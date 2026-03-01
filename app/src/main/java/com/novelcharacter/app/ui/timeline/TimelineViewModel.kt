@@ -72,7 +72,7 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
     }
 
     // ===== Search =====
-    private val _searchQuery = MutableLiveData<String>()
+    private val _searchQuery = MutableLiveData("")
     val searchResults: LiveData<List<TimelineEvent>> = _searchQuery.switchMap { query ->
         if (query.isNullOrBlank()) {
             filteredEvents

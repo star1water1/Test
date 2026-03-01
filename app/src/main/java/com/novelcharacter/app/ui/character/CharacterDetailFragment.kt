@@ -193,7 +193,12 @@ class CharacterDetailFragment : Fragment() {
             binding.yearSlider.isEnabled = true
             binding.yearSlider.valueFrom = adjustedMin
             binding.yearSlider.valueTo = adjustedMax
-            binding.yearSlider.stepSize = 1f
+            val totalRange = adjustedMax - adjustedMin
+            binding.yearSlider.stepSize = when {
+                totalRange > 10000 -> 100f
+                totalRange > 1000 -> 10f
+                else -> 1f
+            }
 
             // Set initial value
             if (currentSliderYear == null) {
@@ -378,7 +383,7 @@ class CharacterDetailFragment : Fragment() {
         binding.eventsRecyclerView.adapter = timelineAdapter
 
         viewModel.getEventsForCharacter(characterId).observe(viewLifecycleOwner) { events ->
-            timelineAdapter.submitList(events)
+            timelineAdapter.submitEventList(events)
         }
     }
 

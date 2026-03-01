@@ -162,15 +162,10 @@ class TimelineFragment : Fragment() {
     }
 
     private fun observeData() {
-        // Observe filtered events based on zoom level and center year
-        viewModel.filteredEvents.observe(viewLifecycleOwner) { events ->
-            adapter.submitEventList(events)
-            binding.emptyText.visibility = if (events.isEmpty()) View.VISIBLE else View.GONE
-        }
-
-        // Observe search results
+        // Observe search results (falls back to filteredEvents when query is empty)
         viewModel.searchResults.observe(viewLifecycleOwner) { events ->
             adapter.submitEventList(events)
+            binding.emptyText.visibility = if (events.isEmpty()) View.VISIBLE else View.GONE
         }
 
         // Observe zoom level changes
@@ -242,8 +237,13 @@ class TimelineFragment : Fragment() {
             binding.yearSlider.valueTo = rangeTo
         }
 
-        // Set step size to 1
-        binding.yearSlider.stepSize = 1f
+        // Dynamically adjust step size based on range to avoid excessive discrete steps
+        val totalRange = rangeTo - rangeFrom
+        binding.yearSlider.stepSize = when {
+            totalRange > 10000 -> 100f
+            totalRange > 1000 -> 10f
+            else -> 1f
+        }
 
         // Set current value within range
         val currentCenter = viewModel.centerYear.value ?: 0

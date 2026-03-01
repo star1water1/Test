@@ -11,6 +11,7 @@ import com.novelcharacter.app.data.model.TimelineEvent
 import com.novelcharacter.app.databinding.ItemTimelineBinding
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -105,11 +106,27 @@ class TimelineAdapter(
         (holder as TimelineViewHolder).bind(getItem(position))
     }
 
+    override fun onViewRecycled(holder: RecyclerView.ViewHolder) {
+        super.onViewRecycled(holder)
+        if (holder is TimelineViewHolder) {
+            holder.cancelLoad()
+        }
+    }
+
     inner class TimelineViewHolder(
         private val binding: ItemTimelineBinding
     ) : RecyclerView.ViewHolder(binding.root) {
 
+        private var loadJob: Job? = null
+
+        fun cancelLoad() {
+            loadJob?.cancel()
+            loadJob = null
+        }
+
         fun bind(item: TimelineDisplayItem) {
+            // Cancel any ongoing coroutine from previous bind
+            loadJob?.cancel()
             when (item) {
                 is TimelineDisplayItem.EventItem -> bindEvent(item.event)
                 is TimelineDisplayItem.GroupHeader -> bindGroup(item)
@@ -123,7 +140,7 @@ class TimelineAdapter(
 
             // Load related character chips
             binding.characterChipGroup.removeAllViews()
-            CoroutineScope(Dispatchers.IO).launch {
+            loadJob = CoroutineScope(Dispatchers.IO).launch {
                 val db = AppDatabase.getDatabase(binding.root.context)
                 val characters = db.timelineDao().getCharactersForEvent(event.id)
                 withContext(Dispatchers.Main) {
