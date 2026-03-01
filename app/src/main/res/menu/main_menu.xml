@@ -12,4 +12,9 @@
         android:title="@string/import_excel"
         app:showAsAction="never" />
 
+    <item
+        android:id="@+id/action_preset"
+        android:title="@string/load_preset"
+        app:showAsAction="never" />
+
 </menu>

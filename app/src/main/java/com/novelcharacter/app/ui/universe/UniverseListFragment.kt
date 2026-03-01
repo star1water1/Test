@@ -6,6 +6,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
@@ -35,6 +36,7 @@ class UniverseListFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         setupRecyclerView()
         setupFab()
+        setupToolbarMenu()
         observeData()
     }
 
@@ -60,6 +62,38 @@ class UniverseListFragment : Fragment() {
         binding.fabAddUniverse.setOnClickListener {
             showUniverseEditDialog(null)
         }
+    }
+
+    private fun setupToolbarMenu() {
+        binding.toolbar.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                R.id.action_preset -> {
+                    showPresetDialog()
+                    true
+                }
+                else -> false
+            }
+        }
+    }
+
+    private fun showPresetDialog() {
+        val templates = viewModel.getPresetTemplates()
+        val names = templates.map { "${it.universe.name} — ${it.universe.description}" }.toTypedArray()
+
+        AlertDialog.Builder(requireContext())
+            .setTitle(R.string.select_preset)
+            .setItems(names) { _, which ->
+                val template = templates[which]
+                viewModel.applyPreset(template) {
+                    Toast.makeText(
+                        requireContext(),
+                        getString(R.string.preset_loaded, template.universe.name),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
     }
 
     private fun observeData() {

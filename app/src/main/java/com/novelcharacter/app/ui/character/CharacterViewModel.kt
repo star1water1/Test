@@ -5,6 +5,7 @@ import androidx.lifecycle.*
 import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.CharacterFieldValue
+import com.novelcharacter.app.data.model.CharacterStateChange
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.TimelineEvent
@@ -81,5 +82,27 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     fun insertCharacterAndGetId(character: Character, onResult: (Long) -> Unit) = viewModelScope.launch {
         val id = repository.insertCharacter(character)
         onResult(id)
+    }
+
+    // ===== CharacterStateChange =====
+    fun getChangesByCharacter(characterId: Long): LiveData<List<CharacterStateChange>> =
+        repository.getChangesByCharacter(characterId)
+
+    suspend fun getChangesUpToYear(characterId: Long, year: Int): List<CharacterStateChange> =
+        repository.getChangesUpToYear(characterId, year)
+
+    suspend fun getChangesByCharacterList(characterId: Long): List<CharacterStateChange> =
+        repository.getChangesByCharacterList(characterId)
+
+    fun insertStateChange(change: CharacterStateChange) = viewModelScope.launch {
+        repository.insertStateChange(change)
+    }
+
+    fun updateStateChange(change: CharacterStateChange) = viewModelScope.launch {
+        repository.updateStateChange(change)
+    }
+
+    fun deleteStateChange(change: CharacterStateChange) = viewModelScope.launch {
+        repository.deleteStateChange(change)
     }
 }

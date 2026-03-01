@@ -45,4 +45,44 @@
     <string name="field_manage">필드 관리</string>
     <string name="add_field">필드 추가</string>
     <string name="edit_field">필드 편집</string>
+
+    <!-- Timeline Zoom -->
+    <string name="zoom_level_1000">1000년 단위</string>
+    <string name="zoom_level_100">100년 단위</string>
+    <string name="zoom_level_10">10년 단위</string>
+    <string name="zoom_level_1">1년 단위</string>
+    <string name="zoom_level_month">월 단위</string>
+    <string name="zoom_in">확대</string>
+    <string name="zoom_out">축소</string>
+    <string name="year_slider">연도 선택</string>
+    <string name="event_month">월 (선택)</string>
+    <string name="event_day">일 (선택)</string>
+    <string name="events_count">%d건</string>
+    <string name="year_range_format">%d년 ~ %d년</string>
+
+    <!-- State changes -->
+    <string name="state_changes">상태 변화</string>
+    <string name="add_state_change">상태 변화 추가</string>
+    <string name="edit_state_change">상태 변화 편집</string>
+    <string name="no_state_changes">등록된 상태 변화가 없습니다</string>
+    <string name="time_view">시점 보기</string>
+    <string name="toggle_time_slider">시점 슬라이더 토글</string>
+    <string name="reset_time_view">원래 상태로</string>
+    <string name="time_view_indicator">%d년 시점의 상태</string>
+    <string name="year_required">연도를 입력해주세요</string>
+    <string name="field_required">변경 필드를 선택해주세요</string>
+    <string name="value_required">새 값을 입력해주세요</string>
+    <string name="state_change_saved">상태 변화가 저장되었습니다</string>
+    <string name="state_change_deleted">상태 변화가 삭제되었습니다</string>
+    <string name="edit_or_delete">편집 또는 삭제</string>
+    <string name="edit">편집</string>
+    <string name="birth">탄생</string>
+    <string name="death">사망</string>
+    <string name="alive_status">생존상태</string>
+    <string name="age">나이</string>
+
+    <!-- Preset -->
+    <string name="load_preset">프리셋 불러오기</string>
+    <string name="preset_loaded">프리셋 \"%s\" 세계관이 생성되었습니다</string>
+    <string name="select_preset">프리셋 템플릿 선택</string>
 </resources>

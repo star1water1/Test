@@ -14,7 +14,99 @@
         app:navigationIcon="?attr/homeAsUpIndicator"
         app:titleTextColor="@color/on_primary" />
 
+    <!-- Time slider section (togglable) -->
+    <LinearLayout
+        android:id="@+id/timeSliderContainer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="?attr/actionBarSize"
+        android:orientation="vertical"
+        android:background="@color/surface"
+        android:elevation="2dp"
+        android:visibility="gone">
+
+        <!-- Toggle header -->
+        <LinearLayout
+            android:id="@+id/timeSliderHeader"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingHorizontal="16dp"
+            android:paddingVertical="8dp"
+            android:background="?attr/selectableItemBackground">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/time_view"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:textColor="@color/primary" />
+
+            <ImageView
+                android:id="@+id/timeSliderToggleIcon"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:src="@android:drawable/arrow_down_float"
+                android:contentDescription="@string/toggle_time_slider" />
+
+        </LinearLayout>
+
+        <!-- Slider + year label -->
+        <LinearLayout
+            android:id="@+id/timeSliderContent"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingHorizontal="16dp"
+            android:paddingBottom="8dp"
+            android:visibility="gone">
+
+            <com.google.android.material.slider.Slider
+                android:id="@+id/yearSlider"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:valueFrom="0"
+                android:valueTo="100"
+                android:stepSize="1"
+                app:trackColorActive="@color/primary"
+                app:trackColorInactive="@color/primary_light"
+                app:thumbColor="@color/primary" />
+
+            <TextView
+                android:id="@+id/yearLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:textColor="@color/primary"
+                android:minWidth="56dp"
+                android:gravity="center" />
+
+        </LinearLayout>
+
+        <!-- Reset button -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnResetTimeView"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="end"
+            android:layout_marginEnd="8dp"
+            android:layout_marginBottom="4dp"
+            android:text="@string/reset_time_view"
+            android:textSize="12sp"
+            android:visibility="gone" />
+
+    </LinearLayout>
+
     <androidx.core.widget.NestedScrollView
+        android:id="@+id/scrollView"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:layout_marginTop="?attr/actionBarSize">
@@ -51,6 +143,21 @@
                 android:layout_marginBottom="16dp"
                 android:textColor="@color/text_secondary" />
 
+            <!-- Time view indicator (visible when slider is active) -->
+            <TextView
+                android:id="@+id/timeViewIndicator"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                android:paddingVertical="6dp"
+                android:paddingHorizontal="12dp"
+                android:background="@color/primary_light"
+                android:textColor="@color/on_primary"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:gravity="center"
+                android:visibility="gone" />
+
             <!-- Dynamic fields container (populated programmatically from CharacterFieldValue) -->
             <LinearLayout
                 android:id="@+id/dynamicFieldsContainer"
@@ -85,6 +192,68 @@
                         android:id="@+id/eventsRecyclerView"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
+                        android:nestedScrollingEnabled="false" />
+
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- State changes card -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/stateChangesCard"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                app:cardCornerRadius="12dp"
+                app:cardElevation="2dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/state_changes"
+                            android:textSize="16sp"
+                            android:textStyle="bold"
+                            android:textColor="@color/primary" />
+
+                        <ImageView
+                            android:id="@+id/btnAddStateChange"
+                            android:layout_width="32dp"
+                            android:layout_height="32dp"
+                            android:padding="4dp"
+                            android:src="@android:drawable/ic_input_add"
+                            android:background="?attr/selectableItemBackgroundBorderless"
+                            android:contentDescription="@string/add_state_change" />
+
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/textNoStateChanges"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/no_state_changes"
+                        android:textSize="13sp"
+                        android:textColor="@color/text_secondary"
+                        android:gravity="center"
+                        android:paddingVertical="16dp"
+                        android:visibility="gone" />
+
+                    <androidx.recyclerview.widget.RecyclerView
+                        android:id="@+id/stateChangesRecyclerView"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
                         android:nestedScrollingEnabled="false" />
 
                 </LinearLayout>

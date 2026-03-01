@@ -4,6 +4,8 @@ import android.os.Bundle
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.LayoutInflater
+import android.view.MotionEvent
+import android.view.ScaleGestureDetector
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ArrayAdapter
@@ -32,6 +34,7 @@ class TimelineFragment : Fragment() {
     private val viewModel: TimelineViewModel by viewModels()
 
     private lateinit var adapter: TimelineAdapter
+    private lateinit var scaleGestureDetector: ScaleGestureDetector
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
@@ -44,6 +47,9 @@ class TimelineFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
 
         setupRecyclerView()
+        setupPinchZoom()
+        setupZoomControls()
+        setupYearSlider()
         setupSearch()
         setupFab()
         observeData()
@@ -78,6 +84,67 @@ class TimelineFragment : Fragment() {
         binding.timelineRecyclerView.adapter = adapter
     }
 
+    private fun setupPinchZoom() {
+        scaleGestureDetector = ScaleGestureDetector(
+            requireContext(),
+            object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+                private var scaleFactor = 1.0f
+
+                override fun onScaleBegin(detector: ScaleGestureDetector): Boolean {
+                    scaleFactor = 1.0f
+                    return true
+                }
+
+                override fun onScale(detector: ScaleGestureDetector): Boolean {
+                    scaleFactor *= detector.scaleFactor
+                    return true
+                }
+
+                override fun onScaleEnd(detector: ScaleGestureDetector) {
+                    if (scaleFactor > 1.3f) {
+                        // Pinch out -> zoom in (more detail)
+                        viewModel.zoomIn()
+                    } else if (scaleFactor < 0.7f) {
+                        // Pinch in -> zoom out (less detail)
+                        viewModel.zoomOut()
+                    }
+                }
+            }
+        )
+
+        binding.timelineRecyclerView.addOnItemTouchListener(object : RecyclerView.OnItemTouchListener {
+            override fun onInterceptTouchEvent(rv: RecyclerView, e: MotionEvent): Boolean {
+                scaleGestureDetector.onTouchEvent(e)
+                return false
+            }
+
+            override fun onTouchEvent(rv: RecyclerView, e: MotionEvent) {
+                scaleGestureDetector.onTouchEvent(e)
+            }
+
+            override fun onRequestDisallowInterceptTouchEvent(disallowIntercept: Boolean) {}
+        })
+    }
+
+    private fun setupZoomControls() {
+        binding.btnZoomIn.setOnClickListener {
+            viewModel.zoomIn()
+        }
+
+        binding.btnZoomOut.setOnClickListener {
+            viewModel.zoomOut()
+        }
+    }
+
+    private fun setupYearSlider() {
+        binding.yearSlider.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+                val year = value.toInt()
+                viewModel.setSelectedYear(year)
+            }
+        }
+    }
+
     private fun setupSearch() {
         binding.searchEdit.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
@@ -95,14 +162,96 @@ class TimelineFragment : Fragment() {
     }
 
     private fun observeData() {
-        viewModel.allEvents.observe(viewLifecycleOwner) { events ->
-            adapter.submitList(events)
+        // Observe filtered events based on zoom level and center year
+        viewModel.filteredEvents.observe(viewLifecycleOwner) { events ->
+            adapter.submitEventList(events)
             binding.emptyText.visibility = if (events.isEmpty()) View.VISIBLE else View.GONE
         }
 
+        // Observe search results
         viewModel.searchResults.observe(viewLifecycleOwner) { events ->
-            adapter.submitList(events)
+            adapter.submitEventList(events)
         }
+
+        // Observe zoom level changes
+        viewModel.zoomLevel.observe(viewLifecycleOwner) { level ->
+            adapter.zoomLevel = level
+            updateZoomLevelLabel(level)
+        }
+
+        // Observe zoom level label
+        viewModel.zoomLevelLabel.observe(viewLifecycleOwner) { label ->
+            binding.zoomLevelLabel.text = label
+        }
+
+        // Observe visible range to update year range label
+        viewModel.visibleRange.observe(viewLifecycleOwner) { (start, end) ->
+            binding.yearRangeLabel.text = getString(R.string.year_range_format, start, end)
+        }
+
+        // Update slider range based on all events data
+        viewModel.allEvents.observe(viewLifecycleOwner) { events ->
+            updateSliderRange(events)
+        }
+
+        // Observe selected year to update slider position
+        viewModel.selectedYear.observe(viewLifecycleOwner) { year ->
+            if (year != null) {
+                val slider = binding.yearSlider
+                val clampedValue = year.toFloat().coerceIn(slider.valueFrom, slider.valueTo)
+                if (slider.value != clampedValue) {
+                    slider.value = clampedValue
+                }
+            }
+        }
+    }
+
+    private fun updateZoomLevelLabel(level: Int) {
+        val labelRes = when (level) {
+            1 -> R.string.zoom_level_1000
+            2 -> R.string.zoom_level_100
+            3 -> R.string.zoom_level_10
+            4 -> R.string.zoom_level_1
+            5 -> R.string.zoom_level_month
+            else -> R.string.zoom_level_1
+        }
+        binding.zoomLevelLabel.text = getString(labelRes)
+    }
+
+    private fun updateSliderRange(events: List<TimelineEvent>) {
+        if (events.isEmpty()) {
+            binding.yearSlider.valueFrom = -100f
+            binding.yearSlider.valueTo = 100f
+            binding.yearSlider.value = 0f
+            return
+        }
+
+        val minYear = events.minOf { it.year }
+        val maxYear = events.maxOf { it.year }
+
+        // Add some padding to the range
+        val rangeFrom = (minYear - 10).toFloat()
+        val rangeTo = (maxYear + 10).toFloat()
+
+        // Ensure valueFrom < valueTo
+        if (rangeFrom >= rangeTo) {
+            binding.yearSlider.valueFrom = rangeFrom - 10
+            binding.yearSlider.valueTo = rangeTo + 10
+        } else {
+            binding.yearSlider.valueFrom = rangeFrom
+            binding.yearSlider.valueTo = rangeTo
+        }
+
+        // Set step size to 1
+        binding.yearSlider.stepSize = 1f
+
+        // Set current value within range
+        val currentCenter = viewModel.centerYear.value ?: 0
+        val clampedValue = currentCenter.toFloat().coerceIn(
+            binding.yearSlider.valueFrom,
+            binding.yearSlider.valueTo
+        )
+        binding.yearSlider.value = clampedValue
     }
 
     private fun showEditEventDialog(event: TimelineEvent?) {
@@ -117,14 +266,16 @@ class TimelineFragment : Fragment() {
 
             val dialogBinding = DialogTimelineEditBinding.inflate(layoutInflater)
 
-            // 기존 데이터 채우기
+            // Fill existing data
             event?.let {
                 dialogBinding.editYear.setText(it.year.toString())
+                dialogBinding.editMonth.setText(it.month?.toString() ?: "")
+                dialogBinding.editDay.setText(it.day?.toString() ?: "")
                 dialogBinding.editCalendarType.setText(it.calendarType)
                 dialogBinding.editDescription.setText(it.description)
             }
 
-            // 작품 스피너
+            // Novel spinner
             val novelNames = mutableListOf("전체")
             novelNames.addAll(novels.map { it.title })
             val novelAdapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, novelNames)
@@ -136,7 +287,7 @@ class TimelineFragment : Fragment() {
                 if (index >= 0) dialogBinding.spinnerNovel.setSelection(index + 1)
             }
 
-            // 캐릭터 체크박스 목록
+            // Character checkboxes
             setupCharacterCheckboxes(dialogBinding, characters, selectedCharIds)
 
             AlertDialog.Builder(requireContext())
@@ -157,6 +308,24 @@ class TimelineFragment : Fragment() {
                         return@setPositiveButton
                     }
 
+                    // Parse optional month and day
+                    val monthStr = dialogBinding.editMonth.text.toString().trim()
+                    val dayStr = dialogBinding.editDay.text.toString().trim()
+                    val month = if (monthStr.isNotEmpty()) monthStr.toIntOrNull() else null
+                    val day = if (dayStr.isNotEmpty()) dayStr.toIntOrNull() else null
+
+                    // Validate month range
+                    if (month != null && (month < 1 || month > 12)) {
+                        Toast.makeText(requireContext(), "월은 1~12 사이로 입력하세요", Toast.LENGTH_SHORT).show()
+                        return@setPositiveButton
+                    }
+
+                    // Validate day range
+                    if (day != null && (day < 1 || day > 31)) {
+                        Toast.makeText(requireContext(), "일은 1~31 사이로 입력하세요", Toast.LENGTH_SHORT).show()
+                        return@setPositiveButton
+                    }
+
                     val calendarType = dialogBinding.editCalendarType.text.toString().trim()
                     val novelPosition = dialogBinding.spinnerNovel.selectedItemPosition
                     val novelId = if (novelPosition > 0) novels[novelPosition - 1].id else null
@@ -164,6 +333,8 @@ class TimelineFragment : Fragment() {
                     val newEvent = TimelineEvent(
                         id = event?.id ?: 0,
                         year = year,
+                        month = month,
+                        day = day,
                         calendarType = calendarType,
                         description = description,
                         novelId = novelId,
@@ -186,7 +357,7 @@ class TimelineFragment : Fragment() {
         characters: List<Character>,
         selectedIds: MutableSet<Long>
     ) {
-        // 간단한 체크박스 리스트로 구현
+        // Simple checkbox list implementation
         val recyclerView = dialogBinding.characterSelectRecyclerView
         recyclerView.layoutManager = LinearLayoutManager(requireContext())
         recyclerView.adapter = object : RecyclerView.Adapter<RecyclerView.ViewHolder>() {

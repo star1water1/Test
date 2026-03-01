@@ -9,6 +9,7 @@ import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.data.model.FieldDefinition
+import com.novelcharacter.app.util.PresetTemplates
 import kotlinx.coroutines.launch
 
 class UniverseViewModel(application: Application) : AndroidViewModel(application) {
@@ -45,4 +46,15 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
     fun deleteUniverse(universe: Universe) = viewModelScope.launch {
         repository.deleteUniverse(universe)
     }
+
+    fun getPresetTemplates(): List<PresetTemplates.PresetTemplate> =
+        PresetTemplates.getTemplates()
+
+    fun applyPreset(template: PresetTemplates.PresetTemplate, onComplete: () -> Unit) =
+        viewModelScope.launch {
+            val universeId = repository.insertUniverse(template.universe)
+            val fieldsWithId = template.fields.map { it.copy(universeId = universeId) }
+            repository.insertAllFields(fieldsWithId)
+            onComplete()
+        }
 }
