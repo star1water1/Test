@@ -32,4 +32,9 @@ interface NovelDao {
 
     @Query("SELECT * FROM novels WHERE universeId = :universeId ORDER BY createdAt DESC")
     suspend fun getNovelsByUniverseList(universeId: Long): List<Novel>
+
+    @Query("SELECT universeId, COUNT(*) as cnt FROM novels WHERE universeId IN (:universeIds) GROUP BY universeId")
+    suspend fun getNovelCountsByUniverses(universeIds: List<Long>): List<UniverseCount>
 }
+
+data class UniverseCount(val universeId: Long, val cnt: Int)

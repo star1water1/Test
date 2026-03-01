@@ -25,14 +25,9 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
     val universeFieldCounts: LiveData<Map<Long, Int>> = _universeFieldCounts
 
     fun loadCounts(universes: List<Universe>) = viewModelScope.launch {
-        val novelCounts = mutableMapOf<Long, Int>()
-        val fieldCounts = mutableMapOf<Long, Int>()
-        for (u in universes) {
-            novelCounts[u.id] = repository.getNovelsByUniverseList(u.id).size
-            fieldCounts[u.id] = repository.getFieldsByUniverseList(u.id).size
-        }
-        _universeNovelCounts.value = novelCounts
-        _universeFieldCounts.value = fieldCounts
+        val ids = universes.map { it.id }
+        _universeNovelCounts.value = repository.getNovelCountsByUniverses(ids)
+        _universeFieldCounts.value = repository.getFieldCountsByUniverses(ids)
     }
 
     fun insertUniverse(universe: Universe) = viewModelScope.launch {

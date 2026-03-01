@@ -1,9 +1,14 @@
 package com.novelcharacter.app.util
 
+import android.util.Log
 import com.novelcharacter.app.data.model.CharacterStateChange
 import com.novelcharacter.app.data.model.FieldDefinition
 
 class TimeStateResolver {
+
+    companion object {
+        private const val TAG = "TimeStateResolver"
+    }
 
     /**
      * Resolves a character's field values at a specific year by applying state changes chronologically.
@@ -56,12 +61,16 @@ class TimeStateResolver {
                         field.config,
                         object : com.google.gson.reflect.TypeToken<Map<String, Any>>() {}.type
                     )
-                } catch (e: Exception) { emptyMap() }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to parse config for field '${field.key}': ${e.message}")
+                    emptyMap()
+                }
                 val formula = config["formula"] as? String ?: continue
                 try {
                     val value = evaluator.evaluate(formula)
                     result[field.key] = value.toString()
                 } catch (e: Exception) {
+                    Log.e(TAG, "Formula evaluation error for field '${field.key}', formula='$formula'", e)
                     result[field.key] = "오류"
                 }
             }
