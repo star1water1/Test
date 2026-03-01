@@ -79,7 +79,8 @@ class TimelineFragment : Fragment() {
                     }
                     .show()
             },
-            coroutineScope = viewLifecycleOwner.lifecycleScope
+            coroutineScope = viewLifecycleOwner.lifecycleScope,
+            loadCharactersForEvent = { eventId -> viewModel.getCharactersForEvent(eventId) }
         )
         binding.timelineRecyclerView.layoutManager = LinearLayoutManager(requireContext())
         binding.timelineRecyclerView.adapter = adapter

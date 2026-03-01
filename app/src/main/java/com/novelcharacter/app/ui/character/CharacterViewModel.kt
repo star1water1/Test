@@ -52,6 +52,9 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
 
     suspend fun getCharacterByIdSuspend(id: Long): Character? = repository.getCharacterById(id)
 
+    suspend fun getCharactersForEvent(eventId: Long): List<Character> =
+        repository.getCharactersForEvent(eventId)
+
     suspend fun getNovelById(id: Long): Novel? = repository.getNovelById(id)
 
     suspend fun getAllNovelsList(): List<Novel> = repository.getAllNovelsList()

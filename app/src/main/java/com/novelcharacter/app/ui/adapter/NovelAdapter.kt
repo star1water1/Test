@@ -30,7 +30,7 @@ class NovelAdapter(
 
         fun bind(novel: Novel) {
             binding.novelTitle.text = novel.title
-            binding.novelDescription.text = novel.description.ifEmpty { "설명 없음" }
+            binding.novelDescription.text = novel.description.ifEmpty { binding.root.context.getString(com.novelcharacter.app.R.string.no_description) }
 
             binding.root.setOnClickListener { onClick(novel) }
             binding.root.setOnLongClickListener {

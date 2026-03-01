@@ -88,4 +88,55 @@
     <string name="load_preset">프리셋 불러오기</string>
     <string name="preset_loaded">프리셋 \"%s\" 세계관이 생성되었습니다</string>
     <string name="select_preset">프리셋 템플릿 선택</string>
+
+    <!-- Empty state hints -->
+    <string name="empty_universe_hint">세계관을 추가해보세요</string>
+    <string name="empty_field_hint">필드를 추가해보세요</string>
+
+    <!-- Layout hardcoded strings -->
+    <string name="hint_search_event">사건 검색</string>
+    <string name="default_calendar_type">천개력</string>
+    <string name="label_change_field">변경 필드</string>
+    <string name="hint_new_value">새 값</string>
+    <string name="hint_state_change_desc">설명 (예: 켄넬 즉위)</string>
+    <string name="hint_field_name">필드 이름 (표시명)</string>
+    <string name="hint_field_key">필드 키 (영문, 고유)</string>
+    <string name="label_field_type">필드 타입</string>
+    <string name="hint_group_name">그룹 이름</string>
+    <string name="default_group_name">기본 정보</string>
+    <string name="label_select_options">선택 옵션 (쉼표로 구분)</string>
+    <string name="hint_select_example">예: 남,여,?</string>
+    <string name="label_grade_mapping">등급별 수치 매핑</string>
+    <string name="label_allow_negative">음수 허용 (±등급)</string>
+    <string name="label_formula">계산 수식</string>
+    <string name="hint_formula_example">예: field(\'aura\') + field(\'body\')</string>
+    <string name="text_formula_help">사용 가능: field(\'키\'), sum_all_grades(), abs(), +, -, *, /</string>
+    <string name="label_required_field">필수 입력</string>
+
+    <!-- Kotlin code hardcoded strings -->
+    <string name="no_description">설명 없음</string>
+    <string name="no_novel_selected">작품 미지정</string>
+    <string name="no_selection">선택 안함</string>
+    <string name="no_grade_selected">등급 미정</string>
+    <string name="hint_multi_text_format">%s (쉼표로 구분)</string>
+    <string name="auto_calculated">%s: (자동 계산)</string>
+    <string name="image_save_failed">이미지 저장 실패</string>
+    <string name="enter_name">이름을 입력하세요</string>
+    <string name="saved_successfully">저장되었습니다</string>
+    <string name="universe_name_hint">세계관 이름</string>
+    <string name="universe_desc_hint">설명 (선택)</string>
+    <string name="dialog_add_universe">세계관 추가</string>
+    <string name="dialog_edit_universe">세계관 편집</string>
+    <string name="confirm_delete_universe">\" %s\" 세계관을 삭제하시겠습니까?\n관련 필드 정의도 함께 삭제됩니다.</string>
+    <string name="menu_edit">편집</string>
+    <string name="menu_delete">삭제</string>
+    <string name="month_valid_range">월은 1~12 사이로 입력하세요</string>
+    <string name="day_valid_range">일은 1~31 사이로 입력하세요</string>
+    <string name="importer_restart">가져오기를 사용하려면 앱을 다시 시작하세요</string>
+
+    <!-- Birthday notifications -->
+    <string name="birthday_notification_title">오늘은 캐릭터 생일!</string>
+    <string name="birthday_single">%s의 생일입니다!</string>
+    <string name="birthday_multiple">%1$s 외 %2$d명의 생일입니다!</string>
+    <string name="birthday_list">%s의 생일입니다!</string>
 </resources>

@@ -34,7 +34,7 @@ class FieldEditDialog : DialogFragment() {
         populateFields(binding)
 
         return AlertDialog.Builder(requireContext())
-            .setTitle(if (existingField == null) "필드 추가" else "필드 편집")
+            .setTitle(if (existingField == null) R.string.add_field else R.string.edit_field)
             .setView(binding.root)
             .setPositiveButton(R.string.save) { _, _ ->
                 saveField(binding)

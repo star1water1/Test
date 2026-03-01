@@ -1,6 +1,5 @@
 package com.novelcharacter.app.ui.adapter
 
-import android.graphics.Color
 import android.view.LayoutInflater
 import android.view.ViewGroup
 import androidx.recyclerview.widget.DiffUtil

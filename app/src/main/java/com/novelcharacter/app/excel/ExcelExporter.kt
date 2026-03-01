@@ -1,7 +1,10 @@
 package com.novelcharacter.app.excel
 
+import android.content.ContentValues
 import android.content.Context
+import android.os.Build
 import android.os.Environment
+import android.provider.MediaStore
 import android.widget.Toast
 import com.novelcharacter.app.data.database.AppDatabase
 import kotlinx.coroutines.CoroutineScope
@@ -33,12 +36,8 @@ class ExcelExporter(private val context: Context) {
 
                 val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
                 val fileName = "NovelCharacter_$timestamp.xlsx"
-                val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-                val file = File(downloadsDir, fileName)
 
-                FileOutputStream(file).use { outputStream ->
-                    workbook.write(outputStream)
-                }
+                saveWorkbook(workbook, fileName)
                 workbook.close()
 
                 withContext(Dispatchers.Main) {
@@ -48,6 +47,32 @@ class ExcelExporter(private val context: Context) {
                 withContext(Dispatchers.Main) {
                     Toast.makeText(context, "내보내기 실패: ${e.message}", Toast.LENGTH_LONG).show()
                 }
+            }
+        }
+    }
+
+    private fun saveWorkbook(workbook: XSSFWorkbook, fileName: String) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            // API 29+ : MediaStore 사용 (Scoped Storage)
+            val contentValues = ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+                put(MediaStore.Downloads.MIME_TYPE,
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+            }
+            val uri = context.contentResolver.insert(
+                MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues
+            ) ?: throw Exception("파일을 생성할 수 없습니다")
+
+            context.contentResolver.openOutputStream(uri)?.use { outputStream ->
+                workbook.write(outputStream)
+            } ?: throw Exception("파일에 쓸 수 없습니다")
+        } else {
+            // API 28 이하: 기존 방식
+            val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            val file = File(downloadsDir, fileName)
+            FileOutputStream(file).use { outputStream ->
+                workbook.write(outputStream)
             }
         }
     }

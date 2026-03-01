@@ -14,7 +14,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="12dp"
-            android:hint="필드 이름 (표시명)">
+            android:hint="@string/hint_field_name">
             <com.google.android.material.textfield.TextInputEditText
                 android:id="@+id/editFieldName"
                 android:layout_width="match_parent"
@@ -26,7 +26,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="12dp"
-            android:hint="필드 키 (영문, 고유)">
+            android:hint="@string/hint_field_key">
             <com.google.android.material.textfield.TextInputEditText
                 android:id="@+id/editFieldKey"
                 android:layout_width="match_parent"
@@ -37,7 +37,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="필드 타입"
+            android:text="@string/label_field_type"
             android:textSize="12sp"
             android:textColor="@color/text_secondary" />
 
@@ -51,13 +51,13 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="12dp"
-            android:hint="그룹 이름">
+            android:hint="@string/hint_group_name">
             <com.google.android.material.textfield.TextInputEditText
                 android:id="@+id/editGroupName"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:inputType="text"
-                android:text="기본 정보" />
+                android:text="@string/default_group_name" />
         </com.google.android.material.textfield.TextInputLayout>
 
         <!-- SELECT 옵션 (SELECT 타입일 때만 표시) -->
@@ -72,14 +72,14 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="선택 옵션 (쉼표로 구분)"
+                android:text="@string/label_select_options"
                 android:textSize="12sp"
                 android:textColor="@color/text_secondary" />
 
             <com.google.android.material.textfield.TextInputLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:hint="예: 남,여,?">
+                android:hint="@string/hint_select_example">
                 <com.google.android.material.textfield.TextInputEditText
                     android:id="@+id/editSelectOptions"
                     android:layout_width="match_parent"
@@ -100,7 +100,7 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="등급별 수치 매핑"
+                android:text="@string/label_grade_mapping"
                 android:textSize="14sp"
                 android:textStyle="bold"
                 android:textColor="@color/primary"
@@ -127,7 +127,7 @@
                 android:id="@+id/switchAllowNegative"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="음수 허용 (±등급)" />
+                android:text="@string/label_allow_negative" />
 
         </LinearLayout>
 
@@ -143,14 +143,14 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="계산 수식"
+                android:text="@string/label_formula"
                 android:textSize="12sp"
                 android:textColor="@color/text_secondary" />
 
             <com.google.android.material.textfield.TextInputLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:hint="예: field('aura') + field('body')">
+                android:hint="@string/hint_formula_example">
                 <com.google.android.material.textfield.TextInputEditText
                     android:id="@+id/editFormula"
                     android:layout_width="match_parent"
@@ -163,7 +163,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="4dp"
-                android:text="사용 가능: field('키'), sum_all_grades(), abs(), +, -, *, /"
+                android:text="@string/text_formula_help"
                 android:textSize="11sp"
                 android:textColor="@color/text_secondary" />
 
@@ -173,7 +173,7 @@
             android:id="@+id/switchRequired"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="필수 입력" />
+            android:text="@string/label_required_field" />
 
     </LinearLayout>
 

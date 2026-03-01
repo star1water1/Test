@@ -6,15 +6,12 @@ import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.chip.Chip
-import com.novelcharacter.app.data.database.AppDatabase
+import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.TimelineEvent
 import com.novelcharacter.app.databinding.ItemTimelineBinding
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import kotlin.coroutines.CoroutineContext
 
 /**
  * Sealed class representing items displayed in the timeline.
@@ -32,7 +29,8 @@ sealed class TimelineDisplayItem {
 class TimelineAdapter(
     private val onClick: (TimelineEvent) -> Unit,
     private val onLongClick: (TimelineEvent) -> Unit,
-    private val coroutineScope: CoroutineScope? = null
+    private val coroutineScope: CoroutineScope,
+    private val loadCharactersForEvent: suspend (Long) -> List<Character> = { emptyList() }
 ) : ListAdapter<TimelineDisplayItem, RecyclerView.ViewHolder>(TimelineDisplayDiffCallback()) {
 
     var zoomLevel: Int = 4
@@ -140,14 +138,10 @@ class TimelineAdapter(
             binding.calendarTypeText.text = event.calendarType
             binding.descriptionText.text = event.description
 
-            // Load related character chips
+            // Load related character chips via callback (repository 경유)
             binding.characterChipGroup.removeAllViews()
-            val scope = coroutineScope ?: CoroutineScope(Dispatchers.Main + Job())
-            loadJob = scope.launch {
-                val characters = withContext(Dispatchers.IO) {
-                    val db = AppDatabase.getDatabase(binding.root.context)
-                    db.timelineDao().getCharactersForEvent(event.id)
-                }
+            loadJob = coroutineScope.launch {
+                val characters = loadCharactersForEvent(event.id)
                 characters.forEach { character ->
                     val chip = Chip(binding.root.context).apply {
                         text = character.name

@@ -464,7 +464,7 @@ class CharacterEditFragment : Fragment() {
             imagePaths.add(file.absolutePath)
             updateImageList()
         } catch (e: Exception) {
-            Toast.makeText(requireContext(), "이미지 저장 실패", Toast.LENGTH_SHORT).show()
+            Toast.makeText(requireContext(), R.string.image_save_failed, Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -501,7 +501,7 @@ class CharacterEditFragment : Fragment() {
         binding.btnSave.setOnClickListener {
             val name = binding.editName.text.toString().trim()
             if (name.isEmpty()) {
-                Toast.makeText(requireContext(), "이름을 입력하세요", Toast.LENGTH_SHORT).show()
+                Toast.makeText(requireContext(), R.string.enter_name, Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
 
@@ -530,7 +530,7 @@ class CharacterEditFragment : Fragment() {
                     viewModel.saveAllFieldValues(newId, fieldValues)
                 }
 
-                Toast.makeText(requireContext(), "저장되었습니다", Toast.LENGTH_SHORT).show()
+                Toast.makeText(requireContext(), R.string.saved_successfully, Toast.LENGTH_SHORT).show()
                 findNavController().popBackStack()
             }
         }
