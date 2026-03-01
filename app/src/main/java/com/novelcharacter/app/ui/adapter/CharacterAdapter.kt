@@ -17,6 +17,10 @@ class CharacterAdapter(
     private val onLongClick: (Character) -> Unit
 ) : ListAdapter<Character, CharacterAdapter.CharacterViewHolder>(CharacterDiffCallback()) {
 
+    companion object {
+        private val gson = Gson()
+    }
+
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): CharacterViewHolder {
         val binding = ItemCharacterBinding.inflate(
             LayoutInflater.from(parent.context), parent, false
@@ -26,6 +30,11 @@ class CharacterAdapter(
 
     override fun onBindViewHolder(holder: CharacterViewHolder, position: Int) {
         holder.bind(getItem(position))
+    }
+
+    override fun onViewRecycled(holder: CharacterViewHolder) {
+        super.onViewRecycled(holder)
+        holder.clearImage()
     }
 
     inner class CharacterViewHolder(
@@ -45,8 +54,11 @@ class CharacterAdapter(
             }
         }
 
+        fun clearImage() {
+            binding.characterImage.setImageDrawable(null)
+        }
+
         private fun loadCharacterImage(character: Character) {
-            val gson = Gson()
             val type = object : TypeToken<List<String>>() {}.type
             val paths: List<String> = try {
                 gson.fromJson(character.imagePaths, type) ?: emptyList()
@@ -55,13 +67,37 @@ class CharacterAdapter(
             }
 
             if (paths.isNotEmpty()) {
-                val bitmap = BitmapFactory.decodeFile(paths[0])
+                val options = BitmapFactory.Options().apply {
+                    inJustDecodeBounds = true
+                }
+                BitmapFactory.decodeFile(paths[0], options)
+                if (options.outWidth <= 0 || options.outHeight <= 0) {
+                    binding.characterImage.setImageResource(R.drawable.ic_character_placeholder)
+                    return
+                }
+                options.inSampleSize = calculateInSampleSize(options, 200, 200)
+                options.inJustDecodeBounds = false
+                val bitmap = BitmapFactory.decodeFile(paths[0], options)
                 if (bitmap != null) {
                     binding.characterImage.setImageBitmap(bitmap)
                     return
                 }
             }
             binding.characterImage.setImageResource(R.drawable.ic_character_placeholder)
+        }
+
+        private fun calculateInSampleSize(options: BitmapFactory.Options, reqWidth: Int, reqHeight: Int): Int {
+            val height = options.outHeight
+            val width = options.outWidth
+            var inSampleSize = 1
+            if (height > reqHeight || width > reqWidth) {
+                val halfHeight = height / 2
+                val halfWidth = width / 2
+                while (halfHeight / inSampleSize >= reqHeight && halfWidth / inSampleSize >= reqWidth) {
+                    inSampleSize *= 2
+                }
+            }
+            return inSampleSize
         }
     }
 

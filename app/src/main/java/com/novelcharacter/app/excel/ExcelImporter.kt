@@ -45,6 +45,7 @@ class ExcelImporter(private val context: Context) {
                     try {
                         // 세계관별 시트에서 캐릭터 가져오기
                         val universes = db.universeDao().getAllUniversesList()
+                        val allNovels = db.novelDao().getAllNovelsList().toMutableList()
 
                         for (universe in universes) {
                             val sheet = workbook.getSheet(universe.name) ?: continue
@@ -62,11 +63,13 @@ class ExcelImporter(private val context: Context) {
                                 // 마지막 열은 "작품"
                                 val novelTitle = getCellString(row, fields.size + 1)
                                 val novelId = if (novelTitle.isNotBlank()) {
-                                    val existingNovels = db.novelDao().getAllNovelsList()
-                                    val existing = existingNovels.find { it.title == novelTitle }
-                                    existing?.id ?: db.novelDao().insert(
-                                        Novel(title = novelTitle, universeId = universe.id)
-                                    )
+                                    val existing = allNovels.find { it.title == novelTitle }
+                                    existing?.id ?: run {
+                                        val newNovel = Novel(title = novelTitle, universeId = universe.id)
+                                        val newId = db.novelDao().insert(newNovel)
+                                        allNovels.add(newNovel.copy(id = newId))
+                                        newId
+                                    }
                                 } else null
 
                                 val character = Character(name = name, novelId = novelId)
@@ -108,8 +111,7 @@ class ExcelImporter(private val context: Context) {
                                 val calendarType = getCellString(row, 3)
                                 val novelTitle = getCellString(row, 5)
                                 val novelId = if (novelTitle.isNotBlank()) {
-                                    val existingNovels = db.novelDao().getAllNovelsList()
-                                    existingNovels.find { it.title == novelTitle }?.id
+                                    allNovels.find { it.title == novelTitle }?.id
                                 } else null
 
                                 val event = TimelineEvent(
