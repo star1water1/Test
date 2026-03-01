@@ -198,4 +198,11 @@ class AppRepository(
 
     suspend fun deleteAllStateChangesByCharacter(characterId: Long) =
         characterStateChangeDao.deleteAllByCharacter(characterId)
+
+    // ===== Batch count queries =====
+    suspend fun getNovelCountsByUniverses(universeIds: List<Long>): Map<Long, Int> =
+        novelDao.getNovelCountsByUniverses(universeIds).associate { it.universeId to it.cnt }
+
+    suspend fun getFieldCountsByUniverses(universeIds: List<Long>): Map<Long, Int> =
+        fieldDefinitionDao.getFieldCountsByUniverses(universeIds).associate { it.universeId to it.cnt }
 }

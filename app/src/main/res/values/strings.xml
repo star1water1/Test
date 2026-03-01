@@ -81,6 +81,9 @@
     <string name="alive_status">생존상태</string>
     <string name="age">나이</string>
 
+    <!-- Permission -->
+    <string name="notification_permission_denied">알림 권한이 거부되어 생일 알림을 받을 수 없습니다</string>
+
     <!-- Preset -->
     <string name="load_preset">프리셋 불러오기</string>
     <string name="preset_loaded">프리셋 \"%s\" 세계관이 생성되었습니다</string>

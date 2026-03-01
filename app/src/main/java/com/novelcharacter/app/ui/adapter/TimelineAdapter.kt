@@ -14,6 +14,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.CoroutineContext
 
 /**
  * Sealed class representing items displayed in the timeline.
@@ -30,7 +31,8 @@ sealed class TimelineDisplayItem {
 
 class TimelineAdapter(
     private val onClick: (TimelineEvent) -> Unit,
-    private val onLongClick: (TimelineEvent) -> Unit
+    private val onLongClick: (TimelineEvent) -> Unit,
+    private val coroutineScope: CoroutineScope? = null
 ) : ListAdapter<TimelineDisplayItem, RecyclerView.ViewHolder>(TimelineDisplayDiffCallback()) {
 
     var zoomLevel: Int = 4
@@ -140,18 +142,19 @@ class TimelineAdapter(
 
             // Load related character chips
             binding.characterChipGroup.removeAllViews()
-            loadJob = CoroutineScope(Dispatchers.IO).launch {
-                val db = AppDatabase.getDatabase(binding.root.context)
-                val characters = db.timelineDao().getCharactersForEvent(event.id)
-                withContext(Dispatchers.Main) {
-                    characters.forEach { character ->
-                        val chip = Chip(binding.root.context).apply {
-                            text = character.name
-                            textSize = 11f
-                            isClickable = false
-                        }
-                        binding.characterChipGroup.addView(chip)
+            val scope = coroutineScope ?: CoroutineScope(Dispatchers.Main + Job())
+            loadJob = scope.launch {
+                val characters = withContext(Dispatchers.IO) {
+                    val db = AppDatabase.getDatabase(binding.root.context)
+                    db.timelineDao().getCharactersForEvent(event.id)
+                }
+                characters.forEach { character ->
+                    val chip = Chip(binding.root.context).apply {
+                        text = character.name
+                        textSize = 11f
+                        isClickable = false
                     }
+                    binding.characterChipGroup.addView(chip)
                 }
             }
 

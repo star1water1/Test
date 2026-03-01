@@ -1,5 +1,6 @@
 package com.novelcharacter.app.ui.character
 
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Typeface
 import android.os.Bundle
@@ -32,7 +33,9 @@ import com.novelcharacter.app.databinding.FragmentCharacterDetailBinding
 import com.novelcharacter.app.ui.adapter.StateChangeAdapter
 import com.novelcharacter.app.ui.adapter.TimelineAdapter
 import com.novelcharacter.app.util.TimeStateResolver
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class CharacterDetailFragment : Fragment() {
 
@@ -377,7 +380,8 @@ class CharacterDetailFragment : Fragment() {
     private fun observeEvents() {
         val timelineAdapter = TimelineAdapter(
             onClick = { /* 연표 클릭 시 */ },
-            onLongClick = { /* 연표 롱클릭 시 */ }
+            onLongClick = { /* 연표 롱클릭 시 */ },
+            coroutineScope = viewLifecycleOwner.lifecycleScope
         )
         binding.eventsRecyclerView.layoutManager = LinearLayoutManager(requireContext())
         binding.eventsRecyclerView.adapter = timelineAdapter
@@ -694,16 +698,47 @@ class CharacterDetailFragment : Fragment() {
 
             override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
                 val imageView = holder.itemView as ImageView
-                val bitmap = BitmapFactory.decodeFile(imagePaths[position])
-                if (bitmap != null) {
-                    imageView.setImageBitmap(bitmap)
-                } else {
-                    imageView.setImageResource(R.drawable.ic_character_placeholder)
+                imageView.setImageResource(R.drawable.ic_character_placeholder)
+                lifecycleScope.launch {
+                    val bitmap = withContext(Dispatchers.IO) {
+                        decodeSampledBitmap(imagePaths[position], 1024, 1024)
+                    }
+                    if (bitmap != null) {
+                        imageView.setImageBitmap(bitmap)
+                    }
                 }
             }
 
             override fun getItemCount() = imagePaths.size
         }
+    }
+
+    private fun decodeSampledBitmap(path: String, reqWidth: Int, reqHeight: Int): Bitmap? {
+        return try {
+            val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(path, options)
+
+            options.inSampleSize = calculateInSampleSize(options, reqWidth, reqHeight)
+            options.inJustDecodeBounds = false
+            BitmapFactory.decodeFile(path, options)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun calculateInSampleSize(
+        options: BitmapFactory.Options, reqWidth: Int, reqHeight: Int
+    ): Int {
+        val (height, width) = options.outHeight to options.outWidth
+        var inSampleSize = 1
+        if (height > reqHeight || width > reqWidth) {
+            val halfHeight = height / 2
+            val halfWidth = width / 2
+            while (halfHeight / inSampleSize >= reqHeight && halfWidth / inSampleSize >= reqWidth) {
+                inSampleSize *= 2
+            }
+        }
+        return inSampleSize
     }
 
     override fun onDestroyView() {
