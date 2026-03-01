@@ -26,23 +26,26 @@ class ExcelExporter(private val context: Context) {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val workbook = XSSFWorkbook()
-                val headerStyle = createHeaderStyle(workbook)
+                try {
+                    val headerStyle = createHeaderStyle(workbook)
 
-                exportCharacters(workbook, headerStyle)
-                exportTimeline(workbook, headerStyle)
+                    exportCharacters(workbook, headerStyle)
+                    exportTimeline(workbook, headerStyle)
 
-                val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-                val fileName = "NovelCharacter_$timestamp.xlsx"
-                val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-                val file = File(downloadsDir, fileName)
+                    val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+                    val fileName = "NovelCharacter_$timestamp.xlsx"
+                    val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                    val file = File(downloadsDir, fileName)
 
-                FileOutputStream(file).use { outputStream ->
-                    workbook.write(outputStream)
-                }
-                workbook.close()
+                    FileOutputStream(file).use { outputStream ->
+                        workbook.write(outputStream)
+                    }
 
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(context, "내보내기 완료: $fileName", Toast.LENGTH_LONG).show()
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, "내보내기 완료: $fileName", Toast.LENGTH_LONG).show()
+                    }
+                } finally {
+                    workbook.close()
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
@@ -61,10 +64,8 @@ class ExcelExporter(private val context: Context) {
         for (universe in universes) {
             val fields = db.fieldDefinitionDao().getFieldsByUniverseList(universe.id)
             val universeNovels = novels.filter { it.universeId == universe.id }
-            val universeCharIds = universeNovels.flatMap { novel ->
-                db.characterDao().getCharactersByNovelList(novel.id).map { it.id }
-            }.toSet()
-            val universeChars = allCharacters.filter { it.id in universeCharIds }
+            val universeNovelIds = universeNovels.map { it.id }.toSet()
+            val universeChars = allCharacters.filter { it.novelId in universeNovelIds }
 
             if (universeChars.isEmpty()) continue
 
@@ -137,6 +138,12 @@ class ExcelExporter(private val context: Context) {
             cell.cellStyle = headerStyle
         }
 
+        // 일괄 조회: 각 이벤트의 관련 캐릭터를 미리 로드
+        val eventCharactersMap = mutableMapOf<Long, List<com.novelcharacter.app.data.model.Character>>()
+        for (event in events) {
+            eventCharactersMap[event.id] = db.timelineDao().getCharactersForEvent(event.id)
+        }
+
         events.forEachIndexed { index, event ->
             val row = sheet.createRow(index + 1)
             row.createCell(0).setCellValue(event.year.toDouble())
@@ -148,7 +155,7 @@ class ExcelExporter(private val context: Context) {
             val novelTitle = novels.find { it.id == event.novelId }?.title ?: ""
             row.createCell(5).setCellValue(novelTitle)
 
-            val characters = db.timelineDao().getCharactersForEvent(event.id)
+            val characters = eventCharactersMap[event.id] ?: emptyList()
             row.createCell(6).setCellValue(characters.joinToString(", ") { it.name })
         }
 

@@ -9,6 +9,10 @@ class FormulaEvaluator(
     private val fieldValues: Map<String, String>,       // fieldKey -> value
     private val fieldDefinitions: List<FieldDefinition>  // for GRADE mapping
 ) {
+    companion object {
+        private val gson = Gson()
+    }
+
     fun evaluate(formula: String): Double {
         val tokens = tokenize(formula)
         val rpn = shuntingYard(tokens)
@@ -26,7 +30,7 @@ class FormulaEvaluator(
 
     private fun resolveGradeValue(fieldDef: FieldDefinition, gradeLabel: String): Double {
         // Parse config JSON to get grade mappings
-        val config = try { Gson().fromJson<Map<String, Any>>(fieldDef.config, object : TypeToken<Map<String, Any>>() {}.type) } catch (e: Exception) { emptyMap() }
+        val config = try { gson.fromJson<Map<String, Any>>(fieldDef.config, object : TypeToken<Map<String, Any>>() {}.type) } catch (e: Exception) { emptyMap() }
         val grades = (config["grades"] as? Map<*, *>) ?: return 0.0
         val allowNegative = config["allowNegative"] as? Boolean ?: false
         // gradeLabel could be "A", "-B", "+A" etc
@@ -134,19 +138,19 @@ class FormulaEvaluator(
             when (token) {
                 is Token.Num -> stack.addLast(token.value)
                 is Token.Op -> {
-                    if (stack.size < 2) return 0.0
+                    if (stack.size < 2) throw IllegalArgumentException("수식 오류: 피연산자 부족")
                     val b = stack.removeLast()
                     val a = stack.removeLast()
                     stack.addLast(when (token.op) {
                         '+' -> a + b
                         '-' -> a - b
                         '*' -> a * b
-                        '/' -> if (b != 0.0) a / b else 0.0
-                        else -> 0.0
+                        '/' -> if (b != 0.0) a / b else throw ArithmeticException("0으로 나눌 수 없습니다")
+                        else -> throw IllegalArgumentException("알 수 없는 연산자: ${token.op}")
                     })
                 }
                 is Token.Func -> {
-                    if (stack.isEmpty()) return 0.0
+                    if (stack.isEmpty()) throw IllegalArgumentException("수식 오류: 함수 인수 부족")
                     val v = stack.removeLast()
                     stack.addLast(when (token.name) {
                         "abs" -> abs(v)
@@ -156,6 +160,6 @@ class FormulaEvaluator(
                 else -> {}
             }
         }
-        return stack.lastOrNull() ?: 0.0
+        return stack.lastOrNull() ?: throw IllegalArgumentException("수식 결과 없음")
     }
 }

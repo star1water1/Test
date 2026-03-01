@@ -84,6 +84,9 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         onResult(id)
     }
 
+    suspend fun insertCharacterSuspend(character: Character): Long =
+        repository.insertCharacter(character)
+
     // ===== CharacterStateChange =====
     fun getChangesByCharacter(characterId: Long): LiveData<List<CharacterStateChange>> =
         repository.getChangesByCharacter(characterId)

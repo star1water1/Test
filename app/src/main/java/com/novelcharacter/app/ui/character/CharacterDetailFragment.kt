@@ -694,7 +694,13 @@ class CharacterDetailFragment : Fragment() {
 
             override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
                 val imageView = holder.itemView as ImageView
-                val bitmap = BitmapFactory.decodeFile(imagePaths[position])
+                val options = BitmapFactory.Options().apply {
+                    inJustDecodeBounds = true
+                }
+                BitmapFactory.decodeFile(imagePaths[position], options)
+                options.inSampleSize = calculateInSampleSize(options, 800, 800)
+                options.inJustDecodeBounds = false
+                val bitmap = BitmapFactory.decodeFile(imagePaths[position], options)
                 if (bitmap != null) {
                     imageView.setImageBitmap(bitmap)
                 } else {
@@ -702,8 +708,25 @@ class CharacterDetailFragment : Fragment() {
                 }
             }
 
+            override fun onViewRecycled(holder: RecyclerView.ViewHolder) {
+                (holder.itemView as? ImageView)?.setImageDrawable(null)
+            }
+
             override fun getItemCount() = imagePaths.size
         }
+    }
+
+    private fun calculateInSampleSize(options: BitmapFactory.Options, reqWidth: Int, reqHeight: Int): Int {
+        val (height, width) = options.outHeight to options.outWidth
+        var inSampleSize = 1
+        if (height > reqHeight || width > reqWidth) {
+            val halfHeight = height / 2
+            val halfWidth = width / 2
+            while (halfHeight / inSampleSize >= reqHeight && halfWidth / inSampleSize >= reqWidth) {
+                inSampleSize *= 2
+            }
+        }
+        return inSampleSize
     }
 
     override fun onDestroyView() {

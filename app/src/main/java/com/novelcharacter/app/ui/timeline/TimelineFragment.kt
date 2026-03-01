@@ -255,7 +255,7 @@ class TimelineFragment : Fragment() {
     }
 
     private fun showEditEventDialog(event: TimelineEvent?) {
-        lifecycleScope.launch {
+        viewLifecycleOwner.lifecycleScope.launch {
             val novels = viewModel.getAllNovelsList()
             val characters = viewModel.getAllCharactersList()
             val selectedCharIds = if (event != null) {
@@ -263,6 +263,8 @@ class TimelineFragment : Fragment() {
             } else {
                 mutableSetOf()
             }
+
+            if (!isAdded) return@launch
 
             val dialogBinding = DialogTimelineEditBinding.inflate(layoutInflater)
 

@@ -24,7 +24,7 @@ interface CharacterDao {
     @Query("SELECT * FROM characters WHERE id = :id")
     fun getCharacterByIdLive(id: Long): LiveData<Character?>
 
-    @Query("SELECT * FROM characters WHERE name LIKE '%' || :query || '%'")
+    @Query("SELECT * FROM characters WHERE name LIKE '%' || :query || '%' ESCAPE '\\'")
     fun searchCharacters(query: String): LiveData<List<Character>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)

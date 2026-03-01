@@ -1,9 +1,15 @@
 package com.novelcharacter.app.util
 
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import com.novelcharacter.app.data.model.CharacterStateChange
 import com.novelcharacter.app.data.model.FieldDefinition
 
 class TimeStateResolver {
+
+    companion object {
+        private val gson = Gson()
+    }
 
     /**
      * Resolves a character's field values at a specific year by applying state changes chronologically.
@@ -52,9 +58,9 @@ class TimeStateResolver {
             val evaluator = FormulaEvaluator(result, fieldDefinitions)
             for (field in calculatedFields) {
                 val config = try {
-                    com.google.gson.Gson().fromJson<Map<String, Any>>(
+                    gson.fromJson<Map<String, Any>>(
                         field.config,
-                        object : com.google.gson.reflect.TypeToken<Map<String, Any>>() {}.type
+                        object : TypeToken<Map<String, Any>>() {}.type
                     )
                 } catch (e: Exception) { emptyMap() }
                 val formula = config["formula"] as? String ?: continue

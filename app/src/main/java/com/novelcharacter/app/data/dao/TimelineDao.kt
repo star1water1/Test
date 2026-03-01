@@ -22,7 +22,7 @@ interface TimelineDao {
     @Query("SELECT * FROM timeline_events WHERE year BETWEEN :startYear AND :endYear ORDER BY year ASC")
     fun getEventsByYearRange(startYear: Int, endYear: Int): LiveData<List<TimelineEvent>>
 
-    @Query("SELECT * FROM timeline_events WHERE description LIKE '%' || :query || '%' ORDER BY year ASC")
+    @Query("SELECT * FROM timeline_events WHERE description LIKE '%' || :query || '%' ESCAPE '\\' ORDER BY year ASC")
     fun searchEvents(query: String): LiveData<List<TimelineEvent>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)

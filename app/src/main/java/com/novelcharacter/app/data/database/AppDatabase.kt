@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.novelcharacter.app.data.dao.CharacterDao
 import com.novelcharacter.app.data.dao.CharacterFieldValueDao
 import com.novelcharacter.app.data.dao.CharacterStateChangeDao
@@ -31,7 +33,7 @@ import com.novelcharacter.app.data.model.Universe
         CharacterFieldValue::class,
         CharacterStateChange::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -47,6 +49,15 @@ abstract class AppDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // FieldDefinition에 (universeId, key) 유니크 인덱스 추가
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_field_definitions_universeId_key` ON `field_definitions` (`universeId`, `key`)"
+                )
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -54,6 +65,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "novel_character_database"
                 )
+                    .addMigrations(MIGRATION_2_3)
                     .fallbackToDestructiveMigration()
                     .build()
                 INSTANCE = instance

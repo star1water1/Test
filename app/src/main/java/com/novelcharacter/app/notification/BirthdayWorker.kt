@@ -29,7 +29,8 @@ class BirthdayWorker(
                     .getChangesByField(character.id, CharacterStateChange.KEY_BIRTH)
                 val birthChange = birthChanges.firstOrNull() ?: continue
 
-                if (birthChange.month == todayMonth && birthChange.day == todayDay) {
+                if (birthChange.month != null && birthChange.day != null &&
+                    birthChange.month == todayMonth && birthChange.day == todayDay) {
                     birthdayNames.add(character.name)
                 }
             }

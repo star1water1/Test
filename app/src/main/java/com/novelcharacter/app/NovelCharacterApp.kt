@@ -16,6 +16,7 @@ class NovelCharacterApp : Application() {
     val database by lazy { AppDatabase.getDatabase(this) }
     val repository by lazy {
         AppRepository(
+            database,
             database.novelDao(),
             database.characterDao(),
             database.timelineDao(),

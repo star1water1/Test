@@ -482,19 +482,45 @@ class CharacterEditFragment : Fragment() {
 
             override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
                 val imageView = holder.itemView as ImageView
-                val bitmap = BitmapFactory.decodeFile(imagePaths[position])
+                val options = BitmapFactory.Options().apply {
+                    inJustDecodeBounds = true
+                }
+                BitmapFactory.decodeFile(imagePaths[position], options)
+                options.inSampleSize = calculateInSampleSize(options, 200, 200)
+                options.inJustDecodeBounds = false
+                val bitmap = BitmapFactory.decodeFile(imagePaths[position], options)
                 if (bitmap != null) {
                     imageView.setImageBitmap(bitmap)
                 }
                 imageView.setOnLongClickListener {
-                    imagePaths.removeAt(position)
-                    updateImageList()
+                    val pos = holder.adapterPosition
+                    if (pos != RecyclerView.NO_POSITION) {
+                        imagePaths.removeAt(pos)
+                        updateImageList()
+                    }
                     true
                 }
             }
 
+            override fun onViewRecycled(holder: RecyclerView.ViewHolder) {
+                (holder.itemView as? ImageView)?.setImageDrawable(null)
+            }
+
             override fun getItemCount() = imagePaths.size
         }
+    }
+
+    private fun calculateInSampleSize(options: BitmapFactory.Options, reqWidth: Int, reqHeight: Int): Int {
+        val (height, width) = options.outHeight to options.outWidth
+        var inSampleSize = 1
+        if (height > reqHeight || width > reqWidth) {
+            val halfHeight = height / 2
+            val halfWidth = width / 2
+            while (halfHeight / inSampleSize >= reqHeight && halfWidth / inSampleSize >= reqWidth) {
+                inSampleSize *= 2
+            }
+        }
+        return inSampleSize
     }
 
     private fun setupSaveButton() {
@@ -517,7 +543,7 @@ class CharacterEditFragment : Fragment() {
                 updatedAt = System.currentTimeMillis()
             )
 
-            lifecycleScope.launch {
+            viewLifecycleOwner.lifecycleScope.launch {
                 if (characterId != -1L) {
                     // 기존 캐릭터 수정
                     viewModel.updateCharacter(character)
@@ -525,14 +551,12 @@ class CharacterEditFragment : Fragment() {
                     viewModel.saveAllFieldValues(characterId, fieldValues)
                 } else {
                     // 새 캐릭터 생성
-                    viewModel.insertCharacterAndGetId(character) { newId ->
-                        lifecycleScope.launch {
-                            val fieldValues = collectFieldValues(newId)
-                            viewModel.saveAllFieldValues(newId, fieldValues)
-                        }
-                    }
+                    val newId = viewModel.insertCharacterSuspend(character)
+                    val fieldValues = collectFieldValues(newId)
+                    viewModel.saveAllFieldValues(newId, fieldValues)
                 }
 
+                if (!isAdded) return@launch
                 Toast.makeText(requireContext(), "저장되었습니다", Toast.LENGTH_SHORT).show()
                 findNavController().popBackStack()
             }

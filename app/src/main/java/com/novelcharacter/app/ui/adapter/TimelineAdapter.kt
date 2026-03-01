@@ -12,6 +12,8 @@ import com.novelcharacter.app.databinding.ItemTimelineBinding
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -32,6 +34,8 @@ class TimelineAdapter(
     private val onClick: (TimelineEvent) -> Unit,
     private val onLongClick: (TimelineEvent) -> Unit
 ) : ListAdapter<TimelineDisplayItem, RecyclerView.ViewHolder>(TimelineDisplayDiffCallback()) {
+
+    private val adapterScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     var zoomLevel: Int = 4
         set(value) {
@@ -113,6 +117,11 @@ class TimelineAdapter(
         }
     }
 
+    override fun onDetachedFromRecyclerView(recyclerView: RecyclerView) {
+        super.onDetachedFromRecyclerView(recyclerView)
+        adapterScope.cancel()
+    }
+
     inner class TimelineViewHolder(
         private val binding: ItemTimelineBinding
     ) : RecyclerView.ViewHolder(binding.root) {
@@ -140,18 +149,18 @@ class TimelineAdapter(
 
             // Load related character chips
             binding.characterChipGroup.removeAllViews()
-            loadJob = CoroutineScope(Dispatchers.IO).launch {
+            loadJob = adapterScope.launch {
                 val db = AppDatabase.getDatabase(binding.root.context)
-                val characters = db.timelineDao().getCharactersForEvent(event.id)
-                withContext(Dispatchers.Main) {
-                    characters.forEach { character ->
-                        val chip = Chip(binding.root.context).apply {
-                            text = character.name
-                            textSize = 11f
-                            isClickable = false
-                        }
-                        binding.characterChipGroup.addView(chip)
+                val characters = withContext(Dispatchers.IO) {
+                    db.timelineDao().getCharactersForEvent(event.id)
+                }
+                characters.forEach { character ->
+                    val chip = Chip(binding.root.context).apply {
+                        text = character.name
+                        textSize = 11f
+                        isClickable = false
                     }
+                    binding.characterChipGroup.addView(chip)
                 }
             }
 

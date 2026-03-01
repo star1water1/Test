@@ -1,10 +1,13 @@
 package com.novelcharacter.app.data.repository
 
 import androidx.lifecycle.LiveData
+import androidx.room.withTransaction
 import com.novelcharacter.app.data.dao.*
+import com.novelcharacter.app.data.database.AppDatabase
 import com.novelcharacter.app.data.model.*
 
 class AppRepository(
+    private val database: AppDatabase,
     private val novelDao: NovelDao,
     private val characterDao: CharacterDao,
     private val timelineDao: TimelineDao,
@@ -37,7 +40,7 @@ class AppRepository(
     suspend fun getCharacterById(id: Long): Character? = characterDao.getCharacterById(id)
     fun getCharacterByIdLive(id: Long): LiveData<Character?> = characterDao.getCharacterByIdLive(id)
     fun searchCharacters(query: String): LiveData<List<Character>> =
-        characterDao.searchCharacters(query)
+        characterDao.searchCharacters(escapeLikeQuery(query))
     suspend fun insertCharacter(character: Character): Long = characterDao.insert(character)
     suspend fun updateCharacter(character: Character) = characterDao.update(character)
     suspend fun deleteCharacter(character: Character) = characterDao.delete(character)
@@ -53,7 +56,7 @@ class AppRepository(
     fun getEventsByYearRange(startYear: Int, endYear: Int): LiveData<List<TimelineEvent>> =
         timelineDao.getEventsByYearRange(startYear, endYear)
     fun searchEvents(query: String): LiveData<List<TimelineEvent>> =
-        timelineDao.searchEvents(query)
+        timelineDao.searchEvents(escapeLikeQuery(query))
     suspend fun insertEvent(event: TimelineEvent): Long = timelineDao.insert(event)
     suspend fun updateEvent(event: TimelineEvent) = timelineDao.update(event)
     suspend fun deleteEvent(event: TimelineEvent) = timelineDao.delete(event)
@@ -73,9 +76,11 @@ class AppRepository(
     }
 
     suspend fun updateEventCharacters(eventId: Long, characterIds: List<Long>) {
-        timelineDao.deleteCrossRefsByEvent(eventId)
-        characterIds.forEach { characterId ->
-            timelineDao.insertCrossRef(TimelineCharacterCrossRef(eventId, characterId))
+        database.withTransaction {
+            timelineDao.deleteCrossRefsByEvent(eventId)
+            characterIds.forEach { characterId ->
+                timelineDao.insertCrossRef(TimelineCharacterCrossRef(eventId, characterId))
+            }
         }
     }
 
@@ -164,8 +169,10 @@ class AppRepository(
      * Deletes existing values and inserts the new ones.
      */
     suspend fun saveAllFieldValues(characterId: Long, values: List<CharacterFieldValue>) {
-        characterFieldValueDao.deleteAllByCharacter(characterId)
-        characterFieldValueDao.insertAll(values)
+        database.withTransaction {
+            characterFieldValueDao.deleteAllByCharacter(characterId)
+            characterFieldValueDao.insertAll(values)
+        }
     }
 
     // ===== CharacterStateChange =====
@@ -198,4 +205,7 @@ class AppRepository(
 
     suspend fun deleteAllStateChangesByCharacter(characterId: Long) =
         characterStateChangeDao.deleteAllByCharacter(characterId)
+
+    private fun escapeLikeQuery(query: String): String =
+        query.replace("%", "\\%").replace("_", "\\_")
 }
