@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="primary">#5C6BC0</color>
+    <color name="primary_dark">#3949AB</color>
+    <color name="primary_light">#9FA8DA</color>
+    <color name="accent">#FF7043</color>
+    <color name="background">#FAFAFA</color>
+    <color name="surface">#FFFFFF</color>
+    <color name="on_primary">#FFFFFF</color>
+    <color name="on_surface">#212121</color>
+    <color name="text_secondary">#757575</color>
+
+    <!-- 전투력 등급 색상 -->
+    <color name="rank_ex">#FFD700</color>
+    <color name="rank_s_plus">#FF4500</color>
+    <color name="rank_s">#FF6347</color>
+    <color name="rank_a_plus">#FF8C00</color>
+    <color name="rank_a">#FFA500</color>
+    <color name="rank_a_minus">#FFB347</color>
+    <color name="rank_b_plus">#4169E1</color>
+    <color name="rank_b">#6495ED</color>
+    <color name="rank_b_minus">#87CEEB</color>
+    <color name="rank_c_plus">#32CD32</color>
+    <color name="rank_c">#90EE90</color>
+    <color name="rank_c_minus">#98FB98</color>
+    <color name="rank_d">#A9A9A9</color>
+
+    <!-- 생존 상태 색상 -->
+    <color name="alive_color">#4CAF50</color>
+    <color name="dead_color">#F44336</color>
+    <color name="unknown_color">#9E9E9E</color>
+
+    <!-- 타임라인 -->
+    <color name="timeline_line">#BDBDBD</color>
+    <color name="timeline_dot">#5C6BC0</color>
+</resources>

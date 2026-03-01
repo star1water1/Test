@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/nav_graph"
+    app:startDestination="@id/novelListFragment">
+
+    <fragment
+        android:id="@+id/novelListFragment"
+        android:name="com.novelcharacter.app.ui.novel.NovelListFragment"
+        android:label="작품"
+        tools:layout="@layout/fragment_novel_list">
+
+        <action
+            android:id="@+id/action_novel_to_characters"
+            app:destination="@id/characterListFragment" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/characterListFragment"
+        android:name="com.novelcharacter.app.ui.character.CharacterListFragment"
+        android:label="캐릭터"
+        tools:layout="@layout/fragment_character_list">
+
+        <argument
+            android:name="novelId"
+            app:argType="long"
+            android:defaultValue="-1L" />
+
+        <action
+            android:id="@+id/action_characters_to_detail"
+            app:destination="@id/characterDetailFragment" />
+
+        <action
+            android:id="@+id/action_characters_to_edit"
+            app:destination="@id/characterEditFragment" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/characterDetailFragment"
+        android:name="com.novelcharacter.app.ui.character.CharacterDetailFragment"
+        android:label="캐릭터 상세"
+        tools:layout="@layout/fragment_character_detail">
+
+        <argument
+            android:name="characterId"
+            app:argType="long" />
+
+        <action
+            android:id="@+id/action_detail_to_edit"
+            app:destination="@id/characterEditFragment" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/characterEditFragment"
+        android:name="com.novelcharacter.app.ui.character.CharacterEditFragment"
+        android:label="캐릭터 편집"
+        tools:layout="@layout/fragment_character_edit">
+
+        <argument
+            android:name="characterId"
+            app:argType="long"
+            android:defaultValue="-1L" />
+
+        <argument
+            android:name="novelId"
+            app:argType="long"
+            android:defaultValue="-1L" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/timelineFragment"
+        android:name="com.novelcharacter.app.ui.timeline.TimelineFragment"
+        android:label="연표"
+        tools:layout="@layout/fragment_timeline" />
+
+</navigation>
