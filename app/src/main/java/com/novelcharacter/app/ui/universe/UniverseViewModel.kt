@@ -1,0 +1,48 @@
+package com.novelcharacter.app.ui.universe
+
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.LiveData
+import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.viewModelScope
+import com.novelcharacter.app.NovelCharacterApp
+import com.novelcharacter.app.data.model.Novel
+import com.novelcharacter.app.data.model.Universe
+import com.novelcharacter.app.data.model.FieldDefinition
+import kotlinx.coroutines.launch
+
+class UniverseViewModel(application: Application) : AndroidViewModel(application) {
+
+    private val repository = (application as NovelCharacterApp).repository
+    val allUniverses: LiveData<List<Universe>> = repository.allUniverses
+
+    // 각 세계관의 작품 수, 필드 수를 캐시
+    private val _universeNovelCounts = MutableLiveData<Map<Long, Int>>()
+    val universeNovelCounts: LiveData<Map<Long, Int>> = _universeNovelCounts
+
+    private val _universeFieldCounts = MutableLiveData<Map<Long, Int>>()
+    val universeFieldCounts: LiveData<Map<Long, Int>> = _universeFieldCounts
+
+    fun loadCounts(universes: List<Universe>) = viewModelScope.launch {
+        val novelCounts = mutableMapOf<Long, Int>()
+        val fieldCounts = mutableMapOf<Long, Int>()
+        for (u in universes) {
+            novelCounts[u.id] = repository.getNovelsByUniverseList(u.id).size
+            fieldCounts[u.id] = repository.getFieldsByUniverseList(u.id).size
+        }
+        _universeNovelCounts.value = novelCounts
+        _universeFieldCounts.value = fieldCounts
+    }
+
+    fun insertUniverse(universe: Universe) = viewModelScope.launch {
+        repository.insertUniverse(universe)
+    }
+
+    fun updateUniverse(universe: Universe) = viewModelScope.launch {
+        repository.updateUniverse(universe)
+    }
+
+    fun deleteUniverse(universe: Universe) = viewModelScope.launch {
+        repository.deleteUniverse(universe)
+    }
+}

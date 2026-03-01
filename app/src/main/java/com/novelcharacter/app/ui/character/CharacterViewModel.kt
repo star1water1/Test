@@ -4,6 +4,8 @@ import android.app.Application
 import androidx.lifecycle.*
 import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.data.model.Character
+import com.novelcharacter.app.data.model.CharacterFieldValue
+import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.TimelineEvent
 import kotlinx.coroutines.launch
@@ -63,5 +65,21 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun deleteCharacter(character: Character) = viewModelScope.launch {
         repository.deleteCharacter(character)
+    }
+
+    // ===== FieldDefinition =====
+    suspend fun getFieldsByUniverseList(universeId: Long): List<FieldDefinition> =
+        repository.getFieldsByUniverseList(universeId)
+
+    // ===== CharacterFieldValue =====
+    suspend fun getValuesByCharacterList(characterId: Long): List<CharacterFieldValue> =
+        repository.getValuesByCharacterList(characterId)
+
+    suspend fun saveAllFieldValues(characterId: Long, values: List<CharacterFieldValue>) =
+        repository.saveAllFieldValues(characterId, values)
+
+    fun insertCharacterAndGetId(character: Character, onResult: (Long) -> Unit) = viewModelScope.launch {
+        val id = repository.insertCharacter(character)
+        onResult(id)
     }
 }

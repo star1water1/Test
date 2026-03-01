@@ -26,4 +26,10 @@ interface NovelDao {
 
     @Query("DELETE FROM novels WHERE id = :id")
     suspend fun deleteById(id: Long)
+
+    @Query("SELECT * FROM novels WHERE universeId = :universeId ORDER BY createdAt DESC")
+    fun getNovelsByUniverse(universeId: Long): LiveData<List<Novel>>
+
+    @Query("SELECT * FROM novels WHERE universeId = :universeId ORDER BY createdAt DESC")
+    suspend fun getNovelsByUniverseList(universeId: Long): List<Novel>
 }

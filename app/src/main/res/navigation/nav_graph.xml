@@ -3,7 +3,22 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/nav_graph"
-    app:startDestination="@id/novelListFragment">
+    app:startDestination="@id/universeListFragment">
+
+    <fragment
+        android:id="@+id/universeListFragment"
+        android:name="com.novelcharacter.app.ui.universe.UniverseListFragment"
+        android:label="세계관"
+        tools:layout="@layout/fragment_universe_list">
+
+        <action
+            android:id="@+id/action_universe_to_novels"
+            app:destination="@id/novelListFragment" />
+
+        <action
+            android:id="@+id/action_universe_to_field_manage"
+            app:destination="@id/fieldManageFragment" />
+    </fragment>
 
     <fragment
         android:id="@+id/novelListFragment"
@@ -11,9 +26,25 @@
         android:label="작품"
         tools:layout="@layout/fragment_novel_list">
 
+        <argument
+            android:name="universeId"
+            app:argType="long"
+            android:defaultValue="-1L" />
+
         <action
             android:id="@+id/action_novel_to_characters"
             app:destination="@id/characterListFragment" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/fieldManageFragment"
+        android:name="com.novelcharacter.app.ui.field.FieldManageFragment"
+        android:label="필드 관리"
+        tools:layout="@layout/fragment_field_manage">
+
+        <argument
+            android:name="universeId"
+            app:argType="long" />
     </fragment>
 
     <fragment

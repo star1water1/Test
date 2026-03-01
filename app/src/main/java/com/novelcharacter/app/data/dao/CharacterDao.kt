@@ -24,13 +24,7 @@ interface CharacterDao {
     @Query("SELECT * FROM characters WHERE id = :id")
     fun getCharacterByIdLive(id: Long): LiveData<Character?>
 
-    @Query("SELECT * FROM characters WHERE birthday LIKE '%' || :monthDay || '%'")
-    suspend fun getCharactersByBirthday(monthDay: String): List<Character>
-
-    @Query("SELECT * FROM characters WHERE combatRank = :rank ORDER BY name ASC")
-    fun getCharactersByRank(rank: String): LiveData<List<Character>>
-
-    @Query("SELECT * FROM characters WHERE name LIKE '%' || :query || '%' OR specialNotes LIKE '%' || :query || '%' OR appearance LIKE '%' || :query || '%'")
+    @Query("SELECT * FROM characters WHERE name LIKE '%' || :query || '%'")
     fun searchCharacters(query: String): LiveData<List<Character>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)

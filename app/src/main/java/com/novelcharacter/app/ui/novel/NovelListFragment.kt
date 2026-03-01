@@ -22,6 +22,7 @@ class NovelListFragment : Fragment() {
     private val viewModel: NovelViewModel by viewModels()
 
     private lateinit var adapter: NovelAdapter
+    private var universeId: Long = -1L
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
@@ -33,10 +34,18 @@ class NovelListFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
+        universeId = arguments?.getLong("universeId", -1L) ?: -1L
+        viewModel.setUniverseFilter(universeId)
+
         setupRecyclerView()
         setupFab()
         setupToolbarMenu()
         observeData()
+
+        if (universeId != -1L) {
+            binding.toolbar.setNavigationIcon(androidx.appcompat.R.drawable.abc_ic_ab_back_material)
+            binding.toolbar.setNavigationOnClickListener { findNavController().popBackStack() }
+        }
     }
 
     private fun setupRecyclerView() {
@@ -76,7 +85,7 @@ class NovelListFragment : Fragment() {
     }
 
     private fun observeData() {
-        viewModel.allNovels.observe(viewLifecycleOwner) { novels ->
+        viewModel.filteredNovels.observe(viewLifecycleOwner) { novels ->
             adapter.submitList(novels)
             binding.emptyText.visibility = if (novels.isEmpty()) View.VISIBLE else View.GONE
         }
@@ -97,7 +106,12 @@ class NovelListFragment : Fragment() {
                 val description = dialogBinding.editDescription.text.toString().trim()
                 if (title.isNotEmpty()) {
                     if (novel == null) {
-                        viewModel.insertNovel(Novel(title = title, description = description))
+                        val newNovel = Novel(
+                            title = title,
+                            description = description,
+                            universeId = if (universeId != -1L) universeId else null
+                        )
+                        viewModel.insertNovel(newNovel)
                     } else {
                         viewModel.updateNovel(novel.copy(title = title, description = description))
                     }

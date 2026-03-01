@@ -2,9 +2,9 @@
 <menu xmlns:android="http://schemas.android.com/apk/res/android">
 
     <item
-        android:id="@+id/novelListFragment"
-        android:icon="@drawable/ic_novel"
-        android:title="작품" />
+        android:id="@+id/universeListFragment"
+        android:icon="@drawable/ic_universe"
+        android:title="세계관" />
 
     <item
         android:id="@+id/characterListFragment"

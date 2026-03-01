@@ -1,18 +1,17 @@
 package com.novelcharacter.app.data.repository
 
 import androidx.lifecycle.LiveData
-import com.novelcharacter.app.data.dao.CharacterDao
-import com.novelcharacter.app.data.dao.NovelDao
-import com.novelcharacter.app.data.dao.TimelineDao
-import com.novelcharacter.app.data.model.Character
-import com.novelcharacter.app.data.model.Novel
-import com.novelcharacter.app.data.model.TimelineCharacterCrossRef
-import com.novelcharacter.app.data.model.TimelineEvent
+import com.novelcharacter.app.data.dao.*
+import com.novelcharacter.app.data.model.*
 
 class AppRepository(
     private val novelDao: NovelDao,
     private val characterDao: CharacterDao,
-    private val timelineDao: TimelineDao
+    private val timelineDao: TimelineDao,
+    private val universeDao: UniverseDao,
+    private val fieldDefinitionDao: FieldDefinitionDao,
+    private val characterFieldValueDao: CharacterFieldValueDao,
+    private val characterStateChangeDao: CharacterStateChangeDao
 ) {
     // ===== Novel =====
     val allNovels: LiveData<List<Novel>> = novelDao.getAllNovels()
@@ -22,6 +21,10 @@ class AppRepository(
     suspend fun insertNovel(novel: Novel): Long = novelDao.insert(novel)
     suspend fun updateNovel(novel: Novel) = novelDao.update(novel)
     suspend fun deleteNovel(novel: Novel) = novelDao.delete(novel)
+    fun getNovelsByUniverse(universeId: Long): LiveData<List<Novel>> =
+        novelDao.getNovelsByUniverse(universeId)
+    suspend fun getNovelsByUniverseList(universeId: Long): List<Novel> =
+        novelDao.getNovelsByUniverseList(universeId)
 
     // ===== Character =====
     val allCharacters: LiveData<List<Character>> = characterDao.getAllCharacters()
@@ -33,8 +36,6 @@ class AppRepository(
         characterDao.getCharactersByNovelList(novelId)
     suspend fun getCharacterById(id: Long): Character? = characterDao.getCharacterById(id)
     fun getCharacterByIdLive(id: Long): LiveData<Character?> = characterDao.getCharacterByIdLive(id)
-    suspend fun getCharactersByBirthday(monthDay: String): List<Character> =
-        characterDao.getCharactersByBirthday(monthDay)
     fun searchCharacters(query: String): LiveData<List<Character>> =
         characterDao.searchCharacters(query)
     suspend fun insertCharacter(character: Character): Long = characterDao.insert(character)
@@ -57,6 +58,10 @@ class AppRepository(
     suspend fun updateEvent(event: TimelineEvent) = timelineDao.update(event)
     suspend fun deleteEvent(event: TimelineEvent) = timelineDao.delete(event)
     suspend fun insertAllEvents(events: List<TimelineEvent>) = timelineDao.insertAll(events)
+    fun getEventsByUniverse(universeId: Long): LiveData<List<TimelineEvent>> =
+        timelineDao.getEventsByUniverse(universeId)
+    fun getEventsByYearMonthDay(year: Int, month: Int?, day: Int?): LiveData<List<TimelineEvent>> =
+        timelineDao.getEventsByYearMonthDay(year, month, day)
 
     // ===== Timeline-Character 연결 =====
     suspend fun linkCharacterToEvent(eventId: Long, characterId: Long) {
@@ -82,4 +87,115 @@ class AppRepository(
 
     suspend fun getCharactersForEvent(eventId: Long): List<Character> =
         timelineDao.getCharactersForEvent(eventId)
+
+    // ===== Universe =====
+    val allUniverses: LiveData<List<Universe>> = universeDao.getAllUniverses()
+
+    suspend fun getAllUniversesList(): List<Universe> = universeDao.getAllUniversesList()
+    suspend fun getUniverseById(id: Long): Universe? = universeDao.getUniverseById(id)
+    suspend fun insertUniverse(universe: Universe): Long = universeDao.insert(universe)
+    suspend fun updateUniverse(universe: Universe) = universeDao.update(universe)
+    suspend fun deleteUniverse(universe: Universe) = universeDao.delete(universe)
+
+    // ===== FieldDefinition =====
+    fun getFieldsByUniverse(universeId: Long): LiveData<List<FieldDefinition>> =
+        fieldDefinitionDao.getFieldsByUniverse(universeId)
+
+    suspend fun getFieldsByUniverseList(universeId: Long): List<FieldDefinition> =
+        fieldDefinitionDao.getFieldsByUniverseList(universeId)
+
+    suspend fun getFieldById(id: Long): FieldDefinition? =
+        fieldDefinitionDao.getFieldById(id)
+
+    suspend fun getFieldByKey(universeId: Long, key: String): FieldDefinition? =
+        fieldDefinitionDao.getFieldByKey(universeId, key)
+
+    suspend fun getFieldsByType(universeId: Long, type: String): List<FieldDefinition> =
+        fieldDefinitionDao.getFieldsByType(universeId, type)
+
+    suspend fun getGroupNames(universeId: Long): List<String> =
+        fieldDefinitionDao.getGroupNames(universeId)
+
+    suspend fun insertField(field: FieldDefinition): Long =
+        fieldDefinitionDao.insert(field)
+
+    suspend fun insertAllFields(fields: List<FieldDefinition>) =
+        fieldDefinitionDao.insertAll(fields)
+
+    suspend fun updateField(field: FieldDefinition) =
+        fieldDefinitionDao.update(field)
+
+    suspend fun deleteField(field: FieldDefinition) =
+        fieldDefinitionDao.delete(field)
+
+    suspend fun deleteAllFieldsByUniverse(universeId: Long) =
+        fieldDefinitionDao.deleteAllByUniverse(universeId)
+
+    // ===== CharacterFieldValue =====
+    fun getValuesByCharacter(characterId: Long): LiveData<List<CharacterFieldValue>> =
+        characterFieldValueDao.getValuesByCharacter(characterId)
+
+    suspend fun getValuesByCharacterList(characterId: Long): List<CharacterFieldValue> =
+        characterFieldValueDao.getValuesByCharacterList(characterId)
+
+    suspend fun getFieldValue(characterId: Long, fieldId: Long): CharacterFieldValue? =
+        characterFieldValueDao.getValue(characterId, fieldId)
+
+    suspend fun insertFieldValue(value: CharacterFieldValue): Long =
+        characterFieldValueDao.insert(value)
+
+    suspend fun insertAllFieldValues(values: List<CharacterFieldValue>) =
+        characterFieldValueDao.insertAll(values)
+
+    suspend fun updateFieldValue(value: CharacterFieldValue) =
+        characterFieldValueDao.update(value)
+
+    suspend fun deleteAllFieldValuesByCharacter(characterId: Long) =
+        characterFieldValueDao.deleteAllByCharacter(characterId)
+
+    suspend fun deleteFieldValue(characterId: Long, fieldId: Long) =
+        characterFieldValueDao.deleteValue(characterId, fieldId)
+
+    suspend fun getFieldValueByKey(characterId: Long, fieldKey: String): CharacterFieldValue? =
+        characterFieldValueDao.getValueByFieldKey(characterId, fieldKey)
+
+    /**
+     * Save all field values for a character at once (replace all).
+     * Deletes existing values and inserts the new ones.
+     */
+    suspend fun saveAllFieldValues(characterId: Long, values: List<CharacterFieldValue>) {
+        characterFieldValueDao.deleteAllByCharacter(characterId)
+        characterFieldValueDao.insertAll(values)
+    }
+
+    // ===== CharacterStateChange =====
+    fun getChangesByCharacter(characterId: Long): LiveData<List<CharacterStateChange>> =
+        characterStateChangeDao.getChangesByCharacter(characterId)
+
+    suspend fun getChangesByCharacterList(characterId: Long): List<CharacterStateChange> =
+        characterStateChangeDao.getChangesByCharacterList(characterId)
+
+    suspend fun getChangesUpToYear(characterId: Long, year: Int): List<CharacterStateChange> =
+        characterStateChangeDao.getChangesUpToYear(characterId, year)
+
+    suspend fun getChangesByField(characterId: Long, fieldKey: String): List<CharacterStateChange> =
+        characterStateChangeDao.getChangesByField(characterId, fieldKey)
+
+    suspend fun getChangeById(id: Long): CharacterStateChange? =
+        characterStateChangeDao.getChangeById(id)
+
+    suspend fun insertStateChange(change: CharacterStateChange): Long =
+        characterStateChangeDao.insert(change)
+
+    suspend fun insertAllStateChanges(changes: List<CharacterStateChange>) =
+        characterStateChangeDao.insertAll(changes)
+
+    suspend fun updateStateChange(change: CharacterStateChange) =
+        characterStateChangeDao.update(change)
+
+    suspend fun deleteStateChange(change: CharacterStateChange) =
+        characterStateChangeDao.delete(change)
+
+    suspend fun deleteAllStateChangesByCharacter(characterId: Long) =
+        characterStateChangeDao.deleteAllByCharacter(characterId)
 }

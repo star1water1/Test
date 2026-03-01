@@ -1,0 +1,39 @@
+package com.novelcharacter.app.data.dao
+
+import androidx.lifecycle.LiveData
+import androidx.room.*
+import com.novelcharacter.app.data.model.CharacterFieldValue
+
+@Dao
+interface CharacterFieldValueDao {
+    @Query("SELECT * FROM character_field_values WHERE characterId = :characterId")
+    fun getValuesByCharacter(characterId: Long): LiveData<List<CharacterFieldValue>>
+
+    @Query("SELECT * FROM character_field_values WHERE characterId = :characterId")
+    suspend fun getValuesByCharacterList(characterId: Long): List<CharacterFieldValue>
+
+    @Query("SELECT * FROM character_field_values WHERE characterId = :characterId AND fieldDefinitionId = :fieldId")
+    suspend fun getValue(characterId: Long, fieldId: Long): CharacterFieldValue?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(value: CharacterFieldValue): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(values: List<CharacterFieldValue>)
+
+    @Update
+    suspend fun update(value: CharacterFieldValue)
+
+    @Query("DELETE FROM character_field_values WHERE characterId = :characterId")
+    suspend fun deleteAllByCharacter(characterId: Long)
+
+    @Query("DELETE FROM character_field_values WHERE characterId = :characterId AND fieldDefinitionId = :fieldId")
+    suspend fun deleteValue(characterId: Long, fieldId: Long)
+
+    @Query("""
+        SELECT cfv.* FROM character_field_values cfv
+        INNER JOIN field_definitions fd ON cfv.fieldDefinitionId = fd.id
+        WHERE cfv.characterId = :characterId AND fd.`key` = :fieldKey
+    """)
+    suspend fun getValueByFieldKey(characterId: Long, fieldKey: String): CharacterFieldValue?
+}

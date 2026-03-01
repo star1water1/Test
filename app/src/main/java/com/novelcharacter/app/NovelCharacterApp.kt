@@ -18,7 +18,11 @@ class NovelCharacterApp : Application() {
         AppRepository(
             database.novelDao(),
             database.characterDao(),
-            database.timelineDao()
+            database.timelineDao(),
+            database.universeDao(),
+            database.fieldDefinitionDao(),
+            database.characterFieldValueDao(),
+            database.characterStateChangeDao()
         )
     }
 

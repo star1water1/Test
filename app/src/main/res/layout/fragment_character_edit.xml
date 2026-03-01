@@ -3,7 +3,8 @@
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
+    android:layout_height="match_parent"
+    android:background="@color/background">
 
     <com.google.android.material.appbar.MaterialToolbar
         android:id="@+id/toolbar"
@@ -25,7 +26,7 @@
             android:orientation="vertical"
             android:padding="16dp">
 
-            <!-- 이미지 추가 버튼 -->
+            <!-- Add image button -->
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnAddImage"
                 android:layout_width="match_parent"
@@ -33,134 +34,50 @@
                 android:text="@string/add_image"
                 style="@style/Widget.Material3.Button.OutlinedButton" />
 
+            <!-- Image preview list -->
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/imageRecyclerView"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="16dp" />
 
-            <!-- 기본 정보 -->
-            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="기본 정보" android:textSize="16sp" android:textStyle="bold" android:textColor="@color/primary" android:layout_marginBottom="8dp" android:layout_marginTop="8dp" />
-
-            <com.google.android.material.textfield.TextInputLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="8dp" android:hint="@string/character_name">
-                <com.google.android.material.textfield.TextInputEditText android:id="@+id/editName" android:layout_width="match_parent" android:layout_height="wrap_content" android:inputType="text" />
-            </com.google.android.material.textfield.TextInputLayout>
-
-            <!-- 작품 선택 스피너 -->
-            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/select_novel" android:textSize="12sp" android:textColor="@color/text_secondary" />
-            <Spinner android:id="@+id/spinnerNovel" android:layout_width="match_parent" android:layout_height="48dp" android:layout_marginBottom="8dp" />
-
-            <com.google.android.material.textfield.TextInputLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="8dp" android:hint="@string/character_age">
-                <com.google.android.material.textfield.TextInputEditText android:id="@+id/editAge" android:layout_width="match_parent" android:layout_height="wrap_content" android:inputType="text" />
-            </com.google.android.material.textfield.TextInputLayout>
-
-            <!-- 성별 라디오 -->
-            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/character_gender" android:textSize="12sp" android:textColor="@color/text_secondary" />
-            <RadioGroup android:id="@+id/radioGender" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginBottom="8dp">
-                <RadioButton android:id="@+id/radioMale" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/male" />
-                <RadioButton android:id="@+id/radioFemale" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/female" />
-                <RadioButton android:id="@+id/radioGenderUnknown" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/gender_unknown" />
-            </RadioGroup>
-
-            <!-- 생존 여부 -->
-            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="생존 여부" android:textSize="12sp" android:textColor="@color/text_secondary" />
-            <RadioGroup android:id="@+id/radioAlive" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginBottom="8dp">
-                <RadioButton android:id="@+id/radioAliveYes" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/alive" />
-                <RadioButton android:id="@+id/radioAliveNo" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/dead" />
-                <RadioButton android:id="@+id/radioAliveUnknown" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/unknown" />
-            </RadioGroup>
-
-            <com.google.android.material.textfield.TextInputLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="8dp" android:hint="@string/character_height">
-                <com.google.android.material.textfield.TextInputEditText android:id="@+id/editHeight" android:layout_width="match_parent" android:layout_height="wrap_content" android:inputType="text" />
-            </com.google.android.material.textfield.TextInputLayout>
-
-            <com.google.android.material.textfield.TextInputLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="8dp" android:hint="@string/character_body_type">
-                <com.google.android.material.textfield.TextInputEditText android:id="@+id/editBodyType" android:layout_width="match_parent" android:layout_height="wrap_content" android:inputType="text" />
-            </com.google.android.material.textfield.TextInputLayout>
-
-            <com.google.android.material.textfield.TextInputLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="8dp" android:hint="@string/character_race">
-                <com.google.android.material.textfield.TextInputEditText android:id="@+id/editRace" android:layout_width="match_parent" android:layout_height="wrap_content" android:inputType="text" />
-            </com.google.android.material.textfield.TextInputLayout>
-
-            <com.google.android.material.textfield.TextInputLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="8dp" android:hint="@string/character_job_title">
-                <com.google.android.material.textfield.TextInputEditText android:id="@+id/editJobTitle" android:layout_width="match_parent" android:layout_height="wrap_content" android:inputType="text" />
-            </com.google.android.material.textfield.TextInputLayout>
-
-            <!-- 전투력 등급 스피너 -->
-            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/character_combat_rank" android:textSize="12sp" android:textColor="@color/text_secondary" />
-            <Spinner android:id="@+id/spinnerCombatRank" android:layout_width="match_parent" android:layout_height="48dp" android:layout_marginBottom="8dp" />
-
-            <!-- 초월자 정보 -->
-            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="초월자 정보" android:textSize="16sp" android:textStyle="bold" android:textColor="@color/primary" android:layout_marginBottom="8dp" android:layout_marginTop="16dp" />
-
-            <com.google.android.material.switchmaterial.SwitchMaterial
-                android:id="@+id/switchTranscendent"
+            <!-- Character name input -->
+            <com.google.android.material.textfield.TextInputLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="@string/character_transcendent"
-                android:layout_marginBottom="8dp" />
+                android:layout_marginBottom="8dp"
+                android:hint="@string/character_name">
 
-            <com.google.android.material.textfield.TextInputLayout android:id="@+id/layoutTranscendentNumber" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="8dp" android:hint="@string/character_transcendent_number" android:visibility="gone">
-                <com.google.android.material.textfield.TextInputEditText android:id="@+id/editTranscendentNumber" android:layout_width="match_parent" android:layout_height="wrap_content" android:inputType="number" />
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/editName"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:inputType="text" />
+
             </com.google.android.material.textfield.TextInputLayout>
 
-            <com.google.android.material.textfield.TextInputLayout android:id="@+id/layoutTranscendentGeneration" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="8dp" android:hint="@string/character_transcendent_generation" android:visibility="gone">
-                <com.google.android.material.textfield.TextInputEditText android:id="@+id/editTranscendentGeneration" android:layout_width="match_parent" android:layout_height="wrap_content" android:inputType="text" />
-            </com.google.android.material.textfield.TextInputLayout>
+            <!-- Novel selection -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/select_novel"
+                android:textSize="12sp"
+                android:textColor="@color/text_secondary" />
 
-            <!-- 능력 정보 -->
-            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="능력 정보" android:textSize="16sp" android:textStyle="bold" android:textColor="@color/primary" android:layout_marginBottom="8dp" android:layout_marginTop="16dp" />
+            <Spinner
+                android:id="@+id/spinnerNovel"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:layout_marginBottom="16dp" />
 
-            <com.google.android.material.textfield.TextInputLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="8dp" android:hint="@string/character_magic_power">
-                <com.google.android.material.textfield.TextInputEditText android:id="@+id/editMagicPower" android:layout_width="match_parent" android:layout_height="wrap_content" android:inputType="text" />
-            </com.google.android.material.textfield.TextInputLayout>
+            <!-- Dynamic form fields container (populated programmatically from FieldDefinition) -->
+            <LinearLayout
+                android:id="@+id/dynamicFormContainer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
 
-            <com.google.android.material.textfield.TextInputLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="8dp" android:hint="@string/character_authority">
-                <com.google.android.material.textfield.TextInputEditText android:id="@+id/editAuthority" android:layout_width="match_parent" android:layout_height="wrap_content" android:inputType="text" />
-            </com.google.android.material.textfield.TextInputLayout>
-
-            <!-- 소속 정보 -->
-            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="소속 정보" android:textSize="16sp" android:textStyle="bold" android:textColor="@color/primary" android:layout_marginBottom="8dp" android:layout_marginTop="16dp" />
-
-            <com.google.android.material.textfield.TextInputLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="8dp" android:hint="@string/character_residence">
-                <com.google.android.material.textfield.TextInputEditText android:id="@+id/editResidence" android:layout_width="match_parent" android:layout_height="wrap_content" android:inputType="text" />
-            </com.google.android.material.textfield.TextInputLayout>
-
-            <com.google.android.material.textfield.TextInputLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="8dp" android:hint="@string/character_affiliation">
-                <com.google.android.material.textfield.TextInputEditText android:id="@+id/editAffiliation" android:layout_width="match_parent" android:layout_height="wrap_content" android:inputType="text" />
-            </com.google.android.material.textfield.TextInputLayout>
-
-            <!-- 성격/개인 정보 -->
-            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="성격/개인 정보" android:textSize="16sp" android:textStyle="bold" android:textColor="@color/primary" android:layout_marginBottom="8dp" android:layout_marginTop="16dp" />
-
-            <com.google.android.material.textfield.TextInputLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="8dp" android:hint="@string/character_personality">
-                <com.google.android.material.textfield.TextInputEditText android:id="@+id/editPersonality" android:layout_width="match_parent" android:layout_height="wrap_content" android:inputType="text" />
-            </com.google.android.material.textfield.TextInputLayout>
-
-            <com.google.android.material.textfield.TextInputLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="8dp" android:hint="@string/character_likes">
-                <com.google.android.material.textfield.TextInputEditText android:id="@+id/editLikes" android:layout_width="match_parent" android:layout_height="wrap_content" android:inputType="text" />
-            </com.google.android.material.textfield.TextInputLayout>
-
-            <com.google.android.material.textfield.TextInputLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="8dp" android:hint="@string/character_dislikes">
-                <com.google.android.material.textfield.TextInputEditText android:id="@+id/editDislikes" android:layout_width="match_parent" android:layout_height="wrap_content" android:inputType="text" />
-            </com.google.android.material.textfield.TextInputLayout>
-
-            <!-- 외모/특이사항 -->
-            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="외모/특이사항" android:textSize="16sp" android:textStyle="bold" android:textColor="@color/primary" android:layout_marginBottom="8dp" android:layout_marginTop="16dp" />
-
-            <com.google.android.material.textfield.TextInputLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="8dp" android:hint="@string/character_appearance">
-                <com.google.android.material.textfield.TextInputEditText android:id="@+id/editAppearance" android:layout_width="match_parent" android:layout_height="wrap_content" android:inputType="textMultiLine" android:minLines="2" />
-            </com.google.android.material.textfield.TextInputLayout>
-
-            <com.google.android.material.textfield.TextInputLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="8dp" android:hint="@string/character_special_notes">
-                <com.google.android.material.textfield.TextInputEditText android:id="@+id/editSpecialNotes" android:layout_width="match_parent" android:layout_height="wrap_content" android:inputType="textMultiLine" android:minLines="2" />
-            </com.google.android.material.textfield.TextInputLayout>
-
-            <com.google.android.material.textfield.TextInputLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="8dp" android:hint="@string/character_birthday">
-                <com.google.android.material.textfield.TextInputEditText android:id="@+id/editBirthday" android:layout_width="match_parent" android:layout_height="wrap_content" android:inputType="text" />
-            </com.google.android.material.textfield.TextInputLayout>
-
-            <!-- 저장 버튼 -->
+            <!-- Save button -->
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnSave"
                 android:layout_width="match_parent"

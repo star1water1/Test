@@ -55,103 +55,70 @@ class ExcelExporter(private val context: Context) {
     private suspend fun exportCharacters(workbook: XSSFWorkbook, headerStyle: CellStyle) {
         val novels = db.novelDao().getAllNovelsList()
         val allCharacters = db.characterDao().getAllCharactersList()
+        val universes = db.universeDao().getAllUniversesList()
 
-        // 전체 캐릭터 시트
-        val sheet = workbook.createSheet("전체 캐릭터")
-        val headers = listOf(
-            "이름", "나이", "생존", "성별", "키", "체형", "종족", "직업/직책",
-            "초월 유무", "초월자 번호", "초월자 세대", "마력", "권능",
-            "거주지", "소속", "좋아하는 것", "싫어하는 것", "성격",
-            "특이사항", "외모특징", "전투력 등급", "생일", "등장 시리즈"
-        )
+        // 세계관별로 시트 생성
+        for (universe in universes) {
+            val fields = db.fieldDefinitionDao().getFieldsByUniverseList(universe.id)
+            val universeNovels = novels.filter { it.universeId == universe.id }
+            val universeCharIds = universeNovels.flatMap { novel ->
+                db.characterDao().getCharactersByNovelList(novel.id).map { it.id }
+            }.toSet()
+            val universeChars = allCharacters.filter { it.id in universeCharIds }
 
-        // 헤더 행
-        val headerRow = sheet.createRow(0)
-        headers.forEachIndexed { index, header ->
-            val cell = headerRow.createCell(index)
-            cell.setCellValue(header)
-            cell.cellStyle = headerStyle
+            if (universeChars.isEmpty()) continue
+
+            val sheetName = universe.name.take(31)
+            val sheet = workbook.createSheet(sheetName)
+
+            // 헤더: 이름 + 동적 필드 + 작품
+            val headers = mutableListOf("이름")
+            headers.addAll(fields.map { it.name })
+            headers.add("작품")
+
+            val headerRow = sheet.createRow(0)
+            headers.forEachIndexed { index, header ->
+                val cell = headerRow.createCell(index)
+                cell.setCellValue(header)
+                cell.cellStyle = headerStyle
+            }
+
+            // 데이터
+            universeChars.forEachIndexed { index, character ->
+                val row = sheet.createRow(index + 1)
+                val novelTitle = novels.find { it.id == character.novelId }?.title ?: ""
+                val fieldValues = db.characterFieldValueDao().getValuesByCharacterList(character.id)
+
+                row.createCell(0).setCellValue(character.name)
+
+                fields.forEachIndexed { fi, field ->
+                    val value = fieldValues.find { it.fieldDefinitionId == field.id }?.value ?: ""
+                    row.createCell(fi + 1).setCellValue(value)
+                }
+
+                row.createCell(fields.size + 1).setCellValue(novelTitle)
+            }
+
+            headers.indices.forEach { sheet.setColumnWidth(it, 5000) }
         }
 
-        // 데이터 행
-        allCharacters.forEachIndexed { index, character ->
-            val row = sheet.createRow(index + 1)
-            val novelTitle = novels.find { it.id == character.novelId }?.title ?: ""
-
-            row.createCell(0).setCellValue(character.name)
-            row.createCell(1).setCellValue(character.age)
-            row.createCell(2).setCellValue(when (character.isAlive) {
-                true -> "o"
-                false -> "x"
-                null -> "?"
-            })
-            row.createCell(3).setCellValue(character.gender)
-            row.createCell(4).setCellValue(character.height)
-            row.createCell(5).setCellValue(character.bodyType)
-            row.createCell(6).setCellValue(character.race)
-            row.createCell(7).setCellValue(character.jobTitle)
-            row.createCell(8).setCellValue(when (character.isTranscendent) {
-                true -> "o"
-                false -> "x"
-                null -> ""
-            })
-            row.createCell(9).setCellValue(character.transcendentNumber?.toString() ?: "")
-            row.createCell(10).setCellValue(character.transcendentGeneration)
-            row.createCell(11).setCellValue(character.magicPower)
-            row.createCell(12).setCellValue(character.authority)
-            row.createCell(13).setCellValue(character.residence)
-            row.createCell(14).setCellValue(character.affiliation)
-            row.createCell(15).setCellValue(character.likes)
-            row.createCell(16).setCellValue(character.dislikes)
-            row.createCell(17).setCellValue(character.personality)
-            row.createCell(18).setCellValue(character.specialNotes)
-            row.createCell(19).setCellValue(character.appearance)
-            row.createCell(20).setCellValue(character.combatRank)
-            row.createCell(21).setCellValue(character.birthday)
-            row.createCell(22).setCellValue(novelTitle)
+        // 세계관 없는 캐릭터들도 별도 시트
+        val unassignedChars = allCharacters.filter { char ->
+            val novel = novels.find { it.id == char.novelId }
+            novel?.universeId == null
         }
-
-        // 열 너비 자동 조절
-        headers.indices.forEach { sheet.setColumnWidth(it, 5000) }
-
-        // 소설별 시트도 추가
-        novels.forEach { novel ->
-            val novelCharacters = allCharacters.filter { it.novelId == novel.id }
-            if (novelCharacters.isNotEmpty()) {
-                val novelSheet = workbook.createSheet(novel.title.take(31)) // 시트 이름 최대 31자
-                val novelHeaderRow = novelSheet.createRow(0)
-                headers.forEachIndexed { index, header ->
-                    val cell = novelHeaderRow.createCell(index)
-                    cell.setCellValue(header)
-                    cell.cellStyle = headerStyle
-                }
-                novelCharacters.forEachIndexed { index, character ->
-                    val row = novelSheet.createRow(index + 1)
-                    row.createCell(0).setCellValue(character.name)
-                    row.createCell(1).setCellValue(character.age)
-                    row.createCell(2).setCellValue(when (character.isAlive) { true -> "o"; false -> "x"; null -> "?" })
-                    row.createCell(3).setCellValue(character.gender)
-                    row.createCell(4).setCellValue(character.height)
-                    row.createCell(5).setCellValue(character.bodyType)
-                    row.createCell(6).setCellValue(character.race)
-                    row.createCell(7).setCellValue(character.jobTitle)
-                    row.createCell(8).setCellValue(when (character.isTranscendent) { true -> "o"; false -> "x"; null -> "" })
-                    row.createCell(9).setCellValue(character.transcendentNumber?.toString() ?: "")
-                    row.createCell(10).setCellValue(character.transcendentGeneration)
-                    row.createCell(11).setCellValue(character.magicPower)
-                    row.createCell(12).setCellValue(character.authority)
-                    row.createCell(13).setCellValue(character.residence)
-                    row.createCell(14).setCellValue(character.affiliation)
-                    row.createCell(15).setCellValue(character.likes)
-                    row.createCell(16).setCellValue(character.dislikes)
-                    row.createCell(17).setCellValue(character.personality)
-                    row.createCell(18).setCellValue(character.specialNotes)
-                    row.createCell(19).setCellValue(character.appearance)
-                    row.createCell(20).setCellValue(character.combatRank)
-                    row.createCell(21).setCellValue(character.birthday)
-                    row.createCell(22).setCellValue(novel.title)
-                }
-                headers.indices.forEach { novelSheet.setColumnWidth(it, 5000) }
+        if (unassignedChars.isNotEmpty()) {
+            val sheet = workbook.createSheet("미분류 캐릭터")
+            val headerRow = sheet.createRow(0)
+            listOf("이름", "작품").forEachIndexed { index, header ->
+                val cell = headerRow.createCell(index)
+                cell.setCellValue(header)
+                cell.cellStyle = headerStyle
+            }
+            unassignedChars.forEachIndexed { index, character ->
+                val row = sheet.createRow(index + 1)
+                row.createCell(0).setCellValue(character.name)
+                row.createCell(1).setCellValue(novels.find { it.id == character.novelId }?.title ?: "")
             }
         }
     }
@@ -161,7 +128,7 @@ class ExcelExporter(private val context: Context) {
         val novels = db.novelDao().getAllNovelsList()
 
         val sheet = workbook.createSheet("사건 연표")
-        val headers = listOf("연도", "역법", "사건 설명", "관련 작품", "관련 캐릭터")
+        val headers = listOf("연도", "월", "일", "역법", "사건 설명", "관련 작품", "관련 캐릭터")
 
         val headerRow = sheet.createRow(0)
         headers.forEachIndexed { index, header ->
@@ -173,21 +140,25 @@ class ExcelExporter(private val context: Context) {
         events.forEachIndexed { index, event ->
             val row = sheet.createRow(index + 1)
             row.createCell(0).setCellValue(event.year.toDouble())
-            row.createCell(1).setCellValue(event.calendarType)
-            row.createCell(2).setCellValue(event.description)
+            row.createCell(1).setCellValue(event.month?.toDouble() ?: 0.0)
+            row.createCell(2).setCellValue(event.day?.toDouble() ?: 0.0)
+            row.createCell(3).setCellValue(event.calendarType)
+            row.createCell(4).setCellValue(event.description)
 
             val novelTitle = novels.find { it.id == event.novelId }?.title ?: ""
-            row.createCell(3).setCellValue(novelTitle)
+            row.createCell(5).setCellValue(novelTitle)
 
             val characters = db.timelineDao().getCharactersForEvent(event.id)
-            row.createCell(4).setCellValue(characters.joinToString(", ") { it.name })
+            row.createCell(6).setCellValue(characters.joinToString(", ") { it.name })
         }
 
         sheet.setColumnWidth(0, 3000)
-        sheet.setColumnWidth(1, 3000)
-        sheet.setColumnWidth(2, 15000)
-        sheet.setColumnWidth(3, 5000)
-        sheet.setColumnWidth(4, 10000)
+        sheet.setColumnWidth(1, 2000)
+        sheet.setColumnWidth(2, 2000)
+        sheet.setColumnWidth(3, 3000)
+        sheet.setColumnWidth(4, 15000)
+        sheet.setColumnWidth(5, 5000)
+        sheet.setColumnWidth(6, 10000)
     }
 
     private fun createHeaderStyle(workbook: XSSFWorkbook): CellStyle {

@@ -3,11 +3,15 @@ package com.novelcharacter.app.ui.character
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
+import android.text.InputType
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.ImageView
+import android.widget.Spinner
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.Fragment
@@ -16,11 +20,15 @@ import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.google.android.material.textfield.TextInputEditText
+import com.google.android.material.textfield.TextInputLayout
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.Character
-import com.novelcharacter.app.data.model.CombatRank
+import com.novelcharacter.app.data.model.CharacterFieldValue
+import com.novelcharacter.app.data.model.FieldDefinition
+import com.novelcharacter.app.data.model.FieldType
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.databinding.FragmentCharacterEditBinding
 import kotlinx.coroutines.launch
@@ -33,12 +41,17 @@ class CharacterEditFragment : Fragment() {
     private var _binding: FragmentCharacterEditBinding? = null
     private val binding get() = _binding!!
     private val viewModel: CharacterViewModel by viewModels()
+    private val gson = Gson()
 
     private var characterId: Long = -1L
     private var presetNovelId: Long = -1L
     private var existingCharacter: Character? = null
     private var novels: List<Novel> = emptyList()
     private val imagePaths = mutableListOf<String>()
+
+    // 동적 필드 관리
+    private var fieldDefinitions: List<FieldDefinition> = emptyList()
+    private val fieldInputMap = mutableMapOf<Long, Any>() // fieldDefinitionId -> input widget
 
     private val imagePickerLauncher = registerForActivityResult(
         ActivityResultContracts.GetContent()
@@ -62,8 +75,6 @@ class CharacterEditFragment : Fragment() {
         binding.toolbar.setNavigationOnClickListener { findNavController().popBackStack() }
         binding.toolbar.title = if (characterId == -1L) getString(R.string.add_character) else getString(R.string.edit_character)
 
-        setupCombatRankSpinner()
-        setupTranscendentSwitch()
         setupImageButton()
         setupSaveButton()
 
@@ -84,6 +95,33 @@ class CharacterEditFragment : Fragment() {
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         binding.spinnerNovel.adapter = adapter
 
+        // 작품 선택 시 해당 universe의 동적 필드 로드
+        binding.spinnerNovel.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                lifecycleScope.launch {
+                    if (position > 0) {
+                        val novel = novels[position - 1]
+                        val universeId = novel.universeId
+                        if (universeId != null) {
+                            fieldDefinitions = viewModel.getFieldsByUniverseList(universeId)
+                        } else {
+                            fieldDefinitions = emptyList()
+                        }
+                    } else {
+                        fieldDefinitions = emptyList()
+                    }
+                    buildDynamicForm()
+
+                    // 기존 캐릭터 편집 시, 필드 값 채우기
+                    if (existingCharacter != null) {
+                        loadFieldValues(existingCharacter!!.id)
+                    }
+                }
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+
         // 미리 지정된 작품이 있으면 선택
         if (presetNovelId != -1L) {
             val index = novels.indexOfFirst { it.id == presetNovelId }
@@ -98,55 +136,14 @@ class CharacterEditFragment : Fragment() {
 
     private fun fillForm(character: Character) {
         binding.editName.setText(character.name)
-        binding.editAge.setText(character.age)
-        binding.editHeight.setText(character.height)
-        binding.editBodyType.setText(character.bodyType)
-        binding.editRace.setText(character.race)
-        binding.editJobTitle.setText(character.jobTitle)
-        binding.editMagicPower.setText(character.magicPower)
-        binding.editAuthority.setText(character.authority)
-        binding.editResidence.setText(character.residence)
-        binding.editAffiliation.setText(character.affiliation)
-        binding.editLikes.setText(character.likes)
-        binding.editDislikes.setText(character.dislikes)
-        binding.editPersonality.setText(character.personality)
-        binding.editAppearance.setText(character.appearance)
-        binding.editSpecialNotes.setText(character.specialNotes)
-        binding.editBirthday.setText(character.birthday)
 
-        // 성별
-        when (character.gender) {
-            "남" -> binding.radioMale.isChecked = true
-            "여" -> binding.radioFemale.isChecked = true
-            else -> binding.radioGenderUnknown.isChecked = true
-        }
-
-        // 생존 여부
-        when (character.isAlive) {
-            true -> binding.radioAliveYes.isChecked = true
-            false -> binding.radioAliveNo.isChecked = true
-            null -> binding.radioAliveUnknown.isChecked = true
-        }
-
-        // 전투력 등급
-        val rankIndex = CombatRank.labels().indexOf(character.combatRank)
-        if (rankIndex >= 0) binding.spinnerCombatRank.setSelection(rankIndex + 1)
-
-        // 초월자
-        binding.switchTranscendent.isChecked = character.isTranscendent == true
-        character.transcendentNumber?.let {
-            binding.editTranscendentNumber.setText(it.toString())
-        }
-        binding.editTranscendentGeneration.setText(character.transcendentGeneration)
-
-        // 작품
+        // 작품 선택
         character.novelId?.let { novelId ->
             val index = novels.indexOfFirst { it.id == novelId }
             if (index >= 0) binding.spinnerNovel.setSelection(index + 1)
         }
 
         // 이미지
-        val gson = Gson()
         val type = object : TypeToken<List<String>>() {}.type
         val paths: List<String> = try {
             gson.fromJson(character.imagePaths, type) ?: emptyList()
@@ -158,20 +155,292 @@ class CharacterEditFragment : Fragment() {
         updateImageList()
     }
 
-    private fun setupCombatRankSpinner() {
-        val ranks = mutableListOf("등급 미정")
-        ranks.addAll(CombatRank.labels())
-        val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, ranks)
-        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-        binding.spinnerCombatRank.adapter = adapter
+    private suspend fun loadFieldValues(characterId: Long) {
+        val values = viewModel.getValuesByCharacterList(characterId)
+        val valueMap = values.associateBy { it.fieldDefinitionId }
+
+        for (field in fieldDefinitions) {
+            val savedValue = valueMap[field.id]?.value ?: ""
+            val widget = fieldInputMap[field.id] ?: continue
+
+            when (widget) {
+                is TextInputEditText -> widget.setText(savedValue)
+                is Spinner -> {
+                    val fieldType = FieldType.fromName(field.type)
+                    if (fieldType == FieldType.SELECT) {
+                        val options = parseSelectOptions(field.config)
+                        val optionWithBlank = mutableListOf("선택 안함")
+                        optionWithBlank.addAll(options)
+                        val idx = optionWithBlank.indexOf(savedValue)
+                        if (idx >= 0) widget.setSelection(idx)
+                    } else if (fieldType == FieldType.GRADE) {
+                        val grades = parseGradeOptions(field.config)
+                        val gradeWithBlank = mutableListOf("등급 미정")
+                        gradeWithBlank.addAll(grades)
+                        val idx = gradeWithBlank.indexOf(savedValue)
+                        if (idx >= 0) widget.setSelection(idx)
+                    }
+                }
+            }
+        }
     }
 
-    private fun setupTranscendentSwitch() {
-        binding.switchTranscendent.setOnCheckedChangeListener { _, isChecked ->
-            val visibility = if (isChecked) View.VISIBLE else View.GONE
-            binding.layoutTranscendentNumber.visibility = visibility
-            binding.layoutTranscendentGeneration.visibility = visibility
+    private fun buildDynamicForm() {
+        binding.dynamicFormContainer.removeAllViews()
+        fieldInputMap.clear()
+
+        val context = requireContext()
+        val density = resources.displayMetrics.density
+
+        for (field in fieldDefinitions.sortedBy { it.displayOrder }) {
+            val fieldType = FieldType.fromName(field.type)
+
+            when (fieldType) {
+                FieldType.TEXT, FieldType.BODY_SIZE -> {
+                    val inputLayout = TextInputLayout(context).apply {
+                        layoutParams = ViewGroup.MarginLayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT
+                        ).apply {
+                            bottomMargin = (8 * density).toInt()
+                        }
+                        hint = field.name
+                    }
+                    val editText = TextInputEditText(context).apply {
+                        layoutParams = ViewGroup.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT
+                        )
+                    }
+                    inputLayout.addView(editText)
+                    binding.dynamicFormContainer.addView(inputLayout)
+                    fieldInputMap[field.id] = editText
+                }
+
+                FieldType.NUMBER -> {
+                    val inputLayout = TextInputLayout(context).apply {
+                        layoutParams = ViewGroup.MarginLayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT
+                        ).apply {
+                            bottomMargin = (8 * density).toInt()
+                        }
+                        hint = field.name
+                    }
+                    val editText = TextInputEditText(context).apply {
+                        layoutParams = ViewGroup.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT
+                        )
+                        inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+                    }
+                    inputLayout.addView(editText)
+                    binding.dynamicFormContainer.addView(inputLayout)
+                    fieldInputMap[field.id] = editText
+                }
+
+                FieldType.SELECT -> {
+                    val label = TextView(context).apply {
+                        text = field.name
+                        textSize = 14f
+                        layoutParams = ViewGroup.MarginLayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT
+                        ).apply {
+                            topMargin = (4 * density).toInt()
+                        }
+                    }
+                    binding.dynamicFormContainer.addView(label)
+
+                    val options = parseSelectOptions(field.config)
+                    val optionsWithBlank = mutableListOf("선택 안함")
+                    optionsWithBlank.addAll(options)
+
+                    val spinner = Spinner(context).apply {
+                        layoutParams = ViewGroup.MarginLayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT
+                        ).apply {
+                            bottomMargin = (8 * density).toInt()
+                        }
+                        adapter = ArrayAdapter(
+                            context,
+                            android.R.layout.simple_spinner_item,
+                            optionsWithBlank
+                        ).also {
+                            it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+                        }
+                    }
+                    binding.dynamicFormContainer.addView(spinner)
+                    fieldInputMap[field.id] = spinner
+                }
+
+                FieldType.GRADE -> {
+                    val label = TextView(context).apply {
+                        text = field.name
+                        textSize = 14f
+                        layoutParams = ViewGroup.MarginLayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT
+                        ).apply {
+                            topMargin = (4 * density).toInt()
+                        }
+                    }
+                    binding.dynamicFormContainer.addView(label)
+
+                    val grades = parseGradeOptions(field.config)
+                    val gradesWithBlank = mutableListOf("등급 미정")
+                    gradesWithBlank.addAll(grades)
+
+                    val spinner = Spinner(context).apply {
+                        layoutParams = ViewGroup.MarginLayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT
+                        ).apply {
+                            bottomMargin = (8 * density).toInt()
+                        }
+                        adapter = ArrayAdapter(
+                            context,
+                            android.R.layout.simple_spinner_item,
+                            gradesWithBlank
+                        ).also {
+                            it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+                        }
+                    }
+                    binding.dynamicFormContainer.addView(spinner)
+                    fieldInputMap[field.id] = spinner
+                }
+
+                FieldType.MULTI_TEXT -> {
+                    val inputLayout = TextInputLayout(context).apply {
+                        layoutParams = ViewGroup.MarginLayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT
+                        ).apply {
+                            bottomMargin = (8 * density).toInt()
+                        }
+                        hint = "${field.name} (쉼표로 구분)"
+                    }
+                    val editText = TextInputEditText(context).apply {
+                        layoutParams = ViewGroup.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT
+                        )
+                    }
+                    inputLayout.addView(editText)
+                    binding.dynamicFormContainer.addView(inputLayout)
+                    fieldInputMap[field.id] = editText
+                }
+
+                FieldType.CALCULATED -> {
+                    val textView = TextView(context).apply {
+                        text = "${field.name}: (자동 계산)"
+                        textSize = 14f
+                        isEnabled = false
+                        layoutParams = ViewGroup.MarginLayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT
+                        ).apply {
+                            bottomMargin = (8 * density).toInt()
+                            topMargin = (4 * density).toInt()
+                        }
+                    }
+                    binding.dynamicFormContainer.addView(textView)
+                    fieldInputMap[field.id] = textView
+                }
+
+                null -> {
+                    // 알 수 없는 필드 타입 - 기본 텍스트 입력
+                    val inputLayout = TextInputLayout(context).apply {
+                        layoutParams = ViewGroup.MarginLayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT
+                        ).apply {
+                            bottomMargin = (8 * density).toInt()
+                        }
+                        hint = field.name
+                    }
+                    val editText = TextInputEditText(context).apply {
+                        layoutParams = ViewGroup.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT
+                        )
+                    }
+                    inputLayout.addView(editText)
+                    binding.dynamicFormContainer.addView(inputLayout)
+                    fieldInputMap[field.id] = editText
+                }
+            }
         }
+    }
+
+    private fun parseSelectOptions(configJson: String): List<String> {
+        return try {
+            val configMap: Map<String, Any> = gson.fromJson(
+                configJson, object : TypeToken<Map<String, Any>>() {}.type
+            )
+            @Suppress("UNCHECKED_CAST")
+            (configMap["options"] as? List<String>) ?: emptyList()
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    private fun parseGradeOptions(configJson: String): List<String> {
+        val baseGrades = listOf("C", "B", "A", "S")
+        return try {
+            val configMap: Map<String, Any> = gson.fromJson(
+                configJson, object : TypeToken<Map<String, Any>>() {}.type
+            )
+            val allowNegative = configMap["allowNegative"] as? Boolean ?: false
+            if (allowNegative) {
+                val result = mutableListOf<String>()
+                for (grade in baseGrades) {
+                    result.add("-$grade")
+                    result.add(grade)
+                }
+                result
+            } else {
+                baseGrades
+            }
+        } catch (e: Exception) {
+            baseGrades
+        }
+    }
+
+    private fun collectFieldValues(characterId: Long): List<CharacterFieldValue> {
+        val values = mutableListOf<CharacterFieldValue>()
+
+        for (field in fieldDefinitions) {
+            val widget = fieldInputMap[field.id] ?: continue
+            val fieldType = FieldType.fromName(field.type)
+
+            // CALCULATED 필드는 저장하지 않음
+            if (fieldType == FieldType.CALCULATED) continue
+
+            val value: String = when (widget) {
+                is TextInputEditText -> widget.text.toString().trim()
+                is Spinner -> {
+                    if (widget.selectedItemPosition > 0) {
+                        widget.selectedItem.toString()
+                    } else {
+                        ""
+                    }
+                }
+                else -> ""
+            }
+
+            if (value.isNotEmpty()) {
+                values.add(
+                    CharacterFieldValue(
+                        characterId = characterId,
+                        fieldDefinitionId = field.id,
+                        value = value
+                    )
+                )
+            }
+        }
+        return values
     }
 
     private fun setupImageButton() {
@@ -236,70 +505,37 @@ class CharacterEditFragment : Fragment() {
                 return@setOnClickListener
             }
 
-            val gender = when {
-                binding.radioMale.isChecked -> "남"
-                binding.radioFemale.isChecked -> "여"
-                else -> "?"
-            }
-
-            val isAlive = when {
-                binding.radioAliveYes.isChecked -> true
-                binding.radioAliveNo.isChecked -> false
-                else -> null
-            }
-
             val novelPosition = binding.spinnerNovel.selectedItemPosition
             val selectedNovelId = if (novelPosition > 0) novels[novelPosition - 1].id else null
-
-            val rankPosition = binding.spinnerCombatRank.selectedItemPosition
-            val combatRank = if (rankPosition > 0) CombatRank.labels()[rankPosition - 1] else ""
-
-            val isTranscendent = binding.switchTranscendent.isChecked
-            val transcendentNumber = if (isTranscendent) {
-                binding.editTranscendentNumber.text.toString().toIntOrNull()
-            } else null
-            val transcendentGeneration = if (isTranscendent) {
-                binding.editTranscendentGeneration.text.toString().trim()
-            } else ""
 
             val character = Character(
                 id = if (characterId != -1L) characterId else 0,
                 name = name,
                 novelId = selectedNovelId,
-                age = binding.editAge.text.toString().trim(),
-                isAlive = isAlive,
-                gender = gender,
-                height = binding.editHeight.text.toString().trim(),
-                bodyType = binding.editBodyType.text.toString().trim(),
-                race = binding.editRace.text.toString().trim(),
-                jobTitle = binding.editJobTitle.text.toString().trim(),
-                isTranscendent = if (isTranscendent) true else null,
-                transcendentNumber = transcendentNumber,
-                transcendentGeneration = transcendentGeneration,
-                magicPower = binding.editMagicPower.text.toString().trim(),
-                authority = binding.editAuthority.text.toString().trim(),
-                residence = binding.editResidence.text.toString().trim(),
-                affiliation = binding.editAffiliation.text.toString().trim(),
-                likes = binding.editLikes.text.toString().trim(),
-                dislikes = binding.editDislikes.text.toString().trim(),
-                personality = binding.editPersonality.text.toString().trim(),
-                specialNotes = binding.editSpecialNotes.text.toString().trim(),
-                appearance = binding.editAppearance.text.toString().trim(),
-                combatRank = combatRank,
-                birthday = binding.editBirthday.text.toString().trim(),
-                imagePaths = Gson().toJson(imagePaths),
+                imagePaths = gson.toJson(imagePaths),
                 createdAt = existingCharacter?.createdAt ?: System.currentTimeMillis(),
                 updatedAt = System.currentTimeMillis()
             )
 
-            if (characterId != -1L) {
-                viewModel.updateCharacter(character)
-            } else {
-                viewModel.insertCharacter(character)
-            }
+            lifecycleScope.launch {
+                if (characterId != -1L) {
+                    // 기존 캐릭터 수정
+                    viewModel.updateCharacter(character)
+                    val fieldValues = collectFieldValues(characterId)
+                    viewModel.saveAllFieldValues(characterId, fieldValues)
+                } else {
+                    // 새 캐릭터 생성
+                    viewModel.insertCharacterAndGetId(character) { newId ->
+                        lifecycleScope.launch {
+                            val fieldValues = collectFieldValues(newId)
+                            viewModel.saveAllFieldValues(newId, fieldValues)
+                        }
+                    }
+                }
 
-            Toast.makeText(requireContext(), "저장되었습니다", Toast.LENGTH_SHORT).show()
-            findNavController().popBackStack()
+                Toast.makeText(requireContext(), "저장되었습니다", Toast.LENGTH_SHORT).show()
+                findNavController().popBackStack()
+            }
         }
     }
 

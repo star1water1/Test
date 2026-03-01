@@ -71,4 +71,10 @@ interface TimelineDao {
         ORDER BY c.name ASC
     """)
     suspend fun getCharactersForEvent(eventId: Long): List<com.novelcharacter.app.data.model.Character>
+
+    @Query("SELECT * FROM timeline_events WHERE universeId = :universeId ORDER BY year ASC")
+    fun getEventsByUniverse(universeId: Long): LiveData<List<TimelineEvent>>
+
+    @Query("SELECT * FROM timeline_events WHERE year = :year AND month = :month AND day = :day ORDER BY year ASC")
+    fun getEventsByYearMonthDay(year: Int, month: Int?, day: Int?): LiveData<List<TimelineEvent>>
 }
