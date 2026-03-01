@@ -524,13 +524,10 @@ class CharacterEditFragment : Fragment() {
                     val fieldValues = collectFieldValues(characterId)
                     viewModel.saveAllFieldValues(characterId, fieldValues)
                 } else {
-                    // 새 캐릭터 생성
-                    viewModel.insertCharacterAndGetId(character) { newId ->
-                        lifecycleScope.launch {
-                            val fieldValues = collectFieldValues(newId)
-                            viewModel.saveAllFieldValues(newId, fieldValues)
-                        }
-                    }
+                    // 새 캐릭터 생성 - suspend로 ID를 받아온 뒤 필드값 저장
+                    val newId = viewModel.insertCharacterSuspend(character)
+                    val fieldValues = collectFieldValues(newId)
+                    viewModel.saveAllFieldValues(newId, fieldValues)
                 }
 
                 Toast.makeText(requireContext(), "저장되었습니다", Toast.LENGTH_SHORT).show()

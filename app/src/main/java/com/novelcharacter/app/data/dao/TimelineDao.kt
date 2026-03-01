@@ -75,6 +75,6 @@ interface TimelineDao {
     @Query("SELECT * FROM timeline_events WHERE universeId = :universeId ORDER BY year ASC")
     fun getEventsByUniverse(universeId: Long): LiveData<List<TimelineEvent>>
 
-    @Query("SELECT * FROM timeline_events WHERE year = :year AND month = :month AND day = :day ORDER BY year ASC")
+    @Query("SELECT * FROM timeline_events WHERE year = :year AND (:month IS NULL OR month = :month) AND (:day IS NULL OR day = :day) ORDER BY year ASC")
     fun getEventsByYearMonthDay(year: Int, month: Int?, day: Int?): LiveData<List<TimelineEvent>>
 }

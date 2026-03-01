@@ -22,13 +22,27 @@ class ExcelImporter(private val context: Context) {
 
     private val db = AppDatabase.getDatabase(context)
 
-    fun showImportDialog(fragment: Fragment) {
-        val launcher = fragment.registerForActivityResult(
+    private var importLauncher: androidx.activity.result.ActivityResultLauncher<String>? = null
+
+    /**
+     * registerForActivityResult는 Fragment가 STARTED 상태 이전에 호출되어야 합니다.
+     * onViewCreated 등에서 미리 호출하세요.
+     */
+    fun registerLauncher(fragment: Fragment) {
+        importLauncher = fragment.registerForActivityResult(
             ActivityResultContracts.GetContent()
         ) { uri: Uri? ->
             uri?.let { importFromExcel(it) }
         }
-        launcher.launch("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    }
+
+    fun showImportDialog(fragment: Fragment) {
+        val launcher = importLauncher
+        if (launcher != null) {
+            launcher.launch("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        } else {
+            Toast.makeText(context, "가져오기를 사용하려면 앱을 다시 시작하세요", Toast.LENGTH_SHORT).show()
+        }
     }
 
     fun importFromExcel(uri: Uri) {

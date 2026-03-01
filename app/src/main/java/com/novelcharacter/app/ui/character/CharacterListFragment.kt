@@ -101,13 +101,11 @@ class CharacterListFragment : Fragment() {
     }
 
     private fun observeData() {
-        viewModel.filteredCharacters.observe(viewLifecycleOwner) { characters ->
-            adapter.submitList(characters)
-            binding.emptyText.visibility = if (characters.isEmpty()) View.VISIBLE else View.GONE
-        }
-
+        // searchResults가 검색어 비어있을 때 filteredCharacters로 위임하므로
+        // searchResults만 observe하면 모든 케이스를 커버
         viewModel.searchResults.observe(viewLifecycleOwner) { characters ->
             adapter.submitList(characters)
+            binding.emptyText.visibility = if (characters.isEmpty()) View.VISIBLE else View.GONE
         }
     }
 
