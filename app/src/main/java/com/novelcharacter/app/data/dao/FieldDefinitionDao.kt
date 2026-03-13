@@ -21,7 +21,7 @@ interface FieldDefinitionDao {
     @Query("SELECT * FROM field_definitions WHERE universeId = :universeId AND type = :type ORDER BY displayOrder ASC")
     suspend fun getFieldsByType(universeId: Long, type: String): List<FieldDefinition>
 
-    @Query("SELECT DISTINCT groupName FROM field_definitions WHERE universeId = :universeId ORDER BY MIN(displayOrder)")
+    @Query("SELECT groupName FROM field_definitions WHERE universeId = :universeId GROUP BY groupName ORDER BY MIN(displayOrder)")
     suspend fun getGroupNames(universeId: Long): List<String>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
