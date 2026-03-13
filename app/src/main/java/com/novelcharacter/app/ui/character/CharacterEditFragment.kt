@@ -78,7 +78,7 @@ class CharacterEditFragment : Fragment() {
         setupImageButton()
         setupSaveButton()
 
-        lifecycleScope.launch {
+        viewLifecycleOwner.lifecycleScope.launch {
             loadNovels()
             if (characterId != -1L) {
                 loadExistingCharacter()
@@ -98,7 +98,7 @@ class CharacterEditFragment : Fragment() {
         // 작품 선택 시 해당 universe의 동적 필드 로드
         binding.spinnerNovel.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                lifecycleScope.launch {
+                viewLifecycleOwner.lifecycleScope.launch {
                     if (position > 0) {
                         val novel = novels[position - 1]
                         val universeId = novel.universeId
@@ -517,7 +517,7 @@ class CharacterEditFragment : Fragment() {
                 updatedAt = System.currentTimeMillis()
             )
 
-            lifecycleScope.launch {
+            viewLifecycleOwner.lifecycleScope.launch {
                 if (characterId != -1L) {
                     // 기존 캐릭터 수정
                     viewModel.updateCharacter(character)

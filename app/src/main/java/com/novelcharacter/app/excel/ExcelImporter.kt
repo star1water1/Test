@@ -16,13 +16,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.apache.poi.ss.usermodel.CellType
 import org.apache.poi.ss.usermodel.Row
-import org.apache.poi.xssf.usermodel.XSSFWorkbook
+import org.apache.poi.ss.usermodel.WorkbookFactory
 
 class ExcelImporter(private val context: Context) {
 
     private val db = AppDatabase.getDatabase(context)
 
-    private var importLauncher: androidx.activity.result.ActivityResultLauncher<String>? = null
+    private var importLauncher: androidx.activity.result.ActivityResultLauncher<Array<String>>? = null
 
     /**
      * registerForActivityResult는 Fragment가 STARTED 상태 이전에 호출되어야 합니다.
@@ -30,7 +30,7 @@ class ExcelImporter(private val context: Context) {
      */
     fun registerLauncher(fragment: Fragment) {
         importLauncher = fragment.registerForActivityResult(
-            ActivityResultContracts.GetContent()
+            ActivityResultContracts.OpenDocument()
         ) { uri: Uri? ->
             uri?.let { importFromExcel(it) }
         }
@@ -39,7 +39,11 @@ class ExcelImporter(private val context: Context) {
     fun showImportDialog(fragment: Fragment) {
         val launcher = importLauncher
         if (launcher != null) {
-            launcher.launch("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            launcher.launch(arrayOf(
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "application/vnd.ms-excel",
+                "application/octet-stream"
+            ))
         } else {
             Toast.makeText(context, "가져오기를 사용하려면 앱을 다시 시작하세요", Toast.LENGTH_SHORT).show()
         }
@@ -51,7 +55,7 @@ class ExcelImporter(private val context: Context) {
                 val inputStream = context.contentResolver.openInputStream(uri)
                     ?: throw Exception("파일을 열 수 없습니다")
 
-                val workbook = XSSFWorkbook(inputStream)
+                val workbook = WorkbookFactory.create(inputStream)
                 var importedCharacters = 0
                 var importedEvents = 0
 

@@ -150,7 +150,7 @@ class CharacterDetailFragment : Fragment() {
     }
 
     private fun applyTimeView(year: Int) {
-        lifecycleScope.launch {
+        viewLifecycleOwner.lifecycleScope.launch {
             if (cachedFields.isEmpty()) return@launch
 
             // Build base values map from cached field values
@@ -177,7 +177,7 @@ class CharacterDetailFragment : Fragment() {
     }
 
     private fun updateSliderRange() {
-        lifecycleScope.launch {
+        viewLifecycleOwner.lifecycleScope.launch {
             val changes = viewModel.getChangesByCharacterList(characterId)
             if (changes.isEmpty()) {
                 // No state changes, hide slider content but keep toggle
@@ -399,7 +399,7 @@ class CharacterDetailFragment : Fragment() {
         binding.detailName.text = character.name
 
         // 작품명 + 동적 필드 로드
-        lifecycleScope.launch {
+        viewLifecycleOwner.lifecycleScope.launch {
             val novel = character.novelId?.let { viewModel.getNovelById(it) }
             binding.detailNovel.text = "작품: ${novel?.title ?: "미지정"}"
 
@@ -700,7 +700,7 @@ class CharacterDetailFragment : Fragment() {
             override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
                 val imageView = holder.itemView as ImageView
                 imageView.setImageResource(R.drawable.ic_character_placeholder)
-                lifecycleScope.launch {
+                viewLifecycleOwner.lifecycleScope.launch {
                     val bitmap = withContext(Dispatchers.IO) {
                         decodeSampledBitmap(imagePaths[position], 1024, 1024)
                     }

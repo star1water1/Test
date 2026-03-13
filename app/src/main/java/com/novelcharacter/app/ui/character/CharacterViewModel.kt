@@ -28,7 +28,7 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
-    private val _searchQuery = MutableLiveData<String>()
+    private val _searchQuery = MutableLiveData("")
     val searchResults: LiveData<List<Character>> = _searchQuery.switchMap { query ->
         if (query.isNullOrBlank()) {
             filteredCharacters
