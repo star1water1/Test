@@ -482,13 +482,18 @@ class CharacterEditFragment : Fragment() {
 
             override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
                 val imageView = holder.itemView as ImageView
-                val bitmap = BitmapFactory.decodeFile(imagePaths[position])
-                if (bitmap != null) {
-                    imageView.setImageBitmap(bitmap)
+                if (position < imagePaths.size) {
+                    val bitmap = BitmapFactory.decodeFile(imagePaths[position])
+                    if (bitmap != null) {
+                        imageView.setImageBitmap(bitmap)
+                    }
                 }
                 imageView.setOnLongClickListener {
-                    imagePaths.removeAt(position)
-                    updateImageList()
+                    val adapterPosition = holder.adapterPosition
+                    if (adapterPosition >= 0 && adapterPosition < imagePaths.size) {
+                        imagePaths.removeAt(adapterPosition)
+                        updateImageList()
+                    }
                     true
                 }
             }
