@@ -13,7 +13,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.apache.poi.ss.usermodel.FillPatternType
 import org.apache.poi.ss.usermodel.IndexedColors
-import org.apache.poi.xssf.usermodel.XSSFXSSFCellStyle
+import org.apache.poi.xssf.usermodel.XSSFCellStyle
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
 import java.io.File
 import java.io.FileOutputStream
@@ -187,7 +187,7 @@ class ExcelExporter(private val context: Context) {
     }
 
     private fun createHeaderStyle(workbook: XSSFWorkbook): XSSFCellStyle {
-        val style = workbook.createXSSFCellStyle()
+        val style = workbook.createCellStyle() as XSSFCellStyle
         val font = workbook.createFont()
         font.bold = true
         font.color = IndexedColors.WHITE.index
