@@ -11,9 +11,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.apache.poi.ss.usermodel.CellStyle
 import org.apache.poi.ss.usermodel.FillPatternType
 import org.apache.poi.ss.usermodel.IndexedColors
+import org.apache.poi.xssf.usermodel.XSSFXSSFCellStyle
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
 import java.io.File
 import java.io.FileOutputStream
@@ -77,7 +77,7 @@ class ExcelExporter(private val context: Context) {
         }
     }
 
-    private suspend fun exportCharacters(workbook: XSSFWorkbook, headerStyle: CellStyle) {
+    private suspend fun exportCharacters(workbook: XSSFWorkbook, headerStyle: XSSFCellStyle) {
         val novels = db.novelDao().getAllNovelsList()
         val allCharacters = db.characterDao().getAllCharactersList()
         val universes = db.universeDao().getAllUniversesList()
@@ -148,7 +148,7 @@ class ExcelExporter(private val context: Context) {
         }
     }
 
-    private suspend fun exportTimeline(workbook: XSSFWorkbook, headerStyle: CellStyle) {
+    private suspend fun exportTimeline(workbook: XSSFWorkbook, headerStyle: XSSFCellStyle) {
         val events = db.timelineDao().getAllEventsList()
         val novels = db.novelDao().getAllNovelsList()
 
@@ -186,8 +186,8 @@ class ExcelExporter(private val context: Context) {
         sheet.setColumnWidth(6, 10000)
     }
 
-    private fun createHeaderStyle(workbook: XSSFWorkbook): CellStyle {
-        val style = workbook.createCellStyle()
+    private fun createHeaderStyle(workbook: XSSFWorkbook): XSSFCellStyle {
+        val style = workbook.createXSSFCellStyle()
         val font = workbook.createFont()
         font.bold = true
         font.color = IndexedColors.WHITE.index
