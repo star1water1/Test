@@ -69,7 +69,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:inputType="text"
-            android:text="천개력" />
+            android:text="@string/default_calendar_type" />
 
     </com.google.android.material.textfield.TextInputLayout>
 

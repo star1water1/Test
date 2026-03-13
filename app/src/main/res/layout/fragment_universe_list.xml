@@ -14,7 +14,7 @@
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent"
-        app:title="세계관"
+        app:title="@string/tab_universes"
         app:titleTextColor="@color/on_primary"
         app:menu="@menu/main_menu" />
 
@@ -22,7 +22,7 @@
         android:id="@+id/emptyText"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="세계관을 추가해보세요"
+        android:text="@string/empty_universe_hint"
         android:textColor="@color/text_secondary"
         android:textSize="16sp"
         android:visibility="gone"
@@ -47,7 +47,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_margin="16dp"
-        android:contentDescription="세계관 추가"
+        android:contentDescription="@string/add_universe"
         android:src="@android:drawable/ic_input_add"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />

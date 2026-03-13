@@ -34,7 +34,7 @@ class FieldEditDialog : DialogFragment() {
         populateFields(binding)
 
         return AlertDialog.Builder(requireContext())
-            .setTitle(if (existingField == null) "필드 추가" else "필드 편집")
+            .setTitle(if (existingField == null) R.string.add_field else R.string.edit_field)
             .setView(binding.root)
             .setPositiveButton(R.string.save) { _, _ ->
                 saveField(binding)
@@ -44,7 +44,7 @@ class FieldEditDialog : DialogFragment() {
     }
 
     private fun setupTypeSpinner(binding: DialogFieldEditBinding) {
-        val types = FieldType.values()
+        val types = FieldType.entries.toTypedArray()
         val labels = types.map { it.label }
         val spinnerAdapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, labels)
         spinnerAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
@@ -73,7 +73,7 @@ class FieldEditDialog : DialogFragment() {
         binding.switchRequired.isChecked = field.isRequired
 
         // Set type spinner
-        val types = FieldType.values()
+        val types = FieldType.entries.toTypedArray()
         val typeIndex = types.indexOfFirst { it.name == field.type }
         if (typeIndex >= 0) binding.spinnerFieldType.setSelection(typeIndex)
 
@@ -110,7 +110,7 @@ class FieldEditDialog : DialogFragment() {
 
         if (name.isEmpty() || key.isEmpty()) return
 
-        val types = FieldType.values()
+        val types = FieldType.entries.toTypedArray()
         val selectedType = types[binding.spinnerFieldType.selectedItemPosition]
 
         val config = buildConfig(binding, selectedType)

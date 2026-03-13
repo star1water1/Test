@@ -118,18 +118,18 @@ class UniverseListFragment : Fragment() {
             setPadding(64, 32, 64, 16)
         }
         val nameEdit = EditText(requireContext()).apply {
-            hint = "세계관 이름"
+            hint = getString(R.string.universe_name_hint)
             universe?.let { setText(it.name) }
         }
         val descEdit = EditText(requireContext()).apply {
-            hint = "설명 (선택)"
+            hint = getString(R.string.universe_desc_hint)
             universe?.let { setText(it.description) }
         }
         layout.addView(nameEdit)
         layout.addView(descEdit)
 
         AlertDialog.Builder(requireContext())
-            .setTitle(if (universe == null) "세계관 추가" else "세계관 편집")
+            .setTitle(if (universe == null) R.string.add_universe else R.string.edit_universe)
             .setView(layout)
             .setPositiveButton(R.string.save) { _, _ ->
                 val name = nameEdit.text.toString().trim()
@@ -149,12 +149,12 @@ class UniverseListFragment : Fragment() {
     private fun showEditDeleteDialog(universe: Universe) {
         AlertDialog.Builder(requireContext())
             .setTitle(universe.name)
-            .setItems(arrayOf("편집", "삭제")) { _, which ->
+            .setItems(arrayOf(getString(R.string.menu_edit), getString(R.string.menu_delete))) { _, which ->
                 when (which) {
                     0 -> showUniverseEditDialog(universe)
                     1 -> {
                         AlertDialog.Builder(requireContext())
-                            .setMessage("\"${universe.name}\" 세계관을 삭제하시겠습니까?\n관련 필드 정의도 함께 삭제됩니다.")
+                            .setMessage(getString(R.string.confirm_delete_universe, universe.name))
                             .setPositiveButton(R.string.yes) { _, _ ->
                                 viewModel.deleteUniverse(universe)
                             }

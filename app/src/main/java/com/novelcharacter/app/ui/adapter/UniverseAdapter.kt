@@ -44,7 +44,7 @@ class UniverseAdapter(
 
         fun bind(universe: Universe) {
             binding.universeName.text = universe.name
-            binding.universeDescription.text = universe.description.ifEmpty { "설명 없음" }
+            binding.universeDescription.text = universe.description.ifEmpty { binding.root.context.getString(com.novelcharacter.app.R.string.no_description) }
 
             val nc = novelCounts[universe.id] ?: 0
             val fc = fieldCounts[universe.id] ?: 0

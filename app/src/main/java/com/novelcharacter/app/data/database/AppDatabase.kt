@@ -89,7 +89,7 @@ abstract class AppDatabase : RoomDatabase() {
                         `name` TEXT NOT NULL,
                         `type` TEXT NOT NULL,
                         `config` TEXT NOT NULL DEFAULT '{}',
-                        `groupName` TEXT NOT NULL DEFAULT '',
+                        `groupName` TEXT NOT NULL DEFAULT '기본 정보',
                         `displayOrder` INTEGER NOT NULL DEFAULT 0,
                         `isRequired` INTEGER NOT NULL DEFAULT 0,
                         FOREIGN KEY(`universeId`) REFERENCES `universes`(`id`) ON DELETE CASCADE

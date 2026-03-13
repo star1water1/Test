@@ -381,7 +381,8 @@ class CharacterDetailFragment : Fragment() {
         val timelineAdapter = TimelineAdapter(
             onClick = { /* 연표 클릭 시 */ },
             onLongClick = { /* 연표 롱클릭 시 */ },
-            coroutineScope = viewLifecycleOwner.lifecycleScope
+            coroutineScope = viewLifecycleOwner.lifecycleScope,
+            loadCharactersForEvent = { eventId -> viewModel.getCharactersForEvent(eventId) }
         )
         binding.eventsRecyclerView.layoutManager = LinearLayoutManager(requireContext())
         binding.eventsRecyclerView.adapter = timelineAdapter

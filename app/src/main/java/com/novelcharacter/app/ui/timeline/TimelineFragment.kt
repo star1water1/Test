@@ -79,7 +79,8 @@ class TimelineFragment : Fragment() {
                     }
                     .show()
             },
-            coroutineScope = viewLifecycleOwner.lifecycleScope
+            coroutineScope = viewLifecycleOwner.lifecycleScope,
+            loadCharactersForEvent = { eventId -> viewModel.getCharactersForEvent(eventId) }
         )
         binding.timelineRecyclerView.layoutManager = LinearLayoutManager(requireContext())
         binding.timelineRecyclerView.adapter = adapter
@@ -329,7 +330,9 @@ class TimelineFragment : Fragment() {
 
                     val calendarType = dialogBinding.editCalendarType.text.toString().trim()
                     val novelPosition = dialogBinding.spinnerNovel.selectedItemPosition
-                    val novelId = if (novelPosition > 0) novels[novelPosition - 1].id else null
+                    val selectedNovel = if (novelPosition > 0) novels[novelPosition - 1] else null
+                    val novelId = selectedNovel?.id
+                    val universeId = selectedNovel?.universeId ?: event?.universeId
 
                     val newEvent = TimelineEvent(
                         id = event?.id ?: 0,
@@ -338,6 +341,7 @@ class TimelineFragment : Fragment() {
                         day = day,
                         calendarType = calendarType,
                         description = description,
+                        universeId = universeId,
                         novelId = novelId,
                         createdAt = event?.createdAt ?: System.currentTimeMillis()
                     )

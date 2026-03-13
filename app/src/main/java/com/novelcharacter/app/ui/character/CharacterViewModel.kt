@@ -52,6 +52,9 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
 
     suspend fun getCharacterByIdSuspend(id: Long): Character? = repository.getCharacterById(id)
 
+    suspend fun getCharactersForEvent(eventId: Long): List<Character> =
+        repository.getCharactersForEvent(eventId)
+
     suspend fun getNovelById(id: Long): Novel? = repository.getNovelById(id)
 
     suspend fun getAllNovelsList(): List<Novel> = repository.getAllNovelsList()
@@ -78,6 +81,9 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
 
     suspend fun saveAllFieldValues(characterId: Long, values: List<CharacterFieldValue>) =
         repository.saveAllFieldValues(characterId, values)
+
+    suspend fun insertCharacterSuspend(character: Character): Long =
+        repository.insertCharacter(character)
 
     fun insertCharacterAndGetId(character: Character, onResult: (Long) -> Unit) = viewModelScope.launch {
         val id = repository.insertCharacter(character)

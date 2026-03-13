@@ -14,7 +14,7 @@
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent"
-        app:title="필드 관리"
+        app:title="@string/field_manage"
         app:titleTextColor="@color/on_primary"
         app:navigationIcon="?attr/homeAsUpIndicator" />
 
@@ -22,7 +22,7 @@
         android:id="@+id/emptyText"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="필드를 추가해보세요"
+        android:text="@string/empty_field_hint"
         android:textColor="@color/text_secondary"
         android:textSize="16sp"
         android:visibility="gone"
@@ -47,7 +47,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_margin="16dp"
-        android:contentDescription="필드 추가"
+        android:contentDescription="@string/add_field"
         android:src="@android:drawable/ic_input_add"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
