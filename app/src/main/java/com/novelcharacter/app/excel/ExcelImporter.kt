@@ -116,8 +116,9 @@ class ExcelImporter(private val context: Context) {
                     Toast.makeText(context, message, Toast.LENGTH_LONG).show()
                 }
             } catch (e: Exception) {
+                android.util.Log.e("ExcelImporter", "Import failed", e)
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(context, "가져오기 실패: ${e.message}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, "가져오기 실패: 잠시 후 다시 시도하세요", Toast.LENGTH_LONG).show()
                 }
             }
         }
@@ -746,9 +747,9 @@ class ExcelImporter(private val context: Context) {
         return allChars.find { it.name == name }
     }
 
-    private fun getCellString(row: Row, cellIndex: Int): String {
+    private fun getCellString(row: Row, cellIndex: Int, maxLength: Int = MAX_FIELD_LENGTH): String {
         val cell = row.getCell(cellIndex) ?: return ""
-        return when (cell.cellType) {
+        val raw = when (cell.cellType) {
             CellType.STRING -> cell.stringCellValue?.trim() ?: ""
             CellType.NUMERIC -> {
                 val value = cell.numericCellValue
@@ -768,5 +769,10 @@ class ExcelImporter(private val context: Context) {
             }
             else -> ""
         }
+        return if (raw.length > maxLength) raw.substring(0, maxLength) else raw
+    }
+
+    companion object {
+        private const val MAX_FIELD_LENGTH = 10000
     }
 }

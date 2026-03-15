@@ -52,8 +52,9 @@ class ExcelExporter(private val context: Context) {
                     Toast.makeText(context, "내보내기 완료: $fileName", Toast.LENGTH_LONG).show()
                 }
             } catch (e: Exception) {
+                android.util.Log.e("ExcelExporter", "Export failed", e)
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(context, "내보내기 실패: ${e.message}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, "내보내기 실패: 잠시 후 다시 시도하세요", Toast.LENGTH_LONG).show()
                 }
             }
         }
