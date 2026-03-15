@@ -87,9 +87,12 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     suspend fun insertCharacterSuspend(character: Character): Long =
         repository.insertCharacter(character)
 
-    fun insertCharacterAndGetId(character: Character, onResult: (Long) -> Unit) = viewModelScope.launch {
+    private val _insertedCharacterId = MutableLiveData<Long>()
+    val insertedCharacterId: LiveData<Long> = _insertedCharacterId
+
+    fun insertCharacterAndGetId(character: Character) = viewModelScope.launch {
         val id = repository.insertCharacter(character)
-        onResult(id)
+        _insertedCharacterId.value = id
     }
 
     // ===== CharacterStateChange =====

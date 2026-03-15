@@ -36,6 +36,10 @@ class TimelineFragment : Fragment() {
     private lateinit var adapter: TimelineAdapter
     private lateinit var scaleGestureDetector: ScaleGestureDetector
 
+    // Cached data for spinner filters
+    private var cachedNovels: List<Novel> = emptyList()
+    private var cachedCharacters: List<Character> = emptyList()
+
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
     ): View {
@@ -161,40 +165,44 @@ class TimelineFragment : Fragment() {
     }
 
     private fun setupFilters() {
-        // Novel filter
-        viewModel.allNovels.observe(viewLifecycleOwner) { novels ->
-            val novelNames = mutableListOf("전체 작품")
-            novelNames.addAll(novels.map { it.title })
-            val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, novelNames)
-            adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-            binding.spinnerFilterNovel.adapter = adapter
-
-            binding.spinnerFilterNovel.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
-                override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: android.view.View?, position: Int, id: Long) {
-                    val novelId = if (position > 0) novels[position - 1].id else null
-                    viewModel.setFilterNovel(novelId)
-                    updateClearFilterButton()
-                }
-                override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
+        // Novel filter - setup listener once
+        binding.spinnerFilterNovel.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: android.view.View?, position: Int, id: Long) {
+                val novelId = if (position > 0) cachedNovels.getOrNull(position - 1)?.id else null
+                viewModel.setFilterNovel(novelId)
+                updateClearFilterButton()
             }
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
         }
 
-        // Character filter
+        // Character filter - setup listener once
+        binding.spinnerFilterCharacter.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: android.view.View?, position: Int, id: Long) {
+                val charId = if (position > 0) cachedCharacters.getOrNull(position - 1)?.id else null
+                viewModel.setFilterCharacter(charId)
+                updateClearFilterButton()
+            }
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
+        }
+
+        // Observe novel data and update spinner adapter only
+        viewModel.allNovels.observe(viewLifecycleOwner) { novels ->
+            cachedNovels = novels
+            val novelNames = mutableListOf("전체 작품")
+            novelNames.addAll(novels.map { it.title })
+            val spinnerAdapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, novelNames)
+            spinnerAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+            binding.spinnerFilterNovel.adapter = spinnerAdapter
+        }
+
+        // Observe character data and update spinner adapter only
         viewModel.allCharacters.observe(viewLifecycleOwner) { characters ->
+            cachedCharacters = characters
             val charNames = mutableListOf("전체 캐릭터")
             charNames.addAll(characters.map { it.name })
-            val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, charNames)
-            adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-            binding.spinnerFilterCharacter.adapter = adapter
-
-            binding.spinnerFilterCharacter.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
-                override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: android.view.View?, position: Int, id: Long) {
-                    val charId = if (position > 0) characters[position - 1].id else null
-                    viewModel.setFilterCharacter(charId)
-                    updateClearFilterButton()
-                }
-                override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
-            }
+            val spinnerAdapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, charNames)
+            spinnerAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+            binding.spinnerFilterCharacter.adapter = spinnerAdapter
         }
 
         // Clear filter button

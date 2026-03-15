@@ -745,11 +745,12 @@ class CharacterDetailFragment : Fragment() {
                 val imageView = holder.itemView as ImageView
                 imageView.setImageResource(R.drawable.ic_character_placeholder)
                 val path = imagePaths[position]
+                val boundPosition = position
                 viewLifecycleOwner.lifecycleScope.launch {
                     val bitmap = withContext(Dispatchers.IO) {
                         decodeSampledBitmap(path, 1024, 1024)
                     }
-                    if (bitmap != null) {
+                    if (bitmap != null && holder.bindingAdapterPosition == boundPosition) {
                         imageView.setImageBitmap(bitmap)
                     }
                 }
@@ -904,6 +905,8 @@ class CharacterDetailFragment : Fragment() {
     }
 
     override fun onDestroyView() {
+        relationshipJob?.cancel()
+        relationshipJob = null
         super.onDestroyView()
         _binding = null
     }

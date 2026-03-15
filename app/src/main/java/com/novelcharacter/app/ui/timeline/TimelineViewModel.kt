@@ -6,11 +6,15 @@ import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.TimelineEvent
+import android.util.Log
 import kotlinx.coroutines.launch
 
 class TimelineViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = (application as NovelCharacterApp).repository
+
+    private val _error = MutableLiveData<String?>()
+    val error: LiveData<String?> = _error
 
     val allEvents: LiveData<List<TimelineEvent>> = repository.allEvents
     val allNovels: LiveData<List<Novel>> = repository.allNovels
@@ -150,16 +154,34 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
         repository.getCharactersForEvent(eventId)
 
     fun insertEvent(event: TimelineEvent, characterIds: List<Long>) = viewModelScope.launch {
-        val eventId = repository.insertEvent(event)
-        repository.updateEventCharacters(eventId, characterIds)
+        try {
+            val eventId = repository.insertEvent(event)
+            repository.updateEventCharacters(eventId, characterIds)
+        } catch (e: Exception) {
+            Log.e("TimelineViewModel", "Failed to insert event", e)
+            _error.value = e.message
+            _error.value = null
+        }
     }
 
     fun updateEvent(event: TimelineEvent, characterIds: List<Long>) = viewModelScope.launch {
-        repository.updateEvent(event)
-        repository.updateEventCharacters(event.id, characterIds)
+        try {
+            repository.updateEvent(event)
+            repository.updateEventCharacters(event.id, characterIds)
+        } catch (e: Exception) {
+            Log.e("TimelineViewModel", "Failed to update event", e)
+            _error.value = e.message
+            _error.value = null
+        }
     }
 
     fun deleteEvent(event: TimelineEvent) = viewModelScope.launch {
-        repository.deleteEvent(event)
+        try {
+            repository.deleteEvent(event)
+        } catch (e: Exception) {
+            Log.e("TimelineViewModel", "Failed to delete event", e)
+            _error.value = e.message
+            _error.value = null
+        }
     }
 }

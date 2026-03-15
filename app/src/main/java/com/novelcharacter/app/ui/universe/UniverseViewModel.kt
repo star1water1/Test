@@ -45,11 +45,15 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
     fun getPresetTemplates(): List<PresetTemplates.PresetTemplate> =
         PresetTemplates.getTemplates()
 
-    fun applyPreset(template: PresetTemplates.PresetTemplate, onComplete: () -> Unit) =
+    private val _presetApplied = MutableLiveData<String?>()
+    val presetApplied: LiveData<String?> = _presetApplied
+
+    fun applyPreset(template: PresetTemplates.PresetTemplate) =
         viewModelScope.launch {
             val universeId = repository.insertUniverse(template.universe)
             val fieldsWithId = template.fields.map { it.copy(universeId = universeId) }
             repository.insertAllFields(fieldsWithId)
-            onComplete()
+            _presetApplied.value = template.universe.name
+            _presetApplied.value = null  // reset for next observation
         }
 }

@@ -84,13 +84,7 @@ class UniverseListFragment : Fragment() {
             .setTitle(R.string.select_preset)
             .setItems(names) { _, which ->
                 val template = templates[which]
-                viewModel.applyPreset(template) {
-                    Toast.makeText(
-                        requireContext(),
-                        getString(R.string.preset_loaded, template.universe.name),
-                        Toast.LENGTH_SHORT
-                    ).show()
-                }
+                viewModel.applyPreset(template)
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
@@ -109,6 +103,16 @@ class UniverseListFragment : Fragment() {
 
         viewModel.universeFieldCounts.observe(viewLifecycleOwner) { counts ->
             adapter.updateFieldCounts(counts)
+        }
+
+        viewModel.presetApplied.observe(viewLifecycleOwner) { name ->
+            if (name != null) {
+                Toast.makeText(
+                    requireContext(),
+                    getString(R.string.preset_loaded, name),
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
         }
     }
 

@@ -499,11 +499,12 @@ class CharacterEditFragment : Fragment() {
                     imageView.setImageResource(R.drawable.ic_character_placeholder)
                     if (position < imagePaths.size) {
                         val path = imagePaths[position]
+                        val boundPosition = position
                         viewLifecycleOwner.lifecycleScope.launch {
                             val bitmap = withContext(Dispatchers.IO) {
                                 decodeSampledBitmap(path, 200, 200)
                             }
-                            if (bitmap != null) {
+                            if (bitmap != null && holder.bindingAdapterPosition == boundPosition) {
                                 imageView.setImageBitmap(bitmap)
                             }
                         }
