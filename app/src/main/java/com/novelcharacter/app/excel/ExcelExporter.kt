@@ -30,9 +30,14 @@ class ExcelExporter(private val context: Context) {
             try {
                 val workbook = XSSFWorkbook()
                 val headerStyle = createHeaderStyle(workbook)
+                val usedSheetNames = mutableSetOf<String>()
 
-                exportCharacters(workbook, headerStyle)
-                exportTimeline(workbook, headerStyle)
+                exportUniverses(workbook, headerStyle, usedSheetNames)
+                exportNovels(workbook, headerStyle, usedSheetNames)
+                exportFieldDefinitions(workbook, headerStyle, usedSheetNames)
+                exportCharacters(workbook, headerStyle, usedSheetNames)
+                exportTimeline(workbook, headerStyle, usedSheetNames)
+                exportStateChanges(workbook, headerStyle, usedSheetNames)
 
                 val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
                 val fileName = "NovelCharacter_$timestamp.xlsx"
@@ -53,7 +58,6 @@ class ExcelExporter(private val context: Context) {
 
     private fun saveWorkbook(workbook: XSSFWorkbook, fileName: String) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            // API 29+ : MediaStore 사용 (Scoped Storage)
             val contentValues = ContentValues().apply {
                 put(MediaStore.Downloads.DISPLAY_NAME, fileName)
                 put(MediaStore.Downloads.MIME_TYPE,
@@ -68,7 +72,6 @@ class ExcelExporter(private val context: Context) {
                 workbook.write(outputStream)
             } ?: throw Exception("파일에 쓸 수 없습니다")
         } else {
-            // API 28 이하: 기존 방식
             val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
             val file = File(downloadsDir, fileName)
             FileOutputStream(file).use { outputStream ->
@@ -77,7 +80,123 @@ class ExcelExporter(private val context: Context) {
         }
     }
 
-    private suspend fun exportCharacters(workbook: XSSFWorkbook, headerStyle: XSSFCellStyle) {
+    private fun sanitizeSheetName(name: String, usedNames: MutableSet<String>): String {
+        // Excel 시트명: 최대 31자, 특수문자 제거
+        var sanitized = name
+            .replace(Regex("[\\[\\]*/\\\\?:]"), "")
+            .take(31)
+        if (sanitized.isBlank()) sanitized = "Sheet"
+
+        var result = sanitized
+        var counter = 2
+        while (result in usedNames) {
+            val suffix = "($counter)"
+            result = sanitized.take(31 - suffix.length) + suffix
+            counter++
+        }
+        usedNames.add(result)
+        return result
+    }
+
+    private suspend fun exportUniverses(
+        workbook: XSSFWorkbook,
+        headerStyle: XSSFCellStyle,
+        usedSheetNames: MutableSet<String>
+    ) {
+        val universes = db.universeDao().getAllUniversesList()
+        if (universes.isEmpty()) return
+
+        val sheetName = sanitizeSheetName("세계관", usedSheetNames)
+        val sheet = workbook.createSheet(sheetName)
+        val headers = listOf("이름", "설명")
+
+        val headerRow = sheet.createRow(0)
+        headers.forEachIndexed { index, header ->
+            val cell = headerRow.createCell(index)
+            cell.setCellValue(header)
+            cell.cellStyle = headerStyle
+        }
+
+        universes.forEachIndexed { index, universe ->
+            val row = sheet.createRow(index + 1)
+            row.createCell(0).setCellValue(universe.name)
+            row.createCell(1).setCellValue(universe.description)
+        }
+
+        headers.indices.forEach { sheet.setColumnWidth(it, 8000) }
+    }
+
+    private suspend fun exportNovels(
+        workbook: XSSFWorkbook,
+        headerStyle: XSSFCellStyle,
+        usedSheetNames: MutableSet<String>
+    ) {
+        val novels = db.novelDao().getAllNovelsList()
+        val universes = db.universeDao().getAllUniversesList()
+        if (novels.isEmpty()) return
+
+        val sheetName = sanitizeSheetName("작품", usedSheetNames)
+        val sheet = workbook.createSheet(sheetName)
+        val headers = listOf("제목", "설명", "세계관")
+
+        val headerRow = sheet.createRow(0)
+        headers.forEachIndexed { index, header ->
+            val cell = headerRow.createCell(index)
+            cell.setCellValue(header)
+            cell.cellStyle = headerStyle
+        }
+
+        novels.forEachIndexed { index, novel ->
+            val row = sheet.createRow(index + 1)
+            row.createCell(0).setCellValue(novel.title)
+            row.createCell(1).setCellValue(novel.description)
+            val universeName = universes.find { it.id == novel.universeId }?.name ?: ""
+            row.createCell(2).setCellValue(universeName)
+        }
+
+        headers.indices.forEach { sheet.setColumnWidth(it, 8000) }
+    }
+
+    private suspend fun exportFieldDefinitions(
+        workbook: XSSFWorkbook,
+        headerStyle: XSSFCellStyle,
+        usedSheetNames: MutableSet<String>
+    ) {
+        val universes = db.universeDao().getAllUniversesList()
+        val allFields = mutableListOf<Pair<String, com.novelcharacter.app.data.model.FieldDefinition>>()
+        for (universe in universes) {
+            val fields = db.fieldDefinitionDao().getFieldsByUniverseList(universe.id)
+            fields.forEach { allFields.add(universe.name to it) }
+        }
+        if (allFields.isEmpty()) return
+
+        val sheetName = sanitizeSheetName("필드 정의", usedSheetNames)
+        val sheet = workbook.createSheet(sheetName)
+        val headers = listOf("세계관", "필드키", "필드명", "타입", "설정(JSON)", "그룹", "순서", "필수여부")
+
+        val headerRow = sheet.createRow(0)
+        headers.forEachIndexed { index, header ->
+            val cell = headerRow.createCell(index)
+            cell.setCellValue(header)
+            cell.cellStyle = headerStyle
+        }
+
+        allFields.forEachIndexed { index, (universeName, field) ->
+            val row = sheet.createRow(index + 1)
+            row.createCell(0).setCellValue(universeName)
+            row.createCell(1).setCellValue(field.key)
+            row.createCell(2).setCellValue(field.name)
+            row.createCell(3).setCellValue(field.type)
+            row.createCell(4).setCellValue(field.config)
+            row.createCell(5).setCellValue(field.groupName)
+            row.createCell(6).setCellValue(field.displayOrder.toDouble())
+            row.createCell(7).setCellValue(if (field.isRequired) "Y" else "N")
+        }
+
+        headers.indices.forEach { sheet.setColumnWidth(it, 5000) }
+    }
+
+    private suspend fun exportCharacters(workbook: XSSFWorkbook, headerStyle: XSSFCellStyle, usedSheetNames: MutableSet<String>) {
         val novels = db.novelDao().getAllNovelsList()
         val allCharacters = db.characterDao().getAllCharactersList()
         val universes = db.universeDao().getAllUniversesList()
@@ -93,12 +212,13 @@ class ExcelExporter(private val context: Context) {
 
             if (universeChars.isEmpty()) continue
 
-            val sheetName = universe.name.take(31)
+            val sheetName = sanitizeSheetName(universe.name, usedSheetNames)
             val sheet = workbook.createSheet(sheetName)
 
-            // 헤더: 이름 + 동적 필드 + 작품
+            // 헤더: 이름 + 동적 필드 + 이미지경로 + 작품
             val headers = mutableListOf("이름")
             headers.addAll(fields.map { it.name })
+            headers.add("이미지경로")
             headers.add("작품")
 
             val headerRow = sheet.createRow(0)
@@ -121,7 +241,8 @@ class ExcelExporter(private val context: Context) {
                     row.createCell(fi + 1).setCellValue(value)
                 }
 
-                row.createCell(fields.size + 1).setCellValue(novelTitle)
+                row.createCell(fields.size + 1).setCellValue(character.imagePaths)
+                row.createCell(fields.size + 2).setCellValue(novelTitle)
             }
 
             headers.indices.forEach { sheet.setColumnWidth(it, 5000) }
@@ -133,9 +254,11 @@ class ExcelExporter(private val context: Context) {
             novel?.universeId == null
         }
         if (unassignedChars.isNotEmpty()) {
-            val sheet = workbook.createSheet("미분류 캐릭터")
+            val sheetName = sanitizeSheetName("미분류 캐릭터", usedSheetNames)
+            val sheet = workbook.createSheet(sheetName)
+            val headers = listOf("이름", "이미지경로", "작품")
             val headerRow = sheet.createRow(0)
-            listOf("이름", "작품").forEachIndexed { index, header ->
+            headers.forEachIndexed { index, header ->
                 val cell = headerRow.createCell(index)
                 cell.setCellValue(header)
                 cell.cellStyle = headerStyle
@@ -143,16 +266,19 @@ class ExcelExporter(private val context: Context) {
             unassignedChars.forEachIndexed { index, character ->
                 val row = sheet.createRow(index + 1)
                 row.createCell(0).setCellValue(character.name)
-                row.createCell(1).setCellValue(novels.find { it.id == character.novelId }?.title ?: "")
+                row.createCell(1).setCellValue(character.imagePaths)
+                row.createCell(2).setCellValue(novels.find { it.id == character.novelId }?.title ?: "")
             }
+            headers.indices.forEach { sheet.setColumnWidth(it, 5000) }
         }
     }
 
-    private suspend fun exportTimeline(workbook: XSSFWorkbook, headerStyle: XSSFCellStyle) {
+    private suspend fun exportTimeline(workbook: XSSFWorkbook, headerStyle: XSSFCellStyle, usedSheetNames: MutableSet<String>) {
         val events = db.timelineDao().getAllEventsList()
         val novels = db.novelDao().getAllNovelsList()
 
-        val sheet = workbook.createSheet("사건 연표")
+        val sheetName = sanitizeSheetName("사건 연표", usedSheetNames)
+        val sheet = workbook.createSheet(sheetName)
         val headers = listOf("연도", "월", "일", "역법", "사건 설명", "관련 작품", "관련 캐릭터")
 
         val headerRow = sheet.createRow(0)
@@ -165,8 +291,8 @@ class ExcelExporter(private val context: Context) {
         events.forEachIndexed { index, event ->
             val row = sheet.createRow(index + 1)
             row.createCell(0).setCellValue(event.year.toDouble())
-            row.createCell(1).setCellValue(event.month?.toDouble() ?: 0.0)
-            row.createCell(2).setCellValue(event.day?.toDouble() ?: 0.0)
+            event.month?.let { row.createCell(1).setCellValue(it.toDouble()) }
+            event.day?.let { row.createCell(2).setCellValue(it.toDouble()) }
             row.createCell(3).setCellValue(event.calendarType)
             row.createCell(4).setCellValue(event.description)
 
@@ -184,6 +310,48 @@ class ExcelExporter(private val context: Context) {
         sheet.setColumnWidth(4, 15000)
         sheet.setColumnWidth(5, 5000)
         sheet.setColumnWidth(6, 10000)
+    }
+
+    private suspend fun exportStateChanges(
+        workbook: XSSFWorkbook,
+        headerStyle: XSSFCellStyle,
+        usedSheetNames: MutableSet<String>
+    ) {
+        val allCharacters = db.characterDao().getAllCharactersList()
+        val novels = db.novelDao().getAllNovelsList()
+
+        val allChanges = mutableListOf<Triple<String, String, com.novelcharacter.app.data.model.CharacterStateChange>>()
+        for (character in allCharacters) {
+            val changes = db.characterStateChangeDao().getChangesByCharacterList(character.id)
+            val novelTitle = novels.find { it.id == character.novelId }?.title ?: ""
+            changes.forEach { allChanges.add(Triple(character.name, novelTitle, it)) }
+        }
+        if (allChanges.isEmpty()) return
+
+        val sheetName = sanitizeSheetName("캐릭터 상태변화", usedSheetNames)
+        val sheet = workbook.createSheet(sheetName)
+        val headers = listOf("캐릭터", "작품", "연도", "월", "일", "필드키", "새 값", "설명")
+
+        val headerRow = sheet.createRow(0)
+        headers.forEachIndexed { index, header ->
+            val cell = headerRow.createCell(index)
+            cell.setCellValue(header)
+            cell.cellStyle = headerStyle
+        }
+
+        allChanges.forEachIndexed { index, (charName, novelTitle, change) ->
+            val row = sheet.createRow(index + 1)
+            row.createCell(0).setCellValue(charName)
+            row.createCell(1).setCellValue(novelTitle)
+            row.createCell(2).setCellValue(change.year.toDouble())
+            change.month?.let { row.createCell(3).setCellValue(it.toDouble()) }
+            change.day?.let { row.createCell(4).setCellValue(it.toDouble()) }
+            row.createCell(5).setCellValue(change.fieldKey)
+            row.createCell(6).setCellValue(change.newValue)
+            row.createCell(7).setCellValue(change.description)
+        }
+
+        headers.indices.forEach { sheet.setColumnWidth(it, 5000) }
     }
 
     private fun createHeaderStyle(workbook: XSSFWorkbook): XSSFCellStyle {

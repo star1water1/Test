@@ -35,6 +35,12 @@ interface NovelDao {
 
     @Query("SELECT universeId, COUNT(*) as cnt FROM novels WHERE universeId IN (:universeIds) GROUP BY universeId")
     suspend fun getNovelCountsByUniverses(universeIds: List<Long>): List<UniverseCount>
+
+    @Query("SELECT * FROM novels WHERE title = :title AND universeId = :universeId LIMIT 1")
+    suspend fun getNovelByTitleAndUniverse(title: String, universeId: Long): Novel?
+
+    @Query("SELECT * FROM novels WHERE title = :title AND universeId IS NULL LIMIT 1")
+    suspend fun getNovelByTitleNoUniverse(title: String): Novel?
 }
 
 data class UniverseCount(val universeId: Long, val cnt: Int)

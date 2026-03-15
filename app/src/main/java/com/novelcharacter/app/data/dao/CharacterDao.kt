@@ -27,6 +27,9 @@ interface CharacterDao {
     @Query("SELECT * FROM characters WHERE name LIKE '%' || :query || '%'")
     fun searchCharacters(query: String): LiveData<List<Character>>
 
+    @Query("SELECT * FROM characters WHERE name = :name AND novelId = :novelId LIMIT 1")
+    suspend fun getCharacterByNameAndNovel(name: String, novelId: Long): Character?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(character: Character): Long
 

@@ -77,4 +77,10 @@ interface TimelineDao {
 
     @Query("SELECT * FROM timeline_events WHERE year = :year AND (:month IS NULL OR month = :month) AND (:day IS NULL OR day = :day) ORDER BY year ASC")
     fun getEventsByYearMonthDay(year: Int, month: Int?, day: Int?): LiveData<List<TimelineEvent>>
+
+    @Query("SELECT * FROM timeline_events WHERE year = :year AND description = :description AND novelId = :novelId LIMIT 1")
+    suspend fun getEventByNaturalKey(year: Int, description: String, novelId: Long): TimelineEvent?
+
+    @Query("SELECT * FROM timeline_events WHERE year = :year AND description = :description AND novelId IS NULL LIMIT 1")
+    suspend fun getEventByNaturalKeyNoNovel(year: Int, description: String): TimelineEvent?
 }

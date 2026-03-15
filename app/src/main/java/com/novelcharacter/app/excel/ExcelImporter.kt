@@ -5,17 +5,24 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.Fragment
+import androidx.room.withTransaction
 import com.novelcharacter.app.data.database.AppDatabase
 import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.CharacterFieldValue
+import com.novelcharacter.app.data.model.CharacterStateChange
+import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.Novel
+import com.novelcharacter.app.data.model.TimelineCharacterCrossRef
 import com.novelcharacter.app.data.model.TimelineEvent
+import com.novelcharacter.app.data.model.Universe
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.apache.poi.ss.usermodel.CellType
 import org.apache.poi.ss.usermodel.Row
+import org.apache.poi.ss.usermodel.Sheet
+import org.apache.poi.ss.usermodel.Workbook
 import org.apache.poi.ss.usermodel.WorkbookFactory
 
 class ExcelImporter(private val context: Context) {
@@ -49,6 +56,23 @@ class ExcelImporter(private val context: Context) {
         }
     }
 
+    private data class ImportResult(
+        var newUniverses: Int = 0,
+        var updatedUniverses: Int = 0,
+        var newNovels: Int = 0,
+        var updatedNovels: Int = 0,
+        var newFields: Int = 0,
+        var updatedFields: Int = 0,
+        var newCharacters: Int = 0,
+        var updatedCharacters: Int = 0,
+        var newEvents: Int = 0,
+        var updatedEvents: Int = 0,
+        var newStateChanges: Int = 0,
+        var updatedStateChanges: Int = 0,
+        var skippedRows: Int = 0,
+        val errors: MutableList<String> = mutableListOf()
+    )
+
     fun importFromExcel(uri: Uri) {
         CoroutineScope(Dispatchers.IO).launch {
             try {
@@ -56,100 +80,25 @@ class ExcelImporter(private val context: Context) {
                     ?: throw Exception("파일을 열 수 없습니다")
 
                 val workbook = WorkbookFactory.create(inputStream)
-                var importedCharacters = 0
-                var importedEvents = 0
+                val result = ImportResult()
 
-                // 세계관별 시트에서 캐릭터 가져오기
-                val universes = db.universeDao().getAllUniversesList()
-
-                for (universe in universes) {
-                    val sheet = workbook.getSheet(universe.name) ?: continue
-                    val fields = db.fieldDefinitionDao().getFieldsByUniverseList(universe.id)
-                    val headerRow = sheet.getRow(0) ?: continue
-
-                    // 첫 번째 열이 "이름"인지 확인
-                    if (getCellString(headerRow, 0) != "이름") continue
-
-                    for (i in 1..sheet.lastRowNum) {
-                        val row = sheet.getRow(i) ?: continue
-                        val name = getCellString(row, 0)
-                        if (name.isBlank()) continue
-
-                        // 마지막 열은 "작품"
-                        val novelTitle = getCellString(row, fields.size + 1)
-                        val novelId = if (novelTitle.isNotBlank()) {
-                            val existingNovels = db.novelDao().getAllNovelsList()
-                            val existing = existingNovels.find { it.title == novelTitle }
-                            existing?.id ?: db.novelDao().insert(
-                                Novel(title = novelTitle, universeId = universe.id)
-                            )
-                        } else null
-
-                        val character = Character(name = name, novelId = novelId)
-                        val charId = db.characterDao().insert(character)
-
-                        // 동적 필드 값 가져오기
-                        val fieldValues = mutableListOf<CharacterFieldValue>()
-                        fields.forEachIndexed { fi, field ->
-                            val value = getCellString(row, fi + 1)
-                            if (value.isNotBlank()) {
-                                fieldValues.add(
-                                    CharacterFieldValue(
-                                        characterId = charId,
-                                        fieldDefinitionId = field.id,
-                                        value = value
-                                    )
-                                )
-                            }
-                        }
-                        if (fieldValues.isNotEmpty()) {
-                            db.characterFieldValueDao().insertAll(fieldValues)
-                        }
-                        importedCharacters++
-                    }
-                }
-
-                // 연표 시트 가져오기
-                val timelineSheet = workbook.getSheet("사건 연표")
-                if (timelineSheet != null) {
-                    for (i in 1..timelineSheet.lastRowNum) {
-                        val row = timelineSheet.getRow(i) ?: continue
-                        val yearStr = getCellString(row, 0)
-                        val year = yearStr.toDoubleOrNull()?.toInt() ?: continue
-                        val description = getCellString(row, 4)
-                        if (description.isBlank()) continue
-
-                        val month = getCellString(row, 1).toDoubleOrNull()?.toInt()?.takeIf { it > 0 }
-                        val day = getCellString(row, 2).toDoubleOrNull()?.toInt()?.takeIf { it > 0 }
-                        val calendarType = getCellString(row, 3)
-                        val novelTitle = getCellString(row, 5)
-                        val novelId = if (novelTitle.isNotBlank()) {
-                            val existingNovels = db.novelDao().getAllNovelsList()
-                            existingNovels.find { it.title == novelTitle }?.id
-                        } else null
-
-                        val event = TimelineEvent(
-                            year = year,
-                            month = month,
-                            day = day,
-                            calendarType = calendarType.ifBlank { "천개력" },
-                            description = description,
-                            novelId = novelId
-                        )
-                        db.timelineDao().insert(event)
-                        importedEvents++
-                    }
+                db.withTransaction {
+                    // 의존성 순서대로 가져오기
+                    importUniverses(workbook, result)
+                    importNovels(workbook, result)
+                    importFieldDefinitions(workbook, result)
+                    importCharacterSheets(workbook, result)
+                    importUnclassifiedCharacters(workbook, result)
+                    importTimeline(workbook, result)
+                    importStateChanges(workbook, result)
                 }
 
                 workbook.close()
                 inputStream.close()
 
+                val message = buildResultMessage(result)
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(
-                        context,
-                        "가져오기 완료: 캐릭터 ${importedCharacters}명, 사건 ${importedEvents}개",
-                        Toast.LENGTH_LONG
-                    ).show()
+                    Toast.makeText(context, message, Toast.LENGTH_LONG).show()
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
@@ -157,6 +106,485 @@ class ExcelImporter(private val context: Context) {
                 }
             }
         }
+    }
+
+    private fun buildResultMessage(result: ImportResult): String {
+        val parts = mutableListOf<String>()
+        val charTotal = result.newCharacters + result.updatedCharacters
+        val eventTotal = result.newEvents + result.updatedEvents
+
+        if (result.newUniverses > 0 || result.updatedUniverses > 0)
+            parts.add("세계관 ${result.newUniverses + result.updatedUniverses}개")
+        if (result.newNovels > 0 || result.updatedNovels > 0)
+            parts.add("작품 ${result.newNovels + result.updatedNovels}개")
+        if (result.newFields > 0 || result.updatedFields > 0)
+            parts.add("필드 ${result.newFields + result.updatedFields}개")
+        if (charTotal > 0) {
+            val detail = if (result.updatedCharacters > 0) " (업데이트 ${result.updatedCharacters}명)" else ""
+            parts.add("캐릭터 ${charTotal}명$detail")
+        }
+        if (eventTotal > 0) {
+            val detail = if (result.updatedEvents > 0) " (업데이트 ${result.updatedEvents}개)" else ""
+            parts.add("사건 ${eventTotal}개$detail")
+        }
+        val scTotal = result.newStateChanges + result.updatedStateChanges
+        if (scTotal > 0) {
+            val detail = if (result.updatedStateChanges > 0) " (업데이트 ${result.updatedStateChanges}개)" else ""
+            parts.add("상태변화 ${scTotal}개$detail")
+        }
+        if (result.skippedRows > 0)
+            parts.add("오류 ${result.skippedRows}건 건너뜀")
+
+        return if (parts.isEmpty()) "가져오기 완료: 데이터 없음"
+        else "가져오기 완료: ${parts.joinToString(", ")}"
+    }
+
+    // ── 세계관 가져오기 ──
+
+    private suspend fun importUniverses(workbook: Workbook, result: ImportResult) {
+        val sheet = workbook.getSheet("세계관") ?: return
+        val headerRow = sheet.getRow(0) ?: return
+        if (getCellString(headerRow, 0) != "이름") return
+
+        for (i in 1..sheet.lastRowNum) {
+            try {
+                val row = sheet.getRow(i) ?: continue
+                val name = getCellString(row, 0)
+                if (name.isBlank()) continue
+
+                val description = getCellString(row, 1)
+                val existing = db.universeDao().getUniverseByName(name)
+                if (existing != null) {
+                    db.universeDao().update(existing.copy(description = description))
+                    result.updatedUniverses++
+                } else {
+                    db.universeDao().insert(Universe(name = name, description = description))
+                    result.newUniverses++
+                }
+            } catch (e: Exception) {
+                result.skippedRows++
+                result.errors.add("세계관 행 $i: ${e.message}")
+            }
+        }
+    }
+
+    // ── 작품 가져오기 ──
+
+    private suspend fun importNovels(workbook: Workbook, result: ImportResult) {
+        val sheet = workbook.getSheet("작품") ?: return
+        val headerRow = sheet.getRow(0) ?: return
+        if (getCellString(headerRow, 0) != "제목") return
+
+        for (i in 1..sheet.lastRowNum) {
+            try {
+                val row = sheet.getRow(i) ?: continue
+                val title = getCellString(row, 0)
+                if (title.isBlank()) continue
+
+                val description = getCellString(row, 1)
+                val universeName = getCellString(row, 2)
+                val universeId = if (universeName.isNotBlank()) {
+                    db.universeDao().getUniverseByName(universeName)?.id
+                } else null
+
+                val existing = if (universeId != null) {
+                    db.novelDao().getNovelByTitleAndUniverse(title, universeId)
+                } else {
+                    db.novelDao().getNovelByTitleNoUniverse(title)
+                }
+
+                if (existing != null) {
+                    db.novelDao().update(existing.copy(description = description, universeId = universeId))
+                    result.updatedNovels++
+                } else {
+                    db.novelDao().insert(Novel(title = title, description = description, universeId = universeId))
+                    result.newNovels++
+                }
+            } catch (e: Exception) {
+                result.skippedRows++
+                result.errors.add("작품 행 $i: ${e.message}")
+            }
+        }
+    }
+
+    // ── 필드 정의 가져오기 ──
+
+    private suspend fun importFieldDefinitions(workbook: Workbook, result: ImportResult) {
+        val sheet = workbook.getSheet("필드 정의") ?: return
+        val headerRow = sheet.getRow(0) ?: return
+        if (getCellString(headerRow, 0) != "세계관") return
+
+        for (i in 1..sheet.lastRowNum) {
+            try {
+                val row = sheet.getRow(i) ?: continue
+                val universeName = getCellString(row, 0)
+                if (universeName.isBlank()) continue
+
+                val universe = db.universeDao().getUniverseByName(universeName) ?: continue
+                val key = getCellString(row, 1)
+                if (key.isBlank()) continue
+
+                val name = getCellString(row, 2)
+                val type = getCellString(row, 3)
+                val config = getCellString(row, 4).ifBlank { "{}" }
+                val groupName = getCellString(row, 5).ifBlank { "기본 정보" }
+                val displayOrder = getCellString(row, 6).toDoubleOrNull()?.toInt() ?: 0
+                val isRequired = getCellString(row, 7) == "Y"
+
+                val existing = db.fieldDefinitionDao().getFieldByKey(universe.id, key)
+                if (existing != null) {
+                    db.fieldDefinitionDao().update(existing.copy(
+                        name = name,
+                        type = type,
+                        config = config,
+                        groupName = groupName,
+                        displayOrder = displayOrder,
+                        isRequired = isRequired
+                    ))
+                    result.updatedFields++
+                } else {
+                    db.fieldDefinitionDao().insert(FieldDefinition(
+                        universeId = universe.id,
+                        key = key,
+                        name = name,
+                        type = type,
+                        config = config,
+                        groupName = groupName,
+                        displayOrder = displayOrder,
+                        isRequired = isRequired
+                    ))
+                    result.newFields++
+                }
+            } catch (e: Exception) {
+                result.skippedRows++
+                result.errors.add("필드 정의 행 $i: ${e.message}")
+            }
+        }
+    }
+
+    // ── 세계관별 캐릭터 시트 가져오기 ──
+
+    private suspend fun importCharacterSheets(workbook: Workbook, result: ImportResult) {
+        val universes = db.universeDao().getAllUniversesList()
+        val reservedNames = setOf("세계관", "작품", "필드 정의", "미분류 캐릭터", "사건 연표", "캐릭터 상태변화")
+
+        for (universe in universes) {
+            // 시트 찾기: 세계관 이름과 일치하는 시트
+            val sheet = findSheetForUniverse(workbook, universe.name, reservedNames) ?: continue
+            val headerRow = sheet.getRow(0) ?: continue
+            if (getCellString(headerRow, 0) != "이름") continue
+
+            val fields = db.fieldDefinitionDao().getFieldsByUniverseList(universe.id)
+
+            // 헤더 기반 필드 매핑: 컬럼명 → 필드 정의 매칭
+            val columnFieldMap = buildColumnFieldMap(headerRow, fields)
+
+            // "이미지경로" 컬럼 위치 찾기
+            val imageColIndex = findColumnIndex(headerRow, "이미지경로")
+
+            // "작품" 컬럼 위치 찾기
+            val novelColIndex = findColumnIndex(headerRow, "작품")
+
+            for (i in 1..sheet.lastRowNum) {
+                try {
+                    val row = sheet.getRow(i) ?: continue
+                    val name = getCellString(row, 0)
+                    if (name.isBlank()) continue
+
+                    val novelTitle = if (novelColIndex >= 0) getCellString(row, novelColIndex) else ""
+                    val novelId = resolveNovelId(novelTitle, universe.id)
+                    val imagePaths = if (imageColIndex >= 0) getCellString(row, imageColIndex) else "[]"
+
+                    // 기존 캐릭터 찾기 (덮어쓰기)
+                    val existingChar = if (novelId != null) {
+                        db.characterDao().getCharacterByNameAndNovel(name, novelId)
+                    } else null
+
+                    val charId: Long
+                    if (existingChar != null) {
+                        charId = existingChar.id
+                        db.characterDao().update(existingChar.copy(
+                            imagePaths = imagePaths,
+                            updatedAt = System.currentTimeMillis()
+                        ))
+                        result.updatedCharacters++
+                    } else {
+                        charId = db.characterDao().insert(Character(
+                            name = name,
+                            novelId = novelId,
+                            imagePaths = imagePaths
+                        ))
+                        result.newCharacters++
+                    }
+
+                    // 동적 필드 값 가져오기 (헤더 기반 매핑)
+                    for ((colIndex, field) in columnFieldMap) {
+                        val value = getCellString(row, colIndex)
+                        if (value.isNotBlank()) {
+                            val existingValue = db.characterFieldValueDao().getValue(charId, field.id)
+                            if (existingValue != null) {
+                                db.characterFieldValueDao().update(existingValue.copy(value = value))
+                            } else {
+                                db.characterFieldValueDao().insert(CharacterFieldValue(
+                                    characterId = charId,
+                                    fieldDefinitionId = field.id,
+                                    value = value
+                                ))
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    result.skippedRows++
+                    result.errors.add("${universe.name} 행 $i: ${e.message}")
+                }
+            }
+        }
+    }
+
+    // ── 미분류 캐릭터 가져오기 ──
+
+    private suspend fun importUnclassifiedCharacters(workbook: Workbook, result: ImportResult) {
+        val sheet = workbook.getSheet("미분류 캐릭터") ?: return
+        val headerRow = sheet.getRow(0) ?: return
+        if (getCellString(headerRow, 0) != "이름") return
+
+        val imageColIndex = findColumnIndex(headerRow, "이미지경로")
+        val novelColIndex = findColumnIndex(headerRow, "작품")
+
+        for (i in 1..sheet.lastRowNum) {
+            try {
+                val row = sheet.getRow(i) ?: continue
+                val name = getCellString(row, 0)
+                if (name.isBlank()) continue
+
+                val novelTitle = if (novelColIndex >= 0) getCellString(row, novelColIndex) else ""
+                val novelId = resolveNovelIdNoUniverse(novelTitle)
+                val imagePaths = if (imageColIndex >= 0) getCellString(row, imageColIndex) else "[]"
+
+                val existingChar = if (novelId != null) {
+                    db.characterDao().getCharacterByNameAndNovel(name, novelId)
+                } else null
+
+                if (existingChar != null) {
+                    db.characterDao().update(existingChar.copy(
+                        imagePaths = imagePaths,
+                        updatedAt = System.currentTimeMillis()
+                    ))
+                    result.updatedCharacters++
+                } else {
+                    db.characterDao().insert(Character(
+                        name = name,
+                        novelId = novelId,
+                        imagePaths = imagePaths
+                    ))
+                    result.newCharacters++
+                }
+            } catch (e: Exception) {
+                result.skippedRows++
+                result.errors.add("미분류 캐릭터 행 $i: ${e.message}")
+            }
+        }
+    }
+
+    // ── 연표 가져오기 ──
+
+    private suspend fun importTimeline(workbook: Workbook, result: ImportResult) {
+        val sheet = workbook.getSheet("사건 연표") ?: return
+        val headerRow = sheet.getRow(0) ?: return
+        if (getCellString(headerRow, 0) != "연도") return
+
+        for (i in 1..sheet.lastRowNum) {
+            try {
+                val row = sheet.getRow(i) ?: continue
+                val yearStr = getCellString(row, 0)
+                val year = yearStr.toDoubleOrNull()?.toInt() ?: continue
+                val description = getCellString(row, 4)
+                if (description.isBlank()) continue
+
+                val month = getCellString(row, 1).toDoubleOrNull()?.toInt()?.takeIf { it > 0 }
+                val day = getCellString(row, 2).toDoubleOrNull()?.toInt()?.takeIf { it > 0 }
+                val calendarType = getCellString(row, 3).ifBlank { "천개력" }
+                val novelTitle = getCellString(row, 5)
+                val novelId = if (novelTitle.isNotBlank()) {
+                    db.novelDao().getAllNovelsList().find { it.title == novelTitle }?.id
+                } else null
+
+                // 기존 이벤트 찾기 (덮어쓰기)
+                val existingEvent = if (novelId != null) {
+                    db.timelineDao().getEventByNaturalKey(year, description, novelId)
+                } else {
+                    db.timelineDao().getEventByNaturalKeyNoNovel(year, description)
+                }
+
+                val eventId: Long
+                if (existingEvent != null) {
+                    eventId = existingEvent.id
+                    db.timelineDao().update(existingEvent.copy(
+                        month = month,
+                        day = day,
+                        calendarType = calendarType
+                    ))
+                    result.updatedEvents++
+                } else {
+                    eventId = db.timelineDao().insert(TimelineEvent(
+                        year = year,
+                        month = month,
+                        day = day,
+                        calendarType = calendarType,
+                        description = description,
+                        novelId = novelId
+                    ))
+                    result.newEvents++
+                }
+
+                // 관련 캐릭터 연결 복원
+                val characterNames = getCellString(row, 6)
+                if (characterNames.isNotBlank()) {
+                    // 기존 크로스레프 제거 후 재설정
+                    db.timelineDao().deleteCrossRefsByEvent(eventId)
+                    val names = characterNames.split(", ").map { it.trim() }.filter { it.isNotBlank() }
+                    for (charName in names) {
+                        val character = findCharacterByName(charName, novelId)
+                        if (character != null) {
+                            db.timelineDao().insertCrossRef(
+                                TimelineCharacterCrossRef(eventId = eventId, characterId = character.id)
+                            )
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                result.skippedRows++
+                result.errors.add("연표 행 $i: ${e.message}")
+            }
+        }
+    }
+
+    // ── 상태변화 가져오기 ──
+
+    private suspend fun importStateChanges(workbook: Workbook, result: ImportResult) {
+        val sheet = workbook.getSheet("캐릭터 상태변화") ?: return
+        val headerRow = sheet.getRow(0) ?: return
+        if (getCellString(headerRow, 0) != "캐릭터") return
+
+        for (i in 1..sheet.lastRowNum) {
+            try {
+                val row = sheet.getRow(i) ?: continue
+                val charName = getCellString(row, 0)
+                if (charName.isBlank()) continue
+
+                val novelTitle = getCellString(row, 1)
+                val yearStr = getCellString(row, 2)
+                val year = yearStr.toDoubleOrNull()?.toInt() ?: continue
+
+                val month = getCellString(row, 3).toDoubleOrNull()?.toInt()?.takeIf { it > 0 }
+                val day = getCellString(row, 4).toDoubleOrNull()?.toInt()?.takeIf { it > 0 }
+                val fieldKey = getCellString(row, 5)
+                if (fieldKey.isBlank()) continue
+                val newValue = getCellString(row, 6)
+                val description = getCellString(row, 7)
+
+                // 캐릭터 찾기
+                val novelId = if (novelTitle.isNotBlank()) {
+                    db.novelDao().getAllNovelsList().find { it.title == novelTitle }?.id
+                } else null
+                val character = findCharacterByName(charName, novelId) ?: continue
+
+                // 중복 체크 및 덮어쓰기
+                val existing = db.characterStateChangeDao()
+                    .getChangeByNaturalKey(character.id, year, fieldKey, newValue)
+
+                if (existing != null) {
+                    db.characterStateChangeDao().update(existing.copy(
+                        month = month,
+                        day = day,
+                        description = description
+                    ))
+                    result.updatedStateChanges++
+                } else {
+                    db.characterStateChangeDao().insert(CharacterStateChange(
+                        characterId = character.id,
+                        year = year,
+                        month = month,
+                        day = day,
+                        fieldKey = fieldKey,
+                        newValue = newValue,
+                        description = description
+                    ))
+                    result.newStateChanges++
+                }
+            } catch (e: Exception) {
+                result.skippedRows++
+                result.errors.add("상태변화 행 $i: ${e.message}")
+            }
+        }
+    }
+
+    // ── 유틸리티 메서드 ──
+
+    private fun findSheetForUniverse(workbook: Workbook, universeName: String, reservedNames: Set<String>): Sheet? {
+        // 정확한 이름 매칭 시도
+        workbook.getSheet(universeName)?.let { return it }
+        // 31자 잘림 대응: 세계관 이름이 31자 초과일 때 앞부분 매칭
+        if (universeName.length > 31) {
+            val truncated = universeName.take(31)
+            workbook.getSheet(truncated)?.let { return it }
+        }
+        // 시트 이름 순회하며 매칭 (suffix 제거 대응)
+        for (idx in 0 until workbook.numberOfSheets) {
+            val sheetName = workbook.getSheetName(idx)
+            if (sheetName in reservedNames) continue
+            if (universeName.startsWith(sheetName.replace(Regex("\\(\\d+\\)$"), ""))) {
+                return workbook.getSheetAt(idx)
+            }
+        }
+        return null
+    }
+
+    private fun buildColumnFieldMap(headerRow: Row, fields: List<FieldDefinition>): Map<Int, FieldDefinition> {
+        val map = mutableMapOf<Int, FieldDefinition>()
+        val lastCol = headerRow.lastCellNum.toInt()
+        for (col in 1 until lastCol) {
+            val headerName = getCellString(headerRow, col)
+            if (headerName == "작품" || headerName == "이미지경로") continue
+            val field = fields.find { it.name == headerName }
+            if (field != null) {
+                map[col] = field
+            }
+        }
+        return map
+    }
+
+    private fun findColumnIndex(headerRow: Row, columnName: String): Int {
+        val lastCol = headerRow.lastCellNum.toInt()
+        for (col in 0 until lastCol) {
+            if (getCellString(headerRow, col) == columnName) return col
+        }
+        return -1
+    }
+
+    private suspend fun resolveNovelId(novelTitle: String, universeId: Long): Long? {
+        if (novelTitle.isBlank()) return null
+        val existing = db.novelDao().getNovelByTitleAndUniverse(novelTitle, universeId)
+        if (existing != null) return existing.id
+        return db.novelDao().insert(Novel(title = novelTitle, universeId = universeId))
+    }
+
+    private suspend fun resolveNovelIdNoUniverse(novelTitle: String): Long? {
+        if (novelTitle.isBlank()) return null
+        val existing = db.novelDao().getNovelByTitleNoUniverse(novelTitle)
+        if (existing != null) return existing.id
+        return db.novelDao().insert(Novel(title = novelTitle))
+    }
+
+    private suspend fun findCharacterByName(name: String, preferredNovelId: Long?): Character? {
+        // 같은 작품의 캐릭터 우선
+        if (preferredNovelId != null) {
+            val match = db.characterDao().getCharacterByNameAndNovel(name, preferredNovelId)
+            if (match != null) return match
+        }
+        // 전체에서 이름으로 검색
+        val allChars = db.characterDao().getAllCharactersList()
+        return allChars.find { it.name == name }
     }
 
     private fun getCellString(row: Row, cellIndex: Int): String {

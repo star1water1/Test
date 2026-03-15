@@ -35,4 +35,7 @@ interface CharacterStateChangeDao {
 
     @Query("DELETE FROM character_state_changes WHERE characterId = :characterId")
     suspend fun deleteAllByCharacter(characterId: Long)
+
+    @Query("SELECT * FROM character_state_changes WHERE characterId = :characterId AND year = :year AND fieldKey = :fieldKey AND newValue = :newValue LIMIT 1")
+    suspend fun getChangeByNaturalKey(characterId: Long, year: Int, fieldKey: String, newValue: String): CharacterStateChange?
 }
