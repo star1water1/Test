@@ -47,6 +47,14 @@ interface TimelineDao {
     @Delete
     suspend fun deleteCrossRef(crossRef: TimelineCharacterCrossRef)
 
+    @Transaction
+    suspend fun replaceEventCharacters(eventId: Long, characterIds: List<Long>) {
+        deleteCrossRefsByEvent(eventId)
+        characterIds.forEach { characterId ->
+            insertCrossRef(TimelineCharacterCrossRef(eventId, characterId))
+        }
+    }
+
     @Query("DELETE FROM timeline_character_cross_ref WHERE eventId = :eventId")
     suspend fun deleteCrossRefsByEvent(eventId: Long)
 

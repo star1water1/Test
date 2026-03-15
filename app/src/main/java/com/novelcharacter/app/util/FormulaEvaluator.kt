@@ -66,7 +66,7 @@ class FormulaEvaluator(
                     while (i < formula.length && (formula[i].isDigit() || formula[i] == '.')) i++
                     tokens.add(Token.Num(formula.substring(start, i).toDouble()))
                 }
-                formula.substring(i).startsWith("field(") -> {
+                formula.startsWith("field(", i) -> {
                     i += 6 // skip "field("
                     // skip quote
                     if (i < formula.length && (formula[i] == '\'' || formula[i] == '"')) i++
@@ -78,11 +78,11 @@ class FormulaEvaluator(
                     if (i < formula.length && formula[i] == ')') i++
                     tokens.add(Token.Num(resolveField(key)))
                 }
-                formula.substring(i).startsWith("sum_all_grades()") -> {
+                formula.startsWith("sum_all_grades()", i) -> {
                     tokens.add(Token.Num(sumAllGrades()))
                     i += 16
                 }
-                formula.substring(i).startsWith("abs(") -> {
+                formula.startsWith("abs(", i) -> {
                     tokens.add(Token.Func("abs"))
                     tokens.add(Token.LParen)
                     i += 4

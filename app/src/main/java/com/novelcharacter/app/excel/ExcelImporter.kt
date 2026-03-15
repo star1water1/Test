@@ -87,7 +87,7 @@ class ExcelImporter(private val context: Context) {
                 val inputStream = context.contentResolver.openInputStream(uri)
                     ?: throw Exception("파일을 열 수 없습니다")
 
-                val workbook = WorkbookFactory.create(inputStream)
+                val workbook = inputStream.use { WorkbookFactory.create(it) }
                 val result = ImportResult()
 
                 db.withTransaction {
@@ -104,7 +104,6 @@ class ExcelImporter(private val context: Context) {
                 }
 
                 workbook.close()
-                inputStream.close()
 
                 val message = buildResultMessage(result)
                 withContext(Dispatchers.Main) {

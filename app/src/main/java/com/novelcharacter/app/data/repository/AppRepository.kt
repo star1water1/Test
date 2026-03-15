@@ -82,10 +82,7 @@ class AppRepository(
     }
 
     suspend fun updateEventCharacters(eventId: Long, characterIds: List<Long>) {
-        timelineDao.deleteCrossRefsByEvent(eventId)
-        characterIds.forEach { characterId ->
-            timelineDao.insertCrossRef(TimelineCharacterCrossRef(eventId, characterId))
-        }
+        timelineDao.replaceEventCharacters(eventId, characterIds)
     }
 
     suspend fun getCharacterIdsForEvent(eventId: Long): List<Long> =
