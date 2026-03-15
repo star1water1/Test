@@ -15,7 +15,7 @@ import androidx.room.PrimaryKey
             onDelete = ForeignKey.SET_NULL
         )
     ],
-    indices = [Index("universeId")]
+    indices = [Index("universeId"), Index("createdAt")]
 )
 data class Novel(
     @PrimaryKey(autoGenerate = true)

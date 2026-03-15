@@ -21,7 +21,7 @@ import androidx.room.PrimaryKey
             onDelete = ForeignKey.CASCADE
         )
     ],
-    indices = [Index("characterId1"), Index("characterId2")]
+    indices = [Index("characterId1"), Index("characterId2"), Index("createdAt")]
 )
 data class CharacterRelationship(
     @PrimaryKey(autoGenerate = true)

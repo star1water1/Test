@@ -15,7 +15,7 @@ import androidx.room.PrimaryKey
             onDelete = ForeignKey.SET_NULL
         )
     ],
-    indices = [Index("isUsed"), Index("usedByCharacterId")]
+    indices = [Index("isUsed"), Index("usedByCharacterId"), Index("createdAt")]
 )
 data class NameBankEntry(
     @PrimaryKey(autoGenerate = true)
