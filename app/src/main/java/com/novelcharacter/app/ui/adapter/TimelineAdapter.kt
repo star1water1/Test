@@ -80,19 +80,27 @@ class TimelineAdapter(
 
         return groups.entries.sortedBy { it.key }.map { (groupStart, groupEvents) ->
             val groupEnd = groupStart + interval - 1
-            val label = if (groupStart < 0 && groupEnd < 0) {
-                "BC ${-groupEnd} ~ BC ${-groupStart}"
-            } else if (groupStart < 0) {
-                "BC ${-groupStart} ~ $groupEnd"
-            } else {
-                "$groupStart ~ $groupEnd"
-            }
+            val label = formatGroupLabel(groupStart, groupEnd)
             TimelineDisplayItem.GroupHeader(
                 label = label,
                 eventCount = groupEvents.size,
                 events = groupEvents
             )
         }
+    }
+
+    /**
+     * Format a group label with proper handling for negative (BC) years.
+     * Ensures chronological ordering: earlier year on the left, later year on the right.
+     */
+    private fun formatGroupLabel(groupStart: Int, groupEnd: Int): String {
+        val startStr = formatYearLabel(groupStart)
+        val endStr = formatYearLabel(groupEnd)
+        return "$startStr ~ $endStr"
+    }
+
+    private fun formatYearLabel(year: Int): String {
+        return if (year < 0) "BC ${-year}" else "${year}"
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {

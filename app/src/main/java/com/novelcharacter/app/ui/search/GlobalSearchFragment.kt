@@ -71,7 +71,7 @@ class GlobalSearchFragment : Fragment() {
             adapter.submitList(results)
             val query = binding.searchEdit.text.toString()
             binding.emptyText.visibility = if (results.isEmpty()) View.VISIBLE else View.GONE
-            binding.emptyText.text = if (query.isBlank()) "검색어를 입력하세요" else "검색 결과가 없습니다"
+            binding.emptyMessage.text = if (query.isBlank()) "검색어를 입력하세요" else "검색 결과가 없습니다"
         }
     }
 

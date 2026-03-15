@@ -33,4 +33,13 @@
     <!-- 타임라인 -->
     <color name="timeline_line">#BDBDBD</color>
     <color name="timeline_dot">#5C6BC0</color>
+
+    <!-- 검색 결과 타입 색상 -->
+    <color name="search_type_character">#5C6BC0</color>
+    <color name="search_type_event">#FF7043</color>
+    <color name="search_type_novel">#26A69A</color>
+
+    <!-- 빈 상태 색상 -->
+    <color name="empty_state_icon">#BDBDBD</color>
+    <color name="delete_warning">#F44336</color>
 </resources>

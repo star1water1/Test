@@ -2,6 +2,7 @@ package com.novelcharacter.app.ui.adapter
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.util.LruCache
 import android.view.LayoutInflater
 import android.view.ViewGroup
 import androidx.recyclerview.widget.DiffUtil
@@ -25,6 +26,18 @@ class CharacterAdapter(
 
     private var isSelectionMode = false
     private var selectedIds = setOf<Long>()
+    private var isMaxReached = false
+
+    // Thumbnail cache - max 20MB
+    private val thumbnailCache: LruCache<String, Bitmap> = run {
+        val maxMemory = (Runtime.getRuntime().maxMemory() / 1024).toInt()
+        val cacheSize = maxMemory / 8  // Use 1/8th of available memory
+        object : LruCache<String, Bitmap>(cacheSize.coerceAtMost(20 * 1024)) {
+            override fun sizeOf(key: String, bitmap: Bitmap): Int {
+                return bitmap.byteCount / 1024
+            }
+        }
+    }
 
     fun setSelectionMode(enabled: Boolean) {
         isSelectionMode = enabled
@@ -33,6 +46,11 @@ class CharacterAdapter(
 
     fun setSelectedIds(ids: Set<Long>) {
         selectedIds = ids
+        notifyDataSetChanged()
+    }
+
+    fun setMaxReached(maxReached: Boolean) {
+        isMaxReached = maxReached
         notifyDataSetChanged()
     }
 
@@ -70,6 +88,10 @@ class CharacterAdapter(
             if (isSelectionMode && selectedIds.contains(character.id)) {
                 binding.root.alpha = 1.0f
                 binding.root.setBackgroundColor(binding.root.context.getColor(R.color.primary_light))
+            } else if (isSelectionMode && isMaxReached) {
+                // Max selections reached - dim unselected items more
+                binding.root.alpha = 0.3f
+                binding.root.setBackgroundColor(0)
             } else if (isSelectionMode) {
                 binding.root.alpha = 0.5f
                 binding.root.setBackgroundColor(0)
@@ -101,11 +123,20 @@ class CharacterAdapter(
             }
 
             if (paths.isNotEmpty()) {
+                val path = paths[0]
+                // Check cache first
+                val cached = thumbnailCache.get(path)
+                if (cached != null) {
+                    binding.characterImage.setImageBitmap(cached)
+                    return
+                }
+
                 loadJob = CoroutineScope(Dispatchers.Main + Job()).launch {
                     val bitmap = withContext(Dispatchers.IO) {
-                        decodeSampledBitmap(paths[0], 256, 256)
+                        decodeSampledBitmap(path, 256, 256)
                     }
                     if (bitmap != null) {
+                        thumbnailCache.put(path, bitmap)
                         binding.characterImage.setImageBitmap(bitmap)
                     }
                 }

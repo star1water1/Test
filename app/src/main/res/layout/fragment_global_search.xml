@@ -31,15 +31,33 @@
 
     </com.google.android.material.textfield.TextInputLayout>
 
-    <TextView
+    <LinearLayout
         android:id="@+id/emptyText"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="검색어를 입력하세요"
-        android:textColor="@color/text_secondary"
-        android:textSize="14sp"
+        android:orientation="vertical"
         android:gravity="center"
-        android:padding="32dp" />
+        android:padding="32dp">
+
+        <ImageView
+            android:id="@+id/emptyIcon"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:src="@android:drawable/ic_menu_search"
+            android:alpha="0.3"
+            android:layout_marginBottom="12dp"
+            android:contentDescription="@string/search" />
+
+        <TextView
+            android:id="@+id/emptyMessage"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="검색어를 입력하세요"
+            android:textColor="@color/text_secondary"
+            android:textSize="14sp"
+            android:gravity="center" />
+
+    </LinearLayout>
 
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/searchResultsRecyclerView"

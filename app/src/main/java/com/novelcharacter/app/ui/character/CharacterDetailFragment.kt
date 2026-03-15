@@ -203,6 +203,10 @@ class CharacterDetailFragment : Fragment() {
             binding.yearSlider.isEnabled = true
             binding.yearSlider.valueFrom = adjustedMin
             binding.yearSlider.valueTo = adjustedMax
+
+            // Show min/max year labels
+            binding.minYearLabel.text = getString(R.string.slider_min_year, minYear)
+            binding.maxYearLabel.text = getString(R.string.slider_max_year, adjustedMax.toInt())
             val totalRange = adjustedMax - adjustedMin
             binding.yearSlider.stepSize = when {
                 totalRange > 10000 -> 100f
@@ -363,7 +367,8 @@ class CharacterDetailFragment : Fragment() {
 
     private fun confirmDeleteStateChange(change: CharacterStateChange) {
         AlertDialog.Builder(requireContext())
-            .setTitle(getString(R.string.delete))
+            .setIcon(android.R.drawable.ic_dialog_alert)
+            .setTitle(getString(R.string.delete_warning_title))
             .setMessage(getString(R.string.confirm_delete))
             .setPositiveButton(getString(R.string.yes)) { _, _ ->
                 viewModel.deleteStateChange(change)
@@ -514,11 +519,20 @@ class CharacterDetailFragment : Fragment() {
             // 필드 행들
             for (field in groupFields) {
                 val fieldValue = valueMap[field.id]?.value ?: ""
-                val displayValue = fieldValue.ifEmpty { "-" }
+                val isCalculated = field.type == "CALCULATED"
+                val displayValue = if (isCalculated && fieldValue.isEmpty()) {
+                    getString(R.string.auto_calculated_label, field.name)
+                } else {
+                    "${field.name}: ${fieldValue.ifEmpty { "-" }}"
+                }
 
                 val rowView = TextView(context).apply {
-                    text = "${field.name}: $displayValue"
+                    text = displayValue
                     textSize = 14f
+                    if (isCalculated) {
+                        setTextColor(context.getColor(R.color.text_secondary))
+                        setTypeface(null, android.graphics.Typeface.ITALIC)
+                    }
                     layoutParams = LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
                         LinearLayout.LayoutParams.WRAP_CONTENT
@@ -868,6 +882,8 @@ class CharacterDetailFragment : Fragment() {
                 when (which) {
                     0 -> {
                         AlertDialog.Builder(requireContext())
+                            .setIcon(android.R.drawable.ic_dialog_alert)
+                            .setTitle(getString(R.string.delete_warning_title))
                             .setMessage("이 관계를 삭제하시겠습니까?")
                             .setPositiveButton("예") { _, _ ->
                                 viewModel.deleteRelationshipById(item.relationshipId)

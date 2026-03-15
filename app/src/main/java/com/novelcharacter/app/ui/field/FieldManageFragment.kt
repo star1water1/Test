@@ -127,6 +127,8 @@ class FieldManageFragment : Fragment() {
                     0 -> showFieldEditDialog(field)
                     1 -> {
                         AlertDialog.Builder(requireContext())
+                            .setIcon(android.R.drawable.ic_dialog_alert)
+                            .setTitle(R.string.delete_warning_title)
                             .setMessage("\"${field.name}\" 필드를 삭제하시겠습니까?")
                             .setPositiveButton(R.string.yes) { _, _ ->
                                 viewModel.deleteField(field)

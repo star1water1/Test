@@ -47,7 +47,8 @@
             android:id="@+id/timelineDot"
             android:layout_width="12dp"
             android:layout_height="12dp"
-            android:background="@drawable/ic_timeline" />
+            android:background="@drawable/ic_timeline"
+            android:contentDescription="@string/timeline_event_dot_desc" />
 
         <View
             android:layout_width="2dp"

@@ -18,18 +18,43 @@
         app:titleTextColor="@color/on_primary"
         app:navigationIcon="?attr/homeAsUpIndicator" />
 
-    <TextView
+    <LinearLayout
         android:id="@+id/emptyText"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="@string/empty_field_hint"
-        android:textColor="@color/text_secondary"
-        android:textSize="16sp"
+        android:orientation="vertical"
+        android:gravity="center"
         android:visibility="gone"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/toolbar" />
+        app:layout_constraintTop_toBottomOf="@id/toolbar">
+
+        <ImageView
+            android:layout_width="64dp"
+            android:layout_height="64dp"
+            android:src="@drawable/ic_settings"
+            android:alpha="0.4"
+            android:layout_marginBottom="12dp"
+            android:contentDescription="@string/no_fields" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/no_fields"
+            android:textColor="@color/text_secondary"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/empty_field_hint"
+            android:textColor="@color/text_secondary"
+            android:textSize="13sp"
+            android:layout_marginTop="4dp" />
+
+    </LinearLayout>
 
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/fieldRecyclerView"

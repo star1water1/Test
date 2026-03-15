@@ -77,6 +77,8 @@ class CharacterListFragment : Fragment() {
                                 }
                                 1 -> {
                                     androidx.appcompat.app.AlertDialog.Builder(requireContext())
+                                        .setIcon(android.R.drawable.ic_dialog_alert)
+                                        .setTitle(R.string.delete_warning_title)
                                         .setMessage(R.string.confirm_delete)
                                         .setPositiveButton(R.string.yes) { _, _ ->
                                             viewModel.deleteCharacter(character)
@@ -146,7 +148,13 @@ class CharacterListFragment : Fragment() {
     }
 
     private fun updateCompareButtonText() {
-        binding.btnCompare.text = if (selectedForCompare.isEmpty()) "비교하기" else "비교하기 (${selectedForCompare.size}명)"
+        if (selectedForCompare.isEmpty()) {
+            binding.btnCompare.text = "비교하기"
+        } else {
+            binding.btnCompare.text = getString(R.string.compare_button_text, selectedForCompare.size)
+        }
+        // Disable selection when max reached (visual feedback instead of just toast)
+        adapter.setMaxReached(selectedForCompare.size >= 3)
     }
 
     private fun setupSearch() {

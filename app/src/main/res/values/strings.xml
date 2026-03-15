@@ -143,4 +143,24 @@
     <!-- Memo -->
     <string name="memo">메모</string>
     <string name="hint_tags">태그 (쉼표로 구분)</string>
+
+    <!-- UX Improvements -->
+    <string name="optional_field">선택사항</string>
+    <string name="search_type_character">캐릭터</string>
+    <string name="search_type_event">사건</string>
+    <string name="search_type_novel">작품</string>
+    <string name="empty_character_hint">캐릭터를 추가해보세요</string>
+    <string name="empty_novel_hint">작품을 추가해보세요</string>
+    <string name="empty_event_hint">사건을 추가해보세요</string>
+    <string name="empty_state_change_hint">상태 변화를 추가해보세요</string>
+    <string name="empty_relationship_hint">관계를 추가해보세요</string>
+    <string name="compare_button_text">비교하기 (%d명)</string>
+    <string name="slider_min_year">최소: %d년</string>
+    <string name="slider_max_year">최대: %d년</string>
+    <string name="drag_handle_desc">순서 변경 드래그 핸들</string>
+    <string name="character_image_desc">캐릭터 이미지</string>
+    <string name="timeline_event_dot_desc">타임라인 사건 지점</string>
+    <string name="edit_button_desc">캐릭터 편집</string>
+    <string name="delete_warning_title">삭제 확인</string>
+    <string name="auto_calculated_label">%s (자동 계산)</string>
 </resources>

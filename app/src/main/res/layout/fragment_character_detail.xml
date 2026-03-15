@@ -63,34 +63,70 @@
                 android:id="@+id/timeSliderContent"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
+                android:orientation="vertical"
                 android:paddingHorizontal="16dp"
                 android:paddingBottom="8dp"
                 android:visibility="gone">
 
-                <com.google.android.material.slider.Slider
-                    android:id="@+id/yearSlider"
-                    android:layout_width="0dp"
+                <LinearLayout
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:valueFrom="0"
-                    android:valueTo="100"
-                    android:stepSize="1"
-                    app:trackColorActive="@color/primary"
-                    app:trackColorInactive="@color/primary_light"
-                    app:thumbColor="@color/primary" />
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
 
-                <TextView
-                    android:id="@+id/yearLabel"
-                    android:layout_width="wrap_content"
+                    <com.google.android.material.slider.Slider
+                        android:id="@+id/yearSlider"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:valueFrom="0"
+                        android:valueTo="100"
+                        android:stepSize="1"
+                        app:trackColorActive="@color/primary"
+                        app:trackColorInactive="@color/primary_light"
+                        app:thumbColor="@color/primary" />
+
+                    <TextView
+                        android:id="@+id/yearLabel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="12dp"
+                        android:textSize="16sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/primary"
+                        android:minWidth="56dp"
+                        android:gravity="center" />
+
+                </LinearLayout>
+
+                <!-- Min/Max year labels -->
+                <LinearLayout
+                    android:id="@+id/yearRangeLabels"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="12dp"
-                    android:textSize="16sp"
-                    android:textStyle="bold"
-                    android:textColor="@color/primary"
-                    android:minWidth="56dp"
-                    android:gravity="center" />
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <TextView
+                        android:id="@+id/minYearLabel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textSize="11sp"
+                        android:textColor="@color/text_secondary" />
+
+                    <View
+                        android:layout_width="0dp"
+                        android:layout_height="0dp"
+                        android:layout_weight="1" />
+
+                    <TextView
+                        android:id="@+id/maxYearLabel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textSize="11sp"
+                        android:textColor="@color/text_secondary" />
+
+                </LinearLayout>
 
             </LinearLayout>
 
@@ -257,7 +293,7 @@
                             android:id="@+id/textNoRelationships"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:text="등록된 관계가 없습니다"
+                            android:text="@string/empty_relationship_hint"
                             android:textSize="13sp"
                             android:textColor="@color/text_secondary"
                             android:gravity="center"
@@ -351,7 +387,7 @@
                             android:id="@+id/textNoStateChanges"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:text="@string/no_state_changes"
+                            android:text="@string/empty_state_change_hint"
                             android:textSize="13sp"
                             android:textColor="@color/text_secondary"
                             android:gravity="center"
@@ -379,6 +415,7 @@
         android:layout_height="wrap_content"
         android:layout_gravity="bottom|end"
         android:layout_margin="16dp"
-        android:src="@android:drawable/ic_menu_edit" />
+        android:src="@android:drawable/ic_menu_edit"
+        android:contentDescription="@string/edit_button_desc" />
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

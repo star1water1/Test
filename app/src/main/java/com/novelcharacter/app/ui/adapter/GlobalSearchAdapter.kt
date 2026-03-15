@@ -69,8 +69,8 @@ class GlobalSearchAdapter(
             mainText.text = character.name
             subText.text = ""
             subText.visibility = View.GONE
-            typeIndicator.text = "캐릭터"
-            typeIndicator.setBackgroundColor(itemView.context.getColor(R.color.primary_light))
+            typeIndicator.text = itemView.context.getString(R.string.search_type_character)
+            typeIndicator.setBackgroundColor(itemView.context.getColor(R.color.search_type_character))
             itemView.setOnClickListener { onCharacterClick(character) }
         }
 
@@ -78,8 +78,8 @@ class GlobalSearchAdapter(
             mainText.text = event.description
             subText.text = "${event.year}년"
             subText.visibility = View.VISIBLE
-            typeIndicator.text = "사건"
-            typeIndicator.setBackgroundColor(itemView.context.getColor(R.color.primary_light))
+            typeIndicator.text = itemView.context.getString(R.string.search_type_event)
+            typeIndicator.setBackgroundColor(itemView.context.getColor(R.color.search_type_event))
             itemView.setOnClickListener { onEventClick(event) }
         }
 
@@ -87,8 +87,8 @@ class GlobalSearchAdapter(
             mainText.text = novel.title
             subText.text = novel.description.take(50)
             subText.visibility = if (novel.description.isNotBlank()) View.VISIBLE else View.GONE
-            typeIndicator.text = "작품"
-            typeIndicator.setBackgroundColor(itemView.context.getColor(R.color.primary_light))
+            typeIndicator.text = itemView.context.getString(R.string.search_type_novel)
+            typeIndicator.setBackgroundColor(itemView.context.getColor(R.color.search_type_novel))
             itemView.setOnClickListener { onNovelClick(novel) }
         }
     }

@@ -83,17 +83,41 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/zoomControlLayout" />
 
-    <TextView
-        android:id="@+id/yearRangeLabel"
+    <LinearLayout
+        android:id="@+id/yearRangeLayout"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:gravity="center"
-        android:textSize="12sp"
-        android:textColor="@color/text_secondary"
+        android:orientation="horizontal"
+        android:paddingHorizontal="16dp"
         android:paddingBottom="4dp"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/yearSlider" />
+        app:layout_constraintTop_toBottomOf="@id/yearSlider">
+
+        <TextView
+            android:id="@+id/minYearLabel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textSize="11sp"
+            android:textColor="@color/text_secondary" />
+
+        <TextView
+            android:id="@+id/yearRangeLabel"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:textSize="12sp"
+            android:textColor="@color/text_secondary" />
+
+        <TextView
+            android:id="@+id/maxYearLabel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textSize="11sp"
+            android:textColor="@color/text_secondary" />
+
+    </LinearLayout>
 
     <com.google.android.material.textfield.TextInputLayout
         android:id="@+id/searchLayout"
@@ -102,7 +126,7 @@
         android:layout_margin="8dp"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/yearRangeLabel"
+        app:layout_constraintTop_toBottomOf="@id/yearRangeLayout"
         android:hint="@string/hint_search_event">
 
         <com.google.android.material.textfield.TextInputEditText
@@ -153,18 +177,43 @@
 
     </LinearLayout>
 
-    <TextView
+    <LinearLayout
         android:id="@+id/emptyText"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="@string/no_events"
-        android:textColor="@color/text_secondary"
-        android:textSize="16sp"
+        android:orientation="vertical"
+        android:gravity="center"
         android:visibility="gone"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/filterLayout" />
+        app:layout_constraintTop_toBottomOf="@id/filterLayout">
+
+        <ImageView
+            android:layout_width="64dp"
+            android:layout_height="64dp"
+            android:src="@drawable/ic_timeline"
+            android:alpha="0.4"
+            android:layout_marginBottom="12dp"
+            android:contentDescription="@string/no_events" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/no_events"
+            android:textColor="@color/text_secondary"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/empty_event_hint"
+            android:textColor="@color/text_secondary"
+            android:textSize="13sp"
+            android:layout_marginTop="4dp" />
+
+    </LinearLayout>
 
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/timelineRecyclerView"

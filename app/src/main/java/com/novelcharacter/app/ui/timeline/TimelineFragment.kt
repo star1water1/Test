@@ -69,6 +69,8 @@ class TimelineFragment : Fragment() {
                             0 -> showEditEventDialog(event)
                             1 -> {
                                 AlertDialog.Builder(requireContext())
+                                    .setIcon(android.R.drawable.ic_dialog_alert)
+                                    .setTitle(R.string.delete_warning_title)
                                     .setMessage(R.string.confirm_delete)
                                     .setPositiveButton(R.string.yes) { _, _ ->
                                         viewModel.deleteEvent(event)
@@ -298,6 +300,10 @@ class TimelineFragment : Fragment() {
             totalRange > 1000 -> 10f
             else -> 1f
         }
+
+        // Show min/max year labels
+        binding.minYearLabel.text = getString(R.string.slider_min_year, rangeFrom.toInt())
+        binding.maxYearLabel.text = getString(R.string.slider_max_year, rangeTo.toInt())
 
         // Set current value within range
         val currentCenter = viewModel.centerYear.value ?: 0
