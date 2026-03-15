@@ -51,6 +51,7 @@ class TimelineFragment : Fragment() {
         setupZoomControls()
         setupYearSlider()
         setupSearch()
+        setupFilters()
         setupFab()
         observeData()
     }
@@ -155,6 +156,57 @@ class TimelineFragment : Fragment() {
             }
             override fun afterTextChanged(s: Editable?) {}
         })
+    }
+
+    private fun setupFilters() {
+        // Novel filter
+        viewModel.allNovels.observe(viewLifecycleOwner) { novels ->
+            val novelNames = mutableListOf("전체 작품")
+            novelNames.addAll(novels.map { it.title })
+            val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, novelNames)
+            adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+            binding.spinnerFilterNovel.adapter = adapter
+
+            binding.spinnerFilterNovel.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+                override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: android.view.View?, position: Int, id: Long) {
+                    val novelId = if (position > 0) novels[position - 1].id else null
+                    viewModel.setFilterNovel(novelId)
+                    updateClearFilterButton()
+                }
+                override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
+            }
+        }
+
+        // Character filter
+        viewModel.allCharacters.observe(viewLifecycleOwner) { characters ->
+            val charNames = mutableListOf("전체 캐릭터")
+            charNames.addAll(characters.map { it.name })
+            val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, charNames)
+            adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+            binding.spinnerFilterCharacter.adapter = adapter
+
+            binding.spinnerFilterCharacter.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+                override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: android.view.View?, position: Int, id: Long) {
+                    val charId = if (position > 0) characters[position - 1].id else null
+                    viewModel.setFilterCharacter(charId)
+                    updateClearFilterButton()
+                }
+                override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
+            }
+        }
+
+        // Clear filter button
+        binding.btnClearFilter.setOnClickListener {
+            viewModel.clearFilters()
+            binding.spinnerFilterNovel.setSelection(0)
+            binding.spinnerFilterCharacter.setSelection(0)
+            binding.btnClearFilter.visibility = View.GONE
+        }
+    }
+
+    private fun updateClearFilterButton() {
+        val hasFilter = viewModel.filterNovelId.value != null || viewModel.filterCharacterId.value != null
+        binding.btnClearFilter.visibility = if (hasFilter) View.VISIBLE else View.GONE
     }
 
     private fun setupFab() {

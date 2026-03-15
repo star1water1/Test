@@ -83,4 +83,16 @@ interface TimelineDao {
 
     @Query("SELECT * FROM timeline_events WHERE year = :year AND description = :description AND novelId IS NULL LIMIT 1")
     suspend fun getEventByNaturalKeyNoNovel(year: Int, description: String): TimelineEvent?
+
+    // Timeline filtering
+    @Query("""
+        SELECT te.* FROM timeline_events te
+        INNER JOIN timeline_character_cross_ref tcr ON te.id = tcr.eventId
+        WHERE tcr.characterId = :characterId AND te.year BETWEEN :startYear AND :endYear
+        ORDER BY te.year ASC
+    """)
+    fun getEventsForCharacterInRange(characterId: Long, startYear: Int, endYear: Int): LiveData<List<TimelineEvent>>
+
+    @Query("SELECT * FROM timeline_events WHERE novelId = :novelId AND year BETWEEN :startYear AND :endYear ORDER BY year ASC")
+    fun getEventsByNovelInRange(novelId: Long, startYear: Int, endYear: Int): LiveData<List<TimelineEvent>>
 }

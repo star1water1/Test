@@ -1,0 +1,75 @@
+package com.novelcharacter.app.ui.namebank
+
+import android.app.Application
+import androidx.lifecycle.*
+import com.novelcharacter.app.NovelCharacterApp
+import com.novelcharacter.app.data.model.NameBankEntry
+import kotlinx.coroutines.launch
+
+class NameBankViewModel(application: Application) : AndroidViewModel(application) {
+
+    private val repository = (application as NovelCharacterApp).repository
+
+    private val _searchQuery = MutableLiveData("")
+    private val _showOnlyAvailable = MutableLiveData(false)
+
+    val displayedNames: LiveData<List<NameBankEntry>> = MediatorLiveData<List<NameBankEntry>>().apply {
+        val allNames = repository.allNameBankEntries
+        val availableNames = repository.availableNameBankEntries
+
+        fun update() {
+            val query = _searchQuery.value ?: ""
+            val onlyAvailable = _showOnlyAvailable.value ?: false
+            // We'll use a coroutine to filter if needed
+            val source = if (onlyAvailable) availableNames else allNames
+            val currentList = source.value ?: emptyList()
+            value = if (query.isBlank()) {
+                currentList
+            } else {
+                currentList.filter {
+                    it.name.contains(query, ignoreCase = true) ||
+                    it.notes.contains(query, ignoreCase = true) ||
+                    it.origin.contains(query, ignoreCase = true)
+                }
+            }
+        }
+
+        addSource(allNames) { update() }
+        addSource(availableNames) { update() }
+        addSource(_searchQuery) { update() }
+        addSource(_showOnlyAvailable) { update() }
+    }
+
+    fun setSearchQuery(query: String) {
+        _searchQuery.value = query
+    }
+
+    fun setShowOnlyAvailable(onlyAvailable: Boolean) {
+        _showOnlyAvailable.value = onlyAvailable
+    }
+
+    fun isShowOnlyAvailable(): Boolean = _showOnlyAvailable.value ?: false
+
+    fun insert(entry: NameBankEntry) = viewModelScope.launch {
+        repository.insertNameBankEntry(entry)
+    }
+
+    fun update(entry: NameBankEntry) = viewModelScope.launch {
+        repository.updateNameBankEntry(entry)
+    }
+
+    fun delete(entry: NameBankEntry) = viewModelScope.launch {
+        repository.deleteNameBankEntry(entry)
+    }
+
+    fun markAsUsed(id: Long, characterId: Long) = viewModelScope.launch {
+        repository.markNameBankAsUsed(id, characterId)
+    }
+
+    fun markAsAvailable(id: Long) = viewModelScope.launch {
+        repository.markNameBankAsAvailable(id)
+    }
+
+    suspend fun getAvailableNamesList(): List<NameBankEntry> =
+        repository.getAvailableNameBankList()
+}

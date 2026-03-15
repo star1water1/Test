@@ -105,4 +105,27 @@
         android:label="연표"
         tools:layout="@layout/fragment_timeline" />
 
+    <fragment
+        android:id="@+id/nameBankFragment"
+        android:name="com.novelcharacter.app.ui.namebank.NameBankFragment"
+        android:label="이름 은행"
+        tools:layout="@layout/fragment_name_bank" />
+
+    <fragment
+        android:id="@+id/characterCompareFragment"
+        android:name="com.novelcharacter.app.ui.character.CharacterCompareFragment"
+        android:label="캐릭터 비교"
+        tools:layout="@layout/fragment_character_compare">
+
+        <argument
+            android:name="characterIds"
+            app:argType="string" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/globalSearchFragment"
+        android:name="com.novelcharacter.app.ui.search.GlobalSearchFragment"
+        android:label="검색"
+        tools:layout="@layout/fragment_global_search" />
+
 </navigation>

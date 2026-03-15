@@ -73,6 +73,10 @@ class NovelListFragment : Fragment() {
     private fun setupToolbarMenu() {
         binding.toolbar.setOnMenuItemClickListener { item ->
             when (item.itemId) {
+                R.id.action_global_search -> {
+                    findNavController().navigate(R.id.globalSearchFragment)
+                    true
+                }
                 R.id.action_export -> {
                     exportToExcel()
                     true

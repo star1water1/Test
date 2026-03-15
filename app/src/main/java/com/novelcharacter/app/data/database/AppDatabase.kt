@@ -10,17 +10,23 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import com.novelcharacter.app.data.dao.CharacterDao
 import com.novelcharacter.app.data.dao.CharacterFieldValueDao
 import com.novelcharacter.app.data.dao.CharacterStateChangeDao
+import com.novelcharacter.app.data.dao.CharacterTagDao
 import com.novelcharacter.app.data.dao.FieldDefinitionDao
 import com.novelcharacter.app.data.dao.NovelDao
 import com.novelcharacter.app.data.dao.TimelineDao
 import com.novelcharacter.app.data.dao.UniverseDao
+import com.novelcharacter.app.data.dao.CharacterRelationshipDao
+import com.novelcharacter.app.data.dao.NameBankDao
 import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.CharacterFieldValue
 import com.novelcharacter.app.data.model.CharacterStateChange
+import com.novelcharacter.app.data.model.CharacterTag
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.TimelineCharacterCrossRef
 import com.novelcharacter.app.data.model.TimelineEvent
+import com.novelcharacter.app.data.model.CharacterRelationship
+import com.novelcharacter.app.data.model.NameBankEntry
 import com.novelcharacter.app.data.model.Universe
 
 @Database(
@@ -32,9 +38,12 @@ import com.novelcharacter.app.data.model.Universe
         Universe::class,
         FieldDefinition::class,
         CharacterFieldValue::class,
-        CharacterStateChange::class
+        CharacterStateChange::class,
+        CharacterTag::class,
+        NameBankEntry::class,
+        CharacterRelationship::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -45,6 +54,9 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun fieldDefinitionDao(): FieldDefinitionDao
     abstract fun characterFieldValueDao(): CharacterFieldValueDao
     abstract fun characterStateChangeDao(): CharacterStateChangeDao
+    abstract fun characterTagDao(): CharacterTagDao
+    abstract fun nameBankDao(): NameBankDao
+    abstract fun characterRelationshipDao(): CharacterRelationshipDao
 
     companion object {
         private const val TAG = "AppDatabase"
@@ -146,6 +158,69 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Migration from version 2 to 3:
+         * - Added memo column to characters table
+         * - Added character_tags table
+         * - Added name_bank table
+         * - Added character_relationships table
+         */
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "Migrating database from version 2 to 3")
+
+                // Feature 5: Add memo column to characters
+                db.execSQL("ALTER TABLE `characters` ADD COLUMN `memo` TEXT NOT NULL DEFAULT ''")
+
+                // Feature 4: Create character_tags table
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `character_tags` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `characterId` INTEGER NOT NULL,
+                        `tag` TEXT NOT NULL,
+                        FOREIGN KEY(`characterId`) REFERENCES `characters`(`id`) ON DELETE CASCADE
+                    )
+                """)
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_character_tags_characterId` ON `character_tags` (`characterId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_character_tags_tag` ON `character_tags` (`tag`)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_character_tags_characterId_tag` ON `character_tags` (`characterId`, `tag`)")
+
+                // Feature 8: Create name_bank table
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `name_bank` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `gender` TEXT NOT NULL DEFAULT '',
+                        `origin` TEXT NOT NULL DEFAULT '',
+                        `notes` TEXT NOT NULL DEFAULT '',
+                        `isUsed` INTEGER NOT NULL DEFAULT 0,
+                        `usedByCharacterId` INTEGER DEFAULT NULL,
+                        `createdAt` INTEGER NOT NULL DEFAULT 0,
+                        FOREIGN KEY(`usedByCharacterId`) REFERENCES `characters`(`id`) ON DELETE SET NULL
+                    )
+                """)
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_name_bank_isUsed` ON `name_bank` (`isUsed`)")
+
+                // Feature 1: Create character_relationships table
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `character_relationships` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `characterId1` INTEGER NOT NULL,
+                        `characterId2` INTEGER NOT NULL,
+                        `relationshipType` TEXT NOT NULL,
+                        `description` TEXT NOT NULL DEFAULT '',
+                        `createdAt` INTEGER NOT NULL DEFAULT 0,
+                        FOREIGN KEY(`characterId1`) REFERENCES `characters`(`id`) ON DELETE CASCADE,
+                        FOREIGN KEY(`characterId2`) REFERENCES `characters`(`id`) ON DELETE CASCADE
+                    )
+                """)
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_character_relationships_characterId1` ON `character_relationships` (`characterId1`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_character_relationships_characterId2` ON `character_relationships` (`characterId2`)")
+
+                Log.i(TAG, "Migration from version 2 to 3 completed successfully")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -153,7 +228,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "novel_character_database"
                 )
-                    .addMigrations(MIGRATION_1_2)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                     .build()
                 INSTANCE = instance
                 instance

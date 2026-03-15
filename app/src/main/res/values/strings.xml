@@ -139,4 +139,8 @@
     <string name="birthday_single">%s의 생일입니다!</string>
     <string name="birthday_multiple">%1$s 외 %2$d명의 생일입니다!</string>
     <string name="birthday_list">%s의 생일입니다!</string>
+
+    <!-- Memo -->
+    <string name="memo">메모</string>
+    <string name="hint_tags">태그 (쉼표로 구분)</string>
 </resources>

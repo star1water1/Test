@@ -5,7 +5,9 @@ import androidx.lifecycle.*
 import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.CharacterFieldValue
+import com.novelcharacter.app.data.model.CharacterRelationship
 import com.novelcharacter.app.data.model.CharacterStateChange
+import com.novelcharacter.app.data.model.CharacterTag
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.TimelineEvent
@@ -110,5 +112,38 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun deleteStateChange(change: CharacterStateChange) = viewModelScope.launch {
         repository.deleteStateChange(change)
+    }
+
+    // ===== Relationships =====
+    fun getRelationshipsForCharacter(characterId: Long): LiveData<List<CharacterRelationship>> =
+        repository.getRelationshipsForCharacter(characterId)
+
+    fun insertRelationship(relationship: CharacterRelationship) = viewModelScope.launch {
+        repository.insertRelationship(relationship)
+    }
+
+    fun deleteRelationshipById(id: Long) = viewModelScope.launch {
+        repository.deleteRelationshipById(id)
+    }
+
+    suspend fun getAllCharactersList(): List<Character> =
+        repository.getAllCharactersList()
+
+    // ===== Tags =====
+    fun getTagsByCharacter(characterId: Long): LiveData<List<CharacterTag>> =
+        repository.getTagsByCharacter(characterId)
+
+    suspend fun getTagsByCharacterList(characterId: Long): List<CharacterTag> =
+        repository.getTagsByCharacterList(characterId)
+
+    suspend fun getAllDistinctTags(): List<String> =
+        repository.getAllDistinctTags()
+
+    fun deleteAllTagsByCharacter(characterId: Long) = viewModelScope.launch {
+        repository.deleteAllTagsByCharacter(characterId)
+    }
+
+    fun insertTags(tags: List<CharacterTag>) = viewModelScope.launch {
+        repository.insertTags(tags)
     }
 }

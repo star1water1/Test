@@ -9,8 +9,11 @@ import androidx.room.withTransaction
 import com.novelcharacter.app.data.database.AppDatabase
 import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.CharacterFieldValue
+import com.novelcharacter.app.data.model.CharacterRelationship
 import com.novelcharacter.app.data.model.CharacterStateChange
+import com.novelcharacter.app.data.model.CharacterTag
 import com.novelcharacter.app.data.model.FieldDefinition
+import com.novelcharacter.app.data.model.NameBankEntry
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.TimelineCharacterCrossRef
 import com.novelcharacter.app.data.model.TimelineEvent
@@ -69,6 +72,10 @@ class ExcelImporter(private val context: Context) {
         var updatedEvents: Int = 0,
         var newStateChanges: Int = 0,
         var updatedStateChanges: Int = 0,
+        var newRelationships: Int = 0,
+        var updatedRelationships: Int = 0,
+        var newNameBank: Int = 0,
+        var updatedNameBank: Int = 0,
         var skippedRows: Int = 0,
         val errors: MutableList<String> = mutableListOf()
     )
@@ -91,6 +98,8 @@ class ExcelImporter(private val context: Context) {
                     importUnclassifiedCharacters(workbook, result)
                     importTimeline(workbook, result)
                     importStateChanges(workbook, result)
+                    importRelationships(workbook, result)
+                    importNameBank(workbook, result)
                 }
 
                 workbook.close()
@@ -132,6 +141,10 @@ class ExcelImporter(private val context: Context) {
             val detail = if (result.updatedStateChanges > 0) " (업데이트 ${result.updatedStateChanges}개)" else ""
             parts.add("상태변화 ${scTotal}개$detail")
         }
+        val relTotal = result.newRelationships + result.updatedRelationships
+        if (relTotal > 0) parts.add("관계 ${relTotal}개")
+        val nbTotal = result.newNameBank + result.updatedNameBank
+        if (nbTotal > 0) parts.add("이름 ${nbTotal}개")
         if (result.skippedRows > 0)
             parts.add("오류 ${result.skippedRows}건 건너뜀")
 
@@ -279,11 +292,11 @@ class ExcelImporter(private val context: Context) {
             // 헤더 기반 필드 매핑: 컬럼명 → 필드 정의 매칭
             val columnFieldMap = buildColumnFieldMap(headerRow, fields)
 
-            // "이미지경로" 컬럼 위치 찾기
+            // 특수 컬럼 위치 찾기
             val imageColIndex = findColumnIndex(headerRow, "이미지경로")
-
-            // "작품" 컬럼 위치 찾기
             val novelColIndex = findColumnIndex(headerRow, "작품")
+            val memoColIndex = findColumnIndex(headerRow, "메모")
+            val tagsColIndex = findColumnIndex(headerRow, "태그")
 
             for (i in 1..sheet.lastRowNum) {
                 try {
@@ -294,6 +307,7 @@ class ExcelImporter(private val context: Context) {
                     val novelTitle = if (novelColIndex >= 0) getCellString(row, novelColIndex) else ""
                     val novelId = resolveNovelId(novelTitle, universe.id)
                     val imagePaths = if (imageColIndex >= 0) getCellString(row, imageColIndex) else "[]"
+                    val memo = if (memoColIndex >= 0) getCellString(row, memoColIndex) else ""
 
                     // 기존 캐릭터 찾기 (덮어쓰기)
                     val existingChar = if (novelId != null) {
@@ -305,6 +319,7 @@ class ExcelImporter(private val context: Context) {
                         charId = existingChar.id
                         db.characterDao().update(existingChar.copy(
                             imagePaths = imagePaths,
+                            memo = memo,
                             updatedAt = System.currentTimeMillis()
                         ))
                         result.updatedCharacters++
@@ -312,9 +327,22 @@ class ExcelImporter(private val context: Context) {
                         charId = db.characterDao().insert(Character(
                             name = name,
                             novelId = novelId,
-                            imagePaths = imagePaths
+                            imagePaths = imagePaths,
+                            memo = memo
                         ))
                         result.newCharacters++
+                    }
+
+                    // 태그 가져오기
+                    if (tagsColIndex >= 0) {
+                        val tagsStr = getCellString(row, tagsColIndex)
+                        if (tagsStr.isNotBlank()) {
+                            db.characterTagDao().deleteAllByCharacter(charId)
+                            val tags = tagsStr.split(",").map { it.trim() }.filter { it.isNotBlank() }
+                            tags.forEach { tag ->
+                                db.characterTagDao().insert(CharacterTag(characterId = charId, tag = tag))
+                            }
+                        }
                     }
 
                     // 동적 필드 값 가져오기 (헤더 기반 매핑)
@@ -350,6 +378,8 @@ class ExcelImporter(private val context: Context) {
 
         val imageColIndex = findColumnIndex(headerRow, "이미지경로")
         val novelColIndex = findColumnIndex(headerRow, "작품")
+        val memoColIndex = findColumnIndex(headerRow, "메모")
+        val tagsColIndex = findColumnIndex(headerRow, "태그")
 
         for (i in 1..sheet.lastRowNum) {
             try {
@@ -360,24 +390,41 @@ class ExcelImporter(private val context: Context) {
                 val novelTitle = if (novelColIndex >= 0) getCellString(row, novelColIndex) else ""
                 val novelId = resolveNovelIdNoUniverse(novelTitle)
                 val imagePaths = if (imageColIndex >= 0) getCellString(row, imageColIndex) else "[]"
+                val memo = if (memoColIndex >= 0) getCellString(row, memoColIndex) else ""
 
                 val existingChar = if (novelId != null) {
                     db.characterDao().getCharacterByNameAndNovel(name, novelId)
                 } else null
 
+                val charId: Long
                 if (existingChar != null) {
+                    charId = existingChar.id
                     db.characterDao().update(existingChar.copy(
                         imagePaths = imagePaths,
+                        memo = memo,
                         updatedAt = System.currentTimeMillis()
                     ))
                     result.updatedCharacters++
                 } else {
-                    db.characterDao().insert(Character(
+                    charId = db.characterDao().insert(Character(
                         name = name,
                         novelId = novelId,
-                        imagePaths = imagePaths
+                        imagePaths = imagePaths,
+                        memo = memo
                     ))
                     result.newCharacters++
+                }
+
+                // 태그 가져오기
+                if (tagsColIndex >= 0) {
+                    val tagsStr = getCellString(row, tagsColIndex)
+                    if (tagsStr.isNotBlank()) {
+                        db.characterTagDao().deleteAllByCharacter(charId)
+                        val tags = tagsStr.split(",").map { it.trim() }.filter { it.isNotBlank() }
+                        tags.forEach { tag ->
+                            db.characterTagDao().insert(CharacterTag(characterId = charId, tag = tag))
+                        }
+                    }
                 }
             } catch (e: Exception) {
                 result.skippedRows++
@@ -519,6 +566,107 @@ class ExcelImporter(private val context: Context) {
         }
     }
 
+    // ── 캐릭터 관계 가져오기 ──
+
+    private suspend fun importRelationships(workbook: Workbook, result: ImportResult) {
+        val sheet = workbook.getSheet("캐릭터 관계") ?: return
+        val headerRow = sheet.getRow(0) ?: return
+        if (getCellString(headerRow, 0) != "캐릭터1") return
+
+        for (i in 1..sheet.lastRowNum) {
+            try {
+                val row = sheet.getRow(i) ?: continue
+                val char1Name = getCellString(row, 0)
+                val char2Name = getCellString(row, 1)
+                if (char1Name.isBlank() || char2Name.isBlank()) continue
+
+                val relationshipType = getCellString(row, 2)
+                if (relationshipType.isBlank()) continue
+                val description = getCellString(row, 3)
+
+                val char1 = findCharacterByName(char1Name, null) ?: continue
+                val char2 = findCharacterByName(char2Name, null) ?: continue
+
+                // 중복 체크: 같은 두 캐릭터 + 같은 관계 유형
+                val existingRels = db.characterRelationshipDao().getRelationshipsForCharacterList(char1.id)
+                val existing = existingRels.find { rel ->
+                    ((rel.characterId1 == char1.id && rel.characterId2 == char2.id) ||
+                     (rel.characterId1 == char2.id && rel.characterId2 == char1.id)) &&
+                    rel.relationshipType == relationshipType
+                }
+
+                if (existing != null) {
+                    db.characterRelationshipDao().update(existing.copy(description = description))
+                    result.updatedRelationships++
+                } else {
+                    db.characterRelationshipDao().insert(CharacterRelationship(
+                        characterId1 = char1.id,
+                        characterId2 = char2.id,
+                        relationshipType = relationshipType,
+                        description = description
+                    ))
+                    result.newRelationships++
+                }
+            } catch (e: Exception) {
+                result.skippedRows++
+                result.errors.add("관계 행 $i: ${e.message}")
+            }
+        }
+    }
+
+    // ── 이름 은행 가져오기 ──
+
+    private suspend fun importNameBank(workbook: Workbook, result: ImportResult) {
+        val sheet = workbook.getSheet("이름 은행") ?: return
+        val headerRow = sheet.getRow(0) ?: return
+        if (getCellString(headerRow, 0) != "이름") return
+
+        for (i in 1..sheet.lastRowNum) {
+            try {
+                val row = sheet.getRow(i) ?: continue
+                val name = getCellString(row, 0)
+                if (name.isBlank()) continue
+
+                val gender = getCellString(row, 1)
+                val origin = getCellString(row, 2)
+                val notes = getCellString(row, 3)
+                val isUsed = getCellString(row, 4) == "Y"
+                val usedByCharName = getCellString(row, 5)
+
+                val usedByCharacterId = if (usedByCharName.isNotBlank()) {
+                    findCharacterByName(usedByCharName, null)?.id
+                } else null
+
+                // 중복 체크: 같은 이름
+                val existingNames = db.nameBankDao().getAllNamesList()
+                val existing = existingNames.find { it.name == name && it.gender == gender }
+
+                if (existing != null) {
+                    db.nameBankDao().update(existing.copy(
+                        origin = origin,
+                        notes = notes,
+                        isUsed = isUsed,
+                        usedByCharacterId = usedByCharacterId
+                    ))
+                    result.updatedNameBank++
+                } else {
+                    db.nameBankDao().insert(NameBankEntry(
+                        name = name,
+                        gender = gender,
+                        origin = origin,
+                        notes = notes,
+                        isUsed = isUsed,
+                        usedByCharacterId = usedByCharacterId
+                    ))
+                    result.newNameBank++
+                }
+            } catch (e: Exception) {
+                result.skippedRows++
+                result.errors.add("이름 은행 행 $i: ${e.message}")
+            }
+        }
+    }
+
     // ── 유틸리티 메서드 ──
 
     private fun findSheetForUniverse(workbook: Workbook, universeName: String, reservedNames: Set<String>): Sheet? {
@@ -545,7 +693,7 @@ class ExcelImporter(private val context: Context) {
         val lastCol = headerRow.lastCellNum.toInt()
         for (col in 1 until lastCol) {
             val headerName = getCellString(headerRow, col)
-            if (headerName == "작품" || headerName == "이미지경로") continue
+            if (headerName in setOf("작품", "이미지경로", "메모", "태그")) continue
             val field = fields.find { it.name == headerName }
             if (field != null) {
                 map[col] = field

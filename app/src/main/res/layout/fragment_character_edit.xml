@@ -56,6 +56,21 @@
 
             </com.google.android.material.textfield.TextInputLayout>
 
+            <!-- Tags input -->
+            <com.google.android.material.textfield.TextInputLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                android:hint="@string/hint_tags">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/editTags"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:inputType="text" />
+
+            </com.google.android.material.textfield.TextInputLayout>
+
             <!-- Novel selection -->
             <TextView
                 android:layout_width="wrap_content"
@@ -76,6 +91,23 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical" />
+
+            <!-- Memo input -->
+            <com.google.android.material.textfield.TextInputLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                android:hint="@string/memo">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/editMemo"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:inputType="textMultiLine"
+                    android:minLines="3"
+                    android:gravity="top" />
+
+            </com.google.android.material.textfield.TextInputLayout>
 
             <!-- Save button -->
             <com.google.android.material.button.MaterialButton

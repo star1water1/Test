@@ -11,7 +11,10 @@ class AppRepository(
     private val universeDao: UniverseDao,
     private val fieldDefinitionDao: FieldDefinitionDao,
     private val characterFieldValueDao: CharacterFieldValueDao,
-    private val characterStateChangeDao: CharacterStateChangeDao
+    private val characterStateChangeDao: CharacterStateChangeDao,
+    private val characterTagDao: CharacterTagDao,
+    private val nameBankDao: NameBankDao,
+    private val characterRelationshipDao: CharacterRelationshipDao
 ) {
     // ===== Novel =====
     val allNovels: LiveData<List<Novel>> = novelDao.getAllNovels()
@@ -25,6 +28,8 @@ class AppRepository(
         novelDao.getNovelsByUniverse(universeId)
     suspend fun getNovelsByUniverseList(universeId: Long): List<Novel> =
         novelDao.getNovelsByUniverseList(universeId)
+    fun searchNovels(query: String): LiveData<List<Novel>> =
+        novelDao.searchNovels(query)
 
     // ===== Character =====
     val allCharacters: LiveData<List<Character>> = characterDao.getAllCharacters()
@@ -62,6 +67,10 @@ class AppRepository(
         timelineDao.getEventsByUniverse(universeId)
     fun getEventsByYearMonthDay(year: Int, month: Int?, day: Int?): LiveData<List<TimelineEvent>> =
         timelineDao.getEventsByYearMonthDay(year, month, day)
+    fun getEventsForCharacterInRange(characterId: Long, startYear: Int, endYear: Int): LiveData<List<TimelineEvent>> =
+        timelineDao.getEventsForCharacterInRange(characterId, startYear, endYear)
+    fun getEventsByNovelInRange(novelId: Long, startYear: Int, endYear: Int): LiveData<List<TimelineEvent>> =
+        timelineDao.getEventsByNovelInRange(novelId, startYear, endYear)
 
     // ===== Timeline-Character 연결 =====
     suspend fun linkCharacterToEvent(eventId: Long, characterId: Long) {
@@ -205,4 +214,63 @@ class AppRepository(
 
     suspend fun getFieldCountsByUniverses(universeIds: List<Long>): Map<Long, Int> =
         fieldDefinitionDao.getFieldCountsByUniverses(universeIds).associate { it.universeId to it.cnt }
+
+    // ===== CharacterTag =====
+    fun getTagsByCharacter(characterId: Long): LiveData<List<CharacterTag>> =
+        characterTagDao.getTagsByCharacter(characterId)
+
+    suspend fun getTagsByCharacterList(characterId: Long): List<CharacterTag> =
+        characterTagDao.getTagsByCharacterList(characterId)
+
+    suspend fun getAllDistinctTags(): List<String> =
+        characterTagDao.getAllDistinctTags()
+
+    suspend fun deleteAllTagsByCharacter(characterId: Long) =
+        characterTagDao.deleteAllByCharacter(characterId)
+
+    suspend fun insertTags(tags: List<CharacterTag>) =
+        characterTagDao.insertAll(tags)
+
+    // ===== NameBank =====
+    val allNameBankEntries: LiveData<List<NameBankEntry>> = nameBankDao.getAllNames()
+    val availableNameBankEntries: LiveData<List<NameBankEntry>> = nameBankDao.getAvailableNames()
+
+    suspend fun getAvailableNameBankList(): List<NameBankEntry> =
+        nameBankDao.getAvailableNamesList()
+
+    suspend fun getAllNameBankList(): List<NameBankEntry> =
+        nameBankDao.getAllNamesList()
+
+    suspend fun insertNameBankEntry(entry: NameBankEntry): Long =
+        nameBankDao.insert(entry)
+
+    suspend fun updateNameBankEntry(entry: NameBankEntry) =
+        nameBankDao.update(entry)
+
+    suspend fun deleteNameBankEntry(entry: NameBankEntry) =
+        nameBankDao.delete(entry)
+
+    suspend fun markNameBankAsUsed(id: Long, characterId: Long) =
+        nameBankDao.markAsUsed(id, characterId)
+
+    suspend fun markNameBankAsAvailable(id: Long) =
+        nameBankDao.markAsAvailable(id)
+
+    // ===== CharacterRelationship =====
+    fun getRelationshipsForCharacter(characterId: Long): LiveData<List<CharacterRelationship>> =
+        characterRelationshipDao.getRelationshipsForCharacter(characterId)
+
+    suspend fun getRelationshipsForCharacterList(characterId: Long): List<CharacterRelationship> =
+        characterRelationshipDao.getRelationshipsForCharacterList(characterId)
+
+    suspend fun getAllRelationships(): List<CharacterRelationship> =
+        characterRelationshipDao.getAllRelationships()
+
+    suspend fun insertRelationship(relationship: CharacterRelationship): Long =
+        characterRelationshipDao.insert(relationship)
+
+    suspend fun deleteRelationshipById(id: Long) {
+        val rels = characterRelationshipDao.getAllRelationships()
+        rels.find { it.id == id }?.let { characterRelationshipDao.delete(it) }
+    }
 }

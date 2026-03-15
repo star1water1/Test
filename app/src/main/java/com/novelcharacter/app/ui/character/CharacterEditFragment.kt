@@ -27,6 +27,7 @@ import com.google.gson.reflect.TypeToken
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.CharacterFieldValue
+import com.novelcharacter.app.data.model.CharacterTag
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.FieldType
 import com.novelcharacter.app.data.model.Novel
@@ -132,6 +133,10 @@ class CharacterEditFragment : Fragment() {
     private suspend fun loadExistingCharacter() {
         existingCharacter = viewModel.getCharacterByIdSuspend(characterId)
         existingCharacter?.let { fillForm(it) }
+
+        // 태그 로드
+        val tags = viewModel.getTagsByCharacterList(characterId)
+        binding.editTags.setText(tags.joinToString(", ") { it.tag })
     }
 
     private fun fillForm(character: Character) {
@@ -153,6 +158,9 @@ class CharacterEditFragment : Fragment() {
         imagePaths.clear()
         imagePaths.addAll(paths)
         updateImageList()
+
+        // 메모
+        binding.editMemo.setText(character.memo)
     }
 
     private suspend fun loadFieldValues(characterId: Long) {
@@ -513,27 +521,39 @@ class CharacterEditFragment : Fragment() {
             val novelPosition = binding.spinnerNovel.selectedItemPosition
             val selectedNovelId = if (novelPosition > 0) novels[novelPosition - 1].id else null
 
+            val memo = binding.editMemo.text.toString()
+
             val character = Character(
                 id = if (characterId != -1L) characterId else 0,
                 name = name,
                 novelId = selectedNovelId,
                 imagePaths = gson.toJson(imagePaths),
                 createdAt = existingCharacter?.createdAt ?: System.currentTimeMillis(),
-                updatedAt = System.currentTimeMillis()
+                updatedAt = System.currentTimeMillis(),
+                memo = memo
             )
 
             viewLifecycleOwner.lifecycleScope.launch {
+                val savedCharId: Long
                 if (characterId != -1L) {
                     // 기존 캐릭터 수정
                     viewModel.updateCharacter(character)
                     val fieldValues = collectFieldValues(characterId)
                     viewModel.saveAllFieldValues(characterId, fieldValues)
+                    savedCharId = characterId
                 } else {
                     // 새 캐릭터 생성 - suspend로 ID를 받아온 뒤 필드값 저장
                     val newId = viewModel.insertCharacterSuspend(character)
                     val fieldValues = collectFieldValues(newId)
                     viewModel.saveAllFieldValues(newId, fieldValues)
+                    savedCharId = newId
                 }
+
+                // 태그 저장
+                val tagText = binding.editTags.text.toString()
+                val tagList = tagText.split(",").map { it.trim() }.filter { it.isNotBlank() }
+                viewModel.deleteAllTagsByCharacter(savedCharId)
+                viewModel.insertTags(tagList.map { CharacterTag(characterId = savedCharId, tag = it) })
 
                 Toast.makeText(requireContext(), R.string.saved_successfully, Toast.LENGTH_SHORT).show()
                 findNavController().popBackStack()

@@ -6,24 +6,25 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 
 @Entity(
-    tableName = "characters",
+    tableName = "name_bank",
     foreignKeys = [
         ForeignKey(
-            entity = Novel::class,
+            entity = Character::class,
             parentColumns = ["id"],
-            childColumns = ["novelId"],
+            childColumns = ["usedByCharacterId"],
             onDelete = ForeignKey.SET_NULL
         )
     ],
-    indices = [Index("novelId")]
+    indices = [Index("isUsed")]
 )
-data class Character(
+data class NameBankEntry(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
     val name: String,
-    val novelId: Long? = null,
-    val imagePaths: String = "[]",
-    val createdAt: Long = System.currentTimeMillis(),
-    val updatedAt: Long = System.currentTimeMillis(),
-    val memo: String = ""
+    val gender: String = "",
+    val origin: String = "",
+    val notes: String = "",
+    val isUsed: Boolean = false,
+    val usedByCharacterId: Long? = null,
+    val createdAt: Long = System.currentTimeMillis()
 )

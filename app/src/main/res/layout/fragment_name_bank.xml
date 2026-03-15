@@ -14,17 +14,17 @@
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent"
-        app:title="@string/tab_characters"
+        app:title="이름 은행"
         app:titleTextColor="@color/on_primary" />
 
     <LinearLayout
-        android:id="@+id/compareLayout"
+        android:id="@+id/filterLayout"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_vertical"
         android:paddingHorizontal="8dp"
-        android:paddingTop="4dp"
+        android:paddingVertical="4dp"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/toolbar">
@@ -34,8 +34,8 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:layout_marginEnd="4dp"
-            android:hint="@string/search">
+            android:layout_marginEnd="8dp"
+            android:hint="이름 검색">
 
             <com.google.android.material.textfield.TextInputEditText
                 android:id="@+id/searchEdit"
@@ -45,23 +45,13 @@
 
         </com.google.android.material.textfield.TextInputLayout>
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnCompare"
-            style="@style/Widget.Material3.Button.TonalButton"
+        <com.google.android.material.chip.Chip
+            android:id="@+id/chipAvailableOnly"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="비교"
-            android:textSize="12sp"
-            android:minWidth="56dp" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnCancelCompare"
-            style="@style/Widget.Material3.Button.TextButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="취소"
-            android:textSize="12sp"
-            android:visibility="gone" />
+            android:text="미사용만"
+            style="@style/Widget.Material3.Chip.Filter"
+            android:checkable="true" />
 
     </LinearLayout>
 
@@ -69,32 +59,32 @@
         android:id="@+id/emptyText"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="@string/no_characters"
+        android:text="이름을 추가해보세요"
         android:textColor="@color/text_secondary"
         android:textSize="16sp"
         android:visibility="gone"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/compareLayout" />
+        app:layout_constraintTop_toBottomOf="@id/filterLayout" />
 
     <androidx.recyclerview.widget.RecyclerView
-        android:id="@+id/characterRecyclerView"
+        android:id="@+id/nameBankRecyclerView"
         android:layout_width="0dp"
         android:layout_height="0dp"
-        android:padding="4dp"
         android:clipToPadding="false"
+        android:paddingBottom="72dp"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/compareLayout" />
+        app:layout_constraintTop_toBottomOf="@id/filterLayout" />
 
     <com.google.android.material.floatingactionbutton.FloatingActionButton
-        android:id="@+id/fabAddCharacter"
+        android:id="@+id/fabAddName"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_margin="16dp"
-        android:contentDescription="@string/add_character"
+        android:contentDescription="이름 추가"
         android:src="@android:drawable/ic_input_add"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />

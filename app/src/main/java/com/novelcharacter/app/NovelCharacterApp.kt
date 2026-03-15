@@ -8,6 +8,7 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import com.novelcharacter.app.data.database.AppDatabase
 import com.novelcharacter.app.data.repository.AppRepository
+import com.novelcharacter.app.backup.AutoBackupWorker
 import com.novelcharacter.app.notification.BirthdayWorker
 import java.util.concurrent.TimeUnit
 
@@ -22,7 +23,10 @@ class NovelCharacterApp : Application() {
             database.universeDao(),
             database.fieldDefinitionDao(),
             database.characterFieldValueDao(),
-            database.characterStateChangeDao()
+            database.characterStateChangeDao(),
+            database.characterTagDao(),
+            database.nameBankDao(),
+            database.characterRelationshipDao()
         )
     }
 
@@ -30,6 +34,7 @@ class NovelCharacterApp : Application() {
         super.onCreate()
         createNotificationChannel()
         scheduleBirthdayCheck()
+        scheduleAutoBackup()
     }
 
     private fun createNotificationChannel() {
@@ -51,6 +56,22 @@ class NovelCharacterApp : Application() {
 
         WorkManager.getInstance(this).enqueueUniquePeriodicWork(
             "birthday_check",
+            ExistingPeriodicWorkPolicy.KEEP,
+            workRequest
+        )
+    }
+
+    private fun scheduleAutoBackup() {
+        val workRequest = PeriodicWorkRequestBuilder<AutoBackupWorker>(
+            1, TimeUnit.DAYS
+        ).setConstraints(
+            androidx.work.Constraints.Builder()
+                .setRequiresBatteryNotLow(true)
+                .build()
+        ).build()
+
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+            "auto_backup",
             ExistingPeriodicWorkPolicy.KEEP,
             workRequest
         )

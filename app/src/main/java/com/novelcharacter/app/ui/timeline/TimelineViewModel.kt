@@ -27,6 +27,19 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
     private val _selectedYear = MutableLiveData<Int?>(null)
     val selectedYear: LiveData<Int?> = _selectedYear
 
+    // ===== Timeline Filters =====
+    private val _filterNovelId = MutableLiveData<Long?>(null)
+    val filterNovelId: LiveData<Long?> = _filterNovelId
+    private val _filterCharacterId = MutableLiveData<Long?>(null)
+    val filterCharacterId: LiveData<Long?> = _filterCharacterId
+
+    fun setFilterNovel(novelId: Long?) { _filterNovelId.value = novelId }
+    fun setFilterCharacter(characterId: Long?) { _filterCharacterId.value = characterId }
+    fun clearFilters() {
+        _filterNovelId.value = null
+        _filterCharacterId.value = null
+    }
+
     /**
      * Computes the visible year range based on zoom level and center year.
      * Returns a Pair of (startYear, endYear).
@@ -50,11 +63,24 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
     }
 
     /**
-     * Filtered events based on the current visible range.
-     * Uses switchMap to query the database for the year range.
+     * Filtered events based on the current visible range and optional novel/character filters.
      */
-    val filteredEvents: LiveData<List<TimelineEvent>> = visibleRange.switchMap { (start, end) ->
-        repository.getEventsByYearRange(start, end)
+    private val _filterTrigger = MediatorLiveData<Unit>().apply {
+        addSource(visibleRange) { value = Unit }
+        addSource(_filterNovelId) { value = Unit }
+        addSource(_filterCharacterId) { value = Unit }
+    }
+
+    val filteredEvents: LiveData<List<TimelineEvent>> = _filterTrigger.switchMap {
+        val (start, end) = visibleRange.value ?: Pair(-5, 5)
+        val novelId = _filterNovelId.value
+        val characterId = _filterCharacterId.value
+
+        when {
+            characterId != null -> repository.getEventsForCharacterInRange(characterId, start, end)
+            novelId != null -> repository.getEventsByNovelInRange(novelId, start, end)
+            else -> repository.getEventsByYearRange(start, end)
+        }
     }
 
     /**

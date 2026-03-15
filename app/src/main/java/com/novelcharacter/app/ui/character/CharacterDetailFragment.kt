@@ -30,6 +30,8 @@ import com.novelcharacter.app.data.model.CharacterStateChange
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.databinding.DialogStateChangeBinding
 import com.novelcharacter.app.databinding.FragmentCharacterDetailBinding
+import com.novelcharacter.app.ui.adapter.RelationshipAdapter
+import com.novelcharacter.app.ui.adapter.RelationshipDisplayItem
 import com.novelcharacter.app.ui.adapter.StateChangeAdapter
 import com.novelcharacter.app.ui.adapter.TimelineAdapter
 import com.novelcharacter.app.util.TimeStateResolver
@@ -59,6 +61,9 @@ class CharacterDetailFragment : Fragment() {
     // State change adapter
     private lateinit var stateChangeAdapter: StateChangeAdapter
 
+    // Relationship adapter
+    private lateinit var relationshipAdapter: RelationshipAdapter
+
     private val timeStateResolver = TimeStateResolver()
 
     override fun onCreateView(
@@ -82,9 +87,11 @@ class CharacterDetailFragment : Fragment() {
 
         setupTimeSlider()
         setupStateChanges()
+        setupRelationships()
         observeCharacter()
         observeEvents()
         observeStateChanges()
+        observeRelationships()
     }
 
     // ===== Time Slider =====
@@ -402,6 +409,24 @@ class CharacterDetailFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             val novel = character.novelId?.let { viewModel.getNovelById(it) }
             binding.detailNovel.text = "작품: ${novel?.title ?: "미지정"}"
+
+            // 태그
+            viewModel.getTagsByCharacter(characterId).observe(viewLifecycleOwner) { tags ->
+                if (tags.isNotEmpty()) {
+                    binding.detailTags.visibility = View.VISIBLE
+                    binding.detailTags.text = tags.joinToString("  ") { "#${it.tag}" }
+                } else {
+                    binding.detailTags.visibility = View.GONE
+                }
+            }
+
+            // 메모
+            if (character.memo.isNotBlank()) {
+                binding.memoCard.visibility = View.VISIBLE
+                binding.detailMemo.text = character.memo
+            } else {
+                binding.memoCard.visibility = View.GONE
+            }
 
             // 동적 필드 로드: novel -> universeId -> FieldDefinitions -> CharacterFieldValues
             val universeId = novel?.universeId
@@ -740,6 +765,119 @@ class CharacterDetailFragment : Fragment() {
             }
         }
         return inSampleSize
+    }
+
+    // ===== Relationships =====
+
+    private fun setupRelationships() {
+        relationshipAdapter = RelationshipAdapter(
+            onClick = { item ->
+                // Navigate to the other character's detail
+                val bundle = Bundle().apply { putLong("characterId", item.otherCharacterId) }
+                findNavController().navigate(R.id.characterDetailFragment, bundle)
+            },
+            onLongClick = { item ->
+                showRelationshipOptionsDialog(item)
+            }
+        )
+        binding.relationshipsRecyclerView.layoutManager = LinearLayoutManager(requireContext())
+        binding.relationshipsRecyclerView.adapter = relationshipAdapter
+
+        binding.btnAddRelationship.setOnClickListener {
+            showAddRelationshipDialog()
+        }
+    }
+
+    private fun observeRelationships() {
+        viewModel.getRelationshipsForCharacter(characterId).observe(viewLifecycleOwner) { relationships ->
+            viewLifecycleOwner.lifecycleScope.launch {
+                val displayItems = relationships.mapNotNull { rel ->
+                    val otherId = if (rel.characterId1 == characterId) rel.characterId2 else rel.characterId1
+                    val otherChar = viewModel.getCharacterByIdSuspend(otherId)
+                    if (otherChar != null) {
+                        RelationshipDisplayItem(
+                            relationshipId = rel.id,
+                            otherCharacterName = otherChar.name,
+                            otherCharacterId = otherId,
+                            relationshipType = rel.relationshipType,
+                            description = rel.description
+                        )
+                    } else null
+                }
+                relationshipAdapter.submitList(displayItems)
+                binding.textNoRelationships.visibility = if (displayItems.isEmpty()) View.VISIBLE else View.GONE
+                binding.relationshipsRecyclerView.visibility = if (displayItems.isEmpty()) View.GONE else View.VISIBLE
+            }
+        }
+    }
+
+    private fun showAddRelationshipDialog() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val allCharacters = viewModel.getAllCharactersList()
+            val otherCharacters = allCharacters.filter { it.id != characterId }
+            if (otherCharacters.isEmpty()) {
+                Toast.makeText(requireContext(), "다른 캐릭터가 없습니다", Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+
+            val charNames = otherCharacters.map { it.name }.toTypedArray()
+            val typeNames = com.novelcharacter.app.data.model.CharacterRelationship.TYPES.toTypedArray()
+
+            val dialogView = LayoutInflater.from(requireContext()).inflate(R.layout.dialog_relationship_edit, null)
+            val spinnerCharacter = dialogView.findViewById<android.widget.Spinner>(R.id.spinnerRelCharacter)
+            val spinnerType = dialogView.findViewById<android.widget.Spinner>(R.id.spinnerRelType)
+            val editDesc = dialogView.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.editRelDescription)
+
+            spinnerCharacter.adapter = android.widget.ArrayAdapter(
+                requireContext(), android.R.layout.simple_spinner_item, charNames
+            ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+
+            spinnerType.adapter = android.widget.ArrayAdapter(
+                requireContext(), android.R.layout.simple_spinner_item, typeNames
+            ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+
+            AlertDialog.Builder(requireContext())
+                .setTitle("관계 추가")
+                .setView(dialogView)
+                .setPositiveButton("저장") { _, _ ->
+                    val selectedCharIndex = spinnerCharacter.selectedItemPosition
+                    val selectedType = typeNames[spinnerType.selectedItemPosition]
+                    val desc = editDesc.text.toString().trim()
+
+                    if (selectedCharIndex >= 0) {
+                        val otherChar = otherCharacters[selectedCharIndex]
+                        viewModel.insertRelationship(
+                            com.novelcharacter.app.data.model.CharacterRelationship(
+                                characterId1 = characterId,
+                                characterId2 = otherChar.id,
+                                relationshipType = selectedType,
+                                description = desc
+                            )
+                        )
+                    }
+                }
+                .setNegativeButton("취소", null)
+                .show()
+        }
+    }
+
+    private fun showRelationshipOptionsDialog(item: RelationshipDisplayItem) {
+        AlertDialog.Builder(requireContext())
+            .setTitle("${item.otherCharacterName} (${item.relationshipType})")
+            .setItems(arrayOf("삭제")) { _, which ->
+                when (which) {
+                    0 -> {
+                        AlertDialog.Builder(requireContext())
+                            .setMessage("이 관계를 삭제하시겠습니까?")
+                            .setPositiveButton("예") { _, _ ->
+                                viewModel.deleteRelationshipById(item.relationshipId)
+                            }
+                            .setNegativeButton("아니오", null)
+                            .show()
+                    }
+                }
+            }
+            .show()
     }
 
     override fun onDestroyView() {

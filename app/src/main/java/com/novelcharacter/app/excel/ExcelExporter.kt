@@ -38,6 +38,8 @@ class ExcelExporter(private val context: Context) {
                 exportCharacters(workbook, headerStyle, usedSheetNames)
                 exportTimeline(workbook, headerStyle, usedSheetNames)
                 exportStateChanges(workbook, headerStyle, usedSheetNames)
+                exportRelationships(workbook, headerStyle, usedSheetNames)
+                exportNameBank(workbook, headerStyle, usedSheetNames)
 
                 val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
                 val fileName = "NovelCharacter_$timestamp.xlsx"
@@ -215,11 +217,13 @@ class ExcelExporter(private val context: Context) {
             val sheetName = sanitizeSheetName(universe.name, usedSheetNames)
             val sheet = workbook.createSheet(sheetName)
 
-            // 헤더: 이름 + 동적 필드 + 이미지경로 + 작품
+            // 헤더: 이름 + 동적 필드 + 이미지경로 + 작품 + 메모 + 태그
             val headers = mutableListOf("이름")
             headers.addAll(fields.map { it.name })
             headers.add("이미지경로")
             headers.add("작품")
+            headers.add("메모")
+            headers.add("태그")
 
             val headerRow = sheet.createRow(0)
             headers.forEachIndexed { index, header ->
@@ -243,6 +247,9 @@ class ExcelExporter(private val context: Context) {
 
                 row.createCell(fields.size + 1).setCellValue(character.imagePaths)
                 row.createCell(fields.size + 2).setCellValue(novelTitle)
+                row.createCell(fields.size + 3).setCellValue(character.memo)
+                val tags = db.characterTagDao().getTagsByCharacterList(character.id)
+                row.createCell(fields.size + 4).setCellValue(tags.joinToString(", ") { it.tag })
             }
 
             headers.indices.forEach { sheet.setColumnWidth(it, 5000) }
@@ -256,7 +263,7 @@ class ExcelExporter(private val context: Context) {
         if (unassignedChars.isNotEmpty()) {
             val sheetName = sanitizeSheetName("미분류 캐릭터", usedSheetNames)
             val sheet = workbook.createSheet(sheetName)
-            val headers = listOf("이름", "이미지경로", "작품")
+            val headers = listOf("이름", "이미지경로", "작품", "메모", "태그")
             val headerRow = sheet.createRow(0)
             headers.forEachIndexed { index, header ->
                 val cell = headerRow.createCell(index)
@@ -268,6 +275,9 @@ class ExcelExporter(private val context: Context) {
                 row.createCell(0).setCellValue(character.name)
                 row.createCell(1).setCellValue(character.imagePaths)
                 row.createCell(2).setCellValue(novels.find { it.id == character.novelId }?.title ?: "")
+                row.createCell(3).setCellValue(character.memo)
+                val tags = db.characterTagDao().getTagsByCharacterList(character.id)
+                row.createCell(4).setCellValue(tags.joinToString(", ") { it.tag })
             }
             headers.indices.forEach { sheet.setColumnWidth(it, 5000) }
         }
@@ -349,6 +359,70 @@ class ExcelExporter(private val context: Context) {
             row.createCell(5).setCellValue(change.fieldKey)
             row.createCell(6).setCellValue(change.newValue)
             row.createCell(7).setCellValue(change.description)
+        }
+
+        headers.indices.forEach { sheet.setColumnWidth(it, 5000) }
+    }
+
+    private suspend fun exportRelationships(
+        workbook: XSSFWorkbook,
+        headerStyle: XSSFCellStyle,
+        usedSheetNames: MutableSet<String>
+    ) {
+        val allRelationships = db.characterRelationshipDao().getAllRelationships()
+        if (allRelationships.isEmpty()) return
+
+        val allCharacters = db.characterDao().getAllCharactersList()
+        val charMap = allCharacters.associateBy { it.id }
+
+        val sheetName = sanitizeSheetName("캐릭터 관계", usedSheetNames)
+        val sheet = workbook.createSheet(sheetName)
+        val headers = listOf("캐릭터1", "캐릭터2", "관계 유형", "설명")
+
+        val headerRow = sheet.createRow(0)
+        headers.forEachIndexed { i, h ->
+            headerRow.createCell(i).apply { setCellValue(h); cellStyle = headerStyle }
+        }
+
+        allRelationships.forEachIndexed { i, rel ->
+            val row = sheet.createRow(i + 1)
+            row.createCell(0).setCellValue(charMap[rel.characterId1]?.name ?: "")
+            row.createCell(1).setCellValue(charMap[rel.characterId2]?.name ?: "")
+            row.createCell(2).setCellValue(rel.relationshipType)
+            row.createCell(3).setCellValue(rel.description)
+        }
+
+        headers.indices.forEach { sheet.setColumnWidth(it, 5000) }
+    }
+
+    private suspend fun exportNameBank(
+        workbook: XSSFWorkbook,
+        headerStyle: XSSFCellStyle,
+        usedSheetNames: MutableSet<String>
+    ) {
+        val allNames = db.nameBankDao().getAllNamesList()
+        if (allNames.isEmpty()) return
+
+        val allCharacters = db.characterDao().getAllCharactersList()
+        val charMap = allCharacters.associateBy { it.id }
+
+        val sheetName = sanitizeSheetName("이름 은행", usedSheetNames)
+        val sheet = workbook.createSheet(sheetName)
+        val headers = listOf("이름", "성별", "출처", "메모", "사용여부", "사용 캐릭터")
+
+        val headerRow = sheet.createRow(0)
+        headers.forEachIndexed { i, h ->
+            headerRow.createCell(i).apply { setCellValue(h); cellStyle = headerStyle }
+        }
+
+        allNames.forEachIndexed { i, entry ->
+            val row = sheet.createRow(i + 1)
+            row.createCell(0).setCellValue(entry.name)
+            row.createCell(1).setCellValue(entry.gender)
+            row.createCell(2).setCellValue(entry.origin)
+            row.createCell(3).setCellValue(entry.notes)
+            row.createCell(4).setCellValue(if (entry.isUsed) "Y" else "N")
+            row.createCell(5).setCellValue(entry.usedByCharacterId?.let { charMap[it]?.name } ?: "")
         }
 
         headers.indices.forEach { sheet.setColumnWidth(it, 5000) }

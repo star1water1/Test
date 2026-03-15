@@ -6,6 +6,7 @@ import android.text.TextWatcher
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Toast
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.navigation.fragment.findNavController
@@ -23,6 +24,10 @@ class CharacterListFragment : Fragment() {
     private lateinit var adapter: CharacterAdapter
     private var novelId: Long = -1L
 
+    // Comparison mode
+    private var isCompareMode = false
+    private val selectedForCompare = mutableSetOf<Long>()
+
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
     ): View {
@@ -39,6 +44,7 @@ class CharacterListFragment : Fragment() {
         setupRecyclerView()
         setupSearch()
         setupFab()
+        setupCompareButton()
         observeData()
 
         if (novelId != -1L) {
@@ -50,34 +56,97 @@ class CharacterListFragment : Fragment() {
     private fun setupRecyclerView() {
         adapter = CharacterAdapter(
             onClick = { character ->
-                val bundle = Bundle().apply { putLong("characterId", character.id) }
-                findNavController().navigate(R.id.characterDetailFragment, bundle)
+                if (isCompareMode) {
+                    toggleCompareSelection(character.id)
+                } else {
+                    val bundle = Bundle().apply { putLong("characterId", character.id) }
+                    findNavController().navigate(R.id.characterDetailFragment, bundle)
+                }
             },
             onLongClick = { character ->
-                androidx.appcompat.app.AlertDialog.Builder(requireContext())
-                    .setTitle(character.name)
-                    .setItems(arrayOf("편집", "삭제")) { _, which ->
-                        when (which) {
-                            0 -> {
-                                val bundle = Bundle().apply { putLong("characterId", character.id) }
-                                findNavController().navigate(R.id.characterEditFragment, bundle)
-                            }
-                            1 -> {
-                                androidx.appcompat.app.AlertDialog.Builder(requireContext())
-                                    .setMessage(R.string.confirm_delete)
-                                    .setPositiveButton(R.string.yes) { _, _ ->
-                                        viewModel.deleteCharacter(character)
-                                    }
-                                    .setNegativeButton(R.string.no, null)
-                                    .show()
+                if (isCompareMode) {
+                    toggleCompareSelection(character.id)
+                } else {
+                    androidx.appcompat.app.AlertDialog.Builder(requireContext())
+                        .setTitle(character.name)
+                        .setItems(arrayOf("편집", "삭제")) { _, which ->
+                            when (which) {
+                                0 -> {
+                                    val bundle = Bundle().apply { putLong("characterId", character.id) }
+                                    findNavController().navigate(R.id.characterEditFragment, bundle)
+                                }
+                                1 -> {
+                                    androidx.appcompat.app.AlertDialog.Builder(requireContext())
+                                        .setMessage(R.string.confirm_delete)
+                                        .setPositiveButton(R.string.yes) { _, _ ->
+                                            viewModel.deleteCharacter(character)
+                                        }
+                                        .setNegativeButton(R.string.no, null)
+                                        .show()
+                                }
                             }
                         }
-                    }
-                    .show()
+                        .show()
+                }
             }
         )
         binding.characterRecyclerView.layoutManager = GridLayoutManager(requireContext(), 3)
         binding.characterRecyclerView.adapter = adapter
+    }
+
+    private fun toggleCompareSelection(characterId: Long) {
+        if (selectedForCompare.contains(characterId)) {
+            selectedForCompare.remove(characterId)
+        } else {
+            if (selectedForCompare.size >= 3) {
+                Toast.makeText(requireContext(), "최대 3명까지 비교할 수 있습니다", Toast.LENGTH_SHORT).show()
+                return
+            }
+            selectedForCompare.add(characterId)
+        }
+        adapter.setSelectedIds(selectedForCompare)
+        updateCompareButtonText()
+    }
+
+    private fun setupCompareButton() {
+        binding.btnCompare.setOnClickListener {
+            if (!isCompareMode) {
+                // Enter compare mode
+                isCompareMode = true
+                selectedForCompare.clear()
+                adapter.setSelectionMode(true)
+                binding.btnCompare.text = "비교하기"
+                binding.btnCancelCompare.visibility = View.VISIBLE
+                Toast.makeText(requireContext(), "비교할 캐릭터를 선택하세요 (2~3명)", Toast.LENGTH_SHORT).show()
+            } else {
+                // Execute comparison
+                if (selectedForCompare.size < 2) {
+                    Toast.makeText(requireContext(), "2명 이상 선택하세요", Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+                val idsStr = selectedForCompare.joinToString(",")
+                val bundle = Bundle().apply { putString("characterIds", idsStr) }
+                exitCompareMode()
+                findNavController().navigate(R.id.characterCompareFragment, bundle)
+            }
+        }
+
+        binding.btnCancelCompare.setOnClickListener {
+            exitCompareMode()
+        }
+    }
+
+    private fun exitCompareMode() {
+        isCompareMode = false
+        selectedForCompare.clear()
+        adapter.setSelectionMode(false)
+        adapter.setSelectedIds(emptySet())
+        binding.btnCompare.text = "비교"
+        binding.btnCancelCompare.visibility = View.GONE
+    }
+
+    private fun updateCompareButtonText() {
+        binding.btnCompare.text = if (selectedForCompare.isEmpty()) "비교하기" else "비교하기 (${selectedForCompare.size}명)"
     }
 
     private fun setupSearch() {
@@ -101,8 +170,6 @@ class CharacterListFragment : Fragment() {
     }
 
     private fun observeData() {
-        // searchResults가 검색어 비어있을 때 filteredCharacters로 위임하므로
-        // searchResults만 observe하면 모든 케이스를 커버
         viewModel.searchResults.observe(viewLifecycleOwner) { characters ->
             adapter.submitList(characters)
             binding.emptyText.visibility = if (characters.isEmpty()) View.VISIBLE else View.GONE

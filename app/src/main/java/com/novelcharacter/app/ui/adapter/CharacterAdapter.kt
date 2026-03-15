@@ -23,6 +23,19 @@ class CharacterAdapter(
     private val onLongClick: (Character) -> Unit
 ) : ListAdapter<Character, CharacterAdapter.CharacterViewHolder>(CharacterDiffCallback()) {
 
+    private var isSelectionMode = false
+    private var selectedIds = setOf<Long>()
+
+    fun setSelectionMode(enabled: Boolean) {
+        isSelectionMode = enabled
+        notifyDataSetChanged()
+    }
+
+    fun setSelectedIds(ids: Set<Long>) {
+        selectedIds = ids
+        notifyDataSetChanged()
+    }
+
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): CharacterViewHolder {
         val binding = ItemCharacterBinding.inflate(
             LayoutInflater.from(parent.context), parent, false
@@ -52,6 +65,18 @@ class CharacterAdapter(
 
         fun bind(character: Character) {
             binding.characterName.text = character.name
+
+            // Selection indicator
+            if (isSelectionMode && selectedIds.contains(character.id)) {
+                binding.root.alpha = 1.0f
+                binding.root.setBackgroundColor(binding.root.context.getColor(R.color.primary_light))
+            } else if (isSelectionMode) {
+                binding.root.alpha = 0.5f
+                binding.root.setBackgroundColor(0)
+            } else {
+                binding.root.alpha = 1.0f
+                binding.root.setBackgroundColor(0)
+            }
 
             // 이미지 - 비동기로 로드
             loadCharacterImage(character)

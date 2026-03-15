@@ -147,6 +147,15 @@
                     android:layout_marginBottom="16dp"
                     android:textColor="@color/text_secondary" />
 
+                <!-- Tags -->
+                <TextView
+                    android:id="@+id/detailTags"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textColor="@color/primary"
+                    android:textSize="13sp"
+                    android:visibility="gone" />
+
                 <!-- Time view indicator (visible when slider is active) -->
                 <TextView
                     android:id="@+id/timeViewIndicator"
@@ -168,6 +177,102 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical" />
+
+                <!-- Memo card -->
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/memoCard"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:visibility="gone"
+                    app:cardCornerRadius="12dp"
+                    app:cardElevation="2dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="16dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/memo"
+                            android:textSize="16sp"
+                            android:textStyle="bold"
+                            android:textColor="@color/primary"
+                            android:layout_marginBottom="8dp" />
+
+                        <TextView
+                            android:id="@+id/detailMemo"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:textSize="14sp" />
+
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <!-- Relationships card -->
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/relationshipsCard"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    app:cardCornerRadius="12dp"
+                    app:cardElevation="2dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="16dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
+
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="관계"
+                                android:textSize="16sp"
+                                android:textStyle="bold"
+                                android:textColor="@color/primary" />
+
+                            <ImageView
+                                android:id="@+id/btnAddRelationship"
+                                android:layout_width="32dp"
+                                android:layout_height="32dp"
+                                android:padding="4dp"
+                                android:src="@android:drawable/ic_input_add"
+                                android:background="?attr/selectableItemBackgroundBorderless"
+                                android:contentDescription="관계 추가" />
+
+                        </LinearLayout>
+
+                        <TextView
+                            android:id="@+id/textNoRelationships"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="등록된 관계가 없습니다"
+                            android:textSize="13sp"
+                            android:textColor="@color/text_secondary"
+                            android:gravity="center"
+                            android:paddingVertical="16dp"
+                            android:visibility="gone" />
+
+                        <androidx.recyclerview.widget.RecyclerView
+                            android:id="@+id/relationshipsRecyclerView"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:nestedScrollingEnabled="false" />
+
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
 
                 <!-- Related events card -->
                 <com.google.android.material.card.MaterialCardView
