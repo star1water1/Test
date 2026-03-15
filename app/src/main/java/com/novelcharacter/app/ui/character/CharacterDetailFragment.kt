@@ -520,8 +520,12 @@ class CharacterDetailFragment : Fragment() {
             for (field in groupFields) {
                 val fieldValue = valueMap[field.id]?.value ?: ""
                 val isCalculated = field.type == "CALCULATED"
-                val displayValue = if (isCalculated && fieldValue.isEmpty()) {
-                    getString(R.string.auto_calculated_label, field.name)
+                val displayValue = if (isCalculated) {
+                    if (fieldValue.isEmpty()) {
+                        getString(R.string.auto_calculated_label, field.name)
+                    } else {
+                        "${field.name}: $fieldValue (자동 계산)"
+                    }
                 } else {
                     "${field.name}: ${fieldValue.ifEmpty { "-" }}"
                 }

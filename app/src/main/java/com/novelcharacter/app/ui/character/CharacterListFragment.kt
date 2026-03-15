@@ -9,6 +9,7 @@ import android.view.ViewGroup
 import android.widget.Toast
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
+import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.GridLayoutManager
 import com.novelcharacter.app.R
@@ -55,6 +56,7 @@ class CharacterListFragment : Fragment() {
 
     private fun setupRecyclerView() {
         adapter = CharacterAdapter(
+            coroutineScope = viewLifecycleOwner.lifecycleScope,
             onClick = { character ->
                 if (isCompareMode) {
                     toggleCompareSelection(character.id)
@@ -106,6 +108,8 @@ class CharacterListFragment : Fragment() {
             }
             selectedForCompare.add(characterId)
         }
+        // Update max-reached first (no-op if unchanged), then setSelectedIds triggers single notify
+        adapter.setMaxReached(selectedForCompare.size >= 3)
         adapter.setSelectedIds(selectedForCompare)
         updateCompareButtonText()
     }
@@ -153,8 +157,6 @@ class CharacterListFragment : Fragment() {
         } else {
             binding.btnCompare.text = getString(R.string.compare_button_text, selectedForCompare.size)
         }
-        // Disable selection when max reached (visual feedback instead of just toast)
-        adapter.setMaxReached(selectedForCompare.size >= 3)
     }
 
     private fun setupSearch() {

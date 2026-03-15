@@ -44,6 +44,7 @@
         android:paddingVertical="4dp"
         android:textSize="11sp"
         android:textStyle="bold"
-        android:textColor="@color/on_primary" />
+        android:textColor="@color/on_primary"
+        android:background="@drawable/bg_search_type_badge" />
 
 </LinearLayout>

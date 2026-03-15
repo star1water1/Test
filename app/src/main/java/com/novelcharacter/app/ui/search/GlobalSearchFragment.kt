@@ -70,7 +70,9 @@ class GlobalSearchFragment : Fragment() {
         viewModel.searchResults.observe(viewLifecycleOwner) { results ->
             adapter.submitList(results)
             val query = binding.searchEdit.text.toString()
-            binding.emptyText.visibility = if (results.isEmpty()) View.VISIBLE else View.GONE
+            val isEmpty = results.isEmpty()
+            binding.emptyText.visibility = if (isEmpty) View.VISIBLE else View.GONE
+            binding.searchResultsRecyclerView.visibility = if (isEmpty) View.GONE else View.VISIBLE
             binding.emptyMessage.text = if (query.isBlank()) "검색어를 입력하세요" else "검색 결과가 없습니다"
         }
     }

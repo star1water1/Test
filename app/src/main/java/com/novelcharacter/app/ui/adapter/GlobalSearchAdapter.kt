@@ -1,6 +1,7 @@
 package com.novelcharacter.app.ui.adapter
 
 import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -65,12 +66,25 @@ class GlobalSearchAdapter(
         private val subText: TextView = itemView.findViewById(R.id.resultSubText)
         private val typeIndicator: TextView = itemView.findViewById(R.id.resultTypeIndicator)
 
+        private fun setTypeBadgeColor(colorResId: Int) {
+            val bg = typeIndicator.background
+            if (bg is GradientDrawable) {
+                bg.setColor(itemView.context.getColor(colorResId))
+            } else {
+                val drawable = GradientDrawable().apply {
+                    cornerRadius = 4f * itemView.context.resources.displayMetrics.density
+                    setColor(itemView.context.getColor(colorResId))
+                }
+                typeIndicator.background = drawable
+            }
+        }
+
         fun bindCharacter(character: Character) {
             mainText.text = character.name
             subText.text = ""
             subText.visibility = View.GONE
             typeIndicator.text = itemView.context.getString(R.string.search_type_character)
-            typeIndicator.setBackgroundColor(itemView.context.getColor(R.color.search_type_character))
+            setTypeBadgeColor(R.color.search_type_character)
             itemView.setOnClickListener { onCharacterClick(character) }
         }
 
@@ -79,7 +93,7 @@ class GlobalSearchAdapter(
             subText.text = "${event.year}년"
             subText.visibility = View.VISIBLE
             typeIndicator.text = itemView.context.getString(R.string.search_type_event)
-            typeIndicator.setBackgroundColor(itemView.context.getColor(R.color.search_type_event))
+            setTypeBadgeColor(R.color.search_type_event)
             itemView.setOnClickListener { onEventClick(event) }
         }
 
@@ -88,7 +102,7 @@ class GlobalSearchAdapter(
             subText.text = novel.description.take(50)
             subText.visibility = if (novel.description.isNotBlank()) View.VISIBLE else View.GONE
             typeIndicator.text = itemView.context.getString(R.string.search_type_novel)
-            typeIndicator.setBackgroundColor(itemView.context.getColor(R.color.search_type_novel))
+            setTypeBadgeColor(R.color.search_type_novel)
             itemView.setOnClickListener { onNovelClick(novel) }
         }
     }

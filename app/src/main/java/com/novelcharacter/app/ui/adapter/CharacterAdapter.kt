@@ -21,7 +21,8 @@ import kotlinx.coroutines.withContext
 
 class CharacterAdapter(
     private val onClick: (Character) -> Unit,
-    private val onLongClick: (Character) -> Unit
+    private val onLongClick: (Character) -> Unit,
+    private val coroutineScope: CoroutineScope = CoroutineScope(Dispatchers.Main + Job())
 ) : ListAdapter<Character, CharacterAdapter.CharacterViewHolder>(CharacterDiffCallback()) {
 
     private var isSelectionMode = false
@@ -49,9 +50,15 @@ class CharacterAdapter(
         notifyDataSetChanged()
     }
 
+    /**
+     * Update max-reached state without triggering notifyDataSetChanged.
+     * Caller should batch this with setSelectedIds to avoid double refresh.
+     */
     fun setMaxReached(maxReached: Boolean) {
-        isMaxReached = maxReached
-        notifyDataSetChanged()
+        if (isMaxReached != maxReached) {
+            isMaxReached = maxReached
+            notifyDataSetChanged()
+        }
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): CharacterViewHolder {
@@ -131,7 +138,7 @@ class CharacterAdapter(
                     return
                 }
 
-                loadJob = CoroutineScope(Dispatchers.Main + Job()).launch {
+                loadJob = coroutineScope.launch {
                     val bitmap = withContext(Dispatchers.IO) {
                         decodeSampledBitmap(path, 256, 256)
                     }
