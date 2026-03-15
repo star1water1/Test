@@ -40,6 +40,10 @@ android {
         viewBinding = true
     }
 
+    ksp {
+        arg("room.schemaLocation", "$projectDir/schemas")
+    }
+
     packaging {
         resources {
             excludes += listOf(

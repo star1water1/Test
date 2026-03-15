@@ -44,7 +44,7 @@ import com.novelcharacter.app.data.model.Universe
         CharacterRelationship::class
     ],
     version = 3,
-    exportSchema = false
+    exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun novelDao(): NovelDao
