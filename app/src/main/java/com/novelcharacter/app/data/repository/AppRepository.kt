@@ -269,7 +269,6 @@ class AppRepository(
         characterRelationshipDao.insert(relationship)
 
     suspend fun deleteRelationshipById(id: Long) {
-        val rels = characterRelationshipDao.getAllRelationships()
-        rels.find { it.id == id }?.let { characterRelationshipDao.delete(it) }
+        characterRelationshipDao.deleteById(id)
     }
 }

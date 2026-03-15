@@ -23,4 +23,7 @@ interface CharacterRelationshipDao {
 
     @Delete
     suspend fun delete(relationship: CharacterRelationship)
+
+    @Query("DELETE FROM character_relationships WHERE id = :id")
+    suspend fun deleteById(id: Long)
 }

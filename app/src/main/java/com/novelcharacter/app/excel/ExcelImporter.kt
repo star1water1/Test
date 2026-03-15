@@ -31,6 +31,7 @@ import org.apache.poi.ss.usermodel.WorkbookFactory
 class ExcelImporter(private val context: Context) {
 
     private val db = AppDatabase.getDatabase(context)
+    private val importScope = CoroutineScope(Dispatchers.IO + kotlinx.coroutines.SupervisorJob())
 
     private var importLauncher: androidx.activity.result.ActivityResultLauncher<Array<String>>? = null
 
@@ -81,7 +82,7 @@ class ExcelImporter(private val context: Context) {
     )
 
     fun importFromExcel(uri: Uri) {
-        CoroutineScope(Dispatchers.IO).launch {
+        importScope.launch {
             try {
                 val inputStream = context.contentResolver.openInputStream(uri)
                     ?: throw Exception("파일을 열 수 없습니다")
@@ -440,6 +441,8 @@ class ExcelImporter(private val context: Context) {
         val headerRow = sheet.getRow(0) ?: return
         if (getCellString(headerRow, 0) != "연도") return
 
+        val allNovels = db.novelDao().getAllNovelsList()
+
         for (i in 1..sheet.lastRowNum) {
             try {
                 val row = sheet.getRow(i) ?: continue
@@ -453,7 +456,7 @@ class ExcelImporter(private val context: Context) {
                 val calendarType = getCellString(row, 3).ifBlank { "천개력" }
                 val novelTitle = getCellString(row, 5)
                 val novelId = if (novelTitle.isNotBlank()) {
-                    db.novelDao().getAllNovelsList().find { it.title == novelTitle }?.id
+                    allNovels.find { it.title == novelTitle }?.id
                 } else null
 
                 // 기존 이벤트 찾기 (덮어쓰기)
@@ -513,6 +516,8 @@ class ExcelImporter(private val context: Context) {
         val headerRow = sheet.getRow(0) ?: return
         if (getCellString(headerRow, 0) != "캐릭터") return
 
+        val allNovels = db.novelDao().getAllNovelsList()
+
         for (i in 1..sheet.lastRowNum) {
             try {
                 val row = sheet.getRow(i) ?: continue
@@ -532,7 +537,7 @@ class ExcelImporter(private val context: Context) {
 
                 // 캐릭터 찾기
                 val novelId = if (novelTitle.isNotBlank()) {
-                    db.novelDao().getAllNovelsList().find { it.title == novelTitle }?.id
+                    allNovels.find { it.title == novelTitle }?.id
                 } else null
                 val character = findCharacterByName(charName, novelId) ?: continue
 
@@ -621,6 +626,8 @@ class ExcelImporter(private val context: Context) {
         val headerRow = sheet.getRow(0) ?: return
         if (getCellString(headerRow, 0) != "이름") return
 
+        val existingNames = db.nameBankDao().getAllNamesList().toMutableList()
+
         for (i in 1..sheet.lastRowNum) {
             try {
                 val row = sheet.getRow(i) ?: continue
@@ -638,7 +645,6 @@ class ExcelImporter(private val context: Context) {
                 } else null
 
                 // 중복 체크: 같은 이름
-                val existingNames = db.nameBankDao().getAllNamesList()
                 val existing = existingNames.find { it.name == name && it.gender == gender }
 
                 if (existing != null) {

@@ -24,9 +24,10 @@ import java.util.Locale
 class ExcelExporter(private val context: Context) {
 
     private val db = AppDatabase.getDatabase(context)
+    private val exportScope = CoroutineScope(Dispatchers.IO + kotlinx.coroutines.SupervisorJob())
 
     fun exportAll() {
-        CoroutineScope(Dispatchers.IO).launch {
+        exportScope.launch {
             try {
                 val workbook = XSSFWorkbook()
                 val headerStyle = createHeaderStyle(workbook)

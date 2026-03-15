@@ -586,11 +586,11 @@ class CharacterEditFragment : Fragment() {
                     savedCharId = newId
                 }
 
-                // 태그 저장
+                // 태그 저장 (순차 실행으로 race condition 방지)
                 val tagText = binding.editTags.text.toString()
                 val tagList = tagText.split(",").map { it.trim() }.filter { it.isNotBlank() }
-                viewModel.deleteAllTagsByCharacter(savedCharId)
-                viewModel.insertTags(tagList.map { CharacterTag(characterId = savedCharId, tag = it) })
+                viewModel.deleteAllTagsByCharacterSuspend(savedCharId)
+                viewModel.insertTagsSuspend(tagList.map { CharacterTag(characterId = savedCharId, tag = it) })
 
                 if (isAdded) {
                     Toast.makeText(requireContext(), R.string.saved_successfully, Toast.LENGTH_SHORT).show()

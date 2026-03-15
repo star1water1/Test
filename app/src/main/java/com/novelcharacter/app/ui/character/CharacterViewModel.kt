@@ -146,4 +146,10 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     fun insertTags(tags: List<CharacterTag>) = viewModelScope.launch {
         repository.insertTags(tags)
     }
+
+    suspend fun deleteAllTagsByCharacterSuspend(characterId: Long) =
+        repository.deleteAllTagsByCharacter(characterId)
+
+    suspend fun insertTagsSuspend(tags: List<CharacterTag>) =
+        repository.insertTags(tags)
 }
