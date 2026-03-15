@@ -22,7 +22,8 @@ import java.util.Locale
 
 class ExcelExporter(private val context: Context) {
 
-    private val db = AppDatabase.getDatabase(context)
+    private val appContext = context.applicationContext
+    private val db = AppDatabase.getDatabase(appContext)
     private val exportScope = CoroutineScope(Dispatchers.IO + kotlinx.coroutines.SupervisorJob())
 
     fun exportAll() {
@@ -53,14 +54,14 @@ class ExcelExporter(private val context: Context) {
             } catch (e: Exception) {
                 android.util.Log.e("ExcelExporter", "Export failed", e)
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(context, "내보내기 실패: 잠시 후 다시 시도하세요", Toast.LENGTH_LONG).show()
+                    Toast.makeText(appContext, "내보내기 실패: 잠시 후 다시 시도하세요", Toast.LENGTH_LONG).show()
                 }
             }
         }
     }
 
     private fun saveWorkbook(workbook: XSSFWorkbook, fileName: String): File {
-        val exportsDir = File(context.cacheDir, "exports")
+        val exportsDir = File(appContext.cacheDir, "exports")
         exportsDir.mkdirs()
         // Clean old exports, keeping the 3 most recent
         exportsDir.listFiles()?.sortedByDescending { it.lastModified() }?.drop(3)?.forEach { it.delete() }
@@ -71,8 +72,8 @@ class ExcelExporter(private val context: Context) {
     }
 
     private fun shareFile(file: File) {
-        val authority = "${context.packageName}.fileprovider"
-        val uri = FileProvider.getUriForFile(context, authority, file)
+        val authority = "${appContext.packageName}.fileprovider"
+        val uri = FileProvider.getUriForFile(appContext, authority, file)
 
         val shareIntent = Intent(Intent.ACTION_SEND).apply {
             type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"

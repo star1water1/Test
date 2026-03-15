@@ -598,7 +598,7 @@ class CharacterEditFragment : Fragment() {
                 viewModel.deleteAllTagsByCharacterSuspend(savedCharId)
                 viewModel.insertTagsSuspend(tagList.map { CharacterTag(characterId = savedCharId, tag = it) })
 
-                if (isAdded) {
+                if (isAdded && view != null) {
                     Toast.makeText(requireContext(), R.string.saved_successfully, Toast.LENGTH_SHORT).show()
                     findNavController().popBackStack()
                 }

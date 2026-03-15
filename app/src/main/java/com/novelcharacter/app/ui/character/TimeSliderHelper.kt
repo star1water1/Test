@@ -113,8 +113,8 @@ class TimeSliderHelper(
             }
 
             val years = changes.map { it.year }
-            val minYear = years.min()
-            val maxYear = years.max()
+            val minYear = years.minOrNull() ?: return@launch
+            val maxYear = years.maxOrNull() ?: return@launch
 
             val adjustedMin = minYear.toFloat()
             val adjustedMax = if (maxYear <= minYear) (minYear + 1).toFloat() else maxYear.toFloat()

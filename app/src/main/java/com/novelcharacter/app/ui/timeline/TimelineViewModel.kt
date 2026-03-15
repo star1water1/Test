@@ -7,6 +7,7 @@ import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.TimelineEvent
 import android.util.Log
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class TimelineViewModel(application: Application) : AndroidViewModel(application) {
@@ -156,14 +157,21 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
     suspend fun getCharactersForEvent(eventId: Long): List<Character> =
         timelineRepository.getCharactersForEvent(eventId)
 
+    private fun showError(message: String?) {
+        _error.value = message
+        viewModelScope.launch {
+            delay(100)
+            _error.value = null
+        }
+    }
+
     fun insertEvent(event: TimelineEvent, characterIds: List<Long>) = viewModelScope.launch {
         try {
             val eventId = timelineRepository.insertEvent(event)
             timelineRepository.updateEventCharacters(eventId, characterIds)
         } catch (e: Exception) {
             Log.e("TimelineViewModel", "Failed to insert event", e)
-            _error.value = e.message
-            _error.value = null
+            showError(e.message)
         }
     }
 
@@ -173,8 +181,7 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
             timelineRepository.updateEventCharacters(event.id, characterIds)
         } catch (e: Exception) {
             Log.e("TimelineViewModel", "Failed to update event", e)
-            _error.value = e.message
-            _error.value = null
+            showError(e.message)
         }
     }
 
@@ -183,8 +190,7 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
             timelineRepository.deleteEvent(event)
         } catch (e: Exception) {
             Log.e("TimelineViewModel", "Failed to delete event", e)
-            _error.value = e.message
-            _error.value = null
+            showError(e.message)
         }
     }
 }
