@@ -55,10 +55,7 @@ class CharacterAdapter(
      * Caller should batch this with setSelectedIds to avoid double refresh.
      */
     fun setMaxReached(maxReached: Boolean) {
-        if (isMaxReached != maxReached) {
-            isMaxReached = maxReached
-            notifyDataSetChanged()
-        }
+        isMaxReached = maxReached
     }
 
     /**

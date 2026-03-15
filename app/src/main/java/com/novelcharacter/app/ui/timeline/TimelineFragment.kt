@@ -319,7 +319,7 @@ class TimelineFragment : Fragment() {
     }
 
     private fun showEditEventDialog(event: TimelineEvent?) {
-        lifecycleScope.launch {
+        viewLifecycleOwner.lifecycleScope.launch {
             val novels = viewModel.getAllNovelsList()
             val characters = viewModel.getAllCharactersList()
             val selectedCharIds = if (event != null) {
@@ -443,6 +443,7 @@ class TimelineFragment : Fragment() {
                 val character = characters[position]
                 val checkBox = holder.itemView as CheckBox
                 checkBox.text = character.name
+                checkBox.setOnCheckedChangeListener(null)
                 checkBox.isChecked = selectedIds.contains(character.id)
                 checkBox.setOnCheckedChangeListener { _, isChecked ->
                     if (isChecked) selectedIds.add(character.id)

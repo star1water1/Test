@@ -33,6 +33,8 @@ import com.novelcharacter.app.data.model.FieldType
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.databinding.FragmentCharacterEditBinding
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.util.UUID
@@ -465,10 +467,11 @@ class CharacterEditFragment : Fragment() {
             val inputStream = requireContext().contentResolver.openInputStream(uri) ?: return
             val fileName = "char_${UUID.randomUUID()}.jpg"
             val file = File(requireContext().filesDir, fileName)
-            FileOutputStream(file).use { output ->
-                inputStream.copyTo(output)
+            inputStream.use { input ->
+                FileOutputStream(file).use { output ->
+                    input.copyTo(output)
+                }
             }
-            inputStream.close()
             imagePaths.add(file.absolutePath)
             updateImageList()
         } catch (e: Exception) {
@@ -476,37 +479,70 @@ class CharacterEditFragment : Fragment() {
         }
     }
 
+    private var imageAdapter: RecyclerView.Adapter<RecyclerView.ViewHolder>? = null
+
     private fun updateImageList() {
-        binding.imageRecyclerView.adapter = object : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
-            override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
-                val imageView = ImageView(parent.context).apply {
-                    layoutParams = ViewGroup.MarginLayoutParams(200, 200).apply {
-                        marginEnd = 8
+        if (imageAdapter == null) {
+            imageAdapter = object : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
+                override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
+                    val imageView = ImageView(parent.context).apply {
+                        layoutParams = ViewGroup.MarginLayoutParams(200, 200).apply {
+                            marginEnd = 8
+                        }
+                        scaleType = ImageView.ScaleType.CENTER_CROP
                     }
-                    scaleType = ImageView.ScaleType.CENTER_CROP
+                    return object : RecyclerView.ViewHolder(imageView) {}
                 }
-                return object : RecyclerView.ViewHolder(imageView) {}
-            }
 
-            override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
-                val imageView = holder.itemView as ImageView
-                if (position < imagePaths.size) {
-                    val bitmap = BitmapFactory.decodeFile(imagePaths[position])
-                    if (bitmap != null) {
-                        imageView.setImageBitmap(bitmap)
+                override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
+                    val imageView = holder.itemView as ImageView
+                    imageView.setImageResource(R.drawable.ic_character_placeholder)
+                    if (position < imagePaths.size) {
+                        viewLifecycleOwner.lifecycleScope.launch {
+                            val bitmap = withContext(Dispatchers.IO) {
+                                decodeSampledBitmap(imagePaths[position], 200, 200)
+                            }
+                            if (bitmap != null) {
+                                imageView.setImageBitmap(bitmap)
+                            }
+                        }
+                    }
+                    imageView.setOnLongClickListener {
+                        val adapterPosition = holder.adapterPosition
+                        if (adapterPosition >= 0 && adapterPosition < imagePaths.size) {
+                            imagePaths.removeAt(adapterPosition)
+                            imageAdapter?.notifyDataSetChanged()
+                        }
+                        true
                     }
                 }
-                imageView.setOnLongClickListener {
-                    val adapterPosition = holder.adapterPosition
-                    if (adapterPosition >= 0 && adapterPosition < imagePaths.size) {
-                        imagePaths.removeAt(adapterPosition)
-                        updateImageList()
-                    }
-                    true
+
+                override fun getItemCount() = imagePaths.size
+            }
+            binding.imageRecyclerView.adapter = imageAdapter
+        } else {
+            imageAdapter?.notifyDataSetChanged()
+        }
+    }
+
+    private fun decodeSampledBitmap(path: String, reqWidth: Int, reqHeight: Int): android.graphics.Bitmap? {
+        return try {
+            val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(path, options)
+            val (height, width) = options.outHeight to options.outWidth
+            var inSampleSize = 1
+            if (height > reqHeight || width > reqWidth) {
+                val halfHeight = height / 2
+                val halfWidth = width / 2
+                while (halfHeight / inSampleSize >= reqHeight && halfWidth / inSampleSize >= reqWidth) {
+                    inSampleSize *= 2
                 }
             }
-
-            override fun getItemCount() = imagePaths.size
+            options.inSampleSize = inSampleSize
+            options.inJustDecodeBounds = false
+            BitmapFactory.decodeFile(path, options)
+        } catch (e: Exception) {
+            null
         }
     }
 
@@ -555,8 +591,10 @@ class CharacterEditFragment : Fragment() {
                 viewModel.deleteAllTagsByCharacter(savedCharId)
                 viewModel.insertTags(tagList.map { CharacterTag(characterId = savedCharId, tag = it) })
 
-                Toast.makeText(requireContext(), R.string.saved_successfully, Toast.LENGTH_SHORT).show()
-                findNavController().popBackStack()
+                if (isAdded) {
+                    Toast.makeText(requireContext(), R.string.saved_successfully, Toast.LENGTH_SHORT).show()
+                    findNavController().popBackStack()
+                }
             }
         }
     }

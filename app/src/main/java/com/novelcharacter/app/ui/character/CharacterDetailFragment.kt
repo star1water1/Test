@@ -56,13 +56,15 @@ class CharacterDetailFragment : Fragment() {
     private var cachedFields: List<FieldDefinition> = emptyList()
     private var cachedValues: List<CharacterFieldValue> = emptyList()
     private var cachedCharacter: Character? = null
-    private var cachedUniverseId: Long? = null
 
     // State change adapter
     private lateinit var stateChangeAdapter: StateChangeAdapter
 
     // Relationship adapter
     private lateinit var relationshipAdapter: RelationshipAdapter
+
+    // Coroutine job for relationship resolution
+    private var relationshipJob: kotlinx.coroutines.Job? = null
 
     private val timeStateResolver = TimeStateResolver()
 
@@ -389,6 +391,16 @@ class CharacterDetailFragment : Fragment() {
                 displayCharacter(it)
             }
         }
+
+        // Observe tags once here, not inside displayCharacter
+        viewModel.getTagsByCharacter(characterId).observe(viewLifecycleOwner) { tags ->
+            if (tags.isNotEmpty()) {
+                binding.detailTags.visibility = View.VISIBLE
+                binding.detailTags.text = tags.joinToString("  ") { "#${it.tag}" }
+            } else {
+                binding.detailTags.visibility = View.GONE
+            }
+        }
     }
 
     private fun observeEvents() {
@@ -417,16 +429,6 @@ class CharacterDetailFragment : Fragment() {
             val novel = character.novelId?.let { viewModel.getNovelById(it) }
             binding.detailNovel.text = "작품: ${novel?.title ?: "미지정"}"
 
-            // 태그
-            viewModel.getTagsByCharacter(characterId).observe(viewLifecycleOwner) { tags ->
-                if (tags.isNotEmpty()) {
-                    binding.detailTags.visibility = View.VISIBLE
-                    binding.detailTags.text = tags.joinToString("  ") { "#${it.tag}" }
-                } else {
-                    binding.detailTags.visibility = View.GONE
-                }
-            }
-
             // 메모
             if (character.memo.isNotBlank()) {
                 binding.memoCard.visibility = View.VISIBLE
@@ -437,7 +439,6 @@ class CharacterDetailFragment : Fragment() {
 
             // 동적 필드 로드: novel -> universeId -> FieldDefinitions -> CharacterFieldValues
             val universeId = novel?.universeId
-            cachedUniverseId = universeId
             if (universeId != null) {
                 val fields = viewModel.getFieldsByUniverseList(universeId)
                 val values = viewModel.getValuesByCharacterList(character.id)
@@ -716,10 +717,8 @@ class CharacterDetailFragment : Fragment() {
     }
 
     private fun setupImages(imagePathsJson: String) {
-        val gson = Gson()
-        val type = object : TypeToken<List<String>>() {}.type
         val imagePaths: List<String> = try {
-            gson.fromJson(imagePathsJson, type) ?: emptyList()
+            GSON.fromJson(imagePathsJson, IMAGE_PATHS_TYPE) ?: emptyList()
         } catch (e: Exception) {
             emptyList()
         }
@@ -810,7 +809,8 @@ class CharacterDetailFragment : Fragment() {
 
     private fun observeRelationships() {
         viewModel.getRelationshipsForCharacter(characterId).observe(viewLifecycleOwner) { relationships ->
-            viewLifecycleOwner.lifecycleScope.launch {
+            relationshipJob?.cancel()
+            relationshipJob = viewLifecycleOwner.lifecycleScope.launch {
                 val displayItems = relationships.mapNotNull { rel ->
                     val otherId = if (rel.characterId1 == characterId) rel.characterId2 else rel.characterId1
                     val otherChar = viewModel.getCharacterByIdSuspend(otherId)
@@ -905,5 +905,10 @@ class CharacterDetailFragment : Fragment() {
     override fun onDestroyView() {
         super.onDestroyView()
         _binding = null
+    }
+
+    companion object {
+        private val GSON = Gson()
+        private val IMAGE_PATHS_TYPE = object : TypeToken<List<String>>() {}.type
     }
 }
