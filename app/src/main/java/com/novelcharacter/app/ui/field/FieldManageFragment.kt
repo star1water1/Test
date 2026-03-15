@@ -103,7 +103,9 @@ class FieldManageFragment : Fragment() {
     private fun observeData() {
         viewModel.fields.observe(viewLifecycleOwner) { fields ->
             adapter.submitList(fields)
-            binding.emptyText.visibility = if (fields.isEmpty()) View.VISIBLE else View.GONE
+            val isEmpty = fields.isEmpty()
+            binding.emptyText.visibility = if (isEmpty) View.VISIBLE else View.GONE
+            binding.fieldRecyclerView.visibility = if (isEmpty) View.GONE else View.VISIBLE
         }
     }
 

@@ -221,7 +221,9 @@ class TimelineFragment : Fragment() {
         // Observe search results (falls back to filteredEvents when query is empty)
         viewModel.searchResults.observe(viewLifecycleOwner) { events ->
             adapter.submitEventList(events)
-            binding.emptyText.visibility = if (events.isEmpty()) View.VISIBLE else View.GONE
+            val isEmpty = events.isEmpty()
+            binding.emptyText.visibility = if (isEmpty) View.VISIBLE else View.GONE
+            binding.timelineRecyclerView.visibility = if (isEmpty) View.GONE else View.VISIBLE
         }
 
         // Observe zoom level changes
@@ -274,6 +276,8 @@ class TimelineFragment : Fragment() {
             binding.yearSlider.valueFrom = -100f
             binding.yearSlider.valueTo = 100f
             binding.yearSlider.value = 0f
+            binding.minYearLabel.text = ""
+            binding.maxYearLabel.text = ""
             return
         }
 
@@ -301,9 +305,9 @@ class TimelineFragment : Fragment() {
             else -> 1f
         }
 
-        // Show min/max year labels
-        binding.minYearLabel.text = getString(R.string.slider_min_year, rangeFrom.toInt())
-        binding.maxYearLabel.text = getString(R.string.slider_max_year, rangeTo.toInt())
+        // Show min/max year labels (actual min/max, not padded range)
+        binding.minYearLabel.text = getString(R.string.slider_min_year, minYear)
+        binding.maxYearLabel.text = getString(R.string.slider_max_year, maxYear)
 
         // Set current value within range
         val currentCenter = viewModel.centerYear.value ?: 0

@@ -145,8 +145,7 @@ class CharacterListFragment : Fragment() {
     private fun exitCompareMode() {
         isCompareMode = false
         selectedForCompare.clear()
-        adapter.setSelectionMode(false)
-        adapter.setSelectedIds(emptySet())
+        adapter.resetState()  // batch reset: clears selection + mode in single notify
         binding.btnCompare.text = "비교"
         binding.btnCancelCompare.visibility = View.GONE
     }
@@ -182,7 +181,9 @@ class CharacterListFragment : Fragment() {
     private fun observeData() {
         viewModel.searchResults.observe(viewLifecycleOwner) { characters ->
             adapter.submitList(characters)
-            binding.emptyText.visibility = if (characters.isEmpty()) View.VISIBLE else View.GONE
+            val isEmpty = characters.isEmpty()
+            binding.emptyText.visibility = if (isEmpty) View.VISIBLE else View.GONE
+            binding.characterRecyclerView.visibility = if (isEmpty) View.GONE else View.VISIBLE
         }
     }
 

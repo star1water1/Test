@@ -61,6 +61,16 @@ class CharacterAdapter(
         }
     }
 
+    /**
+     * Batch reset: clears selection mode, selected IDs, and max-reached in a single notify.
+     */
+    fun resetState() {
+        isSelectionMode = false
+        selectedIds = emptySet()
+        isMaxReached = false
+        notifyDataSetChanged()
+    }
+
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): CharacterViewHolder {
         val binding = ItemCharacterBinding.inflate(
             LayoutInflater.from(parent.context), parent, false
@@ -121,10 +131,8 @@ class CharacterAdapter(
             loadJob?.cancel()
             binding.characterImage.setImageResource(R.drawable.ic_character_placeholder)
 
-            val gson = Gson()
-            val type = object : TypeToken<List<String>>() {}.type
             val paths: List<String> = try {
-                gson.fromJson(character.imagePaths, type) ?: emptyList()
+                gson.fromJson(character.imagePaths, imagePathsType) ?: emptyList()
             } catch (e: Exception) {
                 emptyList()
             }
@@ -181,5 +189,10 @@ class CharacterAdapter(
     class CharacterDiffCallback : DiffUtil.ItemCallback<Character>() {
         override fun areItemsTheSame(oldItem: Character, newItem: Character) = oldItem.id == newItem.id
         override fun areContentsTheSame(oldItem: Character, newItem: Character) = oldItem == newItem
+    }
+
+    companion object {
+        private val gson = Gson()
+        private val imagePathsType = object : TypeToken<List<String>>() {}.type
     }
 }

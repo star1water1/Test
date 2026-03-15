@@ -189,6 +189,8 @@ class CharacterDetailFragment : Fragment() {
             if (changes.isEmpty()) {
                 // No state changes, hide slider content but keep toggle
                 binding.yearSlider.isEnabled = false
+                binding.minYearLabel.text = ""
+                binding.maxYearLabel.text = ""
                 return@launch
             }
 
