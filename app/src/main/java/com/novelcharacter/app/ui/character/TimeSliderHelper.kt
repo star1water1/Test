@@ -9,6 +9,7 @@ import com.novelcharacter.app.data.model.CharacterFieldValue
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.databinding.FragmentCharacterDetailBinding
 import com.novelcharacter.app.util.TimeStateResolver
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 class TimeSliderHelper(
@@ -26,6 +27,7 @@ class TimeSliderHelper(
     var cachedValues: List<CharacterFieldValue> = emptyList()
 
     private val timeStateResolver = TimeStateResolver()
+    private var applyTimeViewJob: Job? = null
 
     fun setup() {
         binding.timeSliderContainer.visibility = View.VISIBLE
@@ -81,7 +83,8 @@ class TimeSliderHelper(
     }
 
     fun applyTimeView(year: Int) {
-        viewLifecycleOwner.lifecycleScope.launch {
+        applyTimeViewJob?.cancel()
+        applyTimeViewJob = viewLifecycleOwner.lifecycleScope.launch {
             if (cachedFields.isEmpty()) return@launch
 
             val baseValues = mutableMapOf<String, String>()
