@@ -185,4 +185,16 @@
     <string name="origin_label">출처/문화권</string>
     <string name="compare_button">비교</string>
     <string name="cancel_button">취소</string>
+
+    <!-- RelationshipHelper -->
+    <string name="no_other_characters">다른 캐릭터가 없습니다</string>
+    <string name="confirm_delete_relationship">이 관계를 삭제하시겠습니까?</string>
+
+    <!-- ExcelExporter -->
+    <string name="export_failed_retry">내보내기 실패: 잠시 후 다시 시도하세요</string>
+    <string name="export_share_title">내보내기 파일 공유</string>
+
+    <!-- CharacterDetailFragment -->
+    <string name="novel_label_format">작품: %s</string>
+    <string name="novel_unassigned">미지정</string>
 </resources>

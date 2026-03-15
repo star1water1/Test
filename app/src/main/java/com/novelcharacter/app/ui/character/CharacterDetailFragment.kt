@@ -151,7 +151,7 @@ class CharacterDetailFragment : Fragment() {
 
         viewLifecycleOwner.lifecycleScope.launch {
             val novel = character.novelId?.let { viewModel.getNovelById(it) }
-            binding.detailNovel.text = "작품: ${novel?.title ?: "미지정"}"
+            binding.detailNovel.text = getString(R.string.novel_label_format, novel?.title ?: getString(R.string.novel_unassigned))
 
             if (character.memo.isNotBlank()) {
                 binding.memoCard.visibility = View.VISIBLE
@@ -211,6 +211,9 @@ class CharacterDetailFragment : Fragment() {
 
             override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
                 val imageView = holder.itemView as ImageView
+                // Recycle previous bitmap to free memory
+                (imageView.tag as? Bitmap)?.let { if (!it.isRecycled) it.recycle() }
+                imageView.tag = null
                 imageView.setImageResource(R.drawable.ic_character_placeholder)
                 val path = imagePaths[position]
                 val boundPosition = position
@@ -219,6 +222,7 @@ class CharacterDetailFragment : Fragment() {
                         decodeSampledBitmap(path, 1024, 1024)
                     }
                     if (bitmap != null && holder.bindingAdapterPosition == boundPosition) {
+                        imageView.tag = bitmap
                         imageView.setImageBitmap(bitmap)
                     }
                 }

@@ -26,4 +26,10 @@ interface CharacterTagDao {
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertAll(tags: List<CharacterTag>)
+
+    @Transaction
+    suspend fun replaceAllForCharacter(characterId: Long, tags: List<CharacterTag>) {
+        deleteAllByCharacter(characterId)
+        insertAll(tags)
+    }
 }

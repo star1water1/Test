@@ -496,6 +496,9 @@ class CharacterEditFragment : Fragment() {
 
                 override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
                     val imageView = holder.itemView as ImageView
+                    // Recycle previous bitmap to free memory
+                    (imageView.tag as? android.graphics.Bitmap)?.let { if (!it.isRecycled) it.recycle() }
+                    imageView.tag = null
                     imageView.setImageResource(R.drawable.ic_character_placeholder)
                     if (position < imagePaths.size) {
                         val path = imagePaths[position]
@@ -505,6 +508,7 @@ class CharacterEditFragment : Fragment() {
                                 decodeSampledBitmap(path, 200, 200)
                             }
                             if (bitmap != null && holder.bindingAdapterPosition == boundPosition) {
+                                imageView.tag = bitmap
                                 imageView.setImageBitmap(bitmap)
                             }
                         }
@@ -592,11 +596,10 @@ class CharacterEditFragment : Fragment() {
                     savedCharId = newId
                 }
 
-                // 태그 저장 (순차 실행으로 race condition 방지)
+                // 태그 저장 (트랜잭션으로 원자적 교체)
                 val tagText = binding.editTags.text.toString()
                 val tagList = tagText.split(",").map { it.trim() }.filter { it.isNotBlank() }
-                viewModel.deleteAllTagsByCharacterSuspend(savedCharId)
-                viewModel.insertTagsSuspend(tagList.map { CharacterTag(characterId = savedCharId, tag = it) })
+                viewModel.replaceAllTagsSuspend(savedCharId, tagList.map { CharacterTag(characterId = savedCharId, tag = it) })
 
                 if (isAdded && view != null) {
                     Toast.makeText(requireContext(), R.string.saved_successfully, Toast.LENGTH_SHORT).show()

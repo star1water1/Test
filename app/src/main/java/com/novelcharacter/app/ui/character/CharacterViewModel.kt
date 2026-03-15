@@ -151,4 +151,7 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
 
     suspend fun insertTagsSuspend(tags: List<CharacterTag>) =
         characterRepository.insertTags(tags)
+
+    suspend fun replaceAllTagsSuspend(characterId: Long, tags: List<CharacterTag>) =
+        characterRepository.replaceAllTagsForCharacter(characterId, tags)
 }

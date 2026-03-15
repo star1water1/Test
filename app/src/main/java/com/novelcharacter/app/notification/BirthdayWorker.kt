@@ -1,6 +1,7 @@
 package com.novelcharacter.app.notification
 
 import android.content.Context
+import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.novelcharacter.app.data.database.AppDatabase
@@ -40,6 +41,7 @@ class BirthdayWorker(
 
             Result.success()
         } catch (e: Exception) {
+            Log.e("BirthdayWorker", "Birthday check failed", e)
             Result.retry()
         }
     }

@@ -54,7 +54,7 @@ class ExcelExporter(private val context: Context) {
             } catch (e: Exception) {
                 android.util.Log.e("ExcelExporter", "Export failed", e)
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(appContext, "내보내기 실패: 잠시 후 다시 시도하세요", Toast.LENGTH_LONG).show()
+                    Toast.makeText(appContext, appContext.getString(com.novelcharacter.app.R.string.export_failed_retry), Toast.LENGTH_LONG).show()
                 }
             }
         }
@@ -81,7 +81,7 @@ class ExcelExporter(private val context: Context) {
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
 
-        val chooserIntent = Intent.createChooser(shareIntent, "내보내기 파일 공유")
+        val chooserIntent = Intent.createChooser(shareIntent, appContext.getString(com.novelcharacter.app.R.string.export_share_title))
 
         val activity = context as? Activity
         if (activity != null) {

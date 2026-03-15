@@ -107,6 +107,9 @@ class CharacterRepository(
     suspend fun insertTags(tags: List<CharacterTag>) =
         characterTagDao.insertAll(tags)
 
+    suspend fun replaceAllTagsForCharacter(characterId: Long, tags: List<CharacterTag>) =
+        characterTagDao.replaceAllForCharacter(characterId, tags)
+
     // ===== CharacterRelationship =====
     fun getRelationshipsForCharacter(characterId: Long): LiveData<List<CharacterRelationship>> =
         characterRelationshipDao.getRelationshipsForCharacter(characterId)

@@ -82,7 +82,7 @@ class RelationshipHelper(
             val allCharacters = viewModel.getAllCharactersList()
             val otherCharacters = allCharacters.filter { it.id != characterId }
             if (otherCharacters.isEmpty()) {
-                Toast.makeText(contextGetter(), "다른 캐릭터가 없습니다", Toast.LENGTH_SHORT).show()
+                Toast.makeText(contextGetter(), getString(R.string.no_other_characters), Toast.LENGTH_SHORT).show()
                 return@launch
             }
 
@@ -104,9 +104,9 @@ class RelationshipHelper(
             ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
 
             AlertDialog.Builder(context)
-                .setTitle("관계 추가")
+                .setTitle(getString(R.string.add_relationship))
                 .setView(dialogView)
-                .setPositiveButton("저장") { _, _ ->
+                .setPositiveButton(getString(R.string.save)) { _, _ ->
                     val selectedCharIndex = spinnerCharacter.selectedItemPosition
                     val selectedType = typeNames[spinnerType.selectedItemPosition]
                     val desc = editDesc.text.toString().trim()
@@ -123,7 +123,7 @@ class RelationshipHelper(
                         )
                     }
                 }
-                .setNegativeButton("취소", null)
+                .setNegativeButton(getString(R.string.cancel), null)
                 .show()
         }
     }
@@ -132,17 +132,17 @@ class RelationshipHelper(
         val context = contextGetter()
         AlertDialog.Builder(context)
             .setTitle("${item.otherCharacterName} (${item.relationshipType})")
-            .setItems(arrayOf("삭제")) { _, which ->
+            .setItems(arrayOf(getString(R.string.delete))) { _, which ->
                 when (which) {
                     0 -> {
                         AlertDialog.Builder(context)
                             .setIcon(android.R.drawable.ic_dialog_alert)
                             .setTitle(getString(R.string.delete_warning_title))
-                            .setMessage("이 관계를 삭제하시겠습니까?")
-                            .setPositiveButton("예") { _, _ ->
+                            .setMessage(getString(R.string.confirm_delete_relationship))
+                            .setPositiveButton(getString(R.string.yes)) { _, _ ->
                                 viewModel.deleteRelationshipById(item.relationshipId)
                             }
-                            .setNegativeButton("아니오", null)
+                            .setNegativeButton(getString(R.string.no), null)
                             .show()
                     }
                 }
