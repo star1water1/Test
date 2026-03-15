@@ -28,8 +28,9 @@ class ExcelExporter(private val context: Context) {
 
     fun exportAll() {
         exportScope.launch {
+            var workbook: XSSFWorkbook? = null
             try {
-                val workbook = XSSFWorkbook()
+                workbook = XSSFWorkbook()
                 val headerStyle = createHeaderStyle(workbook)
                 val usedSheetNames = mutableSetOf<String>()
 
@@ -46,7 +47,6 @@ class ExcelExporter(private val context: Context) {
                 val fileName = "NovelCharacter_$timestamp.xlsx"
 
                 val file = saveWorkbook(workbook, fileName)
-                workbook.close()
 
                 withContext(Dispatchers.Main) {
                     shareFile(file)
@@ -56,6 +56,8 @@ class ExcelExporter(private val context: Context) {
                 withContext(Dispatchers.Main) {
                     Toast.makeText(appContext, appContext.getString(com.novelcharacter.app.R.string.export_failed_retry), Toast.LENGTH_LONG).show()
                 }
+            } finally {
+                try { workbook?.close() } catch (_: Exception) {}
             }
         }
     }

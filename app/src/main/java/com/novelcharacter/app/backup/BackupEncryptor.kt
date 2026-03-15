@@ -55,6 +55,7 @@ object BackupEncryptor {
     }
 
     fun decrypt(data: ByteArray): ByteArray {
+        require(data.size > GCM_IV_LENGTH) { "Encrypted data too short: expected at least ${GCM_IV_LENGTH + 1} bytes" }
         val buffer = ByteBuffer.wrap(data)
         val iv = ByteArray(GCM_IV_LENGTH)
         buffer.get(iv)

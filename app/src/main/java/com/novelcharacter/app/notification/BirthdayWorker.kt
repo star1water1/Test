@@ -40,7 +40,7 @@ class BirthdayWorker(
             Result.success()
         } catch (e: Exception) {
             Log.e("BirthdayWorker", "Birthday check failed", e)
-            Result.retry()
+            if (runAttemptCount < 3) Result.retry() else Result.failure()
         }
     }
 }

@@ -89,11 +89,12 @@ class ExcelImporter(private val context: Context) {
 
     fun importFromExcel(uri: Uri) {
         importScope.launch {
+            var workbook: org.apache.poi.ss.usermodel.Workbook? = null
             try {
                 val inputStream = context.contentResolver.openInputStream(uri)
                     ?: throw Exception("파일을 열 수 없습니다")
 
-                val workbook = inputStream.use { WorkbookFactory.create(it) }
+                workbook = inputStream.use { WorkbookFactory.create(it) }
                 val result = ImportResult()
 
                 db.withTransaction {
@@ -109,8 +110,6 @@ class ExcelImporter(private val context: Context) {
                     importNameBank(workbook, result)
                 }
 
-                workbook.close()
-
                 val message = buildResultMessage(result)
                 withContext(Dispatchers.Main) {
                     Toast.makeText(context, message, Toast.LENGTH_LONG).show()
@@ -120,6 +119,8 @@ class ExcelImporter(private val context: Context) {
                 withContext(Dispatchers.Main) {
                     Toast.makeText(context, com.novelcharacter.app.R.string.import_failed_retry, Toast.LENGTH_LONG).show()
                 }
+            } finally {
+                try { workbook?.close() } catch (_: Exception) {}
             }
         }
     }
