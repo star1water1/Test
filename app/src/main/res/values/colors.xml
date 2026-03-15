@@ -42,4 +42,9 @@
     <!-- 빈 상태 색상 -->
     <color name="empty_state_icon">#BDBDBD</color>
     <color name="delete_warning">#F44336</color>
+
+    <!-- UI element colors -->
+    <color name="used_indicator_bg">#E0E0E0</color>
+    <color name="used_indicator_text">#757575</color>
+    <color name="item_background_light">#F5F5F5</color>
 </resources>

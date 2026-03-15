@@ -13,14 +13,14 @@
         android:layout_height="?attr/actionBarSize"
         android:background="@color/primary"
         app:navigationIcon="?attr/homeAsUpIndicator"
-        app:title="통합 검색"
+        app:title="@string/global_search"
         app:titleTextColor="@color/on_primary" />
 
     <com.google.android.material.textfield.TextInputLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_margin="8dp"
-        android:hint="캐릭터, 사건, 작품 검색">
+        android:hint="@string/global_search_hint">
 
         <com.google.android.material.textfield.TextInputEditText
             android:id="@+id/searchEdit"
@@ -53,7 +53,7 @@
             android:id="@+id/emptyMessage"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="검색어를 입력하세요"
+            android:text="@string/search_empty_hint"
             android:textColor="@color/text_secondary"
             android:textSize="14sp"
             android:gravity="center" />

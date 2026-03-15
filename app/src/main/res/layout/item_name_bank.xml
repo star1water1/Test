@@ -49,8 +49,8 @@
                 android:layout_marginStart="8dp"
                 android:paddingHorizontal="8dp"
                 android:paddingVertical="2dp"
-                android:background="#E0E0E0"
-                android:textColor="#757575"
+                android:background="@color/used_indicator_bg"
+                android:textColor="@color/used_indicator_text"
                 android:textSize="11sp"
                 android:visibility="gone" />
 

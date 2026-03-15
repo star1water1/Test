@@ -14,7 +14,7 @@
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent"
-        app:title="이름 은행"
+        app:title="@string/tab_name_bank"
         app:titleTextColor="@color/on_primary" />
 
     <LinearLayout
@@ -35,7 +35,7 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:layout_marginEnd="8dp"
-            android:hint="이름 검색">
+            android:hint="@string/name_search_hint">
 
             <com.google.android.material.textfield.TextInputEditText
                 android:id="@+id/searchEdit"
@@ -49,7 +49,7 @@
             android:id="@+id/chipAvailableOnly"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="미사용만"
+            android:text="@string/show_available_only"
             style="@style/Widget.Material3.Chip.Filter"
             android:checkable="true" />
 
@@ -59,7 +59,7 @@
         android:id="@+id/emptyText"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="이름을 추가해보세요"
+        android:text="@string/name_bank_empty_hint"
         android:textColor="@color/text_secondary"
         android:textSize="16sp"
         android:visibility="gone"
@@ -84,7 +84,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_margin="16dp"
-        android:contentDescription="이름 추가"
+        android:contentDescription="@string/add_character"
         android:src="@android:drawable/ic_input_add"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />

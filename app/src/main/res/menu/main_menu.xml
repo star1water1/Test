@@ -5,7 +5,7 @@
     <item
         android:id="@+id/action_global_search"
         android:icon="@android:drawable/ic_menu_search"
-        android:title="통합 검색"
+        android:title="@string/global_search"
         app:showAsAction="ifRoom" />
 
     <item

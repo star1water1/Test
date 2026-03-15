@@ -10,7 +10,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginBottom="8dp"
-        android:hint="이름">
+        android:hint="@string/name_label">
 
         <com.google.android.material.textfield.TextInputEditText
             android:id="@+id/editNameBank"
@@ -23,7 +23,7 @@
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="성별"
+        android:text="@string/gender_label"
         android:textSize="12sp"
         android:textColor="@color/text_secondary" />
 
@@ -37,7 +37,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginBottom="8dp"
-        android:hint="출처/문화권">
+        android:hint="@string/origin_label">
 
         <com.google.android.material.textfield.TextInputEditText
             android:id="@+id/editOrigin"
@@ -50,7 +50,7 @@
     <com.google.android.material.textfield.TextInputLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:hint="메모">
+        android:hint="@string/memo">
 
         <com.google.android.material.textfield.TextInputEditText
             android:id="@+id/editNotes"

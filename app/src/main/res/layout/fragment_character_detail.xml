@@ -273,19 +273,19 @@
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"
-                                android:text="관계"
+                                android:text="@string/relationship_label"
                                 android:textSize="16sp"
                                 android:textStyle="bold"
                                 android:textColor="@color/primary" />
 
                             <ImageView
                                 android:id="@+id/btnAddRelationship"
-                                android:layout_width="32dp"
-                                android:layout_height="32dp"
-                                android:padding="4dp"
+                                android:layout_width="48dp"
+                                android:layout_height="48dp"
+                                android:padding="12dp"
                                 android:src="@android:drawable/ic_input_add"
                                 android:background="?attr/selectableItemBackgroundBorderless"
-                                android:contentDescription="관계 추가" />
+                                android:contentDescription="@string/add_relationship" />
 
                         </LinearLayout>
 
@@ -374,9 +374,9 @@
 
                             <ImageView
                                 android:id="@+id/btnAddStateChange"
-                                android:layout_width="32dp"
-                                android:layout_height="32dp"
-                                android:padding="4dp"
+                                android:layout_width="48dp"
+                                android:layout_height="48dp"
+                                android:padding="12dp"
                                 android:src="@android:drawable/ic_input_add"
                                 android:background="?attr/selectableItemBackgroundBorderless"
                                 android:contentDescription="@string/add_state_change" />

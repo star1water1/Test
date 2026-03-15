@@ -19,7 +19,7 @@
             android:layout_height="120dp"
             android:scaleType="centerCrop"
             android:src="@drawable/ic_character_placeholder"
-            android:background="#F5F5F5"
+            android:background="@color/item_background_light"
             android:contentDescription="@string/character_name" />
 
         <TextView

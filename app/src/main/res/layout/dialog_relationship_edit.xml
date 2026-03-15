@@ -9,7 +9,7 @@
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="대상 캐릭터"
+        android:text="@string/target_character"
         android:textSize="12sp"
         android:textColor="@color/text_secondary" />
 
@@ -22,7 +22,7 @@
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="관계 유형"
+        android:text="@string/relationship_type"
         android:textSize="12sp"
         android:textColor="@color/text_secondary" />
 
@@ -35,7 +35,7 @@
     <com.google.android.material.textfield.TextInputLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:hint="설명 (선택)">
+        android:hint="@string/description_optional">
 
         <com.google.android.material.textfield.TextInputEditText
             android:id="@+id/editRelDescription"

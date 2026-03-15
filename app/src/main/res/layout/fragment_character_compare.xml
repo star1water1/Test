@@ -13,7 +13,7 @@
         android:layout_height="?attr/actionBarSize"
         android:background="@color/primary"
         app:navigationIcon="?attr/homeAsUpIndicator"
-        app:title="캐릭터 비교"
+        app:title="@string/character_compare"
         app:titleTextColor="@color/on_primary" />
 
     <HorizontalScrollView

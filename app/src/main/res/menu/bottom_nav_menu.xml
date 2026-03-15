@@ -4,21 +4,21 @@
     <item
         android:id="@+id/universeListFragment"
         android:icon="@drawable/ic_universe"
-        android:title="세계관" />
+        android:title="@string/tab_universes" />
 
     <item
         android:id="@+id/characterListFragment"
         android:icon="@drawable/ic_character_placeholder"
-        android:title="캐릭터" />
+        android:title="@string/tab_characters" />
 
     <item
         android:id="@+id/timelineFragment"
         android:icon="@drawable/ic_timeline"
-        android:title="연표" />
+        android:title="@string/tab_timeline" />
 
     <item
         android:id="@+id/nameBankFragment"
         android:icon="@drawable/ic_name_bank"
-        android:title="이름 은행" />
+        android:title="@string/tab_name_bank" />
 
 </menu>
