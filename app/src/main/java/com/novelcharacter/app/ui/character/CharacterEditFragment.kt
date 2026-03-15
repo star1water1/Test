@@ -529,6 +529,11 @@ class CharacterEditFragment : Fragment() {
 
     private fun decodeSampledBitmap(path: String, reqWidth: Int, reqHeight: Int): android.graphics.Bitmap? {
         return try {
+            val file = java.io.File(path)
+            val appDir = requireContext().filesDir
+            if (!file.canonicalPath.startsWith(appDir.canonicalPath)) {
+                return null // Reject paths outside app directory
+            }
             val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             BitmapFactory.decodeFile(path, options)
             val (height, width) = options.outHeight to options.outWidth
