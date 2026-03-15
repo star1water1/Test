@@ -33,18 +33,21 @@ class AutoBackupWorker(
             Log.i(TAG, "Starting auto backup...")
             val db = AppDatabase.getDatabase(appContext)
             val workbook = XSSFWorkbook()
-            val headerStyle = createHeaderStyle(workbook)
-            val usedSheetNames = mutableSetOf<String>()
+            try {
+                val headerStyle = createHeaderStyle(workbook)
+                val usedSheetNames = mutableSetOf<String>()
 
-            // Export all data
-            exportUniverses(db, workbook, headerStyle, usedSheetNames)
-            exportNovels(db, workbook, headerStyle, usedSheetNames)
-            exportCharacters(db, workbook, headerStyle, usedSheetNames)
-            exportTimeline(db, workbook, headerStyle, usedSheetNames)
+                // Export all data
+                exportUniverses(db, workbook, headerStyle, usedSheetNames)
+                exportNovels(db, workbook, headerStyle, usedSheetNames)
+                exportCharacters(db, workbook, headerStyle, usedSheetNames)
+                exportTimeline(db, workbook, headerStyle, usedSheetNames)
 
-            // Write workbook to bytes, encrypt, and save to internal storage
-            saveEncryptedBackup(workbook)
-            workbook.close()
+                // Write workbook to bytes, encrypt, and save to internal storage
+                saveEncryptedBackup(workbook)
+            } finally {
+                try { workbook.close() } catch (_: Exception) {}
+            }
 
             // Rotate old backups
             rotateBackups()

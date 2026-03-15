@@ -60,7 +60,7 @@ class NovelCharacterApp : Application() {
         ).apply {
             description = "소설 캐릭터의 생일을 알려줍니다"
         }
-        val manager = getSystemService(NotificationManager::class.java)
+        val manager = getSystemService(NotificationManager::class.java) ?: return
         manager.createNotificationChannel(channel)
     }
 
