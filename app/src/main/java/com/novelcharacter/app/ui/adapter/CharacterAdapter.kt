@@ -143,13 +143,23 @@ class CharacterAdapter(
                     return
                 }
 
+                val boundPath = path
                 loadJob = coroutineScope.launch {
                     val bitmap = withContext(Dispatchers.IO) {
-                        decodeSampledBitmap(path, 256, 256)
+                        decodeSampledBitmap(boundPath, 256, 256)
                     }
                     if (bitmap != null) {
-                        thumbnailCache.put(path, bitmap)
-                        binding.characterImage.setImageBitmap(bitmap)
+                        thumbnailCache.put(boundPath, bitmap)
+                        // Only set if this ViewHolder still shows the same character
+                        val currentPaths: List<String> = try {
+                            val currentItem = getItem(bindingAdapterPosition)
+                            gson.fromJson(currentItem.imagePaths, imagePathsType) ?: emptyList()
+                        } catch (e: Exception) {
+                            emptyList()
+                        }
+                        if (currentPaths.isNotEmpty() && currentPaths[0] == boundPath) {
+                            binding.characterImage.setImageBitmap(bitmap)
+                        }
                     }
                 }
             }

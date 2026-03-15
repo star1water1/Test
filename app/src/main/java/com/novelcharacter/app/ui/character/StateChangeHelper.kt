@@ -60,7 +60,7 @@ class StateChangeHelper(
     }
 
     private fun showStateChangeDialog(existingChange: CharacterStateChange?) {
-        val context = contextGetter()
+        val context = try { contextGetter() } catch (_: Exception) { return }
         val dialogBinding = DialogStateChangeBinding.inflate(LayoutInflater.from(context))
 
         val cachedFields = cachedFieldsGetter()
@@ -149,7 +149,7 @@ class StateChangeHelper(
     }
 
     private fun showEditDeleteDialog(change: CharacterStateChange) {
-        val context = contextGetter()
+        val context = try { contextGetter() } catch (_: Exception) { return }
         val options = arrayOf(getString(R.string.edit), getString(R.string.delete))
         AlertDialog.Builder(context)
             .setTitle(getString(R.string.edit_or_delete))
@@ -163,7 +163,7 @@ class StateChangeHelper(
     }
 
     private fun confirmDeleteStateChange(change: CharacterStateChange) {
-        val context = contextGetter()
+        val context = try { contextGetter() } catch (_: Exception) { return }
         AlertDialog.Builder(context)
             .setIcon(android.R.drawable.ic_dialog_alert)
             .setTitle(getString(R.string.delete_warning_title))

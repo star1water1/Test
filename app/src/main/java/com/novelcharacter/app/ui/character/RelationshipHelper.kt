@@ -89,7 +89,7 @@ class RelationshipHelper(
             val charNames = otherCharacters.map { it.name }.toTypedArray()
             val typeNames = CharacterRelationship.TYPES.toTypedArray()
 
-            val context = contextGetter()
+            val context = try { contextGetter() } catch (_: Exception) { return@launch }
             val dialogView = LayoutInflater.from(context).inflate(R.layout.dialog_relationship_edit, null)
             val spinnerCharacter = dialogView.findViewById<android.widget.Spinner>(R.id.spinnerRelCharacter)
             val spinnerType = dialogView.findViewById<android.widget.Spinner>(R.id.spinnerRelType)

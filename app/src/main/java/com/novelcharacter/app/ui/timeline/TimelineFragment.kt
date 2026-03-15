@@ -354,8 +354,8 @@ class TimelineFragment : Fragment() {
             novelAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
             dialogBinding.spinnerNovel.adapter = novelAdapter
 
-            event?.novelId?.let { novelId ->
-                val index = novels.indexOfFirst { it.id == novelId }
+            event?.novelId?.let { nid ->
+                val index = novels.indexOfFirst { it.id == nid }
                 if (index >= 0) dialogBinding.spinnerNovel.setSelection(index + 1)
             }
 
@@ -400,7 +400,7 @@ class TimelineFragment : Fragment() {
 
                     val calendarType = dialogBinding.editCalendarType.text.toString().trim()
                     val novelPosition = dialogBinding.spinnerNovel.selectedItemPosition
-                    val selectedNovel = if (novelPosition > 0) novels[novelPosition - 1] else null
+                    val selectedNovel = if (novelPosition > 0) novels.getOrNull(novelPosition - 1) else null
                     val novelId = selectedNovel?.id
                     val universeId = selectedNovel?.universeId ?: event?.universeId
 

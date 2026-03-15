@@ -221,7 +221,7 @@ class CharacterDetailFragment : Fragment() {
                     val bitmap = withContext(Dispatchers.IO) {
                         decodeSampledBitmap(path, 1024, 1024)
                     }
-                    if (bitmap != null && holder.bindingAdapterPosition == boundPosition) {
+                    if (bitmap != null && holder.bindingAdapterPosition == boundPosition && isAdded) {
                         imageView.tag = bitmap
                         imageView.setImageBitmap(bitmap)
                     }

@@ -34,7 +34,11 @@ class CharacterCompareFragment : Fragment() {
 
         binding.toolbar.setNavigationOnClickListener { findNavController().popBackStack() }
 
-        val idsStr = arguments?.getString("characterIds") ?: return
+        val idsStr = arguments?.getString("characterIds")
+        if (idsStr.isNullOrEmpty()) {
+            findNavController().popBackStack()
+            return
+        }
         val characterIds = idsStr.split(",").mapNotNull { it.trim().toLongOrNull() }
 
         if (characterIds.size < 2) {
@@ -76,7 +80,9 @@ class CharacterCompareFragment : Fragment() {
                 entries.add(CompareEntry(char.name, novel?.title ?: "미지정", valueMap, tags))
             }
 
-            buildComparisonTable(entries, allFields)
+            if (isAdded && _binding != null) {
+                buildComparisonTable(entries, allFields)
+            }
         }
     }
 

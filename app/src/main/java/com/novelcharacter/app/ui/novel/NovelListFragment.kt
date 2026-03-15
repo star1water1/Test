@@ -26,7 +26,7 @@ class NovelListFragment : Fragment() {
     private var importerInitialized = false
     private val importer by lazy {
         importerInitialized = true
-        com.novelcharacter.app.excel.ExcelImporter(requireContext())
+        com.novelcharacter.app.excel.ExcelImporter(requireContext().applicationContext)
     }
 
     override fun onCreateView(
@@ -152,12 +152,13 @@ class NovelListFragment : Fragment() {
     }
 
     private fun exportToExcel() {
-        // Excel 내보내기는 ExcelExporter에서 처리 (Activity context for share intent)
-        val exporter = com.novelcharacter.app.excel.ExcelExporter(requireActivity())
+        val activity = activity ?: return
+        val exporter = com.novelcharacter.app.excel.ExcelExporter(activity)
         exporter.exportAll()
     }
 
     private fun importFromExcel() {
+        if (!isAdded) return
         importer.showImportDialog(this)
     }
 

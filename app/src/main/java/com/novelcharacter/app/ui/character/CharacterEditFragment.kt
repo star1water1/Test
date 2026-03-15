@@ -507,7 +507,7 @@ class CharacterEditFragment : Fragment() {
                             val bitmap = withContext(Dispatchers.IO) {
                                 decodeSampledBitmap(path, 200, 200)
                             }
-                            if (bitmap != null && holder.bindingAdapterPosition == boundPosition) {
+                            if (bitmap != null && holder.bindingAdapterPosition == boundPosition && isAdded) {
                                 imageView.tag = bitmap
                                 imageView.setImageBitmap(bitmap)
                             }
@@ -517,7 +517,8 @@ class CharacterEditFragment : Fragment() {
                         val adapterPosition = holder.bindingAdapterPosition
                         if (adapterPosition >= 0 && adapterPosition < imagePaths.size) {
                             imagePaths.removeAt(adapterPosition)
-                            imageAdapter?.notifyDataSetChanged()
+                            imageAdapter?.notifyItemRemoved(adapterPosition)
+                            imageAdapter?.notifyItemRangeChanged(adapterPosition, imagePaths.size - adapterPosition)
                         }
                         true
                     }
