@@ -20,9 +20,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class CharacterAdapter(
+    private val coroutineScope: CoroutineScope,
     private val onClick: (Character) -> Unit,
-    private val onLongClick: (Character) -> Unit,
-    private val coroutineScope: CoroutineScope = CoroutineScope(Dispatchers.Main + Job())
+    private val onLongClick: (Character) -> Unit
 ) : ListAdapter<Character, CharacterAdapter.CharacterViewHolder>(CharacterDiffCallback()) {
 
     private var isSelectionMode = false

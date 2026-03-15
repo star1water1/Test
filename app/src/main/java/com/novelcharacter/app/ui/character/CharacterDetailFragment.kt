@@ -504,9 +504,9 @@ class CharacterDetailFragment : Fragment() {
                 )
             }
 
-            // 그룹 제목
+            // 그룹 제목 (빈 그룹명이면 "기타"로 표시)
             val titleView = TextView(context).apply {
-                text = groupName
+                text = groupName.ifEmpty { getString(R.string.other) }
                 setTypeface(null, Typeface.BOLD)
                 textSize = 16f
                 setTextColor(context.getColor(R.color.primary))
@@ -680,7 +680,7 @@ class CharacterDetailFragment : Fragment() {
             }
 
             val titleView = TextView(context).apply {
-                text = groupName
+                text = groupName.ifEmpty { getString(R.string.other) }
                 setTypeface(null, Typeface.BOLD)
                 textSize = 16f
                 setTextColor(context.getColor(R.color.primary))
@@ -744,9 +744,10 @@ class CharacterDetailFragment : Fragment() {
             override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
                 val imageView = holder.itemView as ImageView
                 imageView.setImageResource(R.drawable.ic_character_placeholder)
+                val path = imagePaths[position]
                 viewLifecycleOwner.lifecycleScope.launch {
                     val bitmap = withContext(Dispatchers.IO) {
-                        decodeSampledBitmap(imagePaths[position], 1024, 1024)
+                        decodeSampledBitmap(path, 1024, 1024)
                     }
                     if (bitmap != null) {
                         imageView.setImageBitmap(bitmap)

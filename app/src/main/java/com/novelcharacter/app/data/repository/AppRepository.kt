@@ -173,8 +173,7 @@ class AppRepository(
      * Deletes existing values and inserts the new ones.
      */
     suspend fun saveAllFieldValues(characterId: Long, values: List<CharacterFieldValue>) {
-        characterFieldValueDao.deleteAllByCharacter(characterId)
-        characterFieldValueDao.insertAll(values)
+        characterFieldValueDao.replaceAllByCharacter(characterId, values)
     }
 
     // ===== CharacterStateChange =====

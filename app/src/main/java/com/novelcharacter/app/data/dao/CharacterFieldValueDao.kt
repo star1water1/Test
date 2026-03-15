@@ -24,6 +24,12 @@ interface CharacterFieldValueDao {
     @Update
     suspend fun update(value: CharacterFieldValue)
 
+    @Transaction
+    suspend fun replaceAllByCharacter(characterId: Long, values: List<CharacterFieldValue>) {
+        deleteAllByCharacter(characterId)
+        insertAll(values)
+    }
+
     @Query("DELETE FROM character_field_values WHERE characterId = :characterId")
     suspend fun deleteAllByCharacter(characterId: Long)
 

@@ -498,9 +498,10 @@ class CharacterEditFragment : Fragment() {
                     val imageView = holder.itemView as ImageView
                     imageView.setImageResource(R.drawable.ic_character_placeholder)
                     if (position < imagePaths.size) {
+                        val path = imagePaths[position]
                         viewLifecycleOwner.lifecycleScope.launch {
                             val bitmap = withContext(Dispatchers.IO) {
-                                decodeSampledBitmap(imagePaths[position], 200, 200)
+                                decodeSampledBitmap(path, 200, 200)
                             }
                             if (bitmap != null) {
                                 imageView.setImageBitmap(bitmap)
@@ -508,7 +509,7 @@ class CharacterEditFragment : Fragment() {
                         }
                     }
                     imageView.setOnLongClickListener {
-                        val adapterPosition = holder.adapterPosition
+                        val adapterPosition = holder.bindingAdapterPosition
                         if (adapterPosition >= 0 && adapterPosition < imagePaths.size) {
                             imagePaths.removeAt(adapterPosition)
                             imageAdapter?.notifyDataSetChanged()
@@ -601,6 +602,7 @@ class CharacterEditFragment : Fragment() {
 
     override fun onDestroyView() {
         super.onDestroyView()
+        imageAdapter = null
         _binding = null
     }
 }

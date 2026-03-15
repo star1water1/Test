@@ -163,4 +163,5 @@
     <string name="edit_button_desc">캐릭터 편집</string>
     <string name="delete_warning_title">삭제 확인</string>
     <string name="auto_calculated_label">%s (자동 계산)</string>
+    <string name="other">기타</string>
 </resources>
