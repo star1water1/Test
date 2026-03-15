@@ -206,9 +206,9 @@ class CharacterDetailFragment : Fragment() {
             binding.yearSlider.valueFrom = adjustedMin
             binding.yearSlider.valueTo = adjustedMax
 
-            // Show min/max year labels
+            // Show min/max year labels (actual event years, not adjusted slider range)
             binding.minYearLabel.text = getString(R.string.slider_min_year, minYear)
-            binding.maxYearLabel.text = getString(R.string.slider_max_year, adjustedMax.toInt())
+            binding.maxYearLabel.text = getString(R.string.slider_max_year, maxYear)
             val totalRange = adjustedMax - adjustedMin
             binding.yearSlider.stepSize = when {
                 totalRange > 10000 -> 100f

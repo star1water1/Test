@@ -193,7 +193,7 @@ class TimelineAdapter(
          * - Zoom level 5: show year/month/day detail
          */
         private fun formatEventDate(event: TimelineEvent): String {
-            val yearStr = formatYear(event.year)
+            val yearStr = formatYearLabel(event.year)
             return if (zoomLevel == 5) {
                 val parts = mutableListOf(yearStr)
                 event.month?.let { parts.add("${it}월") }
@@ -201,14 +201,6 @@ class TimelineAdapter(
                 parts.joinToString(" ")
             } else {
                 yearStr
-            }
-        }
-
-        private fun formatYear(year: Int): String {
-            return if (year < 0) {
-                "BC ${-year}"
-            } else {
-                "$year"
             }
         }
     }

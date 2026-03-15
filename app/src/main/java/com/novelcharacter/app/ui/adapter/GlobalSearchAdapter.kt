@@ -67,9 +67,10 @@ class GlobalSearchAdapter(
         private val typeIndicator: TextView = itemView.findViewById(R.id.resultTypeIndicator)
 
         private fun setTypeBadgeColor(colorResId: Int) {
-            val bg = typeIndicator.background
+            val bg = typeIndicator.background?.mutate()
             if (bg is GradientDrawable) {
                 bg.setColor(itemView.context.getColor(colorResId))
+                typeIndicator.background = bg
             } else {
                 val drawable = GradientDrawable().apply {
                     cornerRadius = 4f * itemView.context.resources.displayMetrics.density
