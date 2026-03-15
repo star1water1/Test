@@ -16,7 +16,10 @@ sealed class SearchResultItem {
 
 class GlobalSearchViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val repository = (application as NovelCharacterApp).repository
+    private val app = application as NovelCharacterApp
+    private val novelRepository = app.novelRepository
+    private val characterRepository = app.characterRepository
+    private val timelineRepository = app.timelineRepository
 
     private val _searchQuery = MutableLiveData("")
 
@@ -25,9 +28,9 @@ class GlobalSearchViewModel(application: Application) : AndroidViewModel(applica
             MutableLiveData(emptyList())
         } else {
             val mediator = MediatorLiveData<List<SearchResultItem>>()
-            val charResults = repository.searchCharacters(query)
-            val eventResults = repository.searchEvents(query)
-            val novelResults = repository.searchNovels(query)
+            val charResults = characterRepository.searchCharacters(query)
+            val eventResults = timelineRepository.searchEvents(query)
+            val novelResults = novelRepository.searchNovels(query)
 
             var chars: List<Character> = emptyList()
             var events: List<TimelineEvent> = emptyList()

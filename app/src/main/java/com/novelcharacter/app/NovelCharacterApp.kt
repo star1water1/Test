@@ -8,6 +8,11 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import com.novelcharacter.app.data.database.AppDatabase
 import com.novelcharacter.app.data.repository.AppRepository
+import com.novelcharacter.app.data.repository.NovelRepository
+import com.novelcharacter.app.data.repository.CharacterRepository
+import com.novelcharacter.app.data.repository.TimelineRepository
+import com.novelcharacter.app.data.repository.UniverseRepository
+import com.novelcharacter.app.data.repository.NameBankRepository
 import com.novelcharacter.app.backup.AutoBackupWorker
 import com.novelcharacter.app.notification.BirthdayWorker
 import java.util.concurrent.TimeUnit
@@ -15,19 +20,29 @@ import java.util.concurrent.TimeUnit
 class NovelCharacterApp : Application() {
 
     val database by lazy { AppDatabase.getDatabase(this) }
-    val repository by lazy {
-        AppRepository(
-            database.novelDao(),
+    val novelRepository by lazy { NovelRepository(database.novelDao()) }
+    val characterRepository by lazy {
+        CharacterRepository(
             database.characterDao(),
-            database.timelineDao(),
-            database.universeDao(),
-            database.fieldDefinitionDao(),
             database.characterFieldValueDao(),
             database.characterStateChangeDao(),
             database.characterTagDao(),
-            database.nameBankDao(),
             database.characterRelationshipDao()
         )
+    }
+    val timelineRepository by lazy { TimelineRepository(database.timelineDao()) }
+    val universeRepository by lazy {
+        UniverseRepository(
+            database.universeDao(),
+            database.fieldDefinitionDao(),
+            database.novelDao()
+        )
+    }
+    val nameBankRepository by lazy { NameBankRepository(database.nameBankDao()) }
+
+    // Keep backward compatibility
+    val repository by lazy {
+        AppRepository(novelRepository, characterRepository, timelineRepository, universeRepository, nameBankRepository)
     }
 
     override fun onCreate() {

@@ -1,10 +1,6 @@
 package com.novelcharacter.app.backup
 
-import android.content.ContentValues
 import android.content.Context
-import android.os.Build
-import android.os.Environment
-import android.provider.MediaStore
 import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
@@ -13,8 +9,11 @@ import org.apache.poi.ss.usermodel.FillPatternType
 import org.apache.poi.ss.usermodel.IndexedColors
 import org.apache.poi.xssf.usermodel.XSSFCellStyle
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
+import java.io.ByteArrayOutputStream
 import java.io.File
-import java.io.FileOutputStream
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class AutoBackupWorker(
     private val appContext: Context,
@@ -23,7 +22,10 @@ class AutoBackupWorker(
 
     companion object {
         private const val TAG = "AutoBackupWorker"
-        const val BACKUP_FILE_NAME = "NovelCharacter_AutoBackup.xlsx"
+        private const val BACKUP_DIR_NAME = "backups"
+        private const val BACKUP_PREFIX = "NovelCharacter_AutoBackup_"
+        private const val BACKUP_EXTENSION = ".enc"
+        private const val MAX_BACKUPS = 3
     }
 
     override suspend fun doWork(): Result {
@@ -40,9 +42,12 @@ class AutoBackupWorker(
             exportCharacters(db, workbook, headerStyle, usedSheetNames)
             exportTimeline(db, workbook, headerStyle, usedSheetNames)
 
-            // Save to Downloads
-            saveWorkbook(workbook, BACKUP_FILE_NAME)
+            // Write workbook to bytes, encrypt, and save to internal storage
+            saveEncryptedBackup(workbook)
             workbook.close()
+
+            // Rotate old backups
+            rotateBackups()
 
             Log.i(TAG, "Auto backup completed successfully")
             Result.success()
@@ -52,50 +57,40 @@ class AutoBackupWorker(
         }
     }
 
-    private fun saveWorkbook(workbook: XSSFWorkbook, fileName: String) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val contentValues = ContentValues().apply {
-                put(MediaStore.Downloads.DISPLAY_NAME, fileName)
-                put(MediaStore.Downloads.MIME_TYPE,
-                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-                put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
-                put(MediaStore.Downloads.IS_PENDING, 1)
-            }
+    private fun saveEncryptedBackup(workbook: XSSFWorkbook) {
+        val backupDir = File(appContext.filesDir, BACKUP_DIR_NAME)
+        if (!backupDir.exists()) {
+            backupDir.mkdirs()
+        }
 
-            val resolver = appContext.contentResolver
-            // Try to find existing file first
-            val existingUri = resolver.query(
-                MediaStore.Downloads.EXTERNAL_CONTENT_URI,
-                arrayOf(MediaStore.Downloads._ID),
-                "${MediaStore.Downloads.DISPLAY_NAME} = ?",
-                arrayOf(fileName),
-                null
-            )?.use { cursor ->
-                if (cursor.moveToFirst()) {
-                    val id = cursor.getLong(0)
-                    android.content.ContentUris.withAppendedId(MediaStore.Downloads.EXTERNAL_CONTENT_URI, id)
-                } else null
-            }
+        val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+        val fileName = "$BACKUP_PREFIX$timestamp$BACKUP_EXTENSION"
+        val backupFile = File(backupDir, fileName)
 
-            if (existingUri != null) {
-                resolver.openOutputStream(existingUri, "wt")?.use { outputStream ->
-                    workbook.write(outputStream)
+        val rawBytes = ByteArrayOutputStream().use { baos ->
+            workbook.write(baos)
+            baos.toByteArray()
+        }
+
+        val encryptedBytes = BackupEncryptor.encrypt(rawBytes)
+        backupFile.writeBytes(encryptedBytes)
+
+        Log.i(TAG, "Encrypted backup saved: ${backupFile.absolutePath}")
+    }
+
+    private fun rotateBackups() {
+        val backupDir = File(appContext.filesDir, BACKUP_DIR_NAME)
+        if (!backupDir.exists()) return
+
+        val backupFiles = backupDir.listFiles { file ->
+            file.name.startsWith(BACKUP_PREFIX) && file.name.endsWith(BACKUP_EXTENSION)
+        }?.sortedByDescending { it.lastModified() } ?: return
+
+        if (backupFiles.size > MAX_BACKUPS) {
+            backupFiles.drop(MAX_BACKUPS).forEach { file ->
+                if (file.delete()) {
+                    Log.i(TAG, "Deleted old backup: ${file.name}")
                 }
-            } else {
-                val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
-                    ?: throw Exception("Cannot create backup file")
-                resolver.openOutputStream(uri)?.use { outputStream ->
-                    workbook.write(outputStream)
-                }
-                contentValues.clear()
-                contentValues.put(MediaStore.Downloads.IS_PENDING, 0)
-                resolver.update(uri, contentValues, null, null)
-            }
-        } else {
-            val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-            val file = File(downloadsDir, fileName)
-            FileOutputStream(file).use { outputStream ->
-                workbook.write(outputStream)
             }
         }
     }

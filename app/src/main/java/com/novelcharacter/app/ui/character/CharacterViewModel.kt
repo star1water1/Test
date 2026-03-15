@@ -15,18 +15,22 @@ import kotlinx.coroutines.launch
 
 class CharacterViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val repository = (application as NovelCharacterApp).repository
+    private val app = application as NovelCharacterApp
+    private val characterRepository = app.characterRepository
+    private val novelRepository = app.novelRepository
+    private val timelineRepository = app.timelineRepository
+    private val universeRepository = app.universeRepository
 
-    val allCharacters: LiveData<List<Character>> = repository.allCharacters
-    val allNovels: LiveData<List<Novel>> = repository.allNovels
+    val allCharacters: LiveData<List<Character>> = characterRepository.allCharacters
+    val allNovels: LiveData<List<Novel>> = novelRepository.allNovels
 
     private val _currentNovelId = MutableLiveData<Long?>()
 
     val filteredCharacters: LiveData<List<Character>> = _currentNovelId.switchMap { novelId ->
         if (novelId == null || novelId == -1L) {
-            repository.allCharacters
+            characterRepository.allCharacters
         } else {
-            repository.getCharactersByNovel(novelId)
+            characterRepository.getCharactersByNovel(novelId)
         }
     }
 
@@ -35,7 +39,7 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         if (query.isNullOrBlank()) {
             filteredCharacters
         } else {
-            repository.searchCharacters(query)
+            characterRepository.searchCharacters(query)
         }
     }
 
@@ -47,104 +51,104 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         _searchQuery.value = query
     }
 
-    fun getCharacterById(id: Long): LiveData<Character?> = repository.getCharacterByIdLive(id)
+    fun getCharacterById(id: Long): LiveData<Character?> = characterRepository.getCharacterByIdLive(id)
 
     fun getEventsForCharacter(characterId: Long): LiveData<List<TimelineEvent>> =
-        repository.getEventsForCharacter(characterId)
+        timelineRepository.getEventsForCharacter(characterId)
 
-    suspend fun getCharacterByIdSuspend(id: Long): Character? = repository.getCharacterById(id)
+    suspend fun getCharacterByIdSuspend(id: Long): Character? = characterRepository.getCharacterById(id)
 
     suspend fun getCharactersForEvent(eventId: Long): List<Character> =
-        repository.getCharactersForEvent(eventId)
+        timelineRepository.getCharactersForEvent(eventId)
 
-    suspend fun getNovelById(id: Long): Novel? = repository.getNovelById(id)
+    suspend fun getNovelById(id: Long): Novel? = novelRepository.getNovelById(id)
 
-    suspend fun getAllNovelsList(): List<Novel> = repository.getAllNovelsList()
+    suspend fun getAllNovelsList(): List<Novel> = novelRepository.getAllNovelsList()
 
     fun insertCharacter(character: Character) = viewModelScope.launch {
-        repository.insertCharacter(character)
+        characterRepository.insertCharacter(character)
     }
 
     fun updateCharacter(character: Character) = viewModelScope.launch {
-        repository.updateCharacter(character)
+        characterRepository.updateCharacter(character)
     }
 
     fun deleteCharacter(character: Character) = viewModelScope.launch {
-        repository.deleteCharacter(character)
+        characterRepository.deleteCharacter(character)
     }
 
     // ===== FieldDefinition =====
     suspend fun getFieldsByUniverseList(universeId: Long): List<FieldDefinition> =
-        repository.getFieldsByUniverseList(universeId)
+        universeRepository.getFieldsByUniverseList(universeId)
 
     // ===== CharacterFieldValue =====
     suspend fun getValuesByCharacterList(characterId: Long): List<CharacterFieldValue> =
-        repository.getValuesByCharacterList(characterId)
+        characterRepository.getValuesByCharacterList(characterId)
 
     suspend fun saveAllFieldValues(characterId: Long, values: List<CharacterFieldValue>) =
-        repository.saveAllFieldValues(characterId, values)
+        characterRepository.saveAllFieldValues(characterId, values)
 
     suspend fun insertCharacterSuspend(character: Character): Long =
-        repository.insertCharacter(character)
+        characterRepository.insertCharacter(character)
 
     // ===== CharacterStateChange =====
     fun getChangesByCharacter(characterId: Long): LiveData<List<CharacterStateChange>> =
-        repository.getChangesByCharacter(characterId)
+        characterRepository.getChangesByCharacter(characterId)
 
     suspend fun getChangesUpToYear(characterId: Long, year: Int): List<CharacterStateChange> =
-        repository.getChangesUpToYear(characterId, year)
+        characterRepository.getChangesUpToYear(characterId, year)
 
     suspend fun getChangesByCharacterList(characterId: Long): List<CharacterStateChange> =
-        repository.getChangesByCharacterList(characterId)
+        characterRepository.getChangesByCharacterList(characterId)
 
     fun insertStateChange(change: CharacterStateChange) = viewModelScope.launch {
-        repository.insertStateChange(change)
+        characterRepository.insertStateChange(change)
     }
 
     fun updateStateChange(change: CharacterStateChange) = viewModelScope.launch {
-        repository.updateStateChange(change)
+        characterRepository.updateStateChange(change)
     }
 
     fun deleteStateChange(change: CharacterStateChange) = viewModelScope.launch {
-        repository.deleteStateChange(change)
+        characterRepository.deleteStateChange(change)
     }
 
     // ===== Relationships =====
     fun getRelationshipsForCharacter(characterId: Long): LiveData<List<CharacterRelationship>> =
-        repository.getRelationshipsForCharacter(characterId)
+        characterRepository.getRelationshipsForCharacter(characterId)
 
     fun insertRelationship(relationship: CharacterRelationship) = viewModelScope.launch {
-        repository.insertRelationship(relationship)
+        characterRepository.insertRelationship(relationship)
     }
 
     fun deleteRelationshipById(id: Long) = viewModelScope.launch {
-        repository.deleteRelationshipById(id)
+        characterRepository.deleteRelationshipById(id)
     }
 
     suspend fun getAllCharactersList(): List<Character> =
-        repository.getAllCharactersList()
+        characterRepository.getAllCharactersList()
 
     // ===== Tags =====
     fun getTagsByCharacter(characterId: Long): LiveData<List<CharacterTag>> =
-        repository.getTagsByCharacter(characterId)
+        characterRepository.getTagsByCharacter(characterId)
 
     suspend fun getTagsByCharacterList(characterId: Long): List<CharacterTag> =
-        repository.getTagsByCharacterList(characterId)
+        characterRepository.getTagsByCharacterList(characterId)
 
     suspend fun getAllDistinctTags(): List<String> =
-        repository.getAllDistinctTags()
+        characterRepository.getAllDistinctTags()
 
     fun deleteAllTagsByCharacter(characterId: Long) = viewModelScope.launch {
-        repository.deleteAllTagsByCharacter(characterId)
+        characterRepository.deleteAllTagsByCharacter(characterId)
     }
 
     fun insertTags(tags: List<CharacterTag>) = viewModelScope.launch {
-        repository.insertTags(tags)
+        characterRepository.insertTags(tags)
     }
 
     suspend fun deleteAllTagsByCharacterSuspend(characterId: Long) =
-        repository.deleteAllTagsByCharacter(characterId)
+        characterRepository.deleteAllTagsByCharacter(characterId)
 
     suspend fun insertTagsSuspend(tags: List<CharacterTag>) =
-        repository.insertTags(tags)
+        characterRepository.insertTags(tags)
 }

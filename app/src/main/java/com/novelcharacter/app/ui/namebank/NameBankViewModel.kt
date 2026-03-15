@@ -8,14 +8,14 @@ import kotlinx.coroutines.launch
 
 class NameBankViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val repository = (application as NovelCharacterApp).repository
+    private val nameBankRepository = (application as NovelCharacterApp).nameBankRepository
 
     private val _searchQuery = MutableLiveData("")
     private val _showOnlyAvailable = MutableLiveData(false)
 
     val displayedNames: LiveData<List<NameBankEntry>> = MediatorLiveData<List<NameBankEntry>>().apply {
-        val allNames = repository.allNameBankEntries
-        val availableNames = repository.availableNameBankEntries
+        val allNames = nameBankRepository.allNameBankEntries
+        val availableNames = nameBankRepository.availableNameBankEntries
 
         fun update() {
             val query = _searchQuery.value ?: ""
@@ -51,25 +51,25 @@ class NameBankViewModel(application: Application) : AndroidViewModel(application
     fun isShowOnlyAvailable(): Boolean = _showOnlyAvailable.value ?: false
 
     fun insert(entry: NameBankEntry) = viewModelScope.launch {
-        repository.insertNameBankEntry(entry)
+        nameBankRepository.insertNameBankEntry(entry)
     }
 
     fun update(entry: NameBankEntry) = viewModelScope.launch {
-        repository.updateNameBankEntry(entry)
+        nameBankRepository.updateNameBankEntry(entry)
     }
 
     fun delete(entry: NameBankEntry) = viewModelScope.launch {
-        repository.deleteNameBankEntry(entry)
+        nameBankRepository.deleteNameBankEntry(entry)
     }
 
     fun markAsUsed(id: Long, characterId: Long) = viewModelScope.launch {
-        repository.markNameBankAsUsed(id, characterId)
+        nameBankRepository.markNameBankAsUsed(id, characterId)
     }
 
     fun markAsAvailable(id: Long) = viewModelScope.launch {
-        repository.markNameBankAsAvailable(id)
+        nameBankRepository.markNameBankAsAvailable(id)
     }
 
     suspend fun getAvailableNamesList(): List<NameBankEntry> =
-        repository.getAvailableNameBankList()
+        nameBankRepository.getAvailableNameBankList()
 }

@@ -1,271 +1,260 @@
 package com.novelcharacter.app.data.repository
 
 import androidx.lifecycle.LiveData
-import com.novelcharacter.app.data.dao.*
 import com.novelcharacter.app.data.model.*
 
+/**
+ * Facade that delegates to domain-specific repositories.
+ * Kept for backward compatibility with existing code that references AppRepository.
+ */
 class AppRepository(
-    private val novelDao: NovelDao,
-    private val characterDao: CharacterDao,
-    private val timelineDao: TimelineDao,
-    private val universeDao: UniverseDao,
-    private val fieldDefinitionDao: FieldDefinitionDao,
-    private val characterFieldValueDao: CharacterFieldValueDao,
-    private val characterStateChangeDao: CharacterStateChangeDao,
-    private val characterTagDao: CharacterTagDao,
-    private val nameBankDao: NameBankDao,
-    private val characterRelationshipDao: CharacterRelationshipDao
+    private val novelRepository: NovelRepository,
+    private val characterRepository: CharacterRepository,
+    private val timelineRepository: TimelineRepository,
+    private val universeRepository: UniverseRepository,
+    private val nameBankRepository: NameBankRepository
 ) {
     // ===== Novel =====
-    val allNovels: LiveData<List<Novel>> = novelDao.getAllNovels()
+    val allNovels: LiveData<List<Novel>> get() = novelRepository.allNovels
 
-    suspend fun getAllNovelsList(): List<Novel> = novelDao.getAllNovelsList()
-    suspend fun getNovelById(id: Long): Novel? = novelDao.getNovelById(id)
-    suspend fun insertNovel(novel: Novel): Long = novelDao.insert(novel)
-    suspend fun updateNovel(novel: Novel) = novelDao.update(novel)
-    suspend fun deleteNovel(novel: Novel) = novelDao.delete(novel)
+    suspend fun getAllNovelsList(): List<Novel> = novelRepository.getAllNovelsList()
+    suspend fun getNovelById(id: Long): Novel? = novelRepository.getNovelById(id)
+    suspend fun insertNovel(novel: Novel): Long = novelRepository.insertNovel(novel)
+    suspend fun updateNovel(novel: Novel) = novelRepository.updateNovel(novel)
+    suspend fun deleteNovel(novel: Novel) = novelRepository.deleteNovel(novel)
     fun getNovelsByUniverse(universeId: Long): LiveData<List<Novel>> =
-        novelDao.getNovelsByUniverse(universeId)
+        novelRepository.getNovelsByUniverse(universeId)
     suspend fun getNovelsByUniverseList(universeId: Long): List<Novel> =
-        novelDao.getNovelsByUniverseList(universeId)
+        novelRepository.getNovelsByUniverseList(universeId)
     fun searchNovels(query: String): LiveData<List<Novel>> =
-        novelDao.searchNovels(query)
+        novelRepository.searchNovels(query)
 
     // ===== Character =====
-    val allCharacters: LiveData<List<Character>> = characterDao.getAllCharacters()
+    val allCharacters: LiveData<List<Character>> get() = characterRepository.allCharacters
 
-    suspend fun getAllCharactersList(): List<Character> = characterDao.getAllCharactersList()
+    suspend fun getAllCharactersList(): List<Character> = characterRepository.getAllCharactersList()
     fun getCharactersByNovel(novelId: Long): LiveData<List<Character>> =
-        characterDao.getCharactersByNovel(novelId)
+        characterRepository.getCharactersByNovel(novelId)
     suspend fun getCharactersByNovelList(novelId: Long): List<Character> =
-        characterDao.getCharactersByNovelList(novelId)
-    suspend fun getCharacterById(id: Long): Character? = characterDao.getCharacterById(id)
-    fun getCharacterByIdLive(id: Long): LiveData<Character?> = characterDao.getCharacterByIdLive(id)
+        characterRepository.getCharactersByNovelList(novelId)
+    suspend fun getCharacterById(id: Long): Character? = characterRepository.getCharacterById(id)
+    fun getCharacterByIdLive(id: Long): LiveData<Character?> = characterRepository.getCharacterByIdLive(id)
     fun searchCharacters(query: String): LiveData<List<Character>> =
-        characterDao.searchCharacters(query)
-    suspend fun insertCharacter(character: Character): Long = characterDao.insert(character)
-    suspend fun updateCharacter(character: Character) = characterDao.update(character)
-    suspend fun deleteCharacter(character: Character) = characterDao.delete(character)
-    suspend fun insertAllCharacters(characters: List<Character>) = characterDao.insertAll(characters)
+        characterRepository.searchCharacters(query)
+    suspend fun insertCharacter(character: Character): Long = characterRepository.insertCharacter(character)
+    suspend fun updateCharacter(character: Character) = characterRepository.updateCharacter(character)
+    suspend fun deleteCharacter(character: Character) = characterRepository.deleteCharacter(character)
+    suspend fun insertAllCharacters(characters: List<Character>) = characterRepository.insertAllCharacters(characters)
 
     // ===== Timeline =====
-    val allEvents: LiveData<List<TimelineEvent>> = timelineDao.getAllEvents()
+    val allEvents: LiveData<List<TimelineEvent>> get() = timelineRepository.allEvents
 
-    suspend fun getAllEventsList(): List<TimelineEvent> = timelineDao.getAllEventsList()
+    suspend fun getAllEventsList(): List<TimelineEvent> = timelineRepository.getAllEventsList()
     fun getEventsByNovel(novelId: Long): LiveData<List<TimelineEvent>> =
-        timelineDao.getEventsByNovel(novelId)
-    suspend fun getEventById(id: Long): TimelineEvent? = timelineDao.getEventById(id)
+        timelineRepository.getEventsByNovel(novelId)
+    suspend fun getEventById(id: Long): TimelineEvent? = timelineRepository.getEventById(id)
     fun getEventsByYearRange(startYear: Int, endYear: Int): LiveData<List<TimelineEvent>> =
-        timelineDao.getEventsByYearRange(startYear, endYear)
+        timelineRepository.getEventsByYearRange(startYear, endYear)
     fun searchEvents(query: String): LiveData<List<TimelineEvent>> =
-        timelineDao.searchEvents(query)
-    suspend fun insertEvent(event: TimelineEvent): Long = timelineDao.insert(event)
-    suspend fun updateEvent(event: TimelineEvent) = timelineDao.update(event)
-    suspend fun deleteEvent(event: TimelineEvent) = timelineDao.delete(event)
-    suspend fun insertAllEvents(events: List<TimelineEvent>) = timelineDao.insertAll(events)
+        timelineRepository.searchEvents(query)
+    suspend fun insertEvent(event: TimelineEvent): Long = timelineRepository.insertEvent(event)
+    suspend fun updateEvent(event: TimelineEvent) = timelineRepository.updateEvent(event)
+    suspend fun deleteEvent(event: TimelineEvent) = timelineRepository.deleteEvent(event)
+    suspend fun insertAllEvents(events: List<TimelineEvent>) = timelineRepository.insertAllEvents(events)
     fun getEventsByUniverse(universeId: Long): LiveData<List<TimelineEvent>> =
-        timelineDao.getEventsByUniverse(universeId)
+        timelineRepository.getEventsByUniverse(universeId)
     fun getEventsByYearMonthDay(year: Int, month: Int?, day: Int?): LiveData<List<TimelineEvent>> =
-        timelineDao.getEventsByYearMonthDay(year, month, day)
+        timelineRepository.getEventsByYearMonthDay(year, month, day)
     fun getEventsForCharacterInRange(characterId: Long, startYear: Int, endYear: Int): LiveData<List<TimelineEvent>> =
-        timelineDao.getEventsForCharacterInRange(characterId, startYear, endYear)
+        timelineRepository.getEventsForCharacterInRange(characterId, startYear, endYear)
     fun getEventsByNovelInRange(novelId: Long, startYear: Int, endYear: Int): LiveData<List<TimelineEvent>> =
-        timelineDao.getEventsByNovelInRange(novelId, startYear, endYear)
+        timelineRepository.getEventsByNovelInRange(novelId, startYear, endYear)
 
-    // ===== Timeline-Character 연결 =====
-    suspend fun linkCharacterToEvent(eventId: Long, characterId: Long) {
-        timelineDao.insertCrossRef(TimelineCharacterCrossRef(eventId, characterId))
-    }
+    // ===== Timeline-Character linkage =====
+    suspend fun linkCharacterToEvent(eventId: Long, characterId: Long) =
+        timelineRepository.linkCharacterToEvent(eventId, characterId)
 
-    suspend fun unlinkCharacterFromEvent(eventId: Long, characterId: Long) {
-        timelineDao.deleteCrossRef(TimelineCharacterCrossRef(eventId, characterId))
-    }
+    suspend fun unlinkCharacterFromEvent(eventId: Long, characterId: Long) =
+        timelineRepository.unlinkCharacterFromEvent(eventId, characterId)
 
-    suspend fun updateEventCharacters(eventId: Long, characterIds: List<Long>) {
-        timelineDao.replaceEventCharacters(eventId, characterIds)
-    }
+    suspend fun updateEventCharacters(eventId: Long, characterIds: List<Long>) =
+        timelineRepository.updateEventCharacters(eventId, characterIds)
 
     suspend fun getCharacterIdsForEvent(eventId: Long): List<Long> =
-        timelineDao.getCharacterIdsForEvent(eventId)
+        timelineRepository.getCharacterIdsForEvent(eventId)
 
     fun getEventsForCharacter(characterId: Long): LiveData<List<TimelineEvent>> =
-        timelineDao.getEventsForCharacter(characterId)
+        timelineRepository.getEventsForCharacter(characterId)
 
     suspend fun getCharactersForEvent(eventId: Long): List<Character> =
-        timelineDao.getCharactersForEvent(eventId)
+        timelineRepository.getCharactersForEvent(eventId)
 
     // ===== Universe =====
-    val allUniverses: LiveData<List<Universe>> = universeDao.getAllUniverses()
+    val allUniverses: LiveData<List<Universe>> get() = universeRepository.allUniverses
 
-    suspend fun getAllUniversesList(): List<Universe> = universeDao.getAllUniversesList()
-    suspend fun getUniverseById(id: Long): Universe? = universeDao.getUniverseById(id)
-    suspend fun insertUniverse(universe: Universe): Long = universeDao.insert(universe)
-    suspend fun updateUniverse(universe: Universe) = universeDao.update(universe)
-    suspend fun deleteUniverse(universe: Universe) = universeDao.delete(universe)
+    suspend fun getAllUniversesList(): List<Universe> = universeRepository.getAllUniversesList()
+    suspend fun getUniverseById(id: Long): Universe? = universeRepository.getUniverseById(id)
+    suspend fun insertUniverse(universe: Universe): Long = universeRepository.insertUniverse(universe)
+    suspend fun updateUniverse(universe: Universe) = universeRepository.updateUniverse(universe)
+    suspend fun deleteUniverse(universe: Universe) = universeRepository.deleteUniverse(universe)
 
     // ===== FieldDefinition =====
     fun getFieldsByUniverse(universeId: Long): LiveData<List<FieldDefinition>> =
-        fieldDefinitionDao.getFieldsByUniverse(universeId)
+        universeRepository.getFieldsByUniverse(universeId)
 
     suspend fun getFieldsByUniverseList(universeId: Long): List<FieldDefinition> =
-        fieldDefinitionDao.getFieldsByUniverseList(universeId)
+        universeRepository.getFieldsByUniverseList(universeId)
 
     suspend fun getFieldById(id: Long): FieldDefinition? =
-        fieldDefinitionDao.getFieldById(id)
+        universeRepository.getFieldById(id)
 
     suspend fun getFieldByKey(universeId: Long, key: String): FieldDefinition? =
-        fieldDefinitionDao.getFieldByKey(universeId, key)
+        universeRepository.getFieldByKey(universeId, key)
 
     suspend fun getFieldsByType(universeId: Long, type: String): List<FieldDefinition> =
-        fieldDefinitionDao.getFieldsByType(universeId, type)
+        universeRepository.getFieldsByType(universeId, type)
 
     suspend fun getGroupNames(universeId: Long): List<String> =
-        fieldDefinitionDao.getGroupNames(universeId)
+        universeRepository.getGroupNames(universeId)
 
     suspend fun insertField(field: FieldDefinition): Long =
-        fieldDefinitionDao.insert(field)
+        universeRepository.insertField(field)
 
     suspend fun insertAllFields(fields: List<FieldDefinition>) =
-        fieldDefinitionDao.insertAll(fields)
+        universeRepository.insertAllFields(fields)
 
     suspend fun updateField(field: FieldDefinition) =
-        fieldDefinitionDao.update(field)
+        universeRepository.updateField(field)
 
     suspend fun deleteField(field: FieldDefinition) =
-        fieldDefinitionDao.delete(field)
+        universeRepository.deleteField(field)
 
     suspend fun deleteAllFieldsByUniverse(universeId: Long) =
-        fieldDefinitionDao.deleteAllByUniverse(universeId)
+        universeRepository.deleteAllFieldsByUniverse(universeId)
 
     // ===== CharacterFieldValue =====
     fun getValuesByCharacter(characterId: Long): LiveData<List<CharacterFieldValue>> =
-        characterFieldValueDao.getValuesByCharacter(characterId)
+        characterRepository.getValuesByCharacter(characterId)
 
     suspend fun getValuesByCharacterList(characterId: Long): List<CharacterFieldValue> =
-        characterFieldValueDao.getValuesByCharacterList(characterId)
+        characterRepository.getValuesByCharacterList(characterId)
 
     suspend fun getFieldValue(characterId: Long, fieldId: Long): CharacterFieldValue? =
-        characterFieldValueDao.getValue(characterId, fieldId)
+        characterRepository.getFieldValue(characterId, fieldId)
 
     suspend fun insertFieldValue(value: CharacterFieldValue): Long =
-        characterFieldValueDao.insert(value)
+        characterRepository.insertFieldValue(value)
 
     suspend fun insertAllFieldValues(values: List<CharacterFieldValue>) =
-        characterFieldValueDao.insertAll(values)
+        characterRepository.insertAllFieldValues(values)
 
     suspend fun updateFieldValue(value: CharacterFieldValue) =
-        characterFieldValueDao.update(value)
+        characterRepository.updateFieldValue(value)
 
     suspend fun deleteAllFieldValuesByCharacter(characterId: Long) =
-        characterFieldValueDao.deleteAllByCharacter(characterId)
+        characterRepository.deleteAllFieldValuesByCharacter(characterId)
 
     suspend fun deleteFieldValue(characterId: Long, fieldId: Long) =
-        characterFieldValueDao.deleteValue(characterId, fieldId)
+        characterRepository.deleteFieldValue(characterId, fieldId)
 
     suspend fun getFieldValueByKey(characterId: Long, fieldKey: String): CharacterFieldValue? =
-        characterFieldValueDao.getValueByFieldKey(characterId, fieldKey)
+        characterRepository.getFieldValueByKey(characterId, fieldKey)
 
-    /**
-     * Save all field values for a character at once (replace all).
-     * Deletes existing values and inserts the new ones.
-     */
-    suspend fun saveAllFieldValues(characterId: Long, values: List<CharacterFieldValue>) {
-        characterFieldValueDao.replaceAllByCharacter(characterId, values)
-    }
+    suspend fun saveAllFieldValues(characterId: Long, values: List<CharacterFieldValue>) =
+        characterRepository.saveAllFieldValues(characterId, values)
 
     // ===== CharacterStateChange =====
     fun getChangesByCharacter(characterId: Long): LiveData<List<CharacterStateChange>> =
-        characterStateChangeDao.getChangesByCharacter(characterId)
+        characterRepository.getChangesByCharacter(characterId)
 
     suspend fun getChangesByCharacterList(characterId: Long): List<CharacterStateChange> =
-        characterStateChangeDao.getChangesByCharacterList(characterId)
+        characterRepository.getChangesByCharacterList(characterId)
 
     suspend fun getChangesUpToYear(characterId: Long, year: Int): List<CharacterStateChange> =
-        characterStateChangeDao.getChangesUpToYear(characterId, year)
+        characterRepository.getChangesUpToYear(characterId, year)
 
     suspend fun getChangesByField(characterId: Long, fieldKey: String): List<CharacterStateChange> =
-        characterStateChangeDao.getChangesByField(characterId, fieldKey)
+        characterRepository.getChangesByField(characterId, fieldKey)
 
     suspend fun getChangeById(id: Long): CharacterStateChange? =
-        characterStateChangeDao.getChangeById(id)
+        characterRepository.getChangeById(id)
 
     suspend fun insertStateChange(change: CharacterStateChange): Long =
-        characterStateChangeDao.insert(change)
+        characterRepository.insertStateChange(change)
 
     suspend fun insertAllStateChanges(changes: List<CharacterStateChange>) =
-        characterStateChangeDao.insertAll(changes)
+        characterRepository.insertAllStateChanges(changes)
 
     suspend fun updateStateChange(change: CharacterStateChange) =
-        characterStateChangeDao.update(change)
+        characterRepository.updateStateChange(change)
 
     suspend fun deleteStateChange(change: CharacterStateChange) =
-        characterStateChangeDao.delete(change)
+        characterRepository.deleteStateChange(change)
 
     suspend fun deleteAllStateChangesByCharacter(characterId: Long) =
-        characterStateChangeDao.deleteAllByCharacter(characterId)
+        characterRepository.deleteAllStateChangesByCharacter(characterId)
 
     // ===== Batch count queries =====
     suspend fun getNovelCountsByUniverses(universeIds: List<Long>): Map<Long, Int> =
-        novelDao.getNovelCountsByUniverses(universeIds).associate { it.universeId to it.cnt }
+        universeRepository.getNovelCountsByUniverses(universeIds)
 
     suspend fun getFieldCountsByUniverses(universeIds: List<Long>): Map<Long, Int> =
-        fieldDefinitionDao.getFieldCountsByUniverses(universeIds).associate { it.universeId to it.cnt }
+        universeRepository.getFieldCountsByUniverses(universeIds)
 
     // ===== CharacterTag =====
     fun getTagsByCharacter(characterId: Long): LiveData<List<CharacterTag>> =
-        characterTagDao.getTagsByCharacter(characterId)
+        characterRepository.getTagsByCharacter(characterId)
 
     suspend fun getTagsByCharacterList(characterId: Long): List<CharacterTag> =
-        characterTagDao.getTagsByCharacterList(characterId)
+        characterRepository.getTagsByCharacterList(characterId)
 
     suspend fun getAllDistinctTags(): List<String> =
-        characterTagDao.getAllDistinctTags()
+        characterRepository.getAllDistinctTags()
 
     suspend fun deleteAllTagsByCharacter(characterId: Long) =
-        characterTagDao.deleteAllByCharacter(characterId)
+        characterRepository.deleteAllTagsByCharacter(characterId)
 
     suspend fun insertTags(tags: List<CharacterTag>) =
-        characterTagDao.insertAll(tags)
+        characterRepository.insertTags(tags)
 
     // ===== NameBank =====
-    val allNameBankEntries: LiveData<List<NameBankEntry>> = nameBankDao.getAllNames()
-    val availableNameBankEntries: LiveData<List<NameBankEntry>> = nameBankDao.getAvailableNames()
+    val allNameBankEntries: LiveData<List<NameBankEntry>> get() = nameBankRepository.allNameBankEntries
+    val availableNameBankEntries: LiveData<List<NameBankEntry>> get() = nameBankRepository.availableNameBankEntries
 
     suspend fun getAvailableNameBankList(): List<NameBankEntry> =
-        nameBankDao.getAvailableNamesList()
+        nameBankRepository.getAvailableNameBankList()
 
     suspend fun getAllNameBankList(): List<NameBankEntry> =
-        nameBankDao.getAllNamesList()
+        nameBankRepository.getAllNameBankList()
 
     suspend fun insertNameBankEntry(entry: NameBankEntry): Long =
-        nameBankDao.insert(entry)
+        nameBankRepository.insertNameBankEntry(entry)
 
     suspend fun updateNameBankEntry(entry: NameBankEntry) =
-        nameBankDao.update(entry)
+        nameBankRepository.updateNameBankEntry(entry)
 
     suspend fun deleteNameBankEntry(entry: NameBankEntry) =
-        nameBankDao.delete(entry)
+        nameBankRepository.deleteNameBankEntry(entry)
 
     suspend fun markNameBankAsUsed(id: Long, characterId: Long) =
-        nameBankDao.markAsUsed(id, characterId)
+        nameBankRepository.markNameBankAsUsed(id, characterId)
 
     suspend fun markNameBankAsAvailable(id: Long) =
-        nameBankDao.markAsAvailable(id)
+        nameBankRepository.markNameBankAsAvailable(id)
 
     // ===== CharacterRelationship =====
     fun getRelationshipsForCharacter(characterId: Long): LiveData<List<CharacterRelationship>> =
-        characterRelationshipDao.getRelationshipsForCharacter(characterId)
+        characterRepository.getRelationshipsForCharacter(characterId)
 
     suspend fun getRelationshipsForCharacterList(characterId: Long): List<CharacterRelationship> =
-        characterRelationshipDao.getRelationshipsForCharacterList(characterId)
+        characterRepository.getRelationshipsForCharacterList(characterId)
 
     suspend fun getAllRelationships(): List<CharacterRelationship> =
-        characterRelationshipDao.getAllRelationships()
+        characterRepository.getAllRelationships()
 
     suspend fun insertRelationship(relationship: CharacterRelationship): Long =
-        characterRelationshipDao.insert(relationship)
+        characterRepository.insertRelationship(relationship)
 
-    suspend fun deleteRelationshipById(id: Long) {
-        characterRelationshipDao.deleteById(id)
-    }
+    suspend fun deleteRelationshipById(id: Long) =
+        characterRepository.deleteRelationshipById(id)
 }

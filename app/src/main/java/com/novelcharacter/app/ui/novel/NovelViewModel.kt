@@ -12,16 +12,16 @@ import kotlinx.coroutines.launch
 
 class NovelViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val repository = (application as NovelCharacterApp).repository
-    val allNovels: LiveData<List<Novel>> = repository.allNovels
+    private val novelRepository = (application as NovelCharacterApp).novelRepository
+    val allNovels: LiveData<List<Novel>> = novelRepository.allNovels
 
     private val _universeId = MutableLiveData<Long?>()
 
     val filteredNovels: LiveData<List<Novel>> = _universeId.switchMap { uid ->
         if (uid == null || uid == -1L) {
-            repository.allNovels
+            novelRepository.allNovels
         } else {
-            repository.getNovelsByUniverse(uid)
+            novelRepository.getNovelsByUniverse(uid)
         }
     }
 
@@ -30,14 +30,14 @@ class NovelViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun insertNovel(novel: Novel) = viewModelScope.launch {
-        repository.insertNovel(novel)
+        novelRepository.insertNovel(novel)
     }
 
     fun updateNovel(novel: Novel) = viewModelScope.launch {
-        repository.updateNovel(novel)
+        novelRepository.updateNovel(novel)
     }
 
     fun deleteNovel(novel: Novel) = viewModelScope.launch {
-        repository.deleteNovel(novel)
+        novelRepository.deleteNovel(novel)
     }
 }

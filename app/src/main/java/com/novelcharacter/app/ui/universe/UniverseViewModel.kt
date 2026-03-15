@@ -14,8 +14,8 @@ import kotlinx.coroutines.launch
 
 class UniverseViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val repository = (application as NovelCharacterApp).repository
-    val allUniverses: LiveData<List<Universe>> = repository.allUniverses
+    private val universeRepository = (application as NovelCharacterApp).universeRepository
+    val allUniverses: LiveData<List<Universe>> = universeRepository.allUniverses
 
     // 각 세계관의 작품 수, 필드 수를 캐시
     private val _universeNovelCounts = MutableLiveData<Map<Long, Int>>()
@@ -26,20 +26,20 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
 
     fun loadCounts(universes: List<Universe>) = viewModelScope.launch {
         val ids = universes.map { it.id }
-        _universeNovelCounts.value = repository.getNovelCountsByUniverses(ids)
-        _universeFieldCounts.value = repository.getFieldCountsByUniverses(ids)
+        _universeNovelCounts.value = universeRepository.getNovelCountsByUniverses(ids)
+        _universeFieldCounts.value = universeRepository.getFieldCountsByUniverses(ids)
     }
 
     fun insertUniverse(universe: Universe) = viewModelScope.launch {
-        repository.insertUniverse(universe)
+        universeRepository.insertUniverse(universe)
     }
 
     fun updateUniverse(universe: Universe) = viewModelScope.launch {
-        repository.updateUniverse(universe)
+        universeRepository.updateUniverse(universe)
     }
 
     fun deleteUniverse(universe: Universe) = viewModelScope.launch {
-        repository.deleteUniverse(universe)
+        universeRepository.deleteUniverse(universe)
     }
 
     fun getPresetTemplates(): List<PresetTemplates.PresetTemplate> =
@@ -50,9 +50,9 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
 
     fun applyPreset(template: PresetTemplates.PresetTemplate) =
         viewModelScope.launch {
-            val universeId = repository.insertUniverse(template.universe)
+            val universeId = universeRepository.insertUniverse(template.universe)
             val fieldsWithId = template.fields.map { it.copy(universeId = universeId) }
-            repository.insertAllFields(fieldsWithId)
+            universeRepository.insertAllFields(fieldsWithId)
             _presetApplied.value = template.universe.name
             _presetApplied.value = null  // reset for next observation
         }

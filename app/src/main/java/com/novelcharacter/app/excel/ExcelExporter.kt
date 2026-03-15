@@ -1,11 +1,10 @@
 package com.novelcharacter.app.excel
 
-import android.content.ContentValues
+import android.app.Activity
 import android.content.Context
-import android.os.Build
-import android.os.Environment
-import android.provider.MediaStore
+import android.content.Intent
 import android.widget.Toast
+import androidx.core.content.FileProvider
 import com.novelcharacter.app.data.database.AppDatabase
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -45,11 +44,11 @@ class ExcelExporter(private val context: Context) {
                 val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
                 val fileName = "NovelCharacter_$timestamp.xlsx"
 
-                saveWorkbook(workbook, fileName)
+                val file = saveWorkbook(workbook, fileName)
                 workbook.close()
 
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(context, "내보내기 완료: $fileName", Toast.LENGTH_LONG).show()
+                    shareFile(file)
                 }
             } catch (e: Exception) {
                 android.util.Log.e("ExcelExporter", "Export failed", e)
@@ -60,27 +59,35 @@ class ExcelExporter(private val context: Context) {
         }
     }
 
-    private fun saveWorkbook(workbook: XSSFWorkbook, fileName: String) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val contentValues = ContentValues().apply {
-                put(MediaStore.Downloads.DISPLAY_NAME, fileName)
-                put(MediaStore.Downloads.MIME_TYPE,
-                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-                put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
-            }
-            val uri = context.contentResolver.insert(
-                MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues
-            ) ?: throw Exception("파일을 생성할 수 없습니다")
+    private fun saveWorkbook(workbook: XSSFWorkbook, fileName: String): File {
+        val exportsDir = File(context.cacheDir, "exports")
+        exportsDir.mkdirs()
+        // Clean old exports, keeping the 3 most recent
+        exportsDir.listFiles()?.sortedByDescending { it.lastModified() }?.drop(3)?.forEach { it.delete() }
 
-            context.contentResolver.openOutputStream(uri)?.use { outputStream ->
-                workbook.write(outputStream)
-            } ?: throw Exception("파일에 쓸 수 없습니다")
+        val file = File(exportsDir, fileName)
+        FileOutputStream(file).use { workbook.write(it) }
+        return file
+    }
+
+    private fun shareFile(file: File) {
+        val authority = "${context.packageName}.fileprovider"
+        val uri = FileProvider.getUriForFile(context, authority, file)
+
+        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+
+        val chooserIntent = Intent.createChooser(shareIntent, "내보내기 파일 공유")
+
+        val activity = context as? Activity
+        if (activity != null) {
+            activity.startActivity(chooserIntent)
         } else {
-            val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-            val file = File(downloadsDir, fileName)
-            FileOutputStream(file).use { outputStream ->
-                workbook.write(outputStream)
-            }
+            chooserIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(chooserIntent)
         }
     }
 

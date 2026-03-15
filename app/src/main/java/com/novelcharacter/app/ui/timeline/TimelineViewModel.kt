@@ -11,14 +11,17 @@ import kotlinx.coroutines.launch
 
 class TimelineViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val repository = (application as NovelCharacterApp).repository
+    private val app = application as NovelCharacterApp
+    private val timelineRepository = app.timelineRepository
+    private val novelRepository = app.novelRepository
+    private val characterRepository = app.characterRepository
 
     private val _error = MutableLiveData<String?>()
     val error: LiveData<String?> = _error
 
-    val allEvents: LiveData<List<TimelineEvent>> = repository.allEvents
-    val allNovels: LiveData<List<Novel>> = repository.allNovels
-    val allCharacters: LiveData<List<Character>> = repository.allCharacters
+    val allEvents: LiveData<List<TimelineEvent>> = timelineRepository.allEvents
+    val allNovels: LiveData<List<Novel>> = novelRepository.allNovels
+    val allCharacters: LiveData<List<Character>> = characterRepository.allCharacters
 
     // ===== Zoom Level Management =====
     // Zoom levels: 1=1000년, 2=100년, 3=10년, 4=1년 (default), 5=월
@@ -81,9 +84,9 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
         val characterId = _filterCharacterId.value
 
         when {
-            characterId != null -> repository.getEventsForCharacterInRange(characterId, start, end)
-            novelId != null -> repository.getEventsByNovelInRange(novelId, start, end)
-            else -> repository.getEventsByYearRange(start, end)
+            characterId != null -> timelineRepository.getEventsForCharacterInRange(characterId, start, end)
+            novelId != null -> timelineRepository.getEventsByNovelInRange(novelId, start, end)
+            else -> timelineRepository.getEventsByYearRange(start, end)
         }
     }
 
@@ -107,7 +110,7 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
         if (query.isNullOrBlank()) {
             filteredEvents
         } else {
-            repository.searchEvents(query)
+            timelineRepository.searchEvents(query)
         }
     }
 
@@ -146,17 +149,17 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
     }
 
     // ===== Data access =====
-    suspend fun getAllNovelsList(): List<Novel> = repository.getAllNovelsList()
-    suspend fun getAllCharactersList(): List<Character> = repository.getAllCharactersList()
+    suspend fun getAllNovelsList(): List<Novel> = novelRepository.getAllNovelsList()
+    suspend fun getAllCharactersList(): List<Character> = characterRepository.getAllCharactersList()
     suspend fun getCharacterIdsForEvent(eventId: Long): List<Long> =
-        repository.getCharacterIdsForEvent(eventId)
+        timelineRepository.getCharacterIdsForEvent(eventId)
     suspend fun getCharactersForEvent(eventId: Long): List<Character> =
-        repository.getCharactersForEvent(eventId)
+        timelineRepository.getCharactersForEvent(eventId)
 
     fun insertEvent(event: TimelineEvent, characterIds: List<Long>) = viewModelScope.launch {
         try {
-            val eventId = repository.insertEvent(event)
-            repository.updateEventCharacters(eventId, characterIds)
+            val eventId = timelineRepository.insertEvent(event)
+            timelineRepository.updateEventCharacters(eventId, characterIds)
         } catch (e: Exception) {
             Log.e("TimelineViewModel", "Failed to insert event", e)
             _error.value = e.message
@@ -166,8 +169,8 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
 
     fun updateEvent(event: TimelineEvent, characterIds: List<Long>) = viewModelScope.launch {
         try {
-            repository.updateEvent(event)
-            repository.updateEventCharacters(event.id, characterIds)
+            timelineRepository.updateEvent(event)
+            timelineRepository.updateEventCharacters(event.id, characterIds)
         } catch (e: Exception) {
             Log.e("TimelineViewModel", "Failed to update event", e)
             _error.value = e.message
@@ -177,7 +180,7 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
 
     fun deleteEvent(event: TimelineEvent) = viewModelScope.launch {
         try {
-            repository.deleteEvent(event)
+            timelineRepository.deleteEvent(event)
         } catch (e: Exception) {
             Log.e("TimelineViewModel", "Failed to delete event", e)
             _error.value = e.message

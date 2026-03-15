@@ -152,8 +152,8 @@ class NovelListFragment : Fragment() {
     }
 
     private fun exportToExcel() {
-        // Excel 내보내기는 ExcelExporter에서 처리
-        val exporter = com.novelcharacter.app.excel.ExcelExporter(requireContext())
+        // Excel 내보내기는 ExcelExporter에서 처리 (Activity context for share intent)
+        val exporter = com.novelcharacter.app.excel.ExcelExporter(requireActivity())
         exporter.exportAll()
     }
 
