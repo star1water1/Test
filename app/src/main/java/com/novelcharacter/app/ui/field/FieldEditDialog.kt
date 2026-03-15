@@ -23,6 +23,11 @@ class FieldEditDialog : DialogFragment() {
         onSave = listener
     }
 
+    override fun onDestroyView() {
+        super.onDestroyView()
+        onSave = null
+    }
+
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         val binding = DialogFieldEditBinding.inflate(layoutInflater)
 

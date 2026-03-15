@@ -126,6 +126,7 @@ class TimelineAdapter(
     ) : RecyclerView.ViewHolder(binding.root) {
 
         private var loadJob: Job? = null
+        private var boundEventId: Long = -1
 
         fun cancelLoad() {
             loadJob?.cancel()
@@ -142,21 +143,25 @@ class TimelineAdapter(
         }
 
         private fun bindEvent(event: TimelineEvent) {
+            boundEventId = event.id
             binding.yearText.text = formatEventDate(event)
             binding.calendarTypeText.text = event.calendarType
             binding.descriptionText.text = event.description
 
             // Load related character chips via callback (repository 경유)
             binding.characterChipGroup.removeAllViews()
+            val eventId = event.id
             loadJob = coroutineScope.launch {
-                val characters = loadCharactersForEvent(event.id)
-                characters.forEach { character ->
-                    val chip = Chip(binding.root.context).apply {
-                        text = character.name
-                        textSize = 11f
-                        isClickable = false
+                val characters = loadCharactersForEvent(eventId)
+                if (boundEventId == eventId) {
+                    characters.forEach { character ->
+                        val chip = Chip(binding.root.context).apply {
+                            text = character.name
+                            textSize = 11f
+                            isClickable = false
+                        }
+                        binding.characterChipGroup.addView(chip)
                     }
-                    binding.characterChipGroup.addView(chip)
                 }
             }
 
