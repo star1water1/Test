@@ -20,6 +20,7 @@ import com.novelcharacter.app.data.model.TimelineEvent
 import com.novelcharacter.app.data.model.Universe
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.apache.poi.ss.usermodel.CellType
@@ -45,6 +46,11 @@ class ExcelImporter(private val context: Context) {
         ) { uri: Uri? ->
             uri?.let { importFromExcel(it) }
         }
+    }
+
+    fun cleanup() {
+        importScope.cancel()
+        importLauncher = null
     }
 
     fun showImportDialog(fragment: Fragment) {

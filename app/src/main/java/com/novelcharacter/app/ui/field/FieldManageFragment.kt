@@ -24,6 +24,7 @@ class FieldManageFragment : Fragment() {
 
     private lateinit var adapter: FieldDefinitionAdapter
     private var universeId: Long = -1L
+    private var itemTouchHelper: ItemTouchHelper? = null
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
@@ -67,7 +68,7 @@ class FieldManageFragment : Fragment() {
         binding.fieldRecyclerView.adapter = adapter
 
         // 드래그로 순서 변경
-        val touchHelper = ItemTouchHelper(object : ItemTouchHelper.SimpleCallback(
+        itemTouchHelper = ItemTouchHelper(object : ItemTouchHelper.SimpleCallback(
             ItemTouchHelper.UP or ItemTouchHelper.DOWN, 0
         ) {
             override fun onMove(
@@ -91,7 +92,7 @@ class FieldManageFragment : Fragment() {
                 viewModel.updateFieldOrder(adapter.currentList)
             }
         })
-        touchHelper.attachToRecyclerView(binding.fieldRecyclerView)
+        itemTouchHelper?.attachToRecyclerView(binding.fieldRecyclerView)
     }
 
     private fun setupFab() {
@@ -144,6 +145,8 @@ class FieldManageFragment : Fragment() {
     }
 
     override fun onDestroyView() {
+        itemTouchHelper?.attachToRecyclerView(null)
+        itemTouchHelper = null
         super.onDestroyView()
         _binding = null
     }

@@ -23,7 +23,11 @@ class NovelListFragment : Fragment() {
 
     private lateinit var adapter: NovelAdapter
     private var universeId: Long = -1L
-    private val importer by lazy { com.novelcharacter.app.excel.ExcelImporter(requireContext()) }
+    private var importerInitialized = false
+    private val importer by lazy {
+        importerInitialized = true
+        com.novelcharacter.app.excel.ExcelImporter(requireContext())
+    }
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
@@ -160,5 +164,12 @@ class NovelListFragment : Fragment() {
     override fun onDestroyView() {
         super.onDestroyView()
         _binding = null
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        if (importerInitialized) {
+            importer.cleanup()
+        }
     }
 }
