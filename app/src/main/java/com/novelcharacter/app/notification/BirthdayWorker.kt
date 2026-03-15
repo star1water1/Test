@@ -20,17 +20,15 @@ class BirthdayWorker(
             val todayMonth = calendar.get(Calendar.MONTH) + 1
             val todayDay = calendar.get(Calendar.DAY_OF_MONTH)
 
-            // v2: 생일은 CharacterStateChange에서 __birth 필드로 관리
-            // 모든 캐릭터의 탄생 이벤트를 확인하여 오늘이 생일인 캐릭터 찾기
-            val allCharacters = db.characterDao().getAllCharactersList()
+            // 오늘 월/일과 일치하는 탄생 이벤트를 일괄 조회
+            val birthChanges = db.characterStateChangeDao()
+                .getChangesByFieldAndDate(CharacterStateChange.KEY_BIRTH, todayMonth, todayDay)
+
+            val birthdayCharIds = birthChanges.map { it.characterId }.distinct()
             val birthdayNames = mutableListOf<String>()
-
-            for (character in allCharacters) {
-                val birthChanges = db.characterStateChangeDao()
-                    .getChangesByField(character.id, CharacterStateChange.KEY_BIRTH)
-                val birthChange = birthChanges.firstOrNull() ?: continue
-
-                if (birthChange.month == todayMonth && birthChange.day == todayDay) {
+            for (charId in birthdayCharIds) {
+                val character = db.characterDao().getCharacterById(charId)
+                if (character != null) {
                     birthdayNames.add(character.name)
                 }
             }

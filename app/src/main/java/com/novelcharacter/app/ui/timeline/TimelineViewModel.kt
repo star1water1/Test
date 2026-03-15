@@ -3,6 +3,7 @@ package com.novelcharacter.app.ui.timeline
 import android.app.Application
 import androidx.lifecycle.*
 import com.novelcharacter.app.NovelCharacterApp
+import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.TimelineEvent
@@ -95,14 +96,15 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
      * Zoom level display label.
      */
     val zoomLevelLabel: LiveData<String> = _zoomLevel.map { level ->
-        when (level) {
-            1 -> "1000년 단위"
-            2 -> "100년 단위"
-            3 -> "10년 단위"
-            4 -> "1년 단위"
-            5 -> "월 단위"
-            else -> "1년 단위"
+        val resId = when (level) {
+            1 -> R.string.zoom_level_1000
+            2 -> R.string.zoom_level_100
+            3 -> R.string.zoom_level_10
+            4 -> R.string.zoom_level_1
+            5 -> R.string.zoom_level_month
+            else -> R.string.zoom_level_1
         }
+        application.getString(resId)
     }
 
     // ===== Search =====

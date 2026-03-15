@@ -103,12 +103,12 @@ class NameBankFragment : Fragment() {
         }
 
         AlertDialog.Builder(context)
-            .setTitle(if (existing != null) "이름 편집" else "이름 추가")
+            .setTitle(if (existing != null) getString(R.string.edit_name_title) else getString(R.string.add_name_title))
             .setView(layout)
-            .setPositiveButton("저장") { _, _ ->
+            .setPositiveButton(getString(R.string.save)) { _, _ ->
                 val name = editName.text.toString().trim()
                 if (name.isBlank()) {
-                    Toast.makeText(context, "이름을 입력하세요", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, R.string.enter_name, Toast.LENGTH_SHORT).show()
                     return@setPositiveButton
                 }
                 val gender = if (spinnerGender.selectedItemPosition > 0)
@@ -126,29 +126,32 @@ class NameBankFragment : Fragment() {
                     ))
                 }
             }
-            .setNegativeButton("취소", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
     private fun showOptionsDialog(entry: NameBankEntry) {
-        val options = mutableListOf("편집", "삭제")
+        val editStr = getString(R.string.edit)
+        val deleteStr = getString(R.string.delete)
+        val markAvailableStr = getString(R.string.mark_as_available)
+        val options = mutableListOf(editStr, deleteStr)
         if (entry.isUsed) {
-            options.add("미사용으로 변경")
+            options.add(markAvailableStr)
         }
 
         AlertDialog.Builder(requireContext())
             .setTitle(entry.name)
             .setItems(options.toTypedArray()) { _, which ->
                 when (options[which]) {
-                    "편집" -> showEditDialog(entry)
-                    "삭제" -> {
+                    editStr -> showEditDialog(entry)
+                    deleteStr -> {
                         AlertDialog.Builder(requireContext())
-                            .setMessage("\"${entry.name}\"을(를) 삭제하시겠습니까?")
-                            .setPositiveButton("예") { _, _ -> viewModel.delete(entry) }
-                            .setNegativeButton("아니오", null)
+                            .setMessage(getString(R.string.confirm_delete_name, entry.name))
+                            .setPositiveButton(R.string.yes) { _, _ -> viewModel.delete(entry) }
+                            .setNegativeButton(R.string.no, null)
                             .show()
                     }
-                    "미사용으로 변경" -> viewModel.markAsAvailable(entry.id)
+                    markAvailableStr -> viewModel.markAsAvailable(entry.id)
                 }
             }
             .show()

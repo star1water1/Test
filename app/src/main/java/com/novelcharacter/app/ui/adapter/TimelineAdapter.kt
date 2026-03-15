@@ -8,6 +8,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.chip.Chip
 import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.TimelineEvent
+import com.novelcharacter.app.R
 import com.novelcharacter.app.databinding.ItemTimelineBinding
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -175,7 +176,7 @@ class TimelineAdapter(
         private fun bindGroup(group: TimelineDisplayItem.GroupHeader) {
             binding.yearText.text = group.label
             binding.calendarTypeText.text = ""
-            binding.descriptionText.text = "${group.eventCount}건의 사건"
+            binding.descriptionText.text = binding.root.context.getString(R.string.event_count_format, group.eventCount)
 
             binding.characterChipGroup.removeAllViews()
 

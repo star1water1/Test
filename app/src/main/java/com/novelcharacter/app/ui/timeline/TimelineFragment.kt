@@ -68,7 +68,7 @@ class TimelineFragment : Fragment() {
             onLongClick = { event ->
                 AlertDialog.Builder(requireContext())
                     .setTitle("${event.year}년")
-                    .setItems(arrayOf("편집", "삭제")) { _, which ->
+                    .setItems(arrayOf(getString(R.string.edit), getString(R.string.delete))) { _, which ->
                         when (which) {
                             0 -> showEditEventDialog(event)
                             1 -> {
@@ -188,7 +188,7 @@ class TimelineFragment : Fragment() {
         // Observe novel data and update spinner adapter only
         viewModel.allNovels.observe(viewLifecycleOwner) { novels ->
             cachedNovels = novels
-            val novelNames = mutableListOf("전체 작품")
+            val novelNames = mutableListOf(getString(R.string.all_novels_filter))
             novelNames.addAll(novels.map { it.title })
             val spinnerAdapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, novelNames)
             spinnerAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
@@ -198,7 +198,7 @@ class TimelineFragment : Fragment() {
         // Observe character data and update spinner adapter only
         viewModel.allCharacters.observe(viewLifecycleOwner) { characters ->
             cachedCharacters = characters
-            val charNames = mutableListOf("전체 캐릭터")
+            val charNames = mutableListOf(getString(R.string.all_characters_filter))
             charNames.addAll(characters.map { it.name })
             val spinnerAdapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, charNames)
             spinnerAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
@@ -348,7 +348,7 @@ class TimelineFragment : Fragment() {
             }
 
             // Novel spinner
-            val novelNames = mutableListOf("전체")
+            val novelNames = mutableListOf(getString(R.string.all_novels_event))
             novelNames.addAll(novels.map { it.title })
             val novelAdapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, novelNames)
             novelAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
@@ -370,13 +370,13 @@ class TimelineFragment : Fragment() {
                     val description = dialogBinding.editDescription.text.toString().trim()
 
                     if (yearStr.isEmpty() || description.isEmpty()) {
-                        Toast.makeText(requireContext(), "연도와 설명을 입력하세요", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(requireContext(), R.string.enter_year_and_desc, Toast.LENGTH_SHORT).show()
                         return@setPositiveButton
                     }
 
                     val year = yearStr.toIntOrNull()
                     if (year == null) {
-                        Toast.makeText(requireContext(), "올바른 연도를 입력하세요", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(requireContext(), R.string.enter_valid_year, Toast.LENGTH_SHORT).show()
                         return@setPositiveButton
                     }
 
@@ -388,13 +388,13 @@ class TimelineFragment : Fragment() {
 
                     // Validate month range
                     if (month != null && (month < 1 || month > 12)) {
-                        Toast.makeText(requireContext(), "월은 1~12 사이로 입력하세요", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(requireContext(), R.string.month_valid_range, Toast.LENGTH_SHORT).show()
                         return@setPositiveButton
                     }
 
                     // Validate day range
                     if (day != null && (day < 1 || day > 31)) {
-                        Toast.makeText(requireContext(), "일은 1~31 사이로 입력하세요", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(requireContext(), R.string.day_valid_range, Toast.LENGTH_SHORT).show()
                         return@setPositiveButton
                     }
 

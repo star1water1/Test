@@ -197,4 +197,27 @@
     <!-- CharacterDetailFragment -->
     <string name="novel_label_format">작품: %s</string>
     <string name="novel_unassigned">미지정</string>
+
+    <!-- TimelineFragment -->
+    <string name="enter_year_and_desc">연도와 설명을 입력하세요</string>
+    <string name="enter_valid_year">올바른 연도를 입력하세요</string>
+    <string name="all_novels_filter">전체 작품</string>
+    <string name="all_characters_filter">전체 캐릭터</string>
+    <string name="all_novels_event">전체</string>
+
+    <!-- NameBankFragment -->
+    <string name="edit_name_title">이름 편집</string>
+    <string name="add_name_title">이름 추가</string>
+    <string name="gender_unspecified">미지정</string>
+    <string name="confirm_delete_name">\" %s\"을(를) 삭제하시겠습니까?</string>
+    <string name="mark_as_available">미사용으로 변경</string>
+
+    <!-- GlobalSearchFragment -->
+    <string name="search_empty_result">검색 결과가 없습니다</string>
+
+    <!-- ExcelImporter -->
+    <string name="import_failed_retry">가져오기 실패: 잠시 후 다시 시도하세요</string>
+
+    <!-- TimelineAdapter -->
+    <string name="event_count_format">%d건의 사건</string>
 </resources>

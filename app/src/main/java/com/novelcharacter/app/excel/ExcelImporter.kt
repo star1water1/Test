@@ -118,7 +118,7 @@ class ExcelImporter(private val context: Context) {
             } catch (e: Exception) {
                 android.util.Log.e("ExcelImporter", "Import failed", e)
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(context, "가져오기 실패: 잠시 후 다시 시도하세요", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, com.novelcharacter.app.R.string.import_failed_retry, Toast.LENGTH_LONG).show()
                 }
             }
         }

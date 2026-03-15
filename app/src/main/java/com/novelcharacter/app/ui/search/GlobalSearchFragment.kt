@@ -73,7 +73,7 @@ class GlobalSearchFragment : Fragment() {
             val isEmpty = results.isEmpty()
             binding.emptyText.visibility = if (isEmpty) View.VISIBLE else View.GONE
             binding.searchResultsRecyclerView.visibility = if (isEmpty) View.GONE else View.VISIBLE
-            binding.emptyMessage.text = if (query.isBlank()) "검색어를 입력하세요" else "검색 결과가 없습니다"
+            binding.emptyMessage.text = if (query.isBlank()) getString(R.string.search_empty_hint) else getString(R.string.search_empty_result)
         }
     }
 
