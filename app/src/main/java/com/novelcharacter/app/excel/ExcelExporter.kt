@@ -32,12 +32,17 @@ class ExcelExporter(private val context: Context) {
 
     private val appContext = context.applicationContext
     private val db = AppDatabase.getDatabase(appContext)
-    private val supervisorJob = kotlinx.coroutines.SupervisorJob()
-    private val exportScope = CoroutineScope(Dispatchers.IO + supervisorJob)
+    private var supervisorJob = kotlinx.coroutines.SupervisorJob()
+    private var exportScope = CoroutineScope(Dispatchers.IO + supervisorJob)
 
     private lateinit var styles: ExcelStyles
 
     fun exportAll() {
+        // Create fresh Job/scope in case a previous export completed or was cancelled
+        if (supervisorJob.isCompleted || supervisorJob.isCancelled) {
+            supervisorJob = kotlinx.coroutines.SupervisorJob()
+            exportScope = CoroutineScope(Dispatchers.IO + supervisorJob)
+        }
         exportScope.launch {
             withContext(Dispatchers.Main) {
                 Toast.makeText(appContext, "내보내기 준비 중...", Toast.LENGTH_SHORT).show()
@@ -73,7 +78,6 @@ class ExcelExporter(private val context: Context) {
                 }
             } finally {
                 try { workbook?.close() } catch (_: Exception) {}
-                supervisorJob.complete()
             }
         }
     }
@@ -449,6 +453,14 @@ class ExcelExporter(private val context: Context) {
 
             if (universeChars.isEmpty()) continue
 
+            // Batch load field values and tags to avoid N+1 queries
+            val allFieldValues = universeChars.associate { char ->
+                char.id to db.characterFieldValueDao().getValuesByCharacterList(char.id)
+            }
+            val allTags = universeChars.associate { char ->
+                char.id to db.characterTagDao().getTagsByCharacterList(char.id)
+            }
+
             val sheetName = sanitizeSheetName(universe.name, usedSheetNames)
             val sheet = workbook.createSheet(sheetName)
 
@@ -488,7 +500,7 @@ class ExcelExporter(private val context: Context) {
             universeChars.forEachIndexed { index, character ->
                 val row = sheet.createRow(index + 1)
                 val novelTitle = novels.find { it.id == character.novelId }?.title ?: ""
-                val fieldValues = db.characterFieldValueDao().getValuesByCharacterList(character.id)
+                val fieldValues = allFieldValues[character.id] ?: emptyList()
 
                 row.createCell(0).setCellValue(character.name)
 
@@ -503,7 +515,7 @@ class ExcelExporter(private val context: Context) {
 
                 row.createCell(fields.size + 2).setCellValue(novelTitle)
                 row.createCell(fields.size + 3).setCellValue(character.memo)
-                val tags = db.characterTagDao().getTagsByCharacterList(character.id)
+                val tags = allTags[character.id] ?: emptyList()
                 row.createCell(fields.size + 4).setCellValue(tags.joinToString(", ") { it.tag })
             }
 
@@ -542,6 +554,11 @@ class ExcelExporter(private val context: Context) {
             novel?.universeId == null
         }
         if (unassignedChars.isNotEmpty()) {
+            // Batch load tags for unassigned characters
+            val unassignedTags = unassignedChars.associate { char ->
+                char.id to db.characterTagDao().getTagsByCharacterList(char.id)
+            }
+
             val sheetName = sanitizeSheetName("미분류 캐릭터", usedSheetNames)
             val sheet = workbook.createSheet(sheetName)
 
@@ -573,7 +590,7 @@ class ExcelExporter(private val context: Context) {
                 imageCell.cellStyle = styles.readOnly
                 row.createCell(2).setCellValue(novels.find { it.id == character.novelId }?.title ?: "")
                 row.createCell(3).setCellValue(character.memo)
-                val tags = db.characterTagDao().getTagsByCharacterList(character.id)
+                val tags = unassignedTags[character.id] ?: emptyList()
                 row.createCell(4).setCellValue(tags.joinToString(", ") { it.tag })
             }
 
@@ -612,6 +629,11 @@ class ExcelExporter(private val context: Context) {
             cell.cellStyle = if (required) styles.requiredHeader else styles.header
         }
 
+        // Batch load event characters to avoid N+1 queries
+        val eventCharacters = events.associate { event ->
+            event.id to db.timelineDao().getCharactersForEvent(event.id)
+        }
+
         events.forEachIndexed { index, event ->
             val row = sheet.createRow(index + 1)
             row.createCell(0).setCellValue(event.year.toDouble())
@@ -623,7 +645,7 @@ class ExcelExporter(private val context: Context) {
             val novelTitle = novels.find { it.id == event.novelId }?.title ?: ""
             row.createCell(5).setCellValue(novelTitle)
 
-            val characters = db.timelineDao().getCharactersForEvent(event.id)
+            val characters = eventCharacters[event.id] ?: emptyList()
             row.createCell(6).setCellValue(characters.joinToString(", ") { it.name })
         }
 
@@ -648,10 +670,12 @@ class ExcelExporter(private val context: Context) {
         val allCharacters = db.characterDao().getAllCharactersList()
         val novels = db.novelDao().getAllNovelsList()
 
+        val novelMap = novels.associateBy { it.id }
         val allChanges = mutableListOf<Triple<String, String, CharacterStateChange>>()
         for (character in allCharacters) {
             val changes = db.characterStateChangeDao().getChangesByCharacterList(character.id)
-            val novelTitle = novels.find { it.id == character.novelId }?.title ?: ""
+            if (changes.isEmpty()) continue
+            val novelTitle = character.novelId?.let { novelMap[it]?.title } ?: ""
             changes.forEach { allChanges.add(Triple(character.name, novelTitle, it)) }
         }
         if (allChanges.isEmpty()) return

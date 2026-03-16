@@ -64,6 +64,7 @@ interface TimelineDao {
     @Query("SELECT eventId FROM timeline_character_cross_ref WHERE characterId = :characterId")
     suspend fun getEventIdsForCharacter(characterId: Long): List<Long>
 
+    @Transaction
     @Query("""
         SELECT te.* FROM timeline_events te
         INNER JOIN timeline_character_cross_ref tcr ON te.id = tcr.eventId
@@ -72,6 +73,7 @@ interface TimelineDao {
     """)
     fun getEventsForCharacter(characterId: Long): LiveData<List<TimelineEvent>>
 
+    @Transaction
     @Query("""
         SELECT c.* FROM characters c
         INNER JOIN timeline_character_cross_ref tcr ON c.id = tcr.characterId
@@ -93,6 +95,7 @@ interface TimelineDao {
     suspend fun getEventByNaturalKeyNoNovel(year: Int, description: String): TimelineEvent?
 
     // Timeline filtering
+    @Transaction
     @Query("""
         SELECT te.* FROM timeline_events te
         INNER JOIN timeline_character_cross_ref tcr ON te.id = tcr.eventId

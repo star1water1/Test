@@ -58,7 +58,15 @@ class FormulaEvaluator(
         while (i < formula.length) {
             when {
                 formula[i].isWhitespace() -> i++
-                formula[i] in "+-*/" -> { tokens.add(Token.Op(formula[i])); i++ }
+                formula[i] in "+-*/" -> {
+                    // Handle unary minus: treat as negation if at start, after '(' or after another operator
+                    if (formula[i] == '-' && (tokens.isEmpty() || tokens.last() is Token.LParen || tokens.last() is Token.Op)) {
+                        // Parse as negative number or insert 0 for subtraction
+                        tokens.add(Token.Num(0.0))
+                    }
+                    tokens.add(Token.Op(formula[i]))
+                    i++
+                }
                 formula[i] == '(' -> { tokens.add(Token.LParen); i++ }
                 formula[i] == ')' -> { tokens.add(Token.RParen); i++ }
                 formula[i].isDigit() || (formula[i] == '.' && i + 1 < formula.length && formula[i + 1].isDigit()) -> {

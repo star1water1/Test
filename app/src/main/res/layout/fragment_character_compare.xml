@@ -16,14 +16,14 @@
         app:title="@string/character_compare"
         app:titleTextColor="@color/on_primary" />
 
-    <HorizontalScrollView
+    <androidx.core.widget.NestedScrollView
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:fillViewport="true">
 
-        <androidx.core.widget.NestedScrollView
-            android:layout_width="wrap_content"
-            android:layout_height="match_parent">
+        <HorizontalScrollView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
 
             <TableLayout
                 android:id="@+id/compareTable"
@@ -32,8 +32,8 @@
                 android:padding="8dp"
                 android:stretchColumns="*" />
 
-        </androidx.core.widget.NestedScrollView>
+        </HorizontalScrollView>
 
-    </HorizontalScrollView>
+    </androidx.core.widget.NestedScrollView>
 
 </LinearLayout>
