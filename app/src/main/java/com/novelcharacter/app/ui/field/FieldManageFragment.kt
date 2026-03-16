@@ -80,7 +80,7 @@ class FieldManageFragment : Fragment() {
                 val to = target.adapterPosition
                 if (from == RecyclerView.NO_POSITION || to == RecyclerView.NO_POSITION) return false
                 val list = adapter.currentList.toMutableList()
-                if (from >= list.size || to >= list.size) return false
+                if (from < 0 || to < 0 || from >= list.size || to >= list.size) return false
                 val item = list.removeAt(from)
                 list.add(to, item)
                 adapter.submitList(list)
