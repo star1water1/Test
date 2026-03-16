@@ -12,6 +12,7 @@ import android.widget.ArrayAdapter
 import android.widget.ImageView
 import android.widget.Spinner
 import android.widget.TextView
+import android.widget.LinearLayout
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.Fragment
@@ -217,9 +218,9 @@ class CharacterEditFragment : Fragment() {
                         hint = field.name
                     }
                     val editText = TextInputEditText(context).apply {
-                        layoutParams = ViewGroup.LayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT,
-                            ViewGroup.LayoutParams.WRAP_CONTENT
+                        layoutParams = LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT
                         )
                     }
                     inputLayout.addView(editText)
@@ -238,9 +239,9 @@ class CharacterEditFragment : Fragment() {
                         hint = field.name
                     }
                     val editText = TextInputEditText(context).apply {
-                        layoutParams = ViewGroup.LayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT,
-                            ViewGroup.LayoutParams.WRAP_CONTENT
+                        layoutParams = LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT
                         )
                         inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
                     }
@@ -332,9 +333,9 @@ class CharacterEditFragment : Fragment() {
                         hint = "${field.name} (쉼표로 구분)"
                     }
                     val editText = TextInputEditText(context).apply {
-                        layoutParams = ViewGroup.LayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT,
-                            ViewGroup.LayoutParams.WRAP_CONTENT
+                        layoutParams = LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT
                         )
                     }
                     inputLayout.addView(editText)
@@ -371,9 +372,9 @@ class CharacterEditFragment : Fragment() {
                         hint = field.name
                     }
                     val editText = TextInputEditText(context).apply {
-                        layoutParams = ViewGroup.LayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT,
-                            ViewGroup.LayoutParams.WRAP_CONTENT
+                        layoutParams = LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT
                         )
                     }
                     inputLayout.addView(editText)
