@@ -15,7 +15,7 @@ import androidx.room.PrimaryKey
             onDelete = ForeignKey.SET_NULL
         )
     ],
-    indices = [Index("universeId"), Index("createdAt")]
+    indices = [Index("universeId"), Index("createdAt"), Index(value = ["code"], unique = true)]
 )
 data class Novel(
     @PrimaryKey(autoGenerate = true)
@@ -23,5 +23,6 @@ data class Novel(
     val title: String,
     val description: String = "",
     val universeId: Long? = null,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val code: String = generateEntityCode()
 )

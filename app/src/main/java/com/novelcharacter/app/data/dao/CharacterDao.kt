@@ -33,6 +33,9 @@ interface CharacterDao {
     @Query("SELECT * FROM characters WHERE name = :name LIMIT 1")
     suspend fun getCharacterByName(name: String): Character?
 
+    @Query("SELECT * FROM characters WHERE code = :code LIMIT 1")
+    suspend fun getCharacterByCode(code: String): Character?
+
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(character: Character): Long
 

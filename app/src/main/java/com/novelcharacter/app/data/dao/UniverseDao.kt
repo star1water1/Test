@@ -24,6 +24,9 @@ interface UniverseDao {
     @Query("SELECT * FROM universes WHERE name = :name LIMIT 1")
     suspend fun getUniverseByName(name: String): Universe?
 
+    @Query("SELECT * FROM universes WHERE code = :code LIMIT 1")
+    suspend fun getUniverseByCode(code: String): Universe?
+
     @Delete
     suspend fun delete(universe: Universe)
 }

@@ -6,9 +6,14 @@ import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
 import androidx.core.content.FileProvider
+import com.novelcharacter.app.R
 import com.novelcharacter.app.data.database.AppDatabase
+import com.novelcharacter.app.data.model.Character
+import com.novelcharacter.app.data.model.CharacterFieldValue
 import com.novelcharacter.app.data.model.CharacterStateChange
+import com.novelcharacter.app.data.model.CharacterTag
 import com.novelcharacter.app.data.model.FieldDefinition
+import com.novelcharacter.app.data.model.Novel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -50,7 +55,7 @@ class ExcelExporter(private val context: Context) {
         }
         exportScope.launch {
             withContext(Dispatchers.Main) {
-                Toast.makeText(appContext, "내보내기 준비 중...", Toast.LENGTH_SHORT).show()
+                Toast.makeText(appContext, appContext.getString(R.string.export_preparing), Toast.LENGTH_SHORT).show()
             }
             var workbook: XSSFWorkbook? = null
             try {
@@ -83,7 +88,7 @@ class ExcelExporter(private val context: Context) {
             } catch (e: Exception) {
                 android.util.Log.e("ExcelExporter", "Export failed", e)
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(appContext, appContext.getString(com.novelcharacter.app.R.string.export_failed_retry) + "\n" + e.message, Toast.LENGTH_LONG).show()
+                    Toast.makeText(appContext, appContext.getString(R.string.export_failed_retry) + "\n" + e.message, Toast.LENGTH_LONG).show()
                 }
             } finally {
                 try { workbook?.close() } catch (_: Exception) {}
@@ -97,7 +102,7 @@ class ExcelExporter(private val context: Context) {
                 val outputStream = appContext.contentResolver.openOutputStream(uri)
                 if (outputStream == null) {
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(appContext, appContext.getString(com.novelcharacter.app.R.string.export_save_failed), Toast.LENGTH_LONG).show()
+                        Toast.makeText(appContext, appContext.getString(R.string.export_save_failed), Toast.LENGTH_LONG).show()
                     }
                     return@launch
                 }
@@ -108,12 +113,12 @@ class ExcelExporter(private val context: Context) {
                 }
                 sourceFile.delete()
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(appContext, appContext.getString(com.novelcharacter.app.R.string.export_save_success), Toast.LENGTH_SHORT).show()
+                    Toast.makeText(appContext, appContext.getString(R.string.export_save_success), Toast.LENGTH_SHORT).show()
                 }
             } catch (e: Exception) {
                 android.util.Log.e("ExcelExporter", "Save to URI failed", e)
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(appContext, appContext.getString(com.novelcharacter.app.R.string.export_save_failed) + "\n" + e.message, Toast.LENGTH_LONG).show()
+                    Toast.makeText(appContext, appContext.getString(R.string.export_save_failed) + "\n" + e.message, Toast.LENGTH_LONG).show()
                 }
             }
         }
@@ -194,7 +199,42 @@ class ExcelExporter(private val context: Context) {
         }
     }
 
-    // ── 유틸리티 ──
+    // ── SheetSpec 기반 유틸리티 ──
+
+    private fun writeHeaderRow(sheet: XSSFSheet, spec: SheetSpec) {
+        val headerRow = sheet.createRow(0)
+        spec.columns.forEachIndexed { index, col ->
+            val cell = headerRow.createCell(index)
+            cell.setCellValue(col.header)
+            cell.cellStyle = when {
+                col.readOnly -> styles.readOnlyHeader
+                col.required -> styles.requiredHeader
+                else -> styles.header
+            }
+        }
+    }
+
+    private fun applySpecFormatting(sheet: XSSFSheet, spec: SheetSpec, dataRowCount: Int) {
+        // Dropdowns
+        spec.columns.forEachIndexed { colIndex, col ->
+            col.dropdownOptions?.let { options ->
+                addDropdownValidation(sheet, colIndex, dataRowCount, options)
+            }
+        }
+        // Column widths
+        spec.columns.forEachIndexed { index, col ->
+            sheet.setColumnWidth(index, col.width)
+        }
+        // Read-only cell styles
+        spec.columns.forEachIndexed { colIndex, col ->
+            if (col.readOnly) {
+                applyReadOnlyColumn(sheet, colIndex, dataRowCount)
+            }
+        }
+        sheet.freezeAndFilter(spec.columns.size, dataRowCount)
+    }
+
+    // ── 기존 유틸리티 ──
 
     private fun XSSFSheet.freezeAndFilter(lastCol: Int, dataRowCount: Int) {
         createFreezePane(0, 1)
@@ -210,7 +250,6 @@ class ExcelExporter(private val context: Context) {
         options: List<String>
     ) {
         if (options.isEmpty()) return
-        // 기존 데이터 + 여유 100행, 최대 10000행
         val maxRow = minOf(maxOf(dataRowCount + DROPDOWN_EXTRA_ROWS, 1), MAX_DROPDOWN_ROWS)
         val addressList = CellRangeAddressList(1, maxRow, colIndex, colIndex)
         val dvHelper = sheet.dataValidationHelper
@@ -252,7 +291,7 @@ class ExcelExporter(private val context: Context) {
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
 
-        val chooserIntent = Intent.createChooser(shareIntent, appContext.getString(com.novelcharacter.app.R.string.export_share_title))
+        val chooserIntent = Intent.createChooser(shareIntent, appContext.getString(R.string.export_share_title))
 
         val activity = context as? Activity
         if (activity != null && !activity.isFinishing && !activity.isDestroyed) {
@@ -282,8 +321,6 @@ class ExcelExporter(private val context: Context) {
 
     // ── 사용 안내 시트 ──
 
-    private data class ColDef(val name: String, val required: Boolean, val readOnly: Boolean, val selectOptions: List<String>? = null)
-
     private data class GuideLine(val section: String, val style: XSSFCellStyle, val text: String)
 
     private fun exportInstructions(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
@@ -298,11 +335,17 @@ class ExcelExporter(private val context: Context) {
             GuideLine("", styles.guideBody, "■ 빨간 헤더 = 필수 입력 컬럼 (비워두면 해당 행 무시됨)"),
             GuideLine("", styles.guideBody, "■ 회색 헤더/셀 = 수정 불가 (앱 내부 데이터, 수정해도 무시됨)"),
             GuideLine("", styles.guideBody, ""),
+            GuideLine("코드 컬럼 안내", styles.guideSection, ""),
+            GuideLine("", styles.guideBody, "• 회색 코드 컬럼은 자동 생성된 고유 식별자입니다. 수정하지 마세요."),
+            GuideLine("", styles.guideBody, "• 이름/제목은 자유롭게 변경할 수 있습니다 — 코드가 있으면 코드로 매칭합니다."),
+            GuideLine("", styles.guideBody, "• 새 행을 추가할 때는 코드를 비워두세요. 자동으로 생성됩니다."),
+            GuideLine("", styles.guideBody, "• 코드를 삭제하면 이름 기반으로 매칭됩니다 (구버전 호환)."),
+            GuideLine("", styles.guideBody, ""),
             GuideLine("시트별 안내", styles.guideSection, ""),
-            GuideLine("", styles.guideBody, "• 세계관: 이름으로 기존 데이터 매칭. 이름 변경 시 새 세계관으로 추가됨"),
-            GuideLine("", styles.guideBody, "• 작품: 제목+세계관으로 매칭. 세계관 이름은 '세계관' 시트의 이름과 정확히 일치해야 함"),
+            GuideLine("", styles.guideBody, "• 세계관: 코드로 기존 데이터 매칭. 코드 없을 시 이름으로 매칭"),
+            GuideLine("", styles.guideBody, "• 작품: 코드로 매칭. 코드 없을 시 제목+세계관으로 매칭"),
             GuideLine("", styles.guideBody, "• 필드 정의: 세계관+필드키로 매칭. 타입은 드롭다운에서 선택"),
-            GuideLine("", styles.guideBody, "• 캐릭터 시트 (세계관 이름): 이름+작품으로 매칭. 드롭다운이 있는 필드는 목록에서 선택"),
+            GuideLine("", styles.guideBody, "• 캐릭터 시트 (세계관 이름): 코드로 매칭. 코드 없을 시 이름+작품으로 매칭"),
             GuideLine("", styles.guideBody, "• 사건 연표: 연도+설명으로 매칭. 관련 캐릭터는 쉼표로 구분"),
             GuideLine("", styles.guideBody, "• 캐릭터 관계: 관계 유형은 드롭다운에서 선택"),
             GuideLine("", styles.guideBody, "• 이름 은행: 이름+성별로 매칭. 사용여부는 Y/N"),
@@ -347,26 +390,19 @@ class ExcelExporter(private val context: Context) {
         val universes = db.universeDao().getAllUniversesList()
         if (universes.isEmpty()) return
 
-        val sheetName = sanitizeSheetName("세계관", usedSheetNames)
+        val spec = universeSpec()
+        val sheetName = sanitizeSheetName(spec.sheetName, usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
-        val headers = listOf("이름" to true, "설명" to false)
-
-        val headerRow = sheet.createRow(0)
-        headers.forEachIndexed { index, (header, required) ->
-            val cell = headerRow.createCell(index)
-            cell.setCellValue(header)
-            cell.cellStyle = if (required) styles.requiredHeader else styles.header
-        }
+        writeHeaderRow(sheet, spec)
 
         universes.forEachIndexed { index, universe ->
             val row = sheet.createRow(index + 1)
             row.createCell(0).setCellValue(universe.name)
             row.createCell(1).setCellValue(universe.description)
+            row.createCell(2).setCellValue(universe.code)
         }
 
-        sheet.setColumnWidth(0, 8000)
-        sheet.setColumnWidth(1, 15000)
-        sheet.freezeAndFilter(headers.size, universes.size)
+        applySpecFormatting(sheet, spec, universes.size)
     }
 
     // ── 작품 ──
@@ -376,71 +412,46 @@ class ExcelExporter(private val context: Context) {
         val universes = db.universeDao().getAllUniversesList()
         if (novels.isEmpty()) return
 
-        val sheetName = sanitizeSheetName("작품", usedSheetNames)
+        val universeMap = universes.associateBy { it.id }
+        val spec = novelSpec(universes.map { it.name })
+        val sheetName = sanitizeSheetName(spec.sheetName, usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
-        val headers = listOf("제목" to true, "설명" to false, "세계관" to false)
-
-        val headerRow = sheet.createRow(0)
-        headers.forEachIndexed { index, (header, required) ->
-            val cell = headerRow.createCell(index)
-            cell.setCellValue(header)
-            cell.cellStyle = if (required) styles.requiredHeader else styles.header
-        }
+        writeHeaderRow(sheet, spec)
 
         novels.forEachIndexed { index, novel ->
             val row = sheet.createRow(index + 1)
             row.createCell(0).setCellValue(novel.title)
             row.createCell(1).setCellValue(novel.description)
-            val universeName = universes.find { it.id == novel.universeId }?.name ?: ""
-            row.createCell(2).setCellValue(universeName)
+            val universe = novel.universeId?.let { universeMap[it] }
+            row.createCell(2).setCellValue(universe?.name ?: "")
+            row.createCell(3).setCellValue(novel.code)
+            row.createCell(4).setCellValue(universe?.code ?: "")
         }
 
-        // 세계관 드롭다운
-        if (universes.isNotEmpty()) {
-            addDropdownValidation(sheet, 2, novels.size, universes.map { it.name })
-        }
-
-        sheet.setColumnWidth(0, 8000)
-        sheet.setColumnWidth(1, 15000)
-        sheet.setColumnWidth(2, 8000)
-        sheet.freezeAndFilter(headers.size, novels.size)
+        applySpecFormatting(sheet, spec, novels.size)
     }
 
     // ── 필드 정의 ──
 
     private suspend fun exportFieldDefinitions(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
         val universes = db.universeDao().getAllUniversesList()
-        val allFields = mutableListOf<Pair<String, FieldDefinition>>()
+        val universeMap = universes.associateBy { it.id }
+        val allFields = mutableListOf<Pair<Long, FieldDefinition>>()
         for (universe in universes) {
             val fields = db.fieldDefinitionDao().getFieldsByUniverseList(universe.id)
-            fields.forEach { allFields.add(universe.name to it) }
+            fields.forEach { allFields.add(universe.id to it) }
         }
         if (allFields.isEmpty()) return
 
-        val sheetName = sanitizeSheetName("필드 정의", usedSheetNames)
+        val spec = fieldDefinitionSpec(universes.map { it.name })
+        val sheetName = sanitizeSheetName(spec.sheetName, usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
-        // (헤더, 필수여부, 읽기전용)
-        val headers = listOf(
-            Triple("세계관", true, false),
-            Triple("필드키", true, false),
-            Triple("필드명", true, false),
-            Triple("타입", true, false),
-            Triple("설정(JSON)", false, false),
-            Triple("그룹", false, false),
-            Triple("순서", false, false),
-            Triple("필수여부", false, false)
-        )
+        writeHeaderRow(sheet, spec)
 
-        val headerRow = sheet.createRow(0)
-        headers.forEachIndexed { index, (header, required, _) ->
-            val cell = headerRow.createCell(index)
-            cell.setCellValue(header)
-            cell.cellStyle = if (required) styles.requiredHeader else styles.header
-        }
-
-        allFields.forEachIndexed { index, (universeName, field) ->
+        allFields.forEachIndexed { index, (universeId, field) ->
+            val universe = universeMap[universeId]
             val row = sheet.createRow(index + 1)
-            row.createCell(0).setCellValue(universeName)
+            row.createCell(0).setCellValue(universe?.name ?: "")
             row.createCell(1).setCellValue(field.key)
             row.createCell(2).setCellValue(field.name)
             row.createCell(3).setCellValue(field.type)
@@ -448,35 +459,17 @@ class ExcelExporter(private val context: Context) {
             row.createCell(5).setCellValue(field.groupName)
             row.createCell(6).setCellValue(field.displayOrder.toDouble())
             row.createCell(7).setCellValue(if (field.isRequired) "Y" else "N")
+            row.createCell(8).setCellValue(universe?.code ?: "")
         }
 
-        // 타입 드롭다운
-        val fieldTypes = listOf("TEXT", "NUMBER", "SELECT", "MULTI_TEXT", "GRADE", "CALCULATED", "BODY_SIZE")
-        addDropdownValidation(sheet, 3, allFields.size, fieldTypes)
-
-        // 필수여부 드롭다운
-        addDropdownValidation(sheet, 7, allFields.size, listOf("Y", "N"))
-
-        // 세계관 드롭다운
-        if (universes.isNotEmpty()) {
-            addDropdownValidation(sheet, 0, allFields.size, universes.map { it.name })
-        }
-
-        sheet.setColumnWidth(0, 5000)
-        sheet.setColumnWidth(1, 5000)
-        sheet.setColumnWidth(2, 5000)
-        sheet.setColumnWidth(3, 4000)
-        sheet.setColumnWidth(4, 10000)
-        sheet.setColumnWidth(5, 5000)
-        sheet.setColumnWidth(6, 3000)
-        sheet.setColumnWidth(7, 4000)
-        sheet.freezeAndFilter(headers.size, allFields.size)
+        applySpecFormatting(sheet, spec, allFields.size)
     }
 
-    // ── 캐릭터 (세계관별) ──
+    // ── 캐릭터 (세계관별 + 미분류 통합) ──
 
     private suspend fun exportCharacters(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
         val novels = db.novelDao().getAllNovelsList()
+        val novelMap = novels.associateBy { it.id }
         val allCharacters = db.characterDao().getAllCharactersList()
         val universes = db.universeDao().getAllUniversesList()
 
@@ -490,7 +483,6 @@ class ExcelExporter(private val context: Context) {
 
             if (universeChars.isEmpty()) continue
 
-            // Batch load field values and tags to avoid N+1 queries
             val allFieldValues = universeChars.associate { char ->
                 char.id to db.characterFieldValueDao().getValuesByCharacterList(char.id)
             }
@@ -498,146 +490,80 @@ class ExcelExporter(private val context: Context) {
                 char.id to db.characterTagDao().getTagsByCharacterList(char.id)
             }
 
-            val sheetName = sanitizeSheetName(universe.name, usedSheetNames)
-            val sheet = workbook.createSheet(sheetName)
-
-            val columns = mutableListOf<ColDef>()
-            columns.add(ColDef("이름", required = true, readOnly = false))
-
-            // 동적 필드 - SELECT 타입은 드롭다운 옵션 파싱
-            for (field in fields) {
-                val options = if (field.type == "SELECT") {
-                    try {
-                        val json = org.json.JSONObject(field.config)
-                        val arr = json.optJSONArray("options")
-                        if (arr != null) (0 until arr.length()).map { arr.getString(it) } else null
-                    } catch (_: Exception) { null }
-                } else null
-                columns.add(ColDef(field.name, required = field.isRequired, readOnly = false, selectOptions = options))
-            }
-
-            columns.add(ColDef("이미지경로", required = false, readOnly = true))
-            columns.add(ColDef("작품", required = false, readOnly = false))
-            columns.add(ColDef("메모", required = false, readOnly = false))
-            columns.add(ColDef("태그", required = false, readOnly = false))
-
-            // 헤더 행
-            val headerRow = sheet.createRow(0)
-            columns.forEachIndexed { index, col ->
-                val cell = headerRow.createCell(index)
-                cell.setCellValue(col.name)
-                cell.cellStyle = when {
-                    col.readOnly -> styles.readOnlyHeader
-                    col.required -> styles.requiredHeader
-                    else -> styles.header
-                }
-            }
-
-            // 데이터 행
-            universeChars.forEachIndexed { index, character ->
-                val row = sheet.createRow(index + 1)
-                val novelTitle = novels.find { it.id == character.novelId }?.title ?: ""
-                val fieldValues = allFieldValues[character.id] ?: emptyList()
-
-                row.createCell(0).setCellValue(character.name)
-
-                fields.forEachIndexed { fi, field ->
-                    val value = fieldValues.find { it.fieldDefinitionId == field.id }?.value ?: ""
-                    row.createCell(fi + 1).setCellValue(value)
-                }
-
-                val imageCell = row.createCell(fields.size + 1)
-                imageCell.setCellValue(character.imagePaths)
-                imageCell.cellStyle = styles.readOnly
-
-                row.createCell(fields.size + 2).setCellValue(novelTitle)
-                row.createCell(fields.size + 3).setCellValue(character.memo)
-                val tags = allTags[character.id] ?: emptyList()
-                row.createCell(fields.size + 4).setCellValue(tags.joinToString(", ") { it.tag })
-            }
-
-            // 드롭다운 적용
-            columns.forEachIndexed { colIndex, col ->
-                if (col.selectOptions != null) {
-                    addDropdownValidation(sheet, colIndex, universeChars.size, col.selectOptions)
-                }
-            }
-
-            // 작품 드롭다운
-            if (universeNovels.isNotEmpty()) {
-                val novelColIndex = fields.size + 2
-                addDropdownValidation(sheet, novelColIndex, universeChars.size, universeNovels.map { it.title })
-            }
-
-            // 컬럼 너비
-            columns.forEachIndexed { index, col ->
-                val width = when {
-                    col.name == "이름" -> 6000
-                    col.name == "메모" -> 10000
-                    col.name == "태그" -> 8000
-                    col.name == "이미지경로" -> 4000
-                    col.name == "작품" -> 6000
-                    else -> 5000
-                }
-                sheet.setColumnWidth(index, width)
-            }
-
-            sheet.freezeAndFilter(columns.size, universeChars.size)
+            exportCharacterSheet(
+                workbook, usedSheetNames, universe.name,
+                universeChars, fields, novelMap, allFieldValues, allTags
+            )
         }
 
         // 미분류 캐릭터
         val unassignedChars = allCharacters.filter { char ->
-            val novel = novels.find { it.id == char.novelId }
+            val novel = novelMap[char.novelId]
             novel?.universeId == null
         }
         if (unassignedChars.isNotEmpty()) {
-            // Batch load tags for unassigned characters
-            val unassignedTags = unassignedChars.associate { char ->
+            val allTags = unassignedChars.associate { char ->
                 char.id to db.characterTagDao().getTagsByCharacterList(char.id)
             }
-
-            val sheetName = sanitizeSheetName("미분류 캐릭터", usedSheetNames)
-            val sheet = workbook.createSheet(sheetName)
-
-            val headerDefs = listOf(
-                "이름" to true,
-                "이미지경로" to false,
-                "작품" to false,
-                "메모" to false,
-                "태그" to false
+            exportCharacterSheet(
+                workbook, usedSheetNames, "미분류 캐릭터",
+                unassignedChars, emptyList(), novelMap, emptyMap(), allTags
             )
-            val readOnlyCols = setOf(1) // 이미지경로
-
-            val headerRow = sheet.createRow(0)
-            headerDefs.forEachIndexed { index, (header, required) ->
-                val cell = headerRow.createCell(index)
-                cell.setCellValue(header)
-                cell.cellStyle = when {
-                    index in readOnlyCols -> styles.readOnlyHeader
-                    required -> styles.requiredHeader
-                    else -> styles.header
-                }
-            }
-
-            unassignedChars.forEachIndexed { index, character ->
-                val row = sheet.createRow(index + 1)
-                row.createCell(0).setCellValue(character.name)
-                val imageCell = row.createCell(1)
-                imageCell.setCellValue(character.imagePaths)
-                imageCell.cellStyle = styles.readOnly
-                row.createCell(2).setCellValue(novels.find { it.id == character.novelId }?.title ?: "")
-                row.createCell(3).setCellValue(character.memo)
-                val tags = unassignedTags[character.id] ?: emptyList()
-                row.createCell(4).setCellValue(tags.joinToString(", ") { it.tag })
-            }
-
-            sheet.setColumnWidth(0, 6000)
-            sheet.setColumnWidth(1, 4000)
-            sheet.setColumnWidth(2, 6000)
-            sheet.setColumnWidth(3, 10000)
-            sheet.setColumnWidth(4, 8000)
-            sheet.freezeAndFilter(headerDefs.size, unassignedChars.size)
         }
+    }
+
+    private fun exportCharacterSheet(
+        workbook: XSSFWorkbook,
+        usedSheetNames: MutableSet<String>,
+        sheetLabel: String,
+        characters: List<Character>,
+        fields: List<FieldDefinition>,
+        novelMap: Map<Long, Novel>,
+        allFieldValues: Map<Long, List<CharacterFieldValue>>,
+        allTags: Map<Long, List<CharacterTag>>
+    ) {
+        val novelTitles = novelMap.values.map { it.title }.distinct()
+        val spec = characterSpec(fields, novelTitles)
+        val sheetName = sanitizeSheetName(sheetLabel, usedSheetNames)
+        val sheet = workbook.createSheet(sheetName)
+        writeHeaderRow(sheet, spec)
+
+        characters.forEachIndexed { index, character ->
+            val row = sheet.createRow(index + 1)
+            val novel = character.novelId?.let { novelMap[it] }
+            val fieldValues = allFieldValues[character.id] ?: emptyList()
+            var col = 0
+
+            // 이름
+            row.createCell(col++).setCellValue(character.name)
+
+            // 동적 필드
+            for (field in fields) {
+                val value = fieldValues.find { it.fieldDefinitionId == field.id }?.value ?: ""
+                row.createCell(col++).setCellValue(value)
+            }
+
+            // 이미지경로 (readOnly)
+            row.createCell(col++).setCellValue(character.imagePaths)
+
+            // 작품
+            row.createCell(col++).setCellValue(novel?.title ?: "")
+
+            // 메모
+            row.createCell(col++).setCellValue(character.memo)
+
+            // 태그
+            val tags = allTags[character.id] ?: emptyList()
+            row.createCell(col++).setCellValue(tags.joinToString(", ") { it.tag })
+
+            // 코드 (readOnly)
+            row.createCell(col++).setCellValue(character.code)
+
+            // 작품코드 (readOnly)
+            row.createCell(col).setCellValue(novel?.code ?: "")
+        }
+
+        applySpecFormatting(sheet, spec, characters.size)
     }
 
     // ── 사건 연표 ──
@@ -646,27 +572,13 @@ class ExcelExporter(private val context: Context) {
         val events = db.timelineDao().getAllEventsList()
         if (events.isEmpty()) return
         val novels = db.novelDao().getAllNovelsList()
+        val novelMap = novels.associateBy { it.id }
 
-        val sheetName = sanitizeSheetName("사건 연표", usedSheetNames)
+        val spec = timelineSpec(novels.map { it.title })
+        val sheetName = sanitizeSheetName(spec.sheetName, usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
-        val headers = listOf(
-            "연도" to true,
-            "월" to false,
-            "일" to false,
-            "역법" to false,
-            "사건 설명" to true,
-            "관련 작품" to false,
-            "관련 캐릭터" to false
-        )
+        writeHeaderRow(sheet, spec)
 
-        val headerRow = sheet.createRow(0)
-        headers.forEachIndexed { index, (header, required) ->
-            val cell = headerRow.createCell(index)
-            cell.setCellValue(header)
-            cell.cellStyle = if (required) styles.requiredHeader else styles.header
-        }
-
-        // Batch load event characters to avoid N+1 queries
         val eventCharacters = events.associate { event ->
             event.id to db.timelineDao().getCharactersForEvent(event.id)
         }
@@ -679,67 +591,45 @@ class ExcelExporter(private val context: Context) {
             row.createCell(3).setCellValue(event.calendarType)
             row.createCell(4).setCellValue(event.description)
 
-            val novelTitle = novels.find { it.id == event.novelId }?.title ?: ""
-            row.createCell(5).setCellValue(novelTitle)
+            val novel = event.novelId?.let { novelMap[it] }
+            row.createCell(5).setCellValue(novel?.title ?: "")
 
             val characters = eventCharacters[event.id] ?: emptyList()
             row.createCell(6).setCellValue(characters.joinToString(", ") { it.name })
+
+            // 관련작품코드 (readOnly)
+            row.createCell(7).setCellValue(novel?.code ?: "")
         }
 
-        // 작품 드롭다운
-        if (novels.isNotEmpty()) {
-            addDropdownValidation(sheet, 5, events.size, novels.map { it.title })
-        }
-
-        sheet.setColumnWidth(0, 3000)
-        sheet.setColumnWidth(1, 2000)
-        sheet.setColumnWidth(2, 2000)
-        sheet.setColumnWidth(3, 3000)
-        sheet.setColumnWidth(4, 15000)
-        sheet.setColumnWidth(5, 6000)
-        sheet.setColumnWidth(6, 10000)
-        sheet.freezeAndFilter(headers.size, events.size)
+        applySpecFormatting(sheet, spec, events.size)
     }
 
     // ── 캐릭터 상태변화 ──
 
     private suspend fun exportStateChanges(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
         val allCharacters = db.characterDao().getAllCharactersList()
+        val charMap = allCharacters.associateBy { it.id }
         val novels = db.novelDao().getAllNovelsList()
-
         val novelMap = novels.associateBy { it.id }
-        val allChanges = mutableListOf<Triple<String, String, CharacterStateChange>>()
+
+        data class ChangeRow(val character: Character, val novelTitle: String, val change: CharacterStateChange)
+        val allChanges = mutableListOf<ChangeRow>()
         for (character in allCharacters) {
             val changes = db.characterStateChangeDao().getChangesByCharacterList(character.id)
             if (changes.isEmpty()) continue
             val novelTitle = character.novelId?.let { novelMap[it]?.title } ?: ""
-            changes.forEach { allChanges.add(Triple(character.name, novelTitle, it)) }
+            changes.forEach { allChanges.add(ChangeRow(character, novelTitle, it)) }
         }
         if (allChanges.isEmpty()) return
 
-        val sheetName = sanitizeSheetName("캐릭터 상태변화", usedSheetNames)
+        val spec = stateChangeSpec()
+        val sheetName = sanitizeSheetName(spec.sheetName, usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
-        val headers = listOf(
-            "캐릭터" to true,
-            "작품" to false,
-            "연도" to true,
-            "월" to false,
-            "일" to false,
-            "필드키" to true,
-            "새 값" to false,
-            "설명" to false
-        )
+        writeHeaderRow(sheet, spec)
 
-        val headerRow = sheet.createRow(0)
-        headers.forEachIndexed { index, (header, required) ->
-            val cell = headerRow.createCell(index)
-            cell.setCellValue(header)
-            cell.cellStyle = if (required) styles.requiredHeader else styles.header
-        }
-
-        allChanges.forEachIndexed { index, (charName, novelTitle, change) ->
+        allChanges.forEachIndexed { index, (character, novelTitle, change) ->
             val row = sheet.createRow(index + 1)
-            row.createCell(0).setCellValue(charName)
+            row.createCell(0).setCellValue(character.name)
             row.createCell(1).setCellValue(novelTitle)
             row.createCell(2).setCellValue(change.year.toDouble())
             change.month?.let { row.createCell(3).setCellValue(it.toDouble()) }
@@ -747,17 +637,11 @@ class ExcelExporter(private val context: Context) {
             row.createCell(5).setCellValue(change.fieldKey)
             row.createCell(6).setCellValue(change.newValue)
             row.createCell(7).setCellValue(change.description)
+            // 캐릭터코드 (readOnly)
+            row.createCell(8).setCellValue(character.code)
         }
 
-        sheet.setColumnWidth(0, 5000)
-        sheet.setColumnWidth(1, 5000)
-        sheet.setColumnWidth(2, 3000)
-        sheet.setColumnWidth(3, 2000)
-        sheet.setColumnWidth(4, 2000)
-        sheet.setColumnWidth(5, 5000)
-        sheet.setColumnWidth(6, 5000)
-        sheet.setColumnWidth(7, 10000)
-        sheet.freezeAndFilter(headers.size, allChanges.size)
+        applySpecFormatting(sheet, spec, allChanges.size)
     }
 
     // ── 캐릭터 관계 ──
@@ -769,40 +653,25 @@ class ExcelExporter(private val context: Context) {
         val allCharacters = db.characterDao().getAllCharactersList()
         val charMap = allCharacters.associateBy { it.id }
 
-        val sheetName = sanitizeSheetName("캐릭터 관계", usedSheetNames)
+        val spec = relationshipSpec()
+        val sheetName = sanitizeSheetName(spec.sheetName, usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
-        val headers = listOf(
-            "캐릭터1" to true,
-            "캐릭터2" to true,
-            "관계 유형" to true,
-            "설명" to false
-        )
-
-        val headerRow = sheet.createRow(0)
-        headers.forEachIndexed { i, (h, required) ->
-            headerRow.createCell(i).apply {
-                setCellValue(h)
-                cellStyle = if (required) styles.requiredHeader else styles.header
-            }
-        }
+        writeHeaderRow(sheet, spec)
 
         allRelationships.forEachIndexed { i, rel ->
             val row = sheet.createRow(i + 1)
-            row.createCell(0).setCellValue(charMap[rel.characterId1]?.name ?: "")
-            row.createCell(1).setCellValue(charMap[rel.characterId2]?.name ?: "")
+            val char1 = charMap[rel.characterId1]
+            val char2 = charMap[rel.characterId2]
+            row.createCell(0).setCellValue(char1?.name ?: "")
+            row.createCell(1).setCellValue(char2?.name ?: "")
             row.createCell(2).setCellValue(rel.relationshipType)
             row.createCell(3).setCellValue(rel.description)
+            // 코드 (readOnly)
+            row.createCell(4).setCellValue(char1?.code ?: "")
+            row.createCell(5).setCellValue(char2?.code ?: "")
         }
 
-        // 관계 유형 드롭다운
-        val relationTypes = listOf("부모-자식", "연인", "라이벌", "멘토-제자", "동료", "적", "형제자매", "친구", "기타")
-        addDropdownValidation(sheet, 2, allRelationships.size, relationTypes)
-
-        sheet.setColumnWidth(0, 6000)
-        sheet.setColumnWidth(1, 6000)
-        sheet.setColumnWidth(2, 5000)
-        sheet.setColumnWidth(3, 10000)
-        sheet.freezeAndFilter(headers.size, allRelationships.size)
+        applySpecFormatting(sheet, spec, allRelationships.size)
     }
 
     // ── 이름 은행 ──
@@ -814,45 +683,25 @@ class ExcelExporter(private val context: Context) {
         val allCharacters = db.characterDao().getAllCharactersList()
         val charMap = allCharacters.associateBy { it.id }
 
-        val sheetName = sanitizeSheetName("이름 은행", usedSheetNames)
+        val spec = nameBankSpec()
+        val sheetName = sanitizeSheetName(spec.sheetName, usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
-        val headers = listOf(
-            "이름" to true,
-            "성별" to false,
-            "출처" to false,
-            "메모" to false,
-            "사용여부" to false,
-            "사용 캐릭터" to false
-        )
-
-        val headerRow = sheet.createRow(0)
-        headers.forEachIndexed { i, (h, required) ->
-            headerRow.createCell(i).apply {
-                setCellValue(h)
-                cellStyle = if (required) styles.requiredHeader else styles.header
-            }
-        }
+        writeHeaderRow(sheet, spec)
 
         allNames.forEachIndexed { i, entry ->
             val row = sheet.createRow(i + 1)
+            val usedByChar = entry.usedByCharacterId?.let { charMap[it] }
             row.createCell(0).setCellValue(entry.name)
             row.createCell(1).setCellValue(entry.gender)
             row.createCell(2).setCellValue(entry.origin)
             row.createCell(3).setCellValue(entry.notes)
             row.createCell(4).setCellValue(if (entry.isUsed) "Y" else "N")
-            row.createCell(5).setCellValue(entry.usedByCharacterId?.let { charMap[it]?.name } ?: "")
+            row.createCell(5).setCellValue(usedByChar?.name ?: "")
+            // 사용캐릭터코드 (readOnly)
+            row.createCell(6).setCellValue(usedByChar?.code ?: "")
         }
 
-        // 사용여부 드롭다운
-        addDropdownValidation(sheet, 4, allNames.size, listOf("Y", "N"))
-
-        sheet.setColumnWidth(0, 5000)
-        sheet.setColumnWidth(1, 3000)
-        sheet.setColumnWidth(2, 5000)
-        sheet.setColumnWidth(3, 8000)
-        sheet.setColumnWidth(4, 4000)
-        sheet.setColumnWidth(5, 5000)
-        sheet.freezeAndFilter(headers.size, allNames.size)
+        applySpecFormatting(sheet, spec, allNames.size)
     }
 
     companion object {

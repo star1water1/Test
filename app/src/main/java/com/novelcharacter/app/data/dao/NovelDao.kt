@@ -42,6 +42,9 @@ interface NovelDao {
     @Query("SELECT * FROM novels WHERE title = :title AND universeId IS NULL LIMIT 1")
     suspend fun getNovelByTitleNoUniverse(title: String): Novel?
 
+    @Query("SELECT * FROM novels WHERE code = :code LIMIT 1")
+    suspend fun getNovelByCode(code: String): Novel?
+
     @Query("SELECT * FROM novels WHERE title LIKE '%' || :query || '%' OR description LIKE '%' || :query || '%'")
     fun searchNovels(query: String): LiveData<List<Novel>>
 }

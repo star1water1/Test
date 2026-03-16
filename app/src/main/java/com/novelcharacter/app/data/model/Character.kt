@@ -15,7 +15,7 @@ import androidx.room.PrimaryKey
             onDelete = ForeignKey.SET_NULL
         )
     ],
-    indices = [Index("novelId")]
+    indices = [Index("novelId"), Index(value = ["code"], unique = true)]
 )
 data class Character(
     @PrimaryKey(autoGenerate = true)
@@ -25,5 +25,6 @@ data class Character(
     val imagePaths: String = "[]",
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),
-    val memo: String = ""
+    val memo: String = "",
+    val code: String = generateEntityCode()
 )

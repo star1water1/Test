@@ -43,7 +43,7 @@ import com.novelcharacter.app.data.model.Universe
         NameBankEntry::class,
         CharacterRelationship::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -249,6 +249,34 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Migration from version 4 to 5:
+         * - Added code column to universes, novels, and characters tables
+         *   for stable identity-based Excel round-tripping.
+         */
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "Migrating database from version 4 to 5")
+
+                // Add code columns
+                db.execSQL("ALTER TABLE `universes` ADD COLUMN `code` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `novels` ADD COLUMN `code` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `characters` ADD COLUMN `code` TEXT NOT NULL DEFAULT ''")
+
+                // Backfill existing rows with unique codes using SQLite's randomblob
+                db.execSQL("UPDATE `universes` SET `code` = lower(hex(randomblob(4))) WHERE `code` = ''")
+                db.execSQL("UPDATE `novels` SET `code` = lower(hex(randomblob(4))) WHERE `code` = ''")
+                db.execSQL("UPDATE `characters` SET `code` = lower(hex(randomblob(4))) WHERE `code` = ''")
+
+                // Create unique indexes
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_universes_code` ON `universes` (`code`)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_novels_code` ON `novels` (`code`)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_characters_code` ON `characters` (`code`)")
+
+                Log.i(TAG, "Migration from version 4 to 5 completed successfully")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -256,7 +284,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "novel_character_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                     .build()
                     .also { INSTANCE = it }
             }
