@@ -84,6 +84,11 @@ class CharacterAdapter(
         holder.cancelLoad()
     }
 
+    override fun onDetachedFromRecyclerView(recyclerView: RecyclerView) {
+        super.onDetachedFromRecyclerView(recyclerView)
+        thumbnailCache.evictAll()
+    }
+
     inner class CharacterViewHolder(
         private val binding: ItemCharacterBinding
     ) : RecyclerView.ViewHolder(binding.root) {

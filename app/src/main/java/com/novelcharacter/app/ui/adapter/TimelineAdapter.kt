@@ -48,7 +48,7 @@ class TimelineAdapter(
      * Accept a list of TimelineEvent and convert to display items based on zoom level.
      */
     fun submitEventList(events: List<TimelineEvent>) {
-        rawEvents = events
+        rawEvents = events.toList()
         reprocessEvents()
     }
 

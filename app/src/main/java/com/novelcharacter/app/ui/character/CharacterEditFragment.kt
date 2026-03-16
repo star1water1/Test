@@ -391,7 +391,7 @@ class CharacterEditFragment : Fragment() {
                 configJson, object : TypeToken<Map<String, Any>>() {}.type
             )
             @Suppress("UNCHECKED_CAST")
-            (configMap["options"] as? List<String>) ?: emptyList()
+            (configMap["options"] as? List<*>)?.mapNotNull { it as? String } ?: emptyList()
         } catch (e: Exception) {
             emptyList()
         }
