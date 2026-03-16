@@ -85,6 +85,7 @@ class GlobalSearchFragment : Fragment() {
     }
 
     override fun onDestroyView() {
+        searchRunnable?.let { searchHandler.removeCallbacks(it) }
         binding.searchResultsRecyclerView.adapter = null
         super.onDestroyView()
         _binding = null

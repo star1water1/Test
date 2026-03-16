@@ -203,8 +203,8 @@ class TimelineAdapter(
             val yearStr = formatYearLabel(event.year)
             return if (zoomLevel == 5) {
                 val parts = mutableListOf(yearStr)
-                event.month?.let { parts.add("${it}월") }
-                event.day?.let { parts.add("${it}일") }
+                event.month?.let { parts.add(binding.root.context.getString(R.string.month_suffix, it)) }
+                event.day?.let { parts.add(binding.root.context.getString(R.string.day_suffix, it)) }
                 parts.joinToString(" ")
             } else {
                 yearStr

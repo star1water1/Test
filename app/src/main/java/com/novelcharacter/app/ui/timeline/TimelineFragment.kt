@@ -470,6 +470,7 @@ class TimelineFragment : Fragment() {
     }
 
     override fun onDestroyView() {
+        searchRunnable?.let { searchHandler.removeCallbacks(it) }
         super.onDestroyView()
         _binding = null
     }

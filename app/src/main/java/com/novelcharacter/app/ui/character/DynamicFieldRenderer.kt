@@ -57,7 +57,7 @@ class DynamicFieldRenderer(
                     if (fieldValue.isEmpty()) {
                         getStringWithArg(R.string.auto_calculated_label, field.name)
                     } else {
-                        "${field.name}: $fieldValue (자동 계산)"
+                        contextGetter().getString(R.string.auto_calculated_value, field.name, fieldValue)
                     }
                 } else {
                     "${field.name}: ${fieldValue.ifEmpty { "-" }}"

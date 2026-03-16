@@ -95,7 +95,7 @@ class NameBankFragment : Fragment() {
         val editOrigin = layout.findViewById<TextInputEditText>(R.id.editOrigin)
         val editNotes = layout.findViewById<TextInputEditText>(R.id.editNotes)
 
-        val genderOptions = listOf("미지정", "남", "여")
+        val genderOptions = listOf(getString(R.string.gender_unspecified), getString(R.string.gender_male), getString(R.string.gender_female))
         spinnerGender.adapter = ArrayAdapter(context, android.R.layout.simple_spinner_item, genderOptions).also {
             it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         }
@@ -164,6 +164,7 @@ class NameBankFragment : Fragment() {
     }
 
     override fun onDestroyView() {
+        searchRunnable?.let { searchHandler.removeCallbacks(it) }
         binding.nameBankRecyclerView.adapter = null
         super.onDestroyView()
         _binding = null

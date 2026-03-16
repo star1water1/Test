@@ -48,8 +48,8 @@ class UniverseAdapter(
 
             val nc = novelCounts[universe.id] ?: 0
             val fc = fieldCounts[universe.id] ?: 0
-            binding.novelCount.text = "작품 ${nc}개"
-            binding.fieldCount.text = "필드 ${fc}개"
+            binding.novelCount.text = binding.root.context.getString(com.novelcharacter.app.R.string.novel_count_format, nc)
+            binding.fieldCount.text = binding.root.context.getString(com.novelcharacter.app.R.string.field_count_format, fc)
 
             binding.root.setOnClickListener { onClick(universe) }
             binding.root.setOnLongClickListener {

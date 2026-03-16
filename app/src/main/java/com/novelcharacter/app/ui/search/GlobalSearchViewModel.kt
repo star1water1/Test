@@ -41,15 +41,15 @@ class GlobalSearchViewModel(application: Application) : AndroidViewModel(applica
             fun combine() {
                 val items = mutableListOf<SearchResultItem>()
                 if (chars.isNotEmpty()) {
-                    items.add(SearchResultItem.SectionHeader("${appContext.getString(R.string.tab_characters)} (${chars.size})"))
+                    items.add(SearchResultItem.SectionHeader(appContext.getString(R.string.section_header_format, appContext.getString(R.string.tab_characters), chars.size)))
                     items.addAll(chars.map { SearchResultItem.CharacterResult(it) })
                 }
                 if (events.isNotEmpty()) {
-                    items.add(SearchResultItem.SectionHeader("${appContext.getString(R.string.tab_timeline)} (${events.size})"))
+                    items.add(SearchResultItem.SectionHeader(appContext.getString(R.string.section_header_format, appContext.getString(R.string.tab_timeline), events.size)))
                     items.addAll(events.map { SearchResultItem.EventResult(it) })
                 }
                 if (novels.isNotEmpty()) {
-                    items.add(SearchResultItem.SectionHeader("${appContext.getString(R.string.tab_novels)} (${novels.size})"))
+                    items.add(SearchResultItem.SectionHeader(appContext.getString(R.string.section_header_format, appContext.getString(R.string.tab_novels), novels.size)))
                     items.addAll(novels.map { SearchResultItem.NovelResult(it) })
                 }
                 mediator.value = items

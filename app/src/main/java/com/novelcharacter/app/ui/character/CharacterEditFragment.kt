@@ -93,7 +93,7 @@ class CharacterEditFragment : Fragment() {
 
     private suspend fun loadNovels() {
         novels = viewModel.getAllNovelsList()
-        val novelNames = mutableListOf("작품 미지정")
+        val novelNames = mutableListOf(getString(R.string.no_novel_selected))
         novelNames.addAll(novels.map { it.title })
 
         val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, novelNames)
@@ -181,13 +181,13 @@ class CharacterEditFragment : Fragment() {
                     val fieldType = FieldType.fromName(field.type)
                     if (fieldType == FieldType.SELECT) {
                         val options = parseSelectOptions(field.config)
-                        val optionWithBlank = mutableListOf("선택 안함")
+                        val optionWithBlank = mutableListOf(getString(R.string.no_selection))
                         optionWithBlank.addAll(options)
                         val idx = optionWithBlank.indexOf(savedValue)
                         if (idx >= 0) widget.setSelection(idx)
                     } else if (fieldType == FieldType.GRADE) {
                         val grades = parseGradeOptions(field.config)
-                        val gradeWithBlank = mutableListOf("등급 미정")
+                        val gradeWithBlank = mutableListOf(getString(R.string.no_grade_selected))
                         gradeWithBlank.addAll(grades)
                         val idx = gradeWithBlank.indexOf(savedValue)
                         if (idx >= 0) widget.setSelection(idx)
@@ -265,7 +265,7 @@ class CharacterEditFragment : Fragment() {
                     binding.dynamicFormContainer.addView(label)
 
                     val options = parseSelectOptions(field.config)
-                    val optionsWithBlank = mutableListOf("선택 안함")
+                    val optionsWithBlank = mutableListOf(getString(R.string.no_selection))
                     optionsWithBlank.addAll(options)
 
                     val spinner = Spinner(context).apply {
@@ -301,7 +301,7 @@ class CharacterEditFragment : Fragment() {
                     binding.dynamicFormContainer.addView(label)
 
                     val grades = parseGradeOptions(field.config)
-                    val gradesWithBlank = mutableListOf("등급 미정")
+                    val gradesWithBlank = mutableListOf(getString(R.string.no_grade_selected))
                     gradesWithBlank.addAll(grades)
 
                     val spinner = Spinner(context).apply {
@@ -331,7 +331,7 @@ class CharacterEditFragment : Fragment() {
                         ).apply {
                             bottomMargin = (8 * density).toInt()
                         }
-                        hint = "${field.name} (쉼표로 구분)"
+                        hint = getString(R.string.hint_multi_text_format, field.name)
                     }
                     val editText = TextInputEditText(context).apply {
                         layoutParams = LinearLayout.LayoutParams(
@@ -346,7 +346,7 @@ class CharacterEditFragment : Fragment() {
 
                 FieldType.CALCULATED -> {
                     val textView = TextView(context).apply {
-                        text = "${field.name}: (자동 계산)"
+                        text = getString(R.string.auto_calculated, field.name)
                         textSize = 14f
                         isEnabled = false
                         layoutParams = ViewGroup.MarginLayoutParams(

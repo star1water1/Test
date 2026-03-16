@@ -46,7 +46,7 @@ class NameBankAdapter(
 
             if (entry.isUsed) {
                 usedIndicator.visibility = View.VISIBLE
-                usedIndicator.text = "사용됨"
+                usedIndicator.text = itemView.context.getString(R.string.used_indicator)
                 itemView.alpha = 0.6f
             } else {
                 usedIndicator.visibility = View.GONE

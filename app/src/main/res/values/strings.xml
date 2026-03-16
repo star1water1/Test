@@ -235,4 +235,15 @@
     <string name="export_preparing">내보내기 준비 중…</string>
     <string name="import_file_too_large">파일 크기가 너무 큽니다 (최대 50MB)</string>
     <string name="relationship_title_format">%1$s (%2$s)</string>
+
+    <!-- Round 5 -->
+    <string name="used_indicator">사용됨</string>
+    <string name="novel_count_format">작품 %d개</string>
+    <string name="field_count_format">필드 %d개</string>
+    <string name="gender_male">남</string>
+    <string name="gender_female">여</string>
+    <string name="month_suffix">%d월</string>
+    <string name="day_suffix">%d일</string>
+    <string name="section_header_format">%1$s (%2$d)</string>
+    <string name="auto_calculated_value">%1$s: %2$s (자동 계산)</string>
 </resources>
