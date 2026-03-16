@@ -51,7 +51,11 @@ android {
                 "META-INF/LICENSE",
                 "META-INF/LICENSE.txt",
                 "META-INF/NOTICE",
-                "META-INF/NOTICE.txt"
+                "META-INF/NOTICE.txt",
+                "META-INF/*.SF",
+                "META-INF/*.DSA",
+                "META-INF/*.RSA",
+                "META-INF/versions/**"
             )
         }
     }
@@ -84,6 +88,9 @@ dependencies {
     // Apache POI (엑셀)
     implementation("org.apache.poi:poi:5.2.5")
     implementation("org.apache.poi:poi-ooxml:5.2.5")
+    // Android에는 javax.xml.stream (StAX API)이 없어서 명시적으로 추가 필요
+    implementation("javax.xml.stream:stax-api:1.0-2")
+    implementation("com.fasterxml:aalto-xml:1.3.2") // 경량 StAX 구현체 (Android 호환)
 
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")

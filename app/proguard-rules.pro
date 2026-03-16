@@ -7,6 +7,11 @@
 -dontwarn org.apache.commons.**
 -dontwarn javax.xml.**
 
+# Keep StAX API and Aalto XML (Android에서 POI OOXML 동작에 필요)
+-keep class javax.xml.stream.** { *; }
+-keep class com.fasterxml.aalto.** { *; }
+-dontwarn com.fasterxml.aalto.**
+
 # Keep Gson serialization/deserialization
 -keep class com.google.gson.** { *; }
 -keepattributes Signature
