@@ -9,7 +9,6 @@ import org.apache.poi.ss.usermodel.FillPatternType
 import org.apache.poi.ss.usermodel.IndexedColors
 import org.apache.poi.xssf.usermodel.XSSFCellStyle
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -74,15 +73,13 @@ class AutoBackupWorker(
         val fileName = "$BACKUP_PREFIX$timestamp$BACKUP_EXTENSION"
         val backupFile = File(backupDir, fileName)
 
-        // Write to temp file first to avoid holding entire workbook in memory
+        // Write to temp file then stream-encrypt to avoid double memory copy
         val tempFile = File(backupDir, "temp_backup.xlsx")
         try {
             tempFile.outputStream().use { fos ->
                 workbook.write(fos)
             }
-            val rawBytes = tempFile.readBytes()
-            val encryptedBytes = BackupEncryptor.encrypt(rawBytes)
-            backupFile.writeBytes(encryptedBytes)
+            BackupEncryptor.encryptFile(tempFile, backupFile)
         } finally {
             tempFile.delete()
         }

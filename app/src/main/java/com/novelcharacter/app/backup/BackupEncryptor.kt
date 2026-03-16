@@ -2,9 +2,13 @@ package com.novelcharacter.app.backup
 
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
+import java.io.File
+import java.io.FileInputStream
+import java.io.FileOutputStream
 import java.nio.ByteBuffer
 import java.security.KeyStore
 import javax.crypto.Cipher
+import javax.crypto.CipherOutputStream
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
@@ -52,6 +56,25 @@ object BackupEncryptor {
             .put(iv)
             .put(encryptedData)
             .array()
+    }
+
+    /**
+     * Encrypt a file to another file using streaming to avoid loading all data into memory.
+     * Output format: [IV (12 bytes)] [encrypted data + GCM tag]
+     */
+    fun encryptFile(inputFile: File, outputFile: File) {
+        val cipher = Cipher.getInstance(TRANSFORMATION)
+        cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey())
+        val iv = cipher.iv
+
+        FileOutputStream(outputFile).use { fos ->
+            fos.write(iv)
+            CipherOutputStream(fos, cipher).use { cos ->
+                FileInputStream(inputFile).use { fis ->
+                    fis.copyTo(cos, bufferSize = 8192)
+                }
+            }
+        }
     }
 
     fun decrypt(data: ByteArray): ByteArray {

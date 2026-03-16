@@ -509,7 +509,7 @@ class ExcelImporter(private val context: Context) {
                 if (characterNames.isNotBlank()) {
                     // 기존 크로스레프 제거 후 재설정
                     db.timelineDao().deleteCrossRefsByEvent(eventId)
-                    val names = characterNames.split(", ").map { it.trim() }.filter { it.isNotBlank() }
+                    val names = characterNames.split(",").map { it.trim() }.filter { it.isNotBlank() }
                     for (charName in names) {
                         val character = findCharacterByName(charName, novelId)
                         if (character != null) {
