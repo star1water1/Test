@@ -43,7 +43,7 @@
         android:paddingHorizontal="10dp"
         android:paddingVertical="4dp"
         android:background="@color/primary_light"
-        android:textColor="@color/on_primary"
+        android:textColor="@color/primary_dark"
         android:textSize="12sp" />
 
 </LinearLayout>

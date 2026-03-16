@@ -222,4 +222,7 @@
 
     <!-- TimelineAdapter -->
     <string name="event_count_format">%d건의 사건</string>
+
+    <!-- Misc -->
+    <string name="arrow_separator" translatable="false"> → </string>
 </resources>

@@ -42,6 +42,10 @@ class AutoBackupWorker(
                 exportNovels(db, workbook, headerStyle, usedSheetNames)
                 exportCharacters(db, workbook, headerStyle, usedSheetNames)
                 exportTimeline(db, workbook, headerStyle, usedSheetNames)
+                exportFieldDefinitions(db, workbook, headerStyle, usedSheetNames)
+                exportStateChanges(db, workbook, headerStyle, usedSheetNames)
+                exportRelationships(db, workbook, headerStyle, usedSheetNames)
+                exportNameBank(db, workbook, headerStyle, usedSheetNames)
 
                 // Write workbook to bytes, encrypt, and save to internal storage
                 saveEncryptedBackup(workbook)
@@ -190,6 +194,123 @@ class AutoBackupWorker(
             e.month?.let { row.createCell(1).setCellValue(it.toDouble()) }
             e.day?.let { row.createCell(2).setCellValue(it.toDouble()) }
             row.createCell(3).setCellValue(e.description)
+        }
+    }
+
+    private suspend fun exportFieldDefinitions(
+        db: AppDatabase, workbook: XSSFWorkbook,
+        headerStyle: XSSFCellStyle, usedSheetNames: MutableSet<String>
+    ) {
+        val universes = db.universeDao().getAllUniversesList()
+        val allFields = universes.flatMap { u ->
+            db.fieldDefinitionDao().getFieldsByUniverseList(u.id).map { u.name to it }
+        }
+        if (allFields.isEmpty()) return
+
+        val sheetName = sanitizeSheetName("필드 정의", usedSheetNames)
+        val sheet = workbook.createSheet(sheetName)
+        val headers = listOf("세계관", "키", "이름", "타입", "설정", "그룹", "순서", "필수")
+        val headerRow = sheet.createRow(0)
+        headers.forEachIndexed { i, h ->
+            headerRow.createCell(i).apply { setCellValue(h); cellStyle = headerStyle }
+        }
+        allFields.forEachIndexed { i, (universeName, f) ->
+            val row = sheet.createRow(i + 1)
+            row.createCell(0).setCellValue(universeName)
+            row.createCell(1).setCellValue(f.key)
+            row.createCell(2).setCellValue(f.name)
+            row.createCell(3).setCellValue(f.type)
+            row.createCell(4).setCellValue(f.config)
+            row.createCell(5).setCellValue(f.groupName)
+            row.createCell(6).setCellValue(f.displayOrder.toDouble())
+            row.createCell(7).setCellValue(if (f.isRequired) "Y" else "N")
+        }
+    }
+
+    private suspend fun exportStateChanges(
+        db: AppDatabase, workbook: XSSFWorkbook,
+        headerStyle: XSSFCellStyle, usedSheetNames: MutableSet<String>
+    ) {
+        val allCharacters = db.characterDao().getAllCharactersList()
+        val novels = db.novelDao().getAllNovelsList()
+        val allChanges = allCharacters.flatMap { c ->
+            val changes = db.characterStateChangeDao().getChangesByCharacterList(c.id)
+            val novelTitle = novels.find { it.id == c.novelId }?.title ?: ""
+            changes.map { Triple(c.name, novelTitle, it) }
+        }
+        if (allChanges.isEmpty()) return
+
+        val sheetName = sanitizeSheetName("캐릭터 상태변화", usedSheetNames)
+        val sheet = workbook.createSheet(sheetName)
+        val headers = listOf("캐릭터", "작품", "연도", "월", "일", "필드키", "새 값", "설명")
+        val headerRow = sheet.createRow(0)
+        headers.forEachIndexed { i, h ->
+            headerRow.createCell(i).apply { setCellValue(h); cellStyle = headerStyle }
+        }
+        allChanges.forEachIndexed { i, (charName, novelTitle, sc) ->
+            val row = sheet.createRow(i + 1)
+            row.createCell(0).setCellValue(charName)
+            row.createCell(1).setCellValue(novelTitle)
+            row.createCell(2).setCellValue(sc.year.toDouble())
+            sc.month?.let { row.createCell(3).setCellValue(it.toDouble()) }
+            sc.day?.let { row.createCell(4).setCellValue(it.toDouble()) }
+            row.createCell(5).setCellValue(sc.fieldKey)
+            row.createCell(6).setCellValue(sc.newValue)
+            row.createCell(7).setCellValue(sc.description)
+        }
+    }
+
+    private suspend fun exportRelationships(
+        db: AppDatabase, workbook: XSSFWorkbook,
+        headerStyle: XSSFCellStyle, usedSheetNames: MutableSet<String>
+    ) {
+        val relationships = db.characterRelationshipDao().getAllRelationships()
+        if (relationships.isEmpty()) return
+
+        val allCharacters = db.characterDao().getAllCharactersList()
+        val charMap = allCharacters.associateBy { it.id }
+
+        val sheetName = sanitizeSheetName("캐릭터 관계", usedSheetNames)
+        val sheet = workbook.createSheet(sheetName)
+        val headers = listOf("캐릭터1", "캐릭터2", "관계유형", "설명")
+        val headerRow = sheet.createRow(0)
+        headers.forEachIndexed { i, h ->
+            headerRow.createCell(i).apply { setCellValue(h); cellStyle = headerStyle }
+        }
+        relationships.forEachIndexed { i, r ->
+            val row = sheet.createRow(i + 1)
+            row.createCell(0).setCellValue(charMap[r.characterId1]?.name ?: "")
+            row.createCell(1).setCellValue(charMap[r.characterId2]?.name ?: "")
+            row.createCell(2).setCellValue(r.relationshipType)
+            row.createCell(3).setCellValue(r.description)
+        }
+    }
+
+    private suspend fun exportNameBank(
+        db: AppDatabase, workbook: XSSFWorkbook,
+        headerStyle: XSSFCellStyle, usedSheetNames: MutableSet<String>
+    ) {
+        val names = db.nameBankDao().getAllNamesList()
+        if (names.isEmpty()) return
+
+        val allCharacters = db.characterDao().getAllCharactersList()
+        val charMap = allCharacters.associateBy { it.id }
+
+        val sheetName = sanitizeSheetName("이름 은행", usedSheetNames)
+        val sheet = workbook.createSheet(sheetName)
+        val headers = listOf("이름", "성별", "출처", "비고", "사용", "사용캐릭터")
+        val headerRow = sheet.createRow(0)
+        headers.forEachIndexed { i, h ->
+            headerRow.createCell(i).apply { setCellValue(h); cellStyle = headerStyle }
+        }
+        names.forEachIndexed { i, n ->
+            val row = sheet.createRow(i + 1)
+            row.createCell(0).setCellValue(n.name)
+            row.createCell(1).setCellValue(n.gender)
+            row.createCell(2).setCellValue(n.origin)
+            row.createCell(3).setCellValue(n.notes)
+            row.createCell(4).setCellValue(if (n.isUsed) "Y" else "N")
+            row.createCell(5).setCellValue(n.usedByCharacterId?.let { charMap[it]?.name } ?: "")
         }
     }
 

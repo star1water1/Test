@@ -154,11 +154,17 @@ class TimelineFragment : Fragment() {
         }
     }
 
+    private var searchRunnable: Runnable? = null
+    private val searchHandler = android.os.Handler(android.os.Looper.getMainLooper())
+
     private fun setupSearch() {
         binding.searchEdit.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
-                viewModel.setSearchQuery(s.toString())
+                searchRunnable?.let { searchHandler.removeCallbacks(it) }
+                val query = s.toString()
+                searchRunnable = Runnable { viewModel.setSearchQuery(query) }
+                searchHandler.postDelayed(searchRunnable!!, 300)
             }
             override fun afterTextChanged(s: Editable?) {}
         })
