@@ -6,6 +6,8 @@ import android.content.Intent
 import android.widget.Toast
 import androidx.core.content.FileProvider
 import com.novelcharacter.app.data.database.AppDatabase
+import CharacterStateChange
+import FieldDefinition
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -163,8 +165,9 @@ class ExcelExporter(private val context: Context) {
         dataRowCount: Int,
         options: List<String>
     ) {
-        if (dataRowCount <= 0 || options.isEmpty()) return
-        val maxRow = minOf(dataRowCount, 10000)
+        if (options.isEmpty()) return
+        // 기존 데이터 + 여유 100행, 최대 10000행
+        val maxRow = minOf(maxOf(dataRowCount + DROPDOWN_EXTRA_ROWS, 1), MAX_DROPDOWN_ROWS)
         val addressList = CellRangeAddressList(1, maxRow, colIndex, colIndex)
         val dvHelper = sheet.dataValidationHelper
         val dvConstraint = dvHelper.createExplicitListConstraint(options.toTypedArray())
@@ -234,6 +237,8 @@ class ExcelExporter(private val context: Context) {
     }
 
     // ── 사용 안내 시트 ──
+
+    private data class ColDef(val name: String, val required: Boolean, val readOnly: Boolean, val selectOptions: List<String>? = null)
 
     private data class GuideLine(val section: String, val style: XSSFCellStyle, val text: String)
 
@@ -348,7 +353,7 @@ class ExcelExporter(private val context: Context) {
 
         // 세계관 드롭다운
         if (universes.isNotEmpty()) {
-            addDropdownValidation(sheet, 2, novels.size + 100, universes.map { it.name })
+            addDropdownValidation(sheet, 2, novels.size, universes.map { it.name })
         }
 
         sheet.setColumnWidth(0, 8000)
@@ -361,7 +366,7 @@ class ExcelExporter(private val context: Context) {
 
     private suspend fun exportFieldDefinitions(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
         val universes = db.universeDao().getAllUniversesList()
-        val allFields = mutableListOf<Pair<String, com.novelcharacter.app.data.model.FieldDefinition>>()
+        val allFields = mutableListOf<Pair<String, FieldDefinition>>()
         for (universe in universes) {
             val fields = db.fieldDefinitionDao().getFieldsByUniverseList(universe.id)
             fields.forEach { allFields.add(universe.name to it) }
@@ -403,14 +408,14 @@ class ExcelExporter(private val context: Context) {
 
         // 타입 드롭다운
         val fieldTypes = listOf("TEXT", "NUMBER", "SELECT", "MULTI_TEXT", "GRADE", "CALCULATED", "BODY_SIZE")
-        addDropdownValidation(sheet, 3, allFields.size + 100, fieldTypes)
+        addDropdownValidation(sheet, 3, allFields.size, fieldTypes)
 
         // 필수여부 드롭다운
-        addDropdownValidation(sheet, 7, allFields.size + 100, listOf("Y", "N"))
+        addDropdownValidation(sheet, 7, allFields.size, listOf("Y", "N"))
 
         // 세계관 드롭다운
         if (universes.isNotEmpty()) {
-            addDropdownValidation(sheet, 0, allFields.size + 100, universes.map { it.name })
+            addDropdownValidation(sheet, 0, allFields.size, universes.map { it.name })
         }
 
         sheet.setColumnWidth(0, 5000)
@@ -443,9 +448,6 @@ class ExcelExporter(private val context: Context) {
 
             val sheetName = sanitizeSheetName(universe.name, usedSheetNames)
             val sheet = workbook.createSheet(sheetName)
-
-            // 헤더 구성: (이름, 필수, 읽기전용, SELECT옵션)
-            data class ColDef(val name: String, val required: Boolean, val readOnly: Boolean, val selectOptions: List<String>? = null)
 
             val columns = mutableListOf<ColDef>()
             columns.add(ColDef("이름", required = true, readOnly = false))
@@ -505,14 +507,14 @@ class ExcelExporter(private val context: Context) {
             // 드롭다운 적용
             columns.forEachIndexed { colIndex, col ->
                 if (col.selectOptions != null) {
-                    addDropdownValidation(sheet, colIndex, universeChars.size + 100, col.selectOptions)
+                    addDropdownValidation(sheet, colIndex, universeChars.size, col.selectOptions)
                 }
             }
 
             // 작품 드롭다운
             if (universeNovels.isNotEmpty()) {
                 val novelColIndex = fields.size + 2
-                addDropdownValidation(sheet, novelColIndex, universeChars.size + 100, universeNovels.map { it.title })
+                addDropdownValidation(sheet, novelColIndex, universeChars.size, universeNovels.map { it.title })
             }
 
             // 컬럼 너비
@@ -624,7 +626,7 @@ class ExcelExporter(private val context: Context) {
 
         // 작품 드롭다운
         if (novels.isNotEmpty()) {
-            addDropdownValidation(sheet, 5, events.size + 100, novels.map { it.title })
+            addDropdownValidation(sheet, 5, events.size, novels.map { it.title })
         }
 
         sheet.setColumnWidth(0, 3000)
@@ -643,7 +645,7 @@ class ExcelExporter(private val context: Context) {
         val allCharacters = db.characterDao().getAllCharactersList()
         val novels = db.novelDao().getAllNovelsList()
 
-        val allChanges = mutableListOf<Triple<String, String, com.novelcharacter.app.data.model.CharacterStateChange>>()
+        val allChanges = mutableListOf<Triple<String, String, CharacterStateChange>>()
         for (character in allCharacters) {
             val changes = db.characterStateChangeDao().getChangesByCharacterList(character.id)
             val novelTitle = novels.find { it.id == character.novelId }?.title ?: ""
@@ -730,7 +732,7 @@ class ExcelExporter(private val context: Context) {
 
         // 관계 유형 드롭다운
         val relationTypes = listOf("부모-자식", "연인", "라이벌", "멘토-제자", "동료", "적", "형제자매", "친구", "기타")
-        addDropdownValidation(sheet, 2, allRelationships.size + 100, relationTypes)
+        addDropdownValidation(sheet, 2, allRelationships.size, relationTypes)
 
         sheet.setColumnWidth(0, 6000)
         sheet.setColumnWidth(1, 6000)
@@ -778,7 +780,7 @@ class ExcelExporter(private val context: Context) {
         }
 
         // 사용여부 드롭다운
-        addDropdownValidation(sheet, 4, allNames.size + 100, listOf("Y", "N"))
+        addDropdownValidation(sheet, 4, allNames.size, listOf("Y", "N"))
 
         sheet.setColumnWidth(0, 5000)
         sheet.setColumnWidth(1, 3000)
@@ -787,5 +789,10 @@ class ExcelExporter(private val context: Context) {
         sheet.setColumnWidth(4, 4000)
         sheet.setColumnWidth(5, 5000)
         sheet.freezeAndFilter(headers.size, allNames.size)
+    }
+
+    companion object {
+        private const val DROPDOWN_EXTRA_ROWS = 100
+        private const val MAX_DROPDOWN_ROWS = 10000
     }
 }

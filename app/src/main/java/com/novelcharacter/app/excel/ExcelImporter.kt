@@ -287,7 +287,7 @@ class ExcelImporter(private val context: Context) {
 
     private suspend fun importCharacterSheets(workbook: Workbook, result: ImportResult) {
         val universes = db.universeDao().getAllUniversesList()
-        val reservedNames = setOf("세계관", "작품", "필드 정의", "미분류 캐릭터", "사건 연표", "캐릭터 상태변화")
+        val reservedNames = setOf("사용 안내", "세계관", "작품", "필드 정의", "미분류 캐릭터", "사건 연표", "캐릭터 상태변화", "캐릭터 관계", "이름 은행")
 
         for (universe in universes) {
             // 시트 찾기: 세계관 이름과 일치하는 시트
