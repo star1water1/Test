@@ -39,6 +39,9 @@ class ExcelExporter(private val context: Context) {
 
     fun exportAll() {
         exportScope.launch {
+            withContext(Dispatchers.Main) {
+                Toast.makeText(appContext, "내보내기 준비 중...", Toast.LENGTH_SHORT).show()
+            }
             var workbook: XSSFWorkbook? = null
             try {
                 workbook = XSSFWorkbook()
@@ -66,7 +69,7 @@ class ExcelExporter(private val context: Context) {
             } catch (e: Exception) {
                 android.util.Log.e("ExcelExporter", "Export failed", e)
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(appContext, appContext.getString(com.novelcharacter.app.R.string.export_failed_retry), Toast.LENGTH_LONG).show()
+                    Toast.makeText(appContext, appContext.getString(com.novelcharacter.app.R.string.export_failed_retry) + "\n" + e.message, Toast.LENGTH_LONG).show()
                 }
             } finally {
                 try { workbook?.close() } catch (_: Exception) {}

@@ -25,6 +25,11 @@ class UniverseListFragment : Fragment() {
     private val viewModel: UniverseViewModel by viewModels()
 
     private lateinit var adapter: UniverseAdapter
+    private var importerInitialized = false
+    private val importer by lazy {
+        importerInitialized = true
+        com.novelcharacter.app.excel.ExcelImporter(requireContext().applicationContext)
+    }
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
@@ -35,6 +40,7 @@ class UniverseListFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        importer.registerLauncher(this)
         setupRecyclerView()
         setupFab()
         setupToolbarMenu()
@@ -68,6 +74,14 @@ class UniverseListFragment : Fragment() {
     private fun setupToolbarMenu() {
         binding.toolbar.setOnMenuItemClickListener { item ->
             when (item.itemId) {
+                R.id.action_export -> {
+                    exportToExcel()
+                    true
+                }
+                R.id.action_import -> {
+                    importFromExcel()
+                    true
+                }
                 R.id.action_preset -> {
                     showPresetDialog()
                     true
@@ -171,9 +185,31 @@ class UniverseListFragment : Fragment() {
             .show()
     }
 
+    private var exporter: com.novelcharacter.app.excel.ExcelExporter? = null
+
+    private fun exportToExcel() {
+        val activity = activity ?: return
+        exporter = com.novelcharacter.app.excel.ExcelExporter(activity)
+        exporter?.exportAll()
+    }
+
+    private fun importFromExcel() {
+        if (!isAdded) return
+        importer.showImportDialog(this)
+    }
+
     override fun onDestroyView() {
         binding.universeRecyclerView.adapter = null
         super.onDestroyView()
         _binding = null
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        exporter?.cancel()
+        exporter = null
+        if (importerInitialized) {
+            importer.cleanup()
+        }
     }
 }
