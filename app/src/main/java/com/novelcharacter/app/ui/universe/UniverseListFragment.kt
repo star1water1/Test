@@ -221,8 +221,10 @@ class UniverseListFragment : Fragment() {
                 when (which) {
                     0 -> exporter?.exportAll()
                     1 -> exporter?.exportAll { file, fileName ->
-                        pendingExportFile = file
-                        saveFileLauncher.launch(fileName)
+                        if (isAdded) {
+                            pendingExportFile = file
+                            saveFileLauncher.launch(fileName)
+                        }
                     }
                 }
             }
