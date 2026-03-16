@@ -308,7 +308,7 @@ class ExcelImportService(private val db: AppDatabase) {
                     ?: if (universe != null) {
                         resolveNovelId(novelTitle, universe.id)
                     } else {
-                        resolveNovelIdNoUniverse(novelTitle)
+                        resolveNovelId(novelTitle)
                     }
 
                 val imagePaths = if (imageColIndex >= 0) getCellString(row, imageColIndex) else "[]"
@@ -587,7 +587,9 @@ class ExcelImportService(private val db: AppDatabase) {
         if (getCellString(headerRow, 0) != spec.firstColumnHeader) return
 
         val charCodeColIndex = spec.findColumn(headerRow, "사용캐릭터코드")
-        val existingNames = db.nameBankDao().getAllNamesList().toMutableList()
+        val existingNamesMap = db.nameBankDao().getAllNamesList()
+            .associateBy { "${it.name}\u0000${it.gender}" }
+            .toMutableMap()
 
         for (i in 1..sheet.lastRowNum) {
             try {
@@ -607,7 +609,8 @@ class ExcelImportService(private val db: AppDatabase) {
                 } else null
                     ?: if (usedByCharName.isNotBlank()) findCharacterByName(usedByCharName, null)?.id else null
 
-                val existing = existingNames.find { it.name == name && it.gender == gender }
+                val mapKey = "${name}\u0000${gender}"
+                val existing = existingNamesMap[mapKey]
 
                 if (existing != null) {
                     db.nameBankDao().update(existing.copy(
@@ -621,7 +624,7 @@ class ExcelImportService(private val db: AppDatabase) {
                         isUsed = isUsed, usedByCharacterId = usedByCharacterId
                     )
                     val newId = db.nameBankDao().insert(newEntry)
-                    existingNames.add(newEntry.copy(id = newId))
+                    existingNamesMap[mapKey] = newEntry.copy(id = newId)
                     result.newNameBank++
                 }
             } catch (e: Exception) {
@@ -653,10 +656,9 @@ class ExcelImportService(private val db: AppDatabase) {
     private fun buildColumnFieldMap(headerRow: Row, fields: List<FieldDefinition>): Map<Int, FieldDefinition> {
         val map = mutableMapOf<Int, FieldDefinition>()
         val lastCol = headerRow.lastCellNum.toInt()
-        val skipHeaders = setOf("작품", "이미지경로", "메모", "태그", "코드", "작품코드")
         for (col in 1 until lastCol) {
             val headerName = getCellString(headerRow, col)
-            if (headerName in skipHeaders) continue
+            if (headerName in CHARACTER_FIXED_HEADERS) continue
             val field = fields.find { it.name == headerName }
             if (field != null) {
                 map[col] = field
@@ -665,30 +667,20 @@ class ExcelImportService(private val db: AppDatabase) {
         return map
     }
 
-    private suspend fun resolveNovelId(novelTitle: String, universeId: Long): Long? {
+    private suspend fun resolveNovelId(novelTitle: String, universeId: Long? = null): Long? {
         if (novelTitle.isBlank()) return null
-        val cacheKey = novelTitle to universeId as Long?
+        val cacheKey = novelTitle to universeId
         novelIdCache[cacheKey]?.let { return it }
-        val existing = db.novelDao().getNovelByTitleAndUniverse(novelTitle, universeId)
+        val existing = if (universeId != null) {
+            db.novelDao().getNovelByTitleAndUniverse(novelTitle, universeId)
+        } else {
+            db.novelDao().getNovelByTitleNoUniverse(novelTitle)
+        }
         if (existing != null) {
             novelIdCache[cacheKey] = existing.id
             return existing.id
         }
         val newId = db.novelDao().insert(Novel(title = novelTitle, universeId = universeId))
-        novelIdCache[cacheKey] = newId
-        return newId
-    }
-
-    private suspend fun resolveNovelIdNoUniverse(novelTitle: String): Long? {
-        if (novelTitle.isBlank()) return null
-        val cacheKey = novelTitle to null
-        novelIdCache[cacheKey]?.let { return it }
-        val existing = db.novelDao().getNovelByTitleNoUniverse(novelTitle)
-        if (existing != null) {
-            novelIdCache[cacheKey] = existing.id
-            return existing.id
-        }
-        val newId = db.novelDao().insert(Novel(title = novelTitle))
         novelIdCache[cacheKey] = newId
         return newId
     }

@@ -32,6 +32,9 @@ data class SheetSpec(
     }
 }
 
+/** Fixed (non-dynamic-field) column headers in character sheets. */
+val CHARACTER_FIXED_HEADERS = setOf("이름", "이미지경로", "작품", "메모", "태그", "코드", "작품코드")
+
 /** All reserved (non-universe) sheet names used by the app. */
 val RESERVED_SHEET_NAMES = setOf(
     "사용 안내",

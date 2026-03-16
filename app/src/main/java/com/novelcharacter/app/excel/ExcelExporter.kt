@@ -532,6 +532,7 @@ class ExcelExporter(private val context: Context) {
             val row = sheet.createRow(index + 1)
             val novel = character.novelId?.let { novelMap[it] }
             val fieldValues = allFieldValues[character.id] ?: emptyList()
+            val fieldValueMap = fieldValues.associateBy { it.fieldDefinitionId }
             var col = 0
 
             // 이름
@@ -539,7 +540,7 @@ class ExcelExporter(private val context: Context) {
 
             // 동적 필드
             for (field in fields) {
-                val value = fieldValues.find { it.fieldDefinitionId == field.id }?.value ?: ""
+                val value = fieldValueMap[field.id]?.value ?: ""
                 row.createCell(col++).setCellValue(value)
             }
 
@@ -607,15 +608,20 @@ class ExcelExporter(private val context: Context) {
     // ── 캐릭터 상태변화 ──
 
     private suspend fun exportStateChanges(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
+        val allChangesRaw = db.characterStateChangeDao().getAllChangesList()
+        if (allChangesRaw.isEmpty()) return
+
+        val changesByCharId = allChangesRaw.groupBy { it.characterId }
+        val charIds = changesByCharId.keys
         val allCharacters = db.characterDao().getAllCharactersList()
+        val charMap = allCharacters.filter { it.id in charIds }.associateBy { it.id }
         val novels = db.novelDao().getAllNovelsList()
         val novelMap = novels.associateBy { it.id }
 
         data class ChangeRow(val character: Character, val novelTitle: String, val change: CharacterStateChange)
         val allChanges = mutableListOf<ChangeRow>()
-        for (character in allCharacters) {
-            val changes = db.characterStateChangeDao().getChangesByCharacterList(character.id)
-            if (changes.isEmpty()) continue
+        for ((charId, changes) in changesByCharId) {
+            val character = charMap[charId] ?: continue
             val novelTitle = character.novelId?.let { novelMap[it]?.title } ?: ""
             changes.forEach { allChanges.add(ChangeRow(character, novelTitle, it)) }
         }

@@ -18,6 +18,9 @@ interface CharacterStateChangeDao {
     @Query("SELECT * FROM character_state_changes WHERE characterId = :characterId AND fieldKey = :fieldKey ORDER BY year ASC")
     suspend fun getChangesByField(characterId: Long, fieldKey: String): List<CharacterStateChange>
 
+    @Query("SELECT * FROM character_state_changes ORDER BY characterId ASC, year ASC, month ASC, day ASC")
+    suspend fun getAllChangesList(): List<CharacterStateChange>
+
     @Query("SELECT * FROM character_state_changes WHERE id = :id")
     suspend fun getChangeById(id: Long): CharacterStateChange?
 
