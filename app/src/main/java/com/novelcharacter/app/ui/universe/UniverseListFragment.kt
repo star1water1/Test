@@ -7,6 +7,7 @@ import android.view.ViewGroup
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
@@ -186,11 +187,34 @@ class UniverseListFragment : Fragment() {
     }
 
     private var exporter: com.novelcharacter.app.excel.ExcelExporter? = null
+    private var pendingExportFile: java.io.File? = null
+
+    private val saveFileLauncher = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    ) { uri ->
+        val file = pendingExportFile
+        if (uri != null && file != null) {
+            exporter?.writeToUri(uri, file)
+        }
+        pendingExportFile = null
+    }
 
     private fun exportToExcel() {
         val activity = activity ?: return
-        exporter = com.novelcharacter.app.excel.ExcelExporter(activity)
-        exporter?.exportAll()
+        AlertDialog.Builder(requireContext())
+            .setTitle(R.string.export_mode_title)
+            .setItems(arrayOf(getString(R.string.export_mode_share), getString(R.string.export_mode_save))) { _, which ->
+                exporter = com.novelcharacter.app.excel.ExcelExporter(activity)
+                when (which) {
+                    0 -> exporter?.exportAll()
+                    1 -> exporter?.exportAll { file, fileName ->
+                        pendingExportFile = file
+                        saveFileLauncher.launch(fileName)
+                    }
+                }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
     }
 
     private fun importFromExcel() {

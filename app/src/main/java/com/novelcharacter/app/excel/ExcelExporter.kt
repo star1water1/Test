@@ -3,6 +3,7 @@ package com.novelcharacter.app.excel
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
 import androidx.core.content.FileProvider
 import com.novelcharacter.app.data.database.AppDatabase
@@ -37,7 +38,11 @@ class ExcelExporter(private val context: Context) {
 
     private lateinit var styles: ExcelStyles
 
-    fun exportAll() {
+    /**
+     * @param onFileReady if non-null, called with the temp file instead of opening a share sheet.
+     *                    The caller is responsible for launching SAF to let the user pick a save location.
+     */
+    fun exportAll(onFileReady: ((File, String) -> Unit)? = null) {
         // Create fresh Job/scope in case a previous export completed or was cancelled
         if (supervisorJob.isCompleted || supervisorJob.isCancelled) {
             supervisorJob = kotlinx.coroutines.SupervisorJob()
@@ -69,7 +74,11 @@ class ExcelExporter(private val context: Context) {
                 val file = saveWorkbook(workbook, fileName)
 
                 withContext(Dispatchers.Main) {
-                    shareFile(file)
+                    if (onFileReady != null) {
+                        onFileReady(file, fileName)
+                    } else {
+                        shareFile(file)
+                    }
                 }
             } catch (e: Exception) {
                 android.util.Log.e("ExcelExporter", "Export failed", e)
@@ -78,6 +87,26 @@ class ExcelExporter(private val context: Context) {
                 }
             } finally {
                 try { workbook?.close() } catch (_: Exception) {}
+            }
+        }
+    }
+
+    fun writeToUri(uri: Uri, sourceFile: File) {
+        exportScope.launch {
+            try {
+                appContext.contentResolver.openOutputStream(uri)?.use { outputStream ->
+                    sourceFile.inputStream().use { inputStream ->
+                        inputStream.copyTo(outputStream)
+                    }
+                }
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(appContext, appContext.getString(com.novelcharacter.app.R.string.export_save_success), Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("ExcelExporter", "Save to URI failed", e)
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(appContext, appContext.getString(com.novelcharacter.app.R.string.export_save_failed) + "\n" + e.message, Toast.LENGTH_LONG).show()
+                }
             }
         }
     }

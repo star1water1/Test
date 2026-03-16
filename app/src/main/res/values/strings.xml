@@ -246,4 +246,11 @@
     <string name="day_suffix">%d일</string>
     <string name="section_header_format">%1$s (%2$d)</string>
     <string name="auto_calculated_value">%1$s: %2$s (자동 계산)</string>
+
+    <!-- Export mode -->
+    <string name="export_mode_title">내보내기 방식 선택</string>
+    <string name="export_mode_share">공유하기</string>
+    <string name="export_mode_save">파일로 저장</string>
+    <string name="export_save_success">파일이 저장되었습니다</string>
+    <string name="export_save_failed">파일 저장에 실패했습니다</string>
 </resources>
