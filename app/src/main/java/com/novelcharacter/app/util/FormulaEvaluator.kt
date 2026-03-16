@@ -81,7 +81,7 @@ class FormulaEvaluator(
                 formula[i].isDigit() || (formula[i] == '.' && i + 1 < formula.length && formula[i + 1].isDigit()) -> {
                     val start = i
                     while (i < formula.length && (formula[i].isDigit() || formula[i] == '.')) i++
-                    tokens.add(Token.Num(formula.substring(start, i).toDouble()))
+                    tokens.add(Token.Num(formula.substring(start, i).toDoubleOrNull() ?: 0.0))
                 }
                 formula.startsWith("field(", i) -> {
                     i += 6 // skip "field("

@@ -85,11 +85,13 @@ class UniverseListFragment : Fragment() {
             .setItems(names) { _, which ->
                 val template = templates[which]
                 viewModel.applyPreset(template) {
-                    Toast.makeText(
-                        requireContext(),
-                        getString(R.string.preset_loaded, template.universe.name),
-                        Toast.LENGTH_SHORT
-                    ).show()
+                    if (isAdded) {
+                        Toast.makeText(
+                            requireContext(),
+                            getString(R.string.preset_loaded, template.universe.name),
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
                 }
             }
             .setNegativeButton(R.string.cancel, null)

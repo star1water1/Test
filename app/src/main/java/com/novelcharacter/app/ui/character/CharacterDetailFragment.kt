@@ -34,6 +34,7 @@ import com.novelcharacter.app.ui.adapter.StateChangeAdapter
 import com.novelcharacter.app.ui.adapter.TimelineAdapter
 import com.novelcharacter.app.util.TimeStateResolver
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -60,6 +61,9 @@ class CharacterDetailFragment : Fragment() {
     private lateinit var stateChangeAdapter: StateChangeAdapter
 
     private val timeStateResolver = TimeStateResolver()
+
+    // Track displayCharacter coroutine to cancel previous one
+    private var displayJob: Job? = null
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
@@ -193,26 +197,33 @@ class CharacterDetailFragment : Fragment() {
             val adjustedMin = minYear.toFloat()
             val adjustedMax = if (maxYear <= minYear) (minYear + 1).toFloat() else maxYear.toFloat()
 
-            binding.yearSlider.isEnabled = true
-            binding.yearSlider.valueFrom = adjustedMin
-            binding.yearSlider.valueTo = adjustedMax
             val totalRange = adjustedMax - adjustedMin
-            binding.yearSlider.stepSize = when {
+            val stepSize = when {
                 totalRange > 10000 -> 100f
                 totalRange > 1000 -> 10f
                 else -> 1f
             }
 
-            // Set initial value
-            if (currentSliderYear == null) {
-                binding.yearSlider.value = adjustedMin
-                binding.yearLabel.text = "${minYear}년"
+            // Align valueFrom/valueTo to stepSize to prevent IllegalStateException
+            val alignedMin = Math.floor((adjustedMin / stepSize).toDouble()).toFloat() * stepSize
+            val alignedMax = Math.ceil((adjustedMax / stepSize).toDouble()).toFloat() * stepSize
+
+            binding.yearSlider.isEnabled = true
+            // Set stepSize to 0 first to avoid constraint violations during range updates
+            binding.yearSlider.stepSize = 0f
+            binding.yearSlider.valueFrom = alignedMin
+            binding.yearSlider.valueTo = alignedMax.coerceAtLeast(alignedMin + stepSize)
+            binding.yearSlider.stepSize = stepSize
+
+            // Set initial value, aligned to stepSize
+            val targetValue = if (currentSliderYear == null) {
+                alignedMin
             } else {
-                // Clamp to range
-                val clampedYear = currentSliderYear!!.coerceIn(minYear, adjustedMax.toInt())
-                binding.yearSlider.value = clampedYear.toFloat()
-                binding.yearLabel.text = "${clampedYear}년"
+                val clamped = currentSliderYear!!.toFloat().coerceIn(alignedMin, binding.yearSlider.valueTo)
+                Math.round(clamped / stepSize) * stepSize
             }
+            binding.yearSlider.value = targetValue
+            binding.yearLabel.text = "${targetValue.toInt()}년"
         }
     }
 
@@ -398,8 +409,9 @@ class CharacterDetailFragment : Fragment() {
         // 기본 정보
         binding.detailName.text = character.name
 
-        // 작품명 + 동적 필드 로드
-        lifecycleScope.launch {
+        // 작품명 + 동적 필드 로드 - cancel previous job to prevent racing
+        displayJob?.cancel()
+        displayJob = lifecycleScope.launch {
             val novel = character.novelId?.let { viewModel.getNovelById(it) }
             binding.detailNovel.text = "작품: ${novel?.title ?: "미지정"}"
 
@@ -686,6 +698,11 @@ class CharacterDetailFragment : Fragment() {
 
         binding.imageViewPager.visibility = View.VISIBLE
         binding.imageViewPager.adapter = object : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
+
+            inner class ImageViewHolder(val imageView: ImageView) : RecyclerView.ViewHolder(imageView) {
+                var loadJob: Job? = null
+            }
+
             override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
                 val imageView = ImageView(parent.context).apply {
                     layoutParams = ViewGroup.LayoutParams(
@@ -694,20 +711,25 @@ class CharacterDetailFragment : Fragment() {
                     )
                     scaleType = ImageView.ScaleType.FIT_CENTER
                 }
-                return object : RecyclerView.ViewHolder(imageView) {}
+                return ImageViewHolder(imageView)
             }
 
             override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
-                val imageView = holder.itemView as ImageView
-                imageView.setImageResource(R.drawable.ic_character_placeholder)
-                lifecycleScope.launch {
+                val vh = holder as ImageViewHolder
+                vh.loadJob?.cancel()
+                vh.imageView.setImageResource(R.drawable.ic_character_placeholder)
+                vh.loadJob = lifecycleScope.launch {
                     val bitmap = withContext(Dispatchers.IO) {
                         decodeSampledBitmap(imagePaths[position], 1024, 1024)
                     }
                     if (bitmap != null) {
-                        imageView.setImageBitmap(bitmap)
+                        vh.imageView.setImageBitmap(bitmap)
                     }
                 }
+            }
+
+            override fun onViewRecycled(holder: RecyclerView.ViewHolder) {
+                (holder as? ImageViewHolder)?.loadJob?.cancel()
             }
 
             override fun getItemCount() = imagePaths.size

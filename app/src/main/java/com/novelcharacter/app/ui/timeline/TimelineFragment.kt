@@ -176,11 +176,6 @@ class TimelineFragment : Fragment() {
             updateZoomLevelLabel(level)
         }
 
-        // Observe zoom level label
-        viewModel.zoomLevelLabel.observe(viewLifecycleOwner) { label ->
-            binding.zoomLevelLabel.text = label
-        }
-
         // Observe visible range to update year range label
         viewModel.visibleRange.observe(viewLifecycleOwner) { (start, end) ->
             binding.yearRangeLabel.text = getString(R.string.year_range_format, start, end)
@@ -230,30 +225,31 @@ class TimelineFragment : Fragment() {
         val rangeFrom = (minYear - 10).toFloat()
         val rangeTo = (maxYear + 10).toFloat()
 
-        // Ensure valueFrom < valueTo
-        if (rangeFrom >= rangeTo) {
-            binding.yearSlider.valueFrom = rangeFrom - 10
-            binding.yearSlider.valueTo = rangeTo + 10
-        } else {
-            binding.yearSlider.valueFrom = rangeFrom
-            binding.yearSlider.valueTo = rangeTo
-        }
-
         // Dynamically adjust step size based on range to avoid excessive discrete steps
         val totalRange = rangeTo - rangeFrom
-        binding.yearSlider.stepSize = when {
+        val stepSize = when {
             totalRange > 10000 -> 100f
             totalRange > 1000 -> 10f
             else -> 1f
         }
 
-        // Set current value within range
+        // Align range to stepSize to prevent IllegalStateException
+        val alignedFrom = Math.floor((rangeFrom / stepSize).toDouble()).toFloat() * stepSize
+        val alignedTo = Math.ceil((rangeTo / stepSize).toDouble()).toFloat() * stepSize
+        val safeFrom = alignedFrom
+        val safeTo = alignedTo.coerceAtLeast(alignedFrom + stepSize)
+
+        // Set stepSize to 0 first to avoid constraint violations during range updates
+        binding.yearSlider.stepSize = 0f
+        binding.yearSlider.valueFrom = safeFrom
+        binding.yearSlider.valueTo = safeTo
+        binding.yearSlider.stepSize = stepSize
+
+        // Set current value within range, aligned to stepSize
         val currentCenter = viewModel.centerYear.value ?: 0
-        val clampedValue = currentCenter.toFloat().coerceIn(
-            binding.yearSlider.valueFrom,
-            binding.yearSlider.valueTo
-        )
-        binding.yearSlider.value = clampedValue
+        val clamped = currentCenter.toFloat().coerceIn(safeFrom, safeTo)
+        val alignedValue = Math.round(clamped / stepSize) * stepSize
+        binding.yearSlider.value = alignedValue
     }
 
     private fun showEditEventDialog(event: TimelineEvent?) {

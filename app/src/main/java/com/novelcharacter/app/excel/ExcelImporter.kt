@@ -67,7 +67,8 @@ class ExcelImporter(context: Context) {
                             val universes = db.universeDao().getAllUniversesList()
 
                             for (universe in universes) {
-                                val sheetName = universe.name.take(31)
+                                // Match ExcelExporter's sanitizeSheetName: replace special chars and truncate
+                                val sheetName = universe.name.replace(Regex("[\\\\/?*\\[\\]]"), "_").take(31)
                                 val sheet = wb.getSheet(sheetName) ?: continue
                                 val fields = db.fieldDefinitionDao().getFieldsByUniverseList(universe.id)
                                 val headerRow = sheet.getRow(0) ?: continue

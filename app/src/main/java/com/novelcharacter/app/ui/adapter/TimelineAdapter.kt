@@ -11,6 +11,7 @@ import com.novelcharacter.app.data.model.TimelineEvent
 import com.novelcharacter.app.databinding.ItemTimelineBinding
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 
 /**
@@ -142,6 +143,7 @@ class TimelineAdapter(
             binding.characterChipGroup.removeAllViews()
             loadJob = coroutineScope.launch {
                 val characters = loadCharactersForEvent(event.id)
+                ensureActive() // Check cancellation before modifying UI
                 characters.forEach { character ->
                     val chip = Chip(binding.root.context).apply {
                         text = character.name

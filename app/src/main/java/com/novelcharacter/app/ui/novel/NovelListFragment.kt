@@ -25,6 +25,12 @@ class NovelListFragment : Fragment() {
     private var universeId: Long = -1L
     private val importer by lazy { com.novelcharacter.app.excel.ExcelImporter(requireContext()) }
 
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        // registerForActivityResult must be called before STARTED state
+        importer.registerLauncher(this)
+    }
+
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
     ): View {
@@ -35,7 +41,6 @@ class NovelListFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        importer.registerLauncher(this)
         universeId = arguments?.getLong("universeId", -1L) ?: -1L
         viewModel.setUniverseFilter(universeId)
 

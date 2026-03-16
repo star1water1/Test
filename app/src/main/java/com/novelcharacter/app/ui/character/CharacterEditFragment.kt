@@ -552,8 +552,8 @@ class CharacterEditFragment : Fragment() {
 
             lifecycleScope.launch {
                 if (characterId != -1L) {
-                    // 기존 캐릭터 수정
-                    viewModel.updateCharacter(character)
+                    // 기존 캐릭터 수정 - use suspend version to ensure order
+                    viewModel.updateCharacterSuspend(character)
                     val fieldValues = collectFieldValues(characterId)
                     viewModel.saveAllFieldValues(characterId, fieldValues)
                 } else {
