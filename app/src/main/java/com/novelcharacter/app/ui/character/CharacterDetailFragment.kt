@@ -152,6 +152,7 @@ class CharacterDetailFragment : Fragment() {
 
         viewLifecycleOwner.lifecycleScope.launch {
             val novel = character.novelId?.let { viewModel.getNovelById(it) }
+            if (_binding == null) return@launch
             binding.detailNovel.text = getString(R.string.novel_label_format, novel?.title ?: getString(R.string.novel_unassigned))
 
             if (character.memo.isNotBlank()) {

@@ -97,6 +97,7 @@ class ExcelImporter(private val context: Context) {
                 workbook = inputStream.use { WorkbookFactory.create(it) }
                 val result = ImportResult()
 
+                novelIdCache.clear()
                 db.withTransaction {
                     // 의존성 순서대로 가져오기
                     importUniverses(workbook, result)
@@ -725,18 +726,34 @@ class ExcelImporter(private val context: Context) {
         return -1
     }
 
+    private val novelIdCache = mutableMapOf<Pair<String, Long?>, Long?>()
+
     private suspend fun resolveNovelId(novelTitle: String, universeId: Long): Long? {
         if (novelTitle.isBlank()) return null
+        val cacheKey = novelTitle to universeId as Long?
+        novelIdCache[cacheKey]?.let { return it }
         val existing = db.novelDao().getNovelByTitleAndUniverse(novelTitle, universeId)
-        if (existing != null) return existing.id
-        return db.novelDao().insert(Novel(title = novelTitle, universeId = universeId))
+        if (existing != null) {
+            novelIdCache[cacheKey] = existing.id
+            return existing.id
+        }
+        val newId = db.novelDao().insert(Novel(title = novelTitle, universeId = universeId))
+        novelIdCache[cacheKey] = newId
+        return newId
     }
 
     private suspend fun resolveNovelIdNoUniverse(novelTitle: String): Long? {
         if (novelTitle.isBlank()) return null
+        val cacheKey = novelTitle to null
+        novelIdCache[cacheKey]?.let { return it }
         val existing = db.novelDao().getNovelByTitleNoUniverse(novelTitle)
-        if (existing != null) return existing.id
-        return db.novelDao().insert(Novel(title = novelTitle))
+        if (existing != null) {
+            novelIdCache[cacheKey] = existing.id
+            return existing.id
+        }
+        val newId = db.novelDao().insert(Novel(title = novelTitle))
+        novelIdCache[cacheKey] = newId
+        return newId
     }
 
     private suspend fun findCharacterByName(name: String, preferredNovelId: Long?): Character? {

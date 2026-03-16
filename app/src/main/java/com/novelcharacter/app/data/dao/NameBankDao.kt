@@ -36,6 +36,9 @@ interface NameBankDao {
     @Query("UPDATE name_bank SET isUsed = 0, usedByCharacterId = NULL WHERE id = :id")
     suspend fun markAsAvailable(id: Long)
 
+    @Query("UPDATE name_bank SET isUsed = 0, usedByCharacterId = NULL WHERE usedByCharacterId = :characterId")
+    suspend fun resetUsageByCharacter(characterId: Long)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(entries: List<NameBankEntry>)
 }

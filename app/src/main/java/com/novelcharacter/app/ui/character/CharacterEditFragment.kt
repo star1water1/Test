@@ -612,6 +612,7 @@ class CharacterEditFragment : Fragment() {
     }
 
     override fun onDestroyView() {
+        binding.imageRecyclerView.adapter = null
         super.onDestroyView()
         imageAdapter = null
         _binding = null
