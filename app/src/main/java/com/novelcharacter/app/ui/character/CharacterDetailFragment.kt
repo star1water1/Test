@@ -201,9 +201,9 @@ class CharacterDetailFragment : Fragment() {
         binding.imageViewPager.adapter = object : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
             override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
                 val imageView = ImageView(parent.context).apply {
-                    layoutParams = ViewGroup.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.MATCH_PARENT
+                    layoutParams = RecyclerView.LayoutParams(
+                        RecyclerView.LayoutParams.MATCH_PARENT,
+                        RecyclerView.LayoutParams.MATCH_PARENT
                     )
                     scaleType = ImageView.ScaleType.FIT_CENTER
                 }

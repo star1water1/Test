@@ -3,6 +3,7 @@ package com.novelcharacter.app.ui.character
 import android.content.Context
 import android.content.res.Resources
 import android.graphics.Typeface
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.cardview.widget.CardView
@@ -40,9 +41,9 @@ class DynamicFieldRenderer(
 
             val cardContent = LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
+                layoutParams = FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT
                 )
             }
 
@@ -121,9 +122,9 @@ class DynamicFieldRenderer(
 
             val specialContent = LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
+                layoutParams = FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT
                 )
             }
 
@@ -169,9 +170,9 @@ class DynamicFieldRenderer(
 
             val cardContent = LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
+                layoutParams = FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT
                 )
             }
 

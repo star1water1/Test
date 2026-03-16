@@ -438,9 +438,9 @@ class TimelineFragment : Fragment() {
         recyclerView.adapter = object : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
             override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
                 val checkBox = CheckBox(parent.context).apply {
-                    layoutParams = LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    layoutParams = RecyclerView.LayoutParams(
+                        RecyclerView.LayoutParams.MATCH_PARENT,
+                        RecyclerView.LayoutParams.WRAP_CONTENT
                     ).apply { bottomMargin = 4 }
                     textSize = 14f
                 }

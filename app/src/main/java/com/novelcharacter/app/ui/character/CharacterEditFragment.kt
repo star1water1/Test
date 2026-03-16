@@ -487,7 +487,7 @@ class CharacterEditFragment : Fragment() {
             imageAdapter = object : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
                 override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
                     val imageView = ImageView(parent.context).apply {
-                        layoutParams = ViewGroup.MarginLayoutParams(200, 200).apply {
+                        layoutParams = RecyclerView.LayoutParams(200, 200).apply {
                             marginEnd = 8
                         }
                         scaleType = ImageView.ScaleType.CENTER_CROP
