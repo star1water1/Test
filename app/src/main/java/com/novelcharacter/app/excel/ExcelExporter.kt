@@ -6,8 +6,8 @@ import android.content.Intent
 import android.widget.Toast
 import androidx.core.content.FileProvider
 import com.novelcharacter.app.data.database.AppDatabase
-import CharacterStateChange
-import FieldDefinition
+import com.novelcharacter.app.data.model.CharacterStateChange
+import com.novelcharacter.app.data.model.FieldDefinition
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
