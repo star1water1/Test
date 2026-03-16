@@ -21,10 +21,10 @@ interface CharacterStateChangeDao {
     @Query("SELECT * FROM character_state_changes WHERE id = :id")
     suspend fun getChangeById(id: Long): CharacterStateChange?
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(change: CharacterStateChange): Long
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertAll(changes: List<CharacterStateChange>)
 
     @Update

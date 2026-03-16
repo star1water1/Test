@@ -25,7 +25,7 @@ interface TimelineDao {
     @Query("SELECT * FROM timeline_events WHERE description LIKE '%' || :query || '%' ORDER BY year ASC")
     fun searchEvents(query: String): LiveData<List<TimelineEvent>>
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(event: TimelineEvent): Long
 
     @Update
@@ -37,11 +37,11 @@ interface TimelineDao {
     @Query("DELETE FROM timeline_events WHERE id = :id")
     suspend fun deleteById(id: Long)
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertAll(events: List<TimelineEvent>)
 
     // Cross-reference (연표-캐릭터 연결)
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertCrossRef(crossRef: TimelineCharacterCrossRef)
 
     @Delete

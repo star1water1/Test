@@ -75,6 +75,7 @@ class CharacterEditFragment : Fragment() {
 
         characterId = arguments?.getLong("characterId", -1L) ?: -1L
         presetNovelId = arguments?.getLong("novelId", -1L) ?: -1L
+        appDir = requireContext().filesDir
 
         binding.toolbar.setNavigationOnClickListener { findNavController().popBackStack() }
         binding.toolbar.title = if (characterId == -1L) getString(R.string.add_character) else getString(R.string.edit_character)
@@ -533,11 +534,13 @@ class CharacterEditFragment : Fragment() {
         }
     }
 
+    private var appDir: java.io.File? = null
+
     private fun decodeSampledBitmap(path: String, reqWidth: Int, reqHeight: Int): android.graphics.Bitmap? {
         return try {
             val file = java.io.File(path)
-            val appDir = requireContext().filesDir
-            if (!file.canonicalPath.startsWith(appDir.canonicalPath)) {
+            val dir = appDir ?: return null
+            if (!file.canonicalPath.startsWith(dir.canonicalPath)) {
                 return null // Reject paths outside app directory
             }
             val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }

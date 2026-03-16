@@ -15,7 +15,7 @@ interface UniverseDao {
     @Query("SELECT * FROM universes WHERE id = :id")
     suspend fun getUniverseById(id: Long): Universe?
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(universe: Universe): Long
 
     @Update

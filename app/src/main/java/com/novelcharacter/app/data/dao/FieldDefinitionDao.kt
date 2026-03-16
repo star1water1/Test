@@ -24,10 +24,10 @@ interface FieldDefinitionDao {
     @Query("SELECT groupName FROM field_definitions WHERE universeId = :universeId GROUP BY groupName ORDER BY MIN(displayOrder)")
     suspend fun getGroupNames(universeId: Long): List<String>
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(field: FieldDefinition): Long
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertAll(fields: List<FieldDefinition>)
 
     @Update

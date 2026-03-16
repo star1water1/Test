@@ -30,7 +30,10 @@ interface CharacterDao {
     @Query("SELECT * FROM characters WHERE name = :name AND novelId = :novelId LIMIT 1")
     suspend fun getCharacterByNameAndNovel(name: String, novelId: Long): Character?
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Query("SELECT * FROM characters WHERE name = :name LIMIT 1")
+    suspend fun getCharacterByName(name: String): Character?
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(character: Character): Long
 
     @Update
@@ -42,6 +45,6 @@ interface CharacterDao {
     @Query("DELETE FROM characters WHERE id = :id")
     suspend fun deleteById(id: Long)
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertAll(characters: List<Character>)
 }

@@ -11,6 +11,7 @@ import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.google.gson.Gson
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.databinding.FragmentFieldManageBinding
@@ -47,6 +48,7 @@ class FieldManageFragment : Fragment() {
         setupRecyclerView()
         setupFab()
         observeData()
+        setupFieldEditResultListener()
     }
 
     private fun setupToolbar() {
@@ -122,6 +124,20 @@ class FieldManageFragment : Fragment() {
             }
         }
         dialog.show(childFragmentManager, "FieldEditDialog")
+    }
+
+    private fun setupFieldEditResultListener() {
+        childFragmentManager.setFragmentResultListener(
+            FieldEditDialog.RESULT_KEY, viewLifecycleOwner
+        ) { _, bundle ->
+            val json = bundle.getString(FieldEditDialog.RESULT_FIELD_JSON) ?: return@setFragmentResultListener
+            val savedField = Gson().fromJson(json, FieldDefinition::class.java)
+            if (savedField.id == 0L) {
+                viewModel.insertField(savedField)
+            } else {
+                viewModel.updateField(savedField)
+            }
+        }
     }
 
     private fun showDeleteDialog(field: FieldDefinition) {

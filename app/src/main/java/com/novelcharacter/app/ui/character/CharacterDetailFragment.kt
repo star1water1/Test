@@ -51,6 +51,7 @@ class CharacterDetailFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
 
         characterId = arguments?.getLong("characterId", -1L) ?: -1L
+        appDir = requireContext().filesDir
 
         binding.toolbar.setNavigationOnClickListener { findNavController().popBackStack() }
 
@@ -234,11 +235,16 @@ class CharacterDetailFragment : Fragment() {
         }
     }
 
+    private var appDir: java.io.File? = null
+    private fun getAppDir(): java.io.File {
+        return appDir ?: requireContext().filesDir.also { appDir = it }
+    }
+
     private fun decodeSampledBitmap(path: String, reqWidth: Int, reqHeight: Int): Bitmap? {
         return try {
             val file = java.io.File(path)
-            val appDir = requireContext().filesDir
-            if (!file.canonicalPath.startsWith(appDir.canonicalPath)) {
+            val dir = appDir ?: return null
+            if (!file.canonicalPath.startsWith(dir.canonicalPath)) {
                 return null
             }
             val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }

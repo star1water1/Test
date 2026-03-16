@@ -91,6 +91,15 @@ class ExcelImporter(private val context: Context) {
         importScope.launch {
             var workbook: org.apache.poi.ss.usermodel.Workbook? = null
             try {
+                // ZIP bomb / oversized file protection
+                val fileSize = context.contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: -1L
+                if (fileSize > MAX_IMPORT_FILE_SIZE) {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, "파일 크기가 너무 큽니다 (최대 50MB)", Toast.LENGTH_LONG).show()
+                    }
+                    return@launch
+                }
+
                 val inputStream = context.contentResolver.openInputStream(uri)
                     ?: throw Exception("파일을 열 수 없습니다")
 
@@ -600,6 +609,13 @@ class ExcelImporter(private val context: Context) {
                 val char1 = findCharacterByName(char1Name, null) ?: continue
                 val char2 = findCharacterByName(char2Name, null) ?: continue
 
+                // 자기 참조 관계 방지
+                if (char1.id == char2.id) {
+                    result.skippedRows++
+                    result.errors.add("관계 행 $i: 자기 자신과의 관계는 허용되지 않습니다")
+                    continue
+                }
+
                 // 중복 체크: 같은 두 캐릭터 + 같은 관계 유형
                 val existingRels = db.characterRelationshipDao().getRelationshipsForCharacterList(char1.id)
                 val existing = existingRels.find { rel ->
@@ -762,9 +778,8 @@ class ExcelImporter(private val context: Context) {
             val match = db.characterDao().getCharacterByNameAndNovel(name, preferredNovelId)
             if (match != null) return match
         }
-        // 전체에서 이름으로 검색
-        val allChars = db.characterDao().getAllCharactersList()
-        return allChars.find { it.name == name }
+        // 이름으로 직접 DB 검색 (전체 로드 방지)
+        return db.characterDao().getCharacterByName(name)
     }
 
     private fun getCellString(row: Row, cellIndex: Int, maxLength: Int = MAX_FIELD_LENGTH): String {
@@ -794,5 +809,6 @@ class ExcelImporter(private val context: Context) {
 
     companion object {
         private const val MAX_FIELD_LENGTH = 10000
+        private const val MAX_IMPORT_FILE_SIZE = 50L * 1024 * 1024 // 50MB
     }
 }

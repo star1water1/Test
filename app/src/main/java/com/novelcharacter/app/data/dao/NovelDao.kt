@@ -15,7 +15,7 @@ interface NovelDao {
     @Query("SELECT * FROM novels WHERE id = :id")
     suspend fun getNovelById(id: Long): Novel?
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(novel: Novel): Long
 
     @Update

@@ -70,13 +70,18 @@ class AutoBackupWorker(
         val fileName = "$BACKUP_PREFIX$timestamp$BACKUP_EXTENSION"
         val backupFile = File(backupDir, fileName)
 
-        val rawBytes = ByteArrayOutputStream().use { baos ->
-            workbook.write(baos)
-            baos.toByteArray()
+        // Write to temp file first to avoid holding entire workbook in memory
+        val tempFile = File(backupDir, "temp_backup.xlsx")
+        try {
+            tempFile.outputStream().use { fos ->
+                workbook.write(fos)
+            }
+            val rawBytes = tempFile.readBytes()
+            val encryptedBytes = BackupEncryptor.encrypt(rawBytes)
+            backupFile.writeBytes(encryptedBytes)
+        } finally {
+            tempFile.delete()
         }
-
-        val encryptedBytes = BackupEncryptor.encrypt(rawBytes)
-        backupFile.writeBytes(encryptedBytes)
 
         Log.i(TAG, "Encrypted backup saved: ${backupFile.absolutePath}")
     }

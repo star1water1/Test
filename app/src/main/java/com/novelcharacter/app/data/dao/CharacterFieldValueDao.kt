@@ -15,10 +15,10 @@ interface CharacterFieldValueDao {
     @Query("SELECT * FROM character_field_values WHERE characterId = :characterId AND fieldDefinitionId = :fieldId")
     suspend fun getValue(characterId: Long, fieldId: Long): CharacterFieldValue?
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(value: CharacterFieldValue): Long
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertAll(values: List<CharacterFieldValue>)
 
     @Update

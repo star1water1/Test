@@ -120,8 +120,12 @@ class CharacterRepository(
     suspend fun getAllRelationships(): List<CharacterRelationship> =
         characterRelationshipDao.getAllRelationships()
 
-    suspend fun insertRelationship(relationship: CharacterRelationship): Long =
-        characterRelationshipDao.insert(relationship)
+    suspend fun insertRelationship(relationship: CharacterRelationship): Long {
+        require(relationship.characterId1 != relationship.characterId2) {
+            "A character cannot have a relationship with itself"
+        }
+        return characterRelationshipDao.insert(relationship)
+    }
 
     suspend fun deleteRelationshipById(id: Long) {
         characterRelationshipDao.deleteById(id)

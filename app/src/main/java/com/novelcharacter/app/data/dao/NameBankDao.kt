@@ -21,7 +21,7 @@ interface NameBankDao {
     @Query("SELECT * FROM name_bank WHERE name LIKE '%' || :query || '%' OR notes LIKE '%' || :query || '%' ORDER BY createdAt DESC")
     fun searchNames(query: String): LiveData<List<NameBankEntry>>
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(entry: NameBankEntry): Long
 
     @Update
@@ -39,6 +39,6 @@ interface NameBankDao {
     @Query("UPDATE name_bank SET isUsed = 0, usedByCharacterId = NULL WHERE usedByCharacterId = :characterId")
     suspend fun resetUsageByCharacter(characterId: Long)
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertAll(entries: List<NameBankEntry>)
 }

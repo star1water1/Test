@@ -6,7 +6,9 @@ import android.view.View
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import androidx.appcompat.app.AlertDialog
+import androidx.core.os.bundleOf
 import androidx.fragment.app.DialogFragment
+import androidx.fragment.app.setFragmentResult
 import com.google.gson.Gson
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.FieldDefinition
@@ -21,11 +23,6 @@ class FieldEditDialog : DialogFragment() {
 
     fun setOnSaveListener(listener: (FieldDefinition) -> Unit) {
         onSave = listener
-    }
-
-    override fun onDestroyView() {
-        super.onDestroyView()
-        onSave = null
     }
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
@@ -141,7 +138,12 @@ class FieldEditDialog : DialogFragment() {
             )
         }
 
-        onSave?.invoke(field)
+        // Support both callback (for non-rotation case) and FragmentResult (survives rotation)
+        if (onSave != null) {
+            onSave?.invoke(field)
+        } else {
+            setFragmentResult(RESULT_KEY, bundleOf(RESULT_FIELD_JSON to Gson().toJson(field)))
+        }
     }
 
     private fun buildConfig(binding: DialogFieldEditBinding, type: FieldType): String {
@@ -181,6 +183,8 @@ class FieldEditDialog : DialogFragment() {
     }
 
     companion object {
+        const val RESULT_KEY = "field_edit_result"
+        const val RESULT_FIELD_JSON = "field_json"
         private const val ARG_UNIVERSE_ID = "universeId"
         private const val ARG_FIELD_JSON = "fieldJson"
 
