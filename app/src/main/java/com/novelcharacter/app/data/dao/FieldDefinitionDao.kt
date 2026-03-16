@@ -33,6 +33,9 @@ interface FieldDefinitionDao {
     @Update
     suspend fun update(field: FieldDefinition)
 
+    @Update
+    suspend fun updateAll(fields: List<FieldDefinition>)
+
     @Delete
     suspend fun delete(field: FieldDefinition)
 

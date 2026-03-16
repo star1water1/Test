@@ -72,7 +72,7 @@ class CharacterListFragment : Fragment() {
                 } else {
                     androidx.appcompat.app.AlertDialog.Builder(requireContext())
                         .setTitle(character.name)
-                        .setItems(arrayOf("편집", "삭제")) { _, which ->
+                        .setItems(arrayOf(getString(R.string.edit), getString(R.string.delete))) { _, which ->
                             when (which) {
                                 0 -> {
                                     val bundle = Bundle().apply { putLong("characterId", character.id) }

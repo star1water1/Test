@@ -49,6 +49,9 @@ class UniverseRepository(
     suspend fun updateField(field: FieldDefinition) =
         fieldDefinitionDao.update(field)
 
+    suspend fun updateFieldsOrder(fields: List<FieldDefinition>) =
+        fieldDefinitionDao.updateAll(fields)
+
     suspend fun deleteField(field: FieldDefinition) =
         fieldDefinitionDao.delete(field)
 

@@ -121,6 +121,7 @@
     <string name="hint_multi_text_format">%s (쉼표로 구분)</string>
     <string name="auto_calculated">%s: (자동 계산)</string>
     <string name="image_save_failed">이미지 저장 실패</string>
+    <string name="confirm_delete_field">\"%s\" 필드를 삭제하시겠습니까?</string>
     <string name="enter_name">이름을 입력하세요</string>
     <string name="saved_successfully">저장되었습니다</string>
     <string name="universe_name_hint">세계관 이름</string>

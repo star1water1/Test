@@ -135,7 +135,7 @@ class NovelListFragment : Fragment() {
     private fun showEditDeleteDialog(novel: Novel) {
         AlertDialog.Builder(requireContext())
             .setTitle(novel.title)
-            .setItems(arrayOf("편집", "삭제")) { _, which ->
+            .setItems(arrayOf(getString(R.string.edit), getString(R.string.delete))) { _, which ->
                 when (which) {
                     0 -> showNovelEditDialog(novel)
                     1 -> {

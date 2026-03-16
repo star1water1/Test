@@ -127,14 +127,14 @@ class FieldManageFragment : Fragment() {
     private fun showDeleteDialog(field: FieldDefinition) {
         AlertDialog.Builder(requireContext())
             .setTitle(field.name)
-            .setItems(arrayOf("편집", "삭제")) { _, which ->
+            .setItems(arrayOf(getString(R.string.edit), getString(R.string.delete))) { _, which ->
                 when (which) {
                     0 -> showFieldEditDialog(field)
                     1 -> {
                         AlertDialog.Builder(requireContext())
                             .setIcon(android.R.drawable.ic_dialog_alert)
                             .setTitle(R.string.delete_warning_title)
-                            .setMessage("\"${field.name}\" 필드를 삭제하시겠습니까?")
+                            .setMessage(getString(R.string.confirm_delete_field, field.name))
                             .setPositiveButton(R.string.yes) { _, _ ->
                                 viewModel.deleteField(field)
                             }
