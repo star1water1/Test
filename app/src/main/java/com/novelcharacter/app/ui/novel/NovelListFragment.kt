@@ -14,6 +14,7 @@ import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.databinding.DialogNovelEditBinding
 import com.novelcharacter.app.databinding.FragmentNovelListBinding
 import com.novelcharacter.app.ui.adapter.NovelAdapter
+import com.novelcharacter.app.util.navigateSafe
 
 class NovelListFragment : Fragment() {
 
@@ -58,7 +59,7 @@ class NovelListFragment : Fragment() {
         adapter = NovelAdapter(
             onClick = { novel ->
                 val bundle = Bundle().apply { putLong("novelId", novel.id) }
-                findNavController().navigate(R.id.characterListFragment, bundle)
+                findNavController().navigateSafe(R.id.novelListFragment, R.id.characterListFragment, bundle)
             },
             onLongClick = { novel ->
                 showEditDeleteDialog(novel)
@@ -78,7 +79,7 @@ class NovelListFragment : Fragment() {
         binding.toolbar.setOnMenuItemClickListener { item ->
             when (item.itemId) {
                 R.id.action_global_search -> {
-                    findNavController().navigate(R.id.globalSearchFragment)
+                    findNavController().navigateSafe(R.id.novelListFragment, R.id.globalSearchFragment)
                     true
                 }
                 R.id.action_export -> {

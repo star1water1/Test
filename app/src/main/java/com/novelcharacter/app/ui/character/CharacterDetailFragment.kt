@@ -12,6 +12,7 @@ import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
+import com.novelcharacter.app.util.navigateSafe
 import androidx.recyclerview.widget.RecyclerView
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
@@ -55,7 +56,7 @@ class CharacterDetailFragment : Fragment() {
 
         binding.fabEdit.setOnClickListener {
             val bundle = Bundle().apply { putLong("characterId", characterId) }
-            findNavController().navigate(R.id.characterEditFragment, bundle)
+            findNavController().navigateSafe(R.id.characterDetailFragment, R.id.characterEditFragment, bundle)
         }
 
         initHelpers()

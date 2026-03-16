@@ -13,6 +13,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import com.novelcharacter.app.R
 import com.novelcharacter.app.databinding.FragmentGlobalSearchBinding
 import com.novelcharacter.app.ui.adapter.GlobalSearchAdapter
+import com.novelcharacter.app.util.navigateSafe
 
 class GlobalSearchFragment : Fragment() {
 
@@ -42,12 +43,12 @@ class GlobalSearchFragment : Fragment() {
         adapter = GlobalSearchAdapter(
             onCharacterClick = { character ->
                 val bundle = Bundle().apply { putLong("characterId", character.id) }
-                findNavController().navigate(R.id.characterDetailFragment, bundle)
+                findNavController().navigateSafe(R.id.globalSearchFragment, R.id.characterDetailFragment, bundle)
             },
             onEventClick = { /* Events don't have a detail screen */ },
             onNovelClick = { novel ->
                 val bundle = Bundle().apply { putLong("novelId", novel.id) }
-                findNavController().navigate(R.id.characterListFragment, bundle)
+                findNavController().navigateSafe(R.id.globalSearchFragment, R.id.characterListFragment, bundle)
             }
         )
         binding.searchResultsRecyclerView.layoutManager = LinearLayoutManager(requireContext())

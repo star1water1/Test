@@ -16,6 +16,7 @@ import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.databinding.FragmentUniverseListBinding
 import com.novelcharacter.app.ui.adapter.UniverseAdapter
+import com.novelcharacter.app.util.navigateSafe
 
 class UniverseListFragment : Fragment() {
 
@@ -44,14 +45,14 @@ class UniverseListFragment : Fragment() {
         adapter = UniverseAdapter(
             onClick = { universe ->
                 val bundle = Bundle().apply { putLong("universeId", universe.id) }
-                findNavController().navigate(R.id.novelListFragment, bundle)
+                findNavController().navigateSafe(R.id.universeListFragment, R.id.novelListFragment, bundle)
             },
             onLongClick = { universe ->
                 showEditDeleteDialog(universe)
             },
             onFieldManageClick = { universe ->
                 val bundle = Bundle().apply { putLong("universeId", universe.id) }
-                findNavController().navigate(R.id.fieldManageFragment, bundle)
+                findNavController().navigateSafe(R.id.universeListFragment, R.id.fieldManageFragment, bundle)
             }
         )
         binding.universeRecyclerView.layoutManager = LinearLayoutManager(requireContext())

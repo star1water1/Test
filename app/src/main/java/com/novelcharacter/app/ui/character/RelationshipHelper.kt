@@ -11,6 +11,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavController
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.novelcharacter.app.R
+import com.novelcharacter.app.util.navigateSafe
 import com.novelcharacter.app.data.model.CharacterRelationship
 import com.novelcharacter.app.databinding.FragmentCharacterDetailBinding
 import com.novelcharacter.app.ui.adapter.RelationshipAdapter
@@ -34,7 +35,7 @@ class RelationshipHelper(
         relationshipAdapter = RelationshipAdapter(
             onClick = { item ->
                 val bundle = Bundle().apply { putLong("characterId", item.otherCharacterId) }
-                navController().navigate(R.id.characterDetailFragment, bundle)
+                navController().navigateSafe(R.id.characterDetailFragment, R.id.characterDetailFragment, bundle)
             },
             onLongClick = { item ->
                 showRelationshipOptionsDialog(item)

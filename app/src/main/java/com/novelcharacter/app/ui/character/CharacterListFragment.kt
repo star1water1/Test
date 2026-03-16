@@ -15,6 +15,7 @@ import androidx.recyclerview.widget.GridLayoutManager
 import com.novelcharacter.app.R
 import com.novelcharacter.app.databinding.FragmentCharacterListBinding
 import com.novelcharacter.app.ui.adapter.CharacterAdapter
+import com.novelcharacter.app.util.navigateSafe
 
 class CharacterListFragment : Fragment() {
 
@@ -62,7 +63,7 @@ class CharacterListFragment : Fragment() {
                     toggleCompareSelection(character.id)
                 } else {
                     val bundle = Bundle().apply { putLong("characterId", character.id) }
-                    findNavController().navigate(R.id.characterDetailFragment, bundle)
+                    findNavController().navigateSafe(R.id.characterListFragment, R.id.characterDetailFragment, bundle)
                 }
             },
             onLongClick = { character ->
@@ -75,7 +76,7 @@ class CharacterListFragment : Fragment() {
                             when (which) {
                                 0 -> {
                                     val bundle = Bundle().apply { putLong("characterId", character.id) }
-                                    findNavController().navigate(R.id.characterEditFragment, bundle)
+                                    findNavController().navigateSafe(R.id.characterListFragment, R.id.characterEditFragment, bundle)
                                 }
                                 1 -> {
                                     androidx.appcompat.app.AlertDialog.Builder(requireContext())
@@ -133,7 +134,7 @@ class CharacterListFragment : Fragment() {
                 val idsStr = selectedForCompare.joinToString(",")
                 val bundle = Bundle().apply { putString("characterIds", idsStr) }
                 exitCompareMode()
-                findNavController().navigate(R.id.characterCompareFragment, bundle)
+                findNavController().navigateSafe(R.id.characterListFragment, R.id.characterCompareFragment, bundle)
             }
         }
 
@@ -174,7 +175,7 @@ class CharacterListFragment : Fragment() {
                 putLong("characterId", -1L)
                 putLong("novelId", novelId)
             }
-            findNavController().navigate(R.id.characterEditFragment, bundle)
+            findNavController().navigateSafe(R.id.characterListFragment, R.id.characterEditFragment, bundle)
         }
     }
 
