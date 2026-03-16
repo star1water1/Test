@@ -124,6 +124,9 @@ class AppRepository(
     suspend fun updateField(field: FieldDefinition) =
         fieldDefinitionDao.update(field)
 
+    suspend fun updateAllFields(fields: List<FieldDefinition>) =
+        fieldDefinitionDao.updateAll(fields)
+
     suspend fun deleteField(field: FieldDefinition) =
         fieldDefinitionDao.delete(field)
 

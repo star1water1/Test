@@ -38,8 +38,7 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun updateFieldOrder(fields: List<FieldDefinition>) = viewModelScope.launch {
-        fields.forEachIndexed { index, field ->
-            repository.updateField(field.copy(displayOrder = index))
-        }
+        val reordered = fields.mapIndexed { index, field -> field.copy(displayOrder = index) }
+        repository.updateAllFields(reordered)
     }
 }

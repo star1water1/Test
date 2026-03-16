@@ -127,10 +127,11 @@ class ExcelExporter(context: Context) {
                 cell.cellStyle = headerStyle
             }
 
-            // 데이터
+            // 데이터 - use map for O(1) novel lookup, batch load field values
+            val novelMap = novels.associateBy { it.id }
             universeChars.forEachIndexed { index, character ->
                 val row = sheet.createRow(index + 1)
-                val novelTitle = novels.find { it.id == character.novelId }?.title ?: ""
+                val novelTitle = character.novelId?.let { novelMap[it]?.title } ?: ""
                 val fieldValues = db.characterFieldValueDao().getValuesByCharacterList(character.id)
 
                 row.createCell(0).setCellValue(character.name)
@@ -147,8 +148,9 @@ class ExcelExporter(context: Context) {
         }
 
         // 세계관 없는 캐릭터들도 별도 시트
+        val novelMapForFilter = novels.associateBy { it.id }
         val unassignedChars = allCharacters.filter { char ->
-            val novel = novels.find { it.id == char.novelId }
+            val novel = char.novelId?.let { novelMapForFilter[it] }
             novel?.universeId == null
         }
         if (unassignedChars.isNotEmpty()) {
@@ -164,7 +166,7 @@ class ExcelExporter(context: Context) {
             unassignedChars.forEachIndexed { index, character ->
                 val row = sheet.createRow(index + 1)
                 row.createCell(0).setCellValue(character.name)
-                row.createCell(1).setCellValue(novels.find { it.id == character.novelId }?.title ?: "")
+                row.createCell(1).setCellValue(character.novelId?.let { novelMapForFilter[it]?.title } ?: "")
             }
         }
     }
@@ -172,6 +174,7 @@ class ExcelExporter(context: Context) {
     private suspend fun exportTimeline(workbook: XSSFWorkbook, headerStyle: CellStyle) {
         val events = db.timelineDao().getAllEventsList()
         val novels = db.novelDao().getAllNovelsList()
+        val novelMap = novels.associateBy { it.id }
 
         val sheet = workbook.createSheet("사건 연표")
         val headers = listOf("연도", "월", "일", "역법", "사건 설명", "관련 작품", "관련 캐릭터")
@@ -199,7 +202,7 @@ class ExcelExporter(context: Context) {
             row.createCell(3).setCellValue(event.calendarType)
             row.createCell(4).setCellValue(event.description)
 
-            val novelTitle = novels.find { it.id == event.novelId }?.title ?: ""
+            val novelTitle = event.novelId?.let { novelMap[it]?.title } ?: ""
             row.createCell(5).setCellValue(novelTitle)
 
             val characters = db.timelineDao().getCharactersForEvent(event.id)

@@ -52,6 +52,7 @@ class CharacterEditFragment : Fragment() {
     // 동적 필드 관리
     private var fieldDefinitions: List<FieldDefinition> = emptyList()
     private val fieldInputMap = mutableMapOf<Long, Any>() // fieldDefinitionId -> input widget
+    private var isSpinnerInitializing = false // Guard against duplicate spinner triggers
 
     private val imagePickerLauncher = registerForActivityResult(
         ActivityResultContracts.GetContent()
@@ -98,6 +99,7 @@ class CharacterEditFragment : Fragment() {
         // 작품 선택 시 해당 universe의 동적 필드 로드
         binding.spinnerNovel.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                if (isSpinnerInitializing) return
                 lifecycleScope.launch {
                     if (position > 0) {
                         val novel = novels[position - 1]
@@ -122,10 +124,14 @@ class CharacterEditFragment : Fragment() {
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
 
-        // 미리 지정된 작품이 있으면 선택
+        // 미리 지정된 작품이 있으면 선택 (guard to prevent listener firing during setup)
         if (presetNovelId != -1L) {
             val index = novels.indexOfFirst { it.id == presetNovelId }
-            if (index >= 0) binding.spinnerNovel.setSelection(index + 1)
+            if (index >= 0) {
+                isSpinnerInitializing = true
+                binding.spinnerNovel.setSelection(index + 1)
+                isSpinnerInitializing = false
+            }
         }
     }
 
@@ -471,6 +477,11 @@ class CharacterEditFragment : Fragment() {
 
     private fun updateImageList() {
         binding.imageRecyclerView.adapter = object : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
+
+            inner class ImageViewHolder(val imageView: ImageView) : RecyclerView.ViewHolder(imageView) {
+                var loadJob: kotlinx.coroutines.Job? = null
+            }
+
             override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
                 val imageView = ImageView(parent.context).apply {
                     layoutParams = ViewGroup.MarginLayoutParams(200, 200).apply {
@@ -478,27 +489,32 @@ class CharacterEditFragment : Fragment() {
                     }
                     scaleType = ImageView.ScaleType.CENTER_CROP
                 }
-                return object : RecyclerView.ViewHolder(imageView) {}
+                return ImageViewHolder(imageView)
             }
 
             override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
-                val imageView = holder.itemView as ImageView
-                lifecycleScope.launch {
+                val vh = holder as ImageViewHolder
+                vh.loadJob?.cancel()
+                vh.loadJob = lifecycleScope.launch {
                     val bitmap = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                         decodeSampledBitmapFromFile(imagePaths[position], 200, 200)
                     }
                     if (bitmap != null) {
-                        imageView.setImageBitmap(bitmap)
+                        vh.imageView.setImageBitmap(bitmap)
                     }
                 }
-                imageView.setOnLongClickListener {
-                    val currentPos = holder.bindingAdapterPosition
+                vh.imageView.setOnLongClickListener {
+                    val currentPos = vh.bindingAdapterPosition
                     if (currentPos != RecyclerView.NO_POSITION) {
                         imagePaths.removeAt(currentPos)
                         updateImageList()
                     }
                     true
                 }
+            }
+
+            override fun onViewRecycled(holder: RecyclerView.ViewHolder) {
+                (holder as? ImageViewHolder)?.loadJob?.cancel()
             }
 
             override fun getItemCount() = imagePaths.size
