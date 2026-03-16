@@ -163,10 +163,11 @@ class NovelListFragment : Fragment() {
     private val saveFileLauncher = registerForActivityResult(
         ActivityResultContracts.CreateDocument("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     ) { uri ->
+        if (!isAdded) return@registerForActivityResult
         val file = pendingExportFile
         if (uri != null && file != null) {
             if (exporter == null) {
-                exporter = com.novelcharacter.app.excel.ExcelExporter(requireContext())
+                exporter = com.novelcharacter.app.excel.ExcelExporter(requireContext().applicationContext)
             }
             exporter?.writeToUri(uri, file)
         }
@@ -185,7 +186,7 @@ class NovelListFragment : Fragment() {
         AlertDialog.Builder(requireContext())
             .setTitle(R.string.export_mode_title)
             .setItems(arrayOf(getString(R.string.export_mode_share), getString(R.string.export_mode_save))) { _, which ->
-                exporter = com.novelcharacter.app.excel.ExcelExporter(activity)
+                exporter = com.novelcharacter.app.excel.ExcelExporter(requireContext().applicationContext)
                 when (which) {
                     0 -> exporter?.exportAll()
                     1 -> exporter?.exportAll { file, fileName ->
@@ -206,6 +207,7 @@ class NovelListFragment : Fragment() {
     }
 
     override fun onDestroyView() {
+        binding.novelRecyclerView.adapter = null
         super.onDestroyView()
         _binding = null
     }

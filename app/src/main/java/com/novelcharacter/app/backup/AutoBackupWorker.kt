@@ -74,7 +74,7 @@ class AutoBackupWorker(
         val backupFile = File(backupDir, fileName)
 
         // Write to temp file then stream-encrypt to avoid double memory copy
-        val tempFile = File(backupDir, "temp_backup.xlsx")
+        val tempFile = File.createTempFile("backup_", ".xlsx", backupDir)
         try {
             tempFile.outputStream().use { fos ->
                 workbook.write(fos)

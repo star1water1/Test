@@ -45,15 +45,20 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
     fun getPresetTemplates(): List<PresetTemplates.PresetTemplate> =
         PresetTemplates.getTemplates()
 
-    private val _presetApplied = MutableLiveData<String?>()
-    val presetApplied: LiveData<String?> = _presetApplied
+    // SingleLiveEvent pattern: wrap value so observer consumes it only once
+    class Event<out T>(private val content: T) {
+        private var hasBeenHandled = false
+        fun getContentIfNotHandled(): T? = if (hasBeenHandled) null else { hasBeenHandled = true; content }
+    }
+
+    private val _presetApplied = MutableLiveData<Event<String>?>()
+    val presetApplied: LiveData<Event<String>?> = _presetApplied
 
     fun applyPreset(template: PresetTemplates.PresetTemplate) =
         viewModelScope.launch {
             val universeId = universeRepository.insertUniverse(template.universe)
             val fieldsWithId = template.fields.map { it.copy(universeId = universeId) }
             universeRepository.insertAllFields(fieldsWithId)
-            _presetApplied.value = template.universe.name
-            _presetApplied.value = null  // reset for next observation
+            _presetApplied.value = Event(template.universe.name)
         }
 }

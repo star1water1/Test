@@ -19,16 +19,19 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.apache.poi.ss.usermodel.WorkbookFactory
 
-class ExcelImporter(private val context: Context) {
+class ExcelImporter(context: Context) {
 
-    private val db = AppDatabase.getDatabase(context)
+    private val appContext: Context = context.applicationContext
+    private val db = AppDatabase.getDatabase(appContext)
     private var supervisorJob = kotlinx.coroutines.SupervisorJob()
     private var importScope = CoroutineScope(Dispatchers.IO + supervisorJob)
     private val importService = ExcelImportService(db)
 
     private var importLauncher: androidx.activity.result.ActivityResultLauncher<Array<String>>? = null
+    private var currentActivity: Activity? = null
 
     fun registerLauncher(fragment: Fragment) {
+        currentActivity = fragment.activity
         importLauncher = fragment.registerForActivityResult(
             ActivityResultContracts.OpenDocument()
         ) { uri: Uri? ->
@@ -39,6 +42,7 @@ class ExcelImporter(private val context: Context) {
     fun cleanup() {
         supervisorJob.cancel()
         importLauncher = null
+        currentActivity = null
     }
 
     fun showImportDialog(fragment: Fragment) {
@@ -50,7 +54,7 @@ class ExcelImporter(private val context: Context) {
                 "application/octet-stream"
             ))
         } else {
-            Toast.makeText(context, com.novelcharacter.app.R.string.importer_restart, Toast.LENGTH_SHORT).show()
+            Toast.makeText(appContext, com.novelcharacter.app.R.string.importer_restart, Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -67,48 +71,52 @@ class ExcelImporter(private val context: Context) {
 
             try {
                 // ZIP bomb / oversized file protection
-                val fileSize = context.contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: -1L
+                val fileSize = appContext.contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: -1L
                 if (fileSize > MAX_IMPORT_FILE_SIZE) {
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(context, com.novelcharacter.app.R.string.import_file_too_large, Toast.LENGTH_LONG).show()
+                        Toast.makeText(appContext, com.novelcharacter.app.R.string.import_file_too_large, Toast.LENGTH_LONG).show()
                     }
                     return@launch
                 }
 
-                val inputStream = context.contentResolver.openInputStream(uri)
+                val inputStream = appContext.contentResolver.openInputStream(uri)
                     ?: throw Exception("파일을 열 수 없습니다")
 
                 workbook = inputStream.use { WorkbookFactory.create(it) }
 
-                // Show progress dialog (only if context is an Activity)
-                val activity = context as? Activity
+                // Show progress dialog (requires an Activity reference)
+                val activityRef = java.lang.ref.WeakReference(currentActivity)
+                val activity = activityRef.get()
                 if (activity != null && !activity.isFinishing && !activity.isDestroyed) {
                     withContext(Dispatchers.Main) {
-                        val layout = LinearLayout(activity).apply {
-                            orientation = LinearLayout.VERTICAL
-                            gravity = Gravity.CENTER
-                            val dp16 = (16 * activity.resources.displayMetrics.density).toInt()
-                            setPadding(dp16 * 2, dp16, dp16 * 2, dp16)
-                        }
-                        val progressBar = ProgressBar(activity).apply {
-                            isIndeterminate = true
-                        }
-                        layout.addView(progressBar)
-                        val textView = TextView(activity).apply {
-                            text = "가져오기 준비 중..."
-                            gravity = Gravity.CENTER
-                            val dp8 = (8 * activity.resources.displayMetrics.density).toInt()
-                            setPadding(0, dp8, 0, 0)
-                        }
-                        layout.addView(textView)
-                        progressText = textView
+                        val act = activityRef.get()
+                        if (act != null && !act.isFinishing && !act.isDestroyed) {
+                            val layout = LinearLayout(act).apply {
+                                orientation = LinearLayout.VERTICAL
+                                gravity = Gravity.CENTER
+                                val dp16 = (16 * act.resources.displayMetrics.density).toInt()
+                                setPadding(dp16 * 2, dp16, dp16 * 2, dp16)
+                            }
+                            val progressBar = ProgressBar(act).apply {
+                                isIndeterminate = true
+                            }
+                            layout.addView(progressBar)
+                            val textView = TextView(act).apply {
+                                text = "가져오기 준비 중..."
+                                gravity = Gravity.CENTER
+                                val dp8 = (8 * act.resources.displayMetrics.density).toInt()
+                                setPadding(0, dp8, 0, 0)
+                            }
+                            layout.addView(textView)
+                            progressText = textView
 
-                        progressDialog = AlertDialog.Builder(activity)
-                            .setTitle("가져오기 진행 중")
-                            .setView(layout)
-                            .setCancelable(false)
-                            .create()
-                        progressDialog?.show()
+                            progressDialog = AlertDialog.Builder(act)
+                                .setTitle("가져오기 진행 중")
+                                .setView(layout)
+                                .setCancelable(false)
+                                .create()
+                            progressDialog?.show()
+                        }
                     }
                 }
 
@@ -125,13 +133,13 @@ class ExcelImporter(private val context: Context) {
                 val message = buildResultMessage(result)
                 withContext(Dispatchers.Main) {
                     progressDialog?.dismiss()
-                    Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                    Toast.makeText(appContext, message, Toast.LENGTH_LONG).show()
                 }
             } catch (e: Exception) {
                 android.util.Log.e("ExcelImporter", "Import failed", e)
                 withContext(Dispatchers.Main) {
                     progressDialog?.dismiss()
-                    Toast.makeText(context, com.novelcharacter.app.R.string.import_failed_retry, Toast.LENGTH_LONG).show()
+                    Toast.makeText(appContext, com.novelcharacter.app.R.string.import_failed_retry, Toast.LENGTH_LONG).show()
                 }
             } finally {
                 try { workbook?.close() } catch (_: Exception) {}
@@ -175,6 +183,6 @@ class ExcelImporter(private val context: Context) {
     }
 
     companion object {
-        private const val MAX_IMPORT_FILE_SIZE = 50L * 1024 * 1024 // 50MB
+        private const val MAX_IMPORT_FILE_SIZE = 10L * 1024 * 1024 // 10MB (Apache POI expands ~5-10x in memory)
     }
 }

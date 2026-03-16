@@ -1,6 +1,5 @@
 package com.novelcharacter.app.excel
 
-import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -34,7 +33,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-class ExcelExporter(private val context: Context) {
+class ExcelExporter(context: Context) {
 
     private val appContext = context.applicationContext
     private val db = AppDatabase.getDatabase(appContext)
@@ -293,13 +292,8 @@ class ExcelExporter(private val context: Context) {
 
         val chooserIntent = Intent.createChooser(shareIntent, appContext.getString(R.string.export_share_title))
 
-        val activity = context as? Activity
-        if (activity != null && !activity.isFinishing && !activity.isDestroyed) {
-            activity.startActivity(chooserIntent)
-        } else {
-            chooserIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            appContext.startActivity(chooserIntent)
-        }
+        chooserIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        appContext.startActivity(chooserIntent)
     }
 
     private fun sanitizeSheetName(name: String, usedNames: MutableSet<String>): String {

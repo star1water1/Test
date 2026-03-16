@@ -153,6 +153,7 @@ abstract class AppDatabase : RoomDatabase() {
                     )
                 """)
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_timeline_character_cross_ref_characterId` ON `timeline_character_cross_ref` (`characterId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_timeline_character_cross_ref_eventId` ON `timeline_character_cross_ref` (`eventId`)")
 
                 Log.i(TAG, "Migration from version 1 to 2 completed successfully")
             }

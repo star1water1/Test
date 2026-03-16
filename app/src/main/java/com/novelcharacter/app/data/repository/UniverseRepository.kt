@@ -59,9 +59,13 @@ class UniverseRepository(
         fieldDefinitionDao.deleteAllByUniverse(universeId)
 
     // ===== Batch count queries =====
-    suspend fun getNovelCountsByUniverses(universeIds: List<Long>): Map<Long, Int> =
-        novelDao.getNovelCountsByUniverses(universeIds).associate { it.universeId to it.cnt }
+    suspend fun getNovelCountsByUniverses(universeIds: List<Long>): Map<Long, Int> {
+        if (universeIds.isEmpty()) return emptyMap()
+        return novelDao.getNovelCountsByUniverses(universeIds).associate { it.universeId to it.cnt }
+    }
 
-    suspend fun getFieldCountsByUniverses(universeIds: List<Long>): Map<Long, Int> =
-        fieldDefinitionDao.getFieldCountsByUniverses(universeIds).associate { it.universeId to it.cnt }
+    suspend fun getFieldCountsByUniverses(universeIds: List<Long>): Map<Long, Int> {
+        if (universeIds.isEmpty()) return emptyMap()
+        return fieldDefinitionDao.getFieldCountsByUniverses(universeIds).associate { it.universeId to it.cnt }
+    }
 }

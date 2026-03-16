@@ -77,6 +77,32 @@ object BackupEncryptor {
         }
     }
 
+    /**
+     * Decrypt a file to another file using streaming to avoid loading all data into memory.
+     * Input format: [IV (12 bytes)] [encrypted data + GCM tag]
+     */
+    fun decryptFile(inputFile: File, outputFile: File) {
+        FileInputStream(inputFile).use { fis ->
+            val iv = ByteArray(GCM_IV_LENGTH)
+            var read = 0
+            while (read < GCM_IV_LENGTH) {
+                val n = fis.read(iv, read, GCM_IV_LENGTH - read)
+                if (n == -1) throw IllegalArgumentException("Encrypted file too short")
+                read += n
+            }
+
+            val cipher = Cipher.getInstance(TRANSFORMATION)
+            val spec = GCMParameterSpec(GCM_TAG_LENGTH, iv)
+            cipher.init(Cipher.DECRYPT_MODE, getOrCreateKey(), spec)
+
+            FileOutputStream(outputFile).use { fos ->
+                javax.crypto.CipherOutputStream(fos, cipher).use { cos ->
+                    fis.copyTo(cos, bufferSize = 8192)
+                }
+            }
+        }
+    }
+
     fun decrypt(data: ByteArray): ByteArray {
         require(data.size > GCM_IV_LENGTH) { "Encrypted data too short: expected at least ${GCM_IV_LENGTH + 1} bytes" }
         val buffer = ByteBuffer.wrap(data)

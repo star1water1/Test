@@ -27,7 +27,8 @@ class NovelCharacterApp : Application() {
             database.characterFieldValueDao(),
             database.characterStateChangeDao(),
             database.characterTagDao(),
-            database.characterRelationshipDao()
+            database.characterRelationshipDao(),
+            database.nameBankDao()
         )
     }
     val timelineRepository by lazy { TimelineRepository(database.timelineDao()) }
