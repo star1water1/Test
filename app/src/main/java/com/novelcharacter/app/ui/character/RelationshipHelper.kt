@@ -132,7 +132,7 @@ class RelationshipHelper(
     private fun showRelationshipOptionsDialog(item: RelationshipDisplayItem) {
         val context = try { contextGetter() } catch (_: Exception) { return }
         AlertDialog.Builder(context)
-            .setTitle("${item.otherCharacterName} (${item.relationshipType})")
+            .setTitle(getString(com.novelcharacter.app.R.string.relationship_title_format).format(item.otherCharacterName, item.relationshipType))
             .setItems(arrayOf(getString(R.string.delete))) { _, which ->
                 when (which) {
                     0 -> {

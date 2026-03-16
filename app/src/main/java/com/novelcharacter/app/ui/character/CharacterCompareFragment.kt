@@ -14,6 +14,8 @@ import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import com.novelcharacter.app.R
 import com.novelcharacter.app.databinding.FragmentCharacterCompareBinding
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
 
 class CharacterCompareFragment : Fragment() {
@@ -61,27 +63,38 @@ class CharacterCompareFragment : Fragment() {
             val characters = characterIds.mapNotNull { viewModel.getCharacterByIdSuspend(it) }
             if (characters.size < 2) return@launch
 
-            val entries = mutableListOf<CompareEntry>()
             val allFields = linkedMapOf<String, String>() // key -> display name
 
-            for (char in characters) {
-                val novel = char.novelId?.let { viewModel.getNovelById(it) }
-                val universeId = novel?.universeId
-                val fields = if (universeId != null) viewModel.getFieldsByUniverseList(universeId) else emptyList()
-                val values = viewModel.getValuesByCharacterList(char.id)
-                val tags = viewModel.getTagsByCharacterList(char.id).map { it.tag }
+            // Load all character data in parallel
+            val entries = characters.map { char ->
+                async {
+                    val novel = char.novelId?.let { viewModel.getNovelById(it) }
+                    val universeId = novel?.universeId
+                    val fields = if (universeId != null) viewModel.getFieldsByUniverseList(universeId) else emptyList()
+                    val values = viewModel.getValuesByCharacterList(char.id)
+                    val tags = viewModel.getTagsByCharacterList(char.id).map { it.tag }
 
-                val valueMap = mutableMapOf<String, String>()
-                for (field in fields.sortedBy { it.displayOrder }) {
-                    allFields[field.key] = field.name
-                    val v = values.find { it.fieldDefinitionId == field.id }?.value ?: ""
-                    valueMap[field.key] = v
+                    val valueMap = mutableMapOf<String, String>()
+                    val sortedFields = fields.sortedBy { it.displayOrder }
+                    for (field in sortedFields) {
+                        val v = values.find { it.fieldDefinitionId == field.id }?.value ?: ""
+                        valueMap[field.key] = v
+                    }
+                    Triple(CompareEntry(char.name, novel?.title ?: getString(R.string.novel_unassigned), valueMap, tags), sortedFields, char)
                 }
-                entries.add(CompareEntry(char.name, novel?.title ?: getString(R.string.novel_unassigned), valueMap, tags))
+            }.awaitAll()
+
+            // Collect allFields in order (must be sequential to maintain linked order)
+            for ((_, sortedFields, _) in entries) {
+                for (field in sortedFields) {
+                    allFields[field.key] = field.name
+                }
             }
 
+            val compareEntries = entries.map { it.first }
+
             if (isAdded && _binding != null) {
-                buildComparisonTable(entries, allFields)
+                buildComparisonTable(compareEntries, allFields)
             }
         }
     }

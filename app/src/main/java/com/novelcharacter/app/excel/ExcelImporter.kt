@@ -95,7 +95,7 @@ class ExcelImporter(private val context: Context) {
                 val fileSize = context.contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: -1L
                 if (fileSize > MAX_IMPORT_FILE_SIZE) {
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(context, "파일 크기가 너무 큽니다 (최대 50MB)", Toast.LENGTH_LONG).show()
+                        Toast.makeText(context, com.novelcharacter.app.R.string.import_file_too_large, Toast.LENGTH_LONG).show()
                     }
                     return@launch
                 }

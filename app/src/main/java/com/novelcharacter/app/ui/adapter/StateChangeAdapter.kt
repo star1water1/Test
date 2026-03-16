@@ -6,6 +6,7 @@ import android.view.ViewGroup
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
+import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.CharacterStateChange
 import com.novelcharacter.app.databinding.ItemStateChangeBinding
 
@@ -44,10 +45,10 @@ class StateChangeAdapter(
 
             // Field key - display a friendly name for special keys
             binding.textFieldKey.text = when (change.fieldKey) {
-                CharacterStateChange.KEY_BIRTH -> "탄생"
-                CharacterStateChange.KEY_DEATH -> "사망"
-                CharacterStateChange.KEY_ALIVE -> "생존상태"
-                CharacterStateChange.KEY_AGE -> "나이"
+                CharacterStateChange.KEY_BIRTH -> itemView.context.getString(R.string.birth)
+                CharacterStateChange.KEY_DEATH -> itemView.context.getString(R.string.death)
+                CharacterStateChange.KEY_ALIVE -> itemView.context.getString(R.string.alive_status)
+                CharacterStateChange.KEY_AGE -> itemView.context.getString(R.string.age)
                 else -> change.fieldKey
             }
 

@@ -91,7 +91,7 @@ class GlobalSearchAdapter(
 
         fun bindEvent(event: TimelineEvent) {
             mainText.text = event.description
-            subText.text = "${event.year}년"
+            subText.text = itemView.context.getString(R.string.event_year_format, event.year)
             subText.visibility = View.VISIBLE
             typeIndicator.text = itemView.context.getString(R.string.search_type_event)
             setTypeBadgeColor(R.color.search_type_event)

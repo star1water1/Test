@@ -67,7 +67,7 @@ class TimelineFragment : Fragment() {
             },
             onLongClick = { event ->
                 AlertDialog.Builder(requireContext())
-                    .setTitle("${event.year}년")
+                    .setTitle(getString(R.string.event_year_format, event.year))
                     .setItems(arrayOf(getString(R.string.edit), getString(R.string.delete))) { _, which ->
                         when (which) {
                             0 -> showEditEventDialog(event)

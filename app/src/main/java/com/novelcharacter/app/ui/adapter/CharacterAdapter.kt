@@ -33,7 +33,7 @@ class CharacterAdapter(
     private val thumbnailCache: LruCache<String, Bitmap> = run {
         val maxMemory = (Runtime.getRuntime().maxMemory() / 1024).toInt()
         val cacheSize = maxMemory / 8  // Use 1/8th of available memory
-        object : LruCache<String, Bitmap>(cacheSize.coerceAtMost(20 * 1024)) {
+        object : LruCache<String, Bitmap>(cacheSize.coerceIn(1024, 20 * 1024)) {
             override fun sizeOf(key: String, bitmap: Bitmap): Int {
                 return bitmap.byteCount / 1024
             }

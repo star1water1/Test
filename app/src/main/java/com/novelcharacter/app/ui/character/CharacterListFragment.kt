@@ -104,7 +104,7 @@ class CharacterListFragment : Fragment() {
             selectedForCompare.remove(characterId)
         } else {
             if (selectedForCompare.size >= 3) {
-                Toast.makeText(requireContext(), "최대 3명까지 비교할 수 있습니다", Toast.LENGTH_SHORT).show()
+                Toast.makeText(requireContext(), R.string.max_compare_limit, Toast.LENGTH_SHORT).show()
                 return
             }
             selectedForCompare.add(characterId)
@@ -122,13 +122,13 @@ class CharacterListFragment : Fragment() {
                 isCompareMode = true
                 selectedForCompare.clear()
                 adapter.setSelectionMode(true)
-                binding.btnCompare.text = "비교하기"
+                binding.btnCompare.text = getString(R.string.compare_mode_label)
                 binding.btnCancelCompare.visibility = View.VISIBLE
-                Toast.makeText(requireContext(), "비교할 캐릭터를 선택하세요 (2~3명)", Toast.LENGTH_SHORT).show()
+                Toast.makeText(requireContext(), R.string.compare_select_hint, Toast.LENGTH_SHORT).show()
             } else {
                 // Execute comparison
                 if (selectedForCompare.size < 2) {
-                    Toast.makeText(requireContext(), "2명 이상 선택하세요", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(requireContext(), R.string.compare_min_select, Toast.LENGTH_SHORT).show()
                     return@setOnClickListener
                 }
                 val idsStr = selectedForCompare.joinToString(",")
@@ -147,13 +147,13 @@ class CharacterListFragment : Fragment() {
         isCompareMode = false
         selectedForCompare.clear()
         adapter.resetState()  // batch reset: clears selection + mode in single notify
-        binding.btnCompare.text = "비교"
+        binding.btnCompare.text = getString(R.string.compare_button)
         binding.btnCancelCompare.visibility = View.GONE
     }
 
     private fun updateCompareButtonText() {
         if (selectedForCompare.isEmpty()) {
-            binding.btnCompare.text = "비교하기"
+            binding.btnCompare.text = getString(R.string.compare_mode_label)
         } else {
             binding.btnCompare.text = getString(R.string.compare_button_text, selectedForCompare.size)
         }
