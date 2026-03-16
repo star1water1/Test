@@ -52,7 +52,6 @@ class CharacterEditFragment : Fragment() {
     // 동적 필드 관리
     private var fieldDefinitions: List<FieldDefinition> = emptyList()
     private val fieldInputMap = mutableMapOf<Long, Any>() // fieldDefinitionId -> input widget
-    private var isSpinnerInitializing = false // Guard against duplicate spinner triggers
 
     private val imagePickerLauncher = registerForActivityResult(
         ActivityResultContracts.GetContent()
@@ -99,7 +98,6 @@ class CharacterEditFragment : Fragment() {
         // 작품 선택 시 해당 universe의 동적 필드 로드
         binding.spinnerNovel.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                if (isSpinnerInitializing) return
                 lifecycleScope.launch {
                     if (position > 0) {
                         val novel = novels[position - 1]
@@ -124,14 +122,10 @@ class CharacterEditFragment : Fragment() {
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
 
-        // 미리 지정된 작품이 있으면 선택 (guard to prevent listener firing during setup)
+        // 미리 지정된 작품이 있으면 선택
         if (presetNovelId != -1L) {
             val index = novels.indexOfFirst { it.id == presetNovelId }
-            if (index >= 0) {
-                isSpinnerInitializing = true
-                binding.spinnerNovel.setSelection(index + 1)
-                isSpinnerInitializing = false
-            }
+            if (index >= 0) binding.spinnerNovel.setSelection(index + 1)
         }
     }
 
