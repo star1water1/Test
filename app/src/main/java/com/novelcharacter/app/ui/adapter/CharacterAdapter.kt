@@ -67,16 +67,16 @@ class CharacterAdapter(
             loadJob?.cancel()
             binding.characterImage.setImageResource(R.drawable.ic_character_placeholder)
 
-            val gson = Gson()
-            val type = object : TypeToken<List<String>>() {}.type
             val paths: List<String> = try {
-                gson.fromJson(character.imagePaths, type) ?: emptyList()
+                gson.fromJson(character.imagePaths, imagePathsType) ?: emptyList()
             } catch (e: Exception) {
                 emptyList()
             }
 
             if (paths.isNotEmpty()) {
-                loadJob = CoroutineScope(Dispatchers.Main + Job()).launch {
+                val parentJob = Job()
+                loadJob = parentJob
+                CoroutineScope(Dispatchers.Main + parentJob).launch {
                     val bitmap = withContext(Dispatchers.IO) {
                         decodeSampledBitmap(paths[0], 256, 256)
                     }
@@ -113,6 +113,11 @@ class CharacterAdapter(
             }
             return inSampleSize
         }
+    }
+
+    companion object {
+        private val gson = Gson()
+        private val imagePathsType = object : TypeToken<List<String>>() {}.type
     }
 
     class CharacterDiffCallback : DiffUtil.ItemCallback<Character>() {

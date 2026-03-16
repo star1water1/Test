@@ -457,10 +457,11 @@ class CharacterEditFragment : Fragment() {
             val inputStream = requireContext().contentResolver.openInputStream(uri) ?: return
             val fileName = "char_${UUID.randomUUID()}.jpg"
             val file = File(requireContext().filesDir, fileName)
-            FileOutputStream(file).use { output ->
-                inputStream.copyTo(output)
+            inputStream.use { input ->
+                FileOutputStream(file).use { output ->
+                    input.copyTo(output)
+                }
             }
-            inputStream.close()
             imagePaths.add(file.absolutePath)
             updateImageList()
         } catch (e: Exception) {
@@ -482,19 +483,51 @@ class CharacterEditFragment : Fragment() {
 
             override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
                 val imageView = holder.itemView as ImageView
-                val bitmap = BitmapFactory.decodeFile(imagePaths[position])
-                if (bitmap != null) {
-                    imageView.setImageBitmap(bitmap)
+                lifecycleScope.launch {
+                    val bitmap = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        decodeSampledBitmapFromFile(imagePaths[position], 200, 200)
+                    }
+                    if (bitmap != null) {
+                        imageView.setImageBitmap(bitmap)
+                    }
                 }
                 imageView.setOnLongClickListener {
-                    imagePaths.removeAt(position)
-                    updateImageList()
+                    val currentPos = holder.bindingAdapterPosition
+                    if (currentPos != RecyclerView.NO_POSITION) {
+                        imagePaths.removeAt(currentPos)
+                        updateImageList()
+                    }
                     true
                 }
             }
 
             override fun getItemCount() = imagePaths.size
         }
+    }
+
+    private fun decodeSampledBitmapFromFile(path: String, reqWidth: Int, reqHeight: Int): android.graphics.Bitmap? {
+        return try {
+            val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(path, options)
+            options.inSampleSize = calculateInSampleSize(options, reqWidth, reqHeight)
+            options.inJustDecodeBounds = false
+            BitmapFactory.decodeFile(path, options)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun calculateInSampleSize(options: BitmapFactory.Options, reqWidth: Int, reqHeight: Int): Int {
+        val (height, width) = options.outHeight to options.outWidth
+        var inSampleSize = 1
+        if (height > reqHeight || width > reqWidth) {
+            val halfHeight = height / 2
+            val halfWidth = width / 2
+            while (halfHeight / inSampleSize >= reqHeight && halfWidth / inSampleSize >= reqWidth) {
+                inSampleSize *= 2
+            }
+        }
+        return inSampleSize
     }
 
     private fun setupSaveButton() {

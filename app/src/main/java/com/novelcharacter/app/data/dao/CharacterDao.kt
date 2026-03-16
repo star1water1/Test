@@ -27,7 +27,10 @@ interface CharacterDao {
     @Query("SELECT * FROM characters WHERE name LIKE '%' || :query || '%'")
     fun searchCharacters(query: String): LiveData<List<Character>>
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Query("SELECT * FROM characters WHERE novelId = :novelId AND name LIKE '%' || :query || '%'")
+    fun searchCharactersByNovel(novelId: Long, query: String): LiveData<List<Character>>
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(character: Character): Long
 
     @Update
@@ -39,6 +42,6 @@ interface CharacterDao {
     @Query("DELETE FROM characters WHERE id = :id")
     suspend fun deleteById(id: Long)
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertAll(characters: List<Character>)
 }

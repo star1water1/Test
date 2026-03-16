@@ -38,6 +38,8 @@ class AppRepository(
     fun getCharacterByIdLive(id: Long): LiveData<Character?> = characterDao.getCharacterByIdLive(id)
     fun searchCharacters(query: String): LiveData<List<Character>> =
         characterDao.searchCharacters(query)
+    fun searchCharactersByNovel(novelId: Long, query: String): LiveData<List<Character>> =
+        characterDao.searchCharactersByNovel(novelId, query)
     suspend fun insertCharacter(character: Character): Long = characterDao.insert(character)
     suspend fun updateCharacter(character: Character) = characterDao.update(character)
     suspend fun deleteCharacter(character: Character) = characterDao.delete(character)
@@ -73,10 +75,7 @@ class AppRepository(
     }
 
     suspend fun updateEventCharacters(eventId: Long, characterIds: List<Long>) {
-        timelineDao.deleteCrossRefsByEvent(eventId)
-        characterIds.forEach { characterId ->
-            timelineDao.insertCrossRef(TimelineCharacterCrossRef(eventId, characterId))
-        }
+        timelineDao.replaceCharactersForEvent(eventId, characterIds)
     }
 
     suspend fun getCharacterIdsForEvent(eventId: Long): List<Long> =
@@ -164,8 +163,7 @@ class AppRepository(
      * Deletes existing values and inserts the new ones.
      */
     suspend fun saveAllFieldValues(characterId: Long, values: List<CharacterFieldValue>) {
-        characterFieldValueDao.deleteAllByCharacter(characterId)
-        characterFieldValueDao.insertAll(values)
+        characterFieldValueDao.replaceAllByCharacter(characterId, values)
     }
 
     // ===== CharacterStateChange =====

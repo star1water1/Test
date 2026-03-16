@@ -5,35 +5,41 @@ import androidx.room.*
 import com.novelcharacter.app.data.model.CharacterFieldValue
 
 @Dao
-interface CharacterFieldValueDao {
+abstract class CharacterFieldValueDao {
     @Query("SELECT * FROM character_field_values WHERE characterId = :characterId")
-    fun getValuesByCharacter(characterId: Long): LiveData<List<CharacterFieldValue>>
+    abstract fun getValuesByCharacter(characterId: Long): LiveData<List<CharacterFieldValue>>
 
     @Query("SELECT * FROM character_field_values WHERE characterId = :characterId")
-    suspend fun getValuesByCharacterList(characterId: Long): List<CharacterFieldValue>
+    abstract suspend fun getValuesByCharacterList(characterId: Long): List<CharacterFieldValue>
 
     @Query("SELECT * FROM character_field_values WHERE characterId = :characterId AND fieldDefinitionId = :fieldId")
-    suspend fun getValue(characterId: Long, fieldId: Long): CharacterFieldValue?
+    abstract suspend fun getValue(characterId: Long, fieldId: Long): CharacterFieldValue?
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insert(value: CharacterFieldValue): Long
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    abstract suspend fun insert(value: CharacterFieldValue): Long
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertAll(values: List<CharacterFieldValue>)
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    abstract suspend fun insertAll(values: List<CharacterFieldValue>)
 
     @Update
-    suspend fun update(value: CharacterFieldValue)
+    abstract suspend fun update(value: CharacterFieldValue)
 
     @Query("DELETE FROM character_field_values WHERE characterId = :characterId")
-    suspend fun deleteAllByCharacter(characterId: Long)
+    abstract suspend fun deleteAllByCharacter(characterId: Long)
 
     @Query("DELETE FROM character_field_values WHERE characterId = :characterId AND fieldDefinitionId = :fieldId")
-    suspend fun deleteValue(characterId: Long, fieldId: Long)
+    abstract suspend fun deleteValue(characterId: Long, fieldId: Long)
 
     @Query("""
         SELECT cfv.* FROM character_field_values cfv
         INNER JOIN field_definitions fd ON cfv.fieldDefinitionId = fd.id
         WHERE cfv.characterId = :characterId AND fd.`key` = :fieldKey
     """)
-    suspend fun getValueByFieldKey(characterId: Long, fieldKey: String): CharacterFieldValue?
+    abstract suspend fun getValueByFieldKey(characterId: Long, fieldKey: String): CharacterFieldValue?
+
+    @Transaction
+    open suspend fun replaceAllByCharacter(characterId: Long, values: List<CharacterFieldValue>) {
+        deleteAllByCharacter(characterId)
+        insertAll(values)
+    }
 }

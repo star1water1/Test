@@ -380,6 +380,7 @@ class TimelineFragment : Fragment() {
             override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
                 val character = characters[position]
                 val checkBox = holder.itemView as CheckBox
+                checkBox.setOnCheckedChangeListener(null)
                 checkBox.text = character.name
                 checkBox.isChecked = selectedIds.contains(character.id)
                 checkBox.setOnCheckedChangeListener { _, isChecked ->
