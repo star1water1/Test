@@ -6,7 +6,9 @@ import android.view.View
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import androidx.appcompat.app.AlertDialog
+import androidx.core.os.bundleOf
 import androidx.fragment.app.DialogFragment
+import androidx.fragment.app.setFragmentResult
 import com.google.gson.Gson
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.FieldDefinition
@@ -15,13 +17,8 @@ import com.novelcharacter.app.databinding.DialogFieldEditBinding
 
 class FieldEditDialog : DialogFragment() {
 
-    private var onSave: ((FieldDefinition) -> Unit)? = null
     private var universeId: Long = 0
     private var existingField: FieldDefinition? = null
-
-    fun setOnSaveListener(listener: (FieldDefinition) -> Unit) {
-        onSave = listener
-    }
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         val binding = DialogFieldEditBinding.inflate(layoutInflater)
@@ -136,7 +133,12 @@ class FieldEditDialog : DialogFragment() {
             )
         }
 
-        onSave?.invoke(field)
+        // Use Fragment Result API instead of callback (survives config change)
+        val isNew = existingField == null
+        setFragmentResult(RESULT_KEY, bundleOf(
+            RESULT_FIELD_JSON to Gson().toJson(field),
+            RESULT_IS_NEW to isNew
+        ))
     }
 
     private fun buildConfig(binding: DialogFieldEditBinding, type: FieldType): String {
@@ -178,6 +180,9 @@ class FieldEditDialog : DialogFragment() {
     companion object {
         private const val ARG_UNIVERSE_ID = "universeId"
         private const val ARG_FIELD_JSON = "fieldJson"
+        const val RESULT_KEY = "field_edit_result"
+        const val RESULT_FIELD_JSON = "field_json"
+        const val RESULT_IS_NEW = "is_new"
 
         fun newInstance(universeId: Long, field: FieldDefinition?): FieldEditDialog {
             return FieldEditDialog().apply {

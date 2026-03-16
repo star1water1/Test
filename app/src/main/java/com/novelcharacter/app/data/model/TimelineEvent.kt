@@ -37,8 +37,9 @@ data class TimelineEvent(
 ) {
     fun getFormattedDate(): String {
         val yearStr = if (year < 0) "BC ${-year}" else "$year"
-        val monthStr = month?.let { "${it}월" } ?: ""
-        val dayStr = day?.let { "${it}일" } ?: ""
-        return "$calendarType $yearStr $monthStr $dayStr".trim()
+        val parts = mutableListOf(calendarType, yearStr)
+        month?.let { parts.add("${it}월") }
+        day?.let { parts.add("${it}일") }
+        return parts.joinToString(" ")
     }
 }

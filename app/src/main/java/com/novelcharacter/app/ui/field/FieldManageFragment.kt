@@ -11,6 +11,7 @@ import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.google.gson.Gson
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.databinding.FragmentFieldManageBinding
@@ -46,6 +47,7 @@ class FieldManageFragment : Fragment() {
         setupRecyclerView()
         setupFab()
         observeData()
+        setupFragmentResultListener()
     }
 
     private fun setupToolbar() {
@@ -75,8 +77,9 @@ class FieldManageFragment : Fragment() {
                 viewHolder: RecyclerView.ViewHolder,
                 target: RecyclerView.ViewHolder
             ): Boolean {
-                val from = viewHolder.adapterPosition
-                val to = target.adapterPosition
+                val from = viewHolder.bindingAdapterPosition
+                val to = target.bindingAdapterPosition
+                if (from == RecyclerView.NO_POSITION || to == RecyclerView.NO_POSITION) return false
                 val list = adapter.currentList.toMutableList()
                 val item = list.removeAt(from)
                 list.add(to, item)
@@ -107,15 +110,23 @@ class FieldManageFragment : Fragment() {
         }
     }
 
-    private fun showFieldEditDialog(field: FieldDefinition?) {
-        val dialog = FieldEditDialog.newInstance(universeId, field)
-        dialog.setOnSaveListener { savedField ->
-            if (field == null) {
-                viewModel.insertField(savedField)
+    private fun setupFragmentResultListener() {
+        childFragmentManager.setFragmentResultListener(
+            FieldEditDialog.RESULT_KEY, viewLifecycleOwner
+        ) { _, bundle ->
+            val fieldJson = bundle.getString(FieldEditDialog.RESULT_FIELD_JSON) ?: return@setFragmentResultListener
+            val isNew = bundle.getBoolean(FieldEditDialog.RESULT_IS_NEW, true)
+            val field = Gson().fromJson(fieldJson, FieldDefinition::class.java)
+            if (isNew) {
+                viewModel.insertField(field)
             } else {
-                viewModel.updateField(savedField)
+                viewModel.updateField(field)
             }
         }
+    }
+
+    private fun showFieldEditDialog(field: FieldDefinition?) {
+        val dialog = FieldEditDialog.newInstance(universeId, field)
         dialog.show(childFragmentManager, "FieldEditDialog")
     }
 

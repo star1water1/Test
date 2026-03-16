@@ -21,9 +21,10 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-class ExcelExporter(private val context: Context) {
+class ExcelExporter(context: Context) {
 
-    private val db = AppDatabase.getDatabase(context)
+    private val appContext = context.applicationContext
+    private val db = AppDatabase.getDatabase(appContext)
 
     fun exportAll() {
         CoroutineScope(Dispatchers.IO).launch {
@@ -41,11 +42,11 @@ class ExcelExporter(private val context: Context) {
                 workbook.close()
 
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(context, "내보내기 완료: $fileName", Toast.LENGTH_LONG).show()
+                    Toast.makeText(appContext, "내보내기 완료: $fileName", Toast.LENGTH_LONG).show()
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(context, "내보내기 실패: ${e.message}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(appContext, "내보내기 실패: ${e.message}", Toast.LENGTH_LONG).show()
                 }
             }
         }
@@ -60,11 +61,11 @@ class ExcelExporter(private val context: Context) {
                     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
                 put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
             }
-            val uri = context.contentResolver.insert(
+            val uri = appContext.contentResolver.insert(
                 MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues
             ) ?: throw Exception("파일을 생성할 수 없습니다")
 
-            context.contentResolver.openOutputStream(uri)?.use { outputStream ->
+            appContext.contentResolver.openOutputStream(uri)?.use { outputStream ->
                 workbook.write(outputStream)
             } ?: throw Exception("파일에 쓸 수 없습니다")
         } else {
@@ -77,10 +78,27 @@ class ExcelExporter(private val context: Context) {
         }
     }
 
+    /**
+     * Sanitize and deduplicate sheet names for Excel compatibility.
+     * Sheet names cannot contain \ / ? * [ ] and must be <= 31 chars.
+     */
+    private fun sanitizeSheetName(name: String, existingNames: Set<String>): String {
+        val sanitized = name.replace(Regex("[\\\\/?*\\[\\]]"), "_").take(31)
+        if (sanitized !in existingNames) return sanitized
+        // Deduplicate by appending a number
+        for (i in 2..999) {
+            val suffix = " ($i)"
+            val candidate = sanitized.take(31 - suffix.length) + suffix
+            if (candidate !in existingNames) return candidate
+        }
+        return sanitized
+    }
+
     private suspend fun exportCharacters(workbook: XSSFWorkbook, headerStyle: CellStyle) {
         val novels = db.novelDao().getAllNovelsList()
         val allCharacters = db.characterDao().getAllCharactersList()
         val universes = db.universeDao().getAllUniversesList()
+        val usedSheetNames = mutableSetOf<String>()
 
         // 세계관별로 시트 생성
         for (universe in universes) {
@@ -93,7 +111,8 @@ class ExcelExporter(private val context: Context) {
 
             if (universeChars.isEmpty()) continue
 
-            val sheetName = universe.name.take(31)
+            val sheetName = sanitizeSheetName(universe.name, usedSheetNames)
+            usedSheetNames.add(sheetName)
             val sheet = workbook.createSheet(sheetName)
 
             // 헤더: 이름 + 동적 필드 + 작품
@@ -133,7 +152,9 @@ class ExcelExporter(private val context: Context) {
             novel?.universeId == null
         }
         if (unassignedChars.isNotEmpty()) {
-            val sheet = workbook.createSheet("미분류 캐릭터")
+            val sheetName = sanitizeSheetName("미분류 캐릭터", usedSheetNames)
+            usedSheetNames.add(sheetName)
+            val sheet = workbook.createSheet(sheetName)
             val headerRow = sheet.createRow(0)
             listOf("이름", "작품").forEachIndexed { index, header ->
                 val cell = headerRow.createCell(index)
@@ -165,8 +186,16 @@ class ExcelExporter(private val context: Context) {
         events.forEachIndexed { index, event ->
             val row = sheet.createRow(index + 1)
             row.createCell(0).setCellValue(event.year.toDouble())
-            row.createCell(1).setCellValue(event.month?.toDouble() ?: 0.0)
-            row.createCell(2).setCellValue(event.day?.toDouble() ?: 0.0)
+            if (event.month != null) {
+                row.createCell(1).setCellValue(event.month.toDouble())
+            } else {
+                row.createCell(1).setCellValue("")
+            }
+            if (event.day != null) {
+                row.createCell(2).setCellValue(event.day.toDouble())
+            } else {
+                row.createCell(2).setCellValue("")
+            }
             row.createCell(3).setCellValue(event.calendarType)
             row.createCell(4).setCellValue(event.description)
 

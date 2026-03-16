@@ -5,6 +5,7 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.Fragment
+import androidx.room.withTransaction
 import com.novelcharacter.app.data.database.AppDatabase
 import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.CharacterFieldValue
@@ -18,9 +19,10 @@ import org.apache.poi.ss.usermodel.CellType
 import org.apache.poi.ss.usermodel.Row
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
 
-class ExcelImporter(private val context: Context) {
+class ExcelImporter(context: Context) {
 
-    private val db = AppDatabase.getDatabase(context)
+    private val appContext = context.applicationContext
+    private val db = AppDatabase.getDatabase(appContext)
 
     private var importLauncher: androidx.activity.result.ActivityResultLauncher<String>? = null
 
@@ -41,115 +43,125 @@ class ExcelImporter(private val context: Context) {
         if (launcher != null) {
             launcher.launch("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         } else {
-            Toast.makeText(context, "가져오기를 사용하려면 앱을 다시 시작하세요", Toast.LENGTH_SHORT).show()
+            Toast.makeText(appContext, "가져오기를 사용하려면 앱을 다시 시작하세요", Toast.LENGTH_SHORT).show()
         }
     }
 
     fun importFromExcel(uri: Uri) {
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val inputStream = context.contentResolver.openInputStream(uri)
+                val inputStream = appContext.contentResolver.openInputStream(uri)
                     ?: throw Exception("파일을 열 수 없습니다")
 
-                val workbook = XSSFWorkbook(inputStream)
                 var importedCharacters = 0
                 var importedEvents = 0
 
-                // 세계관별 시트에서 캐릭터 가져오기
-                val universes = db.universeDao().getAllUniversesList()
+                inputStream.use { stream ->
+                    val workbook = XSSFWorkbook(stream)
+                    workbook.use { wb ->
+                        db.withTransaction {
+                            // Cache novels to avoid N+1 queries
+                            val novelCache = db.novelDao().getAllNovelsList().associateBy { it.title }.toMutableMap()
 
-                for (universe in universes) {
-                    val sheet = workbook.getSheet(universe.name) ?: continue
-                    val fields = db.fieldDefinitionDao().getFieldsByUniverseList(universe.id)
-                    val headerRow = sheet.getRow(0) ?: continue
+                            // 세계관별 시트에서 캐릭터 가져오기
+                            val universes = db.universeDao().getAllUniversesList()
 
-                    // 첫 번째 열이 "이름"인지 확인
-                    if (getCellString(headerRow, 0) != "이름") continue
+                            for (universe in universes) {
+                                val sheetName = universe.name.take(31)
+                                val sheet = wb.getSheet(sheetName) ?: continue
+                                val fields = db.fieldDefinitionDao().getFieldsByUniverseList(universe.id)
+                                val headerRow = sheet.getRow(0) ?: continue
 
-                    for (i in 1..sheet.lastRowNum) {
-                        val row = sheet.getRow(i) ?: continue
-                        val name = getCellString(row, 0)
-                        if (name.isBlank()) continue
+                                // 첫 번째 열이 "이름"인지 확인
+                                if (getCellString(headerRow, 0) != "이름") continue
 
-                        // 마지막 열은 "작품"
-                        val novelTitle = getCellString(row, fields.size + 1)
-                        val novelId = if (novelTitle.isNotBlank()) {
-                            val existingNovels = db.novelDao().getAllNovelsList()
-                            val existing = existingNovels.find { it.title == novelTitle }
-                            existing?.id ?: db.novelDao().insert(
-                                Novel(title = novelTitle, universeId = universe.id)
-                            )
-                        } else null
+                                for (i in 1..sheet.lastRowNum) {
+                                    val row = sheet.getRow(i) ?: continue
+                                    val name = getCellString(row, 0)
+                                    if (name.isBlank()) continue
 
-                        val character = Character(name = name, novelId = novelId)
-                        val charId = db.characterDao().insert(character)
+                                    // 마지막 열은 "작품"
+                                    val novelTitle = getCellString(row, fields.size + 1)
+                                    val novelId = if (novelTitle.isNotBlank()) {
+                                        val existing = novelCache[novelTitle]
+                                        if (existing != null) {
+                                            existing.id
+                                        } else {
+                                            val newNovel = Novel(title = novelTitle, universeId = universe.id)
+                                            val id = db.novelDao().insert(newNovel)
+                                            novelCache[novelTitle] = newNovel.copy(id = id)
+                                            id
+                                        }
+                                    } else null
 
-                        // 동적 필드 값 가져오기
-                        val fieldValues = mutableListOf<CharacterFieldValue>()
-                        fields.forEachIndexed { fi, field ->
-                            val value = getCellString(row, fi + 1)
-                            if (value.isNotBlank()) {
-                                fieldValues.add(
-                                    CharacterFieldValue(
-                                        characterId = charId,
-                                        fieldDefinitionId = field.id,
-                                        value = value
+                                    val character = Character(name = name, novelId = novelId)
+                                    val charId = db.characterDao().insert(character)
+
+                                    // 동적 필드 값 가져오기
+                                    val fieldValues = mutableListOf<CharacterFieldValue>()
+                                    fields.forEachIndexed { fi, field ->
+                                        val value = getCellString(row, fi + 1)
+                                        if (value.isNotBlank()) {
+                                            fieldValues.add(
+                                                CharacterFieldValue(
+                                                    characterId = charId,
+                                                    fieldDefinitionId = field.id,
+                                                    value = value
+                                                )
+                                            )
+                                        }
+                                    }
+                                    if (fieldValues.isNotEmpty()) {
+                                        db.characterFieldValueDao().insertAll(fieldValues)
+                                    }
+                                    importedCharacters++
+                                }
+                            }
+
+                            // 연표 시트 가져오기
+                            val timelineSheet = wb.getSheet("사건 연표")
+                            if (timelineSheet != null) {
+                                for (i in 1..timelineSheet.lastRowNum) {
+                                    val row = timelineSheet.getRow(i) ?: continue
+                                    val yearStr = getCellString(row, 0)
+                                    val year = yearStr.toDoubleOrNull()?.toInt() ?: continue
+                                    val description = getCellString(row, 4)
+                                    if (description.isBlank()) continue
+
+                                    val month = getCellString(row, 1).toDoubleOrNull()?.toInt()?.takeIf { it > 0 }
+                                    val day = getCellString(row, 2).toDoubleOrNull()?.toInt()?.takeIf { it > 0 }
+                                    val calendarType = getCellString(row, 3)
+                                    val novelTitle = getCellString(row, 5)
+                                    val novelId = if (novelTitle.isNotBlank()) {
+                                        novelCache[novelTitle]?.id
+                                    } else null
+
+                                    val event = TimelineEvent(
+                                        year = year,
+                                        month = month,
+                                        day = day,
+                                        calendarType = calendarType.ifBlank { "천개력" },
+                                        description = description,
+                                        novelId = novelId
                                     )
-                                )
+                                    db.timelineDao().insert(event)
+                                    importedEvents++
+                                }
                             }
                         }
-                        if (fieldValues.isNotEmpty()) {
-                            db.characterFieldValueDao().insertAll(fieldValues)
-                        }
-                        importedCharacters++
                     }
                 }
-
-                // 연표 시트 가져오기
-                val timelineSheet = workbook.getSheet("사건 연표")
-                if (timelineSheet != null) {
-                    for (i in 1..timelineSheet.lastRowNum) {
-                        val row = timelineSheet.getRow(i) ?: continue
-                        val yearStr = getCellString(row, 0)
-                        val year = yearStr.toDoubleOrNull()?.toInt() ?: continue
-                        val description = getCellString(row, 4)
-                        if (description.isBlank()) continue
-
-                        val month = getCellString(row, 1).toDoubleOrNull()?.toInt()?.takeIf { it > 0 }
-                        val day = getCellString(row, 2).toDoubleOrNull()?.toInt()?.takeIf { it > 0 }
-                        val calendarType = getCellString(row, 3)
-                        val novelTitle = getCellString(row, 5)
-                        val novelId = if (novelTitle.isNotBlank()) {
-                            val existingNovels = db.novelDao().getAllNovelsList()
-                            existingNovels.find { it.title == novelTitle }?.id
-                        } else null
-
-                        val event = TimelineEvent(
-                            year = year,
-                            month = month,
-                            day = day,
-                            calendarType = calendarType.ifBlank { "천개력" },
-                            description = description,
-                            novelId = novelId
-                        )
-                        db.timelineDao().insert(event)
-                        importedEvents++
-                    }
-                }
-
-                workbook.close()
-                inputStream.close()
 
                 withContext(Dispatchers.Main) {
                     Toast.makeText(
-                        context,
+                        appContext,
                         "가져오기 완료: 캐릭터 ${importedCharacters}명, 사건 ${importedEvents}개",
                         Toast.LENGTH_LONG
                     ).show()
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(context, "가져오기 실패: ${e.message}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(appContext, "가져오기 실패: ${e.message}", Toast.LENGTH_LONG).show()
                 }
             }
         }

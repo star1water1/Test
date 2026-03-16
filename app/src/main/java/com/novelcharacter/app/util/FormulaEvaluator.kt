@@ -58,6 +58,23 @@ class FormulaEvaluator(
         while (i < formula.length) {
             when {
                 formula[i].isWhitespace() -> i++
+                // Handle unary +/- (at start, after operator, or after left paren)
+                formula[i] in "+-" && (tokens.isEmpty() || tokens.last() is Token.Op || tokens.last() == Token.LParen) -> {
+                    val sign = formula[i]
+                    i++
+                    // Check if followed by a digit or dot (unary number)
+                    if (i < formula.length && (formula[i].isDigit() || formula[i] == '.')) {
+                        val start = i
+                        while (i < formula.length && (formula[i].isDigit() || formula[i] == '.')) i++
+                        val numStr = formula.substring(start, i)
+                        val num = numStr.toDoubleOrNull() ?: 0.0
+                        tokens.add(Token.Num(if (sign == '-') -num else num))
+                    } else {
+                        // Unary sign before non-number (e.g., -(expr)): insert 0 and the operator
+                        tokens.add(Token.Num(0.0))
+                        tokens.add(Token.Op(sign))
+                    }
+                }
                 formula[i] in "+-*/" -> { tokens.add(Token.Op(formula[i])); i++ }
                 formula[i] == '(' -> { tokens.add(Token.LParen); i++ }
                 formula[i] == ')' -> { tokens.add(Token.RParen); i++ }
@@ -66,23 +83,27 @@ class FormulaEvaluator(
                     while (i < formula.length && (formula[i].isDigit() || formula[i] == '.')) i++
                     tokens.add(Token.Num(formula.substring(start, i).toDouble()))
                 }
-                formula.substring(i).startsWith("field(") -> {
+                formula.startsWith("field(", i) -> {
                     i += 6 // skip "field("
-                    // skip quote
-                    if (i < formula.length && (formula[i] == '\'' || formula[i] == '"')) i++
+                    // Track which quote char was used (if any)
+                    val quoteChar = if (i < formula.length && (formula[i] == '\'' || formula[i] == '"')) formula[i++] else null
                     val start = i
-                    while (i < formula.length && formula[i] != '\'' && formula[i] != '"' && formula[i] != ')') i++
+                    if (quoteChar != null) {
+                        while (i < formula.length && formula[i] != quoteChar) i++
+                    } else {
+                        while (i < formula.length && formula[i] != ')') i++
+                    }
                     val key = formula.substring(start, i)
                     // skip closing quote and paren
-                    if (i < formula.length && (formula[i] == '\'' || formula[i] == '"')) i++
+                    if (quoteChar != null && i < formula.length && formula[i] == quoteChar) i++
                     if (i < formula.length && formula[i] == ')') i++
                     tokens.add(Token.Num(resolveField(key)))
                 }
-                formula.substring(i).startsWith("sum_all_grades()") -> {
+                formula.startsWith("sum_all_grades()", i) -> {
                     tokens.add(Token.Num(sumAllGrades()))
                     i += 16
                 }
-                formula.substring(i).startsWith("abs(") -> {
+                formula.startsWith("abs(", i) -> {
                     tokens.add(Token.Func("abs"))
                     tokens.add(Token.LParen)
                     i += 4
@@ -117,14 +138,22 @@ class FormulaEvaluator(
                     while (stack.isNotEmpty() && stack.last() !is Token.LParen) {
                         output.add(stack.removeLast())
                     }
-                    if (stack.isNotEmpty()) stack.removeLast() // remove LParen
+                    if (stack.isNotEmpty() && stack.last() is Token.LParen) {
+                        stack.removeLast() // remove LParen
+                    }
                     if (stack.isNotEmpty() && stack.last() is Token.Func) {
                         output.add(stack.removeLast())
                     }
                 }
             }
         }
-        while (stack.isNotEmpty()) output.add(stack.removeLast())
+        while (stack.isNotEmpty()) {
+            val top = stack.removeLast()
+            // Discard unmatched LParen instead of adding to output
+            if (top !is Token.LParen) {
+                output.add(top)
+            }
+        }
         return output
     }
 

@@ -40,7 +40,7 @@ class BirthdayWorker(
 
             Result.success()
         } catch (e: Exception) {
-            Result.retry()
+            Result.failure()
         }
     }
 }
