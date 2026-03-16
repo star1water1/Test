@@ -144,6 +144,7 @@ class TimelineAdapter(
         }
 
         private fun bindEvent(event: TimelineEvent) {
+            loadJob?.cancel()
             boundEventId = event.id
             binding.yearText.text = formatEventDate(event)
             binding.calendarTypeText.text = event.calendarType

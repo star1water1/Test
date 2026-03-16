@@ -3,8 +3,9 @@
 # Keep Apache POI classes
 -keep class org.apache.poi.** { *; }
 -dontwarn org.apache.poi.**
--dontwarn org.apache.xmlbeans.**
+-keep class org.apache.commons.** { *; }
 -dontwarn org.apache.commons.**
+-dontwarn org.apache.xmlbeans.**
 -dontwarn javax.xml.**
 
 # Keep StAX API and Aalto XML (Android에서 POI OOXML 동작에 필요)
