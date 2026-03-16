@@ -29,6 +29,11 @@ class TimeSliderHelper(
     private val timeStateResolver = TimeStateResolver()
     private var applyTimeViewJob: Job? = null
 
+    fun cancelJob() {
+        applyTimeViewJob?.cancel()
+        applyTimeViewJob = null
+    }
+
     fun setup() {
         binding.timeSliderContainer.visibility = View.VISIBLE
 
@@ -135,11 +140,12 @@ class TimeSliderHelper(
                 else -> 1f
             }
 
-            if (currentSliderYear == null) {
+            val sliderYear = currentSliderYear
+            if (sliderYear == null) {
                 binding.yearSlider.value = adjustedMin
                 binding.yearLabel.text = "${minYear}년"
             } else {
-                val clampedYear = currentSliderYear!!.coerceIn(minYear, adjustedMax.toInt())
+                val clampedYear = sliderYear.coerceIn(minYear, adjustedMax.toInt())
                 binding.yearSlider.value = clampedYear.toFloat()
                 binding.yearLabel.text = "${clampedYear}년"
             }

@@ -133,7 +133,7 @@
             <!-- Reset button -->
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnResetTimeView"
-                style="@style/Widget.MaterialComponents.Button.TextButton"
+                style="@style/Widget.Material3.Button.TextButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_gravity="end"
@@ -163,7 +163,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="300dp"
                     android:layout_marginBottom="16dp"
-                    android:background="#F5F5F5" />
+                    android:background="@color/item_background_light" />
 
                 <!-- Character name -->
                 <TextView

@@ -62,7 +62,7 @@ class ExcelImporter(private val context: Context) {
                 "application/octet-stream"
             ))
         } else {
-            Toast.makeText(context, "가져오기를 사용하려면 앱을 다시 시작하세요", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, com.novelcharacter.app.R.string.importer_restart, Toast.LENGTH_SHORT).show()
         }
     }
 

@@ -50,7 +50,7 @@
             style="@style/Widget.Material3.Button.TonalButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="비교"
+            android:text="@string/compare_button"
             android:textSize="12sp"
             android:minWidth="56dp" />
 
@@ -59,7 +59,7 @@
             style="@style/Widget.Material3.Button.TextButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="취소"
+            android:text="@string/cancel_button"
             android:textSize="12sp"
             android:visibility="gone" />
 

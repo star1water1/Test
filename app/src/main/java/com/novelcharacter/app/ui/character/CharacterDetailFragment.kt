@@ -268,6 +268,7 @@ class CharacterDetailFragment : Fragment() {
 
     override fun onDestroyView() {
         relationshipHelper.cancelJob()
+        timeSliderHelper.cancelJob()
         super.onDestroyView()
         _binding = null
     }
