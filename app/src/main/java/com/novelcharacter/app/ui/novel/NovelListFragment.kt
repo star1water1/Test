@@ -41,6 +41,10 @@ class NovelListFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
+        savedInstanceState?.getString("pendingExportFilePath")?.let {
+            pendingExportFile = java.io.File(it)
+        }
+
         importer.registerLauncher(this)
         universeId = arguments?.getLong("universeId", -1L) ?: -1L
         viewModel.setUniverseFilter(universeId)
@@ -161,9 +165,19 @@ class NovelListFragment : Fragment() {
     ) { uri ->
         val file = pendingExportFile
         if (uri != null && file != null) {
+            if (exporter == null) {
+                exporter = com.novelcharacter.app.excel.ExcelExporter(requireContext())
+            }
             exporter?.writeToUri(uri, file)
         }
         pendingExportFile = null
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        pendingExportFile?.absolutePath?.let {
+            outState.putString("pendingExportFilePath", it)
+        }
     }
 
     private fun exportToExcel() {

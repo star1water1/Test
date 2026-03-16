@@ -94,11 +94,19 @@ class ExcelExporter(private val context: Context) {
     fun writeToUri(uri: Uri, sourceFile: File) {
         exportScope.launch {
             try {
-                appContext.contentResolver.openOutputStream(uri)?.use { outputStream ->
-                    sourceFile.inputStream().use { inputStream ->
-                        inputStream.copyTo(outputStream)
+                val outputStream = appContext.contentResolver.openOutputStream(uri)
+                if (outputStream == null) {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(appContext, appContext.getString(com.novelcharacter.app.R.string.export_save_failed), Toast.LENGTH_LONG).show()
+                    }
+                    return@launch
+                }
+                outputStream.use { out ->
+                    sourceFile.inputStream().use { input ->
+                        input.copyTo(out)
                     }
                 }
+                sourceFile.delete()
                 withContext(Dispatchers.Main) {
                     Toast.makeText(appContext, appContext.getString(com.novelcharacter.app.R.string.export_save_success), Toast.LENGTH_SHORT).show()
                 }
