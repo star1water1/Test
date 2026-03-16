@@ -9,6 +9,7 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.navigation.NavOptions
 import androidx.navigation.fragment.NavHostFragment
 import androidx.navigation.ui.setupWithNavController
 import com.google.android.material.bottomnavigation.BottomNavigationView
@@ -44,6 +45,19 @@ class MainActivity : AppCompatActivity() {
         val navController = navHostFragment.navController
 
         binding.bottomNav.setupWithNavController(navController)
+
+        binding.bottomNav.setOnItemSelectedListener { item ->
+            val navOptions = NavOptions.Builder()
+                .setPopUpTo(navController.graph.startDestinationId, inclusive = false)
+                .setLaunchSingleTop(true)
+                .build()
+            navController.navigate(item.itemId, null, navOptions)
+            true
+        }
+
+        binding.bottomNav.setOnItemReselectedListener { item ->
+            navController.popBackStack(item.itemId, inclusive = false)
+        }
     }
 
     private fun requestNotificationPermission() {
