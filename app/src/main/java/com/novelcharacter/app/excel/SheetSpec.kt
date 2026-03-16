@@ -19,6 +19,9 @@ data class SheetSpec(
     val sheetName: String,
     val columns: List<ColumnSpec>
 ) {
+    val firstColumnHeader: String get() = columns.first().header
+
+    /** Find column index by header name in an actual Excel header row. */
     fun findColumn(headerRow: Row, headerName: String): Int {
         val lastCol = headerRow.lastCellNum.toInt()
         for (col in 0 until lastCol) {
@@ -28,6 +31,23 @@ data class SheetSpec(
         return -1
     }
 }
+
+/** All reserved (non-universe) sheet names used by the app. */
+val RESERVED_SHEET_NAMES = setOf(
+    "사용 안내",
+    universeSpec().sheetName,
+    novelSpec(emptyList()).sheetName,
+    fieldDefinitionSpec(emptyList()).sheetName,
+    "미분류 캐릭터",
+    timelineSpec(emptyList()).sheetName,
+    stateChangeSpec().sheetName,
+    relationshipSpec().sheetName,
+    nameBankSpec().sheetName
+)
+
+/** Split a comma-separated string into a trimmed, non-blank list. */
+fun splitCsv(value: String): List<String> =
+    value.split(",").map { it.trim() }.filter { it.isNotBlank() }
 
 // ── Sheet Spec factories ──
 

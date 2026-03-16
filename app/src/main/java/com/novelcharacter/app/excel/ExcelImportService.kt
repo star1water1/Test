@@ -56,6 +56,7 @@ class ExcelImportService(private val db: AppDatabase) {
     ): ImportResult {
         val result = ImportResult()
         novelIdCache.clear()
+        processedRowsSoFar = 0
 
         // Count total rows for progress
         val totalRows = countTotalRows(workbook)
@@ -79,7 +80,7 @@ class ExcelImportService(private val db: AppDatabase) {
         var total = 0
         for (i in 0 until workbook.numberOfSheets) {
             val sheetName = workbook.getSheetName(i)
-            if (sheetName == "사용 안내") continue
+            if (sheetName == GUIDE_SHEET_NAME) continue
             total += maxOf(0, workbook.getSheetAt(i).lastRowNum)
         }
         return maxOf(total, 1)
@@ -95,11 +96,12 @@ class ExcelImportService(private val db: AppDatabase) {
     // ── 세계관 가져오기 ──
 
     private suspend fun importUniverses(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
-        val sheet = workbook.getSheet("세계관") ?: return
+        val spec = universeSpec()
+        val sheet = workbook.getSheet(spec.sheetName) ?: return
         val headerRow = sheet.getRow(0) ?: return
-        if (getCellString(headerRow, 0) != "이름") return
+        if (getCellString(headerRow, 0) != spec.firstColumnHeader) return
 
-        val codeColIndex = findColumnIndex(headerRow, "코드")
+        val codeColIndex = spec.findColumn(headerRow, "코드")
 
         for (i in 1..sheet.lastRowNum) {
             try {
@@ -135,12 +137,13 @@ class ExcelImportService(private val db: AppDatabase) {
     // ── 작품 가져오기 ──
 
     private suspend fun importNovels(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
-        val sheet = workbook.getSheet("작품") ?: return
+        val spec = novelSpec(emptyList())
+        val sheet = workbook.getSheet(spec.sheetName) ?: return
         val headerRow = sheet.getRow(0) ?: return
-        if (getCellString(headerRow, 0) != "제목") return
+        if (getCellString(headerRow, 0) != spec.firstColumnHeader) return
 
-        val codeColIndex = findColumnIndex(headerRow, "코드")
-        val universeCodeColIndex = findColumnIndex(headerRow, "세계관코드")
+        val codeColIndex = spec.findColumn(headerRow, "코드")
+        val universeCodeColIndex = spec.findColumn(headerRow, "세계관코드")
 
         for (i in 1..sheet.lastRowNum) {
             try {
@@ -188,11 +191,12 @@ class ExcelImportService(private val db: AppDatabase) {
     // ── 필드 정의 가져오기 ──
 
     private suspend fun importFieldDefinitions(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
-        val sheet = workbook.getSheet("필드 정의") ?: return
+        val spec = fieldDefinitionSpec(emptyList())
+        val sheet = workbook.getSheet(spec.sheetName) ?: return
         val headerRow = sheet.getRow(0) ?: return
-        if (getCellString(headerRow, 0) != "세계관") return
+        if (getCellString(headerRow, 0) != spec.firstColumnHeader) return
 
-        val universeCodeColIndex = findColumnIndex(headerRow, "세계관코드")
+        val universeCodeColIndex = spec.findColumn(headerRow, "세계관코드")
 
         for (i in 1..sheet.lastRowNum) {
             try {
@@ -244,7 +248,7 @@ class ExcelImportService(private val db: AppDatabase) {
 
     private suspend fun importCharacterSheets(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val universes = db.universeDao().getAllUniversesList()
-        val reservedNames = setOf("사용 안내", "세계관", "작품", "필드 정의", "미분류 캐릭터", "사건 연표", "캐릭터 상태변화", "캐릭터 관계", "이름 은행")
+        val reservedNames = RESERVED_SHEET_NAMES
 
         for (universe in universes) {
             val sheet = findSheetForUniverse(workbook, universe.name, reservedNames) ?: continue
@@ -259,7 +263,7 @@ class ExcelImportService(private val db: AppDatabase) {
     // ── 미분류 캐릭터 가져오기 ──
 
     private suspend fun importUnclassifiedCharacters(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
-        val sheet = workbook.getSheet("미분류 캐릭터") ?: return
+        val sheet = workbook.getSheet(UNCLASSIFIED_SHEET_NAME) ?: return
         val headerRow = sheet.getRow(0) ?: return
         if (getCellString(headerRow, 0) != "이름") return
 
@@ -278,13 +282,14 @@ class ExcelImportService(private val db: AppDatabase) {
         onProgress: (ImportProgress) -> Unit,
         totalRows: Int
     ) {
+        val spec = characterSpec(fields, emptyList())
         val columnFieldMap = buildColumnFieldMap(headerRow, fields)
-        val imageColIndex = findColumnIndex(headerRow, "이미지경로")
-        val novelColIndex = findColumnIndex(headerRow, "작품")
-        val memoColIndex = findColumnIndex(headerRow, "메모")
-        val tagsColIndex = findColumnIndex(headerRow, "태그")
-        val codeColIndex = findColumnIndex(headerRow, "코드")
-        val novelCodeColIndex = findColumnIndex(headerRow, "작품코드")
+        val imageColIndex = spec.findColumn(headerRow, "이미지경로")
+        val novelColIndex = spec.findColumn(headerRow, "작품")
+        val memoColIndex = spec.findColumn(headerRow, "메모")
+        val tagsColIndex = spec.findColumn(headerRow, "태그")
+        val codeColIndex = spec.findColumn(headerRow, "코드")
+        val novelCodeColIndex = spec.findColumn(headerRow, "작품코드")
 
         for (i in 1..sheet.lastRowNum) {
             try {
@@ -342,7 +347,7 @@ class ExcelImportService(private val db: AppDatabase) {
                     val tagsStr = getCellString(row, tagsColIndex)
                     if (tagsStr.isNotBlank()) {
                         db.characterTagDao().deleteAllByCharacter(charId)
-                        val tags = tagsStr.split(",").map { it.trim() }.filter { it.isNotBlank() }
+                        val tags = splitCsv(tagsStr)
                         tags.forEach { tag ->
                             db.characterTagDao().insert(CharacterTag(characterId = charId, tag = tag))
                         }
@@ -375,12 +380,13 @@ class ExcelImportService(private val db: AppDatabase) {
     // ── 연표 가져오기 ──
 
     private suspend fun importTimeline(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
-        val sheet = workbook.getSheet("사건 연표") ?: return
+        val spec = timelineSpec(emptyList())
+        val sheet = workbook.getSheet(spec.sheetName) ?: return
         val headerRow = sheet.getRow(0) ?: return
-        if (getCellString(headerRow, 0) != "연도") return
+        if (getCellString(headerRow, 0) != spec.firstColumnHeader) return
 
         val allNovels = db.novelDao().getAllNovelsList()
-        val novelCodeColIndex = findColumnIndex(headerRow, "관련작품코드")
+        val novelCodeColIndex = spec.findColumn(headerRow, "관련작품코드")
 
         for (i in 1..sheet.lastRowNum) {
             try {
@@ -425,7 +431,7 @@ class ExcelImportService(private val db: AppDatabase) {
                 val characterNames = getCellString(row, 6)
                 if (characterNames.isNotBlank()) {
                     db.timelineDao().deleteCrossRefsByEvent(eventId)
-                    val names = characterNames.split(",").map { it.trim() }.filter { it.isNotBlank() }
+                    val names = splitCsv(characterNames)
                     for (charName in names) {
                         val character = findCharacterByName(charName, novelId)
                         if (character != null) {
@@ -446,12 +452,13 @@ class ExcelImportService(private val db: AppDatabase) {
     // ── 상태변화 가져오기 ──
 
     private suspend fun importStateChanges(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
-        val sheet = workbook.getSheet("캐릭터 상태변화") ?: return
+        val spec = stateChangeSpec()
+        val sheet = workbook.getSheet(spec.sheetName) ?: return
         val headerRow = sheet.getRow(0) ?: return
-        if (getCellString(headerRow, 0) != "캐릭터") return
+        if (getCellString(headerRow, 0) != spec.firstColumnHeader) return
 
         val allNovels = db.novelDao().getAllNovelsList()
-        val charCodeColIndex = findColumnIndex(headerRow, "캐릭터코드")
+        val charCodeColIndex = spec.findColumn(headerRow, "캐릭터코드")
 
         for (i in 1..sheet.lastRowNum) {
             try {
@@ -507,12 +514,13 @@ class ExcelImportService(private val db: AppDatabase) {
     // ── 캐릭터 관계 가져오기 ──
 
     private suspend fun importRelationships(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
-        val sheet = workbook.getSheet("캐릭터 관계") ?: return
+        val spec = relationshipSpec()
+        val sheet = workbook.getSheet(spec.sheetName) ?: return
         val headerRow = sheet.getRow(0) ?: return
-        if (getCellString(headerRow, 0) != "캐릭터1") return
+        if (getCellString(headerRow, 0) != spec.firstColumnHeader) return
 
-        val char1CodeColIndex = findColumnIndex(headerRow, "캐릭터1코드")
-        val char2CodeColIndex = findColumnIndex(headerRow, "캐릭터2코드")
+        val char1CodeColIndex = spec.findColumn(headerRow, "캐릭터1코드")
+        val char2CodeColIndex = spec.findColumn(headerRow, "캐릭터2코드")
 
         for (i in 1..sheet.lastRowNum) {
             try {
@@ -571,11 +579,12 @@ class ExcelImportService(private val db: AppDatabase) {
     // ── 이름 은행 가져오기 ──
 
     private suspend fun importNameBank(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
-        val sheet = workbook.getSheet("이름 은행") ?: return
+        val spec = nameBankSpec()
+        val sheet = workbook.getSheet(spec.sheetName) ?: return
         val headerRow = sheet.getRow(0) ?: return
-        if (getCellString(headerRow, 0) != "이름") return
+        if (getCellString(headerRow, 0) != spec.firstColumnHeader) return
 
-        val charCodeColIndex = findColumnIndex(headerRow, "사용캐릭터코드")
+        val charCodeColIndex = spec.findColumn(headerRow, "사용캐릭터코드")
         val existingNames = db.nameBankDao().getAllNamesList().toMutableList()
 
         for (i in 1..sheet.lastRowNum) {
@@ -654,14 +663,6 @@ class ExcelImportService(private val db: AppDatabase) {
         return map
     }
 
-    private fun findColumnIndex(headerRow: Row, columnName: String): Int {
-        val lastCol = headerRow.lastCellNum.toInt()
-        for (col in 0 until lastCol) {
-            if (getCellString(headerRow, col) == columnName) return col
-        }
-        return -1
-    }
-
     private suspend fun resolveNovelId(novelTitle: String, universeId: Long): Long? {
         if (novelTitle.isBlank()) return null
         val cacheKey = novelTitle to universeId as Long?
@@ -725,5 +726,7 @@ class ExcelImportService(private val db: AppDatabase) {
 
     companion object {
         private const val MAX_FIELD_LENGTH = 10000
+        private const val GUIDE_SHEET_NAME = "사용 안내"
+        private const val UNCLASSIFIED_SHEET_NAME = "미분류 캐릭터"
     }
 }
