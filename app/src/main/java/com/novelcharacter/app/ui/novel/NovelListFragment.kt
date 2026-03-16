@@ -152,10 +152,12 @@ class NovelListFragment : Fragment() {
             .show()
     }
 
+    private var exporter: com.novelcharacter.app.excel.ExcelExporter? = null
+
     private fun exportToExcel() {
         val activity = activity ?: return
-        val exporter = com.novelcharacter.app.excel.ExcelExporter(activity)
-        exporter.exportAll()
+        exporter = com.novelcharacter.app.excel.ExcelExporter(activity)
+        exporter?.exportAll()
     }
 
     private fun importFromExcel() {
@@ -170,6 +172,8 @@ class NovelListFragment : Fragment() {
 
     override fun onDestroy() {
         super.onDestroy()
+        exporter?.cancel()
+        exporter = null
         if (importerInitialized) {
             importer.cleanup()
         }

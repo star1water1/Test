@@ -24,7 +24,8 @@ class ExcelExporter(private val context: Context) {
 
     private val appContext = context.applicationContext
     private val db = AppDatabase.getDatabase(appContext)
-    private val exportScope = CoroutineScope(Dispatchers.IO + kotlinx.coroutines.SupervisorJob())
+    private val supervisorJob = kotlinx.coroutines.SupervisorJob()
+    private val exportScope = CoroutineScope(Dispatchers.IO + supervisorJob)
 
     fun exportAll() {
         exportScope.launch {
@@ -58,8 +59,13 @@ class ExcelExporter(private val context: Context) {
                 }
             } finally {
                 try { workbook?.close() } catch (_: Exception) {}
+                supervisorJob.complete()
             }
         }
+    }
+
+    fun cancel() {
+        supervisorJob.cancel()
     }
 
     private fun saveWorkbook(workbook: XSSFWorkbook, fileName: String): File {
@@ -297,6 +303,7 @@ class ExcelExporter(private val context: Context) {
 
     private suspend fun exportTimeline(workbook: XSSFWorkbook, headerStyle: XSSFCellStyle, usedSheetNames: MutableSet<String>) {
         val events = db.timelineDao().getAllEventsList()
+        if (events.isEmpty()) return
         val novels = db.novelDao().getAllNovelsList()
 
         val sheetName = sanitizeSheetName("사건 연표", usedSheetNames)
