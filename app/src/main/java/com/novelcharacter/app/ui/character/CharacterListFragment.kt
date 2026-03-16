@@ -189,6 +189,7 @@ class CharacterListFragment : Fragment() {
     }
 
     override fun onDestroyView() {
+        binding.characterRecyclerView.adapter = null
         super.onDestroyView()
         _binding = null
     }

@@ -79,6 +79,7 @@ class GlobalSearchFragment : Fragment() {
     }
 
     override fun onDestroyView() {
+        binding.searchResultsRecyclerView.adapter = null
         super.onDestroyView()
         _binding = null
     }

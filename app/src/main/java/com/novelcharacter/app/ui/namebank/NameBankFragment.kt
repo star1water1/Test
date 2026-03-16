@@ -158,6 +158,7 @@ class NameBankFragment : Fragment() {
     }
 
     override fun onDestroyView() {
+        binding.nameBankRecyclerView.adapter = null
         super.onDestroyView()
         _binding = null
     }
