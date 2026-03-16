@@ -162,7 +162,7 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
     private fun showError(message: String?) {
         _error.value = message
         viewModelScope.launch {
-            delay(100)
+            delay(3000)
             _error.value = null
         }
     }

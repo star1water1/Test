@@ -663,14 +663,16 @@ class ExcelImporter(private val context: Context) {
                     ))
                     result.updatedNameBank++
                 } else {
-                    db.nameBankDao().insert(NameBankEntry(
+                    val newEntry = NameBankEntry(
                         name = name,
                         gender = gender,
                         origin = origin,
                         notes = notes,
                         isUsed = isUsed,
                         usedByCharacterId = usedByCharacterId
-                    ))
+                    )
+                    val newId = db.nameBankDao().insert(newEntry)
+                    existingNames.add(newEntry.copy(id = newId))
                     result.newNameBank++
                 }
             } catch (e: Exception) {
