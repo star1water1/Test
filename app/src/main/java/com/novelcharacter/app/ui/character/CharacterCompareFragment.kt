@@ -77,7 +77,7 @@ class CharacterCompareFragment : Fragment() {
                     val v = values.find { it.fieldDefinitionId == field.id }?.value ?: ""
                     valueMap[field.key] = v
                 }
-                entries.add(CompareEntry(char.name, novel?.title ?: "미지정", valueMap, tags))
+                entries.add(CompareEntry(char.name, novel?.title ?: getString(R.string.novel_unassigned), valueMap, tags))
             }
 
             if (isAdded && _binding != null) {
@@ -107,7 +107,7 @@ class CharacterCompareFragment : Fragment() {
 
         // Novel row
         val novelRow = TableRow(context)
-        novelRow.addView(createCell("작품", false, cellPadding, colWidth))
+        novelRow.addView(createCell(getString(R.string.tab_novels), false, cellPadding, colWidth))
         for (e in entries) {
             novelRow.addView(createCell(e.novelTitle, false, cellPadding, colWidth))
         }
@@ -115,7 +115,7 @@ class CharacterCompareFragment : Fragment() {
 
         // Tags row
         val tagRow = TableRow(context)
-        tagRow.addView(createCell("태그", false, cellPadding, colWidth))
+        tagRow.addView(createCell(getString(R.string.tags), false, cellPadding, colWidth))
         for (e in entries) {
             tagRow.addView(createCell(
                 if (e.tags.isNotEmpty()) e.tags.joinToString(", ") else "-",

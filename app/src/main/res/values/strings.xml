@@ -143,6 +143,7 @@
 
     <!-- Memo -->
     <string name="memo">메모</string>
+    <string name="tags">태그</string>
     <string name="hint_tags">태그 (쉼표로 구분)</string>
 
     <!-- UX Improvements -->

@@ -3,6 +3,7 @@ package com.novelcharacter.app.ui.search
 import android.app.Application
 import androidx.lifecycle.*
 import com.novelcharacter.app.NovelCharacterApp
+import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.TimelineEvent
@@ -16,6 +17,7 @@ sealed class SearchResultItem {
 
 class GlobalSearchViewModel(application: Application) : AndroidViewModel(application) {
 
+    private val appContext = application
     private val app = application as NovelCharacterApp
     private val novelRepository = app.novelRepository
     private val characterRepository = app.characterRepository
@@ -39,15 +41,15 @@ class GlobalSearchViewModel(application: Application) : AndroidViewModel(applica
             fun combine() {
                 val items = mutableListOf<SearchResultItem>()
                 if (chars.isNotEmpty()) {
-                    items.add(SearchResultItem.SectionHeader("캐릭터 (${chars.size})"))
+                    items.add(SearchResultItem.SectionHeader("${appContext.getString(R.string.tab_characters)} (${chars.size})"))
                     items.addAll(chars.map { SearchResultItem.CharacterResult(it) })
                 }
                 if (events.isNotEmpty()) {
-                    items.add(SearchResultItem.SectionHeader("연표 (${events.size})"))
+                    items.add(SearchResultItem.SectionHeader("${appContext.getString(R.string.tab_timeline)} (${events.size})"))
                     items.addAll(events.map { SearchResultItem.EventResult(it) })
                 }
                 if (novels.isNotEmpty()) {
-                    items.add(SearchResultItem.SectionHeader("작품 (${novels.size})"))
+                    items.add(SearchResultItem.SectionHeader("${appContext.getString(R.string.tab_novels)} (${novels.size})"))
                     items.addAll(novels.map { SearchResultItem.NovelResult(it) })
                 }
                 mediator.value = items
