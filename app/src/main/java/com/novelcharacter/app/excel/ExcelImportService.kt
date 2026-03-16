@@ -314,13 +314,15 @@ class ExcelImportService(private val db: AppDatabase) {
                 val imagePaths = if (imageColIndex >= 0) getCellString(row, imageColIndex) else "[]"
                 val memo = if (memoColIndex >= 0) getCellString(row, memoColIndex) else ""
 
-                // Code-first matching, then name+novel fallback
+                // Code-first matching, then name+novel fallback, then name-only fallback
                 val existingChar = if (code.isNotBlank()) {
                     db.characterDao().getCharacterByCode(code)
                 } else null
                     ?: if (novelId != null) {
                         db.characterDao().getCharacterByNameAndNovel(name, novelId)
-                    } else null
+                    } else {
+                        db.characterDao().getCharacterByName(name)
+                    }
 
                 val charId: Long
                 if (existingChar != null) {
@@ -342,11 +344,11 @@ class ExcelImportService(private val db: AppDatabase) {
                     result.newCharacters++
                 }
 
-                // 태그 가져오기
+                // 태그 가져오기 (빈 셀 = 기존 태그 모두 삭제)
                 if (tagsColIndex >= 0) {
                     val tagsStr = getCellString(row, tagsColIndex)
+                    db.characterTagDao().deleteAllByCharacter(charId)
                     if (tagsStr.isNotBlank()) {
-                        db.characterTagDao().deleteAllByCharacter(charId)
                         val tags = splitCsv(tagsStr)
                         tags.forEach { tag ->
                             db.characterTagDao().insert(CharacterTag(characterId = charId, tag = tag))

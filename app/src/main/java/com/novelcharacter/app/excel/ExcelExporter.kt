@@ -608,7 +608,6 @@ class ExcelExporter(private val context: Context) {
 
     private suspend fun exportStateChanges(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
         val allCharacters = db.characterDao().getAllCharactersList()
-        val charMap = allCharacters.associateBy { it.id }
         val novels = db.novelDao().getAllNovelsList()
         val novelMap = novels.associateBy { it.id }
 

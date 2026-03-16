@@ -1,5 +1,6 @@
 package com.novelcharacter.app.excel
 
+import android.app.Activity
 import android.app.AlertDialog
 import android.content.Context
 import android.net.Uri
@@ -21,7 +22,8 @@ import org.apache.poi.ss.usermodel.WorkbookFactory
 class ExcelImporter(private val context: Context) {
 
     private val db = AppDatabase.getDatabase(context)
-    private val importScope = CoroutineScope(Dispatchers.IO + kotlinx.coroutines.SupervisorJob())
+    private var supervisorJob = kotlinx.coroutines.SupervisorJob()
+    private var importScope = CoroutineScope(Dispatchers.IO + supervisorJob)
     private val importService = ExcelImportService(db)
 
     private var importLauncher: androidx.activity.result.ActivityResultLauncher<Array<String>>? = null
@@ -35,7 +37,7 @@ class ExcelImporter(private val context: Context) {
     }
 
     fun cleanup() {
-        importScope.cancel()
+        supervisorJob.cancel()
         importLauncher = null
     }
 
@@ -53,6 +55,11 @@ class ExcelImporter(private val context: Context) {
     }
 
     fun importFromExcel(uri: Uri) {
+        // Recreate scope if previous one was cancelled
+        if (supervisorJob.isCompleted || supervisorJob.isCancelled) {
+            supervisorJob = kotlinx.coroutines.SupervisorJob()
+            importScope = CoroutineScope(Dispatchers.IO + supervisorJob)
+        }
         importScope.launch {
             var workbook: org.apache.poi.ss.usermodel.Workbook? = null
             var progressDialog: AlertDialog? = null
@@ -73,33 +80,36 @@ class ExcelImporter(private val context: Context) {
 
                 workbook = inputStream.use { WorkbookFactory.create(it) }
 
-                // Show progress dialog
-                withContext(Dispatchers.Main) {
-                    val layout = LinearLayout(context).apply {
-                        orientation = LinearLayout.VERTICAL
-                        gravity = Gravity.CENTER
-                        val dp16 = (16 * context.resources.displayMetrics.density).toInt()
-                        setPadding(dp16 * 2, dp16, dp16 * 2, dp16)
-                    }
-                    val progressBar = ProgressBar(context).apply {
-                        isIndeterminate = true
-                    }
-                    layout.addView(progressBar)
-                    val textView = TextView(context).apply {
-                        text = "가져오기 준비 중..."
-                        gravity = Gravity.CENTER
-                        val dp8 = (8 * context.resources.displayMetrics.density).toInt()
-                        setPadding(0, dp8, 0, 0)
-                    }
-                    layout.addView(textView)
-                    progressText = textView
+                // Show progress dialog (only if context is an Activity)
+                val activity = context as? Activity
+                if (activity != null && !activity.isFinishing && !activity.isDestroyed) {
+                    withContext(Dispatchers.Main) {
+                        val layout = LinearLayout(activity).apply {
+                            orientation = LinearLayout.VERTICAL
+                            gravity = Gravity.CENTER
+                            val dp16 = (16 * activity.resources.displayMetrics.density).toInt()
+                            setPadding(dp16 * 2, dp16, dp16 * 2, dp16)
+                        }
+                        val progressBar = ProgressBar(activity).apply {
+                            isIndeterminate = true
+                        }
+                        layout.addView(progressBar)
+                        val textView = TextView(activity).apply {
+                            text = "가져오기 준비 중..."
+                            gravity = Gravity.CENTER
+                            val dp8 = (8 * activity.resources.displayMetrics.density).toInt()
+                            setPadding(0, dp8, 0, 0)
+                        }
+                        layout.addView(textView)
+                        progressText = textView
 
-                    progressDialog = AlertDialog.Builder(context)
-                        .setTitle("가져오기 진행 중")
-                        .setView(layout)
-                        .setCancelable(false)
-                        .create()
-                    progressDialog?.show()
+                        progressDialog = AlertDialog.Builder(activity)
+                            .setTitle("가져오기 진행 중")
+                            .setView(layout)
+                            .setCancelable(false)
+                            .create()
+                        progressDialog?.show()
+                    }
                 }
 
                 val result = importService.importAll(workbook) { progress ->
@@ -107,7 +117,6 @@ class ExcelImporter(private val context: Context) {
                         (progress.processedRows * 100 / progress.totalRows).coerceAtMost(100)
                     } else 0
                     val text = "${progress.currentPhase} 처리 중... ($pct%)"
-                    // Update UI on main thread (fire-and-forget)
                     importScope.launch(Dispatchers.Main) {
                         progressText?.text = text
                     }
