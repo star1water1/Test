@@ -539,6 +539,8 @@ class CharacterEditFragment : Fragment() {
 
                 override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
                     val imageView = holder.itemView as ImageView
+                    // Cancel previous loading job for this ViewHolder
+                    (imageView.getTag(R.id.image_load_job) as? kotlinx.coroutines.Job)?.cancel()
                     // Set placeholder first, then recycle old bitmap to avoid drawing recycled bitmap
                     val oldBitmap = imageView.tag as? android.graphics.Bitmap
                     imageView.tag = null
@@ -547,7 +549,7 @@ class CharacterEditFragment : Fragment() {
                     if (position < imagePaths.size) {
                         val path = imagePaths[position]
                         val boundPosition = position
-                        viewLifecycleOwner.lifecycleScope.launch {
+                        val job = viewLifecycleOwner.lifecycleScope.launch {
                             val bitmap = withContext(Dispatchers.IO) {
                                 decodeSampledBitmap(path, 200, 200)
                             }
@@ -556,6 +558,7 @@ class CharacterEditFragment : Fragment() {
                                 imageView.setImageBitmap(bitmap)
                             }
                         }
+                        imageView.setTag(R.id.image_load_job, job)
                     }
                     imageView.setOnLongClickListener {
                         val adapterPosition = holder.bindingAdapterPosition
@@ -566,6 +569,15 @@ class CharacterEditFragment : Fragment() {
                         }
                         true
                     }
+                }
+
+                override fun onViewRecycled(holder: RecyclerView.ViewHolder) {
+                    val imageView = holder.itemView as ImageView
+                    (imageView.getTag(R.id.image_load_job) as? kotlinx.coroutines.Job)?.cancel()
+                    val bitmap = imageView.tag as? android.graphics.Bitmap
+                    imageView.tag = null
+                    imageView.setImageDrawable(null)
+                    bitmap?.let { if (!it.isRecycled) it.recycle() }
                 }
 
                 override fun getItemCount() = imagePaths.size

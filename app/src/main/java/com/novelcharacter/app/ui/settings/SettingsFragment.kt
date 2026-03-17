@@ -7,11 +7,9 @@ import android.view.ViewGroup
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
-import androidx.lifecycle.lifecycleScope
 import com.novelcharacter.app.R
 import com.novelcharacter.app.databinding.FragmentSettingsBinding
 import com.novelcharacter.app.util.ThemeHelper
-import kotlinx.coroutines.launch
 
 class SettingsFragment : Fragment() {
 
@@ -63,10 +61,8 @@ class SettingsFragment : Fragment() {
             .setTitle(R.string.settings_theme)
             .setSingleChoiceItems(options, current) { dialog, which ->
                 dialog.dismiss()
-                viewLifecycleOwner.lifecycleScope.launch {
-                    ThemeHelper.saveTheme(requireContext(), which)
-                    ThemeHelper.applyTheme(which)
-                }
+                ThemeHelper.saveTheme(requireContext(), which)
+                ThemeHelper.applyTheme(which)
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
