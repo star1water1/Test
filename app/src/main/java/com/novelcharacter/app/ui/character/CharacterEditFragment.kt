@@ -29,6 +29,7 @@ import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.CharacterFieldValue
 import com.novelcharacter.app.data.model.CharacterTag
+import com.novelcharacter.app.data.model.generateEntityCode
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.FieldType
 import com.novelcharacter.app.data.model.Novel
@@ -622,7 +623,8 @@ class CharacterEditFragment : Fragment() {
                 imagePaths = gson.toJson(imagePaths),
                 createdAt = existingCharacter?.createdAt ?: System.currentTimeMillis(),
                 updatedAt = System.currentTimeMillis(),
-                memo = memo
+                memo = memo,
+                code = existingCharacter?.code ?: generateEntityCode()
             )
 
             viewLifecycleOwner.lifecycleScope.launch {

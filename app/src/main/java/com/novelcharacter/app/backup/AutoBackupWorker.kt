@@ -144,7 +144,8 @@ class AutoBackupWorker(
 
         val sheetName = sanitizeSheetName("작품", usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
-        val headers = listOf("제목", "설명", "세계관", "코드")
+        val headers = listOf("제목", "설명", "세계관", "코드", "세계관코드")
+        val universeMap = universes.associateBy { it.id }
         val headerRow = sheet.createRow(0)
         headers.forEachIndexed { i, h ->
             headerRow.createCell(i).apply { setCellValue(h); cellStyle = headerStyle }
@@ -153,8 +154,10 @@ class AutoBackupWorker(
             val row = sheet.createRow(i + 1)
             row.createCell(0).setCellValue(n.title)
             row.createCell(1).setCellValue(n.description)
-            row.createCell(2).setCellValue(universes.find { it.id == n.universeId }?.name ?: "")
+            val universe = n.universeId?.let { universeMap[it] }
+            row.createCell(2).setCellValue(universe?.name ?: "")
             row.createCell(3).setCellValue(n.code)
+            row.createCell(4).setCellValue(universe?.code ?: "")
         }
     }
 
@@ -284,21 +287,22 @@ class AutoBackupWorker(
         headerStyle: XSSFCellStyle, usedSheetNames: MutableSet<String>
     ) {
         val universes = db.universeDao().getAllUniversesList()
+        val universeMap = universes.associateBy { it.id }
         val allFields = universes.flatMap { u ->
-            db.fieldDefinitionDao().getFieldsByUniverseList(u.id).map { u.name to it }
+            db.fieldDefinitionDao().getFieldsByUniverseList(u.id).map { u to it }
         }
         if (allFields.isEmpty()) return
 
         val sheetName = sanitizeSheetName("필드 정의", usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
-        val headers = listOf("세계관", "키", "이름", "타입", "설정", "그룹", "순서", "필수")
+        val headers = listOf("세계관", "필드키", "필드명", "타입", "설정(JSON)", "그룹", "순서", "필수여부", "세계관코드")
         val headerRow = sheet.createRow(0)
         headers.forEachIndexed { i, h ->
             headerRow.createCell(i).apply { setCellValue(h); cellStyle = headerStyle }
         }
-        allFields.forEachIndexed { i, (universeName, f) ->
+        allFields.forEachIndexed { i, (universe, f) ->
             val row = sheet.createRow(i + 1)
-            row.createCell(0).setCellValue(universeName)
+            row.createCell(0).setCellValue(universe.name)
             row.createCell(1).setCellValue(f.key)
             row.createCell(2).setCellValue(f.name)
             row.createCell(3).setCellValue(f.type)
@@ -306,6 +310,7 @@ class AutoBackupWorker(
             row.createCell(5).setCellValue(f.groupName)
             row.createCell(6).setCellValue(f.displayOrder.toDouble())
             row.createCell(7).setCellValue(if (f.isRequired) "Y" else "N")
+            row.createCell(8).setCellValue(universe.code)
         }
     }
 
@@ -360,7 +365,7 @@ class AutoBackupWorker(
 
         val sheetName = sanitizeSheetName("캐릭터 관계", usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
-        val headers = listOf("캐릭터1", "캐릭터2", "관계유형", "설명", "캐릭터1코드", "캐릭터2코드")
+        val headers = listOf("캐릭터1", "캐릭터2", "관계 유형", "설명", "캐릭터1코드", "캐릭터2코드")
         val headerRow = sheet.createRow(0)
         headers.forEachIndexed { i, h ->
             headerRow.createCell(i).apply { setCellValue(h); cellStyle = headerStyle }
@@ -390,7 +395,7 @@ class AutoBackupWorker(
 
         val sheetName = sanitizeSheetName("이름 은행", usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
-        val headers = listOf("이름", "성별", "출처", "메모", "사용", "사용캐릭터", "사용캐릭터코드")
+        val headers = listOf("이름", "성별", "출처", "메모", "사용여부", "사용 캐릭터", "사용캐릭터코드")
         val headerRow = sheet.createRow(0)
         headers.forEachIndexed { i, h ->
             headerRow.createCell(i).apply { setCellValue(h); cellStyle = headerStyle }
