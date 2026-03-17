@@ -195,6 +195,9 @@
     <!-- ExcelExporter -->
     <string name="export_failed_retry">내보내기 실패: 잠시 후 다시 시도하세요</string>
     <string name="export_share_title">내보내기 파일 공유</string>
+    <string name="export_validation_error_title">입력 오류</string>
+    <string name="export_validation_error_msg">목록에서 선택하세요: %s</string>
+    <string name="export_validation_prompt">선택</string>
 
     <!-- CharacterDetailFragment -->
     <string name="novel_label_format">작품: %s</string>
@@ -219,6 +222,23 @@
 
     <!-- ExcelImporter -->
     <string name="import_failed_retry">가져오기 실패: 잠시 후 다시 시도하세요</string>
+    <string name="import_file_unreadable">파일을 읽을 수 없습니다</string>
+    <string name="import_preparing">가져오기 준비 중…</string>
+    <string name="import_in_progress">가져오기 진행 중</string>
+    <string name="import_progress_format">%1$s 처리 중… (%2$d%%)</string>
+    <string name="import_complete">가져오기 완료: %s</string>
+    <string name="import_complete_empty">가져오기 완료: 데이터 없음</string>
+    <string name="import_result_universes">세계관 %d개</string>
+    <string name="import_result_novels">작품 %d개</string>
+    <string name="import_result_fields">필드 %d개</string>
+    <string name="import_result_characters">캐릭터 %d명</string>
+    <string name="import_result_events">사건 %d개</string>
+    <string name="import_result_state_changes">상태변화 %d개</string>
+    <string name="import_result_relationships">관계 %d개</string>
+    <string name="import_result_names">이름 %d개</string>
+    <string name="import_result_updated_count"> (업데이트 %d명)</string>
+    <string name="import_result_updated_items"> (업데이트 %d개)</string>
+    <string name="import_result_skipped">오류 %d건 건너뜀</string>
 
     <!-- TimelineAdapter -->
     <string name="event_count_format">%d건의 사건</string>

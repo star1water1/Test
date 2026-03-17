@@ -124,6 +124,12 @@ class CharacterRepository(
         require(relationship.characterId1 != relationship.characterId2) {
             "A character cannot have a relationship with itself"
         }
+        requireNotNull(characterDao.getCharacterById(relationship.characterId1)) {
+            "Character with id ${relationship.characterId1} does not exist"
+        }
+        requireNotNull(characterDao.getCharacterById(relationship.characterId2)) {
+            "Character with id ${relationship.characterId2} does not exist"
+        }
         return characterRelationshipDao.insert(relationship)
     }
 

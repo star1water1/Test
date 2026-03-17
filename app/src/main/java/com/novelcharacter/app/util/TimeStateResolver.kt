@@ -8,6 +8,7 @@ class TimeStateResolver {
 
     companion object {
         private const val TAG = "TimeStateResolver"
+        const val FORMULA_ERROR_VALUE = "#ERROR"
     }
 
     /**
@@ -71,7 +72,7 @@ class TimeStateResolver {
                     result[field.key] = value.toString()
                 } catch (e: Exception) {
                     Log.e(TAG, "Formula evaluation error for field '${field.key}', formula='$formula'", e)
-                    result[field.key] = "오류"
+                    result[field.key] = FORMULA_ERROR_VALUE
                 }
             }
         }

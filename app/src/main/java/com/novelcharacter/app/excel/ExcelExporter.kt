@@ -48,8 +48,9 @@ class ExcelExporter(private val context: Context) {
      *                    The caller is responsible for launching SAF to let the user pick a save location.
      */
     fun exportAll(onFileReady: ((File, String) -> Unit)? = null) {
-        // Create fresh Job/scope in case a previous export completed or was cancelled
+        // Cancel old scope and create fresh Job/scope
         if (supervisorJob.isCompleted || supervisorJob.isCancelled) {
+            supervisorJob.cancel()
             supervisorJob = kotlinx.coroutines.SupervisorJob()
             exportScope = CoroutineScope(Dispatchers.IO + supervisorJob)
         }
@@ -257,9 +258,12 @@ class ExcelExporter(private val context: Context) {
         val validation = dvHelper.createValidation(dvConstraint, addressList)
         validation.showErrorBox = true
         validation.errorStyle = DataValidation.ErrorStyle.WARNING
-        validation.createErrorBox("입력 오류", "목록에서 선택하세요: ${options.joinToString(", ")}")
+        validation.createErrorBox(
+            appContext.getString(R.string.export_validation_error_title),
+            appContext.getString(R.string.export_validation_error_msg, options.joinToString(", "))
+        )
         validation.showPromptBox = true
-        validation.createPromptBox("선택", options.joinToString(", "))
+        validation.createPromptBox(appContext.getString(R.string.export_validation_prompt), options.joinToString(", "))
         sheet.addValidationData(validation)
     }
 

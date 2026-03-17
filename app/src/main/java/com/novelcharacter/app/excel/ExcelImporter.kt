@@ -55,8 +55,9 @@ class ExcelImporter(private val context: Context) {
     }
 
     fun importFromExcel(uri: Uri) {
-        // Recreate scope if previous one was cancelled
+        // Cancel old scope and recreate if previous one completed or was cancelled
         if (supervisorJob.isCompleted || supervisorJob.isCancelled) {
+            supervisorJob.cancel()
             supervisorJob = kotlinx.coroutines.SupervisorJob()
             importScope = CoroutineScope(Dispatchers.IO + supervisorJob)
         }
@@ -68,15 +69,17 @@ class ExcelImporter(private val context: Context) {
             try {
                 // ZIP bomb / oversized file protection
                 val fileSize = context.contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: -1L
-                if (fileSize > MAX_IMPORT_FILE_SIZE) {
+                if (fileSize < 0 || fileSize > MAX_IMPORT_FILE_SIZE) {
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(context, com.novelcharacter.app.R.string.import_file_too_large, Toast.LENGTH_LONG).show()
+                        val msgRes = if (fileSize < 0) com.novelcharacter.app.R.string.import_file_unreadable
+                            else com.novelcharacter.app.R.string.import_file_too_large
+                        Toast.makeText(context, msgRes, Toast.LENGTH_LONG).show()
                     }
                     return@launch
                 }
 
                 val inputStream = context.contentResolver.openInputStream(uri)
-                    ?: throw Exception("파일을 열 수 없습니다")
+                    ?: throw Exception(context.getString(com.novelcharacter.app.R.string.import_file_unreadable))
 
                 workbook = inputStream.use { WorkbookFactory.create(it) }
 
@@ -95,7 +98,7 @@ class ExcelImporter(private val context: Context) {
                         }
                         layout.addView(progressBar)
                         val textView = TextView(activity).apply {
-                            text = "가져오기 준비 중..."
+                            text = activity.getString(com.novelcharacter.app.R.string.import_preparing)
                             gravity = Gravity.CENTER
                             val dp8 = (8 * activity.resources.displayMetrics.density).toInt()
                             setPadding(0, dp8, 0, 0)
@@ -104,7 +107,7 @@ class ExcelImporter(private val context: Context) {
                         progressText = textView
 
                         progressDialog = AlertDialog.Builder(activity)
-                            .setTitle("가져오기 진행 중")
+                            .setTitle(activity.getString(com.novelcharacter.app.R.string.import_in_progress))
                             .setView(layout)
                             .setCancelable(false)
                             .create()
@@ -116,7 +119,7 @@ class ExcelImporter(private val context: Context) {
                     val pct = if (progress.totalRows > 0) {
                         (progress.processedRows * 100 / progress.totalRows).coerceAtMost(100)
                     } else 0
-                    val text = "${progress.currentPhase} 처리 중... ($pct%)"
+                    val text = context.getString(com.novelcharacter.app.R.string.import_progress_format, progress.currentPhase, pct)
                     importScope.launch(Dispatchers.Main) {
                         progressText?.text = text
                     }
@@ -145,33 +148,33 @@ class ExcelImporter(private val context: Context) {
         val eventTotal = result.newEvents + result.updatedEvents
 
         if (result.newUniverses > 0 || result.updatedUniverses > 0)
-            parts.add("세계관 ${result.newUniverses + result.updatedUniverses}개")
+            parts.add(context.getString(com.novelcharacter.app.R.string.import_result_universes, result.newUniverses + result.updatedUniverses))
         if (result.newNovels > 0 || result.updatedNovels > 0)
-            parts.add("작품 ${result.newNovels + result.updatedNovels}개")
+            parts.add(context.getString(com.novelcharacter.app.R.string.import_result_novels, result.newNovels + result.updatedNovels))
         if (result.newFields > 0 || result.updatedFields > 0)
-            parts.add("필드 ${result.newFields + result.updatedFields}개")
+            parts.add(context.getString(com.novelcharacter.app.R.string.import_result_fields, result.newFields + result.updatedFields))
         if (charTotal > 0) {
-            val detail = if (result.updatedCharacters > 0) " (업데이트 ${result.updatedCharacters}명)" else ""
-            parts.add("캐릭터 ${charTotal}명$detail")
+            val detail = if (result.updatedCharacters > 0) context.getString(com.novelcharacter.app.R.string.import_result_updated_count, result.updatedCharacters) else ""
+            parts.add(context.getString(com.novelcharacter.app.R.string.import_result_characters, charTotal) + detail)
         }
         if (eventTotal > 0) {
-            val detail = if (result.updatedEvents > 0) " (업데이트 ${result.updatedEvents}개)" else ""
-            parts.add("사건 ${eventTotal}개$detail")
+            val detail = if (result.updatedEvents > 0) context.getString(com.novelcharacter.app.R.string.import_result_updated_items, result.updatedEvents) else ""
+            parts.add(context.getString(com.novelcharacter.app.R.string.import_result_events, eventTotal) + detail)
         }
         val scTotal = result.newStateChanges + result.updatedStateChanges
         if (scTotal > 0) {
-            val detail = if (result.updatedStateChanges > 0) " (업데이트 ${result.updatedStateChanges}개)" else ""
-            parts.add("상태변화 ${scTotal}개$detail")
+            val detail = if (result.updatedStateChanges > 0) context.getString(com.novelcharacter.app.R.string.import_result_updated_items, result.updatedStateChanges) else ""
+            parts.add(context.getString(com.novelcharacter.app.R.string.import_result_state_changes, scTotal) + detail)
         }
         val relTotal = result.newRelationships + result.updatedRelationships
-        if (relTotal > 0) parts.add("관계 ${relTotal}개")
+        if (relTotal > 0) parts.add(context.getString(com.novelcharacter.app.R.string.import_result_relationships, relTotal))
         val nbTotal = result.newNameBank + result.updatedNameBank
-        if (nbTotal > 0) parts.add("이름 ${nbTotal}개")
+        if (nbTotal > 0) parts.add(context.getString(com.novelcharacter.app.R.string.import_result_names, nbTotal))
         if (result.skippedRows > 0)
-            parts.add("오류 ${result.skippedRows}건 건너뜀")
+            parts.add(context.getString(com.novelcharacter.app.R.string.import_result_skipped, result.skippedRows))
 
-        return if (parts.isEmpty()) "가져오기 완료: 데이터 없음"
-        else "가져오기 완료: ${parts.joinToString(", ")}"
+        return if (parts.isEmpty()) context.getString(com.novelcharacter.app.R.string.import_complete_empty)
+        else context.getString(com.novelcharacter.app.R.string.import_complete, parts.joinToString(", "))
     }
 
     companion object {

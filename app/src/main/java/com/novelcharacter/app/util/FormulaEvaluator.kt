@@ -1,6 +1,7 @@
 package com.novelcharacter.app.util
 
 import com.novelcharacter.app.data.model.FieldDefinition
+import android.util.Log
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlin.math.abs
@@ -142,19 +143,28 @@ class FormulaEvaluator(
             when (token) {
                 is Token.Num -> stack.addLast(token.value)
                 is Token.Op -> {
-                    if (stack.size < 2) return 0.0
+                    if (stack.size < 2) {
+                        Log.w(TAG, "Malformed formula: not enough operands for operator '${token.op}'")
+                        return 0.0
+                    }
                     val b = stack.removeLast()
                     val a = stack.removeLast()
                     stack.addLast(when (token.op) {
                         '+' -> a + b
                         '-' -> a - b
                         '*' -> a * b
-                        '/' -> if (b != 0.0) a / b else 0.0
+                        '/' -> if (b != 0.0) a / b else {
+                            Log.w(TAG, "Division by zero in formula")
+                            0.0
+                        }
                         else -> 0.0
                     })
                 }
                 is Token.Func -> {
-                    if (stack.isEmpty()) return 0.0
+                    if (stack.isEmpty()) {
+                        Log.w(TAG, "Malformed formula: no argument for function '${token.name}'")
+                        return 0.0
+                    }
                     val v = stack.removeLast()
                     stack.addLast(when (token.name) {
                         "abs" -> abs(v)
@@ -165,5 +175,9 @@ class FormulaEvaluator(
             }
         }
         return stack.lastOrNull() ?: 0.0
+    }
+
+    companion object {
+        private const val TAG = "FormulaEvaluator"
     }
 }
