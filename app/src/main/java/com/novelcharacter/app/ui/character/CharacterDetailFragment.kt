@@ -277,6 +277,7 @@ class CharacterDetailFragment : Fragment() {
         relationshipHelper.cancelJob()
         timeSliderHelper.cancelJob()
         binding.imageViewPager.adapter = null
+        binding.eventsRecyclerView.adapter = null
         super.onDestroyView()
         _binding = null
     }

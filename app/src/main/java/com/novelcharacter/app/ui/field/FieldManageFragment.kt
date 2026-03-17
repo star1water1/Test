@@ -11,6 +11,7 @@ import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.google.gson.Gson
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.databinding.FragmentFieldManageBinding
@@ -47,6 +48,26 @@ class FieldManageFragment : Fragment() {
         setupRecyclerView()
         setupFab()
         observeData()
+        setupFieldEditResultListener()
+    }
+
+    /**
+     * Handles field save result after configuration change (rotation).
+     * When the dialog is recreated by FragmentManager, the callback listener is lost,
+     * so FragmentResult is the fallback mechanism.
+     */
+    private fun setupFieldEditResultListener() {
+        childFragmentManager.setFragmentResultListener(
+            FieldEditDialog.RESULT_KEY, viewLifecycleOwner
+        ) { _, bundle ->
+            val json = bundle.getString(FieldEditDialog.RESULT_FIELD_JSON) ?: return@setFragmentResultListener
+            val savedField = Gson().fromJson(json, FieldDefinition::class.java)
+            if (savedField.id == 0L) {
+                viewModel.insertField(savedField)
+            } else {
+                viewModel.updateField(savedField)
+            }
+        }
     }
 
     private fun setupToolbar() {
@@ -149,6 +170,7 @@ class FieldManageFragment : Fragment() {
     override fun onDestroyView() {
         itemTouchHelper?.attachToRecyclerView(null)
         itemTouchHelper = null
+        binding.fieldRecyclerView.adapter = null
         super.onDestroyView()
         _binding = null
     }

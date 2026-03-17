@@ -680,7 +680,7 @@ class ExcelImportService(private val db: AppDatabase) {
             novelIdCache[cacheKey] = existing.id
             return existing.id
         }
-        val newId = db.novelDao().insert(Novel(title = novelTitle, universeId = universeId))
+        val newId = db.novelDao().insert(Novel(title = novelTitle, universeId = universeId, code = generateEntityCode()))
         novelIdCache[cacheKey] = newId
         return newId
     }

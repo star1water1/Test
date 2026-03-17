@@ -20,7 +20,6 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     private val novelRepository = app.novelRepository
     private val timelineRepository = app.timelineRepository
     private val universeRepository = app.universeRepository
-    private val nameBankRepository = app.nameBankRepository
 
     val allCharacters: LiveData<List<Character>> = characterRepository.allCharacters
     val allNovels: LiveData<List<Novel>> = novelRepository.allNovels
@@ -75,7 +74,6 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun deleteCharacter(character: Character) = viewModelScope.launch {
-        nameBankRepository.resetUsageByCharacter(character.id)
         characterRepository.deleteCharacter(character)
     }
 

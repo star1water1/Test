@@ -95,9 +95,9 @@ object BackupEncryptor {
             val spec = GCMParameterSpec(GCM_TAG_LENGTH, iv)
             cipher.init(Cipher.DECRYPT_MODE, getOrCreateKey(), spec)
 
-            FileOutputStream(outputFile).use { fos ->
-                javax.crypto.CipherOutputStream(fos, cipher).use { cos ->
-                    fis.copyTo(cos, bufferSize = 8192)
+            javax.crypto.CipherInputStream(fis, cipher).use { cis ->
+                FileOutputStream(outputFile).use { fos ->
+                    cis.copyTo(fos, bufferSize = 8192)
                 }
             }
         }

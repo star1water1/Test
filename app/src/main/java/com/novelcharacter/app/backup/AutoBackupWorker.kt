@@ -91,6 +91,11 @@ class AutoBackupWorker(
         val backupDir = File(appContext.filesDir, BACKUP_DIR_NAME)
         if (!backupDir.exists()) return
 
+        // Clean up orphaned temp files from previous interrupted backups
+        backupDir.listFiles { file ->
+            file.name.startsWith("backup_") && file.name.endsWith(".xlsx")
+        }?.forEach { it.delete() }
+
         val backupFiles = backupDir.listFiles { file ->
             file.name.startsWith(BACKUP_PREFIX) && file.name.endsWith(BACKUP_EXTENSION)
         }?.sortedByDescending { it.lastModified() } ?: return
