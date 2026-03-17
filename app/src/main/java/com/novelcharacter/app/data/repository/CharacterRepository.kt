@@ -10,7 +10,7 @@ class CharacterRepository(
     private val characterStateChangeDao: CharacterStateChangeDao,
     private val characterTagDao: CharacterTagDao,
     private val characterRelationshipDao: CharacterRelationshipDao,
-    private val nameBankDao: NameBankDao? = null
+    private val nameBankDao: NameBankDao
 ) {
     // ===== Character =====
     val allCharacters: LiveData<List<Character>> = characterDao.getAllCharacters()
@@ -27,7 +27,7 @@ class CharacterRepository(
     suspend fun insertCharacter(character: Character): Long = characterDao.insert(character)
     suspend fun updateCharacter(character: Character) = characterDao.update(character)
     suspend fun deleteCharacter(character: Character) {
-        nameBankDao?.resetUsageByCharacter(character.id)
+        nameBankDao.resetUsageByCharacter(character.id)
         characterDao.delete(character)
     }
     suspend fun insertAllCharacters(characters: List<Character>) = characterDao.insertAll(characters)

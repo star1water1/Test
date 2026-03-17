@@ -35,18 +35,21 @@ class TimeStateResolver {
             result[change.fieldKey] = change.newValue
         }
 
-        // Calculate age from birth year
+        // Calculate age from birth year (newValue holds the actual birth year)
         val birthChange = relevantChanges.find { it.fieldKey == CharacterStateChange.KEY_BIRTH }
         if (birthChange != null) {
-            val age = targetYear - birthChange.year
+            val birthYear = birthChange.newValue.toIntOrNull() ?: birthChange.year
+            val age = targetYear - birthYear
             result[CharacterStateChange.KEY_AGE] = if (age >= 0) age.toString() else ""
         }
 
-        // Check alive status
+        // Check alive status (use newValue for birth/death year when available)
         val deathChange = relevantChanges.find { it.fieldKey == CharacterStateChange.KEY_DEATH }
-        if (deathChange != null && targetYear >= deathChange.year) {
+        val deathYear = deathChange?.let { it.newValue.toIntOrNull() ?: it.year }
+        val birthYear = birthChange?.let { it.newValue.toIntOrNull() ?: it.year }
+        if (deathYear != null && targetYear >= deathYear) {
             result[CharacterStateChange.KEY_ALIVE] = "false"
-        } else if (birthChange != null && targetYear >= birthChange.year) {
+        } else if (birthYear != null && targetYear >= birthYear) {
             // If born and not yet dead, alive
             result[CharacterStateChange.KEY_ALIVE] = "true"
         }

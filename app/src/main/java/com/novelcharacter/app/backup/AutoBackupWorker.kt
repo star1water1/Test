@@ -118,7 +118,7 @@ class AutoBackupWorker(
 
         val sheetName = sanitizeSheetName("세계관", usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
-        val headers = listOf("이름", "설명")
+        val headers = listOf("이름", "설명", "코드")
         val headerRow = sheet.createRow(0)
         headers.forEachIndexed { i, h ->
             headerRow.createCell(i).apply { setCellValue(h); cellStyle = headerStyle }
@@ -127,6 +127,7 @@ class AutoBackupWorker(
             val row = sheet.createRow(i + 1)
             row.createCell(0).setCellValue(u.name)
             row.createCell(1).setCellValue(u.description)
+            row.createCell(2).setCellValue(u.code)
         }
     }
 
@@ -140,7 +141,7 @@ class AutoBackupWorker(
 
         val sheetName = sanitizeSheetName("작품", usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
-        val headers = listOf("제목", "설명", "세계관")
+        val headers = listOf("제목", "설명", "세계관", "코드")
         val headerRow = sheet.createRow(0)
         headers.forEachIndexed { i, h ->
             headerRow.createCell(i).apply { setCellValue(h); cellStyle = headerStyle }
@@ -150,6 +151,7 @@ class AutoBackupWorker(
             row.createCell(0).setCellValue(n.title)
             row.createCell(1).setCellValue(n.description)
             row.createCell(2).setCellValue(universes.find { it.id == n.universeId }?.name ?: "")
+            row.createCell(3).setCellValue(n.code)
         }
     }
 
@@ -163,7 +165,7 @@ class AutoBackupWorker(
 
         val sheetName = sanitizeSheetName("캐릭터", usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
-        val headers = listOf("이름", "작품", "메모")
+        val headers = listOf("이름", "작품", "메모", "코드")
         val headerRow = sheet.createRow(0)
         headers.forEachIndexed { i, h ->
             headerRow.createCell(i).apply { setCellValue(h); cellStyle = headerStyle }
@@ -173,6 +175,7 @@ class AutoBackupWorker(
             row.createCell(0).setCellValue(c.name)
             row.createCell(1).setCellValue(novels.find { it.id == c.novelId }?.title ?: "")
             row.createCell(2).setCellValue(c.memo)
+            row.createCell(3).setCellValue(c.code)
         }
     }
 
