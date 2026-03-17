@@ -107,6 +107,10 @@ object BackupEncryptor {
             // GCM tag verified successfully — safe to commit output
             if (!tempFile.renameTo(outputFile)) {
                 tempFile.copyTo(outputFile, overwrite = true)
+                if (outputFile.length() != tempFile.length()) {
+                    outputFile.delete()
+                    throw java.io.IOException("복호화 파일 복사 불완전: expected=${tempFile.length()}, actual=${outputFile.length()}")
+                }
                 tempFile.delete()
             }
         } catch (e: Exception) {

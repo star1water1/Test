@@ -38,16 +38,21 @@ class TimeStateResolver {
         // Calculate age from birth year (newValue holds the actual birth year)
         // Use findLast to get the most recent entry in case of corrections/retcons
         val birthChange = relevantChanges.findLast { it.fieldKey == CharacterStateChange.KEY_BIRTH }
-        if (birthChange != null) {
-            val birthYear = birthChange.newValue.toIntOrNull() ?: birthChange.year
+        val birthYear = birthChange?.let { change ->
+            change.newValue.toIntOrNull()
+                ?: if (change.newValue.isBlank()) change.year else null
+        }
+        if (birthYear != null) {
             val age = targetYear - birthYear
             result[CharacterStateChange.KEY_AGE] = if (age >= 0) age.toString() else ""
         }
 
         // Check alive status (use newValue for birth/death year when available)
         val deathChange = relevantChanges.findLast { it.fieldKey == CharacterStateChange.KEY_DEATH }
-        val deathYear = deathChange?.let { it.newValue.toIntOrNull() ?: it.year }
-        val birthYear = birthChange?.let { it.newValue.toIntOrNull() ?: it.year }
+        val deathYear = deathChange?.let { change ->
+            change.newValue.toIntOrNull()
+                ?: if (change.newValue.isBlank()) change.year else null
+        }
         if (deathYear != null && targetYear >= deathYear) {
             result[CharacterStateChange.KEY_ALIVE] = "false"
         } else if (birthYear != null && targetYear >= birthYear) {
@@ -72,7 +77,7 @@ class TimeStateResolver {
                 val formula = config["formula"] as? String ?: continue
                 try {
                     val value = evaluator.evaluate(formula)
-                    result[field.key] = value.toString()
+                    result[field.key] = if (value.isNaN() || value.isInfinite()) "오류" else value.toString()
                 } catch (e: Exception) {
                     Log.e(TAG, "Formula evaluation error for field '${field.key}', formula='$formula'", e)
                     result[field.key] = "오류"
