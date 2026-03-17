@@ -356,11 +356,11 @@ class ExcelImportService(private val db: AppDatabase) {
                     }
                 }
 
-                // 동적 필드 값 가져오기
+                // 동적 필드 값 가져오기 (빈 셀 = 기존 값 삭제)
                 for ((colIndex, field) in columnFieldMap) {
                     val value = getCellString(row, colIndex)
+                    val existingValue = db.characterFieldValueDao().getValue(charId, field.id)
                     if (value.isNotBlank()) {
-                        val existingValue = db.characterFieldValueDao().getValue(charId, field.id)
                         if (existingValue != null) {
                             db.characterFieldValueDao().update(existingValue.copy(value = value))
                         } else {
@@ -368,6 +368,8 @@ class ExcelImportService(private val db: AppDatabase) {
                                 characterId = charId, fieldDefinitionId = field.id, value = value
                             ))
                         }
+                    } else if (existingValue != null) {
+                        db.characterFieldValueDao().deleteValue(charId, field.id)
                     }
                 }
             } catch (e: Exception) {

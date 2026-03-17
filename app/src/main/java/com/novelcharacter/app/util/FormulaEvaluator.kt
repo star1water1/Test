@@ -30,7 +30,7 @@ class FormulaEvaluator(
         val grades = (config["grades"] as? Map<*, *>) ?: return 0.0
         val allowNegative = config["allowNegative"] as? Boolean ?: false
         // gradeLabel could be "A", "-B", "+A" etc
-        val isNegative = gradeLabel.startsWith("-")
+        val isNegative = allowNegative && gradeLabel.startsWith("-")
         val cleanLabel = gradeLabel.removePrefix("-").removePrefix("+")
         val baseValue = (grades[cleanLabel] as? Number)?.toDouble() ?: 0.0
         return if (isNegative) -baseValue else baseValue
