@@ -19,12 +19,14 @@ class UniverseAdapter(
 
     fun updateNovelCounts(counts: Map<Long, Int>) {
         novelCounts = counts
-        notifyItemRangeChanged(0, itemCount)
+        // Re-submit the same list to trigger DiffUtil-safe rebind
+        // (manual notifyItemRangeChanged can conflict with AsyncListDiffer)
+        submitList(currentList.toList())
     }
 
     fun updateFieldCounts(counts: Map<Long, Int>) {
         fieldCounts = counts
-        notifyItemRangeChanged(0, itemCount)
+        submitList(currentList.toList())
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): UniverseViewHolder {
