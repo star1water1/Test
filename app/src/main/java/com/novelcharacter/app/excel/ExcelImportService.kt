@@ -699,10 +699,10 @@ class ExcelImportService(private val db: AppDatabase) {
             CellType.STRING -> cell.stringCellValue?.trim() ?: ""
             CellType.NUMERIC -> {
                 val value = cell.numericCellValue
-                if (value == value.toLong().toDouble()) {
-                    value.toLong().toString()
-                } else {
-                    value.toString()
+                when {
+                    value.isNaN() || value.isInfinite() -> ""
+                    value == value.toLong().toDouble() -> value.toLong().toString()
+                    else -> value.toString()
                 }
             }
             CellType.BOOLEAN -> cell.booleanCellValue.toString()
@@ -710,7 +710,8 @@ class ExcelImportService(private val db: AppDatabase) {
                 try {
                     cell.stringCellValue?.trim() ?: ""
                 } catch (e: Exception) {
-                    cell.numericCellValue.toString()
+                    val value = cell.numericCellValue
+                    if (value.isNaN() || value.isInfinite()) "" else value.toString()
                 }
             }
             else -> ""

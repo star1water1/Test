@@ -186,6 +186,7 @@ class NovelListFragment : Fragment() {
         AlertDialog.Builder(requireContext())
             .setTitle(R.string.export_mode_title)
             .setItems(arrayOf(getString(R.string.export_mode_share), getString(R.string.export_mode_save))) { _, which ->
+                exporter?.cancel()
                 exporter = com.novelcharacter.app.excel.ExcelExporter(requireContext().applicationContext)
                 when (which) {
                     0 -> exporter?.exportAll()
