@@ -265,9 +265,11 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE `characters` ADD COLUMN `code` TEXT NOT NULL DEFAULT ''")
 
                 // Backfill existing rows with unique codes using SQLite's randomblob
-                db.execSQL("UPDATE `universes` SET `code` = lower(hex(randomblob(4))) WHERE `code` = ''")
-                db.execSQL("UPDATE `novels` SET `code` = lower(hex(randomblob(4))) WHERE `code` = ''")
-                db.execSQL("UPDATE `characters` SET `code` = lower(hex(randomblob(4))) WHERE `code` = ''")
+                // Use randomblob(8) for 16 hex chars to avoid birthday-paradox collisions
+                // with large datasets (randomblob(4) has ~1% collision chance at ~9300 rows)
+                db.execSQL("UPDATE `universes` SET `code` = lower(hex(randomblob(8))) WHERE `code` = ''")
+                db.execSQL("UPDATE `novels` SET `code` = lower(hex(randomblob(8))) WHERE `code` = ''")
+                db.execSQL("UPDATE `characters` SET `code` = lower(hex(randomblob(8))) WHERE `code` = ''")
 
                 // Create unique indexes
                 db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_universes_code` ON `universes` (`code`)")

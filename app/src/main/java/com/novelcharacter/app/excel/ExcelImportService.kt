@@ -432,11 +432,15 @@ class ExcelImportService(private val db: AppDatabase) {
 
                 val characterNames = getCellString(row, 6)
                 if (characterNames.isNotBlank()) {
-                    db.timelineDao().deleteCrossRefsByEvent(eventId)
                     val names = splitCsv(characterNames)
-                    for (charName in names) {
-                        val character = findCharacterByName(charName, novelId)
-                        if (character != null) {
+                    val resolvedCharacters = names.mapNotNull { charName ->
+                        findCharacterByName(charName, novelId)
+                    }
+                    // Only replace cross-refs if at least one character was resolved,
+                    // to avoid accidental data loss from typos or name mismatches
+                    if (resolvedCharacters.isNotEmpty()) {
+                        db.timelineDao().deleteCrossRefsByEvent(eventId)
+                        for (character in resolvedCharacters) {
                             db.timelineDao().insertCrossRef(
                                 TimelineCharacterCrossRef(eventId = eventId, characterId = character.id)
                             )
