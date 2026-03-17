@@ -76,6 +76,9 @@ class FieldManageFragment : Fragment() {
         }
     }
 
+    // 드래그 후 저장할 순서를 보관 (ListAdapter 비동기 diff 대비)
+    private var pendingOrderList: List<FieldDefinition>? = null
+
     private fun setupRecyclerView() {
         adapter = FieldDefinitionAdapter(
             onClick = { field ->
@@ -104,6 +107,7 @@ class FieldManageFragment : Fragment() {
                 if (from < 0 || to < 0 || from >= list.size || to >= list.size) return false
                 val item = list.removeAt(from)
                 list.add(to, item)
+                pendingOrderList = list
                 adapter.submitList(list)
                 return true
             }
@@ -112,7 +116,9 @@ class FieldManageFragment : Fragment() {
 
             override fun clearView(recyclerView: RecyclerView, viewHolder: RecyclerView.ViewHolder) {
                 super.clearView(recyclerView, viewHolder)
-                viewModel.updateFieldOrder(adapter.currentList)
+                val listToSave = pendingOrderList ?: adapter.currentList
+                pendingOrderList = null
+                viewModel.updateFieldOrder(listToSave)
             }
         })
         itemTouchHelper?.attachToRecyclerView(binding.fieldRecyclerView)

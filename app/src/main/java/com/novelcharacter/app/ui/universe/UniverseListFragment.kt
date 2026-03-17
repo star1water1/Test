@@ -109,11 +109,18 @@ class UniverseListFragment : Fragment() {
             .show()
     }
 
+    private var lastUniverseIds: List<Long> = emptyList()
+
     private fun observeData() {
         viewModel.allUniverses.observe(viewLifecycleOwner) { universes ->
             adapter.submitList(universes)
             binding.emptyText.visibility = if (universes.isEmpty()) View.VISIBLE else View.GONE
-            viewModel.loadCounts(universes)
+            // Only reload counts when the universe list actually changes
+            val newIds = universes.map { it.id }
+            if (newIds != lastUniverseIds) {
+                lastUniverseIds = newIds
+                viewModel.loadCounts(universes)
+            }
         }
 
         viewModel.universeNovelCounts.observe(viewLifecycleOwner) { counts ->
@@ -136,9 +143,15 @@ class UniverseListFragment : Fragment() {
     }
 
     private fun showUniverseEditDialog(universe: Universe?) {
+        val density = resources.displayMetrics.density
         val layout = LinearLayout(requireContext()).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(64, 32, 64, 16)
+            setPadding(
+                (24 * density).toInt(),
+                (16 * density).toInt(),
+                (24 * density).toInt(),
+                (8 * density).toInt()
+            )
         }
         val nameEdit = EditText(requireContext()).apply {
             hint = getString(R.string.universe_name_hint)
@@ -240,6 +253,8 @@ class UniverseListFragment : Fragment() {
     }
 
     override fun onDestroyView() {
+        exporter?.cancel()
+        exporter = null
         binding.universeRecyclerView.adapter = null
         super.onDestroyView()
         _binding = null

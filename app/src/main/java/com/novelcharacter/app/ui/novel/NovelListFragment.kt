@@ -208,6 +208,8 @@ class NovelListFragment : Fragment() {
     }
 
     override fun onDestroyView() {
+        exporter?.cancel()
+        exporter = null
         binding.novelRecyclerView.adapter = null
         super.onDestroyView()
         _binding = null
