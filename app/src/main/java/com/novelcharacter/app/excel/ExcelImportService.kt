@@ -620,19 +620,22 @@ class ExcelImportService(private val db: AppDatabase) {
                 } else null
                     ?: if (usedByCharName.isNotBlank()) findCharacterByName(usedByCharName, null)?.id else null
 
+                // If marked as used but the character can't be resolved, clear the used flag
+                val effectiveIsUsed = isUsed && usedByCharacterId != null
+
                 val mapKey = "${name}\u0000${gender}"
                 val existing = existingNamesMap[mapKey]
 
                 if (existing != null) {
                     db.nameBankDao().update(existing.copy(
                         origin = origin, notes = notes,
-                        isUsed = isUsed, usedByCharacterId = usedByCharacterId
+                        isUsed = effectiveIsUsed, usedByCharacterId = usedByCharacterId
                     ))
                     result.updatedNameBank++
                 } else {
                     val newEntry = NameBankEntry(
                         name = name, gender = gender, origin = origin, notes = notes,
-                        isUsed = isUsed, usedByCharacterId = usedByCharacterId
+                        isUsed = effectiveIsUsed, usedByCharacterId = usedByCharacterId
                     )
                     val newId = db.nameBankDao().insert(newEntry)
                     existingNamesMap[mapKey] = newEntry.copy(id = newId)
