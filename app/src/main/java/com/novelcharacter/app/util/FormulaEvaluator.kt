@@ -132,7 +132,10 @@ class FormulaEvaluator(
                 }
             }
         }
-        while (stack.isNotEmpty()) output.add(stack.removeLast())
+        while (stack.isNotEmpty()) {
+            val top = stack.removeLast()
+            if (top !is Token.LParen) output.add(top) // discard unmatched LParen
+        }
         return output
     }
 

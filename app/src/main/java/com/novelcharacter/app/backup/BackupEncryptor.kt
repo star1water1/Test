@@ -82,24 +82,36 @@ object BackupEncryptor {
      * Input format: [IV (12 bytes)] [encrypted data + GCM tag]
      */
     fun decryptFile(inputFile: File, outputFile: File) {
-        FileInputStream(inputFile).use { fis ->
-            val iv = ByteArray(GCM_IV_LENGTH)
-            var read = 0
-            while (read < GCM_IV_LENGTH) {
-                val n = fis.read(iv, read, GCM_IV_LENGTH - read)
-                if (n == -1) throw IllegalArgumentException("Encrypted file too short")
-                read += n
-            }
+        // Write to temp file first; rename only after successful GCM authentication
+        val tempFile = File(outputFile.parentFile, outputFile.name + ".tmp")
+        try {
+            FileInputStream(inputFile).use { fis ->
+                val iv = ByteArray(GCM_IV_LENGTH)
+                var read = 0
+                while (read < GCM_IV_LENGTH) {
+                    val n = fis.read(iv, read, GCM_IV_LENGTH - read)
+                    if (n == -1) throw IllegalArgumentException("Encrypted file too short")
+                    read += n
+                }
 
-            val cipher = Cipher.getInstance(TRANSFORMATION)
-            val spec = GCMParameterSpec(GCM_TAG_LENGTH, iv)
-            cipher.init(Cipher.DECRYPT_MODE, getOrCreateKey(), spec)
+                val cipher = Cipher.getInstance(TRANSFORMATION)
+                val spec = GCMParameterSpec(GCM_TAG_LENGTH, iv)
+                cipher.init(Cipher.DECRYPT_MODE, getOrCreateKey(), spec)
 
-            javax.crypto.CipherInputStream(fis, cipher).use { cis ->
-                FileOutputStream(outputFile).use { fos ->
-                    cis.copyTo(fos, bufferSize = 8192)
+                javax.crypto.CipherInputStream(fis, cipher).use { cis ->
+                    FileOutputStream(tempFile).use { fos ->
+                        cis.copyTo(fos, bufferSize = 8192)
+                    }
                 }
             }
+            // GCM tag verified successfully — safe to commit output
+            if (!tempFile.renameTo(outputFile)) {
+                tempFile.copyTo(outputFile, overwrite = true)
+                tempFile.delete()
+            }
+        } catch (e: Exception) {
+            tempFile.delete()
+            throw e
         }
     }
 
