@@ -19,12 +19,12 @@ class UniverseAdapter(
 
     fun updateNovelCounts(counts: Map<Long, Int>) {
         novelCounts = counts
-        notifyDataSetChanged()
+        notifyItemRangeChanged(0, itemCount)
     }
 
     fun updateFieldCounts(counts: Map<Long, Int>) {
         fieldCounts = counts
-        notifyDataSetChanged()
+        notifyItemRangeChanged(0, itemCount)
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): UniverseViewHolder {

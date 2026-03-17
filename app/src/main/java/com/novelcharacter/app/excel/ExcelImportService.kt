@@ -311,7 +311,7 @@ class ExcelImportService(private val db: AppDatabase) {
                         resolveNovelId(novelTitle)
                     }
 
-                val imagePaths = if (imageColIndex >= 0) getCellString(row, imageColIndex) else "[]"
+                val imagePaths = if (imageColIndex >= 0) getCellString(row, imageColIndex).ifBlank { "[]" } else "[]"
                 val memo = if (memoColIndex >= 0) getCellString(row, memoColIndex) else ""
 
                 // Code-first matching, then name+novel fallback, then name-only fallback
