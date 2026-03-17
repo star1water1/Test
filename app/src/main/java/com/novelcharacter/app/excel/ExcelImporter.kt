@@ -39,6 +39,15 @@ class ExcelImporter(context: Context) {
         }
     }
 
+    @Synchronized
+    private fun ensureActiveScope(): CoroutineScope {
+        if (supervisorJob.isCompleted || supervisorJob.isCancelled) {
+            supervisorJob = kotlinx.coroutines.SupervisorJob()
+            importScope = CoroutineScope(Dispatchers.IO + supervisorJob)
+        }
+        return importScope
+    }
+
     fun cleanup() {
         supervisorJob.cancel()
         importLauncher = null
@@ -59,12 +68,7 @@ class ExcelImporter(context: Context) {
     }
 
     fun importFromExcel(uri: Uri) {
-        // Recreate scope if previous one was cancelled
-        if (supervisorJob.isCompleted || supervisorJob.isCancelled) {
-            supervisorJob = kotlinx.coroutines.SupervisorJob()
-            importScope = CoroutineScope(Dispatchers.IO + supervisorJob)
-        }
-        importScope.launch {
+        ensureActiveScope().launch {
             var workbook: org.apache.poi.ss.usermodel.Workbook? = null
             var progressDialog: AlertDialog? = null
             var progressText: TextView? = null

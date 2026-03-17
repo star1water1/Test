@@ -40,6 +40,15 @@ class ExcelExporter(context: Context) {
     private var supervisorJob = kotlinx.coroutines.SupervisorJob()
     private var exportScope = CoroutineScope(Dispatchers.IO + supervisorJob)
 
+    @Synchronized
+    private fun ensureActiveScope(): CoroutineScope {
+        if (supervisorJob.isCompleted || supervisorJob.isCancelled) {
+            supervisorJob = kotlinx.coroutines.SupervisorJob()
+            exportScope = CoroutineScope(Dispatchers.IO + supervisorJob)
+        }
+        return exportScope
+    }
+
     private lateinit var styles: ExcelStyles
 
     /**
@@ -47,12 +56,7 @@ class ExcelExporter(context: Context) {
      *                    The caller is responsible for launching SAF to let the user pick a save location.
      */
     fun exportAll(onFileReady: ((File, String) -> Unit)? = null) {
-        // Create fresh Job/scope in case a previous export completed or was cancelled
-        if (supervisorJob.isCompleted || supervisorJob.isCancelled) {
-            supervisorJob = kotlinx.coroutines.SupervisorJob()
-            exportScope = CoroutineScope(Dispatchers.IO + supervisorJob)
-        }
-        exportScope.launch {
+        ensureActiveScope().launch {
             withContext(Dispatchers.Main) {
                 Toast.makeText(appContext, appContext.getString(R.string.export_preparing), Toast.LENGTH_SHORT).show()
             }
@@ -96,7 +100,7 @@ class ExcelExporter(context: Context) {
     }
 
     fun writeToUri(uri: Uri, sourceFile: File) {
-        exportScope.launch {
+        ensureActiveScope().launch {
             try {
                 val outputStream = appContext.contentResolver.openOutputStream(uri)
                 if (outputStream == null) {
