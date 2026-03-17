@@ -253,4 +253,7 @@
     <string name="export_mode_save">파일로 저장</string>
     <string name="export_save_success">파일이 저장되었습니다</string>
     <string name="export_save_failed">파일 저장에 실패했습니다</string>
+
+    <!-- Field validation -->
+    <string name="field_name_key_required">필드 이름과 키를 입력해주세요</string>
 </resources>

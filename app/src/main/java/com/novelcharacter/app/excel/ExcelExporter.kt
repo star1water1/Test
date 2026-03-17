@@ -127,6 +127,7 @@ class ExcelExporter(context: Context) {
         }
     }
 
+    @Synchronized
     fun cancel() {
         supervisorJob.cancel()
     }
