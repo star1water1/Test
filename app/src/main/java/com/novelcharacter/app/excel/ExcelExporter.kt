@@ -37,8 +37,8 @@ class ExcelExporter(context: Context) {
 
     private val appContext = context.applicationContext
     private val db = AppDatabase.getDatabase(appContext)
-    private var supervisorJob = kotlinx.coroutines.SupervisorJob()
-    private var exportScope = CoroutineScope(Dispatchers.IO + supervisorJob)
+    @Volatile private var supervisorJob = kotlinx.coroutines.SupervisorJob()
+    @Volatile private var exportScope = CoroutineScope(Dispatchers.IO + supervisorJob)
 
     @Synchronized
     private fun ensureActiveScope(): CoroutineScope {

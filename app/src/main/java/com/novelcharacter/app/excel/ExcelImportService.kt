@@ -289,7 +289,7 @@ class ExcelImportService(private val db: AppDatabase) {
         val tagsColIndex = spec.findColumn(headerRow, "태그")
         val codeColIndex = spec.findColumn(headerRow, "코드")
         val novelCodeColIndex = spec.findColumn(headerRow, "작품코드")
-        val fixedColIndices = setOf(0, imageColIndex, novelColIndex, memoColIndex, tagsColIndex, codeColIndex, novelCodeColIndex)
+        val fixedColIndices = setOf(0, imageColIndex, novelColIndex, memoColIndex, tagsColIndex, codeColIndex, novelCodeColIndex).filter { it >= 0 }.toSet()
         val columnFieldMap = buildColumnFieldMap(headerRow, fields, fixedColIndices)
 
         for (i in 1..sheet.lastRowNum) {
@@ -401,16 +401,18 @@ class ExcelImportService(private val db: AppDatabase) {
                 val description = getCellString(row, 4)
                 if (description.isBlank()) continue
 
-                val month = getCellString(row, 1).toDoubleOrNull()?.toInt()?.takeIf { it > 0 }
-                val day = getCellString(row, 2).toDoubleOrNull()?.toInt()?.takeIf { it > 0 }
+                val month = getCellString(row, 1).toDoubleOrNull()?.toInt()?.takeIf { it in 1..12 }
+                val day = getCellString(row, 2).toDoubleOrNull()?.toInt()?.takeIf { it in 1..31 }
                 val calendarType = getCellString(row, 3).ifBlank { "천개력" }
                 val novelTitle = getCellString(row, 5)
                 val novelCode = if (novelCodeColIndex >= 0) getCellString(row, novelCodeColIndex) else ""
 
-                val novelId = if (novelCode.isNotBlank()) {
-                    db.novelDao().getNovelByCode(novelCode)?.id
+                val resolvedNovel = if (novelCode.isNotBlank()) {
+                    db.novelDao().getNovelByCode(novelCode)
                 } else null
-                    ?: if (novelTitle.isNotBlank()) allNovels.find { it.title == novelTitle }?.id else null
+                    ?: if (novelTitle.isNotBlank()) allNovels.find { it.title == novelTitle } else null
+                val novelId = resolvedNovel?.id
+                val universeId = resolvedNovel?.universeId
 
                 val existingEvent = if (novelId != null) {
                     db.timelineDao().getEventByNaturalKey(year, description, novelId)
@@ -422,13 +424,15 @@ class ExcelImportService(private val db: AppDatabase) {
                 if (existingEvent != null) {
                     eventId = existingEvent.id
                     db.timelineDao().update(existingEvent.copy(
-                        month = month, day = day, calendarType = calendarType
+                        month = month, day = day, calendarType = calendarType,
+                        novelId = novelId, universeId = universeId
                     ))
                     result.updatedEvents++
                 } else {
                     eventId = db.timelineDao().insert(TimelineEvent(
                         year = year, month = month, day = day,
-                        calendarType = calendarType, description = description, novelId = novelId
+                        calendarType = calendarType, description = description,
+                        novelId = novelId, universeId = universeId
                     ))
                     result.newEvents++
                 }
@@ -479,8 +483,8 @@ class ExcelImportService(private val db: AppDatabase) {
                 val yearStr = getCellString(row, 2)
                 val year = yearStr.toDoubleOrNull()?.toInt() ?: continue
 
-                val month = getCellString(row, 3).toDoubleOrNull()?.toInt()?.takeIf { it > 0 }
-                val day = getCellString(row, 4).toDoubleOrNull()?.toInt()?.takeIf { it > 0 }
+                val month = getCellString(row, 3).toDoubleOrNull()?.toInt()?.takeIf { it in 1..12 }
+                val day = getCellString(row, 4).toDoubleOrNull()?.toInt()?.takeIf { it in 1..31 }
                 val fieldKey = getCellString(row, 5)
                 if (fieldKey.isBlank()) continue
                 val newValue = getCellString(row, 6)
@@ -616,19 +620,22 @@ class ExcelImportService(private val db: AppDatabase) {
                 } else null
                     ?: if (usedByCharName.isNotBlank()) findCharacterByName(usedByCharName, null)?.id else null
 
+                // If marked as used but the character can't be resolved, clear the used flag
+                val effectiveIsUsed = isUsed && usedByCharacterId != null
+
                 val mapKey = "${name}\u0000${gender}"
                 val existing = existingNamesMap[mapKey]
 
                 if (existing != null) {
                     db.nameBankDao().update(existing.copy(
                         origin = origin, notes = notes,
-                        isUsed = isUsed, usedByCharacterId = usedByCharacterId
+                        isUsed = effectiveIsUsed, usedByCharacterId = usedByCharacterId
                     ))
                     result.updatedNameBank++
                 } else {
                     val newEntry = NameBankEntry(
                         name = name, gender = gender, origin = origin, notes = notes,
-                        isUsed = isUsed, usedByCharacterId = usedByCharacterId
+                        isUsed = effectiveIsUsed, usedByCharacterId = usedByCharacterId
                     )
                     val newId = db.nameBankDao().insert(newEntry)
                     existingNamesMap[mapKey] = newEntry.copy(id = newId)
@@ -659,7 +666,7 @@ class ExcelImportService(private val db: AppDatabase) {
             val sheetName = workbook.getSheetName(idx)
             if (sheetName in reservedNames) continue
             val baseName = sheetName.replace(Regex("\\(\\d+\\)$"), "")
-            if (baseName == sanitized || sanitized.startsWith(baseName) && sanitized.length >= 31) {
+            if (baseName == sanitized || (sanitized.startsWith(baseName) && sheetName.length >= 31)) {
                 return workbook.getSheetAt(idx)
             }
         }

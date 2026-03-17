@@ -9,6 +9,11 @@ import androidx.navigation.NavController
  */
 fun NavController.navigateSafe(currentDestId: Int, destId: Int, args: Bundle? = null) {
     if (currentDestination?.id == currentDestId) {
-        navigate(destId, args)
+        try {
+            navigate(destId, args)
+        } catch (e: IllegalArgumentException) {
+            // Navigation destination not found or already navigated
+            android.util.Log.w("SafeNavigation", "Navigation failed: ${e.message}")
+        }
     }
 }

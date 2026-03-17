@@ -416,7 +416,7 @@ class TimelineFragment : Fragment() {
                     val novelPosition = dialogBinding.spinnerNovel.selectedItemPosition
                     val selectedNovel = if (novelPosition > 0) novels.getOrNull(novelPosition - 1) else null
                     val novelId = selectedNovel?.id
-                    val universeId = selectedNovel?.universeId ?: event?.universeId
+                    val universeId = selectedNovel?.universeId
 
                     val newEvent = TimelineEvent(
                         id = event?.id ?: 0,

@@ -157,7 +157,7 @@ class FormulaEvaluator(
                         '+' -> a + b
                         '-' -> a - b
                         '*' -> a * b
-                        '/' -> if (b != 0.0) a / b else 0.0
+                        '/' -> if (b != 0.0) a / b else Double.NaN
                         else -> 0.0
                     })
                 }
