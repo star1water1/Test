@@ -6,10 +6,10 @@ import com.novelcharacter.app.data.model.Novel
 
 @Dao
 interface NovelDao {
-    @Query("SELECT * FROM novels ORDER BY createdAt DESC")
+    @Query("SELECT * FROM novels ORDER BY displayOrder ASC, createdAt DESC")
     fun getAllNovels(): LiveData<List<Novel>>
 
-    @Query("SELECT * FROM novels ORDER BY createdAt DESC")
+    @Query("SELECT * FROM novels ORDER BY displayOrder ASC, createdAt DESC")
     suspend fun getAllNovelsList(): List<Novel>
 
     @Query("SELECT * FROM novels WHERE id = :id")
@@ -27,10 +27,10 @@ interface NovelDao {
     @Query("DELETE FROM novels WHERE id = :id")
     suspend fun deleteById(id: Long)
 
-    @Query("SELECT * FROM novels WHERE universeId = :universeId ORDER BY createdAt DESC")
+    @Query("SELECT * FROM novels WHERE universeId = :universeId ORDER BY displayOrder ASC, createdAt DESC")
     fun getNovelsByUniverse(universeId: Long): LiveData<List<Novel>>
 
-    @Query("SELECT * FROM novels WHERE universeId = :universeId ORDER BY createdAt DESC")
+    @Query("SELECT * FROM novels WHERE universeId = :universeId ORDER BY displayOrder ASC, createdAt DESC")
     suspend fun getNovelsByUniverseList(universeId: Long): List<Novel>
 
     @Query("SELECT universeId, COUNT(*) as cnt FROM novels WHERE universeId IN (:universeIds) GROUP BY universeId")
@@ -47,6 +47,9 @@ interface NovelDao {
 
     @Query("SELECT * FROM novels WHERE title LIKE '%' || :query || '%' OR description LIKE '%' || :query || '%'")
     fun searchNovels(query: String): LiveData<List<Novel>>
+
+    @Update
+    suspend fun updateAll(novels: List<Novel>)
 }
 
 data class UniverseCount(val universeId: Long, val cnt: Int)

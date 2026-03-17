@@ -43,7 +43,7 @@ import com.novelcharacter.app.data.model.Universe
         NameBankEntry::class,
         CharacterRelationship::class
     ],
-    version = 5,
+    version = 7,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -280,6 +280,60 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Migration from version 5 to 6:
+         * - Added displayOrder column to universes, novels, and characters
+         *   for user-defined card ordering.
+         */
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "Migrating database from version 5 to 6")
+
+                // Add displayOrder columns
+                db.execSQL("ALTER TABLE `universes` ADD COLUMN `displayOrder` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `novels` ADD COLUMN `displayOrder` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `characters` ADD COLUMN `displayOrder` INTEGER NOT NULL DEFAULT 0")
+
+                // Backfill: set displayOrder based on existing sort order
+                // Universe/Novel: createdAt DESC -> assign ascending order
+                db.execSQL("""
+                    UPDATE `universes` SET `displayOrder` = (
+                        SELECT COUNT(*) FROM `universes` u2 WHERE u2.`createdAt` > `universes`.`createdAt`
+                            OR (u2.`createdAt` = `universes`.`createdAt` AND u2.`id` < `universes`.`id`)
+                    )
+                """)
+                db.execSQL("""
+                    UPDATE `novels` SET `displayOrder` = (
+                        SELECT COUNT(*) FROM `novels` n2 WHERE n2.`createdAt` > `novels`.`createdAt`
+                            OR (n2.`createdAt` = `novels`.`createdAt` AND n2.`id` < `novels`.`id`)
+                    )
+                """)
+                // Character: name ASC
+                db.execSQL("""
+                    UPDATE `characters` SET `displayOrder` = (
+                        SELECT COUNT(*) FROM `characters` c2 WHERE c2.`name` < `characters`.`name`
+                            OR (c2.`name` = `characters`.`name` AND c2.`id` < `characters`.`id`)
+                    )
+                """)
+
+                Log.i(TAG, "Migration from version 5 to 6 completed successfully")
+            }
+        }
+
+        /**
+         * Migration from version 6 to 7:
+         * - Added anotherName column to characters for aliases/alternate names.
+         */
+        private val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "Migrating database from version 6 to 7")
+
+                db.execSQL("ALTER TABLE `characters` ADD COLUMN `anotherName` TEXT NOT NULL DEFAULT ''")
+
+                Log.i(TAG, "Migration from version 6 to 7 completed successfully")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -287,7 +341,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "novel_character_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
                     .build()
                     .also { INSTANCE = it }
             }

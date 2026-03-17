@@ -39,7 +39,7 @@ data class SheetSpec(
 }
 
 /** Fixed (non-dynamic-field) column headers in character sheets. */
-val CHARACTER_FIXED_HEADERS = setOf("이름", "이미지경로", "작품", "메모", "태그", "코드", "작품코드")
+val CHARACTER_FIXED_HEADERS = setOf("이름", "이명", "이미지경로", "작품", "메모", "태그", "코드", "작품코드", "정렬순서")
 
 /** All reserved (non-universe) sheet names used by the app. */
 val RESERVED_SHEET_NAMES = setOf(
@@ -65,7 +65,8 @@ fun universeSpec() = SheetSpec(
     columns = listOf(
         ColumnSpec("이름", required = true, width = 8000),
         ColumnSpec("설명", width = 15000),
-        ColumnSpec("코드", readOnly = true, width = 4000)
+        ColumnSpec("코드", readOnly = true, width = 4000),
+        ColumnSpec("정렬순서", width = 3000)
     )
 )
 
@@ -76,7 +77,8 @@ fun novelSpec(universeNames: List<String>) = SheetSpec(
         ColumnSpec("설명", width = 15000),
         ColumnSpec("세계관", dropdownOptions = universeNames.takeIf { it.isNotEmpty() }, width = 8000),
         ColumnSpec("코드", readOnly = true, width = 4000),
-        ColumnSpec("세계관코드", readOnly = true, width = 4000)
+        ColumnSpec("세계관코드", readOnly = true, width = 4000),
+        ColumnSpec("정렬순서", width = 3000)
     )
 )
 
@@ -99,6 +101,7 @@ fun characterSpec(fields: List<FieldDefinition>, novelTitles: List<String>) = Sh
     sheetName = "",  // Sheet name is set dynamically (universe name or "미분류 캐릭터")
     columns = buildList {
         add(ColumnSpec("이름", required = true, width = 6000))
+        add(ColumnSpec("이명", width = 6000))
         // Dynamic field columns
         for (field in fields) {
             val options = if (field.type == "SELECT") {
@@ -116,6 +119,7 @@ fun characterSpec(fields: List<FieldDefinition>, novelTitles: List<String>) = Sh
         add(ColumnSpec("태그", width = 8000))
         add(ColumnSpec("코드", readOnly = true, width = 4000))
         add(ColumnSpec("작품코드", readOnly = true, width = 4000))
+        add(ColumnSpec("정렬순서", width = 3000))
     }
 )
 

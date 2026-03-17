@@ -164,6 +164,7 @@ class CharacterEditFragment : Fragment() {
 
     private fun fillForm(character: Character) {
         binding.editName.setText(character.name)
+        binding.editAnotherName.setText(character.anotherName)
 
         // 작품 선택
         character.novelId?.let { novelId ->
@@ -616,9 +617,12 @@ class CharacterEditFragment : Fragment() {
 
             val memo = binding.editMemo.text.toString()
 
+            val anotherName = binding.editAnotherName.text.toString().trim()
+
             val character = Character(
                 id = if (characterId != -1L) characterId else 0,
                 name = name,
+                anotherName = anotherName,
                 novelId = selectedNovelId,
                 imagePaths = gson.toJson(imagePaths),
                 createdAt = existingCharacter?.createdAt ?: System.currentTimeMillis(),

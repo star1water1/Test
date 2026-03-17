@@ -20,6 +20,7 @@ class UniverseRepository(
     suspend fun insertUniverse(universe: Universe): Long = universeDao.insert(universe)
     suspend fun updateUniverse(universe: Universe) = universeDao.update(universe)
     suspend fun deleteUniverse(universe: Universe) = universeDao.delete(universe)
+    suspend fun updateUniverseDisplayOrders(universes: List<Universe>) = universeDao.updateAll(universes)
 
     // ===== FieldDefinition =====
     fun getFieldsByUniverse(universeId: Long): LiveData<List<FieldDefinition>> =

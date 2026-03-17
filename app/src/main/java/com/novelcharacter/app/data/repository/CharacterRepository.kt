@@ -36,6 +36,7 @@ class CharacterRepository(
         }
     }
     suspend fun insertAllCharacters(characters: List<Character>) = characterDao.insertAll(characters)
+    suspend fun updateCharacterDisplayOrders(characters: List<Character>) = characterDao.updateAll(characters)
 
     // ===== CharacterFieldValue =====
     fun getValuesByCharacter(characterId: Long): LiveData<List<CharacterFieldValue>> =

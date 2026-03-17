@@ -24,5 +24,6 @@ data class Novel(
     val description: String = "",
     val universeId: Long? = null,
     val createdAt: Long = System.currentTimeMillis(),
-    val code: String = generateEntityCode()
+    val code: String = generateEntityCode(),
+    val displayOrder: Long = 0
 )
