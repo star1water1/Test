@@ -182,7 +182,7 @@ class NovelListFragment : Fragment() {
     }
 
     private fun exportToExcel() {
-        val activity = activity ?: return
+        if (!isAdded) return
         AlertDialog.Builder(requireContext())
             .setTitle(R.string.export_mode_title)
             .setItems(arrayOf(getString(R.string.export_mode_share), getString(R.string.export_mode_save))) { _, which ->

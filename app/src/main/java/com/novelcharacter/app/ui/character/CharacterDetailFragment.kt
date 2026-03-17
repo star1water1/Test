@@ -276,6 +276,7 @@ class CharacterDetailFragment : Fragment() {
     override fun onDestroyView() {
         relationshipHelper.cancelJob()
         timeSliderHelper.cancelJob()
+        binding.imageViewPager.adapter = null
         super.onDestroyView()
         _binding = null
     }

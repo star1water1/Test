@@ -28,10 +28,10 @@ class ExcelImporter(context: Context) {
     private val importService = ExcelImportService(db)
 
     private var importLauncher: androidx.activity.result.ActivityResultLauncher<Array<String>>? = null
-    private var currentActivity: Activity? = null
+    private var currentActivityRef: java.lang.ref.WeakReference<Activity>? = null
 
     fun registerLauncher(fragment: Fragment) {
-        currentActivity = fragment.activity
+        currentActivityRef = java.lang.ref.WeakReference(fragment.activity)
         importLauncher = fragment.registerForActivityResult(
             ActivityResultContracts.OpenDocument()
         ) { uri: Uri? ->
@@ -42,7 +42,7 @@ class ExcelImporter(context: Context) {
     fun cleanup() {
         supervisorJob.cancel()
         importLauncher = null
-        currentActivity = null
+        currentActivityRef = null
     }
 
     fun showImportDialog(fragment: Fragment) {
@@ -85,11 +85,11 @@ class ExcelImporter(context: Context) {
                 workbook = inputStream.use { WorkbookFactory.create(it) }
 
                 // Show progress dialog (requires an Activity reference)
-                val activityRef = java.lang.ref.WeakReference(currentActivity)
-                val activity = activityRef.get()
+                val activityRef = currentActivityRef
+                val activity = activityRef?.get()
                 if (activity != null && !activity.isFinishing && !activity.isDestroyed) {
                     withContext(Dispatchers.Main) {
-                        val act = activityRef.get()
+                        val act = activityRef?.get()
                         if (act != null && !act.isFinishing && !act.isDestroyed) {
                             val layout = LinearLayout(act).apply {
                                 orientation = LinearLayout.VERTICAL

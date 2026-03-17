@@ -8,6 +8,7 @@ import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.TimelineEvent
 import android.util.Log
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -159,9 +160,12 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
     suspend fun getCharactersForEvent(eventId: Long): List<Character> =
         timelineRepository.getCharactersForEvent(eventId)
 
+    private var errorClearJob: Job? = null
+
     private fun showError(message: String?) {
         _error.value = message
-        viewModelScope.launch {
+        errorClearJob?.cancel()
+        errorClearJob = viewModelScope.launch {
             delay(3000)
             _error.value = null
         }
