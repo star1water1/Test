@@ -61,6 +61,9 @@ interface TimelineDao {
     @Query("SELECT characterId FROM timeline_character_cross_ref WHERE eventId = :eventId")
     suspend fun getCharacterIdsForEvent(eventId: Long): List<Long>
 
+    @Query("SELECT * FROM timeline_character_cross_ref")
+    suspend fun getAllCrossRefs(): List<TimelineCharacterCrossRef>
+
     @Query("SELECT eventId FROM timeline_character_cross_ref WHERE characterId = :characterId")
     suspend fun getEventIdsForCharacter(characterId: Long): List<Long>
 

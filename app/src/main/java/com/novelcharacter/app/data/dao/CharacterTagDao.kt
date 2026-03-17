@@ -12,6 +12,9 @@ interface CharacterTagDao {
     @Query("SELECT * FROM character_tags WHERE characterId = :characterId ORDER BY tag ASC")
     suspend fun getTagsByCharacterList(characterId: Long): List<CharacterTag>
 
+    @Query("SELECT * FROM character_tags ORDER BY tag ASC")
+    suspend fun getAllTagsList(): List<CharacterTag>
+
     @Query("SELECT DISTINCT tag FROM character_tags ORDER BY tag ASC")
     suspend fun getAllDistinctTags(): List<String>
 

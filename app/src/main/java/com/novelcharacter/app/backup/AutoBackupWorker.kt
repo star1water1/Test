@@ -168,19 +168,21 @@ class AutoBackupWorker(
         val universes = db.universeDao().getAllUniversesList()
         if (allCharacters.isEmpty()) return
 
+        // Batch load all field values and tags to avoid N+1 queries
+        val allFieldValues = db.characterFieldValueDao().getAllValuesList().groupBy { it.characterId }
+        val allTags = db.characterTagDao().getAllTagsList().groupBy { it.characterId }
+
         // Export per-universe sheets (matching ExcelExporter/ExcelImportService format)
         for (universe in universes) {
             val fields = db.fieldDefinitionDao().getFieldsByUniverseList(universe.id)
             val universeNovels = novels.filter { it.universeId == universe.id }
-            val universeCharIds = universeNovels.flatMap { novel ->
-                db.characterDao().getCharactersByNovelList(novel.id).map { it.id }
-            }.toSet()
-            val universeChars = allCharacters.filter { it.id in universeCharIds }
+            val universeNovelIds = universeNovels.map { it.id }.toSet()
+            val universeChars = allCharacters.filter { it.novelId in universeNovelIds }
             if (universeChars.isEmpty()) continue
 
             exportCharacterSheet(
-                db, workbook, headerStyle, usedSheetNames,
-                universe.name, universeChars, fields, novelMap
+                workbook, headerStyle, usedSheetNames,
+                universe.name, universeChars, fields, novelMap, allFieldValues, allTags
             )
         }
 
@@ -191,19 +193,21 @@ class AutoBackupWorker(
         }
         if (unassignedChars.isNotEmpty()) {
             exportCharacterSheet(
-                db, workbook, headerStyle, usedSheetNames,
-                "미분류 캐릭터", unassignedChars, emptyList(), novelMap
+                workbook, headerStyle, usedSheetNames,
+                "미분류 캐릭터", unassignedChars, emptyList(), novelMap, allFieldValues, allTags
             )
         }
     }
 
-    private suspend fun exportCharacterSheet(
-        db: AppDatabase, workbook: XSSFWorkbook,
+    private fun exportCharacterSheet(
+        workbook: XSSFWorkbook,
         headerStyle: XSSFCellStyle, usedSheetNames: MutableSet<String>,
         sheetLabel: String,
         characters: List<com.novelcharacter.app.data.model.Character>,
         fields: List<com.novelcharacter.app.data.model.FieldDefinition>,
-        novelMap: Map<Long, com.novelcharacter.app.data.model.Novel>
+        novelMap: Map<Long, com.novelcharacter.app.data.model.Novel>,
+        allFieldValues: Map<Long, List<com.novelcharacter.app.data.model.CharacterFieldValue>>,
+        allTags: Map<Long, List<com.novelcharacter.app.data.model.CharacterTag>>
     ) {
         val sheetName = sanitizeSheetName(sheetLabel, usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
@@ -221,9 +225,8 @@ class AutoBackupWorker(
         characters.forEachIndexed { i, c ->
             val row = sheet.createRow(i + 1)
             val novel = c.novelId?.let { novelMap[it] }
-            val fieldValues = db.characterFieldValueDao().getValuesByCharacterList(c.id)
-            val fieldValueMap = fieldValues.associateBy { it.fieldDefinitionId }
-            val tags = db.characterTagDao().getTagsByCharacterList(c.id)
+            val fieldValueMap = (allFieldValues[c.id] ?: emptyList()).associateBy { it.fieldDefinitionId }
+            val tags = allTags[c.id] ?: emptyList()
             var col = 0
 
             row.createCell(col++).setCellValue(c.name)
@@ -248,6 +251,12 @@ class AutoBackupWorker(
         val novels = db.novelDao().getAllNovelsList()
         val novelMap = novels.associateBy { it.id }
 
+        // Batch load all cross-refs and characters to avoid N+1 queries
+        val allCrossRefs = db.timelineDao().getAllCrossRefs()
+        val eventCharMap = allCrossRefs.groupBy({ it.eventId }, { it.characterId })
+        val allCharacters = db.characterDao().getAllCharactersList()
+        val charMap = allCharacters.associateBy { it.id }
+
         val sheetName = sanitizeSheetName("사건 연표", usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
         val headers = listOf("연도", "월", "일", "역법", "사건 설명", "관련 작품", "관련 캐릭터", "관련작품코드")
@@ -264,8 +273,8 @@ class AutoBackupWorker(
             row.createCell(4).setCellValue(e.description)
             val novel = e.novelId?.let { novelMap[it] }
             row.createCell(5).setCellValue(novel?.title ?: "")
-            val characters = db.timelineDao().getCharactersForEvent(e.id)
-            row.createCell(6).setCellValue(characters.joinToString(", ") { it.name })
+            val characterNames = (eventCharMap[e.id] ?: emptyList()).mapNotNull { charMap[it]?.name }
+            row.createCell(6).setCellValue(characterNames.joinToString(", "))
             row.createCell(7).setCellValue(novel?.code ?: "")
         }
     }
@@ -310,11 +319,12 @@ class AutoBackupWorker(
         val novelMap = novels.associateBy { it.id }
 
         data class ChangeRow(val character: com.novelcharacter.app.data.model.Character, val novelTitle: String, val change: com.novelcharacter.app.data.model.CharacterStateChange)
-        val allChanges = mutableListOf<ChangeRow>()
-        for (c in allCharacters) {
-            val changes = db.characterStateChangeDao().getChangesByCharacterList(c.id)
+        val charMap = allCharacters.associateBy { it.id }
+        val allStateChanges = db.characterStateChangeDao().getAllChangesList()
+        val allChanges = allStateChanges.mapNotNull { change ->
+            val c = charMap[change.characterId] ?: return@mapNotNull null
             val novelTitle = c.novelId?.let { novelMap[it]?.title } ?: ""
-            changes.forEach { allChanges.add(ChangeRow(c, novelTitle, it)) }
+            ChangeRow(c, novelTitle, change)
         }
         if (allChanges.isEmpty()) return
 

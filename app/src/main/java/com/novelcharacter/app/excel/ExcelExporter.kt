@@ -471,26 +471,28 @@ class ExcelExporter(context: Context) {
         val allCharacters = db.characterDao().getAllCharactersList()
         val universes = db.universeDao().getAllUniversesList()
 
+        // Batch load all field values and tags to avoid N+1 queries
+        val allFieldValuesMap = db.characterFieldValueDao().getAllValuesList().groupBy { it.characterId }
+        val allTagsMap = db.characterTagDao().getAllTagsList().groupBy { it.characterId }
+
         for (universe in universes) {
             val fields = db.fieldDefinitionDao().getFieldsByUniverseList(universe.id)
             val universeNovels = novels.filter { it.universeId == universe.id }
-            val universeCharIds = universeNovels.flatMap { novel ->
-                db.characterDao().getCharactersByNovelList(novel.id).map { it.id }
-            }.toSet()
-            val universeChars = allCharacters.filter { it.id in universeCharIds }
+            val universeNovelIds = universeNovels.map { it.id }.toSet()
+            val universeChars = allCharacters.filter { it.novelId in universeNovelIds }
 
             if (universeChars.isEmpty()) continue
 
-            val allFieldValues = universeChars.associate { char ->
-                char.id to db.characterFieldValueDao().getValuesByCharacterList(char.id)
+            val fieldValues = universeChars.associate { char ->
+                char.id to (allFieldValuesMap[char.id] ?: emptyList())
             }
-            val allTags = universeChars.associate { char ->
-                char.id to db.characterTagDao().getTagsByCharacterList(char.id)
+            val tags = universeChars.associate { char ->
+                char.id to (allTagsMap[char.id] ?: emptyList())
             }
 
             exportCharacterSheet(
                 workbook, usedSheetNames, universe.name,
-                universeChars, fields, novelMap, allFieldValues, allTags
+                universeChars, fields, novelMap, fieldValues, tags
             )
         }
 
@@ -500,12 +502,12 @@ class ExcelExporter(context: Context) {
             novel?.universeId == null
         }
         if (unassignedChars.isNotEmpty()) {
-            val allTags = unassignedChars.associate { char ->
-                char.id to db.characterTagDao().getTagsByCharacterList(char.id)
+            val tags = unassignedChars.associate { char ->
+                char.id to (allTagsMap[char.id] ?: emptyList())
             }
             exportCharacterSheet(
                 workbook, usedSheetNames, "미분류 캐릭터",
-                unassignedChars, emptyList(), novelMap, emptyMap(), allTags
+                unassignedChars, emptyList(), novelMap, emptyMap(), tags
             )
         }
     }
@@ -578,9 +580,11 @@ class ExcelExporter(context: Context) {
         val sheet = workbook.createSheet(sheetName)
         writeHeaderRow(sheet, spec)
 
-        val eventCharacters = events.associate { event ->
-            event.id to db.timelineDao().getCharactersForEvent(event.id)
-        }
+        // Batch load all cross-refs and characters to avoid N+1 queries
+        val allCrossRefs = db.timelineDao().getAllCrossRefs()
+        val eventCharIdMap = allCrossRefs.groupBy({ it.eventId }, { it.characterId })
+        val allChars = db.characterDao().getAllCharactersList()
+        val charMap = allChars.associateBy { it.id }
 
         events.forEachIndexed { index, event ->
             val row = sheet.createRow(index + 1)
@@ -593,8 +597,8 @@ class ExcelExporter(context: Context) {
             val novel = event.novelId?.let { novelMap[it] }
             row.createCell(5).setCellValue(novel?.title ?: "")
 
-            val characters = eventCharacters[event.id] ?: emptyList()
-            row.createCell(6).setCellValue(characters.joinToString(", ") { it.name })
+            val characterNames = (eventCharIdMap[event.id] ?: emptyList()).mapNotNull { charMap[it]?.name }
+            row.createCell(6).setCellValue(characterNames.joinToString(", "))
 
             // 관련작품코드 (readOnly)
             row.createCell(7).setCellValue(novel?.code ?: "")

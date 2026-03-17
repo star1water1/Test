@@ -12,6 +12,9 @@ interface CharacterFieldValueDao {
     @Query("SELECT * FROM character_field_values WHERE characterId = :characterId")
     suspend fun getValuesByCharacterList(characterId: Long): List<CharacterFieldValue>
 
+    @Query("SELECT * FROM character_field_values")
+    suspend fun getAllValuesList(): List<CharacterFieldValue>
+
     @Query("SELECT * FROM character_field_values WHERE characterId = :characterId AND fieldDefinitionId = :fieldId")
     suspend fun getValue(characterId: Long, fieldId: Long): CharacterFieldValue?
 
