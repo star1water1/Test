@@ -215,21 +215,26 @@ class CharacterDetailFragment : Fragment() {
 
             override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
                 val imageView = holder.itemView as ImageView
-                // Recycle previous bitmap to free memory
-                (imageView.tag as? Bitmap)?.let { if (!it.isRecycled) it.recycle() }
-                imageView.tag = null
+                // Cancel previous image loading job for this ViewHolder
+                (imageView.getTag(R.id.image_load_job) as? kotlinx.coroutines.Job)?.cancel()
                 imageView.setImageResource(R.drawable.ic_character_placeholder)
                 val path = imagePaths[position]
                 val boundPosition = position
-                viewLifecycleOwner.lifecycleScope.launch {
+                val job = viewLifecycleOwner.lifecycleScope.launch {
                     val bitmap = withContext(Dispatchers.IO) {
                         decodeSampledBitmap(path, 1024, 1024)
                     }
                     if (bitmap != null && holder.bindingAdapterPosition == boundPosition && isAdded) {
-                        imageView.tag = bitmap
                         imageView.setImageBitmap(bitmap)
                     }
                 }
+                imageView.setTag(R.id.image_load_job, job)
+            }
+
+            override fun onViewRecycled(holder: RecyclerView.ViewHolder) {
+                val imageView = holder.itemView as ImageView
+                (imageView.getTag(R.id.image_load_job) as? kotlinx.coroutines.Job)?.cancel()
+                imageView.setImageDrawable(null)
             }
 
             override fun getItemCount() = imagePaths.size
