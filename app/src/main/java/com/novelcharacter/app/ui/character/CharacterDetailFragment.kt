@@ -167,6 +167,7 @@ class CharacterDetailFragment : Fragment() {
             if (universeId != null) {
                 val fields = viewModel.getFieldsByUniverseList(universeId)
                 val values = viewModel.getValuesByCharacterList(character.id)
+                if (_binding == null) return@launch
                 timeSliderHelper.cachedFields = fields
                 timeSliderHelper.cachedValues = values
 

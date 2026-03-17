@@ -465,19 +465,38 @@ class CharacterEditFragment : Fragment() {
     }
 
     private fun saveImageToInternalStorage(uri: Uri) {
-        try {
-            val inputStream = requireContext().contentResolver.openInputStream(uri) ?: return
-            val fileName = "char_${UUID.randomUUID()}.jpg"
-            val file = File(requireContext().filesDir, fileName)
-            inputStream.use { input ->
-                FileOutputStream(file).use { output ->
-                    input.copyTo(output)
+        val context = context?.applicationContext ?: return
+        viewLifecycleOwner.lifecycleScope.launch {
+            try {
+                val filePath = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    val inputStream = context.contentResolver.openInputStream(uri) ?: return@withContext null
+                    // Reject files larger than 20MB to prevent storage exhaustion
+                    val fileName = "char_${UUID.randomUUID()}.jpg"
+                    val file = File(context.filesDir, fileName)
+                    inputStream.use { input ->
+                        FileOutputStream(file).use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                    // Check file size after copy and delete if too large
+                    if (file.length() > 20L * 1024 * 1024) {
+                        file.delete()
+                        return@withContext null
+                    }
+                    file.absolutePath
+                }
+                if (_binding == null) return@launch
+                if (filePath != null) {
+                    imagePaths.add(filePath)
+                    updateImageList()
+                } else {
+                    Toast.makeText(requireContext(), R.string.image_save_failed, Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                if (isAdded) {
+                    Toast.makeText(requireContext(), R.string.image_save_failed, Toast.LENGTH_SHORT).show()
                 }
             }
-            imagePaths.add(file.absolutePath)
-            updateImageList()
-        } catch (e: Exception) {
-            Toast.makeText(requireContext(), R.string.image_save_failed, Toast.LENGTH_SHORT).show()
         }
     }
 

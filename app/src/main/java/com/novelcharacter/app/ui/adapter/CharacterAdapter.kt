@@ -175,6 +175,11 @@ class CharacterAdapter(
 
         private fun decodeSampledBitmap(path: String, reqWidth: Int, reqHeight: Int): Bitmap? {
             return try {
+                val file = java.io.File(path)
+                val appDir = binding.root.context.filesDir
+                if (!file.canonicalPath.startsWith(appDir.canonicalPath)) {
+                    return null
+                }
                 val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 BitmapFactory.decodeFile(path, options)
                 options.inSampleSize = calculateInSampleSize(options, reqWidth, reqHeight)

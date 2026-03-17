@@ -342,6 +342,8 @@ class TimelineFragment : Fragment() {
                 mutableSetOf()
             }
 
+            if (!isAdded) return@launch
+
             val dialogBinding = DialogTimelineEditBinding.inflate(layoutInflater)
 
             // Fill existing data
