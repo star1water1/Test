@@ -345,11 +345,11 @@ class ExcelImportService(private val db: AppDatabase) {
                     result.newCharacters++
                 }
 
-                // 태그 가져오기 (빈 셀 = 기존 태그 모두 삭제)
+                // 태그 가져오기 (빈 셀 = 기존 태그 유지, 명시적 값이 있을 때만 교체)
                 if (tagsColIndex >= 0) {
                     val tagsStr = getCellString(row, tagsColIndex)
-                    db.characterTagDao().deleteAllByCharacter(charId)
                     if (tagsStr.isNotBlank()) {
+                        db.characterTagDao().deleteAllByCharacter(charId)
                         val tags = splitCsv(tagsStr)
                         tags.forEach { tag ->
                             db.characterTagDao().insert(CharacterTag(characterId = charId, tag = tag))

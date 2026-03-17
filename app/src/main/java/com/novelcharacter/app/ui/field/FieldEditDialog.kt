@@ -110,7 +110,10 @@ class FieldEditDialog : DialogFragment() {
         val groupName = binding.editGroupName.text.toString().trim().ifEmpty { "기본 정보" }
         val isRequired = binding.switchRequired.isChecked
 
-        if (name.isEmpty() || key.isEmpty()) return
+        if (name.isEmpty() || key.isEmpty()) {
+            android.widget.Toast.makeText(requireContext(), getString(R.string.field_name_key_required), android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
 
         val types = FieldType.entries.toTypedArray()
         val selectedType = types[binding.spinnerFieldType.selectedItemPosition]

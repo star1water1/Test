@@ -55,7 +55,8 @@ class FormulaEvaluator(
     private fun tokenize(formula: String): List<Token> {
         val tokens = mutableListOf<Token>()
         var i = 0
-        while (i < formula.length) {
+        val maxTokens = 500
+        while (i < formula.length && tokens.size < maxTokens) {
             when {
                 formula[i].isWhitespace() -> i++
                 formula[i] in "+-*/" -> {
@@ -157,7 +158,7 @@ class FormulaEvaluator(
                         '+' -> a + b
                         '-' -> a - b
                         '*' -> a * b
-                        '/' -> if (b != 0.0) a / b else Double.NaN
+                        '/' -> if (b != 0.0) a / b else 0.0
                         else -> 0.0
                     })
                 }

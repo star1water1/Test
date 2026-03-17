@@ -199,7 +199,7 @@ class CharacterAdapter(
             if (height > reqHeight || width > reqWidth) {
                 val halfHeight = height / 2
                 val halfWidth = width / 2
-                while (halfHeight / inSampleSize >= reqHeight && halfWidth / inSampleSize >= reqWidth) {
+                while (inSampleSize < 1024 && halfHeight / inSampleSize >= reqHeight && halfWidth / inSampleSize >= reqWidth) {
                     inSampleSize *= 2
                 }
             }

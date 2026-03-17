@@ -48,6 +48,7 @@ class ExcelImporter(context: Context) {
         return importScope
     }
 
+    @Synchronized
     fun cleanup() {
         supervisorJob.cancel()
         importLauncher = null
