@@ -287,6 +287,7 @@ class TimelineFragment : Fragment() {
 
     private fun updateSliderRange(events: List<TimelineEvent>) {
         if (events.isEmpty()) {
+            binding.yearSlider.stepSize = 1f
             binding.yearSlider.valueFrom = -100f
             binding.yearSlider.valueTo = 100f
             binding.yearSlider.value = 0f
@@ -298,38 +299,43 @@ class TimelineFragment : Fragment() {
         val minYear = events.minOf { it.year }
         val maxYear = events.maxOf { it.year }
 
-        // Add some padding to the range
-        val rangeFrom = (minYear - 10).toFloat()
-        val rangeTo = (maxYear + 10).toFloat()
-
-        // Ensure valueFrom < valueTo
-        if (rangeFrom >= rangeTo) {
-            binding.yearSlider.valueFrom = rangeFrom - 10
-            binding.yearSlider.valueTo = rangeTo + 10
-        } else {
-            binding.yearSlider.valueFrom = rangeFrom
-            binding.yearSlider.valueTo = rangeTo
-        }
-
-        // Dynamically adjust step size based on range to avoid excessive discrete steps
-        val totalRange = rangeTo - rangeFrom
-        binding.yearSlider.stepSize = when {
-            totalRange > 10000 -> 100f
-            totalRange > 1000 -> 10f
+        // Determine step size based on range
+        val rawRange = (maxYear - minYear + 20).toFloat() // +20 for padding
+        val stepSize = when {
+            rawRange > 10000 -> 100f
+            rawRange > 1000 -> 10f
             else -> 1f
         }
+
+        // Align range boundaries to step size so range is evenly divisible
+        val step = stepSize.toInt()
+        val alignedFrom = ((minYear - 10).floorDiv(step) * step).toFloat()
+        val alignedTo = (((maxYear + 10) + step - 1).floorDiv(step) * step).toFloat()
+
+        // Ensure valueFrom < valueTo
+        val finalFrom = if (alignedFrom >= alignedTo) alignedFrom - stepSize else alignedFrom
+        val finalTo = if (alignedFrom >= alignedTo) alignedTo + stepSize else alignedTo
+
+        // Reset stepSize to 0 (continuous) first to avoid constraint violations during update
+        binding.yearSlider.stepSize = 0f
+
+        // Set range wide enough to cover both old and new values, then narrow
+        binding.yearSlider.valueFrom = minOf(binding.yearSlider.valueFrom, finalFrom)
+        binding.yearSlider.valueTo = maxOf(binding.yearSlider.valueTo, finalTo)
+
+        // Set value within new range
+        val currentCenter = viewModel.centerYear.value ?: 0
+        val clampedValue = currentCenter.toFloat().coerceIn(finalFrom, finalTo)
+        binding.yearSlider.value = clampedValue
+
+        // Now safely narrow the range
+        binding.yearSlider.valueFrom = finalFrom
+        binding.yearSlider.valueTo = finalTo
+        binding.yearSlider.stepSize = stepSize
 
         // Show min/max year labels (actual min/max, not padded range)
         binding.minYearLabel.text = getString(R.string.slider_min_year, minYear)
         binding.maxYearLabel.text = getString(R.string.slider_max_year, maxYear)
-
-        // Set current value within range
-        val currentCenter = viewModel.centerYear.value ?: 0
-        val clampedValue = currentCenter.toFloat().coerceIn(
-            binding.yearSlider.valueFrom,
-            binding.yearSlider.valueTo
-        )
-        binding.yearSlider.value = clampedValue
     }
 
     private fun showEditEventDialog(event: TimelineEvent?) {
