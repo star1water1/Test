@@ -23,8 +23,8 @@ class ExcelImporter(context: Context) {
 
     private val appContext: Context = context.applicationContext
     private val db = AppDatabase.getDatabase(appContext)
-    private var supervisorJob = kotlinx.coroutines.SupervisorJob()
-    private var importScope = CoroutineScope(Dispatchers.IO + supervisorJob)
+    @Volatile private var supervisorJob = kotlinx.coroutines.SupervisorJob()
+    @Volatile private var importScope = CoroutineScope(Dispatchers.IO + supervisorJob)
     private val importService = ExcelImportService(db)
 
     private var importLauncher: androidx.activity.result.ActivityResultLauncher<Array<String>>? = null

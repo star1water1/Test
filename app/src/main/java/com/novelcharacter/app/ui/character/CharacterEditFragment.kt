@@ -537,10 +537,11 @@ class CharacterEditFragment : Fragment() {
 
                 override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
                     val imageView = holder.itemView as ImageView
-                    // Recycle previous bitmap to free memory
-                    (imageView.tag as? android.graphics.Bitmap)?.let { if (!it.isRecycled) it.recycle() }
+                    // Set placeholder first, then recycle old bitmap to avoid drawing recycled bitmap
+                    val oldBitmap = imageView.tag as? android.graphics.Bitmap
                     imageView.tag = null
                     imageView.setImageResource(R.drawable.ic_character_placeholder)
+                    oldBitmap?.let { if (!it.isRecycled) it.recycle() }
                     if (position < imagePaths.size) {
                         val path = imagePaths[position]
                         val boundPosition = position
