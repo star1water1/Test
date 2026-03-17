@@ -40,4 +40,8 @@ class NovelViewModel(application: Application) : AndroidViewModel(application) {
     fun deleteNovel(novel: Novel) = viewModelScope.launch {
         novelRepository.deleteNovel(novel)
     }
+
+    fun updateDisplayOrders(novels: List<Novel>) = viewModelScope.launch {
+        novelRepository.updateNovelDisplayOrders(novels)
+    }
 }

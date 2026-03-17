@@ -399,6 +399,7 @@ class ExcelExporter(context: Context) {
             row.createCell(0).setCellValue(universe.name)
             row.createCell(1).setCellValue(universe.description)
             row.createCell(2).setCellValue(universe.code)
+            row.createCell(3).setCellValue(universe.displayOrder.toDouble())
         }
 
         applySpecFormatting(sheet, spec, universes.size)
@@ -425,6 +426,7 @@ class ExcelExporter(context: Context) {
             row.createCell(2).setCellValue(universe?.name ?: "")
             row.createCell(3).setCellValue(novel.code)
             row.createCell(4).setCellValue(universe?.code ?: "")
+            row.createCell(5).setCellValue(novel.displayOrder.toDouble())
         }
 
         applySpecFormatting(sheet, spec, novels.size)
@@ -539,6 +541,9 @@ class ExcelExporter(context: Context) {
             // 이름
             row.createCell(col++).setCellValue(character.name)
 
+            // 이명
+            row.createCell(col++).setCellValue(character.anotherName)
+
             // 동적 필드
             for (field in fields) {
                 val value = fieldValueMap[field.id]?.value ?: ""
@@ -562,7 +567,10 @@ class ExcelExporter(context: Context) {
             row.createCell(col++).setCellValue(character.code)
 
             // 작품코드 (readOnly)
-            row.createCell(col).setCellValue(novel?.code ?: "")
+            row.createCell(col++).setCellValue(novel?.code ?: "")
+
+            // 정렬순서
+            row.createCell(col).setCellValue(character.displayOrder.toDouble())
         }
 
         applySpecFormatting(sheet, spec, characters.size)

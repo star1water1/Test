@@ -6,6 +6,7 @@ import android.util.LruCache
 import android.view.LayoutInflater
 import android.view.ViewGroup
 import androidx.recyclerview.widget.DiffUtil
+import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.google.gson.Gson
@@ -28,6 +29,10 @@ class CharacterAdapter(
     private var isSelectionMode = false
     private var selectedIds = setOf<Long>()
     private var isMaxReached = false
+
+    private var isReorderMode = false
+    var itemTouchHelper: ItemTouchHelper? = null
+    private val reorderList = mutableListOf<Character>()
 
     // Thumbnail cache - max 20MB
     private val thumbnailCache: LruCache<String, Bitmap> = run {
@@ -68,6 +73,27 @@ class CharacterAdapter(
         notifyDataSetChanged()
     }
 
+    fun setReorderMode(enabled: Boolean) {
+        isReorderMode = enabled
+        if (enabled) {
+            reorderList.clear()
+            reorderList.addAll(currentList)
+        }
+        notifyDataSetChanged()
+    }
+
+    fun isReorderMode() = isReorderMode
+
+    fun onItemMove(from: Int, to: Int) {
+        val item = reorderList.removeAt(from)
+        reorderList.add(to, item)
+        notifyItemMoved(from, to)
+    }
+
+    fun getReorderedList(): List<Character> = reorderList.mapIndexed { index, character ->
+        character.copy(displayOrder = index.toLong())
+    }
+
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): CharacterViewHolder {
         val binding = ItemCharacterBinding.inflate(
             LayoutInflater.from(parent.context), parent, false
@@ -76,7 +102,12 @@ class CharacterAdapter(
     }
 
     override fun onBindViewHolder(holder: CharacterViewHolder, position: Int) {
-        holder.bind(getItem(position))
+        val item = if (isReorderMode && position < reorderList.size) reorderList[position] else getItem(position)
+        holder.bind(item)
+    }
+
+    override fun getItemCount(): Int {
+        return if (isReorderMode) reorderList.size else super.getItemCount()
     }
 
     override fun onViewRecycled(holder: CharacterViewHolder) {
@@ -103,30 +134,40 @@ class CharacterAdapter(
         fun bind(character: Character) {
             binding.characterName.text = character.name
 
-            // Selection indicator
-            if (isSelectionMode && selectedIds.contains(character.id)) {
-                binding.root.alpha = 1.0f
-                binding.root.setBackgroundColor(binding.root.context.getColor(R.color.primary_light))
-            } else if (isSelectionMode && isMaxReached) {
-                // Max selections reached - dim unselected items more
-                binding.root.alpha = 0.3f
+            if (isReorderMode) {
+                // Reorder mode: slight visual change, disable normal interactions
+                binding.root.alpha = 0.9f
                 binding.root.setBackgroundColor(0)
-            } else if (isSelectionMode) {
-                binding.root.alpha = 0.5f
-                binding.root.setBackgroundColor(0)
+                binding.root.setOnClickListener(null)
+                binding.root.setOnLongClickListener(null)
+                binding.root.isClickable = false
+                binding.root.isLongClickable = false
             } else {
-                binding.root.alpha = 1.0f
-                binding.root.setBackgroundColor(0)
+                // Selection indicator
+                if (isSelectionMode && selectedIds.contains(character.id)) {
+                    binding.root.alpha = 1.0f
+                    binding.root.setBackgroundColor(binding.root.context.getColor(R.color.primary_light))
+                } else if (isSelectionMode && isMaxReached) {
+                    // Max selections reached - dim unselected items more
+                    binding.root.alpha = 0.3f
+                    binding.root.setBackgroundColor(0)
+                } else if (isSelectionMode) {
+                    binding.root.alpha = 0.5f
+                    binding.root.setBackgroundColor(0)
+                } else {
+                    binding.root.alpha = 1.0f
+                    binding.root.setBackgroundColor(0)
+                }
+
+                binding.root.setOnClickListener { onClick(character) }
+                binding.root.setOnLongClickListener {
+                    onLongClick(character)
+                    true
+                }
             }
 
             // 이미지 - 비동기로 로드
             loadCharacterImage(character)
-
-            binding.root.setOnClickListener { onClick(character) }
-            binding.root.setOnLongClickListener {
-                onLongClick(character)
-                true
-            }
         }
 
         private fun loadCharacterImage(character: Character) {
@@ -159,7 +200,7 @@ class CharacterAdapter(
                         val pos = bindingAdapterPosition
                         if (pos != RecyclerView.NO_POSITION) {
                             val currentPaths: List<String> = try {
-                                val currentItem = getItem(pos)
+                                val currentItem = if (isReorderMode && pos < reorderList.size) reorderList[pos] else getItem(pos)
                                 gson.fromJson(currentItem.imagePaths, imagePathsType) ?: emptyList()
                             } catch (e: Exception) {
                                 // List may have been updated between position check and getItem

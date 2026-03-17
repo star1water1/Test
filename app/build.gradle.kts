@@ -106,4 +106,7 @@ dependencies {
 
     // CardView
     implementation("androidx.cardview:cardview:1.0.0")
+
+    // DataStore
+    implementation("androidx.datastore:datastore-preferences:1.0.0")
 }

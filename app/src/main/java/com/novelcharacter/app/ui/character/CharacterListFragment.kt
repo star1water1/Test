@@ -12,6 +12,8 @@ import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.GridLayoutManager
+import androidx.recyclerview.widget.ItemTouchHelper
+import androidx.recyclerview.widget.RecyclerView
 import com.novelcharacter.app.R
 import com.novelcharacter.app.databinding.FragmentCharacterListBinding
 import com.novelcharacter.app.ui.adapter.CharacterAdapter
@@ -24,6 +26,7 @@ class CharacterListFragment : Fragment() {
     private val viewModel: CharacterViewModel by viewModels()
 
     private lateinit var adapter: CharacterAdapter
+    private var itemTouchHelper: ItemTouchHelper? = null
     private var novelId: Long = -1L
 
     // Comparison mode
@@ -47,6 +50,7 @@ class CharacterListFragment : Fragment() {
         setupSearch()
         setupFab()
         setupCompareButton()
+        setupToolbarMenu()
         observeData()
 
         if (novelId != -1L) {
@@ -97,6 +101,51 @@ class CharacterListFragment : Fragment() {
         )
         binding.characterRecyclerView.layoutManager = GridLayoutManager(requireContext(), 3)
         binding.characterRecyclerView.adapter = adapter
+
+        val callback = object : ItemTouchHelper.SimpleCallback(
+            ItemTouchHelper.UP or ItemTouchHelper.DOWN or ItemTouchHelper.LEFT or ItemTouchHelper.RIGHT, 0
+        ) {
+            override fun isLongPressDragEnabled(): Boolean = adapter.isReorderMode()
+
+            override fun onMove(
+                recyclerView: RecyclerView,
+                viewHolder: RecyclerView.ViewHolder,
+                target: RecyclerView.ViewHolder
+            ): Boolean {
+                adapter.onItemMove(viewHolder.bindingAdapterPosition, target.bindingAdapterPosition)
+                return true
+            }
+
+            override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) {}
+        }
+        itemTouchHelper = ItemTouchHelper(callback).also {
+            it.attachToRecyclerView(binding.characterRecyclerView)
+            adapter.itemTouchHelper = it
+        }
+    }
+
+    private fun setupToolbarMenu() {
+        binding.toolbar.inflateMenu(R.menu.character_menu)
+        binding.toolbar.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                R.id.action_reorder -> {
+                    toggleReorderMode()
+                    true
+                }
+                else -> false
+            }
+        }
+    }
+
+    private fun toggleReorderMode() {
+        if (adapter.isReorderMode()) {
+            viewModel.updateCharacterDisplayOrders(adapter.getReorderedList())
+            adapter.setReorderMode(false)
+            Toast.makeText(requireContext(), R.string.reorder_saved, Toast.LENGTH_SHORT).show()
+        } else {
+            adapter.setReorderMode(true)
+            Toast.makeText(requireContext(), R.string.reorder_hint, Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun toggleCompareSelection(characterId: Long) {

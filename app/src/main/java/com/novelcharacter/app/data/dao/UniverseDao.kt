@@ -6,10 +6,10 @@ import com.novelcharacter.app.data.model.Universe
 
 @Dao
 interface UniverseDao {
-    @Query("SELECT * FROM universes ORDER BY createdAt DESC")
+    @Query("SELECT * FROM universes ORDER BY displayOrder ASC, createdAt DESC")
     fun getAllUniverses(): LiveData<List<Universe>>
 
-    @Query("SELECT * FROM universes ORDER BY createdAt DESC")
+    @Query("SELECT * FROM universes ORDER BY displayOrder ASC, createdAt DESC")
     suspend fun getAllUniversesList(): List<Universe>
 
     @Query("SELECT * FROM universes WHERE id = :id")
@@ -29,4 +29,7 @@ interface UniverseDao {
 
     @Delete
     suspend fun delete(universe: Universe)
+
+    @Update
+    suspend fun updateAll(universes: List<Universe>)
 }

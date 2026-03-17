@@ -21,10 +21,12 @@ data class Character(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
     val name: String,
+    val anotherName: String = "",
     val novelId: Long? = null,
     val imagePaths: String = "[]",
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),
     val memo: String = "",
-    val code: String = generateEntityCode()
+    val code: String = generateEntityCode(),
+    val displayOrder: Long = 0
 )

@@ -166,4 +166,8 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
 
     suspend fun replaceAllTagsSuspend(characterId: Long, tags: List<CharacterTag>) =
         characterRepository.replaceAllTagsForCharacter(characterId, tags)
+
+    fun updateCharacterDisplayOrders(characters: List<Character>) = viewModelScope.launch {
+        characterRepository.updateCharacterDisplayOrders(characters)
+    }
 }

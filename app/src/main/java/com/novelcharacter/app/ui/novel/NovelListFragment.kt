@@ -14,6 +14,9 @@ import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.databinding.DialogNovelEditBinding
 import com.novelcharacter.app.databinding.FragmentNovelListBinding
+import android.widget.Toast
+import androidx.recyclerview.widget.ItemTouchHelper
+import androidx.recyclerview.widget.RecyclerView
 import com.novelcharacter.app.ui.adapter.NovelAdapter
 import com.novelcharacter.app.util.navigateSafe
 
@@ -24,6 +27,7 @@ class NovelListFragment : Fragment() {
     private val viewModel: NovelViewModel by viewModels()
 
     private lateinit var adapter: NovelAdapter
+    private var itemTouchHelper: ItemTouchHelper? = null
     private var universeId: Long = -1L
     private var importerInitialized = false
     private val importer by lazy {
@@ -72,6 +76,19 @@ class NovelListFragment : Fragment() {
         )
         binding.novelRecyclerView.layoutManager = LinearLayoutManager(requireContext())
         binding.novelRecyclerView.adapter = adapter
+
+        val callback = object : ItemTouchHelper.SimpleCallback(ItemTouchHelper.UP or ItemTouchHelper.DOWN, 0) {
+            override fun isLongPressDragEnabled() = false
+            override fun onMove(rv: RecyclerView, vh: RecyclerView.ViewHolder, target: RecyclerView.ViewHolder): Boolean {
+                adapter.onItemMove(vh.bindingAdapterPosition, target.bindingAdapterPosition)
+                return true
+            }
+            override fun onSwiped(vh: RecyclerView.ViewHolder, direction: Int) {}
+        }
+        itemTouchHelper = ItemTouchHelper(callback).also {
+            it.attachToRecyclerView(binding.novelRecyclerView)
+            adapter.itemTouchHelper = it
+        }
     }
 
     private fun setupFab() {
@@ -95,6 +112,10 @@ class NovelListFragment : Fragment() {
                     importFromExcel()
                     true
                 }
+                R.id.action_reorder -> {
+                    toggleReorderMode()
+                    true
+                }
                 else -> false
             }
         }
@@ -104,6 +125,17 @@ class NovelListFragment : Fragment() {
         viewModel.filteredNovels.observe(viewLifecycleOwner) { novels ->
             adapter.submitList(novels)
             binding.emptyText.visibility = if (novels.isEmpty()) View.VISIBLE else View.GONE
+        }
+    }
+
+    private fun toggleReorderMode() {
+        if (adapter.isReorderMode()) {
+            viewModel.updateDisplayOrders(adapter.getReorderedList())
+            adapter.setReorderMode(false)
+            Toast.makeText(requireContext(), R.string.reorder_saved, Toast.LENGTH_SHORT).show()
+        } else {
+            adapter.setReorderMode(true)
+            Toast.makeText(requireContext(), R.string.reorder_hint, Toast.LENGTH_SHORT).show()
         }
     }
 

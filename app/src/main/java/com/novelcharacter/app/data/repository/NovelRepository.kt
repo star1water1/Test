@@ -20,4 +20,5 @@ class NovelRepository(
         novelDao.getNovelsByUniverseList(universeId)
     fun searchNovels(query: String): LiveData<List<Novel>> =
         novelDao.searchNovels(query)
+    suspend fun updateNovelDisplayOrders(novels: List<Novel>) = novelDao.updateAll(novels)
 }

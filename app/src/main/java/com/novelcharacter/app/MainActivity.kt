@@ -14,6 +14,7 @@ import androidx.navigation.fragment.NavHostFragment
 import androidx.navigation.ui.setupWithNavController
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.novelcharacter.app.databinding.ActivityMainBinding
+import com.novelcharacter.app.util.ThemeHelper
 
 class MainActivity : AppCompatActivity() {
 
@@ -31,6 +32,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        ThemeHelper.applyTheme(ThemeHelper.getSavedTheme(this))
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)

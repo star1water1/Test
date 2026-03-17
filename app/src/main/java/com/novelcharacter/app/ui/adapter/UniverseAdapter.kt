@@ -1,8 +1,12 @@
 package com.novelcharacter.app.ui.adapter
 
+import android.annotation.SuppressLint
 import android.view.LayoutInflater
+import android.view.MotionEvent
+import android.view.View
 import android.view.ViewGroup
 import androidx.recyclerview.widget.DiffUtil
+import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.novelcharacter.app.data.model.Universe
@@ -16,6 +20,9 @@ class UniverseAdapter(
 
     private var novelCounts: Map<Long, Int> = emptyMap()
     private var fieldCounts: Map<Long, Int> = emptyMap()
+    private var isReorderMode = false
+    var itemTouchHelper: ItemTouchHelper? = null
+    private val reorderList = mutableListOf<Universe>()
 
     fun updateNovelCounts(counts: Map<Long, Int>) {
         novelCounts = counts
@@ -27,6 +34,27 @@ class UniverseAdapter(
         notifyItemRangeChanged(0, itemCount)
     }
 
+    fun setReorderMode(enabled: Boolean) {
+        isReorderMode = enabled
+        if (enabled) {
+            reorderList.clear()
+            reorderList.addAll(currentList)
+        }
+        notifyDataSetChanged()
+    }
+
+    fun isReorderMode() = isReorderMode
+
+    fun onItemMove(from: Int, to: Int) {
+        val item = reorderList.removeAt(from)
+        reorderList.add(to, item)
+        notifyItemMoved(from, to)
+    }
+
+    fun getReorderedList(): List<Universe> = reorderList.mapIndexed { index, universe ->
+        universe.copy(displayOrder = index.toLong())
+    }
+
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): UniverseViewHolder {
         val binding = ItemUniverseBinding.inflate(
             LayoutInflater.from(parent.context), parent, false
@@ -35,9 +63,15 @@ class UniverseAdapter(
     }
 
     override fun onBindViewHolder(holder: UniverseViewHolder, position: Int) {
-        holder.bind(getItem(position))
+        val item = if (isReorderMode && position < reorderList.size) reorderList[position] else getItem(position)
+        holder.bind(item)
     }
 
+    override fun getItemCount(): Int {
+        return if (isReorderMode) reorderList.size else super.getItemCount()
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
     inner class UniverseViewHolder(
         private val binding: ItemUniverseBinding
     ) : RecyclerView.ViewHolder(binding.root) {
@@ -50,6 +84,19 @@ class UniverseAdapter(
             val fc = fieldCounts[universe.id] ?: 0
             binding.novelCount.text = binding.root.context.getString(com.novelcharacter.app.R.string.novel_count_format, nc)
             binding.fieldCount.text = binding.root.context.getString(com.novelcharacter.app.R.string.field_count_format, fc)
+
+            binding.dragHandle.visibility = if (isReorderMode) View.VISIBLE else View.GONE
+
+            if (isReorderMode) {
+                binding.dragHandle.setOnTouchListener { _, event ->
+                    if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+                        itemTouchHelper?.startDrag(this)
+                    }
+                    false
+                }
+            } else {
+                binding.dragHandle.setOnTouchListener(null)
+            }
 
             binding.root.setOnClickListener { onClick(universe) }
             binding.root.setOnLongClickListener {

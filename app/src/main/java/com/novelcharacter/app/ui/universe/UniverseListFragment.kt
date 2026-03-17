@@ -16,6 +16,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.databinding.FragmentUniverseListBinding
+import androidx.recyclerview.widget.ItemTouchHelper
 import com.novelcharacter.app.ui.adapter.UniverseAdapter
 import com.novelcharacter.app.util.navigateSafe
 
@@ -26,6 +27,7 @@ class UniverseListFragment : Fragment() {
     private val viewModel: UniverseViewModel by viewModels()
 
     private lateinit var adapter: UniverseAdapter
+    private var itemTouchHelper: ItemTouchHelper? = null
     private var importerInitialized = false
     private val importer by lazy {
         importerInitialized = true
@@ -67,6 +69,19 @@ class UniverseListFragment : Fragment() {
         )
         binding.universeRecyclerView.layoutManager = LinearLayoutManager(requireContext())
         binding.universeRecyclerView.adapter = adapter
+
+        val callback = object : ItemTouchHelper.SimpleCallback(ItemTouchHelper.UP or ItemTouchHelper.DOWN, 0) {
+            override fun isLongPressDragEnabled() = false
+            override fun onMove(rv: RecyclerView, vh: RecyclerView.ViewHolder, target: RecyclerView.ViewHolder): Boolean {
+                adapter.onItemMove(vh.bindingAdapterPosition, target.bindingAdapterPosition)
+                return true
+            }
+            override fun onSwiped(vh: RecyclerView.ViewHolder, direction: Int) {}
+        }
+        itemTouchHelper = ItemTouchHelper(callback).also {
+            it.attachToRecyclerView(binding.universeRecyclerView)
+            adapter.itemTouchHelper = it
+        }
     }
 
     private fun setupFab() {
@@ -88,6 +103,10 @@ class UniverseListFragment : Fragment() {
                 }
                 R.id.action_preset -> {
                     showPresetDialog()
+                    true
+                }
+                R.id.action_reorder -> {
+                    toggleReorderMode()
                     true
                 }
                 else -> false
@@ -132,6 +151,18 @@ class UniverseListFragment : Fragment() {
                     Toast.LENGTH_SHORT
                 ).show()
             }
+        }
+    }
+
+    private fun toggleReorderMode() {
+        if (adapter.isReorderMode()) {
+            // Save and exit reorder mode
+            viewModel.updateDisplayOrders(adapter.getReorderedList())
+            adapter.setReorderMode(false)
+            Toast.makeText(requireContext(), R.string.reorder_saved, Toast.LENGTH_SHORT).show()
+        } else {
+            adapter.setReorderMode(true)
+            Toast.makeText(requireContext(), R.string.reorder_hint, Toast.LENGTH_SHORT).show()
         }
     }
 

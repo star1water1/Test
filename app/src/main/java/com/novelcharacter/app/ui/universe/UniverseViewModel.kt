@@ -45,6 +45,10 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
         universeRepository.deleteUniverse(universe)
     }
 
+    fun updateDisplayOrders(universes: List<Universe>) = viewModelScope.launch {
+        universeRepository.updateUniverseDisplayOrders(universes)
+    }
+
     fun getPresetTemplates(): List<PresetTemplates.PresetTemplate> =
         PresetTemplates.getTemplates()
 

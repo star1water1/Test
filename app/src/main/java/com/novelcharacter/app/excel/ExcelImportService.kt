@@ -102,6 +102,7 @@ class ExcelImportService(private val db: AppDatabase) {
         if (getCellString(headerRow, 0) != spec.firstColumnHeader) return
 
         val codeColIndex = spec.findColumn(headerRow, "코드")
+        val orderColIndex = spec.findColumn(headerRow, "정렬순서")
 
         for (i in 1..sheet.lastRowNum) {
             try {
@@ -111,6 +112,7 @@ class ExcelImportService(private val db: AppDatabase) {
 
                 val description = getCellString(row, 1)
                 val code = if (codeColIndex >= 0) getCellString(row, codeColIndex) else ""
+                val displayOrder = if (orderColIndex >= 0) getCellString(row, orderColIndex).toDoubleOrNull()?.toLong() ?: 0L else 0L
 
                 // Code-first matching, then name fallback
                 val existing = if (code.isNotBlank()) {
@@ -119,11 +121,11 @@ class ExcelImportService(private val db: AppDatabase) {
                     ?: db.universeDao().getUniverseByName(name)
 
                 if (existing != null) {
-                    db.universeDao().update(existing.copy(name = name, description = description))
+                    db.universeDao().update(existing.copy(name = name, description = description, displayOrder = displayOrder))
                     result.updatedUniverses++
                 } else {
                     val newCode = if (code.isNotBlank()) code else generateEntityCode()
-                    db.universeDao().insert(Universe(name = name, description = description, code = newCode))
+                    db.universeDao().insert(Universe(name = name, description = description, code = newCode, displayOrder = displayOrder))
                     result.newUniverses++
                 }
             } catch (e: Exception) {
@@ -144,6 +146,7 @@ class ExcelImportService(private val db: AppDatabase) {
 
         val codeColIndex = spec.findColumn(headerRow, "코드")
         val universeCodeColIndex = spec.findColumn(headerRow, "세계관코드")
+        val orderColIndex = spec.findColumn(headerRow, "정렬순서")
 
         for (i in 1..sheet.lastRowNum) {
             try {
@@ -155,6 +158,7 @@ class ExcelImportService(private val db: AppDatabase) {
                 val universeName = getCellString(row, 2)
                 val code = if (codeColIndex >= 0) getCellString(row, codeColIndex) else ""
                 val universeCode = if (universeCodeColIndex >= 0) getCellString(row, universeCodeColIndex) else ""
+                val displayOrder = if (orderColIndex >= 0) getCellString(row, orderColIndex).toDoubleOrNull()?.toLong() ?: 0L else 0L
 
                 // Resolve universe: code-first, then name
                 val universeId = if (universeCode.isNotBlank()) {
@@ -173,11 +177,11 @@ class ExcelImportService(private val db: AppDatabase) {
                     }
 
                 if (existing != null) {
-                    db.novelDao().update(existing.copy(title = title, description = description, universeId = universeId))
+                    db.novelDao().update(existing.copy(title = title, description = description, universeId = universeId, displayOrder = displayOrder))
                     result.updatedNovels++
                 } else {
                     val newCode = if (code.isNotBlank()) code else generateEntityCode()
-                    db.novelDao().insert(Novel(title = title, description = description, universeId = universeId, code = newCode))
+                    db.novelDao().insert(Novel(title = title, description = description, universeId = universeId, code = newCode, displayOrder = displayOrder))
                     result.newNovels++
                 }
             } catch (e: Exception) {
@@ -283,13 +287,15 @@ class ExcelImportService(private val db: AppDatabase) {
         totalRows: Int
     ) {
         val spec = characterSpec(fields, emptyList())
+        val anotherNameColIndex = spec.findColumn(headerRow, "이명")
         val imageColIndex = spec.findColumn(headerRow, "이미지경로")
         val novelColIndex = spec.findColumn(headerRow, "작품")
         val memoColIndex = spec.findColumn(headerRow, "메모")
         val tagsColIndex = spec.findColumn(headerRow, "태그")
         val codeColIndex = spec.findColumn(headerRow, "코드")
         val novelCodeColIndex = spec.findColumn(headerRow, "작품코드")
-        val fixedColIndices = setOf(0, imageColIndex, novelColIndex, memoColIndex, tagsColIndex, codeColIndex, novelCodeColIndex).filter { it >= 0 }.toSet()
+        val orderColIndex = spec.findColumn(headerRow, "정렬순서")
+        val fixedColIndices = setOf(0, anotherNameColIndex, imageColIndex, novelColIndex, memoColIndex, tagsColIndex, codeColIndex, novelCodeColIndex, orderColIndex).filter { it >= 0 }.toSet()
         val columnFieldMap = buildColumnFieldMap(headerRow, fields, fixedColIndices)
 
         for (i in 1..sheet.lastRowNum) {
@@ -312,8 +318,10 @@ class ExcelImportService(private val db: AppDatabase) {
                         resolveNovelId(novelTitle)
                     }
 
+                val anotherName = if (anotherNameColIndex >= 0) getCellString(row, anotherNameColIndex) else ""
                 val imagePaths = if (imageColIndex >= 0) getCellString(row, imageColIndex).ifBlank { "[]" } else "[]"
                 val memo = if (memoColIndex >= 0) getCellString(row, memoColIndex) else ""
+                val displayOrder = if (orderColIndex >= 0) getCellString(row, orderColIndex).toDoubleOrNull()?.toLong() ?: 0L else 0L
 
                 // Code-first matching, then name+novel fallback, then name-only fallback
                 val existingChar = if (code.isNotBlank()) {
@@ -330,17 +338,19 @@ class ExcelImportService(private val db: AppDatabase) {
                     charId = existingChar.id
                     db.characterDao().update(existingChar.copy(
                         name = name,
+                        anotherName = anotherName,
                         novelId = novelId,
                         imagePaths = imagePaths,
                         memo = memo,
-                        updatedAt = System.currentTimeMillis()
+                        updatedAt = System.currentTimeMillis(),
+                        displayOrder = displayOrder
                     ))
                     result.updatedCharacters++
                 } else {
                     val newCode = if (code.isNotBlank()) code else generateEntityCode()
                     charId = db.characterDao().insert(Character(
-                        name = name, novelId = novelId,
-                        imagePaths = imagePaths, memo = memo, code = newCode
+                        name = name, anotherName = anotherName, novelId = novelId,
+                        imagePaths = imagePaths, memo = memo, code = newCode, displayOrder = displayOrder
                     ))
                     result.newCharacters++
                 }
