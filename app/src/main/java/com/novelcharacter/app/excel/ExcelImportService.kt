@@ -283,13 +283,14 @@ class ExcelImportService(private val db: AppDatabase) {
         totalRows: Int
     ) {
         val spec = characterSpec(fields, emptyList())
-        val columnFieldMap = buildColumnFieldMap(headerRow, fields)
         val imageColIndex = spec.findColumn(headerRow, "이미지경로")
         val novelColIndex = spec.findColumn(headerRow, "작품")
         val memoColIndex = spec.findColumn(headerRow, "메모")
         val tagsColIndex = spec.findColumn(headerRow, "태그")
         val codeColIndex = spec.findColumn(headerRow, "코드")
         val novelCodeColIndex = spec.findColumn(headerRow, "작품코드")
+        val fixedColIndices = setOf(0, imageColIndex, novelColIndex, memoColIndex, tagsColIndex, codeColIndex, novelCodeColIndex)
+        val columnFieldMap = buildColumnFieldMap(headerRow, fields, fixedColIndices)
 
         for (i in 1..sheet.lastRowNum) {
             try {
@@ -658,19 +659,19 @@ class ExcelImportService(private val db: AppDatabase) {
             val sheetName = workbook.getSheetName(idx)
             if (sheetName in reservedNames) continue
             val baseName = sheetName.replace(Regex("\\(\\d+\\)$"), "")
-            if (baseName == sanitized || sanitized.startsWith(baseName) && baseName.length >= 31) {
+            if (baseName == sanitized || sanitized.startsWith(baseName) && sanitized.length >= 31) {
                 return workbook.getSheetAt(idx)
             }
         }
         return null
     }
 
-    private fun buildColumnFieldMap(headerRow: Row, fields: List<FieldDefinition>): Map<Int, FieldDefinition> {
+    private fun buildColumnFieldMap(headerRow: Row, fields: List<FieldDefinition>, fixedColIndices: Set<Int>): Map<Int, FieldDefinition> {
         val map = mutableMapOf<Int, FieldDefinition>()
         val lastCol = headerRow.lastCellNum.toInt()
         for (col in 1 until lastCol) {
+            if (col in fixedColIndices) continue
             val headerName = getCellString(headerRow, col)
-            if (headerName in CHARACTER_FIXED_HEADERS) continue
             val field = fields.find { it.name == headerName }
             if (field != null) {
                 map[col] = field
