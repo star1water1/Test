@@ -110,7 +110,15 @@ class StateChangeHelper(
                 }
 
                 val month = dialogBinding.editMonth.text.toString().trim().toIntOrNull()
+                if (month != null && month !in 1..12) {
+                    Toast.makeText(context, getString(R.string.month_valid_range), Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
                 val day = dialogBinding.editDay.text.toString().trim().toIntOrNull()
+                if (day != null && day !in 1..31) {
+                    Toast.makeText(context, getString(R.string.day_valid_range), Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
                 val selectedIndex = dialogBinding.spinnerFieldKey.selectedItemPosition
                 if (selectedIndex < 0 || selectedIndex >= fieldOptions.size) {
                     Toast.makeText(context, getString(R.string.field_required), Toast.LENGTH_SHORT).show()

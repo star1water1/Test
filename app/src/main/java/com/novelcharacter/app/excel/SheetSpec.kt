@@ -26,7 +26,13 @@ data class SheetSpec(
         val lastCol = headerRow.lastCellNum.toInt()
         for (col in 0 until lastCol) {
             val cell = headerRow.getCell(col) ?: continue
-            if (cell.stringCellValue?.trim() == headerName) return col
+            val cellValue = try {
+                cell.stringCellValue?.trim()
+            } catch (_: Exception) {
+                // Cell is not a string type (e.g. NUMERIC) — skip
+                null
+            }
+            if (cellValue == headerName) return col
         }
         return -1
     }
