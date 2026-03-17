@@ -164,21 +164,78 @@ class AutoBackupWorker(
     ) {
         val allCharacters = db.characterDao().getAllCharactersList()
         val novels = db.novelDao().getAllNovelsList()
+        val novelMap = novels.associateBy { it.id }
+        val universes = db.universeDao().getAllUniversesList()
         if (allCharacters.isEmpty()) return
 
-        val sheetName = sanitizeSheetName("캐릭터", usedSheetNames)
+        // Export per-universe sheets (matching ExcelExporter/ExcelImportService format)
+        for (universe in universes) {
+            val fields = db.fieldDefinitionDao().getFieldsByUniverseList(universe.id)
+            val universeNovels = novels.filter { it.universeId == universe.id }
+            val universeCharIds = universeNovels.flatMap { novel ->
+                db.characterDao().getCharactersByNovelList(novel.id).map { it.id }
+            }.toSet()
+            val universeChars = allCharacters.filter { it.id in universeCharIds }
+            if (universeChars.isEmpty()) continue
+
+            exportCharacterSheet(
+                db, workbook, headerStyle, usedSheetNames,
+                universe.name, universeChars, fields, novelMap
+            )
+        }
+
+        // Unassigned characters (no universe)
+        val unassignedChars = allCharacters.filter { char ->
+            val novel = novelMap[char.novelId]
+            novel?.universeId == null
+        }
+        if (unassignedChars.isNotEmpty()) {
+            exportCharacterSheet(
+                db, workbook, headerStyle, usedSheetNames,
+                "미분류 캐릭터", unassignedChars, emptyList(), novelMap
+            )
+        }
+    }
+
+    private suspend fun exportCharacterSheet(
+        db: AppDatabase, workbook: XSSFWorkbook,
+        headerStyle: XSSFCellStyle, usedSheetNames: MutableSet<String>,
+        sheetLabel: String,
+        characters: List<com.novelcharacter.app.data.model.Character>,
+        fields: List<com.novelcharacter.app.data.model.FieldDefinition>,
+        novelMap: Map<Long, com.novelcharacter.app.data.model.Novel>
+    ) {
+        val sheetName = sanitizeSheetName(sheetLabel, usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
-        val headers = listOf("이름", "작품", "메모", "코드")
+
+        // Build headers: 이름, [dynamic fields...], 이미지경로, 작품, 메모, 태그, 코드, 작품코드
+        val headers = mutableListOf("이름")
+        fields.forEach { headers.add(it.name) }
+        headers.addAll(listOf("이미지경로", "작품", "메모", "태그", "코드", "작품코드"))
+
         val headerRow = sheet.createRow(0)
         headers.forEachIndexed { i, h ->
             headerRow.createCell(i).apply { setCellValue(h); cellStyle = headerStyle }
         }
-        allCharacters.forEachIndexed { i, c ->
+
+        characters.forEachIndexed { i, c ->
             val row = sheet.createRow(i + 1)
-            row.createCell(0).setCellValue(c.name)
-            row.createCell(1).setCellValue(novels.find { it.id == c.novelId }?.title ?: "")
-            row.createCell(2).setCellValue(c.memo)
-            row.createCell(3).setCellValue(c.code)
+            val novel = c.novelId?.let { novelMap[it] }
+            val fieldValues = db.characterFieldValueDao().getValuesByCharacterList(c.id)
+            val fieldValueMap = fieldValues.associateBy { it.fieldDefinitionId }
+            val tags = db.characterTagDao().getTagsByCharacterList(c.id)
+            var col = 0
+
+            row.createCell(col++).setCellValue(c.name)
+            for (field in fields) {
+                row.createCell(col++).setCellValue(fieldValueMap[field.id]?.value ?: "")
+            }
+            row.createCell(col++).setCellValue(c.imagePaths)
+            row.createCell(col++).setCellValue(novel?.title ?: "")
+            row.createCell(col++).setCellValue(c.memo)
+            row.createCell(col++).setCellValue(tags.joinToString(", ") { it.tag })
+            row.createCell(col++).setCellValue(c.code)
+            row.createCell(col).setCellValue(novel?.code ?: "")
         }
     }
 
@@ -188,10 +245,12 @@ class AutoBackupWorker(
     ) {
         val events = db.timelineDao().getAllEventsList()
         if (events.isEmpty()) return
+        val novels = db.novelDao().getAllNovelsList()
+        val novelMap = novels.associateBy { it.id }
 
         val sheetName = sanitizeSheetName("사건 연표", usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
-        val headers = listOf("연도", "월", "일", "사건 설명")
+        val headers = listOf("연도", "월", "일", "역법", "사건 설명", "관련 작품", "관련 캐릭터", "관련작품코드")
         val headerRow = sheet.createRow(0)
         headers.forEachIndexed { i, h ->
             headerRow.createCell(i).apply { setCellValue(h); cellStyle = headerStyle }
@@ -201,7 +260,13 @@ class AutoBackupWorker(
             row.createCell(0).setCellValue(e.year.toDouble())
             e.month?.let { row.createCell(1).setCellValue(it.toDouble()) }
             e.day?.let { row.createCell(2).setCellValue(it.toDouble()) }
-            row.createCell(3).setCellValue(e.description)
+            row.createCell(3).setCellValue(e.calendarType)
+            row.createCell(4).setCellValue(e.description)
+            val novel = e.novelId?.let { novelMap[it] }
+            row.createCell(5).setCellValue(novel?.title ?: "")
+            val characters = db.timelineDao().getCharactersForEvent(e.id)
+            row.createCell(6).setCellValue(characters.joinToString(", ") { it.name })
+            row.createCell(7).setCellValue(novel?.code ?: "")
         }
     }
 
@@ -240,24 +305,29 @@ class AutoBackupWorker(
         headerStyle: XSSFCellStyle, usedSheetNames: MutableSet<String>
     ) {
         val allCharacters = db.characterDao().getAllCharactersList()
+        val charMap = allCharacters.associateBy { it.id }
         val novels = db.novelDao().getAllNovelsList()
-        val allChanges = allCharacters.flatMap { c ->
+        val novelMap = novels.associateBy { it.id }
+
+        data class ChangeRow(val character: com.novelcharacter.app.data.model.Character, val novelTitle: String, val change: com.novelcharacter.app.data.model.CharacterStateChange)
+        val allChanges = mutableListOf<ChangeRow>()
+        for (c in allCharacters) {
             val changes = db.characterStateChangeDao().getChangesByCharacterList(c.id)
-            val novelTitle = novels.find { it.id == c.novelId }?.title ?: ""
-            changes.map { Triple(c.name, novelTitle, it) }
+            val novelTitle = c.novelId?.let { novelMap[it]?.title } ?: ""
+            changes.forEach { allChanges.add(ChangeRow(c, novelTitle, it)) }
         }
         if (allChanges.isEmpty()) return
 
         val sheetName = sanitizeSheetName("캐릭터 상태변화", usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
-        val headers = listOf("캐릭터", "작품", "연도", "월", "일", "필드키", "새 값", "설명")
+        val headers = listOf("캐릭터", "작품", "연도", "월", "일", "필드키", "새 값", "설명", "캐릭터코드")
         val headerRow = sheet.createRow(0)
         headers.forEachIndexed { i, h ->
             headerRow.createCell(i).apply { setCellValue(h); cellStyle = headerStyle }
         }
-        allChanges.forEachIndexed { i, (charName, novelTitle, sc) ->
+        allChanges.forEachIndexed { i, (character, novelTitle, sc) ->
             val row = sheet.createRow(i + 1)
-            row.createCell(0).setCellValue(charName)
+            row.createCell(0).setCellValue(character.name)
             row.createCell(1).setCellValue(novelTitle)
             row.createCell(2).setCellValue(sc.year.toDouble())
             sc.month?.let { row.createCell(3).setCellValue(it.toDouble()) }
@@ -265,6 +335,7 @@ class AutoBackupWorker(
             row.createCell(5).setCellValue(sc.fieldKey)
             row.createCell(6).setCellValue(sc.newValue)
             row.createCell(7).setCellValue(sc.description)
+            row.createCell(8).setCellValue(character.code)
         }
     }
 
@@ -280,17 +351,21 @@ class AutoBackupWorker(
 
         val sheetName = sanitizeSheetName("캐릭터 관계", usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
-        val headers = listOf("캐릭터1", "캐릭터2", "관계유형", "설명")
+        val headers = listOf("캐릭터1", "캐릭터2", "관계유형", "설명", "캐릭터1코드", "캐릭터2코드")
         val headerRow = sheet.createRow(0)
         headers.forEachIndexed { i, h ->
             headerRow.createCell(i).apply { setCellValue(h); cellStyle = headerStyle }
         }
         relationships.forEachIndexed { i, r ->
             val row = sheet.createRow(i + 1)
-            row.createCell(0).setCellValue(charMap[r.characterId1]?.name ?: "")
-            row.createCell(1).setCellValue(charMap[r.characterId2]?.name ?: "")
+            val char1 = charMap[r.characterId1]
+            val char2 = charMap[r.characterId2]
+            row.createCell(0).setCellValue(char1?.name ?: "")
+            row.createCell(1).setCellValue(char2?.name ?: "")
             row.createCell(2).setCellValue(r.relationshipType)
             row.createCell(3).setCellValue(r.description)
+            row.createCell(4).setCellValue(char1?.code ?: "")
+            row.createCell(5).setCellValue(char2?.code ?: "")
         }
     }
 
@@ -306,19 +381,21 @@ class AutoBackupWorker(
 
         val sheetName = sanitizeSheetName("이름 은행", usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
-        val headers = listOf("이름", "성별", "출처", "비고", "사용", "사용캐릭터")
+        val headers = listOf("이름", "성별", "출처", "메모", "사용", "사용캐릭터", "사용캐릭터코드")
         val headerRow = sheet.createRow(0)
         headers.forEachIndexed { i, h ->
             headerRow.createCell(i).apply { setCellValue(h); cellStyle = headerStyle }
         }
         names.forEachIndexed { i, n ->
             val row = sheet.createRow(i + 1)
+            val usedByChar = n.usedByCharacterId?.let { charMap[it] }
             row.createCell(0).setCellValue(n.name)
             row.createCell(1).setCellValue(n.gender)
             row.createCell(2).setCellValue(n.origin)
             row.createCell(3).setCellValue(n.notes)
             row.createCell(4).setCellValue(if (n.isUsed) "Y" else "N")
-            row.createCell(5).setCellValue(n.usedByCharacterId?.let { charMap[it]?.name } ?: "")
+            row.createCell(5).setCellValue(usedByChar?.name ?: "")
+            row.createCell(6).setCellValue(usedByChar?.code ?: "")
         }
     }
 

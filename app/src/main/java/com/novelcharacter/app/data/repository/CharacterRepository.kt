@@ -2,7 +2,7 @@ package com.novelcharacter.app.data.repository
 
 import androidx.lifecycle.LiveData
 import androidx.room.withTransaction
-import com.novelcharacter.app.data.AppDatabase
+import com.novelcharacter.app.data.database.AppDatabase
 import com.novelcharacter.app.data.dao.*
 import com.novelcharacter.app.data.model.*
 
