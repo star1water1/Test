@@ -63,11 +63,22 @@ class FormulaEvaluator(
                     // Handle unary minus/plus: treat as sign if at start, after '(' or after another operator
                     if ((formula[i] == '-' || formula[i] == '+') && (tokens.isEmpty() || tokens.last() is Token.LParen || tokens.last() is Token.Op)) {
                         if (formula[i] == '-') {
-                            tokens.add(Token.Num(0.0))
-                            tokens.add(Token.Op('-'))
+                            // Count consecutive minus signs to determine effective sign
+                            var minusCount = 0
+                            while (i < formula.length && (formula[i] == '-' || formula[i] == '+')) {
+                                if (formula[i] == '-') minusCount++
+                                i++
+                            }
+                            if (minusCount % 2 == 1) {
+                                // Odd number of minuses = negate
+                                tokens.add(Token.Num(0.0))
+                                tokens.add(Token.Op('-'))
+                            }
+                            // Even number of minuses = no-op (positive)
+                        } else {
+                            // Unary plus: simply skip it ("+5" → "5")
+                            i++
                         }
-                        // Unary plus: simply skip it ("+5" → "5")
-                        i++
                     } else {
                         tokens.add(Token.Op(formula[i]))
                         i++

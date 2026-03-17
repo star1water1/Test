@@ -28,10 +28,13 @@ class TimeSliderHelper(
 
     private val timeStateResolver = TimeStateResolver()
     private var applyTimeViewJob: Job? = null
+    private var updateSliderJob: Job? = null
 
     fun cancelJob() {
         applyTimeViewJob?.cancel()
         applyTimeViewJob = null
+        updateSliderJob?.cancel()
+        updateSliderJob = null
     }
 
     fun setup() {
@@ -111,7 +114,8 @@ class TimeSliderHelper(
     }
 
     fun updateSliderRange() {
-        viewLifecycleOwner.lifecycleScope.launch {
+        updateSliderJob?.cancel()
+        updateSliderJob = viewLifecycleOwner.lifecycleScope.launch {
             val changes = viewModel.getChangesByCharacterList(characterId)
             if (changes.isEmpty()) {
                 binding.yearSlider.isEnabled = false

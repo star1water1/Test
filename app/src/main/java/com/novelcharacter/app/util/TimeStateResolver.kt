@@ -53,10 +53,14 @@ class TimeStateResolver {
             change.newValue.toIntOrNull()
                 ?: if (change.newValue.isBlank()) change.year else null
         }
-        if (deathYear != null && targetYear >= deathYear) {
+        if (birthYear != null && targetYear < birthYear) {
+            // Before birth
+            result[CharacterStateChange.KEY_ALIVE] = ""
+            result[CharacterStateChange.KEY_AGE] = ""
+        } else if (deathYear != null && targetYear >= deathYear) {
             result[CharacterStateChange.KEY_ALIVE] = "false"
         } else if (birthYear != null && targetYear >= birthYear) {
-            // If born and not yet dead, alive
+            // Born and not yet dead
             result[CharacterStateChange.KEY_ALIVE] = "true"
         }
 

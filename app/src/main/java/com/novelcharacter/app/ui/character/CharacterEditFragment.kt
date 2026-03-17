@@ -631,7 +631,7 @@ class CharacterEditFragment : Fragment() {
                 val savedCharId: Long
                 if (characterId != -1L) {
                     // 기존 캐릭터 수정
-                    viewModel.updateCharacter(character)
+                    viewModel.updateCharacterSuspend(character)
                     val fieldValues = collectFieldValues(characterId)
                     viewModel.saveAllFieldValues(characterId, fieldValues)
                     savedCharId = characterId

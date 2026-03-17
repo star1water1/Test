@@ -20,7 +20,14 @@ import java.util.concurrent.TimeUnit
 class NovelCharacterApp : Application() {
 
     val database by lazy { AppDatabase.getDatabase(this) }
-    val novelRepository by lazy { NovelRepository(database.novelDao()) }
+    val novelRepository by lazy {
+        NovelRepository(
+            database,
+            database.novelDao(),
+            database.characterDao(),
+            database.nameBankDao()
+        )
+    }
     val characterRepository by lazy {
         CharacterRepository(
             database,
@@ -35,9 +42,12 @@ class NovelCharacterApp : Application() {
     val timelineRepository by lazy { TimelineRepository(database.timelineDao()) }
     val universeRepository by lazy {
         UniverseRepository(
+            database,
             database.universeDao(),
             database.fieldDefinitionDao(),
-            database.novelDao()
+            database.novelDao(),
+            database.characterDao(),
+            database.nameBankDao()
         )
     }
     val nameBankRepository by lazy { NameBankRepository(database.nameBankDao()) }

@@ -1,16 +1,23 @@
 package com.novelcharacter.app.data.repository
 
 import androidx.lifecycle.LiveData
+import androidx.room.withTransaction
+import com.novelcharacter.app.data.database.AppDatabase
+import com.novelcharacter.app.data.dao.CharacterDao
 import com.novelcharacter.app.data.dao.FieldDefinitionDao
+import com.novelcharacter.app.data.dao.NameBankDao
 import com.novelcharacter.app.data.dao.NovelDao
 import com.novelcharacter.app.data.dao.UniverseDao
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.Universe
 
 class UniverseRepository(
+    private val db: AppDatabase,
     private val universeDao: UniverseDao,
     private val fieldDefinitionDao: FieldDefinitionDao,
-    private val novelDao: NovelDao
+    private val novelDao: NovelDao,
+    private val characterDao: CharacterDao,
+    private val nameBankDao: NameBankDao
 ) {
     // ===== Universe =====
     val allUniverses: LiveData<List<Universe>> = universeDao.getAllUniverses()
@@ -19,7 +26,19 @@ class UniverseRepository(
     suspend fun getUniverseById(id: Long): Universe? = universeDao.getUniverseById(id)
     suspend fun insertUniverse(universe: Universe): Long = universeDao.insert(universe)
     suspend fun updateUniverse(universe: Universe) = universeDao.update(universe)
-    suspend fun deleteUniverse(universe: Universe) = universeDao.delete(universe)
+    suspend fun deleteUniverse(universe: Universe) {
+        db.withTransaction {
+            // Reset name bank usage for all characters in novels belonging to this universe
+            val novels = novelDao.getNovelsByUniverseList(universe.id)
+            for (novel in novels) {
+                val characters = characterDao.getCharactersByNovelList(novel.id)
+                for (character in characters) {
+                    nameBankDao.resetUsageByCharacter(character.id)
+                }
+            }
+            universeDao.delete(universe)
+        }
+    }
 
     // ===== FieldDefinition =====
     fun getFieldsByUniverse(universeId: Long): LiveData<List<FieldDefinition>> =

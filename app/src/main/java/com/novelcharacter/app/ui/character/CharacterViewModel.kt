@@ -85,6 +85,9 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         characterRepository.updateCharacter(character)
     }
 
+    suspend fun updateCharacterSuspend(character: Character) =
+        characterRepository.updateCharacter(character)
+
     fun deleteCharacter(character: Character) = viewModelScope.launch {
         characterRepository.deleteCharacter(character)
     }

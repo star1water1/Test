@@ -52,10 +52,15 @@ class AutoBackupWorker(
                 try { workbook.close() } catch (_: Exception) {}
             }
 
-            // Rotate old backups
-            rotateBackups()
-
             Log.i(TAG, "Auto backup completed successfully")
+
+            // Rotate old backups (non-critical, don't fail the worker if this errors)
+            try {
+                rotateBackups()
+            } catch (e: Exception) {
+                Log.w(TAG, "Backup rotation failed, will retry next time", e)
+            }
+
             Result.success()
         } catch (e: Exception) {
             Log.e(TAG, "Auto backup failed", e)

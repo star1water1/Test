@@ -35,14 +35,20 @@ class FieldEditDialog : DialogFragment() {
         setupTypeSpinner(binding)
         populateFields(binding)
 
-        return AlertDialog.Builder(requireContext())
+        val dialog = AlertDialog.Builder(requireContext())
             .setTitle(if (existingField == null) R.string.add_field else R.string.edit_field)
             .setView(binding.root)
-            .setPositiveButton(R.string.save) { _, _ ->
-                saveField(binding)
-            }
+            .setPositiveButton(R.string.save, null)
             .setNegativeButton(R.string.cancel, null)
             .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                if (saveField(binding)) {
+                    dialog.dismiss()
+                }
+            }
+        }
+        return dialog
     }
 
     private fun setupTypeSpinner(binding: DialogFieldEditBinding) {
@@ -104,7 +110,7 @@ class FieldEditDialog : DialogFragment() {
         if (formula != null) binding.editFormula.setText(formula)
     }
 
-    private fun saveField(binding: DialogFieldEditBinding) {
+    private fun saveField(binding: DialogFieldEditBinding): Boolean {
         val name = binding.editFieldName.text.toString().trim()
         val key = binding.editFieldKey.text.toString().trim()
         val groupName = binding.editGroupName.text.toString().trim().ifEmpty { "기본 정보" }
@@ -112,7 +118,7 @@ class FieldEditDialog : DialogFragment() {
 
         if (name.isEmpty() || key.isEmpty()) {
             android.widget.Toast.makeText(requireContext(), getString(R.string.field_name_key_required), android.widget.Toast.LENGTH_SHORT).show()
-            return
+            return false
         }
 
         val types = FieldType.entries.toTypedArray()
@@ -147,6 +153,7 @@ class FieldEditDialog : DialogFragment() {
         } else {
             setFragmentResult(RESULT_KEY, bundleOf(RESULT_FIELD_JSON to Gson().toJson(field)))
         }
+        return true
     }
 
     private fun buildConfig(binding: DialogFieldEditBinding, type: FieldType): String {

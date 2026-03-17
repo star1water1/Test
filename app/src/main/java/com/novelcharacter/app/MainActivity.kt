@@ -47,11 +47,15 @@ class MainActivity : AppCompatActivity() {
         binding.bottomNav.setupWithNavController(navController)
 
         binding.bottomNav.setOnItemSelectedListener { item ->
-            val navOptions = NavOptions.Builder()
-                .setPopUpTo(navController.graph.startDestinationId, inclusive = false)
-                .setLaunchSingleTop(true)
-                .build()
-            navController.navigate(item.itemId, null, navOptions)
+            try {
+                val navOptions = NavOptions.Builder()
+                    .setPopUpTo(navController.graph.startDestinationId, inclusive = false)
+                    .setLaunchSingleTop(true)
+                    .build()
+                navController.navigate(item.itemId, null, navOptions)
+            } catch (e: IllegalArgumentException) {
+                Log.w("MainActivity", "Navigation failed: ${e.message}")
+            }
             true
         }
 

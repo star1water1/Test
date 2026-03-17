@@ -191,24 +191,38 @@ class TimelineFragment : Fragment() {
             override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
         }
 
-        // Observe novel data and update spinner adapter only
+        // Observe novel data and update spinner adapter, preserving current selection
         viewModel.allNovels.observe(viewLifecycleOwner) { novels ->
+            val previousSelection = binding.spinnerFilterNovel.selectedItemPosition
+            val previousNovelId = if (previousSelection > 0) cachedNovels.getOrNull(previousSelection - 1)?.id else null
             cachedNovels = novels
             val novelNames = mutableListOf(getString(R.string.all_novels_filter))
             novelNames.addAll(novels.map { it.title })
             val spinnerAdapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, novelNames)
             spinnerAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
             binding.spinnerFilterNovel.adapter = spinnerAdapter
+            // Restore previous selection if the novel still exists
+            if (previousNovelId != null) {
+                val newIndex = novels.indexOfFirst { it.id == previousNovelId }
+                if (newIndex >= 0) binding.spinnerFilterNovel.setSelection(newIndex + 1)
+            }
         }
 
-        // Observe character data and update spinner adapter only
+        // Observe character data and update spinner adapter, preserving current selection
         viewModel.allCharacters.observe(viewLifecycleOwner) { characters ->
+            val previousSelection = binding.spinnerFilterCharacter.selectedItemPosition
+            val previousCharId = if (previousSelection > 0) cachedCharacters.getOrNull(previousSelection - 1)?.id else null
             cachedCharacters = characters
             val charNames = mutableListOf(getString(R.string.all_characters_filter))
             charNames.addAll(characters.map { it.name })
             val spinnerAdapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, charNames)
             spinnerAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
             binding.spinnerFilterCharacter.adapter = spinnerAdapter
+            // Restore previous selection if the character still exists
+            if (previousCharId != null) {
+                val newIndex = characters.indexOfFirst { it.id == previousCharId }
+                if (newIndex >= 0) binding.spinnerFilterCharacter.setSelection(newIndex + 1)
+            }
         }
 
         // Clear filter button
@@ -269,6 +283,13 @@ class TimelineFragment : Fragment() {
                 if (slider.value != clampedValue) {
                     slider.value = clampedValue
                 }
+            }
+        }
+
+        // Observe errors and show Toast
+        viewModel.error.observe(viewLifecycleOwner) { errorMsg ->
+            if (errorMsg != null && isAdded) {
+                Toast.makeText(requireContext(), errorMsg, Toast.LENGTH_SHORT).show()
             }
         }
     }

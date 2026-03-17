@@ -108,14 +108,18 @@ class NameBankFragment : Fragment() {
             editNotes.setText(existing.notes)
         }
 
-        AlertDialog.Builder(context)
+        val dialog = AlertDialog.Builder(context)
             .setTitle(if (existing != null) getString(R.string.edit_name_title) else getString(R.string.add_name_title))
             .setView(layout)
-            .setPositiveButton(getString(R.string.save)) { _, _ ->
+            .setPositiveButton(getString(R.string.save), null)
+            .setNegativeButton(getString(R.string.cancel), null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 val name = editName.text.toString().trim()
                 if (name.isBlank()) {
                     Toast.makeText(context, R.string.enter_name, Toast.LENGTH_SHORT).show()
-                    return@setPositiveButton
+                    return@setOnClickListener
                 }
                 val gender = if (spinnerGender.selectedItemPosition > 0)
                     genderOptions[spinnerGender.selectedItemPosition] else ""
@@ -131,9 +135,10 @@ class NameBankFragment : Fragment() {
                         name = name, gender = gender, origin = origin, notes = notes
                     ))
                 }
+                dialog.dismiss()
             }
-            .setNegativeButton(getString(R.string.cancel), null)
-            .show()
+        }
+        dialog.show()
     }
 
     private fun showOptionsDialog(entry: NameBankEntry) {
