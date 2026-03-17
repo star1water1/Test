@@ -407,10 +407,12 @@ class ExcelImportService(private val db: AppDatabase) {
                 val novelTitle = getCellString(row, 5)
                 val novelCode = if (novelCodeColIndex >= 0) getCellString(row, novelCodeColIndex) else ""
 
-                val novelId = if (novelCode.isNotBlank()) {
-                    db.novelDao().getNovelByCode(novelCode)?.id
+                val resolvedNovel = if (novelCode.isNotBlank()) {
+                    db.novelDao().getNovelByCode(novelCode)
                 } else null
-                    ?: if (novelTitle.isNotBlank()) allNovels.find { it.title == novelTitle }?.id else null
+                    ?: if (novelTitle.isNotBlank()) allNovels.find { it.title == novelTitle } else null
+                val novelId = resolvedNovel?.id
+                val universeId = resolvedNovel?.universeId
 
                 val existingEvent = if (novelId != null) {
                     db.timelineDao().getEventByNaturalKey(year, description, novelId)
@@ -422,13 +424,15 @@ class ExcelImportService(private val db: AppDatabase) {
                 if (existingEvent != null) {
                     eventId = existingEvent.id
                     db.timelineDao().update(existingEvent.copy(
-                        month = month, day = day, calendarType = calendarType
+                        month = month, day = day, calendarType = calendarType,
+                        novelId = novelId, universeId = universeId
                     ))
                     result.updatedEvents++
                 } else {
                     eventId = db.timelineDao().insert(TimelineEvent(
                         year = year, month = month, day = day,
-                        calendarType = calendarType, description = description, novelId = novelId
+                        calendarType = calendarType, description = description,
+                        novelId = novelId, universeId = universeId
                     ))
                     result.newEvents++
                 }
@@ -659,7 +663,7 @@ class ExcelImportService(private val db: AppDatabase) {
             val sheetName = workbook.getSheetName(idx)
             if (sheetName in reservedNames) continue
             val baseName = sheetName.replace(Regex("\\(\\d+\\)$"), "")
-            if (baseName == sanitized || (sanitized.startsWith(baseName) && sanitized.length >= 31)) {
+            if (baseName == sanitized || (sanitized.startsWith(baseName) && sheetName.length >= 31)) {
                 return workbook.getSheetAt(idx)
             }
         }
