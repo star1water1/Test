@@ -80,6 +80,9 @@ class AutoBackupWorker(
                 workbook.write(fos)
             }
             BackupEncryptor.encryptFile(tempFile, backupFile)
+        } catch (e: Exception) {
+            backupFile.delete() // clean up partial encrypted file on failure
+            throw e
         } finally {
             tempFile.delete()
         }

@@ -59,13 +59,18 @@ class FormulaEvaluator(
             when {
                 formula[i].isWhitespace() -> i++
                 formula[i] in "+-*/" -> {
-                    // Handle unary minus: treat as negation if at start, after '(' or after another operator
-                    if (formula[i] == '-' && (tokens.isEmpty() || tokens.last() is Token.LParen || tokens.last() is Token.Op)) {
-                        // Parse as negative number or insert 0 for subtraction
-                        tokens.add(Token.Num(0.0))
+                    // Handle unary minus/plus: treat as sign if at start, after '(' or after another operator
+                    if ((formula[i] == '-' || formula[i] == '+') && (tokens.isEmpty() || tokens.last() is Token.LParen || tokens.last() is Token.Op)) {
+                        if (formula[i] == '-') {
+                            tokens.add(Token.Num(0.0))
+                            tokens.add(Token.Op('-'))
+                        }
+                        // Unary plus: simply skip it ("+5" → "5")
+                        i++
+                    } else {
+                        tokens.add(Token.Op(formula[i]))
+                        i++
                     }
-                    tokens.add(Token.Op(formula[i]))
-                    i++
                 }
                 formula[i] == '(' -> { tokens.add(Token.LParen); i++ }
                 formula[i] == ')' -> { tokens.add(Token.RParen); i++ }
