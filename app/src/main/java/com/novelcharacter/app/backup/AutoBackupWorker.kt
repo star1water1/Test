@@ -319,7 +319,6 @@ class AutoBackupWorker(
         val novelMap = novels.associateBy { it.id }
 
         data class ChangeRow(val character: com.novelcharacter.app.data.model.Character, val novelTitle: String, val change: com.novelcharacter.app.data.model.CharacterStateChange)
-        val charMap = allCharacters.associateBy { it.id }
         val allStateChanges = db.characterStateChangeDao().getAllChangesList()
         val allChanges = allStateChanges.mapNotNull { change ->
             val c = charMap[change.characterId] ?: return@mapNotNull null
