@@ -70,6 +70,11 @@ class CharacterEditFragment : Fragment() {
         return binding.root
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putStringArrayList("imagePaths", ArrayList(imagePaths))
+    }
+
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
@@ -77,11 +82,22 @@ class CharacterEditFragment : Fragment() {
         presetNovelId = arguments?.getLong("novelId", -1L) ?: -1L
         appDir = requireContext().filesDir
 
+        // Restore imagePaths from saved state (rotation)
+        savedInstanceState?.getStringArrayList("imagePaths")?.let { saved ->
+            imagePaths.clear()
+            imagePaths.addAll(saved)
+        }
+
         binding.toolbar.setNavigationOnClickListener { findNavController().popBackStack() }
         binding.toolbar.title = if (characterId == -1L) getString(R.string.add_character) else getString(R.string.edit_character)
 
         setupImageButton()
         setupSaveButton()
+
+        // Show restored images if any (from rotation)
+        if (imagePaths.isNotEmpty()) {
+            updateImageList()
+        }
 
         viewLifecycleOwner.lifecycleScope.launch {
             loadNovels()

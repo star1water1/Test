@@ -157,7 +157,7 @@ class CharacterAdapter(
                         thumbnailCache.put(boundPath, bitmap)
                         // Only set if this ViewHolder still shows the same character
                         val pos = bindingAdapterPosition
-                        if (pos != RecyclerView.NO_POSITION) {
+                        if (pos != RecyclerView.NO_POSITION && pos < itemCount) {
                             val currentPaths: List<String> = try {
                                 val currentItem = getItem(pos)
                                 gson.fromJson(currentItem.imagePaths, imagePathsType) ?: emptyList()
