@@ -205,9 +205,9 @@ class ExcelImportService(private val db: AppDatabase) {
                 if (universeName.isBlank()) continue
 
                 val universeCode = if (universeCodeColIndex >= 0) getCellString(row, universeCodeColIndex) else ""
-                val universe = if (universeCode.isNotBlank()) {
+                val universe = (if (universeCode.isNotBlank()) {
                     db.universeDao().getUniverseByCode(universeCode)
-                } else null
+                } else null)
                     ?: db.universeDao().getUniverseByName(universeName)
                     ?: continue
 
@@ -488,9 +488,9 @@ class ExcelImportService(private val db: AppDatabase) {
                 val charCode = if (charCodeColIndex >= 0) getCellString(row, charCodeColIndex) else ""
 
                 // Resolve character: code-first, then name
-                val character = if (charCode.isNotBlank()) {
+                val character = (if (charCode.isNotBlank()) {
                     db.characterDao().getCharacterByCode(charCode)
-                } else null
+                } else null)
                     ?: run {
                         val novelId = if (novelTitle.isNotBlank()) allNovels.find { it.title == novelTitle }?.id else null
                         findCharacterByName(charName, novelId)
@@ -544,14 +544,14 @@ class ExcelImportService(private val db: AppDatabase) {
                 val char1Code = if (char1CodeColIndex >= 0) getCellString(row, char1CodeColIndex) else ""
                 val char2Code = if (char2CodeColIndex >= 0) getCellString(row, char2CodeColIndex) else ""
 
-                val char1 = if (char1Code.isNotBlank()) {
+                val char1 = (if (char1Code.isNotBlank()) {
                     db.characterDao().getCharacterByCode(char1Code)
-                } else null
+                } else null)
                     ?: findCharacterByName(char1Name, null) ?: continue
 
-                val char2 = if (char2Code.isNotBlank()) {
+                val char2 = (if (char2Code.isNotBlank()) {
                     db.characterDao().getCharacterByCode(char2Code)
-                } else null
+                } else null)
                     ?: findCharacterByName(char2Name, null) ?: continue
 
                 if (char1.id == char2.id) {
