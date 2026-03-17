@@ -52,6 +52,7 @@ class CharacterEditFragment : Fragment() {
     private var existingCharacter: Character? = null
     private var novels: List<Novel> = emptyList()
     private val imagePaths = mutableListOf<String>()
+    private var restoredFromSavedState = false
 
     // 동적 필드 관리
     private var fieldDefinitions: List<FieldDefinition> = emptyList()
@@ -86,6 +87,7 @@ class CharacterEditFragment : Fragment() {
         savedInstanceState?.getStringArrayList("imagePaths")?.let { saved ->
             imagePaths.clear()
             imagePaths.addAll(saved)
+            restoredFromSavedState = true
         }
 
         binding.toolbar.setNavigationOnClickListener { findNavController().popBackStack() }
@@ -168,15 +170,17 @@ class CharacterEditFragment : Fragment() {
             if (index >= 0) binding.spinnerNovel.setSelection(index + 1)
         }
 
-        // 이미지
-        val type = object : TypeToken<List<String>>() {}.type
-        val paths: List<String> = try {
-            gson.fromJson(character.imagePaths, type) ?: emptyList()
-        } catch (e: Exception) {
-            emptyList()
+        // 이미지 — 회전 복원된 경우 사용자가 추가한 이미지를 보존
+        if (!restoredFromSavedState) {
+            val type = object : TypeToken<List<String>>() {}.type
+            val paths: List<String> = try {
+                gson.fromJson(character.imagePaths, type) ?: emptyList()
+            } catch (e: Exception) {
+                emptyList()
+            }
+            imagePaths.clear()
+            imagePaths.addAll(paths)
         }
-        imagePaths.clear()
-        imagePaths.addAll(paths)
         updateImageList()
 
         // 메모

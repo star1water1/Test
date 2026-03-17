@@ -114,6 +114,7 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
         addSource(_searchQuery) { value = Unit }
         addSource(visibleRange) { value = Unit }
         addSource(_filterNovelId) { value = Unit }
+        addSource(_filterCharacterId) { value = Unit }
     }
     val searchResults: LiveData<List<TimelineEvent>> = _searchTrigger.switchMap {
         val query = _searchQuery.value
@@ -122,10 +123,17 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
         } else {
             val (start, end) = visibleRange.value ?: Pair(-5, 5)
             val novelId = _filterNovelId.value
-            timelineRepository.searchEvents(query).map { events ->
-                events.filter { event ->
-                    event.year in start..end &&
-                        (novelId == null || event.novelId == novelId)
+            val characterId = _filterCharacterId.value
+            if (characterId != null) {
+                timelineRepository.getEventsForCharacterInRange(characterId, start, end).map { events ->
+                    events.filter { it.description.contains(query, ignoreCase = true) }
+                }
+            } else {
+                timelineRepository.searchEvents(query).map { events ->
+                    events.filter { event ->
+                        event.year in start..end &&
+                            (novelId == null || event.novelId == novelId)
+                    }
                 }
             }
         }
