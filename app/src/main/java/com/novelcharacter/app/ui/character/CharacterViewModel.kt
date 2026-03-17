@@ -35,11 +35,23 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     private val _searchQuery = MutableLiveData("")
-    val searchResults: LiveData<List<Character>> = _searchQuery.switchMap { query ->
+    private val _searchTrigger = MediatorLiveData<Unit>().apply {
+        addSource(_searchQuery) { value = Unit }
+        addSource(_currentNovelId) { value = Unit }
+    }
+    val searchResults: LiveData<List<Character>> = _searchTrigger.switchMap {
+        val query = _searchQuery.value
         if (query.isNullOrBlank()) {
             filteredCharacters
         } else {
-            characterRepository.searchCharacters(query)
+            val novelId = _currentNovelId.value
+            if (novelId == null || novelId == -1L) {
+                characterRepository.searchCharacters(query)
+            } else {
+                characterRepository.searchCharacters(query).map { characters ->
+                    characters.filter { it.novelId == novelId }
+                }
+            }
         }
     }
 

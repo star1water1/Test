@@ -642,15 +642,21 @@ class ExcelImportService(private val db: AppDatabase) {
     // ── 유틸리티 메서드 ──
 
     private fun findSheetForUniverse(workbook: Workbook, universeName: String, reservedNames: Set<String>): Sheet? {
+        // Try exact match first
         workbook.getSheet(universeName)?.let { return it }
-        if (universeName.length > 31) {
-            val truncated = universeName.take(31)
-            workbook.getSheet(truncated)?.let { return it }
+        // Try sanitized name (matching export's sanitizeSheetName logic)
+        val sanitized = universeName
+            .replace(Regex("[\\[\\]*/\\\\?:]"), "")
+            .take(31)
+        if (sanitized != universeName) {
+            workbook.getSheet(sanitized)?.let { return it }
         }
+        // Fuzzy fallback: match sheets whose base name (without dedup suffix) equals the sanitized name
         for (idx in 0 until workbook.numberOfSheets) {
             val sheetName = workbook.getSheetName(idx)
             if (sheetName in reservedNames) continue
-            if (universeName.startsWith(sheetName.replace(Regex("\\(\\d+\\)$"), ""))) {
+            val baseName = sheetName.replace(Regex("\\(\\d+\\)$"), "")
+            if (baseName == sanitized || sanitized.startsWith(baseName) && baseName.length >= 31) {
                 return workbook.getSheetAt(idx)
             }
         }

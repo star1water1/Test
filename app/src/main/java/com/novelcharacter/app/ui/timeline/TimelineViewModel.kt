@@ -110,11 +110,24 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
 
     // ===== Search =====
     private val _searchQuery = MutableLiveData("")
-    val searchResults: LiveData<List<TimelineEvent>> = _searchQuery.switchMap { query ->
+    private val _searchTrigger = MediatorLiveData<Unit>().apply {
+        addSource(_searchQuery) { value = Unit }
+        addSource(visibleRange) { value = Unit }
+        addSource(_filterNovelId) { value = Unit }
+    }
+    val searchResults: LiveData<List<TimelineEvent>> = _searchTrigger.switchMap {
+        val query = _searchQuery.value
         if (query.isNullOrBlank()) {
             filteredEvents
         } else {
-            timelineRepository.searchEvents(query)
+            val (start, end) = visibleRange.value ?: Pair(-5, 5)
+            val novelId = _filterNovelId.value
+            timelineRepository.searchEvents(query).map { events ->
+                events.filter { event ->
+                    event.year in start..end &&
+                        (novelId == null || event.novelId == novelId)
+                }
+            }
         }
     }
 
