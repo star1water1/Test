@@ -23,6 +23,7 @@ class NovelCharacterApp : Application() {
     val novelRepository by lazy { NovelRepository(database.novelDao()) }
     val characterRepository by lazy {
         CharacterRepository(
+            database,
             database.characterDao(),
             database.characterFieldValueDao(),
             database.characterStateChangeDao(),

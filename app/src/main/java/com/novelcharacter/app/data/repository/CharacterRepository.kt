@@ -1,10 +1,13 @@
 package com.novelcharacter.app.data.repository
 
 import androidx.lifecycle.LiveData
+import androidx.room.withTransaction
+import com.novelcharacter.app.data.AppDatabase
 import com.novelcharacter.app.data.dao.*
 import com.novelcharacter.app.data.model.*
 
 class CharacterRepository(
+    private val db: AppDatabase,
     private val characterDao: CharacterDao,
     private val characterFieldValueDao: CharacterFieldValueDao,
     private val characterStateChangeDao: CharacterStateChangeDao,
@@ -27,8 +30,10 @@ class CharacterRepository(
     suspend fun insertCharacter(character: Character): Long = characterDao.insert(character)
     suspend fun updateCharacter(character: Character) = characterDao.update(character)
     suspend fun deleteCharacter(character: Character) {
-        nameBankDao.resetUsageByCharacter(character.id)
-        characterDao.delete(character)
+        db.withTransaction {
+            nameBankDao.resetUsageByCharacter(character.id)
+            characterDao.delete(character)
+        }
     }
     suspend fun insertAllCharacters(characters: List<Character>) = characterDao.insertAll(characters)
 
