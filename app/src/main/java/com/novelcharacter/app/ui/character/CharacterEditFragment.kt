@@ -610,7 +610,7 @@ class CharacterEditFragment : Fragment() {
             }
 
             val novelPosition = binding.spinnerNovel.selectedItemPosition
-            val selectedNovelId = if (novelPosition > 0) novels[novelPosition - 1].id else null
+            val selectedNovelId = if (novelPosition > 0 && novelPosition - 1 < novels.size) novels[novelPosition - 1].id else null
 
             val memo = binding.editMemo.text.toString()
 

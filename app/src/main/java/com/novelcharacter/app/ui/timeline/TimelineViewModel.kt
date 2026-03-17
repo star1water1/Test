@@ -8,6 +8,7 @@ import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.TimelineEvent
 import android.util.Log
+import androidx.room.withTransaction
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -15,6 +16,7 @@ import kotlinx.coroutines.launch
 class TimelineViewModel(application: Application) : AndroidViewModel(application) {
 
     private val app = application as NovelCharacterApp
+    private val db = app.database
     private val timelineRepository = app.timelineRepository
     private val novelRepository = app.novelRepository
     private val characterRepository = app.characterRepository
@@ -194,8 +196,10 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
 
     fun insertEvent(event: TimelineEvent, characterIds: List<Long>) = viewModelScope.launch {
         try {
-            val eventId = timelineRepository.insertEvent(event)
-            timelineRepository.updateEventCharacters(eventId, characterIds)
+            db.withTransaction {
+                val eventId = timelineRepository.insertEvent(event)
+                timelineRepository.updateEventCharacters(eventId, characterIds)
+            }
         } catch (e: Exception) {
             Log.e("TimelineViewModel", "Failed to insert event", e)
             showError(e.message)
@@ -204,8 +208,10 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
 
     fun updateEvent(event: TimelineEvent, characterIds: List<Long>) = viewModelScope.launch {
         try {
-            timelineRepository.updateEvent(event)
-            timelineRepository.updateEventCharacters(event.id, characterIds)
+            db.withTransaction {
+                timelineRepository.updateEvent(event)
+                timelineRepository.updateEventCharacters(event.id, characterIds)
+            }
         } catch (e: Exception) {
             Log.e("TimelineViewModel", "Failed to update event", e)
             showError(e.message)

@@ -136,13 +136,13 @@ class ExcelImporter(context: Context) {
 
                 val message = buildResultMessage(result)
                 withContext(Dispatchers.Main) {
-                    progressDialog?.dismiss()
+                    try { progressDialog?.takeIf { it.isShowing }?.dismiss() } catch (_: Exception) {}
                     Toast.makeText(appContext, message, Toast.LENGTH_LONG).show()
                 }
             } catch (e: Exception) {
                 android.util.Log.e("ExcelImporter", "Import failed", e)
                 withContext(Dispatchers.Main) {
-                    progressDialog?.dismiss()
+                    try { progressDialog?.takeIf { it.isShowing }?.dismiss() } catch (_: Exception) {}
                     Toast.makeText(appContext, com.novelcharacter.app.R.string.import_failed_retry, Toast.LENGTH_LONG).show()
                 }
             } finally {

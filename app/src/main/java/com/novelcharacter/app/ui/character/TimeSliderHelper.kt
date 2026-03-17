@@ -128,18 +128,30 @@ class TimeSliderHelper(
             val adjustedMax = if (maxYear <= minYear) (minYear + 1).toFloat() else maxYear.toFloat()
 
             binding.yearSlider.isEnabled = true
+
+            // Reset stepSize first to avoid validation errors when range changes
+            binding.yearSlider.stepSize = 0f
+
+            // Expand range before narrowing to avoid value-out-of-range errors
+            val oldFrom = binding.yearSlider.valueFrom
+            val oldTo = binding.yearSlider.valueTo
+            binding.yearSlider.valueFrom = minOf(oldFrom, adjustedMin)
+            binding.yearSlider.valueTo = maxOf(oldTo, adjustedMax)
+
+            // Now narrow to actual range
             binding.yearSlider.valueFrom = adjustedMin
             binding.yearSlider.valueTo = adjustedMax
 
             binding.minYearLabel.text = getString(R.string.slider_min_year, minYear)
             binding.maxYearLabel.text = getString(R.string.slider_max_year, maxYear)
             val totalRange = adjustedMax - adjustedMin
-            binding.yearSlider.stepSize = when {
+            val newStepSize = when {
                 totalRange > 10000 -> 100f
                 totalRange > 1000 -> 10f
                 else -> 1f
             }
 
+            // Set value before stepSize to ensure alignment
             val sliderYear = currentSliderYear
             if (sliderYear == null) {
                 binding.yearSlider.value = adjustedMin
@@ -149,6 +161,14 @@ class TimeSliderHelper(
                 binding.yearSlider.value = clampedYear.toFloat()
                 binding.yearLabel.text = "${clampedYear}년"
             }
+
+            // Align value to step before setting stepSize
+            if (newStepSize > 0f) {
+                val currentVal = binding.yearSlider.value
+                val aligned = adjustedMin + (((currentVal - adjustedMin) / newStepSize).toInt() * newStepSize)
+                binding.yearSlider.value = aligned.coerceIn(adjustedMin, adjustedMax)
+            }
+            binding.yearSlider.stepSize = newStepSize
         }
     }
 }

@@ -120,6 +120,7 @@
 
         <argument
             android:name="characterIds"
+            android:defaultValue=""
             app:argType="string" />
     </fragment>
 

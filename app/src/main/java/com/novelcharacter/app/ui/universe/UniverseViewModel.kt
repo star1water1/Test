@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.viewModelScope
+import androidx.room.withTransaction
 import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.Universe
@@ -14,7 +15,9 @@ import kotlinx.coroutines.launch
 
 class UniverseViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val universeRepository = (application as NovelCharacterApp).universeRepository
+    private val app = application as NovelCharacterApp
+    private val db = app.database
+    private val universeRepository = app.universeRepository
     val allUniverses: LiveData<List<Universe>> = universeRepository.allUniverses
 
     // 각 세계관의 작품 수, 필드 수를 캐시
@@ -56,9 +59,11 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
 
     fun applyPreset(template: PresetTemplates.PresetTemplate) =
         viewModelScope.launch {
-            val universeId = universeRepository.insertUniverse(template.universe)
-            val fieldsWithId = template.fields.map { it.copy(universeId = universeId) }
-            universeRepository.insertAllFields(fieldsWithId)
+            db.withTransaction {
+                val universeId = universeRepository.insertUniverse(template.universe)
+                val fieldsWithId = template.fields.map { it.copy(universeId = universeId) }
+                universeRepository.insertAllFields(fieldsWithId)
+            }
             _presetApplied.value = Event(template.universe.name)
         }
 }
