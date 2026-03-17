@@ -36,7 +36,8 @@ class TimeStateResolver {
         }
 
         // Calculate age from birth year (newValue holds the actual birth year)
-        val birthChange = relevantChanges.find { it.fieldKey == CharacterStateChange.KEY_BIRTH }
+        // Use findLast to get the most recent entry in case of corrections/retcons
+        val birthChange = relevantChanges.findLast { it.fieldKey == CharacterStateChange.KEY_BIRTH }
         if (birthChange != null) {
             val birthYear = birthChange.newValue.toIntOrNull() ?: birthChange.year
             val age = targetYear - birthYear
@@ -44,7 +45,7 @@ class TimeStateResolver {
         }
 
         // Check alive status (use newValue for birth/death year when available)
-        val deathChange = relevantChanges.find { it.fieldKey == CharacterStateChange.KEY_DEATH }
+        val deathChange = relevantChanges.findLast { it.fieldKey == CharacterStateChange.KEY_DEATH }
         val deathYear = deathChange?.let { it.newValue.toIntOrNull() ?: it.year }
         val birthYear = birthChange?.let { it.newValue.toIntOrNull() ?: it.year }
         if (deathYear != null && targetYear >= deathYear) {
