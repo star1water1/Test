@@ -15,6 +15,7 @@ class CharacterRepository(
     private val characterRelationshipDao: CharacterRelationshipDao,
     private val nameBankDao: NameBankDao
 ) {
+    private val recentActivityDao get() = db.recentActivityDao()
     // ===== Character =====
     val allCharacters: LiveData<List<Character>> = characterDao.getAllCharacters()
 
@@ -41,6 +42,7 @@ class CharacterRepository(
     suspend fun deleteCharacter(character: Character) {
         db.withTransaction {
             nameBankDao.resetUsageByCharacter(character.id)
+            recentActivityDao.deleteByEntity(RecentActivity.TYPE_CHARACTER, character.id)
             characterDao.delete(character)
         }
     }

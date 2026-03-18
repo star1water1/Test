@@ -7,6 +7,7 @@ import com.novelcharacter.app.data.dao.FieldDefinitionDao
 import com.novelcharacter.app.data.dao.NovelDao
 import com.novelcharacter.app.data.dao.UniverseDao
 import com.novelcharacter.app.data.model.FieldDefinition
+import com.novelcharacter.app.data.model.RecentActivity
 import com.novelcharacter.app.data.model.Universe
 
 class UniverseRepository(
@@ -27,7 +28,12 @@ class UniverseRepository(
         }
     }
     suspend fun updateUniverse(universe: Universe) = universeDao.update(universe)
-    suspend fun deleteUniverse(universe: Universe) = universeDao.delete(universe)
+    suspend fun deleteUniverse(universe: Universe) {
+        db.withTransaction {
+            db.recentActivityDao().deleteByEntity(RecentActivity.TYPE_UNIVERSE, universe.id)
+            universeDao.delete(universe)
+        }
+    }
     suspend fun updateUniverseDisplayOrders(universes: List<Universe>) = universeDao.updateAll(universes)
 
     // ===== FieldDefinition =====

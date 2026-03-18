@@ -319,6 +319,7 @@
     <!-- Sprint 1: Pin -->
     <string name="pin">고정</string>
     <string name="unpin">고정 해제</string>
+    <string name="pinned_name_format" translatable="false">\uD83D\uDCCC %s</string>
 
     <!-- Sprint 1: Recent Activity -->
     <string name="recent_activities">최근 작업</string>

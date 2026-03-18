@@ -78,7 +78,11 @@ class NovelAdapter(
     ) : RecyclerView.ViewHolder(binding.root) {
 
         fun bind(novel: Novel) {
-            binding.novelTitle.text = novel.title
+            binding.novelTitle.text = if (novel.isPinned) {
+                binding.root.context.getString(R.string.pinned_name_format, novel.title)
+            } else {
+                novel.title
+            }
             binding.novelDescription.text = novel.description.ifEmpty { binding.root.context.getString(R.string.no_description) }
 
             binding.dragHandle.visibility = if (isReorderMode) View.VISIBLE else View.GONE

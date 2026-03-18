@@ -5,11 +5,13 @@ import androidx.room.withTransaction
 import com.novelcharacter.app.data.database.AppDatabase
 import com.novelcharacter.app.data.dao.NovelDao
 import com.novelcharacter.app.data.model.Novel
+import com.novelcharacter.app.data.model.RecentActivity
 
 class NovelRepository(
     private val db: AppDatabase,
     private val novelDao: NovelDao
 ) {
+    private val recentActivityDao get() = db.recentActivityDao()
     val allNovels: LiveData<List<Novel>> = novelDao.getAllNovels()
 
     suspend fun getAllNovelsList(): List<Novel> = novelDao.getAllNovelsList()
@@ -25,7 +27,12 @@ class NovelRepository(
         }
     }
     suspend fun updateNovel(novel: Novel) = novelDao.update(novel)
-    suspend fun deleteNovel(novel: Novel) = novelDao.delete(novel)
+    suspend fun deleteNovel(novel: Novel) {
+        db.withTransaction {
+            recentActivityDao.deleteByEntity(RecentActivity.TYPE_NOVEL, novel.id)
+            novelDao.delete(novel)
+        }
+    }
     fun getNovelsByUniverse(universeId: Long): LiveData<List<Novel>> =
         novelDao.getNovelsByUniverse(universeId)
     suspend fun getNovelsByUniverseList(universeId: Long): List<Novel> =

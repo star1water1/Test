@@ -146,7 +146,11 @@ class CharacterAdapter(
         }
 
         fun bind(character: Character) {
-            binding.characterName.text = character.name
+            binding.characterName.text = if (character.isPinned) {
+                binding.root.context.getString(R.string.pinned_name_format, character.name)
+            } else {
+                character.name
+            }
 
             // anotherName subtitle
             if (showAnotherName && character.anotherName.isNotBlank()) {
