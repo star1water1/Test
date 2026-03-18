@@ -16,7 +16,7 @@ import androidx.navigation.fragment.findNavController
 import androidx.viewpager2.widget.ViewPager2
 import androidx.recyclerview.widget.RecyclerView
 import com.novelcharacter.app.R
-import kotlinx.coroutines.CoroutineScope
+import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -52,17 +52,19 @@ class ImageViewerFragment : Fragment() {
         root.addView(pager)
 
         // Close button
+        val density = resources.displayMetrics.density
         val closeBtn = ImageView(requireContext()).apply {
             setImageResource(android.R.drawable.ic_menu_close_clear_cancel)
-            setPadding(32, 32, 32, 32)
+            val pad = (12 * density).toInt()
+            setPadding(pad, pad, pad, pad)
             setColorFilter(android.graphics.Color.WHITE)
             layoutParams = android.widget.FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply {
                 gravity = android.view.Gravity.TOP or android.view.Gravity.START
-                topMargin = 48
-                leftMargin = 16
+                topMargin = (16 * density).toInt()
+                leftMargin = (8 * density).toInt()
             }
             setOnClickListener { findNavController().popBackStack() }
             contentDescription = "Close"
@@ -78,7 +80,7 @@ class ImageViewerFragment : Fragment() {
                 ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply {
                 gravity = android.view.Gravity.BOTTOM or android.view.Gravity.CENTER_HORIZONTAL
-                bottomMargin = 48
+                bottomMargin = (16 * density).toInt()
             }
         }
         indexText = idxText
@@ -128,7 +130,7 @@ class ImageViewerFragment : Fragment() {
 
                 val path = imagePaths[position]
                 val boundPos = position
-                val job = CoroutineScope(Dispatchers.Main).launch {
+                val job = viewLifecycleOwner.lifecycleScope.launch {
                     val bitmap = withContext(Dispatchers.IO) {
                         decodeBitmap(path)
                     }

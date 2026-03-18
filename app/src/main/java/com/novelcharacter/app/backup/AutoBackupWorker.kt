@@ -121,7 +121,7 @@ class AutoBackupWorker(
 
         val sheetName = sanitizeSheetName("세계관", usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
-        val headers = listOf("이름", "설명", "코드")
+        val headers = listOf("이름", "설명", "코드", "정렬순서", "테두리색", "테두리두께")
         val headerRow = sheet.createRow(0)
         headers.forEachIndexed { i, h ->
             headerRow.createCell(i).apply { setCellValue(h); cellStyle = headerStyle }
@@ -131,6 +131,9 @@ class AutoBackupWorker(
             row.createCell(0).setCellValue(u.name)
             row.createCell(1).setCellValue(u.description)
             row.createCell(2).setCellValue(u.code)
+            row.createCell(3).setCellValue(u.displayOrder.toDouble())
+            row.createCell(4).setCellValue(u.borderColor)
+            row.createCell(5).setCellValue(u.borderWidthDp.toDouble())
         }
     }
 
@@ -144,7 +147,7 @@ class AutoBackupWorker(
 
         val sheetName = sanitizeSheetName("작품", usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
-        val headers = listOf("제목", "설명", "세계관", "코드", "세계관코드")
+        val headers = listOf("제목", "설명", "세계관", "코드", "세계관코드", "정렬순서", "테두리색", "테두리두께")
         val universeMap = universes.associateBy { it.id }
         val headerRow = sheet.createRow(0)
         headers.forEachIndexed { i, h ->
@@ -158,6 +161,9 @@ class AutoBackupWorker(
             row.createCell(2).setCellValue(universe?.name ?: "")
             row.createCell(3).setCellValue(n.code)
             row.createCell(4).setCellValue(universe?.code ?: "")
+            row.createCell(5).setCellValue(n.displayOrder.toDouble())
+            row.createCell(6).setCellValue(n.borderColor)
+            row.createCell(7).setCellValue(n.borderWidthDp.toDouble())
         }
     }
 
@@ -215,10 +221,10 @@ class AutoBackupWorker(
         val sheetName = sanitizeSheetName(sheetLabel, usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
 
-        // Build headers: 이름, [dynamic fields...], 이미지경로, 작품, 메모, 태그, 코드, 작품코드
-        val headers = mutableListOf("이름")
+        // Build headers: 이름, 이명, [dynamic fields...], 이미지경로, 작품, 메모, 태그, 코드, 작품코드, 정렬순서
+        val headers = mutableListOf("이름", "이명")
         fields.forEach { headers.add(it.name) }
-        headers.addAll(listOf("이미지경로", "작품", "메모", "태그", "코드", "작품코드"))
+        headers.addAll(listOf("이미지경로", "작품", "메모", "태그", "코드", "작품코드", "정렬순서"))
 
         val headerRow = sheet.createRow(0)
         headers.forEachIndexed { i, h ->
@@ -233,6 +239,7 @@ class AutoBackupWorker(
             var col = 0
 
             row.createCell(col++).setCellValue(c.name)
+            row.createCell(col++).setCellValue(c.anotherName)
             for (field in fields) {
                 row.createCell(col++).setCellValue(fieldValueMap[field.id]?.value ?: "")
             }
@@ -241,7 +248,8 @@ class AutoBackupWorker(
             row.createCell(col++).setCellValue(c.memo)
             row.createCell(col++).setCellValue(tags.joinToString(", ") { it.tag })
             row.createCell(col++).setCellValue(c.code)
-            row.createCell(col).setCellValue(novel?.code ?: "")
+            row.createCell(col++).setCellValue(novel?.code ?: "")
+            row.createCell(col).setCellValue(c.displayOrder.toDouble())
         }
     }
 

@@ -15,7 +15,7 @@ interface CharacterRelationshipDao {
     @Query("SELECT * FROM character_relationships ORDER BY createdAt DESC")
     suspend fun getAllRelationships(): List<CharacterRelationship>
 
-    @Insert(onConflict = OnConflictStrategy.ABORT)
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insert(relationship: CharacterRelationship): Long
 
     @Update

@@ -13,6 +13,7 @@ import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.TimelineCharacterCrossRef
 import com.novelcharacter.app.data.model.TimelineEvent
 import com.novelcharacter.app.data.model.Universe
+import com.novelcharacter.app.data.model.FieldType
 import com.novelcharacter.app.data.model.generateEntityCode
 import org.apache.poi.ss.usermodel.CellType
 import org.apache.poi.ss.usermodel.Row
@@ -412,6 +413,12 @@ class ExcelImportService(private val db: AppDatabase) {
 
                 val name = getCellString(row, nameColIndex)
                 val type = getCellString(row, typeColIndex)
+                // Validate field type against known types
+                if (type.isNotBlank() && FieldType.fromName(type) == null) {
+                    result.skippedRows++
+                    result.errors.add("필드 정의 행 $i: 알 수 없는 필드 타입 '$type' (허용: ${FieldType.entries.joinToString { it.name }})")
+                    continue
+                }
                 val config = getCellString(row, configColIndex).ifBlank { "{}" }
                 val groupName = getCellString(row, groupColIndex).ifBlank { "기본 정보" }
                 val displayOrder = parseNumber(getCellString(row, orderColIndex))?.toInt() ?: 0

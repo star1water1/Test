@@ -1,6 +1,8 @@
 package com.novelcharacter.app.data.repository
 
 import androidx.lifecycle.LiveData
+import androidx.room.withTransaction
+import com.novelcharacter.app.data.database.AppDatabase
 import com.novelcharacter.app.data.dao.FieldDefinitionDao
 import com.novelcharacter.app.data.dao.NovelDao
 import com.novelcharacter.app.data.dao.UniverseDao
@@ -8,6 +10,7 @@ import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.Universe
 
 class UniverseRepository(
+    private val db: AppDatabase,
     private val universeDao: UniverseDao,
     private val fieldDefinitionDao: FieldDefinitionDao,
     private val novelDao: NovelDao
@@ -18,8 +21,10 @@ class UniverseRepository(
     suspend fun getAllUniversesList(): List<Universe> = universeDao.getAllUniversesList()
     suspend fun getUniverseById(id: Long): Universe? = universeDao.getUniverseById(id)
     suspend fun insertUniverse(universe: Universe): Long {
-        val next = universeDao.getNextDisplayOrder()
-        return universeDao.insert(universe.copy(displayOrder = next))
+        return db.withTransaction {
+            val next = universeDao.getNextDisplayOrder()
+            universeDao.insert(universe.copy(displayOrder = next))
+        }
     }
     suspend fun updateUniverse(universe: Universe) = universeDao.update(universe)
     suspend fun deleteUniverse(universe: Universe) = universeDao.delete(universe)

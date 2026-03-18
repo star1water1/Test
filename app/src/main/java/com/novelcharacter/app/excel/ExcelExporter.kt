@@ -91,7 +91,7 @@ class ExcelExporter(context: Context) {
             } catch (e: Exception) {
                 android.util.Log.e("ExcelExporter", "Export failed", e)
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(appContext, appContext.getString(R.string.export_failed_retry) + "\n" + e.message, Toast.LENGTH_LONG).show()
+                    Toast.makeText(appContext, appContext.getString(R.string.export_failed_retry), Toast.LENGTH_LONG).show()
                 }
             } finally {
                 try { workbook?.close() } catch (_: Exception) {}
@@ -121,7 +121,7 @@ class ExcelExporter(context: Context) {
             } catch (e: Exception) {
                 android.util.Log.e("ExcelExporter", "Save to URI failed", e)
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(appContext, appContext.getString(R.string.export_save_failed) + "\n" + e.message, Toast.LENGTH_LONG).show()
+                    Toast.makeText(appContext, appContext.getString(R.string.export_save_failed), Toast.LENGTH_LONG).show()
                 }
             }
         }

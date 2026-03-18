@@ -15,7 +15,7 @@ import androidx.room.PrimaryKey
             onDelete = ForeignKey.CASCADE
         )
     ],
-    indices = [Index("universeId")]
+    indices = [Index("universeId"), Index(value = ["universeId", "key"], unique = true)]
 )
 data class FieldDefinition(
     @PrimaryKey(autoGenerate = true)

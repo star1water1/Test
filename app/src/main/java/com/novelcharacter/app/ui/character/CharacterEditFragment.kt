@@ -492,16 +492,26 @@ class CharacterEditFragment : Fragment() {
             try {
                 val filePath = withContext(kotlinx.coroutines.Dispatchers.IO) {
                     val inputStream = context.contentResolver.openInputStream(uri) ?: return@withContext null
-                    // Reject files larger than 20MB to prevent storage exhaustion
+                    val maxSize = 20L * 1024 * 1024 // 20MB
                     val fileName = "char_${UUID.randomUUID()}.jpg"
                     val file = File(context.filesDir, fileName)
+                    var totalBytes = 0L
+                    var exceededLimit = false
                     inputStream.use { input ->
                         FileOutputStream(file).use { output ->
-                            input.copyTo(output)
+                            val buffer = ByteArray(8192)
+                            var bytesRead: Int
+                            while (input.read(buffer).also { bytesRead = it } != -1) {
+                                totalBytes += bytesRead
+                                if (totalBytes > maxSize) {
+                                    exceededLimit = true
+                                    break
+                                }
+                                output.write(buffer, 0, bytesRead)
+                            }
                         }
                     }
-                    // Check file size after copy and delete if too large
-                    if (file.length() > 20L * 1024 * 1024) {
+                    if (exceededLimit) {
                         file.delete()
                         return@withContext null
                     }
@@ -528,9 +538,11 @@ class CharacterEditFragment : Fragment() {
         if (imageAdapter == null) {
             imageAdapter = object : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
                 override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
+                    val d = parent.context.resources.displayMetrics.density
+                    val sizePx = (80 * d).toInt()
                     val imageView = ImageView(parent.context).apply {
-                        layoutParams = RecyclerView.LayoutParams(200, 200).apply {
-                            marginEnd = 8
+                        layoutParams = RecyclerView.LayoutParams(sizePx, sizePx).apply {
+                            marginEnd = (4 * d).toInt()
                         }
                         scaleType = ImageView.ScaleType.CENTER_CROP
                     }
@@ -548,8 +560,9 @@ class CharacterEditFragment : Fragment() {
                         val path = imagePaths[position]
                         val boundPosition = position
                         viewLifecycleOwner.lifecycleScope.launch {
+                            val targetSize = (80 * itemView.context.resources.displayMetrics.density).toInt()
                             val bitmap = withContext(Dispatchers.IO) {
-                                decodeSampledBitmap(path, 200, 200)
+                                decodeSampledBitmap(path, targetSize, targetSize)
                             }
                             if (bitmap != null && holder.bindingAdapterPosition == boundPosition && isAdded) {
                                 imageView.tag = bitmap
@@ -609,6 +622,10 @@ class CharacterEditFragment : Fragment() {
             val name = binding.editName.text.toString().trim()
             if (name.isEmpty()) {
                 Toast.makeText(requireContext(), R.string.enter_name, Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            if (name.length > 100) {
+                Toast.makeText(requireContext(), R.string.name_too_long, Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
 

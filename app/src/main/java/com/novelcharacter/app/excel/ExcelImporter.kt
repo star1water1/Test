@@ -84,6 +84,10 @@ class ExcelImporter(context: Context) {
                     return@launch
                 }
 
+                // Limit POI ZIP expansion ratio to prevent memory DoS
+                org.apache.poi.openxml4j.util.ZipSecureFile.setMinInflateRatio(0.01)
+                org.apache.poi.openxml4j.util.ZipSecureFile.setMaxEntrySize(50L * 1024 * 1024) // 50MB max per entry
+
                 val inputStream = appContext.contentResolver.openInputStream(uri)
                     ?: throw Exception("파일을 열 수 없습니다")
 
