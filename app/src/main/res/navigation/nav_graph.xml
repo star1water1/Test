@@ -153,6 +153,17 @@
         tools:layout="@layout/fragment_settings" />
 
     <fragment
+        android:id="@+id/characterGrowthFragment"
+        android:name="com.novelcharacter.app.ui.growth.CharacterGrowthFragment"
+        android:label="@string/growth_chart"
+        tools:layout="@layout/fragment_character_growth">
+
+        <argument
+            android:name="characterId"
+            app:argType="long" />
+    </fragment>
+
+    <fragment
         android:id="@+id/relationshipGraphFragment"
         android:name="com.novelcharacter.app.ui.graph.RelationshipGraphFragment"
         android:label="@string/relationship_graph_beta"
