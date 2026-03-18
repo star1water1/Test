@@ -184,7 +184,10 @@ class UniverseListFragment : Fragment() {
         val dp = ctx.resources.displayMetrics.density
         val layout = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(64, 32, 64, 16)
+            val dp16 = (16 * dp).toInt()
+            val dp24 = (24 * dp).toInt()
+            val dp8 = (8 * dp).toInt()
+            setPadding(dp24, dp16, dp24, dp8)
         }
         val nameEdit = EditText(ctx).apply {
             hint = getString(R.string.universe_name_hint)

@@ -26,13 +26,16 @@ class SystemMaintenanceService(
         var fkCount = 0
 
         val cursor = db.openHelper.readableDatabase.query("PRAGMA foreign_key_check")
-        while (cursor.moveToNext()) {
-            fkCount++
-            val table = cursor.getString(0)
-            val rowId = cursor.getLong(1)
-            details.add("FK violation: $table (row $rowId)")
+        try {
+            while (cursor.moveToNext()) {
+                fkCount++
+                val table = cursor.getString(0)
+                val rowId = cursor.getLong(1)
+                details.add("FK violation: $table (row $rowId)")
+            }
+        } finally {
+            cursor.close()
         }
-        cursor.close()
 
         return IntegrityResult(fkViolations = fkCount, details = details)
     }
@@ -51,72 +54,99 @@ class SystemMaintenanceService(
         var sparseCount = 0
 
         // Universes: global scope
-        val uCursor = db.openHelper.readableDatabase.query(
+        db.openHelper.readableDatabase.query(
             "SELECT displayOrder, COUNT(*) as cnt FROM universes GROUP BY displayOrder HAVING cnt > 1"
-        )
-        while (uCursor.moveToNext()) {
-            val order = uCursor.getLong(0)
-            val count = uCursor.getInt(1)
-            dupCount += count - 1
-            details.add("universes: displayOrder=$order duplicated $count times")
+        ).use { cursor ->
+            while (cursor.moveToNext()) {
+                val order = cursor.getLong(0)
+                val count = cursor.getInt(1)
+                dupCount += count - 1
+                details.add("universes: displayOrder=$order duplicated $count times")
+            }
         }
-        uCursor.close()
 
         // Novels: per universeId scope
-        val nCursor = db.openHelper.readableDatabase.query(
+        db.openHelper.readableDatabase.query(
             "SELECT universeId, displayOrder, COUNT(*) as cnt FROM novels GROUP BY universeId, displayOrder HAVING cnt > 1"
-        )
-        while (nCursor.moveToNext()) {
-            val uid = if (nCursor.isNull(0)) "NULL" else nCursor.getLong(0).toString()
-            val order = nCursor.getLong(1)
-            val count = nCursor.getInt(2)
-            dupCount += count - 1
-            details.add("novels(universe=$uid): displayOrder=$order duplicated $count times")
+        ).use { cursor ->
+            while (cursor.moveToNext()) {
+                val uid = if (cursor.isNull(0)) "NULL" else cursor.getLong(0).toString()
+                val order = cursor.getLong(1)
+                val count = cursor.getInt(2)
+                dupCount += count - 1
+                details.add("novels(universe=$uid): displayOrder=$order duplicated $count times")
+            }
         }
-        nCursor.close()
 
         // Characters: per novelId scope
-        val cCursor = db.openHelper.readableDatabase.query(
+        db.openHelper.readableDatabase.query(
             "SELECT novelId, displayOrder, COUNT(*) as cnt FROM characters GROUP BY novelId, displayOrder HAVING cnt > 1"
-        )
-        while (cCursor.moveToNext()) {
-            val nid = if (cCursor.isNull(0)) "NULL" else cCursor.getLong(0).toString()
-            val order = cCursor.getLong(1)
-            val count = cCursor.getInt(2)
-            dupCount += count - 1
-            details.add("characters(novel=$nid): displayOrder=$order duplicated $count times")
+        ).use { cursor ->
+            while (cursor.moveToNext()) {
+                val nid = if (cursor.isNull(0)) "NULL" else cursor.getLong(0).toString()
+                val order = cursor.getLong(1)
+                val count = cursor.getInt(2)
+                dupCount += count - 1
+                details.add("characters(novel=$nid): displayOrder=$order duplicated $count times")
+            }
         }
-        cCursor.close()
 
         // Check for negative displayOrder values
         for (table in listOf("universes", "novels", "characters")) {
-            val negCursor = db.openHelper.readableDatabase.query(
+            db.openHelper.readableDatabase.query(
                 "SELECT COUNT(*) FROM $table WHERE displayOrder < 0"
-            )
-            if (negCursor.moveToNext()) {
-                val count = negCursor.getInt(0)
-                if (count > 0) {
-                    negativeCount += count
-                    details.add("$table: negative displayOrder $count rows")
+            ).use { cursor ->
+                if (cursor.moveToNext()) {
+                    val count = cursor.getInt(0)
+                    if (count > 0) {
+                        negativeCount += count
+                        details.add("$table: negative displayOrder $count rows")
+                    }
                 }
             }
-            negCursor.close()
         }
 
-        // Check for excessive sparseness (max order > count * 2)
-        for (table in listOf("universes", "novels", "characters")) {
-            val sparseCursor = db.openHelper.readableDatabase.query(
-                "SELECT MAX(displayOrder), COUNT(*) FROM $table"
-            )
-            if (sparseCursor.moveToNext()) {
-                val maxOrder = sparseCursor.getLong(0)
-                val count = sparseCursor.getLong(1)
+        // Check for excessive sparseness — scope-aware
+        // Universes: global
+        db.openHelper.readableDatabase.query(
+            "SELECT MAX(displayOrder), COUNT(*) FROM universes"
+        ).use { cursor ->
+            if (cursor.moveToNext()) {
+                val maxOrder = cursor.getLong(0)
+                val count = cursor.getLong(1)
                 if (count > 0 && maxOrder > count * 2) {
                     sparseCount++
-                    details.add("$table: sparse displayOrder (max=$maxOrder, count=$count)")
+                    details.add("universes: sparse displayOrder (max=$maxOrder, count=$count)")
                 }
             }
-            sparseCursor.close()
+        }
+        // Novels: per universeId scope
+        db.openHelper.readableDatabase.query(
+            "SELECT universeId, MAX(displayOrder), COUNT(*) FROM novels GROUP BY universeId"
+        ).use { cursor ->
+            while (cursor.moveToNext()) {
+                val uid = if (cursor.isNull(0)) "NULL" else cursor.getLong(0).toString()
+                val maxOrder = cursor.getLong(1)
+                val count = cursor.getLong(2)
+                if (count > 0 && maxOrder > count * 2) {
+                    sparseCount++
+                    details.add("novels(universe=$uid): sparse displayOrder (max=$maxOrder, count=$count)")
+                }
+            }
+        }
+        // Characters: per novelId scope
+        db.openHelper.readableDatabase.query(
+            "SELECT novelId, MAX(displayOrder), COUNT(*) FROM characters GROUP BY novelId"
+        ).use { cursor ->
+            while (cursor.moveToNext()) {
+                val nid = if (cursor.isNull(0)) "NULL" else cursor.getLong(0).toString()
+                val maxOrder = cursor.getLong(1)
+                val count = cursor.getLong(2)
+                if (count > 0 && maxOrder > count * 2) {
+                    sparseCount++
+                    details.add("characters(novel=$nid): sparse displayOrder (max=$maxOrder, count=$count)")
+                }
+            }
         }
 
         return IntegrityResult(
@@ -159,19 +189,22 @@ class SystemMaintenanceService(
     /**
      * Reindex displayOrder for all entities using scope-based ordering.
      * Sprint B: Scope-aware reindexing
-     * - Universes: single global scope, 0..N-1
+     * - Universes: single global scope, 0..N-1 (preserving existing sort)
      * - Novels: per universeId scope, 0..N-1 within each scope
      * - Characters: per novelId scope, 0..N-1 within each scope
+     *
+     * getAllUniversesList/getAllNovelsList/getAllCharactersList already return
+     * results ORDER BY displayOrder ASC, so reindexing preserves user order.
      */
     suspend fun reindexDisplayOrders() {
-        // Universes: single global scope
+        // Universes: single global scope (already sorted by displayOrder ASC)
         val universes = db.universeDao().getAllUniversesList()
         val reindexedUniverses = universes.mapIndexed { index, u ->
             u.copy(displayOrder = index.toLong())
         }
         db.universeDao().updateAll(reindexedUniverses)
 
-        // Novels: per universeId scope
+        // Novels: per universeId scope (already sorted by displayOrder ASC)
         val novels = db.novelDao().getAllNovelsList()
         val novelsByUniverse = novels.groupBy { it.universeId }
         val reindexedNovels = mutableListOf<com.novelcharacter.app.data.model.Novel>()
@@ -182,7 +215,7 @@ class SystemMaintenanceService(
         }
         db.novelDao().updateAll(reindexedNovels)
 
-        // Characters: per novelId scope
+        // Characters: per novelId scope (already sorted by displayOrder ASC)
         val characters = db.characterDao().getAllCharactersList()
         val charactersByNovel = characters.groupBy { it.novelId }
         val reindexedCharacters = mutableListOf<com.novelcharacter.app.data.model.Character>()

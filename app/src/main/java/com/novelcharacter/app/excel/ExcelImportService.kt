@@ -60,60 +60,62 @@ class ExcelImportService(private val db: AppDatabase) {
     private val headerAliases: Map<String, String> = buildMap {
         fun alias(canonical: String, vararg aliases: String) {
             put(canonical.normalizeHeader(), canonical)
-            for (a in aliases) put(a.normalizeHeader(), canonical)
+            for (a in aliases) {
+                val key = a.normalizeHeader()
+                // Only add if not already claimed by another canonical
+                if (key !in this) put(key, canonical)
+            }
         }
-        // Universe sheet
-        alias("이름", "name", "캐릭터명", "세계관명", "유니버스명", "universe_name")
-        alias("설명", "description", "desc", "세계관설명")
-        alias("코드", "code", "유니버스코드", "universe_code")
-        alias("정렬순서", "sort_order", "order", "순서", "display_order", "displayorder")
-        // Novel sheet
-        alias("제목", "title", "작품명", "작품제목", "novel_title")
-        alias("세계관", "universe", "세계관명", "universe_name")
-        alias("세계관코드", "universe_code", "유니버스코드")
-        // Character sheet
-        alias("이명", "another_name", "별칭", "alias", "이명/별칭")
-        alias("이미지경로", "image_path", "이미지", "image")
-        alias("작품", "novel", "작품명", "novel_title")
+        // Core identifiers (order matters: first registration wins)
+        alias("이름", "name", "캐릭터명")
+        alias("설명", "description", "desc")
+        alias("코드", "code")
+        alias("정렬순서", "sort_order", "display_order", "displayorder")
+        alias("제목", "title", "작품제목")
+        alias("세계관", "universe")
+        alias("세계관코드", "universe_code")
+        alias("이명", "another_name", "별칭", "alias")
+        alias("이미지경로", "image_path")
+        alias("작품", "novel")
         alias("메모", "memo", "비고", "note", "notes")
-        alias("태그", "tags", "tag", "태그들")
+        alias("태그", "tags", "tag")
         alias("작품코드", "novel_code")
-        // Field definition
-        alias("필드키", "field_key", "key", "키")
-        alias("필드명", "field_name", "필드이름")
-        alias("타입", "type", "field_type", "필드타입")
-        alias("설정(JSON)", "config", "설정", "configuration")
+        // Field definition (unique aliases only)
+        alias("필드키", "field_key")
+        alias("필드명", "field_name")
+        alias("타입", "type", "field_type")
+        alias("설정(JSON)", "config", "configuration")
         alias("그룹", "group", "그룹명", "group_name")
-        alias("순서", "order", "display_order")
-        alias("필수여부", "required", "필수", "is_required")
-        // Timeline
-        alias("연도", "year", "년도")
+        alias("순서", "order")
+        alias("필수여부", "required", "is_required")
+        // Timeline (unique aliases only)
+        alias("연도", "year")
         alias("월", "month")
         alias("일", "day")
-        alias("역법", "calendar", "calendar_type", "달력")
-        alias("사건 설명", "event_description", "사건설명", "설명", "description")
-        alias("관련 작품", "related_novel", "관련작품", "작품")
-        alias("관련 캐릭터", "related_characters", "관련캐릭터", "캐릭터")
+        alias("역법", "calendar", "calendar_type")
+        alias("사건 설명", "event_description", "사건설명")
+        alias("관련 작품", "related_novel", "관련작품")
+        alias("관련 캐릭터", "related_characters", "관련캐릭터")
         alias("관련작품코드", "related_novel_code")
         // State change
-        alias("캐릭터", "character", "캐릭터명", "character_name")
-        alias("새 값", "new_value", "새값", "값")
+        alias("캐릭터", "character", "character_name")
+        alias("새 값", "new_value", "새값")
         alias("캐릭터코드", "character_code")
         // Relationship
-        alias("캐릭터1", "character1", "캐릭터1명")
-        alias("캐릭터2", "character2", "캐릭터2명")
-        alias("관계 유형", "relationship_type", "관계유형", "관계")
+        alias("캐릭터1", "character1")
+        alias("캐릭터2", "character2")
+        alias("관계 유형", "relationship_type", "관계유형")
         alias("캐릭터1코드", "character1_code")
         alias("캐릭터2코드", "character2_code")
         // Name bank
         alias("성별", "gender", "sex")
-        alias("출처", "origin", "문화권", "출처/문화권")
-        alias("사용여부", "is_used", "사용", "used")
+        alias("출처", "origin", "문화권")
+        alias("사용여부", "is_used")
         alias("사용 캐릭터", "used_by", "사용캐릭터")
         alias("사용캐릭터코드", "used_character_code")
         // Border color (Sprint D)
-        alias("테두리색", "border_color", "bordercolor", "테두리 색", "테두리색상")
-        alias("테두리두께", "border_width", "borderwidth", "테두리 두께")
+        alias("테두리색", "border_color", "bordercolor")
+        alias("테두리두께", "border_width", "borderwidth")
     }
 
     suspend fun importAll(
@@ -345,10 +347,13 @@ class ExcelImportService(private val db: AppDatabase) {
                     }
                 }
 
+                val effectiveInherit = borderColor.isBlank()
+
                 if (existing != null) {
                     db.novelDao().update(existing.copy(
                         title = title, description = description, universeId = universeId,
-                        displayOrder = displayOrder, borderColor = borderColor, borderWidthDp = borderWidthDp
+                        displayOrder = displayOrder, borderColor = borderColor, borderWidthDp = borderWidthDp,
+                        inheritUniverseBorder = effectiveInherit
                     ))
                     result.updatedNovels++
                 } else {
@@ -357,7 +362,8 @@ class ExcelImportService(private val db: AppDatabase) {
                     db.novelDao().insert(Novel(
                         title = title, description = description, universeId = universeId,
                         code = newCode, displayOrder = displayOrder,
-                        borderColor = borderColor, borderWidthDp = borderWidthDp
+                        borderColor = borderColor, borderWidthDp = borderWidthDp,
+                        inheritUniverseBorder = effectiveInherit
                     ))
                     result.newNovels++
                 }
