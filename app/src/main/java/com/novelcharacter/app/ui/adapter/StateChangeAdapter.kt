@@ -45,10 +45,10 @@ class StateChangeAdapter(
 
             // Field key - display a friendly name for special keys
             binding.textFieldKey.text = when (change.fieldKey) {
-                CharacterStateChange.KEY_BIRTH -> itemView.context.getString(R.string.birth)
-                CharacterStateChange.KEY_DEATH -> itemView.context.getString(R.string.death)
-                CharacterStateChange.KEY_ALIVE -> itemView.context.getString(R.string.alive_status)
-                CharacterStateChange.KEY_AGE -> itemView.context.getString(R.string.age)
+                CharacterStateChange.KEY_BIRTH -> binding.root.context.getString(R.string.birth)
+                CharacterStateChange.KEY_DEATH -> binding.root.context.getString(R.string.death)
+                CharacterStateChange.KEY_ALIVE -> binding.root.context.getString(R.string.alive_status)
+                CharacterStateChange.KEY_AGE -> binding.root.context.getString(R.string.age)
                 else -> change.fieldKey
             }
 
