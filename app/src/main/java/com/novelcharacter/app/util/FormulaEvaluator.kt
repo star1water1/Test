@@ -1,5 +1,6 @@
 package com.novelcharacter.app.util
 
+import android.util.Log
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
@@ -20,7 +21,11 @@ class FormulaEvaluator(
     }
 
     private fun resolveField(key: String): Double {
-        val value = fieldValues[key] ?: return 0.0
+        val value = fieldValues[key]
+        if (value == null) {
+            Log.w("FormulaEvaluator", "Field '$key' not found in values, defaulting to 0.0")
+            return 0.0
+        }
         val fieldDef = fieldDefinitions.find { it.key == key }
         if (fieldDef != null && fieldDef.type == "GRADE") {
             return resolveGradeValue(fieldDef, value)

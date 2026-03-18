@@ -66,18 +66,16 @@ class GlobalSearchAdapter(
         private val subText: TextView = itemView.findViewById(R.id.resultSubText)
         private val typeIndicator: TextView = itemView.findViewById(R.id.resultTypeIndicator)
 
+        private val badgeDrawable = GradientDrawable().apply {
+            cornerRadius = 4f * itemView.context.resources.displayMetrics.density
+        }
+
+        init {
+            typeIndicator.background = badgeDrawable
+        }
+
         private fun setTypeBadgeColor(colorResId: Int) {
-            val bg = typeIndicator.background?.mutate()
-            if (bg is GradientDrawable) {
-                bg.setColor(itemView.context.getColor(colorResId))
-                typeIndicator.background = bg
-            } else {
-                val drawable = GradientDrawable().apply {
-                    cornerRadius = 4f * itemView.context.resources.displayMetrics.density
-                    setColor(itemView.context.getColor(colorResId))
-                }
-                typeIndicator.background = drawable
-            }
+            badgeDrawable.setColor(itemView.context.getColor(colorResId))
         }
 
         fun bindCharacter(character: Character) {

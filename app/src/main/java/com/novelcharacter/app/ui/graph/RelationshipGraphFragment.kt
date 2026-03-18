@@ -140,7 +140,7 @@ class RelationshipGraphFragment : Fragment() {
             binding.emptyMessage.text = if (allRelationships.isEmpty()) {
                 getString(R.string.graph_no_relationships)
             } else {
-                getString(R.string.graph_no_relationships)
+                getString(R.string.graph_no_filtered_relationships)
             }
             binding.nodeCountText.text = getString(R.string.graph_node_count, 0)
             binding.edgeCountText.text = getString(R.string.graph_edge_count, 0)

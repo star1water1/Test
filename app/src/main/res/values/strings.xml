@@ -368,6 +368,7 @@
     <string name="relationship_graph_beta">관계 그래프 (베타)</string>
     <string name="graph_no_characters">표시할 캐릭터가 없습니다</string>
     <string name="graph_no_relationships">등록된 관계가 없습니다</string>
+    <string name="graph_no_filtered_relationships">선택한 유형의 관계가 없습니다</string>
     <string name="graph_summary_mode">노드가 %d개 이상이어서 요약 모드로 표시합니다</string>
     <string name="graph_summary_mode_title">요약 모드</string>
     <string name="graph_filter_hint">관계 유형 필터</string>

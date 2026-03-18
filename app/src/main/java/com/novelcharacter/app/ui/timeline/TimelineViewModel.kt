@@ -185,6 +185,11 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
 
     private var errorClearJob: Job? = null
 
+    override fun onCleared() {
+        super.onCleared()
+        errorClearJob?.cancel()
+    }
+
     private fun showError(message: String?) {
         _error.value = message
         errorClearJob?.cancel()
