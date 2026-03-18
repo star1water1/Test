@@ -8,6 +8,7 @@ import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
+import androidx.core.content.ContextCompat
 import com.novelcharacter.app.R
 import kotlin.math.*
 
@@ -32,30 +33,30 @@ class RelationshipGraphView @JvmOverloads constructor(
     private val edges = mutableListOf<GraphEdge>()
 
     private val nodePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#5C6BC0")
+        color = ContextCompat.getColor(context, R.color.graph_node_fill)
         style = Paint.Style.FILL
     }
 
     private val nodeStrokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#3F51B5")
+        color = ContextCompat.getColor(context, R.color.graph_node_stroke)
         style = Paint.Style.STROKE
         strokeWidth = 2f
     }
 
     private val edgePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#9E9E9E")
+        color = ContextCompat.getColor(context, R.color.graph_edge)
         style = Paint.Style.STROKE
         strokeWidth = 2f
     }
 
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.WHITE
+        color = ContextCompat.getColor(context, R.color.graph_node_text)
         textSize = 28f
         textAlign = Paint.Align.CENTER
     }
 
     private val edgeLabelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#757575")
+        color = ContextCompat.getColor(context, R.color.graph_edge_label)
         textSize = 22f
         textAlign = Paint.Align.CENTER
     }
@@ -139,6 +140,7 @@ class RelationshipGraphView @JvmOverloads constructor(
         val iterations = min(100, count * 5)
         val k = sqrt((radius * radius * 4) / count.toFloat()) // ideal distance
         val temp = radius / 2f
+        val nodeIndexMap = nodes.withIndex().associate { (i, n) -> n.id to i }
 
         for (iter in 0 until iterations) {
             val cooling = temp * (1f - iter.toFloat() / iterations)
@@ -161,7 +163,6 @@ class RelationshipGraphView @JvmOverloads constructor(
             }
 
             // Attractive forces along edges
-            val nodeIndexMap = nodes.withIndex().associate { (i, n) -> n.id to i }
             for (edge in edges) {
                 val iIdx = nodeIndexMap[edge.fromId] ?: continue
                 val jIdx = nodeIndexMap[edge.toId] ?: continue

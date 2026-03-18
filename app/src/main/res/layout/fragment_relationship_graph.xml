@@ -41,9 +41,9 @@
         android:id="@+id/summaryModeText"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="#FFFDE7"
+        android:background="@color/graph_summary_bg"
         android:padding="8dp"
-        android:textColor="#F57F17"
+        android:textColor="@color/graph_summary_text"
         android:textSize="12sp"
         android:visibility="gone"
         android:gravity="center" />

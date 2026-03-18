@@ -65,6 +65,7 @@ class GlobalSearchViewModel(application: Application) : AndroidViewModel(applica
 
                 val rankedChars = when (sort) {
                     SearchPreset.SORT_NAME -> chars.sortedBy { it.name.lowercase() }
+                    SearchPreset.SORT_TAG -> chars.sortedBy { it.name.lowercase() }
                     SearchPreset.SORT_RECENT -> chars.sortedByDescending { it.updatedAt }
                     else -> chars.sortedByDescending { c ->
                         val name = c.name.lowercase()
@@ -109,18 +110,20 @@ class GlobalSearchViewModel(application: Application) : AndroidViewModel(applica
                     }
                 }
 
-                // For tag sort mode, show characters first (tag-sorted chars prioritized)
+                // Build result list; tag sort mode shows only characters
                 if (rankedChars.isNotEmpty()) {
                     items.add(SearchResultItem.SectionHeader(appContext.getString(R.string.section_header_format, appContext.getString(R.string.tab_characters), rankedChars.size)))
                     items.addAll(rankedChars.map { SearchResultItem.CharacterResult(it) })
                 }
-                if (rankedEvents.isNotEmpty()) {
-                    items.add(SearchResultItem.SectionHeader(appContext.getString(R.string.section_header_format, appContext.getString(R.string.tab_timeline), rankedEvents.size)))
-                    items.addAll(rankedEvents.map { SearchResultItem.EventResult(it) })
-                }
-                if (rankedNovels.isNotEmpty()) {
-                    items.add(SearchResultItem.SectionHeader(appContext.getString(R.string.section_header_format, appContext.getString(R.string.tab_novels), rankedNovels.size)))
-                    items.addAll(rankedNovels.map { SearchResultItem.NovelResult(it) })
+                if (sort != SearchPreset.SORT_TAG) {
+                    if (rankedEvents.isNotEmpty()) {
+                        items.add(SearchResultItem.SectionHeader(appContext.getString(R.string.section_header_format, appContext.getString(R.string.tab_timeline), rankedEvents.size)))
+                        items.addAll(rankedEvents.map { SearchResultItem.EventResult(it) })
+                    }
+                    if (rankedNovels.isNotEmpty()) {
+                        items.add(SearchResultItem.SectionHeader(appContext.getString(R.string.section_header_format, appContext.getString(R.string.tab_novels), rankedNovels.size)))
+                        items.addAll(rankedNovels.map { SearchResultItem.NovelResult(it) })
+                    }
                 }
                 mediator.value = items
             }

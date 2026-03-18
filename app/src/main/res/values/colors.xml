@@ -47,4 +47,13 @@
     <color name="used_indicator_bg">#E0E0E0</color>
     <color name="used_indicator_text">#757575</color>
     <color name="item_background_light">#F5F5F5</color>
+
+    <!-- 관계 그래프 -->
+    <color name="graph_node_fill">#5C6BC0</color>
+    <color name="graph_node_stroke">#3F51B5</color>
+    <color name="graph_edge">#9E9E9E</color>
+    <color name="graph_node_text">#FFFFFF</color>
+    <color name="graph_edge_label">#757575</color>
+    <color name="graph_summary_bg">#FFFDE7</color>
+    <color name="graph_summary_text">#F57F17</color>
 </resources>
