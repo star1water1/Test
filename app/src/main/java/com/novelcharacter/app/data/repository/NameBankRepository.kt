@@ -30,7 +30,4 @@ class NameBankRepository(
 
     suspend fun markNameBankAsAvailable(id: Long) =
         nameBankDao.markAsAvailable(id)
-
-    suspend fun resetUsageByCharacter(characterId: Long) =
-        nameBankDao.resetUsageByCharacter(characterId)
 }

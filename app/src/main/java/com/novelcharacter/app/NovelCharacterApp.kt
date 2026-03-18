@@ -7,7 +7,6 @@ import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import com.novelcharacter.app.data.database.AppDatabase
-import com.novelcharacter.app.data.repository.AppRepository
 import com.novelcharacter.app.data.repository.NovelRepository
 import com.novelcharacter.app.data.repository.CharacterRepository
 import com.novelcharacter.app.data.repository.TimelineRepository
@@ -52,11 +51,6 @@ class NovelCharacterApp : Application() {
     val searchPresetRepository by lazy { SearchPresetRepository(database.searchPresetDao()) }
     val recentActivityDao by lazy { database.recentActivityDao() }
     val backupStatusStore by lazy { BackupStatusStore(this) }
-
-    // Keep backward compatibility
-    val repository by lazy {
-        AppRepository(novelRepository, characterRepository, timelineRepository, universeRepository, nameBankRepository)
-    }
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
