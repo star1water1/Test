@@ -336,4 +336,42 @@
     <string name="backup_failure_reason">실패 원인: %s</string>
     <string name="backup_file_count">백업 파일: %d개</string>
     <string name="backup_never">없음</string>
+
+    <!-- Sprint 2: Search Presets -->
+    <string name="search_presets">검색 프리셋</string>
+    <string name="preset_apply">프리셋 적용</string>
+    <string name="preset_save">프리셋 저장</string>
+    <string name="preset_save_title">검색 프리셋 저장</string>
+    <string name="preset_edit_title">프리셋 편집</string>
+    <string name="preset_name_hint">프리셋 이름</string>
+    <string name="preset_applied">프리셋 \"%s\" 적용됨</string>
+    <string name="preset_saved">프리셋이 저장되었습니다</string>
+    <string name="preset_deleted">프리셋이 삭제되었습니다</string>
+    <string name="preset_limit_reached">프리셋은 최대 %d개까지 저장할 수 있습니다</string>
+    <string name="preset_name_required">프리셋 이름을 입력하세요</string>
+    <string name="preset_default_cannot_delete">기본 프리셋은 삭제할 수 없습니다</string>
+    <string name="preset_default_recent">최근검색</string>
+    <string name="preset_default_name_first">이름우선</string>
+    <string name="preset_default_tag_first">태그우선</string>
+    <string name="confirm_delete_preset">\"%s\" 프리셋을 삭제하시겠습니까?</string>
+    <string name="sort_relevance">관련도순</string>
+    <string name="sort_name">이름순</string>
+    <string name="sort_tag">태그순</string>
+    <string name="sort_recent">최근순</string>
+    <string name="no_presets">저장된 프리셋이 없습니다</string>
+
+    <!-- Sprint 2: Relationship Graph -->
+    <string name="relationship_graph">관계 그래프</string>
+    <string name="relationship_graph_beta">관계 그래프 (베타)</string>
+    <string name="graph_no_characters">표시할 캐릭터가 없습니다</string>
+    <string name="graph_no_relationships">등록된 관계가 없습니다</string>
+    <string name="graph_summary_mode">노드가 %d개 이상이어서 요약 모드로 표시합니다</string>
+    <string name="graph_summary_mode_title">요약 모드</string>
+    <string name="graph_filter_hint">관계 유형 필터</string>
+    <string name="graph_node_count">노드: %d개</string>
+    <string name="graph_edge_count">관계: %d개</string>
+    <string name="graph_zoom_reset">확대/축소 초기화</string>
+    <string name="graph_tap_hint">캐릭터를 탭하면 상세 화면으로 이동합니다</string>
+    <string name="graph_too_many_nodes">노드가 너무 많습니다. 필터를 사용하세요.</string>
+    <string name="graph_filter_all">전체</string>
 </resources>

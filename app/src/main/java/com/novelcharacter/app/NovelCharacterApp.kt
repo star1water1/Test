@@ -13,6 +13,7 @@ import com.novelcharacter.app.data.repository.CharacterRepository
 import com.novelcharacter.app.data.repository.TimelineRepository
 import com.novelcharacter.app.data.repository.UniverseRepository
 import com.novelcharacter.app.data.repository.NameBankRepository
+import com.novelcharacter.app.data.repository.SearchPresetRepository
 import com.novelcharacter.app.backup.AutoBackupWorker
 import com.novelcharacter.app.backup.BackupStatusStore
 import com.novelcharacter.app.notification.BirthdayWorker
@@ -44,6 +45,7 @@ class NovelCharacterApp : Application() {
         )
     }
     val nameBankRepository by lazy { NameBankRepository(database.nameBankDao()) }
+    val searchPresetRepository by lazy { SearchPresetRepository(database.searchPresetDao()) }
     val recentActivityDao by lazy { database.recentActivityDao() }
     val backupStatusStore by lazy { BackupStatusStore(this) }
 

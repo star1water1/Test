@@ -18,7 +18,9 @@ import com.novelcharacter.app.data.dao.UniverseDao
 import com.novelcharacter.app.data.dao.CharacterRelationshipDao
 import com.novelcharacter.app.data.dao.NameBankDao
 import com.novelcharacter.app.data.dao.RecentActivityDao
+import com.novelcharacter.app.data.dao.SearchPresetDao
 import com.novelcharacter.app.data.model.RecentActivity
+import com.novelcharacter.app.data.model.SearchPreset
 import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.CharacterFieldValue
 import com.novelcharacter.app.data.model.CharacterStateChange
@@ -44,9 +46,10 @@ import com.novelcharacter.app.data.model.Universe
         CharacterTag::class,
         NameBankEntry::class,
         CharacterRelationship::class,
-        RecentActivity::class
+        RecentActivity::class,
+        SearchPreset::class
     ],
-    version = 10,
+    version = 11,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -61,6 +64,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun nameBankDao(): NameBankDao
     abstract fun characterRelationshipDao(): CharacterRelationshipDao
     abstract fun recentActivityDao(): RecentActivityDao
+    abstract fun searchPresetDao(): SearchPresetDao
 
     companion object {
         private const val TAG = "AppDatabase"
@@ -408,6 +412,32 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Migration from version 10 to 11:
+         * - Created search_presets table for search preset storage
+         */
+        private val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "Migrating database from version 10 to 11")
+
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `search_presets` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `query` TEXT NOT NULL DEFAULT '',
+                        `filtersJson` TEXT NOT NULL DEFAULT '{}',
+                        `sortMode` TEXT NOT NULL DEFAULT 'relevance',
+                        `createdAt` INTEGER NOT NULL DEFAULT 0,
+                        `updatedAt` INTEGER NOT NULL DEFAULT 0,
+                        `isDefault` INTEGER NOT NULL DEFAULT 0
+                    )
+                """)
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_search_presets_name` ON `search_presets` (`name`)")
+
+                Log.i(TAG, "Migration from version 10 to 11 completed successfully")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -415,7 +445,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "novel_character_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
                     .build()
                     .also { INSTANCE = it }
             }

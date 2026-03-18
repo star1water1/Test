@@ -5,4 +5,8 @@
         android:id="@+id/action_reorder"
         android:title="@string/reorder_mode"
         app:showAsAction="never" />
+    <item
+        android:id="@+id/action_relationship_graph"
+        android:title="@string/relationship_graph_beta"
+        app:showAsAction="never" />
 </menu>

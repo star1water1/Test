@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/background">
+
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="?attr/actionBarSize"
+        android:background="@color/primary"
+        app:navigationIcon="?attr/homeAsUpIndicator"
+        app:title="@string/relationship_graph_beta"
+        app:titleTextColor="@color/on_primary" />
+
+    <!-- Filter chips -->
+    <HorizontalScrollView
+        android:id="@+id/filterScrollView"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:scrollbars="none"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp">
+
+        <com.google.android.material.chip.ChipGroup
+            android:id="@+id/filterChipGroup"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            app:singleSelection="true"
+            app:selectionRequired="true"
+            android:paddingTop="4dp"
+            android:paddingBottom="4dp" />
+
+    </HorizontalScrollView>
+
+    <!-- Summary mode warning -->
+    <TextView
+        android:id="@+id/summaryModeText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#FFFDE7"
+        android:padding="8dp"
+        android:textColor="#F57F17"
+        android:textSize="12sp"
+        android:visibility="gone"
+        android:gravity="center" />
+
+    <!-- Stats bar -->
+    <LinearLayout
+        android:id="@+id/statsBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:paddingTop="4dp"
+        android:paddingBottom="4dp">
+
+        <TextView
+            android:id="@+id/nodeCountText"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textSize="11sp"
+            android:textColor="@color/text_secondary" />
+
+        <TextView
+            android:id="@+id/edgeCountText"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textSize="11sp"
+            android:textColor="@color/text_secondary"
+            android:gravity="end" />
+
+    </LinearLayout>
+
+    <!-- Graph view -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <com.novelcharacter.app.ui.graph.RelationshipGraphView
+            android:id="@+id/graphView"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
+        <!-- Empty state -->
+        <LinearLayout
+            android:id="@+id/emptyState"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:visibility="gone">
+
+            <ImageView
+                android:layout_width="64dp"
+                android:layout_height="64dp"
+                android:src="@android:drawable/ic_menu_mapmode"
+                android:alpha="0.3"
+                android:layout_marginBottom="12dp"
+                android:contentDescription="@string/relationship_graph" />
+
+            <TextView
+                android:id="@+id/emptyMessage"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/graph_no_relationships"
+                android:textColor="@color/text_secondary"
+                android:textSize="14sp"
+                android:gravity="center" />
+
+        </LinearLayout>
+
+    </FrameLayout>
+
+    <!-- Hint bar -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/graph_tap_hint"
+        android:textSize="11sp"
+        android:textColor="@color/text_secondary"
+        android:gravity="center"
+        android:padding="6dp"
+        android:background="@color/surface" />
+
+</LinearLayout>

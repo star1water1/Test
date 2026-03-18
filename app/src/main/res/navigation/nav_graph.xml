@@ -152,4 +152,10 @@
         android:label="@string/tab_settings"
         tools:layout="@layout/fragment_settings" />
 
+    <fragment
+        android:id="@+id/relationshipGraphFragment"
+        android:name="com.novelcharacter.app.ui.graph.RelationshipGraphFragment"
+        android:label="@string/relationship_graph_beta"
+        tools:layout="@layout/fragment_relationship_graph" />
+
 </navigation>

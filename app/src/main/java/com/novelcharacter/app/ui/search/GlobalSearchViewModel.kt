@@ -6,7 +6,9 @@ import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.Novel
+import com.novelcharacter.app.data.model.SearchPreset
 import com.novelcharacter.app.data.model.TimelineEvent
+import kotlinx.coroutines.launch
 
 sealed class SearchResultItem {
     data class SectionHeader(val title: String) : SearchResultItem()
@@ -22,11 +24,30 @@ class GlobalSearchViewModel(application: Application) : AndroidViewModel(applica
     private val novelRepository = app.novelRepository
     private val characterRepository = app.characterRepository
     private val timelineRepository = app.timelineRepository
+    private val searchPresetRepository = app.searchPresetRepository
 
     private val _searchQuery = MutableLiveData("")
+    private val _sortMode = MutableLiveData(SearchPreset.SORT_RELEVANCE)
 
-    val searchResults: LiveData<List<SearchResultItem>> = _searchQuery.switchMap { query ->
-        if (query.isNullOrBlank()) {
+    val presets: LiveData<List<SearchPreset>> = searchPresetRepository.allPresets
+    val sortMode: LiveData<String> = _sortMode
+
+    private val _presetAppliedEvent = MutableLiveData<String?>()
+    val presetAppliedEvent: LiveData<String?> = _presetAppliedEvent
+
+    init {
+        viewModelScope.launch {
+            searchPresetRepository.ensureDefaultPresets()
+        }
+    }
+
+    private val searchTrigger = MediatorLiveData<Pair<String, String>>().apply {
+        addSource(_searchQuery) { value = Pair(it ?: "", _sortMode.value ?: SearchPreset.SORT_RELEVANCE) }
+        addSource(_sortMode) { value = Pair(_searchQuery.value ?: "", it ?: SearchPreset.SORT_RELEVANCE) }
+    }
+
+    val searchResults: LiveData<List<SearchResultItem>> = searchTrigger.switchMap { (query, sort) ->
+        if (query.isBlank()) {
             MutableLiveData(emptyList())
         } else {
             val mediator = MediatorLiveData<List<SearchResultItem>>()
@@ -42,43 +63,53 @@ class GlobalSearchViewModel(application: Application) : AndroidViewModel(applica
                 val q = query.lowercase()
                 val items = mutableListOf<SearchResultItem>()
 
-                // Rank characters: exact name > prefix name > exact anotherName > prefix anotherName > contains
-                val rankedChars = chars.sortedByDescending { c ->
-                    val name = c.name.lowercase()
-                    val alias = c.anotherName.lowercase()
-                    when {
-                        name == q -> 100
-                        name.startsWith(q) -> 80
-                        alias == q -> 70
-                        alias.startsWith(q) -> 60
-                        name.contains(q) -> 40
-                        alias.contains(q) -> 30
-                        else -> 10
+                val rankedChars = when (sort) {
+                    SearchPreset.SORT_NAME -> chars.sortedBy { it.name.lowercase() }
+                    SearchPreset.SORT_RECENT -> chars.sortedByDescending { it.updatedAt }
+                    else -> chars.sortedByDescending { c ->
+                        val name = c.name.lowercase()
+                        val alias = c.anotherName.lowercase()
+                        when {
+                            name == q -> 100
+                            name.startsWith(q) -> 80
+                            alias == q -> 70
+                            alias.startsWith(q) -> 60
+                            name.contains(q) -> 40
+                            alias.contains(q) -> 30
+                            else -> 10
+                        }
                     }
                 }
 
-                // Rank novels: exact title > prefix > contains title > contains description
-                val rankedNovels = novels.sortedByDescending { n ->
-                    val title = n.title.lowercase()
-                    when {
-                        title == q -> 100
-                        title.startsWith(q) -> 80
-                        title.contains(q) -> 40
-                        else -> 10 // matched via description
+                val rankedNovels = when (sort) {
+                    SearchPreset.SORT_NAME -> novels.sortedBy { it.title.lowercase() }
+                    SearchPreset.SORT_RECENT -> novels.sortedByDescending { it.createdAt }
+                    else -> novels.sortedByDescending { n ->
+                        val title = n.title.lowercase()
+                        when {
+                            title == q -> 100
+                            title.startsWith(q) -> 80
+                            title.contains(q) -> 40
+                            else -> 10
+                        }
                     }
                 }
 
-                // Rank events: exact description > prefix > contains
-                val rankedEvents = events.sortedByDescending { e ->
-                    val desc = e.description.lowercase()
-                    when {
-                        desc == q -> 100
-                        desc.startsWith(q) -> 80
-                        desc.contains(q) -> 40
-                        else -> 10
+                val rankedEvents = when (sort) {
+                    SearchPreset.SORT_NAME -> events.sortedBy { it.description.lowercase() }
+                    SearchPreset.SORT_RECENT -> events.sortedByDescending { it.createdAt }
+                    else -> events.sortedByDescending { e ->
+                        val desc = e.description.lowercase()
+                        when {
+                            desc == q -> 100
+                            desc.startsWith(q) -> 80
+                            desc.contains(q) -> 40
+                            else -> 10
+                        }
                     }
                 }
 
+                // For tag sort mode, show characters first (tag-sorted chars prioritized)
                 if (rankedChars.isNotEmpty()) {
                     items.add(SearchResultItem.SectionHeader(appContext.getString(R.string.section_header_format, appContext.getString(R.string.tab_characters), rankedChars.size)))
                     items.addAll(rankedChars.map { SearchResultItem.CharacterResult(it) })
@@ -104,4 +135,49 @@ class GlobalSearchViewModel(application: Application) : AndroidViewModel(applica
     fun setSearchQuery(query: String) {
         _searchQuery.value = query
     }
+
+    fun setSortMode(mode: String) {
+        _sortMode.value = mode
+    }
+
+    fun applyPreset(preset: SearchPreset) {
+        _sortMode.value = preset.sortMode
+        if (preset.query.isNotBlank()) {
+            _searchQuery.value = preset.query
+        }
+        _presetAppliedEvent.value = preset.name
+    }
+
+    fun clearPresetEvent() {
+        _presetAppliedEvent.value = null
+    }
+
+    fun saveCurrentAsPreset(name: String) {
+        viewModelScope.launch {
+            try {
+                val preset = SearchPreset(
+                    name = name,
+                    query = _searchQuery.value ?: "",
+                    sortMode = _sortMode.value ?: SearchPreset.SORT_RELEVANCE
+                )
+                searchPresetRepository.insertPreset(preset)
+            } catch (_: IllegalStateException) {
+                // Max limit reached - handled in UI
+            }
+        }
+    }
+
+    fun deletePreset(id: Long) {
+        viewModelScope.launch {
+            searchPresetRepository.deletePreset(id)
+        }
+    }
+
+    fun updatePreset(preset: SearchPreset) {
+        viewModelScope.launch {
+            searchPresetRepository.updatePreset(preset)
+        }
+    }
+
+    suspend fun getPresetCount(): Int = searchPresetRepository.getPresetCount()
 }

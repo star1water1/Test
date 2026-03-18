@@ -123,6 +123,10 @@ class CharacterListFragment : Fragment() {
                     toggleReorderMode()
                     true
                 }
+                R.id.action_relationship_graph -> {
+                    findNavController().navigateSafe(R.id.characterListFragment, R.id.relationshipGraphFragment, null)
+                    true
+                }
                 else -> false
             }
         }
