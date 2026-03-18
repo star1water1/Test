@@ -13,6 +13,7 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
+import com.novelcharacter.app.data.model.RecentActivity
 import androidx.fragment.app.viewModels
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -60,6 +61,7 @@ class UniverseListFragment : Fragment() {
     private fun setupRecyclerView() {
         adapter = UniverseAdapter(
             onClick = { universe ->
+                viewModel.recordRecentActivity(RecentActivity.TYPE_UNIVERSE, universe.id, universe.name)
                 val bundle = Bundle().apply { putLong("universeId", universe.id) }
                 findNavController().navigateSafe(R.id.universeListFragment, R.id.novelListFragment, bundle)
             },
@@ -163,6 +165,64 @@ class UniverseListFragment : Fragment() {
                     getString(R.string.preset_loaded, name),
                     Toast.LENGTH_SHORT
                 ).show()
+            }
+        }
+
+        // Recent activities cards
+        viewModel.recentActivities.observe(viewLifecycleOwner) { recents ->
+            if (recents.isNullOrEmpty()) {
+                binding.recentSection.visibility = View.GONE
+            } else {
+                binding.recentSection.visibility = View.VISIBLE
+                setupRecentCards(recents)
+            }
+        }
+    }
+
+    private fun setupRecentCards(recents: List<RecentActivity>) {
+        binding.recentRecyclerView.layoutManager =
+            LinearLayoutManager(requireContext(), LinearLayoutManager.HORIZONTAL, false)
+        binding.recentRecyclerView.adapter = object : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
+            override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
+                val view = LayoutInflater.from(parent.context).inflate(R.layout.item_recent_activity, parent, false)
+                return object : RecyclerView.ViewHolder(view) {}
+            }
+
+            override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
+                val item = recents[position]
+                val typeLabel = holder.itemView.findViewById<TextView>(R.id.recentTypeLabel)
+                val titleView = holder.itemView.findViewById<TextView>(R.id.recentTitle)
+
+                typeLabel.text = when (item.entityType) {
+                    RecentActivity.TYPE_CHARACTER -> getString(R.string.recent_type_character)
+                    RecentActivity.TYPE_NOVEL -> getString(R.string.recent_type_novel)
+                    RecentActivity.TYPE_UNIVERSE -> getString(R.string.recent_type_universe)
+                    else -> item.entityType
+                }
+                titleView.text = item.title
+
+                holder.itemView.setOnClickListener {
+                    navigateToRecentItem(item)
+                }
+            }
+
+            override fun getItemCount() = recents.size
+        }
+    }
+
+    private fun navigateToRecentItem(item: RecentActivity) {
+        when (item.entityType) {
+            RecentActivity.TYPE_UNIVERSE -> {
+                val bundle = Bundle().apply { putLong("universeId", item.entityId) }
+                findNavController().navigateSafe(R.id.universeListFragment, R.id.novelListFragment, bundle)
+            }
+            RecentActivity.TYPE_NOVEL -> {
+                val bundle = Bundle().apply { putLong("novelId", item.entityId) }
+                findNavController().navigateSafe(R.id.universeListFragment, R.id.characterListFragment, bundle)
+            }
+            RecentActivity.TYPE_CHARACTER -> {
+                val bundle = Bundle().apply { putLong("characterId", item.entityId) }
+                findNavController().navigateSafe(R.id.universeListFragment, R.id.characterDetailFragment, bundle)
             }
         }
     }

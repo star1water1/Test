@@ -8,12 +8,14 @@ import androidx.lifecycle.switchMap
 import androidx.lifecycle.viewModelScope
 import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.data.model.Novel
+import com.novelcharacter.app.data.model.RecentActivity
 import kotlinx.coroutines.launch
 
 class NovelViewModel(application: Application) : AndroidViewModel(application) {
 
     private val app = application as NovelCharacterApp
     private val novelRepository = app.novelRepository
+    private val recentActivityDao = app.recentActivityDao
     val allNovels: LiveData<List<Novel>> = novelRepository.allNovels
 
     private val _universeId = MutableLiveData<Long?>()
@@ -54,5 +56,16 @@ class NovelViewModel(application: Application) : AndroidViewModel(application) {
 
     fun updateDisplayOrders(novels: List<Novel>) = viewModelScope.launch {
         novelRepository.updateNovelDisplayOrders(novels)
+    }
+
+    fun togglePin(novel: Novel) = viewModelScope.launch {
+        novelRepository.setPinned(novel.id, !novel.isPinned)
+    }
+
+    fun recordRecentActivity(novelId: Long, title: String) = viewModelScope.launch {
+        recentActivityDao.upsert(
+            RecentActivity(entityType = RecentActivity.TYPE_NOVEL, entityId = novelId, title = title)
+        )
+        recentActivityDao.trimToMax(RecentActivity.MAX_ENTRIES)
     }
 }

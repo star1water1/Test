@@ -28,5 +28,6 @@ data class Novel(
     val displayOrder: Long = 0,
     val borderColor: String = "",
     val borderWidthDp: Float = 1.5f,
-    val inheritUniverseBorder: Boolean = true
+    val inheritUniverseBorder: Boolean = true,
+    val isPinned: Boolean = false
 )

@@ -11,7 +11,12 @@ import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.R
+import com.novelcharacter.app.backup.BackupStatusStore
 import com.novelcharacter.app.data.maintenance.SystemMaintenanceService
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import com.novelcharacter.app.databinding.FragmentSettingsBinding
 import com.novelcharacter.app.util.ThemeHelper
 import kotlinx.coroutines.launch
@@ -145,6 +150,41 @@ class SettingsFragment : Fragment() {
             binding.versionText.text = getString(R.string.settings_version_format, pInfo.versionName)
         } catch (e: Exception) {
             binding.versionText.text = getString(R.string.settings_version_format, "1.0")
+        }
+
+        loadBackupStatus()
+    }
+
+    private fun loadBackupStatus() {
+        val statusStore = (requireContext().applicationContext as NovelCharacterApp).backupStatusStore
+        viewLifecycleOwner.lifecycleScope.launch {
+            val status = statusStore.getStatus()
+            val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+            val sb = StringBuilder()
+
+            val successText = if (status.lastSuccessAt > 0) {
+                dateFormat.format(Date(status.lastSuccessAt))
+            } else {
+                getString(R.string.backup_never)
+            }
+            sb.appendLine(getString(R.string.backup_last_success, successText))
+
+            if (status.lastFailureAt > 0) {
+                val failText = dateFormat.format(Date(status.lastFailureAt))
+                sb.appendLine(getString(R.string.backup_last_failure, failText))
+                if (status.lastFailureReason.isNotBlank()) {
+                    sb.appendLine(getString(R.string.backup_failure_reason, status.lastFailureReason))
+                }
+            }
+
+            // Count backup files
+            val backupDir = File(requireContext().filesDir, "backups")
+            val backupCount = backupDir.listFiles { f ->
+                f.name.startsWith("NovelCharacter_AutoBackup_") && f.name.endsWith(".enc")
+            }?.size ?: 0
+            sb.append(getString(R.string.backup_file_count, backupCount))
+
+            binding.backupStatusText.text = sb.toString()
         }
     }
 

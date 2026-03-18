@@ -66,6 +66,7 @@ class CharacterListFragment : Fragment() {
                 if (isCompareMode) {
                     toggleCompareSelection(character.id)
                 } else {
+                    viewModel.recordRecentActivity(character.id, character.name)
                     val bundle = Bundle().apply { putLong("characterId", character.id) }
                     findNavController().navigateSafe(R.id.characterListFragment, R.id.characterDetailFragment, bundle)
                 }
@@ -84,6 +85,9 @@ class CharacterListFragment : Fragment() {
                     }
                     .setNegativeButton(R.string.no, null)
                     .show()
+            },
+            onPinClick = { character ->
+                viewModel.togglePin(character)
             }
         )
         binding.characterRecyclerView.layoutManager = GridLayoutManager(requireContext(), 3)

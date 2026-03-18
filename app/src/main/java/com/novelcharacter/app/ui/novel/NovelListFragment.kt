@@ -69,6 +69,7 @@ class NovelListFragment : Fragment() {
     private fun setupRecyclerView() {
         adapter = NovelAdapter(
             onClick = { novel ->
+                viewModel.recordRecentActivity(novel.id, novel.title)
                 val bundle = Bundle().apply { putLong("novelId", novel.id) }
                 findNavController().navigateSafe(R.id.novelListFragment, R.id.characterListFragment, bundle)
             },
@@ -83,6 +84,9 @@ class NovelListFragment : Fragment() {
                     }
                     .setNegativeButton(R.string.no, null)
                     .show()
+            },
+            onPinClick = { novel ->
+                viewModel.togglePin(novel)
             }
         )
         binding.novelRecyclerView.layoutManager = LinearLayoutManager(requireContext())

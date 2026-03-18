@@ -28,6 +28,7 @@ class AutoBackupWorker(
     }
 
     override suspend fun doWork(): Result {
+        val statusStore = BackupStatusStore(appContext)
         return try {
             Log.i(TAG, "Starting auto backup...")
             val db = AppDatabase.getDatabase(appContext)
@@ -55,10 +56,12 @@ class AutoBackupWorker(
             // Rotate old backups
             rotateBackups()
 
+            statusStore.recordSuccess()
             Log.i(TAG, "Auto backup completed successfully")
             Result.success()
         } catch (e: Exception) {
             Log.e(TAG, "Auto backup failed", e)
+            statusStore.recordFailure(e.message ?: "Unknown error")
             if (runAttemptCount < 3) Result.retry() else Result.failure()
         }
     }

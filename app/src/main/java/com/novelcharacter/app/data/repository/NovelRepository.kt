@@ -33,4 +33,7 @@ class NovelRepository(
     fun searchNovels(query: String): LiveData<List<Novel>> =
         novelDao.searchNovels(query)
     suspend fun updateNovelDisplayOrders(novels: List<Novel>) = novelDao.updateAll(novels)
+
+    suspend fun setPinned(id: Long, isPinned: Boolean) =
+        novelDao.setPinned(id, isPinned)
 }

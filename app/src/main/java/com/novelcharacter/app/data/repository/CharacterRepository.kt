@@ -149,4 +149,7 @@ class CharacterRepository(
     suspend fun deleteRelationshipById(id: Long) {
         characterRelationshipDao.deleteById(id)
     }
+
+    suspend fun setPinned(id: Long, isPinned: Boolean) =
+        characterDao.setPinned(id, isPinned)
 }

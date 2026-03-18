@@ -10,6 +10,7 @@ import com.novelcharacter.app.data.model.CharacterStateChange
 import com.novelcharacter.app.data.model.CharacterTag
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.Novel
+import com.novelcharacter.app.data.model.RecentActivity
 import com.novelcharacter.app.data.model.TimelineEvent
 import kotlinx.coroutines.launch
 
@@ -20,6 +21,7 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     private val novelRepository = app.novelRepository
     private val timelineRepository = app.timelineRepository
     private val universeRepository = app.universeRepository
+    private val recentActivityDao = app.recentActivityDao
 
     val allCharacters: LiveData<List<Character>> = characterRepository.allCharacters
     val allNovels: LiveData<List<Novel>> = novelRepository.allNovels
@@ -169,5 +171,16 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun updateCharacterDisplayOrders(characters: List<Character>) = viewModelScope.launch {
         characterRepository.updateCharacterDisplayOrders(characters)
+    }
+
+    fun togglePin(character: Character) = viewModelScope.launch {
+        characterRepository.setPinned(character.id, !character.isPinned)
+    }
+
+    fun recordRecentActivity(characterId: Long, name: String) = viewModelScope.launch {
+        recentActivityDao.upsert(
+            RecentActivity(entityType = RecentActivity.TYPE_CHARACTER, entityId = characterId, title = name)
+        )
+        recentActivityDao.trimToMax(RecentActivity.MAX_ENTRIES)
     }
 }

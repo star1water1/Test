@@ -9,6 +9,7 @@ import androidx.room.withTransaction
 import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.Universe
+import com.novelcharacter.app.data.model.RecentActivity
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.util.PresetTemplates
 import kotlinx.coroutines.launch
@@ -18,7 +19,9 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
     private val app = application as NovelCharacterApp
     private val db = app.database
     private val universeRepository = app.universeRepository
+    private val recentActivityDao = app.recentActivityDao
     val allUniverses: LiveData<List<Universe>> = universeRepository.allUniverses
+    val recentActivities: LiveData<List<RecentActivity>> = recentActivityDao.getRecentActivities(5)
 
     // 각 세계관의 작품 수, 필드 수를 캐시
     private val _universeNovelCounts = MutableLiveData<Map<Long, Int>>()
@@ -70,4 +73,11 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
             }
             _presetApplied.value = Event(template.universe.name)
         }
+
+    fun recordRecentActivity(entityType: String, entityId: Long, title: String) = viewModelScope.launch {
+        recentActivityDao.upsert(
+            RecentActivity(entityType = entityType, entityId = entityId, title = title)
+        )
+        recentActivityDao.trimToMax(RecentActivity.MAX_ENTRIES)
+    }
 }

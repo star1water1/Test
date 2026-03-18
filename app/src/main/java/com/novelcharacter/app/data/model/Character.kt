@@ -28,5 +28,6 @@ data class Character(
     val updatedAt: Long = System.currentTimeMillis(),
     val memo: String = "",
     val code: String = generateEntityCode(),
-    val displayOrder: Long = 0
+    val displayOrder: Long = 0,
+    val isPinned: Boolean = false
 )

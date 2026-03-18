@@ -6,16 +6,17 @@ import com.novelcharacter.app.data.model.Character
 
 @Dao
 interface CharacterDao {
-    @Query("SELECT * FROM characters ORDER BY displayOrder ASC, name ASC")
+    // Pinned-first sorting: isPinned DESC ensures pinned items appear at top
+    @Query("SELECT * FROM characters ORDER BY isPinned DESC, displayOrder ASC, name ASC")
     fun getAllCharacters(): LiveData<List<Character>>
 
-    @Query("SELECT * FROM characters ORDER BY displayOrder ASC, name ASC")
+    @Query("SELECT * FROM characters ORDER BY isPinned DESC, displayOrder ASC, name ASC")
     suspend fun getAllCharactersList(): List<Character>
 
-    @Query("SELECT * FROM characters WHERE novelId = :novelId ORDER BY displayOrder ASC, name ASC")
+    @Query("SELECT * FROM characters WHERE novelId = :novelId ORDER BY isPinned DESC, displayOrder ASC, name ASC")
     fun getCharactersByNovel(novelId: Long): LiveData<List<Character>>
 
-    @Query("SELECT * FROM characters WHERE novelId = :novelId ORDER BY displayOrder ASC, name ASC")
+    @Query("SELECT * FROM characters WHERE novelId = :novelId ORDER BY isPinned DESC, displayOrder ASC, name ASC")
     suspend fun getCharactersByNovelList(novelId: Long): List<Character>
 
     @Query("SELECT * FROM characters WHERE id = :id")
@@ -59,4 +60,7 @@ interface CharacterDao {
 
     @Query("SELECT COALESCE(MAX(displayOrder), -1) + 1 FROM characters WHERE novelId IS NULL")
     suspend fun getNextDisplayOrderNoNovel(): Long
+
+    @Query("UPDATE characters SET isPinned = :isPinned WHERE id = :id")
+    suspend fun setPinned(id: Long, isPinned: Boolean)
 }

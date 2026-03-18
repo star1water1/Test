@@ -28,7 +28,8 @@ class CharacterAdapter(
     private val coroutineScope: CoroutineScope,
     private val onClick: (Character) -> Unit,
     private val onEditClick: (Character) -> Unit,
-    private val onDeleteClick: (Character) -> Unit
+    private val onDeleteClick: (Character) -> Unit,
+    private val onPinClick: ((Character) -> Unit)? = null
 ) : ListAdapter<Character, CharacterAdapter.CharacterViewHolder>(CharacterDiffCallback()) {
 
     private var isSelectionMode = false
@@ -200,10 +201,15 @@ class CharacterAdapter(
             // More button popup menu
             binding.btnMore.setOnClickListener { view ->
                 val popup = PopupMenu(view.context, view)
-                popup.menu.add(0, 1, 0, R.string.menu_edit)
-                popup.menu.add(0, 2, 1, R.string.menu_delete)
+                // Pin/Unpin: search results do NOT reorder by pinned (search has its own ranking)
+                // List views sort pinned items first via DAO query
+                val pinLabel = if (character.isPinned) R.string.unpin else R.string.pin
+                popup.menu.add(0, 3, 0, pinLabel)
+                popup.menu.add(0, 1, 1, R.string.menu_edit)
+                popup.menu.add(0, 2, 2, R.string.menu_delete)
                 popup.setOnMenuItemClickListener { item ->
                     when (item.itemId) {
+                        3 -> { onPinClick?.invoke(character); true }
                         1 -> { onEditClick(character); true }
                         2 -> { onDeleteClick(character); true }
                         else -> false

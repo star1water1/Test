@@ -17,6 +17,8 @@ import com.novelcharacter.app.data.dao.TimelineDao
 import com.novelcharacter.app.data.dao.UniverseDao
 import com.novelcharacter.app.data.dao.CharacterRelationshipDao
 import com.novelcharacter.app.data.dao.NameBankDao
+import com.novelcharacter.app.data.dao.RecentActivityDao
+import com.novelcharacter.app.data.model.RecentActivity
 import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.CharacterFieldValue
 import com.novelcharacter.app.data.model.CharacterStateChange
@@ -41,9 +43,10 @@ import com.novelcharacter.app.data.model.Universe
         CharacterStateChange::class,
         CharacterTag::class,
         NameBankEntry::class,
-        CharacterRelationship::class
+        CharacterRelationship::class,
+        RecentActivity::class
     ],
-    version = 9,
+    version = 10,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -57,6 +60,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun characterTagDao(): CharacterTagDao
     abstract fun nameBankDao(): NameBankDao
     abstract fun characterRelationshipDao(): CharacterRelationshipDao
+    abstract fun recentActivityDao(): RecentActivityDao
 
     companion object {
         private const val TAG = "AppDatabase"
@@ -375,6 +379,35 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Migration from version 9 to 10:
+         * - Added isPinned column to characters and novels
+         * - Created recent_activities table for recent work tracking
+         */
+        private val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "Migrating database from version 9 to 10")
+
+                // Add isPinned to characters and novels
+                db.execSQL("ALTER TABLE `characters` ADD COLUMN `isPinned` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `novels` ADD COLUMN `isPinned` INTEGER NOT NULL DEFAULT 0")
+
+                // Create recent_activities table
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `recent_activities` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `entityType` TEXT NOT NULL,
+                        `entityId` INTEGER NOT NULL,
+                        `title` TEXT NOT NULL,
+                        `accessedAt` INTEGER NOT NULL DEFAULT 0
+                    )
+                """)
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_recent_activities_entityType_entityId` ON `recent_activities` (`entityType`, `entityId`)")
+
+                Log.i(TAG, "Migration from version 9 to 10 completed successfully")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -382,7 +415,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "novel_character_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
                     .build()
                     .also { INSTANCE = it }
             }

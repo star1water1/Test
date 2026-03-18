@@ -19,7 +19,8 @@ import com.novelcharacter.app.databinding.ItemNovelBinding
 class NovelAdapter(
     private val onClick: (Novel) -> Unit,
     private val onEditClick: (Novel) -> Unit,
-    private val onDeleteClick: (Novel) -> Unit
+    private val onDeleteClick: (Novel) -> Unit,
+    private val onPinClick: ((Novel) -> Unit)? = null
 ) : ListAdapter<Novel, NovelAdapter.NovelViewHolder>(NovelDiffCallback()) {
 
     private var isReorderMode = false
@@ -101,10 +102,13 @@ class NovelAdapter(
 
             binding.btnMore.setOnClickListener { view ->
                 val popup = PopupMenu(view.context, view)
-                popup.menu.add(0, 1, 0, R.string.menu_edit)
-                popup.menu.add(0, 2, 1, R.string.menu_delete)
+                val pinLabel = if (novel.isPinned) R.string.unpin else R.string.pin
+                popup.menu.add(0, 3, 0, pinLabel)
+                popup.menu.add(0, 1, 1, R.string.menu_edit)
+                popup.menu.add(0, 2, 2, R.string.menu_delete)
                 popup.setOnMenuItemClickListener { item ->
                     when (item.itemId) {
+                        3 -> { onPinClick?.invoke(novel); true }
                         1 -> { onEditClick(novel); true }
                         2 -> { onDeleteClick(novel); true }
                         else -> false

@@ -14,6 +14,7 @@ import com.novelcharacter.app.data.repository.TimelineRepository
 import com.novelcharacter.app.data.repository.UniverseRepository
 import com.novelcharacter.app.data.repository.NameBankRepository
 import com.novelcharacter.app.backup.AutoBackupWorker
+import com.novelcharacter.app.backup.BackupStatusStore
 import com.novelcharacter.app.notification.BirthdayWorker
 import com.novelcharacter.app.util.ThemeHelper
 import java.util.concurrent.TimeUnit
@@ -43,6 +44,8 @@ class NovelCharacterApp : Application() {
         )
     }
     val nameBankRepository by lazy { NameBankRepository(database.nameBankDao()) }
+    val recentActivityDao by lazy { database.recentActivityDao() }
+    val backupStatusStore by lazy { BackupStatusStore(this) }
 
     // Keep backward compatibility
     val repository by lazy {

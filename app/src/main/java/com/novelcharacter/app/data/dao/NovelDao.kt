@@ -6,10 +6,11 @@ import com.novelcharacter.app.data.model.Novel
 
 @Dao
 interface NovelDao {
-    @Query("SELECT * FROM novels ORDER BY displayOrder ASC, createdAt DESC")
+    // Pinned-first sorting: isPinned DESC ensures pinned items appear at top
+    @Query("SELECT * FROM novels ORDER BY isPinned DESC, displayOrder ASC, createdAt DESC")
     fun getAllNovels(): LiveData<List<Novel>>
 
-    @Query("SELECT * FROM novels ORDER BY displayOrder ASC, createdAt DESC")
+    @Query("SELECT * FROM novels ORDER BY isPinned DESC, displayOrder ASC, createdAt DESC")
     suspend fun getAllNovelsList(): List<Novel>
 
     @Query("SELECT * FROM novels WHERE id = :id")
@@ -27,10 +28,10 @@ interface NovelDao {
     @Query("DELETE FROM novels WHERE id = :id")
     suspend fun deleteById(id: Long)
 
-    @Query("SELECT * FROM novels WHERE universeId = :universeId ORDER BY displayOrder ASC, createdAt DESC")
+    @Query("SELECT * FROM novels WHERE universeId = :universeId ORDER BY isPinned DESC, displayOrder ASC, createdAt DESC")
     fun getNovelsByUniverse(universeId: Long): LiveData<List<Novel>>
 
-    @Query("SELECT * FROM novels WHERE universeId = :universeId ORDER BY displayOrder ASC, createdAt DESC")
+    @Query("SELECT * FROM novels WHERE universeId = :universeId ORDER BY isPinned DESC, displayOrder ASC, createdAt DESC")
     suspend fun getNovelsByUniverseList(universeId: Long): List<Novel>
 
     @Query("SELECT universeId, COUNT(*) as cnt FROM novels WHERE universeId IN (:universeIds) GROUP BY universeId")
@@ -56,6 +57,9 @@ interface NovelDao {
 
     @Query("SELECT COALESCE(MAX(displayOrder), -1) + 1 FROM novels WHERE universeId IS NULL")
     suspend fun getNextDisplayOrderNoUniverse(): Long
+
+    @Query("UPDATE novels SET isPinned = :isPinned WHERE id = :id")
+    suspend fun setPinned(id: Long, isPinned: Boolean)
 }
 
 data class UniverseCount(val universeId: Long, val cnt: Int)
