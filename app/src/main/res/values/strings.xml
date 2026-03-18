@@ -302,6 +302,15 @@
     <string name="maintenance_check_integrity">무결성 점검</string>
     <string name="maintenance_fk_violations">FK 위반: %d건</string>
 
+    <!-- Accessibility -->
+    <string name="close_button_desc">닫기</string>
+    <string name="import_preparing">가져오기 준비 중…</string>
+    <string name="import_progress_title">가져오기 진행 중</string>
+
+    <!-- Maintenance log -->
+    <string name="maintenance_negative_orders">음수 displayOrder: %d건</string>
+    <string name="maintenance_sparse_orders">비연속 displayOrder: %d건</string>
+
     <!-- Border color customization (Sprint D) -->
     <string name="border_color_label">테두리 색상</string>
     <string name="border_color_hex_hint">HEX 색상 (예: #5C6BC0)</string>

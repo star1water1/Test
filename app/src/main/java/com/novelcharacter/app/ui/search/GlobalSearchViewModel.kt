@@ -39,18 +39,57 @@ class GlobalSearchViewModel(application: Application) : AndroidViewModel(applica
             var novels: List<Novel> = emptyList()
 
             fun combine() {
+                val q = query.lowercase()
                 val items = mutableListOf<SearchResultItem>()
-                if (chars.isNotEmpty()) {
-                    items.add(SearchResultItem.SectionHeader(appContext.getString(R.string.section_header_format, appContext.getString(R.string.tab_characters), chars.size)))
-                    items.addAll(chars.map { SearchResultItem.CharacterResult(it) })
+
+                // Rank characters: exact name > prefix name > exact anotherName > prefix anotherName > contains
+                val rankedChars = chars.sortedByDescending { c ->
+                    val name = c.name.lowercase()
+                    val alias = c.anotherName.lowercase()
+                    when {
+                        name == q -> 100
+                        name.startsWith(q) -> 80
+                        alias == q -> 70
+                        alias.startsWith(q) -> 60
+                        name.contains(q) -> 40
+                        alias.contains(q) -> 30
+                        else -> 10
+                    }
                 }
-                if (events.isNotEmpty()) {
-                    items.add(SearchResultItem.SectionHeader(appContext.getString(R.string.section_header_format, appContext.getString(R.string.tab_timeline), events.size)))
-                    items.addAll(events.map { SearchResultItem.EventResult(it) })
+
+                // Rank novels: exact title > prefix > contains title > contains description
+                val rankedNovels = novels.sortedByDescending { n ->
+                    val title = n.title.lowercase()
+                    when {
+                        title == q -> 100
+                        title.startsWith(q) -> 80
+                        title.contains(q) -> 40
+                        else -> 10 // matched via description
+                    }
                 }
-                if (novels.isNotEmpty()) {
-                    items.add(SearchResultItem.SectionHeader(appContext.getString(R.string.section_header_format, appContext.getString(R.string.tab_novels), novels.size)))
-                    items.addAll(novels.map { SearchResultItem.NovelResult(it) })
+
+                // Rank events: exact description > prefix > contains
+                val rankedEvents = events.sortedByDescending { e ->
+                    val desc = e.description.lowercase()
+                    when {
+                        desc == q -> 100
+                        desc.startsWith(q) -> 80
+                        desc.contains(q) -> 40
+                        else -> 10
+                    }
+                }
+
+                if (rankedChars.isNotEmpty()) {
+                    items.add(SearchResultItem.SectionHeader(appContext.getString(R.string.section_header_format, appContext.getString(R.string.tab_characters), rankedChars.size)))
+                    items.addAll(rankedChars.map { SearchResultItem.CharacterResult(it) })
+                }
+                if (rankedEvents.isNotEmpty()) {
+                    items.add(SearchResultItem.SectionHeader(appContext.getString(R.string.section_header_format, appContext.getString(R.string.tab_timeline), rankedEvents.size)))
+                    items.addAll(rankedEvents.map { SearchResultItem.EventResult(it) })
+                }
+                if (rankedNovels.isNotEmpty()) {
+                    items.add(SearchResultItem.SectionHeader(appContext.getString(R.string.section_header_format, appContext.getString(R.string.tab_novels), rankedNovels.size)))
+                    items.addAll(rankedNovels.map { SearchResultItem.NovelResult(it) })
                 }
                 mediator.value = items
             }

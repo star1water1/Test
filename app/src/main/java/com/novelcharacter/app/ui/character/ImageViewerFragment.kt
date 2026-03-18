@@ -67,7 +67,7 @@ class ImageViewerFragment : Fragment() {
                 leftMargin = (8 * density).toInt()
             }
             setOnClickListener { findNavController().popBackStack() }
-            contentDescription = "Close"
+            contentDescription = getString(R.string.close_button_desc)
         }
         root.addView(closeBtn)
 

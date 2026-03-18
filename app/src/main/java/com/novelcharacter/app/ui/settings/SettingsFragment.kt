@@ -84,7 +84,9 @@ class SettingsFragment : Fragment() {
                 val fkResult = maintenanceService.checkForeignKeyIntegrity()
                 val dupResult = maintenanceService.checkDuplicateDisplayOrders()
                 val sb = StringBuilder()
-                if (fkResult.fkViolations == 0 && dupResult.duplicateOrders == 0) {
+                val hasIssues = fkResult.fkViolations > 0 || dupResult.duplicateOrders > 0 ||
+                    dupResult.negativeOrders > 0 || dupResult.sparseOrders > 0
+                if (!hasIssues) {
                     sb.append(getString(R.string.maintenance_no_issues))
                 } else {
                     if (fkResult.fkViolations > 0) {
@@ -92,6 +94,21 @@ class SettingsFragment : Fragment() {
                     }
                     if (dupResult.duplicateOrders > 0) {
                         sb.appendLine(getString(R.string.maintenance_duplicate_order, dupResult.duplicateOrders))
+                    }
+                    if (dupResult.negativeOrders > 0) {
+                        sb.appendLine(getString(R.string.maintenance_negative_orders, dupResult.negativeOrders))
+                    }
+                    if (dupResult.sparseOrders > 0) {
+                        sb.appendLine(getString(R.string.maintenance_sparse_orders, dupResult.sparseOrders))
+                    }
+                    // Show detail items
+                    val allDetails = fkResult.details + dupResult.details
+                    if (allDetails.isNotEmpty()) {
+                        sb.appendLine()
+                        allDetails.take(20).forEach { sb.appendLine("  - $it") }
+                        if (allDetails.size > 20) {
+                            sb.appendLine("  ... (+${allDetails.size - 20}건)")
+                        }
                     }
                 }
                 binding.maintenanceResult.text = sb.toString()

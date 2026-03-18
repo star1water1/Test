@@ -29,7 +29,11 @@ class CharacterRepository(
         characterDao.searchCharacters(query)
     suspend fun insertCharacter(character: Character): Long {
         return db.withTransaction {
-            val next = characterDao.getNextDisplayOrder()
+            val next = if (character.novelId != null) {
+                characterDao.getNextDisplayOrderInNovel(character.novelId)
+            } else {
+                characterDao.getNextDisplayOrderNoNovel()
+            }
             characterDao.insert(character.copy(displayOrder = next))
         }
     }

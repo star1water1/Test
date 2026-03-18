@@ -16,7 +16,11 @@ class NovelRepository(
     suspend fun getNovelById(id: Long): Novel? = novelDao.getNovelById(id)
     suspend fun insertNovel(novel: Novel): Long {
         return db.withTransaction {
-            val next = novelDao.getNextDisplayOrder()
+            val next = if (novel.universeId != null) {
+                novelDao.getNextDisplayOrderInUniverse(novel.universeId)
+            } else {
+                novelDao.getNextDisplayOrderNoUniverse()
+            }
             novelDao.insert(novel.copy(displayOrder = next))
         }
     }

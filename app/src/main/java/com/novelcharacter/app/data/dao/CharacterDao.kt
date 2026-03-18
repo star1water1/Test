@@ -54,6 +54,9 @@ interface CharacterDao {
     @Update
     suspend fun updateAll(characters: List<Character>)
 
-    @Query("SELECT COALESCE(MAX(displayOrder), -1) + 1 FROM characters")
-    suspend fun getNextDisplayOrder(): Long
+    @Query("SELECT COALESCE(MAX(displayOrder), -1) + 1 FROM characters WHERE novelId = :novelId")
+    suspend fun getNextDisplayOrderInNovel(novelId: Long): Long
+
+    @Query("SELECT COALESCE(MAX(displayOrder), -1) + 1 FROM characters WHERE novelId IS NULL")
+    suspend fun getNextDisplayOrderNoNovel(): Long
 }

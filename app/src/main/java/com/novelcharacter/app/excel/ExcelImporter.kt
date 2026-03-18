@@ -111,7 +111,7 @@ class ExcelImporter(context: Context) {
                             }
                             layout.addView(progressBar)
                             val textView = TextView(act).apply {
-                                text = "가져오기 준비 중..."
+                                text = appContext.getString(com.novelcharacter.app.R.string.import_preparing)
                                 gravity = Gravity.CENTER
                                 val dp8 = (8 * act.resources.displayMetrics.density).toInt()
                                 setPadding(0, dp8, 0, 0)
@@ -120,7 +120,7 @@ class ExcelImporter(context: Context) {
                             progressText = textView
 
                             progressDialog = AlertDialog.Builder(act)
-                                .setTitle("가져오기 진행 중")
+                                .setTitle(appContext.getString(com.novelcharacter.app.R.string.import_progress_title))
                                 .setView(layout)
                                 .setCancelable(false)
                                 .create()
