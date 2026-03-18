@@ -17,12 +17,14 @@ class NameBankViewModel(application: Application) : AndroidViewModel(application
         val allNames = nameBankRepository.allNameBankEntries
         val availableNames = nameBankRepository.availableNameBankEntries
 
+        // Cache the latest values from both sources to avoid stale data
+        var latestAll: List<NameBankEntry> = emptyList()
+        var latestAvailable: List<NameBankEntry> = emptyList()
+
         fun update() {
             val query = _searchQuery.value ?: ""
             val onlyAvailable = _showOnlyAvailable.value ?: false
-            // We'll use a coroutine to filter if needed
-            val source = if (onlyAvailable) availableNames else allNames
-            val currentList = source.value ?: emptyList()
+            val currentList = if (onlyAvailable) latestAvailable else latestAll
             value = if (query.isBlank()) {
                 currentList
             } else {
@@ -34,8 +36,8 @@ class NameBankViewModel(application: Application) : AndroidViewModel(application
             }
         }
 
-        addSource(allNames) { update() }
-        addSource(availableNames) { update() }
+        addSource(allNames) { latestAll = it; update() }
+        addSource(availableNames) { latestAvailable = it; update() }
         addSource(_searchQuery) { update() }
         addSource(_showOnlyAvailable) { update() }
     }

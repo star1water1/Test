@@ -46,7 +46,23 @@ class GlobalSearchViewModel(application: Application) : AndroidViewModel(applica
         addSource(_sortMode) { value = Pair(_searchQuery.value ?: "", it ?: SearchPreset.SORT_RELEVANCE) }
     }
 
+    private var previousCharSource: LiveData<List<Character>>? = null
+    private var previousEventSource: LiveData<List<TimelineEvent>>? = null
+    private var previousNovelSource: LiveData<List<Novel>>? = null
+    private var previousMediator: MediatorLiveData<List<SearchResultItem>>? = null
+
     val searchResults: LiveData<List<SearchResultItem>> = searchTrigger.switchMap { (query, sort) ->
+        // Clean up previous MediatorLiveData sources to prevent memory leaks
+        previousMediator?.let { med ->
+            previousCharSource?.let { med.removeSource(it) }
+            previousEventSource?.let { med.removeSource(it) }
+            previousNovelSource?.let { med.removeSource(it) }
+        }
+        previousCharSource = null
+        previousEventSource = null
+        previousNovelSource = null
+        previousMediator = null
+
         if (query.isBlank()) {
             MutableLiveData(emptyList())
         } else {
@@ -54,6 +70,11 @@ class GlobalSearchViewModel(application: Application) : AndroidViewModel(applica
             val charResults = characterRepository.searchCharacters(query)
             val eventResults = timelineRepository.searchEvents(query)
             val novelResults = novelRepository.searchNovels(query)
+
+            previousCharSource = charResults
+            previousEventSource = eventResults
+            previousNovelSource = novelResults
+            previousMediator = mediator
 
             var chars: List<Character> = emptyList()
             var events: List<TimelineEvent> = emptyList()

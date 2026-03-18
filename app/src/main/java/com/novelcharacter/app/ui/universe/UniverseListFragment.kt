@@ -32,6 +32,7 @@ class UniverseListFragment : Fragment() {
     private val viewModel: UniverseViewModel by viewModels()
 
     private lateinit var adapter: UniverseAdapter
+    private var recentAdapter: RecentActivityAdapter? = null
     private var itemTouchHelper: ItemTouchHelper? = null
     private var importerInitialized = false
     private val importer by lazy {
@@ -180,34 +181,55 @@ class UniverseListFragment : Fragment() {
     }
 
     private fun setupRecentCards(recents: List<RecentActivity>) {
-        binding.recentRecyclerView.layoutManager =
-            LinearLayoutManager(requireContext(), LinearLayoutManager.HORIZONTAL, false)
-        binding.recentRecyclerView.adapter = object : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
-            override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
-                val view = LayoutInflater.from(parent.context).inflate(R.layout.item_recent_activity, parent, false)
-                return object : RecyclerView.ViewHolder(view) {}
-            }
-
-            override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
-                val item = recents[position]
-                val typeLabel = holder.itemView.findViewById<TextView>(R.id.recentTypeLabel)
-                val titleView = holder.itemView.findViewById<TextView>(R.id.recentTitle)
-
-                typeLabel.text = when (item.entityType) {
-                    RecentActivity.TYPE_CHARACTER -> getString(R.string.recent_type_character)
-                    RecentActivity.TYPE_NOVEL -> getString(R.string.recent_type_novel)
-                    RecentActivity.TYPE_UNIVERSE -> getString(R.string.recent_type_universe)
-                    else -> item.entityType
-                }
-                titleView.text = item.title
-
-                holder.itemView.setOnClickListener {
-                    navigateToRecentItem(item)
-                }
-            }
-
-            override fun getItemCount() = recents.size
+        if (recentAdapter == null) {
+            binding.recentRecyclerView.layoutManager =
+                LinearLayoutManager(requireContext(), LinearLayoutManager.HORIZONTAL, false)
+            recentAdapter = RecentActivityAdapter(
+                getTypeLabel = { entityType ->
+                    when (entityType) {
+                        RecentActivity.TYPE_CHARACTER -> getString(R.string.recent_type_character)
+                        RecentActivity.TYPE_NOVEL -> getString(R.string.recent_type_novel)
+                        RecentActivity.TYPE_UNIVERSE -> getString(R.string.recent_type_universe)
+                        else -> entityType
+                    }
+                },
+                onClick = { navigateToRecentItem(it) }
+            )
+            binding.recentRecyclerView.adapter = recentAdapter
         }
+        recentAdapter?.submitList(recents)
+    }
+
+    private class RecentActivityAdapter(
+        private val getTypeLabel: (String) -> String,
+        private val onClick: (RecentActivity) -> Unit
+    ) : RecyclerView.Adapter<RecentActivityAdapter.ViewHolder>() {
+
+        private var items: List<RecentActivity> = emptyList()
+
+        fun submitList(newItems: List<RecentActivity>) {
+            items = newItems
+            notifyDataSetChanged()
+        }
+
+        class ViewHolder(view: View) : RecyclerView.ViewHolder(view) {
+            val typeLabel: TextView = view.findViewById(R.id.recentTypeLabel)
+            val titleView: TextView = view.findViewById(R.id.recentTitle)
+        }
+
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
+            val view = LayoutInflater.from(parent.context).inflate(R.layout.item_recent_activity, parent, false)
+            return ViewHolder(view)
+        }
+
+        override fun onBindViewHolder(holder: ViewHolder, position: Int) {
+            val item = items[position]
+            holder.typeLabel.text = getTypeLabel(item.entityType)
+            holder.titleView.text = item.title
+            holder.itemView.setOnClickListener { onClick(item) }
+        }
+
+        override fun getItemCount() = items.size
     }
 
     private fun navigateToRecentItem(item: RecentActivity) {
