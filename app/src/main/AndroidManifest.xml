@@ -38,6 +38,40 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
+        <!-- Widgets -->
+        <receiver
+            android:name=".widget.RecentCharactersWidget"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_recent_characters_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.TodayCharacterWidget"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_today_character_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.QuickAddWidget"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_quick_add_info" />
+        </receiver>
+
     </application>
 
 </manifest>

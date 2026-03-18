@@ -39,6 +39,9 @@ interface FieldDefinitionDao {
     @Delete
     suspend fun delete(field: FieldDefinition)
 
+    @Query("SELECT * FROM field_definitions ORDER BY universeId ASC, displayOrder ASC")
+    suspend fun getAllFieldsList(): List<FieldDefinition>
+
     @Query("DELETE FROM field_definitions WHERE universeId = :universeId")
     suspend fun deleteAllByUniverse(universeId: Long)
 
