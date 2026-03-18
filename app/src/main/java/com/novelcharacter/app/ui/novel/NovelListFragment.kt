@@ -70,8 +70,17 @@ class NovelListFragment : Fragment() {
                 val bundle = Bundle().apply { putLong("novelId", novel.id) }
                 findNavController().navigateSafe(R.id.novelListFragment, R.id.characterListFragment, bundle)
             },
-            onLongClick = { novel ->
-                showEditDeleteDialog(novel)
+            onEditClick = { novel ->
+                showNovelEditDialog(novel)
+            },
+            onDeleteClick = { novel ->
+                androidx.appcompat.app.AlertDialog.Builder(requireContext())
+                    .setMessage(R.string.confirm_delete)
+                    .setPositiveButton(R.string.yes) { _, _ ->
+                        viewModel.deleteNovel(novel)
+                    }
+                    .setNegativeButton(R.string.no, null)
+                    .show()
             }
         )
         binding.novelRecyclerView.layoutManager = LinearLayoutManager(requireContext())
@@ -166,26 +175,6 @@ class NovelListFragment : Fragment() {
                 }
             }
             .setNegativeButton(R.string.cancel, null)
-            .show()
-    }
-
-    private fun showEditDeleteDialog(novel: Novel) {
-        AlertDialog.Builder(requireContext())
-            .setTitle(novel.title)
-            .setItems(arrayOf(getString(R.string.edit), getString(R.string.delete))) { _, which ->
-                when (which) {
-                    0 -> showNovelEditDialog(novel)
-                    1 -> {
-                        AlertDialog.Builder(requireContext())
-                            .setMessage(R.string.confirm_delete)
-                            .setPositiveButton(R.string.yes) { _, _ ->
-                                viewModel.deleteNovel(novel)
-                            }
-                            .setNegativeButton(R.string.no, null)
-                            .show()
-                    }
-                }
-            }
             .show()
     }
 

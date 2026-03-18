@@ -70,33 +70,20 @@ class CharacterListFragment : Fragment() {
                     findNavController().navigateSafe(R.id.characterListFragment, R.id.characterDetailFragment, bundle)
                 }
             },
-            onLongClick = { character ->
-                if (isCompareMode) {
-                    toggleCompareSelection(character.id)
-                } else {
-                    androidx.appcompat.app.AlertDialog.Builder(requireContext())
-                        .setTitle(character.name)
-                        .setItems(arrayOf(getString(R.string.edit), getString(R.string.delete))) { _, which ->
-                            when (which) {
-                                0 -> {
-                                    val bundle = Bundle().apply { putLong("characterId", character.id) }
-                                    findNavController().navigateSafe(R.id.characterListFragment, R.id.characterEditFragment, bundle)
-                                }
-                                1 -> {
-                                    androidx.appcompat.app.AlertDialog.Builder(requireContext())
-                                        .setIcon(android.R.drawable.ic_dialog_alert)
-                                        .setTitle(R.string.delete_warning_title)
-                                        .setMessage(R.string.confirm_delete)
-                                        .setPositiveButton(R.string.yes) { _, _ ->
-                                            viewModel.deleteCharacter(character)
-                                        }
-                                        .setNegativeButton(R.string.no, null)
-                                        .show()
-                                }
-                            }
-                        }
-                        .show()
-                }
+            onEditClick = { character ->
+                val bundle = Bundle().apply { putLong("characterId", character.id) }
+                findNavController().navigateSafe(R.id.characterListFragment, R.id.characterEditFragment, bundle)
+            },
+            onDeleteClick = { character ->
+                androidx.appcompat.app.AlertDialog.Builder(requireContext())
+                    .setIcon(android.R.drawable.ic_dialog_alert)
+                    .setTitle(R.string.delete_warning_title)
+                    .setMessage(R.string.confirm_delete)
+                    .setPositiveButton(R.string.yes) { _, _ ->
+                        viewModel.deleteCharacter(character)
+                    }
+                    .setNegativeButton(R.string.no, null)
+                    .show()
             }
         )
         binding.characterRecyclerView.layoutManager = GridLayoutManager(requireContext(), 3)
@@ -105,7 +92,7 @@ class CharacterListFragment : Fragment() {
         val callback = object : ItemTouchHelper.SimpleCallback(
             ItemTouchHelper.UP or ItemTouchHelper.DOWN or ItemTouchHelper.LEFT or ItemTouchHelper.RIGHT, 0
         ) {
-            override fun isLongPressDragEnabled(): Boolean = adapter.isReorderMode()
+            override fun isLongPressDragEnabled(): Boolean = false
 
             override fun onMove(
                 recyclerView: RecyclerView,
@@ -143,6 +130,12 @@ class CharacterListFragment : Fragment() {
             adapter.setReorderMode(false)
             Toast.makeText(requireContext(), R.string.reorder_saved, Toast.LENGTH_SHORT).show()
         } else {
+            // Block reorder when search is active
+            val query = binding.searchEdit.text?.toString().orEmpty()
+            if (query.isNotBlank()) {
+                Toast.makeText(requireContext(), R.string.reorder_disabled_while_searching, Toast.LENGTH_SHORT).show()
+                return
+            }
             adapter.setReorderMode(true)
             Toast.makeText(requireContext(), R.string.reorder_hint, Toast.LENGTH_SHORT).show()
         }

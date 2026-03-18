@@ -17,7 +17,10 @@ class UniverseRepository(
 
     suspend fun getAllUniversesList(): List<Universe> = universeDao.getAllUniversesList()
     suspend fun getUniverseById(id: Long): Universe? = universeDao.getUniverseById(id)
-    suspend fun insertUniverse(universe: Universe): Long = universeDao.insert(universe)
+    suspend fun insertUniverse(universe: Universe): Long {
+        val next = universeDao.getNextDisplayOrder()
+        return universeDao.insert(universe.copy(displayOrder = next))
+    }
     suspend fun updateUniverse(universe: Universe) = universeDao.update(universe)
     suspend fun deleteUniverse(universe: Universe) = universeDao.delete(universe)
     suspend fun updateUniverseDisplayOrders(universes: List<Universe>) = universeDao.updateAll(universes)

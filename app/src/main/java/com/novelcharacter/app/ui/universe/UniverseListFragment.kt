@@ -60,8 +60,17 @@ class UniverseListFragment : Fragment() {
                 val bundle = Bundle().apply { putLong("universeId", universe.id) }
                 findNavController().navigateSafe(R.id.universeListFragment, R.id.novelListFragment, bundle)
             },
-            onLongClick = { universe ->
-                showEditDeleteDialog(universe)
+            onEditClick = { universe ->
+                showUniverseEditDialog(universe)
+            },
+            onDeleteClick = { universe ->
+                AlertDialog.Builder(requireContext())
+                    .setMessage(getString(R.string.confirm_delete_universe, universe.name))
+                    .setPositiveButton(R.string.yes) { _, _ ->
+                        viewModel.deleteUniverse(universe)
+                    }
+                    .setNegativeButton(R.string.no, null)
+                    .show()
             },
             onFieldManageClick = { universe ->
                 val bundle = Bundle().apply { putLong("universeId", universe.id) }
@@ -198,26 +207,6 @@ class UniverseListFragment : Fragment() {
                 }
             }
             .setNegativeButton(R.string.cancel, null)
-            .show()
-    }
-
-    private fun showEditDeleteDialog(universe: Universe) {
-        AlertDialog.Builder(requireContext())
-            .setTitle(universe.name)
-            .setItems(arrayOf(getString(R.string.menu_edit), getString(R.string.menu_delete))) { _, which ->
-                when (which) {
-                    0 -> showUniverseEditDialog(universe)
-                    1 -> {
-                        AlertDialog.Builder(requireContext())
-                            .setMessage(getString(R.string.confirm_delete_universe, universe.name))
-                            .setPositiveButton(R.string.yes) { _, _ ->
-                                viewModel.deleteUniverse(universe)
-                            }
-                            .setNegativeButton(R.string.no, null)
-                            .show()
-                    }
-                }
-            }
             .show()
     }
 

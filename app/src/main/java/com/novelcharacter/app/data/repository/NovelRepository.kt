@@ -11,7 +11,10 @@ class NovelRepository(
 
     suspend fun getAllNovelsList(): List<Novel> = novelDao.getAllNovelsList()
     suspend fun getNovelById(id: Long): Novel? = novelDao.getNovelById(id)
-    suspend fun insertNovel(novel: Novel): Long = novelDao.insert(novel)
+    suspend fun insertNovel(novel: Novel): Long {
+        val next = novelDao.getNextDisplayOrder()
+        return novelDao.insert(novel.copy(displayOrder = next))
+    }
     suspend fun updateNovel(novel: Novel) = novelDao.update(novel)
     suspend fun deleteNovel(novel: Novel) = novelDao.delete(novel)
     fun getNovelsByUniverse(universeId: Long): LiveData<List<Novel>> =

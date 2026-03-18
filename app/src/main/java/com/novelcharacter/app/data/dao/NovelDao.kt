@@ -50,6 +50,9 @@ interface NovelDao {
 
     @Update
     suspend fun updateAll(novels: List<Novel>)
+
+    @Query("SELECT COALESCE(MAX(displayOrder), -1) + 1 FROM novels")
+    suspend fun getNextDisplayOrder(): Long
 }
 
 data class UniverseCount(val universeId: Long, val cnt: Int)

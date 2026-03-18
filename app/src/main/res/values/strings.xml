@@ -283,4 +283,21 @@
     <string name="settings_export">엑셀 내보내기</string>
     <string name="settings_import">엑셀 가져오기</string>
     <string name="theme_changed">테마가 변경되었습니다</string>
+
+    <!-- More menu -->
+    <string name="more_options">더보기</string>
+    <string name="reorder_disabled_while_searching">검색/필터 중에는 순서 변경이 불가합니다</string>
+
+    <!-- Settings data management -->
+    <string name="settings_maintenance">시스템 점검</string>
+    <string name="maintenance_running">점검 진행 중…</string>
+    <string name="maintenance_complete">점검 완료</string>
+    <string name="maintenance_orphan_images">끊어진 이미지 경로: %d건</string>
+    <string name="maintenance_duplicate_order">중복 displayOrder: %d건</string>
+    <string name="maintenance_reindex_done">displayOrder 재색인 완료</string>
+    <string name="maintenance_no_issues">문제가 발견되지 않았습니다</string>
+    <string name="maintenance_reindex">displayOrder 재색인</string>
+    <string name="maintenance_check_images">이미지 경로 점검</string>
+    <string name="maintenance_check_integrity">무결성 점검</string>
+    <string name="maintenance_fk_violations">FK 위반: %d건</string>
 </resources>

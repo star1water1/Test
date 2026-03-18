@@ -5,16 +5,19 @@ import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.widget.PopupMenu
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
+import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.databinding.ItemNovelBinding
 
 class NovelAdapter(
     private val onClick: (Novel) -> Unit,
-    private val onLongClick: (Novel) -> Unit
+    private val onEditClick: (Novel) -> Unit,
+    private val onDeleteClick: (Novel) -> Unit
 ) : ListAdapter<Novel, NovelAdapter.NovelViewHolder>(NovelDiffCallback()) {
 
     private var isReorderMode = false
@@ -65,9 +68,11 @@ class NovelAdapter(
 
         fun bind(novel: Novel) {
             binding.novelTitle.text = novel.title
-            binding.novelDescription.text = novel.description.ifEmpty { binding.root.context.getString(com.novelcharacter.app.R.string.no_description) }
+            binding.novelDescription.text = novel.description.ifEmpty { binding.root.context.getString(R.string.no_description) }
 
             binding.dragHandle.visibility = if (isReorderMode) View.VISIBLE else View.GONE
+            binding.btnMore.setImageResource(R.drawable.ic_more_vert)
+            binding.btnMore.visibility = if (isReorderMode) View.GONE else View.VISIBLE
 
             if (isReorderMode) {
                 binding.dragHandle.setOnTouchListener { _, event ->
@@ -81,9 +86,21 @@ class NovelAdapter(
             }
 
             binding.root.setOnClickListener { onClick(novel) }
-            binding.root.setOnLongClickListener {
-                onLongClick(novel)
-                true
+            binding.root.setOnLongClickListener(null)
+            binding.root.isLongClickable = false
+
+            binding.btnMore.setOnClickListener { view ->
+                val popup = PopupMenu(view.context, view)
+                popup.menu.add(0, 1, 0, R.string.menu_edit)
+                popup.menu.add(0, 2, 1, R.string.menu_delete)
+                popup.setOnMenuItemClickListener { item ->
+                    when (item.itemId) {
+                        1 -> { onEditClick(novel); true }
+                        2 -> { onDeleteClick(novel); true }
+                        else -> false
+                    }
+                }
+                popup.show()
             }
         }
     }

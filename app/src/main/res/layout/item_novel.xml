@@ -50,6 +50,15 @@
 
         </LinearLayout>
 
+        <ImageView
+            android:id="@+id/btnMore"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:padding="6dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/more_options"
+            android:importantForAccessibility="yes" />
+
     </LinearLayout>
 
 </com.google.android.material.card.MaterialCardView>

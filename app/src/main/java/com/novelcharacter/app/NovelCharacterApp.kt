@@ -15,6 +15,7 @@ import com.novelcharacter.app.data.repository.UniverseRepository
 import com.novelcharacter.app.data.repository.NameBankRepository
 import com.novelcharacter.app.backup.AutoBackupWorker
 import com.novelcharacter.app.notification.BirthdayWorker
+import com.novelcharacter.app.util.ThemeHelper
 import java.util.concurrent.TimeUnit
 
 class NovelCharacterApp : Application() {
@@ -49,6 +50,8 @@ class NovelCharacterApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // Apply saved theme early to minimize flicker before Activity creates
+        ThemeHelper.applyTheme(ThemeHelper.getSavedTheme(this))
         createNotificationChannel()
         scheduleBirthdayCheck()
         scheduleAutoBackup()

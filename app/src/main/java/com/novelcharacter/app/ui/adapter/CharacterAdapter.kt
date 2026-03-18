@@ -1,10 +1,14 @@
 package com.novelcharacter.app.ui.adapter
 
+import android.annotation.SuppressLint
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.LruCache
 import android.view.LayoutInflater
+import android.view.MotionEvent
+import android.view.View
 import android.view.ViewGroup
+import android.widget.PopupMenu
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.ListAdapter
@@ -23,7 +27,8 @@ import kotlinx.coroutines.withContext
 class CharacterAdapter(
     private val coroutineScope: CoroutineScope,
     private val onClick: (Character) -> Unit,
-    private val onLongClick: (Character) -> Unit
+    private val onEditClick: (Character) -> Unit,
+    private val onDeleteClick: (Character) -> Unit
 ) : ListAdapter<Character, CharacterAdapter.CharacterViewHolder>(CharacterDiffCallback()) {
 
     private var isSelectionMode = false
@@ -120,6 +125,14 @@ class CharacterAdapter(
         thumbnailCache.evictAll()
     }
 
+    private var showAnotherName = false
+
+    fun setShowAnotherName(show: Boolean) {
+        showAnotherName = show
+        notifyDataSetChanged()
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
     inner class CharacterViewHolder(
         private val binding: ItemCharacterBinding
     ) : RecyclerView.ViewHolder(binding.root) {
@@ -134,7 +147,27 @@ class CharacterAdapter(
         fun bind(character: Character) {
             binding.characterName.text = character.name
 
+            // anotherName subtitle
+            if (showAnotherName && character.anotherName.isNotBlank()) {
+                binding.characterSubName.text = character.anotherName
+                binding.characterSubName.visibility = View.VISIBLE
+            } else {
+                binding.characterSubName.visibility = View.GONE
+            }
+
+            // Drag handle visibility
+            binding.dragHandle.visibility = if (isReorderMode) View.VISIBLE else View.GONE
+            // More button visibility
+            binding.btnMore.setImageResource(R.drawable.ic_more_vert)
+            binding.btnMore.visibility = if (isReorderMode || isSelectionMode) View.GONE else View.VISIBLE
+
             if (isReorderMode) {
+                binding.dragHandle.setOnTouchListener { _, event ->
+                    if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+                        itemTouchHelper?.startDrag(this)
+                    }
+                    false
+                }
                 // Reorder mode: slight visual change, disable normal interactions
                 binding.root.alpha = 0.9f
                 binding.root.setBackgroundColor(0)
@@ -143,12 +176,12 @@ class CharacterAdapter(
                 binding.root.isClickable = false
                 binding.root.isLongClickable = false
             } else {
+                binding.dragHandle.setOnTouchListener(null)
                 // Selection indicator
                 if (isSelectionMode && selectedIds.contains(character.id)) {
                     binding.root.alpha = 1.0f
                     binding.root.setBackgroundColor(binding.root.context.getColor(R.color.primary_light))
                 } else if (isSelectionMode && isMaxReached) {
-                    // Max selections reached - dim unselected items more
                     binding.root.alpha = 0.3f
                     binding.root.setBackgroundColor(0)
                 } else if (isSelectionMode) {
@@ -160,10 +193,23 @@ class CharacterAdapter(
                 }
 
                 binding.root.setOnClickListener { onClick(character) }
-                binding.root.setOnLongClickListener {
-                    onLongClick(character)
-                    true
+                binding.root.setOnLongClickListener(null)
+                binding.root.isLongClickable = false
+            }
+
+            // More button popup menu
+            binding.btnMore.setOnClickListener { view ->
+                val popup = PopupMenu(view.context, view)
+                popup.menu.add(0, 1, 0, R.string.menu_edit)
+                popup.menu.add(0, 2, 1, R.string.menu_delete)
+                popup.setOnMenuItemClickListener { item ->
+                    when (item.itemId) {
+                        1 -> { onEditClick(character); true }
+                        2 -> { onDeleteClick(character); true }
+                        else -> false
+                    }
                 }
+                popup.show()
             }
 
             // 이미지 - 비동기로 로드

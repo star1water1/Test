@@ -5,16 +5,19 @@ import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.widget.PopupMenu
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
+import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.databinding.ItemUniverseBinding
 
 class UniverseAdapter(
     private val onClick: (Universe) -> Unit,
-    private val onLongClick: (Universe) -> Unit,
+    private val onEditClick: (Universe) -> Unit,
+    private val onDeleteClick: (Universe) -> Unit,
     private val onFieldManageClick: (Universe) -> Unit
 ) : ListAdapter<Universe, UniverseAdapter.UniverseViewHolder>(UniverseDiffCallback()) {
 
@@ -78,14 +81,16 @@ class UniverseAdapter(
 
         fun bind(universe: Universe) {
             binding.universeName.text = universe.name
-            binding.universeDescription.text = universe.description.ifEmpty { binding.root.context.getString(com.novelcharacter.app.R.string.no_description) }
+            binding.universeDescription.text = universe.description.ifEmpty { binding.root.context.getString(R.string.no_description) }
 
             val nc = novelCounts[universe.id] ?: 0
             val fc = fieldCounts[universe.id] ?: 0
-            binding.novelCount.text = binding.root.context.getString(com.novelcharacter.app.R.string.novel_count_format, nc)
-            binding.fieldCount.text = binding.root.context.getString(com.novelcharacter.app.R.string.field_count_format, fc)
+            binding.novelCount.text = binding.root.context.getString(R.string.novel_count_format, nc)
+            binding.fieldCount.text = binding.root.context.getString(R.string.field_count_format, fc)
 
             binding.dragHandle.visibility = if (isReorderMode) View.VISIBLE else View.GONE
+            binding.btnMore.setImageResource(R.drawable.ic_more_vert)
+            binding.btnMore.visibility = if (isReorderMode) View.GONE else View.VISIBLE
 
             if (isReorderMode) {
                 binding.dragHandle.setOnTouchListener { _, event ->
@@ -99,10 +104,23 @@ class UniverseAdapter(
             }
 
             binding.root.setOnClickListener { onClick(universe) }
-            binding.root.setOnLongClickListener {
-                onLongClick(universe)
-                true
+            binding.root.setOnLongClickListener(null)
+            binding.root.isLongClickable = false
+
+            binding.btnMore.setOnClickListener { view ->
+                val popup = PopupMenu(view.context, view)
+                popup.menu.add(0, 1, 0, R.string.menu_edit)
+                popup.menu.add(0, 2, 1, R.string.menu_delete)
+                popup.setOnMenuItemClickListener { item ->
+                    when (item.itemId) {
+                        1 -> { onEditClick(universe); true }
+                        2 -> { onDeleteClick(universe); true }
+                        else -> false
+                    }
+                }
+                popup.show()
             }
+
             binding.btnFieldManage.setOnClickListener { onFieldManageClick(universe) }
         }
     }

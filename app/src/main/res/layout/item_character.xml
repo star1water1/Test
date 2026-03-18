@@ -13,25 +13,67 @@
         android:layout_height="wrap_content"
         android:orientation="vertical">
 
-        <ImageView
-            android:id="@+id/characterImage"
+        <FrameLayout
             android:layout_width="match_parent"
-            android:layout_height="120dp"
-            android:scaleType="centerCrop"
-            android:src="@drawable/ic_character_placeholder"
-            android:background="@color/item_background_light"
-            android:contentDescription="@string/character_name" />
+            android:layout_height="120dp">
+
+            <ImageView
+                android:id="@+id/characterImage"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:scaleType="centerCrop"
+                android:src="@drawable/ic_character_placeholder"
+                android:background="@color/item_background_light"
+                android:contentDescription="@string/character_name" />
+
+            <ImageView
+                android:id="@+id/dragHandle"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:layout_gravity="top|start"
+                android:layout_margin="4dp"
+                android:src="@drawable/ic_drag_handle"
+                android:contentDescription="@string/drag_handle_desc"
+                android:visibility="gone" />
+
+            <ImageView
+                android:id="@+id/btnMore"
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:layout_gravity="top|end"
+                android:layout_margin="4dp"
+                android:padding="4dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/more_options"
+                android:importantForAccessibility="yes" />
+
+        </FrameLayout>
 
         <TextView
             android:id="@+id/characterName"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:padding="8dp"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:paddingTop="4dp"
             android:textSize="14sp"
             android:textStyle="bold"
             android:textColor="@color/on_surface"
             android:maxLines="1"
             android:ellipsize="end" />
+
+        <TextView
+            android:id="@+id/characterSubName"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:paddingBottom="6dp"
+            android:textSize="11sp"
+            android:textColor="@color/text_secondary"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:visibility="gone" />
 
     </LinearLayout>
 

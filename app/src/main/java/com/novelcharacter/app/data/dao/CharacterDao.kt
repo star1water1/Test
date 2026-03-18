@@ -53,4 +53,7 @@ interface CharacterDao {
 
     @Update
     suspend fun updateAll(characters: List<Character>)
+
+    @Query("SELECT COALESCE(MAX(displayOrder), -1) + 1 FROM characters")
+    suspend fun getNextDisplayOrder(): Long
 }

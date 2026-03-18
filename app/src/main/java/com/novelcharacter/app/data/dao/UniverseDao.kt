@@ -32,4 +32,7 @@ interface UniverseDao {
 
     @Update
     suspend fun updateAll(universes: List<Universe>)
+
+    @Query("SELECT COALESCE(MAX(displayOrder), -1) + 1 FROM universes")
+    suspend fun getNextDisplayOrder(): Long
 }
