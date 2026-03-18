@@ -568,7 +568,7 @@ class CharacterEditFragment : Fragment() {
                         val path = imagePaths[position]
                         val boundPosition = position
                         viewLifecycleOwner.lifecycleScope.launch {
-                            val targetSize = (80 * itemView.context.resources.displayMetrics.density).toInt()
+                            val targetSize = (80 * holder.itemView.context.resources.displayMetrics.density).toInt()
                             val bitmap = withContext(Dispatchers.IO) {
                                 decodeSampledBitmap(path, targetSize, targetSize)
                             }
