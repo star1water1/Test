@@ -32,6 +32,13 @@ class TimelineRepository(
     fun getEventsByNovelInRange(novelId: Long, startYear: Int, endYear: Int): LiveData<List<TimelineEvent>> =
         timelineDao.getEventsByNovelInRange(novelId, startYear, endYear)
 
+    fun getEventsForCharacterAndNovelInRange(
+        characterId: Long, novelId: Long, startYear: Int, endYear: Int
+    ): LiveData<List<TimelineEvent>> =
+        timelineDao.getEventsForCharacterAndNovelInRange(characterId, novelId, startYear, endYear)
+
+    suspend fun getEventDensity() = timelineDao.getEventDensity()
+
     // ===== Timeline-Character linkage =====
     suspend fun linkCharacterToEvent(eventId: Long, characterId: Long) {
         timelineDao.insertCrossRef(TimelineCharacterCrossRef(eventId, characterId))

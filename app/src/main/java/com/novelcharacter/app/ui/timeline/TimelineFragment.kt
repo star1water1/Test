@@ -204,8 +204,8 @@ class TimelineFragment : Fragment() {
             binding.spinnerFilterNovel.adapter = spinnerAdapter
         }
 
-        // Observe character data and update spinner adapter only
-        viewModel.allCharacters.observe(viewLifecycleOwner) { characters ->
+        // Observe filtered characters (연동: 소설 선택 시 해당 소설 캐릭터만 표시)
+        viewModel.filteredCharacters.observe(viewLifecycleOwner) { characters ->
             cachedCharacters = characters
             val charNames = mutableListOf(getString(R.string.all_characters_filter))
             charNames.addAll(characters.map { it.name })
@@ -259,9 +259,28 @@ class TimelineFragment : Fragment() {
             binding.yearRangeLabel.text = getString(R.string.year_range_format, start, end)
         }
 
-        // Update slider range based on all events data
+        // Update slider range and density bar based on all events data
         viewModel.allEvents.observe(viewLifecycleOwner) { events ->
             updateSliderRange(events)
+        }
+
+        // Observe event density for density bar
+        viewModel.eventDensity.observe(viewLifecycleOwner) { density ->
+            val events = viewModel.allEvents.value ?: return@observe
+            if (events.isEmpty()) return@observe
+            val minYear = events.minOf { it.year }
+            val maxYear = events.maxOf { it.year }
+            binding.eventDensityBar.setDensityData(density, minYear - 10, maxYear + 10)
+        }
+
+        // Update density bar range when visible range changes
+        viewModel.visibleRange.observe(viewLifecycleOwner) { (start, end) ->
+            binding.eventDensityBar.setRange(start, end)
+        }
+
+        // Density bar tap → jump to year
+        binding.eventDensityBar.setOnYearTapListener { year ->
+            viewModel.setSelectedYear(year)
         }
 
         // Observe selected year to update slider position
