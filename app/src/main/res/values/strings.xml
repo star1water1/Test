@@ -378,4 +378,119 @@
     <string name="graph_tap_hint">캐릭터를 탭하면 상세 화면으로 이동합니다</string>
     <string name="graph_too_many_nodes">노드가 너무 많습니다. 필터를 사용하세요.</string>
     <string name="graph_filter_all">전체</string>
+
+    <!-- Temporal Relationship Graph -->
+    <string name="graph_time_view">시점 보기</string>
+    <string name="graph_year_slider">관계 시점 선택</string>
+
+    <!-- Timeline UX improvements -->
+    <string name="timeline_manual_order_mode">수동 순서</string>
+    <string name="timeline_auto_distribute">연도 자동 배분</string>
+    <string name="timeline_quick_add_hint">설명만 입력하면 자동 배치됩니다</string>
+    <string name="timeline_density_tooltip">이 구간에 사건 %d개</string>
+    <string name="timeline_visual_view">연표 뷰</string>
+    <string name="timeline_list_view">리스트 뷰</string>
+    <string name="timeline_sort_mode">정렬 모드</string>
+    <string name="timeline_sort_by_year">연도순</string>
+    <string name="timeline_sort_manual">수동 순서</string>
+    <string name="timeline_auto_assign_on">드래그 시 자동 배정</string>
+    <string name="timeline_distributed">연도가 자동 배분되었습니다</string>
+    <string name="timeline_survival_bar">생존 기간</string>
+
+    <!-- Growth Chart -->
+    <string name="growth_chart">성장 그래프</string>
+    <string name="growth_chart_title">%s 성장 곡선</string>
+    <string name="growth_add_compare">캐릭터 비교 추가</string>
+    <string name="growth_no_data">표시할 상태 변화 데이터가 없습니다</string>
+    <string name="growth_select_field">필드 선택</string>
+
+    <!-- Statistics Tab -->
+    <string name="tab_statistics">통계</string>
+    <string name="stats_summary">전체 요약</string>
+    <string name="stats_characters">캐릭터 분석</string>
+    <string name="stats_events">사건 분석</string>
+    <string name="stats_relationships">관계 분석</string>
+    <string name="stats_namebank">이름뱅크</string>
+    <string name="stats_data_health">데이터 건강도</string>
+    <string name="stats_total_characters">총 캐릭터</string>
+    <string name="stats_total_events">총 사건</string>
+    <string name="stats_total_relationships">총 관계</string>
+    <string name="stats_total_novels">총 소설</string>
+    <string name="stats_total_universes">총 세계관</string>
+    <string name="stats_total_names">총 이름</string>
+    <string name="stats_tag_distribution">태그 분포</string>
+    <string name="stats_novel_char_count">소설별 캐릭터 수</string>
+    <string name="stats_rel_type_distribution">관계 유형 분포</string>
+    <string name="stats_rel_top_characters">관계 수 TOP 10</string>
+    <string name="stats_event_top_characters">사건 연계 TOP 10</string>
+    <string name="stats_field_completion">필드 완성도</string>
+    <string name="stats_survival_distribution">생존기간 분포</string>
+    <string name="stats_event_density">연도별 사건 밀도</string>
+    <string name="stats_event_per_novel">소설별 사건 수</string>
+    <string name="stats_avg_chars_per_event">사건당 평균 캐릭터</string>
+    <string name="stats_orphan_events">미연결 사건</string>
+    <string name="stats_name_usage_rate">이름 사용률</string>
+    <string name="stats_name_gender_dist">성별 분포</string>
+    <string name="stats_no_image">이미지 미등록</string>
+    <string name="stats_incomplete_fields">필드 미입력률 높음</string>
+    <string name="stats_isolated_characters">고립 캐릭터</string>
+    <string name="stats_unlinked_characters">사건 미연계</string>
+    <string name="stats_individual_detail">개별 캐릭터 상세</string>
+    <string name="stats_select_character">캐릭터 선택</string>
+    <string name="stats_event_link_count">사건 연계: %d건</string>
+    <string name="stats_relationship_count">관계: %d개</string>
+    <string name="stats_field_completion_rate">필드 완성도: %d%%</string>
+    <string name="stats_state_change_count">상태변화: %d건</string>
+    <string name="stats_count_format">%d개</string>
+    <string name="stats_percent_format">%d%%</string>
+    <string name="stats_ratio_format">%.1f명</string>
+
+    <!-- Widgets -->
+    <string name="widget_recent_characters">최근 캐릭터</string>
+    <string name="widget_today_character">오늘의 캐릭터</string>
+    <string name="widget_quick_add">빠른 추가</string>
+    <string name="widget_no_birthday">오늘 생일인 캐릭터가 없습니다</string>
+    <string name="widget_random_character">오늘의 캐릭터: %s</string>
+    <string name="widget_birthday_today">오늘 생일: %s</string>
+    <string name="widget_add_character">+ 캐릭터</string>
+    <string name="widget_add_event">+ 사건</string>
+
+    <!-- Share / Export -->
+    <string name="share_character_card">캐릭터 카드 내보내기</string>
+    <string name="share_card_theme">카드 테마</string>
+    <string name="share_card_theme_light">라이트</string>
+    <string name="share_card_theme_dark">다크</string>
+    <string name="share_card_theme_fantasy">판타지</string>
+    <string name="share_card_theme_modern">모던</string>
+    <string name="share_card_ratio">카드 비율</string>
+    <string name="share_card_include_image">이미지 포함</string>
+    <string name="share_card_include_relations">관계 표시</string>
+    <string name="share_card_select_fields">표시할 필드 선택</string>
+    <string name="share_card_export">내보내기</string>
+    <string name="share_card_saved">카드가 저장되었습니다</string>
+    <string name="share_world_package">세계관 패키지</string>
+    <string name="share_world_export">패키지 내보내기</string>
+    <string name="share_world_import">패키지 가져오기</string>
+    <string name="share_world_include_images">이미지 포함</string>
+    <string name="share_world_image_quality">이미지 품질</string>
+    <string name="share_world_quality_original">원본</string>
+    <string name="share_world_quality_compressed">압축</string>
+    <string name="share_world_exporting">패키지 내보내기 중…</string>
+    <string name="share_world_exported">패키지가 내보내기 되었습니다</string>
+    <string name="share_world_conflict_title">충돌 감지</string>
+    <string name="share_world_conflict_overwrite">덮어쓰기</string>
+    <string name="share_world_conflict_skip">건너뛰기</string>
+    <string name="share_world_conflict_new">새로 생성</string>
+    <string name="share_pdf_export">PDF 설정집</string>
+    <string name="share_pdf_generating">PDF 생성 중…</string>
+    <string name="share_pdf_generated">PDF가 생성되었습니다</string>
+    <string name="share_pdf_scope_universe">세계관 전체</string>
+    <string name="share_pdf_scope_novel">소설 단위</string>
+    <string name="share_pdf_scope_characters">선택한 캐릭터</string>
+    <string name="share_pdf_include_profiles">캐릭터 프로필</string>
+    <string name="share_pdf_include_graph">관계도</string>
+    <string name="share_pdf_include_timeline">타임라인</string>
+    <string name="share_pdf_include_namebank">이름뱅크</string>
+    <string name="share_pdf_include_fields">필드 정의</string>
+    <string name="share_size_estimate">예상 크기: %s</string>
 </resources>

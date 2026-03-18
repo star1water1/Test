@@ -33,6 +33,8 @@ data class TimelineEvent(
     val description: String,
     val universeId: Long? = null,
     val novelId: Long? = null,
+    val displayOrder: Int = 0,
+    val isTemporary: Boolean = false,  // 간편 모드에서 임시 배치된 사건
     val createdAt: Long = System.currentTimeMillis()
 ) {
     fun getFormattedDate(): String {

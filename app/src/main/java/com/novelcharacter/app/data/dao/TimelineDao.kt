@@ -109,4 +109,47 @@ interface TimelineDao {
 
     @Query("SELECT * FROM timeline_events WHERE novelId = :novelId AND year BETWEEN :startYear AND :endYear ORDER BY year ASC")
     fun getEventsByNovelInRange(novelId: Long, startYear: Int, endYear: Int): LiveData<List<TimelineEvent>>
+
+    // AND 조합 필터: 소설 + 캐릭터 동시 필터
+    @Transaction
+    @Query("""
+        SELECT te.* FROM timeline_events te
+        INNER JOIN timeline_character_cross_ref tcr ON te.id = tcr.eventId
+        WHERE tcr.characterId = :characterId AND te.novelId = :novelId
+            AND te.year BETWEEN :startYear AND :endYear
+        ORDER BY te.year ASC
+    """)
+    fun getEventsForCharacterAndNovelInRange(
+        characterId: Long, novelId: Long, startYear: Int, endYear: Int
+    ): LiveData<List<TimelineEvent>>
+
+    // displayOrder 관련
+    @Update
+    suspend fun updateAll(events: List<TimelineEvent>)
+
+    @Query("SELECT COALESCE(MAX(displayOrder), -1) + 1 FROM timeline_events")
+    suspend fun getNextDisplayOrder(): Int
+
+    // 사건 밀도 조회: 연도별 사건 수
+    @Query("SELECT year, COUNT(*) as count FROM timeline_events GROUP BY year ORDER BY year ASC")
+    suspend fun getEventDensity(): List<YearCount>
+
+    // 통계용 쿼리
+    @Query("SELECT COUNT(*) FROM timeline_events")
+    suspend fun getEventCount(): Int
+
+    @Query("SELECT COUNT(*) FROM timeline_events WHERE novelId = :novelId")
+    suspend fun getEventCountByNovel(novelId: Long): Int
+
+    @Query("""
+        SELECT COUNT(DISTINCT tcr.characterId) FROM timeline_character_cross_ref tcr
+        INNER JOIN timeline_events te ON tcr.eventId = te.id
+        WHERE te.id = :eventId
+    """)
+    suspend fun getCharacterCountForEvent(eventId: Long): Int
 }
+
+data class YearCount(
+    val year: Int,
+    val count: Int
+)

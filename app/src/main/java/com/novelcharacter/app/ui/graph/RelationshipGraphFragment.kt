@@ -14,6 +14,7 @@ import com.novelcharacter.app.R
 import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.CharacterRelationship
+import com.novelcharacter.app.data.model.CharacterRelationshipChange
 import com.novelcharacter.app.databinding.FragmentRelationshipGraphBinding
 import com.novelcharacter.app.util.navigateSafe
 import kotlinx.coroutines.launch
@@ -28,13 +29,46 @@ class RelationshipGraphViewModel(application: android.app.Application) : Android
     private val _relationships = MutableLiveData<List<CharacterRelationship>>()
     val relationships: LiveData<List<CharacterRelationship>> = _relationships
 
+    private val _relationshipChanges = MutableLiveData<List<CharacterRelationshipChange>>()
+    val relationshipChanges: LiveData<List<CharacterRelationshipChange>> = _relationshipChanges
+
     fun loadData() {
         viewModelScope.launch {
             _characters.value = characterRepository.getAllCharactersList()
             _relationships.value = characterRepository.getAllRelationships()
+            _relationshipChanges.value = characterRepository.getAllRelationshipChanges()
         }
     }
+
+    /**
+     * 특정 시점에서의 관계를 resolve한다.
+     * RelationshipChange가 있으면 해당 시점 이전의 가장 최근 변화를 반환.
+     */
+    fun resolveRelationshipAtYear(
+        relationship: CharacterRelationship,
+        year: Int,
+        allChanges: List<CharacterRelationshipChange>
+    ): ResolvedRelationship {
+        val changes = allChanges
+            .filter { it.relationshipId == relationship.id && it.year <= year }
+            .sortedByDescending { it.year * 10000 + (it.month ?: 0) * 100 + (it.day ?: 0) }
+
+        val latestChange = changes.firstOrNull()
+        return ResolvedRelationship(
+            relationship = relationship,
+            resolvedType = latestChange?.relationshipType ?: relationship.relationshipType,
+            resolvedIntensity = latestChange?.intensity ?: 5,
+            resolvedBidirectional = latestChange?.isBidirectional ?: true
+        )
+    }
 }
+
+data class ResolvedRelationship(
+    val relationship: CharacterRelationship,
+    val resolvedType: String,
+    val resolvedIntensity: Int,
+    val resolvedBidirectional: Boolean
+)
 
 class RelationshipGraphFragment : Fragment() {
 
@@ -46,6 +80,8 @@ class RelationshipGraphFragment : Fragment() {
     private val binding get() = _binding!!
     private val viewModel: RelationshipGraphViewModel by viewModels()
     private var currentFilter: String? = null
+    private var isTimeViewEnabled = false
+    private var currentYear: Int? = null
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
@@ -64,35 +100,80 @@ class RelationshipGraphFragment : Fragment() {
             findNavController().navigateSafe(R.id.relationshipGraphFragment, R.id.characterDetailFragment, bundle)
         }
 
+        setupTimeSlider()
         observeData()
         viewModel.loadData()
     }
 
+    private fun setupTimeSlider() {
+        binding.switchTimeView.setOnCheckedChangeListener { _, isChecked ->
+            isTimeViewEnabled = isChecked
+            binding.graphYearSlider.visibility = if (isChecked) View.VISIBLE else View.GONE
+            binding.yearLabel.visibility = if (isChecked) View.VISIBLE else View.GONE
+            if (!isChecked) {
+                currentYear = null
+            } else {
+                currentYear = binding.graphYearSlider.value.toInt()
+                binding.yearLabel.text = getString(R.string.year_label_format, currentYear!!)
+            }
+            refreshGraph()
+        }
+
+        binding.graphYearSlider.addOnChangeListener { _, value, fromUser ->
+            if (fromUser && isTimeViewEnabled) {
+                currentYear = value.toInt()
+                binding.yearLabel.text = getString(R.string.year_label_format, value.toInt())
+                refreshGraphEdgesOnly()
+            }
+        }
+    }
+
     private fun observeData() {
-        val combinedData = MediatorLiveData<Pair<List<Character>, List<CharacterRelationship>>>()
+        val combinedData = MediatorLiveData<Triple<List<Character>, List<CharacterRelationship>, List<CharacterRelationshipChange>>>()
         var chars: List<Character> = emptyList()
         var rels: List<CharacterRelationship> = emptyList()
+        var changes: List<CharacterRelationshipChange> = emptyList()
 
         combinedData.addSource(viewModel.characters) {
             chars = it
-            combinedData.value = Pair(chars, rels)
+            combinedData.value = Triple(chars, rels, changes)
         }
         combinedData.addSource(viewModel.relationships) {
             rels = it
-            combinedData.value = Pair(chars, rels)
+            combinedData.value = Triple(chars, rels, changes)
+        }
+        combinedData.addSource(viewModel.relationshipChanges) {
+            changes = it
+            combinedData.value = Triple(chars, rels, changes)
         }
 
-        combinedData.observe(viewLifecycleOwner) { (characters, relationships) ->
+        combinedData.observe(viewLifecycleOwner) { (characters, relationships, relChanges) ->
             setupFilterChips(relationships)
+            updateYearSliderRange(relChanges)
+            binding.yearSliderLayout.visibility =
+                if (relChanges.isNotEmpty()) View.VISIBLE else View.GONE
             updateGraph(characters, relationships)
         }
+    }
+
+    private fun updateYearSliderRange(changes: List<CharacterRelationshipChange>) {
+        if (changes.isEmpty()) return
+
+        val minYear = changes.minOf { it.year }
+        val maxYear = changes.maxOf { it.year }
+        val padding = ((maxYear - minYear) * 0.1f).toInt().coerceAtLeast(10)
+
+        binding.graphYearSlider.stepSize = 0f
+        binding.graphYearSlider.valueFrom = (minYear - padding).toFloat()
+        binding.graphYearSlider.valueTo = (maxYear + padding).toFloat()
+        binding.graphYearSlider.stepSize = 1f
+        binding.graphYearSlider.value = maxYear.toFloat()
     }
 
     private fun setupFilterChips(relationships: List<CharacterRelationship>) {
         val chipGroup = binding.filterChipGroup
         chipGroup.removeAllViews()
 
-        // "All" chip
         val allChip = Chip(requireContext()).apply {
             text = getString(R.string.graph_filter_all)
             isCheckable = true
@@ -104,7 +185,6 @@ class RelationshipGraphFragment : Fragment() {
         }
         chipGroup.addView(allChip)
 
-        // Unique relationship types
         val types = relationships.map { it.relationshipType }.distinct().sorted()
         for (type in types) {
             val chip = Chip(requireContext()).apply {
@@ -126,8 +206,37 @@ class RelationshipGraphFragment : Fragment() {
         updateGraph(chars, rels)
     }
 
+    /**
+     * 엣지만 갱신 (슬라이더 드래그 시 빠른 반응). 노드 레이아웃은 유지.
+     */
+    private fun refreshGraphEdgesOnly() {
+        val rels = viewModel.relationships.value ?: return
+        val allChanges = viewModel.relationshipChanges.value ?: emptyList()
+        val year = currentYear ?: return
+
+        val filteredRelationships = if (currentFilter != null) {
+            rels.filter { it.relationshipType == currentFilter }
+        } else {
+            rels
+        }
+
+        val edges = filteredRelationships.map { rel ->
+            val resolved = viewModel.resolveRelationshipAtYear(rel, year, allChanges)
+            GraphEdge(
+                fromId = rel.characterId1,
+                toId = rel.characterId2,
+                label = resolved.resolvedType,
+                intensity = resolved.resolvedIntensity,
+                isBidirectional = resolved.resolvedBidirectional
+            )
+        }
+
+        binding.graphView.updateEdges(edges)
+    }
+
     private fun updateGraph(allCharacters: List<Character>, allRelationships: List<CharacterRelationship>) {
-        // Filter by type if a filter is active
+        val allChanges = viewModel.relationshipChanges.value ?: emptyList()
+
         val filteredRelationships = if (currentFilter != null) {
             allRelationships.filter { it.relationshipType == currentFilter }
         } else {
@@ -148,7 +257,6 @@ class RelationshipGraphFragment : Fragment() {
             return
         }
 
-        // Get only characters that are part of relationships
         val involvedIds = mutableSetOf<Long>()
         filteredRelationships.forEach {
             involvedIds.add(it.characterId1)
@@ -158,14 +266,12 @@ class RelationshipGraphFragment : Fragment() {
         val characterMap = allCharacters.associateBy { it.id }
         val involvedCharacters = involvedIds.mapNotNull { characterMap[it] }
 
-        // Summary mode check
         val isSummaryMode = involvedCharacters.size > SUMMARY_MODE_THRESHOLD
         if (isSummaryMode) {
             binding.summaryModeText.visibility = View.VISIBLE
             binding.summaryModeText.text = getString(R.string.graph_summary_mode, SUMMARY_MODE_THRESHOLD)
             Toast.makeText(requireContext(), getString(R.string.graph_too_many_nodes), Toast.LENGTH_LONG).show()
 
-            // In summary mode, only show nodes with 3+ connections
             val connectionCount = mutableMapOf<Long, Int>()
             filteredRelationships.forEach {
                 connectionCount[it.characterId1] = (connectionCount[it.characterId1] ?: 0) + 1
@@ -175,10 +281,10 @@ class RelationshipGraphFragment : Fragment() {
             val summaryChars = involvedCharacters.filter { it.id in importantIds }
             val summaryRels = filteredRelationships.filter { it.characterId1 in importantIds && it.characterId2 in importantIds }
 
-            showGraph(summaryChars, summaryRels)
+            showGraph(summaryChars, summaryRels, allChanges)
         } else {
             binding.summaryModeText.visibility = View.GONE
-            showGraph(involvedCharacters, filteredRelationships)
+            showGraph(involvedCharacters, filteredRelationships, allChanges)
         }
 
         binding.emptyState.visibility = View.GONE
@@ -187,9 +293,30 @@ class RelationshipGraphFragment : Fragment() {
         binding.edgeCountText.text = getString(R.string.graph_edge_count, filteredRelationships.size)
     }
 
-    private fun showGraph(characters: List<Character>, relationships: List<CharacterRelationship>) {
+    private fun showGraph(
+        characters: List<Character>,
+        relationships: List<CharacterRelationship>,
+        allChanges: List<CharacterRelationshipChange>
+    ) {
         val nodes = characters.map { GraphNode(it.id, it.name) }
-        val edges = relationships.map { GraphEdge(it.characterId1, it.characterId2, it.relationshipType) }
+        val edges = relationships.map { rel ->
+            if (isTimeViewEnabled && currentYear != null) {
+                val resolved = viewModel.resolveRelationshipAtYear(rel, currentYear!!, allChanges)
+                GraphEdge(
+                    fromId = rel.characterId1,
+                    toId = rel.characterId2,
+                    label = resolved.resolvedType,
+                    intensity = resolved.resolvedIntensity,
+                    isBidirectional = resolved.resolvedBidirectional
+                )
+            } else {
+                GraphEdge(
+                    fromId = rel.characterId1,
+                    toId = rel.characterId2,
+                    label = rel.relationshipType
+                )
+            }
+        }
         binding.graphView.setGraphData(nodes, edges)
     }
 

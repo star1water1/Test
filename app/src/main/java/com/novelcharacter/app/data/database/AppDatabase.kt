@@ -19,8 +19,10 @@ import com.novelcharacter.app.data.dao.CharacterRelationshipDao
 import com.novelcharacter.app.data.dao.NameBankDao
 import com.novelcharacter.app.data.dao.RecentActivityDao
 import com.novelcharacter.app.data.dao.SearchPresetDao
+import com.novelcharacter.app.data.dao.CharacterRelationshipChangeDao
 import com.novelcharacter.app.data.model.RecentActivity
 import com.novelcharacter.app.data.model.SearchPreset
+import com.novelcharacter.app.data.model.CharacterRelationshipChange
 import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.CharacterFieldValue
 import com.novelcharacter.app.data.model.CharacterStateChange
@@ -46,10 +48,11 @@ import com.novelcharacter.app.data.model.Universe
         CharacterTag::class,
         NameBankEntry::class,
         CharacterRelationship::class,
+        CharacterRelationshipChange::class,
         RecentActivity::class,
         SearchPreset::class
     ],
-    version = 11,
+    version = 12,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -65,6 +68,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun characterRelationshipDao(): CharacterRelationshipDao
     abstract fun recentActivityDao(): RecentActivityDao
     abstract fun searchPresetDao(): SearchPresetDao
+    abstract fun characterRelationshipChangeDao(): CharacterRelationshipChangeDao
 
     companion object {
         private const val TAG = "AppDatabase"
@@ -438,6 +442,51 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Migration from version 11 to 12:
+         * - Created character_relationship_changes table for temporal relationship tracking
+         * - Added displayOrder and isTemporary columns to timeline_events
+         */
+        private val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "Migrating database from version 11 to 12")
+
+                // Create character_relationship_changes table
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `character_relationship_changes` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `relationshipId` INTEGER NOT NULL,
+                        `year` INTEGER NOT NULL,
+                        `month` INTEGER,
+                        `day` INTEGER,
+                        `relationshipType` TEXT NOT NULL,
+                        `description` TEXT NOT NULL DEFAULT '',
+                        `intensity` INTEGER NOT NULL DEFAULT 5,
+                        `isBidirectional` INTEGER NOT NULL DEFAULT 1,
+                        `createdAt` INTEGER NOT NULL DEFAULT 0,
+                        FOREIGN KEY(`relationshipId`) REFERENCES `character_relationships`(`id`) ON DELETE CASCADE
+                    )
+                """)
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_character_relationship_changes_relationshipId` ON `character_relationship_changes` (`relationshipId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_character_relationship_changes_year` ON `character_relationship_changes` (`year`)")
+
+                // Add displayOrder and isTemporary to timeline_events
+                db.execSQL("ALTER TABLE `timeline_events` ADD COLUMN `displayOrder` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `timeline_events` ADD COLUMN `isTemporary` INTEGER NOT NULL DEFAULT 0")
+
+                // Backfill displayOrder based on year ordering
+                db.execSQL("""
+                    UPDATE `timeline_events` SET `displayOrder` = (
+                        SELECT COUNT(*) FROM `timeline_events` t2
+                        WHERE t2.`year` < `timeline_events`.`year`
+                            OR (t2.`year` = `timeline_events`.`year` AND t2.`id` < `timeline_events`.`id`)
+                    )
+                """)
+
+                Log.i(TAG, "Migration from version 11 to 12 completed successfully")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -445,7 +494,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "novel_character_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12)
                     .build()
                     .also { INSTANCE = it }
             }

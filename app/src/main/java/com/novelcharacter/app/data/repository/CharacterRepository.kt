@@ -160,6 +160,52 @@ class CharacterRepository(
         characterRelationshipDao.deleteById(id)
     }
 
+    suspend fun updateRelationship(relationship: CharacterRelationship) {
+        characterRelationshipDao.update(relationship)
+    }
+
+    // ===== CharacterRelationshipChange =====
+    private val relationshipChangeDao get() = db.characterRelationshipChangeDao()
+
+    fun getRelationshipChanges(relationshipId: Long): LiveData<List<CharacterRelationshipChange>> =
+        relationshipChangeDao.getChangesForRelationship(relationshipId)
+
+    suspend fun getRelationshipChangesList(relationshipId: Long): List<CharacterRelationshipChange> =
+        relationshipChangeDao.getChangesForRelationshipList(relationshipId)
+
+    suspend fun getRelationshipChangeAtYear(relationshipId: Long, year: Int): CharacterRelationshipChange? =
+        relationshipChangeDao.getChangeAtYear(relationshipId, year)
+
+    suspend fun getAllRelationshipChanges(): List<CharacterRelationshipChange> =
+        relationshipChangeDao.getAllChanges()
+
+    suspend fun insertRelationshipChange(change: CharacterRelationshipChange): Long =
+        relationshipChangeDao.insert(change)
+
+    suspend fun updateRelationshipChange(change: CharacterRelationshipChange) =
+        relationshipChangeDao.update(change)
+
+    suspend fun deleteRelationshipChange(change: CharacterRelationshipChange) =
+        relationshipChangeDao.delete(change)
+
+    /**
+     * 특정 시점에서의 관계 타입을 resolve한다.
+     * RelationshipChange가 있으면 해당 시점 이전의 가장 최근 변화를 반환.
+     * 없으면 기본 관계의 relationshipType을 반환.
+     */
+    suspend fun resolveRelationshipTypeAtYear(relationship: CharacterRelationship, year: Int): String {
+        val change = relationshipChangeDao.getChangeAtYear(relationship.id, year)
+        return change?.relationshipType ?: relationship.relationshipType
+    }
+
+    /**
+     * 특정 시점에서의 관계 강도를 resolve한다.
+     */
+    suspend fun resolveRelationshipIntensityAtYear(relationship: CharacterRelationship, year: Int): Int {
+        val change = relationshipChangeDao.getChangeAtYear(relationship.id, year)
+        return change?.intensity ?: 5
+    }
+
     suspend fun setPinned(id: Long, isPinned: Boolean) =
         characterDao.setPinned(id, isPinned)
 }
