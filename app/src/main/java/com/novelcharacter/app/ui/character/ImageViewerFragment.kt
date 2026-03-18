@@ -96,9 +96,20 @@ class ImageViewerFragment : Fragment() {
         val pathsJson = arguments?.getString("imagePaths") ?: "[]"
         startPosition = arguments?.getInt("startPosition", 0) ?: 0
 
-        imagePaths = try {
+        val rawPaths: List<String> = try {
             com.google.gson.Gson().fromJson(pathsJson, object : com.google.gson.reflect.TypeToken<List<String>>() {}.type) ?: emptyList()
         } catch (e: Exception) {
+            emptyList()
+        }
+        // Filter out paths outside app directory to prevent path traversal
+        val dir = appDir
+        imagePaths = if (dir != null) {
+            rawPaths.filter { path ->
+                try {
+                    java.io.File(path).canonicalPath.startsWith(dir.canonicalPath)
+                } catch (_: Exception) { false }
+            }
+        } else {
             emptyList()
         }
 

@@ -84,10 +84,20 @@ class CharacterEditFragment : Fragment() {
         presetNovelId = arguments?.getLong("novelId", -1L) ?: -1L
         appDir = requireContext().filesDir
 
-        // Restore imagePaths from saved state (rotation)
+        // Restore imagePaths from saved state (rotation), filtering invalid paths
         savedInstanceState?.getStringArrayList("imagePaths")?.let { saved ->
+            val dir = appDir
+            val validated = if (dir != null) {
+                saved.filter { path ->
+                    try {
+                        java.io.File(path).canonicalPath.startsWith(dir.canonicalPath)
+                    } catch (_: Exception) { false }
+                }
+            } else {
+                emptyList()
+            }
             imagePaths.clear()
-            imagePaths.addAll(saved)
+            imagePaths.addAll(validated)
             restoredFromSavedState = true
         }
 

@@ -11,6 +11,10 @@ class FormulaEvaluator(
 ) {
     fun evaluate(formula: String): Double {
         val tokens = tokenize(formula)
+        if (tokens.size >= MAX_TOKENS) {
+            // Formula too complex — return NaN to signal error
+            return Double.NaN
+        }
         val rpn = shuntingYard(tokens)
         return evaluateRPN(rpn)
     }
@@ -55,8 +59,7 @@ class FormulaEvaluator(
     private fun tokenize(formula: String): List<Token> {
         val tokens = mutableListOf<Token>()
         var i = 0
-        val maxTokens = 500
-        while (i < formula.length && tokens.size < maxTokens) {
+        while (i < formula.length && tokens.size < MAX_TOKENS) {
             when {
                 formula[i].isWhitespace() -> i++
                 formula[i] in "+-*/" -> {
@@ -174,5 +177,9 @@ class FormulaEvaluator(
             }
         }
         return stack.lastOrNull() ?: 0.0
+    }
+
+    companion object {
+        private const val MAX_TOKENS = 500
     }
 }
