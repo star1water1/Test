@@ -107,6 +107,7 @@ class CharacterDetailFragment : Fragment() {
             characterId = characterId,
             contextGetter = { requireContext() },
             getString = { id -> getString(id) },
+            getFormattedString = { id, args -> getString(id, *args) },
             navController = { findNavController() }
         )
     }

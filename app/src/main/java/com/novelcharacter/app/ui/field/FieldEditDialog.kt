@@ -107,7 +107,7 @@ class FieldEditDialog : DialogFragment() {
     private fun saveField(binding: DialogFieldEditBinding) {
         val name = binding.editFieldName.text.toString().trim()
         val key = binding.editFieldKey.text.toString().trim()
-        val groupName = binding.editGroupName.text.toString().trim().ifEmpty { "기본 정보" }
+        val groupName = binding.editGroupName.text.toString().trim().ifEmpty { getString(R.string.default_group_name) }
         val isRequired = binding.switchRequired.isChecked
 
         if (name.isEmpty() || key.isEmpty()) {

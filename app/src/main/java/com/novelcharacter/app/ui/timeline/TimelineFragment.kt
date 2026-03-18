@@ -25,6 +25,8 @@ import com.novelcharacter.app.data.model.TimelineEvent
 import com.novelcharacter.app.databinding.DialogTimelineEditBinding
 import com.novelcharacter.app.databinding.FragmentTimelineBinding
 import com.novelcharacter.app.ui.adapter.TimelineAdapter
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class TimelineFragment : Fragment() {
@@ -154,17 +156,18 @@ class TimelineFragment : Fragment() {
         }
     }
 
-    private var searchRunnable: Runnable? = null
-    private val searchHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var searchJob: Job? = null
 
     private fun setupSearch() {
         binding.searchEdit.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
-                searchRunnable?.let { searchHandler.removeCallbacks(it) }
                 val query = s.toString()
-                searchRunnable = Runnable { viewModel.setSearchQuery(query) }
-                searchHandler.postDelayed(searchRunnable!!, 300)
+                searchJob?.cancel()
+                searchJob = viewLifecycleOwner.lifecycleScope.launch {
+                    delay(300)
+                    viewModel.setSearchQuery(query)
+                }
             }
             override fun afterTextChanged(s: Editable?) {}
         })
@@ -478,7 +481,7 @@ class TimelineFragment : Fragment() {
     }
 
     override fun onDestroyView() {
-        searchRunnable?.let { searchHandler.removeCallbacks(it) }
+        searchJob?.cancel()
         binding.timelineRecyclerView.adapter = null
         super.onDestroyView()
         _binding = null

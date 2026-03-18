@@ -142,6 +142,9 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         characterRepository.deleteRelationshipById(id)
     }
 
+    suspend fun getRelationshipsForCharacterList(characterId: Long): List<CharacterRelationship> =
+        characterRepository.getRelationshipsForCharacterList(characterId)
+
     suspend fun getAllCharactersList(): List<Character> =
         characterRepository.getAllCharactersList()
 

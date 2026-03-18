@@ -54,7 +54,7 @@ class TimeSliderHelper(
             if (fromUser) {
                 val year = value.toInt()
                 currentSliderYear = year
-                binding.yearLabel.text = "${year}년"
+                binding.yearLabel.text = getString(R.string.year_label_format, year)
                 isTimeViewActive = true
                 binding.btnResetTimeView.visibility = View.VISIBLE
                 binding.timeViewIndicator.visibility = View.VISIBLE
@@ -155,11 +155,11 @@ class TimeSliderHelper(
             val sliderYear = currentSliderYear
             if (sliderYear == null) {
                 binding.yearSlider.value = adjustedMin
-                binding.yearLabel.text = "${minYear}년"
+                binding.yearLabel.text = getString(R.string.year_label_format, minYear)
             } else {
                 val clampedYear = sliderYear.coerceIn(minYear, adjustedMax.toInt())
                 binding.yearSlider.value = clampedYear.toFloat()
-                binding.yearLabel.text = "${clampedYear}년"
+                binding.yearLabel.text = getString(R.string.year_label_format, clampedYear)
             }
 
             // Align value to step before setting stepSize
