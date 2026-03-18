@@ -10,6 +10,8 @@ import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
+import android.graphics.Color
+import com.google.android.material.card.MaterialCardView
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.databinding.ItemUniverseBinding
@@ -122,6 +124,23 @@ class UniverseAdapter(
             }
 
             binding.btnFieldManage.setOnClickListener { onFieldManageClick(universe) }
+
+            // Apply custom border color (Sprint D)
+            val card = binding.root as? MaterialCardView
+            if (card != null) {
+                if (universe.borderColor.isNotBlank()) {
+                    try {
+                        card.strokeColor = Color.parseColor(universe.borderColor)
+                        card.strokeWidth = (universe.borderWidthDp * binding.root.context.resources.displayMetrics.density).toInt()
+                    } catch (_: Exception) {
+                        card.strokeColor = 0
+                        card.strokeWidth = 0
+                    }
+                } else {
+                    card.strokeColor = 0
+                    card.strokeWidth = 0
+                }
+            }
         }
     }
 

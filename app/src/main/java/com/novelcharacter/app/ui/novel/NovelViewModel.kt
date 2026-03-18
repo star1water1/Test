@@ -12,10 +12,21 @@ import kotlinx.coroutines.launch
 
 class NovelViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val novelRepository = (application as NovelCharacterApp).novelRepository
+    private val app = application as NovelCharacterApp
+    private val novelRepository = app.novelRepository
     val allNovels: LiveData<List<Novel>> = novelRepository.allNovels
 
     private val _universeId = MutableLiveData<Long?>()
+
+    private val _universeBorder = MutableLiveData<Pair<String, Float>>(Pair("", 1.5f))
+    val universeBorder: LiveData<Pair<String, Float>> = _universeBorder
+
+    fun loadUniverseBorder(universeId: Long) = viewModelScope.launch {
+        val universe = app.database.universeDao().getUniverseById(universeId)
+        if (universe != null) {
+            _universeBorder.value = Pair(universe.borderColor, universe.borderWidthDp)
+        }
+    }
 
     val filteredNovels: LiveData<List<Novel>> = _universeId.switchMap { uid ->
         if (uid == null || uid == -1L) {

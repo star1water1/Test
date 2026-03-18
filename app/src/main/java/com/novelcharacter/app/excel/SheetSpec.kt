@@ -21,7 +21,7 @@ data class SheetSpec(
 ) {
     val firstColumnHeader: String get() = columns.first().header
 
-    /** Find column index by header name in an actual Excel header row. */
+    /** Find column index by header name in an actual Excel header row (exact match). */
     fun findColumn(headerRow: Row, headerName: String): Int {
         val lastCol = headerRow.lastCellNum.toInt()
         for (col in 0 until lastCol) {
@@ -29,10 +29,27 @@ data class SheetSpec(
             val cellValue = try {
                 cell.stringCellValue?.trim()
             } catch (_: Exception) {
-                // Cell is not a string type (e.g. NUMERIC) — skip
                 null
             }
             if (cellValue == headerName) return col
+        }
+        return -1
+    }
+
+    /** Find column index using normalized alias matching (tolerant import). */
+    fun findColumnTolerant(headerRow: Row, headerName: String): Int {
+        // Try exact match first
+        val exact = findColumn(headerRow, headerName)
+        if (exact >= 0) return exact
+        // Try normalized comparison
+        val normalized = headerName.trim().lowercase().replace(Regex("[\\s_\\-()（）]"), "")
+        val lastCol = headerRow.lastCellNum.toInt()
+        for (col in 0 until lastCol) {
+            val cell = headerRow.getCell(col) ?: continue
+            val cellValue = try {
+                cell.stringCellValue?.trim()?.lowercase()?.replace(Regex("[\\s_\\-()（）]"), "")
+            } catch (_: Exception) { null }
+            if (cellValue == normalized) return col
         }
         return -1
     }
@@ -40,6 +57,13 @@ data class SheetSpec(
 
 /** Fixed (non-dynamic-field) column headers in character sheets. */
 val CHARACTER_FIXED_HEADERS = setOf("이름", "이명", "이미지경로", "작품", "메모", "태그", "코드", "작품코드", "정렬순서")
+
+/** Default border color presets for color picker UI. */
+val BORDER_COLOR_PRESETS = listOf(
+    "#5C6BC0", "#FF7043", "#26A69A", "#AB47BC",
+    "#EF5350", "#42A5F5", "#66BB6A", "#FFA726",
+    "#EC407A", "#7E57C2", "#29B6F6", "#D4E157"
+)
 
 /** All reserved (non-universe) sheet names used by the app. */
 val RESERVED_SHEET_NAMES = setOf(
@@ -66,7 +90,9 @@ fun universeSpec() = SheetSpec(
         ColumnSpec("이름", required = true, width = 8000),
         ColumnSpec("설명", width = 15000),
         ColumnSpec("코드", readOnly = true, width = 4000),
-        ColumnSpec("정렬순서", width = 3000)
+        ColumnSpec("정렬순서", width = 3000),
+        ColumnSpec("테두리색", width = 4000),
+        ColumnSpec("테두리두께", width = 3000)
     )
 )
 
@@ -78,7 +104,9 @@ fun novelSpec(universeNames: List<String>) = SheetSpec(
         ColumnSpec("세계관", dropdownOptions = universeNames.takeIf { it.isNotEmpty() }, width = 8000),
         ColumnSpec("코드", readOnly = true, width = 4000),
         ColumnSpec("세계관코드", readOnly = true, width = 4000),
-        ColumnSpec("정렬순서", width = 3000)
+        ColumnSpec("정렬순서", width = 3000),
+        ColumnSpec("테두리색", width = 4000),
+        ColumnSpec("테두리두께", width = 3000)
     )
 )
 

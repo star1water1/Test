@@ -182,6 +182,10 @@ class ExcelImporter(context: Context) {
         if (nbTotal > 0) parts.add("이름 ${nbTotal}개")
         if (result.skippedRows > 0)
             parts.add("오류 ${result.skippedRows}건 건너뜀")
+        if (result.nameBasedMappings > 0)
+            parts.add("이름 매칭 ${result.nameBasedMappings}건")
+        if (result.newCodesGenerated > 0)
+            parts.add("새 코드 ${result.newCodesGenerated}건 발급")
 
         return if (parts.isEmpty()) "가져오기 완료: 데이터 없음"
         else "가져오기 완료: ${parts.joinToString(", ")}"

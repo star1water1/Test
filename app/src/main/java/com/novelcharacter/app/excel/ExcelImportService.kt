@@ -43,12 +43,78 @@ data class ImportResult(
     var newNameBank: Int = 0,
     var updatedNameBank: Int = 0,
     var skippedRows: Int = 0,
-    val errors: MutableList<String> = mutableListOf()
+    val errors: MutableList<String> = mutableListOf(),
+    var nameBasedMappings: Int = 0,
+    var autoRepairedValues: Int = 0,
+    var newCodesGenerated: Int = 0,
+    val warnings: MutableList<String> = mutableListOf(),
+    val pendingConflicts: MutableList<String> = mutableListOf()
 )
 
 class ExcelImportService(private val db: AppDatabase) {
 
     private val novelIdCache = mutableMapOf<Pair<String, Long?>, Long?>()
+
+    // ── Header alias map for tolerant import (Sprint C) ──
+
+    private val headerAliases: Map<String, String> = buildMap {
+        fun alias(canonical: String, vararg aliases: String) {
+            put(canonical.normalizeHeader(), canonical)
+            for (a in aliases) put(a.normalizeHeader(), canonical)
+        }
+        // Universe sheet
+        alias("이름", "name", "캐릭터명", "세계관명", "유니버스명", "universe_name")
+        alias("설명", "description", "desc", "세계관설명")
+        alias("코드", "code", "유니버스코드", "universe_code")
+        alias("정렬순서", "sort_order", "order", "순서", "display_order", "displayorder")
+        // Novel sheet
+        alias("제목", "title", "작품명", "작품제목", "novel_title")
+        alias("세계관", "universe", "세계관명", "universe_name")
+        alias("세계관코드", "universe_code", "유니버스코드")
+        // Character sheet
+        alias("이명", "another_name", "별칭", "alias", "이명/별칭")
+        alias("이미지경로", "image_path", "이미지", "image")
+        alias("작품", "novel", "작품명", "novel_title")
+        alias("메모", "memo", "비고", "note", "notes")
+        alias("태그", "tags", "tag", "태그들")
+        alias("작품코드", "novel_code")
+        // Field definition
+        alias("필드키", "field_key", "key", "키")
+        alias("필드명", "field_name", "필드이름")
+        alias("타입", "type", "field_type", "필드타입")
+        alias("설정(JSON)", "config", "설정", "configuration")
+        alias("그룹", "group", "그룹명", "group_name")
+        alias("순서", "order", "display_order")
+        alias("필수여부", "required", "필수", "is_required")
+        // Timeline
+        alias("연도", "year", "년도")
+        alias("월", "month")
+        alias("일", "day")
+        alias("역법", "calendar", "calendar_type", "달력")
+        alias("사건 설명", "event_description", "사건설명", "설명", "description")
+        alias("관련 작품", "related_novel", "관련작품", "작품")
+        alias("관련 캐릭터", "related_characters", "관련캐릭터", "캐릭터")
+        alias("관련작품코드", "related_novel_code")
+        // State change
+        alias("캐릭터", "character", "캐릭터명", "character_name")
+        alias("새 값", "new_value", "새값", "값")
+        alias("캐릭터코드", "character_code")
+        // Relationship
+        alias("캐릭터1", "character1", "캐릭터1명")
+        alias("캐릭터2", "character2", "캐릭터2명")
+        alias("관계 유형", "relationship_type", "관계유형", "관계")
+        alias("캐릭터1코드", "character1_code")
+        alias("캐릭터2코드", "character2_code")
+        // Name bank
+        alias("성별", "gender", "sex")
+        alias("출처", "origin", "문화권", "출처/문화권")
+        alias("사용여부", "is_used", "사용", "used")
+        alias("사용 캐릭터", "used_by", "사용캐릭터")
+        alias("사용캐릭터코드", "used_character_code")
+        // Border color (Sprint D)
+        alias("테두리색", "border_color", "bordercolor", "테두리 색", "테두리색상")
+        alias("테두리두께", "border_width", "borderwidth", "테두리 두께")
+    }
 
     suspend fun importAll(
         workbook: Workbook,
@@ -58,7 +124,6 @@ class ExcelImportService(private val db: AppDatabase) {
         novelIdCache.clear()
         processedRowsSoFar = 0
 
-        // Count total rows for progress
         val totalRows = countTotalRows(workbook)
 
         db.withTransaction {
@@ -93,39 +158,116 @@ class ExcelImportService(private val db: AppDatabase) {
         onProgress(ImportProgress(phase, processedRowsSoFar, totalRows))
     }
 
+    // ── Tolerant header matching (Sprint C) ──
+
+    /**
+     * Build a column index map by resolving header names through aliases.
+     * Returns Map<canonical_header_name, column_index>.
+     */
+    private fun resolveHeaderColumns(headerRow: Row): Map<String, Int> {
+        val result = mutableMapOf<String, Int>()
+        val lastCol = headerRow.lastCellNum.toInt()
+        for (col in 0 until lastCol) {
+            val cell = headerRow.getCell(col) ?: continue
+            val rawHeader = try { cell.stringCellValue?.trim() ?: "" } catch (_: Exception) { "" }
+            if (rawHeader.isBlank()) continue
+            val normalized = rawHeader.normalizeHeader()
+            val canonical = headerAliases[normalized] ?: rawHeader
+            if (canonical !in result) {
+                result[canonical] = col
+            }
+        }
+        return result
+    }
+
+    /**
+     * Check if header row is valid for a sheet by looking for expected first column header
+     * using alias-aware matching.
+     */
+    private fun isValidHeader(headerRow: Row, expectedFirstHeader: String): Boolean {
+        val firstCell = getCellString(headerRow, 0)
+        if (firstCell.isBlank()) return false
+        val normalized = firstCell.normalizeHeader()
+        val canonical = headerAliases[normalized] ?: firstCell
+        return canonical == expectedFirstHeader || firstCell == expectedFirstHeader
+    }
+
     // ── 세계관 가져오기 ──
 
     private suspend fun importUniverses(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = universeSpec()
         val sheet = workbook.getSheet(spec.sheetName) ?: return
         val headerRow = sheet.getRow(0) ?: return
-        if (getCellString(headerRow, 0) != spec.firstColumnHeader) return
+        if (!isValidHeader(headerRow, spec.firstColumnHeader)) return
 
-        val codeColIndex = spec.findColumn(headerRow, "코드")
-        val orderColIndex = spec.findColumn(headerRow, "정렬순서")
+        val cols = resolveHeaderColumns(headerRow)
+        val nameColIndex = cols[spec.firstColumnHeader] ?: cols["이름"] ?: 0
+        val descColIndex = cols["설명"] ?: 1
+        val codeColIndex = cols["코드"] ?: -1
+        val orderColIndex = cols["정렬순서"] ?: -1
+        val borderColorColIndex = cols["테두리색"] ?: -1
+        val borderWidthColIndex = cols["테두리두께"] ?: -1
+
+        // Build code index for duplicate detection within file
+        val codesSeen = mutableMapOf<String, Int>()
 
         for (i in 1..sheet.lastRowNum) {
             try {
                 val row = sheet.getRow(i) ?: continue
-                val name = getCellString(row, 0)
+                val name = getCellString(row, nameColIndex)
                 if (name.isBlank()) continue
 
-                val description = getCellString(row, 1)
+                val description = getCellString(row, descColIndex)
                 val code = if (codeColIndex >= 0) getCellString(row, codeColIndex) else ""
-                val displayOrder = if (orderColIndex >= 0) getCellString(row, orderColIndex).toDoubleOrNull()?.toLong() ?: 0L else 0L
+                val displayOrder = if (orderColIndex >= 0) parseNumber(getCellString(row, orderColIndex))?.toLong() ?: 0L else 0L
+                val borderColor = if (borderColorColIndex >= 0) getCellString(row, borderColorColIndex) else ""
+                val borderWidthDp = if (borderWidthColIndex >= 0) parseNumber(getCellString(row, borderWidthColIndex))?.toFloat() ?: 1.5f else 1.5f
 
-                // Code-first matching, then name fallback
-                val existing = if (code.isNotBlank()) {
-                    db.universeDao().getUniverseByCode(code)
-                } else null
-                    ?: db.universeDao().getUniverseByName(name)
+                // Duplicate code detection within file (last-write-wins)
+                if (code.isNotBlank()) {
+                    val prevRow = codesSeen[code]
+                    if (prevRow != null) {
+                        result.warnings.add("세계관: 코드 '$code'가 행 $prevRow 과 행 $i 에 중복됨 (마지막 행 우선)")
+                    }
+                    codesSeen[code] = i
+                }
+
+                // Code-first matching (Sprint A strict rule)
+                val existing: Universe?
+                val matchedByName: Boolean
+                if (code.isNotBlank()) {
+                    val byCode = db.universeDao().getUniverseByCode(code)
+                    if (byCode != null) {
+                        existing = byCode
+                        matchedByName = false
+                    } else {
+                        // Code present but not found in DB => new entity, don't fallback to name
+                        existing = null
+                        matchedByName = false
+                    }
+                } else {
+                    // No code => try name for backward compatibility + warn
+                    existing = db.universeDao().getUniverseByName(name)
+                    matchedByName = existing != null
+                    if (matchedByName) {
+                        result.nameBasedMappings++
+                        result.warnings.add("세계관 행 $i: 이름 기반 매칭 ('$name') — 코드 사용 권장")
+                    }
+                }
 
                 if (existing != null) {
-                    db.universeDao().update(existing.copy(name = name, description = description, displayOrder = displayOrder))
+                    db.universeDao().update(existing.copy(
+                        name = name, description = description, displayOrder = displayOrder,
+                        borderColor = borderColor, borderWidthDp = borderWidthDp
+                    ))
                     result.updatedUniverses++
                 } else {
                     val newCode = if (code.isNotBlank()) code else generateEntityCode()
-                    db.universeDao().insert(Universe(name = name, description = description, code = newCode, displayOrder = displayOrder))
+                    if (code.isBlank()) result.newCodesGenerated++
+                    db.universeDao().insert(Universe(
+                        name = name, description = description, code = newCode,
+                        displayOrder = displayOrder, borderColor = borderColor, borderWidthDp = borderWidthDp
+                    ))
                     result.newUniverses++
                 }
             } catch (e: Exception) {
@@ -142,23 +284,42 @@ class ExcelImportService(private val db: AppDatabase) {
         val spec = novelSpec(emptyList())
         val sheet = workbook.getSheet(spec.sheetName) ?: return
         val headerRow = sheet.getRow(0) ?: return
-        if (getCellString(headerRow, 0) != spec.firstColumnHeader) return
+        if (!isValidHeader(headerRow, spec.firstColumnHeader)) return
 
-        val codeColIndex = spec.findColumn(headerRow, "코드")
-        val universeCodeColIndex = spec.findColumn(headerRow, "세계관코드")
-        val orderColIndex = spec.findColumn(headerRow, "정렬순서")
+        val cols = resolveHeaderColumns(headerRow)
+        val titleColIndex = cols[spec.firstColumnHeader] ?: cols["제목"] ?: 0
+        val descColIndex = cols["설명"] ?: 1
+        val universeNameColIndex = cols["세계관"] ?: 2
+        val codeColIndex = cols["코드"] ?: -1
+        val universeCodeColIndex = cols["세계관코드"] ?: -1
+        val orderColIndex = cols["정렬순서"] ?: -1
+        val borderColorColIndex = cols["테두리색"] ?: -1
+        val borderWidthColIndex = cols["테두리두께"] ?: -1
+
+        val codesSeen = mutableMapOf<String, Int>()
 
         for (i in 1..sheet.lastRowNum) {
             try {
                 val row = sheet.getRow(i) ?: continue
-                val title = getCellString(row, 0)
+                val title = getCellString(row, titleColIndex)
                 if (title.isBlank()) continue
 
-                val description = getCellString(row, 1)
-                val universeName = getCellString(row, 2)
+                val description = getCellString(row, descColIndex)
+                val universeName = getCellString(row, universeNameColIndex)
                 val code = if (codeColIndex >= 0) getCellString(row, codeColIndex) else ""
                 val universeCode = if (universeCodeColIndex >= 0) getCellString(row, universeCodeColIndex) else ""
-                val displayOrder = if (orderColIndex >= 0) getCellString(row, orderColIndex).toDoubleOrNull()?.toLong() ?: 0L else 0L
+                val displayOrder = if (orderColIndex >= 0) parseNumber(getCellString(row, orderColIndex))?.toLong() ?: 0L else 0L
+                val borderColor = if (borderColorColIndex >= 0) getCellString(row, borderColorColIndex) else ""
+                val borderWidthDp = if (borderWidthColIndex >= 0) parseNumber(getCellString(row, borderWidthColIndex))?.toFloat() ?: 1.5f else 1.5f
+
+                // Duplicate code detection
+                if (code.isNotBlank()) {
+                    val prevRow = codesSeen[code]
+                    if (prevRow != null) {
+                        result.warnings.add("작품: 코드 '$code'가 행 $prevRow 과 행 $i 에 중복됨 (마지막 행 우선)")
+                    }
+                    codesSeen[code] = i
+                }
 
                 // Resolve universe: code-first, then name
                 val universeId = if (universeCode.isNotBlank()) {
@@ -166,22 +327,38 @@ class ExcelImportService(private val db: AppDatabase) {
                 } else null
                     ?: if (universeName.isNotBlank()) db.universeDao().getUniverseByName(universeName)?.id else null
 
-                // Resolve novel: code-first, then title+universe
-                val existing = if (code.isNotBlank()) {
-                    db.novelDao().getNovelByCode(code)
-                } else null
-                    ?: if (universeId != null) {
+                // Code-first matching (Sprint A)
+                val existing: Novel?
+                if (code.isNotBlank()) {
+                    existing = db.novelDao().getNovelByCode(code)
+                    // Code present but not found => new entity
+                } else {
+                    // No code => fallback to title+universe
+                    existing = if (universeId != null) {
                         db.novelDao().getNovelByTitleAndUniverse(title, universeId)
                     } else {
                         db.novelDao().getNovelByTitleNoUniverse(title)
                     }
+                    if (existing != null) {
+                        result.nameBasedMappings++
+                        result.warnings.add("작품 행 $i: 이름 기반 매칭 ('$title') — 코드 사용 권장")
+                    }
+                }
 
                 if (existing != null) {
-                    db.novelDao().update(existing.copy(title = title, description = description, universeId = universeId, displayOrder = displayOrder))
+                    db.novelDao().update(existing.copy(
+                        title = title, description = description, universeId = universeId,
+                        displayOrder = displayOrder, borderColor = borderColor, borderWidthDp = borderWidthDp
+                    ))
                     result.updatedNovels++
                 } else {
                     val newCode = if (code.isNotBlank()) code else generateEntityCode()
-                    db.novelDao().insert(Novel(title = title, description = description, universeId = universeId, code = newCode, displayOrder = displayOrder))
+                    if (code.isBlank()) result.newCodesGenerated++
+                    db.novelDao().insert(Novel(
+                        title = title, description = description, universeId = universeId,
+                        code = newCode, displayOrder = displayOrder,
+                        borderColor = borderColor, borderWidthDp = borderWidthDp
+                    ))
                     result.newNovels++
                 }
             } catch (e: Exception) {
@@ -198,14 +375,23 @@ class ExcelImportService(private val db: AppDatabase) {
         val spec = fieldDefinitionSpec(emptyList())
         val sheet = workbook.getSheet(spec.sheetName) ?: return
         val headerRow = sheet.getRow(0) ?: return
-        if (getCellString(headerRow, 0) != spec.firstColumnHeader) return
+        if (!isValidHeader(headerRow, spec.firstColumnHeader)) return
 
-        val universeCodeColIndex = spec.findColumn(headerRow, "세계관코드")
+        val cols = resolveHeaderColumns(headerRow)
+        val universeNameColIndex = cols[spec.firstColumnHeader] ?: cols["세계관"] ?: 0
+        val keyColIndex = cols["필드키"] ?: 1
+        val nameColIndex = cols["필드명"] ?: 2
+        val typeColIndex = cols["타입"] ?: 3
+        val configColIndex = cols["설정(JSON)"] ?: 4
+        val groupColIndex = cols["그룹"] ?: 5
+        val orderColIndex = cols["순서"] ?: 6
+        val requiredColIndex = cols["필수여부"] ?: 7
+        val universeCodeColIndex = cols["세계관코드"] ?: -1
 
         for (i in 1..sheet.lastRowNum) {
             try {
                 val row = sheet.getRow(i) ?: continue
-                val universeName = getCellString(row, 0)
+                val universeName = getCellString(row, universeNameColIndex)
                 if (universeName.isBlank()) continue
 
                 val universeCode = if (universeCodeColIndex >= 0) getCellString(row, universeCodeColIndex) else ""
@@ -215,15 +401,15 @@ class ExcelImportService(private val db: AppDatabase) {
                     ?: db.universeDao().getUniverseByName(universeName)
                     ?: continue
 
-                val key = getCellString(row, 1)
+                val key = getCellString(row, keyColIndex)
                 if (key.isBlank()) continue
 
-                val name = getCellString(row, 2)
-                val type = getCellString(row, 3)
-                val config = getCellString(row, 4).ifBlank { "{}" }
-                val groupName = getCellString(row, 5).ifBlank { "기본 정보" }
-                val displayOrder = getCellString(row, 6).toDoubleOrNull()?.toInt() ?: 0
-                val isRequired = getCellString(row, 7) == "Y"
+                val name = getCellString(row, nameColIndex)
+                val type = getCellString(row, typeColIndex)
+                val config = getCellString(row, configColIndex).ifBlank { "{}" }
+                val groupName = getCellString(row, groupColIndex).ifBlank { "기본 정보" }
+                val displayOrder = parseNumber(getCellString(row, orderColIndex))?.toInt() ?: 0
+                val isRequired = parseBoolean(getCellString(row, requiredColIndex))
 
                 val existing = db.fieldDefinitionDao().getFieldByKey(universe.id, key)
                 if (existing != null) {
@@ -257,7 +443,7 @@ class ExcelImportService(private val db: AppDatabase) {
         for (universe in universes) {
             val sheet = findSheetForUniverse(workbook, universe.name, reservedNames) ?: continue
             val headerRow = sheet.getRow(0) ?: continue
-            if (getCellString(headerRow, 0) != "이름") continue
+            if (!isValidHeader(headerRow, "이름")) continue
 
             val fields = db.fieldDefinitionDao().getFieldsByUniverseList(universe.id)
             importCharacterRows(sheet, headerRow, universe, fields, result, onProgress, totalRows)
@@ -269,13 +455,16 @@ class ExcelImportService(private val db: AppDatabase) {
     private suspend fun importUnclassifiedCharacters(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val sheet = workbook.getSheet(UNCLASSIFIED_SHEET_NAME) ?: return
         val headerRow = sheet.getRow(0) ?: return
-        if (getCellString(headerRow, 0) != "이름") return
+        if (!isValidHeader(headerRow, "이름")) return
 
         importCharacterRows(sheet, headerRow, null, emptyList(), result, onProgress, totalRows)
     }
 
     /**
      * Shared character import logic for both universe and unclassified sheets.
+     * Sprint A: Strict code-first matching with conflict detection
+     * Sprint B: Scope-based displayOrder
+     * Sprint C: Tolerant header resolution
      */
     private suspend fun importCharacterRows(
         sheet: Sheet,
@@ -286,29 +475,41 @@ class ExcelImportService(private val db: AppDatabase) {
         onProgress: (ImportProgress) -> Unit,
         totalRows: Int
     ) {
-        val spec = characterSpec(fields, emptyList())
-        val anotherNameColIndex = spec.findColumn(headerRow, "이명")
-        val imageColIndex = spec.findColumn(headerRow, "이미지경로")
-        val novelColIndex = spec.findColumn(headerRow, "작품")
-        val memoColIndex = spec.findColumn(headerRow, "메모")
-        val tagsColIndex = spec.findColumn(headerRow, "태그")
-        val codeColIndex = spec.findColumn(headerRow, "코드")
-        val novelCodeColIndex = spec.findColumn(headerRow, "작품코드")
-        val orderColIndex = spec.findColumn(headerRow, "정렬순서")
-        val fixedColIndices = setOf(0, anotherNameColIndex, imageColIndex, novelColIndex, memoColIndex, tagsColIndex, codeColIndex, novelCodeColIndex, orderColIndex).filter { it >= 0 }.toSet()
+        val cols = resolveHeaderColumns(headerRow)
+        val nameColIndex = cols["이름"] ?: 0
+        val anotherNameColIndex = cols["이명"] ?: -1
+        val imageColIndex = cols["이미지경로"] ?: -1
+        val novelColIndex = cols["작품"] ?: -1
+        val memoColIndex = cols["메모"] ?: -1
+        val tagsColIndex = cols["태그"] ?: -1
+        val codeColIndex = cols["코드"] ?: -1
+        val novelCodeColIndex = cols["작품코드"] ?: -1
+        val orderColIndex = cols["정렬순서"] ?: -1
+        val fixedColIndices = setOf(nameColIndex, anotherNameColIndex, imageColIndex, novelColIndex, memoColIndex, tagsColIndex, codeColIndex, novelCodeColIndex, orderColIndex).filter { it >= 0 }.toSet()
         val columnFieldMap = buildColumnFieldMap(headerRow, fields, fixedColIndices)
+
+        val codesSeen = mutableMapOf<String, Int>()
 
         for (i in 1..sheet.lastRowNum) {
             try {
                 val row = sheet.getRow(i) ?: continue
-                val name = getCellString(row, 0)
+                val name = getCellString(row, nameColIndex)
                 if (name.isBlank()) continue
 
                 val code = if (codeColIndex >= 0) getCellString(row, codeColIndex) else ""
                 val novelCode = if (novelCodeColIndex >= 0) getCellString(row, novelCodeColIndex) else ""
                 val novelTitle = if (novelColIndex >= 0) getCellString(row, novelColIndex) else ""
 
-                // Resolve novel: code-first, then title
+                // Duplicate code detection
+                if (code.isNotBlank()) {
+                    val prevRow = codesSeen[code]
+                    if (prevRow != null) {
+                        result.warnings.add("캐릭터: 코드 '$code'가 행 $prevRow 과 행 $i 에 중복됨 (마지막 행 우선)")
+                    }
+                    codesSeen[code] = i
+                }
+
+                // Resolve novel: code-first, then title (Sprint A)
                 val novelId = if (novelCode.isNotBlank()) {
                     db.novelDao().getNovelByCode(novelCode)?.id
                 } else null
@@ -321,17 +522,25 @@ class ExcelImportService(private val db: AppDatabase) {
                 val anotherName = if (anotherNameColIndex >= 0) getCellString(row, anotherNameColIndex) else ""
                 val imagePaths = if (imageColIndex >= 0) getCellString(row, imageColIndex).ifBlank { "[]" } else "[]"
                 val memo = if (memoColIndex >= 0) getCellString(row, memoColIndex) else ""
-                val displayOrder = if (orderColIndex >= 0) getCellString(row, orderColIndex).toDoubleOrNull()?.toLong() ?: 0L else 0L
+                val displayOrder = if (orderColIndex >= 0) parseNumber(getCellString(row, orderColIndex))?.toLong() ?: 0L else 0L
 
-                // Code-first matching, then name+novel fallback, then name-only fallback
-                val existingChar = if (code.isNotBlank()) {
-                    db.characterDao().getCharacterByCode(code)
-                } else null
-                    ?: if (novelId != null) {
+                // Code-first matching (Sprint A strict rule)
+                val existingChar: Character?
+                if (code.isNotBlank()) {
+                    existingChar = db.characterDao().getCharacterByCode(code)
+                    // Code present but not found => new entity
+                } else {
+                    // No code => fallback with warning
+                    existingChar = if (novelId != null) {
                         db.characterDao().getCharacterByNameAndNovel(name, novelId)
                     } else {
                         db.characterDao().getCharacterByName(name)
                     }
+                    if (existingChar != null) {
+                        result.nameBasedMappings++
+                        result.warnings.add("캐릭터 행 $i: 이름 기반 매칭 ('$name') — 코드 사용 권장")
+                    }
+                }
 
                 val charId: Long
                 if (existingChar != null) {
@@ -348,6 +557,7 @@ class ExcelImportService(private val db: AppDatabase) {
                     result.updatedCharacters++
                 } else {
                     val newCode = if (code.isNotBlank()) code else generateEntityCode()
+                    if (code.isBlank()) result.newCodesGenerated++
                     charId = db.characterDao().insert(Character(
                         name = name, anotherName = anotherName, novelId = novelId,
                         imagePaths = imagePaths, memo = memo, code = newCode, displayOrder = displayOrder
@@ -398,23 +608,32 @@ class ExcelImportService(private val db: AppDatabase) {
         val spec = timelineSpec(emptyList())
         val sheet = workbook.getSheet(spec.sheetName) ?: return
         val headerRow = sheet.getRow(0) ?: return
-        if (getCellString(headerRow, 0) != spec.firstColumnHeader) return
+        if (!isValidHeader(headerRow, spec.firstColumnHeader)) return
+
+        val cols = resolveHeaderColumns(headerRow)
+        val yearColIndex = cols["연도"] ?: 0
+        val monthColIndex = cols["월"] ?: 1
+        val dayColIndex = cols["일"] ?: 2
+        val calendarColIndex = cols["역법"] ?: 3
+        val descColIndex = cols["사건 설명"] ?: 4
+        val novelColIndex = cols["관련 작품"] ?: 5
+        val charColIndex = cols["관련 캐릭터"] ?: 6
+        val novelCodeColIndex = cols["관련작품코드"] ?: -1
 
         val allNovels = db.novelDao().getAllNovelsList()
-        val novelCodeColIndex = spec.findColumn(headerRow, "관련작품코드")
 
         for (i in 1..sheet.lastRowNum) {
             try {
                 val row = sheet.getRow(i) ?: continue
-                val yearStr = getCellString(row, 0)
-                val year = yearStr.toDoubleOrNull()?.toInt() ?: continue
-                val description = getCellString(row, 4)
+                val yearStr = getCellString(row, yearColIndex)
+                val year = parseNumber(yearStr)?.toInt() ?: continue
+                val description = getCellString(row, descColIndex)
                 if (description.isBlank()) continue
 
-                val month = getCellString(row, 1).toDoubleOrNull()?.toInt()?.takeIf { it in 1..12 }
-                val day = getCellString(row, 2).toDoubleOrNull()?.toInt()?.takeIf { it in 1..31 }
-                val calendarType = getCellString(row, 3).ifBlank { "천개력" }
-                val novelTitle = getCellString(row, 5)
+                val month = parseNumber(getCellString(row, monthColIndex))?.toInt()?.takeIf { it in 1..12 }
+                val day = parseNumber(getCellString(row, dayColIndex))?.toInt()?.takeIf { it in 1..31 }
+                val calendarType = getCellString(row, calendarColIndex).ifBlank { "천개력" }
+                val novelTitle = getCellString(row, novelColIndex)
                 val novelCode = if (novelCodeColIndex >= 0) getCellString(row, novelCodeColIndex) else ""
 
                 val resolvedNovel = if (novelCode.isNotBlank()) {
@@ -447,14 +666,12 @@ class ExcelImportService(private val db: AppDatabase) {
                     result.newEvents++
                 }
 
-                val characterNames = getCellString(row, 6)
+                val characterNames = getCellString(row, charColIndex)
                 if (characterNames.isNotBlank()) {
                     val names = splitCsv(characterNames)
                     val resolvedCharacters = names.mapNotNull { charName ->
                         findCharacterByName(charName, novelId)
                     }
-                    // Only replace cross-refs if at least one character was resolved,
-                    // to avoid accidental data loss from typos or name mismatches
                     if (resolvedCharacters.isNotEmpty()) {
                         db.timelineDao().deleteCrossRefsByEvent(eventId)
                         for (character in resolvedCharacters) {
@@ -478,30 +695,40 @@ class ExcelImportService(private val db: AppDatabase) {
         val spec = stateChangeSpec()
         val sheet = workbook.getSheet(spec.sheetName) ?: return
         val headerRow = sheet.getRow(0) ?: return
-        if (getCellString(headerRow, 0) != spec.firstColumnHeader) return
+        if (!isValidHeader(headerRow, spec.firstColumnHeader)) return
+
+        val cols = resolveHeaderColumns(headerRow)
+        val charNameColIndex = cols["캐릭터"] ?: 0
+        val novelColIndex = cols["작품"] ?: 1
+        val yearColIndex = cols["연도"] ?: 2
+        val monthColIndex = cols["월"] ?: 3
+        val dayColIndex = cols["일"] ?: 4
+        val fieldKeyColIndex = cols["필드키"] ?: 5
+        val newValueColIndex = cols["새 값"] ?: 6
+        val descColIndex = cols["설명"] ?: 7
+        val charCodeColIndex = cols["캐릭터코드"] ?: -1
 
         val allNovels = db.novelDao().getAllNovelsList()
-        val charCodeColIndex = spec.findColumn(headerRow, "캐릭터코드")
 
         for (i in 1..sheet.lastRowNum) {
             try {
                 val row = sheet.getRow(i) ?: continue
-                val charName = getCellString(row, 0)
+                val charName = getCellString(row, charNameColIndex)
                 if (charName.isBlank()) continue
 
-                val novelTitle = getCellString(row, 1)
-                val yearStr = getCellString(row, 2)
-                val year = yearStr.toDoubleOrNull()?.toInt() ?: continue
+                val novelTitle = getCellString(row, novelColIndex)
+                val yearStr = getCellString(row, yearColIndex)
+                val year = parseNumber(yearStr)?.toInt() ?: continue
 
-                val month = getCellString(row, 3).toDoubleOrNull()?.toInt()?.takeIf { it in 1..12 }
-                val day = getCellString(row, 4).toDoubleOrNull()?.toInt()?.takeIf { it in 1..31 }
-                val fieldKey = getCellString(row, 5)
+                val month = parseNumber(getCellString(row, monthColIndex))?.toInt()?.takeIf { it in 1..12 }
+                val day = parseNumber(getCellString(row, dayColIndex))?.toInt()?.takeIf { it in 1..31 }
+                val fieldKey = getCellString(row, fieldKeyColIndex)
                 if (fieldKey.isBlank()) continue
-                val newValue = getCellString(row, 6)
-                val description = getCellString(row, 7)
+                val newValue = getCellString(row, newValueColIndex)
+                val description = getCellString(row, descColIndex)
                 val charCode = if (charCodeColIndex >= 0) getCellString(row, charCodeColIndex) else ""
 
-                // Resolve character: code-first, then name
+                // Resolve character: code-first, then name (Sprint A)
                 val character = (if (charCode.isNotBlank()) {
                     db.characterDao().getCharacterByCode(charCode)
                 } else null)
@@ -540,21 +767,26 @@ class ExcelImportService(private val db: AppDatabase) {
         val spec = relationshipSpec()
         val sheet = workbook.getSheet(spec.sheetName) ?: return
         val headerRow = sheet.getRow(0) ?: return
-        if (getCellString(headerRow, 0) != spec.firstColumnHeader) return
+        if (!isValidHeader(headerRow, spec.firstColumnHeader)) return
 
-        val char1CodeColIndex = spec.findColumn(headerRow, "캐릭터1코드")
-        val char2CodeColIndex = spec.findColumn(headerRow, "캐릭터2코드")
+        val cols = resolveHeaderColumns(headerRow)
+        val char1NameColIndex = cols["캐릭터1"] ?: 0
+        val char2NameColIndex = cols["캐릭터2"] ?: 1
+        val typeColIndex = cols["관계 유형"] ?: 2
+        val descColIndex = cols["설명"] ?: 3
+        val char1CodeColIndex = cols["캐릭터1코드"] ?: -1
+        val char2CodeColIndex = cols["캐릭터2코드"] ?: -1
 
         for (i in 1..sheet.lastRowNum) {
             try {
                 val row = sheet.getRow(i) ?: continue
-                val char1Name = getCellString(row, 0)
-                val char2Name = getCellString(row, 1)
+                val char1Name = getCellString(row, char1NameColIndex)
+                val char2Name = getCellString(row, char2NameColIndex)
                 if (char1Name.isBlank() || char2Name.isBlank()) continue
 
-                val relationshipType = getCellString(row, 2)
+                val relationshipType = getCellString(row, typeColIndex)
                 if (relationshipType.isBlank()) continue
-                val description = getCellString(row, 3)
+                val description = getCellString(row, descColIndex)
                 val char1Code = if (char1CodeColIndex >= 0) getCellString(row, char1CodeColIndex) else ""
                 val char2Code = if (char2CodeColIndex >= 0) getCellString(row, char2CodeColIndex) else ""
 
@@ -605,9 +837,17 @@ class ExcelImportService(private val db: AppDatabase) {
         val spec = nameBankSpec()
         val sheet = workbook.getSheet(spec.sheetName) ?: return
         val headerRow = sheet.getRow(0) ?: return
-        if (getCellString(headerRow, 0) != spec.firstColumnHeader) return
+        if (!isValidHeader(headerRow, spec.firstColumnHeader)) return
 
-        val charCodeColIndex = spec.findColumn(headerRow, "사용캐릭터코드")
+        val cols = resolveHeaderColumns(headerRow)
+        val nameColIndex = cols["이름"] ?: 0
+        val genderColIndex = cols["성별"] ?: 1
+        val originColIndex = cols["출처"] ?: 2
+        val notesColIndex = cols["메모"] ?: 3
+        val usedColIndex = cols["사용여부"] ?: 4
+        val usedByColIndex = cols["사용 캐릭터"] ?: 5
+        val charCodeColIndex = cols["사용캐릭터코드"] ?: -1
+
         val existingNamesMap = db.nameBankDao().getAllNamesList()
             .associateBy { "${it.name}\u0000${it.gender}" }
             .toMutableMap()
@@ -615,14 +855,14 @@ class ExcelImportService(private val db: AppDatabase) {
         for (i in 1..sheet.lastRowNum) {
             try {
                 val row = sheet.getRow(i) ?: continue
-                val name = getCellString(row, 0)
+                val name = getCellString(row, nameColIndex)
                 if (name.isBlank()) continue
 
-                val gender = getCellString(row, 1)
-                val origin = getCellString(row, 2)
-                val notes = getCellString(row, 3)
-                val isUsed = getCellString(row, 4) == "Y"
-                val usedByCharName = getCellString(row, 5)
+                val gender = getCellString(row, genderColIndex)
+                val origin = getCellString(row, originColIndex)
+                val notes = getCellString(row, notesColIndex)
+                val isUsed = parseBoolean(getCellString(row, usedColIndex))
+                val usedByCharName = getCellString(row, usedByColIndex)
                 val usedByCharCode = if (charCodeColIndex >= 0) getCellString(row, charCodeColIndex) else ""
 
                 val usedByCharacterId = if (usedByCharCode.isNotBlank()) {
@@ -630,7 +870,6 @@ class ExcelImportService(private val db: AppDatabase) {
                 } else null
                     ?: if (usedByCharName.isNotBlank()) findCharacterByName(usedByCharName, null)?.id else null
 
-                // If marked as used but the character can't be resolved, clear the used flag
                 val effectiveIsUsed = isUsed && usedByCharacterId != null
 
                 val mapKey = "${name}\u0000${gender}"
@@ -662,16 +901,13 @@ class ExcelImportService(private val db: AppDatabase) {
     // ── 유틸리티 메서드 ──
 
     private fun findSheetForUniverse(workbook: Workbook, universeName: String, reservedNames: Set<String>): Sheet? {
-        // Try exact match first
         workbook.getSheet(universeName)?.let { return it }
-        // Try sanitized name (matching export's sanitizeSheetName logic)
         val sanitized = universeName
             .replace(Regex("[\\[\\]*/\\\\?:]"), "")
             .take(31)
         if (sanitized != universeName) {
             workbook.getSheet(sanitized)?.let { return it }
         }
-        // Fuzzy fallback: match sheets whose base name (without dedup suffix) equals the sanitized name
         for (idx in 0 until workbook.numberOfSheets) {
             val sheetName = workbook.getSheetName(idx)
             if (sheetName in reservedNames) continue
@@ -686,9 +922,10 @@ class ExcelImportService(private val db: AppDatabase) {
     private fun buildColumnFieldMap(headerRow: Row, fields: List<FieldDefinition>, fixedColIndices: Set<Int>): Map<Int, FieldDefinition> {
         val map = mutableMapOf<Int, FieldDefinition>()
         val lastCol = headerRow.lastCellNum.toInt()
-        for (col in 1 until lastCol) {
+        for (col in 0 until lastCol) {
             if (col in fixedColIndices) continue
             val headerName = getCellString(headerRow, col)
+            if (headerName.isBlank()) continue
             val field = fields.find { it.name == headerName }
             if (field != null) {
                 map[col] = field
@@ -723,7 +960,27 @@ class ExcelImportService(private val db: AppDatabase) {
         return db.characterDao().getCharacterByName(name)
     }
 
+    /**
+     * Tolerant number parsing (Sprint C): handles "12", "12.0", " 12 ", etc.
+     */
+    private fun parseNumber(value: String): Double? {
+        val trimmed = value.trim()
+        if (trimmed.isBlank()) return null
+        return trimmed.toDoubleOrNull()
+    }
+
+    /**
+     * Tolerant boolean parsing (Sprint C): Y/N, TRUE/FALSE, 1/0, yes/no
+     */
+    private fun parseBoolean(value: String): Boolean {
+        return when (value.trim().uppercase()) {
+            "Y", "YES", "TRUE", "1", "O", "예" -> true
+            else -> false
+        }
+    }
+
     private fun getCellString(row: Row, cellIndex: Int, maxLength: Int = MAX_FIELD_LENGTH): String {
+        if (cellIndex < 0) return ""
         val cell = row.getCell(cellIndex) ?: return ""
         val raw = when (cell.cellType) {
             CellType.STRING -> cell.stringCellValue?.trim() ?: ""
@@ -735,13 +992,17 @@ class ExcelImportService(private val db: AppDatabase) {
                     else -> value.toString()
                 }
             }
-            CellType.BOOLEAN -> cell.booleanCellValue.toString()
+            CellType.BOOLEAN -> if (cell.booleanCellValue) "Y" else "N"
             CellType.FORMULA -> {
                 try {
                     cell.stringCellValue?.trim() ?: ""
                 } catch (e: Exception) {
-                    val value = cell.numericCellValue
-                    if (value.isNaN() || value.isInfinite()) "" else value.toString()
+                    try {
+                        val value = cell.numericCellValue
+                        if (value.isNaN() || value.isInfinite()) "" else {
+                            if (value == value.toLong().toDouble()) value.toLong().toString() else value.toString()
+                        }
+                    } catch (_: Exception) { "" }
                 }
             }
             else -> ""
@@ -755,3 +1016,10 @@ class ExcelImportService(private val db: AppDatabase) {
         private const val UNCLASSIFIED_SHEET_NAME = "미분류 캐릭터"
     }
 }
+
+/**
+ * Normalize header string for alias matching:
+ * lowercase, remove spaces/underscores/special chars
+ */
+private fun String.normalizeHeader(): String =
+    this.trim().lowercase().replace(Regex("[\\s_\\-()（）]"), "")

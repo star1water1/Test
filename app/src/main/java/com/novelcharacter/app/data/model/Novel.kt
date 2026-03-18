@@ -25,5 +25,8 @@ data class Novel(
     val universeId: Long? = null,
     val createdAt: Long = System.currentTimeMillis(),
     val code: String = generateEntityCode(),
-    val displayOrder: Long = 0
+    val displayOrder: Long = 0,
+    val borderColor: String = "",
+    val borderWidthDp: Float = 1.5f,
+    val inheritUniverseBorder: Boolean = true
 )

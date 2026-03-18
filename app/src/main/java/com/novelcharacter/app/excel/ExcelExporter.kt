@@ -334,11 +334,12 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "■ 빨간 헤더 = 필수 입력 컬럼 (비워두면 해당 행 무시됨)"),
             GuideLine("", styles.guideBody, "■ 회색 헤더/셀 = 수정 불가 (앱 내부 데이터, 수정해도 무시됨)"),
             GuideLine("", styles.guideBody, ""),
-            GuideLine("코드 컬럼 안내", styles.guideSection, ""),
+            GuideLine("코드 컬럼 안내 (중요)", styles.guideSection, ""),
             GuideLine("", styles.guideBody, "• 회색 코드 컬럼은 자동 생성된 고유 식별자입니다. 수정하지 마세요."),
-            GuideLine("", styles.guideBody, "• 이름/제목은 자유롭게 변경할 수 있습니다 — 코드가 있으면 코드로 매칭합니다."),
+            GuideLine("", styles.guideBody, "• 코드가 데이터 매칭의 1순위입니다. 이름/제목은 자유롭게 변경 가능합니다."),
             GuideLine("", styles.guideBody, "• 새 행을 추가할 때는 코드를 비워두세요. 자동으로 생성됩니다."),
-            GuideLine("", styles.guideBody, "• 코드를 삭제하면 이름 기반으로 매칭됩니다 (구버전 호환)."),
+            GuideLine("", styles.guideBody, "• 코드가 없으면 이름 기반으로 매칭되지만, 경고가 표시됩니다."),
+            GuideLine("", styles.guideBody, "• 참조 코드(작품코드, 세계관코드 등)도 동일한 규칙을 따릅니다."),
             GuideLine("", styles.guideBody, ""),
             GuideLine("시트별 안내", styles.guideSection, ""),
             GuideLine("", styles.guideBody, "• 세계관: 코드로 기존 데이터 매칭. 코드 없을 시 이름으로 매칭"),
@@ -349,9 +350,19 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "• 캐릭터 관계: 관계 유형은 드롭다운에서 선택"),
             GuideLine("", styles.guideBody, "• 이름 은행: 이름+성별로 매칭. 사용여부는 Y/N"),
             GuideLine("", styles.guideBody, ""),
+            GuideLine("관대한 가져오기", styles.guideSection, ""),
+            GuideLine("", styles.guideBody, "• 헤더 순서를 변경해도 자동으로 인식합니다."),
+            GuideLine("", styles.guideBody, "• 숫자/문자 혼합, Y/N/TRUE/FALSE/1/0 모두 인식합니다."),
+            GuideLine("", styles.guideBody, "• 일부 행 오류가 있어도 나머지는 정상 처리됩니다."),
+            GuideLine("", styles.guideBody, "• 가져오기 결과에서 경고/오류 내역을 확인할 수 있습니다."),
+            GuideLine("", styles.guideBody, ""),
+            GuideLine("테두리 색상", styles.guideSection, ""),
+            GuideLine("", styles.guideBody, "• 세계관/작품 시트에서 테두리색(HEX), 테두리두께를 설정할 수 있습니다."),
+            GuideLine("", styles.guideBody, "• 작품의 테두리를 비워두면 세계관 색상을 상속합니다."),
+            GuideLine("", styles.guideBody, ""),
             GuideLine("주의사항", styles.guideSection, ""),
             GuideLine("", styles.guideBody, "• 시트 이름을 변경하지 마세요 (가져오기 시 시트명으로 데이터를 찾습니다)"),
-            GuideLine("", styles.guideBody, "• 헤더 행(1행)을 삭제하거나 순서를 바꾸지 마세요"),
+            GuideLine("", styles.guideBody, "• 헤더 행(1행)을 삭제하지 마세요 (컬럼 순서 변경은 가능합니다)"),
             GuideLine("", styles.guideBody, "• 행을 추가하여 새 데이터를 입력할 수 있습니다"),
             GuideLine("", styles.guideBody, "• 이미지경로 컬럼은 앱 내부 경로이므로 수정하지 마세요"),
             GuideLine("", styles.guideBody, "• 태그는 쉼표(,)로 구분하여 입력하세요"),
@@ -400,6 +411,8 @@ class ExcelExporter(context: Context) {
             row.createCell(1).setCellValue(universe.description)
             row.createCell(2).setCellValue(universe.code)
             row.createCell(3).setCellValue(universe.displayOrder.toDouble())
+            row.createCell(4).setCellValue(universe.borderColor)
+            row.createCell(5).setCellValue(universe.borderWidthDp.toDouble())
         }
 
         applySpecFormatting(sheet, spec, universes.size)
@@ -427,6 +440,8 @@ class ExcelExporter(context: Context) {
             row.createCell(3).setCellValue(novel.code)
             row.createCell(4).setCellValue(universe?.code ?: "")
             row.createCell(5).setCellValue(novel.displayOrder.toDouble())
+            row.createCell(6).setCellValue(novel.borderColor)
+            row.createCell(7).setCellValue(novel.borderWidthDp.toDouble())
         }
 
         applySpecFormatting(sheet, spec, novels.size)

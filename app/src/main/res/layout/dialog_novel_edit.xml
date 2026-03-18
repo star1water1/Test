@@ -23,6 +23,7 @@
     <com.google.android.material.textfield.TextInputLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_marginBottom="12dp"
         android:hint="@string/novel_description">
 
         <com.google.android.material.textfield.TextInputEditText
@@ -33,5 +34,50 @@
             android:minLines="3" />
 
     </com.google.android.material.textfield.TextInputLayout>
+
+    <TextView
+        android:id="@+id/borderColorLabel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/border_color_label"
+        android:layout_marginTop="4dp"
+        android:layout_marginBottom="8dp" />
+
+    <View
+        android:id="@+id/colorPreview"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:layout_marginBottom="8dp"
+        android:background="@color/item_background_light" />
+
+    <LinearLayout
+        android:id="@+id/colorPresetsRow"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginBottom="8dp" />
+
+    <com.google.android.material.textfield.TextInputLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="4dp"
+        android:hint="@string/border_color_hex_hint">
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/editBorderColor"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="text" />
+
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <TextView
+        android:id="@+id/resetBorderColor"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/border_color_reset"
+        android:textColor="@color/primary"
+        android:paddingTop="4dp"
+        android:paddingBottom="8dp" />
 
 </LinearLayout>

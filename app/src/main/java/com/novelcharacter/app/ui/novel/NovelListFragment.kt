@@ -1,5 +1,7 @@
 package com.novelcharacter.app.ui.novel
 
+import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -135,6 +137,14 @@ class NovelListFragment : Fragment() {
             adapter.submitList(novels)
             binding.emptyText.visibility = if (novels.isEmpty()) View.VISIBLE else View.GONE
         }
+
+        // Load universe border color for inheritance
+        if (universeId != -1L) {
+            viewModel.loadUniverseBorder(universeId)
+        }
+        viewModel.universeBorder.observe(viewLifecycleOwner) { (color, width) ->
+            adapter.setUniverseBorder(color, width)
+        }
     }
 
     private fun toggleReorderMode() {
@@ -150,27 +160,94 @@ class NovelListFragment : Fragment() {
 
     private fun showNovelEditDialog(novel: Novel?) {
         val dialogBinding = DialogNovelEditBinding.inflate(layoutInflater)
+        val ctx = requireContext()
+        val dp = ctx.resources.displayMetrics.density
+
         novel?.let {
             dialogBinding.editTitle.setText(it.title)
             dialogBinding.editDescription.setText(it.description)
+            dialogBinding.editBorderColor.setText(it.borderColor)
         }
 
-        AlertDialog.Builder(requireContext())
+        var selectedColor = novel?.borderColor ?: ""
+
+        // Setup color preview
+        val previewBg = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = 8 * dp
+            if (selectedColor.isNotBlank()) {
+                try { setColor(Color.parseColor(selectedColor)) } catch (_: Exception) { setColor(Color.LTGRAY) }
+            } else {
+                setColor(Color.LTGRAY)
+            }
+            setStroke((1 * dp).toInt(), Color.GRAY)
+        }
+        dialogBinding.colorPreview.background = previewBg
+
+        // Setup color presets
+        val presets = com.novelcharacter.app.excel.BORDER_COLOR_PRESETS
+        for (preset in presets) {
+            val swatch = View(ctx).apply {
+                layoutParams = android.widget.LinearLayout.LayoutParams((28 * dp).toInt(), (28 * dp).toInt()).apply {
+                    marginEnd = (4 * dp).toInt()
+                }
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    try { setColor(Color.parseColor(preset)) } catch (_: Exception) {}
+                }
+                setOnClickListener {
+                    selectedColor = preset
+                    previewBg.setColor(Color.parseColor(preset))
+                    dialogBinding.editBorderColor.setText(preset)
+                }
+            }
+            dialogBinding.colorPresetsRow.addView(swatch)
+        }
+
+        // HEX edit watcher
+        dialogBinding.editBorderColor.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: android.text.Editable?) {
+                val hex = s?.toString()?.trim() ?: ""
+                selectedColor = hex
+                try {
+                    if (hex.isNotBlank()) previewBg.setColor(Color.parseColor(hex))
+                } catch (_: Exception) {}
+            }
+        })
+
+        // Reset button
+        dialogBinding.resetBorderColor.setOnClickListener {
+            selectedColor = ""
+            dialogBinding.editBorderColor.setText("")
+            previewBg.setColor(Color.LTGRAY)
+        }
+
+        AlertDialog.Builder(ctx)
             .setTitle(if (novel == null) R.string.add_novel else R.string.edit_novel)
             .setView(dialogBinding.root)
             .setPositiveButton(R.string.save) { _, _ ->
                 val title = dialogBinding.editTitle.text.toString().trim()
                 val description = dialogBinding.editDescription.text.toString().trim()
+                val borderColor = dialogBinding.editBorderColor.text.toString().trim()
                 if (title.isNotEmpty()) {
                     if (novel == null) {
                         val newNovel = Novel(
                             title = title,
                             description = description,
-                            universeId = if (universeId != -1L) universeId else null
+                            universeId = if (universeId != -1L) universeId else null,
+                            borderColor = borderColor,
+                            inheritUniverseBorder = borderColor.isBlank()
                         )
                         viewModel.insertNovel(newNovel)
                     } else {
-                        viewModel.updateNovel(novel.copy(title = title, description = description))
+                        viewModel.updateNovel(novel.copy(
+                            title = title,
+                            description = description,
+                            borderColor = borderColor,
+                            inheritUniverseBorder = borderColor.isBlank()
+                        ))
                     }
                 }
             }

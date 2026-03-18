@@ -1,11 +1,14 @@
 package com.novelcharacter.app.ui.universe
 
+import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
@@ -177,32 +180,119 @@ class UniverseListFragment : Fragment() {
     }
 
     private fun showUniverseEditDialog(universe: Universe?) {
-        val layout = LinearLayout(requireContext()).apply {
+        val ctx = requireContext()
+        val dp = ctx.resources.displayMetrics.density
+        val layout = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(64, 32, 64, 16)
         }
-        val nameEdit = EditText(requireContext()).apply {
+        val nameEdit = EditText(ctx).apply {
             hint = getString(R.string.universe_name_hint)
             universe?.let { setText(it.name) }
         }
-        val descEdit = EditText(requireContext()).apply {
+        val descEdit = EditText(ctx).apply {
             hint = getString(R.string.universe_desc_hint)
             universe?.let { setText(it.description) }
         }
         layout.addView(nameEdit)
         layout.addView(descEdit)
 
-        AlertDialog.Builder(requireContext())
+        // Border color picker section
+        val colorLabel = TextView(ctx).apply {
+            text = getString(R.string.border_color_label)
+            setPadding(0, (16 * dp).toInt(), 0, (8 * dp).toInt())
+        }
+        layout.addView(colorLabel)
+
+        var selectedColor = universe?.borderColor ?: ""
+
+        val colorPreview = View(ctx).apply {
+            layoutParams = LinearLayout.LayoutParams((40 * dp).toInt(), (40 * dp).toInt()).apply {
+                bottomMargin = (8 * dp).toInt()
+            }
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = 8 * dp
+                if (selectedColor.isNotBlank()) {
+                    try { setColor(Color.parseColor(selectedColor)) } catch (_: Exception) { setColor(Color.LTGRAY) }
+                } else {
+                    setColor(Color.LTGRAY)
+                }
+                setStroke((1 * dp).toInt(), Color.GRAY)
+            }
+        }
+        layout.addView(colorPreview)
+
+        // HEX input (declared first so presets can reference it)
+        val colorHexEdit = EditText(ctx).apply {
+            hint = getString(R.string.border_color_hex_hint)
+            setText(selectedColor)
+            addTextChangedListener(object : android.text.TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+                override fun afterTextChanged(s: android.text.Editable?) {
+                    val hex = s?.toString()?.trim() ?: ""
+                    selectedColor = hex
+                    try {
+                        if (hex.isNotBlank()) {
+                            (colorPreview.background as? GradientDrawable)?.setColor(Color.parseColor(hex))
+                        }
+                    } catch (_: Exception) {}
+                }
+            })
+        }
+
+        // Color presets row
+        val presetsRow = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, 0, 0, (8 * dp).toInt())
+        }
+        val presets = com.novelcharacter.app.excel.BORDER_COLOR_PRESETS
+        for (preset in presets) {
+            val swatch = View(ctx).apply {
+                layoutParams = LinearLayout.LayoutParams((28 * dp).toInt(), (28 * dp).toInt()).apply {
+                    marginEnd = (4 * dp).toInt()
+                }
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    try { setColor(Color.parseColor(preset)) } catch (_: Exception) {}
+                }
+                setOnClickListener {
+                    selectedColor = preset
+                    (colorPreview.background as? GradientDrawable)?.setColor(Color.parseColor(preset))
+                    colorHexEdit.setText(preset)
+                }
+            }
+            presetsRow.addView(swatch)
+        }
+        layout.addView(presetsRow)
+        layout.addView(colorHexEdit)
+
+        // Clear button
+        val clearBtn = TextView(ctx).apply {
+            text = getString(R.string.border_color_reset)
+            setTextColor(ctx.getColor(R.color.primary))
+            setPadding(0, (4 * dp).toInt(), 0, (8 * dp).toInt())
+            setOnClickListener {
+                selectedColor = ""
+                colorHexEdit.setText("")
+                (colorPreview.background as? GradientDrawable)?.setColor(Color.LTGRAY)
+            }
+        }
+        layout.addView(clearBtn)
+
+        AlertDialog.Builder(ctx)
             .setTitle(if (universe == null) R.string.add_universe else R.string.edit_universe)
             .setView(layout)
             .setPositiveButton(R.string.save) { _, _ ->
                 val name = nameEdit.text.toString().trim()
                 val desc = descEdit.text.toString().trim()
+                val borderColor = colorHexEdit.text.toString().trim()
                 if (name.isNotEmpty()) {
                     if (universe == null) {
-                        viewModel.insertUniverse(Universe(name = name, description = desc))
+                        viewModel.insertUniverse(Universe(name = name, description = desc, borderColor = borderColor))
                     } else {
-                        viewModel.updateUniverse(universe.copy(name = name, description = desc))
+                        viewModel.updateUniverse(universe.copy(name = name, description = desc, borderColor = borderColor))
                     }
                 }
             }

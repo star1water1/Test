@@ -300,4 +300,9 @@
     <string name="maintenance_check_images">이미지 경로 점검</string>
     <string name="maintenance_check_integrity">무결성 점검</string>
     <string name="maintenance_fk_violations">FK 위반: %d건</string>
+
+    <!-- Border color customization (Sprint D) -->
+    <string name="border_color_label">테두리 색상</string>
+    <string name="border_color_hex_hint">HEX 색상 (예: #5C6BC0)</string>
+    <string name="border_color_reset">기본값으로 되돌리기</string>
 </resources>

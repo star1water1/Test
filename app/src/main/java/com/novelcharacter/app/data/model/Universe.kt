@@ -15,5 +15,7 @@ data class Universe(
     val description: String = "",
     val createdAt: Long = System.currentTimeMillis(),
     val code: String = generateEntityCode(),
-    val displayOrder: Long = 0
+    val displayOrder: Long = 0,
+    val borderColor: String = "",
+    val borderWidthDp: Float = 1.5f
 )

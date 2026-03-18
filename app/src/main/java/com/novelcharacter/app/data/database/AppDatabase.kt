@@ -43,7 +43,7 @@ import com.novelcharacter.app.data.model.Universe
         NameBankEntry::class,
         CharacterRelationship::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -334,6 +334,28 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Migration from version 7 to 8:
+         * - Added borderColor, borderWidthDp to universes for card border customization
+         * - Added borderColor, borderWidthDp, inheritUniverseBorder to novels
+         */
+        private val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "Migrating database from version 7 to 8")
+
+                // Universe border customization
+                db.execSQL("ALTER TABLE `universes` ADD COLUMN `borderColor` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `universes` ADD COLUMN `borderWidthDp` REAL NOT NULL DEFAULT 1.5")
+
+                // Novel border customization with inheritance
+                db.execSQL("ALTER TABLE `novels` ADD COLUMN `borderColor` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `novels` ADD COLUMN `borderWidthDp` REAL NOT NULL DEFAULT 1.5")
+                db.execSQL("ALTER TABLE `novels` ADD COLUMN `inheritUniverseBorder` INTEGER NOT NULL DEFAULT 1")
+
+                Log.i(TAG, "Migration from version 7 to 8 completed successfully")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -341,7 +363,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "novel_character_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
                     .build()
                     .also { INSTANCE = it }
             }
