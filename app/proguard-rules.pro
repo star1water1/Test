@@ -5,6 +5,7 @@
 -dontwarn org.apache.poi.**
 -keep class org.apache.commons.** { *; }
 -dontwarn org.apache.commons.**
+-keep class org.apache.xmlbeans.** { *; }
 -dontwarn org.apache.xmlbeans.**
 -dontwarn javax.xml.**
 
@@ -12,6 +13,20 @@
 -keep class javax.xml.stream.** { *; }
 -keep class com.fasterxml.aalto.** { *; }
 -dontwarn com.fasterxml.aalto.**
+
+# Keep Apache POI service provider implementations (loaded via reflection)
+-keep class org.apache.poi.sl.draw.** { *; }
+-keep class org.apache.poi.ss.formula.functions.** { *; }
+-keepclassmembers class org.apache.poi.** {
+    public <init>(...);
+}
+-dontwarn org.apache.batik.**
+-dontwarn org.apache.logging.**
+-dontwarn org.apache.log4j.**
+-dontwarn org.slf4j.**
+-dontwarn de.rototor.pdfbox.**
+-dontwarn org.openxmlformats.**
+-keep class org.openxmlformats.** { *; }
 
 # Keep Gson serialization/deserialization
 -keep class com.google.gson.** { *; }

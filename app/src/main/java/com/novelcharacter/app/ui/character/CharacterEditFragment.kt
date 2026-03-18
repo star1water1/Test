@@ -551,11 +551,9 @@ class CharacterEditFragment : Fragment() {
 
                 override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
                     val imageView = holder.itemView as ImageView
-                    // Set placeholder first, then recycle old bitmap to avoid drawing recycled bitmap
-                    val oldBitmap = imageView.tag as? android.graphics.Bitmap
+                    // Reset to placeholder; let GC handle old bitmap lifecycle
                     imageView.tag = null
                     imageView.setImageResource(R.drawable.ic_character_placeholder)
-                    oldBitmap?.let { if (!it.isRecycled) it.recycle() }
                     if (position < imagePaths.size) {
                         val path = imagePaths[position]
                         val boundPosition = position
@@ -651,10 +649,9 @@ class CharacterEditFragment : Fragment() {
             viewLifecycleOwner.lifecycleScope.launch {
                 val savedCharId: Long
                 if (characterId != -1L) {
-                    // 기존 캐릭터 수정
-                    viewModel.updateCharacter(character)
+                    // 기존 캐릭터 수정 (트랜잭션으로 원자적 업데이트)
                     val fieldValues = collectFieldValues(characterId)
-                    viewModel.saveAllFieldValues(characterId, fieldValues)
+                    viewModel.updateCharacterWithFields(character, fieldValues)
                     savedCharId = characterId
                 } else {
                     // 새 캐릭터 생성 - suspend로 ID를 받아온 뒤 필드값 저장

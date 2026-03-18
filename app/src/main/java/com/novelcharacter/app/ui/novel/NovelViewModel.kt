@@ -15,6 +15,7 @@ class NovelViewModel(application: Application) : AndroidViewModel(application) {
 
     private val app = application as NovelCharacterApp
     private val novelRepository = app.novelRepository
+    private val universeRepository = app.universeRepository
     private val recentActivityDao = app.recentActivityDao
     val allNovels: LiveData<List<Novel>> = novelRepository.allNovels
 
@@ -24,7 +25,7 @@ class NovelViewModel(application: Application) : AndroidViewModel(application) {
     val universeBorder: LiveData<Pair<String, Float>> = _universeBorder
 
     fun loadUniverseBorder(universeId: Long) = viewModelScope.launch {
-        val universe = app.database.universeDao().getUniverseById(universeId)
+        val universe = universeRepository.getUniverseById(universeId)
         if (universe != null) {
             _universeBorder.value = Pair(universe.borderColor, universe.borderWidthDp)
         }

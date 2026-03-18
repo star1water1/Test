@@ -10,6 +10,7 @@ import android.view.ScaleGestureDetector
 import android.view.View
 import androidx.core.content.ContextCompat
 import com.novelcharacter.app.R
+import kotlinx.coroutines.*
 import kotlin.math.*
 
 data class GraphNode(
@@ -67,6 +68,8 @@ class RelationshipGraphView @JvmOverloads constructor(
     private var translateY = 0f
 
     private var onNodeClickListener: ((Long) -> Unit)? = null
+    private var layoutJob: Job? = null
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     private val scaleDetector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
         override fun onScale(detector: ScaleGestureDetector): Boolean {
@@ -93,7 +96,10 @@ class RelationshipGraphView @JvmOverloads constructor(
                 val dy = tapY - node.y
                 sqrt(dx * dx + dy * dy) <= nodeRadius * 1.5f
             }
-            hitNode?.let { onNodeClickListener?.invoke(it.id) }
+            hitNode?.let {
+                performClick()
+                onNodeClickListener?.invoke(it.id)
+            }
             return true
         }
     })
@@ -107,9 +113,8 @@ class RelationshipGraphView @JvmOverloads constructor(
         edges.clear()
         nodes.addAll(nodeList)
         edges.addAll(edgeList)
-        layoutNodes()
         resetTransform()
-        invalidate()
+        layoutNodesAsync()
     }
 
     fun resetTransform() {
@@ -118,41 +123,73 @@ class RelationshipGraphView @JvmOverloads constructor(
         translateY = 0f
     }
 
-    private fun layoutNodes() {
-        if (nodes.isEmpty()) return
+    private fun layoutNodesAsync() {
+        layoutJob?.cancel()
+        if (nodes.isEmpty()) {
+            invalidate()
+            return
+        }
 
         val count = nodes.size
         if (count == 1) {
             nodes[0].x = 0f
             nodes[0].y = 0f
+            invalidate()
             return
         }
 
-        // Force-directed layout using simple circular initialization + spring iterations
+        // Take a snapshot for background computation
+        val nodesCopy = nodes.map { it.copy() }
+        val edgesCopy = edges.toList()
+
+        layoutJob = scope.launch {
+            val positions = withContext(Dispatchers.Default) {
+                computeLayout(nodesCopy, edgesCopy)
+            }
+            // Apply computed positions back to nodes
+            for (i in nodes.indices) {
+                if (i < positions.size) {
+                    nodes[i].x = positions[i].first
+                    nodes[i].y = positions[i].second
+                }
+            }
+            invalidate()
+        }
+    }
+
+    private fun computeLayout(
+        nodesCopy: List<GraphNode>,
+        edgesCopy: List<GraphEdge>
+    ): List<Pair<Float, Float>> {
+        val count = nodesCopy.size
+        val xs = FloatArray(count)
+        val ys = FloatArray(count)
+
+        // Circular initialization
         val radius = max(150f, count * 30f)
-        nodes.forEachIndexed { i, node ->
+        for (i in 0 until count) {
             val angle = 2.0 * PI * i / count
-            node.x = (radius * cos(angle)).toFloat()
-            node.y = (radius * sin(angle)).toFloat()
+            xs[i] = (radius * cos(angle)).toFloat()
+            ys[i] = (radius * sin(angle)).toFloat()
         }
 
-        // Run force-directed iterations
+        // Force-directed iterations
         val iterations = min(100, count * 5)
-        val k = sqrt((radius * radius * 4) / count.toFloat()) // ideal distance
+        val k = sqrt((radius * radius * 4) / count.toFloat())
         val temp = radius / 2f
-        val nodeIndexMap = nodes.withIndex().associate { (i, n) -> n.id to i }
+        val nodeIndexMap = nodesCopy.withIndex().associate { (i, n) -> n.id to i }
 
         for (iter in 0 until iterations) {
             val cooling = temp * (1f - iter.toFloat() / iterations)
 
-            // Repulsive forces between all node pairs
             val dispX = FloatArray(count)
             val dispY = FloatArray(count)
 
+            // Repulsive forces
             for (i in 0 until count) {
                 for (j in i + 1 until count) {
-                    val dx = nodes[i].x - nodes[j].x
-                    val dy = nodes[i].y - nodes[j].y
+                    val dx = xs[i] - xs[j]
+                    val dy = ys[i] - ys[j]
                     val dist = max(sqrt(dx * dx + dy * dy), 0.1f)
                     val force = k * k / dist
                     val fx = dx / dist * force
@@ -162,12 +199,12 @@ class RelationshipGraphView @JvmOverloads constructor(
                 }
             }
 
-            // Attractive forces along edges
-            for (edge in edges) {
+            // Attractive forces
+            for (edge in edgesCopy) {
                 val iIdx = nodeIndexMap[edge.fromId] ?: continue
                 val jIdx = nodeIndexMap[edge.toId] ?: continue
-                val dx = nodes[iIdx].x - nodes[jIdx].x
-                val dy = nodes[iIdx].y - nodes[jIdx].y
+                val dx = xs[iIdx] - xs[jIdx]
+                val dy = ys[iIdx] - ys[jIdx]
                 val dist = max(sqrt(dx * dx + dy * dy), 0.1f)
                 val force = dist * dist / k
                 val fx = dx / dist * force
@@ -179,10 +216,12 @@ class RelationshipGraphView @JvmOverloads constructor(
             // Apply displacement with cooling
             for (i in 0 until count) {
                 val dist = max(sqrt(dispX[i] * dispX[i] + dispY[i] * dispY[i]), 0.1f)
-                nodes[i].x += dispX[i] / dist * min(dist, cooling)
-                nodes[i].y += dispY[i] / dist * min(dist, cooling)
+                xs[i] += dispX[i] / dist * min(dist, cooling)
+                ys[i] += dispY[i] / dist * min(dist, cooling)
             }
         }
+
+        return (0 until count).map { xs[it] to ys[it] }
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -227,5 +266,11 @@ class RelationshipGraphView @JvmOverloads constructor(
         }
 
         canvas.restore()
+    }
+
+    override fun onDetachedFromWindow() {
+        super.onDetachedFromWindow()
+        layoutJob?.cancel()
+        scope.cancel()
     }
 }

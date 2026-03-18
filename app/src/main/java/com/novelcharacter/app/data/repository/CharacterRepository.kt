@@ -39,6 +39,14 @@ class CharacterRepository(
         }
     }
     suspend fun updateCharacter(character: Character) = characterDao.update(character)
+
+    suspend fun updateCharacterWithFields(character: Character, values: List<CharacterFieldValue>) {
+        db.withTransaction {
+            characterDao.update(character)
+            characterFieldValueDao.replaceAllByCharacter(character.id, values)
+        }
+    }
+
     suspend fun deleteCharacter(character: Character) {
         db.withTransaction {
             nameBankDao.resetUsageByCharacter(character.id)

@@ -102,6 +102,9 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     suspend fun saveAllFieldValues(characterId: Long, values: List<CharacterFieldValue>) =
         characterRepository.saveAllFieldValues(characterId, values)
 
+    suspend fun updateCharacterWithFields(character: Character, values: List<CharacterFieldValue>) =
+        characterRepository.updateCharacterWithFields(character, values)
+
     suspend fun insertCharacterSuspend(character: Character): Long =
         characterRepository.insertCharacter(character)
 

@@ -18,6 +18,10 @@ import com.novelcharacter.app.backup.AutoBackupWorker
 import com.novelcharacter.app.backup.BackupStatusStore
 import com.novelcharacter.app.notification.BirthdayWorker
 import com.novelcharacter.app.util.ThemeHelper
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import java.util.concurrent.TimeUnit
 
 class NovelCharacterApp : Application() {
@@ -54,10 +58,16 @@ class NovelCharacterApp : Application() {
         AppRepository(novelRepository, characterRepository, timelineRepository, universeRepository, nameBankRepository)
     }
 
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+
     override fun onCreate() {
         super.onCreate()
-        // Apply saved theme early to minimize flicker before Activity creates
+        // Apply saved theme from SharedPreferences cache (non-blocking)
         ThemeHelper.applyTheme(ThemeHelper.getSavedTheme(this))
+        // Migrate DataStore → SharedPreferences cache on first launch
+        appScope.launch(Dispatchers.IO) {
+            ThemeHelper.migrateCacheIfNeeded(this@NovelCharacterApp)
+        }
         createNotificationChannel()
         scheduleBirthdayCheck()
         scheduleAutoBackup()
