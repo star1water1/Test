@@ -2,10 +2,14 @@ package com.novelcharacter.app.ui.novel
 
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
+import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.ArrayAdapter
+import android.widget.Spinner
+import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
@@ -31,6 +35,29 @@ class NovelListFragment : Fragment() {
     private lateinit var adapter: NovelAdapter
     private var itemTouchHelper: ItemTouchHelper? = null
     private var universeId: Long = -1L
+    private var pendingImageCallback: ((String) -> Unit)? = null
+
+    private val novelImagePickerLauncher = registerForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let { saveNovelImage(it) }
+    }
+
+    private fun saveNovelImage(uri: Uri) {
+        try {
+            val ctx = requireContext()
+            val inputStream = ctx.contentResolver.openInputStream(uri) ?: return
+            val fileName = "novel_${java.util.UUID.randomUUID()}.jpg"
+            val file = java.io.File(ctx.filesDir, fileName)
+            file.outputStream().use { out -> inputStream.copyTo(out) }
+            inputStream.close()
+            pendingImageCallback?.invoke(file.absolutePath)
+            pendingImageCallback = null
+        } catch (e: Exception) {
+            Toast.makeText(requireContext(), R.string.image_save_failed, Toast.LENGTH_SHORT).show()
+        }
+    }
+
     private var importerInitialized = false
     private val importer by lazy {
         importerInitialized = true
@@ -228,6 +255,43 @@ class NovelListFragment : Fragment() {
             previewBg.setColor(Color.LTGRAY)
         }
 
+        // 이미지 모드 설정
+        val imageModes = arrayOf(
+            getString(R.string.image_mode_none),
+            getString(R.string.image_mode_custom),
+            getString(R.string.image_mode_random_character),
+            getString(R.string.image_mode_select_character)
+        )
+        val imageModeValues = arrayOf(
+            Novel.IMAGE_MODE_NONE, Novel.IMAGE_MODE_CUSTOM,
+            Novel.IMAGE_MODE_RANDOM_CHARACTER, Novel.IMAGE_MODE_SELECT_CHARACTER
+        )
+        var selectedImageMode = novel?.imageMode ?: Novel.IMAGE_MODE_NONE
+        var selectedImagePath = novel?.imagePath ?: ""
+        var selectedImageCharId = novel?.imageCharacterId
+
+        dialogBinding.spinnerImageMode.adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_dropdown_item, imageModes)
+        dialogBinding.spinnerImageMode.setSelection(imageModeValues.indexOf(selectedImageMode).coerceAtLeast(0))
+
+        dialogBinding.btnSelectImage.visibility = if (selectedImageMode == Novel.IMAGE_MODE_CUSTOM) View.VISIBLE else View.GONE
+        if (selectedImagePath.isNotBlank()) dialogBinding.btnSelectImage.text = getString(R.string.image_change)
+
+        dialogBinding.btnSelectImage.setOnClickListener {
+            pendingImageCallback = { path ->
+                selectedImagePath = path
+                dialogBinding.btnSelectImage.text = getString(R.string.image_selected)
+            }
+            novelImagePickerLauncher.launch("image/*")
+        }
+
+        dialogBinding.spinnerImageMode.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: android.widget.AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                selectedImageMode = imageModeValues[pos]
+                dialogBinding.btnSelectImage.visibility = if (selectedImageMode == Novel.IMAGE_MODE_CUSTOM) View.VISIBLE else View.GONE
+            }
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
+        }
+
         AlertDialog.Builder(ctx)
             .setTitle(if (novel == null) R.string.add_novel else R.string.edit_novel)
             .setView(dialogBinding.root)
@@ -242,7 +306,10 @@ class NovelListFragment : Fragment() {
                             description = description,
                             universeId = if (universeId != -1L) universeId else null,
                             borderColor = borderColor,
-                            inheritUniverseBorder = borderColor.isBlank()
+                            inheritUniverseBorder = borderColor.isBlank(),
+                            imagePath = selectedImagePath,
+                            imageMode = selectedImageMode,
+                            imageCharacterId = selectedImageCharId
                         )
                         viewModel.insertNovel(newNovel)
                     } else {
@@ -250,7 +317,10 @@ class NovelListFragment : Fragment() {
                             title = title,
                             description = description,
                             borderColor = borderColor,
-                            inheritUniverseBorder = borderColor.isBlank()
+                            inheritUniverseBorder = borderColor.isBlank(),
+                            imagePath = selectedImagePath,
+                            imageMode = selectedImageMode,
+                            imageCharacterId = selectedImageCharId
                         ))
                     }
                 }

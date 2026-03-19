@@ -11,6 +11,7 @@ import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.data.model.RecentActivity
 import com.novelcharacter.app.data.model.FieldDefinition
+import com.novelcharacter.app.data.model.UserPresetTemplate
 import com.novelcharacter.app.util.PresetTemplates
 import android.util.Log
 import kotlinx.coroutines.Job
@@ -22,8 +23,10 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
     private val db = app.database
     private val universeRepository = app.universeRepository
     private val recentActivityDao = app.recentActivityDao
+    private val userPresetDao = db.userPresetTemplateDao()
     val allUniverses: LiveData<List<Universe>> = universeRepository.allUniverses
     val recentActivities: LiveData<List<RecentActivity>> = recentActivityDao.getRecentActivities(5)
+    val userPresets: LiveData<List<UserPresetTemplate>> = userPresetDao.getAllTemplates()
 
     // 각 세계관의 작품 수, 필드 수를 캐시
     private val _universeNovelCounts = MutableLiveData<Map<Long, Int>>()
@@ -76,7 +79,40 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun getPresetTemplates(): List<PresetTemplates.PresetTemplate> =
-        PresetTemplates.getTemplates()
+        PresetTemplates.getBuiltInTemplates()
+
+    /** 현재 세계관의 필드 구성을 사용자 프리셋으로 저장 */
+    fun saveAsUserPreset(universeId: Long, name: String, description: String) = viewModelScope.launch {
+        try {
+            val fields = universeRepository.getFieldsByUniverseList(universeId)
+            val json = PresetTemplates.fieldsToJson(fields)
+            userPresetDao.insert(UserPresetTemplate(
+                name = name,
+                description = description,
+                fieldsJson = json
+            ))
+        } catch (e: Exception) {
+            Log.e("UniverseViewModel", "Failed to save user preset", e)
+        }
+    }
+
+    /** 사용자 프리셋 업데이트 */
+    fun updateUserPreset(preset: UserPresetTemplate) = viewModelScope.launch {
+        try {
+            userPresetDao.update(preset.copy(updatedAt = System.currentTimeMillis()))
+        } catch (e: Exception) {
+            Log.e("UniverseViewModel", "Failed to update user preset", e)
+        }
+    }
+
+    /** 사용자 프리셋 삭제 */
+    fun deleteUserPreset(preset: UserPresetTemplate) = viewModelScope.launch {
+        try {
+            userPresetDao.delete(preset)
+        } catch (e: Exception) {
+            Log.e("UniverseViewModel", "Failed to delete user preset", e)
+        }
+    }
 
     // SingleLiveEvent pattern: wrap value so observer consumes it only once
     class Event<out T>(private val content: T) {

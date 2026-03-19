@@ -80,4 +80,28 @@
         android:paddingTop="4dp"
         android:paddingBottom="8dp" />
 
+    <!-- 이미지 설정 -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/image_mode_label"
+        android:layout_marginTop="8dp"
+        android:layout_marginBottom="8dp" />
+
+    <Spinner
+        android:id="@+id/spinnerImageMode"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:layout_marginBottom="8dp"
+        android:contentDescription="@string/image_mode_label" />
+
+    <TextView
+        android:id="@+id/btnSelectImage"
+        android:layout_width="wrap_content"
+        android:layout_height="48dp"
+        android:gravity="center_vertical"
+        android:text="@string/image_select"
+        android:textColor="@color/primary"
+        android:visibility="gone" />
+
 </LinearLayout>

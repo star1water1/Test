@@ -4,9 +4,11 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
+import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -14,8 +16,10 @@ import androidx.recyclerview.widget.RecyclerView
 import com.google.gson.Gson
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.FieldDefinition
+import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.databinding.FragmentFieldManageBinding
 import com.novelcharacter.app.ui.adapter.FieldDefinitionAdapter
+import kotlinx.coroutines.launch
 
 class FieldManageFragment : Fragment() {
 
@@ -51,11 +55,6 @@ class FieldManageFragment : Fragment() {
         setupFieldEditResultListener()
     }
 
-    /**
-     * Handles field save result after configuration change (rotation).
-     * When the dialog is recreated by FragmentManager, the callback listener is lost,
-     * so FragmentResult is the fallback mechanism.
-     */
     private fun setupFieldEditResultListener() {
         childFragmentManager.setFragmentResultListener(
             FieldEditDialog.RESULT_KEY, viewLifecycleOwner
@@ -74,6 +73,16 @@ class FieldManageFragment : Fragment() {
         binding.toolbar.setNavigationOnClickListener {
             findNavController().popBackStack()
         }
+        binding.toolbar.inflateMenu(R.menu.field_manage_menu)
+        binding.toolbar.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                R.id.action_import_fields -> {
+                    showImportFieldsDialog()
+                    true
+                }
+                else -> false
+            }
+        }
     }
 
     private fun setupRecyclerView() {
@@ -88,7 +97,6 @@ class FieldManageFragment : Fragment() {
         binding.fieldRecyclerView.layoutManager = LinearLayoutManager(requireContext())
         binding.fieldRecyclerView.adapter = adapter
 
-        // 드래그로 순서 변경
         itemTouchHelper = ItemTouchHelper(object : ItemTouchHelper.SimpleCallback(
             ItemTouchHelper.UP or ItemTouchHelper.DOWN, 0
         ) {
@@ -164,6 +172,54 @@ class FieldManageFragment : Fragment() {
                     }
                 }
             }
+            .show()
+    }
+
+    /** 다른 세계관에서 필드 가져오기 */
+    private fun showImportFieldsDialog() {
+        lifecycleScope.launch {
+            val otherFields = viewModel.getFieldsFromOtherUniverses(universeId)
+            if (otherFields.isEmpty()) {
+                Toast.makeText(requireContext(), R.string.import_no_other_universes, Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+
+            // 1단계: 세계관 선택
+            val universes = otherFields.keys.toList()
+            val names = universes.map { "${it.name} (${otherFields[it]!!.size}개 필드)" }.toTypedArray()
+
+            AlertDialog.Builder(requireContext())
+                .setTitle(R.string.import_select_universe)
+                .setItems(names) { _, which ->
+                    val selectedUniverse = universes[which]
+                    val fields = otherFields[selectedUniverse] ?: return@setItems
+                    showFieldSelectionDialog(selectedUniverse, fields)
+                }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+        }
+    }
+
+    /** 2단계: 필드 선택 (체크박스 다중선택) */
+    private fun showFieldSelectionDialog(universe: Universe, fields: List<FieldDefinition>) {
+        val fieldNames = fields.map { "[${it.groupName}] ${it.name} (${it.type})" }.toTypedArray()
+        val checked = BooleanArray(fields.size) { true } // 기본 전체 선택
+
+        AlertDialog.Builder(requireContext())
+            .setTitle(getString(R.string.import_select_fields, universe.name))
+            .setMultiChoiceItems(fieldNames, checked) { _, which, isChecked ->
+                checked[which] = isChecked
+            }
+            .setPositiveButton(R.string.import_action) { _, _ ->
+                val selected = fields.filterIndexed { i, _ -> checked[i] }
+                if (selected.isNotEmpty()) {
+                    viewModel.importFields(universeId, selected)
+                    Toast.makeText(requireContext(),
+                        getString(R.string.import_success, selected.size),
+                        Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton(R.string.cancel, null)
             .show()
     }
 

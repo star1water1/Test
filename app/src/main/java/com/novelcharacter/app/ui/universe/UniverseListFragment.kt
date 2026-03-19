@@ -2,12 +2,15 @@ package com.novelcharacter.app.ui.universe
 
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
+import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.ArrayAdapter
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -23,6 +26,7 @@ import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.databinding.FragmentUniverseListBinding
 import androidx.recyclerview.widget.ItemTouchHelper
 import com.novelcharacter.app.ui.adapter.UniverseAdapter
+import com.novelcharacter.app.util.PresetTemplates
 import com.novelcharacter.app.util.navigateSafe
 
 class UniverseListFragment : Fragment() {
@@ -34,6 +38,29 @@ class UniverseListFragment : Fragment() {
     private lateinit var adapter: UniverseAdapter
     private var recentAdapter: RecentActivityAdapter? = null
     private var itemTouchHelper: ItemTouchHelper? = null
+    private var pendingImageCallback: ((String) -> Unit)? = null
+
+    private val imagePickerLauncher = registerForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let { saveImageForEntity(it) }
+    }
+
+    private fun saveImageForEntity(uri: Uri) {
+        try {
+            val ctx = requireContext()
+            val inputStream = ctx.contentResolver.openInputStream(uri) ?: return
+            val fileName = "universe_${java.util.UUID.randomUUID()}.jpg"
+            val file = java.io.File(ctx.filesDir, fileName)
+            file.outputStream().use { out -> inputStream.copyTo(out) }
+            inputStream.close()
+            pendingImageCallback?.invoke(file.absolutePath)
+            pendingImageCallback = null
+        } catch (e: Exception) {
+            Toast.makeText(requireContext(), R.string.image_save_failed, Toast.LENGTH_SHORT).show()
+        }
+    }
+
     private var importerInitialized = false
     private val importer by lazy {
         importerInitialized = true
@@ -86,6 +113,10 @@ class UniverseListFragment : Fragment() {
         binding.universeRecyclerView.layoutManager = LinearLayoutManager(requireContext())
         binding.universeRecyclerView.adapter = adapter
 
+        adapter.onOrderChanged = { reorderedList ->
+            viewModel.updateDisplayOrders(reorderedList)
+        }
+
         val callback = object : ItemTouchHelper.SimpleCallback(ItemTouchHelper.UP or ItemTouchHelper.DOWN, 0) {
             override fun isLongPressDragEnabled() = false
             override fun onMove(rv: RecyclerView, vh: RecyclerView.ViewHolder, target: RecyclerView.ViewHolder): Boolean {
@@ -93,6 +124,10 @@ class UniverseListFragment : Fragment() {
                 return true
             }
             override fun onSwiped(vh: RecyclerView.ViewHolder, direction: Int) {}
+            override fun clearView(recyclerView: RecyclerView, viewHolder: RecyclerView.ViewHolder) {
+                super.clearView(recyclerView, viewHolder)
+                adapter.onDragCompleted()
+            }
         }
         itemTouchHelper = ItemTouchHelper(callback).also {
             it.attachToRecyclerView(binding.universeRecyclerView)
@@ -139,14 +174,146 @@ class UniverseListFragment : Fragment() {
     }
 
     private fun showPresetDialog() {
-        val templates = viewModel.getPresetTemplates()
-        val names = templates.map { "${it.universe.name} — ${it.universe.description}" }.toTypedArray()
+        val builtInTemplates = viewModel.getPresetTemplates()
+        val userPresets = viewModel.userPresets.value ?: emptyList()
+        val userTemplates = userPresets.map { PresetTemplates.fromUserPreset(it) }
+        val allTemplates = builtInTemplates + userTemplates
+
+        val names = allTemplates.map { t ->
+            val prefix = if (t.isBuiltIn) "[기본] " else "[사용자] "
+            "$prefix${t.universe.name} — ${t.universe.description}"
+        }.toTypedArray()
 
         AlertDialog.Builder(requireContext())
             .setTitle(R.string.select_preset)
             .setItems(names) { _, which ->
-                val template = templates[which]
-                viewModel.applyPreset(template)
+                val template = allTemplates[which]
+                if (template.isBuiltIn) {
+                    viewModel.applyPreset(template)
+                } else {
+                    // 사용자 프리셋: 적용/편집/삭제 선택
+                    showUserPresetOptionsDialog(template, userPresets[which - builtInTemplates.size])
+                }
+            }
+            .setNeutralButton(R.string.preset_save_current, null)
+            .setNegativeButton(R.string.cancel, null)
+            .create().also { dialog ->
+                dialog.setOnShowListener {
+                    dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setOnClickListener {
+                        dialog.dismiss()
+                        showSaveAsPresetDialog()
+                    }
+                }
+            }
+            .show()
+    }
+
+    private fun showUserPresetOptionsDialog(template: PresetTemplates.PresetTemplate, preset: com.novelcharacter.app.data.model.UserPresetTemplate) {
+        val options = arrayOf(
+            getString(R.string.preset_apply),
+            getString(R.string.preset_edit_name),
+            getString(R.string.delete)
+        )
+        AlertDialog.Builder(requireContext())
+            .setTitle(preset.name)
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> viewModel.applyPreset(template)
+                    1 -> showEditPresetNameDialog(preset)
+                    2 -> {
+                        AlertDialog.Builder(requireContext())
+                            .setTitle(R.string.delete_warning_title)
+                            .setMessage(getString(R.string.confirm_delete_preset, preset.name))
+                            .setPositiveButton(R.string.yes) { _, _ ->
+                                viewModel.deleteUserPreset(preset)
+                            }
+                            .setNegativeButton(R.string.no, null)
+                            .show()
+                    }
+                }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun showEditPresetNameDialog(preset: com.novelcharacter.app.data.model.UserPresetTemplate) {
+        val ctx = requireContext()
+        val layout = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            val dp24 = (24 * ctx.resources.displayMetrics.density).toInt()
+            setPadding(dp24, dp24, dp24, 0)
+        }
+        val nameEdit = EditText(ctx).apply {
+            hint = getString(R.string.preset_name_hint)
+            setText(preset.name)
+        }
+        val descEdit = EditText(ctx).apply {
+            hint = getString(R.string.preset_desc_hint)
+            setText(preset.description)
+        }
+        layout.addView(nameEdit)
+        layout.addView(descEdit)
+
+        AlertDialog.Builder(ctx)
+            .setTitle(R.string.preset_edit_name)
+            .setView(layout)
+            .setPositiveButton(R.string.save) { _, _ ->
+                val name = nameEdit.text.toString().trim()
+                val desc = descEdit.text.toString().trim()
+                if (name.isNotEmpty()) {
+                    viewModel.updateUserPreset(preset.copy(name = name, description = desc))
+                }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun showSaveAsPresetDialog() {
+        // 세계관 선택 → 해당 세계관의 필드를 프리셋으로 저장
+        val universes = viewModel.allUniverses.value ?: emptyList()
+        if (universes.isEmpty()) {
+            Toast.makeText(requireContext(), R.string.preset_no_universes, Toast.LENGTH_SHORT).show()
+            return
+        }
+        val names = universes.map { it.name }.toTypedArray()
+        AlertDialog.Builder(requireContext())
+            .setTitle(R.string.preset_select_source)
+            .setItems(names) { _, which ->
+                val universe = universes[which]
+                showPresetNameInputDialog(universe)
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun showPresetNameInputDialog(universe: Universe) {
+        val ctx = requireContext()
+        val layout = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            val dp24 = (24 * ctx.resources.displayMetrics.density).toInt()
+            setPadding(dp24, dp24, dp24, 0)
+        }
+        val nameEdit = EditText(ctx).apply {
+            hint = getString(R.string.preset_name_hint)
+            setText(universe.name)
+        }
+        val descEdit = EditText(ctx).apply {
+            hint = getString(R.string.preset_desc_hint)
+            setText(universe.description)
+        }
+        layout.addView(nameEdit)
+        layout.addView(descEdit)
+
+        AlertDialog.Builder(ctx)
+            .setTitle(R.string.preset_save_title)
+            .setView(layout)
+            .setPositiveButton(R.string.save) { _, _ ->
+                val name = nameEdit.text.toString().trim()
+                val desc = descEdit.text.toString().trim()
+                if (name.isNotEmpty()) {
+                    viewModel.saveAsUserPreset(universe.id, name, desc)
+                    Toast.makeText(ctx, getString(R.string.preset_saved, name), Toast.LENGTH_SHORT).show()
+                }
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
@@ -259,8 +426,7 @@ class UniverseListFragment : Fragment() {
 
     private fun toggleReorderMode() {
         if (adapter.isReorderMode()) {
-            // Save and exit reorder mode
-            viewModel.updateDisplayOrders(adapter.getReorderedList())
+            // 자동 저장이 이미 되므로 모드만 종료
             adapter.setReorderMode(false)
             Toast.makeText(requireContext(), R.string.reorder_saved, Toast.LENGTH_SHORT).show()
         } else {
@@ -374,6 +540,51 @@ class UniverseListFragment : Fragment() {
         }
         layout.addView(clearBtn)
 
+        // 이미지 모드 선택
+        val imageLabel = TextView(ctx).apply {
+            text = getString(R.string.image_mode_label)
+            setPadding(0, (16 * dp).toInt(), 0, (8 * dp).toInt())
+        }
+        layout.addView(imageLabel)
+
+        val imageModes = arrayOf(
+            getString(R.string.image_mode_none),
+            getString(R.string.image_mode_custom),
+            getString(R.string.image_mode_random_character)
+        )
+        val imageModeValues = arrayOf(Universe.IMAGE_MODE_NONE, Universe.IMAGE_MODE_CUSTOM, Universe.IMAGE_MODE_RANDOM_CHARACTER)
+        var selectedImageMode = universe?.imageMode ?: Universe.IMAGE_MODE_NONE
+        var selectedImagePath = universe?.imagePath ?: ""
+
+        val imageModeSpinner = Spinner(ctx).apply {
+            adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_dropdown_item, imageModes)
+            setSelection(imageModeValues.indexOf(selectedImageMode).coerceAtLeast(0))
+        }
+        layout.addView(imageModeSpinner)
+
+        val imageSelectBtn = TextView(ctx).apply {
+            text = if (selectedImagePath.isNotBlank()) getString(R.string.image_change) else getString(R.string.image_select)
+            setTextColor(ctx.getColor(R.color.primary))
+            setPadding(0, (8 * dp).toInt(), 0, (8 * dp).toInt())
+            visibility = if (selectedImageMode == Universe.IMAGE_MODE_CUSTOM) View.VISIBLE else View.GONE
+            setOnClickListener {
+                pendingImageCallback = { path ->
+                    selectedImagePath = path
+                    text = getString(R.string.image_selected)
+                }
+                imagePickerLauncher.launch("image/*")
+            }
+        }
+        layout.addView(imageSelectBtn)
+
+        imageModeSpinner.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: android.widget.AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                selectedImageMode = imageModeValues[pos]
+                imageSelectBtn.visibility = if (selectedImageMode == Universe.IMAGE_MODE_CUSTOM) View.VISIBLE else View.GONE
+            }
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
+        }
+
         AlertDialog.Builder(ctx)
             .setTitle(if (universe == null) R.string.add_universe else R.string.edit_universe)
             .setView(layout)
@@ -383,9 +594,15 @@ class UniverseListFragment : Fragment() {
                 val borderColor = colorHexEdit.text.toString().trim()
                 if (name.isNotEmpty()) {
                     if (universe == null) {
-                        viewModel.insertUniverse(Universe(name = name, description = desc, borderColor = borderColor))
+                        viewModel.insertUniverse(Universe(
+                            name = name, description = desc, borderColor = borderColor,
+                            imagePath = selectedImagePath, imageMode = selectedImageMode
+                        ))
                     } else {
-                        viewModel.updateUniverse(universe.copy(name = name, description = desc, borderColor = borderColor))
+                        viewModel.updateUniverse(universe.copy(
+                            name = name, description = desc, borderColor = borderColor,
+                            imagePath = selectedImagePath, imageMode = selectedImageMode
+                        ))
                     }
                 }
             }

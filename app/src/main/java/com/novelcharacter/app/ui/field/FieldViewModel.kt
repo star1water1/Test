@@ -8,6 +8,7 @@ import androidx.lifecycle.switchMap
 import androidx.lifecycle.viewModelScope
 import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.data.model.FieldDefinition
+import com.novelcharacter.app.data.model.Universe
 import android.util.Log
 import kotlinx.coroutines.launch
 
@@ -56,6 +57,43 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
             universeRepository.updateFieldsOrder(updated)
         } catch (e: Exception) {
             Log.e("FieldViewModel", "Failed to update field order", e)
+        }
+    }
+
+    /** 다른 세계관의 필드 목록 조회 */
+    suspend fun getFieldsFromOtherUniverses(currentUniverseId: Long): Map<Universe, List<FieldDefinition>> {
+        val allUniverses = universeRepository.getAllUniversesList()
+        val result = mutableMapOf<Universe, List<FieldDefinition>>()
+        for (universe in allUniverses) {
+            if (universe.id == currentUniverseId) continue
+            val fields = universeRepository.getFieldsByUniverseList(universe.id)
+            if (fields.isNotEmpty()) {
+                result[universe] = fields
+            }
+        }
+        return result
+    }
+
+    /** 선택된 필드를 현재 세계관으로 복사 */
+    fun importFields(targetUniverseId: Long, sourceFields: List<FieldDefinition>) = viewModelScope.launch {
+        try {
+            val currentFields = universeRepository.getFieldsByUniverseList(targetUniverseId)
+            val existingKeys = currentFields.map { it.key }.toSet()
+            val maxOrder = currentFields.maxOfOrNull { it.displayOrder } ?: -1
+
+            val newFields = sourceFields.mapIndexedNotNull { index, field ->
+                if (field.key in existingKeys) return@mapIndexedNotNull null
+                field.copy(
+                    id = 0,
+                    universeId = targetUniverseId,
+                    displayOrder = maxOrder + 1 + index
+                )
+            }
+            if (newFields.isNotEmpty()) {
+                universeRepository.insertAllFields(newFields)
+            }
+        } catch (e: Exception) {
+            Log.e("FieldViewModel", "Failed to import fields", e)
         }
     }
 }

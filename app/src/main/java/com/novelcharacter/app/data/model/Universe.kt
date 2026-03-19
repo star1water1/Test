@@ -17,5 +17,13 @@ data class Universe(
     val code: String = generateEntityCode(),
     val displayOrder: Long = 0,
     val borderColor: String = "",
-    val borderWidthDp: Float = 1.5f
-)
+    val borderWidthDp: Float = 1.5f,
+    val imagePath: String = "",       // 직접 등록한 이미지 경로
+    val imageMode: String = "none"    // none, custom, random_character
+) {
+    companion object {
+        const val IMAGE_MODE_NONE = "none"
+        const val IMAGE_MODE_CUSTOM = "custom"
+        const val IMAGE_MODE_RANDOM_CHARACTER = "random_character"
+    }
+}

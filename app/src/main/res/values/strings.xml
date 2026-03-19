@@ -43,6 +43,12 @@
     <string name="character_detail">캐릭터 상세</string>
     <string name="related_events">관련 사건</string>
     <string name="field_manage">필드 관리</string>
+    <string name="import_fields_from_other">다른 세계관에서 필드 가져오기</string>
+    <string name="import_no_other_universes">가져올 수 있는 다른 세계관이 없습니다</string>
+    <string name="import_select_universe">가져올 세계관 선택</string>
+    <string name="import_select_fields">%s에서 가져올 필드 선택</string>
+    <string name="import_action">가져오기</string>
+    <string name="import_success">%d개 필드를 가져왔습니다</string>
     <string name="add_field">필드 추가</string>
     <string name="edit_field">필드 편집</string>
 
@@ -87,6 +93,16 @@
     <!-- Preset -->
     <string name="load_preset">프리셋 불러오기</string>
     <string name="preset_loaded">프리셋 \"%s\" 세계관이 생성되었습니다</string>
+    <string name="preset_save_current">현재 세계관을 프리셋으로 저장</string>
+    <string name="preset_apply">적용</string>
+    <string name="preset_edit_name">이름/설명 편집</string>
+    <string name="confirm_delete_preset">프리셋 \"%s\"을(를) 삭제하시겠습니까?</string>
+    <string name="preset_no_universes">저장할 세계관이 없습니다</string>
+    <string name="preset_select_source">프리셋으로 저장할 세계관 선택</string>
+    <string name="preset_save_title">프리셋 저장</string>
+    <string name="preset_name_hint">프리셋 이름</string>
+    <string name="preset_desc_hint">설명 (선택)</string>
+    <string name="preset_saved">프리셋 \"%s\"이(가) 저장되었습니다</string>
     <string name="select_preset">프리셋 템플릿 선택</string>
 
     <!-- Empty state hints -->
@@ -274,6 +290,15 @@
 
     <!-- Image viewer -->
     <string name="image_viewer">이미지 보기</string>
+    <string name="image_mode_label">대표 이미지 설정</string>
+    <string name="image_mode_none">없음</string>
+    <string name="image_mode_custom">직접 등록</string>
+    <string name="image_mode_random_character">캐릭터 이미지 랜덤</string>
+    <string name="image_mode_select_character">캐릭터 이미지 선택</string>
+    <string name="image_select">이미지 선택</string>
+    <string name="image_change">이미지 변경</string>
+    <string name="image_selected">이미지 선택됨</string>
+    <string name="image_save_failed">이미지 저장에 실패했습니다</string>
     <string name="image_index_format">%1$d / %2$d</string>
 
     <!-- Settings -->

@@ -20,7 +20,8 @@ class UniverseAdapter(
     private val onClick: (Universe) -> Unit,
     private val onEditClick: (Universe) -> Unit,
     private val onDeleteClick: (Universe) -> Unit,
-    private val onFieldManageClick: (Universe) -> Unit
+    private val onFieldManageClick: (Universe) -> Unit,
+    var onOrderChanged: ((List<Universe>) -> Unit)? = null
 ) : ListAdapter<Universe, UniverseAdapter.UniverseViewHolder>(UniverseDiffCallback()) {
 
     private var novelCounts: Map<Long, Int> = emptyMap()
@@ -55,6 +56,13 @@ class UniverseAdapter(
         val item = reorderList.removeAt(from)
         reorderList.add(to, item)
         notifyItemMoved(from, to)
+    }
+
+    /** 드래그 완료 시 호출 — 즉시 자동 저장 */
+    fun onDragCompleted() {
+        if (isReorderMode) {
+            onOrderChanged?.invoke(getReorderedList())
+        }
     }
 
     fun getReorderedList(): List<Universe> = reorderList.mapIndexed { index, universe ->

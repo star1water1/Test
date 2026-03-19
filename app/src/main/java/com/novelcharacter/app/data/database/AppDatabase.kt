@@ -20,7 +20,9 @@ import com.novelcharacter.app.data.dao.NameBankDao
 import com.novelcharacter.app.data.dao.RecentActivityDao
 import com.novelcharacter.app.data.dao.SearchPresetDao
 import com.novelcharacter.app.data.dao.CharacterRelationshipChangeDao
+import com.novelcharacter.app.data.dao.UserPresetTemplateDao
 import com.novelcharacter.app.data.model.RecentActivity
+import com.novelcharacter.app.data.model.UserPresetTemplate
 import com.novelcharacter.app.data.model.SearchPreset
 import com.novelcharacter.app.data.model.CharacterRelationshipChange
 import com.novelcharacter.app.data.model.Character
@@ -50,9 +52,10 @@ import com.novelcharacter.app.data.model.Universe
         CharacterRelationship::class,
         CharacterRelationshipChange::class,
         RecentActivity::class,
-        SearchPreset::class
+        SearchPreset::class,
+        UserPresetTemplate::class
     ],
-    version = 13,
+    version = 14,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -69,6 +72,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun recentActivityDao(): RecentActivityDao
     abstract fun searchPresetDao(): SearchPresetDao
     abstract fun characterRelationshipChangeDao(): CharacterRelationshipChangeDao
+    abstract fun userPresetTemplateDao(): UserPresetTemplateDao
 
     companion object {
         private const val TAG = "AppDatabase"
@@ -518,6 +522,37 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "Migrating database from version 13 to 14")
+
+                // 1. 사용자 정의 프리셋 템플릿 테이블
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `user_preset_templates` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `description` TEXT NOT NULL DEFAULT '',
+                        `fieldsJson` TEXT NOT NULL DEFAULT '[]',
+                        `createdAt` INTEGER NOT NULL DEFAULT 0,
+                        `updatedAt` INTEGER NOT NULL DEFAULT 0
+                    )
+                """)
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_user_preset_templates_name` ON `user_preset_templates` (`name`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_user_preset_templates_createdAt` ON `user_preset_templates` (`createdAt`)")
+
+                // 2. 세계관에 이미지 필드 추가
+                db.execSQL("ALTER TABLE `universes` ADD COLUMN `imagePath` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `universes` ADD COLUMN `imageMode` TEXT NOT NULL DEFAULT 'none'")
+
+                // 3. 작품에 이미지 필드 추가
+                db.execSQL("ALTER TABLE `novels` ADD COLUMN `imagePath` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `novels` ADD COLUMN `imageMode` TEXT NOT NULL DEFAULT 'none'")
+                db.execSQL("ALTER TABLE `novels` ADD COLUMN `imageCharacterId` INTEGER DEFAULT NULL")
+
+                Log.i(TAG, "Migration from version 13 to 14 completed successfully")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -525,7 +560,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "novel_character_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14)
                     .build()
                     .also { INSTANCE = it }
             }
