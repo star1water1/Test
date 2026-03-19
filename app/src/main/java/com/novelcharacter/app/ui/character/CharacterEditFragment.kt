@@ -645,8 +645,11 @@ class CharacterEditFragment : Fragment() {
         }
     }
 
+    private var isSaving = false
+
     private fun setupSaveButton() {
         binding.btnSave.setOnClickListener {
+            if (isSaving) return@setOnClickListener
             val name = binding.editName.text.toString().trim()
             if (name.isEmpty()) {
                 Toast.makeText(requireContext(), R.string.enter_name, Toast.LENGTH_SHORT).show()
@@ -682,29 +685,36 @@ class CharacterEditFragment : Fragment() {
                 code = existingCharacter?.code ?: generateEntityCode()
             )
 
+            isSaving = true
+            binding.btnSave.isEnabled = false
             viewLifecycleOwner.lifecycleScope.launch {
-                val savedCharId: Long
-                if (characterId != -1L) {
-                    // 기존 캐릭터 수정 (트랜잭션으로 원자적 업데이트)
-                    val fieldValues = collectFieldValues(characterId)
-                    viewModel.updateCharacterWithFields(character, fieldValues)
-                    savedCharId = characterId
-                } else {
-                    // 새 캐릭터 생성 - suspend로 ID를 받아온 뒤 필드값 저장
-                    val newId = viewModel.insertCharacterSuspend(character)
-                    val fieldValues = collectFieldValues(newId)
-                    viewModel.saveAllFieldValues(newId, fieldValues)
-                    savedCharId = newId
-                }
+                try {
+                    val savedCharId: Long
+                    if (characterId != -1L) {
+                        val fieldValues = collectFieldValues(characterId)
+                        viewModel.updateCharacterWithFields(character, fieldValues)
+                        savedCharId = characterId
+                    } else {
+                        val newId = viewModel.insertCharacterSuspend(character)
+                        val fieldValues = collectFieldValues(newId)
+                        viewModel.saveAllFieldValues(newId, fieldValues)
+                        savedCharId = newId
+                    }
 
-                // 태그 저장 (트랜잭션으로 원자적 교체)
-                val tagText = binding.editTags.text.toString()
-                val tagList = tagText.split(",").map { it.trim() }.filter { it.isNotBlank() }
-                viewModel.replaceAllTagsSuspend(savedCharId, tagList.map { CharacterTag(characterId = savedCharId, tag = it) })
+                    val tagText = binding.editTags.text.toString()
+                    val tagList = tagText.split(",").map { it.trim() }.filter { it.isNotBlank() }
+                    viewModel.replaceAllTagsSuspend(savedCharId, tagList.map { CharacterTag(characterId = savedCharId, tag = it) })
 
-                if (isAdded && view != null) {
-                    Toast.makeText(requireContext(), R.string.saved_successfully, Toast.LENGTH_SHORT).show()
-                    findNavController().popBackStack()
+                    if (isAdded && view != null) {
+                        Toast.makeText(requireContext(), R.string.saved_successfully, Toast.LENGTH_SHORT).show()
+                        findNavController().popBackStack()
+                    }
+                } catch (e: Exception) {
+                    if (isAdded && _binding != null) {
+                        isSaving = false
+                        binding.btnSave.isEnabled = true
+                        Toast.makeText(requireContext(), R.string.save_failed, Toast.LENGTH_SHORT).show()
+                    }
                 }
             }
         }

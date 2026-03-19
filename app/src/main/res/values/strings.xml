@@ -126,6 +126,7 @@
     <string name="name_too_long">이름이 너무 깁니다 (최대 100자)</string>
     <string name="required_field_empty">필수 필드 \'%1$s\'을(를) 입력하세요</string>
     <string name="saved_successfully">저장되었습니다</string>
+    <string name="save_failed">저장에 실패했습니다</string>
     <string name="universe_name_hint">세계관 이름</string>
     <string name="universe_desc_hint">설명 (선택)</string>
     <string name="dialog_add_universe">세계관 추가</string>

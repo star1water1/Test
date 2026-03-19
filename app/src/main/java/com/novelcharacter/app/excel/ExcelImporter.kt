@@ -182,6 +182,7 @@ class ExcelImporter(context: Context) {
         }
         val relTotal = result.newRelationships + result.updatedRelationships
         if (relTotal > 0) parts.add("관계 ${relTotal}개")
+        if (result.newRelationshipChanges > 0) parts.add("관계 변화 ${result.newRelationshipChanges}개")
         val nbTotal = result.newNameBank + result.updatedNameBank
         if (nbTotal > 0) parts.add("이름 ${nbTotal}개")
         if (result.skippedRows > 0)
