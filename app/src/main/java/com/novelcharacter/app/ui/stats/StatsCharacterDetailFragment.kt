@@ -90,21 +90,22 @@ class StatsCharacterDetailFragment : Fragment() {
             container.addView(makeEmptyTextView())
             return
         }
-        val marginSm = resources.getDimensionPixelSize(R.dimen.stats_margin_sm)
+        val inflater = LayoutInflater.from(requireContext())
         scores.take(10).forEachIndexed { index, c ->
-            val row = LinearLayout(requireContext()).apply {
-                orientation = LinearLayout.VERTICAL
-                val lp = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                )
-                lp.bottomMargin = marginSm
-                layoutParams = lp
-            }
-            row.addView(makeTextView("${index + 1}. ${c.name} (${getString(R.string.stats_complexity_score, c.totalScore)})"))
-            row.addView(makeTextView(getString(R.string.stats_complexity_breakdown,
-                c.relationshipCount, c.eventLinkCount, c.fieldCompletionRate.toInt(), c.stateChangeCount)))
-            container.addView(row)
+            val itemView = inflater.inflate(R.layout.item_complexity_rank, container, false)
+            itemView.findViewById<TextView>(R.id.rankNumber).text = "${index + 1}"
+            itemView.findViewById<TextView>(R.id.characterName).text = c.name
+            itemView.findViewById<TextView>(R.id.scoreBadge).text =
+                getString(R.string.stats_complexity_score, c.totalScore)
+            itemView.findViewById<TextView>(R.id.statRelations).text =
+                getString(R.string.stats_stat_relations, c.relationshipCount)
+            itemView.findViewById<TextView>(R.id.statEvents).text =
+                getString(R.string.stats_stat_events, c.eventLinkCount)
+            itemView.findViewById<TextView>(R.id.statFields).text =
+                getString(R.string.stats_stat_fields, c.fieldCompletionRate.toInt())
+            itemView.findViewById<TextView>(R.id.statChanges).text =
+                getString(R.string.stats_stat_changes, c.stateChangeCount)
+            container.addView(itemView)
         }
     }
 

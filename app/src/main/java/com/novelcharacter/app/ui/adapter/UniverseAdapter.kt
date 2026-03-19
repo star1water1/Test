@@ -14,6 +14,7 @@ import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import android.graphics.Color
+import android.graphics.Typeface
 import com.google.android.material.card.MaterialCardView
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.Universe
@@ -126,7 +127,15 @@ class UniverseAdapter(
 
         fun bind(universe: Universe) {
             binding.universeName.text = universe.name
-            binding.universeDescription.text = universe.description.ifEmpty { binding.root.context.getString(R.string.no_description) }
+            if (universe.description.isNotEmpty()) {
+                binding.universeDescription.text = universe.description
+                binding.universeDescription.setTypeface(null, Typeface.NORMAL)
+                binding.universeDescription.alpha = 1f
+            } else {
+                binding.universeDescription.text = binding.root.context.getString(R.string.no_description)
+                binding.universeDescription.setTypeface(null, Typeface.ITALIC)
+                binding.universeDescription.alpha = 0.6f
+            }
 
             val nc = novelCounts[universe.id] ?: 0
             val fc = fieldCounts[universe.id] ?: 0

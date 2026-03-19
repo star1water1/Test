@@ -104,6 +104,8 @@
     <string name="preset_desc_hint">설명 (선택)</string>
     <string name="preset_saved">프리셋 \"%s\"이(가) 저장되었습니다</string>
     <string name="select_preset">프리셋 템플릿 선택</string>
+    <string name="preset_tag_builtin">기본</string>
+    <string name="preset_tag_user">사용자</string>
 
     <!-- Empty state hints -->
     <string name="empty_universe_hint">세계관을 추가해보세요</string>
@@ -508,6 +510,10 @@
     <string name="stats_complexity_ranking">캐릭터 복잡도 순위</string>
     <string name="stats_complexity_score">점수 %.1f</string>
     <string name="stats_complexity_breakdown">  관계 %d · 사건 %d · 필드 %d%% · 변화 %d</string>
+    <string name="stats_stat_relations">관계 %d</string>
+    <string name="stats_stat_events">사건 %d</string>
+    <string name="stats_stat_fields">필드 %d%%</string>
+    <string name="stats_stat_changes">변화 %d</string>
     <string name="stats_field_completion_by_group">그룹별 필드 완성도</string>
     <string name="stats_memo_another_name">메모 · 별명 통계</string>
     <string name="stats_memo_detail">메모 작성: %d/%d명 (평균 %d자)</string>

@@ -4,7 +4,10 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_margin="4dp"
+    android:layout_marginStart="8dp"
+    android:layout_marginEnd="8dp"
+    android:layout_marginTop="4dp"
+    android:layout_marginBottom="4dp"
     app:cardCornerRadius="12dp"
     app:cardElevation="2dp">
 
@@ -58,7 +61,7 @@
                     android:id="@+id/universeDescription"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
+                    android:layout_marginTop="3dp"
                     android:textColor="@color/text_secondary"
                     android:textSize="13sp"
                     android:maxLines="2"
@@ -72,6 +75,7 @@
                 android:layout_height="48dp"
                 android:src="@drawable/ic_settings"
                 android:padding="12dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="@string/field_manage" />
 
             <ImageView
@@ -85,10 +89,11 @@
 
         </LinearLayout>
 
+        <!-- 하단 카운트 배지 -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
+            android:layout_marginTop="10dp"
             android:orientation="horizontal">
 
             <TextView
@@ -97,14 +102,25 @@
                 android:layout_height="wrap_content"
                 android:textColor="@color/primary"
                 android:textSize="12sp"
-                android:layout_marginEnd="16dp" />
+                android:textStyle="bold"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp"
+                android:paddingTop="3dp"
+                android:paddingBottom="3dp"
+                android:background="@drawable/bg_count_badge"
+                android:layout_marginEnd="8dp" />
 
             <TextView
                 android:id="@+id/fieldCount"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:textColor="@color/text_secondary"
-                android:textSize="12sp" />
+                android:textSize="12sp"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp"
+                android:paddingTop="3dp"
+                android:paddingBottom="3dp"
+                android:background="@drawable/bg_count_badge" />
 
         </LinearLayout>
 

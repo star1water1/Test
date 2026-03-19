@@ -188,36 +188,59 @@ class UniverseListFragment : Fragment() {
         // 각 템플릿에 원본 UserPresetTemplate을 직접 매핑
         val presetByTemplateId = userPresetList.associateBy { it.id }
 
-        val names = allTemplates.map { t ->
-            val prefix = if (t.isBuiltIn) "[기본] " else "[사용자] "
-            "$prefix${t.universe.name} — ${t.universe.description}"
-        }.toTypedArray()
+        val bottomSheet = com.google.android.material.bottomsheet.BottomSheetDialog(requireContext())
+        val sheetView = layoutInflater.inflate(R.layout.bottom_sheet_preset, null)
+        bottomSheet.setContentView(sheetView)
 
-        AlertDialog.Builder(requireContext())
-            .setTitle(R.string.select_preset)
-            .setItems(names) { _, which ->
-                val template = allTemplates[which]
-                if (template.isBuiltIn) {
-                    viewModel.applyPreset(template)
+        val recyclerView = sheetView.findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.presetRecyclerView)
+        recyclerView.layoutManager = androidx.recyclerview.widget.LinearLayoutManager(requireContext())
+        recyclerView.adapter = object : androidx.recyclerview.widget.RecyclerView.Adapter<androidx.recyclerview.widget.RecyclerView.ViewHolder>() {
+            inner class VH(val view: View) : androidx.recyclerview.widget.RecyclerView.ViewHolder(view)
+
+            override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
+                val v = LayoutInflater.from(parent.context).inflate(R.layout.item_preset_template, parent, false)
+                return VH(v)
+            }
+
+            override fun getItemCount() = allTemplates.size
+
+            override fun onBindViewHolder(holder: VH, position: Int) {
+                val t = allTemplates[position]
+                val tag = holder.view.findViewById<TextView>(R.id.presetTag)
+                val name = holder.view.findViewById<TextView>(R.id.presetName)
+                val desc = holder.view.findViewById<TextView>(R.id.presetDescription)
+
+                if (t.isBuiltIn) {
+                    tag.text = getString(R.string.preset_tag_builtin)
+                    tag.setBackgroundResource(R.drawable.bg_preset_tag_builtin)
                 } else {
-                    // userPresetId로 직접 참조 — 인덱스 계산 불필요
-                    val preset = template.userPresetId?.let { presetByTemplateId[it] }
-                    if (preset != null) {
-                        showUserPresetOptionsDialog(template, preset)
+                    tag.text = getString(R.string.preset_tag_user)
+                    tag.setBackgroundResource(R.drawable.bg_preset_tag_user)
+                }
+                name.text = t.universe.name
+                desc.text = t.universe.description
+
+                holder.view.setOnClickListener {
+                    bottomSheet.dismiss()
+                    if (t.isBuiltIn) {
+                        viewModel.applyPreset(t)
+                    } else {
+                        val preset = t.userPresetId?.let { id -> presetByTemplateId[id] }
+                        if (preset != null) {
+                            showUserPresetOptionsDialog(t, preset)
+                        }
                     }
                 }
             }
-            .setNeutralButton(R.string.preset_save_current, null)
-            .setNegativeButton(R.string.cancel, null)
-            .create().also { dialog ->
-                dialog.setOnShowListener {
-                    dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setOnClickListener {
-                        dialog.dismiss()
-                        showSaveAsPresetDialog()
-                    }
-                }
+        }
+
+        sheetView.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnSaveAsPreset)
+            .setOnClickListener {
+                bottomSheet.dismiss()
+                showSaveAsPresetDialog()
             }
-            .show()
+
+        bottomSheet.show()
     }
 
     private fun showUserPresetOptionsDialog(template: PresetTemplates.PresetTemplate, preset: com.novelcharacter.app.data.model.UserPresetTemplate) {
