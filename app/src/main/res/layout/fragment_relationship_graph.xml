@@ -109,7 +109,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:textSize="11sp"
+            android:textSize="12sp"
             android:textColor="@color/text_secondary" />
 
         <TextView
@@ -117,7 +117,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:textSize="11sp"
+            android:textSize="12sp"
             android:textColor="@color/text_secondary"
             android:gravity="end" />
 
@@ -132,7 +132,8 @@
         <com.novelcharacter.app.ui.graph.RelationshipGraphView
             android:id="@+id/graphView"
             android:layout_width="match_parent"
-            android:layout_height="match_parent" />
+            android:layout_height="match_parent"
+            android:contentDescription="@string/graph_view_desc" />
 
         <!-- Empty state -->
         <LinearLayout
@@ -169,7 +170,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="@string/graph_tap_hint"
-        android:textSize="11sp"
+        android:textSize="12sp"
         android:textColor="@color/text_secondary"
         android:gravity="center"
         android:padding="6dp"

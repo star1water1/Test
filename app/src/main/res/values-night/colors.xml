@@ -8,7 +8,7 @@
     <color name="surface">#1E1E1E</color>
     <color name="on_primary">#FFFFFF</color>
     <color name="on_surface">#E0E0E0</color>
-    <color name="text_secondary">#9E9E9E</color>
+    <color name="text_secondary">#ABABAB</color>
     <color name="item_background_light">#2C2C2C</color>
 
     <!-- 관계 그래프 (다크모드) -->
@@ -16,7 +16,7 @@
     <color name="graph_node_stroke">#5C6BC0</color>
     <color name="graph_edge">#757575</color>
     <color name="graph_node_text">#FFFFFF</color>
-    <color name="graph_edge_label">#9E9E9E</color>
+    <color name="graph_edge_label">#ABABAB</color>
     <color name="graph_summary_bg">#3E2723</color>
     <color name="graph_summary_text">#FFB74D</color>
 </resources>

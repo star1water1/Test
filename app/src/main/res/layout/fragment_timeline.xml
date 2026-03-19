@@ -108,7 +108,7 @@
             android:id="@+id/minYearLabel"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:textSize="11sp"
+            android:textSize="12sp"
             android:textColor="@color/text_secondary" />
 
         <TextView
@@ -124,7 +124,7 @@
             android:id="@+id/maxYearLabel"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:textSize="11sp"
+            android:textSize="12sp"
             android:textColor="@color/text_secondary" />
 
     </LinearLayout>

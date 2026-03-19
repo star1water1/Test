@@ -23,7 +23,7 @@
     <color name="rank_c_plus">#32CD32</color>
     <color name="rank_c">#4CAF50</color>
     <color name="rank_c_minus">#66BB6A</color>
-    <color name="rank_d">#A9A9A9</color>
+    <color name="rank_d">#757575</color>
 
     <!-- 생존 상태 색상 -->
     <color name="alive_color">#4CAF50</color>
@@ -45,7 +45,7 @@
 
     <!-- UI element colors -->
     <color name="used_indicator_bg">#E0E0E0</color>
-    <color name="used_indicator_text">#757575</color>
+    <color name="used_indicator_text">#555555</color>
     <color name="item_background_light">#F5F5F5</color>
 
     <!-- 관계 그래프 -->
@@ -55,5 +55,5 @@
     <color name="graph_node_text">#FFFFFF</color>
     <color name="graph_edge_label">#757575</color>
     <color name="graph_summary_bg">#FFFDE7</color>
-    <color name="graph_summary_text">#F57F17</color>
+    <color name="graph_summary_text">#E65100</color>
 </resources>

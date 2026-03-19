@@ -50,7 +50,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginStart="8dp"
-                    android:textSize="11sp"
+                    android:textSize="12sp"
                     android:textColor="@android:color/white"
                     android:paddingHorizontal="6dp"
                     android:paddingVertical="2dp"
@@ -62,7 +62,7 @@
                 android:id="@+id/fieldKey"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:textSize="11sp"
+                android:textSize="12sp"
                 android:textColor="@color/text_secondary"
                 android:fontFamily="monospace" />
 
@@ -70,7 +70,7 @@
                 android:id="@+id/fieldGroup"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:textSize="11sp"
+                android:textSize="12sp"
                 android:textColor="@color/primary" />
 
         </LinearLayout>
