@@ -533,7 +533,8 @@ class ExcelImportService(private val db: AppDatabase) {
                     }
 
                 val anotherName = if (anotherNameColIndex >= 0) getCellString(row, anotherNameColIndex) else ""
-                val imagePaths = if (imageColIndex >= 0) getCellString(row, imageColIndex).ifBlank { "[]" } else "[]"
+                // imageColIndex < 0 means column is missing: use null sentinel to preserve existing images
+                val imagePathsFromExcel: String? = if (imageColIndex >= 0) getCellString(row, imageColIndex).ifBlank { "[]" } else null
                 val memo = if (memoColIndex >= 0) getCellString(row, memoColIndex) else ""
                 val displayOrder = if (orderColIndex >= 0) parseNumber(getCellString(row, orderColIndex))?.toLong() ?: 0L else 0L
 
@@ -562,7 +563,7 @@ class ExcelImportService(private val db: AppDatabase) {
                         name = name,
                         anotherName = anotherName,
                         novelId = novelId,
-                        imagePaths = imagePaths,
+                        imagePaths = imagePathsFromExcel ?: existingChar.imagePaths,
                         memo = memo,
                         updatedAt = System.currentTimeMillis(),
                         displayOrder = displayOrder
@@ -573,7 +574,7 @@ class ExcelImportService(private val db: AppDatabase) {
                     if (code.isBlank()) result.newCodesGenerated++
                     charId = db.characterDao().insert(Character(
                         name = name, anotherName = anotherName, novelId = novelId,
-                        imagePaths = imagePaths, memo = memo, code = newCode, displayOrder = displayOrder
+                        imagePaths = imagePathsFromExcel ?: "[]", memo = memo, code = newCode, displayOrder = displayOrder
                     ))
                     result.newCharacters++
                 }
@@ -939,7 +940,9 @@ class ExcelImportService(private val db: AppDatabase) {
             if (col in fixedColIndices) continue
             val headerName = getCellString(headerRow, col)
             if (headerName.isBlank()) continue
-            val field = fields.find { it.name == headerName }
+            val trimmedHeader = headerName.trim()
+            val field = fields.find { it.name == trimmedHeader }
+                ?: fields.find { it.name.equals(trimmedHeader, ignoreCase = true) }
             if (field != null) {
                 map[col] = field
             }
