@@ -87,7 +87,8 @@ class RelationshipGraphView @JvmOverloads constructor(
 
     private var onNodeClickListener: ((Long) -> Unit)? = null
     private var layoutJob: Job? = null
-    private var scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private var supervisorJob = SupervisorJob()
+    private var scope = CoroutineScope(supervisorJob + Dispatchers.Main)
 
     // 화살표 그리기용
     private val arrowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -342,13 +343,14 @@ class RelationshipGraphView @JvmOverloads constructor(
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         // Always create a fresh scope on attach to avoid using a cancelled scope
-        scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        supervisorJob = SupervisorJob()
+        scope = CoroutineScope(supervisorJob + Dispatchers.Main)
     }
 
     override fun onDetachedFromWindow() {
-        super.onDetachedFromWindow()
         layoutJob?.cancel()
         layoutJob = null
-        scope.cancel()
+        supervisorJob.cancel()
+        super.onDetachedFromWindow()
     }
 }

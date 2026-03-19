@@ -404,18 +404,19 @@ class TimelineFragment : Fragment() {
             AlertDialog.Builder(ctx)
                 .setTitle(if (event == null) R.string.add_event else R.string.edit_event)
                 .setView(dialogBinding.root)
-                .setPositiveButton(R.string.save) { _, _ ->
+                .setPositiveButton(R.string.save) { dialog, _ ->
+                    val toastCtx = (dialog as? AlertDialog)?.context ?: return@setPositiveButton
                     val yearStr = dialogBinding.editYear.text.toString().trim()
                     val description = dialogBinding.editDescription.text.toString().trim()
 
                     if (yearStr.isEmpty() || description.isEmpty()) {
-                        Toast.makeText(requireContext(), R.string.enter_year_and_desc, Toast.LENGTH_SHORT).show()
+                        Toast.makeText(toastCtx, R.string.enter_year_and_desc, Toast.LENGTH_SHORT).show()
                         return@setPositiveButton
                     }
 
                     val year = yearStr.toIntOrNull()
                     if (year == null) {
-                        Toast.makeText(requireContext(), R.string.enter_valid_year, Toast.LENGTH_SHORT).show()
+                        Toast.makeText(toastCtx, R.string.enter_valid_year, Toast.LENGTH_SHORT).show()
                         return@setPositiveButton
                     }
 
@@ -427,13 +428,13 @@ class TimelineFragment : Fragment() {
 
                     // Validate month range
                     if (month != null && (month < 1 || month > 12)) {
-                        Toast.makeText(requireContext(), R.string.month_valid_range, Toast.LENGTH_SHORT).show()
+                        Toast.makeText(toastCtx, R.string.month_valid_range, Toast.LENGTH_SHORT).show()
                         return@setPositiveButton
                     }
 
                     // Validate day range
                     if (day != null && (day < 1 || day > 31)) {
-                        Toast.makeText(requireContext(), R.string.day_valid_range, Toast.LENGTH_SHORT).show()
+                        Toast.makeText(toastCtx, R.string.day_valid_range, Toast.LENGTH_SHORT).show()
                         return@setPositiveButton
                     }
 

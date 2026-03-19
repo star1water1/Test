@@ -64,7 +64,9 @@ class CharacterCompareFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             val characters = characterIds.mapNotNull { viewModel.getCharacterByIdSuspend(it) }
             if (characters.size < 2) return@launch
+            if (!isAdded) return@launch
 
+            val novelUnassignedLabel = getString(R.string.novel_unassigned)
             val allFields = linkedMapOf<String, String>() // key -> display name
 
             // Load all character data in parallel
@@ -83,7 +85,7 @@ class CharacterCompareFragment : Fragment() {
                             val v = values.find { it.fieldDefinitionId == field.id }?.value ?: ""
                             valueMap[field.key] = v
                         }
-                        Triple(CompareEntry(char.name, novel?.title ?: getString(R.string.novel_unassigned), valueMap, tags), sortedFields, char)
+                        Triple(CompareEntry(char.name, novel?.title ?: novelUnassignedLabel, valueMap, tags), sortedFields, char)
                     }
                 }.awaitAll()
             } catch (e: Exception) {

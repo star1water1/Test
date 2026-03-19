@@ -87,15 +87,16 @@ class RelationshipHelper(
         viewLifecycleOwner.lifecycleScope.launch {
             val allCharacters = viewModel.getAllCharactersList()
             val otherCharacters = allCharacters.filter { it.id != characterId }
+
+            val context = try { contextGetter() } catch (_: Exception) { return@launch }
+
             if (otherCharacters.isEmpty()) {
-                Toast.makeText(contextGetter(), getString(R.string.no_other_characters), Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, getString(R.string.no_other_characters), Toast.LENGTH_SHORT).show()
                 return@launch
             }
 
             val charNames = otherCharacters.map { it.name }.toTypedArray()
             val typeNames = CharacterRelationship.TYPES.toTypedArray()
-
-            val context = try { contextGetter() } catch (_: Exception) { return@launch }
             val dialogView = LayoutInflater.from(context).inflate(R.layout.dialog_relationship_edit, null)
             val spinnerCharacter = dialogView.findViewById<android.widget.Spinner>(R.id.spinnerRelCharacter)
             val spinnerType = dialogView.findViewById<android.widget.Spinner>(R.id.spinnerRelType)

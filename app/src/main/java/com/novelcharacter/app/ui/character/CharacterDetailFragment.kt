@@ -171,9 +171,11 @@ class CharacterDetailFragment : Fragment() {
                 binding.memoCard.visibility = View.GONE
             }
 
+            if (_binding == null) return@launch
             val universeId = novel?.universeId
             if (universeId != null) {
                 val fields = viewModel.getFieldsByUniverseList(universeId)
+                if (_binding == null) return@launch
                 val values = viewModel.getValuesByCharacterList(character.id)
                 if (_binding == null) return@launch
                 timeSliderHelper.cachedFields = fields

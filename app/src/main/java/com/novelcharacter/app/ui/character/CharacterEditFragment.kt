@@ -236,10 +236,11 @@ class CharacterEditFragment : Fragment() {
     }
 
     private fun buildDynamicForm() {
+        if (_binding == null || !isAdded) return
         binding.dynamicFormContainer.removeAllViews()
         fieldInputMap.clear()
 
-        val context = requireContext()
+        val context = context ?: return
         val density = resources.displayMetrics.density
 
         for (field in fieldDefinitions.sortedBy { it.displayOrder }) {
@@ -554,11 +555,13 @@ class CharacterEditFragment : Fragment() {
                     imagePaths.add(filePath)
                     updateImageList()
                 } else {
-                    Toast.makeText(requireContext(), R.string.image_save_failed, Toast.LENGTH_SHORT).show()
+                    val ctx = context ?: return@launch
+                    Toast.makeText(ctx, R.string.image_save_failed, Toast.LENGTH_SHORT).show()
                 }
             } catch (e: Exception) {
                 if (isAdded) {
-                    Toast.makeText(requireContext(), R.string.image_save_failed, Toast.LENGTH_SHORT).show()
+                    val ctx = context ?: return@launch
+                    Toast.makeText(ctx, R.string.image_save_failed, Toast.LENGTH_SHORT).show()
                 }
             }
         }

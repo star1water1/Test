@@ -84,9 +84,11 @@ class SettingsFragment : Fragment() {
 
         binding.integrityCheckRow.setOnClickListener {
             viewLifecycleOwner.lifecycleScope.launch {
+                if (_binding == null) return@launch
                 binding.maintenanceResult.visibility = View.VISIBLE
                 binding.maintenanceResult.text = getString(R.string.maintenance_running)
                 val fkResult = maintenanceService.checkForeignKeyIntegrity()
+                if (_binding == null) return@launch
                 val dupResult = maintenanceService.checkDuplicateDisplayOrders()
                 if (_binding == null) return@launch
                 val sb = StringBuilder()
@@ -123,6 +125,7 @@ class SettingsFragment : Fragment() {
 
         binding.reindexRow.setOnClickListener {
             viewLifecycleOwner.lifecycleScope.launch {
+                if (_binding == null) return@launch
                 binding.maintenanceResult.visibility = View.VISIBLE
                 binding.maintenanceResult.text = getString(R.string.maintenance_running)
                 maintenanceService.reindexDisplayOrders()
@@ -133,6 +136,7 @@ class SettingsFragment : Fragment() {
 
         binding.checkImagesRow.setOnClickListener {
             viewLifecycleOwner.lifecycleScope.launch {
+                if (_binding == null) return@launch
                 binding.maintenanceResult.visibility = View.VISIBLE
                 binding.maintenanceResult.text = getString(R.string.maintenance_running)
                 val result = maintenanceService.checkBrokenImagePaths()

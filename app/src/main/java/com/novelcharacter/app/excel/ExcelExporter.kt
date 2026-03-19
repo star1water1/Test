@@ -39,7 +39,7 @@ class ExcelExporter(context: Context) {
     private val db = AppDatabase.getDatabase(appContext)
     @Volatile private var supervisorJob = kotlinx.coroutines.SupervisorJob()
     @Volatile private var exportScope = CoroutineScope(Dispatchers.IO + supervisorJob)
-    @Volatile private var isExporting = false
+    private val isExporting = java.util.concurrent.atomic.AtomicBoolean(false)
 
     @Synchronized
     private fun ensureActiveScope(): CoroutineScope {
@@ -57,8 +57,7 @@ class ExcelExporter(context: Context) {
      *                    The caller is responsible for launching SAF to let the user pick a save location.
      */
     fun exportAll(onFileReady: ((File, String) -> Unit)? = null) {
-        if (isExporting) return
-        isExporting = true
+        if (!isExporting.compareAndSet(false, true)) return
         ensureActiveScope().launch {
             withContext(Dispatchers.Main) {
                 Toast.makeText(appContext, appContext.getString(R.string.export_preparing), Toast.LENGTH_SHORT).show()
@@ -99,7 +98,7 @@ class ExcelExporter(context: Context) {
                 }
             } finally {
                 try { workbook?.close() } catch (_: Exception) {}
-                isExporting = false
+                isExporting.set(false)
             }
         }
     }

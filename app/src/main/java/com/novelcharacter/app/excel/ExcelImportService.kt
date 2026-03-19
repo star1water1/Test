@@ -57,6 +57,7 @@ data class ImportResult(
 class ExcelImportService(private val db: AppDatabase) {
 
     private val novelIdCache = mutableMapOf<Pair<String, Long?>, Long?>()
+    private var truncatedFieldCount = 0
 
     // ── Header alias map for tolerant import (Sprint C) ──
 
@@ -128,6 +129,7 @@ class ExcelImportService(private val db: AppDatabase) {
         val result = ImportResult()
         novelIdCache.clear()
         processedRowsSoFar = 0
+        truncatedFieldCount = 0
 
         val totalRows = countTotalRows(workbook)
 
@@ -142,6 +144,10 @@ class ExcelImportService(private val db: AppDatabase) {
             importRelationships(workbook, result, onProgress, totalRows)
             importRelationshipChanges(workbook, result, onProgress, totalRows)
             importNameBank(workbook, result, onProgress, totalRows)
+        }
+
+        if (truncatedFieldCount > 0) {
+            result.warnings.add("${truncatedFieldCount}개 필드값이 ${MAX_FIELD_LENGTH}자 제한으로 잘렸습니다.")
         }
 
         return result
@@ -1100,7 +1106,11 @@ class ExcelImportService(private val db: AppDatabase) {
             }
             else -> ""
         }
-        return if (raw.length > maxLength) raw.substring(0, maxLength) else raw
+        if (raw.length > maxLength) {
+            truncatedFieldCount++
+            return raw.substring(0, maxLength)
+        }
+        return raw
     }
 
     companion object {
