@@ -81,6 +81,7 @@ class ExcelImportService(private val db: AppDatabase) {
         alias("이명", "another_name", "별칭", "alias")
         alias("이미지경로", "image_path", "이미지 경로", "image_file")
         alias("이미지모드", "image_mode", "이미지 모드")
+        alias("이미지캐릭터ID", "image_character_id", "이미지 캐릭터 ID")
         alias("작품", "novel")
         alias("메모", "memo", "비고", "note", "notes")
         alias("태그", "tags", "tag")
@@ -316,6 +317,7 @@ class ExcelImportService(private val db: AppDatabase) {
         val borderWidthColIndex = cols["테두리두께"] ?: -1
         val novelImagePathColIndex = cols["이미지경로"] ?: -1
         val novelImageModeColIndex = cols["이미지모드"] ?: -1
+        val imageCharIdColIndex = cols["이미지캐릭터ID"] ?: -1
 
         val codesSeen = mutableMapOf<String, Int>()
 
@@ -334,6 +336,7 @@ class ExcelImportService(private val db: AppDatabase) {
                 val borderWidthDp = if (borderWidthColIndex >= 0) parseNumber(getCellString(row, borderWidthColIndex))?.toFloat() ?: 1.5f else 1.5f
                 val novelImagePath = if (novelImagePathColIndex >= 0) getCellString(row, novelImagePathColIndex) else ""
                 val novelImageMode = if (novelImageModeColIndex >= 0) getCellString(row, novelImageModeColIndex).ifBlank { "none" } else "none"
+                val novelImageCharId = if (imageCharIdColIndex >= 0) parseNumber(getCellString(row, imageCharIdColIndex))?.toLong() else null
 
                 // Duplicate code detection
                 if (code.isNotBlank()) {
@@ -375,7 +378,8 @@ class ExcelImportService(private val db: AppDatabase) {
                         title = title, description = description, universeId = universeId,
                         displayOrder = displayOrder, borderColor = borderColor, borderWidthDp = borderWidthDp,
                         inheritUniverseBorder = effectiveInherit,
-                        imagePath = novelImagePath, imageMode = novelImageMode
+                        imagePath = novelImagePath, imageMode = novelImageMode,
+                        imageCharacterId = novelImageCharId
                     ))
                     result.updatedNovels++
                 } else {
@@ -386,7 +390,8 @@ class ExcelImportService(private val db: AppDatabase) {
                         code = newCode, displayOrder = displayOrder,
                         borderColor = borderColor, borderWidthDp = borderWidthDp,
                         inheritUniverseBorder = effectiveInherit,
-                        imagePath = novelImagePath, imageMode = novelImageMode
+                        imagePath = novelImagePath, imageMode = novelImageMode,
+                        imageCharacterId = novelImageCharId
                     ))
                     result.newNovels++
                 }

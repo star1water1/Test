@@ -110,7 +110,8 @@ fun novelSpec(universeNames: List<String>) = SheetSpec(
         ColumnSpec("테두리색", width = 4000),
         ColumnSpec("테두리두께", width = 3000),
         ColumnSpec("이미지경로", width = 8000),
-        ColumnSpec("이미지모드", dropdownOptions = listOf("none", "custom", "random_character", "select_character"), width = 5000)
+        ColumnSpec("이미지모드", dropdownOptions = listOf("none", "custom", "random_character", "select_character"), width = 5000),
+        ColumnSpec("이미지캐릭터ID", width = 5000)
     )
 )
 

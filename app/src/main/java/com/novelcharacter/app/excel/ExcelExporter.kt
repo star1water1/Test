@@ -450,6 +450,7 @@ class ExcelExporter(context: Context) {
             row.createCell(7).setCellValue(novel.borderWidthDp.toDouble())
             row.createCell(8).setCellValue(novel.imagePath)
             row.createCell(9).setCellValue(novel.imageMode)
+            row.createCell(10).setCellValue(novel.imageCharacterId?.toDouble() ?: 0.0)
         }
 
         applySpecFormatting(sheet, spec, novels.size)
