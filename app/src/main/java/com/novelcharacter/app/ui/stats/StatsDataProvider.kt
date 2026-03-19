@@ -132,7 +132,7 @@ data class DataHealthStats(
     val lowPrecisionEvents: Int // 년도만 있는 사건 수
 )
 
-// ===== 커스텀 필드 분석 (신규) =====
+// ===== 커스텀 필드 분석 (레거시 - 호환용) =====
 data class FieldAnalysisStats(
     val fieldValueDistributions: List<FieldValueDistribution>,
     val numberFieldSummaries: List<NumberFieldSummary>,
@@ -162,6 +162,64 @@ data class FieldCompletionDetail(
     val filledCount: Int,
     val totalCount: Int,
     val completionRate: Float
+)
+
+// ===== 필드 인사이트 (신규) =====
+data class FieldInsightResult(
+    val fieldDefinition: FieldDefinition,
+    val statsConfig: FieldStatsConfig,
+    val analysisResults: List<AnalysisResult>,
+    val totalCount: Int,
+    val filledCount: Int
+)
+
+data class AnalysisResult(
+    val entry: FieldStatsConfig.AnalysisEntry,
+    val distributionData: Map<String, Int>?,
+    val numericSummary: NumericSummaryData?
+)
+
+data class NumericSummaryData(
+    val min: Float,
+    val max: Float,
+    val avg: Float,
+    val median: Float,
+    val stdDev: Float,
+    val histogram: Map<String, Int>
+)
+
+// ===== 교차 분석 (신규) =====
+data class CrossAnalysisResult(
+    val field1Name: String,
+    val field2Name: String,
+    val filterFieldName: String?,
+    val filterValue: String?,
+    val crossTable: Map<String, Map<String, Int>>,
+    val totalCount: Int,
+    val filteredCount: Int
+)
+
+// ===== 데이터 현황 (신규 - 기존 여러 Stats 통합) =====
+data class DataOverviewStats(
+    val totalCharacters: Int,
+    val totalNovels: Int,
+    val totalUniverses: Int,
+    val totalEvents: Int,
+    val totalRelationships: Int,
+    val totalNames: Int,
+    val fieldCompletionByGroup: Map<String, Float>,
+    val fieldCompletionByField: List<FieldCompletionDetail>,
+    val yearDensity: Map<Int, Int>,
+    val nameBankUsageRate: Float,
+    val nameBankGenderDist: Map<String, Int>,
+    val healthWarnings: HealthWarnings
+)
+
+data class HealthWarnings(
+    val noImageCount: Int,
+    val incompleteFieldCount: Int,
+    val isolatedCharCount: Int,
+    val unlinkedCharCount: Int
 )
 
 class StatsDataProvider(private val app: NovelCharacterApp) {
@@ -620,7 +678,303 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
         )
     }
 
-    // ===== 커스텀 필드 분석 (신규) =====
+    // ===== 필드 인사이트 (신규) =====
+    fun computeFieldInsights(s: StatsSnapshot): List<FieldInsightResult> {
+        val novelMap = s.novels.associateBy { it.id }
+        val valuesByFieldDef = s.fieldValues.filter { it.value.isNotBlank() }
+            .groupBy { it.fieldDefinitionId }
+
+        return s.fieldDefinitions.mapNotNull { fd ->
+            val statsConfig = FieldStatsConfig.fromConfig(fd.config)
+            if (!statsConfig.enabled) return@mapNotNull null
+            if (fd.type == "CALCULATED") return@mapNotNull null
+
+            val rawValues = valuesByFieldDef[fd.id] ?: emptyList()
+
+            // 해당 유니버스 캐릭터 수
+            val universeNovels = s.novels.filter { it.universeId == fd.universeId }.map { it.id }.toSet()
+            val totalCount = s.characters.count { it.novelId in universeNovels }
+            val filledCount = rawValues.size
+
+            val analysisResults = statsConfig.analyses.map { entry ->
+                when (entry.type) {
+                    FieldStatsConfig.StatsType.DISTRIBUTION -> {
+                        val dist = computeFieldDistribution(fd, rawValues, statsConfig, entry.limit)
+                        AnalysisResult(entry, dist, null)
+                    }
+                    FieldStatsConfig.StatsType.NUMERIC -> {
+                        val numericValues = rawValues.mapNotNull { it.value.toFloatOrNull() }
+                        val summary = if (numericValues.isNotEmpty()) {
+                            computeNumericSummary(numericValues, statsConfig.binning)
+                        } else null
+                        AnalysisResult(entry, null, summary)
+                    }
+                    FieldStatsConfig.StatsType.RANKING -> {
+                        val dist = computeFieldDistribution(fd, rawValues, statsConfig, entry.limit)
+                        val ranked = dist.entries.sortedByDescending { it.value }
+                            .take(entry.limit)
+                            .associate { it.key to it.value }
+                        AnalysisResult(entry, ranked, null)
+                    }
+                }
+            }
+
+            FieldInsightResult(fd, statsConfig, analysisResults, totalCount, filledCount)
+        }
+    }
+
+    private fun computeFieldDistribution(
+        fd: FieldDefinition,
+        rawValues: List<CharacterFieldValue>,
+        statsConfig: FieldStatsConfig,
+        limit: Int
+    ): Map<String, Int> {
+        val allValues = mutableListOf<String>()
+
+        for (fv in rawValues) {
+            allValues.addAll(getFieldValues(fd, fv.value, statsConfig))
+        }
+
+        return allValues.groupBy { it }
+            .mapValues { it.value.size }
+            .entries.sortedByDescending { it.value }
+            .take(limit)
+            .associate { it.key to it.value }
+    }
+
+    private fun getFieldValues(
+        fd: FieldDefinition,
+        rawValue: String,
+        statsConfig: FieldStatsConfig
+    ): List<String> {
+        val format = DisplayFormat.fromConfig(fd.config)
+
+        // Step 1: 값 분리
+        val splitValues = when {
+            fd.type == "BODY_SIZE" -> {
+                // BODY_SIZE 다각적 분석: 전체 값 + 개별 구성요소
+                val separator = try {
+                    org.json.JSONObject(fd.config).optString("separator", "-")
+                } catch (_: Exception) { "-" }
+                val parts = rawValue.split(separator).map { it.trim() }.filter { it.isNotEmpty() }
+                // 전체 값을 하나의 항목으로, 그리고 각 파트도 개별로
+                val result = mutableListOf(rawValue.trim())
+                if (parts.size >= 2) {
+                    parts.forEachIndexed { idx, part ->
+                        val label = when (idx) {
+                            0 -> "키:$part"
+                            1 -> "체중:$part"
+                            else -> "사이즈${idx + 1}:$part"
+                        }
+                        result.add(label)
+                    }
+                }
+                result
+            }
+            format == DisplayFormat.COMMA_LIST || format == DisplayFormat.BULLET_LIST ->
+                rawValue.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+            fd.type == "MULTI_TEXT" ->
+                rawValue.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+            else -> listOf(rawValue.trim())
+        }
+
+        // Step 2: 값 라벨 매핑 적용
+        val labeled = splitValues.map { statsConfig.applyLabel(it) }
+
+        // Step 3: NUMBER + binning
+        if (fd.type == "NUMBER" && statsConfig.binning != null && statsConfig.binning.mode == "custom") {
+            return labeled.mapNotNull { v ->
+                v.toFloatOrNull()?.let { statsConfig.applyBinning(it) }
+            }
+        }
+
+        return labeled
+    }
+
+    private fun computeNumericSummary(
+        values: List<Float>,
+        binning: FieldStatsConfig.BinningConfig?
+    ): NumericSummaryData {
+        val sorted = values.sorted()
+        val min = sorted.first()
+        val max = sorted.last()
+        val avg = values.average().toFloat()
+        val median = if (sorted.size % 2 == 0) {
+            (sorted[sorted.size / 2 - 1] + sorted[sorted.size / 2]) / 2f
+        } else sorted[sorted.size / 2]
+
+        // 표준편차
+        val variance = values.map { (it - avg) * (it - avg) }.average().toFloat()
+        val stdDev = kotlin.math.sqrt(variance.toDouble()).toFloat()
+
+        // 히스토그램
+        val histogram = if (binning != null && binning.mode == "custom") {
+            val ranges = binning.parseRanges()
+            val counts = mutableMapOf<String, Int>()
+            for (range in ranges) {
+                counts[range.label] = values.count { range.contains(it) }
+            }
+            counts
+        } else {
+            // 자동 5등분
+            val range = max - min
+            if (range <= 0) {
+                mapOf(min.toString() to values.size)
+            } else {
+                val binSize = range / 5f
+                val counts = mutableMapOf<String, Int>()
+                for (i in 0 until 5) {
+                    val binMin = min + i * binSize
+                    val binMax = if (i == 4) max else min + (i + 1) * binSize
+                    val label = "${binMin.toInt()}~${binMax.toInt()}"
+                    counts[label] = values.count { it >= binMin && (if (i == 4) it <= binMax else it < binMax) }
+                }
+                counts
+            }
+        }
+
+        return NumericSummaryData(min, max, avg, median, stdDev, histogram)
+    }
+
+    // ===== 교차 분석 (신규) =====
+    fun computeCrossAnalysis(
+        s: StatsSnapshot,
+        field1Id: Long,
+        field2Id: Long,
+        filterFieldId: Long?,
+        filterValue: String?
+    ): CrossAnalysisResult? {
+        val field1 = s.fieldDefinitions.find { it.id == field1Id } ?: return null
+        val field2 = s.fieldDefinitions.find { it.id == field2Id } ?: return null
+        val filterField = if (filterFieldId != null) s.fieldDefinitions.find { it.id == filterFieldId } else null
+
+        val valuesByChar = s.fieldValues.groupBy { it.characterId }
+        val config1 = FieldStatsConfig.fromConfig(field1.config)
+        val config2 = FieldStatsConfig.fromConfig(field2.config)
+
+        // 필터 적용: 대상 캐릭터 ID 세트 구하기
+        val targetCharIds = if (filterField != null && filterValue != null) {
+            val filterConfig = FieldStatsConfig.fromConfig(filterField.config)
+            s.fieldValues.filter { it.fieldDefinitionId == filterField.id }
+                .filter { fv ->
+                    val vals = getFieldValues(filterField, fv.value, filterConfig)
+                    filterValue in vals
+                }
+                .map { it.characterId }
+                .toSet()
+        } else {
+            s.characters.map { it.id }.toSet()
+        }
+
+        // 교차표 구성
+        val crossTable = mutableMapOf<String, MutableMap<String, Int>>()
+        var filteredCount = 0
+
+        for (charId in targetCharIds) {
+            val charValues = valuesByChar[charId] ?: continue
+            val val1Raw = charValues.find { it.fieldDefinitionId == field1Id }?.value ?: continue
+            val val2Raw = charValues.find { it.fieldDefinitionId == field2Id }?.value ?: continue
+
+            val values1 = getFieldValues(field1, val1Raw, config1)
+            val values2 = getFieldValues(field2, val2Raw, config2)
+
+            for (v1 in values1) {
+                for (v2 in values2) {
+                    crossTable.getOrPut(v1) { mutableMapOf() }
+                        .merge(v2, 1) { old, new -> old + new }
+                }
+            }
+            filteredCount++
+        }
+
+        return CrossAnalysisResult(
+            field1Name = field1.name,
+            field2Name = field2.name,
+            filterFieldName = filterField?.name,
+            filterValue = filterValue,
+            crossTable = crossTable,
+            totalCount = s.characters.size,
+            filteredCount = filteredCount
+        )
+    }
+
+    // ===== 데이터 현황 (신규 - 기존 여러 compute 통합) =====
+    fun computeDataOverview(s: StatsSnapshot): DataOverviewStats {
+        val novelMap = s.novels.associateBy { it.id }
+        val fieldDefByUniverse = s.fieldDefinitions.groupBy { it.universeId }
+        val charFieldValuesByChar = s.fieldValues.groupBy { it.characterId }
+        val valuesByFieldDef = s.fieldValues.filter { it.value.isNotBlank() }.groupBy { it.fieldDefinitionId }
+
+        // 그룹별 필드 완성도
+        val groupCompletions = mutableMapOf<String, MutableList<Float>>()
+        s.characters.forEach { char ->
+            val novelId = char.novelId ?: return@forEach
+            val novel = novelMap[novelId] ?: return@forEach
+            val fieldsForUniverse = fieldDefByUniverse[novel.universeId] ?: return@forEach
+            val charValues = charFieldValuesByChar[char.id] ?: emptyList()
+            val filledDefIds = charValues.filter { it.value.isNotBlank() }.map { it.fieldDefinitionId }.toSet()
+
+            fieldsForUniverse.groupBy { it.groupName }.forEach { (group, fields) ->
+                val rate = if (fields.isEmpty()) 0f else fields.count { it.id in filledDefIds }.toFloat() / fields.size * 100f
+                groupCompletions.getOrPut(group) { mutableListOf() }.add(rate)
+            }
+        }
+        val completionByGroup = groupCompletions.mapValues { (_, rates) ->
+            if (rates.isEmpty()) 0f else rates.average().toFloat()
+        }
+
+        // 개별 필드별 완성도
+        val fieldCompletionDetails = s.fieldDefinitions.map { fd ->
+            val universeNovels = s.novels.filter { it.universeId == fd.universeId }.map { it.id }.toSet()
+            val relevantChars = s.characters.filter { it.novelId in universeNovels }
+            val filled = valuesByFieldDef[fd.id]?.count { it.value.isNotBlank() } ?: 0
+            val total = relevantChars.size
+            val rate = if (total > 0) filled.toFloat() / total * 100f else 0f
+            FieldCompletionDetail(fd.name, fd.groupName, filled, total, rate)
+        }.sortedBy { it.completionRate }
+
+        // 타임라인 밀도
+        val yearDensity = s.events.groupBy { it.year }.mapValues { it.value.size }
+
+        // 이름뱅크
+        val used = s.nameBank.count { it.isUsed }
+        val nameBankRate = if (s.nameBank.isNotEmpty()) used.toFloat() / s.nameBank.size * 100f else 0f
+        val genderDist = s.nameBank.groupBy { it.gender.ifBlank { "미지정" } }
+            .mapValues { it.value.size }
+
+        // 건강도
+        val noImageCount = s.characters.count { it.imagePaths.isBlank() || it.imagePaths == "[]" }
+        val incompleteCount = s.characters.count { char ->
+            val novelId = char.novelId ?: return@count false
+            val novel = novelMap[novelId] ?: return@count false
+            val fields = fieldDefByUniverse[novel.universeId] ?: return@count false
+            if (fields.isEmpty()) return@count false
+            val charValues = charFieldValuesByChar[char.id] ?: emptyList()
+            val filled = charValues.count { it.value.isNotBlank() }
+            filled.toFloat() / fields.size < 0.5f
+        }
+        val relCharIds = s.relationships.flatMap { listOf(it.characterId1, it.characterId2) }.toSet()
+        val isolatedCount = s.characters.count { it.id !in relCharIds }
+        val eventCharIds = s.crossRefs.map { it.characterId }.toSet()
+        val unlinkedCount = s.characters.count { it.id !in eventCharIds }
+
+        return DataOverviewStats(
+            totalCharacters = s.characters.size,
+            totalNovels = s.novels.size,
+            totalUniverses = s.universes.size,
+            totalEvents = s.events.size,
+            totalRelationships = s.relationships.size,
+            totalNames = s.nameBank.size,
+            fieldCompletionByGroup = completionByGroup,
+            fieldCompletionByField = fieldCompletionDetails,
+            yearDensity = yearDensity,
+            nameBankUsageRate = nameBankRate,
+            nameBankGenderDist = genderDist,
+            healthWarnings = HealthWarnings(noImageCount, incompleteCount, isolatedCount, unlinkedCount)
+        )
+    }
+
+    // ===== 커스텀 필드 분석 (레거시) =====
     fun computeFieldAnalysis(s: StatsSnapshot): FieldAnalysisStats {
         val novelMap = s.novels.associateBy { it.id }
         val fieldDefById = s.fieldDefinitions.associateBy { it.id }

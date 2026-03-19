@@ -294,6 +294,140 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
+            <!-- 필드 인사이트 미리보기 (가로 스크롤) -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cardInsightPreview"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="@dimen/stats_margin_md"
+                android:visibility="gone"
+                app:cardCornerRadius="@dimen/stats_card_corner_radius"
+                app:cardElevation="@dimen/stats_card_elevation">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="@dimen/stats_padding_card">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginBottom="@dimen/stats_margin_sm">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/stats_nav_field_insight"
+                            android:textSize="@dimen/stats_text_heading"
+                            android:textStyle="bold"
+                            android:textColor="@color/primary" />
+
+                        <TextView
+                            android:id="@+id/btnInsightMore"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/stats_insight_preview_more"
+                            android:textSize="@dimen/stats_text_body_sm"
+                            android:textColor="@color/accent"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:foreground="?attr/selectableItemBackground"
+                            android:padding="@dimen/stats_margin_xs" />
+                    </LinearLayout>
+
+                    <HorizontalScrollView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:scrollbars="none">
+
+                        <LinearLayout
+                            android:id="@+id/insightPreviewContainer"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal" />
+                    </HorizontalScrollView>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- 신규 네비게이션 카드 -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginBottom="@dimen/stats_margin_md">
+
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/cardFieldInsight"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="@dimen/stats_margin_xs"
+                    app:cardCornerRadius="@dimen/stats_card_corner_radius"
+                    app:cardElevation="@dimen/stats_card_elevation"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:foreground="?attr/selectableItemBackground">
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/stats_nav_field_insight"
+                        android:textSize="@dimen/stats_text_body"
+                        android:textStyle="bold"
+                        android:textColor="@color/primary"
+                        android:gravity="center"
+                        android:padding="@dimen/stats_padding_card" />
+                </com.google.android.material.card.MaterialCardView>
+
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/cardRelationNetwork"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="@dimen/stats_margin_xs"
+                    android:layout_marginEnd="@dimen/stats_margin_xs"
+                    app:cardCornerRadius="@dimen/stats_card_corner_radius"
+                    app:cardElevation="@dimen/stats_card_elevation"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:foreground="?attr/selectableItemBackground">
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/stats_nav_relation_network"
+                        android:textSize="@dimen/stats_text_body"
+                        android:textStyle="bold"
+                        android:textColor="@color/primary"
+                        android:gravity="center"
+                        android:padding="@dimen/stats_padding_card" />
+                </com.google.android.material.card.MaterialCardView>
+
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/cardDataOverview"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="@dimen/stats_margin_xs"
+                    app:cardCornerRadius="@dimen/stats_card_corner_radius"
+                    app:cardElevation="@dimen/stats_card_elevation"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:foreground="?attr/selectableItemBackground">
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/stats_nav_data_overview"
+                        android:textSize="@dimen/stats_text_body"
+                        android:textStyle="bold"
+                        android:textColor="@color/primary"
+                        android:gravity="center"
+                        android:padding="@dimen/stats_padding_card" />
+                </com.google.android.material.card.MaterialCardView>
+            </LinearLayout>
+
             <!-- 캐릭터 분석 카드 -->
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/cardCharacters"

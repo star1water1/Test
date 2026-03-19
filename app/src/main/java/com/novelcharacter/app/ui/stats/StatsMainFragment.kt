@@ -1,15 +1,25 @@
 package com.novelcharacter.app.ui.stats
 
+import android.graphics.Color
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
+import android.widget.LinearLayout
+import android.widget.TextView
 import android.widget.Toast
+import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.navigation.fragment.findNavController
+import com.github.mikephil.charting.charts.PieChart
+import com.github.mikephil.charting.data.PieData
+import com.github.mikephil.charting.data.PieDataSet
+import com.github.mikephil.charting.data.PieEntry
+import com.github.mikephil.charting.formatter.PercentFormatter
+import com.github.mikephil.charting.utils.ColorTemplate
 import com.novelcharacter.app.R
 import com.novelcharacter.app.databinding.FragmentStatsMainBinding
 import com.novelcharacter.app.util.navigateSafe
@@ -99,6 +109,11 @@ class StatsMainFragment : Fragment() {
                 if (summary.totalCharacters > 0) View.VISIBLE else View.GONE
         }
 
+        // 필드 인사이트 미리보기
+        viewModel.fieldInsights.observe(viewLifecycleOwner) { insights ->
+            populateInsightPreview(insights)
+        }
+
         viewModel.characterStats.observe(viewLifecycleOwner) { charStats ->
             val topTag = charStats.tagDistribution.entries.firstOrNull()
             binding.charPreview.text = buildString {
@@ -160,7 +175,120 @@ class StatsMainFragment : Fragment() {
         }
     }
 
+    // ===== 인사이트 미리보기 (가로 스크롤 미니 차트) =====
+
+    private fun populateInsightPreview(insights: List<FieldInsightResult>) {
+        val container = binding.insightPreviewContainer
+        container.removeAllViews()
+
+        if (insights.isEmpty()) {
+            binding.cardInsightPreview.visibility = View.GONE
+            return
+        }
+        binding.cardInsightPreview.visibility = View.VISIBLE
+
+        val cardWidth = resources.getDimensionPixelSize(R.dimen.stats_chart_height) / 2  // 150dp
+        val chartSize = cardWidth - resources.getDimensionPixelSize(R.dimen.stats_margin_md) * 2
+        val marginSm = resources.getDimensionPixelSize(R.dimen.stats_margin_sm)
+
+        insights.take(10).forEach { insight ->
+            // 분포 데이터가 있는 첫 번째 분석만 미리보기
+            val distResult = insight.analysisResults.firstOrNull { it.distributionData != null }
+            val distData = distResult?.distributionData ?: return@forEach
+
+            val card = LinearLayout(requireContext()).apply {
+                orientation = LinearLayout.VERTICAL
+                val lp = LinearLayout.LayoutParams(cardWidth, LinearLayout.LayoutParams.WRAP_CONTENT)
+                lp.marginEnd = marginSm
+                layoutParams = lp
+                setOnClickListener {
+                    findNavController().navigateSafe(
+                        R.id.statsMainFragment, R.id.statsFieldInsightFragment, null
+                    )
+                }
+            }
+
+            // 필드 이름
+            val textSizeSp = resources.getDimension(R.dimen.stats_text_body_sm) / resources.displayMetrics.scaledDensity
+            val captionSp = resources.getDimension(R.dimen.stats_text_chart_value_sm) / resources.displayMetrics.scaledDensity
+            card.addView(TextView(requireContext()).apply {
+                text = insight.fieldDefinition.name
+                textSize = textSizeSp
+                setTextColor(ContextCompat.getColor(requireContext(), R.color.on_surface))
+                maxLines = 1
+                val lp = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+                lp.bottomMargin = marginSm / 2
+                layoutParams = lp
+            })
+
+            // 미니 파이차트
+            val miniChart = PieChart(requireContext()).apply {
+                layoutParams = LinearLayout.LayoutParams(chartSize, chartSize)
+            }
+            val entries = distData.entries.sortedByDescending { it.value }.take(5)
+                .map { PieEntry(it.value.toFloat(), it.key) }
+            val dataSet = PieDataSet(entries, "").apply {
+                colors = chartColors()
+                setDrawValues(false)
+            }
+            miniChart.apply {
+                data = PieData(dataSet)
+                description.isEnabled = false
+                isDrawHoleEnabled = true
+                holeRadius = 35f
+                setHoleColor(ContextCompat.getColor(requireContext(), R.color.surface))
+                setTransparentCircleColor(ContextCompat.getColor(requireContext(), R.color.surface))
+                legend.isEnabled = false
+                setDrawEntryLabels(false)
+                setTouchEnabled(false)
+                invalidate()
+            }
+            card.addView(miniChart)
+
+            // TOP 1 값 표시
+            val topEntry = distData.entries.maxByOrNull { it.value }
+            if (topEntry != null) {
+                val total = distData.values.sum().toFloat()
+                val pct = if (total > 0) topEntry.value / total * 100 else 0f
+                card.addView(TextView(requireContext()).apply {
+                    text = "${topEntry.key} ${String.format("%.0f", pct)}%"
+                    textSize = captionSp
+                    setTextColor(ContextCompat.getColor(requireContext(), R.color.text_secondary))
+                    maxLines = 1
+                })
+            }
+
+            container.addView(card)
+        }
+    }
+
     private fun setupClickListeners() {
+        // 신규 네비게이션 카드
+        binding.cardFieldInsight.setOnClickListener {
+            findNavController().navigateSafe(
+                R.id.statsMainFragment, R.id.statsFieldInsightFragment, null
+            )
+        }
+        binding.cardRelationNetwork.setOnClickListener {
+            findNavController().navigateSafe(
+                R.id.statsMainFragment, R.id.statsRelationshipDetailFragment, null
+            )
+        }
+        binding.cardDataOverview.setOnClickListener {
+            findNavController().navigateSafe(
+                R.id.statsMainFragment, R.id.statsDataOverviewFragment, null
+            )
+        }
+        binding.btnInsightMore.setOnClickListener {
+            findNavController().navigateSafe(
+                R.id.statsMainFragment, R.id.statsFieldInsightFragment, null
+            )
+        }
+
+        // 레거시 카드
         binding.cardCharacters.setOnClickListener {
             findNavController().navigateSafe(
                 R.id.statsMainFragment, R.id.statsCharacterDetailFragment, null
@@ -191,6 +319,17 @@ class StatsMainFragment : Fragment() {
                 R.id.statsMainFragment, R.id.statsDataHealthDetailFragment, null
             )
         }
+    }
+
+    private fun chartColors(): List<Int> {
+        val ctx = requireContext()
+        return listOf(
+            ContextCompat.getColor(ctx, R.color.primary),
+            ContextCompat.getColor(ctx, R.color.accent),
+            ContextCompat.getColor(ctx, R.color.search_type_novel),
+            ContextCompat.getColor(ctx, R.color.primary_light),
+            ContextCompat.getColor(ctx, R.color.primary_dark)
+        ) + ColorTemplate.MATERIAL_COLORS.toList()
     }
 
     override fun onDestroyView() {

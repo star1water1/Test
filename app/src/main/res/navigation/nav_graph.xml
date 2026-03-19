@@ -177,6 +177,12 @@
         <action
             android:id="@+id/action_stats_to_field_analysis_detail"
             app:destination="@id/statsFieldAnalysisDetailFragment" />
+        <action
+            android:id="@+id/action_stats_to_field_insight"
+            app:destination="@id/statsFieldInsightFragment" />
+        <action
+            android:id="@+id/action_stats_to_data_overview"
+            app:destination="@id/statsDataOverviewFragment" />
     </fragment>
 
     <fragment
@@ -214,6 +220,18 @@
         android:name="com.novelcharacter.app.ui.stats.StatsFieldAnalysisDetailFragment"
         android:label="@string/stats_field_analysis"
         tools:layout="@layout/fragment_stats_field_analysis_detail" />
+
+    <fragment
+        android:id="@+id/statsFieldInsightFragment"
+        android:name="com.novelcharacter.app.ui.stats.StatsFieldInsightFragment"
+        android:label="@string/stats_field_insight_title"
+        tools:layout="@layout/fragment_stats_field_insight" />
+
+    <fragment
+        android:id="@+id/statsDataOverviewFragment"
+        android:name="com.novelcharacter.app.ui.stats.StatsDataOverviewFragment"
+        android:label="@string/stats_data_overview_title"
+        tools:layout="@layout/fragment_stats_data_overview" />
 
     <fragment
         android:id="@+id/characterGrowthFragment"

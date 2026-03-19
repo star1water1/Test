@@ -15,7 +15,7 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent"
         app:navigationIcon="?attr/homeAsUpIndicator"
-        app:title="@string/stats_relationships"
+        app:title="@string/stats_relation_network_title"
         app:titleTextColor="@color/on_primary" />
 
     <ProgressBar

@@ -3,8 +3,14 @@ package com.novelcharacter.app.ui.field
 import android.app.Dialog
 import android.os.Bundle
 import android.view.View
+import android.view.ViewGroup
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
+import android.widget.EditText
+import android.widget.ImageButton
+import android.widget.LinearLayout
+import android.widget.Spinner
+import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.core.os.bundleOf
 import androidx.fragment.app.DialogFragment
@@ -13,6 +19,7 @@ import com.google.gson.Gson
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.DisplayFormat
 import com.novelcharacter.app.data.model.FieldDefinition
+import com.novelcharacter.app.data.model.FieldStatsConfig
 import com.novelcharacter.app.data.model.FieldType
 import com.novelcharacter.app.databinding.DialogFieldEditBinding
 
@@ -21,6 +28,30 @@ class FieldEditDialog : DialogFragment() {
     private var onSave: ((FieldDefinition) -> Unit)? = null
     private var universeId: Long = 0
     private var existingField: FieldDefinition? = null
+
+    // 동적 분석 항목 관리
+    private data class AnalysisRow(
+        val container: View,
+        val spinnerType: Spinner,
+        val spinnerChart: Spinner,
+        val editLimit: EditText
+    )
+    private val analysisRows = mutableListOf<AnalysisRow>()
+
+    // 동적 값 라벨 관리
+    private data class ValueLabelRow(
+        val container: View,
+        val editKey: EditText,
+        val editValue: EditText
+    )
+    private val valueLabelRows = mutableListOf<ValueLabelRow>()
+
+    // 동적 구간 관리
+    private data class BinRangeRow(
+        val container: View,
+        val editRange: EditText
+    )
+    private val binRangeRows = mutableListOf<BinRangeRow>()
 
     fun setOnSaveListener(listener: (FieldDefinition) -> Unit) {
         onSave = listener
@@ -34,6 +65,7 @@ class FieldEditDialog : DialogFragment() {
         existingField = if (fieldJson != null) Gson().fromJson(fieldJson, FieldDefinition::class.java) else null
 
         setupTypeSpinner(binding)
+        setupStatsSection(binding)
         populateFields(binding)
 
         return AlertDialog.Builder(requireContext())
@@ -70,9 +102,192 @@ class FieldEditDialog : DialogFragment() {
                     if (selectedType == FieldType.CALCULATED) View.VISIBLE else View.GONE
                 binding.displayFormatLayout.visibility =
                     if (selectedType == FieldType.TEXT || selectedType == FieldType.MULTI_TEXT) View.VISIBLE else View.GONE
+                // 통계 설정: CALCULATED 제외
+                binding.statsSettingsLayout.visibility =
+                    if (selectedType != FieldType.CALCULATED) View.VISIBLE else View.GONE
+                // NUMBER 전용 구간 설정
+                binding.binningLayout.visibility =
+                    if (selectedType == FieldType.NUMBER) View.VISIBLE else View.GONE
             }
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
+    }
+
+    private fun setupStatsSection(binding: DialogFieldEditBinding) {
+        val density = resources.displayMetrics.density
+
+        // 통계 토글
+        binding.switchStatsEnabled.setOnCheckedChangeListener { _, isChecked ->
+            val visibility = if (isChecked) View.VISIBLE else View.GONE
+            binding.analysisListContainer.visibility = visibility
+            binding.btnAddAnalysis.visibility = visibility
+            binding.valueLabelContainer.visibility = visibility
+            binding.btnAddValueLabel.visibility = visibility
+            // valueLabelContainer 위의 라벨 TextView도 토글
+        }
+
+        // 분석 추가 버튼
+        binding.btnAddAnalysis.setOnClickListener {
+            addAnalysisRow(binding.analysisListContainer, density)
+        }
+
+        // 값 라벨 추가 버튼
+        binding.btnAddValueLabel.setOnClickListener {
+            addValueLabelRow(binding.valueLabelContainer, density)
+        }
+
+        // 구간 모드 스피너
+        val binModes = listOf(getString(R.string.label_binning_auto), getString(R.string.label_binning_custom))
+        binding.spinnerBinningMode.adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, binModes).also {
+            it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        }
+        binding.spinnerBinningMode.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                val isCustom = position == 1
+                binding.customBinContainer.visibility = if (isCustom) View.VISIBLE else View.GONE
+                binding.btnAddBinRange.visibility = if (isCustom) View.VISIBLE else View.GONE
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+
+        // 구간 추가 버튼
+        binding.btnAddBinRange.setOnClickListener {
+            addBinRangeRow(binding.customBinContainer, density)
+        }
+
+        // 기본 분석 1개 추가
+        addAnalysisRow(binding.analysisListContainer, density)
+    }
+
+    private fun addAnalysisRow(container: LinearLayout, density: Float) {
+        val ctx = requireContext()
+        val row = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                bottomMargin = (4 * density).toInt()
+            }
+        }
+
+        val spinnerType = Spinner(ctx).apply {
+            layoutParams = LinearLayout.LayoutParams(0, (40 * density).toInt(), 1f)
+            adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item, FieldStatsConfig.StatsType.labels()).also {
+                it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+            }
+        }
+
+        val spinnerChart = Spinner(ctx).apply {
+            layoutParams = LinearLayout.LayoutParams(0, (40 * density).toInt(), 1f)
+            adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item, FieldStatsConfig.ChartType.labels()).also {
+                it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+            }
+        }
+
+        val editLimit = EditText(ctx).apply {
+            layoutParams = LinearLayout.LayoutParams((48 * density).toInt(), (40 * density).toInt())
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            setText("10")
+            textSize = 12f
+            hint = "N"
+        }
+
+        val btnRemove = ImageButton(ctx).apply {
+            layoutParams = LinearLayout.LayoutParams((36 * density).toInt(), (36 * density).toInt())
+            setImageResource(android.R.drawable.ic_delete)
+            setBackgroundResource(android.R.color.transparent)
+            contentDescription = "삭제"
+            setOnClickListener {
+                container.removeView(row)
+                analysisRows.removeAll { it.container == row }
+            }
+        }
+
+        row.addView(spinnerType)
+        row.addView(spinnerChart)
+        row.addView(editLimit)
+        row.addView(btnRemove)
+        container.addView(row)
+        analysisRows.add(AnalysisRow(row, spinnerType, spinnerChart, editLimit))
+    }
+
+    private fun addValueLabelRow(container: LinearLayout, density: Float) {
+        val ctx = requireContext()
+        val row = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = (4 * density).toInt() }
+        }
+
+        val editKey = EditText(ctx).apply {
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            hint = getString(R.string.hint_value_label_key)
+            textSize = 13f
+        }
+
+        val arrow = TextView(ctx).apply {
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            text = " → "
+            textSize = 14f
+        }
+
+        val editValue = EditText(ctx).apply {
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            hint = getString(R.string.hint_value_label_value)
+            textSize = 13f
+        }
+
+        val btnRemove = ImageButton(ctx).apply {
+            layoutParams = LinearLayout.LayoutParams((36 * density).toInt(), (36 * density).toInt())
+            setImageResource(android.R.drawable.ic_delete)
+            setBackgroundResource(android.R.color.transparent)
+            setOnClickListener {
+                container.removeView(row)
+                valueLabelRows.removeAll { it.container == row }
+            }
+        }
+
+        row.addView(editKey)
+        row.addView(arrow)
+        row.addView(editValue)
+        row.addView(btnRemove)
+        container.addView(row)
+        valueLabelRows.add(ValueLabelRow(row, editKey, editValue))
+    }
+
+    private fun addBinRangeRow(container: LinearLayout, density: Float) {
+        val ctx = requireContext()
+        val row = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = (4 * density).toInt() }
+        }
+
+        val editRange = EditText(ctx).apply {
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            hint = getString(R.string.hint_bin_range)
+            textSize = 13f
+        }
+
+        val btnRemove = ImageButton(ctx).apply {
+            layoutParams = LinearLayout.LayoutParams((36 * density).toInt(), (36 * density).toInt())
+            setImageResource(android.R.drawable.ic_delete)
+            setBackgroundResource(android.R.color.transparent)
+            setOnClickListener {
+                container.removeView(row)
+                binRangeRows.removeAll { it.container == row }
+            }
+        }
+
+        row.addView(editRange)
+        row.addView(btnRemove)
+        container.addView(row)
+        binRangeRows.add(BinRangeRow(row, editRange))
     }
 
     private fun populateFields(binding: DialogFieldEditBinding) {
@@ -116,6 +331,44 @@ class FieldEditDialog : DialogFragment() {
         val displayFormat = DisplayFormat.fromConfig(field.config)
         val formatIndex = DisplayFormat.entries.indexOf(displayFormat)
         if (formatIndex >= 0) binding.spinnerDisplayFormat.setSelection(formatIndex)
+
+        // Stats config
+        val statsConfig = FieldStatsConfig.fromConfig(field.config)
+        binding.switchStatsEnabled.isChecked = statsConfig.enabled
+
+        // 기존 분석 행 제거 후 복원
+        val density = resources.displayMetrics.density
+        binding.analysisListContainer.removeAllViews()
+        analysisRows.clear()
+        for (entry in statsConfig.analyses) {
+            addAnalysisRow(binding.analysisListContainer, density)
+            val row = analysisRows.last()
+            val typeIdx = FieldStatsConfig.StatsType.entries.indexOf(entry.type)
+            if (typeIdx >= 0) row.spinnerType.setSelection(typeIdx)
+            val chartIdx = FieldStatsConfig.ChartType.entries.indexOf(entry.chart)
+            if (chartIdx >= 0) row.spinnerChart.setSelection(chartIdx)
+            row.editLimit.setText(entry.limit.toString())
+        }
+
+        // 값 라벨 복원
+        for ((key, value) in statsConfig.valueLabels) {
+            addValueLabelRow(binding.valueLabelContainer, density)
+            val row = valueLabelRows.last()
+            row.editKey.setText(key)
+            row.editValue.setText(value)
+        }
+
+        // 구간 설정 복원
+        val binning = statsConfig.binning
+        if (binning != null) {
+            if (binning.mode == "custom") {
+                binding.spinnerBinningMode.setSelection(1)
+                for (range in binning.ranges) {
+                    addBinRangeRow(binding.customBinContainer, density)
+                    binRangeRows.last().editRange.setText(range)
+                }
+            }
+        }
     }
 
     private fun saveField(binding: DialogFieldEditBinding) {
@@ -205,7 +458,52 @@ class FieldEditDialog : DialogFragment() {
             else -> {}
         }
 
+        // Stats config (CALCULATED 제외)
+        if (type != FieldType.CALCULATED) {
+            val statsConfig = collectStatsConfig(binding, type)
+            val configJson = Gson().toJson(config)
+            return FieldStatsConfig.applyToConfig(configJson, statsConfig)
+        }
+
         return Gson().toJson(config)
+    }
+
+    private fun collectStatsConfig(binding: DialogFieldEditBinding, type: FieldType): FieldStatsConfig {
+        val enabled = binding.switchStatsEnabled.isChecked
+
+        val analyses = analysisRows.map { row ->
+            val statsTypes = FieldStatsConfig.StatsType.entries
+            val chartTypes = FieldStatsConfig.ChartType.entries
+            FieldStatsConfig.AnalysisEntry(
+                type = statsTypes[row.spinnerType.selectedItemPosition],
+                chart = chartTypes[row.spinnerChart.selectedItemPosition],
+                limit = row.editLimit.text.toString().toIntOrNull() ?: 10
+            )
+        }.ifEmpty { listOf(FieldStatsConfig.AnalysisEntry()) }
+
+        val valueLabels = mutableMapOf<String, String>()
+        for (row in valueLabelRows) {
+            val k = row.editKey.text.toString().trim()
+            val v = row.editValue.text.toString().trim()
+            if (k.isNotEmpty() && v.isNotEmpty()) {
+                valueLabels[k] = v
+            }
+        }
+
+        val binning = if (type == FieldType.NUMBER) {
+            val mode = if (binding.spinnerBinningMode.selectedItemPosition == 1) "custom" else "auto"
+            val ranges = if (mode == "custom") {
+                binRangeRows.mapNotNull { row ->
+                    val text = row.editRange.text.toString().trim()
+                    text.ifEmpty { null }
+                }
+            } else emptyList()
+            if (mode == "custom" && ranges.isNotEmpty()) {
+                FieldStatsConfig.BinningConfig(mode, ranges)
+            } else null
+        } else null
+
+        return FieldStatsConfig(enabled, analyses, binning, valueLabels)
     }
 
     companion object {

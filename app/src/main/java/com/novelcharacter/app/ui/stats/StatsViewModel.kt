@@ -27,6 +27,23 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
     private val _summary = MutableLiveData<SummaryStats>()
     val summary: LiveData<SummaryStats> = _summary
 
+    // ===== 신규: 필드 인사이트 =====
+    private val _fieldInsights = MutableLiveData<List<FieldInsightResult>>()
+    val fieldInsights: LiveData<List<FieldInsightResult>> = _fieldInsights
+
+    // ===== 신규: 교차 분석 =====
+    private val _crossAnalysis = MutableLiveData<CrossAnalysisResult?>()
+    val crossAnalysis: LiveData<CrossAnalysisResult?> = _crossAnalysis
+
+    // ===== 신규: 관계 네트워크 =====
+    private val _relationNetwork = MutableLiveData<RelationshipStats>()
+    val relationNetwork: LiveData<RelationshipStats> = _relationNetwork
+
+    // ===== 신규: 데이터 현황 =====
+    private val _dataOverview = MutableLiveData<DataOverviewStats>()
+    val dataOverview: LiveData<DataOverviewStats> = _dataOverview
+
+    // ===== 레거시 (기존 Fragment 호환용) =====
     private val _characterStats = MutableLiveData<CharacterStats>()
     val characterStats: LiveData<CharacterStats> = _characterStats
 
@@ -89,13 +106,18 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
                 _novelList.value = snapshot.novels.map { it.id to it.title }
 
                 val summary = withContext(Dispatchers.IO) { provider.computeSummary(filtered) }
+                val insights = withContext(Dispatchers.IO) { provider.computeFieldInsights(filtered) }
+
+                _summary.value = summary
+                _fieldInsights.value = insights
+
+                // 레거시 호환: 기존 Fragment가 참조하는 값들도 로드
                 val chars = withContext(Dispatchers.IO) { provider.computeCharacterStats(filtered) }
                 val events = withContext(Dispatchers.IO) { provider.computeEventStats(filtered) }
                 val rels = withContext(Dispatchers.IO) { provider.computeRelationshipStats(filtered) }
                 val names = withContext(Dispatchers.IO) { provider.computeNameBankStats(filtered) }
                 val health = withContext(Dispatchers.IO) { provider.computeDataHealth(filtered) }
 
-                _summary.value = summary
                 _characterStats.value = chars
                 _eventStats.value = events
                 _relationshipStats.value = rels
@@ -108,6 +130,79 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
+
+    // ===== 신규 load 메서드 =====
+
+    fun loadFieldInsights() {
+        if (_fieldInsights.value != null && !isRefreshing) return
+        _loading.value = true
+        _error.value = null
+        viewModelScope.launch {
+            try {
+                val snapshot = ensureSnapshot()
+                val filtered = getFilteredSnapshot(snapshot)
+                _fieldInsights.value = withContext(Dispatchers.IO) { provider.computeFieldInsights(filtered) }
+            } catch (e: Exception) {
+                _error.value = e.message
+            } finally {
+                _loading.value = false
+            }
+        }
+    }
+
+    fun loadCrossAnalysis(field1Id: Long, field2Id: Long, filterFieldId: Long? = null, filterValue: String? = null) {
+        _loading.value = true
+        _error.value = null
+        viewModelScope.launch {
+            try {
+                val snapshot = ensureSnapshot()
+                val filtered = getFilteredSnapshot(snapshot)
+                _crossAnalysis.value = withContext(Dispatchers.IO) {
+                    provider.computeCrossAnalysis(filtered, field1Id, field2Id, filterFieldId, filterValue)
+                }
+            } catch (e: Exception) {
+                _error.value = e.message
+            } finally {
+                _loading.value = false
+            }
+        }
+    }
+
+    fun loadRelationNetwork() {
+        if (_relationNetwork.value != null && !isRefreshing) return
+        _loading.value = true
+        _error.value = null
+        viewModelScope.launch {
+            try {
+                val snapshot = ensureSnapshot()
+                val filtered = getFilteredSnapshot(snapshot)
+                _relationNetwork.value = withContext(Dispatchers.IO) { provider.computeRelationshipStats(filtered) }
+            } catch (e: Exception) {
+                _error.value = e.message
+            } finally {
+                _loading.value = false
+            }
+        }
+    }
+
+    fun loadDataOverview() {
+        if (_dataOverview.value != null && !isRefreshing) return
+        _loading.value = true
+        _error.value = null
+        viewModelScope.launch {
+            try {
+                val snapshot = ensureSnapshot()
+                val filtered = getFilteredSnapshot(snapshot)
+                _dataOverview.value = withContext(Dispatchers.IO) { provider.computeDataOverview(filtered) }
+            } catch (e: Exception) {
+                _error.value = e.message
+            } finally {
+                _loading.value = false
+            }
+        }
+    }
+
+    // ===== 레거시 load 메서드 (기존 Fragment 호환) =====
 
     fun loadCharacterStats() {
         if (_characterStats.value != null && !isRefreshing) return

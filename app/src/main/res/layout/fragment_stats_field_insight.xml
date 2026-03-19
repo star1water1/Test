@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/background">
+
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/toolbar"
+        android:layout_width="0dp"
+        android:layout_height="?attr/actionBarSize"
+        android:background="@color/primary"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:navigationIcon="?attr/homeAsUpIndicator"
+        app:title="@string/stats_field_insight_title"
+        app:titleTextColor="@color/on_primary" />
+
+    <ProgressBar
+        android:id="@+id/loadingProgress"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/toolbar" />
+
+    <androidx.core.widget.NestedScrollView
+        android:id="@+id/contentLayout"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/toolbar">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="@dimen/stats_padding_content">
+
+            <!-- 교차 분석 버튼 -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnCrossAnalysis"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="@dimen/stats_margin_md"
+                android:text="@string/stats_cross_analysis" />
+
+            <!-- 교차 분석 결과 영역 -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cardCrossAnalysis"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="@dimen/stats_margin_md"
+                android:visibility="gone"
+                app:cardCornerRadius="@dimen/stats_card_corner_radius"
+                app:cardElevation="@dimen/stats_card_elevation">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="@dimen/stats_padding_card">
+
+                    <TextView
+                        android:id="@+id/crossAnalysisTitle"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textSize="@dimen/stats_text_subtitle"
+                        android:textStyle="bold"
+                        android:textColor="@color/primary"
+                        android:layout_marginBottom="@dimen/stats_margin_sm" />
+
+                    <TextView
+                        android:id="@+id/crossAnalysisFilter"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textSize="@dimen/stats_text_body_sm"
+                        android:textColor="@color/text_secondary"
+                        android:visibility="gone"
+                        android:layout_marginBottom="@dimen/stats_margin_sm" />
+
+                    <HorizontalScrollView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="@dimen/stats_margin_sm">
+
+                        <LinearLayout
+                            android:id="@+id/crossTableContainer"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical" />
+                    </HorizontalScrollView>
+
+                    <com.github.mikephil.charting.charts.HorizontalBarChart
+                        android:id="@+id/crossBarChart"
+                        android:layout_width="match_parent"
+                        android:layout_height="@dimen/stats_chart_height" />
+
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- 필드 인사이트 카드 컨테이너 (동적 추가) -->
+            <LinearLayout
+                android:id="@+id/insightContainer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+
+            <!-- 데이터 없음 -->
+            <TextView
+                android:id="@+id/emptyText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:text="@string/stats_no_data"
+                android:textSize="@dimen/stats_text_body"
+                android:textColor="@color/text_secondary"
+                android:visibility="gone"
+                android:layout_marginTop="48dp" />
+
+        </LinearLayout>
+    </androidx.core.widget.NestedScrollView>
+</androidx.constraintlayout.widget.ConstraintLayout>

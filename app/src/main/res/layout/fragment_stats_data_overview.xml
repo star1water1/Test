@@ -1,0 +1,247 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/background">
+
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/toolbar"
+        android:layout_width="0dp"
+        android:layout_height="?attr/actionBarSize"
+        android:background="@color/primary"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:navigationIcon="?attr/homeAsUpIndicator"
+        app:title="@string/stats_data_overview_title"
+        app:titleTextColor="@color/on_primary" />
+
+    <ProgressBar
+        android:id="@+id/loadingProgress"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/toolbar" />
+
+    <androidx.core.widget.NestedScrollView
+        android:id="@+id/contentLayout"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/toolbar">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="@dimen/stats_padding_content">
+
+            <!-- 데이터 요약 -->
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="@dimen/stats_margin_md"
+                app:cardCornerRadius="@dimen/stats_card_corner_radius"
+                app:cardElevation="@dimen/stats_card_elevation">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="@dimen/stats_padding_card">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/stats_overview_totals"
+                        android:textSize="@dimen/stats_text_heading"
+                        android:textStyle="bold"
+                        android:textColor="@color/primary"
+                        android:layout_marginBottom="@dimen/stats_margin_md" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal">
+
+                        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:gravity="center" android:orientation="vertical">
+                            <TextView android:id="@+id/overviewCharCount" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textSize="@dimen/stats_text_number_lg" android:textStyle="bold" android:textColor="@color/primary" />
+                            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/stats_total_characters" android:textSize="@dimen/stats_text_caption" android:textColor="@color/text_secondary" />
+                        </LinearLayout>
+
+                        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:gravity="center" android:orientation="vertical">
+                            <TextView android:id="@+id/overviewNovelCount" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textSize="@dimen/stats_text_number_lg" android:textStyle="bold" android:textColor="@color/accent" />
+                            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/stats_total_novels" android:textSize="@dimen/stats_text_caption" android:textColor="@color/text_secondary" />
+                        </LinearLayout>
+
+                        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:gravity="center" android:orientation="vertical">
+                            <TextView android:id="@+id/overviewUniverseCount" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textSize="@dimen/stats_text_number_lg" android:textStyle="bold" android:textColor="@color/search_type_novel" />
+                            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/stats_total_universes" android:textSize="@dimen/stats_text_caption" android:textColor="@color/text_secondary" />
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:layout_marginTop="@dimen/stats_margin_md">
+
+                        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:gravity="center" android:orientation="vertical">
+                            <TextView android:id="@+id/overviewEventCount" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textSize="@dimen/stats_text_number_md" android:textStyle="bold" android:textColor="@color/on_surface" />
+                            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/stats_total_events" android:textSize="@dimen/stats_text_caption" android:textColor="@color/text_secondary" />
+                        </LinearLayout>
+
+                        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:gravity="center" android:orientation="vertical">
+                            <TextView android:id="@+id/overviewRelCount" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textSize="@dimen/stats_text_number_md" android:textStyle="bold" android:textColor="@color/on_surface" />
+                            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/stats_total_relationships" android:textSize="@dimen/stats_text_caption" android:textColor="@color/text_secondary" />
+                        </LinearLayout>
+
+                        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:gravity="center" android:orientation="vertical">
+                            <TextView android:id="@+id/overviewNameCount" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textSize="@dimen/stats_text_number_md" android:textStyle="bold" android:textColor="@color/on_surface" />
+                            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/stats_total_names" android:textSize="@dimen/stats_text_caption" android:textColor="@color/text_secondary" />
+                        </LinearLayout>
+                    </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- 그룹별 필드 완성도 -->
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="@dimen/stats_margin_md"
+                app:cardCornerRadius="@dimen/stats_card_corner_radius"
+                app:cardElevation="@dimen/stats_card_elevation">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="@dimen/stats_padding_card">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/stats_overview_field_completion"
+                        android:textSize="@dimen/stats_text_heading"
+                        android:textStyle="bold"
+                        android:textColor="@color/primary"
+                        android:layout_marginBottom="@dimen/stats_margin_sm" />
+
+                    <LinearLayout
+                        android:id="@+id/fieldCompletionContainer"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- 연도별 사건 밀도 -->
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="@dimen/stats_margin_md"
+                app:cardCornerRadius="@dimen/stats_card_corner_radius"
+                app:cardElevation="@dimen/stats_card_elevation">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="@dimen/stats_padding_card">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/stats_overview_year_density"
+                        android:textSize="@dimen/stats_text_heading"
+                        android:textStyle="bold"
+                        android:textColor="@color/primary"
+                        android:layout_marginBottom="@dimen/stats_margin_sm" />
+
+                    <com.github.mikephil.charting.charts.BarChart
+                        android:id="@+id/chartYearDensity"
+                        android:layout_width="match_parent"
+                        android:layout_height="@dimen/stats_chart_height" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- 이름뱅크 현황 -->
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="@dimen/stats_margin_md"
+                app:cardCornerRadius="@dimen/stats_card_corner_radius"
+                app:cardElevation="@dimen/stats_card_elevation">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="@dimen/stats_padding_card">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/stats_overview_namebank"
+                        android:textSize="@dimen/stats_text_heading"
+                        android:textStyle="bold"
+                        android:textColor="@color/primary"
+                        android:layout_marginBottom="@dimen/stats_margin_sm" />
+
+                    <TextView
+                        android:id="@+id/nameBankUsage"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:textSize="@dimen/stats_text_body"
+                        android:textColor="@color/on_surface"
+                        android:layout_marginBottom="@dimen/stats_margin_sm" />
+
+                    <com.github.mikephil.charting.charts.PieChart
+                        android:id="@+id/chartNameGender"
+                        android:layout_width="match_parent"
+                        android:layout_height="200dp" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- 건강도 경고 -->
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="@dimen/stats_margin_md"
+                app:cardCornerRadius="@dimen/stats_card_corner_radius"
+                app:cardElevation="@dimen/stats_card_elevation">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="@dimen/stats_padding_card">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/stats_overview_health"
+                        android:textSize="@dimen/stats_text_heading"
+                        android:textStyle="bold"
+                        android:textColor="@color/primary"
+                        android:layout_marginBottom="@dimen/stats_margin_sm" />
+
+                    <LinearLayout
+                        android:id="@+id/healthWarningsContainer"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+        </LinearLayout>
+    </androidx.core.widget.NestedScrollView>
+</androidx.constraintlayout.widget.ConstraintLayout>

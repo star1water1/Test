@@ -133,6 +133,20 @@
     <string name="label_display_format">표시 형식</string>
     <string name="hint_comma_list_helper">콤마(,)로 구분하여 여러 항목 입력</string>
     <string name="hint_multiline_helper">여러 줄로 입력 가능</string>
+    <string name="label_stats_enabled">통계에 포함</string>
+    <string name="label_add_analysis">+ 분석 추가</string>
+    <string name="label_value_labels">값 라벨 매핑 (선택)</string>
+    <string name="label_add_value_label">+ 라벨 추가</string>
+    <string name="label_binning">구간 설정 (NUMBER 전용)</string>
+    <string name="label_add_bin_range">+ 구간 추가</string>
+    <string name="label_analysis_type">분석 방법</string>
+    <string name="label_chart_type">차트</string>
+    <string name="label_limit">항목 수</string>
+    <string name="label_binning_auto">자동 (5등분)</string>
+    <string name="label_binning_custom">직접 정의</string>
+    <string name="hint_value_label_key">저장값 (예: M)</string>
+    <string name="hint_value_label_value">표시 라벨 (예: 남성)</string>
+    <string name="hint_bin_range">범위 (예: ~19:10대)</string>
 
     <!-- Kotlin code hardcoded strings -->
     <string name="no_description">설명 없음</string>
@@ -629,4 +643,51 @@
     <string name="stats_health_issues_found">발견 사항 %d건</string>
     <string name="stats_health_no_image"> | 이미지없음 %d</string>
     <string name="stats_person_suffix">%d명</string>
+
+    <!-- Stats: 필드 인사이트 -->
+    <string name="stats_field_insight_title">필드 인사이트</string>
+    <string name="stats_field_insight_completion">입력: %1$d/%2$d명 (%3$.0f%%)</string>
+    <string name="stats_table_value">값</string>
+    <string name="stats_table_count">개수</string>
+    <string name="stats_table_ratio">비율</string>
+    <string name="stats_numeric_min">최솟값: %.1f</string>
+    <string name="stats_numeric_max">최댓값: %.1f</string>
+    <string name="stats_numeric_avg">평균: %.1f</string>
+    <string name="stats_numeric_median">중앙값: %.1f</string>
+    <string name="stats_numeric_stddev">표준편차: %.2f</string>
+
+    <!-- Stats: 교차 분석 -->
+    <string name="stats_cross_analysis">교차 분석</string>
+    <string name="stats_cross_field1">필드 1</string>
+    <string name="stats_cross_field2">필드 2</string>
+    <string name="stats_cross_filter_field">필터 필드 (선택)</string>
+    <string name="stats_cross_filter_value_hint">필터 값 (예: 남성)</string>
+    <string name="stats_cross_filter_none">없음</string>
+    <string name="stats_cross_run">분석 실행</string>
+    <string name="stats_cross_need_two_fields">교차 분석에는 2개 이상의 통계 활성 필드가 필요합니다</string>
+    <string name="stats_cross_title">%1$s × %2$s</string>
+    <string name="stats_cross_filter_info">필터: %1$s = %2$s (%3$d/%4$d명)</string>
+
+    <!-- Stats: 데이터 현황 -->
+    <string name="stats_data_overview_title">데이터 현황</string>
+    <string name="stats_overview_totals">데이터 요약</string>
+    <string name="stats_overview_field_completion">그룹별 필드 완성도</string>
+    <string name="stats_overview_year_density">연도별 사건 밀도</string>
+    <string name="stats_overview_namebank">이름뱅크 현황</string>
+    <string name="stats_overview_health">건강도 경고</string>
+    <string name="stats_overview_no_image_count">이미지 미등록: %d명</string>
+    <string name="stats_overview_incomplete_field_count">필드 미입력: %d명</string>
+    <string name="stats_overview_isolated_count">고립 캐릭터: %d명</string>
+    <string name="stats_overview_unlinked_count">사건 미연계: %d명</string>
+    <string name="stats_overview_all_healthy">모든 항목이 양호합니다</string>
+    <string name="stats_overview_namebank_usage">사용률: %.0f%%</string>
+
+    <!-- Stats: 관계 네트워크 -->
+    <string name="stats_relation_network_title">관계 네트워크</string>
+
+    <!-- Stats: 네비게이션 카드 -->
+    <string name="stats_nav_field_insight">필드 인사이트</string>
+    <string name="stats_nav_relation_network">관계 네트워크</string>
+    <string name="stats_nav_data_overview">데이터 현황</string>
+    <string name="stats_insight_preview_more">전체보기</string>
 </resources>
