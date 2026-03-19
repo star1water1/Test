@@ -122,10 +122,12 @@ class CharacterEditFragment : Fragment() {
 
     private suspend fun loadNovels() {
         novels = viewModel.getAllNovelsList()
+        if (_binding == null) return
         val novelNames = mutableListOf(getString(R.string.no_novel_selected))
         novelNames.addAll(novels.map { it.title })
 
-        val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, novelNames)
+        val ctx = requireContext()
+        val adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item, novelNames)
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         binding.spinnerNovel.adapter = adapter
 
@@ -165,10 +167,12 @@ class CharacterEditFragment : Fragment() {
 
     private suspend fun loadExistingCharacter() {
         existingCharacter = viewModel.getCharacterByIdSuspend(characterId)
+        if (_binding == null) return
         existingCharacter?.let { fillForm(it) }
 
         // 태그 로드
         val tags = viewModel.getTagsByCharacterList(characterId)
+        if (_binding == null) return
         binding.editTags.setText(tags.joinToString(", ") { it.tag })
     }
 

@@ -113,6 +113,7 @@ class CharacterCompareFragment : Fragment() {
         entries: List<CompareEntry>,
         allFields: Map<String, String>
     ) {
+        if (!isAdded || _binding == null) return
         val table = binding.compareTable
         table.removeAllViews()
         val context = requireContext()
