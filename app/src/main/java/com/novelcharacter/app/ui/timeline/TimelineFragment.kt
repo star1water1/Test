@@ -197,9 +197,10 @@ class TimelineFragment : Fragment() {
         // Observe novel data and update spinner adapter only
         viewModel.allNovels.observe(viewLifecycleOwner) { novels ->
             cachedNovels = novels
+            val ctx = context ?: return@observe
             val novelNames = mutableListOf(getString(R.string.all_novels_filter))
             novelNames.addAll(novels.map { it.title })
-            val spinnerAdapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, novelNames)
+            val spinnerAdapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item, novelNames)
             spinnerAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
             binding.spinnerFilterNovel.adapter = spinnerAdapter
         }
@@ -207,9 +208,10 @@ class TimelineFragment : Fragment() {
         // Observe filtered characters (연동: 소설 선택 시 해당 소설 캐릭터만 표시)
         viewModel.filteredCharacters.observe(viewLifecycleOwner) { characters ->
             cachedCharacters = characters
+            val ctx = context ?: return@observe
             val charNames = mutableListOf(getString(R.string.all_characters_filter))
             charNames.addAll(characters.map { it.name })
-            val spinnerAdapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, charNames)
+            val spinnerAdapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item, charNames)
             spinnerAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
             binding.spinnerFilterCharacter.adapter = spinnerAdapter
         }

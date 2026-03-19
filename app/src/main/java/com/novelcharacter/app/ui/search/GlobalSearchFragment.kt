@@ -104,13 +104,14 @@ class GlobalSearchFragment : Fragment() {
 
     private fun updatePresetChips(presets: List<SearchPreset>) {
         val container = binding.presetContainer
+        val ctx = context ?: return
         // Remove all chips except the save button (first child)
         while (container.childCount > 1) {
             container.removeViewAt(1)
         }
 
         for (preset in presets) {
-            val chip = Chip(requireContext()).apply {
+            val chip = Chip(ctx).apply {
                 text = preset.name
                 isCheckable = false
                 isClickable = true

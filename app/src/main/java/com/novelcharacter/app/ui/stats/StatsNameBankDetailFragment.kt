@@ -52,7 +52,7 @@ class StatsNameBankDetailFragment : Fragment() {
 
         viewModel.error.observe(viewLifecycleOwner) { error ->
             if (error != null) {
-                Toast.makeText(requireContext(), R.string.stats_load_error, Toast.LENGTH_SHORT).show()
+                Toast.makeText(context ?: return@observe, R.string.stats_load_error, Toast.LENGTH_SHORT).show()
             }
         }
 
