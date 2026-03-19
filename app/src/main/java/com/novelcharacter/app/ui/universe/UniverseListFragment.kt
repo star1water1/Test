@@ -125,6 +125,10 @@ class UniverseListFragment : Fragment() {
                     toggleReorderMode()
                     true
                 }
+                R.id.action_stats -> {
+                    findNavController().navigateSafe(R.id.universeListFragment, R.id.statsMainFragment, null)
+                    true
+                }
                 else -> false
             }
         }
