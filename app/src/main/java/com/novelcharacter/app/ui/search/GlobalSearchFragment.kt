@@ -140,6 +140,7 @@ class GlobalSearchFragment : Fragment() {
     private fun showSavePresetDialog() {
         viewLifecycleOwner.lifecycleScope.launch {
             val count = viewModel.getPresetCount()
+            if (!isAdded) return@launch
             if (count >= SearchPreset.MAX_PRESETS) {
                 Toast.makeText(requireContext(), getString(R.string.preset_limit_reached, SearchPreset.MAX_PRESETS), Toast.LENGTH_SHORT).show()
                 return@launch

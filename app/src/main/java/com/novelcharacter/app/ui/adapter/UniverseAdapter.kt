@@ -51,6 +51,7 @@ class UniverseAdapter(
     fun isReorderMode() = isReorderMode
 
     fun onItemMove(from: Int, to: Int) {
+        if (from < 0 || to < 0 || from >= reorderList.size || to >= reorderList.size) return
         val item = reorderList.removeAt(from)
         reorderList.add(to, item)
         notifyItemMoved(from, to)

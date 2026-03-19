@@ -88,6 +88,7 @@ class SettingsFragment : Fragment() {
                 binding.maintenanceResult.text = getString(R.string.maintenance_running)
                 val fkResult = maintenanceService.checkForeignKeyIntegrity()
                 val dupResult = maintenanceService.checkDuplicateDisplayOrders()
+                if (_binding == null) return@launch
                 val sb = StringBuilder()
                 val hasIssues = fkResult.fkViolations > 0 || dupResult.duplicateOrders > 0 ||
                     dupResult.negativeOrders > 0 || dupResult.sparseOrders > 0
@@ -125,6 +126,7 @@ class SettingsFragment : Fragment() {
                 binding.maintenanceResult.visibility = View.VISIBLE
                 binding.maintenanceResult.text = getString(R.string.maintenance_running)
                 maintenanceService.reindexDisplayOrders()
+                if (_binding == null) return@launch
                 binding.maintenanceResult.text = getString(R.string.maintenance_reindex_done)
             }
         }
@@ -134,6 +136,7 @@ class SettingsFragment : Fragment() {
                 binding.maintenanceResult.visibility = View.VISIBLE
                 binding.maintenanceResult.text = getString(R.string.maintenance_running)
                 val result = maintenanceService.checkBrokenImagePaths()
+                if (_binding == null) return@launch
                 if (result.orphanImages == 0) {
                     binding.maintenanceResult.text = getString(R.string.maintenance_no_issues)
                 } else {
@@ -156,9 +159,12 @@ class SettingsFragment : Fragment() {
     }
 
     private fun loadBackupStatus() {
-        val statusStore = (requireContext().applicationContext as NovelCharacterApp).backupStatusStore
+        val app = requireContext().applicationContext as NovelCharacterApp
+        val statusStore = app.backupStatusStore
+        val filesDir = app.filesDir
         viewLifecycleOwner.lifecycleScope.launch {
             val status = statusStore.getStatus()
+            if (_binding == null) return@launch
             val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
             val sb = StringBuilder()
 
@@ -178,7 +184,7 @@ class SettingsFragment : Fragment() {
             }
 
             // Count backup files
-            val backupDir = File(requireContext().filesDir, "backups")
+            val backupDir = File(filesDir, "backups")
             val backupCount = backupDir.listFiles { f ->
                 f.name.startsWith("NovelCharacter_AutoBackup_") && f.name.endsWith(".enc")
             }?.size ?: 0
@@ -212,12 +218,13 @@ class SettingsFragment : Fragment() {
         )
         val current = ThemeHelper.getSavedTheme(requireContext())
 
-        AlertDialog.Builder(requireContext())
+        val ctx = requireContext()
+        AlertDialog.Builder(ctx)
             .setTitle(R.string.settings_theme)
             .setSingleChoiceItems(options, current) { dialog, which ->
                 dialog.dismiss()
                 viewLifecycleOwner.lifecycleScope.launch {
-                    ThemeHelper.saveTheme(requireContext(), which)
+                    ThemeHelper.saveTheme(ctx.applicationContext, which)
                     ThemeHelper.applyTheme(which)
                 }
             }
