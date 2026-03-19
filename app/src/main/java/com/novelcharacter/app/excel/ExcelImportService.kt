@@ -219,6 +219,8 @@ class ExcelImportService(private val db: AppDatabase) {
         val orderColIndex = cols["정렬순서"] ?: -1
         val borderColorColIndex = cols["테두리색"] ?: -1
         val borderWidthColIndex = cols["테두리두께"] ?: -1
+        val imagePathColIndex = cols["이미지경로"] ?: -1
+        val imageModeColIndex = cols["이미지모드"] ?: -1
 
         // Build code index for duplicate detection within file
         val codesSeen = mutableMapOf<String, Int>()
@@ -234,6 +236,8 @@ class ExcelImportService(private val db: AppDatabase) {
                 val displayOrder = if (orderColIndex >= 0) parseNumber(getCellString(row, orderColIndex))?.toLong() ?: 0L else 0L
                 val borderColor = if (borderColorColIndex >= 0) getCellString(row, borderColorColIndex) else ""
                 val borderWidthDp = if (borderWidthColIndex >= 0) parseNumber(getCellString(row, borderWidthColIndex))?.toFloat() ?: 1.5f else 1.5f
+                val imagePath = if (imagePathColIndex >= 0) getCellString(row, imagePathColIndex) else ""
+                val imageMode = if (imageModeColIndex >= 0) getCellString(row, imageModeColIndex).ifBlank { "none" } else "none"
 
                 // Duplicate code detection within file (last-write-wins)
                 if (code.isNotBlank()) {
@@ -270,7 +274,8 @@ class ExcelImportService(private val db: AppDatabase) {
                 if (existing != null) {
                     db.universeDao().update(existing.copy(
                         name = name, description = description, displayOrder = displayOrder,
-                        borderColor = borderColor, borderWidthDp = borderWidthDp
+                        borderColor = borderColor, borderWidthDp = borderWidthDp,
+                        imagePath = imagePath, imageMode = imageMode
                     ))
                     result.updatedUniverses++
                 } else {
@@ -278,7 +283,8 @@ class ExcelImportService(private val db: AppDatabase) {
                     if (code.isBlank()) result.newCodesGenerated++
                     db.universeDao().insert(Universe(
                         name = name, description = description, code = newCode,
-                        displayOrder = displayOrder, borderColor = borderColor, borderWidthDp = borderWidthDp
+                        displayOrder = displayOrder, borderColor = borderColor, borderWidthDp = borderWidthDp,
+                        imagePath = imagePath, imageMode = imageMode
                     ))
                     result.newUniverses++
                 }
@@ -307,6 +313,8 @@ class ExcelImportService(private val db: AppDatabase) {
         val orderColIndex = cols["정렬순서"] ?: -1
         val borderColorColIndex = cols["테두리색"] ?: -1
         val borderWidthColIndex = cols["테두리두께"] ?: -1
+        val novelImagePathColIndex = cols["이미지경로"] ?: -1
+        val novelImageModeColIndex = cols["이미지모드"] ?: -1
 
         val codesSeen = mutableMapOf<String, Int>()
 
@@ -323,6 +331,8 @@ class ExcelImportService(private val db: AppDatabase) {
                 val displayOrder = if (orderColIndex >= 0) parseNumber(getCellString(row, orderColIndex))?.toLong() ?: 0L else 0L
                 val borderColor = if (borderColorColIndex >= 0) getCellString(row, borderColorColIndex) else ""
                 val borderWidthDp = if (borderWidthColIndex >= 0) parseNumber(getCellString(row, borderWidthColIndex))?.toFloat() ?: 1.5f else 1.5f
+                val novelImagePath = if (novelImagePathColIndex >= 0) getCellString(row, novelImagePathColIndex) else ""
+                val novelImageMode = if (novelImageModeColIndex >= 0) getCellString(row, novelImageModeColIndex).ifBlank { "none" } else "none"
 
                 // Duplicate code detection
                 if (code.isNotBlank()) {
@@ -363,7 +373,8 @@ class ExcelImportService(private val db: AppDatabase) {
                     db.novelDao().update(existing.copy(
                         title = title, description = description, universeId = universeId,
                         displayOrder = displayOrder, borderColor = borderColor, borderWidthDp = borderWidthDp,
-                        inheritUniverseBorder = effectiveInherit
+                        inheritUniverseBorder = effectiveInherit,
+                        imagePath = novelImagePath, imageMode = novelImageMode
                     ))
                     result.updatedNovels++
                 } else {
@@ -373,7 +384,8 @@ class ExcelImportService(private val db: AppDatabase) {
                         title = title, description = description, universeId = universeId,
                         code = newCode, displayOrder = displayOrder,
                         borderColor = borderColor, borderWidthDp = borderWidthDp,
-                        inheritUniverseBorder = effectiveInherit
+                        inheritUniverseBorder = effectiveInherit,
+                        imagePath = novelImagePath, imageMode = novelImageMode
                     ))
                     result.newNovels++
                 }

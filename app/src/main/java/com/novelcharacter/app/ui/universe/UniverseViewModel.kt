@@ -22,6 +22,8 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
     private val app = application as NovelCharacterApp
     private val db = app.database
     private val universeRepository = app.universeRepository
+    private val novelRepository = app.novelRepository
+    private val characterRepository = app.characterRepository
     private val recentActivityDao = app.recentActivityDao
     private val userPresetDao = db.userPresetTemplateDao()
     val allUniverses: LiveData<List<Universe>> = universeRepository.allUniverses
@@ -132,6 +134,34 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
             }
             _presetApplied.value = Event(template.universe.name)
         }
+
+    /** 세계관에 속한 캐릭터 중 이미지가 있는 랜덤 캐릭터의 첫 이미지 경로 반환 */
+    fun resolveRandomCharacterImage(universeId: Long, callback: (String?) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val novels = novelRepository.getNovelsByUniverseList(universeId)
+                val allCharacters = novels.flatMap { novel ->
+                    characterRepository.getCharactersByNovelList(novel.id)
+                }
+                val withImages = allCharacters.filter { char ->
+                    char.imagePaths.isNotBlank() && char.imagePaths != "[]"
+                }
+                if (withImages.isEmpty()) {
+                    callback(null)
+                    return@launch
+                }
+                val target = withImages.random()
+                val firstPath = try {
+                    val arr = com.google.gson.Gson().fromJson(target.imagePaths, Array<String>::class.java)
+                    arr?.firstOrNull()
+                } catch (_: Exception) { null }
+                callback(firstPath)
+            } catch (e: Exception) {
+                Log.e("UniverseViewModel", "Failed to resolve character image", e)
+                callback(null)
+            }
+        }
+    }
 
     fun recordRecentActivity(entityType: String, entityId: Long, title: String) = viewModelScope.launch {
         recentActivityDao.upsert(

@@ -21,10 +21,12 @@ import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.databinding.DialogNovelEditBinding
 import com.novelcharacter.app.databinding.FragmentNovelListBinding
 import android.widget.Toast
+import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.RecyclerView
 import com.novelcharacter.app.ui.adapter.NovelAdapter
 import com.novelcharacter.app.util.navigateSafe
+import kotlinx.coroutines.launch
 
 class NovelListFragment : Fragment() {
 
@@ -119,6 +121,13 @@ class NovelListFragment : Fragment() {
         binding.novelRecyclerView.layoutManager = LinearLayoutManager(requireContext())
         binding.novelRecyclerView.adapter = adapter
 
+        adapter.onOrderChanged = { reorderedList ->
+            viewModel.updateDisplayOrders(reorderedList)
+        }
+        adapter.resolveCharacterImage = { novelId, characterId, callback ->
+            viewModel.resolveCharacterImage(novelId, characterId, callback)
+        }
+
         val callback = object : ItemTouchHelper.SimpleCallback(ItemTouchHelper.UP or ItemTouchHelper.DOWN, 0) {
             override fun isLongPressDragEnabled() = false
             override fun onMove(rv: RecyclerView, vh: RecyclerView.ViewHolder, target: RecyclerView.ViewHolder): Boolean {
@@ -126,6 +135,10 @@ class NovelListFragment : Fragment() {
                 return true
             }
             override fun onSwiped(vh: RecyclerView.ViewHolder, direction: Int) {}
+            override fun clearView(recyclerView: RecyclerView, viewHolder: RecyclerView.ViewHolder) {
+                super.clearView(recyclerView, viewHolder)
+                adapter.onDragCompleted()
+            }
         }
         itemTouchHelper = ItemTouchHelper(callback).also {
             it.attachToRecyclerView(binding.novelRecyclerView)
@@ -180,7 +193,7 @@ class NovelListFragment : Fragment() {
 
     private fun toggleReorderMode() {
         if (adapter.isReorderMode()) {
-            viewModel.updateDisplayOrders(adapter.getReorderedList())
+            // 자동 저장이 이미 되므로 모드만 종료
             adapter.setReorderMode(false)
             Toast.makeText(requireContext(), R.string.reorder_saved, Toast.LENGTH_SHORT).show()
         } else {
@@ -288,6 +301,25 @@ class NovelListFragment : Fragment() {
             override fun onItemSelected(parent: android.widget.AdapterView<*>?, v: View?, pos: Int, id: Long) {
                 selectedImageMode = imageModeValues[pos]
                 dialogBinding.btnSelectImage.visibility = if (selectedImageMode == Novel.IMAGE_MODE_CUSTOM) View.VISIBLE else View.GONE
+                // select_character 모드 선택 시 캐릭터 선택 다이얼로그
+                if (selectedImageMode == Novel.IMAGE_MODE_SELECT_CHARACTER && novel != null) {
+                    lifecycleScope.launch {
+                        val chars = viewModel.getCharactersWithImages(novel.id)
+                        if (chars.isEmpty()) {
+                            Toast.makeText(ctx, R.string.image_no_characters_with_images, Toast.LENGTH_SHORT).show()
+                            return@launch
+                        }
+                        val charNames = chars.map { it.name }.toTypedArray()
+                        AlertDialog.Builder(ctx)
+                            .setTitle(R.string.image_select_character)
+                            .setItems(charNames) { _, which ->
+                                selectedImageCharId = chars[which].id
+                                Toast.makeText(ctx, getString(R.string.image_character_selected, chars[which].name), Toast.LENGTH_SHORT).show()
+                            }
+                            .setNegativeButton(R.string.cancel, null)
+                            .show()
+                    }
+                }
             }
             override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
         }

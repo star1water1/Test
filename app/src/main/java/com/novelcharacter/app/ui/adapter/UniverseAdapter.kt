@@ -1,6 +1,7 @@
 package com.novelcharacter.app.ui.adapter
 
 import android.annotation.SuppressLint
+import android.graphics.BitmapFactory
 import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
@@ -15,6 +16,11 @@ import com.google.android.material.card.MaterialCardView
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.databinding.ItemUniverseBinding
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 
 class UniverseAdapter(
     private val onClick: (Universe) -> Unit,
@@ -29,6 +35,9 @@ class UniverseAdapter(
     private var isReorderMode = false
     var itemTouchHelper: ItemTouchHelper? = null
     private val reorderList = mutableListOf<Universe>()
+
+    /** 세계관에 속한 캐릭터의 랜덤 이미지 경로를 반환하는 콜백 */
+    var resolveRandomCharacterImage: ((universeId: Long, callback: (String?) -> Unit) -> Unit)? = null
 
     fun updateNovelCounts(counts: Map<Long, Int>) {
         novelCounts = counts
@@ -134,6 +143,9 @@ class UniverseAdapter(
 
             binding.btnFieldManage.setOnClickListener { onFieldManageClick(universe) }
 
+            // 이미지 표시
+            loadUniverseImage(universe)
+
             // Apply custom border color (Sprint D)
             val card = binding.root as? MaterialCardView
             if (card != null) {
@@ -148,6 +160,53 @@ class UniverseAdapter(
                 } else {
                     card.strokeColor = 0
                     card.strokeWidth = 0
+                }
+            }
+        }
+    }
+
+        private fun loadUniverseImage(universe: Universe) {
+            when (universe.imageMode) {
+                Universe.IMAGE_MODE_CUSTOM -> {
+                    if (universe.imagePath.isNotBlank()) {
+                        val imageView = binding.universeImage
+                        CoroutineScope(Dispatchers.IO).launch {
+                            val file = File(universe.imagePath)
+                            if (file.exists()) {
+                                val opts = BitmapFactory.Options().apply { inSampleSize = 4 }
+                                val bmp = BitmapFactory.decodeFile(file.absolutePath, opts)
+                                withContext(Dispatchers.Main) {
+                                    if (bindingAdapterPosition != RecyclerView.NO_POSITION) {
+                                        imageView.setImageBitmap(bmp)
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        binding.universeImage.setImageResource(R.drawable.ic_universe)
+                    }
+                }
+                Universe.IMAGE_MODE_RANDOM_CHARACTER -> {
+                    binding.universeImage.setImageResource(R.drawable.ic_universe)
+                    resolveRandomCharacterImage?.invoke(universe.id) { imagePath ->
+                        if (imagePath != null && bindingAdapterPosition != RecyclerView.NO_POSITION) {
+                            CoroutineScope(Dispatchers.IO).launch {
+                                val file = File(imagePath)
+                                if (file.exists()) {
+                                    val opts = BitmapFactory.Options().apply { inSampleSize = 4 }
+                                    val bmp = BitmapFactory.decodeFile(file.absolutePath, opts)
+                                    withContext(Dispatchers.Main) {
+                                        if (bindingAdapterPosition != RecyclerView.NO_POSITION) {
+                                            binding.universeImage.setImageBitmap(bmp)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                else -> {
+                    binding.universeImage.setImageResource(R.drawable.ic_universe)
                 }
             }
         }

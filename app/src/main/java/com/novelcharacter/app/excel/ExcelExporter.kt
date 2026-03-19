@@ -417,6 +417,8 @@ class ExcelExporter(context: Context) {
             row.createCell(3).setCellValue(universe.displayOrder.toDouble())
             row.createCell(4).setCellValue(universe.borderColor)
             row.createCell(5).setCellValue(universe.borderWidthDp.toDouble())
+            row.createCell(6).setCellValue(universe.imagePath)
+            row.createCell(7).setCellValue(universe.imageMode)
         }
 
         applySpecFormatting(sheet, spec, universes.size)
@@ -446,6 +448,8 @@ class ExcelExporter(context: Context) {
             row.createCell(5).setCellValue(novel.displayOrder.toDouble())
             row.createCell(6).setCellValue(novel.borderColor)
             row.createCell(7).setCellValue(novel.borderWidthDp.toDouble())
+            row.createCell(8).setCellValue(novel.imagePath)
+            row.createCell(9).setCellValue(novel.imageMode)
         }
 
         applySpecFormatting(sheet, spec, novels.size)

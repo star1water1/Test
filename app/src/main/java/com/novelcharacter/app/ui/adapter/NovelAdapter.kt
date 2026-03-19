@@ -1,6 +1,7 @@
 package com.novelcharacter.app.ui.adapter
 
 import android.annotation.SuppressLint
+import android.graphics.BitmapFactory
 import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
@@ -15,12 +16,18 @@ import com.google.android.material.card.MaterialCardView
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.databinding.ItemNovelBinding
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 
 class NovelAdapter(
     private val onClick: (Novel) -> Unit,
     private val onEditClick: (Novel) -> Unit,
     private val onDeleteClick: (Novel) -> Unit,
-    private val onPinClick: ((Novel) -> Unit)? = null
+    private val onPinClick: ((Novel) -> Unit)? = null,
+    var onOrderChanged: ((List<Novel>) -> Unit)? = null
 ) : ListAdapter<Novel, NovelAdapter.NovelViewHolder>(NovelDiffCallback()) {
 
     private var isReorderMode = false
@@ -28,6 +35,9 @@ class NovelAdapter(
     private val reorderList = mutableListOf<Novel>()
     private var universeBorderColor: String = ""
     private var universeBorderWidthDp: Float = 1.5f
+
+    /** 작품에 속한 캐릭터의 랜덤/선택 이미지 경로를 반환하는 콜백 */
+    var resolveCharacterImage: ((novelId: Long, characterId: Long?, callback: (String?) -> Unit) -> Unit)? = null
 
     fun setUniverseBorder(color: String, widthDp: Float) {
         universeBorderColor = color
@@ -51,6 +61,13 @@ class NovelAdapter(
         val item = reorderList.removeAt(from)
         reorderList.add(to, item)
         notifyItemMoved(from, to)
+    }
+
+    /** 드래그 완료 시 호출 — 즉시 자동 저장 */
+    fun onDragCompleted() {
+        if (isReorderMode) {
+            onOrderChanged?.invoke(getReorderedList())
+        }
     }
 
     fun getReorderedList(): List<Novel> = reorderList.mapIndexed { index, novel ->
@@ -101,6 +118,9 @@ class NovelAdapter(
                 binding.dragHandle.setOnTouchListener(null)
             }
 
+            // 이미지 표시
+            loadNovelImage(novel)
+
             binding.root.setOnClickListener { onClick(novel) }
             binding.root.setOnLongClickListener(null)
             binding.root.isLongClickable = false
@@ -149,6 +169,55 @@ class NovelAdapter(
                 } else {
                     card.strokeColor = 0
                     card.strokeWidth = 0
+                }
+            }
+        }
+    }
+
+        private fun loadNovelImage(novel: Novel) {
+            when (novel.imageMode) {
+                Novel.IMAGE_MODE_CUSTOM -> {
+                    if (novel.imagePath.isNotBlank()) {
+                        binding.novelImage.visibility = View.VISIBLE
+                        CoroutineScope(Dispatchers.IO).launch {
+                            val file = File(novel.imagePath)
+                            if (file.exists()) {
+                                val opts = BitmapFactory.Options().apply { inSampleSize = 4 }
+                                val bmp = BitmapFactory.decodeFile(file.absolutePath, opts)
+                                withContext(Dispatchers.Main) {
+                                    if (bindingAdapterPosition != RecyclerView.NO_POSITION) {
+                                        binding.novelImage.setImageBitmap(bmp)
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        binding.novelImage.visibility = View.GONE
+                    }
+                }
+                Novel.IMAGE_MODE_RANDOM_CHARACTER, Novel.IMAGE_MODE_SELECT_CHARACTER -> {
+                    binding.novelImage.visibility = View.GONE
+                    val charId = if (novel.imageMode == Novel.IMAGE_MODE_SELECT_CHARACTER) novel.imageCharacterId else null
+                    resolveCharacterImage?.invoke(novel.id, charId) { imagePath ->
+                        if (imagePath != null && bindingAdapterPosition != RecyclerView.NO_POSITION) {
+                            CoroutineScope(Dispatchers.IO).launch {
+                                val file = File(imagePath)
+                                if (file.exists()) {
+                                    val opts = BitmapFactory.Options().apply { inSampleSize = 4 }
+                                    val bmp = BitmapFactory.decodeFile(file.absolutePath, opts)
+                                    withContext(Dispatchers.Main) {
+                                        if (bindingAdapterPosition != RecyclerView.NO_POSITION) {
+                                            binding.novelImage.visibility = View.VISIBLE
+                                            binding.novelImage.setImageBitmap(bmp)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                else -> {
+                    binding.novelImage.visibility = View.GONE
                 }
             }
         }

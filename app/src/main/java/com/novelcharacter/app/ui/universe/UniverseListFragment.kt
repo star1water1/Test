@@ -116,6 +116,9 @@ class UniverseListFragment : Fragment() {
         adapter.onOrderChanged = { reorderedList ->
             viewModel.updateDisplayOrders(reorderedList)
         }
+        adapter.resolveRandomCharacterImage = { universeId, callback ->
+            viewModel.resolveRandomCharacterImage(universeId, callback)
+        }
 
         val callback = object : ItemTouchHelper.SimpleCallback(ItemTouchHelper.UP or ItemTouchHelper.DOWN, 0) {
             override fun isLongPressDragEnabled() = false
