@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Margins & Padding -->
+    <dimen name="stats_card_elevation">2dp</dimen>
+    <dimen name="stats_card_corner_radius">12dp</dimen>
+    <dimen name="stats_margin_xs">4dp</dimen>
+    <dimen name="stats_margin_sm">8dp</dimen>
+    <dimen name="stats_margin_md">12dp</dimen>
+    <dimen name="stats_margin_lg">16dp</dimen>
+    <dimen name="stats_padding_content">12dp</dimen>
+    <dimen name="stats_padding_card">16dp</dimen>
+
+    <!-- Chart -->
+    <dimen name="stats_chart_height">300dp</dimen>
+    <dimen name="stats_progress_bar_height">12dp</dimen>
+
+    <!-- Text Sizes -->
+    <dimen name="stats_text_caption">11sp</dimen>
+    <dimen name="stats_text_body_sm">12sp</dimen>
+    <dimen name="stats_text_body">14sp</dimen>
+    <dimen name="stats_text_subtitle">15sp</dimen>
+    <dimen name="stats_text_heading">16sp</dimen>
+    <dimen name="stats_text_number_md">20sp</dimen>
+    <dimen name="stats_text_number_lg">24sp</dimen>
+    <dimen name="stats_text_number_xl">28sp</dimen>
+    <dimen name="stats_text_number_xxl">36sp</dimen>
+</resources>

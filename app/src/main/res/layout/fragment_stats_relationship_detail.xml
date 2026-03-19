@@ -42,57 +42,57 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:padding="12dp">
+            android:padding="@dimen/stats_padding_content">
 
             <!-- 관계 유형 분포 PieChart -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/stats_rel_type_distribution"
-                android:textSize="16sp"
+                android:textSize="@dimen/stats_text_heading"
                 android:textStyle="bold"
                 android:textColor="@color/primary"
-                android:layout_marginBottom="8dp" />
+                android:layout_marginBottom="@dimen/stats_margin_sm" />
 
             <com.github.mikephil.charting.charts.PieChart
                 android:id="@+id/chartTypeDist"
                 android:layout_width="match_parent"
-                android:layout_height="300dp"
-                android:layout_marginBottom="16dp" />
+                android:layout_height="@dimen/stats_chart_height"
+                android:layout_marginBottom="@dimen/stats_margin_lg" />
 
             <!-- 관계 수 TOP 연결 캐릭터 -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/stats_rel_top_characters"
-                android:textSize="16sp"
+                android:textSize="@dimen/stats_text_heading"
                 android:textStyle="bold"
                 android:textColor="@color/primary"
-                android:layout_marginBottom="8dp" />
+                android:layout_marginBottom="@dimen/stats_margin_sm" />
 
             <LinearLayout
                 android:id="@+id/listTopConnected"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:layout_marginBottom="16dp" />
+                android:layout_marginBottom="@dimen/stats_margin_lg" />
 
             <!-- 고립 캐릭터 -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/stats_isolated_characters"
-                android:textSize="16sp"
+                android:textSize="@dimen/stats_text_heading"
                 android:textStyle="bold"
                 android:textColor="@color/primary"
-                android:layout_marginBottom="8dp" />
+                android:layout_marginBottom="@dimen/stats_margin_sm" />
 
             <LinearLayout
                 android:id="@+id/listIsolated"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:layout_marginBottom="16dp" />
+                android:layout_marginBottom="@dimen/stats_margin_lg" />
 
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>

@@ -41,31 +41,37 @@ class StatsDataHealthDetailFragment : Fragment() {
         binding.contentLayout.visibility = View.GONE
 
         viewLifecycleOwner.lifecycleScope.launch {
-            val app = requireActivity().application as NovelCharacterApp
-            val provider = StatsDataProvider(app)
-            val snapshot = withContext(Dispatchers.IO) { provider.loadSnapshot() }
-            val stats = withContext(Dispatchers.IO) { provider.computeDataHealth(snapshot) }
+            try {
+                val app = requireActivity().application as NovelCharacterApp
+                val provider = StatsDataProvider(app)
+                val snapshot = withContext(Dispatchers.IO) { provider.loadSnapshot() }
+                val stats = withContext(Dispatchers.IO) { provider.computeDataHealth(snapshot) }
 
-            if (!isAdded) return@launch
+                if (!isAdded) return@launch
 
-            binding.loadingProgress.visibility = View.GONE
-            binding.contentLayout.visibility = View.VISIBLE
+                binding.loadingProgress.visibility = View.GONE
+                binding.contentLayout.visibility = View.VISIBLE
 
-            // No-image characters
-            binding.textNoImageCount.text = "${stats.noImageChars.size}명"
-            populateSimpleList(binding.listNoImage, stats.noImageChars)
+                // No-image characters
+                binding.textNoImageCount.text = "${stats.noImageChars.size}명"
+                populateSimpleList(binding.listNoImage, stats.noImageChars)
 
-            // Incomplete fields
-            populateIncompleteList(binding.listIncompleteFields, stats.incompleteFieldChars)
+                // Incomplete fields
+                populateIncompleteList(binding.listIncompleteFields, stats.incompleteFieldChars)
 
-            // Isolated characters
-            populateSimpleList(binding.listIsolated, stats.isolatedChars)
+                // Isolated characters
+                populateSimpleList(binding.listIsolated, stats.isolatedChars)
 
-            // Unlinked characters
-            populateSimpleList(binding.listUnlinked, stats.unlinkedChars)
+                // Unlinked characters
+                populateSimpleList(binding.listUnlinked, stats.unlinkedChars)
 
-            // Duplicate tags
-            populateSimpleList(binding.listDuplicateTags, stats.duplicateTags)
+                // Duplicate tags
+                populateSimpleList(binding.listDuplicateTags, stats.duplicateTags)
+            } catch (e: Exception) {
+                if (isAdded) {
+                    binding.loadingProgress.visibility = View.GONE
+                }
+            }
         }
     }
 

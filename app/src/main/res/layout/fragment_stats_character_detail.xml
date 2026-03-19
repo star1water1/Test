@@ -42,106 +42,106 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:padding="12dp">
+            android:padding="@dimen/stats_padding_content">
 
             <!-- 태그 분포 PieChart -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/stats_tag_distribution"
-                android:textSize="16sp"
+                android:textSize="@dimen/stats_text_heading"
                 android:textStyle="bold"
                 android:textColor="@color/primary"
-                android:layout_marginBottom="8dp" />
+                android:layout_marginBottom="@dimen/stats_margin_sm" />
 
             <com.github.mikephil.charting.charts.PieChart
                 android:id="@+id/chartTagDistribution"
                 android:layout_width="match_parent"
-                android:layout_height="300dp"
-                android:layout_marginBottom="16dp" />
+                android:layout_height="@dimen/stats_chart_height"
+                android:layout_marginBottom="@dimen/stats_margin_lg" />
 
             <!-- 소설별 캐릭터 수 HorizontalBarChart -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/stats_novel_char_count"
-                android:textSize="16sp"
+                android:textSize="@dimen/stats_text_heading"
                 android:textStyle="bold"
                 android:textColor="@color/primary"
-                android:layout_marginBottom="8dp" />
+                android:layout_marginBottom="@dimen/stats_margin_sm" />
 
             <com.github.mikephil.charting.charts.HorizontalBarChart
                 android:id="@+id/chartNovelCharCounts"
                 android:layout_width="match_parent"
-                android:layout_height="300dp"
-                android:layout_marginBottom="16dp" />
+                android:layout_height="@dimen/stats_chart_height"
+                android:layout_marginBottom="@dimen/stats_margin_lg" />
 
             <!-- 관계 유형 분포 PieChart -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/stats_rel_type_distribution"
-                android:textSize="16sp"
+                android:textSize="@dimen/stats_text_heading"
                 android:textStyle="bold"
                 android:textColor="@color/primary"
-                android:layout_marginBottom="8dp" />
+                android:layout_marginBottom="@dimen/stats_margin_sm" />
 
             <com.github.mikephil.charting.charts.PieChart
                 android:id="@+id/chartRelTypeDist"
                 android:layout_width="match_parent"
-                android:layout_height="300dp"
-                android:layout_marginBottom="16dp" />
+                android:layout_height="@dimen/stats_chart_height"
+                android:layout_marginBottom="@dimen/stats_margin_lg" />
 
             <!-- 관계 수 TOP 10 -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/stats_rel_top_characters"
-                android:textSize="16sp"
+                android:textSize="@dimen/stats_text_heading"
                 android:textStyle="bold"
                 android:textColor="@color/primary"
-                android:layout_marginBottom="8dp" />
+                android:layout_marginBottom="@dimen/stats_margin_sm" />
 
             <LinearLayout
                 android:id="@+id/listTopRelChars"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:layout_marginBottom="16dp" />
+                android:layout_marginBottom="@dimen/stats_margin_lg" />
 
             <!-- 사건 연계 TOP 10 -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/stats_event_top_characters"
-                android:textSize="16sp"
+                android:textSize="@dimen/stats_text_heading"
                 android:textStyle="bold"
                 android:textColor="@color/primary"
-                android:layout_marginBottom="8dp" />
+                android:layout_marginBottom="@dimen/stats_margin_sm" />
 
             <LinearLayout
                 android:id="@+id/listTopEventChars"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:layout_marginBottom="16dp" />
+                android:layout_marginBottom="@dimen/stats_margin_lg" />
 
             <!-- 필드 완성도 -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/stats_field_completion"
-                android:textSize="16sp"
+                android:textSize="@dimen/stats_text_heading"
                 android:textStyle="bold"
                 android:textColor="@color/primary"
-                android:layout_marginBottom="8dp" />
+                android:layout_marginBottom="@dimen/stats_margin_sm" />
 
             <LinearLayout
                 android:id="@+id/listFieldCompletion"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:layout_marginBottom="16dp" />
+                android:layout_marginBottom="@dimen/stats_margin_lg" />
 
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>

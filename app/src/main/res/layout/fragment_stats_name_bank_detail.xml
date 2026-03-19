@@ -42,66 +42,66 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:padding="12dp">
+            android:padding="@dimen/stats_padding_content">
 
             <!-- 사용률 -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/stats_name_usage_rate"
-                android:textSize="16sp"
+                android:textSize="@dimen/stats_text_heading"
                 android:textStyle="bold"
                 android:textColor="@color/primary"
-                android:layout_marginBottom="4dp" />
+                android:layout_marginBottom="@dimen/stats_margin_xs" />
 
             <TextView
                 android:id="@+id/textUsageRate"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:textSize="36sp"
+                android:textSize="@dimen/stats_text_number_xxl"
                 android:textStyle="bold"
                 android:textColor="@color/accent"
-                android:layout_marginBottom="4dp" />
+                android:layout_marginBottom="@dimen/stats_margin_xs" />
 
             <ProgressBar
                 android:id="@+id/progressUsageRate"
                 style="@android:style/Widget.ProgressBar.Horizontal"
                 android:layout_width="match_parent"
-                android:layout_height="12dp"
+                android:layout_height="@dimen/stats_progress_bar_height"
                 android:max="100"
-                android:layout_marginBottom="16dp" />
+                android:layout_marginBottom="@dimen/stats_margin_lg" />
 
             <!-- 성별 분포 PieChart -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/stats_name_gender_dist"
-                android:textSize="16sp"
+                android:textSize="@dimen/stats_text_heading"
                 android:textStyle="bold"
                 android:textColor="@color/primary"
-                android:layout_marginBottom="8dp" />
+                android:layout_marginBottom="@dimen/stats_margin_sm" />
 
             <com.github.mikephil.charting.charts.PieChart
                 android:id="@+id/chartGenderDist"
                 android:layout_width="match_parent"
-                android:layout_height="300dp"
-                android:layout_marginBottom="16dp" />
+                android:layout_height="@dimen/stats_chart_height"
+                android:layout_marginBottom="@dimen/stats_margin_lg" />
 
             <!-- 출신 분포 HorizontalBarChart -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/stats_origin_distribution"
-                android:textSize="16sp"
+                android:textSize="@dimen/stats_text_heading"
                 android:textStyle="bold"
                 android:textColor="@color/primary"
-                android:layout_marginBottom="8dp" />
+                android:layout_marginBottom="@dimen/stats_margin_sm" />
 
             <com.github.mikephil.charting.charts.HorizontalBarChart
                 android:id="@+id/chartOriginDist"
                 android:layout_width="match_parent"
-                android:layout_height="300dp"
-                android:layout_marginBottom="16dp" />
+                android:layout_height="@dimen/stats_chart_height"
+                android:layout_marginBottom="@dimen/stats_margin_lg" />
 
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>

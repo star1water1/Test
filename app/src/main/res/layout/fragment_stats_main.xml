@@ -41,30 +41,30 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:padding="12dp">
+            android:padding="@dimen/stats_padding_content">
 
             <!-- 전체 요약 카드 -->
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="12dp"
-                app:cardCornerRadius="12dp"
-                app:cardElevation="2dp">
+                android:layout_marginBottom="@dimen/stats_margin_md"
+                app:cardCornerRadius="@dimen/stats_card_corner_radius"
+                app:cardElevation="@dimen/stats_card_elevation">
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:padding="16dp">
+                    android:padding="@dimen/stats_padding_card">
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="@string/stats_summary"
-                        android:textSize="16sp"
+                        android:textSize="@dimen/stats_text_heading"
                         android:textStyle="bold"
                         android:textColor="@color/primary"
-                        android:layout_marginBottom="12dp" />
+                        android:layout_marginBottom="@dimen/stats_margin_md" />
 
                     <!-- Row 1 -->
                     <LinearLayout
@@ -82,14 +82,14 @@
                                 android:id="@+id/summaryCharCount"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:textSize="24sp"
+                                android:textSize="@dimen/stats_text_number_lg"
                                 android:textStyle="bold"
                                 android:textColor="@color/primary" />
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="@string/stats_total_characters"
-                                android:textSize="11sp"
+                                android:textSize="@dimen/stats_text_caption"
                                 android:textColor="@color/text_secondary" />
                         </LinearLayout>
 
@@ -103,14 +103,14 @@
                                 android:id="@+id/summaryEventCount"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:textSize="24sp"
+                                android:textSize="@dimen/stats_text_number_lg"
                                 android:textStyle="bold"
                                 android:textColor="@color/accent" />
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="@string/stats_total_events"
-                                android:textSize="11sp"
+                                android:textSize="@dimen/stats_text_caption"
                                 android:textColor="@color/text_secondary" />
                         </LinearLayout>
 
@@ -124,14 +124,14 @@
                                 android:id="@+id/summaryRelCount"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:textSize="24sp"
+                                android:textSize="@dimen/stats_text_number_lg"
                                 android:textStyle="bold"
                                 android:textColor="@color/search_type_novel" />
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="@string/stats_total_relationships"
-                                android:textSize="11sp"
+                                android:textSize="@dimen/stats_text_caption"
                                 android:textColor="@color/text_secondary" />
                         </LinearLayout>
                     </LinearLayout>
@@ -141,7 +141,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="horizontal"
-                        android:layout_marginTop="12dp">
+                        android:layout_marginTop="@dimen/stats_margin_md">
 
                         <LinearLayout
                             android:layout_width="0dp"
@@ -153,14 +153,14 @@
                                 android:id="@+id/summaryNovelCount"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:textSize="20sp"
+                                android:textSize="@dimen/stats_text_number_md"
                                 android:textStyle="bold"
                                 android:textColor="@color/on_surface" />
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="@string/stats_total_novels"
-                                android:textSize="11sp"
+                                android:textSize="@dimen/stats_text_caption"
                                 android:textColor="@color/text_secondary" />
                         </LinearLayout>
 
@@ -174,14 +174,14 @@
                                 android:id="@+id/summaryUniverseCount"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:textSize="20sp"
+                                android:textSize="@dimen/stats_text_number_md"
                                 android:textStyle="bold"
                                 android:textColor="@color/on_surface" />
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="@string/stats_total_universes"
-                                android:textSize="11sp"
+                                android:textSize="@dimen/stats_text_caption"
                                 android:textColor="@color/text_secondary" />
                         </LinearLayout>
 
@@ -195,14 +195,14 @@
                                 android:id="@+id/summaryNameCount"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:textSize="20sp"
+                                android:textSize="@dimen/stats_text_number_md"
                                 android:textStyle="bold"
                                 android:textColor="@color/on_surface" />
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="@string/stats_total_names"
-                                android:textSize="11sp"
+                                android:textSize="@dimen/stats_text_caption"
                                 android:textColor="@color/text_secondary" />
                         </LinearLayout>
                     </LinearLayout>
@@ -214,31 +214,31 @@
                 android:id="@+id/cardCharacters"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="8dp"
-                app:cardCornerRadius="12dp"
-                app:cardElevation="2dp"
+                android:layout_marginBottom="@dimen/stats_margin_sm"
+                app:cardCornerRadius="@dimen/stats_card_corner_radius"
+                app:cardElevation="@dimen/stats_card_elevation"
                 android:clickable="true"
                 android:focusable="true"
                 android:foreground="?attr/selectableItemBackground">
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:padding="16dp"
+                    android:padding="@dimen/stats_padding_card"
                     android:orientation="vertical">
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="@string/stats_characters"
-                        android:textSize="15sp"
+                        android:textSize="@dimen/stats_text_subtitle"
                         android:textStyle="bold"
                         android:textColor="@color/on_surface" />
                     <TextView
                         android:id="@+id/charPreview"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:textSize="12sp"
+                        android:textSize="@dimen/stats_text_body_sm"
                         android:textColor="@color/text_secondary"
-                        android:layout_marginTop="4dp" />
+                        android:layout_marginTop="@dimen/stats_margin_xs" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
@@ -247,31 +247,31 @@
                 android:id="@+id/cardEvents"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="8dp"
-                app:cardCornerRadius="12dp"
-                app:cardElevation="2dp"
+                android:layout_marginBottom="@dimen/stats_margin_sm"
+                app:cardCornerRadius="@dimen/stats_card_corner_radius"
+                app:cardElevation="@dimen/stats_card_elevation"
                 android:clickable="true"
                 android:focusable="true"
                 android:foreground="?attr/selectableItemBackground">
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:padding="16dp"
+                    android:padding="@dimen/stats_padding_card"
                     android:orientation="vertical">
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="@string/stats_events"
-                        android:textSize="15sp"
+                        android:textSize="@dimen/stats_text_subtitle"
                         android:textStyle="bold"
                         android:textColor="@color/on_surface" />
                     <TextView
                         android:id="@+id/eventPreview"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:textSize="12sp"
+                        android:textSize="@dimen/stats_text_body_sm"
                         android:textColor="@color/text_secondary"
-                        android:layout_marginTop="4dp" />
+                        android:layout_marginTop="@dimen/stats_margin_xs" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
@@ -280,31 +280,31 @@
                 android:id="@+id/cardRelationships"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="8dp"
-                app:cardCornerRadius="12dp"
-                app:cardElevation="2dp"
+                android:layout_marginBottom="@dimen/stats_margin_sm"
+                app:cardCornerRadius="@dimen/stats_card_corner_radius"
+                app:cardElevation="@dimen/stats_card_elevation"
                 android:clickable="true"
                 android:focusable="true"
                 android:foreground="?attr/selectableItemBackground">
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:padding="16dp"
+                    android:padding="@dimen/stats_padding_card"
                     android:orientation="vertical">
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="@string/stats_relationships"
-                        android:textSize="15sp"
+                        android:textSize="@dimen/stats_text_subtitle"
                         android:textStyle="bold"
                         android:textColor="@color/on_surface" />
                     <TextView
                         android:id="@+id/relPreview"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:textSize="12sp"
+                        android:textSize="@dimen/stats_text_body_sm"
                         android:textColor="@color/text_secondary"
-                        android:layout_marginTop="4dp" />
+                        android:layout_marginTop="@dimen/stats_margin_xs" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
@@ -313,31 +313,31 @@
                 android:id="@+id/cardNameBank"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="8dp"
-                app:cardCornerRadius="12dp"
-                app:cardElevation="2dp"
+                android:layout_marginBottom="@dimen/stats_margin_sm"
+                app:cardCornerRadius="@dimen/stats_card_corner_radius"
+                app:cardElevation="@dimen/stats_card_elevation"
                 android:clickable="true"
                 android:focusable="true"
                 android:foreground="?attr/selectableItemBackground">
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:padding="16dp"
+                    android:padding="@dimen/stats_padding_card"
                     android:orientation="vertical">
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="@string/stats_namebank"
-                        android:textSize="15sp"
+                        android:textSize="@dimen/stats_text_subtitle"
                         android:textStyle="bold"
                         android:textColor="@color/on_surface" />
                     <TextView
                         android:id="@+id/namePreview"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:textSize="12sp"
+                        android:textSize="@dimen/stats_text_body_sm"
                         android:textColor="@color/text_secondary"
-                        android:layout_marginTop="4dp" />
+                        android:layout_marginTop="@dimen/stats_margin_xs" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
@@ -346,31 +346,31 @@
                 android:id="@+id/cardDataHealth"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="8dp"
-                app:cardCornerRadius="12dp"
-                app:cardElevation="2dp"
+                android:layout_marginBottom="@dimen/stats_margin_sm"
+                app:cardCornerRadius="@dimen/stats_card_corner_radius"
+                app:cardElevation="@dimen/stats_card_elevation"
                 android:clickable="true"
                 android:focusable="true"
                 android:foreground="?attr/selectableItemBackground">
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:padding="16dp"
+                    android:padding="@dimen/stats_padding_card"
                     android:orientation="vertical">
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="@string/stats_data_health"
-                        android:textSize="15sp"
+                        android:textSize="@dimen/stats_text_subtitle"
                         android:textStyle="bold"
                         android:textColor="@color/on_surface" />
                     <TextView
                         android:id="@+id/healthPreview"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:textSize="12sp"
+                        android:textSize="@dimen/stats_text_body_sm"
                         android:textColor="@color/text_secondary"
-                        android:layout_marginTop="4dp" />
+                        android:layout_marginTop="@dimen/stats_margin_xs" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 

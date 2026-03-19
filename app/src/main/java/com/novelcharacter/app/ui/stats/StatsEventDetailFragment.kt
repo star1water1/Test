@@ -45,21 +45,27 @@ class StatsEventDetailFragment : Fragment() {
         binding.contentLayout.visibility = View.GONE
 
         viewLifecycleOwner.lifecycleScope.launch {
-            val app = requireActivity().application as NovelCharacterApp
-            val provider = StatsDataProvider(app)
-            val snapshot = withContext(Dispatchers.IO) { provider.loadSnapshot() }
-            val stats = withContext(Dispatchers.IO) { provider.computeEventStats(snapshot) }
+            try {
+                val app = requireActivity().application as NovelCharacterApp
+                val provider = StatsDataProvider(app)
+                val snapshot = withContext(Dispatchers.IO) { provider.loadSnapshot() }
+                val stats = withContext(Dispatchers.IO) { provider.computeEventStats(snapshot) }
 
-            if (!isAdded) return@launch
+                if (!isAdded) return@launch
 
-            binding.loadingProgress.visibility = View.GONE
-            binding.contentLayout.visibility = View.VISIBLE
+                binding.loadingProgress.visibility = View.GONE
+                binding.contentLayout.visibility = View.VISIBLE
 
-            setupYearDensityChart(stats.yearDensity)
-            setupNovelEventBarChart(stats.novelEventCounts)
-            binding.textAvgCharsPerEvent.text = String.format("%.1f", stats.avgCharsPerEvent)
-            binding.textOrphanCount.text = stats.orphanEventCount.toString()
-            setupMonthDistChart(stats.monthDistribution)
+                setupYearDensityChart(stats.yearDensity)
+                setupNovelEventBarChart(stats.novelEventCounts)
+                binding.textAvgCharsPerEvent.text = String.format("%.1f", stats.avgCharsPerEvent)
+                binding.textOrphanCount.text = stats.orphanEventCount.toString()
+                setupMonthDistChart(stats.monthDistribution)
+            } catch (e: Exception) {
+                if (isAdded) {
+                    binding.loadingProgress.visibility = View.GONE
+                }
+            }
         }
     }
 

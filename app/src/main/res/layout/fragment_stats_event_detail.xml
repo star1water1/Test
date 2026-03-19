@@ -42,77 +42,77 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:padding="12dp">
+            android:padding="@dimen/stats_padding_content">
 
             <!-- 연도별 사건 밀도 BarChart -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/stats_event_density"
-                android:textSize="16sp"
+                android:textSize="@dimen/stats_text_heading"
                 android:textStyle="bold"
                 android:textColor="@color/primary"
-                android:layout_marginBottom="8dp" />
+                android:layout_marginBottom="@dimen/stats_margin_sm" />
 
             <com.github.mikephil.charting.charts.BarChart
                 android:id="@+id/chartYearDensity"
                 android:layout_width="match_parent"
-                android:layout_height="300dp"
-                android:layout_marginBottom="16dp" />
+                android:layout_height="@dimen/stats_chart_height"
+                android:layout_marginBottom="@dimen/stats_margin_lg" />
 
             <!-- 소설별 사건 수 HorizontalBarChart -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/stats_event_per_novel"
-                android:textSize="16sp"
+                android:textSize="@dimen/stats_text_heading"
                 android:textStyle="bold"
                 android:textColor="@color/primary"
-                android:layout_marginBottom="8dp" />
+                android:layout_marginBottom="@dimen/stats_margin_sm" />
 
             <com.github.mikephil.charting.charts.HorizontalBarChart
                 android:id="@+id/chartNovelEventCounts"
                 android:layout_width="match_parent"
-                android:layout_height="300dp"
-                android:layout_marginBottom="16dp" />
+                android:layout_height="@dimen/stats_chart_height"
+                android:layout_marginBottom="@dimen/stats_margin_lg" />
 
             <!-- 사건당 평균 캐릭터 -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/stats_avg_chars_per_event"
-                android:textSize="16sp"
+                android:textSize="@dimen/stats_text_heading"
                 android:textStyle="bold"
                 android:textColor="@color/primary"
-                android:layout_marginBottom="4dp" />
+                android:layout_marginBottom="@dimen/stats_margin_xs" />
 
             <TextView
                 android:id="@+id/textAvgCharsPerEvent"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:textSize="28sp"
+                android:textSize="@dimen/stats_text_number_xl"
                 android:textStyle="bold"
                 android:textColor="@color/accent"
-                android:layout_marginBottom="16dp" />
+                android:layout_marginBottom="@dimen/stats_margin_lg" />
 
             <!-- 미연결 사건 -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/stats_orphan_events"
-                android:textSize="16sp"
+                android:textSize="@dimen/stats_text_heading"
                 android:textStyle="bold"
                 android:textColor="@color/primary"
-                android:layout_marginBottom="4dp" />
+                android:layout_marginBottom="@dimen/stats_margin_xs" />
 
             <TextView
                 android:id="@+id/textOrphanCount"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:textSize="28sp"
+                android:textSize="@dimen/stats_text_number_xl"
                 android:textStyle="bold"
                 android:textColor="@color/accent"
-                android:layout_marginBottom="16dp" />
+                android:layout_marginBottom="@dimen/stats_margin_lg" />
 
             <!-- 월별 분포 BarChart -->
             <TextView
@@ -120,16 +120,16 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/stats_month_distribution"
-                android:textSize="16sp"
+                android:textSize="@dimen/stats_text_heading"
                 android:textStyle="bold"
                 android:textColor="@color/primary"
-                android:layout_marginBottom="8dp" />
+                android:layout_marginBottom="@dimen/stats_margin_sm" />
 
             <com.github.mikephil.charting.charts.BarChart
                 android:id="@+id/chartMonthDist"
                 android:layout_width="match_parent"
-                android:layout_height="300dp"
-                android:layout_marginBottom="16dp" />
+                android:layout_height="@dimen/stats_chart_height"
+                android:layout_marginBottom="@dimen/stats_margin_lg" />
 
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>

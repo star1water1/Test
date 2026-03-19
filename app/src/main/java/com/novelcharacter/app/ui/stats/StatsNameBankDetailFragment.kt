@@ -49,22 +49,28 @@ class StatsNameBankDetailFragment : Fragment() {
         binding.contentLayout.visibility = View.GONE
 
         viewLifecycleOwner.lifecycleScope.launch {
-            val app = requireActivity().application as NovelCharacterApp
-            val provider = StatsDataProvider(app)
-            val snapshot = withContext(Dispatchers.IO) { provider.loadSnapshot() }
-            val stats = withContext(Dispatchers.IO) { provider.computeNameBankStats(snapshot) }
+            try {
+                val app = requireActivity().application as NovelCharacterApp
+                val provider = StatsDataProvider(app)
+                val snapshot = withContext(Dispatchers.IO) { provider.loadSnapshot() }
+                val stats = withContext(Dispatchers.IO) { provider.computeNameBankStats(snapshot) }
 
-            if (!isAdded) return@launch
+                if (!isAdded) return@launch
 
-            binding.loadingProgress.visibility = View.GONE
-            binding.contentLayout.visibility = View.VISIBLE
+                binding.loadingProgress.visibility = View.GONE
+                binding.contentLayout.visibility = View.VISIBLE
 
-            // Usage rate
-            binding.textUsageRate.text = "${String.format("%.0f", stats.usageRate)}%"
-            binding.progressUsageRate.progress = stats.usageRate.toInt().coerceIn(0, 100)
+                // Usage rate
+                binding.textUsageRate.text = "${String.format("%.0f", stats.usageRate)}%"
+                binding.progressUsageRate.progress = stats.usageRate.toInt().coerceIn(0, 100)
 
-            setupGenderPieChart(stats.genderDistribution)
-            setupOriginBarChart(stats.originDistribution)
+                setupGenderPieChart(stats.genderDistribution)
+                setupOriginBarChart(stats.originDistribution)
+            } catch (e: Exception) {
+                if (isAdded) {
+                    binding.loadingProgress.visibility = View.GONE
+                }
+            }
         }
     }
 

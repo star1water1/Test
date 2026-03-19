@@ -54,22 +54,28 @@ class StatsCharacterDetailFragment : Fragment() {
         binding.contentLayout.visibility = View.GONE
 
         viewLifecycleOwner.lifecycleScope.launch {
-            val app = requireActivity().application as NovelCharacterApp
-            val provider = StatsDataProvider(app)
-            val snapshot = withContext(Dispatchers.IO) { provider.loadSnapshot() }
-            val stats = withContext(Dispatchers.IO) { provider.computeCharacterStats(snapshot) }
+            try {
+                val app = requireActivity().application as NovelCharacterApp
+                val provider = StatsDataProvider(app)
+                val snapshot = withContext(Dispatchers.IO) { provider.loadSnapshot() }
+                val stats = withContext(Dispatchers.IO) { provider.computeCharacterStats(snapshot) }
 
-            if (!isAdded) return@launch
+                if (!isAdded) return@launch
 
-            binding.loadingProgress.visibility = View.GONE
-            binding.contentLayout.visibility = View.VISIBLE
+                binding.loadingProgress.visibility = View.GONE
+                binding.contentLayout.visibility = View.VISIBLE
 
-            setupTagPieChart(stats.tagDistribution)
-            setupNovelCharBarChart(stats.novelCharacterCounts)
-            setupRelTypePieChart(stats.relationshipTypeDist)
-            populateList(binding.listTopRelChars, stats.topRelationshipChars)
-            populateList(binding.listTopEventChars, stats.topEventLinkedChars)
-            populateFieldCompletionList(stats.fieldCompletionRates)
+                setupTagPieChart(stats.tagDistribution)
+                setupNovelCharBarChart(stats.novelCharacterCounts)
+                setupRelTypePieChart(stats.relationshipTypeDist)
+                populateList(binding.listTopRelChars, stats.topRelationshipChars)
+                populateList(binding.listTopEventChars, stats.topEventLinkedChars)
+                populateFieldCompletionList(stats.fieldCompletionRates)
+            } catch (e: Exception) {
+                if (isAdded) {
+                    binding.loadingProgress.visibility = View.GONE
+                }
+            }
         }
     }
 

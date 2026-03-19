@@ -46,19 +46,25 @@ class StatsRelationshipDetailFragment : Fragment() {
         binding.contentLayout.visibility = View.GONE
 
         viewLifecycleOwner.lifecycleScope.launch {
-            val app = requireActivity().application as NovelCharacterApp
-            val provider = StatsDataProvider(app)
-            val snapshot = withContext(Dispatchers.IO) { provider.loadSnapshot() }
-            val stats = withContext(Dispatchers.IO) { provider.computeRelationshipStats(snapshot) }
+            try {
+                val app = requireActivity().application as NovelCharacterApp
+                val provider = StatsDataProvider(app)
+                val snapshot = withContext(Dispatchers.IO) { provider.loadSnapshot() }
+                val stats = withContext(Dispatchers.IO) { provider.computeRelationshipStats(snapshot) }
 
-            if (!isAdded) return@launch
+                if (!isAdded) return@launch
 
-            binding.loadingProgress.visibility = View.GONE
-            binding.contentLayout.visibility = View.VISIBLE
+                binding.loadingProgress.visibility = View.GONE
+                binding.contentLayout.visibility = View.VISIBLE
 
-            setupTypePieChart(stats.typeDistribution)
-            populateRankedList(binding.listTopConnected, stats.topConnectedChars)
-            populateSimpleList(binding.listIsolated, stats.isolatedCharacters)
+                setupTypePieChart(stats.typeDistribution)
+                populateRankedList(binding.listTopConnected, stats.topConnectedChars)
+                populateSimpleList(binding.listIsolated, stats.isolatedCharacters)
+            } catch (e: Exception) {
+                if (isAdded) {
+                    binding.loadingProgress.visibility = View.GONE
+                }
+            }
         }
     }
 
