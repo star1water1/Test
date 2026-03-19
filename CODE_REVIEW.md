@@ -82,6 +82,16 @@
 - **문제:** 저장 성공 시 `isSaving = true` 리셋 없이 `popBackStack()` 호출. 네비게이션 실패 시 **저장 버튼이 영구 비활성화**되어 재저장 불가.
 - **수정:** finally 블록에서 `isSaving = false`, `binding.btnSave.isEnabled = true` 리셋
 
+### H-10. NovelAdapter/UniverseAdapter 이미지 경로 순회 검증 누락 — 보안 취약점
+- **파일:** `ui/adapter/NovelAdapter.kt` (line 246-257), `ui/adapter/UniverseAdapter.kt` (line 239-264)
+- **문제:** `decodeSampledBitmap`에서 `file.exists()`만 확인하고 canonical path 검증 없음. `CharacterAdapter`(line 278-281)에는 있는 경로 순회 방지가 누락. DB에 저장된 악의적 경로로 **임의 파일 읽기 가능**.
+- **수정:** `file.canonicalPath.startsWith(appDir.canonicalPath)` 검증 추가
+
+### H-11. NovelListFragment/UniverseListFragment 이미지 복사 크기 제한 없음
+- **파일:** `ui/novel/NovelListFragment.kt` (line 47-57), `ui/universe/UniverseListFragment.kt` (line 48-61)
+- **문제:** 이미지 선택 시 `inputStream.copyTo(out)` 크기 무제한. `CharacterEditFragment`(line 522-568)에는 20MB 제한이 있지만 이 두 Fragment에는 없음. **대용량 파일 선택 시 OOM 또는 저장소 고갈**.
+- **수정:** 20MB 크기 제한 통일 적용
+
 ---
 
 ## 3. 중간 심각도 이슈 (Medium)
@@ -122,7 +132,31 @@
 - **파일:** `data/dao/CharacterRelationshipChangeDao.kt` (line 9, 15), `CharacterStateChangeDao.kt` (line 9)
 - **문제:** `ORDER BY year, month, day`에서 NULL이 ASC 시 가장 먼저 정렬됨. 월/일 미지정 이벤트가 1월보다 앞에 표시. `COALESCE(month, 9999)` 등으로 명시적 처리 필요.
 
-### M-10. LIKE 쿼리 특수문자 미이스케이프
+### M-10. NovelListFragment — lifecycleScope 대신 viewLifecycleOwner 필요
+- **파일:** `ui/novel/NovelListFragment.kt` (line 300)
+- **문제:** `lifecycleScope.launch` 사용. 구성 변경 시 View 파괴 후에도 코루틴이 실행되어 분리된 뷰 접근 위험.
+
+### M-11. TimelineViewModel — observeForever 메모리 누수 위험
+- **파일:** `ui/timeline/TimelineViewModel.kt` (line 35-41)
+- **문제:** `allEvents.observeForever(densityObserver)` 사용. `onCleared()`에서 제거하지만 생명주기 무시 패턴으로 취약. `MediatorLiveData`로 대체 권장.
+
+### M-12. StatsViewModel 캐시 무효화 없음 — 항상 오래된 통계 표시
+- **파일:** `ui/stats/StatsViewModel.kt` (line 54-58, 78-80)
+- **문제:** `cachedSnapshot` 한 번 로드 후 재사용. 캐릭터 추가/삭제 후 통계 화면 재진입 시 **이전 데이터 그대로 표시**. 자동 무효화 메커니즘 없음.
+
+### M-13. CharacterEditFragment 이미지 어댑터 — onViewRecycled 미구현
+- **파일:** `ui/character/CharacterEditFragment.kt` (line 587-615)
+- **문제:** ViewHolder 재활용 시 이전 이미지 로딩 코루틴이 계속 실행. `CharacterDetailFragment`는 `onViewRecycled`에서 Job 취소를 구현했지만 여기서는 누락.
+
+### M-14. StatsFieldAnalysisDetailFragment/CharacterGrowthFragment 차트 미정리
+- **파일:** `ui/stats/StatsFieldAnalysisDetailFragment.kt` (line 223-227), `ui/growth/CharacterGrowthFragment.kt` (line 268-271)
+- **문제:** `onDestroyView`에서 동적 생성된 PieChart/LineChart에 `.clear()` 미호출. MPAndroidChart 내부 애니메이션 핸들러 메모리 누수.
+
+### M-15. ImageViewerFragment PageChangeCallback 미해제
+- **파일:** `ui/character/ImageViewerFragment.kt` (line 166-170, 197-202)
+- **문제:** `ViewPager2.OnPageChangeCallback` 등록 후 `onDestroyView`에서 미해제. 뷰 참조 누수 가능.
+
+### M-16. LIKE 쿼리 특수문자 미이스케이프
 - **파일:** `data/dao/CharacterDao.kt` (line 31), `NovelDao.kt` (line 49)
 - **문제:** `LIKE '%' || :query || '%'`에서 `%`, `_` 미이스케이프. 의도치 않은 검색 결과 반환.
 
@@ -244,8 +278,10 @@
 | **P1** | H-6 | novelId=null 캐릭터 검색 불가 | 낮음 |
 | **P1** | H-7 | imageCharacterId FK 누락 | 낮음 |
 | **P1** | H-8 | 위젯 코루틴 타임아웃 | 낮음 |
+| **P1** | H-10 | NovelAdapter/UniverseAdapter 경로 순회 보안 | 낮음 |
+| **P1** | H-11 | 이미지 복사 크기 제한 통일 | 낮음 |
 | **P1** | R-4 | WCAG 색상 대비 수정 | 낮음 |
-| **P2** | M-1~M-12 | 중간 심각도 이슈 전체 | 다양 |
+| **P2** | M-1~M-21 | 중간 심각도 이슈 전체 | 다양 |
 | **P2** | B-1~B-9 | 빌드 설정 개선 | 다양 |
 | **P3** | L-1~L-6 | 낮은 심각도 이슈 전체 | 낮음 |
 | **P3** | R-1~R-7 | 리소스 정리 | 낮음 |
