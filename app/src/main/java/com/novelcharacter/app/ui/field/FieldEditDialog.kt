@@ -11,6 +11,7 @@ import androidx.fragment.app.DialogFragment
 import androidx.fragment.app.setFragmentResult
 import com.google.gson.Gson
 import com.novelcharacter.app.R
+import com.novelcharacter.app.data.model.DisplayFormat
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.FieldType
 import com.novelcharacter.app.databinding.DialogFieldEditBinding
@@ -52,6 +53,12 @@ class FieldEditDialog : DialogFragment() {
         spinnerAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         binding.spinnerFieldType.adapter = spinnerAdapter
 
+        // Display format spinner
+        val formatLabels = DisplayFormat.labels()
+        val formatAdapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, formatLabels)
+        formatAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        binding.spinnerDisplayFormat.adapter = formatAdapter
+
         binding.spinnerFieldType.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
                 val selectedType = types[position]
@@ -61,6 +68,8 @@ class FieldEditDialog : DialogFragment() {
                     if (selectedType == FieldType.GRADE) View.VISIBLE else View.GONE
                 binding.calculatedLayout.visibility =
                     if (selectedType == FieldType.CALCULATED) View.VISIBLE else View.GONE
+                binding.displayFormatLayout.visibility =
+                    if (selectedType == FieldType.TEXT || selectedType == FieldType.MULTI_TEXT) View.VISIBLE else View.GONE
             }
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
@@ -102,6 +111,11 @@ class FieldEditDialog : DialogFragment() {
         // CALCULATED formula
         val formula = config["formula"] as? String
         if (formula != null) binding.editFormula.setText(formula)
+
+        // Display format
+        val displayFormat = DisplayFormat.fromConfig(field.config)
+        val formatIndex = DisplayFormat.entries.indexOf(displayFormat)
+        if (formatIndex >= 0) binding.spinnerDisplayFormat.setSelection(formatIndex)
     }
 
     private fun saveField(binding: DialogFieldEditBinding) {
@@ -151,6 +165,15 @@ class FieldEditDialog : DialogFragment() {
 
     private fun buildConfig(binding: DialogFieldEditBinding, type: FieldType): String {
         val config = mutableMapOf<String, Any>()
+
+        // Display format (TEXT, MULTI_TEXT only)
+        if (type == FieldType.TEXT || type == FieldType.MULTI_TEXT) {
+            val formats = DisplayFormat.entries
+            val selectedFormat = formats[binding.spinnerDisplayFormat.selectedItemPosition]
+            if (selectedFormat != DisplayFormat.PLAIN) {
+                config["displayFormat"] = selectedFormat.key
+            }
+        }
 
         when (type) {
             FieldType.SELECT -> {

@@ -33,15 +33,16 @@
                 android:contentDescription="@string/drag_handle_desc"
                 android:visibility="gone" />
 
-            <ImageView
+            <com.google.android.material.imageview.ShapeableImageView
                 android:id="@+id/universeImage"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
+                android:layout_width="72dp"
+                android:layout_height="72dp"
                 android:layout_marginEnd="12dp"
                 android:scaleType="centerCrop"
                 android:src="@drawable/ic_universe"
                 android:contentDescription="@string/tab_universes"
-                android:importantForAccessibility="no" />
+                android:importantForAccessibility="no"
+                app:shapeAppearanceOverlay="@style/RoundedImageShape" />
 
             <LinearLayout
                 android:layout_width="0dp"

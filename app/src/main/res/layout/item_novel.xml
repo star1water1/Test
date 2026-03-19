@@ -4,7 +4,10 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_margin="4dp"
+    android:layout_marginStart="8dp"
+    android:layout_marginEnd="8dp"
+    android:layout_marginTop="4dp"
+    android:layout_marginBottom="4dp"
     app:cardCornerRadius="12dp"
     app:cardElevation="2dp">
 
@@ -25,15 +28,16 @@
             android:contentDescription="@string/drag_handle_desc"
             android:visibility="gone" />
 
-        <ImageView
+        <com.google.android.material.imageview.ShapeableImageView
             android:id="@+id/novelImage"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
+            android:layout_width="72dp"
+            android:layout_height="72dp"
             android:layout_marginEnd="12dp"
             android:scaleType="centerCrop"
             android:visibility="gone"
             android:contentDescription="@string/image_mode_label"
-            android:importantForAccessibility="no" />
+            android:importantForAccessibility="no"
+            app:shapeAppearanceOverlay="@style/RoundedImageShape" />
 
         <LinearLayout
             android:layout_width="0dp"

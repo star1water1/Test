@@ -60,6 +60,29 @@
                 android:text="@string/default_group_name" />
         </com.google.android.material.textfield.TextInputLayout>
 
+        <!-- 표시 형식 (TEXT/MULTI_TEXT 타입일 때 표시) -->
+        <LinearLayout
+            android:id="@+id/displayFormatLayout"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone"
+            android:layout_marginBottom="12dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/label_display_format"
+                android:textSize="12sp"
+                android:textColor="@color/text_secondary" />
+
+            <Spinner
+                android:id="@+id/spinnerDisplayFormat"
+                android:layout_width="match_parent"
+                android:layout_height="48dp" />
+
+        </LinearLayout>
+
         <!-- SELECT 옵션 (SELECT 타입일 때만 표시) -->
         <LinearLayout
             android:id="@+id/selectOptionsLayout"

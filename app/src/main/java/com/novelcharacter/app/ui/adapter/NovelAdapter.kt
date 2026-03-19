@@ -227,7 +227,7 @@ class NovelAdapter(
 
             loadJob = coroutineScope.launch {
                 val bitmap = withContext(Dispatchers.IO) {
-                    decodeSampledBitmap(path, 128, 128)
+                    decodeSampledBitmap(path, 192, 192)
                 }
                 if (bitmap != null) {
                     thumbnailCache.put(path, bitmap)

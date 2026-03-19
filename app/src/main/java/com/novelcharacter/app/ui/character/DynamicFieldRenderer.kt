@@ -7,9 +7,12 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.cardview.widget.CardView
+import com.google.android.material.chip.Chip
+import com.google.android.material.chip.ChipGroup
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.CharacterFieldValue
 import com.novelcharacter.app.data.model.CharacterStateChange
+import com.novelcharacter.app.data.model.DisplayFormat
 import com.novelcharacter.app.data.model.FieldDefinition
 
 class DynamicFieldRenderer(
@@ -53,31 +56,109 @@ class DynamicFieldRenderer(
             for (field in groupFields) {
                 val fieldValue = valueMap[field.id]?.value ?: ""
                 val isCalculated = field.type == "CALCULATED"
-                val displayValue = if (isCalculated) {
-                    if (fieldValue.isEmpty()) {
-                        getStringWithArg(R.string.auto_calculated_label, field.name)
-                    } else {
-                        contextGetter().getString(R.string.auto_calculated_value, field.name, fieldValue)
-                    }
-                } else {
-                    "${field.name}: ${fieldValue.ifEmpty { "-" }}"
-                }
+                val format = DisplayFormat.fromConfig(field.config)
 
-                val rowView = TextView(context).apply {
-                    text = displayValue
-                    textSize = 14f
-                    if (isCalculated) {
+                if (!isCalculated && fieldValue.isNotEmpty() &&
+                    (format == DisplayFormat.COMMA_LIST || format == DisplayFormat.BULLET_LIST)) {
+                    // 필드 이름 라벨
+                    val labelView = TextView(context).apply {
+                        text = field.name
+                        textSize = 13f
                         setTextColor(context.getColor(R.color.text_secondary))
-                        setTypeface(null, Typeface.ITALIC)
+                        layoutParams = LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT
+                        ).apply {
+                            bottomMargin = (2 * density).toInt()
+                        }
                     }
-                    layoutParams = LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT
-                    ).apply {
-                        bottomMargin = (4 * density).toInt()
+                    cardContent.addView(labelView)
+
+                    val items = fieldValue.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                    if (format == DisplayFormat.COMMA_LIST) {
+                        val chipGroup = ChipGroup(context).apply {
+                            layoutParams = LinearLayout.LayoutParams(
+                                LinearLayout.LayoutParams.MATCH_PARENT,
+                                LinearLayout.LayoutParams.WRAP_CONTENT
+                            ).apply {
+                                bottomMargin = (6 * density).toInt()
+                            }
+                        }
+                        for (item in items) {
+                            chipGroup.addView(Chip(context).apply {
+                                text = item
+                                isClickable = false
+                                isCheckable = false
+                            })
+                        }
+                        cardContent.addView(chipGroup)
+                    } else {
+                        // BULLET_LIST
+                        val bulletText = items.joinToString("\n") { "• $it" }
+                        val bulletView = TextView(context).apply {
+                            text = bulletText
+                            textSize = 14f
+                            layoutParams = LinearLayout.LayoutParams(
+                                LinearLayout.LayoutParams.MATCH_PARENT,
+                                LinearLayout.LayoutParams.WRAP_CONTENT
+                            ).apply {
+                                bottomMargin = (6 * density).toInt()
+                            }
+                        }
+                        cardContent.addView(bulletView)
                     }
+                } else if (!isCalculated && format == DisplayFormat.MULTILINE && fieldValue.isNotEmpty()) {
+                    val labelView = TextView(context).apply {
+                        text = field.name
+                        textSize = 13f
+                        setTextColor(context.getColor(R.color.text_secondary))
+                        layoutParams = LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT
+                        ).apply {
+                            bottomMargin = (2 * density).toInt()
+                        }
+                    }
+                    cardContent.addView(labelView)
+                    val multiView = TextView(context).apply {
+                        text = fieldValue
+                        textSize = 14f
+                        layoutParams = LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT
+                        ).apply {
+                            bottomMargin = (6 * density).toInt()
+                        }
+                    }
+                    cardContent.addView(multiView)
+                } else {
+                    // PLAIN (default) / CALCULATED
+                    val displayValue = if (isCalculated) {
+                        if (fieldValue.isEmpty()) {
+                            getStringWithArg(R.string.auto_calculated_label, field.name)
+                        } else {
+                            contextGetter().getString(R.string.auto_calculated_value, field.name, fieldValue)
+                        }
+                    } else {
+                        "${field.name}: ${fieldValue.ifEmpty { "-" }}"
+                    }
+
+                    val rowView = TextView(context).apply {
+                        text = displayValue
+                        textSize = 14f
+                        if (isCalculated) {
+                            setTextColor(context.getColor(R.color.text_secondary))
+                            setTypeface(null, Typeface.ITALIC)
+                        }
+                        layoutParams = LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT
+                        ).apply {
+                            bottomMargin = (4 * density).toInt()
+                        }
+                    }
+                    cardContent.addView(rowView)
                 }
-                cardContent.addView(rowView)
             }
 
             card.addView(cardContent)

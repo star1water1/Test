@@ -31,6 +31,7 @@ import com.novelcharacter.app.data.model.CharacterFieldValue
 import com.novelcharacter.app.data.model.CharacterTag
 import com.novelcharacter.app.data.model.generateEntityCode
 import com.novelcharacter.app.data.model.FieldDefinition
+import com.novelcharacter.app.data.model.DisplayFormat
 import com.novelcharacter.app.data.model.FieldType
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.databinding.FragmentCharacterEditBinding
@@ -250,6 +251,7 @@ class CharacterEditFragment : Fragment() {
 
             when (fieldType) {
                 FieldType.TEXT, FieldType.BODY_SIZE -> {
+                    val format = DisplayFormat.fromConfig(field.config)
                     val inputLayout = TextInputLayout(context).apply {
                         layoutParams = ViewGroup.MarginLayoutParams(
                             ViewGroup.LayoutParams.MATCH_PARENT,
@@ -258,12 +260,23 @@ class CharacterEditFragment : Fragment() {
                             bottomMargin = (8 * density).toInt()
                         }
                         hint = field.name
+                        if (format == DisplayFormat.COMMA_LIST || format == DisplayFormat.BULLET_LIST) {
+                            helperText = getString(R.string.hint_comma_list_helper)
+                            isHelperTextEnabled = true
+                        } else if (format == DisplayFormat.MULTILINE) {
+                            helperText = getString(R.string.hint_multiline_helper)
+                            isHelperTextEnabled = true
+                        }
                     }
                     val editText = TextInputEditText(context).apply {
                         layoutParams = LinearLayout.LayoutParams(
                             LinearLayout.LayoutParams.MATCH_PARENT,
                             LinearLayout.LayoutParams.WRAP_CONTENT
                         )
+                        if (format == DisplayFormat.MULTILINE) {
+                            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
+                            minLines = 2
+                        }
                     }
                     inputLayout.addView(editText)
                     binding.dynamicFormContainer.addView(inputLayout)

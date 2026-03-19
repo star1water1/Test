@@ -130,6 +130,9 @@
     <string name="hint_formula_example">예: field(\'aura\') + field(\'body\')</string>
     <string name="text_formula_help">사용 가능: field(\'키\'), sum_all_grades(), abs(), +, -, *, /</string>
     <string name="label_required_field">필수 입력</string>
+    <string name="label_display_format">표시 형식</string>
+    <string name="hint_comma_list_helper">콤마(,)로 구분하여 여러 항목 입력</string>
+    <string name="hint_multiline_helper">여러 줄로 입력 가능</string>
 
     <!-- Kotlin code hardcoded strings -->
     <string name="no_description">설명 없음</string>
