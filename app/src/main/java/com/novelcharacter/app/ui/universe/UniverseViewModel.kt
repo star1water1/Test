@@ -13,6 +13,7 @@ import com.novelcharacter.app.data.model.RecentActivity
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.UserPresetTemplate
 import com.novelcharacter.app.util.PresetTemplates
+import com.google.gson.Gson
 import android.util.Log
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -135,14 +136,14 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
             _presetApplied.value = Event(template.universe.name)
         }
 
+    private val gson = Gson()
+
     /** 세계관에 속한 캐릭터 중 이미지가 있는 랜덤 캐릭터의 첫 이미지 경로 반환 */
     fun resolveRandomCharacterImage(universeId: Long, callback: (String?) -> Unit) {
         viewModelScope.launch {
             try {
-                val novels = novelRepository.getNovelsByUniverseList(universeId)
-                val allCharacters = novels.flatMap { novel ->
-                    characterRepository.getCharactersByNovelList(novel.id)
-                }
+                // 단일 JOIN 쿼리로 세계관 내 모든 캐릭터를 한 번에 조회
+                val allCharacters = characterRepository.getCharactersByUniverseList(universeId)
                 val withImages = allCharacters.filter { char ->
                     char.imagePaths.isNotBlank() && char.imagePaths != "[]"
                 }
@@ -152,8 +153,7 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
                 }
                 val target = withImages.random()
                 val firstPath = try {
-                    val arr = com.google.gson.Gson().fromJson(target.imagePaths, Array<String>::class.java)
-                    arr?.firstOrNull()
+                    gson.fromJson(target.imagePaths, Array<String>::class.java)?.firstOrNull()
                 } catch (_: Exception) { null }
                 callback(firstPath)
             } catch (e: Exception) {

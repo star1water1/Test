@@ -37,24 +37,20 @@ class NovelListFragment : Fragment() {
     private lateinit var adapter: NovelAdapter
     private var itemTouchHelper: ItemTouchHelper? = null
     private var universeId: Long = -1L
-    private var pendingImageCallback: ((String) -> Unit)? = null
+    private var lastSavedImagePath: String? = null
 
     private val novelImagePickerLauncher = registerForActivityResult(
         ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
-        uri?.let { saveNovelImage(it) }
-    }
-
-    private fun saveNovelImage(uri: Uri) {
+        if (uri == null) return@registerForActivityResult
         try {
             val ctx = requireContext()
-            val inputStream = ctx.contentResolver.openInputStream(uri) ?: return
+            val inputStream = ctx.contentResolver.openInputStream(uri) ?: return@registerForActivityResult
             val fileName = "novel_${java.util.UUID.randomUUID()}.jpg"
             val file = java.io.File(ctx.filesDir, fileName)
             file.outputStream().use { out -> inputStream.copyTo(out) }
             inputStream.close()
-            pendingImageCallback?.invoke(file.absolutePath)
-            pendingImageCallback = null
+            lastSavedImagePath = file.absolutePath
         } catch (e: Exception) {
             Toast.makeText(requireContext(), R.string.image_save_failed, Toast.LENGTH_SHORT).show()
         }
@@ -97,6 +93,7 @@ class NovelListFragment : Fragment() {
 
     private fun setupRecyclerView() {
         adapter = NovelAdapter(
+            coroutineScope = viewLifecycleOwner.lifecycleScope,
             onClick = { novel ->
                 viewModel.recordRecentActivity(novel.id, novel.title)
                 val bundle = Bundle().apply { putLong("novelId", novel.id) }
@@ -289,37 +286,44 @@ class NovelListFragment : Fragment() {
         dialogBinding.btnSelectImage.visibility = if (selectedImageMode == Novel.IMAGE_MODE_CUSTOM) View.VISIBLE else View.GONE
         if (selectedImagePath.isNotBlank()) dialogBinding.btnSelectImage.text = getString(R.string.image_change)
 
+        lastSavedImagePath = null
         dialogBinding.btnSelectImage.setOnClickListener {
-            pendingImageCallback = { path ->
-                selectedImagePath = path
-                dialogBinding.btnSelectImage.text = getString(R.string.image_selected)
-            }
             novelImagePickerLauncher.launch("image/*")
+        }
+
+        // 캐릭터 선택 버튼 (select_character 모드 전용, 언제든 재선택 가능)
+        dialogBinding.btnSelectCharacter.setOnClickListener {
+            if (novel == null) {
+                Toast.makeText(ctx, R.string.image_save_novel_first, Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            lifecycleScope.launch {
+                val chars = viewModel.getCharactersWithImages(novel.id)
+                if (chars.isEmpty()) {
+                    Toast.makeText(ctx, R.string.image_no_characters_with_images, Toast.LENGTH_SHORT).show()
+                    return@launch
+                }
+                val charNames = chars.map { it.name }.toTypedArray()
+                AlertDialog.Builder(ctx)
+                    .setTitle(R.string.image_select_character)
+                    .setItems(charNames) { _, which ->
+                        selectedImageCharId = chars[which].id
+                        dialogBinding.btnSelectCharacter.text = getString(R.string.image_character_selected, chars[which].name)
+                    }
+                    .setNegativeButton(R.string.cancel, null)
+                    .show()
+            }
+        }
+        // 기존 선택 캐릭터가 있으면 표시
+        if (selectedImageCharId != null && novel != null) {
+            dialogBinding.btnSelectCharacter.text = getString(R.string.image_change_character)
         }
 
         dialogBinding.spinnerImageMode.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: android.widget.AdapterView<*>?, v: View?, pos: Int, id: Long) {
                 selectedImageMode = imageModeValues[pos]
                 dialogBinding.btnSelectImage.visibility = if (selectedImageMode == Novel.IMAGE_MODE_CUSTOM) View.VISIBLE else View.GONE
-                // select_character 모드 선택 시 캐릭터 선택 다이얼로그
-                if (selectedImageMode == Novel.IMAGE_MODE_SELECT_CHARACTER && novel != null) {
-                    lifecycleScope.launch {
-                        val chars = viewModel.getCharactersWithImages(novel.id)
-                        if (chars.isEmpty()) {
-                            Toast.makeText(ctx, R.string.image_no_characters_with_images, Toast.LENGTH_SHORT).show()
-                            return@launch
-                        }
-                        val charNames = chars.map { it.name }.toTypedArray()
-                        AlertDialog.Builder(ctx)
-                            .setTitle(R.string.image_select_character)
-                            .setItems(charNames) { _, which ->
-                                selectedImageCharId = chars[which].id
-                                Toast.makeText(ctx, getString(R.string.image_character_selected, chars[which].name), Toast.LENGTH_SHORT).show()
-                            }
-                            .setNegativeButton(R.string.cancel, null)
-                            .show()
-                    }
-                }
+                dialogBinding.btnSelectCharacter.visibility = if (selectedImageMode == Novel.IMAGE_MODE_SELECT_CHARACTER) View.VISIBLE else View.GONE
             }
             override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
         }
@@ -331,6 +335,7 @@ class NovelListFragment : Fragment() {
                 val title = dialogBinding.editTitle.text.toString().trim()
                 val description = dialogBinding.editDescription.text.toString().trim()
                 val borderColor = dialogBinding.editBorderColor.text.toString().trim()
+                val finalImagePath = lastSavedImagePath ?: selectedImagePath
                 if (title.isNotEmpty()) {
                     if (novel == null) {
                         val newNovel = Novel(
@@ -339,7 +344,7 @@ class NovelListFragment : Fragment() {
                             universeId = if (universeId != -1L) universeId else null,
                             borderColor = borderColor,
                             inheritUniverseBorder = borderColor.isBlank(),
-                            imagePath = selectedImagePath,
+                            imagePath = finalImagePath,
                             imageMode = selectedImageMode,
                             imageCharacterId = selectedImageCharId
                         )
@@ -350,7 +355,7 @@ class NovelListFragment : Fragment() {
                             description = description,
                             borderColor = borderColor,
                             inheritUniverseBorder = borderColor.isBlank(),
-                            imagePath = selectedImagePath,
+                            imagePath = finalImagePath,
                             imageMode = selectedImageMode,
                             imageCharacterId = selectedImageCharId
                         ))

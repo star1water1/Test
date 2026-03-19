@@ -9,6 +9,7 @@ import androidx.lifecycle.viewModelScope
 import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.RecentActivity
+import com.google.gson.Gson
 import android.util.Log
 import kotlinx.coroutines.launch
 
@@ -19,6 +20,7 @@ class NovelViewModel(application: Application) : AndroidViewModel(application) {
     private val universeRepository = app.universeRepository
     private val characterRepository = app.characterRepository
     private val recentActivityDao = app.recentActivityDao
+    private val gson = Gson()
     val allNovels: LiveData<List<Novel>> = novelRepository.allNovels
 
     private val _universeId = MutableLiveData<Long?>()
@@ -108,8 +110,7 @@ class NovelViewModel(application: Application) : AndroidViewModel(application) {
                 // imagePaths는 JSON 배열 형태 — 첫 번째 경로 추출
                 val pathsStr = target.imagePaths
                 val firstPath = try {
-                    val arr = com.google.gson.Gson().fromJson(pathsStr, Array<String>::class.java)
-                    arr?.firstOrNull()
+                    gson.fromJson(pathsStr, Array<String>::class.java)?.firstOrNull()
                 } catch (_: Exception) {
                     null
                 }

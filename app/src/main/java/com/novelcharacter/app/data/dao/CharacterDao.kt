@@ -66,4 +66,12 @@ interface CharacterDao {
 
     @Query("UPDATE characters SET isPinned = :isPinned WHERE id = :id")
     suspend fun setPinned(id: Long, isPinned: Boolean)
+
+    /** 세계관에 속한 모든 캐릭터 조회 (JOIN) — N+1 회피용 */
+    @Query("""
+        SELECT c.* FROM characters c
+        INNER JOIN novels n ON c.novelId = n.id
+        WHERE n.universeId = :universeId
+    """)
+    suspend fun getCharactersByUniverseList(universeId: Long): List<Character>
 }

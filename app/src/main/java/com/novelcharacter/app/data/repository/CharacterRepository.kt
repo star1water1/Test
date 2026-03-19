@@ -24,6 +24,8 @@ class CharacterRepository(
         characterDao.getCharactersByNovel(novelId)
     suspend fun getCharactersByNovelList(novelId: Long): List<Character> =
         characterDao.getCharactersByNovelList(novelId)
+    suspend fun getCharactersByUniverseList(universeId: Long): List<Character> =
+        characterDao.getCharactersByUniverseList(universeId)
     suspend fun getCharacterById(id: Long): Character? = characterDao.getCharacterById(id)
     fun getCharacterByIdLive(id: Long): LiveData<Character?> = characterDao.getCharacterByIdLive(id)
     fun searchCharacters(query: String): LiveData<List<Character>> =

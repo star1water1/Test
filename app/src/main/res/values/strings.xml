@@ -301,7 +301,9 @@
     <string name="image_save_failed">이미지 저장에 실패했습니다</string>
     <string name="image_select_character">이미지를 가져올 캐릭터 선택</string>
     <string name="image_no_characters_with_images">이미지가 있는 캐릭터가 없습니다</string>
-    <string name="image_character_selected">%s의 이미지가 선택되었습니다</string>
+    <string name="image_character_selected">%s 선택됨</string>
+    <string name="image_change_character">캐릭터 변경</string>
+    <string name="image_save_novel_first">작품을 먼저 저장해주세요</string>
     <string name="image_index_format">%1$d / %2$d</string>
 
     <!-- Settings -->

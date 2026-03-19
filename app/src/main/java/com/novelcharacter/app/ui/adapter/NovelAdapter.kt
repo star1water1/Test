@@ -1,7 +1,9 @@
 package com.novelcharacter.app.ui.adapter
 
 import android.annotation.SuppressLint
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.util.LruCache
 import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
@@ -18,11 +20,13 @@ import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.databinding.ItemNovelBinding
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
 class NovelAdapter(
+    private val coroutineScope: CoroutineScope,
     private val onClick: (Novel) -> Unit,
     private val onEditClick: (Novel) -> Unit,
     private val onDeleteClick: (Novel) -> Unit,
@@ -38,6 +42,14 @@ class NovelAdapter(
 
     /** 작품에 속한 캐릭터의 랜덤/선택 이미지 경로를 반환하는 콜백 */
     var resolveCharacterImage: ((novelId: Long, characterId: Long?, callback: (String?) -> Unit) -> Unit)? = null
+
+    private val thumbnailCache: LruCache<String, Bitmap> = run {
+        val maxMemory = (Runtime.getRuntime().maxMemory() / 1024).toInt()
+        val cacheSize = maxMemory / 16
+        object : LruCache<String, Bitmap>(cacheSize.coerceIn(512, 10 * 1024)) {
+            override fun sizeOf(key: String, bitmap: Bitmap): Int = bitmap.byteCount / 1024
+        }
+    }
 
     fun setUniverseBorder(color: String, widthDp: Float) {
         universeBorderColor = color
@@ -63,7 +75,6 @@ class NovelAdapter(
         notifyItemMoved(from, to)
     }
 
-    /** 드래그 완료 시 호출 — 즉시 자동 저장 */
     fun onDragCompleted() {
         if (isReorderMode) {
             onOrderChanged?.invoke(getReorderedList())
@@ -75,9 +86,7 @@ class NovelAdapter(
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): NovelViewHolder {
-        val binding = ItemNovelBinding.inflate(
-            LayoutInflater.from(parent.context), parent, false
-        )
+        val binding = ItemNovelBinding.inflate(LayoutInflater.from(parent.context), parent, false)
         return NovelViewHolder(binding)
     }
 
@@ -86,14 +95,29 @@ class NovelAdapter(
         holder.bind(item)
     }
 
-    override fun getItemCount(): Int {
-        return if (isReorderMode) reorderList.size else super.getItemCount()
+    override fun getItemCount(): Int = if (isReorderMode) reorderList.size else super.getItemCount()
+
+    override fun onViewRecycled(holder: NovelViewHolder) {
+        super.onViewRecycled(holder)
+        holder.cancelLoad()
+    }
+
+    override fun onDetachedFromRecyclerView(recyclerView: RecyclerView) {
+        super.onDetachedFromRecyclerView(recyclerView)
+        thumbnailCache.evictAll()
     }
 
     @SuppressLint("ClickableViewAccessibility")
     inner class NovelViewHolder(
         private val binding: ItemNovelBinding
     ) : RecyclerView.ViewHolder(binding.root) {
+
+        private var loadJob: Job? = null
+
+        fun cancelLoad() {
+            loadJob?.cancel()
+            loadJob = null
+        }
 
         fun bind(novel: Novel) {
             binding.novelTitle.text = if (novel.isPinned) {
@@ -118,7 +142,6 @@ class NovelAdapter(
                 binding.dragHandle.setOnTouchListener(null)
             }
 
-            // 이미지 표시
             loadNovelImage(novel)
 
             binding.root.setOnClickListener { onClick(novel) }
@@ -142,10 +165,8 @@ class NovelAdapter(
                 popup.show()
             }
 
-            // Apply custom border color (Sprint D)
             val card = binding.root as? MaterialCardView
             if (card != null) {
-                // Determine effective border: own color, or inherit from universe
                 val effectiveColor = if (novel.borderColor.isNotBlank()) {
                     novel.borderColor
                 } else if (novel.inheritUniverseBorder && universeBorderColor.isNotBlank()) {
@@ -172,55 +193,81 @@ class NovelAdapter(
                 }
             }
         }
-    }
 
         private fun loadNovelImage(novel: Novel) {
+            loadJob?.cancel()
+            binding.novelImage.visibility = View.GONE
+            binding.novelImage.setImageDrawable(null)
+
             when (novel.imageMode) {
                 Novel.IMAGE_MODE_CUSTOM -> {
                     if (novel.imagePath.isNotBlank()) {
                         binding.novelImage.visibility = View.VISIBLE
-                        CoroutineScope(Dispatchers.IO).launch {
-                            val file = File(novel.imagePath)
-                            if (file.exists()) {
-                                val opts = BitmapFactory.Options().apply { inSampleSize = 4 }
-                                val bmp = BitmapFactory.decodeFile(file.absolutePath, opts)
-                                withContext(Dispatchers.Main) {
-                                    if (bindingAdapterPosition != RecyclerView.NO_POSITION) {
-                                        binding.novelImage.setImageBitmap(bmp)
-                                    }
-                                }
-                            }
-                        }
-                    } else {
-                        binding.novelImage.visibility = View.GONE
+                        loadImageFromPath(novel.imagePath, novel.id)
                     }
                 }
                 Novel.IMAGE_MODE_RANDOM_CHARACTER, Novel.IMAGE_MODE_SELECT_CHARACTER -> {
-                    binding.novelImage.visibility = View.GONE
                     val charId = if (novel.imageMode == Novel.IMAGE_MODE_SELECT_CHARACTER) novel.imageCharacterId else null
-                    resolveCharacterImage?.invoke(novel.id, charId) { imagePath ->
-                        if (imagePath != null && bindingAdapterPosition != RecyclerView.NO_POSITION) {
-                            CoroutineScope(Dispatchers.IO).launch {
-                                val file = File(imagePath)
-                                if (file.exists()) {
-                                    val opts = BitmapFactory.Options().apply { inSampleSize = 4 }
-                                    val bmp = BitmapFactory.decodeFile(file.absolutePath, opts)
-                                    withContext(Dispatchers.Main) {
-                                        if (bindingAdapterPosition != RecyclerView.NO_POSITION) {
-                                            binding.novelImage.visibility = View.VISIBLE
-                                            binding.novelImage.setImageBitmap(bmp)
-                                        }
-                                    }
-                                }
-                            }
+                    resolveCharacterImage?.invoke(novel.id, charId) { resolvedPath ->
+                        if (resolvedPath != null && bindingAdapterPosition != RecyclerView.NO_POSITION) {
+                            binding.novelImage.visibility = View.VISIBLE
+                            loadImageFromPath(resolvedPath, novel.id)
                         }
                     }
                 }
-                else -> {
-                    binding.novelImage.visibility = View.GONE
+            }
+        }
+
+        private fun loadImageFromPath(path: String, novelId: Long) {
+            val cached = thumbnailCache.get(path)
+            if (cached != null) {
+                binding.novelImage.setImageBitmap(cached)
+                return
+            }
+
+            loadJob = coroutineScope.launch {
+                val bitmap = withContext(Dispatchers.IO) {
+                    decodeSampledBitmap(path, 128, 128)
+                }
+                if (bitmap != null) {
+                    thumbnailCache.put(path, bitmap)
+                    val pos = bindingAdapterPosition
+                    if (pos != RecyclerView.NO_POSITION) {
+                        val current = if (isReorderMode && pos < reorderList.size) reorderList[pos] else getItem(pos)
+                        if (current.id == novelId) {
+                            binding.novelImage.setImageBitmap(bitmap)
+                        }
+                    }
                 }
             }
         }
+    }
+
+    private fun decodeSampledBitmap(path: String, reqWidth: Int, reqHeight: Int): Bitmap? {
+        return try {
+            val file = File(path)
+            if (!file.exists()) return null
+            val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(path, options)
+            options.inSampleSize = calculateInSampleSize(options, reqWidth, reqHeight)
+            options.inJustDecodeBounds = false
+            BitmapFactory.decodeFile(path, options)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun calculateInSampleSize(options: BitmapFactory.Options, reqWidth: Int, reqHeight: Int): Int {
+        val (height, width) = options.outHeight to options.outWidth
+        var inSampleSize = 1
+        if (height > reqHeight || width > reqWidth) {
+            val halfHeight = height / 2
+            val halfWidth = width / 2
+            while (halfHeight / inSampleSize >= reqHeight && halfWidth / inSampleSize >= reqWidth) {
+                inSampleSize *= 2
+            }
+        }
+        return inSampleSize
     }
 
     class NovelDiffCallback : DiffUtil.ItemCallback<Novel>() {

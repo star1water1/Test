@@ -16,6 +16,7 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.lifecycleScope
 import com.novelcharacter.app.data.model.RecentActivity
 import androidx.fragment.app.viewModels
 import androidx.navigation.fragment.findNavController
@@ -38,24 +39,22 @@ class UniverseListFragment : Fragment() {
     private lateinit var adapter: UniverseAdapter
     private var recentAdapter: RecentActivityAdapter? = null
     private var itemTouchHelper: ItemTouchHelper? = null
-    private var pendingImageCallback: ((String) -> Unit)? = null
+    /** 이미지 선택 결과를 저장할 MutableLiveData — ViewModel에 두는 것이 이상적이나
+     *  이 다이얼로그는 구성변경 시 재생성되므로, savedInstanceState로 처리 */
+    private var lastSavedImagePath: String? = null
 
     private val imagePickerLauncher = registerForActivityResult(
         ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
-        uri?.let { saveImageForEntity(it) }
-    }
-
-    private fun saveImageForEntity(uri: Uri) {
+        if (uri == null) return@registerForActivityResult
         try {
             val ctx = requireContext()
-            val inputStream = ctx.contentResolver.openInputStream(uri) ?: return
+            val inputStream = ctx.contentResolver.openInputStream(uri) ?: return@registerForActivityResult
             val fileName = "universe_${java.util.UUID.randomUUID()}.jpg"
             val file = java.io.File(ctx.filesDir, fileName)
             file.outputStream().use { out -> inputStream.copyTo(out) }
             inputStream.close()
-            pendingImageCallback?.invoke(file.absolutePath)
-            pendingImageCallback = null
+            lastSavedImagePath = file.absolutePath
         } catch (e: Exception) {
             Toast.makeText(requireContext(), R.string.image_save_failed, Toast.LENGTH_SHORT).show()
         }
@@ -88,6 +87,7 @@ class UniverseListFragment : Fragment() {
 
     private fun setupRecyclerView() {
         adapter = UniverseAdapter(
+            coroutineScope = viewLifecycleOwner.lifecycleScope,
             onClick = { universe ->
                 viewModel.recordRecentActivity(RecentActivity.TYPE_UNIVERSE, universe.id, universe.name)
                 val bundle = Bundle().apply { putLong("universeId", universe.id) }
@@ -176,11 +176,17 @@ class UniverseListFragment : Fragment() {
         }
     }
 
+    /** 최신 사용자 프리셋 데이터 — observe 패턴 */
+    private var cachedUserPresets: List<com.novelcharacter.app.data.model.UserPresetTemplate> = emptyList()
+
     private fun showPresetDialog() {
         val builtInTemplates = viewModel.getPresetTemplates()
-        val userPresets = viewModel.userPresets.value ?: emptyList()
-        val userTemplates = userPresets.map { PresetTemplates.fromUserPreset(it) }
+        val userPresetList = cachedUserPresets
+        val userTemplates = userPresetList.map { PresetTemplates.fromUserPreset(it) }
         val allTemplates = builtInTemplates + userTemplates
+
+        // 각 템플릿에 원본 UserPresetTemplate을 직접 매핑
+        val presetByTemplateId = userPresetList.associateBy { it.id }
 
         val names = allTemplates.map { t ->
             val prefix = if (t.isBuiltIn) "[기본] " else "[사용자] "
@@ -194,8 +200,11 @@ class UniverseListFragment : Fragment() {
                 if (template.isBuiltIn) {
                     viewModel.applyPreset(template)
                 } else {
-                    // 사용자 프리셋: 적용/편집/삭제 선택
-                    showUserPresetOptionsDialog(template, userPresets[which - builtInTemplates.size])
+                    // userPresetId로 직접 참조 — 인덱스 계산 불필요
+                    val preset = template.userPresetId?.let { presetByTemplateId[it] }
+                    if (preset != null) {
+                        showUserPresetOptionsDialog(template, preset)
+                    }
                 }
             }
             .setNeutralButton(R.string.preset_save_current, null)
@@ -345,6 +354,11 @@ class UniverseListFragment : Fragment() {
                     Toast.LENGTH_SHORT
                 ).show()
             }
+        }
+
+        // 사용자 프리셋 캐시 (observe 패턴)
+        viewModel.userPresets.observe(viewLifecycleOwner) { presets ->
+            cachedUserPresets = presets ?: emptyList()
         }
 
         // Recent activities cards
@@ -565,16 +579,13 @@ class UniverseListFragment : Fragment() {
         }
         layout.addView(imageModeSpinner)
 
+        lastSavedImagePath = null
         val imageSelectBtn = TextView(ctx).apply {
             text = if (selectedImagePath.isNotBlank()) getString(R.string.image_change) else getString(R.string.image_select)
             setTextColor(ctx.getColor(R.color.primary))
             setPadding(0, (8 * dp).toInt(), 0, (8 * dp).toInt())
             visibility = if (selectedImageMode == Universe.IMAGE_MODE_CUSTOM) View.VISIBLE else View.GONE
             setOnClickListener {
-                pendingImageCallback = { path ->
-                    selectedImagePath = path
-                    text = getString(R.string.image_selected)
-                }
                 imagePickerLauncher.launch("image/*")
             }
         }
@@ -595,16 +606,17 @@ class UniverseListFragment : Fragment() {
                 val name = nameEdit.text.toString().trim()
                 val desc = descEdit.text.toString().trim()
                 val borderColor = colorHexEdit.text.toString().trim()
+                val finalImagePath = lastSavedImagePath ?: selectedImagePath
                 if (name.isNotEmpty()) {
                     if (universe == null) {
                         viewModel.insertUniverse(Universe(
                             name = name, description = desc, borderColor = borderColor,
-                            imagePath = selectedImagePath, imageMode = selectedImageMode
+                            imagePath = finalImagePath, imageMode = selectedImageMode
                         ))
                     } else {
                         viewModel.updateUniverse(universe.copy(
                             name = name, description = desc, borderColor = borderColor,
-                            imagePath = selectedImagePath, imageMode = selectedImageMode
+                            imagePath = finalImagePath, imageMode = selectedImageMode
                         ))
                     }
                 }
