@@ -122,11 +122,11 @@ class CharacterEditFragment : Fragment() {
 
     private suspend fun loadNovels() {
         novels = viewModel.getAllNovelsList()
-        if (_binding == null) return
+        if (_binding == null || !isAdded) return
         val novelNames = mutableListOf(getString(R.string.no_novel_selected))
         novelNames.addAll(novels.map { it.title })
 
-        val ctx = requireContext()
+        val ctx = context ?: return
         val adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item, novelNames)
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         binding.spinnerNovel.adapter = adapter
@@ -146,11 +146,13 @@ class CharacterEditFragment : Fragment() {
                     } else {
                         fieldDefinitions = emptyList()
                     }
+                    if (_binding == null) return@launch
                     buildDynamicForm()
 
                     // 기존 캐릭터 편집 시, 필드 값 채우기
-                    if (existingCharacter != null) {
-                        loadFieldValues(existingCharacter!!.id)
+                    val existing = existingCharacter
+                    if (existing != null) {
+                        loadFieldValues(existing.id)
                     }
                 }
             }

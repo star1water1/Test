@@ -63,8 +63,12 @@ class NovelCharacterApp : Application() {
             ThemeHelper.migrateCacheIfNeeded(this@NovelCharacterApp)
         }
         createNotificationChannel()
-        scheduleBirthdayCheck()
-        scheduleAutoBackup()
+        try {
+            scheduleBirthdayCheck()
+            scheduleAutoBackup()
+        } catch (e: Exception) {
+            android.util.Log.e("NovelCharacterApp", "Failed to schedule background workers", e)
+        }
     }
 
     private fun createNotificationChannel() {

@@ -25,7 +25,9 @@ object BackupEncryptor {
         val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
 
         keyStore.getEntry(KEYSTORE_ALIAS, null)?.let { entry ->
-            return (entry as KeyStore.SecretKeyEntry).secretKey
+            if (entry is KeyStore.SecretKeyEntry) {
+                return entry.secretKey
+            }
         }
 
         val keyGenerator = KeyGenerator.getInstance(
