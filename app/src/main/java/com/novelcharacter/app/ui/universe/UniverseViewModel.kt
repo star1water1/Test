@@ -13,6 +13,7 @@ import com.novelcharacter.app.data.model.RecentActivity
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.util.PresetTemplates
 import android.util.Log
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 class UniverseViewModel(application: Application) : AndroidViewModel(application) {
@@ -31,10 +32,15 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
     private val _universeFieldCounts = MutableLiveData<Map<Long, Int>>()
     val universeFieldCounts: LiveData<Map<Long, Int>> = _universeFieldCounts
 
-    fun loadCounts(universes: List<Universe>) = viewModelScope.launch {
-        val ids = universes.map { it.id }
-        _universeNovelCounts.value = universeRepository.getNovelCountsByUniverses(ids)
-        _universeFieldCounts.value = universeRepository.getFieldCountsByUniverses(ids)
+    private var loadCountsJob: Job? = null
+
+    fun loadCounts(universes: List<Universe>) {
+        loadCountsJob?.cancel()
+        loadCountsJob = viewModelScope.launch {
+            val ids = universes.map { it.id }
+            _universeNovelCounts.value = universeRepository.getNovelCountsByUniverses(ids)
+            _universeFieldCounts.value = universeRepository.getFieldCountsByUniverses(ids)
+        }
     }
 
     fun insertUniverse(universe: Universe) = viewModelScope.launch {

@@ -159,14 +159,14 @@ class FormulaEvaluator(
             when (token) {
                 is Token.Num -> stack.addLast(token.value)
                 is Token.Op -> {
-                    if (stack.size < 2) return 0.0
+                    if (stack.size < 2) return Double.NaN
                     val b = stack.removeLast()
                     val a = stack.removeLast()
                     stack.addLast(when (token.op) {
                         '+' -> a + b
                         '-' -> a - b
                         '*' -> a * b
-                        '/' -> if (b != 0.0) a / b else 0.0
+                        '/' -> if (b != 0.0) a / b else Double.NaN
                         else -> 0.0
                     })
                 }
