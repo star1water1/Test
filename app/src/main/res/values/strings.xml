@@ -289,6 +289,9 @@
     <!-- Another name -->
     <string name="another_name">이명</string>
     <string name="hint_another_name">이명 / 별칭</string>
+    <string name="hint_another_name_helper">콤마(,)로 구분하여 여러 개 입력 가능</string>
+    <string name="hint_first_name">이름 (First Name)</string>
+    <string name="hint_last_name">성 (Last Name)</string>
 
     <!-- Image viewer -->
     <string name="image_viewer">이미지 보기</string>
@@ -517,7 +520,8 @@
     <string name="stats_field_completion_by_group">그룹별 필드 완성도</string>
     <string name="stats_memo_another_name">메모 · 별명 통계</string>
     <string name="stats_memo_detail">메모 작성: %d/%d명 (평균 %d자)</string>
-    <string name="stats_another_name_rate">별명 보유율: %.0f%%</string>
+    <string name="stats_another_name_rate">별명 보유율: %.0f%% (총 별칭 %d개)</string>
+    <string name="stats_last_name_distribution">성씨 분포</string>
 
     <!-- Stats: 사건 확장 -->
     <string name="stats_narrative_density">서사 밀도 곡선</string>

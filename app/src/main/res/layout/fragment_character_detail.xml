@@ -176,15 +176,22 @@
                     android:textStyle="bold"
                     android:textColor="@color/on_surface" />
 
-                <!-- Another name -->
+                <!-- First Name / Last Name subtitle -->
                 <TextView
-                    android:id="@+id/detailAnotherName"
+                    android:id="@+id/detailFullName"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="2dp"
-                    android:textSize="15sp"
+                    android:textSize="14sp"
                     android:textColor="@color/text_secondary"
-                    android:textStyle="italic"
+                    android:visibility="gone" />
+
+                <!-- Aliases (chips) -->
+                <com.google.android.material.chip.ChipGroup
+                    android:id="@+id/aliasChipGroup"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
                     android:visibility="gone" />
 
                 <!-- Novel name -->

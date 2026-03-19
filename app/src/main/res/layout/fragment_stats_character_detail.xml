@@ -220,6 +220,23 @@
                 android:textColor="@color/on_surface"
                 android:layout_marginBottom="@dimen/stats_margin_lg" />
 
+            <!-- 성씨 분포 -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/stats_last_name_distribution"
+                android:textSize="@dimen/stats_text_heading"
+                android:textStyle="bold"
+                android:textColor="@color/primary"
+                android:layout_marginBottom="@dimen/stats_margin_sm" />
+
+            <LinearLayout
+                android:id="@+id/listLastNameDist"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:layout_marginBottom="@dimen/stats_margin_lg" />
+
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>
 </androidx.constraintlayout.widget.ConstraintLayout>

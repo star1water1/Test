@@ -14,6 +14,7 @@ import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.novelcharacter.app.util.navigateSafe
 import androidx.recyclerview.widget.RecyclerView
+import com.google.android.material.chip.Chip
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.novelcharacter.app.R
@@ -152,11 +153,30 @@ class CharacterDetailFragment : Fragment() {
 
         binding.detailName.text = character.name
 
-        if (character.anotherName.isNotBlank()) {
-            binding.detailAnotherName.visibility = View.VISIBLE
-            binding.detailAnotherName.text = character.anotherName
+        // firstName/lastName 표시
+        if (character.firstName.isNotBlank() || character.lastName.isNotBlank()) {
+            binding.detailFullName.visibility = View.VISIBLE
+            val parts = listOf(character.lastName, character.firstName).filter { it.isNotBlank() }
+            binding.detailFullName.text = parts.joinToString(" ")
         } else {
-            binding.detailAnotherName.visibility = View.GONE
+            binding.detailFullName.visibility = View.GONE
+        }
+
+        // 별칭 칩 표시
+        val aliases = character.aliases
+        if (aliases.isNotEmpty()) {
+            binding.aliasChipGroup.visibility = View.VISIBLE
+            binding.aliasChipGroup.removeAllViews()
+            for (alias in aliases) {
+                val chip = Chip(requireContext()).apply {
+                    text = alias
+                    isClickable = false
+                    isCheckable = false
+                }
+                binding.aliasChipGroup.addView(chip)
+            }
+        } else {
+            binding.aliasChipGroup.visibility = View.GONE
         }
 
         viewLifecycleOwner.lifecycleScope.launch {

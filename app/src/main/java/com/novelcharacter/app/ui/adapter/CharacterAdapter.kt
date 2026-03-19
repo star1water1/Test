@@ -153,9 +153,9 @@ class CharacterAdapter(
                 character.name
             }
 
-            // anotherName subtitle
-            if (showAnotherName && character.anotherName.isNotBlank()) {
-                binding.characterSubName.text = character.anotherName
+            // anotherName subtitle (aliases joined)
+            if (showAnotherName && character.aliases.isNotEmpty()) {
+                binding.characterSubName.text = character.aliases.joinToString(", ")
                 binding.characterSubName.visibility = View.VISIBLE
             } else {
                 binding.characterSubName.visibility = View.GONE

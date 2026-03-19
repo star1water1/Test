@@ -79,7 +79,11 @@ class StatsCharacterDetailFragment : Fragment() {
             val memo = stats.memoStats
             binding.textMemoStats.text = getString(R.string.stats_memo_detail,
                 memo.withMemo, memo.withMemo + memo.withoutMemo, memo.avgMemoLength.toInt())
-            binding.textAnotherNameRate.text = getString(R.string.stats_another_name_rate, stats.anotherNameRate)
+            binding.textAnotherNameRate.text = getString(R.string.stats_another_name_rate,
+                stats.anotherNameRate, stats.totalAliasCount)
+
+            // 성씨 분포
+            populateList(binding.listLastNameDist, stats.lastNameDistribution)
         }
     }
 

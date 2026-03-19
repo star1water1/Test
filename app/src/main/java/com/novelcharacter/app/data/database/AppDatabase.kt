@@ -55,7 +55,7 @@ import com.novelcharacter.app.data.model.Universe
         SearchPreset::class,
         UserPresetTemplate::class
     ],
-    version = 14,
+    version = 15,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -553,6 +553,21 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Migration from version 14 to 15:
+         * - Added firstName, lastName columns to characters for name splitting
+         */
+        private val MIGRATION_14_15 = object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "Migrating database from version 14 to 15")
+
+                db.execSQL("ALTER TABLE `characters` ADD COLUMN `firstName` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `characters` ADD COLUMN `lastName` TEXT NOT NULL DEFAULT ''")
+
+                Log.i(TAG, "Migration from version 14 to 15 completed successfully")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -560,7 +575,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "novel_character_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15)
                     .build()
                     .also { INSTANCE = it }
             }

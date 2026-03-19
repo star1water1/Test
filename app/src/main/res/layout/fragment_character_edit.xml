@@ -56,12 +56,53 @@
 
             </com.google.android.material.textfield.TextInputLayout>
 
-            <!-- Another name input -->
+            <!-- First name / Last name row -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginBottom="8dp">
+
+                <com.google.android.material.textfield.TextInputLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="4dp"
+                    android:hint="@string/hint_last_name">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/editLastName"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="text" />
+
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <com.google.android.material.textfield.TextInputLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="4dp"
+                    android:hint="@string/hint_first_name">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/editFirstName"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="text" />
+
+                </com.google.android.material.textfield.TextInputLayout>
+
+            </LinearLayout>
+
+            <!-- Another name input (comma-separated aliases) -->
             <com.google.android.material.textfield.TextInputLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="8dp"
-                android:hint="@string/hint_another_name">
+                android:hint="@string/hint_another_name"
+                app:helperTextEnabled="true"
+                app:helperText="@string/hint_another_name_helper">
 
                 <com.google.android.material.textfield.TextInputEditText
                     android:id="@+id/editAnotherName"

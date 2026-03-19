@@ -92,13 +92,18 @@ class GlobalSearchViewModel(application: Application) : AndroidViewModel(applica
                     else -> chars.sortedByDescending { c ->
                         val name = c.name.lowercase()
                         val alias = c.anotherName.lowercase()
+                        val first = c.firstName.lowercase()
+                        val last = c.lastName.lowercase()
                         when {
                             name == q -> 100
                             name.startsWith(q) -> 80
+                            last == q || first == q -> 75
                             alias == q -> 70
                             alias.startsWith(q) -> 60
+                            last.startsWith(q) || first.startsWith(q) -> 55
                             name.contains(q) -> 40
                             alias.contains(q) -> 30
+                            first.contains(q) || last.contains(q) -> 25
                             else -> 10
                         }
                     }

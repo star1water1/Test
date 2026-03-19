@@ -180,6 +180,8 @@ class CharacterEditFragment : Fragment() {
 
     private fun fillForm(character: Character) {
         binding.editName.setText(character.name)
+        binding.editFirstName.setText(character.firstName)
+        binding.editLastName.setText(character.lastName)
         binding.editAnotherName.setText(character.anotherName)
 
         // 작품 선택
@@ -676,11 +678,15 @@ class CharacterEditFragment : Fragment() {
 
             val memo = binding.editMemo.text.toString()
 
+            val firstName = binding.editFirstName.text.toString().trim()
+            val lastName = binding.editLastName.text.toString().trim()
             val anotherName = binding.editAnotherName.text.toString().trim()
 
             val character = Character(
                 id = if (characterId != -1L) characterId else 0,
                 name = name,
+                firstName = firstName,
+                lastName = lastName,
                 anotherName = anotherName,
                 novelId = selectedNovelId,
                 imagePaths = gson.toJson(imagePaths),

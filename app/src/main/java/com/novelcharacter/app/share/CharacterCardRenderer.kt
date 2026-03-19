@@ -91,15 +91,27 @@ class CharacterCardRenderer(private val context: Context) {
         canvas.drawText(character.name, w / 2f, yOffset + 42f, namePaint)
         yOffset += 52f
 
-        // Another name
-        if (character.anotherName.isNotBlank()) {
+        // Full name (firstName + lastName)
+        if (character.firstName.isNotBlank() || character.lastName.isNotBlank()) {
             val subPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = colors.textSecondary
                 textSize = 24f
                 textAlign = Paint.Align.CENTER
             }
-            canvas.drawText(character.anotherName, w / 2f, yOffset + 24f, subPaint)
+            val fullName = listOf(character.lastName, character.firstName).filter { it.isNotBlank() }.joinToString(" ")
+            canvas.drawText(fullName, w / 2f, yOffset + 24f, subPaint)
             yOffset += 34f
+        }
+
+        // Aliases
+        if (character.aliases.isNotEmpty()) {
+            val aliasPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = colors.textSecondary
+                textSize = 20f
+                textAlign = Paint.Align.CENTER
+            }
+            canvas.drawText(character.aliases.joinToString(", "), w / 2f, yOffset + 22f, aliasPaint)
+            yOffset += 30f
         }
 
         // Separator

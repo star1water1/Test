@@ -565,6 +565,12 @@ class ExcelExporter(context: Context) {
             // 이름
             row.createCell(col++).setCellValue(character.name)
 
+            // 성
+            row.createCell(col++).setCellValue(character.lastName)
+
+            // 이름(First)
+            row.createCell(col++).setCellValue(character.firstName)
+
             // 이명
             row.createCell(col++).setCellValue(character.anotherName)
 

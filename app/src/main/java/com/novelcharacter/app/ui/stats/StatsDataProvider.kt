@@ -50,7 +50,9 @@ data class CharacterStats(
     val fieldCompletionByGroup: Map<String, Float>,
     val complexityScores: List<CharacterComplexity>,
     val memoStats: MemoUsageStats,
-    val anotherNameRate: Float // 별명 보유율 (%)
+    val anotherNameRate: Float, // 별명 보유율 (%)
+    val totalAliasCount: Int = 0,
+    val lastNameDistribution: List<Pair<String, Int>> = emptyList()
 )
 
 data class CharacterComplexity(
@@ -360,6 +362,18 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
             s.characters.count { it.anotherName.isNotBlank() }.toFloat() / s.characters.size * 100f
         } else 0f
 
+        // 총 별칭 개수
+        val totalAliasCount = s.characters.sumOf { it.aliases.size }
+
+        // 성씨 분포 (lastName 기반)
+        val lastNameDist = s.characters
+            .filter { it.lastName.isNotBlank() }
+            .groupBy { it.lastName }
+            .mapValues { it.value.size }
+            .toList()
+            .sortedByDescending { it.second }
+            .take(10)
+
         return CharacterStats(
             tagDistribution = tagDist,
             novelCharacterCounts = novelCharCounts,
@@ -371,7 +385,9 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
             fieldCompletionByGroup = fieldCompletionByGroup,
             complexityScores = complexityScores,
             memoStats = MemoUsageStats(withMemo, s.characters.size - withMemo, avgMemoLen),
-            anotherNameRate = anotherNameRate
+            anotherNameRate = anotherNameRate,
+            totalAliasCount = totalAliasCount,
+            lastNameDistribution = lastNameDist
         )
     }
 

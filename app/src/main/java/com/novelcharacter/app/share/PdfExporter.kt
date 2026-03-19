@@ -133,8 +133,13 @@ class PdfExporter(private val context: Context) {
                 for (char in characters) {
                     append("<div class='profile-card'>")
                     append("<div class='profile-name'>${escHtml(char.name)}</div>")
+                    if (char.firstName.isNotBlank() || char.lastName.isNotBlank()) {
+                        val fullName = listOf(char.lastName, char.firstName).filter { it.isNotBlank() }.joinToString(" ")
+                        append("<div class='profile-sub'>${escHtml(fullName)}</div>")
+                    }
                     if (char.anotherName.isNotBlank()) {
-                        append("<div class='profile-sub'>${escHtml(char.anotherName)}</div>")
+                        val aliasHtml = char.aliases.joinToString(" ") { "<span class='alias-tag'>${escHtml(it)}</span>" }
+                        append("<div class='profile-sub'>$aliasHtml</div>")
                     }
 
                     // Field values (ordered by field displayOrder)

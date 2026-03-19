@@ -225,8 +225,8 @@ class AutoBackupWorker(
         val sheetName = sanitizeSheetName(sheetLabel, usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
 
-        // Build headers: 이름, 이명, [dynamic fields...], 이미지경로, 작품, 메모, 태그, 코드, 작품코드, 정렬순서
-        val headers = mutableListOf("이름", "이명")
+        // Build headers: 이름, 성, 이름(First), 이명, [dynamic fields...], 이미지경로, 작품, 메모, 태그, 코드, 작품코드, 정렬순서
+        val headers = mutableListOf("이름", "성", "이름(First)", "이명")
         fields.forEach { headers.add(it.name) }
         headers.addAll(listOf("이미지경로", "작품", "메모", "태그", "코드", "작품코드", "정렬순서"))
 
@@ -243,6 +243,8 @@ class AutoBackupWorker(
             var col = 0
 
             row.createCell(col++).setCellValue(c.name)
+            row.createCell(col++).setCellValue(c.lastName)
+            row.createCell(col++).setCellValue(c.firstName)
             row.createCell(col++).setCellValue(c.anotherName)
             for (field in fields) {
                 row.createCell(col++).setCellValue(fieldValueMap[field.id]?.value ?: "")

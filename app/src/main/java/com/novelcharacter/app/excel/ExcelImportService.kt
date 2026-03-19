@@ -79,6 +79,8 @@ class ExcelImportService(private val db: AppDatabase) {
         alias("세계관", "universe")
         alias("세계관코드", "universe_code")
         alias("이명", "another_name", "별칭", "alias")
+        alias("성", "last_name", "lastName", "family_name")
+        alias("이름(First)", "first_name", "firstName", "given_name")
         alias("이미지경로", "image_path", "이미지 경로", "image_file")
         alias("이미지모드", "image_mode", "이미지 모드")
         alias("이미지캐릭터ID", "image_character_id", "이미지 캐릭터 ID")
@@ -521,6 +523,8 @@ class ExcelImportService(private val db: AppDatabase) {
         val cols = resolveHeaderColumns(headerRow)
         val nameColIndex = cols["이름"] ?: 0
         val anotherNameColIndex = cols["이명"] ?: -1
+        val lastNameColIndex = cols["성"] ?: -1
+        val firstNameColIndex = cols["이름(First)"] ?: -1
         val imageColIndex = cols["이미지경로"] ?: -1
         val novelColIndex = cols["작품"] ?: -1
         val memoColIndex = cols["메모"] ?: -1
@@ -528,7 +532,7 @@ class ExcelImportService(private val db: AppDatabase) {
         val codeColIndex = cols["코드"] ?: -1
         val novelCodeColIndex = cols["작품코드"] ?: -1
         val orderColIndex = cols["정렬순서"] ?: -1
-        val fixedColIndices = setOf(nameColIndex, anotherNameColIndex, imageColIndex, novelColIndex, memoColIndex, tagsColIndex, codeColIndex, novelCodeColIndex, orderColIndex).filter { it >= 0 }.toSet()
+        val fixedColIndices = setOf(nameColIndex, anotherNameColIndex, lastNameColIndex, firstNameColIndex, imageColIndex, novelColIndex, memoColIndex, tagsColIndex, codeColIndex, novelCodeColIndex, orderColIndex).filter { it >= 0 }.toSet()
         val columnFieldMap = buildColumnFieldMap(headerRow, fields, fixedColIndices)
 
         val codesSeen = mutableMapOf<String, Int>()
@@ -563,6 +567,8 @@ class ExcelImportService(private val db: AppDatabase) {
                     }
 
                 val anotherName = if (anotherNameColIndex >= 0) getCellString(row, anotherNameColIndex) else ""
+                val lastName = if (lastNameColIndex >= 0) getCellString(row, lastNameColIndex) else ""
+                val firstName = if (firstNameColIndex >= 0) getCellString(row, firstNameColIndex) else ""
                 // imageColIndex < 0 means column is missing: use null sentinel to preserve existing images
                 val imagePathsFromExcel: String? = if (imageColIndex >= 0) getCellString(row, imageColIndex).ifBlank { "[]" } else null
                 val memo = if (memoColIndex >= 0) getCellString(row, memoColIndex) else ""
@@ -591,6 +597,8 @@ class ExcelImportService(private val db: AppDatabase) {
                     charId = existingChar.id
                     db.characterDao().update(existingChar.copy(
                         name = name,
+                        firstName = firstName,
+                        lastName = lastName,
                         anotherName = anotherName,
                         novelId = novelId,
                         imagePaths = imagePathsFromExcel ?: existingChar.imagePaths,
@@ -603,7 +611,8 @@ class ExcelImportService(private val db: AppDatabase) {
                     val newCode = if (code.isNotBlank()) code else generateEntityCode()
                     if (code.isBlank()) result.newCodesGenerated++
                     charId = db.characterDao().insert(Character(
-                        name = name, anotherName = anotherName, novelId = novelId,
+                        name = name, firstName = firstName, lastName = lastName,
+                        anotherName = anotherName, novelId = novelId,
                         imagePaths = imagePathsFromExcel ?: "[]", memo = memo, code = newCode, displayOrder = displayOrder
                     ))
                     result.newCharacters++
