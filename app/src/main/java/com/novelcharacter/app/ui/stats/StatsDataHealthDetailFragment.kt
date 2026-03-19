@@ -10,19 +10,16 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
-import androidx.lifecycle.lifecycleScope
+import androidx.fragment.app.activityViewModels
 import androidx.navigation.fragment.findNavController
-import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.R
 import com.novelcharacter.app.databinding.FragmentStatsDataHealthDetailBinding
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 class StatsDataHealthDetailFragment : Fragment() {
 
     private var _binding: FragmentStatsDataHealthDetailBinding? = null
     private val binding get() = _binding!!
+    private val viewModel: StatsViewModel by activityViewModels()
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
@@ -34,53 +31,36 @@ class StatsDataHealthDetailFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         binding.toolbar.setNavigationOnClickListener { findNavController().popBackStack() }
-        loadData()
+        setupObservers()
+        viewModel.loadDataHealthStats()
     }
 
-    private fun loadData() {
-        binding.loadingProgress.visibility = View.VISIBLE
-        binding.contentLayout.visibility = View.GONE
+    private fun setupObservers() {
+        viewModel.loading.observe(viewLifecycleOwner) { isLoading ->
+            binding.loadingProgress.visibility = if (isLoading) View.VISIBLE else View.GONE
+            binding.contentLayout.visibility = if (isLoading) View.GONE else View.VISIBLE
+        }
 
-        viewLifecycleOwner.lifecycleScope.launch {
-            try {
-                val app = requireActivity().application as NovelCharacterApp
-                val provider = StatsDataProvider(app)
-                val snapshot = withContext(Dispatchers.IO) { provider.loadSnapshot() }
-                val stats = withContext(Dispatchers.IO) { provider.computeDataHealth(snapshot) }
-
-                if (!isAdded) return@launch
-
-                binding.loadingProgress.visibility = View.GONE
-                binding.contentLayout.visibility = View.VISIBLE
-
-                // No-image characters
-                binding.textNoImageCount.text = "${stats.noImageChars.size}명"
-                populateSimpleList(binding.listNoImage, stats.noImageChars)
-
-                // Incomplete fields
-                populateIncompleteList(binding.listIncompleteFields, stats.incompleteFieldChars)
-
-                // Isolated characters
-                populateSimpleList(binding.listIsolated, stats.isolatedChars)
-
-                // Unlinked characters
-                populateSimpleList(binding.listUnlinked, stats.unlinkedChars)
-
-                // Duplicate tags
-                populateSimpleList(binding.listDuplicateTags, stats.duplicateTags)
-            } catch (e: Exception) {
-                if (isAdded) {
-                    binding.loadingProgress.visibility = View.GONE
-                    Toast.makeText(requireContext(), R.string.stats_load_error, Toast.LENGTH_SHORT).show()
-                }
+        viewModel.error.observe(viewLifecycleOwner) { error ->
+            if (error != null) {
+                Toast.makeText(requireContext(), R.string.stats_load_error, Toast.LENGTH_SHORT).show()
             }
+        }
+
+        viewModel.dataHealthStats.observe(viewLifecycleOwner) { stats ->
+            binding.textNoImageCount.text = "${stats.noImageChars.size}명"
+            populateSimpleList(binding.listNoImage, stats.noImageChars)
+            populateIncompleteList(binding.listIncompleteFields, stats.incompleteFieldChars)
+            populateSimpleList(binding.listIsolated, stats.isolatedChars)
+            populateSimpleList(binding.listUnlinked, stats.unlinkedChars)
+            populateSimpleList(binding.listDuplicateTags, stats.duplicateTags)
         }
     }
 
     private fun populateSimpleList(container: LinearLayout, items: List<String>) {
         container.removeAllViews()
         if (items.isEmpty()) {
-            container.addView(makeTextView("--"))
+            container.addView(makeEmptyTextView())
             return
         }
         items.forEach { name ->
@@ -91,7 +71,7 @@ class StatsDataHealthDetailFragment : Fragment() {
     private fun populateIncompleteList(container: LinearLayout, items: List<Pair<String, Float>>) {
         container.removeAllViews()
         if (items.isEmpty()) {
-            container.addView(makeTextView("--"))
+            container.addView(makeEmptyTextView())
             return
         }
         val marginSm = resources.getDimensionPixelSize(R.dimen.stats_margin_sm)
@@ -118,6 +98,10 @@ class StatsDataHealthDetailFragment : Fragment() {
             row.addView(progress)
             container.addView(row)
         }
+    }
+
+    private fun makeEmptyTextView(): TextView {
+        return makeTextView(getString(R.string.stats_no_data))
     }
 
     private fun makeTextView(text: String): TextView {

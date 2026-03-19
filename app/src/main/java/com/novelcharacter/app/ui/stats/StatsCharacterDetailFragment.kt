@@ -11,9 +11,8 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
-import androidx.lifecycle.lifecycleScope
+import androidx.fragment.app.activityViewModels
 import androidx.navigation.fragment.findNavController
-import com.github.mikephil.charting.charts.HorizontalBarChart
 import com.github.mikephil.charting.charts.PieChart
 import com.github.mikephil.charting.components.XAxis
 import com.github.mikephil.charting.data.BarData
@@ -25,17 +24,14 @@ import com.github.mikephil.charting.data.PieEntry
 import com.github.mikephil.charting.formatter.IndexAxisValueFormatter
 import com.github.mikephil.charting.formatter.PercentFormatter
 import com.github.mikephil.charting.utils.ColorTemplate
-import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.R
 import com.novelcharacter.app.databinding.FragmentStatsCharacterDetailBinding
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 class StatsCharacterDetailFragment : Fragment() {
 
     private var _binding: FragmentStatsCharacterDetailBinding? = null
     private val binding get() = _binding!!
+    private val viewModel: StatsViewModel by activityViewModels()
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
@@ -47,37 +43,29 @@ class StatsCharacterDetailFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         binding.toolbar.setNavigationOnClickListener { findNavController().popBackStack() }
-        loadData()
+        setupObservers()
+        viewModel.loadCharacterStats()
     }
 
-    private fun loadData() {
-        binding.loadingProgress.visibility = View.VISIBLE
-        binding.contentLayout.visibility = View.GONE
+    private fun setupObservers() {
+        viewModel.loading.observe(viewLifecycleOwner) { isLoading ->
+            binding.loadingProgress.visibility = if (isLoading) View.VISIBLE else View.GONE
+            binding.contentLayout.visibility = if (isLoading) View.GONE else View.VISIBLE
+        }
 
-        viewLifecycleOwner.lifecycleScope.launch {
-            try {
-                val app = requireActivity().application as NovelCharacterApp
-                val provider = StatsDataProvider(app)
-                val snapshot = withContext(Dispatchers.IO) { provider.loadSnapshot() }
-                val stats = withContext(Dispatchers.IO) { provider.computeCharacterStats(snapshot) }
-
-                if (!isAdded) return@launch
-
-                binding.loadingProgress.visibility = View.GONE
-                binding.contentLayout.visibility = View.VISIBLE
-
-                setupTagPieChart(stats.tagDistribution)
-                setupNovelCharBarChart(stats.novelCharacterCounts)
-                setupRelTypePieChart(stats.relationshipTypeDist)
-                populateList(binding.listTopRelChars, stats.topRelationshipChars)
-                populateList(binding.listTopEventChars, stats.topEventLinkedChars)
-                populateFieldCompletionList(stats.fieldCompletionRates)
-            } catch (e: Exception) {
-                if (isAdded) {
-                    binding.loadingProgress.visibility = View.GONE
-                    Toast.makeText(requireContext(), R.string.stats_load_error, Toast.LENGTH_SHORT).show()
-                }
+        viewModel.error.observe(viewLifecycleOwner) { error ->
+            if (error != null) {
+                Toast.makeText(requireContext(), R.string.stats_load_error, Toast.LENGTH_SHORT).show()
             }
+        }
+
+        viewModel.characterStats.observe(viewLifecycleOwner) { stats ->
+            setupTagPieChart(stats.tagDistribution)
+            setupNovelCharBarChart(stats.novelCharacterCounts)
+            setupRelTypePieChart(stats.relationshipTypeDist)
+            populateList(binding.listTopRelChars, stats.topRelationshipChars)
+            populateList(binding.listTopEventChars, stats.topEventLinkedChars)
+            populateFieldCompletionList(stats.fieldCompletionRates)
         }
     }
 
@@ -102,6 +90,7 @@ class StatsCharacterDetailFragment : Fragment() {
             description.isEnabled = false
             isDrawHoleEnabled = true
             holeRadius = 40f
+            applyDarkModeHole(this)
             setUsePercentValues(true)
             legend.isEnabled = true
             legend.textColor = ContextCompat.getColor(ctx, R.color.on_surface)
@@ -164,6 +153,7 @@ class StatsCharacterDetailFragment : Fragment() {
             description.isEnabled = false
             isDrawHoleEnabled = true
             holeRadius = 40f
+            applyDarkModeHole(this)
             setUsePercentValues(true)
             legend.isEnabled = true
             legend.textColor = ContextCompat.getColor(ctx, R.color.on_surface)
@@ -177,7 +167,7 @@ class StatsCharacterDetailFragment : Fragment() {
     private fun populateList(container: LinearLayout, items: List<Pair<String, Int>>) {
         container.removeAllViews()
         if (items.isEmpty()) {
-            container.addView(makeTextView("--"))
+            container.addView(makeEmptyTextView())
             return
         }
         items.forEachIndexed { index, (name, count) ->
@@ -189,7 +179,7 @@ class StatsCharacterDetailFragment : Fragment() {
         val container = binding.listFieldCompletion
         container.removeAllViews()
         if (items.isEmpty()) {
-            container.addView(makeTextView("--"))
+            container.addView(makeEmptyTextView())
             return
         }
         val marginSm = resources.getDimensionPixelSize(R.dimen.stats_margin_sm)
@@ -218,6 +208,10 @@ class StatsCharacterDetailFragment : Fragment() {
         }
     }
 
+    private fun makeEmptyTextView(): TextView {
+        return makeTextView(getString(R.string.stats_no_data))
+    }
+
     private fun makeTextView(text: String): TextView {
         val textSizeSp = resources.getDimension(R.dimen.stats_text_body_sm) / resources.displayMetrics.scaledDensity
         val marginXs = resources.getDimensionPixelSize(R.dimen.stats_margin_xs)
@@ -232,6 +226,11 @@ class StatsCharacterDetailFragment : Fragment() {
             lp.bottomMargin = marginXs
             layoutParams = lp
         }
+    }
+
+    private fun applyDarkModeHole(chart: PieChart) {
+        chart.setHoleColor(ContextCompat.getColor(requireContext(), R.color.surface))
+        chart.setTransparentCircleColor(ContextCompat.getColor(requireContext(), R.color.surface))
     }
 
     private fun chartColors(): List<Int> {

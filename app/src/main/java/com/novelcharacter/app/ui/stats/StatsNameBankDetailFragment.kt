@@ -8,8 +8,9 @@ import android.view.ViewGroup
 import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
-import androidx.lifecycle.lifecycleScope
+import androidx.fragment.app.activityViewModels
 import androidx.navigation.fragment.findNavController
+import com.github.mikephil.charting.charts.PieChart
 import com.github.mikephil.charting.components.XAxis
 import com.github.mikephil.charting.data.BarData
 import com.github.mikephil.charting.data.BarDataSet
@@ -20,17 +21,14 @@ import com.github.mikephil.charting.data.PieEntry
 import com.github.mikephil.charting.formatter.IndexAxisValueFormatter
 import com.github.mikephil.charting.formatter.PercentFormatter
 import com.github.mikephil.charting.utils.ColorTemplate
-import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.R
 import com.novelcharacter.app.databinding.FragmentStatsNameBankDetailBinding
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 class StatsNameBankDetailFragment : Fragment() {
 
     private var _binding: FragmentStatsNameBankDetailBinding? = null
     private val binding get() = _binding!!
+    private val viewModel: StatsViewModel by activityViewModels()
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
@@ -42,37 +40,27 @@ class StatsNameBankDetailFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         binding.toolbar.setNavigationOnClickListener { findNavController().popBackStack() }
-        loadData()
+        setupObservers()
+        viewModel.loadNameBankStats()
     }
 
-    private fun loadData() {
-        binding.loadingProgress.visibility = View.VISIBLE
-        binding.contentLayout.visibility = View.GONE
+    private fun setupObservers() {
+        viewModel.loading.observe(viewLifecycleOwner) { isLoading ->
+            binding.loadingProgress.visibility = if (isLoading) View.VISIBLE else View.GONE
+            binding.contentLayout.visibility = if (isLoading) View.GONE else View.VISIBLE
+        }
 
-        viewLifecycleOwner.lifecycleScope.launch {
-            try {
-                val app = requireActivity().application as NovelCharacterApp
-                val provider = StatsDataProvider(app)
-                val snapshot = withContext(Dispatchers.IO) { provider.loadSnapshot() }
-                val stats = withContext(Dispatchers.IO) { provider.computeNameBankStats(snapshot) }
-
-                if (!isAdded) return@launch
-
-                binding.loadingProgress.visibility = View.GONE
-                binding.contentLayout.visibility = View.VISIBLE
-
-                // Usage rate
-                binding.textUsageRate.text = "${String.format("%.0f", stats.usageRate)}%"
-                binding.progressUsageRate.progress = stats.usageRate.toInt().coerceIn(0, 100)
-
-                setupGenderPieChart(stats.genderDistribution)
-                setupOriginBarChart(stats.originDistribution)
-            } catch (e: Exception) {
-                if (isAdded) {
-                    binding.loadingProgress.visibility = View.GONE
-                    Toast.makeText(requireContext(), R.string.stats_load_error, Toast.LENGTH_SHORT).show()
-                }
+        viewModel.error.observe(viewLifecycleOwner) { error ->
+            if (error != null) {
+                Toast.makeText(requireContext(), R.string.stats_load_error, Toast.LENGTH_SHORT).show()
             }
+        }
+
+        viewModel.nameBankStats.observe(viewLifecycleOwner) { stats ->
+            binding.textUsageRate.text = "${String.format("%.0f", stats.usageRate)}%"
+            binding.progressUsageRate.progress = stats.usageRate.toInt().coerceIn(0, 100)
+            setupGenderPieChart(stats.genderDistribution)
+            setupOriginBarChart(stats.originDistribution)
         }
     }
 
@@ -97,6 +85,7 @@ class StatsNameBankDetailFragment : Fragment() {
             description.isEnabled = false
             isDrawHoleEnabled = true
             holeRadius = 40f
+            applyDarkModeHole(this)
             setUsePercentValues(true)
             legend.isEnabled = true
             legend.textColor = ContextCompat.getColor(ctx, R.color.on_surface)
@@ -136,6 +125,11 @@ class StatsNameBankDetailFragment : Fragment() {
             animateY(600)
             invalidate()
         }
+    }
+
+    private fun applyDarkModeHole(chart: PieChart) {
+        chart.setHoleColor(ContextCompat.getColor(requireContext(), R.color.surface))
+        chart.setTransparentCircleColor(ContextCompat.getColor(requireContext(), R.color.surface))
     }
 
     private fun chartColors(): List<Int> {

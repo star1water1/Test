@@ -10,24 +10,22 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
-import androidx.lifecycle.lifecycleScope
+import androidx.fragment.app.activityViewModels
 import androidx.navigation.fragment.findNavController
+import com.github.mikephil.charting.charts.PieChart
 import com.github.mikephil.charting.data.PieData
 import com.github.mikephil.charting.data.PieDataSet
 import com.github.mikephil.charting.data.PieEntry
 import com.github.mikephil.charting.formatter.PercentFormatter
 import com.github.mikephil.charting.utils.ColorTemplate
-import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.R
 import com.novelcharacter.app.databinding.FragmentStatsRelationshipDetailBinding
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 class StatsRelationshipDetailFragment : Fragment() {
 
     private var _binding: FragmentStatsRelationshipDetailBinding? = null
     private val binding get() = _binding!!
+    private val viewModel: StatsViewModel by activityViewModels()
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
@@ -39,34 +37,26 @@ class StatsRelationshipDetailFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         binding.toolbar.setNavigationOnClickListener { findNavController().popBackStack() }
-        loadData()
+        setupObservers()
+        viewModel.loadRelationshipStats()
     }
 
-    private fun loadData() {
-        binding.loadingProgress.visibility = View.VISIBLE
-        binding.contentLayout.visibility = View.GONE
+    private fun setupObservers() {
+        viewModel.loading.observe(viewLifecycleOwner) { isLoading ->
+            binding.loadingProgress.visibility = if (isLoading) View.VISIBLE else View.GONE
+            binding.contentLayout.visibility = if (isLoading) View.GONE else View.VISIBLE
+        }
 
-        viewLifecycleOwner.lifecycleScope.launch {
-            try {
-                val app = requireActivity().application as NovelCharacterApp
-                val provider = StatsDataProvider(app)
-                val snapshot = withContext(Dispatchers.IO) { provider.loadSnapshot() }
-                val stats = withContext(Dispatchers.IO) { provider.computeRelationshipStats(snapshot) }
-
-                if (!isAdded) return@launch
-
-                binding.loadingProgress.visibility = View.GONE
-                binding.contentLayout.visibility = View.VISIBLE
-
-                setupTypePieChart(stats.typeDistribution)
-                populateRankedList(binding.listTopConnected, stats.topConnectedChars)
-                populateSimpleList(binding.listIsolated, stats.isolatedCharacters)
-            } catch (e: Exception) {
-                if (isAdded) {
-                    binding.loadingProgress.visibility = View.GONE
-                    Toast.makeText(requireContext(), R.string.stats_load_error, Toast.LENGTH_SHORT).show()
-                }
+        viewModel.error.observe(viewLifecycleOwner) { error ->
+            if (error != null) {
+                Toast.makeText(requireContext(), R.string.stats_load_error, Toast.LENGTH_SHORT).show()
             }
+        }
+
+        viewModel.relationshipStats.observe(viewLifecycleOwner) { stats ->
+            setupTypePieChart(stats.typeDistribution)
+            populateRankedList(binding.listTopConnected, stats.topConnectedChars)
+            populateSimpleList(binding.listIsolated, stats.isolatedCharacters)
         }
     }
 
@@ -91,6 +81,7 @@ class StatsRelationshipDetailFragment : Fragment() {
             description.isEnabled = false
             isDrawHoleEnabled = true
             holeRadius = 40f
+            applyDarkModeHole(this)
             setUsePercentValues(true)
             legend.isEnabled = true
             legend.textColor = ContextCompat.getColor(ctx, R.color.on_surface)
@@ -104,7 +95,7 @@ class StatsRelationshipDetailFragment : Fragment() {
     private fun populateRankedList(container: LinearLayout, items: List<Pair<String, Int>>) {
         container.removeAllViews()
         if (items.isEmpty()) {
-            container.addView(makeTextView("--"))
+            container.addView(makeEmptyTextView())
             return
         }
         items.forEachIndexed { index, (name, count) ->
@@ -115,12 +106,16 @@ class StatsRelationshipDetailFragment : Fragment() {
     private fun populateSimpleList(container: LinearLayout, items: List<String>) {
         container.removeAllViews()
         if (items.isEmpty()) {
-            container.addView(makeTextView("--"))
+            container.addView(makeEmptyTextView())
             return
         }
         items.forEach { name ->
             container.addView(makeTextView(name))
         }
+    }
+
+    private fun makeEmptyTextView(): TextView {
+        return makeTextView(getString(R.string.stats_no_data))
     }
 
     private fun makeTextView(text: String): TextView {
@@ -137,6 +132,11 @@ class StatsRelationshipDetailFragment : Fragment() {
             lp.bottomMargin = marginXs
             layoutParams = lp
         }
+    }
+
+    private fun applyDarkModeHole(chart: PieChart) {
+        chart.setHoleColor(ContextCompat.getColor(requireContext(), R.color.surface))
+        chart.setTransparentCircleColor(ContextCompat.getColor(requireContext(), R.color.surface))
     }
 
     private fun chartColors(): List<Int> {

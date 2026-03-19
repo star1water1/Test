@@ -1,6 +1,5 @@
 package com.novelcharacter.app.ui.stats
 
-import android.graphics.Color
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -8,7 +7,7 @@ import android.view.ViewGroup
 import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
-import androidx.lifecycle.lifecycleScope
+import androidx.fragment.app.activityViewModels
 import androidx.navigation.fragment.findNavController
 import com.github.mikephil.charting.components.XAxis
 import com.github.mikephil.charting.data.BarData
@@ -16,17 +15,14 @@ import com.github.mikephil.charting.data.BarDataSet
 import com.github.mikephil.charting.data.BarEntry
 import com.github.mikephil.charting.formatter.IndexAxisValueFormatter
 import com.github.mikephil.charting.utils.ColorTemplate
-import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.R
 import com.novelcharacter.app.databinding.FragmentStatsEventDetailBinding
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 class StatsEventDetailFragment : Fragment() {
 
     private var _binding: FragmentStatsEventDetailBinding? = null
     private val binding get() = _binding!!
+    private val viewModel: StatsViewModel by activityViewModels()
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
@@ -38,36 +34,28 @@ class StatsEventDetailFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         binding.toolbar.setNavigationOnClickListener { findNavController().popBackStack() }
-        loadData()
+        setupObservers()
+        viewModel.loadEventStats()
     }
 
-    private fun loadData() {
-        binding.loadingProgress.visibility = View.VISIBLE
-        binding.contentLayout.visibility = View.GONE
+    private fun setupObservers() {
+        viewModel.loading.observe(viewLifecycleOwner) { isLoading ->
+            binding.loadingProgress.visibility = if (isLoading) View.VISIBLE else View.GONE
+            binding.contentLayout.visibility = if (isLoading) View.GONE else View.VISIBLE
+        }
 
-        viewLifecycleOwner.lifecycleScope.launch {
-            try {
-                val app = requireActivity().application as NovelCharacterApp
-                val provider = StatsDataProvider(app)
-                val snapshot = withContext(Dispatchers.IO) { provider.loadSnapshot() }
-                val stats = withContext(Dispatchers.IO) { provider.computeEventStats(snapshot) }
-
-                if (!isAdded) return@launch
-
-                binding.loadingProgress.visibility = View.GONE
-                binding.contentLayout.visibility = View.VISIBLE
-
-                setupYearDensityChart(stats.yearDensity)
-                setupNovelEventBarChart(stats.novelEventCounts)
-                binding.textAvgCharsPerEvent.text = String.format("%.1f", stats.avgCharsPerEvent)
-                binding.textOrphanCount.text = stats.orphanEventCount.toString()
-                setupMonthDistChart(stats.monthDistribution)
-            } catch (e: Exception) {
-                if (isAdded) {
-                    binding.loadingProgress.visibility = View.GONE
-                    Toast.makeText(requireContext(), R.string.stats_load_error, Toast.LENGTH_SHORT).show()
-                }
+        viewModel.error.observe(viewLifecycleOwner) { error ->
+            if (error != null) {
+                Toast.makeText(requireContext(), R.string.stats_load_error, Toast.LENGTH_SHORT).show()
             }
+        }
+
+        viewModel.eventStats.observe(viewLifecycleOwner) { stats ->
+            setupYearDensityChart(stats.yearDensity)
+            setupNovelEventBarChart(stats.novelEventCounts)
+            binding.textAvgCharsPerEvent.text = String.format("%.1f", stats.avgCharsPerEvent)
+            binding.textOrphanCount.text = stats.orphanEventCount.toString()
+            setupMonthDistChart(stats.monthDistribution)
         }
     }
 
