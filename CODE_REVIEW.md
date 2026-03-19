@@ -57,12 +57,27 @@
 - **문제:** 보안 잠금 변경/초기화 시 Android KeyStore 키가 삭제되면 새 키 생성됨. 기존 암호화된 백업은 **영구 복호화 불가**하지만 사용자에게 경고 없음.
 - **수정:** 앱 시작 시 키 일관성 검증 + 복원 실패 시 명확한 오류 메시지
 
-### H-5. 위젯 goAsync() 코루틴에 타임아웃 없음
+### H-5. UniverseRepository.deleteField — 필드 키 기준 삭제가 전체 세계관에 영향
+- **파일:** `data/repository/UniverseRepository.kt` (line 70-74)
+- **문제:** `deleteChangesByFieldKey(field.key)`가 해당 세계관이 아닌 **전체 DB**에서 같은 fieldKey의 상태 변경을 삭제. 두 세계관이 같은 키(예: "age")를 사용하면 **다른 세계관의 데이터까지 삭제됨**.
+- **수정:** characterId 기반 필터링 추가 (해당 세계관 소속 캐릭터의 상태 변경만 삭제)
+
+### H-6. CharacterDao.getCharacterByNameAndNovel — novelId=null 시 매칭 불가
+- **파일:** `data/dao/CharacterDao.kt` (line 34)
+- **문제:** SQL `WHERE novelId = :novelId`는 novelId가 null이면 `NULL = NULL` → `NULL`(falsy)이 되어 **소설 미지정 캐릭터 검색 불가**. NovelDao에는 별도의 null 처리 쿼리가 있지만 CharacterDao에는 없음.
+- **수정:** `WHERE name = :name AND (novelId = :novelId OR (:novelId IS NULL AND novelId IS NULL))` 또는 별도 쿼리 추가
+
+### H-7. Novel.imageCharacterId에 Foreign Key 없음 — 댕글링 참조
+- **파일:** `data/model/Novel.kt` (line 35)
+- **문제:** `imageCharacterId`가 Character를 참조하지만 FK 미선언. 캐릭터 삭제 시 **잘못된 ID가 영구 잔존**.
+- **수정:** `ForeignKey(entity = Character::class, onDelete = SET_NULL)` 추가
+
+### H-8. 위젯 goAsync() 코루틴에 타임아웃 없음
 - **파일:** `widget/RecentCharactersWidget.kt` (line 24-61), `widget/TodayCharacterWidget.kt` (line 25-71)
 - **문제:** `goAsync()` + `Dispatchers.IO` 코루틴에 타임아웃 없음. DB가 크거나 잠겨있으면 **10초 BroadcastReceiver 제한 초과 → 프로세스 강제 종료**.
 - **수정:** `withTimeout(8000)` 래핑
 
-### H-6. CharacterEditFragment 저장 버튼 영구 비활성화
+### H-9. CharacterEditFragment 저장 버튼 영구 비활성화
 - **파일:** `ui/character/CharacterEditFragment.kt` (line 693, 713-715)
 - **문제:** 저장 성공 시 `isSaving = true` 리셋 없이 `popBackStack()` 호출. 네비게이션 실패 시 **저장 버튼이 영구 비활성화**되어 재저장 불가.
 - **수정:** finally 블록에서 `isSaving = false`, `binding.btnSave.isEnabled = true` 리셋
@@ -91,7 +106,23 @@
 - **파일:** `share/WorldPackageExporter.kt` (line 106)
 - **문제:** `catch (_: Exception) {}`로 이미지 내보내기 오류를 무시. 패키지에 이미지 누락되어도 사용자 알 수 없음.
 
-### M-6. LIKE 쿼리 특수문자 미이스케이프
+### M-6. CharacterDao.deleteById가 Repository 정리 로직 우회
+- **파일:** `data/dao/CharacterDao.kt` (line 52-53)
+- **문제:** DAO의 `deleteById`를 직접 호출하면 `CharacterRepository.deleteCharacter`의 이름 은행 리셋, 최근 활동 제거 등 정리 로직 누락. 고아 데이터 잔존.
+
+### M-7. SearchPresetDao REPLACE 전략 — MAX_PRESETS 제한 우회
+- **파일:** `data/dao/SearchPresetDao.kt` (line 21), `data/repository/SearchPresetRepository.kt` (line 15-21)
+- **문제:** 동일 이름 프리셋 삽입 시 REPLACE가 기존 행 삭제 후 재삽입. 개수 체크(TOCTOU) 후 실행되어 제한 우회 가능.
+
+### M-8. CharacterRelationshipDao.insert IGNORE — 실패 시 -1 반환 미검사
+- **파일:** `data/dao/CharacterRelationshipDao.kt` (line 18), `data/repository/CharacterRepository.kt` (line 154-159)
+- **문제:** 중복 무시 시 -1 반환되지만 Repository에서 미확인. UI가 반환된 ID로 네비게이션하면 오류.
+
+### M-9. NULL 정렬 순서 불일치 (month/day nullable 컬럼)
+- **파일:** `data/dao/CharacterRelationshipChangeDao.kt` (line 9, 15), `CharacterStateChangeDao.kt` (line 9)
+- **문제:** `ORDER BY year, month, day`에서 NULL이 ASC 시 가장 먼저 정렬됨. 월/일 미지정 이벤트가 1월보다 앞에 표시. `COALESCE(month, 9999)` 등으로 명시적 처리 필요.
+
+### M-10. LIKE 쿼리 특수문자 미이스케이프
 - **파일:** `data/dao/CharacterDao.kt` (line 31), `NovelDao.kt` (line 49)
 - **문제:** `LIKE '%' || :query || '%'`에서 `%`, `_` 미이스케이프. 의도치 않은 검색 결과 반환.
 
@@ -205,13 +236,16 @@
 | **P0** | C-2 | StatsViewModel fieldAnalysisStats 누락 수정 | 낮음 |
 | **P0** | C-3 | CipherInputStream GCM 인증 문제 | 중간 |
 | **P0** | H-1 | 자동 백업 데이터 손실 수정 | 중간 |
-| **P0** | H-6 | 저장 버튼 비활성화 수정 | 낮음 |
+| **P0** | H-5 | deleteField 전체 세계관 영향 — 데이터 손실 | 중간 |
+| **P0** | H-9 | 저장 버튼 비활성화 수정 | 낮음 |
 | **P1** | H-2 | 관계 변경 중복 가져오기 수정 | 낮음 |
 | **P1** | H-3 | 계산 필드 의존성 순서 | 중간 |
 | **P1** | H-4 | KeyStore 키 분실 감지/경고 | 중간 |
-| **P1** | H-5 | 위젯 코루틴 타임아웃 | 낮음 |
+| **P1** | H-6 | novelId=null 캐릭터 검색 불가 | 낮음 |
+| **P1** | H-7 | imageCharacterId FK 누락 | 낮음 |
+| **P1** | H-8 | 위젯 코루틴 타임아웃 | 낮음 |
 | **P1** | R-4 | WCAG 색상 대비 수정 | 낮음 |
-| **P2** | M-1~M-8 | 중간 심각도 이슈 전체 | 다양 |
+| **P2** | M-1~M-12 | 중간 심각도 이슈 전체 | 다양 |
 | **P2** | B-1~B-9 | 빌드 설정 개선 | 다양 |
 | **P3** | L-1~L-6 | 낮은 심각도 이슈 전체 | 낮음 |
 | **P3** | R-1~R-7 | 리소스 정리 | 낮음 |
@@ -230,4 +264,4 @@
 
 **빌드:** Apache POI의 Android 적합성(B-1), 테스트 부재(B-9), 릴리스 서명 미설정(B-3)이 프로덕션 출시 전 해결 필요.
 
-**P0 항목 5건을 우선 수정하면 가장 큰 사용자 영향 버그와 데이터 안전성 문제가 해결됩니다.**
+**P0 항목 6건을 우선 수정하면 가장 큰 사용자 영향 버그와 데이터 안전성 문제가 해결됩니다.**
