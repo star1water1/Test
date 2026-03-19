@@ -245,7 +245,7 @@
                     <View
                         android:layout_width="match_parent"
                         android:layout_height="1dp"
-                        android:background="@color/divider"
+                        android:background="?attr/colorOutlineVariant"
                         android:layout_marginTop="@dimen/stats_margin_md"
                         android:layout_marginBottom="@dimen/stats_margin_sm" />
 
