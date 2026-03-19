@@ -7,6 +7,7 @@ import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
+import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
@@ -70,6 +71,7 @@ class StatsDataHealthDetailFragment : Fragment() {
             } catch (e: Exception) {
                 if (isAdded) {
                     binding.loadingProgress.visibility = View.GONE
+                    Toast.makeText(requireContext(), R.string.stats_load_error, Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -92,6 +94,8 @@ class StatsDataHealthDetailFragment : Fragment() {
             container.addView(makeTextView("--"))
             return
         }
+        val marginSm = resources.getDimensionPixelSize(R.dimen.stats_margin_sm)
+        val progressHeight = resources.getDimensionPixelSize(R.dimen.stats_progress_bar_height_sm)
         items.sortedBy { it.second }.forEach { (name, rate) ->
             val row = LinearLayout(requireContext()).apply {
                 orientation = LinearLayout.VERTICAL
@@ -99,14 +103,14 @@ class StatsDataHealthDetailFragment : Fragment() {
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
                 )
-                lp.bottomMargin = 8
+                lp.bottomMargin = marginSm
                 layoutParams = lp
             }
             row.addView(makeTextView("$name  ${String.format("%.0f", rate)}%"))
             val progress = ProgressBar(requireContext(), null, android.R.attr.progressBarStyleHorizontal).apply {
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
-                    8
+                    progressHeight
                 )
                 max = 100
                 this.progress = rate.toInt().coerceIn(0, 100)
@@ -117,15 +121,17 @@ class StatsDataHealthDetailFragment : Fragment() {
     }
 
     private fun makeTextView(text: String): TextView {
+        val textSizeSp = resources.getDimension(R.dimen.stats_text_body_sm) / resources.displayMetrics.scaledDensity
+        val marginXs = resources.getDimensionPixelSize(R.dimen.stats_margin_xs)
         return TextView(requireContext()).apply {
             this.text = text
-            textSize = 13f
+            textSize = textSizeSp
             setTextColor(ContextCompat.getColor(requireContext(), R.color.on_surface))
             val lp = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             )
-            lp.bottomMargin = 4
+            lp.bottomMargin = marginXs
             layoutParams = lp
         }
     }

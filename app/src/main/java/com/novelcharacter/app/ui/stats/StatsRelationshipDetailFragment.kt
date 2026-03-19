@@ -7,6 +7,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
@@ -63,6 +64,7 @@ class StatsRelationshipDetailFragment : Fragment() {
             } catch (e: Exception) {
                 if (isAdded) {
                     binding.loadingProgress.visibility = View.GONE
+                    Toast.makeText(requireContext(), R.string.stats_load_error, Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -74,10 +76,13 @@ class StatsRelationshipDetailFragment : Fragment() {
             chart.visibility = View.GONE
             return
         }
+        val ctx = requireContext()
+        val captionSize = resources.getDimension(R.dimen.stats_text_caption) / resources.displayMetrics.scaledDensity
+        val chartValueSize = resources.getDimension(R.dimen.stats_text_chart_value) / resources.displayMetrics.scaledDensity
         val entries = data.entries.map { PieEntry(it.value.toFloat(), it.key) }
         val dataSet = PieDataSet(entries, "").apply {
             colors = chartColors()
-            valueTextSize = 11f
+            valueTextSize = captionSize
             valueTextColor = Color.WHITE
             valueFormatter = PercentFormatter(chart)
         }
@@ -88,9 +93,9 @@ class StatsRelationshipDetailFragment : Fragment() {
             holeRadius = 40f
             setUsePercentValues(true)
             legend.isEnabled = true
-            legend.textColor = ContextCompat.getColor(requireContext(), R.color.on_surface)
+            legend.textColor = ContextCompat.getColor(ctx, R.color.on_surface)
             setEntryLabelColor(Color.WHITE)
-            setEntryLabelTextSize(10f)
+            setEntryLabelTextSize(chartValueSize)
             animateY(600)
             invalidate()
         }
@@ -119,15 +124,17 @@ class StatsRelationshipDetailFragment : Fragment() {
     }
 
     private fun makeTextView(text: String): TextView {
+        val textSizeSp = resources.getDimension(R.dimen.stats_text_body_sm) / resources.displayMetrics.scaledDensity
+        val marginXs = resources.getDimensionPixelSize(R.dimen.stats_margin_xs)
         return TextView(requireContext()).apply {
             this.text = text
-            textSize = 13f
+            textSize = textSizeSp
             setTextColor(ContextCompat.getColor(requireContext(), R.color.on_surface))
             val lp = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             )
-            lp.bottomMargin = 4
+            lp.bottomMargin = marginXs
             layoutParams = lp
         }
     }
@@ -144,6 +151,7 @@ class StatsRelationshipDetailFragment : Fragment() {
     }
 
     override fun onDestroyView() {
+        _binding?.chartTypeDist?.clear()
         super.onDestroyView()
         _binding = null
     }

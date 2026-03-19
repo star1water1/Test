@@ -13,8 +13,11 @@
     <!-- Chart -->
     <dimen name="stats_chart_height">300dp</dimen>
     <dimen name="stats_progress_bar_height">12dp</dimen>
+    <dimen name="stats_progress_bar_height_sm">8dp</dimen>
 
     <!-- Text Sizes -->
+    <dimen name="stats_text_chart_value_sm">9sp</dimen>
+    <dimen name="stats_text_chart_value">10sp</dimen>
     <dimen name="stats_text_caption">11sp</dimen>
     <dimen name="stats_text_body_sm">12sp</dimen>
     <dimen name="stats_text_body">14sp</dimen>

@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
@@ -64,6 +65,7 @@ class StatsEventDetailFragment : Fragment() {
             } catch (e: Exception) {
                 if (isAdded) {
                     binding.loadingProgress.visibility = View.GONE
+                    Toast.makeText(requireContext(), R.string.stats_load_error, Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -75,13 +77,15 @@ class StatsEventDetailFragment : Fragment() {
             chart.visibility = View.GONE
             return
         }
+        val ctx = requireContext()
+        val chartValueSmSize = resources.getDimension(R.dimen.stats_text_chart_value_sm) / resources.displayMetrics.scaledDensity
         val sorted = data.entries.sortedBy { it.key }
         val labels = sorted.map { it.key.toString() }
         val entries = sorted.mapIndexed { i, e -> BarEntry(i.toFloat(), e.value.toFloat()) }
         val dataSet = BarDataSet(entries, "").apply {
-            color = ContextCompat.getColor(requireContext(), R.color.primary)
-            valueTextSize = 9f
-            valueTextColor = ContextCompat.getColor(requireContext(), R.color.on_surface)
+            color = ContextCompat.getColor(ctx, R.color.primary)
+            valueTextSize = chartValueSmSize
+            valueTextColor = ContextCompat.getColor(ctx, R.color.on_surface)
         }
         chart.apply {
             this.data = BarData(dataSet)
@@ -90,9 +94,9 @@ class StatsEventDetailFragment : Fragment() {
             xAxis.valueFormatter = IndexAxisValueFormatter(labels)
             xAxis.position = XAxis.XAxisPosition.BOTTOM
             xAxis.granularity = 1f
-            xAxis.textColor = ContextCompat.getColor(requireContext(), R.color.on_surface)
+            xAxis.textColor = ContextCompat.getColor(ctx, R.color.on_surface)
             xAxis.labelRotationAngle = -45f
-            axisLeft.textColor = ContextCompat.getColor(requireContext(), R.color.on_surface)
+            axisLeft.textColor = ContextCompat.getColor(ctx, R.color.on_surface)
             axisRight.isEnabled = false
             setFitBars(true)
             animateY(600)
@@ -106,12 +110,14 @@ class StatsEventDetailFragment : Fragment() {
             chart.visibility = View.GONE
             return
         }
+        val ctx = requireContext()
+        val chartValueSize = resources.getDimension(R.dimen.stats_text_chart_value) / resources.displayMetrics.scaledDensity
         val labels = data.keys.toList()
         val entries = data.values.mapIndexed { i, v -> BarEntry(i.toFloat(), v.toFloat()) }
         val dataSet = BarDataSet(entries, "").apply {
             colors = chartColors()
-            valueTextSize = 10f
-            valueTextColor = ContextCompat.getColor(requireContext(), R.color.on_surface)
+            valueTextSize = chartValueSize
+            valueTextColor = ContextCompat.getColor(ctx, R.color.on_surface)
         }
         chart.apply {
             this.data = BarData(dataSet)
@@ -120,8 +126,8 @@ class StatsEventDetailFragment : Fragment() {
             xAxis.valueFormatter = IndexAxisValueFormatter(labels)
             xAxis.position = XAxis.XAxisPosition.BOTTOM
             xAxis.granularity = 1f
-            xAxis.textColor = ContextCompat.getColor(requireContext(), R.color.on_surface)
-            axisLeft.textColor = ContextCompat.getColor(requireContext(), R.color.on_surface)
+            xAxis.textColor = ContextCompat.getColor(ctx, R.color.on_surface)
+            axisLeft.textColor = ContextCompat.getColor(ctx, R.color.on_surface)
             axisRight.isEnabled = false
             setFitBars(true)
             animateY(600)
@@ -136,6 +142,8 @@ class StatsEventDetailFragment : Fragment() {
             binding.labelMonthDist.visibility = View.GONE
             return
         }
+        val ctx = requireContext()
+        val chartValueSmSize = resources.getDimension(R.dimen.stats_text_chart_value_sm) / resources.displayMetrics.scaledDensity
         val monthLabels = listOf(
             "1월", "2월", "3월", "4월", "5월", "6월",
             "7월", "8월", "9월", "10월", "11월", "12월"
@@ -144,9 +152,9 @@ class StatsEventDetailFragment : Fragment() {
             BarEntry((month - 1).toFloat(), (data[month] ?: 0).toFloat())
         }
         val dataSet = BarDataSet(entries, "").apply {
-            color = ContextCompat.getColor(requireContext(), R.color.accent)
-            valueTextSize = 9f
-            valueTextColor = ContextCompat.getColor(requireContext(), R.color.on_surface)
+            color = ContextCompat.getColor(ctx, R.color.accent)
+            valueTextSize = chartValueSmSize
+            valueTextColor = ContextCompat.getColor(ctx, R.color.on_surface)
         }
         chart.apply {
             this.data = BarData(dataSet)
@@ -155,8 +163,8 @@ class StatsEventDetailFragment : Fragment() {
             xAxis.valueFormatter = IndexAxisValueFormatter(monthLabels)
             xAxis.position = XAxis.XAxisPosition.BOTTOM
             xAxis.granularity = 1f
-            xAxis.textColor = ContextCompat.getColor(requireContext(), R.color.on_surface)
-            axisLeft.textColor = ContextCompat.getColor(requireContext(), R.color.on_surface)
+            xAxis.textColor = ContextCompat.getColor(ctx, R.color.on_surface)
+            axisLeft.textColor = ContextCompat.getColor(ctx, R.color.on_surface)
             axisRight.isEnabled = false
             setFitBars(true)
             animateY(600)
@@ -176,6 +184,11 @@ class StatsEventDetailFragment : Fragment() {
     }
 
     override fun onDestroyView() {
+        _binding?.let {
+            it.chartYearDensity.clear()
+            it.chartNovelEventCounts.clear()
+            it.chartMonthDist.clear()
+        }
         super.onDestroyView()
         _binding = null
     }

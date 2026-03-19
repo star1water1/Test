@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
@@ -69,6 +70,7 @@ class StatsNameBankDetailFragment : Fragment() {
             } catch (e: Exception) {
                 if (isAdded) {
                     binding.loadingProgress.visibility = View.GONE
+                    Toast.makeText(requireContext(), R.string.stats_load_error, Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -80,10 +82,13 @@ class StatsNameBankDetailFragment : Fragment() {
             chart.visibility = View.GONE
             return
         }
+        val ctx = requireContext()
+        val captionSize = resources.getDimension(R.dimen.stats_text_caption) / resources.displayMetrics.scaledDensity
+        val chartValueSize = resources.getDimension(R.dimen.stats_text_chart_value) / resources.displayMetrics.scaledDensity
         val entries = data.entries.map { PieEntry(it.value.toFloat(), it.key) }
         val dataSet = PieDataSet(entries, "").apply {
             colors = chartColors()
-            valueTextSize = 11f
+            valueTextSize = captionSize
             valueTextColor = Color.WHITE
             valueFormatter = PercentFormatter(chart)
         }
@@ -94,9 +99,9 @@ class StatsNameBankDetailFragment : Fragment() {
             holeRadius = 40f
             setUsePercentValues(true)
             legend.isEnabled = true
-            legend.textColor = ContextCompat.getColor(requireContext(), R.color.on_surface)
+            legend.textColor = ContextCompat.getColor(ctx, R.color.on_surface)
             setEntryLabelColor(Color.WHITE)
-            setEntryLabelTextSize(10f)
+            setEntryLabelTextSize(chartValueSize)
             animateY(600)
             invalidate()
         }
@@ -108,12 +113,14 @@ class StatsNameBankDetailFragment : Fragment() {
             chart.visibility = View.GONE
             return
         }
+        val ctx = requireContext()
+        val chartValueSize = resources.getDimension(R.dimen.stats_text_chart_value) / resources.displayMetrics.scaledDensity
         val labels = data.keys.toList()
         val entries = data.values.mapIndexed { i, v -> BarEntry(i.toFloat(), v.toFloat()) }
         val dataSet = BarDataSet(entries, "").apply {
             colors = chartColors()
-            valueTextSize = 10f
-            valueTextColor = ContextCompat.getColor(requireContext(), R.color.on_surface)
+            valueTextSize = chartValueSize
+            valueTextColor = ContextCompat.getColor(ctx, R.color.on_surface)
         }
         chart.apply {
             this.data = BarData(dataSet)
@@ -122,8 +129,8 @@ class StatsNameBankDetailFragment : Fragment() {
             xAxis.valueFormatter = IndexAxisValueFormatter(labels)
             xAxis.position = XAxis.XAxisPosition.BOTTOM
             xAxis.granularity = 1f
-            xAxis.textColor = ContextCompat.getColor(requireContext(), R.color.on_surface)
-            axisLeft.textColor = ContextCompat.getColor(requireContext(), R.color.on_surface)
+            xAxis.textColor = ContextCompat.getColor(ctx, R.color.on_surface)
+            axisLeft.textColor = ContextCompat.getColor(ctx, R.color.on_surface)
             axisRight.isEnabled = false
             setFitBars(true)
             animateY(600)
@@ -143,6 +150,10 @@ class StatsNameBankDetailFragment : Fragment() {
     }
 
     override fun onDestroyView() {
+        _binding?.let {
+            it.chartGenderDist.clear()
+            it.chartOriginDist.clear()
+        }
         super.onDestroyView()
         _binding = null
     }

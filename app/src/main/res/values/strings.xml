@@ -447,6 +447,7 @@
     <string name="stats_count_format">%d개</string>
     <string name="stats_percent_format">%d%%</string>
     <string name="stats_ratio_format">%.1f명</string>
+    <string name="stats_load_error">통계 데이터를 불러올 수 없습니다</string>
 
     <!-- Widgets -->
     <string name="widget_recent_characters">최근 캐릭터</string>
