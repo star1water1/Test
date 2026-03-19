@@ -13,7 +13,7 @@
         android:layout_height="wrap_content"
         android:text="@string/widget_add_character"
         android:textSize="12sp"
-        android:layout_marginBottom="4dp" />
+        android:layout_marginBottom="8dp" />
 
     <Button
         android:id="@+id/btnAddEvent"

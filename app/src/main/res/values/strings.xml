@@ -309,6 +309,18 @@
 
     <!-- Accessibility -->
     <string name="close_button_desc">닫기</string>
+    <string name="image_carousel_desc">캐릭터 이미지 캐러셀</string>
+    <string name="density_bar_desc">사건 밀도 막대</string>
+    <string name="filter_novel_desc">작품 필터</string>
+    <string name="filter_character_desc">캐릭터 필터</string>
+    <string name="relationship_type_badge_desc">관계 유형: %s</string>
+    <string name="search_type_badge_desc">검색 유형: %s</string>
+    <string name="graph_view_desc">캐릭터 관계 그래프</string>
+    <string name="compare_table_desc">캐릭터 비교 테이블</string>
+    <string name="chart_desc">%s 차트</string>
+    <string name="add_relationship_desc">관계 추가</string>
+    <string name="add_state_change_desc">상태 변화 추가</string>
+    <string name="settings_icon_desc">설정</string>
     <string name="import_preparing">가져오기 준비 중…</string>
     <string name="import_progress_title">가져오기 진행 중</string>
 

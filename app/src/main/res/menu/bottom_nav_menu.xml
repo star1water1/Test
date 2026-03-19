@@ -21,9 +21,5 @@
         android:icon="@drawable/ic_name_bank"
         android:title="@string/tab_name_bank" />
 
-    <item
-        android:id="@+id/settingsFragment"
-        android:icon="@android:drawable/ic_menu_preferences"
-        android:title="@string/tab_settings" />
 
 </menu>

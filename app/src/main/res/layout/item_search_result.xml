@@ -42,9 +42,10 @@
         android:layout_marginStart="8dp"
         android:paddingHorizontal="10dp"
         android:paddingVertical="4dp"
-        android:textSize="11sp"
+        android:textSize="12sp"
         android:textStyle="bold"
         android:textColor="@color/on_primary"
-        android:background="@drawable/bg_search_type_badge" />
+        android:background="@drawable/bg_search_type_badge"
+        android:importantForAccessibility="yes" />
 
 </LinearLayout>

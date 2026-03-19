@@ -1,6 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Margins & Padding -->
+    <!-- ===== Global Spacing System (4dp grid) ===== -->
+    <dimen name="spacing_xs">4dp</dimen>
+    <dimen name="spacing_sm">8dp</dimen>
+    <dimen name="spacing_md">12dp</dimen>
+    <dimen name="spacing_lg">16dp</dimen>
+    <dimen name="spacing_xl">24dp</dimen>
+
+    <!-- Touch targets -->
+    <dimen name="touch_target_min">48dp</dimen>
+
+    <!-- Card -->
+    <dimen name="card_elevation">2dp</dimen>
+    <dimen name="card_corner_radius">12dp</dimen>
+    <dimen name="card_margin">4dp</dimen>
+    <dimen name="card_padding">16dp</dimen>
+
+    <!-- Icon sizes -->
+    <dimen name="icon_sm">16dp</dimen>
+    <dimen name="icon_md">24dp</dimen>
+    <dimen name="icon_lg">32dp</dimen>
+
+    <!-- ===== Stats Margins & Padding ===== -->
     <dimen name="stats_card_elevation">2dp</dimen>
     <dimen name="stats_card_corner_radius">12dp</dimen>
     <dimen name="stats_margin_xs">4dp</dimen>

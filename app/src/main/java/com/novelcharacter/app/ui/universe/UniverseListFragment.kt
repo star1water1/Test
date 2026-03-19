@@ -129,6 +129,10 @@ class UniverseListFragment : Fragment() {
                     findNavController().navigateSafe(R.id.universeListFragment, R.id.statsMainFragment, null)
                     true
                 }
+                R.id.action_settings -> {
+                    findNavController().navigateSafe(R.id.universeListFragment, R.id.settingsFragment, null)
+                    true
+                }
                 else -> false
             }
         }

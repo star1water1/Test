@@ -9,6 +9,16 @@
     android:gravity="center_vertical">
 
     <TextView
+        android:id="@+id/widgetTitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/widget_today_character"
+        android:textSize="12sp"
+        android:textStyle="bold"
+        android:textColor="@color/primary"
+        android:layout_marginBottom="4dp" />
+
+    <TextView
         android:id="@+id/widgetText"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

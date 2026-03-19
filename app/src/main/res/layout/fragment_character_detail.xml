@@ -161,9 +161,11 @@
                 <androidx.viewpager2.widget.ViewPager2
                     android:id="@+id/imageViewPager"
                     android:layout_width="match_parent"
-                    android:layout_height="300dp"
+                    android:layout_height="250dp"
+                    android:maxHeight="300dp"
                     android:layout_marginBottom="16dp"
-                    android:background="@color/item_background_light" />
+                    android:background="@color/item_background_light"
+                    android:contentDescription="@string/image_carousel_desc" />
 
                 <!-- Character name -->
                 <TextView

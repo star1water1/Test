@@ -34,4 +34,9 @@
         android:title="@string/tab_statistics"
         app:showAsAction="never" />
 
+    <item
+        android:id="@+id/action_settings"
+        android:title="@string/tab_settings"
+        app:showAsAction="never" />
+
 </menu>
