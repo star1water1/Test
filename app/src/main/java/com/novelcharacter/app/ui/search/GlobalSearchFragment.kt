@@ -97,7 +97,7 @@ class GlobalSearchFragment : Fragment() {
         viewModel.presetAppliedEvent.observe(viewLifecycleOwner) { event ->
             event?.getContentIfNotHandled()?.let { name ->
                 val ctx = context ?: return@observe
-                Toast.makeText(ctx, getString(R.string.preset_applied, name), Toast.LENGTH_SHORT).show()
+                Toast.makeText(ctx, getString(R.string.search_preset_applied, name), Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -145,25 +145,25 @@ class GlobalSearchFragment : Fragment() {
             if (!isAdded || _binding == null) return@launch
             val ctx = context ?: return@launch
             if (count >= SearchPreset.MAX_PRESETS) {
-                Toast.makeText(ctx, getString(R.string.preset_limit_reached, SearchPreset.MAX_PRESETS), Toast.LENGTH_SHORT).show()
+                Toast.makeText(ctx, getString(R.string.search_preset_limit_reached, SearchPreset.MAX_PRESETS), Toast.LENGTH_SHORT).show()
                 return@launch
             }
 
             val editText = EditText(ctx).apply {
-                hint = getString(R.string.preset_name_hint)
+                hint = getString(R.string.search_preset_name_hint)
                 setPadding(48, 32, 48, 16)
             }
 
             AlertDialog.Builder(ctx)
-                .setTitle(R.string.preset_save_title)
+                .setTitle(R.string.search_preset_save_title)
                 .setView(editText)
                 .setPositiveButton(R.string.save) { _, _ ->
                     val name = editText.text.toString().trim()
                     if (name.isBlank()) {
-                        Toast.makeText(requireContext(), R.string.preset_name_required, Toast.LENGTH_SHORT).show()
+                        Toast.makeText(requireContext(), R.string.search_preset_name_required, Toast.LENGTH_SHORT).show()
                     } else {
                         viewModel.saveCurrentAsPreset(name)
-                        Toast.makeText(requireContext(), R.string.preset_saved, Toast.LENGTH_SHORT).show()
+                        Toast.makeText(requireContext(), R.string.search_preset_saved, Toast.LENGTH_SHORT).show()
                     }
                 }
                 .setNegativeButton(R.string.cancel, null)
@@ -173,9 +173,9 @@ class GlobalSearchFragment : Fragment() {
 
     private fun showPresetOptionsDialog(preset: SearchPreset) {
         val options = if (preset.isDefault) {
-            arrayOf(getString(R.string.preset_apply))
+            arrayOf(getString(R.string.search_preset_apply))
         } else {
-            arrayOf(getString(R.string.preset_apply), getString(R.string.edit), getString(R.string.delete))
+            arrayOf(getString(R.string.search_preset_apply), getString(R.string.edit), getString(R.string.delete))
         }
 
         AlertDialog.Builder(requireContext())
@@ -199,12 +199,12 @@ class GlobalSearchFragment : Fragment() {
     private fun showEditPresetDialog(preset: SearchPreset) {
         val editText = EditText(requireContext()).apply {
             setText(preset.name)
-            hint = getString(R.string.preset_name_hint)
+            hint = getString(R.string.search_preset_name_hint)
             setPadding(48, 32, 48, 16)
         }
 
         AlertDialog.Builder(requireContext())
-            .setTitle(R.string.preset_edit_title)
+            .setTitle(R.string.search_preset_edit_title)
             .setView(editText)
             .setPositiveButton(R.string.save) { _, _ ->
                 val newName = editText.text.toString().trim()
@@ -214,7 +214,7 @@ class GlobalSearchFragment : Fragment() {
                         query = binding.searchEdit.text.toString(),
                         sortMode = viewModel.sortMode.value ?: SearchPreset.SORT_RELEVANCE
                     ))
-                    Toast.makeText(requireContext(), R.string.preset_saved, Toast.LENGTH_SHORT).show()
+                    Toast.makeText(requireContext(), R.string.search_preset_saved, Toast.LENGTH_SHORT).show()
                 }
             }
             .setNegativeButton(R.string.cancel, null)
@@ -224,10 +224,10 @@ class GlobalSearchFragment : Fragment() {
     private fun showDeletePresetConfirm(preset: SearchPreset) {
         AlertDialog.Builder(requireContext())
             .setTitle(R.string.delete_warning_title)
-            .setMessage(getString(R.string.confirm_delete_preset, preset.name))
+            .setMessage(getString(R.string.confirm_delete_search_preset, preset.name))
             .setPositiveButton(R.string.delete) { _, _ ->
                 viewModel.deletePreset(preset.id)
-                Toast.makeText(requireContext(), R.string.preset_deleted, Toast.LENGTH_SHORT).show()
+                Toast.makeText(requireContext(), R.string.search_preset_deleted, Toast.LENGTH_SHORT).show()
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
