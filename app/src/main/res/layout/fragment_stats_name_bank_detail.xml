@@ -71,6 +71,15 @@
                 android:max="100"
                 android:layout_marginBottom="@dimen/stats_margin_lg" />
 
+            <!-- 평균 이름 길이 (신규) -->
+            <TextView
+                android:id="@+id/textAvgNameLength"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textSize="@dimen/stats_text_body"
+                android:textColor="@color/on_surface"
+                android:layout_marginBottom="@dimen/stats_margin_lg" />
+
             <!-- 성별 분포 PieChart -->
             <TextView
                 android:layout_width="wrap_content"
@@ -87,7 +96,7 @@
                 android:layout_height="@dimen/stats_chart_height"
                 android:layout_marginBottom="@dimen/stats_margin_lg" />
 
-            <!-- 출신 분포 HorizontalBarChart -->
+            <!-- 출신 분포 -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -101,6 +110,55 @@
                 android:id="@+id/chartOriginDist"
                 android:layout_width="match_parent"
                 android:layout_height="@dimen/stats_chart_height"
+                android:layout_marginBottom="@dimen/stats_margin_lg" />
+
+            <!-- 이름 길이 분포 (신규) -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/stats_name_length_dist"
+                android:textSize="@dimen/stats_text_heading"
+                android:textStyle="bold"
+                android:textColor="@color/primary"
+                android:layout_marginBottom="@dimen/stats_margin_sm" />
+
+            <com.github.mikephil.charting.charts.BarChart
+                android:id="@+id/chartNameLength"
+                android:layout_width="match_parent"
+                android:layout_height="@dimen/stats_chart_height"
+                android:layout_marginBottom="@dimen/stats_margin_lg" />
+
+            <!-- 첫 글자 분포 (신규) -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/stats_first_char_dist"
+                android:textSize="@dimen/stats_text_heading"
+                android:textStyle="bold"
+                android:textColor="@color/primary"
+                android:layout_marginBottom="@dimen/stats_margin_sm" />
+
+            <com.github.mikephil.charting.charts.BarChart
+                android:id="@+id/chartFirstChar"
+                android:layout_width="match_parent"
+                android:layout_height="@dimen/stats_chart_height"
+                android:layout_marginBottom="@dimen/stats_margin_lg" />
+
+            <!-- 미사용 이름 목록 (신규) -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/stats_unused_names"
+                android:textSize="@dimen/stats_text_heading"
+                android:textStyle="bold"
+                android:textColor="@color/primary"
+                android:layout_marginBottom="@dimen/stats_margin_sm" />
+
+            <LinearLayout
+                android:id="@+id/listUnusedNames"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
                 android:layout_marginBottom="@dimen/stats_margin_lg" />
 
         </LinearLayout>

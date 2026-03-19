@@ -54,6 +54,12 @@ class StatsRelationshipDetailFragment : Fragment() {
         }
 
         viewModel.relationshipStats.observe(viewLifecycleOwner) { stats ->
+            // 네트워크 메트릭
+            binding.textNetworkDensity.text = getString(R.string.stats_network_density_label, stats.networkDensity * 100)
+            binding.textAvgConnections.text = getString(R.string.stats_avg_connections, stats.avgConnectionsPerChar)
+            binding.textDescCompleteness.text = getString(R.string.stats_desc_completeness, stats.descriptionCompleteness, stats.emptyDescriptionCount)
+            binding.textReciprocalPairs.text = getString(R.string.stats_reciprocal_pairs, stats.reciprocalPairCount)
+
             setupTypePieChart(stats.typeDistribution)
             populateRankedList(binding.listTopConnected, stats.topConnectedChars)
             populateSimpleList(binding.listIsolated, stats.isolatedCharacters)
@@ -114,9 +120,7 @@ class StatsRelationshipDetailFragment : Fragment() {
         }
     }
 
-    private fun makeEmptyTextView(): TextView {
-        return makeTextView(getString(R.string.stats_no_data))
-    }
+    private fun makeEmptyTextView(): TextView = makeTextView(getString(R.string.stats_no_data))
 
     private fun makeTextView(text: String): TextView {
         val textSizeSp = resources.getDimension(R.dimen.stats_text_body_sm) / resources.displayMetrics.scaledDensity

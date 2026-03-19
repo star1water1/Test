@@ -17,6 +17,13 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
 
     private var cachedSnapshot: StatsSnapshot? = null
 
+    // 작품 필터
+    private val _selectedNovelId = MutableLiveData<Long?>(null)
+    val selectedNovelId: LiveData<Long?> = _selectedNovelId
+
+    private val _novelList = MutableLiveData<List<Pair<Long, String>>>()
+    val novelList: LiveData<List<Pair<Long, String>>> = _novelList
+
     private val _summary = MutableLiveData<SummaryStats>()
     val summary: LiveData<SummaryStats> = _summary
 
@@ -35,6 +42,9 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
     private val _dataHealthStats = MutableLiveData<DataHealthStats>()
     val dataHealthStats: LiveData<DataHealthStats> = _dataHealthStats
 
+    private val _fieldAnalysisStats = MutableLiveData<FieldAnalysisStats>()
+    val fieldAnalysisStats: LiveData<FieldAnalysisStats> = _fieldAnalysisStats
+
     private val _loading = MutableLiveData(false)
     val loading: LiveData<Boolean> = _loading
 
@@ -47,7 +57,17 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
         }.also { cachedSnapshot = it }
     }
 
+    private fun getFilteredSnapshot(snapshot: StatsSnapshot): StatsSnapshot {
+        val novelId = _selectedNovelId.value ?: return snapshot
+        return provider.filterByNovel(snapshot, novelId)
+    }
+
     private var isRefreshing = false
+
+    fun setNovelFilter(novelId: Long?) {
+        _selectedNovelId.value = novelId
+        refreshStats()
+    }
 
     fun refreshStats() {
         cachedSnapshot = null
@@ -63,12 +83,17 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             try {
                 val snapshot = ensureSnapshot()
-                val summary = withContext(Dispatchers.IO) { provider.computeSummary(snapshot) }
-                val chars = withContext(Dispatchers.IO) { provider.computeCharacterStats(snapshot) }
-                val events = withContext(Dispatchers.IO) { provider.computeEventStats(snapshot) }
-                val rels = withContext(Dispatchers.IO) { provider.computeRelationshipStats(snapshot) }
-                val names = withContext(Dispatchers.IO) { provider.computeNameBankStats(snapshot) }
-                val health = withContext(Dispatchers.IO) { provider.computeDataHealth(snapshot) }
+                val filtered = getFilteredSnapshot(snapshot)
+
+                // 작품 목록 설정
+                _novelList.value = snapshot.novels.map { it.id to it.title }
+
+                val summary = withContext(Dispatchers.IO) { provider.computeSummary(filtered) }
+                val chars = withContext(Dispatchers.IO) { provider.computeCharacterStats(filtered) }
+                val events = withContext(Dispatchers.IO) { provider.computeEventStats(filtered) }
+                val rels = withContext(Dispatchers.IO) { provider.computeRelationshipStats(filtered) }
+                val names = withContext(Dispatchers.IO) { provider.computeNameBankStats(filtered) }
+                val health = withContext(Dispatchers.IO) { provider.computeDataHealth(filtered) }
 
                 _summary.value = summary
                 _characterStats.value = chars
@@ -85,13 +110,14 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun loadCharacterStats() {
-        if (_characterStats.value != null) return
+        if (_characterStats.value != null && !isRefreshing) return
         _loading.value = true
         _error.value = null
         viewModelScope.launch {
             try {
                 val snapshot = ensureSnapshot()
-                _characterStats.value = withContext(Dispatchers.IO) { provider.computeCharacterStats(snapshot) }
+                val filtered = getFilteredSnapshot(snapshot)
+                _characterStats.value = withContext(Dispatchers.IO) { provider.computeCharacterStats(filtered) }
             } catch (e: Exception) {
                 _error.value = e.message
             } finally {
@@ -101,13 +127,14 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun loadEventStats() {
-        if (_eventStats.value != null) return
+        if (_eventStats.value != null && !isRefreshing) return
         _loading.value = true
         _error.value = null
         viewModelScope.launch {
             try {
                 val snapshot = ensureSnapshot()
-                _eventStats.value = withContext(Dispatchers.IO) { provider.computeEventStats(snapshot) }
+                val filtered = getFilteredSnapshot(snapshot)
+                _eventStats.value = withContext(Dispatchers.IO) { provider.computeEventStats(filtered) }
             } catch (e: Exception) {
                 _error.value = e.message
             } finally {
@@ -117,13 +144,14 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun loadRelationshipStats() {
-        if (_relationshipStats.value != null) return
+        if (_relationshipStats.value != null && !isRefreshing) return
         _loading.value = true
         _error.value = null
         viewModelScope.launch {
             try {
                 val snapshot = ensureSnapshot()
-                _relationshipStats.value = withContext(Dispatchers.IO) { provider.computeRelationshipStats(snapshot) }
+                val filtered = getFilteredSnapshot(snapshot)
+                _relationshipStats.value = withContext(Dispatchers.IO) { provider.computeRelationshipStats(filtered) }
             } catch (e: Exception) {
                 _error.value = e.message
             } finally {
@@ -133,13 +161,14 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun loadNameBankStats() {
-        if (_nameBankStats.value != null) return
+        if (_nameBankStats.value != null && !isRefreshing) return
         _loading.value = true
         _error.value = null
         viewModelScope.launch {
             try {
                 val snapshot = ensureSnapshot()
-                _nameBankStats.value = withContext(Dispatchers.IO) { provider.computeNameBankStats(snapshot) }
+                val filtered = getFilteredSnapshot(snapshot)
+                _nameBankStats.value = withContext(Dispatchers.IO) { provider.computeNameBankStats(filtered) }
             } catch (e: Exception) {
                 _error.value = e.message
             } finally {
@@ -149,13 +178,31 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun loadDataHealthStats() {
-        if (_dataHealthStats.value != null) return
+        if (_dataHealthStats.value != null && !isRefreshing) return
         _loading.value = true
         _error.value = null
         viewModelScope.launch {
             try {
                 val snapshot = ensureSnapshot()
-                _dataHealthStats.value = withContext(Dispatchers.IO) { provider.computeDataHealth(snapshot) }
+                val filtered = getFilteredSnapshot(snapshot)
+                _dataHealthStats.value = withContext(Dispatchers.IO) { provider.computeDataHealth(filtered) }
+            } catch (e: Exception) {
+                _error.value = e.message
+            } finally {
+                _loading.value = false
+            }
+        }
+    }
+
+    fun loadFieldAnalysisStats() {
+        if (_fieldAnalysisStats.value != null && !isRefreshing) return
+        _loading.value = true
+        _error.value = null
+        viewModelScope.launch {
+            try {
+                val snapshot = ensureSnapshot()
+                val filtered = getFilteredSnapshot(snapshot)
+                _fieldAnalysisStats.value = withContext(Dispatchers.IO) { provider.computeFieldAnalysis(filtered) }
             } catch (e: Exception) {
                 _error.value = e.message
             } finally {

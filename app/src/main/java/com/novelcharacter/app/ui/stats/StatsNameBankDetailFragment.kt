@@ -5,6 +5,8 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.LinearLayout
+import android.widget.TextView
 import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
@@ -59,8 +61,91 @@ class StatsNameBankDetailFragment : Fragment() {
         viewModel.nameBankStats.observe(viewLifecycleOwner) { stats ->
             binding.textUsageRate.text = "${String.format("%.0f", stats.usageRate)}%"
             binding.progressUsageRate.progress = stats.usageRate.toInt().coerceIn(0, 100)
+            binding.textAvgNameLength.text = getString(R.string.stats_avg_name_length, stats.avgNameLength)
+
             setupGenderPieChart(stats.genderDistribution)
             setupOriginBarChart(stats.originDistribution)
+            setupNameLengthChart(stats.nameLengthDistribution)
+            setupFirstCharChart(stats.firstCharDistribution)
+            populateUnusedNames(stats.unusedNames)
+        }
+    }
+
+    private fun setupNameLengthChart(data: Map<Int, Int>) {
+        val chart = binding.chartNameLength
+        if (data.isEmpty()) {
+            chart.visibility = View.GONE
+            return
+        }
+        val ctx = requireContext()
+        val chartValueSize = resources.getDimension(R.dimen.stats_text_chart_value) / resources.displayMetrics.scaledDensity
+        val labels = data.keys.map { getString(R.string.stats_chars_unit, it) }
+        val entries = data.values.mapIndexed { i, v -> BarEntry(i.toFloat(), v.toFloat()) }
+        val dataSet = BarDataSet(entries, "").apply {
+            color = ContextCompat.getColor(ctx, R.color.primary)
+            valueTextSize = chartValueSize
+            valueTextColor = ContextCompat.getColor(ctx, R.color.on_surface)
+        }
+        chart.apply {
+            this.data = BarData(dataSet)
+            description.isEnabled = false
+            legend.isEnabled = false
+            xAxis.valueFormatter = IndexAxisValueFormatter(labels)
+            xAxis.position = XAxis.XAxisPosition.BOTTOM
+            xAxis.granularity = 1f
+            xAxis.textColor = ContextCompat.getColor(ctx, R.color.on_surface)
+            axisLeft.textColor = ContextCompat.getColor(ctx, R.color.on_surface)
+            axisRight.isEnabled = false
+            setFitBars(true)
+            animateY(600)
+            invalidate()
+        }
+    }
+
+    private fun setupFirstCharChart(data: Map<String, Int>) {
+        val chart = binding.chartFirstChar
+        if (data.isEmpty()) {
+            chart.visibility = View.GONE
+            return
+        }
+        val ctx = requireContext()
+        val chartValueSize = resources.getDimension(R.dimen.stats_text_chart_value) / resources.displayMetrics.scaledDensity
+        val top15 = data.entries.take(15)
+        val labels = top15.map { it.key }
+        val entries = top15.mapIndexed { i, e -> BarEntry(i.toFloat(), e.value.toFloat()) }
+        val dataSet = BarDataSet(entries, "").apply {
+            colors = chartColors()
+            valueTextSize = chartValueSize
+            valueTextColor = ContextCompat.getColor(ctx, R.color.on_surface)
+        }
+        chart.apply {
+            this.data = BarData(dataSet)
+            description.isEnabled = false
+            legend.isEnabled = false
+            xAxis.valueFormatter = IndexAxisValueFormatter(labels)
+            xAxis.position = XAxis.XAxisPosition.BOTTOM
+            xAxis.granularity = 1f
+            xAxis.textColor = ContextCompat.getColor(ctx, R.color.on_surface)
+            axisLeft.textColor = ContextCompat.getColor(ctx, R.color.on_surface)
+            axisRight.isEnabled = false
+            setFitBars(true)
+            animateY(600)
+            invalidate()
+        }
+    }
+
+    private fun populateUnusedNames(names: List<String>) {
+        val container = binding.listUnusedNames
+        container.removeAllViews()
+        if (names.isEmpty()) {
+            container.addView(makeTextView(getString(R.string.stats_all_names_used)))
+            return
+        }
+        names.take(30).forEach { name ->
+            container.addView(makeTextView(name))
+        }
+        if (names.size > 30) {
+            container.addView(makeTextView(getString(R.string.stats_and_more, names.size - 30)))
         }
     }
 
@@ -127,6 +212,22 @@ class StatsNameBankDetailFragment : Fragment() {
         }
     }
 
+    private fun makeTextView(text: String): TextView {
+        val textSizeSp = resources.getDimension(R.dimen.stats_text_body_sm) / resources.displayMetrics.scaledDensity
+        val marginXs = resources.getDimensionPixelSize(R.dimen.stats_margin_xs)
+        return TextView(requireContext()).apply {
+            this.text = text
+            textSize = textSizeSp
+            setTextColor(ContextCompat.getColor(requireContext(), R.color.on_surface))
+            val lp = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            lp.bottomMargin = marginXs
+            layoutParams = lp
+        }
+    }
+
     private fun applyDarkModeHole(chart: PieChart) {
         chart.setHoleColor(ContextCompat.getColor(requireContext(), R.color.surface))
         chart.setTransparentCircleColor(ContextCompat.getColor(requireContext(), R.color.surface))
@@ -147,6 +248,8 @@ class StatsNameBankDetailFragment : Fragment() {
         _binding?.let {
             it.chartGenderDist.clear()
             it.chartOriginDist.clear()
+            it.chartNameLength.clear()
+            it.chartFirstChar.clear()
         }
         super.onDestroyView()
         _binding = null

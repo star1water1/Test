@@ -44,23 +44,23 @@
             android:orientation="vertical"
             android:padding="@dimen/stats_padding_content">
 
-            <!-- 연도별 사건 밀도 BarChart -->
+            <!-- 서사 밀도 곡선 (신규: 빈 연도 포함) -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/stats_event_density"
+                android:text="@string/stats_narrative_density"
                 android:textSize="@dimen/stats_text_heading"
                 android:textStyle="bold"
                 android:textColor="@color/primary"
                 android:layout_marginBottom="@dimen/stats_margin_sm" />
 
             <com.github.mikephil.charting.charts.BarChart
-                android:id="@+id/chartYearDensity"
+                android:id="@+id/chartNarrativeDensity"
                 android:layout_width="match_parent"
                 android:layout_height="@dimen/stats_chart_height"
                 android:layout_marginBottom="@dimen/stats_margin_lg" />
 
-            <!-- 소설별 사건 수 HorizontalBarChart -->
+            <!-- 소설별 사건 수 -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -76,7 +76,40 @@
                 android:layout_height="@dimen/stats_chart_height"
                 android:layout_marginBottom="@dimen/stats_margin_lg" />
 
-            <!-- 사건당 평균 캐릭터 -->
+            <!-- 시간 정밀도 분포 (신규) -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/stats_time_precision"
+                android:textSize="@dimen/stats_text_heading"
+                android:textStyle="bold"
+                android:textColor="@color/primary"
+                android:layout_marginBottom="@dimen/stats_margin_sm" />
+
+            <com.github.mikephil.charting.charts.PieChart
+                android:id="@+id/chartTimePrecision"
+                android:layout_width="match_parent"
+                android:layout_height="@dimen/stats_chart_height"
+                android:layout_marginBottom="@dimen/stats_margin_lg" />
+
+            <!-- 달력 유형 분포 (신규) -->
+            <TextView
+                android:id="@+id/labelCalendarType"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/stats_calendar_type_dist"
+                android:textSize="@dimen/stats_text_heading"
+                android:textStyle="bold"
+                android:textColor="@color/primary"
+                android:layout_marginBottom="@dimen/stats_margin_sm" />
+
+            <com.github.mikephil.charting.charts.PieChart
+                android:id="@+id/chartCalendarType"
+                android:layout_width="match_parent"
+                android:layout_height="@dimen/stats_chart_height"
+                android:layout_marginBottom="@dimen/stats_margin_lg" />
+
+            <!-- 메트릭 요약 -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -95,7 +128,6 @@
                 android:textColor="@color/accent"
                 android:layout_marginBottom="@dimen/stats_margin_lg" />
 
-            <!-- 미연결 사건 -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -114,7 +146,26 @@
                 android:textColor="@color/accent"
                 android:layout_marginBottom="@dimen/stats_margin_lg" />
 
-            <!-- 월별 분포 BarChart -->
+            <!-- 사건 설명 평균 길이 (신규) -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/stats_event_desc_avg_length"
+                android:textSize="@dimen/stats_text_heading"
+                android:textStyle="bold"
+                android:textColor="@color/primary"
+                android:layout_marginBottom="@dimen/stats_margin_xs" />
+
+            <TextView
+                android:id="@+id/textAvgDescLength"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="@dimen/stats_text_number_xl"
+                android:textStyle="bold"
+                android:textColor="@color/accent"
+                android:layout_marginBottom="@dimen/stats_margin_lg" />
+
+            <!-- 월별 분포 -->
             <TextView
                 android:id="@+id/labelMonthDist"
                 android:layout_width="wrap_content"

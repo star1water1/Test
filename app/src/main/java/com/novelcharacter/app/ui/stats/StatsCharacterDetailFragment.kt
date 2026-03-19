@@ -60,12 +60,84 @@ class StatsCharacterDetailFragment : Fragment() {
         }
 
         viewModel.characterStats.observe(viewLifecycleOwner) { stats ->
+            // 복잡도 순위
+            populateComplexityList(stats.complexityScores)
+
             setupTagPieChart(stats.tagDistribution)
             setupNovelCharBarChart(stats.novelCharacterCounts)
+            setupSurvivalChart(stats.survivalPeriods)
             setupRelTypePieChart(stats.relationshipTypeDist)
             populateList(binding.listTopRelChars, stats.topRelationshipChars)
             populateList(binding.listTopEventChars, stats.topEventLinkedChars)
+
+            // 그룹별 필드 완성도
+            populateGroupCompletionList(stats.fieldCompletionByGroup)
+
             populateFieldCompletionList(stats.fieldCompletionRates)
+
+            // 메모/별명 통계
+            val memo = stats.memoStats
+            binding.textMemoStats.text = getString(R.string.stats_memo_detail,
+                memo.withMemo, memo.withMemo + memo.withoutMemo, memo.avgMemoLength.toInt())
+            binding.textAnotherNameRate.text = getString(R.string.stats_another_name_rate, stats.anotherNameRate)
+        }
+    }
+
+    private fun populateComplexityList(scores: List<CharacterComplexity>) {
+        val container = binding.listComplexity
+        container.removeAllViews()
+        if (scores.isEmpty()) {
+            container.addView(makeEmptyTextView())
+            return
+        }
+        val marginSm = resources.getDimensionPixelSize(R.dimen.stats_margin_sm)
+        scores.take(10).forEachIndexed { index, c ->
+            val row = LinearLayout(requireContext()).apply {
+                orientation = LinearLayout.VERTICAL
+                val lp = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+                lp.bottomMargin = marginSm
+                layoutParams = lp
+            }
+            row.addView(makeTextView("${index + 1}. ${c.name} (${getString(R.string.stats_complexity_score, c.totalScore)})"))
+            row.addView(makeTextView(getString(R.string.stats_complexity_breakdown,
+                c.relationshipCount, c.eventLinkCount, c.fieldCompletionRate.toInt(), c.stateChangeCount)))
+            container.addView(row)
+        }
+    }
+
+    private fun setupSurvivalChart(data: List<Pair<String, Int>>) {
+        val chart = binding.chartSurvivalPeriods
+        if (data.isEmpty()) {
+            chart.visibility = View.GONE
+            binding.labelSurvival.visibility = View.GONE
+            return
+        }
+        val ctx = requireContext()
+        val chartValueSize = resources.getDimension(R.dimen.stats_text_chart_value) / resources.displayMetrics.scaledDensity
+        val sorted = data.sortedByDescending { it.second }
+        val labels = sorted.map { it.first }
+        val entries = sorted.mapIndexed { i, (_, years) -> BarEntry(i.toFloat(), years.toFloat()) }
+        val dataSet = BarDataSet(entries, "").apply {
+            colors = chartColors()
+            valueTextSize = chartValueSize
+            valueTextColor = ContextCompat.getColor(ctx, R.color.on_surface)
+        }
+        chart.apply {
+            this.data = BarData(dataSet)
+            description.isEnabled = false
+            legend.isEnabled = false
+            xAxis.valueFormatter = IndexAxisValueFormatter(labels)
+            xAxis.position = XAxis.XAxisPosition.BOTTOM
+            xAxis.granularity = 1f
+            xAxis.textColor = ContextCompat.getColor(ctx, R.color.on_surface)
+            axisLeft.textColor = ContextCompat.getColor(ctx, R.color.on_surface)
+            axisRight.isEnabled = false
+            setFitBars(true)
+            animateY(600)
+            invalidate()
         }
     }
 
@@ -175,6 +247,39 @@ class StatsCharacterDetailFragment : Fragment() {
         }
     }
 
+    private fun populateGroupCompletionList(data: Map<String, Float>) {
+        val container = binding.listGroupCompletion
+        container.removeAllViews()
+        if (data.isEmpty()) {
+            container.addView(makeEmptyTextView())
+            return
+        }
+        val marginSm = resources.getDimensionPixelSize(R.dimen.stats_margin_sm)
+        val progressHeight = resources.getDimensionPixelSize(R.dimen.stats_progress_bar_height_sm)
+        data.entries.sortedByDescending { it.value }.forEach { (group, rate) ->
+            val row = LinearLayout(requireContext()).apply {
+                orientation = LinearLayout.VERTICAL
+                val lp = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+                lp.bottomMargin = marginSm
+                layoutParams = lp
+            }
+            row.addView(makeTextView("$group  ${String.format("%.0f", rate)}%"))
+            val progress = ProgressBar(requireContext(), null, android.R.attr.progressBarStyleHorizontal).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    progressHeight
+                )
+                max = 100
+                this.progress = rate.toInt().coerceIn(0, 100)
+            }
+            row.addView(progress)
+            container.addView(row)
+        }
+    }
+
     private fun populateFieldCompletionList(items: List<Pair<String, Float>>) {
         val container = binding.listFieldCompletion
         container.removeAllViews()
@@ -208,9 +313,7 @@ class StatsCharacterDetailFragment : Fragment() {
         }
     }
 
-    private fun makeEmptyTextView(): TextView {
-        return makeTextView(getString(R.string.stats_no_data))
-    }
+    private fun makeEmptyTextView(): TextView = makeTextView(getString(R.string.stats_no_data))
 
     private fun makeTextView(text: String): TextView {
         val textSizeSp = resources.getDimension(R.dimen.stats_text_body_sm) / resources.displayMetrics.scaledDensity
@@ -249,6 +352,7 @@ class StatsCharacterDetailFragment : Fragment() {
             it.chartTagDistribution.clear()
             it.chartNovelCharCounts.clear()
             it.chartRelTypeDist.clear()
+            it.chartSurvivalPeriods.clear()
         }
         super.onDestroyView()
         _binding = null

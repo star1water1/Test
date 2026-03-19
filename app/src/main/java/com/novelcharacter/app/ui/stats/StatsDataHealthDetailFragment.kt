@@ -51,9 +51,55 @@ class StatsDataHealthDetailFragment : Fragment() {
             binding.textNoImageCount.text = getString(R.string.stats_person_suffix, stats.noImageChars.size)
             populateSimpleList(binding.listNoImage, stats.noImageChars)
             populateIncompleteList(binding.listIncompleteFields, stats.incompleteFieldChars)
+
+            // 그룹별 완성도
+            populateGroupCompletionList(stats.fieldCompletionByGroup)
+
+            // 메모 미작성
+            binding.textNoMemoCount.text = getString(R.string.stats_person_suffix, stats.noMemoChars.size)
+
+            // 관계 설명 미작성
+            binding.textEmptyRelDesc.text = getString(R.string.stats_count_format, stats.emptyDescRelationships)
+
+            // 시간 정밀도 낮은 사건
+            binding.textLowPrecision.text = getString(R.string.stats_count_format, stats.lowPrecisionEvents)
+
             populateSimpleList(binding.listIsolated, stats.isolatedChars)
             populateSimpleList(binding.listUnlinked, stats.unlinkedChars)
             populateSimpleList(binding.listDuplicateTags, stats.duplicateTags)
+        }
+    }
+
+    private fun populateGroupCompletionList(data: Map<String, Float>) {
+        val container = binding.listGroupCompletion
+        container.removeAllViews()
+        if (data.isEmpty()) {
+            container.addView(makeEmptyTextView())
+            return
+        }
+        val marginSm = resources.getDimensionPixelSize(R.dimen.stats_margin_sm)
+        val progressHeight = resources.getDimensionPixelSize(R.dimen.stats_progress_bar_height_sm)
+        data.entries.sortedBy { it.value }.forEach { (group, rate) ->
+            val row = LinearLayout(requireContext()).apply {
+                orientation = LinearLayout.VERTICAL
+                val lp = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+                lp.bottomMargin = marginSm
+                layoutParams = lp
+            }
+            row.addView(makeTextView("$group  ${String.format("%.0f", rate)}%"))
+            val progress = ProgressBar(requireContext(), null, android.R.attr.progressBarStyleHorizontal).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    progressHeight
+                )
+                max = 100
+                this.progress = rate.toInt().coerceIn(0, 100)
+            }
+            row.addView(progress)
+            container.addView(row)
         }
     }
 
@@ -100,9 +146,7 @@ class StatsDataHealthDetailFragment : Fragment() {
         }
     }
 
-    private fun makeEmptyTextView(): TextView {
-        return makeTextView(getString(R.string.stats_no_data))
-    }
+    private fun makeEmptyTextView(): TextView = makeTextView(getString(R.string.stats_no_data))
 
     private fun makeTextView(text: String): TextView {
         val textSizeSp = resources.getDimension(R.dimen.stats_text_body_sm) / resources.displayMetrics.scaledDensity

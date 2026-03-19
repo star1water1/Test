@@ -15,7 +15,7 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent"
         app:navigationIcon="?attr/homeAsUpIndicator"
-        app:title="@string/stats_relationships"
+        app:title="@string/stats_field_analysis"
         app:titleTextColor="@color/on_primary" />
 
     <ProgressBar
@@ -44,93 +44,69 @@
             android:orientation="vertical"
             android:padding="@dimen/stats_padding_content">
 
-            <!-- 네트워크 메트릭 (신규) -->
+            <!-- 개별 필드 완성도 -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/stats_network_metrics"
-                android:textSize="@dimen/stats_text_heading"
-                android:textStyle="bold"
-                android:textColor="@color/primary"
-                android:layout_marginBottom="@dimen/stats_margin_sm" />
-
-            <TextView
-                android:id="@+id/textNetworkDensity"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:textSize="@dimen/stats_text_body"
-                android:textColor="@color/on_surface"
-                android:layout_marginBottom="@dimen/stats_margin_xs" />
-
-            <TextView
-                android:id="@+id/textAvgConnections"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:textSize="@dimen/stats_text_body"
-                android:textColor="@color/on_surface"
-                android:layout_marginBottom="@dimen/stats_margin_xs" />
-
-            <TextView
-                android:id="@+id/textDescCompleteness"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:textSize="@dimen/stats_text_body"
-                android:textColor="@color/on_surface"
-                android:layout_marginBottom="@dimen/stats_margin_xs" />
-
-            <TextView
-                android:id="@+id/textReciprocalPairs"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:textSize="@dimen/stats_text_body"
-                android:textColor="@color/on_surface"
-                android:layout_marginBottom="@dimen/stats_margin_lg" />
-
-            <!-- 관계 유형 분포 PieChart -->
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/stats_rel_type_distribution"
-                android:textSize="@dimen/stats_text_heading"
-                android:textStyle="bold"
-                android:textColor="@color/primary"
-                android:layout_marginBottom="@dimen/stats_margin_sm" />
-
-            <com.github.mikephil.charting.charts.PieChart
-                android:id="@+id/chartTypeDist"
-                android:layout_width="match_parent"
-                android:layout_height="@dimen/stats_chart_height"
-                android:layout_marginBottom="@dimen/stats_margin_lg" />
-
-            <!-- TOP 연결 캐릭터 -->
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/stats_rel_top_characters"
+                android:text="@string/stats_field_completion_per_field"
                 android:textSize="@dimen/stats_text_heading"
                 android:textStyle="bold"
                 android:textColor="@color/primary"
                 android:layout_marginBottom="@dimen/stats_margin_sm" />
 
             <LinearLayout
-                android:id="@+id/listTopConnected"
+                android:id="@+id/listFieldCompletion"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
                 android:layout_marginBottom="@dimen/stats_margin_lg" />
 
-            <!-- 고립 캐릭터 -->
+            <!-- 선택형 필드 값 분포들 -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/stats_isolated_characters"
+                android:text="@string/stats_field_value_distributions"
                 android:textSize="@dimen/stats_text_heading"
                 android:textStyle="bold"
                 android:textColor="@color/primary"
                 android:layout_marginBottom="@dimen/stats_margin_sm" />
 
             <LinearLayout
-                android:id="@+id/listIsolated"
+                android:id="@+id/containerValueDists"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:layout_marginBottom="@dimen/stats_margin_lg" />
+
+            <!-- 수치형 필드 요약 -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/stats_number_field_summaries"
+                android:textSize="@dimen/stats_text_heading"
+                android:textStyle="bold"
+                android:textColor="@color/primary"
+                android:layout_marginBottom="@dimen/stats_margin_sm" />
+
+            <LinearLayout
+                android:id="@+id/containerNumberSummaries"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:layout_marginBottom="@dimen/stats_margin_lg" />
+
+            <!-- 상태변화 빈도 -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/stats_state_changes_by_field"
+                android:textSize="@dimen/stats_text_heading"
+                android:textStyle="bold"
+                android:textColor="@color/primary"
+                android:layout_marginBottom="@dimen/stats_margin_sm" />
+
+            <LinearLayout
+                android:id="@+id/listStateChanges"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"

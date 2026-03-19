@@ -53,7 +53,6 @@
                 android:textStyle="bold"
                 android:textColor="@color/primary"
                 android:layout_marginBottom="@dimen/stats_margin_xs" />
-
             <TextView
                 android:id="@+id/textNoImageCount"
                 android:layout_width="wrap_content"
@@ -61,7 +60,6 @@
                 android:textSize="@dimen/stats_text_body"
                 android:textColor="@color/accent"
                 android:layout_marginBottom="@dimen/stats_margin_xs" />
-
             <LinearLayout
                 android:id="@+id/listNoImage"
                 android:layout_width="match_parent"
@@ -78,12 +76,78 @@
                 android:textStyle="bold"
                 android:textColor="@color/primary"
                 android:layout_marginBottom="@dimen/stats_margin_sm" />
-
             <LinearLayout
                 android:id="@+id/listIncompleteFields"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
+                android:layout_marginBottom="@dimen/stats_margin_lg" />
+
+            <!-- 그룹별 필드 완성도 (신규) -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/stats_field_completion_by_group"
+                android:textSize="@dimen/stats_text_heading"
+                android:textStyle="bold"
+                android:textColor="@color/primary"
+                android:layout_marginBottom="@dimen/stats_margin_sm" />
+            <LinearLayout
+                android:id="@+id/listGroupCompletion"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:layout_marginBottom="@dimen/stats_margin_lg" />
+
+            <!-- 메모 미작성 (신규) -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/stats_no_memo"
+                android:textSize="@dimen/stats_text_heading"
+                android:textStyle="bold"
+                android:textColor="@color/primary"
+                android:layout_marginBottom="@dimen/stats_margin_xs" />
+            <TextView
+                android:id="@+id/textNoMemoCount"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="@dimen/stats_text_body"
+                android:textColor="@color/accent"
+                android:layout_marginBottom="@dimen/stats_margin_lg" />
+
+            <!-- 관계 설명 미작성 (신규) -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/stats_empty_rel_desc"
+                android:textSize="@dimen/stats_text_heading"
+                android:textStyle="bold"
+                android:textColor="@color/primary"
+                android:layout_marginBottom="@dimen/stats_margin_xs" />
+            <TextView
+                android:id="@+id/textEmptyRelDesc"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="@dimen/stats_text_body"
+                android:textColor="@color/accent"
+                android:layout_marginBottom="@dimen/stats_margin_lg" />
+
+            <!-- 시간 정밀도 낮은 사건 (신규) -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/stats_low_precision_label"
+                android:textSize="@dimen/stats_text_heading"
+                android:textStyle="bold"
+                android:textColor="@color/primary"
+                android:layout_marginBottom="@dimen/stats_margin_xs" />
+            <TextView
+                android:id="@+id/textLowPrecision"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="@dimen/stats_text_body"
+                android:textColor="@color/accent"
                 android:layout_marginBottom="@dimen/stats_margin_lg" />
 
             <!-- 고립 캐릭터 -->
@@ -95,7 +159,6 @@
                 android:textStyle="bold"
                 android:textColor="@color/primary"
                 android:layout_marginBottom="@dimen/stats_margin_sm" />
-
             <LinearLayout
                 android:id="@+id/listIsolated"
                 android:layout_width="match_parent"
@@ -112,7 +175,6 @@
                 android:textStyle="bold"
                 android:textColor="@color/primary"
                 android:layout_marginBottom="@dimen/stats_margin_sm" />
-
             <LinearLayout
                 android:id="@+id/listUnlinked"
                 android:layout_width="match_parent"
@@ -129,7 +191,6 @@
                 android:textStyle="bold"
                 android:textColor="@color/primary"
                 android:layout_marginBottom="@dimen/stats_margin_sm" />
-
             <LinearLayout
                 android:id="@+id/listDuplicateTags"
                 android:layout_width="match_parent"

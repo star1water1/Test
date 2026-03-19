@@ -44,6 +44,23 @@
             android:orientation="vertical"
             android:padding="@dimen/stats_padding_content">
 
+            <!-- 캐릭터 복잡도 TOP 10 (신규) -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/stats_complexity_ranking"
+                android:textSize="@dimen/stats_text_heading"
+                android:textStyle="bold"
+                android:textColor="@color/primary"
+                android:layout_marginBottom="@dimen/stats_margin_sm" />
+
+            <LinearLayout
+                android:id="@+id/listComplexity"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:layout_marginBottom="@dimen/stats_margin_lg" />
+
             <!-- 태그 분포 PieChart -->
             <TextView
                 android:layout_width="wrap_content"
@@ -60,7 +77,7 @@
                 android:layout_height="@dimen/stats_chart_height"
                 android:layout_marginBottom="@dimen/stats_margin_lg" />
 
-            <!-- 소설별 캐릭터 수 HorizontalBarChart -->
+            <!-- 소설별 캐릭터 수 -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -72,6 +89,23 @@
 
             <com.github.mikephil.charting.charts.HorizontalBarChart
                 android:id="@+id/chartNovelCharCounts"
+                android:layout_width="match_parent"
+                android:layout_height="@dimen/stats_chart_height"
+                android:layout_marginBottom="@dimen/stats_margin_lg" />
+
+            <!-- 생존기간 분포 BarChart (신규: 기존 데이터 시각화) -->
+            <TextView
+                android:id="@+id/labelSurvival"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/stats_survival_distribution"
+                android:textSize="@dimen/stats_text_heading"
+                android:textStyle="bold"
+                android:textColor="@color/primary"
+                android:layout_marginBottom="@dimen/stats_margin_sm" />
+
+            <com.github.mikephil.charting.charts.HorizontalBarChart
+                android:id="@+id/chartSurvivalPeriods"
                 android:layout_width="match_parent"
                 android:layout_height="@dimen/stats_chart_height"
                 android:layout_marginBottom="@dimen/stats_margin_lg" />
@@ -126,6 +160,23 @@
                 android:orientation="vertical"
                 android:layout_marginBottom="@dimen/stats_margin_lg" />
 
+            <!-- 그룹별 필드 완성도 (신규) -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/stats_field_completion_by_group"
+                android:textSize="@dimen/stats_text_heading"
+                android:textStyle="bold"
+                android:textColor="@color/primary"
+                android:layout_marginBottom="@dimen/stats_margin_sm" />
+
+            <LinearLayout
+                android:id="@+id/listGroupCompletion"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:layout_marginBottom="@dimen/stats_margin_lg" />
+
             <!-- 필드 완성도 -->
             <TextView
                 android:layout_width="wrap_content"
@@ -141,6 +192,32 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
+                android:layout_marginBottom="@dimen/stats_margin_lg" />
+
+            <!-- 메모/별명 통계 (신규) -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/stats_memo_another_name"
+                android:textSize="@dimen/stats_text_heading"
+                android:textStyle="bold"
+                android:textColor="@color/primary"
+                android:layout_marginBottom="@dimen/stats_margin_sm" />
+
+            <TextView
+                android:id="@+id/textMemoStats"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textSize="@dimen/stats_text_body"
+                android:textColor="@color/on_surface"
+                android:layout_marginBottom="@dimen/stats_margin_xs" />
+
+            <TextView
+                android:id="@+id/textAnotherNameRate"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textSize="@dimen/stats_text_body"
+                android:textColor="@color/on_surface"
                 android:layout_marginBottom="@dimen/stats_margin_lg" />
 
         </LinearLayout>
