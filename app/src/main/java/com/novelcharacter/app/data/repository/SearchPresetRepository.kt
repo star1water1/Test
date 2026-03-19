@@ -10,8 +10,6 @@ class SearchPresetRepository(private val dao: SearchPresetDao) {
 
     suspend fun getAllPresetsList(): List<SearchPreset> = dao.getAllPresetsList()
 
-    suspend fun getPresetById(id: Long): SearchPreset? = dao.getPresetById(id)
-
     suspend fun getPresetCount(): Int = dao.getPresetCount()
 
     suspend fun insertPreset(preset: SearchPreset): Long {

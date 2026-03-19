@@ -306,7 +306,13 @@ class NovelListFragment : Fragment() {
 
     private fun importFromExcel() {
         if (!isAdded) return
-        importer.showImportDialog(this)
+        try {
+            importer.showImportDialog(this)
+        } catch (e: Exception) {
+            if (isAdded) {
+                Toast.makeText(requireContext(), R.string.import_file_too_large, Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     override fun onDestroyView() {

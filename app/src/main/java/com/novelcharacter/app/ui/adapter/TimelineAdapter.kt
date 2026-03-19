@@ -155,7 +155,8 @@ class TimelineAdapter(
             val eventId = event.id
             loadJob = coroutineScope.launch {
                 val characters = loadCharactersForEvent(eventId)
-                if (boundEventId == eventId) {
+                // Double-check: boundEventId may change if ViewHolder was recycled and rebound
+                if (boundEventId == eventId && bindingAdapterPosition != RecyclerView.NO_POSITION) {
                     characters.forEach { character ->
                         val chip = Chip(binding.root.context).apply {
                             text = character.name

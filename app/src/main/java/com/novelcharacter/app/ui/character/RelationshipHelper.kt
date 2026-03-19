@@ -26,6 +26,7 @@ class RelationshipHelper(
     private val characterId: Long,
     private val contextGetter: () -> Context,
     private val getString: (Int) -> String,
+    private val getFormattedString: (Int, Array<out Any>) -> String,
     private val navController: () -> NavController
 ) {
     private lateinit var relationshipAdapter: RelationshipAdapter
@@ -114,14 +115,27 @@ class RelationshipHelper(
 
                     if (selectedCharIndex >= 0) {
                         val otherChar = otherCharacters[selectedCharIndex]
-                        viewModel.insertRelationship(
-                            CharacterRelationship(
-                                characterId1 = characterId,
-                                characterId2 = otherChar.id,
-                                relationshipType = selectedType,
-                                description = desc
+                        // Check for existing relationship to prevent duplicates
+                        viewLifecycleOwner.lifecycleScope.launch {
+                            val existingRels = viewModel.getRelationshipsForCharacterList(characterId)
+                            val alreadyExists = existingRels.any {
+                                (it.characterId1 == characterId && it.characterId2 == otherChar.id) ||
+                                (it.characterId1 == otherChar.id && it.characterId2 == characterId)
+                            }
+                            if (alreadyExists) {
+                                val ctx = try { contextGetter() } catch (_: Exception) { return@launch }
+                                Toast.makeText(ctx, getString(R.string.relationship_already_exists), Toast.LENGTH_SHORT).show()
+                                return@launch
+                            }
+                            viewModel.insertRelationship(
+                                CharacterRelationship(
+                                    characterId1 = characterId,
+                                    characterId2 = otherChar.id,
+                                    relationshipType = selectedType,
+                                    description = desc
+                                )
                             )
-                        )
+                        }
                     }
                 }
                 .setNegativeButton(getString(R.string.cancel), null)
@@ -132,7 +146,7 @@ class RelationshipHelper(
     private fun showRelationshipOptionsDialog(item: RelationshipDisplayItem) {
         val context = try { contextGetter() } catch (_: Exception) { return }
         AlertDialog.Builder(context)
-            .setTitle(getString(com.novelcharacter.app.R.string.relationship_title_format).format(item.otherCharacterName, item.relationshipType))
+            .setTitle(getFormattedString(R.string.relationship_title_format, arrayOf(item.otherCharacterName, item.relationshipType)))
             .setItems(arrayOf(getString(R.string.delete))) { _, which ->
                 when (which) {
                     0 -> {

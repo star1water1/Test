@@ -48,6 +48,51 @@
         android:visibility="gone"
         android:gravity="center" />
 
+    <!-- Year slider for temporal relationship view -->
+    <LinearLayout
+        android:id="@+id/yearSliderLayout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingHorizontal="12dp"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <com.google.android.material.materialswitch.MaterialSwitch
+                android:id="@+id/switchTimeView"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/graph_time_view"
+                android:textSize="12sp" />
+
+            <TextView
+                android:id="@+id/yearLabel"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="end"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:textColor="@color/primary" />
+
+        </LinearLayout>
+
+        <com.google.android.material.slider.Slider
+            android:id="@+id/graphYearSlider"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:stepSize="1.0"
+            android:valueFrom="0.0"
+            android:valueTo="100.0"
+            android:contentDescription="@string/graph_year_slider" />
+
+    </LinearLayout>
+
     <!-- Stats bar -->
     <LinearLayout
         android:id="@+id/statsBar"

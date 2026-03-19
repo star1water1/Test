@@ -1,5 +1,6 @@
 package com.novelcharacter.app.util
 
+import android.util.Log
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
@@ -11,12 +12,20 @@ class FormulaEvaluator(
 ) {
     fun evaluate(formula: String): Double {
         val tokens = tokenize(formula)
+        if (tokens.size >= MAX_TOKENS) {
+            // Formula too complex — return NaN to signal error
+            return Double.NaN
+        }
         val rpn = shuntingYard(tokens)
         return evaluateRPN(rpn)
     }
 
     private fun resolveField(key: String): Double {
-        val value = fieldValues[key] ?: return 0.0
+        val value = fieldValues[key]
+        if (value == null) {
+            Log.w("FormulaEvaluator", "Field '$key' not found in values, defaulting to 0.0")
+            return 0.0
+        }
         val fieldDef = fieldDefinitions.find { it.key == key }
         if (fieldDef != null && fieldDef.type == "GRADE") {
             return resolveGradeValue(fieldDef, value)
@@ -55,8 +64,7 @@ class FormulaEvaluator(
     private fun tokenize(formula: String): List<Token> {
         val tokens = mutableListOf<Token>()
         var i = 0
-        val maxTokens = 500
-        while (i < formula.length && tokens.size < maxTokens) {
+        while (i < formula.length && tokens.size < MAX_TOKENS) {
             when {
                 formula[i].isWhitespace() -> i++
                 formula[i] in "+-*/" -> {
@@ -174,5 +182,9 @@ class FormulaEvaluator(
             }
         }
         return stack.lastOrNull() ?: 0.0
+    }
+
+    companion object {
+        private const val MAX_TOKENS = 500
     }
 }

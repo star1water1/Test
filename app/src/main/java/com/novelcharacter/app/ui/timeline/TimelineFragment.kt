@@ -25,6 +25,8 @@ import com.novelcharacter.app.data.model.TimelineEvent
 import com.novelcharacter.app.databinding.DialogTimelineEditBinding
 import com.novelcharacter.app.databinding.FragmentTimelineBinding
 import com.novelcharacter.app.ui.adapter.TimelineAdapter
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class TimelineFragment : Fragment() {
@@ -154,17 +156,18 @@ class TimelineFragment : Fragment() {
         }
     }
 
-    private var searchRunnable: Runnable? = null
-    private val searchHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var searchJob: Job? = null
 
     private fun setupSearch() {
         binding.searchEdit.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
-                searchRunnable?.let { searchHandler.removeCallbacks(it) }
                 val query = s.toString()
-                searchRunnable = Runnable { viewModel.setSearchQuery(query) }
-                searchHandler.postDelayed(searchRunnable!!, 300)
+                searchJob?.cancel()
+                searchJob = viewLifecycleOwner.lifecycleScope.launch {
+                    delay(300)
+                    viewModel.setSearchQuery(query)
+                }
             }
             override fun afterTextChanged(s: Editable?) {}
         })
@@ -201,8 +204,8 @@ class TimelineFragment : Fragment() {
             binding.spinnerFilterNovel.adapter = spinnerAdapter
         }
 
-        // Observe character data and update spinner adapter only
-        viewModel.allCharacters.observe(viewLifecycleOwner) { characters ->
+        // Observe filtered characters (연동: 소설 선택 시 해당 소설 캐릭터만 표시)
+        viewModel.filteredCharacters.observe(viewLifecycleOwner) { characters ->
             cachedCharacters = characters
             val charNames = mutableListOf(getString(R.string.all_characters_filter))
             charNames.addAll(characters.map { it.name })
@@ -256,9 +259,28 @@ class TimelineFragment : Fragment() {
             binding.yearRangeLabel.text = getString(R.string.year_range_format, start, end)
         }
 
-        // Update slider range based on all events data
+        // Update slider range and density bar based on all events data
         viewModel.allEvents.observe(viewLifecycleOwner) { events ->
             updateSliderRange(events)
+        }
+
+        // Observe event density for density bar
+        viewModel.eventDensity.observe(viewLifecycleOwner) { density ->
+            val events = viewModel.allEvents.value ?: return@observe
+            if (events.isEmpty()) return@observe
+            val minYear = events.minOf { it.year }
+            val maxYear = events.maxOf { it.year }
+            binding.eventDensityBar.setDensityData(density, minYear - 10, maxYear + 10)
+        }
+
+        // Update density bar range when visible range changes
+        viewModel.visibleRange.observe(viewLifecycleOwner) { (start, end) ->
+            binding.eventDensityBar.setRange(start, end)
+        }
+
+        // Density bar tap → jump to year
+        binding.eventDensityBar.setOnYearTapListener { year ->
+            viewModel.setSelectedYear(year)
         }
 
         // Observe selected year to update slider position
@@ -478,7 +500,7 @@ class TimelineFragment : Fragment() {
     }
 
     override fun onDestroyView() {
-        searchRunnable?.let { searchHandler.removeCallbacks(it) }
+        searchJob?.cancel()
         binding.timelineRecyclerView.adapter = null
         super.onDestroyView()
         _binding = null

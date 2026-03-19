@@ -152,6 +152,71 @@
         android:label="@string/tab_settings"
         tools:layout="@layout/fragment_settings" />
 
+    <!-- Statistics -->
+    <fragment
+        android:id="@+id/statsMainFragment"
+        android:name="com.novelcharacter.app.ui.stats.StatsMainFragment"
+        android:label="@string/tab_statistics"
+        tools:layout="@layout/fragment_stats_main">
+
+        <action
+            android:id="@+id/action_stats_to_character_detail"
+            app:destination="@id/statsCharacterDetailFragment" />
+        <action
+            android:id="@+id/action_stats_to_event_detail"
+            app:destination="@id/statsEventDetailFragment" />
+        <action
+            android:id="@+id/action_stats_to_relationship_detail"
+            app:destination="@id/statsRelationshipDetailFragment" />
+        <action
+            android:id="@+id/action_stats_to_namebank_detail"
+            app:destination="@id/statsNameBankDetailFragment" />
+        <action
+            android:id="@+id/action_stats_to_health_detail"
+            app:destination="@id/statsDataHealthDetailFragment" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/statsCharacterDetailFragment"
+        android:name="com.novelcharacter.app.ui.stats.StatsCharacterDetailFragment"
+        android:label="@string/stats_characters"
+        tools:layout="@layout/fragment_stats_character_detail" />
+
+    <fragment
+        android:id="@+id/statsEventDetailFragment"
+        android:name="com.novelcharacter.app.ui.stats.StatsEventDetailFragment"
+        android:label="@string/stats_events"
+        tools:layout="@layout/fragment_stats_event_detail" />
+
+    <fragment
+        android:id="@+id/statsRelationshipDetailFragment"
+        android:name="com.novelcharacter.app.ui.stats.StatsRelationshipDetailFragment"
+        android:label="@string/stats_relationships"
+        tools:layout="@layout/fragment_stats_relationship_detail" />
+
+    <fragment
+        android:id="@+id/statsNameBankDetailFragment"
+        android:name="com.novelcharacter.app.ui.stats.StatsNameBankDetailFragment"
+        android:label="@string/stats_namebank"
+        tools:layout="@layout/fragment_stats_name_bank_detail" />
+
+    <fragment
+        android:id="@+id/statsDataHealthDetailFragment"
+        android:name="com.novelcharacter.app.ui.stats.StatsDataHealthDetailFragment"
+        android:label="@string/stats_data_health"
+        tools:layout="@layout/fragment_stats_data_health_detail" />
+
+    <fragment
+        android:id="@+id/characterGrowthFragment"
+        android:name="com.novelcharacter.app.ui.growth.CharacterGrowthFragment"
+        android:label="@string/growth_chart"
+        tools:layout="@layout/fragment_character_growth">
+
+        <argument
+            android:name="characterId"
+            app:argType="long" />
+    </fragment>
+
     <fragment
         android:id="@+id/relationshipGraphFragment"
         android:name="com.novelcharacter.app.ui.graph.RelationshipGraphFragment"

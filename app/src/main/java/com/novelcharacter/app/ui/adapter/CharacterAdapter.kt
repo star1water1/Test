@@ -53,12 +53,12 @@ class CharacterAdapter(
 
     fun setSelectionMode(enabled: Boolean) {
         isSelectionMode = enabled
-        notifyDataSetChanged()
+        notifyItemRangeChanged(0, itemCount)
     }
 
     fun setSelectedIds(ids: Set<Long>) {
         selectedIds = ids
-        notifyDataSetChanged()
+        notifyItemRangeChanged(0, itemCount)
     }
 
     /**
@@ -76,7 +76,7 @@ class CharacterAdapter(
         isSelectionMode = false
         selectedIds = emptySet()
         isMaxReached = false
-        notifyDataSetChanged()
+        notifyItemRangeChanged(0, itemCount)
     }
 
     fun setReorderMode(enabled: Boolean) {
@@ -130,7 +130,7 @@ class CharacterAdapter(
 
     fun setShowAnotherName(show: Boolean) {
         showAnotherName = show
-        notifyDataSetChanged()
+        notifyItemRangeChanged(0, itemCount)
     }
 
     @SuppressLint("ClickableViewAccessibility")

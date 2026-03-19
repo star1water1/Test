@@ -102,6 +102,9 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     suspend fun saveAllFieldValues(characterId: Long, values: List<CharacterFieldValue>) =
         characterRepository.saveAllFieldValues(characterId, values)
 
+    suspend fun updateCharacterWithFields(character: Character, values: List<CharacterFieldValue>) =
+        characterRepository.updateCharacterWithFields(character, values)
+
     suspend fun insertCharacterSuspend(character: Character): Long =
         characterRepository.insertCharacter(character)
 
@@ -138,6 +141,9 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     fun deleteRelationshipById(id: Long) = viewModelScope.launch {
         characterRepository.deleteRelationshipById(id)
     }
+
+    suspend fun getRelationshipsForCharacterList(characterId: Long): List<CharacterRelationship> =
+        characterRepository.getRelationshipsForCharacterList(characterId)
 
     suspend fun getAllCharactersList(): List<Character> =
         characterRepository.getAllCharactersList()

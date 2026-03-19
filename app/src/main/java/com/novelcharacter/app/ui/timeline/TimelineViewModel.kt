@@ -28,8 +28,19 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
     val allNovels: LiveData<List<Novel>> = novelRepository.allNovels
     val allCharacters: LiveData<List<Character>> = characterRepository.allCharacters
 
+    // ===== Event density data for density bar =====
+    private val _eventDensity = MutableLiveData<Map<Int, Int>>()
+    val eventDensity: LiveData<Map<Int, Int>> = _eventDensity
+
+    init {
+        // Load density data when all events change
+        allEvents.observeForever { events ->
+            val density = events.groupBy { it.year }.mapValues { it.value.size }
+            _eventDensity.value = density
+        }
+    }
+
     // ===== Zoom Level Management =====
-    // Zoom levels: 1=1000년, 2=100년, 3=10년, 4=1년 (default), 5=월
     private val _zoomLevel = MutableLiveData(4)
     val zoomLevel: LiveData<Int> = _zoomLevel
 
@@ -45,27 +56,50 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
     private val _filterCharacterId = MutableLiveData<Long?>(null)
     val filterCharacterId: LiveData<Long?> = _filterCharacterId
 
-    fun setFilterNovel(novelId: Long?) { _filterNovelId.value = novelId }
+    // 소설 필터에 연동된 캐릭터 목록
+    private val _filteredCharacters = MediatorLiveData<List<Character>>().apply {
+        addSource(allCharacters) { updateFilteredCharacters() }
+        addSource(_filterNovelId) { updateFilteredCharacters() }
+    }
+    val filteredCharacters: LiveData<List<Character>> = _filteredCharacters
+
+    private fun updateFilteredCharacters() {
+        val all = allCharacters.value ?: emptyList()
+        val novelId = _filterNovelId.value
+        _filteredCharacters.value = if (novelId != null) {
+            all.filter { it.novelId == novelId }
+        } else {
+            all
+        }
+    }
+
+    fun setFilterNovel(novelId: Long?) {
+        _filterNovelId.value = novelId
+        // 소설 필터 변경 시 캐릭터 필터 초기화
+        if (novelId != null && _filterCharacterId.value != null) {
+            val chars = allCharacters.value ?: emptyList()
+            val selectedChar = chars.find { it.id == _filterCharacterId.value }
+            if (selectedChar?.novelId != novelId) {
+                _filterCharacterId.value = null
+            }
+        }
+    }
     fun setFilterCharacter(characterId: Long?) { _filterCharacterId.value = characterId }
     fun clearFilters() {
         _filterNovelId.value = null
         _filterCharacterId.value = null
     }
 
-    /**
-     * Computes the visible year range based on zoom level and center year.
-     * Returns a Pair of (startYear, endYear).
-     */
     val visibleRange: LiveData<Pair<Int, Int>> = MediatorLiveData<Pair<Int, Int>>().apply {
         fun update() {
             val zoom = _zoomLevel.value ?: 4
             val center = _centerYear.value ?: 0
             val range = when (zoom) {
-                1 -> 5000  // ±5000 years
-                2 -> 500   // ±500 years
-                3 -> 50    // ±50 years
-                4 -> 5     // ±5 years
-                5 -> 0     // single year (12 months)
+                1 -> 5000
+                2 -> 500
+                3 -> 50
+                4 -> 5
+                5 -> 0
                 else -> 5
             }
             value = Pair(center - range, center + range)
@@ -75,7 +109,7 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
     }
 
     /**
-     * Filtered events based on the current visible range and optional novel/character filters.
+     * Filtered events — 소설+캐릭터 AND 조합 필터 지원
      */
     private val _filterTrigger = MediatorLiveData<Unit>().apply {
         addSource(visibleRange) { value = Unit }
@@ -89,15 +123,18 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
         val characterId = _filterCharacterId.value
 
         when {
-            characterId != null -> timelineRepository.getEventsForCharacterInRange(characterId, start, end)
-            novelId != null -> timelineRepository.getEventsByNovelInRange(novelId, start, end)
-            else -> timelineRepository.getEventsByYearRange(start, end)
+            // AND 조합: 소설 + 캐릭터 동시 필터
+            characterId != null && novelId != null ->
+                timelineRepository.getEventsForCharacterAndNovelInRange(characterId, novelId, start, end)
+            characterId != null ->
+                timelineRepository.getEventsForCharacterInRange(characterId, start, end)
+            novelId != null ->
+                timelineRepository.getEventsByNovelInRange(novelId, start, end)
+            else ->
+                timelineRepository.getEventsByYearRange(start, end)
         }
     }
 
-    /**
-     * Zoom level display label.
-     */
     val zoomLevelLabel: LiveData<String> = _zoomLevel.map { level ->
         val resId = when (level) {
             1 -> R.string.zoom_level_1000
@@ -126,15 +163,23 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
             val (start, end) = visibleRange.value ?: Pair(-5, 5)
             val novelId = _filterNovelId.value
             val characterId = _filterCharacterId.value
-            if (characterId != null) {
-                timelineRepository.getEventsForCharacterInRange(characterId, start, end).map { events ->
-                    events.filter { it.description.contains(query, ignoreCase = true) }
+
+            // 검색도 AND 조합 필터 적용
+            when {
+                characterId != null -> {
+                    timelineRepository.getEventsForCharacterInRange(characterId, start, end).map { events ->
+                        events.filter {
+                            it.description.contains(query, ignoreCase = true) &&
+                                (novelId == null || it.novelId == novelId)
+                        }
+                    }
                 }
-            } else {
-                timelineRepository.searchEvents(query).map { events ->
-                    events.filter { event ->
-                        event.year in start..end &&
-                            (novelId == null || event.novelId == novelId)
+                else -> {
+                    timelineRepository.searchEvents(query).map { events ->
+                        events.filter { event ->
+                            event.year in start..end &&
+                                (novelId == null || event.novelId == novelId)
+                        }
                     }
                 }
             }
@@ -148,16 +193,12 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
     // ===== Zoom controls =====
     fun zoomIn() {
         val current = _zoomLevel.value ?: 4
-        if (current < 5) {
-            _zoomLevel.value = current + 1
-        }
+        if (current < 5) _zoomLevel.value = current + 1
     }
 
     fun zoomOut() {
         val current = _zoomLevel.value ?: 4
-        if (current > 1) {
-            _zoomLevel.value = current - 1
-        }
+        if (current > 1) _zoomLevel.value = current - 1
     }
 
     fun setZoomLevel(level: Int) {
@@ -170,9 +211,7 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
 
     fun setSelectedYear(year: Int?) {
         _selectedYear.value = year
-        if (year != null) {
-            _centerYear.value = year
-        }
+        if (year != null) _centerYear.value = year
     }
 
     // ===== Data access =====
@@ -183,7 +222,16 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
     suspend fun getCharactersForEvent(eventId: Long): List<Character> =
         timelineRepository.getCharactersForEvent(eventId)
 
+    // 소설별 캐릭터 목록 (다이얼로그용)
+    suspend fun getCharactersByNovel(novelId: Long): List<Character> =
+        characterRepository.getCharactersByNovelList(novelId)
+
     private var errorClearJob: Job? = null
+
+    override fun onCleared() {
+        super.onCleared()
+        errorClearJob?.cancel()
+    }
 
     private fun showError(message: String?) {
         _error.value = message
