@@ -32,12 +32,13 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
     private val _eventDensity = MutableLiveData<Map<Int, Int>>()
     val eventDensity: LiveData<Map<Int, Int>> = _eventDensity
 
+    private val densityObserver = Observer<List<TimelineEvent>> { events ->
+        val density = events.groupBy { it.year }.mapValues { it.value.size }
+        _eventDensity.value = density
+    }
+
     init {
-        // Load density data when all events change
-        allEvents.observeForever { events ->
-            val density = events.groupBy { it.year }.mapValues { it.value.size }
-            _eventDensity.value = density
-        }
+        allEvents.observeForever(densityObserver)
     }
 
     // ===== Zoom Level Management =====
@@ -230,6 +231,7 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
 
     override fun onCleared() {
         super.onCleared()
+        allEvents.removeObserver(densityObserver)
         errorClearJob?.cancel()
     }
 

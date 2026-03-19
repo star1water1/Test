@@ -45,6 +45,7 @@ class AutoBackupWorker(
                 exportFieldDefinitions(db, workbook, headerStyle, usedSheetNames)
                 exportStateChanges(db, workbook, headerStyle, usedSheetNames)
                 exportRelationships(db, workbook, headerStyle, usedSheetNames)
+                exportRelationshipChanges(db, workbook, headerStyle, usedSheetNames)
                 exportNameBank(db, workbook, headerStyle, usedSheetNames)
 
                 // Write workbook to bytes, encrypt, and save to internal storage
@@ -391,6 +392,45 @@ class AutoBackupWorker(
             row.createCell(3).setCellValue(r.description)
             row.createCell(4).setCellValue(char1?.code ?: "")
             row.createCell(5).setCellValue(char2?.code ?: "")
+        }
+    }
+
+    private suspend fun exportRelationshipChanges(
+        db: AppDatabase, workbook: XSSFWorkbook,
+        headerStyle: XSSFCellStyle, usedSheetNames: MutableSet<String>
+    ) {
+        val allChanges = db.characterRelationshipChangeDao().getAllChanges()
+        if (allChanges.isEmpty()) return
+
+        val allRelationships = db.characterRelationshipDao().getAllRelationships()
+        val relMap = allRelationships.associateBy { it.id }
+        val allCharacters = db.characterDao().getAllCharactersList()
+        val charMap = allCharacters.associateBy { it.id }
+
+        val sheetName = sanitizeSheetName("관계 변화", usedSheetNames)
+        val sheet = workbook.createSheet(sheetName)
+        val headers = listOf("캐릭터1", "캐릭터2", "연도", "월", "일", "관계 유형", "설명", "강도", "양방향", "캐릭터1코드", "캐릭터2코드")
+        val headerRow = sheet.createRow(0)
+        headers.forEachIndexed { i, h ->
+            headerRow.createCell(i).apply { setCellValue(h); cellStyle = headerStyle }
+        }
+        var rowIndex = 0
+        for (rc in allChanges) {
+            val rel = relMap[rc.relationshipId] ?: continue
+            val char1 = charMap[rel.characterId1]
+            val char2 = charMap[rel.characterId2]
+            val row = sheet.createRow(++rowIndex)
+            row.createCell(0).setCellValue(char1?.name ?: "")
+            row.createCell(1).setCellValue(char2?.name ?: "")
+            row.createCell(2).setCellValue(rc.year.toDouble())
+            rc.month?.let { row.createCell(3).setCellValue(it.toDouble()) }
+            rc.day?.let { row.createCell(4).setCellValue(it.toDouble()) }
+            row.createCell(5).setCellValue(rc.relationshipType)
+            row.createCell(6).setCellValue(rc.description)
+            row.createCell(7).setCellValue(rc.intensity.toDouble())
+            row.createCell(8).setCellValue(if (rc.isBidirectional) "Y" else "N")
+            row.createCell(9).setCellValue(char1?.code ?: "")
+            row.createCell(10).setCellValue(char2?.code ?: "")
         }
     }
 

@@ -22,6 +22,9 @@ interface CharacterDao {
     @Query("SELECT * FROM characters WHERE id = :id")
     suspend fun getCharacterById(id: Long): Character?
 
+    @Query("SELECT * FROM characters WHERE id IN (:ids)")
+    suspend fun getCharactersByIds(ids: List<Long>): List<Character>
+
     @Query("SELECT * FROM characters WHERE id = :id")
     fun getCharacterByIdLive(id: Long): LiveData<Character?>
 

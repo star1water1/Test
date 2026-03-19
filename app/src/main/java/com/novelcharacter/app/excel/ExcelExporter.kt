@@ -39,6 +39,7 @@ class ExcelExporter(context: Context) {
     private val db = AppDatabase.getDatabase(appContext)
     @Volatile private var supervisorJob = kotlinx.coroutines.SupervisorJob()
     @Volatile private var exportScope = CoroutineScope(Dispatchers.IO + supervisorJob)
+    @Volatile private var isExporting = false
 
     @Synchronized
     private fun ensureActiveScope(): CoroutineScope {
@@ -56,6 +57,8 @@ class ExcelExporter(context: Context) {
      *                    The caller is responsible for launching SAF to let the user pick a save location.
      */
     fun exportAll(onFileReady: ((File, String) -> Unit)? = null) {
+        if (isExporting) return
+        isExporting = true
         ensureActiveScope().launch {
             withContext(Dispatchers.Main) {
                 Toast.makeText(appContext, appContext.getString(R.string.export_preparing), Toast.LENGTH_SHORT).show()
@@ -74,9 +77,10 @@ class ExcelExporter(context: Context) {
                 exportTimeline(workbook, usedSheetNames)
                 exportStateChanges(workbook, usedSheetNames)
                 exportRelationships(workbook, usedSheetNames)
+                exportRelationshipChanges(workbook, usedSheetNames)
                 exportNameBank(workbook, usedSheetNames)
 
-                val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+                val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
                 val fileName = "NovelCharacter_$timestamp.xlsx"
 
                 val file = saveWorkbook(workbook, fileName)
@@ -95,6 +99,7 @@ class ExcelExporter(context: Context) {
                 }
             } finally {
                 try { workbook?.close() } catch (_: Exception) {}
+                isExporting = false
             }
         }
     }
@@ -703,6 +708,46 @@ class ExcelExporter(context: Context) {
         }
 
         applySpecFormatting(sheet, spec, allRelationships.size)
+    }
+
+    // ── 관계 변화 ──
+
+    private suspend fun exportRelationshipChanges(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
+        val allChanges = db.characterRelationshipChangeDao().getAllChanges()
+        if (allChanges.isEmpty()) return
+
+        val allRelationships = db.characterRelationshipDao().getAllRelationships()
+        val relMap = allRelationships.associateBy { it.id }
+        val allCharacters = db.characterDao().getAllCharactersList()
+        val charMap = allCharacters.associateBy { it.id }
+
+        val sheetName = sanitizeSheetName("관계 변화", usedSheetNames)
+        val sheet = workbook.createSheet(sheetName)
+        val headers = listOf("캐릭터1", "캐릭터2", "연도", "월", "일", "관계 유형", "설명", "강도", "양방향", "캐릭터1코드", "캐릭터2코드")
+        val headerRow = sheet.createRow(0)
+        headers.forEachIndexed { i, h ->
+            headerRow.createCell(i).apply {
+                setCellValue(h)
+                cellStyle = styles.header
+            }
+        }
+        allChanges.forEachIndexed { i, rc ->
+            val rel = relMap[rc.relationshipId] ?: return@forEachIndexed
+            val char1 = charMap[rel.characterId1]
+            val char2 = charMap[rel.characterId2]
+            val row = sheet.createRow(i + 1)
+            row.createCell(0).setCellValue(char1?.name ?: "")
+            row.createCell(1).setCellValue(char2?.name ?: "")
+            row.createCell(2).setCellValue(rc.year.toDouble())
+            rc.month?.let { row.createCell(3).setCellValue(it.toDouble()) }
+            rc.day?.let { row.createCell(4).setCellValue(it.toDouble()) }
+            row.createCell(5).setCellValue(rc.relationshipType)
+            row.createCell(6).setCellValue(rc.description)
+            row.createCell(7).setCellValue(rc.intensity.toDouble())
+            row.createCell(8).setCellValue(if (rc.isBidirectional) "Y" else "N")
+            row.createCell(9).setCellValue(char1?.code ?: "")
+            row.createCell(10).setCellValue(char2?.code ?: "")
+        }
     }
 
     // ── 이름 은행 ──

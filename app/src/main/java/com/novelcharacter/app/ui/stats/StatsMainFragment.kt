@@ -56,30 +56,27 @@ class StatsMainFragment : Fragment() {
         viewModel.characterStats.observe(viewLifecycleOwner) { charStats ->
             val topTag = charStats.tagDistribution.entries.firstOrNull()
             binding.charPreview.text = buildString {
-                append("태그 ${charStats.tagDistribution.size}종")
-                if (topTag != null) append(" | 최다: ${topTag.key}(${topTag.value})")
+                append(getString(R.string.stats_tag_preview, charStats.tagDistribution.size))
+                if (topTag != null) append(getString(R.string.stats_tag_top_format, topTag.key, topTag.value))
             }
         }
 
         viewModel.eventStats.observe(viewLifecycleOwner) { eventStats ->
             binding.eventPreview.text = buildString {
-                append("연도 밀도 ${eventStats.yearDensity.size}개")
-                append(" | 고아사건 ${eventStats.orphanEventCount}건")
+                append(getString(R.string.stats_event_density_preview, eventStats.yearDensity.size))
+                append(getString(R.string.stats_orphan_event_preview, eventStats.orphanEventCount))
             }
         }
 
         viewModel.relationshipStats.observe(viewLifecycleOwner) { relStats ->
             binding.relPreview.text = buildString {
-                append("유형 ${relStats.typeDistribution.size}종")
-                append(" | 고립 ${relStats.isolatedCharacters.size}명")
+                append(getString(R.string.stats_rel_type_preview, relStats.typeDistribution.size))
+                append(getString(R.string.stats_isolated_preview, relStats.isolatedCharacters.size))
             }
         }
 
         viewModel.nameBankStats.observe(viewLifecycleOwner) { nameStats ->
-            binding.namePreview.text = buildString {
-                append("사용률 ${String.format("%.0f", nameStats.usageRate)}%")
-                append(" (${nameStats.usedNames}/${nameStats.totalNames})")
-            }
+            binding.namePreview.text = getString(R.string.stats_usage_rate_preview, nameStats.usageRate, nameStats.usedNames, nameStats.totalNames)
         }
 
         viewModel.dataHealthStats.observe(viewLifecycleOwner) { healthStats ->
@@ -88,10 +85,10 @@ class StatsMainFragment : Fragment() {
                 healthStats.isolatedChars.size +
                 healthStats.unlinkedChars.size
             binding.healthPreview.text = buildString {
-                if (totalIssues == 0) append("문제 없음")
+                if (totalIssues == 0) append(getString(R.string.stats_health_no_issues))
                 else {
-                    append("발견 사항 ${totalIssues}건")
-                    if (healthStats.noImageChars.isNotEmpty()) append(" | 이미지없음 ${healthStats.noImageChars.size}")
+                    append(getString(R.string.stats_health_issues_found, totalIssues))
+                    if (healthStats.noImageChars.isNotEmpty()) append(getString(R.string.stats_health_no_image, healthStats.noImageChars.size))
                 }
             }
         }

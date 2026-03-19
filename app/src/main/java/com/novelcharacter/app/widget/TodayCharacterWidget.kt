@@ -22,25 +22,9 @@ import java.util.Calendar
  */
 class TodayCharacterWidget : AppWidgetProvider() {
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
-        for (appWidgetId in appWidgetIds) {
-            updateWidget(context, appWidgetManager, appWidgetId)
-        }
-    }
-
-    private fun updateWidget(context: Context, manager: AppWidgetManager, widgetId: Int) {
-        val views = RemoteViews(context.packageName, R.layout.widget_today_character)
-
-        val launchIntent = Intent(context, MainActivity::class.java)
-        val pendingIntent = PendingIntent.getActivity(
-            context, 1, launchIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        views.setOnClickPendingIntent(R.id.widgetRoot, pendingIntent)
-
-        scope.launch {
+        val pendingResult = goAsync()
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
                 val db = AppDatabase.getDatabase(context)
                 val calendar = Calendar.getInstance()
@@ -51,29 +35,38 @@ class TodayCharacterWidget : AppWidgetProvider() {
                 val birthChanges = db.characterStateChangeDao()
                     .getChangesByFieldAndDate(CharacterStateChange.KEY_BIRTH, month, day)
 
-                if (birthChanges.isNotEmpty()) {
+                val widgetText: String = if (birthChanges.isNotEmpty()) {
                     val charIds = birthChanges.map { it.characterId }.distinct()
                     val names = charIds.mapNotNull { id ->
                         db.characterDao().getCharacterById(id)?.name
                     }
-                    val text = context.getString(R.string.widget_birthday_today, names.joinToString(", "))
-                    views.setTextViewText(R.id.widgetText, text)
+                    context.getString(R.string.widget_birthday_today, names.joinToString(", "))
                 } else {
-                    // 랜덤 캐릭터
                     val allChars = db.characterDao().getAllCharactersList()
                     if (allChars.isNotEmpty()) {
                         val random = allChars.random()
-                        views.setTextViewText(
-                            R.id.widgetText,
-                            context.getString(R.string.widget_random_character, random.name)
-                        )
+                        context.getString(R.string.widget_random_character, random.name)
                     } else {
-                        views.setTextViewText(R.id.widgetText, context.getString(R.string.widget_no_birthday))
+                        context.getString(R.string.widget_no_birthday)
                     }
                 }
 
-                manager.updateAppWidget(widgetId, views)
-            } catch (_: Exception) {}
+                for (appWidgetId in appWidgetIds) {
+                    val views = RemoteViews(context.packageName, R.layout.widget_today_character)
+
+                    val launchIntent = Intent(context, MainActivity::class.java)
+                    val pendingIntent = PendingIntent.getActivity(
+                        context, 1, launchIntent,
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                    )
+                    views.setOnClickPendingIntent(R.id.widgetRoot, pendingIntent)
+                    views.setTextViewText(R.id.widgetText, widgetText)
+                    appWidgetManager.updateAppWidget(appWidgetId, views)
+                }
+            } catch (_: Exception) {
+            } finally {
+                pendingResult.finish()
+            }
         }
     }
 }

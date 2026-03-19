@@ -68,8 +68,12 @@ class RelationshipHelper(
                     } else null
                 }
                 relationshipAdapter.submitList(displayItems)
-                binding.textNoRelationships.visibility = if (displayItems.isEmpty()) View.VISIBLE else View.GONE
-                binding.relationshipsRecyclerView.visibility = if (displayItems.isEmpty()) View.GONE else View.VISIBLE
+                try {
+                    binding.textNoRelationships.visibility = if (displayItems.isEmpty()) View.VISIBLE else View.GONE
+                    binding.relationshipsRecyclerView.visibility = if (displayItems.isEmpty()) View.GONE else View.VISIBLE
+                } catch (_: Exception) {
+                    // Fragment view may have been destroyed during suspend
+                }
             }
         }
     }

@@ -44,4 +44,7 @@ interface CharacterStateChangeDao {
 
     @Query("SELECT * FROM character_state_changes WHERE fieldKey = :fieldKey AND month = :month AND day = :day")
     suspend fun getChangesByFieldAndDate(fieldKey: String, month: Int, day: Int): List<CharacterStateChange>
+
+    @Query("DELETE FROM character_state_changes WHERE fieldKey = :fieldKey AND fieldKey NOT LIKE '\\_\\_%' ESCAPE '\\'")
+    suspend fun deleteChangesByFieldKey(fieldKey: String)
 }

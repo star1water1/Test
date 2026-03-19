@@ -106,7 +106,11 @@ class TimeSliderHelper(
                 baseValues, allChanges, year, cachedFields
             )
 
-            fieldRenderer.displayResolvedFields(cachedFields, resolvedState)
+            try {
+                fieldRenderer.displayResolvedFields(cachedFields, resolvedState)
+            } catch (_: Exception) {
+                // Fragment view may have been destroyed during suspend
+            }
         }
     }
 

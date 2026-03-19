@@ -12,6 +12,8 @@ import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.data.model.RecentActivity
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.util.PresetTemplates
+import android.util.Log
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 class UniverseViewModel(application: Application) : AndroidViewModel(application) {
@@ -30,26 +32,47 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
     private val _universeFieldCounts = MutableLiveData<Map<Long, Int>>()
     val universeFieldCounts: LiveData<Map<Long, Int>> = _universeFieldCounts
 
-    fun loadCounts(universes: List<Universe>) = viewModelScope.launch {
-        val ids = universes.map { it.id }
-        _universeNovelCounts.value = universeRepository.getNovelCountsByUniverses(ids)
-        _universeFieldCounts.value = universeRepository.getFieldCountsByUniverses(ids)
+    private var loadCountsJob: Job? = null
+
+    fun loadCounts(universes: List<Universe>) {
+        loadCountsJob?.cancel()
+        loadCountsJob = viewModelScope.launch {
+            val ids = universes.map { it.id }
+            _universeNovelCounts.value = universeRepository.getNovelCountsByUniverses(ids)
+            _universeFieldCounts.value = universeRepository.getFieldCountsByUniverses(ids)
+        }
     }
 
     fun insertUniverse(universe: Universe) = viewModelScope.launch {
-        universeRepository.insertUniverse(universe)
+        try {
+            universeRepository.insertUniverse(universe)
+        } catch (e: Exception) {
+            Log.e("UniverseViewModel", "Failed to insert universe", e)
+        }
     }
 
     fun updateUniverse(universe: Universe) = viewModelScope.launch {
-        universeRepository.updateUniverse(universe)
+        try {
+            universeRepository.updateUniverse(universe)
+        } catch (e: Exception) {
+            Log.e("UniverseViewModel", "Failed to update universe", e)
+        }
     }
 
     fun deleteUniverse(universe: Universe) = viewModelScope.launch {
-        universeRepository.deleteUniverse(universe)
+        try {
+            universeRepository.deleteUniverse(universe)
+        } catch (e: Exception) {
+            Log.e("UniverseViewModel", "Failed to delete universe", e)
+        }
     }
 
     fun updateDisplayOrders(universes: List<Universe>) = viewModelScope.launch {
-        universeRepository.updateUniverseDisplayOrders(universes)
+        try {
+            universeRepository.updateUniverseDisplayOrders(universes)
+        } catch (e: Exception) {
+            Log.e("UniverseViewModel", "Failed to update display orders", e)
+        }
     }
 
     fun getPresetTemplates(): List<PresetTemplates.PresetTemplate> =

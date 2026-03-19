@@ -8,6 +8,7 @@ import androidx.lifecycle.switchMap
 import androidx.lifecycle.viewModelScope
 import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.data.model.FieldDefinition
+import android.util.Log
 import kotlinx.coroutines.launch
 
 class FieldViewModel(application: Application) : AndroidViewModel(application) {
@@ -26,19 +27,35 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun insertField(field: FieldDefinition) = viewModelScope.launch {
-        universeRepository.insertField(field)
+        try {
+            universeRepository.insertField(field)
+        } catch (e: Exception) {
+            Log.e("FieldViewModel", "Failed to insert field", e)
+        }
     }
 
     fun updateField(field: FieldDefinition) = viewModelScope.launch {
-        universeRepository.updateField(field)
+        try {
+            universeRepository.updateField(field)
+        } catch (e: Exception) {
+            Log.e("FieldViewModel", "Failed to update field", e)
+        }
     }
 
     fun deleteField(field: FieldDefinition) = viewModelScope.launch {
-        universeRepository.deleteField(field)
+        try {
+            universeRepository.deleteField(field)
+        } catch (e: Exception) {
+            Log.e("FieldViewModel", "Failed to delete field", e)
+        }
     }
 
     fun updateFieldOrder(fields: List<FieldDefinition>) = viewModelScope.launch {
-        val updated = fields.mapIndexed { index, field -> field.copy(displayOrder = index) }
-        universeRepository.updateFieldsOrder(updated)
+        try {
+            val updated = fields.mapIndexed { index, field -> field.copy(displayOrder = index) }
+            universeRepository.updateFieldsOrder(updated)
+        } catch (e: Exception) {
+            Log.e("FieldViewModel", "Failed to update field order", e)
+        }
     }
 }

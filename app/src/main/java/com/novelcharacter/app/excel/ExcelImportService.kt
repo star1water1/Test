@@ -5,6 +5,7 @@ import com.novelcharacter.app.data.database.AppDatabase
 import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.CharacterFieldValue
 import com.novelcharacter.app.data.model.CharacterRelationship
+import com.novelcharacter.app.data.model.CharacterRelationshipChange
 import com.novelcharacter.app.data.model.CharacterStateChange
 import com.novelcharacter.app.data.model.CharacterTag
 import com.novelcharacter.app.data.model.FieldDefinition
@@ -41,6 +42,7 @@ data class ImportResult(
     var updatedStateChanges: Int = 0,
     var newRelationships: Int = 0,
     var updatedRelationships: Int = 0,
+    var newRelationshipChanges: Int = 0,
     var newNameBank: Int = 0,
     var updatedNameBank: Int = 0,
     var skippedRows: Int = 0,
@@ -138,6 +140,7 @@ class ExcelImportService(private val db: AppDatabase) {
             importTimeline(workbook, result, onProgress, totalRows)
             importStateChanges(workbook, result, onProgress, totalRows)
             importRelationships(workbook, result, onProgress, totalRows)
+            importRelationshipChanges(workbook, result, onProgress, totalRows)
             importNameBank(workbook, result, onProgress, totalRows)
         }
 
@@ -426,6 +429,9 @@ class ExcelImportService(private val db: AppDatabase) {
 
                 val existing = db.fieldDefinitionDao().getFieldByKey(universe.id, key)
                 if (existing != null) {
+                    if (existing.type != type && type.isNotBlank()) {
+                        result.warnings.add("필드 정의 행 $i: 필드 '$name'의 타입이 '${existing.type}'에서 '$type'(으)로 변경됨 — 기존 값 호환성을 확인하세요")
+                    }
                     db.fieldDefinitionDao().update(existing.copy(
                         name = name, type = type, config = config,
                         groupName = groupName, displayOrder = displayOrder, isRequired = isRequired
@@ -533,7 +539,8 @@ class ExcelImportService(private val db: AppDatabase) {
                     }
 
                 val anotherName = if (anotherNameColIndex >= 0) getCellString(row, anotherNameColIndex) else ""
-                val imagePaths = if (imageColIndex >= 0) getCellString(row, imageColIndex).ifBlank { "[]" } else "[]"
+                // imageColIndex < 0 means column is missing: use null sentinel to preserve existing images
+                val imagePathsFromExcel: String? = if (imageColIndex >= 0) getCellString(row, imageColIndex).ifBlank { "[]" } else null
                 val memo = if (memoColIndex >= 0) getCellString(row, memoColIndex) else ""
                 val displayOrder = if (orderColIndex >= 0) parseNumber(getCellString(row, orderColIndex))?.toLong() ?: 0L else 0L
 
@@ -562,7 +569,7 @@ class ExcelImportService(private val db: AppDatabase) {
                         name = name,
                         anotherName = anotherName,
                         novelId = novelId,
-                        imagePaths = imagePaths,
+                        imagePaths = imagePathsFromExcel ?: existingChar.imagePaths,
                         memo = memo,
                         updatedAt = System.currentTimeMillis(),
                         displayOrder = displayOrder
@@ -573,7 +580,7 @@ class ExcelImportService(private val db: AppDatabase) {
                     if (code.isBlank()) result.newCodesGenerated++
                     charId = db.characterDao().insert(Character(
                         name = name, anotherName = anotherName, novelId = novelId,
-                        imagePaths = imagePaths, memo = memo, code = newCode, displayOrder = displayOrder
+                        imagePaths = imagePathsFromExcel ?: "[]", memo = memo, code = newCode, displayOrder = displayOrder
                     ))
                     result.newCharacters++
                 }
@@ -738,6 +745,11 @@ class ExcelImportService(private val db: AppDatabase) {
                 val fieldKey = getCellString(row, fieldKeyColIndex)
                 if (fieldKey.isBlank()) continue
                 val newValue = getCellString(row, newValueColIndex)
+                if (newValue.isBlank()) {
+                    result.skippedRows++
+                    result.warnings.add("상태변화 행 $i: 빈 값은 허용되지 않습니다")
+                    continue
+                }
                 val description = getCellString(row, descColIndex)
                 val charCode = if (charCodeColIndex >= 0) getCellString(row, charCodeColIndex) else ""
 
@@ -844,6 +856,72 @@ class ExcelImportService(private val db: AppDatabase) {
         reportProgress(onProgress, "관계", sheet.lastRowNum, totalRows)
     }
 
+    // ── 관계 변화 가져오기 ──
+
+    private suspend fun importRelationshipChanges(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
+        val sheet = workbook.getSheet("관계 변화") ?: return
+        val headerRow = sheet.getRow(0) ?: return
+        if (!isValidHeader(headerRow, "캐릭터1")) return
+
+        val cols = resolveHeaderColumns(headerRow)
+        val char1NameColIndex = cols["캐릭터1"] ?: 0
+        val char2NameColIndex = cols["캐릭터2"] ?: 1
+        val yearColIndex = cols["연도"] ?: 2
+        val monthColIndex = cols["월"] ?: 3
+        val dayColIndex = cols["일"] ?: 4
+        val relTypeColIndex = cols["관계 유형"] ?: 5
+        val descColIndex = cols["설명"] ?: 6
+        val intensityColIndex = cols["강도"] ?: 7
+        val bidirectionalColIndex = cols["양방향"] ?: 8
+        val char1CodeColIndex = cols["캐릭터1코드"] ?: -1
+        val char2CodeColIndex = cols["캐릭터2코드"] ?: -1
+
+        for (i in 1..sheet.lastRowNum) {
+            try {
+                val row = sheet.getRow(i) ?: continue
+                val char1Name = getCellString(row, char1NameColIndex)
+                val char2Name = getCellString(row, char2NameColIndex)
+                if (char1Name.isBlank() || char2Name.isBlank()) continue
+
+                val yearStr = getCellString(row, yearColIndex)
+                val year = parseNumber(yearStr)?.toInt() ?: continue
+                val month = parseNumber(getCellString(row, monthColIndex))?.toInt()?.takeIf { it in 1..12 }
+                val day = parseNumber(getCellString(row, dayColIndex))?.toInt()?.takeIf { it in 1..31 }
+                val relationshipType = getCellString(row, relTypeColIndex)
+                val description = getCellString(row, descColIndex)
+                val intensity = parseNumber(getCellString(row, intensityColIndex))?.toInt()?.coerceIn(1, 10) ?: 5
+                val isBidirectional = parseBoolean(getCellString(row, bidirectionalColIndex))
+
+                val char1Code = if (char1CodeColIndex >= 0) getCellString(row, char1CodeColIndex) else ""
+                val char2Code = if (char2CodeColIndex >= 0) getCellString(row, char2CodeColIndex) else ""
+
+                val char1 = (if (char1Code.isNotBlank()) db.characterDao().getCharacterByCode(char1Code) else null)
+                    ?: findCharacterByName(char1Name, null) ?: continue
+                val char2 = (if (char2Code.isNotBlank()) db.characterDao().getCharacterByCode(char2Code) else null)
+                    ?: findCharacterByName(char2Name, null) ?: continue
+
+                // Find the relationship between these characters
+                val relationships = db.characterRelationshipDao().getRelationshipsForCharacterList(char1.id)
+                val relationship = relationships.find { rel ->
+                    (rel.characterId1 == char1.id && rel.characterId2 == char2.id) ||
+                    (rel.characterId1 == char2.id && rel.characterId2 == char1.id)
+                } ?: continue
+
+                db.characterRelationshipChangeDao().insert(CharacterRelationshipChange(
+                    relationshipId = relationship.id,
+                    year = year, month = month, day = day,
+                    relationshipType = relationshipType, description = description,
+                    intensity = intensity, isBidirectional = isBidirectional
+                ))
+                result.newRelationshipChanges++
+            } catch (e: Exception) {
+                result.skippedRows++
+                result.errors.add("관계 변화 행 $i: ${e.message}")
+            }
+        }
+        reportProgress(onProgress, "관계 변화", sheet.lastRowNum, totalRows)
+    }
+
     // ── 이름 은행 가져오기 ──
 
     private suspend fun importNameBank(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
@@ -939,7 +1017,9 @@ class ExcelImportService(private val db: AppDatabase) {
             if (col in fixedColIndices) continue
             val headerName = getCellString(headerRow, col)
             if (headerName.isBlank()) continue
-            val field = fields.find { it.name == headerName }
+            val trimmedHeader = headerName.trim()
+            val field = fields.find { it.name == trimmedHeader }
+                ?: fields.find { it.name.equals(trimmedHeader, ignoreCase = true) }
             if (field != null) {
                 map[col] = field
             }

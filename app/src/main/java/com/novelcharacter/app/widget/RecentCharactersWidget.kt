@@ -20,26 +20,9 @@ import kotlinx.coroutines.launch
  */
 class RecentCharactersWidget : AppWidgetProvider() {
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
-        for (appWidgetId in appWidgetIds) {
-            updateWidget(context, appWidgetManager, appWidgetId)
-        }
-    }
-
-    private fun updateWidget(context: Context, manager: AppWidgetManager, widgetId: Int) {
-        val views = RemoteViews(context.packageName, R.layout.widget_recent_characters)
-
-        // 앱 실행 인텐트
-        val launchIntent = Intent(context, MainActivity::class.java)
-        val pendingIntent = PendingIntent.getActivity(
-            context, 0, launchIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        views.setOnClickPendingIntent(R.id.widgetRoot, pendingIntent)
-
-        scope.launch {
+        val pendingResult = goAsync()
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
                 val db = AppDatabase.getDatabase(context)
                 val recentActivities = db.recentActivityDao().getRecentActivitiesList()
@@ -47,19 +30,32 @@ class RecentCharactersWidget : AppWidgetProvider() {
                     .filter { it.entityType == "character" }
                     .take(4)
 
-                val textIds = listOf(
-                    R.id.charName1, R.id.charName2, R.id.charName3, R.id.charName4
-                )
+                for (appWidgetId in appWidgetIds) {
+                    val views = RemoteViews(context.packageName, R.layout.widget_recent_characters)
 
-                for (i in textIds.indices) {
-                    val name = charActivities.getOrNull(i)?.title ?: ""
-                    views.setTextViewText(textIds[i], name)
+                    val launchIntent = Intent(context, MainActivity::class.java)
+                    val pendingIntent = PendingIntent.getActivity(
+                        context, 0, launchIntent,
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                    )
+                    views.setOnClickPendingIntent(R.id.widgetRoot, pendingIntent)
+
+                    val textIds = listOf(
+                        R.id.charName1, R.id.charName2, R.id.charName3, R.id.charName4
+                    )
+
+                    for (i in textIds.indices) {
+                        val name = charActivities.getOrNull(i)?.title ?: ""
+                        views.setTextViewText(textIds[i], name)
+                    }
+
+                    views.setTextViewText(R.id.widgetTitle, context.getString(R.string.widget_recent_characters))
+                    appWidgetManager.updateAppWidget(appWidgetId, views)
                 }
-
-                views.setTextViewText(R.id.widgetTitle, context.getString(R.string.widget_recent_characters))
-                manager.updateAppWidget(widgetId, views)
             } catch (_: Exception) {
                 // Widget update failure is not critical
+            } finally {
+                pendingResult.finish()
             }
         }
     }

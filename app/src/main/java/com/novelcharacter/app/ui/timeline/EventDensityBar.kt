@@ -46,7 +46,7 @@ class EventDensityBar @JvmOverloads constructor(
         densityData.putAll(data)
         rangeFrom = from
         rangeTo = to
-        maxCount = data.values.maxOrNull() ?: 1
+        maxCount = (data.values.maxOrNull() ?: 1).coerceAtLeast(1)
         invalidate()
     }
 

@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.*
 import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.data.model.NameBankEntry
+import android.util.Log
 import kotlinx.coroutines.launch
 
 class NameBankViewModel(application: Application) : AndroidViewModel(application) {
@@ -53,23 +54,43 @@ class NameBankViewModel(application: Application) : AndroidViewModel(application
     fun isShowOnlyAvailable(): Boolean = _showOnlyAvailable.value ?: false
 
     fun insert(entry: NameBankEntry) = viewModelScope.launch {
-        nameBankRepository.insertNameBankEntry(entry)
+        try {
+            nameBankRepository.insertNameBankEntry(entry)
+        } catch (e: Exception) {
+            Log.e("NameBankViewModel", "Failed to insert name bank entry", e)
+        }
     }
 
     fun update(entry: NameBankEntry) = viewModelScope.launch {
-        nameBankRepository.updateNameBankEntry(entry)
+        try {
+            nameBankRepository.updateNameBankEntry(entry)
+        } catch (e: Exception) {
+            Log.e("NameBankViewModel", "Failed to update name bank entry", e)
+        }
     }
 
     fun delete(entry: NameBankEntry) = viewModelScope.launch {
-        nameBankRepository.deleteNameBankEntry(entry)
+        try {
+            nameBankRepository.deleteNameBankEntry(entry)
+        } catch (e: Exception) {
+            Log.e("NameBankViewModel", "Failed to delete name bank entry", e)
+        }
     }
 
     fun markAsUsed(id: Long, characterId: Long) = viewModelScope.launch {
-        nameBankRepository.markNameBankAsUsed(id, characterId)
+        try {
+            nameBankRepository.markNameBankAsUsed(id, characterId)
+        } catch (e: Exception) {
+            Log.e("NameBankViewModel", "Failed to mark as used", e)
+        }
     }
 
     fun markAsAvailable(id: Long) = viewModelScope.launch {
-        nameBankRepository.markNameBankAsAvailable(id)
+        try {
+            nameBankRepository.markNameBankAsAvailable(id)
+        } catch (e: Exception) {
+            Log.e("NameBankViewModel", "Failed to mark as available", e)
+        }
     }
 
     suspend fun getAvailableNamesList(): List<NameBankEntry> =

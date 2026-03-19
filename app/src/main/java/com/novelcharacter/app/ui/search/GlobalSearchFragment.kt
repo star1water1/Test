@@ -94,10 +94,9 @@ class GlobalSearchFragment : Fragment() {
             updatePresetChips(presets)
         }
 
-        viewModel.presetAppliedEvent.observe(viewLifecycleOwner) { name ->
-            if (name != null) {
+        viewModel.presetAppliedEvent.observe(viewLifecycleOwner) { event ->
+            event?.getContentIfNotHandled()?.let { name ->
                 Toast.makeText(requireContext(), getString(R.string.preset_applied, name), Toast.LENGTH_SHORT).show()
-                viewModel.clearPresetEvent()
             }
         }
     }
@@ -139,8 +138,9 @@ class GlobalSearchFragment : Fragment() {
     }
 
     private fun showSavePresetDialog() {
-        lifecycleScope.launch {
+        viewLifecycleOwner.lifecycleScope.launch {
             val count = viewModel.getPresetCount()
+            if (!isAdded) return@launch
             if (count >= SearchPreset.MAX_PRESETS) {
                 Toast.makeText(requireContext(), getString(R.string.preset_limit_reached, SearchPreset.MAX_PRESETS), Toast.LENGTH_SHORT).show()
                 return@launch

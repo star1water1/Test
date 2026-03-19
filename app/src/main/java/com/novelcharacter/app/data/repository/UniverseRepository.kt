@@ -67,8 +67,12 @@ class UniverseRepository(
     suspend fun updateFieldsOrder(fields: List<FieldDefinition>) =
         fieldDefinitionDao.updateAll(fields)
 
-    suspend fun deleteField(field: FieldDefinition) =
-        fieldDefinitionDao.delete(field)
+    suspend fun deleteField(field: FieldDefinition) {
+        db.withTransaction {
+            db.characterStateChangeDao().deleteChangesByFieldKey(field.key)
+            fieldDefinitionDao.delete(field)
+        }
+    }
 
     suspend fun deleteAllFieldsByUniverse(universeId: Long) =
         fieldDefinitionDao.deleteAllByUniverse(universeId)

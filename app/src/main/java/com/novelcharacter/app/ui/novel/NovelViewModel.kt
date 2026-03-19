@@ -9,6 +9,7 @@ import androidx.lifecycle.viewModelScope
 import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.RecentActivity
+import android.util.Log
 import kotlinx.coroutines.launch
 
 class NovelViewModel(application: Application) : AndroidViewModel(application) {
@@ -44,29 +45,53 @@ class NovelViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun insertNovel(novel: Novel) = viewModelScope.launch {
-        novelRepository.insertNovel(novel)
+        try {
+            novelRepository.insertNovel(novel)
+        } catch (e: Exception) {
+            Log.e("NovelViewModel", "Failed to insert novel", e)
+        }
     }
 
     fun updateNovel(novel: Novel) = viewModelScope.launch {
-        novelRepository.updateNovel(novel)
+        try {
+            novelRepository.updateNovel(novel)
+        } catch (e: Exception) {
+            Log.e("NovelViewModel", "Failed to update novel", e)
+        }
     }
 
     fun deleteNovel(novel: Novel) = viewModelScope.launch {
-        novelRepository.deleteNovel(novel)
+        try {
+            novelRepository.deleteNovel(novel)
+        } catch (e: Exception) {
+            Log.e("NovelViewModel", "Failed to delete novel", e)
+        }
     }
 
     fun updateDisplayOrders(novels: List<Novel>) = viewModelScope.launch {
-        novelRepository.updateNovelDisplayOrders(novels)
+        try {
+            novelRepository.updateNovelDisplayOrders(novels)
+        } catch (e: Exception) {
+            Log.e("NovelViewModel", "Failed to update display orders", e)
+        }
     }
 
     fun togglePin(novel: Novel) = viewModelScope.launch {
-        novelRepository.setPinned(novel.id, !novel.isPinned)
+        try {
+            novelRepository.setPinned(novel.id, !novel.isPinned)
+        } catch (e: Exception) {
+            Log.e("NovelViewModel", "Failed to toggle pin", e)
+        }
     }
 
     fun recordRecentActivity(novelId: Long, title: String) = viewModelScope.launch {
-        recentActivityDao.upsert(
-            RecentActivity(entityType = RecentActivity.TYPE_NOVEL, entityId = novelId, title = title)
-        )
-        recentActivityDao.trimToMax(RecentActivity.MAX_ENTRIES)
+        try {
+            recentActivityDao.upsert(
+                RecentActivity(entityType = RecentActivity.TYPE_NOVEL, entityId = novelId, title = title)
+            )
+            recentActivityDao.trimToMax(RecentActivity.MAX_ENTRIES)
+        } catch (e: Exception) {
+            Log.e("NovelViewModel", "Failed to record recent activity", e)
+        }
     }
 }

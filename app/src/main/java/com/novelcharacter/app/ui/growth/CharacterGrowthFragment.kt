@@ -125,6 +125,7 @@ class CharacterGrowthFragment : Fragment() {
     private fun loadData() {
         viewLifecycleOwner.lifecycleScope.launch {
             val character = viewModel.getCharacter(characterId) ?: return@launch
+            if (_binding == null) return@launch
             binding.toolbar.title = getString(R.string.growth_chart_title, character.name)
 
             // 세계관 필드 정의 가져오기
@@ -181,7 +182,7 @@ class CharacterGrowthFragment : Fragment() {
                 if (!isAdded) return@launch
 
                 val names = allChars.map { it.name }.toTypedArray()
-                android.app.AlertDialog.Builder(requireContext())
+                androidx.appcompat.app.AlertDialog.Builder(requireContext())
                     .setTitle(R.string.growth_add_compare)
                     .setItems(names) { _, which ->
                         compareCharacterIds.add(allChars[which].id)
@@ -228,6 +229,8 @@ class CharacterGrowthFragment : Fragment() {
                 colorIndex++
             }
         }
+
+        if (_binding == null) return
 
         if (dataSets.isEmpty()) {
             binding.emptyState.visibility = View.VISIBLE

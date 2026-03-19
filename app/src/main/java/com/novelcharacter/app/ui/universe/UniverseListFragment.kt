@@ -437,6 +437,8 @@ class UniverseListFragment : Fragment() {
 
     override fun onDestroyView() {
         binding.universeRecyclerView.adapter = null
+        binding.recentRecyclerView.adapter = null
+        recentAdapter = null
         super.onDestroyView()
         _binding = null
     }

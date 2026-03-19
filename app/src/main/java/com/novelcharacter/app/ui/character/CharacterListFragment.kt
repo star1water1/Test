@@ -246,6 +246,8 @@ class CharacterListFragment : Fragment() {
 
     override fun onDestroyView() {
         searchRunnable?.let { searchHandler.removeCallbacks(it) }
+        itemTouchHelper?.attachToRecyclerView(null)
+        itemTouchHelper = null
         binding.characterRecyclerView.adapter = null
         super.onDestroyView()
         _binding = null

@@ -122,10 +122,12 @@ class CharacterEditFragment : Fragment() {
 
     private suspend fun loadNovels() {
         novels = viewModel.getAllNovelsList()
+        if (_binding == null) return
         val novelNames = mutableListOf(getString(R.string.no_novel_selected))
         novelNames.addAll(novels.map { it.title })
 
-        val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, novelNames)
+        val ctx = requireContext()
+        val adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item, novelNames)
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         binding.spinnerNovel.adapter = adapter
 
@@ -165,10 +167,12 @@ class CharacterEditFragment : Fragment() {
 
     private suspend fun loadExistingCharacter() {
         existingCharacter = viewModel.getCharacterByIdSuspend(characterId)
+        if (_binding == null) return
         existingCharacter?.let { fillForm(it) }
 
         // 태그 로드
         val tags = viewModel.getTagsByCharacterList(characterId)
+        if (_binding == null) return
         binding.editTags.setText(tags.joinToString(", ") { it.tag })
     }
 
@@ -452,6 +456,22 @@ class CharacterEditFragment : Fragment() {
         }
     }
 
+    private fun validateRequiredFields(): String? {
+        for (field in fieldDefinitions) {
+            if (!field.isRequired) continue
+            val fieldType = FieldType.fromName(field.type)
+            if (fieldType == FieldType.CALCULATED) continue
+            val widget = fieldInputMap[field.id] ?: continue
+            val isEmpty = when (widget) {
+                is TextInputEditText -> widget.text.isNullOrBlank()
+                is Spinner -> widget.selectedItemPosition <= 0
+                else -> true
+            }
+            if (isEmpty) return field.name
+        }
+        return null
+    }
+
     private fun collectFieldValues(characterId: Long): List<CharacterFieldValue> {
         val values = mutableListOf<CharacterFieldValue>()
 
@@ -625,8 +645,11 @@ class CharacterEditFragment : Fragment() {
         }
     }
 
+    private var isSaving = false
+
     private fun setupSaveButton() {
         binding.btnSave.setOnClickListener {
+            if (isSaving) return@setOnClickListener
             val name = binding.editName.text.toString().trim()
             if (name.isEmpty()) {
                 Toast.makeText(requireContext(), R.string.enter_name, Toast.LENGTH_SHORT).show()
@@ -634,6 +657,12 @@ class CharacterEditFragment : Fragment() {
             }
             if (name.length > 100) {
                 Toast.makeText(requireContext(), R.string.name_too_long, Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+
+            val missingRequired = validateRequiredFields()
+            if (missingRequired != null) {
+                Toast.makeText(requireContext(), getString(R.string.required_field_empty, missingRequired), Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
 
@@ -656,29 +685,36 @@ class CharacterEditFragment : Fragment() {
                 code = existingCharacter?.code ?: generateEntityCode()
             )
 
+            isSaving = true
+            binding.btnSave.isEnabled = false
             viewLifecycleOwner.lifecycleScope.launch {
-                val savedCharId: Long
-                if (characterId != -1L) {
-                    // 기존 캐릭터 수정 (트랜잭션으로 원자적 업데이트)
-                    val fieldValues = collectFieldValues(characterId)
-                    viewModel.updateCharacterWithFields(character, fieldValues)
-                    savedCharId = characterId
-                } else {
-                    // 새 캐릭터 생성 - suspend로 ID를 받아온 뒤 필드값 저장
-                    val newId = viewModel.insertCharacterSuspend(character)
-                    val fieldValues = collectFieldValues(newId)
-                    viewModel.saveAllFieldValues(newId, fieldValues)
-                    savedCharId = newId
-                }
+                try {
+                    val savedCharId: Long
+                    if (characterId != -1L) {
+                        val fieldValues = collectFieldValues(characterId)
+                        viewModel.updateCharacterWithFields(character, fieldValues)
+                        savedCharId = characterId
+                    } else {
+                        val newId = viewModel.insertCharacterSuspend(character)
+                        val fieldValues = collectFieldValues(newId)
+                        viewModel.saveAllFieldValues(newId, fieldValues)
+                        savedCharId = newId
+                    }
 
-                // 태그 저장 (트랜잭션으로 원자적 교체)
-                val tagText = binding.editTags.text.toString()
-                val tagList = tagText.split(",").map { it.trim() }.filter { it.isNotBlank() }
-                viewModel.replaceAllTagsSuspend(savedCharId, tagList.map { CharacterTag(characterId = savedCharId, tag = it) })
+                    val tagText = binding.editTags.text.toString()
+                    val tagList = tagText.split(",").map { it.trim() }.filter { it.isNotBlank() }
+                    viewModel.replaceAllTagsSuspend(savedCharId, tagList.map { CharacterTag(characterId = savedCharId, tag = it) })
 
-                if (isAdded && view != null) {
-                    Toast.makeText(requireContext(), R.string.saved_successfully, Toast.LENGTH_SHORT).show()
-                    findNavController().popBackStack()
+                    if (isAdded && view != null) {
+                        Toast.makeText(requireContext(), R.string.saved_successfully, Toast.LENGTH_SHORT).show()
+                        findNavController().popBackStack()
+                    }
+                } catch (e: Exception) {
+                    if (isAdded && _binding != null) {
+                        isSaving = false
+                        binding.btnSave.isEnabled = true
+                        Toast.makeText(requireContext(), R.string.save_failed, Toast.LENGTH_SHORT).show()
+                    }
                 }
             }
         }

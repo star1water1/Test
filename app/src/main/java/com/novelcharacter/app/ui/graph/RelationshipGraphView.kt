@@ -33,8 +33,8 @@ class RelationshipGraphView @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0
 ) : View(context, attrs, defStyleAttr) {
 
-    private val nodes = mutableListOf<GraphNode>()
-    private val edges = mutableListOf<GraphEdge>()
+    private var nodes = listOf<GraphNode>()
+    private var edges = listOf<GraphEdge>()
 
     private val nodePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = ContextCompat.getColor(context, R.color.graph_node_fill)
@@ -87,7 +87,7 @@ class RelationshipGraphView @JvmOverloads constructor(
 
     private var onNodeClickListener: ((Long) -> Unit)? = null
     private var layoutJob: Job? = null
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private var scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     // 화살표 그리기용
     private val arrowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -132,10 +132,8 @@ class RelationshipGraphView @JvmOverloads constructor(
     }
 
     fun setGraphData(nodeList: List<GraphNode>, edgeList: List<GraphEdge>) {
-        nodes.clear()
-        edges.clear()
-        nodes.addAll(nodeList)
-        edges.addAll(edgeList)
+        nodes = nodeList.map { it.copy() }
+        edges = edgeList.toList()
         resetTransform()
         layoutNodesAsync()
     }
@@ -144,8 +142,7 @@ class RelationshipGraphView @JvmOverloads constructor(
      * 엣지 데이터만 갱신 (노드 레이아웃 유지). 시점 변경 시 사용.
      */
     fun updateEdges(edgeList: List<GraphEdge>) {
-        edges.clear()
-        edges.addAll(edgeList)
+        edges = edgeList.toList()
         invalidate()
     }
 
@@ -157,31 +154,30 @@ class RelationshipGraphView @JvmOverloads constructor(
 
     private fun layoutNodesAsync() {
         layoutJob?.cancel()
-        if (nodes.isEmpty()) {
+        val currentNodes = nodes
+        if (currentNodes.isEmpty()) {
             invalidate()
             return
         }
 
-        val count = nodes.size
+        val count = currentNodes.size
         if (count == 1) {
-            nodes[0].x = 0f
-            nodes[0].y = 0f
+            nodes = listOf(currentNodes[0].copy(x = 0f, y = 0f))
             invalidate()
             return
         }
 
-        val nodesCopy = nodes.map { it.copy() }
-        val edgesCopy = edges.toList()
+        val nodesCopy = currentNodes.map { it.copy() }
+        val edgesCopy = edges
 
         layoutJob = scope.launch {
             val positions = withContext(Dispatchers.Default) {
                 computeLayout(nodesCopy, edgesCopy)
             }
-            for (i in nodes.indices) {
-                if (i < positions.size) {
-                    nodes[i].x = positions[i].first
-                    nodes[i].y = positions[i].second
-                }
+            // Atomically replace with new immutable list containing updated positions
+            nodes = nodesCopy.mapIndexed { i, node ->
+                if (i < positions.size) node.copy(x = positions[i].first, y = positions[i].second)
+                else node
             }
             invalidate()
         }
@@ -208,6 +204,7 @@ class RelationshipGraphView @JvmOverloads constructor(
         val nodeIndexMap = nodesCopy.withIndex().associate { (i, n) -> n.id to i }
 
         for (iter in 0 until iterations) {
+            if (Thread.currentThread().isInterrupted) break
             val cooling = temp * (1f - iter.toFloat() / iterations)
 
             val dispX = FloatArray(count)
@@ -342,9 +339,16 @@ class RelationshipGraphView @JvmOverloads constructor(
         canvas.drawPath(path, arrowPaint)
     }
 
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        // Always create a fresh scope on attach to avoid using a cancelled scope
+        scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    }
+
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
         layoutJob?.cancel()
+        layoutJob = null
         scope.cancel()
     }
 }
