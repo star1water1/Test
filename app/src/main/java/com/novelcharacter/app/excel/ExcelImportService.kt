@@ -426,6 +426,9 @@ class ExcelImportService(private val db: AppDatabase) {
 
                 val existing = db.fieldDefinitionDao().getFieldByKey(universe.id, key)
                 if (existing != null) {
+                    if (existing.type != type && type.isNotBlank()) {
+                        result.warnings.add("필드 정의 행 $i: 필드 '$name'의 타입이 '${existing.type}'에서 '$type'(으)로 변경됨 — 기존 값 호환성을 확인하세요")
+                    }
                     db.fieldDefinitionDao().update(existing.copy(
                         name = name, type = type, config = config,
                         groupName = groupName, displayOrder = displayOrder, isRequired = isRequired

@@ -456,6 +456,22 @@ class CharacterEditFragment : Fragment() {
         }
     }
 
+    private fun validateRequiredFields(): String? {
+        for (field in fieldDefinitions) {
+            if (!field.isRequired) continue
+            val fieldType = FieldType.fromName(field.type)
+            if (fieldType == FieldType.CALCULATED) continue
+            val widget = fieldInputMap[field.id] ?: continue
+            val isEmpty = when (widget) {
+                is TextInputEditText -> widget.text.isNullOrBlank()
+                is Spinner -> widget.selectedItemPosition <= 0
+                else -> true
+            }
+            if (isEmpty) return field.name
+        }
+        return null
+    }
+
     private fun collectFieldValues(characterId: Long): List<CharacterFieldValue> {
         val values = mutableListOf<CharacterFieldValue>()
 
@@ -638,6 +654,12 @@ class CharacterEditFragment : Fragment() {
             }
             if (name.length > 100) {
                 Toast.makeText(requireContext(), R.string.name_too_long, Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+
+            val missingRequired = validateRequiredFields()
+            if (missingRequired != null) {
+                Toast.makeText(requireContext(), getString(R.string.required_field_empty, missingRequired), Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
 
