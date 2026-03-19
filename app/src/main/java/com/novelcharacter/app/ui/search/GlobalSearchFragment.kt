@@ -96,7 +96,8 @@ class GlobalSearchFragment : Fragment() {
 
         viewModel.presetAppliedEvent.observe(viewLifecycleOwner) { event ->
             event?.getContentIfNotHandled()?.let { name ->
-                Toast.makeText(requireContext(), getString(R.string.preset_applied, name), Toast.LENGTH_SHORT).show()
+                val ctx = context ?: return@observe
+                Toast.makeText(ctx, getString(R.string.preset_applied, name), Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -140,18 +141,19 @@ class GlobalSearchFragment : Fragment() {
     private fun showSavePresetDialog() {
         viewLifecycleOwner.lifecycleScope.launch {
             val count = viewModel.getPresetCount()
-            if (!isAdded) return@launch
+            if (!isAdded || _binding == null) return@launch
+            val ctx = context ?: return@launch
             if (count >= SearchPreset.MAX_PRESETS) {
-                Toast.makeText(requireContext(), getString(R.string.preset_limit_reached, SearchPreset.MAX_PRESETS), Toast.LENGTH_SHORT).show()
+                Toast.makeText(ctx, getString(R.string.preset_limit_reached, SearchPreset.MAX_PRESETS), Toast.LENGTH_SHORT).show()
                 return@launch
             }
 
-            val editText = EditText(requireContext()).apply {
+            val editText = EditText(ctx).apply {
                 hint = getString(R.string.preset_name_hint)
                 setPadding(48, 32, 48, 16)
             }
 
-            AlertDialog.Builder(requireContext())
+            AlertDialog.Builder(ctx)
                 .setTitle(R.string.preset_save_title)
                 .setView(editText)
                 .setPositiveButton(R.string.save) { _, _ ->

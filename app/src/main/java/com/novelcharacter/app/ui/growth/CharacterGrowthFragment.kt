@@ -132,6 +132,7 @@ class CharacterGrowthFragment : Fragment() {
             val novel = character.novelId?.let { viewModel.getNovelById(it) }
             val universeId = novel?.universeId
             val fields = if (universeId != null) viewModel.getFieldDefinitions(universeId) else emptyList()
+            if (_binding == null) return@launch
 
             // NUMBER, GRADE 타입 필드만 필터
             val numericFields = fields.filter { it.type == "NUMBER" || it.type == "GRADE" }
@@ -156,8 +157,9 @@ class CharacterGrowthFragment : Fragment() {
 
     private fun setupFieldChips(fields: List<FieldDefinition>) {
         binding.fieldChipGroup.removeAllViews()
+        val ctx = context ?: return
         fields.forEach { field ->
-            val chip = Chip(requireContext()).apply {
+            val chip = Chip(ctx).apply {
                 text = field.name
                 isCheckable = true
                 isChecked = selectedFieldKeys.contains(field.key)
@@ -179,10 +181,11 @@ class CharacterGrowthFragment : Fragment() {
                     .filter { it.id != characterId && it.id !in compareCharacterIds }
 
                 if (allChars.isEmpty()) return@launch
-                if (!isAdded) return@launch
+                if (!isAdded || _binding == null) return@launch
+                val ctx = context ?: return@launch
 
                 val names = allChars.map { it.name }.toTypedArray()
-                androidx.appcompat.app.AlertDialog.Builder(requireContext())
+                androidx.appcompat.app.AlertDialog.Builder(ctx)
                     .setTitle(R.string.growth_add_compare)
                     .setItems(names) { _, which ->
                         compareCharacterIds.add(allChars[which].id)

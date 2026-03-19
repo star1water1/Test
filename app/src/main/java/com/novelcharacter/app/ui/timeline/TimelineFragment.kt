@@ -370,7 +370,8 @@ class TimelineFragment : Fragment() {
                 mutableSetOf()
             }
 
-            if (!isAdded) return@launch
+            if (!isAdded || _binding == null) return@launch
+            val ctx = context ?: return@launch
 
             val dialogBinding = DialogTimelineEditBinding.inflate(layoutInflater)
 
@@ -386,7 +387,7 @@ class TimelineFragment : Fragment() {
             // Novel spinner
             val novelNames = mutableListOf(getString(R.string.all_novels_event))
             novelNames.addAll(novels.map { it.title })
-            val novelAdapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, novelNames)
+            val novelAdapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item, novelNames)
             novelAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
             dialogBinding.spinnerNovel.adapter = novelAdapter
 
@@ -398,7 +399,7 @@ class TimelineFragment : Fragment() {
             // Character checkboxes
             setupCharacterCheckboxes(dialogBinding, characters, selectedCharIds)
 
-            AlertDialog.Builder(requireContext())
+            AlertDialog.Builder(ctx)
                 .setTitle(if (event == null) R.string.add_event else R.string.edit_event)
                 .setView(dialogBinding.root)
                 .setPositiveButton(R.string.save) { _, _ ->

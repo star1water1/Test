@@ -88,8 +88,9 @@ class CharacterCompareFragment : Fragment() {
                 }.awaitAll()
             } catch (e: Exception) {
                 Log.e("CharacterCompare", "Failed to load comparison data", e)
-                if (isAdded) {
-                    Toast.makeText(requireContext(), R.string.compare_load_error, Toast.LENGTH_SHORT).show()
+                val ctx = context
+                if (isAdded && ctx != null) {
+                    Toast.makeText(ctx, R.string.compare_load_error, Toast.LENGTH_SHORT).show()
                 }
                 return@launch
             }

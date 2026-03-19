@@ -40,7 +40,8 @@ class StatsMainFragment : Fragment() {
 
         viewModel.error.observe(viewLifecycleOwner) { error ->
             if (error != null) {
-                Toast.makeText(requireContext(), R.string.stats_load_error, Toast.LENGTH_SHORT).show()
+                val ctx = context ?: return@observe
+                Toast.makeText(ctx, R.string.stats_load_error, Toast.LENGTH_SHORT).show()
             }
         }
 

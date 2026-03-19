@@ -117,62 +117,66 @@ class TimeSliderHelper(
     fun updateSliderRange() {
         viewLifecycleOwner.lifecycleScope.launch {
             val changes = viewModel.getChangesByCharacterList(characterId)
-            if (changes.isEmpty()) {
-                binding.yearSlider.isEnabled = false
-                binding.minYearLabel.text = ""
-                binding.maxYearLabel.text = ""
-                return@launch
+            try {
+                if (changes.isEmpty()) {
+                    binding.yearSlider.isEnabled = false
+                    binding.minYearLabel.text = ""
+                    binding.maxYearLabel.text = ""
+                    return@launch
+                }
+
+                val years = changes.map { it.year }
+                val minYear = years.minOrNull() ?: return@launch
+                val maxYear = years.maxOrNull() ?: return@launch
+
+                val adjustedMin = minYear.toFloat()
+                val adjustedMax = if (maxYear <= minYear) (minYear + 1).toFloat() else maxYear.toFloat()
+
+                binding.yearSlider.isEnabled = true
+
+                // Reset stepSize first to avoid validation errors when range changes
+                binding.yearSlider.stepSize = 0f
+
+                // Expand range before narrowing to avoid value-out-of-range errors
+                val oldFrom = binding.yearSlider.valueFrom
+                val oldTo = binding.yearSlider.valueTo
+                binding.yearSlider.valueFrom = minOf(oldFrom, adjustedMin)
+                binding.yearSlider.valueTo = maxOf(oldTo, adjustedMax)
+
+                // Now narrow to actual range
+                binding.yearSlider.valueFrom = adjustedMin
+                binding.yearSlider.valueTo = adjustedMax
+
+                binding.minYearLabel.text = getString(R.string.slider_min_year, minYear)
+                binding.maxYearLabel.text = getString(R.string.slider_max_year, maxYear)
+                val totalRange = adjustedMax - adjustedMin
+                val newStepSize = when {
+                    totalRange > 10000 -> 100f
+                    totalRange > 1000 -> 10f
+                    else -> 1f
+                }
+
+                // Set value before stepSize to ensure alignment
+                val sliderYear = currentSliderYear
+                if (sliderYear == null) {
+                    binding.yearSlider.value = adjustedMin
+                    binding.yearLabel.text = getString(R.string.year_label_format, minYear)
+                } else {
+                    val clampedYear = sliderYear.coerceIn(minYear, adjustedMax.toInt())
+                    binding.yearSlider.value = clampedYear.toFloat()
+                    binding.yearLabel.text = getString(R.string.year_label_format, clampedYear)
+                }
+
+                // Align value to step before setting stepSize
+                if (newStepSize > 0f) {
+                    val currentVal = binding.yearSlider.value
+                    val aligned = adjustedMin + (((currentVal - adjustedMin) / newStepSize).toInt() * newStepSize)
+                    binding.yearSlider.value = aligned.coerceIn(adjustedMin, adjustedMax)
+                }
+                binding.yearSlider.stepSize = newStepSize
+            } catch (_: Exception) {
+                // Fragment view may have been destroyed during suspend
             }
-
-            val years = changes.map { it.year }
-            val minYear = years.minOrNull() ?: return@launch
-            val maxYear = years.maxOrNull() ?: return@launch
-
-            val adjustedMin = minYear.toFloat()
-            val adjustedMax = if (maxYear <= minYear) (minYear + 1).toFloat() else maxYear.toFloat()
-
-            binding.yearSlider.isEnabled = true
-
-            // Reset stepSize first to avoid validation errors when range changes
-            binding.yearSlider.stepSize = 0f
-
-            // Expand range before narrowing to avoid value-out-of-range errors
-            val oldFrom = binding.yearSlider.valueFrom
-            val oldTo = binding.yearSlider.valueTo
-            binding.yearSlider.valueFrom = minOf(oldFrom, adjustedMin)
-            binding.yearSlider.valueTo = maxOf(oldTo, adjustedMax)
-
-            // Now narrow to actual range
-            binding.yearSlider.valueFrom = adjustedMin
-            binding.yearSlider.valueTo = adjustedMax
-
-            binding.minYearLabel.text = getString(R.string.slider_min_year, minYear)
-            binding.maxYearLabel.text = getString(R.string.slider_max_year, maxYear)
-            val totalRange = adjustedMax - adjustedMin
-            val newStepSize = when {
-                totalRange > 10000 -> 100f
-                totalRange > 1000 -> 10f
-                else -> 1f
-            }
-
-            // Set value before stepSize to ensure alignment
-            val sliderYear = currentSliderYear
-            if (sliderYear == null) {
-                binding.yearSlider.value = adjustedMin
-                binding.yearLabel.text = getString(R.string.year_label_format, minYear)
-            } else {
-                val clampedYear = sliderYear.coerceIn(minYear, adjustedMax.toInt())
-                binding.yearSlider.value = clampedYear.toFloat()
-                binding.yearLabel.text = getString(R.string.year_label_format, clampedYear)
-            }
-
-            // Align value to step before setting stepSize
-            if (newStepSize > 0f) {
-                val currentVal = binding.yearSlider.value
-                val aligned = adjustedMin + (((currentVal - adjustedMin) / newStepSize).toInt() * newStepSize)
-                binding.yearSlider.value = aligned.coerceIn(adjustedMin, adjustedMax)
-            }
-            binding.yearSlider.stepSize = newStepSize
         }
     }
 }
