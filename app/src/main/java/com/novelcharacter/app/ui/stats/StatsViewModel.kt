@@ -47,19 +47,17 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
         }.also { cachedSnapshot = it }
     }
 
+    private var isRefreshing = false
+
     fun refreshStats() {
         cachedSnapshot = null
-        _summary.value = null
-        _characterStats.value = null
-        _eventStats.value = null
-        _relationshipStats.value = null
-        _nameBankStats.value = null
-        _dataHealthStats.value = null
+        isRefreshing = true
         loadAllStats()
     }
 
     fun loadAllStats() {
-        if (_summary.value != null) return
+        if (!isRefreshing && _summary.value != null) return
+        isRefreshing = false
         _loading.value = true
         _error.value = null
         viewModelScope.launch {

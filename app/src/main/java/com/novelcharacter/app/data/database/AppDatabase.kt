@@ -490,14 +490,29 @@ abstract class AppDatabase : RoomDatabase() {
         /**
          * Migration from version 12 to 13:
          * - Added updatedAt column to characters table
+         * Note: Column may already exist if the app was fresh-installed at version 12
+         * (Room auto-creates all columns from entity definition on fresh install).
          */
         private val MIGRATION_12_13 = object : Migration(12, 13) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 Log.i(TAG, "Migrating database from version 12 to 13")
 
-                db.execSQL("ALTER TABLE `characters` ADD COLUMN `updatedAt` INTEGER NOT NULL DEFAULT 0")
-                // Backfill: set updatedAt = createdAt for existing rows
-                db.execSQL("UPDATE `characters` SET `updatedAt` = `createdAt` WHERE `updatedAt` = 0")
+                // Check if column already exists before adding (idempotent migration)
+                val cursor = db.query("PRAGMA table_info(characters)")
+                val columns = mutableSetOf<String>()
+                val nameIndex = cursor.getColumnIndex("name")
+                while (cursor.moveToNext()) {
+                    if (nameIndex >= 0) {
+                        columns.add(cursor.getString(nameIndex))
+                    }
+                }
+                cursor.close()
+
+                if ("updatedAt" !in columns) {
+                    db.execSQL("ALTER TABLE `characters` ADD COLUMN `updatedAt` INTEGER NOT NULL DEFAULT 0")
+                    // Backfill: set updatedAt = createdAt for existing rows
+                    db.execSQL("UPDATE `characters` SET `updatedAt` = `createdAt` WHERE `updatedAt` = 0")
+                }
 
                 Log.i(TAG, "Migration from version 12 to 13 completed successfully")
             }
