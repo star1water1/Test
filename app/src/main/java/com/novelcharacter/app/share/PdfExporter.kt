@@ -127,13 +127,15 @@ class PdfExporter(private val context: Context) {
                         append("<div class='profile-sub'>${escHtml(char.anotherName)}</div>")
                     }
 
-                    // Field values
+                    // Field values (ordered by field displayOrder)
                     val charValues = fieldValues.filter { it.characterId == char.id }
-                    if (charValues.isNotEmpty()) {
+                    val charValueMap = charValues.associateBy { it.fieldDefinitionId }
+                    val orderedFieldValues = fieldDefs.mapNotNull { fd ->
+                        charValueMap[fd.id]?.let { fv -> fd to fv }
+                    }.filter { it.second.value.isNotBlank() }
+                    if (orderedFieldValues.isNotEmpty()) {
                         append("<table>")
-                        for (fv in charValues) {
-                            val fd = fieldDefs.find { it.id == fv.fieldDefinitionId } ?: continue
-                            if (fv.value.isBlank()) continue
+                        for ((fd, fv) in orderedFieldValues) {
                             append("<tr><td>${escHtml(fd.name)}</td><td>${escHtml(fv.value)}</td></tr>")
                         }
                         append("</table>")
