@@ -87,7 +87,7 @@ class RelationshipGraphView @JvmOverloads constructor(
 
     private var onNodeClickListener: ((Long) -> Unit)? = null
     private var layoutJob: Job? = null
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private var scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     // 화살표 그리기용
     private val arrowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -340,6 +340,13 @@ class RelationshipGraphView @JvmOverloads constructor(
             close()
         }
         canvas.drawPath(path, arrowPaint)
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        if (!scope.isActive) {
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        }
     }
 
     override fun onDetachedFromWindow() {

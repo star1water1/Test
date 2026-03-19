@@ -498,4 +498,17 @@
     <string name="share_pdf_include_namebank">이름뱅크</string>
     <string name="share_pdf_include_fields">필드 정의</string>
     <string name="share_size_estimate">예상 크기: %s</string>
+
+    <!-- Stats preview strings -->
+    <string name="stats_tag_preview">태그 %1$d종</string>
+    <string name="stats_tag_top_format"> | 최다: %1$s(%2$d)</string>
+    <string name="stats_event_density_preview">연도 밀도 %d개</string>
+    <string name="stats_orphan_event_preview"> | 고아사건 %d건</string>
+    <string name="stats_rel_type_preview">유형 %d종</string>
+    <string name="stats_isolated_preview"> | 고립 %d명</string>
+    <string name="stats_usage_rate_preview">사용률 %1$.0f%% (%2$d/%3$d)</string>
+    <string name="stats_health_no_issues">문제 없음</string>
+    <string name="stats_health_issues_found">발견 사항 %d건</string>
+    <string name="stats_health_no_image"> | 이미지없음 %d</string>
+    <string name="stats_person_suffix">%d명</string>
 </resources>

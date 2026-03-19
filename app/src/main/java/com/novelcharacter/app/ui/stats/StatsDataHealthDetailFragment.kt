@@ -48,7 +48,7 @@ class StatsDataHealthDetailFragment : Fragment() {
         }
 
         viewModel.dataHealthStats.observe(viewLifecycleOwner) { stats ->
-            binding.textNoImageCount.text = "${stats.noImageChars.size}명"
+            binding.textNoImageCount.text = getString(R.string.stats_person_suffix, stats.noImageChars.size)
             populateSimpleList(binding.listNoImage, stats.noImageChars)
             populateIncompleteList(binding.listIncompleteFields, stats.incompleteFieldChars)
             populateSimpleList(binding.listIsolated, stats.isolatedChars)

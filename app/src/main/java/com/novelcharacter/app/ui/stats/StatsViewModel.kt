@@ -47,6 +47,17 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
         }.also { cachedSnapshot = it }
     }
 
+    fun refreshStats() {
+        cachedSnapshot = null
+        _summary.value = null
+        _characterStats.value = null
+        _eventStats.value = null
+        _relationshipStats.value = null
+        _nameBankStats.value = null
+        _dataHealthStats.value = null
+        loadAllStats()
+    }
+
     fun loadAllStats() {
         if (_summary.value != null) return
         _loading.value = true

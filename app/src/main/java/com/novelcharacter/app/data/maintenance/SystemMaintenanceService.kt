@@ -1,6 +1,7 @@
 package com.novelcharacter.app.data.maintenance
 
 import android.content.Context
+import androidx.room.withTransaction
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.novelcharacter.app.data.database.AppDatabase
@@ -197,33 +198,35 @@ class SystemMaintenanceService(
      * results ORDER BY displayOrder ASC, so reindexing preserves user order.
      */
     suspend fun reindexDisplayOrders() {
-        // Universes: single global scope (already sorted by displayOrder ASC)
-        val universes = db.universeDao().getAllUniversesList()
-        val reindexedUniverses = universes.mapIndexed { index, u ->
-            u.copy(displayOrder = index.toLong())
-        }
-        db.universeDao().updateAll(reindexedUniverses)
-
-        // Novels: per universeId scope (already sorted by displayOrder ASC)
-        val novels = db.novelDao().getAllNovelsList()
-        val novelsByUniverse = novels.groupBy { it.universeId }
-        val reindexedNovels = mutableListOf<com.novelcharacter.app.data.model.Novel>()
-        for ((_, scopeNovels) in novelsByUniverse) {
-            scopeNovels.forEachIndexed { index, n ->
-                reindexedNovels.add(n.copy(displayOrder = index.toLong()))
+        db.withTransaction {
+            // Universes: single global scope (already sorted by displayOrder ASC)
+            val universes = db.universeDao().getAllUniversesList()
+            val reindexedUniverses = universes.mapIndexed { index, u ->
+                u.copy(displayOrder = index.toLong())
             }
-        }
-        db.novelDao().updateAll(reindexedNovels)
+            db.universeDao().updateAll(reindexedUniverses)
 
-        // Characters: per novelId scope (already sorted by displayOrder ASC)
-        val characters = db.characterDao().getAllCharactersList()
-        val charactersByNovel = characters.groupBy { it.novelId }
-        val reindexedCharacters = mutableListOf<com.novelcharacter.app.data.model.Character>()
-        for ((_, scopeChars) in charactersByNovel) {
-            scopeChars.forEachIndexed { index, c ->
-                reindexedCharacters.add(c.copy(displayOrder = index.toLong()))
+            // Novels: per universeId scope (already sorted by displayOrder ASC)
+            val novels = db.novelDao().getAllNovelsList()
+            val novelsByUniverse = novels.groupBy { it.universeId }
+            val reindexedNovels = mutableListOf<com.novelcharacter.app.data.model.Novel>()
+            for ((_, scopeNovels) in novelsByUniverse) {
+                scopeNovels.forEachIndexed { index, n ->
+                    reindexedNovels.add(n.copy(displayOrder = index.toLong()))
+                }
             }
+            db.novelDao().updateAll(reindexedNovels)
+
+            // Characters: per novelId scope (already sorted by displayOrder ASC)
+            val characters = db.characterDao().getAllCharactersList()
+            val charactersByNovel = characters.groupBy { it.novelId }
+            val reindexedCharacters = mutableListOf<com.novelcharacter.app.data.model.Character>()
+            for ((_, scopeChars) in charactersByNovel) {
+                scopeChars.forEachIndexed { index, c ->
+                    reindexedCharacters.add(c.copy(displayOrder = index.toLong()))
+                }
+            }
+            db.characterDao().updateAll(reindexedCharacters)
         }
-        db.characterDao().updateAll(reindexedCharacters)
     }
 }

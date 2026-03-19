@@ -181,7 +181,7 @@ class CharacterGrowthFragment : Fragment() {
                 if (!isAdded) return@launch
 
                 val names = allChars.map { it.name }.toTypedArray()
-                android.app.AlertDialog.Builder(requireContext())
+                androidx.appcompat.app.AlertDialog.Builder(requireContext())
                     .setTitle(R.string.growth_add_compare)
                     .setItems(names) { _, which ->
                         compareCharacterIds.add(allChars[which].id)
