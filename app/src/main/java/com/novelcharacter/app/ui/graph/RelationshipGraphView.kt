@@ -204,6 +204,7 @@ class RelationshipGraphView @JvmOverloads constructor(
         val nodeIndexMap = nodesCopy.withIndex().associate { (i, n) -> n.id to i }
 
         for (iter in 0 until iterations) {
+            if (Thread.currentThread().isInterrupted) break
             val cooling = temp * (1f - iter.toFloat() / iterations)
 
             val dispX = FloatArray(count)

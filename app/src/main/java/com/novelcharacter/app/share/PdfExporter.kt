@@ -100,7 +100,7 @@ class PdfExporter(private val context: Context) {
                 append("<table><tr><th>이름</th><th>키</th><th>타입</th><th>그룹</th></tr>")
                 for (fd in fieldDefs) {
                     append("<tr><td>${escHtml(fd.name)}</td><td>${escHtml(fd.key)}</td>")
-                    append("<td>${fd.type}</td><td>${escHtml(fd.groupName)}</td></tr>")
+                    append("<td>${escHtml(fd.type)}</td><td>${escHtml(fd.groupName)}</td></tr>")
                 }
                 append("</table>")
             }
@@ -120,6 +120,16 @@ class PdfExporter(private val context: Context) {
             if (config.includeProfiles) {
                 append("<div class='page-break'></div>")
                 append("<h2 id='characters'>캐릭터 프로필</h2>")
+
+                // Pre-build lookup maps to avoid O(n²) searches
+                val fieldValuesByChar = fieldValues.groupBy { it.characterId }
+                val charMap = characters.associateBy { it.id }
+                val relsByChar = mutableMapOf<Long, MutableList<com.novelcharacter.app.data.model.CharacterRelationship>>()
+                for (rel in relationships) {
+                    relsByChar.getOrPut(rel.characterId1) { mutableListOf() }.add(rel)
+                    relsByChar.getOrPut(rel.characterId2) { mutableListOf() }.add(rel)
+                }
+
                 for (char in characters) {
                     append("<div class='profile-card'>")
                     append("<div class='profile-name'>${escHtml(char.name)}</div>")
@@ -128,8 +138,7 @@ class PdfExporter(private val context: Context) {
                     }
 
                     // Field values (ordered by field displayOrder)
-                    val charValues = fieldValues.filter { it.characterId == char.id }
-                    val charValueMap = charValues.associateBy { it.fieldDefinitionId }
+                    val charValueMap = (fieldValuesByChar[char.id] ?: emptyList()).associateBy { it.fieldDefinitionId }
                     val orderedFieldValues = fieldDefs.mapNotNull { fd ->
                         charValueMap[fd.id]?.let { fv -> fd to fv }
                     }.filter { it.second.value.isNotBlank() }
@@ -142,14 +151,12 @@ class PdfExporter(private val context: Context) {
                     }
 
                     // Relationships
-                    val charRels = relationships.filter {
-                        it.characterId1 == char.id || it.characterId2 == char.id
-                    }
+                    val charRels = relsByChar[char.id] ?: emptyList()
                     if (charRels.isNotEmpty()) {
                         append("<p><b>관계:</b> ")
                         val relTexts = charRels.map { rel ->
                             val otherId = if (rel.characterId1 == char.id) rel.characterId2 else rel.characterId1
-                            val otherName = characters.find { it.id == otherId }?.name ?: "?"
+                            val otherName = charMap[otherId]?.name ?: "?"
                             "$otherName(${rel.relationshipType})"
                         }
                         append(relTexts.joinToString(", ") { escHtml(it) })
@@ -217,4 +224,5 @@ class PdfExporter(private val context: Context) {
         .replace("<", "&lt;")
         .replace(">", "&gt;")
         .replace("\"", "&quot;")
+        .replace("'", "&#39;")
 }
