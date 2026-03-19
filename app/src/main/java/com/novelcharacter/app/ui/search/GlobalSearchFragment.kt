@@ -94,10 +94,9 @@ class GlobalSearchFragment : Fragment() {
             updatePresetChips(presets)
         }
 
-        viewModel.presetAppliedEvent.observe(viewLifecycleOwner) { name ->
-            if (name != null) {
+        viewModel.presetAppliedEvent.observe(viewLifecycleOwner) { event ->
+            event?.getContentIfNotHandled()?.let { name ->
                 Toast.makeText(requireContext(), getString(R.string.preset_applied, name), Toast.LENGTH_SHORT).show()
-                viewModel.clearPresetEvent()
             }
         }
     }

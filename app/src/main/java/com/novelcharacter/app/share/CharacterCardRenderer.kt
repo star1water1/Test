@@ -60,20 +60,25 @@ class CharacterCardRenderer(private val context: Context) {
         if (config.includeImage && characterBitmap != null) {
             val imgSize = (w * 0.35f).toInt()
             val imgX = (w - imgSize) / 2f
-            val scaledBmp = Bitmap.createScaledBitmap(characterBitmap, imgSize, imgSize, true)
+            var scaledBmp: Bitmap? = null
+            var circleBitmap: Bitmap? = null
+            try {
+                scaledBmp = Bitmap.createScaledBitmap(characterBitmap, imgSize, imgSize, true)
 
-            // Circular clip
-            val circleBitmap = Bitmap.createBitmap(imgSize, imgSize, Bitmap.Config.ARGB_8888)
-            val circleCanvas = Canvas(circleBitmap)
-            val circlePaint = Paint(Paint.ANTI_ALIAS_FLAG)
-            circleCanvas.drawCircle(imgSize / 2f, imgSize / 2f, imgSize / 2f, circlePaint)
-            circlePaint.xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC_IN)
-            circleCanvas.drawBitmap(scaledBmp, 0f, 0f, circlePaint)
+                // Circular clip
+                circleBitmap = Bitmap.createBitmap(imgSize, imgSize, Bitmap.Config.ARGB_8888)
+                val circleCanvas = Canvas(circleBitmap)
+                val circlePaint = Paint(Paint.ANTI_ALIAS_FLAG)
+                circleCanvas.drawCircle(imgSize / 2f, imgSize / 2f, imgSize / 2f, circlePaint)
+                circlePaint.xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC_IN)
+                circleCanvas.drawBitmap(scaledBmp, 0f, 0f, circlePaint)
 
-            canvas.drawBitmap(circleBitmap, imgX, yOffset, null)
-            yOffset += imgSize + 16f
-            scaledBmp.recycle()
-            circleBitmap.recycle()
+                canvas.drawBitmap(circleBitmap, imgX, yOffset, null)
+                yOffset += imgSize + 16f
+            } finally {
+                scaledBmp?.recycle()
+                circleBitmap?.recycle()
+            }
         }
 
         // Name

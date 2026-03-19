@@ -52,7 +52,7 @@ class PdfExporter(private val context: Context) {
         val events = app.timelineRepository.getAllEventsList()
             .filter { it.novelId in novelIds || it.universeId == config.universeId }
             .sortedBy { it.year }
-        val nameBank = db.nameBankDao().getAllNamesList()
+        val nameBank = if (config.includeNameBank) db.nameBankDao().getAllNamesList() else emptyList()
 
         return buildString {
             append("""
@@ -167,7 +167,7 @@ class PdfExporter(private val context: Context) {
                 append("<h2 id='timeline'>타임라인</h2>")
                 append("<table class='event-row'><tr><th>연도</th><th>설명</th></tr>")
                 for (event in events) {
-                    append("<tr><td>${event.getFormattedDate()}</td>")
+                    append("<tr><td>${escHtml(event.getFormattedDate())}</td>")
                     append("<td>${escHtml(event.description)}</td></tr>")
                 }
                 append("</table>")

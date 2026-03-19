@@ -76,7 +76,7 @@ class ExcelExporter(context: Context) {
                 exportRelationships(workbook, usedSheetNames)
                 exportNameBank(workbook, usedSheetNames)
 
-                val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+                val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
                 val fileName = "NovelCharacter_$timestamp.xlsx"
 
                 val file = saveWorkbook(workbook, fileName)

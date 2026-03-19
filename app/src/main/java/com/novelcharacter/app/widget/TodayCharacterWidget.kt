@@ -22,8 +22,6 @@ import java.util.Calendar
  */
 class TodayCharacterWidget : AppWidgetProvider() {
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
         for (appWidgetId in appWidgetIds) {
             updateWidget(context, appWidgetManager, appWidgetId)
@@ -40,7 +38,8 @@ class TodayCharacterWidget : AppWidgetProvider() {
         )
         views.setOnClickPendingIntent(R.id.widgetRoot, pendingIntent)
 
-        scope.launch {
+        val pendingResult = goAsync()
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
                 val db = AppDatabase.getDatabase(context)
                 val calendar = Calendar.getInstance()
@@ -73,7 +72,10 @@ class TodayCharacterWidget : AppWidgetProvider() {
                 }
 
                 manager.updateAppWidget(widgetId, views)
-            } catch (_: Exception) {}
+            } catch (_: Exception) {
+            } finally {
+                pendingResult.finish()
+            }
         }
     }
 }

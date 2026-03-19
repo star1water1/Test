@@ -141,13 +141,13 @@ class ExcelImporter(context: Context) {
 
                 val message = buildResultMessage(result)
                 withContext(Dispatchers.Main) {
-                    try { progressDialog?.takeIf { it.isShowing }?.dismiss() } catch (_: Exception) {}
+                    dismissDialogSafely(progressDialog)
                     Toast.makeText(appContext, message, Toast.LENGTH_LONG).show()
                 }
             } catch (e: Exception) {
                 android.util.Log.e("ExcelImporter", "Import failed", e)
                 withContext(Dispatchers.Main) {
-                    try { progressDialog?.takeIf { it.isShowing }?.dismiss() } catch (_: Exception) {}
+                    dismissDialogSafely(progressDialog)
                     Toast.makeText(appContext, com.novelcharacter.app.R.string.import_failed_retry, Toast.LENGTH_LONG).show()
                 }
             } finally {
@@ -193,6 +193,15 @@ class ExcelImporter(context: Context) {
 
         return if (parts.isEmpty()) "가져오기 완료: 데이터 없음"
         else "가져오기 완료: ${parts.joinToString(", ")}"
+    }
+
+    private fun dismissDialogSafely(dialog: AlertDialog?) {
+        try {
+            val act = currentActivityRef?.get()
+            if (dialog != null && dialog.isShowing && act != null && !act.isFinishing && !act.isDestroyed) {
+                dialog.dismiss()
+            }
+        } catch (_: Exception) {}
     }
 
     companion object {

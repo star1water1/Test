@@ -25,12 +25,10 @@ class BirthdayWorker(
                 .getChangesByFieldAndDate(CharacterStateChange.KEY_BIRTH, todayMonth, todayDay)
 
             val birthdayCharIds = birthChanges.map { it.characterId }.distinct()
-            val birthdayNames = mutableListOf<String>()
-            for (charId in birthdayCharIds) {
-                val character = db.characterDao().getCharacterById(charId)
-                if (character != null) {
-                    birthdayNames.add(character.name)
-                }
+            val birthdayNames = if (birthdayCharIds.isNotEmpty()) {
+                db.characterDao().getCharactersByIds(birthdayCharIds).map { it.name }
+            } else {
+                emptyList()
             }
 
             if (birthdayNames.isNotEmpty()) {

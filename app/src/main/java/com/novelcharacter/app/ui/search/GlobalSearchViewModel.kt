@@ -8,6 +8,7 @@ import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.SearchPreset
 import com.novelcharacter.app.data.model.TimelineEvent
+import com.novelcharacter.app.ui.universe.UniverseViewModel.Event
 import kotlinx.coroutines.launch
 
 sealed class SearchResultItem {
@@ -32,8 +33,8 @@ class GlobalSearchViewModel(application: Application) : AndroidViewModel(applica
     val presets: LiveData<List<SearchPreset>> = searchPresetRepository.allPresets
     val sortMode: LiveData<String> = _sortMode
 
-    private val _presetAppliedEvent = MutableLiveData<String?>()
-    val presetAppliedEvent: LiveData<String?> = _presetAppliedEvent
+    private val _presetAppliedEvent = MutableLiveData<Event<String>?>()
+    val presetAppliedEvent: LiveData<Event<String>?> = _presetAppliedEvent
 
     init {
         viewModelScope.launch {
@@ -169,11 +170,7 @@ class GlobalSearchViewModel(application: Application) : AndroidViewModel(applica
         if (preset.query.isNotBlank()) {
             _searchQuery.value = preset.query
         }
-        _presetAppliedEvent.value = preset.name
-    }
-
-    fun clearPresetEvent() {
-        _presetAppliedEvent.value = null
+        _presetAppliedEvent.value = Event(preset.name)
     }
 
     fun saveCurrentAsPreset(name: String) {

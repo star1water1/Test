@@ -20,8 +20,6 @@ import kotlinx.coroutines.launch
  */
 class RecentCharactersWidget : AppWidgetProvider() {
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
         for (appWidgetId in appWidgetIds) {
             updateWidget(context, appWidgetManager, appWidgetId)
@@ -39,7 +37,8 @@ class RecentCharactersWidget : AppWidgetProvider() {
         )
         views.setOnClickPendingIntent(R.id.widgetRoot, pendingIntent)
 
-        scope.launch {
+        val pendingResult = goAsync()
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
                 val db = AppDatabase.getDatabase(context)
                 val recentActivities = db.recentActivityDao().getRecentActivitiesList()
@@ -60,6 +59,8 @@ class RecentCharactersWidget : AppWidgetProvider() {
                 manager.updateAppWidget(widgetId, views)
             } catch (_: Exception) {
                 // Widget update failure is not critical
+            } finally {
+                pendingResult.finish()
             }
         }
     }

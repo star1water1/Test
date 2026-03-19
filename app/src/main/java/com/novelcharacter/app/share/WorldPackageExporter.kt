@@ -89,13 +89,15 @@ class WorldPackageExporter(private val context: Context) {
 
             // Images
             if (config.includeImages) {
+                val appDir = context.filesDir
                 for (char in characters) {
                     if (char.imagePaths.isBlank() || char.imagePaths == "[]") continue
                     try {
                         val paths = gson.fromJson(char.imagePaths, Array<String>::class.java)
                         paths?.forEachIndexed { index, path ->
                             val imageFile = File(path)
-                            if (imageFile.exists()) {
+                            // Validate path is within app directory to prevent path traversal
+                            if (imageFile.exists() && imageFile.canonicalPath.startsWith(appDir.canonicalPath)) {
                                 zip.putNextEntry(ZipEntry("images/${char.id}_$index.jpg"))
                                 imageFile.inputStream().use { it.copyTo(zip) }
                                 zip.closeEntry()

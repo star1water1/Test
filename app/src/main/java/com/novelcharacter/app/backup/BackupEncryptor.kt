@@ -78,30 +78,36 @@ object BackupEncryptor {
     }
 
     /**
-     * Decrypt a file to another file.
-     * Uses Cipher.doFinal() to ensure GCM authentication tag is properly verified.
+     * Decrypt a file to another file using streaming to avoid loading all data into memory.
+     * Uses CipherInputStream for streaming decryption. GCM authentication tag is verified
+     * when the stream reaches the end (doFinal is called internally).
      * Input format: [IV (12 bytes)] [encrypted data + GCM tag]
      */
     fun decryptFile(inputFile: File, outputFile: File) {
         val tempFile = File(outputFile.parentFile, outputFile.name + ".tmp")
         try {
-            val encryptedBytes = inputFile.readBytes()
-            require(encryptedBytes.size > GCM_IV_LENGTH) {
-                "Encrypted file too short: expected at least ${GCM_IV_LENGTH + 1} bytes"
-            }
+            FileInputStream(inputFile).use { fis ->
+                require(inputFile.length() > GCM_IV_LENGTH) {
+                    "Encrypted file too short: expected at least ${GCM_IV_LENGTH + 1} bytes"
+                }
 
-            val iv = encryptedBytes.copyOfRange(0, GCM_IV_LENGTH)
-            val ciphertext = encryptedBytes.copyOfRange(GCM_IV_LENGTH, encryptedBytes.size)
+                val iv = ByteArray(GCM_IV_LENGTH)
+                var totalRead = 0
+                while (totalRead < GCM_IV_LENGTH) {
+                    val read = fis.read(iv, totalRead, GCM_IV_LENGTH - totalRead)
+                    if (read == -1) throw IllegalArgumentException("Encrypted file too short to read IV")
+                    totalRead += read
+                }
 
-            val cipher = Cipher.getInstance(TRANSFORMATION)
-            val spec = GCMParameterSpec(GCM_TAG_LENGTH, iv)
-            cipher.init(Cipher.DECRYPT_MODE, getOrCreateKey(), spec)
+                val cipher = Cipher.getInstance(TRANSFORMATION)
+                val spec = GCMParameterSpec(GCM_TAG_LENGTH, iv)
+                cipher.init(Cipher.DECRYPT_MODE, getOrCreateKey(), spec)
 
-            // doFinal verifies GCM authentication tag; throws AEADBadTagException on tampering
-            val decrypted = cipher.doFinal(ciphertext)
-
-            FileOutputStream(tempFile).use { fos ->
-                fos.write(decrypted)
+                javax.crypto.CipherInputStream(fis, cipher).use { cis ->
+                    FileOutputStream(tempFile).use { fos ->
+                        cis.copyTo(fos, bufferSize = 8192)
+                    }
+                }
             }
 
             // GCM tag verified successfully — safe to commit output

@@ -12,6 +12,7 @@ import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.RecentActivity
 import com.novelcharacter.app.data.model.TimelineEvent
+import android.util.Log
 import kotlinx.coroutines.launch
 
 class CharacterViewModel(application: Application) : AndroidViewModel(application) {
@@ -80,15 +81,27 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     suspend fun getAllNovelsList(): List<Novel> = novelRepository.getAllNovelsList()
 
     fun insertCharacter(character: Character) = viewModelScope.launch {
-        characterRepository.insertCharacter(character)
+        try {
+            characterRepository.insertCharacter(character)
+        } catch (e: Exception) {
+            Log.e("CharacterViewModel", "Failed to insert character", e)
+        }
     }
 
     fun updateCharacter(character: Character) = viewModelScope.launch {
-        characterRepository.updateCharacter(character)
+        try {
+            characterRepository.updateCharacter(character)
+        } catch (e: Exception) {
+            Log.e("CharacterViewModel", "Failed to update character", e)
+        }
     }
 
     fun deleteCharacter(character: Character) = viewModelScope.launch {
-        characterRepository.deleteCharacter(character)
+        try {
+            characterRepository.deleteCharacter(character)
+        } catch (e: Exception) {
+            Log.e("CharacterViewModel", "Failed to delete character", e)
+        }
     }
 
     // ===== FieldDefinition =====
@@ -119,15 +132,27 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         characterRepository.getChangesByCharacterList(characterId)
 
     fun insertStateChange(change: CharacterStateChange) = viewModelScope.launch {
-        characterRepository.insertStateChange(change)
+        try {
+            characterRepository.insertStateChange(change)
+        } catch (e: Exception) {
+            Log.e("CharacterViewModel", "Failed to insert state change", e)
+        }
     }
 
     fun updateStateChange(change: CharacterStateChange) = viewModelScope.launch {
-        characterRepository.updateStateChange(change)
+        try {
+            characterRepository.updateStateChange(change)
+        } catch (e: Exception) {
+            Log.e("CharacterViewModel", "Failed to update state change", e)
+        }
     }
 
     fun deleteStateChange(change: CharacterStateChange) = viewModelScope.launch {
-        characterRepository.deleteStateChange(change)
+        try {
+            characterRepository.deleteStateChange(change)
+        } catch (e: Exception) {
+            Log.e("CharacterViewModel", "Failed to delete state change", e)
+        }
     }
 
     // ===== Relationships =====
@@ -135,11 +160,19 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         characterRepository.getRelationshipsForCharacter(characterId)
 
     fun insertRelationship(relationship: CharacterRelationship) = viewModelScope.launch {
-        characterRepository.insertRelationship(relationship)
+        try {
+            characterRepository.insertRelationship(relationship)
+        } catch (e: Exception) {
+            Log.e("CharacterViewModel", "Failed to insert relationship", e)
+        }
     }
 
     fun deleteRelationshipById(id: Long) = viewModelScope.launch {
-        characterRepository.deleteRelationshipById(id)
+        try {
+            characterRepository.deleteRelationshipById(id)
+        } catch (e: Exception) {
+            Log.e("CharacterViewModel", "Failed to delete relationship", e)
+        }
     }
 
     suspend fun getRelationshipsForCharacterList(characterId: Long): List<CharacterRelationship> =
@@ -159,11 +192,19 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         characterRepository.getAllDistinctTags()
 
     fun deleteAllTagsByCharacter(characterId: Long) = viewModelScope.launch {
-        characterRepository.deleteAllTagsByCharacter(characterId)
+        try {
+            characterRepository.deleteAllTagsByCharacter(characterId)
+        } catch (e: Exception) {
+            Log.e("CharacterViewModel", "Failed to delete tags", e)
+        }
     }
 
     fun insertTags(tags: List<CharacterTag>) = viewModelScope.launch {
-        characterRepository.insertTags(tags)
+        try {
+            characterRepository.insertTags(tags)
+        } catch (e: Exception) {
+            Log.e("CharacterViewModel", "Failed to insert tags", e)
+        }
     }
 
     suspend fun deleteAllTagsByCharacterSuspend(characterId: Long) =
@@ -176,17 +217,29 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         characterRepository.replaceAllTagsForCharacter(characterId, tags)
 
     fun updateCharacterDisplayOrders(characters: List<Character>) = viewModelScope.launch {
-        characterRepository.updateCharacterDisplayOrders(characters)
+        try {
+            characterRepository.updateCharacterDisplayOrders(characters)
+        } catch (e: Exception) {
+            Log.e("CharacterViewModel", "Failed to update display orders", e)
+        }
     }
 
     fun togglePin(character: Character) = viewModelScope.launch {
-        characterRepository.setPinned(character.id, !character.isPinned)
+        try {
+            characterRepository.setPinned(character.id, !character.isPinned)
+        } catch (e: Exception) {
+            Log.e("CharacterViewModel", "Failed to toggle pin", e)
+        }
     }
 
     fun recordRecentActivity(characterId: Long, name: String) = viewModelScope.launch {
-        recentActivityDao.upsert(
-            RecentActivity(entityType = RecentActivity.TYPE_CHARACTER, entityId = characterId, title = name)
-        )
-        recentActivityDao.trimToMax(RecentActivity.MAX_ENTRIES)
+        try {
+            recentActivityDao.upsert(
+                RecentActivity(entityType = RecentActivity.TYPE_CHARACTER, entityId = characterId, title = name)
+            )
+            recentActivityDao.trimToMax(RecentActivity.MAX_ENTRIES)
+        } catch (e: Exception) {
+            Log.e("CharacterViewModel", "Failed to record recent activity", e)
+        }
     }
 }
