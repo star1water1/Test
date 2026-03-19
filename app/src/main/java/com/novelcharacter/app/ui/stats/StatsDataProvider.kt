@@ -794,7 +794,8 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
     private fun computeNumericSummary(
         values: List<Float>,
         binning: FieldStatsConfig.BinningConfig?
-    ): NumericSummaryData {
+    ): NumericSummaryData? {
+        if (values.isEmpty()) return null
         val sorted = values.sorted()
         val min = sorted.first()
         val max = sorted.last()

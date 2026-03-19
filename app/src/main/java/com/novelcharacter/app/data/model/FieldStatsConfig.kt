@@ -31,17 +31,17 @@ data class FieldStatsConfig(
                 val label = parts[1].trim()
                 when {
                     rangePart.startsWith("~") -> {
-                        val max = rangePart.removePrefix("~").toFloatOrNull() ?: return@mapNotNull null
+                        val max = rangePart.removePrefix("~").trim().toFloatOrNull() ?: return@mapNotNull null
                         BinRange(null, max, label)
                     }
                     rangePart.endsWith("~") -> {
-                        val min = rangePart.removeSuffix("~").toFloatOrNull() ?: return@mapNotNull null
+                        val min = rangePart.removeSuffix("~").trim().toFloatOrNull() ?: return@mapNotNull null
                         BinRange(min, null, label)
                     }
                     rangePart.contains("~") -> {
                         val (minStr, maxStr) = rangePart.split("~", limit = 2)
-                        val min = minStr.toFloatOrNull() ?: return@mapNotNull null
-                        val max = maxStr.toFloatOrNull() ?: return@mapNotNull null
+                        val min = minStr.trim().toFloatOrNull() ?: return@mapNotNull null
+                        val max = maxStr.trim().toFloatOrNull() ?: return@mapNotNull null
                         BinRange(min, max, label)
                     }
                     else -> null

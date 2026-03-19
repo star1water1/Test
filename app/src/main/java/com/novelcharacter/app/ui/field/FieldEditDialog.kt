@@ -52,6 +52,13 @@ class FieldEditDialog : DialogFragment() {
         val editRange: EditText
     )
     private val binRangeRows = mutableListOf<BinRangeRow>()
+    private var fieldTypeSpinner: Spinner? = null
+
+    private fun currentFieldType(): String {
+        val pos = fieldTypeSpinner?.selectedItemPosition ?: 0
+        val types = FieldType.entries.toTypedArray()
+        return if (pos in types.indices) types[pos].name else "TEXT"
+    }
 
     fun setOnSaveListener(listener: (FieldDefinition) -> Unit) {
         onSave = listener
@@ -84,6 +91,7 @@ class FieldEditDialog : DialogFragment() {
         val spinnerAdapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, labels)
         spinnerAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         binding.spinnerFieldType.adapter = spinnerAdapter
+        fieldTypeSpinner = binding.spinnerFieldType
 
         // Display format spinner
         val formatLabels = DisplayFormat.labels()
@@ -159,7 +167,7 @@ class FieldEditDialog : DialogFragment() {
         addAnalysisRow(binding.analysisListContainer, density)
     }
 
-    private fun addAnalysisRow(container: LinearLayout, density: Float) {
+    private fun addAnalysisRow(container: LinearLayout, density: Float, fieldType: String = currentFieldType()) {
         val ctx = requireContext()
         val row = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -171,9 +179,10 @@ class FieldEditDialog : DialogFragment() {
             }
         }
 
+        val allowedTypes = FieldStatsConfig.StatsType.forFieldType(fieldType)
         val spinnerType = Spinner(ctx).apply {
             layoutParams = LinearLayout.LayoutParams(0, (40 * density).toInt(), 1f)
-            adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item, FieldStatsConfig.StatsType.labels()).also {
+            adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item, allowedTypes.map { it.label }).also {
                 it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
             }
         }
@@ -471,11 +480,12 @@ class FieldEditDialog : DialogFragment() {
     private fun collectStatsConfig(binding: DialogFieldEditBinding, type: FieldType): FieldStatsConfig {
         val enabled = binding.switchStatsEnabled.isChecked
 
+        val allowedTypes = FieldStatsConfig.StatsType.forFieldType(type.name)
         val analyses = analysisRows.map { row ->
-            val statsTypes = FieldStatsConfig.StatsType.entries
             val chartTypes = FieldStatsConfig.ChartType.entries
+            val typePos = row.spinnerType.selectedItemPosition.coerceIn(0, allowedTypes.size - 1)
             FieldStatsConfig.AnalysisEntry(
-                type = statsTypes[row.spinnerType.selectedItemPosition],
+                type = allowedTypes[typePos],
                 chart = chartTypes[row.spinnerChart.selectedItemPosition],
                 limit = row.editLimit.text.toString().toIntOrNull() ?: 10
             )
