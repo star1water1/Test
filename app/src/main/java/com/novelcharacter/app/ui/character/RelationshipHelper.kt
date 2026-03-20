@@ -391,7 +391,7 @@ class RelationshipHelper(
 
             // 사건 스피너 (첫 항목: "없음")
             val eventLabels = mutableListOf(getString(R.string.rel_change_no_event))
-            events.forEach { eventLabels.add("${it.title} (${it.year}년)") }
+            events.forEach { eventLabels.add("${it.description} (${it.year}년)") }
             spinnerEvent.adapter = ArrayAdapter(context, android.R.layout.simple_spinner_item, eventLabels)
                 .also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
 
@@ -450,7 +450,7 @@ class RelationshipHelper(
                 .also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
 
             val eventLabels = mutableListOf(getString(R.string.rel_change_no_event))
-            events.forEach { eventLabels.add("${it.title} (${it.year}년)") }
+            events.forEach { eventLabels.add("${it.description} (${it.year}년)") }
             spinnerEvent.adapter = ArrayAdapter(context, android.R.layout.simple_spinner_item, eventLabels)
                 .also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
 
