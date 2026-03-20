@@ -13,9 +13,15 @@ import androidx.room.PrimaryKey
             parentColumns = ["id"],
             childColumns = ["universeId"],
             onDelete = ForeignKey.SET_NULL
+        ),
+        ForeignKey(
+            entity = Character::class,
+            parentColumns = ["id"],
+            childColumns = ["imageCharacterId"],
+            onDelete = ForeignKey.SET_NULL
         )
     ],
-    indices = [Index("universeId"), Index("createdAt"), Index(value = ["code"], unique = true)]
+    indices = [Index("universeId"), Index("createdAt"), Index(value = ["code"], unique = true), Index("imageCharacterId")]
 )
 data class Novel(
     @PrimaryKey(autoGenerate = true)

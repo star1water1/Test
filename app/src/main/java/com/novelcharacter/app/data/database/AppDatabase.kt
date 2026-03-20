@@ -59,7 +59,7 @@ import com.novelcharacter.app.data.model.Universe
         SearchPreset::class,
         UserPresetTemplate::class
     ],
-    version = 20,
+    version = 21,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -787,6 +787,68 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_20_21 = object : Migration(20, 21) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "Migrating database from version 20 to 21")
+                // novels.imageCharacterId에 FK 제약 추가 (Character.id 참조, SET_NULL on delete)
+                // SQLite는 ALTER TABLE로 FK를 추가할 수 없으므로 테이블 재생성 필요
+
+                // 1. 댕글링 참조 정리 (존재하지 않는 캐릭터 참조 null 처리)
+                db.execSQL(
+                    "UPDATE novels SET imageCharacterId = NULL " +
+                    "WHERE imageCharacterId IS NOT NULL " +
+                    "AND imageCharacterId NOT IN (SELECT id FROM characters)"
+                )
+
+                // 2. 새 테이블 생성 (FK 포함)
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `novels_new` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `title` TEXT NOT NULL,
+                        `description` TEXT NOT NULL DEFAULT '',
+                        `universeId` INTEGER DEFAULT NULL,
+                        `createdAt` INTEGER NOT NULL DEFAULT 0,
+                        `code` TEXT NOT NULL DEFAULT '',
+                        `displayOrder` INTEGER NOT NULL DEFAULT 0,
+                        `borderColor` TEXT NOT NULL DEFAULT '',
+                        `borderWidthDp` REAL NOT NULL DEFAULT 1.5,
+                        `inheritUniverseBorder` INTEGER NOT NULL DEFAULT 1,
+                        `isPinned` INTEGER NOT NULL DEFAULT 0,
+                        `imagePath` TEXT NOT NULL DEFAULT '',
+                        `imageMode` TEXT NOT NULL DEFAULT 'none',
+                        `imageCharacterId` INTEGER DEFAULT NULL,
+                        FOREIGN KEY(`universeId`) REFERENCES `universes`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL,
+                        FOREIGN KEY(`imageCharacterId`) REFERENCES `characters`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL
+                    )
+                """)
+
+                // 3. 데이터 복사
+                db.execSQL("""
+                    INSERT INTO `novels_new` (
+                        `id`, `title`, `description`, `universeId`, `createdAt`, `code`,
+                        `displayOrder`, `borderColor`, `borderWidthDp`, `inheritUniverseBorder`,
+                        `isPinned`, `imagePath`, `imageMode`, `imageCharacterId`
+                    ) SELECT
+                        `id`, `title`, `description`, `universeId`, `createdAt`, `code`,
+                        `displayOrder`, `borderColor`, `borderWidthDp`, `inheritUniverseBorder`,
+                        `isPinned`, `imagePath`, `imageMode`, `imageCharacterId`
+                    FROM `novels`
+                """)
+
+                // 4. 기존 테이블 삭제 및 이름 변경
+                db.execSQL("DROP TABLE `novels`")
+                db.execSQL("ALTER TABLE `novels_new` RENAME TO `novels`")
+
+                // 5. 인덱스 재생성
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_novels_universeId` ON `novels` (`universeId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_novels_createdAt` ON `novels` (`createdAt`)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_novels_code` ON `novels` (`code`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_novels_imageCharacterId` ON `novels` (`imageCharacterId`)")
+
+                Log.i(TAG, "Migration from version 20 to 21 completed successfully")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -794,7 +856,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "novel_character_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21)
                     .addCallback(SeedCallback())
                     .build()
                     .also { INSTANCE = it }
