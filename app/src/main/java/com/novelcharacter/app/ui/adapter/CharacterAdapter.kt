@@ -120,6 +120,7 @@ class CharacterAdapter(
     override fun onViewRecycled(holder: CharacterViewHolder) {
         super.onViewRecycled(holder)
         holder.cancelLoad()
+        holder.binding.characterImage.setImageDrawable(null)
     }
 
     override fun onDetachedFromRecyclerView(recyclerView: RecyclerView) {

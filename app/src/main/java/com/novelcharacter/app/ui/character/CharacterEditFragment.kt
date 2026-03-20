@@ -699,22 +699,23 @@ class CharacterEditFragment : Fragment() {
 
                 override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
                     val imageView = holder.itemView as ImageView
-                    // Reset to placeholder; let GC handle old bitmap lifecycle
-                    imageView.tag = null
+                    // 이전 로드 작업 취소 + 이미지 초기화
+                    (imageView.getTag(R.id.image_load_job) as? kotlinx.coroutines.Job)?.cancel()
+                    imageView.setTag(R.id.image_load_job, null)
                     imageView.setImageResource(R.drawable.ic_character_placeholder)
                     if (position < imagePaths.size) {
                         val path = imagePaths[position]
                         val boundPosition = position
-                        viewLifecycleOwner.lifecycleScope.launch {
+                        val job = viewLifecycleOwner.lifecycleScope.launch {
                             val targetSize = (80 * holder.itemView.context.resources.displayMetrics.density).toInt()
                             val bitmap = withContext(Dispatchers.IO) {
                                 decodeSampledBitmap(path, targetSize, targetSize)
                             }
                             if (bitmap != null && holder.bindingAdapterPosition == boundPosition && isAdded) {
-                                imageView.tag = bitmap
                                 imageView.setImageBitmap(bitmap)
                             }
                         }
+                        imageView.setTag(R.id.image_load_job, job)
                     }
                     imageView.setOnLongClickListener {
                         val adapterPosition = holder.bindingAdapterPosition

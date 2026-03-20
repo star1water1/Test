@@ -119,6 +119,7 @@ class TimelineAdapter(
         super.onViewRecycled(holder)
         if (holder is TimelineViewHolder) {
             holder.cancelLoad()
+            holder.clearChips()
         }
     }
 
@@ -132,6 +133,10 @@ class TimelineAdapter(
         fun cancelLoad() {
             loadJob?.cancel()
             loadJob = null
+        }
+
+        fun clearChips() {
+            binding.characterChipGroup.removeAllViews()
         }
 
         fun bind(item: TimelineDisplayItem) {

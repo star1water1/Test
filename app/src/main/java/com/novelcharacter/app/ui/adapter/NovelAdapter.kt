@@ -100,6 +100,7 @@ class NovelAdapter(
     override fun onViewRecycled(holder: NovelViewHolder) {
         super.onViewRecycled(holder)
         holder.cancelLoad()
+        holder.binding.novelImage.setImageDrawable(null)
     }
 
     override fun onDetachedFromRecyclerView(recyclerView: RecyclerView) {
