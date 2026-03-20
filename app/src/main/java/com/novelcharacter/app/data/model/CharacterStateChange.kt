@@ -15,7 +15,7 @@ import androidx.room.PrimaryKey
             onDelete = ForeignKey.CASCADE
         )
     ],
-    indices = [Index("characterId"), Index("year")]
+    indices = [Index("characterId"), Index("year"), Index("fieldKey")]
 )
 data class CharacterStateChange(
     @PrimaryKey(autoGenerate = true)
