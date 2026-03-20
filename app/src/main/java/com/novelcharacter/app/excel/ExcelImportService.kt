@@ -852,6 +852,9 @@ class ExcelImportService(private val db: AppDatabase) {
         val char2NameColIndex = cols["캐릭터2"] ?: 1
         val typeColIndex = cols["관계 유형"] ?: 2
         val descColIndex = cols["설명"] ?: 3
+        val intensityColIndex = cols["강도"] ?: -1
+        val bidirectionalColIndex = cols["양방향"] ?: -1
+        val displayOrderColIndex = cols["표시순서"] ?: -1
         val char1CodeColIndex = cols["캐릭터1코드"] ?: -1
         val char2CodeColIndex = cols["캐릭터2코드"] ?: -1
 
@@ -865,6 +868,9 @@ class ExcelImportService(private val db: AppDatabase) {
                 val relationshipType = getCellString(row, typeColIndex)
                 if (relationshipType.isBlank()) continue
                 val description = getCellString(row, descColIndex)
+                val intensity = if (intensityColIndex >= 0) parseNumber(getCellString(row, intensityColIndex))?.toInt()?.coerceIn(1, 10) ?: 5 else 5
+                val isBidirectional = if (bidirectionalColIndex >= 0) getCellString(row, bidirectionalColIndex).uppercase() != "N" else true
+                val displayOrder = if (displayOrderColIndex >= 0) parseNumber(getCellString(row, displayOrderColIndex))?.toInt() ?: 0 else 0
                 val char1Code = if (char1CodeColIndex >= 0) getCellString(row, char1CodeColIndex) else ""
                 val char2Code = if (char2CodeColIndex >= 0) getCellString(row, char2CodeColIndex) else ""
 
@@ -892,12 +898,17 @@ class ExcelImportService(private val db: AppDatabase) {
                 }
 
                 if (existing != null) {
-                    db.characterRelationshipDao().update(existing.copy(description = description))
+                    db.characterRelationshipDao().update(existing.copy(
+                        description = description, intensity = intensity,
+                        isBidirectional = isBidirectional, displayOrder = displayOrder
+                    ))
                     result.updatedRelationships++
                 } else {
                     db.characterRelationshipDao().insert(CharacterRelationship(
                         characterId1 = char1.id, characterId2 = char2.id,
-                        relationshipType = relationshipType, description = description
+                        relationshipType = relationshipType, description = description,
+                        intensity = intensity, isBidirectional = isBidirectional,
+                        displayOrder = displayOrder
                     ))
                     result.newRelationships++
                 }
@@ -926,6 +937,7 @@ class ExcelImportService(private val db: AppDatabase) {
         val descColIndex = cols["설명"] ?: 6
         val intensityColIndex = cols["강도"] ?: 7
         val bidirectionalColIndex = cols["양방향"] ?: 8
+        val eventIdColIndex = cols["연결사건ID"] ?: -1
         val char1CodeColIndex = cols["캐릭터1코드"] ?: -1
         val char2CodeColIndex = cols["캐릭터2코드"] ?: -1
 
@@ -944,6 +956,7 @@ class ExcelImportService(private val db: AppDatabase) {
                 val description = getCellString(row, descColIndex)
                 val intensity = parseNumber(getCellString(row, intensityColIndex))?.toInt()?.coerceIn(1, 10) ?: 5
                 val isBidirectional = parseBoolean(getCellString(row, bidirectionalColIndex))
+                val eventId = if (eventIdColIndex >= 0) parseNumber(getCellString(row, eventIdColIndex))?.toLong() else null
 
                 val char1Code = if (char1CodeColIndex >= 0) getCellString(row, char1CodeColIndex) else ""
                 val char2Code = if (char2CodeColIndex >= 0) getCellString(row, char2CodeColIndex) else ""
@@ -966,7 +979,8 @@ class ExcelImportService(private val db: AppDatabase) {
                 if (existing != null) {
                     db.characterRelationshipChangeDao().update(existing.copy(
                         relationshipType = relationshipType, description = description,
-                        intensity = intensity, isBidirectional = isBidirectional
+                        intensity = intensity, isBidirectional = isBidirectional,
+                        eventId = eventId
                     ))
                     result.updatedRelationshipChanges++
                 } else {
@@ -974,7 +988,8 @@ class ExcelImportService(private val db: AppDatabase) {
                         relationshipId = relationship.id,
                         year = year, month = month, day = day,
                         relationshipType = relationshipType, description = description,
-                        intensity = intensity, isBidirectional = isBidirectional
+                        intensity = intensity, isBidirectional = isBidirectional,
+                        eventId = eventId
                     ))
                     result.newRelationshipChanges++
                 }

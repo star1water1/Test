@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <!-- 연도 -->
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="@string/rel_change_year"
+            android:layout_marginBottom="8dp">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/editYear"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="numberSigned" />
+
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <!-- 관계 유형 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/relationship_type"
+            android:textSize="12sp"
+            android:textColor="@color/text_secondary" />
+
+        <Spinner
+            android:id="@+id/spinnerChangeType"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginBottom="8dp" />
+
+        <!-- 설명 -->
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="@string/description_optional"
+            android:layout_marginBottom="8dp">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/editChangeDescription"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="text" />
+
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <!-- 강도 슬라이더 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/relationship_intensity"
+            android:textSize="12sp"
+            android:textColor="@color/text_secondary" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <com.google.android.material.slider.Slider
+                android:id="@+id/sliderChangeIntensity"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:valueFrom="1"
+                android:valueTo="10"
+                android:stepSize="1"
+                android:value="5" />
+
+            <TextView
+                android:id="@+id/textChangeIntensityValue"
+                android:layout_width="32dp"
+                android:layout_height="wrap_content"
+                android:text="5"
+                android:textSize="14sp"
+                android:textColor="?attr/colorOnSurface"
+                android:gravity="center" />
+
+        </LinearLayout>
+
+        <!-- 양방향 -->
+        <com.google.android.material.checkbox.MaterialCheckBox
+            android:id="@+id/checkChangeBidirectional"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/relationship_bidirectional"
+            android:checked="true"
+            android:layout_marginBottom="8dp" />
+
+        <!-- 연결 사건 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/rel_change_linked_event"
+            android:textSize="12sp"
+            android:textColor="@color/text_secondary" />
+
+        <Spinner
+            android:id="@+id/spinnerLinkedEvent"
+            android:layout_width="match_parent"
+            android:layout_height="48dp" />
+
+    </LinearLayout>
+</ScrollView>

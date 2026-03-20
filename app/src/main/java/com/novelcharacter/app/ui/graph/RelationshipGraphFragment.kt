@@ -22,6 +22,7 @@ import kotlinx.coroutines.launch
 class RelationshipGraphViewModel(application: android.app.Application) : AndroidViewModel(application) {
     private val app = application as NovelCharacterApp
     private val characterRepository = app.characterRepository
+    private val universeRepository = app.universeRepository
 
     private val _characters = MutableLiveData<List<Character>>()
     val characters: LiveData<List<Character>> = _characters
@@ -32,11 +33,23 @@ class RelationshipGraphViewModel(application: android.app.Application) : Android
     private val _relationshipChanges = MutableLiveData<List<CharacterRelationshipChange>>()
     val relationshipChanges: LiveData<List<CharacterRelationshipChange>> = _relationshipChanges
 
+    /** 모든 세계관의 관계 색상 맵을 통합 */
+    private val _relationshipColorMap = MutableLiveData<Map<String, String>>()
+    val relationshipColorMap: LiveData<Map<String, String>> = _relationshipColorMap
+
     fun loadData() {
         viewModelScope.launch {
             _characters.value = characterRepository.getAllCharactersList()
             _relationships.value = characterRepository.getAllRelationships()
             _relationshipChanges.value = characterRepository.getAllRelationshipChanges()
+
+            // 모든 세계관의 색상 맵을 통합 (나중에 설정한 것이 우선)
+            val universes = universeRepository.getAllUniversesList()
+            val mergedColors = mutableMapOf<String, String>()
+            for (universe in universes) {
+                mergedColors.putAll(universe.getRelationshipColorMap())
+            }
+            _relationshipColorMap.value = mergedColors
         }
     }
 
@@ -100,7 +113,12 @@ class RelationshipGraphFragment : Fragment() {
             findNavController().navigateSafe(R.id.relationshipGraphFragment, R.id.characterDetailFragment, bundle)
         }
 
+        binding.graphView.setOnNodeLongClickListener { characterId ->
+            showNodeContextMenu(characterId)
+        }
+
         setupTimeSlider()
+        observeColors()
         observeData()
         viewModel.loadData()
     }
@@ -125,6 +143,12 @@ class RelationshipGraphFragment : Fragment() {
                 binding.yearLabel.text = getString(R.string.year_label_format, value.toInt())
                 refreshGraphEdgesOnly()
             }
+        }
+    }
+
+    private fun observeColors() {
+        viewModel.relationshipColorMap.observe(viewLifecycleOwner) { colorMap ->
+            binding.graphView.setRelationshipColors(colorMap)
         }
     }
 
@@ -313,11 +337,49 @@ class RelationshipGraphFragment : Fragment() {
                 GraphEdge(
                     fromId = rel.characterId1,
                     toId = rel.characterId2,
-                    label = rel.relationshipType
+                    label = rel.relationshipType,
+                    intensity = rel.intensity,
+                    isBidirectional = rel.isBidirectional
                 )
             }
         }
         binding.graphView.setGraphData(nodes, edges)
+    }
+
+    private fun showNodeContextMenu(characterId: Long) {
+        val ctx = context ?: return
+        val chars = viewModel.characters.value ?: return
+        val rels = viewModel.relationships.value ?: return
+        val charName = chars.find { it.id == characterId }?.name ?: return
+
+        // 이 캐릭터와 관련된 관계 목록
+        val charRels = rels.filter { it.characterId1 == characterId || it.characterId2 == characterId }
+        val relLabels = charRels.map { rel ->
+            val otherId = if (rel.characterId1 == characterId) rel.characterId2 else rel.characterId1
+            val otherName = chars.find { it.id == otherId }?.name ?: "?"
+            "$otherName (${rel.relationshipType})"
+        }
+
+        val options = mutableListOf(getString(R.string.graph_context_view_detail))
+        relLabels.forEach { options.add(it) }
+
+        androidx.appcompat.app.AlertDialog.Builder(ctx)
+            .setTitle(charName)
+            .setItems(options.toTypedArray()) { _, which ->
+                if (which == 0) {
+                    // 캐릭터 상세로 이동
+                    val bundle = Bundle().apply { putLong("characterId", characterId) }
+                    findNavController().navigateSafe(R.id.relationshipGraphFragment, R.id.characterDetailFragment, bundle)
+                } else {
+                    // 선택한 관계의 대상 캐릭터 상세로 이동
+                    val rel = charRels[which - 1]
+                    val otherId = if (rel.characterId1 == characterId) rel.characterId2 else rel.characterId1
+                    val bundle = Bundle().apply { putLong("characterId", otherId) }
+                    findNavController().navigateSafe(R.id.relationshipGraphFragment, R.id.characterDetailFragment, bundle)
+                }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
     }
 
     override fun onDestroyView() {

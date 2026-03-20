@@ -13,6 +13,7 @@ data class StatsSnapshot(
     val universes: List<Universe>,
     val events: List<TimelineEvent>,
     val relationships: List<CharacterRelationship>,
+    val relationshipChanges: List<CharacterRelationshipChange>,
     val tags: List<CharacterTag>,
     val nameBank: List<NameBankEntry>,
     val stateChanges: List<CharacterStateChange>,
@@ -152,12 +153,20 @@ data class RelationshipStats(
     val typeDistribution: Map<String, Int>,
     val topConnectedChars: List<Pair<String, Int>>,
     val isolatedCharacters: List<String>,
-    // 신규
+    // 네트워크 메트릭
     val networkDensity: Float,
     val descriptionCompleteness: Float, // 설명이 있는 관계 비율 (%)
     val emptyDescriptionCount: Int,
     val reciprocalPairCount: Int, // 양방향 관계 쌍 수
-    val avgConnectionsPerChar: Float
+    val avgConnectionsPerChar: Float,
+    // 강도/방향성 분석
+    val intensityDistribution: Map<Int, Int>,      // 강도값(1~10) → 개수
+    val avgIntensity: Float,                        // 평균 강도
+    val bidirectionalCount: Int,                    // 양방향 관계 수
+    val unidirectionalCount: Int,                   // 단방향 관계 수
+    // 시간 추세 (RelationshipChange 기반)
+    val changeTimeline: List<Pair<Int, Int>>,        // 연도 → 해당 연도 변화 수
+    val typeChangeTrends: Map<String, List<Pair<Int, Int>>> // 유형별 연도→변화 수
 )
 
 // ===== 이름뱅크 =====
@@ -308,6 +317,7 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
             universes = app.universeRepository.getAllUniversesList(),
             events = app.timelineRepository.getAllEventsList(),
             relationships = app.characterRepository.getAllRelationships(),
+            relationshipChanges = app.characterRepository.getAllRelationshipChanges(),
             tags = db.characterTagDao().getAllTagsList(),
             nameBank = db.nameBankDao().getAllNamesList(),
             stateChanges = db.characterStateChangeDao().getAllChangesList(),
@@ -327,6 +337,10 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
             novels = listOf(novel),
             events = s.events.filter { it.novelId == novelId },
             relationships = s.relationships.filter { it.characterId1 in charIds || it.characterId2 in charIds },
+            relationshipChanges = run {
+                val relIds = s.relationships.filter { it.characterId1 in charIds || it.characterId2 in charIds }.map { it.id }.toSet()
+                s.relationshipChanges.filter { it.relationshipId in relIds }
+            },
             tags = s.tags.filter { it.characterId in charIds },
             stateChanges = s.stateChanges.filter { it.characterId in charIds },
             fieldDefinitions = s.fieldDefinitions.filter { it.universeId == novel.universeId },
@@ -703,10 +717,36 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
         }
         val reciprocalCount = pairCounts.count { it.value > 1 }
 
-        // 신규: 캐릭터당 평균 연결
+        // 캐릭터당 평균 연결
         val avgConn = if (s.characters.isNotEmpty()) {
             connCount.values.sum().toFloat() / s.characters.size
         } else 0f
+
+        // 강도 분포
+        val intensityDist = s.relationships.groupBy { it.intensity }.mapValues { it.value.size }
+        val avgIntensity = if (s.relationships.isNotEmpty()) {
+            s.relationships.sumOf { it.intensity }.toFloat() / s.relationships.size
+        } else 0f
+
+        // 방향성 분석
+        val biCount = s.relationships.count { it.isBidirectional }
+        val uniCount = s.relationships.size - biCount
+
+        // 시간 추세 (RelationshipChange 기반)
+        val changeTimeline = s.relationshipChanges
+            .groupBy { it.year }
+            .mapValues { it.value.size }
+            .toSortedMap()
+            .map { it.key to it.value }
+
+        val typeChangeTrends = s.relationshipChanges
+            .groupBy { it.relationshipType }
+            .mapValues { (_, changes) ->
+                changes.groupBy { it.year }
+                    .mapValues { it.value.size }
+                    .toSortedMap()
+                    .map { it.key to it.value }
+            }
 
         return RelationshipStats(
             typeDistribution = typeDist,
@@ -716,7 +756,13 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
             descriptionCompleteness = descCompleteness,
             emptyDescriptionCount = emptyDescCount,
             reciprocalPairCount = reciprocalCount,
-            avgConnectionsPerChar = avgConn
+            avgConnectionsPerChar = avgConn,
+            intensityDistribution = intensityDist,
+            avgIntensity = avgIntensity,
+            bidirectionalCount = biCount,
+            unidirectionalCount = uniCount,
+            changeTimeline = changeTimeline,
+            typeChangeTrends = typeChangeTrends
         )
     }
 

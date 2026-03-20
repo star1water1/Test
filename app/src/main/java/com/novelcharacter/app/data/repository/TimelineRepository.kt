@@ -14,6 +14,8 @@ class TimelineRepository(
     suspend fun getAllEventsList(): List<TimelineEvent> = timelineDao.getAllEventsList()
     fun getEventsByNovel(novelId: Long): LiveData<List<TimelineEvent>> =
         timelineDao.getEventsByNovel(novelId)
+    suspend fun getEventsByNovelList(novelId: Long): List<TimelineEvent> =
+        timelineDao.getEventsByNovelList(novelId)
     suspend fun getEventById(id: Long): TimelineEvent? = timelineDao.getEventById(id)
     fun getEventsByYearRange(startYear: Int, endYear: Int): LiveData<List<TimelineEvent>> =
         timelineDao.getEventsByYearRange(startYear, endYear)

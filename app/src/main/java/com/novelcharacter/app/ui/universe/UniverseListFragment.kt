@@ -606,10 +606,26 @@ class UniverseListFragment : Fragment() {
         layout.addView(relTypeLabel)
 
         val currentTypes = (universe?.getRelationshipTypes() ?: Universe.DEFAULT_RELATIONSHIP_TYPES).toMutableList()
+        val currentColors = (universe?.getRelationshipColorMap() ?: Universe.DEFAULT_RELATIONSHIP_COLORS).toMutableMap()
 
         val relTypeChipsContainer = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(0, 0, 0, (4 * dp).toInt())
+        }
+
+        fun showColorPickerForType(typeName: String, onColorSelected: (String) -> Unit) {
+            val presetColors = arrayOf("#E91E63", "#F44336", "#FF5722", "#FF9800", "#FFC107",
+                "#4CAF50", "#2196F3", "#3F51B5", "#9C27B0", "#00BCD4", "#795548", "#607D8B", "#212121", "#9E9E9E")
+            val colorNames = arrayOf("핑크", "빨강", "주황빨강", "주황", "노랑",
+                "초록", "파랑", "남색", "보라", "청록", "갈색", "회남색", "검정", "회색")
+
+            AlertDialog.Builder(ctx)
+                .setTitle(getString(R.string.relationship_color_pick_title, typeName))
+                .setItems(colorNames) { _, which ->
+                    onColorSelected(presetColors[which])
+                }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
         }
 
         fun refreshRelTypeChips() {
@@ -620,6 +636,26 @@ class UniverseListFragment : Fragment() {
                     gravity = android.view.Gravity.CENTER_VERTICAL
                     setPadding(0, (2 * dp).toInt(), 0, (2 * dp).toInt())
                 }
+                // 색상 원 (클릭 시 색상 피커)
+                val colorCircle = View(ctx).apply {
+                    val size = (20 * dp).toInt()
+                    layoutParams = LinearLayout.LayoutParams(size, size).apply {
+                        marginEnd = (8 * dp).toInt()
+                    }
+                    val colorHex = currentColors[typeName] ?: "#9E9E9E"
+                    val drawable = android.graphics.drawable.GradientDrawable().apply {
+                        shape = android.graphics.drawable.GradientDrawable.OVAL
+                        setColor(Color.parseColor(colorHex))
+                    }
+                    background = drawable
+                    setOnClickListener {
+                        showColorPickerForType(typeName) { newColor ->
+                            currentColors[typeName] = newColor
+                            (background as? android.graphics.drawable.GradientDrawable)?.setColor(Color.parseColor(newColor))
+                        }
+                    }
+                }
+                row.addView(colorCircle)
                 row.addView(TextView(ctx).apply {
                     text = typeName
                     layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
@@ -630,6 +666,7 @@ class UniverseListFragment : Fragment() {
                     setPadding((8 * dp).toInt(), 0, 0, 0)
                     setOnClickListener {
                         currentTypes.remove(typeName)
+                        currentColors.remove(typeName)
                         refreshRelTypeChips()
                     }
                 })
@@ -762,6 +799,13 @@ class UniverseListFragment : Fragment() {
                 // 관계 유형을 JSON 배열로 직렬화 (기본값과 동일하면 빈 문자열 저장)
                 val relTypesJson = if (currentTypes == Universe.DEFAULT_RELATIONSHIP_TYPES) ""
                     else org.json.JSONArray(currentTypes).toString()
+                // 기본 색상과 동일하면 빈 문자열, 아니면 JSON 저장
+                val relColorsJson = run {
+                    val customOnly = currentColors.filter { (k, v) ->
+                        Universe.DEFAULT_RELATIONSHIP_COLORS[k] != v
+                    }
+                    if (customOnly.isEmpty()) "" else org.json.JSONObject(customOnly as Map<*, *>).toString()
+                }
                 if (name.isNotEmpty()) {
                     val finalCharId = if (selectedImageMode == Universe.IMAGE_MODE_SELECT_CHARACTER) selectedCharacterId else null
                     if (universe == null) {
@@ -769,14 +813,16 @@ class UniverseListFragment : Fragment() {
                             name = name, description = desc, borderColor = borderColor,
                             imagePath = finalImagePath, imageMode = selectedImageMode,
                             imageCharacterId = finalCharId,
-                            customRelationshipTypes = relTypesJson
+                            customRelationshipTypes = relTypesJson,
+                            customRelationshipColors = relColorsJson
                         ))
                     } else {
                         viewModel.updateUniverse(universe.copy(
                             name = name, description = desc, borderColor = borderColor,
                             imagePath = finalImagePath, imageMode = selectedImageMode,
                             imageCharacterId = finalCharId,
-                            customRelationshipTypes = relTypesJson
+                            customRelationshipTypes = relTypesJson,
+                            customRelationshipColors = relColorsJson
                         ))
                     }
                 }

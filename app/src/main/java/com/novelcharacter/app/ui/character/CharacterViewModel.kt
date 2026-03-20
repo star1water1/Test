@@ -6,6 +6,7 @@ import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.CharacterFieldValue
 import com.novelcharacter.app.data.model.CharacterRelationship
+import com.novelcharacter.app.data.model.CharacterRelationshipChange
 import com.novelcharacter.app.data.model.CharacterStateChange
 import com.novelcharacter.app.data.model.CharacterTag
 import com.novelcharacter.app.data.model.FieldDefinition
@@ -205,6 +206,14 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    fun updateRelationship(relationship: CharacterRelationship) = viewModelScope.launch {
+        try {
+            characterRepository.updateRelationship(relationship)
+        } catch (e: Exception) {
+            Log.e("CharacterViewModel", "Failed to update relationship", e)
+        }
+    }
+
     fun deleteRelationshipById(id: Long) = viewModelScope.launch {
         try {
             characterRepository.deleteRelationshipById(id)
@@ -216,8 +225,53 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     suspend fun getRelationshipsForCharacterList(characterId: Long): List<CharacterRelationship> =
         characterRepository.getRelationshipsForCharacterList(characterId)
 
+    suspend fun getRelationshipById(id: Long): CharacterRelationship? =
+        characterRepository.getRelationshipById(id)
+
+    fun updateRelationshipOrders(relationships: List<CharacterRelationship>) = viewModelScope.launch {
+        try {
+            characterRepository.updateRelationshipOrders(relationships)
+        } catch (e: Exception) {
+            Log.e("CharacterViewModel", "Failed to update relationship orders", e)
+        }
+    }
+
     suspend fun getAllCharactersList(): List<Character> =
         characterRepository.getAllCharactersList()
+
+    // ===== RelationshipChanges =====
+    fun getRelationshipChanges(relationshipId: Long): LiveData<List<CharacterRelationshipChange>> =
+        characterRepository.getRelationshipChanges(relationshipId)
+
+    suspend fun getRelationshipChangesList(relationshipId: Long): List<CharacterRelationshipChange> =
+        characterRepository.getRelationshipChangesList(relationshipId)
+
+    fun insertRelationshipChange(change: CharacterRelationshipChange) = viewModelScope.launch {
+        try {
+            characterRepository.insertRelationshipChange(change)
+        } catch (e: Exception) {
+            Log.e("CharacterViewModel", "Failed to insert relationship change", e)
+        }
+    }
+
+    fun updateRelationshipChange(change: CharacterRelationshipChange) = viewModelScope.launch {
+        try {
+            characterRepository.updateRelationshipChange(change)
+        } catch (e: Exception) {
+            Log.e("CharacterViewModel", "Failed to update relationship change", e)
+        }
+    }
+
+    fun deleteRelationshipChange(change: CharacterRelationshipChange) = viewModelScope.launch {
+        try {
+            characterRepository.deleteRelationshipChange(change)
+        } catch (e: Exception) {
+            Log.e("CharacterViewModel", "Failed to delete relationship change", e)
+        }
+    }
+
+    suspend fun getEventsForNovelList(novelId: Long): List<TimelineEvent> =
+        timelineRepository.getEventsByNovelList(novelId)
 
     // ===== Tags =====
     fun getTagsByCharacter(characterId: Long): LiveData<List<CharacterTag>> =

@@ -278,6 +278,28 @@
     <string name="import_file_too_large">파일 크기가 너무 큽니다 (최대 10MB)</string>
     <string name="relationship_title_format">%1$s (%2$s)</string>
     <string name="relationship_already_exists">이미 해당 캐릭터와 관계가 존재합니다</string>
+    <string name="edit_relationship">관계 편집</string>
+    <string name="relationship_intensity">관계 강도</string>
+    <string name="relationship_bidirectional">양방향 관계</string>
+    <string name="relationship_search_character_hint">캐릭터 이름 검색</string>
+    <string name="relationship_options_edit">편집</string>
+    <string name="relationship_options_delete">삭제</string>
+    <string name="relationship_color_pick_title">\"%s\" 관계 색상</string>
+    <string name="stats_intensity_direction_title">강도 / 방향성 분석</string>
+    <string name="stats_avg_intensity">평균 관계 강도: %.1f / 10</string>
+    <string name="stats_direction_ratio">양방향 %d개 / 단방향 %d개</string>
+    <string name="stats_rel_time_trend">관계 변화 추세</string>
+    <string name="stats_intensity_axis">개수</string>
+    <string name="stats_intensity_label">강도</string>
+    <string name="graph_context_view_detail">캐릭터 상세 보기</string>
+    <string name="rel_change_year">연도</string>
+    <string name="rel_change_linked_event">연결 사건 (선택)</string>
+    <string name="rel_change_no_event">없음</string>
+    <string name="add_relationship_change">관계 변화 추가</string>
+    <string name="edit_relationship_change">관계 변화 편집</string>
+    <string name="relationship_changes_title">관계 변화 이력</string>
+    <string name="no_relationship_changes">관계 변화가 없습니다</string>
+    <string name="rel_change_event_format">%s (%d년)</string>
     <string name="year_label_format">%d년</string>
 
     <!-- Round 5 -->

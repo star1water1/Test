@@ -14,7 +14,9 @@ data class RelationshipDisplayItem(
     val otherCharacterName: String,
     val otherCharacterId: Long,
     val relationshipType: String,
-    val description: String
+    val description: String,
+    val intensity: Int = 5,
+    val isBidirectional: Boolean = true
 )
 
 class RelationshipAdapter(
@@ -36,10 +38,21 @@ class RelationshipAdapter(
         private val characterName: TextView = itemView.findViewById(R.id.relationCharacterName)
         private val relationType: TextView = itemView.findViewById(R.id.relationType)
         private val relationDescription: TextView = itemView.findViewById(R.id.relationDescription)
+        private val directionIcon: TextView = itemView.findViewById(R.id.relationDirectionIcon)
+        private val intensityBar: View = itemView.findViewById(R.id.relationIntensityBar)
 
         fun bind(item: RelationshipDisplayItem) {
             characterName.text = item.otherCharacterName
             relationType.text = item.relationshipType
+            directionIcon.text = if (item.isBidirectional) "↔" else "→"
+
+            // 강도에 비례하여 바 너비 조정 (1~10 → 8dp~80dp)
+            val barWidth = (8 + (item.intensity - 1) * 8)
+            val density = itemView.context.resources.displayMetrics.density
+            intensityBar.layoutParams = intensityBar.layoutParams.apply {
+                width = (barWidth * density).toInt()
+            }
+
             if (item.description.isNotBlank()) {
                 relationDescription.visibility = View.VISIBLE
                 relationDescription.text = item.description

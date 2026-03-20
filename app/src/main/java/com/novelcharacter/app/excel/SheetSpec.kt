@@ -198,6 +198,9 @@ fun relationshipSpec() = SheetSpec(
         ColumnSpec("캐릭터2", required = true, width = 6000),
         ColumnSpec("관계 유형", required = true, dropdownOptions = listOf("부모-자식", "연인", "라이벌", "멘토-제자", "동료", "적", "형제자매", "친구", "기타"), width = 5000),
         ColumnSpec("설명", width = 10000),
+        ColumnSpec("강도", width = 3000),
+        ColumnSpec("양방향", dropdownOptions = listOf("Y", "N"), width = 3000),
+        ColumnSpec("표시순서", width = 3000),
         ColumnSpec("캐릭터1코드", readOnly = true, width = 4000),
         ColumnSpec("캐릭터2코드", readOnly = true, width = 4000)
     )
@@ -215,6 +218,7 @@ fun relationshipChangeSpec() = SheetSpec(
         ColumnSpec("설명", width = 10000),
         ColumnSpec("강도", width = 3000),
         ColumnSpec("양방향", dropdownOptions = listOf("Y", "N"), width = 3000),
+        ColumnSpec("연결사건ID", width = 4000),
         ColumnSpec("캐릭터1코드", readOnly = true, width = 4000),
         ColumnSpec("캐릭터2코드", readOnly = true, width = 4000)
     )

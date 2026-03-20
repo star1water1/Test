@@ -17,7 +17,8 @@ import androidx.room.PrimaryKey
     ],
     indices = [
         Index("relationshipId"),
-        Index("year")
+        Index("year"),
+        Index("eventId")
     ]
 )
 data class CharacterRelationshipChange(
@@ -31,5 +32,6 @@ data class CharacterRelationshipChange(
     val description: String = "",
     val intensity: Int = 5,          // 1~10, 관계 강도 (그래프 선 굵기)
     val isBidirectional: Boolean = true,
+    val eventId: Long? = null,       // 연결된 사건 ID (null이면 미연결)
     val createdAt: Long = System.currentTimeMillis()
 )

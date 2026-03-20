@@ -717,9 +717,12 @@ class ExcelExporter(context: Context) {
             row.createCell(1).setCellValue(char2?.name ?: "")
             row.createCell(2).setCellValue(rel.relationshipType)
             row.createCell(3).setCellValue(rel.description)
+            row.createCell(4).setCellValue(rel.intensity.toDouble())
+            row.createCell(5).setCellValue(if (rel.isBidirectional) "Y" else "N")
+            row.createCell(6).setCellValue(rel.displayOrder.toDouble())
             // 코드 (readOnly)
-            row.createCell(4).setCellValue(char1?.code ?: "")
-            row.createCell(5).setCellValue(char2?.code ?: "")
+            row.createCell(7).setCellValue(char1?.code ?: "")
+            row.createCell(8).setCellValue(char2?.code ?: "")
         }
 
         applySpecFormatting(sheet, spec, allRelationships.size)
@@ -755,8 +758,9 @@ class ExcelExporter(context: Context) {
             row.createCell(6).setCellValue(rc.description)
             row.createCell(7).setCellValue(rc.intensity.toDouble())
             row.createCell(8).setCellValue(if (rc.isBidirectional) "Y" else "N")
-            row.createCell(9).setCellValue(char1?.code ?: "")
-            row.createCell(10).setCellValue(char2?.code ?: "")
+            rc.eventId?.let { row.createCell(9).setCellValue(it.toDouble()) }
+            row.createCell(10).setCellValue(char1?.code ?: "")
+            row.createCell(11).setCellValue(char2?.code ?: "")
         }
 
         applySpecFormatting(sheet, spec, allChanges.size)

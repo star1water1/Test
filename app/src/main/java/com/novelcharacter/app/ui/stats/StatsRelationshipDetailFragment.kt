@@ -12,11 +12,13 @@ import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.navigation.fragment.findNavController
+import com.github.mikephil.charting.charts.BarChart
+import com.github.mikephil.charting.charts.LineChart
 import com.github.mikephil.charting.charts.PieChart
-import com.github.mikephil.charting.data.PieData
-import com.github.mikephil.charting.data.PieDataSet
-import com.github.mikephil.charting.data.PieEntry
+import com.github.mikephil.charting.components.XAxis
+import com.github.mikephil.charting.data.*
 import com.github.mikephil.charting.formatter.PercentFormatter
+import com.github.mikephil.charting.formatter.ValueFormatter
 import com.github.mikephil.charting.utils.ColorTemplate
 import com.novelcharacter.app.R
 import com.novelcharacter.app.databinding.FragmentStatsRelationshipDetailBinding
@@ -63,6 +65,21 @@ class StatsRelationshipDetailFragment : Fragment() {
             setupTypePieChart(stats.typeDistribution)
             populateRankedList(binding.listTopConnected, stats.topConnectedChars)
             populateSimpleList(binding.listIsolated, stats.isolatedCharacters)
+
+            // 강도/방향성
+            binding.textAvgIntensity.text = getString(R.string.stats_avg_intensity, stats.avgIntensity)
+            binding.textDirectionRatio.text = getString(R.string.stats_direction_ratio, stats.bidirectionalCount, stats.unidirectionalCount)
+            setupIntensityBarChart(stats.intensityDistribution)
+
+            // 시간 추세
+            if (stats.changeTimeline.isNotEmpty()) {
+                binding.labelTimeTrend.visibility = View.VISIBLE
+                binding.chartTimeTrend.visibility = View.VISIBLE
+                setupTimeTrendChart(stats.changeTimeline)
+            } else {
+                binding.labelTimeTrend.visibility = View.GONE
+                binding.chartTimeTrend.visibility = View.GONE
+            }
         }
     }
 
@@ -138,6 +155,77 @@ class StatsRelationshipDetailFragment : Fragment() {
         }
     }
 
+    private fun setupIntensityBarChart(data: Map<Int, Int>) {
+        val chart = binding.chartIntensityDist
+        if (data.isEmpty()) {
+            chart.visibility = View.GONE
+            return
+        }
+        chart.visibility = View.VISIBLE
+        val ctx = requireContext()
+
+        val entries = (1..10).map { intensity ->
+            BarEntry(intensity.toFloat(), (data[intensity] ?: 0).toFloat())
+        }
+        val dataSet = BarDataSet(entries, getString(R.string.stats_intensity_label)).apply {
+            color = ContextCompat.getColor(ctx, R.color.primary)
+            valueTextColor = ContextCompat.getColor(ctx, R.color.on_surface)
+            valueTextSize = 10f
+            valueFormatter = object : ValueFormatter() {
+                override fun getFormattedValue(value: Float) = if (value > 0) value.toInt().toString() else ""
+            }
+        }
+        chart.apply {
+            this.data = BarData(dataSet)
+            description.isEnabled = false
+            legend.isEnabled = false
+            xAxis.position = XAxis.XAxisPosition.BOTTOM
+            xAxis.granularity = 1f
+            xAxis.textColor = ContextCompat.getColor(ctx, R.color.on_surface)
+            axisLeft.textColor = ContextCompat.getColor(ctx, R.color.on_surface)
+            axisLeft.axisMinimum = 0f
+            axisRight.isEnabled = false
+            animateY(400)
+            invalidate()
+        }
+    }
+
+    private fun setupTimeTrendChart(data: List<Pair<Int, Int>>) {
+        val chart = binding.chartTimeTrend
+        val ctx = requireContext()
+
+        val entries = data.mapIndexed { _, (year, count) ->
+            Entry(year.toFloat(), count.toFloat())
+        }
+        val dataSet = LineDataSet(entries, getString(R.string.stats_rel_time_trend)).apply {
+            color = ContextCompat.getColor(ctx, R.color.primary)
+            valueTextColor = ContextCompat.getColor(ctx, R.color.on_surface)
+            setCircleColor(ContextCompat.getColor(ctx, R.color.primary))
+            circleRadius = 3f
+            lineWidth = 2f
+            valueTextSize = 10f
+            valueFormatter = object : ValueFormatter() {
+                override fun getFormattedValue(value: Float) = value.toInt().toString()
+            }
+        }
+        chart.apply {
+            this.data = LineData(dataSet)
+            description.isEnabled = false
+            legend.isEnabled = false
+            xAxis.position = XAxis.XAxisPosition.BOTTOM
+            xAxis.granularity = 1f
+            xAxis.textColor = ContextCompat.getColor(ctx, R.color.on_surface)
+            xAxis.valueFormatter = object : ValueFormatter() {
+                override fun getFormattedValue(value: Float) = value.toInt().toString()
+            }
+            axisLeft.textColor = ContextCompat.getColor(ctx, R.color.on_surface)
+            axisLeft.axisMinimum = 0f
+            axisRight.isEnabled = false
+            animateX(600)
+            invalidate()
+        }
+    }
+
     private fun applyDarkModeHole(chart: PieChart) {
         chart.setHoleColor(ContextCompat.getColor(requireContext(), R.color.surface))
         chart.setTransparentCircleColor(ContextCompat.getColor(requireContext(), R.color.surface))
@@ -156,6 +244,8 @@ class StatsRelationshipDetailFragment : Fragment() {
 
     override fun onDestroyView() {
         _binding?.chartTypeDist?.clear()
+        _binding?.chartIntensityDist?.clear()
+        _binding?.chartTimeTrend?.clear()
         super.onDestroyView()
         _binding = null
     }

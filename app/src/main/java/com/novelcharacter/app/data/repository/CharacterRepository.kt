@@ -151,6 +151,9 @@ class CharacterRepository(
     suspend fun getRelationshipsForCharacterList(characterId: Long): List<CharacterRelationship> =
         characterRelationshipDao.getRelationshipsForCharacterList(characterId)
 
+    suspend fun getRelationshipById(id: Long): CharacterRelationship? =
+        characterRelationshipDao.getById(id)
+
     suspend fun getAllRelationships(): List<CharacterRelationship> =
         characterRelationshipDao.getAllRelationships()
 
@@ -167,6 +170,10 @@ class CharacterRepository(
 
     suspend fun updateRelationship(relationship: CharacterRelationship) {
         characterRelationshipDao.update(relationship)
+    }
+
+    suspend fun updateRelationshipOrders(relationships: List<CharacterRelationship>) {
+        characterRelationshipDao.updateAll(relationships)
     }
 
     // ===== CharacterRelationshipChange =====

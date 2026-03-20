@@ -33,6 +33,9 @@ data class CharacterRelationship(
     val characterId2: Long,
     val relationshipType: String,
     val description: String = "",
+    val intensity: Int = 5,              // 1~10 관계 강도 (그래프 선 굵기)
+    val isBidirectional: Boolean = true, // false이면 단방향 (characterId1 → characterId2)
+    val displayOrder: Int = 0,           // 드래그앤드롭 정렬용
     val createdAt: Long = System.currentTimeMillis()
 ) {
     companion object {

@@ -16,6 +16,9 @@ interface TimelineDao {
     @Query("SELECT * FROM timeline_events WHERE novelId = :novelId ORDER BY year ASC")
     fun getEventsByNovel(novelId: Long): LiveData<List<TimelineEvent>>
 
+    @Query("SELECT * FROM timeline_events WHERE novelId = :novelId ORDER BY year ASC")
+    suspend fun getEventsByNovelList(novelId: Long): List<TimelineEvent>
+
     @Query("SELECT * FROM timeline_events WHERE id = :id")
     suspend fun getEventById(id: Long): TimelineEvent?
 

@@ -136,6 +136,57 @@
                 android:orientation="vertical"
                 android:layout_marginBottom="@dimen/stats_margin_lg" />
 
+            <!-- 강도/방향성 분석 -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/stats_intensity_direction_title"
+                android:textSize="@dimen/stats_text_heading"
+                android:textStyle="bold"
+                android:textColor="@color/primary"
+                android:layout_marginBottom="@dimen/stats_margin_sm" />
+
+            <TextView
+                android:id="@+id/textAvgIntensity"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textSize="@dimen/stats_text_body"
+                android:textColor="@color/on_surface"
+                android:layout_marginBottom="@dimen/stats_margin_xs" />
+
+            <TextView
+                android:id="@+id/textDirectionRatio"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textSize="@dimen/stats_text_body"
+                android:textColor="@color/on_surface"
+                android:layout_marginBottom="@dimen/stats_margin_sm" />
+
+            <com.github.mikephil.charting.charts.BarChart
+                android:id="@+id/chartIntensityDist"
+                android:layout_width="match_parent"
+                android:layout_height="180dp"
+                android:layout_marginBottom="@dimen/stats_margin_lg" />
+
+            <!-- 관계 변화 시간 추세 -->
+            <TextView
+                android:id="@+id/labelTimeTrend"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/stats_rel_time_trend"
+                android:textSize="@dimen/stats_text_heading"
+                android:textStyle="bold"
+                android:textColor="@color/primary"
+                android:layout_marginBottom="@dimen/stats_margin_sm"
+                android:visibility="gone" />
+
+            <com.github.mikephil.charting.charts.LineChart
+                android:id="@+id/chartTimeTrend"
+                android:layout_width="match_parent"
+                android:layout_height="200dp"
+                android:layout_marginBottom="@dimen/stats_margin_lg"
+                android:visibility="gone" />
+
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>
 </androidx.constraintlayout.widget.ConstraintLayout>

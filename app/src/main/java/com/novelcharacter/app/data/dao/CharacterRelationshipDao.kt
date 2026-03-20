@@ -6,11 +6,17 @@ import com.novelcharacter.app.data.model.CharacterRelationship
 
 @Dao
 interface CharacterRelationshipDao {
-    @Query("SELECT * FROM character_relationships WHERE characterId1 = :characterId OR characterId2 = :characterId ORDER BY createdAt DESC")
+    @Query("SELECT * FROM character_relationships WHERE characterId1 = :characterId OR characterId2 = :characterId ORDER BY displayOrder ASC, createdAt DESC")
     fun getRelationshipsForCharacter(characterId: Long): LiveData<List<CharacterRelationship>>
 
-    @Query("SELECT * FROM character_relationships WHERE characterId1 = :characterId OR characterId2 = :characterId ORDER BY createdAt DESC")
+    @Query("SELECT * FROM character_relationships WHERE characterId1 = :characterId OR characterId2 = :characterId ORDER BY displayOrder ASC, createdAt DESC")
     suspend fun getRelationshipsForCharacterList(characterId: Long): List<CharacterRelationship>
+
+    @Update
+    suspend fun updateAll(relationships: List<CharacterRelationship>)
+
+    @Query("SELECT * FROM character_relationships WHERE id = :id")
+    suspend fun getById(id: Long): CharacterRelationship?
 
     @Query("SELECT * FROM character_relationships ORDER BY createdAt DESC")
     suspend fun getAllRelationships(): List<CharacterRelationship>

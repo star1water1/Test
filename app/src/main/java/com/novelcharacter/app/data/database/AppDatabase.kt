@@ -59,7 +59,7 @@ import com.novelcharacter.app.data.model.Universe
         SearchPreset::class,
         UserPresetTemplate::class
     ],
-    version = 21,
+    version = 22,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -849,6 +849,19 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_21_22 = object : Migration(21, 22) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "Migrating database from version 21 to 22")
+                db.execSQL("ALTER TABLE `character_relationships` ADD COLUMN `intensity` INTEGER NOT NULL DEFAULT 5")
+                db.execSQL("ALTER TABLE `character_relationships` ADD COLUMN `isBidirectional` INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE `universes` ADD COLUMN `customRelationshipColors` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `character_relationship_changes` ADD COLUMN `eventId` INTEGER DEFAULT NULL")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_character_relationship_changes_eventId` ON `character_relationship_changes` (`eventId`)")
+                db.execSQL("ALTER TABLE `character_relationships` ADD COLUMN `displayOrder` INTEGER NOT NULL DEFAULT 0")
+                Log.i(TAG, "Migration from version 21 to 22 completed successfully")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -856,7 +869,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "novel_character_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22)
                     .addCallback(SeedCallback())
                     .build()
                     .also { INSTANCE = it }

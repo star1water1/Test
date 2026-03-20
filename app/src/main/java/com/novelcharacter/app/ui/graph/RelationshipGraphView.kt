@@ -65,9 +65,11 @@ class RelationshipGraphView @JvmOverloads constructor(
         textAlign = Paint.Align.CENTER
     }
 
-    // 관계 타입별 색상
+    // 관계 타입별 색상 (외부에서 커스터마이즈 가능)
+    private var relationshipColors: Map<String, Int> = DEFAULT_COLORS
+
     companion object {
-        val RELATIONSHIP_COLORS = mapOf(
+        val DEFAULT_COLORS = mapOf(
             "연인" to Color.parseColor("#E91E63"),
             "적" to Color.parseColor("#212121"),
             "라이벌" to Color.parseColor("#FF5722"),
@@ -80,12 +82,29 @@ class RelationshipGraphView @JvmOverloads constructor(
         )
     }
 
+    /**
+     * 외부에서 관계 유형별 색상 맵을 설정한다.
+     * @param colorMap 관계 유형 → 색상 hex 문자열 (예: "#E91E63")
+     */
+    fun setRelationshipColors(colorMap: Map<String, String>) {
+        val parsed = mutableMapOf<String, Int>()
+        for ((type, hex) in colorMap) {
+            try {
+                parsed[type] = Color.parseColor(hex)
+            } catch (_: Exception) { }
+        }
+        // 기본 색상에 커스텀 색상을 오버레이
+        relationshipColors = DEFAULT_COLORS + parsed
+        invalidate()
+    }
+
     private val nodeRadius = 40f
     private var scaleFactor = 1f
     private var translateX = 0f
     private var translateY = 0f
 
     private var onNodeClickListener: ((Long) -> Unit)? = null
+    private var onNodeLongClickListener: ((Long) -> Unit)? = null
     private var layoutJob: Job? = null
     private var supervisorJob = SupervisorJob()
     private var scope = CoroutineScope(supervisorJob + Dispatchers.Main)
@@ -127,10 +146,28 @@ class RelationshipGraphView @JvmOverloads constructor(
             }
             return true
         }
+
+        override fun onLongPress(e: MotionEvent) {
+            val tapX = (e.x - width / 2f) / scaleFactor - translateX
+            val tapY = (e.y - height / 2f) / scaleFactor - translateY
+            val hitNode = nodes.find { node ->
+                val dx = tapX - node.x
+                val dy = tapY - node.y
+                sqrt(dx * dx + dy * dy) <= nodeRadius * 1.5f
+            }
+            hitNode?.let {
+                performLongClick()
+                onNodeLongClickListener?.invoke(it.id)
+            }
+        }
     })
 
     fun setOnNodeClickListener(listener: (Long) -> Unit) {
         onNodeClickListener = listener
+    }
+
+    fun setOnNodeLongClickListener(listener: (Long) -> Unit) {
+        onNodeLongClickListener = listener
     }
 
     fun setGraphData(nodeList: List<GraphNode>, edgeList: List<GraphEdge>) {
@@ -272,7 +309,7 @@ class RelationshipGraphView @JvmOverloads constructor(
             val from = nodeMap[edge.fromId] ?: continue
             val to = nodeMap[edge.toId] ?: continue
 
-            val edgeColor = RELATIONSHIP_COLORS[edge.label]
+            val edgeColor = relationshipColors[edge.label]
                 ?: ContextCompat.getColor(context, R.color.graph_edge)
 
             edgePaint.color = if (edge.isActive) edgeColor else Color.argb(80, Color.red(edgeColor), Color.green(edgeColor), Color.blue(edgeColor))
