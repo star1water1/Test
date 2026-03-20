@@ -94,7 +94,6 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
 
     fun loadAllStats() {
         if (!isRefreshing && _summary.value != null) return
-        isRefreshing = false
         _loading.value = true
         _error.value = null
         viewModelScope.launch {
@@ -129,6 +128,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 _error.value = e.message
             } finally {
+                isRefreshing = false
                 _loading.value = false
             }
         }
