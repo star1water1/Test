@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView
     xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content">
 
@@ -10,324 +11,469 @@
         android:orientation="vertical"
         android:padding="24dp">
 
-        <com.google.android.material.textfield.TextInputLayout
+        <!-- 기본/고급 탭 -->
+        <com.google.android.material.tabs.TabLayout
+            android:id="@+id/tabLayout"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="12dp"
-            android:hint="@string/hint_field_name">
-            <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/editFieldName"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:inputType="text" />
-        </com.google.android.material.textfield.TextInputLayout>
+            android:layout_marginBottom="16dp"
+            app:tabMode="fixed"
+            app:tabGravity="fill">
 
-        <com.google.android.material.textfield.TextInputLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="12dp"
-            android:hint="@string/hint_field_key">
-            <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/editFieldKey"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:inputType="text" />
-        </com.google.android.material.textfield.TextInputLayout>
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/label_field_type"
-            android:textSize="12sp"
-            android:textColor="@color/text_secondary" />
-
-        <Spinner
-            android:id="@+id/spinnerFieldType"
-            android:layout_width="match_parent"
-            android:layout_height="48dp"
-            android:layout_marginBottom="12dp" />
-
-        <com.google.android.material.textfield.TextInputLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="12dp"
-            android:hint="@string/hint_group_name">
-            <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/editGroupName"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:inputType="text"
-                android:text="@string/default_group_name" />
-        </com.google.android.material.textfield.TextInputLayout>
-
-        <!-- 표시 형식 (TEXT/MULTI_TEXT 타입일 때 표시) -->
-        <LinearLayout
-            android:id="@+id/displayFormatLayout"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:visibility="gone"
-            android:layout_marginBottom="12dp">
-
-            <TextView
+            <com.google.android.material.tabs.TabItem
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/label_display_format"
-                android:textSize="12sp"
-                android:textColor="@color/text_secondary" />
+                android:text="@string/tab_basic" />
 
-            <Spinner
-                android:id="@+id/spinnerDisplayFormat"
-                android:layout_width="match_parent"
-                android:layout_height="48dp" />
-
-        </LinearLayout>
-
-        <!-- SELECT 옵션 (SELECT 타입일 때만 표시) -->
-        <LinearLayout
-            android:id="@+id/selectOptionsLayout"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:visibility="gone"
-            android:layout_marginBottom="12dp">
-
-            <TextView
+            <com.google.android.material.tabs.TabItem
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/label_select_options"
-                android:textSize="12sp"
-                android:textColor="@color/text_secondary" />
+                android:text="@string/tab_advanced" />
+
+        </com.google.android.material.tabs.TabLayout>
+
+        <!-- ===== 기본 설정 탭 ===== -->
+        <LinearLayout
+            android:id="@+id/basicTabContent"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
 
             <com.google.android.material.textfield.TextInputLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:hint="@string/hint_select_example">
+                android:layout_marginBottom="12dp"
+                android:hint="@string/hint_field_name">
                 <com.google.android.material.textfield.TextInputEditText
-                    android:id="@+id/editSelectOptions"
+                    android:id="@+id/editFieldName"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:inputType="text" />
             </com.google.android.material.textfield.TextInputLayout>
-        </LinearLayout>
-
-        <!-- GRADE 설정 (GRADE 타입일 때만 표시) -->
-        <LinearLayout
-            android:id="@+id/gradeLayout"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:visibility="gone"
-            android:layout_marginBottom="12dp">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/label_grade_mapping"
-                android:textSize="14sp"
-                android:textStyle="bold"
-                android:textColor="@color/primary"
-                android:layout_marginBottom="8dp" />
-
-            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginBottom="4dp">
-                <TextView android:layout_width="40dp" android:layout_height="wrap_content" android:text="C:" android:textSize="14sp" />
-                <com.google.android.material.textfield.TextInputEditText android:id="@+id/editGradeC" android:layout_width="80dp" android:layout_height="40dp" android:inputType="numberDecimal|numberSigned" android:text="0.5" android:textSize="14sp" />
-            </LinearLayout>
-            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginBottom="4dp">
-                <TextView android:layout_width="40dp" android:layout_height="wrap_content" android:text="B:" android:textSize="14sp" />
-                <com.google.android.material.textfield.TextInputEditText android:id="@+id/editGradeB" android:layout_width="80dp" android:layout_height="40dp" android:inputType="numberDecimal|numberSigned" android:text="1" android:textSize="14sp" />
-            </LinearLayout>
-            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginBottom="4dp">
-                <TextView android:layout_width="40dp" android:layout_height="wrap_content" android:text="A:" android:textSize="14sp" />
-                <com.google.android.material.textfield.TextInputEditText android:id="@+id/editGradeA" android:layout_width="80dp" android:layout_height="40dp" android:inputType="numberDecimal|numberSigned" android:text="2" android:textSize="14sp" />
-            </LinearLayout>
-            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginBottom="4dp">
-                <TextView android:layout_width="40dp" android:layout_height="wrap_content" android:text="S:" android:textSize="14sp" />
-                <com.google.android.material.textfield.TextInputEditText android:id="@+id/editGradeS" android:layout_width="80dp" android:layout_height="40dp" android:inputType="numberDecimal|numberSigned" android:text="3" android:textSize="14sp" />
-            </LinearLayout>
-
-            <com.google.android.material.switchmaterial.SwitchMaterial
-                android:id="@+id/switchAllowNegative"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/label_allow_negative" />
-
-        </LinearLayout>
-
-        <!-- CALCULATED 수식 (CALCULATED 타입일 때만 표시) -->
-        <LinearLayout
-            android:id="@+id/calculatedLayout"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:visibility="gone"
-            android:layout_marginBottom="12dp">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/label_formula"
-                android:textSize="12sp"
-                android:textColor="@color/text_secondary" />
 
             <com.google.android.material.textfield.TextInputLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:hint="@string/hint_formula_example">
+                android:layout_marginBottom="12dp"
+                android:hint="@string/hint_field_key">
                 <com.google.android.material.textfield.TextInputEditText
-                    android:id="@+id/editFormula"
+                    android:id="@+id/editFieldKey"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:inputType="text"
-                    android:fontFamily="monospace" />
+                    android:inputType="text" />
             </com.google.android.material.textfield.TextInputLayout>
 
             <TextView
-                android:layout_width="match_parent"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:text="@string/text_formula_help"
-                android:textSize="11sp"
+                android:text="@string/label_field_type"
+                android:textSize="12sp"
                 android:textColor="@color/text_secondary" />
 
-        </LinearLayout>
-
-        <!-- 시스템 연동 (CALCULATED 제외) -->
-        <LinearLayout
-            android:id="@+id/semanticRoleLayout"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:layout_marginBottom="12dp"
-            android:padding="12dp"
-            android:background="@drawable/bg_count_badge">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/label_semantic_role"
-                android:textSize="14sp"
-                android:textStyle="bold"
-                android:textColor="@color/primary"
-                android:layout_marginBottom="4dp" />
-
             <Spinner
-                android:id="@+id/spinnerSemanticRole"
+                android:id="@+id/spinnerFieldType"
                 android:layout_width="match_parent"
-                android:layout_height="40dp" />
+                android:layout_height="48dp"
+                android:layout_marginBottom="12dp" />
 
-            <TextView
-                android:id="@+id/textSemanticRoleDesc"
+            <com.google.android.material.textfield.TextInputLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:textSize="12sp"
-                android:textColor="@color/text_secondary"
-                android:visibility="gone" />
-
-        </LinearLayout>
-
-        <!-- 통계 설정 (CALCULATED 제외 모든 타입) -->
-        <LinearLayout
-            android:id="@+id/statsSettingsLayout"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:layout_marginTop="8dp"
-            android:layout_marginBottom="12dp"
-            android:padding="12dp"
-            android:background="@drawable/bg_count_badge">
+                android:layout_marginBottom="12dp"
+                android:hint="@string/hint_group_name">
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/editGroupName"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:inputType="text"
+                    android:text="@string/default_group_name" />
+            </com.google.android.material.textfield.TextInputLayout>
 
             <com.google.android.material.switchmaterial.SwitchMaterial
-                android:id="@+id/switchStatsEnabled"
+                android:id="@+id/switchRequired"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="@string/label_stats_enabled"
-                android:checked="true" />
+                android:text="@string/label_required_field"
+                android:layout_marginBottom="12dp" />
 
-            <!-- 분석 목록 컨테이너 (동적으로 추가) -->
+            <!-- 표시 형식 (TEXT/MULTI_TEXT 타입일 때 표시) -->
             <LinearLayout
-                android:id="@+id/analysisListContainer"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:layout_marginTop="8dp" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnAddAnalysis"
-                style="@style/Widget.Material3.Button.TextButton"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/label_add_analysis" />
-
-            <!-- 값 라벨 매핑 -->
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/label_value_labels"
-                android:textSize="12sp"
-                android:textColor="@color/text_secondary"
-                android:layout_marginTop="8dp" />
-
-            <LinearLayout
-                android:id="@+id/valueLabelContainer"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:layout_marginTop="4dp" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnAddValueLabel"
-                style="@style/Widget.Material3.Button.TextButton"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/label_add_value_label" />
-
-            <!-- NUMBER 전용: 구간 설정 -->
-            <LinearLayout
-                android:id="@+id/binningLayout"
+                android:id="@+id/displayFormatLayout"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
                 android:visibility="gone"
-                android:layout_marginTop="8dp">
+                android:layout_marginBottom="12dp">
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="@string/label_binning"
+                    android:text="@string/label_display_format"
                     android:textSize="12sp"
                     android:textColor="@color/text_secondary" />
 
                 <Spinner
-                    android:id="@+id/spinnerBinningMode"
+                    android:id="@+id/spinnerDisplayFormat"
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp" />
+
+            </LinearLayout>
+
+            <!-- SELECT 옵션 (SELECT 타입일 때만 표시) -->
+            <LinearLayout
+                android:id="@+id/selectOptionsLayout"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone"
+                android:layout_marginBottom="12dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/label_select_options"
+                    android:textSize="12sp"
+                    android:textColor="@color/text_secondary" />
+
+                <com.google.android.material.textfield.TextInputLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:hint="@string/hint_select_example">
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/editSelectOptions"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="text" />
+                </com.google.android.material.textfield.TextInputLayout>
+            </LinearLayout>
+
+            <!-- GRADE 설정 (GRADE 타입일 때만 표시) -->
+            <LinearLayout
+                android:id="@+id/gradeLayout"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone"
+                android:layout_marginBottom="12dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/label_grade_mapping"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/primary"
+                    android:layout_marginBottom="8dp" />
+
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginBottom="4dp">
+                    <TextView android:layout_width="40dp" android:layout_height="wrap_content" android:text="C:" android:textSize="14sp" />
+                    <com.google.android.material.textfield.TextInputEditText android:id="@+id/editGradeC" android:layout_width="80dp" android:layout_height="40dp" android:inputType="numberDecimal|numberSigned" android:text="0.5" android:textSize="14sp" />
+                </LinearLayout>
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginBottom="4dp">
+                    <TextView android:layout_width="40dp" android:layout_height="wrap_content" android:text="B:" android:textSize="14sp" />
+                    <com.google.android.material.textfield.TextInputEditText android:id="@+id/editGradeB" android:layout_width="80dp" android:layout_height="40dp" android:inputType="numberDecimal|numberSigned" android:text="1" android:textSize="14sp" />
+                </LinearLayout>
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginBottom="4dp">
+                    <TextView android:layout_width="40dp" android:layout_height="wrap_content" android:text="A:" android:textSize="14sp" />
+                    <com.google.android.material.textfield.TextInputEditText android:id="@+id/editGradeA" android:layout_width="80dp" android:layout_height="40dp" android:inputType="numberDecimal|numberSigned" android:text="2" android:textSize="14sp" />
+                </LinearLayout>
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginBottom="4dp">
+                    <TextView android:layout_width="40dp" android:layout_height="wrap_content" android:text="S:" android:textSize="14sp" />
+                    <com.google.android.material.textfield.TextInputEditText android:id="@+id/editGradeS" android:layout_width="80dp" android:layout_height="40dp" android:inputType="numberDecimal|numberSigned" android:text="3" android:textSize="14sp" />
+                </LinearLayout>
+
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/switchAllowNegative"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/label_allow_negative" />
+
+            </LinearLayout>
+
+            <!-- CALCULATED 수식 (CALCULATED 타입일 때만 표시) -->
+            <LinearLayout
+                android:id="@+id/calculatedLayout"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone"
+                android:layout_marginBottom="12dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/label_formula"
+                    android:textSize="12sp"
+                    android:textColor="@color/text_secondary" />
+
+                <com.google.android.material.textfield.TextInputLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:hint="@string/hint_formula_example">
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/editFormula"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="text"
+                        android:fontFamily="monospace" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="@string/text_formula_help"
+                    android:textSize="11sp"
+                    android:textColor="@color/text_secondary" />
+
+            </LinearLayout>
+
+        </LinearLayout>
+
+        <!-- ===== 고급 설정 탭 ===== -->
+        <LinearLayout
+            android:id="@+id/advancedTabContent"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <!-- 시스템 연동 (CALCULATED 제외) -->
+            <LinearLayout
+                android:id="@+id/semanticRoleLayout"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:layout_marginBottom="12dp"
+                android:padding="12dp"
+                android:background="@drawable/bg_count_badge">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/label_semantic_role"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/primary"
+                    android:layout_marginBottom="4dp" />
+
+                <Spinner
+                    android:id="@+id/spinnerSemanticRole"
                     android:layout_width="match_parent"
                     android:layout_height="40dp" />
 
+                <TextView
+                    android:id="@+id/textSemanticRoleDesc"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:textSize="12sp"
+                    android:textColor="@color/text_secondary"
+                    android:visibility="gone" />
+
+            </LinearLayout>
+
+            <!-- 구조화 입력 설정 (TEXT/BODY_SIZE) -->
+            <LinearLayout
+                android:id="@+id/structuredInputLayout"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:layout_marginBottom="12dp"
+                android:padding="12dp"
+                android:background="@drawable/bg_count_badge"
+                android:visibility="gone">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/label_structured_input"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/primary"
+                    android:layout_marginBottom="4dp" />
+
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/switchStructuredInput"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/label_structured_input_enabled" />
+
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/structuredSeparatorLayout"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:hint="@string/hint_separator"
+                    android:visibility="gone">
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/editStructuredSeparator"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="text"
+                        android:text="-" />
+                </com.google.android.material.textfield.TextInputLayout>
+
                 <LinearLayout
-                    android:id="@+id/customBinContainer"
+                    android:id="@+id/structuredPartsContainer"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:layout_marginTop="8dp"
+                    android:visibility="gone" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnAddStructuredPart"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/label_add_part"
+                    android:visibility="gone" />
+
+            </LinearLayout>
+
+            <!-- 통계 설정 (CALCULATED 제외 모든 타입) -->
+            <LinearLayout
+                android:id="@+id/statsSettingsLayout"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:layout_marginTop="8dp"
+                android:layout_marginBottom="12dp"
+                android:padding="12dp"
+                android:background="@drawable/bg_count_badge">
+
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/switchStatsEnabled"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/label_stats_enabled"
+                    android:checked="true" />
+
+                <!-- 분석 목록 컨테이너 (동적으로 추가) -->
+                <LinearLayout
+                    android:id="@+id/analysisListContainer"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:layout_marginTop="8dp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnAddAnalysis"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/label_add_analysis" />
+
+                <!-- 값 라벨 매핑 -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/label_value_labels"
+                    android:textSize="12sp"
+                    android:textColor="@color/text_secondary"
+                    android:layout_marginTop="8dp" />
+
+                <LinearLayout
+                    android:id="@+id/valueLabelContainer"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:layout_marginTop="4dp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnAddValueLabel"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/label_add_value_label" />
+
+                <!-- 값 카테고리 매핑 -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/label_value_categories"
+                    android:textSize="12sp"
+                    android:textColor="@color/text_secondary"
+                    android:layout_marginTop="8dp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/label_value_categories_desc"
+                    android:textSize="11sp"
+                    android:textColor="@color/text_secondary"
+                    android:layout_marginBottom="4dp" />
+
+                <LinearLayout
+                    android:id="@+id/valueCategoryContainer"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:layout_marginTop="4dp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnAddValueCategory"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/label_add_category_mapping" />
+
+                <!-- 통계 그룹핑 기준 -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/label_stats_group_by"
+                    android:textSize="12sp"
+                    android:textColor="@color/text_secondary"
+                    android:layout_marginTop="8dp" />
+
+                <Spinner
+                    android:id="@+id/spinnerStatsGroupBy"
+                    android:layout_width="match_parent"
+                    android:layout_height="40dp" />
+
+                <!-- NUMBER 전용: 구간 설정 -->
+                <LinearLayout
+                    android:id="@+id/binningLayout"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
                     android:visibility="gone"
-                    android:layout_marginTop="4dp" />
+                    android:layout_marginTop="8dp">
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnAddBinRange"
-                    style="@style/Widget.Material3.Button.TextButton"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/label_add_bin_range"
-                    android:visibility="gone" />
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/label_binning"
+                        android:textSize="12sp"
+                        android:textColor="@color/text_secondary" />
 
+                    <Spinner
+                        android:id="@+id/spinnerBinningMode"
+                        android:layout_width="match_parent"
+                        android:layout_height="40dp" />
+
+                    <LinearLayout
+                        android:id="@+id/customBinContainer"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:visibility="gone"
+                        android:layout_marginTop="4dp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnAddBinRange"
+                        style="@style/Widget.Material3.Button.TextButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/label_add_bin_range"
+                        android:visibility="gone" />
+
+                </LinearLayout>
             </LinearLayout>
-        </LinearLayout>
 
-        <com.google.android.material.switchmaterial.SwitchMaterial
-            android:id="@+id/switchRequired"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="@string/label_required_field" />
+        </LinearLayout>
 
     </LinearLayout>
 

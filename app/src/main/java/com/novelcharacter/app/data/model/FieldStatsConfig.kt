@@ -11,7 +11,11 @@ data class FieldStatsConfig(
     val enabled: Boolean = true,
     val analyses: List<AnalysisEntry> = listOf(AnalysisEntry()),
     val binning: BinningConfig? = null,
-    val valueLabels: Map<String, String> = emptyMap()
+    val valueLabels: Map<String, String> = emptyMap(),
+    /** 값 → 카테고리 매핑. 예: "청염" → "불", "흑염" → "불", "빙결" → "얼음" */
+    val valueCategories: Map<String, String> = emptyMap(),
+    /** 통계 그룹핑 기준: "value"(기본값별), "category"(카테고리별), "both"(둘 다) */
+    val statsGroupBy: String = "value"
 ) {
     data class AnalysisEntry(
         val type: StatsType = StatsType.DISTRIBUTION,
@@ -94,6 +98,20 @@ data class FieldStatsConfig(
     /** 저장값 → 표시 라벨 변환 */
     fun applyLabel(rawValue: String): String = valueLabels[rawValue] ?: rawValue
 
+    /** 저장값 → 카테고리 변환. 매핑 없으면 원래 값 반환 */
+    fun applyCategory(rawValue: String): String = valueCategories[rawValue] ?: rawValue
+
+    /** statsGroupBy 설정에 따라 분석용 키 목록 반환 */
+    fun resolveStatsKeys(rawValue: String): List<String> {
+        val label = applyLabel(rawValue)
+        val category = valueCategories[rawValue]
+        return when (statsGroupBy) {
+            "category" -> listOf(category ?: label)
+            "both" -> if (category != null) listOf(label, category) else listOf(label)
+            else -> listOf(label)  // "value" (default)
+        }
+    }
+
     /** 숫자값 → 구간 라벨 변환 */
     fun applyBinning(numericValue: Float): String? {
         val config = binning ?: return null
@@ -153,7 +171,19 @@ data class FieldStatsConfig(
                     }
                 }
 
-                FieldStatsConfig(enabled, analyses, binning, valueLabels)
+                val valueCategories = mutableMapOf<String, String>()
+                val categoriesObj = stats.optJSONObject("valueCategories")
+                if (categoriesObj != null) {
+                    val keys = categoriesObj.keys()
+                    while (keys.hasNext()) {
+                        val k = keys.next()
+                        valueCategories[k] = categoriesObj.getString(k)
+                    }
+                }
+
+                val statsGroupBy = stats.optString("statsGroupBy", "value")
+
+                FieldStatsConfig(enabled, analyses, binning, valueLabels, valueCategories, statsGroupBy)
             } catch (_: Exception) {
                 FieldStatsConfig()
             }
@@ -192,6 +222,16 @@ data class FieldStatsConfig(
                     put("valueLabels", JSONObject().apply {
                         statsConfig.valueLabels.forEach { (k, v) -> put(k, v) }
                     })
+                }
+
+                if (statsConfig.valueCategories.isNotEmpty()) {
+                    put("valueCategories", JSONObject().apply {
+                        statsConfig.valueCategories.forEach { (k, v) -> put(k, v) }
+                    })
+                }
+
+                if (statsConfig.statsGroupBy != "value") {
+                    put("statsGroupBy", statsConfig.statsGroupBy)
                 }
             }
 

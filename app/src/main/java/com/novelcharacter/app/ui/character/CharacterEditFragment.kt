@@ -33,6 +33,7 @@ import com.novelcharacter.app.data.model.generateEntityCode
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.DisplayFormat
 import com.novelcharacter.app.data.model.FieldType
+import com.novelcharacter.app.data.model.StructuredInputConfig
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.databinding.FragmentCharacterEditBinding
 import kotlinx.coroutines.launch
@@ -229,6 +230,17 @@ class CharacterEditFragment : Fragment() {
 
             when (widget) {
                 is TextInputEditText -> widget.setText(savedValue)
+                is LinearLayout -> {
+                    // 구조화 입력: 저장된 값을 파트별로 분리하여 채움
+                    val config = widget.tag as? StructuredInputConfig
+                    if (config != null && savedValue.isNotEmpty()) {
+                        val parts = config.splitValue(savedValue)
+                        for (i in 0 until minOf(widget.childCount, parts.size)) {
+                            val partLayout = widget.getChildAt(i) as? TextInputLayout
+                            partLayout?.editText?.setText(parts[i].second)
+                        }
+                    }
+                }
                 is Spinner -> {
                     val fieldType = FieldType.fromName(field.type)
                     if (fieldType == FieldType.SELECT) {
@@ -262,36 +274,89 @@ class CharacterEditFragment : Fragment() {
 
             when (fieldType) {
                 FieldType.TEXT, FieldType.BODY_SIZE -> {
-                    val format = DisplayFormat.fromConfig(field.config)
-                    val inputLayout = TextInputLayout(context).apply {
-                        layoutParams = ViewGroup.MarginLayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT,
-                            ViewGroup.LayoutParams.WRAP_CONTENT
-                        ).apply {
-                            bottomMargin = (8 * density).toInt()
+                    val structuredConfig = StructuredInputConfig.fromConfig(field.config)
+                    if (structuredConfig.enabled && structuredConfig.parts.isNotEmpty()) {
+                        // 구조화 입력: 파트별 개별 입력 필드
+                        val label = TextView(context).apply {
+                            text = field.name
+                            textSize = 14f
+                            layoutParams = ViewGroup.MarginLayoutParams(
+                                ViewGroup.LayoutParams.MATCH_PARENT,
+                                ViewGroup.LayoutParams.WRAP_CONTENT
+                            ).apply {
+                                topMargin = (4 * density).toInt()
+                            }
                         }
-                        hint = field.name
-                        if (format == DisplayFormat.COMMA_LIST || format == DisplayFormat.BULLET_LIST) {
-                            helperText = getString(R.string.hint_comma_list_helper)
-                            isHelperTextEnabled = true
-                        } else if (format == DisplayFormat.MULTILINE) {
-                            helperText = getString(R.string.hint_multiline_helper)
-                            isHelperTextEnabled = true
+                        binding.dynamicFormContainer.addView(label)
+
+                        val partsContainer = LinearLayout(context).apply {
+                            orientation = LinearLayout.HORIZONTAL
+                            layoutParams = ViewGroup.MarginLayoutParams(
+                                ViewGroup.LayoutParams.MATCH_PARENT,
+                                ViewGroup.LayoutParams.WRAP_CONTENT
+                            ).apply {
+                                bottomMargin = (8 * density).toInt()
+                            }
+                            tag = structuredConfig // 나중에 값 수집 시 사용
                         }
+                        for (part in structuredConfig.parts) {
+                            val partLayout = TextInputLayout(context).apply {
+                                layoutParams = LinearLayout.LayoutParams(
+                                    0,
+                                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                                    1f
+                                ).apply {
+                                    marginEnd = (4 * density).toInt()
+                                }
+                                hint = if (part.suffix.isNotEmpty()) "${part.label} (${part.suffix})" else part.label
+                            }
+                            val partEdit = TextInputEditText(context).apply {
+                                layoutParams = LinearLayout.LayoutParams(
+                                    LinearLayout.LayoutParams.MATCH_PARENT,
+                                    LinearLayout.LayoutParams.WRAP_CONTENT
+                                )
+                                if (part.inputType == "number") {
+                                    inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+                                }
+                            }
+                            partLayout.addView(partEdit)
+                            partsContainer.addView(partLayout)
+                        }
+                        binding.dynamicFormContainer.addView(partsContainer)
+                        fieldInputMap[field.id] = partsContainer
+                    } else {
+                        // 일반 텍스트 입력
+                        val format = DisplayFormat.fromConfig(field.config)
+                        val inputLayout = TextInputLayout(context).apply {
+                            layoutParams = ViewGroup.MarginLayoutParams(
+                                ViewGroup.LayoutParams.MATCH_PARENT,
+                                ViewGroup.LayoutParams.WRAP_CONTENT
+                            ).apply {
+                                bottomMargin = (8 * density).toInt()
+                            }
+                            hint = field.name
+                            if (format == DisplayFormat.COMMA_LIST || format == DisplayFormat.BULLET_LIST) {
+                                helperText = getString(R.string.hint_comma_list_helper)
+                                isHelperTextEnabled = true
+                            } else if (format == DisplayFormat.MULTILINE) {
+                                helperText = getString(R.string.hint_multiline_helper)
+                                isHelperTextEnabled = true
+                            }
+                        }
+                        val editText = TextInputEditText(context).apply {
+                            layoutParams = LinearLayout.LayoutParams(
+                                LinearLayout.LayoutParams.MATCH_PARENT,
+                                LinearLayout.LayoutParams.WRAP_CONTENT
+                            )
+                            if (format == DisplayFormat.MULTILINE) {
+                                inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
+                                minLines = 2
+                            }
+                        }
+                        inputLayout.addView(editText)
+                        binding.dynamicFormContainer.addView(inputLayout)
+                        fieldInputMap[field.id] = editText
                     }
-                    val editText = TextInputEditText(context).apply {
-                        layoutParams = LinearLayout.LayoutParams(
-                            LinearLayout.LayoutParams.MATCH_PARENT,
-                            LinearLayout.LayoutParams.WRAP_CONTENT
-                        )
-                        if (format == DisplayFormat.MULTILINE) {
-                            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
-                            minLines = 2
-                        }
-                    }
-                    inputLayout.addView(editText)
-                    binding.dynamicFormContainer.addView(inputLayout)
-                    fieldInputMap[field.id] = editText
                 }
 
                 FieldType.NUMBER -> {
@@ -494,6 +559,13 @@ class CharacterEditFragment : Fragment() {
             val isEmpty = when (widget) {
                 is TextInputEditText -> widget.text.isNullOrBlank()
                 is Spinner -> widget.selectedItemPosition <= 0
+                is LinearLayout -> {
+                    // 구조화 입력: 모든 파트가 비어있으면 isEmpty
+                    (0 until widget.childCount).all { i ->
+                        val partLayout = widget.getChildAt(i) as? TextInputLayout
+                        partLayout?.editText?.text.isNullOrBlank()
+                    }
+                }
                 else -> true
             }
             if (isEmpty) return field.name
@@ -519,6 +591,21 @@ class CharacterEditFragment : Fragment() {
                     } else {
                         ""
                     }
+                }
+                is LinearLayout -> {
+                    // 구조화 입력: 파트별 값을 separator로 합침
+                    val config = widget.tag as? StructuredInputConfig
+                    if (config != null) {
+                        val partValues = mutableListOf<String>()
+                        for (i in 0 until widget.childCount) {
+                            val partLayout = widget.getChildAt(i) as? TextInputLayout
+                            val partEdit = partLayout?.editText
+                            partValues.add(partEdit?.text?.toString()?.trim() ?: "")
+                        }
+                        if (partValues.any { it.isNotEmpty() }) {
+                            config.joinValues(partValues)
+                        } else ""
+                    } else ""
                 }
                 else -> ""
             }

@@ -817,25 +817,25 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
 
         // Step 1: 값 분리
         val splitValues = when {
-            fd.type == "BODY_SIZE" -> {
-                // BODY_SIZE 다각적 분석: 전체 값 + 개별 구성요소
-                val separator = try {
-                    org.json.JSONObject(fd.config).optString("separator", "-")
-                } catch (_: Exception) { "-" }
-                val parts = rawValue.split(separator).map { it.trim() }.filter { it.isNotEmpty() }
-                // 전체 값을 하나의 항목으로, 그리고 각 파트도 개별로
-                val result = mutableListOf(rawValue.trim())
-                if (parts.size >= 2) {
-                    parts.forEachIndexed { idx, part ->
-                        val label = when (idx) {
-                            0 -> "키:$part"
-                            1 -> "체중:$part"
-                            else -> "사이즈${idx + 1}:$part"
+            fd.type == "BODY_SIZE" || StructuredInputConfig.fromConfig(fd.config).enabled -> {
+                // 구조화 입력: config의 파트 라벨로 개별 분석
+                val structuredConfig = StructuredInputConfig.fromConfig(fd.config)
+                if (structuredConfig.enabled && structuredConfig.parts.isNotEmpty()) {
+                    structuredConfig.labeledParts(rawValue)
+                } else {
+                    // 구조화 설정 없는 BODY_SIZE — separator로 분리
+                    val separator = try {
+                        org.json.JSONObject(fd.config).optString("separator", "-")
+                    } catch (_: Exception) { "-" }
+                    val parts = rawValue.split(separator).map { it.trim() }.filter { it.isNotEmpty() }
+                    val result = mutableListOf(rawValue.trim())
+                    if (parts.size >= 2) {
+                        parts.forEachIndexed { idx, part ->
+                            result.add("Part${idx + 1}:$part")
                         }
-                        result.add(label)
                     }
+                    result
                 }
-                result
             }
             format == DisplayFormat.COMMA_LIST || format == DisplayFormat.BULLET_LIST ->
                 rawValue.split(",").map { it.trim() }.filter { it.isNotEmpty() }
@@ -847,14 +847,19 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
         // Step 2: 값 라벨 매핑 적용
         val labeled = splitValues.map { statsConfig.applyLabel(it) }
 
+        // Step 2.5: 카테고리 매핑 적용 (statsGroupBy 설정에 따라)
+        val categorized = if (statsConfig.valueCategories.isNotEmpty()) {
+            labeled.flatMap { statsConfig.resolveStatsKeys(it) }
+        } else labeled
+
         // Step 3: NUMBER + binning
         if (fd.type == "NUMBER" && statsConfig.binning != null && statsConfig.binning.mode == "custom") {
-            return labeled.mapNotNull { v ->
+            return categorized.mapNotNull { v ->
                 v.toFloatOrNull()?.let { statsConfig.applyBinning(it) }
             }
         }
 
-        return labeled
+        return categorized
     }
 
     private fun computeNumericSummary(
@@ -1057,7 +1062,11 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
             .filter { it.type in distributionTypes }
             .mapNotNull { fd ->
                 val values = valuesByFieldDef[fd.id] ?: return@mapNotNull null
-                val dist = values.groupBy { it.value }.mapValues { it.value.size }
+                val statsConfig = FieldStatsConfig.fromConfig(fd.config)
+                val allKeys = values.flatMap { fv ->
+                    getFieldValues(fd, fv.value, statsConfig)
+                }
+                val dist = allKeys.groupBy { it }.mapValues { it.value.size }
                     .entries.sortedByDescending { it.value }.associate { it.key to it.value }
                 if (dist.isEmpty()) return@mapNotNull null
                 FieldValueDistribution(fd.name, fd.type, fd.groupName, dist)

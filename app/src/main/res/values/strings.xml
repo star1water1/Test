@@ -719,4 +719,31 @@
     <!-- Notification Channel -->
     <string name="notification_channel_birthday_name">캐릭터 생일 알림</string>
     <string name="notification_channel_birthday_desc">소설 캐릭터의 생일을 알려줍니다</string>
+
+    <!-- Field Edit Dialog - Tabs -->
+    <string name="tab_basic">기본</string>
+    <string name="tab_advanced">고급</string>
+
+    <!-- Structured Input -->
+    <string name="label_structured_input">구조화 입력</string>
+    <string name="label_structured_input_enabled">구조화 입력 사용</string>
+    <string name="hint_separator">구분자 (기본: -)</string>
+    <string name="label_add_part">파트 추가</string>
+    <string name="hint_part_label">파트명 (예: 키)</string>
+    <string name="hint_part_suffix">단위 (예: cm)</string>
+    <string name="label_input_text">텍스트</string>
+    <string name="label_input_number">숫자</string>
+
+    <!-- Value Categories -->
+    <string name="label_value_categories">값 → 카테고리 매핑</string>
+    <string name="label_value_categories_desc">입력값을 상위 카테고리로 그룹핑 (예: 청염 → 불)</string>
+    <string name="label_add_category_mapping">카테고리 매핑 추가</string>
+    <string name="hint_category_value">입력값 (예: 청염)</string>
+    <string name="hint_category_name">카테고리 (예: 불)</string>
+
+    <!-- Stats Group By -->
+    <string name="label_stats_group_by">통계 그룹핑 기준</string>
+    <string name="label_group_by_value">개별 값</string>
+    <string name="label_group_by_category">카테고리</string>
+    <string name="label_group_by_both">둘 다</string>
 </resources>

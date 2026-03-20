@@ -17,11 +17,13 @@ import androidx.fragment.app.DialogFragment
 import androidx.fragment.app.setFragmentResult
 import com.google.gson.Gson
 import com.novelcharacter.app.R
+import com.google.android.material.tabs.TabLayout
 import com.novelcharacter.app.data.model.DisplayFormat
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.FieldStatsConfig
 import com.novelcharacter.app.data.model.FieldType
 import com.novelcharacter.app.data.model.SemanticRole
+import com.novelcharacter.app.data.model.StructuredInputConfig
 import com.novelcharacter.app.databinding.DialogFieldEditBinding
 
 class FieldEditDialog : DialogFragment() {
@@ -53,6 +55,24 @@ class FieldEditDialog : DialogFragment() {
         val editRange: EditText
     )
     private val binRangeRows = mutableListOf<BinRangeRow>()
+
+    // 동적 카테고리 매핑 관리
+    private data class ValueCategoryRow(
+        val container: View,
+        val editKey: EditText,
+        val editCategory: EditText
+    )
+    private val valueCategoryRows = mutableListOf<ValueCategoryRow>()
+
+    // 구조화 입력 파트 관리
+    private data class StructuredPartRow(
+        val container: View,
+        val editLabel: EditText,
+        val editSuffix: EditText,
+        val spinnerInputType: Spinner
+    )
+    private val structuredPartRows = mutableListOf<StructuredPartRow>()
+
     private var fieldTypeSpinner: Spinner? = null
 
     private fun currentFieldType(): String {
@@ -72,9 +92,11 @@ class FieldEditDialog : DialogFragment() {
         val fieldJson = arguments?.getString(ARG_FIELD_JSON)
         existingField = if (fieldJson != null) Gson().fromJson(fieldJson, FieldDefinition::class.java) else null
 
+        setupTabSwitching(binding)
         setupTypeSpinner(binding)
         setupSemanticRoleSpinner(binding)
         setupStatsSection(binding)
+        setupStructuredInputSection(binding)
         populateFields(binding)
 
         return AlertDialog.Builder(requireContext())
@@ -121,9 +143,31 @@ class FieldEditDialog : DialogFragment() {
                 // NUMBER 전용 구간 설정
                 binding.binningLayout.visibility =
                     if (selectedType == FieldType.NUMBER) View.VISIBLE else View.GONE
+                // 구조화 입력: TEXT, BODY_SIZE
+                binding.structuredInputLayout.visibility =
+                    if (selectedType == FieldType.TEXT || selectedType == FieldType.BODY_SIZE) View.VISIBLE else View.GONE
             }
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
+    }
+
+    private fun setupTabSwitching(binding: DialogFieldEditBinding) {
+        binding.tabLayout.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
+            override fun onTabSelected(tab: TabLayout.Tab?) {
+                when (tab?.position) {
+                    0 -> {
+                        binding.basicTabContent.visibility = View.VISIBLE
+                        binding.advancedTabContent.visibility = View.GONE
+                    }
+                    1 -> {
+                        binding.basicTabContent.visibility = View.GONE
+                        binding.advancedTabContent.visibility = View.VISIBLE
+                    }
+                }
+            }
+            override fun onTabUnselected(tab: TabLayout.Tab?) {}
+            override fun onTabReselected(tab: TabLayout.Tab?) {}
+        })
     }
 
     private fun setupSemanticRoleSpinner(binding: DialogFieldEditBinding) {
@@ -190,6 +234,38 @@ class FieldEditDialog : DialogFragment() {
 
         // 기본 분석 1개 추가
         addAnalysisRow(binding.analysisListContainer, density)
+
+        // 카테고리 매핑 추가 버튼
+        binding.btnAddValueCategory.setOnClickListener {
+            addValueCategoryRow(binding.valueCategoryContainer, density)
+        }
+
+        // statsGroupBy 스피너
+        val groupByLabels = listOf(
+            getString(R.string.label_group_by_value),
+            getString(R.string.label_group_by_category),
+            getString(R.string.label_group_by_both)
+        )
+        binding.spinnerStatsGroupBy.adapter = ArrayAdapter(
+            requireContext(), android.R.layout.simple_spinner_item, groupByLabels
+        ).also {
+            it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        }
+    }
+
+    private fun setupStructuredInputSection(binding: DialogFieldEditBinding) {
+        val density = resources.displayMetrics.density
+
+        binding.switchStructuredInput.setOnCheckedChangeListener { _, isChecked ->
+            val visibility = if (isChecked) View.VISIBLE else View.GONE
+            binding.structuredSeparatorLayout.visibility = visibility
+            binding.structuredPartsContainer.visibility = visibility
+            binding.btnAddStructuredPart.visibility = visibility
+        }
+
+        binding.btnAddStructuredPart.setOnClickListener {
+            addStructuredPartRow(binding.structuredPartsContainer, density)
+        }
     }
 
     private fun addAnalysisRow(container: LinearLayout, density: Float, fieldType: String = currentFieldType()) {
@@ -324,6 +400,106 @@ class FieldEditDialog : DialogFragment() {
         binRangeRows.add(BinRangeRow(row, editRange))
     }
 
+    private fun addValueCategoryRow(container: LinearLayout, density: Float, key: String = "", category: String = "") {
+        val ctx = requireContext()
+        val row = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = (4 * density).toInt() }
+        }
+
+        val editKey = EditText(ctx).apply {
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            hint = getString(R.string.hint_category_value)
+            textSize = 13f
+            if (key.isNotEmpty()) setText(key)
+        }
+
+        val arrow = TextView(ctx).apply {
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            text = " → "
+            textSize = 14f
+        }
+
+        val editCategory = EditText(ctx).apply {
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            hint = getString(R.string.hint_category_name)
+            textSize = 13f
+            if (category.isNotEmpty()) setText(category)
+        }
+
+        val btnRemove = ImageButton(ctx).apply {
+            layoutParams = LinearLayout.LayoutParams((36 * density).toInt(), (36 * density).toInt())
+            setImageResource(android.R.drawable.ic_delete)
+            setBackgroundResource(android.R.color.transparent)
+            setOnClickListener {
+                container.removeView(row)
+                valueCategoryRows.removeAll { it.container == row }
+            }
+        }
+
+        row.addView(editKey)
+        row.addView(arrow)
+        row.addView(editCategory)
+        row.addView(btnRemove)
+        container.addView(row)
+        valueCategoryRows.add(ValueCategoryRow(row, editKey, editCategory))
+    }
+
+    private fun addStructuredPartRow(container: LinearLayout, density: Float,
+                                      label: String = "", suffix: String = "", inputType: String = "text") {
+        val ctx = requireContext()
+        val row = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = (4 * density).toInt() }
+        }
+
+        val editLabel = EditText(ctx).apply {
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 2f)
+            hint = getString(R.string.hint_part_label)
+            textSize = 13f
+            if (label.isNotEmpty()) setText(label)
+        }
+
+        val editSuffix = EditText(ctx).apply {
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            hint = getString(R.string.hint_part_suffix)
+            textSize = 13f
+            if (suffix.isNotEmpty()) setText(suffix)
+        }
+
+        val inputTypes = listOf(getString(R.string.label_input_text), getString(R.string.label_input_number))
+        val spinnerInputType = Spinner(ctx).apply {
+            layoutParams = LinearLayout.LayoutParams(0, (36 * density).toInt(), 1f)
+            adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item, inputTypes).also {
+                it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+            }
+            if (inputType == "number") setSelection(1)
+        }
+
+        val btnRemove = ImageButton(ctx).apply {
+            layoutParams = LinearLayout.LayoutParams((36 * density).toInt(), (36 * density).toInt())
+            setImageResource(android.R.drawable.ic_delete)
+            setBackgroundResource(android.R.color.transparent)
+            setOnClickListener {
+                container.removeView(row)
+                structuredPartRows.removeAll { it.container == row }
+            }
+        }
+
+        row.addView(editLabel)
+        row.addView(editSuffix)
+        row.addView(spinnerInputType)
+        row.addView(btnRemove)
+        container.addView(row)
+        structuredPartRows.add(StructuredPartRow(row, editLabel, editSuffix, spinnerInputType))
+    }
+
     private fun populateFields(binding: DialogFieldEditBinding) {
         val field = existingField ?: return
 
@@ -409,6 +585,30 @@ class FieldEditDialog : DialogFragment() {
                     addBinRangeRow(binding.customBinContainer, density)
                     binRangeRows.last().editRange.setText(range)
                 }
+            }
+        }
+
+        // 카테고리 매핑 복원
+        for ((k, v) in statsConfig.valueCategories) {
+            addValueCategoryRow(binding.valueCategoryContainer, density, k, v)
+        }
+
+        // statsGroupBy 복원
+        val groupByIdx = when (statsConfig.statsGroupBy) {
+            "category" -> 1
+            "both" -> 2
+            else -> 0  // "value"
+        }
+        binding.spinnerStatsGroupBy.setSelection(groupByIdx)
+
+        // 구조화 입력 복원
+        val structuredConfig = StructuredInputConfig.fromConfig(field.config)
+        if (structuredConfig.enabled) {
+            binding.switchStructuredInput.isChecked = true
+            binding.editStructuredSeparator.setText(structuredConfig.separator)
+            for (part in structuredConfig.parts) {
+                addStructuredPartRow(binding.structuredPartsContainer, density,
+                    part.label, part.suffix, part.inputType)
             }
         }
     }
@@ -509,6 +709,33 @@ class FieldEditDialog : DialogFragment() {
             }
         }
 
+        // 구조화 입력 (TEXT/BODY_SIZE)
+        if (type == FieldType.TEXT || type == FieldType.BODY_SIZE) {
+            val structuredEnabled = binding.switchStructuredInput.isChecked
+            if (structuredEnabled && structuredPartRows.isNotEmpty()) {
+                val parts = structuredPartRows.map { row ->
+                    val inputType = if (row.spinnerInputType.selectedItemPosition == 1) "number" else "text"
+                    StructuredInputConfig.Part(
+                        label = row.editLabel.text.toString().trim(),
+                        suffix = row.editSuffix.text.toString().trim(),
+                        inputType = inputType
+                    )
+                }.filter { it.label.isNotEmpty() }
+                val structuredConfig = StructuredInputConfig(
+                    enabled = true,
+                    separator = binding.editStructuredSeparator.text.toString().ifEmpty { "-" },
+                    parts = parts
+                )
+                val configJson = Gson().toJson(config)
+                val withStructured = StructuredInputConfig.applyToConfig(configJson, structuredConfig)
+                if (type != FieldType.CALCULATED) {
+                    val statsConfig = collectStatsConfig(binding, type)
+                    return FieldStatsConfig.applyToConfig(withStructured, statsConfig)
+                }
+                return withStructured
+            }
+        }
+
         // Stats config (CALCULATED 제외)
         if (type != FieldType.CALCULATED) {
             val statsConfig = collectStatsConfig(binding, type)
@@ -555,7 +782,22 @@ class FieldEditDialog : DialogFragment() {
             } else null
         } else null
 
-        return FieldStatsConfig(enabled, analyses, binning, valueLabels)
+        val valueCategories = mutableMapOf<String, String>()
+        for (row in valueCategoryRows) {
+            val k = row.editKey.text.toString().trim()
+            val v = row.editCategory.text.toString().trim()
+            if (k.isNotEmpty() && v.isNotEmpty()) {
+                valueCategories[k] = v
+            }
+        }
+
+        val statsGroupBy = when (binding.spinnerStatsGroupBy.selectedItemPosition) {
+            1 -> "category"
+            2 -> "both"
+            else -> "value"
+        }
+
+        return FieldStatsConfig(enabled, analyses, binning, valueLabels, valueCategories, statsGroupBy)
     }
 
     companion object {
