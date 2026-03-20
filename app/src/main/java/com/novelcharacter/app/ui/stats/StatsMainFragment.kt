@@ -234,6 +234,9 @@ class StatsMainFragment : Fragment() {
         val chartSize = cardWidth - resources.getDimensionPixelSize(R.dimen.stats_margin_md) * 2
         val marginSm = resources.getDimensionPixelSize(R.dimen.stats_margin_sm)
 
+        // 동일 필드명이 여러 세계관에 존재하는지 확인 (세계관명 표시 여부 결정)
+        val nameCountMap = insights.groupBy { it.fieldDefinition.name }.mapValues { it.value.size }
+
         insights.take(10).forEach { insight ->
             // 분포 데이터가 있는 첫 번째 분석만 미리보기
             val distResult = insight.analysisResults.firstOrNull { it.distributionData != null }
@@ -251,11 +254,17 @@ class StatsMainFragment : Fragment() {
                 }
             }
 
-            // 필드 이름
+            // 필드 이름 (동일 이름이 여러 세계관에 있으면 세계관명 표시)
             val textSizeSp = resources.getDimension(R.dimen.stats_text_body_sm) / resources.displayMetrics.scaledDensity
             val captionSp = resources.getDimension(R.dimen.stats_text_chart_value_sm) / resources.displayMetrics.scaledDensity
+            val needDisambiguation = (nameCountMap[insight.fieldDefinition.name] ?: 0) > 1
+            val displayName = if (needDisambiguation && insight.universeName.isNotBlank()) {
+                "${insight.fieldDefinition.name} (${insight.universeName})"
+            } else {
+                insight.fieldDefinition.name
+            }
             card.addView(TextView(requireContext()).apply {
-                text = insight.fieldDefinition.name
+                text = displayName
                 textSize = textSizeSp
                 setTextColor(ContextCompat.getColor(requireContext(), R.color.on_surface))
                 maxLines = 1
