@@ -19,11 +19,27 @@ data class Universe(
     val borderColor: String = "",
     val borderWidthDp: Float = 1.5f,
     val imagePath: String = "",       // 직접 등록한 이미지 경로
-    val imageMode: String = "none"    // none, custom, random_character
+    val imageMode: String = "none",   // none, custom, random_character
+    val customRelationshipTypes: String = "" // JSON 배열: 사용자 정의 관계 유형
 ) {
+    /** 이 세계관의 관계 유형 목록. 커스텀 정의가 없으면 기본 유형 반환. */
+    fun getRelationshipTypes(): List<String> {
+        if (customRelationshipTypes.isBlank()) return DEFAULT_RELATIONSHIP_TYPES
+        return try {
+            val arr = org.json.JSONArray(customRelationshipTypes)
+            (0 until arr.length()).map { arr.getString(it) }.ifEmpty { DEFAULT_RELATIONSHIP_TYPES }
+        } catch (_: Exception) {
+            DEFAULT_RELATIONSHIP_TYPES
+        }
+    }
+
     companion object {
         const val IMAGE_MODE_NONE = "none"
         const val IMAGE_MODE_CUSTOM = "custom"
         const val IMAGE_MODE_RANDOM_CHARACTER = "random_character"
+
+        val DEFAULT_RELATIONSHIP_TYPES = listOf(
+            "부모-자식", "연인", "라이벌", "멘토-제자", "동료", "적", "형제자매", "친구", "기타"
+        )
     }
 }

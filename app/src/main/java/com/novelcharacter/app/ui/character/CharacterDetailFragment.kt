@@ -70,6 +70,7 @@ class CharacterDetailFragment : Fragment() {
         observeEvents()
         stateChangeHelper.observe()
         relationshipHelper.observe()
+        loadCharacterStats()
     }
 
     private fun initHelpers() {
@@ -314,6 +315,58 @@ class CharacterDetailFragment : Fragment() {
             }
         }
         return inSampleSize
+    }
+
+    private fun loadCharacterStats() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val character = viewModel.getCharacterByIdSuspend(characterId) ?: return@launch
+            val relationships = viewModel.getRelationshipsForCharacterList(characterId)
+            val events = viewModel.getEventsForCharacterSuspend(characterId)
+            val stateChanges = viewModel.getChangesByCharacterList(characterId)
+
+            // 필드 완성도 계산
+            val novel = character.novelId?.let { viewModel.getNovelById(it) }
+            val universeId = novel?.universeId
+            val fieldCompletion = if (universeId != null) {
+                val fields = viewModel.getFieldsByUniverseList(universeId)
+                val values = viewModel.getValuesByCharacterList(characterId)
+                if (fields.isNotEmpty()) {
+                    values.count { it.value.isNotBlank() }.toFloat() / fields.size * 100f
+                } else 0f
+            } else 0f
+
+            // 복잡도 점수
+            val complexity = relationships.size * 2f +
+                events.size * 1.5f +
+                fieldCompletion * 0.3f +
+                stateChanges.size * 1f
+
+            if (_binding == null) return@launch
+
+            val container = binding.characterStatsContainer
+            container.removeAllViews()
+            val ctx = context ?: return@launch
+
+            val stats = listOf(
+                getString(R.string.char_stats_relationship_count, relationships.size),
+                getString(R.string.char_stats_event_count, events.size),
+                getString(R.string.char_stats_field_completion, fieldCompletion),
+                getString(R.string.char_stats_state_changes, stateChanges.size),
+                getString(R.string.char_stats_alias_count, character.aliases.size),
+                getString(R.string.char_stats_complexity, complexity)
+            )
+
+            stats.forEach { text ->
+                val tv = android.widget.TextView(ctx).apply {
+                    this.text = text
+                    textSize = 14f
+                    setTextColor(androidx.core.content.ContextCompat.getColor(ctx, R.color.on_surface))
+                    setPadding(0, (2 * resources.displayMetrics.density).toInt(), 0,
+                        (2 * resources.displayMetrics.density).toInt())
+                }
+                container.addView(tv)
+            }
+        }
     }
 
     override fun onDestroyView() {

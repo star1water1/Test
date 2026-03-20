@@ -10,6 +10,7 @@ import com.novelcharacter.app.data.model.CharacterStateChange
 import com.novelcharacter.app.data.model.CharacterTag
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.Novel
+import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.data.model.RecentActivity
 import com.novelcharacter.app.data.model.TimelineEvent
 import com.novelcharacter.app.util.SemanticFieldSyncHelper
@@ -73,6 +74,9 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     fun getEventsForCharacter(characterId: Long): LiveData<List<TimelineEvent>> =
         timelineRepository.getEventsForCharacter(characterId)
 
+    suspend fun getEventsForCharacterSuspend(characterId: Long): List<TimelineEvent> =
+        timelineRepository.getEventsForCharacterList(characterId)
+
     suspend fun getCharacterByIdSuspend(id: Long): Character? = characterRepository.getCharacterById(id)
 
     suspend fun getCharactersForEvent(eventId: Long): List<Character> =
@@ -135,6 +139,13 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         val novelId = character.novelId ?: return null
         val novel = novelRepository.getNovelById(novelId) ?: return null
         return novel.universeId
+    }
+
+    /** 캐릭터가 속한 세계관의 관계 유형 목록을 반환 (세계관 미배정 시 기본 유형) */
+    suspend fun getRelationshipTypesForCharacter(characterId: Long): List<String> {
+        val universeId = getUniverseIdForCharacter(characterId) ?: return Universe.DEFAULT_RELATIONSHIP_TYPES
+        val universe = universeRepository.getUniverseById(universeId) ?: return Universe.DEFAULT_RELATIONSHIP_TYPES
+        return universe.getRelationshipTypes()
     }
 
     suspend fun insertCharacterSuspend(character: Character): Long =

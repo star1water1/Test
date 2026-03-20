@@ -36,6 +36,7 @@ data class CharacterRelationship(
     val createdAt: Long = System.currentTimeMillis()
 ) {
     companion object {
-        val TYPES = listOf("부모-자식", "연인", "라이벌", "멘토-제자", "동료", "적", "형제자매", "친구", "기타")
+        /** @deprecated 세계관별 커스텀 관계 유형을 사용하세요: Universe.getRelationshipTypes() */
+        val TYPES = Universe.DEFAULT_RELATIONSHIP_TYPES
     }
 }

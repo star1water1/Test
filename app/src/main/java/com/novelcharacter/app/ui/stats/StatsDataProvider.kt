@@ -687,7 +687,6 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
         return s.fieldDefinitions.mapNotNull { fd ->
             val statsConfig = FieldStatsConfig.fromConfig(fd.config)
             if (!statsConfig.enabled) return@mapNotNull null
-            if (fd.type == "CALCULATED") return@mapNotNull null
 
             val rawValues = valuesByFieldDef[fd.id] ?: emptyList()
 

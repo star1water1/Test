@@ -59,6 +59,7 @@ class CharacterEditFragment : Fragment() {
     // 동적 필드 관리
     private var fieldDefinitions: List<FieldDefinition> = emptyList()
     private val fieldInputMap = mutableMapOf<Long, Any>() // fieldDefinitionId -> input widget
+    private var hasUnsavedChanges = false
 
     private val imagePickerLauncher = registerForActivityResult(
         ActivityResultContracts.GetContent()
@@ -102,11 +103,21 @@ class CharacterEditFragment : Fragment() {
             restoredFromSavedState = true
         }
 
-        binding.toolbar.setNavigationOnClickListener { findNavController().popBackStack() }
+        binding.toolbar.setNavigationOnClickListener { handleBackPress() }
+
+        // 시스템 뒤로가기 버튼 인터셉트
+        requireActivity().onBackPressedDispatcher.addCallback(viewLifecycleOwner,
+            object : androidx.activity.OnBackPressedCallback(true) {
+                override fun handleOnBackPressed() {
+                    handleBackPress()
+                }
+            }
+        )
         binding.toolbar.title = if (characterId == -1L) getString(R.string.add_character) else getString(R.string.edit_character)
 
         setupImageButton()
         setupSaveButton()
+        setupChangeTracking()
 
         // Show restored images if any (from rotation)
         if (imagePaths.isNotEmpty()) {
@@ -742,6 +753,37 @@ class CharacterEditFragment : Fragment() {
                 }
             }
         }
+    }
+
+    private fun handleBackPress() {
+        if (hasUnsavedChanges) {
+            val ctx = context ?: return
+            androidx.appcompat.app.AlertDialog.Builder(ctx)
+                .setTitle(R.string.unsaved_changes_title)
+                .setMessage(R.string.unsaved_changes_message)
+                .setPositiveButton(R.string.discard) { _, _ ->
+                    findNavController().popBackStack()
+                }
+                .setNegativeButton(R.string.stay, null)
+                .show()
+        } else {
+            findNavController().popBackStack()
+        }
+    }
+
+    private fun setupChangeTracking() {
+        val changeWatcher = object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                hasUnsavedChanges = true
+            }
+            override fun afterTextChanged(s: android.text.Editable?) {}
+        }
+        binding.editName.addTextChangedListener(changeWatcher)
+        binding.editFirstName.addTextChangedListener(changeWatcher)
+        binding.editLastName.addTextChangedListener(changeWatcher)
+        binding.editAnotherName.addTextChangedListener(changeWatcher)
+        binding.editMemo.addTextChangedListener(changeWatcher)
     }
 
     override fun onDestroyView() {

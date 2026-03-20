@@ -76,6 +76,14 @@ interface TimelineDao {
     """)
     fun getEventsForCharacter(characterId: Long): LiveData<List<TimelineEvent>>
 
+    @Query("""
+        SELECT te.* FROM timeline_events te
+        INNER JOIN timeline_character_cross_ref tcr ON te.id = tcr.eventId
+        WHERE tcr.characterId = :characterId
+        ORDER BY te.year ASC
+    """)
+    suspend fun getEventsForCharacterList(characterId: Long): List<TimelineEvent>
+
     @Transaction
     @Query("""
         SELECT c.* FROM characters c

@@ -386,6 +386,25 @@
     <string name="border_color_hex_hint">HEX 색상 (예: #5C6BC0)</string>
     <string name="border_color_reset">기본값으로 되돌리기</string>
 
+    <!-- 관계 유형 편집 -->
+    <string name="unsaved_changes_title">저장되지 않은 변경사항</string>
+    <string name="unsaved_changes_message">변경사항이 저장되지 않았습니다. 나가시겠습니까?</string>
+    <string name="discard">나가기</string>
+    <string name="stay">계속 편집</string>
+
+    <string name="character_stats_label">캐릭터 통계</string>
+    <string name="char_stats_event_count">관련 사건: %d건</string>
+    <string name="char_stats_relationship_count">관계: %d명</string>
+    <string name="char_stats_field_completion">필드 완성도: %.0f%%</string>
+    <string name="char_stats_state_changes">상태 변화: %d건</string>
+    <string name="char_stats_alias_count">별칭: %d개</string>
+    <string name="char_stats_complexity">복잡도 점수: %.1f</string>
+
+    <string name="relationship_types_label">관계 유형</string>
+    <string name="relationship_types_hint">새 관계 유형 입력</string>
+    <string name="relationship_types_reset">기본 유형으로 초기화</string>
+    <string name="relationship_types_add">추가</string>
+
     <!-- Sprint 1: Pin -->
     <string name="pin">고정</string>
     <string name="unpin">고정 해제</string>

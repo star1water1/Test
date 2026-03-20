@@ -58,6 +58,9 @@ class TimelineRepository(
     fun getEventsForCharacter(characterId: Long): LiveData<List<TimelineEvent>> =
         timelineDao.getEventsForCharacter(characterId)
 
+    suspend fun getEventsForCharacterList(characterId: Long): List<TimelineEvent> =
+        timelineDao.getEventsForCharacterList(characterId)
+
     suspend fun getCharactersForEvent(eventId: Long): List<Character> =
         timelineDao.getCharactersForEvent(eventId)
 }

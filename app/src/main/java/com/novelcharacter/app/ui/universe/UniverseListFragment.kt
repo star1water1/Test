@@ -586,6 +586,85 @@ class UniverseListFragment : Fragment() {
         }
         layout.addView(clearBtn)
 
+        // 관계 유형 편집 섹션
+        val relTypeLabel = TextView(ctx).apply {
+            text = getString(R.string.relationship_types_label)
+            setPadding(0, (16 * dp).toInt(), 0, (8 * dp).toInt())
+        }
+        layout.addView(relTypeLabel)
+
+        val currentTypes = (universe?.getRelationshipTypes() ?: Universe.DEFAULT_RELATIONSHIP_TYPES).toMutableList()
+
+        val relTypeChipsContainer = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, 0, 0, (4 * dp).toInt())
+        }
+
+        fun refreshRelTypeChips() {
+            relTypeChipsContainer.removeAllViews()
+            currentTypes.forEach { typeName ->
+                val row = LinearLayout(ctx).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = android.view.Gravity.CENTER_VERTICAL
+                    setPadding(0, (2 * dp).toInt(), 0, (2 * dp).toInt())
+                }
+                row.addView(TextView(ctx).apply {
+                    text = typeName
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                })
+                row.addView(TextView(ctx).apply {
+                    text = "✕"
+                    setTextColor(ctx.getColor(R.color.primary))
+                    setPadding((8 * dp).toInt(), 0, 0, 0)
+                    setOnClickListener {
+                        currentTypes.remove(typeName)
+                        refreshRelTypeChips()
+                    }
+                })
+                relTypeChipsContainer.addView(row)
+            }
+        }
+        refreshRelTypeChips()
+        layout.addView(relTypeChipsContainer)
+
+        // 새 유형 추가 행
+        val addRow = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, 0, 0, (4 * dp).toInt())
+        }
+        val newTypeEdit = EditText(ctx).apply {
+            hint = getString(R.string.relationship_types_hint)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        val addBtn = TextView(ctx).apply {
+            text = getString(R.string.relationship_types_add)
+            setTextColor(ctx.getColor(R.color.primary))
+            setPadding((12 * dp).toInt(), (8 * dp).toInt(), 0, (8 * dp).toInt())
+            setOnClickListener {
+                val newType = newTypeEdit.text.toString().trim()
+                if (newType.isNotEmpty() && newType !in currentTypes) {
+                    currentTypes.add(newType)
+                    refreshRelTypeChips()
+                    newTypeEdit.text.clear()
+                }
+            }
+        }
+        addRow.addView(newTypeEdit)
+        addRow.addView(addBtn)
+        layout.addView(addRow)
+
+        val relResetBtn = TextView(ctx).apply {
+            text = getString(R.string.relationship_types_reset)
+            setTextColor(ctx.getColor(R.color.primary))
+            setPadding(0, (4 * dp).toInt(), 0, (8 * dp).toInt())
+            setOnClickListener {
+                currentTypes.clear()
+                currentTypes.addAll(Universe.DEFAULT_RELATIONSHIP_TYPES)
+                refreshRelTypeChips()
+            }
+        }
+        layout.addView(relResetBtn)
+
         // 이미지 모드 선택
         val imageLabel = TextView(ctx).apply {
             text = getString(R.string.image_mode_label)
@@ -636,16 +715,21 @@ class UniverseListFragment : Fragment() {
                 val desc = descEdit.text.toString().trim()
                 val borderColor = colorHexEdit.text.toString().trim()
                 val finalImagePath = lastSavedImagePath ?: selectedImagePath
+                // 관계 유형을 JSON 배열로 직렬화 (기본값과 동일하면 빈 문자열 저장)
+                val relTypesJson = if (currentTypes == Universe.DEFAULT_RELATIONSHIP_TYPES) ""
+                    else org.json.JSONArray(currentTypes).toString()
                 if (name.isNotEmpty()) {
                     if (universe == null) {
                         viewModel.insertUniverse(Universe(
                             name = name, description = desc, borderColor = borderColor,
-                            imagePath = finalImagePath, imageMode = selectedImageMode
+                            imagePath = finalImagePath, imageMode = selectedImageMode,
+                            customRelationshipTypes = relTypesJson
                         ))
                     } else {
                         viewModel.updateUniverse(universe.copy(
                             name = name, description = desc, borderColor = borderColor,
-                            imagePath = finalImagePath, imageMode = selectedImageMode
+                            imagePath = finalImagePath, imageMode = selectedImageMode,
+                            customRelationshipTypes = relTypesJson
                         ))
                     }
                 }
