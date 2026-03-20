@@ -736,16 +736,11 @@ class ExcelExporter(context: Context) {
         val allCharacters = db.characterDao().getAllCharactersList()
         val charMap = allCharacters.associateBy { it.id }
 
-        val sheetName = sanitizeSheetName("관계 변화", usedSheetNames)
+        val spec = relationshipChangeSpec()
+        val sheetName = sanitizeSheetName(spec.sheetName, usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
-        val headers = listOf("캐릭터1", "캐릭터2", "연도", "월", "일", "관계 유형", "설명", "강도", "양방향", "캐릭터1코드", "캐릭터2코드")
-        val headerRow = sheet.createRow(0)
-        headers.forEachIndexed { i, h ->
-            headerRow.createCell(i).apply {
-                setCellValue(h)
-                cellStyle = styles.header
-            }
-        }
+        writeHeaderRow(sheet, spec)
+
         allChanges.forEachIndexed { i, rc ->
             val rel = relMap[rc.relationshipId] ?: return@forEachIndexed
             val char1 = charMap[rel.characterId1]
@@ -763,6 +758,8 @@ class ExcelExporter(context: Context) {
             row.createCell(9).setCellValue(char1?.code ?: "")
             row.createCell(10).setCellValue(char2?.code ?: "")
         }
+
+        applySpecFormatting(sheet, spec, allChanges.size)
     }
 
     // ── 이름 은행 ──

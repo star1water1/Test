@@ -19,7 +19,7 @@ data class SheetSpec(
     val sheetName: String,
     val columns: List<ColumnSpec>
 ) {
-    val firstColumnHeader: String get() = columns.first().header
+    val firstColumnHeader: String get() = columns.firstOrNull()?.header ?: ""
 
     /** Find column index by header name in an actual Excel header row (exact match). */
     fun findColumn(headerRow: Row, headerName: String): Int {
@@ -75,6 +75,7 @@ val RESERVED_SHEET_NAMES = setOf(
     timelineSpec(emptyList()).sheetName,
     stateChangeSpec().sheetName,
     relationshipSpec().sheetName,
+    relationshipChangeSpec().sheetName,
     nameBankSpec().sheetName
 )
 
@@ -197,6 +198,23 @@ fun relationshipSpec() = SheetSpec(
         ColumnSpec("캐릭터2", required = true, width = 6000),
         ColumnSpec("관계 유형", required = true, dropdownOptions = listOf("부모-자식", "연인", "라이벌", "멘토-제자", "동료", "적", "형제자매", "친구", "기타"), width = 5000),
         ColumnSpec("설명", width = 10000),
+        ColumnSpec("캐릭터1코드", readOnly = true, width = 4000),
+        ColumnSpec("캐릭터2코드", readOnly = true, width = 4000)
+    )
+)
+
+fun relationshipChangeSpec() = SheetSpec(
+    sheetName = "관계 변화",
+    columns = listOf(
+        ColumnSpec("캐릭터1", required = true, width = 6000),
+        ColumnSpec("캐릭터2", required = true, width = 6000),
+        ColumnSpec("연도", required = true, width = 3000),
+        ColumnSpec("월", width = 2000),
+        ColumnSpec("일", width = 2000),
+        ColumnSpec("관계 유형", width = 5000),
+        ColumnSpec("설명", width = 10000),
+        ColumnSpec("강도", width = 3000),
+        ColumnSpec("양방향", dropdownOptions = listOf("Y", "N"), width = 3000),
         ColumnSpec("캐릭터1코드", readOnly = true, width = 4000),
         ColumnSpec("캐릭터2코드", readOnly = true, width = 4000)
     )

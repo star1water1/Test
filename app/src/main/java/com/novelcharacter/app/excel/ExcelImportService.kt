@@ -454,7 +454,12 @@ class ExcelImportService(private val db: AppDatabase) {
                 val name = getCellString(row, nameColIndex)
                 val type = getCellString(row, typeColIndex)
                 // Validate field type against known types
-                if (type.isNotBlank() && FieldType.fromName(type) == null) {
+                if (type.isBlank()) {
+                    result.skippedRows++
+                    result.errors.add("필드 정의 행 $i: 필드 타입이 비어 있음 (허용: ${FieldType.entries.joinToString { it.name }})")
+                    continue
+                }
+                if (FieldType.fromName(type) == null) {
                     result.skippedRows++
                     result.errors.add("필드 정의 행 $i: 알 수 없는 필드 타입 '$type' (허용: ${FieldType.entries.joinToString { it.name }})")
                     continue

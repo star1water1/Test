@@ -16,7 +16,10 @@ class SemanticFieldSyncHelper(
     private val characterRepository: CharacterRepository,
     private val universeRepository: UniverseRepository
 ) {
-    private val isSyncing = AtomicBoolean(false)
+    // 방향별 재귀 방지 플래그: 각 방향의 동기화가 독립적으로 동작하되,
+    // A→B→A 재귀만 차단한다.
+    private val isSyncingFieldToState = AtomicBoolean(false)
+    private val isSyncingStateToField = AtomicBoolean(false)
 
     /**
      * 방향 1: 커스텀 필드값 저장 후 → CharacterStateChange 동기화.
@@ -27,7 +30,7 @@ class SemanticFieldSyncHelper(
         universeId: Long,
         values: List<CharacterFieldValue>
     ) {
-        if (!isSyncing.compareAndSet(false, true)) return
+        if (!isSyncingFieldToState.compareAndSet(false, true)) return
         try {
             val fields = universeRepository.getFieldsByUniverseList(universeId)
             val fieldMap = fields.associateBy { it.id }
@@ -54,7 +57,7 @@ class SemanticFieldSyncHelper(
                 }
             }
         } finally {
-            isSyncing.set(false)
+            isSyncingFieldToState.set(false)
         }
     }
 
@@ -67,7 +70,7 @@ class SemanticFieldSyncHelper(
         universeId: Long,
         change: CharacterStateChange
     ) {
-        if (!isSyncing.compareAndSet(false, true)) return
+        if (!isSyncingStateToField.compareAndSet(false, true)) return
         try {
             val fields = universeRepository.getFieldsByUniverseList(universeId)
 
@@ -93,7 +96,7 @@ class SemanticFieldSyncHelper(
                 }
             }
         } finally {
-            isSyncing.set(false)
+            isSyncingStateToField.set(false)
         }
     }
 
