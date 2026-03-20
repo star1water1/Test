@@ -137,7 +137,7 @@ class CharacterAdapter(
 
     @SuppressLint("ClickableViewAccessibility")
     inner class CharacterViewHolder(
-        private val binding: ItemCharacterBinding
+        val binding: ItemCharacterBinding
     ) : RecyclerView.ViewHolder(binding.root) {
 
         private var loadJob: Job? = null

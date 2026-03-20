@@ -160,7 +160,7 @@ class StateChangeHelper(
         val context = try { contextGetter() } catch (_: Exception) { return }
         AlertDialog.Builder(context)
             .setTitle(getString(R.string.edit_or_delete))
-            .setMessage("${change.fieldKey}: ${change.oldValue} → ${change.newValue}")
+            .setMessage("${change.fieldKey} → ${change.newValue}")
             .setPositiveButton(R.string.edit) { _, _ ->
                 showStateChangeDialog(change)
             }

@@ -110,7 +110,7 @@ class NovelAdapter(
 
     @SuppressLint("ClickableViewAccessibility")
     inner class NovelViewHolder(
-        private val binding: ItemNovelBinding
+        val binding: ItemNovelBinding
     ) : RecyclerView.ViewHolder(binding.root) {
 
         private var loadJob: Job? = null
