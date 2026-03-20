@@ -97,7 +97,7 @@ class ExcelExporter(context: Context) {
                     Toast.makeText(appContext, appContext.getString(R.string.export_failed_retry), Toast.LENGTH_LONG).show()
                 }
             } finally {
-                try { workbook?.close() } catch (_: Exception) {}
+                try { workbook?.close() } catch (e: Exception) { android.util.Log.w("ExcelExporter", "Failed to close workbook", e) }
                 isExporting.set(false)
             }
         }

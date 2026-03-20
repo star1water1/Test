@@ -26,7 +26,9 @@ import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.RecyclerView
 import com.novelcharacter.app.ui.adapter.NovelAdapter
 import com.novelcharacter.app.util.navigateSafe
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class NovelListFragment : Fragment() {
 
@@ -43,16 +45,26 @@ class NovelListFragment : Fragment() {
         ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         if (uri == null) return@registerForActivityResult
-        try {
-            val ctx = requireContext()
-            val inputStream = ctx.contentResolver.openInputStream(uri) ?: return@registerForActivityResult
-            val fileName = "novel_${java.util.UUID.randomUUID()}.jpg"
-            val file = java.io.File(ctx.filesDir, fileName)
-            file.outputStream().use { out -> inputStream.copyTo(out) }
-            inputStream.close()
-            lastSavedImagePath = file.absolutePath
-        } catch (e: Exception) {
-            Toast.makeText(requireContext(), R.string.image_save_failed, Toast.LENGTH_SHORT).show()
+        val ctx = requireContext()
+        viewLifecycleOwner.lifecycleScope.launch {
+            try {
+                val savedPath = withContext(Dispatchers.IO) {
+                    val inputStream = ctx.contentResolver.openInputStream(uri) ?: return@withContext null
+                    val fileName = "novel_${java.util.UUID.randomUUID()}.jpg"
+                    val file = java.io.File(ctx.filesDir, fileName)
+                    inputStream.use { input ->
+                        file.outputStream().use { out -> input.copyTo(out) }
+                    }
+                    file.absolutePath
+                }
+                if (savedPath != null) {
+                    lastSavedImagePath = savedPath
+                }
+            } catch (e: Exception) {
+                if (isAdded) {
+                    Toast.makeText(ctx, R.string.image_save_failed, Toast.LENGTH_SHORT).show()
+                }
+            }
         }
     }
 

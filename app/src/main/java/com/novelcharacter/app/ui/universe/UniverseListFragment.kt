@@ -17,6 +17,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.novelcharacter.app.data.model.RecentActivity
 import androidx.fragment.app.viewModels
 import androidx.navigation.fragment.findNavController
@@ -47,16 +50,26 @@ class UniverseListFragment : Fragment() {
         ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         if (uri == null) return@registerForActivityResult
-        try {
-            val ctx = requireContext()
-            val inputStream = ctx.contentResolver.openInputStream(uri) ?: return@registerForActivityResult
-            val fileName = "universe_${java.util.UUID.randomUUID()}.jpg"
-            val file = java.io.File(ctx.filesDir, fileName)
-            file.outputStream().use { out -> inputStream.copyTo(out) }
-            inputStream.close()
-            lastSavedImagePath = file.absolutePath
-        } catch (e: Exception) {
-            Toast.makeText(requireContext(), R.string.image_save_failed, Toast.LENGTH_SHORT).show()
+        val ctx = requireContext()
+        viewLifecycleOwner.lifecycleScope.launch {
+            try {
+                val savedPath = withContext(Dispatchers.IO) {
+                    val inputStream = ctx.contentResolver.openInputStream(uri) ?: return@withContext null
+                    val fileName = "universe_${java.util.UUID.randomUUID()}.jpg"
+                    val file = java.io.File(ctx.filesDir, fileName)
+                    inputStream.use { input ->
+                        file.outputStream().use { out -> input.copyTo(out) }
+                    }
+                    file.absolutePath
+                }
+                if (savedPath != null) {
+                    lastSavedImagePath = savedPath
+                }
+            } catch (e: Exception) {
+                if (isAdded) {
+                    Toast.makeText(ctx, R.string.image_save_failed, Toast.LENGTH_SHORT).show()
+                }
+            }
         }
     }
 

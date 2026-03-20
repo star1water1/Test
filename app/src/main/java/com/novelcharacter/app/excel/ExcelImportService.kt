@@ -43,6 +43,7 @@ data class ImportResult(
     var newRelationships: Int = 0,
     var updatedRelationships: Int = 0,
     var newRelationshipChanges: Int = 0,
+    var updatedRelationshipChanges: Int = 0,
     var newNameBank: Int = 0,
     var updatedNameBank: Int = 0,
     var skippedRows: Int = 0,
@@ -955,6 +956,7 @@ class ExcelImportService(private val db: AppDatabase) {
                         relationshipType = relationshipType, description = description,
                         intensity = intensity, isBidirectional = isBidirectional
                     ))
+                    result.updatedRelationshipChanges++
                 } else {
                     db.characterRelationshipChangeDao().insert(CharacterRelationshipChange(
                         relationshipId = relationship.id,
@@ -962,8 +964,8 @@ class ExcelImportService(private val db: AppDatabase) {
                         relationshipType = relationshipType, description = description,
                         intensity = intensity, isBidirectional = isBidirectional
                     ))
+                    result.newRelationshipChanges++
                 }
-                result.newRelationshipChanges++
             } catch (e: Exception) {
                 result.skippedRows++
                 result.errors.add("관계 변화 행 $i: ${e.message}")

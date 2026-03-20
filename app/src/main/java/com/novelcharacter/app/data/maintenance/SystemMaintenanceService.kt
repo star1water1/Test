@@ -199,6 +199,16 @@ class SystemMaintenanceService(
     }
 
     /**
+     * Fix NameBankEntry records where isUsed=true but usedByCharacterId is NULL
+     * (can happen if FK SET_NULL fires without going through CharacterRepository.deleteCharacter).
+     */
+    suspend fun cleanOrphanedNameBankUsage() {
+        db.openHelper.writableDatabase.execSQL(
+            "UPDATE name_bank SET isUsed = 0 WHERE isUsed = 1 AND usedByCharacterId IS NULL"
+        )
+    }
+
+    /**
      * Clear orphaned imageCharacterId references in novels
      * where the referenced character no longer exists.
      */
