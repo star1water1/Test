@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">NovelCharacter</string>
+    <string name="tab_home">홈</string>
     <string name="tab_universes">세계관</string>
+    <string name="tab_relationship_graph">관계도</string>
     <string name="tab_novels">작품</string>
     <string name="tab_characters">캐릭터</string>
     <string name="tab_timeline">연표</string>

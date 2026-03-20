@@ -3,8 +3,16 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/nav_graph"
-    app:startDestination="@id/universeListFragment">
+    app:startDestination="@id/homeFragment">
 
+    <!-- Home (세계관 + 연표 + 이름은행) -->
+    <fragment
+        android:id="@+id/homeFragment"
+        android:name="com.novelcharacter.app.ui.home.HomeFragment"
+        android:label="@string/tab_home"
+        tools:layout="@layout/fragment_home" />
+
+    <!-- 세계관 내부 네비게이션 (홈 내부에서 진입) -->
     <fragment
         android:id="@+id/universeListFragment"
         android:name="com.novelcharacter.app.ui.universe.UniverseListFragment"
@@ -247,7 +255,7 @@
     <fragment
         android:id="@+id/relationshipGraphFragment"
         android:name="com.novelcharacter.app.ui.graph.RelationshipGraphFragment"
-        android:label="@string/relationship_graph_beta"
+        android:label="@string/tab_relationship_graph"
         tools:layout="@layout/fragment_relationship_graph" />
 
 </navigation>

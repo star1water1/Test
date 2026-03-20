@@ -2,9 +2,9 @@
 <menu xmlns:android="http://schemas.android.com/apk/res/android">
 
     <item
-        android:id="@+id/universeListFragment"
+        android:id="@+id/homeFragment"
         android:icon="@drawable/ic_universe"
-        android:title="@string/tab_universes" />
+        android:title="@string/tab_home" />
 
     <item
         android:id="@+id/characterListFragment"
@@ -12,14 +12,18 @@
         android:title="@string/tab_characters" />
 
     <item
-        android:id="@+id/timelineFragment"
-        android:icon="@drawable/ic_timeline"
-        android:title="@string/tab_timeline" />
+        android:id="@+id/relationshipGraphFragment"
+        android:icon="@drawable/ic_relationship_graph"
+        android:title="@string/tab_relationship_graph" />
 
     <item
-        android:id="@+id/nameBankFragment"
-        android:icon="@drawable/ic_name_bank"
-        android:title="@string/tab_name_bank" />
+        android:id="@+id/statsMainFragment"
+        android:icon="@drawable/ic_stats"
+        android:title="@string/tab_statistics" />
 
+    <item
+        android:id="@+id/settingsFragment"
+        android:icon="@drawable/ic_settings"
+        android:title="@string/tab_settings" />
 
 </menu>

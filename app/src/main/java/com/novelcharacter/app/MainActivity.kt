@@ -5,6 +5,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
+import android.view.View
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -46,6 +47,15 @@ class MainActivity : AppCompatActivity() {
             .findFragmentById(R.id.nav_host_fragment) as NavHostFragment
         val navController = navHostFragment.navController
 
+        // 하단 바 5탭: 홈, 캐릭터, 관계도, 통계, 설정
+        val topLevelIds = setOf(
+            R.id.homeFragment,
+            R.id.characterListFragment,
+            R.id.relationshipGraphFragment,
+            R.id.statsMainFragment,
+            R.id.settingsFragment
+        )
+
         binding.bottomNav.setupWithNavController(navController)
 
         binding.bottomNav.setOnItemSelectedListener { item ->
@@ -59,6 +69,15 @@ class MainActivity : AppCompatActivity() {
 
         binding.bottomNav.setOnItemReselectedListener { item ->
             navController.popBackStack(item.itemId, inclusive = false)
+        }
+
+        // 하단 바는 최상위 탭에서만 표시
+        navController.addOnDestinationChangedListener { _, destination, _ ->
+            binding.bottomNav.visibility = if (destination.id in topLevelIds) {
+                View.VISIBLE
+            } else {
+                View.GONE
+            }
         }
     }
 

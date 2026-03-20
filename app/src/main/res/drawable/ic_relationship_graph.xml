@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="?attr/colorControlNormal">
+    <!-- Hub and spoke / network graph icon -->
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M13,5.08C15.05,5.22 16.85,6.11 18.17,7.47L16.76,8.88C15.78,7.86 14.46,7.23 13,7.1V5.08ZM11,5.08V7.1C9.54,7.23 8.22,7.86 7.24,8.88L5.83,7.47C7.15,6.11 8.95,5.22 11,5.08ZM5.83,16.53L7.24,15.12C8.22,16.14 9.54,16.77 11,16.9V18.92C8.95,18.78 7.15,17.89 5.83,16.53ZM16.76,15.12L18.17,16.53C16.85,17.89 15.05,18.78 13,18.92V16.9C14.46,16.77 15.78,16.14 16.76,15.12ZM12,14C10.9,14 10,13.1 10,12C10,10.9 10.9,10 12,10C13.1,10 14,10.9 14,12C14,13.1 13.1,14 12,14Z" />
+</vector>
