@@ -259,16 +259,32 @@ class CharacterDetailFragment : Fragment() {
             } catch (_: Exception) { emptyList() }
             if (scopes.isEmpty()) continue
 
+            // GRADE 필드: 등급 문자 → 수치 매핑 추출
+            val gradeMap: Map<String, Double>? = if (field.type == "GRADE") {
+                try {
+                    val cfg = org.json.JSONObject(field.config)
+                    val gradesObj = cfg.optJSONObject("grades")
+                    if (gradesObj != null) {
+                        gradesObj.keys().asSequence().associateWith { gradesObj.getDouble(it) }
+                    } else null
+                } catch (_: Exception) { null }
+            } else null
+
             // Get current character's numeric value
-            val myValue: Double? = if (field.type == "CALCULATED") {
-                val formula = try {
-                    org.json.JSONObject(field.config).optString("formula", "")
-                } catch (_: Exception) { "" }
-                if (formula.isNotBlank()) {
-                    try { evaluator.evaluate(formula) } catch (_: Exception) { null }
-                } else null
-            } else {
-                valueMap[field.id]?.value?.toDoubleOrNull()
+            val myValue: Double? = when (field.type) {
+                "CALCULATED" -> {
+                    val formula = try {
+                        org.json.JSONObject(field.config).optString("formula", "")
+                    } catch (_: Exception) { "" }
+                    if (formula.isNotBlank()) {
+                        try { evaluator.evaluate(formula) } catch (_: Exception) { null }
+                    } else null
+                }
+                "GRADE" -> {
+                    val rawVal = valueMap[field.id]?.value ?: ""
+                    gradeMap?.get(rawVal)
+                }
+                else -> valueMap[field.id]?.value?.toDoubleOrNull()
             }
 
             if (myValue == null || myValue.isNaN() || myValue.isInfinite()) continue
@@ -276,27 +292,43 @@ class CharacterDetailFragment : Fragment() {
             var novelPercentile: Float? = null
             var universePercentile: Float? = null
 
+            val isCalculated = field.type == "CALCULATED"
+            val isGrade = field.type == "GRADE"
+
+            // 문자열 값을 수치로 변환하는 함수 (GRADE는 등급 매핑 사용)
+            val toNumeric: (String) -> Double? = if (isGrade && gradeMap != null) {
+                { s -> gradeMap[s] }
+            } else {
+                { s -> s.toDoubleOrNull() }
+            }
+
             if ("novel" in scopes && novel != null) {
-                val allValues = viewModel.getFieldValuesForNovel(novel.id, field.id)
-                    .mapNotNull { it.toDoubleOrNull() }
+                val allValues: List<Double> = if (isCalculated) {
+                    computeCalculatedValuesForScope(field, novel.id, null)
+                } else {
+                    viewModel.getFieldValuesForNovel(novel.id, field.id)
+                        .mapNotNull(toNumeric)
+                }
                 if (allValues.isNotEmpty()) {
                     val higher = allValues.count { it > myValue }
                     novelPercentile = ((higher.toFloat() / allValues.size) * 100f)
-                    // 상위 %: 자기보다 높은 값이 적을수록 상위
                     novelPercentile = novelPercentile.coerceIn(0f, 100f)
-                    // 1% 미만은 1%로 표시, 소수점 버림
-                    if (novelPercentile < 1f && novelPercentile > 0f) novelPercentile = 1f
+                    if (novelPercentile < 1f) novelPercentile = 1f
                 }
             }
 
-            if ("universe" in scopes) {
-                val allValues = viewModel.getFieldValuesForUniverse(universeId, field.id)
-                    .mapNotNull { it.toDoubleOrNull() }
+            if ("universe" in scopes && universeId != null) {
+                val allValues: List<Double> = if (isCalculated) {
+                    computeCalculatedValuesForScope(field, null, universeId)
+                } else {
+                    viewModel.getFieldValuesForUniverse(universeId, field.id)
+                        .mapNotNull(toNumeric)
+                }
                 if (allValues.isNotEmpty()) {
                     val higher = allValues.count { it > myValue }
                     universePercentile = ((higher.toFloat() / allValues.size) * 100f)
                     universePercentile = universePercentile.coerceIn(0f, 100f)
-                    if (universePercentile < 1f && universePercentile > 0f) universePercentile = 1f
+                    if (universePercentile < 1f) universePercentile = 1f
                 }
             }
 
@@ -305,6 +337,46 @@ class CharacterDetailFragment : Fragment() {
             }
         }
         return result
+    }
+
+    /**
+     * CALCULATED 필드의 백분위 계산을 위해 범위 내 모든 캐릭터의 수식 결과를 계산한다.
+     * DB에 저장되지 않는 CALCULATED 값을 각 캐릭터별로 FormulaEvaluator로 평가한다.
+     */
+    private suspend fun computeCalculatedValuesForScope(
+        field: com.novelcharacter.app.data.model.FieldDefinition,
+        novelId: Long?,
+        universeId: Long?
+    ): List<Double> {
+        val formula = try {
+            org.json.JSONObject(field.config).optString("formula", "")
+        } catch (_: Exception) { "" }
+        if (formula.isBlank()) return emptyList()
+
+        val characters = if (novelId != null) {
+            viewModel.getCharactersByNovelList(novelId)
+        } else if (universeId != null) {
+            viewModel.getCharactersByUniverseList(universeId)
+        } else return emptyList()
+
+        val universeIdForFields = universeId
+            ?: characters.firstOrNull()?.let { c ->
+                c.novelId?.let { viewModel.getNovelById(it)?.universeId }
+            }
+        if (universeIdForFields == null) return emptyList()
+
+        val allFields = viewModel.getFieldsByUniverseList(universeIdForFields)
+
+        return characters.mapNotNull { char ->
+            val charValues = viewModel.getValuesByCharacterList(char.id)
+            val charKeyValues = mutableMapOf<String, String>()
+            for (f in allFields) {
+                val v = charValues.firstOrNull { it.fieldDefinitionId == f.id }?.value ?: ""
+                if (v.isNotBlank()) charKeyValues[f.key] = v
+            }
+            val eval = com.novelcharacter.app.util.FormulaEvaluator(charKeyValues, allFields)
+            try { eval.evaluate(formula) } catch (_: Exception) { null }
+        }
     }
 
     // ===== Images =====

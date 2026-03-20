@@ -375,7 +375,7 @@ class UniverseListFragment : Fragment() {
                         layoutParams = LinearLayout.LayoutParams((32 * density).toInt(), (32 * density).toInt())
                         setImageResource(android.R.drawable.arrow_up_float)
                         setBackgroundResource(android.R.color.transparent)
-                        contentDescription = "위로"
+                        contentDescription = getString(R.string.move_up)
                         setOnClickListener {
                             val temp = fields[index]
                             fields[index] = fields[index - 1]
@@ -396,7 +396,7 @@ class UniverseListFragment : Fragment() {
                         layoutParams = LinearLayout.LayoutParams((32 * density).toInt(), (32 * density).toInt())
                         setImageResource(android.R.drawable.arrow_down_float)
                         setBackgroundResource(android.R.color.transparent)
-                        contentDescription = "아래로"
+                        contentDescription = getString(R.string.move_down)
                         setOnClickListener {
                             val temp = fields[index]
                             fields[index] = fields[index + 1]
@@ -441,6 +441,11 @@ class UniverseListFragment : Fragment() {
                     setOnClickListener {
                         val dialog = com.novelcharacter.app.ui.field.FieldEditDialog.newInstance(0, field)
                         dialog.setOnSaveListener { editedField ->
+                            val dupIdx = fields.indexOfFirst { it.key == editedField.key && it !== field }
+                            if (dupIdx >= 0) {
+                                Toast.makeText(ctx, R.string.preset_field_key_duplicate, Toast.LENGTH_SHORT).show()
+                                return@setOnSaveListener
+                            }
                             fields[index] = editedField
                             rebuildFieldList()
                         }
@@ -485,6 +490,10 @@ class UniverseListFragment : Fragment() {
             setOnClickListener {
                 val dialog = com.novelcharacter.app.ui.field.FieldEditDialog.newInstance(0, null)
                 dialog.setOnSaveListener { newField ->
+                    if (fields.any { it.key == newField.key }) {
+                        Toast.makeText(ctx, R.string.preset_field_key_duplicate, Toast.LENGTH_SHORT).show()
+                        return@setOnSaveListener
+                    }
                     fields.add(newField)
                     rebuildFieldList()
                 }
@@ -984,9 +993,25 @@ class UniverseListFragment : Fragment() {
         }
         layout.addView(charSelectBtn)
 
+        // 기존 세계관 편집 시 선택된 캐릭터 이름 표시
+        if (universe != null && selectedCharacterId != null) {
+            viewModel.getCharactersWithImageForUniverse(universe.id) { chars ->
+                if (!isAdded) return@getCharactersWithImageForUniverse
+                val match = chars.firstOrNull { it.first == selectedCharacterId }
+                if (match != null) {
+                    charSelectBtn.text = getString(R.string.image_selected_character, match.second)
+                }
+            }
+        }
+
         charSelectBtn.setOnClickListener {
-            val uid = universe?.id ?: return@setOnClickListener
+            val uid = universe?.id
+            if (uid == null) {
+                Toast.makeText(ctx, R.string.save_universe_first_for_image, Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
             viewModel.getCharactersWithImageForUniverse(uid) { chars ->
+                if (!isAdded) return@getCharactersWithImageForUniverse
                 if (chars.isEmpty()) {
                     Toast.makeText(ctx, R.string.no_character_with_image, Toast.LENGTH_SHORT).show()
                     return@getCharactersWithImageForUniverse
@@ -1013,9 +1038,25 @@ class UniverseListFragment : Fragment() {
         }
         layout.addView(novelSelectBtn)
 
+        // 기존 세계관 편집 시 선택된 작품 이름 표시
+        if (universe != null && selectedNovelId != null) {
+            viewModel.getNovelsWithImageForUniverse(universe.id) { novels ->
+                if (!isAdded) return@getNovelsWithImageForUniverse
+                val match = novels.firstOrNull { it.first == selectedNovelId }
+                if (match != null) {
+                    novelSelectBtn.text = getString(R.string.image_selected_novel, match.second)
+                }
+            }
+        }
+
         novelSelectBtn.setOnClickListener {
-            val uid = universe?.id ?: return@setOnClickListener
+            val uid = universe?.id
+            if (uid == null) {
+                Toast.makeText(ctx, R.string.save_universe_first_for_image, Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
             viewModel.getNovelsWithImageForUniverse(uid) { novels ->
+                if (!isAdded) return@getNovelsWithImageForUniverse
                 if (novels.isEmpty()) {
                     Toast.makeText(ctx, R.string.no_novel_with_image, Toast.LENGTH_SHORT).show()
                     return@getNovelsWithImageForUniverse
@@ -1139,10 +1180,14 @@ class UniverseListFragment : Fragment() {
             }
         }
 
+        var isUpdating = false
+
         fun updateFromHSV() {
+            isUpdating = true
             val color = Color.HSVToColor(hsv)
             (previewView.background as? GradientDrawable)?.setColor(color)
             hexEdit.setText(String.format("#%06X", 0xFFFFFF and color))
+            isUpdating = false
         }
 
         // Hue SeekBar (0-360)
@@ -1201,6 +1246,7 @@ class UniverseListFragment : Fragment() {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
             override fun afterTextChanged(s: android.text.Editable?) {
+                if (isUpdating) return
                 val hex = s?.toString()?.trim() ?: ""
                 try {
                     if (hex.matches(Regex("#[0-9A-Fa-f]{6}"))) {

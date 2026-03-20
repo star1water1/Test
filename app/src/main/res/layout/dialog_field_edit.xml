@@ -228,14 +228,24 @@
 
             </LinearLayout>
 
-            <!-- 상위 % 표기 (NUMBER, CALCULATED, BODY_SIZE 전용) -->
+        </LinearLayout>
+
+        <!-- ===== 고급 설정 탭 ===== -->
+        <LinearLayout
+            android:id="@+id/advancedTabContent"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <!-- 상위 % 표기 (NUMBER, CALCULATED, BODY_SIZE, GRADE 전용) -->
             <LinearLayout
                 android:id="@+id/percentileLayout"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
                 android:visibility="gone"
-                android:layout_marginTop="12dp">
+                android:layout_marginBottom="12dp">
 
                 <androidx.appcompat.widget.SwitchCompat
                     android:id="@+id/switchPercentileEnabled"
@@ -265,16 +275,6 @@
                         android:text="@string/label_percentile_scope_universe" />
                 </LinearLayout>
             </LinearLayout>
-
-        </LinearLayout>
-
-        <!-- ===== 고급 설정 탭 ===== -->
-        <LinearLayout
-            android:id="@+id/advancedTabContent"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:visibility="gone">
 
             <!-- 시스템 연동 (CALCULATED 제외) -->
             <LinearLayout

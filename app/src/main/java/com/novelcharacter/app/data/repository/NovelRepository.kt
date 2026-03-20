@@ -30,6 +30,8 @@ class NovelRepository(
     suspend fun deleteNovel(novel: Novel) {
         db.withTransaction {
             recentActivityDao.deleteByEntity(RecentActivity.TYPE_NOVEL, novel.id)
+            // 이 작품을 이미지로 참조하는 세계관의 댕글링 참조 정리
+            db.universeDao().clearImageNovelRef(novel.id)
             novelDao.delete(novel)
         }
     }

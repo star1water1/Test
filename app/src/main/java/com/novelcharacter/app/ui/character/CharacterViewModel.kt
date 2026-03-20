@@ -247,6 +247,12 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     suspend fun getAllCharactersList(): List<Character> =
         characterRepository.getAllCharactersList()
 
+    suspend fun getCharactersByNovelList(novelId: Long): List<Character> =
+        characterRepository.getCharactersByNovelList(novelId)
+
+    suspend fun getCharactersByUniverseList(universeId: Long): List<Character> =
+        characterRepository.getCharactersByUniverseList(universeId)
+
     // ===== RelationshipChanges =====
     fun getRelationshipChanges(relationshipId: Long): LiveData<List<CharacterRelationshipChange>> =
         characterRepository.getRelationshipChanges(relationshipId)

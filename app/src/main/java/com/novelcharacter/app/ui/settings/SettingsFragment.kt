@@ -422,15 +422,16 @@ class SettingsFragment : Fragment() {
                     val temp = File.createTempFile("restore_ext_", ".enc", requireContext().cacheDir)
                     requireContext().contentResolver.openInputStream(uri)?.use { input ->
                         temp.outputStream().use { output -> input.copyTo(output) }
-                    } ?: throw Exception("파일을 열 수 없습니다")
+                    } ?: throw Exception(getString(R.string.backup_file_open_failed))
                     temp
                 }
                 restoreFromEncryptedFile(tempEncFile)
             } catch (e: Exception) {
-                tempEncFile?.delete()
                 if (_binding != null) {
                     Toast.makeText(requireContext(), getString(R.string.backup_restore_failed, e.message), Toast.LENGTH_LONG).show()
                 }
+            } finally {
+                tempEncFile?.delete()
             }
         }
     }
@@ -464,11 +465,12 @@ class SettingsFragment : Fragment() {
                 importer.importFromExcel(xlsxUri)
 
             } catch (e: Exception) {
-                tempXlsx?.delete()
                 if (progressDialog.isShowing) progressDialog.dismiss()
                 if (_binding != null) {
                     Toast.makeText(ctx, getString(R.string.backup_restore_failed, e.message), Toast.LENGTH_LONG).show()
                 }
+            } finally {
+                tempXlsx?.delete()
             }
         }
     }

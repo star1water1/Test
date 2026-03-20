@@ -38,4 +38,7 @@ interface UniverseDao {
 
     @Query("UPDATE universes SET imageCharacterId = NULL, imageMode = 'none' WHERE imageCharacterId = :characterId")
     suspend fun clearImageCharacterRef(characterId: Long)
+
+    @Query("UPDATE universes SET imageNovelId = NULL, imageMode = 'none' WHERE imageNovelId = :novelId")
+    suspend fun clearImageNovelRef(novelId: Long)
 }

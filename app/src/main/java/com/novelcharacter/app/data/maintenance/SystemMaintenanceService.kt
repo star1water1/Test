@@ -289,15 +289,27 @@ class SystemMaintenanceService(
             db.openHelper.writableDatabase.execSQL(
                 "UPDATE novels SET imageCharacterId = NULL WHERE imageCharacterId IS NOT NULL AND imageCharacterId NOT IN (SELECT id FROM characters)"
             )
+            var clearedNovelImageRefs = 0
+            db.openHelper.readableDatabase.query("SELECT changes()").use { c ->
+                if (c.moveToNext()) clearedNovelImageRefs = c.getInt(0)
+            }
             db.openHelper.writableDatabase.execSQL(
                 "UPDATE universes SET imageCharacterId = NULL WHERE imageCharacterId IS NOT NULL AND imageCharacterId NOT IN (SELECT id FROM characters)"
             )
+            var clearedUniverseImageRefs = 0
             db.openHelper.readableDatabase.query("SELECT changes()").use { c ->
-                if (c.moveToNext()) {
-                    clearedImageRefs = c.getInt(0)
-                    if (clearedImageRefs > 0) details.add("댕글링 이미지 참조 $clearedImageRefs 건 정리")
-                }
+                if (c.moveToNext()) clearedUniverseImageRefs = c.getInt(0)
             }
+            // 존재하지 않는 작품을 참조하는 universes imageNovelId 정리
+            db.openHelper.writableDatabase.execSQL(
+                "UPDATE universes SET imageNovelId = NULL WHERE imageNovelId IS NOT NULL AND imageNovelId NOT IN (SELECT id FROM novels)"
+            )
+            var clearedNovelIdRefs = 0
+            db.openHelper.readableDatabase.query("SELECT changes()").use { c ->
+                if (c.moveToNext()) clearedNovelIdRefs = c.getInt(0)
+            }
+            clearedImageRefs = clearedNovelImageRefs + clearedUniverseImageRefs + clearedNovelIdRefs
+            if (clearedImageRefs > 0) details.add("댕글링 이미지 참조 $clearedImageRefs 건 정리")
 
             // 이름은행: isUsed=true인데 usedByCharacterId가 NULL이거나 존재하지 않는 캐릭터를 가리키는 경우
             db.openHelper.writableDatabase.execSQL(

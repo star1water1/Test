@@ -150,8 +150,8 @@ class FieldEditDialog : DialogFragment() {
                 // 구조화 입력: TEXT, BODY_SIZE
                 binding.structuredInputLayout.visibility =
                     if (selectedType == FieldType.TEXT || selectedType == FieldType.BODY_SIZE) View.VISIBLE else View.GONE
-                // 상위 % 표기: NUMBER, CALCULATED, BODY_SIZE
-                val isNumericType = selectedType == FieldType.NUMBER || selectedType == FieldType.CALCULATED || selectedType == FieldType.BODY_SIZE
+                // 상위 % 표기: NUMBER, CALCULATED, BODY_SIZE, GRADE
+                val isNumericType = selectedType == FieldType.NUMBER || selectedType == FieldType.CALCULATED || selectedType == FieldType.BODY_SIZE || selectedType == FieldType.GRADE
                 binding.percentileLayout.visibility = if (isNumericType) View.VISIBLE else View.GONE
             }
             override fun onNothingSelected(parent: AdapterView<*>?) {}
@@ -763,8 +763,8 @@ class FieldEditDialog : DialogFragment() {
             }
         }
 
-        // 상위 % 설정 (NUMBER, CALCULATED, BODY_SIZE)
-        if (type == FieldType.NUMBER || type == FieldType.CALCULATED || type == FieldType.BODY_SIZE) {
+        // 상위 % 설정 (NUMBER, CALCULATED, BODY_SIZE, GRADE)
+        if (type == FieldType.NUMBER || type == FieldType.CALCULATED || type == FieldType.BODY_SIZE || type == FieldType.GRADE) {
             if (binding.switchPercentileEnabled.isChecked) {
                 val scopes = mutableListOf<String>()
                 if (binding.checkPercentileNovel.isChecked) scopes.add("novel")

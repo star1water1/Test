@@ -350,6 +350,7 @@
     <string name="image_select_novel">이미지를 가져올 작품 선택</string>
     <string name="image_selected_novel">선택됨: %s</string>
     <string name="no_novel_with_image">이미지가 있는 작품이 없습니다</string>
+    <string name="save_universe_first_for_image">세계관을 먼저 저장한 후 이미지를 선택할 수 있습니다</string>
     <string name="image_select_character">이미지를 가져올 캐릭터 선택</string>
     <string name="image_selected_character">선택됨: %s</string>
     <string name="no_character_with_image">이미지가 있는 캐릭터가 없습니다</string>
@@ -362,6 +363,9 @@
     <string name="preset_fields_saved">프리셋 필드가 저장되었습니다</string>
     <string name="preset_field_name_required">필드 이름을 입력하세요</string>
     <string name="preset_field_key_required">필드 키를 입력하세요</string>
+    <string name="preset_field_key_duplicate">이미 같은 키가 존재합니다</string>
+    <string name="move_up">위로</string>
+    <string name="move_down">아래로</string>
     <string name="image_no_characters_with_images">이미지가 있는 캐릭터가 없습니다</string>
     <string name="image_character_selected">%s 선택됨</string>
     <string name="image_change_character">캐릭터 변경</string>
@@ -478,6 +482,7 @@
     <string name="backup_restore_decrypting">백업 파일 복호화 중…</string>
     <string name="backup_restore_success">백업 복원 완료</string>
     <string name="backup_restore_failed">백업 복원 실패: %s</string>
+    <string name="backup_file_open_failed">파일을 열 수 없습니다</string>
     <string name="backup_restore_no_backups">저장된 백업 파일이 없습니다</string>
     <string name="backup_restore_key_missing">암호화 키가 손실되어 백업을 복원할 수 없습니다.\n기기 초기화 또는 보안 업데이트 후 발생할 수 있습니다.</string>
     <string name="backup_export_to_external">백업 내보내기</string>
