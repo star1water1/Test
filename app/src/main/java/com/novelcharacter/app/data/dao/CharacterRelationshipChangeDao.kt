@@ -18,7 +18,7 @@ interface CharacterRelationshipChangeDao {
     @Query("SELECT * FROM character_relationship_changes ORDER BY year ASC")
     suspend fun getAllChanges(): List<CharacterRelationshipChange>
 
-    @Query("SELECT * FROM character_relationship_changes WHERE relationshipId = :relationshipId AND year = :year AND (month IS :month OR (month IS NULL AND :month IS NULL)) AND (day IS :day OR (day IS NULL AND :day IS NULL)) LIMIT 1")
+    @Query("SELECT * FROM character_relationship_changes WHERE relationshipId = :relationshipId AND year = :year AND (month = :month OR (month IS NULL AND :month IS NULL)) AND (day = :day OR (day IS NULL AND :day IS NULL)) LIMIT 1")
     suspend fun getChangeByNaturalKey(relationshipId: Long, year: Int, month: Int?, day: Int?): CharacterRelationshipChange?
 
     @Insert(onConflict = OnConflictStrategy.ABORT)

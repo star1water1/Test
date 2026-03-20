@@ -197,7 +197,7 @@ class FieldManageFragment : Fragment() {
 
             val universeSpinner = Spinner(ctx).apply {
                 adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item,
-                    universes.map { "${it.name} (${otherFields[it]!!.size}개 필드)" }
+                    universes.map { "${it.name} (${otherFields[it]?.size ?: 0}개 필드)" }
                 ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
             }
             container.addView(universeSpinner)
