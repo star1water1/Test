@@ -5,6 +5,7 @@ import com.novelcharacter.app.data.model.CharacterStateChange
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.SemanticRole
 import com.novelcharacter.app.data.repository.CharacterRepository
+import com.novelcharacter.app.data.repository.NovelRepository
 import com.novelcharacter.app.data.repository.UniverseRepository
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -14,8 +15,10 @@ import java.util.concurrent.atomic.AtomicBoolean
  */
 class SemanticFieldSyncHelper(
     private val characterRepository: CharacterRepository,
-    private val universeRepository: UniverseRepository
+    private val universeRepository: UniverseRepository,
+    private val novelRepository: NovelRepository? = null
 ) {
+    private val standardYearSyncHelper = StandardYearSyncHelper(characterRepository, universeRepository)
     // 방향별 재귀 방지 플래그: 각 방향의 동기화가 독립적으로 동작하되,
     // A→B→A 재귀만 차단한다.
     private val isSyncingFieldToState = AtomicBoolean(false)
@@ -43,6 +46,8 @@ class SemanticFieldSyncHelper(
                     SemanticRole.BIRTH_YEAR -> {
                         val year = value.value.trim().toIntOrNull() ?: continue
                         upsertStateChange(characterId, CharacterStateChange.KEY_BIRTH, year, null, null)
+                        // standardYear가 있고 연동 활성이면 age 필드도 갱신
+                        syncBirthYearToAge(characterId, year, fields)
                     }
                     SemanticRole.BIRTH_DATE -> {
                         val parts = parseBirthDate(value.value) ?: continue
@@ -54,6 +59,21 @@ class SemanticFieldSyncHelper(
                         val year = value.value.trim().toIntOrNull() ?: continue
                         upsertStateChange(characterId, CharacterStateChange.KEY_DEATH, year, null, null)
                     }
+                    SemanticRole.AGE -> {
+                        // 나이 → 출생연도 역산: birthYear = standardYear - age
+                        val age = value.value.trim().toIntOrNull() ?: continue
+                        val novel = getNovelForCharacter(characterId) ?: continue
+                        val stdYear = novel.standardYear ?: continue
+                        if (!standardYearSyncHelper.isLinked(characterId)) continue
+                        val birthYear = stdYear - age
+                        upsertStateChange(characterId, CharacterStateChange.KEY_BIRTH, birthYear, null, null)
+                        // birth_year 필드도 갱신
+                        val birthYearField = findFieldByRole(fields, SemanticRole.BIRTH_YEAR)
+                        if (birthYearField != null) {
+                            upsertFieldValue(characterId, birthYearField.id, birthYear.toString())
+                        }
+                    }
+                    else -> { /* HEIGHT, WEIGHT, BODY_SIZE — 동기화 불필요 */ }
                 }
             }
         } finally {
@@ -160,6 +180,25 @@ class SemanticFieldSyncHelper(
             CharacterStateChange.KEY_DEATH -> year.toString()
             else -> ""
         }
+    }
+
+    /**
+     * 출생연도 변경 시, standardYear가 있고 연동 활성이면 age 필드를 자동 갱신.
+     */
+    private suspend fun syncBirthYearToAge(characterId: Long, birthYear: Int, fields: List<FieldDefinition>) {
+        val novel = getNovelForCharacter(characterId) ?: return
+        val stdYear = novel.standardYear ?: return
+        if (!standardYearSyncHelper.isLinked(characterId)) return
+        val ageField = findFieldByRole(fields, SemanticRole.AGE) ?: return
+        val age = stdYear - birthYear
+        upsertFieldValue(characterId, ageField.id, if (age >= 0) age.toString() else "")
+    }
+
+    private suspend fun getNovelForCharacter(characterId: Long): com.novelcharacter.app.data.model.Novel? {
+        if (novelRepository == null) return null
+        val character = characterRepository.getCharacterById(characterId) ?: return null
+        val novelId = character.novelId ?: return null
+        return novelRepository.getNovelById(novelId)
     }
 
     private suspend fun upsertFieldValue(characterId: Long, fieldId: Long, value: String) {

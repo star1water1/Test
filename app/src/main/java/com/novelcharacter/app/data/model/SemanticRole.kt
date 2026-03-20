@@ -14,7 +14,11 @@ enum class SemanticRole(
 ) {
     BIRTH_YEAR("birth_year", "출생연도", "__birth", "생일 알림, 위젯, 나이 자동계산, 생존기간 통계"),
     BIRTH_DATE("birth_date", "생일(월/일)", "__birth", "생일 알림, 오늘의 캐릭터 위젯"),
-    DEATH_YEAR("death_year", "사망연도", "__death", "생존 여부 판정, 생존기간 통계");
+    DEATH_YEAR("death_year", "사망연도", "__death", "생존 여부 판정, 생존기간 통계"),
+    AGE("age", "나이", "__age", "표준 년도 기반 자동 나이 계산"),
+    HEIGHT("height", "키(신장)", "__height", "체형 분석 연동"),
+    WEIGHT("weight", "체중", "__weight", "체형 분석, BMI 연동"),
+    BODY_SIZE("body_size", "신체 사이즈", "__body_size", "체형 분석, 컵사이즈 연동");
 
     companion object {
         private const val CONFIG_KEY = "semanticRole"

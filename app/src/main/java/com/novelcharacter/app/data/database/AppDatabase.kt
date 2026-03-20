@@ -59,7 +59,7 @@ import com.novelcharacter.app.data.model.Universe
         SearchPreset::class,
         UserPresetTemplate::class
     ],
-    version = 23,
+    version = 24,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -870,6 +870,64 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_23_24 = object : Migration(23, 24) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "Migrating database from version 23 to 24")
+
+                // 1. Novel에 standardYear 컬럼 추가
+                db.execSQL("ALTER TABLE `novels` ADD COLUMN `standardYear` INTEGER DEFAULT NULL")
+
+                // 2. 기존 프리셋 세계관에 birth_date 필드 추가 (별님대모험)
+                val cursor1 = db.query("SELECT id FROM universes WHERE name = '별님대모험'")
+                if (cursor1.moveToFirst()) {
+                    val uid = cursor1.getLong(0)
+                    db.execSQL("""INSERT OR IGNORE INTO field_definitions
+                        (universeId, `key`, name, type, config, groupName, displayOrder, isRequired)
+                        VALUES ($uid, 'birth_date', '생일(월/일)', 'TEXT',
+                        '{"semanticRole":"birth_date","placeholder":"MM-DD"}', '기본 정보', 1, 0)""")
+                    db.execSQL("""UPDATE field_definitions SET displayOrder = displayOrder + 1
+                        WHERE universeId = $uid AND `key` != 'birth_year' AND `key` != 'birth_date'
+                        AND displayOrder >= 1""")
+                }
+                cursor1.close()
+
+                // 천칭의 마법사
+                val cursor2 = db.query("SELECT id FROM universes WHERE name = '천칭의 마법사'")
+                if (cursor2.moveToFirst()) {
+                    val uid = cursor2.getLong(0)
+                    db.execSQL("""INSERT OR IGNORE INTO field_definitions
+                        (universeId, `key`, name, type, config, groupName, displayOrder, isRequired)
+                        VALUES ($uid, 'birth_date', '생일(월/일)', 'TEXT',
+                        '{"semanticRole":"birth_date","placeholder":"MM-DD"}', '기본 정보', 1, 0)""")
+                    db.execSQL("""UPDATE field_definitions SET displayOrder = displayOrder + 1
+                        WHERE universeId = $uid AND `key` != 'birth_year' AND `key` != 'birth_date'
+                        AND displayOrder >= 1""")
+                }
+                cursor2.close()
+
+                // 3. 기존 age/height/body_type 필드에 semanticRole 추가
+                db.execSQL("""UPDATE field_definitions SET config =
+                    CASE WHEN config IS NULL OR config = '' THEN '{"semanticRole":"age"}'
+                    ELSE json_set(config, '${'$'}.semanticRole', 'age') END
+                    WHERE `key` = 'age' AND type = 'NUMBER'
+                    AND (config IS NULL OR config = '' OR json_extract(config, '${'$'}.semanticRole') IS NULL)""")
+
+                db.execSQL("""UPDATE field_definitions SET config =
+                    CASE WHEN config IS NULL OR config = '' THEN '{"semanticRole":"height"}'
+                    ELSE json_set(config, '${'$'}.semanticRole', 'height') END
+                    WHERE `key` = 'height' AND type IN ('TEXT', 'NUMBER')
+                    AND (config IS NULL OR config = '' OR json_extract(config, '${'$'}.semanticRole') IS NULL)""")
+
+                db.execSQL("""UPDATE field_definitions SET config =
+                    CASE WHEN config IS NULL OR config = '' THEN '{"semanticRole":"body_size"}'
+                    ELSE json_set(config, '${'$'}.semanticRole', 'body_size') END
+                    WHERE `key` IN ('body_size', 'body_type') AND type = 'BODY_SIZE'
+                    AND (config IS NULL OR config = '' OR json_extract(config, '${'$'}.semanticRole') IS NULL)""")
+
+                Log.i(TAG, "Migration from version 23 to 24 completed successfully")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -877,7 +935,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "novel_character_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24)
                     .addCallback(SeedCallback())
                     .build()
                     .also { INSTANCE = it }

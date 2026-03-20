@@ -111,11 +111,12 @@ object PresetTemplates {
 
         val fields = listOf(
             FieldDefinition(universeId = 0, key = "birth_year", name = "출생연도", type = "NUMBER", config = """{"semanticRole":"birth_year"}""", groupName = "기본 정보"),
-            FieldDefinition(universeId = 0, key = "age", name = "나이", type = "NUMBER", groupName = "기본 정보"),
+            FieldDefinition(universeId = 0, key = "birth_date", name = "생일(월/일)", type = "TEXT", config = """{"semanticRole":"birth_date","placeholder":"MM-DD"}""", groupName = "기본 정보"),
+            FieldDefinition(universeId = 0, key = "age", name = "나이", type = "NUMBER", config = """{"semanticRole":"age"}""", groupName = "기본 정보"),
             FieldDefinition(universeId = 0, key = "gender", name = "성별", type = "SELECT", config = """{"options":["남","여","?"]}""", groupName = "기본 정보"),
             FieldDefinition(universeId = 0, key = "race", name = "종족", type = "TEXT", groupName = "기본 정보"),
-            FieldDefinition(universeId = 0, key = "height", name = "키", type = "TEXT", groupName = "기본 정보"),
-            FieldDefinition(universeId = 0, key = "body_type", name = "체형", type = "BODY_SIZE", config = """{"separator":"-","inputReplace":{" ":"-"}}""", groupName = "기본 정보"),
+            FieldDefinition(universeId = 0, key = "height", name = "키", type = "TEXT", config = """{"semanticRole":"height"}""", groupName = "기본 정보"),
+            FieldDefinition(universeId = 0, key = "body_type", name = "체형", type = "BODY_SIZE", config = """{"separator":"-","inputReplace":{" ":"-"},"semanticRole":"body_size"}""", groupName = "기본 정보"),
             FieldDefinition(universeId = 0, key = "alive", name = "생존 여부", type = "SELECT", config = """{"options":["생존","사망","불명"]}""", groupName = "기본 정보"),
             FieldDefinition(universeId = 0, key = "job_title", name = "직업/직위", type = "TEXT", groupName = "직업/소속"),
             FieldDefinition(universeId = 0, key = "affiliation", name = "소속", type = "TEXT", groupName = "직업/소속"),
@@ -144,11 +145,12 @@ object PresetTemplates {
 
         val fields = listOf(
             FieldDefinition(universeId = 0, key = "birth_year", name = "출생연도", type = "NUMBER", config = """{"semanticRole":"birth_year"}""", groupName = "기본 정보"),
-            FieldDefinition(universeId = 0, key = "age", name = "나이", type = "NUMBER", groupName = "기본 정보"),
+            FieldDefinition(universeId = 0, key = "birth_date", name = "생일(월/일)", type = "TEXT", config = """{"semanticRole":"birth_date","placeholder":"MM-DD"}""", groupName = "기본 정보"),
+            FieldDefinition(universeId = 0, key = "age", name = "나이", type = "NUMBER", config = """{"semanticRole":"age"}""", groupName = "기본 정보"),
             FieldDefinition(universeId = 0, key = "gender", name = "성별", type = "SELECT", config = """{"options":["남","여","?"]}""", groupName = "기본 정보"),
             FieldDefinition(universeId = 0, key = "race", name = "종족", type = "TEXT", groupName = "기본 정보"),
-            FieldDefinition(universeId = 0, key = "height", name = "키", type = "TEXT", groupName = "기본 정보"),
-            FieldDefinition(universeId = 0, key = "body_size", name = "신체 사이즈", type = "BODY_SIZE", config = """{"separator":"-","inputReplace":{" ":"-"}}""", groupName = "기본 정보"),
+            FieldDefinition(universeId = 0, key = "height", name = "키", type = "TEXT", config = """{"semanticRole":"height"}""", groupName = "기본 정보"),
+            FieldDefinition(universeId = 0, key = "body_size", name = "신체 사이즈", type = "BODY_SIZE", config = """{"separator":"-","inputReplace":{" ":"-"},"semanticRole":"body_size"}""", groupName = "기본 정보"),
             FieldDefinition(universeId = 0, key = "alive", name = "생존 여부", type = "SELECT", config = """{"options":["생존","사망","불명"]}""", groupName = "기본 정보"),
             FieldDefinition(universeId = 0, key = "job_title", name = "직업/직위", type = "TEXT", groupName = "직업/소속"),
             FieldDefinition(universeId = 0, key = "affiliation", name = "소속", type = "TEXT", groupName = "직업/소속"),

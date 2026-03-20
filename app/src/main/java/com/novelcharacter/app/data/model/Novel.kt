@@ -38,7 +38,8 @@ data class Novel(
     val isPinned: Boolean = false,
     val imagePath: String = "",           // 직접 등록한 이미지 경로
     val imageMode: String = "none",       // none, custom, random_character, select_character
-    val imageCharacterId: Long? = null    // select_character 모드에서 선택된 캐릭터 ID
+    val imageCharacterId: Long? = null,   // select_character 모드에서 선택된 캐릭터 ID
+    val standardYear: Int? = null          // 작중 표준 년도 (현재 시점)
 ) {
     companion object {
         const val IMAGE_MODE_NONE = "none"

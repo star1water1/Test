@@ -226,6 +226,7 @@ class NovelListFragment : Fragment() {
             dialogBinding.editTitle.setText(it.title)
             dialogBinding.editDescription.setText(it.description)
             dialogBinding.editBorderColor.setText(it.borderColor)
+            it.standardYear?.let { year -> dialogBinding.editStandardYear.setText(year.toString()) }
         }
 
         var selectedColor = novel?.borderColor ?: ""
@@ -356,6 +357,8 @@ class NovelListFragment : Fragment() {
                 val description = dialogBinding.editDescription.text.toString().trim()
                 val borderColor = dialogBinding.editBorderColor.text.toString().trim()
                 val finalImagePath = lastSavedImagePath ?: selectedImagePath
+                val standardYearStr = dialogBinding.editStandardYear.text.toString().trim()
+                val standardYear = if (standardYearStr.isNotEmpty()) standardYearStr.toIntOrNull() else null
                 if (title.isNotEmpty()) {
                     if (novel == null) {
                         val newNovel = Novel(
@@ -366,19 +369,27 @@ class NovelListFragment : Fragment() {
                             inheritUniverseBorder = borderColor.isBlank(),
                             imagePath = finalImagePath,
                             imageMode = selectedImageMode,
-                            imageCharacterId = selectedImageCharId
+                            imageCharacterId = selectedImageCharId,
+                            standardYear = standardYear
                         )
                         viewModel.insertNovel(newNovel)
                     } else {
-                        viewModel.updateNovel(novel.copy(
+                        val oldStdYear = novel.standardYear
+                        val updatedNovel = novel.copy(
                             title = title,
                             description = description,
                             borderColor = borderColor,
                             inheritUniverseBorder = borderColor.isBlank(),
                             imagePath = finalImagePath,
                             imageMode = selectedImageMode,
-                            imageCharacterId = selectedImageCharId
-                        ))
+                            imageCharacterId = selectedImageCharId,
+                            standardYear = standardYear
+                        )
+                        viewModel.updateNovel(updatedNovel)
+                        // 표준 년도 변경 시 연동 캐릭터 일괄 재계산
+                        if (oldStdYear != standardYear) {
+                            viewModel.onStandardYearChanged(updatedNovel, oldStdYear, standardYear)
+                        }
                     }
                 }
             }

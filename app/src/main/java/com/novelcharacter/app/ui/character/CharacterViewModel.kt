@@ -26,7 +26,7 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     private val timelineRepository = app.timelineRepository
     private val universeRepository = app.universeRepository
     private val recentActivityDao = app.recentActivityDao
-    private val semanticSyncHelper = SemanticFieldSyncHelper(characterRepository, universeRepository)
+    private val semanticSyncHelper = SemanticFieldSyncHelper(characterRepository, universeRepository, novelRepository)
 
     val allCharacters: LiveData<List<Character>> = characterRepository.allCharacters
     val allNovels: LiveData<List<Novel>> = novelRepository.allNovels
@@ -348,4 +348,36 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
             Log.e("CharacterViewModel", "Failed to record recent activity", e)
         }
     }
+
+    // ===== Event CRUD (캐릭터 화면에서 사건 생성용) =====
+    private val db = app.database
+
+    fun insertEvent(event: TimelineEvent, characterIds: List<Long>) = viewModelScope.launch {
+        try {
+            db.runInTransaction {
+                kotlinx.coroutines.runBlocking {
+                    val eventId = timelineRepository.insertEvent(event)
+                    timelineRepository.updateEventCharacters(eventId, characterIds)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("CharacterViewModel", "Failed to insert event", e)
+        }
+    }
+
+    fun updateEvent(event: TimelineEvent, characterIds: List<Long>) = viewModelScope.launch {
+        try {
+            db.runInTransaction {
+                kotlinx.coroutines.runBlocking {
+                    timelineRepository.updateEvent(event)
+                    timelineRepository.updateEventCharacters(event.id, characterIds)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("CharacterViewModel", "Failed to update event", e)
+        }
+    }
+
+    suspend fun getCharacterIdsForEvent(eventId: Long): List<Long> =
+        timelineRepository.getCharacterIdsForEvent(eventId)
 }

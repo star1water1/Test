@@ -9,6 +9,7 @@ import androidx.lifecycle.viewModelScope
 import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.RecentActivity
+import com.novelcharacter.app.util.StandardYearSyncHelper
 import com.google.gson.Gson
 import android.util.Log
 import kotlinx.coroutines.launch
@@ -20,6 +21,7 @@ class NovelViewModel(application: Application) : AndroidViewModel(application) {
     private val universeRepository = app.universeRepository
     private val characterRepository = app.characterRepository
     private val recentActivityDao = app.recentActivityDao
+    private val standardYearSyncHelper = StandardYearSyncHelper(characterRepository, universeRepository)
     private val gson = Gson()
     val allNovels: LiveData<List<Novel>> = novelRepository.allNovels
 
@@ -126,6 +128,14 @@ class NovelViewModel(application: Application) : AndroidViewModel(application) {
     suspend fun getCharactersWithImages(novelId: Long): List<com.novelcharacter.app.data.model.Character> {
         return characterRepository.getCharactersByNovelList(novelId).filter { char ->
             char.imagePaths.isNotBlank() && char.imagePaths != "[]"
+        }
+    }
+
+    fun onStandardYearChanged(novel: Novel, oldStdYear: Int?, newStdYear: Int?) = viewModelScope.launch {
+        try {
+            standardYearSyncHelper.onStandardYearChanged(novel, oldStdYear, newStdYear)
+        } catch (e: Exception) {
+            Log.e("NovelViewModel", "Failed to sync standard year change", e)
         }
     }
 

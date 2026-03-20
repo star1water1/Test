@@ -85,6 +85,29 @@
             android:paddingTop="4dp"
             android:paddingBottom="8dp" />
 
+        <!-- 표준 년도 -->
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="4dp"
+            android:hint="@string/standard_year_hint">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/editStandardYear"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="numberSigned" />
+
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/standard_year_description"
+            android:textSize="12sp"
+            android:textColor="@color/text_secondary"
+            android:layout_marginBottom="12dp" />
+
         <!-- 이미지 설정 -->
         <TextView
             android:layout_width="match_parent"

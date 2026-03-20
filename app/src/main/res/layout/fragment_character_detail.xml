@@ -234,6 +234,15 @@
                     android:layout_height="wrap_content"
                     android:orientation="vertical" />
 
+                <!-- Standard year linkage toggle -->
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/stdYearLinkSwitch"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/std_year_link_label"
+                    android:visibility="gone" />
+
                 <!-- Memo card -->
                 <com.google.android.material.card.MaterialCardView
                     android:id="@+id/memoCard"
@@ -344,14 +353,34 @@
                         android:orientation="vertical"
                         android:padding="16dp">
 
-                        <TextView
-                            android:layout_width="wrap_content"
+                        <LinearLayout
+                            android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:text="@string/related_events"
-                            android:textSize="16sp"
-                            android:textStyle="bold"
-                            android:textColor="@color/primary"
-                            android:layout_marginBottom="8dp" />
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:layout_marginBottom="8dp">
+
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="@string/related_events"
+                                android:textSize="16sp"
+                                android:textStyle="bold"
+                                android:textColor="@color/primary" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnAddEvent"
+                                style="@style/Widget.Material3.Button.TonalButton"
+                                android:layout_width="wrap_content"
+                                android:layout_height="36dp"
+                                android:text="@string/add_event"
+                                android:textSize="12sp"
+                                android:minWidth="0dp"
+                                android:paddingStart="12dp"
+                                android:paddingEnd="12dp" />
+
+                        </LinearLayout>
 
                         <androidx.recyclerview.widget.RecyclerView
                             android:id="@+id/eventsRecyclerView"

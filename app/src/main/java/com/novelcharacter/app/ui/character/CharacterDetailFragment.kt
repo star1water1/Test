@@ -147,6 +147,27 @@ class CharacterDetailFragment : Fragment() {
         viewModel.getEventsForCharacter(characterId).observe(viewLifecycleOwner) { events ->
             timelineAdapter.submitEventList(events)
         }
+
+        // 사건 추가 버튼
+        binding.btnAddEvent.setOnClickListener {
+            val eventHelper = com.novelcharacter.app.util.EventEditDialogHelper(
+                context = requireContext(),
+                lifecycleScope = viewLifecycleOwner.lifecycleScope,
+                layoutInflater = layoutInflater
+            )
+            val dataProvider = object : com.novelcharacter.app.util.EventEditDialogHelper.DataProvider {
+                override suspend fun getAllNovelsList() = viewModel.getAllNovelsList()
+                override suspend fun getAllCharactersList() = viewModel.getAllCharactersList()
+                override suspend fun getCharacterIdsForEvent(eventId: Long) = viewModel.getCharacterIdsForEvent(eventId)
+                override fun insertEvent(event: com.novelcharacter.app.data.model.TimelineEvent, characterIds: List<Long>) = viewModel.insertEvent(event, characterIds)
+                override fun updateEvent(event: com.novelcharacter.app.data.model.TimelineEvent, characterIds: List<Long>) = viewModel.updateEvent(event, characterIds)
+            }
+            eventHelper.showEventDialog(
+                dataProvider = dataProvider,
+                preSelectedCharacterIds = setOf(characterId),
+                preSelectedNovelId = cachedCharacter?.novelId
+            )
+        }
     }
 
     private fun displayCharacter(character: Character) {
@@ -193,6 +214,26 @@ class CharacterDetailFragment : Fragment() {
             }
 
             if (_binding == null) return@launch
+            // 표준 년도 연동 토글
+            if (novel?.standardYear != null) {
+                binding.stdYearLinkSwitch.visibility = View.VISIBLE
+                val stdHelper = com.novelcharacter.app.util.StandardYearSyncHelper(
+                    (requireActivity().application as com.novelcharacter.app.NovelCharacterApp).characterRepository,
+                    (requireActivity().application as com.novelcharacter.app.NovelCharacterApp).universeRepository,
+                    (requireActivity().application as com.novelcharacter.app.NovelCharacterApp).novelRepository
+                )
+                val isLinked = stdHelper.isLinked(character.id)
+                binding.stdYearLinkSwitch.setOnCheckedChangeListener(null)
+                binding.stdYearLinkSwitch.isChecked = isLinked
+                binding.stdYearLinkSwitch.setOnCheckedChangeListener { _, checked ->
+                    viewLifecycleOwner.lifecycleScope.launch {
+                        stdHelper.setLinked(character.id, checked)
+                    }
+                }
+            } else {
+                binding.stdYearLinkSwitch.visibility = View.GONE
+            }
+
             val universeId = novel?.universeId
             if (universeId != null) {
                 val fields = viewModel.getFieldsByUniverseList(universeId)

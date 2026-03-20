@@ -14,6 +14,9 @@ import com.novelcharacter.app.data.model.CharacterFieldValue
 import com.novelcharacter.app.data.model.CharacterStateChange
 import com.novelcharacter.app.data.model.DisplayFormat
 import com.novelcharacter.app.data.model.FieldDefinition
+import com.novelcharacter.app.data.model.SemanticRole
+import com.novelcharacter.app.util.BodyAnalysisHelper
+import com.novelcharacter.app.util.BodyAnalysisResult
 import com.novelcharacter.app.util.FormulaEvaluator
 
 class DynamicFieldRenderer(
@@ -198,6 +201,61 @@ class DynamicFieldRenderer(
             card.addView(cardContent)
             container.addView(card)
         }
+
+        // 체형 분석 인사이트 카드
+        val bodyAnalysis = computeBodyAnalysis(fields, valueMap)
+        if (bodyAnalysis != null) {
+            val insightCard = createCard(context, density)
+
+            val insightContent = LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT
+                )
+            }
+
+            val insightTitle = TextView(context).apply {
+                text = getString(R.string.body_analysis_title)
+                setTypeface(null, Typeface.BOLD)
+                textSize = 16f
+                setTextColor(context.getColor(R.color.primary))
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    bottomMargin = (8 * density).toInt()
+                }
+            }
+            insightContent.addView(insightTitle)
+
+            fun addRow(label: String, value: String) {
+                insightContent.addView(TextView(context).apply {
+                    text = "$label: $value"
+                    textSize = 14f
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    ).apply {
+                        bottomMargin = (4 * density).toInt()
+                    }
+                })
+            }
+
+            bodyAnalysis.bodyType?.let { addRow(getString(R.string.body_type_label), it) }
+            bodyAnalysis.cupSize?.let { cup ->
+                val diffStr = bodyAnalysis.bustDiff?.let { " (차이 ${"%.1f".format(it)}cm)" } ?: ""
+                addRow(getString(R.string.cup_size_label), "$cup$diffStr")
+            }
+            bodyAnalysis.bmi?.let { bmi ->
+                val categoryStr = bodyAnalysis.bmiCategory?.let { " ($it)" } ?: ""
+                addRow(getString(R.string.bmi_label), "${"%.1f".format(bmi)}$categoryStr")
+            }
+            bodyAnalysis.whr?.let { addRow(getString(R.string.whr_label), "%.2f".format(it)) }
+
+            insightCard.addView(insightContent)
+            container.addView(insightCard)
+        }
     }
 
     fun displayResolvedFields(
@@ -372,6 +430,38 @@ class DynamicFieldRenderer(
             } catch (_: Exception) { /* 평가 실패 시 기존 동작 유지 */ }
         }
         return results
+    }
+
+    private fun computeBodyAnalysis(
+        fields: List<FieldDefinition>,
+        valueMap: Map<Long, CharacterFieldValue>
+    ): BodyAnalysisResult? {
+        // BODY_SIZE 필드 찾기 (SemanticRole 또는 type/key 기반)
+        val bodySizeField = fields.find { SemanticRole.fromConfig(it.config) == SemanticRole.BODY_SIZE }
+            ?: fields.find { it.type == "BODY_SIZE" }
+            ?: fields.find { it.key in listOf("body_size", "body_type", "three_sizes") }
+
+        val bodySizeValue = bodySizeField?.let { valueMap[it.id]?.value } ?: return null
+        if (bodySizeValue.isBlank()) return null
+
+        // bust/waist/hip 파싱 (구분자: -, /, 공백)
+        val parts = bodySizeValue.split(Regex("[-/\\s]+")).mapNotNull { it.trim().toDoubleOrNull() }
+        if (parts.size < 3) return null
+        val bust = parts[0]
+        val waist = parts[1]
+        val hip = parts[2]
+
+        // HEIGHT 필드 찾기
+        val heightField = fields.find { SemanticRole.fromConfig(it.config) == SemanticRole.HEIGHT }
+            ?: fields.find { it.key in listOf("height", "키") }
+        val height = heightField?.let { BodyAnalysisHelper.parseNumericFromText(valueMap[it.id]?.value) }
+
+        // WEIGHT 필드 찾기
+        val weightField = fields.find { SemanticRole.fromConfig(it.config) == SemanticRole.WEIGHT }
+            ?: fields.find { it.key in listOf("weight", "체중") }
+        val weight = weightField?.let { BodyAnalysisHelper.parseNumericFromText(valueMap[it.id]?.value) }
+
+        return BodyAnalysisHelper().analyze(bust, waist, hip, height, weight)
     }
 
     private fun createGroupTitle(context: Context, density: Float, groupName: String): TextView {

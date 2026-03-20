@@ -118,6 +118,7 @@ class CharacterEditFragment : Fragment() {
 
         setupImageButton()
         setupSaveButton()
+        setupEventButton()
         setupChangeTracking()
 
         // Show restored images if any (from rotation)
@@ -839,6 +840,37 @@ class CharacterEditFragment : Fragment() {
                     }
                 }
             }
+        }
+    }
+
+    private fun setupEventButton() {
+        binding.btnAddEvent.setOnClickListener {
+            // 새 캐릭터(아직 저장 안 됨)면 사건 추가 불가
+            if (characterId == -1L) {
+                Toast.makeText(requireContext(), R.string.save_character_first, Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            val eventHelper = com.novelcharacter.app.util.EventEditDialogHelper(
+                requireContext(), viewLifecycleOwner.lifecycleScope, layoutInflater
+            )
+            val dataProvider = object : com.novelcharacter.app.util.EventEditDialogHelper.DataProvider {
+                override suspend fun getAllNovelsList(): List<Novel> = viewModel.getAllNovelsList()
+                override suspend fun getAllCharactersList(): List<com.novelcharacter.app.data.model.Character> = viewModel.getAllCharactersList()
+                override suspend fun getCharacterIdsForEvent(eventId: Long): List<Long> = viewModel.getCharacterIdsForEvent(eventId)
+                override fun insertEvent(event: com.novelcharacter.app.data.model.TimelineEvent, characterIds: List<Long>) {
+                    viewModel.insertEvent(event, characterIds)
+                }
+                override fun updateEvent(event: com.novelcharacter.app.data.model.TimelineEvent, characterIds: List<Long>) {
+                    viewModel.updateEvent(event, characterIds)
+                }
+            }
+            val novelPosition = binding.spinnerNovel.selectedItemPosition
+            val selectedNovelId = if (novelPosition > 0 && novelPosition - 1 < novels.size) novels[novelPosition - 1].id else null
+            eventHelper.showEventDialog(
+                dataProvider = dataProvider,
+                preSelectedCharacterIds = setOf(characterId),
+                preSelectedNovelId = selectedNovelId
+            )
         }
     }
 

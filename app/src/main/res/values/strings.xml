@@ -864,4 +864,22 @@
     <string name="import_result_complete">가져오기 완료: %s</string>
     <string name="import_result_empty">가져오기 완료: 데이터 없음</string>
     <string name="import_progress_format">%s 처리 중… (%d%%)</string>
+
+    <!-- Feature: Standard Year -->
+    <string name="standard_year_hint">작중 표준 년도 (선택)</string>
+    <string name="standard_year_description">작중 현재 시점. 출생연도와 연동하여 나이를 자동 계산합니다.</string>
+    <string name="std_year_link_label">표준 년도 연동</string>
+    <string name="linkage_rule_age_anchor">나이 기준 (표준 년도 변경 시 출생연도 재계산)</string>
+    <string name="linkage_rule_birth_anchor">출생연도 기준 (표준 년도 변경 시 나이 재계산)</string>
+    <string name="linkage_rule_label">연동 규칙</string>
+
+    <!-- Feature: Body Analysis -->
+    <string name="body_analysis_title">체형 분석</string>
+    <string name="body_type_label">체형</string>
+    <string name="cup_size_label">컵 사이즈 (추정)</string>
+    <string name="bmi_label">BMI</string>
+    <string name="whr_label">WHR (허리-엉덩이 비율)</string>
+
+    <!-- Feature: Event from character screen -->
+    <string name="save_character_first">캐릭터를 먼저 저장해주세요</string>
 </resources>

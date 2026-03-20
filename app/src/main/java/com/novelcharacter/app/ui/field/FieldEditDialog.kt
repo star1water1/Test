@@ -183,18 +183,75 @@ class FieldEditDialog : DialogFragment() {
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         binding.spinnerSemanticRole.adapter = adapter
 
+        // 연동 규칙 스피너 설정
+        setupLinkageRuleSpinner(binding)
+
         binding.spinnerSemanticRole.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
                 if (position == 0) {
                     binding.textSemanticRoleDesc.visibility = View.GONE
+                    linkageRuleContainer?.visibility = View.GONE
                 } else {
                     val role = SemanticRole.entries[position - 1]
                     binding.textSemanticRoleDesc.text = role.description
                     binding.textSemanticRoleDesc.visibility = View.VISIBLE
+                    // AGE 선택 시 연동 규칙 표시
+                    linkageRuleContainer?.visibility = if (role == SemanticRole.AGE) View.VISIBLE else View.GONE
                 }
             }
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
+    }
+
+    private var linkageRuleContainer: View? = null
+    private var linkageRuleSpinner: android.widget.Spinner? = null
+
+    private fun setupLinkageRuleSpinner(binding: DialogFieldEditBinding) {
+        val density = resources.displayMetrics.density
+        val ctx = requireContext()
+
+        val container = android.widget.LinearLayout(ctx).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            visibility = View.GONE
+            layoutParams = android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = (8 * density).toInt()
+            }
+        }
+
+        val label = android.widget.TextView(ctx).apply {
+            text = getString(R.string.linkage_rule_label)
+            textSize = 12f
+            setTextColor(ctx.getColor(R.color.text_secondary))
+        }
+        container.addView(label)
+
+        val spinner = android.widget.Spinner(ctx).apply {
+            layoutParams = android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                (48 * density).toInt()
+            )
+        }
+        val ruleLabels = listOf(
+            getString(R.string.linkage_rule_age_anchor),
+            getString(R.string.linkage_rule_birth_anchor)
+        )
+        val ruleAdapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item, ruleLabels)
+        ruleAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        spinner.adapter = ruleAdapter
+        container.addView(spinner)
+
+        // semanticRoleDesc 뒤에 삽입
+        val parent = binding.textSemanticRoleDesc.parent as? android.view.ViewGroup
+        if (parent != null) {
+            val descIndex = parent.indexOfChild(binding.textSemanticRoleDesc)
+            parent.addView(container, descIndex + 1)
+        }
+
+        linkageRuleContainer = container
+        linkageRuleSpinner = spinner
     }
 
     private fun setupStatsSection(binding: DialogFieldEditBinding) {
@@ -554,6 +611,14 @@ class FieldEditDialog : DialogFragment() {
         if (semanticRole != null) {
             val roleIdx = SemanticRole.entries.indexOf(semanticRole) + 1 // +1 for "없음"
             binding.spinnerSemanticRole.setSelection(roleIdx)
+            // AGE면 연동 규칙 복원
+            if (semanticRole == SemanticRole.AGE) {
+                linkageRuleContainer?.visibility = View.VISIBLE
+                try {
+                    val linkageRule = org.json.JSONObject(field.config).optString("linkageRule", "age_anchor")
+                    linkageRuleSpinner?.setSelection(if (linkageRule == "birth_anchor") 1 else 0)
+                } catch (_: Exception) {}
+            }
         }
 
         // Stats config
@@ -729,6 +794,11 @@ class FieldEditDialog : DialogFragment() {
             val role = if (rolePos > 0) SemanticRole.entries[rolePos - 1] else null
             if (role != null) {
                 config["semanticRole"] = role.key
+                // AGE 역할이면 연동 규칙 저장
+                if (role == SemanticRole.AGE) {
+                    val rulePos = linkageRuleSpinner?.selectedItemPosition ?: 0
+                    config["linkageRule"] = if (rulePos == 1) "birth_anchor" else "age_anchor"
+                }
             }
         }
 
