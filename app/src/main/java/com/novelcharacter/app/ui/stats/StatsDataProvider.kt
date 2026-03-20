@@ -61,8 +61,61 @@ data class CharacterComplexity(
     val eventLinkCount: Int,
     val fieldCompletionRate: Float,
     val stateChangeCount: Int,
-    val totalScore: Float
-)
+    val totalScore: Float,
+    val overallPotential: PotentialGrade = PotentialGrade.D,
+    val specialization: Specialization = Specialization.NONE
+) {
+    /** 종합 잠재력 등급 */
+    enum class PotentialGrade(val label: String, val colorKey: String) {
+        S("S", "potential_s"),
+        A("A", "potential_a"),
+        B("B", "potential_b"),
+        C("C", "potential_c"),
+        D("D", "potential_d");
+
+        companion object {
+            fun fromScore(score: Float): PotentialGrade = when {
+                score >= 30f -> S
+                score >= 18f -> A
+                score >= 10f -> B
+                score >= 4f  -> C
+                else         -> D
+            }
+        }
+    }
+
+    /** 특화 잠재력 유형 */
+    enum class Specialization(val label: String, val icon: String) {
+        RELATIONSHIP("관계형", "\uD83E\uDD1D"),   // 🤝
+        EVENT("사건형", "\u26A1"),                  // ⚡
+        DETAIL("설정형", "\uD83D\uDCDD"),          // 📝
+        DYNAMIC("변화형", "\uD83D\uDD04"),          // 🔄
+        BALANCED("균형형", "\u2696\uFE0F"),         // ⚖️
+        NONE("미측정", "");
+
+        companion object {
+            fun determine(relWeight: Float, evtWeight: Float, fieldWeight: Float, stateWeight: Float): Specialization {
+                val total = relWeight + evtWeight + fieldWeight + stateWeight
+                if (total <= 0f) return NONE
+
+                val relRatio = relWeight / total
+                val evtRatio = evtWeight / total
+                val fieldRatio = fieldWeight / total
+                val stateRatio = stateWeight / total
+
+                // 한 차원이 45% 이상 차지하면 그 쪽 특화
+                val threshold = 0.45f
+                return when {
+                    relRatio >= threshold -> RELATIONSHIP
+                    evtRatio >= threshold -> EVENT
+                    fieldRatio >= threshold -> DETAIL
+                    stateRatio >= threshold -> DYNAMIC
+                    else -> BALANCED
+                }
+            }
+        }
+    }
+}
 
 data class MemoUsageStats(
     val withMemo: Int,
@@ -400,14 +453,28 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
             if (rates.isEmpty()) 0f else rates.average().toFloat()
         }
 
-        // 신규: 캐릭터 복잡도 스코어
+        // 신규: 캐릭터 복잡도 스코어 + 종합/특화 잠재력
         val complexityScores = s.characters.map { char ->
             val relCnt = relCount[char.id] ?: 0
             val evtCnt = eventCountMap[char.id] ?: 0
             val completion = fieldCompletions.find { it.first == char.name }?.second ?: 0f
             val stateChangeCnt = stateChangesByChar[char.id]?.size ?: 0
-            val score = relCnt * 2f + evtCnt * 1.5f + completion * 0.3f + stateChangeCnt * 1f
-            CharacterComplexity(char.name, relCnt, evtCnt, completion, stateChangeCnt, score)
+
+            val relWeight = relCnt * 2f
+            val evtWeight = evtCnt * 1.5f
+            val fieldWeight = completion * 0.3f
+            val stateWeight = stateChangeCnt * 1f
+            val score = relWeight + evtWeight + fieldWeight + stateWeight
+
+            val overallPotential = CharacterComplexity.PotentialGrade.fromScore(score)
+            val specialization = CharacterComplexity.Specialization.determine(
+                relWeight, evtWeight, fieldWeight, stateWeight
+            )
+
+            CharacterComplexity(
+                char.name, relCnt, evtCnt, completion, stateChangeCnt, score,
+                overallPotential, specialization
+            )
         }.sortedByDescending { it.totalScore }
 
         // 신규: 메모 통계
@@ -981,8 +1048,8 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
         val charFieldValuesByChar = s.fieldValues.groupBy { it.characterId }
         val fieldDefByUniverse = s.fieldDefinitions.groupBy { it.universeId }
 
-        // 필드별 값 분포 (SELECT, GRADE, MULTI_TEXT, BODY_SIZE 타입)
-        val distributionTypes = setOf("SELECT", "GRADE", "MULTI_TEXT", "BODY_SIZE")
+        // 필드별 값 분포 (이산 값을 가지는 필드 타입)
+        val distributionTypes = setOf("SELECT", "GRADE", "MULTI_TEXT", "BODY_SIZE", "TEXT")
         val valuesByFieldDef = s.fieldValues.filter { it.value.isNotBlank() }
             .groupBy { it.fieldDefinitionId }
 

@@ -14,6 +14,7 @@ import com.novelcharacter.app.data.model.CharacterFieldValue
 import com.novelcharacter.app.data.model.CharacterStateChange
 import com.novelcharacter.app.data.model.DisplayFormat
 import com.novelcharacter.app.data.model.FieldDefinition
+import com.novelcharacter.app.util.FormulaEvaluator
 
 class DynamicFieldRenderer(
     private val containerGetter: () -> LinearLayout,
@@ -31,6 +32,9 @@ class DynamicFieldRenderer(
         container.removeAllViews()
 
         val valueMap = values.associateBy { it.fieldDefinitionId }
+
+        // CALCULATED 필드 수식 평가
+        val calculatedResults = evaluateCalculatedFields(fields, valueMap)
 
         val grouped = fields
             .sortedBy { it.displayOrder }
@@ -134,10 +138,13 @@ class DynamicFieldRenderer(
                 } else {
                     // PLAIN (default) / CALCULATED
                     val displayValue = if (isCalculated) {
-                        if (fieldValue.isEmpty()) {
-                            getStringWithArg(R.string.auto_calculated_label, field.name)
-                        } else {
+                        val computedValue = calculatedResults[field.id]
+                        if (computedValue != null) {
+                            contextGetter().getString(R.string.auto_calculated_value, field.name, computedValue)
+                        } else if (fieldValue.isNotEmpty()) {
                             contextGetter().getString(R.string.auto_calculated_value, field.name, fieldValue)
+                        } else {
+                            getStringWithArg(R.string.auto_calculated_label, field.name)
                         }
                     } else {
                         "${field.name}: ${fieldValue.ifEmpty { "-" }}"
@@ -299,6 +306,45 @@ class DynamicFieldRenderer(
                 (12 * density).toInt()
             )
         }
+    }
+
+    /**
+     * CALCULATED 필드의 수식을 FormulaEvaluator로 평가하여 결과를 반환.
+     * @return fieldDefinitionId → 계산된 값 문자열
+     */
+    private fun evaluateCalculatedFields(
+        fields: List<FieldDefinition>,
+        valueMap: Map<Long, CharacterFieldValue>
+    ): Map<Long, String> {
+        val calculatedFields = fields.filter { it.type == "CALCULATED" }
+        if (calculatedFields.isEmpty()) return emptyMap()
+
+        // fieldKey → value 맵 구성
+        val fieldKeyValues = mutableMapOf<String, String>()
+        for (field in fields) {
+            val v = valueMap[field.id]?.value ?: ""
+            if (v.isNotBlank()) fieldKeyValues[field.key] = v
+        }
+
+        val results = mutableMapOf<Long, String>()
+        val evaluator = FormulaEvaluator(fieldKeyValues, fields)
+        for (field in calculatedFields) {
+            val formula = try {
+                org.json.JSONObject(field.config).optString("formula", "")
+            } catch (_: Exception) { "" }
+            if (formula.isBlank()) continue
+            try {
+                val value = evaluator.evaluate(formula)
+                if (!value.isNaN() && !value.isInfinite()) {
+                    results[field.id] = if (value == value.toLong().toDouble()) {
+                        value.toLong().toString()
+                    } else {
+                        "%.2f".format(value)
+                    }
+                }
+            } catch (_: Exception) { /* 평가 실패 시 기존 동작 유지 */ }
+        }
+        return results
     }
 
     private fun createGroupTitle(context: Context, density: Float, groupName: String): TextView {

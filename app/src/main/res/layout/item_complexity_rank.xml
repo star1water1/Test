@@ -36,15 +36,33 @@
             android:layout_marginStart="12dp"
             android:layout_marginEnd="8dp">
 
-            <TextView
-                android:id="@+id/characterName"
-                android:layout_width="wrap_content"
+            <LinearLayout
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:textSize="15sp"
-                android:textStyle="bold"
-                android:textColor="@color/on_surface"
-                android:maxLines="1"
-                android:ellipsize="end" />
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:id="@+id/characterName"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:textSize="15sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/on_surface"
+                    android:maxLines="1"
+                    android:ellipsize="end" />
+
+                <TextView
+                    android:id="@+id/specializationLabel"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textSize="11sp"
+                    android:textColor="@color/text_secondary"
+                    android:layout_marginStart="6dp"
+                    android:visibility="gone" />
+
+            </LinearLayout>
 
             <!-- 세부 항목 그리드 -->
             <LinearLayout

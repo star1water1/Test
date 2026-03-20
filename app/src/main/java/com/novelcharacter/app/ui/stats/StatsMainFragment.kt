@@ -121,7 +121,9 @@ class StatsMainFragment : Fragment() {
                 if (topTag != null) append(getString(R.string.stats_tag_top_format, topTag.key, topTag.value))
                 if (charStats.complexityScores.isNotEmpty()) {
                     val top = charStats.complexityScores.first()
-                    append(" | ${getString(R.string.stats_insight_complex_char, top.name)}")
+                    val specInfo = if (top.specialization != CharacterComplexity.Specialization.NONE)
+                        " ${top.specialization.icon}${top.specialization.label}" else ""
+                    append(" | ${getString(R.string.stats_insight_complex_char, top.name)} (${top.overallPotential.label}$specInfo)")
                 }
             }
         }

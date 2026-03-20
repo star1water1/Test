@@ -109,6 +109,23 @@ class StatsCharacterDetailFragment : Fragment() {
                 getString(R.string.stats_stat_fields, c.fieldCompletionRate.toInt())
             itemView.findViewById<TextView>(R.id.statChanges).text =
                 getString(R.string.stats_stat_changes, c.stateChangeCount)
+
+            // 특화 잠재력 레이블
+            val specLabel = itemView.findViewById<TextView>(R.id.specializationLabel)
+            if (c.specialization != CharacterComplexity.Specialization.NONE) {
+                specLabel.text = "${c.specialization.icon} ${c.specialization.label}"
+                specLabel.visibility = View.VISIBLE
+            }
+
+            // 등급별 배지 색상
+            val scoreBadge = itemView.findViewById<TextView>(R.id.scoreBadge)
+            val gradeColor = ContextCompat.getColor(requireContext(), gradeColorRes(c.overallPotential))
+            val badgeBg = android.graphics.drawable.GradientDrawable().apply {
+                setColor(gradeColor)
+                cornerRadius = 12 * resources.displayMetrics.density
+            }
+            scoreBadge.background = badgeBg
+
             container.addView(itemView)
         }
     }
@@ -334,6 +351,14 @@ class StatsCharacterDetailFragment : Fragment() {
             lp.bottomMargin = marginXs
             layoutParams = lp
         }
+    }
+
+    private fun gradeColorRes(grade: CharacterComplexity.PotentialGrade): Int = when (grade) {
+        CharacterComplexity.PotentialGrade.S -> R.color.rank_s
+        CharacterComplexity.PotentialGrade.A -> R.color.rank_a
+        CharacterComplexity.PotentialGrade.B -> R.color.rank_b
+        CharacterComplexity.PotentialGrade.C -> R.color.rank_c
+        CharacterComplexity.PotentialGrade.D -> R.color.rank_d
     }
 
     private fun applyDarkModeHole(chart: PieChart) {
