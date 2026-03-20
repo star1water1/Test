@@ -129,7 +129,8 @@ class StatsFieldInsightFragment : Fragment() {
         val textSizeSp = resources.getDimension(R.dimen.stats_text_subtitle) / resources.displayMetrics.scaledDensity
         return TextView(requireContext()).apply {
             val uniPrefix = if (insight.universeName.isNotEmpty()) "${insight.universeName} · " else ""
-            text = "$uniPrefix[${insight.fieldDefinition.groupName}] ${insight.fieldDefinition.name} (${insight.fieldDefinition.type})"
+            val typeLabel = com.novelcharacter.app.data.model.FieldType.fromName(insight.fieldDefinition.type)?.label ?: insight.fieldDefinition.type
+            text = "$uniPrefix[${insight.fieldDefinition.groupName}] ${insight.fieldDefinition.name} ($typeLabel)"
             textSize = textSizeSp
             setTextColor(ContextCompat.getColor(requireContext(), R.color.primary))
             setTypeface(null, Typeface.BOLD)
@@ -172,7 +173,11 @@ class StatsFieldInsightFragment : Fragment() {
         // 분석 타입 라벨
         val typeLabel = TextView(requireContext()).apply {
             val textSizeSp = resources.getDimension(R.dimen.stats_text_body_sm) / resources.displayMetrics.scaledDensity
-            text = result.entry.type.label
+            text = if (result.entry.label.isNotBlank()) {
+                "${result.entry.type.label} — ${result.entry.label}"
+            } else {
+                result.entry.type.label
+            }
             textSize = textSizeSp
             setTextColor(ContextCompat.getColor(requireContext(), R.color.on_surface))
             setTypeface(null, Typeface.BOLD)

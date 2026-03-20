@@ -895,48 +895,99 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
 
     // ===== 필드 인사이트 (신규) =====
     fun computeFieldInsights(s: StatsSnapshot): List<FieldInsightResult> {
-        val novelMap = s.novels.associateBy { it.id }
         val universeMap = s.universes.associateBy { it.id }
         val valuesByFieldDef = s.fieldValues.filter { it.value.isNotBlank() }
             .groupBy { it.fieldDefinitionId }
 
-        return s.fieldDefinitions.mapNotNull { fd ->
-            val statsConfig = FieldStatsConfig.fromConfig(fd.config)
-            if (!statsConfig.enabled) return@mapNotNull null
+        // 동일 필드를 (key, type) 기준으로 세계관 통합 (Pre-Analysis Merge)
+        val fieldGroups = s.fieldDefinitions
+            .filter { FieldStatsConfig.fromConfig(it.config).enabled }
+            .groupBy { it.key to it.type }
 
-            val rawValues = valuesByFieldDef[fd.id] ?: emptyList()
+        return fieldGroups.mapNotNull { (_, fds) ->
+            val primaryFd = fds.first()
+            val statsConfig = FieldStatsConfig.fromConfig(primaryFd.config)
 
-            // 해당 유니버스 캐릭터 수
-            val universeNovels = s.novels.filter { it.universeId == fd.universeId }.map { it.id }.toSet()
-            val totalCount = s.characters.count { it.novelId in universeNovels }
+            // 그룹 내 모든 필드의 값을 합산
+            val rawValues = fds.flatMap { fd -> valuesByFieldDef[fd.id] ?: emptyList() }
+
+            // 관련 세계관 전체의 캐릭터 수
+            val universeIds = fds.map { it.universeId }.toSet()
+            val relevantNovelIds = s.novels.filter { it.universeId in universeIds }.map { it.id }.toSet()
+            val totalCount = s.characters.count { it.novelId in relevantNovelIds }
             val filledCount = rawValues.size
 
-            val analysisResults = statsConfig.analyses.map { entry ->
+            val analysisResults = statsConfig.analyses.flatMap { entry ->
                 when (entry.type) {
                     FieldStatsConfig.StatsType.DISTRIBUTION -> {
-                        val dist = computeFieldDistribution(fd, rawValues, statsConfig, entry.limit)
-                        AnalysisResult(entry, dist, null)
+                        val dist = computeFieldDistribution(primaryFd, rawValues, statsConfig, entry.limit)
+                        listOf(AnalysisResult(entry, dist, null))
                     }
                     FieldStatsConfig.StatsType.NUMERIC -> {
-                        val numericValues = rawValues.mapNotNull { it.value.toFloatOrNull() }
-                        val summary = if (numericValues.isNotEmpty()) {
-                            computeNumericSummary(numericValues, statsConfig.binning)
-                        } else null
-                        AnalysisResult(entry, null, summary)
+                        computeNumericAnalysis(primaryFd, rawValues, statsConfig, entry)
                     }
                     FieldStatsConfig.StatsType.RANKING -> {
-                        val dist = computeFieldDistribution(fd, rawValues, statsConfig, entry.limit)
+                        val dist = computeFieldDistribution(primaryFd, rawValues, statsConfig, entry.limit)
                         val ranked = dist.entries.sortedByDescending { it.value }
                             .take(entry.limit)
                             .associate { it.key to it.value }
-                        AnalysisResult(entry, ranked, null)
+                        listOf(AnalysisResult(entry, ranked, null))
                     }
                 }
             }
 
-            FieldInsightResult(fd, statsConfig, analysisResults, totalCount, filledCount,
-                universeName = universeMap[fd.universeId]?.name ?: "")
+            val universeName = if (fds.size == 1) {
+                universeMap[primaryFd.universeId]?.name ?: ""
+            } else ""
+
+            FieldInsightResult(primaryFd, statsConfig, analysisResults, totalCount, filledCount,
+                universeName = universeName)
         }
+    }
+
+    /**
+     * NUMERIC 분석 생성. BODY_SIZE는 파트별 개별 수치 통계를 반환한다.
+     */
+    private fun computeNumericAnalysis(
+        fd: FieldDefinition,
+        rawValues: List<CharacterFieldValue>,
+        statsConfig: FieldStatsConfig,
+        entry: FieldStatsConfig.AnalysisEntry
+    ): List<AnalysisResult> {
+        if (fd.type == "BODY_SIZE") {
+            val structuredConfig = StructuredInputConfig.fromConfig(fd.config)
+            val separator = if (structuredConfig.enabled) structuredConfig.separator else "-"
+            val partCount = if (structuredConfig.enabled && structuredConfig.parts.isNotEmpty()) {
+                structuredConfig.parts.size
+            } else {
+                rawValues.firstOrNull()?.value?.split(separator)?.size ?: 1
+            }
+
+            return (0 until partCount).mapNotNull { partIdx ->
+                val partLabel = if (structuredConfig.enabled && partIdx < structuredConfig.parts.size) {
+                    structuredConfig.parts[partIdx].label
+                } else "파트${partIdx + 1}"
+
+                val numericValues = rawValues.mapNotNull { cfv ->
+                    val parts = cfv.value.split(separator).map { it.trim() }
+                    parts.getOrNull(partIdx)?.toFloatOrNull()
+                }
+                if (numericValues.isNotEmpty()) {
+                    AnalysisResult(
+                        entry.copy(label = partLabel),
+                        null,
+                        computeNumericSummary(numericValues, statsConfig.binning)
+                    )
+                } else null
+            }
+        }
+
+        // 기본 NUMERIC 분석
+        val numericValues = rawValues.mapNotNull { it.value.toFloatOrNull() }
+        val summary = if (numericValues.isNotEmpty()) {
+            computeNumericSummary(numericValues, statsConfig.binning)
+        } else null
+        return listOf(AnalysisResult(entry, null, summary))
     }
 
     private fun computeFieldDistribution(
@@ -973,18 +1024,12 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
                 if (structuredConfig.enabled && structuredConfig.parts.isNotEmpty()) {
                     structuredConfig.labeledParts(rawValue)
                 } else {
-                    // 구조화 설정 없는 BODY_SIZE — separator로 분리
+                    // 구조화 설정 없는 BODY_SIZE — separator로 분리 (파트별 값만 반환)
                     val separator = try {
                         org.json.JSONObject(fd.config).optString("separator", "-")
                     } catch (_: Exception) { "-" }
                     val parts = rawValue.split(separator).map { it.trim() }.filter { it.isNotEmpty() }
-                    val result = mutableListOf(rawValue.trim())
-                    if (parts.size >= 2) {
-                        parts.forEachIndexed { idx, part ->
-                            result.add("Part${idx + 1}:$part")
-                        }
-                    }
-                    result
+                    if (parts.size >= 2) parts else listOf(rawValue.trim())
                 }
             }
             format == DisplayFormat.COMMA_LIST || format == DisplayFormat.BULLET_LIST ->

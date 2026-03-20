@@ -290,7 +290,7 @@ class StatsMainFragment : Fragment() {
                 data = PieData(dataSet)
                 description.isEnabled = false
                 isDrawHoleEnabled = true
-                holeRadius = 35f
+                holeRadius = 25f
                 setHoleColor(ContextCompat.getColor(requireContext(), R.color.surface))
                 setTransparentCircleColor(ContextCompat.getColor(requireContext(), R.color.surface))
                 legend.isEnabled = false

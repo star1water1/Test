@@ -39,16 +39,17 @@ data class StructuredInputConfig(
         return partValues.joinToString(separator)
     }
 
-    /** 통계용: 파트별 라벨 붙은 값 목록 반환 */
+    /** 통계용: 파트별 라벨 붙은 값 목록 반환. 파트가 2개 이상이면 전체 값은 제외한다. */
     fun labeledParts(combinedValue: String): List<String> {
         if (!enabled || parts.isEmpty()) return listOf(combinedValue)
         val rawParts = combinedValue.split(separator).map { it.trim() }
-        val result = mutableListOf(combinedValue.trim())
-        parts.forEachIndexed { idx, part ->
-            val value = rawParts.getOrNull(idx)?.takeIf { it.isNotEmpty() } ?: return@forEachIndexed
-            result.add("${part.label}:$value")
+        if (rawParts.size >= 2) {
+            // 파트별 값만 반환 (전체 조합 값 제외 — 전체 값은 무의미한 문자열 분포를 만듦)
+            return parts.mapIndexedNotNull { idx, part ->
+                rawParts.getOrNull(idx)?.takeIf { it.isNotEmpty() }?.let { "${part.label}:$it" }
+            }
         }
-        return result
+        return listOf(combinedValue.trim())
     }
 
     companion object {

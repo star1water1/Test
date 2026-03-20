@@ -20,7 +20,9 @@ data class FieldStatsConfig(
     data class AnalysisEntry(
         val type: StatsType = StatsType.DISTRIBUTION,
         val chart: ChartType = ChartType.PIE,
-        val limit: Int = 10
+        val limit: Int = 10,
+        /** 파트별 분석 시 파트 라벨 (런타임 전용, JSON 저장 안 됨) */
+        val label: String = ""
     )
 
     data class BinningConfig(
