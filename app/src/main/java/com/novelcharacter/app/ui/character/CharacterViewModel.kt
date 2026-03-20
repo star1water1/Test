@@ -24,7 +24,7 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     private val timelineRepository = app.timelineRepository
     private val universeRepository = app.universeRepository
     private val recentActivityDao = app.recentActivityDao
-    val semanticSyncHelper = SemanticFieldSyncHelper(characterRepository, universeRepository)
+    private val semanticSyncHelper = SemanticFieldSyncHelper(characterRepository, universeRepository)
 
     val allCharacters: LiveData<List<Character>> = characterRepository.allCharacters
     val allNovels: LiveData<List<Novel>> = novelRepository.allNovels

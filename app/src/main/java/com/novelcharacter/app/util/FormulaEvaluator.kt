@@ -72,7 +72,7 @@ class FormulaEvaluator(
                 formula[i].isWhitespace() -> i++
                 formula[i] in "+-*/" -> {
                     // Handle unary minus/plus: treat as sign if at start, after '(' or after another operator
-                    if ((formula[i] == '-' || formula[i] == '+') && (tokens.isEmpty() || tokens.last() is Token.LParen || tokens.last() is Token.Op)) {
+                    if ((formula[i] == '-' || formula[i] == '+') && (tokens.isEmpty() || tokens.last() is Token.LParen || tokens.last() is Token.Op || tokens.last() is Token.Separator)) {
                         if (formula[i] == '-') {
                             tokens.add(Token.Num(0.0))
                             tokens.add(Token.Op('-'))

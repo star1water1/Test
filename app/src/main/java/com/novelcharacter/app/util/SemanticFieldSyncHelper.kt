@@ -6,6 +6,7 @@ import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.SemanticRole
 import com.novelcharacter.app.data.repository.CharacterRepository
 import com.novelcharacter.app.data.repository.UniverseRepository
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * 커스텀 필드(FieldDefinition)와 시스템 특수 필드(CharacterStateChange)를
@@ -15,8 +16,7 @@ class SemanticFieldSyncHelper(
     private val characterRepository: CharacterRepository,
     private val universeRepository: UniverseRepository
 ) {
-    @Volatile
-    private var isSyncing = false
+    private val isSyncing = AtomicBoolean(false)
 
     /**
      * 방향 1: 커스텀 필드값 저장 후 → CharacterStateChange 동기화.
@@ -27,8 +27,7 @@ class SemanticFieldSyncHelper(
         universeId: Long,
         values: List<CharacterFieldValue>
     ) {
-        if (isSyncing) return
-        isSyncing = true
+        if (!isSyncing.compareAndSet(false, true)) return
         try {
             val fields = universeRepository.getFieldsByUniverseList(universeId)
             val fieldMap = fields.associateBy { it.id }
@@ -55,7 +54,7 @@ class SemanticFieldSyncHelper(
                 }
             }
         } finally {
-            isSyncing = false
+            isSyncing.set(false)
         }
     }
 
@@ -68,8 +67,7 @@ class SemanticFieldSyncHelper(
         universeId: Long,
         change: CharacterStateChange
     ) {
-        if (isSyncing) return
-        isSyncing = true
+        if (!isSyncing.compareAndSet(false, true)) return
         try {
             val fields = universeRepository.getFieldsByUniverseList(universeId)
 
@@ -89,13 +87,13 @@ class SemanticFieldSyncHelper(
                 }
                 CharacterStateChange.KEY_DEATH -> {
                     val deathYearField = findFieldByRole(fields, SemanticRole.DEATH_YEAR)
-                    if (deathYearField != null) {
+                    if (deathYearField != null && change.year != 0) {
                         upsertFieldValue(characterId, deathYearField.id, change.year.toString())
                     }
                 }
             }
         } finally {
-            isSyncing = false
+            isSyncing.set(false)
         }
     }
 
