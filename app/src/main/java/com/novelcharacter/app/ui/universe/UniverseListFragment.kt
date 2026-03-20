@@ -217,11 +217,12 @@ class UniverseListFragment : Fragment() {
 
             override fun getItemCount() = allTemplates.size
 
-            override fun onBindViewHolder(holder: VH, position: Int) {
+            override fun onBindViewHolder(holder: androidx.recyclerview.widget.RecyclerView.ViewHolder, position: Int) {
+                val vh = holder as VH
                 val t = allTemplates[position]
-                val tag = holder.view.findViewById<TextView>(R.id.presetTag)
-                val name = holder.view.findViewById<TextView>(R.id.presetName)
-                val desc = holder.view.findViewById<TextView>(R.id.presetDescription)
+                val tag = vh.view.findViewById<TextView>(R.id.presetTag)
+                val name = vh.view.findViewById<TextView>(R.id.presetName)
+                val desc = vh.view.findViewById<TextView>(R.id.presetDescription)
 
                 if (t.isBuiltIn) {
                     tag.text = getString(R.string.preset_tag_builtin)
@@ -233,7 +234,7 @@ class UniverseListFragment : Fragment() {
                 name.text = t.universe.name
                 desc.text = t.universe.description
 
-                holder.view.setOnClickListener {
+                vh.view.setOnClickListener {
                     bottomSheet.dismiss()
                     if (t.isBuiltIn) {
                         viewModel.applyPreset(t)
