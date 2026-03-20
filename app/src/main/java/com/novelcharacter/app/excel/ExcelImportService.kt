@@ -869,7 +869,7 @@ class ExcelImportService(private val db: AppDatabase) {
                 if (relationshipType.isBlank()) continue
                 val description = getCellString(row, descColIndex)
                 val intensity = if (intensityColIndex >= 0) parseNumber(getCellString(row, intensityColIndex))?.toInt()?.coerceIn(1, 10) ?: 5 else 5
-                val isBidirectional = if (bidirectionalColIndex >= 0) getCellString(row, bidirectionalColIndex).uppercase() != "N" else true
+                val isBidirectional = if (bidirectionalColIndex >= 0) parseBoolean(getCellString(row, bidirectionalColIndex)) else true
                 val displayOrder = if (displayOrderColIndex >= 0) parseNumber(getCellString(row, displayOrderColIndex))?.toInt() ?: 0 else 0
                 val char1Code = if (char1CodeColIndex >= 0) getCellString(row, char1CodeColIndex) else ""
                 val char2Code = if (char2CodeColIndex >= 0) getCellString(row, char2CodeColIndex) else ""

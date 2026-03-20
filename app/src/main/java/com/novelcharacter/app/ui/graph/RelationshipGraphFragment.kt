@@ -70,8 +70,8 @@ class RelationshipGraphViewModel(application: android.app.Application) : Android
         return ResolvedRelationship(
             relationship = relationship,
             resolvedType = latestChange?.relationshipType ?: relationship.relationshipType,
-            resolvedIntensity = latestChange?.intensity ?: 5,
-            resolvedBidirectional = latestChange?.isBidirectional ?: true
+            resolvedIntensity = latestChange?.intensity ?: relationship.intensity,
+            resolvedBidirectional = latestChange?.isBidirectional ?: relationship.isBidirectional
         )
     }
 }

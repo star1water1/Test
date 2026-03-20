@@ -224,8 +224,9 @@ class RelationshipHelper(
                     viewLifecycleOwner.lifecycleScope.launch {
                         val existingRels = viewModel.getRelationshipsForCharacterList(characterId)
                         val alreadyExists = existingRels.any {
-                            (it.characterId1 == characterId && it.characterId2 == otherChar.id) ||
-                            (it.characterId1 == otherChar.id && it.characterId2 == characterId)
+                            ((it.characterId1 == characterId && it.characterId2 == otherChar.id) ||
+                            (it.characterId1 == otherChar.id && it.characterId2 == characterId)) &&
+                            it.relationshipType == selectedType
                         }
                         if (alreadyExists) {
                             val ctx = try { contextGetter() } catch (_: Exception) { return@launch }
