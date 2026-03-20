@@ -1,116 +1,122 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout
+<ScrollView
     xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:orientation="vertical"
-    android:padding="24dp">
-
-    <com.google.android.material.textfield.TextInputLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginBottom="12dp"
-        android:hint="@string/novel_title">
-
-        <com.google.android.material.textfield.TextInputEditText
-            android:id="@+id/editTitle"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:inputType="text" />
-
-    </com.google.android.material.textfield.TextInputLayout>
-
-    <com.google.android.material.textfield.TextInputLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginBottom="12dp"
-        android:hint="@string/novel_description">
-
-        <com.google.android.material.textfield.TextInputEditText
-            android:id="@+id/editDescription"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:inputType="textMultiLine"
-            android:minLines="3" />
-
-    </com.google.android.material.textfield.TextInputLayout>
-
-    <TextView
-        android:id="@+id/borderColorLabel"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="@string/border_color_label"
-        android:layout_marginTop="4dp"
-        android:layout_marginBottom="8dp" />
-
-    <View
-        android:id="@+id/colorPreview"
-        android:layout_width="48dp"
-        android:layout_height="48dp"
-        android:layout_marginBottom="8dp"
-        android:background="@color/item_background_light" />
+    android:fillViewport="true">
 
     <LinearLayout
-        android:id="@+id/colorPresetsRow"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:layout_marginBottom="8dp" />
+        android:orientation="vertical"
+        android:padding="24dp">
 
-    <com.google.android.material.textfield.TextInputLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginBottom="4dp"
-        android:hint="@string/border_color_hex_hint">
-
-        <com.google.android.material.textfield.TextInputEditText
-            android:id="@+id/editBorderColor"
+        <com.google.android.material.textfield.TextInputLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:inputType="text" />
+            android:layout_marginBottom="12dp"
+            android:hint="@string/novel_title">
 
-    </com.google.android.material.textfield.TextInputLayout>
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/editTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="text" />
 
-    <TextView
-        android:id="@+id/resetBorderColor"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="@string/border_color_reset"
-        android:textColor="@color/primary"
-        android:paddingTop="4dp"
-        android:paddingBottom="8dp" />
+        </com.google.android.material.textfield.TextInputLayout>
 
-    <!-- 이미지 설정 -->
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="@string/image_mode_label"
-        android:layout_marginTop="8dp"
-        android:layout_marginBottom="8dp" />
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            android:hint="@string/novel_description">
 
-    <Spinner
-        android:id="@+id/spinnerImageMode"
-        android:layout_width="match_parent"
-        android:layout_height="48dp"
-        android:layout_marginBottom="8dp"
-        android:contentDescription="@string/image_mode_label" />
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/editDescription"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="textMultiLine"
+                android:minLines="3" />
 
-    <TextView
-        android:id="@+id/btnSelectImage"
-        android:layout_width="wrap_content"
-        android:layout_height="48dp"
-        android:gravity="center_vertical"
-        android:text="@string/image_select"
-        android:textColor="@color/primary"
-        android:visibility="gone" />
+        </com.google.android.material.textfield.TextInputLayout>
 
-    <TextView
-        android:id="@+id/btnSelectCharacter"
-        android:layout_width="wrap_content"
-        android:layout_height="48dp"
-        android:gravity="center_vertical"
-        android:text="@string/image_select_character"
-        android:textColor="@color/primary"
-        android:visibility="gone" />
+        <TextView
+            android:id="@+id/borderColorLabel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/border_color_label"
+            android:layout_marginTop="4dp"
+            android:layout_marginBottom="8dp" />
 
-</LinearLayout>
+        <View
+            android:id="@+id/colorPreview"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginBottom="8dp"
+            android:background="@color/item_background_light" />
+
+        <LinearLayout
+            android:id="@+id/colorPresetsRow"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="8dp" />
+
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="4dp"
+            android:hint="@string/border_color_hex_hint">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/editBorderColor"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="text" />
+
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <TextView
+            android:id="@+id/resetBorderColor"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/border_color_reset"
+            android:textColor="@color/primary"
+            android:paddingTop="4dp"
+            android:paddingBottom="8dp" />
+
+        <!-- 이미지 설정 -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/image_mode_label"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="8dp" />
+
+        <Spinner
+            android:id="@+id/spinnerImageMode"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginBottom="8dp"
+            android:contentDescription="@string/image_mode_label" />
+
+        <TextView
+            android:id="@+id/btnSelectImage"
+            android:layout_width="wrap_content"
+            android:layout_height="48dp"
+            android:gravity="center_vertical"
+            android:text="@string/image_select"
+            android:textColor="@color/primary"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/btnSelectCharacter"
+            android:layout_width="wrap_content"
+            android:layout_height="48dp"
+            android:gravity="center_vertical"
+            android:text="@string/image_select_character"
+            android:textColor="@color/primary"
+            android:visibility="gone" />
+
+    </LinearLayout>
+</ScrollView>

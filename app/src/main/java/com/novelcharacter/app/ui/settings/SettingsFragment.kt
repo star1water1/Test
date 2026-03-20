@@ -38,12 +38,37 @@ class SettingsFragment : Fragment() {
     }
     private var exporter: com.novelcharacter.app.excel.ExcelExporter? = null
     private var pendingExportFile: java.io.File? = null
+    private var pendingBackupExportFile: File? = null
 
     private val restoreFileLauncher = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (!isAdded || uri == null) return@registerForActivityResult
         restoreFromEncryptedUri(uri)
+    }
+
+    private val backupExportLauncher = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("application/octet-stream")
+    ) { uri ->
+        if (!isAdded || uri == null) return@registerForActivityResult
+        val file = pendingBackupExportFile ?: return@registerForActivityResult
+        viewLifecycleOwner.lifecycleScope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    requireContext().contentResolver.openOutputStream(uri)?.use { output ->
+                        file.inputStream().use { input -> input.copyTo(output) }
+                    }
+                }
+                if (_binding != null) {
+                    Toast.makeText(requireContext(), R.string.backup_export_success, Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                if (_binding != null) {
+                    Toast.makeText(requireContext(), getString(R.string.backup_export_failed, e.message), Toast.LENGTH_LONG).show()
+                }
+            }
+            pendingBackupExportFile = null
+        }
     }
 
     private val saveFileLauncher = registerForActivityResult(
@@ -91,7 +116,7 @@ class SettingsFragment : Fragment() {
         }
 
         binding.backupRestoreRow.setOnClickListener {
-            showRestoreDialog()
+            showBackupRestoreDialog()
         }
 
         // Maintenance
@@ -147,6 +172,20 @@ class SettingsFragment : Fragment() {
                 maintenanceService.reindexDisplayOrders()
                 if (_binding == null) return@launch
                 binding.maintenanceResult.text = getString(R.string.maintenance_reindex_done)
+            }
+        }
+
+        binding.cleanOrphanRow.setOnClickListener {
+            viewLifecycleOwner.lifecycleScope.launch {
+                if (_binding == null) return@launch
+                binding.maintenanceResult.visibility = View.VISIBLE
+                binding.maintenanceResult.text = getString(R.string.maintenance_running)
+                val result = maintenanceService.cleanOrphanData()
+                if (_binding == null) return@launch
+                val sb = StringBuilder()
+                sb.appendLine(getString(R.string.maintenance_clean_orphan_done))
+                result.details.forEach { sb.appendLine("  - $it") }
+                binding.maintenanceResult.text = sb.toString()
             }
         }
 
@@ -278,9 +317,9 @@ class SettingsFragment : Fragment() {
         importer.showImportDialog(this)
     }
 
-    // ── 백업 복원 ──
+    // ── 백업/복원 ──
 
-    private fun showRestoreDialog() {
+    private fun showBackupRestoreDialog() {
         if (!isAdded) return
 
         if (!BackupEncryptor.isKeyAvailable()) {
@@ -293,6 +332,7 @@ class SettingsFragment : Fragment() {
         }
 
         val options = arrayOf(
+            getString(R.string.backup_export_to_external),
             getString(R.string.backup_restore_from_internal),
             getString(R.string.backup_restore_from_external)
         )
@@ -300,12 +340,32 @@ class SettingsFragment : Fragment() {
             .setTitle(R.string.backup_restore_title)
             .setItems(options) { _, which ->
                 when (which) {
-                    0 -> showInternalBackupList()
-                    1 -> restoreFileLauncher.launch(arrayOf("application/octet-stream"))
+                    0 -> exportBackupToExternal()
+                    1 -> showInternalBackupList()
+                    2 -> restoreFileLauncher.launch(arrayOf("application/octet-stream"))
                 }
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
+    }
+
+    private fun exportBackupToExternal() {
+        if (!isAdded) return
+        val app = requireContext().applicationContext as NovelCharacterApp
+        val backupDir = File(app.filesDir, "backups")
+        val latestBackup = backupDir.listFiles { f ->
+            f.name.startsWith("NovelCharacter_AutoBackup_") && f.name.endsWith(".enc")
+        }?.maxByOrNull { it.lastModified() }
+
+        if (latestBackup == null) {
+            Toast.makeText(requireContext(), R.string.backup_restore_no_backups, Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        pendingBackupExportFile = latestBackup
+        val dateFormat = SimpleDateFormat("yyyyMMdd_HHmm", Locale.getDefault())
+        val fileName = "NovelCharacter_Backup_${dateFormat.format(Date(latestBackup.lastModified()))}.enc"
+        backupExportLauncher.launch(fileName)
     }
 
     private fun showInternalBackupList() {

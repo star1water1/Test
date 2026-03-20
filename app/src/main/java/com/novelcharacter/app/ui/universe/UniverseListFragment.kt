@@ -141,6 +141,12 @@ class UniverseListFragment : Fragment() {
         adapter.resolveCharacterImageById = { characterId, callback ->
             viewModel.resolveCharacterImageById(characterId, callback)
         }
+        adapter.resolveRandomNovelImage = { universeId, callback ->
+            viewModel.resolveRandomNovelImage(universeId, callback)
+        }
+        adapter.resolveNovelImageById = { novelId, callback ->
+            viewModel.resolveNovelImageById(novelId, callback)
+        }
 
         val callback = object : ItemTouchHelper.SimpleCallback(ItemTouchHelper.UP or ItemTouchHelper.DOWN, 0) {
             override fun isLongPressDragEnabled() = false
@@ -272,6 +278,7 @@ class UniverseListFragment : Fragment() {
     private fun showUserPresetOptionsDialog(template: PresetTemplates.PresetTemplate, preset: com.novelcharacter.app.data.model.UserPresetTemplate) {
         val options = arrayOf(
             getString(R.string.preset_edit_name),
+            getString(R.string.preset_edit_fields),
             getString(R.string.delete)
         )
         AlertDialog.Builder(requireContext())
@@ -279,7 +286,8 @@ class UniverseListFragment : Fragment() {
             .setItems(options) { _, which ->
                 when (which) {
                     0 -> showEditPresetNameDialog(preset)
-                    1 -> {
+                    1 -> showPresetFieldEditDialog(preset)
+                    2 -> {
                         AlertDialog.Builder(requireContext())
                             .setTitle(R.string.delete_warning_title)
                             .setMessage(getString(R.string.confirm_delete_preset, preset.name))
@@ -322,6 +330,190 @@ class UniverseListFragment : Fragment() {
                 if (name.isNotEmpty()) {
                     viewModel.updateUserPreset(preset.copy(name = name, description = desc))
                 }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun showPresetFieldEditDialog(preset: com.novelcharacter.app.data.model.UserPresetTemplate) {
+        val ctx = requireContext()
+        val density = ctx.resources.displayMetrics.density
+        val dp16 = (16 * density).toInt()
+        val dp8 = (8 * density).toInt()
+        val dp4 = (4 * density).toInt()
+
+        // Parse existing fields from preset JSON
+        val fields = PresetTemplates.fieldsFromJson(preset.fieldsJson).toMutableList()
+
+        // Build field list container
+        val fieldListContainer = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+
+        // Helper to rebuild the field list UI
+        fun rebuildFieldList() {
+            fieldListContainer.removeAllViews()
+            fields.forEachIndexed { index, field ->
+                val row = LinearLayout(ctx).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = android.view.Gravity.CENTER_VERTICAL
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    ).apply { bottomMargin = dp4 }
+                    setPadding(dp8, dp8, dp8, dp8)
+                    setBackgroundResource(android.R.attr.selectableItemBackground.let {
+                        val typedValue = android.util.TypedValue()
+                        ctx.theme.resolveAttribute(android.R.attr.selectableItemBackground, typedValue, true)
+                        typedValue.resourceId
+                    })
+                }
+
+                // Move up button
+                if (index > 0) {
+                    val btnUp = android.widget.ImageButton(ctx).apply {
+                        layoutParams = LinearLayout.LayoutParams((32 * density).toInt(), (32 * density).toInt())
+                        setImageResource(android.R.drawable.arrow_up_float)
+                        setBackgroundResource(android.R.color.transparent)
+                        contentDescription = "위로"
+                        setOnClickListener {
+                            val temp = fields[index]
+                            fields[index] = fields[index - 1]
+                            fields[index - 1] = temp
+                            rebuildFieldList()
+                        }
+                    }
+                    row.addView(btnUp)
+                } else {
+                    row.addView(View(ctx).apply {
+                        layoutParams = LinearLayout.LayoutParams((32 * density).toInt(), (32 * density).toInt())
+                    })
+                }
+
+                // Move down button
+                if (index < fields.size - 1) {
+                    val btnDown = android.widget.ImageButton(ctx).apply {
+                        layoutParams = LinearLayout.LayoutParams((32 * density).toInt(), (32 * density).toInt())
+                        setImageResource(android.R.drawable.arrow_down_float)
+                        setBackgroundResource(android.R.color.transparent)
+                        contentDescription = "아래로"
+                        setOnClickListener {
+                            val temp = fields[index]
+                            fields[index] = fields[index + 1]
+                            fields[index + 1] = temp
+                            rebuildFieldList()
+                        }
+                    }
+                    row.addView(btnDown)
+                } else {
+                    row.addView(View(ctx).apply {
+                        layoutParams = LinearLayout.LayoutParams((32 * density).toInt(), (32 * density).toInt())
+                    })
+                }
+
+                // Field info (name, type, group)
+                val infoLayout = LinearLayout(ctx).apply {
+                    orientation = LinearLayout.VERTICAL
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                        marginStart = dp8
+                    }
+                }
+                val nameText = TextView(ctx).apply {
+                    text = field.name
+                    textSize = 15f
+                    setTextColor(android.graphics.Color.parseColor("#DD000000"))
+                }
+                val detailText = TextView(ctx).apply {
+                    text = "${field.type} · ${field.groupName} · ${field.key}"
+                    textSize = 12f
+                    setTextColor(android.graphics.Color.parseColor("#88000000"))
+                }
+                infoLayout.addView(nameText)
+                infoLayout.addView(detailText)
+                row.addView(infoLayout)
+
+                // Edit button
+                val btnEdit = android.widget.ImageButton(ctx).apply {
+                    layoutParams = LinearLayout.LayoutParams((36 * density).toInt(), (36 * density).toInt())
+                    setImageResource(android.R.drawable.ic_menu_edit)
+                    setBackgroundResource(android.R.color.transparent)
+                    contentDescription = getString(R.string.edit)
+                    setOnClickListener {
+                        val dialog = com.novelcharacter.app.ui.field.FieldEditDialog.newInstance(0, field)
+                        dialog.setOnSaveListener { editedField ->
+                            fields[index] = editedField
+                            rebuildFieldList()
+                        }
+                        dialog.show(childFragmentManager, "edit_preset_field")
+                    }
+                }
+                row.addView(btnEdit)
+
+                // Delete button
+                val btnDelete = android.widget.ImageButton(ctx).apply {
+                    layoutParams = LinearLayout.LayoutParams((36 * density).toInt(), (36 * density).toInt())
+                    setImageResource(android.R.drawable.ic_delete)
+                    setBackgroundResource(android.R.color.transparent)
+                    contentDescription = getString(R.string.delete)
+                    setOnClickListener {
+                        AlertDialog.Builder(ctx)
+                            .setTitle(R.string.delete_warning_title)
+                            .setMessage(getString(R.string.preset_field_delete_confirm, field.name))
+                            .setPositiveButton(R.string.yes) { _, _ ->
+                                fields.removeAt(index)
+                                rebuildFieldList()
+                            }
+                            .setNegativeButton(R.string.no, null)
+                            .show()
+                    }
+                }
+                row.addView(btnDelete)
+
+                fieldListContainer.addView(row)
+            }
+        }
+
+        rebuildFieldList()
+
+        // Add field button
+        val btnAddField = com.google.android.material.button.MaterialButton(ctx).apply {
+            text = getString(R.string.preset_field_add)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp8 }
+            setOnClickListener {
+                val dialog = com.novelcharacter.app.ui.field.FieldEditDialog.newInstance(0, null)
+                dialog.setOnSaveListener { newField ->
+                    fields.add(newField)
+                    rebuildFieldList()
+                }
+                dialog.show(childFragmentManager, "add_preset_field")
+            }
+        }
+
+        // Root layout
+        val rootLayout = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp16, dp16, dp16, dp8)
+            addView(fieldListContainer)
+            addView(btnAddField)
+        }
+
+        val scrollView = android.widget.ScrollView(ctx).apply {
+            addView(rootLayout)
+            isFillViewport = true
+        }
+
+        AlertDialog.Builder(ctx)
+            .setTitle(getString(R.string.preset_edit_fields) + " - " + preset.name)
+            .setView(scrollView)
+            .setPositiveButton(R.string.save) { _, _ ->
+                // Update displayOrder and save
+                val updatedFields = fields.mapIndexed { i, f -> f.copy(displayOrder = i) }
+                val newJson = PresetTemplates.fieldsToJson(updatedFields)
+                viewModel.updateUserPreset(preset.copy(fieldsJson = newJson))
+                Toast.makeText(ctx, R.string.preset_fields_saved, Toast.LENGTH_SHORT).show()
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
@@ -591,6 +783,21 @@ class UniverseListFragment : Fragment() {
             presetsRow.addView(swatch)
         }
         layout.addView(presetsRow)
+
+        // Full spectrum color picker button
+        val fullSpectrumBtn = TextView(ctx).apply {
+            text = getString(R.string.color_picker_full_spectrum)
+            setTextColor(ctx.getColor(R.color.primary))
+            setPadding(0, (4 * dp).toInt(), 0, (8 * dp).toInt())
+            setOnClickListener {
+                showFullSpectrumColorPicker(ctx, selectedColor) { newColor ->
+                    selectedColor = newColor
+                    colorHexEdit.setText(newColor)
+                    (colorPreview.background as? GradientDrawable)?.setColor(Color.parseColor(newColor))
+                }
+            }
+        }
+        layout.addView(fullSpectrumBtn)
         layout.addView(colorHexEdit)
 
         // Clear button
@@ -626,11 +833,18 @@ class UniverseListFragment : Fragment() {
                 "#4CAF50", "#2196F3", "#3F51B5", "#9C27B0", "#00BCD4", "#795548", "#607D8B", "#212121", "#9E9E9E")
             val colorNames = arrayOf("핑크", "빨강", "주황빨강", "주황", "노랑",
                 "초록", "파랑", "남색", "보라", "청록", "갈색", "회남색", "검정", "회색")
+            val options = colorNames.toMutableList()
+            options.add(getString(R.string.color_picker_full_spectrum))
 
             AlertDialog.Builder(ctx)
                 .setTitle(getString(R.string.relationship_color_pick_title, typeName))
-                .setItems(colorNames) { _, which ->
-                    onColorSelected(presetColors[which])
+                .setItems(options.toTypedArray()) { _, which ->
+                    if (which < presetColors.size) {
+                        onColorSelected(presetColors[which])
+                    } else {
+                        val currentColor = currentColors[typeName] ?: "#9E9E9E"
+                        showFullSpectrumColorPicker(ctx, currentColor, onColorSelected)
+                    }
                 }
                 .setNegativeButton(R.string.cancel, null)
                 .show()
@@ -733,9 +947,11 @@ class UniverseListFragment : Fragment() {
             getString(R.string.image_mode_none),
             getString(R.string.image_mode_custom),
             getString(R.string.image_mode_random_character),
-            getString(R.string.image_mode_select_character)
+            getString(R.string.image_mode_select_character),
+            getString(R.string.image_mode_random_novel),
+            getString(R.string.image_mode_select_novel)
         )
-        val imageModeValues = arrayOf(Universe.IMAGE_MODE_NONE, Universe.IMAGE_MODE_CUSTOM, Universe.IMAGE_MODE_RANDOM_CHARACTER, Universe.IMAGE_MODE_SELECT_CHARACTER)
+        val imageModeValues = arrayOf(Universe.IMAGE_MODE_NONE, Universe.IMAGE_MODE_CUSTOM, Universe.IMAGE_MODE_RANDOM_CHARACTER, Universe.IMAGE_MODE_SELECT_CHARACTER, Universe.IMAGE_MODE_RANDOM_NOVEL, Universe.IMAGE_MODE_SELECT_NOVEL)
         var selectedImageMode = universe?.imageMode ?: Universe.IMAGE_MODE_NONE
         var selectedImagePath = universe?.imagePath ?: ""
 
@@ -787,18 +1003,54 @@ class UniverseListFragment : Fragment() {
             }
         }
 
+        // 작품 선택 버튼 (select_novel 모드 전용)
+        var selectedNovelId: Long? = universe?.imageNovelId
+        val novelSelectBtn = TextView(ctx).apply {
+            text = getString(R.string.image_select_novel)
+            setTextColor(ctx.getColor(R.color.primary))
+            setPadding(0, (8 * dp).toInt(), 0, (8 * dp).toInt())
+            visibility = if (selectedImageMode == Universe.IMAGE_MODE_SELECT_NOVEL) View.VISIBLE else View.GONE
+        }
+        layout.addView(novelSelectBtn)
+
+        novelSelectBtn.setOnClickListener {
+            val uid = universe?.id ?: return@setOnClickListener
+            viewModel.getNovelsWithImageForUniverse(uid) { novels ->
+                if (novels.isEmpty()) {
+                    Toast.makeText(ctx, R.string.no_novel_with_image, Toast.LENGTH_SHORT).show()
+                    return@getNovelsWithImageForUniverse
+                }
+                val names = novels.map { it.second }.toTypedArray()
+                AlertDialog.Builder(ctx)
+                    .setTitle(R.string.image_select_novel)
+                    .setItems(names) { _, which ->
+                        selectedNovelId = novels[which].first
+                        novelSelectBtn.text = getString(R.string.image_selected_novel, novels[which].second)
+                    }
+                    .setNegativeButton(R.string.cancel, null)
+                    .show()
+            }
+        }
+
         imageModeSpinner.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: android.widget.AdapterView<*>?, v: View?, pos: Int, id: Long) {
                 selectedImageMode = imageModeValues[pos]
                 imageSelectBtn.visibility = if (selectedImageMode == Universe.IMAGE_MODE_CUSTOM) View.VISIBLE else View.GONE
                 charSelectBtn.visibility = if (selectedImageMode == Universe.IMAGE_MODE_SELECT_CHARACTER) View.VISIBLE else View.GONE
+                novelSelectBtn.visibility = if (selectedImageMode == Universe.IMAGE_MODE_SELECT_NOVEL) View.VISIBLE else View.GONE
             }
             override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
         }
 
+        // ScrollView로 래핑하여 긴 다이얼로그 스크롤 가능하게
+        val scrollView = android.widget.ScrollView(ctx).apply {
+            addView(layout)
+            isFillViewport = true
+        }
+
         AlertDialog.Builder(ctx)
             .setTitle(if (universe == null) R.string.add_universe else R.string.edit_universe)
-            .setView(layout)
+            .setView(scrollView)
             .setPositiveButton(R.string.save) { _, _ ->
                 val name = nameEdit.text.toString().trim()
                 val desc = descEdit.text.toString().trim()
@@ -816,11 +1068,13 @@ class UniverseListFragment : Fragment() {
                 }
                 if (name.isNotEmpty()) {
                     val finalCharId = if (selectedImageMode == Universe.IMAGE_MODE_SELECT_CHARACTER) selectedCharacterId else null
+                    val finalNovelId = if (selectedImageMode == Universe.IMAGE_MODE_SELECT_NOVEL) selectedNovelId else null
                     if (universe == null) {
                         viewModel.insertUniverse(Universe(
                             name = name, description = desc, borderColor = borderColor,
                             imagePath = finalImagePath, imageMode = selectedImageMode,
                             imageCharacterId = finalCharId,
+                            imageNovelId = finalNovelId,
                             customRelationshipTypes = relTypesJson,
                             customRelationshipColors = relColorsJson
                         ))
@@ -829,10 +1083,152 @@ class UniverseListFragment : Fragment() {
                             name = name, description = desc, borderColor = borderColor,
                             imagePath = finalImagePath, imageMode = selectedImageMode,
                             imageCharacterId = finalCharId,
+                            imageNovelId = finalNovelId,
                             customRelationshipTypes = relTypesJson,
                             customRelationshipColors = relColorsJson
                         ))
                     }
+                }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    /**
+     * HSV 풀 스펙트럼 색상 선택 다이얼로그.
+     * SeekBar 3개(Hue, Saturation, Value)와 미리보기 + HEX 입력을 제공한다.
+     */
+    private fun showFullSpectrumColorPicker(ctx: android.content.Context, initialColor: String, onColorSelected: (String) -> Unit) {
+        val density = ctx.resources.displayMetrics.density
+        val dp8 = (8 * density).toInt()
+        val dp16 = (16 * density).toInt()
+
+        // Parse initial color
+        val hsv = FloatArray(3)
+        try {
+            Color.colorToHSV(Color.parseColor(initialColor), hsv)
+        } catch (_: Exception) {
+            hsv[0] = 0f; hsv[1] = 1f; hsv[2] = 1f
+        }
+
+        val layout = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp16, dp16, dp16, dp8)
+        }
+
+        // Color preview
+        val previewView = View(ctx).apply {
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, (48 * density).toInt()).apply {
+                bottomMargin = dp16
+            }
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = 8 * density
+                setColor(Color.HSVToColor(hsv))
+                setStroke((1 * density).toInt(), Color.GRAY)
+            }
+        }
+        layout.addView(previewView)
+
+        // HEX display
+        val hexEdit = EditText(ctx).apply {
+            setText(String.format("#%06X", 0xFFFFFF and Color.HSVToColor(hsv)))
+            textSize = 14f
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                bottomMargin = dp8
+            }
+        }
+
+        fun updateFromHSV() {
+            val color = Color.HSVToColor(hsv)
+            (previewView.background as? GradientDrawable)?.setColor(color)
+            hexEdit.setText(String.format("#%06X", 0xFFFFFF and color))
+        }
+
+        // Hue SeekBar (0-360)
+        val hueLabel = TextView(ctx).apply { text = "Hue (색상)" ; textSize = 12f }
+        val hueBar = android.widget.SeekBar(ctx).apply {
+            max = 360
+            progress = hsv[0].toInt()
+            setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(sb: android.widget.SeekBar?, progress: Int, fromUser: Boolean) {
+                    if (fromUser) { hsv[0] = progress.toFloat(); updateFromHSV() }
+                }
+                override fun onStartTrackingTouch(sb: android.widget.SeekBar?) {}
+                override fun onStopTrackingTouch(sb: android.widget.SeekBar?) {}
+            })
+        }
+        layout.addView(hueLabel)
+        layout.addView(hueBar)
+
+        // Saturation SeekBar (0-100)
+        val satLabel = TextView(ctx).apply { text = "Saturation (채도)" ; textSize = 12f }
+        val satBar = android.widget.SeekBar(ctx).apply {
+            max = 100
+            progress = (hsv[1] * 100).toInt()
+            setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(sb: android.widget.SeekBar?, progress: Int, fromUser: Boolean) {
+                    if (fromUser) { hsv[1] = progress / 100f; updateFromHSV() }
+                }
+                override fun onStartTrackingTouch(sb: android.widget.SeekBar?) {}
+                override fun onStopTrackingTouch(sb: android.widget.SeekBar?) {}
+            })
+        }
+        layout.addView(satLabel)
+        layout.addView(satBar)
+
+        // Value SeekBar (0-100)
+        val valLabel = TextView(ctx).apply { text = "Brightness (명도)" ; textSize = 12f }
+        val valBar = android.widget.SeekBar(ctx).apply {
+            max = 100
+            progress = (hsv[2] * 100).toInt()
+            setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(sb: android.widget.SeekBar?, progress: Int, fromUser: Boolean) {
+                    if (fromUser) { hsv[2] = progress / 100f; updateFromHSV() }
+                }
+                override fun onStartTrackingTouch(sb: android.widget.SeekBar?) {}
+                override fun onStopTrackingTouch(sb: android.widget.SeekBar?) {}
+            })
+        }
+        layout.addView(valLabel)
+        layout.addView(valBar)
+
+        // HEX manual input
+        layout.addView(hexEdit)
+
+        // HEX input → HSV sync
+        hexEdit.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: android.text.Editable?) {
+                val hex = s?.toString()?.trim() ?: ""
+                try {
+                    if (hex.matches(Regex("#[0-9A-Fa-f]{6}"))) {
+                        val color = Color.parseColor(hex)
+                        Color.colorToHSV(color, hsv)
+                        (previewView.background as? GradientDrawable)?.setColor(color)
+                        hueBar.progress = hsv[0].toInt()
+                        satBar.progress = (hsv[1] * 100).toInt()
+                        valBar.progress = (hsv[2] * 100).toInt()
+                    }
+                } catch (_: Exception) {}
+            }
+        })
+
+        val scrollView = android.widget.ScrollView(ctx).apply {
+            addView(layout)
+            isFillViewport = true
+        }
+
+        AlertDialog.Builder(ctx)
+            .setTitle(R.string.color_picker_full_spectrum)
+            .setView(scrollView)
+            .setPositiveButton(R.string.confirm) { _, _ ->
+                val finalHex = hexEdit.text.toString().trim()
+                if (finalHex.matches(Regex("#[0-9A-Fa-f]{6}"))) {
+                    onColorSelected(finalHex)
+                } else {
+                    onColorSelected(String.format("#%06X", 0xFFFFFF and Color.HSVToColor(hsv)))
                 }
             }
             .setNegativeButton(R.string.cancel, null)

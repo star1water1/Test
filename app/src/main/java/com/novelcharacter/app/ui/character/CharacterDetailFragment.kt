@@ -202,10 +202,13 @@ class CharacterDetailFragment : Fragment() {
                 timeSliderHelper.cachedFields = fields
                 timeSliderHelper.cachedValues = values
 
+                // 백분위 계산
+                val percentileData = computePercentileData(fields, values, character, novel, universeId)
+
                 if (timeSliderHelper.isTimeViewActive && timeSliderHelper.currentSliderYear != null) {
                     timeSliderHelper.applyTimeView(timeSliderHelper.currentSliderYear!!)
                 } else {
-                    fieldRenderer.displayDynamicFields(fields, values)
+                    fieldRenderer.displayDynamicFields(fields, values, percentileData)
                 }
             } else {
                 timeSliderHelper.cachedFields = emptyList()
@@ -215,6 +218,93 @@ class CharacterDetailFragment : Fragment() {
         }
 
         setupImages(character.imagePaths)
+    }
+
+    /**
+     * 백분위 데이터 계산.
+     * 각 숫자형 필드에 대해 config의 percentile 설정을 확인하고,
+     * 활성화된 스코프(작품/세계관)에 대해 상위 %를 계산한다.
+     */
+    private suspend fun computePercentileData(
+        fields: List<com.novelcharacter.app.data.model.FieldDefinition>,
+        values: List<com.novelcharacter.app.data.model.CharacterFieldValue>,
+        character: Character,
+        novel: com.novelcharacter.app.data.model.Novel?,
+        universeId: Long
+    ): Map<Long, DynamicFieldRenderer.PercentileInfo> {
+        val result = mutableMapOf<Long, DynamicFieldRenderer.PercentileInfo>()
+        val valueMap = values.associateBy { it.fieldDefinitionId }
+        val numericTypes = setOf("NUMBER", "CALCULATED", "BODY_SIZE", "GRADE")
+
+        // CALCULATED 필드의 수식 평가를 위해 FormulaEvaluator 준비
+        val fieldKeyValues = mutableMapOf<String, String>()
+        for (field in fields) {
+            val v = valueMap[field.id]?.value ?: ""
+            if (v.isNotBlank()) fieldKeyValues[field.key] = v
+        }
+        val evaluator = com.novelcharacter.app.util.FormulaEvaluator(fieldKeyValues, fields)
+
+        for (field in fields) {
+            if (field.type !in numericTypes) continue
+
+            // Parse percentile config
+            val percentileConfig = try {
+                org.json.JSONObject(field.config).optJSONObject("percentile")
+            } catch (_: Exception) { null }
+            if (percentileConfig == null || !percentileConfig.optBoolean("enabled", false)) continue
+
+            val scopes = try {
+                val arr = percentileConfig.optJSONArray("scopes")
+                if (arr != null) (0 until arr.length()).map { arr.getString(it) } else emptyList()
+            } catch (_: Exception) { emptyList() }
+            if (scopes.isEmpty()) continue
+
+            // Get current character's numeric value
+            val myValue: Double? = if (field.type == "CALCULATED") {
+                val formula = try {
+                    org.json.JSONObject(field.config).optString("formula", "")
+                } catch (_: Exception) { "" }
+                if (formula.isNotBlank()) {
+                    try { evaluator.evaluate(formula) } catch (_: Exception) { null }
+                } else null
+            } else {
+                valueMap[field.id]?.value?.toDoubleOrNull()
+            }
+
+            if (myValue == null || myValue.isNaN() || myValue.isInfinite()) continue
+
+            var novelPercentile: Float? = null
+            var universePercentile: Float? = null
+
+            if ("novel" in scopes && novel != null) {
+                val allValues = viewModel.getFieldValuesForNovel(novel.id, field.id)
+                    .mapNotNull { it.toDoubleOrNull() }
+                if (allValues.isNotEmpty()) {
+                    val higher = allValues.count { it > myValue }
+                    novelPercentile = ((higher.toFloat() / allValues.size) * 100f)
+                    // 상위 %: 자기보다 높은 값이 적을수록 상위
+                    novelPercentile = novelPercentile.coerceIn(0f, 100f)
+                    // 1% 미만은 1%로 표시, 소수점 버림
+                    if (novelPercentile < 1f && novelPercentile > 0f) novelPercentile = 1f
+                }
+            }
+
+            if ("universe" in scopes) {
+                val allValues = viewModel.getFieldValuesForUniverse(universeId, field.id)
+                    .mapNotNull { it.toDoubleOrNull() }
+                if (allValues.isNotEmpty()) {
+                    val higher = allValues.count { it > myValue }
+                    universePercentile = ((higher.toFloat() / allValues.size) * 100f)
+                    universePercentile = universePercentile.coerceIn(0f, 100f)
+                    if (universePercentile < 1f && universePercentile > 0f) universePercentile = 1f
+                }
+            }
+
+            if (novelPercentile != null || universePercentile != null) {
+                result[field.id] = DynamicFieldRenderer.PercentileInfo(novelPercentile, universePercentile)
+            }
+        }
+        return result
     }
 
     // ===== Images =====

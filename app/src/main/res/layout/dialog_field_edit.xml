@@ -228,6 +228,44 @@
 
             </LinearLayout>
 
+            <!-- 상위 % 표기 (NUMBER, CALCULATED, BODY_SIZE 전용) -->
+            <LinearLayout
+                android:id="@+id/percentileLayout"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone"
+                android:layout_marginTop="12dp">
+
+                <androidx.appcompat.widget.SwitchCompat
+                    android:id="@+id/switchPercentileEnabled"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/label_percentile_enabled"
+                    android:layout_marginBottom="4dp" />
+
+                <LinearLayout
+                    android:id="@+id/percentileScopeLayout"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <CheckBox
+                        android:id="@+id/checkPercentileNovel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/label_percentile_scope_novel"
+                        android:checked="true" />
+
+                    <CheckBox
+                        android:id="@+id/checkPercentileUniverse"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/label_percentile_scope_universe" />
+                </LinearLayout>
+            </LinearLayout>
+
         </LinearLayout>
 
         <!-- ===== 고급 설정 탭 ===== -->

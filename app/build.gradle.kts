@@ -112,4 +112,5 @@ dependencies {
 
     // MPAndroidChart (성장 곡선 시각화)
     implementation("com.github.PhilJay:MPAndroidChart:v3.1.0")
+
 }

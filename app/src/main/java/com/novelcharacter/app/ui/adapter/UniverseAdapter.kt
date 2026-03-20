@@ -45,6 +45,10 @@ class UniverseAdapter(
     var resolveRandomCharacterImage: ((universeId: Long, callback: (String?) -> Unit) -> Unit)? = null
     /** 특정 캐릭터의 이미지 경로를 반환하는 콜백 */
     var resolveCharacterImageById: ((characterId: Long, callback: (String?) -> Unit) -> Unit)? = null
+    /** 세계관에 속한 작품의 랜덤 이미지 경로를 반환하는 콜백 */
+    var resolveRandomNovelImage: ((universeId: Long, callback: (String?) -> Unit) -> Unit)? = null
+    /** 특정 작품의 이미지 경로를 반환하는 콜백 */
+    var resolveNovelImageById: ((novelId: Long, callback: (String?) -> Unit) -> Unit)? = null
 
     // 이미지 캐시 — CharacterAdapter 패턴
     private val thumbnailCache: LruCache<String, Bitmap> = run {
@@ -218,6 +222,23 @@ class UniverseAdapter(
                     val charId = universe.imageCharacterId
                     if (charId != null) {
                         resolveCharacterImageById?.invoke(charId) { resolvedPath ->
+                            if (resolvedPath != null && bindingAdapterPosition != RecyclerView.NO_POSITION) {
+                                loadImageFromPath(resolvedPath, universe.id)
+                            }
+                        }
+                    }
+                }
+                Universe.IMAGE_MODE_RANDOM_NOVEL -> {
+                    resolveRandomNovelImage?.invoke(universe.id) { resolvedPath ->
+                        if (resolvedPath != null && bindingAdapterPosition != RecyclerView.NO_POSITION) {
+                            loadImageFromPath(resolvedPath, universe.id)
+                        }
+                    }
+                }
+                Universe.IMAGE_MODE_SELECT_NOVEL -> {
+                    val novelId = universe.imageNovelId
+                    if (novelId != null) {
+                        resolveNovelImageById?.invoke(novelId) { resolvedPath ->
                             if (resolvedPath != null && bindingAdapterPosition != RecyclerView.NO_POSITION) {
                                 loadImageFromPath(resolvedPath, universe.id)
                             }

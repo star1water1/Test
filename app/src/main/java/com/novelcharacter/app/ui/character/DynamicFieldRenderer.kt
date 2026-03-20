@@ -24,9 +24,18 @@ class DynamicFieldRenderer(
     private val getStringWithArg: (Int, Any) -> String
 ) {
 
+    /**
+     * 백분위 정보. 필드별로 작품/세계관 스코프의 상위 퍼센트를 보관.
+     */
+    data class PercentileInfo(
+        val novelPercentile: Float? = null,
+        val universePercentile: Float? = null
+    )
+
     fun displayDynamicFields(
         fields: List<FieldDefinition>,
-        values: List<CharacterFieldValue>
+        values: List<CharacterFieldValue>,
+        percentileData: Map<Long, PercentileInfo> = emptyMap()
     ) {
         val container = containerGetter()
         container.removeAllViews()
@@ -150,8 +159,16 @@ class DynamicFieldRenderer(
                         "${field.name}: ${fieldValue.ifEmpty { "-" }}"
                     }
 
+                    // 백분위 표기 추가
+                    val percentileSuffix = percentileData[field.id]?.let { info ->
+                        val parts = mutableListOf<String>()
+                        info.novelPercentile?.let { parts.add("작품 상위 ${"%.0f".format(it)}%") }
+                        info.universePercentile?.let { parts.add("세계관 상위 ${"%.0f".format(it)}%") }
+                        if (parts.isNotEmpty()) " (${parts.joinToString(" / ")})" else null
+                    } ?: ""
+
                     val rowView = TextView(context).apply {
-                        text = displayValue
+                        text = displayValue + percentileSuffix
                         textSize = 14f
                         if (isCalculated) {
                             setTextColor(context.getColor(R.color.text_secondary))

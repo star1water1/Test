@@ -106,6 +106,8 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     fun deleteCharacter(character: Character) = viewModelScope.launch {
         try {
             characterRepository.deleteCharacter(character)
+            // 삭제 후 switchMap 재평가를 강제하여 캐시된 LiveData 갱신
+            _searchQuery.value = _searchQuery.value
         } catch (e: Exception) {
             Log.e("CharacterViewModel", "Failed to delete character", e)
         }
@@ -118,6 +120,12 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     // ===== CharacterFieldValue =====
     suspend fun getValuesByCharacterList(characterId: Long): List<CharacterFieldValue> =
         characterRepository.getValuesByCharacterList(characterId)
+
+    suspend fun getFieldValuesForNovel(novelId: Long, fieldDefId: Long): List<String> =
+        characterRepository.getFieldValuesForNovel(novelId, fieldDefId)
+
+    suspend fun getFieldValuesForUniverse(universeId: Long, fieldDefId: Long): List<String> =
+        characterRepository.getFieldValuesForUniverse(universeId, fieldDefId)
 
     suspend fun saveAllFieldValues(characterId: Long, values: List<CharacterFieldValue>) {
         characterRepository.saveAllFieldValues(characterId, values)

@@ -94,6 +94,14 @@ class CharacterRepository(
         characterFieldValueDao.replaceAllByCharacter(characterId, values)
     }
 
+    /** 같은 작품 내 모든 캐릭터의 특정 필드 값 (백분위 계산용) */
+    suspend fun getFieldValuesForNovel(novelId: Long, fieldDefId: Long): List<String> =
+        characterFieldValueDao.getFieldValuesForNovel(novelId, fieldDefId)
+
+    /** 같은 세계관 내 모든 캐릭터의 특정 필드 값 (백분위 계산용) */
+    suspend fun getFieldValuesForUniverse(universeId: Long, fieldDefId: Long): List<String> =
+        characterFieldValueDao.getFieldValuesForUniverse(universeId, fieldDefId)
+
     // ===== CharacterStateChange =====
     fun getChangesByCharacter(characterId: Long): LiveData<List<CharacterStateChange>> =
         characterStateChangeDao.getChangesByCharacter(characterId)

@@ -21,6 +21,7 @@ data class Universe(
     val imagePath: String = "",       // 직접 등록한 이미지 경로
     val imageMode: String = "none",   // none, custom, random_character, select_character
     val imageCharacterId: Long? = null, // select_character 모드에서 선택된 캐릭터 ID
+    val imageNovelId: Long? = null,    // select_novel 모드에서 선택된 작품 ID
     val customRelationshipTypes: String = "", // JSON 배열: 사용자 정의 관계 유형
     val customRelationshipColors: String = ""  // JSON 객체: 관계 유형 → 색상 hex (예: {"연인":"#E91E63"})
 ) {
@@ -54,6 +55,8 @@ data class Universe(
         const val IMAGE_MODE_CUSTOM = "custom"
         const val IMAGE_MODE_RANDOM_CHARACTER = "random_character"
         const val IMAGE_MODE_SELECT_CHARACTER = "select_character"
+        const val IMAGE_MODE_RANDOM_NOVEL = "random_novel"
+        const val IMAGE_MODE_SELECT_NOVEL = "select_novel"
 
         val DEFAULT_RELATIONSHIP_TYPES = listOf(
             "부모-자식", "연인", "라이벌", "멘토-제자", "동료", "적", "형제자매", "친구", "기타"

@@ -7,6 +7,7 @@ import android.view.ViewGroup
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.LinearLayout
+import android.widget.ListView
 import android.widget.Spinner
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
@@ -189,7 +190,7 @@ class FieldManageFragment : Fragment() {
             var currentChecked = BooleanArray(currentFields.size) { true }
             var currentFieldNames = currentFields.map { "[${it.groupName}] ${it.name} (${it.type})" }.toTypedArray()
 
-            // 컨테이너: Spinner + MultiChoice를 단일 다이얼로그에 배치
+            // 컨테이너: Spinner + ListView를 단일 다이얼로그에 배치
             val container = LinearLayout(ctx).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding((16 * density).toInt(), (8 * density).toInt(), (16 * density).toInt(), 0)
@@ -202,14 +203,27 @@ class FieldManageFragment : Fragment() {
             }
             container.addView(universeSpinner)
 
+            // ListView를 직접 container에 배치 (setView + setMultiChoiceItems 충돌 방지)
+            val fieldListView = ListView(ctx).apply {
+                choiceMode = ListView.CHOICE_MODE_MULTIPLE
+                adapter = ArrayAdapter(ctx, android.R.layout.simple_list_item_multiple_choice, currentFieldNames)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    (200 * density).toInt()
+                ).apply {
+                    topMargin = (8 * density).toInt()
+                }
+            }
+            // 초기 상태: 모두 체크
+            container.addView(fieldListView)
+
             val dialog = AlertDialog.Builder(ctx)
                 .setTitle(R.string.import_select_universe)
                 .setView(container)
-                .setMultiChoiceItems(currentFieldNames, currentChecked) { _, which, isChecked ->
-                    currentChecked[which] = isChecked
-                }
                 .setPositiveButton(R.string.import_action) { _, _ ->
-                    val selected = currentFields.filterIndexed { i, _ -> currentChecked[i] }
+                    val selected = currentFields.filterIndexed { i, _ ->
+                        fieldListView.isItemChecked(i)
+                    }
                     if (selected.isNotEmpty()) {
                         viewModel.importFields(universeId, selected)
                         Toast.makeText(ctx,
@@ -226,17 +240,21 @@ class FieldManageFragment : Fragment() {
                     currentFields = otherFields[universes[position]] ?: emptyList()
                     currentChecked = BooleanArray(currentFields.size) { true }
                     currentFieldNames = currentFields.map { "[${it.groupName}] ${it.name} (${it.type})" }.toTypedArray()
-                    val listView = dialog.listView
-                    listView?.adapter = ArrayAdapter(ctx,
-                        android.R.layout.select_dialog_multichoice, currentFieldNames)
+                    fieldListView.adapter = ArrayAdapter(ctx,
+                        android.R.layout.simple_list_item_multiple_choice, currentFieldNames)
                     for (i in currentChecked.indices) {
-                        listView?.setItemChecked(i, true)
+                        fieldListView.setItemChecked(i, true)
                     }
                 }
                 override fun onNothingSelected(parent: AdapterView<*>?) {}
             }
 
             dialog.show()
+
+            // 다이얼로그 표시 후 초기 체크 설정
+            for (i in currentChecked.indices) {
+                fieldListView.setItemChecked(i, true)
+            }
         }
     }
 

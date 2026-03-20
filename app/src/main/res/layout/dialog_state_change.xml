@@ -1,95 +1,101 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout
+<ScrollView
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:orientation="vertical"
-    android:padding="24dp">
-
-    <com.google.android.material.textfield.TextInputLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginBottom="12dp"
-        android:hint="@string/event_year">
-        <com.google.android.material.textfield.TextInputEditText
-            android:id="@+id/editYear"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:inputType="numberSigned" />
-    </com.google.android.material.textfield.TextInputLayout>
+    android:fillViewport="true">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:layout_marginBottom="4dp">
+        android:orientation="vertical"
+        android:padding="24dp">
 
         <com.google.android.material.textfield.TextInputLayout
-            android:layout_width="0dp"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:layout_marginEnd="8dp"
-            android:hint="@string/event_month"
-            app:helperText="@string/optional_field"
-            app:helperTextEnabled="true">
+            android:layout_marginBottom="12dp"
+            android:hint="@string/event_year">
             <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/editMonth"
+                android:id="@+id/editYear"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:inputType="number" />
+                android:inputType="numberSigned" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="4dp">
+
+            <com.google.android.material.textfield.TextInputLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginEnd="8dp"
+                android:hint="@string/event_month"
+                app:helperText="@string/optional_field"
+                app:helperTextEnabled="true">
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/editMonth"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:inputType="number" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <com.google.android.material.textfield.TextInputLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:hint="@string/event_day"
+                app:helperText="@string/optional_field"
+                app:helperTextEnabled="true">
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/editDay"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:inputType="number" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/label_change_field"
+            android:textSize="12sp"
+            android:textColor="@color/text_secondary" />
+
+        <Spinner
+            android:id="@+id/spinnerFieldKey"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginBottom="12dp" />
+
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            android:hint="@string/hint_new_value">
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/editNewValue"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="text" />
         </com.google.android.material.textfield.TextInputLayout>
 
         <com.google.android.material.textfield.TextInputLayout
-            android:layout_width="0dp"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:hint="@string/event_day"
-            app:helperText="@string/optional_field"
-            app:helperTextEnabled="true">
+            android:hint="@string/hint_state_change_desc">
             <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/editDay"
+                android:id="@+id/editDescription"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:inputType="number" />
+                android:inputType="text" />
         </com.google.android.material.textfield.TextInputLayout>
 
     </LinearLayout>
-
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="@string/label_change_field"
-        android:textSize="12sp"
-        android:textColor="@color/text_secondary" />
-
-    <Spinner
-        android:id="@+id/spinnerFieldKey"
-        android:layout_width="match_parent"
-        android:layout_height="48dp"
-        android:layout_marginBottom="12dp" />
-
-    <com.google.android.material.textfield.TextInputLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginBottom="12dp"
-        android:hint="@string/hint_new_value">
-        <com.google.android.material.textfield.TextInputEditText
-            android:id="@+id/editNewValue"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:inputType="text" />
-    </com.google.android.material.textfield.TextInputLayout>
-
-    <com.google.android.material.textfield.TextInputLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:hint="@string/hint_state_change_desc">
-        <com.google.android.material.textfield.TextInputEditText
-            android:id="@+id/editDescription"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:inputType="text" />
-    </com.google.android.material.textfield.TextInputLayout>
-
-</LinearLayout>
+</ScrollView>

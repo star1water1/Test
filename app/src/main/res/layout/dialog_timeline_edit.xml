@@ -1,120 +1,127 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout
+<androidx.core.widget.NestedScrollView
     xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:orientation="vertical"
-    android:padding="24dp">
+    android:fillViewport="true">
 
-    <com.google.android.material.textfield.TextInputLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginBottom="12dp"
-        android:hint="@string/event_year">
-
-        <com.google.android.material.textfield.TextInputEditText
-            android:id="@+id/editYear"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:inputType="numberSigned" />
-
-    </com.google.android.material.textfield.TextInputLayout>
-
-    <!-- 월/일 입력 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:layout_marginBottom="12dp">
+        android:orientation="vertical"
+        android:padding="24dp">
 
         <com.google.android.material.textfield.TextInputLayout
-            android:layout_width="0dp"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:layout_marginEnd="8dp"
-            android:hint="@string/event_month">
+            android:layout_marginBottom="12dp"
+            android:hint="@string/event_year">
 
             <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/editMonth"
+                android:id="@+id/editYear"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:inputType="number" />
+                android:inputType="numberSigned" />
+
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <!-- 월/일 입력 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="12dp">
+
+            <com.google.android.material.textfield.TextInputLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginEnd="8dp"
+                android:hint="@string/event_month">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/editMonth"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:inputType="number" />
+
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <com.google.android.material.textfield.TextInputLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:hint="@string/event_day">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/editDay"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:inputType="number" />
+
+            </com.google.android.material.textfield.TextInputLayout>
+
+        </LinearLayout>
+
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            android:hint="@string/event_calendar_type">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/editCalendarType"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="text"
+                android:text="@string/default_calendar_type" />
 
         </com.google.android.material.textfield.TextInputLayout>
 
         <com.google.android.material.textfield.TextInputLayout
-            android:layout_width="0dp"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:hint="@string/event_day">
+            android:layout_marginBottom="12dp"
+            android:hint="@string/event_description">
 
             <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/editDay"
+                android:id="@+id/editDescription"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:inputType="number" />
+                android:inputType="textMultiLine"
+                android:minLines="3" />
 
         </com.google.android.material.textfield.TextInputLayout>
+
+        <!-- 작품 선택 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/select_novel"
+            android:textSize="12sp"
+            android:textColor="@color/text_secondary" />
+
+        <Spinner
+            android:id="@+id/spinnerNovel"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginBottom="12dp" />
+
+        <!-- 관련 캐릭터 선택 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/related_characters"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:textColor="@color/primary"
+            android:layout_marginBottom="8dp" />
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/characterSelectRecyclerView"
+            android:layout_width="match_parent"
+            android:layout_height="200dp"
+            android:nestedScrollingEnabled="false" />
 
     </LinearLayout>
-
-    <com.google.android.material.textfield.TextInputLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginBottom="12dp"
-        android:hint="@string/event_calendar_type">
-
-        <com.google.android.material.textfield.TextInputEditText
-            android:id="@+id/editCalendarType"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:inputType="text"
-            android:text="@string/default_calendar_type" />
-
-    </com.google.android.material.textfield.TextInputLayout>
-
-    <com.google.android.material.textfield.TextInputLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginBottom="12dp"
-        android:hint="@string/event_description">
-
-        <com.google.android.material.textfield.TextInputEditText
-            android:id="@+id/editDescription"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:inputType="textMultiLine"
-            android:minLines="3" />
-
-    </com.google.android.material.textfield.TextInputLayout>
-
-    <!-- 작품 선택 -->
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="@string/select_novel"
-        android:textSize="12sp"
-        android:textColor="@color/text_secondary" />
-
-    <Spinner
-        android:id="@+id/spinnerNovel"
-        android:layout_width="match_parent"
-        android:layout_height="48dp"
-        android:layout_marginBottom="12dp" />
-
-    <!-- 관련 캐릭터 선택 -->
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="@string/related_characters"
-        android:textSize="14sp"
-        android:textStyle="bold"
-        android:textColor="@color/primary"
-        android:layout_marginBottom="8dp" />
-
-    <androidx.recyclerview.widget.RecyclerView
-        android:id="@+id/characterSelectRecyclerView"
-        android:layout_width="match_parent"
-        android:layout_height="200dp" />
-
-</LinearLayout>
+</androidx.core.widget.NestedScrollView>

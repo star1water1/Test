@@ -123,6 +123,11 @@ class FieldEditDialog : DialogFragment() {
         formatAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         binding.spinnerDisplayFormat.adapter = formatAdapter
 
+        // Percentile toggle
+        binding.switchPercentileEnabled.setOnCheckedChangeListener { _, isChecked ->
+            binding.percentileScopeLayout.visibility = if (isChecked) View.VISIBLE else View.GONE
+        }
+
         binding.spinnerFieldType.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
                 val selectedType = types[position]
@@ -145,6 +150,9 @@ class FieldEditDialog : DialogFragment() {
                 // 구조화 입력: TEXT, BODY_SIZE
                 binding.structuredInputLayout.visibility =
                     if (selectedType == FieldType.TEXT || selectedType == FieldType.BODY_SIZE) View.VISIBLE else View.GONE
+                // 상위 % 표기: NUMBER, CALCULATED, BODY_SIZE
+                val isNumericType = selectedType == FieldType.NUMBER || selectedType == FieldType.CALCULATED || selectedType == FieldType.BODY_SIZE
+                binding.percentileLayout.visibility = if (isNumericType) View.VISIBLE else View.GONE
             }
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
@@ -600,6 +608,20 @@ class FieldEditDialog : DialogFragment() {
         }
         binding.spinnerStatsGroupBy.setSelection(groupByIdx)
 
+        // 상위 % 표기 복원
+        val percentileObj = try {
+            org.json.JSONObject(field.config).optJSONObject("percentile")
+        } catch (_: Exception) { null }
+        if (percentileObj != null && percentileObj.optBoolean("enabled", false)) {
+            binding.switchPercentileEnabled.isChecked = true
+            val scopes = try {
+                val arr = percentileObj.optJSONArray("scopes")
+                if (arr != null) (0 until arr.length()).map { arr.getString(it) } else emptyList()
+            } catch (_: Exception) { emptyList() }
+            binding.checkPercentileNovel.isChecked = "novel" in scopes
+            binding.checkPercentileUniverse.isChecked = "universe" in scopes
+        }
+
         // 구조화 입력 복원
         val structuredConfig = StructuredInputConfig.fromConfig(field.config)
         if (structuredConfig.enabled) {
@@ -727,10 +749,27 @@ class FieldEditDialog : DialogFragment() {
                     separator = binding.editStructuredSeparator.text.toString().ifEmpty { "-" },
                     parts = parts
                 )
+                // 상위 % 설정 (구조화 입력 경로에서도)
+                if (type == FieldType.BODY_SIZE && binding.switchPercentileEnabled.isChecked) {
+                    val scopes = mutableListOf<String>()
+                    if (binding.checkPercentileNovel.isChecked) scopes.add("novel")
+                    if (binding.checkPercentileUniverse.isChecked) scopes.add("universe")
+                    config["percentile"] = mapOf("enabled" to true, "scopes" to scopes)
+                }
                 val configJson = Gson().toJson(config)
                 val withStructured = StructuredInputConfig.applyToConfig(configJson, structuredConfig)
                 val statsConfig = collectStatsConfig(binding, type)
                 return FieldStatsConfig.applyToConfig(withStructured, statsConfig)
+            }
+        }
+
+        // 상위 % 설정 (NUMBER, CALCULATED, BODY_SIZE)
+        if (type == FieldType.NUMBER || type == FieldType.CALCULATED || type == FieldType.BODY_SIZE) {
+            if (binding.switchPercentileEnabled.isChecked) {
+                val scopes = mutableListOf<String>()
+                if (binding.checkPercentileNovel.isChecked) scopes.add("novel")
+                if (binding.checkPercentileUniverse.isChecked) scopes.add("universe")
+                config["percentile"] = mapOf("enabled" to true, "scopes" to scopes)
             }
         }
 

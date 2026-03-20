@@ -1,116 +1,122 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout
+<ScrollView
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:orientation="vertical"
-    android:padding="16dp">
-
-    <TextView
-        android:id="@+id/labelTargetCharacter"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="@string/target_character"
-        android:textSize="12sp"
-        android:textColor="@color/text_secondary" />
-
-    <!-- 편집 모드: 대상 캐릭터 이름 표시 (읽기 전용) -->
-    <TextView
-        android:id="@+id/textTargetCharacterName"
-        android:layout_width="match_parent"
-        android:layout_height="48dp"
-        android:gravity="center_vertical"
-        android:textSize="16sp"
-        android:textColor="?attr/colorOnSurface"
-        android:visibility="gone" />
-
-    <!-- 추가 모드: 검색 가능한 캐릭터 선택 -->
-    <com.google.android.material.textfield.TextInputLayout
-        android:id="@+id/layoutCharacterSearch"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginBottom="12dp"
-        app:endIconMode="dropdown_menu"
-        style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.ExposedDropdownMenu">
-
-        <AutoCompleteTextView
-            android:id="@+id/autoCompleteCharacter"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:inputType="text"
-            android:hint="@string/relationship_search_character_hint" />
-
-    </com.google.android.material.textfield.TextInputLayout>
-
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="@string/relationship_type"
-        android:textSize="12sp"
-        android:textColor="@color/text_secondary" />
-
-    <Spinner
-        android:id="@+id/spinnerRelType"
-        android:layout_width="match_parent"
-        android:layout_height="48dp"
-        android:layout_marginBottom="12dp" />
-
-    <com.google.android.material.textfield.TextInputLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:hint="@string/description_optional"
-        android:layout_marginBottom="12dp">
-
-        <com.google.android.material.textfield.TextInputEditText
-            android:id="@+id/editRelDescription"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:inputType="text" />
-
-    </com.google.android.material.textfield.TextInputLayout>
-
-    <!-- 강도 슬라이더 -->
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="@string/relationship_intensity"
-        android:textSize="12sp"
-        android:textColor="@color/text_secondary" />
+    android:fillViewport="true">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical">
-
-        <com.google.android.material.slider.Slider
-            android:id="@+id/sliderIntensity"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:valueFrom="1"
-            android:valueTo="10"
-            android:stepSize="1"
-            android:value="5" />
+        android:orientation="vertical"
+        android:padding="16dp">
 
         <TextView
-            android:id="@+id/textIntensityValue"
-            android:layout_width="32dp"
+            android:id="@+id/labelTargetCharacter"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="5"
-            android:textSize="14sp"
+            android:text="@string/target_character"
+            android:textSize="12sp"
+            android:textColor="@color/text_secondary" />
+
+        <!-- 편집 모드: 대상 캐릭터 이름 표시 (읽기 전용) -->
+        <TextView
+            android:id="@+id/textTargetCharacterName"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:gravity="center_vertical"
+            android:textSize="16sp"
             android:textColor="?attr/colorOnSurface"
-            android:gravity="center" />
+            android:visibility="gone" />
+
+        <!-- 추가 모드: 검색 가능한 캐릭터 선택 -->
+        <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/layoutCharacterSearch"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            app:endIconMode="dropdown_menu"
+            style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.ExposedDropdownMenu">
+
+            <AutoCompleteTextView
+                android:id="@+id/autoCompleteCharacter"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="text"
+                android:hint="@string/relationship_search_character_hint" />
+
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/relationship_type"
+            android:textSize="12sp"
+            android:textColor="@color/text_secondary" />
+
+        <Spinner
+            android:id="@+id/spinnerRelType"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginBottom="12dp" />
+
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="@string/description_optional"
+            android:layout_marginBottom="12dp">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/editRelDescription"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="text" />
+
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <!-- 강도 슬라이더 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/relationship_intensity"
+            android:textSize="12sp"
+            android:textColor="@color/text_secondary" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <com.google.android.material.slider.Slider
+                android:id="@+id/sliderIntensity"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:valueFrom="1"
+                android:valueTo="10"
+                android:stepSize="1"
+                android:value="5" />
+
+            <TextView
+                android:id="@+id/textIntensityValue"
+                android:layout_width="32dp"
+                android:layout_height="wrap_content"
+                android:text="5"
+                android:textSize="14sp"
+                android:textColor="?attr/colorOnSurface"
+                android:gravity="center" />
+
+        </LinearLayout>
+
+        <!-- 양방향 체크박스 -->
+        <com.google.android.material.checkbox.MaterialCheckBox
+            android:id="@+id/checkBidirectional"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/relationship_bidirectional"
+            android:checked="true" />
 
     </LinearLayout>
-
-    <!-- 양방향 체크박스 -->
-    <com.google.android.material.checkbox.MaterialCheckBox
-        android:id="@+id/checkBidirectional"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="@string/relationship_bidirectional"
-        android:checked="true" />
-
-</LinearLayout>
+</ScrollView>

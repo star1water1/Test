@@ -218,6 +218,112 @@ class SystemMaintenanceService(
         )
     }
 
+    data class CleanupResult(
+        val deletedFieldValues: Int = 0,
+        val deletedTags: Int = 0,
+        val deletedStateChanges: Int = 0,
+        val deletedRelationships: Int = 0,
+        val clearedImageRefs: Int = 0,
+        val clearedNameBank: Int = 0,
+        val details: List<String> = emptyList()
+    )
+
+    /**
+     * 고아 데이터 정리: FK 제약이 없거나 CASCADE가 작동하지 않은 잔여 레코드 삭제.
+     */
+    suspend fun cleanOrphanData(): CleanupResult {
+        val details = mutableListOf<String>()
+        var deletedFieldValues = 0
+        var deletedTags = 0
+        var deletedStateChanges = 0
+        var deletedRelationships = 0
+        var clearedImageRefs = 0
+        var clearedNameBank = 0
+
+        db.withTransaction {
+            // 존재하지 않는 캐릭터를 참조하는 character_field_values 삭제
+            db.openHelper.writableDatabase.execSQL(
+                "DELETE FROM character_field_values WHERE characterId NOT IN (SELECT id FROM characters)"
+            )
+            db.openHelper.readableDatabase.query("SELECT changes()").use { c ->
+                if (c.moveToNext()) {
+                    deletedFieldValues = c.getInt(0)
+                    if (deletedFieldValues > 0) details.add("고아 필드값 $deletedFieldValues 건 삭제")
+                }
+            }
+
+            // 존재하지 않는 캐릭터를 참조하는 character_tags 삭제
+            db.openHelper.writableDatabase.execSQL(
+                "DELETE FROM character_tags WHERE characterId NOT IN (SELECT id FROM characters)"
+            )
+            db.openHelper.readableDatabase.query("SELECT changes()").use { c ->
+                if (c.moveToNext()) {
+                    deletedTags = c.getInt(0)
+                    if (deletedTags > 0) details.add("고아 태그 $deletedTags 건 삭제")
+                }
+            }
+
+            // 존재하지 않는 캐릭터를 참조하는 character_state_changes 삭제
+            db.openHelper.writableDatabase.execSQL(
+                "DELETE FROM character_state_changes WHERE characterId NOT IN (SELECT id FROM characters)"
+            )
+            db.openHelper.readableDatabase.query("SELECT changes()").use { c ->
+                if (c.moveToNext()) {
+                    deletedStateChanges = c.getInt(0)
+                    if (deletedStateChanges > 0) details.add("고아 상태변화 $deletedStateChanges 건 삭제")
+                }
+            }
+
+            // 존재하지 않는 캐릭터를 참조하는 character_relationships 삭제
+            db.openHelper.writableDatabase.execSQL(
+                "DELETE FROM character_relationships WHERE characterId1 NOT IN (SELECT id FROM characters) OR characterId2 NOT IN (SELECT id FROM characters)"
+            )
+            db.openHelper.readableDatabase.query("SELECT changes()").use { c ->
+                if (c.moveToNext()) {
+                    deletedRelationships = c.getInt(0)
+                    if (deletedRelationships > 0) details.add("고아 관계 $deletedRelationships 건 삭제")
+                }
+            }
+
+            // 존재하지 않는 캐릭터를 참조하는 novels/universes imageCharacterId 정리
+            db.openHelper.writableDatabase.execSQL(
+                "UPDATE novels SET imageCharacterId = NULL WHERE imageCharacterId IS NOT NULL AND imageCharacterId NOT IN (SELECT id FROM characters)"
+            )
+            db.openHelper.writableDatabase.execSQL(
+                "UPDATE universes SET imageCharacterId = NULL WHERE imageCharacterId IS NOT NULL AND imageCharacterId NOT IN (SELECT id FROM characters)"
+            )
+            db.openHelper.readableDatabase.query("SELECT changes()").use { c ->
+                if (c.moveToNext()) {
+                    clearedImageRefs = c.getInt(0)
+                    if (clearedImageRefs > 0) details.add("댕글링 이미지 참조 $clearedImageRefs 건 정리")
+                }
+            }
+
+            // 이름은행: isUsed=true인데 usedByCharacterId가 NULL이거나 존재하지 않는 캐릭터를 가리키는 경우
+            db.openHelper.writableDatabase.execSQL(
+                "UPDATE name_bank SET isUsed = 0 WHERE isUsed = 1 AND (usedByCharacterId IS NULL OR usedByCharacterId NOT IN (SELECT id FROM characters))"
+            )
+            db.openHelper.readableDatabase.query("SELECT changes()").use { c ->
+                if (c.moveToNext()) {
+                    clearedNameBank = c.getInt(0)
+                    if (clearedNameBank > 0) details.add("이름은행 고아 사용표시 $clearedNameBank 건 정리")
+                }
+            }
+        }
+
+        if (details.isEmpty()) details.add("정리할 고아 데이터가 없습니다")
+
+        return CleanupResult(
+            deletedFieldValues = deletedFieldValues,
+            deletedTags = deletedTags,
+            deletedStateChanges = deletedStateChanges,
+            deletedRelationships = deletedRelationships,
+            clearedImageRefs = clearedImageRefs,
+            clearedNameBank = clearedNameBank,
+            details = details
+        )
+    }
+
     /**
      * Reindex displayOrder for all entities using scope-based ordering.
      * Sprint B: Scope-aware reindexing

@@ -98,7 +98,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="@string/backup_restore"
+                    android:text="@string/settings_backup"
                     android:textSize="16sp"
                     android:textColor="?attr/colorOnSurface" />
 
@@ -209,6 +209,32 @@
                     android:text="@string/maintenance_reindex"
                     android:textSize="16sp"
                     android:textColor="?attr/colorOnSurface" />
+
+            </LinearLayout>
+
+            <!-- Clean orphan data -->
+            <LinearLayout
+                android:id="@+id/cleanOrphanRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp"
+                android:background="?attr/selectableItemBackground">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/maintenance_clean_orphan"
+                    android:textSize="16sp"
+                    android:textColor="?attr/colorOnSurface" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/maintenance_clean_orphan_desc"
+                    android:textSize="13sp"
+                    android:textColor="?attr/colorOnSurfaceVariant"
+                    android:layout_marginTop="2dp" />
 
             </LinearLayout>
 

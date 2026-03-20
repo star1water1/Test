@@ -45,4 +45,21 @@ interface CharacterFieldValueDao {
         WHERE cfv.characterId = :characterId AND fd.`key` = :fieldKey
     """)
     suspend fun getValueByFieldKey(characterId: Long, fieldKey: String): CharacterFieldValue?
+
+    /** 같은 작품 내 모든 캐릭터의 특정 필드 값 조회 (백분위 계산용) */
+    @Query("""
+        SELECT cfv.value FROM character_field_values cfv
+        INNER JOIN characters c ON cfv.characterId = c.id
+        WHERE c.novelId = :novelId AND cfv.fieldDefinitionId = :fieldDefId AND cfv.value != ''
+    """)
+    suspend fun getFieldValuesForNovel(novelId: Long, fieldDefId: Long): List<String>
+
+    /** 같은 세계관 내 모든 캐릭터의 특정 필드 값 조회 (백분위 계산용) */
+    @Query("""
+        SELECT cfv.value FROM character_field_values cfv
+        INNER JOIN characters c ON cfv.characterId = c.id
+        INNER JOIN novels n ON c.novelId = n.id
+        WHERE n.universeId = :universeId AND cfv.fieldDefinitionId = :fieldDefId AND cfv.value != ''
+    """)
+    suspend fun getFieldValuesForUniverse(universeId: Long, fieldDefId: Long): List<String>
 }

@@ -235,6 +235,52 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    /** 세계관에 속한 작품 중 이미지가 있는 랜덤 작품의 이미지 경로 반환 */
+    fun resolveRandomNovelImage(universeId: Long, callback: (String?) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val novels = novelRepository.getNovelsByUniverseList(universeId)
+                val withImages = novels.filter { it.imagePath.isNotBlank() }
+                if (withImages.isEmpty()) {
+                    callback(null)
+                    return@launch
+                }
+                callback(withImages.random().imagePath)
+            } catch (e: Exception) {
+                Log.e("UniverseViewModel", "Failed to resolve novel image", e)
+                callback(null)
+            }
+        }
+    }
+
+    /** 특정 작품의 이미지 경로를 반환하는 콜백 */
+    fun resolveNovelImageById(novelId: Long, callback: (String?) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val novel = novelRepository.getNovelById(novelId)
+                callback(novel?.imagePath?.takeIf { it.isNotBlank() })
+            } catch (e: Exception) {
+                Log.e("UniverseViewModel", "Failed to resolve novel image by ID", e)
+                callback(null)
+            }
+        }
+    }
+
+    /** 세계관에 속한 작품 중 이미지가 있는 작품 목록 반환 (select_novel UI용) */
+    fun getNovelsWithImageForUniverse(universeId: Long, callback: (List<Pair<Long, String>>) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val novels = novelRepository.getNovelsByUniverseList(universeId)
+                val result = novels.mapNotNull { novel ->
+                    if (novel.imagePath.isNotBlank()) Pair(novel.id, novel.title) else null
+                }
+                callback(result)
+            } catch (_: Exception) {
+                callback(emptyList())
+            }
+        }
+    }
+
     fun recordRecentActivity(entityType: String, entityId: Long, title: String) = viewModelScope.launch {
         recentActivityDao.upsert(
             RecentActivity(entityType = entityType, entityId = entityId, title = title)
