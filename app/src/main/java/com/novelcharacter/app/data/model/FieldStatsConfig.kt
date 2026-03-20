@@ -74,9 +74,10 @@ data class FieldStatsConfig(
             fun labels(): List<String> = entries.map { it.label }
 
             fun forFieldType(fieldType: String): List<StatsType> = when (fieldType) {
-                "NUMBER" -> listOf(DISTRIBUTION, NUMERIC, RANKING)
+                "NUMBER", "CALCULATED" -> listOf(DISTRIBUTION, NUMERIC, RANKING)
                 "TEXT", "SELECT", "MULTI_TEXT", "GRADE" -> listOf(DISTRIBUTION, RANKING)
-                else -> listOf(DISTRIBUTION)
+                "BODY_SIZE" -> listOf(DISTRIBUTION, NUMERIC, RANKING)
+                else -> listOf(DISTRIBUTION, RANKING)
             }
         }
     }

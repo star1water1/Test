@@ -137,9 +137,8 @@ class FieldEditDialog : DialogFragment() {
                 // 시스템 연동: CALCULATED 제외
                 binding.semanticRoleLayout.visibility =
                     if (selectedType != FieldType.CALCULATED) View.VISIBLE else View.GONE
-                // 통계 설정: CALCULATED 제외
-                binding.statsSettingsLayout.visibility =
-                    if (selectedType != FieldType.CALCULATED) View.VISIBLE else View.GONE
+                // 통계 설정: 모든 타입 지원 (CALCULATED 포함 — 수식 결과를 통계 분석 가능)
+                binding.statsSettingsLayout.visibility = View.VISIBLE
                 // NUMBER 전용 구간 설정
                 binding.binningLayout.visibility =
                     if (selectedType == FieldType.NUMBER) View.VISIBLE else View.GONE
@@ -694,8 +693,10 @@ class FieldEditDialog : DialogFragment() {
                 }
             }
             FieldType.BODY_SIZE -> {
-                config["separator"] = "-"
-                config["inputReplace"] = mapOf(" " to "-")
+                // separator는 구조화 입력 설정에서 사용자가 지정 (기본값 "-")
+                if (!binding.switchStructuredInput.isChecked) {
+                    config["separator"] = binding.editStructuredSeparator.text.toString().ifEmpty { "-" }
+                }
             }
             else -> {}
         }
@@ -728,22 +729,15 @@ class FieldEditDialog : DialogFragment() {
                 )
                 val configJson = Gson().toJson(config)
                 val withStructured = StructuredInputConfig.applyToConfig(configJson, structuredConfig)
-                if (type != FieldType.CALCULATED) {
-                    val statsConfig = collectStatsConfig(binding, type)
-                    return FieldStatsConfig.applyToConfig(withStructured, statsConfig)
-                }
-                return withStructured
+                val statsConfig = collectStatsConfig(binding, type)
+                return FieldStatsConfig.applyToConfig(withStructured, statsConfig)
             }
         }
 
-        // Stats config (CALCULATED 제외)
-        if (type != FieldType.CALCULATED) {
-            val statsConfig = collectStatsConfig(binding, type)
-            val configJson = Gson().toJson(config)
-            return FieldStatsConfig.applyToConfig(configJson, statsConfig)
-        }
-
-        return Gson().toJson(config)
+        // Stats config (모든 타입 지원)
+        val statsConfig = collectStatsConfig(binding, type)
+        val configJson = Gson().toJson(config)
+        return FieldStatsConfig.applyToConfig(configJson, statsConfig)
     }
 
     private fun collectStatsConfig(binding: DialogFieldEditBinding, type: FieldType): FieldStatsConfig {
