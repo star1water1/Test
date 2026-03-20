@@ -486,7 +486,7 @@ class StatsFieldInsightFragment : Fragment() {
         spinner2.setSelection(field2Index)
 
         // 필터 필드 (선택 사항)
-        val filterNames = arrayOf(getString(R.string.stats_filter_none)) + fieldNames
+        val filterNames = arrayOf(getString(R.string.stats_cross_filter_none)) + fieldNames
         val filterAdapter = android.widget.ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, filterNames)
         filterAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         spinnerFilter.adapter = filterAdapter
@@ -595,7 +595,7 @@ class StatsFieldInsightFragment : Fragment() {
         }
 
         chart.apply {
-            data = BarData(dataSets).apply {
+            data = BarData(dataSets.toList()).apply {
                 barWidth = 0.8f / field2Values.size
             }
             if (field2Values.size > 1) {
