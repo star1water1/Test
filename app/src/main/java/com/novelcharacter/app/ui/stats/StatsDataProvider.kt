@@ -417,24 +417,27 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
         val sevenDaysAgo = System.currentTimeMillis() - 7 * 24 * 60 * 60 * 1000L
         val recentCount = s.characters.count { it.updatedAt >= sevenDaysAgo }
 
-        // 분석적 인사이트: 특화 유형 분포
+        // 분석적 인사이트: 특화 유형 분포 (미측정 제외 — 분석적 인사이트만 표시)
         val complexities = computeCharacterComplexities(s)
-        val specDist = complexities.groupBy { it.specialization.label }
+        val specDist = complexities
+            .filter { it.specialization != CharacterComplexity.Specialization.NONE }
+            .groupBy { it.specialization.label }
             .mapValues { it.value.size }
 
-        // 분석적 인사이트: 주요 필드 값 TOP 5
+        // 분석적 인사이트: 주요 필드 값 TOP 5 (필드 이름 기준으로 세계관 간 통합 집계)
         val fieldDefById = s.fieldDefinitions.associateBy { it.id }
         val topFieldValues = s.fieldValues
             .filter { it.value.isNotBlank() }
-            .groupBy { Pair(it.fieldDefinitionId, it.value) }
+            .mapNotNull { fv ->
+                val fd = fieldDefById[fv.fieldDefinitionId] ?: return@mapNotNull null
+                Pair(fd.name, fv.value)
+            }
+            .groupBy { it }
             .mapValues { it.value.size }
             .entries
             .sortedByDescending { it.value }
             .take(5)
-            .mapNotNull { entry ->
-                val fd = fieldDefById[entry.key.first] ?: return@mapNotNull null
-                Triple(fd.name, entry.key.second, entry.value)
-            }
+            .map { entry -> Triple(entry.key.first, entry.key.second, entry.value) }
 
         // 분석적 인사이트: 사건 밀도 최고 시기
         val eventDensityPeak = if (s.events.isNotEmpty()) {
