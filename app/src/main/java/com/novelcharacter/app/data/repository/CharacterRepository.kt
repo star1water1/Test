@@ -215,7 +215,7 @@ class CharacterRepository(
      */
     suspend fun resolveRelationshipIntensityAtYear(relationship: CharacterRelationship, year: Int): Int {
         val change = relationshipChangeDao.getChangeAtYear(relationship.id, year)
-        return change?.intensity ?: 5
+        return change?.intensity ?: relationship.intensity
     }
 
     suspend fun setPinned(id: Long, isPinned: Boolean) =

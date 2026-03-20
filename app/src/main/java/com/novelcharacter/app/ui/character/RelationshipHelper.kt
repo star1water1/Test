@@ -20,7 +20,9 @@ import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import com.novelcharacter.app.R
 import com.novelcharacter.app.util.navigateSafe
+import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.CharacterRelationship
+import com.novelcharacter.app.data.model.CharacterRelationshipChange
 import com.novelcharacter.app.databinding.FragmentCharacterDetailBinding
 import com.novelcharacter.app.ui.adapter.RelationshipAdapter
 import com.novelcharacter.app.ui.adapter.RelationshipDisplayItem
@@ -153,7 +155,7 @@ class RelationshipHelper(
             // 같은 작품 캐릭터를 상단에, 나머지는 작품명과 함께 표시
             val novels = viewModel.getAllNovelsList()
             val novelMap = novels.associate { it.id to it.title }
-            val sorted = otherCharacters.sortedWith(compareBy<com.novelcharacter.app.data.model.Character> {
+            val sorted = otherCharacters.sortedWith(compareBy<Character> {
                 if (it.novelId == currentNovelId && currentNovelId != null) 0 else 1
             }.thenBy { it.name })
             val charDisplayNames = sorted.map { char ->
@@ -409,7 +411,7 @@ class RelationshipHelper(
                     val eventId = if (eventIdx > 0 && eventIdx <= events.size) events[eventIdx - 1].id else null
 
                     viewModel.insertRelationshipChange(
-                        com.novelcharacter.app.data.model.CharacterRelationshipChange(
+                        CharacterRelationshipChange(
                             relationshipId = relationshipId,
                             year = year,
                             relationshipType = type,
@@ -425,7 +427,7 @@ class RelationshipHelper(
         }
     }
 
-    private fun showEditRelationshipChangeDialog(change: com.novelcharacter.app.data.model.CharacterRelationshipChange) {
+    private fun showEditRelationshipChangeDialog(change: CharacterRelationshipChange) {
         viewLifecycleOwner.lifecycleScope.launch {
             val context = try { contextGetter() } catch (_: Exception) { return@launch }
             val typeNames = viewModel.getRelationshipTypesForCharacter(characterId).toTypedArray()
