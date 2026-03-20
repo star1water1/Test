@@ -205,9 +205,8 @@ class CharacterEditFragment : Fragment() {
 
         // 이미지 — 회전 복원된 경우 사용자가 추가한 이미지를 보존
         if (!restoredFromSavedState) {
-            val type = object : TypeToken<List<String>>() {}.type
             val paths: List<String> = try {
-                gson.fromJson(character.imagePaths, type) ?: emptyList()
+                gson.fromJson(character.imagePaths, com.novelcharacter.app.util.GsonTypes.STRING_LIST) ?: emptyList()
             } catch (e: Exception) {
                 emptyList()
             }
@@ -519,7 +518,7 @@ class CharacterEditFragment : Fragment() {
     private fun parseSelectOptions(configJson: String): List<String> {
         return try {
             val configMap: Map<String, Any> = gson.fromJson(
-                configJson, object : TypeToken<Map<String, Any>>() {}.type
+                configJson, com.novelcharacter.app.util.GsonTypes.STRING_ANY_MAP
             )
             @Suppress("UNCHECKED_CAST")
             (configMap["options"] as? List<*>)?.mapNotNull { it as? String } ?: emptyList()
@@ -532,7 +531,7 @@ class CharacterEditFragment : Fragment() {
         val baseGrades = listOf("C", "B", "A", "S")
         return try {
             val configMap: Map<String, Any> = gson.fromJson(
-                configJson, object : TypeToken<Map<String, Any>>() {}.type
+                configJson, com.novelcharacter.app.util.GsonTypes.STRING_ANY_MAP
             )
             val allowNegative = configMap["allowNegative"] as? Boolean ?: false
             if (allowNegative) {

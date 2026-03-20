@@ -97,7 +97,7 @@ class ImageViewerFragment : Fragment() {
         startPosition = arguments?.getInt("startPosition", 0) ?: 0
 
         val rawPaths: List<String> = try {
-            com.google.gson.Gson().fromJson(pathsJson, object : com.google.gson.reflect.TypeToken<List<String>>() {}.type) ?: emptyList()
+            com.google.gson.Gson().fromJson(pathsJson, com.novelcharacter.app.util.GsonTypes.STRING_LIST) ?: emptyList()
         } catch (e: Exception) {
             emptyList()
         }

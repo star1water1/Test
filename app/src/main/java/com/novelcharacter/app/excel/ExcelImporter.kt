@@ -93,7 +93,7 @@ class ExcelImporter(context: Context) {
                 org.apache.poi.openxml4j.util.ZipSecureFile.setMaxEntrySize(50L * 1024 * 1024) // 50MB max per entry
 
                 val inputStream = appContext.contentResolver.openInputStream(uri)
-                    ?: throw Exception("파일을 열 수 없습니다")
+                    ?: throw Exception("Cannot open file input stream")
 
                 workbook = inputStream.use { WorkbookFactory.create(it) }
 
@@ -137,7 +137,7 @@ class ExcelImporter(context: Context) {
                     val pct = if (progress.totalRows > 0) {
                         (progress.processedRows * 100 / progress.totalRows).coerceAtMost(100)
                     } else 0
-                    val text = "${progress.currentPhase} 처리 중... ($pct%)"
+                    val text = appContext.getString(com.novelcharacter.app.R.string.import_progress_format, progress.currentPhase, pct)
                     importScope.launch(Dispatchers.Main) {
                         progressText?.text = text
                     }
@@ -155,49 +155,59 @@ class ExcelImporter(context: Context) {
                     Toast.makeText(appContext, com.novelcharacter.app.R.string.import_failed_retry, Toast.LENGTH_LONG).show()
                 }
             } finally {
-                try { workbook?.close() } catch (_: Exception) {}
+                try { workbook?.close() } catch (e: Exception) { android.util.Log.w("ExcelImporter", "Failed to close workbook", e) }
             }
         }
     }
 
     private fun buildResultMessage(result: ImportResult): String {
+        val r = appContext.resources
         val parts = mutableListOf<String>()
         val charTotal = result.newCharacters + result.updatedCharacters
         val eventTotal = result.newEvents + result.updatedEvents
 
         if (result.newUniverses > 0 || result.updatedUniverses > 0)
-            parts.add("세계관 ${result.newUniverses + result.updatedUniverses}개")
+            parts.add(r.getString(com.novelcharacter.app.R.string.import_result_universes, result.newUniverses + result.updatedUniverses))
         if (result.newNovels > 0 || result.updatedNovels > 0)
-            parts.add("작품 ${result.newNovels + result.updatedNovels}개")
+            parts.add(r.getString(com.novelcharacter.app.R.string.import_result_novels, result.newNovels + result.updatedNovels))
         if (result.newFields > 0 || result.updatedFields > 0)
-            parts.add("필드 ${result.newFields + result.updatedFields}개")
+            parts.add(r.getString(com.novelcharacter.app.R.string.import_result_fields, result.newFields + result.updatedFields))
         if (charTotal > 0) {
-            val detail = if (result.updatedCharacters > 0) " (업데이트 ${result.updatedCharacters}명)" else ""
-            parts.add("캐릭터 ${charTotal}명$detail")
+            parts.add(if (result.updatedCharacters > 0) {
+                r.getString(com.novelcharacter.app.R.string.import_result_characters_updated, charTotal, result.updatedCharacters)
+            } else {
+                r.getString(com.novelcharacter.app.R.string.import_result_characters, charTotal)
+            })
         }
         if (eventTotal > 0) {
-            val detail = if (result.updatedEvents > 0) " (업데이트 ${result.updatedEvents}개)" else ""
-            parts.add("사건 ${eventTotal}개$detail")
+            parts.add(if (result.updatedEvents > 0) {
+                r.getString(com.novelcharacter.app.R.string.import_result_events_updated, eventTotal, result.updatedEvents)
+            } else {
+                r.getString(com.novelcharacter.app.R.string.import_result_events, eventTotal)
+            })
         }
         val scTotal = result.newStateChanges + result.updatedStateChanges
         if (scTotal > 0) {
-            val detail = if (result.updatedStateChanges > 0) " (업데이트 ${result.updatedStateChanges}개)" else ""
-            parts.add("상태변화 ${scTotal}개$detail")
+            parts.add(if (result.updatedStateChanges > 0) {
+                r.getString(com.novelcharacter.app.R.string.import_result_state_changes_updated, scTotal, result.updatedStateChanges)
+            } else {
+                r.getString(com.novelcharacter.app.R.string.import_result_state_changes, scTotal)
+            })
         }
         val relTotal = result.newRelationships + result.updatedRelationships
-        if (relTotal > 0) parts.add("관계 ${relTotal}개")
-        if (result.newRelationshipChanges > 0) parts.add("관계 변화 ${result.newRelationshipChanges}개")
+        if (relTotal > 0) parts.add(r.getString(com.novelcharacter.app.R.string.import_result_relationships, relTotal))
+        if (result.newRelationshipChanges > 0) parts.add(r.getString(com.novelcharacter.app.R.string.import_result_relationship_changes, result.newRelationshipChanges))
         val nbTotal = result.newNameBank + result.updatedNameBank
-        if (nbTotal > 0) parts.add("이름 ${nbTotal}개")
+        if (nbTotal > 0) parts.add(r.getString(com.novelcharacter.app.R.string.import_result_names, nbTotal))
         if (result.skippedRows > 0)
-            parts.add("오류 ${result.skippedRows}건 건너뜀")
+            parts.add(r.getString(com.novelcharacter.app.R.string.import_result_skipped, result.skippedRows))
         if (result.nameBasedMappings > 0)
-            parts.add("이름 매칭 ${result.nameBasedMappings}건")
+            parts.add(r.getString(com.novelcharacter.app.R.string.import_result_name_mappings, result.nameBasedMappings))
         if (result.newCodesGenerated > 0)
-            parts.add("새 코드 ${result.newCodesGenerated}건 발급")
+            parts.add(r.getString(com.novelcharacter.app.R.string.import_result_new_codes, result.newCodesGenerated))
 
-        return if (parts.isEmpty()) "가져오기 완료: 데이터 없음"
-        else "가져오기 완료: ${parts.joinToString(", ")}"
+        return if (parts.isEmpty()) r.getString(com.novelcharacter.app.R.string.import_result_empty)
+        else r.getString(com.novelcharacter.app.R.string.import_result_complete, parts.joinToString(", "))
     }
 
     private fun dismissDialogSafely(dialog: AlertDialog?) {
@@ -206,7 +216,9 @@ class ExcelImporter(context: Context) {
             if (dialog != null && dialog.isShowing && act != null && !act.isFinishing && !act.isDestroyed) {
                 dialog.dismiss()
             }
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            android.util.Log.w("ExcelImporter", "Failed to dismiss progress dialog", e)
+        }
     }
 
     companion object {

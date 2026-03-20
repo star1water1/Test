@@ -70,7 +70,7 @@ class TimeStateResolver {
                 val config = try {
                     com.google.gson.Gson().fromJson<Map<String, Any>>(
                         field.config,
-                        object : com.google.gson.reflect.TypeToken<Map<String, Any>>() {}.type
+                        GsonTypes.STRING_ANY_MAP
                     )
                 } catch (e: Exception) {
                     Log.w(TAG, "Failed to parse config for field '${field.key}': ${e.message}")

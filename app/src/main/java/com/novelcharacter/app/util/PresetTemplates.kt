@@ -20,6 +20,8 @@ object PresetTemplates {
     )
 
     private val gson = Gson()
+    private val FIELD_TEMPLATE_LIST_TYPE: java.lang.reflect.Type =
+        object : TypeToken<List<FieldTemplateData>>() {}.type
 
     fun getBuiltInTemplates(): List<PresetTemplate> = listOf(
         createStarAdventureTemplate(),
@@ -28,9 +30,8 @@ object PresetTemplates {
 
     /** 사용자 정의 템플릿을 PresetTemplate으로 변환 */
     fun fromUserPreset(preset: UserPresetTemplate): PresetTemplate {
-        val type = object : TypeToken<List<FieldTemplateData>>() {}.type
         val fieldDataList: List<FieldTemplateData> = try {
-            gson.fromJson(preset.fieldsJson, type) ?: emptyList()
+            gson.fromJson(preset.fieldsJson, FIELD_TEMPLATE_LIST_TYPE) ?: emptyList()
         } catch (e: Exception) {
             emptyList()
         }
@@ -71,9 +72,8 @@ object PresetTemplates {
 
     /** JSON에서 필드 목록 복원 (미리보기용) */
     fun fieldsFromJson(json: String): List<FieldDefinition> {
-        val type = object : TypeToken<List<FieldTemplateData>>() {}.type
         val dataList: List<FieldTemplateData> = try {
-            gson.fromJson(json, type) ?: emptyList()
+            gson.fromJson(json, FIELD_TEMPLATE_LIST_TYPE) ?: emptyList()
         } catch (e: Exception) {
             emptyList()
         }

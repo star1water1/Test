@@ -815,4 +815,24 @@
 
     <!-- Formula / Calculated fields -->
     <string name="formula_evaluation_error">오류</string>
+
+    <!-- Import result messages -->
+    <string name="import_result_universes">세계관 %d개</string>
+    <string name="import_result_novels">작품 %d개</string>
+    <string name="import_result_fields">필드 %d개</string>
+    <string name="import_result_characters">캐릭터 %d명</string>
+    <string name="import_result_characters_updated">캐릭터 %1$d명 (업데이트 %2$d명)</string>
+    <string name="import_result_events">사건 %d개</string>
+    <string name="import_result_events_updated">사건 %1$d개 (업데이트 %2$d개)</string>
+    <string name="import_result_state_changes">상태변화 %d개</string>
+    <string name="import_result_state_changes_updated">상태변화 %1$d개 (업데이트 %2$d개)</string>
+    <string name="import_result_relationships">관계 %d개</string>
+    <string name="import_result_relationship_changes">관계 변화 %d개</string>
+    <string name="import_result_names">이름 %d개</string>
+    <string name="import_result_skipped">오류 %d건 건너뜀</string>
+    <string name="import_result_name_mappings">이름 매칭 %d건</string>
+    <string name="import_result_new_codes">새 코드 %d건 발급</string>
+    <string name="import_result_complete">가져오기 완료: %s</string>
+    <string name="import_result_empty">가져오기 완료: 데이터 없음</string>
+    <string name="import_progress_format">%s 처리 중… (%d%%)</string>
 </resources>

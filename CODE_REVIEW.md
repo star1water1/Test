@@ -1,6 +1,6 @@
 # NovelCharacter 전반적 코드 리뷰
 
-> 검토일: 2026-03-20 (2차 갱신)
+> 검토일: 2026-03-20 (3차 갱신)
 > 대상: Kotlin Android 앱 (117 소스 파일, Room DB v22, MVVM 아키텍처)
 
 ---
@@ -27,6 +27,9 @@
 | 14 | 이미지 경로 검증 불일치 | UniverseListFragment, NovelListFragment에 canonicalPath 검증 추가 완료 |
 | 15 | DashPathEffect 매 프레임 재생성 | 멤버 변수로 추출 완료 |
 | 16 | TimeStateResolver 하드코딩 "오류" | 상수 FORMULA_ERROR_DISPLAY로 추출, strings.xml 리소스 추가 완료 |
+| 17 | ExcelImporter 빈 catch 블록 | Log.w() 로깅 추가 완료 |
+| 18 | ExcelImporter 하드코딩 결과 문자열 | strings.xml 리소스로 이동 완료 (17개 문자열) |
+| 19 | Gson TypeToken 반복 생성 | GsonTypes 유틸 상수로 추출 완료 (6개 파일) |
 
 ---
 
@@ -44,7 +47,7 @@
 
 **파일:** `AppDatabase.kt` (MIGRATION_5_6)
 
-`displayOrder` 백필에서 서브쿼리 기반의 `UPDATE` 문이 O(n²) 성능을 가집니다. 수천 개의 레코드가 있는 경우 마이그레이션이 느려질 수 있습니다.
+`displayOrder` 백필에서 서브쿼리 기반의 `UPDATE` 문이 O(n²) 성능을 가집니다. 수천 개의 레코드가 있는 경우 마이그레이션이 느려질 수 있습니다. 단, 이미 실행된 과거 마이그레이션이므로 수정 시 위험이 있습니다.
 
 ---
 
@@ -52,9 +55,7 @@
 
 **파일:** `ExcelImportService.kt`
 
-임포트가 단일 트랜잭션 블록으로 실행됩니다. 수천 행을 가져오면 트랜잭션 저널이 매우 커져 메모리 부족이나 ANR이 발생할 수 있습니다.
-
-**권장:** 시트 또는 청크 단위로 트랜잭션을 분리.
+임포트가 시트별 3-phase 트랜잭션으로 분리되어 있어 기본적인 청크 처리는 되어 있으나, 단일 시트에 수천 행이 있는 경우 해당 트랜잭션이 커질 수 있습니다.
 
 ---
 
@@ -62,27 +63,10 @@
 
 ### 3.1 하드코딩된 문자열 (일부 잔존)
 
-일부 파일에서 한국어 문자열이 코드에 직접 포함되어 있습니다:
-- `ExcelImportService.kt`: `"기본 정보"`, `"천개력"`, `"사용 안내"`, `"미분류 캐릭터"`
-- `NovelCharacterApp.kt`: `"캐릭터 생일 알림"`, `"소설 캐릭터의 생일을 알려줍니다"`
+`ExcelImportService.kt`에서 엑셀 시트 이름으로 사용되는 내부 식별자 문자열이 있습니다:
+- `"기본 정보"`, `"천개력"`, `"사용 안내"`, `"미분류 캐릭터"`
 
-이들을 `strings.xml`로 이동하면 국제화(i18n) 지원이 용이해집니다.
-
----
-
-### 3.2 Gson 타입 토큰 반복 생성
-
-`CharacterEditFragment.kt`와 `SystemMaintenanceService.kt` 등에서 `TypeToken<List<String>>`을 매번 새로 생성합니다. 재사용 가능한 상수로 추출하면 미세한 성능 향상이 가능합니다.
-
----
-
-### 3.3 빈 catch 블록 (일부 잔존)
-
-아래 파일에 빈 catch 블록이 남아있습니다:
-- `ExcelImporter.kt`
-- `AutoBackupWorker.kt`
-
-최소한 `Log.w()`로 경고를 기록해야 디버깅이 가능합니다.
+이들은 사용자에게 직접 노출되지 않는 내부 시트 식별자이므로 긴급하지 않으나, 국제화(i18n) 지원 시 이동이 필요합니다.
 
 ---
 
@@ -123,6 +107,7 @@
 | ~~**P0**~~ | ~~위젯 exported, loadAllStats, GCM 태그~~ | ✅ 수정 완료 |
 | ~~**P1**~~ | ~~AutoBackup 이미지, 관계변화 upsert, 순환참조, KeyStore~~ | ✅ 수정 완료 |
 | ~~**P2**~~ | ~~검색 디바운스, FK 추가, 위젯 타임아웃, 이미지 경로 검증~~ | ✅ 수정 완료 |
-| **P2** | ExcelImporter Activity 참조, 마이그레이션 O(n²), 임포트 트랜잭션 분리 | 잔여 |
-| **P3** | 하드코딩 문자열 일부, Gson 타입토큰, 빈 catch 일부 | 잔여 |
+| ~~**P3**~~ | ~~빈 catch 블록, Gson 타입토큰, ExcelImporter 문자열 리소스화~~ | ✅ 수정 완료 |
+| **P2** | ExcelImporter Activity 참조, 마이그레이션 O(n²), 임포트 트랜잭션 크기 | 잔여 (설계 개선 필요) |
+| **P3** | ExcelImportService 내부 시트 식별자 문자열 | 잔여 (i18n 시 이동) |
 | **P3** | 이미지 라이브러리 도입, DI 도입, 테스트 코드 추가 | 장기 과제 |

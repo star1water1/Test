@@ -176,13 +176,12 @@ class SystemMaintenanceService(
         val details = mutableListOf<String>()
         var orphanCount = 0
         val gson = Gson()
-        val type = object : TypeToken<List<String>>() {}.type
         val appDir = context.filesDir
 
         val characters = db.characterDao().getAllCharactersList()
         for (character in characters) {
             val paths: List<String> = try {
-                gson.fromJson(character.imagePaths, type) ?: emptyList()
+                gson.fromJson(character.imagePaths, com.novelcharacter.app.util.GsonTypes.STRING_LIST) ?: emptyList()
             } catch (e: Exception) {
                 emptyList()
             }

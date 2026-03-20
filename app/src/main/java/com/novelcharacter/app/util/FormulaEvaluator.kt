@@ -3,7 +3,6 @@ package com.novelcharacter.app.util
 import android.util.Log
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.google.gson.Gson
-import com.google.gson.reflect.TypeToken
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -48,7 +47,7 @@ class FormulaEvaluator(
 
     private fun resolveGradeValue(fieldDef: FieldDefinition, gradeLabel: String): Double {
         // Parse config JSON to get grade mappings
-        val config = try { Gson().fromJson<Map<String, Any>>(fieldDef.config, object : TypeToken<Map<String, Any>>() {}.type) } catch (e: Exception) { Log.w("FormulaEvaluator", "Failed to parse grade config for field '${fieldDef.key}'", e); emptyMap() }
+        val config = try { Gson().fromJson<Map<String, Any>>(fieldDef.config, GsonTypes.STRING_ANY_MAP) } catch (e: Exception) { Log.w("FormulaEvaluator", "Failed to parse grade config for field '${fieldDef.key}'", e); emptyMap() }
         val grades = (config["grades"] as? Map<*, *>) ?: return 0.0
         val allowNegative = config["allowNegative"] as? Boolean ?: false
         // gradeLabel could be "A", "-B", "+A" etc
