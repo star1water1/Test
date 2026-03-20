@@ -501,13 +501,14 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
         val charFieldCounts = s.fieldValues.groupBy { it.characterId }
             .mapValues { it.value.count { fv -> fv.value.isNotBlank() } }
 
-        val fieldCompletions = s.characters.mapNotNull { char ->
-            val novelId = char.novelId ?: return@mapNotNull null
-            val novel = novelMap[novelId] ?: return@mapNotNull null
-            val totalFields = universeFieldCounts[novel.universeId] ?: return@mapNotNull null
-            if (totalFields == 0) return@mapNotNull null
+        val fieldCompletionById = mutableMapOf<Long, Float>()
+        s.characters.forEach { char ->
+            val novelId = char.novelId ?: return@forEach
+            val novel = novelMap[novelId] ?: return@forEach
+            val totalFields = universeFieldCounts[novel.universeId] ?: return@forEach
+            if (totalFields == 0) return@forEach
             val filled = charFieldCounts[char.id] ?: 0
-            char.name to (filled.toFloat() / totalFields * 100f)
+            fieldCompletionById[char.id] = filled.toFloat() / totalFields * 100f
         }
 
         // 생존기간
@@ -547,7 +548,7 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
         val complexityScores = s.characters.map { char ->
             val relCnt = relCount[char.id] ?: 0
             val evtCnt = eventCountMap[char.id] ?: 0
-            val completion = fieldCompletions.find { it.first == char.name }?.second ?: 0f
+            val completion = fieldCompletionById[char.id] ?: 0f
             val stateChangeCnt = stateChangesByChar[char.id]?.size ?: 0
 
             val relWeight = relCnt * 2f
@@ -595,7 +596,7 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
             relationshipTypeDist = relTypeDist,
             topRelationshipChars = topRelChars,
             topEventLinkedChars = topEventChars,
-            fieldCompletionRates = fieldCompletions,
+            fieldCompletionRates = fieldCompletionById.map { (id, rate) -> (charMap[id]?.name ?: "?") to rate },
             survivalPeriods = survivalPeriods,
             fieldCompletionByGroup = fieldCompletionByGroup,
             complexityScores = complexityScores,
@@ -678,8 +679,8 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
 
         // 신규: 네트워크 밀도 = 실제관계 / 가능한관계(n*(n-1)/2)
         val n = s.characters.size
-        val maxPossible = if (n > 1) n * (n - 1) / 2f else 1f
-        val density = s.relationships.size / maxPossible
+        val maxPossible = if (n > 1) n.toLong() * (n - 1) / 2.0f else 1f
+        val density = (s.relationships.size / maxPossible).coerceAtMost(1f)
 
         // 신규: 설명 완성도
         val emptyDescCount = s.relationships.count { it.description.isBlank() }
@@ -687,13 +688,13 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
             (s.relationships.size - emptyDescCount).toFloat() / s.relationships.size * 100f
         } else 0f
 
-        // 신규: 양방향 관계 쌍 (A→B, B→A 동일 유형)
-        val pairSet = mutableSetOf<String>()
-        var reciprocalCount = 0
+        // 신규: 양방향 관계 쌍 (A→B, B→A 동일 유형) — 정규화 키로 그룹핑 후 2개 이상인 쌍만 카운트
+        val pairCounts = mutableMapOf<String, Int>()
         s.relationships.forEach { rel ->
             val key = "${minOf(rel.characterId1, rel.characterId2)}-${maxOf(rel.characterId1, rel.characterId2)}-${rel.relationshipType}"
-            if (!pairSet.add(key)) reciprocalCount++
+            pairCounts[key] = (pairCounts[key] ?: 0) + 1
         }
+        val reciprocalCount = pairCounts.count { it.value > 1 }
 
         // 신규: 캐릭터당 평균 연결
         val avgConn = if (s.characters.isNotEmpty()) {
@@ -786,10 +787,10 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
         val eventCharIds = s.crossRefs.map { it.characterId }.toSet()
         val unlinked = s.characters.filter { it.id !in eventCharIds }.map { it.name }
 
-        // 중복 태그
+        // 중복 태그 (대소문자/공백 차이로 중복된 태그)
         val dupTags = s.tags.groupBy { it.tag.lowercase().trim() }
-            .filter { it.value.size > 1 && it.value.map { t -> t.tag }.distinct().size > 1 }
-            .keys.toList()
+            .filter { it.value.size > 1 }
+            .flatMap { it.value.map { t -> t.tag }.distinct() }
 
         // 신규: 메모 미작성 캐릭터
         val noMemo = s.characters.filter { it.memo.isBlank() }.map { it.name }
@@ -1113,8 +1114,9 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
         // 건강도
         val noImageCount = s.characters.count { it.imagePaths.isBlank() || it.imagePaths == "[]" }
         val incompleteCount = s.characters.count { char ->
-            val novelId = char.novelId ?: return@count false
-            val novel = novelMap[novelId] ?: return@count false
+            val novelId = char.novelId
+            if (novelId == null) return@count true // 작품 미배정 = 미완성으로 간주
+            val novel = novelMap[novelId] ?: return@count true
             val fields = fieldDefByUniverse[novel.universeId] ?: return@count false
             if (fields.isEmpty()) return@count false
             val charValues = charFieldValuesByChar[char.id] ?: emptyList()
