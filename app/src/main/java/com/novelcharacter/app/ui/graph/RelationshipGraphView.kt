@@ -91,7 +91,9 @@ class RelationshipGraphView @JvmOverloads constructor(
         for ((type, hex) in colorMap) {
             try {
                 parsed[type] = Color.parseColor(hex)
-            } catch (_: Exception) { }
+            } catch (e: Exception) {
+                android.util.Log.w("RelGraphView", "Invalid color '$hex' for type '$type'", e)
+            }
         }
         // 기본 색상에 커스텀 색상을 오버레이
         relationshipColors = DEFAULT_COLORS + parsed
@@ -114,6 +116,7 @@ class RelationshipGraphView @JvmOverloads constructor(
         style = Paint.Style.FILL
     }
     private val arrowPath = Path()
+    private val dashEffect = DashPathEffect(floatArrayOf(10f, 10f), 0f)
 
     private val scaleDetector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
         override fun onScale(detector: ScaleGestureDetector): Boolean {
@@ -316,7 +319,7 @@ class RelationshipGraphView @JvmOverloads constructor(
             edgePaint.strokeWidth = (edge.intensity * 0.5f).coerceIn(1f, 5f)
 
             if (!edge.isActive) {
-                edgePaint.pathEffect = DashPathEffect(floatArrayOf(10f, 10f), 0f)
+                edgePaint.pathEffect = dashEffect
             } else {
                 edgePaint.pathEffect = null
             }

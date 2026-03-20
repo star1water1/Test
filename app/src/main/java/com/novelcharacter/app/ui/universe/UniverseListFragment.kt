@@ -60,7 +60,13 @@ class UniverseListFragment : Fragment() {
                     inputStream.use { input ->
                         file.outputStream().use { out -> input.copyTo(out) }
                     }
-                    file.absolutePath
+                    // 경로 검증: filesDir 내부인지 확인
+                    val canonical = file.canonicalPath
+                    if (!canonical.startsWith(ctx.filesDir.canonicalPath)) {
+                        file.delete()
+                        return@withContext null
+                    }
+                    canonical
                 }
                 if (savedPath != null) {
                     lastSavedImagePath = savedPath
@@ -531,7 +537,7 @@ class UniverseListFragment : Fragment() {
                 shape = GradientDrawable.RECTANGLE
                 cornerRadius = 8 * dp
                 if (selectedColor.isNotBlank()) {
-                    try { setColor(Color.parseColor(selectedColor)) } catch (_: Exception) { setColor(Color.LTGRAY) }
+                    try { setColor(Color.parseColor(selectedColor)) } catch (e: Exception) { android.util.Log.w("UniverseList", "Invalid color: $selectedColor", e); setColor(Color.LTGRAY) }
                 } else {
                     setColor(Color.LTGRAY)
                 }
@@ -554,7 +560,9 @@ class UniverseListFragment : Fragment() {
                         if (hex.isNotBlank()) {
                             (colorPreview.background as? GradientDrawable)?.setColor(Color.parseColor(hex))
                         }
-                    } catch (_: Exception) {}
+                    } catch (e: Exception) {
+                        android.util.Log.w("UniverseList", "Invalid HEX color input: $hex", e)
+                    }
                 }
             })
         }
@@ -572,7 +580,7 @@ class UniverseListFragment : Fragment() {
                 }
                 background = GradientDrawable().apply {
                     shape = GradientDrawable.OVAL
-                    try { setColor(Color.parseColor(preset)) } catch (_: Exception) {}
+                    try { setColor(Color.parseColor(preset)) } catch (e: Exception) { android.util.Log.w("UniverseList", "Invalid preset color: $preset", e) }
                 }
                 setOnClickListener {
                     selectedColor = preset

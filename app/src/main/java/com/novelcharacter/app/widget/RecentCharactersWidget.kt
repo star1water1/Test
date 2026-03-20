@@ -13,6 +13,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * 최근 캐릭터 위젯 (4x2).
@@ -24,11 +25,12 @@ class RecentCharactersWidget : AppWidgetProvider() {
         val pendingResult = goAsync()
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
-                val db = AppDatabase.getDatabase(context)
-                val recentActivities = db.recentActivityDao().getRecentActivitiesList()
-                val charActivities = recentActivities
-                    .filter { it.entityType == "character" }
-                    .take(4)
+                val data = withTimeoutOrNull(5000L) {
+                    val db = AppDatabase.getDatabase(context)
+                    val recentActivities = db.recentActivityDao().getRecentActivitiesList()
+                    recentActivities.filter { it.entityType == "character" }.take(4)
+                }
+                val charActivities = data ?: emptyList()
 
                 for (appWidgetId in appWidgetIds) {
                     val views = RemoteViews(context.packageName, R.layout.widget_recent_characters)
@@ -52,8 +54,8 @@ class RecentCharactersWidget : AppWidgetProvider() {
                     views.setTextViewText(R.id.widgetTitle, context.getString(R.string.widget_recent_characters))
                     appWidgetManager.updateAppWidget(appWidgetId, views)
                 }
-            } catch (_: Exception) {
-                // Widget update failure is not critical
+            } catch (e: Exception) {
+                android.util.Log.w("RecentCharsWidget", "Widget update failed", e)
             } finally {
                 pendingResult.finish()
             }

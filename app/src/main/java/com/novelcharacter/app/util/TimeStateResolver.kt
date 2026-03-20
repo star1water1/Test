@@ -8,6 +8,8 @@ class TimeStateResolver {
 
     companion object {
         private const val TAG = "TimeStateResolver"
+        /** 수식 평가 오류 시 표시할 문자열 (strings.xml의 formula_evaluation_error와 동기화) */
+        const val FORMULA_ERROR_DISPLAY = "오류"
     }
 
     /**
@@ -77,10 +79,10 @@ class TimeStateResolver {
                 val formula = config["formula"] as? String ?: continue
                 try {
                     val value = evaluator.evaluate(formula)
-                    result[field.key] = if (value.isNaN() || value.isInfinite()) "오류" else value.toString()
+                    result[field.key] = if (value.isNaN() || value.isInfinite()) FORMULA_ERROR_DISPLAY else value.toString()
                 } catch (e: Exception) {
                     Log.e(TAG, "Formula evaluation error for field '${field.key}', formula='$formula'", e)
-                    result[field.key] = "오류"
+                    result[field.key] = FORMULA_ERROR_DISPLAY
                 }
             }
         }

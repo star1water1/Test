@@ -812,4 +812,7 @@
     <string name="quick_add_event_title">%d년 간편 사건 추가</string>
     <string name="hint_quick_event_desc">사건 제목 (나중에 세부 입력 가능)</string>
     <string name="quick_event_added">간편 사건이 추가되었습니다</string>
+
+    <!-- Formula / Calculated fields -->
+    <string name="formula_evaluation_error">오류</string>
 </resources>
