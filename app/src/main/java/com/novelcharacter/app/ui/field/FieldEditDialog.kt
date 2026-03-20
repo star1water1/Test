@@ -231,7 +231,7 @@ class FieldEditDialog : DialogFragment() {
             layoutParams = LinearLayout.LayoutParams((36 * density).toInt(), (36 * density).toInt())
             setImageResource(android.R.drawable.ic_delete)
             setBackgroundResource(android.R.color.transparent)
-            contentDescription = "삭제"
+            contentDescription = ctx.getString(R.string.delete)
             setOnClickListener {
                 container.removeView(row)
                 analysisRows.removeAll { it.container == row }

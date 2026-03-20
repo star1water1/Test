@@ -128,7 +128,7 @@
     <string name="label_allow_negative">음수 허용 (±등급)</string>
     <string name="label_formula">계산 수식</string>
     <string name="hint_formula_example">예: field(\'aura\') + field(\'body\')</string>
-    <string name="text_formula_help">사용 가능: field(\'키\'), sum_all_grades(), abs(), +, -, *, /</string>
+    <string name="text_formula_help">사용 가능: field(\'키\'), sum_all_grades(), abs(), max(a,b), min(a,b), +, -, *, /</string>
     <string name="label_required_field">필수 입력</string>
     <string name="label_display_format">표시 형식</string>
     <string name="hint_comma_list_helper">콤마(,)로 구분하여 여러 항목 입력</string>
