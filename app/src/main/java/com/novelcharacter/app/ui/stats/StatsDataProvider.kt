@@ -1240,11 +1240,16 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
                 .groupBy { "${it.specialization.icon} ${it.specialization.label}" }
                 .mapValues { it.value.size }
 
-            // 자주 쓰인 필드 값 TOP 5
+            // 자주 쓰인 필드 값 TOP 5 (필드별로 구분하여 집계)
+            val fieldDefMap = s.fieldDefinitions.associateBy { it.id }
             val novelFieldValues = s.fieldValues
                 .filter { fv -> fv.characterId in charIds && fv.value.isNotBlank() }
             val topValues = novelFieldValues
-                .groupBy { it.value.trim() }
+                .mapNotNull { fv ->
+                    val fdName = fieldDefMap[fv.fieldDefinitionId]?.name ?: return@mapNotNull null
+                    Triple(fdName, fv.value.trim(), fv)
+                }
+                .groupBy { "${it.first}:${it.second}" }
                 .mapValues { it.value.size }
                 .entries.sortedByDescending { it.value }
                 .take(5)

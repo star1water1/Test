@@ -65,6 +65,13 @@ class StatsMainFragment : Fragment() {
             val adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item, items)
             adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
             binding.spinnerNovelFilter.adapter = adapter
+
+            // ViewModel 상태에서 스피너 위치 복원 (Fragment 재생성 시)
+            val currentNovelId = viewModel.selectedNovelId.value
+            val restoredPos = if (currentNovelId == null) 0
+                else novels.indexOfFirst { it.first == currentNovelId }.let { if (it >= 0) it + 1 else 0 }
+            binding.spinnerNovelFilter.setSelection(restoredPos, false)
+
             binding.spinnerNovelFilter.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
                 override fun onItemSelected(parent: AdapterView<*>?, v: View?, pos: Int, id: Long) {
                     val novelId = if (pos == 0) null else novels[pos - 1].first

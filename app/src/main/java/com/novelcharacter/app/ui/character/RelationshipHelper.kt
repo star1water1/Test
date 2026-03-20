@@ -151,22 +151,13 @@ class RelationshipHelper(
     private fun showRelationshipOptionsDialog(item: RelationshipDisplayItem) {
         val context = try { contextGetter() } catch (_: Exception) { return }
         AlertDialog.Builder(context)
+            .setIcon(android.R.drawable.ic_dialog_alert)
             .setTitle(getFormattedString(R.string.relationship_title_format, arrayOf(item.otherCharacterName, item.relationshipType)))
-            .setItems(arrayOf(getString(R.string.delete))) { _, which ->
-                when (which) {
-                    0 -> {
-                        AlertDialog.Builder(context)
-                            .setIcon(android.R.drawable.ic_dialog_alert)
-                            .setTitle(getString(R.string.delete_warning_title))
-                            .setMessage(getString(R.string.confirm_delete_relationship))
-                            .setPositiveButton(getString(R.string.yes)) { _, _ ->
-                                viewModel.deleteRelationshipById(item.relationshipId)
-                            }
-                            .setNegativeButton(getString(R.string.no), null)
-                            .show()
-                    }
-                }
+            .setMessage(getString(R.string.confirm_delete_relationship))
+            .setPositiveButton(getString(R.string.delete)) { _, _ ->
+                viewModel.deleteRelationshipById(item.relationshipId)
             }
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 }
