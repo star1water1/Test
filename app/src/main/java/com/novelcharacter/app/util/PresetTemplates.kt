@@ -110,6 +110,7 @@ object PresetTemplates {
         )
 
         val fields = listOf(
+            FieldDefinition(universeId = 0, key = "birth_year", name = "출생연도", type = "NUMBER", config = """{"semanticRole":"birth_year"}""", groupName = "기본 정보"),
             FieldDefinition(universeId = 0, key = "age", name = "나이", type = "NUMBER", groupName = "기본 정보"),
             FieldDefinition(universeId = 0, key = "gender", name = "성별", type = "SELECT", config = """{"options":["남","여","?"]}""", groupName = "기본 정보"),
             FieldDefinition(universeId = 0, key = "race", name = "종족", type = "TEXT", groupName = "기본 정보"),
@@ -142,6 +143,7 @@ object PresetTemplates {
         )
 
         val fields = listOf(
+            FieldDefinition(universeId = 0, key = "birth_year", name = "출생연도", type = "NUMBER", config = """{"semanticRole":"birth_year"}""", groupName = "기본 정보"),
             FieldDefinition(universeId = 0, key = "age", name = "나이", type = "NUMBER", groupName = "기본 정보"),
             FieldDefinition(universeId = 0, key = "gender", name = "성별", type = "SELECT", config = """{"options":["남","여","?"]}""", groupName = "기본 정보"),
             FieldDefinition(universeId = 0, key = "race", name = "종족", type = "TEXT", groupName = "기본 정보"),

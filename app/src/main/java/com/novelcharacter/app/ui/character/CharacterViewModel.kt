@@ -12,6 +12,7 @@ import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.RecentActivity
 import com.novelcharacter.app.data.model.TimelineEvent
+import com.novelcharacter.app.util.SemanticFieldSyncHelper
 import android.util.Log
 import kotlinx.coroutines.launch
 
@@ -23,6 +24,7 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     private val timelineRepository = app.timelineRepository
     private val universeRepository = app.universeRepository
     private val recentActivityDao = app.recentActivityDao
+    val semanticSyncHelper = SemanticFieldSyncHelper(characterRepository, universeRepository)
 
     val allCharacters: LiveData<List<Character>> = characterRepository.allCharacters
     val allNovels: LiveData<List<Novel>> = novelRepository.allNovels
@@ -112,11 +114,28 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     suspend fun getValuesByCharacterList(characterId: Long): List<CharacterFieldValue> =
         characterRepository.getValuesByCharacterList(characterId)
 
-    suspend fun saveAllFieldValues(characterId: Long, values: List<CharacterFieldValue>) =
+    suspend fun saveAllFieldValues(characterId: Long, values: List<CharacterFieldValue>) {
         characterRepository.saveAllFieldValues(characterId, values)
+        val universeId = getUniverseIdForCharacter(characterId)
+        if (universeId != null) {
+            semanticSyncHelper.syncFieldToStateChange(characterId, universeId, values)
+        }
+    }
 
-    suspend fun updateCharacterWithFields(character: Character, values: List<CharacterFieldValue>) =
+    suspend fun updateCharacterWithFields(character: Character, values: List<CharacterFieldValue>) {
         characterRepository.updateCharacterWithFields(character, values)
+        val universeId = getUniverseIdForCharacter(character.id)
+        if (universeId != null) {
+            semanticSyncHelper.syncFieldToStateChange(character.id, universeId, values)
+        }
+    }
+
+    private suspend fun getUniverseIdForCharacter(characterId: Long): Long? {
+        val character = characterRepository.getCharacterById(characterId) ?: return null
+        val novelId = character.novelId ?: return null
+        val novel = novelRepository.getNovelById(novelId) ?: return null
+        return novel.universeId
+    }
 
     suspend fun insertCharacterSuspend(character: Character): Long =
         characterRepository.insertCharacter(character)
@@ -134,6 +153,7 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     fun insertStateChange(change: CharacterStateChange) = viewModelScope.launch {
         try {
             characterRepository.insertStateChange(change)
+            syncStateChangeToField(change)
         } catch (e: Exception) {
             Log.e("CharacterViewModel", "Failed to insert state change", e)
         }
@@ -142,9 +162,16 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     fun updateStateChange(change: CharacterStateChange) = viewModelScope.launch {
         try {
             characterRepository.updateStateChange(change)
+            syncStateChangeToField(change)
         } catch (e: Exception) {
             Log.e("CharacterViewModel", "Failed to update state change", e)
         }
+    }
+
+    private suspend fun syncStateChangeToField(change: CharacterStateChange) {
+        if (change.fieldKey != CharacterStateChange.KEY_BIRTH && change.fieldKey != CharacterStateChange.KEY_DEATH) return
+        val universeId = getUniverseIdForCharacter(change.characterId) ?: return
+        semanticSyncHelper.syncStateChangeToField(change.characterId, universeId, change)
     }
 
     fun deleteStateChange(change: CharacterStateChange) = viewModelScope.launch {

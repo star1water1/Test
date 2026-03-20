@@ -5,8 +5,10 @@ import android.view.ViewGroup
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
+import android.view.View
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.FieldType
+import com.novelcharacter.app.data.model.SemanticRole
 import com.novelcharacter.app.databinding.ItemFieldDefinitionBinding
 
 class FieldDefinitionAdapter(
@@ -39,6 +41,14 @@ class FieldDefinitionAdapter(
             binding.fieldTypeBadge.text = fieldType?.label ?: field.type
 
             binding.fieldGroup.text = field.groupName
+
+            val semanticRole = SemanticRole.fromConfig(field.config)
+            if (semanticRole != null) {
+                binding.fieldSemanticBadge.text = semanticRole.label
+                binding.fieldSemanticBadge.visibility = View.VISIBLE
+            } else {
+                binding.fieldSemanticBadge.visibility = View.GONE
+            }
 
             binding.root.setOnClickListener { onClick(field) }
             binding.root.setOnLongClickListener {

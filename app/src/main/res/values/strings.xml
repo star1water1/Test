@@ -690,4 +690,8 @@
     <string name="stats_nav_relation_network">관계 네트워크</string>
     <string name="stats_nav_data_overview">데이터 현황</string>
     <string name="stats_insight_preview_more">전체보기</string>
+
+    <!-- Semantic Role (시스템 연동) -->
+    <string name="label_semantic_role">시스템 연동 (선택)</string>
+    <string name="label_semantic_role_none">없음</string>
 </resources>

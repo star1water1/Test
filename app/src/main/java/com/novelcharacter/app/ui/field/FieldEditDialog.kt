@@ -21,6 +21,7 @@ import com.novelcharacter.app.data.model.DisplayFormat
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.FieldStatsConfig
 import com.novelcharacter.app.data.model.FieldType
+import com.novelcharacter.app.data.model.SemanticRole
 import com.novelcharacter.app.databinding.DialogFieldEditBinding
 
 class FieldEditDialog : DialogFragment() {
@@ -72,6 +73,7 @@ class FieldEditDialog : DialogFragment() {
         existingField = if (fieldJson != null) Gson().fromJson(fieldJson, FieldDefinition::class.java) else null
 
         setupTypeSpinner(binding)
+        setupSemanticRoleSpinner(binding)
         setupStatsSection(binding)
         populateFields(binding)
 
@@ -110,12 +112,35 @@ class FieldEditDialog : DialogFragment() {
                     if (selectedType == FieldType.CALCULATED) View.VISIBLE else View.GONE
                 binding.displayFormatLayout.visibility =
                     if (selectedType == FieldType.TEXT || selectedType == FieldType.MULTI_TEXT) View.VISIBLE else View.GONE
+                // 시스템 연동: CALCULATED 제외
+                binding.semanticRoleLayout.visibility =
+                    if (selectedType != FieldType.CALCULATED) View.VISIBLE else View.GONE
                 // 통계 설정: CALCULATED 제외
                 binding.statsSettingsLayout.visibility =
                     if (selectedType != FieldType.CALCULATED) View.VISIBLE else View.GONE
                 // NUMBER 전용 구간 설정
                 binding.binningLayout.visibility =
                     if (selectedType == FieldType.NUMBER) View.VISIBLE else View.GONE
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+    }
+
+    private fun setupSemanticRoleSpinner(binding: DialogFieldEditBinding) {
+        val roleLabels = listOf(getString(R.string.label_semantic_role_none)) + SemanticRole.labels()
+        val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, roleLabels)
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        binding.spinnerSemanticRole.adapter = adapter
+
+        binding.spinnerSemanticRole.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                if (position == 0) {
+                    binding.textSemanticRoleDesc.visibility = View.GONE
+                } else {
+                    val role = SemanticRole.entries[position - 1]
+                    binding.textSemanticRoleDesc.text = role.description
+                    binding.textSemanticRoleDesc.visibility = View.VISIBLE
+                }
             }
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
@@ -341,6 +366,13 @@ class FieldEditDialog : DialogFragment() {
         val formatIndex = DisplayFormat.entries.indexOf(displayFormat)
         if (formatIndex >= 0) binding.spinnerDisplayFormat.setSelection(formatIndex)
 
+        // Semantic role
+        val semanticRole = SemanticRole.fromConfig(field.config)
+        if (semanticRole != null) {
+            val roleIdx = SemanticRole.entries.indexOf(semanticRole) + 1 // +1 for "없음"
+            binding.spinnerSemanticRole.setSelection(roleIdx)
+        }
+
         // Stats config
         val statsConfig = FieldStatsConfig.fromConfig(field.config)
         binding.switchStatsEnabled.isChecked = statsConfig.enabled
@@ -465,6 +497,15 @@ class FieldEditDialog : DialogFragment() {
                 config["inputReplace"] = mapOf(" " to "-")
             }
             else -> {}
+        }
+
+        // Semantic role (CALCULATED 제외)
+        if (type != FieldType.CALCULATED) {
+            val rolePos = binding.spinnerSemanticRole.selectedItemPosition
+            val role = if (rolePos > 0) SemanticRole.entries[rolePos - 1] else null
+            if (role != null) {
+                config["semanticRole"] = role.key
+            }
         }
 
         // Stats config (CALCULATED 제외)
