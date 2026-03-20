@@ -361,7 +361,8 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
 
             val relWeight = relCnt * 2f
             val evtWeight = evtCnt * 1.5f
-            val fieldWeight = completion * 0.3f
+            // completion은 0~100 퍼센트 → 0~1로 정규화 후 가중치 적용 (최대 ~5점)
+            val fieldWeight = (completion / 100f) * 5f
             val stateWeight = stateChangeCnt * 1f
             val score = relWeight + evtWeight + fieldWeight + stateWeight
 
@@ -556,7 +557,8 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
 
             val relWeight = relCnt * 2f
             val evtWeight = evtCnt * 1.5f
-            val fieldWeight = completion * 0.3f
+            // completion은 0~100 퍼센트 → 0~1로 정규화 후 가중치 적용 (최대 ~5점)
+            val fieldWeight = (completion / 100f) * 5f
             val stateWeight = stateChangeCnt * 1f
             val score = relWeight + evtWeight + fieldWeight + stateWeight
 
@@ -682,8 +684,10 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
 
         // 신규: 네트워크 밀도 = 실제관계 / 가능한관계(n*(n-1)/2)
         val n = s.characters.size
-        val maxPossible = if (n > 1) n.toLong() * (n - 1) / 2.0f else 1f
-        val density = (s.relationships.size / maxPossible).coerceAtMost(1f)
+        val density = if (n > 1) {
+            val maxPossible = n.toLong() * (n - 1) / 2.0f
+            (s.relationships.size / maxPossible).coerceAtMost(1f)
+        } else 0f
 
         // 신규: 설명 완성도
         val emptyDescCount = s.relationships.count { it.description.isBlank() }
@@ -1229,9 +1233,9 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
         val charsByNovel = s.characters.groupBy { it.novelId }
         val eventsByNovel = s.events.groupBy { it.novelId }
 
-        // 전체 복잡도를 한 번만 계산하고 캐릭터 이름으로 매핑
+        // 전체 복잡도를 한 번만 계산하고 캐릭터 ID로 매핑
         val allComplexities = computeCharacterComplexities(s)
-        val complexityByName = allComplexities.associateBy { it.name }
+        val complexityById = allComplexities.mapIndexed { i, c -> s.characters[i].id to c }.toMap()
 
         val entries = s.novels.map { novel ->
             val chars = charsByNovel[novel.id] ?: emptyList()
@@ -1242,7 +1246,7 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
             val relCount = s.relationships.count { it.characterId1 in charIds || it.characterId2 in charIds }
 
             // 복잡도 계산 — 전체 복잡도에서 이 작품 캐릭터만 필터
-            val complexities = chars.mapNotNull { complexityByName[it.name] }
+            val complexities = chars.mapNotNull { complexityById[it.id] }
             val avgComplexity = if (complexities.isNotEmpty()) {
                 complexities.map { it.totalScore }.average().toFloat()
             } else 0f
