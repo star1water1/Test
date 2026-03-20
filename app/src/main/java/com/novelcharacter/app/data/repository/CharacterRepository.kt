@@ -53,8 +53,9 @@ class CharacterRepository(
         db.withTransaction {
             nameBankDao.resetUsageByCharacter(character.id)
             recentActivityDao.deleteByEntity(RecentActivity.TYPE_CHARACTER, character.id)
-            // 이 캐릭터를 이미지로 참조하는 작품의 댕글링 참조 정리
+            // 이 캐릭터를 이미지로 참조하는 작품/세계관의 댕글링 참조 정리
             db.novelDao().clearImageCharacterRef(character.id)
+            db.universeDao().clearImageCharacterRef(character.id)
             characterDao.delete(character)
         }
     }

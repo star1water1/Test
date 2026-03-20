@@ -35,4 +35,7 @@ interface UniverseDao {
 
     @Query("SELECT COALESCE(MAX(displayOrder), -1) + 1 FROM universes")
     suspend fun getNextDisplayOrder(): Long
+
+    @Query("UPDATE universes SET imageCharacterId = NULL, imageMode = 'random_character' WHERE imageCharacterId = :characterId")
+    suspend fun clearImageCharacterRef(characterId: Long)
 }
