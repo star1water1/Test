@@ -38,6 +38,17 @@ class SystemMaintenanceService(
             cursor.close()
         }
 
+        // Check for orphaned imageCharacterId references (no FK constraint)
+        db.openHelper.readableDatabase.query(
+            "SELECT id, title FROM novels WHERE imageCharacterId IS NOT NULL AND imageCharacterId NOT IN (SELECT id FROM characters)"
+        ).use { orphanCursor ->
+            while (orphanCursor.moveToNext()) {
+                fkCount++
+                val title = orphanCursor.getString(1)
+                details.add("FK violation: novels.imageCharacterId (novel '$title') references deleted character")
+            }
+        }
+
         return IntegrityResult(fkViolations = fkCount, details = details)
     }
 
@@ -185,6 +196,17 @@ class SystemMaintenanceService(
         }
 
         return IntegrityResult(orphanImages = orphanCount, details = details)
+    }
+
+    /**
+     * Clear orphaned imageCharacterId references in novels
+     * where the referenced character no longer exists.
+     */
+    suspend fun cleanOrphanedImageCharacterIds() {
+        db.openHelper.writableDatabase.execSQL(
+            "UPDATE novels SET imageCharacterId = NULL WHERE imageCharacterId IS NOT NULL " +
+            "AND imageCharacterId NOT IN (SELECT id FROM characters)"
+        )
     }
 
     /**

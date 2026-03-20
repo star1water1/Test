@@ -80,39 +80,36 @@ object BackupEncryptor {
     }
 
     /**
-     * Decrypt a file to another file using streaming to avoid loading all data into memory.
-     * Uses CipherInputStream for streaming decryption. GCM authentication tag is verified
-     * when the stream reaches the end (doFinal is called internally).
+     * Decrypt a file to another file.
+     * Uses doFinal()-based decryption to guarantee GCM authentication tag verification.
+     * CipherInputStream may silently skip tag validation on some Android versions,
+     * so we read the ciphertext fully and use doFinal() which always verifies the tag.
      * Input format: [IV (12 bytes)] [encrypted data + GCM tag]
      */
     fun decryptFile(inputFile: File, outputFile: File) {
         val tempFile = File(outputFile.parentFile, outputFile.name + ".tmp")
         try {
-            FileInputStream(inputFile).use { fis ->
-                require(inputFile.length() > GCM_IV_LENGTH) {
-                    "Encrypted file too short: expected at least ${GCM_IV_LENGTH + 1} bytes"
-                }
-
-                val iv = ByteArray(GCM_IV_LENGTH)
-                var totalRead = 0
-                while (totalRead < GCM_IV_LENGTH) {
-                    val read = fis.read(iv, totalRead, GCM_IV_LENGTH - totalRead)
-                    if (read == -1) throw IllegalArgumentException("Encrypted file too short to read IV")
-                    totalRead += read
-                }
-
-                val cipher = Cipher.getInstance(TRANSFORMATION)
-                val spec = GCMParameterSpec(GCM_TAG_LENGTH, iv)
-                cipher.init(Cipher.DECRYPT_MODE, getOrCreateKey(), spec)
-
-                javax.crypto.CipherInputStream(fis, cipher).use { cis ->
-                    FileOutputStream(tempFile).use { fos ->
-                        cis.copyTo(fos, bufferSize = 8192)
-                    }
-                }
+            val fileBytes = inputFile.readBytes()
+            require(fileBytes.size > GCM_IV_LENGTH) {
+                "Encrypted file too short: expected at least ${GCM_IV_LENGTH + 1} bytes"
             }
 
-            // GCM tag verified successfully — safe to commit output
+            val iv = fileBytes.copyOfRange(0, GCM_IV_LENGTH)
+            val ciphertext = fileBytes.copyOfRange(GCM_IV_LENGTH, fileBytes.size)
+
+            val cipher = Cipher.getInstance(TRANSFORMATION)
+            val spec = GCMParameterSpec(GCM_TAG_LENGTH, iv)
+            cipher.init(Cipher.DECRYPT_MODE, getOrCreateKey(), spec)
+
+            // doFinal() guarantees GCM authentication tag verification;
+            // throws AEADBadTagException if the file has been tampered with
+            val decrypted = cipher.doFinal(ciphertext)
+
+            FileOutputStream(tempFile).use { fos ->
+                fos.write(decrypted)
+            }
+
+            // Tag verified successfully — safe to commit output
             if (!tempFile.renameTo(outputFile)) {
                 tempFile.copyTo(outputFile, overwrite = true)
                 tempFile.delete()
@@ -120,6 +117,19 @@ object BackupEncryptor {
         } catch (e: Exception) {
             tempFile.delete()
             throw e
+        }
+    }
+
+    /**
+     * Check whether the backup encryption key exists in Android KeyStore.
+     * Returns false if the key has been lost (e.g. after factory reset or KeyStore wipe).
+     */
+    fun isKeyAvailable(): Boolean {
+        return try {
+            val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+            keyStore.containsAlias(KEYSTORE_ALIAS)
+        } catch (e: Exception) {
+            false
         }
     }
 

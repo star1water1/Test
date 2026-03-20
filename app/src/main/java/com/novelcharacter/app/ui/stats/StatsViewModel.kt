@@ -118,11 +118,14 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
                 val names = withContext(Dispatchers.IO) { provider.computeNameBankStats(filtered) }
                 val health = withContext(Dispatchers.IO) { provider.computeDataHealth(filtered) }
 
+                val fieldAnalysis = withContext(Dispatchers.IO) { provider.computeFieldAnalysis(filtered) }
+
                 _characterStats.value = chars
                 _eventStats.value = events
                 _relationshipStats.value = rels
                 _nameBankStats.value = names
                 _dataHealthStats.value = health
+                _fieldAnalysisStats.value = fieldAnalysis
             } catch (e: Exception) {
                 _error.value = e.message
             } finally {

@@ -41,7 +41,7 @@
         <!-- Widgets -->
         <receiver
             android:name=".widget.RecentCharactersWidget"
-            android:exported="false">
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
@@ -52,7 +52,7 @@
 
         <receiver
             android:name=".widget.TodayCharacterWidget"
-            android:exported="false">
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
@@ -63,7 +63,7 @@
 
         <receiver
             android:name=".widget.QuickAddWidget"
-            android:exported="false">
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>

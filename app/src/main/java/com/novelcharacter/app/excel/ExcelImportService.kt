@@ -137,12 +137,19 @@ class ExcelImportService(private val db: AppDatabase) {
 
         val totalRows = countTotalRows(workbook)
 
+        // Phase 1: Schema definitions (universes, novels, field definitions)
         db.withTransaction {
             importUniverses(workbook, result, onProgress, totalRows)
             importNovels(workbook, result, onProgress, totalRows)
             importFieldDefinitions(workbook, result, onProgress, totalRows)
+        }
+        // Phase 2: Entity data (characters)
+        db.withTransaction {
             importCharacterSheets(workbook, result, onProgress, totalRows)
             importUnclassifiedCharacters(workbook, result, onProgress, totalRows)
+        }
+        // Phase 3: Relationships and references
+        db.withTransaction {
             importTimeline(workbook, result, onProgress, totalRows)
             importStateChanges(workbook, result, onProgress, totalRows)
             importRelationships(workbook, result, onProgress, totalRows)
@@ -940,12 +947,22 @@ class ExcelImportService(private val db: AppDatabase) {
                     (rel.characterId1 == char2.id && rel.characterId2 == char1.id)
                 } ?: continue
 
-                db.characterRelationshipChangeDao().insert(CharacterRelationshipChange(
-                    relationshipId = relationship.id,
-                    year = year, month = month, day = day,
-                    relationshipType = relationshipType, description = description,
-                    intensity = intensity, isBidirectional = isBidirectional
-                ))
+                val existing = db.characterRelationshipChangeDao().getChangeByNaturalKey(
+                    relationship.id, year, month, day
+                )
+                if (existing != null) {
+                    db.characterRelationshipChangeDao().update(existing.copy(
+                        relationshipType = relationshipType, description = description,
+                        intensity = intensity, isBidirectional = isBidirectional
+                    ))
+                } else {
+                    db.characterRelationshipChangeDao().insert(CharacterRelationshipChange(
+                        relationshipId = relationship.id,
+                        year = year, month = month, day = day,
+                        relationshipType = relationshipType, description = description,
+                        intensity = intensity, isBidirectional = isBidirectional
+                    ))
+                }
                 result.newRelationshipChanges++
             } catch (e: Exception) {
                 result.skippedRows++

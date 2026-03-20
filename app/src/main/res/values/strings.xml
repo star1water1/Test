@@ -694,4 +694,8 @@
     <!-- Semantic Role (시스템 연동) -->
     <string name="label_semantic_role">시스템 연동 (선택)</string>
     <string name="label_semantic_role_none">없음</string>
+
+    <!-- Notification Channel -->
+    <string name="notification_channel_birthday_name">캐릭터 생일 알림</string>
+    <string name="notification_channel_birthday_desc">소설 캐릭터의 생일을 알려줍니다</string>
 </resources>

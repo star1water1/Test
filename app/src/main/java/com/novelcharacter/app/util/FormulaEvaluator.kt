@@ -12,6 +12,9 @@ class FormulaEvaluator(
     private val fieldValues: Map<String, String>,       // fieldKey -> value
     private val fieldDefinitions: List<FieldDefinition>  // for GRADE mapping
 ) {
+    // Track field keys currently being resolved to detect circular references
+    private val resolvingFields = mutableSetOf<String>()
+
     fun evaluate(formula: String): Double {
         val tokens = tokenize(formula)
         if (tokens.size >= MAX_TOKENS) {
@@ -23,16 +26,24 @@ class FormulaEvaluator(
     }
 
     private fun resolveField(key: String): Double {
-        val value = fieldValues[key]
-        if (value == null) {
-            Log.w("FormulaEvaluator", "Field '$key' not found in values, defaulting to 0.0")
+        if (!resolvingFields.add(key)) {
+            Log.w("FormulaEvaluator", "Circular reference detected for field '$key', returning 0.0")
             return 0.0
         }
-        val fieldDef = fieldDefinitions.find { it.key == key }
-        if (fieldDef != null && fieldDef.type == "GRADE") {
-            return resolveGradeValue(fieldDef, value)
+        try {
+            val value = fieldValues[key]
+            if (value == null) {
+                Log.w("FormulaEvaluator", "Field '$key' not found in values, defaulting to 0.0")
+                return 0.0
+            }
+            val fieldDef = fieldDefinitions.find { it.key == key }
+            if (fieldDef != null && fieldDef.type == "GRADE") {
+                return resolveGradeValue(fieldDef, value)
+            }
+            return value.toDoubleOrNull() ?: 0.0
+        } finally {
+            resolvingFields.remove(key)
         }
-        return value.toDoubleOrNull() ?: 0.0
     }
 
     private fun resolveGradeValue(fieldDef: FieldDefinition, gradeLabel: String): Double {

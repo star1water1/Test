@@ -94,6 +94,7 @@ class RelationshipGraphView @JvmOverloads constructor(
     private val arrowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
     }
+    private val arrowPath = Path()
 
     private val scaleDetector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
         override fun onScale(detector: ScaleGestureDetector): Boolean {
@@ -331,13 +332,12 @@ class RelationshipGraphView @JvmOverloads constructor(
         val y2 = tipY - arrowSize * sin(angle + PI / 6).toFloat()
 
         arrowPaint.color = color
-        val path = Path().apply {
-            moveTo(tipX, tipY)
-            lineTo(x1, y1)
-            lineTo(x2, y2)
-            close()
-        }
-        canvas.drawPath(path, arrowPaint)
+        arrowPath.rewind()
+        arrowPath.moveTo(tipX, tipY)
+        arrowPath.lineTo(x1, y1)
+        arrowPath.lineTo(x2, y2)
+        arrowPath.close()
+        canvas.drawPath(arrowPath, arrowPaint)
     }
 
     override fun onAttachedToWindow() {

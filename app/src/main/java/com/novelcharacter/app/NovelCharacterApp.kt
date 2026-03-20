@@ -1,6 +1,7 @@
 package com.novelcharacter.app
 
 import android.app.Application
+import com.novelcharacter.app.R
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import androidx.work.ExistingPeriodicWorkPolicy
@@ -14,6 +15,7 @@ import com.novelcharacter.app.data.repository.UniverseRepository
 import com.novelcharacter.app.data.repository.NameBankRepository
 import com.novelcharacter.app.data.repository.SearchPresetRepository
 import com.novelcharacter.app.backup.AutoBackupWorker
+import com.novelcharacter.app.backup.BackupEncryptor
 import com.novelcharacter.app.backup.BackupStatusStore
 import com.novelcharacter.app.notification.BirthdayWorker
 import com.novelcharacter.app.util.ThemeHelper
@@ -63,6 +65,7 @@ class NovelCharacterApp : Application() {
             ThemeHelper.migrateCacheIfNeeded(this@NovelCharacterApp)
         }
         createNotificationChannel()
+        checkBackupKeyAvailability()
         try {
             scheduleBirthdayCheck()
             scheduleAutoBackup()
@@ -74,10 +77,10 @@ class NovelCharacterApp : Application() {
     private fun createNotificationChannel() {
         val channel = NotificationChannel(
             BIRTHDAY_CHANNEL_ID,
-            "캐릭터 생일 알림",
+            getString(R.string.notification_channel_birthday_name),
             NotificationManager.IMPORTANCE_DEFAULT
         ).apply {
-            description = "소설 캐릭터의 생일을 알려줍니다"
+            description = getString(R.string.notification_channel_birthday_desc)
         }
         val manager = getSystemService(NotificationManager::class.java) ?: return
         manager.createNotificationChannel(channel)
@@ -109,6 +112,16 @@ class NovelCharacterApp : Application() {
             ExistingPeriodicWorkPolicy.KEEP,
             workRequest
         )
+    }
+
+    private fun checkBackupKeyAvailability() {
+        val backupDir = java.io.File(filesDir, "backups")
+        val hasBackups = backupDir.exists() && (backupDir.listFiles()?.isNotEmpty() == true)
+        if (hasBackups && !BackupEncryptor.isKeyAvailable()) {
+            android.util.Log.w("NovelCharacterApp",
+                "Backup encryption key is missing! Previous backups cannot be decrypted. " +
+                "This may happen after a factory reset or KeyStore wipe.")
+        }
     }
 
     companion object {

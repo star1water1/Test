@@ -51,7 +51,7 @@ class AutoBackupWorker(
                 // Write workbook to bytes, encrypt, and save to internal storage
                 saveEncryptedBackup(workbook)
             } finally {
-                try { workbook.close() } catch (_: Exception) {}
+                try { workbook.close() } catch (e: Exception) { Log.w(TAG, "Failed to close workbook", e) }
             }
 
             // Rotate old backups
@@ -125,7 +125,7 @@ class AutoBackupWorker(
 
         val sheetName = sanitizeSheetName("세계관", usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
-        val headers = listOf("이름", "설명", "코드", "정렬순서", "테두리색", "테두리두께")
+        val headers = listOf("이름", "설명", "코드", "정렬순서", "테두리색", "테두리두께", "이미지경로", "이미지모드")
         val headerRow = sheet.createRow(0)
         headers.forEachIndexed { i, h ->
             headerRow.createCell(i).apply { setCellValue(h); cellStyle = headerStyle }
@@ -138,6 +138,8 @@ class AutoBackupWorker(
             row.createCell(3).setCellValue(u.displayOrder.toDouble())
             row.createCell(4).setCellValue(u.borderColor)
             row.createCell(5).setCellValue(u.borderWidthDp.toDouble())
+            row.createCell(6).setCellValue(u.imagePath)
+            row.createCell(7).setCellValue(u.imageMode)
         }
     }
 
@@ -151,7 +153,7 @@ class AutoBackupWorker(
 
         val sheetName = sanitizeSheetName("작품", usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
-        val headers = listOf("제목", "설명", "세계관", "코드", "세계관코드", "정렬순서", "테두리색", "테두리두께")
+        val headers = listOf("제목", "설명", "세계관", "코드", "세계관코드", "정렬순서", "테두리색", "테두리두께", "이미지경로", "이미지모드", "이미지캐릭터ID")
         val universeMap = universes.associateBy { it.id }
         val headerRow = sheet.createRow(0)
         headers.forEachIndexed { i, h ->
@@ -168,6 +170,9 @@ class AutoBackupWorker(
             row.createCell(5).setCellValue(n.displayOrder.toDouble())
             row.createCell(6).setCellValue(n.borderColor)
             row.createCell(7).setCellValue(n.borderWidthDp.toDouble())
+            row.createCell(8).setCellValue(n.imagePath)
+            row.createCell(9).setCellValue(n.imageMode)
+            row.createCell(10).setCellValue(n.imageCharacterId?.toDouble() ?: 0.0)
         }
     }
 
