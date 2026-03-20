@@ -18,6 +18,7 @@
     <string name="character_name">이름</string>
     <string name="save">저장</string>
     <string name="cancel">취소</string>
+    <string name="confirm">확인</string>
     <string name="delete">삭제</string>
     <string name="add_image">이미지 추가</string>
     <string name="select_novel">작품 선택</string>
@@ -429,6 +430,18 @@
     <string name="backup_failure_reason">실패 원인: %s</string>
     <string name="backup_file_count">백업 파일: %d개</string>
     <string name="backup_never">없음</string>
+    <string name="backup_restore">백업 복원</string>
+    <string name="backup_restore_title">백업 복원</string>
+    <string name="backup_restore_from_internal">내부 백업에서 복원</string>
+    <string name="backup_restore_from_external">외부 파일에서 복원</string>
+    <string name="backup_restore_select">복원할 백업을 선택하세요</string>
+    <string name="backup_restore_confirm_title">백업 복원 확인</string>
+    <string name="backup_restore_confirm_message">\'%s\' 백업을 복원하시겠습니까?\n\n기존 데이터와 중복되는 항목은 업데이트됩니다.</string>
+    <string name="backup_restore_decrypting">백업 파일 복호화 중…</string>
+    <string name="backup_restore_success">백업 복원 완료</string>
+    <string name="backup_restore_failed">백업 복원 실패: %s</string>
+    <string name="backup_restore_no_backups">저장된 백업 파일이 없습니다</string>
+    <string name="backup_restore_key_missing">암호화 키가 손실되어 백업을 복원할 수 없습니다.\n기기 초기화 또는 보안 업데이트 후 발생할 수 있습니다.</string>
 
     <!-- Sprint 2: Search Presets -->
     <string name="search_presets">검색 프리셋</string>

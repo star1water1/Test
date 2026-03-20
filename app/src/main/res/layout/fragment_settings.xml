@@ -86,6 +86,24 @@
                 android:textSize="13sp"
                 android:textColor="?attr/colorOnSurfaceVariant" />
 
+            <!-- Restore from backup -->
+            <LinearLayout
+                android:id="@+id/backupRestoreRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp"
+                android:background="?attr/selectableItemBackground">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/backup_restore"
+                    android:textSize="16sp"
+                    android:textColor="?attr/colorOnSurface" />
+
+            </LinearLayout>
+
             <View
                 android:layout_width="match_parent"
                 android:layout_height="1dp"

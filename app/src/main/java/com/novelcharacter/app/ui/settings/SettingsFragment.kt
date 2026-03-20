@@ -1,5 +1,7 @@
 package com.novelcharacter.app.ui.settings
 
+import android.app.ProgressDialog
+import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -11,6 +13,7 @@ import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.R
+import com.novelcharacter.app.backup.BackupEncryptor
 import com.novelcharacter.app.backup.BackupStatusStore
 import com.novelcharacter.app.data.maintenance.SystemMaintenanceService
 import java.io.File
@@ -19,7 +22,9 @@ import java.util.Date
 import java.util.Locale
 import com.novelcharacter.app.databinding.FragmentSettingsBinding
 import com.novelcharacter.app.util.ThemeHelper
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class SettingsFragment : Fragment() {
 
@@ -33,6 +38,13 @@ class SettingsFragment : Fragment() {
     }
     private var exporter: com.novelcharacter.app.excel.ExcelExporter? = null
     private var pendingExportFile: java.io.File? = null
+
+    private val restoreFileLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (!isAdded || uri == null) return@registerForActivityResult
+        restoreFromEncryptedUri(uri)
+    }
 
     private val saveFileLauncher = registerForActivityResult(
         ActivityResultContracts.CreateDocument("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
@@ -76,6 +88,10 @@ class SettingsFragment : Fragment() {
 
         binding.importRow.setOnClickListener {
             importFromExcel()
+        }
+
+        binding.backupRestoreRow.setOnClickListener {
+            showRestoreDialog()
         }
 
         // Maintenance
@@ -260,6 +276,141 @@ class SettingsFragment : Fragment() {
     private fun importFromExcel() {
         if (!isAdded) return
         importer.showImportDialog(this)
+    }
+
+    // ── 백업 복원 ──
+
+    private fun showRestoreDialog() {
+        if (!isAdded) return
+
+        if (!BackupEncryptor.isKeyAvailable()) {
+            AlertDialog.Builder(requireContext())
+                .setTitle(R.string.backup_restore_title)
+                .setMessage(R.string.backup_restore_key_missing)
+                .setPositiveButton(R.string.confirm, null)
+                .show()
+            return
+        }
+
+        val options = arrayOf(
+            getString(R.string.backup_restore_from_internal),
+            getString(R.string.backup_restore_from_external)
+        )
+        AlertDialog.Builder(requireContext())
+            .setTitle(R.string.backup_restore_title)
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> showInternalBackupList()
+                    1 -> restoreFileLauncher.launch(arrayOf("application/octet-stream"))
+                }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun showInternalBackupList() {
+        if (!isAdded) return
+        val app = requireContext().applicationContext as NovelCharacterApp
+        val backupDir = File(app.filesDir, "backups")
+        val backupFiles = backupDir.listFiles { f ->
+            f.name.startsWith("NovelCharacter_AutoBackup_") && f.name.endsWith(".enc")
+        }?.sortedByDescending { it.lastModified() } ?: emptyList()
+
+        if (backupFiles.isEmpty()) {
+            Toast.makeText(requireContext(), R.string.backup_restore_no_backups, Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+        val labels = backupFiles.map { file ->
+            val date = dateFormat.format(Date(file.lastModified()))
+            val sizeMb = String.format(Locale.US, "%.1f", file.length() / 1024.0 / 1024.0)
+            "$date  (${sizeMb}MB)"
+        }.toTypedArray()
+
+        AlertDialog.Builder(requireContext())
+            .setTitle(R.string.backup_restore_select)
+            .setItems(labels) { _, which ->
+                confirmAndRestore(backupFiles[which])
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun confirmAndRestore(encFile: File) {
+        if (!isAdded) return
+        val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+        val label = dateFormat.format(Date(encFile.lastModified()))
+
+        AlertDialog.Builder(requireContext())
+            .setTitle(R.string.backup_restore_confirm_title)
+            .setMessage(getString(R.string.backup_restore_confirm_message, label))
+            .setPositiveButton(R.string.confirm) { _, _ ->
+                restoreFromEncryptedFile(encFile)
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun restoreFromEncryptedUri(uri: Uri) {
+        if (!isAdded) return
+        viewLifecycleOwner.lifecycleScope.launch {
+            var tempEncFile: File? = null
+            try {
+                // 외부 Uri를 로컬 임시 파일로 복사
+                tempEncFile = withContext(Dispatchers.IO) {
+                    val temp = File.createTempFile("restore_ext_", ".enc", requireContext().cacheDir)
+                    requireContext().contentResolver.openInputStream(uri)?.use { input ->
+                        temp.outputStream().use { output -> input.copyTo(output) }
+                    } ?: throw Exception("파일을 열 수 없습니다")
+                    temp
+                }
+                restoreFromEncryptedFile(tempEncFile)
+            } catch (e: Exception) {
+                tempEncFile?.delete()
+                if (_binding != null) {
+                    Toast.makeText(requireContext(), getString(R.string.backup_restore_failed, e.message), Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun restoreFromEncryptedFile(encFile: File) {
+        if (!isAdded) return
+
+        val ctx = requireContext()
+        val progressDialog = ProgressDialog(ctx).apply {
+            setMessage(getString(R.string.backup_restore_decrypting))
+            setCancelable(false)
+            isIndeterminate = true
+        }
+        progressDialog.show()
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            var tempXlsx: File? = null
+            try {
+                // 복호화
+                tempXlsx = withContext(Dispatchers.IO) {
+                    val xlsx = File.createTempFile("restore_", ".xlsx", ctx.cacheDir)
+                    BackupEncryptor.decryptFile(encFile, xlsx)
+                    xlsx
+                }
+                if (_binding == null) return@launch
+
+                // 복호화된 xlsx를 ExcelImporter로 전달
+                val xlsxUri = Uri.fromFile(tempXlsx)
+                progressDialog.dismiss()
+                importer.importFromExcel(xlsxUri)
+
+            } catch (e: Exception) {
+                tempXlsx?.delete()
+                if (progressDialog.isShowing) progressDialog.dismiss()
+                if (_binding != null) {
+                    Toast.makeText(ctx, getString(R.string.backup_restore_failed, e.message), Toast.LENGTH_LONG).show()
+                }
+            }
+        }
     }
 
     override fun onDestroyView() {
