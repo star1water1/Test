@@ -55,7 +55,7 @@ import com.novelcharacter.app.data.model.Universe
         SearchPreset::class,
         UserPresetTemplate::class
     ],
-    version = 16,
+    version = 17,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -579,6 +579,148 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Migration from version 16 to 17:
+         * 천칭의 마법사 프리셋 6대 능력치 체계 반영
+         * - 기존 3개 GRADE 필드 (aura_affinity, body_control, mana_affinity) 이름/등급스케일/그룹 업데이트
+         * - total_combat → total_potential 키/이름/수식 변경
+         * - 신규 필드 3개 (special, intelligence, mana_control) + spec_potential 추가
+         * - 그룹명 "마법 능력치" → "잠재 능력치"
+         * - 세계관 설명 "오라" → "오러" 표기 수정
+         */
+        private val MIGRATION_16_17 = object : Migration(16, 17) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "Migrating database from version 16 to 17")
+
+                // 1. 천칭의 마법사 세계관 ID 조회
+                val cursor = db.query("SELECT id FROM universes WHERE name = '천칭의 마법사'")
+                val universeIds = mutableListOf<Long>()
+                while (cursor.moveToNext()) {
+                    universeIds.add(cursor.getLong(0))
+                }
+                cursor.close()
+
+                if (universeIds.isEmpty()) {
+                    Log.i(TAG, "No 천칭의 마법사 universes found, skipping field migration")
+                    return
+                }
+
+                for (universeId in universeIds) {
+                    Log.i(TAG, "Updating 천칭의 마법사 universe id=$universeId")
+
+                    // 2. 세계관 설명 업데이트: "오라" → "오러"
+                    db.execSQL("""
+                        UPDATE universes SET description = '오러·마나·신체 기반 마법 체계와 등급 시스템이 있는 세계관'
+                        WHERE id = $universeId
+                    """)
+
+                    // 3. 기존 필드 업데이트: 이름, 등급 스케일, 그룹명 변경
+                    // aura_affinity: "오라 친화" → "오러친화", C=0.5/B=1/A=2/S=3, allowNegative=false
+                    db.execSQL("""
+                        UPDATE field_definitions
+                        SET name = '오러친화',
+                            config = '{"grades":{"C":0.5,"B":1,"A":2,"S":3},"allowNegative":false}',
+                            groupName = '잠재 능력치'
+                        WHERE universeId = $universeId AND `key` = 'aura_affinity'
+                    """)
+
+                    // body_control: "신체 조절" → "신체제어", C=0.5/B=1/A=2/S=3, allowNegative=false
+                    db.execSQL("""
+                        UPDATE field_definitions
+                        SET name = '신체제어',
+                            config = '{"grades":{"C":0.5,"B":1,"A":2,"S":3},"allowNegative":false}',
+                            groupName = '잠재 능력치'
+                        WHERE universeId = $universeId AND `key` = 'body_control'
+                    """)
+
+                    // mana_affinity: "마나 친화" → "마나친화", C=0.5/B=1/A=2/S=3, allowNegative=false
+                    db.execSQL("""
+                        UPDATE field_definitions
+                        SET name = '마나친화',
+                            config = '{"grades":{"C":0.5,"B":1,"A":2,"S":3},"allowNegative":false}',
+                            groupName = '잠재 능력치'
+                        WHERE universeId = $universeId AND `key` = 'mana_affinity'
+                    """)
+
+                    // 4. total_combat → total_potential: 키/이름/수식 변경
+                    db.execSQL("""
+                        UPDATE field_definitions
+                        SET `key` = 'total_potential',
+                            name = '종합잠재력',
+                            config = '{"formula":"field(''special'')+field(''intelligence'')+field(''mana_affinity'')+field(''mana_control'')+field(''aura_affinity'')+field(''body_control'')"}',
+                            groupName = '잠재 능력치'
+                        WHERE universeId = $universeId AND `key` = 'total_combat'
+                    """)
+
+                    // character_state_changes의 fieldKey도 업데이트
+                    db.execSQL("""
+                        UPDATE character_state_changes
+                        SET fieldKey = 'total_potential'
+                        WHERE fieldKey = 'total_combat'
+                          AND characterId IN (
+                              SELECT c.id FROM characters c
+                              JOIN novels n ON c.novelId = n.id
+                              WHERE n.universeId = $universeId
+                          )
+                    """)
+
+                    // 5. 신규 GRADE 필드 추가 (displayOrder는 뒤에서 일괄 재정렬)
+                    // special: "특수", C=1/B=2/A=3/S=4, allowNegative=true
+                    db.execSQL("""
+                        INSERT OR IGNORE INTO field_definitions (universeId, `key`, name, type, config, groupName, displayOrder, isRequired)
+                        VALUES ($universeId, 'special', '특수', 'GRADE',
+                                '{"grades":{"C":1,"B":2,"A":3,"S":4},"allowNegative":true}',
+                                '잠재 능력치', 10, 0)
+                    """)
+
+                    // intelligence: "지력", C=1/B=2/A=3/S=4
+                    db.execSQL("""
+                        INSERT OR IGNORE INTO field_definitions (universeId, `key`, name, type, config, groupName, displayOrder, isRequired)
+                        VALUES ($universeId, 'intelligence', '지력', 'GRADE',
+                                '{"grades":{"C":1,"B":2,"A":3,"S":4},"allowNegative":false}',
+                                '잠재 능력치', 11, 0)
+                    """)
+
+                    // mana_control: "마나제어", C=1/B=2/A=3/S=4
+                    db.execSQL("""
+                        INSERT OR IGNORE INTO field_definitions (universeId, `key`, name, type, config, groupName, displayOrder, isRequired)
+                        VALUES ($universeId, 'mana_control', '마나제어', 'GRADE',
+                                '{"grades":{"C":1,"B":2,"A":3,"S":4},"allowNegative":false}',
+                                '잠재 능력치', 13, 0)
+                    """)
+
+                    // spec_potential: "특화잠재력", CALCULATED
+                    db.execSQL("""
+                        INSERT OR IGNORE INTO field_definitions (universeId, `key`, name, type, config, groupName, displayOrder, isRequired)
+                        VALUES ($universeId, 'spec_potential', '특화잠재력', 'CALCULATED',
+                                '{"formula":"max(field(''mana_affinity'')+field(''mana_control''),field(''aura_affinity'')+field(''body_control''))"}',
+                                '잠재 능력치', 17, 0)
+                    """)
+
+                    // 6. displayOrder 재정렬 (프리셋 순서에 맞춤)
+                    val orderMap = mapOf(
+                        "birth_year" to 0, "age" to 1, "gender" to 2, "race" to 3,
+                        "height" to 4, "body_size" to 5, "alive" to 6,
+                        "job_title" to 7, "affiliation" to 8, "residence" to 9,
+                        "special" to 10, "intelligence" to 11, "mana_affinity" to 12,
+                        "mana_control" to 13, "aura_affinity" to 14, "body_control" to 15,
+                        "total_potential" to 16, "spec_potential" to 17,
+                        "magic_type" to 18, "special_magic" to 19, "authority" to 20,
+                        "personality" to 21, "likes" to 22, "dislikes" to 23,
+                        "appearance" to 24, "special_notes" to 25
+                    )
+                    for ((key, order) in orderMap) {
+                        db.execSQL("""
+                            UPDATE field_definitions SET displayOrder = $order
+                            WHERE universeId = $universeId AND `key` = '$key'
+                        """)
+                    }
+                }
+
+                Log.i(TAG, "Migration from version 16 to 17 completed successfully")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -586,7 +728,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "novel_character_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17)
                     .build()
                     .also { INSTANCE = it }
             }
