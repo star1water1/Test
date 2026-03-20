@@ -451,6 +451,8 @@ class ExcelExporter(context: Context) {
             row.createCell(8).setCellValue(novel.imagePath)
             row.createCell(9).setCellValue(novel.imageMode)
             row.createCell(10).setCellValue(novel.imageCharacterId?.toDouble() ?: 0.0)
+            row.createCell(11).setCellValue(if (novel.inheritUniverseBorder) "Y" else "N")
+            row.createCell(12).setCellValue(if (novel.isPinned) "Y" else "N")
         }
 
         applySpecFormatting(sheet, spec, novels.size)
@@ -600,7 +602,10 @@ class ExcelExporter(context: Context) {
             row.createCell(col++).setCellValue(novel?.code ?: "")
 
             // 정렬순서
-            row.createCell(col).setCellValue(character.displayOrder.toDouble())
+            row.createCell(col++).setCellValue(character.displayOrder.toDouble())
+
+            // 고정
+            row.createCell(col).setCellValue(if (character.isPinned) "Y" else "N")
         }
 
         applySpecFormatting(sheet, spec, characters.size)

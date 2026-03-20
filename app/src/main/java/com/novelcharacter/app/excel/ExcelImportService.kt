@@ -328,6 +328,8 @@ class ExcelImportService(private val db: AppDatabase) {
         val novelImagePathColIndex = cols["이미지경로"] ?: -1
         val novelImageModeColIndex = cols["이미지모드"] ?: -1
         val imageCharIdColIndex = cols["이미지캐릭터ID"] ?: -1
+        val inheritBorderColIndex = cols["테두리상속"] ?: -1
+        val novelPinnedColIndex = cols["고정"] ?: -1
 
         val codesSeen = mutableMapOf<String, Int>()
 
@@ -347,6 +349,7 @@ class ExcelImportService(private val db: AppDatabase) {
                 val novelImagePath = if (novelImagePathColIndex >= 0) getCellString(row, novelImagePathColIndex) else ""
                 val novelImageMode = if (novelImageModeColIndex >= 0) getCellString(row, novelImageModeColIndex).ifBlank { "none" } else "none"
                 val novelImageCharId = if (imageCharIdColIndex >= 0) parseNumber(getCellString(row, imageCharIdColIndex))?.toLong() else null
+                val novelIsPinned = if (novelPinnedColIndex >= 0) parseBoolean(getCellString(row, novelPinnedColIndex)) else false
 
                 // Duplicate code detection
                 if (code.isNotBlank()) {
@@ -381,13 +384,13 @@ class ExcelImportService(private val db: AppDatabase) {
                     }
                 }
 
-                val effectiveInherit = borderColor.isBlank()
+                val effectiveInherit = if (inheritBorderColIndex >= 0) parseBoolean(getCellString(row, inheritBorderColIndex)) else borderColor.isBlank()
 
                 if (existing != null) {
                     db.novelDao().update(existing.copy(
                         title = title, description = description, universeId = universeId,
                         displayOrder = displayOrder, borderColor = borderColor, borderWidthDp = borderWidthDp,
-                        inheritUniverseBorder = effectiveInherit,
+                        inheritUniverseBorder = effectiveInherit, isPinned = novelIsPinned,
                         imagePath = novelImagePath, imageMode = novelImageMode,
                         imageCharacterId = novelImageCharId
                     ))
@@ -399,7 +402,7 @@ class ExcelImportService(private val db: AppDatabase) {
                         title = title, description = description, universeId = universeId,
                         code = newCode, displayOrder = displayOrder,
                         borderColor = borderColor, borderWidthDp = borderWidthDp,
-                        inheritUniverseBorder = effectiveInherit,
+                        inheritUniverseBorder = effectiveInherit, isPinned = novelIsPinned,
                         imagePath = novelImagePath, imageMode = novelImageMode,
                         imageCharacterId = novelImageCharId
                     ))
@@ -540,7 +543,8 @@ class ExcelImportService(private val db: AppDatabase) {
         val codeColIndex = cols["코드"] ?: -1
         val novelCodeColIndex = cols["작품코드"] ?: -1
         val orderColIndex = cols["정렬순서"] ?: -1
-        val fixedColIndices = setOf(nameColIndex, anotherNameColIndex, lastNameColIndex, firstNameColIndex, imageColIndex, novelColIndex, memoColIndex, tagsColIndex, codeColIndex, novelCodeColIndex, orderColIndex).filter { it >= 0 }.toSet()
+        val pinnedColIndex = cols["고정"] ?: -1
+        val fixedColIndices = setOf(nameColIndex, anotherNameColIndex, lastNameColIndex, firstNameColIndex, imageColIndex, novelColIndex, memoColIndex, tagsColIndex, codeColIndex, novelCodeColIndex, orderColIndex, pinnedColIndex).filter { it >= 0 }.toSet()
         val columnFieldMap = buildColumnFieldMap(headerRow, fields, fixedColIndices)
 
         val codesSeen = mutableMapOf<String, Int>()
@@ -581,6 +585,7 @@ class ExcelImportService(private val db: AppDatabase) {
                 val imagePathsFromExcel: String? = if (imageColIndex >= 0) getCellString(row, imageColIndex).ifBlank { "[]" } else null
                 val memo = if (memoColIndex >= 0) getCellString(row, memoColIndex) else ""
                 val displayOrder = if (orderColIndex >= 0) parseNumber(getCellString(row, orderColIndex))?.toLong() ?: 0L else 0L
+                val charIsPinned = if (pinnedColIndex >= 0) parseBoolean(getCellString(row, pinnedColIndex)) else false
 
                 // Code-first matching (Sprint A strict rule)
                 val existingChar: Character?
@@ -612,7 +617,8 @@ class ExcelImportService(private val db: AppDatabase) {
                         imagePaths = imagePathsFromExcel ?: existingChar.imagePaths,
                         memo = memo,
                         updatedAt = System.currentTimeMillis(),
-                        displayOrder = displayOrder
+                        displayOrder = displayOrder,
+                        isPinned = charIsPinned
                     ))
                     result.updatedCharacters++
                 } else {
@@ -621,7 +627,8 @@ class ExcelImportService(private val db: AppDatabase) {
                     charId = db.characterDao().insert(Character(
                         name = name, firstName = firstName, lastName = lastName,
                         anotherName = anotherName, novelId = novelId,
-                        imagePaths = imagePathsFromExcel ?: "[]", memo = memo, code = newCode, displayOrder = displayOrder
+                        imagePaths = imagePathsFromExcel ?: "[]", memo = memo, code = newCode, displayOrder = displayOrder,
+                        isPinned = charIsPinned
                     ))
                     result.newCharacters++
                 }

@@ -56,7 +56,7 @@ data class SheetSpec(
 }
 
 /** Fixed (non-dynamic-field) column headers in character sheets. */
-val CHARACTER_FIXED_HEADERS = setOf("이름", "성", "이름(First)", "이명", "이미지경로", "작품", "메모", "태그", "코드", "작품코드", "정렬순서")
+val CHARACTER_FIXED_HEADERS = setOf("이름", "성", "이름(First)", "이명", "이미지경로", "작품", "메모", "태그", "코드", "작품코드", "정렬순서", "고정")
 
 /** Default border color presets for color picker UI. */
 val BORDER_COLOR_PRESETS = listOf(
@@ -111,7 +111,9 @@ fun novelSpec(universeNames: List<String>) = SheetSpec(
         ColumnSpec("테두리두께", width = 3000),
         ColumnSpec("이미지경로", width = 8000),
         ColumnSpec("이미지모드", dropdownOptions = listOf("none", "custom", "random_character", "select_character"), width = 5000),
-        ColumnSpec("이미지캐릭터ID", width = 5000)
+        ColumnSpec("이미지캐릭터ID", width = 5000),
+        ColumnSpec("테두리상속", dropdownOptions = listOf("Y", "N"), width = 3000),
+        ColumnSpec("고정", dropdownOptions = listOf("Y", "N"), width = 3000)
     )
 )
 
@@ -155,6 +157,7 @@ fun characterSpec(fields: List<FieldDefinition>, novelTitles: List<String>) = Sh
         add(ColumnSpec("코드", readOnly = true, width = 4000))
         add(ColumnSpec("작품코드", readOnly = true, width = 4000))
         add(ColumnSpec("정렬순서", width = 3000))
+        add(ColumnSpec("고정", dropdownOptions = listOf("Y", "N"), width = 3000))
     }
 )
 
