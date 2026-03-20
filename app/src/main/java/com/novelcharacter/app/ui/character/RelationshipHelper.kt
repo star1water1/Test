@@ -86,6 +86,8 @@ class RelationshipHelper(
     private fun showAddRelationshipDialog() {
         viewLifecycleOwner.lifecycleScope.launch {
             val allCharacters = viewModel.getAllCharactersList()
+            val currentChar = viewModel.getCharacterByIdSuspend(characterId)
+            val currentNovelId = currentChar?.novelId
             val otherCharacters = allCharacters.filter { it.id != characterId }
 
             val context = try { contextGetter() } catch (_: Exception) { return@launch }
@@ -95,7 +97,17 @@ class RelationshipHelper(
                 return@launch
             }
 
-            val charNames = otherCharacters.map { it.name }.toTypedArray()
+            // 같은 작품 캐릭터를 상단에, 나머지는 작품명과 함께 표시
+            val novels = viewModel.getAllNovelsList()
+            val novelMap = novels.associate { it.id to it.title }
+            val sorted = otherCharacters.sortedWith(compareBy<com.novelcharacter.app.data.model.Character> {
+                if (it.novelId == currentNovelId && currentNovelId != null) 0 else 1
+            }.thenBy { it.name })
+            val charNames = sorted.map { char ->
+                val novelName = char.novelId?.let { novelMap[it] }
+                if (novelName != null && char.novelId != currentNovelId) "${char.name} ($novelName)"
+                else char.name
+            }.toTypedArray()
             val typeNames = viewModel.getRelationshipTypesForCharacter(characterId).toTypedArray()
             val dialogView = LayoutInflater.from(context).inflate(R.layout.dialog_relationship_edit, null)
             val spinnerCharacter = dialogView.findViewById<android.widget.Spinner>(R.id.spinnerRelCharacter)
@@ -119,7 +131,7 @@ class RelationshipHelper(
                     val desc = editDesc.text.toString().trim()
 
                     if (selectedCharIndex >= 0) {
-                        val otherChar = otherCharacters[selectedCharIndex]
+                        val otherChar = sorted[selectedCharIndex]
                         // Check for existing relationship to prevent duplicates
                         viewLifecycleOwner.lifecycleScope.launch {
                             val existingRels = viewModel.getRelationshipsForCharacterList(characterId)

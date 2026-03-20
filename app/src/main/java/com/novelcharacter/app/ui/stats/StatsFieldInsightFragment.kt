@@ -128,7 +128,8 @@ class StatsFieldInsightFragment : Fragment() {
     private fun makeFieldHeader(insight: FieldInsightResult): TextView {
         val textSizeSp = resources.getDimension(R.dimen.stats_text_subtitle) / resources.displayMetrics.scaledDensity
         return TextView(requireContext()).apply {
-            text = "[${insight.fieldDefinition.groupName}] ${insight.fieldDefinition.name} (${insight.fieldDefinition.type})"
+            val uniPrefix = if (insight.universeName.isNotEmpty()) "${insight.universeName} · " else ""
+            text = "$uniPrefix[${insight.fieldDefinition.groupName}] ${insight.fieldDefinition.name} (${insight.fieldDefinition.type})"
             textSize = textSizeSp
             setTextColor(ContextCompat.getColor(requireContext(), R.color.primary))
             setTypeface(null, Typeface.BOLD)

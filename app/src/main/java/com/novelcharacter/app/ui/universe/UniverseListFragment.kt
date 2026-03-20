@@ -228,14 +228,19 @@ class UniverseListFragment : Fragment() {
                 name.text = t.universe.name
                 desc.text = t.universe.description
 
+                // 클릭 → 즉시 적용 (모든 프리셋 동일)
                 vh.view.setOnClickListener {
                     bottomSheet.dismiss()
+                    viewModel.applyPreset(t)
+                }
+                // 롱프레스 → 옵션 다이얼로그 (편집/삭제)
+                vh.view.setOnLongClickListener {
                     val preset = t.userPresetId?.let { id -> presetByTemplateId[id] }
                     if (preset != null) {
+                        bottomSheet.dismiss()
                         showUserPresetOptionsDialog(t, preset)
-                    } else {
-                        viewModel.applyPreset(t)
                     }
+                    true
                 }
             }
         }
@@ -260,7 +265,6 @@ class UniverseListFragment : Fragment() {
 
     private fun showUserPresetOptionsDialog(template: PresetTemplates.PresetTemplate, preset: com.novelcharacter.app.data.model.UserPresetTemplate) {
         val options = arrayOf(
-            getString(R.string.preset_apply),
             getString(R.string.preset_edit_name),
             getString(R.string.delete)
         )
@@ -268,9 +272,8 @@ class UniverseListFragment : Fragment() {
             .setTitle(preset.name)
             .setItems(options) { _, which ->
                 when (which) {
-                    0 -> viewModel.applyPreset(template)
-                    1 -> showEditPresetNameDialog(preset)
-                    2 -> {
+                    0 -> showEditPresetNameDialog(preset)
+                    1 -> {
                         AlertDialog.Builder(requireContext())
                             .setTitle(R.string.delete_warning_title)
                             .setMessage(getString(R.string.confirm_delete_preset, preset.name))
@@ -808,23 +811,9 @@ class UniverseListFragment : Fragment() {
 
     private fun exportToExcel() {
         if (!isAdded) return
-        AlertDialog.Builder(requireContext())
-            .setTitle(R.string.export_mode_title)
-            .setItems(arrayOf(getString(R.string.export_mode_share), getString(R.string.export_mode_save))) { _, which ->
-                exporter?.cancel()
-                exporter = com.novelcharacter.app.excel.ExcelExporter(requireContext().applicationContext)
-                when (which) {
-                    0 -> exporter?.exportAll()
-                    1 -> exporter?.exportAll { file, fileName ->
-                        if (isAdded) {
-                            pendingExportFile = file
-                            saveFileLauncher.launch(fileName)
-                        }
-                    }
-                }
-            }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
+        exporter?.cancel()
+        exporter = com.novelcharacter.app.excel.ExcelExporter(requireContext().applicationContext)
+        exporter?.exportAll()
     }
 
     private fun importFromExcel() {

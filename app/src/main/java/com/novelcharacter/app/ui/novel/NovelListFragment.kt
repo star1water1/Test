@@ -404,23 +404,9 @@ class NovelListFragment : Fragment() {
 
     private fun exportToExcel() {
         if (!isAdded) return
-        AlertDialog.Builder(requireContext())
-            .setTitle(R.string.export_mode_title)
-            .setItems(arrayOf(getString(R.string.export_mode_share), getString(R.string.export_mode_save))) { _, which ->
-                exporter?.cancel()
-                exporter = com.novelcharacter.app.excel.ExcelExporter(requireContext().applicationContext)
-                when (which) {
-                    0 -> exporter?.exportAll()
-                    1 -> exporter?.exportAll { file, fileName ->
-                        if (isAdded) {
-                            pendingExportFile = file
-                            saveFileLauncher.launch(fileName)
-                        }
-                    }
-                }
-            }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
+        exporter?.cancel()
+        exporter = com.novelcharacter.app.excel.ExcelExporter(requireContext().applicationContext)
+        exporter?.exportAll()
     }
 
     private fun importFromExcel() {

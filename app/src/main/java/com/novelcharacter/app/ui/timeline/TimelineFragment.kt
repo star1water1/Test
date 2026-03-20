@@ -8,6 +8,7 @@ import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
 import android.view.ViewGroup
+import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.CheckBox
 import android.widget.EditText
@@ -396,8 +397,23 @@ class TimelineFragment : Fragment() {
                 if (index >= 0) dialogBinding.spinnerNovel.setSelection(index + 1)
             }
 
-            // Character checkboxes
-            setupCharacterCheckboxes(dialogBinding, characters, selectedCharIds)
+            // Character checkboxes — 작품 선택 시 자동 필터링
+            fun filteredChars(novelPos: Int): List<Character> {
+                if (novelPos <= 0) return characters
+                val novelId = novels.getOrNull(novelPos - 1)?.id ?: return characters
+                // 선택된 작품 캐릭터 상단, 나머지는 아래에 표시
+                return characters.sortedWith(compareBy<Character> {
+                    if (it.novelId == novelId) 0 else 1
+                }.thenBy { it.name })
+            }
+            setupCharacterCheckboxes(dialogBinding, filteredChars(dialogBinding.spinnerNovel.selectedItemPosition), selectedCharIds)
+
+            dialogBinding.spinnerNovel.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                override fun onItemSelected(parent: AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                    setupCharacterCheckboxes(dialogBinding, filteredChars(pos), selectedCharIds)
+                }
+                override fun onNothingSelected(parent: AdapterView<*>?) {}
+            }
 
             AlertDialog.Builder(ctx)
                 .setTitle(if (event == null) R.string.add_event else R.string.edit_event)

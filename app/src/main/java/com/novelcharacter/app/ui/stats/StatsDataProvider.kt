@@ -186,7 +186,8 @@ data class DataHealthStats(
     val emptyDescRelationships: Int,
     val fieldCompletionByGroup: Map<String, Float>,
     val noAnotherNameChars: List<String>,
-    val lowPrecisionEvents: Int // 년도만 있는 사건 수
+    val lowPrecisionEvents: Int, // 년도만 있는 사건 수
+    val noNovelChars: List<String> = emptyList() // 작품 미배정 캐릭터
 )
 
 // ===== 커스텀 필드 분석 (레거시 - 호환용) =====
@@ -228,7 +229,8 @@ data class FieldInsightResult(
     val statsConfig: FieldStatsConfig,
     val analysisResults: List<AnalysisResult>,
     val totalCount: Int,
-    val filledCount: Int
+    val filledCount: Int,
+    val universeName: String = ""
 )
 
 data class AnalysisResult(
@@ -819,6 +821,9 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
         // 신규: 시간 정밀도 낮은 사건
         val lowPrecision = s.events.count { it.month == null }
 
+        // 작품 미배정 캐릭터
+        val noNovel = s.characters.filter { it.novelId == null }.map { it.name }
+
         return DataHealthStats(
             noImageChars = noImage,
             incompleteFieldChars = incomplete,
@@ -829,13 +834,15 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
             emptyDescRelationships = emptyDescRels,
             fieldCompletionByGroup = completionByGroup,
             noAnotherNameChars = noAnotherName,
-            lowPrecisionEvents = lowPrecision
+            lowPrecisionEvents = lowPrecision,
+            noNovelChars = noNovel
         )
     }
 
     // ===== 필드 인사이트 (신규) =====
     fun computeFieldInsights(s: StatsSnapshot): List<FieldInsightResult> {
         val novelMap = s.novels.associateBy { it.id }
+        val universeMap = s.universes.associateBy { it.id }
         val valuesByFieldDef = s.fieldValues.filter { it.value.isNotBlank() }
             .groupBy { it.fieldDefinitionId }
 
@@ -873,7 +880,8 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
                 }
             }
 
-            FieldInsightResult(fd, statsConfig, analysisResults, totalCount, filledCount)
+            FieldInsightResult(fd, statsConfig, analysisResults, totalCount, filledCount,
+                universeName = universeMap[fd.universeId]?.name ?: "")
         }
     }
 

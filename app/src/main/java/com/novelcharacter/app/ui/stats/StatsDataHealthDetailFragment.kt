@@ -81,6 +81,10 @@ class StatsDataHealthDetailFragment : Fragment() {
             // 별명 미작성
             binding.textNoAnotherNameCount.text = getString(R.string.stats_person_suffix, stats.noAnotherNameChars.size)
             populateSimpleList(binding.listNoAnotherName, stats.noAnotherNameChars)
+
+            // 작품 미배정
+            binding.textNoNovelCount.text = getString(R.string.stats_person_suffix, stats.noNovelChars.size)
+            populateSimpleList(binding.listNoNovel, stats.noNovelChars)
         }
     }
 
