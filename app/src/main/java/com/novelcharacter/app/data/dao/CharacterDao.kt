@@ -31,8 +31,8 @@ interface CharacterDao {
     @Query("SELECT * FROM characters WHERE name LIKE '%' || :query || '%' OR anotherName LIKE '%' || :query || '%' OR firstName LIKE '%' || :query || '%' OR lastName LIKE '%' || :query || '%'")
     fun searchCharacters(query: String): LiveData<List<Character>>
 
-    @Query("SELECT * FROM characters WHERE name = :name AND novelId = :novelId LIMIT 1")
-    suspend fun getCharacterByNameAndNovel(name: String, novelId: Long): Character?
+    @Query("SELECT * FROM characters WHERE name = :name AND (novelId = :novelId OR (:novelId IS NULL AND novelId IS NULL)) LIMIT 1")
+    suspend fun getCharacterByNameAndNovel(name: String, novelId: Long?): Character?
 
     @Query("SELECT * FROM characters WHERE name = :name LIMIT 1")
     suspend fun getCharacterByName(name: String): Character?

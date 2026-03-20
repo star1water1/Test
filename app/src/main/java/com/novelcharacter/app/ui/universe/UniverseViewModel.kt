@@ -43,9 +43,15 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
     fun loadCounts(universes: List<Universe>) {
         loadCountsJob?.cancel()
         loadCountsJob = viewModelScope.launch {
-            val ids = universes.map { it.id }
-            _universeNovelCounts.value = universeRepository.getNovelCountsByUniverses(ids)
-            _universeFieldCounts.value = universeRepository.getFieldCountsByUniverses(ids)
+            try {
+                val ids = universes.map { it.id }
+                _universeNovelCounts.value = universeRepository.getNovelCountsByUniverses(ids)
+                _universeFieldCounts.value = universeRepository.getFieldCountsByUniverses(ids)
+            } catch (e: Exception) {
+                Log.w("UniverseViewModel", "Failed to load counts", e)
+                _universeNovelCounts.value = emptyMap()
+                _universeFieldCounts.value = emptyMap()
+            }
         }
     }
 
