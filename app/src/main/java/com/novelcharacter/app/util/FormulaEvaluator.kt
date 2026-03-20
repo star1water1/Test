@@ -5,6 +5,8 @@ import com.novelcharacter.app.data.model.FieldDefinition
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlin.math.abs
+import kotlin.math.max
+import kotlin.math.min
 
 class FormulaEvaluator(
     private val fieldValues: Map<String, String>,       // fieldKey -> value
@@ -56,9 +58,10 @@ class FormulaEvaluator(
     private sealed class Token {
         data class Num(val value: Double) : Token()
         data class Op(val op: Char) : Token()
-        data class Func(val name: String) : Token()
+        data class Func(val name: String, val arity: Int = 1) : Token()
         object LParen : Token()
         object RParen : Token()
+        object Separator : Token()  // 콤마 (함수 인자 구분)
     }
 
     private fun tokenize(formula: String): List<Token> {
@@ -105,9 +108,25 @@ class FormulaEvaluator(
                     i += 16
                 }
                 formula.startsWith("abs(", i) -> {
-                    tokens.add(Token.Func("abs"))
+                    tokens.add(Token.Func("abs", 1))
                     tokens.add(Token.LParen)
                     i += 4
+                }
+                formula.startsWith("max(", i) -> {
+                    tokens.add(Token.Func("max", 2))
+                    tokens.add(Token.LParen)
+                    i += 4
+                }
+                formula.startsWith("min(", i) -> {
+                    tokens.add(Token.Func("min", 2))
+                    tokens.add(Token.LParen)
+                    i += 4
+                }
+                formula[i] == ',' -> {
+                    // 콤마를 RParen + LParen으로 변환하여 인자 분리
+                    // 함수 내 콤마: 첫 인자를 스택에 남기고 다음 인자 시작
+                    tokens.add(Token.Separator)
+                    i++
                 }
                 else -> i++ // skip unknown
             }
@@ -128,6 +147,12 @@ class FormulaEvaluator(
             when (token) {
                 is Token.Num -> output.add(token)
                 is Token.Func -> stack.addLast(token)
+                is Token.Separator -> {
+                    // 콤마: LParen까지 연산자를 출력으로 이동 (LParen은 유지)
+                    while (stack.isNotEmpty() && stack.last() !is Token.LParen) {
+                        output.add(stack.removeLast())
+                    }
+                }
                 is Token.Op -> {
                     while (stack.isNotEmpty() && stack.last() is Token.Op && precedence((stack.last() as Token.Op).op) >= precedence(token.op)) {
                         output.add(stack.removeLast())
@@ -171,12 +196,23 @@ class FormulaEvaluator(
                     })
                 }
                 is Token.Func -> {
-                    if (stack.isEmpty()) return 0.0
-                    val v = stack.removeLast()
-                    stack.addLast(when (token.name) {
-                        "abs" -> abs(v)
-                        else -> v
-                    })
+                    if (token.arity == 2) {
+                        if (stack.size < 2) return Double.NaN
+                        val b = stack.removeLast()
+                        val a = stack.removeLast()
+                        stack.addLast(when (token.name) {
+                            "max" -> max(a, b)
+                            "min" -> min(a, b)
+                            else -> a
+                        })
+                    } else {
+                        if (stack.isEmpty()) return 0.0
+                        val v = stack.removeLast()
+                        stack.addLast(when (token.name) {
+                            "abs" -> abs(v)
+                            else -> v
+                        })
+                    }
                 }
                 else -> {}
             }

@@ -139,7 +139,7 @@ object PresetTemplates {
     private fun createLibraMageTemplate(): PresetTemplate {
         val universe = Universe(
             name = "천칭의 마법사",
-            description = "오라·마나·신체 기반 마법 체계와 등급 시스템이 있는 세계관"
+            description = "오러·마나·신체 기반 마법 체계와 등급 시스템이 있는 세계관"
         )
 
         val fields = listOf(
@@ -153,10 +153,16 @@ object PresetTemplates {
             FieldDefinition(universeId = 0, key = "job_title", name = "직업/직위", type = "TEXT", groupName = "직업/소속"),
             FieldDefinition(universeId = 0, key = "affiliation", name = "소속", type = "TEXT", groupName = "직업/소속"),
             FieldDefinition(universeId = 0, key = "residence", name = "거주지", type = "TEXT", groupName = "직업/소속"),
-            FieldDefinition(universeId = 0, key = "aura_affinity", name = "오라 친화", type = "GRADE", config = """{"grades":{"C":1,"B":2,"A":3,"S":4},"allowNegative":true}""", groupName = "마법 능력치"),
-            FieldDefinition(universeId = 0, key = "body_control", name = "신체 조절", type = "GRADE", config = """{"grades":{"C":1,"B":2,"A":3,"S":4},"allowNegative":true}""", groupName = "마법 능력치"),
-            FieldDefinition(universeId = 0, key = "mana_affinity", name = "마나 친화", type = "GRADE", config = """{"grades":{"C":1,"B":2,"A":3,"S":4},"allowNegative":true}""", groupName = "마법 능력치"),
-            FieldDefinition(universeId = 0, key = "total_combat", name = "종합 전투력", type = "CALCULATED", config = """{"formula":"field('aura_affinity')+field('body_control')+field('mana_affinity')"}""", groupName = "마법 능력치"),
+            // 6대 잠재 능력치
+            FieldDefinition(universeId = 0, key = "special", name = "특수", type = "GRADE", config = """{"grades":{"C":1,"B":2,"A":3,"S":4},"allowNegative":true}""", groupName = "잠재 능력치"),
+            FieldDefinition(universeId = 0, key = "intelligence", name = "지력", type = "GRADE", config = """{"grades":{"C":1,"B":2,"A":3,"S":4},"allowNegative":false}""", groupName = "잠재 능력치"),
+            FieldDefinition(universeId = 0, key = "mana_affinity", name = "마나친화", type = "GRADE", config = """{"grades":{"C":0.5,"B":1,"A":2,"S":3},"allowNegative":false}""", groupName = "잠재 능력치"),
+            FieldDefinition(universeId = 0, key = "mana_control", name = "마나제어", type = "GRADE", config = """{"grades":{"C":1,"B":2,"A":3,"S":4},"allowNegative":false}""", groupName = "잠재 능력치"),
+            FieldDefinition(universeId = 0, key = "aura_affinity", name = "오러친화", type = "GRADE", config = """{"grades":{"C":0.5,"B":1,"A":2,"S":3},"allowNegative":false}""", groupName = "잠재 능력치"),
+            FieldDefinition(universeId = 0, key = "body_control", name = "신체제어", type = "GRADE", config = """{"grades":{"C":0.5,"B":1,"A":2,"S":3},"allowNegative":false}""", groupName = "잠재 능력치"),
+            // 계산 필드
+            FieldDefinition(universeId = 0, key = "total_potential", name = "종합잠재력", type = "CALCULATED", config = """{"formula":"field('special')+field('intelligence')+field('mana_affinity')+field('mana_control')+field('aura_affinity')+field('body_control')"}""", groupName = "잠재 능력치"),
+            FieldDefinition(universeId = 0, key = "spec_potential", name = "특화잠재력", type = "CALCULATED", config = """{"formula":"max(field('mana_affinity')+field('mana_control'),field('aura_affinity')+field('body_control'))"}""", groupName = "잠재 능력치"),
             FieldDefinition(universeId = 0, key = "magic_type", name = "마법 계통", type = "TEXT", groupName = "마법 상세"),
             FieldDefinition(universeId = 0, key = "special_magic", name = "고유 마법", type = "TEXT", groupName = "마법 상세"),
             FieldDefinition(universeId = 0, key = "authority", name = "권능/특수능력", type = "TEXT", groupName = "마법 상세"),
