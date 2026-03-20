@@ -202,7 +202,7 @@ class StatsMainFragment : Fragment() {
                 if (totalIssues == 0) append(getString(R.string.stats_health_no_issues))
                 else {
                     append(getString(R.string.stats_health_issues_found, totalIssues))
-                    if (healthStats.noImageChars.isNotEmpty()) append(getString(R.string.stats_health_no_image, healthStats.noImageChars.size))
+                    if (healthStats.noImageChars.isNotEmpty()) append(getString(R.string.stats_health_no_image_preview, healthStats.noImageChars.size))
                     if (healthStats.lowPrecisionEvents > 0) append(" | ${getString(R.string.stats_low_precision_events, healthStats.lowPrecisionEvents)}")
                 }
             }

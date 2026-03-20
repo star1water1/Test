@@ -686,7 +686,7 @@
     <string name="stats_usage_rate_preview">사용률 %1$.0f%% (%2$d/%3$d)</string>
     <string name="stats_health_no_issues">문제 없음</string>
     <string name="stats_health_issues_found">발견 사항 %d건</string>
-    <string name="stats_health_no_image"> | 이미지없음 %d</string>
+    <string name="stats_health_no_image_preview"> | 이미지없음 %d</string>
     <string name="stats_person_suffix">%d명</string>
 
     <!-- Stats: 필드 인사이트 -->
