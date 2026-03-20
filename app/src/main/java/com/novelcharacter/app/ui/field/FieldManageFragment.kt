@@ -4,6 +4,10 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.AdapterView
+import android.widget.ArrayAdapter
+import android.widget.LinearLayout
+import android.widget.Spinner
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
@@ -156,26 +160,18 @@ class FieldManageFragment : Fragment() {
     private fun showDeleteDialog(field: FieldDefinition) {
         AlertDialog.Builder(requireContext())
             .setTitle(field.name)
-            .setItems(arrayOf(getString(R.string.edit), getString(R.string.delete))) { _, which ->
-                when (which) {
-                    0 -> showFieldEditDialog(field)
-                    1 -> {
-                        AlertDialog.Builder(requireContext())
-                            .setIcon(android.R.drawable.ic_dialog_alert)
-                            .setTitle(R.string.delete_warning_title)
-                            .setMessage(getString(R.string.confirm_delete_field, field.name))
-                            .setPositiveButton(R.string.yes) { _, _ ->
-                                viewModel.deleteField(field)
-                            }
-                            .setNegativeButton(R.string.no, null)
-                            .show()
-                    }
-                }
+            .setMessage("[${field.groupName}] ${field.type}")
+            .setPositiveButton(R.string.edit) { _, _ ->
+                showFieldEditDialog(field)
             }
+            .setNegativeButton(R.string.delete) { _, _ ->
+                viewModel.deleteField(field)
+            }
+            .setNeutralButton(R.string.cancel, null)
             .show()
     }
 
-    /** 다른 세계관에서 필드 가져오기 */
+    /** 다른 세계관에서 필드 가져오기 (단일 다이얼로그) */
     private fun showImportFieldsDialog() {
         lifecycleScope.launch {
             val otherFields = viewModel.getFieldsFromOtherUniverses(universeId)
@@ -184,43 +180,64 @@ class FieldManageFragment : Fragment() {
                 return@launch
             }
 
-            // 1단계: 세계관 선택
+            val ctx = requireContext()
             val universes = otherFields.keys.toList()
-            val names = universes.map { "${it.name} (${otherFields[it]!!.size}개 필드)" }.toTypedArray()
+            val density = resources.displayMetrics.density
 
-            AlertDialog.Builder(requireContext())
+            // 현재 선택된 세계관의 필드와 체크 상태
+            var currentFields = otherFields[universes[0]] ?: emptyList()
+            var currentChecked = BooleanArray(currentFields.size) { true }
+            var currentFieldNames = currentFields.map { "[${it.groupName}] ${it.name} (${it.type})" }.toTypedArray()
+
+            // 컨테이너: Spinner + MultiChoice를 단일 다이얼로그에 배치
+            val container = LinearLayout(ctx).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding((16 * density).toInt(), (8 * density).toInt(), (16 * density).toInt(), 0)
+            }
+
+            val universeSpinner = Spinner(ctx).apply {
+                adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item,
+                    universes.map { "${it.name} (${otherFields[it]!!.size}개 필드)" }
+                ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+            }
+            container.addView(universeSpinner)
+
+            val dialog = AlertDialog.Builder(ctx)
                 .setTitle(R.string.import_select_universe)
-                .setItems(names) { _, which ->
-                    val selectedUniverse = universes[which]
-                    val fields = otherFields[selectedUniverse] ?: return@setItems
-                    showFieldSelectionDialog(selectedUniverse, fields)
+                .setView(container)
+                .setMultiChoiceItems(currentFieldNames, currentChecked) { _, which, isChecked ->
+                    currentChecked[which] = isChecked
+                }
+                .setPositiveButton(R.string.import_action) { _, _ ->
+                    val selected = currentFields.filterIndexed { i, _ -> currentChecked[i] }
+                    if (selected.isNotEmpty()) {
+                        viewModel.importFields(universeId, selected)
+                        Toast.makeText(ctx,
+                            getString(R.string.import_success, selected.size),
+                            Toast.LENGTH_SHORT).show()
+                    }
                 }
                 .setNegativeButton(R.string.cancel, null)
-                .show()
-        }
-    }
+                .create()
 
-    /** 2단계: 필드 선택 (체크박스 다중선택) */
-    private fun showFieldSelectionDialog(universe: Universe, fields: List<FieldDefinition>) {
-        val fieldNames = fields.map { "[${it.groupName}] ${it.name} (${it.type})" }.toTypedArray()
-        val checked = BooleanArray(fields.size) { true } // 기본 전체 선택
-
-        AlertDialog.Builder(requireContext())
-            .setTitle(getString(R.string.import_select_fields, universe.name))
-            .setMultiChoiceItems(fieldNames, checked) { _, which, isChecked ->
-                checked[which] = isChecked
-            }
-            .setPositiveButton(R.string.import_action) { _, _ ->
-                val selected = fields.filterIndexed { i, _ -> checked[i] }
-                if (selected.isNotEmpty()) {
-                    viewModel.importFields(universeId, selected)
-                    Toast.makeText(requireContext(),
-                        getString(R.string.import_success, selected.size),
-                        Toast.LENGTH_SHORT).show()
+            // 세계관 변경 시 필드 목록 갱신
+            universeSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                    currentFields = otherFields[universes[position]] ?: emptyList()
+                    currentChecked = BooleanArray(currentFields.size) { true }
+                    currentFieldNames = currentFields.map { "[${it.groupName}] ${it.name} (${it.type})" }.toTypedArray()
+                    val listView = dialog.listView
+                    listView?.adapter = ArrayAdapter(ctx,
+                        android.R.layout.select_dialog_multichoice, currentFieldNames)
+                    for (i in currentChecked.indices) {
+                        listView?.setItemChecked(i, true)
+                    }
                 }
+                override fun onNothingSelected(parent: AdapterView<*>?) {}
             }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
+
+            dialog.show()
+        }
     }
 
     override fun onDestroyView() {

@@ -7,6 +7,10 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.novelcharacter.app.util.PresetTemplates
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import com.novelcharacter.app.data.dao.CharacterDao
 import com.novelcharacter.app.data.dao.CharacterFieldValueDao
 import com.novelcharacter.app.data.dao.CharacterStateChangeDao
@@ -55,7 +59,7 @@ import com.novelcharacter.app.data.model.Universe
         SearchPreset::class,
         UserPresetTemplate::class
     ],
-    version = 18,
+    version = 20,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -730,6 +734,59 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_18_19 = object : Migration(18, 19) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "Migrating database from version 18 to 19")
+                // 세계관 select_character 이미지 모드를 위한 캐릭터 ID 컬럼 추가
+                db.execSQL("ALTER TABLE universes ADD COLUMN imageCharacterId INTEGER DEFAULT NULL")
+                Log.i(TAG, "Migration from version 18 to 19 completed successfully")
+            }
+        }
+
+        /**
+         * 빌트인 프리셋을 DB에 시드하는 콜백.
+         * onCreate(최초 설치) 또는 onOpen(업데이트 후)에서 빌트인이 없으면 삽입.
+         */
+        private class SeedCallback : RoomDatabase.Callback() {
+            override fun onOpen(db: SupportSQLiteDatabase) {
+                super.onOpen(db)
+                INSTANCE?.let { database ->
+                    CoroutineScope(Dispatchers.IO).launch {
+                        seedBuiltInPresets(database)
+                    }
+                }
+            }
+
+            private suspend fun seedBuiltInPresets(db: AppDatabase) {
+                val dao = db.userPresetTemplateDao()
+                val existing = dao.getAllTemplatesList()
+                val hasBuiltIn = existing.any { it.isBuiltIn }
+                if (hasBuiltIn) return
+
+                // 빌트인 프리셋을 DB에 삽입
+                val builtInTemplates = PresetTemplates.getBuiltInTemplates()
+                builtInTemplates.forEach { template ->
+                    val fieldsJson = PresetTemplates.fieldsToJson(template.fields)
+                    dao.insert(UserPresetTemplate(
+                        name = template.universe.name,
+                        description = template.universe.description,
+                        fieldsJson = fieldsJson,
+                        isBuiltIn = true
+                    ))
+                }
+                Log.i(TAG, "Seeded ${builtInTemplates.size} built-in presets to DB")
+            }
+        }
+
+        private val MIGRATION_19_20 = object : Migration(19, 20) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "Migrating database from version 19 to 20")
+                // 사용자 프리셋에 isBuiltIn 필드 추가 (빌트인 프리셋 DB 이관)
+                db.execSQL("ALTER TABLE user_preset_templates ADD COLUMN isBuiltIn INTEGER NOT NULL DEFAULT 0")
+                Log.i(TAG, "Migration from version 19 to 20 completed successfully")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -737,7 +794,8 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "novel_character_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20)
+                    .addCallback(SeedCallback())
                     .build()
                     .also { INSTANCE = it }
             }

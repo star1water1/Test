@@ -39,6 +39,10 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
     private val _relationNetwork = MutableLiveData<RelationshipStats>()
     val relationNetwork: LiveData<RelationshipStats> = _relationNetwork
 
+    // ===== 신규: 작품별 비교 =====
+    private val _crossNovelComparison = MutableLiveData<CrossNovelComparison>()
+    val crossNovelComparison: LiveData<CrossNovelComparison> = _crossNovelComparison
+
     // ===== 신규: 데이터 현황 =====
     private val _dataOverview = MutableLiveData<DataOverviewStats>()
     val dataOverview: LiveData<DataOverviewStats> = _dataOverview
@@ -195,6 +199,25 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
                 val snapshot = ensureSnapshot()
                 val filtered = getFilteredSnapshot(snapshot)
                 _dataOverview.value = withContext(Dispatchers.IO) { provider.computeDataOverview(filtered) }
+            } catch (e: Exception) {
+                _error.value = e.message
+            } finally {
+                _loading.value = false
+            }
+        }
+    }
+
+    fun loadCrossNovelComparison() {
+        if (_crossNovelComparison.value != null && !isRefreshing) return
+        _loading.value = true
+        _error.value = null
+        viewModelScope.launch {
+            try {
+                val snapshot = ensureSnapshot()
+                // 작품 비교는 전체 스냅샷으로 계산 (필터 미적용)
+                _crossNovelComparison.value = withContext(Dispatchers.IO) {
+                    provider.computeCrossNovelComparison(snapshot)
+                }
             } catch (e: Exception) {
                 _error.value = e.message
             } finally {

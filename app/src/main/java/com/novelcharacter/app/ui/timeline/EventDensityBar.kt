@@ -36,9 +36,14 @@ class EventDensityBar @JvmOverloads constructor(
     private val baseColor = ContextCompat.getColor(context, R.color.primary)
 
     private var onYearTapListener: ((Int) -> Unit)? = null
+    private var onYearLongPressListener: ((Int) -> Unit)? = null
 
     fun setOnYearTapListener(listener: (Int) -> Unit) {
         onYearTapListener = listener
+    }
+
+    fun setOnYearLongPressListener(listener: (Int) -> Unit) {
+        onYearLongPressListener = listener
     }
 
     fun setDensityData(data: Map<Int, Int>, from: Int, to: Int) {
@@ -92,29 +97,56 @@ class EventDensityBar @JvmOverloads constructor(
         }
     }
 
+    private var longPressRunnable: Runnable? = null
+    private var downX = 0f
+    private var isLongPressHandled = false
+
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        if (event.action == MotionEvent.ACTION_UP && rangeTo > rangeFrom) {
-            val ratio = event.x / width.toFloat()
-            val year = rangeFrom + (ratio * (rangeTo - rangeFrom)).toInt()
+        if (rangeTo <= rangeFrom) return false
 
-            // 해당 구간 근처의 사건 수 표시
-            val nearCount = densityData.entries
-                .filter { kotlin.math.abs(it.key - year) <= ((rangeTo - rangeFrom) / 50).coerceAtLeast(1) }
-                .sumOf { it.value }
-
-            if (nearCount > 0) {
-                Toast.makeText(
-                    context,
-                    context.getString(R.string.timeline_density_tooltip, nearCount),
-                    Toast.LENGTH_SHORT
-                ).show()
+        when (event.action) {
+            MotionEvent.ACTION_DOWN -> {
+                downX = event.x
+                isLongPressHandled = false
+                longPressRunnable = Runnable {
+                    isLongPressHandled = true
+                    val ratio = downX / width.toFloat()
+                    val year = rangeFrom + (ratio * (rangeTo - rangeFrom)).toInt()
+                    onYearLongPressListener?.invoke(year)
+                    performClick()
+                }
+                handler?.postDelayed(longPressRunnable!!, 500L)
+                return true
             }
+            MotionEvent.ACTION_UP -> {
+                handler?.removeCallbacks(longPressRunnable ?: return false)
+                if (!isLongPressHandled) {
+                    val ratio = event.x / width.toFloat()
+                    val year = rangeFrom + (ratio * (rangeTo - rangeFrom)).toInt()
 
-            onYearTapListener?.invoke(year)
-            performClick()
-            return true
+                    val nearCount = densityData.entries
+                        .filter { kotlin.math.abs(it.key - year) <= ((rangeTo - rangeFrom) / 50).coerceAtLeast(1) }
+                        .sumOf { it.value }
+
+                    if (nearCount > 0) {
+                        Toast.makeText(
+                            context,
+                            context.getString(R.string.timeline_density_tooltip, nearCount),
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+
+                    onYearTapListener?.invoke(year)
+                    performClick()
+                }
+                return true
+            }
+            MotionEvent.ACTION_CANCEL -> {
+                handler?.removeCallbacks(longPressRunnable ?: return false)
+                return true
+            }
         }
-        return event.action == MotionEvent.ACTION_DOWN
+        return false
     }
 }

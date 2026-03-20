@@ -61,6 +61,38 @@
                 android:orientation="vertical"
                 android:layout_marginBottom="@dimen/stats_margin_lg" />
 
+            <!-- 특화 유형 분포 PieChart -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/stats_specialization_distribution"
+                android:textSize="@dimen/stats_text_heading"
+                android:textStyle="bold"
+                android:textColor="@color/primary"
+                android:layout_marginBottom="@dimen/stats_margin_sm" />
+
+            <com.github.mikephil.charting.charts.PieChart
+                android:id="@+id/chartSpecializationDist"
+                android:layout_width="match_parent"
+                android:layout_height="@dimen/stats_chart_height"
+                android:layout_marginBottom="@dimen/stats_margin_lg" />
+
+            <!-- 잠재력 등급 분포 BarChart -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/stats_potential_grade_distribution"
+                android:textSize="@dimen/stats_text_heading"
+                android:textStyle="bold"
+                android:textColor="@color/primary"
+                android:layout_marginBottom="@dimen/stats_margin_sm" />
+
+            <com.github.mikephil.charting.charts.HorizontalBarChart
+                android:id="@+id/chartPotentialGradeDist"
+                android:layout_width="match_parent"
+                android:layout_height="@dimen/stats_chart_height_sm"
+                android:layout_marginBottom="@dimen/stats_margin_lg" />
+
             <!-- 태그 분포 PieChart -->
             <TextView
                 android:layout_width="wrap_content"

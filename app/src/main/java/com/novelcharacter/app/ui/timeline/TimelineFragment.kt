@@ -10,6 +10,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.ArrayAdapter
 import android.widget.CheckBox
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
@@ -70,22 +71,14 @@ class TimelineFragment : Fragment() {
             onLongClick = { event ->
                 AlertDialog.Builder(requireContext())
                     .setTitle(getString(R.string.event_year_format, event.year))
-                    .setItems(arrayOf(getString(R.string.edit), getString(R.string.delete))) { _, which ->
-                        when (which) {
-                            0 -> showEditEventDialog(event)
-                            1 -> {
-                                AlertDialog.Builder(requireContext())
-                                    .setIcon(android.R.drawable.ic_dialog_alert)
-                                    .setTitle(R.string.delete_warning_title)
-                                    .setMessage(R.string.confirm_delete)
-                                    .setPositiveButton(R.string.yes) { _, _ ->
-                                        viewModel.deleteEvent(event)
-                                    }
-                                    .setNegativeButton(R.string.no, null)
-                                    .show()
-                            }
-                        }
+                    .setMessage(event.description.take(100))
+                    .setPositiveButton(R.string.edit) { _, _ ->
+                        showEditEventDialog(event)
                     }
+                    .setNegativeButton(R.string.delete) { _, _ ->
+                        viewModel.deleteEvent(event)
+                    }
+                    .setNeutralButton(R.string.cancel, null)
                     .show()
             },
             coroutineScope = viewLifecycleOwner.lifecycleScope,
@@ -285,6 +278,11 @@ class TimelineFragment : Fragment() {
             viewModel.setSelectedYear(year)
         }
 
+        // Density bar long-press → quick event creation
+        binding.eventDensityBar.setOnYearLongPressListener { year ->
+            showQuickAddDialog(year)
+        }
+
         // Observe selected year to update slider position
         viewModel.selectedYear.observe(viewLifecycleOwner) { year ->
             if (year != null) {
@@ -453,6 +451,7 @@ class TimelineFragment : Fragment() {
                         description = description,
                         universeId = universeId,
                         novelId = novelId,
+                        isTemporary = false,  // 전체 편집 시 간편 사건 → 정식 사건 전환
                         createdAt = event?.createdAt ?: System.currentTimeMillis()
                     )
 
@@ -465,6 +464,40 @@ class TimelineFragment : Fragment() {
                 .setNegativeButton(R.string.cancel, null)
                 .show()
         }
+    }
+
+    /** 간편 사건 추가: 연도 + 한줄 설명만으로 임시 사건 생성 */
+    private fun showQuickAddDialog(year: Int) {
+        val ctx = context ?: return
+        val density = resources.displayMetrics.density
+
+        val container = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding((24 * density).toInt(), (16 * density).toInt(), (24 * density).toInt(), 0)
+        }
+
+        val editDescription = EditText(ctx).apply {
+            hint = getString(R.string.hint_quick_event_desc)
+            isSingleLine = true
+        }
+        container.addView(editDescription)
+
+        AlertDialog.Builder(ctx)
+            .setTitle(getString(R.string.quick_add_event_title, year))
+            .setView(container)
+            .setPositiveButton(R.string.save) { _, _ ->
+                val desc = editDescription.text.toString().trim()
+                if (desc.isEmpty()) return@setPositiveButton
+                val quickEvent = TimelineEvent(
+                    year = year,
+                    description = desc,
+                    isTemporary = true
+                )
+                viewModel.insertEvent(quickEvent, emptyList())
+                Toast.makeText(ctx, R.string.quick_event_added, Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
     }
 
     private fun setupCharacterCheckboxes(

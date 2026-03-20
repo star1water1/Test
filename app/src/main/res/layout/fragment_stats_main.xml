@@ -274,7 +274,25 @@
                             android:layout_marginBottom="@dimen/stats_margin_xs" />
 
                         <TextView
-                            android:id="@+id/insightFieldCompletion"
+                            android:id="@+id/insightSpecialization"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:textSize="@dimen/stats_text_body_sm"
+                            android:textColor="@color/on_surface"
+                            android:drawablePadding="@dimen/stats_margin_xs"
+                            android:layout_marginBottom="@dimen/stats_margin_xs" />
+
+                        <TextView
+                            android:id="@+id/insightTopFieldValues"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:textSize="@dimen/stats_text_body_sm"
+                            android:textColor="@color/on_surface"
+                            android:drawablePadding="@dimen/stats_margin_xs"
+                            android:layout_marginBottom="@dimen/stats_margin_xs" />
+
+                        <TextView
+                            android:id="@+id/insightDensityPeak"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:textSize="@dimen/stats_text_body_sm"
@@ -427,6 +445,28 @@
                         android:padding="@dimen/stats_padding_card" />
                 </com.google.android.material.card.MaterialCardView>
             </LinearLayout>
+
+            <!-- 작품별 비교 분석 카드 -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cardCrossNovel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="@dimen/stats_margin_sm"
+                app:cardCornerRadius="@dimen/stats_card_corner_radius"
+                app:cardElevation="@dimen/stats_card_elevation"
+                android:clickable="true"
+                android:focusable="true"
+                android:foreground="?attr/selectableItemBackground">
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/stats_cross_novel_title"
+                    android:textSize="@dimen/stats_text_body"
+                    android:textStyle="bold"
+                    android:textColor="@color/primary"
+                    android:gravity="center"
+                    android:padding="@dimen/stats_padding_card" />
+            </com.google.android.material.card.MaterialCardView>
 
             <!-- 캐릭터 분석 카드 -->
             <com.google.android.material.card.MaterialCardView

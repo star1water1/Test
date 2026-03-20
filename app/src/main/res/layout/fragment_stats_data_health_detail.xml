@@ -44,6 +44,22 @@
             android:orientation="vertical"
             android:padding="@dimen/stats_padding_content">
 
+            <!-- 데이터 건강도 개요 도넛 차트 -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/stats_data_health_overview"
+                android:textSize="@dimen/stats_text_heading"
+                android:textStyle="bold"
+                android:textColor="@color/primary"
+                android:layout_marginBottom="@dimen/stats_margin_sm" />
+
+            <com.github.mikephil.charting.charts.PieChart
+                android:id="@+id/chartDataHealthOverview"
+                android:layout_width="match_parent"
+                android:layout_height="@dimen/stats_chart_height"
+                android:layout_marginBottom="@dimen/stats_margin_lg" />
+
             <!-- 이미지 미등록 -->
             <TextView
                 android:layout_width="wrap_content"

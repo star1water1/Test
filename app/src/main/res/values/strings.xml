@@ -323,6 +323,10 @@
     <string name="image_change">이미지 변경</string>
     <string name="image_selected">이미지 선택됨</string>
     <string name="image_select_character">이미지를 가져올 캐릭터 선택</string>
+    <string name="image_selected_character">선택됨: %s</string>
+    <string name="no_character_with_image">이미지가 있는 캐릭터가 없습니다</string>
+    <string name="preset_restore_builtin">기본 프리셋 복원</string>
+    <string name="preset_restored">기본 프리셋이 복원되었습니다</string>
     <string name="image_no_characters_with_images">이미지가 있는 캐릭터가 없습니다</string>
     <string name="image_character_selected">%s 선택됨</string>
     <string name="image_change_character">캐릭터 변경</string>
@@ -498,6 +502,22 @@
     <string name="stats_relationships">관계 분석</string>
     <string name="stats_namebank">이름뱅크</string>
     <string name="stats_data_health">데이터 건강도</string>
+    <string name="stats_cross_novel_title">작품별 비교 분석</string>
+    <string name="stats_cross_novel_char_count">캐릭터 %d명</string>
+    <string name="stats_cross_novel_event_count">사건 %d건</string>
+    <string name="stats_cross_novel_rel_count">관계 %d건</string>
+    <string name="stats_cross_novel_avg_complexity">평균 복잡도 %.1f</string>
+    <string name="stats_cross_novel_specialization">특화 유형: %s</string>
+    <string name="stats_cross_novel_top_values">주요 필드 값: %s</string>
+    <string name="stats_data_health_overview">데이터 건강도 개요</string>
+    <string name="stats_specialization_distribution">캐릭터 특화 유형 분포</string>
+    <string name="stats_potential_grade_distribution">잠재력 등급 분포</string>
+    <string name="stats_health_has_image">이미지 있음</string>
+    <string name="stats_health_no_image">이미지 없음</string>
+    <string name="stats_health_connected">관계 연결됨</string>
+    <string name="stats_health_isolated">관계 고립</string>
+    <string name="stats_health_event_linked">사건 연계됨</string>
+    <string name="stats_health_event_unlinked">사건 미연계</string>
     <string name="stats_total_characters">총 캐릭터</string>
     <string name="stats_total_events">총 사건</string>
     <string name="stats_total_relationships">총 관계</string>
@@ -543,7 +563,9 @@
     <!-- Stats: 인사이트 -->
     <string name="stats_insight_most_active">가장 캐릭터가 많은 작품: %s</string>
     <string name="stats_insight_most_connected">가장 관계가 많은 캐릭터: %s</string>
-    <string name="stats_insight_field_completion">평균 필드 완성도: %.0f%%</string>
+    <string name="stats_insight_specialization">캐릭터 유형 분포: %s</string>
+    <string name="stats_insight_top_field_values">자주 쓰인 필드 값: %s</string>
+    <string name="stats_insight_density_peak">가장 사건이 밀집된 시기: %s</string>
     <string name="stats_insight_recent_activity">최근 7일 활동 캐릭터: %d명</string>
     <string name="stats_insight_complex_char">최고 복잡도: %s</string>
 
@@ -746,4 +768,9 @@
     <string name="label_group_by_value">개별 값</string>
     <string name="label_group_by_category">카테고리</string>
     <string name="label_group_by_both">둘 다</string>
+
+    <!-- Quick Event -->
+    <string name="quick_add_event_title">%d년 간편 사건 추가</string>
+    <string name="hint_quick_event_desc">사건 제목 (나중에 세부 입력 가능)</string>
+    <string name="quick_event_added">간편 사건이 추가되었습니다</string>
 </resources>

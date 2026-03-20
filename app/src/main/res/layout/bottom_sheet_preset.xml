@@ -55,4 +55,17 @@
         app:iconGravity="textStart"
         app:iconTint="@color/primary" />
 
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnRestoreBuiltIn"
+        style="@style/Widget.Material3.Button.TextButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        android:text="@string/preset_restore_builtin"
+        android:textColor="@color/text_secondary"
+        app:icon="@android:drawable/ic_menu_revert"
+        app:iconGravity="textStart"
+        app:iconTint="@color/text_secondary" />
+
 </LinearLayout>

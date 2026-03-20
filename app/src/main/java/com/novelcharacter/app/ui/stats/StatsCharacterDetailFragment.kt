@@ -63,6 +63,11 @@ class StatsCharacterDetailFragment : Fragment() {
             // 복잡도 순위
             populateComplexityList(stats.complexityScores)
 
+            // 특화 유형 분포 차트
+            setupSpecializationPieChart(stats.complexityScores)
+            // 잠재력 등급 분포 차트
+            setupPotentialGradeBarChart(stats.complexityScores)
+
             setupTagPieChart(stats.tagDistribution)
             setupNovelCharBarChart(stats.novelCharacterCounts)
             setupSurvivalChart(stats.survivalPeriods)
@@ -127,6 +132,86 @@ class StatsCharacterDetailFragment : Fragment() {
             scoreBadge.background = badgeBg
 
             container.addView(itemView)
+        }
+    }
+
+    private fun setupSpecializationPieChart(scores: List<CharacterComplexity>) {
+        val chart = binding.chartSpecializationDist
+        val dist = scores
+            .filter { it.specialization != CharacterComplexity.Specialization.NONE }
+            .groupBy { "${it.specialization.icon} ${it.specialization.label}" }
+            .mapValues { it.value.size }
+        if (dist.isEmpty()) {
+            chart.visibility = View.GONE
+            return
+        }
+        val ctx = requireContext()
+        val captionSize = resources.getDimension(R.dimen.stats_text_caption) / resources.displayMetrics.scaledDensity
+        val chartValueSize = resources.getDimension(R.dimen.stats_text_chart_value) / resources.displayMetrics.scaledDensity
+        val entries = dist.entries.map { PieEntry(it.value.toFloat(), it.key) }
+        val dataSet = PieDataSet(entries, "").apply {
+            colors = chartColors()
+            valueTextSize = captionSize
+            valueTextColor = Color.WHITE
+            valueFormatter = PercentFormatter(chart)
+        }
+        chart.apply {
+            data = PieData(dataSet)
+            description.isEnabled = false
+            isDrawHoleEnabled = true
+            holeRadius = 40f
+            applyDarkModeHole(this)
+            setUsePercentValues(true)
+            legend.isEnabled = true
+            legend.textColor = ContextCompat.getColor(ctx, R.color.on_surface)
+            setEntryLabelColor(Color.WHITE)
+            setEntryLabelTextSize(chartValueSize)
+            animateY(600)
+            invalidate()
+        }
+    }
+
+    private fun setupPotentialGradeBarChart(scores: List<CharacterComplexity>) {
+        val chart = binding.chartPotentialGradeDist
+        val gradeDist = scores.groupBy { it.overallPotential }
+            .mapValues { it.value.size }
+        if (gradeDist.isEmpty()) {
+            chart.visibility = View.GONE
+            return
+        }
+        val ctx = requireContext()
+        val chartValueSize = resources.getDimension(R.dimen.stats_text_chart_value) / resources.displayMetrics.scaledDensity
+        val grades = listOf(
+            CharacterComplexity.PotentialGrade.S,
+            CharacterComplexity.PotentialGrade.A,
+            CharacterComplexity.PotentialGrade.B,
+            CharacterComplexity.PotentialGrade.C,
+            CharacterComplexity.PotentialGrade.D
+        )
+        val labels = grades.map { it.label }
+        val entries = grades.mapIndexed { i, grade ->
+            BarEntry(i.toFloat(), (gradeDist[grade] ?: 0).toFloat())
+        }
+        val gradeColors = grades.map { ContextCompat.getColor(ctx, gradeColorRes(it)) }
+        val dataSet = BarDataSet(entries, "").apply {
+            colors = gradeColors
+            valueTextSize = chartValueSize
+            valueTextColor = ContextCompat.getColor(ctx, R.color.on_surface)
+        }
+        chart.apply {
+            data = BarData(dataSet)
+            description.isEnabled = false
+            legend.isEnabled = false
+            xAxis.valueFormatter = IndexAxisValueFormatter(labels)
+            xAxis.position = XAxis.XAxisPosition.BOTTOM
+            xAxis.granularity = 1f
+            xAxis.textColor = ContextCompat.getColor(ctx, R.color.on_surface)
+            axisLeft.textColor = ContextCompat.getColor(ctx, R.color.on_surface)
+            axisLeft.granularity = 1f
+            axisRight.isEnabled = false
+            setFitBars(true)
+            animateY(600)
+            invalidate()
         }
     }
 
@@ -379,6 +464,8 @@ class StatsCharacterDetailFragment : Fragment() {
 
     override fun onDestroyView() {
         _binding?.let {
+            it.chartSpecializationDist.clear()
+            it.chartPotentialGradeDist.clear()
             it.chartTagDistribution.clear()
             it.chartNovelCharCounts.clear()
             it.chartRelTypeDist.clear()

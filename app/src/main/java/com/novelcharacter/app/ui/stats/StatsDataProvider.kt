@@ -29,12 +29,16 @@ data class SummaryStats(
     val totalEvents: Int,
     val totalRelationships: Int,
     val totalNames: Int,
-    // 신규: 인사이트 요약
+    // 인사이트 요약
     val mostActiveNovel: String?,
     val mostConnectedChar: String?,
     val dataHealthIssueCount: Int,
     val avgFieldCompletion: Float,
-    val recentActivityCount: Int // 최근 7일 생성/수정 캐릭터
+    val recentActivityCount: Int, // 최근 7일 생성/수정 캐릭터
+    // 분석적 인사이트 (원칙 02: 입력량보다 분석 우선)
+    val specializationDist: Map<String, Int> = emptyMap(), // 특화유형 분포
+    val topFieldValues: List<Triple<String, String, Int>> = emptyList(), // (필드명, 값, 개수) TOP N
+    val eventDensityPeak: String? = null // 사건 밀도 최고 시기
 )
 
 // ===== 캐릭터 분석 =====
@@ -252,6 +256,22 @@ data class CrossAnalysisResult(
     val filteredCount: Int
 )
 
+// ===== 작품별 비교 분석 (신규 - 원칙 05) =====
+data class CrossNovelComparison(
+    val novels: List<NovelComparisonEntry>
+)
+
+data class NovelComparisonEntry(
+    val novelId: Long,
+    val novelTitle: String,
+    val characterCount: Int,
+    val eventCount: Int,
+    val relationshipCount: Int,
+    val avgComplexity: Float,
+    val specializationDist: Map<String, Int>,
+    val topFieldValues: List<Pair<String, Int>> // (필드값, 개수) TOP 5
+)
+
 // ===== 데이터 현황 (신규 - 기존 여러 Stats 통합) =====
 data class DataOverviewStats(
     val totalCharacters: Int,
@@ -312,6 +332,44 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
         )
     }
 
+    /** 캐릭터 복잡도 경량 계산 (Summary에서 특화 분포용) */
+    private fun computeCharacterComplexities(s: StatsSnapshot): List<CharacterComplexity> {
+        val relCount = mutableMapOf<Long, Int>()
+        s.relationships.forEach {
+            relCount[it.characterId1] = (relCount[it.characterId1] ?: 0) + 1
+            relCount[it.characterId2] = (relCount[it.characterId2] ?: 0) + 1
+        }
+        val eventCountMap = s.crossRefs.groupBy { it.characterId }.mapValues { it.value.size }
+        val stateChangesByChar = s.stateChanges.groupBy { it.characterId }
+
+        val novelMap = s.novels.associateBy { it.id }
+        val fieldDefByUniverse = s.fieldDefinitions.groupBy { it.universeId }
+        val charFieldValues = s.fieldValues.groupBy { it.characterId }
+
+        return s.characters.map { char ->
+            val relCnt = relCount[char.id] ?: 0
+            val evtCnt = eventCountMap[char.id] ?: 0
+            val stateChangeCnt = stateChangesByChar[char.id]?.size ?: 0
+
+            val novel = char.novelId?.let { novelMap[it] }
+            val fields = novel?.let { fieldDefByUniverse[it.universeId] } ?: emptyList()
+            val filledCount = charFieldValues[char.id]?.count { it.value.isNotBlank() } ?: 0
+            val completion = if (fields.isNotEmpty()) filledCount.toFloat() / fields.size * 100f else 0f
+
+            val relWeight = relCnt * 2f
+            val evtWeight = evtCnt * 1.5f
+            val fieldWeight = completion * 0.3f
+            val stateWeight = stateChangeCnt * 1f
+            val score = relWeight + evtWeight + fieldWeight + stateWeight
+
+            CharacterComplexity(
+                char.name, relCnt, evtCnt, completion, stateChangeCnt, score,
+                CharacterComplexity.PotentialGrade.fromScore(score),
+                CharacterComplexity.Specialization.determine(relWeight, evtWeight, fieldWeight, stateWeight)
+            )
+        }
+    }
+
     fun computeSummary(s: StatsSnapshot): SummaryStats {
         val novelMap = s.novels.associateBy { it.id }
         val charMap = s.characters.associateBy { it.id }
@@ -356,6 +414,32 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
         val sevenDaysAgo = System.currentTimeMillis() - 7 * 24 * 60 * 60 * 1000L
         val recentCount = s.characters.count { it.updatedAt >= sevenDaysAgo }
 
+        // 분석적 인사이트: 특화 유형 분포
+        val complexities = computeCharacterComplexities(s)
+        val specDist = complexities.groupBy { it.specialization.label }
+            .mapValues { it.value.size }
+
+        // 분석적 인사이트: 주요 필드 값 TOP 5
+        val fieldDefById = s.fieldDefinitions.associateBy { it.id }
+        val topFieldValues = s.fieldValues
+            .filter { it.value.isNotBlank() }
+            .groupBy { Pair(it.fieldDefinitionId, it.value) }
+            .mapValues { it.value.size }
+            .entries
+            .sortedByDescending { it.value }
+            .take(5)
+            .mapNotNull { entry ->
+                val fd = fieldDefById[entry.key.first] ?: return@mapNotNull null
+                Triple(fd.name, entry.key.second, entry.value)
+            }
+
+        // 분석적 인사이트: 사건 밀도 최고 시기
+        val eventDensityPeak = if (s.events.isNotEmpty()) {
+            val yearCounts = s.events.groupBy { it.year }.mapValues { it.value.size }
+            val peakYear = yearCounts.maxByOrNull { it.value }
+            peakYear?.let { "${it.key}년 (${it.value}건)" }
+        } else null
+
         return SummaryStats(
             totalCharacters = s.characters.size,
             totalNovels = s.novels.size,
@@ -367,7 +451,10 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
             mostConnectedChar = mostConnectedChar,
             dataHealthIssueCount = healthIssues,
             avgFieldCompletion = avgCompletion,
-            recentActivityCount = recentCount
+            recentActivityCount = recentCount,
+            specializationDist = specDist,
+            topFieldValues = topFieldValues,
+            eventDensityPeak = eventDensityPeak
         )
     }
 
@@ -1117,5 +1204,59 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
             fieldCompletionByField = fieldCompletionDetails,
             stateChangesByField = stateChangesByField
         )
+    }
+
+    /**
+     * 작품별 비교 분석 (원칙 05: 데이터 유기적 연결)
+     * 전체 스냅샷(필터 미적용)에서 작품별 통계를 나란히 비교할 수 있도록 한다.
+     */
+    fun computeCrossNovelComparison(s: StatsSnapshot): CrossNovelComparison {
+        val charsByNovel = s.characters.groupBy { it.novelId }
+        val eventsByNovel = s.events.groupBy { it.novelId }
+        val crossRefCharIds = s.crossRefs.groupBy { it.eventId }
+
+        val entries = s.novels.map { novel ->
+            val chars = charsByNovel[novel.id] ?: emptyList()
+            val charIds = chars.map { it.id }.toSet()
+            val events = eventsByNovel[novel.id] ?: emptyList()
+
+            // 이 작품 캐릭터의 관계 수
+            val relCount = s.relationships.count { it.characterId in charIds || it.targetCharacterId in charIds }
+
+            // 복잡도 계산
+            val complexities = computeCharacterComplexities(s, chars)
+            val avgComplexity = if (complexities.isNotEmpty()) {
+                complexities.map { it.totalScore }.average().toFloat()
+            } else 0f
+
+            // 특화 유형 분포
+            val specDist = complexities
+                .filter { it.specialization != CharacterComplexity.Specialization.NONE }
+                .groupBy { "${it.specialization.icon} ${it.specialization.label}" }
+                .mapValues { it.value.size }
+
+            // 자주 쓰인 필드 값 TOP 5
+            val novelFieldValues = s.fieldValues
+                .filter { fv -> fv.characterId in charIds && fv.value.isNotBlank() }
+            val topValues = novelFieldValues
+                .groupBy { it.value.trim() }
+                .mapValues { it.value.size }
+                .entries.sortedByDescending { it.value }
+                .take(5)
+                .map { it.key to it.value }
+
+            NovelComparisonEntry(
+                novelId = novel.id,
+                novelTitle = novel.title,
+                characterCount = chars.size,
+                eventCount = events.size,
+                relationshipCount = relCount,
+                avgComplexity = avgComplexity,
+                specializationDist = specDist,
+                topFieldValues = topValues
+            )
+        }.sortedByDescending { it.characterCount }
+
+        return CrossNovelComparison(novels = entries)
     }
 }

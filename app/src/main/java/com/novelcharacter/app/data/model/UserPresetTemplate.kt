@@ -18,6 +18,7 @@ data class UserPresetTemplate(
     val name: String,
     val description: String = "",
     val fieldsJson: String = "[]", // JSON array of FieldDefinition-like objects
+    val isBuiltIn: Boolean = false, // 기본 제공 프리셋 여부 (편집/삭제 가능하되 복원 가능)
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
 )

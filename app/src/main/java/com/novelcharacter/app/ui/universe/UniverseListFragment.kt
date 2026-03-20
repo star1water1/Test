@@ -132,6 +132,9 @@ class UniverseListFragment : Fragment() {
         adapter.resolveRandomCharacterImage = { universeId, callback ->
             viewModel.resolveRandomCharacterImage(universeId, callback)
         }
+        adapter.resolveCharacterImageById = { characterId, callback ->
+            viewModel.resolveCharacterImageById(characterId, callback)
+        }
 
         val callback = object : ItemTouchHelper.SimpleCallback(ItemTouchHelper.UP or ItemTouchHelper.DOWN, 0) {
             override fun isLongPressDragEnabled() = false
@@ -185,10 +188,9 @@ class UniverseListFragment : Fragment() {
     private var cachedUserPresets: List<com.novelcharacter.app.data.model.UserPresetTemplate> = emptyList()
 
     private fun showPresetDialog() {
-        val builtInTemplates = viewModel.getPresetTemplates()
+        // 빌트인 프리셋도 이제 DB에서 로드 — 모든 프리셋을 동일하게 처리
         val userPresetList = cachedUserPresets
-        val userTemplates = userPresetList.map { PresetTemplates.fromUserPreset(it) }
-        val allTemplates = builtInTemplates + userTemplates
+        val allTemplates = userPresetList.map { PresetTemplates.fromUserPreset(it) }
 
         // 각 템플릿에 원본 UserPresetTemplate을 직접 매핑
         val presetByTemplateId = userPresetList.associateBy { it.id }
@@ -228,13 +230,11 @@ class UniverseListFragment : Fragment() {
 
                 vh.view.setOnClickListener {
                     bottomSheet.dismiss()
-                    if (t.isBuiltIn) {
-                        viewModel.applyPreset(t)
+                    val preset = t.userPresetId?.let { id -> presetByTemplateId[id] }
+                    if (preset != null) {
+                        showUserPresetOptionsDialog(t, preset)
                     } else {
-                        val preset = t.userPresetId?.let { id -> presetByTemplateId[id] }
-                        if (preset != null) {
-                            showUserPresetOptionsDialog(t, preset)
-                        }
+                        viewModel.applyPreset(t)
                     }
                 }
             }
@@ -245,6 +245,15 @@ class UniverseListFragment : Fragment() {
                 bottomSheet.dismiss()
                 showSaveAsPresetDialog()
             }
+
+        sheetView.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnRestoreBuiltIn)?.apply {
+            visibility = View.VISIBLE
+            setOnClickListener {
+                bottomSheet.dismiss()
+                viewModel.restoreBuiltInPresets()
+                Toast.makeText(requireContext(), R.string.preset_restored, Toast.LENGTH_SHORT).show()
+            }
+        }
 
         bottomSheet.show()
     }
@@ -675,9 +684,10 @@ class UniverseListFragment : Fragment() {
         val imageModes = arrayOf(
             getString(R.string.image_mode_none),
             getString(R.string.image_mode_custom),
-            getString(R.string.image_mode_random_character)
+            getString(R.string.image_mode_random_character),
+            getString(R.string.image_mode_select_character)
         )
-        val imageModeValues = arrayOf(Universe.IMAGE_MODE_NONE, Universe.IMAGE_MODE_CUSTOM, Universe.IMAGE_MODE_RANDOM_CHARACTER)
+        val imageModeValues = arrayOf(Universe.IMAGE_MODE_NONE, Universe.IMAGE_MODE_CUSTOM, Universe.IMAGE_MODE_RANDOM_CHARACTER, Universe.IMAGE_MODE_SELECT_CHARACTER)
         var selectedImageMode = universe?.imageMode ?: Universe.IMAGE_MODE_NONE
         var selectedImagePath = universe?.imagePath ?: ""
 
@@ -688,6 +698,8 @@ class UniverseListFragment : Fragment() {
         layout.addView(imageModeSpinner)
 
         lastSavedImagePath = null
+        var selectedCharacterId: Long? = universe?.imageCharacterId
+
         val imageSelectBtn = TextView(ctx).apply {
             text = if (selectedImagePath.isNotBlank()) getString(R.string.image_change) else getString(R.string.image_select)
             setTextColor(ctx.getColor(R.color.primary))
@@ -699,10 +711,39 @@ class UniverseListFragment : Fragment() {
         }
         layout.addView(imageSelectBtn)
 
+        // 캐릭터 선택 버튼 (select_character 모드 전용)
+        val charSelectBtn = TextView(ctx).apply {
+            text = getString(R.string.image_select_character)
+            setTextColor(ctx.getColor(R.color.primary))
+            setPadding(0, (8 * dp).toInt(), 0, (8 * dp).toInt())
+            visibility = if (selectedImageMode == Universe.IMAGE_MODE_SELECT_CHARACTER) View.VISIBLE else View.GONE
+        }
+        layout.addView(charSelectBtn)
+
+        charSelectBtn.setOnClickListener {
+            val uid = universe?.id ?: return@setOnClickListener
+            viewModel.getCharactersWithImageForUniverse(uid) { chars ->
+                if (chars.isEmpty()) {
+                    Toast.makeText(ctx, R.string.no_character_with_image, Toast.LENGTH_SHORT).show()
+                    return@getCharactersWithImageForUniverse
+                }
+                val names = chars.map { it.second }.toTypedArray()
+                AlertDialog.Builder(ctx)
+                    .setTitle(R.string.image_select_character)
+                    .setItems(names) { _, which ->
+                        selectedCharacterId = chars[which].first
+                        charSelectBtn.text = getString(R.string.image_selected_character, chars[which].second)
+                    }
+                    .setNegativeButton(R.string.cancel, null)
+                    .show()
+            }
+        }
+
         imageModeSpinner.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: android.widget.AdapterView<*>?, v: View?, pos: Int, id: Long) {
                 selectedImageMode = imageModeValues[pos]
                 imageSelectBtn.visibility = if (selectedImageMode == Universe.IMAGE_MODE_CUSTOM) View.VISIBLE else View.GONE
+                charSelectBtn.visibility = if (selectedImageMode == Universe.IMAGE_MODE_SELECT_CHARACTER) View.VISIBLE else View.GONE
             }
             override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
         }
@@ -719,16 +760,19 @@ class UniverseListFragment : Fragment() {
                 val relTypesJson = if (currentTypes == Universe.DEFAULT_RELATIONSHIP_TYPES) ""
                     else org.json.JSONArray(currentTypes).toString()
                 if (name.isNotEmpty()) {
+                    val finalCharId = if (selectedImageMode == Universe.IMAGE_MODE_SELECT_CHARACTER) selectedCharacterId else null
                     if (universe == null) {
                         viewModel.insertUniverse(Universe(
                             name = name, description = desc, borderColor = borderColor,
                             imagePath = finalImagePath, imageMode = selectedImageMode,
+                            imageCharacterId = finalCharId,
                             customRelationshipTypes = relTypesJson
                         ))
                     } else {
                         viewModel.updateUniverse(universe.copy(
                             name = name, description = desc, borderColor = borderColor,
                             imagePath = finalImagePath, imageMode = selectedImageMode,
+                            imageCharacterId = finalCharId,
                             customRelationshipTypes = relTypesJson
                         ))
                     }

@@ -43,6 +43,8 @@ class UniverseAdapter(
 
     /** 세계관에 속한 캐릭터의 랜덤 이미지 경로를 반환하는 콜백 */
     var resolveRandomCharacterImage: ((universeId: Long, callback: (String?) -> Unit) -> Unit)? = null
+    /** 특정 캐릭터의 이미지 경로를 반환하는 콜백 */
+    var resolveCharacterImageById: ((characterId: Long, callback: (String?) -> Unit) -> Unit)? = null
 
     // 이미지 캐시 — CharacterAdapter 패턴
     private val thumbnailCache: LruCache<String, Bitmap> = run {
@@ -200,23 +202,28 @@ class UniverseAdapter(
             loadJob?.cancel()
             binding.universeImage.setImageResource(R.drawable.ic_universe)
 
-            val imagePath = when (universe.imageMode) {
-                Universe.IMAGE_MODE_CUSTOM -> universe.imagePath.takeIf { it.isNotBlank() }
-                Universe.IMAGE_MODE_RANDOM_CHARACTER -> null // 콜백으로 처리
-                else -> null
-            }
-
-            if (universe.imageMode == Universe.IMAGE_MODE_RANDOM_CHARACTER) {
-                resolveRandomCharacterImage?.invoke(universe.id) { resolvedPath ->
-                    if (resolvedPath != null && bindingAdapterPosition != RecyclerView.NO_POSITION) {
-                        loadImageFromPath(resolvedPath, universe.id)
+            when (universe.imageMode) {
+                Universe.IMAGE_MODE_CUSTOM -> {
+                    val path = universe.imagePath.takeIf { it.isNotBlank() }
+                    if (path != null) loadImageFromPath(path, universe.id)
+                }
+                Universe.IMAGE_MODE_RANDOM_CHARACTER -> {
+                    resolveRandomCharacterImage?.invoke(universe.id) { resolvedPath ->
+                        if (resolvedPath != null && bindingAdapterPosition != RecyclerView.NO_POSITION) {
+                            loadImageFromPath(resolvedPath, universe.id)
+                        }
                     }
                 }
-                return
-            }
-
-            if (imagePath != null) {
-                loadImageFromPath(imagePath, universe.id)
+                Universe.IMAGE_MODE_SELECT_CHARACTER -> {
+                    val charId = universe.imageCharacterId
+                    if (charId != null) {
+                        resolveCharacterImageById?.invoke(charId) { resolvedPath ->
+                            if (resolvedPath != null && bindingAdapterPosition != RecyclerView.NO_POSITION) {
+                                loadImageFromPath(resolvedPath, universe.id)
+                            }
+                        }
+                    }
+                }
             }
         }
 

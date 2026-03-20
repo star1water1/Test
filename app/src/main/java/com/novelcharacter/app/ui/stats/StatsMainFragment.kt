@@ -95,10 +95,33 @@ class StatsMainFragment : Fragment() {
             } ?: ""
             binding.insightMostConnected.visibility = if (summary.mostConnectedChar != null) View.VISIBLE else View.GONE
 
-            binding.insightFieldCompletion.text =
-                getString(R.string.stats_insight_field_completion, summary.avgFieldCompletion)
-            binding.insightFieldCompletion.visibility =
-                if (summary.totalCharacters > 0) View.VISIBLE else View.GONE
+            // 캐릭터 특화 유형 분포
+            val specText = summary.specializationDist
+                .filter { it.value > 0 }
+                .entries.sortedByDescending { it.value }
+                .joinToString(", ") { "${it.key} ${it.value}명" }
+            binding.insightSpecialization.text = if (specText.isNotEmpty()) {
+                getString(R.string.stats_insight_specialization, specText)
+            } else ""
+            binding.insightSpecialization.visibility =
+                if (specText.isNotEmpty()) View.VISIBLE else View.GONE
+
+            // 가장 많이 사용된 필드 값 TOP 3
+            val topFieldText = summary.topFieldValues
+                .take(3)
+                .joinToString(", ") { "${it.first}:${it.second}(${it.third})" }
+            binding.insightTopFieldValues.text = if (topFieldText.isNotEmpty()) {
+                getString(R.string.stats_insight_top_field_values, topFieldText)
+            } else ""
+            binding.insightTopFieldValues.visibility =
+                if (topFieldText.isNotEmpty()) View.VISIBLE else View.GONE
+
+            // 사건 밀도 피크
+            binding.insightDensityPeak.text = summary.eventDensityPeak?.let {
+                getString(R.string.stats_insight_density_peak, it)
+            } ?: ""
+            binding.insightDensityPeak.visibility =
+                if (summary.eventDensityPeak != null) View.VISIBLE else View.GONE
 
             binding.insightRecentActivity.text =
                 getString(R.string.stats_insight_recent_activity, summary.recentActivityCount)
@@ -282,6 +305,11 @@ class StatsMainFragment : Fragment() {
         binding.cardDataOverview.setOnClickListener {
             findNavController().navigateSafe(
                 R.id.statsMainFragment, R.id.statsDataOverviewFragment, null
+            )
+        }
+        binding.cardCrossNovel.setOnClickListener {
+            findNavController().navigateSafe(
+                R.id.statsMainFragment, R.id.statsCrossNovelFragment, null
             )
         }
         binding.btnInsightMore.setOnClickListener {

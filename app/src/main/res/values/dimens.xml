@@ -33,6 +33,7 @@
 
     <!-- Chart -->
     <dimen name="stats_chart_height">300dp</dimen>
+    <dimen name="stats_chart_height_sm">200dp</dimen>
     <dimen name="stats_progress_bar_height">12dp</dimen>
     <dimen name="stats_progress_bar_height_sm">8dp</dimen>
 

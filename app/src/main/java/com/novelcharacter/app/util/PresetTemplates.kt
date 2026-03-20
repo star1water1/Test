@@ -49,7 +49,7 @@ object PresetTemplates {
         return PresetTemplate(
             universe = Universe(name = preset.name, description = preset.description),
             fields = fields,
-            isBuiltIn = false,
+            isBuiltIn = preset.isBuiltIn,
             userPresetId = preset.id
         )
     }

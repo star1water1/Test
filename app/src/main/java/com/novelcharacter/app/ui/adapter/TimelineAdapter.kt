@@ -148,7 +148,13 @@ class TimelineAdapter(
             boundEventId = event.id
             binding.yearText.text = formatEventDate(event)
             binding.calendarTypeText.text = event.calendarType
-            binding.descriptionText.text = event.description
+            binding.descriptionText.text = if (event.isTemporary) {
+                "📌 ${event.description}"
+            } else {
+                event.description
+            }
+            // 간편 사건 시각적 구분: 반투명 배경
+            binding.root.alpha = if (event.isTemporary) 0.7f else 1.0f
 
             // Load related character chips via callback (repository 경유)
             binding.characterChipGroup.removeAllViews()

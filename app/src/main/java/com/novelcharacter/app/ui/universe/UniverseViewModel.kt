@@ -90,6 +90,31 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
     fun getPresetTemplates(): List<PresetTemplates.PresetTemplate> =
         PresetTemplates.getBuiltInTemplates()
 
+    /** 기본 프리셋 복원: 삭제된 빌트인 프리셋을 다시 DB에 삽입 */
+    fun restoreBuiltInPresets() = viewModelScope.launch {
+        try {
+            val existing = userPresetDao.getAllTemplatesList()
+            val existingBuiltInNames = existing.filter { it.isBuiltIn }.map { it.name }.toSet()
+            val builtInTemplates = PresetTemplates.getBuiltInTemplates()
+            var restored = 0
+            builtInTemplates.forEach { template ->
+                if (template.universe.name !in existingBuiltInNames) {
+                    val fieldsJson = PresetTemplates.fieldsToJson(template.fields)
+                    userPresetDao.insert(UserPresetTemplate(
+                        name = template.universe.name,
+                        description = template.universe.description,
+                        fieldsJson = fieldsJson,
+                        isBuiltIn = true
+                    ))
+                    restored++
+                }
+            }
+            Log.i("UniverseViewModel", "Restored $restored built-in presets")
+        } catch (e: Exception) {
+            Log.e("UniverseViewModel", "Failed to restore built-in presets", e)
+        }
+    }
+
     /** 현재 세계관의 필드 구성을 사용자 프리셋으로 저장 */
     fun saveAsUserPreset(universeId: Long, name: String, description: String) = viewModelScope.launch {
         try {
@@ -165,6 +190,47 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
             } catch (e: Exception) {
                 Log.e("UniverseViewModel", "Failed to resolve character image", e)
                 callback(null)
+            }
+        }
+    }
+
+    fun resolveCharacterImageById(characterId: Long, callback: (String?) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val character = characterRepository.getCharacterById(characterId)
+                if (character == null) {
+                    callback(null)
+                    return@launch
+                }
+                val firstPath = try {
+                    gson.fromJson(character.imagePaths, Array<String>::class.java)?.firstOrNull()
+                } catch (_: Exception) { null }
+                callback(firstPath)
+            } catch (e: Exception) {
+                Log.e("UniverseViewModel", "Failed to resolve character image by ID", e)
+                callback(null)
+            }
+        }
+    }
+
+    /**
+     * 세계관에 속한 캐릭터 중 이미지가 있는 캐릭터 목록을 반환 (select_character UI용)
+     */
+    fun getCharactersWithImageForUniverse(universeId: Long, callback: (List<Pair<Long, String>>) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val chars = characterRepository.getCharactersByUniverseList(universeId)
+                val result = chars.mapNotNull { char ->
+                    if (char.imagePaths.isNotBlank() && char.imagePaths != "[]") {
+                        val firstPath = try {
+                            gson.fromJson(char.imagePaths, Array<String>::class.java)?.firstOrNull()
+                        } catch (_: Exception) { null }
+                        if (firstPath != null) Pair(char.id, char.name) else null
+                    } else null
+                }
+                callback(result)
+            } catch (_: Exception) {
+                callback(emptyList())
             }
         }
     }

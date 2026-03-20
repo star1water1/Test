@@ -191,6 +191,9 @@
         <action
             android:id="@+id/action_stats_to_data_overview"
             app:destination="@id/statsDataOverviewFragment" />
+        <action
+            android:id="@+id/action_stats_to_cross_novel"
+            app:destination="@id/statsCrossNovelFragment" />
     </fragment>
 
     <fragment
@@ -240,6 +243,12 @@
         android:name="com.novelcharacter.app.ui.stats.StatsDataOverviewFragment"
         android:label="@string/stats_data_overview_title"
         tools:layout="@layout/fragment_stats_data_overview" />
+
+    <fragment
+        android:id="@+id/statsCrossNovelFragment"
+        android:name="com.novelcharacter.app.ui.stats.StatsCrossNovelFragment"
+        android:label="@string/stats_cross_novel_title"
+        tools:layout="@layout/fragment_stats_cross_novel" />
 
     <fragment
         android:id="@+id/characterGrowthFragment"

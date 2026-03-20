@@ -158,29 +158,17 @@ class StateChangeHelper(
 
     private fun showEditDeleteDialog(change: CharacterStateChange) {
         val context = try { contextGetter() } catch (_: Exception) { return }
-        val options = arrayOf(getString(R.string.edit), getString(R.string.delete))
         AlertDialog.Builder(context)
             .setTitle(getString(R.string.edit_or_delete))
-            .setItems(options) { _, which ->
-                when (which) {
-                    0 -> showStateChangeDialog(change)
-                    1 -> confirmDeleteStateChange(change)
-                }
+            .setMessage("${change.fieldKey}: ${change.oldValue} → ${change.newValue}")
+            .setPositiveButton(R.string.edit) { _, _ ->
+                showStateChangeDialog(change)
             }
-            .show()
-    }
-
-    private fun confirmDeleteStateChange(change: CharacterStateChange) {
-        val context = try { contextGetter() } catch (_: Exception) { return }
-        AlertDialog.Builder(context)
-            .setIcon(android.R.drawable.ic_dialog_alert)
-            .setTitle(getString(R.string.delete_warning_title))
-            .setMessage(getString(R.string.confirm_delete))
-            .setPositiveButton(getString(R.string.yes)) { _, _ ->
+            .setNegativeButton(R.string.delete) { _, _ ->
                 viewModel.deleteStateChange(change)
                 Toast.makeText(context, getString(R.string.state_change_deleted), Toast.LENGTH_SHORT).show()
             }
-            .setNegativeButton(getString(R.string.no), null)
+            .setNeutralButton(R.string.cancel, null)
             .show()
     }
 }

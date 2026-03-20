@@ -109,6 +109,13 @@ class CharacterListFragment : Fragment() {
             }
 
             override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) {}
+
+            override fun clearView(recyclerView: RecyclerView, viewHolder: RecyclerView.ViewHolder) {
+                super.clearView(recyclerView, viewHolder)
+                if (adapter.isReorderMode()) {
+                    viewModel.updateCharacterDisplayOrders(adapter.getReorderedList())
+                }
+            }
         }
         itemTouchHelper = ItemTouchHelper(callback).also {
             it.attachToRecyclerView(binding.characterRecyclerView)
@@ -131,7 +138,7 @@ class CharacterListFragment : Fragment() {
 
     private fun toggleReorderMode() {
         if (adapter.isReorderMode()) {
-            viewModel.updateCharacterDisplayOrders(adapter.getReorderedList())
+            // 드래그 완료 시 clearView()에서 이미 자동 저장됨
             adapter.setReorderMode(false)
             Toast.makeText(requireContext(), R.string.reorder_saved, Toast.LENGTH_SHORT).show()
         } else {
