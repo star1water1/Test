@@ -35,15 +35,17 @@ class DynamicFieldRenderer(
     fun displayDynamicFields(
         fields: List<FieldDefinition>,
         values: List<CharacterFieldValue>,
-        percentileData: Map<Long, PercentileInfo> = emptyMap()
+        percentileData: Map<Long, PercentileInfo> = emptyMap(),
+        preComputedCalculated: Map<Long, String>? = null
     ) {
         val container = containerGetter()
         container.removeAllViews()
 
         val valueMap = values.associateBy { it.fieldDefinitionId }
 
-        // CALCULATED 필드 수식 평가
-        val calculatedResults = evaluateCalculatedFields(fields, valueMap)
+        // CALCULATED 필드 수식 평가 (사전 계산 결과가 있으면 재사용)
+        val calculatedResults = preComputedCalculated
+            ?: evaluateCalculatedFields(fields, valueMap)
 
         val grouped = fields
             .sortedBy { it.displayOrder }
@@ -146,26 +148,34 @@ class DynamicFieldRenderer(
                     cardContent.addView(multiView)
                 } else {
                     // PLAIN (default) / CALCULATED
-                    val displayValue = if (isCalculated) {
-                        val computedValue = calculatedResults[field.id]
-                        if (computedValue != null) {
-                            contextGetter().getString(R.string.auto_calculated_value, field.name, computedValue)
-                        } else if (fieldValue.isNotEmpty()) {
-                            contextGetter().getString(R.string.auto_calculated_value, field.name, fieldValue)
-                        } else {
-                            getStringWithArg(R.string.auto_calculated_label, field.name)
-                        }
-                    } else {
-                        "${field.name}: ${fieldValue.ifEmpty { "-" }}"
-                    }
+                    val displayValue: String
+                    val percentileSuffix: String
 
-                    // 백분위 표기 추가
-                    val percentileSuffix = percentileData[field.id]?.let { info ->
-                        val parts = mutableListOf<String>()
-                        info.novelPercentile?.let { parts.add("작품 상위 ${"%.0f".format(it)}%") }
-                        info.universePercentile?.let { parts.add("세계관 상위 ${"%.0f".format(it)}%") }
-                        if (parts.isNotEmpty()) " (${parts.joinToString(" / ")})" else null
-                    } ?: ""
+                    if (isCalculated) {
+                        val computedValue = calculatedResults[field.id]
+                        val baseValue = computedValue ?: fieldValue.ifEmpty { null }
+                        if (baseValue != null) {
+                            // "(자동 계산)"과 백분위를 단일 괄호로 통합
+                            val infoList = mutableListOf("자동 계산")
+                            percentileData[field.id]?.let { info ->
+                                info.novelPercentile?.let { infoList.add("작품 상위 ${"%.0f".format(it)}%") }
+                                info.universePercentile?.let { infoList.add("세계관 상위 ${"%.0f".format(it)}%") }
+                            }
+                            displayValue = "${field.name}: $baseValue (${infoList.joinToString(", ")})"
+                        } else {
+                            displayValue = getStringWithArg(R.string.auto_calculated_label, field.name)
+                        }
+                        percentileSuffix = "" // CALCULATED은 위에서 통합 완료
+                    } else {
+                        displayValue = "${field.name}: ${fieldValue.ifEmpty { "-" }}"
+                        // 백분위 표기 추가 (NUMBER, GRADE 등)
+                        percentileSuffix = percentileData[field.id]?.let { info ->
+                            val parts = mutableListOf<String>()
+                            info.novelPercentile?.let { parts.add("작품 상위 ${"%.0f".format(it)}%") }
+                            info.universePercentile?.let { parts.add("세계관 상위 ${"%.0f".format(it)}%") }
+                            if (parts.isNotEmpty()) " (${parts.joinToString(" / ")})" else null
+                        } ?: ""
+                    }
 
                     val rowView = TextView(context).apply {
                         text = displayValue + percentileSuffix

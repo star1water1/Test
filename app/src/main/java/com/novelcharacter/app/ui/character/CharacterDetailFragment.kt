@@ -202,13 +202,21 @@ class CharacterDetailFragment : Fragment() {
                 timeSliderHelper.cachedFields = fields
                 timeSliderHelper.cachedValues = values
 
-                // 백분위 계산
-                val percentileData = computePercentileData(fields, values, character, novel, universeId)
+                // CALCULATED 필드 사전 계산 (단일 계산, 결과 공유)
+                val valueMap = values.associateBy { it.fieldDefinitionId }
+                val calculatedResults = evaluateCalculatedFields(fields, valueMap)
+
+                // 백분위 계산 (사전 계산된 CALCULATED 결과 사용)
+                val percentileData = computePercentileData(fields, values, character, novel, universeId, calculatedResults)
+
+                // 캐싱 (TimeSlider 리셋 시 백분위 보존)
+                timeSliderHelper.cachedPercentileData = percentileData
+                timeSliderHelper.cachedCalculatedResults = calculatedResults
 
                 if (timeSliderHelper.isTimeViewActive && timeSliderHelper.currentSliderYear != null) {
                     timeSliderHelper.applyTimeView(timeSliderHelper.currentSliderYear!!)
                 } else {
-                    fieldRenderer.displayDynamicFields(fields, values, percentileData)
+                    fieldRenderer.displayDynamicFields(fields, values, percentileData, calculatedResults)
                 }
             } else {
                 timeSliderHelper.cachedFields = emptyList()
@@ -221,28 +229,58 @@ class CharacterDetailFragment : Fragment() {
     }
 
     /**
-     * 백분위 데이터 계산.
-     * 각 숫자형 필드에 대해 config의 percentile 설정을 확인하고,
-     * 활성화된 스코프(작품/세계관)에 대해 상위 %를 계산한다.
+     * CALCULATED 필드의 수식을 FormulaEvaluator로 평가하여 결과를 반환.
+     * displayCharacter에서 한 번만 계산하여 백분위 계산과 표시 양쪽에 공유한다.
+     * @return fieldDefinitionId → 계산된 값 문자열
      */
-    private suspend fun computePercentileData(
+    private fun evaluateCalculatedFields(
         fields: List<com.novelcharacter.app.data.model.FieldDefinition>,
-        values: List<com.novelcharacter.app.data.model.CharacterFieldValue>,
-        character: Character,
-        novel: com.novelcharacter.app.data.model.Novel?,
-        universeId: Long
-    ): Map<Long, DynamicFieldRenderer.PercentileInfo> {
-        val result = mutableMapOf<Long, DynamicFieldRenderer.PercentileInfo>()
-        val valueMap = values.associateBy { it.fieldDefinitionId }
-        val numericTypes = setOf("NUMBER", "CALCULATED", "BODY_SIZE", "GRADE")
-
-        // CALCULATED 필드의 수식 평가를 위해 FormulaEvaluator 준비
+        valueMap: Map<Long, com.novelcharacter.app.data.model.CharacterFieldValue>
+    ): Map<Long, String> {
+        val calculatedFields = fields.filter { it.type == "CALCULATED" }
+        if (calculatedFields.isEmpty()) return emptyMap()
         val fieldKeyValues = mutableMapOf<String, String>()
         for (field in fields) {
             val v = valueMap[field.id]?.value ?: ""
             if (v.isNotBlank()) fieldKeyValues[field.key] = v
         }
         val evaluator = com.novelcharacter.app.util.FormulaEvaluator(fieldKeyValues, fields)
+        val results = mutableMapOf<Long, String>()
+        for (field in calculatedFields) {
+            val formula = try {
+                org.json.JSONObject(field.config).optString("formula", "")
+            } catch (_: Exception) { "" }
+            if (formula.isBlank()) continue
+            try {
+                val value = evaluator.evaluate(formula)
+                if (!value.isNaN() && !value.isInfinite()) {
+                    results[field.id] = if (value == value.toLong().toDouble()) {
+                        value.toLong().toString()
+                    } else "%.2f".format(value)
+                }
+            } catch (_: Exception) { }
+        }
+        return results
+    }
+
+    /**
+     * 백분위 데이터 계산.
+     * 각 숫자형 필드에 대해 config의 percentile 설정을 확인하고,
+     * 활성화된 스코프(작품/세계관)에 대해 상위 %를 계산한다.
+     * CALCULATED 필드는 사전 계산된 결과(calculatedResults)를 사용하여
+     * 표시 값과 백분위 값의 일관성을 보장한다.
+     */
+    private suspend fun computePercentileData(
+        fields: List<com.novelcharacter.app.data.model.FieldDefinition>,
+        values: List<com.novelcharacter.app.data.model.CharacterFieldValue>,
+        character: Character,
+        novel: com.novelcharacter.app.data.model.Novel?,
+        universeId: Long,
+        calculatedResults: Map<Long, String> = emptyMap()
+    ): Map<Long, DynamicFieldRenderer.PercentileInfo> {
+        val result = mutableMapOf<Long, DynamicFieldRenderer.PercentileInfo>()
+        val valueMap = values.associateBy { it.fieldDefinitionId }
+        val numericTypes = setOf("NUMBER", "CALCULATED", "BODY_SIZE", "GRADE")
 
         for (field in fields) {
             if (field.type !in numericTypes) continue
@@ -271,15 +309,9 @@ class CharacterDetailFragment : Fragment() {
             } else null
 
             // Get current character's numeric value
+            // CALCULATED: 사전 계산된 결과 사용 (display와 동일한 값 보장)
             val myValue: Double? = when (field.type) {
-                "CALCULATED" -> {
-                    val formula = try {
-                        org.json.JSONObject(field.config).optString("formula", "")
-                    } catch (_: Exception) { "" }
-                    if (formula.isNotBlank()) {
-                        try { evaluator.evaluate(formula) } catch (_: Exception) { null }
-                    } else null
-                }
+                "CALCULATED" -> calculatedResults[field.id]?.toDoubleOrNull()
                 "GRADE" -> {
                     val rawVal = valueMap[field.id]?.value ?: ""
                     gradeMap?.get(rawVal)
@@ -304,7 +336,9 @@ class CharacterDetailFragment : Fragment() {
 
             if ("novel" in scopes && novel != null) {
                 val allValues: List<Double> = if (isCalculated) {
-                    computeCalculatedValuesForScope(field, novel.id, null)
+                    try {
+                        computeCalculatedValuesForScope(field, novel.id, universeId)
+                    } catch (_: Exception) { emptyList() }
                 } else {
                     viewModel.getFieldValuesForNovel(novel.id, field.id)
                         .mapNotNull(toNumeric)
@@ -317,9 +351,11 @@ class CharacterDetailFragment : Fragment() {
                 }
             }
 
-            if ("universe" in scopes && universeId != null) {
+            if ("universe" in scopes) {
                 val allValues: List<Double> = if (isCalculated) {
-                    computeCalculatedValuesForScope(field, null, universeId)
+                    try {
+                        computeCalculatedValuesForScope(field, null, universeId)
+                    } catch (_: Exception) { emptyList() }
                 } else {
                     viewModel.getFieldValuesForUniverse(universeId, field.id)
                         .mapNotNull(toNumeric)

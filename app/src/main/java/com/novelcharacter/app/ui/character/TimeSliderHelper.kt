@@ -25,6 +25,8 @@ class TimeSliderHelper(
     var currentSliderYear: Int? = null
     var cachedFields: List<FieldDefinition> = emptyList()
     var cachedValues: List<CharacterFieldValue> = emptyList()
+    var cachedPercentileData: Map<Long, DynamicFieldRenderer.PercentileInfo> = emptyMap()
+    var cachedCalculatedResults: Map<Long, String> = emptyMap()
 
     private val timeStateResolver = TimeStateResolver()
     private var applyTimeViewJob: Job? = null
@@ -83,7 +85,7 @@ class TimeSliderHelper(
         binding.timeViewIndicator.visibility = View.GONE
 
         if (cachedFields.isNotEmpty()) {
-            fieldRenderer.displayDynamicFields(cachedFields, cachedValues)
+            fieldRenderer.displayDynamicFields(cachedFields, cachedValues, cachedPercentileData, cachedCalculatedResults)
         }
     }
 
