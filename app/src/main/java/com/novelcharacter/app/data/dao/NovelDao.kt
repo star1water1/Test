@@ -60,6 +60,10 @@ interface NovelDao {
 
     @Query("UPDATE novels SET isPinned = :isPinned WHERE id = :id")
     suspend fun setPinned(id: Long, isPinned: Boolean)
+
+    /** 삭제된 캐릭터를 참조하는 imageCharacterId를 null로 정리 */
+    @Query("UPDATE novels SET imageCharacterId = NULL, imageMode = 'none' WHERE imageCharacterId = :characterId")
+    suspend fun clearImageCharacterRef(characterId: Long)
 }
 
 data class UniverseCount(val universeId: Long, val cnt: Int)

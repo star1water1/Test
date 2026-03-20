@@ -104,27 +104,25 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
                 // 작품 목록 설정
                 _novelList.value = snapshot.novels.map { it.id to it.title }
 
+                // 모든 통계를 먼저 계산한 후 한 번에 LiveData에 반영
                 val summary = withContext(Dispatchers.IO) { provider.computeSummary(filtered) }
                 val insights = withContext(Dispatchers.IO) { provider.computeFieldInsights(filtered) }
-
-                _summary.value = summary
-                _fieldInsights.value = insights
-
-                // 레거시 호환: 기존 Fragment가 참조하는 값들도 로드
                 val chars = withContext(Dispatchers.IO) { provider.computeCharacterStats(filtered) }
                 val events = withContext(Dispatchers.IO) { provider.computeEventStats(filtered) }
                 val rels = withContext(Dispatchers.IO) { provider.computeRelationshipStats(filtered) }
                 val names = withContext(Dispatchers.IO) { provider.computeNameBankStats(filtered) }
                 val health = withContext(Dispatchers.IO) { provider.computeDataHealth(filtered) }
-
                 val fieldAnalysis = withContext(Dispatchers.IO) { provider.computeFieldAnalysis(filtered) }
 
+                // 세부 통계를 먼저 set하고, summary를 마지막에 set
+                _fieldInsights.value = insights
                 _characterStats.value = chars
                 _eventStats.value = events
                 _relationshipStats.value = rels
                 _nameBankStats.value = names
                 _dataHealthStats.value = health
                 _fieldAnalysisStats.value = fieldAnalysis
+                _summary.value = summary
             } catch (e: Exception) {
                 _error.value = e.message
             } finally {
