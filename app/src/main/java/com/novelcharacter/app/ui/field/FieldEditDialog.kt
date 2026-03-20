@@ -381,10 +381,11 @@ class FieldEditDialog : DialogFragment() {
         val density = resources.displayMetrics.density
         binding.analysisListContainer.removeAllViews()
         analysisRows.clear()
+        val allowedTypes = FieldStatsConfig.StatsType.forFieldType(field.type)
         for (entry in statsConfig.analyses) {
-            addAnalysisRow(binding.analysisListContainer, density)
+            addAnalysisRow(binding.analysisListContainer, density, field.type)
             val row = analysisRows.last()
-            val typeIdx = FieldStatsConfig.StatsType.entries.indexOf(entry.type)
+            val typeIdx = allowedTypes.indexOf(entry.type)
             if (typeIdx >= 0) row.spinnerType.setSelection(typeIdx)
             val chartIdx = FieldStatsConfig.ChartType.entries.indexOf(entry.chart)
             if (chartIdx >= 0) row.spinnerChart.setSelection(chartIdx)
