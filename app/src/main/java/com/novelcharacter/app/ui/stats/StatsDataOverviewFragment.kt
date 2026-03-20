@@ -115,9 +115,12 @@ class StatsDataOverviewFragment : Fragment() {
             container.addView(row)
         }
 
-        // 필드별 상세 (접기 가능하도록 처음 5개만)
+        // 필드별 상세 (처음 10개 + 더 보기)
         val fieldItems = stats.fieldCompletionByField.sortedBy { it.completionRate }
-        fieldItems.take(10).forEach { field ->
+        val initialCount = 10
+        val textSizeSp = resources.getDimension(R.dimen.stats_text_body_sm) / resources.displayMetrics.scaledDensity
+
+        fun addFieldRow(field: FieldCompletionDetail): LinearLayout {
             val row = LinearLayout(requireContext()).apply {
                 orientation = LinearLayout.VERTICAL
                 val lp = LinearLayout.LayoutParams(
@@ -127,7 +130,6 @@ class StatsDataOverviewFragment : Fragment() {
                 lp.bottomMargin = marginSm / 2
                 layoutParams = lp
             }
-            val textSizeSp = resources.getDimension(R.dimen.stats_text_body_sm) / resources.displayMetrics.scaledDensity
             row.addView(TextView(requireContext()).apply {
                 text = "[${field.groupName}] ${field.fieldName}  ${String.format("%.0f", field.completionRate)}% (${field.filledCount}/${field.totalCount})"
                 textSize = textSizeSp
@@ -142,7 +144,36 @@ class StatsDataOverviewFragment : Fragment() {
                 this.progress = field.completionRate.toInt().coerceIn(0, 100)
             }
             row.addView(progress)
-            container.addView(row)
+            return row
+        }
+
+        fieldItems.take(initialCount).forEach { container.addView(addFieldRow(it)) }
+
+        if (fieldItems.size > initialCount) {
+            val remaining = fieldItems.size - initialCount
+            val expandedViews = mutableListOf<View>()
+            val toggleBtn = TextView(requireContext()).apply {
+                text = getString(R.string.stats_show_more, remaining)
+                textSize = textSizeSp
+                setTextColor(ContextCompat.getColor(requireContext(), R.color.accent))
+                setPadding(0, marginSm, 0, marginSm)
+            }
+            toggleBtn.setOnClickListener {
+                if (expandedViews.isEmpty()) {
+                    val insertIndex = container.indexOfChild(toggleBtn)
+                    fieldItems.drop(initialCount).forEachIndexed { i, field ->
+                        val row = addFieldRow(field)
+                        container.addView(row, insertIndex + i)
+                        expandedViews.add(row)
+                    }
+                    toggleBtn.text = getString(R.string.stats_show_less)
+                } else {
+                    expandedViews.forEach { container.removeView(it) }
+                    expandedViews.clear()
+                    toggleBtn.text = getString(R.string.stats_show_more, remaining)
+                }
+            }
+            container.addView(toggleBtn)
         }
     }
 

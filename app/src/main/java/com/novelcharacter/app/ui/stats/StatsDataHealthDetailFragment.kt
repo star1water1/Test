@@ -66,6 +66,7 @@ class StatsDataHealthDetailFragment : Fragment() {
 
             // 메모 미작성
             binding.textNoMemoCount.text = getString(R.string.stats_person_suffix, stats.noMemoChars.size)
+            populateSimpleList(binding.listNoMemo, stats.noMemoChars)
 
             // 관계 설명 미작성
             binding.textEmptyRelDesc.text = getString(R.string.stats_count_format, stats.emptyDescRelationships)
@@ -76,6 +77,10 @@ class StatsDataHealthDetailFragment : Fragment() {
             populateSimpleList(binding.listIsolated, stats.isolatedChars)
             populateSimpleList(binding.listUnlinked, stats.unlinkedChars)
             populateSimpleList(binding.listDuplicateTags, stats.duplicateTags)
+
+            // 별명 미작성
+            binding.textNoAnotherNameCount.text = getString(R.string.stats_person_suffix, stats.noAnotherNameChars.size)
+            populateSimpleList(binding.listNoAnotherName, stats.noAnotherNameChars)
         }
     }
 

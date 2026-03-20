@@ -130,6 +130,12 @@
                 android:layout_height="wrap_content"
                 android:textSize="@dimen/stats_text_body"
                 android:textColor="@color/accent"
+                android:layout_marginBottom="@dimen/stats_margin_xs" />
+            <LinearLayout
+                android:id="@+id/listNoMemo"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
                 android:layout_marginBottom="@dimen/stats_margin_lg" />
 
             <!-- 관계 설명 미작성 (신규) -->
@@ -209,6 +215,29 @@
                 android:layout_marginBottom="@dimen/stats_margin_sm" />
             <LinearLayout
                 android:id="@+id/listDuplicateTags"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:layout_marginBottom="@dimen/stats_margin_lg" />
+
+            <!-- 별명 미작성 -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/stats_no_another_name"
+                android:textSize="@dimen/stats_text_heading"
+                android:textStyle="bold"
+                android:textColor="@color/primary"
+                android:layout_marginBottom="@dimen/stats_margin_xs" />
+            <TextView
+                android:id="@+id/textNoAnotherNameCount"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="@dimen/stats_text_body"
+                android:textColor="@color/accent"
+                android:layout_marginBottom="@dimen/stats_margin_xs" />
+            <LinearLayout
+                android:id="@+id/listNoAnotherName"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"

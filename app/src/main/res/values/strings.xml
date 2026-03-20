@@ -543,6 +543,7 @@
     <string name="stats_unlinked_characters">사건 미연계</string>
     <string name="stats_month_distribution">월별 분포</string>
     <string name="stats_origin_distribution">출신 분포</string>
+    <string name="stats_no_another_name">별명 미작성</string>
     <string name="stats_duplicate_tags">중복 태그</string>
     <string name="stats_individual_detail">개별 캐릭터 상세</string>
     <string name="stats_select_character">캐릭터 선택</string>
@@ -724,6 +725,8 @@
     <string name="stats_overview_unlinked_count">사건 미연계: %d명</string>
     <string name="stats_overview_all_healthy">모든 항목이 양호합니다</string>
     <string name="stats_overview_namebank_usage">사용률: %.0f%%</string>
+    <string name="stats_show_more">더 보기 (%d개 더)</string>
+    <string name="stats_show_less">접기</string>
 
     <!-- Stats: 관계 네트워크 -->
     <string name="stats_relation_network_title">관계 네트워크</string>

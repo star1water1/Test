@@ -210,7 +210,8 @@ data class NumberFieldSummary(
     val max: Float,
     val avg: Float,
     val median: Float,
-    val count: Int
+    val count: Int,
+    val values: List<Float> = emptyList()
 )
 
 data class FieldCompletionDetail(
@@ -1177,7 +1178,8 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
                     max = sorted.last(),
                     avg = values.average().toFloat(),
                     median = median,
-                    count = values.size
+                    count = values.size,
+                    values = sorted
                 )
             }
 
@@ -1213,7 +1215,10 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
     fun computeCrossNovelComparison(s: StatsSnapshot): CrossNovelComparison {
         val charsByNovel = s.characters.groupBy { it.novelId }
         val eventsByNovel = s.events.groupBy { it.novelId }
-        val crossRefCharIds = s.crossRefs.groupBy { it.eventId }
+
+        // 전체 복잡도를 한 번만 계산하고 캐릭터 이름으로 매핑
+        val allComplexities = computeCharacterComplexities(s)
+        val complexityByName = allComplexities.associateBy { it.name }
 
         val entries = s.novels.map { novel ->
             val chars = charsByNovel[novel.id] ?: emptyList()
@@ -1221,10 +1226,10 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
             val events = eventsByNovel[novel.id] ?: emptyList()
 
             // 이 작품 캐릭터의 관계 수
-            val relCount = s.relationships.count { it.characterId in charIds || it.targetCharacterId in charIds }
+            val relCount = s.relationships.count { it.characterId1 in charIds || it.characterId2 in charIds }
 
-            // 복잡도 계산
-            val complexities = computeCharacterComplexities(s, chars)
+            // 복잡도 계산 — 전체 복잡도에서 이 작품 캐릭터만 필터
+            val complexities = chars.mapNotNull { complexityByName[it.name] }
             val avgComplexity = if (complexities.isNotEmpty()) {
                 complexities.map { it.totalScore }.average().toFloat()
             } else 0f

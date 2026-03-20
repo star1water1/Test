@@ -170,7 +170,18 @@ class StatsMainFragment : Fragment() {
         }
 
         viewModel.nameBankStats.observe(viewLifecycleOwner) { nameStats ->
-            binding.namePreview.text = getString(R.string.stats_usage_rate_preview, nameStats.usageRate, nameStats.usedNames, nameStats.totalNames)
+            binding.namePreview.text = buildString {
+                append(getString(R.string.stats_usage_rate_preview, nameStats.usageRate, nameStats.usedNames, nameStats.totalNames))
+                // 성별 분포 인사이트
+                val topGender = nameStats.genderDistribution.maxByOrNull { it.value }
+                if (topGender != null) {
+                    append(" | ${topGender.key} ${topGender.value}명")
+                }
+                // 평균 이름 길이
+                if (nameStats.avgNameLength > 0) {
+                    append(" | 평균 ${String.format("%.1f", nameStats.avgNameLength)}자")
+                }
+            }
         }
 
         viewModel.dataHealthStats.observe(viewLifecycleOwner) { healthStats ->

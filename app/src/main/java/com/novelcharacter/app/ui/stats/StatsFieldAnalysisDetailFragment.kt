@@ -13,11 +13,18 @@ import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.navigation.fragment.findNavController
+import com.github.mikephil.charting.charts.BarChart
 import com.github.mikephil.charting.charts.PieChart
+import com.github.mikephil.charting.components.XAxis
+import com.github.mikephil.charting.data.BarData
+import com.github.mikephil.charting.data.BarDataSet
+import com.github.mikephil.charting.data.BarEntry
 import com.github.mikephil.charting.data.PieData
 import com.github.mikephil.charting.data.PieDataSet
 import com.github.mikephil.charting.data.PieEntry
+import com.github.mikephil.charting.formatter.IndexAxisValueFormatter
 import com.github.mikephil.charting.formatter.PercentFormatter
+import com.github.mikephil.charting.formatter.ValueFormatter
 import com.github.mikephil.charting.utils.ColorTemplate
 import com.novelcharacter.app.R
 import com.novelcharacter.app.databinding.FragmentStatsFieldAnalysisDetailBinding
@@ -158,6 +165,8 @@ class StatsFieldAnalysisDetailFragment : Fragment() {
             return
         }
         val marginSm = resources.getDimensionPixelSize(R.dimen.stats_margin_sm)
+        val marginLg = resources.getDimensionPixelSize(R.dimen.stats_margin_lg)
+        val chartHeight = resources.getDimensionPixelSize(R.dimen.stats_chart_height_sm)
         summaries.forEach { s ->
             val row = LinearLayout(requireContext()).apply {
                 orientation = LinearLayout.VERTICAL
@@ -165,7 +174,7 @@ class StatsFieldAnalysisDetailFragment : Fragment() {
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
                 )
-                lp.bottomMargin = marginSm
+                lp.bottomMargin = marginLg
                 layoutParams = lp
             }
             row.addView(makeTextView(s.fieldName).apply {
@@ -175,7 +184,69 @@ class StatsFieldAnalysisDetailFragment : Fragment() {
             })
             row.addView(makeTextView(getString(R.string.stats_number_summary,
                 s.min, s.max, s.avg, s.median, s.count)))
+
+            // 히스토그램 BarChart
+            if (s.values.size >= 2) {
+                val histogram = buildHistogram(s.values)
+                val chart = BarChart(requireContext()).apply {
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        chartHeight
+                    ).apply { topMargin = marginSm }
+                }
+                val barEntries = histogram.mapIndexed { i, bucket ->
+                    BarEntry(i.toFloat(), bucket.second.toFloat())
+                }
+                val labels = histogram.map { it.first }
+                val dataSet = BarDataSet(barEntries, "").apply {
+                    color = ContextCompat.getColor(requireContext(), R.color.primary)
+                    valueTextColor = ContextCompat.getColor(requireContext(), R.color.on_surface)
+                    valueFormatter = object : ValueFormatter() {
+                        override fun getFormattedValue(value: Float): String =
+                            if (value > 0) value.toInt().toString() else ""
+                    }
+                }
+                chart.apply {
+                    data = BarData(dataSet)
+                    description.isEnabled = false
+                    xAxis.valueFormatter = IndexAxisValueFormatter(labels)
+                    xAxis.position = XAxis.XAxisPosition.BOTTOM
+                    xAxis.granularity = 1f
+                    xAxis.textColor = ContextCompat.getColor(requireContext(), R.color.on_surface)
+                    xAxis.setDrawGridLines(false)
+                    xAxis.labelRotationAngle = -30f
+                    axisLeft.textColor = ContextCompat.getColor(requireContext(), R.color.on_surface)
+                    axisLeft.granularity = 1f
+                    axisRight.isEnabled = false
+                    legend.isEnabled = false
+                    setTouchEnabled(false)
+                    animateY(400)
+                    invalidate()
+                }
+                row.addView(chart)
+            }
+
             container.addView(row)
+        }
+    }
+
+    private fun buildHistogram(values: List<Float>): List<Pair<String, Int>> {
+        val min = values.first()
+        val max = values.last()
+        if (min == max) return listOf(String.format("%.0f", min) to values.size)
+        val bucketCount = minOf(8, values.size).coerceAtLeast(3)
+        val range = max - min
+        val bucketSize = range / bucketCount
+        val buckets = Array(bucketCount) { 0 }
+        values.forEach { v ->
+            val idx = ((v - min) / bucketSize).toInt().coerceIn(0, bucketCount - 1)
+            buckets[idx]++
+        }
+        return buckets.mapIndexed { i, count ->
+            val lo = min + i * bucketSize
+            val hi = lo + bucketSize
+            val label = if (bucketSize >= 1f) "${lo.toInt()}~${hi.toInt()}" else String.format("%.1f~%.1f", lo, hi)
+            label to count
         }
     }
 
