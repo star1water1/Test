@@ -1285,7 +1285,7 @@ class UniverseListFragment : Fragment() {
     private var pendingExportFile: java.io.File? = null
 
     private val saveFileLauncher = registerForActivityResult(
-        ActivityResultContracts.CreateDocument("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        ActivityResultContracts.CreateDocument("*/*")
     ) { uri ->
         if (!isAdded) return@registerForActivityResult
         val file = pendingExportFile
@@ -1317,9 +1317,28 @@ class UniverseListFragment : Fragment() {
             }
             .setPositiveButton(R.string.confirm) { _, _ ->
                 val options = com.novelcharacter.app.excel.ExportOptions.fromBooleanArray(checked)
+                showExportModeDialog(options)
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun showExportModeDialog(options: com.novelcharacter.app.excel.ExportOptions) {
+        if (!isAdded) return
+        androidx.appcompat.app.AlertDialog.Builder(requireContext())
+            .setTitle(R.string.export_mode_title)
+            .setItems(arrayOf(getString(R.string.export_mode_share), getString(R.string.export_mode_save))) { _, which ->
                 exporter?.cancel()
                 exporter = com.novelcharacter.app.excel.ExcelExporter(requireContext().applicationContext)
-                exporter?.exportAll(options)
+                when (which) {
+                    0 -> exporter?.exportAll(options)
+                    1 -> exporter?.exportAll(options) { file, fileName ->
+                        if (isAdded) {
+                            pendingExportFile = file
+                            saveFileLauncher.launch(fileName)
+                        }
+                    }
+                }
             }
             .setNegativeButton(R.string.cancel, null)
             .show()

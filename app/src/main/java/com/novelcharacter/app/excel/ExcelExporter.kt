@@ -931,7 +931,7 @@ class ExcelExporter(context: Context) {
 
     // ── 앱 설정 ──
 
-    private fun exportAppSettings(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
+    private suspend fun exportAppSettings(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
         val spec = appSettingsSpec()
         val sheetName = sanitizeSheetName(spec.sheetName, usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
