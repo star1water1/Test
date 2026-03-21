@@ -18,7 +18,8 @@ class TimeSliderHelper(
     private val viewLifecycleOwner: LifecycleOwner,
     private val characterId: Long,
     private val fieldRenderer: DynamicFieldRenderer,
-    private val getString: (Int, Any?) -> String
+    private val getString: (Int, Any?) -> String,
+    private val isBindingAlive: () -> Boolean = { true }
 ) {
     var isTimeSliderExpanded = false
     var isTimeViewActive = false
@@ -103,22 +104,21 @@ class TimeSliderHelper(
             }
 
             val allChanges = viewModel.getChangesByCharacterList(characterId)
+            if (!isBindingAlive()) return@launch
 
             val resolvedState = timeStateResolver.resolveStateAtYear(
                 baseValues, allChanges, year, cachedFields
             )
 
-            try {
-                fieldRenderer.displayResolvedFields(cachedFields, resolvedState)
-            } catch (_: Exception) {
-                // Fragment view may have been destroyed during suspend
-            }
+            if (!isBindingAlive()) return@launch
+            fieldRenderer.displayResolvedFields(cachedFields, resolvedState)
         }
     }
 
     fun updateSliderRange() {
         viewLifecycleOwner.lifecycleScope.launch {
             val changes = viewModel.getChangesByCharacterList(characterId)
+            if (!isBindingAlive()) return@launch
             try {
                 if (changes.isEmpty()) {
                     binding.yearSlider.isEnabled = false

@@ -88,7 +88,8 @@ class CharacterDetailFragment : Fragment() {
             viewLifecycleOwner = viewLifecycleOwner,
             characterId = characterId,
             fieldRenderer = fieldRenderer,
-            getString = { id, arg -> getString(id, arg) }
+            getString = { id, arg -> getString(id, arg) },
+            isBindingAlive = { _binding != null }
         )
 
         stateChangeHelper = StateChangeHelper(
@@ -110,7 +111,8 @@ class CharacterDetailFragment : Fragment() {
             contextGetter = { requireContext() },
             getString = { id -> getString(id) },
             getFormattedString = { id, args -> getString(id, *args) },
-            navController = { findNavController() }
+            navController = { findNavController() },
+            isBindingAlive = { _binding != null }
         )
     }
 

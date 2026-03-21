@@ -39,7 +39,8 @@ class RelationshipHelper(
     private val contextGetter: () -> Context,
     private val getString: (Int) -> String,
     private val getFormattedString: (Int, Array<out Any>) -> String,
-    private val navController: () -> NavController
+    private val navController: () -> NavController,
+    private val isBindingAlive: () -> Boolean = { true }
 ) {
     private lateinit var relationshipAdapter: RelationshipAdapter
     private var relationshipJob: Job? = null
@@ -123,12 +124,9 @@ class RelationshipHelper(
                 }
                 currentDisplayItems = displayItems.toMutableList()
                 relationshipAdapter.submitList(displayItems)
-                try {
-                    binding.textNoRelationships.visibility = if (displayItems.isEmpty()) View.VISIBLE else View.GONE
-                    binding.relationshipsRecyclerView.visibility = if (displayItems.isEmpty()) View.GONE else View.VISIBLE
-                } catch (_: Exception) {
-                    // Fragment view may have been destroyed during suspend
-                }
+                if (!isBindingAlive()) return@launch
+                binding.textNoRelationships.visibility = if (displayItems.isEmpty()) View.VISIBLE else View.GONE
+                binding.relationshipsRecyclerView.visibility = if (displayItems.isEmpty()) View.GONE else View.VISIBLE
             }
         }
     }

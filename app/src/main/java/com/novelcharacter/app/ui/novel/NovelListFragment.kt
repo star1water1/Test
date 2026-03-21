@@ -45,7 +45,7 @@ class NovelListFragment : Fragment() {
         ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         if (uri == null) return@registerForActivityResult
-        val ctx = requireContext()
+        val ctx = context ?: return@registerForActivityResult
         viewLifecycleOwner.lifecycleScope.launch {
             try {
                 val savedPath = withContext(Dispatchers.IO) {
@@ -320,6 +320,7 @@ class NovelListFragment : Fragment() {
             }
             lifecycleScope.launch {
                 val chars = viewModel.getCharactersWithImages(novel.id)
+                if (!isAdded) return@launch
                 if (chars.isEmpty()) {
                     Toast.makeText(ctx, R.string.image_no_characters_with_images, Toast.LENGTH_SHORT).show()
                     return@launch

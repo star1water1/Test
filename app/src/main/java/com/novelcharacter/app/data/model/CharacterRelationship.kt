@@ -23,7 +23,8 @@ import androidx.room.PrimaryKey
     ],
     indices = [
         Index("characterId1"), Index("characterId2"), Index("createdAt"),
-        Index(value = ["characterId1", "characterId2", "relationshipType"], unique = true)
+        Index(value = ["characterId1", "characterId2", "relationshipType"], unique = true),
+        Index(value = ["displayOrder", "createdAt"])
     ]
 )
 data class CharacterRelationship(

@@ -16,7 +16,9 @@ import androidx.room.PrimaryKey
             onDelete = ForeignKey.SET_NULL
         )
     ],
-    indices = [Index("novelId"), Index(value = ["code"], unique = true)]
+    indices = [Index("novelId"), Index(value = ["code"], unique = true),
+               Index(value = ["novelId", "isPinned", "displayOrder"]),
+               Index(value = ["isPinned", "displayOrder"])]
 )
 data class Character(
     @PrimaryKey(autoGenerate = true)

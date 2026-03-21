@@ -13,6 +13,12 @@ import androidx.room.PrimaryKey
             parentColumns = ["id"],
             childColumns = ["relationshipId"],
             onDelete = ForeignKey.CASCADE
+        ),
+        ForeignKey(
+            entity = TimelineEvent::class,
+            parentColumns = ["id"],
+            childColumns = ["eventId"],
+            onDelete = ForeignKey.SET_NULL
         )
     ],
     indices = [

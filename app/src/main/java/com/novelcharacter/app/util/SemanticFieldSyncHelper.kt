@@ -7,7 +7,7 @@ import com.novelcharacter.app.data.model.SemanticRole
 import com.novelcharacter.app.data.repository.CharacterRepository
 import com.novelcharacter.app.data.repository.NovelRepository
 import com.novelcharacter.app.data.repository.UniverseRepository
-import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.sync.Mutex
 
 /**
  * 커스텀 필드(FieldDefinition)와 시스템 특수 필드(CharacterStateChange)를
@@ -19,10 +19,9 @@ class SemanticFieldSyncHelper(
     private val novelRepository: NovelRepository? = null
 ) {
     private val standardYearSyncHelper = StandardYearSyncHelper(characterRepository, universeRepository)
-    // 방향별 재귀 방지 플래그: 각 방향의 동기화가 독립적으로 동작하되,
-    // A→B→A 재귀만 차단한다.
-    private val isSyncingFieldToState = AtomicBoolean(false)
-    private val isSyncingStateToField = AtomicBoolean(false)
+    // 양방향 동기화를 직렬화하는 단일 뮤텍스.
+    // 동시에 양쪽 방향이 실행되어 비결정적 상태가 되는 것을 방지.
+    private val syncMutex = Mutex()
 
     /**
      * 방향 1: 커스텀 필드값 저장 후 → CharacterStateChange 동기화.
@@ -33,7 +32,7 @@ class SemanticFieldSyncHelper(
         universeId: Long,
         values: List<CharacterFieldValue>
     ) {
-        if (!isSyncingFieldToState.compareAndSet(false, true)) return
+        if (!syncMutex.tryLock()) return
         try {
             val fields = universeRepository.getFieldsByUniverseList(universeId)
             val fieldMap = fields.associateBy { it.id }
@@ -77,7 +76,7 @@ class SemanticFieldSyncHelper(
                 }
             }
         } finally {
-            isSyncingFieldToState.set(false)
+            syncMutex.unlock()
         }
     }
 
@@ -90,7 +89,7 @@ class SemanticFieldSyncHelper(
         universeId: Long,
         change: CharacterStateChange
     ) {
-        if (!isSyncingStateToField.compareAndSet(false, true)) return
+        if (!syncMutex.tryLock()) return
         try {
             val fields = universeRepository.getFieldsByUniverseList(universeId)
 
@@ -116,7 +115,7 @@ class SemanticFieldSyncHelper(
                 }
             }
         } finally {
-            isSyncingStateToField.set(false)
+            syncMutex.unlock()
         }
     }
 

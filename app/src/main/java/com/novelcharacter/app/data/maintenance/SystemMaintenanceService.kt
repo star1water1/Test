@@ -321,6 +321,20 @@ class SystemMaintenanceService(
                     if (clearedNameBank > 0) details.add("이름은행 고아 사용표시 $clearedNameBank 건 정리")
                 }
             }
+
+            // 최근 활동: 존재하지 않는 엔티티를 참조하는 레코드 삭제
+            db.openHelper.writableDatabase.execSQL(
+                """DELETE FROM recent_activities WHERE
+                    (entityType = 'character' AND entityId NOT IN (SELECT id FROM characters)) OR
+                    (entityType = 'novel' AND entityId NOT IN (SELECT id FROM novels)) OR
+                    (entityType = 'universe' AND entityId NOT IN (SELECT id FROM universes))"""
+            )
+            db.openHelper.readableDatabase.query("SELECT changes()").use { c ->
+                if (c.moveToNext()) {
+                    val cleaned = c.getInt(0)
+                    if (cleaned > 0) details.add("고아 최근활동 $cleaned 건 삭제")
+                }
+            }
         }
 
         if (details.isEmpty()) details.add("정리할 고아 데이터가 없습니다")

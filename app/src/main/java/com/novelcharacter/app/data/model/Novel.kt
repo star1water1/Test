@@ -21,7 +21,9 @@ import androidx.room.PrimaryKey
             onDelete = ForeignKey.SET_NULL
         )
     ],
-    indices = [Index("universeId"), Index("createdAt"), Index(value = ["code"], unique = true), Index("imageCharacterId")]
+    indices = [Index("universeId"), Index("createdAt"), Index(value = ["code"], unique = true), Index("imageCharacterId"),
+               Index(value = ["universeId", "isPinned", "displayOrder"]),
+               Index(value = ["isPinned", "displayOrder"])]
 )
 data class Novel(
     @PrimaryKey(autoGenerate = true)

@@ -183,7 +183,11 @@ class FormulaEvaluator(
         }
         while (stack.isNotEmpty()) {
             val top = stack.removeLast()
-            if (top !is Token.LParen) output.add(top) // discard unmatched LParen
+            if (top is Token.LParen) {
+                // Unmatched opening parenthesis — formula is malformed
+                return listOf(Token.Num(Double.NaN))
+            }
+            output.add(top)
         }
         return output
     }

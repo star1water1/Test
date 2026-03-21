@@ -59,7 +59,7 @@ import com.novelcharacter.app.data.model.Universe
         SearchPreset::class,
         UserPresetTemplate::class
     ],
-    version = 24,
+    version = 25,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -928,6 +928,77 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_24_25 = object : Migration(24, 25) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "Migrating database from version 24 to 25")
+
+                // DATA-1: FK 제약 추가 — character_relationship_changes.eventId → timeline_events.id SET_NULL
+                // SQLite는 ALTER TABLE로 FK를 추가할 수 없으므로 테이블 재생성
+                db.execSQL("""CREATE TABLE IF NOT EXISTS `character_relationship_changes_new` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `relationshipId` INTEGER NOT NULL,
+                    `year` INTEGER NOT NULL,
+                    `month` INTEGER,
+                    `day` INTEGER,
+                    `relationshipType` TEXT NOT NULL,
+                    `description` TEXT NOT NULL DEFAULT '',
+                    `intensity` INTEGER NOT NULL DEFAULT 5,
+                    `isBidirectional` INTEGER NOT NULL DEFAULT 1,
+                    `eventId` INTEGER,
+                    `createdAt` INTEGER NOT NULL DEFAULT 0,
+                    FOREIGN KEY(`relationshipId`) REFERENCES `character_relationships`(`id`) ON DELETE CASCADE,
+                    FOREIGN KEY(`eventId`) REFERENCES `timeline_events`(`id`) ON DELETE SET NULL
+                )""")
+                db.execSQL("""INSERT INTO `character_relationship_changes_new`
+                    SELECT * FROM `character_relationship_changes`""")
+                db.execSQL("DROP TABLE `character_relationship_changes`")
+                db.execSQL("ALTER TABLE `character_relationship_changes_new` RENAME TO `character_relationship_changes`")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_character_relationship_changes_relationshipId` ON `character_relationship_changes` (`relationshipId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_character_relationship_changes_year` ON `character_relationship_changes` (`year`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_character_relationship_changes_eventId` ON `character_relationship_changes` (`eventId`)")
+
+                // DATA-1: FK 제약 추가 — universes.imageCharacterId → characters.id SET_NULL
+                //                         universes.imageNovelId → novels.id SET_NULL
+                db.execSQL("""CREATE TABLE IF NOT EXISTS `universes_new` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `name` TEXT NOT NULL,
+                    `description` TEXT NOT NULL DEFAULT '',
+                    `createdAt` INTEGER NOT NULL DEFAULT 0,
+                    `code` TEXT NOT NULL DEFAULT '',
+                    `displayOrder` INTEGER NOT NULL DEFAULT 0,
+                    `borderColor` TEXT NOT NULL DEFAULT '',
+                    `borderWidthDp` REAL NOT NULL DEFAULT 1.5,
+                    `imagePath` TEXT NOT NULL DEFAULT '',
+                    `imageMode` TEXT NOT NULL DEFAULT 'none',
+                    `imageCharacterId` INTEGER,
+                    `imageNovelId` INTEGER,
+                    `customRelationshipTypes` TEXT NOT NULL DEFAULT '',
+                    `customRelationshipColors` TEXT NOT NULL DEFAULT '',
+                    FOREIGN KEY(`imageCharacterId`) REFERENCES `characters`(`id`) ON DELETE SET NULL,
+                    FOREIGN KEY(`imageNovelId`) REFERENCES `novels`(`id`) ON DELETE SET NULL
+                )""")
+                db.execSQL("""INSERT INTO `universes_new`
+                    SELECT * FROM `universes`""")
+                db.execSQL("DROP TABLE `universes`")
+                db.execSQL("ALTER TABLE `universes_new` RENAME TO `universes`")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_universes_name` ON `universes` (`name`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_universes_createdAt` ON `universes` (`createdAt`)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_universes_code` ON `universes` (`code`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_universes_imageCharacterId` ON `universes` (`imageCharacterId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_universes_imageNovelId` ON `universes` (`imageNovelId`)")
+
+                // DATA-2: 복합 인덱스 추가
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_characters_novelId_isPinned_displayOrder` ON `characters` (`novelId`, `isPinned`, `displayOrder`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_characters_isPinned_displayOrder` ON `characters` (`isPinned`, `displayOrder`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_novels_universeId_isPinned_displayOrder` ON `novels` (`universeId`, `isPinned`, `displayOrder`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_novels_isPinned_displayOrder` ON `novels` (`isPinned`, `displayOrder`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_name_bank_isUsed_createdAt` ON `name_bank` (`isUsed`, `createdAt`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_character_relationships_displayOrder_createdAt` ON `character_relationships` (`displayOrder`, `createdAt`)")
+
+                Log.i(TAG, "Migration from version 24 to 25 completed successfully")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -935,7 +1006,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "novel_character_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25)
                     .addCallback(SeedCallback())
                     .build()
                     .also { INSTANCE = it }

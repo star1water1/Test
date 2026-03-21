@@ -1,12 +1,28 @@
 package com.novelcharacter.app.data.model
 
 import androidx.room.Entity
+import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
 @Entity(
     tableName = "universes",
-    indices = [Index("name"), Index("createdAt"), Index(value = ["code"], unique = true)]
+    foreignKeys = [
+        ForeignKey(
+            entity = Character::class,
+            parentColumns = ["id"],
+            childColumns = ["imageCharacterId"],
+            onDelete = ForeignKey.SET_NULL
+        ),
+        ForeignKey(
+            entity = Novel::class,
+            parentColumns = ["id"],
+            childColumns = ["imageNovelId"],
+            onDelete = ForeignKey.SET_NULL
+        )
+    ],
+    indices = [Index("name"), Index("createdAt"), Index(value = ["code"], unique = true),
+               Index("imageCharacterId"), Index("imageNovelId")]
 )
 data class Universe(
     @PrimaryKey(autoGenerate = true)
