@@ -161,8 +161,8 @@ class CharacterDetailFragment : Fragment() {
                 override suspend fun getAllNovelsList() = viewModel.getAllNovelsList()
                 override suspend fun getAllCharactersList() = viewModel.getAllCharactersList()
                 override suspend fun getCharacterIdsForEvent(eventId: Long) = viewModel.getCharacterIdsForEvent(eventId)
-                override fun insertEvent(event: com.novelcharacter.app.data.model.TimelineEvent, characterIds: List<Long>) = viewModel.insertEvent(event, characterIds)
-                override fun updateEvent(event: com.novelcharacter.app.data.model.TimelineEvent, characterIds: List<Long>) = viewModel.updateEvent(event, characterIds)
+                override fun insertEvent(event: com.novelcharacter.app.data.model.TimelineEvent, characterIds: List<Long>) { viewModel.insertEvent(event, characterIds) }
+                override fun updateEvent(event: com.novelcharacter.app.data.model.TimelineEvent, characterIds: List<Long>) { viewModel.updateEvent(event, characterIds) }
             }
             eventHelper.showEventDialog(
                 dataProvider = dataProvider,
@@ -221,8 +221,7 @@ class CharacterDetailFragment : Fragment() {
                 binding.stdYearLinkSwitch.visibility = View.VISIBLE
                 val stdHelper = com.novelcharacter.app.util.StandardYearSyncHelper(
                     (requireActivity().application as com.novelcharacter.app.NovelCharacterApp).characterRepository,
-                    (requireActivity().application as com.novelcharacter.app.NovelCharacterApp).universeRepository,
-                    (requireActivity().application as com.novelcharacter.app.NovelCharacterApp).novelRepository
+                    (requireActivity().application as com.novelcharacter.app.NovelCharacterApp).universeRepository
                 )
                 val isLinked = stdHelper.isLinked(character.id)
                 binding.stdYearLinkSwitch.setOnCheckedChangeListener(null)
