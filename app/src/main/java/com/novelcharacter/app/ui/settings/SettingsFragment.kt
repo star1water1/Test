@@ -72,8 +72,10 @@ class SettingsFragment : Fragment() {
         }
     }
 
+    private var pendingExportOptions: com.novelcharacter.app.excel.ExportOptions? = null
+
     private val saveFileLauncher = registerForActivityResult(
-        ActivityResultContracts.CreateDocument("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        ActivityResultContracts.CreateDocument("*/*")
     ) { uri ->
         if (!isAdded) return@registerForActivityResult
         val file = pendingExportFile
@@ -294,14 +296,38 @@ class SettingsFragment : Fragment() {
 
     private fun exportToExcel() {
         if (!isAdded) return
+        showExportOptionsDialog()
+    }
+
+    private fun showExportOptionsDialog() {
+        if (!isAdded) return
+        val labels = com.novelcharacter.app.excel.ExportOptions.LABELS
+        val checked = com.novelcharacter.app.excel.ExportOptions.ALL.toBooleanArray()
+
+        AlertDialog.Builder(requireContext())
+            .setTitle(R.string.export_options_title)
+            .setMultiChoiceItems(labels, checked) { _, which, isChecked ->
+                checked[which] = isChecked
+            }
+            .setPositiveButton(R.string.confirm) { _, _ ->
+                val options = com.novelcharacter.app.excel.ExportOptions.fromBooleanArray(checked)
+                pendingExportOptions = options
+                showExportModeDialog(options)
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun showExportModeDialog(options: com.novelcharacter.app.excel.ExportOptions) {
+        if (!isAdded) return
         AlertDialog.Builder(requireContext())
             .setTitle(R.string.export_mode_title)
             .setItems(arrayOf(getString(R.string.export_mode_share), getString(R.string.export_mode_save))) { _, which ->
                 exporter?.cancel()
                 exporter = com.novelcharacter.app.excel.ExcelExporter(requireContext().applicationContext)
                 when (which) {
-                    0 -> exporter?.exportAll()
-                    1 -> exporter?.exportAll { file, fileName ->
+                    0 -> exporter?.exportAll(options)
+                    1 -> exporter?.exportAll(options) { file, fileName ->
                         if (isAdded) {
                             pendingExportFile = file
                             saveFileLauncher.launch(fileName)

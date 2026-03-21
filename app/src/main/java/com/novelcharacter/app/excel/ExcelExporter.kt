@@ -33,6 +33,8 @@ import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 
 class ExcelExporter(context: Context) {
 
@@ -54,10 +56,11 @@ class ExcelExporter(context: Context) {
     private lateinit var styles: ExcelStyles
 
     /**
+     * @param options 내보내기에 포함할 항목 선택
      * @param onFileReady if non-null, called with the temp file instead of opening a share sheet.
      *                    The caller is responsible for launching SAF to let the user pick a save location.
      */
-    fun exportAll(onFileReady: ((File, String) -> Unit)? = null) {
+    fun exportAll(options: ExportOptions = ExportOptions(), onFileReady: ((File, String) -> Unit)? = null) {
         if (!isExporting.compareAndSet(false, true)) return
         ensureActiveScope().launch {
             withContext(Dispatchers.Main) {
@@ -70,29 +73,39 @@ class ExcelExporter(context: Context) {
                 val usedSheetNames = mutableSetOf<String>()
 
                 exportInstructions(workbook, usedSheetNames)
-                exportUniverses(workbook, usedSheetNames)
-                exportNovels(workbook, usedSheetNames)
-                exportFieldDefinitions(workbook, usedSheetNames)
-                exportCharacters(workbook, usedSheetNames)
-                exportTimeline(workbook, usedSheetNames)
-                exportStateChanges(workbook, usedSheetNames)
-                exportRelationships(workbook, usedSheetNames)
-                exportRelationshipChanges(workbook, usedSheetNames)
-                exportNameBank(workbook, usedSheetNames)
-                exportUserPresetTemplates(workbook, usedSheetNames)
-                exportSearchPresets(workbook, usedSheetNames)
-                exportAppSettings(workbook, usedSheetNames)
+                if (options.universes) exportUniverses(workbook, usedSheetNames)
+                if (options.novels) exportNovels(workbook, usedSheetNames)
+                if (options.fieldDefinitions) exportFieldDefinitions(workbook, usedSheetNames)
+                if (options.characters) exportCharacters(workbook, usedSheetNames)
+                if (options.timeline) exportTimeline(workbook, usedSheetNames)
+                if (options.stateChanges) exportStateChanges(workbook, usedSheetNames)
+                if (options.relationships) exportRelationships(workbook, usedSheetNames)
+                if (options.relationshipChanges) exportRelationshipChanges(workbook, usedSheetNames)
+                if (options.nameBank) exportNameBank(workbook, usedSheetNames)
+                if (options.presetTemplates) exportUserPresetTemplates(workbook, usedSheetNames)
+                if (options.searchPresets) exportSearchPresets(workbook, usedSheetNames)
+                if (options.appSettings) exportAppSettings(workbook, usedSheetNames)
 
                 val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-                val fileName = "NovelCharacter_$timestamp.xlsx"
+                val xlsxFileName = "NovelCharacter_$timestamp.xlsx"
+                val xlsxFile = saveWorkbook(workbook, xlsxFileName)
 
-                val file = saveWorkbook(workbook, fileName)
+                val file: File
+                val fileName: String
+                if (options.images) {
+                    fileName = "NovelCharacter_$timestamp.zip"
+                    file = wrapWithImages(xlsxFile, fileName)
+                    xlsxFile.delete()
+                } else {
+                    file = xlsxFile
+                    fileName = xlsxFileName
+                }
 
                 withContext(Dispatchers.Main) {
                     if (onFileReady != null) {
                         onFileReady(file, fileName)
                     } else {
-                        shareFile(file)
+                        shareFile(file, isZip = options.images)
                     }
                 }
             } catch (e: Exception) {
@@ -293,12 +306,14 @@ class ExcelExporter(context: Context) {
         return file
     }
 
-    private fun shareFile(file: File) {
+    private fun shareFile(file: File, isZip: Boolean = false) {
         val authority = "${appContext.packageName}.fileprovider"
         val uri = FileProvider.getUriForFile(appContext, authority, file)
 
+        val mimeType = if (isZip) "application/zip"
+            else "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         val shareIntent = Intent(Intent.ACTION_SEND).apply {
-            type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            type = mimeType
             putExtra(Intent.EXTRA_STREAM, uri)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
@@ -798,6 +813,71 @@ class ExcelExporter(context: Context) {
         }
 
         applySpecFormatting(sheet, spec, allNames.size)
+    }
+
+    // ── ZIP + 이미지 래핑 ──
+
+    private suspend fun wrapWithImages(xlsxFile: File, zipFileName: String): File {
+        val gson = com.google.gson.Gson()
+        val appDir = appContext.filesDir
+
+        // 모든 이미지 경로 수집
+        val imagePathSet = mutableSetOf<String>()
+        val allCharacters = db.characterDao().getAllCharactersList()
+        for (char in allCharacters) {
+            if (char.imagePaths.isBlank() || char.imagePaths == "[]") continue
+            try {
+                val paths = gson.fromJson(char.imagePaths, Array<String>::class.java)
+                paths?.forEach { imagePathSet.add(it) }
+            } catch (_: Exception) { }
+        }
+        val allUniverses = db.universeDao().getAllUniversesList()
+        for (u in allUniverses) {
+            if (u.imagePath.isNotBlank()) imagePathSet.add(u.imagePath)
+        }
+        val allNovels = db.novelDao().getAllNovelsList()
+        for (n in allNovels) {
+            if (n.imagePath.isNotBlank()) imagePathSet.add(n.imagePath)
+        }
+
+        // ZIP 생성
+        val exportsDir = File(appContext.cacheDir, "exports")
+        exportsDir.mkdirs()
+        val zipFile = File(exportsDir, zipFileName)
+
+        // image_map: 원본절대경로 → ZIP 내 상대경로
+        val imageMap = mutableMapOf<String, String>()
+
+        ZipOutputStream(FileOutputStream(zipFile)).use { zip ->
+            // data.xlsx 추가
+            zip.putNextEntry(ZipEntry("data.xlsx"))
+            xlsxFile.inputStream().use { it.copyTo(zip) }
+            zip.closeEntry()
+
+            // 이미지 추가
+            for (path in imagePathSet) {
+                val imageFile = File(path)
+                if (!imageFile.exists()) continue
+                try {
+                    if (!imageFile.canonicalPath.startsWith(appDir.canonicalPath)) continue
+                } catch (_: Exception) { continue }
+
+                val zipPath = "images/${imageFile.name}"
+                imageMap[path] = zipPath
+                try {
+                    zip.putNextEntry(ZipEntry(zipPath))
+                    imageFile.inputStream().use { it.copyTo(zip) }
+                    zip.closeEntry()
+                } catch (_: Exception) { }
+            }
+
+            // image_map.json 추가
+            zip.putNextEntry(ZipEntry("image_map.json"))
+            zip.write(gson.toJson(imageMap).toByteArray())
+            zip.closeEntry()
+        }
+
+        return zipFile
     }
 
     // ── 필드 템플릿 ──

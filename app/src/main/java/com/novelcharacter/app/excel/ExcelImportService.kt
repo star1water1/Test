@@ -146,8 +146,29 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         alias("설정값", "setting_value", "value")
     }
 
+    /** 가져올 이미지의 경로 재매핑: {원본경로 → 새경로} */
+    var imagePathRemap: Map<String, String> = emptyMap()
+
+    /** 단일 이미지 경로를 재매핑. 매핑 없으면 원본 반환. */
+    private fun remapImagePath(path: String): String {
+        if (imagePathRemap.isEmpty() || path.isBlank()) return path
+        return imagePathRemap[path] ?: path
+    }
+
+    /** imagePaths JSON 배열 내 모든 경로를 재매핑. */
+    private fun remapImagePaths(imagePathsJson: String): String {
+        if (imagePathRemap.isEmpty() || imagePathsJson.isBlank() || imagePathsJson == "[]") return imagePathsJson
+        return try {
+            val gson = com.google.gson.Gson()
+            val paths = gson.fromJson(imagePathsJson, Array<String>::class.java)
+            val remapped = paths?.map { remapImagePath(it) } ?: return imagePathsJson
+            gson.toJson(remapped)
+        } catch (_: Exception) { imagePathsJson }
+    }
+
     suspend fun importAll(
         workbook: Workbook,
+        options: ExportOptions = ExportOptions(),
         onProgress: (ImportProgress) -> Unit = {}
     ): ImportResult {
         val result = ImportResult()
@@ -159,28 +180,30 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
         // Phase 1: Schema definitions (universes, novels, field definitions)
         db.withTransaction {
-            importUniverses(workbook, result, onProgress, totalRows)
-            importNovels(workbook, result, onProgress, totalRows)
-            importFieldDefinitions(workbook, result, onProgress, totalRows)
+            if (options.universes) importUniverses(workbook, result, onProgress, totalRows)
+            if (options.novels) importNovels(workbook, result, onProgress, totalRows)
+            if (options.fieldDefinitions) importFieldDefinitions(workbook, result, onProgress, totalRows)
         }
         // Phase 2: Entity data (characters)
         db.withTransaction {
-            importCharacterSheets(workbook, result, onProgress, totalRows)
-            importUnclassifiedCharacters(workbook, result, onProgress, totalRows)
+            if (options.characters) {
+                importCharacterSheets(workbook, result, onProgress, totalRows)
+                importUnclassifiedCharacters(workbook, result, onProgress, totalRows)
+            }
         }
         // Phase 3: Relationships and references
         db.withTransaction {
-            importTimeline(workbook, result, onProgress, totalRows)
-            importStateChanges(workbook, result, onProgress, totalRows)
-            importRelationships(workbook, result, onProgress, totalRows)
-            importRelationshipChanges(workbook, result, onProgress, totalRows)
-            importNameBank(workbook, result, onProgress, totalRows)
+            if (options.timeline) importTimeline(workbook, result, onProgress, totalRows)
+            if (options.stateChanges) importStateChanges(workbook, result, onProgress, totalRows)
+            if (options.relationships) importRelationships(workbook, result, onProgress, totalRows)
+            if (options.relationshipChanges) importRelationshipChanges(workbook, result, onProgress, totalRows)
+            if (options.nameBank) importNameBank(workbook, result, onProgress, totalRows)
         }
         // Phase 4: User settings and presets
         db.withTransaction {
-            importUserPresetTemplates(workbook, result, onProgress, totalRows)
-            importSearchPresets(workbook, result, onProgress, totalRows)
-            importAppSettings(workbook, result)
+            if (options.presetTemplates) importUserPresetTemplates(workbook, result, onProgress, totalRows)
+            if (options.searchPresets) importSearchPresets(workbook, result, onProgress, totalRows)
+            if (options.appSettings) importAppSettings(workbook, result)
         }
 
         if (truncatedFieldCount > 0) {
@@ -273,7 +296,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val displayOrder = if (orderColIndex >= 0) parseNumber(getCellString(row, orderColIndex))?.toLong() ?: 0L else 0L
                 val borderColor = if (borderColorColIndex >= 0) getCellString(row, borderColorColIndex) else ""
                 val borderWidthDp = if (borderWidthColIndex >= 0) parseNumber(getCellString(row, borderWidthColIndex))?.toFloat() ?: 1.5f else 1.5f
-                val imagePath = if (imagePathColIndex >= 0) getCellString(row, imagePathColIndex) else ""
+                val rawImagePath = if (imagePathColIndex >= 0) getCellString(row, imagePathColIndex) else ""
+                val imagePath = remapImagePath(rawImagePath)
                 val imageMode = if (imageModeColIndex >= 0) getCellString(row, imageModeColIndex).ifBlank { "none" } else "none"
 
                 // Duplicate code detection within file (last-write-wins)
@@ -371,7 +395,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val displayOrder = if (orderColIndex >= 0) parseNumber(getCellString(row, orderColIndex))?.toLong() ?: 0L else 0L
                 val borderColor = if (borderColorColIndex >= 0) getCellString(row, borderColorColIndex) else ""
                 val borderWidthDp = if (borderWidthColIndex >= 0) parseNumber(getCellString(row, borderWidthColIndex))?.toFloat() ?: 1.5f else 1.5f
-                val novelImagePath = if (novelImagePathColIndex >= 0) getCellString(row, novelImagePathColIndex) else ""
+                val rawNovelImagePath = if (novelImagePathColIndex >= 0) getCellString(row, novelImagePathColIndex) else ""
+                val novelImagePath = remapImagePath(rawNovelImagePath)
                 val novelImageMode = if (novelImageModeColIndex >= 0) getCellString(row, novelImageModeColIndex).ifBlank { "none" } else "none"
                 val novelImageCharId = if (imageCharIdColIndex >= 0) parseNumber(getCellString(row, imageCharIdColIndex))?.toLong() else null
                 val novelIsPinned = if (novelPinnedColIndex >= 0) parseBoolean(getCellString(row, novelPinnedColIndex)) else false
@@ -612,7 +637,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val lastName = if (lastNameColIndex >= 0) getCellString(row, lastNameColIndex) else ""
                 val firstName = if (firstNameColIndex >= 0) getCellString(row, firstNameColIndex) else ""
                 // imageColIndex < 0 means column is missing: use null sentinel to preserve existing images
-                val imagePathsFromExcel: String? = if (imageColIndex >= 0) getCellString(row, imageColIndex).ifBlank { "[]" } else null
+                val rawImagePaths: String? = if (imageColIndex >= 0) getCellString(row, imageColIndex).ifBlank { "[]" } else null
+                val imagePathsFromExcel: String? = rawImagePaths?.let { remapImagePaths(it) }
                 val memo = if (memoColIndex >= 0) getCellString(row, memoColIndex) else ""
                 val displayOrder = if (orderColIndex >= 0) parseNumber(getCellString(row, orderColIndex))?.toLong() ?: 0L else 0L
                 val charIsPinned = if (pinnedColIndex >= 0) parseBoolean(getCellString(row, pinnedColIndex)) else false

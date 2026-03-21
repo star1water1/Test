@@ -424,9 +424,22 @@ class NovelListFragment : Fragment() {
 
     private fun exportToExcel() {
         if (!isAdded) return
-        exporter?.cancel()
-        exporter = com.novelcharacter.app.excel.ExcelExporter(requireContext().applicationContext)
-        exporter?.exportAll()
+        val labels = com.novelcharacter.app.excel.ExportOptions.LABELS
+        val checked = com.novelcharacter.app.excel.ExportOptions.ALL.toBooleanArray()
+
+        androidx.appcompat.app.AlertDialog.Builder(requireContext())
+            .setTitle(R.string.export_options_title)
+            .setMultiChoiceItems(labels, checked) { _, which, isChecked ->
+                checked[which] = isChecked
+            }
+            .setPositiveButton(R.string.confirm) { _, _ ->
+                val options = com.novelcharacter.app.excel.ExportOptions.fromBooleanArray(checked)
+                exporter?.cancel()
+                exporter = com.novelcharacter.app.excel.ExcelExporter(requireContext().applicationContext)
+                exporter?.exportAll(options)
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
     }
 
     private fun importFromExcel() {
