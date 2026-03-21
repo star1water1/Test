@@ -1,6 +1,6 @@
 # NovelCharacter 전반적 코드 리뷰
 
-> 검토일: 2026-03-21 (5차 갱신)
+> 검토일: 2026-03-21 (6차 갱신)
 > 대상: Kotlin Android 앱 (122 소스 파일, Room DB v25, MVVM 아키텍처)
 
 ---
@@ -37,6 +37,8 @@
 | 24 | 캐릭터 상세 개별 통계 미표시 | 잠재력 등급(S~D) + 특화 유형 인라인 표시 추가 완료 |
 | 25 | 캐릭터 재정렬 UX 불일치 (원칙 04) | 검증 결과: 드래그 핸들 이미 구현되어 있음 — 이슈 아님 |
 | 26 | 통계 분석 방법 인라인 설정 부재 (원칙 01) | StatsFieldInsightFragment에 기어 아이콘 + 설정 다이얼로그 추가 완료 |
+| 27 | StatsFieldInsightFragment requireContext() 크래시 위험 | populateInsights 등 4개 메서드에 `if (!isAdded) return` 가드 추가 |
+| 28 | MainActivity NavHostFragment 언세이프 캐스트 | `as NavHostFragment` → `as? NavHostFragment ?: return` 변경 |
 
 ---
 

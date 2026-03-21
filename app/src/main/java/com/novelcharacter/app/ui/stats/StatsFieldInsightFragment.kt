@@ -86,6 +86,7 @@ class StatsFieldInsightFragment : Fragment() {
     // ===== 필드 인사이트 렌더링 =====
 
     private fun populateInsights(insights: List<FieldInsightResult>) {
+        if (!isAdded) return
         val container = binding.insightContainer
         container.removeAllViews()
 
@@ -494,6 +495,7 @@ class StatsFieldInsightFragment : Fragment() {
     // ===== 교차 분석 다이얼로그 =====
 
     private fun showCrossAnalysisDialog() {
+        if (!isAdded) return
         val insights = viewModel.fieldInsights.value ?: return
         if (insights.size < 2) {
             Toast.makeText(requireContext(), R.string.stats_cross_need_two_fields, Toast.LENGTH_SHORT).show()
@@ -544,6 +546,7 @@ class StatsFieldInsightFragment : Fragment() {
     // ===== 교차 분석 결과 표시 =====
 
     private fun showCrossAnalysisResult(result: CrossAnalysisResult) {
+        if (!isAdded) return
         binding.cardCrossAnalysis.visibility = View.VISIBLE
         binding.crossAnalysisTitle.text = getString(R.string.stats_cross_title, result.field1Name, result.field2Name)
 
@@ -665,6 +668,7 @@ class StatsFieldInsightFragment : Fragment() {
     // ===== 인라인 분석 설정 =====
 
     private fun showAnalysisSettingsBottomSheet(fieldDef: FieldDefinition, currentConfig: FieldStatsConfig) {
+        if (!isAdded) return
         val ctx = requireContext()
         val density = resources.displayMetrics.density
         val pad = (16 * density).toInt()
