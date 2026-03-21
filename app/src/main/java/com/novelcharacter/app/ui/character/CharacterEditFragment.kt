@@ -15,6 +15,7 @@ import android.widget.TextView
 import android.widget.LinearLayout
 import com.google.android.material.textfield.MaterialAutoCompleteTextView
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
@@ -767,9 +768,19 @@ class CharacterEditFragment : Fragment() {
                     imageView.setOnLongClickListener {
                         val adapterPosition = holder.bindingAdapterPosition
                         if (adapterPosition >= 0 && adapterPosition < imagePaths.size) {
-                            imagePaths.removeAt(adapterPosition)
-                            imageAdapter?.notifyItemRemoved(adapterPosition)
-                            imageAdapter?.notifyItemRangeChanged(adapterPosition, imagePaths.size - adapterPosition)
+                            AlertDialog.Builder(requireContext())
+                                .setTitle(R.string.delete)
+                                .setMessage(R.string.image_delete_confirm)
+                                .setPositiveButton(R.string.delete) { _, _ ->
+                                    val currentPos = holder.bindingAdapterPosition
+                                    if (currentPos >= 0 && currentPos < imagePaths.size) {
+                                        imagePaths.removeAt(currentPos)
+                                        imageAdapter?.notifyItemRemoved(currentPos)
+                                        imageAdapter?.notifyItemRangeChanged(currentPos, imagePaths.size - currentPos)
+                                    }
+                                }
+                                .setNegativeButton(R.string.cancel, null)
+                                .show()
                         }
                         true
                     }

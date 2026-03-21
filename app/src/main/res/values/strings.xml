@@ -21,6 +21,7 @@
     <string name="confirm">확인</string>
     <string name="delete">삭제</string>
     <string name="add_image">이미지 추가</string>
+    <string name="image_delete_confirm">이 이미지를 삭제하시겠습니까?</string>
     <string name="select_novel">작품 선택</string>
     <string name="all_characters">전체 캐릭터</string>
     <string name="alive">생존</string>
