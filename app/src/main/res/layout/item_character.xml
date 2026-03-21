@@ -26,6 +26,22 @@
                 android:background="@color/item_background_light"
                 android:contentDescription="@string/character_name" />
 
+            <TextView
+                android:id="@+id/imageCountBadge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="bottom|end"
+                android:layout_marginEnd="4dp"
+                android:layout_marginBottom="4dp"
+                android:paddingStart="5dp"
+                android:paddingEnd="5dp"
+                android:paddingTop="1dp"
+                android:paddingBottom="1dp"
+                android:background="@drawable/bg_image_count_badge"
+                android:textColor="@android:color/white"
+                android:textSize="10sp"
+                android:visibility="gone" />
+
             <ImageView
                 android:id="@+id/dragHandle"
                 android:layout_width="48dp"

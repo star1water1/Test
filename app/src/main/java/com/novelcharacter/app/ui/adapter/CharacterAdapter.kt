@@ -29,7 +29,8 @@ class CharacterAdapter(
     private val onClick: (Character) -> Unit,
     private val onEditClick: (Character) -> Unit,
     private val onDeleteClick: (Character) -> Unit,
-    private val onPinClick: ((Character) -> Unit)? = null
+    private val onPinClick: ((Character) -> Unit)? = null,
+    private val onImageClick: ((imagePaths: String, startIndex: Int) -> Unit)? = null
 ) : ListAdapter<Character, CharacterAdapter.CharacterViewHolder>(CharacterDiffCallback()) {
 
     private var isSelectionMode = false
@@ -232,24 +233,42 @@ class CharacterAdapter(
                 popup.show()
             }
 
-            // 이미지 - 비동기로 로드
-            loadCharacterImage(character)
-        }
-
-        private fun loadCharacterImage(character: Character) {
-            loadJob?.cancel()
-            binding.characterImage.setImageResource(R.drawable.ic_character_placeholder)
-
+            // 이미지 파싱 → 배지 + 클릭 + 로드
             val paths: List<String> = try {
                 gson.fromJson(character.imagePaths, imagePathsType) ?: emptyList()
             } catch (e: Exception) {
                 emptyList()
             }
+            val idx = if (paths.isNotEmpty()) {
+                imageIndexMap.getOrPut(character.id) { (0 until paths.size).random() }
+            } else 0
+
+            // 이미지 개수 배지
+            if (paths.size > 1) {
+                binding.imageCountBadge.text = "${(idx % paths.size) + 1}/${paths.size}"
+                binding.imageCountBadge.visibility = View.VISIBLE
+            } else {
+                binding.imageCountBadge.visibility = View.GONE
+            }
+
+            // 이미지 영역 클릭 → 이미지 뷰어
+            if (paths.isNotEmpty() && onImageClick != null) {
+                binding.characterImage.setOnClickListener {
+                    onImageClick.invoke(character.imagePaths, idx % paths.size)
+                }
+            } else {
+                binding.characterImage.setOnClickListener(null)
+                binding.characterImage.isClickable = false
+            }
+
+            loadCharacterImage(character, paths, idx)
+        }
+
+        private fun loadCharacterImage(character: Character, paths: List<String>, idx: Int) {
+            loadJob?.cancel()
+            binding.characterImage.setImageResource(R.drawable.ic_character_placeholder)
 
             if (paths.isNotEmpty()) {
-                // 캐릭터별 인덱스를 기억하여 재바인드 시 같은 이미지 표시 (캐시 스래싱 방지)
-                // submitList/refreshRandomImages 호출 시 인덱스가 재설정되어 새 랜덤 이미지 표시
-                val idx = imageIndexMap.getOrPut(character.id) { (0 until paths.size).random() }
                 val path = paths[idx % paths.size]
                 // Check cache first
                 val cached = thumbnailCache.get(path)

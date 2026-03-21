@@ -26,6 +26,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import com.google.gson.Gson
+import com.novelcharacter.app.util.navigateSafe
 import com.google.gson.reflect.TypeToken
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.Character
@@ -822,6 +823,18 @@ class CharacterEditFragment : Fragment() {
                         }
                         imageView.setTag(R.id.image_load_job, job)
                     }
+                    // 탭 → 이미지 뷰어에서 확대
+                    imageView.setOnClickListener {
+                        val adapterPosition = holder.bindingAdapterPosition
+                        if (adapterPosition >= 0 && adapterPosition < imagePaths.size) {
+                            val bundle = Bundle().apply {
+                                putString("imagePaths", Gson().toJson(imagePaths))
+                                putInt("startPosition", adapterPosition)
+                            }
+                            findNavController().navigateSafe(R.id.characterEditFragment, R.id.imageViewerFragment, bundle)
+                        }
+                    }
+                    // 롱프레스 → 삭제
                     imageView.setOnLongClickListener {
                         val adapterPosition = holder.bindingAdapterPosition
                         if (adapterPosition >= 0 && adapterPosition < imagePaths.size) {

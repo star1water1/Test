@@ -89,6 +89,13 @@ class CharacterListFragment : Fragment() {
             },
             onPinClick = { character ->
                 viewModel.togglePin(character)
+            },
+            onImageClick = { imagePaths, startIndex ->
+                val bundle = Bundle().apply {
+                    putString("imagePaths", imagePaths)
+                    putInt("startPosition", startIndex)
+                }
+                findNavController().navigateSafe(R.id.characterListFragment, R.id.imageViewerFragment, bundle)
             }
         )
         binding.characterRecyclerView.layoutManager = GridLayoutManager(requireContext(), 3)
