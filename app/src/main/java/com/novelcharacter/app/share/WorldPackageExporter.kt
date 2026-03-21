@@ -67,45 +67,51 @@ class WorldPackageExporter(private val context: Context) {
         val fileName = "${universe.name.replace(Regex("[^\\w가-힣]"), "_")}.ncworld"
         val outputFile = File(context.cacheDir, fileName)
 
-        ZipOutputStream(FileOutputStream(outputFile)).use { zip ->
-            // Manifest
-            val manifest = WorldPackageManifest(
-                universeName = universe.name,
-                includesImages = config.includeImages
-            )
-            writeJsonEntry(zip, "manifest.json", manifest)
-            writeJsonEntry(zip, "universe.json", universe)
-            writeJsonEntry(zip, "field_definitions.json", fieldDefinitions)
-            writeJsonEntry(zip, "novels.json", novels)
-            writeJsonEntry(zip, "characters.json", characters)
-            writeJsonEntry(zip, "field_values.json", fieldValues)
-            writeJsonEntry(zip, "state_changes.json", stateChanges)
-            writeJsonEntry(zip, "tags.json", tags)
-            writeJsonEntry(zip, "relationships.json", relationships)
-            writeJsonEntry(zip, "relationship_changes.json", relChanges)
-            writeJsonEntry(zip, "timeline_events.json", events)
-            writeJsonEntry(zip, "timeline_cross_refs.json", crossRefs)
-            writeJsonEntry(zip, "name_bank.json", nameBank)
+        try {
+            ZipOutputStream(FileOutputStream(outputFile)).use { zip ->
+                // Manifest
+                val manifest = WorldPackageManifest(
+                    universeName = universe.name,
+                    includesImages = config.includeImages
+                )
+                writeJsonEntry(zip, "manifest.json", manifest)
+                writeJsonEntry(zip, "universe.json", universe)
+                writeJsonEntry(zip, "field_definitions.json", fieldDefinitions)
+                writeJsonEntry(zip, "novels.json", novels)
+                writeJsonEntry(zip, "characters.json", characters)
+                writeJsonEntry(zip, "field_values.json", fieldValues)
+                writeJsonEntry(zip, "state_changes.json", stateChanges)
+                writeJsonEntry(zip, "tags.json", tags)
+                writeJsonEntry(zip, "relationships.json", relationships)
+                writeJsonEntry(zip, "relationship_changes.json", relChanges)
+                writeJsonEntry(zip, "timeline_events.json", events)
+                writeJsonEntry(zip, "timeline_cross_refs.json", crossRefs)
+                writeJsonEntry(zip, "name_bank.json", nameBank)
 
-            // Images
-            if (config.includeImages) {
-                val appDir = context.filesDir
-                for (char in characters) {
-                    if (char.imagePaths.isBlank() || char.imagePaths == "[]") continue
-                    try {
-                        val paths = gson.fromJson(char.imagePaths, Array<String>::class.java)
-                        paths?.forEachIndexed { index, path ->
-                            val imageFile = File(path)
-                            // Validate path is within app directory to prevent path traversal
-                            if (imageFile.exists() && imageFile.canonicalPath.startsWith(appDir.canonicalPath)) {
-                                zip.putNextEntry(ZipEntry("images/${char.id}_$index.jpg"))
-                                imageFile.inputStream().use { it.copyTo(zip) }
-                                zip.closeEntry()
+                // Images
+                if (config.includeImages) {
+                    val appDir = context.filesDir
+                    for (char in characters) {
+                        if (char.imagePaths.isBlank() || char.imagePaths == "[]") continue
+                        try {
+                            val paths = gson.fromJson(char.imagePaths, Array<String>::class.java)
+                            paths?.forEachIndexed { index, path ->
+                                val imageFile = File(path)
+                                if (imageFile.exists() && imageFile.canonicalPath.startsWith(appDir.canonicalPath)) {
+                                    zip.putNextEntry(ZipEntry("images/${char.id}_$index.jpg"))
+                                    imageFile.inputStream().use { it.copyTo(zip) }
+                                    zip.closeEntry()
+                                }
                             }
+                        } catch (_: Exception) {
+                            // 개별 이미지 실패 시 건너뛰고 계속 진행
                         }
-                    } catch (_: Exception) {}
+                    }
                 }
             }
+        } catch (e: Exception) {
+            outputFile.delete()
+            throw e
         }
 
         return outputFile

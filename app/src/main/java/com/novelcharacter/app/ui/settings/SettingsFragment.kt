@@ -52,19 +52,20 @@ class SettingsFragment : Fragment() {
     ) { uri ->
         if (!isAdded || uri == null) return@registerForActivityResult
         val file = pendingBackupExportFile ?: return@registerForActivityResult
+        val ctx = requireContext().applicationContext
         viewLifecycleOwner.lifecycleScope.launch {
             try {
                 withContext(Dispatchers.IO) {
-                    requireContext().contentResolver.openOutputStream(uri)?.use { output ->
+                    ctx.contentResolver.openOutputStream(uri)?.use { output ->
                         file.inputStream().use { input -> input.copyTo(output) }
                     }
                 }
                 if (_binding != null) {
-                    Toast.makeText(requireContext(), R.string.backup_export_success, Toast.LENGTH_SHORT).show()
+                    Toast.makeText(ctx, R.string.backup_export_success, Toast.LENGTH_SHORT).show()
                 }
             } catch (e: Exception) {
                 if (_binding != null) {
-                    Toast.makeText(requireContext(), getString(R.string.backup_export_failed, e.message), Toast.LENGTH_LONG).show()
+                    Toast.makeText(ctx, getString(R.string.backup_export_failed, e.message), Toast.LENGTH_LONG).show()
                 }
             }
             pendingBackupExportFile = null
@@ -414,13 +415,13 @@ class SettingsFragment : Fragment() {
 
     private fun restoreFromEncryptedUri(uri: Uri) {
         if (!isAdded) return
+        val ctx = requireContext().applicationContext
         viewLifecycleOwner.lifecycleScope.launch {
             var tempEncFile: File? = null
             try {
-                // 외부 Uri를 로컬 임시 파일로 복사
                 tempEncFile = withContext(Dispatchers.IO) {
-                    val temp = File.createTempFile("restore_ext_", ".enc", requireContext().cacheDir)
-                    requireContext().contentResolver.openInputStream(uri)?.use { input ->
+                    val temp = File.createTempFile("restore_ext_", ".enc", ctx.cacheDir)
+                    ctx.contentResolver.openInputStream(uri)?.use { input ->
                         temp.outputStream().use { output -> input.copyTo(output) }
                     } ?: throw Exception(getString(R.string.backup_file_open_failed))
                     temp
@@ -428,7 +429,7 @@ class SettingsFragment : Fragment() {
                 restoreFromEncryptedFile(tempEncFile)
             } catch (e: Exception) {
                 if (_binding != null) {
-                    Toast.makeText(requireContext(), getString(R.string.backup_restore_failed, e.message), Toast.LENGTH_LONG).show()
+                    Toast.makeText(ctx, getString(R.string.backup_restore_failed, e.message), Toast.LENGTH_LONG).show()
                 }
             } finally {
                 tempEncFile?.delete()

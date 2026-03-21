@@ -86,13 +86,19 @@ object BackupEncryptor {
      * so we read the ciphertext fully and use doFinal() which always verifies the tag.
      * Input format: [IV (12 bytes)] [encrypted data + GCM tag]
      */
+    private const val MAX_DECRYPT_FILE_SIZE = 256L * 1024 * 1024 // 256MB
+
     fun decryptFile(inputFile: File, outputFile: File) {
         val tempFile = File(outputFile.parentFile, outputFile.name + ".tmp")
         try {
-            val fileBytes = inputFile.readBytes()
-            require(fileBytes.size > GCM_IV_LENGTH) {
+            val fileSize = inputFile.length()
+            require(fileSize > GCM_IV_LENGTH) {
                 "Encrypted file too short: expected at least ${GCM_IV_LENGTH + 1} bytes"
             }
+            require(fileSize <= MAX_DECRYPT_FILE_SIZE) {
+                "Encrypted file too large: ${fileSize / (1024 * 1024)}MB exceeds ${MAX_DECRYPT_FILE_SIZE / (1024 * 1024)}MB limit"
+            }
+            val fileBytes = inputFile.readBytes()
 
             val iv = fileBytes.copyOfRange(0, GCM_IV_LENGTH)
             val ciphertext = fileBytes.copyOfRange(GCM_IV_LENGTH, fileBytes.size)
