@@ -906,23 +906,27 @@ abstract class AppDatabase : RoomDatabase() {
                 cursor2.close()
 
                 // 3. 기존 age/height/body_type 필드에 semanticRole 추가
+                // json_set/json_extract 대신 문자열 연산 사용 (일부 기기에서 JSON1 미지원)
                 db.execSQL("""UPDATE field_definitions SET config =
-                    CASE WHEN config IS NULL OR config = '' THEN '{"semanticRole":"age"}'
-                    ELSE json_set(config, '${'$'}.semanticRole', 'age') END
+                    CASE WHEN config IS NULL OR config = '' OR config = '{}' THEN '{"semanticRole":"age"}'
+                    ELSE substr(config, 1, length(config) - 1) || ',"semanticRole":"age"}'
+                    END
                     WHERE `key` = 'age' AND type = 'NUMBER'
-                    AND (config IS NULL OR config = '' OR json_extract(config, '${'$'}.semanticRole') IS NULL)""")
+                    AND (config IS NULL OR config = '' OR config NOT LIKE '%"semanticRole"%')""")
 
                 db.execSQL("""UPDATE field_definitions SET config =
-                    CASE WHEN config IS NULL OR config = '' THEN '{"semanticRole":"height"}'
-                    ELSE json_set(config, '${'$'}.semanticRole', 'height') END
+                    CASE WHEN config IS NULL OR config = '' OR config = '{}' THEN '{"semanticRole":"height"}'
+                    ELSE substr(config, 1, length(config) - 1) || ',"semanticRole":"height"}'
+                    END
                     WHERE `key` = 'height' AND type IN ('TEXT', 'NUMBER')
-                    AND (config IS NULL OR config = '' OR json_extract(config, '${'$'}.semanticRole') IS NULL)""")
+                    AND (config IS NULL OR config = '' OR config NOT LIKE '%"semanticRole"%')""")
 
                 db.execSQL("""UPDATE field_definitions SET config =
-                    CASE WHEN config IS NULL OR config = '' THEN '{"semanticRole":"body_size"}'
-                    ELSE json_set(config, '${'$'}.semanticRole', 'body_size') END
+                    CASE WHEN config IS NULL OR config = '' OR config = '{}' THEN '{"semanticRole":"body_size"}'
+                    ELSE substr(config, 1, length(config) - 1) || ',"semanticRole":"body_size"}'
+                    END
                     WHERE `key` IN ('body_size', 'body_type') AND type = 'BODY_SIZE'
-                    AND (config IS NULL OR config = '' OR json_extract(config, '${'$'}.semanticRole') IS NULL)""")
+                    AND (config IS NULL OR config = '' OR config NOT LIKE '%"semanticRole"%')""")
 
                 Log.i(TAG, "Migration from version 23 to 24 completed successfully")
             }
