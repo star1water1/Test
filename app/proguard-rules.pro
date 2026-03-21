@@ -43,3 +43,32 @@
     public static **[] values();
     public static ** valueOf(java.lang.String);
 }
+
+# ===== App-specific R8 rules =====
+
+# --- Fragments (referenced by name in nav_graph.xml) ---
+-keep class com.novelcharacter.app.ui.** extends androidx.fragment.app.Fragment { *; }
+
+# --- ViewModels (instantiated via reflection by ViewModelProvider) ---
+-keep class com.novelcharacter.app.ui.** extends androidx.lifecycle.ViewModel { <init>(...); }
+-keep class com.novelcharacter.app.ui.** extends androidx.lifecycle.AndroidViewModel { <init>(...); }
+
+# --- Gson-serialized data classes (field names must not be renamed) ---
+-keep class com.novelcharacter.app.util.PresetTemplates$* { *; }
+-keep class com.novelcharacter.app.util.BodyAnalysisResult { *; }
+-keep class com.novelcharacter.app.util.GoldenRatioItem { *; }
+-keep class com.novelcharacter.app.util.RankingInfo { *; }
+-keep class com.novelcharacter.app.share.WorldPackageManifest { *; }
+-keep class com.novelcharacter.app.share.WorldPackageExporter$* { *; }
+-keep class com.novelcharacter.app.util.GsonTypes { *; }
+-keep class com.novelcharacter.app.util.GsonTypes$* { *; }
+-keep class * extends com.google.gson.reflect.TypeToken { *; }
+
+# --- WorkManager workers (instantiated by class name) ---
+-keep class com.novelcharacter.app.backup.AutoBackupWorker { *; }
+-keep class com.novelcharacter.app.notification.BirthdayWorker { *; }
+
+# --- Kotlin metadata & coroutines ---
+-keep class kotlin.Metadata { *; }
+-dontwarn kotlin.**
+-dontwarn kotlinx.coroutines.**
