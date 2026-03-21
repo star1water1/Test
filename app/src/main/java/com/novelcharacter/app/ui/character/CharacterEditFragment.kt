@@ -825,10 +825,11 @@ class CharacterEditFragment : Fragment() {
                     }
                     // 탭 → 이미지 뷰어에서 확대
                     imageView.setOnClickListener {
+                        if (!isAdded) return@setOnClickListener
                         val adapterPosition = holder.bindingAdapterPosition
                         if (adapterPosition >= 0 && adapterPosition < imagePaths.size) {
                             val bundle = Bundle().apply {
-                                putString("imagePaths", Gson().toJson(imagePaths))
+                                putString("imagePaths", gson.toJson(imagePaths))
                                 putInt("startPosition", adapterPosition)
                             }
                             findNavController().navigateSafe(R.id.characterEditFragment, R.id.imageViewerFragment, bundle)

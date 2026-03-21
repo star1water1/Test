@@ -37,6 +37,9 @@ class RelationshipGraphView @JvmOverloads constructor(
     private var nodes = listOf<GraphNode>()
     private var edges = listOf<GraphEdge>()
 
+    // 엣지 쌍별 개수 캐시 (setGraphData/updateEdges 시 갱신, onDraw마다 재생성 방지)
+    private var cachedPairEdgeCount = mapOf<Long, Int>()
+
     private val nodePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = ContextCompat.getColor(context, R.color.graph_node_fill)
         style = Paint.Style.FILL
@@ -186,6 +189,7 @@ class RelationshipGraphView @JvmOverloads constructor(
     fun setGraphData(nodeList: List<GraphNode>, edgeList: List<GraphEdge>) {
         nodes = nodeList.map { it.copy() }
         edges = edgeList.toList()
+        rebuildPairEdgeCache()
         resetTransform()
         layoutNodesAsync()
     }
@@ -195,7 +199,17 @@ class RelationshipGraphView @JvmOverloads constructor(
      */
     fun updateEdges(edgeList: List<GraphEdge>) {
         edges = edgeList.toList()
+        rebuildPairEdgeCache()
         invalidate()
+    }
+
+    private fun rebuildPairEdgeCache() {
+        val counts = mutableMapOf<Long, Int>()
+        for (edge in edges) {
+            val key = min(edge.fromId, edge.toId).shl(32) or max(edge.fromId, edge.toId)
+            counts[key] = (counts[key] ?: 0) + 1
+        }
+        cachedPairEdgeCount = counts
     }
 
     fun resetTransform() {
@@ -293,6 +307,7 @@ class RelationshipGraphView @JvmOverloads constructor(
         val temp = radius
         val nodeIndexMap = nodesCopy.withIndex().associate { (i, n) -> n.id to i }
 
+        val processedPairs = mutableSetOf<Long>()
         for (iter in 0 until iterations) {
             if (Thread.currentThread().isInterrupted) break
             val cooling = temp * (1f - iter.toFloat() / iterations)
@@ -315,11 +330,11 @@ class RelationshipGraphView @JvmOverloads constructor(
             }
 
             // 인력 (연결된 노드만) — 중복 엣지의 인력 합산 방지
-            val processedPairs = mutableSetOf<Long>()
+            processedPairs.clear()
             for (edge in edgesCopy) {
                 val iIdx = nodeIndexMap[edge.fromId] ?: continue
                 val jIdx = nodeIndexMap[edge.toId] ?: continue
-                val pairKey = min(edge.fromId, edge.toId) * 100000L + max(edge.fromId, edge.toId)
+                val pairKey = min(edge.fromId, edge.toId).shl(32) or max(edge.fromId, edge.toId)
                 if (!processedPairs.add(pairKey)) continue  // 같은 쌍은 한 번만
                 val dx = xs[iIdx] - xs[jIdx]
                 val dy = ys[iIdx] - ys[jIdx]
@@ -360,13 +375,8 @@ class RelationshipGraphView @JvmOverloads constructor(
 
         val nodeMap = nodes.associateBy { it.id }
 
-        // 같은 노드 쌍 사이의 엣지 수를 세어 곡선 오프셋 계산
-        val pairEdgeCount = mutableMapOf<Long, Int>()
+        // 같은 노드 쌍 사이의 곡선 오프셋 인덱스
         val pairEdgeIndex = mutableMapOf<Long, Int>()
-        for (edge in edges) {
-            val pairKey = min(edge.fromId, edge.toId) * 100000L + max(edge.fromId, edge.toId)
-            pairEdgeCount[pairKey] = (pairEdgeCount[pairKey] ?: 0) + 1
-        }
 
         // Draw edges with type-based colors and intensity-based width
         for (edge in edges) {
@@ -386,8 +396,8 @@ class RelationshipGraphView @JvmOverloads constructor(
             }
 
             // 같은 노드 쌍의 다중 엣지 → 곡선으로 분리
-            val pairKey = min(edge.fromId, edge.toId) * 100000L + max(edge.fromId, edge.toId)
-            val totalEdges = pairEdgeCount[pairKey] ?: 1
+            val pairKey = min(edge.fromId, edge.toId).shl(32) or max(edge.fromId, edge.toId)
+            val totalEdges = cachedPairEdgeCount[pairKey] ?: 1
             val edgeIdx = pairEdgeIndex.getOrPut(pairKey) { 0 }
             pairEdgeIndex[pairKey] = edgeIdx + 1
 
@@ -437,9 +447,10 @@ class RelationshipGraphView @JvmOverloads constructor(
                 midY = 0.25f * from.y + 0.5f * ctrlY + 0.25f * to.y
 
                 if (!edge.isBidirectional) {
-                    // 곡선 끝점 방향으로 화살표
-                    val arrowFromX = 0.5f * (ctrlX + from.x)  // t≈0.75 근사
-                    val arrowFromY = 0.5f * (ctrlY + from.y)
+                    // 2차 베지어 t=0.75 지점에서 끝점 방향으로 화살표
+                    val t = 0.75f
+                    val arrowFromX = (1-t)*(1-t)*from.x + 2*(1-t)*t*ctrlX + t*t*to.x
+                    val arrowFromY = (1-t)*(1-t)*from.y + 2*(1-t)*t*ctrlY + t*t*to.y
                     drawArrow(canvas, arrowFromX, arrowFromY, to.x, to.y, edgeColor)
                 }
             }

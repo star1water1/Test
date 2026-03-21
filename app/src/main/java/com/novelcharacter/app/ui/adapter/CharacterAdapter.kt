@@ -251,8 +251,8 @@ class CharacterAdapter(
                 binding.imageCountBadge.visibility = View.GONE
             }
 
-            // 이미지 영역 클릭 → 이미지 뷰어
-            if (paths.isNotEmpty() && onImageClick != null) {
+            // 이미지 영역 클릭 → 이미지 뷰어 (reorder/selection mode에서는 비활성)
+            if (!isReorderMode && !isSelectionMode && paths.isNotEmpty() && onImageClick != null) {
                 binding.characterImage.setOnClickListener {
                     onImageClick.invoke(character.imagePaths, idx % paths.size)
                 }
