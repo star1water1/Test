@@ -87,7 +87,7 @@ class BodyAnalysisHelper {
         val diff = bust - underbust
         val cupSize = config.cupMapping
             .sortedBy { it.maxDiff }
-            .firstOrNull { diff < it.maxDiff }?.label ?: "?"
+            .firstOrNull { diff <= it.maxDiff }?.label ?: "?"
 
         // 2. 체형 분류 (config 기반 rule 매칭)
         val bmi = if (heightCm != null && weightKg != null && heightCm > 0 && weightKg > 0) {
