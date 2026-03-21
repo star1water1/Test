@@ -7,6 +7,7 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import org.json.JSONObject
 import com.novelcharacter.app.util.PresetTemplates
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -611,95 +612,60 @@ abstract class AppDatabase : RoomDatabase() {
 
                 for (universeId in universeIds) {
                     Log.i(TAG, "Updating 천칭의 마법사 universe id=$universeId")
+                    val uid = arrayOf<Any>(universeId)
 
                     // 2. 세계관 설명 업데이트: "오라" → "오러"
-                    db.execSQL("""
-                        UPDATE universes SET description = '오러·마나·신체 기반 마법 체계와 등급 시스템이 있는 세계관'
-                        WHERE id = $universeId
-                    """)
+                    db.execSQL(
+                        "UPDATE universes SET description = ? WHERE id = ?",
+                        arrayOf("오러·마나·신체 기반 마법 체계와 등급 시스템이 있는 세계관", universeId)
+                    )
 
                     // 3. 기존 필드 업데이트: 이름, 등급 스케일, 그룹명 변경
-                    // aura_affinity: "오라 친화" → "오러친화", C=0.5/B=1/A=2/S=3, allowNegative=false
-                    db.execSQL("""
-                        UPDATE field_definitions
-                        SET name = '오러친화',
-                            config = '{"grades":{"C":0.5,"B":1,"A":2,"S":3},"allowNegative":false}',
-                            groupName = '잠재 능력치'
-                        WHERE universeId = $universeId AND `key` = 'aura_affinity'
-                    """)
-
-                    // body_control: "신체 조절" → "신체제어", C=0.5/B=1/A=2/S=3, allowNegative=false
-                    db.execSQL("""
-                        UPDATE field_definitions
-                        SET name = '신체제어',
-                            config = '{"grades":{"C":0.5,"B":1,"A":2,"S":3},"allowNegative":false}',
-                            groupName = '잠재 능력치'
-                        WHERE universeId = $universeId AND `key` = 'body_control'
-                    """)
-
-                    // mana_affinity: "마나 친화" → "마나친화", C=0.5/B=1/A=2/S=3, allowNegative=false
-                    db.execSQL("""
-                        UPDATE field_definitions
-                        SET name = '마나친화',
-                            config = '{"grades":{"C":0.5,"B":1,"A":2,"S":3},"allowNegative":false}',
-                            groupName = '잠재 능력치'
-                        WHERE universeId = $universeId AND `key` = 'mana_affinity'
-                    """)
+                    db.execSQL(
+                        "UPDATE field_definitions SET name = ?, config = ?, groupName = ? WHERE universeId = ? AND `key` = ?",
+                        arrayOf("오러친화", """{"grades":{"C":0.5,"B":1,"A":2,"S":3},"allowNegative":false}""", "잠재 능력치", universeId, "aura_affinity")
+                    )
+                    db.execSQL(
+                        "UPDATE field_definitions SET name = ?, config = ?, groupName = ? WHERE universeId = ? AND `key` = ?",
+                        arrayOf("신체제어", """{"grades":{"C":0.5,"B":1,"A":2,"S":3},"allowNegative":false}""", "잠재 능력치", universeId, "body_control")
+                    )
+                    db.execSQL(
+                        "UPDATE field_definitions SET name = ?, config = ?, groupName = ? WHERE universeId = ? AND `key` = ?",
+                        arrayOf("마나친화", """{"grades":{"C":0.5,"B":1,"A":2,"S":3},"allowNegative":false}""", "잠재 능력치", universeId, "mana_affinity")
+                    )
 
                     // 4. total_combat → total_potential: 키/이름/수식 변경
-                    db.execSQL("""
-                        UPDATE field_definitions
-                        SET `key` = 'total_potential',
-                            name = '종합잠재력',
-                            config = '{"formula":"field(''special'')+field(''intelligence'')+field(''mana_affinity'')+field(''mana_control'')+field(''aura_affinity'')+field(''body_control'')"}',
-                            groupName = '잠재 능력치'
-                        WHERE universeId = $universeId AND `key` = 'total_combat'
-                    """)
+                    db.execSQL(
+                        "UPDATE field_definitions SET `key` = ?, name = ?, config = ?, groupName = ? WHERE universeId = ? AND `key` = ?",
+                        arrayOf("total_potential", "종합잠재력", """{"formula":"field('special')+field('intelligence')+field('mana_affinity')+field('mana_control')+field('aura_affinity')+field('body_control')"}""", "잠재 능력치", universeId, "total_combat")
+                    )
 
                     // character_state_changes의 fieldKey도 업데이트
-                    db.execSQL("""
-                        UPDATE character_state_changes
-                        SET fieldKey = 'total_potential'
-                        WHERE fieldKey = 'total_combat'
-                          AND characterId IN (
-                              SELECT c.id FROM characters c
-                              JOIN novels n ON c.novelId = n.id
-                              WHERE n.universeId = $universeId
-                          )
-                    """)
+                    db.execSQL(
+                        """UPDATE character_state_changes SET fieldKey = 'total_potential'
+                        WHERE fieldKey = 'total_combat' AND characterId IN (
+                            SELECT c.id FROM characters c JOIN novels n ON c.novelId = n.id WHERE n.universeId = ?
+                        )""",
+                        uid
+                    )
 
                     // 5. 신규 GRADE 필드 추가 (displayOrder는 뒤에서 일괄 재정렬)
-                    // special: "특수", C=1/B=2/A=3/S=4, allowNegative=true
-                    db.execSQL("""
-                        INSERT OR IGNORE INTO field_definitions (universeId, `key`, name, type, config, groupName, displayOrder, isRequired)
-                        VALUES ($universeId, 'special', '특수', 'GRADE',
-                                '{"grades":{"C":1,"B":2,"A":3,"S":4},"allowNegative":true}',
-                                '잠재 능력치', 10, 0)
-                    """)
-
-                    // intelligence: "지력", C=1/B=2/A=3/S=4
-                    db.execSQL("""
-                        INSERT OR IGNORE INTO field_definitions (universeId, `key`, name, type, config, groupName, displayOrder, isRequired)
-                        VALUES ($universeId, 'intelligence', '지력', 'GRADE',
-                                '{"grades":{"C":1,"B":2,"A":3,"S":4},"allowNegative":false}',
-                                '잠재 능력치', 11, 0)
-                    """)
-
-                    // mana_control: "마나제어", C=1/B=2/A=3/S=4
-                    db.execSQL("""
-                        INSERT OR IGNORE INTO field_definitions (universeId, `key`, name, type, config, groupName, displayOrder, isRequired)
-                        VALUES ($universeId, 'mana_control', '마나제어', 'GRADE',
-                                '{"grades":{"C":1,"B":2,"A":3,"S":4},"allowNegative":false}',
-                                '잠재 능력치', 13, 0)
-                    """)
-
-                    // spec_potential: "특화잠재력", CALCULATED
-                    db.execSQL("""
-                        INSERT OR IGNORE INTO field_definitions (universeId, `key`, name, type, config, groupName, displayOrder, isRequired)
-                        VALUES ($universeId, 'spec_potential', '특화잠재력', 'CALCULATED',
-                                '{"formula":"max(field(''mana_affinity'')+field(''mana_control''),field(''aura_affinity'')+field(''body_control''))"}',
-                                '잠재 능력치', 17, 0)
-                    """)
+                    db.execSQL(
+                        "INSERT OR IGNORE INTO field_definitions (universeId, `key`, name, type, config, groupName, displayOrder, isRequired) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        arrayOf(universeId, "special", "특수", "GRADE", """{"grades":{"C":1,"B":2,"A":3,"S":4},"allowNegative":true}""", "잠재 능력치", 10, 0)
+                    )
+                    db.execSQL(
+                        "INSERT OR IGNORE INTO field_definitions (universeId, `key`, name, type, config, groupName, displayOrder, isRequired) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        arrayOf(universeId, "intelligence", "지력", "GRADE", """{"grades":{"C":1,"B":2,"A":3,"S":4},"allowNegative":false}""", "잠재 능력치", 11, 0)
+                    )
+                    db.execSQL(
+                        "INSERT OR IGNORE INTO field_definitions (universeId, `key`, name, type, config, groupName, displayOrder, isRequired) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        arrayOf(universeId, "mana_control", "마나제어", "GRADE", """{"grades":{"C":1,"B":2,"A":3,"S":4},"allowNegative":false}""", "잠재 능력치", 13, 0)
+                    )
+                    db.execSQL(
+                        "INSERT OR IGNORE INTO field_definitions (universeId, `key`, name, type, config, groupName, displayOrder, isRequired) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        arrayOf(universeId, "spec_potential", "특화잠재력", "CALCULATED", """{"formula":"max(field('mana_affinity')+field('mana_control'),field('aura_affinity')+field('body_control'))"}""", "잠재 능력치", 17, 0)
+                    )
 
                     // 6. displayOrder 재정렬 (프리셋 순서에 맞춤)
                     val orderMap = mapOf(
@@ -714,10 +680,10 @@ abstract class AppDatabase : RoomDatabase() {
                         "appearance" to 24, "special_notes" to 25
                     )
                     for ((key, order) in orderMap) {
-                        db.execSQL("""
-                            UPDATE field_definitions SET displayOrder = $order
-                            WHERE universeId = $universeId AND `key` = '$key'
-                        """)
+                        db.execSQL(
+                            "UPDATE field_definitions SET displayOrder = ? WHERE universeId = ? AND `key` = ?",
+                            arrayOf(order, universeId, key)
+                        )
                     }
                 }
 
@@ -877,56 +843,17 @@ abstract class AppDatabase : RoomDatabase() {
                 // 1. Novel에 standardYear 컬럼 추가
                 db.execSQL("ALTER TABLE `novels` ADD COLUMN `standardYear` INTEGER DEFAULT NULL")
 
-                // 2. 기존 프리셋 세계관에 birth_date 필드 추가 (별님대모험)
-                val cursor1 = db.query("SELECT id FROM universes WHERE name = '별님대모험'")
-                if (cursor1.moveToFirst()) {
-                    val uid = cursor1.getLong(0)
-                    db.execSQL("""INSERT OR IGNORE INTO field_definitions
-                        (universeId, `key`, name, type, config, groupName, displayOrder, isRequired)
-                        VALUES ($uid, 'birth_date', '생일(월/일)', 'TEXT',
-                        '{"semanticRole":"birth_date","placeholder":"MM-DD"}', '기본 정보', 1, 0)""")
-                    db.execSQL("""UPDATE field_definitions SET displayOrder = displayOrder + 1
-                        WHERE universeId = $uid AND `key` != 'birth_year' AND `key` != 'birth_date'
-                        AND displayOrder >= 1""")
-                }
-                cursor1.close()
-
-                // 천칭의 마법사
-                val cursor2 = db.query("SELECT id FROM universes WHERE name = '천칭의 마법사'")
-                if (cursor2.moveToFirst()) {
-                    val uid = cursor2.getLong(0)
-                    db.execSQL("""INSERT OR IGNORE INTO field_definitions
-                        (universeId, `key`, name, type, config, groupName, displayOrder, isRequired)
-                        VALUES ($uid, 'birth_date', '생일(월/일)', 'TEXT',
-                        '{"semanticRole":"birth_date","placeholder":"MM-DD"}', '기본 정보', 1, 0)""")
-                    db.execSQL("""UPDATE field_definitions SET displayOrder = displayOrder + 1
-                        WHERE universeId = $uid AND `key` != 'birth_year' AND `key` != 'birth_date'
-                        AND displayOrder >= 1""")
-                }
-                cursor2.close()
+                // 2. 기존 프리셋 세계관에 birth_date 필드 추가
+                addBirthDateField(db, "별님대모험")
+                addBirthDateField(db, "천칭의 마법사")
 
                 // 3. 기존 age/height/body_type 필드에 semanticRole 추가
-                // json_set/json_extract 대신 문자열 연산 사용 (일부 기기에서 JSON1 미지원)
-                db.execSQL("""UPDATE field_definitions SET config =
-                    CASE WHEN config IS NULL OR config = '' OR config = '{}' THEN '{"semanticRole":"age"}'
-                    ELSE substr(config, 1, length(config) - 1) || ',"semanticRole":"age"}'
-                    END
-                    WHERE `key` = 'age' AND type = 'NUMBER'
-                    AND (config IS NULL OR config = '' OR config NOT LIKE '%"semanticRole"%')""")
-
-                db.execSQL("""UPDATE field_definitions SET config =
-                    CASE WHEN config IS NULL OR config = '' OR config = '{}' THEN '{"semanticRole":"height"}'
-                    ELSE substr(config, 1, length(config) - 1) || ',"semanticRole":"height"}'
-                    END
-                    WHERE `key` = 'height' AND type IN ('TEXT', 'NUMBER')
-                    AND (config IS NULL OR config = '' OR config NOT LIKE '%"semanticRole"%')""")
-
-                db.execSQL("""UPDATE field_definitions SET config =
-                    CASE WHEN config IS NULL OR config = '' OR config = '{}' THEN '{"semanticRole":"body_size"}'
-                    ELSE substr(config, 1, length(config) - 1) || ',"semanticRole":"body_size"}'
-                    END
-                    WHERE `key` IN ('body_size', 'body_type') AND type = 'BODY_SIZE'
-                    AND (config IS NULL OR config = '' OR config NOT LIKE '%"semanticRole"%')""")
+                // SQLite JSON1 확장이 미지원 기기가 있으므로 Kotlin에서 파싱 후 업데이트
+                addSemanticRoleToFields(db, "age", "NUMBER", "age")
+                addSemanticRoleToFields(db, "height", "TEXT", "height")
+                addSemanticRoleToFields(db, "height", "NUMBER", "height")
+                addSemanticRoleToFields(db, "body_size", "BODY_SIZE", "body_size")
+                addSemanticRoleToFields(db, "body_type", "BODY_SIZE", "body_size")
 
                 Log.i(TAG, "Migration from version 23 to 24 completed successfully")
             }
@@ -1008,6 +935,64 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_character_relationships_displayOrder_createdAt` ON `character_relationships` (`displayOrder`, `createdAt`)")
 
                 Log.i(TAG, "Migration from version 24 to 25 completed successfully")
+            }
+        }
+
+        /**
+         * 프리셋 세계관에 birth_date 필드를 추가하고 displayOrder를 재정렬하는 헬퍼.
+         */
+        private fun addBirthDateField(db: SupportSQLiteDatabase, universeName: String) {
+            val cursor = db.query("SELECT id FROM universes WHERE name = ?", arrayOf(universeName))
+            try {
+                if (cursor.moveToFirst()) {
+                    val uid = cursor.getLong(0)
+                    db.execSQL(
+                        "INSERT OR IGNORE INTO field_definitions (universeId, `key`, name, type, config, groupName, displayOrder, isRequired) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        arrayOf(uid, "birth_date", "생일(월/일)", "TEXT", """{"semanticRole":"birth_date","placeholder":"MM-DD"}""", "기본 정보", 1, 0)
+                    )
+                    db.execSQL(
+                        "UPDATE field_definitions SET displayOrder = displayOrder + 1 WHERE universeId = ? AND `key` != ? AND `key` != ? AND displayOrder >= 1",
+                        arrayOf(uid, "birth_year", "birth_date")
+                    )
+                }
+            } finally {
+                cursor.close()
+            }
+        }
+
+        /**
+         * field_definitions에서 지정된 key/type에 해당하는 행의 config JSON에 semanticRole을 추가.
+         * SQLite JSON1 확장에 의존하지 않고 Kotlin의 org.json.JSONObject로 안전하게 파싱/수정.
+         */
+        private fun addSemanticRoleToFields(
+            db: SupportSQLiteDatabase,
+            fieldKey: String,
+            fieldType: String,
+            semanticRole: String
+        ) {
+            val cursor = db.query(
+                "SELECT id, config FROM field_definitions WHERE `key` = ? AND type = ?",
+                arrayOf(fieldKey, fieldType)
+            )
+            try {
+                while (cursor.moveToNext()) {
+                    val id = cursor.getLong(0)
+                    val config = cursor.getString(1) ?: ""
+                    val json = try {
+                        if (config.isBlank()) JSONObject() else JSONObject(config)
+                    } catch (e: Exception) {
+                        JSONObject()
+                    }
+                    if (!json.has("semanticRole")) {
+                        json.put("semanticRole", semanticRole)
+                        db.execSQL(
+                            "UPDATE field_definitions SET config = ? WHERE id = ?",
+                            arrayOf(json.toString(), id)
+                        )
+                    }
+                }
+            } finally {
+                cursor.close()
             }
         }
 
