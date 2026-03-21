@@ -1,6 +1,5 @@
 package com.novelcharacter.app.ui.settings
 
-import android.app.ProgressDialog
 import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
@@ -9,6 +8,7 @@ import android.view.ViewGroup
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import com.novelcharacter.app.NovelCharacterApp
@@ -436,16 +436,22 @@ class SettingsFragment : Fragment() {
         }
     }
 
-    @Suppress("DEPRECATION")
     private fun restoreFromEncryptedFile(encFile: File) {
         if (!isAdded) return
 
         val ctx = requireContext()
-        val progressDialog = ProgressDialog(ctx).apply {
-            setMessage(getString(R.string.backup_restore_decrypting))
-            setCancelable(false)
-            isIndeterminate = true
-        }
+        val dialogView = LayoutInflater.from(ctx).inflate(
+            android.R.layout.simple_list_item_1, null
+        )
+        val progressDialog = MaterialAlertDialogBuilder(ctx)
+            .setMessage(getString(R.string.backup_restore_decrypting))
+            .setCancelable(false)
+            .setView(android.widget.ProgressBar(ctx).apply {
+                isIndeterminate = true
+                val pad = (24 * resources.displayMetrics.density).toInt()
+                setPadding(pad, pad, pad, pad)
+            })
+            .create()
         progressDialog.show()
 
         viewLifecycleOwner.lifecycleScope.launch {

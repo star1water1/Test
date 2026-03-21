@@ -7,6 +7,7 @@ import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.viewModelScope
 import com.novelcharacter.app.NovelCharacterApp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -108,15 +109,24 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
                 // 작품 목록 설정
                 _novelList.value = snapshot.novels.map { it.id to it.title }
 
-                // 모든 통계를 먼저 계산한 후 한 번에 LiveData에 반영
-                val summary = withContext(Dispatchers.IO) { provider.computeSummary(filtered) }
-                val insights = withContext(Dispatchers.IO) { provider.computeFieldInsights(filtered) }
-                val chars = withContext(Dispatchers.IO) { provider.computeCharacterStats(filtered) }
-                val events = withContext(Dispatchers.IO) { provider.computeEventStats(filtered) }
-                val rels = withContext(Dispatchers.IO) { provider.computeRelationshipStats(filtered) }
-                val names = withContext(Dispatchers.IO) { provider.computeNameBankStats(filtered) }
-                val health = withContext(Dispatchers.IO) { provider.computeDataHealth(filtered) }
-                val fieldAnalysis = withContext(Dispatchers.IO) { provider.computeFieldAnalysis(filtered) }
+                // 모든 통계를 병렬로 계산한 후 한 번에 LiveData에 반영
+                val summaryDeferred = async(Dispatchers.IO) { provider.computeSummary(filtered) }
+                val insightsDeferred = async(Dispatchers.IO) { provider.computeFieldInsights(filtered) }
+                val charsDeferred = async(Dispatchers.IO) { provider.computeCharacterStats(filtered) }
+                val eventsDeferred = async(Dispatchers.IO) { provider.computeEventStats(filtered) }
+                val relsDeferred = async(Dispatchers.IO) { provider.computeRelationshipStats(filtered) }
+                val namesDeferred = async(Dispatchers.IO) { provider.computeNameBankStats(filtered) }
+                val healthDeferred = async(Dispatchers.IO) { provider.computeDataHealth(filtered) }
+                val fieldAnalysisDeferred = async(Dispatchers.IO) { provider.computeFieldAnalysis(filtered) }
+
+                val summary = summaryDeferred.await()
+                val insights = insightsDeferred.await()
+                val chars = charsDeferred.await()
+                val events = eventsDeferred.await()
+                val rels = relsDeferred.await()
+                val names = namesDeferred.await()
+                val health = healthDeferred.await()
+                val fieldAnalysis = fieldAnalysisDeferred.await()
 
                 // 세부 통계를 먼저 set하고, summary를 마지막에 set
                 _fieldInsights.value = insights

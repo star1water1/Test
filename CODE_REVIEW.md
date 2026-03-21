@@ -1,7 +1,7 @@
 # NovelCharacter 전반적 코드 리뷰
 
-> 검토일: 2026-03-20 (3차 갱신)
-> 대상: Kotlin Android 앱 (117 소스 파일, Room DB v22, MVVM 아키텍처)
+> 검토일: 2026-03-21 (4차 갱신)
+> 대상: Kotlin Android 앱 (122 소스 파일, Room DB v25, MVVM 아키텍처)
 
 ---
 
@@ -30,6 +30,11 @@
 | 17 | ExcelImporter 빈 catch 블록 | Log.w() 로깅 추가 완료 |
 | 18 | ExcelImporter 하드코딩 결과 문자열 | strings.xml 리소스로 이동 완료 (17개 문자열) |
 | 19 | Gson TypeToken 반복 생성 | GsonTypes 유틸 상수로 추출 완료 (6개 파일) |
+| 20 | SettingsFragment deprecated ProgressDialog | MaterialAlertDialogBuilder + ProgressBar로 교체 완료 |
+| 21 | StatsViewModel 통계 순차 로딩 | `async`/`awaitAll` 병렬 로딩으로 전환 완료 |
+| 22 | FormulaEvaluator `avg()` 함수 미구현 | `avg(a, b)` 함수 추가 완료 |
+| 23 | `filterByNovel()` nameBank/universe 필터 누락 | nameBank, universes 필터링 추가 완료 |
+| 24 | 캐릭터 상세 개별 통계 미표시 | 잠재력 등급(S~D) + 특화 유형 인라인 표시 추가 완료 |
 
 ---
 
@@ -70,7 +75,28 @@
 
 ---
 
-## 4. 아키텍처 및 설계 관찰
+## 4. CLAUDE.md 원칙 위배 사항 (4차 갱신에서 추가)
+
+### 원칙 01: 열린 구조 — 통계 분석 방법 인라인 설정 부재
+
+`FieldStatsConfig`에서 분석 타입(DISTRIBUTION/NUMERIC/RANKING)과 차트 타입을 설정할 수 있으나, 이를 변경하는 UI가 `FieldEditDialog`에만 존재합니다. 통계 화면에서 직접 분석 방법을 변경할 수 있는 인라인 설정이 없어, 사용자가 통계 탭 → 필드 관리로 이동해야 합니다.
+
+### 원칙 02: 실질적 기능성 — DataHealth 통계 입력량 중심
+
+`DataHealthStats`의 `noImageChars`, `noMemoChars`, `noAnotherNameChars` 등이 "입력했는가/안 했는가" 중심입니다. 데이터 건강도 자체는 유용하나, 원칙에서 말하는 "편향이나 패턴 발견" 중심의 분석보다 입력 완료율 중심이 더 부각되어 있습니다.
+
+### 원칙 04: 조작 마찰 최소화 — 재정렬 UX 불일치 (기존 잔여)
+
+- Universe/Novel: 드래그 핸들 존재, 직접 드래그 가능
+- Character: 메뉴에서 재정렬 모드 토글 필요, 핸들 부재
+
+### 원칙 05: 데이터 유기적 연결 — 작품 간 필드 구성 비교 미흡
+
+`CrossNovelComparison`이 존재하지만 작품 간 필드 구성 차이(어떤 작품에만 있는 필드 등)를 시각적으로 비교하는 기능이 약합니다.
+
+---
+
+## 5. 아키텍처 및 설계 관찰 (3차 기준)
 
 ### 4.1 긍정적 측면
 
@@ -100,14 +126,23 @@
 
 ---
 
-## 5. 우선순위 요약
+## 7. 우선순위 요약
 
 | 우선순위 | 항목 | 상태 |
 |---------|------|------|
 | ~~**P0**~~ | ~~위젯 exported, loadAllStats, GCM 태그~~ | ✅ 수정 완료 |
+| ~~**P0**~~ | ~~SettingsFragment ProgressDialog 크래시 위험~~ | ✅ 수정 완료 (4차) |
 | ~~**P1**~~ | ~~AutoBackup 이미지, 관계변화 upsert, 순환참조, KeyStore~~ | ✅ 수정 완료 |
+| ~~**P1**~~ | ~~StatsViewModel 순차 로딩 → 병렬화~~ | ✅ 수정 완료 (4차) |
+| ~~**P1**~~ | ~~FormulaEvaluator avg() 미구현~~ | ✅ 수정 완료 (4차) |
+| ~~**P1**~~ | ~~filterByNovel() 필터링 누락~~ | ✅ 수정 완료 (4차) |
+| ~~**P1**~~ | ~~캐릭터 상세 개별 통계 미표시~~ | ✅ 수정 완료 (4차) |
 | ~~**P2**~~ | ~~검색 디바운스, FK 추가, 위젯 타임아웃, 이미지 경로 검증~~ | ✅ 수정 완료 |
 | ~~**P3**~~ | ~~빈 catch 블록, Gson 타입토큰, ExcelImporter 문자열 리소스화~~ | ✅ 수정 완료 |
+| **P1** | 재정렬 UX 통일 (캐릭터 핸들 추가) | 잔여 (원칙 04 위배) |
+| **P1** | 통계 분석 방법 인라인 설정 UI | 잔여 (원칙 01 위배) |
 | **P2** | ExcelImporter Activity 참조, 마이그레이션 O(n²), 임포트 트랜잭션 크기 | 잔여 (설계 개선 필요) |
+| **P2** | 접근성 개선 (contentDescription, 색상 대비) | 잔여 |
+| **P2** | 작품 간 필드 구성 비교 기능 | 잔여 (원칙 05 위배) |
 | **P3** | ExcelImportService 내부 시트 식별자 문자열 | 잔여 (i18n 시 이동) |
 | **P3** | 이미지 라이브러리 도입, DI 도입, 테스트 코드 추가 | 장기 과제 |

@@ -332,16 +332,21 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
         val novel = s.novels.find { it.id == novelId } ?: return s
         val charIds = s.characters.filter { it.novelId == novelId }.map { it.id }.toSet()
         val eventIds = s.events.filter { it.novelId == novelId }.map { it.id }.toSet()
+        val filteredRelationships = s.relationships.filter { it.characterId1 in charIds || it.characterId2 in charIds }
+        val relIds = filteredRelationships.map { it.id }.toSet()
+        // nameBank: usedByCharacterId가 해당 작품 캐릭터이거나 미사용인 것만 포함
+        val filteredNameBank = s.nameBank.filter { entry ->
+            entry.usedByCharacterId == null || entry.usedByCharacterId in charIds
+        }
         return s.copy(
             characters = s.characters.filter { it.novelId == novelId },
             novels = listOf(novel),
+            universes = s.universes.filter { it.id == novel.universeId },
             events = s.events.filter { it.novelId == novelId },
-            relationships = s.relationships.filter { it.characterId1 in charIds || it.characterId2 in charIds },
-            relationshipChanges = run {
-                val relIds = s.relationships.filter { it.characterId1 in charIds || it.characterId2 in charIds }.map { it.id }.toSet()
-                s.relationshipChanges.filter { it.relationshipId in relIds }
-            },
+            relationships = filteredRelationships,
+            relationshipChanges = s.relationshipChanges.filter { it.relationshipId in relIds },
             tags = s.tags.filter { it.characterId in charIds },
+            nameBank = filteredNameBank,
             stateChanges = s.stateChanges.filter { it.characterId in charIds },
             fieldDefinitions = s.fieldDefinitions.filter { it.universeId == novel.universeId },
             fieldValues = s.fieldValues.filter { it.characterId in charIds },

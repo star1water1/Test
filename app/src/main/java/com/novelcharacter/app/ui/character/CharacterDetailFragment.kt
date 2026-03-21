@@ -636,17 +636,39 @@ class CharacterDetailFragment : Fragment() {
                 } else 0f
             } else 0f
 
-            // 복잡도 점수
-            val complexity = relationships.size * 2f +
-                events.size * 1.5f +
-                fieldCompletion * 0.3f +
-                stateChanges.size * 1f
+            // 복잡도 점수 (StatsDataProvider와 동일한 가중치)
+            val relWeight = relationships.size * 2f
+            val evtWeight = events.size * 1.5f
+            val fieldWeight = (fieldCompletion / 100f) * 5f
+            val stateWeight = stateChanges.size * 1f
+            val complexity = relWeight + evtWeight + fieldWeight + stateWeight
+
+            // 잠재력 등급 및 특화 유형 계산
+            val grade = com.novelcharacter.app.ui.stats.CharacterComplexity.PotentialGrade.fromScore(complexity)
+            val specialization = com.novelcharacter.app.ui.stats.CharacterComplexity.Specialization.determine(
+                relWeight, evtWeight, fieldWeight, stateWeight
+            )
 
             if (_binding == null) return@launch
 
             val container = binding.characterStatsContainer
             container.removeAllViews()
             val ctx = context ?: return@launch
+            val density = resources.displayMetrics.density
+
+            // 잠재력 등급 + 특화 유형 헤더
+            val gradeText = buildString {
+                append("${grade.label}")
+                if (specialization != com.novelcharacter.app.ui.stats.CharacterComplexity.Specialization.NONE) {
+                    append("  ${specialization.icon} ${specialization.label}")
+                }
+            }
+            container.addView(android.widget.TextView(ctx).apply {
+                text = gradeText
+                textSize = 20f
+                setTextColor(androidx.core.content.ContextCompat.getColor(ctx, R.color.primary))
+                setPadding(0, (4 * density).toInt(), 0, (8 * density).toInt())
+            })
 
             val stats = listOf(
                 getString(R.string.char_stats_relationship_count, relationships.size),
@@ -662,8 +684,7 @@ class CharacterDetailFragment : Fragment() {
                     this.text = text
                     textSize = 14f
                     setTextColor(androidx.core.content.ContextCompat.getColor(ctx, R.color.on_surface))
-                    setPadding(0, (2 * resources.displayMetrics.density).toInt(), 0,
-                        (2 * resources.displayMetrics.density).toInt())
+                    setPadding(0, (2 * density).toInt(), 0, (2 * density).toInt())
                 }
                 container.addView(tv)
             }

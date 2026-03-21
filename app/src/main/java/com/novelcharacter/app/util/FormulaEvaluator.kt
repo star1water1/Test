@@ -132,6 +132,11 @@ class FormulaEvaluator(
                     tokens.add(Token.LParen)
                     i += 4
                 }
+                formula.startsWith("avg(", i) -> {
+                    tokens.add(Token.Func("avg", 2))
+                    tokens.add(Token.LParen)
+                    i += 4
+                }
                 formula[i] == ',' -> {
                     // 콤마를 RParen + LParen으로 변환하여 인자 분리
                     // 함수 내 콤마: 첫 인자를 스택에 남기고 다음 인자 시작
@@ -217,6 +222,7 @@ class FormulaEvaluator(
                         stack.addLast(when (token.name) {
                             "max" -> max(a, b)
                             "min" -> min(a, b)
+                            "avg" -> (a + b) / 2.0
                             else -> a
                         })
                     } else {
