@@ -16,6 +16,7 @@ import com.novelcharacter.app.data.model.RecentActivity
 import com.novelcharacter.app.data.model.TimelineEvent
 import com.novelcharacter.app.util.SemanticFieldSyncHelper
 import android.util.Log
+import androidx.room.withTransaction
 import kotlinx.coroutines.launch
 
 class CharacterViewModel(application: Application) : AndroidViewModel(application) {
@@ -354,11 +355,9 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun insertEvent(event: TimelineEvent, characterIds: List<Long>) = viewModelScope.launch {
         try {
-            db.runInTransaction {
-                kotlinx.coroutines.runBlocking {
-                    val eventId = timelineRepository.insertEvent(event)
-                    timelineRepository.updateEventCharacters(eventId, characterIds)
-                }
+            db.withTransaction {
+                val eventId = timelineRepository.insertEvent(event)
+                timelineRepository.updateEventCharacters(eventId, characterIds)
             }
         } catch (e: Exception) {
             Log.e("CharacterViewModel", "Failed to insert event", e)
@@ -367,11 +366,9 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun updateEvent(event: TimelineEvent, characterIds: List<Long>) = viewModelScope.launch {
         try {
-            db.runInTransaction {
-                kotlinx.coroutines.runBlocking {
-                    timelineRepository.updateEvent(event)
-                    timelineRepository.updateEventCharacters(event.id, characterIds)
-                }
+            db.withTransaction {
+                timelineRepository.updateEvent(event)
+                timelineRepository.updateEventCharacters(event.id, characterIds)
             }
         } catch (e: Exception) {
             Log.e("CharacterViewModel", "Failed to update event", e)

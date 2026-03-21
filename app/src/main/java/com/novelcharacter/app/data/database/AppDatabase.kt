@@ -950,7 +950,9 @@ abstract class AppDatabase : RoomDatabase() {
                     FOREIGN KEY(`eventId`) REFERENCES `timeline_events`(`id`) ON DELETE SET NULL
                 )""")
                 db.execSQL("""INSERT INTO `character_relationship_changes_new`
-                    SELECT * FROM `character_relationship_changes`""")
+                    (id, relationshipId, year, month, day, relationshipType, description, intensity, isBidirectional, eventId, createdAt)
+                    SELECT id, relationshipId, year, month, day, relationshipType, description, intensity, isBidirectional, eventId, createdAt
+                    FROM `character_relationship_changes`""")
                 db.execSQL("DROP TABLE `character_relationship_changes`")
                 db.execSQL("ALTER TABLE `character_relationship_changes_new` RENAME TO `character_relationship_changes`")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_character_relationship_changes_relationshipId` ON `character_relationship_changes` (`relationshipId`)")
@@ -977,8 +979,14 @@ abstract class AppDatabase : RoomDatabase() {
                     FOREIGN KEY(`imageCharacterId`) REFERENCES `characters`(`id`) ON DELETE SET NULL,
                     FOREIGN KEY(`imageNovelId`) REFERENCES `novels`(`id`) ON DELETE SET NULL
                 )""")
+                // 댕글링 참조 정리 (FK 추가 전 무결성 확보)
+                db.execSQL("UPDATE `universes` SET imageCharacterId = NULL WHERE imageCharacterId IS NOT NULL AND imageCharacterId NOT IN (SELECT id FROM characters)")
+                db.execSQL("UPDATE `universes` SET imageNovelId = NULL WHERE imageNovelId IS NOT NULL AND imageNovelId NOT IN (SELECT id FROM novels)")
+
                 db.execSQL("""INSERT INTO `universes_new`
-                    SELECT * FROM `universes`""")
+                    (id, name, description, createdAt, code, displayOrder, borderColor, borderWidthDp, imagePath, imageMode, imageCharacterId, imageNovelId, customRelationshipTypes, customRelationshipColors)
+                    SELECT id, name, description, createdAt, code, displayOrder, borderColor, borderWidthDp, imagePath, imageMode, imageCharacterId, imageNovelId, customRelationshipTypes, customRelationshipColors
+                    FROM `universes`""")
                 db.execSQL("DROP TABLE `universes`")
                 db.execSQL("ALTER TABLE `universes_new` RENAME TO `universes`")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_universes_name` ON `universes` (`name`)")

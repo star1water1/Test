@@ -133,12 +133,13 @@ class StandardYearSyncHelper(
         val changes = characterRepository.getChangesByCharacterList(characterId)
         val existing = changes.find { it.fieldKey == fieldKey }
         if (existing != null) {
+            val effectiveYear = if (year != 0) year else existing.year
             characterRepository.updateStateChange(
                 existing.copy(
-                    year = if (year != 0) year else existing.year,
+                    year = effectiveYear,
                     month = month ?: existing.month,
                     day = day ?: existing.day,
-                    newValue = year.toString()
+                    newValue = effectiveYear.toString()
                 )
             )
         } else {

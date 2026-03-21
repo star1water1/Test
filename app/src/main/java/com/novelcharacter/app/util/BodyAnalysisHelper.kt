@@ -252,8 +252,10 @@ class BodyAnalysisHelper {
          * @return 순위 (1 = 최대)
          */
         fun computeRank(currentValue: Double, allValues: List<Double>): Int {
-            val sorted = allValues.sortedDescending()
-            return sorted.indexOfFirst { it <= currentValue } + 1
+            if (allValues.isEmpty()) return 0
+            // 자기보다 큰 값의 수 + 1 = 순위 (동점은 같은 순위)
+            val higherCount = allValues.count { it > currentValue }
+            return higherCount + 1
         }
     }
 }

@@ -193,6 +193,12 @@ class TimelineFragment : Fragment() {
             val spinnerAdapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item, novelNames)
             spinnerAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
             binding.spinnerFilterNovel.adapter = spinnerAdapter
+            // 어댑터 교체 후 ViewModel의 현재 필터 선택을 복원 (어댑터 세팅이 리스너를 트리거하여 position 0으로 리셋되는 것 방지)
+            val currentNovelId = viewModel.filterNovelId.value
+            if (currentNovelId != null) {
+                val idx = novels.indexOfFirst { it.id == currentNovelId }
+                if (idx >= 0) binding.spinnerFilterNovel.setSelection(idx + 1)
+            }
         }
 
         // Observe filtered characters (연동: 소설 선택 시 해당 소설 캐릭터만 표시)
@@ -204,6 +210,12 @@ class TimelineFragment : Fragment() {
             val spinnerAdapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item, charNames)
             spinnerAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
             binding.spinnerFilterCharacter.adapter = spinnerAdapter
+            // 어댑터 교체 후 ViewModel의 현재 필터 선택을 복원
+            val currentCharId = viewModel.filterCharacterId.value
+            if (currentCharId != null) {
+                val idx = characters.indexOfFirst { it.id == currentCharId }
+                if (idx >= 0) binding.spinnerFilterCharacter.setSelection(idx + 1)
+            }
         }
 
         // Clear filter button

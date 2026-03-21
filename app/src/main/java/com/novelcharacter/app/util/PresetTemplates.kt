@@ -1,5 +1,6 @@
 package com.novelcharacter.app.util
 
+import android.util.Log
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.novelcharacter.app.data.model.FieldDefinition
@@ -33,6 +34,7 @@ object PresetTemplates {
         val fieldDataList: List<FieldTemplateData> = try {
             gson.fromJson(preset.fieldsJson, FIELD_TEMPLATE_LIST_TYPE) ?: emptyList()
         } catch (e: Exception) {
+            Log.w("PresetTemplates", "Failed to parse fieldsJson for preset '${preset.name}'", e)
             emptyList()
         }
         val fields = fieldDataList.mapIndexed { index, data ->

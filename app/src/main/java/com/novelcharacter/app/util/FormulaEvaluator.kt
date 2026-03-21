@@ -231,7 +231,7 @@ class FormulaEvaluator(
                 else -> {}
             }
         }
-        return stack.lastOrNull() ?: 0.0
+        return stack.lastOrNull() ?: Double.NaN
     }
 
     companion object {
