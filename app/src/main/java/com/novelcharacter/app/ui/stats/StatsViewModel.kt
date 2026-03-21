@@ -153,6 +153,15 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
 
     // ===== 신규 load 메서드 =====
 
+    /**
+     * 개별 load 메서드에서 사용: loadAllStats()가 실행 중이면 loading 상태를 건드리지 않는다.
+     */
+    private fun dismissLoadingIfIdle() {
+        if (statsJob?.isActive != true) {
+            _loading.value = false
+        }
+    }
+
     fun loadFieldInsights() {
         if (_fieldInsights.value != null && !isRefreshing) return
         _loading.value = true
@@ -165,8 +174,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 _error.value = e.message
             } finally {
-                isRefreshing = false
-                _loading.value = false
+                dismissLoadingIfIdle()
             }
         }
     }
@@ -184,7 +192,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 _error.value = e.message
             } finally {
-                _loading.value = false
+                dismissLoadingIfIdle()
             }
         }
     }
@@ -201,7 +209,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 _error.value = e.message
             } finally {
-                _loading.value = false
+                dismissLoadingIfIdle()
             }
         }
     }
@@ -218,7 +226,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 _error.value = e.message
             } finally {
-                _loading.value = false
+                dismissLoadingIfIdle()
             }
         }
     }
@@ -237,7 +245,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 _error.value = e.message
             } finally {
-                _loading.value = false
+                dismissLoadingIfIdle()
             }
         }
     }
@@ -276,7 +284,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 _error.value = e.message
             } finally {
-                _loading.value = false
+                dismissLoadingIfIdle()
             }
         }
     }
@@ -293,7 +301,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 _error.value = e.message
             } finally {
-                _loading.value = false
+                dismissLoadingIfIdle()
             }
         }
     }
@@ -310,7 +318,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 _error.value = e.message
             } finally {
-                _loading.value = false
+                dismissLoadingIfIdle()
             }
         }
     }
@@ -327,7 +335,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 _error.value = e.message
             } finally {
-                _loading.value = false
+                dismissLoadingIfIdle()
             }
         }
     }
@@ -344,7 +352,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 _error.value = e.message
             } finally {
-                _loading.value = false
+                dismissLoadingIfIdle()
             }
         }
     }
@@ -361,7 +369,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 _error.value = e.message
             } finally {
-                _loading.value = false
+                dismissLoadingIfIdle()
             }
         }
     }

@@ -64,6 +64,7 @@ class CharacterEditFragment : Fragment() {
     private val fieldInputMap = mutableMapOf<Long, Any>() // fieldDefinitionId -> input widget
     private var currentUniverseId: Long? = null
     private var hasUnsavedChanges = false
+    private var pendingFieldValues: Bundle? = null
 
     private val imagePickerLauncher = registerForActivityResult(
         ActivityResultContracts.GetContent()
@@ -81,6 +82,30 @@ class CharacterEditFragment : Fragment() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putStringArrayList("imagePaths", ArrayList(imagePaths))
+
+        // 동적 필드 입력값 보존
+        val fieldValues = Bundle()
+        for (field in fieldDefinitions) {
+            val widget = fieldInputMap[field.id] ?: continue
+            val fieldType = FieldType.fromName(field.type)
+            if (fieldType == FieldType.CALCULATED) continue
+            val value: String = when (widget) {
+                is MaterialAutoCompleteTextView -> widget.text.toString()
+                is TextInputEditText -> widget.text.toString()
+                is Spinner -> widget.selectedItemPosition.toString()
+                is LinearLayout -> {
+                    val parts = mutableListOf<String>()
+                    for (i in 0 until widget.childCount) {
+                        val partLayout = widget.getChildAt(i) as? TextInputLayout
+                        parts.add(partLayout?.editText?.text?.toString() ?: "")
+                    }
+                    parts.joinToString("\u001F")
+                }
+                else -> ""
+            }
+            fieldValues.putString(field.id.toString(), value)
+        }
+        outState.putBundle("fieldValues", fieldValues)
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
@@ -106,6 +131,7 @@ class CharacterEditFragment : Fragment() {
             imagePaths.addAll(validated)
             restoredFromSavedState = true
         }
+        pendingFieldValues = savedInstanceState?.getBundle("fieldValues")
 
         binding.toolbar.setNavigationOnClickListener { handleBackPress() }
 
@@ -167,10 +193,16 @@ class CharacterEditFragment : Fragment() {
                     if (_binding == null) return@launch
                     buildDynamicForm()
 
-                    // 기존 캐릭터 편집 시, 필드 값 채우기
-                    val existing = existingCharacter
-                    if (existing != null) {
-                        loadFieldValues(existing.id)
+                    // 회전 복원된 필드값이 있으면 우선 적용, 없으면 DB에서 로드
+                    val saved = pendingFieldValues
+                    if (saved != null) {
+                        restoreFieldValues(saved)
+                        pendingFieldValues = null
+                    } else {
+                        val existing = existingCharacter
+                        if (existing != null) {
+                            loadFieldValues(existing.id)
+                        }
                     }
                 }
             }
@@ -260,6 +292,31 @@ class CharacterEditFragment : Fragment() {
                         gradeWithBlank.addAll(grades)
                         val idx = gradeWithBlank.indexOf(savedValue)
                         if (idx >= 0) widget.setSelection(idx)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun restoreFieldValues(saved: Bundle) {
+        for (field in fieldDefinitions) {
+            val widget = fieldInputMap[field.id] ?: continue
+            val fieldType = FieldType.fromName(field.type)
+            if (fieldType == FieldType.CALCULATED) continue
+            val value = saved.getString(field.id.toString()) ?: continue
+
+            when (widget) {
+                is MaterialAutoCompleteTextView -> widget.setText(value, false)
+                is TextInputEditText -> widget.setText(value)
+                is Spinner -> {
+                    val pos = value.toIntOrNull() ?: 0
+                    if (pos in 0 until widget.adapter.count) widget.setSelection(pos)
+                }
+                is LinearLayout -> {
+                    val parts = value.split("\u001F")
+                    for (i in 0 until minOf(widget.childCount, parts.size)) {
+                        val partLayout = widget.getChildAt(i) as? TextInputLayout
+                        partLayout?.editText?.setText(parts[i])
                     }
                 }
             }

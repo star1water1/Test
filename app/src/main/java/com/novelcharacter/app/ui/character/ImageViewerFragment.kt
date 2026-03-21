@@ -29,6 +29,7 @@ class ImageViewerFragment : Fragment() {
     private var viewPager: ViewPager2? = null
     private var indexText: TextView? = null
     private var appDir: java.io.File? = null
+    private var pageChangeCallback: ViewPager2.OnPageChangeCallback? = null
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
@@ -163,11 +164,12 @@ class ImageViewerFragment : Fragment() {
         pager.setCurrentItem(startPosition, false)
         updateIndex(startPosition)
 
-        pager.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
+        pageChangeCallback = object : ViewPager2.OnPageChangeCallback() {
             override fun onPageSelected(position: Int) {
                 updateIndex(position)
             }
-        })
+        }
+        pager.registerOnPageChangeCallback(pageChangeCallback!!)
     }
 
     private fun updateIndex(position: Int) {
@@ -195,6 +197,8 @@ class ImageViewerFragment : Fragment() {
     }
 
     override fun onDestroyView() {
+        pageChangeCallback?.let { viewPager?.unregisterOnPageChangeCallback(it) }
+        pageChangeCallback = null
         viewPager?.adapter = null
         viewPager = null
         indexText = null
