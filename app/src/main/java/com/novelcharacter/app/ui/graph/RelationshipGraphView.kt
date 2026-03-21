@@ -66,13 +66,19 @@ class RelationshipGraphView @JvmOverloads constructor(
         textAlign = Paint.Align.CENTER
     }
 
+    // 라벨 배경 (가독성 향상)
+    private val labelBgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.argb(180, 0, 0, 0)
+        style = Paint.Style.FILL
+    }
+
     // 관계 타입별 색상 (외부에서 커스터마이즈 가능)
     private var relationshipColors: Map<String, Int> = DEFAULT_COLORS
 
     companion object {
         val DEFAULT_COLORS = mapOf(
             "연인" to Color.parseColor("#E91E63"),
-            "적" to Color.parseColor("#212121"),
+            "적" to Color.parseColor("#F44336"),   // 다크 배경에서 보이도록 밝은 빨강
             "라이벌" to Color.parseColor("#FF5722"),
             "동료" to Color.parseColor("#2196F3"),
             "친구" to Color.parseColor("#4CAF50"),
@@ -118,6 +124,9 @@ class RelationshipGraphView @JvmOverloads constructor(
     }
     private val arrowPath = Path()
     private val dashEffect = DashPathEffect(floatArrayOf(10f, 10f), 0f)
+
+    // 곡선 경로용
+    private val curvePath = Path()
 
     private val scaleDetector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
         override fun onScale(detector: ScaleGestureDetector): Boolean {
@@ -195,6 +204,40 @@ class RelationshipGraphView @JvmOverloads constructor(
         translateY = 0f
     }
 
+    /**
+     * 그래프 전체가 화면에 들어오도록 자동 줌/패닝 조정
+     */
+    private fun fitToScreen() {
+        if (nodes.isEmpty() || width == 0 || height == 0) return
+
+        var minX = Float.MAX_VALUE
+        var maxX = Float.MIN_VALUE
+        var minY = Float.MAX_VALUE
+        var maxY = Float.MIN_VALUE
+        for (node in nodes) {
+            minX = min(minX, node.x - nodeRadius)
+            maxX = max(maxX, node.x + nodeRadius)
+            minY = min(minY, node.y - nodeRadius)
+            maxY = max(maxY, node.y + nodeRadius)
+        }
+
+        val graphWidth = maxX - minX
+        val graphHeight = maxY - minY
+        if (graphWidth < 1f || graphHeight < 1f) return
+
+        // 뷰 크기에서 여백 제외
+        val viewWidth = width * 0.85f
+        val viewHeight = height * 0.85f
+
+        scaleFactor = min(viewWidth / graphWidth, viewHeight / graphHeight).coerceIn(0.3f, 3.0f)
+
+        // 그래프 중심을 뷰 중심에 맞춤
+        val centerX = (minX + maxX) / 2f
+        val centerY = (minY + maxY) / 2f
+        translateX = -centerX
+        translateY = -centerY
+    }
+
     private fun layoutNodesAsync() {
         layoutJob?.cancel()
         val currentNodes = nodes
@@ -206,6 +249,7 @@ class RelationshipGraphView @JvmOverloads constructor(
         val count = currentNodes.size
         if (count == 1) {
             nodes = listOf(currentNodes[0].copy(x = 0f, y = 0f))
+            fitToScreen()
             invalidate()
             return
         }
@@ -222,6 +266,7 @@ class RelationshipGraphView @JvmOverloads constructor(
                 if (i < positions.size) node.copy(x = positions[i].first, y = positions[i].second)
                 else node
             }
+            fitToScreen()
             invalidate()
         }
     }
@@ -241,9 +286,11 @@ class RelationshipGraphView @JvmOverloads constructor(
             ys[i] = (radius * sin(angle)).toFloat()
         }
 
-        val iterations = min(100, count * 5)
-        val k = sqrt((radius * radius * 4) / count.toFloat())
-        val temp = radius / 2f
+        // 반복 횟수 증가 (더 안정적인 레이아웃)
+        val iterations = min(300, max(100, count * 8))
+        // 반발력 강화 — 노드 간 최소 거리를 넓혀 밀집 방지
+        val k = sqrt((radius * radius * 6) / count.toFloat())
+        val temp = radius
         val nodeIndexMap = nodesCopy.withIndex().associate { (i, n) -> n.id to i }
 
         for (iter in 0 until iterations) {
@@ -253,6 +300,7 @@ class RelationshipGraphView @JvmOverloads constructor(
             val dispX = FloatArray(count)
             val dispY = FloatArray(count)
 
+            // 반발력 (모든 노드 쌍)
             for (i in 0 until count) {
                 for (j in i + 1 until count) {
                     val dx = xs[i] - xs[j]
@@ -266,9 +314,13 @@ class RelationshipGraphView @JvmOverloads constructor(
                 }
             }
 
+            // 인력 (연결된 노드만) — 중복 엣지의 인력 합산 방지
+            val processedPairs = mutableSetOf<Long>()
             for (edge in edgesCopy) {
                 val iIdx = nodeIndexMap[edge.fromId] ?: continue
                 val jIdx = nodeIndexMap[edge.toId] ?: continue
+                val pairKey = min(edge.fromId, edge.toId) * 100000L + max(edge.fromId, edge.toId)
+                if (!processedPairs.add(pairKey)) continue  // 같은 쌍은 한 번만
                 val dx = xs[iIdx] - xs[jIdx]
                 val dy = ys[iIdx] - ys[jIdx]
                 val dist = max(sqrt(dx * dx + dy * dy), 0.1f)
@@ -308,6 +360,14 @@ class RelationshipGraphView @JvmOverloads constructor(
 
         val nodeMap = nodes.associateBy { it.id }
 
+        // 같은 노드 쌍 사이의 엣지 수를 세어 곡선 오프셋 계산
+        val pairEdgeCount = mutableMapOf<Long, Int>()
+        val pairEdgeIndex = mutableMapOf<Long, Int>()
+        for (edge in edges) {
+            val pairKey = min(edge.fromId, edge.toId) * 100000L + max(edge.fromId, edge.toId)
+            pairEdgeCount[pairKey] = (pairEdgeCount[pairKey] ?: 0) + 1
+        }
+
         // Draw edges with type-based colors and intensity-based width
         for (edge in edges) {
             val from = nodeMap[edge.fromId] ?: continue
@@ -325,18 +385,83 @@ class RelationshipGraphView @JvmOverloads constructor(
                 edgePaint.pathEffect = null
             }
 
-            canvas.drawLine(from.x, from.y, to.x, to.y, edgePaint)
+            // 같은 노드 쌍의 다중 엣지 → 곡선으로 분리
+            val pairKey = min(edge.fromId, edge.toId) * 100000L + max(edge.fromId, edge.toId)
+            val totalEdges = pairEdgeCount[pairKey] ?: 1
+            val edgeIdx = pairEdgeIndex.getOrPut(pairKey) { 0 }
+            pairEdgeIndex[pairKey] = edgeIdx + 1
 
-            // 단방향 관계일 때 화살표 그리기
-            if (!edge.isBidirectional) {
-                drawArrow(canvas, from.x, from.y, to.x, to.y, edgeColor)
+            // 곡선 오프셋 계산 (0이면 직선, 양수/음수로 좌우 분리)
+            val curveOffset = if (totalEdges <= 1) {
+                0f
+            } else {
+                val spread = 40f  // 곡선 간 간격
+                val center = (totalEdges - 1) / 2f
+                (edgeIdx - center) * spread
             }
 
-            // Edge label at midpoint
-            val midX = (from.x + to.x) / 2
-            val midY = (from.y + to.y) / 2
+            // 라벨 위치 계산
+            val midX: Float
+            val midY: Float
+
+            if (abs(curveOffset) < 1f) {
+                // 직선
+                canvas.drawLine(from.x, from.y, to.x, to.y, edgePaint)
+                midX = (from.x + to.x) / 2
+                midY = (from.y + to.y) / 2
+
+                if (!edge.isBidirectional) {
+                    drawArrow(canvas, from.x, from.y, to.x, to.y, edgeColor)
+                }
+            } else {
+                // 2차 베지어 곡선
+                val mx = (from.x + to.x) / 2f
+                val my = (from.y + to.y) / 2f
+                val dx = to.x - from.x
+                val dy = to.y - from.y
+                val dist = sqrt(dx * dx + dy * dy)
+                if (dist < 1f) continue
+                // 법선 벡터 (선에 수직)
+                val nx = -dy / dist
+                val ny = dx / dist
+                val ctrlX = mx + nx * curveOffset
+                val ctrlY = my + ny * curveOffset
+
+                curvePath.rewind()
+                curvePath.moveTo(from.x, from.y)
+                curvePath.quadTo(ctrlX, ctrlY, to.x, to.y)
+                canvas.drawPath(curvePath, edgePaint)
+
+                // 곡선의 중점 (t=0.5에서의 2차 베지어 점)
+                midX = 0.25f * from.x + 0.5f * ctrlX + 0.25f * to.x
+                midY = 0.25f * from.y + 0.5f * ctrlY + 0.25f * to.y
+
+                if (!edge.isBidirectional) {
+                    // 곡선 끝점 방향으로 화살표
+                    val arrowFromX = 0.5f * (ctrlX + from.x)  // t≈0.75 근사
+                    val arrowFromY = 0.5f * (ctrlY + from.y)
+                    drawArrow(canvas, arrowFromX, arrowFromY, to.x, to.y, edgeColor)
+                }
+            }
+
+            // Edge label — 반투명 배경으로 가독성 확보
+            val labelText = edge.label
+            val labelWidth = edgeLabelPaint.measureText(labelText)
+            val labelHeight = edgeLabelPaint.textSize
+            val labelY = midY - 6f
+
+            labelBgPaint.color = if (edge.isActive) Color.argb(180, 0, 0, 0) else Color.argb(100, 0, 0, 0)
+            canvas.drawRoundRect(
+                midX - labelWidth / 2 - 4f,
+                labelY - labelHeight + 2f,
+                midX + labelWidth / 2 + 4f,
+                labelY + 4f,
+                4f, 4f,
+                labelBgPaint
+            )
+
             edgeLabelPaint.color = if (edge.isActive) edgeColor else Color.argb(80, Color.red(edgeColor), Color.green(edgeColor), Color.blue(edgeColor))
-            canvas.drawText(edge.label, midX, midY - 6f, edgeLabelPaint)
+            canvas.drawText(labelText, midX, labelY, edgeLabelPaint)
         }
 
         // Reset edge paint
@@ -355,7 +480,8 @@ class RelationshipGraphView @JvmOverloads constructor(
             canvas.drawCircle(node.x, node.y, nodeRadius, nodeStrokePaint)
 
             textPaint.alpha = if (node.isSecondary) 120 else 255
-            val label = if (node.label.length > 4) node.label.take(4) + "…" else node.label
+            // 노드 이름: 6글자까지 표시 (원래 4글자)
+            val label = if (node.label.length > 6) node.label.take(6) + "…" else node.label
             canvas.drawText(label, node.x, node.y + textPaint.textSize / 3, textPaint)
         }
         // Reset paint states
