@@ -50,6 +50,9 @@ class UniverseAdapter(
     /** 특정 작품의 이미지 경로를 반환하는 콜백 */
     var resolveNovelImageById: ((novelId: Long, callback: (String?) -> Unit) -> Unit)? = null
 
+    /** 세계관별 커스텀 이미지 인덱스 (재바인드 시 동일 이미지 유지) */
+    private val imageIndexMap = mutableMapOf<Long, Int>()
+
     // 이미지 캐시 — CharacterAdapter 패턴
     private val thumbnailCache: LruCache<String, Bitmap> = run {
         val maxMemory = (Runtime.getRuntime().maxMemory() / 1024).toInt()
@@ -209,7 +212,10 @@ class UniverseAdapter(
             when (universe.imageMode) {
                 Universe.IMAGE_MODE_CUSTOM -> {
                     val paths = parseImagePaths(universe.imagePaths)
-                    if (paths.isNotEmpty()) loadImageFromPath(paths.random(), universe.id)
+                    if (paths.isNotEmpty()) {
+                        val idx = imageIndexMap.getOrPut(universe.id) { (0 until paths.size).random() }
+                        loadImageFromPath(paths[idx % paths.size], universe.id)
+                    }
                 }
                 Universe.IMAGE_MODE_RANDOM_CHARACTER -> {
                     resolveRandomCharacterImage?.invoke(universe.id) { resolvedPath ->

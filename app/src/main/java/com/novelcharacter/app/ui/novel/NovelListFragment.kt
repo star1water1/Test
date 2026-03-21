@@ -53,11 +53,23 @@ class NovelListFragment : Fragment() {
                 try {
                     val savedPath = withContext(Dispatchers.IO) {
                         val inputStream = ctx.contentResolver.openInputStream(uri) ?: return@withContext null
+                        val maxSize = 20L * 1024 * 1024 // 20MB
                         val fileName = "novel_${java.util.UUID.randomUUID()}.jpg"
                         val file = java.io.File(ctx.filesDir, fileName)
+                        var totalBytes = 0L
+                        var exceededLimit = false
                         inputStream.use { input ->
-                            file.outputStream().use { out -> input.copyTo(out) }
+                            file.outputStream().use { out ->
+                                val buffer = ByteArray(8192)
+                                var bytesRead: Int
+                                while (input.read(buffer).also { bytesRead = it } != -1) {
+                                    totalBytes += bytesRead
+                                    if (totalBytes > maxSize) { exceededLimit = true; break }
+                                    out.write(buffer, 0, bytesRead)
+                                }
+                            }
                         }
+                        if (exceededLimit) { file.delete(); return@withContext null }
                         val canonical = file.canonicalPath
                         if (!canonical.startsWith(ctx.filesDir.canonicalPath)) {
                             file.delete()
