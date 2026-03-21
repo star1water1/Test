@@ -4,6 +4,8 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.AdapterView
+import android.widget.ArrayAdapter
 import android.widget.Toast
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
@@ -15,6 +17,8 @@ import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.CharacterRelationship
 import com.novelcharacter.app.data.model.CharacterRelationshipChange
+import com.novelcharacter.app.data.model.Novel
+import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.databinding.FragmentRelationshipGraphBinding
 import com.novelcharacter.app.util.navigateSafe
 import kotlinx.coroutines.launch
@@ -23,6 +27,7 @@ class RelationshipGraphViewModel(application: android.app.Application) : Android
     private val app = application as NovelCharacterApp
     private val characterRepository = app.characterRepository
     private val universeRepository = app.universeRepository
+    private val novelRepository = app.novelRepository
 
     private val _characters = MutableLiveData<List<Character>>()
     val characters: LiveData<List<Character>> = _characters
@@ -33,9 +38,14 @@ class RelationshipGraphViewModel(application: android.app.Application) : Android
     private val _relationshipChanges = MutableLiveData<List<CharacterRelationshipChange>>()
     val relationshipChanges: LiveData<List<CharacterRelationshipChange>> = _relationshipChanges
 
-    /** 모든 세계관의 관계 색상 맵을 통합 */
     private val _relationshipColorMap = MutableLiveData<Map<String, String>>()
     val relationshipColorMap: LiveData<Map<String, String>> = _relationshipColorMap
+
+    private val _universes = MutableLiveData<List<Universe>>()
+    val universes: LiveData<List<Universe>> = _universes
+
+    private val _novels = MutableLiveData<List<Novel>>()
+    val novels: LiveData<List<Novel>> = _novels
 
     fun loadData() {
         viewModelScope.launch {
@@ -43,20 +53,18 @@ class RelationshipGraphViewModel(application: android.app.Application) : Android
             _relationships.value = characterRepository.getAllRelationships()
             _relationshipChanges.value = characterRepository.getAllRelationshipChanges()
 
-            // 모든 세계관의 색상 맵을 통합 (나중에 설정한 것이 우선)
-            val universes = universeRepository.getAllUniversesList()
+            val universeList = universeRepository.getAllUniversesList()
+            _universes.value = universeList
+            _novels.value = novelRepository.getAllNovelsList()
+
             val mergedColors = mutableMapOf<String, String>()
-            for (universe in universes) {
+            for (universe in universeList) {
                 mergedColors.putAll(universe.getRelationshipColorMap())
             }
             _relationshipColorMap.value = mergedColors
         }
     }
 
-    /**
-     * 특정 시점에서의 관계를 resolve한다.
-     * RelationshipChange가 있으면 해당 시점 이전의 가장 최근 변화를 반환.
-     */
     fun resolveRelationshipAtYear(
         relationship: CharacterRelationship,
         year: Int,
@@ -96,6 +104,14 @@ class RelationshipGraphFragment : Fragment() {
     private var isTimeViewEnabled = false
     private var currentYear: Int? = null
 
+    private var currentUniverseId: Long? = null
+    private var currentNovelId: Long? = null
+    private var primaryCharacterIds: Set<Long> = emptySet()
+
+    // 세계관/작품 목록 캐시
+    private var cachedUniverses: List<Universe> = emptyList()
+    private var cachedNovels: List<Novel> = emptyList()
+
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
     ): View {
@@ -119,8 +135,75 @@ class RelationshipGraphFragment : Fragment() {
 
         setupTimeSlider()
         observeColors()
+        observeUniversesAndNovels()
         observeData()
         viewModel.loadData()
+    }
+
+    private fun observeUniversesAndNovels() {
+        viewModel.universes.observe(viewLifecycleOwner) { universes ->
+            cachedUniverses = universes
+            setupUniverseSpinner(universes)
+        }
+        viewModel.novels.observe(viewLifecycleOwner) { novels ->
+            cachedNovels = novels
+            updateNovelSpinner()
+        }
+    }
+
+    private fun setupUniverseSpinner(universes: List<Universe>) {
+        val names = mutableListOf(getString(R.string.graph_filter_all_universes))
+        names.addAll(universes.map { it.name })
+
+        val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, names)
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        binding.universeFilterSpinner.adapter = adapter
+
+        binding.universeFilterSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                val newUniverseId = if (position == 0) null else universes[position - 1].id
+                if (newUniverseId != currentUniverseId) {
+                    currentUniverseId = newUniverseId
+                    currentNovelId = null
+                    updateNovelSpinner()
+                    refreshGraph()
+                }
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+    }
+
+    private fun updateNovelSpinner() {
+        val universeId = currentUniverseId
+        val filteredNovels = if (universeId != null) {
+            cachedNovels.filter { it.universeId == universeId }
+        } else {
+            emptyList()
+        }
+
+        if (universeId == null) {
+            binding.novelFilterSpinner.visibility = View.GONE
+            return
+        }
+
+        binding.novelFilterSpinner.visibility = View.VISIBLE
+        val names = mutableListOf(getString(R.string.graph_filter_all_novels))
+        names.addAll(filteredNovels.map { it.title })
+
+        val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, names)
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        binding.novelFilterSpinner.adapter = adapter
+
+        binding.novelFilterSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                val newNovelId = if (position == 0) null else filteredNovels[position - 1].id
+                if (newNovelId != currentNovelId) {
+                    currentNovelId = newNovelId
+                    refreshGraph()
+                }
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
     }
 
     private fun setupTimeSlider() {
@@ -231,17 +314,55 @@ class RelationshipGraphFragment : Fragment() {
     }
 
     /**
+     * 세계관/작품 필터를 적용하여 관계를 필터링한다.
+     * @return Pair(필터링된 관계 목록, primary 캐릭터 ID 집합 — null이면 모두 primary)
+     */
+    private fun applyUniverseNovelFilter(
+        allCharacters: List<Character>,
+        allRelationships: List<CharacterRelationship>
+    ): Pair<List<CharacterRelationship>, Set<Long>?> {
+        val universeId = currentUniverseId ?: return allRelationships to null
+        val novelId = currentNovelId
+
+        // 세계관 내 소설 ID 및 캐릭터 ID 집합
+        val universeNovelIds = cachedNovels.filter { it.universeId == universeId }.map { it.id }.toSet()
+        val universeCharIds = allCharacters.filter { it.novelId in universeNovelIds }.map { it.id }.toSet()
+
+        if (novelId != null) {
+            // 특정 작품 선택
+            val pIds = allCharacters.filter { it.novelId == novelId }.map { it.id }.toSet()
+            primaryCharacterIds = pIds
+            val filtered = allRelationships.filter { rel ->
+                val hasPrimary = rel.characterId1 in pIds || rel.characterId2 in pIds
+                val bothInUniverse = rel.characterId1 in universeCharIds && rel.characterId2 in universeCharIds
+                hasPrimary && bothInUniverse
+            }
+            return filtered to pIds
+        } else {
+            // 세계관 전체
+            primaryCharacterIds = universeCharIds
+            val filtered = allRelationships.filter { rel ->
+                rel.characterId1 in universeCharIds && rel.characterId2 in universeCharIds
+            }
+            return filtered to null // 세계관 전체일 때는 모두 primary
+        }
+    }
+
+    /**
      * 엣지만 갱신 (슬라이더 드래그 시 빠른 반응). 노드 레이아웃은 유지.
      */
     private fun refreshGraphEdgesOnly() {
+        val chars = viewModel.characters.value ?: return
         val rels = viewModel.relationships.value ?: return
         val allChanges = viewModel.relationshipChanges.value ?: emptyList()
         val year = currentYear ?: return
 
+        val (universeFiltered, _) = applyUniverseNovelFilter(chars, rels)
+
         val filteredRelationships = if (currentFilter != null) {
-            rels.filter { it.relationshipType == currentFilter }
+            universeFiltered.filter { it.relationshipType == currentFilter }
         } else {
-            rels
+            universeFiltered
         }
 
         val edges = filteredRelationships.map { rel ->
@@ -261,10 +382,14 @@ class RelationshipGraphFragment : Fragment() {
     private fun updateGraph(allCharacters: List<Character>, allRelationships: List<CharacterRelationship>) {
         val allChanges = viewModel.relationshipChanges.value ?: emptyList()
 
+        // 세계관/작품 필터 적용
+        val (universeFiltered, pIds) = applyUniverseNovelFilter(allCharacters, allRelationships)
+
+        // 관계 유형 필터 적용
         val filteredRelationships = if (currentFilter != null) {
-            allRelationships.filter { it.relationshipType == currentFilter }
+            universeFiltered.filter { it.relationshipType == currentFilter }
         } else {
-            allRelationships
+            universeFiltered
         }
 
         if (filteredRelationships.isEmpty()) {
@@ -305,10 +430,10 @@ class RelationshipGraphFragment : Fragment() {
             val summaryChars = involvedCharacters.filter { it.id in importantIds }
             val summaryRels = filteredRelationships.filter { it.characterId1 in importantIds && it.characterId2 in importantIds }
 
-            showGraph(summaryChars, summaryRels, allChanges)
+            showGraph(summaryChars, summaryRels, allChanges, pIds)
         } else {
             binding.summaryModeText.visibility = View.GONE
-            showGraph(involvedCharacters, filteredRelationships, allChanges)
+            showGraph(involvedCharacters, filteredRelationships, allChanges, pIds)
         }
 
         binding.emptyState.visibility = View.GONE
@@ -320,9 +445,16 @@ class RelationshipGraphFragment : Fragment() {
     private fun showGraph(
         characters: List<Character>,
         relationships: List<CharacterRelationship>,
-        allChanges: List<CharacterRelationshipChange>
+        allChanges: List<CharacterRelationshipChange>,
+        primaryIds: Set<Long>? = null
     ) {
-        val nodes = characters.map { GraphNode(it.id, it.name) }
+        val nodes = characters.map { char ->
+            GraphNode(
+                id = char.id,
+                label = char.name,
+                isSecondary = primaryIds != null && char.id !in primaryIds
+            )
+        }
         val edges = relationships.map { rel ->
             if (isTimeViewEnabled && currentYear != null) {
                 val resolved = viewModel.resolveRelationshipAtYear(rel, currentYear!!, allChanges)
@@ -352,7 +484,6 @@ class RelationshipGraphFragment : Fragment() {
         val rels = viewModel.relationships.value ?: return
         val charName = chars.find { it.id == characterId }?.name ?: return
 
-        // 이 캐릭터와 관련된 관계 목록
         val charRels = rels.filter { it.characterId1 == characterId || it.characterId2 == characterId }
         val relLabels = charRels.map { rel ->
             val otherId = if (rel.characterId1 == characterId) rel.characterId2 else rel.characterId1
@@ -367,11 +498,9 @@ class RelationshipGraphFragment : Fragment() {
             .setTitle(charName)
             .setItems(options.toTypedArray()) { _, which ->
                 if (which == 0) {
-                    // 캐릭터 상세로 이동
                     val bundle = Bundle().apply { putLong("characterId", characterId) }
                     findNavController().navigateSafe(R.id.relationshipGraphFragment, R.id.characterDetailFragment, bundle)
                 } else {
-                    // 선택한 관계의 대상 캐릭터 상세로 이동
                     val rel = charRels[which - 1]
                     val otherId = if (rel.characterId1 == characterId) rel.characterId2 else rel.characterId1
                     val bundle = Bundle().apply { putLong("characterId", otherId) }

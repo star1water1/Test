@@ -16,6 +16,29 @@
         app:title="@string/relationship_graph_beta"
         app:titleTextColor="@color/on_primary" />
 
+    <!-- Universe / Novel filter -->
+    <LinearLayout
+        android:id="@+id/filterSpinnerLayout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingHorizontal="12dp"
+        android:paddingVertical="4dp">
+
+        <Spinner
+            android:id="@+id/universeFilterSpinner"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1" />
+
+        <Spinner
+            android:id="@+id/novelFilterSpinner"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1" />
+
+    </LinearLayout>
+
     <!-- Filter chips -->
     <HorizontalScrollView
         android:id="@+id/filterScrollView"

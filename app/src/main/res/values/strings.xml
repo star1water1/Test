@@ -528,6 +528,8 @@
     <string name="graph_tap_hint">캐릭터를 탭하면 상세 화면으로 이동합니다</string>
     <string name="graph_too_many_nodes">노드가 너무 많습니다. 필터를 사용하세요.</string>
     <string name="graph_filter_all">전체</string>
+    <string name="graph_filter_all_universes">전체 세계관</string>
+    <string name="graph_filter_all_novels">전체 작품</string>
 
     <!-- Temporal Relationship Graph -->
     <string name="graph_time_view">시점 보기</string>

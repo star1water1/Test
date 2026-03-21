@@ -16,6 +16,7 @@ import kotlin.math.*
 data class GraphNode(
     val id: Long,
     val label: String,
+    val isSecondary: Boolean = false,
     var x: Float = 0f,
     var y: Float = 0f
 )
@@ -343,12 +344,24 @@ class RelationshipGraphView @JvmOverloads constructor(
 
         // Draw nodes
         for (node in nodes) {
+            if (node.isSecondary) {
+                nodePaint.alpha = 100
+                nodeStrokePaint.pathEffect = dashEffect
+            } else {
+                nodePaint.alpha = 255
+                nodeStrokePaint.pathEffect = null
+            }
             canvas.drawCircle(node.x, node.y, nodeRadius, nodePaint)
             canvas.drawCircle(node.x, node.y, nodeRadius, nodeStrokePaint)
 
+            textPaint.alpha = if (node.isSecondary) 120 else 255
             val label = if (node.label.length > 4) node.label.take(4) + "…" else node.label
             canvas.drawText(label, node.x, node.y + textPaint.textSize / 3, textPaint)
         }
+        // Reset paint states
+        nodePaint.alpha = 255
+        nodeStrokePaint.pathEffect = null
+        textPaint.alpha = 255
 
         canvas.restore()
     }
