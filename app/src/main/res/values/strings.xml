@@ -875,10 +875,24 @@
 
     <!-- Feature: Body Analysis -->
     <string name="body_analysis_title">체형 분석</string>
-    <string name="body_type_label">체형</string>
+    <string name="body_type_label">체형 분류</string>
     <string name="cup_size_label">컵 사이즈 (추정)</string>
     <string name="bmi_label">BMI</string>
     <string name="whr_label">WHR (허리-엉덩이 비율)</string>
+    <string name="body_bwh_diff_label">측정값 분석</string>
+    <string name="body_normalized_ratio_label">정규화 비율</string>
+    <string name="body_height_relative_label">키 대비 비율</string>
+    <string name="body_golden_ratio_label">골든 비율</string>
+    <string name="body_ranking_label">작품 내 순위</string>
+    <string name="body_analysis_settings_title">체형 분석 설정</string>
+    <string name="body_cup_mapping_title">컵 사이즈 매핑</string>
+    <string name="body_type_preset_title">체형 분류 프리셋</string>
+    <string name="body_type_custom_json_hint">체형 분류 규칙 (JSON)</string>
+    <string name="body_insight_toggle_title">표시할 인사이트</string>
+    <string name="body_restore_defaults">기본값 복원</string>
+    <string name="body_preset_subculture">서브컬쳐 기본</string>
+    <string name="body_preset_detailed">상세 분류</string>
+    <string name="body_preset_custom">사용자 정의</string>
 
     <!-- Feature: Event from character screen -->
     <string name="save_character_first">캐릭터를 먼저 저장해주세요</string>

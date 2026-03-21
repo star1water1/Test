@@ -254,6 +254,9 @@ class CharacterDetailFragment : Fragment() {
                 timeSliderHelper.cachedPercentileData = percentileData
                 timeSliderHelper.cachedCalculatedResults = calculatedResults
 
+                // 체형 분석 순위 데이터 계산
+                fieldRenderer.bodyRankingInfo = computeBodyRanking(fields, values, character, novel)
+
                 if (timeSliderHelper.isTimeViewActive && timeSliderHelper.currentSliderYear != null) {
                     timeSliderHelper.applyTimeView(timeSliderHelper.currentSliderYear!!)
                 } else {
@@ -554,6 +557,64 @@ class CharacterDetailFragment : Fragment() {
             }
         }
         return inSampleSize
+    }
+
+    /**
+     * 같은 작품 내 다른 캐릭터들의 BODY_SIZE 데이터를 조회하여
+     * 현재 캐릭터의 가슴/허리/엉덩이 순위를 계산한다.
+     */
+    private suspend fun computeBodyRanking(
+        fields: List<com.novelcharacter.app.data.model.FieldDefinition>,
+        values: List<com.novelcharacter.app.data.model.CharacterFieldValue>,
+        character: Character,
+        novel: com.novelcharacter.app.data.model.Novel?
+    ): com.novelcharacter.app.util.RankingInfo? {
+        val novelId = novel?.id ?: return null
+
+        // BODY_SIZE 필드 찾기
+        val bodySizeField = fields.find {
+            com.novelcharacter.app.data.model.SemanticRole.fromConfig(it.config) ==
+                com.novelcharacter.app.data.model.SemanticRole.BODY_SIZE
+        } ?: fields.find { it.type == "BODY_SIZE" } ?: return null
+
+        // 현재 캐릭터의 BWH 파싱
+        val valueMap = values.associateBy { it.fieldDefinitionId }
+        val myBwh = parseBwh(valueMap[bodySizeField.id]?.value) ?: return null
+
+        // 같은 작품의 모든 캐릭터 BWH 수집
+        val allCharacters = viewModel.getCharactersByNovelList(novelId)
+        if (allCharacters.size <= 1) return null
+
+        val allBusts = mutableListOf<Double>()
+        val allWaists = mutableListOf<Double>()
+        val allHips = mutableListOf<Double>()
+
+        for (char in allCharacters) {
+            val charValues = viewModel.getValuesByCharacterList(char.id)
+            val bwhValue = charValues.firstOrNull { it.fieldDefinitionId == bodySizeField.id }?.value
+            val bwh = parseBwh(bwhValue)
+            if (bwh != null) {
+                allBusts.add(bwh.first)
+                allWaists.add(bwh.second)
+                allHips.add(bwh.third)
+            }
+        }
+
+        if (allBusts.size <= 1) return null
+
+        return com.novelcharacter.app.util.RankingInfo(
+            bustRank = com.novelcharacter.app.util.BodyAnalysisHelper.computeRank(myBwh.first, allBusts),
+            waistRank = com.novelcharacter.app.util.BodyAnalysisHelper.computeRank(myBwh.second, allWaists),
+            hipRank = com.novelcharacter.app.util.BodyAnalysisHelper.computeRank(myBwh.third, allHips),
+            totalCharacters = allBusts.size
+        )
+    }
+
+    private fun parseBwh(value: String?): Triple<Double, Double, Double>? {
+        if (value.isNullOrBlank()) return null
+        val parts = value.split(Regex("[-/\\s]+")).mapNotNull { it.trim().toDoubleOrNull() }
+        if (parts.size < 3) return null
+        return Triple(parts[0], parts[1], parts[2])
     }
 
     private fun loadCharacterStats() {

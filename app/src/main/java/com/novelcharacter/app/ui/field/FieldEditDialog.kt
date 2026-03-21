@@ -19,6 +19,7 @@ import com.google.gson.Gson
 import com.novelcharacter.app.R
 import com.google.android.material.tabs.TabLayout
 import com.novelcharacter.app.data.model.DisplayFormat
+import com.novelcharacter.app.data.model.BodyAnalysisConfig
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.FieldStatsConfig
 import com.novelcharacter.app.data.model.FieldType
@@ -73,6 +74,16 @@ class FieldEditDialog : DialogFragment() {
     )
     private val structuredPartRows = mutableListOf<StructuredPartRow>()
 
+    // 체형 분석 컵 매핑 관리
+    private data class CupMappingRow(
+        val container: View,
+        val editMaxDiff: EditText,
+        val editLabel: EditText
+    )
+    private val cupMappingRows = mutableListOf<CupMappingRow>()
+    private val insightToggleSwitches = mutableMapOf<String, androidx.appcompat.widget.SwitchCompat>()
+    private var currentBodyTypeRules: List<BodyAnalysisConfig.BodyTypeRule> = BodyAnalysisConfig.DEFAULT_BODY_TYPE_RULES
+
     private var fieldTypeSpinner: Spinner? = null
 
     private fun currentFieldType(): String {
@@ -97,6 +108,7 @@ class FieldEditDialog : DialogFragment() {
         setupSemanticRoleSpinner(binding)
         setupStatsSection(binding)
         setupStructuredInputSection(binding)
+        setupBodyAnalysisSection(binding)
         populateFields(binding)
 
         return AlertDialog.Builder(requireContext())
@@ -150,6 +162,9 @@ class FieldEditDialog : DialogFragment() {
                 // 구조화 입력: TEXT, BODY_SIZE
                 binding.structuredInputLayout.visibility =
                     if (selectedType == FieldType.TEXT || selectedType == FieldType.BODY_SIZE) View.VISIBLE else View.GONE
+                // 체형 분석 설정: BODY_SIZE 전용
+                binding.bodyAnalysisSettingsLayout.visibility =
+                    if (selectedType == FieldType.BODY_SIZE) View.VISIBLE else View.GONE
                 // 상위 % 표기: NUMBER, CALCULATED, BODY_SIZE, GRADE
                 val isNumericType = selectedType == FieldType.NUMBER || selectedType == FieldType.CALCULATED || selectedType == FieldType.BODY_SIZE || selectedType == FieldType.GRADE
                 binding.percentileLayout.visibility = if (isNumericType) View.VISIBLE else View.GONE
@@ -564,6 +579,261 @@ class FieldEditDialog : DialogFragment() {
         structuredPartRows.add(StructuredPartRow(row, editLabel, editSuffix, spinnerInputType))
     }
 
+    private fun setupBodyAnalysisSection(binding: DialogFieldEditBinding) {
+        val density = resources.displayMetrics.density
+        val ctx = requireContext()
+
+        // 컵 매핑 추가 버튼
+        binding.btnAddCupMapping.setOnClickListener {
+            addCupMappingRow(binding.cupMappingContainer, density)
+        }
+
+        // 기본값 복원 버튼
+        binding.btnRestoreCupDefaults.setOnClickListener {
+            binding.cupMappingContainer.removeAllViews()
+            cupMappingRows.clear()
+            for (entry in BodyAnalysisConfig.DEFAULT_CUP_MAPPING) {
+                addCupMappingRow(binding.cupMappingContainer, density, entry.maxDiff, entry.label)
+            }
+            // 체형 분류도 기본값 복원
+            binding.spinnerBodyTypePreset.setSelection(0)
+            currentBodyTypeRules = BodyAnalysisConfig.DEFAULT_BODY_TYPE_RULES
+            // 인사이트 토글도 기본값 복원
+            for ((key, switch) in insightToggleSwitches) {
+                switch.isChecked = BodyAnalysisConfig.DEFAULT_ENABLED_INSIGHTS[key] ?: true
+            }
+        }
+
+        // 체형 분류 프리셋 스피너
+        val presetLabels = listOf(
+            getString(R.string.body_preset_subculture),
+            getString(R.string.body_preset_detailed),
+            getString(R.string.body_preset_custom)
+        )
+        binding.spinnerBodyTypePreset.adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item, presetLabels).also {
+            it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        }
+        binding.spinnerBodyTypePreset.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                when (position) {
+                    0 -> {
+                        currentBodyTypeRules = BodyAnalysisConfig.DEFAULT_BODY_TYPE_RULES
+                        binding.bodyTypeCustomJsonLayout.visibility = View.GONE
+                    }
+                    1 -> {
+                        // 상세 분류: 더 세분화된 카테고리
+                        currentBodyTypeRules = listOf(
+                            BodyAnalysisConfig.BodyTypeRule("글래머", mapOf(
+                                "bustWaistDiff" to BodyAnalysisConfig.RangeCondition(min = 20.0),
+                                "whr" to BodyAnalysisConfig.RangeCondition(max = 0.70),
+                                "bust" to BodyAnalysisConfig.RangeCondition(min = 90.0)
+                            ), priority = 1),
+                            BodyAnalysisConfig.BodyTypeRule("세미글래머", mapOf(
+                                "bustWaistDiff" to BodyAnalysisConfig.RangeCondition(min = 15.0, max = 20.0),
+                                "whr" to BodyAnalysisConfig.RangeCondition(max = 0.75),
+                                "bust" to BodyAnalysisConfig.RangeCondition(min = 85.0)
+                            ), priority = 2),
+                            BodyAnalysisConfig.BodyTypeRule("풍만형", mapOf(
+                                "bust" to BodyAnalysisConfig.RangeCondition(min = 95.0),
+                                "hip" to BodyAnalysisConfig.RangeCondition(min = 98.0)
+                            ), priority = 3),
+                            BodyAnalysisConfig.BodyTypeRule("날씬형", mapOf(
+                                "bustWaistDiff" to BodyAnalysisConfig.RangeCondition(max = 10.0),
+                                "bust" to BodyAnalysisConfig.RangeCondition(max = 80.0)
+                            ), priority = 4),
+                            BodyAnalysisConfig.BodyTypeRule("소녀체형", mapOf(
+                                "height" to BodyAnalysisConfig.RangeCondition(max = 158.0),
+                                "bust" to BodyAnalysisConfig.RangeCondition(max = 78.0),
+                                "hip" to BodyAnalysisConfig.RangeCondition(max = 83.0)
+                            ), priority = 5),
+                            BodyAnalysisConfig.BodyTypeRule("볼륨형", mapOf(
+                                "bustWaistDiff" to BodyAnalysisConfig.RangeCondition(min = 12.0, max = 18.0),
+                                "hip" to BodyAnalysisConfig.RangeCondition(min = 90.0)
+                            ), priority = 6),
+                            BodyAnalysisConfig.BodyTypeRule("탄탄형", mapOf(
+                                "whr" to BodyAnalysisConfig.RangeCondition(min = 0.70, max = 0.80),
+                                "bustHipRatio" to BodyAnalysisConfig.RangeCondition(min = 0.93, max = 1.07)
+                            ), priority = 7),
+                            BodyAnalysisConfig.BodyTypeRule("마른형", mapOf(
+                                "bustWaistDiff" to BodyAnalysisConfig.RangeCondition(max = 8.0),
+                                "waistHipDiff" to BodyAnalysisConfig.RangeCondition(max = 6.0)
+                            ), priority = 8)
+                        )
+                        binding.bodyTypeCustomJsonLayout.visibility = View.GONE
+                    }
+                    2 -> {
+                        // 사용자 정의: JSON 편집기 표시
+                        binding.bodyTypeCustomJsonLayout.visibility = View.VISIBLE
+                        // 현재 규칙을 JSON으로 표시
+                        val json = bodyTypeRulesToJson(currentBodyTypeRules)
+                        binding.editBodyTypeCustomJson.setText(json)
+                    }
+                }
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+
+        // 인사이트 토글 생성
+        val insightKeys = listOf(
+            BodyAnalysisConfig.INSIGHT_BODY_TYPE to "체형 분류",
+            BodyAnalysisConfig.INSIGHT_SILHOUETTE to "실루엣 설명",
+            BodyAnalysisConfig.INSIGHT_CUP_SIZE to "컵 사이즈",
+            BodyAnalysisConfig.INSIGHT_BWH_DIFF to "B/W/H 차이",
+            BodyAnalysisConfig.INSIGHT_NORMALIZED_RATIO to "정규화 비율",
+            BodyAnalysisConfig.INSIGHT_BMI to "BMI",
+            BodyAnalysisConfig.INSIGHT_WHR to "WHR",
+            BodyAnalysisConfig.INSIGHT_HEIGHT_RELATIVE to "키 대비 비율",
+            BodyAnalysisConfig.INSIGHT_GOLDEN_RATIO to "골든 비율",
+            BodyAnalysisConfig.INSIGHT_RANKING to "작품 내 순위"
+        )
+
+        for ((key, label) in insightKeys) {
+            val switch = androidx.appcompat.widget.SwitchCompat(ctx).apply {
+                text = label
+                isChecked = true
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { bottomMargin = (2 * density).toInt() }
+            }
+            binding.insightTogglesContainer.addView(switch)
+            insightToggleSwitches[key] = switch
+        }
+
+        // 기본 컵 매핑 행 추가
+        for (entry in BodyAnalysisConfig.DEFAULT_CUP_MAPPING) {
+            addCupMappingRow(binding.cupMappingContainer, density, entry.maxDiff, entry.label)
+        }
+    }
+
+    private fun addCupMappingRow(container: LinearLayout, density: Float,
+                                  maxDiff: Double = 0.0, label: String = "") {
+        val ctx = requireContext()
+        val row = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = (4 * density).toInt() }
+        }
+
+        val editMaxDiff = EditText(ctx).apply {
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            hint = "차이(cm)"
+            textSize = 13f
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+            if (maxDiff > 0) setText(if (maxDiff >= 999) "" else maxDiff.toString())
+        }
+
+        val arrow = TextView(ctx).apply {
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            text = " → "
+            textSize = 14f
+        }
+
+        val editLabel = EditText(ctx).apply {
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            hint = "라벨"
+            textSize = 13f
+            if (label.isNotEmpty()) setText(label)
+        }
+
+        val btnRemove = ImageButton(ctx).apply {
+            layoutParams = LinearLayout.LayoutParams((36 * density).toInt(), (36 * density).toInt())
+            setImageResource(android.R.drawable.ic_delete)
+            setBackgroundResource(android.R.color.transparent)
+            setOnClickListener {
+                container.removeView(row)
+                cupMappingRows.removeAll { it.container == row }
+            }
+        }
+
+        row.addView(editMaxDiff)
+        row.addView(arrow)
+        row.addView(editLabel)
+        row.addView(btnRemove)
+        container.addView(row)
+        cupMappingRows.add(CupMappingRow(row, editMaxDiff, editLabel))
+    }
+
+    private fun bodyTypeRulesToJson(rules: List<BodyAnalysisConfig.BodyTypeRule>): String {
+        val arr = org.json.JSONArray()
+        for (rule in rules) {
+            val ruleObj = org.json.JSONObject().apply {
+                put("label", rule.label)
+                put("priority", rule.priority)
+                val condObj = org.json.JSONObject()
+                for ((k, range) in rule.conditions) {
+                    condObj.put(k, org.json.JSONObject().apply {
+                        range.min?.let { put("min", it) }
+                        range.max?.let { put("max", it) }
+                    })
+                }
+                put("conditions", condObj)
+            }
+            arr.put(ruleObj)
+        }
+        return arr.toString(2)
+    }
+
+    private fun jsonToBodyTypeRules(json: String): List<BodyAnalysisConfig.BodyTypeRule>? {
+        return try {
+            val arr = org.json.JSONArray(json)
+            val rules = mutableListOf<BodyAnalysisConfig.BodyTypeRule>()
+            for (i in 0 until arr.length()) {
+                val obj = arr.getJSONObject(i)
+                val conditions = mutableMapOf<String, BodyAnalysisConfig.RangeCondition>()
+                val condObj = obj.optJSONObject("conditions")
+                if (condObj != null) {
+                    val keys = condObj.keys()
+                    while (keys.hasNext()) {
+                        val k = keys.next()
+                        val rangeObj = condObj.getJSONObject(k)
+                        conditions[k] = BodyAnalysisConfig.RangeCondition(
+                            min = if (rangeObj.has("min")) rangeObj.getDouble("min") else null,
+                            max = if (rangeObj.has("max")) rangeObj.getDouble("max") else null
+                        )
+                    }
+                }
+                rules.add(BodyAnalysisConfig.BodyTypeRule(
+                    label = obj.optString("label", ""),
+                    conditions = conditions,
+                    priority = obj.optInt("priority", i)
+                ))
+            }
+            rules
+        } catch (_: Exception) { null }
+    }
+
+    private fun collectBodyAnalysisConfig(binding: DialogFieldEditBinding): BodyAnalysisConfig {
+        // 컵 매핑
+        val cupMapping = cupMappingRows.mapNotNull { row ->
+            val maxDiff = row.editMaxDiff.text.toString().toDoubleOrNull()
+            val label = row.editLabel.text.toString().trim()
+            if (label.isNotEmpty()) {
+                BodyAnalysisConfig.CupMappingEntry(maxDiff ?: 999.0, label)
+            } else null
+        }.sortedBy { it.maxDiff }.ifEmpty { BodyAnalysisConfig.DEFAULT_CUP_MAPPING }
+
+        // 체형 분류 규칙
+        val bodyTypeRules = if (binding.spinnerBodyTypePreset.selectedItemPosition == 2) {
+            // 사용자 정의: JSON 파싱
+            val jsonText = binding.editBodyTypeCustomJson.text.toString().trim()
+            jsonToBodyTypeRules(jsonText) ?: currentBodyTypeRules
+        } else {
+            currentBodyTypeRules
+        }
+
+        // 인사이트 토글
+        val enabledInsights = insightToggleSwitches.mapValues { it.value.isChecked }
+
+        return BodyAnalysisConfig(
+            cupMapping = cupMapping,
+            bodyTypeRules = bodyTypeRules,
+            enabledInsights = enabledInsights.ifEmpty { BodyAnalysisConfig.DEFAULT_ENABLED_INSIGHTS }
+        )
+    }
+
     private fun populateFields(binding: DialogFieldEditBinding) {
         val field = existingField ?: return
 
@@ -687,6 +957,29 @@ class FieldEditDialog : DialogFragment() {
             binding.checkPercentileUniverse.isChecked = "universe" in scopes
         }
 
+        // 체형 분석 설정 복원
+        if (field.type == "BODY_SIZE") {
+            val bodyConfig = BodyAnalysisConfig.fromConfig(field.config)
+            // 컵 매핑 복원
+            val density2 = resources.displayMetrics.density
+            binding.cupMappingContainer.removeAllViews()
+            cupMappingRows.clear()
+            for (entry in bodyConfig.cupMapping) {
+                addCupMappingRow(binding.cupMappingContainer, density2, entry.maxDiff, entry.label)
+            }
+            // 체형 분류 프리셋 판별
+            if (bodyConfig.bodyTypeRules == BodyAnalysisConfig.DEFAULT_BODY_TYPE_RULES) {
+                binding.spinnerBodyTypePreset.setSelection(0)
+            } else {
+                binding.spinnerBodyTypePreset.setSelection(2) // 사용자 정의
+                currentBodyTypeRules = bodyConfig.bodyTypeRules
+            }
+            // 인사이트 토글 복원
+            for ((key, switch) in insightToggleSwitches) {
+                switch.isChecked = bodyConfig.isInsightEnabled(key)
+            }
+        }
+
         // 구조화 입력 복원
         val structuredConfig = StructuredInputConfig.fromConfig(field.config)
         if (structuredConfig.enabled) {
@@ -784,6 +1077,7 @@ class FieldEditDialog : DialogFragment() {
                 if (!binding.switchStructuredInput.isChecked) {
                     config["separator"] = binding.editStructuredSeparator.text.toString().ifEmpty { "-" }
                 }
+                // 체형 분석 설정은 아래에서 applyToConfig로 추가
             }
             else -> {}
         }
@@ -829,7 +1123,10 @@ class FieldEditDialog : DialogFragment() {
                 val configJson = Gson().toJson(config)
                 val withStructured = StructuredInputConfig.applyToConfig(configJson, structuredConfig)
                 val statsConfig = collectStatsConfig(binding, type)
-                return FieldStatsConfig.applyToConfig(withStructured, statsConfig)
+                val withStats = FieldStatsConfig.applyToConfig(withStructured, statsConfig)
+                return if (type == FieldType.BODY_SIZE) {
+                    BodyAnalysisConfig.applyToConfig(withStats, collectBodyAnalysisConfig(binding))
+                } else withStats
             }
         }
 
@@ -846,7 +1143,10 @@ class FieldEditDialog : DialogFragment() {
         // Stats config (모든 타입 지원)
         val statsConfig = collectStatsConfig(binding, type)
         val configJson = Gson().toJson(config)
-        return FieldStatsConfig.applyToConfig(configJson, statsConfig)
+        val withStats = FieldStatsConfig.applyToConfig(configJson, statsConfig)
+        return if (type == FieldType.BODY_SIZE) {
+            BodyAnalysisConfig.applyToConfig(withStats, collectBodyAnalysisConfig(binding))
+        } else withStats
     }
 
     private fun collectStatsConfig(binding: DialogFieldEditBinding, type: FieldType): FieldStatsConfig {

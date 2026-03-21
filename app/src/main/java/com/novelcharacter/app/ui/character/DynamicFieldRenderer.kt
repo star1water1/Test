@@ -10,6 +10,7 @@ import androidx.cardview.widget.CardView
 import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
 import com.novelcharacter.app.R
+import com.novelcharacter.app.data.model.BodyAnalysisConfig
 import com.novelcharacter.app.data.model.CharacterFieldValue
 import com.novelcharacter.app.data.model.CharacterStateChange
 import com.novelcharacter.app.data.model.DisplayFormat
@@ -18,6 +19,7 @@ import com.novelcharacter.app.data.model.SemanticRole
 import com.novelcharacter.app.util.BodyAnalysisHelper
 import com.novelcharacter.app.util.BodyAnalysisResult
 import com.novelcharacter.app.util.FormulaEvaluator
+import com.novelcharacter.app.util.RankingInfo
 
 class DynamicFieldRenderer(
     private val containerGetter: () -> LinearLayout,
@@ -34,6 +36,9 @@ class DynamicFieldRenderer(
         val novelPercentile: Float? = null,
         val universePercentile: Float? = null
     )
+
+    /** 외부에서 주입하는 순위 데이터 (체형 분석 인사이트용) */
+    var bodyRankingInfo: RankingInfo? = null
 
     fun displayDynamicFields(
         fields: List<FieldDefinition>,
@@ -203,10 +208,12 @@ class DynamicFieldRenderer(
         }
 
         // 체형 분석 인사이트 카드
-        val bodyAnalysis = computeBodyAnalysis(fields, valueMap)
-        if (bodyAnalysis != null) {
-            val insightCard = createCard(context, density)
+        val bodyAnalysisPair = computeBodyAnalysis(fields, valueMap)
+        if (bodyAnalysisPair != null) {
+            val (bodyAnalysis, analysisConfig) = bodyAnalysisPair
+            val result = bodyRankingInfo?.let { bodyAnalysis.copy(rankingInNovel = it) } ?: bodyAnalysis
 
+            val insightCard = createCard(context, density)
             val insightContent = LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
                 layoutParams = FrameLayout.LayoutParams(
@@ -215,7 +222,8 @@ class DynamicFieldRenderer(
                 )
             }
 
-            val insightTitle = TextView(context).apply {
+            // 타이틀
+            insightContent.addView(TextView(context).apply {
                 text = getString(R.string.body_analysis_title)
                 setTypeface(null, Typeface.BOLD)
                 textSize = 16f
@@ -223,11 +231,8 @@ class DynamicFieldRenderer(
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    bottomMargin = (8 * density).toInt()
-                }
-            }
-            insightContent.addView(insightTitle)
+                ).apply { bottomMargin = (8 * density).toInt() }
+            })
 
             fun addRow(label: String, value: String) {
                 insightContent.addView(TextView(context).apply {
@@ -236,22 +241,115 @@ class DynamicFieldRenderer(
                     layoutParams = LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
                         LinearLayout.LayoutParams.WRAP_CONTENT
+                    ).apply { bottomMargin = (4 * density).toInt() }
+                })
+            }
+
+            fun addSectionTitle(title: String) {
+                insightContent.addView(TextView(context).apply {
+                    text = title
+                    textSize = 13f
+                    setTypeface(null, Typeface.BOLD)
+                    setTextColor(context.getColor(R.color.text_secondary))
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
                     ).apply {
-                        bottomMargin = (4 * density).toInt()
+                        topMargin = (6 * density).toInt()
+                        bottomMargin = (2 * density).toInt()
                     }
                 })
             }
 
-            bodyAnalysis.bodyType?.let { addRow(getString(R.string.body_type_label), it) }
-            bodyAnalysis.cupSize?.let { cup ->
-                val diffStr = bodyAnalysis.bustDiff?.let { " (차이 ${"%.1f".format(it)}cm)" } ?: ""
-                addRow(getString(R.string.cup_size_label), "$cup$diffStr")
+            fun addSubRow(text: String) {
+                insightContent.addView(TextView(context).apply {
+                    this.text = text
+                    textSize = 12f
+                    setTextColor(context.getColor(R.color.text_secondary))
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    ).apply { bottomMargin = (2 * density).toInt() }
+                })
             }
-            bodyAnalysis.bmi?.let { bmi ->
-                val categoryStr = bodyAnalysis.bmiCategory?.let { " ($it)" } ?: ""
-                addRow(getString(R.string.bmi_label), "${"%.1f".format(bmi)}$categoryStr")
+
+            // 섹션 1: 체형 분류 + 실루엣
+            if (analysisConfig.isInsightEnabled(BodyAnalysisConfig.INSIGHT_BODY_TYPE)) {
+                result.bodyType?.let { addRow(getString(R.string.body_type_label), it) }
             }
-            bodyAnalysis.whr?.let { addRow(getString(R.string.whr_label), "%.2f".format(it)) }
+            if (analysisConfig.isInsightEnabled(BodyAnalysisConfig.INSIGHT_SILHOUETTE)) {
+                result.silhouetteDescription?.let { addSubRow(it) }
+            }
+
+            // 섹션 2: 컵 사이즈
+            if (analysisConfig.isInsightEnabled(BodyAnalysisConfig.INSIGHT_CUP_SIZE)) {
+                result.cupSize?.let { cup ->
+                    val diffStr = result.bustDiff?.let { " (차이 ${"%.1f".format(it)}cm)" } ?: ""
+                    addRow(getString(R.string.cup_size_label), "$cup$diffStr")
+                }
+            }
+
+            // 섹션 3: 측정값 분석
+            if (analysisConfig.isInsightEnabled(BodyAnalysisConfig.INSIGHT_BWH_DIFF)) {
+                addSectionTitle(getString(R.string.body_bwh_diff_label))
+                addRow("B-W", "%+.0fcm".format(result.bustWaistDiff))
+                addRow("W-H", "%+.0fcm".format(-result.waistHipDiff))
+                addRow("B-H", "%+.0fcm".format(result.bustHipDiff))
+            }
+            if (analysisConfig.isInsightEnabled(BodyAnalysisConfig.INSIGHT_NORMALIZED_RATIO)) {
+                addRow(getString(R.string.body_normalized_ratio_label), result.normalizedRatio)
+            }
+
+            // 섹션 4: 신체 지표
+            if (analysisConfig.isInsightEnabled(BodyAnalysisConfig.INSIGHT_BMI)) {
+                result.bmi?.let { bmi ->
+                    val categoryStr = result.bmiCategory?.let { " ($it)" } ?: ""
+                    addRow(getString(R.string.bmi_label), "${"%.1f".format(bmi)}$categoryStr")
+                }
+            }
+            if (analysisConfig.isInsightEnabled(BodyAnalysisConfig.INSIGHT_WHR)) {
+                result.whr?.let { addRow(getString(R.string.whr_label), "%.2f".format(it)) }
+            }
+
+            // 섹션 5: 키 대비 비율
+            if (analysisConfig.isInsightEnabled(BodyAnalysisConfig.INSIGHT_HEIGHT_RELATIVE) &&
+                result.bustHeightRatio != null) {
+                addSectionTitle(getString(R.string.body_height_relative_label))
+                result.bustHeightRatio.let {
+                    addSubRow("가슴/키: ${"%.1f".format(it * 100)}% (참고: 51~53%)")
+                }
+                result.waistHeightRatio?.let {
+                    addSubRow("허리/키: ${"%.1f".format(it * 100)}% (참고: 38~42%)")
+                }
+                result.hipHeightRatio?.let {
+                    addSubRow("엉덩이/키: ${"%.1f".format(it * 100)}% (참고: 52~56%)")
+                }
+            }
+
+            // 섹션 6: 골든 비율
+            if (analysisConfig.isInsightEnabled(BodyAnalysisConfig.INSIGHT_GOLDEN_RATIO) &&
+                result.goldenRatioScore != null) {
+                addSectionTitle(getString(R.string.body_golden_ratio_label))
+                addRow("점수", "${"%.0f".format(result.goldenRatioScore)}/100")
+                result.goldenRatioDetails?.forEach { item ->
+                    addSubRow("${item.label}: ${"%.2f".format(item.actual)} (이상: ${"%.2f".format(item.ideal)}, %+.1f%%)".format(item.deviationPercent))
+                }
+            }
+
+            // 섹션 7: 작품 내 순위
+            if (analysisConfig.isInsightEnabled(BodyAnalysisConfig.INSIGHT_RANKING) &&
+                result.rankingInNovel != null && result.rankingInNovel.totalCharacters > 1) {
+                addSectionTitle(getString(R.string.body_ranking_label))
+                val r = result.rankingInNovel
+                val parts = mutableListOf<String>()
+                r.bustRank?.let { parts.add("가슴: ${it}위") }
+                r.waistRank?.let { parts.add("허리: ${it}위") }
+                r.hipRank?.let { parts.add("엉덩이: ${it}위") }
+                if (parts.isNotEmpty()) {
+                    addSubRow(parts.joinToString(" / "))
+                    addSubRow("(전체 ${r.totalCharacters}캐릭터 중)")
+                }
+            }
 
             insightCard.addView(insightContent)
             container.addView(insightCard)
@@ -435,7 +533,7 @@ class DynamicFieldRenderer(
     private fun computeBodyAnalysis(
         fields: List<FieldDefinition>,
         valueMap: Map<Long, CharacterFieldValue>
-    ): BodyAnalysisResult? {
+    ): Pair<BodyAnalysisResult, BodyAnalysisConfig>? {
         // BODY_SIZE 필드 찾기 (SemanticRole 또는 type/key 기반)
         val bodySizeField = fields.find { SemanticRole.fromConfig(it.config) == SemanticRole.BODY_SIZE }
             ?: fields.find { it.type == "BODY_SIZE" }
@@ -451,6 +549,10 @@ class DynamicFieldRenderer(
         val waist = parts[1]
         val hip = parts[2]
 
+        // config에서 BodyAnalysisConfig 파싱 (없으면 DEFAULT)
+        val config = bodySizeField?.let { BodyAnalysisConfig.fromConfig(it.config) }
+            ?: BodyAnalysisConfig.DEFAULT
+
         // HEIGHT 필드 찾기
         val heightField = fields.find { SemanticRole.fromConfig(it.config) == SemanticRole.HEIGHT }
             ?: fields.find { it.key in listOf("height", "키") }
@@ -461,7 +563,8 @@ class DynamicFieldRenderer(
             ?: fields.find { it.key in listOf("weight", "체중") }
         val weight = weightField?.let { BodyAnalysisHelper.parseNumericFromText(valueMap[it.id]?.value) }
 
-        return BodyAnalysisHelper().analyze(bust, waist, hip, height, weight)
+        val result = BodyAnalysisHelper().analyze(bust, waist, hip, height, weight, config)
+        return result to config
     }
 
     private fun createGroupTitle(context: Context, density: Float, groupName: String): TextView {
