@@ -58,6 +58,7 @@ class NovelCharacterApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        installCrashLogger()
         // Apply saved theme from SharedPreferences cache (non-blocking)
         ThemeHelper.applyTheme(ThemeHelper.getSavedTheme(this))
         // Migrate DataStore → SharedPreferences cache on first launch
@@ -71,6 +72,28 @@ class NovelCharacterApp : Application() {
             scheduleAutoBackup()
         } catch (e: Exception) {
             android.util.Log.e("NovelCharacterApp", "Failed to schedule background workers", e)
+        }
+    }
+
+    /**
+     * 릴리스 빌드 크래시 디버깅용.
+     * 크래시 발생 시 스택 트레이스를 /data/data/<pkg>/files/crash_log.txt 에 저장.
+     * 설정 > 크래시 로그 확인 또는 파일 탐색기로 확인 가능.
+     */
+    private fun installCrashLogger() {
+        val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            try {
+                val logFile = java.io.File(filesDir, "crash_log.txt")
+                logFile.writeText(buildString {
+                    appendLine("=== Crash at ${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())} ===")
+                    appendLine("Thread: ${thread.name}")
+                    appendLine(throwable.stackTraceToString())
+                })
+            } catch (_: Exception) {
+                // 로그 저장 실패 시 무시
+            }
+            defaultHandler?.uncaughtException(thread, throwable)
         }
     }
 

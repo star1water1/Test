@@ -32,6 +32,7 @@
 -keep class com.google.gson.** { *; }
 -keepattributes Signature
 -keepattributes *Annotation*
+-keepattributes InnerClasses,EnclosingMethod
 -dontwarn com.google.gson.**
 
 # Keep Room entity and DAO classes
@@ -46,27 +47,20 @@
 
 # ===== App-specific R8 rules =====
 
-# --- Fragments (referenced by name in nav_graph.xml) ---
--keep class com.novelcharacter.app.ui.** extends androidx.fragment.app.Fragment { *; }
+# --- Keep ALL app classes (R8이 앱 코드를 제거/이름 변경하는 것을 방지) ---
+# 난독화만 비활성화하고 미사용 코드 제거(tree-shaking)는 유지
+-keep class com.novelcharacter.app.** { *; }
+-keepclassmembers class com.novelcharacter.app.** { *; }
 
-# --- ViewModels (instantiated via reflection by ViewModelProvider) ---
--keep class com.novelcharacter.app.ui.** extends androidx.lifecycle.ViewModel { <init>(...); }
--keep class com.novelcharacter.app.ui.** extends androidx.lifecycle.AndroidViewModel { <init>(...); }
+# --- MPAndroidChart (리플렉션 사용) ---
+-keep class com.github.mikephil.charting.** { *; }
+-dontwarn com.github.mikephil.charting.**
 
-# --- Gson-serialized data classes (field names must not be renamed) ---
--keep class com.novelcharacter.app.util.PresetTemplates$* { *; }
--keep class com.novelcharacter.app.util.BodyAnalysisResult { *; }
--keep class com.novelcharacter.app.util.GoldenRatioItem { *; }
--keep class com.novelcharacter.app.util.RankingInfo { *; }
--keep class com.novelcharacter.app.share.WorldPackageManifest { *; }
--keep class com.novelcharacter.app.share.WorldPackageExporter$* { *; }
--keep class com.novelcharacter.app.util.GsonTypes { *; }
--keep class com.novelcharacter.app.util.GsonTypes$* { *; }
+# --- Gson TypeToken 보존 ---
 -keep class * extends com.google.gson.reflect.TypeToken { *; }
 
-# --- WorkManager workers (instantiated by class name) ---
--keep class com.novelcharacter.app.backup.AutoBackupWorker { *; }
--keep class com.novelcharacter.app.notification.BirthdayWorker { *; }
+# --- WorkManager workers (클래스명으로 인스턴스 생성) ---
+-keep class * extends androidx.work.ListenableWorker { *; }
 
 # --- Kotlin metadata & coroutines ---
 -keep class kotlin.Metadata { *; }
