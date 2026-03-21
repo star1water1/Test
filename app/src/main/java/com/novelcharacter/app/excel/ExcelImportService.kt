@@ -89,7 +89,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         alias("이명", "another_name", "별칭", "alias")
         alias("성", "last_name", "lastName", "family_name")
         alias("이름(First)", "first_name", "firstName", "given_name")
-        alias("이미지경로", "image_path", "이미지 경로", "image_file")
+        alias("이미지경로", "image_path", "이미지 경로", "image_file", "imagepath", "imagepaths")
         alias("이미지모드", "image_mode", "이미지 모드")
         alias("이미지캐릭터ID", "image_character_id", "이미지 캐릭터 ID")
         alias("작품", "novel")
