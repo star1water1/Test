@@ -79,8 +79,8 @@ class BodyAnalysisHelper {
         val bustWaistDiff = bust - waist
         val waistHipDiff = hip - waist
         val bustHipDiff = bust - hip
-        val whr = waist / hip
-        val bustHipRatio = bust / hip
+        val whr = if (hip > 0) waist / hip else 0.0
+        val bustHipRatio = if (hip > 0) bust / hip else 0.0
 
         // 1. 컵 사이즈
         val underbust = waist  // config.underbustEstimation에 따라 확장 가능
@@ -128,16 +128,19 @@ class BodyAnalysisHelper {
         }
 
         // 4. 정규화 비율 (bust=1 기준)
-        val normalizedRatio = "%.2f : %.2f : %.2f".format(1.0, waist / bust, hip / bust)
         val bwhRatioDisplay = "${bust.roundToInt()} : ${waist.roundToInt()} : ${hip.roundToInt()}"
+        val normalizedRatio = if (bust > 0) {
+            "%.2f : %.2f : %.2f".format(1.0, waist / bust, hip / bust)
+        } else bwhRatioDisplay
 
-        // 5. 키 대비 비율
-        val bustHeightRatio = heightCm?.let { bust / it }
-        val waistHeightRatio = heightCm?.let { waist / it }
-        val hipHeightRatio = heightCm?.let { hip / it }
+        // 5. 키 대비 비율 (heightCm이 0이면 null 처리)
+        val safeHeight = heightCm?.takeIf { it > 0 }
+        val bustHeightRatio = safeHeight?.let { bust / it }
+        val waistHeightRatio = safeHeight?.let { waist / it }
+        val hipHeightRatio = safeHeight?.let { hip / it }
 
-        // 6. 골든 비율 점수 (키 있을 때만)
-        val goldenRatioDetails = if (heightCm != null) {
+        // 6. 골든 비율 점수 (유효한 키가 있을 때만)
+        val goldenRatioDetails = if (safeHeight != null) {
             val items = mutableListOf<GoldenRatioItem>()
 
             // W/H 이상: 0.70
@@ -147,11 +150,11 @@ class BodyAnalysisHelper {
             items.add(goldenRatioItem("가슴/엉덩이", bustHipRatio, 1.00))
 
             // waist/height 이상: 0.40
-            val whrHeight = waist / heightCm
+            val whrHeight = waist / safeHeight
             items.add(goldenRatioItem("허리/키", whrHeight, 0.40))
 
             // bust/height 이상: 0.52
-            items.add(goldenRatioItem("가슴/키", bust / heightCm, 0.52))
+            items.add(goldenRatioItem("가슴/키", bust / safeHeight, 0.52))
 
             items
         } else null

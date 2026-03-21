@@ -18,6 +18,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.apache.poi.ss.usermodel.WorkbookFactory
+import android.util.Log
 import java.io.File
 import java.io.FileOutputStream
 import java.util.UUID
@@ -159,6 +160,10 @@ class ExcelImporter(context: Context) {
                         }
                         entry.name.startsWith("images/") -> {
                             val imageFile = File(extractDir, entry.name)
+                            if (!imageFile.canonicalPath.startsWith(extractDir.canonicalPath + File.separator)) {
+                                Log.w("ExcelImporter", "Skipping suspicious zip entry: ${entry.name}")
+                                continue
+                            }
                             imageFile.parentFile?.mkdirs()
                             zip.getInputStream(entry).use { input ->
                                 FileOutputStream(imageFile).use { output -> input.copyTo(output) }
