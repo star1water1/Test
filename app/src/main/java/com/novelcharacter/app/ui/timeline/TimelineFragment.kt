@@ -410,10 +410,15 @@ class TimelineFragment : Fragment() {
             .setPositiveButton(R.string.save) { _, _ ->
                 val desc = editDescription.text.toString().trim()
                 if (desc.isEmpty()) return@setPositiveButton
+                val currentNovel = viewModel.filterNovelId.value?.let { nid ->
+                    cachedNovels.find { it.id == nid }
+                }
                 val quickEvent = TimelineEvent(
                     year = year,
                     description = desc,
-                    isTemporary = true
+                    isTemporary = true,
+                    novelId = currentNovel?.id,
+                    universeId = currentNovel?.universeId
                 )
                 viewModel.insertEvent(quickEvent, emptyList())
                 Toast.makeText(ctx, R.string.quick_event_added, Toast.LENGTH_SHORT).show()
