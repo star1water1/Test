@@ -109,10 +109,10 @@ class NovelViewModel(application: Application) : AndroidViewModel(application) {
                     withImages.random()
                 }
 
-                // imagePaths는 JSON 배열 형태 — 첫 번째 경로 추출
+                // imagePaths는 JSON 배열 형태 — 랜덤 경로 추출
                 val pathsStr = target.imagePaths
                 val firstPath = try {
-                    gson.fromJson(pathsStr, Array<String>::class.java)?.firstOrNull()
+                    gson.fromJson(pathsStr, Array<String>::class.java)?.randomOrNull()
                 } catch (_: Exception) {
                     null
                 }

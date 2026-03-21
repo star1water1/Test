@@ -183,10 +183,10 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
                     return@launch
                 }
                 val target = withImages.random()
-                val firstPath = try {
-                    gson.fromJson(target.imagePaths, Array<String>::class.java)?.firstOrNull()
+                val randomPath = try {
+                    gson.fromJson(target.imagePaths, Array<String>::class.java)?.randomOrNull()
                 } catch (_: Exception) { null }
-                callback(firstPath)
+                callback(randomPath)
             } catch (e: Exception) {
                 Log.e("UniverseViewModel", "Failed to resolve character image", e)
                 callback(null)
@@ -202,10 +202,10 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
                     callback(null)
                     return@launch
                 }
-                val firstPath = try {
-                    gson.fromJson(character.imagePaths, Array<String>::class.java)?.firstOrNull()
+                val randomPath = try {
+                    gson.fromJson(character.imagePaths, Array<String>::class.java)?.randomOrNull()
                 } catch (_: Exception) { null }
-                callback(firstPath)
+                callback(randomPath)
             } catch (e: Exception) {
                 Log.e("UniverseViewModel", "Failed to resolve character image by ID", e)
                 callback(null)
@@ -235,17 +235,24 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    /** 세계관에 속한 작품 중 이미지가 있는 랜덤 작품의 이미지 경로 반환 */
+    /** 세계관에 속한 작품 중 이미지를 가진 랜덤 작품의 이미지 경로 반환 (계단식 해상도) */
     fun resolveRandomNovelImage(universeId: Long, callback: (String?) -> Unit) {
         viewModelScope.launch {
             try {
                 val novels = novelRepository.getNovelsByUniverseList(universeId)
-                val withImages = novels.filter { it.imagePath.isNotBlank() }
-                if (withImages.isEmpty()) {
+                // 직접 이미지가 있거나 캐릭터 이미지 모드인 작품을 후보로 포함
+                val candidates = novels.filter {
+                    it.imagePath.isNotBlank() ||
+                    it.imageMode in listOf(
+                        Novel.IMAGE_MODE_RANDOM_CHARACTER,
+                        Novel.IMAGE_MODE_SELECT_CHARACTER
+                    )
+                }
+                if (candidates.isEmpty()) {
                     callback(null)
                     return@launch
                 }
-                callback(withImages.random().imagePath)
+                resolveNovelImageCascading(candidates.random(), callback)
             } catch (e: Exception) {
                 Log.e("UniverseViewModel", "Failed to resolve novel image", e)
                 callback(null)
@@ -253,17 +260,55 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    /** 특정 작품의 이미지 경로를 반환하는 콜백 */
+    /** 특정 작품의 이미지 경로를 반환 (계단식 해상도) */
     fun resolveNovelImageById(novelId: Long, callback: (String?) -> Unit) {
         viewModelScope.launch {
             try {
                 val novel = novelRepository.getNovelById(novelId)
-                callback(novel?.imagePath?.takeIf { it.isNotBlank() })
+                    ?: run { callback(null); return@launch }
+                resolveNovelImageCascading(novel, callback)
             } catch (e: Exception) {
                 Log.e("UniverseViewModel", "Failed to resolve novel image by ID", e)
                 callback(null)
             }
         }
+    }
+
+    /**
+     * 작품 이미지를 계단식으로 해상도:
+     * 1차: 직접 이미지(imagePath) → 2차: 캐릭터 이미지 모드 → 해당 캐릭터 이미지
+     */
+    private suspend fun resolveNovelImageCascading(novel: Novel, callback: (String?) -> Unit) {
+        // 1차: 직접 이미지
+        if (novel.imagePath.isNotBlank()) {
+            callback(novel.imagePath)
+            return
+        }
+        // 2차: 캐릭터 이미지 모드 → 하위 캐릭터 이미지 해상도
+        if (novel.imageMode in listOf(
+                Novel.IMAGE_MODE_RANDOM_CHARACTER,
+                Novel.IMAGE_MODE_SELECT_CHARACTER
+            )) {
+            val characters = characterRepository.getCharactersByNovelList(novel.id)
+            val withImages = characters.filter {
+                it.imagePaths.isNotBlank() && it.imagePaths != "[]"
+            }
+            if (withImages.isEmpty()) {
+                callback(null)
+                return
+            }
+            val target = if (novel.imageMode == Novel.IMAGE_MODE_SELECT_CHARACTER && novel.imageCharacterId != null) {
+                withImages.find { it.id == novel.imageCharacterId } ?: withImages.random()
+            } else {
+                withImages.random()
+            }
+            val path = try {
+                gson.fromJson(target.imagePaths, Array<String>::class.java)?.randomOrNull()
+            } catch (_: Exception) { null }
+            callback(path)
+            return
+        }
+        callback(null)
     }
 
     /** 세계관에 속한 작품 중 이미지가 있는 작품 목록 반환 (select_novel UI용) */

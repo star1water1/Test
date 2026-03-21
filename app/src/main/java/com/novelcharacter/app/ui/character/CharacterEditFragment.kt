@@ -13,6 +13,7 @@ import android.widget.ImageView
 import android.widget.Spinner
 import android.widget.TextView
 import android.widget.LinearLayout
+import android.widget.AutoCompleteTextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.Fragment
@@ -60,6 +61,7 @@ class CharacterEditFragment : Fragment() {
     // 동적 필드 관리
     private var fieldDefinitions: List<FieldDefinition> = emptyList()
     private val fieldInputMap = mutableMapOf<Long, Any>() // fieldDefinitionId -> input widget
+    private var currentUniverseId: Long? = null
     private var hasUnsavedChanges = false
 
     private val imagePickerLauncher = registerForActivityResult(
@@ -152,6 +154,7 @@ class CharacterEditFragment : Fragment() {
                     if (position > 0) {
                         val novel = novels[position - 1]
                         val universeId = novel.universeId
+                        currentUniverseId = universeId
                         if (universeId != null) {
                             fieldDefinitions = viewModel.getFieldsByUniverseList(universeId)
                         } else {
@@ -229,6 +232,7 @@ class CharacterEditFragment : Fragment() {
             val widget = fieldInputMap[field.id] ?: continue
 
             when (widget) {
+                is AutoCompleteTextView -> widget.setText(savedValue, false)
                 is TextInputEditText -> widget.setText(savedValue)
                 is LinearLayout -> {
                     // 구조화 입력: 저장된 값을 파트별로 분리하여 채움
@@ -343,7 +347,7 @@ class CharacterEditFragment : Fragment() {
                                 isHelperTextEnabled = true
                             }
                         }
-                        val editText = TextInputEditText(context).apply {
+                        val editText = AutoCompleteTextView(context).apply {
                             layoutParams = LinearLayout.LayoutParams(
                                 LinearLayout.LayoutParams.MATCH_PARENT,
                                 LinearLayout.LayoutParams.WRAP_CONTENT
@@ -352,10 +356,32 @@ class CharacterEditFragment : Fragment() {
                                 inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
                                 minLines = 2
                             }
+                            threshold = 1 // 1글자부터 자동완성 제안
                         }
                         inputLayout.addView(editText)
                         binding.dynamicFormContainer.addView(inputLayout)
                         fieldInputMap[field.id] = editText
+
+                        // 자동완성 데이터 로드 (세계관 내 같은 필드의 기존 값)
+                        val uId = currentUniverseId
+                        if (uId != null) {
+                            viewLifecycleOwner.lifecycleScope.launch {
+                                val existingValues = viewModel.getFieldValuesForUniverse(uId, field.id)
+                                val suggestions = if (format == DisplayFormat.COMMA_LIST || format == DisplayFormat.BULLET_LIST) {
+                                    existingValues.flatMap { it.split(",").map { v -> v.trim() } }
+                                        .filter { it.isNotBlank() }.distinct().sorted()
+                                } else {
+                                    existingValues.filter { it.isNotBlank() }.distinct().sorted()
+                                }
+                                if (suggestions.isNotEmpty() && _binding != null) {
+                                    editText.setAdapter(ArrayAdapter(
+                                        requireContext(),
+                                        android.R.layout.simple_dropdown_item_1line,
+                                        suggestions
+                                    ))
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -463,15 +489,34 @@ class CharacterEditFragment : Fragment() {
                         }
                         hint = getString(R.string.hint_multi_text_format, field.name)
                     }
-                    val editText = TextInputEditText(context).apply {
+                    val editText = AutoCompleteTextView(context).apply {
                         layoutParams = LinearLayout.LayoutParams(
                             LinearLayout.LayoutParams.MATCH_PARENT,
                             LinearLayout.LayoutParams.WRAP_CONTENT
                         )
+                        threshold = 1
                     }
                     inputLayout.addView(editText)
                     binding.dynamicFormContainer.addView(inputLayout)
                     fieldInputMap[field.id] = editText
+
+                    // 자동완성: 기존 값의 개별 항목을 제안
+                    val uId = currentUniverseId
+                    if (uId != null) {
+                        viewLifecycleOwner.lifecycleScope.launch {
+                            val existingValues = viewModel.getFieldValuesForUniverse(uId, field.id)
+                            val suggestions = existingValues
+                                .flatMap { it.split(",").map { v -> v.trim() } }
+                                .filter { it.isNotBlank() }.distinct().sorted()
+                            if (suggestions.isNotEmpty() && _binding != null) {
+                                editText.setAdapter(ArrayAdapter(
+                                    requireContext(),
+                                    android.R.layout.simple_dropdown_item_1line,
+                                    suggestions
+                                ))
+                            }
+                        }
+                    }
                 }
 
                 FieldType.CALCULATED -> {
@@ -557,6 +602,7 @@ class CharacterEditFragment : Fragment() {
             if (fieldType == FieldType.CALCULATED) continue
             val widget = fieldInputMap[field.id] ?: continue
             val isEmpty = when (widget) {
+                is AutoCompleteTextView -> widget.text.isNullOrBlank()
                 is TextInputEditText -> widget.text.isNullOrBlank()
                 is Spinner -> widget.selectedItemPosition <= 0
                 is LinearLayout -> {
@@ -584,6 +630,7 @@ class CharacterEditFragment : Fragment() {
             if (fieldType == FieldType.CALCULATED) continue
 
             val value: String = when (widget) {
+                is AutoCompleteTextView -> widget.text.toString().trim()
                 is TextInputEditText -> widget.text.toString().trim()
                 is Spinner -> {
                     if (widget.selectedItemPosition > 0) {

@@ -239,7 +239,7 @@ class CharacterAdapter(
             }
 
             if (paths.isNotEmpty()) {
-                val path = paths[0]
+                val path = paths.random()
                 // Check cache first
                 val cached = thumbnailCache.get(path)
                 if (cached != null) {
@@ -264,7 +264,7 @@ class CharacterAdapter(
                                 // List may have been updated between position check and getItem
                                 emptyList()
                             }
-                            if (currentPaths.isNotEmpty() && currentPaths[0] == boundPath) {
+                            if (currentPaths.isNotEmpty() && boundPath in currentPaths) {
                                 binding.characterImage.setImageBitmap(bitmap)
                             }
                         }

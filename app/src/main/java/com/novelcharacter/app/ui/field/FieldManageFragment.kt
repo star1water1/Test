@@ -21,7 +21,6 @@ import androidx.recyclerview.widget.RecyclerView
 import com.google.gson.Gson
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.FieldDefinition
-import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.databinding.FragmentFieldManageBinding
 import com.novelcharacter.app.ui.adapter.FieldDefinitionAdapter
 import kotlinx.coroutines.launch
@@ -172,23 +171,32 @@ class FieldManageFragment : Fragment() {
             .show()
     }
 
-    /** 다른 세계관에서 필드 가져오기 (단일 다이얼로그) */
+    /** 다른 세계관 + 프리셋에서 필드 가져오기 (중복 자동 표시) */
     private fun showImportFieldsDialog() {
         lifecycleScope.launch {
-            val otherFields = viewModel.getFieldsFromOtherUniverses(universeId)
-            if (otherFields.isEmpty()) {
+            val allSources = viewModel.getFieldsFromAllSources(universeId)
+            if (allSources.isEmpty()) {
                 Toast.makeText(requireContext(), R.string.import_no_other_universes, Toast.LENGTH_SHORT).show()
                 return@launch
             }
 
+            // 현재 세계관의 기존 필드 키 (중복 확인용)
+            val currentFieldKeys = viewModel.getCurrentFieldKeys(universeId)
+
             val ctx = requireContext()
-            val universes = otherFields.keys.toList()
+            val sourceNames = allSources.keys.toList()
             val density = resources.displayMetrics.density
 
-            // 현재 선택된 세계관의 필드와 체크 상태
-            var currentFields = otherFields[universes[0]] ?: emptyList()
-            var currentChecked = BooleanArray(currentFields.size) { true }
-            var currentFieldNames = currentFields.map { "[${it.groupName}] ${it.name} (${it.type})" }.toTypedArray()
+            var currentFields = allSources[sourceNames[0]] ?: emptyList()
+
+            // 중복 필드 표시 + 기본 체크 상태 결정
+            fun buildFieldLabels(fields: List<FieldDefinition>): Array<String> {
+                return fields.map { f ->
+                    val isDuplicate = f.key in currentFieldKeys
+                    val prefix = if (isDuplicate) "[중복] " else ""
+                    "$prefix[${f.groupName}] ${f.name} (${f.type})"
+                }.toTypedArray()
+            }
 
             // 컨테이너: Spinner + ListView를 단일 다이얼로그에 배치
             val container = LinearLayout(ctx).apply {
@@ -196,17 +204,15 @@ class FieldManageFragment : Fragment() {
                 setPadding((16 * density).toInt(), (8 * density).toInt(), (16 * density).toInt(), 0)
             }
 
-            val universeSpinner = Spinner(ctx).apply {
+            val sourceSpinner = Spinner(ctx).apply {
                 adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item,
-                    universes.map { "${it.name} (${otherFields[it]?.size ?: 0}개 필드)" }
+                    sourceNames.map { "$it (${allSources[it]?.size ?: 0}개 필드)" }
                 ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
             }
-            container.addView(universeSpinner)
+            container.addView(sourceSpinner)
 
-            // ListView를 직접 container에 배치 (setView + setMultiChoiceItems 충돌 방지)
             val fieldListView = ListView(ctx).apply {
                 choiceMode = ListView.CHOICE_MODE_MULTIPLE
-                adapter = ArrayAdapter(ctx, android.R.layout.simple_list_item_multiple_choice, currentFieldNames)
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     (200 * density).toInt()
@@ -214,8 +220,19 @@ class FieldManageFragment : Fragment() {
                     topMargin = (8 * density).toInt()
                 }
             }
-            // 초기 상태: 모두 체크
             container.addView(fieldListView)
+
+            // 필드 목록 갱신 함수 (중복 아닌 것만 기본 체크)
+            fun updateFieldList(fields: List<FieldDefinition>) {
+                currentFields = fields
+                val labels = buildFieldLabels(fields)
+                fieldListView.adapter = ArrayAdapter(ctx,
+                    android.R.layout.simple_list_item_multiple_choice, labels)
+                for (i in fields.indices) {
+                    val isDuplicate = fields[i].key in currentFieldKeys
+                    fieldListView.setItemChecked(i, !isDuplicate)
+                }
+            }
 
             val dialog = AlertDialog.Builder(ctx)
                 .setTitle(R.string.import_select_universe)
@@ -234,27 +251,18 @@ class FieldManageFragment : Fragment() {
                 .setNegativeButton(R.string.cancel, null)
                 .create()
 
-            // 세계관 변경 시 필드 목록 갱신
-            universeSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            // 소스 변경 시 필드 목록 갱신
+            sourceSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
                 override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                    currentFields = otherFields[universes[position]] ?: emptyList()
-                    currentChecked = BooleanArray(currentFields.size) { true }
-                    currentFieldNames = currentFields.map { "[${it.groupName}] ${it.name} (${it.type})" }.toTypedArray()
-                    fieldListView.adapter = ArrayAdapter(ctx,
-                        android.R.layout.simple_list_item_multiple_choice, currentFieldNames)
-                    for (i in currentChecked.indices) {
-                        fieldListView.setItemChecked(i, true)
-                    }
+                    updateFieldList(allSources[sourceNames[position]] ?: emptyList())
                 }
                 override fun onNothingSelected(parent: AdapterView<*>?) {}
             }
 
             dialog.show()
 
-            // 다이얼로그 표시 후 초기 체크 설정
-            for (i in currentChecked.indices) {
-                fieldListView.setItemChecked(i, true)
-            }
+            // 다이얼로그 표시 후 초기 목록 설정
+            updateFieldList(currentFields)
         }
     }
 

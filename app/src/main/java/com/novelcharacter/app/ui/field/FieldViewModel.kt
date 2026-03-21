@@ -9,12 +9,15 @@ import androidx.lifecycle.viewModelScope
 import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.Universe
+import com.novelcharacter.app.util.PresetTemplates
 import android.util.Log
 import kotlinx.coroutines.launch
 
 class FieldViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val universeRepository = (application as NovelCharacterApp).universeRepository
+    private val app = application as NovelCharacterApp
+    private val universeRepository = app.universeRepository
+    private val userPresetDao = app.database.userPresetTemplateDao()
 
     private val _universeId = MutableLiveData<Long>()
     val universeId: LiveData<Long> = _universeId
@@ -72,6 +75,42 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         return result
+    }
+
+    /** 다른 세계관 + 프리셋의 필드 목록 통합 조회 */
+    suspend fun getFieldsFromAllSources(currentUniverseId: Long): Map<String, List<FieldDefinition>> {
+        val result = linkedMapOf<String, List<FieldDefinition>>()
+
+        // 1. 다른 세계관
+        val allUniverses = universeRepository.getAllUniversesList()
+        for (universe in allUniverses) {
+            if (universe.id == currentUniverseId) continue
+            val fields = universeRepository.getFieldsByUniverseList(universe.id)
+            if (fields.isNotEmpty()) {
+                result[universe.name] = fields
+            }
+        }
+
+        // 2. 내장 프리셋 템플릿
+        for (preset in PresetTemplates.getBuiltInTemplates()) {
+            val label = "${preset.universe.name} (프리셋)"
+            result[label] = preset.fields
+        }
+
+        // 3. 사용자 정의 프리셋
+        val userPresets = userPresetDao.getAllTemplatesList()
+        for (preset in userPresets) {
+            val template = PresetTemplates.fromUserPreset(preset)
+            val label = "${template.universe.name} (사용자 프리셋)"
+            result[label] = template.fields
+        }
+
+        return result
+    }
+
+    /** 현재 세계관의 필드 키 목록 조회 */
+    suspend fun getCurrentFieldKeys(universeId: Long): Set<String> {
+        return universeRepository.getFieldsByUniverseList(universeId).map { it.key }.toSet()
     }
 
     /** 선택된 필드를 현재 세계관으로 복사 */
