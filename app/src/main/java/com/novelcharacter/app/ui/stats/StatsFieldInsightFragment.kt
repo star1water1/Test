@@ -7,7 +7,10 @@ import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.ArrayAdapter
+import android.widget.ImageButton
 import android.widget.LinearLayout
+import android.widget.Spinner
 import android.widget.TableLayout
 import android.widget.TableRow
 import android.widget.TextView
@@ -17,6 +20,7 @@ import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.navigation.fragment.findNavController
+import com.novelcharacter.app.data.model.FieldDefinition
 import com.github.mikephil.charting.charts.BarChart
 import com.github.mikephil.charting.charts.HorizontalBarChart
 import com.github.mikephil.charting.charts.PieChart
@@ -125,21 +129,46 @@ class StatsFieldInsightFragment : Fragment() {
         }
     }
 
-    private fun makeFieldHeader(insight: FieldInsightResult): TextView {
+    private fun makeFieldHeader(insight: FieldInsightResult): LinearLayout {
+        val ctx = requireContext()
         val textSizeSp = resources.getDimension(R.dimen.stats_text_subtitle) / resources.displayMetrics.scaledDensity
-        return TextView(requireContext()).apply {
-            val uniPrefix = if (insight.universeName.isNotEmpty()) "${insight.universeName} · " else ""
-            val typeLabel = com.novelcharacter.app.data.model.FieldType.fromName(insight.fieldDefinition.type)?.label ?: insight.fieldDefinition.type
-            text = "$uniPrefix[${insight.fieldDefinition.groupName}] ${insight.fieldDefinition.name} ($typeLabel)"
-            textSize = textSizeSp
-            setTextColor(ContextCompat.getColor(requireContext(), R.color.primary))
-            setTypeface(null, Typeface.BOLD)
+        val density = resources.displayMetrics.density
+
+        return LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
             val lp = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             )
             lp.bottomMargin = resources.getDimensionPixelSize(R.dimen.stats_margin_sm)
             layoutParams = lp
+
+            // 필드 이름 텍스트
+            val headerText = TextView(ctx).apply {
+                val uniPrefix = if (insight.universeName.isNotEmpty()) "${insight.universeName} · " else ""
+                val typeLabel = com.novelcharacter.app.data.model.FieldType.fromName(insight.fieldDefinition.type)?.label ?: insight.fieldDefinition.type
+                text = "$uniPrefix[${insight.fieldDefinition.groupName}] ${insight.fieldDefinition.name} ($typeLabel)"
+                textSize = textSizeSp
+                setTextColor(ContextCompat.getColor(ctx, R.color.primary))
+                setTypeface(null, Typeface.BOLD)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            }
+            addView(headerText)
+
+            // 분석 설정 기어 아이콘
+            val settingsBtn = ImageButton(ctx).apply {
+                val size = (32 * density).toInt()
+                layoutParams = LinearLayout.LayoutParams(size, size)
+                setImageResource(R.drawable.ic_settings)
+                setColorFilter(ContextCompat.getColor(ctx, R.color.primary))
+                setBackgroundResource(android.R.color.transparent)
+                contentDescription = getString(R.string.stats_inline_config_title)
+                setOnClickListener {
+                    showAnalysisSettingsBottomSheet(insight.fieldDefinition, insight.statsConfig)
+                }
+            }
+            addView(settingsBtn)
         }
     }
 
@@ -631,6 +660,97 @@ class StatsFieldInsightFragment : Fragment() {
             ContextCompat.getColor(ctx, R.color.primary_light),
             ContextCompat.getColor(ctx, R.color.primary_dark)
         ) + ColorTemplate.MATERIAL_COLORS.toList()
+    }
+
+    // ===== 인라인 분석 설정 =====
+
+    private fun showAnalysisSettingsBottomSheet(fieldDef: FieldDefinition, currentConfig: FieldStatsConfig) {
+        val ctx = requireContext()
+        val density = resources.displayMetrics.density
+        val pad = (16 * density).toInt()
+
+        val allowedTypes = FieldStatsConfig.StatsType.forFieldType(fieldDef.type)
+        val chartTypes = FieldStatsConfig.ChartType.entries
+        val limitOptions = listOf(5, 10, 15, 20)
+
+        // 첫 번째 분석 항목을 기준으로 표시 (대부분 1개)
+        val currentEntry = currentConfig.analyses.firstOrNull() ?: FieldStatsConfig.AnalysisEntry()
+
+        val container = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(pad, pad, pad, pad)
+        }
+
+        // 분석 타입 Spinner
+        container.addView(TextView(ctx).apply {
+            text = getString(R.string.stats_inline_analysis_type)
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(ContextCompat.getColor(ctx, R.color.on_surface))
+        })
+        val spinnerType = Spinner(ctx).apply {
+            adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item, allowedTypes.map { it.label }).also {
+                it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+            }
+            val idx = allowedTypes.indexOf(currentEntry.type)
+            if (idx >= 0) setSelection(idx)
+        }
+        container.addView(spinnerType)
+
+        // 차트 타입 Spinner
+        container.addView(TextView(ctx).apply {
+            text = getString(R.string.stats_inline_chart_type)
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(ContextCompat.getColor(ctx, R.color.on_surface))
+            val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            lp.topMargin = (8 * density).toInt()
+            layoutParams = lp
+        })
+        val spinnerChart = Spinner(ctx).apply {
+            adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item, chartTypes.map { it.label }).also {
+                it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+            }
+            val idx = chartTypes.indexOf(currentEntry.chart)
+            if (idx >= 0) setSelection(idx)
+        }
+        container.addView(spinnerChart)
+
+        // 표시 개수 Spinner
+        container.addView(TextView(ctx).apply {
+            text = getString(R.string.stats_inline_limit)
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(ContextCompat.getColor(ctx, R.color.on_surface))
+            val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            lp.topMargin = (8 * density).toInt()
+            layoutParams = lp
+        })
+        val spinnerLimit = Spinner(ctx).apply {
+            adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item, limitOptions.map { it.toString() }).also {
+                it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+            }
+            val idx = limitOptions.indexOf(currentEntry.limit)
+            if (idx >= 0) setSelection(idx)
+        }
+        container.addView(spinnerLimit)
+
+        AlertDialog.Builder(ctx)
+            .setTitle(R.string.stats_inline_config_title)
+            .setView(container)
+            .setPositiveButton(R.string.stats_inline_save) { _, _ ->
+                val selectedType = allowedTypes[spinnerType.selectedItemPosition.coerceIn(0, allowedTypes.size - 1)]
+                val selectedChart = chartTypes[spinnerChart.selectedItemPosition.coerceIn(0, chartTypes.size - 1)]
+                val selectedLimit = limitOptions[spinnerLimit.selectedItemPosition.coerceIn(0, limitOptions.size - 1)]
+
+                val newEntry = FieldStatsConfig.AnalysisEntry(
+                    type = selectedType,
+                    chart = selectedChart,
+                    limit = selectedLimit
+                )
+                // 기존 설정의 나머지(binning, valueLabels 등)는 유지하고 analyses만 교체
+                val newConfig = currentConfig.copy(analyses = listOf(newEntry))
+                viewModel.updateFieldStatsConfig(fieldDef, newConfig)
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
     }
 
     override fun onDestroyView() {

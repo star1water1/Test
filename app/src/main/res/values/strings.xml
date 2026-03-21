@@ -894,6 +894,13 @@
     <string name="body_preset_detailed">상세 분류</string>
     <string name="body_preset_custom">사용자 정의</string>
 
+    <!-- Feature: Inline stats config -->
+    <string name="stats_inline_config_title">분석 설정</string>
+    <string name="stats_inline_analysis_type">분석 타입</string>
+    <string name="stats_inline_chart_type">차트 타입</string>
+    <string name="stats_inline_limit">표시 개수</string>
+    <string name="stats_inline_save">적용</string>
+
     <!-- Feature: Event from character screen -->
     <string name="save_character_first">캐릭터를 먼저 저장해주세요</string>
 </resources>

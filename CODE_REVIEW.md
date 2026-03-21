@@ -1,6 +1,6 @@
 # NovelCharacter 전반적 코드 리뷰
 
-> 검토일: 2026-03-21 (4차 갱신)
+> 검토일: 2026-03-21 (5차 갱신)
 > 대상: Kotlin Android 앱 (122 소스 파일, Room DB v25, MVVM 아키텍처)
 
 ---
@@ -35,6 +35,8 @@
 | 22 | FormulaEvaluator `avg()` 함수 미구현 | `avg(a, b)` 함수 추가 완료 |
 | 23 | `filterByNovel()` nameBank/universe 필터 누락 | nameBank, universes 필터링 추가 완료 |
 | 24 | 캐릭터 상세 개별 통계 미표시 | 잠재력 등급(S~D) + 특화 유형 인라인 표시 추가 완료 |
+| 25 | 캐릭터 재정렬 UX 불일치 (원칙 04) | 검증 결과: 드래그 핸들 이미 구현되어 있음 — 이슈 아님 |
+| 26 | 통계 분석 방법 인라인 설정 부재 (원칙 01) | StatsFieldInsightFragment에 기어 아이콘 + 설정 다이얼로그 추가 완료 |
 
 ---
 
@@ -77,18 +79,19 @@
 
 ## 4. CLAUDE.md 원칙 위배 사항 (4차 갱신에서 추가)
 
-### 원칙 01: 열린 구조 — 통계 분석 방법 인라인 설정 부재
+### ~~원칙 01: 열린 구조 — 통계 분석 방법 인라인 설정 부재~~ ✅ 수정 완료
 
-`FieldStatsConfig`에서 분석 타입(DISTRIBUTION/NUMERIC/RANKING)과 차트 타입을 설정할 수 있으나, 이를 변경하는 UI가 `FieldEditDialog`에만 존재합니다. 통계 화면에서 직접 분석 방법을 변경할 수 있는 인라인 설정이 없어, 사용자가 통계 탭 → 필드 관리로 이동해야 합니다.
+~~`FieldStatsConfig`에서 분석 타입(DISTRIBUTION/NUMERIC/RANKING)과 차트 타입을 설정할 수 있으나, 이를 변경하는 UI가 `FieldEditDialog`에만 존재합니다.~~ **5차 수정:** `StatsFieldInsightFragment`의 필드 헤더에 설정 아이콘 추가, 분석 타입/차트 타입/표시 개수를 즉석에서 변경 가능. `StatsViewModel.updateFieldStatsConfig()`로 DB 저장 후 차트 즉시 갱신.
 
 ### 원칙 02: 실질적 기능성 — DataHealth 통계 입력량 중심
 
 `DataHealthStats`의 `noImageChars`, `noMemoChars`, `noAnotherNameChars` 등이 "입력했는가/안 했는가" 중심입니다. 데이터 건강도 자체는 유용하나, 원칙에서 말하는 "편향이나 패턴 발견" 중심의 분석보다 입력 완료율 중심이 더 부각되어 있습니다.
 
-### 원칙 04: 조작 마찰 최소화 — 재정렬 UX 불일치 (기존 잔여)
+### ~~원칙 04: 조작 마찰 최소화 — 재정렬 UX 불일치~~ ✅ 검증 완료 (이슈 아님)
 
-- Universe/Novel: 드래그 핸들 존재, 직접 드래그 가능
-- Character: 메뉴에서 재정렬 모드 토글 필요, 핸들 부재
+~~- Universe/Novel: 드래그 핸들 존재, 직접 드래그 가능~~
+~~- Character: 메뉴에서 재정렬 모드 토글 필요, 핸들 부재~~
+**5차 검증:** `CharacterAdapter`에 `dragHandle.setOnTouchListener → itemTouchHelper.startDrag` 패턴이 이미 올바르게 구현되어 있음. 재정렬 모드 진입 시 핸들이 표시되고 터치로 드래그 가능.
 
 ### 원칙 05: 데이터 유기적 연결 — 작품 간 필드 구성 비교 미흡
 
@@ -139,8 +142,8 @@
 | ~~**P1**~~ | ~~캐릭터 상세 개별 통계 미표시~~ | ✅ 수정 완료 (4차) |
 | ~~**P2**~~ | ~~검색 디바운스, FK 추가, 위젯 타임아웃, 이미지 경로 검증~~ | ✅ 수정 완료 |
 | ~~**P3**~~ | ~~빈 catch 블록, Gson 타입토큰, ExcelImporter 문자열 리소스화~~ | ✅ 수정 완료 |
-| **P1** | 재정렬 UX 통일 (캐릭터 핸들 추가) | 잔여 (원칙 04 위배) |
-| **P1** | 통계 분석 방법 인라인 설정 UI | 잔여 (원칙 01 위배) |
+| ~~**P1**~~ | ~~재정렬 UX 통일 (캐릭터 핸들 추가)~~ | ✅ 검증 완료 — 이미 구현됨 (5차) |
+| ~~**P1**~~ | ~~통계 분석 방법 인라인 설정 UI~~ | ✅ 수정 완료 (5차) |
 | **P2** | ExcelImporter Activity 참조, 마이그레이션 O(n²), 임포트 트랜잭션 크기 | 잔여 (설계 개선 필요) |
 | **P2** | 접근성 개선 (contentDescription, 색상 대비) | 잔여 |
 | **P2** | 작품 간 필드 구성 비교 기능 | 잔여 (원칙 05 위배) |

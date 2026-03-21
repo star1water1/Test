@@ -6,6 +6,8 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.viewModelScope
 import com.novelcharacter.app.NovelCharacterApp
+import com.novelcharacter.app.data.model.FieldDefinition
+import com.novelcharacter.app.data.model.FieldStatsConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
@@ -160,6 +162,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 _error.value = e.message
             } finally {
+                isRefreshing = false
                 _loading.value = false
             }
         }
@@ -232,6 +235,26 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
                 _error.value = e.message
             } finally {
                 _loading.value = false
+            }
+        }
+    }
+
+    // ===== 인라인 분석 설정 업데이트 =====
+
+    fun updateFieldStatsConfig(fieldDef: FieldDefinition, newConfig: FieldStatsConfig) {
+        viewModelScope.launch {
+            try {
+                val updatedConfigJson = FieldStatsConfig.applyToConfig(fieldDef.config, newConfig)
+                val updatedField = fieldDef.copy(config = updatedConfigJson)
+                withContext(Dispatchers.IO) {
+                    app.universeRepository.updateField(updatedField)
+                }
+                // 캐시 무효화 후 인사이트만 재로딩
+                cachedSnapshot = null
+                isRefreshing = true
+                loadFieldInsights()
+            } catch (e: Exception) {
+                _error.value = e.message
             }
         }
     }
