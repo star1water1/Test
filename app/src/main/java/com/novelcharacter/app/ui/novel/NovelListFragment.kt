@@ -212,6 +212,7 @@ class NovelListFragment : Fragment() {
 
     private fun observeData() {
         viewModel.filteredNovels.observe(viewLifecycleOwner) { novels ->
+            adapter.refreshRandomImages()
             adapter.submitList(novels)
             binding.emptyText.visibility = if (novels.isEmpty()) View.VISIBLE else View.GONE
         }
