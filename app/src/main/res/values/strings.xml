@@ -861,6 +861,9 @@
     <string name="import_result_relationships">관계 %d개</string>
     <string name="import_result_relationship_changes">관계 변화 %d개</string>
     <string name="import_result_names">이름 %d개</string>
+    <string name="import_result_preset_templates">필드 템플릿 %d개</string>
+    <string name="import_result_search_presets">검색 프리셋 %d개</string>
+    <string name="import_result_settings">앱 설정 %d건 복원</string>
     <string name="import_result_skipped">오류 %d건 건너뜀</string>
     <string name="import_result_name_mappings">이름 매칭 %d건</string>
     <string name="import_result_new_codes">새 코드 %d건 발급</string>

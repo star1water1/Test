@@ -13,6 +13,7 @@ import com.novelcharacter.app.data.model.CharacterStateChange
 import com.novelcharacter.app.data.model.CharacterTag
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.Novel
+import com.novelcharacter.app.util.ThemeHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -78,6 +79,9 @@ class ExcelExporter(context: Context) {
                 exportRelationships(workbook, usedSheetNames)
                 exportRelationshipChanges(workbook, usedSheetNames)
                 exportNameBank(workbook, usedSheetNames)
+                exportUserPresetTemplates(workbook, usedSheetNames)
+                exportSearchPresets(workbook, usedSheetNames)
+                exportAppSettings(workbook, usedSheetNames)
 
                 val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
                 val fileName = "NovelCharacter_$timestamp.xlsx"
@@ -794,6 +798,71 @@ class ExcelExporter(context: Context) {
         }
 
         applySpecFormatting(sheet, spec, allNames.size)
+    }
+
+    // ── 필드 템플릿 ──
+
+    private suspend fun exportUserPresetTemplates(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
+        val templates = db.userPresetTemplateDao().getAllTemplatesList()
+        if (templates.isEmpty()) return
+
+        val spec = userPresetTemplateSpec()
+        val sheetName = sanitizeSheetName(spec.sheetName, usedSheetNames)
+        val sheet = workbook.createSheet(sheetName)
+        writeHeaderRow(sheet, spec)
+
+        templates.forEachIndexed { i, t ->
+            val row = sheet.createRow(i + 1)
+            row.createCell(0).setCellValue(t.name)
+            row.createCell(1).setCellValue(t.description)
+            row.createCell(2).setCellValue(t.fieldsJson)
+            row.createCell(3).setCellValue(if (t.isBuiltIn) "Y" else "N")
+            row.createCell(4).setCellValue(t.createdAt.toDouble())
+            row.createCell(5).setCellValue(t.updatedAt.toDouble())
+        }
+
+        applySpecFormatting(sheet, spec, templates.size)
+    }
+
+    // ── 검색 프리셋 ──
+
+    private suspend fun exportSearchPresets(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
+        val presets = db.searchPresetDao().getAllPresetsList()
+        if (presets.isEmpty()) return
+
+        val spec = searchPresetSpec()
+        val sheetName = sanitizeSheetName(spec.sheetName, usedSheetNames)
+        val sheet = workbook.createSheet(sheetName)
+        writeHeaderRow(sheet, spec)
+
+        presets.forEachIndexed { i, p ->
+            val row = sheet.createRow(i + 1)
+            row.createCell(0).setCellValue(p.name)
+            row.createCell(1).setCellValue(p.query)
+            row.createCell(2).setCellValue(p.filtersJson)
+            row.createCell(3).setCellValue(p.sortMode)
+            row.createCell(4).setCellValue(if (p.isDefault) "Y" else "N")
+            row.createCell(5).setCellValue(p.createdAt.toDouble())
+            row.createCell(6).setCellValue(p.updatedAt.toDouble())
+        }
+
+        applySpecFormatting(sheet, spec, presets.size)
+    }
+
+    // ── 앱 설정 ──
+
+    private fun exportAppSettings(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
+        val spec = appSettingsSpec()
+        val sheetName = sanitizeSheetName(spec.sheetName, usedSheetNames)
+        val sheet = workbook.createSheet(sheetName)
+        writeHeaderRow(sheet, spec)
+
+        val themeMode = ThemeHelper.getSavedTheme(appContext)
+        val row = sheet.createRow(1)
+        row.createCell(0).setCellValue("theme_mode")
+        row.createCell(1).setCellValue(themeMode.toDouble())
+
+        applySpecFormatting(sheet, spec, 1)
     }
 
     companion object {

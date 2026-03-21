@@ -9,6 +9,7 @@ import org.apache.poi.ss.usermodel.FillPatternType
 import org.apache.poi.ss.usermodel.IndexedColors
 import org.apache.poi.xssf.usermodel.XSSFCellStyle
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
+import com.novelcharacter.app.util.ThemeHelper
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -47,6 +48,9 @@ class AutoBackupWorker(
                 exportRelationships(db, workbook, headerStyle, usedSheetNames)
                 exportRelationshipChanges(db, workbook, headerStyle, usedSheetNames)
                 exportNameBank(db, workbook, headerStyle, usedSheetNames)
+                exportUserPresetTemplates(db, workbook, headerStyle, usedSheetNames)
+                exportSearchPresets(db, workbook, headerStyle, usedSheetNames)
+                exportAppSettings(workbook, headerStyle, usedSheetNames)
 
                 // Write workbook to bytes, encrypt, and save to internal storage
                 saveEncryptedBackup(workbook)
@@ -472,6 +476,75 @@ class AutoBackupWorker(
             row.createCell(5).setCellValue(usedByChar?.name ?: "")
             row.createCell(6).setCellValue(usedByChar?.code ?: "")
         }
+    }
+
+    private suspend fun exportUserPresetTemplates(
+        db: AppDatabase, workbook: XSSFWorkbook,
+        headerStyle: XSSFCellStyle, usedSheetNames: MutableSet<String>
+    ) {
+        val templates = db.userPresetTemplateDao().getAllTemplatesList()
+        if (templates.isEmpty()) return
+
+        val sheetName = sanitizeSheetName("필드 템플릿", usedSheetNames)
+        val sheet = workbook.createSheet(sheetName)
+        val headers = listOf("이름", "설명", "설정(JSON)", "기본제공", "생성일", "수정일")
+        val headerRow = sheet.createRow(0)
+        headers.forEachIndexed { i, h ->
+            headerRow.createCell(i).apply { setCellValue(h); cellStyle = headerStyle }
+        }
+        templates.forEachIndexed { i, t ->
+            val row = sheet.createRow(i + 1)
+            row.createCell(0).setCellValue(t.name)
+            row.createCell(1).setCellValue(t.description)
+            row.createCell(2).setCellValue(t.fieldsJson)
+            row.createCell(3).setCellValue(if (t.isBuiltIn) "Y" else "N")
+            row.createCell(4).setCellValue(t.createdAt.toDouble())
+            row.createCell(5).setCellValue(t.updatedAt.toDouble())
+        }
+    }
+
+    private suspend fun exportSearchPresets(
+        db: AppDatabase, workbook: XSSFWorkbook,
+        headerStyle: XSSFCellStyle, usedSheetNames: MutableSet<String>
+    ) {
+        val presets = db.searchPresetDao().getAllPresetsList()
+        if (presets.isEmpty()) return
+
+        val sheetName = sanitizeSheetName("검색 프리셋", usedSheetNames)
+        val sheet = workbook.createSheet(sheetName)
+        val headers = listOf("이름", "검색어", "필터(JSON)", "정렬모드", "기본값", "생성일", "수정일")
+        val headerRow = sheet.createRow(0)
+        headers.forEachIndexed { i, h ->
+            headerRow.createCell(i).apply { setCellValue(h); cellStyle = headerStyle }
+        }
+        presets.forEachIndexed { i, p ->
+            val row = sheet.createRow(i + 1)
+            row.createCell(0).setCellValue(p.name)
+            row.createCell(1).setCellValue(p.query)
+            row.createCell(2).setCellValue(p.filtersJson)
+            row.createCell(3).setCellValue(p.sortMode)
+            row.createCell(4).setCellValue(if (p.isDefault) "Y" else "N")
+            row.createCell(5).setCellValue(p.createdAt.toDouble())
+            row.createCell(6).setCellValue(p.updatedAt.toDouble())
+        }
+    }
+
+    private fun exportAppSettings(
+        workbook: XSSFWorkbook,
+        headerStyle: XSSFCellStyle, usedSheetNames: MutableSet<String>
+    ) {
+        val sheetName = sanitizeSheetName("앱 설정", usedSheetNames)
+        val sheet = workbook.createSheet(sheetName)
+        val headers = listOf("설정키", "설정값")
+        val headerRow = sheet.createRow(0)
+        headers.forEachIndexed { i, h ->
+            headerRow.createCell(i).apply { setCellValue(h); cellStyle = headerStyle }
+        }
+
+        val themeMode = ThemeHelper.getSavedTheme(appContext)
+        val row = sheet.createRow(1)
+        row.createCell(0).setCellValue("theme_mode")
+        row.createCell(1).setCellValue(themeMode.toDouble())
     }
 
     private fun sanitizeSheetName(name: String, usedNames: MutableSet<String>): String {

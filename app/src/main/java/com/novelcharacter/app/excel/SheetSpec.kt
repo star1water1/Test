@@ -76,7 +76,10 @@ val RESERVED_SHEET_NAMES = setOf(
     stateChangeSpec().sheetName,
     relationshipSpec().sheetName,
     relationshipChangeSpec().sheetName,
-    nameBankSpec().sheetName
+    nameBankSpec().sheetName,
+    userPresetTemplateSpec().sheetName,
+    searchPresetSpec().sheetName,
+    appSettingsSpec().sheetName
 )
 
 /** Split a comma-separated string into a trimmed, non-blank list. */
@@ -234,5 +237,38 @@ fun nameBankSpec() = SheetSpec(
         ColumnSpec("사용여부", dropdownOptions = listOf("Y", "N"), width = 4000),
         ColumnSpec("사용 캐릭터", width = 5000),
         ColumnSpec("사용캐릭터코드", readOnly = true, width = 4000)
+    )
+)
+
+fun userPresetTemplateSpec() = SheetSpec(
+    sheetName = "필드 템플릿",
+    columns = listOf(
+        ColumnSpec("이름", required = true, width = 8000),
+        ColumnSpec("설명", width = 15000),
+        ColumnSpec("설정(JSON)", width = 15000),
+        ColumnSpec("기본제공", dropdownOptions = listOf("Y", "N"), width = 4000),
+        ColumnSpec("생성일", readOnly = true, width = 6000),
+        ColumnSpec("수정일", readOnly = true, width = 6000)
+    )
+)
+
+fun searchPresetSpec() = SheetSpec(
+    sheetName = "검색 프리셋",
+    columns = listOf(
+        ColumnSpec("이름", required = true, width = 8000),
+        ColumnSpec("검색어", width = 10000),
+        ColumnSpec("필터(JSON)", width = 15000),
+        ColumnSpec("정렬모드", dropdownOptions = listOf("relevance", "name", "tag", "recent"), width = 5000),
+        ColumnSpec("기본값", dropdownOptions = listOf("Y", "N"), width = 4000),
+        ColumnSpec("생성일", readOnly = true, width = 6000),
+        ColumnSpec("수정일", readOnly = true, width = 6000)
+    )
+)
+
+fun appSettingsSpec() = SheetSpec(
+    sheetName = "앱 설정",
+    columns = listOf(
+        ColumnSpec("설정키", required = true, width = 8000),
+        ColumnSpec("설정값", width = 10000)
     )
 )

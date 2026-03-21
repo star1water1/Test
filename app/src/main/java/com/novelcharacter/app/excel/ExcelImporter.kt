@@ -25,7 +25,7 @@ class ExcelImporter(context: Context) {
     private val db = AppDatabase.getDatabase(appContext)
     @Volatile private var supervisorJob = kotlinx.coroutines.SupervisorJob()
     @Volatile private var importScope = CoroutineScope(Dispatchers.IO + supervisorJob)
-    private val importService = ExcelImportService(db)
+    private val importService = ExcelImportService(db, appContext)
 
     private var importLauncher: androidx.activity.result.ActivityResultLauncher<Array<String>>? = null
     private var currentActivityRef: java.lang.ref.WeakReference<Activity>? = null
@@ -199,6 +199,11 @@ class ExcelImporter(context: Context) {
         if (result.newRelationshipChanges > 0) parts.add(r.getString(com.novelcharacter.app.R.string.import_result_relationship_changes, result.newRelationshipChanges))
         val nbTotal = result.newNameBank + result.updatedNameBank
         if (nbTotal > 0) parts.add(r.getString(com.novelcharacter.app.R.string.import_result_names, nbTotal))
+        val ptTotal = result.newPresetTemplates + result.updatedPresetTemplates
+        if (ptTotal > 0) parts.add(r.getString(com.novelcharacter.app.R.string.import_result_preset_templates, ptTotal))
+        val spTotal = result.newSearchPresets + result.updatedSearchPresets
+        if (spTotal > 0) parts.add(r.getString(com.novelcharacter.app.R.string.import_result_search_presets, spTotal))
+        if (result.restoredSettings > 0) parts.add(r.getString(com.novelcharacter.app.R.string.import_result_settings, result.restoredSettings))
         if (result.skippedRows > 0)
             parts.add(r.getString(com.novelcharacter.app.R.string.import_result_skipped, result.skippedRows))
         if (result.nameBasedMappings > 0)

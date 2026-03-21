@@ -15,6 +15,8 @@ import com.novelcharacter.app.data.model.TimelineCharacterCrossRef
 import com.novelcharacter.app.data.model.TimelineEvent
 import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.data.model.FieldType
+import com.novelcharacter.app.data.model.SearchPreset
+import com.novelcharacter.app.data.model.UserPresetTemplate
 import com.novelcharacter.app.data.model.generateEntityCode
 import org.apache.poi.ss.usermodel.CellType
 import org.apache.poi.ss.usermodel.Row
@@ -46,6 +48,11 @@ data class ImportResult(
     var updatedRelationshipChanges: Int = 0,
     var newNameBank: Int = 0,
     var updatedNameBank: Int = 0,
+    var newPresetTemplates: Int = 0,
+    var updatedPresetTemplates: Int = 0,
+    var newSearchPresets: Int = 0,
+    var updatedSearchPresets: Int = 0,
+    var restoredSettings: Int = 0,
     var skippedRows: Int = 0,
     val errors: MutableList<String> = mutableListOf(),
     var nameBasedMappings: Int = 0,
@@ -55,7 +62,7 @@ data class ImportResult(
     val pendingConflicts: MutableList<String> = mutableListOf()
 )
 
-class ExcelImportService(private val db: AppDatabase) {
+class ExcelImportService(private val db: AppDatabase, private val appContext: android.content.Context? = null) {
 
     private val novelIdCache = mutableMapOf<Pair<String, Long?>, Long?>()
     private var truncatedFieldCount = 0
@@ -125,6 +132,18 @@ class ExcelImportService(private val db: AppDatabase) {
         // Border color (Sprint D)
         alias("테두리색", "border_color", "bordercolor")
         alias("테두리두께", "border_width", "borderwidth")
+        // User preset template
+        alias("기본제공", "is_built_in", "builtin")
+        alias("생성일", "created_at", "createdat")
+        alias("수정일", "updated_at", "updatedat")
+        // Search preset
+        alias("검색어", "query", "search_query")
+        alias("필터(JSON)", "filters", "filter_json")
+        alias("정렬모드", "sort_mode", "sortmode")
+        alias("기본값", "is_default", "default")
+        // App settings
+        alias("설정키", "setting_key", "key")
+        alias("설정값", "setting_value", "value")
     }
 
     suspend fun importAll(
@@ -156,6 +175,12 @@ class ExcelImportService(private val db: AppDatabase) {
             importRelationships(workbook, result, onProgress, totalRows)
             importRelationshipChanges(workbook, result, onProgress, totalRows)
             importNameBank(workbook, result, onProgress, totalRows)
+        }
+        // Phase 4: User settings and presets
+        db.withTransaction {
+            importUserPresetTemplates(workbook, result, onProgress, totalRows)
+            importSearchPresets(workbook, result, onProgress, totalRows)
+            importAppSettings(workbook, result)
         }
 
         if (truncatedFieldCount > 0) {
@@ -1066,6 +1091,155 @@ class ExcelImportService(private val db: AppDatabase) {
             }
         }
         reportProgress(onProgress, "이름 은행", sheet.lastRowNum, totalRows)
+    }
+
+    // ── 필드 템플릿 가져오기 ──
+
+    private suspend fun importUserPresetTemplates(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
+        val spec = userPresetTemplateSpec()
+        val sheet = workbook.getSheet(spec.sheetName) ?: return
+        val headerRow = sheet.getRow(0) ?: return
+        if (!isValidHeader(headerRow, spec.firstColumnHeader)) return
+
+        val cols = resolveHeaderColumns(headerRow)
+        val nameColIndex = cols["이름"] ?: 0
+        val descColIndex = cols["설명"] ?: 1
+        val fieldsJsonColIndex = cols["설정(JSON)"] ?: 2
+        val builtInColIndex = cols["기본제공"] ?: 3
+        val createdAtColIndex = cols["생성일"] ?: -1
+        val updatedAtColIndex = cols["수정일"] ?: -1
+
+        val existingTemplates = db.userPresetTemplateDao().getAllTemplatesList()
+        val existingByName = existingTemplates.associateBy { it.name }.toMutableMap()
+
+        for (i in 1..sheet.lastRowNum) {
+            try {
+                val row = sheet.getRow(i) ?: continue
+                val name = getCellString(row, nameColIndex)
+                if (name.isBlank()) continue
+
+                val description = getCellString(row, descColIndex)
+                val fieldsJson = getCellString(row, fieldsJsonColIndex).ifBlank { "[]" }
+                val isBuiltIn = parseBoolean(getCellString(row, builtInColIndex))
+                val createdAt = if (createdAtColIndex >= 0) parseNumber(getCellString(row, createdAtColIndex))?.toLong() ?: System.currentTimeMillis() else System.currentTimeMillis()
+                val updatedAt = if (updatedAtColIndex >= 0) parseNumber(getCellString(row, updatedAtColIndex))?.toLong() ?: System.currentTimeMillis() else System.currentTimeMillis()
+
+                val existing = existingByName[name]
+                if (existing != null) {
+                    db.userPresetTemplateDao().update(existing.copy(
+                        description = description, fieldsJson = fieldsJson,
+                        isBuiltIn = isBuiltIn, updatedAt = updatedAt
+                    ))
+                    result.updatedPresetTemplates++
+                } else {
+                    val newTemplate = UserPresetTemplate(
+                        name = name, description = description,
+                        fieldsJson = fieldsJson, isBuiltIn = isBuiltIn,
+                        createdAt = createdAt, updatedAt = updatedAt
+                    )
+                    val newId = db.userPresetTemplateDao().insert(newTemplate)
+                    existingByName[name] = newTemplate.copy(id = newId)
+                    result.newPresetTemplates++
+                }
+            } catch (e: Exception) {
+                result.skippedRows++
+                result.errors.add("필드 템플릿 행 $i: ${e.message}")
+            }
+        }
+        reportProgress(onProgress, "필드 템플릿", sheet.lastRowNum, totalRows)
+    }
+
+    // ── 검색 프리셋 가져오기 ──
+
+    private suspend fun importSearchPresets(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
+        val spec = searchPresetSpec()
+        val sheet = workbook.getSheet(spec.sheetName) ?: return
+        val headerRow = sheet.getRow(0) ?: return
+        if (!isValidHeader(headerRow, spec.firstColumnHeader)) return
+
+        val cols = resolveHeaderColumns(headerRow)
+        val nameColIndex = cols["이름"] ?: 0
+        val queryColIndex = cols["검색어"] ?: 1
+        val filtersColIndex = cols["필터(JSON)"] ?: 2
+        val sortModeColIndex = cols["정렬모드"] ?: 3
+        val isDefaultColIndex = cols["기본값"] ?: 4
+        val createdAtColIndex = cols["생성일"] ?: -1
+        val updatedAtColIndex = cols["수정일"] ?: -1
+
+        val existingPresets = db.searchPresetDao().getAllPresetsList()
+        val existingByName = existingPresets.associateBy { it.name }.toMutableMap()
+
+        for (i in 1..sheet.lastRowNum) {
+            try {
+                val row = sheet.getRow(i) ?: continue
+                val name = getCellString(row, nameColIndex)
+                if (name.isBlank()) continue
+
+                val query = getCellString(row, queryColIndex)
+                val filtersJson = getCellString(row, filtersColIndex).ifBlank { "{}" }
+                val sortMode = getCellString(row, sortModeColIndex).ifBlank { SearchPreset.SORT_RELEVANCE }
+                val isDefault = parseBoolean(getCellString(row, isDefaultColIndex))
+                val createdAt = if (createdAtColIndex >= 0) parseNumber(getCellString(row, createdAtColIndex))?.toLong() ?: System.currentTimeMillis() else System.currentTimeMillis()
+                val updatedAt = if (updatedAtColIndex >= 0) parseNumber(getCellString(row, updatedAtColIndex))?.toLong() ?: System.currentTimeMillis() else System.currentTimeMillis()
+
+                val existing = existingByName[name]
+                if (existing != null) {
+                    db.searchPresetDao().update(existing.copy(
+                        query = query, filtersJson = filtersJson,
+                        sortMode = sortMode, isDefault = isDefault,
+                        updatedAt = updatedAt
+                    ))
+                    result.updatedSearchPresets++
+                } else {
+                    val newPreset = SearchPreset(
+                        name = name, query = query, filtersJson = filtersJson,
+                        sortMode = sortMode, isDefault = isDefault,
+                        createdAt = createdAt, updatedAt = updatedAt
+                    )
+                    val newId = db.searchPresetDao().insert(newPreset)
+                    existingByName[name] = newPreset.copy(id = newId)
+                    result.newSearchPresets++
+                }
+            } catch (e: Exception) {
+                result.skippedRows++
+                result.errors.add("검색 프리셋 행 $i: ${e.message}")
+            }
+        }
+        reportProgress(onProgress, "검색 프리셋", sheet.lastRowNum, totalRows)
+    }
+
+    // ── 앱 설정 가져오기 ──
+
+    private suspend fun importAppSettings(workbook: Workbook, result: ImportResult) {
+        val spec = appSettingsSpec()
+        val sheet = workbook.getSheet(spec.sheetName) ?: return
+        val headerRow = sheet.getRow(0) ?: return
+        if (!isValidHeader(headerRow, spec.firstColumnHeader)) return
+
+        val cols = resolveHeaderColumns(headerRow)
+        val keyColIndex = cols["설정키"] ?: 0
+        val valueColIndex = cols["설정값"] ?: 1
+
+        for (i in 1..sheet.lastRowNum) {
+            try {
+                val row = sheet.getRow(i) ?: continue
+                val key = getCellString(row, keyColIndex)
+                if (key.isBlank()) continue
+                val value = getCellString(row, valueColIndex)
+
+                when (key) {
+                    "theme_mode" -> {
+                        val ctx = appContext ?: continue
+                        val mode = parseNumber(value)?.toInt() ?: 0
+                        val validMode = mode.coerceIn(0, 2)
+                        com.novelcharacter.app.util.ThemeHelper.saveTheme(ctx, validMode)
+                        result.restoredSettings++
+                    }
+                }
+            } catch (e: Exception) {
+                result.errors.add("앱 설정 행 $i: ${e.message}")
+            }
+        }
     }
 
     // ── 유틸리티 메서드 ──
