@@ -51,6 +51,14 @@ class CharacterAdapter(
         }
     }
 
+    // 캐릭터별 표시 이미지 인덱스 (목록 새로고침 시 랜덤 재설정)
+    private val imageIndexMap = mutableMapOf<Long, Int>()
+
+    /** 캐릭터 이미지 표시를 랜덤으로 재설정 (목록 새로고침 시 호출) */
+    fun refreshRandomImages() {
+        imageIndexMap.clear()
+    }
+
     fun setSelectionMode(enabled: Boolean) {
         isSelectionMode = enabled
         notifyItemRangeChanged(0, itemCount)
@@ -239,7 +247,10 @@ class CharacterAdapter(
             }
 
             if (paths.isNotEmpty()) {
-                val path = paths.random()
+                // 캐릭터별 인덱스를 기억하여 재바인드 시 같은 이미지 표시 (캐시 스래싱 방지)
+                // submitList/refreshRandomImages 호출 시 인덱스가 재설정되어 새 랜덤 이미지 표시
+                val idx = imageIndexMap.getOrPut(character.id) { (0 until paths.size).random() }
+                val path = paths[idx % paths.size]
                 // Check cache first
                 val cached = thumbnailCache.get(path)
                 if (cached != null) {

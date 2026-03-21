@@ -311,13 +311,20 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
         callback(null)
     }
 
-    /** 세계관에 속한 작품 중 이미지가 있는 작품 목록 반환 (select_novel UI용) */
+    /** 세계관에 속한 작품 중 이미지 표시 가능한 작품 목록 반환 (select_novel UI용) */
     fun getNovelsWithImageForUniverse(universeId: Long, callback: (List<Pair<Long, String>>) -> Unit) {
         viewModelScope.launch {
             try {
                 val novels = novelRepository.getNovelsByUniverseList(universeId)
+                // 직접 이미지 + 캐릭터 이미지 모드 작품 모두 포함 (계단식 해상도와 일관성 유지)
                 val result = novels.mapNotNull { novel ->
-                    if (novel.imagePath.isNotBlank()) Pair(novel.id, novel.title) else null
+                    if (novel.imagePath.isNotBlank() ||
+                        novel.imageMode in listOf(
+                            Novel.IMAGE_MODE_RANDOM_CHARACTER,
+                            Novel.IMAGE_MODE_SELECT_CHARACTER
+                        )) {
+                        Pair(novel.id, novel.title)
+                    } else null
                 }
                 callback(result)
             } catch (_: Exception) {

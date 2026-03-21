@@ -63,31 +63,21 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** 다른 세계관의 필드 목록 조회 */
-    suspend fun getFieldsFromOtherUniverses(currentUniverseId: Long): Map<Universe, List<FieldDefinition>> {
-        val allUniverses = universeRepository.getAllUniversesList()
-        val result = mutableMapOf<Universe, List<FieldDefinition>>()
-        for (universe in allUniverses) {
-            if (universe.id == currentUniverseId) continue
-            val fields = universeRepository.getFieldsByUniverseList(universe.id)
-            if (fields.isNotEmpty()) {
-                result[universe] = fields
-            }
-        }
-        return result
-    }
-
     /** 다른 세계관 + 프리셋의 필드 목록 통합 조회 */
     suspend fun getFieldsFromAllSources(currentUniverseId: Long): Map<String, List<FieldDefinition>> {
         val result = linkedMapOf<String, List<FieldDefinition>>()
 
-        // 1. 다른 세계관
+        // 1. 다른 세계관 (이름 중복 시 구분을 위해 카운터 추가)
         val allUniverses = universeRepository.getAllUniversesList()
+        val nameCount = mutableMapOf<String, Int>()
         for (universe in allUniverses) {
             if (universe.id == currentUniverseId) continue
             val fields = universeRepository.getFieldsByUniverseList(universe.id)
             if (fields.isNotEmpty()) {
-                result[universe.name] = fields
+                val count = nameCount.getOrDefault(universe.name, 0)
+                nameCount[universe.name] = count + 1
+                val label = if (count > 0) "${universe.name} (${count + 1})" else universe.name
+                result[label] = fields
             }
         }
 

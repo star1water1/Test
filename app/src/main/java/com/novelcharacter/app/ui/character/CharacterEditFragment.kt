@@ -13,7 +13,7 @@ import android.widget.ImageView
 import android.widget.Spinner
 import android.widget.TextView
 import android.widget.LinearLayout
-import android.widget.AutoCompleteTextView
+import com.google.android.material.textfield.MaterialAutoCompleteTextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.Fragment
@@ -232,7 +232,7 @@ class CharacterEditFragment : Fragment() {
             val widget = fieldInputMap[field.id] ?: continue
 
             when (widget) {
-                is AutoCompleteTextView -> widget.setText(savedValue, false)
+                is MaterialAutoCompleteTextView -> widget.setText(savedValue, false)
                 is TextInputEditText -> widget.setText(savedValue)
                 is LinearLayout -> {
                     // 구조화 입력: 저장된 값을 파트별로 분리하여 채움
@@ -347,7 +347,7 @@ class CharacterEditFragment : Fragment() {
                                 isHelperTextEnabled = true
                             }
                         }
-                        val editText = AutoCompleteTextView(context).apply {
+                        val editText = MaterialAutoCompleteTextView(context).apply {
                             layoutParams = LinearLayout.LayoutParams(
                                 LinearLayout.LayoutParams.MATCH_PARENT,
                                 LinearLayout.LayoutParams.WRAP_CONTENT
@@ -489,7 +489,7 @@ class CharacterEditFragment : Fragment() {
                         }
                         hint = getString(R.string.hint_multi_text_format, field.name)
                     }
-                    val editText = AutoCompleteTextView(context).apply {
+                    val editText = MaterialAutoCompleteTextView(context).apply {
                         layoutParams = LinearLayout.LayoutParams(
                             LinearLayout.LayoutParams.MATCH_PARENT,
                             LinearLayout.LayoutParams.WRAP_CONTENT
@@ -602,7 +602,7 @@ class CharacterEditFragment : Fragment() {
             if (fieldType == FieldType.CALCULATED) continue
             val widget = fieldInputMap[field.id] ?: continue
             val isEmpty = when (widget) {
-                is AutoCompleteTextView -> widget.text.isNullOrBlank()
+                is MaterialAutoCompleteTextView -> widget.text.isNullOrBlank()
                 is TextInputEditText -> widget.text.isNullOrBlank()
                 is Spinner -> widget.selectedItemPosition <= 0
                 is LinearLayout -> {
@@ -630,7 +630,7 @@ class CharacterEditFragment : Fragment() {
             if (fieldType == FieldType.CALCULATED) continue
 
             val value: String = when (widget) {
-                is AutoCompleteTextView -> widget.text.toString().trim()
+                is MaterialAutoCompleteTextView -> widget.text.toString().trim()
                 is TextInputEditText -> widget.text.toString().trim()
                 is Spinner -> {
                     if (widget.selectedItemPosition > 0) {
