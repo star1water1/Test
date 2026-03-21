@@ -456,7 +456,7 @@ class CharacterDetailFragment : Fragment() {
                 if (v.isNotBlank()) charKeyValues[f.key] = v
             }
             val eval = com.novelcharacter.app.util.FormulaEvaluator(charKeyValues, allFields)
-            try { eval.evaluate(formula) } catch (_: Exception) { null }
+            try { eval.evaluate(formula).takeIf { it.isFinite() } } catch (_: Exception) { null }
         }
     }
 

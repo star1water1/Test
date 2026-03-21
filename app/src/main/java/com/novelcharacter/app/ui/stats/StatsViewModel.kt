@@ -9,6 +9,7 @@ import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.FieldStatsConfig
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -87,6 +88,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private var isRefreshing = false
+    private var statsJob: Job? = null
 
     fun setNovelFilter(novelId: Long?) {
         _selectedNovelId.value = novelId
@@ -101,9 +103,10 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
 
     fun loadAllStats() {
         if (!isRefreshing && _summary.value != null) return
+        statsJob?.cancel()
         _loading.value = true
         _error.value = null
-        viewModelScope.launch {
+        statsJob = viewModelScope.launch {
             try {
                 val snapshot = ensureSnapshot()
                 val filtered = getFilteredSnapshot(snapshot)
@@ -249,10 +252,10 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
                 withContext(Dispatchers.IO) {
                     app.universeRepository.updateField(updatedField)
                 }
-                // 캐시 무효화 후 인사이트만 재로딩
+                // 캐시 무효화 후 전체 통계 재로딩
                 cachedSnapshot = null
                 isRefreshing = true
-                loadFieldInsights()
+                loadAllStats()
             } catch (e: Exception) {
                 _error.value = e.message
             }

@@ -863,7 +863,9 @@ class CharacterEditFragment : Fragment() {
                 createdAt = existingCharacter?.createdAt ?: System.currentTimeMillis(),
                 updatedAt = System.currentTimeMillis(),
                 memo = memo,
-                code = existingCharacter?.code ?: generateEntityCode()
+                code = existingCharacter?.code ?: generateEntityCode(),
+                displayOrder = existingCharacter?.displayOrder ?: 0,
+                isPinned = existingCharacter?.isPinned ?: false
             )
 
             isSaving = true
