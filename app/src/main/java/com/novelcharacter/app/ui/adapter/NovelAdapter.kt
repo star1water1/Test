@@ -202,9 +202,10 @@ class NovelAdapter(
 
             when (novel.imageMode) {
                 Novel.IMAGE_MODE_CUSTOM -> {
-                    if (novel.imagePath.isNotBlank()) {
+                    val paths = parseImagePaths(novel.imagePaths)
+                    if (paths.isNotEmpty()) {
                         binding.novelImage.visibility = View.VISIBLE
-                        loadImageFromPath(novel.imagePath, novel.id)
+                        loadImageFromPath(paths.random(), novel.id)
                     }
                 }
                 Novel.IMAGE_MODE_RANDOM_CHARACTER, Novel.IMAGE_MODE_SELECT_CHARACTER -> {
@@ -269,6 +270,16 @@ class NovelAdapter(
             }
         }
         return inSampleSize
+    }
+
+    private fun parseImagePaths(json: String): List<String> {
+        if (json.isBlank() || json == "[]") return emptyList()
+        return try {
+            val arr = org.json.JSONArray(json)
+            (0 until arr.length()).map { arr.getString(it) }.filter { it.isNotBlank() }
+        } catch (_: Exception) {
+            emptyList()
+        }
     }
 
     class NovelDiffCallback : DiffUtil.ItemCallback<Novel>() {

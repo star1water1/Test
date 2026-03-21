@@ -34,7 +34,7 @@ data class Universe(
     val displayOrder: Long = 0,
     val borderColor: String = "",
     val borderWidthDp: Float = 1.5f,
-    val imagePath: String = "",       // 직접 등록한 이미지 경로
+    val imagePaths: String = "[]",     // 직접 등록한 이미지 경로 JSON 배열
     val imageMode: String = "none",   // none, custom, random_character, select_character
     val imageCharacterId: Long? = null, // select_character 모드에서 선택된 캐릭터 ID
     val imageNovelId: Long? = null,    // select_novel 모드에서 선택된 작품 ID

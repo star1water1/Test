@@ -38,7 +38,7 @@ data class Novel(
     val borderWidthDp: Float = 1.5f,
     val inheritUniverseBorder: Boolean = true,
     val isPinned: Boolean = false,
-    val imagePath: String = "",           // 직접 등록한 이미지 경로
+    val imagePaths: String = "[]",         // 직접 등록한 이미지 경로 JSON 배열
     val imageMode: String = "none",       // none, custom, random_character, select_character
     val imageCharacterId: Long? = null,   // select_character 모드에서 선택된 캐릭터 ID
     val standardYear: Int? = null          // 작중 표준 년도 (현재 시점)

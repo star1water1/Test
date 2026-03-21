@@ -142,7 +142,7 @@ class AutoBackupWorker(
             row.createCell(3).setCellValue(u.displayOrder.toDouble())
             row.createCell(4).setCellValue(u.borderColor)
             row.createCell(5).setCellValue(u.borderWidthDp.toDouble())
-            row.createCell(6).setCellValue(u.imagePath)
+            row.createCell(6).setCellValue(u.imagePaths)
             row.createCell(7).setCellValue(u.imageMode)
         }
     }
@@ -174,7 +174,7 @@ class AutoBackupWorker(
             row.createCell(5).setCellValue(n.displayOrder.toDouble())
             row.createCell(6).setCellValue(n.borderColor)
             row.createCell(7).setCellValue(n.borderWidthDp.toDouble())
-            row.createCell(8).setCellValue(n.imagePath)
+            row.createCell(8).setCellValue(n.imagePaths)
             row.createCell(9).setCellValue(n.imageMode)
             row.createCell(10).setCellValue(n.imageCharacterId?.toDouble() ?: 0.0)
             row.createCell(11).setCellValue(if (n.inheritUniverseBorder) "Y" else "N")

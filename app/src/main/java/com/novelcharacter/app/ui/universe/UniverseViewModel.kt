@@ -242,7 +242,7 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
                 val novels = novelRepository.getNovelsByUniverseList(universeId)
                 // 직접 이미지가 있거나 캐릭터 이미지 모드인 작품을 후보로 포함
                 val candidates = novels.filter {
-                    it.imagePath.isNotBlank() ||
+                    (it.imagePaths.isNotBlank() && it.imagePaths != "[]") ||
                     it.imageMode in listOf(
                         Novel.IMAGE_MODE_RANDOM_CHARACTER,
                         Novel.IMAGE_MODE_SELECT_CHARACTER
@@ -276,13 +276,18 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
 
     /**
      * 작품 이미지를 계단식으로 해상도:
-     * 1차: 직접 이미지(imagePath) → 2차: 캐릭터 이미지 모드 → 해당 캐릭터 이미지
+     * 1차: 직접 이미지(imagePaths) → 2차: 캐릭터 이미지 모드 → 해당 캐릭터 이미지
      */
     private suspend fun resolveNovelImageCascading(novel: Novel, callback: (String?) -> Unit) {
-        // 1차: 직접 이미지
-        if (novel.imagePath.isNotBlank()) {
-            callback(novel.imagePath)
-            return
+        // 1차: 직접 이미지 (JSON 배열에서 랜덤 선택)
+        if (novel.imagePaths.isNotBlank() && novel.imagePaths != "[]") {
+            val path = try {
+                gson.fromJson(novel.imagePaths, Array<String>::class.java)?.randomOrNull()
+            } catch (_: Exception) { null }
+            if (path != null) {
+                callback(path)
+                return
+            }
         }
         // 2차: 캐릭터 이미지 모드 → 하위 캐릭터 이미지 해상도
         if (novel.imageMode in listOf(
@@ -318,7 +323,7 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
                 val novels = novelRepository.getNovelsByUniverseList(universeId)
                 // 직접 이미지 + 캐릭터 이미지 모드 작품 모두 포함 (계단식 해상도와 일관성 유지)
                 val result = novels.mapNotNull { novel ->
-                    if (novel.imagePath.isNotBlank() ||
+                    if ((novel.imagePaths.isNotBlank() && novel.imagePaths != "[]") ||
                         novel.imageMode in listOf(
                             Novel.IMAGE_MODE_RANDOM_CHARACTER,
                             Novel.IMAGE_MODE_SELECT_CHARACTER

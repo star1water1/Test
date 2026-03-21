@@ -436,7 +436,7 @@ class ExcelExporter(context: Context) {
             row.createCell(3).setCellValue(universe.displayOrder.toDouble())
             row.createCell(4).setCellValue(universe.borderColor)
             row.createCell(5).setCellValue(universe.borderWidthDp.toDouble())
-            row.createCell(6).setCellValue(universe.imagePath)
+            row.createCell(6).setCellValue(universe.imagePaths)
             row.createCell(7).setCellValue(universe.imageMode)
         }
 
@@ -467,7 +467,7 @@ class ExcelExporter(context: Context) {
             row.createCell(5).setCellValue(novel.displayOrder.toDouble())
             row.createCell(6).setCellValue(novel.borderColor)
             row.createCell(7).setCellValue(novel.borderWidthDp.toDouble())
-            row.createCell(8).setCellValue(novel.imagePath)
+            row.createCell(8).setCellValue(novel.imagePaths)
             row.createCell(9).setCellValue(novel.imageMode)
             row.createCell(10).setCellValue(novel.imageCharacterId?.toDouble() ?: 0.0)
             row.createCell(11).setCellValue(if (novel.inheritUniverseBorder) "Y" else "N")
@@ -833,11 +833,17 @@ class ExcelExporter(context: Context) {
         }
         val allUniverses = db.universeDao().getAllUniversesList()
         for (u in allUniverses) {
-            if (u.imagePath.isNotBlank()) imagePathSet.add(u.imagePath)
+            try {
+                val paths = gson.fromJson(u.imagePaths, Array<String>::class.java)
+                paths?.forEach { imagePathSet.add(it) }
+            } catch (_: Exception) { }
         }
         val allNovels = db.novelDao().getAllNovelsList()
         for (n in allNovels) {
-            if (n.imagePath.isNotBlank()) imagePathSet.add(n.imagePath)
+            try {
+                val paths = gson.fromJson(n.imagePaths, Array<String>::class.java)
+                paths?.forEach { imagePathSet.add(it) }
+            } catch (_: Exception) { }
         }
 
         // ZIP 생성

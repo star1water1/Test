@@ -42,38 +42,43 @@ class UniverseListFragment : Fragment() {
     private lateinit var adapter: UniverseAdapter
     private var recentAdapter: RecentActivityAdapter? = null
     private var itemTouchHelper: ItemTouchHelper? = null
-    /** 이미지 선택 결과를 저장할 MutableLiveData — ViewModel에 두는 것이 이상적이나
-     *  이 다이얼로그는 구성변경 시 재생성되므로, savedInstanceState로 처리 */
-    private var lastSavedImagePath: String? = null
+    private val pendingImagePaths = mutableListOf<String>()
+    private var universeImageRecyclerView: RecyclerView? = null
+    private var universeImageAdapter: RecyclerView.Adapter<RecyclerView.ViewHolder>? = null
 
     private val imagePickerLauncher = registerForActivityResult(
-        ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        if (uri == null) return@registerForActivityResult
+        ActivityResultContracts.GetMultipleContents()
+    ) { uris: List<Uri> ->
+        if (uris.isEmpty()) return@registerForActivityResult
         val ctx = context ?: return@registerForActivityResult
         viewLifecycleOwner.lifecycleScope.launch {
-            try {
-                val savedPath = withContext(Dispatchers.IO) {
-                    val inputStream = ctx.contentResolver.openInputStream(uri) ?: return@withContext null
-                    val fileName = "universe_${java.util.UUID.randomUUID()}.jpg"
-                    val file = java.io.File(ctx.filesDir, fileName)
-                    inputStream.use { input ->
-                        file.outputStream().use { out -> input.copyTo(out) }
+            for (uri in uris) {
+                try {
+                    val savedPath = withContext(Dispatchers.IO) {
+                        val inputStream = ctx.contentResolver.openInputStream(uri) ?: return@withContext null
+                        val fileName = "universe_${java.util.UUID.randomUUID()}.jpg"
+                        val file = java.io.File(ctx.filesDir, fileName)
+                        inputStream.use { input ->
+                            file.outputStream().use { out -> input.copyTo(out) }
+                        }
+                        val canonical = file.canonicalPath
+                        if (!canonical.startsWith(ctx.filesDir.canonicalPath)) {
+                            file.delete()
+                            return@withContext null
+                        }
+                        canonical
                     }
-                    // 경로 검증: filesDir 내부인지 확인
-                    val canonical = file.canonicalPath
-                    if (!canonical.startsWith(ctx.filesDir.canonicalPath)) {
-                        file.delete()
-                        return@withContext null
+                    if (savedPath != null) {
+                        pendingImagePaths.add(savedPath)
                     }
-                    canonical
+                } catch (e: Exception) {
+                    // 개별 실패는 건너뜀
                 }
-                if (savedPath != null) {
-                    lastSavedImagePath = savedPath
-                }
-            } catch (e: Exception) {
-                if (isAdded) {
-                    Toast.makeText(ctx, R.string.image_save_failed, Toast.LENGTH_SHORT).show()
+            }
+            if (isAdded) {
+                universeImageAdapter?.notifyDataSetChanged()
+                if (pendingImagePaths.isNotEmpty()) {
+                    universeImageRecyclerView?.visibility = View.VISIBLE
                 }
             }
         }
@@ -962,7 +967,10 @@ class UniverseListFragment : Fragment() {
         )
         val imageModeValues = arrayOf(Universe.IMAGE_MODE_NONE, Universe.IMAGE_MODE_CUSTOM, Universe.IMAGE_MODE_RANDOM_CHARACTER, Universe.IMAGE_MODE_SELECT_CHARACTER, Universe.IMAGE_MODE_RANDOM_NOVEL, Universe.IMAGE_MODE_SELECT_NOVEL)
         var selectedImageMode = universe?.imageMode ?: Universe.IMAGE_MODE_NONE
-        var selectedImagePath = universe?.imagePath ?: ""
+
+        // 기존 이미지 경로 목록 로드
+        pendingImagePaths.clear()
+        pendingImagePaths.addAll(parseImagePaths(universe?.imagePaths ?: "[]"))
 
         val imageModeSpinner = Spinner(ctx).apply {
             adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_dropdown_item, imageModes)
@@ -970,11 +978,10 @@ class UniverseListFragment : Fragment() {
         }
         layout.addView(imageModeSpinner)
 
-        lastSavedImagePath = null
         var selectedCharacterId: Long? = universe?.imageCharacterId
 
         val imageSelectBtn = TextView(ctx).apply {
-            text = if (selectedImagePath.isNotBlank()) getString(R.string.image_change) else getString(R.string.image_select)
+            text = if (pendingImagePaths.isNotEmpty()) getString(R.string.image_change) else getString(R.string.image_select)
             setTextColor(ctx.getColor(R.color.primary))
             setPadding(0, (8 * dp).toInt(), 0, (8 * dp).toInt())
             visibility = if (selectedImageMode == Universe.IMAGE_MODE_CUSTOM) View.VISIBLE else View.GONE
@@ -983,6 +990,15 @@ class UniverseListFragment : Fragment() {
             }
         }
         layout.addView(imageSelectBtn)
+
+        // 이미지 목록 RecyclerView
+        val imageRv = RecyclerView(ctx).apply {
+            layoutManager = LinearLayoutManager(ctx, LinearLayoutManager.HORIZONTAL, false)
+            visibility = if (selectedImageMode == Universe.IMAGE_MODE_CUSTOM && pendingImagePaths.isNotEmpty()) View.VISIBLE else View.GONE
+        }
+        universeImageRecyclerView = imageRv
+        setupUniverseImageRecyclerView(imageRv)
+        layout.addView(imageRv)
 
         // 캐릭터 선택 버튼 (select_character 모드 전용)
         val charSelectBtn = TextView(ctx).apply {
@@ -1076,7 +1092,9 @@ class UniverseListFragment : Fragment() {
         imageModeSpinner.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: android.widget.AdapterView<*>?, v: View?, pos: Int, id: Long) {
                 selectedImageMode = imageModeValues[pos]
-                imageSelectBtn.visibility = if (selectedImageMode == Universe.IMAGE_MODE_CUSTOM) View.VISIBLE else View.GONE
+                val custom = selectedImageMode == Universe.IMAGE_MODE_CUSTOM
+                imageSelectBtn.visibility = if (custom) View.VISIBLE else View.GONE
+                imageRv.visibility = if (custom && pendingImagePaths.isNotEmpty()) View.VISIBLE else View.GONE
                 charSelectBtn.visibility = if (selectedImageMode == Universe.IMAGE_MODE_SELECT_CHARACTER) View.VISIBLE else View.GONE
                 novelSelectBtn.visibility = if (selectedImageMode == Universe.IMAGE_MODE_SELECT_NOVEL) View.VISIBLE else View.GONE
             }
@@ -1096,7 +1114,7 @@ class UniverseListFragment : Fragment() {
                 val name = nameEdit.text.toString().trim()
                 val desc = descEdit.text.toString().trim()
                 val borderColor = colorHexEdit.text.toString().trim()
-                val finalImagePath = lastSavedImagePath ?: selectedImagePath
+                val finalImagePaths = org.json.JSONArray(pendingImagePaths).toString()
                 // 관계 유형을 JSON 배열로 직렬화 (기본값과 동일하면 빈 문자열 저장)
                 val relTypesJson = if (currentTypes == Universe.DEFAULT_RELATIONSHIP_TYPES) ""
                     else org.json.JSONArray(currentTypes).toString()
@@ -1113,7 +1131,7 @@ class UniverseListFragment : Fragment() {
                     if (universe == null) {
                         viewModel.insertUniverse(Universe(
                             name = name, description = desc, borderColor = borderColor,
-                            imagePath = finalImagePath, imageMode = selectedImageMode,
+                            imagePaths = finalImagePaths, imageMode = selectedImageMode,
                             imageCharacterId = finalCharId,
                             imageNovelId = finalNovelId,
                             customRelationshipTypes = relTypesJson,
@@ -1122,7 +1140,7 @@ class UniverseListFragment : Fragment() {
                     } else {
                         viewModel.updateUniverse(universe.copy(
                             name = name, description = desc, borderColor = borderColor,
-                            imagePath = finalImagePath, imageMode = selectedImageMode,
+                            imagePaths = finalImagePaths, imageMode = selectedImageMode,
                             imageCharacterId = finalCharId,
                             imageNovelId = finalNovelId,
                             customRelationshipTypes = relTypesJson,
@@ -1347,6 +1365,83 @@ class UniverseListFragment : Fragment() {
     private fun importFromExcel() {
         if (!isAdded) return
         importer.showImportDialog(this)
+    }
+
+    private fun setupUniverseImageRecyclerView(recyclerView: RecyclerView) {
+        universeImageAdapter = object : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
+            override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
+                val d = parent.context.resources.displayMetrics.density
+                val sizePx = (64 * d).toInt()
+                val imageView = android.widget.ImageView(parent.context).apply {
+                    layoutParams = RecyclerView.LayoutParams(sizePx, sizePx).apply {
+                        marginEnd = (4 * d).toInt()
+                    }
+                    scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
+                }
+                return object : RecyclerView.ViewHolder(imageView) {}
+            }
+
+            override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
+                val imageView = holder.itemView as android.widget.ImageView
+                imageView.setImageResource(R.drawable.ic_character_placeholder)
+                if (position < pendingImagePaths.size) {
+                    val path = pendingImagePaths[position]
+                    viewLifecycleOwner.lifecycleScope.launch {
+                        val bitmap = withContext(Dispatchers.IO) {
+                            try {
+                                val file = java.io.File(path)
+                                if (!file.exists()) return@withContext null
+                                val options = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                                android.graphics.BitmapFactory.decodeFile(path, options)
+                                val size = 64 * imageView.context.resources.displayMetrics.density.toInt()
+                                var sample = 1
+                                val h = options.outHeight / 2; val w = options.outWidth / 2
+                                while (h / sample >= size && w / sample >= size) sample *= 2
+                                options.inSampleSize = sample
+                                options.inJustDecodeBounds = false
+                                android.graphics.BitmapFactory.decodeFile(path, options)
+                            } catch (_: Exception) { null }
+                        }
+                        if (bitmap != null && isAdded) imageView.setImageBitmap(bitmap)
+                    }
+                }
+                imageView.setOnLongClickListener {
+                    val pos = holder.bindingAdapterPosition
+                    if (pos >= 0 && pos < pendingImagePaths.size) {
+                        AlertDialog.Builder(requireContext())
+                            .setTitle(R.string.delete)
+                            .setMessage(R.string.image_delete_confirm)
+                            .setPositiveButton(R.string.delete) { _, _ ->
+                                val currentPos = holder.bindingAdapterPosition
+                                if (currentPos >= 0 && currentPos < pendingImagePaths.size) {
+                                    pendingImagePaths.removeAt(currentPos)
+                                    universeImageAdapter?.notifyItemRemoved(currentPos)
+                                    universeImageAdapter?.notifyItemRangeChanged(currentPos, pendingImagePaths.size - currentPos)
+                                    if (pendingImagePaths.isEmpty()) {
+                                        universeImageRecyclerView?.visibility = View.GONE
+                                    }
+                                }
+                            }
+                            .setNegativeButton(R.string.cancel, null)
+                            .show()
+                    }
+                    true
+                }
+            }
+
+            override fun getItemCount() = pendingImagePaths.size
+        }
+        recyclerView.adapter = universeImageAdapter
+    }
+
+    private fun parseImagePaths(json: String): List<String> {
+        if (json.isBlank() || json == "[]") return emptyList()
+        return try {
+            val arr = org.json.JSONArray(json)
+            (0 until arr.length()).map { arr.getString(it) }.filter { it.isNotBlank() }
+        } catch (_: Exception) {
+            emptyList()
+        }
     }
 
     override fun onDestroyView() {

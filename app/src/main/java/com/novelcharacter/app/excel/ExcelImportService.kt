@@ -155,15 +155,23 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         return imagePathRemap[path] ?: path
     }
 
-    /** imagePaths JSON 배열 내 모든 경로를 재매핑. */
+    /** imagePaths JSON 배열 내 모든 경로를 재매핑. 레거시 단일 경로도 JSON 배열로 변환. */
     private fun remapImagePaths(imagePathsJson: String): String {
-        if (imagePathRemap.isEmpty() || imagePathsJson.isBlank() || imagePathsJson == "[]") return imagePathsJson
+        if (imagePathsJson.isBlank() || imagePathsJson == "[]") return "[]"
         return try {
             val gson = com.google.gson.Gson()
             val paths = gson.fromJson(imagePathsJson, Array<String>::class.java)
-            val remapped = paths?.map { remapImagePath(it) } ?: return imagePathsJson
-            gson.toJson(remapped)
-        } catch (_: Exception) { imagePathsJson }
+            if (imagePathRemap.isEmpty()) gson.toJson(paths) else {
+                val remapped = paths?.map { remapImagePath(it) } ?: return imagePathsJson
+                gson.toJson(remapped)
+            }
+        } catch (_: Exception) {
+            // 레거시: 단일 경로 문자열 → JSON 배열로 변환
+            if (imagePathsJson.isNotBlank()) {
+                val remapped = remapImagePath(imagePathsJson)
+                org.json.JSONArray(listOf(remapped)).toString()
+            } else "[]"
+        }
     }
 
     suspend fun importAll(
@@ -296,8 +304,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val displayOrder = if (orderColIndex >= 0) parseNumber(getCellString(row, orderColIndex))?.toLong() ?: 0L else 0L
                 val borderColor = if (borderColorColIndex >= 0) getCellString(row, borderColorColIndex) else ""
                 val borderWidthDp = if (borderWidthColIndex >= 0) parseNumber(getCellString(row, borderWidthColIndex))?.toFloat() ?: 1.5f else 1.5f
-                val rawImagePath = if (imagePathColIndex >= 0) getCellString(row, imagePathColIndex) else ""
-                val imagePath = remapImagePath(rawImagePath)
+                val rawImagePaths = if (imagePathColIndex >= 0) getCellString(row, imagePathColIndex) else "[]"
+                val imagePaths = remapImagePaths(rawImagePaths)
                 val imageMode = if (imageModeColIndex >= 0) getCellString(row, imageModeColIndex).ifBlank { "none" } else "none"
 
                 // Duplicate code detection within file (last-write-wins)
@@ -318,12 +326,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         existing = byCode
                         matchedByName = false
                     } else {
-                        // Code present but not found in DB => new entity, don't fallback to name
                         existing = null
                         matchedByName = false
                     }
                 } else {
-                    // No code => try name for backward compatibility + warn
                     existing = db.universeDao().getUniverseByName(name)
                     matchedByName = existing != null
                     if (matchedByName) {
@@ -336,7 +342,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     db.universeDao().update(existing.copy(
                         name = name, description = description, displayOrder = displayOrder,
                         borderColor = borderColor, borderWidthDp = borderWidthDp,
-                        imagePath = imagePath, imageMode = imageMode
+                        imagePaths = imagePaths, imageMode = imageMode
                     ))
                     result.updatedUniverses++
                 } else {
@@ -345,7 +351,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     db.universeDao().insert(Universe(
                         name = name, description = description, code = newCode,
                         displayOrder = displayOrder, borderColor = borderColor, borderWidthDp = borderWidthDp,
-                        imagePath = imagePath, imageMode = imageMode
+                        imagePaths = imagePaths, imageMode = imageMode
                     ))
                     result.newUniverses++
                 }
@@ -395,8 +401,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val displayOrder = if (orderColIndex >= 0) parseNumber(getCellString(row, orderColIndex))?.toLong() ?: 0L else 0L
                 val borderColor = if (borderColorColIndex >= 0) getCellString(row, borderColorColIndex) else ""
                 val borderWidthDp = if (borderWidthColIndex >= 0) parseNumber(getCellString(row, borderWidthColIndex))?.toFloat() ?: 1.5f else 1.5f
-                val rawNovelImagePath = if (novelImagePathColIndex >= 0) getCellString(row, novelImagePathColIndex) else ""
-                val novelImagePath = remapImagePath(rawNovelImagePath)
+                val rawNovelImagePaths = if (novelImagePathColIndex >= 0) getCellString(row, novelImagePathColIndex) else "[]"
+                val novelImagePaths = remapImagePaths(rawNovelImagePaths)
                 val novelImageMode = if (novelImageModeColIndex >= 0) getCellString(row, novelImageModeColIndex).ifBlank { "none" } else "none"
                 val novelImageCharId = if (imageCharIdColIndex >= 0) parseNumber(getCellString(row, imageCharIdColIndex))?.toLong() else null
                 val novelIsPinned = if (novelPinnedColIndex >= 0) parseBoolean(getCellString(row, novelPinnedColIndex)) else false
@@ -441,7 +447,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         title = title, description = description, universeId = universeId,
                         displayOrder = displayOrder, borderColor = borderColor, borderWidthDp = borderWidthDp,
                         inheritUniverseBorder = effectiveInherit, isPinned = novelIsPinned,
-                        imagePath = novelImagePath, imageMode = novelImageMode,
+                        imagePaths = novelImagePaths, imageMode = novelImageMode,
                         imageCharacterId = novelImageCharId
                     ))
                     result.updatedNovels++
@@ -453,7 +459,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         code = newCode, displayOrder = displayOrder,
                         borderColor = borderColor, borderWidthDp = borderWidthDp,
                         inheritUniverseBorder = effectiveInherit, isPinned = novelIsPinned,
-                        imagePath = novelImagePath, imageMode = novelImageMode,
+                        imagePaths = novelImagePaths, imageMode = novelImageMode,
                         imageCharacterId = novelImageCharId
                     ))
                     result.newNovels++

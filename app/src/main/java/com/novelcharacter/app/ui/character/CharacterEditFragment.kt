@@ -67,9 +67,9 @@ class CharacterEditFragment : Fragment() {
     private var pendingFieldValues: Bundle? = null
 
     private val imagePickerLauncher = registerForActivityResult(
-        ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        uri?.let { saveImageToInternalStorage(it) }
+        ActivityResultContracts.GetMultipleContents()
+    ) { uris: List<Uri> ->
+        uris.forEach { uri -> saveImageToInternalStorage(uri) }
     }
 
     override fun onCreateView(

@@ -60,7 +60,7 @@ import com.novelcharacter.app.data.model.Universe
         SearchPreset::class,
         UserPresetTemplate::class
     ],
-    version = 25,
+    version = 26,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -938,6 +938,86 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_25_26 = object : Migration(25, 26) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "Migrating database from version 25 to 26")
+
+                // novels: imagePath(단일 경로) → imagePaths(JSON 배열) 변환
+                db.execSQL("""CREATE TABLE IF NOT EXISTS `novels_new` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `title` TEXT NOT NULL,
+                    `description` TEXT NOT NULL DEFAULT '',
+                    `universeId` INTEGER DEFAULT NULL,
+                    `createdAt` INTEGER NOT NULL DEFAULT 0,
+                    `code` TEXT NOT NULL DEFAULT '',
+                    `displayOrder` INTEGER NOT NULL DEFAULT 0,
+                    `borderColor` TEXT NOT NULL DEFAULT '',
+                    `borderWidthDp` REAL NOT NULL DEFAULT 1.5,
+                    `inheritUniverseBorder` INTEGER NOT NULL DEFAULT 1,
+                    `isPinned` INTEGER NOT NULL DEFAULT 0,
+                    `imagePaths` TEXT NOT NULL DEFAULT '[]',
+                    `imageMode` TEXT NOT NULL DEFAULT 'none',
+                    `imageCharacterId` INTEGER DEFAULT NULL,
+                    `standardYear` INTEGER DEFAULT NULL,
+                    FOREIGN KEY(`universeId`) REFERENCES `universes`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL,
+                    FOREIGN KEY(`imageCharacterId`) REFERENCES `characters`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL
+                )""")
+                db.execSQL("""INSERT INTO `novels_new`
+                    (id, title, description, universeId, createdAt, code, displayOrder,
+                     borderColor, borderWidthDp, inheritUniverseBorder, isPinned,
+                     imagePaths, imageMode, imageCharacterId, standardYear)
+                    SELECT id, title, description, universeId, createdAt, code, displayOrder,
+                     borderColor, borderWidthDp, inheritUniverseBorder, isPinned,
+                     CASE WHEN imagePath IS NOT NULL AND imagePath != '' THEN '["' || REPLACE(REPLACE(imagePath, '\', '\\'), '"', '\"') || '"]' ELSE '[]' END,
+                     imageMode, imageCharacterId, standardYear
+                    FROM `novels`""")
+                db.execSQL("DROP TABLE `novels`")
+                db.execSQL("ALTER TABLE `novels_new` RENAME TO `novels`")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_novels_universeId` ON `novels` (`universeId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_novels_createdAt` ON `novels` (`createdAt`)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_novels_code` ON `novels` (`code`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_novels_imageCharacterId` ON `novels` (`imageCharacterId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_novels_universeId_isPinned_displayOrder` ON `novels` (`universeId`, `isPinned`, `displayOrder`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_novels_isPinned_displayOrder` ON `novels` (`isPinned`, `displayOrder`)")
+
+                // universes: imagePath(단일 경로) → imagePaths(JSON 배열) 변환
+                db.execSQL("""CREATE TABLE IF NOT EXISTS `universes_new` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `name` TEXT NOT NULL,
+                    `description` TEXT NOT NULL DEFAULT '',
+                    `createdAt` INTEGER NOT NULL DEFAULT 0,
+                    `code` TEXT NOT NULL DEFAULT '',
+                    `displayOrder` INTEGER NOT NULL DEFAULT 0,
+                    `borderColor` TEXT NOT NULL DEFAULT '',
+                    `borderWidthDp` REAL NOT NULL DEFAULT 1.5,
+                    `imagePaths` TEXT NOT NULL DEFAULT '[]',
+                    `imageMode` TEXT NOT NULL DEFAULT 'none',
+                    `imageCharacterId` INTEGER,
+                    `imageNovelId` INTEGER,
+                    `customRelationshipTypes` TEXT NOT NULL DEFAULT '',
+                    `customRelationshipColors` TEXT NOT NULL DEFAULT '',
+                    FOREIGN KEY(`imageCharacterId`) REFERENCES `characters`(`id`) ON DELETE SET NULL,
+                    FOREIGN KEY(`imageNovelId`) REFERENCES `novels`(`id`) ON DELETE SET NULL
+                )""")
+                db.execSQL("""INSERT INTO `universes_new`
+                    (id, name, description, createdAt, code, displayOrder, borderColor, borderWidthDp,
+                     imagePaths, imageMode, imageCharacterId, imageNovelId, customRelationshipTypes, customRelationshipColors)
+                    SELECT id, name, description, createdAt, code, displayOrder, borderColor, borderWidthDp,
+                     CASE WHEN imagePath IS NOT NULL AND imagePath != '' THEN '["' || REPLACE(REPLACE(imagePath, '\', '\\'), '"', '\"') || '"]' ELSE '[]' END,
+                     imageMode, imageCharacterId, imageNovelId, customRelationshipTypes, customRelationshipColors
+                    FROM `universes`""")
+                db.execSQL("DROP TABLE `universes`")
+                db.execSQL("ALTER TABLE `universes_new` RENAME TO `universes`")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_universes_name` ON `universes` (`name`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_universes_createdAt` ON `universes` (`createdAt`)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_universes_code` ON `universes` (`code`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_universes_imageCharacterId` ON `universes` (`imageCharacterId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_universes_imageNovelId` ON `universes` (`imageNovelId`)")
+
+                Log.i(TAG, "Migration from version 25 to 26 completed successfully")
+            }
+        }
+
         /**
          * 프리셋 세계관에 birth_date 필드를 추가하고 displayOrder를 재정렬하는 헬퍼.
          */
@@ -1003,7 +1083,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "novel_character_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26)
                     .addCallback(SeedCallback())
                     .build()
                     .also { INSTANCE = it }

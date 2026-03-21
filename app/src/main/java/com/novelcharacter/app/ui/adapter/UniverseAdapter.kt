@@ -208,8 +208,8 @@ class UniverseAdapter(
 
             when (universe.imageMode) {
                 Universe.IMAGE_MODE_CUSTOM -> {
-                    val path = universe.imagePath.takeIf { it.isNotBlank() }
-                    if (path != null) loadImageFromPath(path, universe.id)
+                    val paths = parseImagePaths(universe.imagePaths)
+                    if (paths.isNotEmpty()) loadImageFromPath(paths.random(), universe.id)
                 }
                 Universe.IMAGE_MODE_RANDOM_CHARACTER -> {
                     resolveRandomCharacterImage?.invoke(universe.id) { resolvedPath ->
@@ -298,6 +298,16 @@ class UniverseAdapter(
             }
         }
         return inSampleSize
+    }
+
+    private fun parseImagePaths(json: String): List<String> {
+        if (json.isBlank() || json == "[]") return emptyList()
+        return try {
+            val arr = org.json.JSONArray(json)
+            (0 until arr.length()).map { arr.getString(it) }.filter { it.isNotBlank() }
+        } catch (_: Exception) {
+            emptyList()
+        }
     }
 
     class UniverseDiffCallback : DiffUtil.ItemCallback<Universe>() {

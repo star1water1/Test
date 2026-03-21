@@ -39,36 +39,43 @@ class NovelListFragment : Fragment() {
     private lateinit var adapter: NovelAdapter
     private var itemTouchHelper: ItemTouchHelper? = null
     private var universeId: Long = -1L
-    private var lastSavedImagePath: String? = null
+    private val pendingImagePaths = mutableListOf<String>()
+    private var novelImageRecyclerView: RecyclerView? = null
+    private var novelImageAdapter: RecyclerView.Adapter<RecyclerView.ViewHolder>? = null
 
     private val novelImagePickerLauncher = registerForActivityResult(
-        ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        if (uri == null) return@registerForActivityResult
+        ActivityResultContracts.GetMultipleContents()
+    ) { uris: List<Uri> ->
+        if (uris.isEmpty()) return@registerForActivityResult
         val ctx = context ?: return@registerForActivityResult
         viewLifecycleOwner.lifecycleScope.launch {
-            try {
-                val savedPath = withContext(Dispatchers.IO) {
-                    val inputStream = ctx.contentResolver.openInputStream(uri) ?: return@withContext null
-                    val fileName = "novel_${java.util.UUID.randomUUID()}.jpg"
-                    val file = java.io.File(ctx.filesDir, fileName)
-                    inputStream.use { input ->
-                        file.outputStream().use { out -> input.copyTo(out) }
+            for (uri in uris) {
+                try {
+                    val savedPath = withContext(Dispatchers.IO) {
+                        val inputStream = ctx.contentResolver.openInputStream(uri) ?: return@withContext null
+                        val fileName = "novel_${java.util.UUID.randomUUID()}.jpg"
+                        val file = java.io.File(ctx.filesDir, fileName)
+                        inputStream.use { input ->
+                            file.outputStream().use { out -> input.copyTo(out) }
+                        }
+                        val canonical = file.canonicalPath
+                        if (!canonical.startsWith(ctx.filesDir.canonicalPath)) {
+                            file.delete()
+                            return@withContext null
+                        }
+                        canonical
                     }
-                    // 경로 검증: filesDir 내부인지 확인
-                    val canonical = file.canonicalPath
-                    if (!canonical.startsWith(ctx.filesDir.canonicalPath)) {
-                        file.delete()
-                        return@withContext null
+                    if (savedPath != null) {
+                        pendingImagePaths.add(savedPath)
                     }
-                    canonical
+                } catch (e: Exception) {
+                    // 개별 실패는 건너뜀
                 }
-                if (savedPath != null) {
-                    lastSavedImagePath = savedPath
-                }
-            } catch (e: Exception) {
-                if (isAdded) {
-                    Toast.makeText(ctx, R.string.image_save_failed, Toast.LENGTH_SHORT).show()
+            }
+            if (isAdded) {
+                novelImageAdapter?.notifyDataSetChanged()
+                if (pendingImagePaths.isNotEmpty()) {
+                    novelImageRecyclerView?.visibility = View.VISIBLE
                 }
             }
         }
@@ -298,16 +305,24 @@ class NovelListFragment : Fragment() {
             Novel.IMAGE_MODE_RANDOM_CHARACTER, Novel.IMAGE_MODE_SELECT_CHARACTER
         )
         var selectedImageMode = novel?.imageMode ?: Novel.IMAGE_MODE_NONE
-        var selectedImagePath = novel?.imagePath ?: ""
         var selectedImageCharId = novel?.imageCharacterId
+
+        // 기존 이미지 경로 목록 로드
+        pendingImagePaths.clear()
+        val existingPaths = parseImagePaths(novel?.imagePaths ?: "[]")
+        pendingImagePaths.addAll(existingPaths)
 
         dialogBinding.spinnerImageMode.adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_dropdown_item, imageModes)
         dialogBinding.spinnerImageMode.setSelection(imageModeValues.indexOf(selectedImageMode).coerceAtLeast(0))
 
-        dialogBinding.btnSelectImage.visibility = if (selectedImageMode == Novel.IMAGE_MODE_CUSTOM) View.VISIBLE else View.GONE
-        if (selectedImagePath.isNotBlank()) dialogBinding.btnSelectImage.text = getString(R.string.image_change)
+        val isCustom = selectedImageMode == Novel.IMAGE_MODE_CUSTOM
+        dialogBinding.btnSelectImage.visibility = if (isCustom) View.VISIBLE else View.GONE
+        dialogBinding.imageRecyclerView.visibility = if (isCustom && pendingImagePaths.isNotEmpty()) View.VISIBLE else View.GONE
+        if (pendingImagePaths.isNotEmpty()) dialogBinding.btnSelectImage.text = getString(R.string.image_change)
 
-        lastSavedImagePath = null
+        // 이미지 목록 RecyclerView 설정
+        setupNovelImageRecyclerView(dialogBinding.imageRecyclerView)
+
         dialogBinding.btnSelectImage.setOnClickListener {
             novelImagePickerLauncher.launch("image/*")
         }
@@ -344,7 +359,9 @@ class NovelListFragment : Fragment() {
         dialogBinding.spinnerImageMode.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: android.widget.AdapterView<*>?, v: View?, pos: Int, id: Long) {
                 selectedImageMode = imageModeValues[pos]
-                dialogBinding.btnSelectImage.visibility = if (selectedImageMode == Novel.IMAGE_MODE_CUSTOM) View.VISIBLE else View.GONE
+                val custom = selectedImageMode == Novel.IMAGE_MODE_CUSTOM
+                dialogBinding.btnSelectImage.visibility = if (custom) View.VISIBLE else View.GONE
+                dialogBinding.imageRecyclerView.visibility = if (custom && pendingImagePaths.isNotEmpty()) View.VISIBLE else View.GONE
                 dialogBinding.btnSelectCharacter.visibility = if (selectedImageMode == Novel.IMAGE_MODE_SELECT_CHARACTER) View.VISIBLE else View.GONE
             }
             override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
@@ -357,7 +374,7 @@ class NovelListFragment : Fragment() {
                 val title = dialogBinding.editTitle.text.toString().trim()
                 val description = dialogBinding.editDescription.text.toString().trim()
                 val borderColor = dialogBinding.editBorderColor.text.toString().trim()
-                val finalImagePath = lastSavedImagePath ?: selectedImagePath
+                val finalImagePaths = org.json.JSONArray(pendingImagePaths).toString()
                 val standardYearStr = dialogBinding.editStandardYear.text.toString().trim()
                 val standardYear = if (standardYearStr.isNotEmpty()) standardYearStr.toIntOrNull() else null
                 if (title.isNotEmpty()) {
@@ -368,7 +385,7 @@ class NovelListFragment : Fragment() {
                             universeId = if (universeId != -1L) universeId else null,
                             borderColor = borderColor,
                             inheritUniverseBorder = borderColor.isBlank(),
-                            imagePath = finalImagePath,
+                            imagePaths = finalImagePaths,
                             imageMode = selectedImageMode,
                             imageCharacterId = selectedImageCharId,
                             standardYear = standardYear
@@ -381,13 +398,12 @@ class NovelListFragment : Fragment() {
                             description = description,
                             borderColor = borderColor,
                             inheritUniverseBorder = borderColor.isBlank(),
-                            imagePath = finalImagePath,
+                            imagePaths = finalImagePaths,
                             imageMode = selectedImageMode,
                             imageCharacterId = selectedImageCharId,
                             standardYear = standardYear
                         )
                         viewModel.updateNovel(updatedNovel)
-                        // 표준 년도 변경 시 연동 캐릭터 일괄 재계산
                         if (oldStdYear != standardYear) {
                             viewModel.onStandardYearChanged(updatedNovel, oldStdYear, standardYear)
                         }
@@ -396,6 +412,85 @@ class NovelListFragment : Fragment() {
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
+    }
+
+    private fun setupNovelImageRecyclerView(recyclerView: RecyclerView) {
+        novelImageRecyclerView = recyclerView
+        recyclerView.layoutManager = LinearLayoutManager(requireContext(), LinearLayoutManager.HORIZONTAL, false)
+        novelImageAdapter = object : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
+            override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
+                val d = parent.context.resources.displayMetrics.density
+                val sizePx = (64 * d).toInt()
+                val imageView = android.widget.ImageView(parent.context).apply {
+                    layoutParams = RecyclerView.LayoutParams(sizePx, sizePx).apply {
+                        marginEnd = (4 * d).toInt()
+                    }
+                    scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
+                }
+                return object : RecyclerView.ViewHolder(imageView) {}
+            }
+
+            override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
+                val imageView = holder.itemView as android.widget.ImageView
+                imageView.setImageResource(R.drawable.ic_character_placeholder)
+                if (position < pendingImagePaths.size) {
+                    val path = pendingImagePaths[position]
+                    viewLifecycleOwner.lifecycleScope.launch {
+                        val bitmap = withContext(Dispatchers.IO) {
+                            try {
+                                val file = java.io.File(path)
+                                if (!file.exists()) return@withContext null
+                                val options = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                                android.graphics.BitmapFactory.decodeFile(path, options)
+                                val size = 64 * imageView.context.resources.displayMetrics.density.toInt()
+                                var sample = 1
+                                val h = options.outHeight / 2; val w = options.outWidth / 2
+                                while (h / sample >= size && w / sample >= size) sample *= 2
+                                options.inSampleSize = sample
+                                options.inJustDecodeBounds = false
+                                android.graphics.BitmapFactory.decodeFile(path, options)
+                            } catch (_: Exception) { null }
+                        }
+                        if (bitmap != null && isAdded) imageView.setImageBitmap(bitmap)
+                    }
+                }
+                imageView.setOnLongClickListener {
+                    val pos = holder.bindingAdapterPosition
+                    if (pos >= 0 && pos < pendingImagePaths.size) {
+                        AlertDialog.Builder(requireContext())
+                            .setTitle(R.string.delete)
+                            .setMessage(R.string.image_delete_confirm)
+                            .setPositiveButton(R.string.delete) { _, _ ->
+                                val currentPos = holder.bindingAdapterPosition
+                                if (currentPos >= 0 && currentPos < pendingImagePaths.size) {
+                                    pendingImagePaths.removeAt(currentPos)
+                                    novelImageAdapter?.notifyItemRemoved(currentPos)
+                                    novelImageAdapter?.notifyItemRangeChanged(currentPos, pendingImagePaths.size - currentPos)
+                                    if (pendingImagePaths.isEmpty()) {
+                                        novelImageRecyclerView?.visibility = View.GONE
+                                    }
+                                }
+                            }
+                            .setNegativeButton(R.string.cancel, null)
+                            .show()
+                    }
+                    true
+                }
+            }
+
+            override fun getItemCount() = pendingImagePaths.size
+        }
+        recyclerView.adapter = novelImageAdapter
+    }
+
+    private fun parseImagePaths(json: String): List<String> {
+        if (json.isBlank() || json == "[]") return emptyList()
+        return try {
+            val arr = org.json.JSONArray(json)
+            (0 until arr.length()).map { arr.getString(it) }.filter { it.isNotBlank() }
+        } catch (_: Exception) {
+            emptyList()
+        }
     }
 
     private var exporter: com.novelcharacter.app.excel.ExcelExporter? = null
