@@ -56,9 +56,13 @@ class NovelCharacterApp : Application() {
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
+    override fun attachBaseContext(base: android.content.Context) {
+        super.attachBaseContext(base)
+        installCrashLogger()
+    }
+
     override fun onCreate() {
         super.onCreate()
-        installCrashLogger()
         // Apply saved theme from SharedPreferences cache (non-blocking)
         ThemeHelper.applyTheme(ThemeHelper.getSavedTheme(this))
         // Migrate DataStore → SharedPreferences cache on first launch
