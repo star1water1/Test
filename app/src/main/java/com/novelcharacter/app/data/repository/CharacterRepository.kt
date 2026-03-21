@@ -29,7 +29,7 @@ class CharacterRepository(
     suspend fun getCharacterById(id: Long): Character? = characterDao.getCharacterById(id)
     fun getCharacterByIdLive(id: Long): LiveData<Character?> = characterDao.getCharacterByIdLive(id)
     fun searchCharacters(query: String): LiveData<List<Character>> =
-        characterDao.searchCharacters(query)
+        characterDao.searchCharacters(sanitizeLikeQuery(query))
     suspend fun insertCharacter(character: Character): Long {
         return db.withTransaction {
             val next = if (character.novelId != null) {

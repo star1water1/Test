@@ -18,7 +18,7 @@ interface NameBankDao {
     @Query("SELECT * FROM name_bank WHERE isUsed = 0 ORDER BY createdAt DESC")
     suspend fun getAvailableNamesList(): List<NameBankEntry>
 
-    @Query("SELECT * FROM name_bank WHERE name LIKE '%' || :query || '%' OR notes LIKE '%' || :query || '%' ORDER BY createdAt DESC")
+    @Query("SELECT * FROM name_bank WHERE name LIKE '%' || :query || '%' ESCAPE '\\' OR notes LIKE '%' || :query || '%' ESCAPE '\\' ORDER BY createdAt DESC")
     fun searchNames(query: String): LiveData<List<NameBankEntry>>
 
     @Insert(onConflict = OnConflictStrategy.ABORT)

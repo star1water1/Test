@@ -158,14 +158,22 @@ class FormulaEvaluator(
     private fun shuntingYard(tokens: List<Token>): List<Token> {
         val output = mutableListOf<Token>()
         val stack = ArrayDeque<Token>()
+        // 함수별 실제 인자 개수를 추적 (가변 인자 지원)
+        val argCountStack = ArrayDeque<Int>()
         for (token in tokens) {
             when (token) {
                 is Token.Num -> output.add(token)
-                is Token.Func -> stack.addLast(token)
+                is Token.Func -> {
+                    stack.addLast(token)
+                    argCountStack.addLast(1) // 최소 1개 인자
+                }
                 is Token.Separator -> {
                     // 콤마: LParen까지 연산자를 출력으로 이동 (LParen은 유지)
                     while (stack.isNotEmpty() && stack.last() !is Token.LParen) {
                         output.add(stack.removeLast())
+                    }
+                    if (argCountStack.isNotEmpty()) {
+                        argCountStack.addLast(argCountStack.removeLast() + 1)
                     }
                 }
                 is Token.Op -> {
@@ -181,7 +189,9 @@ class FormulaEvaluator(
                     }
                     if (stack.isNotEmpty()) stack.removeLast() // remove LParen
                     if (stack.isNotEmpty() && stack.last() is Token.Func) {
-                        output.add(stack.removeLast())
+                        val func = stack.removeLast() as Token.Func
+                        val arity = if (argCountStack.isNotEmpty()) argCountStack.removeLast() else func.arity
+                        output.add(Token.Func(func.name, arity))
                     }
                 }
             }
@@ -215,24 +225,17 @@ class FormulaEvaluator(
                     })
                 }
                 is Token.Func -> {
-                    if (token.arity == 2) {
-                        if (stack.size < 2) return Double.NaN
-                        val b = stack.removeLast()
-                        val a = stack.removeLast()
-                        stack.addLast(when (token.name) {
-                            "max" -> max(a, b)
-                            "min" -> min(a, b)
-                            "avg" -> (a + b) / 2.0
-                            else -> a
-                        })
-                    } else {
-                        if (stack.isEmpty()) return 0.0
-                        val v = stack.removeLast()
-                        stack.addLast(when (token.name) {
-                            "abs" -> abs(v)
-                            else -> v
-                        })
-                    }
+                    val arity = token.arity
+                    if (stack.size < arity) return Double.NaN
+                    val args = mutableListOf<Double>()
+                    repeat(arity) { args.add(0, stack.removeLast()) }
+                    stack.addLast(when (token.name) {
+                        "max" -> args.maxOrNull() ?: Double.NaN
+                        "min" -> args.minOrNull() ?: Double.NaN
+                        "avg" -> if (args.isNotEmpty()) args.sum() / args.size else Double.NaN
+                        "abs" -> if (args.size == 1) abs(args[0]) else Double.NaN
+                        else -> args.lastOrNull() ?: 0.0
+                    })
                 }
                 else -> {}
             }

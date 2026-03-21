@@ -46,7 +46,7 @@ interface NovelDao {
     @Query("SELECT * FROM novels WHERE code = :code LIMIT 1")
     suspend fun getNovelByCode(code: String): Novel?
 
-    @Query("SELECT * FROM novels WHERE title LIKE '%' || :query || '%' OR description LIKE '%' || :query || '%'")
+    @Query("SELECT * FROM novels WHERE title LIKE '%' || :query || '%' ESCAPE '\\' OR description LIKE '%' || :query || '%' ESCAPE '\\'")
     fun searchNovels(query: String): LiveData<List<Novel>>
 
     @Update

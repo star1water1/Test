@@ -40,7 +40,7 @@ class NovelRepository(
     suspend fun getNovelsByUniverseList(universeId: Long): List<Novel> =
         novelDao.getNovelsByUniverseList(universeId)
     fun searchNovels(query: String): LiveData<List<Novel>> =
-        novelDao.searchNovels(query)
+        novelDao.searchNovels(sanitizeLikeQuery(query))
     suspend fun updateNovelDisplayOrders(novels: List<Novel>) = novelDao.updateAll(novels)
 
     suspend fun setPinned(id: Long, isPinned: Boolean) =

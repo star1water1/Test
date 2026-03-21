@@ -20,7 +20,7 @@ class TimelineRepository(
     fun getEventsByYearRange(startYear: Int, endYear: Int): LiveData<List<TimelineEvent>> =
         timelineDao.getEventsByYearRange(startYear, endYear)
     fun searchEvents(query: String): LiveData<List<TimelineEvent>> =
-        timelineDao.searchEvents(query)
+        timelineDao.searchEvents(sanitizeLikeQuery(query))
     suspend fun insertEvent(event: TimelineEvent): Long = timelineDao.insert(event)
     suspend fun updateEvent(event: TimelineEvent) = timelineDao.update(event)
     suspend fun deleteEvent(event: TimelineEvent) = timelineDao.delete(event)
