@@ -209,6 +209,7 @@ class RelationshipGraphFragment : Fragment() {
         }
 
         setupTimeSlider()
+        setupFactionDisplayModeToggle()
         observeColors()
         observeUniversesAndNovels()
         observeFactionData()
@@ -236,6 +237,32 @@ class RelationshipGraphFragment : Fragment() {
         }
     }
 
+    private fun setupFactionDisplayModeToggle() {
+        val chipGroup = binding.factionDisplayModeChipGroup
+        chipGroup.removeAllViews()
+
+        data class ModeOption(val mode: FactionDisplayMode, val labelRes: Int)
+        val options = listOf(
+            ModeOption(FactionDisplayMode.BOTH, R.string.faction_display_mode_both),
+            ModeOption(FactionDisplayMode.BACKGROUND, R.string.faction_display_mode_area),
+            ModeOption(FactionDisplayMode.BORDER, R.string.faction_display_mode_border),
+            ModeOption(FactionDisplayMode.NONE, R.string.faction_display_mode_none)
+        )
+
+        for (option in options) {
+            val chip = Chip(requireContext()).apply {
+                text = getString(option.labelRes)
+                isCheckable = true
+                isChecked = binding.graphView.factionDisplayMode == option.mode
+                setOnClickListener {
+                    binding.graphView.factionDisplayMode = option.mode
+                    setupFactionDisplayModeToggle()
+                }
+            }
+            chipGroup.addView(chip)
+        }
+    }
+
     private fun setupFactionChips() {
         val factions = viewModel.getFactionsForUniverse(currentUniverseId)
         val chipGroup = binding.factionChipGroup
@@ -243,10 +270,12 @@ class RelationshipGraphFragment : Fragment() {
 
         if (factions.isEmpty()) {
             binding.factionFilterScrollView.visibility = View.GONE
+            binding.factionDisplayModeScrollView.visibility = View.GONE
             return
         }
 
         binding.factionFilterScrollView.visibility = View.VISIBLE
+        binding.factionDisplayModeScrollView.visibility = View.VISIBLE
 
         // "All factions" chip
         val allChip = Chip(requireContext()).apply {
