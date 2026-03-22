@@ -37,18 +37,18 @@ data class Character(
     val isPinned: Boolean = false
 ) {
     /** 표시용 이름: firstName + lastName이 있으면 조합, 없으면 name 사용 */
-    @Ignore
-    val displayName: String = if (firstName.isNotBlank() || lastName.isNotBlank()) {
-        listOf(lastName, firstName).filter { it.isNotBlank() }.joinToString(" ")
-    } else {
-        name
-    }
+    val displayName: String
+        @Ignore get() = if (firstName.isNotBlank() || lastName.isNotBlank()) {
+            listOf(lastName, firstName).filter { it.isNotBlank() }.joinToString(" ")
+        } else {
+            name
+        }
 
     /** 이명/별칭 목록 (콤마 구분 파싱) */
-    @Ignore
-    val aliases: List<String> = if (anotherName.isNotBlank()) {
-        anotherName.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-    } else {
-        emptyList()
-    }
+    val aliases: List<String>
+        @Ignore get() = if (anotherName.isNotBlank()) {
+            anotherName.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+        } else {
+            emptyList()
+        }
 }

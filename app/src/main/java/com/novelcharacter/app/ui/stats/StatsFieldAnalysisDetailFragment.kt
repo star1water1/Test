@@ -13,6 +13,7 @@ import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.navigation.fragment.findNavController
+import com.novelcharacter.app.util.navigateSafe
 import com.github.mikephil.charting.charts.BarChart
 import com.github.mikephil.charting.charts.PieChart
 import com.github.mikephil.charting.components.XAxis
@@ -297,7 +298,7 @@ class StatsFieldAnalysisDetailFragment : Fragment() {
         val sheet = StatsCharacterListBottomSheet.newInstance(fieldDefId, fieldName, value)
         sheet.onCharacterClick = { characterId ->
             val bundle = Bundle().apply { putLong("characterId", characterId) }
-            findNavController().navigate(R.id.characterDetailFragment, bundle)
+            findNavController().navigateSafe(R.id.statsFieldAnalysisDetailFragment, R.id.characterDetailFragment, bundle)
         }
         sheet.show(childFragmentManager, StatsCharacterListBottomSheet.TAG)
     }

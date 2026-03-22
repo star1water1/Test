@@ -485,6 +485,8 @@ class TimelineFragment : Fragment() {
 
     override fun onDestroyView() {
         searchJob?.cancel()
+        itemTouchHelper?.attachToRecyclerView(null)
+        itemTouchHelper = null
         binding.timelineRecyclerView.adapter = null
         super.onDestroyView()
         _binding = null

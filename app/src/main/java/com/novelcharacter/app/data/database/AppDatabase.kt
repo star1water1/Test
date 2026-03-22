@@ -1104,7 +1104,7 @@ abstract class AppDatabase : RoomDatabase() {
                         FOREIGN KEY(`universeId`) REFERENCES `universes`(`id`) ON DELETE CASCADE
                     )
                 """)
-                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `idx_factions_code` ON `factions` (`code`)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_factions_code` ON `factions` (`code`)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_factions_universeId` ON `factions` (`universeId`)")
 
                 // 세력 멤버십(FactionMembership) 테이블

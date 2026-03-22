@@ -1,6 +1,7 @@
 package com.novelcharacter.app.ui.adapter
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.LruCache
@@ -250,7 +251,7 @@ class NovelAdapter(
 
             loadJob = coroutineScope.launch {
                 val bitmap = withContext(Dispatchers.IO) {
-                    decodeSampledBitmap(path, 192, 192)
+                    decodeSampledBitmap(binding.root.context, path, 192, 192)
                 }
                 if (bitmap != null) {
                     thumbnailCache.put(path, bitmap)
@@ -266,9 +267,11 @@ class NovelAdapter(
         }
     }
 
-    private fun decodeSampledBitmap(path: String, reqWidth: Int, reqHeight: Int): Bitmap? {
+    private fun decodeSampledBitmap(context: Context, path: String, reqWidth: Int, reqHeight: Int): Bitmap? {
         return try {
             val file = File(path)
+            val appDir = context.filesDir
+            if (!file.canonicalPath.startsWith(appDir.canonicalPath)) return null
             if (!file.exists()) return null
             val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             BitmapFactory.decodeFile(path, options)
@@ -286,7 +289,7 @@ class NovelAdapter(
         if (height > reqHeight || width > reqWidth) {
             val halfHeight = height / 2
             val halfWidth = width / 2
-            while (halfHeight / inSampleSize >= reqHeight && halfWidth / inSampleSize >= reqWidth) {
+            while (inSampleSize < 1024 && halfHeight / inSampleSize >= reqHeight && halfWidth / inSampleSize >= reqWidth) {
                 inSampleSize *= 2
             }
         }

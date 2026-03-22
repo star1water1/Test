@@ -77,7 +77,7 @@ interface CharacterFieldValueDao {
     /** 특정 필드에 특정 값을 포함하는 캐릭터 ID 조회 (contains 매칭) */
     @Query("""
         SELECT DISTINCT cfv.characterId FROM character_field_values cfv
-        WHERE cfv.fieldDefinitionId = :fieldDefId AND cfv.value LIKE '%' || :value || '%'
+        WHERE cfv.fieldDefinitionId = :fieldDefId AND cfv.value LIKE '%' || :value || '%' ESCAPE '\'
     """)
     suspend fun getCharacterIdsByFieldValueContains(fieldDefId: Long, value: String): List<Long>
 }

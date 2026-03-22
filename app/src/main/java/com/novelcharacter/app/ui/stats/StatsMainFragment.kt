@@ -379,7 +379,7 @@ class StatsMainFragment : Fragment() {
             val distResult = insight.analysisResults.firstOrNull { it.distributionData != null }
             val distData = distResult?.distributionData ?: return@forEach
 
-            val card = LinearLayout(requireContext()).apply {
+            val card = LinearLayout(ctx).apply {
                 orientation = LinearLayout.VERTICAL
                 val lp = LinearLayout.LayoutParams(cardWidth, LinearLayout.LayoutParams.WRAP_CONTENT)
                 lp.marginEnd = marginSm
@@ -400,10 +400,10 @@ class StatsMainFragment : Fragment() {
             } else {
                 insight.fieldDefinition.name
             }
-            card.addView(TextView(requireContext()).apply {
+            card.addView(TextView(ctx).apply {
                 text = displayName
                 textSize = textSizeSp
-                setTextColor(ContextCompat.getColor(requireContext(), R.color.on_surface))
+                setTextColor(ContextCompat.getColor(ctx, R.color.on_surface))
                 maxLines = 1
                 val lp = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
@@ -414,7 +414,7 @@ class StatsMainFragment : Fragment() {
             })
 
             // 미니 파이차트
-            val miniChart = PieChart(requireContext()).apply {
+            val miniChart = PieChart(ctx).apply {
                 layoutParams = LinearLayout.LayoutParams(chartSize, chartSize)
             }
             val entries = distData.entries.sortedByDescending { it.value }.take(5)
@@ -428,8 +428,8 @@ class StatsMainFragment : Fragment() {
                 description.isEnabled = false
                 isDrawHoleEnabled = true
                 holeRadius = 25f
-                setHoleColor(ContextCompat.getColor(requireContext(), R.color.surface))
-                setTransparentCircleColor(ContextCompat.getColor(requireContext(), R.color.surface))
+                setHoleColor(ContextCompat.getColor(ctx, R.color.surface))
+                setTransparentCircleColor(ContextCompat.getColor(ctx, R.color.surface))
                 legend.isEnabled = false
                 setDrawEntryLabels(false)
                 setTouchEnabled(false)
@@ -442,10 +442,10 @@ class StatsMainFragment : Fragment() {
             if (topEntry != null) {
                 val total = distData.values.sum().toFloat()
                 val pct = if (total > 0) topEntry.value / total * 100 else 0f
-                card.addView(TextView(requireContext()).apply {
+                card.addView(TextView(ctx).apply {
                     text = "${topEntry.key} ${String.format("%.0f", pct)}%"
                     textSize = captionSp
-                    setTextColor(ContextCompat.getColor(requireContext(), R.color.text_secondary))
+                    setTextColor(ContextCompat.getColor(ctx, R.color.text_secondary))
                     maxLines = 1
                 })
             }

@@ -147,13 +147,6 @@ class FieldManageFragment : Fragment() {
 
     private fun showFieldEditDialog(field: FieldDefinition?) {
         val dialog = FieldEditDialog.newInstance(universeId, field)
-        dialog.setOnSaveListener { savedField ->
-            if (field == null) {
-                viewModel.insertField(savedField)
-            } else {
-                viewModel.updateField(savedField)
-            }
-        }
         dialog.show(childFragmentManager, "FieldEditDialog")
     }
 
@@ -173,7 +166,7 @@ class FieldManageFragment : Fragment() {
 
     /** 다른 세계관 + 프리셋에서 필드 가져오기 (중복 자동 표시) */
     private fun showImportFieldsDialog() {
-        lifecycleScope.launch {
+        viewLifecycleOwner.lifecycleScope.launch {
             val allSources = viewModel.getFieldsFromAllSources(universeId)
             if (allSources.isEmpty()) {
                 Toast.makeText(requireContext(), R.string.import_no_other_universes, Toast.LENGTH_SHORT).show()

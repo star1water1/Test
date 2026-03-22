@@ -119,7 +119,7 @@ class FactionManageFragment : Fragment() {
             binding.factionRecyclerView.visibility = if (isEmpty) View.GONE else View.VISIBLE
 
             // 멤버 수 계산
-            lifecycleScope.launch {
+            viewLifecycleOwner.lifecycleScope.launch {
                 val counts = viewModel.getActiveMemberCountsForFactions(factions.map { it.id })
                 adapter.updateMemberCounts(counts)
             }
@@ -296,15 +296,19 @@ class FactionManageFragment : Fragment() {
             .setNegativeButton(R.string.close, null)
             .show()
 
-        // 멤버십 관찰
-        viewModel.memberships.observe(viewLifecycleOwner) { memberships ->
-            lifecycleScope.launch {
+        // 멤버십 관찰 (다이얼로그가 표시되는 동안만)
+        val memberObserver = androidx.lifecycle.Observer<List<FactionMembership>> { memberships ->
+            viewLifecycleOwner.lifecycleScope.launch {
                 val items = memberships.mapNotNull { m ->
                     val char = viewModel.getCharacterById(m.characterId)
                     if (char != null) FactionMemberItem(m, char.name) else null
                 }
                 memberAdapter.submitList(items)
             }
+        }
+        viewModel.memberships.observe(viewLifecycleOwner, memberObserver)
+        dialog.setOnDismissListener {
+            viewModel.memberships.removeObserver(memberObserver)
         }
     }
 
@@ -390,7 +394,7 @@ class FactionManageFragment : Fragment() {
     }
 
     private fun showAddMemberDialog(faction: Faction) {
-        lifecycleScope.launch {
+        viewLifecycleOwner.lifecycleScope.launch {
             val allCharacters = viewModel.getCharactersForUniverse(universeId)
             if (allCharacters.isEmpty()) {
                 Toast.makeText(requireContext(), R.string.faction_no_characters, Toast.LENGTH_SHORT).show()

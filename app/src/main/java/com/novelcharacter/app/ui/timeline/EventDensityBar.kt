@@ -114,7 +114,6 @@ class EventDensityBar @JvmOverloads constructor(
                     val ratio = downX / width.toFloat()
                     val year = rangeFrom + (ratio * (rangeTo - rangeFrom)).toInt()
                     onYearLongPressListener?.invoke(year)
-                    performClick()
                 }
                 handler?.postDelayed(longPressRunnable!!, 500L)
                 return true

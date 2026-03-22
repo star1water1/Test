@@ -346,7 +346,7 @@ class NovelListFragment : Fragment() {
                 Toast.makeText(ctx, R.string.image_save_novel_first, Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
-            lifecycleScope.launch {
+            viewLifecycleOwner.lifecycleScope.launch {
                 val chars = viewModel.getCharactersWithImages(novel.id)
                 if (!isAdded) return@launch
                 if (chars.isEmpty()) {
@@ -581,6 +581,8 @@ class NovelListFragment : Fragment() {
     }
 
     override fun onDestroyView() {
+        itemTouchHelper?.attachToRecyclerView(null)
+        itemTouchHelper = null
         binding.novelRecyclerView.adapter = null
         super.onDestroyView()
         _binding = null

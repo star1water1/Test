@@ -1,6 +1,7 @@
 package com.novelcharacter.app
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -40,6 +41,30 @@ class MainActivity : AppCompatActivity() {
 
         setupNavigation()
         requestNotificationPermission()
+        handleDeepLink(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleDeepLink(intent)
+    }
+
+    private fun handleDeepLink(intent: Intent?) {
+        val deeplink = intent?.getStringExtra("deeplink") ?: return
+        val navHostFragment = supportFragmentManager
+            .findFragmentById(R.id.nav_host_fragment) as? NavHostFragment ?: return
+        val navController = navHostFragment.navController
+
+        when (deeplink) {
+            "add_character" -> {
+                navController.navigate(R.id.characterEditFragment)
+            }
+            "add_event" -> {
+                navController.navigate(R.id.timelineFragment)
+            }
+        }
+        // 딥링크 처리 후 extra 제거 (재처리 방지)
+        intent?.removeExtra("deeplink")
     }
 
     private fun setupNavigation() {
