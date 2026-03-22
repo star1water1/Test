@@ -26,6 +26,10 @@ import com.novelcharacter.app.data.dao.RecentActivityDao
 import com.novelcharacter.app.data.dao.SearchPresetDao
 import com.novelcharacter.app.data.dao.CharacterRelationshipChangeDao
 import com.novelcharacter.app.data.dao.UserPresetTemplateDao
+import com.novelcharacter.app.data.dao.FactionDao
+import com.novelcharacter.app.data.dao.FactionMembershipDao
+import com.novelcharacter.app.data.model.Faction
+import com.novelcharacter.app.data.model.FactionMembership
 import com.novelcharacter.app.data.model.RecentActivity
 import com.novelcharacter.app.data.model.UserPresetTemplate
 import com.novelcharacter.app.data.model.SearchPreset
@@ -58,9 +62,11 @@ import com.novelcharacter.app.data.model.Universe
         CharacterRelationshipChange::class,
         RecentActivity::class,
         SearchPreset::class,
-        UserPresetTemplate::class
+        UserPresetTemplate::class,
+        Faction::class,
+        FactionMembership::class
     ],
-    version = 26,
+    version = 27,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -78,6 +84,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun searchPresetDao(): SearchPresetDao
     abstract fun characterRelationshipChangeDao(): CharacterRelationshipChangeDao
     abstract fun userPresetTemplateDao(): UserPresetTemplateDao
+    abstract fun factionDao(): FactionDao
+    abstract fun factionMembershipDao(): FactionMembershipDao
 
     companion object {
         private const val TAG = "AppDatabase"
@@ -1076,6 +1084,56 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_26_27 = object : Migration(26, 27) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "Migrating database from version 26 to 27")
+
+                // 세력(Faction) 테이블
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `factions` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `universeId` INTEGER NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `description` TEXT NOT NULL DEFAULT '',
+                        `color` TEXT NOT NULL DEFAULT '#2196F3',
+                        `autoRelationType` TEXT NOT NULL,
+                        `autoRelationIntensity` INTEGER NOT NULL DEFAULT 5,
+                        `code` TEXT NOT NULL,
+                        `displayOrder` INTEGER NOT NULL DEFAULT 0,
+                        `createdAt` INTEGER NOT NULL,
+                        FOREIGN KEY(`universeId`) REFERENCES `universes`(`id`) ON DELETE CASCADE
+                    )
+                """)
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `idx_factions_code` ON `factions` (`code`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_factions_universeId` ON `factions` (`universeId`)")
+
+                // 세력 멤버십(FactionMembership) 테이블
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `faction_memberships` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `factionId` INTEGER NOT NULL,
+                        `characterId` INTEGER NOT NULL,
+                        `joinYear` INTEGER,
+                        `leaveYear` INTEGER,
+                        `leaveType` TEXT,
+                        `departedRelationType` TEXT,
+                        `departedIntensity` INTEGER,
+                        `createdAt` INTEGER NOT NULL,
+                        FOREIGN KEY(`factionId`) REFERENCES `factions`(`id`) ON DELETE CASCADE,
+                        FOREIGN KEY(`characterId`) REFERENCES `characters`(`id`) ON DELETE CASCADE
+                    )
+                """)
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_faction_memberships_factionId` ON `faction_memberships` (`factionId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_faction_memberships_characterId` ON `faction_memberships` (`characterId`)")
+
+                // 기존 관계 테이블에 factionId 컬럼 추가
+                db.execSQL("ALTER TABLE `character_relationships` ADD COLUMN `factionId` INTEGER DEFAULT NULL")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_character_relationships_factionId` ON `character_relationships` (`factionId`)")
+
+                Log.i(TAG, "Migration from version 26 to 27 completed successfully")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -1083,7 +1141,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "novel_character_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27)
                     .addCallback(SeedCallback())
                     .build()
                     .also { INSTANCE = it }

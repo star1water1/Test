@@ -24,6 +24,9 @@ interface CharacterRelationshipChangeDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(change: CharacterRelationshipChange): Long
 
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertAll(changes: List<CharacterRelationshipChange>)
+
     @Update
     suspend fun update(change: CharacterRelationshipChange)
 

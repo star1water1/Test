@@ -32,4 +32,27 @@ interface CharacterRelationshipDao {
 
     @Query("DELETE FROM character_relationships WHERE id = :id")
     suspend fun deleteById(id: Long)
+
+    /** 특정 세력의 자동 관계 중, 지정 캐릭터가 포함된 것 삭제 */
+    @Query("""
+        DELETE FROM character_relationships
+        WHERE factionId = :factionId
+        AND (characterId1 = :characterId OR characterId2 = :characterId)
+    """)
+    suspend fun deleteFactionRelationshipsForCharacter(factionId: Long, characterId: Long)
+
+    /** 특정 세력의 모든 자동 관계 삭제 */
+    @Query("DELETE FROM character_relationships WHERE factionId = :factionId")
+    suspend fun deleteAllByFaction(factionId: Long)
+
+    /** 특정 세력의 자동 관계 중 지정 캐릭터가 포함된 것 조회 */
+    @Query("""
+        SELECT * FROM character_relationships
+        WHERE factionId = :factionId
+        AND (characterId1 = :characterId OR characterId2 = :characterId)
+    """)
+    suspend fun getFactionRelationshipsForCharacter(factionId: Long, characterId: Long): List<CharacterRelationship>
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertAll(relationships: List<CharacterRelationship>): List<Long>
 }
