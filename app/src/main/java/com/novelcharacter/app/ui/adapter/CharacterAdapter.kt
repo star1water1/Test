@@ -55,7 +55,7 @@ class CharacterAdapter(
     // 캐릭터별 표시 이미지 인덱스 (영속 저장)
     private val imageIndexMap = mutableMapOf<Long, Int>()
     private var prefsLoaded = false
-    private companion object { const val ENTITY_TYPE = "character" }
+    private val ENTITY_TYPE = "character"
 
     /** 캐릭터 이미지 표시를 랜덤으로 재설정 (목록 새로고침 시 호출) */
     fun refreshRandomImages() {
@@ -242,7 +242,7 @@ class CharacterAdapter(
             } catch (e: Exception) {
                 emptyList()
             }
-            val context = holder.itemView.context
+            val context = itemView.context
             if (!prefsLoaded) {
                 imageIndexMap.putAll(com.novelcharacter.app.util.ImageIndexPrefs.loadAll(context, ENTITY_TYPE))
                 prefsLoaded = true
