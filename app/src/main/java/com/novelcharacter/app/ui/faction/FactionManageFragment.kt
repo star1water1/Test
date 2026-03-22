@@ -446,30 +446,42 @@ class FactionManageFragment : Fragment() {
             val ctx = requireContext()
             val density = resources.displayMetrics.density
 
+            val container = LinearLayout(ctx).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding((16 * density).toInt(), (8 * density).toInt(), (16 * density).toInt(), 0)
+            }
+
             // 가입 연도 입력 (선택)
             val editYear = EditText(ctx).apply {
                 hint = getString(R.string.faction_join_year_optional)
                 inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_SIGNED
-                setPadding((16 * density).toInt(), (8 * density).toInt(), (16 * density).toInt(), (8 * density).toInt())
             }
+            container.addView(editYear)
 
-            val charNames = allCharacters.map { it.name }.toTypedArray()
-            val checkedItems = BooleanArray(charNames.size) { false }
+            // 캐릭터 체크박스 목록
+            val selectedIds = mutableSetOf<Long>()
+            val listView = ListView(ctx).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    (250 * density).toInt()
+                )
+                choiceMode = ListView.CHOICE_MODE_MULTIPLE
+                adapter = android.widget.ArrayAdapter(ctx, android.R.layout.simple_list_item_multiple_choice, allCharacters.map { it.name })
+            }
+            listView.setOnItemClickListener { _, _, position, _ ->
+                val charId = allCharacters[position].id
+                if (selectedIds.contains(charId)) selectedIds.remove(charId) else selectedIds.add(charId)
+            }
+            container.addView(listView)
 
             AlertDialog.Builder(ctx)
                 .setTitle(R.string.faction_member_add)
-                .setView(editYear)
-                .setMultiChoiceItems(charNames, checkedItems) { _, which, isChecked ->
-                    checkedItems[which] = isChecked
-                }
+                .setView(container)
                 .setPositiveButton(R.string.confirm) { _, _ ->
-                    val selectedIds = allCharacters
-                        .filterIndexed { i, _ -> checkedItems[i] }
-                        .map { it.id }
                     if (selectedIds.isEmpty()) return@setPositiveButton
 
                     val joinYear = editYear.text.toString().trim().toIntOrNull()
-                    viewModel.addMembers(faction.id, selectedIds, joinYear) { count ->
+                    viewModel.addMembers(faction.id, selectedIds.toList(), joinYear) { count ->
                         if (count > 0) {
                             Toast.makeText(ctx, getString(R.string.faction_members_added, count), Toast.LENGTH_SHORT).show()
                         }
