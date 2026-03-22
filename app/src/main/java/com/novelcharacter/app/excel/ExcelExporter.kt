@@ -438,6 +438,8 @@ class ExcelExporter(context: Context) {
             row.createCell(5).setCellValue(universe.borderWidthDp.toDouble())
             row.createCell(6).setCellValue(universe.imagePaths)
             row.createCell(7).setCellValue(universe.imageMode)
+            row.createCell(8).setCellValue(universe.customRelationshipTypes)
+            row.createCell(9).setCellValue(universe.customRelationshipColors)
         }
 
         applySpecFormatting(sheet, spec, universes.size)
@@ -472,6 +474,7 @@ class ExcelExporter(context: Context) {
             row.createCell(10).setCellValue(novel.imageCharacterId?.toDouble() ?: 0.0)
             row.createCell(11).setCellValue(if (novel.inheritUniverseBorder) "Y" else "N")
             row.createCell(12).setCellValue(if (novel.isPinned) "Y" else "N")
+            novel.standardYear?.let { row.createCell(13).setCellValue(it.toDouble()) }
         }
 
         applySpecFormatting(sheet, spec, novels.size)
@@ -665,6 +668,8 @@ class ExcelExporter(context: Context) {
 
             // 관련작품코드 (readOnly)
             row.createCell(7).setCellValue(novel?.code ?: "")
+            row.createCell(8).setCellValue(event.displayOrder.toDouble())
+            row.createCell(9).setCellValue(if (event.isTemporary) "Y" else "N")
         }
 
         applySpecFormatting(sheet, spec, events.size)
@@ -723,7 +728,9 @@ class ExcelExporter(context: Context) {
         val allCharacters = db.characterDao().getAllCharactersList()
         val charMap = allCharacters.associateBy { it.id }
 
-        val spec = relationshipSpec()
+        val allUniverses = db.universeDao().getAllUniversesList()
+        val allCustomTypes = allUniverses.flatMap { it.getRelationshipTypes() }
+        val spec = relationshipSpec(allCustomTypes)
         val sheetName = sanitizeSheetName(spec.sheetName, usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
         writeHeaderRow(sheet, spec)

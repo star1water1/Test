@@ -129,7 +129,7 @@ class AutoBackupWorker(
 
         val sheetName = sanitizeSheetName("세계관", usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
-        val headers = listOf("이름", "설명", "코드", "정렬순서", "테두리색", "테두리두께", "이미지경로", "이미지모드")
+        val headers = listOf("이름", "설명", "코드", "정렬순서", "테두리색", "테두리두께", "이미지경로", "이미지모드", "커스텀관계유형", "커스텀관계색상")
         val headerRow = sheet.createRow(0)
         headers.forEachIndexed { i, h ->
             headerRow.createCell(i).apply { setCellValue(h); cellStyle = headerStyle }
@@ -144,6 +144,8 @@ class AutoBackupWorker(
             row.createCell(5).setCellValue(u.borderWidthDp.toDouble())
             row.createCell(6).setCellValue(u.imagePaths)
             row.createCell(7).setCellValue(u.imageMode)
+            row.createCell(8).setCellValue(u.customRelationshipTypes)
+            row.createCell(9).setCellValue(u.customRelationshipColors)
         }
     }
 
@@ -157,7 +159,7 @@ class AutoBackupWorker(
 
         val sheetName = sanitizeSheetName("작품", usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
-        val headers = listOf("제목", "설명", "세계관", "코드", "세계관코드", "정렬순서", "테두리색", "테두리두께", "이미지경로", "이미지모드", "이미지캐릭터ID", "테두리상속", "고정")
+        val headers = listOf("제목", "설명", "세계관", "코드", "세계관코드", "정렬순서", "테두리색", "테두리두께", "이미지경로", "이미지모드", "이미지캐릭터ID", "테두리상속", "고정", "표준연도")
         val universeMap = universes.associateBy { it.id }
         val headerRow = sheet.createRow(0)
         headers.forEachIndexed { i, h ->
@@ -179,6 +181,7 @@ class AutoBackupWorker(
             row.createCell(10).setCellValue(n.imageCharacterId?.toDouble() ?: 0.0)
             row.createCell(11).setCellValue(if (n.inheritUniverseBorder) "Y" else "N")
             row.createCell(12).setCellValue(if (n.isPinned) "Y" else "N")
+            n.standardYear?.let { row.createCell(13).setCellValue(it.toDouble()) }
         }
     }
 
@@ -288,7 +291,7 @@ class AutoBackupWorker(
 
         val sheetName = sanitizeSheetName("사건 연표", usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
-        val headers = listOf("연도", "월", "일", "역법", "사건 설명", "관련 작품", "관련 캐릭터", "관련작품코드")
+        val headers = listOf("연도", "월", "일", "역법", "사건 설명", "관련 작품", "관련 캐릭터", "관련작품코드", "정렬순서", "임시배치")
         val headerRow = sheet.createRow(0)
         headers.forEachIndexed { i, h ->
             headerRow.createCell(i).apply { setCellValue(h); cellStyle = headerStyle }
@@ -305,6 +308,8 @@ class AutoBackupWorker(
             val characterNames = (eventCharMap[e.id] ?: emptyList()).mapNotNull { charMap[it]?.name }
             row.createCell(6).setCellValue(characterNames.joinToString(", "))
             row.createCell(7).setCellValue(novel?.code ?: "")
+            row.createCell(8).setCellValue(e.displayOrder.toDouble())
+            row.createCell(9).setCellValue(if (e.isTemporary) "Y" else "N")
         }
     }
 
@@ -391,7 +396,7 @@ class AutoBackupWorker(
 
         val sheetName = sanitizeSheetName("캐릭터 관계", usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
-        val headers = listOf("캐릭터1", "캐릭터2", "관계 유형", "설명", "캐릭터1코드", "캐릭터2코드")
+        val headers = listOf("캐릭터1", "캐릭터2", "관계 유형", "설명", "강도", "양방향", "표시순서", "캐릭터1코드", "캐릭터2코드")
         val headerRow = sheet.createRow(0)
         headers.forEachIndexed { i, h ->
             headerRow.createCell(i).apply { setCellValue(h); cellStyle = headerStyle }
@@ -404,8 +409,11 @@ class AutoBackupWorker(
             row.createCell(1).setCellValue(char2?.name ?: "")
             row.createCell(2).setCellValue(r.relationshipType)
             row.createCell(3).setCellValue(r.description)
-            row.createCell(4).setCellValue(char1?.code ?: "")
-            row.createCell(5).setCellValue(char2?.code ?: "")
+            row.createCell(4).setCellValue(r.intensity.toDouble())
+            row.createCell(5).setCellValue(if (r.isBidirectional) "Y" else "N")
+            row.createCell(6).setCellValue(r.displayOrder.toDouble())
+            row.createCell(7).setCellValue(char1?.code ?: "")
+            row.createCell(8).setCellValue(char2?.code ?: "")
         }
     }
 

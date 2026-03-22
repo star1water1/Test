@@ -1,6 +1,7 @@
 package com.novelcharacter.app.excel
 
 import com.novelcharacter.app.data.model.FieldDefinition
+import com.novelcharacter.app.data.model.Universe
 import org.apache.poi.ss.usermodel.Row
 
 /**
@@ -98,7 +99,9 @@ fun universeSpec() = SheetSpec(
         ColumnSpec("테두리색", width = 4000),
         ColumnSpec("테두리두께", width = 3000),
         ColumnSpec("이미지경로", width = 8000),
-        ColumnSpec("이미지모드", dropdownOptions = listOf("none", "custom", "random_character"), width = 5000)
+        ColumnSpec("이미지모드", dropdownOptions = listOf("none", "custom", "random_character"), width = 5000),
+        ColumnSpec("커스텀관계유형", width = 10000),
+        ColumnSpec("커스텀관계색상", width = 10000)
     )
 )
 
@@ -117,7 +120,8 @@ fun novelSpec(universeNames: List<String>) = SheetSpec(
         ColumnSpec("이미지모드", dropdownOptions = listOf("none", "custom", "random_character", "select_character"), width = 5000),
         ColumnSpec("이미지캐릭터ID", width = 5000),
         ColumnSpec("테두리상속", dropdownOptions = listOf("Y", "N"), width = 3000),
-        ColumnSpec("고정", dropdownOptions = listOf("Y", "N"), width = 3000)
+        ColumnSpec("고정", dropdownOptions = listOf("Y", "N"), width = 3000),
+        ColumnSpec("표준연도", width = 3000)
     )
 )
 
@@ -175,7 +179,9 @@ fun timelineSpec(novelTitles: List<String>) = SheetSpec(
         ColumnSpec("사건 설명", required = true, width = 15000),
         ColumnSpec("관련 작품", dropdownOptions = novelTitles.takeIf { it.isNotEmpty() }, width = 6000),
         ColumnSpec("관련 캐릭터", width = 10000),
-        ColumnSpec("관련작품코드", readOnly = true, width = 4000)
+        ColumnSpec("관련작품코드", readOnly = true, width = 4000),
+        ColumnSpec("정렬순서", width = 3000),
+        ColumnSpec("임시배치", dropdownOptions = listOf("Y", "N"), width = 3000)
     )
 )
 
@@ -194,12 +200,12 @@ fun stateChangeSpec() = SheetSpec(
     )
 )
 
-fun relationshipSpec() = SheetSpec(
+fun relationshipSpec(customTypes: List<String> = emptyList()) = SheetSpec(
     sheetName = "캐릭터 관계",
     columns = listOf(
         ColumnSpec("캐릭터1", required = true, width = 6000),
         ColumnSpec("캐릭터2", required = true, width = 6000),
-        ColumnSpec("관계 유형", required = true, dropdownOptions = listOf("부모-자식", "연인", "라이벌", "멘토-제자", "동료", "적", "형제자매", "친구", "기타"), width = 5000),
+        ColumnSpec("관계 유형", required = true, dropdownOptions = (Universe.DEFAULT_RELATIONSHIP_TYPES + customTypes).distinct(), width = 5000),
         ColumnSpec("설명", width = 10000),
         ColumnSpec("강도", width = 3000),
         ColumnSpec("양방향", dropdownOptions = listOf("Y", "N"), width = 3000),

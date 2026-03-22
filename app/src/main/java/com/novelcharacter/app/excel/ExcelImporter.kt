@@ -31,6 +31,7 @@ class ExcelImporter(context: Context) {
     @Volatile private var supervisorJob = kotlinx.coroutines.SupervisorJob()
     @Volatile private var importScope = CoroutineScope(Dispatchers.IO + supervisorJob)
     private val importService = ExcelImportService(db, appContext)
+    private var pendingImageFailures = 0
 
     private var importLauncher: androidx.activity.result.ActivityResultLauncher<Array<String>>? = null
     private var currentActivityRef: java.lang.ref.WeakReference<Activity>? = null
@@ -189,8 +190,9 @@ class ExcelImporter(context: Context) {
             val options = showImportOptionsDialog(hasImages) ?: return
 
             // 이미지 복원: extractDir에서 filesDir로 복사
+            pendingImageFailures = 0
             if (options.images && hasImages) {
-                restoreImages(imageMapJson, extractDir, imagePathRemap)
+                pendingImageFailures = restoreImages(imageMapJson, extractDir, imagePathRemap)
             }
 
             // xlsx 가져오기
@@ -223,26 +225,31 @@ class ExcelImporter(context: Context) {
         return remap
     }
 
+    /**
+     * @return 복원 실패한 이미지 수
+     */
     private fun restoreImages(
         imageMapJson: String?, extractDir: File, imagePathRemap: Map<String, String>
-    ) {
-        if (imageMapJson == null) return
+    ): Int {
+        if (imageMapJson == null) return 0
         val gson = com.google.gson.Gson()
         val type = object : com.google.gson.reflect.TypeToken<Map<String, String>>() {}.type
         val originalMap: Map<String, String> = try {
             gson.fromJson(imageMapJson, type)
-        } catch (_: Exception) { return }
+        } catch (_: Exception) { return 0 }
 
+        var failedCount = 0
         for ((originalPath, zipRelPath) in originalMap) {
             val newPath = imagePathRemap[originalPath] ?: continue
             val extractedFile = File(extractDir, zipRelPath)
-            if (!extractedFile.exists()) continue
+            if (!extractedFile.exists()) { failedCount++; continue }
             val destFile = File(newPath)
             if (destFile.exists()) continue
             try {
                 extractedFile.copyTo(destFile)
-            } catch (_: Exception) { }
+            } catch (_: Exception) { failedCount++ }
         }
+        return failedCount
     }
 
     // ── XLSX에서 가져오기 ──
@@ -299,6 +306,11 @@ class ExcelImporter(context: Context) {
                 importScope.launch(Dispatchers.Main) {
                     progressText?.text = text
                 }
+            }
+
+            if (pendingImageFailures > 0) {
+                result.warnings.add("${pendingImageFailures}개 이미지 복원 실패")
+                pendingImageFailures = 0
             }
 
             val message = buildResultMessage(result)
@@ -406,6 +418,10 @@ class ExcelImporter(context: Context) {
             parts.add(r.getString(com.novelcharacter.app.R.string.import_result_name_mappings, result.nameBasedMappings))
         if (result.newCodesGenerated > 0)
             parts.add(r.getString(com.novelcharacter.app.R.string.import_result_new_codes, result.newCodesGenerated))
+
+        if (result.warnings.isNotEmpty()) {
+            parts.add("⚠ ${result.warnings.size}건 경고")
+        }
 
         return if (parts.isEmpty()) r.getString(com.novelcharacter.app.R.string.import_result_empty)
         else r.getString(com.novelcharacter.app.R.string.import_result_complete, parts.joinToString(", "))

@@ -123,6 +123,17 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         alias("관계 유형", "relationship_type", "관계유형")
         alias("캐릭터1코드", "character1_code")
         alias("캐릭터2코드", "character2_code")
+        // Relationship extra
+        alias("강도", "intensity")
+        alias("양방향", "bidirectional", "is_bidirectional")
+        alias("표시순서", "display_order_rel")
+        // Universe custom relationship
+        alias("커스텀관계유형", "custom_relationship_types", "커스텀 관계 유형")
+        alias("커스텀관계색상", "custom_relationship_colors", "커스텀 관계 색상")
+        // Novel extra
+        alias("표준연도", "standard_year", "표준 연도")
+        // Timeline extra
+        alias("임시배치", "is_temporary", "임시 배치", "temporary")
         // Name bank
         alias("성별", "gender", "sex")
         alias("출처", "origin", "문화권")
@@ -289,6 +300,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val borderWidthColIndex = cols["테두리두께"] ?: -1
         val imagePathColIndex = cols["이미지경로"] ?: -1
         val imageModeColIndex = cols["이미지모드"] ?: -1
+        val customRelTypesColIndex = cols["커스텀관계유형"] ?: -1
+        val customRelColorsColIndex = cols["커스텀관계색상"] ?: -1
 
         // Build code index for duplicate detection within file
         val codesSeen = mutableMapOf<String, Int>()
@@ -307,6 +320,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val rawImagePaths = if (imagePathColIndex >= 0) getCellString(row, imagePathColIndex) else "[]"
                 val imagePaths = remapImagePaths(rawImagePaths)
                 val imageMode = if (imageModeColIndex >= 0) getCellString(row, imageModeColIndex).ifBlank { "none" } else "none"
+                val customRelTypes = if (customRelTypesColIndex >= 0) getCellString(row, customRelTypesColIndex) else ""
+                val customRelColors = if (customRelColorsColIndex >= 0) getCellString(row, customRelColorsColIndex) else ""
 
                 // Duplicate code detection within file (last-write-wins)
                 if (code.isNotBlank()) {
@@ -342,7 +357,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     db.universeDao().update(existing.copy(
                         name = name, description = description, displayOrder = displayOrder,
                         borderColor = borderColor, borderWidthDp = borderWidthDp,
-                        imagePaths = imagePaths, imageMode = imageMode
+                        imagePaths = imagePaths, imageMode = imageMode,
+                        customRelationshipTypes = customRelTypes,
+                        customRelationshipColors = customRelColors
                     ))
                     result.updatedUniverses++
                 } else {
@@ -351,7 +368,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     db.universeDao().insert(Universe(
                         name = name, description = description, code = newCode,
                         displayOrder = displayOrder, borderColor = borderColor, borderWidthDp = borderWidthDp,
-                        imagePaths = imagePaths, imageMode = imageMode
+                        imagePaths = imagePaths, imageMode = imageMode,
+                        customRelationshipTypes = customRelTypes,
+                        customRelationshipColors = customRelColors
                     ))
                     result.newUniverses++
                 }
@@ -385,6 +404,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val imageCharIdColIndex = cols["이미지캐릭터ID"] ?: -1
         val inheritBorderColIndex = cols["테두리상속"] ?: -1
         val novelPinnedColIndex = cols["고정"] ?: -1
+        val standardYearColIndex = cols["표준연도"] ?: -1
 
         val codesSeen = mutableMapOf<String, Int>()
 
@@ -406,6 +426,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val novelImageMode = if (novelImageModeColIndex >= 0) getCellString(row, novelImageModeColIndex).ifBlank { "none" } else "none"
                 val novelImageCharId = if (imageCharIdColIndex >= 0) parseNumber(getCellString(row, imageCharIdColIndex))?.toLong() else null
                 val novelIsPinned = if (novelPinnedColIndex >= 0) parseBoolean(getCellString(row, novelPinnedColIndex)) else false
+                val standardYear = if (standardYearColIndex >= 0) parseNumber(getCellString(row, standardYearColIndex))?.toInt() else null
 
                 // Duplicate code detection
                 if (code.isNotBlank()) {
@@ -448,7 +469,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         displayOrder = displayOrder, borderColor = borderColor, borderWidthDp = borderWidthDp,
                         inheritUniverseBorder = effectiveInherit, isPinned = novelIsPinned,
                         imagePaths = novelImagePaths, imageMode = novelImageMode,
-                        imageCharacterId = novelImageCharId
+                        imageCharacterId = novelImageCharId, standardYear = standardYear
                     ))
                     result.updatedNovels++
                 } else {
@@ -460,7 +481,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         borderColor = borderColor, borderWidthDp = borderWidthDp,
                         inheritUniverseBorder = effectiveInherit, isPinned = novelIsPinned,
                         imagePaths = novelImagePaths, imageMode = novelImageMode,
-                        imageCharacterId = novelImageCharId
+                        imageCharacterId = novelImageCharId, standardYear = standardYear
                     ))
                     result.newNovels++
                 }
@@ -749,6 +770,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val novelColIndex = cols["관련 작품"] ?: 5
         val charColIndex = cols["관련 캐릭터"] ?: 6
         val novelCodeColIndex = cols["관련작품코드"] ?: -1
+        val displayOrderColIndex = cols["정렬순서"] ?: -1
+        val isTemporaryColIndex = cols["임시배치"] ?: -1
 
         val allNovels = db.novelDao().getAllNovelsList()
 
@@ -765,6 +788,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val calendarType = getCellString(row, calendarColIndex).ifBlank { "천개력" }
                 val novelTitle = getCellString(row, novelColIndex)
                 val novelCode = if (novelCodeColIndex >= 0) getCellString(row, novelCodeColIndex) else ""
+                val displayOrder = if (displayOrderColIndex >= 0) parseNumber(getCellString(row, displayOrderColIndex))?.toInt() ?: 0 else 0
+                val isTemporary = if (isTemporaryColIndex >= 0) parseBoolean(getCellString(row, isTemporaryColIndex)) else false
 
                 val resolvedNovel = if (novelCode.isNotBlank()) {
                     db.novelDao().getNovelByCode(novelCode)
@@ -784,14 +809,16 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     eventId = existingEvent.id
                     db.timelineDao().update(existingEvent.copy(
                         month = month, day = day, calendarType = calendarType,
-                        novelId = novelId, universeId = universeId
+                        novelId = novelId, universeId = universeId,
+                        displayOrder = displayOrder, isTemporary = isTemporary
                     ))
                     result.updatedEvents++
                 } else {
                     eventId = db.timelineDao().insert(TimelineEvent(
                         year = year, month = month, day = day,
                         calendarType = calendarType, description = description,
-                        novelId = novelId, universeId = universeId
+                        novelId = novelId, universeId = universeId,
+                        displayOrder = displayOrder, isTemporary = isTemporary
                     ))
                     result.newEvents++
                 }
