@@ -253,6 +253,13 @@ class StatsFieldInsightFragment : Fragment() {
         limit: Int
     ): View {
         val entries = data.entries.sortedByDescending { it.value }.take(limit)
+        if (entries.isEmpty()) {
+            return TextView(requireContext()).apply {
+                text = getString(R.string.stats_no_data)
+                gravity = android.view.Gravity.CENTER
+                setPadding(0, 24, 0, 24)
+            }
+        }
         val chartHeight = resources.getDimensionPixelSize(R.dimen.stats_chart_height)
 
         return when (chartType) {
@@ -369,7 +376,14 @@ class StatsFieldInsightFragment : Fragment() {
         return chart
     }
 
-    private fun createRankingChart(entries: List<Map.Entry<String, Int>>): HorizontalBarChart {
+    private fun createRankingChart(entries: List<Map.Entry<String, Int>>): View {
+        if (entries.isEmpty()) {
+            return TextView(requireContext()).apply {
+                text = getString(R.string.stats_no_data)
+                gravity = android.view.Gravity.CENTER
+                setPadding(0, 24, 0, 24)
+            }
+        }
         val chartHeight = resources.getDimensionPixelSize(R.dimen.stats_chart_height)
         return createHorizontalBarChart(entries, chartHeight)
     }
