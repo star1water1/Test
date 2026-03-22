@@ -104,14 +104,10 @@ class GlobalSearchViewModel(application: Application) : AndroidViewModel(applica
 
             // Pre-compute filtered character IDs if filters are active
             var filteredCharIds: Set<Long>? = null
-            if (filters.isNotEmpty()) {
-                viewModelScope.launch {
-                    filteredCharIds = applyFieldFilters(filters)
-                    combineResults(mediator, query, sort, chars, events, novels, filteredCharIds)
-                }
-            }
+            var filterReady = filters.isEmpty()
 
             fun combine() {
+                if (!filterReady) return // 필터 계산 완료 전까지 결과 미출력
                 val q = query.lowercase()
                 val items = mutableListOf<SearchResultItem>()
 
@@ -190,6 +186,14 @@ class GlobalSearchViewModel(application: Application) : AndroidViewModel(applica
                 mediator.value = items
             }
 
+            if (filters.isNotEmpty()) {
+                viewModelScope.launch {
+                    filteredCharIds = applyFieldFilters(filters)
+                    filterReady = true
+                    combine()
+                }
+            }
+
             mediator.addSource(charResults) { chars = it; combine() }
             mediator.addSource(eventResults) { events = it; combine() }
             mediator.addSource(novelResults) { novels = it; combine() }
@@ -258,71 +262,6 @@ class GlobalSearchViewModel(application: Application) : AndroidViewModel(applica
         return resultIds ?: emptySet()
     }
 
-    private fun combineResults(
-        mediator: MediatorLiveData<List<SearchResultItem>>,
-        query: String, sort: String,
-        chars: List<Character>, events: List<TimelineEvent>, novels: List<Novel>,
-        filteredCharIds: Set<Long>?
-    ) {
-        // 필터 결과로 mediator 직접 갱신 (searchTrigger 재설정 제거 — 무한 루프 방지)
-        val q = query.lowercase()
-        val items = mutableListOf<SearchResultItem>()
-
-        val filteredChars = if (filteredCharIds != null) {
-            chars.filter { it.id in filteredCharIds }
-        } else chars
-
-        val rankedChars = when (sort) {
-            SearchPreset.SORT_NAME -> filteredChars.sortedBy { it.name.lowercase() }
-            SearchPreset.SORT_TAG -> filteredChars.sortedBy { it.name.lowercase() }
-            SearchPreset.SORT_RECENT -> filteredChars.sortedByDescending { it.updatedAt }
-            else -> filteredChars.sortedByDescending { c ->
-                val name = c.name.lowercase()
-                val alias = c.anotherName.lowercase()
-                val first = c.firstName.lowercase()
-                val last = c.lastName.lowercase()
-                when {
-                    name == q -> 100; name.startsWith(q) -> 80
-                    last == q || first == q -> 75; alias == q -> 70
-                    alias.startsWith(q) -> 60; last.startsWith(q) || first.startsWith(q) -> 55
-                    name.contains(q) -> 40; alias.contains(q) -> 30
-                    first.contains(q) || last.contains(q) -> 25; else -> 10
-                }
-            }
-        }
-
-        if (rankedChars.isNotEmpty()) {
-            items.add(SearchResultItem.SectionHeader(appContext.getString(R.string.section_header_format, appContext.getString(R.string.tab_characters), rankedChars.size)))
-            items.addAll(rankedChars.map { SearchResultItem.CharacterResult(it) })
-        }
-        if (sort != SearchPreset.SORT_TAG) {
-            val rankedEvents = when (sort) {
-                SearchPreset.SORT_NAME -> events.sortedBy { it.description.lowercase() }
-                SearchPreset.SORT_RECENT -> events.sortedByDescending { it.createdAt }
-                else -> events.sortedByDescending { e ->
-                    val desc = e.description.lowercase()
-                    when { desc == q -> 100; desc.startsWith(q) -> 80; desc.contains(q) -> 40; else -> 10 }
-                }
-            }
-            val rankedNovels = when (sort) {
-                SearchPreset.SORT_NAME -> novels.sortedBy { it.title.lowercase() }
-                SearchPreset.SORT_RECENT -> novels.sortedByDescending { it.createdAt }
-                else -> novels.sortedByDescending { n ->
-                    val title = n.title.lowercase()
-                    when { title == q -> 100; title.startsWith(q) -> 80; title.contains(q) -> 40; else -> 10 }
-                }
-            }
-            if (rankedEvents.isNotEmpty()) {
-                items.add(SearchResultItem.SectionHeader(appContext.getString(R.string.section_header_format, appContext.getString(R.string.tab_timeline), rankedEvents.size)))
-                items.addAll(rankedEvents.map { SearchResultItem.EventResult(it) })
-            }
-            if (rankedNovels.isNotEmpty()) {
-                items.add(SearchResultItem.SectionHeader(appContext.getString(R.string.section_header_format, appContext.getString(R.string.tab_novels), rankedNovels.size)))
-                items.addAll(rankedNovels.map { SearchResultItem.NovelResult(it) })
-            }
-        }
-        mediator.postValue(items)
-    }
 
     /** 특정 필드의 유니크 값 목록 조회 (필터 UI용) */
     suspend fun getFieldValues(fieldDefId: Long): List<String> {

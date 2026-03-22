@@ -1,6 +1,7 @@
 package com.novelcharacter.app.ui.search
 
 import android.os.Bundle
+import android.widget.Toast
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -155,7 +156,10 @@ class SearchFilterBottomSheet : BottomSheetDialogFragment() {
                 }
             }
 
-            if (selectedValues.isEmpty()) return@setOnClickListener
+            if (selectedValues.isEmpty()) {
+                Toast.makeText(requireContext(), getString(R.string.search_filter_select_values), Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
 
             val matchMode = if (binding.radioContains.isChecked) "contains" else "exact"
 

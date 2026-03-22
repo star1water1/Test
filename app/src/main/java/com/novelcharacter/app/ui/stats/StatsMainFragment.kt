@@ -1,6 +1,7 @@
 package com.novelcharacter.app.ui.stats
 
 import android.graphics.Color
+import androidx.core.graphics.ColorUtils
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -254,7 +255,7 @@ class StatsMainFragment : Fragment() {
                     PatternSeverity.MEDIUM -> 0x18FF8800.toInt() // 반투명 주황
                     PatternSeverity.LOW -> 0x182196F3.toInt()    // 반투명 파랑
                 }
-                setCardBackgroundColor(bgColor or ContextCompat.getColor(ctx, R.color.surface).and(0x00FFFFFF.inv()))
+                setCardBackgroundColor(ColorUtils.compositeColors(bgColor, ContextCompat.getColor(ctx, R.color.surface)))
             }
 
             val content = LinearLayout(ctx).apply {
