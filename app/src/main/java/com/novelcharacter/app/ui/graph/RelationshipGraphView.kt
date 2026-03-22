@@ -134,7 +134,7 @@ class RelationshipGraphView @JvmOverloads constructor(
     private val scaleDetector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
         override fun onScale(detector: ScaleGestureDetector): Boolean {
             scaleFactor *= detector.scaleFactor
-            scaleFactor = scaleFactor.coerceIn(0.3f, 3.0f)
+            scaleFactor = scaleFactor.coerceAtMost(3.0f)
             invalidate()
             return true
         }
@@ -243,7 +243,7 @@ class RelationshipGraphView @JvmOverloads constructor(
         val viewWidth = width * 0.85f
         val viewHeight = height * 0.85f
 
-        scaleFactor = min(viewWidth / graphWidth, viewHeight / graphHeight).coerceIn(0.3f, 3.0f)
+        scaleFactor = min(viewWidth / graphWidth, viewHeight / graphHeight).coerceAtMost(3.0f)
 
         // 그래프 중심을 뷰 중심에 맞춤
         val centerX = (minX + maxX) / 2f
@@ -303,8 +303,8 @@ class RelationshipGraphView @JvmOverloads constructor(
         // 반복 횟수 증가 (더 안정적인 레이아웃)
         val iterations = min(300, max(100, count * 8))
         // 반발력 강화 — 노드 간 최소 거리를 넓혀 밀집 방지
-        val k = sqrt((radius * radius * 6) / count.toFloat())
-        val temp = radius
+        val k = sqrt((radius * radius * 5) / count.toFloat())
+        val temp = radius * 0.7f
         val nodeIndexMap = nodesCopy.withIndex().associate { (i, n) -> n.id to i }
 
         val processedPairs = mutableSetOf<Long>()
