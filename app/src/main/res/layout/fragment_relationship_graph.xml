@@ -59,6 +59,27 @@
 
     </HorizontalScrollView>
 
+    <!-- Faction filter chips -->
+    <HorizontalScrollView
+        android:id="@+id/factionFilterScrollView"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:scrollbars="none"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        android:visibility="gone">
+
+        <com.google.android.material.chip.ChipGroup
+            android:id="@+id/factionChipGroup"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            app:singleSelection="true"
+            app:selectionRequired="true"
+            android:paddingTop="2dp"
+            android:paddingBottom="4dp" />
+
+    </HorizontalScrollView>
+
     <!-- Summary mode warning -->
     <TextView
         android:id="@+id/summaryModeText"

@@ -980,4 +980,5 @@
     <string name="close">닫기</string>
     <string name="faction_belonging">소속 세력</string>
     <string name="faction_belonging_empty">소속 세력 없음</string>
+    <string name="graph_faction_filter_all">전체 세력</string>
 </resources>

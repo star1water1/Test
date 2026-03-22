@@ -78,6 +78,64 @@ class RelationshipGraphViewModel(application: android.app.Application) : Android
                 mergedColors.putAll(universe.getRelationshipColorMap())
             }
             _relationshipColorMap.value = mergedColors
+
+            // Load faction data
+            val allFactions = factionRepository.getAllFactionsList()
+            _factions.value = allFactions
+
+            val allMemberships = factionRepository.getAllMembershipsList()
+            _factionMemberships.value = allMemberships
+
+            buildCharacterFactionMap(allFactions, allMemberships, year = null)
+        }
+    }
+
+    /**
+     * Build characterId -> List<Pair<factionId, colorInt>> mapping.
+     * If year is non-null, only include memberships active at that year.
+     */
+    fun buildCharacterFactionMap(
+        allFactions: List<Faction>,
+        allMemberships: List<FactionMembership>,
+        year: Int?
+    ) {
+        val factionMap = allFactions.associateBy { it.id }
+        val result = mutableMapOf<Long, MutableList<Pair<Long, Int>>>()
+
+        for (membership in allMemberships) {
+            // If year filter is specified, only include active memberships
+            if (year != null && !membership.isActiveAtYear(year)) continue
+
+            val faction = factionMap[membership.factionId] ?: continue
+            val colorInt = try {
+                Color.parseColor(faction.color)
+            } catch (e: Exception) {
+                Color.parseColor("#2196F3")
+            }
+            result.getOrPut(membership.characterId) { mutableListOf() }
+                .add(membership.factionId to colorInt)
+        }
+        _characterFactionMap.value = result
+    }
+
+    /**
+     * Update faction memberships for a given year (time slider).
+     */
+    fun updateFactionMembershipsForYear(year: Int?) {
+        val allFactions = _factions.value ?: return
+        val allMemberships = _factionMemberships.value ?: return
+        buildCharacterFactionMap(allFactions, allMemberships, year)
+    }
+
+    /**
+     * Get factions for a specific universe.
+     */
+    fun getFactionsForUniverse(universeId: Long?): List<Faction> {
+        val allFactions = _factions.value ?: emptyList()
+        return if (universeId != null) {
+            allFactions.filter { it.universeId == universeId }
+        } else {
+            allFactions
         }
     }
 
@@ -117,6 +175,7 @@ class RelationshipGraphFragment : Fragment() {
     private val binding get() = _binding!!
     private val viewModel: RelationshipGraphViewModel by viewModels()
     private var currentFilter: String? = null
+    private var currentFactionFilter: Long? = null  // null = show all factions
     private var isTimeViewEnabled = false
     private var currentYear: Int? = null
 
@@ -152,6 +211,7 @@ class RelationshipGraphFragment : Fragment() {
         setupTimeSlider()
         observeColors()
         observeUniversesAndNovels()
+        observeFactionData()
         observeData()
         viewModel.loadData()
     }
@@ -164,6 +224,66 @@ class RelationshipGraphFragment : Fragment() {
         viewModel.novels.observe(viewLifecycleOwner) { novels ->
             cachedNovels = novels
             updateNovelSpinner()
+        }
+    }
+
+    private fun observeFactionData() {
+        viewModel.factions.observe(viewLifecycleOwner) {
+            setupFactionChips()
+        }
+        viewModel.characterFactionMap.observe(viewLifecycleOwner) {
+            refreshGraph()
+        }
+    }
+
+    private fun setupFactionChips() {
+        val factions = viewModel.getFactionsForUniverse(currentUniverseId)
+        val chipGroup = binding.factionChipGroup
+        chipGroup.removeAllViews()
+
+        if (factions.isEmpty()) {
+            binding.factionFilterScrollView.visibility = View.GONE
+            return
+        }
+
+        binding.factionFilterScrollView.visibility = View.VISIBLE
+
+        // "All factions" chip
+        val allChip = Chip(requireContext()).apply {
+            text = getString(R.string.graph_faction_filter_all)
+            isCheckable = true
+            isChecked = currentFactionFilter == null
+            setOnClickListener {
+                currentFactionFilter = null
+                refreshGraph()
+                // Update check states
+                setupFactionChips()
+            }
+        }
+        chipGroup.addView(allChip)
+
+        // One chip per faction
+        for (faction in factions) {
+            val factionColor = try {
+                Color.parseColor(faction.color)
+            } catch (e: Exception) {
+                Color.parseColor("#2196F3")
+            }
+            val chip = Chip(requireContext()).apply {
+                text = faction.name
+                isCheckable = true
+                isChecked = currentFactionFilter == faction.id
+                chipBackgroundColor = android.content.res.ColorStateList.valueOf(
+                    Color.argb(60, Color.red(factionColor), Color.green(factionColor), Color.blue(factionColor))
+                )
+                setTextColor(factionColor)
+                setOnClickListener {
+                    currentFactionFilter = faction.id
+                    refreshGraph()
+                    setupFactionChips()
+                }
+            }
+            chipGroup.addView(chip)
         }
     }
 
