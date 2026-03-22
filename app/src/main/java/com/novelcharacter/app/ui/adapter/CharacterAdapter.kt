@@ -263,14 +263,20 @@ class CharacterAdapter(
                 binding.imageCountBadge.visibility = View.GONE
             }
 
-            // 이미지 영역 클릭 → 이미지 뷰어 (reorder/selection mode에서는 비활성)
+            // 이미지 영역 롱클릭 → 이미지 뷰어 (reorder/selection mode에서는 비활성)
+            // 일반 탭은 카드 root의 onClick으로 상세 화면 이동
             if (!isReorderMode && !isSelectionMode && paths.isNotEmpty() && onImageClick != null) {
-                binding.characterImage.setOnClickListener {
+                binding.characterImage.setOnClickListener(null)
+                binding.characterImage.isClickable = false
+                binding.characterImage.setOnLongClickListener {
                     onImageClick.invoke(character.imagePaths, idx % paths.size)
+                    true
                 }
             } else {
                 binding.characterImage.setOnClickListener(null)
                 binding.characterImage.isClickable = false
+                binding.characterImage.setOnLongClickListener(null)
+                binding.characterImage.isLongClickable = false
             }
 
             loadCharacterImage(character, paths, idx)
