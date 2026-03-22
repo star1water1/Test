@@ -78,6 +78,8 @@ val RESERVED_SHEET_NAMES = setOf(
     relationshipSpec().sheetName,
     relationshipChangeSpec().sheetName,
     nameBankSpec().sheetName,
+    factionSpec().sheetName,
+    factionMembershipSpec().sheetName,
     userPresetTemplateSpec().sheetName,
     searchPresetSpec().sheetName,
     appSettingsSpec().sheetName
@@ -278,6 +280,37 @@ fun searchPresetSpec() = SheetSpec(
         ColumnSpec("기본값", dropdownOptions = listOf("Y", "N"), width = 4000),
         ColumnSpec("생성일", readOnly = true, width = 6000),
         ColumnSpec("수정일", readOnly = true, width = 6000)
+    )
+)
+
+fun factionSpec(universeNames: List<String> = emptyList()) = SheetSpec(
+    sheetName = "세력",
+    columns = listOf(
+        ColumnSpec("이름", required = true, width = 8000),
+        ColumnSpec("세계관", dropdownOptions = universeNames.takeIf { it.isNotEmpty() }, width = 8000),
+        ColumnSpec("설명", width = 15000),
+        ColumnSpec("색상", width = 4000),
+        ColumnSpec("자동관계유형", required = true, width = 6000),
+        ColumnSpec("자동관계강도", width = 3000),
+        ColumnSpec("코드", readOnly = true, width = 4000),
+        ColumnSpec("정렬순서", width = 3000),
+        ColumnSpec("생성일", readOnly = true, width = 5000)
+    )
+)
+
+fun factionMembershipSpec(factionNames: List<String> = emptyList()) = SheetSpec(
+    sheetName = "세력 소속",
+    columns = listOf(
+        ColumnSpec("세력", required = true, dropdownOptions = factionNames.takeIf { it.isNotEmpty() }, width = 8000),
+        ColumnSpec("캐릭터", required = true, width = 8000),
+        ColumnSpec("가입연도", width = 3000),
+        ColumnSpec("탈퇴연도", width = 3000),
+        ColumnSpec("탈퇴유형", dropdownOptions = listOf("", "순수제거", "설정상탈퇴"), width = 5000),
+        ColumnSpec("탈퇴후관계유형", width = 6000),
+        ColumnSpec("탈퇴후강도", width = 3000),
+        ColumnSpec("세력코드", readOnly = true, width = 4000),
+        ColumnSpec("캐릭터코드", readOnly = true, width = 4000),
+        ColumnSpec("생성일", readOnly = true, width = 5000)
     )
 )
 

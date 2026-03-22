@@ -230,6 +230,32 @@ class StatsMainFragment : Fragment() {
                     fieldStats.numberFieldSummaries.size))
             }
         }
+
+        // 세력 통계
+        viewModel.factionStats.observe(viewLifecycleOwner) { factionStats ->
+            if (factionStats.totalFactions == 0) {
+                binding.cardFactionStats.visibility = View.GONE
+                return@observe
+            }
+            binding.cardFactionStats.visibility = View.VISIBLE
+            binding.factionPreview.text = buildString {
+                append("세력 ${factionStats.totalFactions}개")
+                val totalMembers = factionStats.factionMemberCounts.values.sum()
+                append(" | 소속 멤버 ${totalMembers}명")
+                if (factionStats.multiMemberCharacters > 0) {
+                    append(" | 다중 소속 ${factionStats.multiMemberCharacters}명")
+                }
+                if (factionStats.departureCount > 0) {
+                    append(" | 탈퇴 ${factionStats.departureCount}건")
+                }
+                if (factionStats.factionlessCharacterCount > 0) {
+                    append(" | 미소속 ${factionStats.factionlessCharacterCount}명")
+                }
+                if (factionStats.autoRelationshipCount > 0) {
+                    append(" | 자동 관계 ${factionStats.autoRelationshipCount}건")
+                }
+            }
+        }
     }
 
     // ===== 패턴 인사이트 (개선 3) =====

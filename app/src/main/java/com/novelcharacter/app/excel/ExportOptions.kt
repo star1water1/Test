@@ -14,6 +14,8 @@ data class ExportOptions(
     val relationships: Boolean = true,
     val relationshipChanges: Boolean = true,
     val nameBank: Boolean = true,
+    val factions: Boolean = true,
+    val factionMemberships: Boolean = true,
     val presetTemplates: Boolean = true,
     val searchPresets: Boolean = true,
     val appSettings: Boolean = true,
@@ -22,7 +24,8 @@ data class ExportOptions(
     fun toBooleanArray() = booleanArrayOf(
         universes, novels, characters, fieldDefinitions,
         timeline, stateChanges, relationships, relationshipChanges,
-        nameBank, presetTemplates, searchPresets, appSettings, images
+        nameBank, factions, factionMemberships,
+        presetTemplates, searchPresets, appSettings, images
     )
 
     companion object {
@@ -33,7 +36,8 @@ data class ExportOptions(
         val LABELS = arrayOf(
             "세계관", "작품", "캐릭터", "필드 정의",
             "사건 연표", "상태 변화", "관계", "관계 변화",
-            "이름 은행", "필드 템플릿", "검색 프리셋", "앱 설정",
+            "이름 은행", "세력", "세력 소속",
+            "필드 템플릿", "검색 프리셋", "앱 설정",
             "이미지 (파일 크기 증가)"
         )
 
@@ -47,10 +51,12 @@ data class ExportOptions(
             relationships = arr[6],
             relationshipChanges = arr[7],
             nameBank = arr[8],
-            presetTemplates = arr[9],
-            searchPresets = arr[10],
-            appSettings = arr[11],
-            images = arr[12]
+            factions = arr[9],
+            factionMemberships = arr[10],
+            presetTemplates = arr[11],
+            searchPresets = arr[12],
+            appSettings = arr[13],
+            images = arr[14]
         )
     }
 }
