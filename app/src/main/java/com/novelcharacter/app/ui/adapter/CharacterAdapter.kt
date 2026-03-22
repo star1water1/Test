@@ -52,12 +52,15 @@ class CharacterAdapter(
         }
     }
 
-    // 캐릭터별 표시 이미지 인덱스 (목록 새로고침 시 랜덤 재설정)
+    // 캐릭터별 표시 이미지 인덱스 (영속 저장)
     private val imageIndexMap = mutableMapOf<Long, Int>()
+    private var prefsLoaded = false
+    private companion object { const val ENTITY_TYPE = "character" }
 
     /** 캐릭터 이미지 표시를 랜덤으로 재설정 (목록 새로고침 시 호출) */
     fun refreshRandomImages() {
         imageIndexMap.clear()
+        prefsLoaded = false
     }
 
     fun setSelectionMode(enabled: Boolean) {
@@ -239,8 +242,17 @@ class CharacterAdapter(
             } catch (e: Exception) {
                 emptyList()
             }
+            val context = holder.itemView.context
+            if (!prefsLoaded) {
+                imageIndexMap.putAll(com.novelcharacter.app.util.ImageIndexPrefs.loadAll(context, ENTITY_TYPE))
+                prefsLoaded = true
+            }
             val idx = if (paths.isNotEmpty()) {
-                imageIndexMap.getOrPut(character.id) { (0 until paths.size).random() }
+                imageIndexMap.getOrPut(character.id) {
+                    val randomIdx = (0 until paths.size).random()
+                    com.novelcharacter.app.util.ImageIndexPrefs.save(context, ENTITY_TYPE, character.id, randomIdx)
+                    randomIdx
+                }
             } else 0
 
             // 이미지 개수 배지

@@ -43,12 +43,15 @@ class NovelAdapter(
     /** 작품에 속한 캐릭터의 랜덤/선택 이미지 경로를 반환하는 콜백 */
     var resolveCharacterImage: ((novelId: Long, characterId: Long?, callback: (String?) -> Unit) -> Unit)? = null
 
-    /** 작품별 커스텀 이미지 인덱스 (재바인드 시 동일 이미지 유지, 캐시 스래싱 방지) */
+    /** 작품별 커스텀 이미지 인덱스 (영속 저장) */
     private val imageIndexMap = mutableMapOf<Long, Int>()
+    private var prefsLoaded = false
+    private companion object { const val ENTITY_TYPE = "novel" }
 
     /** 이미지 표시를 랜덤으로 재설정 (목록 새로고침 시 호출) */
     fun refreshRandomImages() {
         imageIndexMap.clear()
+        prefsLoaded = false
     }
 
     private val thumbnailCache: LruCache<String, Bitmap> = run {
@@ -212,7 +215,16 @@ class NovelAdapter(
                 Novel.IMAGE_MODE_CUSTOM -> {
                     val paths = parseImagePaths(novel.imagePaths)
                     if (paths.isNotEmpty()) {
-                        val idx = imageIndexMap.getOrPut(novel.id) { (0 until paths.size).random() }
+                        val ctx = itemView.context
+                        if (!prefsLoaded) {
+                            imageIndexMap.putAll(com.novelcharacter.app.util.ImageIndexPrefs.loadAll(ctx, ENTITY_TYPE))
+                            prefsLoaded = true
+                        }
+                        val idx = imageIndexMap.getOrPut(novel.id) {
+                            val randomIdx = (0 until paths.size).random()
+                            com.novelcharacter.app.util.ImageIndexPrefs.save(ctx, ENTITY_TYPE, novel.id, randomIdx)
+                            randomIdx
+                        }
                         binding.novelImage.visibility = View.VISIBLE
                         loadImageFromPath(paths[idx % paths.size], novel.id)
                     }

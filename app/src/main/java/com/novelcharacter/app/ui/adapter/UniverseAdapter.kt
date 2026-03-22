@@ -50,12 +50,15 @@ class UniverseAdapter(
     /** 특정 작품의 이미지 경로를 반환하는 콜백 */
     var resolveNovelImageById: ((novelId: Long, callback: (String?) -> Unit) -> Unit)? = null
 
-    /** 세계관별 커스텀 이미지 인덱스 (재바인드 시 동일 이미지 유지) */
+    /** 세계관별 커스텀 이미지 인덱스 (영속 저장) */
     private val imageIndexMap = mutableMapOf<Long, Int>()
+    private var prefsLoaded = false
+    private companion object { const val ENTITY_TYPE = "universe" }
 
     /** 이미지 표시를 랜덤으로 재설정 (목록 새로고침 시 호출) */
     fun refreshRandomImages() {
         imageIndexMap.clear()
+        prefsLoaded = false
     }
 
     // 이미지 캐시 — CharacterAdapter 패턴
@@ -218,7 +221,16 @@ class UniverseAdapter(
                 Universe.IMAGE_MODE_CUSTOM -> {
                     val paths = parseImagePaths(universe.imagePaths)
                     if (paths.isNotEmpty()) {
-                        val idx = imageIndexMap.getOrPut(universe.id) { (0 until paths.size).random() }
+                        val ctx = itemView.context
+                        if (!prefsLoaded) {
+                            imageIndexMap.putAll(com.novelcharacter.app.util.ImageIndexPrefs.loadAll(ctx, ENTITY_TYPE))
+                            prefsLoaded = true
+                        }
+                        val idx = imageIndexMap.getOrPut(universe.id) {
+                            val randomIdx = (0 until paths.size).random()
+                            com.novelcharacter.app.util.ImageIndexPrefs.save(ctx, ENTITY_TYPE, universe.id, randomIdx)
+                            randomIdx
+                        }
                         loadImageFromPath(paths[idx % paths.size], universe.id)
                     }
                 }
