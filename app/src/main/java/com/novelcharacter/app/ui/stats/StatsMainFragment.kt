@@ -141,6 +141,11 @@ class StatsMainFragment : Fragment() {
                 if (summary.totalCharacters > 0) View.VISIBLE else View.GONE
         }
 
+        // 패턴 인사이트 (개선 3)
+        viewModel.patternInsights.observe(viewLifecycleOwner) { patterns ->
+            populatePatternInsights(patterns)
+        }
+
         // 필드 인사이트 미리보기
         viewModel.fieldInsights.observe(viewLifecycleOwner) { insights ->
             populateInsightPreview(insights)
@@ -217,6 +222,103 @@ class StatsMainFragment : Fragment() {
                     fieldStats.fieldValueDistributions.size,
                     fieldStats.numberFieldSummaries.size))
             }
+        }
+    }
+
+    // ===== 패턴 인사이트 (개선 3) =====
+
+    private fun populatePatternInsights(patterns: List<PatternInsight>) {
+        val container = binding.patternInsightContainer
+        container.removeAllViews()
+
+        if (patterns.isEmpty()) {
+            binding.cardPatternInsights.visibility = View.GONE
+            return
+        }
+        binding.cardPatternInsights.visibility = View.VISIBLE
+
+        val ctx = context ?: return
+        val marginSm = resources.getDimensionPixelSize(R.dimen.stats_margin_sm)
+
+        patterns.forEach { pattern ->
+            val card = com.google.android.material.card.MaterialCardView(ctx).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { bottomMargin = marginSm }
+                radius = resources.getDimension(R.dimen.stats_card_corner_radius)
+                cardElevation = 2f
+                // severity별 배경색 힌트
+                val bgColor = when (pattern.severity) {
+                    PatternSeverity.HIGH -> 0x18FF0000.toInt()   // 반투명 빨강
+                    PatternSeverity.MEDIUM -> 0x18FF8800.toInt() // 반투명 주황
+                    PatternSeverity.LOW -> 0x182196F3.toInt()    // 반투명 파랑
+                }
+                setCardBackgroundColor(bgColor or ContextCompat.getColor(ctx, R.color.surface).and(0x00FFFFFF.inv()))
+            }
+
+            val content = LinearLayout(ctx).apply {
+                orientation = LinearLayout.VERTICAL
+                val pad = (12 * resources.displayMetrics.density).toInt()
+                setPadding(pad, (8 * resources.displayMetrics.density).toInt(), pad, (8 * resources.displayMetrics.density).toInt())
+            }
+
+            // severity 배지 + 타이틀
+            val severityLabel = when (pattern.severity) {
+                PatternSeverity.HIGH -> getString(R.string.stats_pattern_severity_high)
+                PatternSeverity.MEDIUM -> getString(R.string.stats_pattern_severity_medium)
+                PatternSeverity.LOW -> getString(R.string.stats_pattern_severity_low)
+            }
+
+            val titleText = TextView(ctx).apply {
+                text = "$severityLabel  ${pattern.title}"
+                textSize = 14f
+                setTextColor(ContextCompat.getColor(ctx, R.color.on_surface))
+                setTypeface(null, android.graphics.Typeface.BOLD)
+            }
+            content.addView(titleText)
+
+            // 설명
+            val descText = TextView(ctx).apply {
+                text = pattern.description
+                textSize = 13f
+                setTextColor(ContextCompat.getColor(ctx, R.color.text_secondary))
+                val lp = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { topMargin = (4 * resources.displayMetrics.density).toInt() }
+                layoutParams = lp
+            }
+            content.addView(descText)
+
+            // 제안 (있는 경우)
+            if (pattern.suggestion.isNotBlank()) {
+                val sugText = TextView(ctx).apply {
+                    text = "💡 ${pattern.suggestion}"
+                    textSize = 12f
+                    setTextColor(ContextCompat.getColor(ctx, R.color.primary))
+                    val lp = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    ).apply { topMargin = (4 * resources.displayMetrics.density).toInt() }
+                    layoutParams = lp
+                }
+                content.addView(sugText)
+            }
+
+            // fieldDefId가 있으면 탭 시 필드 인사이트로 이동
+            if (pattern.fieldDefId != null) {
+                card.isClickable = true
+                card.isFocusable = true
+                card.setOnClickListener {
+                    findNavController().navigateSafe(
+                        R.id.statsMainFragment, R.id.statsFieldInsightFragment, null
+                    )
+                }
+            }
+
+            card.addView(content)
+            container.addView(card)
         }
     }
 

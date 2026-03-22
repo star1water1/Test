@@ -123,6 +123,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
                 val namesDeferred = async(Dispatchers.IO) { provider.computeNameBankStats(filtered) }
                 val healthDeferred = async(Dispatchers.IO) { provider.computeDataHealth(filtered) }
                 val fieldAnalysisDeferred = async(Dispatchers.IO) { provider.computeFieldAnalysis(filtered) }
+                val patternsDeferred = async(Dispatchers.IO) { provider.detectPatterns(filtered) }
 
                 val summary = summaryDeferred.await()
                 val insights = insightsDeferred.await()
@@ -132,6 +133,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
                 val names = namesDeferred.await()
                 val health = healthDeferred.await()
                 val fieldAnalysis = fieldAnalysisDeferred.await()
+                val patterns = patternsDeferred.await()
 
                 // 세부 통계를 먼저 set하고, summary를 마지막에 set
                 _fieldInsights.value = insights
@@ -141,6 +143,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
                 _nameBankStats.value = names
                 _dataHealthStats.value = health
                 _fieldAnalysisStats.value = fieldAnalysis
+                _patternInsights.value = patterns
                 _summary.value = summary
             } catch (e: Exception) {
                 _error.value = e.message
@@ -246,6 +249,24 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
                 _error.value = e.message
             } finally {
                 dismissLoadingIfIdle()
+            }
+        }
+    }
+
+    // ===== 개선 3: 패턴 인사이트 =====
+    private val _patternInsights = MutableLiveData<List<PatternInsight>>()
+    val patternInsights: LiveData<List<PatternInsight>> = _patternInsights
+
+    fun loadPatternInsights() {
+        viewModelScope.launch {
+            try {
+                val snapshot = ensureSnapshot()
+                val filtered = getFilteredSnapshot(snapshot)
+                _patternInsights.value = withContext(Dispatchers.IO) {
+                    provider.detectPatterns(filtered)
+                }
+            } catch (e: Exception) {
+                _error.value = e.message
             }
         }
     }

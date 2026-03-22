@@ -312,6 +312,40 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
+            <!-- 패턴 인사이트 (개선 3) -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cardPatternInsights"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="@dimen/stats_margin_md"
+                android:visibility="gone"
+                app:cardCornerRadius="@dimen/stats_card_corner_radius"
+                app:cardElevation="@dimen/stats_card_elevation">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="@dimen/stats_padding_card">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/stats_pattern_insights_title"
+                        android:textSize="@dimen/stats_text_heading"
+                        android:textStyle="bold"
+                        android:textColor="@color/primary"
+                        android:layout_marginBottom="@dimen/stats_margin_sm" />
+
+                    <LinearLayout
+                        android:id="@+id/patternInsightContainer"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical" />
+
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
             <!-- 필드 인사이트 미리보기 (가로 스크롤) -->
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/cardInsightPreview"

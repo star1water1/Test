@@ -308,6 +308,32 @@ data class HealthWarnings(
     val unlinkedCharCount: Int
 )
 
+// ===== 패턴 감지 & 서사적 인사이트 (개선 3) =====
+
+enum class PatternType(val label: String) {
+    DOMINANCE("편중"),
+    CLUSTER("집중"),
+    ABSENCE("공백"),
+    OUTLIER("이상치"),
+    BALANCE("균형"),
+    CROSS_NOVEL("작품 간 비교")
+}
+
+enum class PatternSeverity(val label: String) {
+    HIGH("높음"),
+    MEDIUM("보통"),
+    LOW("정보")
+}
+
+data class PatternInsight(
+    val type: PatternType,
+    val severity: PatternSeverity,
+    val title: String,
+    val description: String,
+    val suggestion: String,
+    val fieldDefId: Long? = null
+)
+
 // ===== 차트 탭 → 캐릭터 목록 (개선 6) =====
 data class FieldValueCharacter(
     val characterId: Long,
@@ -1396,6 +1422,176 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
         }.sortedByDescending { it.characterCount }
 
         return CrossNovelComparison(novels = entries)
+    }
+
+    // ===== 개선 3: 패턴 감지 & 서사적 인사이트 =====
+
+    fun detectPatterns(s: StatsSnapshot): List<PatternInsight> {
+        val insights = mutableListOf<PatternInsight>()
+
+        // 필드별 분포 패턴 감지
+        val fieldsByKey = s.fieldDefinitions.groupBy { Pair(it.key, it.type) }
+
+        for ((keyType, fieldDefs) in fieldsByKey) {
+            // 동일 키의 모든 세계관 필드 값 합산
+            val allFieldDefIds = fieldDefs.map { it.id }.toSet()
+            val rawValues = s.fieldValues.filter { it.fieldDefinitionId in allFieldDefIds }
+            if (rawValues.isEmpty()) continue
+
+            val fd = fieldDefs.first()
+            val statsConfig = FieldStatsConfig.fromConfig(fd.config)
+            val allValues = rawValues.flatMap { getFieldValues(fd, it.value, statsConfig) }
+            if (allValues.isEmpty()) continue
+
+            val dist = allValues.groupBy { it }.mapValues { it.value.size }
+            val total = allValues.size
+            val fieldName = fd.name
+
+            // 패턴 1: 편중 (단일 값 60%+)
+            val topEntry = dist.maxByOrNull { it.value }
+            if (topEntry != null) {
+                val topPct = topEntry.value * 100f / total
+                if (topPct >= 60f) {
+                    insights.add(PatternInsight(
+                        type = PatternType.DOMINANCE,
+                        severity = if (topPct >= 80f) PatternSeverity.HIGH else PatternSeverity.MEDIUM,
+                        title = "${fieldName}: '${topEntry.key}' 편중",
+                        description = "${fieldName} 분포에서 '${topEntry.key}'이(가) ${String.format("%.0f", topPct)}%를 차지하여 편중되어 있습니다.",
+                        suggestion = "다양성을 위해 다른 ${fieldName} 값을 가진 캐릭터 추가를 고려해보세요.",
+                        fieldDefId = fd.id
+                    ))
+                }
+            }
+
+            // 패턴 2: 균형 (모든 값 10~30% 사이)
+            if (dist.size >= 3) {
+                val pcts = dist.values.map { it * 100f / total }
+                val allBalanced = pcts.all { it in 10f..35f }
+                if (allBalanced) {
+                    insights.add(PatternInsight(
+                        type = PatternType.BALANCE,
+                        severity = PatternSeverity.LOW,
+                        title = "${fieldName}: 균형 양호",
+                        description = "${fieldName}의 값이 ${dist.size}개 범주에 고르게 분포되어 있습니다.",
+                        suggestion = "",
+                        fieldDefId = fd.id
+                    ))
+                }
+            }
+
+            // 패턴 3: 이상치 (1개 값만 가진 희소 항목이 전체의 2% 미만이고, 나머지는 밀집)
+            if (total >= 10) {
+                val singletons = dist.entries.filter { it.value == 1 }
+                val singletonPct = singletons.size * 100f / total
+                if (singletons.isNotEmpty() && singletonPct <= 5f && dist.size > 3) {
+                    val outlierNames = singletons.take(3).joinToString(", ") { "'${it.key}'" }
+                    insights.add(PatternInsight(
+                        type = PatternType.OUTLIER,
+                        severity = PatternSeverity.LOW,
+                        title = "${fieldName}: 희소 값 발견",
+                        description = "${fieldName}에서 $outlierNames 등이 각 1명에게만 해당됩니다.",
+                        suggestion = "의도적인 개성 부여인지, 오입력인지 확인해보세요.",
+                        fieldDefId = fd.id
+                    ))
+                }
+            }
+        }
+
+        // 패턴 4: 사건 연도 집중 (특정 10년에 50%+ 집중)
+        if (s.events.size >= 5) {
+            val byDecade = s.events.groupBy { (it.year / 10) * 10 }
+            val totalEvents = s.events.size
+            val topDecade = byDecade.maxByOrNull { it.value.size }
+            if (topDecade != null) {
+                val pct = topDecade.value.size * 100f / totalEvents
+                if (pct >= 50f) {
+                    insights.add(PatternInsight(
+                        type = PatternType.CLUSTER,
+                        severity = PatternSeverity.MEDIUM,
+                        title = "사건 연대 집중",
+                        description = "전체 사건의 ${String.format("%.0f", pct)}%가 ${topDecade.key}~${topDecade.key + 9}년에 집중되어 있습니다.",
+                        suggestion = "서사적 밀도가 높은 시기입니다. 다른 시기에도 사건을 분산시킬지 검토해보세요."
+                    ))
+                }
+            }
+
+            // 공백 구간 (100년 이상 사건 없는 구간)
+            val years = s.events.map { it.year }.sorted()
+            if (years.size >= 2) {
+                val gaps = years.zipWithNext().filter { it.second - it.first > 100 }
+                for (gap in gaps.take(2)) {
+                    insights.add(PatternInsight(
+                        type = PatternType.ABSENCE,
+                        severity = PatternSeverity.LOW,
+                        title = "서사 공백 구간",
+                        description = "${gap.first}년~${gap.second}년 사이에 사건이 없습니다 (${gap.second - gap.first}년 간격).",
+                        suggestion = "의도적 공백기인지, 추가할 사건이 있는지 검토해보세요."
+                    ))
+                }
+            }
+        }
+
+        // 패턴 5: 작품 간 비교 (원칙05 유기적 연결)
+        if (s.novels.size >= 2) {
+            val charByNovel = s.characters.groupBy { it.novelId }
+            val novelSizes = charByNovel.mapNotNull { (nid, chars) ->
+                val novel = s.novels.find { it.id == nid } ?: return@mapNotNull null
+                Triple(novel.title, chars.size, nid)
+            }.sortedByDescending { it.second }
+
+            if (novelSizes.size >= 2) {
+                val largest = novelSizes.first()
+                val smallest = novelSizes.last()
+                if (largest.second > 0 && smallest.second > 0) {
+                    val ratio = largest.second.toFloat() / smallest.second
+                    if (ratio >= 3f) {
+                        insights.add(PatternInsight(
+                            type = PatternType.CROSS_NOVEL,
+                            severity = PatternSeverity.MEDIUM,
+                            title = "작품 간 캐릭터 수 불균형",
+                            description = "'${largest.first}'(${largest.second}명)과 '${smallest.first}'(${smallest.second}명) 사이에 ${String.format("%.1f", ratio)}배 차이가 있습니다.",
+                            suggestion = "작품별 서사 규모 차이가 의도적인지 확인해보세요."
+                        ))
+                    }
+                }
+            }
+
+            // 작품 간 필드 편중 비교
+            for ((keyType, fieldDefs) in fieldsByKey) {
+                if (fieldDefs.size < 2) continue
+                val novelPatterns = mutableListOf<Pair<String, String>>() // (작품명, 주요값)
+                for (fd in fieldDefs) {
+                    val novel = s.novels.find { n ->
+                        s.universes.find { it.id == fd.universeId }?.let { uni ->
+                            n.universeId == uni.id
+                        } == true
+                    } ?: continue
+                    val fvs = s.fieldValues.filter { it.fieldDefinitionId == fd.id }
+                    val statsConfig = FieldStatsConfig.fromConfig(fd.config)
+                    val values = fvs.flatMap { getFieldValues(fd, it.value, statsConfig) }
+                    val topVal = values.groupBy { it }.maxByOrNull { it.value.size }
+                    if (topVal != null && values.isNotEmpty()) {
+                        val pct = topVal.value.size * 100f / values.size
+                        if (pct >= 50f) {
+                            novelPatterns.add(Pair(novel.title, "${topVal.key}(${String.format("%.0f", pct)}%)"))
+                        }
+                    }
+                }
+                if (novelPatterns.size >= 2) {
+                    val desc = novelPatterns.joinToString(", ") { "${it.first}: ${it.second}" }
+                    insights.add(PatternInsight(
+                        type = PatternType.CROSS_NOVEL,
+                        severity = PatternSeverity.LOW,
+                        title = "${fieldDefs.first().name}: 작품별 편중 경향",
+                        description = "$desc — 전체적으로 ${fieldDefs.first().name} 편중 경향이 보입니다.",
+                        suggestion = "작품별 다양성 확보를 고려해보세요."
+                    ))
+                }
+            }
+        }
+
+        // severity 기준 정렬 (HIGH → MEDIUM → LOW)
+        return insights.sortedBy { it.severity.ordinal }
     }
 
     // ===== 개선 6: 차트 탭 → 캐릭터 목록 =====

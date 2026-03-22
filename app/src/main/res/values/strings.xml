@@ -671,6 +671,12 @@
     <string name="stats_subgroup_select_field">분석할 필드 선택</string>
     <string name="stats_subgroup_result_title">%s 분포 (%d명 기준)</string>
 
+    <!-- Stats: 패턴 인사이트 (개선 3) -->
+    <string name="stats_pattern_insights_title">패턴 인사이트</string>
+    <string name="stats_pattern_severity_high">⚠️ 높음</string>
+    <string name="stats_pattern_severity_medium">🔶 보통</string>
+    <string name="stats_pattern_severity_low">ℹ️ 정보</string>
+
     <!-- Stats: 사건 확장 -->
     <string name="stats_narrative_density">서사 밀도 곡선</string>
     <string name="stats_time_precision">시간 정밀도 분포</string>
