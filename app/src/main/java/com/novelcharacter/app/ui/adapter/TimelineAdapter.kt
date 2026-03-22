@@ -34,6 +34,16 @@ class TimelineAdapter(
     private val loadCharactersForEvent: suspend (Long) -> List<Character> = { emptyList() }
 ) : ListAdapter<TimelineDisplayItem, RecyclerView.ViewHolder>(TimelineDisplayDiffCallback()) {
 
+    var isReorderMode: Boolean = false
+        set(value) {
+            if (field != value) {
+                field = value
+                notifyItemRangeChanged(0, itemCount)
+            }
+        }
+
+    var onStartDrag: ((RecyclerView.ViewHolder) -> Unit)? = null
+
     var zoomLevel: Int = 4
         set(value) {
             if (field != value) {
@@ -50,6 +60,31 @@ class TimelineAdapter(
     fun submitEventList(events: List<TimelineEvent>) {
         rawEvents = events.toList()
         reprocessEvents()
+    }
+
+    /**
+     * Move item from [fromPosition] to [toPosition] during drag-and-drop.
+     * Only allows movement between EventItems (not GroupHeaders).
+     * Returns true if the move was successful.
+     */
+    fun onItemMove(fromPosition: Int, toPosition: Int): Boolean {
+        val fromItem = currentList.getOrNull(fromPosition)
+        val toItem = currentList.getOrNull(toPosition)
+        if (fromItem !is TimelineDisplayItem.EventItem || toItem !is TimelineDisplayItem.EventItem) return false
+
+        val mutableList = currentList.toMutableList()
+        java.util.Collections.swap(mutableList, fromPosition, toPosition)
+        submitList(mutableList)
+        return true
+    }
+
+    /**
+     * Get the reordered events with updated displayOrder values.
+     */
+    fun getReorderedEvents(): List<TimelineEvent> {
+        return currentList
+            .filterIsInstance<TimelineDisplayItem.EventItem>()
+            .mapIndexed { index, item -> item.event.copy(displayOrder = index) }
     }
 
     private fun reprocessEvents() {
@@ -148,11 +183,25 @@ class TimelineAdapter(
             }
         }
 
+        @android.annotation.SuppressLint("ClickableViewAccessibility")
         private fun bindEvent(event: TimelineEvent) {
             loadJob?.cancel()
             boundEventId = event.id
             binding.yearText.text = formatEventDate(event)
             binding.calendarTypeText.text = event.calendarType
+
+            // 드래그 핸들 표시/숨김
+            binding.dragHandle.visibility = if (isReorderMode) android.view.View.VISIBLE else android.view.View.GONE
+            if (isReorderMode) {
+                binding.dragHandle.setOnTouchListener { _, motionEvent ->
+                    if (motionEvent.actionMasked == android.view.MotionEvent.ACTION_DOWN) {
+                        onStartDrag?.invoke(this)
+                    }
+                    false
+                }
+            } else {
+                binding.dragHandle.setOnTouchListener(null)
+            }
             binding.descriptionText.text = if (event.isTemporary) {
                 "📌 ${event.description}"
             } else {
@@ -187,6 +236,7 @@ class TimelineAdapter(
         }
 
         private fun bindGroup(group: TimelineDisplayItem.GroupHeader) {
+            binding.dragHandle.visibility = android.view.View.GONE
             binding.yearText.text = group.label
             binding.calendarTypeText.text = ""
             binding.descriptionText.text = binding.root.context.getString(R.string.event_count_format, group.eventCount)

@@ -16,6 +16,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.novelcharacter.app.R
@@ -36,6 +37,8 @@ class TimelineFragment : Fragment() {
 
     private lateinit var adapter: TimelineAdapter
     private lateinit var scaleGestureDetector: ScaleGestureDetector
+    private var itemTouchHelper: ItemTouchHelper? = null
+    private var isReorderMode = false
 
     // Cached data for spinner filters
     private var cachedNovels: List<Novel> = emptyList()
@@ -236,6 +239,59 @@ class TimelineFragment : Fragment() {
     private fun setupFab() {
         binding.fabAddEvent.setOnClickListener {
             showEditEventDialog(null)
+        }
+        binding.fabAddEvent.setOnLongClickListener {
+            toggleReorderMode()
+            true
+        }
+    }
+
+    private fun toggleReorderMode() {
+        isReorderMode = !isReorderMode
+        adapter.isReorderMode = isReorderMode
+
+        if (isReorderMode) {
+            Toast.makeText(requireContext(), R.string.reorder_mode, Toast.LENGTH_SHORT).show()
+            val callback = object : ItemTouchHelper.SimpleCallback(
+                ItemTouchHelper.UP or ItemTouchHelper.DOWN, 0
+            ) {
+                override fun onMove(
+                    recyclerView: RecyclerView,
+                    viewHolder: RecyclerView.ViewHolder,
+                    target: RecyclerView.ViewHolder
+                ): Boolean {
+                    return adapter.onItemMove(viewHolder.bindingAdapterPosition, target.bindingAdapterPosition)
+                }
+
+                override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) {}
+
+                override fun isLongPressDragEnabled(): Boolean = false
+
+                override fun canDropOver(
+                    recyclerView: RecyclerView,
+                    current: RecyclerView.ViewHolder,
+                    target: RecyclerView.ViewHolder
+                ): Boolean {
+                    val currentItem = adapter.currentList.getOrNull(current.bindingAdapterPosition)
+                    val targetItem = adapter.currentList.getOrNull(target.bindingAdapterPosition)
+                    return currentItem is com.novelcharacter.app.ui.adapter.TimelineDisplayItem.EventItem &&
+                           targetItem is com.novelcharacter.app.ui.adapter.TimelineDisplayItem.EventItem
+                }
+            }
+            itemTouchHelper = ItemTouchHelper(callback).also {
+                it.attachToRecyclerView(binding.timelineRecyclerView)
+            }
+            adapter.onStartDrag = { holder -> itemTouchHelper?.startDrag(holder) }
+        } else {
+            // 재정렬 모드 종료 — displayOrder 저장
+            val reorderedEvents = adapter.getReorderedEvents()
+            if (reorderedEvents.isNotEmpty()) {
+                viewModel.updateDisplayOrders(reorderedEvents)
+            }
+            itemTouchHelper?.attachToRecyclerView(null)
+            itemTouchHelper = null
+            adapter.onStartDrag = null
+            Toast.makeText(requireContext(), R.string.reorder_saved, Toast.LENGTH_SHORT).show()
         }
     }
 

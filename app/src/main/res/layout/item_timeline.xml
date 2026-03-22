@@ -58,6 +58,16 @@
 
     </LinearLayout>
 
+    <!-- 드래그 핸들 (재정렬 모드에서만 표시) -->
+    <ImageView
+        android:id="@+id/dragHandle"
+        android:layout_width="24dp"
+        android:layout_height="24dp"
+        android:layout_gravity="center_vertical"
+        android:src="@drawable/ic_drag_handle"
+        android:contentDescription="@string/drag_handle_desc"
+        android:visibility="gone" />
+
     <!-- 사건 내용 카드 -->
     <com.google.android.material.card.MaterialCardView
         android:layout_width="0dp"

@@ -268,6 +268,15 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun updateDisplayOrders(events: List<TimelineEvent>) = viewModelScope.launch {
+        try {
+            db.timelineDao().updateAll(events)
+        } catch (e: Exception) {
+            Log.e("TimelineViewModel", "Failed to update display orders", e)
+            showError(e.message)
+        }
+    }
+
     fun deleteEvent(event: TimelineEvent) = viewModelScope.launch {
         try {
             timelineRepository.deleteEvent(event)
