@@ -513,6 +513,23 @@
     <string name="sort_recent">최근순</string>
     <string name="no_presets">저장된 프리셋이 없습니다</string>
 
+    <!-- Search Field Filters -->
+    <string name="search_add_filter">필터 추가</string>
+    <string name="search_filter_title">필드 필터 설정</string>
+    <string name="search_filter_select_universe">세계관 선택</string>
+    <string name="search_filter_select_field">필드 선택</string>
+    <string name="search_filter_select_values">값 선택</string>
+    <string name="search_filter_match_mode">매칭 모드</string>
+    <string name="search_filter_exact">정확히 일치</string>
+    <string name="search_filter_contains">포함</string>
+    <string name="search_filter_apply">필터 적용</string>
+    <string name="search_filter_no_universes">세계관이 없습니다</string>
+    <string name="search_filter_no_fields">필드가 없습니다</string>
+    <string name="search_filter_no_values">값이 없습니다</string>
+    <string name="search_filter_active">활성 필터: %d개</string>
+    <string name="search_filter_clear_all">전체 해제</string>
+    <string name="search_filter_chip_format">%s: %s</string>
+
     <!-- Sprint 2: Relationship Graph -->
     <string name="relationship_graph">관계 그래프</string>
     <string name="relationship_graph_beta">관계 그래프 (베타)</string>

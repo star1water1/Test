@@ -62,4 +62,18 @@ interface CharacterFieldValueDao {
         WHERE n.universeId = :universeId AND cfv.fieldDefinitionId = :fieldDefId AND cfv.value != ''
     """)
     suspend fun getFieldValuesForUniverse(universeId: Long, fieldDefId: Long): List<String>
+
+    /** 특정 필드에 특정 값을 가진 캐릭터 ID 조회 (필터링용) */
+    @Query("""
+        SELECT DISTINCT cfv.characterId FROM character_field_values cfv
+        WHERE cfv.fieldDefinitionId = :fieldDefId AND cfv.value = :value
+    """)
+    suspend fun getCharacterIdsByFieldValue(fieldDefId: Long, value: String): List<Long>
+
+    /** 특정 필드에 특정 값을 포함하는 캐릭터 ID 조회 (contains 매칭) */
+    @Query("""
+        SELECT DISTINCT cfv.characterId FROM character_field_values cfv
+        WHERE cfv.fieldDefinitionId = :fieldDefId AND cfv.value LIKE '%' || :value || '%'
+    """)
+    suspend fun getCharacterIdsByFieldValueContains(fieldDefId: Long, value: String): List<Long>
 }

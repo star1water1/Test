@@ -48,6 +48,7 @@ class GlobalSearchFragment : Fragment() {
         setupRecyclerView()
         setupSearch()
         setupPresets()
+        setupFilters()
         observeData()
     }
 
@@ -212,7 +213,8 @@ class GlobalSearchFragment : Fragment() {
                     viewModel.updatePreset(preset.copy(
                         name = newName,
                         query = binding.searchEdit.text.toString(),
-                        sortMode = viewModel.sortMode.value ?: SearchPreset.SORT_RELEVANCE
+                        sortMode = viewModel.sortMode.value ?: SearchPreset.SORT_RELEVANCE,
+                        filtersJson = viewModel.getFiltersJson()
                     ))
                     Toast.makeText(requireContext(), R.string.search_preset_saved, Toast.LENGTH_SHORT).show()
                 }
@@ -233,14 +235,90 @@ class GlobalSearchFragment : Fragment() {
             .show()
     }
 
+    private fun setupFilters() {
+        val openFilter = View.OnClickListener { showFilterBottomSheet() }
+        binding.btnAddFilter.setOnClickListener(openFilter)
+        binding.btnAddFilterCompact.setOnClickListener(openFilter)
+
+        viewModel.fieldFilters.observe(viewLifecycleOwner) { filters ->
+            updateFilterChips(filters)
+        }
+    }
+
+    private fun updateFilterChips(filters: List<FieldFilter>) {
+        val container = binding.filterContainer
+        // Remove all except the "add filter" button (first child)
+        while (container.childCount > 1) {
+            container.removeViewAt(1)
+        }
+
+        if (filters.isEmpty()) {
+            binding.filterScrollView.visibility = View.GONE
+            binding.btnAddFilterCompact.visibility = View.VISIBLE
+            return
+        }
+
+        binding.filterScrollView.visibility = View.VISIBLE
+        binding.btnAddFilterCompact.visibility = View.GONE
+
+        for (filter in filters) {
+            val label = getString(R.string.search_filter_chip_format, filter.fieldName, filter.values.joinToString(", "))
+            val chip = Chip(requireContext()).apply {
+                text = label
+                isCloseIconVisible = true
+                textSize = 12f
+                val params = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { marginEnd = (4 * resources.displayMetrics.density).toInt() }
+                layoutParams = params
+                setOnCloseIconClickListener {
+                    viewModel.removeFieldFilter(filter.fieldId)
+                }
+            }
+            container.addView(chip)
+        }
+
+        // Add "clear all" chip
+        if (filters.size > 1) {
+            val clearChip = Chip(requireContext()).apply {
+                text = getString(R.string.search_filter_clear_all)
+                textSize = 11f
+                isCloseIconVisible = false
+                val params = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { marginEnd = (4 * resources.displayMetrics.density).toInt() }
+                layoutParams = params
+                setOnClickListener { viewModel.clearFieldFilters() }
+            }
+            container.addView(clearChip)
+        }
+    }
+
+    private fun showFilterBottomSheet() {
+        val sheet = SearchFilterBottomSheet()
+        sheet.loadUniverses = { viewModel.getAllUniverses() }
+        sheet.loadFields = { universeId -> viewModel.getFieldDefinitions(universeId) }
+        sheet.loadFieldValues = { fieldDefId -> viewModel.getFieldValues(fieldDefId) }
+        sheet.onFilterApplied = { filter ->
+            viewModel.addFieldFilter(filter)
+        }
+        sheet.show(childFragmentManager, SearchFilterBottomSheet.TAG)
+    }
+
     private fun observeData() {
         viewModel.searchResults.observe(viewLifecycleOwner) { results ->
             adapter.submitList(results)
             val query = binding.searchEdit.text.toString()
+            val hasFilters = (viewModel.fieldFilters.value?.size ?: 0) > 0
             val isEmpty = results.isEmpty()
             binding.emptyText.visibility = if (isEmpty) View.VISIBLE else View.GONE
             binding.searchResultsRecyclerView.visibility = if (isEmpty) View.GONE else View.VISIBLE
-            binding.emptyMessage.text = if (query.isBlank()) getString(R.string.search_empty_hint) else getString(R.string.search_empty_result)
+            binding.emptyMessage.text = when {
+                query.isBlank() && !hasFilters -> getString(R.string.search_empty_hint)
+                else -> getString(R.string.search_empty_result)
+            }
         }
     }
 

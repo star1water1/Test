@@ -64,6 +64,52 @@
 
     </HorizontalScrollView>
 
+    <!-- Active filter chips -->
+    <HorizontalScrollView
+        android:id="@+id/filterScrollView"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:scrollbars="none"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:id="@+id/filterContainer"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:paddingTop="2dp"
+            android:paddingBottom="4dp">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnAddFilter"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="wrap_content"
+                android:layout_height="32dp"
+                android:layout_marginEnd="6dp"
+                android:text="@string/search_add_filter"
+                android:textSize="11sp"
+                app:icon="@android:drawable/ic_menu_add"
+                app:iconSize="14dp"
+                app:cornerRadius="16dp" />
+
+        </LinearLayout>
+
+    </HorizontalScrollView>
+
+    <!-- Quick add filter button (shown when no filters active) -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnAddFilterCompact"
+        style="@style/Widget.Material3.Button.TextButton"
+        android:layout_width="wrap_content"
+        android:layout_height="32dp"
+        android:layout_marginStart="8dp"
+        android:text="@string/search_add_filter"
+        android:textSize="11sp"
+        app:icon="@android:drawable/ic_menu_add"
+        app:iconSize="14dp" />
+
     <LinearLayout
         android:id="@+id/emptyText"
         android:layout_width="match_parent"

@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="@color/surface"
+    android:paddingBottom="24dp">
+
+    <!-- 드래그 핸들 -->
+    <View
+        android:layout_width="40dp"
+        android:layout_height="4dp"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginTop="12dp"
+        android:layout_marginBottom="8dp"
+        android:background="@drawable/bg_drag_indicator" />
+
+    <!-- 타이틀 -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/search_filter_title"
+        android:textSize="18sp"
+        android:textStyle="bold"
+        android:textColor="@color/on_surface"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="16dp" />
+
+    <!-- 세계관 선택 -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/search_filter_select_universe"
+        android:textSize="14sp"
+        android:textColor="@color/text_secondary"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp"
+        android:paddingBottom="4dp" />
+
+    <Spinner
+        android:id="@+id/spinnerUniverse"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        android:layout_marginBottom="12dp"
+        android:background="@drawable/bg_spinner" />
+
+    <!-- 필드 선택 -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/search_filter_select_field"
+        android:textSize="14sp"
+        android:textColor="@color/text_secondary"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp"
+        android:paddingBottom="4dp" />
+
+    <Spinner
+        android:id="@+id/spinnerField"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        android:layout_marginBottom="12dp"
+        android:background="@drawable/bg_spinner" />
+
+    <!-- 값 선택 (체크리스트) -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/search_filter_select_values"
+        android:textSize="14sp"
+        android:textColor="@color/text_secondary"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp"
+        android:paddingBottom="4dp" />
+
+    <com.google.android.material.chip.ChipGroup
+        android:id="@+id/valueChipGroup"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        android:layout_marginBottom="12dp"
+        app:singleSelection="false" />
+
+    <TextView
+        android:id="@+id/emptyValuesText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/search_filter_no_values"
+        android:textSize="13sp"
+        android:textColor="@color/text_secondary"
+        android:gravity="center"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp"
+        android:visibility="gone" />
+
+    <!-- 매칭 모드 -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/search_filter_match_mode"
+        android:textSize="14sp"
+        android:textColor="@color/text_secondary"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp"
+        android:paddingBottom="4dp" />
+
+    <RadioGroup
+        android:id="@+id/matchModeGroup"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp"
+        android:layout_marginBottom="16dp">
+
+        <RadioButton
+            android:id="@+id/radioExact"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/search_filter_exact"
+            android:checked="true" />
+
+        <RadioButton
+            android:id="@+id/radioContains"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/search_filter_contains"
+            android:layout_marginStart="16dp" />
+
+    </RadioGroup>
+
+    <!-- 적용 버튼 -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnApplyFilter"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        android:text="@string/search_filter_apply"
+        app:cornerRadius="8dp" />
+
+</LinearLayout>
