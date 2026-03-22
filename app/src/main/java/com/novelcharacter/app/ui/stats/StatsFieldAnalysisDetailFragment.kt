@@ -243,6 +243,7 @@ class StatsFieldAnalysisDetailFragment : Fragment() {
     }
 
     private fun buildHistogram(values: List<Float>): List<Pair<String, Int>> {
+        if (values.isEmpty()) return emptyList()
         val min = values.first()
         val max = values.last()
         if (min == max) return listOf(String.format("%.0f", min) to values.size)

@@ -161,7 +161,7 @@ class RelationshipGraphView @JvmOverloads constructor(
     private val scaleDetector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
         override fun onScale(detector: ScaleGestureDetector): Boolean {
             scaleFactor *= detector.scaleFactor
-            scaleFactor = scaleFactor.coerceAtMost(3.0f)
+            scaleFactor = scaleFactor.coerceIn(0.1f, 3.0f)
             invalidate()
             return true
         }

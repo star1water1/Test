@@ -63,7 +63,8 @@ class TodayCharacterWidget : AppWidgetProvider() {
                     views.setTextViewText(R.id.widgetText, widgetText)
                     appWidgetManager.updateAppWidget(appWidgetId, views)
                 }
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                android.util.Log.w("TodayCharWidget", "Widget update failed", e)
             } finally {
                 pendingResult.finish()
             }
