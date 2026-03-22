@@ -146,8 +146,8 @@ class AutoBackupWorker(
             row.createCell(7).setCellValue(u.imageMode)
             row.createCell(8).setCellValue(u.customRelationshipTypes)
             row.createCell(9).setCellValue(u.customRelationshipColors)
-            row.createCell(10).setCellValue(u.imageCharacterId?.toDouble() ?: 0.0)
-            row.createCell(11).setCellValue(u.imageNovelId?.toDouble() ?: 0.0)
+            u.imageCharacterId?.let { row.createCell(10).setCellValue(it.toDouble()) }
+            u.imageNovelId?.let { row.createCell(11).setCellValue(it.toDouble()) }
         }
     }
 
@@ -180,7 +180,7 @@ class AutoBackupWorker(
             row.createCell(7).setCellValue(n.borderWidthDp.toDouble())
             row.createCell(8).setCellValue(n.imagePaths)
             row.createCell(9).setCellValue(n.imageMode)
-            row.createCell(10).setCellValue(n.imageCharacterId?.toDouble() ?: 0.0)
+            n.imageCharacterId?.let { row.createCell(10).setCellValue(it.toDouble()) }
             row.createCell(11).setCellValue(if (n.inheritUniverseBorder) "Y" else "N")
             row.createCell(12).setCellValue(if (n.isPinned) "Y" else "N")
             n.standardYear?.let { row.createCell(13).setCellValue(it.toDouble()) }
@@ -433,7 +433,7 @@ class AutoBackupWorker(
 
         val sheetName = sanitizeSheetName("관계 변화", usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
-        val headers = listOf("캐릭터1", "캐릭터2", "연도", "월", "일", "관계 유형", "설명", "강도", "양방향", "캐릭터1코드", "캐릭터2코드")
+        val headers = listOf("캐릭터1", "캐릭터2", "연도", "월", "일", "관계 유형", "설명", "강도", "양방향", "캐릭터1코드", "캐릭터2코드", "연결사건ID")
         val headerRow = sheet.createRow(0)
         headers.forEachIndexed { i, h ->
             headerRow.createCell(i).apply { setCellValue(h); cellStyle = headerStyle }
@@ -455,6 +455,7 @@ class AutoBackupWorker(
             row.createCell(8).setCellValue(if (rc.isBidirectional) "Y" else "N")
             row.createCell(9).setCellValue(char1?.code ?: "")
             row.createCell(10).setCellValue(char2?.code ?: "")
+            rc.eventId?.let { row.createCell(11).setCellValue(it.toDouble()) }
         }
     }
 

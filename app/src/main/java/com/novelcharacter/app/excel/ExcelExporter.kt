@@ -440,8 +440,8 @@ class ExcelExporter(context: Context) {
             row.createCell(7).setCellValue(universe.imageMode)
             row.createCell(8).setCellValue(universe.customRelationshipTypes)
             row.createCell(9).setCellValue(universe.customRelationshipColors)
-            row.createCell(10).setCellValue(universe.imageCharacterId?.toDouble() ?: 0.0)
-            row.createCell(11).setCellValue(universe.imageNovelId?.toDouble() ?: 0.0)
+            universe.imageCharacterId?.let { row.createCell(10).setCellValue(it.toDouble()) }
+            universe.imageNovelId?.let { row.createCell(11).setCellValue(it.toDouble()) }
         }
 
         applySpecFormatting(sheet, spec, universes.size)
@@ -473,7 +473,7 @@ class ExcelExporter(context: Context) {
             row.createCell(7).setCellValue(novel.borderWidthDp.toDouble())
             row.createCell(8).setCellValue(novel.imagePaths)
             row.createCell(9).setCellValue(novel.imageMode)
-            row.createCell(10).setCellValue(novel.imageCharacterId?.toDouble() ?: 0.0)
+            novel.imageCharacterId?.let { row.createCell(10).setCellValue(it.toDouble()) }
             row.createCell(11).setCellValue(if (novel.inheritUniverseBorder) "Y" else "N")
             row.createCell(12).setCellValue(if (novel.isPinned) "Y" else "N")
             novel.standardYear?.let { row.createCell(13).setCellValue(it.toDouble()) }

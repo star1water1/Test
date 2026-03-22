@@ -477,7 +477,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     db.novelDao().update(existing.copy(
                         title = title, description = description, universeId = universeId,
                         displayOrder = displayOrder, borderColor = borderColor, borderWidthDp = borderWidthDp,
-                        inheritUniverseBorder = effectiveInherit, isPinned = novelIsPinned,
+                        inheritUniverseBorder = if (inheritBorderColIndex >= 0) effectiveInherit else existing.inheritUniverseBorder,
+                        isPinned = if (novelPinnedColIndex >= 0) novelIsPinned else existing.isPinned,
                         imagePaths = novelImagePaths, imageMode = novelImageMode,
                         imageCharacterId = if (imageCharIdColIndex >= 0) novelImageCharId else existing.imageCharacterId,
                         standardYear = if (standardYearColIndex >= 0) standardYear else existing.standardYear
@@ -1078,7 +1079,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     db.characterRelationshipChangeDao().update(existing.copy(
                         relationshipType = relationshipType, description = description,
                         intensity = intensity, isBidirectional = isBidirectional,
-                        eventId = eventId
+                        eventId = if (eventIdColIndex >= 0) eventId else existing.eventId
                     ))
                     result.updatedRelationshipChanges++
                 } else {
