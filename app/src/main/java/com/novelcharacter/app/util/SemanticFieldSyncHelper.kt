@@ -8,6 +8,7 @@ import com.novelcharacter.app.data.repository.CharacterRepository
 import com.novelcharacter.app.data.repository.NovelRepository
 import com.novelcharacter.app.data.repository.UniverseRepository
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * 커스텀 필드(FieldDefinition)와 시스템 특수 필드(CharacterStateChange)를
@@ -31,52 +32,47 @@ class SemanticFieldSyncHelper(
         characterId: Long,
         universeId: Long,
         values: List<CharacterFieldValue>
-    ) {
-        if (!syncMutex.tryLock()) return
-        try {
-            val fields = universeRepository.getFieldsByUniverseList(universeId)
-            val fieldMap = fields.associateBy { it.id }
+    ) = syncMutex.withLock {
+        val fields = universeRepository.getFieldsByUniverseList(universeId)
+        val fieldMap = fields.associateBy { it.id }
 
-            for (value in values) {
-                val field = fieldMap[value.fieldDefinitionId] ?: continue
-                val role = SemanticRole.fromConfig(field.config) ?: continue
+        for (value in values) {
+            val field = fieldMap[value.fieldDefinitionId] ?: continue
+            val role = SemanticRole.fromConfig(field.config) ?: continue
 
-                when (role) {
-                    SemanticRole.BIRTH_YEAR -> {
-                        val year = value.value.trim().toIntOrNull() ?: continue
-                        upsertStateChange(characterId, CharacterStateChange.KEY_BIRTH, year, null, null)
-                        // standardYear가 있고 연동 활성이면 age 필드도 갱신
-                        syncBirthYearToAge(characterId, year, fields)
-                    }
-                    SemanticRole.BIRTH_DATE -> {
-                        val parts = parseBirthDate(value.value) ?: continue
-                        val existingBirth = findStateChange(characterId, CharacterStateChange.KEY_BIRTH)
-                        val year = existingBirth?.year ?: 0
-                        upsertStateChange(characterId, CharacterStateChange.KEY_BIRTH, year, parts.first, parts.second)
-                    }
-                    SemanticRole.DEATH_YEAR -> {
-                        val year = value.value.trim().toIntOrNull() ?: continue
-                        upsertStateChange(characterId, CharacterStateChange.KEY_DEATH, year, null, null)
-                    }
-                    SemanticRole.AGE -> {
-                        // 나이 → 출생연도 역산: birthYear = standardYear - age
-                        val age = value.value.trim().toIntOrNull() ?: continue
-                        val novel = getNovelForCharacter(characterId) ?: continue
-                        val stdYear = novel.standardYear ?: continue
-                        if (!standardYearSyncHelper.isLinked(characterId)) continue
-                        val birthYear = stdYear - age
-                        upsertStateChange(characterId, CharacterStateChange.KEY_BIRTH, birthYear, null, null)
-                        // birth_year 필드도 갱신
-                        val birthYearField = findFieldByRole(fields, SemanticRole.BIRTH_YEAR)
-                        if (birthYearField != null) {
-                            upsertFieldValue(characterId, birthYearField.id, birthYear.toString())
-                        }
-                    }
-                    else -> { /* HEIGHT, WEIGHT, BODY_SIZE — 동기화 불필요 */ }
+            when (role) {
+                SemanticRole.BIRTH_YEAR -> {
+                    val year = value.value.trim().toIntOrNull() ?: continue
+                    upsertStateChange(characterId, CharacterStateChange.KEY_BIRTH, year, null, null)
+                    // standardYear가 있고 연동 활성이면 age 필드도 갱신
+                    syncBirthYearToAge(characterId, year, fields)
                 }
+                SemanticRole.BIRTH_DATE -> {
+                    val parts = parseBirthDate(value.value) ?: continue
+                    val existingBirth = findStateChange(characterId, CharacterStateChange.KEY_BIRTH)
+                    val year = existingBirth?.year ?: 0
+                    upsertStateChange(characterId, CharacterStateChange.KEY_BIRTH, year, parts.first, parts.second)
+                }
+                SemanticRole.DEATH_YEAR -> {
+                    val year = value.value.trim().toIntOrNull() ?: continue
+                    upsertStateChange(characterId, CharacterStateChange.KEY_DEATH, year, null, null)
+                }
+                SemanticRole.AGE -> {
+                    // 나이 → 출생연도 역산: birthYear = standardYear - age
+                    val age = value.value.trim().toIntOrNull() ?: continue
+                    val novel = getNovelForCharacter(characterId) ?: continue
+                    val stdYear = novel.standardYear ?: continue
+                    if (!standardYearSyncHelper.isLinked(characterId)) continue
+                    val birthYear = stdYear - age
+                    upsertStateChange(characterId, CharacterStateChange.KEY_BIRTH, birthYear, null, null)
+                    // birth_year 필드도 갱신
+                    val birthYearField = findFieldByRole(fields, SemanticRole.BIRTH_YEAR)
+                    if (birthYearField != null) {
+                        upsertFieldValue(characterId, birthYearField.id, birthYear.toString())
+                    }
+                }
+                else -> { /* HEIGHT, WEIGHT, BODY_SIZE — 동기화 불필요 */ }
             }
-        } finally {
-            syncMutex.unlock()
         }
     }
 
@@ -88,34 +84,29 @@ class SemanticFieldSyncHelper(
         characterId: Long,
         universeId: Long,
         change: CharacterStateChange
-    ) {
-        if (!syncMutex.tryLock()) return
-        try {
-            val fields = universeRepository.getFieldsByUniverseList(universeId)
+    ) = syncMutex.withLock {
+        val fields = universeRepository.getFieldsByUniverseList(universeId)
 
-            when (change.fieldKey) {
-                CharacterStateChange.KEY_BIRTH -> {
-                    // year → birth_year 필드
-                    val birthYearField = findFieldByRole(fields, SemanticRole.BIRTH_YEAR)
-                    if (birthYearField != null && change.year != 0) {
-                        upsertFieldValue(characterId, birthYearField.id, change.year.toString())
-                    }
-                    // month/day → birth_date 필드
-                    val birthDateField = findFieldByRole(fields, SemanticRole.BIRTH_DATE)
-                    if (birthDateField != null && change.month != null && change.day != null) {
-                        val dateStr = String.format("%02d-%02d", change.month, change.day)
-                        upsertFieldValue(characterId, birthDateField.id, dateStr)
-                    }
+        when (change.fieldKey) {
+            CharacterStateChange.KEY_BIRTH -> {
+                // year → birth_year 필드
+                val birthYearField = findFieldByRole(fields, SemanticRole.BIRTH_YEAR)
+                if (birthYearField != null && change.year != 0) {
+                    upsertFieldValue(characterId, birthYearField.id, change.year.toString())
                 }
-                CharacterStateChange.KEY_DEATH -> {
-                    val deathYearField = findFieldByRole(fields, SemanticRole.DEATH_YEAR)
-                    if (deathYearField != null && change.year != 0) {
-                        upsertFieldValue(characterId, deathYearField.id, change.year.toString())
-                    }
+                // month/day → birth_date 필드
+                val birthDateField = findFieldByRole(fields, SemanticRole.BIRTH_DATE)
+                if (birthDateField != null && change.month != null && change.day != null) {
+                    val dateStr = String.format("%02d-%02d", change.month, change.day)
+                    upsertFieldValue(characterId, birthDateField.id, dateStr)
                 }
             }
-        } finally {
-            syncMutex.unlock()
+            CharacterStateChange.KEY_DEATH -> {
+                val deathYearField = findFieldByRole(fields, SemanticRole.DEATH_YEAR)
+                if (deathYearField != null && change.year != 0) {
+                    upsertFieldValue(characterId, deathYearField.id, change.year.toString())
+                }
+            }
         }
     }
 
