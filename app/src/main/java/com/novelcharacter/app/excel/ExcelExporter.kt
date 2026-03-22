@@ -82,6 +82,8 @@ class ExcelExporter(context: Context) {
                 if (options.relationships) exportRelationships(workbook, usedSheetNames)
                 if (options.relationshipChanges) exportRelationshipChanges(workbook, usedSheetNames)
                 if (options.nameBank) exportNameBank(workbook, usedSheetNames)
+                if (options.factions) exportFactions(workbook, usedSheetNames)
+                if (options.factionMemberships) exportFactionMemberships(workbook, usedSheetNames)
                 if (options.presetTemplates) exportUserPresetTemplates(workbook, usedSheetNames)
                 if (options.searchPresets) exportSearchPresets(workbook, usedSheetNames)
                 if (options.appSettings) exportAppSettings(workbook, usedSheetNames)
@@ -832,6 +834,78 @@ class ExcelExporter(context: Context) {
         }
 
         applySpecFormatting(sheet, spec, allNames.size)
+    }
+
+    // ── 세력 ──
+
+    private suspend fun exportFactions(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
+        val allFactions = db.factionDao().getAllFactionsList()
+        if (allFactions.isEmpty()) return
+
+        val universes = db.universeDao().getAllUniversesList()
+        val universeMap = universes.associateBy { it.id }
+
+        val spec = factionSpec(universes.map { it.name })
+        val sheetName = sanitizeSheetName(spec.sheetName, usedSheetNames)
+        val sheet = workbook.createSheet(sheetName)
+        writeHeaderRow(sheet, spec)
+
+        allFactions.forEachIndexed { i, faction ->
+            val row = sheet.createRow(i + 1)
+            val universe = universeMap[faction.universeId]
+            row.createCell(0).setCellValue(faction.name)
+            row.createCell(1).setCellValue(universe?.name ?: "")
+            row.createCell(2).setCellValue(faction.description)
+            row.createCell(3).setCellValue(faction.color)
+            row.createCell(4).setCellValue(faction.autoRelationType)
+            row.createCell(5).setCellValue(faction.autoRelationIntensity.toDouble())
+            row.createCell(6).setCellValue(faction.code)
+            row.createCell(7).setCellValue(faction.displayOrder.toDouble())
+            row.createCell(8).setCellValue(faction.createdAt.toDouble())
+        }
+
+        applySpecFormatting(sheet, spec, allFactions.size)
+    }
+
+    // ── 세력 소속 ──
+
+    private suspend fun exportFactionMemberships(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
+        val allMemberships = db.factionMembershipDao().getAllMembershipsList()
+        if (allMemberships.isEmpty()) return
+
+        val allFactions = db.factionDao().getAllFactionsList()
+        val factionMap = allFactions.associateBy { it.id }
+        val allCharacters = db.characterDao().getAllCharactersList()
+        val charMap = allCharacters.associateBy { it.id }
+
+        val spec = factionMembershipSpec(allFactions.map { it.name })
+        val sheetName = sanitizeSheetName(spec.sheetName, usedSheetNames)
+        val sheet = workbook.createSheet(sheetName)
+        writeHeaderRow(sheet, spec)
+
+        allMemberships.forEachIndexed { i, membership ->
+            val row = sheet.createRow(i + 1)
+            val faction = factionMap[membership.factionId]
+            val character = charMap[membership.characterId]
+            row.createCell(0).setCellValue(faction?.name ?: "")
+            row.createCell(1).setCellValue(character?.name ?: "")
+            membership.joinYear?.let { row.createCell(2).setCellValue(it.toDouble()) }
+            membership.leaveYear?.let { row.createCell(3).setCellValue(it.toDouble()) }
+            val leaveTypeLabel = when (membership.leaveType) {
+                "removed" -> "순수제거"
+                "departed" -> "설정상탈퇴"
+                else -> ""
+            }
+            row.createCell(4).setCellValue(leaveTypeLabel)
+            row.createCell(5).setCellValue(membership.departedRelationType ?: "")
+            membership.departedIntensity?.let { row.createCell(6).setCellValue(it.toDouble()) }
+            // readOnly codes
+            row.createCell(7).setCellValue(faction?.code ?: "")
+            row.createCell(8).setCellValue(character?.code ?: "")
+            row.createCell(9).setCellValue(membership.createdAt.toDouble())
+        }
+
+        applySpecFormatting(sheet, spec, allMemberships.size)
     }
 
     // ── ZIP + 이미지 래핑 ──

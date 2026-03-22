@@ -6,6 +6,8 @@ import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.CharacterFieldValue
 import com.novelcharacter.app.data.model.CharacterRelationship
 import com.novelcharacter.app.data.model.CharacterRelationshipChange
+import com.novelcharacter.app.data.model.Faction
+import com.novelcharacter.app.data.model.FactionMembership
 import com.novelcharacter.app.data.model.CharacterStateChange
 import com.novelcharacter.app.data.model.CharacterTag
 import com.novelcharacter.app.data.model.FieldDefinition
@@ -52,6 +54,10 @@ data class ImportResult(
     var updatedPresetTemplates: Int = 0,
     var newSearchPresets: Int = 0,
     var updatedSearchPresets: Int = 0,
+    var newFactions: Int = 0,
+    var updatedFactions: Int = 0,
+    var newFactionMemberships: Int = 0,
+    var updatedFactionMemberships: Int = 0,
     var restoredSettings: Int = 0,
     var skippedRows: Int = 0,
     val errors: MutableList<String> = mutableListOf(),
@@ -156,6 +162,18 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // App settings
         alias("설정키", "setting_key", "key")
         alias("설정값", "setting_value", "value")
+        // Faction
+        alias("색상", "color", "faction_color")
+        alias("자동관계유형", "auto_relation_type", "autorelationtype")
+        alias("자동관계강도", "auto_relation_intensity", "autorelationintensity")
+        // Faction membership
+        alias("세력", "faction", "faction_name")
+        alias("가입연도", "join_year", "joinyear")
+        alias("탈퇴연도", "leave_year", "leaveyear")
+        alias("탈퇴유형", "leave_type", "leavetype")
+        alias("탈퇴후관계유형", "departed_relation_type", "departedrelationtype")
+        alias("탈퇴후강도", "departed_intensity", "departedintensity")
+        alias("세력코드", "faction_code", "factioncode")
     }
 
     /** 가져올 이미지의 경로 재매핑: {원본경로 → 새경로} */
@@ -218,6 +236,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             if (options.relationships) importRelationships(workbook, result, onProgress, totalRows)
             if (options.relationshipChanges) importRelationshipChanges(workbook, result, onProgress, totalRows)
             if (options.nameBank) importNameBank(workbook, result, onProgress, totalRows)
+            if (options.factions) importFactions(workbook, result, onProgress, totalRows)
+            if (options.factionMemberships) importFactionMemberships(workbook, result, onProgress, totalRows)
 
             // Phase 4: User settings and presets
             if (options.presetTemplates) importUserPresetTemplates(workbook, result, onProgress, totalRows)
@@ -1342,6 +1362,267 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 result.errors.add("앱 설정 행 $i: ${e.message}")
             }
         }
+    }
+
+    // ── 세력 가져오기 ──
+
+    private suspend fun importFactions(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
+        val spec = factionSpec()
+        val sheet = workbook.getSheet(spec.sheetName) ?: return
+        val headerRow = sheet.getRow(0) ?: return
+        if (!isValidHeader(headerRow, spec.firstColumnHeader)) return
+
+        val cols = resolveHeaderColumns(headerRow)
+        val nameColIndex = cols[spec.firstColumnHeader] ?: cols["이름"] ?: 0
+        val universeNameColIndex = cols["세계관"] ?: -1
+        val descColIndex = cols["설명"] ?: -1
+        val colorColIndex = cols["색상"] ?: -1
+        val autoRelTypeColIndex = cols["자동관계유형"] ?: -1
+        val autoRelIntensityColIndex = cols["자동관계강도"] ?: -1
+        val codeColIndex = cols["코드"] ?: -1
+        val orderColIndex = cols["정렬순서"] ?: -1
+        val createdAtColIndex = cols["생성일"] ?: -1
+
+        val codesSeen = mutableMapOf<String, Int>()
+
+        for (i in 1..sheet.lastRowNum) {
+            try {
+                val row = sheet.getRow(i) ?: continue
+                val name = getCellString(row, nameColIndex)
+                if (name.isBlank()) continue
+
+                val universeName = if (universeNameColIndex >= 0) getCellString(row, universeNameColIndex) else ""
+                val description = if (descColIndex >= 0) getCellString(row, descColIndex) else ""
+                val color = if (colorColIndex >= 0) getCellString(row, colorColIndex).ifBlank { "#2196F3" } else "#2196F3"
+                val autoRelationType = if (autoRelTypeColIndex >= 0) getCellString(row, autoRelTypeColIndex) else ""
+                if (autoRelationType.isBlank()) {
+                    result.skippedRows++
+                    result.errors.add("세력 행 $i: 자동관계유형이 비어 있음")
+                    continue
+                }
+                val autoRelationIntensity = if (autoRelIntensityColIndex >= 0) parseNumber(getCellString(row, autoRelIntensityColIndex))?.toInt()?.coerceIn(1, 10) ?: 5 else 5
+                val code = if (codeColIndex >= 0) getCellString(row, codeColIndex) else ""
+                val displayOrder = if (orderColIndex >= 0) parseNumber(getCellString(row, orderColIndex))?.toInt() ?: 0 else 0
+                val createdAt = if (createdAtColIndex >= 0) parseNumber(getCellString(row, createdAtColIndex))?.toLong() ?: System.currentTimeMillis() else System.currentTimeMillis()
+
+                // Resolve universe
+                val universeId: Long
+                if (universeName.isNotBlank()) {
+                    val universe = db.universeDao().getUniverseByName(universeName)
+                    if (universe == null) {
+                        result.skippedRows++
+                        result.errors.add("세력 행 $i: 세계관 '$universeName'을(를) 찾을 수 없음")
+                        continue
+                    }
+                    universeId = universe.id
+                } else {
+                    result.skippedRows++
+                    result.errors.add("세력 행 $i: 세계관이 지정되지 않음")
+                    continue
+                }
+
+                // Duplicate code detection
+                if (code.isNotBlank()) {
+                    val prevRow = codesSeen[code]
+                    if (prevRow != null) {
+                        result.warnings.add("세력: 코드 '$code'가 행 $prevRow 과 행 $i 에 중복됨 (마지막 행 우선)")
+                    }
+                    codesSeen[code] = i
+                }
+
+                // Code-first matching
+                val existing: Faction?
+                val matchedByName: Boolean
+                if (code.isNotBlank()) {
+                    val byCode = db.factionDao().getByCode(code)
+                    existing = byCode
+                    matchedByName = false
+                } else {
+                    existing = db.factionDao().getByNameAndUniverse(name, universeId)
+                    matchedByName = existing != null
+                    if (matchedByName) {
+                        result.nameBasedMappings++
+                        result.warnings.add("세력 행 $i: 이름 기반 매칭 ('$name') — 코드 사용 권장")
+                    }
+                }
+
+                if (existing != null) {
+                    db.factionDao().update(existing.copy(
+                        name = name,
+                        universeId = universeId,
+                        description = description,
+                        color = color,
+                        autoRelationType = autoRelationType,
+                        autoRelationIntensity = autoRelationIntensity,
+                        displayOrder = displayOrder,
+                        createdAt = if (createdAtColIndex >= 0) createdAt else existing.createdAt
+                    ))
+                    result.updatedFactions++
+                } else {
+                    val newCode = if (code.isNotBlank()) code else generateEntityCode()
+                    if (code.isBlank()) result.newCodesGenerated++
+                    db.factionDao().insert(Faction(
+                        name = name,
+                        universeId = universeId,
+                        description = description,
+                        color = color,
+                        autoRelationType = autoRelationType,
+                        autoRelationIntensity = autoRelationIntensity,
+                        code = newCode,
+                        displayOrder = displayOrder,
+                        createdAt = createdAt
+                    ))
+                    result.newFactions++
+                }
+            } catch (e: Exception) {
+                result.skippedRows++
+                result.errors.add("세력 행 $i: ${e.message}")
+            }
+        }
+        reportProgress(onProgress, "세력", sheet.lastRowNum, totalRows)
+    }
+
+    // ── 세력 소속 가져오기 ──
+
+    private suspend fun importFactionMemberships(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
+        val spec = factionMembershipSpec()
+        val sheet = workbook.getSheet(spec.sheetName) ?: return
+        val headerRow = sheet.getRow(0) ?: return
+        if (!isValidHeader(headerRow, spec.firstColumnHeader)) return
+
+        val cols = resolveHeaderColumns(headerRow)
+        val factionNameColIndex = cols[spec.firstColumnHeader] ?: cols["세력"] ?: 0
+        val charNameColIndex = cols["캐릭터"] ?: -1
+        val joinYearColIndex = cols["가입연도"] ?: -1
+        val leaveYearColIndex = cols["탈퇴연도"] ?: -1
+        val leaveTypeColIndex = cols["탈퇴유형"] ?: -1
+        val departedRelTypeColIndex = cols["탈퇴후관계유형"] ?: -1
+        val departedIntensityColIndex = cols["탈퇴후강도"] ?: -1
+        val factionCodeColIndex = cols["세력코드"] ?: -1
+        val charCodeColIndex = cols["캐릭터코드"] ?: -1
+        val createdAtColIndex = cols["생성일"] ?: -1
+
+        if (charNameColIndex < 0) {
+            result.errors.add("세력 소속 시트: '캐릭터' 컬럼을 찾을 수 없음")
+            return
+        }
+
+        for (i in 1..sheet.lastRowNum) {
+            try {
+                val row = sheet.getRow(i) ?: continue
+                val factionName = getCellString(row, factionNameColIndex)
+                if (factionName.isBlank()) continue
+                val charName = getCellString(row, charNameColIndex)
+                if (charName.isBlank()) continue
+
+                val factionCode = if (factionCodeColIndex >= 0) getCellString(row, factionCodeColIndex) else ""
+                val charCode = if (charCodeColIndex >= 0) getCellString(row, charCodeColIndex) else ""
+
+                // Resolve faction
+                val faction: Faction? = if (factionCode.isNotBlank()) {
+                    db.factionDao().getByCode(factionCode)
+                } else {
+                    // Try all universes to find faction by name
+                    val allFactions = db.factionDao().getAllFactionsList()
+                    allFactions.find { it.name == factionName }
+                }
+                if (faction == null) {
+                    result.skippedRows++
+                    result.errors.add("세력 소속 행 $i: 세력 '$factionName'을(를) 찾을 수 없음")
+                    continue
+                }
+
+                // Resolve character
+                val character: com.novelcharacter.app.data.model.Character? = if (charCode.isNotBlank()) {
+                    db.characterDao().getCharacterByCode(charCode)
+                } else {
+                    db.characterDao().getCharacterByName(charName)
+                }
+                if (character == null) {
+                    result.skippedRows++
+                    result.errors.add("세력 소속 행 $i: 캐릭터 '$charName'을(를) 찾을 수 없음")
+                    continue
+                }
+
+                val joinYear = if (joinYearColIndex >= 0) parseNumber(getCellString(row, joinYearColIndex))?.toInt() else null
+                val leaveYear = if (leaveYearColIndex >= 0) parseNumber(getCellString(row, leaveYearColIndex))?.toInt() else null
+                val leaveTypeRaw = if (leaveTypeColIndex >= 0) getCellString(row, leaveTypeColIndex) else ""
+                val leaveType = when (leaveTypeRaw.trim()) {
+                    "순수제거", "removed" -> FactionMembership.LEAVE_REMOVED
+                    "설정상탈퇴", "departed" -> FactionMembership.LEAVE_DEPARTED
+                    else -> null
+                }
+                val departedRelationType = if (departedRelTypeColIndex >= 0) getCellString(row, departedRelTypeColIndex).ifBlank { null } else null
+                val departedIntensity = if (departedIntensityColIndex >= 0) parseNumber(getCellString(row, departedIntensityColIndex))?.toInt()?.coerceIn(1, 10) else null
+                val createdAt = if (createdAtColIndex >= 0) parseNumber(getCellString(row, createdAtColIndex))?.toLong() ?: System.currentTimeMillis() else System.currentTimeMillis()
+
+                // Check if existing active membership exists
+                val existingMembership = db.factionMembershipDao().getActiveMembership(faction.id, character.id)
+
+                if (existingMembership != null && leaveType == null) {
+                    // Update existing active membership
+                    db.factionMembershipDao().update(existingMembership.copy(
+                        joinYear = joinYear ?: existingMembership.joinYear,
+                        leaveYear = leaveYear,
+                        leaveType = leaveType,
+                        departedRelationType = departedRelationType,
+                        departedIntensity = departedIntensity,
+                        createdAt = if (createdAtColIndex >= 0) createdAt else existingMembership.createdAt
+                    ))
+                    result.updatedFactionMemberships++
+                } else {
+                    // Insert new membership
+                    val membershipId = db.factionMembershipDao().insert(FactionMembership(
+                        factionId = faction.id,
+                        characterId = character.id,
+                        joinYear = joinYear,
+                        leaveYear = leaveYear,
+                        leaveType = leaveType,
+                        departedRelationType = departedRelationType,
+                        departedIntensity = departedIntensity,
+                        createdAt = createdAt
+                    ))
+
+                    // If this is an active membership (no leaveType), trigger auto-relationships
+                    if (leaveType == null && membershipId > 0) {
+                        val activeMembers = db.factionMembershipDao().getActiveMembershipsByFaction(faction.id)
+                        val otherCharIds = activeMembers
+                            .filter { it.characterId != character.id }
+                            .map { it.characterId }
+
+                        if (otherCharIds.isNotEmpty()) {
+                            val existingRels = db.characterRelationshipDao().getAllRelationships()
+                                .filter { it.factionId == faction.id }
+                            val existingPairs = existingRels.map { setOf(it.characterId1, it.characterId2) }.toSet()
+
+                            val newRelationships = otherCharIds.mapNotNull { otherCharId ->
+                                val pair = setOf(character.id, otherCharId)
+                                if (pair in existingPairs) return@mapNotNull null
+                                val (c1, c2) = if (character.id < otherCharId)
+                                    character.id to otherCharId else otherCharId to character.id
+                                CharacterRelationship(
+                                    characterId1 = c1,
+                                    characterId2 = c2,
+                                    relationshipType = faction.autoRelationType,
+                                    intensity = faction.autoRelationIntensity,
+                                    isBidirectional = true,
+                                    factionId = faction.id
+                                )
+                            }
+                            if (newRelationships.isNotEmpty()) {
+                                db.characterRelationshipDao().insertAll(newRelationships)
+                            }
+                        }
+                    }
+
+                    result.newFactionMemberships++
+                }
+            } catch (e: Exception) {
+                result.skippedRows++
+                result.errors.add("세력 소속 행 $i: ${e.message}")
+            }
+        }
+        reportProgress(onProgress, "세력 소속", sheet.lastRowNum, totalRows)
     }
 
     // ── 유틸리티 메서드 ──
