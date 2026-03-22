@@ -263,11 +263,10 @@ class CharacterAdapter(
                 binding.imageCountBadge.visibility = View.GONE
             }
 
-            // 이미지 영역 롱클릭 → 이미지 뷰어 (reorder/selection mode에서는 비활성)
-            // 일반 탭은 카드 root의 onClick으로 상세 화면 이동
+            // 이미지 영역: 탭 → 상세 화면 이동, 롱클릭 → 이미지 뷰어
+            // reorder/selection mode에서는 비활성 (조건 분기에 의해 보장)
             if (!isReorderMode && !isSelectionMode && paths.isNotEmpty() && onImageClick != null) {
-                binding.characterImage.setOnClickListener(null)
-                binding.characterImage.isClickable = false
+                binding.characterImage.setOnClickListener { onClick(character) }
                 binding.characterImage.setOnLongClickListener {
                     onImageClick.invoke(character.imagePaths, idx % paths.size)
                     true

@@ -6,10 +6,8 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.ArrayAdapter
 import android.widget.EditText
 import android.widget.LinearLayout
-import android.widget.ListView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
@@ -135,6 +133,9 @@ class FactionManageFragment : Fragment() {
         val editAutoRelationType = dialogView.findViewById<EditText>(R.id.editAutoRelationType)
         val sliderIntensity = dialogView.findViewById<Slider>(R.id.sliderIntensity)
         val colorPalette = dialogView.findViewById<LinearLayout>(R.id.colorPalette)
+        val colorPreview = dialogView.findViewById<View>(R.id.factionColorPreview)
+        val hexEdit = dialogView.findViewById<EditText>(R.id.editFactionColor)
+        val btnFullSpectrum = dialogView.findViewById<android.widget.TextView>(R.id.btnFullSpectrum)
 
         // 프리셋 색상
         val presetColors = listOf(
@@ -144,8 +145,36 @@ class FactionManageFragment : Fragment() {
         )
         var selectedColor = faction?.color ?: "#2196F3"
 
-        // 색상 팔레트 생성
+        // 색상 미리보기 초기화
         val density = resources.displayMetrics.density
+        val previewBg = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = 8 * density
+            try { setColor(Color.parseColor(selectedColor)) } catch (_: Exception) { setColor(Color.LTGRAY) }
+            setStroke((1 * density).toInt(), Color.GRAY)
+        }
+        colorPreview.background = previewBg
+        hexEdit.setText(selectedColor)
+
+        // 색상 미리보기 업데이트 함수
+        fun updateColorPreview(color: String) {
+            selectedColor = color
+            try { previewBg.setColor(Color.parseColor(color)) } catch (_: Exception) {}
+        }
+
+        // HEX 입력 동기화
+        hexEdit.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: android.text.Editable?) {
+                val hex = s?.toString()?.trim() ?: ""
+                if (hex.matches(Regex("#[0-9A-Fa-f]{6}"))) {
+                    updateColorPreview(hex)
+                }
+            }
+        })
+
+        // 색상 팔레트 생성
         val colorSize = (32 * density).toInt()
         val colorMargin = (4 * density).toInt()
         val colorViews = mutableListOf<View>()
@@ -163,7 +192,8 @@ class FactionManageFragment : Fragment() {
                     }
                 }
                 setOnClickListener {
-                    selectedColor = color
+                    updateColorPreview(color)
+                    hexEdit.setText(color)
                     // 모든 색상의 테두리 초기화
                     colorViews.forEachIndexed { i, v ->
                         (v.background as? GradientDrawable)?.apply {
@@ -177,6 +207,18 @@ class FactionManageFragment : Fragment() {
             }
             colorViews.add(colorView)
             colorPalette.addView(colorView)
+        }
+
+        // 전체 색상 선택 버튼
+        btnFullSpectrum.setOnClickListener {
+            com.novelcharacter.app.util.ColorPickerHelper.showFullSpectrumColorPicker(requireContext(), selectedColor) { newColor ->
+                updateColorPreview(newColor)
+                hexEdit.setText(newColor)
+                // 프리셋 테두리 모두 해제 (커스텀 색상이므로)
+                colorViews.forEachIndexed { i, v ->
+                    (v.background as? GradientDrawable)?.setStroke(0, Color.BLACK)
+                }
+            }
         }
 
         // 기존 값 채우기
@@ -404,42 +446,37 @@ class FactionManageFragment : Fragment() {
             val ctx = requireContext()
             val density = resources.displayMetrics.density
 
-            val container = LinearLayout(ctx).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding((16 * density).toInt(), (8 * density).toInt(), (16 * density).toInt(), 0)
-            }
-
             // 가입 연도 입력 (선택)
             val editYear = EditText(ctx).apply {
                 hint = getString(R.string.faction_join_year_optional)
                 inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_SIGNED
-            }
-            container.addView(editYear)
-
-            val listView = ListView(ctx).apply {
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    (250 * density).toInt()
-                )
+                setPadding((16 * density).toInt(), (8 * density).toInt(), (16 * density).toInt(), (8 * density).toInt())
             }
 
             val charNames = allCharacters.map { it.name }.toTypedArray()
-            listView.adapter = ArrayAdapter(ctx, android.R.layout.simple_list_item_1, charNames)
-            container.addView(listView)
+            val checkedItems = BooleanArray(charNames.size) { false }
 
-            val dialog = AlertDialog.Builder(ctx)
+            AlertDialog.Builder(ctx)
                 .setTitle(R.string.faction_member_add)
-                .setView(container)
+                .setView(editYear)
+                .setMultiChoiceItems(charNames, checkedItems) { _, which, isChecked ->
+                    checkedItems[which] = isChecked
+                }
+                .setPositiveButton(R.string.confirm) { _, _ ->
+                    val selectedIds = allCharacters
+                        .filterIndexed { i, _ -> checkedItems[i] }
+                        .map { it.id }
+                    if (selectedIds.isEmpty()) return@setPositiveButton
+
+                    val joinYear = editYear.text.toString().trim().toIntOrNull()
+                    viewModel.addMembers(faction.id, selectedIds, joinYear) { count ->
+                        if (count > 0) {
+                            Toast.makeText(ctx, getString(R.string.faction_members_added, count), Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
                 .setNegativeButton(R.string.cancel, null)
                 .show()
-
-            listView.setOnItemClickListener { _, _, position, _ ->
-                val character = allCharacters[position]
-                val joinYear = editYear.text.toString().trim().toIntOrNull()
-                viewModel.addMember(faction.id, character.id, joinYear)
-                Toast.makeText(ctx, getString(R.string.faction_member_added, character.name), Toast.LENGTH_SHORT).show()
-                dialog.dismiss()
-            }
         }
     }
 

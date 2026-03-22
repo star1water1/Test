@@ -80,6 +80,16 @@ class FactionViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun addMembers(factionId: Long, characterIds: List<Long>, joinYear: Int?, onResult: (Int) -> Unit = {}) = viewModelScope.launch {
+        try {
+            val count = factionRepository.addMembers(factionId, characterIds, joinYear)
+            onResult(count)
+        } catch (e: Exception) {
+            Log.e("FactionViewModel", "Failed to add members", e)
+            onResult(0)
+        }
+    }
+
     fun removeMember(factionId: Long, characterId: Long) = viewModelScope.launch {
         try {
             factionRepository.removeMember(factionId, characterId)

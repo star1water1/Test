@@ -78,12 +78,50 @@
             android:textColor="@color/text_secondary"
             android:layout_marginBottom="8dp" />
 
-        <LinearLayout
-            android:id="@+id/colorPalette"
+        <HorizontalScrollView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center" />
+            android:scrollbars="none"
+            android:layout_marginBottom="8dp">
+
+            <LinearLayout
+                android:id="@+id/colorPalette"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical" />
+
+        </HorizontalScrollView>
+
+        <View
+            android:id="@+id/factionColorPreview"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginBottom="8dp"
+            android:background="@color/item_background_light" />
+
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="4dp"
+            android:hint="@string/border_color_hex_hint">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/editFactionColor"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="text" />
+
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <TextView
+            android:id="@+id/btnFullSpectrum"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/color_picker_full_spectrum"
+            android:textColor="@color/primary"
+            android:paddingTop="4dp"
+            android:paddingBottom="8dp" />
 
     </LinearLayout>
 

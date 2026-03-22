@@ -115,6 +115,50 @@ class FactionRepository(private val db: AppDatabase) {
         }
     }
 
+    /**
+     * 여러 캐릭터를 세력에 일괄 가입시킨다.
+     * 하나의 트랜잭션으로 감싸서 원자적으로 실행하며, 순차 추가하여 관계가 올바르게 캐스케이딩된다.
+     */
+    suspend fun addMembers(factionId: Long, characterIds: List<Long>, joinYear: Int? = null): Int {
+        return db.withTransaction {
+            var addedCount = 0
+            val faction = factionDao.getById(factionId) ?: return@withTransaction 0
+            for (characterId in characterIds) {
+                val existing = membershipDao.getActiveMembership(factionId, characterId)
+                if (existing != null) continue
+
+                membershipDao.insert(FactionMembership(
+                    factionId = factionId,
+                    characterId = characterId,
+                    joinYear = joinYear
+                ))
+
+                val activeMembers = membershipDao.getActiveMembershipsByFaction(factionId)
+                val otherCharIds = activeMembers
+                    .filter { it.characterId != characterId }
+                    .map { it.characterId }
+
+                if (otherCharIds.isNotEmpty()) {
+                    val newRelationships = otherCharIds.map { otherCharId ->
+                        val (c1, c2) = if (characterId < otherCharId)
+                            characterId to otherCharId else otherCharId to characterId
+                        CharacterRelationship(
+                            characterId1 = c1,
+                            characterId2 = c2,
+                            relationshipType = faction.autoRelationType,
+                            intensity = faction.autoRelationIntensity,
+                            isBidirectional = true,
+                            factionId = factionId
+                        )
+                    }
+                    relationshipDao.insertAll(newRelationships)
+                }
+                addedCount++
+            }
+            addedCount
+        }
+    }
+
     // ===== 핵심 비즈니스 로직: 순수 제거 =====
 
     /**

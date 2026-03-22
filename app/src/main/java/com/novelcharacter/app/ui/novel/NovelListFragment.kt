@@ -306,6 +306,15 @@ class NovelListFragment : Fragment() {
             previewBg.setColor(Color.LTGRAY)
         }
 
+        // 전체 색상 선택 버튼
+        dialogBinding.btnFullSpectrum.setOnClickListener {
+            com.novelcharacter.app.util.ColorPickerHelper.showFullSpectrumColorPicker(ctx, selectedColor.ifBlank { "#5C6BC0" }) { newColor ->
+                selectedColor = newColor
+                dialogBinding.editBorderColor.setText(newColor)
+                try { previewBg.setColor(Color.parseColor(newColor)) } catch (_: Exception) {}
+            }
+        }
+
         // 이미지 모드 설정
         val imageModes = arrayOf(
             getString(R.string.image_mode_none),

@@ -967,6 +967,7 @@
     <string name="faction_member_depart">설정상 탈퇴</string>
     <string name="faction_member_remove_confirm">%1$s을(를) %2$s에서 제거하시겠습니까?\n세력 자동 관계도 함께 삭제됩니다.</string>
     <string name="faction_member_added">%s 추가됨</string>
+    <string name="faction_members_added">%d명의 멤버가 추가되었습니다</string>
     <string name="faction_join_year_optional">가입 연도 (선택)</string>
     <string name="faction_leave_year">탈퇴 연도</string>
     <string name="faction_departed_relation">탈퇴 후 관계 유형</string>
