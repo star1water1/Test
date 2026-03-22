@@ -26,6 +26,10 @@ import com.novelcharacter.app.data.model.FieldType
 import com.novelcharacter.app.data.model.SemanticRole
 import com.novelcharacter.app.data.model.StructuredInputConfig
 import com.novelcharacter.app.databinding.DialogFieldEditBinding
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class FieldEditDialog : DialogFragment() {
 
@@ -1042,8 +1046,8 @@ class FieldEditDialog : DialogFragment() {
         val app = requireContext().applicationContext as com.novelcharacter.app.NovelCharacterApp
         val fieldValueDao = app.database.characterFieldValueDao()
 
-        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
-            val values = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        CoroutineScope(Dispatchers.Main).launch {
+            val values = withContext(Dispatchers.IO) {
                 fieldValueDao.getValuesByFieldDef(field.id)
             }
 
@@ -1069,12 +1073,12 @@ class FieldEditDialog : DialogFragment() {
                     oldType, newType, nonEmptyValues.size, compatible, incompatible))
                 .setPositiveButton(getString(R.string.field_type_change_proceed)) { _, _ ->
                     // 호환 불가 값을 빈 문자열로 초기화
-                    kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                    CoroutineScope(Dispatchers.IO).launch {
                         val toReset = nonEmptyValues.filter { !isValueCompatible(it.value, newType) }
                         toReset.forEach { fv ->
                             fieldValueDao.update(fv.copy(value = ""))
                         }
-                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        withContext(Dispatchers.Main) {
                             deliverResult(field)
                         }
                     }

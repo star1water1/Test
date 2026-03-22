@@ -367,6 +367,7 @@ class StatsMainFragment : Fragment() {
         }
         binding.cardInsightPreview.visibility = View.VISIBLE
 
+        val ctx = requireContext()
         val cardWidth = resources.getDimensionPixelSize(R.dimen.stats_chart_height) / 2  // 150dp
         val chartSize = cardWidth - resources.getDimensionPixelSize(R.dimen.stats_margin_md) * 2
         val marginSm = resources.getDimensionPixelSize(R.dimen.stats_margin_sm)

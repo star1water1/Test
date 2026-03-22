@@ -1726,7 +1726,7 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
             val parsedValues = getFieldValues(fd, fv.value, statsConfig)
             if (parsedValues.any { it == targetValue }) {
                 val char = charMap[fv.characterId] ?: continue
-                val images = char.imageUris.split(",").filter { it.isNotBlank() }
+                val images = char.imagePaths.split(",").filter { it.isNotBlank() }
                 result.add(
                     FieldValueCharacter(
                         characterId = char.id,

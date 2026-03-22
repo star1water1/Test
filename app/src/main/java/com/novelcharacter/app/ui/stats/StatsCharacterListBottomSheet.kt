@@ -115,7 +115,7 @@ class StatsCharacterListBottomSheet : BottomSheetDialogFragment() {
         for ((value, count) in analysis.distribution) {
             val pct = if (totalValues > 0) count * 100f / totalValues else 0f
             val row = TextView(ctx).apply {
-                text = "$value: $count명 (${String.format("%.1f", pct)}%)"
+                text = "$value: ${count}명 (${String.format("%.1f", pct)}%)"
                 textSize = 13f
                 setTextColor(ContextCompat.getColor(ctx, R.color.on_surface))
                 val lp = LinearLayout.LayoutParams(
