@@ -28,12 +28,15 @@ import com.github.mikephil.charting.components.XAxis
 import com.github.mikephil.charting.data.BarData
 import com.github.mikephil.charting.data.BarDataSet
 import com.github.mikephil.charting.data.BarEntry
+import com.github.mikephil.charting.data.Entry
 import com.github.mikephil.charting.data.PieData
 import com.github.mikephil.charting.data.PieDataSet
 import com.github.mikephil.charting.data.PieEntry
 import com.github.mikephil.charting.formatter.IndexAxisValueFormatter
 import com.github.mikephil.charting.formatter.PercentFormatter
 import com.github.mikephil.charting.formatter.ValueFormatter
+import com.github.mikephil.charting.highlight.Highlight
+import com.github.mikephil.charting.listener.OnChartValueSelectedListener
 import com.github.mikephil.charting.utils.ColorTemplate
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.FieldStatsConfig
@@ -220,10 +223,14 @@ class StatsFieldInsightFragment : Fragment() {
         }
         wrapper.addView(typeLabel)
 
+        val fieldDefId = insight.fieldDefinition.id
+        val fieldName = insight.fieldDefinition.name
+
         when (result.entry.type) {
             FieldStatsConfig.StatsType.DISTRIBUTION -> {
                 val data = result.distributionData ?: return wrapper
                 val chart = createChartForDistribution(data, result.entry.chart, result.entry.limit)
+                attachChartTapListener(chart, data.entries.sortedByDescending { it.value }.take(result.entry.limit).map { it.key }, fieldDefId, fieldName)
                 wrapper.addView(chart)
                 wrapper.addView(createDistributionTable(data, result.entry.limit))
             }
@@ -231,6 +238,7 @@ class StatsFieldInsightFragment : Fragment() {
                 val data = result.distributionData ?: return wrapper
                 val sorted = data.entries.sortedByDescending { it.value }.take(result.entry.limit)
                 val chart = createRankingChart(sorted)
+                attachChartTapListener(chart, sorted.map { it.key }, fieldDefId, fieldName)
                 wrapper.addView(chart)
             }
             FieldStatsConfig.StatsType.NUMERIC -> {
@@ -243,6 +251,54 @@ class StatsFieldInsightFragment : Fragment() {
         }
 
         return wrapper
+    }
+
+    // ===== 차트 탭 인터랙션 (개선 6) =====
+
+    private fun attachChartTapListener(chart: View, labels: List<String>, fieldDefId: Long, fieldName: String) {
+        when (chart) {
+            is PieChart -> {
+                chart.setTouchEnabled(true)
+                chart.setOnChartValueSelectedListener(object : OnChartValueSelectedListener {
+                    override fun onValueSelected(e: Entry?, h: Highlight?) {
+                        val pieEntry = e as? PieEntry ?: return
+                        showCharacterListBottomSheet(fieldDefId, fieldName, pieEntry.label)
+                    }
+                    override fun onNothingSelected() {}
+                })
+            }
+            is HorizontalBarChart -> {
+                chart.setTouchEnabled(true)
+                chart.setOnChartValueSelectedListener(object : OnChartValueSelectedListener {
+                    override fun onValueSelected(e: Entry?, h: Highlight?) {
+                        val index = h?.x?.toInt() ?: return
+                        val label = labels.getOrNull(index) ?: return
+                        showCharacterListBottomSheet(fieldDefId, fieldName, label)
+                    }
+                    override fun onNothingSelected() {}
+                })
+            }
+            is BarChart -> {
+                chart.setTouchEnabled(true)
+                chart.setOnChartValueSelectedListener(object : OnChartValueSelectedListener {
+                    override fun onValueSelected(e: Entry?, h: Highlight?) {
+                        val index = h?.x?.toInt() ?: return
+                        val label = labels.getOrNull(index) ?: return
+                        showCharacterListBottomSheet(fieldDefId, fieldName, label)
+                    }
+                    override fun onNothingSelected() {}
+                })
+            }
+        }
+    }
+
+    private fun showCharacterListBottomSheet(fieldDefId: Long, fieldName: String, value: String) {
+        val sheet = StatsCharacterListBottomSheet.newInstance(fieldDefId, fieldName, value)
+        sheet.onCharacterClick = { characterId ->
+            val bundle = Bundle().apply { putLong("characterId", characterId) }
+            findNavController().navigate(R.id.characterDetailFragment, bundle)
+        }
+        sheet.show(childFragmentManager, StatsCharacterListBottomSheet.TAG)
     }
 
     // ===== 차트 생성 =====

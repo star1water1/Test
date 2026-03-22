@@ -250,6 +250,54 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // ===== 개선 6: 차트 탭 → 캐릭터 목록 =====
+
+    private val _chartTapCharacters = MutableLiveData<List<FieldValueCharacter>?>()
+    val chartTapCharacters: LiveData<List<FieldValueCharacter>?> = _chartTapCharacters
+
+    private val _subgroupAnalysis = MutableLiveData<SubgroupAnalysis?>()
+    val subgroupAnalysis: LiveData<SubgroupAnalysis?> = _subgroupAnalysis
+
+    fun loadCharactersByFieldValue(fieldDefId: Long, value: String) {
+        viewModelScope.launch {
+            try {
+                val snapshot = ensureSnapshot()
+                val filtered = getFilteredSnapshot(snapshot)
+                _chartTapCharacters.value = withContext(Dispatchers.IO) {
+                    provider.getCharactersByFieldValue(filtered, fieldDefId, value)
+                }
+            } catch (e: Exception) {
+                _error.value = e.message
+            }
+        }
+    }
+
+    fun loadSubgroupAnalysis(characterIds: Set<Long>, targetFieldDefId: Long) {
+        viewModelScope.launch {
+            try {
+                val snapshot = ensureSnapshot()
+                val filtered = getFilteredSnapshot(snapshot)
+                _subgroupAnalysis.value = withContext(Dispatchers.IO) {
+                    provider.computeSubgroupAnalysis(filtered, characterIds, targetFieldDefId)
+                }
+            } catch (e: Exception) {
+                _error.value = e.message
+            }
+        }
+    }
+
+    fun clearChartTapData() {
+        _chartTapCharacters.value = null
+        _subgroupAnalysis.value = null
+    }
+
+    /** 현재 스냅샷의 필드 정의 목록 반환 (하위 그룹 분석 필드 선택용) */
+    fun getFieldDefinitions(): List<FieldDefinition> {
+        val snapshot = cachedSnapshot ?: return emptyList()
+        val filtered = getFilteredSnapshot(snapshot)
+        return filtered.fieldDefinitions
+    }
+
     // ===== 인라인 분석 설정 업데이트 =====
 
     fun updateFieldStatsConfig(fieldDef: FieldDefinition, newConfig: FieldStatsConfig) {

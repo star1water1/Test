@@ -19,12 +19,15 @@ import com.github.mikephil.charting.components.XAxis
 import com.github.mikephil.charting.data.BarData
 import com.github.mikephil.charting.data.BarDataSet
 import com.github.mikephil.charting.data.BarEntry
+import com.github.mikephil.charting.data.Entry
 import com.github.mikephil.charting.data.PieData
 import com.github.mikephil.charting.data.PieDataSet
 import com.github.mikephil.charting.data.PieEntry
 import com.github.mikephil.charting.formatter.IndexAxisValueFormatter
 import com.github.mikephil.charting.formatter.PercentFormatter
 import com.github.mikephil.charting.formatter.ValueFormatter
+import com.github.mikephil.charting.highlight.Highlight
+import com.github.mikephil.charting.listener.OnChartValueSelectedListener
 import com.github.mikephil.charting.utils.ColorTemplate
 import com.novelcharacter.app.R
 import com.novelcharacter.app.databinding.FragmentStatsFieldAnalysisDetailBinding
@@ -150,6 +153,14 @@ class StatsFieldAnalysisDetailFragment : Fragment() {
                 legend.isEnabled = true
                 legend.textColor = ContextCompat.getColor(requireContext(), R.color.on_surface)
                 setEntryLabelColor(Color.WHITE)
+                setTouchEnabled(true)
+                setOnChartValueSelectedListener(object : OnChartValueSelectedListener {
+                    override fun onValueSelected(e: Entry?, h: Highlight?) {
+                        val pieEntry = e as? PieEntry ?: return
+                        showCharacterListBottomSheet(dist.fieldDefId, dist.fieldName, pieEntry.label)
+                    }
+                    override fun onNothingSelected() {}
+                })
                 animateY(600)
                 invalidate()
             }
@@ -278,6 +289,17 @@ class StatsFieldAnalysisDetailFragment : Fragment() {
             lp.bottomMargin = marginXs
             layoutParams = lp
         }
+    }
+
+    // ===== 차트 탭 인터랙션 (개선 6) =====
+
+    private fun showCharacterListBottomSheet(fieldDefId: Long, fieldName: String, value: String) {
+        val sheet = StatsCharacterListBottomSheet.newInstance(fieldDefId, fieldName, value)
+        sheet.onCharacterClick = { characterId ->
+            val bundle = Bundle().apply { putLong("characterId", characterId) }
+            findNavController().navigate(R.id.characterDetailFragment, bundle)
+        }
+        sheet.show(childFragmentManager, StatsCharacterListBottomSheet.TAG)
     }
 
     private fun chartColors(): List<Int> {

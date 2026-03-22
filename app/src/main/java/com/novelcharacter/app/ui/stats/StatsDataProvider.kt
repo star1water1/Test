@@ -208,6 +208,7 @@ data class FieldAnalysisStats(
 )
 
 data class FieldValueDistribution(
+    val fieldDefId: Long = 0,
     val fieldName: String,
     val fieldType: String,
     val groupName: String,
@@ -305,6 +306,20 @@ data class HealthWarnings(
     val incompleteFieldCount: Int,
     val isolatedCharCount: Int,
     val unlinkedCharCount: Int
+)
+
+// ===== 차트 탭 → 캐릭터 목록 (개선 6) =====
+data class FieldValueCharacter(
+    val characterId: Long,
+    val characterName: String,
+    val fieldValue: String,
+    val imageUri: String?
+)
+
+data class SubgroupAnalysis(
+    val targetFieldName: String,
+    val distribution: Map<String, Int>,
+    val totalCount: Int
 )
 
 class StatsDataProvider(private val app: NovelCharacterApp) {
@@ -1270,7 +1285,7 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
                 val dist = allKeys.groupBy { it }.mapValues { it.value.size }
                     .entries.sortedByDescending { it.value }.associate { it.key to it.value }
                 if (dist.isEmpty()) return@mapNotNull null
-                FieldValueDistribution(fd.name, fd.type, fd.groupName, dist)
+                FieldValueDistribution(fd.id, fd.name, fd.type, fd.groupName, dist)
             }
 
         // NUMBER 타입 필드 통계 요약
@@ -1381,5 +1396,74 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
         }.sortedByDescending { it.characterCount }
 
         return CrossNovelComparison(novels = entries)
+    }
+
+    // ===== 개선 6: 차트 탭 → 캐릭터 목록 =====
+
+    /**
+     * 특정 필드의 특정 값을 가진 캐릭터 목록 반환.
+     * getFieldValues() 로직을 재활용하여 파싱된 값 기준으로 매칭.
+     */
+    fun getCharactersByFieldValue(
+        s: StatsSnapshot,
+        fieldDefId: Long,
+        targetValue: String
+    ): List<FieldValueCharacter> {
+        val fd = s.fieldDefinitions.find { it.id == fieldDefId } ?: return emptyList()
+        val statsConfig = FieldStatsConfig.fromConfig(fd.config)
+        val charMap = s.characters.associateBy { it.id }
+
+        val result = mutableListOf<FieldValueCharacter>()
+        val rawValues = s.fieldValues.filter { it.fieldDefinitionId == fieldDefId }
+
+        for (fv in rawValues) {
+            val parsedValues = getFieldValues(fd, fv.value, statsConfig)
+            if (parsedValues.any { it == targetValue }) {
+                val char = charMap[fv.characterId] ?: continue
+                val images = char.imageUris.split(",").filter { it.isNotBlank() }
+                result.add(
+                    FieldValueCharacter(
+                        characterId = char.id,
+                        characterName = char.name,
+                        fieldValue = fv.value,
+                        imageUri = images.firstOrNull()
+                    )
+                )
+            }
+        }
+        return result.sortedBy { it.characterName }
+    }
+
+    /**
+     * 캐릭터 ID 집합에 대해 다른 필드의 분포를 분석 (하위 그룹 분석).
+     */
+    fun computeSubgroupAnalysis(
+        s: StatsSnapshot,
+        characterIds: Set<Long>,
+        targetFieldDefId: Long
+    ): SubgroupAnalysis? {
+        val fd = s.fieldDefinitions.find { it.id == targetFieldDefId } ?: return null
+        val statsConfig = FieldStatsConfig.fromConfig(fd.config)
+
+        val rawValues = s.fieldValues.filter {
+            it.fieldDefinitionId == targetFieldDefId && it.characterId in characterIds
+        }
+
+        val allValues = mutableListOf<String>()
+        for (fv in rawValues) {
+            allValues.addAll(getFieldValues(fd, fv.value, statsConfig))
+        }
+
+        val distribution = allValues.groupBy { it }
+            .mapValues { it.value.size }
+            .entries.sortedByDescending { it.value }
+            .take(15)
+            .associate { it.key to it.value }
+
+        return SubgroupAnalysis(
+            targetFieldName = fd.name,
+            distribution = distribution,
+            totalCount = characterIds.size
+        )
     }
 }

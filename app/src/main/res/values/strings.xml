@@ -664,6 +664,13 @@
     <string name="stats_another_name_rate">별명 보유율: %.0f%% (총 별칭 %d개)</string>
     <string name="stats_last_name_distribution">성씨 분포</string>
 
+    <!-- Stats: 차트 인터랙티브 필터 (개선 6) -->
+    <string name="stats_chart_tap_title">%s = \"%s\"</string>
+    <string name="stats_chart_tap_count">%d명의 캐릭터</string>
+    <string name="stats_subgroup_analysis">이 그룹의 다른 필드 분포 보기</string>
+    <string name="stats_subgroup_select_field">분석할 필드 선택</string>
+    <string name="stats_subgroup_result_title">%s 분포 (%d명 기준)</string>
+
     <!-- Stats: 사건 확장 -->
     <string name="stats_narrative_density">서사 밀도 곡선</string>
     <string name="stats_time_precision">시간 정밀도 분포</string>
