@@ -17,8 +17,13 @@ import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.chip.Chip
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import android.content.res.ColorStateList
+import android.graphics.Color
+import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.Character
+import com.novelcharacter.app.data.model.FactionMembership
+import com.novelcharacter.app.data.repository.FactionRepository
 import com.novelcharacter.app.databinding.FragmentCharacterDetailBinding
 import com.novelcharacter.app.ui.adapter.TimelineAdapter
 import kotlinx.coroutines.Dispatchers
@@ -40,6 +45,10 @@ class CharacterDetailFragment : Fragment() {
     private lateinit var timeSliderHelper: TimeSliderHelper
     private lateinit var stateChangeHelper: StateChangeHelper
     private lateinit var relationshipHelper: RelationshipHelper
+
+    private val factionRepository: FactionRepository by lazy {
+        (requireActivity().application as NovelCharacterApp).factionRepository
+    }
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
@@ -70,6 +79,7 @@ class CharacterDetailFragment : Fragment() {
         observeEvents()
         stateChangeHelper.observe()
         relationshipHelper.observe()
+        observeFactions()
         loadCharacterStats()
     }
 
@@ -169,6 +179,71 @@ class CharacterDetailFragment : Fragment() {
                 preSelectedCharacterIds = setOf(characterId),
                 preSelectedNovelId = cachedCharacter?.novelId
             )
+        }
+    }
+
+    private fun observeFactions() {
+        factionRepository.getMembershipsByCharacter(characterId).observe(viewLifecycleOwner) { memberships ->
+            viewLifecycleOwner.lifecycleScope.launch {
+                if (_binding == null) return@launch
+                binding.factionChipGroup.removeAllViews()
+
+                if (memberships.isEmpty()) {
+                    binding.factionChipGroup.visibility = View.GONE
+                    binding.factionEmptyText.visibility = View.VISIBLE
+                    return@launch
+                }
+
+                binding.factionChipGroup.visibility = View.VISIBLE
+                binding.factionEmptyText.visibility = View.GONE
+
+                for (membership in memberships) {
+                    val faction = factionRepository.getFactionById(membership.factionId) ?: continue
+                    if (_binding == null) return@launch
+
+                    val isDeparted = membership.leaveType == FactionMembership.LEAVE_DEPARTED
+                    val chipText = if (isDeparted) "${faction.name} (탈퇴)" else faction.name
+
+                    val chip = Chip(requireContext()).apply {
+                        text = chipText
+                        isClickable = true
+                        isCheckable = false
+
+                        val factionColor = try {
+                            Color.parseColor(faction.color)
+                        } catch (_: Exception) {
+                            Color.parseColor("#2196F3")
+                        }
+
+                        if (isDeparted) {
+                            // Outlined style for departed members
+                            chipBackgroundColor = ColorStateList.valueOf(Color.TRANSPARENT)
+                            chipStrokeColor = ColorStateList.valueOf(factionColor)
+                            chipStrokeWidth = 2f * resources.displayMetrics.density
+                            setTextColor(factionColor)
+                        } else {
+                            chipBackgroundColor = ColorStateList.valueOf(factionColor)
+                            // Determine text color based on background luminance
+                            val luminance = (0.299 * Color.red(factionColor) +
+                                    0.587 * Color.green(factionColor) +
+                                    0.114 * Color.blue(factionColor)) / 255.0
+                            setTextColor(if (luminance > 0.5) Color.BLACK else Color.WHITE)
+                        }
+
+                        setOnClickListener {
+                            val bundle = Bundle().apply {
+                                putLong("universeId", faction.universeId)
+                            }
+                            findNavController().navigateSafe(
+                                R.id.characterDetailFragment,
+                                R.id.factionManageFragment,
+                                bundle
+                            )
+                        }
+                    }
+                    binding.factionChipGroup.addView(chip)
+                }
+            }
         }
     }
 

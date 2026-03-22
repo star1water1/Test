@@ -17,10 +17,13 @@ import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.CharacterRelationship
 import com.novelcharacter.app.data.model.CharacterRelationshipChange
+import com.novelcharacter.app.data.model.Faction
+import com.novelcharacter.app.data.model.FactionMembership
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.databinding.FragmentRelationshipGraphBinding
 import com.novelcharacter.app.util.navigateSafe
+import android.graphics.Color
 import kotlinx.coroutines.launch
 
 class RelationshipGraphViewModel(application: android.app.Application) : AndroidViewModel(application) {
@@ -28,6 +31,7 @@ class RelationshipGraphViewModel(application: android.app.Application) : Android
     private val characterRepository = app.characterRepository
     private val universeRepository = app.universeRepository
     private val novelRepository = app.novelRepository
+    private val factionRepository = app.factionRepository
 
     private val _characters = MutableLiveData<List<Character>>()
     val characters: LiveData<List<Character>> = _characters
@@ -46,6 +50,18 @@ class RelationshipGraphViewModel(application: android.app.Application) : Android
 
     private val _novels = MutableLiveData<List<Novel>>()
     val novels: LiveData<List<Novel>> = _novels
+
+    private val _factions = MutableLiveData<List<Faction>>()
+    val factions: LiveData<List<Faction>> = _factions
+
+    private val _factionMemberships = MutableLiveData<List<FactionMembership>>()
+    val factionMemberships: LiveData<List<FactionMembership>> = _factionMemberships
+
+    /**
+     * characterId -> List<Pair<factionId, factionColor(parsed Int)>>
+     */
+    private val _characterFactionMap = MutableLiveData<Map<Long, List<Pair<Long, Int>>>>()
+    val characterFactionMap: LiveData<Map<Long, List<Pair<Long, Int>>>> = _characterFactionMap
 
     fun loadData() {
         viewModelScope.launch {

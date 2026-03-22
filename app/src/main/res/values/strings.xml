@@ -949,4 +949,35 @@
 
     <!-- Feature: Event from character screen -->
     <string name="save_character_first">캐릭터를 먼저 저장해주세요</string>
+
+    <!-- Feature: Faction (세력) -->
+    <string name="faction_manage">세력 관리</string>
+    <string name="faction_add">세력 추가</string>
+    <string name="faction_edit">세력 편집</string>
+    <string name="faction_name">세력 이름</string>
+    <string name="faction_description">설명</string>
+    <string name="faction_color">색상</string>
+    <string name="faction_auto_relation_type">자동 관계 유형 (예: 동료, 조직원)</string>
+    <string name="faction_auto_relation_intensity">자동 관계 강도</string>
+    <string name="faction_empty">등록된 세력이 없습니다</string>
+    <string name="faction_empty_hint">+ 버튼으로 세력을 추가하세요</string>
+    <string name="faction_members">멤버</string>
+    <string name="faction_member_add">멤버 추가</string>
+    <string name="faction_member_remove">순수 제거</string>
+    <string name="faction_member_depart">설정상 탈퇴</string>
+    <string name="faction_member_remove_confirm">%1$s을(를) %2$s에서 제거하시겠습니까?\n세력 자동 관계도 함께 삭제됩니다.</string>
+    <string name="faction_member_added">%s 추가됨</string>
+    <string name="faction_join_year_optional">가입 연도 (선택)</string>
+    <string name="faction_leave_year">탈퇴 연도</string>
+    <string name="faction_departed_relation">탈퇴 후 관계 유형</string>
+    <string name="faction_name_required">세력 이름을 입력하세요</string>
+    <string name="faction_relation_type_required">자동 관계 유형을 입력하세요</string>
+    <string name="faction_leave_year_required">탈퇴 연도를 입력하세요</string>
+    <string name="faction_no_characters">이 세계관에 캐릭터가 없습니다</string>
+    <string name="faction_delete_title">%s 삭제</string>
+    <string name="faction_delete_with_relations">자동 관계도 함께 삭제</string>
+    <string name="faction_delete_keep_relations">자동 관계 유지 (수동 전환)</string>
+    <string name="close">닫기</string>
+    <string name="faction_belonging">소속 세력</string>
+    <string name="faction_belonging_empty">소속 세력 없음</string>
 </resources>

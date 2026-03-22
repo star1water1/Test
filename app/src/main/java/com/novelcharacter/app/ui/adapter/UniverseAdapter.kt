@@ -32,6 +32,7 @@ class UniverseAdapter(
     private val onEditClick: (Universe) -> Unit,
     private val onDeleteClick: (Universe) -> Unit,
     private val onFieldManageClick: (Universe) -> Unit,
+    private val onFactionManageClick: (Universe) -> Unit = {},
     var onOrderChanged: ((List<Universe>) -> Unit)? = null
 ) : ListAdapter<Universe, UniverseAdapter.UniverseViewHolder>(UniverseDiffCallback()) {
 
@@ -182,10 +183,12 @@ class UniverseAdapter(
                 val popup = PopupMenu(view.context, view)
                 popup.menu.add(0, 1, 0, R.string.menu_edit)
                 popup.menu.add(0, 2, 1, R.string.menu_delete)
+                popup.menu.add(0, 3, 2, R.string.faction_manage)
                 popup.setOnMenuItemClickListener { item ->
                     when (item.itemId) {
                         1 -> { onEditClick(universe); true }
                         2 -> { onDeleteClick(universe); true }
+                        3 -> { onFactionManageClick(universe); true }
                         else -> false
                     }
                 }

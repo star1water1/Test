@@ -26,6 +26,10 @@
         <action
             android:id="@+id/action_universe_to_field_manage"
             app:destination="@id/fieldManageFragment" />
+
+        <action
+            android:id="@+id/action_universe_to_faction_manage"
+            app:destination="@id/factionManageFragment" />
     </fragment>
 
     <fragment
@@ -49,6 +53,18 @@
         android:name="com.novelcharacter.app.ui.field.FieldManageFragment"
         android:label="필드 관리"
         tools:layout="@layout/fragment_field_manage">
+
+        <argument
+            android:name="universeId"
+            app:argType="long"
+            android:defaultValue="-1L" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/factionManageFragment"
+        android:name="com.novelcharacter.app.ui.faction.FactionManageFragment"
+        android:label="세력 관리"
+        tools:layout="@layout/fragment_faction_manage">
 
         <argument
             android:name="universeId"
@@ -89,6 +105,10 @@
         <action
             android:id="@+id/action_detail_to_edit"
             app:destination="@id/characterEditFragment" />
+
+        <action
+            android:id="@+id/action_detail_to_faction_manage"
+            app:destination="@id/factionManageFragment" />
     </fragment>
 
     <fragment

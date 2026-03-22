@@ -17,6 +17,8 @@ data class GraphNode(
     val id: Long,
     val label: String,
     val isSecondary: Boolean = false,
+    val factionIds: List<Long> = emptyList(),
+    val factionColors: List<Int> = emptyList(),  // parsed Color ints
     var x: Float = 0f,
     var y: Float = 0f
 )
@@ -27,8 +29,13 @@ data class GraphEdge(
     val label: String,
     val intensity: Int = 5,           // 1~10 관계 강도 → 선 굵기
     val isBidirectional: Boolean = true,
-    val isActive: Boolean = true       // false이면 점선으로 표시 (해당 시점에 아직 없는 관계)
+    val isActive: Boolean = true,      // false이면 점선으로 표시 (해당 시점에 아직 없는 관계)
+    val factionId: Long? = null
 )
+
+enum class FactionDisplayMode {
+    BACKGROUND, BORDER, BOTH, NONE
+}
 
 class RelationshipGraphView @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0
@@ -36,6 +43,12 @@ class RelationshipGraphView @JvmOverloads constructor(
 
     private var nodes = listOf<GraphNode>()
     private var edges = listOf<GraphEdge>()
+
+    var factionDisplayMode: FactionDisplayMode = FactionDisplayMode.BOTH
+        set(value) {
+            field = value
+            invalidate()
+        }
 
     // 엣지 쌍별 개수 캐시 (setGraphData/updateEdges 시 갱신, onDraw마다 재생성 방지)
     private var cachedPairEdgeCount = mapOf<Long, Int>()
@@ -74,6 +87,20 @@ class RelationshipGraphView @JvmOverloads constructor(
         color = Color.argb(180, 0, 0, 0)
         style = Paint.Style.FILL
     }
+
+    // 세력 배경 페인트
+    private val factionBgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+    }
+
+    // 세력 링 페인트
+    private val factionRingPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 4f
+    }
+
+    // 세력 배경 경로
+    private val factionHullPath = Path()
 
     // 관계 타입별 색상 (외부에서 커스터마이즈 가능)
     private var relationshipColors: Map<String, Int> = DEFAULT_COLORS
@@ -346,6 +373,31 @@ class RelationshipGraphView @JvmOverloads constructor(
                 dispX[jIdx] += fx; dispY[jIdx] += fy
             }
 
+            // 세력 클러스터링: 같은 세력 소속 노드 간 약한 인력 (가중치 0.3)
+            val factionWeight = 0.3f
+            processedPairs.clear()
+            for (i in 0 until count) {
+                val iFactions = nodesCopy[i].factionIds
+                if (iFactions.isEmpty()) continue
+                for (j in i + 1 until count) {
+                    val jFactions = nodesCopy[j].factionIds
+                    if (jFactions.isEmpty()) continue
+                    // 공통 세력이 있는지 체크
+                    val shared = iFactions.any { it in jFactions }
+                    if (!shared) continue
+                    val pairKey = i.toLong().shl(32) or j.toLong()
+                    if (!processedPairs.add(pairKey)) continue
+                    val dx = xs[i] - xs[j]
+                    val dy = ys[i] - ys[j]
+                    val dist = max(sqrt(dx * dx + dy * dy), 0.1f)
+                    val force = dist * dist / k * factionWeight
+                    val fx = dx / dist * force
+                    val fy = dy / dist * force
+                    dispX[i] -= fx; dispY[i] -= fy
+                    dispX[j] += fx; dispY[j] += fy
+                }
+            }
+
             for (i in 0 until count) {
                 val dist = max(sqrt(dispX[i] * dispX[i] + dispY[i] * dispY[i]), 0.1f)
                 xs[i] += dispX[i] / dist * min(dist, cooling)
@@ -374,6 +426,11 @@ class RelationshipGraphView @JvmOverloads constructor(
         canvas.translate(translateX, translateY)
 
         val nodeMap = nodes.associateBy { it.id }
+
+        // Draw faction backgrounds (before edges and nodes)
+        if (factionDisplayMode == FactionDisplayMode.BACKGROUND || factionDisplayMode == FactionDisplayMode.BOTH) {
+            drawFactionBackgrounds(canvas)
+        }
 
         // 같은 노드 쌍 사이의 곡선 오프셋 인덱스
         val pairEdgeIndex = mutableMapOf<Long, Int>()
@@ -479,7 +536,21 @@ class RelationshipGraphView @JvmOverloads constructor(
         edgePaint.pathEffect = null
 
         // Draw nodes
+        val showFactionRings = factionDisplayMode == FactionDisplayMode.BORDER || factionDisplayMode == FactionDisplayMode.BOTH
         for (node in nodes) {
+            // Draw faction rings outside the node circle
+            if (showFactionRings && node.factionColors.isNotEmpty()) {
+                val ringWidth = 4f
+                val ringGap = 1f
+                for ((ringIdx, factionColor) in node.factionColors.withIndex()) {
+                    val ringRadius = nodeRadius + (ringIdx + 1) * (ringWidth + ringGap)
+                    factionRingPaint.color = factionColor
+                    factionRingPaint.strokeWidth = ringWidth
+                    factionRingPaint.alpha = if (node.isSecondary) 80 else 220
+                    canvas.drawCircle(node.x, node.y, ringRadius, factionRingPaint)
+                }
+            }
+
             if (node.isSecondary) {
                 nodePaint.alpha = 100
                 nodeStrokePaint.pathEffect = dashEffect
@@ -501,6 +572,115 @@ class RelationshipGraphView @JvmOverloads constructor(
         textPaint.alpha = 255
 
         canvas.restore()
+    }
+
+    /**
+     * 세력별 멤버 노드들을 감싸는 반투명 배경(convex hull + padding)을 그린다.
+     */
+    private fun drawFactionBackgrounds(canvas: Canvas) {
+        // factionId → (color, list of member nodes) 매핑
+        val factionNodes = mutableMapOf<Long, Pair<Int, MutableList<GraphNode>>>()
+        for (node in nodes) {
+            for (i in node.factionIds.indices) {
+                if (i >= node.factionColors.size) break
+                val fId = node.factionIds[i]
+                val fColor = node.factionColors[i]
+                val entry = factionNodes.getOrPut(fId) { fColor to mutableListOf() }
+                entry.second.add(node)
+            }
+        }
+
+        val padding = nodeRadius * 2f
+        for ((_, pair) in factionNodes) {
+            val (factionColor, memberNodes) = pair
+            if (memberNodes.size < 2) {
+                // 단일 노드: 원으로 표시
+                if (memberNodes.size == 1) {
+                    val n = memberNodes[0]
+                    factionBgPaint.color = factionColor
+                    factionBgPaint.alpha = 40
+                    canvas.drawCircle(n.x, n.y, padding, factionBgPaint)
+                }
+                continue
+            }
+
+            // Convex hull 계산 (Graham scan)
+            val points = memberNodes.map { PointF(it.x, it.y) }
+            val hull = computeConvexHull(points)
+            if (hull.size < 2) continue
+
+            // hull + padding 으로 둥근 영역 그리기
+            factionHullPath.rewind()
+            if (hull.size == 2) {
+                // 두 점: 둥근 사각형으로 처리
+                val p0 = hull[0]
+                val p1 = hull[1]
+                val dx = p1.x - p0.x
+                val dy = p1.y - p0.y
+                val dist = sqrt(dx * dx + dy * dy)
+                if (dist < 1f) continue
+                val nx = -dy / dist * padding
+                val ny = dx / dist * padding
+                factionHullPath.moveTo(p0.x + nx, p0.y + ny)
+                factionHullPath.lineTo(p1.x + nx, p1.y + ny)
+                factionHullPath.lineTo(p1.x - nx, p1.y - ny)
+                factionHullPath.lineTo(p0.x - nx, p0.y - ny)
+                factionHullPath.close()
+            } else {
+                // 다각형을 padding만큼 확장 (각 꼭짓점을 중심에서 바깥으로)
+                val cx = hull.map { it.x }.average().toFloat()
+                val cy = hull.map { it.y }.average().toFloat()
+                val expanded = hull.map { p ->
+                    val dx = p.x - cx
+                    val dy = p.y - cy
+                    val dist = sqrt(dx * dx + dy * dy).coerceAtLeast(1f)
+                    PointF(p.x + dx / dist * padding, p.y + dy / dist * padding)
+                }
+                factionHullPath.moveTo(expanded[0].x, expanded[0].y)
+                for (i in 1 until expanded.size) {
+                    factionHullPath.lineTo(expanded[i].x, expanded[i].y)
+                }
+                factionHullPath.close()
+            }
+
+            // 둥근 모서리 효과
+            val cornerEffect = CornerPathEffect(padding * 0.6f)
+            factionBgPaint.color = factionColor
+            factionBgPaint.alpha = 40
+            factionBgPaint.pathEffect = cornerEffect
+            canvas.drawPath(factionHullPath, factionBgPaint)
+            factionBgPaint.pathEffect = null
+        }
+    }
+
+    /**
+     * Graham scan으로 convex hull 계산
+     */
+    private fun computeConvexHull(points: List<PointF>): List<PointF> {
+        if (points.size <= 1) return points.toList()
+        val sorted = points.sortedWith(compareBy({ it.x }, { it.y }))
+
+        fun cross(o: PointF, a: PointF, b: PointF): Float =
+            (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x)
+
+        val lower = mutableListOf<PointF>()
+        for (p in sorted) {
+            while (lower.size >= 2 && cross(lower[lower.size - 2], lower[lower.size - 1], p) <= 0) {
+                lower.removeAt(lower.size - 1)
+            }
+            lower.add(p)
+        }
+        val upper = mutableListOf<PointF>()
+        for (p in sorted.reversed()) {
+            while (upper.size >= 2 && cross(upper[upper.size - 2], upper[upper.size - 1], p) <= 0) {
+                upper.removeAt(upper.size - 1)
+            }
+            upper.add(p)
+        }
+        // Remove last point of each half because it's repeated
+        lower.removeAt(lower.size - 1)
+        upper.removeAt(upper.size - 1)
+        return lower + upper
     }
 
     private fun drawArrow(canvas: Canvas, fromX: Float, fromY: Float, toX: Float, toY: Float, color: Int) {

@@ -19,7 +19,9 @@ data class StatsSnapshot(
     val stateChanges: List<CharacterStateChange>,
     val fieldDefinitions: List<FieldDefinition>,
     val fieldValues: List<CharacterFieldValue>,
-    val crossRefs: List<TimelineCharacterCrossRef>
+    val crossRefs: List<TimelineCharacterCrossRef>,
+    val factions: List<Faction> = emptyList(),
+    val factionMemberships: List<FactionMembership> = emptyList()
 )
 
 // ===== 요약 통계 =====
@@ -365,7 +367,9 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
             stateChanges = db.characterStateChangeDao().getAllChangesList(),
             fieldDefinitions = db.fieldDefinitionDao().getAllFieldsList(),
             fieldValues = db.characterFieldValueDao().getAllValuesList(),
-            crossRefs = db.timelineDao().getAllCrossRefs()
+            crossRefs = db.timelineDao().getAllCrossRefs(),
+            factions = app.factionRepository.getAllFactionsList(),
+            factionMemberships = app.factionRepository.getAllMembershipsList()
         )
     }
 
@@ -380,6 +384,10 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
         val filteredNameBank = s.nameBank.filter { entry ->
             entry.usedByCharacterId != null && entry.usedByCharacterId in charIds
         }
+        val universeIds = setOfNotNull(novel.universeId)
+        val filteredFactions = s.factions.filter { it.universeId in universeIds }
+        val factionIds = filteredFactions.map { it.id }.toSet()
+        val filteredMemberships = s.factionMemberships.filter { it.factionId in factionIds && it.characterId in charIds }
         return s.copy(
             characters = s.characters.filter { it.novelId == novelId },
             novels = listOf(novel),
@@ -392,7 +400,9 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
             stateChanges = s.stateChanges.filter { it.characterId in charIds },
             fieldDefinitions = s.fieldDefinitions.filter { it.universeId == novel.universeId },
             fieldValues = s.fieldValues.filter { it.characterId in charIds },
-            crossRefs = s.crossRefs.filter { it.characterId in charIds || it.eventId in eventIds }
+            crossRefs = s.crossRefs.filter { it.characterId in charIds || it.eventId in eventIds },
+            factions = filteredFactions,
+            factionMemberships = filteredMemberships
         )
     }
 
