@@ -63,6 +63,10 @@ interface CharacterFieldValueDao {
     """)
     suspend fun getFieldValuesForUniverse(universeId: Long, fieldDefId: Long): List<String>
 
+    /** 특정 필드 정의에 대한 모든 값 조회 (타입 변경 영향 분석용) */
+    @Query("SELECT * FROM character_field_values WHERE fieldDefinitionId = :fieldDefId")
+    suspend fun getValuesByFieldDef(fieldDefId: Long): List<CharacterFieldValue>
+
     /** 특정 필드에 특정 값을 가진 캐릭터 ID 조회 (필터링용) */
     @Query("""
         SELECT DISTINCT cfv.characterId FROM character_field_values cfv

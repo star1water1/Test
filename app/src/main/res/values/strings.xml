@@ -166,6 +166,7 @@
     <string name="required_field_empty">필수 필드 \'%1$s\'을(를) 입력하세요</string>
     <string name="saved_successfully">저장되었습니다</string>
     <string name="save_failed">저장에 실패했습니다</string>
+    <string name="save_unsaved">● 저장</string>
     <string name="universe_name_hint">세계관 이름</string>
     <string name="universe_desc_hint">설명 (선택)</string>
     <string name="dialog_add_universe">세계관 추가</string>
@@ -323,6 +324,9 @@
 
     <!-- Field validation -->
     <string name="field_name_key_required">필드 이름과 키를 입력해주세요</string>
+    <string name="field_type_change_title">필드 타입 변경</string>
+    <string name="field_type_change_message">타입을 %1$s에서 %2$s(으)로 변경합니다.\n\n기존 값 %3$d개 중:\n• 호환 가능: %4$d개\n• 호환 불가: %5$d개 (빈 값으로 초기화됩니다)</string>
+    <string name="field_type_change_proceed">변경</string>
 
     <!-- Reorder mode -->
     <string name="reorder_mode">순서 편집</string>
@@ -657,6 +661,7 @@
     <string name="stats_stat_relations">관계 %d</string>
     <string name="stats_stat_events">사건 %d</string>
     <string name="stats_stat_fields">필드 %d%%</string>
+    <string name="stats_stat_fields_na">필드 —</string>
     <string name="stats_stat_changes">변화 %d</string>
     <string name="stats_field_completion_by_group">그룹별 필드 완성도</string>
     <string name="stats_memo_another_name">메모 · 별명 통계</string>
@@ -902,6 +907,8 @@
     <string name="import_result_new_codes">새 코드 %d건 발급</string>
     <string name="import_result_complete">가져오기 완료: %s</string>
     <string name="import_result_empty">가져오기 완료: 데이터 없음</string>
+    <string name="import_result_title">가져오기 결과</string>
+    <string name="import_result_details">상세 보기</string>
     <string name="import_progress_format">%s 처리 중… (%d%%)</string>
 
     <!-- Feature: Standard Year -->

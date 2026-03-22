@@ -64,11 +64,12 @@ data class CharacterComplexity(
     val name: String,
     val relationshipCount: Int,
     val eventLinkCount: Int,
-    val fieldCompletionRate: Float,
+    val fieldCompletionRate: Float?, // null = 작품 미배정으로 산출 불가
     val stateChangeCount: Int,
     val totalScore: Float,
     val overallPotential: PotentialGrade = PotentialGrade.D,
-    val specialization: Specialization = Specialization.NONE
+    val specialization: Specialization = Specialization.NONE,
+    val hasNovelAssignment: Boolean = true // false면 작품 미배정 → 필드 완성도 산출 불가
 ) {
     /** 종합 잠재력 등급 */
     enum class PotentialGrade(val label: String, val colorKey: String) {
@@ -375,9 +376,9 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
         val eventIds = s.events.filter { it.novelId == novelId }.map { it.id }.toSet()
         val filteredRelationships = s.relationships.filter { it.characterId1 in charIds || it.characterId2 in charIds }
         val relIds = filteredRelationships.map { it.id }.toSet()
-        // nameBank: usedByCharacterId가 해당 작품 캐릭터이거나 미사용인 것만 포함
+        // nameBank: 작품 필터 시 해당 작품 캐릭터가 사용한 이름만 포함 (미사용 이름 제외)
         val filteredNameBank = s.nameBank.filter { entry ->
-            entry.usedByCharacterId == null || entry.usedByCharacterId in charIds
+            entry.usedByCharacterId != null && entry.usedByCharacterId in charIds
         }
         return s.copy(
             characters = s.characters.filter { it.novelId == novelId },
@@ -415,21 +416,29 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
             val stateChangeCnt = stateChangesByChar[char.id]?.size ?: 0
 
             val novel = char.novelId?.let { novelMap[it] }
-            val fields = novel?.let { fieldDefByUniverse[it.universeId] } ?: emptyList()
+            val fields = novel?.let { fieldDefByUniverse[it.universeId] }
             val filledCount = charFieldValues[char.id]?.count { it.value.isNotBlank() } ?: 0
-            val completion = if (fields.isNotEmpty()) filledCount.toFloat() / fields.size * 100f else 0f
+            // 작품 미배정 캐릭터는 필드 완성도 산출 불가 (null)
+            val completion: Float? = if (fields != null && fields.isNotEmpty()) {
+                filledCount.toFloat() / fields.size * 100f
+            } else if (char.novelId == null) {
+                null // 작품 미배정 → 산출 불가
+            } else {
+                0f // 작품은 있지만 필드 정의가 없음
+            }
 
             val relWeight = relCnt * 2f
             val evtWeight = evtCnt * 1.5f
-            // completion은 0~100 퍼센트 → 0~1로 정규화 후 가중치 적용 (최대 ~5점)
-            val fieldWeight = (completion / 100f) * 5f
+            // completion이 null이면 작품 미배정 → fieldWeight를 0으로 하되 점수 불이익 없이 제외
+            val fieldWeight = if (completion != null) (completion / 100f) * 5f else 0f
             val stateWeight = stateChangeCnt * 1f
             val score = relWeight + evtWeight + fieldWeight + stateWeight
 
             CharacterComplexity(
                 char.name, relCnt, evtCnt, completion, stateChangeCnt, score,
                 CharacterComplexity.PotentialGrade.fromScore(score),
-                CharacterComplexity.Specialization.determine(relWeight, evtWeight, fieldWeight, stateWeight)
+                CharacterComplexity.Specialization.determine(relWeight, evtWeight, fieldWeight, stateWeight),
+                hasNovelAssignment = char.novelId != null
             )
         }
     }
@@ -612,13 +621,13 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
         val complexityScores = s.characters.map { char ->
             val relCnt = relCount[char.id] ?: 0
             val evtCnt = eventCountMap[char.id] ?: 0
-            val completion = fieldCompletionById[char.id] ?: 0f
+            val completion = fieldCompletionById[char.id] // null = 작품 미배정으로 산출 불가
             val stateChangeCnt = stateChangesByChar[char.id]?.size ?: 0
 
             val relWeight = relCnt * 2f
             val evtWeight = evtCnt * 1.5f
-            // completion은 0~100 퍼센트 → 0~1로 정규화 후 가중치 적용 (최대 ~5점)
-            val fieldWeight = (completion / 100f) * 5f
+            // completion이 null이면 작품 미배정 → fieldWeight를 0으로 하되 점수 불이익 없이 제외
+            val fieldWeight = if (completion != null) (completion / 100f) * 5f else 0f
             val stateWeight = stateChangeCnt * 1f
             val score = relWeight + evtWeight + fieldWeight + stateWeight
 
@@ -629,7 +638,8 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
 
             CharacterComplexity(
                 char.name, relCnt, evtCnt, completion, stateChangeCnt, score,
-                overallPotential, specialization
+                overallPotential, specialization,
+                hasNovelAssignment = char.novelId != null
             )
         }.sortedByDescending { it.totalScore }
 

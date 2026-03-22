@@ -198,29 +198,28 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
         val totalRows = countTotalRows(workbook)
 
-        // Phase 1: Schema definitions (universes, novels, field definitions)
+        // 전체를 단일 트랜잭션으로 감싸서 부분 커밋 방지
+        // Room은 중첩 withTransaction을 savepoint로 처리하므로 phase별 격리 유지
         db.withTransaction {
+            // Phase 1: Schema definitions (universes, novels, field definitions)
             if (options.universes) importUniverses(workbook, result, onProgress, totalRows)
             if (options.novels) importNovels(workbook, result, onProgress, totalRows)
             if (options.fieldDefinitions) importFieldDefinitions(workbook, result, onProgress, totalRows)
-        }
-        // Phase 2: Entity data (characters)
-        db.withTransaction {
+
+            // Phase 2: Entity data (characters)
             if (options.characters) {
                 importCharacterSheets(workbook, result, onProgress, totalRows)
                 importUnclassifiedCharacters(workbook, result, onProgress, totalRows)
             }
-        }
-        // Phase 3: Relationships and references
-        db.withTransaction {
+
+            // Phase 3: Relationships and references
             if (options.timeline) importTimeline(workbook, result, onProgress, totalRows)
             if (options.stateChanges) importStateChanges(workbook, result, onProgress, totalRows)
             if (options.relationships) importRelationships(workbook, result, onProgress, totalRows)
             if (options.relationshipChanges) importRelationshipChanges(workbook, result, onProgress, totalRows)
             if (options.nameBank) importNameBank(workbook, result, onProgress, totalRows)
-        }
-        // Phase 4: User settings and presets
-        db.withTransaction {
+
+            // Phase 4: User settings and presets
             if (options.presetTemplates) importUserPresetTemplates(workbook, result, onProgress, totalRows)
             if (options.searchPresets) importSearchPresets(workbook, result, onProgress, totalRows)
             if (options.appSettings) importAppSettings(workbook, result)

@@ -1029,6 +1029,73 @@ class FieldEditDialog : DialogFragment() {
             )
         }
 
+        // 타입 변경 시 기존 값 호환성 영향 분석
+        val oldType = existingField?.type
+        if (existingField != null && oldType != null && oldType != selectedType.name) {
+            checkTypeChangeImpact(field, oldType, selectedType.name)
+        } else {
+            deliverResult(field)
+        }
+    }
+
+    private fun checkTypeChangeImpact(field: FieldDefinition, oldType: String, newType: String) {
+        val app = requireContext().applicationContext as com.novelcharacter.app.NovelCharacterApp
+        val fieldValueDao = app.database.characterFieldValueDao()
+
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+            val values = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                fieldValueDao.getValuesByFieldDef(field.id)
+            }
+
+            val nonEmptyValues = values.filter { it.value.isNotBlank() }
+            if (nonEmptyValues.isEmpty()) {
+                // 기존 값이 없으면 바로 저장
+                deliverResult(field)
+                return@launch
+            }
+
+            val compatible = nonEmptyValues.count { isValueCompatible(it.value, newType) }
+            val incompatible = nonEmptyValues.size - compatible
+
+            if (incompatible == 0) {
+                deliverResult(field)
+                return@launch
+            }
+
+            val ctx = context ?: return@launch
+            AlertDialog.Builder(ctx)
+                .setTitle(getString(R.string.field_type_change_title))
+                .setMessage(getString(R.string.field_type_change_message,
+                    oldType, newType, nonEmptyValues.size, compatible, incompatible))
+                .setPositiveButton(getString(R.string.field_type_change_proceed)) { _, _ ->
+                    // 호환 불가 값을 빈 문자열로 초기화
+                    kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                        val toReset = nonEmptyValues.filter { !isValueCompatible(it.value, newType) }
+                        toReset.forEach { fv ->
+                            fieldValueDao.update(fv.copy(value = ""))
+                        }
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                            deliverResult(field)
+                        }
+                    }
+                }
+                .setNegativeButton(getString(R.string.cancel), null)
+                .show()
+        }
+    }
+
+    private fun isValueCompatible(value: String, newType: String): Boolean {
+        return when (newType) {
+            FieldType.NUMBER.name -> value.toDoubleOrNull() != null
+            FieldType.GRADE.name -> value.toIntOrNull() != null
+            FieldType.SELECT.name, FieldType.TEXT.name, FieldType.MULTI_TEXT.name -> true
+            FieldType.BODY_SIZE.name -> false // 구조화 입력은 기존 텍스트와 호환 불가
+            FieldType.CALCULATED.name -> false // 수식 필드는 기존 값과 무관
+            else -> true
+        }
+    }
+
+    private fun deliverResult(field: FieldDefinition) {
         // Support both callback (for non-rotation case) and FragmentResult (survives rotation)
         if (onSave != null) {
             onSave?.invoke(field)

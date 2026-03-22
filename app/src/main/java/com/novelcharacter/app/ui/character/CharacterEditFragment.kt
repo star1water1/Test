@@ -1026,6 +1026,7 @@ class CharacterEditFragment : Fragment() {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
                 hasUnsavedChanges = true
+                updateSaveButtonState()
             }
             override fun afterTextChanged(s: android.text.Editable?) {}
         }
@@ -1034,6 +1035,14 @@ class CharacterEditFragment : Fragment() {
         binding.editLastName.addTextChangedListener(changeWatcher)
         binding.editAnotherName.addTextChangedListener(changeWatcher)
         binding.editMemo.addTextChangedListener(changeWatcher)
+    }
+
+    private fun updateSaveButtonState() {
+        if (_binding == null) return
+        if (hasUnsavedChanges) {
+            binding.btnSave.alpha = 1f
+            binding.btnSave.text = getString(R.string.save_unsaved)
+        }
     }
 
     override fun onDestroyView() {

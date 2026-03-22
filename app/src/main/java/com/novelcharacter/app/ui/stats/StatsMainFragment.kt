@@ -45,6 +45,12 @@ class StatsMainFragment : Fragment() {
         viewModel.loadAllStats()
     }
 
+    override fun onResume() {
+        super.onResume()
+        // 다른 탭에서 데이터 변경 후 돌아올 때 캐시 무효화하여 최신 데이터 반영
+        viewModel.refreshStats()
+    }
+
     private fun setupObservers() {
         viewModel.loading.observe(viewLifecycleOwner) { isLoading ->
             binding.loadingProgress.visibility = if (isLoading) View.VISIBLE else View.GONE

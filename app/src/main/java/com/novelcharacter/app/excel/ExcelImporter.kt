@@ -316,7 +316,7 @@ class ExcelImporter(context: Context) {
             val message = buildResultMessage(result)
             withContext(Dispatchers.Main) {
                 dismissDialogSafely(progressDialog)
-                Toast.makeText(appContext, message, Toast.LENGTH_LONG).show()
+                showResultDialog(result, message)
             }
         } catch (e: Exception) {
             android.util.Log.e("ExcelImporter", "Import failed", e)
@@ -425,6 +425,59 @@ class ExcelImporter(context: Context) {
 
         return if (parts.isEmpty()) r.getString(com.novelcharacter.app.R.string.import_result_empty)
         else r.getString(com.novelcharacter.app.R.string.import_result_complete, parts.joinToString(", "))
+    }
+
+    private fun showResultDialog(result: ImportResult, summaryMessage: String) {
+        val act = currentActivityRef?.get()
+        if (act == null || act.isFinishing || act.isDestroyed) {
+            Toast.makeText(appContext, summaryMessage, Toast.LENGTH_LONG).show()
+            return
+        }
+
+        val hasDetails = result.errors.isNotEmpty() || result.warnings.isNotEmpty()
+        val builder = AlertDialog.Builder(act)
+            .setTitle(appContext.getString(com.novelcharacter.app.R.string.import_result_title))
+            .setMessage(summaryMessage)
+
+        if (hasDetails) {
+            builder.setNeutralButton(appContext.getString(com.novelcharacter.app.R.string.import_result_details)) { _, _ ->
+                showErrorDetailDialog(act, result)
+            }
+        }
+        builder.setPositiveButton(appContext.getString(com.novelcharacter.app.R.string.confirm), null)
+        builder.show()
+    }
+
+    private fun showErrorDetailDialog(act: android.app.Activity, result: ImportResult) {
+        if (act.isFinishing || act.isDestroyed) return
+
+        val sb = StringBuilder()
+        if (result.errors.isNotEmpty()) {
+            sb.appendLine("── 오류 (${result.errors.size}건) ──")
+            result.errors.forEachIndexed { i, err ->
+                sb.appendLine("${i + 1}. $err")
+            }
+        }
+        if (result.warnings.isNotEmpty()) {
+            if (sb.isNotEmpty()) sb.appendLine()
+            sb.appendLine("── 경고 (${result.warnings.size}건) ──")
+            result.warnings.forEach { sb.appendLine("• $it") }
+        }
+
+        val scrollView = android.widget.ScrollView(act)
+        val textView = TextView(act).apply {
+            text = sb.toString()
+            val dp16 = (16 * act.resources.displayMetrics.density).toInt()
+            setPadding(dp16, dp16, dp16, dp16)
+            setTextIsSelectable(true)
+        }
+        scrollView.addView(textView)
+
+        AlertDialog.Builder(act)
+            .setTitle(appContext.getString(com.novelcharacter.app.R.string.import_result_details))
+            .setView(scrollView)
+            .setPositiveButton(appContext.getString(com.novelcharacter.app.R.string.confirm), null)
+            .show()
     }
 
     private fun dismissDialogSafely(dialog: AlertDialog?) {

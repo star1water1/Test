@@ -147,6 +147,8 @@ class CharacterListFragment : Fragment() {
         if (adapter.isReorderMode()) {
             // 드래그 완료 시 clearView()에서 이미 자동 저장됨
             adapter.setReorderMode(false)
+            binding.searchEdit.isEnabled = true
+            binding.searchEdit.alpha = 1f
             Toast.makeText(requireContext(), R.string.reorder_saved, Toast.LENGTH_SHORT).show()
         } else {
             // Block reorder when search is active
@@ -156,6 +158,9 @@ class CharacterListFragment : Fragment() {
                 return
             }
             adapter.setReorderMode(true)
+            // 순서변경 모드에서 검색 UI를 명시적으로 비활성화
+            binding.searchEdit.isEnabled = false
+            binding.searchEdit.alpha = 0.5f
             Toast.makeText(requireContext(), R.string.reorder_hint, Toast.LENGTH_SHORT).show()
         }
     }

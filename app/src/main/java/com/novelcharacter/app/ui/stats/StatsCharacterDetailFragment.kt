@@ -111,7 +111,8 @@ class StatsCharacterDetailFragment : Fragment() {
             itemView.findViewById<TextView>(R.id.statEvents).text =
                 getString(R.string.stats_stat_events, c.eventLinkCount)
             itemView.findViewById<TextView>(R.id.statFields).text =
-                getString(R.string.stats_stat_fields, c.fieldCompletionRate.toInt())
+                if (c.fieldCompletionRate != null) getString(R.string.stats_stat_fields, c.fieldCompletionRate.toInt())
+                else getString(R.string.stats_stat_fields_na)
             itemView.findViewById<TextView>(R.id.statChanges).text =
                 getString(R.string.stats_stat_changes, c.stateChangeCount)
 
