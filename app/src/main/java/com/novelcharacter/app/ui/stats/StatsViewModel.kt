@@ -70,6 +70,9 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
     private val _fieldAnalysisStats = MutableLiveData<FieldAnalysisStats>()
     val fieldAnalysisStats: LiveData<FieldAnalysisStats> = _fieldAnalysisStats
 
+    private val _factionStats = MutableLiveData<FactionStatsResult>()
+    val factionStats: LiveData<FactionStatsResult> = _factionStats
+
     private val _loading = MutableLiveData(false)
     val loading: LiveData<Boolean> = _loading
 
@@ -124,6 +127,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
                 val healthDeferred = async(Dispatchers.IO) { provider.computeDataHealth(filtered) }
                 val fieldAnalysisDeferred = async(Dispatchers.IO) { provider.computeFieldAnalysis(filtered) }
                 val patternsDeferred = async(Dispatchers.IO) { provider.detectPatterns(filtered) }
+                val factionDeferred = async(Dispatchers.IO) { provider.computeFactionStats(filtered) }
 
                 val summary = summaryDeferred.await()
                 val insights = insightsDeferred.await()
@@ -134,6 +138,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
                 val health = healthDeferred.await()
                 val fieldAnalysis = fieldAnalysisDeferred.await()
                 val patterns = patternsDeferred.await()
+                val factions = factionDeferred.await()
 
                 // 세부 통계를 먼저 set하고, summary를 마지막에 set
                 _fieldInsights.value = insights
@@ -144,6 +149,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
                 _dataHealthStats.value = health
                 _fieldAnalysisStats.value = fieldAnalysis
                 _patternInsights.value = patterns
+                _factionStats.value = factions
                 _summary.value = summary
             } catch (e: Exception) {
                 _error.value = e.message
@@ -245,6 +251,23 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
                 _crossNovelComparison.value = withContext(Dispatchers.IO) {
                     provider.computeCrossNovelComparison(snapshot)
                 }
+            } catch (e: Exception) {
+                _error.value = e.message
+            } finally {
+                dismissLoadingIfIdle()
+            }
+        }
+    }
+
+    fun loadFactionStats() {
+        if (_factionStats.value != null && !isRefreshing) return
+        _loading.value = true
+        _error.value = null
+        viewModelScope.launch {
+            try {
+                val snapshot = ensureSnapshot()
+                val filtered = getFilteredSnapshot(snapshot)
+                _factionStats.value = withContext(Dispatchers.IO) { provider.computeFactionStats(filtered) }
             } catch (e: Exception) {
                 _error.value = e.message
             } finally {

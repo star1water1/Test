@@ -301,7 +301,9 @@ class RelationshipGraphFragment : Fragment() {
                 if (newUniverseId != currentUniverseId) {
                     currentUniverseId = newUniverseId
                     currentNovelId = null
+                    currentFactionFilter = null
                     updateNovelSpinner()
+                    setupFactionChips()
                     refreshGraph()
                 }
             }
@@ -349,9 +351,11 @@ class RelationshipGraphFragment : Fragment() {
             binding.yearLabel.visibility = if (isChecked) View.VISIBLE else View.GONE
             if (!isChecked) {
                 currentYear = null
+                viewModel.updateFactionMembershipsForYear(null)
             } else {
                 currentYear = binding.graphYearSlider.value.toInt()
                 binding.yearLabel.text = getString(R.string.year_label_format, currentYear!!)
+                viewModel.updateFactionMembershipsForYear(currentYear)
             }
             refreshGraph()
         }
@@ -360,6 +364,7 @@ class RelationshipGraphFragment : Fragment() {
             if (fromUser && isTimeViewEnabled) {
                 currentYear = value.toInt()
                 binding.yearLabel.text = getString(R.string.year_label_format, value.toInt())
+                viewModel.updateFactionMembershipsForYear(value.toInt())
                 refreshGraphEdgesOnly()
             }
         }
@@ -508,7 +513,8 @@ class RelationshipGraphFragment : Fragment() {
                 toId = rel.characterId2,
                 label = resolved.resolvedType,
                 intensity = resolved.resolvedIntensity,
-                isBidirectional = resolved.resolvedBidirectional
+                isBidirectional = resolved.resolvedBidirectional,
+                factionId = rel.factionId
             )
         }
 
@@ -584,11 +590,26 @@ class RelationshipGraphFragment : Fragment() {
         allChanges: List<CharacterRelationshipChange>,
         primaryIds: Set<Long>? = null
     ) {
+        val charFactionMap = viewModel.characterFactionMap.value ?: emptyMap()
+
+        // Determine faction-based secondary highlighting
+        val factionFilteredIds: Set<Long>? = if (currentFactionFilter != null) {
+            charFactionMap.entries
+                .filter { (_, pairs) -> pairs.any { it.first == currentFactionFilter } }
+                .map { it.key }
+                .toSet()
+        } else null
+
         val nodes = characters.map { char ->
+            val factionPairs = charFactionMap[char.id] ?: emptyList()
+            val isSecondaryByNovel = primaryIds != null && char.id !in primaryIds
+            val isSecondaryByFaction = factionFilteredIds != null && char.id !in factionFilteredIds
             GraphNode(
                 id = char.id,
                 label = char.name,
-                isSecondary = primaryIds != null && char.id !in primaryIds
+                isSecondary = isSecondaryByNovel || isSecondaryByFaction,
+                factionIds = factionPairs.map { it.first },
+                factionColors = factionPairs.map { it.second }
             )
         }
         val edges = relationships.map { rel ->
@@ -599,7 +620,8 @@ class RelationshipGraphFragment : Fragment() {
                     toId = rel.characterId2,
                     label = resolved.resolvedType,
                     intensity = resolved.resolvedIntensity,
-                    isBidirectional = resolved.resolvedBidirectional
+                    isBidirectional = resolved.resolvedBidirectional,
+                    factionId = rel.factionId
                 )
             } else {
                 GraphEdge(
@@ -607,7 +629,8 @@ class RelationshipGraphFragment : Fragment() {
                     toId = rel.characterId2,
                     label = rel.relationshipType,
                     intensity = rel.intensity,
-                    isBidirectional = rel.isBidirectional
+                    isBidirectional = rel.isBidirectional,
+                    factionId = rel.factionId
                 )
             }
         }

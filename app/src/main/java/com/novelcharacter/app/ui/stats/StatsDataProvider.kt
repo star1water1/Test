@@ -337,6 +337,16 @@ data class PatternInsight(
     val fieldDefId: Long? = null
 )
 
+// ===== 세력 통계 =====
+data class FactionStatsResult(
+    val totalFactions: Int,
+    val factionMemberCounts: Map<String, Int>,
+    val multiMemberCharacters: Int,
+    val autoRelationshipCount: Int,
+    val departureCount: Int,
+    val factionlessCharacterCount: Int
+)
+
 // ===== 차트 탭 → 캐릭터 목록 (개선 6) =====
 data class FieldValueCharacter(
     val characterId: Long,
@@ -1444,6 +1454,50 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
         return CrossNovelComparison(novels = entries)
     }
 
+    // ===== 세력 통계 =====
+
+    fun computeFactionStats(s: StatsSnapshot): FactionStatsResult {
+        val activeMemberships = s.factionMemberships.filter { it.leaveType != FactionMembership.LEAVE_REMOVED }
+        val factionMap = s.factions.associateBy { it.id }
+
+        // 세력별 활성 멤버 수
+        val factionMemberCounts = activeMemberships
+            .filter { it.leaveType == null } // 현재 활성 중인 멤버만
+            .groupBy { it.factionId }
+            .mapNotNull { (factionId, members) ->
+                val factionName = factionMap[factionId]?.name ?: return@mapNotNull null
+                factionName to members.size
+            }
+            .toMap()
+
+        // 2개 이상 세력에 속한 캐릭터 수
+        val membershipsByChar = activeMemberships
+            .filter { it.leaveType == null }
+            .groupBy { it.characterId }
+        val multiMemberCharacters = membershipsByChar.count { it.value.size >= 2 }
+
+        // 세력 자동 관계 수 (factionId != null)
+        val autoRelationshipCount = s.relationships.count { it.factionId != null }
+
+        // 설정상 탈퇴 수
+        val departureCount = s.factionMemberships.count { it.leaveType == FactionMembership.LEAVE_DEPARTED }
+
+        // 세력 미소속 캐릭터 수
+        val charsInFactions = activeMemberships
+            .filter { it.leaveType == null }
+            .map { it.characterId }.toSet()
+        val factionlessCharacterCount = s.characters.count { it.id !in charsInFactions }
+
+        return FactionStatsResult(
+            totalFactions = s.factions.size,
+            factionMemberCounts = factionMemberCounts,
+            multiMemberCharacters = multiMemberCharacters,
+            autoRelationshipCount = autoRelationshipCount,
+            departureCount = departureCount,
+            factionlessCharacterCount = factionlessCharacterCount
+        )
+    }
+
     // ===== 개선 3: 패턴 감지 & 서사적 인사이트 =====
 
     fun detectPatterns(s: StatsSnapshot): List<PatternInsight> {
@@ -1606,6 +1660,42 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
                         description = "$desc — 전체적으로 ${fieldDefs.first().name} 편중 경향이 보입니다.",
                         suggestion = "작품별 다양성 확보를 고려해보세요."
                     ))
+                }
+            }
+        }
+
+        // 패턴: 세력 관련
+        if (s.factions.isNotEmpty()) {
+            val activeMemberships = s.factionMemberships.filter { it.leaveType == null }
+            val factionMemberCounts = activeMemberships.groupBy { it.factionId }.mapValues { it.value.size }
+
+            // 세력이 존재하지만 멤버가 0명인 경우
+            val emptyFactions = s.factions.filter { (factionMemberCounts[it.id] ?: 0) == 0 }
+            if (emptyFactions.isNotEmpty()) {
+                insights.add(PatternInsight(
+                    type = PatternType.ABSENCE,
+                    severity = PatternSeverity.MEDIUM,
+                    title = "멤버 없는 세력 발견",
+                    description = "${emptyFactions.joinToString(", ") { "'${it.name}'" }} 세력에 활성 멤버가 없습니다.",
+                    suggestion = "캐릭터를 세력에 배정하거나, 불필요한 세력을 정리해보세요."
+                ))
+            }
+
+            // 모든 캐릭터가 동일한 단일 세력에 속한 경우
+            if (s.characters.isNotEmpty()) {
+                val charsInFactions = activeMemberships.map { it.characterId }.toSet()
+                if (charsInFactions.size == s.characters.size && s.factions.size >= 1) {
+                    val factionIds = activeMemberships.map { it.factionId }.distinct()
+                    if (factionIds.size == 1) {
+                        val factionName = s.factions.find { it.id == factionIds.first() }?.name ?: "?"
+                        insights.add(PatternInsight(
+                            type = PatternType.DOMINANCE,
+                            severity = PatternSeverity.MEDIUM,
+                            title = "세력 편중: 모든 캐릭터가 동일 세력",
+                            description = "모든 캐릭터가 '${factionName}' 단일 세력에 소속되어 있습니다.",
+                            suggestion = "대립 구조나 다양성을 위해 다른 세력을 추가하는 것을 고려해보세요."
+                        ))
+                    }
                 }
             }
         }

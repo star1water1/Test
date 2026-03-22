@@ -21,6 +21,9 @@ interface FactionDao {
     @Query("SELECT * FROM factions WHERE code = :code")
     suspend fun getByCode(code: String): Faction?
 
+    @Query("SELECT * FROM factions WHERE name = :name AND universeId = :universeId LIMIT 1")
+    suspend fun getByNameAndUniverse(name: String, universeId: Long): Faction?
+
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(faction: Faction): Long
 

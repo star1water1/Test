@@ -670,6 +670,37 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
+            <!-- 세력 통계 카드 -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cardFactionStats"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="@dimen/stats_margin_sm"
+                app:cardCornerRadius="@dimen/stats_card_corner_radius"
+                app:cardElevation="@dimen/stats_card_elevation"
+                android:visibility="gone">
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:padding="@dimen/stats_padding_card"
+                    android:orientation="vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="세력 통계"
+                        android:textSize="@dimen/stats_text_subtitle"
+                        android:textStyle="bold"
+                        android:textColor="@color/on_surface" />
+                    <TextView
+                        android:id="@+id/factionPreview"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textSize="@dimen/stats_text_body_sm"
+                        android:textColor="@color/text_secondary"
+                        android:layout_marginTop="@dimen/stats_margin_xs" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
             <!-- 데이터 건강도 카드 -->
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/cardDataHealth"
