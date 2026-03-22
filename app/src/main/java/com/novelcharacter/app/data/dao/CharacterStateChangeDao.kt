@@ -47,4 +47,15 @@ interface CharacterStateChangeDao {
 
     @Query("DELETE FROM character_state_changes WHERE fieldKey = :fieldKey")
     suspend fun deleteChangesByFieldKey(fieldKey: String)
+
+    @Query("""
+        DELETE FROM character_state_changes
+        WHERE fieldKey = :fieldKey
+          AND characterId IN (
+              SELECT c.id FROM characters c
+              INNER JOIN novels n ON c.novelId = n.id
+              WHERE n.universeId = :universeId
+          )
+    """)
+    suspend fun deleteChangesByFieldKeyAndUniverse(fieldKey: String, universeId: Long)
 }
