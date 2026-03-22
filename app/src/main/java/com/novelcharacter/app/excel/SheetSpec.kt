@@ -103,7 +103,8 @@ fun universeSpec() = SheetSpec(
         ColumnSpec("커스텀관계유형", width = 10000),
         ColumnSpec("커스텀관계색상", width = 10000),
         ColumnSpec("이미지캐릭터ID", width = 5000),
-        ColumnSpec("이미지작품ID", width = 5000)
+        ColumnSpec("이미지작품ID", width = 5000),
+        ColumnSpec("생성일", readOnly = true, width = 5000)
     )
 )
 
@@ -123,7 +124,8 @@ fun novelSpec(universeNames: List<String>) = SheetSpec(
         ColumnSpec("이미지캐릭터ID", width = 5000),
         ColumnSpec("테두리상속", dropdownOptions = listOf("Y", "N"), width = 3000),
         ColumnSpec("고정", dropdownOptions = listOf("Y", "N"), width = 3000),
-        ColumnSpec("표준연도", width = 3000)
+        ColumnSpec("표준연도", width = 3000),
+        ColumnSpec("생성일", readOnly = true, width = 5000)
     )
 )
 
@@ -168,6 +170,7 @@ fun characterSpec(fields: List<FieldDefinition>, novelTitles: List<String>) = Sh
         add(ColumnSpec("작품코드", readOnly = true, width = 4000))
         add(ColumnSpec("정렬순서", width = 3000))
         add(ColumnSpec("고정", dropdownOptions = listOf("Y", "N"), width = 3000))
+        add(ColumnSpec("생성일", readOnly = true, width = 5000))
     }
 )
 
@@ -183,7 +186,8 @@ fun timelineSpec(novelTitles: List<String>) = SheetSpec(
         ColumnSpec("관련 캐릭터", width = 10000),
         ColumnSpec("관련작품코드", readOnly = true, width = 4000),
         ColumnSpec("정렬순서", width = 3000),
-        ColumnSpec("임시배치", dropdownOptions = listOf("Y", "N"), width = 3000)
+        ColumnSpec("임시배치", dropdownOptions = listOf("Y", "N"), width = 3000),
+        ColumnSpec("생성일", readOnly = true, width = 5000)
     )
 )
 
@@ -198,7 +202,8 @@ fun stateChangeSpec() = SheetSpec(
         ColumnSpec("필드키", required = true, width = 5000),
         ColumnSpec("새 값", width = 5000),
         ColumnSpec("설명", width = 10000),
-        ColumnSpec("캐릭터코드", readOnly = true, width = 4000)
+        ColumnSpec("캐릭터코드", readOnly = true, width = 4000),
+        ColumnSpec("생성일", readOnly = true, width = 5000)
     )
 )
 
@@ -213,7 +218,8 @@ fun relationshipSpec(customTypes: List<String> = emptyList()) = SheetSpec(
         ColumnSpec("양방향", dropdownOptions = listOf("Y", "N"), width = 3000),
         ColumnSpec("표시순서", width = 3000),
         ColumnSpec("캐릭터1코드", readOnly = true, width = 4000),
-        ColumnSpec("캐릭터2코드", readOnly = true, width = 4000)
+        ColumnSpec("캐릭터2코드", readOnly = true, width = 4000),
+        ColumnSpec("생성일", readOnly = true, width = 5000)
     )
 )
 
@@ -231,7 +237,8 @@ fun relationshipChangeSpec() = SheetSpec(
         ColumnSpec("양방향", dropdownOptions = listOf("Y", "N"), width = 3000),
         ColumnSpec("연결사건ID", width = 4000),
         ColumnSpec("캐릭터1코드", readOnly = true, width = 4000),
-        ColumnSpec("캐릭터2코드", readOnly = true, width = 4000)
+        ColumnSpec("캐릭터2코드", readOnly = true, width = 4000),
+        ColumnSpec("생성일", readOnly = true, width = 5000)
     )
 )
 
@@ -244,7 +251,8 @@ fun nameBankSpec() = SheetSpec(
         ColumnSpec("메모", width = 8000),
         ColumnSpec("사용여부", dropdownOptions = listOf("Y", "N"), width = 4000),
         ColumnSpec("사용 캐릭터", width = 5000),
-        ColumnSpec("사용캐릭터코드", readOnly = true, width = 4000)
+        ColumnSpec("사용캐릭터코드", readOnly = true, width = 4000),
+        ColumnSpec("생성일", readOnly = true, width = 5000)
     )
 )
 

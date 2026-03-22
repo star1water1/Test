@@ -442,6 +442,7 @@ class ExcelExporter(context: Context) {
             row.createCell(9).setCellValue(universe.customRelationshipColors)
             universe.imageCharacterId?.let { row.createCell(10).setCellValue(it.toDouble()) }
             universe.imageNovelId?.let { row.createCell(11).setCellValue(it.toDouble()) }
+            row.createCell(12).setCellValue(universe.createdAt.toDouble())
         }
 
         applySpecFormatting(sheet, spec, universes.size)
@@ -477,6 +478,7 @@ class ExcelExporter(context: Context) {
             row.createCell(11).setCellValue(if (novel.inheritUniverseBorder) "Y" else "N")
             row.createCell(12).setCellValue(if (novel.isPinned) "Y" else "N")
             novel.standardYear?.let { row.createCell(13).setCellValue(it.toDouble()) }
+            row.createCell(14).setCellValue(novel.createdAt.toDouble())
         }
 
         applySpecFormatting(sheet, spec, novels.size)
@@ -629,7 +631,10 @@ class ExcelExporter(context: Context) {
             row.createCell(col++).setCellValue(character.displayOrder.toDouble())
 
             // 고정
-            row.createCell(col).setCellValue(if (character.isPinned) "Y" else "N")
+            row.createCell(col++).setCellValue(if (character.isPinned) "Y" else "N")
+
+            // 생성일
+            row.createCell(col).setCellValue(character.createdAt.toDouble())
         }
 
         applySpecFormatting(sheet, spec, characters.size)
@@ -672,6 +677,7 @@ class ExcelExporter(context: Context) {
             row.createCell(7).setCellValue(novel?.code ?: "")
             row.createCell(8).setCellValue(event.displayOrder.toDouble())
             row.createCell(9).setCellValue(if (event.isTemporary) "Y" else "N")
+            row.createCell(10).setCellValue(event.createdAt.toDouble())
         }
 
         applySpecFormatting(sheet, spec, events.size)
@@ -716,6 +722,7 @@ class ExcelExporter(context: Context) {
             row.createCell(7).setCellValue(change.description)
             // 캐릭터코드 (readOnly)
             row.createCell(8).setCellValue(character.code)
+            row.createCell(9).setCellValue(change.createdAt.toDouble())
         }
 
         applySpecFormatting(sheet, spec, allChanges.size)
@@ -751,6 +758,7 @@ class ExcelExporter(context: Context) {
             // 코드 (readOnly)
             row.createCell(7).setCellValue(char1?.code ?: "")
             row.createCell(8).setCellValue(char2?.code ?: "")
+            row.createCell(9).setCellValue(rel.createdAt.toDouble())
         }
 
         applySpecFormatting(sheet, spec, allRelationships.size)
@@ -789,6 +797,7 @@ class ExcelExporter(context: Context) {
             rc.eventId?.let { row.createCell(9).setCellValue(it.toDouble()) }
             row.createCell(10).setCellValue(char1?.code ?: "")
             row.createCell(11).setCellValue(char2?.code ?: "")
+            row.createCell(12).setCellValue(rc.createdAt.toDouble())
         }
 
         applySpecFormatting(sheet, spec, allChanges.size)
@@ -819,6 +828,7 @@ class ExcelExporter(context: Context) {
             row.createCell(5).setCellValue(usedByChar?.name ?: "")
             // 사용캐릭터코드 (readOnly)
             row.createCell(6).setCellValue(usedByChar?.code ?: "")
+            row.createCell(7).setCellValue(entry.createdAt.toDouble())
         }
 
         applySpecFormatting(sheet, spec, allNames.size)

@@ -129,7 +129,7 @@ class AutoBackupWorker(
 
         val sheetName = sanitizeSheetName("세계관", usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
-        val headers = listOf("이름", "설명", "코드", "정렬순서", "테두리색", "테두리두께", "이미지경로", "이미지모드", "커스텀관계유형", "커스텀관계색상", "이미지캐릭터ID", "이미지작품ID")
+        val headers = listOf("이름", "설명", "코드", "정렬순서", "테두리색", "테두리두께", "이미지경로", "이미지모드", "커스텀관계유형", "커스텀관계색상", "이미지캐릭터ID", "이미지작품ID", "생성일")
         val headerRow = sheet.createRow(0)
         headers.forEachIndexed { i, h ->
             headerRow.createCell(i).apply { setCellValue(h); cellStyle = headerStyle }
@@ -148,6 +148,7 @@ class AutoBackupWorker(
             row.createCell(9).setCellValue(u.customRelationshipColors)
             u.imageCharacterId?.let { row.createCell(10).setCellValue(it.toDouble()) }
             u.imageNovelId?.let { row.createCell(11).setCellValue(it.toDouble()) }
+            row.createCell(12).setCellValue(u.createdAt.toDouble())
         }
     }
 
@@ -161,7 +162,7 @@ class AutoBackupWorker(
 
         val sheetName = sanitizeSheetName("작품", usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
-        val headers = listOf("제목", "설명", "세계관", "코드", "세계관코드", "정렬순서", "테두리색", "테두리두께", "이미지경로", "이미지모드", "이미지캐릭터ID", "테두리상속", "고정", "표준연도")
+        val headers = listOf("제목", "설명", "세계관", "코드", "세계관코드", "정렬순서", "테두리색", "테두리두께", "이미지경로", "이미지모드", "이미지캐릭터ID", "테두리상속", "고정", "표준연도", "생성일")
         val universeMap = universes.associateBy { it.id }
         val headerRow = sheet.createRow(0)
         headers.forEachIndexed { i, h ->
@@ -184,6 +185,7 @@ class AutoBackupWorker(
             row.createCell(11).setCellValue(if (n.inheritUniverseBorder) "Y" else "N")
             row.createCell(12).setCellValue(if (n.isPinned) "Y" else "N")
             n.standardYear?.let { row.createCell(13).setCellValue(it.toDouble()) }
+            row.createCell(14).setCellValue(n.createdAt.toDouble())
         }
     }
 
@@ -244,7 +246,7 @@ class AutoBackupWorker(
         // Build headers: 이름, 성, 이름(First), 이명, [dynamic fields...], 이미지경로, 작품, 메모, 태그, 코드, 작품코드, 정렬순서
         val headers = mutableListOf("이름", "성", "이름(First)", "이명")
         fields.forEach { headers.add(it.name) }
-        headers.addAll(listOf("이미지경로", "작품", "메모", "태그", "코드", "작품코드", "정렬순서", "고정"))
+        headers.addAll(listOf("이미지경로", "작품", "메모", "태그", "코드", "작품코드", "정렬순서", "고정", "생성일"))
 
         val headerRow = sheet.createRow(0)
         headers.forEachIndexed { i, h ->
@@ -272,7 +274,8 @@ class AutoBackupWorker(
             row.createCell(col++).setCellValue(c.code)
             row.createCell(col++).setCellValue(novel?.code ?: "")
             row.createCell(col++).setCellValue(c.displayOrder.toDouble())
-            row.createCell(col).setCellValue(if (c.isPinned) "Y" else "N")
+            row.createCell(col++).setCellValue(if (c.isPinned) "Y" else "N")
+            row.createCell(col).setCellValue(c.createdAt.toDouble())
         }
     }
 
@@ -293,7 +296,7 @@ class AutoBackupWorker(
 
         val sheetName = sanitizeSheetName("사건 연표", usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
-        val headers = listOf("연도", "월", "일", "역법", "사건 설명", "관련 작품", "관련 캐릭터", "관련작품코드", "정렬순서", "임시배치")
+        val headers = listOf("연도", "월", "일", "역법", "사건 설명", "관련 작품", "관련 캐릭터", "관련작품코드", "정렬순서", "임시배치", "생성일")
         val headerRow = sheet.createRow(0)
         headers.forEachIndexed { i, h ->
             headerRow.createCell(i).apply { setCellValue(h); cellStyle = headerStyle }
@@ -312,6 +315,7 @@ class AutoBackupWorker(
             row.createCell(7).setCellValue(novel?.code ?: "")
             row.createCell(8).setCellValue(e.displayOrder.toDouble())
             row.createCell(9).setCellValue(if (e.isTemporary) "Y" else "N")
+            row.createCell(10).setCellValue(e.createdAt.toDouble())
         }
     }
 
@@ -367,7 +371,7 @@ class AutoBackupWorker(
 
         val sheetName = sanitizeSheetName("캐릭터 상태변화", usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
-        val headers = listOf("캐릭터", "작품", "연도", "월", "일", "필드키", "새 값", "설명", "캐릭터코드")
+        val headers = listOf("캐릭터", "작품", "연도", "월", "일", "필드키", "새 값", "설명", "캐릭터코드", "생성일")
         val headerRow = sheet.createRow(0)
         headers.forEachIndexed { i, h ->
             headerRow.createCell(i).apply { setCellValue(h); cellStyle = headerStyle }
@@ -383,6 +387,7 @@ class AutoBackupWorker(
             row.createCell(6).setCellValue(sc.newValue)
             row.createCell(7).setCellValue(sc.description)
             row.createCell(8).setCellValue(character.code)
+            row.createCell(9).setCellValue(sc.createdAt.toDouble())
         }
     }
 
@@ -398,7 +403,7 @@ class AutoBackupWorker(
 
         val sheetName = sanitizeSheetName("캐릭터 관계", usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
-        val headers = listOf("캐릭터1", "캐릭터2", "관계 유형", "설명", "강도", "양방향", "표시순서", "캐릭터1코드", "캐릭터2코드")
+        val headers = listOf("캐릭터1", "캐릭터2", "관계 유형", "설명", "강도", "양방향", "표시순서", "캐릭터1코드", "캐릭터2코드", "생성일")
         val headerRow = sheet.createRow(0)
         headers.forEachIndexed { i, h ->
             headerRow.createCell(i).apply { setCellValue(h); cellStyle = headerStyle }
@@ -416,6 +421,7 @@ class AutoBackupWorker(
             row.createCell(6).setCellValue(r.displayOrder.toDouble())
             row.createCell(7).setCellValue(char1?.code ?: "")
             row.createCell(8).setCellValue(char2?.code ?: "")
+            row.createCell(9).setCellValue(r.createdAt.toDouble())
         }
     }
 
@@ -433,7 +439,7 @@ class AutoBackupWorker(
 
         val sheetName = sanitizeSheetName("관계 변화", usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
-        val headers = listOf("캐릭터1", "캐릭터2", "연도", "월", "일", "관계 유형", "설명", "강도", "양방향", "캐릭터1코드", "캐릭터2코드", "연결사건ID")
+        val headers = listOf("캐릭터1", "캐릭터2", "연도", "월", "일", "관계 유형", "설명", "강도", "양방향", "캐릭터1코드", "캐릭터2코드", "연결사건ID", "생성일")
         val headerRow = sheet.createRow(0)
         headers.forEachIndexed { i, h ->
             headerRow.createCell(i).apply { setCellValue(h); cellStyle = headerStyle }
@@ -456,6 +462,7 @@ class AutoBackupWorker(
             row.createCell(9).setCellValue(char1?.code ?: "")
             row.createCell(10).setCellValue(char2?.code ?: "")
             rc.eventId?.let { row.createCell(11).setCellValue(it.toDouble()) }
+            row.createCell(12).setCellValue(rc.createdAt.toDouble())
         }
     }
 
@@ -471,7 +478,7 @@ class AutoBackupWorker(
 
         val sheetName = sanitizeSheetName("이름 은행", usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
-        val headers = listOf("이름", "성별", "출처", "메모", "사용여부", "사용 캐릭터", "사용캐릭터코드")
+        val headers = listOf("이름", "성별", "출처", "메모", "사용여부", "사용 캐릭터", "사용캐릭터코드", "생성일")
         val headerRow = sheet.createRow(0)
         headers.forEachIndexed { i, h ->
             headerRow.createCell(i).apply { setCellValue(h); cellStyle = headerStyle }
@@ -486,6 +493,7 @@ class AutoBackupWorker(
             row.createCell(4).setCellValue(if (n.isUsed) "Y" else "N")
             row.createCell(5).setCellValue(usedByChar?.name ?: "")
             row.createCell(6).setCellValue(usedByChar?.code ?: "")
+            row.createCell(7).setCellValue(n.createdAt.toDouble())
         }
     }
 

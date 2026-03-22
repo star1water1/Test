@@ -305,6 +305,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val customRelColorsColIndex = cols["커스텀관계색상"] ?: -1
         val imageCharIdColIndex = cols["이미지캐릭터ID"] ?: -1
         val imageNovelIdColIndex = cols["이미지작품ID"] ?: -1
+        val createdAtColIndex = cols["생성일"] ?: -1
 
         // Build code index for duplicate detection within file
         val codesSeen = mutableMapOf<String, Int>()
@@ -327,6 +328,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val customRelColors = if (customRelColorsColIndex >= 0) getCellString(row, customRelColorsColIndex) else ""
                 val imageCharId = if (imageCharIdColIndex >= 0) parseNumber(getCellString(row, imageCharIdColIndex))?.toLong() else null
                 val imageNovelId = if (imageNovelIdColIndex >= 0) parseNumber(getCellString(row, imageNovelIdColIndex))?.toLong() else null
+                val createdAt = if (createdAtColIndex >= 0) parseNumber(getCellString(row, createdAtColIndex))?.toLong() ?: System.currentTimeMillis() else System.currentTimeMillis()
 
                 // Duplicate code detection within file (last-write-wins)
                 if (code.isNotBlank()) {
@@ -367,7 +369,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         customRelationshipTypes = if (customRelTypesColIndex >= 0) customRelTypes else existing.customRelationshipTypes,
                         customRelationshipColors = if (customRelColorsColIndex >= 0) customRelColors else existing.customRelationshipColors,
                         imageCharacterId = if (imageCharIdColIndex >= 0) imageCharId else existing.imageCharacterId,
-                        imageNovelId = if (imageNovelIdColIndex >= 0) imageNovelId else existing.imageNovelId
+                        imageNovelId = if (imageNovelIdColIndex >= 0) imageNovelId else existing.imageNovelId,
+                        createdAt = if (createdAtColIndex >= 0) createdAt else existing.createdAt
                     ))
                     result.updatedUniverses++
                 } else {
@@ -380,7 +383,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         customRelationshipTypes = customRelTypes,
                         customRelationshipColors = customRelColors,
                         imageCharacterId = imageCharId,
-                        imageNovelId = imageNovelId
+                        imageNovelId = imageNovelId,
+                        createdAt = createdAt
                     ))
                     result.newUniverses++
                 }
@@ -415,6 +419,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val inheritBorderColIndex = cols["테두리상속"] ?: -1
         val novelPinnedColIndex = cols["고정"] ?: -1
         val standardYearColIndex = cols["표준연도"] ?: -1
+        val createdAtColIndex = cols["생성일"] ?: -1
 
         val codesSeen = mutableMapOf<String, Int>()
 
@@ -437,6 +442,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val novelImageCharId = if (imageCharIdColIndex >= 0) parseNumber(getCellString(row, imageCharIdColIndex))?.toLong() else null
                 val novelIsPinned = if (novelPinnedColIndex >= 0) parseBoolean(getCellString(row, novelPinnedColIndex)) else false
                 val standardYear = if (standardYearColIndex >= 0) parseNumber(getCellString(row, standardYearColIndex))?.toInt() else null
+                val createdAt = if (createdAtColIndex >= 0) parseNumber(getCellString(row, createdAtColIndex))?.toLong() ?: System.currentTimeMillis() else System.currentTimeMillis()
 
                 // Duplicate code detection
                 if (code.isNotBlank()) {
@@ -481,7 +487,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         isPinned = if (novelPinnedColIndex >= 0) novelIsPinned else existing.isPinned,
                         imagePaths = novelImagePaths, imageMode = novelImageMode,
                         imageCharacterId = if (imageCharIdColIndex >= 0) novelImageCharId else existing.imageCharacterId,
-                        standardYear = if (standardYearColIndex >= 0) standardYear else existing.standardYear
+                        standardYear = if (standardYearColIndex >= 0) standardYear else existing.standardYear,
+                        createdAt = if (createdAtColIndex >= 0) createdAt else existing.createdAt
                     ))
                     result.updatedNovels++
                 } else {
@@ -493,7 +500,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         borderColor = borderColor, borderWidthDp = borderWidthDp,
                         inheritUniverseBorder = effectiveInherit, isPinned = novelIsPinned,
                         imagePaths = novelImagePaths, imageMode = novelImageMode,
-                        imageCharacterId = novelImageCharId, standardYear = standardYear
+                        imageCharacterId = novelImageCharId, standardYear = standardYear,
+                        createdAt = createdAt
                     ))
                     result.newNovels++
                 }
@@ -638,7 +646,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val novelCodeColIndex = cols["작품코드"] ?: -1
         val orderColIndex = cols["정렬순서"] ?: -1
         val pinnedColIndex = cols["고정"] ?: -1
-        val fixedColIndices = setOf(nameColIndex, anotherNameColIndex, lastNameColIndex, firstNameColIndex, imageColIndex, novelColIndex, memoColIndex, tagsColIndex, codeColIndex, novelCodeColIndex, orderColIndex, pinnedColIndex).filter { it >= 0 }.toSet()
+        val createdAtColIndex = cols["생성일"] ?: -1
+        val fixedColIndices = setOf(nameColIndex, anotherNameColIndex, lastNameColIndex, firstNameColIndex, imageColIndex, novelColIndex, memoColIndex, tagsColIndex, codeColIndex, novelCodeColIndex, orderColIndex, pinnedColIndex, createdAtColIndex).filter { it >= 0 }.toSet()
         val columnFieldMap = buildColumnFieldMap(headerRow, fields, fixedColIndices)
 
         val codesSeen = mutableMapOf<String, Int>()
@@ -681,6 +690,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val memo = if (memoColIndex >= 0) getCellString(row, memoColIndex) else ""
                 val displayOrder = if (orderColIndex >= 0) parseNumber(getCellString(row, orderColIndex))?.toLong() ?: 0L else 0L
                 val charIsPinned = if (pinnedColIndex >= 0) parseBoolean(getCellString(row, pinnedColIndex)) else false
+                val createdAt = if (createdAtColIndex >= 0) parseNumber(getCellString(row, createdAtColIndex))?.toLong() ?: System.currentTimeMillis() else System.currentTimeMillis()
 
                 // Code-first matching (Sprint A strict rule)
                 val existingChar: Character?
@@ -713,7 +723,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         memo = memo,
                         updatedAt = System.currentTimeMillis(),
                         displayOrder = displayOrder,
-                        isPinned = charIsPinned
+                        isPinned = charIsPinned,
+                        createdAt = if (createdAtColIndex >= 0) createdAt else existingChar.createdAt
                     ))
                     result.updatedCharacters++
                 } else {
@@ -723,7 +734,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         name = name, firstName = firstName, lastName = lastName,
                         anotherName = anotherName, novelId = novelId,
                         imagePaths = imagePathsFromExcel ?: "[]", memo = memo, code = newCode, displayOrder = displayOrder,
-                        isPinned = charIsPinned
+                        isPinned = charIsPinned, createdAt = createdAt
                     ))
                     result.newCharacters++
                 }
@@ -784,6 +795,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val novelCodeColIndex = cols["관련작품코드"] ?: -1
         val displayOrderColIndex = cols["정렬순서"] ?: -1
         val isTemporaryColIndex = cols["임시배치"] ?: -1
+        val createdAtColIndex = cols["생성일"] ?: -1
 
         val allNovels = db.novelDao().getAllNovelsList()
 
@@ -802,6 +814,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val novelCode = if (novelCodeColIndex >= 0) getCellString(row, novelCodeColIndex) else ""
                 val displayOrder = if (displayOrderColIndex >= 0) parseNumber(getCellString(row, displayOrderColIndex))?.toInt() ?: 0 else 0
                 val isTemporary = if (isTemporaryColIndex >= 0) parseBoolean(getCellString(row, isTemporaryColIndex)) else false
+                val createdAt = if (createdAtColIndex >= 0) parseNumber(getCellString(row, createdAtColIndex))?.toLong() ?: System.currentTimeMillis() else System.currentTimeMillis()
 
                 val resolvedNovel = if (novelCode.isNotBlank()) {
                     db.novelDao().getNovelByCode(novelCode)
@@ -823,7 +836,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         month = month, day = day, calendarType = calendarType,
                         novelId = novelId, universeId = universeId,
                         displayOrder = if (displayOrderColIndex >= 0) displayOrder else existingEvent.displayOrder,
-                        isTemporary = if (isTemporaryColIndex >= 0) isTemporary else existingEvent.isTemporary
+                        isTemporary = if (isTemporaryColIndex >= 0) isTemporary else existingEvent.isTemporary,
+                        createdAt = if (createdAtColIndex >= 0) createdAt else existingEvent.createdAt
                     ))
                     result.updatedEvents++
                 } else {
@@ -831,7 +845,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         year = year, month = month, day = day,
                         calendarType = calendarType, description = description,
                         novelId = novelId, universeId = universeId,
-                        displayOrder = displayOrder, isTemporary = isTemporary
+                        displayOrder = displayOrder, isTemporary = isTemporary,
+                        createdAt = createdAt
                     ))
                     result.newEvents++
                 }
@@ -877,6 +892,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val newValueColIndex = cols["새 값"] ?: 6
         val descColIndex = cols["설명"] ?: 7
         val charCodeColIndex = cols["캐릭터코드"] ?: -1
+        val createdAtColIndex = cols["생성일"] ?: -1
 
         val allNovels = db.novelDao().getAllNovelsList()
 
@@ -902,6 +918,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 }
                 val description = getCellString(row, descColIndex)
                 val charCode = if (charCodeColIndex >= 0) getCellString(row, charCodeColIndex) else ""
+                val createdAt = if (createdAtColIndex >= 0) parseNumber(getCellString(row, createdAtColIndex))?.toLong() ?: System.currentTimeMillis() else System.currentTimeMillis()
 
                 // Resolve character: code-first, then name (Sprint A)
                 val character = (if (charCode.isNotBlank()) {
@@ -918,13 +935,15 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
                 if (existing != null) {
                     db.characterStateChangeDao().update(existing.copy(
-                        month = month, day = day, description = description
+                        month = month, day = day, description = description,
+                        createdAt = if (createdAtColIndex >= 0) createdAt else existing.createdAt
                     ))
                     result.updatedStateChanges++
                 } else {
                     db.characterStateChangeDao().insert(CharacterStateChange(
                         characterId = character.id, year = year, month = month, day = day,
-                        fieldKey = fieldKey, newValue = newValue, description = description
+                        fieldKey = fieldKey, newValue = newValue, description = description,
+                        createdAt = createdAt
                     ))
                     result.newStateChanges++
                 }
@@ -954,6 +973,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val displayOrderColIndex = cols["표시순서"] ?: -1
         val char1CodeColIndex = cols["캐릭터1코드"] ?: -1
         val char2CodeColIndex = cols["캐릭터2코드"] ?: -1
+        val createdAtColIndex = cols["생성일"] ?: -1
 
         for (i in 1..sheet.lastRowNum) {
             try {
@@ -970,6 +990,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val displayOrder = if (displayOrderColIndex >= 0) parseNumber(getCellString(row, displayOrderColIndex))?.toInt() ?: 0 else 0
                 val char1Code = if (char1CodeColIndex >= 0) getCellString(row, char1CodeColIndex) else ""
                 val char2Code = if (char2CodeColIndex >= 0) getCellString(row, char2CodeColIndex) else ""
+                val createdAt = if (createdAtColIndex >= 0) parseNumber(getCellString(row, createdAtColIndex))?.toLong() ?: System.currentTimeMillis() else System.currentTimeMillis()
 
                 val char1 = (if (char1Code.isNotBlank()) {
                     db.characterDao().getCharacterByCode(char1Code)
@@ -999,7 +1020,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         description = description,
                         intensity = if (intensityColIndex >= 0) intensity else existing.intensity,
                         isBidirectional = if (bidirectionalColIndex >= 0) isBidirectional else existing.isBidirectional,
-                        displayOrder = if (displayOrderColIndex >= 0) displayOrder else existing.displayOrder
+                        displayOrder = if (displayOrderColIndex >= 0) displayOrder else existing.displayOrder,
+                        createdAt = if (createdAtColIndex >= 0) createdAt else existing.createdAt
                     ))
                     result.updatedRelationships++
                 } else {
@@ -1007,7 +1029,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         characterId1 = char1.id, characterId2 = char2.id,
                         relationshipType = relationshipType, description = description,
                         intensity = intensity, isBidirectional = isBidirectional,
-                        displayOrder = displayOrder
+                        displayOrder = displayOrder, createdAt = createdAt
                     ))
                     result.newRelationships++
                 }
@@ -1039,6 +1061,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val eventIdColIndex = cols["연결사건ID"] ?: -1
         val char1CodeColIndex = cols["캐릭터1코드"] ?: -1
         val char2CodeColIndex = cols["캐릭터2코드"] ?: -1
+        val createdAtColIndex = cols["생성일"] ?: -1
 
         for (i in 1..sheet.lastRowNum) {
             try {
@@ -1056,6 +1079,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val intensity = parseNumber(getCellString(row, intensityColIndex))?.toInt()?.coerceIn(1, 10) ?: 5
                 val isBidirectional = parseBoolean(getCellString(row, bidirectionalColIndex))
                 val eventId = if (eventIdColIndex >= 0) parseNumber(getCellString(row, eventIdColIndex))?.toLong() else null
+                val createdAt = if (createdAtColIndex >= 0) parseNumber(getCellString(row, createdAtColIndex))?.toLong() ?: System.currentTimeMillis() else System.currentTimeMillis()
 
                 val char1Code = if (char1CodeColIndex >= 0) getCellString(row, char1CodeColIndex) else ""
                 val char2Code = if (char2CodeColIndex >= 0) getCellString(row, char2CodeColIndex) else ""
@@ -1079,7 +1103,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     db.characterRelationshipChangeDao().update(existing.copy(
                         relationshipType = relationshipType, description = description,
                         intensity = intensity, isBidirectional = isBidirectional,
-                        eventId = if (eventIdColIndex >= 0) eventId else existing.eventId
+                        eventId = if (eventIdColIndex >= 0) eventId else existing.eventId,
+                        createdAt = if (createdAtColIndex >= 0) createdAt else existing.createdAt
                     ))
                     result.updatedRelationshipChanges++
                 } else {
@@ -1088,7 +1113,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         year = year, month = month, day = day,
                         relationshipType = relationshipType, description = description,
                         intensity = intensity, isBidirectional = isBidirectional,
-                        eventId = eventId
+                        eventId = eventId, createdAt = createdAt
                     ))
                     result.newRelationshipChanges++
                 }
@@ -1116,6 +1141,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val usedColIndex = cols["사용여부"] ?: 4
         val usedByColIndex = cols["사용 캐릭터"] ?: 5
         val charCodeColIndex = cols["사용캐릭터코드"] ?: -1
+        val createdAtColIndex = cols["생성일"] ?: -1
 
         val existingNamesMap = db.nameBankDao().getAllNamesList()
             .associateBy { "${it.name}\u0000${it.gender}" }
@@ -1133,6 +1159,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val isUsed = parseBoolean(getCellString(row, usedColIndex))
                 val usedByCharName = getCellString(row, usedByColIndex)
                 val usedByCharCode = if (charCodeColIndex >= 0) getCellString(row, charCodeColIndex) else ""
+                val createdAt = if (createdAtColIndex >= 0) parseNumber(getCellString(row, createdAtColIndex))?.toLong() ?: System.currentTimeMillis() else System.currentTimeMillis()
 
                 val usedByCharacterId = if (usedByCharCode.isNotBlank()) {
                     db.characterDao().getCharacterByCode(usedByCharCode)?.id
@@ -1147,13 +1174,15 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 if (existing != null) {
                     db.nameBankDao().update(existing.copy(
                         origin = origin, notes = notes,
-                        isUsed = effectiveIsUsed, usedByCharacterId = usedByCharacterId
+                        isUsed = effectiveIsUsed, usedByCharacterId = usedByCharacterId,
+                        createdAt = if (createdAtColIndex >= 0) createdAt else existing.createdAt
                     ))
                     result.updatedNameBank++
                 } else {
                     val newEntry = NameBankEntry(
                         name = name, gender = gender, origin = origin, notes = notes,
-                        isUsed = effectiveIsUsed, usedByCharacterId = usedByCharacterId
+                        isUsed = effectiveIsUsed, usedByCharacterId = usedByCharacterId,
+                        createdAt = createdAt
                     )
                     val newId = db.nameBankDao().insert(newEntry)
                     existingNamesMap[mapKey] = newEntry.copy(id = newId)
