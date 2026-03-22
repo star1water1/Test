@@ -58,7 +58,8 @@ class CharacterAdapter(
     private val ENTITY_TYPE = "character"
 
     /** 캐릭터 이미지 표시를 랜덤으로 재설정 (목록 새로고침 시 호출) */
-    fun refreshRandomImages() {
+    fun refreshRandomImages(context: android.content.Context? = null) {
+        context?.let { com.novelcharacter.app.util.ImageIndexPrefs.clearAll(it, ENTITY_TYPE) }
         imageIndexMap.clear()
         prefsLoaded = false
     }

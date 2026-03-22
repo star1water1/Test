@@ -256,7 +256,7 @@ class CharacterListFragment : Fragment() {
 
     private fun observeData() {
         viewModel.searchResults.observe(viewLifecycleOwner) { characters ->
-            adapter.refreshRandomImages()
+            adapter.refreshRandomImages(context)
             adapter.submitList(characters)
             val isEmpty = characters.isEmpty()
             binding.emptyText.visibility = if (isEmpty) View.VISIBLE else View.GONE
