@@ -1126,8 +1126,33 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_faction_memberships_factionId` ON `faction_memberships` (`factionId`)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_faction_memberships_characterId` ON `faction_memberships` (`characterId`)")
 
-                // 기존 관계 테이블에 factionId 컬럼 추가
-                db.execSQL("ALTER TABLE `character_relationships` ADD COLUMN `factionId` INTEGER DEFAULT NULL")
+                // 기존 관계 테이블에 factionId 컬럼 추가 (FK 포함을 위해 테이블 재생성)
+                db.execSQL("""CREATE TABLE IF NOT EXISTS `character_relationships_new` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `characterId1` INTEGER NOT NULL,
+                    `characterId2` INTEGER NOT NULL,
+                    `relationshipType` TEXT NOT NULL,
+                    `description` TEXT NOT NULL DEFAULT '',
+                    `intensity` INTEGER NOT NULL DEFAULT 5,
+                    `isBidirectional` INTEGER NOT NULL DEFAULT 1,
+                    `displayOrder` INTEGER NOT NULL DEFAULT 0,
+                    `createdAt` INTEGER NOT NULL DEFAULT 0,
+                    `factionId` INTEGER DEFAULT NULL,
+                    FOREIGN KEY(`characterId1`) REFERENCES `characters`(`id`) ON DELETE CASCADE,
+                    FOREIGN KEY(`characterId2`) REFERENCES `characters`(`id`) ON DELETE CASCADE,
+                    FOREIGN KEY(`factionId`) REFERENCES `factions`(`id`) ON DELETE SET NULL
+                )""")
+                db.execSQL("""INSERT INTO `character_relationships_new`
+                    (id, characterId1, characterId2, relationshipType, description, intensity, isBidirectional, displayOrder, createdAt, factionId)
+                    SELECT id, characterId1, characterId2, relationshipType, description, intensity, isBidirectional, displayOrder, createdAt, NULL
+                    FROM `character_relationships`""")
+                db.execSQL("DROP TABLE `character_relationships`")
+                db.execSQL("ALTER TABLE `character_relationships_new` RENAME TO `character_relationships`")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_character_relationships_characterId1` ON `character_relationships` (`characterId1`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_character_relationships_characterId2` ON `character_relationships` (`characterId2`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_character_relationships_createdAt` ON `character_relationships` (`createdAt`)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_character_relationships_characterId1_characterId2_relationshipType` ON `character_relationships` (`characterId1`, `characterId2`, `relationshipType`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_character_relationships_displayOrder_createdAt` ON `character_relationships` (`displayOrder`, `createdAt`)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_character_relationships_factionId` ON `character_relationships` (`factionId`)")
 
                 Log.i(TAG, "Migration from version 26 to 27 completed successfully")
