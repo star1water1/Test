@@ -440,6 +440,8 @@ class ExcelExporter(context: Context) {
             row.createCell(7).setCellValue(universe.imageMode)
             row.createCell(8).setCellValue(universe.customRelationshipTypes)
             row.createCell(9).setCellValue(universe.customRelationshipColors)
+            row.createCell(10).setCellValue(universe.imageCharacterId?.toDouble() ?: 0.0)
+            row.createCell(11).setCellValue(universe.imageNovelId?.toDouble() ?: 0.0)
         }
 
         applySpecFormatting(sheet, spec, universes.size)

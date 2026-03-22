@@ -99,9 +99,11 @@ fun universeSpec() = SheetSpec(
         ColumnSpec("테두리색", width = 4000),
         ColumnSpec("테두리두께", width = 3000),
         ColumnSpec("이미지경로", width = 8000),
-        ColumnSpec("이미지모드", dropdownOptions = listOf("none", "custom", "random_character"), width = 5000),
+        ColumnSpec("이미지모드", dropdownOptions = listOf("none", "custom", "random_character", "select_character", "random_novel", "select_novel"), width = 5000),
         ColumnSpec("커스텀관계유형", width = 10000),
-        ColumnSpec("커스텀관계색상", width = 10000)
+        ColumnSpec("커스텀관계색상", width = 10000),
+        ColumnSpec("이미지캐릭터ID", width = 5000),
+        ColumnSpec("이미지작품ID", width = 5000)
     )
 )
 

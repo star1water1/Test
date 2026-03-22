@@ -92,6 +92,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         alias("이미지경로", "image_path", "이미지 경로", "image_file", "imagepath", "imagepaths")
         alias("이미지모드", "image_mode", "이미지 모드")
         alias("이미지캐릭터ID", "image_character_id", "이미지 캐릭터 ID")
+        alias("이미지작품ID", "image_novel_id", "이미지 작품 ID")
         alias("작품", "novel")
         alias("메모", "memo", "비고", "note", "notes")
         alias("태그", "tags", "tag")
@@ -302,6 +303,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val imageModeColIndex = cols["이미지모드"] ?: -1
         val customRelTypesColIndex = cols["커스텀관계유형"] ?: -1
         val customRelColorsColIndex = cols["커스텀관계색상"] ?: -1
+        val imageCharIdColIndex = cols["이미지캐릭터ID"] ?: -1
+        val imageNovelIdColIndex = cols["이미지작품ID"] ?: -1
 
         // Build code index for duplicate detection within file
         val codesSeen = mutableMapOf<String, Int>()
@@ -322,6 +325,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val imageMode = if (imageModeColIndex >= 0) getCellString(row, imageModeColIndex).ifBlank { "none" } else "none"
                 val customRelTypes = if (customRelTypesColIndex >= 0) getCellString(row, customRelTypesColIndex) else ""
                 val customRelColors = if (customRelColorsColIndex >= 0) getCellString(row, customRelColorsColIndex) else ""
+                val imageCharId = if (imageCharIdColIndex >= 0) parseNumber(getCellString(row, imageCharIdColIndex))?.toLong() else null
+                val imageNovelId = if (imageNovelIdColIndex >= 0) parseNumber(getCellString(row, imageNovelIdColIndex))?.toLong() else null
 
                 // Duplicate code detection within file (last-write-wins)
                 if (code.isNotBlank()) {
@@ -358,8 +363,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         name = name, description = description, displayOrder = displayOrder,
                         borderColor = borderColor, borderWidthDp = borderWidthDp,
                         imagePaths = imagePaths, imageMode = imageMode,
-                        customRelationshipTypes = customRelTypes,
-                        customRelationshipColors = customRelColors
+                        // 구버전 파일(컬럼 없음)에서는 기존값 유지
+                        customRelationshipTypes = if (customRelTypesColIndex >= 0) customRelTypes else existing.customRelationshipTypes,
+                        customRelationshipColors = if (customRelColorsColIndex >= 0) customRelColors else existing.customRelationshipColors,
+                        imageCharacterId = if (imageCharIdColIndex >= 0) imageCharId else existing.imageCharacterId,
+                        imageNovelId = if (imageNovelIdColIndex >= 0) imageNovelId else existing.imageNovelId
                     ))
                     result.updatedUniverses++
                 } else {
@@ -370,7 +378,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         displayOrder = displayOrder, borderColor = borderColor, borderWidthDp = borderWidthDp,
                         imagePaths = imagePaths, imageMode = imageMode,
                         customRelationshipTypes = customRelTypes,
-                        customRelationshipColors = customRelColors
+                        customRelationshipColors = customRelColors,
+                        imageCharacterId = imageCharId,
+                        imageNovelId = imageNovelId
                     ))
                     result.newUniverses++
                 }
@@ -469,7 +479,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         displayOrder = displayOrder, borderColor = borderColor, borderWidthDp = borderWidthDp,
                         inheritUniverseBorder = effectiveInherit, isPinned = novelIsPinned,
                         imagePaths = novelImagePaths, imageMode = novelImageMode,
-                        imageCharacterId = novelImageCharId, standardYear = standardYear
+                        imageCharacterId = if (imageCharIdColIndex >= 0) novelImageCharId else existing.imageCharacterId,
+                        standardYear = if (standardYearColIndex >= 0) standardYear else existing.standardYear
                     ))
                     result.updatedNovels++
                 } else {
@@ -810,7 +821,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     db.timelineDao().update(existingEvent.copy(
                         month = month, day = day, calendarType = calendarType,
                         novelId = novelId, universeId = universeId,
-                        displayOrder = displayOrder, isTemporary = isTemporary
+                        displayOrder = if (displayOrderColIndex >= 0) displayOrder else existingEvent.displayOrder,
+                        isTemporary = if (isTemporaryColIndex >= 0) isTemporary else existingEvent.isTemporary
                     ))
                     result.updatedEvents++
                 } else {
@@ -983,8 +995,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
                 if (existing != null) {
                     db.characterRelationshipDao().update(existing.copy(
-                        description = description, intensity = intensity,
-                        isBidirectional = isBidirectional, displayOrder = displayOrder
+                        description = description,
+                        intensity = if (intensityColIndex >= 0) intensity else existing.intensity,
+                        isBidirectional = if (bidirectionalColIndex >= 0) isBidirectional else existing.isBidirectional,
+                        displayOrder = if (displayOrderColIndex >= 0) displayOrder else existing.displayOrder
                     ))
                     result.updatedRelationships++
                 } else {

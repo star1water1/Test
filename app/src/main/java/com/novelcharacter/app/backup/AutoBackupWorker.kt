@@ -129,7 +129,7 @@ class AutoBackupWorker(
 
         val sheetName = sanitizeSheetName("세계관", usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
-        val headers = listOf("이름", "설명", "코드", "정렬순서", "테두리색", "테두리두께", "이미지경로", "이미지모드", "커스텀관계유형", "커스텀관계색상")
+        val headers = listOf("이름", "설명", "코드", "정렬순서", "테두리색", "테두리두께", "이미지경로", "이미지모드", "커스텀관계유형", "커스텀관계색상", "이미지캐릭터ID", "이미지작품ID")
         val headerRow = sheet.createRow(0)
         headers.forEachIndexed { i, h ->
             headerRow.createCell(i).apply { setCellValue(h); cellStyle = headerStyle }
@@ -146,6 +146,8 @@ class AutoBackupWorker(
             row.createCell(7).setCellValue(u.imageMode)
             row.createCell(8).setCellValue(u.customRelationshipTypes)
             row.createCell(9).setCellValue(u.customRelationshipColors)
+            row.createCell(10).setCellValue(u.imageCharacterId?.toDouble() ?: 0.0)
+            row.createCell(11).setCellValue(u.imageNovelId?.toDouble() ?: 0.0)
         }
     }
 
