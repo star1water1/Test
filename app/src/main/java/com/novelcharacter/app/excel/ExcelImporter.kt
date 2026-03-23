@@ -46,7 +46,7 @@ class ExcelImporter(context: Context) {
             importLauncher = fragment.registerForActivityResult(
                 ActivityResultContracts.OpenDocument()
             ) { uri: Uri? ->
-                uri?.let { importFromFile(it) }
+                uri?.let { importFromUri(it) }
             }
         } catch (e: IllegalStateException) {
             android.util.Log.w("ExcelImporter", "registerForActivityResult called too late in lifecycle", e)
