@@ -334,8 +334,9 @@ class CharacterDetailFragment : Fragment() {
                 // 체형 분석 순위 데이터 계산
                 fieldRenderer.bodyRankingInfo = computeBodyRanking(fields, values, character, novel)
 
-                if (timeSliderHelper.isTimeViewActive && timeSliderHelper.currentSliderYear != null) {
-                    timeSliderHelper.applyTimeView(timeSliderHelper.currentSliderYear!!)
+                val sliderYear = timeSliderHelper.currentSliderYear
+                if (timeSliderHelper.isTimeViewActive && sliderYear != null) {
+                    timeSliderHelper.applyTimeView(sliderYear)
                 } else {
                     fieldRenderer.displayDynamicFields(fields, values, percentileData, calculatedResults)
                 }

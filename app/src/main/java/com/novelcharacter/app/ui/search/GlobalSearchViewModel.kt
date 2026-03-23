@@ -266,8 +266,8 @@ class GlobalSearchViewModel(application: Application) : AndroidViewModel(applica
 
     /** 특정 필드의 유니크 값 목록 조회 (필터 UI용) */
     suspend fun getFieldValues(fieldDefId: Long): List<String> {
-        return db.characterFieldValueDao().getAllValuesList()
-            .filter { it.fieldDefinitionId == fieldDefId && it.value.isNotBlank() }
+        return db.characterFieldValueDao().getValuesByFieldDef(fieldDefId)
+            .filter { it.value.isNotBlank() }
             .map { it.value }
             .distinct()
             .sorted()

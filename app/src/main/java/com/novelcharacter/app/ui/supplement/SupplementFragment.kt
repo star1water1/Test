@@ -390,6 +390,7 @@ class SupplementFragment : Fragment() {
 
         override fun onAttachedToRecyclerView(recyclerView: RecyclerView) {
             super.onAttachedToRecyclerView(recyclerView)
+            scope?.cancel()
             scope = kotlinx.coroutines.CoroutineScope(
                 kotlinx.coroutines.Dispatchers.Main + kotlinx.coroutines.SupervisorJob()
             )
