@@ -74,4 +74,7 @@ interface CharacterDao {
         WHERE n.universeId = :universeId
     """)
     suspend fun getCharactersByUniverseList(universeId: Long): List<Character>
+
+    @Query("DELETE FROM characters")
+    suspend fun deleteAll()
 }

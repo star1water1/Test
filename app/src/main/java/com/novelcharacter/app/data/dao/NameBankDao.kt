@@ -41,4 +41,7 @@ interface NameBankDao {
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertAll(entries: List<NameBankEntry>)
+
+    @Query("DELETE FROM name_bank")
+    suspend fun deleteAll()
 }

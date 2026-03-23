@@ -23,4 +23,7 @@ interface UserPresetTemplateDao {
 
     @Delete
     suspend fun delete(template: UserPresetTemplate)
+
+    @Query("DELETE FROM user_preset_templates")
+    suspend fun deleteAll()
 }

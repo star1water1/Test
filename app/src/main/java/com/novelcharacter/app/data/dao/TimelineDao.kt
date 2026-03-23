@@ -158,6 +158,12 @@ interface TimelineDao {
         WHERE te.id = :eventId
     """)
     suspend fun getCharacterCountForEvent(eventId: Long): Int
+
+    @Query("DELETE FROM timeline_events")
+    suspend fun deleteAllEvents()
+
+    @Query("DELETE FROM timeline_character_cross_ref")
+    suspend fun deleteAllCrossRefs()
 }
 
 data class YearCount(

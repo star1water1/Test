@@ -29,4 +29,7 @@ interface SearchPresetDao {
 
     @Query("DELETE FROM search_presets WHERE isDefault = 0")
     suspend fun deleteAllUserPresets()
+
+    @Query("DELETE FROM search_presets")
+    suspend fun deleteAll()
 }

@@ -55,4 +55,7 @@ interface CharacterRelationshipDao {
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertAll(relationships: List<CharacterRelationship>): List<Long>
+
+    @Query("DELETE FROM character_relationships")
+    suspend fun deleteAll()
 }

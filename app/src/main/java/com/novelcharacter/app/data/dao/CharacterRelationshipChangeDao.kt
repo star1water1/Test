@@ -35,4 +35,7 @@ interface CharacterRelationshipChangeDao {
 
     @Query("DELETE FROM character_relationship_changes WHERE relationshipId = :relationshipId")
     suspend fun deleteAllByRelationship(relationshipId: Long)
+
+    @Query("DELETE FROM character_relationship_changes")
+    suspend fun deleteAll()
 }

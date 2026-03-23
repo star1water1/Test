@@ -47,6 +47,9 @@ interface FieldDefinitionDao {
 
     @Query("SELECT universeId, COUNT(*) as cnt FROM field_definitions WHERE universeId IN (:universeIds) GROUP BY universeId")
     suspend fun getFieldCountsByUniverses(universeIds: List<Long>): List<UniverseFieldCount>
+
+    @Query("DELETE FROM field_definitions")
+    suspend fun deleteAll()
 }
 
 data class UniverseFieldCount(val universeId: Long, val cnt: Int)

@@ -35,4 +35,7 @@ interface FactionDao {
 
     @Update
     suspend fun updateAll(factions: List<Faction>)
+
+    @Query("DELETE FROM factions")
+    suspend fun deleteAll()
 }

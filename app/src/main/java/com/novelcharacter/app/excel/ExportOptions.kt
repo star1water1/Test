@@ -1,6 +1,18 @@
 package com.novelcharacter.app.excel
 
 /**
+ * 가져오기 시 기존 데이터와의 충돌 처리 전략.
+ *
+ * [MERGE]: 기존 동작 — 코드/이름 매칭으로 업데이트, 없으면 삽입.
+ *          백업에 없는 기존 데이터는 그대로 유지.
+ * [OVERWRITE]: 선택된 카테고리의 기존 데이터를 모두 삭제 후 백업 데이터만 삽입.
+ */
+enum class ImportStrategy {
+    MERGE,
+    OVERWRITE
+}
+
+/**
  * 내보내기/가져오기 시 포함할 항목을 선택하는 옵션.
  * 체크박스 다이얼로그에서 사용자가 선택한 항목을 전달한다.
  */

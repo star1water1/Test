@@ -31,6 +31,23 @@ data class ImportProgress(
     val totalRows: Int
 )
 
+data class CategoryAnalysis(
+    val key: String,
+    val label: String,
+    val inBackup: Int,
+    val newCount: Int,
+    val updateCount: Int,
+    val unchangedCount: Int,
+    val existingTotal: Int
+) {
+    /** 백업에 없고 DB에만 있는 항목 수 (덮어쓰기 시 삭제 대상) */
+    val onlyInDb: Int get() = existingTotal - (updateCount + unchangedCount)
+}
+
+data class RestoreAnalysis(
+    val categories: List<CategoryAnalysis>
+)
+
 data class ImportResult(
     var newUniverses: Int = 0,
     var updatedUniverses: Int = 0,
@@ -208,6 +225,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     suspend fun importAll(
         workbook: Workbook,
         options: ExportOptions = ExportOptions(),
+        strategy: ImportStrategy = ImportStrategy.MERGE,
         onProgress: (ImportProgress) -> Unit = {}
     ): ImportResult {
         val result = ImportResult()
@@ -221,6 +239,27 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 전체를 단일 트랜잭션으로 감싸서 부분 커밋 방지
         // Room은 중첩 withTransaction을 savepoint로 처리하므로 phase별 격리 유지
         db.withTransaction {
+            // 덮어쓰기 전략: 선택된 카테고리의 기존 데이터를 먼저 삭제
+            // CASCADE 안전 순서: 종속 데이터 → 상위 엔티티
+            if (strategy == ImportStrategy.OVERWRITE) {
+                if (options.relationshipChanges) db.characterRelationshipChangeDao().deleteAll()
+                if (options.relationships) db.characterRelationshipDao().deleteAll()
+                if (options.factionMemberships) db.factionMembershipDao().deleteAll()
+                if (options.factions) db.factionDao().deleteAll()
+                if (options.stateChanges) db.characterStateChangeDao().deleteAll()
+                if (options.timeline) {
+                    db.timelineDao().deleteAllCrossRefs()
+                    db.timelineDao().deleteAllEvents()
+                }
+                if (options.characters) db.characterDao().deleteAll()
+                if (options.fieldDefinitions) db.fieldDefinitionDao().deleteAll()
+                if (options.novels) db.novelDao().deleteAll()
+                if (options.universes) db.universeDao().deleteAll()
+                if (options.nameBank) db.nameBankDao().deleteAll()
+                if (options.presetTemplates) db.userPresetTemplateDao().deleteAll()
+                if (options.searchPresets) db.searchPresetDao().deleteAll()
+            }
+
             // Phase 1: Schema definitions (universes, novels, field definitions)
             if (options.universes) importUniverses(workbook, result, onProgress, totalRows)
             if (options.novels) importNovels(workbook, result, onProgress, totalRows)
@@ -257,6 +296,542 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         }
 
         return result
+    }
+
+    // ── 복원 미리보기 분석 (읽기 전용) ──
+
+    suspend fun analyzeAll(
+        workbook: Workbook,
+        options: ExportOptions = ExportOptions(),
+        onProgress: (ImportProgress) -> Unit = {}
+    ): RestoreAnalysis {
+        val categories = mutableListOf<CategoryAnalysis>()
+        processedRowsSoFar = 0
+        val totalRows = countTotalRows(workbook)
+
+        if (options.universes) categories.add(analyzeUniverses(workbook, onProgress, totalRows))
+        if (options.novels) categories.add(analyzeNovels(workbook, onProgress, totalRows))
+        if (options.fieldDefinitions) categories.add(analyzeFieldDefinitions(workbook, onProgress, totalRows))
+        if (options.characters) categories.add(analyzeCharacters(workbook, onProgress, totalRows))
+        if (options.timeline) categories.add(analyzeTimeline(workbook, onProgress, totalRows))
+        if (options.stateChanges) categories.add(analyzeStateChanges(workbook, onProgress, totalRows))
+        if (options.relationships) categories.add(analyzeRelationships(workbook, onProgress, totalRows))
+        if (options.relationshipChanges) categories.add(analyzeRelationshipChanges(workbook, onProgress, totalRows))
+        if (options.nameBank) categories.add(analyzeNameBank(workbook, onProgress, totalRows))
+        if (options.factions) categories.add(analyzeFactions(workbook, onProgress, totalRows))
+        if (options.factionMemberships) categories.add(analyzeFactionMemberships(workbook, onProgress, totalRows))
+        if (options.presetTemplates) categories.add(analyzePresetTemplates(workbook, onProgress, totalRows))
+        if (options.searchPresets) categories.add(analyzeSearchPresets(workbook, onProgress, totalRows))
+
+        return RestoreAnalysis(categories)
+    }
+
+    private suspend fun analyzeUniverses(workbook: Workbook, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
+        val spec = universeSpec()
+        val sheet = workbook.getSheet(spec.sheetName)
+        val existingTotal = db.universeDao().getAllUniversesList().size
+        if (sheet == null || sheet.lastRowNum < 1) return CategoryAnalysis("universes", "세계관", 0, 0, 0, 0, existingTotal)
+
+        val headerRow = sheet.getRow(0) ?: return CategoryAnalysis("universes", "세계관", 0, 0, 0, 0, existingTotal)
+        if (!isValidHeader(headerRow, spec.firstColumnHeader)) return CategoryAnalysis("universes", "세계관", 0, 0, 0, 0, existingTotal)
+
+        val cols = resolveHeaderColumns(headerRow)
+        val nameColIndex = cols[spec.firstColumnHeader] ?: cols["이름"] ?: 0
+        val descColIndex = cols["설명"] ?: 1
+        val codeColIndex = cols["코드"] ?: -1
+
+        var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0
+        for (i in 1..sheet.lastRowNum) {
+            val row = sheet.getRow(i) ?: continue
+            val name = getCellString(row, nameColIndex)
+            if (name.isBlank()) continue
+            inBackup++
+            val code = if (codeColIndex >= 0) getCellString(row, codeColIndex) else ""
+            val description = getCellString(row, descColIndex)
+
+            val existing = if (code.isNotBlank()) db.universeDao().getUniverseByCode(code) else db.universeDao().getUniverseByName(name)
+            if (existing == null) { newCount++; continue }
+            if (existing.name != name || existing.description != description) updateCount++ else unchangedCount++
+        }
+        reportProgress(onProgress, "세계관 분석", sheet.lastRowNum, totalRows)
+        return CategoryAnalysis("universes", "세계관", inBackup, newCount, updateCount, unchangedCount, existingTotal)
+    }
+
+    private suspend fun analyzeNovels(workbook: Workbook, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
+        val spec = novelSpec(emptyList())
+        val sheet = workbook.getSheet(spec.sheetName)
+        val existingTotal = db.novelDao().getAllNovelsList().size
+        if (sheet == null || sheet.lastRowNum < 1) return CategoryAnalysis("novels", "작품", 0, 0, 0, 0, existingTotal)
+
+        val headerRow = sheet.getRow(0) ?: return CategoryAnalysis("novels", "작품", 0, 0, 0, 0, existingTotal)
+        if (!isValidHeader(headerRow, spec.firstColumnHeader)) return CategoryAnalysis("novels", "작품", 0, 0, 0, 0, existingTotal)
+
+        val cols = resolveHeaderColumns(headerRow)
+        val titleColIndex = cols[spec.firstColumnHeader] ?: cols["제목"] ?: 0
+        val descColIndex = cols["설명"] ?: 1
+        val codeColIndex = cols["코드"] ?: -1
+        val universeNameColIndex = cols["세계관"] ?: 2
+
+        var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0
+        for (i in 1..sheet.lastRowNum) {
+            val row = sheet.getRow(i) ?: continue
+            val title = getCellString(row, titleColIndex)
+            if (title.isBlank()) continue
+            inBackup++
+            val code = if (codeColIndex >= 0) getCellString(row, codeColIndex) else ""
+            val description = getCellString(row, descColIndex)
+            val universeName = getCellString(row, universeNameColIndex)
+
+            val existing = if (code.isNotBlank()) {
+                db.novelDao().getNovelByCode(code)
+            } else {
+                val universeId = if (universeName.isNotBlank()) db.universeDao().getUniverseByName(universeName)?.id else null
+                if (universeId != null) db.novelDao().getNovelByTitleAndUniverse(title, universeId) else db.novelDao().getNovelByTitleNoUniverse(title)
+            }
+            if (existing == null) { newCount++; continue }
+            if (existing.title != title || existing.description != description) updateCount++ else unchangedCount++
+        }
+        reportProgress(onProgress, "작품 분석", sheet.lastRowNum, totalRows)
+        return CategoryAnalysis("novels", "작품", inBackup, newCount, updateCount, unchangedCount, existingTotal)
+    }
+
+    private suspend fun analyzeFieldDefinitions(workbook: Workbook, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
+        val spec = fieldDefinitionSpec(emptyList())
+        val sheet = workbook.getSheet(spec.sheetName)
+        val existingTotal = db.fieldDefinitionDao().getAllFieldsList().size
+        if (sheet == null || sheet.lastRowNum < 1) return CategoryAnalysis("fieldDefinitions", "필드 정의", 0, 0, 0, 0, existingTotal)
+
+        val headerRow = sheet.getRow(0) ?: return CategoryAnalysis("fieldDefinitions", "필드 정의", 0, 0, 0, 0, existingTotal)
+        val cols = resolveHeaderColumns(headerRow)
+        val universeNameColIndex = cols[spec.firstColumnHeader] ?: cols["세계관"] ?: 0
+        val keyColIndex = cols["필드키"] ?: 1
+        val nameColIndex = cols["필드명"] ?: 2
+        val typeColIndex = cols["타입"] ?: 3
+        val universeCodeColIndex = cols["세계관코드"] ?: -1
+
+        var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0
+        for (i in 1..sheet.lastRowNum) {
+            val row = sheet.getRow(i) ?: continue
+            val universeName = getCellString(row, universeNameColIndex)
+            if (universeName.isBlank()) continue
+            val key = getCellString(row, keyColIndex)
+            if (key.isBlank()) continue
+            inBackup++
+
+            val universeCode = if (universeCodeColIndex >= 0) getCellString(row, universeCodeColIndex) else ""
+            val universe = (if (universeCode.isNotBlank()) db.universeDao().getUniverseByCode(universeCode) else null)
+                ?: db.universeDao().getUniverseByName(universeName) ?: run { newCount++; continue }
+
+            val name = getCellString(row, nameColIndex)
+            val type = getCellString(row, typeColIndex)
+            val existing = db.fieldDefinitionDao().getFieldByKey(universe.id, key)
+            if (existing == null) { newCount++; continue }
+            if (existing.name != name || existing.type != type) updateCount++ else unchangedCount++
+        }
+        reportProgress(onProgress, "필드 정의 분석", sheet.lastRowNum, totalRows)
+        return CategoryAnalysis("fieldDefinitions", "필드 정의", inBackup, newCount, updateCount, unchangedCount, existingTotal)
+    }
+
+    private suspend fun analyzeCharacters(workbook: Workbook, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
+        val existingTotal = db.characterDao().getAllCharactersList().size
+        var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0
+
+        // 세계관별 캐릭터 시트 분석
+        val universes = db.universeDao().getAllUniversesList()
+        val reservedNames = RESERVED_SHEET_NAMES
+        for (universe in universes) {
+            val sheet = findSheetForUniverse(workbook, universe.name, reservedNames) ?: continue
+            val headerRow = sheet.getRow(0) ?: continue
+            if (!isValidHeader(headerRow, "이름")) continue
+            val result = analyzeCharacterSheet(sheet, headerRow)
+            inBackup += result.first; newCount += result.second; updateCount += result.third
+            // fourth element = unchanged
+            unchangedCount += (result.first - result.second - result.third)
+        }
+
+        // 미분류 캐릭터 분석
+        val unclSheet = workbook.getSheet(UNCLASSIFIED_SHEET_NAME)
+        if (unclSheet != null) {
+            val headerRow = unclSheet.getRow(0)
+            if (headerRow != null && isValidHeader(headerRow, "이름")) {
+                val result = analyzeCharacterSheet(unclSheet, headerRow)
+                inBackup += result.first; newCount += result.second; updateCount += result.third
+                unchangedCount += (result.first - result.second - result.third)
+            }
+        }
+
+        reportProgress(onProgress, "캐릭터 분석", 0, totalRows)
+        return CategoryAnalysis("characters", "캐릭터", inBackup, newCount, updateCount, unchangedCount, existingTotal)
+    }
+
+    /** @return Triple(inBackup, newCount, updateCount) */
+    private suspend fun analyzeCharacterSheet(sheet: Sheet, headerRow: Row): Triple<Int, Int, Int> {
+        val cols = resolveHeaderColumns(headerRow)
+        val nameColIndex = cols["이름"] ?: 0
+        val codeColIndex = cols["코드"] ?: -1
+        val memoColIndex = cols["메모"] ?: -1
+        val anotherNameColIndex = cols["이명"] ?: -1
+
+        var inBackup = 0; var newCount = 0; var updateCount = 0
+        for (i in 1..sheet.lastRowNum) {
+            val row = sheet.getRow(i) ?: continue
+            val name = getCellString(row, nameColIndex)
+            if (name.isBlank()) continue
+            inBackup++
+
+            val code = if (codeColIndex >= 0) getCellString(row, codeColIndex) else ""
+            val existing = if (code.isNotBlank()) db.characterDao().getCharacterByCode(code) else db.characterDao().getCharacterByName(name)
+            if (existing == null) { newCount++; continue }
+
+            val memo = if (memoColIndex >= 0) getCellString(row, memoColIndex) else ""
+            val anotherName = if (anotherNameColIndex >= 0) getCellString(row, anotherNameColIndex) else ""
+            if (existing.name != name || existing.memo != memo || existing.anotherName != anotherName) updateCount++
+        }
+        return Triple(inBackup, newCount, updateCount)
+    }
+
+    private suspend fun analyzeTimeline(workbook: Workbook, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
+        val spec = timelineSpec(emptyList())
+        val sheet = workbook.getSheet(spec.sheetName)
+        val existingTotal = db.timelineDao().getAllEventsList().size
+        if (sheet == null || sheet.lastRowNum < 1) return CategoryAnalysis("timeline", "사건 연표", 0, 0, 0, 0, existingTotal)
+
+        val headerRow = sheet.getRow(0) ?: return CategoryAnalysis("timeline", "사건 연표", 0, 0, 0, 0, existingTotal)
+        val cols = resolveHeaderColumns(headerRow)
+        val yearColIndex = cols["연도"] ?: 0
+        val descColIndex = cols["사건 설명"] ?: 4
+        val novelColIndex = cols["관련 작품"] ?: 5
+        val novelCodeColIndex = cols["관련작품코드"] ?: -1
+
+        val allNovels = db.novelDao().getAllNovelsList()
+        var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0
+
+        for (i in 1..sheet.lastRowNum) {
+            val row = sheet.getRow(i) ?: continue
+            val year = parseNumber(getCellString(row, yearColIndex))?.toInt() ?: continue
+            val description = getCellString(row, descColIndex)
+            if (description.isBlank()) continue
+            inBackup++
+
+            val novelCode = if (novelCodeColIndex >= 0) getCellString(row, novelCodeColIndex) else ""
+            val novelTitle = getCellString(row, novelColIndex)
+            val novelId = (if (novelCode.isNotBlank()) db.novelDao().getNovelByCode(novelCode)?.id else null)
+                ?: if (novelTitle.isNotBlank()) allNovels.find { it.title == novelTitle }?.id else null
+
+            val existing = if (novelId != null) db.timelineDao().getEventByNaturalKey(year, description, novelId)
+            else db.timelineDao().getEventByNaturalKeyNoNovel(year, description)
+            if (existing == null) newCount++ else unchangedCount++ // 사건은 natural key 매칭이므로 키가 같으면 동일
+        }
+        reportProgress(onProgress, "사건 분석", sheet.lastRowNum, totalRows)
+        return CategoryAnalysis("timeline", "사건 연표", inBackup, newCount, updateCount, unchangedCount, existingTotal)
+    }
+
+    private suspend fun analyzeStateChanges(workbook: Workbook, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
+        val spec = stateChangeSpec()
+        val sheet = workbook.getSheet(spec.sheetName)
+        val existingTotal = db.characterStateChangeDao().getAllChangesList().size
+        if (sheet == null || sheet.lastRowNum < 1) return CategoryAnalysis("stateChanges", "상태 변화", 0, 0, 0, 0, existingTotal)
+
+        val headerRow = sheet.getRow(0) ?: return CategoryAnalysis("stateChanges", "상태 변화", 0, 0, 0, 0, existingTotal)
+        val cols = resolveHeaderColumns(headerRow)
+        val charNameColIndex = cols["캐릭터"] ?: 0
+        val yearColIndex = cols["연도"] ?: 2
+        val fieldKeyColIndex = cols["필드키"] ?: 5
+        val newValueColIndex = cols["새 값"] ?: 6
+        val charCodeColIndex = cols["캐릭터코드"] ?: -1
+        val novelColIndex = cols["작품"] ?: 1
+
+        val allNovels = db.novelDao().getAllNovelsList()
+        var inBackup = 0; var newCount = 0; var unchangedCount = 0
+
+        for (i in 1..sheet.lastRowNum) {
+            val row = sheet.getRow(i) ?: continue
+            val charName = getCellString(row, charNameColIndex)
+            if (charName.isBlank()) continue
+            val year = parseNumber(getCellString(row, yearColIndex))?.toInt() ?: continue
+            val fieldKey = getCellString(row, fieldKeyColIndex)
+            if (fieldKey.isBlank()) continue
+            val newValue = getCellString(row, newValueColIndex)
+            if (newValue.isBlank()) continue
+            inBackup++
+
+            val charCode = if (charCodeColIndex >= 0) getCellString(row, charCodeColIndex) else ""
+            val novelTitle = getCellString(row, novelColIndex)
+            val character = (if (charCode.isNotBlank()) db.characterDao().getCharacterByCode(charCode) else null)
+                ?: run {
+                    val novelId = if (novelTitle.isNotBlank()) allNovels.find { it.title == novelTitle }?.id else null
+                    findCharacterByName(charName, novelId)
+                } ?: run { newCount++; continue }
+
+            val existing = db.characterStateChangeDao().getChangeByNaturalKey(character.id, year, fieldKey, newValue)
+            if (existing == null) newCount++ else unchangedCount++
+        }
+        reportProgress(onProgress, "상태 변화 분석", sheet.lastRowNum, totalRows)
+        return CategoryAnalysis("stateChanges", "상태 변화", inBackup, newCount, 0, unchangedCount, existingTotal)
+    }
+
+    private suspend fun analyzeRelationships(workbook: Workbook, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
+        val spec = relationshipSpec()
+        val sheet = workbook.getSheet(spec.sheetName)
+        val existingTotal = db.characterRelationshipDao().getAllRelationships().size
+        if (sheet == null || sheet.lastRowNum < 1) return CategoryAnalysis("relationships", "관계", 0, 0, 0, 0, existingTotal)
+
+        val headerRow = sheet.getRow(0) ?: return CategoryAnalysis("relationships", "관계", 0, 0, 0, 0, existingTotal)
+        val cols = resolveHeaderColumns(headerRow)
+        val char1NameColIndex = cols["캐릭터1"] ?: 0
+        val char2NameColIndex = cols["캐릭터2"] ?: 1
+        val typeColIndex = cols["관계 유형"] ?: 2
+        val descColIndex = cols["설명"] ?: 3
+        val char1CodeColIndex = cols["캐릭터1코드"] ?: -1
+        val char2CodeColIndex = cols["캐릭터2코드"] ?: -1
+
+        var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0
+        for (i in 1..sheet.lastRowNum) {
+            val row = sheet.getRow(i) ?: continue
+            val char1Name = getCellString(row, char1NameColIndex)
+            val char2Name = getCellString(row, char2NameColIndex)
+            if (char1Name.isBlank() || char2Name.isBlank()) continue
+            val relationshipType = getCellString(row, typeColIndex)
+            if (relationshipType.isBlank()) continue
+            inBackup++
+
+            val char1Code = if (char1CodeColIndex >= 0) getCellString(row, char1CodeColIndex) else ""
+            val char2Code = if (char2CodeColIndex >= 0) getCellString(row, char2CodeColIndex) else ""
+            val char1 = (if (char1Code.isNotBlank()) db.characterDao().getCharacterByCode(char1Code) else null) ?: findCharacterByName(char1Name, null) ?: run { newCount++; continue }
+            val char2 = (if (char2Code.isNotBlank()) db.characterDao().getCharacterByCode(char2Code) else null) ?: findCharacterByName(char2Name, null) ?: run { newCount++; continue }
+            if (char1.id == char2.id) continue
+
+            val existingRels = db.characterRelationshipDao().getRelationshipsForCharacterList(char1.id)
+            val existing = existingRels.find { rel ->
+                ((rel.characterId1 == char1.id && rel.characterId2 == char2.id) || (rel.characterId1 == char2.id && rel.characterId2 == char1.id)) && rel.relationshipType == relationshipType
+            }
+            if (existing == null) { newCount++; continue }
+            val description = getCellString(row, descColIndex)
+            if (existing.description != description) updateCount++ else unchangedCount++
+        }
+        reportProgress(onProgress, "관계 분석", sheet.lastRowNum, totalRows)
+        return CategoryAnalysis("relationships", "관계", inBackup, newCount, updateCount, unchangedCount, existingTotal)
+    }
+
+    private suspend fun analyzeRelationshipChanges(workbook: Workbook, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
+        val sheet = workbook.getSheet("관계 변화")
+        val existingTotal = db.characterRelationshipChangeDao().getAllChanges().size
+        if (sheet == null || sheet.lastRowNum < 1) return CategoryAnalysis("relationshipChanges", "관계 변화", 0, 0, 0, 0, existingTotal)
+
+        val headerRow = sheet.getRow(0) ?: return CategoryAnalysis("relationshipChanges", "관계 변화", 0, 0, 0, 0, existingTotal)
+        val cols = resolveHeaderColumns(headerRow)
+        val char1NameColIndex = cols["캐릭터1"] ?: 0
+        val char2NameColIndex = cols["캐릭터2"] ?: 1
+        val yearColIndex = cols["연도"] ?: 2
+        val monthColIndex = cols["월"] ?: 3
+        val dayColIndex = cols["일"] ?: 4
+        val char1CodeColIndex = cols["캐릭터1코드"] ?: -1
+        val char2CodeColIndex = cols["캐릭터2코드"] ?: -1
+
+        var inBackup = 0; var newCount = 0; var unchangedCount = 0
+        for (i in 1..sheet.lastRowNum) {
+            val row = sheet.getRow(i) ?: continue
+            val char1Name = getCellString(row, char1NameColIndex)
+            val char2Name = getCellString(row, char2NameColIndex)
+            if (char1Name.isBlank() || char2Name.isBlank()) continue
+            val year = parseNumber(getCellString(row, yearColIndex))?.toInt() ?: continue
+            inBackup++
+
+            val month = parseNumber(getCellString(row, monthColIndex))?.toInt()
+            val day = parseNumber(getCellString(row, dayColIndex))?.toInt()
+            val char1Code = if (char1CodeColIndex >= 0) getCellString(row, char1CodeColIndex) else ""
+            val char2Code = if (char2CodeColIndex >= 0) getCellString(row, char2CodeColIndex) else ""
+            val char1 = (if (char1Code.isNotBlank()) db.characterDao().getCharacterByCode(char1Code) else null) ?: findCharacterByName(char1Name, null) ?: run { newCount++; continue }
+            val char2 = (if (char2Code.isNotBlank()) db.characterDao().getCharacterByCode(char2Code) else null) ?: findCharacterByName(char2Name, null) ?: run { newCount++; continue }
+
+            val relationships = db.characterRelationshipDao().getRelationshipsForCharacterList(char1.id)
+            val relationship = relationships.find { rel ->
+                (rel.characterId1 == char1.id && rel.characterId2 == char2.id) || (rel.characterId1 == char2.id && rel.characterId2 == char1.id)
+            } ?: run { newCount++; continue }
+
+            val existing = db.characterRelationshipChangeDao().getChangeByNaturalKey(relationship.id, year, month, day)
+            if (existing == null) newCount++ else unchangedCount++
+        }
+        reportProgress(onProgress, "관계 변화 분석", sheet.lastRowNum, totalRows)
+        return CategoryAnalysis("relationshipChanges", "관계 변화", inBackup, newCount, 0, unchangedCount, existingTotal)
+    }
+
+    private suspend fun analyzeNameBank(workbook: Workbook, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
+        val spec = nameBankSpec()
+        val sheet = workbook.getSheet(spec.sheetName)
+        val existingNames = db.nameBankDao().getAllNamesList()
+        val existingTotal = existingNames.size
+        if (sheet == null || sheet.lastRowNum < 1) return CategoryAnalysis("nameBank", "이름 은행", 0, 0, 0, 0, existingTotal)
+
+        val headerRow = sheet.getRow(0) ?: return CategoryAnalysis("nameBank", "이름 은행", 0, 0, 0, 0, existingTotal)
+        val cols = resolveHeaderColumns(headerRow)
+        val nameColIndex = cols["이름"] ?: 0
+        val genderColIndex = cols["성별"] ?: 1
+        val originColIndex = cols["출처"] ?: 2
+        val notesColIndex = cols["메모"] ?: 3
+
+        val existingMap = existingNames.associateBy { "${it.name}\u0000${it.gender}" }
+        var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0
+
+        for (i in 1..sheet.lastRowNum) {
+            val row = sheet.getRow(i) ?: continue
+            val name = getCellString(row, nameColIndex)
+            if (name.isBlank()) continue
+            inBackup++
+
+            val gender = getCellString(row, genderColIndex)
+            val mapKey = "${name}\u0000${gender}"
+            val existing = existingMap[mapKey]
+            if (existing == null) { newCount++; continue }
+            val origin = getCellString(row, originColIndex)
+            val notes = getCellString(row, notesColIndex)
+            if (existing.origin != origin || existing.notes != notes) updateCount++ else unchangedCount++
+        }
+        reportProgress(onProgress, "이름 은행 분석", sheet.lastRowNum, totalRows)
+        return CategoryAnalysis("nameBank", "이름 은행", inBackup, newCount, updateCount, unchangedCount, existingTotal)
+    }
+
+    private suspend fun analyzeFactions(workbook: Workbook, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
+        val spec = factionSpec()
+        val sheet = workbook.getSheet(spec.sheetName)
+        val existingTotal = db.factionDao().getAllFactionsList().size
+        if (sheet == null || sheet.lastRowNum < 1) return CategoryAnalysis("factions", "세력", 0, 0, 0, 0, existingTotal)
+
+        val headerRow = sheet.getRow(0) ?: return CategoryAnalysis("factions", "세력", 0, 0, 0, 0, existingTotal)
+        val cols = resolveHeaderColumns(headerRow)
+        val nameColIndex = cols[spec.firstColumnHeader] ?: cols["이름"] ?: 0
+        val descColIndex = cols["설명"] ?: -1
+        val codeColIndex = cols["코드"] ?: -1
+        val universeNameColIndex = cols["세계관"] ?: -1
+
+        var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0
+        for (i in 1..sheet.lastRowNum) {
+            val row = sheet.getRow(i) ?: continue
+            val name = getCellString(row, nameColIndex)
+            if (name.isBlank()) continue
+            inBackup++
+
+            val code = if (codeColIndex >= 0) getCellString(row, codeColIndex) else ""
+            val universeName = if (universeNameColIndex >= 0) getCellString(row, universeNameColIndex) else ""
+            val universeId = if (universeName.isNotBlank()) db.universeDao().getUniverseByName(universeName)?.id else null
+
+            val existing = if (code.isNotBlank()) db.factionDao().getByCode(code)
+            else if (universeId != null) db.factionDao().getByNameAndUniverse(name, universeId) else null
+
+            if (existing == null) { newCount++; continue }
+            val description = if (descColIndex >= 0) getCellString(row, descColIndex) else ""
+            if (existing.name != name || existing.description != description) updateCount++ else unchangedCount++
+        }
+        reportProgress(onProgress, "세력 분석", sheet.lastRowNum, totalRows)
+        return CategoryAnalysis("factions", "세력", inBackup, newCount, updateCount, unchangedCount, existingTotal)
+    }
+
+    private suspend fun analyzeFactionMemberships(workbook: Workbook, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
+        val spec = factionMembershipSpec()
+        val sheet = workbook.getSheet(spec.sheetName)
+        val existingTotal = db.factionMembershipDao().getAllMembershipsList().size
+        if (sheet == null || sheet.lastRowNum < 1) return CategoryAnalysis("factionMemberships", "세력 소속", 0, 0, 0, 0, existingTotal)
+
+        val headerRow = sheet.getRow(0) ?: return CategoryAnalysis("factionMemberships", "세력 소속", 0, 0, 0, 0, existingTotal)
+        val cols = resolveHeaderColumns(headerRow)
+        val factionNameColIndex = cols[spec.firstColumnHeader] ?: cols["세력"] ?: 0
+        val charNameColIndex = cols["캐릭터"] ?: -1
+        val factionCodeColIndex = cols["세력코드"] ?: -1
+        val charCodeColIndex = cols["캐릭터코드"] ?: -1
+        val leaveTypeColIndex = cols["탈퇴유형"] ?: -1
+
+        if (charNameColIndex < 0) return CategoryAnalysis("factionMemberships", "세력 소속", 0, 0, 0, 0, existingTotal)
+
+        var inBackup = 0; var newCount = 0; var unchangedCount = 0
+        for (i in 1..sheet.lastRowNum) {
+            val row = sheet.getRow(i) ?: continue
+            val factionName = getCellString(row, factionNameColIndex)
+            if (factionName.isBlank()) continue
+            val charName = getCellString(row, charNameColIndex)
+            if (charName.isBlank()) continue
+            inBackup++
+
+            val factionCode = if (factionCodeColIndex >= 0) getCellString(row, factionCodeColIndex) else ""
+            val charCode = if (charCodeColIndex >= 0) getCellString(row, charCodeColIndex) else ""
+            val leaveTypeRaw = if (leaveTypeColIndex >= 0) getCellString(row, leaveTypeColIndex) else ""
+            val leaveType = when (leaveTypeRaw.trim()) { "순수제거", "removed" -> "removed"; "설정상탈퇴", "departed" -> "departed"; else -> null }
+
+            val faction = (if (factionCode.isNotBlank()) db.factionDao().getByCode(factionCode) else null)
+                ?: db.factionDao().getAllFactionsList().find { it.name == factionName }
+                ?: run { newCount++; continue }
+            val character = (if (charCode.isNotBlank()) db.characterDao().getCharacterByCode(charCode) else null)
+                ?: db.characterDao().getCharacterByName(charName)
+                ?: run { newCount++; continue }
+
+            val existingMembership = db.factionMembershipDao().getActiveMembership(faction.id, character.id)
+            if (existingMembership != null && leaveType == null) unchangedCount++ else newCount++
+        }
+        reportProgress(onProgress, "세력 소속 분석", sheet.lastRowNum, totalRows)
+        return CategoryAnalysis("factionMemberships", "세력 소속", inBackup, newCount, 0, unchangedCount, existingTotal)
+    }
+
+    private suspend fun analyzePresetTemplates(workbook: Workbook, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
+        val spec = userPresetTemplateSpec()
+        val sheet = workbook.getSheet(spec.sheetName)
+        val existingTemplates = db.userPresetTemplateDao().getAllTemplatesList()
+        val existingTotal = existingTemplates.size
+        if (sheet == null || sheet.lastRowNum < 1) return CategoryAnalysis("presetTemplates", "필드 템플릿", 0, 0, 0, 0, existingTotal)
+
+        val headerRow = sheet.getRow(0) ?: return CategoryAnalysis("presetTemplates", "필드 템플릿", 0, 0, 0, 0, existingTotal)
+        val cols = resolveHeaderColumns(headerRow)
+        val nameColIndex = cols["이름"] ?: 0
+        val descColIndex = cols["설명"] ?: 1
+        val fieldsJsonColIndex = cols["설정(JSON)"] ?: 2
+
+        val existingByName = existingTemplates.associateBy { it.name }
+        var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0
+
+        for (i in 1..sheet.lastRowNum) {
+            val row = sheet.getRow(i) ?: continue
+            val name = getCellString(row, nameColIndex)
+            if (name.isBlank()) continue
+            inBackup++
+
+            val existing = existingByName[name]
+            if (existing == null) { newCount++; continue }
+            val description = getCellString(row, descColIndex)
+            val fieldsJson = getCellString(row, fieldsJsonColIndex).ifBlank { "[]" }
+            if (existing.description != description || existing.fieldsJson != fieldsJson) updateCount++ else unchangedCount++
+        }
+        reportProgress(onProgress, "필드 템플릿 분석", sheet.lastRowNum, totalRows)
+        return CategoryAnalysis("presetTemplates", "필드 템플릿", inBackup, newCount, updateCount, unchangedCount, existingTotal)
+    }
+
+    private suspend fun analyzeSearchPresets(workbook: Workbook, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
+        val spec = searchPresetSpec()
+        val sheet = workbook.getSheet(spec.sheetName)
+        val existingPresets = db.searchPresetDao().getAllPresetsList()
+        val existingTotal = existingPresets.size
+        if (sheet == null || sheet.lastRowNum < 1) return CategoryAnalysis("searchPresets", "검색 프리셋", 0, 0, 0, 0, existingTotal)
+
+        val headerRow = sheet.getRow(0) ?: return CategoryAnalysis("searchPresets", "검색 프리셋", 0, 0, 0, 0, existingTotal)
+        val cols = resolveHeaderColumns(headerRow)
+        val nameColIndex = cols["이름"] ?: 0
+        val queryColIndex = cols["검색어"] ?: 1
+        val filtersColIndex = cols["필터(JSON)"] ?: 2
+
+        val existingByName = existingPresets.associateBy { it.name }
+        var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0
+
+        for (i in 1..sheet.lastRowNum) {
+            val row = sheet.getRow(i) ?: continue
+            val name = getCellString(row, nameColIndex)
+            if (name.isBlank()) continue
+            inBackup++
+
+            val existing = existingByName[name]
+            if (existing == null) { newCount++; continue }
+            val query = getCellString(row, queryColIndex)
+            val filtersJson = getCellString(row, filtersColIndex).ifBlank { "{}" }
+            if (existing.query != query || existing.filtersJson != filtersJson) updateCount++ else unchangedCount++
+        }
+        reportProgress(onProgress, "검색 프리셋 분석", sheet.lastRowNum, totalRows)
+        return CategoryAnalysis("searchPresets", "검색 프리셋", inBackup, newCount, updateCount, unchangedCount, existingTotal)
     }
 
     private fun countTotalRows(workbook: Workbook): Int {

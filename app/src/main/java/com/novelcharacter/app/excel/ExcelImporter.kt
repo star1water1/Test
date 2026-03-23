@@ -7,6 +7,9 @@ import android.net.Uri
 import android.view.Gravity
 import android.widget.LinearLayout
 import android.widget.ProgressBar
+import android.widget.RadioButton
+import android.widget.RadioGroup
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -19,6 +22,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.apache.poi.ss.usermodel.WorkbookFactory
 import android.util.Log
+import android.graphics.Typeface
 import java.io.File
 import java.io.FileOutputStream
 import java.util.UUID
@@ -265,11 +269,63 @@ class ExcelImporter(context: Context) {
 
             workbook = xlsxFile.inputStream().use { WorkbookFactory.create(it) }
 
+            // Phase 1: 분석 프로그레스 표시
             val activityRef = currentActivityRef
             val activity = activityRef?.get()
             if (activity != null && !activity.isFinishing && !activity.isDestroyed) {
                 withContext(Dispatchers.Main) {
                     val act = activityRef?.get()
+                    if (act != null && !act.isFinishing && !act.isDestroyed) {
+                        val layout = LinearLayout(act).apply {
+                            orientation = LinearLayout.VERTICAL
+                            gravity = Gravity.CENTER
+                            val dp16 = (16 * act.resources.displayMetrics.density).toInt()
+                            setPadding(dp16 * 2, dp16, dp16 * 2, dp16)
+                        }
+                        val progressBar = ProgressBar(act).apply { isIndeterminate = true }
+                        layout.addView(progressBar)
+                        val textView = TextView(act).apply {
+                            text = appContext.getString(com.novelcharacter.app.R.string.restore_analyzing)
+                            gravity = Gravity.CENTER
+                            val dp8 = (8 * act.resources.displayMetrics.density).toInt()
+                            setPadding(0, dp8, 0, 0)
+                        }
+                        layout.addView(textView)
+                        progressText = textView
+
+                        progressDialog = AlertDialog.Builder(act)
+                            .setTitle(appContext.getString(com.novelcharacter.app.R.string.restore_preview_title))
+                            .setView(layout)
+                            .setCancelable(false)
+                            .create()
+                        progressDialog?.show()
+                    }
+                }
+            }
+
+            // Phase 2: 백업 내용 분석
+            val analysis = importService.analyzeAll(workbook, options) { progress ->
+                val pct = if (progress.totalRows > 0) {
+                    (progress.processedRows * 100 / progress.totalRows).coerceAtMost(100)
+                } else 0
+                val text = appContext.getString(com.novelcharacter.app.R.string.import_progress_format, progress.currentPhase, pct)
+                importScope.launch(Dispatchers.Main) {
+                    progressText?.text = text
+                }
+            }
+
+            withContext(Dispatchers.Main) { dismissDialogSafely(progressDialog) }
+
+            // Phase 3: 미리보기 + 전략 선택 다이얼로그
+            val strategy = showRestorePreviewDialog(analysis) ?: return
+
+            // Phase 4: 실제 가져오기 진행
+            progressDialog = null
+            progressText = null
+            val act2 = currentActivityRef?.get()
+            if (act2 != null && !act2.isFinishing && !act2.isDestroyed) {
+                withContext(Dispatchers.Main) {
+                    val act = currentActivityRef?.get()
                     if (act != null && !act.isFinishing && !act.isDestroyed) {
                         val layout = LinearLayout(act).apply {
                             orientation = LinearLayout.VERTICAL
@@ -298,7 +354,7 @@ class ExcelImporter(context: Context) {
                 }
             }
 
-            val result = importService.importAll(workbook, options) { progress ->
+            val result = importService.importAll(workbook, options, strategy) { progress ->
                 val pct = if (progress.totalRows > 0) {
                     (progress.processedRows * 100 / progress.totalRows).coerceAtMost(100)
                 } else 0
@@ -326,6 +382,179 @@ class ExcelImporter(context: Context) {
             }
         } finally {
             try { workbook?.close() } catch (e: Exception) { android.util.Log.w("ExcelImporter", "Failed to close workbook", e) }
+        }
+    }
+
+    // ── 복원 미리보기 + 전략 선택 다이얼로그 ──
+
+    private suspend fun showRestorePreviewDialog(analysis: RestoreAnalysis): ImportStrategy? {
+        val activity = currentActivityRef?.get()
+        if (activity == null || activity.isFinishing || activity.isDestroyed) {
+            return ImportStrategy.MERGE
+        }
+
+        return withContext(Dispatchers.Main) {
+            kotlinx.coroutines.suspendCancellableCoroutine { cont ->
+                val act = currentActivityRef?.get()
+                if (act == null || act.isFinishing || act.isDestroyed) {
+                    cont.resume(ImportStrategy.MERGE, null)
+                    return@suspendCancellableCoroutine
+                }
+
+                val dp = act.resources.displayMetrics.density
+                val dp8 = (8 * dp).toInt()
+                val dp16 = (16 * dp).toInt()
+
+                val scrollView = ScrollView(act)
+                val container = LinearLayout(act).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(dp16, dp16, dp16, dp8)
+                }
+                scrollView.addView(container)
+
+                // 카테고리별 분석 결과
+                val hasAnyChange = analysis.categories.any { it.newCount > 0 || it.updateCount > 0 }
+                val totalOnlyInDb = analysis.categories.sumOf { it.onlyInDb.coerceAtLeast(0) }
+
+                for (cat in analysis.categories) {
+                    val catLayout = LinearLayout(act).apply {
+                        orientation = LinearLayout.VERTICAL
+                        setPadding(0, dp8 / 2, 0, dp8 / 2)
+                    }
+
+                    val labelText = TextView(act).apply {
+                        text = cat.label
+                        setTypeface(null, Typeface.BOLD)
+                        textSize = 14f
+                    }
+                    catLayout.addView(labelText)
+
+                    if (cat.newCount == 0 && cat.updateCount == 0 && cat.inBackup > 0) {
+                        val detailText = TextView(act).apply {
+                            text = appContext.getString(com.novelcharacter.app.R.string.restore_preview_no_change) +
+                                    "  (${appContext.getString(com.novelcharacter.app.R.string.restore_preview_db_info, cat.existingTotal, cat.onlyInDb.coerceAtLeast(0))})"
+                            textSize = 12f
+                            setPadding(dp8, 0, 0, 0)
+                        }
+                        catLayout.addView(detailText)
+                    } else if (cat.inBackup == 0) {
+                        val detailText = TextView(act).apply {
+                            text = "백업에 데이터 없음 (현재 DB: ${cat.existingTotal}개)"
+                            textSize = 12f
+                            setPadding(dp8, 0, 0, 0)
+                        }
+                        catLayout.addView(detailText)
+                    } else {
+                        val summaryText = TextView(act).apply {
+                            text = appContext.getString(com.novelcharacter.app.R.string.restore_preview_summary,
+                                cat.newCount, cat.updateCount, cat.unchangedCount)
+                            textSize = 12f
+                            setPadding(dp8, 0, 0, 0)
+                        }
+                        catLayout.addView(summaryText)
+                        val dbInfoText = TextView(act).apply {
+                            text = appContext.getString(com.novelcharacter.app.R.string.restore_preview_db_info,
+                                cat.existingTotal, cat.onlyInDb.coerceAtLeast(0))
+                            textSize = 11f
+                            setPadding(dp8, 0, 0, 0)
+                            alpha = 0.7f
+                        }
+                        catLayout.addView(dbInfoText)
+                    }
+
+                    container.addView(catLayout)
+                }
+
+                // 구분선
+                val divider = android.view.View(act).apply {
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT, 1
+                    ).apply { setMargins(0, dp8, 0, dp8) }
+                    setBackgroundColor(0x33888888)
+                }
+                container.addView(divider)
+
+                // 전략 선택
+                val strategyLabel = TextView(act).apply {
+                    text = appContext.getString(com.novelcharacter.app.R.string.restore_strategy_label)
+                    setTypeface(null, Typeface.BOLD)
+                    textSize = 14f
+                    setPadding(0, 0, 0, dp8)
+                }
+                container.addView(strategyLabel)
+
+                val radioGroup = RadioGroup(act)
+                val mergeRadio = RadioButton(act).apply {
+                    id = android.view.View.generateViewId()
+                    text = appContext.getString(com.novelcharacter.app.R.string.restore_strategy_merge)
+                    isChecked = true
+                }
+                radioGroup.addView(mergeRadio)
+                val mergeDesc = TextView(act).apply {
+                    text = appContext.getString(com.novelcharacter.app.R.string.restore_strategy_merge_desc)
+                    textSize = 12f
+                    setPadding(dp16 * 2, 0, 0, dp8)
+                    alpha = 0.7f
+                }
+                radioGroup.addView(mergeDesc)
+
+                val overwriteRadio = RadioButton(act).apply {
+                    id = android.view.View.generateViewId()
+                    text = appContext.getString(com.novelcharacter.app.R.string.restore_strategy_overwrite)
+                }
+                radioGroup.addView(overwriteRadio)
+                val overwriteDesc = TextView(act).apply {
+                    text = appContext.getString(com.novelcharacter.app.R.string.restore_strategy_overwrite_desc)
+                    textSize = 12f
+                    setPadding(dp16 * 2, 0, 0, 0)
+                    alpha = 0.7f
+                }
+                radioGroup.addView(overwriteDesc)
+
+                // 덮어쓰기 경고
+                val overwriteWarning = TextView(act).apply {
+                    visibility = android.view.View.GONE
+                    textSize = 12f
+                    setPadding(dp16 * 2, dp8 / 2, 0, 0)
+                    setTextColor(0xFFFF5722.toInt())
+                }
+
+                if (totalOnlyInDb > 0) {
+                    val deleteParts = analysis.categories
+                        .filter { it.onlyInDb > 0 }
+                        .map { "${it.label} ${it.onlyInDb}개" }
+                    overwriteWarning.text = appContext.getString(
+                        com.novelcharacter.app.R.string.restore_overwrite_warning,
+                        deleteParts.joinToString(", ")
+                    )
+                }
+                radioGroup.addView(overwriteWarning)
+
+                radioGroup.setOnCheckedChangeListener { _, checkedId ->
+                    overwriteWarning.visibility = if (checkedId == overwriteRadio.id && totalOnlyInDb > 0) {
+                        android.view.View.VISIBLE
+                    } else {
+                        android.view.View.GONE
+                    }
+                }
+
+                container.addView(radioGroup)
+
+                AlertDialog.Builder(act)
+                    .setTitle(com.novelcharacter.app.R.string.restore_preview_title)
+                    .setView(scrollView)
+                    .setPositiveButton(com.novelcharacter.app.R.string.restore_action) { _, _ ->
+                        val strategy = if (overwriteRadio.isChecked) ImportStrategy.OVERWRITE else ImportStrategy.MERGE
+                        cont.resume(strategy, null)
+                    }
+                    .setNegativeButton(com.novelcharacter.app.R.string.cancel) { _, _ ->
+                        cont.resume(null, null)
+                    }
+                    .setOnCancelListener {
+                        cont.resume(null, null)
+                    }
+                    .show()
+            }
         }
     }
 

@@ -47,4 +47,7 @@ interface FactionMembershipDao {
 
     @Query("DELETE FROM faction_memberships WHERE factionId = :factionId AND characterId = :characterId AND leaveType IS NULL")
     suspend fun deleteActiveMembership(factionId: Long, characterId: Long)
+
+    @Query("DELETE FROM faction_memberships")
+    suspend fun deleteAll()
 }

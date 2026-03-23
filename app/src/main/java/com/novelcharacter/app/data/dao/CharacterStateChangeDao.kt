@@ -58,4 +58,7 @@ interface CharacterStateChangeDao {
           )
     """)
     suspend fun deleteChangesByFieldKeyAndUniverse(fieldKey: String, universeId: Long)
+
+    @Query("DELETE FROM character_state_changes")
+    suspend fun deleteAll()
 }
