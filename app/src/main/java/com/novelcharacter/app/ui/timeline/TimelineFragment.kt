@@ -371,10 +371,12 @@ class TimelineFragment : Fragment() {
 
     private fun updateSliderRange(events: List<TimelineEvent>) {
         if (events.isEmpty()) {
-            binding.yearSlider.stepSize = 1f
+            // stepSize를 먼저 0으로 리셋해야 기존 범위/값 제약과 충돌하지 않음
+            binding.yearSlider.stepSize = 0f
             binding.yearSlider.valueFrom = -100f
             binding.yearSlider.valueTo = 100f
             binding.yearSlider.value = 0f
+            binding.yearSlider.stepSize = 1f
             binding.minYearLabel.text = ""
             binding.maxYearLabel.text = ""
             return

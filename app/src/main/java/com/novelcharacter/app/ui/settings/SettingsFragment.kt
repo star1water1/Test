@@ -448,22 +448,22 @@ class SettingsFragment : Fragment() {
         if (!isAdded) return
         val ctx = requireContext().applicationContext
         viewLifecycleOwner.lifecycleScope.launch {
-            var tempEncFile: File? = null
             try {
-                tempEncFile = withContext(Dispatchers.IO) {
+                val tempEncFile = withContext(Dispatchers.IO) {
                     val temp = File.createTempFile("restore_ext_", ".enc", ctx.cacheDir)
                     ctx.contentResolver.openInputStream(uri)?.use { input ->
                         temp.outputStream().use { output -> input.copyTo(output) }
                     } ?: throw Exception(getString(R.string.backup_file_open_failed))
                     temp
                 }
+                // tempEncFile 삭제를 여기서 하지 않음:
+                // restoreFromEncryptedFile()이 별도 코루틴을 실행하여 비동기로 파일을 읽으므로
+                // 즉시 삭제하면 경쟁 조건 발생. cacheDir 파일은 시스템이 관리.
                 restoreFromEncryptedFile(tempEncFile)
             } catch (e: Exception) {
                 if (_binding != null) {
                     Toast.makeText(ctx, getString(R.string.backup_restore_failed, e.message), Toast.LENGTH_LONG).show()
                 }
-            } finally {
-                tempEncFile?.delete()
             }
         }
     }
@@ -500,6 +500,9 @@ class SettingsFragment : Fragment() {
                 // 복호화된 xlsx를 ExcelImporter로 전달
                 val xlsxUri = Uri.fromFile(tempXlsx)
                 progressDialog.dismiss()
+                // tempXlsx 삭제를 여기서 하지 않음:
+                // importFromExcel()이 별도 코루틴을 실행하여 비동기로 파일을 읽으므로
+                // 즉시 삭제하면 경쟁 조건 발생. cacheDir 파일은 시스템이 관리.
                 importer.importFromExcel(xlsxUri)
 
             } catch (e: Exception) {
@@ -507,8 +510,6 @@ class SettingsFragment : Fragment() {
                 if (_binding != null) {
                     Toast.makeText(ctx, getString(R.string.backup_restore_failed, e.message), Toast.LENGTH_LONG).show()
                 }
-            } finally {
-                tempXlsx?.delete()
             }
         }
     }

@@ -196,6 +196,14 @@ class RelationshipHelper(
                 val selectedName = charAdapter.getItem(position) ?: return@setOnItemClickListener
                 selectedCharIndex = charDisplayNames.indexOf(selectedName)
             }
+            // 텍스트 변경 시 이전 선택을 무효화하여, 직접 입력 시 올바른 매칭이 이루어지도록 함
+            autoComplete.addTextChangedListener(object : android.text.TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                    selectedCharIndex = -1
+                }
+                override fun afterTextChanged(s: android.text.Editable?) {}
+            })
 
             AlertDialog.Builder(context)
                 .setTitle(getString(R.string.add_relationship))

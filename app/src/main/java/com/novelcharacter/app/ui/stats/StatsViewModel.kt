@@ -126,7 +126,8 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
                 val namesDeferred = async(Dispatchers.IO) { provider.computeNameBankStats(filtered) }
                 val healthDeferred = async(Dispatchers.IO) { provider.computeDataHealth(filtered) }
                 val fieldAnalysisDeferred = async(Dispatchers.IO) { provider.computeFieldAnalysis(filtered) }
-                val patternsDeferred = async(Dispatchers.IO) { provider.detectPatterns(filtered) }
+                val enabledPatternTypes = getEnabledPatternTypes()
+                val patternsDeferred = async(Dispatchers.IO) { provider.detectPatterns(filtered, enabledPatternTypes) }
                 val factionDeferred = async(Dispatchers.IO) { provider.computeFactionStats(filtered) }
 
                 val summary = summaryDeferred.await()

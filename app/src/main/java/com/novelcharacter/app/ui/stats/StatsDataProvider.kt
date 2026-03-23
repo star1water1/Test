@@ -925,8 +925,9 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
             it.imagePaths.isBlank() || it.imagePaths == "[]"
         }.map { it.name }
 
-        // 필드 미입력률 높은 캐릭터
-        val fieldDefByUniverse = s.fieldDefinitions.groupBy { it.universeId }
+        // 필드 미입력률 높은 캐릭터 (CALCULATED 필드 제외 — 자동 계산 필드이므로 수동 완성도에 포함시키지 않음)
+        val fieldDefByUniverse = s.fieldDefinitions.filter { it.type != "CALCULATED" }
+            .groupBy { it.universeId }
         val charFieldValuesByChar = s.fieldValues.groupBy { it.characterId }
 
         val incomplete = s.characters.mapNotNull { char ->

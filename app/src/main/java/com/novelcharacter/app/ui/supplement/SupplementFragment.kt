@@ -25,6 +25,8 @@ import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.databinding.FragmentSupplementBinding
 import com.novelcharacter.app.databinding.ItemSupplementCharacterBinding
 import com.novelcharacter.app.util.navigateSafe
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 
 class SupplementFragment : Fragment() {
 
@@ -377,10 +379,26 @@ class SupplementFragment : Fragment() {
     ) : RecyclerView.Adapter<SupplementAdapter.ViewHolder>() {
 
         private var items: List<SupplementTarget> = emptyList()
+        private val gson = com.google.gson.Gson()
+        private val imagePathsType = object : com.google.gson.reflect.TypeToken<List<String>>() {}.type
+        private var scope: kotlinx.coroutines.CoroutineScope? = null
 
         fun submitList(list: List<SupplementTarget>) {
             items = list
             notifyDataSetChanged()
+        }
+
+        override fun onAttachedToRecyclerView(recyclerView: RecyclerView) {
+            super.onAttachedToRecyclerView(recyclerView)
+            scope = kotlinx.coroutines.CoroutineScope(
+                kotlinx.coroutines.Dispatchers.Main + kotlinx.coroutines.SupervisorJob()
+            )
+        }
+
+        override fun onDetachedFromRecyclerView(recyclerView: RecyclerView) {
+            super.onDetachedFromRecyclerView(recyclerView)
+            scope?.cancel()
+            scope = null
         }
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
@@ -408,38 +426,43 @@ class SupplementFragment : Fragment() {
                 val issueLabels = target.issues.joinToString(", ") { it.label }
                 binding.issueText.text = itemView.context.getString(R.string.supplement_issue_summary, issueLabels)
 
-                // 이미지
+                // 이미지 — IO 스레드에서 비동기 디코딩
                 val imagePaths = try {
-                    com.google.gson.Gson().fromJson(
-                        target.character.imagePaths,
-                        object : com.google.gson.reflect.TypeToken<List<String>>() {}.type
-                    ) as? List<String> ?: emptyList()
+                    gson.fromJson<List<String>>(target.character.imagePaths, imagePathsType) ?: emptyList()
                 } catch (_: Exception) { emptyList() }
 
                 binding.characterImage.setImageResource(R.drawable.ic_character_placeholder)
                 if (imagePaths.isNotEmpty()) {
                     val path = imagePaths[0]
                     val appDir = itemView.context.filesDir
-                    try {
-                        val file = java.io.File(path)
-                        if (file.exists() && file.canonicalPath.startsWith(appDir.canonicalPath)) {
-                            val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                            BitmapFactory.decodeFile(path, options)
-                            val targetSize = (48 * itemView.context.resources.displayMetrics.density).toInt()
-                            var sampleSize = 1
-                            val halfH = options.outHeight / 2
-                            val halfW = options.outWidth / 2
-                            while (sampleSize < 1024 && halfH / sampleSize >= targetSize && halfW / sampleSize >= targetSize) {
-                                sampleSize *= 2
-                            }
-                            options.inSampleSize = sampleSize
-                            options.inJustDecodeBounds = false
-                            val bitmap = BitmapFactory.decodeFile(path, options)
-                            if (bitmap != null) {
+                    val charId = target.character.id
+                    scope?.launch {
+                        val bitmap = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                            try {
+                                val file = java.io.File(path)
+                                if (!file.exists() || !file.canonicalPath.startsWith(appDir.canonicalPath)) return@withContext null
+                                val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                                BitmapFactory.decodeFile(path, options)
+                                val targetSize = (48 * itemView.context.resources.displayMetrics.density).toInt()
+                                var sampleSize = 1
+                                val halfH = options.outHeight / 2
+                                val halfW = options.outWidth / 2
+                                while (sampleSize < 1024 && halfH / sampleSize >= targetSize && halfW / sampleSize >= targetSize) {
+                                    sampleSize *= 2
+                                }
+                                options.inSampleSize = sampleSize
+                                options.inJustDecodeBounds = false
+                                BitmapFactory.decodeFile(path, options)
+                            } catch (_: Exception) { null }
+                        }
+                        // ViewHolder가 재활용되었을 수 있으므로 검증
+                        if (bitmap != null && bindingAdapterPosition != RecyclerView.NO_POSITION) {
+                            val item = items.getOrNull(bindingAdapterPosition)
+                            if (item?.character?.id == charId) {
                                 binding.characterImage.setImageBitmap(bitmap)
                             }
                         }
-                    } catch (_: Exception) { }
+                    }
                 }
 
                 // 완성률 배지

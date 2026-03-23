@@ -190,13 +190,14 @@ class GlobalSearchViewModel(application: Application) : AndroidViewModel(applica
                 viewModelScope.launch {
                     filteredCharIds = applyFieldFilters(filters)
                     filterReady = true
+                    // addSource 콜백이 이미 실행되어 데이터가 채워졌을 수 있으므로 combine 호출
                     combine()
                 }
             }
 
-            mediator.addSource(charResults) { chars = it; combine() }
-            mediator.addSource(eventResults) { events = it; combine() }
-            mediator.addSource(novelResults) { novels = it; combine() }
+            mediator.addSource(charResults) { chars = it; if (filterReady) combine() }
+            mediator.addSource(eventResults) { events = it; if (filterReady) combine() }
+            mediator.addSource(novelResults) { novels = it; if (filterReady) combine() }
             mediator
         }
     }
