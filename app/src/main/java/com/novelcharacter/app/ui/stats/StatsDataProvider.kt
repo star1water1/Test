@@ -1325,47 +1325,127 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
         val charFieldValuesByChar = s.fieldValues.groupBy { it.characterId }
         val fieldDefByUniverse = s.fieldDefinitions.groupBy { it.universeId }
 
-        // 필드별 값 분포 (이산 값을 가지는 필드 타입)
-        val distributionTypes = setOf("SELECT", "GRADE", "MULTI_TEXT", "BODY_SIZE", "TEXT")
+        // 필드별 값 분포 (이산 값을 가지는 필드 타입 — BODY_SIZE는 수치이므로 제외)
+        val distributionTypes = setOf("SELECT", "GRADE", "MULTI_TEXT", "TEXT")
         val valuesByFieldDef = s.fieldValues.filter { it.value.isNotBlank() }
             .groupBy { it.fieldDefinitionId }
 
-        val fieldValueDists = s.fieldDefinitions
-            .filter { it.type in distributionTypes }
-            .mapNotNull { fd ->
-                val values = valuesByFieldDef[fd.id] ?: return@mapNotNull null
-                val statsConfig = FieldStatsConfig.fromConfig(fd.config)
-                val allKeys = values.flatMap { fv ->
-                    getFieldValues(fd, fv.value, statsConfig)
-                }
-                val dist = allKeys.groupBy { it }.mapValues { it.value.size }
-                    .entries.sortedByDescending { it.value }.associate { it.key to it.value }
-                if (dist.isEmpty()) return@mapNotNull null
-                FieldValueDistribution(fd.id, fd.name, fd.type, fd.groupName, dist)
+        val fieldValueDists = mutableListOf<FieldValueDistribution>()
+
+        // 이산 값 분포
+        for (fd in s.fieldDefinitions.filter { it.type in distributionTypes }) {
+            val values = valuesByFieldDef[fd.id] ?: continue
+            val statsConfig = FieldStatsConfig.fromConfig(fd.config)
+            val allKeys = values.flatMap { fv ->
+                getFieldValues(fd, fv.value, statsConfig)
+            }
+            val dist = allKeys.groupBy { it }.mapValues { it.value.size }
+                .entries.sortedByDescending { it.value }.associate { it.key to it.value }
+            if (dist.isEmpty()) continue
+            fieldValueDists.add(FieldValueDistribution(fd.id, fd.name, fd.type, fd.groupName, dist))
+        }
+
+        // BODY_SIZE 필드: 파트별 범위 분포 생성
+        for (fd in s.fieldDefinitions.filter { it.type == "BODY_SIZE" }) {
+            val rawValues = valuesByFieldDef[fd.id] ?: continue
+            val structuredConfig = StructuredInputConfig.fromConfig(fd.config)
+            val separator = if (structuredConfig.enabled) structuredConfig.separator else "-"
+            val partCount = if (structuredConfig.enabled && structuredConfig.parts.isNotEmpty()) {
+                structuredConfig.parts.size
+            } else {
+                rawValues.firstOrNull()?.value?.split(separator)?.size ?: 1
             }
 
+            for (partIdx in 0 until partCount) {
+                val partLabel = if (structuredConfig.enabled && partIdx < structuredConfig.parts.size) {
+                    structuredConfig.parts[partIdx].label
+                } else "파트${partIdx + 1}"
+
+                val numericValues = rawValues.mapNotNull { cfv ->
+                    val parts = cfv.value.split(separator).map { it.trim() }
+                    parts.getOrNull(partIdx)?.toFloatOrNull()
+                }
+                if (numericValues.size < 2) continue
+
+                val sorted = numericValues.sorted()
+                val min = sorted.first()
+                val max = sorted.last()
+                val range = max - min
+                if (range <= 0) continue
+
+                val binSize = range / 5f
+                val dist = linkedMapOf<String, Int>()
+                for (i in 0 until 5) {
+                    val binMin = min + i * binSize
+                    val binMax = if (i == 4) max else min + (i + 1) * binSize
+                    val label = "${binMin.toInt()}~${binMax.toInt()}"
+                    dist[label] = numericValues.count { it >= binMin && (if (i == 4) it <= binMax else it < binMax) }
+                }
+                fieldValueDists.add(FieldValueDistribution(
+                    fd.id, "${fd.name} — $partLabel", fd.type, fd.groupName, dist
+                ))
+            }
+        }
+
         // NUMBER 타입 필드 통계 요약
-        val numberSummaries = s.fieldDefinitions
-            .filter { it.type == "NUMBER" }
-            .mapNotNull { fd ->
-                val values = valuesByFieldDef[fd.id]
-                    ?.mapNotNull { it.value.toFloatOrNull() }
-                    ?: return@mapNotNull null
-                if (values.isEmpty()) return@mapNotNull null
-                val sorted = values.sorted()
+        val numberSummaries = mutableListOf<NumberFieldSummary>()
+
+        for (fd in s.fieldDefinitions.filter { it.type == "NUMBER" }) {
+            val values = valuesByFieldDef[fd.id]
+                ?.mapNotNull { it.value.toFloatOrNull() }
+                ?: continue
+            if (values.isEmpty()) continue
+            val sorted = values.sorted()
+            val median = if (sorted.size % 2 == 0) {
+                (sorted[sorted.size / 2 - 1] + sorted[sorted.size / 2]) / 2f
+            } else sorted[sorted.size / 2]
+            numberSummaries.add(NumberFieldSummary(
+                fieldName = fd.name,
+                min = sorted.first(),
+                max = sorted.last(),
+                avg = values.average().toFloat(),
+                median = median,
+                count = values.size,
+                values = sorted
+            ))
+        }
+
+        // BODY_SIZE 타입: 파트별 수치 요약 (min/max/avg/median)
+        for (fd in s.fieldDefinitions.filter { it.type == "BODY_SIZE" }) {
+            val rawValues = valuesByFieldDef[fd.id] ?: continue
+            val structuredConfig = StructuredInputConfig.fromConfig(fd.config)
+            val separator = if (structuredConfig.enabled) structuredConfig.separator else "-"
+            val partCount = if (structuredConfig.enabled && structuredConfig.parts.isNotEmpty()) {
+                structuredConfig.parts.size
+            } else {
+                rawValues.firstOrNull()?.value?.split(separator)?.size ?: 1
+            }
+
+            for (partIdx in 0 until partCount) {
+                val partLabel = if (structuredConfig.enabled && partIdx < structuredConfig.parts.size) {
+                    structuredConfig.parts[partIdx].label
+                } else "파트${partIdx + 1}"
+
+                val numericValues = rawValues.mapNotNull { cfv ->
+                    val parts = cfv.value.split(separator).map { it.trim() }
+                    parts.getOrNull(partIdx)?.toFloatOrNull()
+                }
+                if (numericValues.isEmpty()) continue
+                val sorted = numericValues.sorted()
                 val median = if (sorted.size % 2 == 0) {
                     (sorted[sorted.size / 2 - 1] + sorted[sorted.size / 2]) / 2f
                 } else sorted[sorted.size / 2]
-                NumberFieldSummary(
-                    fieldName = fd.name,
+                numberSummaries.add(NumberFieldSummary(
+                    fieldName = "${fd.name} — $partLabel",
                     min = sorted.first(),
                     max = sorted.last(),
-                    avg = values.average().toFloat(),
+                    avg = numericValues.average().toFloat(),
                     median = median,
-                    count = values.size,
+                    count = numericValues.size,
                     values = sorted
-                )
+                ))
             }
+        }
 
         // 개별 필드별 완성도
         val fieldCompletionDetails = s.fieldDefinitions.map { fd ->

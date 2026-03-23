@@ -6,9 +6,11 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.text.Editable
+import android.text.TextWatcher
+import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
-import android.widget.ListView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
@@ -446,10 +448,11 @@ class FactionManageFragment : Fragment() {
 
             val ctx = requireContext()
             val density = resources.displayMetrics.density
+            val dp = { value: Int -> (value * density).toInt() }
 
             val container = LinearLayout(ctx).apply {
                 orientation = LinearLayout.VERTICAL
-                setPadding((16 * density).toInt(), (8 * density).toInt(), (16 * density).toInt(), 0)
+                setPadding(dp(16), dp(8), dp(16), 0)
             }
 
             // 가입 연도 입력 (선택)
@@ -459,21 +462,65 @@ class FactionManageFragment : Fragment() {
             }
             container.addView(editYear)
 
-            // 캐릭터 체크박스 목록
+            // 검색창
+            val searchEdit = EditText(ctx).apply {
+                hint = getString(R.string.name_search_hint)
+                inputType = android.text.InputType.TYPE_CLASS_TEXT
+                setSingleLine()
+            }
+            container.addView(searchEdit)
+
+            // 캐릭터 체크박스 목록 (검색 필터링 지원)
             val selectedIds = mutableSetOf<Long>()
-            val listView = ListView(ctx).apply {
+            var filteredCharacters = allCharacters.toList()
+
+            val listContainer = LinearLayout(ctx).apply {
+                orientation = LinearLayout.VERTICAL
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
-                    (250 * density).toInt()
+                    dp(250)
                 )
-                choiceMode = ListView.CHOICE_MODE_MULTIPLE
-                adapter = android.widget.ArrayAdapter(ctx, android.R.layout.simple_list_item_multiple_choice, allCharacters.map { it.name })
             }
-            listView.setOnItemClickListener { _, _, position, _ ->
-                val charId = allCharacters[position].id
-                if (selectedIds.contains(charId)) selectedIds.remove(charId) else selectedIds.add(charId)
+
+            val scrollView = android.widget.ScrollView(ctx).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.MATCH_PARENT
+                )
+                addView(listContainer)
             }
-            container.addView(listView)
+            container.addView(scrollView)
+
+            fun rebuildList() {
+                listContainer.removeAllViews()
+                for (char in filteredCharacters) {
+                    val checkBox = CheckBox(ctx).apply {
+                        text = char.name
+                        isChecked = char.id in selectedIds
+                        setPadding(dp(4), dp(8), dp(4), dp(8))
+                        setOnCheckedChangeListener { _, isChecked ->
+                            if (isChecked) selectedIds.add(char.id) else selectedIds.remove(char.id)
+                        }
+                    }
+                    listContainer.addView(checkBox)
+                }
+            }
+
+            rebuildList()
+
+            searchEdit.addTextChangedListener(object : TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+                override fun afterTextChanged(s: Editable?) {
+                    val query = s?.toString()?.trim() ?: ""
+                    filteredCharacters = if (query.isEmpty()) {
+                        allCharacters.toList()
+                    } else {
+                        allCharacters.filter { it.name.contains(query, ignoreCase = true) }
+                    }
+                    rebuildList()
+                }
+            })
 
             AlertDialog.Builder(ctx)
                 .setTitle(R.string.faction_member_add)

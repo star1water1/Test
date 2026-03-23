@@ -2,6 +2,7 @@ package com.novelcharacter.app.ui.graph
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.res.Configuration
 import android.graphics.*
 import android.util.AttributeSet
 import android.view.GestureDetector
@@ -50,6 +51,8 @@ class RelationshipGraphView @JvmOverloads constructor(
             invalidate()
         }
 
+    private val isDarkMode = (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+
     // 엣지 쌍별 개수 캐시 (setGraphData/updateEdges 시 갱신, onDraw마다 재생성 방지)
     private var cachedPairEdgeCount = mapOf<Long, Int>()
 
@@ -82,10 +85,17 @@ class RelationshipGraphView @JvmOverloads constructor(
         textAlign = Paint.Align.CENTER
     }
 
-    // 라벨 배경 (가독성 향상)
+    // 라벨 배경 (가독성 향상) — 라이트/다크 모드별 대비 확보
     private val labelBgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.argb(180, 0, 0, 0)
+        color = if (isDarkMode) Color.argb(180, 0, 0, 0) else Color.argb(210, 255, 255, 255)
         style = Paint.Style.FILL
+    }
+
+    // 라벨 배경 테두리 (라이트모드에서 경계 구분용)
+    private val labelBorderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = if (isDarkMode) Color.TRANSPARENT else Color.argb(60, 0, 0, 0)
+        style = Paint.Style.STROKE
+        strokeWidth = 1f
     }
 
     // 세력 배경 페인트
@@ -103,20 +113,35 @@ class RelationshipGraphView @JvmOverloads constructor(
     private val factionHullPath = Path()
 
     // 관계 타입별 색상 (외부에서 커스터마이즈 가능)
-    private var relationshipColors: Map<String, Int> = DEFAULT_COLORS
+    private var relationshipColors: Map<String, Int> = if (isDarkMode) DEFAULT_COLORS_DARK else DEFAULT_COLORS_LIGHT
 
     companion object {
-        val DEFAULT_COLORS = mapOf(
-            "연인" to Color.parseColor("#E91E63"),
-            "적" to Color.parseColor("#F44336"),   // 다크 배경에서 보이도록 밝은 빨강
-            "라이벌" to Color.parseColor("#FF5722"),
-            "동료" to Color.parseColor("#2196F3"),
-            "친구" to Color.parseColor("#4CAF50"),
-            "부모-자식" to Color.parseColor("#9C27B0"),
-            "형제자매" to Color.parseColor("#FF9800"),
-            "멘토-제자" to Color.parseColor("#00BCD4"),
+        val DEFAULT_COLORS_DARK = mapOf(
+            "연인" to Color.parseColor("#F06292"),
+            "적" to Color.parseColor("#EF5350"),
+            "라이벌" to Color.parseColor("#FF7043"),
+            "동료" to Color.parseColor("#42A5F5"),
+            "친구" to Color.parseColor("#66BB6A"),
+            "부모-자식" to Color.parseColor("#AB47BC"),
+            "형제자매" to Color.parseColor("#FFA726"),
+            "멘토-제자" to Color.parseColor("#26C6DA"),
             "기타" to Color.parseColor("#9E9E9E")
         )
+
+        val DEFAULT_COLORS_LIGHT = mapOf(
+            "연인" to Color.parseColor("#C2185B"),
+            "적" to Color.parseColor("#D32F2F"),
+            "라이벌" to Color.parseColor("#E64A19"),
+            "동료" to Color.parseColor("#1565C0"),
+            "친구" to Color.parseColor("#2E7D32"),
+            "부모-자식" to Color.parseColor("#7B1FA2"),
+            "형제자매" to Color.parseColor("#E65100"),
+            "멘토-제자" to Color.parseColor("#00838F"),
+            "기타" to Color.parseColor("#616161")
+        )
+
+        // 하위 호환용
+        val DEFAULT_COLORS = DEFAULT_COLORS_DARK
     }
 
     /**
@@ -133,7 +158,8 @@ class RelationshipGraphView @JvmOverloads constructor(
             }
         }
         // 기본 색상에 커스텀 색상을 오버레이
-        relationshipColors = DEFAULT_COLORS + parsed
+        val base = if (isDarkMode) DEFAULT_COLORS_DARK else DEFAULT_COLORS_LIGHT
+        relationshipColors = base + parsed
         invalidate()
     }
 
@@ -518,15 +544,19 @@ class RelationshipGraphView @JvmOverloads constructor(
             val labelHeight = edgeLabelPaint.textSize
             val labelY = midY - 6f
 
-            labelBgPaint.color = if (edge.isActive) Color.argb(180, 0, 0, 0) else Color.argb(100, 0, 0, 0)
-            canvas.drawRoundRect(
-                midX - labelWidth / 2 - 4f,
-                labelY - labelHeight + 2f,
-                midX + labelWidth / 2 + 4f,
-                labelY + 4f,
-                4f, 4f,
-                labelBgPaint
-            )
+            labelBgPaint.color = if (isDarkMode) {
+                if (edge.isActive) Color.argb(180, 0, 0, 0) else Color.argb(100, 0, 0, 0)
+            } else {
+                if (edge.isActive) Color.argb(210, 255, 255, 255) else Color.argb(140, 255, 255, 255)
+            }
+            val labelLeft = midX - labelWidth / 2 - 4f
+            val labelTop = labelY - labelHeight + 2f
+            val labelRight = midX + labelWidth / 2 + 4f
+            val labelBottom = labelY + 4f
+            canvas.drawRoundRect(labelLeft, labelTop, labelRight, labelBottom, 4f, 4f, labelBgPaint)
+            if (!isDarkMode) {
+                canvas.drawRoundRect(labelLeft, labelTop, labelRight, labelBottom, 4f, 4f, labelBorderPaint)
+            }
 
             edgeLabelPaint.color = if (edge.isActive) edgeColor else Color.argb(80, Color.red(edgeColor), Color.green(edgeColor), Color.blue(edgeColor))
             canvas.drawText(labelText, midX, labelY, edgeLabelPaint)
