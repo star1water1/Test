@@ -478,14 +478,14 @@ class FactionManageFragment : Fragment() {
                 orientation = LinearLayout.VERTICAL
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
-                    dp(250)
+                    LinearLayout.LayoutParams.WRAP_CONTENT
                 )
             }
 
             val scrollView = android.widget.ScrollView(ctx).apply {
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.MATCH_PARENT
+                    dp(250)
                 )
                 addView(listContainer)
             }
