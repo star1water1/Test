@@ -2048,6 +2048,9 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
             val fieldDefIdSet = fieldDefIds.toSet()
             val rawValues = s.fieldValues.filter { it.fieldDefinitionId in fieldDefIdSet }
 
+            // 머지된 필드별 FieldDefinition 역추적 맵 (GRADE/BODY_SIZE에서 올바른 config 사용)
+            val fieldDefMap = allFds.associateBy { it.id }
+
             // 빈도 모드용: 전체 빈도 계산
             val frequencyMap = if (!isNumeric) {
                 val allValues = mutableListOf<String>()
@@ -2060,9 +2063,6 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
                 }
                 allValues.groupBy { it }.mapValues { it.value.size }
             } else emptyMap()
-
-            // BODY_SIZE 파싱 설정은 루프 밖에서 한 번만 생성
-            val bodySizeConfig = if (fd.type == "BODY_SIZE") StructuredInputConfig.fromConfig(fd.config) else null
 
             for (fv in rawValues) {
                 val char = charMap[fv.characterId] ?: continue
@@ -2079,13 +2079,17 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
                         } else parseFailed++
                     }
                 "GRADE" -> {
-                    val numericValue = resolveGradeValueForRanking(fd, fv.value)
+                    // 값이 속한 FieldDefinition의 config으로 등급 해석 (세계관별 맵핑 차이 대응)
+                    val ownerFd = fieldDefMap[fv.fieldDefinitionId] ?: fd
+                    val numericValue = resolveGradeValueForRanking(ownerFd, fv.value)
                     if (numericValue != null) {
                         charValues.add(CharValue(char.id, numericValue, fv.value))
                     } else parseFailed++
                 }
                 "BODY_SIZE" -> {
-                    val sic = bodySizeConfig!!
+                    // 값이 속한 FieldDefinition의 config으로 파싱 (세계관별 separator 차이 대응)
+                    val ownerFd = fieldDefMap[fv.fieldDefinitionId] ?: fd
+                    val sic = StructuredInputConfig.fromConfig(ownerFd.config)
                     val partIdx = (bodySizePartIndex ?: 0).coerceAtLeast(0)
                     val parts = if (sic.enabled) {
                         fv.value.split(sic.separator).map { it.trim() }

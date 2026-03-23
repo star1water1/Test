@@ -301,8 +301,14 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val snapshot = ensureSnapshot()
                 val scoped = if (novelId != null) provider.filterByNovel(snapshot, novelId) else snapshot
+                // filterByNovel 후 다른 세계관의 fieldDefId가 스냅샷에 없을 수 있음 → 교집합
+                val validIds = fieldDefIds.filter { id -> scoped.fieldDefinitions.any { it.id == id } }
+                if (validIds.isEmpty()) {
+                    _rankingResult.value = StatsDataProvider.RankingResult(emptyList(), "", "", ascending, 0, 0)
+                    return@launch
+                }
                 _rankingResult.value = withContext(Dispatchers.IO) {
-                    provider.computeRanking(scoped, fieldDefIds, ascending, bodySizePartIndex)
+                    provider.computeRanking(scoped, validIds, ascending, bodySizePartIndex)
                 }
             } catch (e: Exception) {
                 _error.value = e.message
