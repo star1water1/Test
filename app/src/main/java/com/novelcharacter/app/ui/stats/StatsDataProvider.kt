@@ -385,7 +385,9 @@ data class RankingResult(
 data class RankableField(
     val fieldDef: FieldDefinition,
     val bodySizeParts: List<String>?,
-    val isNumeric: Boolean
+    val isNumeric: Boolean,
+    /** 전체 세계관 모드에서 같은 key+type으로 머지된 모든 fieldDefId 목록 */
+    val mergedFieldDefIds: List<Long> = listOf(fieldDef.id)
 )
 
 class StatsDataProvider(private val app: NovelCharacterApp) {
@@ -1629,7 +1631,7 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
 
     // ===== 개선 3: 패턴 감지 & 서사적 인사이트 =====
 
-    fun detectPatterns(s: StatsSnapshot): List<PatternInsight> {
+    fun detectPatterns(s: StatsSnapshot, enabledTypes: Set<PatternType> = PatternType.values().toSet()): List<PatternInsight> {
         val insights = mutableListOf<PatternInsight>()
 
         // 필드별 분포 패턴 감지
@@ -1652,7 +1654,7 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
 
             // 패턴 1: 편중 (단일 값 60%+)
             val topEntry = dist.maxByOrNull { it.value }
-            if (topEntry != null) {
+            if (PatternType.DOMINANCE in enabledTypes && topEntry != null) {
                 val topPct = topEntry.value * 100f / total
                 if (topPct >= 60f) {
                     insights.add(PatternInsight(
@@ -1667,7 +1669,7 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
             }
 
             // 패턴 2: 균형 (모든 값 10~30% 사이)
-            if (dist.size >= 3) {
+            if (PatternType.BALANCE in enabledTypes && dist.size >= 3) {
                 val pcts = dist.values.map { it * 100f / total }
                 val allBalanced = pcts.all { it in 10f..35f }
                 if (allBalanced) {
@@ -1683,7 +1685,7 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
             }
 
             // 패턴 3: 이상치 (1개 값만 가진 희소 항목이 전체의 2% 미만이고, 나머지는 밀집)
-            if (total >= 10) {
+            if (PatternType.OUTLIER in enabledTypes && total >= 10) {
                 val singletons = dist.entries.filter { it.value == 1 }
                 val singletonPct = singletons.size * 100f / total
                 if (singletons.isNotEmpty() && singletonPct <= 5f && dist.size > 3) {
@@ -1701,11 +1703,12 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
         }
 
         // 패턴 4: 사건 연도 집중 (특정 10년에 50%+ 집중)
-        if (s.events.size >= 5) {
+        val clusterOrAbsence = PatternType.CLUSTER in enabledTypes || PatternType.ABSENCE in enabledTypes
+        if (clusterOrAbsence && s.events.size >= 5) {
             val byDecade = s.events.groupBy { (it.year / 10) * 10 }
             val totalEvents = s.events.size
             val topDecade = byDecade.maxByOrNull { it.value.size }
-            if (topDecade != null) {
+            if (PatternType.CLUSTER in enabledTypes && topDecade != null) {
                 val pct = topDecade.value.size * 100f / totalEvents
                 if (pct >= 50f) {
                     insights.add(PatternInsight(
@@ -1720,7 +1723,7 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
 
             // 공백 구간 (100년 이상 사건 없는 구간)
             val years = s.events.map { it.year }.sorted()
-            if (years.size >= 2) {
+            if (PatternType.ABSENCE in enabledTypes && years.size >= 2) {
                 val gaps = years.zipWithNext().filter { it.second - it.first > 100 }
                 for (gap in gaps.take(2)) {
                     insights.add(PatternInsight(
@@ -1735,7 +1738,7 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
         }
 
         // 패턴 5: 작품 간 비교 (원칙05 유기적 연결)
-        if (s.novels.size >= 2) {
+        if (PatternType.CROSS_NOVEL in enabledTypes && s.novels.size >= 2) {
             val charByNovel = s.characters.groupBy { it.novelId }
             val novelSizes = charByNovel.mapNotNull { (nid, chars) ->
                 val novel = s.novels.find { it.id == nid } ?: return@mapNotNull null
@@ -1800,7 +1803,7 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
 
             // 세력이 존재하지만 멤버가 0명인 경우
             val emptyFactions = s.factions.filter { (factionMemberCounts[it.id] ?: 0) == 0 }
-            if (emptyFactions.isNotEmpty()) {
+            if (PatternType.ABSENCE in enabledTypes && emptyFactions.isNotEmpty()) {
                 insights.add(PatternInsight(
                     type = PatternType.ABSENCE,
                     severity = PatternSeverity.MEDIUM,
@@ -1811,7 +1814,7 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
             }
 
             // 모든 캐릭터가 동일한 단일 세력에 속한 경우
-            if (s.characters.isNotEmpty()) {
+            if (PatternType.DOMINANCE in enabledTypes && s.characters.isNotEmpty()) {
                 val charsInFactions = activeMemberships.map { it.characterId }.toSet()
                 if (charsInFactions.size == s.characters.size && s.factions.size >= 1) {
                     val factionIds = activeMemberships.map { it.factionId }.distinct()
@@ -1928,7 +1931,7 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
 
     /**
      * 순위를 매길 수 있는 필드 목록을 반환한다.
-     * universeId가 null이면 모든 세계관의 필드를 반환한다.
+     * universeId가 null이면 모든 세계관의 필드를 (key, type) 기준으로 머지하여 중복 없이 반환한다.
      */
     fun getRankableFields(s: StatsSnapshot, universeId: Long?): List<RankableField> {
         val fields = if (universeId != null) {
@@ -1937,38 +1940,57 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
             s.fieldDefinitions
         }
 
-        return fields
-            .filter { FieldStatsConfig.fromConfig(it.config).enabled }
-            .map { fd ->
-                val type = fd.type
-                val isNumeric = type in listOf("NUMBER", "CALCULATED", "GRADE", "BODY_SIZE")
-                val bodySizeParts = if (type == "BODY_SIZE") {
-                    val sic = StructuredInputConfig.fromConfig(fd.config)
-                    if (sic.enabled && sic.parts.isNotEmpty()) {
-                        sic.parts.map { it.label }
-                    } else {
-                        listOf("가슴(B)", "허리(W)", "엉덩이(H)")
-                    }
-                } else null
-                RankableField(fd, bodySizeParts, isNumeric)
-            }
+        val enabledFields = fields.filter { FieldStatsConfig.fromConfig(it.config).enabled }
+
+        // 전체 세계관: 같은 (key, type)의 필드를 하나로 머지
+        val grouped = if (universeId == null) {
+            enabledFields.groupBy { it.key to it.type }
+        } else {
+            // 단일 세계관: 각 필드를 개별 그룹으로
+            enabledFields.map { (it.key to it.type) to listOf(it) }.toMap()
+        }
+
+        return grouped.map { (_, fds) ->
+            val primaryFd = fds.first()
+            val type = primaryFd.type
+            val isNumeric = type in listOf("NUMBER", "CALCULATED", "GRADE", "BODY_SIZE")
+            val bodySizeParts = if (type == "BODY_SIZE") {
+                val sic = StructuredInputConfig.fromConfig(primaryFd.config)
+                if (sic.enabled && sic.parts.isNotEmpty()) {
+                    sic.parts.map { it.label }
+                } else {
+                    listOf("가슴(B)", "허리(W)", "엉덩이(H)")
+                }
+            } else null
+            RankableField(primaryFd, bodySizeParts, isNumeric,
+                mergedFieldDefIds = fds.map { it.id })
+        }
     }
 
     /**
      * 지정된 필드에 대해 캐릭터 순위를 계산한다.
+     * fieldDefIds: 전체 세계관 모드에서 같은 key+type으로 머지된 모든 fieldDefId 목록.
+     *              단일 세계관 모드에서는 [fieldDefId] 하나만 전달.
      */
     fun computeRanking(
         s: StatsSnapshot,
-        fieldDefId: Long,
+        fieldDefIds: List<Long>,
         ascending: Boolean = false,
         bodySizePartIndex: Int? = null
     ): RankingResult {
+        val fieldDefId = fieldDefIds.first()
         val fd = s.fieldDefinitions.find { it.id == fieldDefId }
             ?: return RankingResult(emptyList(), "", "", ascending, 0, 0)
 
         val charMap = s.characters.associateBy { it.id }
         val novelMap = s.novels.associateBy { it.id }
         val isNumeric = fd.type in listOf("NUMBER", "CALCULATED", "GRADE", "BODY_SIZE")
+
+        // 관련 세계관 ID 집합 (머지된 모든 필드의 세계관)
+        val allFds = fieldDefIds.mapNotNull { id -> s.fieldDefinitions.find { it.id == id } }
+        val relevantUniverseIds = allFds.map { it.universeId }.toSet()
+        val relevantNovelIds = s.novels.filter { it.universeId in relevantUniverseIds }.map { it.id }.toSet()
+        val relevantCharCount = s.characters.count { it.novelId in relevantNovelIds }
 
         data class CharValue(val charId: Long, val numericValue: Double, val displayValue: String)
 
@@ -1983,30 +2005,34 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
             } catch (_: Exception) { "" }
             if (formula.isBlank()) return RankingResult(emptyList(), fd.name, fd.type, ascending, 0, 0)
 
-            // 같은 세계관의 필드 정의 (GRADE 변환용)
-            val universeFields = s.fieldDefinitions.filter { it.universeId == fd.universeId }
-            val fieldDefById = universeFields.associateBy { it.id }
-
-            // 캐릭터별 필드값 미리 그룹핑
             val allCharFieldValues = s.fieldValues.groupBy { it.characterId }
 
-            // 이 세계관에 속하는 캐릭터만 (novel → universeId 연결)
-            val targetChars = s.characters.filter { char ->
-                val novel = char.novelId?.let { nid -> novelMap[nid] }
-                novel?.universeId == fd.universeId
-            }
+            // 모든 관련 세계관의 캐릭터를 세계관별로 처리
+            for (calcFd in allFds.filter { it.type == "CALCULATED" }) {
+                val universeFields = s.fieldDefinitions.filter { it.universeId == calcFd.universeId }
+                val fieldDefById = universeFields.associateBy { it.id }
+                val calcFormula = try {
+                    org.json.JSONObject(calcFd.config).optString("formula", "")
+                } catch (_: Exception) { "" }
+                if (calcFormula.isBlank()) continue
 
-            for (char in targetChars) {
-                processedCharIds.add(char.id)
-                val values = allCharFieldValues[char.id] ?: emptyList()
-                val fieldKeyValues = mutableMapOf<String, String>()
-                for (fv in values) {
-                    val fDef = fieldDefById[fv.fieldDefinitionId] ?: continue
-                    fieldKeyValues[fDef.key] = fv.value
+                val targetChars = s.characters.filter { char ->
+                    val novel = char.novelId?.let { nid -> novelMap[nid] }
+                    novel?.universeId == calcFd.universeId
                 }
-                try {
-                    val evaluator = FormulaEvaluator(fieldKeyValues, universeFields)
-                    val result = evaluator.evaluate(formula)
+
+                for (char in targetChars) {
+                    if (char.id in processedCharIds) continue
+                    processedCharIds.add(char.id)
+                    val values = allCharFieldValues[char.id] ?: emptyList()
+                    val fieldKeyValues = mutableMapOf<String, String>()
+                    for (fv in values) {
+                        val fDef = fieldDefById[fv.fieldDefinitionId] ?: continue
+                        fieldKeyValues[fDef.key] = fv.value
+                    }
+                    try {
+                        val evaluator = FormulaEvaluator(fieldKeyValues, universeFields)
+                        val result = evaluator.evaluate(calcFormula)
                     if (!result.isNaN() && !result.isInfinite()) {
                         val display = if (result == result.toLong().toDouble()) result.toLong().toString()
                         else String.format("%.1f", result)
@@ -2016,9 +2042,11 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
                     parseFailed++
                 }
             }
+            }
         } else {
             // ── NUMBER, GRADE, BODY_SIZE, SELECT, TEXT, MULTI_TEXT: 기존 DB 값 기반 ──
-            val rawValues = s.fieldValues.filter { it.fieldDefinitionId == fieldDefId }
+            val fieldDefIdSet = fieldDefIds.toSet()
+            val rawValues = s.fieldValues.filter { it.fieldDefinitionId in fieldDefIdSet }
 
             // 빈도 모드용: 전체 빈도 계산
             val frequencyMap = if (!isNumeric) {
@@ -2090,8 +2118,8 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
         }
         } // else (non-CALCULATED)
 
-        // 제외 카운트: 파싱 실패 + 필드 값이 아예 없는 캐릭터 (이중 카운트 방지)
-        val noValueCount = s.characters.size - processedCharIds.size
+        // 제외 카운트: 관련 세계관 캐릭터만 기준 (전체 세계관 모드에서 다른 세계관 캐릭터 제외)
+        val noValueCount = relevantCharCount - processedCharIds.size
         val excludedCount = parseFailed + noValueCount
 
         // 정렬 및 순위 할당 (동점 시 표준 경쟁 순위: 1,2,2,4)

@@ -267,7 +267,7 @@ class StatsMainFragment : Fragment() {
         val field = currentRankableFields.getOrNull(selectedFieldIndex) ?: return
         val bodyPartIdx = if (field.fieldDef.type == "BODY_SIZE") selectedBodySizePartIndex else null
         viewModel.loadRanking(
-            fieldDefId = field.fieldDef.id,
+            fieldDefIds = field.mergedFieldDefIds,
             ascending = currentAscending,
             bodySizePartIndex = bodyPartIdx,
             novelId = selectedNovelIdForRanking
@@ -402,6 +402,11 @@ class StatsMainFragment : Fragment() {
             populatePatternInsights(patterns)
         }
 
+        // 패턴 인사이트 설정 버튼
+        binding.patternSettingsButton.setOnClickListener {
+            showPatternSettingsDialog()
+        }
+
         // 필드 인사이트 미리보기
         viewModel.fieldInsights.observe(viewLifecycleOwner) { insights ->
             populateInsightPreview(insights)
@@ -508,6 +513,32 @@ class StatsMainFragment : Fragment() {
     }
 
     // ===== 패턴 인사이트 (개선 3) =====
+
+    private fun showPatternSettingsDialog() {
+        val ctx = context ?: return
+        val allTypes = PatternType.values()
+        val prefs = ctx.getSharedPreferences("stats_prefs", 0)
+        val storedSet = prefs.getStringSet("pattern_insights_enabled_types", null)
+        val enabledSet = storedSet?.mapNotNull { name ->
+            try { PatternType.valueOf(name) } catch (_: Exception) { null }
+        }?.toMutableSet() ?: allTypes.toMutableSet()
+
+        val labels = allTypes.map { it.label }
+        val checked = allTypes.map { it in enabledSet }.toBooleanArray()
+
+        android.app.AlertDialog.Builder(ctx)
+            .setTitle(getString(R.string.stats_pattern_settings))
+            .setMultiChoiceItems(labels.toTypedArray(), checked) { _, which, isChecked ->
+                if (isChecked) enabledSet.add(allTypes[which])
+                else enabledSet.remove(allTypes[which])
+            }
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                viewModel.saveEnabledPatternTypes(enabledSet)
+                viewModel.loadPatternInsights()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
 
     private fun populatePatternInsights(patterns: List<PatternInsight>) {
         val container = binding.patternInsightContainer

@@ -296,13 +296,13 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun loadRanking(fieldDefId: Long, ascending: Boolean = false, bodySizePartIndex: Int? = null, novelId: Long? = null) {
+    fun loadRanking(fieldDefIds: List<Long>, ascending: Boolean = false, bodySizePartIndex: Int? = null, novelId: Long? = null) {
         viewModelScope.launch {
             try {
                 val snapshot = ensureSnapshot()
                 val scoped = if (novelId != null) provider.filterByNovel(snapshot, novelId) else snapshot
                 _rankingResult.value = withContext(Dispatchers.IO) {
-                    provider.computeRanking(scoped, fieldDefId, ascending, bodySizePartIndex)
+                    provider.computeRanking(scoped, fieldDefIds, ascending, bodySizePartIndex)
                 }
             } catch (e: Exception) {
                 _error.value = e.message
@@ -329,13 +329,31 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val snapshot = ensureSnapshot()
                 val filtered = getFilteredSnapshot(snapshot)
+                val enabledTypes = getEnabledPatternTypes()
                 _patternInsights.value = withContext(Dispatchers.IO) {
-                    provider.detectPatterns(filtered)
+                    provider.detectPatterns(filtered, enabledTypes)
                 }
             } catch (e: Exception) {
                 _error.value = e.message
             }
         }
+    }
+
+    /** SharedPreferences에서 사용자가 활성화한 패턴 유형 목록을 읽는다. */
+    private fun getEnabledPatternTypes(): Set<PatternType> {
+        val prefs = getApplication<Application>().getSharedPreferences("stats_prefs", 0)
+        val stored = prefs.getStringSet("pattern_insights_enabled_types", null)
+            ?: return PatternType.values().toSet() // 기본값: 전체 활성
+        return stored.mapNotNull { name ->
+            try { PatternType.valueOf(name) } catch (_: Exception) { null }
+        }.toSet()
+    }
+
+    /** 사용자가 선택한 패턴 유형을 저장한다. */
+    fun saveEnabledPatternTypes(enabledTypes: Set<PatternType>) {
+        val prefs = getApplication<Application>().getSharedPreferences("stats_prefs", 0)
+        prefs.edit().putStringSet("pattern_insights_enabled_types",
+            enabledTypes.map { it.name }.toSet()).apply()
     }
 
     // ===== 개선 6: 차트 탭 → 캐릭터 목록 =====
