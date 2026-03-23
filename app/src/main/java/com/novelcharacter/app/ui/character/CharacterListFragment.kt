@@ -83,6 +83,7 @@ class CharacterListFragment : Fragment() {
                     .setMessage(R.string.confirm_delete)
                     .setPositiveButton(R.string.yes) { _, _ ->
                         viewModel.deleteCharacter(character)
+                        com.novelcharacter.app.util.ImageIndexPrefs.clear(requireContext(), "character", character.id)
                     }
                     .setNegativeButton(R.string.no, null)
                     .show()

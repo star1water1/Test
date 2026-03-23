@@ -181,7 +181,8 @@ class SystemMaintenanceService(
         val characters = db.characterDao().getAllCharactersList()
         for (character in characters) {
             val paths: List<String> = try {
-                gson.fromJson(character.imagePaths, com.novelcharacter.app.util.GsonTypes.STRING_LIST) ?: emptyList()
+                val raw: List<String?>? = gson.fromJson(character.imagePaths, com.novelcharacter.app.util.GsonTypes.STRING_LIST)
+                raw?.filterNotNull() ?: emptyList()
             } catch (e: Exception) {
                 emptyList()
             }

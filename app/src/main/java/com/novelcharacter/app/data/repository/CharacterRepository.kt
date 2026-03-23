@@ -78,8 +78,8 @@ class CharacterRepository(
 
     private fun parseImagePaths(imagePathsJson: String): List<File> {
         return try {
-            val paths: List<String> = Gson().fromJson(imagePathsJson, GsonTypes.STRING_LIST) ?: emptyList()
-            paths.map { File(it) }
+            val raw: List<String?>? = Gson().fromJson(imagePathsJson, GsonTypes.STRING_LIST)
+            raw?.filterNotNull()?.map { File(it) } ?: emptyList()
         } catch (_: Exception) {
             emptyList()
         }
