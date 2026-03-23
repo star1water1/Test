@@ -468,7 +468,7 @@ class ExcelImporter(context: Context) {
                         catLayout.addView(detailText)
                     } else if (cat.inBackup == 0) {
                         val detailText = TextView(act).apply {
-                            text = "백업에 데이터 없음 (현재 DB: ${cat.existingTotal}개)"
+                            text = appContext.getString(com.novelcharacter.app.R.string.restore_preview_no_data, cat.existingTotal)
                             textSize = 12f
                             setPadding(dp8, 0, 0, 0)
                         }
@@ -551,7 +551,7 @@ class ExcelImporter(context: Context) {
                 if (totalOnlyInDb > 0) {
                     val deleteParts = analysis.categories
                         .filter { it.onlyInDb > 0 }
-                        .map { "${it.label} ${it.onlyInDb}개" }
+                        .map { appContext.getString(com.novelcharacter.app.R.string.restore_overwrite_delete_item, it.label, it.onlyInDb) }
                     overwriteWarning.text = appContext.getString(
                         com.novelcharacter.app.R.string.restore_overwrite_warning,
                         deleteParts.joinToString(", ")
