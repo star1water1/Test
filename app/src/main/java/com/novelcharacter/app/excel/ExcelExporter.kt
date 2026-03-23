@@ -3,6 +3,7 @@ package com.novelcharacter.app.excel
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.util.Log
 import android.widget.Toast
 import androidx.core.content.FileProvider
 import com.novelcharacter.app.R
@@ -989,12 +990,15 @@ class ExcelExporter(context: Context) {
                 } catch (_: Exception) { continue }
 
                 val zipPath = "images/${imageFile.name}"
-                imageMap[path] = zipPath
                 try {
                     zip.putNextEntry(ZipEntry(zipPath))
                     imageFile.inputStream().use { it.copyTo(zip) }
                     zip.closeEntry()
-                } catch (_: Exception) { }
+                    imageMap[path] = zipPath
+                } catch (e: Exception) {
+                    try { zip.closeEntry() } catch (_: Exception) { }
+                    Log.w("ExcelExporter", "Failed to add image to ZIP: $path", e)
+                }
             }
 
             // image_map.json 추가

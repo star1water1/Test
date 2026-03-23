@@ -110,14 +110,15 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
             val existingKeys = currentFields.map { it.key }.toSet()
             val maxOrder = currentFields.maxOfOrNull { it.displayOrder } ?: -1
 
-            val newFields = sourceFields.mapIndexedNotNull { index, field ->
-                if (field.key in existingKeys) return@mapIndexedNotNull null
-                field.copy(
-                    id = 0,
-                    universeId = targetUniverseId,
-                    displayOrder = maxOrder + 1 + index
-                )
-            }
+            val newFields = sourceFields
+                .filter { it.key !in existingKeys }
+                .mapIndexed { index, field ->
+                    field.copy(
+                        id = 0,
+                        universeId = targetUniverseId,
+                        displayOrder = maxOrder + 1 + index
+                    )
+                }
             if (newFields.isNotEmpty()) {
                 universeRepository.insertAllFields(newFields)
             }
