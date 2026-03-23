@@ -683,6 +683,10 @@ class StatsFieldInsightFragment : Fragment() {
         chart.visibility = View.VISIBLE
 
         val field2Values = crossTable.values.flatMap { it.keys }.distinct().sorted()
+        if (field2Values.isEmpty()) {
+            chart.visibility = View.GONE
+            return
+        }
         val field1Values = crossTable.keys.sortedByDescending { crossTable[it]?.values?.sum() ?: 0 }
 
         val dataSets = mutableListOf<BarDataSet>()

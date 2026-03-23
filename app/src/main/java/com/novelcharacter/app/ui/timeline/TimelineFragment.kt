@@ -315,9 +315,10 @@ class TimelineFragment : Fragment() {
             binding.zoomLevelLabel.text = label
         }
 
-        // Observe visible range to update year range label
+        // Observe visible range to update year range label and density bar range
         viewModel.visibleRange.observe(viewLifecycleOwner) { (start, end) ->
             binding.yearRangeLabel.text = getString(R.string.year_range_format, start, end)
+            binding.eventDensityBar.setRange(start, end)
         }
 
         // Update slider range and density bar based on all events data
@@ -332,11 +333,6 @@ class TimelineFragment : Fragment() {
             val minYear = events.minOf { it.year }
             val maxYear = events.maxOf { it.year }
             binding.eventDensityBar.setDensityData(density, minYear - 10, maxYear + 10)
-        }
-
-        // Update density bar range when visible range changes
-        viewModel.visibleRange.observe(viewLifecycleOwner) { (start, end) ->
-            binding.eventDensityBar.setRange(start, end)
         }
 
         // Density bar tap → jump to year

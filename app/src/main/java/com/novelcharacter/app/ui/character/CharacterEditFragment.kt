@@ -241,6 +241,9 @@ class CharacterEditFragment : Fragment() {
         val tags = viewModel.getTagsByCharacterList(characterId)
         if (_binding == null) return
         binding.editTags.setText(tags.joinToString(", ") { it.tag })
+
+        // fillForm과 태그 로드로 인해 TextWatcher가 트리거되어 false positive가 발생하므로 초기화
+        hasUnsavedChanges = false
     }
 
     private fun fillForm(character: Character) {
@@ -979,9 +982,12 @@ class CharacterEditFragment : Fragment() {
                     }
                 } catch (e: Exception) {
                     if (isAdded && _binding != null) {
-                        isSaving = false
-                        binding.btnSave.isEnabled = true
                         Toast.makeText(requireContext(), R.string.save_failed, Toast.LENGTH_SHORT).show()
+                    }
+                } finally {
+                    isSaving = false
+                    if (_binding != null) {
+                        binding.btnSave.isEnabled = true
                     }
                 }
             }
@@ -1165,9 +1171,12 @@ class CharacterEditFragment : Fragment() {
                 }
             } catch (e: Exception) {
                 if (isAdded && _binding != null) {
-                    isSaving = false
-                    binding.btnSaveAndNext.isEnabled = true
                     Toast.makeText(requireContext(), R.string.save_failed, Toast.LENGTH_SHORT).show()
+                }
+            } finally {
+                isSaving = false
+                if (_binding != null) {
+                    binding.btnSaveAndNext.isEnabled = true
                 }
             }
         }
