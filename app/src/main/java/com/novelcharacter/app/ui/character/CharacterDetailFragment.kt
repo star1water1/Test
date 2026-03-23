@@ -200,11 +200,12 @@ class CharacterDetailFragment : Fragment() {
                 for (membership in memberships) {
                     val faction = factionRepository.getFactionById(membership.factionId) ?: continue
                     if (_binding == null) return@launch
+                    val ctx = context ?: return@launch
 
                     val isDeparted = membership.leaveType == FactionMembership.LEAVE_DEPARTED
                     val chipText = if (isDeparted) "${faction.name} (탈퇴)" else faction.name
 
-                    val chip = Chip(requireContext()).apply {
+                    val chip = Chip(ctx).apply {
                         text = chipText
                         isClickable = true
                         isCheckable = false
