@@ -257,6 +257,7 @@ class RelationshipGraphFragment : Fragment() {
                 setOnClickListener {
                     binding.graphView.factionDisplayMode = option.mode
                     setupFactionDisplayModeToggle()
+                    refreshGraph() // NONE 모드에서 세력 자동 관계 숨기기 반영
                 }
             }
             chipGroup.addView(chip)
@@ -641,7 +642,14 @@ class RelationshipGraphFragment : Fragment() {
                 factionColors = factionPairs.map { it.second }
             )
         }
-        val edges = relationships.map { rel ->
+        val factionDisplayMode = binding.graphView.factionDisplayMode
+        val hideFactionEdges = factionDisplayMode == FactionDisplayMode.NONE
+
+        val allEdges = relationships.mapNotNull { rel ->
+            // 세력 표기 모드 NONE → 세력 자동 관계 완전 숨김
+            if (hideFactionEdges && rel.factionId != null) return@mapNotNull null
+            // 세력 선택 필터 활성 시 → 해당 세력 관계만 강조, 나머지 흐리게
+            val isEdgeSecondary = currentFactionFilter != null && rel.factionId != currentFactionFilter
             if (isTimeViewEnabled && currentYear != null) {
                 val resolved = viewModel.resolveRelationshipAtYear(rel, currentYear!!, allChanges)
                 GraphEdge(
@@ -650,7 +658,8 @@ class RelationshipGraphFragment : Fragment() {
                     label = resolved.resolvedType,
                     intensity = resolved.resolvedIntensity,
                     isBidirectional = resolved.resolvedBidirectional,
-                    factionId = rel.factionId
+                    factionId = rel.factionId,
+                    isSecondary = isEdgeSecondary
                 )
             } else {
                 GraphEdge(
@@ -659,11 +668,12 @@ class RelationshipGraphFragment : Fragment() {
                     label = rel.relationshipType,
                     intensity = rel.intensity,
                     isBidirectional = rel.isBidirectional,
-                    factionId = rel.factionId
+                    factionId = rel.factionId,
+                    isSecondary = isEdgeSecondary
                 )
             }
         }
-        binding.graphView.setGraphData(nodes, edges)
+        binding.graphView.setGraphData(nodes, allEdges)
     }
 
     private fun showNodeContextMenu(characterId: Long) {

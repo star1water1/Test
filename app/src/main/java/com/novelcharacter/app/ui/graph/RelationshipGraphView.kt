@@ -31,7 +31,8 @@ data class GraphEdge(
     val intensity: Int = 5,           // 1~10 관계 강도 → 선 굵기
     val isBidirectional: Boolean = true,
     val isActive: Boolean = true,      // false이면 점선으로 표시 (해당 시점에 아직 없는 관계)
-    val factionId: Long? = null
+    val factionId: Long? = null,
+    val isSecondary: Boolean = false   // 세력 필터 시 해당 세력 관계가 아니면 흐리게
 )
 
 enum class FactionDisplayMode {
@@ -469,7 +470,13 @@ class RelationshipGraphView @JvmOverloads constructor(
             val edgeColor = relationshipColors[edge.label]
                 ?: ContextCompat.getColor(context, R.color.graph_edge)
 
-            edgePaint.color = if (edge.isActive) edgeColor else Color.argb(80, Color.red(edgeColor), Color.green(edgeColor), Color.blue(edgeColor))
+            // isSecondary(세력 필터), isActive(시간뷰) 모두 반영
+            val edgeAlpha = when {
+                !edge.isActive -> 80
+                edge.isSecondary -> 60
+                else -> 255
+            }
+            edgePaint.color = Color.argb(edgeAlpha, Color.red(edgeColor), Color.green(edgeColor), Color.blue(edgeColor))
             edgePaint.strokeWidth = (edge.intensity * 0.5f).coerceIn(1f, 5f)
 
             if (!edge.isActive) {
@@ -544,10 +551,15 @@ class RelationshipGraphView @JvmOverloads constructor(
             val labelHeight = edgeLabelPaint.textSize
             val labelY = midY - 6f
 
+            val bgAlpha = when {
+                edge.isSecondary -> if (isDarkMode) 60 else 80
+                !edge.isActive -> if (isDarkMode) 100 else 140
+                else -> if (isDarkMode) 180 else 210
+            }
             labelBgPaint.color = if (isDarkMode) {
-                if (edge.isActive) Color.argb(180, 0, 0, 0) else Color.argb(100, 0, 0, 0)
+                Color.argb(bgAlpha, 0, 0, 0)
             } else {
-                if (edge.isActive) Color.argb(210, 255, 255, 255) else Color.argb(140, 255, 255, 255)
+                Color.argb(bgAlpha, 255, 255, 255)
             }
             val labelLeft = midX - labelWidth / 2 - 4f
             val labelTop = labelY - labelHeight + 2f
@@ -558,7 +570,7 @@ class RelationshipGraphView @JvmOverloads constructor(
                 canvas.drawRoundRect(labelLeft, labelTop, labelRight, labelBottom, 4f, 4f, labelBorderPaint)
             }
 
-            edgeLabelPaint.color = if (edge.isActive) edgeColor else Color.argb(80, Color.red(edgeColor), Color.green(edgeColor), Color.blue(edgeColor))
+            edgeLabelPaint.color = Color.argb(edgeAlpha, Color.red(edgeColor), Color.green(edgeColor), Color.blue(edgeColor))
             canvas.drawText(labelText, midX, labelY, edgeLabelPaint)
         }
 
