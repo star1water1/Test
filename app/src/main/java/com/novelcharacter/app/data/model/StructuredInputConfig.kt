@@ -29,7 +29,8 @@ data class StructuredInputConfig(
     fun splitValue(combinedValue: String): List<Pair<String, String>> {
         if (!enabled || parts.isEmpty()) return emptyList()
         val sep = separator.ifEmpty { "-" }
-        val rawParts = combinedValue.split(sep).map { it.trim() }
+        // limit으로 파트 수만큼만 분리 — 마지막 파트에 separator가 포함되어도 보존
+        val rawParts = combinedValue.split(sep, limit = parts.size).map { it.trim() }
         return parts.mapIndexed { idx, part ->
             part.label to (rawParts.getOrNull(idx) ?: "")
         }
@@ -44,7 +45,7 @@ data class StructuredInputConfig(
     fun labeledParts(combinedValue: String): List<String> {
         if (!enabled || parts.isEmpty()) return listOf(combinedValue)
         val sep = separator.ifEmpty { "-" }
-        val rawParts = combinedValue.split(sep).map { it.trim() }
+        val rawParts = combinedValue.split(sep, limit = parts.size).map { it.trim() }
         if (rawParts.size >= 2) {
             // 파트별 값만 반환 (전체 조합 값 제외 — 전체 값은 무의미한 문자열 분포를 만듦)
             return parts.mapIndexedNotNull { idx, part ->

@@ -124,7 +124,7 @@ class SemanticFieldSyncHelper(
         if (parts.size != 2) return null
         val month = parts[0].trim().toIntOrNull() ?: return null
         val day = parts[1].trim().toIntOrNull() ?: return null
-        if (month !in 1..12 || day !in 1..31) return null
+        if (month !in 1..12 || !isValidDay(month, day)) return null
         return month to day
     }
 

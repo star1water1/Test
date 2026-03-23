@@ -79,7 +79,13 @@ class TimeStateResolver {
                 val formula = config["formula"] as? String ?: continue
                 try {
                     val value = evaluator.evaluate(formula)
-                    result[field.key] = if (value.isNaN() || value.isInfinite()) FORMULA_ERROR_DISPLAY else value.toString()
+                    result[field.key] = if (value.isNaN() || value.isInfinite()) {
+                        FORMULA_ERROR_DISPLAY
+                    } else if (value == value.toLong().toDouble()) {
+                        value.toLong().toString()
+                    } else {
+                        "%.2f".format(value)
+                    }
                 } catch (e: Exception) {
                     Log.e(TAG, "Formula evaluation error for field '${field.key}', formula='$formula'", e)
                     result[field.key] = FORMULA_ERROR_DISPLAY

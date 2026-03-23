@@ -59,6 +59,15 @@ interface CharacterStateChangeDao {
     """)
     suspend fun deleteChangesByFieldKeyAndUniverse(fieldKey: String, universeId: Long)
 
+    /** 세계관에 속한 모든 필드의 state change 삭제 (세계관 삭제 시 사용) */
+    @Query("""
+        DELETE FROM character_state_changes
+        WHERE fieldKey IN (
+            SELECT `key` FROM field_definitions WHERE universeId = :universeId
+        )
+    """)
+    suspend fun deleteAllChangesByUniverse(universeId: Long)
+
     @Query("DELETE FROM character_state_changes")
     suspend fun deleteAll()
 }

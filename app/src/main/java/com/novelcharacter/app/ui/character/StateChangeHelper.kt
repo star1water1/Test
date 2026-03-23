@@ -115,7 +115,7 @@ class StateChangeHelper(
                     return@setPositiveButton
                 }
                 val day = dialogBinding.editDay.text.toString().trim().toIntOrNull()
-                if (day != null && day !in 1..31) {
+                if (day != null && !com.novelcharacter.app.util.isValidDay(month, day)) {
                     Toast.makeText(context, getString(R.string.day_valid_range), Toast.LENGTH_SHORT).show()
                     return@setPositiveButton
                 }

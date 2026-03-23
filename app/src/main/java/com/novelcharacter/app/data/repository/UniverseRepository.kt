@@ -30,6 +30,10 @@ class UniverseRepository(
     suspend fun updateUniverse(universe: Universe) = universeDao.update(universe)
     suspend fun deleteUniverse(universe: Universe) {
         db.withTransaction {
+            // FieldDefinition은 FK CASCADE로 삭제되지만,
+            // CharacterStateChange는 string fieldKey 참조라 CASCADE 대상이 아니므로 명시적 삭제
+            // (field_definitions 테이블이 아직 존재하는 시점에 실행해야 서브쿼리 동작)
+            db.characterStateChangeDao().deleteAllChangesByUniverse(universe.id)
             db.recentActivityDao().deleteByEntity(RecentActivity.TYPE_UNIVERSE, universe.id)
             universeDao.delete(universe)
         }
