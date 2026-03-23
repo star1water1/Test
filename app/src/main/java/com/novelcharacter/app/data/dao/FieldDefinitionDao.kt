@@ -48,6 +48,10 @@ interface FieldDefinitionDao {
     @Query("SELECT universeId, COUNT(*) as cnt FROM field_definitions WHERE universeId IN (:universeIds) GROUP BY universeId")
     suspend fun getFieldCountsByUniverses(universeIds: List<Long>): List<UniverseFieldCount>
 
+    /** 특정 필드를 제외하고 같은 key를 가진 필드가 존재하는지 확인 */
+    @Query("SELECT COUNT(*) FROM field_definitions WHERE `key` = :key AND id != :excludeId")
+    suspend fun countFieldsByKeyExcluding(key: String, excludeId: Long): Int
+
     @Query("DELETE FROM field_definitions")
     suspend fun deleteAll()
 }

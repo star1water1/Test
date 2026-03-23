@@ -69,8 +69,14 @@ class UniverseRepository(
 
     suspend fun deleteField(field: FieldDefinition) {
         db.withTransaction {
-            // fieldKey는 세계관 간 중복 가능하므로, 해당 세계관의 캐릭터에 한정하여 삭제
-            db.characterStateChangeDao().deleteChangesByFieldKeyAndUniverse(field.key, field.universeId)
+            // 같은 key를 가진 다른 세계관의 필드가 없으면 전체 삭제 (고아 캐릭터 포함)
+            // 있으면 해당 세계관의 캐릭터에 한정하여 삭제
+            val otherFieldsWithSameKey = fieldDefinitionDao.countFieldsByKeyExcluding(field.key, field.id)
+            if (otherFieldsWithSameKey == 0) {
+                db.characterStateChangeDao().deleteChangesByFieldKey(field.key)
+            } else {
+                db.characterStateChangeDao().deleteChangesByFieldKeyAndUniverse(field.key, field.universeId)
+            }
             fieldDefinitionDao.delete(field)
         }
     }
