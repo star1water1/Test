@@ -53,22 +53,29 @@ data class ExportOptions(
             "이미지 (파일 크기 증가)"
         )
 
-        fun fromBooleanArray(arr: BooleanArray) = ExportOptions(
-            universes = arr[0],
-            novels = arr[1],
-            characters = arr[2],
-            fieldDefinitions = arr[3],
-            timeline = arr[4],
-            stateChanges = arr[5],
-            relationships = arr[6],
-            relationshipChanges = arr[7],
-            nameBank = arr[8],
-            factions = arr[9],
-            factionMemberships = arr[10],
-            presetTemplates = arr[11],
-            searchPresets = arr[12],
-            appSettings = arr[13],
-            images = arr[14]
-        )
+        private const val FIELD_COUNT = 15
+
+        fun fromBooleanArray(arr: BooleanArray): ExportOptions {
+            require(arr.size >= FIELD_COUNT) {
+                "Expected at least $FIELD_COUNT elements, got ${arr.size}"
+            }
+            return ExportOptions(
+                universes = arr[0],
+                novels = arr[1],
+                characters = arr[2],
+                fieldDefinitions = arr[3],
+                timeline = arr[4],
+                stateChanges = arr[5],
+                relationships = arr[6],
+                relationshipChanges = arr[7],
+                nameBank = arr[8],
+                factions = arr[9],
+                factionMemberships = arr[10],
+                presetTemplates = arr[11],
+                searchPresets = arr[12],
+                appSettings = arr[13],
+                images = arr[14]
+            )
+        }
     }
 }

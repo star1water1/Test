@@ -19,7 +19,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
     private val app = application as NovelCharacterApp
     private val provider = StatsDataProvider(app)
 
-    private var cachedSnapshot: StatsSnapshot? = null
+    @Volatile private var cachedSnapshot: StatsSnapshot? = null
 
     // 작품 필터
     private val _selectedNovelId = MutableLiveData<Long?>(null)
@@ -90,7 +90,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
         return provider.filterByNovel(snapshot, novelId)
     }
 
-    private var isRefreshing = false
+    @Volatile private var isRefreshing = false
     private var statsJob: Job? = null
 
     fun setNovelFilter(novelId: Long?) {

@@ -101,6 +101,12 @@ class EventDensityBar @JvmOverloads constructor(
     private var downX = 0f
     private var isLongPressHandled = false
 
+    override fun onDetachedFromWindow() {
+        super.onDetachedFromWindow()
+        longPressRunnable?.let { handler?.removeCallbacks(it) }
+        longPressRunnable = null
+    }
+
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (rangeTo <= rangeFrom) return false

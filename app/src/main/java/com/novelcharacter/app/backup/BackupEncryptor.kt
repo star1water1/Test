@@ -116,7 +116,8 @@ object BackupEncryptor {
     fun decryptFile(inputFile: File, outputFile: File) {
         val tempFile = File(outputFile.parentFile, outputFile.name + ".tmp")
         try {
-            FileInputStream(inputFile).use { fis ->
+            val fis = FileInputStream(inputFile)
+            try {
                 // 헤더 읽기 (최소 8바이트: v2 헤더 또는 v1 IV의 앞부분)
                 val header = ByteArray(FORMAT_HEADER_SIZE)
                 val headerRead = readFully(fis, header)
@@ -129,10 +130,12 @@ object BackupEncryptor {
                     val chunkSize = ByteBuffer.wrap(header, 4, 4).int
                     decryptChunked(fis, tempFile, chunkSize)
                 } else {
-                    // v1: 레거시 전체 로드 (fis를 닫고 새로 열어야 함 — 헤더를 이미 소비했으므로)
+                    // v1: 레거시 전체 로드 (헤더를 이미 소비했으므로 새로 열어야 함)
                     fis.close()
                     decryptLegacy(inputFile, tempFile)
                 }
+            } finally {
+                try { fis.close() } catch (_: Exception) { }
             }
 
             // 복호화 성공 — 출력 파일 확정

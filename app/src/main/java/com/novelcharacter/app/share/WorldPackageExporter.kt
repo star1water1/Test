@@ -1,6 +1,7 @@
 package com.novelcharacter.app.share
 
 import android.content.Context
+import android.util.Log
 import com.google.gson.GsonBuilder
 import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.data.model.*
@@ -103,8 +104,8 @@ class WorldPackageExporter(private val context: Context) {
                                     zip.closeEntry()
                                 }
                             }
-                        } catch (_: Exception) {
-                            // 개별 이미지 실패 시 건너뛰고 계속 진행
+                        } catch (e: Exception) {
+                            Log.w("WorldPackageExporter", "Failed to add image for character ${char.id}", e)
                         }
                     }
                 }

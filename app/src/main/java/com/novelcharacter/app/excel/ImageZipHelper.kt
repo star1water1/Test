@@ -60,6 +60,7 @@ object ImageZipHelper {
 
             // 이미지 추가 (파일명 충돌 방지)
             val usedNames = mutableSetOf<String>()
+            var failedCount = 0
             for (path in existingImages) {
                 val imageFile = File(path)
                 var name = imageFile.name
@@ -77,9 +78,13 @@ object ImageZipHelper {
                     zip.closeEntry()
                     imageMap[path] = zipPath
                 } catch (e: Exception) {
+                    failedCount++
                     try { zip.closeEntry() } catch (_: Exception) { }
                     Log.w(TAG, "Failed to add image to ZIP: $path", e)
                 }
+            }
+            if (failedCount > 0) {
+                Log.w(TAG, "$failedCount of ${existingImages.size} images failed to add to ZIP")
             }
 
             // image_map.json 추가

@@ -33,6 +33,7 @@ class RankingAdapter(
 
     override fun onAttachedToRecyclerView(recyclerView: RecyclerView) {
         super.onAttachedToRecyclerView(recyclerView)
+        scope?.cancel()
         scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     }
 
