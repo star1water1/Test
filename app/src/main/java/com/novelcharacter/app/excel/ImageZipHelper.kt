@@ -65,8 +65,9 @@ object ImageZipHelper {
                 var name = imageFile.name
                 if (name in usedNames) {
                     val ext = name.substringAfterLast('.', "")
-                    val base = name.substringBeforeLast('.')
-                    name = "${base}_${java.util.UUID.randomUUID().toString().take(8)}.$ext"
+                    val base = if ('.' in name) name.substringBeforeLast('.') else name
+                    val suffix = java.util.UUID.randomUUID().toString().take(8)
+                    name = if (ext.isNotEmpty()) "${base}_$suffix.$ext" else "${base}_$suffix"
                 }
                 usedNames.add(name)
                 val zipPath = "images/$name"
