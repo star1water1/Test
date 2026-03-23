@@ -884,6 +884,22 @@ class CharacterEditFragment : Fragment() {
 
     private var appDir: java.io.File? = null
 
+    /** 이전 이미지 목록과 현재 목록을 비교하여 제거된 파일을 디스크에서 삭제 */
+    private fun cleanupRemovedImages(oldPathsJson: String?, currentPaths: List<String>) {
+        val oldPaths: List<String> = try {
+            gson.fromJson(oldPathsJson ?: "[]", com.novelcharacter.app.util.GsonTypes.STRING_LIST) ?: emptyList()
+        } catch (_: Exception) { emptyList() }
+        val currentSet = currentPaths.toSet()
+        for (path in oldPaths) {
+            if (path !in currentSet) {
+                try {
+                    val file = java.io.File(path)
+                    if (file.exists()) file.delete()
+                } catch (_: Exception) { /* best effort */ }
+            }
+        }
+    }
+
     private fun decodeSampledBitmap(path: String, reqWidth: Int, reqHeight: Int): android.graphics.Bitmap? {
         return try {
             val file = java.io.File(path)
@@ -965,6 +981,8 @@ class CharacterEditFragment : Fragment() {
                         val fieldValues = collectFieldValues(characterId)
                         viewModel.updateCharacterWithFields(character, fieldValues)
                         savedCharId = characterId
+                        // 저장 성공: 이전 이미지 목록에서 제거된 파일을 디스크에서 삭제
+                        cleanupRemovedImages(existingCharacter?.imagePaths, imagePaths)
                     } else {
                         val newId = viewModel.insertCharacterSuspend(character)
                         val fieldValues = collectFieldValues(newId)

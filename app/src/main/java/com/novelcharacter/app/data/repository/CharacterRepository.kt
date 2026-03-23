@@ -1,10 +1,14 @@
 package com.novelcharacter.app.data.repository
 
+import android.util.Log
 import androidx.lifecycle.LiveData
 import androidx.room.withTransaction
+import com.google.gson.Gson
 import com.novelcharacter.app.data.database.AppDatabase
 import com.novelcharacter.app.data.dao.*
 import com.novelcharacter.app.data.model.*
+import com.novelcharacter.app.util.GsonTypes
+import java.io.File
 
 class CharacterRepository(
     private val db: AppDatabase,
@@ -50,6 +54,9 @@ class CharacterRepository(
     }
 
     suspend fun deleteCharacter(character: Character) {
+        // 이미지 파일 경로를 트랜잭션 전에 파싱 (DB 삭제 후에는 접근 불가)
+        val imageFiles = parseImagePaths(character.imagePaths)
+
         db.withTransaction {
             nameBankDao.resetUsageByCharacter(character.id)
             recentActivityDao.deleteByEntity(RecentActivity.TYPE_CHARACTER, character.id)
@@ -57,6 +64,24 @@ class CharacterRepository(
             db.novelDao().clearImageCharacterRef(character.id)
             db.universeDao().clearImageCharacterRef(character.id)
             characterDao.delete(character)
+        }
+
+        // DB 트랜잭션 성공 후 디스크에서 이미지 파일 삭제
+        for (file in imageFiles) {
+            try {
+                if (file.exists()) file.delete()
+            } catch (e: Exception) {
+                Log.w("CharacterRepository", "Failed to delete image: ${file.absolutePath}", e)
+            }
+        }
+    }
+
+    private fun parseImagePaths(imagePathsJson: String): List<File> {
+        return try {
+            val paths: List<String> = Gson().fromJson(imagePathsJson, GsonTypes.STRING_LIST) ?: emptyList()
+            paths.map { File(it) }
+        } catch (_: Exception) {
+            emptyList()
         }
     }
     suspend fun insertAllCharacters(characters: List<Character>) = characterDao.insertAll(characters)
