@@ -1900,7 +1900,8 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
                 if (sic.enabled && sic.parts.isNotEmpty()) {
                     sic.parts.map { it.label }
                 } else {
-                    listOf("B", "W", "H")
+                    // config에 파트 정보가 없으면 기본 BWH 라벨 사용
+                    listOf("가슴(B)", "허리(W)", "엉덩이(H)")
                 }
             } else null
             RankableField(fd, bodySizeParts, isNumeric)
@@ -1940,65 +1941,67 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
         data class CharValue(val charId: Long, val numericValue: Double, val displayValue: String)
 
         val charValues = mutableListOf<CharValue>()
-        var excludedCount = 0
+        val processedCharIds = mutableSetOf<Long>()
+        var parseFailed = 0
 
         for (fv in rawValues) {
             val char = charMap[fv.characterId] ?: continue
-            if (fv.value.isBlank()) { excludedCount++; continue }
+            processedCharIds.add(char.id)
+            if (fv.value.isBlank()) { parseFailed++; continue }
 
             when (fd.type) {
                 "NUMBER", "CALCULATED" -> {
                     val v = fv.value.toDoubleOrNull()
-                    if (v != null) {
+                    if (v != null && v.isFinite()) {
                         val display = if (v == v.toLong().toDouble()) v.toLong().toString()
                         else String.format("%.1f", v)
                         charValues.add(CharValue(char.id, v, display))
-                    } else excludedCount++
+                    } else parseFailed++
                 }
                 "GRADE" -> {
                     val numericValue = resolveGradeValueForRanking(fd, fv.value)
                     if (numericValue != null) {
                         charValues.add(CharValue(char.id, numericValue, fv.value))
-                    } else excludedCount++
+                    } else parseFailed++
                 }
                 "BODY_SIZE" -> {
                     val sic = StructuredInputConfig.fromConfig(fd.config)
-                    val partIdx = bodySizePartIndex ?: 0
+                    val partIdx = (bodySizePartIndex ?: 0).coerceAtLeast(0)
                     val parts = if (sic.enabled) {
                         fv.value.split(sic.separator).map { it.trim() }
                     } else {
                         fv.value.split(Regex("[-/\\s]+")).map { it.trim() }
                     }
                     val partValue = parts.getOrNull(partIdx)?.toDoubleOrNull()
-                    if (partValue != null) {
+                    if (partValue != null && partValue.isFinite()) {
                         charValues.add(CharValue(char.id, partValue, fv.value))
-                    } else excludedCount++
+                    } else parseFailed++
                 }
                 else -> {
                     // 빈도 모드: SELECT, TEXT, MULTI_TEXT
                     if (fd.type == "MULTI_TEXT") {
                         val tokens = fv.value.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                        if (tokens.isEmpty()) { parseFailed++; continue }
                         val maxFreq = tokens.maxOfOrNull { frequencyMap[it] ?: 0 } ?: 0
                         val topToken = tokens.maxByOrNull { frequencyMap[it] ?: 0 } ?: fv.value
                         if (maxFreq > 0) {
                             charValues.add(CharValue(char.id, maxFreq.toDouble(), "$topToken (${maxFreq}회)"))
-                        } else excludedCount++
+                        } else parseFailed++
                     } else {
                         val freq = frequencyMap[fv.value.trim()] ?: 0
                         if (freq > 0) {
                             charValues.add(CharValue(char.id, freq.toDouble(), "${fv.value.trim()} (${freq}회)"))
-                        } else excludedCount++
+                        } else parseFailed++
                     }
                 }
             }
         }
 
-        // 값이 없는 캐릭터도 제외 카운트에 추가
-        val charsWithValues = rawValues.map { it.characterId }.toSet()
-        val totalChars = s.characters.size
-        excludedCount += (totalChars - charsWithValues.size)
+        // 제외 카운트: 파싱 실패 + 필드 값이 아예 없는 캐릭터 (이중 카운트 방지)
+        val noValueCount = s.characters.size - processedCharIds.size
+        val excludedCount = parseFailed + noValueCount
 
-        // 정렬 및 순위 할당
+        // 정렬 및 순위 할당 (동점 시 표준 경쟁 순위: 1,2,2,4)
         val sorted = if (ascending) {
             charValues.sortedBy { it.numericValue }
         } else {
@@ -2009,7 +2012,7 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
         var currentRank = 1
         for (i in sorted.indices) {
             if (i > 0 && sorted[i].numericValue != sorted[i - 1].numericValue) {
-                currentRank = i + 1
+                currentRank = i + 1  // 표준 경쟁 순위: 이전 동점 수만큼 건너뜀
             }
             val char = charMap[sorted[i].charId] ?: continue
             val novel = char.novelId?.let { novelMap[it] }

@@ -66,18 +66,9 @@ class StatsMainFragment : Fragment() {
 
         tabLayout.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
             override fun onTabSelected(tab: TabLayout.Tab?) {
-                when (tab?.position) {
-                    0 -> {
-                        binding.contentLayout.visibility = if (viewModel.loading.value == true) View.GONE else View.VISIBLE
-                        binding.rankingLayout.visibility = View.GONE
-                    }
-                    1 -> {
-                        binding.contentLayout.visibility = View.GONE
-                        binding.rankingLayout.visibility = View.VISIBLE
-                        if (!rankingInitialized) {
-                            initRankingUI()
-                        }
-                    }
+                updateTabVisibility()
+                if (tab?.position == 1 && !rankingInitialized) {
+                    initRankingUI()
                 }
             }
             override fun onTabUnselected(tab: TabLayout.Tab?) {}
@@ -85,23 +76,36 @@ class StatsMainFragment : Fragment() {
         })
     }
 
+    /** 현재 탭 선택 + 로딩 상태에 따라 visibility를 일원적으로 관리 */
+    private fun updateTabVisibility() {
+        val isLoading = viewModel.loading.value == true
+        val isOverviewTab = binding.statsTabLayout.selectedTabPosition == 0
+        binding.contentLayout.visibility = if (!isLoading && isOverviewTab) View.VISIBLE else View.GONE
+        binding.rankingLayout.visibility = if (!isLoading && !isOverviewTab) View.VISIBLE else View.GONE
+    }
+
     private fun initRankingUI() {
         rankingInitialized = true
         val ctx = context ?: return
 
-        // RecyclerView 세팅
+        // RecyclerView
         rankingAdapter = RankingAdapter()
         binding.rankingRecyclerView.layoutManager = LinearLayoutManager(ctx)
         binding.rankingRecyclerView.adapter = rankingAdapter
 
-        // 세계관 스피너
-        setupRankingUniverseSpinner()
+        // BODY_SIZE 파트 스피너 리스너를 한 번만 등록
+        binding.rankingBodySizeSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p: AdapterView<*>?, v: View?, partPos: Int, partId: Long) {
+                selectedBodySizePartIndex = partPos
+                if (selectedFieldIndex >= 0) executeRanking()
+            }
+            override fun onNothingSelected(p: AdapterView<*>?) {}
+        }
 
-        // 필드 스피너 선택 리스너
+        // 필드 스피너 리스너
         binding.rankingFieldSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, v: View?, pos: Int, id: Long) {
                 if (pos == 0) {
-                    // "필드를 선택하세요" 선택
                     selectedFieldIndex = -1
                     binding.rankingBodySizeRow.visibility = View.GONE
                     binding.rankingEmpty.visibility = View.VISIBLE
@@ -112,19 +116,14 @@ class StatsMainFragment : Fragment() {
                 selectedFieldIndex = pos - 1
                 val field = currentRankableFields.getOrNull(selectedFieldIndex) ?: return
 
-                // BODY_SIZE 파트 선택 표시
+                // BODY_SIZE일 때만 파트 스피너 표시 (adapter만 교체, 리스너는 재등록하지 않음)
                 if (field.fieldDef.type == "BODY_SIZE" && field.bodySizeParts != null) {
                     binding.rankingBodySizeRow.visibility = View.VISIBLE
                     val partAdapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item, field.bodySizeParts)
                     partAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
                     binding.rankingBodySizeSpinner.adapter = partAdapter
-                    binding.rankingBodySizeSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-                        override fun onItemSelected(p: AdapterView<*>?, v2: View?, partPos: Int, partId: Long) {
-                            selectedBodySizePartIndex = partPos
-                            executeRanking()
-                        }
-                        override fun onNothingSelected(p: AdapterView<*>?) {}
-                    }
+                    // adapter 변경 시 onItemSelected(pos=0) 자동 발생 → 거기서 executeRanking() 호출됨
+                    return
                 } else {
                     binding.rankingBodySizeRow.visibility = View.GONE
                 }
@@ -144,10 +143,28 @@ class StatsMainFragment : Fragment() {
             if (selectedFieldIndex >= 0) executeRanking()
         }
 
-        // 순위 결과 관찰
+        // 순위 결과 옵저버
+        setupRankingObservers()
+
+        // 초기 로딩: cachedSnapshot이 있으면 즉시, 없으면 summary 완료 후 로딩
+        if (viewModel.getUniverseList().isNotEmpty()) {
+            setupRankingUniverseSpinner()
+            viewModel.loadRankableFields(null)
+        }
+        // summary 완료 시 세계관 스피너도 갱신 (cachedSnapshot 준비 보장)
+    }
+
+    private fun setupRankingObservers() {
         viewModel.rankableFields.observe(viewLifecycleOwner) { fields ->
             currentRankableFields = fields
+            // 리스너 임시 비활성화: adapter 교체 시 자동 콜백 방지
+            val savedListener = binding.rankingFieldSpinner.onItemSelectedListener
+            binding.rankingFieldSpinner.onItemSelectedListener = null
             populateFieldSpinner(fields)
+            // 리스너 복원 (다음 프레임에서, adapter 세팅 후 자동 콜백 무시)
+            binding.rankingFieldSpinner.post {
+                binding.rankingFieldSpinner.onItemSelectedListener = savedListener
+            }
         }
 
         viewModel.rankingResult.observe(viewLifecycleOwner) { result ->
@@ -166,8 +183,13 @@ class StatsMainFragment : Fragment() {
             )
         }
 
-        // 초기 로딩
-        viewModel.loadRankableFields(null)
+        // summary 로딩 완료 → cachedSnapshot 확보 → 세계관 스피너 채우기
+        viewModel.summary.observe(viewLifecycleOwner) {
+            if (rankingInitialized && binding.rankingUniverseSpinner.adapter == null) {
+                setupRankingUniverseSpinner()
+                viewModel.loadRankableFields(null)
+            }
+        }
     }
 
     private fun setupRankingUniverseSpinner() {
@@ -178,8 +200,8 @@ class StatsMainFragment : Fragment() {
 
         val adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item, items)
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-        binding.rankingUniverseSpinner.adapter = adapter
 
+        // 리스너를 adapter 세팅 전에 등록하여 초기 콜백 받음
         binding.rankingUniverseSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, v: View?, pos: Int, id: Long) {
                 if (pos == 0) {
@@ -187,8 +209,9 @@ class StatsMainFragment : Fragment() {
                     binding.rankingNovelRow.visibility = View.GONE
                     selectedNovelIdForRanking = null
                 } else {
-                    selectedUniverseId = universes[pos - 1].first
-                    setupRankingNovelSpinner(selectedUniverseId!!)
+                    val uid = universes.getOrNull(pos - 1)?.first ?: return
+                    selectedUniverseId = uid
+                    setupRankingNovelSpinner(uid)
                     binding.rankingNovelRow.visibility = View.VISIBLE
                 }
                 viewModel.loadRankableFields(selectedUniverseId)
@@ -196,6 +219,7 @@ class StatsMainFragment : Fragment() {
             }
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
+        binding.rankingUniverseSpinner.adapter = adapter
     }
 
     private fun setupRankingNovelSpinner(universeId: Long) {
@@ -206,15 +230,15 @@ class StatsMainFragment : Fragment() {
 
         val adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item, items)
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-        binding.rankingNovelSpinner.adapter = adapter
 
         binding.rankingNovelSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, v: View?, pos: Int, id: Long) {
-                selectedNovelIdForRanking = if (pos == 0) null else novels[pos - 1].first
+                selectedNovelIdForRanking = if (pos == 0) null else novels.getOrNull(pos - 1)?.first
                 if (selectedFieldIndex >= 0) executeRanking()
             }
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
+        binding.rankingNovelSpinner.adapter = adapter
     }
 
     private fun populateFieldSpinner(fields: List<RankableField>) {
@@ -255,13 +279,25 @@ class StatsMainFragment : Fragment() {
         super.onResume()
         // 다른 탭에서 데이터 변경 후 돌아올 때 캐시 무효화하여 최신 데이터 반영
         viewModel.refreshStats()
+        // 순위 탭 돌아왔을 때 세계관 스피너 갱신 플래그
+        if (rankingInitialized) {
+            rankingNeedsRefresh = true
+        }
     }
+
+    private var rankingNeedsRefresh = false
 
     private fun setupObservers() {
         viewModel.loading.observe(viewLifecycleOwner) { isLoading ->
             binding.loadingProgress.visibility = if (isLoading) View.VISIBLE else View.GONE
-            val isOverviewTab = binding.statsTabLayout.selectedTabPosition == 0
-            binding.contentLayout.visibility = if (isLoading || !isOverviewTab) View.GONE else View.VISIBLE
+            updateTabVisibility()
+
+            // 로딩 완료 후 순위 탭 세계관 스피너 갱신
+            if (!isLoading && rankingInitialized && rankingNeedsRefresh) {
+                rankingNeedsRefresh = false
+                setupRankingUniverseSpinner()
+                viewModel.loadRankableFields(selectedUniverseId)
+            }
         }
 
         viewModel.error.observe(viewLifecycleOwner) { error ->
@@ -737,6 +773,7 @@ class StatsMainFragment : Fragment() {
     override fun onDestroyView() {
         super.onDestroyView()
         rankingAdapter = null
+        rankingInitialized = false
         _binding = null
     }
 }

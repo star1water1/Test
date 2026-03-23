@@ -83,7 +83,7 @@ class RankingAdapter(
             binding.valueBadge.text = entry.displayValue
 
             // 이미지 로딩
-            binding.characterImage.setImageResource(R.drawable.ic_person)
+            binding.characterImage.setImageResource(R.drawable.ic_character_placeholder)
             loadImage(entry)
 
             // 클릭
