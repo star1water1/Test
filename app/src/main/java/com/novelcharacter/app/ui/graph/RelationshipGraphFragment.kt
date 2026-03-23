@@ -174,8 +174,8 @@ class RelationshipGraphFragment : Fragment() {
     private var _binding: FragmentRelationshipGraphBinding? = null
     private val binding get() = _binding!!
     private val viewModel: RelationshipGraphViewModel by viewModels()
-    private var currentFilter: String? = null
-    private var currentFactionFilter: Long? = null  // null = show all factions
+    private var selectedRelTypes = mutableSetOf<String>()  // 빈 셋 = 전체
+    private var selectedFactions = mutableSetOf<Long>()   // 빈 셋 = 전체 세력
     private var isTimeViewEnabled = false
     private var currentYear: Int? = null
 
@@ -241,23 +241,26 @@ class RelationshipGraphFragment : Fragment() {
         val chipGroup = binding.factionDisplayModeChipGroup
         chipGroup.removeAllViews()
 
-        data class ModeOption(val mode: FactionDisplayMode, val labelRes: Int)
+        data class ToggleOption(val labelRes: Int, val getter: () -> Boolean, val setter: (Boolean) -> Unit)
         val options = listOf(
-            ModeOption(FactionDisplayMode.BOTH, R.string.faction_display_mode_both),
-            ModeOption(FactionDisplayMode.BACKGROUND, R.string.faction_display_mode_area),
-            ModeOption(FactionDisplayMode.BORDER, R.string.faction_display_mode_border),
-            ModeOption(FactionDisplayMode.NONE, R.string.faction_display_mode_none)
+            ToggleOption(R.string.faction_display_mode_area,
+                { binding.graphView.showFactionArea }, { binding.graphView.showFactionArea = it }),
+            ToggleOption(R.string.faction_display_mode_border,
+                { binding.graphView.showFactionBorder }, { binding.graphView.showFactionBorder = it }),
+            ToggleOption(R.string.faction_display_mode_edges,
+                { binding.graphView.showFactionEdges }, { binding.graphView.showFactionEdges = it })
         )
 
         for (option in options) {
             val chip = Chip(requireContext()).apply {
                 text = getString(option.labelRes)
                 isCheckable = true
-                isChecked = binding.graphView.factionDisplayMode == option.mode
+                isChecked = option.getter()
                 setOnClickListener {
-                    binding.graphView.factionDisplayMode = option.mode
-                    setupFactionDisplayModeToggle()
-                    refreshGraph() // NONE 모드에서 세력 자동 관계 숨기기 반영
+                    val newValue = !option.getter()
+                    option.setter(newValue)
+                    isChecked = newValue
+                    refreshGraph()
                 }
             }
             chipGroup.addView(chip)
@@ -278,21 +281,20 @@ class RelationshipGraphFragment : Fragment() {
         binding.factionFilterScrollView.visibility = View.VISIBLE
         binding.factionDisplayModeScrollView.visibility = View.VISIBLE
 
+        // 무효 선택 제거 (세계관 전환 등으로 세력 목록이 변경된 경우)
+        val validFactionIds = factions.map { it.id }.toSet()
+        selectedFactions.retainAll(validFactionIds)
+
         // "All factions" chip
         val allChip = Chip(requireContext()).apply {
             text = getString(R.string.graph_faction_filter_all)
             isCheckable = true
-            isChecked = currentFactionFilter == null
-            setOnClickListener {
-                currentFactionFilter = null
-                refreshGraph()
-                // Update check states
-                setupFactionChips()
-            }
+            isChecked = selectedFactions.isEmpty()
         }
         chipGroup.addView(allChip)
 
         // One chip per faction
+        val factionChips = mutableListOf<Chip>()
         for (faction in factions) {
             val factionColor = try {
                 Color.parseColor(faction.color)
@@ -302,18 +304,33 @@ class RelationshipGraphFragment : Fragment() {
             val chip = Chip(requireContext()).apply {
                 text = faction.name
                 isCheckable = true
-                isChecked = currentFactionFilter == faction.id
+                isChecked = faction.id in selectedFactions
                 chipBackgroundColor = android.content.res.ColorStateList.valueOf(
                     Color.argb(60, Color.red(factionColor), Color.green(factionColor), Color.blue(factionColor))
                 )
                 setTextColor(factionColor)
                 setOnClickListener {
-                    currentFactionFilter = faction.id
+                    if (faction.id in selectedFactions) {
+                        selectedFactions.remove(faction.id)
+                    } else {
+                        selectedFactions.add(faction.id)
+                    }
+                    // 개별 칩 상태 동기화 (전체 재생성 없이)
+                    isChecked = faction.id in selectedFactions
+                    allChip.isChecked = selectedFactions.isEmpty()
                     refreshGraph()
-                    setupFactionChips()
                 }
             }
+            factionChips.add(chip)
             chipGroup.addView(chip)
+        }
+
+        // "전체" 칩 클릭: 선택 초기화
+        allChip.setOnClickListener {
+            selectedFactions.clear()
+            allChip.isChecked = true
+            factionChips.forEach { it.isChecked = false }
+            refreshGraph()
         }
     }
 
@@ -331,7 +348,7 @@ class RelationshipGraphFragment : Fragment() {
                 if (newUniverseId != currentUniverseId) {
                     currentUniverseId = newUniverseId
                     currentNovelId = null
-                    currentFactionFilter = null
+                    selectedFactions.clear()
                     updateNovelSpinner()
                     setupFactionChips()
                     refreshGraph()
@@ -452,29 +469,45 @@ class RelationshipGraphFragment : Fragment() {
         val chipGroup = binding.filterChipGroup
         chipGroup.removeAllViews()
 
+        val types = relationships.map { it.relationshipType }.distinct().sorted()
+        // 무효 선택 제거 (관계 데이터 변경으로 타입이 사라진 경우)
+        selectedRelTypes.retainAll(types.toSet())
+
         val allChip = Chip(requireContext()).apply {
             text = getString(R.string.graph_filter_all)
             isCheckable = true
-            isChecked = currentFilter == null
-            setOnClickListener {
-                currentFilter = null
-                refreshGraph()
-            }
+            isChecked = selectedRelTypes.isEmpty()
         }
         chipGroup.addView(allChip)
 
-        val types = relationships.map { it.relationshipType }.distinct().sorted()
+        val typeChips = mutableListOf<Chip>()
         for (type in types) {
             val chip = Chip(requireContext()).apply {
                 text = type
                 isCheckable = true
-                isChecked = currentFilter == type
+                isChecked = type in selectedRelTypes
                 setOnClickListener {
-                    currentFilter = type
+                    if (type in selectedRelTypes) {
+                        selectedRelTypes.remove(type)
+                    } else {
+                        selectedRelTypes.add(type)
+                    }
+                    // 개별 칩 상태 동기화 (전체 재생성 없이)
+                    isChecked = type in selectedRelTypes
+                    allChip.isChecked = selectedRelTypes.isEmpty()
                     refreshGraph()
                 }
             }
+            typeChips.add(chip)
             chipGroup.addView(chip)
+        }
+
+        // "전체" 칩 클릭: 선택 초기화
+        allChip.setOnClickListener {
+            selectedRelTypes.clear()
+            allChip.isChecked = true
+            typeChips.forEach { it.isChecked = false }
+            refreshGraph()
         }
     }
 
@@ -530,13 +563,21 @@ class RelationshipGraphFragment : Fragment() {
 
         val (universeFiltered, _) = applyUniverseNovelFilter(chars, rels)
 
-        val filteredRelationships = if (currentFilter != null) {
-            universeFiltered.filter { it.relationshipType == currentFilter }
+        val filteredRelationships = if (selectedRelTypes.isNotEmpty()) {
+            universeFiltered.filter { it.relationshipType in selectedRelTypes }
         } else {
             universeFiltered
         }
 
-        val edges = filteredRelationships.map { rel ->
+        val hideFactionEdges = !binding.graphView.showFactionEdges
+
+        val edges = filteredRelationships.mapNotNull { rel ->
+            // 세력 관계 토글 OFF → 세력 자동 관계 엣지 숨김
+            if (hideFactionEdges && rel.factionId != null) return@mapNotNull null
+            // 세력 선택 필터 secondary 마킹
+            val isEdgeSecondary = selectedFactions.isNotEmpty() &&
+                (rel.factionId == null || rel.factionId !in selectedFactions)
+
             val resolved = viewModel.resolveRelationshipAtYear(rel, year, allChanges)
             GraphEdge(
                 fromId = rel.characterId1,
@@ -544,7 +585,8 @@ class RelationshipGraphFragment : Fragment() {
                 label = resolved.resolvedType,
                 intensity = resolved.resolvedIntensity,
                 isBidirectional = resolved.resolvedBidirectional,
-                factionId = rel.factionId
+                factionId = rel.factionId,
+                isSecondary = isEdgeSecondary
             )
         }
 
@@ -557,9 +599,9 @@ class RelationshipGraphFragment : Fragment() {
         // 세계관/작품 필터 적용
         val (universeFiltered, pIds) = applyUniverseNovelFilter(allCharacters, allRelationships)
 
-        // 관계 유형 필터 적용
-        val filteredRelationships = if (currentFilter != null) {
-            universeFiltered.filter { it.relationshipType == currentFilter }
+        // 관계 유형 필터 적용 (멀티셀렉트: 빈 셋 = 전체)
+        val filteredRelationships = if (selectedRelTypes.isNotEmpty()) {
+            universeFiltered.filter { it.relationshipType in selectedRelTypes }
         } else {
             universeFiltered
         }
@@ -622,10 +664,10 @@ class RelationshipGraphFragment : Fragment() {
     ) {
         val charFactionMap = viewModel.characterFactionMap.value ?: emptyMap()
 
-        // Determine faction-based secondary highlighting
-        val factionFilteredIds: Set<Long>? = if (currentFactionFilter != null) {
+        // Determine faction-based secondary highlighting (멀티셀렉트: OR 조건)
+        val factionFilteredIds: Set<Long>? = if (selectedFactions.isNotEmpty()) {
             charFactionMap.entries
-                .filter { (_, pairs) -> pairs.any { it.first == currentFactionFilter } }
+                .filter { (_, pairs) -> pairs.any { it.first in selectedFactions } }
                 .map { it.key }
                 .toSet()
         } else null
@@ -642,14 +684,14 @@ class RelationshipGraphFragment : Fragment() {
                 factionColors = factionPairs.map { it.second }
             )
         }
-        val factionDisplayMode = binding.graphView.factionDisplayMode
-        val hideFactionEdges = factionDisplayMode == FactionDisplayMode.NONE
+        val hideFactionEdges = !binding.graphView.showFactionEdges
 
         val allEdges = relationships.mapNotNull { rel ->
-            // 세력 표기 모드 NONE → 세력 자동 관계 완전 숨김
+            // 세력 관계 토글 OFF → 세력 자동 관계 엣지 숨김
             if (hideFactionEdges && rel.factionId != null) return@mapNotNull null
-            // 세력 선택 필터 활성 시 → 해당 세력 관계만 강조, 나머지 흐리게
-            val isEdgeSecondary = currentFactionFilter != null && rel.factionId != currentFactionFilter
+            // 세력 선택 필터 활성 시 → 선택된 세력 관계만 강조, 나머지 흐리게
+            val isEdgeSecondary = selectedFactions.isNotEmpty() &&
+                (rel.factionId == null || rel.factionId !in selectedFactions)
             if (isTimeViewEnabled && currentYear != null) {
                 val resolved = viewModel.resolveRelationshipAtYear(rel, currentYear!!, allChanges)
                 GraphEdge(

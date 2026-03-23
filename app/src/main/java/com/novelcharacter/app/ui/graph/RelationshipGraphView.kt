@@ -35,10 +35,6 @@ data class GraphEdge(
     val isSecondary: Boolean = false   // 세력 필터 시 해당 세력 관계가 아니면 흐리게
 )
 
-enum class FactionDisplayMode {
-    BACKGROUND, BORDER, BOTH, NONE
-}
-
 class RelationshipGraphView @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0
 ) : View(context, attrs, defStyleAttr) {
@@ -46,11 +42,17 @@ class RelationshipGraphView @JvmOverloads constructor(
     private var nodes = listOf<GraphNode>()
     private var edges = listOf<GraphEdge>()
 
-    var factionDisplayMode: FactionDisplayMode = FactionDisplayMode.BOTH
-        set(value) {
-            field = value
-            invalidate()
-        }
+    /** 세력 표기: 영역(배경 영역) 토글 */
+    var showFactionArea: Boolean = true
+        set(value) { field = value; invalidate() }
+
+    /** 세력 표기: 선(노드 링) 토글 */
+    var showFactionBorder: Boolean = true
+        set(value) { field = value; invalidate() }
+
+    /** 세력 표기: 관계(세력 자동 엣지) 토글 */
+    var showFactionEdges: Boolean = true
+        set(value) { field = value; invalidate() }
 
     private val isDarkMode = (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
 
@@ -455,7 +457,7 @@ class RelationshipGraphView @JvmOverloads constructor(
         val nodeMap = nodes.associateBy { it.id }
 
         // Draw faction backgrounds (before edges and nodes)
-        if (factionDisplayMode == FactionDisplayMode.BACKGROUND || factionDisplayMode == FactionDisplayMode.BOTH) {
+        if (showFactionArea) {
             drawFactionBackgrounds(canvas)
         }
 
@@ -578,7 +580,7 @@ class RelationshipGraphView @JvmOverloads constructor(
         edgePaint.pathEffect = null
 
         // Draw nodes
-        val showFactionRings = factionDisplayMode == FactionDisplayMode.BORDER || factionDisplayMode == FactionDisplayMode.BOTH
+        val showFactionRings = showFactionBorder
         for (node in nodes) {
             // Draw faction rings outside the node circle
             if (showFactionRings && node.factionColors.isNotEmpty()) {

@@ -985,8 +985,7 @@
     <string name="faction_display_mode_label">세력 표기:</string>
     <string name="faction_display_mode_area">영역</string>
     <string name="faction_display_mode_border">선</string>
-    <string name="faction_display_mode_both">둘 다</string>
-    <string name="faction_display_mode_none">없음</string>
+    <string name="faction_display_mode_edges">관계</string>
 
     <!-- 보충 탭 -->
     <string name="tab_supplement">보충</string>

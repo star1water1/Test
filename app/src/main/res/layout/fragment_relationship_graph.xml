@@ -52,8 +52,7 @@
             android:id="@+id/filterChipGroup"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            app:singleSelection="true"
-            app:selectionRequired="true"
+            app:singleSelection="false"
             android:paddingTop="4dp"
             android:paddingBottom="4dp" />
 
@@ -73,8 +72,7 @@
             android:id="@+id/factionChipGroup"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            app:singleSelection="true"
-            app:selectionRequired="true"
+            app:singleSelection="false"
             android:paddingTop="2dp"
             android:paddingBottom="4dp" />
 
@@ -110,8 +108,7 @@
                 android:id="@+id/factionDisplayModeChipGroup"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                app:singleSelection="true"
-                app:selectionRequired="true" />
+                app:singleSelection="false" />
 
         </LinearLayout>
 
