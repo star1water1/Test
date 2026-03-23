@@ -69,11 +69,11 @@ class RelationshipHelper(
                 viewHolder: RecyclerView.ViewHolder,
                 target: RecyclerView.ViewHolder
             ): Boolean {
-                val from = viewHolder.adapterPosition
-                val to = target.adapterPosition
+                val from = viewHolder.bindingAdapterPosition
+                val to = target.bindingAdapterPosition
                 if (from < 0 || to < 0 || from >= currentDisplayItems.size || to >= currentDisplayItems.size) return false
                 Collections.swap(currentDisplayItems, from, to)
-                relationshipAdapter.notifyItemMoved(from, to)
+                relationshipAdapter.submitList(currentDisplayItems.toList())
                 return true
             }
 

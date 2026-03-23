@@ -416,19 +416,30 @@ class SupplementFragment : Fragment() {
                     ) as? List<String> ?: emptyList()
                 } catch (_: Exception) { emptyList() }
 
+                binding.characterImage.setImageResource(R.drawable.ic_character_placeholder)
                 if (imagePaths.isNotEmpty()) {
+                    val path = imagePaths[0]
+                    val appDir = itemView.context.filesDir
                     try {
-                        val bitmap = BitmapFactory.decodeFile(imagePaths[0])
-                        if (bitmap != null) {
-                            binding.characterImage.setImageBitmap(bitmap)
-                        } else {
-                            binding.characterImage.setImageResource(R.drawable.ic_character_placeholder)
+                        val file = java.io.File(path)
+                        if (file.exists() && file.canonicalPath.startsWith(appDir.canonicalPath)) {
+                            val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                            BitmapFactory.decodeFile(path, options)
+                            val targetSize = (48 * itemView.context.resources.displayMetrics.density).toInt()
+                            var sampleSize = 1
+                            val halfH = options.outHeight / 2
+                            val halfW = options.outWidth / 2
+                            while (sampleSize < 1024 && halfH / sampleSize >= targetSize && halfW / sampleSize >= targetSize) {
+                                sampleSize *= 2
+                            }
+                            options.inSampleSize = sampleSize
+                            options.inJustDecodeBounds = false
+                            val bitmap = BitmapFactory.decodeFile(path, options)
+                            if (bitmap != null) {
+                                binding.characterImage.setImageBitmap(bitmap)
+                            }
                         }
-                    } catch (_: Exception) {
-                        binding.characterImage.setImageResource(R.drawable.ic_character_placeholder)
-                    }
-                } else {
-                    binding.characterImage.setImageResource(R.drawable.ic_character_placeholder)
+                    } catch (_: Exception) { }
                 }
 
                 // 완성률 배지
