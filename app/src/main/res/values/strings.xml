@@ -1042,6 +1042,19 @@
     <string name="supplement_issue_summary">미흡: %s</string>
     <string name="supplement_field_na">N/A</string>
 
+    <!-- 순위 탭 -->
+    <string name="stats_tab_overview">개요</string>
+    <string name="stats_tab_ranking">순위</string>
+    <string name="stats_ranking_scope">범위</string>
+    <string name="stats_ranking_novel">작품</string>
+    <string name="stats_ranking_part">측정</string>
+    <string name="stats_ranking_sort_toggle">정렬 방향 전환</string>
+    <string name="stats_ranking_summary">%1$d명 참여 | %2$d명 제외</string>
+    <string name="stats_ranking_empty">순위를 매길 데이터가 없습니다</string>
+    <string name="stats_ranking_select_field">필드를 선택하세요</string>
+    <string name="stats_ranking_all_universes">전체 세계관</string>
+    <string name="stats_ranking_all_novels">전체 작품</string>
+
     <!-- 보충 모드 배너 -->
     <string name="supplement_banner_issues">미흡 항목: %s</string>
     <string name="supplement_progress_format">%1$d/%2$d</string>

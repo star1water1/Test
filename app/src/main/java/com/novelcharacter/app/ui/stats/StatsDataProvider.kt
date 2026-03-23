@@ -361,6 +361,32 @@ data class SubgroupAnalysis(
     val totalCount: Int
 )
 
+// ===== 순위 =====
+data class RankingEntry(
+    val characterId: Long,
+    val characterName: String,
+    val rank: Int,
+    val value: Double,
+    val displayValue: String,
+    val imagePaths: String,
+    val novelTitle: String?
+)
+
+data class RankingResult(
+    val entries: List<RankingEntry>,
+    val fieldName: String,
+    val fieldType: String,
+    val ascending: Boolean,
+    val totalCharacters: Int,
+    val excludedCount: Int
+)
+
+data class RankableField(
+    val fieldDef: FieldDefinition,
+    val bodySizeParts: List<String>?,
+    val isNumeric: Boolean
+)
+
 class StatsDataProvider(private val app: NovelCharacterApp) {
 
     suspend fun loadSnapshot(): StatsSnapshot {
@@ -1851,5 +1877,181 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
             distribution = distribution,
             totalCount = characterIds.size
         )
+    }
+
+    // ===== 순위 계산 =====
+
+    /**
+     * 순위를 매길 수 있는 필드 목록을 반환한다.
+     * universeId가 null이면 모든 세계관의 필드를 반환한다.
+     */
+    fun getRankableFields(s: StatsSnapshot, universeId: Long?): List<RankableField> {
+        val fields = if (universeId != null) {
+            s.fieldDefinitions.filter { it.universeId == universeId }
+        } else {
+            s.fieldDefinitions
+        }
+
+        return fields.map { fd ->
+            val type = fd.type
+            val isNumeric = type in listOf("NUMBER", "CALCULATED", "GRADE", "BODY_SIZE")
+            val bodySizeParts = if (type == "BODY_SIZE") {
+                val sic = StructuredInputConfig.fromConfig(fd.config)
+                if (sic.enabled && sic.parts.isNotEmpty()) {
+                    sic.parts.map { it.label }
+                } else {
+                    listOf("B", "W", "H")
+                }
+            } else null
+            RankableField(fd, bodySizeParts, isNumeric)
+        }
+    }
+
+    /**
+     * 지정된 필드에 대해 캐릭터 순위를 계산한다.
+     */
+    fun computeRanking(
+        s: StatsSnapshot,
+        fieldDefId: Long,
+        ascending: Boolean = false,
+        bodySizePartIndex: Int? = null
+    ): RankingResult {
+        val fd = s.fieldDefinitions.find { it.id == fieldDefId }
+            ?: return RankingResult(emptyList(), "", "", ascending, 0, 0)
+
+        val charMap = s.characters.associateBy { it.id }
+        val novelMap = s.novels.associateBy { it.id }
+        val rawValues = s.fieldValues.filter { it.fieldDefinitionId == fieldDefId }
+        val isNumeric = fd.type in listOf("NUMBER", "CALCULATED", "GRADE", "BODY_SIZE")
+
+        // 빈도 모드용: 전체 빈도 계산
+        val frequencyMap = if (!isNumeric) {
+            val allValues = mutableListOf<String>()
+            for (fv in rawValues) {
+                if (fd.type == "MULTI_TEXT") {
+                    allValues.addAll(fv.value.split(",").map { it.trim() }.filter { it.isNotEmpty() })
+                } else {
+                    if (fv.value.isNotBlank()) allValues.add(fv.value.trim())
+                }
+            }
+            allValues.groupBy { it }.mapValues { it.value.size }
+        } else emptyMap()
+
+        data class CharValue(val charId: Long, val numericValue: Double, val displayValue: String)
+
+        val charValues = mutableListOf<CharValue>()
+        var excludedCount = 0
+
+        for (fv in rawValues) {
+            val char = charMap[fv.characterId] ?: continue
+            if (fv.value.isBlank()) { excludedCount++; continue }
+
+            when (fd.type) {
+                "NUMBER", "CALCULATED" -> {
+                    val v = fv.value.toDoubleOrNull()
+                    if (v != null) {
+                        val display = if (v == v.toLong().toDouble()) v.toLong().toString()
+                        else String.format("%.1f", v)
+                        charValues.add(CharValue(char.id, v, display))
+                    } else excludedCount++
+                }
+                "GRADE" -> {
+                    val numericValue = resolveGradeValueForRanking(fd, fv.value)
+                    if (numericValue != null) {
+                        charValues.add(CharValue(char.id, numericValue, fv.value))
+                    } else excludedCount++
+                }
+                "BODY_SIZE" -> {
+                    val sic = StructuredInputConfig.fromConfig(fd.config)
+                    val partIdx = bodySizePartIndex ?: 0
+                    val parts = if (sic.enabled) {
+                        fv.value.split(sic.separator).map { it.trim() }
+                    } else {
+                        fv.value.split(Regex("[-/\\s]+")).map { it.trim() }
+                    }
+                    val partValue = parts.getOrNull(partIdx)?.toDoubleOrNull()
+                    if (partValue != null) {
+                        charValues.add(CharValue(char.id, partValue, fv.value))
+                    } else excludedCount++
+                }
+                else -> {
+                    // 빈도 모드: SELECT, TEXT, MULTI_TEXT
+                    if (fd.type == "MULTI_TEXT") {
+                        val tokens = fv.value.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                        val maxFreq = tokens.maxOfOrNull { frequencyMap[it] ?: 0 } ?: 0
+                        val topToken = tokens.maxByOrNull { frequencyMap[it] ?: 0 } ?: fv.value
+                        if (maxFreq > 0) {
+                            charValues.add(CharValue(char.id, maxFreq.toDouble(), "$topToken (${maxFreq}회)"))
+                        } else excludedCount++
+                    } else {
+                        val freq = frequencyMap[fv.value.trim()] ?: 0
+                        if (freq > 0) {
+                            charValues.add(CharValue(char.id, freq.toDouble(), "${fv.value.trim()} (${freq}회)"))
+                        } else excludedCount++
+                    }
+                }
+            }
+        }
+
+        // 값이 없는 캐릭터도 제외 카운트에 추가
+        val charsWithValues = rawValues.map { it.characterId }.toSet()
+        val totalChars = s.characters.size
+        excludedCount += (totalChars - charsWithValues.size)
+
+        // 정렬 및 순위 할당
+        val sorted = if (ascending) {
+            charValues.sortedBy { it.numericValue }
+        } else {
+            charValues.sortedByDescending { it.numericValue }
+        }
+
+        val entries = mutableListOf<RankingEntry>()
+        var currentRank = 1
+        for (i in sorted.indices) {
+            if (i > 0 && sorted[i].numericValue != sorted[i - 1].numericValue) {
+                currentRank = i + 1
+            }
+            val char = charMap[sorted[i].charId] ?: continue
+            val novel = char.novelId?.let { novelMap[it] }
+            entries.add(
+                RankingEntry(
+                    characterId = char.id,
+                    characterName = char.displayName,
+                    rank = currentRank,
+                    value = sorted[i].numericValue,
+                    displayValue = sorted[i].displayValue,
+                    imagePaths = char.imagePaths,
+                    novelTitle = novel?.title
+                )
+            )
+        }
+
+        return RankingResult(
+            entries = entries,
+            fieldName = fd.name,
+            fieldType = fd.type,
+            ascending = ascending,
+            totalCharacters = entries.size,
+            excludedCount = excludedCount
+        )
+    }
+
+    /**
+     * GRADE 필드의 라벨을 숫자 값으로 변환 (FormulaEvaluator의 로직 재사용)
+     */
+    private fun resolveGradeValueForRanking(fieldDef: FieldDefinition, gradeLabel: String): Double? {
+        return try {
+            val config = com.google.gson.Gson().fromJson<Map<String, Any>>(
+                fieldDef.config, com.novelcharacter.app.util.GsonTypes.STRING_ANY_MAP
+            ) ?: return null
+            val grades = (config["grades"] as? Map<*, *>) ?: return null
+            val allowNegative = config["allowNegative"] as? Boolean ?: false
+            val isNegative = allowNegative && gradeLabel.startsWith("-")
+            val cleanLabel = gradeLabel.removePrefix("-").removePrefix("+")
+            val baseValue = (grades[cleanLabel] as? Number)?.toDouble() ?: return null
+            if (isNegative) -baseValue else baseValue
+        } catch (e: Exception) {
+            null
+        }
     }
 }

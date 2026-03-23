@@ -21,8 +21,11 @@ import com.github.mikephil.charting.data.PieDataSet
 import com.github.mikephil.charting.data.PieEntry
 import com.github.mikephil.charting.formatter.PercentFormatter
 import com.github.mikephil.charting.utils.ColorTemplate
+import androidx.recyclerview.widget.LinearLayoutManager
+import com.google.android.material.tabs.TabLayout
 import com.novelcharacter.app.R
 import com.novelcharacter.app.databinding.FragmentStatsMainBinding
+import com.novelcharacter.app.ui.adapter.RankingAdapter
 import com.novelcharacter.app.util.navigateSafe
 
 class StatsMainFragment : Fragment() {
@@ -30,6 +33,16 @@ class StatsMainFragment : Fragment() {
     private var _binding: FragmentStatsMainBinding? = null
     private val binding get() = _binding!!
     private val viewModel: StatsViewModel by activityViewModels()
+
+    // 순위 탭
+    private var rankingAdapter: RankingAdapter? = null
+    private var rankingInitialized = false
+    private var currentRankableFields: List<RankableField> = emptyList()
+    private var currentAscending = false
+    private var selectedUniverseId: Long? = null
+    private var selectedNovelIdForRanking: Long? = null
+    private var selectedFieldIndex = -1
+    private var selectedBodySizePartIndex = 0
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
@@ -40,9 +53,202 @@ class StatsMainFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        setupTabs()
         setupObservers()
         setupClickListeners()
         viewModel.loadAllStats()
+    }
+
+    private fun setupTabs() {
+        val tabLayout = binding.statsTabLayout
+        tabLayout.addTab(tabLayout.newTab().setText(R.string.stats_tab_overview))
+        tabLayout.addTab(tabLayout.newTab().setText(R.string.stats_tab_ranking))
+
+        tabLayout.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
+            override fun onTabSelected(tab: TabLayout.Tab?) {
+                when (tab?.position) {
+                    0 -> {
+                        binding.contentLayout.visibility = if (viewModel.loading.value == true) View.GONE else View.VISIBLE
+                        binding.rankingLayout.visibility = View.GONE
+                    }
+                    1 -> {
+                        binding.contentLayout.visibility = View.GONE
+                        binding.rankingLayout.visibility = View.VISIBLE
+                        if (!rankingInitialized) {
+                            initRankingUI()
+                        }
+                    }
+                }
+            }
+            override fun onTabUnselected(tab: TabLayout.Tab?) {}
+            override fun onTabReselected(tab: TabLayout.Tab?) {}
+        })
+    }
+
+    private fun initRankingUI() {
+        rankingInitialized = true
+        val ctx = context ?: return
+
+        // RecyclerView 세팅
+        rankingAdapter = RankingAdapter()
+        binding.rankingRecyclerView.layoutManager = LinearLayoutManager(ctx)
+        binding.rankingRecyclerView.adapter = rankingAdapter
+
+        // 세계관 스피너
+        setupRankingUniverseSpinner()
+
+        // 필드 스피너 선택 리스너
+        binding.rankingFieldSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                if (pos == 0) {
+                    // "필드를 선택하세요" 선택
+                    selectedFieldIndex = -1
+                    binding.rankingBodySizeRow.visibility = View.GONE
+                    binding.rankingEmpty.visibility = View.VISIBLE
+                    binding.rankingRecyclerView.visibility = View.GONE
+                    binding.rankingSummary.text = ""
+                    return
+                }
+                selectedFieldIndex = pos - 1
+                val field = currentRankableFields.getOrNull(selectedFieldIndex) ?: return
+
+                // BODY_SIZE 파트 선택 표시
+                if (field.fieldDef.type == "BODY_SIZE" && field.bodySizeParts != null) {
+                    binding.rankingBodySizeRow.visibility = View.VISIBLE
+                    val partAdapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item, field.bodySizeParts)
+                    partAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+                    binding.rankingBodySizeSpinner.adapter = partAdapter
+                    binding.rankingBodySizeSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                        override fun onItemSelected(p: AdapterView<*>?, v2: View?, partPos: Int, partId: Long) {
+                            selectedBodySizePartIndex = partPos
+                            executeRanking()
+                        }
+                        override fun onNothingSelected(p: AdapterView<*>?) {}
+                    }
+                } else {
+                    binding.rankingBodySizeRow.visibility = View.GONE
+                }
+
+                executeRanking()
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+
+        // 정렬 토글
+        binding.rankingSortToggle.setOnClickListener {
+            currentAscending = !currentAscending
+            binding.rankingSortToggle.setImageResource(
+                if (currentAscending) android.R.drawable.arrow_up_float
+                else android.R.drawable.arrow_down_float
+            )
+            if (selectedFieldIndex >= 0) executeRanking()
+        }
+
+        // 순위 결과 관찰
+        viewModel.rankableFields.observe(viewLifecycleOwner) { fields ->
+            currentRankableFields = fields
+            populateFieldSpinner(fields)
+        }
+
+        viewModel.rankingResult.observe(viewLifecycleOwner) { result ->
+            if (result == null) return@observe
+            if (result.entries.isEmpty()) {
+                binding.rankingRecyclerView.visibility = View.GONE
+                binding.rankingEmpty.visibility = View.VISIBLE
+                binding.rankingEmpty.text = getString(R.string.stats_ranking_empty)
+            } else {
+                binding.rankingRecyclerView.visibility = View.VISIBLE
+                binding.rankingEmpty.visibility = View.GONE
+                rankingAdapter?.submitList(result.entries)
+            }
+            binding.rankingSummary.text = getString(
+                R.string.stats_ranking_summary, result.totalCharacters, result.excludedCount
+            )
+        }
+
+        // 초기 로딩
+        viewModel.loadRankableFields(null)
+    }
+
+    private fun setupRankingUniverseSpinner() {
+        val ctx = context ?: return
+        val universes = viewModel.getUniverseList()
+        val items = mutableListOf(getString(R.string.stats_ranking_all_universes))
+        items.addAll(universes.map { it.second })
+
+        val adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item, items)
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        binding.rankingUniverseSpinner.adapter = adapter
+
+        binding.rankingUniverseSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                if (pos == 0) {
+                    selectedUniverseId = null
+                    binding.rankingNovelRow.visibility = View.GONE
+                    selectedNovelIdForRanking = null
+                } else {
+                    selectedUniverseId = universes[pos - 1].first
+                    setupRankingNovelSpinner(selectedUniverseId!!)
+                    binding.rankingNovelRow.visibility = View.VISIBLE
+                }
+                viewModel.loadRankableFields(selectedUniverseId)
+                selectedFieldIndex = -1
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+    }
+
+    private fun setupRankingNovelSpinner(universeId: Long) {
+        val ctx = context ?: return
+        val novels = viewModel.getNovelListForUniverse(universeId)
+        val items = mutableListOf(getString(R.string.stats_ranking_all_novels))
+        items.addAll(novels.map { it.second })
+
+        val adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item, items)
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        binding.rankingNovelSpinner.adapter = adapter
+
+        binding.rankingNovelSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                selectedNovelIdForRanking = if (pos == 0) null else novels[pos - 1].first
+                if (selectedFieldIndex >= 0) executeRanking()
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+    }
+
+    private fun populateFieldSpinner(fields: List<RankableField>) {
+        val ctx = context ?: return
+        val items = mutableListOf(getString(R.string.stats_ranking_select_field))
+        items.addAll(fields.map { "${it.fieldDef.name} (${getFieldTypeLabel(it)})" })
+
+        val adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item, items)
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        binding.rankingFieldSpinner.adapter = adapter
+    }
+
+    private fun getFieldTypeLabel(field: RankableField): String {
+        return when (field.fieldDef.type) {
+            "NUMBER" -> "숫자"
+            "CALCULATED" -> "계산"
+            "GRADE" -> "등급"
+            "BODY_SIZE" -> "신체"
+            "SELECT" -> "빈도"
+            "TEXT" -> "빈도"
+            "MULTI_TEXT" -> "빈도"
+            else -> field.fieldDef.type
+        }
+    }
+
+    private fun executeRanking() {
+        val field = currentRankableFields.getOrNull(selectedFieldIndex) ?: return
+        val bodyPartIdx = if (field.fieldDef.type == "BODY_SIZE") selectedBodySizePartIndex else null
+        viewModel.loadRanking(
+            fieldDefId = field.fieldDef.id,
+            ascending = currentAscending,
+            bodySizePartIndex = bodyPartIdx,
+            novelId = selectedNovelIdForRanking
+        )
     }
 
     override fun onResume() {
@@ -54,7 +260,8 @@ class StatsMainFragment : Fragment() {
     private fun setupObservers() {
         viewModel.loading.observe(viewLifecycleOwner) { isLoading ->
             binding.loadingProgress.visibility = if (isLoading) View.VISIBLE else View.GONE
-            binding.contentLayout.visibility = if (isLoading) View.GONE else View.VISIBLE
+            val isOverviewTab = binding.statsTabLayout.selectedTabPosition == 0
+            binding.contentLayout.visibility = if (isLoading || !isOverviewTab) View.GONE else View.VISIBLE
         }
 
         viewModel.error.observe(viewLifecycleOwner) { error ->
@@ -529,6 +736,7 @@ class StatsMainFragment : Fragment() {
 
     override fun onDestroyView() {
         super.onDestroyView()
+        rankingAdapter = null
         _binding = null
     }
 }

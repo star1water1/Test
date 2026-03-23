@@ -276,6 +276,50 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // ===== 순위 =====
+    private val _rankingResult = MutableLiveData<RankingResult?>()
+    val rankingResult: LiveData<RankingResult?> = _rankingResult
+
+    private val _rankableFields = MutableLiveData<List<RankableField>>()
+    val rankableFields: LiveData<List<RankableField>> = _rankableFields
+
+    fun loadRankableFields(universeId: Long?) {
+        viewModelScope.launch {
+            try {
+                val snapshot = ensureSnapshot()
+                _rankableFields.value = withContext(Dispatchers.IO) {
+                    provider.getRankableFields(snapshot, universeId)
+                }
+            } catch (e: Exception) {
+                _error.value = e.message
+            }
+        }
+    }
+
+    fun loadRanking(fieldDefId: Long, ascending: Boolean = false, bodySizePartIndex: Int? = null, novelId: Long? = null) {
+        viewModelScope.launch {
+            try {
+                val snapshot = ensureSnapshot()
+                val scoped = if (novelId != null) provider.filterByNovel(snapshot, novelId) else snapshot
+                _rankingResult.value = withContext(Dispatchers.IO) {
+                    provider.computeRanking(scoped, fieldDefId, ascending, bodySizePartIndex)
+                }
+            } catch (e: Exception) {
+                _error.value = e.message
+            }
+        }
+    }
+
+    fun getUniverseList(): List<Pair<Long, String>> {
+        val snapshot = cachedSnapshot ?: return emptyList()
+        return snapshot.universes.map { it.id to it.name }
+    }
+
+    fun getNovelListForUniverse(universeId: Long): List<Pair<Long, String>> {
+        val snapshot = cachedSnapshot ?: return emptyList()
+        return snapshot.novels.filter { it.universeId == universeId }.map { it.id to it.title }
+    }
+
     // ===== 개선 3: 패턴 인사이트 =====
     private val _patternInsights = MutableLiveData<List<PatternInsight>>()
     val patternInsights: LiveData<List<PatternInsight>> = _patternInsights
