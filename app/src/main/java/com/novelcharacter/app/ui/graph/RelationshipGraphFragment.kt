@@ -146,7 +146,9 @@ class RelationshipGraphViewModel(application: android.app.Application) : Android
     ): ResolvedRelationship {
         val changes = allChanges
             .filter { it.relationshipId == relationship.id && it.year <= year }
-            .sortedByDescending { it.year * 10000 + (it.month ?: 0) * 100 + (it.day ?: 0) }
+            .sortedWith(compareByDescending<CharacterRelationshipChange> {
+                it.year * 10000 + (it.month ?: 0) * 100 + (it.day ?: 0)
+            }.thenByDescending { it.id })
 
         val latestChange = changes.firstOrNull()
         return ResolvedRelationship(
