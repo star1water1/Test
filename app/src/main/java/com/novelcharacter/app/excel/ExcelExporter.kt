@@ -604,9 +604,36 @@ class ExcelExporter(context: Context) {
             // 이명
             row.createCell(col++).setCellValue(character.anotherName)
 
-            // 동적 필드
+            // 동적 필드 (CALCULATED 필드는 FormulaEvaluator로 실시간 계산)
+            val calculatedFields = fields.filter { it.type == "CALCULATED" }
+            val calculatedResults: Map<Long, String> = if (calculatedFields.isNotEmpty()) {
+                val fieldKeyValues = mutableMapOf<String, String>()
+                for (f in fields) {
+                    val v = fieldValueMap[f.id]?.value ?: ""
+                    if (v.isNotBlank()) fieldKeyValues[f.key] = v
+                }
+                val evaluator = com.novelcharacter.app.util.FormulaEvaluator(fieldKeyValues, fields)
+                calculatedFields.mapNotNull { f ->
+                    val formula = try {
+                        org.json.JSONObject(f.config).optString("formula", "")
+                    } catch (_: Exception) { "" }
+                    if (formula.isBlank()) return@mapNotNull null
+                    try {
+                        val result = evaluator.evaluate(formula)
+                        if (!result.isNaN() && !result.isInfinite()) {
+                            f.id to if (result == result.toLong().toDouble()) result.toLong().toString()
+                            else "%.2f".format(result)
+                        } else null
+                    } catch (_: Exception) { null }
+                }.toMap()
+            } else emptyMap()
+
             for (field in fields) {
-                val value = fieldValueMap[field.id]?.value ?: ""
+                val value = if (field.type == "CALCULATED") {
+                    calculatedResults[field.id] ?: ""
+                } else {
+                    fieldValueMap[field.id]?.value ?: ""
+                }
                 row.createCell(col++).setCellValue(value)
             }
 

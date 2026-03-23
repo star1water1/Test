@@ -85,6 +85,25 @@ class CharacterCompareFragment : Fragment() {
                             val v = values.find { it.fieldDefinitionId == field.id }?.value ?: ""
                             valueMap[field.key] = v
                         }
+                        // CALCULATED 필드: FormulaEvaluator로 실시간 계산
+                        val calculatedFields = sortedFields.filter { it.type == "CALCULATED" }
+                        if (calculatedFields.isNotEmpty()) {
+                            val evaluator = com.novelcharacter.app.util.FormulaEvaluator(valueMap, fields)
+                            for (field in calculatedFields) {
+                                val formula = try {
+                                    org.json.JSONObject(field.config).optString("formula", "")
+                                } catch (_: Exception) { "" }
+                                if (formula.isBlank()) continue
+                                try {
+                                    val result = evaluator.evaluate(formula)
+                                    if (!result.isNaN() && !result.isInfinite()) {
+                                        valueMap[field.key] = if (result == result.toLong().toDouble()) {
+                                            result.toLong().toString()
+                                        } else "%.2f".format(result)
+                                    }
+                                } catch (_: Exception) { /* 평가 실패 시 빈 값 유지 */ }
+                            }
+                        }
                         Triple(CompareEntry(char.name, novel?.title ?: novelUnassignedLabel, valueMap, tags), sortedFields, char)
                     }
                 }.awaitAll()

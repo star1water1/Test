@@ -272,9 +272,10 @@ class GlobalSearchViewModel(application: Application) : AndroidViewModel(applica
             .sorted()
     }
 
-    /** 현재 세계관의 필드 목록 조회 (필터 UI용) */
+    /** 현재 세계관의 필드 목록 조회 (필터 UI용, CALCULATED 제외 — DB에 값이 없어 필터링 불가) */
     suspend fun getFieldDefinitions(universeId: Long): List<com.novelcharacter.app.data.model.FieldDefinition> {
         return db.fieldDefinitionDao().getFieldsByUniverseList(universeId)
+            .filter { it.type != "CALCULATED" }
     }
 
     /** 모든 세계관 조회 (필터 UI용) */

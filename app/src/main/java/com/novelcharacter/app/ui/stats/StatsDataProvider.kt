@@ -463,7 +463,8 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
             val stateChangeCnt = stateChangesByChar[char.id]?.size ?: 0
 
             val novel = char.novelId?.let { novelMap[it] }
-            val fields = novel?.let { fieldDefByUniverse[it.universeId] }
+            // CALCULATED 필드는 자동 계산이므로 완성도 산출에서 제외
+            val fields = novel?.let { fieldDefByUniverse[it.universeId]?.filter { f -> f.type != "CALCULATED" } }
             val filledCount = charFieldValues[char.id]?.count { it.value.isNotBlank() } ?: 0
             // 작품 미배정 캐릭터는 필드 완성도 산출 불가 (null)
             val completion: Float? = if (fields != null && fields.isNotEmpty()) {
@@ -516,8 +517,9 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
         val isolatedCount = s.characters.count { it.id !in relCharIds }
         val healthIssues = noImageCount + isolatedCount
 
-        // 평균 필드 완성도
-        val universeFieldCounts = s.fieldDefinitions.groupBy { it.universeId }.mapValues { it.value.size }
+        // 평균 필드 완성도 (CALCULATED 필드 제외 — 자동 계산 필드는 완성도 대상이 아님)
+        val universeFieldCounts = s.fieldDefinitions.filter { it.type != "CALCULATED" }
+            .groupBy { it.universeId }.mapValues { it.value.size }
         val charFieldCounts = s.fieldValues.groupBy { it.characterId }
             .mapValues { it.value.count { fv -> fv.value.isNotBlank() } }
         val completions = s.characters.mapNotNull { char ->
@@ -615,9 +617,9 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
         val topEventChars = eventCountMap.entries.sortedByDescending { it.value }.take(10)
             .map { (charMap[it.key]?.name ?: "?") to it.value }
 
-        // 필드 완성도
-        val universeFieldCounts = s.fieldDefinitions.groupBy { it.universeId }
-            .mapValues { it.value.size }
+        // 필드 완성도 (CALCULATED 필드 제외 — 자동 계산 필드는 완성도 대상이 아님)
+        val universeFieldCounts = s.fieldDefinitions.filter { it.type != "CALCULATED" }
+            .groupBy { it.universeId }.mapValues { it.value.size }
         val charFieldCounts = s.fieldValues.groupBy { it.characterId }
             .mapValues { it.value.count { fv -> fv.value.isNotBlank() } }
 
@@ -642,8 +644,9 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
             } else null
         }
 
-        // 신규: 그룹별 필드 완성도
-        val fieldDefByUniverse = s.fieldDefinitions.groupBy { it.universeId }
+        // 신규: 그룹별 필드 완성도 (CALCULATED 필드 제외)
+        val fieldDefByUniverse = s.fieldDefinitions.filter { it.type != "CALCULATED" }
+            .groupBy { it.universeId }
         val fieldDefIdToField = s.fieldDefinitions.associateBy { it.id }
         val charFieldValuesByChar = s.fieldValues.groupBy { it.characterId }
 
@@ -1002,6 +1005,23 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
         val valuesByFieldDef = s.fieldValues.filter { it.value.isNotBlank() }
             .groupBy { it.fieldDefinitionId }
 
+        // CALCULATED 필드 값을 일괄 계산하여 valuesByFieldDef에 합산
+        val calculatedValues = computeAllCalculatedValues(s)
+        val calcFieldDefs = s.fieldDefinitions.filter { it.type == "CALCULATED" }.associateBy { it.id }
+
+        val augmentedValuesByFieldDef = valuesByFieldDef.toMutableMap()
+        for ((charId, fieldMap) in calculatedValues) {
+            for ((fieldDefId, value) in fieldMap) {
+                val syntheticFv = CharacterFieldValue(
+                    characterId = charId,
+                    fieldDefinitionId = fieldDefId,
+                    value = value
+                )
+                augmentedValuesByFieldDef[fieldDefId] =
+                    (augmentedValuesByFieldDef[fieldDefId] ?: emptyList()) + syntheticFv
+            }
+        }
+
         // 동일 필드를 (key, type) 기준으로 세계관 통합 (Pre-Analysis Merge)
         val fieldGroups = s.fieldDefinitions
             .filter { FieldStatsConfig.fromConfig(it.config).enabled }
@@ -1011,8 +1031,8 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
             val primaryFd = fds.first()
             val statsConfig = FieldStatsConfig.fromConfig(primaryFd.config)
 
-            // 그룹 내 모든 필드의 값을 합산
-            val rawValues = fds.flatMap { fd -> valuesByFieldDef[fd.id] ?: emptyList() }
+            // 그룹 내 모든 필드의 값을 합산 (CALCULATED 포함)
+            val rawValues = fds.flatMap { fd -> augmentedValuesByFieldDef[fd.id] ?: emptyList() }
 
             // 관련 세계관 전체의 캐릭터 수
             val universeIds = fds.map { it.universeId }.toSet()
@@ -1474,16 +1494,18 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
             }
         }
 
-        // 개별 필드별 완성도
-        val fieldCompletionDetails = s.fieldDefinitions.map { fd ->
-            // 이 필드가 속한 유니버스의 캐릭터들
-            val universeNovels = s.novels.filter { it.universeId == fd.universeId }.map { it.id }.toSet()
-            val relevantChars = s.characters.filter { it.novelId in universeNovels }
-            val filled = valuesByFieldDef[fd.id]?.count { it.value.isNotBlank() } ?: 0
-            val total = relevantChars.size
-            val rate = if (total > 0) filled.toFloat() / total * 100f else 0f
-            FieldCompletionDetail(fd.name, fd.groupName, filled, total, rate)
-        }.sortedBy { it.completionRate }
+        // 개별 필드별 완성도 (CALCULATED 필드 제외 — 자동 계산 필드는 항상 100%이므로 의미 없음)
+        val fieldCompletionDetails = s.fieldDefinitions
+            .filter { it.type != "CALCULATED" }
+            .map { fd ->
+                // 이 필드가 속한 유니버스의 캐릭터들
+                val universeNovels = s.novels.filter { it.universeId == fd.universeId }.map { it.id }.toSet()
+                val relevantChars = s.characters.filter { it.novelId in universeNovels }
+                val filled = valuesByFieldDef[fd.id]?.count { it.value.isNotBlank() } ?: 0
+                val total = relevantChars.size
+                val rate = if (total > 0) filled.toFloat() / total * 100f else 0f
+                FieldCompletionDetail(fd.name, fd.groupName, filled, total, rate)
+            }.sortedBy { it.completionRate }
 
         // 필드별 상태변화 수
         val stateChangesByField = s.stateChanges
@@ -1816,6 +1838,7 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
     /**
      * 특정 필드의 특정 값을 가진 캐릭터 목록 반환.
      * getFieldValues() 로직을 재활용하여 파싱된 값 기준으로 매칭.
+     * CALCULATED 필드의 경우 FormulaEvaluator로 실시간 계산한 값으로 매칭.
      */
     fun getCharactersByFieldValue(
         s: StatsSnapshot,
@@ -1827,21 +1850,42 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
         val charMap = s.characters.associateBy { it.id }
 
         val result = mutableListOf<FieldValueCharacter>()
-        val rawValues = s.fieldValues.filter { it.fieldDefinitionId == fieldDefId }
 
-        for (fv in rawValues) {
-            val parsedValues = getFieldValues(fd, fv.value, statsConfig)
-            if (parsedValues.any { it == targetValue }) {
-                val char = charMap[fv.characterId] ?: continue
-                val images = char.imagePaths.split(",").filter { it.isNotBlank() }
-                result.add(
-                    FieldValueCharacter(
-                        characterId = char.id,
-                        characterName = char.name,
-                        fieldValue = fv.value,
-                        imageUri = images.firstOrNull()
+        if (fd.type == "CALCULATED") {
+            // CALCULATED 필드: FormulaEvaluator로 계산한 값으로 매칭
+            val calculatedValues = computeAllCalculatedValues(s)
+            for ((charId, fieldMap) in calculatedValues) {
+                val computedValue = fieldMap[fieldDefId] ?: continue
+                val parsedValues = getFieldValues(fd, computedValue, statsConfig)
+                if (parsedValues.any { it == targetValue }) {
+                    val char = charMap[charId] ?: continue
+                    val images = char.imagePaths.split(",").filter { it.isNotBlank() }
+                    result.add(
+                        FieldValueCharacter(
+                            characterId = char.id,
+                            characterName = char.name,
+                            fieldValue = computedValue,
+                            imageUri = images.firstOrNull()
+                        )
                     )
-                )
+                }
+            }
+        } else {
+            val rawValues = s.fieldValues.filter { it.fieldDefinitionId == fieldDefId }
+            for (fv in rawValues) {
+                val parsedValues = getFieldValues(fd, fv.value, statsConfig)
+                if (parsedValues.any { it == targetValue }) {
+                    val char = charMap[fv.characterId] ?: continue
+                    val images = char.imagePaths.split(",").filter { it.isNotBlank() }
+                    result.add(
+                        FieldValueCharacter(
+                            characterId = char.id,
+                            characterName = char.name,
+                            fieldValue = fv.value,
+                            imageUri = images.firstOrNull()
+                        )
+                    )
+                }
             }
         }
         return result.sortedBy { it.characterName }
@@ -2086,6 +2130,73 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
             totalCharacters = entries.size,
             excludedCount = excludedCount
         )
+    }
+
+    // ===== CALCULATED 필드 유틸리티 =====
+
+    /**
+     * CALCULATED 필드의 값을 FormulaEvaluator로 일괄 계산.
+     * 반환: characterId → (fieldDefinitionId → 계산된 값 문자열)
+     *
+     * StatsDataProvider 내 모든 CALCULATED 필드 처리에서 이 메서드를 사용하여
+     * 일관된 계산 로직을 보장한다.
+     */
+    private fun computeAllCalculatedValues(s: StatsSnapshot): Map<Long, Map<Long, String>> {
+        val calculatedFields = s.fieldDefinitions.filter { it.type == "CALCULATED" }
+        if (calculatedFields.isEmpty()) return emptyMap()
+
+        val novelMap = s.novels.associateBy { it.id }
+        val fieldDefByUniverse = s.fieldDefinitions.groupBy { it.universeId }
+        val allFieldDefById = s.fieldDefinitions.associateBy { it.id }
+        val charFieldValues = s.fieldValues.groupBy { it.characterId }
+
+        // 세계관별 CALCULATED 필드와 수식을 미리 파싱
+        data class CalcFieldInfo(val fd: FieldDefinition, val formula: String)
+        val calcFieldsByUniverse = mutableMapOf<Long, List<CalcFieldInfo>>()
+        for ((universeId, fields) in fieldDefByUniverse) {
+            val calcInfos = fields.filter { it.type == "CALCULATED" }.mapNotNull { fd ->
+                val formula = try {
+                    org.json.JSONObject(fd.config).optString("formula", "")
+                } catch (_: Exception) { "" }
+                if (formula.isNotBlank()) CalcFieldInfo(fd, formula) else null
+            }
+            if (calcInfos.isNotEmpty()) calcFieldsByUniverse[universeId] = calcInfos
+        }
+        if (calcFieldsByUniverse.isEmpty()) return emptyMap()
+
+        val result = mutableMapOf<Long, MutableMap<Long, String>>()
+
+        for (char in s.characters) {
+            val novel = char.novelId?.let { novelMap[it] } ?: continue
+            val calcInfos = calcFieldsByUniverse[novel.universeId] ?: continue
+            val universeFields = fieldDefByUniverse[novel.universeId] ?: continue
+
+            val values = charFieldValues[char.id] ?: emptyList()
+            val fieldKeyValues = mutableMapOf<String, String>()
+            for (fv in values) {
+                val fDef = allFieldDefById[fv.fieldDefinitionId] ?: continue
+                fieldKeyValues[fDef.key] = fv.value
+            }
+
+            val evaluator = FormulaEvaluator(fieldKeyValues, universeFields)
+            val charCalcValues = mutableMapOf<Long, String>()
+
+            for ((fd, formula) in calcInfos) {
+                try {
+                    val value = evaluator.evaluate(formula)
+                    if (!value.isNaN() && !value.isInfinite()) {
+                        charCalcValues[fd.id] = if (value == value.toLong().toDouble()) {
+                            value.toLong().toString()
+                        } else "%.2f".format(value)
+                    }
+                } catch (_: Exception) { /* 평가 실패 시 해당 필드 제외 */ }
+            }
+
+            if (charCalcValues.isNotEmpty()) {
+                result[char.id] = charCalcValues
+            }
+        }
+        return result
     }
 
     /**
