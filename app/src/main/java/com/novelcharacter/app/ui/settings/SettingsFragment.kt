@@ -497,13 +497,12 @@ class SettingsFragment : Fragment() {
                 }
                 if (_binding == null) return@launch
 
-                // 복호화된 xlsx를 ExcelImporter로 전달
-                val xlsxUri = Uri.fromFile(tempXlsx)
+                // 복호화된 파일을 직접 전달 (불필요한 복사 없이)
                 progressDialog.dismiss()
                 // tempXlsx 삭제를 여기서 하지 않음:
-                // importFromExcel()이 별도 코루틴을 실행하여 비동기로 파일을 읽으므로
+                // importFromLocalFile()이 별도 코루틴을 실행하여 비동기로 파일을 읽으므로
                 // 즉시 삭제하면 경쟁 조건 발생. cacheDir 파일은 시스템이 관리.
-                importer.importFromExcel(xlsxUri)
+                importer.importFromLocalFile(tempXlsx!!)
 
             } catch (e: Exception) {
                 if (progressDialog.isShowing) progressDialog.dismiss()

@@ -85,10 +85,39 @@ class ExcelImporter(context: Context) {
 
     /** 외부에서 URI로 직접 가져오기 (하위호환) */
     fun importFromExcel(uri: Uri) {
-        importFromFile(uri)
+        importFromUri(uri)
     }
 
-    private fun importFromFile(uri: Uri) {
+    /**
+     * 로컬 파일을 직접 가져오기 (복사 없이).
+     * 복호화된 백업 파일 등 이미 로컬에 있는 파일에 사용.
+     * 호출자가 파일 수명을 관리해야 함 (가져오기 완료 후 삭제 가능).
+     */
+    fun importFromLocalFile(file: File) {
+        ensureActiveScope().launch {
+            try {
+                if (file.length() > MAX_IMPORT_FILE_SIZE) {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(appContext, com.novelcharacter.app.R.string.import_file_too_large, Toast.LENGTH_LONG).show()
+                    }
+                    return@launch
+                }
+
+                if (isZipFile(file)) {
+                    importFromZip(file)
+                } else {
+                    importFromXlsx(file)
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("ExcelImporter", "Import failed", e)
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(appContext, com.novelcharacter.app.R.string.import_failed_retry, Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    private fun importFromUri(uri: Uri) {
         ensureActiveScope().launch {
             try {
                 // 파일 크기 체크
