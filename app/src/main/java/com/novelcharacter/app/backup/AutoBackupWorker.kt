@@ -48,6 +48,8 @@ class AutoBackupWorker(
                 exportRelationships(db, workbook, headerStyle, usedSheetNames)
                 exportRelationshipChanges(db, workbook, headerStyle, usedSheetNames)
                 exportNameBank(db, workbook, headerStyle, usedSheetNames)
+                exportFactions(db, workbook, headerStyle, usedSheetNames)
+                exportFactionMemberships(db, workbook, headerStyle, usedSheetNames)
                 exportUserPresetTemplates(db, workbook, headerStyle, usedSheetNames)
                 exportSearchPresets(db, workbook, headerStyle, usedSheetNames)
                 exportAppSettings(workbook, headerStyle, usedSheetNames)
@@ -575,6 +577,79 @@ class AutoBackupWorker(
         val row = sheet.createRow(1)
         row.createCell(0).setCellValue("theme_mode")
         row.createCell(1).setCellValue(themeMode.toDouble())
+    }
+
+    private suspend fun exportFactions(
+        db: AppDatabase, workbook: XSSFWorkbook,
+        headerStyle: XSSFCellStyle, usedSheetNames: MutableSet<String>
+    ) {
+        val allFactions = db.factionDao().getAllFactionsList()
+        if (allFactions.isEmpty()) return
+
+        val universes = db.universeDao().getAllUniversesList()
+        val universeMap = universes.associateBy { it.id }
+
+        val sheetName = sanitizeSheetName("세력", usedSheetNames)
+        val sheet = workbook.createSheet(sheetName)
+        val headers = listOf("이름", "세계관", "설명", "색상", "자동관계유형", "자동관계강도", "코드", "정렬순서", "생성일")
+        val headerRow = sheet.createRow(0)
+        headers.forEachIndexed { i, h ->
+            headerRow.createCell(i).apply { setCellValue(h); cellStyle = headerStyle }
+        }
+        allFactions.forEachIndexed { i, faction ->
+            val row = sheet.createRow(i + 1)
+            val universe = universeMap[faction.universeId]
+            row.createCell(0).setCellValue(faction.name)
+            row.createCell(1).setCellValue(universe?.name ?: "")
+            row.createCell(2).setCellValue(faction.description)
+            row.createCell(3).setCellValue(faction.color)
+            row.createCell(4).setCellValue(faction.autoRelationType)
+            row.createCell(5).setCellValue(faction.autoRelationIntensity.toDouble())
+            row.createCell(6).setCellValue(faction.code)
+            row.createCell(7).setCellValue(faction.displayOrder.toDouble())
+            row.createCell(8).setCellValue(faction.createdAt.toDouble())
+        }
+    }
+
+    private suspend fun exportFactionMemberships(
+        db: AppDatabase, workbook: XSSFWorkbook,
+        headerStyle: XSSFCellStyle, usedSheetNames: MutableSet<String>
+    ) {
+        val allMemberships = db.factionMembershipDao().getAllMembershipsList()
+        if (allMemberships.isEmpty()) return
+
+        val allFactions = db.factionDao().getAllFactionsList()
+        val factionMap = allFactions.associateBy { it.id }
+        val allCharacters = db.characterDao().getAllCharactersList()
+        val charMap = allCharacters.associateBy { it.id }
+
+        val sheetName = sanitizeSheetName("세력 소속", usedSheetNames)
+        val sheet = workbook.createSheet(sheetName)
+        val headers = listOf("세력", "캐릭터", "가입연도", "탈퇴연도", "탈퇴유형", "탈퇴후관계유형", "탈퇴후강도", "세력코드", "캐릭터코드", "생성일")
+        val headerRow = sheet.createRow(0)
+        headers.forEachIndexed { i, h ->
+            headerRow.createCell(i).apply { setCellValue(h); cellStyle = headerStyle }
+        }
+        allMemberships.forEachIndexed { i, membership ->
+            val row = sheet.createRow(i + 1)
+            val faction = factionMap[membership.factionId]
+            val character = charMap[membership.characterId]
+            row.createCell(0).setCellValue(faction?.name ?: "")
+            row.createCell(1).setCellValue(character?.name ?: "")
+            membership.joinYear?.let { row.createCell(2).setCellValue(it.toDouble()) }
+            membership.leaveYear?.let { row.createCell(3).setCellValue(it.toDouble()) }
+            val leaveTypeLabel = when (membership.leaveType) {
+                "removed" -> "순수제거"
+                "departed" -> "설정상탈퇴"
+                else -> ""
+            }
+            row.createCell(4).setCellValue(leaveTypeLabel)
+            row.createCell(5).setCellValue(membership.departedRelationType ?: "")
+            membership.departedIntensity?.let { row.createCell(6).setCellValue(it.toDouble()) }
+            row.createCell(7).setCellValue(faction?.code ?: "")
+            row.createCell(8).setCellValue(character?.code ?: "")
+            row.createCell(9).setCellValue(membership.createdAt.toDouble())
+        }
     }
 
     private fun sanitizeSheetName(name: String, usedNames: MutableSet<String>): String {

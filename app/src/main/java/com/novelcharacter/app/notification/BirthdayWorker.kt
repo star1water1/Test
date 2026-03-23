@@ -23,6 +23,17 @@ class BirthdayWorker(
             // 오늘 월/일과 일치하는 탄생 이벤트를 일괄 조회
             val birthChanges = db.characterStateChangeDao()
                 .getChangesByFieldAndDate(CharacterStateChange.KEY_BIRTH, todayMonth, todayDay)
+                .toMutableList()
+
+            // 비윤년 2월 28일: 2월 29일 생일도 함께 알림
+            val isLeapYear = calendar.getActualMaximum(Calendar.DAY_OF_MONTH).let {
+                calendar.get(Calendar.MONTH) == Calendar.FEBRUARY && it == 29
+            }
+            if (todayMonth == 2 && todayDay == 28 && !isLeapYear) {
+                val leapBirthdays = db.characterStateChangeDao()
+                    .getChangesByFieldAndDate(CharacterStateChange.KEY_BIRTH, 2, 29)
+                birthChanges.addAll(leapBirthdays)
+            }
 
             val birthdayCharIds = birthChanges.map { it.characterId }.distinct()
             val birthdayNames = if (birthdayCharIds.isNotEmpty()) {
