@@ -94,9 +94,17 @@ class ExcelExporter(context: Context) {
                 val file: File
                 val fileName: String
                 if (options.images) {
-                    fileName = "NovelCharacter_$timestamp.zip"
-                    file = wrapWithImages(xlsxFile, fileName)
-                    xlsxFile.delete()
+                    val zipFileName = "NovelCharacter_$timestamp.zip"
+                    val zipFile = wrapWithImages(xlsxFile, zipFileName)
+                    if (zipFile != null) {
+                        file = zipFile
+                        fileName = zipFileName
+                        xlsxFile.delete()
+                    } else {
+                        // 이미지가 없으면 XLSX 그대로 사용
+                        file = xlsxFile
+                        fileName = xlsxFileName
+                    }
                 } else {
                     file = xlsxFile
                     fileName = xlsxFileName
@@ -940,12 +948,12 @@ class ExcelExporter(context: Context) {
 
     // ── ZIP + 이미지 래핑 ──
 
-    private suspend fun wrapWithImages(xlsxFile: File, zipFileName: String): File {
+    private suspend fun wrapWithImages(xlsxFile: File, zipFileName: String): File? {
         val exportsDir = File(appContext.cacheDir, "exports")
         exportsDir.mkdirs()
         val zipFile = File(exportsDir, zipFileName)
-        ImageZipHelper.wrapWithImages(xlsxFile, zipFile, db, appContext)
-        return zipFile
+        val hasImages = ImageZipHelper.wrapWithImages(xlsxFile, zipFile, db, appContext)
+        return if (hasImages) zipFile else null
     }
 
     // ── 필드 템플릿 ──

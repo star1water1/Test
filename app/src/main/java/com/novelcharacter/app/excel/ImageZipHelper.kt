@@ -58,10 +58,18 @@ object ImageZipHelper {
             xlsxFile.inputStream().use { it.copyTo(zip) }
             zip.closeEntry()
 
-            // 이미지 추가
+            // 이미지 추가 (파일명 충돌 방지)
+            val usedNames = mutableSetOf<String>()
             for (path in existingImages) {
                 val imageFile = File(path)
-                val zipPath = "images/${imageFile.name}"
+                var name = imageFile.name
+                if (name in usedNames) {
+                    val ext = name.substringAfterLast('.', "")
+                    val base = name.substringBeforeLast('.')
+                    name = "${base}_${java.util.UUID.randomUUID().toString().take(8)}.$ext"
+                }
+                usedNames.add(name)
+                val zipPath = "images/$name"
                 try {
                     zip.putNextEntry(ZipEntry(zipPath))
                     imageFile.inputStream().use { it.copyTo(zip) }
