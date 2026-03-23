@@ -245,7 +245,7 @@ class SystemMaintenanceService(
             db.openHelper.writableDatabase.execSQL(
                 "DELETE FROM character_field_values WHERE characterId NOT IN (SELECT id FROM characters)"
             )
-            db.openHelper.readableDatabase.query("SELECT changes()").use { c ->
+            db.openHelper.writableDatabase.query("SELECT changes()").use { c ->
                 if (c.moveToNext()) {
                     deletedFieldValues = c.getInt(0)
                     if (deletedFieldValues > 0) details.add("고아 필드값 $deletedFieldValues 건 삭제")
@@ -256,7 +256,7 @@ class SystemMaintenanceService(
             db.openHelper.writableDatabase.execSQL(
                 "DELETE FROM character_tags WHERE characterId NOT IN (SELECT id FROM characters)"
             )
-            db.openHelper.readableDatabase.query("SELECT changes()").use { c ->
+            db.openHelper.writableDatabase.query("SELECT changes()").use { c ->
                 if (c.moveToNext()) {
                     deletedTags = c.getInt(0)
                     if (deletedTags > 0) details.add("고아 태그 $deletedTags 건 삭제")
@@ -267,7 +267,7 @@ class SystemMaintenanceService(
             db.openHelper.writableDatabase.execSQL(
                 "DELETE FROM character_state_changes WHERE characterId NOT IN (SELECT id FROM characters)"
             )
-            db.openHelper.readableDatabase.query("SELECT changes()").use { c ->
+            db.openHelper.writableDatabase.query("SELECT changes()").use { c ->
                 if (c.moveToNext()) {
                     deletedStateChanges = c.getInt(0)
                     if (deletedStateChanges > 0) details.add("고아 상태변화 $deletedStateChanges 건 삭제")
@@ -278,7 +278,7 @@ class SystemMaintenanceService(
             db.openHelper.writableDatabase.execSQL(
                 "DELETE FROM character_relationships WHERE characterId1 NOT IN (SELECT id FROM characters) OR characterId2 NOT IN (SELECT id FROM characters)"
             )
-            db.openHelper.readableDatabase.query("SELECT changes()").use { c ->
+            db.openHelper.writableDatabase.query("SELECT changes()").use { c ->
                 if (c.moveToNext()) {
                     deletedRelationships = c.getInt(0)
                     if (deletedRelationships > 0) details.add("고아 관계 $deletedRelationships 건 삭제")
@@ -290,14 +290,14 @@ class SystemMaintenanceService(
                 "UPDATE novels SET imageCharacterId = NULL WHERE imageCharacterId IS NOT NULL AND imageCharacterId NOT IN (SELECT id FROM characters)"
             )
             var clearedNovelImageRefs = 0
-            db.openHelper.readableDatabase.query("SELECT changes()").use { c ->
+            db.openHelper.writableDatabase.query("SELECT changes()").use { c ->
                 if (c.moveToNext()) clearedNovelImageRefs = c.getInt(0)
             }
             db.openHelper.writableDatabase.execSQL(
                 "UPDATE universes SET imageCharacterId = NULL WHERE imageCharacterId IS NOT NULL AND imageCharacterId NOT IN (SELECT id FROM characters)"
             )
             var clearedUniverseImageRefs = 0
-            db.openHelper.readableDatabase.query("SELECT changes()").use { c ->
+            db.openHelper.writableDatabase.query("SELECT changes()").use { c ->
                 if (c.moveToNext()) clearedUniverseImageRefs = c.getInt(0)
             }
             // 존재하지 않는 작품을 참조하는 universes imageNovelId 정리
@@ -305,7 +305,7 @@ class SystemMaintenanceService(
                 "UPDATE universes SET imageNovelId = NULL WHERE imageNovelId IS NOT NULL AND imageNovelId NOT IN (SELECT id FROM novels)"
             )
             var clearedNovelIdRefs = 0
-            db.openHelper.readableDatabase.query("SELECT changes()").use { c ->
+            db.openHelper.writableDatabase.query("SELECT changes()").use { c ->
                 if (c.moveToNext()) clearedNovelIdRefs = c.getInt(0)
             }
             clearedImageRefs = clearedNovelImageRefs + clearedUniverseImageRefs + clearedNovelIdRefs
@@ -315,7 +315,7 @@ class SystemMaintenanceService(
             db.openHelper.writableDatabase.execSQL(
                 "UPDATE name_bank SET isUsed = 0 WHERE isUsed = 1 AND (usedByCharacterId IS NULL OR usedByCharacterId NOT IN (SELECT id FROM characters))"
             )
-            db.openHelper.readableDatabase.query("SELECT changes()").use { c ->
+            db.openHelper.writableDatabase.query("SELECT changes()").use { c ->
                 if (c.moveToNext()) {
                     clearedNameBank = c.getInt(0)
                     if (clearedNameBank > 0) details.add("이름은행 고아 사용표시 $clearedNameBank 건 정리")
@@ -329,7 +329,7 @@ class SystemMaintenanceService(
                     (entityType = 'novel' AND entityId NOT IN (SELECT id FROM novels)) OR
                     (entityType = 'universe' AND entityId NOT IN (SELECT id FROM universes))"""
             )
-            db.openHelper.readableDatabase.query("SELECT changes()").use { c ->
+            db.openHelper.writableDatabase.query("SELECT changes()").use { c ->
                 if (c.moveToNext()) {
                     val cleaned = c.getInt(0)
                     if (cleaned > 0) details.add("고아 최근활동 $cleaned 건 삭제")
