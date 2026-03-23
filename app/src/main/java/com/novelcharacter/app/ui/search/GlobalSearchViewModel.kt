@@ -252,7 +252,7 @@ class GlobalSearchViewModel(application: Application) : AndroidViewModel(applica
             val idsForFilter = mutableSetOf<Long>()
             for (value in filter.values) {
                 val ids = when (filter.matchMode) {
-                    "contains" -> db.characterFieldValueDao().getCharacterIdsByFieldValueContains(filter.fieldId, value)
+                    "contains" -> db.characterFieldValueDao().getCharacterIdsByFieldValueContains(filter.fieldId, com.novelcharacter.app.data.repository.sanitizeLikeQuery(value))
                     else -> db.characterFieldValueDao().getCharacterIdsByFieldValue(filter.fieldId, value)
                 }
                 idsForFilter.addAll(ids)

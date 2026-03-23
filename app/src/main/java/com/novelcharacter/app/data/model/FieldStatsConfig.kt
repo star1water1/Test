@@ -57,7 +57,15 @@ data class FieldStatsConfig(
     }
 
     data class BinRange(val min: Float?, val max: Float?, val label: String) {
+        /** 값이 이 구간에 속하는지 판별. 하한 포함, 상한 미포함 (마지막 구간은 상한도 포함). */
         fun contains(value: Float): Boolean {
+            val aboveMin = min == null || value >= min
+            val belowMax = max == null || value < max
+            return aboveMin && belowMax
+        }
+
+        /** 마지막 구간용: 상한도 포함 */
+        fun containsInclusive(value: Float): Boolean {
             val aboveMin = min == null || value >= min
             val belowMax = max == null || value <= max
             return aboveMin && belowMax
@@ -120,7 +128,14 @@ data class FieldStatsConfig(
         val config = binning ?: return null
         if (config.mode == "auto") return null
         val ranges = config.parseRanges()
-        return ranges.firstOrNull { it.contains(numericValue) }?.label
+        if (ranges.isEmpty()) return null
+        // 마지막 구간은 상한 포함 (경계값 이중 집계 방지)
+        val lastRange = ranges.last()
+        for (range in ranges) {
+            val matches = if (range === lastRange) range.containsInclusive(numericValue) else range.contains(numericValue)
+            if (matches) return range.label
+        }
+        return null
     }
 
     companion object {

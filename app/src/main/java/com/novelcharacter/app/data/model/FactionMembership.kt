@@ -41,9 +41,11 @@ data class FactionMembership(
 ) {
     /** 주어진 연도에 이 멤버십이 활성 상태인지 판별 */
     fun isActiveAtYear(year: Int): Boolean {
+        // removed: 멤버십 자체가 삭제된 것이므로 leaveYear 이후부터 비활성
+        // departed: 설정상 탈퇴이므로 leaveYear 이후부터 비활성 (이전 기간은 활성)
         val afterJoin = joinYear == null || year >= joinYear
         val beforeLeave = leaveYear == null || year < leaveYear
-        return afterJoin && beforeLeave && leaveType != "removed"
+        return afterJoin && beforeLeave
     }
 
     companion object {
