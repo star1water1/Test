@@ -236,54 +236,72 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
         val totalRows = countTotalRows(workbook)
 
+        // OVERWRITE 전략 시 CASCADE 종속 카테고리를 자동 포함하여 데이터 정합성 보장.
+        // 예: 세계관 덮어쓰기 → 필드 정의·세력이 CASCADE 삭제되므로 재가져오기 필수.
+        val effectiveOptions = if (strategy == ImportStrategy.OVERWRITE) {
+            options.copy(
+                // 세계관 삭제 → 필드 정의, 세력 CASCADE 삭제 → 재가져오기 필수
+                fieldDefinitions = options.fieldDefinitions || options.universes,
+                factions = options.factions || options.universes,
+                // 세력 삭제 → 세력 소속 CASCADE 삭제 → 재가져오기 필수
+                factionMemberships = options.factionMemberships || options.factions || options.universes,
+                // 캐릭터 삭제 → 관계, 상태변화 CASCADE 삭제 → 재가져오기 필수
+                relationships = options.relationships || options.characters,
+                relationshipChanges = options.relationshipChanges || options.characters || options.relationships,
+                stateChanges = options.stateChanges || options.characters
+            )
+        } else {
+            options
+        }
+
         // 전체를 단일 트랜잭션으로 감싸서 부분 커밋 방지
         // Room은 중첩 withTransaction을 savepoint로 처리하므로 phase별 격리 유지
         db.withTransaction {
             // 덮어쓰기 전략: 선택된 카테고리의 기존 데이터를 먼저 삭제
             // CASCADE 안전 순서: 종속 데이터 → 상위 엔티티
             if (strategy == ImportStrategy.OVERWRITE) {
-                if (options.relationshipChanges) db.characterRelationshipChangeDao().deleteAll()
-                if (options.relationships) db.characterRelationshipDao().deleteAll()
-                if (options.factionMemberships) db.factionMembershipDao().deleteAll()
-                if (options.factions) db.factionDao().deleteAll()
-                if (options.stateChanges) db.characterStateChangeDao().deleteAll()
-                if (options.timeline) {
+                if (effectiveOptions.relationshipChanges) db.characterRelationshipChangeDao().deleteAll()
+                if (effectiveOptions.relationships) db.characterRelationshipDao().deleteAll()
+                if (effectiveOptions.factionMemberships) db.factionMembershipDao().deleteAll()
+                if (effectiveOptions.factions) db.factionDao().deleteAll()
+                if (effectiveOptions.stateChanges) db.characterStateChangeDao().deleteAll()
+                if (effectiveOptions.timeline) {
                     db.timelineDao().deleteAllCrossRefs()
                     db.timelineDao().deleteAllEvents()
                 }
-                if (options.characters) db.characterDao().deleteAll()
-                if (options.fieldDefinitions) db.fieldDefinitionDao().deleteAll()
-                if (options.novels) db.novelDao().deleteAll()
-                if (options.universes) db.universeDao().deleteAll()
-                if (options.nameBank) db.nameBankDao().deleteAll()
-                if (options.presetTemplates) db.userPresetTemplateDao().deleteAll()
-                if (options.searchPresets) db.searchPresetDao().deleteAll()
+                if (effectiveOptions.characters) db.characterDao().deleteAll()
+                if (effectiveOptions.fieldDefinitions) db.fieldDefinitionDao().deleteAll()
+                if (effectiveOptions.novels) db.novelDao().deleteAll()
+                if (effectiveOptions.universes) db.universeDao().deleteAll()
+                if (effectiveOptions.nameBank) db.nameBankDao().deleteAll()
+                if (effectiveOptions.presetTemplates) db.userPresetTemplateDao().deleteAll()
+                if (effectiveOptions.searchPresets) db.searchPresetDao().deleteAll()
             }
 
             // Phase 1: Schema definitions (universes, novels, field definitions)
-            if (options.universes) importUniverses(workbook, result, onProgress, totalRows)
-            if (options.novels) importNovels(workbook, result, onProgress, totalRows)
-            if (options.fieldDefinitions) importFieldDefinitions(workbook, result, onProgress, totalRows)
+            if (effectiveOptions.universes) importUniverses(workbook, result, onProgress, totalRows)
+            if (effectiveOptions.novels) importNovels(workbook, result, onProgress, totalRows)
+            if (effectiveOptions.fieldDefinitions) importFieldDefinitions(workbook, result, onProgress, totalRows)
 
             // Phase 2: Entity data (characters)
-            if (options.characters) {
+            if (effectiveOptions.characters) {
                 importCharacterSheets(workbook, result, onProgress, totalRows)
                 importUnclassifiedCharacters(workbook, result, onProgress, totalRows)
             }
 
             // Phase 3: Relationships and references
-            if (options.timeline) importTimeline(workbook, result, onProgress, totalRows)
-            if (options.stateChanges) importStateChanges(workbook, result, onProgress, totalRows)
-            if (options.relationships) importRelationships(workbook, result, onProgress, totalRows)
-            if (options.relationshipChanges) importRelationshipChanges(workbook, result, onProgress, totalRows)
-            if (options.nameBank) importNameBank(workbook, result, onProgress, totalRows)
-            if (options.factions) importFactions(workbook, result, onProgress, totalRows)
-            if (options.factionMemberships) importFactionMemberships(workbook, result, onProgress, totalRows)
+            if (effectiveOptions.timeline) importTimeline(workbook, result, onProgress, totalRows)
+            if (effectiveOptions.stateChanges) importStateChanges(workbook, result, onProgress, totalRows)
+            if (effectiveOptions.relationships) importRelationships(workbook, result, onProgress, totalRows)
+            if (effectiveOptions.relationshipChanges) importRelationshipChanges(workbook, result, onProgress, totalRows)
+            if (effectiveOptions.nameBank) importNameBank(workbook, result, onProgress, totalRows)
+            if (effectiveOptions.factions) importFactions(workbook, result, onProgress, totalRows)
+            if (effectiveOptions.factionMemberships) importFactionMemberships(workbook, result, onProgress, totalRows)
 
             // Phase 4: User settings and presets
-            if (options.presetTemplates) importUserPresetTemplates(workbook, result, onProgress, totalRows)
-            if (options.searchPresets) importSearchPresets(workbook, result, onProgress, totalRows)
-            if (options.appSettings) importAppSettings(workbook, result)
+            if (effectiveOptions.presetTemplates) importUserPresetTemplates(workbook, result, onProgress, totalRows)
+            if (effectiveOptions.searchPresets) importSearchPresets(workbook, result, onProgress, totalRows)
+            if (effectiveOptions.appSettings) importAppSettings(workbook, result)
         }
 
         if (truncatedFieldCount > 0) {
