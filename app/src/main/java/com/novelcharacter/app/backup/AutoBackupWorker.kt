@@ -413,10 +413,12 @@ class AutoBackupWorker(
 
         val allCharacters = db.characterDao().getAllCharactersList()
         val charMap = allCharacters.associateBy { it.id }
+        val allFactions = db.factionDao().getAllFactionsList()
+        val factionMap = allFactions.associateBy { it.id }
 
         val sheetName = sanitizeSheetName("캐릭터 관계", usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
-        val headers = listOf("캐릭터1", "캐릭터2", "관계 유형", "설명", "강도", "양방향", "표시순서", "캐릭터1코드", "캐릭터2코드", "생성일")
+        val headers = listOf("캐릭터1", "캐릭터2", "관계 유형", "설명", "강도", "양방향", "표시순서", "캐릭터1코드", "캐릭터2코드", "세력", "생성일")
         val headerRow = sheet.createRow(0)
         headers.forEachIndexed { i, h ->
             headerRow.createCell(i).apply { setCellValue(h); cellStyle = headerStyle }
@@ -434,7 +436,8 @@ class AutoBackupWorker(
             row.createCell(6).setCellValue(r.displayOrder.toDouble())
             row.createCell(7).setCellValue(char1?.code ?: "")
             row.createCell(8).setCellValue(char2?.code ?: "")
-            row.createCell(9).setCellValue(r.createdAt.toDouble())
+            row.createCell(9).setCellValue(r.factionId?.let { factionMap[it]?.name } ?: "")
+            row.createCell(10).setCellValue(r.createdAt.toDouble())
         }
     }
 
