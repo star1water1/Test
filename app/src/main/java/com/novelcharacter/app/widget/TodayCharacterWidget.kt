@@ -37,9 +37,9 @@ class TodayCharacterWidget : AppWidgetProvider() {
 
                 val widgetText: String = if (birthChanges.isNotEmpty()) {
                     val charIds = birthChanges.map { it.characterId }.distinct()
-                    val names = charIds.mapNotNull { id ->
-                        db.characterDao().getCharacterById(id)?.name
-                    }
+                    val names = if (charIds.isNotEmpty()) {
+                        db.characterDao().getCharactersByIds(charIds).map { it.name }
+                    } else emptyList()
                     context.getString(R.string.widget_birthday_today, names.joinToString(", "))
                 } else {
                     val allChars = db.characterDao().getAllCharactersList()

@@ -91,7 +91,11 @@ class NovelCharacterApp : Application() {
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             try {
                 val logFile = java.io.File(filesDir, "crash_log.txt")
-                logFile.writeText(buildString {
+                // 기존 로그가 1MB 초과 시 초기화 (무한 증가 방지)
+                if (logFile.exists() && logFile.length() > 1024 * 1024) {
+                    logFile.delete()
+                }
+                logFile.appendText(buildString {
                     appendLine("=== Crash at ${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())} ===")
                     appendLine("Thread: ${thread.name}")
                     appendLine(throwable.stackTraceToString())
@@ -99,7 +103,11 @@ class NovelCharacterApp : Application() {
             } catch (_: Exception) {
                 // 로그 저장 실패 시 무시
             }
-            defaultHandler?.uncaughtException(thread, throwable)
+            if (defaultHandler != null) {
+                defaultHandler.uncaughtException(thread, throwable)
+            } else {
+                Runtime.getRuntime().exit(1)
+            }
         }
     }
 

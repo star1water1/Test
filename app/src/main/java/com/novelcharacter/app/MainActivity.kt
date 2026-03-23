@@ -55,13 +55,17 @@ class MainActivity : AppCompatActivity() {
             .findFragmentById(R.id.nav_host_fragment) as? NavHostFragment ?: return
         val navController = navHostFragment.navController
 
-        when (deeplink) {
-            "add_character" -> {
-                navController.navigate(R.id.characterEditFragment)
+        try {
+            when (deeplink) {
+                "add_character" -> {
+                    navController.navigate(R.id.characterEditFragment)
+                }
+                "add_event" -> {
+                    navController.navigate(R.id.timelineFragment)
+                }
             }
-            "add_event" -> {
-                navController.navigate(R.id.timelineFragment)
-            }
+        } catch (e: IllegalArgumentException) {
+            Log.w("MainActivity", "Deep link navigation failed: $deeplink", e)
         }
         // 딥링크 처리 후 extra 제거 (재처리 방지)
         intent?.removeExtra("deeplink")
