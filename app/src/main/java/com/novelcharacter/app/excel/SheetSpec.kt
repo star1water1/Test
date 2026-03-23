@@ -289,6 +289,7 @@ fun factionSpec(universeNames: List<String> = emptyList()) = SheetSpec(
     columns = listOf(
         ColumnSpec("이름", required = true, width = 8000),
         ColumnSpec("세계관", dropdownOptions = universeNames.takeIf { it.isNotEmpty() }, width = 8000),
+        ColumnSpec("세계관코드", readOnly = true, width = 4000),
         ColumnSpec("설명", width = 15000),
         ColumnSpec("색상", width = 4000),
         ColumnSpec("자동관계유형", required = true, width = 6000),

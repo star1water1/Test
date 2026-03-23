@@ -117,7 +117,8 @@ class AutoBackupWorker(
 
         // Clean up orphaned temp files from previous interrupted backups
         backupDir.listFiles { file ->
-            file.name.startsWith("backup_") && file.name.endsWith(".xlsx")
+            file.name.startsWith("backup_") &&
+                (file.name.endsWith(".xlsx") || file.name.endsWith(".zip"))
         }?.forEach { it.delete() }
 
         val backupFiles = backupDir.listFiles { file ->
@@ -594,7 +595,7 @@ class AutoBackupWorker(
 
         val sheetName = sanitizeSheetName("세력", usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
-        val headers = listOf("이름", "세계관", "설명", "색상", "자동관계유형", "자동관계강도", "코드", "정렬순서", "생성일")
+        val headers = listOf("이름", "세계관", "세계관코드", "설명", "색상", "자동관계유형", "자동관계강도", "코드", "정렬순서", "생성일")
         val headerRow = sheet.createRow(0)
         headers.forEachIndexed { i, h ->
             headerRow.createCell(i).apply { setCellValue(h); cellStyle = headerStyle }
@@ -604,13 +605,14 @@ class AutoBackupWorker(
             val universe = universeMap[faction.universeId]
             row.createCell(0).setCellValue(faction.name)
             row.createCell(1).setCellValue(universe?.name ?: "")
-            row.createCell(2).setCellValue(faction.description)
-            row.createCell(3).setCellValue(faction.color)
-            row.createCell(4).setCellValue(faction.autoRelationType)
-            row.createCell(5).setCellValue(faction.autoRelationIntensity.toDouble())
-            row.createCell(6).setCellValue(faction.code)
-            row.createCell(7).setCellValue(faction.displayOrder.toDouble())
-            row.createCell(8).setCellValue(faction.createdAt.toDouble())
+            row.createCell(2).setCellValue(universe?.code ?: "")
+            row.createCell(3).setCellValue(faction.description)
+            row.createCell(4).setCellValue(faction.color)
+            row.createCell(5).setCellValue(faction.autoRelationType)
+            row.createCell(6).setCellValue(faction.autoRelationIntensity.toDouble())
+            row.createCell(7).setCellValue(faction.code)
+            row.createCell(8).setCellValue(faction.displayOrder.toDouble())
+            row.createCell(9).setCellValue(faction.createdAt.toDouble())
         }
     }
 

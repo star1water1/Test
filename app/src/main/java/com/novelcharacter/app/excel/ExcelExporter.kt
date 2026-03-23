@@ -893,13 +893,14 @@ class ExcelExporter(context: Context) {
             val universe = universeMap[faction.universeId]
             row.createCell(0).setCellValue(faction.name)
             row.createCell(1).setCellValue(universe?.name ?: "")
-            row.createCell(2).setCellValue(faction.description)
-            row.createCell(3).setCellValue(faction.color)
-            row.createCell(4).setCellValue(faction.autoRelationType)
-            row.createCell(5).setCellValue(faction.autoRelationIntensity.toDouble())
-            row.createCell(6).setCellValue(faction.code)
-            row.createCell(7).setCellValue(faction.displayOrder.toDouble())
-            row.createCell(8).setCellValue(faction.createdAt.toDouble())
+            row.createCell(2).setCellValue(universe?.code ?: "")
+            row.createCell(3).setCellValue(faction.description)
+            row.createCell(4).setCellValue(faction.color)
+            row.createCell(5).setCellValue(faction.autoRelationType)
+            row.createCell(6).setCellValue(faction.autoRelationIntensity.toDouble())
+            row.createCell(7).setCellValue(faction.code)
+            row.createCell(8).setCellValue(faction.displayOrder.toDouble())
+            row.createCell(9).setCellValue(faction.createdAt.toDouble())
         }
 
         applySpecFormatting(sheet, spec, allFactions.size)

@@ -1993,6 +1993,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val cols = resolveHeaderColumns(headerRow)
         val nameColIndex = cols[spec.firstColumnHeader] ?: cols["이름"] ?: 0
         val universeNameColIndex = cols["세계관"] ?: -1
+        val universeCodeColIndex = cols["세계관코드"] ?: -1
         val descColIndex = cols["설명"] ?: -1
         val colorColIndex = cols["색상"] ?: -1
         val autoRelTypeColIndex = cols["자동관계유형"] ?: -1
@@ -2010,6 +2011,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 if (name.isBlank()) continue
 
                 val universeName = if (universeNameColIndex >= 0) getCellString(row, universeNameColIndex) else ""
+                val universeCode = if (universeCodeColIndex >= 0) getCellString(row, universeCodeColIndex) else ""
                 val description = if (descColIndex >= 0) getCellString(row, descColIndex) else ""
                 val color = if (colorColIndex >= 0) getCellString(row, colorColIndex).ifBlank { "#2196F3" } else "#2196F3"
                 val autoRelationType = if (autoRelTypeColIndex >= 0) getCellString(row, autoRelTypeColIndex) else ""
@@ -2023,16 +2025,16 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val displayOrder = if (orderColIndex >= 0) parseNumber(getCellString(row, orderColIndex))?.toInt() ?: 0 else 0
                 val createdAt = if (createdAtColIndex >= 0) parseNumber(getCellString(row, createdAtColIndex))?.toLong() ?: System.currentTimeMillis() else System.currentTimeMillis()
 
-                // Resolve universe
+                // Resolve universe (코드 우선 매칭 — 작품 가져오기와 동일 패턴)
                 val universeId: Long
-                if (universeName.isNotBlank()) {
-                    val universe = db.universeDao().getUniverseByName(universeName)
-                    if (universe == null) {
-                        result.skippedRows++
-                        result.errors.add("세력 행 $i: 세계관 '$universeName'을(를) 찾을 수 없음")
-                        continue
-                    }
-                    universeId = universe.id
+                val resolvedUniverse = (if (universeCode.isNotBlank()) db.universeDao().getUniverseByCode(universeCode) else null)
+                    ?: (if (universeName.isNotBlank()) db.universeDao().getUniverseByName(universeName) else null)
+                if (resolvedUniverse != null) {
+                    universeId = resolvedUniverse.id
+                } else if (universeName.isNotBlank() || universeCode.isNotBlank()) {
+                    result.skippedRows++
+                    result.errors.add("세력 행 $i: 세계관 '$universeName'을(를) 찾을 수 없음")
+                    continue
                 } else {
                     result.skippedRows++
                     result.errors.add("세력 행 $i: 세계관이 지정되지 않음")
