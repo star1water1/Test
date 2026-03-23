@@ -143,6 +143,12 @@ class FieldManageFragment : Fragment() {
             binding.emptyText.visibility = if (isEmpty) View.VISIBLE else View.GONE
             binding.fieldRecyclerView.visibility = if (isEmpty) View.GONE else View.VISIBLE
         }
+        viewModel.saveError.observe(viewLifecycleOwner) { error ->
+            if (error != null) {
+                android.widget.Toast.makeText(requireContext(), error, android.widget.Toast.LENGTH_LONG).show()
+                viewModel.clearSaveError()
+            }
+        }
     }
 
     private fun showFieldEditDialog(field: FieldDefinition?) {

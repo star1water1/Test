@@ -429,6 +429,11 @@ class FactionManageFragment : Fragment() {
                     Toast.makeText(ctx, R.string.faction_leave_year_required, Toast.LENGTH_SHORT).show()
                     return@setPositiveButton
                 }
+                val joinYear = item.membership.joinYear
+                if (joinYear != null && year < joinYear) {
+                    Toast.makeText(ctx, "탈퇴 연도($year)는 가입 연도($joinYear) 이후여야 합니다.", Toast.LENGTH_LONG).show()
+                    return@setPositiveButton
+                }
                 val relType = editRelType.text.toString().trim().ifEmpty { "전 ${faction.autoRelationType}" }
                 val intensity = sliderIntensity.value.toInt()
 

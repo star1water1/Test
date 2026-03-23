@@ -28,7 +28,8 @@ data class StructuredInputConfig(
     /** 합쳐진 값을 파트별로 분리하여 (라벨, 값) 목록으로 반환 */
     fun splitValue(combinedValue: String): List<Pair<String, String>> {
         if (!enabled || parts.isEmpty()) return emptyList()
-        val rawParts = combinedValue.split(separator).map { it.trim() }
+        val sep = separator.ifEmpty { "-" }
+        val rawParts = combinedValue.split(sep).map { it.trim() }
         return parts.mapIndexed { idx, part ->
             part.label to (rawParts.getOrNull(idx) ?: "")
         }
@@ -36,13 +37,14 @@ data class StructuredInputConfig(
 
     /** 파트별 값을 separator로 합쳐 단일 문자열로 반환 */
     fun joinValues(partValues: List<String>): String {
-        return partValues.joinToString(separator)
+        return partValues.joinToString(separator.ifEmpty { "-" })
     }
 
     /** 통계용: 파트별 라벨 붙은 값 목록 반환. 파트가 2개 이상이면 전체 값은 제외한다. */
     fun labeledParts(combinedValue: String): List<String> {
         if (!enabled || parts.isEmpty()) return listOf(combinedValue)
-        val rawParts = combinedValue.split(separator).map { it.trim() }
+        val sep = separator.ifEmpty { "-" }
+        val rawParts = combinedValue.split(sep).map { it.trim() }
         if (rawParts.size >= 2) {
             // 파트별 값만 반환 (전체 조합 값 제외 — 전체 값은 무의미한 문자열 분포를 만듦)
             return parts.mapIndexedNotNull { idx, part ->

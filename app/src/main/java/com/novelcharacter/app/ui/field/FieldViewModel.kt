@@ -22,6 +22,11 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
     private val _universeId = MutableLiveData<Long>()
     val universeId: LiveData<Long> = _universeId
 
+    /** 필드 저장 실패 시 사용자에게 표시할 일회성 에러 이벤트 */
+    private val _saveError = MutableLiveData<String?>()
+    val saveError: LiveData<String?> = _saveError
+    fun clearSaveError() { _saveError.value = null }
+
     val fields: LiveData<List<FieldDefinition>> = _universeId.switchMap { id ->
         universeRepository.getFieldsByUniverse(id)
     }
@@ -33,16 +38,24 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
     fun insertField(field: FieldDefinition) = viewModelScope.launch {
         try {
             universeRepository.insertField(field)
+        } catch (e: android.database.sqlite.SQLiteConstraintException) {
+            Log.e("FieldViewModel", "Duplicate field key: ${field.key}", e)
+            _saveError.postValue("필드 키 '${field.key}'이(가) 이미 존재합니다.")
         } catch (e: Exception) {
             Log.e("FieldViewModel", "Failed to insert field", e)
+            _saveError.postValue("필드 저장에 실패했습니다.")
         }
     }
 
     fun updateField(field: FieldDefinition) = viewModelScope.launch {
         try {
             universeRepository.updateField(field)
+        } catch (e: android.database.sqlite.SQLiteConstraintException) {
+            Log.e("FieldViewModel", "Duplicate field key on update: ${field.key}", e)
+            _saveError.postValue("필드 키 '${field.key}'이(가) 이미 존재합니다.")
         } catch (e: Exception) {
             Log.e("FieldViewModel", "Failed to update field", e)
+            _saveError.postValue("필드 수정에 실패했습니다.")
         }
     }
 
