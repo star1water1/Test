@@ -34,8 +34,6 @@ import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import java.util.zip.ZipEntry
-import java.util.zip.ZipOutputStream
 
 class ExcelExporter(context: Context) {
 
@@ -943,74 +941,10 @@ class ExcelExporter(context: Context) {
     // ── ZIP + 이미지 래핑 ──
 
     private suspend fun wrapWithImages(xlsxFile: File, zipFileName: String): File {
-        val gson = com.google.gson.Gson()
-        val appDir = appContext.filesDir
-
-        // 모든 이미지 경로 수집
-        val imagePathSet = mutableSetOf<String>()
-        val allCharacters = db.characterDao().getAllCharactersList()
-        for (char in allCharacters) {
-            if (char.imagePaths.isBlank() || char.imagePaths == "[]") continue
-            try {
-                val paths = gson.fromJson(char.imagePaths, Array<String>::class.java)
-                paths?.forEach { imagePathSet.add(it) }
-            } catch (_: Exception) { }
-        }
-        val allUniverses = db.universeDao().getAllUniversesList()
-        for (u in allUniverses) {
-            try {
-                val paths = gson.fromJson(u.imagePaths, Array<String>::class.java)
-                paths?.forEach { imagePathSet.add(it) }
-            } catch (_: Exception) { }
-        }
-        val allNovels = db.novelDao().getAllNovelsList()
-        for (n in allNovels) {
-            try {
-                val paths = gson.fromJson(n.imagePaths, Array<String>::class.java)
-                paths?.forEach { imagePathSet.add(it) }
-            } catch (_: Exception) { }
-        }
-
-        // ZIP 생성
         val exportsDir = File(appContext.cacheDir, "exports")
         exportsDir.mkdirs()
         val zipFile = File(exportsDir, zipFileName)
-
-        // image_map: 원본절대경로 → ZIP 내 상대경로
-        val imageMap = mutableMapOf<String, String>()
-
-        ZipOutputStream(FileOutputStream(zipFile)).use { zip ->
-            // data.xlsx 추가
-            zip.putNextEntry(ZipEntry("data.xlsx"))
-            xlsxFile.inputStream().use { it.copyTo(zip) }
-            zip.closeEntry()
-
-            // 이미지 추가
-            for (path in imagePathSet) {
-                val imageFile = File(path)
-                if (!imageFile.exists()) continue
-                try {
-                    if (!imageFile.canonicalPath.startsWith(appDir.canonicalPath)) continue
-                } catch (_: Exception) { continue }
-
-                val zipPath = "images/${imageFile.name}"
-                try {
-                    zip.putNextEntry(ZipEntry(zipPath))
-                    imageFile.inputStream().use { it.copyTo(zip) }
-                    zip.closeEntry()
-                    imageMap[path] = zipPath
-                } catch (e: Exception) {
-                    try { zip.closeEntry() } catch (_: Exception) { }
-                    Log.w("ExcelExporter", "Failed to add image to ZIP: $path", e)
-                }
-            }
-
-            // image_map.json 추가
-            zip.putNextEntry(ZipEntry("image_map.json"))
-            zip.write(gson.toJson(imageMap).toByteArray())
-            zip.closeEntry()
-        }
-
+        ImageZipHelper.wrapWithImages(xlsxFile, zipFile, db, appContext)
         return zipFile
     }
 

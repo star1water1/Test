@@ -71,7 +71,7 @@ class AutoBackupWorker(
         }
     }
 
-    private fun saveEncryptedBackup(workbook: XSSFWorkbook) {
+    private suspend fun saveEncryptedBackup(workbook: XSSFWorkbook) {
         val backupDir = File(appContext.filesDir, BACKUP_DIR_NAME)
         if (!backupDir.exists()) {
             backupDir.mkdirs()
@@ -81,21 +81,32 @@ class AutoBackupWorker(
         val fileName = "$BACKUP_PREFIX$timestamp$BACKUP_EXTENSION"
         val backupFile = File(backupDir, fileName)
 
-        // Write to temp file then stream-encrypt to avoid double memory copy
-        val tempFile = File.createTempFile("backup_", ".xlsx", backupDir)
+        val tempXlsx = File.createTempFile("backup_", ".xlsx", backupDir)
+        val tempZip = File.createTempFile("backup_", ".zip", backupDir)
         try {
-            tempFile.outputStream().use { fos ->
+            // 1. XLSX 쓰기
+            tempXlsx.outputStream().use { fos ->
                 workbook.write(fos)
             }
-            BackupEncryptor.encryptFile(tempFile, backupFile)
+
+            // 2. 이미지 포함 ZIP 래핑
+            val db = AppDatabase.getDatabase(appContext)
+            val hasImages = com.novelcharacter.app.excel.ImageZipHelper.wrapWithImages(
+                tempXlsx, tempZip, db, appContext
+            )
+
+            // 3. 암호화 (이미지가 있으면 ZIP, 없으면 XLSX)
+            val sourceFile = if (hasImages) tempZip else tempXlsx
+            BackupEncryptor.encryptFile(sourceFile, backupFile)
         } catch (e: Exception) {
-            backupFile.delete() // clean up partial encrypted file on failure
+            backupFile.delete()
             throw e
         } finally {
-            tempFile.delete()
+            tempXlsx.delete()
+            tempZip.delete()
         }
 
-        Log.i(TAG, "Encrypted backup saved: ${backupFile.absolutePath}")
+        Log.i(TAG, "Encrypted backup saved (with images): ${backupFile.absolutePath}")
     }
 
     private fun rotateBackups() {
