@@ -987,4 +987,61 @@
     <string name="faction_display_mode_border">선</string>
     <string name="faction_display_mode_both">둘 다</string>
     <string name="faction_display_mode_none">없음</string>
+
+    <!-- 보충 탭 -->
+    <string name="tab_supplement">보충</string>
+    <string name="supplement_title">정보 보충</string>
+    <string name="supplement_desc">정보 입력이 미흡한 캐릭터를 찾아 보충합니다.</string>
+    <string name="supplement_target_count">보충 대상</string>
+    <string name="supplement_total_count">전체 캐릭터</string>
+    <string name="supplement_completion_rate">보충 완료율</string>
+    <string name="supplement_completion_format">%1$d%% (%2$d/%3$d)</string>
+    <string name="supplement_settings_title">보충 기준 설정</string>
+    <string name="supplement_settings_desc">어떤 항목이 비면 보충 대상으로 표시할지 설정합니다.</string>
+    <string name="supplement_start">보충 시작하기</string>
+    <string name="supplement_start_desc">보충이 필요한 캐릭터가 %d개 있습니다.</string>
+    <string name="supplement_save_and_next">저장 &amp; 다음</string>
+    <string name="supplement_skip">건너뛰기 ▶</string>
+    <string name="supplement_all_complete">모든 캐릭터의 정보가 완성되었습니다!</string>
+    <string name="supplement_no_targets">보충이 필요한 캐릭터가 없습니다.</string>
+    <string name="supplement_queue_done">보충 순회를 완료했습니다.</string>
+    <string name="supplement_reset_defaults">기본값으로 초기화</string>
+    <string name="supplement_close">닫기</string>
+    <string name="supplement_no_characters">캐릭터를 먼저 추가해주세요.</string>
+
+    <!-- 보충 기준 항목 -->
+    <string name="supplement_check_image">이미지</string>
+    <string name="supplement_check_image_desc">이미지가 없으면 보충 대상</string>
+    <string name="supplement_check_memo">메모</string>
+    <string name="supplement_check_memo_desc">메모가 비어있으면 보충 대상</string>
+    <string name="supplement_check_aliases">별명</string>
+    <string name="supplement_check_aliases_desc">별명이 없으면 보충 대상</string>
+    <string name="supplement_check_novel">작품 배정</string>
+    <string name="supplement_check_novel_desc">작품이 미배정이면 보충 대상</string>
+    <string name="supplement_check_tags">태그</string>
+    <string name="supplement_check_tags_desc">태그가 없으면 보충 대상</string>
+    <string name="supplement_check_fields">커스텀 필드</string>
+    <string name="supplement_check_fields_desc">커스텀 필드 완성률이 기준 이하이면 보충 대상</string>
+    <string name="supplement_check_relationships">관계</string>
+    <string name="supplement_check_relationships_desc">관계가 없으면 보충 대상</string>
+    <string name="supplement_check_events">사건</string>
+    <string name="supplement_check_events_desc">사건이 없으면 보충 대상</string>
+    <string name="supplement_check_factions">세력</string>
+    <string name="supplement_check_factions_desc">세력이 없으면 보충 대상</string>
+    <string name="supplement_field_threshold">커스텀 필드 완성률 기준</string>
+    <string name="supplement_field_threshold_format">%d%% 이하이면 보충 대상</string>
+
+    <!-- 보충 필터/정렬 -->
+    <string name="supplement_filter_all">전체</string>
+    <string name="supplement_filter_label">이슈별 필터</string>
+    <string name="supplement_sort_label">정렬</string>
+    <string name="supplement_sort_issues">이슈 많은 순</string>
+    <string name="supplement_sort_name">이름순</string>
+    <string name="supplement_sort_completion">완성률순</string>
+    <string name="supplement_issue_summary">미흡: %s</string>
+    <string name="supplement_field_na">N/A</string>
+
+    <!-- 보충 모드 배너 -->
+    <string name="supplement_banner_issues">미흡 항목: %s</string>
+    <string name="supplement_progress_format">%1$d/%2$d</string>
 </resources>

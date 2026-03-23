@@ -67,6 +67,11 @@ class CharacterEditFragment : Fragment() {
     private var hasUnsavedChanges = false
     private var pendingFieldValues: Bundle? = null
 
+    // 보충 모드
+    private var supplementMode = false
+    private var supplementIndex = 0
+    private var supplementIds = longArrayOf()
+
     private val imagePickerLauncher = registerForActivityResult(
         ActivityResultContracts.GetMultipleContents()
     ) { uris: List<Uri> ->
@@ -114,7 +119,14 @@ class CharacterEditFragment : Fragment() {
 
         characterId = arguments?.getLong("characterId", -1L) ?: -1L
         presetNovelId = arguments?.getLong("novelId", -1L) ?: -1L
+        supplementMode = arguments?.getBoolean("supplementMode", false) ?: false
+        supplementIndex = arguments?.getInt("supplementIndex", 0) ?: 0
+        supplementIds = arguments?.getLongArray("supplementIds") ?: longArrayOf()
         appDir = requireContext().filesDir
+
+        if (supplementMode) {
+            setupSupplementMode()
+        }
 
         // Restore imagePaths from saved state (rotation), filtering invalid paths
         savedInstanceState?.getStringArrayList("imagePaths")?.let { saved ->
@@ -1042,6 +1054,166 @@ class CharacterEditFragment : Fragment() {
         if (hasUnsavedChanges) {
             binding.btnSave.alpha = 1f
             binding.btnSave.text = getString(R.string.save_unsaved)
+        }
+    }
+
+    // ===== 보충 모드 =====
+
+    private fun setupSupplementMode() {
+        // 배너 표시
+        binding.supplementBanner.visibility = View.VISIBLE
+        binding.supplementProgressText.text = getString(
+            R.string.supplement_progress_format,
+            supplementIndex + 1,
+            supplementIds.size
+        )
+
+        // 미흡 항목 표시 (ViewModel을 통해 이슈를 재계산)
+        viewLifecycleOwner.lifecycleScope.launch {
+            val issues = computeSupplementIssues()
+            if (_binding != null) {
+                if (issues.isNotEmpty()) {
+                    val issueLabels = issues.joinToString(", ") { it.label }
+                    binding.supplementIssueText.text = getString(R.string.supplement_banner_issues, issueLabels)
+                } else {
+                    binding.supplementIssueText.text = ""
+                }
+            }
+        }
+
+        // 기존 저장/사건 버튼 숨기기, 보충 버튼 표시
+        binding.btnSave.visibility = View.GONE
+        binding.btnAddEvent.visibility = View.GONE
+        binding.supplementButtonLayout.visibility = View.VISIBLE
+
+        // 저장 & 다음
+        binding.btnSaveAndNext.setOnClickListener {
+            performSupplementSave()
+        }
+
+        // 건너뛰기
+        binding.btnSkip.setOnClickListener {
+            navigateToNextSupplement()
+        }
+
+        // 툴바 제목 변경
+        binding.toolbar.title = getString(R.string.supplement_title)
+    }
+
+    private fun performSupplementSave() {
+        if (isSaving) return
+        val name = binding.editName.text.toString().trim()
+        if (name.isEmpty()) {
+            Toast.makeText(requireContext(), R.string.enter_name, Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (name.length > 100) {
+            Toast.makeText(requireContext(), R.string.name_too_long, Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val missingRequired = validateRequiredFields()
+        if (missingRequired != null) {
+            Toast.makeText(requireContext(), getString(R.string.required_field_empty, missingRequired), Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val novelPosition = binding.spinnerNovel.selectedItemPosition
+        val selectedNovelId = if (novelPosition > 0 && novelPosition - 1 < novels.size) novels[novelPosition - 1].id else null
+
+        val memo = binding.editMemo.text.toString()
+        val firstName = binding.editFirstName.text.toString().trim()
+        val lastName = binding.editLastName.text.toString().trim()
+        val anotherName = binding.editAnotherName.text.toString().trim()
+
+        val character = Character(
+            id = if (characterId != -1L) characterId else 0,
+            name = name,
+            firstName = firstName,
+            lastName = lastName,
+            anotherName = anotherName,
+            novelId = selectedNovelId,
+            imagePaths = gson.toJson(imagePaths),
+            createdAt = existingCharacter?.createdAt ?: System.currentTimeMillis(),
+            updatedAt = System.currentTimeMillis(),
+            memo = memo,
+            code = existingCharacter?.code ?: generateEntityCode(),
+            displayOrder = existingCharacter?.displayOrder ?: 0,
+            isPinned = existingCharacter?.isPinned ?: false
+        )
+
+        isSaving = true
+        binding.btnSaveAndNext.isEnabled = false
+        viewLifecycleOwner.lifecycleScope.launch {
+            try {
+                val savedCharId: Long
+                if (characterId != -1L) {
+                    val fieldValues = collectFieldValues(characterId)
+                    viewModel.updateCharacterWithFields(character, fieldValues)
+                    savedCharId = characterId
+                } else {
+                    val newId = viewModel.insertCharacterSuspend(character)
+                    val fieldValues = collectFieldValues(newId)
+                    viewModel.saveAllFieldValues(newId, fieldValues)
+                    savedCharId = newId
+                }
+
+                val tagText = binding.editTags.text.toString()
+                val tagList = tagText.split(",").map { it.trim() }.filter { it.isNotBlank() }
+                viewModel.replaceAllTagsSuspend(savedCharId, tagList.map { CharacterTag(characterId = savedCharId, tag = it) })
+
+                if (isAdded && view != null) {
+                    Toast.makeText(requireContext(), R.string.saved_successfully, Toast.LENGTH_SHORT).show()
+                    navigateToNextSupplement()
+                }
+            } catch (e: Exception) {
+                if (isAdded && _binding != null) {
+                    isSaving = false
+                    binding.btnSaveAndNext.isEnabled = true
+                    Toast.makeText(requireContext(), R.string.save_failed, Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    private fun navigateToNextSupplement() {
+        val nextIndex = supplementIndex + 1
+        if (nextIndex >= supplementIds.size) {
+            Toast.makeText(requireContext(), R.string.supplement_queue_done, Toast.LENGTH_SHORT).show()
+            findNavController().popBackStack(R.id.supplementFragment, false)
+            return
+        }
+        val bundle = Bundle().apply {
+            putLong("characterId", supplementIds[nextIndex])
+            putBoolean("supplementMode", true)
+            putInt("supplementIndex", nextIndex)
+            putLongArray("supplementIds", supplementIds)
+        }
+        val navOptions = androidx.navigation.NavOptions.Builder()
+            .setPopUpTo(R.id.supplementFragment, inclusive = false)
+            .build()
+        findNavController().navigate(R.id.characterEditFragment, bundle, navOptions)
+    }
+
+    private suspend fun computeSupplementIssues(): List<com.novelcharacter.app.ui.supplement.SupplementIssue> {
+        return withContext(Dispatchers.IO) {
+            val issues = mutableListOf<com.novelcharacter.app.ui.supplement.SupplementIssue>()
+            val char = existingCharacter ?: return@withContext issues
+
+            if (char.imagePaths.isBlank() || char.imagePaths == "[]") {
+                issues.add(com.novelcharacter.app.ui.supplement.SupplementIssue.NO_IMAGE)
+            }
+            if (char.memo.isBlank()) {
+                issues.add(com.novelcharacter.app.ui.supplement.SupplementIssue.NO_MEMO)
+            }
+            if (char.anotherName.isBlank()) {
+                issues.add(com.novelcharacter.app.ui.supplement.SupplementIssue.NO_ALIASES)
+            }
+            if (char.novelId == null) {
+                issues.add(com.novelcharacter.app.ui.supplement.SupplementIssue.NO_NOVEL)
+            }
+
+            issues
         }
     }
 

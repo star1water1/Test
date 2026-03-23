@@ -56,4 +56,10 @@
     <color name="graph_edge_label">#757575</color>
     <color name="graph_summary_bg">#FFFDE7</color>
     <color name="graph_summary_text">#E65100</color>
+
+    <!-- 보충 탭 -->
+    <color name="outline">#E0E0E0</color>
+    <color name="supplement_badge_high">#F44336</color>
+    <color name="supplement_badge_mid">#FF9800</color>
+    <color name="supplement_badge_low">#4CAF50</color>
 </resources>

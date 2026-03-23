@@ -15,6 +15,35 @@
         app:title="@string/edit_character"
         app:titleTextColor="@color/on_primary" />
 
+    <!-- 보충 모드 배너 -->
+    <LinearLayout
+        android:id="@+id/supplementBanner"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:background="@color/primary_dark"
+        android:padding="10dp"
+        android:gravity="center_vertical"
+        android:layout_marginTop="?attr/actionBarSize"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/supplementIssueText"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textColor="@color/on_primary"
+            android:textSize="12sp" />
+
+        <TextView
+            android:id="@+id/supplementProgressText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="@color/on_primary"
+            android:textStyle="bold"
+            android:textSize="14sp" />
+    </LinearLayout>
+
     <androidx.core.widget.NestedScrollView
         android:layout_width="match_parent"
         android:layout_height="match_parent"
@@ -181,6 +210,32 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="16dp"
                 android:text="@string/save" />
+
+            <!-- 보충 모드 버튼 -->
+            <LinearLayout
+                android:id="@+id/supplementButtonLayout"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="16dp"
+                android:visibility="gone">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnSaveAndNext"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="2"
+                    android:layout_marginEnd="8dp"
+                    android:text="@string/supplement_save_and_next" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnSkip"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/supplement_skip" />
+            </LinearLayout>
 
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>

@@ -126,6 +126,16 @@
             android:name="novelId"
             app:argType="long"
             android:defaultValue="-1L" />
+
+        <argument
+            android:name="supplementMode"
+            app:argType="boolean"
+            android:defaultValue="false" />
+
+        <argument
+            android:name="supplementIndex"
+            app:argType="integer"
+            android:defaultValue="0" />
     </fragment>
 
     <fragment
@@ -286,5 +296,17 @@
         android:name="com.novelcharacter.app.ui.graph.RelationshipGraphFragment"
         android:label="@string/tab_relationship_graph"
         tools:layout="@layout/fragment_relationship_graph" />
+
+    <!-- 보충 탭 -->
+    <fragment
+        android:id="@+id/supplementFragment"
+        android:name="com.novelcharacter.app.ui.supplement.SupplementFragment"
+        android:label="@string/tab_supplement"
+        tools:layout="@layout/fragment_supplement">
+
+        <action
+            android:id="@+id/action_supplement_to_edit"
+            app:destination="@id/characterEditFragment" />
+    </fragment>
 
 </navigation>
