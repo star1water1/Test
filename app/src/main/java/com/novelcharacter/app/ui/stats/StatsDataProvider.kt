@@ -1863,7 +1863,9 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
                 val parsedValues = getFieldValues(fd, computedValue, statsConfig)
                 if (parsedValues.any { it == targetValue }) {
                     val char = charMap[charId] ?: continue
-                    val images = char.imagePaths.split(",").filter { it.isNotBlank() }
+                    val images = try {
+                        com.google.gson.Gson().fromJson(char.imagePaths, Array<String>::class.java)?.toList() ?: emptyList()
+                    } catch (_: Exception) { emptyList() }
                     result.add(
                         FieldValueCharacter(
                             characterId = char.id,
@@ -1880,7 +1882,9 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
                 val parsedValues = getFieldValues(fd, fv.value, statsConfig)
                 if (parsedValues.any { it == targetValue }) {
                     val char = charMap[fv.characterId] ?: continue
-                    val images = char.imagePaths.split(",").filter { it.isNotBlank() }
+                    val images = try {
+                        com.google.gson.Gson().fromJson(char.imagePaths, Array<String>::class.java)?.toList() ?: emptyList()
+                    } catch (_: Exception) { emptyList() }
                     result.add(
                         FieldValueCharacter(
                             characterId = char.id,
