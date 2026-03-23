@@ -1892,20 +1892,21 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
             s.fieldDefinitions
         }
 
-        return fields.map { fd ->
-            val type = fd.type
-            val isNumeric = type in listOf("NUMBER", "CALCULATED", "GRADE", "BODY_SIZE")
-            val bodySizeParts = if (type == "BODY_SIZE") {
-                val sic = StructuredInputConfig.fromConfig(fd.config)
-                if (sic.enabled && sic.parts.isNotEmpty()) {
-                    sic.parts.map { it.label }
-                } else {
-                    // config에 파트 정보가 없으면 기본 BWH 라벨 사용
-                    listOf("가슴(B)", "허리(W)", "엉덩이(H)")
-                }
-            } else null
-            RankableField(fd, bodySizeParts, isNumeric)
-        }
+        return fields
+            .filter { FieldStatsConfig.fromConfig(it.config).enabled }
+            .map { fd ->
+                val type = fd.type
+                val isNumeric = type in listOf("NUMBER", "CALCULATED", "GRADE", "BODY_SIZE")
+                val bodySizeParts = if (type == "BODY_SIZE") {
+                    val sic = StructuredInputConfig.fromConfig(fd.config)
+                    if (sic.enabled && sic.parts.isNotEmpty()) {
+                        sic.parts.map { it.label }
+                    } else {
+                        listOf("가슴(B)", "허리(W)", "엉덩이(H)")
+                    }
+                } else null
+                RankableField(fd, bodySizeParts, isNumeric)
+            }
     }
 
     /**
@@ -1944,6 +1945,9 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
         val processedCharIds = mutableSetOf<Long>()
         var parseFailed = 0
 
+        // BODY_SIZE 파싱 설정은 루프 밖에서 한 번만 생성
+        val bodySizeConfig = if (fd.type == "BODY_SIZE") StructuredInputConfig.fromConfig(fd.config) else null
+
         for (fv in rawValues) {
             val char = charMap[fv.characterId] ?: continue
             processedCharIds.add(char.id)
@@ -1965,7 +1969,7 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
                     } else parseFailed++
                 }
                 "BODY_SIZE" -> {
-                    val sic = StructuredInputConfig.fromConfig(fd.config)
+                    val sic = bodySizeConfig!!
                     val partIdx = (bodySizePartIndex ?: 0).coerceAtLeast(0)
                     val parts = if (sic.enabled) {
                         fv.value.split(sic.separator).map { it.trim() }

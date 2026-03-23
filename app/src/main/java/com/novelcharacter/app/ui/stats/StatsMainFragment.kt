@@ -74,6 +74,12 @@ class StatsMainFragment : Fragment() {
             override fun onTabUnselected(tab: TabLayout.Tab?) {}
             override fun onTabReselected(tab: TabLayout.Tab?) {}
         })
+
+        // Fragment 재생성 시 탭 위치가 0이 아닐 수 있으므로 현재 상태 반영
+        if (tabLayout.selectedTabPosition == 1) {
+            updateTabVisibility()
+            if (!rankingInitialized) initRankingUI()
+        }
     }
 
     /** 현재 탭 선택 + 로딩 상태에 따라 visibility를 일원적으로 관리 */
@@ -105,6 +111,7 @@ class StatsMainFragment : Fragment() {
         // 필드 스피너 리스너
         binding.rankingFieldSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                if (suppressFieldSpinnerCallback) return
                 if (pos == 0) {
                     selectedFieldIndex = -1
                     binding.rankingBodySizeRow.visibility = View.GONE
@@ -146,49 +153,41 @@ class StatsMainFragment : Fragment() {
         // 순위 결과 옵저버
         setupRankingObservers()
 
-        // 초기 로딩: cachedSnapshot이 있으면 즉시, 없으면 summary 완료 후 로딩
+        // 초기 로딩: cachedSnapshot이 있으면 즉시, 없으면 loading 완료 후 자동 세팅
         if (viewModel.getUniverseList().isNotEmpty()) {
             setupRankingUniverseSpinner()
             viewModel.loadRankableFields(null)
         }
-        // summary 완료 시 세계관 스피너도 갱신 (cachedSnapshot 준비 보장)
     }
+
+    private var suppressFieldSpinnerCallback = false
 
     private fun setupRankingObservers() {
         viewModel.rankableFields.observe(viewLifecycleOwner) { fields ->
             currentRankableFields = fields
-            // 리스너 임시 비활성화: adapter 교체 시 자동 콜백 방지
-            val savedListener = binding.rankingFieldSpinner.onItemSelectedListener
-            binding.rankingFieldSpinner.onItemSelectedListener = null
+            // adapter 교체 시 자동 콜백 방지
+            suppressFieldSpinnerCallback = true
             populateFieldSpinner(fields)
-            // 리스너 복원 (다음 프레임에서, adapter 세팅 후 자동 콜백 무시)
-            binding.rankingFieldSpinner.post {
-                binding.rankingFieldSpinner.onItemSelectedListener = savedListener
+            _binding?.rankingFieldSpinner?.post {
+                suppressFieldSpinnerCallback = false
             }
         }
 
         viewModel.rankingResult.observe(viewLifecycleOwner) { result ->
+            val b = _binding ?: return@observe
             if (result == null) return@observe
             if (result.entries.isEmpty()) {
-                binding.rankingRecyclerView.visibility = View.GONE
-                binding.rankingEmpty.visibility = View.VISIBLE
-                binding.rankingEmpty.text = getString(R.string.stats_ranking_empty)
+                b.rankingRecyclerView.visibility = View.GONE
+                b.rankingEmpty.visibility = View.VISIBLE
+                b.rankingEmpty.text = getString(R.string.stats_ranking_empty)
             } else {
-                binding.rankingRecyclerView.visibility = View.VISIBLE
-                binding.rankingEmpty.visibility = View.GONE
+                b.rankingRecyclerView.visibility = View.VISIBLE
+                b.rankingEmpty.visibility = View.GONE
                 rankingAdapter?.submitList(result.entries)
             }
-            binding.rankingSummary.text = getString(
+            b.rankingSummary.text = getString(
                 R.string.stats_ranking_summary, result.totalCharacters, result.excludedCount
             )
-        }
-
-        // summary 로딩 완료 → cachedSnapshot 확보 → 세계관 스피너 채우기
-        viewModel.summary.observe(viewLifecycleOwner) {
-            if (rankingInitialized && binding.rankingUniverseSpinner.adapter == null) {
-                setupRankingUniverseSpinner()
-                viewModel.loadRankableFields(null)
-            }
         }
     }
 
@@ -279,7 +278,6 @@ class StatsMainFragment : Fragment() {
         super.onResume()
         // 다른 탭에서 데이터 변경 후 돌아올 때 캐시 무효화하여 최신 데이터 반영
         viewModel.refreshStats()
-        // 순위 탭 돌아왔을 때 세계관 스피너 갱신 플래그
         if (rankingInitialized) {
             rankingNeedsRefresh = true
         }
@@ -292,11 +290,19 @@ class StatsMainFragment : Fragment() {
             binding.loadingProgress.visibility = if (isLoading) View.VISIBLE else View.GONE
             updateTabVisibility()
 
-            // 로딩 완료 후 순위 탭 세계관 스피너 갱신
-            if (!isLoading && rankingInitialized && rankingNeedsRefresh) {
-                rankingNeedsRefresh = false
-                setupRankingUniverseSpinner()
-                viewModel.loadRankableFields(selectedUniverseId)
+            // 로딩 완료 후 순위 관련 갱신
+            if (!isLoading && rankingInitialized) {
+                // 세계관 스피너가 아직 세팅 안 된 경우 (최초 진입)
+                if (binding.rankingUniverseSpinner.adapter == null) {
+                    setupRankingUniverseSpinner()
+                    viewModel.loadRankableFields(null)
+                }
+                // onResume 후 데이터 갱신: 스피너 선택은 보존하고 필드 목록만 재로딩
+                else if (rankingNeedsRefresh) {
+                    rankingNeedsRefresh = false
+                    viewModel.loadRankableFields(selectedUniverseId)
+                    if (selectedFieldIndex >= 0) executeRanking()
+                }
             }
         }
 
