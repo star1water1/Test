@@ -10,6 +10,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.fragment.app.Fragment
+import androidx.navigation.fragment.findNavController
 import androidx.lifecycle.lifecycleScope
 import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.R
@@ -107,6 +108,10 @@ class SettingsFragment : Fragment() {
 
         binding.themeRow.setOnClickListener {
             showThemeDialog()
+        }
+
+        binding.supplementRow.setOnClickListener {
+            findNavController().navigate(R.id.supplementFragment)
         }
 
         // Data management

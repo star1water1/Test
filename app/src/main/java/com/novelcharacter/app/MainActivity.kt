@@ -82,7 +82,6 @@ class MainActivity : AppCompatActivity() {
             R.id.characterListFragment,
             R.id.relationshipGraphFragment,
             R.id.statsMainFragment,
-            R.id.supplementFragment,
             R.id.settingsFragment
         )
 

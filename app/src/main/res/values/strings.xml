@@ -992,6 +992,7 @@
     <string name="tab_supplement">보충</string>
     <string name="supplement_title">정보 보충</string>
     <string name="supplement_desc">정보 입력이 미흡한 캐릭터를 찾아 보충합니다.</string>
+    <string name="settings_supplement_desc">캐릭터 데이터 완성도 검사 및 순차 편집</string>
     <string name="supplement_target_count">보충 대상</string>
     <string name="supplement_total_count">전체 캐릭터</string>
     <string name="supplement_completion_rate">보충 완료율</string>

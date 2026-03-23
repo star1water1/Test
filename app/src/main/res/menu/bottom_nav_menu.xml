@@ -22,11 +22,6 @@
         android:title="@string/tab_statistics" />
 
     <item
-        android:id="@+id/supplementFragment"
-        android:icon="@drawable/ic_supplement"
-        android:title="@string/tab_supplement" />
-
-    <item
         android:id="@+id/settingsFragment"
         android:icon="@drawable/ic_settings"
         android:title="@string/tab_settings" />
