@@ -2,6 +2,7 @@ package com.novelcharacter.app.ui.stats
 
 import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.data.model.*
+import com.novelcharacter.app.util.FormulaEvaluator
 
 /**
  * 통계 데이터를 한 번에 로딩하여 캐싱하는 데이터 제공자.
@@ -1923,21 +1924,7 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
 
         val charMap = s.characters.associateBy { it.id }
         val novelMap = s.novels.associateBy { it.id }
-        val rawValues = s.fieldValues.filter { it.fieldDefinitionId == fieldDefId }
         val isNumeric = fd.type in listOf("NUMBER", "CALCULATED", "GRADE", "BODY_SIZE")
-
-        // 빈도 모드용: 전체 빈도 계산
-        val frequencyMap = if (!isNumeric) {
-            val allValues = mutableListOf<String>()
-            for (fv in rawValues) {
-                if (fd.type == "MULTI_TEXT") {
-                    allValues.addAll(fv.value.split(",").map { it.trim() }.filter { it.isNotEmpty() })
-                } else {
-                    if (fv.value.isNotBlank()) allValues.add(fv.value.trim())
-                }
-            }
-            allValues.groupBy { it }.mapValues { it.value.size }
-        } else emptyMap()
 
         data class CharValue(val charId: Long, val numericValue: Double, val displayValue: String)
 
@@ -1945,23 +1932,80 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
         val processedCharIds = mutableSetOf<Long>()
         var parseFailed = 0
 
-        // BODY_SIZE 파싱 설정은 루프 밖에서 한 번만 생성
-        val bodySizeConfig = if (fd.type == "BODY_SIZE") StructuredInputConfig.fromConfig(fd.config) else null
+        // ── CALCULATED 필드: DB에 저장되지 않으므로 FormulaEvaluator로 실시간 계산 ──
+        if (fd.type == "CALCULATED") {
+            val formula = try {
+                org.json.JSONObject(fd.config).optString("formula", "")
+            } catch (_: Exception) { "" }
+            if (formula.isBlank()) return RankingResult(emptyList(), fd.name, fd.type, ascending, 0, 0)
 
-        for (fv in rawValues) {
-            val char = charMap[fv.characterId] ?: continue
-            processedCharIds.add(char.id)
-            if (fv.value.isBlank()) { parseFailed++; continue }
+            // 같은 세계관의 필드 정의 (GRADE 변환용)
+            val universeFields = s.fieldDefinitions.filter { it.universeId == fd.universeId }
+            val fieldDefById = universeFields.associateBy { it.id }
 
-            when (fd.type) {
-                "NUMBER", "CALCULATED" -> {
-                    val v = fv.value.toDoubleOrNull()
-                    if (v != null && v.isFinite()) {
-                        val display = if (v == v.toLong().toDouble()) v.toLong().toString()
-                        else String.format("%.1f", v)
-                        charValues.add(CharValue(char.id, v, display))
-                    } else parseFailed++
+            // 캐릭터별 필드값 미리 그룹핑
+            val allCharFieldValues = s.fieldValues.groupBy { it.characterId }
+
+            // 이 세계관에 속하는 캐릭터만 (novel → universeId 연결)
+            val targetChars = s.characters.filter { char ->
+                val novel = char.novelId?.let { nid -> novelMap[nid] }
+                novel?.universeId == fd.universeId
+            }
+
+            for (char in targetChars) {
+                processedCharIds.add(char.id)
+                val values = allCharFieldValues[char.id] ?: emptyList()
+                val fieldKeyValues = mutableMapOf<String, String>()
+                for (fv in values) {
+                    val fDef = fieldDefById[fv.fieldDefinitionId] ?: continue
+                    fieldKeyValues[fDef.key] = fv.value
                 }
+                try {
+                    val evaluator = FormulaEvaluator(fieldKeyValues, universeFields)
+                    val result = evaluator.evaluate(formula)
+                    if (!result.isNaN() && !result.isInfinite()) {
+                        val display = if (result == result.toLong().toDouble()) result.toLong().toString()
+                        else String.format("%.1f", result)
+                        charValues.add(CharValue(char.id, result, display))
+                    } else parseFailed++
+                } catch (_: Exception) {
+                    parseFailed++
+                }
+            }
+        } else {
+            // ── NUMBER, GRADE, BODY_SIZE, SELECT, TEXT, MULTI_TEXT: 기존 DB 값 기반 ──
+            val rawValues = s.fieldValues.filter { it.fieldDefinitionId == fieldDefId }
+
+            // 빈도 모드용: 전체 빈도 계산
+            val frequencyMap = if (!isNumeric) {
+                val allValues = mutableListOf<String>()
+                for (fv in rawValues) {
+                    if (fd.type == "MULTI_TEXT") {
+                        allValues.addAll(fv.value.split(",").map { it.trim() }.filter { it.isNotEmpty() })
+                    } else {
+                        if (fv.value.isNotBlank()) allValues.add(fv.value.trim())
+                    }
+                }
+                allValues.groupBy { it }.mapValues { it.value.size }
+            } else emptyMap()
+
+            // BODY_SIZE 파싱 설정은 루프 밖에서 한 번만 생성
+            val bodySizeConfig = if (fd.type == "BODY_SIZE") StructuredInputConfig.fromConfig(fd.config) else null
+
+            for (fv in rawValues) {
+                val char = charMap[fv.characterId] ?: continue
+                processedCharIds.add(char.id)
+                if (fv.value.isBlank()) { parseFailed++; continue }
+
+                when (fd.type) {
+                    "NUMBER" -> {
+                        val v = fv.value.toDoubleOrNull()
+                        if (v != null && v.isFinite()) {
+                            val display = if (v == v.toLong().toDouble()) v.toLong().toString()
+                            else String.format("%.1f", v)
+                            charValues.add(CharValue(char.id, v, display))
+                        } else parseFailed++
+                    }
                 "GRADE" -> {
                     val numericValue = resolveGradeValueForRanking(fd, fv.value)
                     if (numericValue != null) {
@@ -2000,6 +2044,7 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
                 }
             }
         }
+        } // else (non-CALCULATED)
 
         // 제외 카운트: 파싱 실패 + 필드 값이 아예 없는 캐릭터 (이중 카운트 방지)
         val noValueCount = s.characters.size - processedCharIds.size
