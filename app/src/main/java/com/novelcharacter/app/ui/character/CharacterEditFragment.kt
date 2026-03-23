@@ -71,6 +71,7 @@ class CharacterEditFragment : Fragment() {
     private var supplementMode = false
     private var supplementIndex = 0
     private var supplementIds = longArrayOf()
+    private var supplementIssueLabels: String? = null
 
     private val imagePickerLauncher = registerForActivityResult(
         ActivityResultContracts.GetMultipleContents()
@@ -122,6 +123,7 @@ class CharacterEditFragment : Fragment() {
         supplementMode = arguments?.getBoolean("supplementMode", false) ?: false
         supplementIndex = arguments?.getInt("supplementIndex", 0) ?: 0
         supplementIds = arguments?.getLongArray("supplementIds") ?: longArrayOf()
+        supplementIssueLabels = arguments?.getString("supplementIssueLabels")
         appDir = requireContext().filesDir
 
         if (supplementMode) {
@@ -1068,17 +1070,12 @@ class CharacterEditFragment : Fragment() {
             supplementIds.size
         )
 
-        // 미흡 항목 표시 (ViewModel을 통해 이슈를 재계산)
-        viewLifecycleOwner.lifecycleScope.launch {
-            val issues = computeSupplementIssues()
-            if (_binding != null) {
-                if (issues.isNotEmpty()) {
-                    val issueLabels = issues.joinToString(", ") { it.label }
-                    binding.supplementIssueText.text = getString(R.string.supplement_banner_issues, issueLabels)
-                } else {
-                    binding.supplementIssueText.text = ""
-                }
-            }
+        // 미흡 항목 표시
+        val labels = supplementIssueLabels
+        if (!labels.isNullOrBlank()) {
+            binding.supplementIssueText.text = getString(R.string.supplement_banner_issues, labels)
+        } else {
+            binding.supplementIssueText.text = ""
         }
 
         // 기존 저장/사건 버튼 숨기기, 보충 버튼 표시
@@ -1183,38 +1180,21 @@ class CharacterEditFragment : Fragment() {
             findNavController().popBackStack(R.id.supplementFragment, false)
             return
         }
+        val issueLabelsArray = arguments?.getStringArray("supplementIssueLabelsArray")
         val bundle = Bundle().apply {
             putLong("characterId", supplementIds[nextIndex])
             putBoolean("supplementMode", true)
             putInt("supplementIndex", nextIndex)
             putLongArray("supplementIds", supplementIds)
+            if (issueLabelsArray != null) {
+                putStringArray("supplementIssueLabelsArray", issueLabelsArray)
+                putString("supplementIssueLabels", issueLabelsArray.getOrNull(nextIndex) ?: "")
+            }
         }
         val navOptions = androidx.navigation.NavOptions.Builder()
             .setPopUpTo(R.id.supplementFragment, inclusive = false)
             .build()
         findNavController().navigate(R.id.characterEditFragment, bundle, navOptions)
-    }
-
-    private suspend fun computeSupplementIssues(): List<com.novelcharacter.app.ui.supplement.SupplementIssue> {
-        return withContext(Dispatchers.IO) {
-            val issues = mutableListOf<com.novelcharacter.app.ui.supplement.SupplementIssue>()
-            val char = existingCharacter ?: return@withContext issues
-
-            if (char.imagePaths.isBlank() || char.imagePaths == "[]") {
-                issues.add(com.novelcharacter.app.ui.supplement.SupplementIssue.NO_IMAGE)
-            }
-            if (char.memo.isBlank()) {
-                issues.add(com.novelcharacter.app.ui.supplement.SupplementIssue.NO_MEMO)
-            }
-            if (char.anotherName.isBlank()) {
-                issues.add(com.novelcharacter.app.ui.supplement.SupplementIssue.NO_ALIASES)
-            }
-            if (char.novelId == null) {
-                issues.add(com.novelcharacter.app.ui.supplement.SupplementIssue.NO_NOVEL)
-            }
-
-            issues
-        }
     }
 
     override fun onDestroyView() {

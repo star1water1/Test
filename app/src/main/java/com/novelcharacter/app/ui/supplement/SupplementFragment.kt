@@ -57,13 +57,12 @@ class SupplementFragment : Fragment() {
         setupSortChips()
         setupButtons()
         observeViewModel()
-
-        viewModel.loadData(criteria)
     }
 
     override fun onResume() {
         super.onResume()
-        // 보충 편집 후 돌아왔을 때 데이터 갱신
+        // 최초 로드 + 보충 편집 후 돌아왔을 때 데이터 갱신
+        criteria = SupplementCriteria.load(requireContext())
         viewModel.loadData(criteria)
     }
 
@@ -263,11 +262,17 @@ class SupplementFragment : Fragment() {
         if (targets.isEmpty()) return
 
         val ids = targets.map { it.character.id }.toLongArray()
+        // 각 캐릭터별 이슈 라벨을 직렬화하여 전달
+        val issueLabelsArray = targets.map { t ->
+            t.issues.joinToString(", ") { it.label }
+        }.toTypedArray()
         val bundle = Bundle().apply {
             putLong("characterId", ids[0])
             putBoolean("supplementMode", true)
             putInt("supplementIndex", 0)
             putLongArray("supplementIds", ids)
+            putStringArray("supplementIssueLabelsArray", issueLabelsArray)
+            putString("supplementIssueLabels", issueLabelsArray.getOrNull(0) ?: "")
         }
 
         findNavController().navigateSafe(R.id.supplementFragment, R.id.characterEditFragment, bundle)

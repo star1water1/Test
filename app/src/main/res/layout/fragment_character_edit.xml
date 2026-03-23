@@ -15,35 +15,6 @@
         app:title="@string/edit_character"
         app:titleTextColor="@color/on_primary" />
 
-    <!-- 보충 모드 배너 -->
-    <LinearLayout
-        android:id="@+id/supplementBanner"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:background="@color/primary_dark"
-        android:padding="10dp"
-        android:gravity="center_vertical"
-        android:layout_marginTop="?attr/actionBarSize"
-        android:visibility="gone">
-
-        <TextView
-            android:id="@+id/supplementIssueText"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:textColor="@color/on_primary"
-            android:textSize="12sp" />
-
-        <TextView
-            android:id="@+id/supplementProgressText"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:textColor="@color/on_primary"
-            android:textStyle="bold"
-            android:textSize="14sp" />
-    </LinearLayout>
-
     <androidx.core.widget.NestedScrollView
         android:layout_width="match_parent"
         android:layout_height="match_parent"
@@ -52,8 +23,41 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:padding="16dp">
+            android:orientation="vertical">
+
+            <!-- 보충 모드 배너 -->
+            <LinearLayout
+                android:id="@+id/supplementBanner"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:background="@color/primary_dark"
+                android:padding="10dp"
+                android:gravity="center_vertical"
+                android:visibility="gone">
+
+                <TextView
+                    android:id="@+id/supplementIssueText"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:textColor="@color/on_primary"
+                    android:textSize="12sp" />
+
+                <TextView
+                    android:id="@+id/supplementProgressText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textColor="@color/on_primary"
+                    android:textStyle="bold"
+                    android:textSize="14sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
 
             <!-- Add image button -->
             <com.google.android.material.button.MaterialButton
@@ -237,6 +241,7 @@
                     android:text="@string/supplement_skip" />
             </LinearLayout>
 
+            </LinearLayout>
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>
 
