@@ -72,6 +72,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     private val novelIdCache = mutableMapOf<Pair<String, Long?>, Long?>()
     private var truncatedFieldCount = 0
+    private val truncatedDetails = mutableListOf<String>()
 
     // ── Header alias map for tolerant import (Sprint C) ──
 
@@ -213,6 +214,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         novelIdCache.clear()
         processedRowsSoFar = 0
         truncatedFieldCount = 0
+        truncatedDetails.clear()
 
         val totalRows = countTotalRows(workbook)
 
@@ -246,7 +248,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         }
 
         if (truncatedFieldCount > 0) {
-            result.warnings.add("${truncatedFieldCount}개 필드값이 ${MAX_FIELD_LENGTH}자 제한으로 잘렸습니다.")
+            val detail = if (truncatedDetails.size <= 5) {
+                truncatedDetails.joinToString(", ")
+            } else {
+                truncatedDetails.take(5).joinToString(", ") + " 외 ${truncatedDetails.size - 5}건"
+            }
+            result.warnings.add("${truncatedFieldCount}개 필드값이 ${MAX_FIELD_LENGTH}자 제한으로 잘렸습니다. ($detail)")
         }
 
         return result
@@ -303,11 +310,22 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         return canonical == expectedFirstHeader || firstCell == expectedFirstHeader
     }
 
+    /**
+     * 시트를 찾고, 못 찾으면 경고를 남기고 null 반환.
+     */
+    private fun findSheet(workbook: Workbook, sheetName: String, result: ImportResult): Sheet? {
+        val sheet = workbook.getSheet(sheetName)
+        if (sheet == null) {
+            result.warnings.add("'$sheetName' 시트를 찾을 수 없어 해당 데이터를 건너뛰었습니다.")
+        }
+        return sheet
+    }
+
     // ── 세계관 가져오기 ──
 
     private suspend fun importUniverses(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = universeSpec()
-        val sheet = workbook.getSheet(spec.sheetName) ?: return
+        val sheet = findSheet(workbook, spec.sheetName, result) ?: return
         val headerRow = sheet.getRow(0) ?: return
         if (!isValidHeader(headerRow, spec.firstColumnHeader)) return
 
@@ -419,7 +437,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     private suspend fun importNovels(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = novelSpec(emptyList())
-        val sheet = workbook.getSheet(spec.sheetName) ?: return
+        val sheet = findSheet(workbook, spec.sheetName, result) ?: return
         val headerRow = sheet.getRow(0) ?: return
         if (!isValidHeader(headerRow, spec.firstColumnHeader)) return
 
@@ -536,7 +554,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     private suspend fun importFieldDefinitions(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = fieldDefinitionSpec(emptyList())
-        val sheet = workbook.getSheet(spec.sheetName) ?: return
+        val sheet = findSheet(workbook, spec.sheetName, result) ?: return
         val headerRow = sheet.getRow(0) ?: return
         if (!isValidHeader(headerRow, spec.firstColumnHeader)) return
 
@@ -799,7 +817,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     private suspend fun importTimeline(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = timelineSpec(emptyList())
-        val sheet = workbook.getSheet(spec.sheetName) ?: return
+        val sheet = findSheet(workbook, spec.sheetName, result) ?: return
         val headerRow = sheet.getRow(0) ?: return
         if (!isValidHeader(headerRow, spec.firstColumnHeader)) return
 
@@ -827,7 +845,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 if (description.isBlank()) continue
 
                 val month = parseNumber(getCellString(row, monthColIndex))?.toInt()?.takeIf { it in 1..12 }
-                val day = parseNumber(getCellString(row, dayColIndex))?.toInt()?.takeIf { it in 1..31 }
+                val day = parseNumber(getCellString(row, dayColIndex))?.toInt()?.takeIf { d -> d in 1..31 && isValidDay(month, d) }
                 val calendarType = getCellString(row, calendarColIndex).ifBlank { "천개력" }
                 val novelTitle = getCellString(row, novelColIndex)
                 val novelCode = if (novelCodeColIndex >= 0) getCellString(row, novelCodeColIndex) else ""
@@ -897,7 +915,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     private suspend fun importStateChanges(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = stateChangeSpec()
-        val sheet = workbook.getSheet(spec.sheetName) ?: return
+        val sheet = findSheet(workbook, spec.sheetName, result) ?: return
         val headerRow = sheet.getRow(0) ?: return
         if (!isValidHeader(headerRow, spec.firstColumnHeader)) return
 
@@ -926,7 +944,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val year = parseNumber(yearStr)?.toInt() ?: continue
 
                 val month = parseNumber(getCellString(row, monthColIndex))?.toInt()?.takeIf { it in 1..12 }
-                val day = parseNumber(getCellString(row, dayColIndex))?.toInt()?.takeIf { it in 1..31 }
+                val day = parseNumber(getCellString(row, dayColIndex))?.toInt()?.takeIf { d -> d in 1..31 && isValidDay(month, d) }
                 val fieldKey = getCellString(row, fieldKeyColIndex)
                 if (fieldKey.isBlank()) continue
                 val newValue = getCellString(row, newValueColIndex)
@@ -978,7 +996,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     private suspend fun importRelationships(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = relationshipSpec()
-        val sheet = workbook.getSheet(spec.sheetName) ?: return
+        val sheet = findSheet(workbook, spec.sheetName, result) ?: return
         val headerRow = sheet.getRow(0) ?: return
         if (!isValidHeader(headerRow, spec.firstColumnHeader)) return
 
@@ -992,7 +1010,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val displayOrderColIndex = cols["표시순서"] ?: -1
         val char1CodeColIndex = cols["캐릭터1코드"] ?: -1
         val char2CodeColIndex = cols["캐릭터2코드"] ?: -1
+        val factionColIndex = cols["세력"] ?: -1
         val createdAtColIndex = cols["생성일"] ?: -1
+
+        val allFactions = if (factionColIndex >= 0) db.factionDao().getAllFactions() else emptyList()
 
         for (i in 1..sheet.lastRowNum) {
             try {
@@ -1010,6 +1031,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val char1Code = if (char1CodeColIndex >= 0) getCellString(row, char1CodeColIndex) else ""
                 val char2Code = if (char2CodeColIndex >= 0) getCellString(row, char2CodeColIndex) else ""
                 val createdAt = if (createdAtColIndex >= 0) parseNumber(getCellString(row, createdAtColIndex))?.toLong() ?: System.currentTimeMillis() else System.currentTimeMillis()
+                val factionName = if (factionColIndex >= 0) getCellString(row, factionColIndex) else ""
+                val factionId = if (factionName.isNotBlank()) allFactions.find { it.name == factionName }?.id else null
 
                 val char1 = (if (char1Code.isNotBlank()) {
                     db.characterDao().getCharacterByCode(char1Code)
@@ -1040,6 +1063,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         intensity = if (intensityColIndex >= 0) intensity else existing.intensity,
                         isBidirectional = if (bidirectionalColIndex >= 0) isBidirectional else existing.isBidirectional,
                         displayOrder = if (displayOrderColIndex >= 0) displayOrder else existing.displayOrder,
+                        factionId = if (factionColIndex >= 0) factionId else existing.factionId,
                         createdAt = if (createdAtColIndex >= 0) createdAt else existing.createdAt
                     ))
                     result.updatedRelationships++
@@ -1048,7 +1072,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         characterId1 = char1.id, characterId2 = char2.id,
                         relationshipType = relationshipType, description = description,
                         intensity = intensity, isBidirectional = isBidirectional,
-                        displayOrder = displayOrder, createdAt = createdAt
+                        displayOrder = displayOrder, factionId = factionId,
+                        createdAt = createdAt
                     ))
                     result.newRelationships++
                 }
@@ -1063,7 +1088,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     // ── 관계 변화 가져오기 ──
 
     private suspend fun importRelationshipChanges(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
-        val sheet = workbook.getSheet("관계 변화") ?: return
+        val sheet = findSheet(workbook, "관계 변화", result) ?: return
         val headerRow = sheet.getRow(0) ?: return
         if (!isValidHeader(headerRow, "캐릭터1")) return
 
@@ -1092,7 +1117,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val yearStr = getCellString(row, yearColIndex)
                 val year = parseNumber(yearStr)?.toInt() ?: continue
                 val month = parseNumber(getCellString(row, monthColIndex))?.toInt()?.takeIf { it in 1..12 }
-                val day = parseNumber(getCellString(row, dayColIndex))?.toInt()?.takeIf { it in 1..31 }
+                val day = parseNumber(getCellString(row, dayColIndex))?.toInt()?.takeIf { d -> d in 1..31 && isValidDay(month, d) }
                 val relationshipType = getCellString(row, relTypeColIndex)
                 val description = getCellString(row, descColIndex)
                 val intensity = parseNumber(getCellString(row, intensityColIndex))?.toInt()?.coerceIn(1, 10) ?: 5
@@ -1148,7 +1173,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     private suspend fun importNameBank(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = nameBankSpec()
-        val sheet = workbook.getSheet(spec.sheetName) ?: return
+        val sheet = findSheet(workbook, spec.sheetName, result) ?: return
         val headerRow = sheet.getRow(0) ?: return
         if (!isValidHeader(headerRow, spec.firstColumnHeader)) return
 
@@ -1219,7 +1244,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     private suspend fun importUserPresetTemplates(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = userPresetTemplateSpec()
-        val sheet = workbook.getSheet(spec.sheetName) ?: return
+        val sheet = findSheet(workbook, spec.sheetName, result) ?: return
         val headerRow = sheet.getRow(0) ?: return
         if (!isValidHeader(headerRow, spec.firstColumnHeader)) return
 
@@ -1275,7 +1300,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     private suspend fun importSearchPresets(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = searchPresetSpec()
-        val sheet = workbook.getSheet(spec.sheetName) ?: return
+        val sheet = findSheet(workbook, spec.sheetName, result) ?: return
         val headerRow = sheet.getRow(0) ?: return
         if (!isValidHeader(headerRow, spec.firstColumnHeader)) return
 
@@ -1334,7 +1359,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     private suspend fun importAppSettings(workbook: Workbook, result: ImportResult) {
         val spec = appSettingsSpec()
-        val sheet = workbook.getSheet(spec.sheetName) ?: return
+        val sheet = findSheet(workbook, spec.sheetName, result) ?: return
         val headerRow = sheet.getRow(0) ?: return
         if (!isValidHeader(headerRow, spec.firstColumnHeader)) return
 
@@ -1368,7 +1393,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     private suspend fun importFactions(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = factionSpec()
-        val sheet = workbook.getSheet(spec.sheetName) ?: return
+        val sheet = findSheet(workbook, spec.sheetName, result) ?: return
         val headerRow = sheet.getRow(0) ?: return
         if (!isValidHeader(headerRow, spec.firstColumnHeader)) return
 
@@ -1486,7 +1511,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     private suspend fun importFactionMemberships(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = factionMembershipSpec()
-        val sheet = workbook.getSheet(spec.sheetName) ?: return
+        val sheet = findSheet(workbook, spec.sheetName, result) ?: return
         val headerRow = sheet.getRow(0) ?: return
         if (!isValidHeader(headerRow, spec.firstColumnHeader)) return
 
@@ -1708,6 +1733,17 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         }
     }
 
+    /** 월에 맞는 유효한 일수인지 검증 (월이 null이면 1..31 범위만 체크) */
+    private fun isValidDay(month: Int?, day: Int): Boolean {
+        if (month == null) return day in 1..31
+        val maxDay = when (month) {
+            2 -> 29  // 윤년 가능성 허용
+            4, 6, 9, 11 -> 30
+            else -> 31
+        }
+        return day in 1..maxDay
+    }
+
     private fun getCellString(row: Row, cellIndex: Int, maxLength: Int = MAX_FIELD_LENGTH): String {
         if (cellIndex < 0) return ""
         val cell = row.getCell(cellIndex) ?: return ""
@@ -1738,6 +1774,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         }
         if (raw.length > maxLength) {
             truncatedFieldCount++
+            val sheetName = row.sheet?.sheetName ?: "?"
+            truncatedDetails.add("${sheetName} 행${row.rowNum + 1} 열${cellIndex + 1}")
             return raw.substring(0, maxLength)
         }
         return raw

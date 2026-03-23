@@ -221,6 +221,7 @@ fun relationshipSpec(customTypes: List<String> = emptyList()) = SheetSpec(
         ColumnSpec("표시순서", width = 3000),
         ColumnSpec("캐릭터1코드", readOnly = true, width = 4000),
         ColumnSpec("캐릭터2코드", readOnly = true, width = 4000),
+        ColumnSpec("세력", readOnly = true, width = 5000),
         ColumnSpec("생성일", readOnly = true, width = 5000)
     )
 )

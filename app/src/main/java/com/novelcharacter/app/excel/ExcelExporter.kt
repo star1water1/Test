@@ -767,6 +767,9 @@ class ExcelExporter(context: Context) {
         val allCharacters = db.characterDao().getAllCharactersList()
         val charMap = allCharacters.associateBy { it.id }
 
+        val allFactions = db.factionDao().getAllFactions()
+        val factionMap = allFactions.associateBy { it.id }
+
         val allUniverses = db.universeDao().getAllUniversesList()
         val allCustomTypes = allUniverses.flatMap { it.getRelationshipTypes() }
         val spec = relationshipSpec(allCustomTypes)
@@ -788,7 +791,8 @@ class ExcelExporter(context: Context) {
             // 코드 (readOnly)
             row.createCell(7).setCellValue(char1?.code ?: "")
             row.createCell(8).setCellValue(char2?.code ?: "")
-            row.createCell(9).setCellValue(rel.createdAt.toDouble())
+            row.createCell(9).setCellValue(rel.factionId?.let { factionMap[it]?.name } ?: "")
+            row.createCell(10).setCellValue(rel.createdAt.toDouble())
         }
 
         applySpecFormatting(sheet, spec, allRelationships.size)
