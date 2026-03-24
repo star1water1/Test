@@ -132,7 +132,7 @@ class SupplementFragment : Fragment() {
             val chip = Chip(requireContext()).apply {
                 text = label
                 isCheckable = true
-                isChecked = mode == SupplementViewModel.SortMode.ISSUES_DESC
+                isChecked = mode == viewModel.sortMode
                 setOnCheckedChangeListener { _, isChecked ->
                     if (isChecked) {
                         viewModel.setSortMode(mode)
