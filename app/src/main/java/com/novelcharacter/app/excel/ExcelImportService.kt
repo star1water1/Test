@@ -160,6 +160,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         alias("월", "month")
         alias("일", "day")
         alias("역법", "calendar", "calendar_type")
+        alias("사건 유형", "event_type", "사건유형")
         alias("사건 설명", "event_description", "사건설명")
         alias("관련 작품", "related_novel", "관련작품")
         alias("관련 캐릭터", "related_characters", "관련캐릭터")
@@ -1577,7 +1578,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val monthColIndex = cols["월"] ?: 1
         val dayColIndex = cols["일"] ?: 2
         val calendarColIndex = cols["역법"] ?: 3
-        val descColIndex = cols["사건 설명"] ?: 4
+        val eventTypeColIndex = cols["사건 유형"] ?: -1
+        val descColIndex = cols["사건 설명"] ?: cols.entries.firstOrNull { it.key.contains("설명") }?.value ?: 4
         val novelColIndex = cols["관련 작품"] ?: 5
         val charColIndex = cols["관련 캐릭터"] ?: 6
         val novelCodeColIndex = cols["관련작품코드"] ?: -1
@@ -1598,6 +1600,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val month = parseNumber(getCellString(row, monthColIndex))?.toInt()?.takeIf { it in 1..12 }
                 val day = parseNumber(getCellString(row, dayColIndex))?.toInt()?.takeIf { d -> d in 1..31 && isValidDay(month, d) }
                 val calendarType = getCellString(row, calendarColIndex).ifBlank { "천개력" }
+                val eventType = if (eventTypeColIndex >= 0) labelToEventType(getCellString(row, eventTypeColIndex)) else TimelineEvent.TYPE_NONE
                 val novelTitle = getCellString(row, novelColIndex)
                 val novelCode = if (novelCodeColIndex >= 0) getCellString(row, novelCodeColIndex) else ""
                 val displayOrder: Int? = if (displayOrderColIndex >= 0) {
@@ -1625,6 +1628,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     eventId = existingEvent.id
                     db.timelineDao().update(existingEvent.copy(
                         month = month, day = day, calendarType = calendarType,
+                        eventType = if (eventTypeColIndex >= 0) eventType else existingEvent.eventType,
                         novelId = novelId, universeId = universeId,
                         displayOrder = displayOrder ?: existingEvent.displayOrder,
                         isTemporary = if (isTemporaryColIndex >= 0) isTemporary else existingEvent.isTemporary,
@@ -1635,6 +1639,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     eventId = db.timelineDao().insert(TimelineEvent(
                         year = year, month = month, day = day,
                         calendarType = calendarType, description = description,
+                        eventType = eventType,
                         novelId = novelId, universeId = universeId,
                         displayOrder = displayOrder ?: i, isTemporary = isTemporary,
                         createdAt = createdAt
@@ -1654,6 +1659,24 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                             db.timelineDao().insertCrossRef(
                                 TimelineCharacterCrossRef(eventId = eventId, characterId = character.id)
                             )
+                        }
+                        // birth/death 사건이면 관련 캐릭터의 상태변화 동기화 대상에 추가
+                        if (eventType == TimelineEvent.TYPE_BIRTH || eventType == TimelineEvent.TYPE_DEATH) {
+                            val stateKey = if (eventType == TimelineEvent.TYPE_BIRTH) CharacterStateChange.KEY_BIRTH else CharacterStateChange.KEY_DEATH
+                            for (character in resolvedCharacters) {
+                                val existing = db.characterStateChangeDao()
+                                    .getChangeByNaturalKey(character.id, year, stateKey, year.toString())
+                                if (existing == null) {
+                                    db.characterStateChangeDao().insert(CharacterStateChange(
+                                        characterId = character.id, year = year, month = month, day = day,
+                                        fieldKey = stateKey, newValue = year.toString()
+                                    ))
+                                }
+                                val uId = universeId ?: character.novelId?.let { db.novelDao().getNovelById(it)?.universeId }
+                                if (uId != null) {
+                                    pendingSyncCharacters[character.id] = uId
+                                }
+                            }
                         }
                     }
                 }
@@ -2591,6 +2614,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 android.util.Log.w("ExcelImport", "Post-import sync failed for character $characterId", e)
             }
         }
+    }
+
+    private fun labelToEventType(label: String): String = when (label.trim()) {
+        "탄생", "birth" -> TimelineEvent.TYPE_BIRTH
+        "사망", "death" -> TimelineEvent.TYPE_DEATH
+        else -> TimelineEvent.TYPE_NONE
     }
 
     companion object {

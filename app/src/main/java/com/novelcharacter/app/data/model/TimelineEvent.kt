@@ -31,12 +31,19 @@ data class TimelineEvent(
     val day: Int? = null,
     val calendarType: String = "천개력",
     val description: String,
+    val eventType: String = "",       // "", "birth", "death" — 시맨틱 사건 유형
     val universeId: Long? = null,
     val novelId: Long? = null,
     val displayOrder: Int = 0,
     val isTemporary: Boolean = false,  // 간편 모드에서 임시 배치된 사건
     val createdAt: Long = System.currentTimeMillis()
 ) {
+    companion object {
+        const val TYPE_NONE = ""
+        const val TYPE_BIRTH = "birth"
+        const val TYPE_DEATH = "death"
+    }
+
     fun getFormattedDate(): String {
         val yearStr = if (year < 0) "BC ${-year}" else "$year"
         return listOfNotNull(

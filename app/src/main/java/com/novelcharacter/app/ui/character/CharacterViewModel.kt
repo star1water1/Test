@@ -441,6 +441,7 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
                 val eventId = timelineRepository.insertEvent(event)
                 timelineRepository.updateEventCharacters(eventId, characterIds)
             }
+            syncEventTypeToStateChanges(event, characterIds)
         } catch (e: Exception) {
             Log.e("CharacterViewModel", "Failed to insert event", e)
         }
@@ -452,8 +453,39 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
                 timelineRepository.updateEvent(event)
                 timelineRepository.updateEventCharacters(event.id, characterIds)
             }
+            syncEventTypeToStateChanges(event, characterIds)
         } catch (e: Exception) {
             Log.e("CharacterViewModel", "Failed to update event", e)
+        }
+    }
+
+    private suspend fun syncEventTypeToStateChanges(event: TimelineEvent, characterIds: List<Long>) {
+        val fieldKey = when (event.eventType) {
+            TimelineEvent.TYPE_BIRTH -> CharacterStateChange.KEY_BIRTH
+            TimelineEvent.TYPE_DEATH -> CharacterStateChange.KEY_DEATH
+            else -> return
+        }
+        for (charId in characterIds) {
+            try {
+                val existing = characterRepository.getChangesByCharacterList(charId)
+                    .find { it.fieldKey == fieldKey }
+                val change = if (existing != null) {
+                    existing.copy(year = event.year, month = event.month, day = event.day)
+                        .also { characterRepository.updateStateChange(it) }
+                } else {
+                    CharacterStateChange(
+                        characterId = charId, year = event.year,
+                        month = event.month, day = event.day,
+                        fieldKey = fieldKey, newValue = event.year.toString()
+                    ).also { characterRepository.insertStateChange(it) }
+                }
+                val character = characterRepository.getCharacterById(charId) ?: continue
+                val novel = character.novelId?.let { novelRepository.getNovelById(it) } ?: continue
+                val uId = novel.universeId ?: continue
+                semanticSyncHelper.syncStateChangeToField(charId, uId, change)
+            } catch (e: Exception) {
+                Log.w("CharacterViewModel", "Failed to sync event type for character $charId", e)
+            }
         }
     }
 

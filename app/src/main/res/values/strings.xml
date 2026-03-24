@@ -31,6 +31,10 @@
     <string name="edit_event">사건 편집</string>
     <string name="event_year">연도</string>
     <string name="event_description">사건 설명</string>
+    <string name="event_type_label">사건 유형</string>
+    <string name="event_type_none">일반</string>
+    <string name="event_type_birth">탄생</string>
+    <string name="event_type_death">사망</string>
     <string name="event_calendar_type">역법</string>
     <string name="related_characters">관련 캐릭터</string>
     <string name="no_characters">등록된 캐릭터가 없습니다</string>

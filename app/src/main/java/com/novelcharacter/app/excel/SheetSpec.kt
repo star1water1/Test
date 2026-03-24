@@ -184,6 +184,7 @@ fun timelineSpec(novelTitles: List<String>) = SheetSpec(
         ColumnSpec("월", width = 2000),
         ColumnSpec("일", width = 2000),
         ColumnSpec("역법", width = 3000),
+        ColumnSpec("사건 유형", dropdownOptions = listOf("일반", "탄생", "사망"), width = 3000),
         ColumnSpec("사건 설명", required = true, width = 15000),
         ColumnSpec("관련 작품", dropdownOptions = novelTitles.takeIf { it.isNotEmpty() }, width = 6000),
         ColumnSpec("관련 캐릭터", width = 10000),

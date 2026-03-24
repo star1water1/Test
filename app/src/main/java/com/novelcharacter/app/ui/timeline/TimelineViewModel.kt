@@ -10,6 +10,8 @@ import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.TimelineEvent
 import android.util.Log
 import androidx.room.withTransaction
+import com.novelcharacter.app.data.model.CharacterStateChange
+import com.novelcharacter.app.util.SemanticFieldSyncHelper
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -21,6 +23,8 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
     private val timelineRepository = app.timelineRepository
     private val novelRepository = app.novelRepository
     private val characterRepository = app.characterRepository
+    private val universeRepository = app.universeRepository
+    private val semanticSyncHelper = SemanticFieldSyncHelper(characterRepository, universeRepository, novelRepository)
     private val prefs = application.getSharedPreferences("timeline_ui_state", Context.MODE_PRIVATE)
 
     private val _error = MutableLiveData<String?>()
@@ -290,6 +294,7 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
                 val eventId = timelineRepository.insertEvent(event)
                 timelineRepository.updateEventCharacters(eventId, characterIds)
             }
+            syncEventTypeToStateChanges(event, characterIds)
         } catch (e: Exception) {
             Log.e("TimelineViewModel", "Failed to insert event", e)
             showError(e.message)
@@ -302,9 +307,50 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
                 timelineRepository.updateEvent(event)
                 timelineRepository.updateEventCharacters(event.id, characterIds)
             }
+            syncEventTypeToStateChanges(event, characterIds)
         } catch (e: Exception) {
             Log.e("TimelineViewModel", "Failed to update event", e)
             showError(e.message)
+        }
+    }
+
+    /**
+     * 사건 유형이 birth/death이면 관련 캐릭터의 상태변화 + 필드 동기화.
+     */
+    private suspend fun syncEventTypeToStateChanges(event: TimelineEvent, characterIds: List<Long>) {
+        val fieldKey = when (event.eventType) {
+            TimelineEvent.TYPE_BIRTH -> CharacterStateChange.KEY_BIRTH
+            TimelineEvent.TYPE_DEATH -> CharacterStateChange.KEY_DEATH
+            else -> return
+        }
+        for (charId in characterIds) {
+            try {
+                val existing = characterRepository.getChangesByCharacterList(charId)
+                    .find { it.fieldKey == fieldKey }
+                val change = if (existing != null) {
+                    existing.copy(
+                        year = event.year,
+                        month = event.month,
+                        day = event.day
+                    ).also { characterRepository.updateStateChange(it) }
+                } else {
+                    CharacterStateChange(
+                        characterId = charId,
+                        year = event.year,
+                        month = event.month,
+                        day = event.day,
+                        fieldKey = fieldKey,
+                        newValue = event.year.toString()
+                    ).also { characterRepository.insertStateChange(it) }
+                }
+                // 필드 동기화 (출생연도/사망연도 필드 + alive 필드)
+                val character = characterRepository.getCharacterById(charId) ?: continue
+                val novel = character.novelId?.let { novelRepository.getNovelById(it) } ?: continue
+                val universeId = novel.universeId ?: continue
+                semanticSyncHelper.syncStateChangeToField(charId, universeId, change)
+            } catch (e: Exception) {
+                Log.w("TimelineViewModel", "Failed to sync event type for character $charId", e)
+            }
         }
     }
 

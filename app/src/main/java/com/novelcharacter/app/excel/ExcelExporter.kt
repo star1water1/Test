@@ -14,6 +14,7 @@ import com.novelcharacter.app.data.model.CharacterStateChange
 import com.novelcharacter.app.data.model.CharacterTag
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.Novel
+import com.novelcharacter.app.data.model.TimelineEvent
 import com.novelcharacter.app.util.ThemeHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -734,19 +735,20 @@ class ExcelExporter(context: Context) {
             event.month?.let { row.createCell(1).setCellValue(it.toDouble()) }
             event.day?.let { row.createCell(2).setCellValue(it.toDouble()) }
             row.createCell(3).setCellValue(event.calendarType)
-            row.createCell(4).setCellValue(event.description)
+            row.createCell(4).setCellValue(eventTypeToLabel(event.eventType))
+            row.createCell(5).setCellValue(event.description)
 
             val novel = event.novelId?.let { novelMap[it] }
-            row.createCell(5).setCellValue(novel?.title ?: "")
+            row.createCell(6).setCellValue(novel?.title ?: "")
 
             val characterNames = (eventCharIdMap[event.id] ?: emptyList()).mapNotNull { charMap[it]?.name }
-            row.createCell(6).setCellValue(characterNames.joinToString(", "))
+            row.createCell(7).setCellValue(characterNames.joinToString(", "))
 
             // 관련작품코드 (readOnly)
-            row.createCell(7).setCellValue(novel?.code ?: "")
-            row.createCell(8).setCellValue(event.displayOrder.toDouble())
-            row.createCell(9).setCellValue(if (event.isTemporary) "Y" else "N")
-            row.createCell(10).setCellValue(event.createdAt.toDouble())
+            row.createCell(8).setCellValue(novel?.code ?: "")
+            row.createCell(9).setCellValue(event.displayOrder.toDouble())
+            row.createCell(10).setCellValue(if (event.isTemporary) "Y" else "N")
+            row.createCell(11).setCellValue(event.createdAt.toDouble())
         }
 
         applySpecFormatting(sheet, spec, events.size)
@@ -1053,6 +1055,12 @@ class ExcelExporter(context: Context) {
         row.createCell(1).setCellValue(themeMode.toDouble())
 
         applySpecFormatting(sheet, spec, 1)
+    }
+
+    private fun eventTypeToLabel(eventType: String): String = when (eventType) {
+        TimelineEvent.TYPE_BIRTH -> "탄생"
+        TimelineEvent.TYPE_DEATH -> "사망"
+        else -> "일반"
     }
 
     companion object {

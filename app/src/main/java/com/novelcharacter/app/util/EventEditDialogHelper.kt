@@ -55,6 +55,16 @@ class EventEditDialogHelper(
 
             val dialogBinding = DialogTimelineEditBinding.inflate(layoutInflater)
 
+            // 사건 유형 스피너
+            val eventTypes = listOf(
+                TimelineEvent.TYPE_NONE to context.getString(R.string.event_type_none),
+                TimelineEvent.TYPE_BIRTH to context.getString(R.string.event_type_birth),
+                TimelineEvent.TYPE_DEATH to context.getString(R.string.event_type_death)
+            )
+            val typeAdapter = ArrayAdapter(context, android.R.layout.simple_spinner_item, eventTypes.map { it.second })
+            typeAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+            dialogBinding.spinnerEventType.adapter = typeAdapter
+
             // Fill existing data
             event?.let {
                 dialogBinding.editYear.setText(it.year.toString())
@@ -62,6 +72,8 @@ class EventEditDialogHelper(
                 dialogBinding.editDay.setText(it.day?.toString() ?: "")
                 dialogBinding.editCalendarType.setText(it.calendarType)
                 dialogBinding.editDescription.setText(it.description)
+                val typeIndex = eventTypes.indexOfFirst { (key, _) -> key == it.eventType }
+                if (typeIndex >= 0) dialogBinding.spinnerEventType.setSelection(typeIndex)
             }
 
             // Novel spinner
@@ -133,6 +145,8 @@ class EventEditDialogHelper(
                     }
 
                     val calendarType = dialogBinding.editCalendarType.text.toString().trim()
+                    val selectedTypeIndex = dialogBinding.spinnerEventType.selectedItemPosition
+                    val selectedEventType = eventTypes.getOrNull(selectedTypeIndex)?.first ?: TimelineEvent.TYPE_NONE
                     val novelPosition = dialogBinding.spinnerNovel.selectedItemPosition
                     val selectedNovel = if (novelPosition > 0) novels.getOrNull(novelPosition - 1) else null
                     val novelId = selectedNovel?.id
@@ -145,6 +159,7 @@ class EventEditDialogHelper(
                         day = day,
                         calendarType = calendarType,
                         description = description,
+                        eventType = selectedEventType,
                         universeId = universeId,
                         novelId = novelId,
                         isTemporary = false,
