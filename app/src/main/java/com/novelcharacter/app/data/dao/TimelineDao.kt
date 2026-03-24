@@ -7,25 +7,25 @@ import com.novelcharacter.app.data.model.TimelineCharacterCrossRef
 
 @Dao
 interface TimelineDao {
-    @Query("SELECT * FROM timeline_events ORDER BY year ASC")
+    @Query("SELECT * FROM timeline_events ORDER BY year ASC, month ASC, day ASC, displayOrder ASC")
     fun getAllEvents(): LiveData<List<TimelineEvent>>
 
-    @Query("SELECT * FROM timeline_events ORDER BY year ASC")
+    @Query("SELECT * FROM timeline_events ORDER BY year ASC, month ASC, day ASC, displayOrder ASC")
     suspend fun getAllEventsList(): List<TimelineEvent>
 
-    @Query("SELECT * FROM timeline_events WHERE novelId = :novelId ORDER BY year ASC")
+    @Query("SELECT * FROM timeline_events WHERE novelId = :novelId ORDER BY year ASC, month ASC, day ASC, displayOrder ASC")
     fun getEventsByNovel(novelId: Long): LiveData<List<TimelineEvent>>
 
-    @Query("SELECT * FROM timeline_events WHERE novelId = :novelId ORDER BY year ASC")
+    @Query("SELECT * FROM timeline_events WHERE novelId = :novelId ORDER BY year ASC, month ASC, day ASC, displayOrder ASC")
     suspend fun getEventsByNovelList(novelId: Long): List<TimelineEvent>
 
     @Query("SELECT * FROM timeline_events WHERE id = :id")
     suspend fun getEventById(id: Long): TimelineEvent?
 
-    @Query("SELECT * FROM timeline_events WHERE year BETWEEN :startYear AND :endYear ORDER BY year ASC")
+    @Query("SELECT * FROM timeline_events WHERE year BETWEEN :startYear AND :endYear ORDER BY year ASC, month ASC, day ASC, displayOrder ASC")
     fun getEventsByYearRange(startYear: Int, endYear: Int): LiveData<List<TimelineEvent>>
 
-    @Query("SELECT * FROM timeline_events WHERE description LIKE '%' || :query || '%' ESCAPE '\\' ORDER BY year ASC")
+    @Query("SELECT * FROM timeline_events WHERE description LIKE '%' || :query || '%' ESCAPE '\\' ORDER BY year ASC, month ASC, day ASC, displayOrder ASC")
     fun searchEvents(query: String): LiveData<List<TimelineEvent>>
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
@@ -75,7 +75,7 @@ interface TimelineDao {
         SELECT te.* FROM timeline_events te
         INNER JOIN timeline_character_cross_ref tcr ON te.id = tcr.eventId
         WHERE tcr.characterId = :characterId
-        ORDER BY te.year ASC
+        ORDER BY te.year ASC, te.month ASC, te.day ASC, te.displayOrder ASC
     """)
     fun getEventsForCharacter(characterId: Long): LiveData<List<TimelineEvent>>
 
@@ -83,7 +83,7 @@ interface TimelineDao {
         SELECT te.* FROM timeline_events te
         INNER JOIN timeline_character_cross_ref tcr ON te.id = tcr.eventId
         WHERE tcr.characterId = :characterId
-        ORDER BY te.year ASC
+        ORDER BY te.year ASC, te.month ASC, te.day ASC, te.displayOrder ASC
     """)
     suspend fun getEventsForCharacterList(characterId: Long): List<TimelineEvent>
 
@@ -96,10 +96,10 @@ interface TimelineDao {
     """)
     suspend fun getCharactersForEvent(eventId: Long): List<com.novelcharacter.app.data.model.Character>
 
-    @Query("SELECT * FROM timeline_events WHERE universeId = :universeId ORDER BY year ASC")
+    @Query("SELECT * FROM timeline_events WHERE universeId = :universeId ORDER BY year ASC, month ASC, day ASC, displayOrder ASC")
     fun getEventsByUniverse(universeId: Long): LiveData<List<TimelineEvent>>
 
-    @Query("SELECT * FROM timeline_events WHERE year = :year AND (:month IS NULL OR month = :month) AND (:day IS NULL OR day = :day) ORDER BY year ASC")
+    @Query("SELECT * FROM timeline_events WHERE year = :year AND (:month IS NULL OR month = :month) AND (:day IS NULL OR day = :day) ORDER BY year ASC, month ASC, day ASC, displayOrder ASC")
     fun getEventsByYearMonthDay(year: Int, month: Int?, day: Int?): LiveData<List<TimelineEvent>>
 
     @Query("SELECT * FROM timeline_events WHERE year = :year AND description = :description AND novelId = :novelId LIMIT 1")
@@ -114,11 +114,11 @@ interface TimelineDao {
         SELECT te.* FROM timeline_events te
         INNER JOIN timeline_character_cross_ref tcr ON te.id = tcr.eventId
         WHERE tcr.characterId = :characterId AND te.year BETWEEN :startYear AND :endYear
-        ORDER BY te.year ASC
+        ORDER BY te.year ASC, te.month ASC, te.day ASC, te.displayOrder ASC
     """)
     fun getEventsForCharacterInRange(characterId: Long, startYear: Int, endYear: Int): LiveData<List<TimelineEvent>>
 
-    @Query("SELECT * FROM timeline_events WHERE novelId = :novelId AND year BETWEEN :startYear AND :endYear ORDER BY year ASC")
+    @Query("SELECT * FROM timeline_events WHERE novelId = :novelId AND year BETWEEN :startYear AND :endYear ORDER BY year ASC, month ASC, day ASC, displayOrder ASC")
     fun getEventsByNovelInRange(novelId: Long, startYear: Int, endYear: Int): LiveData<List<TimelineEvent>>
 
     // AND 조합 필터: 소설 + 캐릭터 동시 필터
@@ -128,7 +128,7 @@ interface TimelineDao {
         INNER JOIN timeline_character_cross_ref tcr ON te.id = tcr.eventId
         WHERE tcr.characterId = :characterId AND te.novelId = :novelId
             AND te.year BETWEEN :startYear AND :endYear
-        ORDER BY te.year ASC
+        ORDER BY te.year ASC, te.month ASC, te.day ASC, te.displayOrder ASC
     """)
     fun getEventsForCharacterAndNovelInRange(
         characterId: Long, novelId: Long, startYear: Int, endYear: Int

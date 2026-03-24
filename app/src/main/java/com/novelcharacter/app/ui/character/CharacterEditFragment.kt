@@ -303,13 +303,32 @@ class CharacterEditFragment : Fragment() {
                         val optionWithBlank = mutableListOf(getString(R.string.no_selection))
                         optionWithBlank.addAll(options)
                         val idx = optionWithBlank.indexOf(savedValue)
-                        if (idx >= 0) widget.setSelection(idx)
+                        if (idx >= 0) {
+                            widget.setSelection(idx)
+                        } else if (savedValue.isNotBlank()) {
+                            // 고아 값: 현재 옵션에 없지만 저장된 값을 스피너에 추가하여 보존
+                            optionWithBlank.add(savedValue)
+                            val ctx = context ?: continue
+                            widget.adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item, optionWithBlank).also {
+                                it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+                            }
+                            widget.setSelection(optionWithBlank.size - 1)
+                        }
                     } else if (fieldType == FieldType.GRADE) {
                         val grades = parseGradeOptions(field.config)
                         val gradeWithBlank = mutableListOf(getString(R.string.no_grade_selected))
                         gradeWithBlank.addAll(grades)
                         val idx = gradeWithBlank.indexOf(savedValue)
-                        if (idx >= 0) widget.setSelection(idx)
+                        if (idx >= 0) {
+                            widget.setSelection(idx)
+                        } else if (savedValue.isNotBlank()) {
+                            gradeWithBlank.add(savedValue)
+                            val ctx = context ?: continue
+                            widget.adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item, gradeWithBlank).also {
+                                it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+                            }
+                            widget.setSelection(gradeWithBlank.size - 1)
+                        }
                     }
                 }
             }
