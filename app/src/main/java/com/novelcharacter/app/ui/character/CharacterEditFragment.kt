@@ -1085,7 +1085,7 @@ class CharacterEditFragment : Fragment() {
             fieldValues = tempFieldValues
         )
         if (conflict != null && isAdded && view != null) {
-            showAgeLinkageConflictDialog(conflict, character, isUpdate, targetCharacterId)
+            showAgeLinkageConflictDialog(conflict, character, isUpdate, targetCharacterId, tempFieldValues)
             return
         }
 
@@ -1132,7 +1132,8 @@ class CharacterEditFragment : Fragment() {
         conflict: CharacterViewModel.AgeLinkageConflict,
         character: Character,
         isUpdate: Boolean,
-        targetCharacterId: Long
+        targetCharacterId: Long,
+        originalFieldValues: List<CharacterFieldValue>
     ) {
         val options = arrayOf(
             getString(R.string.age_linkage_option_adjust_birth,
@@ -1157,9 +1158,7 @@ class CharacterEditFragment : Fragment() {
             .setPositiveButton(R.string.apply) { _, _ ->
                 viewLifecycleOwner.lifecycleScope.launch {
                     try {
-                        val fieldValues = collectFieldValues(
-                            if (isUpdate) targetCharacterId else -1L
-                        ).toMutableList()
+                        val fieldValues = originalFieldValues.toMutableList()
 
                         when (selected) {
                             0 -> {
@@ -1372,37 +1371,141 @@ class CharacterEditFragment : Fragment() {
         binding.btnSaveAndNext.isEnabled = false
         viewLifecycleOwner.lifecycleScope.launch {
             try {
-                val savedCharId: Long
-                if (characterId != -1L) {
-                    val fieldValues = collectFieldValues(characterId)
-                    viewModel.updateCharacterWithFields(character, fieldValues)
-                    savedCharId = characterId
-                } else {
-                    val newId = viewModel.insertCharacterSuspend(character)
-                    val fieldValues = collectFieldValues(newId)
-                    viewModel.saveAllFieldValues(newId, fieldValues)
-                    savedCharId = newId
+                val isUpdate = characterId != -1L
+                val tempCharId = if (isUpdate) characterId else -1L
+                val tempFieldValues = collectFieldValues(tempCharId)
+
+                // 나이-출생연도 불일치 감지
+                val conflict = viewModel.detectAgeLinkageConflict(
+                    novelId = character.novelId,
+                    characterId = tempCharId,
+                    fieldValues = tempFieldValues
+                )
+                if (conflict != null && isAdded && view != null) {
+                    showSupplementAgeLinkageConflictDialog(conflict, character, isUpdate, tempFieldValues)
+                    return@launch
                 }
 
-                val tagText = binding.editTags.text.toString()
-                val tagList = tagText.split(",").map { it.trim() }.filter { it.isNotBlank() }
-                viewModel.replaceAllTagsSuspend(savedCharId, tagList.map { CharacterTag(characterId = savedCharId, tag = it) })
-
-                if (isAdded && view != null) {
-                    Toast.makeText(requireContext(), R.string.saved_successfully, Toast.LENGTH_SHORT).show()
-                    navigateToNextSupplement()
-                }
+                executeSupplementSave(character, isUpdate, tempFieldValues)
             } catch (e: Exception) {
                 if (isAdded && _binding != null) {
                     Toast.makeText(requireContext(), R.string.save_failed, Toast.LENGTH_SHORT).show()
                 }
-            } finally {
-                isSaving = false
-                if (_binding != null) {
-                    binding.btnSaveAndNext.isEnabled = true
-                }
+                resetSupplementSavingState()
             }
         }
+    }
+
+    private suspend fun executeSupplementSave(
+        character: Character,
+        isUpdate: Boolean,
+        resolvedFieldValues: List<CharacterFieldValue>
+    ) {
+        val savedCharId: Long
+        if (isUpdate && characterId != -1L) {
+            val fieldValues = resolvedFieldValues.map { it.copy(characterId = characterId) }
+            viewModel.updateCharacterWithFields(character, fieldValues)
+            savedCharId = characterId
+        } else {
+            val newId = viewModel.insertCharacterSuspend(character)
+            val fieldValues = resolvedFieldValues.map { it.copy(characterId = newId) }
+            viewModel.saveAllFieldValues(newId, fieldValues)
+            savedCharId = newId
+        }
+
+        val tagText = binding.editTags.text.toString()
+        val tagList = tagText.split(",").map { it.trim() }.filter { it.isNotBlank() }
+        viewModel.replaceAllTagsSuspend(savedCharId, tagList.map { CharacterTag(characterId = savedCharId, tag = it) })
+
+        resetSupplementSavingState()
+        if (isAdded && view != null) {
+            Toast.makeText(requireContext(), R.string.saved_successfully, Toast.LENGTH_SHORT).show()
+            navigateToNextSupplement()
+        }
+    }
+
+    private fun resetSupplementSavingState() {
+        isSaving = false
+        if (_binding != null) {
+            binding.btnSaveAndNext.isEnabled = true
+        }
+    }
+
+    private fun showSupplementAgeLinkageConflictDialog(
+        conflict: CharacterViewModel.AgeLinkageConflict,
+        character: Character,
+        isUpdate: Boolean,
+        originalFieldValues: List<CharacterFieldValue>
+    ) {
+        val options = arrayOf(
+            getString(R.string.age_linkage_option_adjust_birth,
+                conflict.suggestedBirthYear, conflict.inputAge),
+            getString(R.string.age_linkage_option_adjust_age,
+                conflict.expectedAge, conflict.inputBirthYear),
+            if (conflict.affectedCharacterCount > 0)
+                getString(R.string.age_linkage_option_adjust_std_year_with_warn,
+                    conflict.suggestedStdYear, conflict.inputAge, conflict.inputBirthYear,
+                    conflict.affectedCharacterCount)
+            else
+                getString(R.string.age_linkage_option_adjust_std_year,
+                    conflict.suggestedStdYear, conflict.inputAge, conflict.inputBirthYear)
+        )
+
+        var selected = 0
+        AlertDialog.Builder(requireContext())
+            .setTitle(R.string.age_linkage_conflict_title)
+            .setMessage(getString(R.string.age_linkage_conflict_message,
+                conflict.currentStdYear, conflict.inputAge, conflict.inputBirthYear, conflict.expectedAge))
+            .setSingleChoiceItems(options, 0) { _, which -> selected = which }
+            .setPositiveButton(R.string.apply) { _, _ ->
+                viewLifecycleOwner.lifecycleScope.launch {
+                    try {
+                        val fieldValues = originalFieldValues.toMutableList()
+
+                        when (selected) {
+                            0 -> {
+                                val idx = fieldValues.indexOfFirst { it.fieldDefinitionId == conflict.birthYearFieldId }
+                                val newVal = CharacterFieldValue(
+                                    characterId = 0,
+                                    fieldDefinitionId = conflict.birthYearFieldId,
+                                    value = conflict.suggestedBirthYear.toString()
+                                )
+                                if (idx >= 0) fieldValues[idx] = newVal else fieldValues.add(newVal)
+                            }
+                            1 -> {
+                                val idx = fieldValues.indexOfFirst { it.fieldDefinitionId == conflict.ageFieldId }
+                                val newVal = CharacterFieldValue(
+                                    characterId = 0,
+                                    fieldDefinitionId = conflict.ageFieldId,
+                                    value = conflict.expectedAge.toString()
+                                )
+                                if (idx >= 0) fieldValues[idx] = newVal else fieldValues.add(newVal)
+                            }
+                            2 -> {
+                                viewModel.applyStandardYearChange(
+                                    conflict.novelId,
+                                    conflict.currentStdYear,
+                                    conflict.suggestedStdYear
+                                )
+                            }
+                        }
+
+                        executeSupplementSave(character, isUpdate, fieldValues)
+                    } catch (e: Exception) {
+                        if (isAdded && _binding != null) {
+                            Toast.makeText(requireContext(), R.string.save_failed, Toast.LENGTH_SHORT).show()
+                        }
+                        resetSupplementSavingState()
+                    }
+                }
+            }
+            .setNegativeButton(R.string.cancel) { _, _ ->
+                resetSupplementSavingState()
+            }
+            .setOnCancelListener {
+                resetSupplementSavingState()
+            }
+            .show()
     }
 
     private fun navigateToNextSupplement() {
