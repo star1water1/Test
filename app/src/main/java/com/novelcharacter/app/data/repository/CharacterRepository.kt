@@ -301,8 +301,11 @@ class CharacterRepository(
 
     suspend fun batchRemoveTags(ids: List<Long>, tags: List<String>) {
         if (tags.isEmpty()) return
+        // deleteTagsFromCharacters는 이중 IN 절(characterIds + tags) 사용
+        // SQLite 변수 제한(API 31 미만: 999)을 초과하지 않도록 chunk 크기 조정
+        val adjustedChunk = (CHUNK_SIZE - tags.size).coerceAtLeast(1)
         db.withTransaction {
-            for (chunk in ids.chunked(CHUNK_SIZE)) {
+            for (chunk in ids.chunked(adjustedChunk)) {
                 characterTagDao.deleteTagsFromCharacters(chunk, tags)
             }
         }
