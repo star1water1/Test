@@ -1085,9 +1085,7 @@ class CharacterEditFragment : Fragment() {
             fieldValues = tempFieldValues
         )
         if (conflict != null && isAdded && view != null) {
-            withContext(Dispatchers.Main) {
-                showAgeLinkageConflictDialog(conflict, character, isUpdate, targetCharacterId)
-            }
+            showAgeLinkageConflictDialog(conflict, character, isUpdate, targetCharacterId)
             return
         }
 
