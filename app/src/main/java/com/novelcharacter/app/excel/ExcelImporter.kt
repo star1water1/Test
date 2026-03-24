@@ -649,7 +649,7 @@ class ExcelImporter(context: Context) {
                 container.addView(messageView)
 
                 // 충돌별 RadioGroup 매핑
-                data class ConflictUI(val conflict: CharacterConflict, val radioGroup: RadioGroup, val updateRadios: Map<Int, Long>)
+                data class ConflictUI(val conflict: CharacterConflict, val radioGroup: RadioGroup, val skipRadioId: Int, val updateRadios: Map<Int, Long>)
                 val conflictUIs = mutableListOf<ConflictUI>()
 
                 for (conflict in conflicts) {
@@ -719,7 +719,7 @@ class ExcelImporter(context: Context) {
                     }
 
                     container.addView(radioGroup)
-                    conflictUIs.add(ConflictUI(conflict, radioGroup, updateRadios))
+                    conflictUIs.add(ConflictUI(conflict, radioGroup, skipRadio.id, updateRadios))
                 }
 
                 AlertDialog.Builder(act)
@@ -734,7 +734,7 @@ class ExcelImporter(context: Context) {
                             val selectedExistingId = ui.updateRadios[checkedId]
                             val resolution = when {
                                 selectedExistingId != null -> ConflictResolution.UPDATE_EXISTING
-                                checkedId == ui.radioGroup.getChildAt(0).id -> ConflictResolution.SKIP
+                                checkedId == ui.skipRadioId -> ConflictResolution.SKIP
                                 else -> ConflictResolution.CREATE_NEW
                             }
                             resultMap[key] = ui.conflict.copy(

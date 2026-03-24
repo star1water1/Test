@@ -14,6 +14,7 @@ import androidx.fragment.app.DialogFragment
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.util.GsonTypes
@@ -46,20 +47,42 @@ class DuplicateCharacterDialog : DialogFragment() {
 
     companion object {
         private const val ARG_IS_EDIT_MODE = "is_edit_mode"
+        private const val ARG_CANDIDATES_JSON = "candidates_json"
+        private const val STATE_SELECTED_POSITION = "selected_position"
+
+        private val CANDIDATE_LIST_TYPE = object : TypeToken<List<DuplicateCandidate>>() {}.type
 
         fun newInstance(candidates: List<DuplicateCandidate>, isEditMode: Boolean): DuplicateCharacterDialog {
             return DuplicateCharacterDialog().apply {
-                this.candidates = candidates
                 arguments = Bundle().apply {
                     putBoolean(ARG_IS_EDIT_MODE, isEditMode)
+                    putString(ARG_CANDIDATES_JSON, Gson().toJson(candidates))
                 }
             }
         }
     }
 
-    override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        // arguments에서 candidates 복원 (회전 시에도 안전)
+        arguments?.getString(ARG_CANDIDATES_JSON)?.let { json ->
+            candidates = try {
+                Gson().fromJson(json, CANDIDATE_LIST_TYPE) ?: emptyList()
+            } catch (e: Exception) { emptyList() }
+        }
         isEditMode = arguments?.getBoolean(ARG_IS_EDIT_MODE, false) ?: false
+        // savedInstanceState에서 선택 상태 복원
+        savedInstanceState?.let {
+            selectedPosition = it.getInt(STATE_SELECTED_POSITION, -1)
+        }
+    }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putInt(STATE_SELECTED_POSITION, selectedPosition)
+    }
+
+    override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         val inflater = LayoutInflater.from(requireContext())
         val view = inflater.inflate(R.layout.dialog_duplicate_character, null)
 
@@ -78,9 +101,15 @@ class DuplicateCharacterDialog : DialogFragment() {
         rvCandidates.layoutManager = LinearLayoutManager(requireContext())
         rvCandidates.adapter = adapter
 
-        if (candidates.size == 1) {
-            selectedPosition = 0
-            adapter.setSelected(0)
+        // 후보가 1개이거나 이전 선택이 있으면 자동 선택
+        val initialSelection = when {
+            selectedPosition >= 0 && selectedPosition < candidates.size -> selectedPosition
+            candidates.size == 1 -> 0
+            else -> -1
+        }
+        if (initialSelection >= 0) {
+            selectedPosition = initialSelection
+            adapter.setSelected(initialSelection)
         }
 
         val builder = AlertDialog.Builder(requireContext())

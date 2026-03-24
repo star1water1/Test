@@ -988,10 +988,7 @@ class CharacterEditFragment : Fragment() {
                         }
 
                         val isEdit = characterId != -1L
-                        // 다이얼로그 표시 (메인 스레드에서)
-                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                            showDuplicateDialog(candidates, isEdit, character)
-                        }
+                        showDuplicateDialog(candidates, isEdit, character)
                     } else {
                         performSave(character, isUpdate = characterId != -1L, targetCharacterId = characterId)
                     }

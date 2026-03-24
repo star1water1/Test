@@ -492,7 +492,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             if (!isValidHeader(headerRow, "이름")) continue
             val result = analyzeCharacterSheet(sheet, headerRow, universe.name)
             inBackup += result.first; newCount += result.second; updateCount += result.third
-            unchangedCount += (result.first - result.second - result.third)
+            unchangedCount += (result.first - result.second - result.third - result.fifth)
             allConflicts.addAll(result.fourth)
         }
 
@@ -503,7 +503,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             if (headerRow != null && isValidHeader(headerRow, "이름")) {
                 val result = analyzeCharacterSheet(unclSheet, headerRow, UNCLASSIFIED_SHEET_NAME)
                 inBackup += result.first; newCount += result.second; updateCount += result.third
-                unchangedCount += (result.first - result.second - result.third)
+                unchangedCount += (result.first - result.second - result.third - result.fifth)
                 allConflicts.addAll(result.fourth)
             }
         }
@@ -513,8 +513,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         return CharacterAnalysisResult(category, allConflicts)
     }
 
-    /** @return Quad(inBackup, newCount, updateCount, conflicts) */
-    private data class SheetAnalysis(val first: Int, val second: Int, val third: Int, val fourth: List<CharacterConflict>)
+    /** first=inBackup, second=newCount, third=updateCount, fourth=conflicts, fifth=conflictCount */
+    private data class SheetAnalysis(val first: Int, val second: Int, val third: Int, val fourth: List<CharacterConflict>, val fifth: Int = 0)
 
     private suspend fun analyzeCharacterSheet(sheet: Sheet, headerRow: Row, sheetLabel: String): SheetAnalysis {
         val cols = resolveHeaderColumns(headerRow)
@@ -524,7 +524,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val anotherNameColIndex = cols["이명"] ?: -1
         val novelColIndex = cols["작품"] ?: -1
 
-        var inBackup = 0; var newCount = 0; var updateCount = 0
+        var inBackup = 0; var newCount = 0; var updateCount = 0; var conflictCount = 0
         val conflicts = mutableListOf<CharacterConflict>()
 
         for (i in 1..sheet.lastRowNum) {
@@ -562,12 +562,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         excelNovelTitle = novelTitle?.ifBlank { null },
                         existingCharacters = allMatches
                     ))
-                    // 충돌은 사용자 결정 전까지 분류 미정이므로 newCount에 임시 포함
-                    newCount++
+                    // 충돌 행은 사용자 결정 전까지 분류 미정 — 별도 카운트
+                    conflictCount++
                 }
             }
         }
-        return SheetAnalysis(inBackup, newCount, updateCount, conflicts)
+        return SheetAnalysis(inBackup, newCount, updateCount, conflicts, conflictCount)
     }
 
     private suspend fun analyzeTimeline(workbook: Workbook, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
