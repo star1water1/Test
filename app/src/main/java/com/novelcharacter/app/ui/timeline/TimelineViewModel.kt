@@ -331,7 +331,8 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
                     existing.copy(
                         year = event.year,
                         month = event.month,
-                        day = event.day
+                        day = event.day,
+                        newValue = event.year.toString()
                     ).also { characterRepository.updateStateChange(it) }
                 } else {
                     CharacterStateChange(

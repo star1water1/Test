@@ -650,24 +650,28 @@ class CharacterEditFragment : Fragment() {
     }
 
     private fun parseGradeOptions(configJson: String): List<String> {
-        val baseGrades = listOf("C", "B", "A", "S")
+        val defaultGrades = listOf("C", "B", "A", "S")
         return try {
             val configMap: Map<String, Any> = gson.fromJson(
                 configJson, com.novelcharacter.app.util.GsonTypes.STRING_ANY_MAP
             )
+            @Suppress("UNCHECKED_CAST")
+            val gradesMap = configMap["grades"] as? Map<String, Any>
+            val gradeKeys = if (gradesMap != null) {
+                gradesMap.entries
+                    .sortedBy { (it.value as? Number)?.toDouble() ?: 0.0 }
+                    .map { it.key }
+            } else {
+                defaultGrades
+            }
             val allowNegative = configMap["allowNegative"] as? Boolean ?: false
             if (allowNegative) {
-                val result = mutableListOf<String>()
-                for (grade in baseGrades) {
-                    result.add("-$grade")
-                    result.add(grade)
-                }
-                result
+                gradeKeys.flatMap { listOf("-$it", it) }
             } else {
-                baseGrades
+                gradeKeys
             }
         } catch (e: Exception) {
-            baseGrades
+            defaultGrades
         }
     }
 
