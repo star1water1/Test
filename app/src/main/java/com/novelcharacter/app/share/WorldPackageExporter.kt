@@ -63,6 +63,11 @@ class WorldPackageExporter(private val context: Context) {
         val crossRefs = db.timelineDao().getAllCrossRefs()
             .filter { cr -> events.any { it.id == cr.eventId } }
         val nameBank = db.nameBankDao().getAllNamesList()
+        val factions = db.factionDao().getAllFactionsList()
+            .filter { it.universeId == config.universeId }
+        val factionIds = factions.map { it.id }.toSet()
+        val factionMemberships = db.factionMembershipDao().getAllMembershipsList()
+            .filter { it.factionId in factionIds }
 
         // Create ZIP
         val fileName = "${universe.name.replace(Regex("[^\\w가-힣]"), "_")}.ncworld"
@@ -88,6 +93,8 @@ class WorldPackageExporter(private val context: Context) {
                 writeJsonEntry(zip, "timeline_events.json", events)
                 writeJsonEntry(zip, "timeline_cross_refs.json", crossRefs)
                 writeJsonEntry(zip, "name_bank.json", nameBank)
+                writeJsonEntry(zip, "factions.json", factions)
+                writeJsonEntry(zip, "faction_memberships.json", factionMemberships)
 
                 // Images
                 if (config.includeImages) {

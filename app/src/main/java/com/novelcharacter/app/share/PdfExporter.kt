@@ -143,9 +143,38 @@ class PdfExporter(private val context: Context) {
                     }
 
                     // Field values (ordered by field displayOrder)
+                    // CALCULATED 필드는 DB에 저장되지 않으므로 FormulaEvaluator로 실시간 계산
                     val charValueMap = (fieldValuesByChar[char.id] ?: emptyList()).associateBy { it.fieldDefinitionId }
+                    val calculatedResults = run {
+                        val calcFields = fieldDefs.filter { it.type == "CALCULATED" }
+                        if (calcFields.isEmpty()) emptyMap()
+                        else {
+                            val keyValues = mutableMapOf<String, String>()
+                            for (fd in fieldDefs) {
+                                val v = charValueMap[fd.id]?.value ?: ""
+                                if (v.isNotBlank()) keyValues[fd.key] = v
+                            }
+                            val evaluator = com.novelcharacter.app.util.FormulaEvaluator(keyValues, fieldDefs)
+                            calcFields.mapNotNull { fd ->
+                                val formula = try {
+                                    org.json.JSONObject(fd.config).optString("formula", "")
+                                } catch (_: Exception) { "" }
+                                if (formula.isBlank()) return@mapNotNull null
+                                try {
+                                    val value = evaluator.evaluate(formula)
+                                    if (value.isNaN() || value.isInfinite()) return@mapNotNull null
+                                    val formatted = if (value == value.toLong().toDouble()) value.toLong().toString() else "%.2f".format(value)
+                                    fd.id to formatted
+                                } catch (_: Exception) { null }
+                            }.toMap()
+                        }
+                    }
                     val orderedFieldValues = fieldDefs.mapNotNull { fd ->
-                        charValueMap[fd.id]?.let { fv -> fd to fv }
+                        if (fd.type == "CALCULATED") {
+                            calculatedResults[fd.id]?.let { v -> fd to CharacterFieldValue(characterId = char.id, fieldDefinitionId = fd.id, value = v) }
+                        } else {
+                            charValueMap[fd.id]?.let { fv -> fd to fv }
+                        }
                     }.filter { it.second.value.isNotBlank() }
                     if (orderedFieldValues.isNotEmpty()) {
                         append("<table>")

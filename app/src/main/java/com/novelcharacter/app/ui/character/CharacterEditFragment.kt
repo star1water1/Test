@@ -654,6 +654,40 @@ class CharacterEditFragment : Fragment() {
                 }
             }
         }
+
+        // 동적 필드에 변경 추적 리스너 추가
+        attachDynamicFieldChangeTracking()
+    }
+
+    private fun attachDynamicFieldChangeTracking() {
+        val watcher = object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                hasUnsavedChanges = true
+                updateSaveButtonState()
+            }
+            override fun afterTextChanged(s: android.text.Editable?) {}
+        }
+        for ((_, widget) in fieldInputMap) {
+            when (widget) {
+                is TextInputEditText -> widget.addTextChangedListener(watcher)
+                is MaterialAutoCompleteTextView -> widget.addTextChangedListener(watcher)
+                is Spinner -> widget.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                    private var initialized = false
+                    override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                        if (initialized) { hasUnsavedChanges = true; updateSaveButtonState() }
+                        initialized = true
+                    }
+                    override fun onNothingSelected(parent: AdapterView<*>?) {}
+                }
+                is LinearLayout -> {
+                    for (i in 0 until widget.childCount) {
+                        val partLayout = widget.getChildAt(i) as? TextInputLayout
+                        partLayout?.editText?.addTextChangedListener(watcher)
+                    }
+                }
+            }
+        }
     }
 
     private fun parseSelectOptions(configJson: String): List<String> {
