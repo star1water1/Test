@@ -159,6 +159,20 @@ class BatchEditViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun clearFieldValue(fieldDefId: Long) = launchBatchOp("clearFieldValue") { ids ->
         characterRepository.batchClearFieldValue(ids, fieldDefId)
+
+        // 시맨틱 필드 동기화 (출생연도/사망연도 등 초기화 시 나이 등 재계산)
+        val fieldDef = app.database.fieldDefinitionDao().getFieldById(fieldDefId)
+        if (fieldDef != null && SemanticRole.fromConfig(fieldDef.config) != null) {
+            for (charId in ids) {
+                try {
+                    val universeId = getUniverseIdForCharacter(charId) ?: continue
+                    val allValues = characterRepository.getValuesByCharacterList(charId)
+                    semanticSyncHelper.syncFieldToStateChange(charId, universeId, allValues)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to sync semantic field for character $charId after clear", e)
+                }
+            }
+        }
         ids.size
     }
 
