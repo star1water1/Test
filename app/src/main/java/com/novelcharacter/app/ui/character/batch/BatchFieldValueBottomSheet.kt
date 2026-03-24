@@ -11,6 +11,7 @@ import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.google.gson.Gson
+import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.Universe
@@ -59,7 +60,7 @@ class BatchFieldValueBottomSheet : BottomSheetDialogFragment() {
             }
 
             // 세계관 로드
-            val app = batchViewModel.getApplication<com.novelcharacter.app.NovelCharacterApp>()
+            val app = batchViewModel.getApplication<NovelCharacterApp>()
             universes = universeIds.mapNotNull { app.universeRepository.getUniverseById(it) }
             if (_binding == null) return@launch
 

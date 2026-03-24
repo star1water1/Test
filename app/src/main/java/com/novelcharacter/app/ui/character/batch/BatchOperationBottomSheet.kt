@@ -29,34 +29,32 @@ class BatchOperationBottomSheet : BottomSheetDialogFragment() {
         val count = arguments?.getInt(ARG_COUNT) ?: 0
         binding.selectedCountLabel.text = getString(R.string.batch_selected_count, count)
 
+        // dismiss() 후 parentFragmentManager 접근 시 detach 위험 방지: 참조를 미리 캡처
+        val fm = parentFragmentManager
+
         binding.opChangeNovel.setOnClickListener {
             dismiss()
-            BatchNovelChangeBottomSheet.newInstance()
-                .show(parentFragmentManager, BatchNovelChangeBottomSheet.TAG)
+            BatchNovelChangeBottomSheet.newInstance().show(fm, BatchNovelChangeBottomSheet.TAG)
         }
 
         binding.opAddTags.setOnClickListener {
             dismiss()
-            BatchTagBottomSheet.newInstance(isRemoveMode = false)
-                .show(parentFragmentManager, BatchTagBottomSheet.TAG)
+            BatchTagBottomSheet.newInstance(isRemoveMode = false).show(fm, BatchTagBottomSheet.TAG)
         }
 
         binding.opRemoveTags.setOnClickListener {
             dismiss()
-            BatchTagBottomSheet.newInstance(isRemoveMode = true)
-                .show(parentFragmentManager, BatchTagBottomSheet.TAG)
+            BatchTagBottomSheet.newInstance(isRemoveMode = true).show(fm, BatchTagBottomSheet.TAG)
         }
 
         binding.opSetField.setOnClickListener {
             dismiss()
-            BatchFieldValueBottomSheet.newInstance(isClearMode = false)
-                .show(parentFragmentManager, BatchFieldValueBottomSheet.TAG)
+            BatchFieldValueBottomSheet.newInstance(isClearMode = false).show(fm, BatchFieldValueBottomSheet.TAG)
         }
 
         binding.opClearField.setOnClickListener {
             dismiss()
-            BatchFieldValueBottomSheet.newInstance(isClearMode = true)
-                .show(parentFragmentManager, BatchFieldValueBottomSheet.TAG)
+            BatchFieldValueBottomSheet.newInstance(isClearMode = true).show(fm, BatchFieldValueBottomSheet.TAG)
         }
 
         binding.opPin.setOnClickListener {
@@ -71,8 +69,7 @@ class BatchOperationBottomSheet : BottomSheetDialogFragment() {
 
         binding.opAppendMemo.setOnClickListener {
             dismiss()
-            BatchMemoBottomSheet.newInstance()
-                .show(parentFragmentManager, BatchMemoBottomSheet.TAG)
+            BatchMemoBottomSheet.newInstance().show(fm, BatchMemoBottomSheet.TAG)
         }
 
         binding.opDelete.setOnClickListener {
