@@ -74,6 +74,8 @@ class NameBankFragment : Fragment() {
     }
 
     private fun setupFilter() {
+        // 저장된 필터 상태 복원
+        binding.chipAvailableOnly.isChecked = viewModel.isShowOnlyAvailable()
         binding.chipAvailableOnly.setOnCheckedChangeListener { _, isChecked ->
             viewModel.setShowOnlyAvailable(isChecked)
         }

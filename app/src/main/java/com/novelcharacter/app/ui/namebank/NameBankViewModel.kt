@@ -1,6 +1,7 @@
 package com.novelcharacter.app.ui.namebank
 
 import android.app.Application
+import android.content.Context
 import androidx.lifecycle.*
 import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.data.model.NameBankEntry
@@ -10,9 +11,10 @@ import kotlinx.coroutines.launch
 class NameBankViewModel(application: Application) : AndroidViewModel(application) {
 
     private val nameBankRepository = (application as NovelCharacterApp).nameBankRepository
+    private val prefs = application.getSharedPreferences("namebank_ui_state", Context.MODE_PRIVATE)
 
     private val _searchQuery = MutableLiveData("")
-    private val _showOnlyAvailable = MutableLiveData(false)
+    private val _showOnlyAvailable = MutableLiveData(prefs.getBoolean("show_only_available", false))
 
     val displayedNames: LiveData<List<NameBankEntry>> = MediatorLiveData<List<NameBankEntry>>().apply {
         val allNames = nameBankRepository.allNameBankEntries
@@ -49,6 +51,7 @@ class NameBankViewModel(application: Application) : AndroidViewModel(application
 
     fun setShowOnlyAvailable(onlyAvailable: Boolean) {
         _showOnlyAvailable.value = onlyAvailable
+        prefs.edit().putBoolean("show_only_available", onlyAvailable).apply()
     }
 
     fun isShowOnlyAvailable(): Boolean = _showOnlyAvailable.value ?: false

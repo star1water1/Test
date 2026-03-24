@@ -1,6 +1,7 @@
 package com.novelcharacter.app.ui.supplement
 
 import android.app.Application
+import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
@@ -18,6 +19,7 @@ class SupplementViewModel(application: Application) : AndroidViewModel(applicati
 
     private val app = application as NovelCharacterApp
     private val db = app.database
+    private val prefs = application.getSharedPreferences("supplement_ui_state", Context.MODE_PRIVATE)
 
     // UI 상태
     private val _isLoading = MutableLiveData(true)
@@ -35,14 +37,16 @@ class SupplementViewModel(application: Application) : AndroidViewModel(applicati
     private val _novelList = MutableLiveData<List<Novel>>(emptyList())
     val novelList: LiveData<List<Novel>> = _novelList
 
-    // 필터 상태
-    var selectedUniverseId: Long? = null
+    // 필터 상태 (SharedPreferences에서 복원)
+    var selectedUniverseId: Long? = if (prefs.contains("universe_id")) prefs.getLong("universe_id", -1L) else null
         private set
-    var selectedNovelId: Long? = null
+    var selectedNovelId: Long? = if (prefs.contains("novel_id")) prefs.getLong("novel_id", -1L) else null
         private set
     var issueFilter: SupplementIssue? = null
         private set
-    var sortMode: SortMode = SortMode.ISSUES_DESC
+    var sortMode: SortMode = try {
+        SortMode.valueOf(prefs.getString("sort_mode", null) ?: SortMode.ISSUES_DESC.name)
+    } catch (_: Exception) { SortMode.ISSUES_DESC }
         private set
 
     // 전체 데이터 (필터 전)
@@ -184,11 +188,17 @@ class SupplementViewModel(application: Application) : AndroidViewModel(applicati
 
     fun setUniverseFilter(universeId: Long?) {
         selectedUniverseId = universeId
+        prefs.edit().apply {
+            if (universeId != null) putLong("universe_id", universeId) else remove("universe_id")
+        }.apply()
         applyFilters()
     }
 
     fun setNovelFilter(novelId: Long?) {
         selectedNovelId = novelId
+        prefs.edit().apply {
+            if (novelId != null) putLong("novel_id", novelId) else remove("novel_id")
+        }.apply()
         applyFilters()
     }
 
@@ -199,6 +209,7 @@ class SupplementViewModel(application: Application) : AndroidViewModel(applicati
 
     fun setSortMode(mode: SortMode) {
         sortMode = mode
+        prefs.edit().putString("sort_mode", mode.name).apply()
         applyFilters()
     }
 

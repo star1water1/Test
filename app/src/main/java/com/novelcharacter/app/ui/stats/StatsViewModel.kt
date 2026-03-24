@@ -21,8 +21,11 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
 
     @Volatile private var cachedSnapshot: StatsSnapshot? = null
 
-    // 작품 필터
-    private val _selectedNovelId = MutableLiveData<Long?>(null)
+    // 작품 필터 (SharedPreferences에서 복원)
+    private val statsPrefs = application.getSharedPreferences("stats_prefs", 0)
+    private val _selectedNovelId = MutableLiveData<Long?>(
+        if (statsPrefs.contains("selected_novel_id")) statsPrefs.getLong("selected_novel_id", -1L) else null
+    )
     val selectedNovelId: LiveData<Long?> = _selectedNovelId
 
     private val _novelList = MutableLiveData<List<Pair<Long, String>>>()
@@ -95,6 +98,9 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setNovelFilter(novelId: Long?) {
         _selectedNovelId.value = novelId
+        statsPrefs.edit().apply {
+            if (novelId != null) putLong("selected_novel_id", novelId) else remove("selected_novel_id")
+        }.apply()
         refreshStats()
     }
 
@@ -348,8 +354,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
 
     /** SharedPreferences에서 사용자가 활성화한 패턴 유형 목록을 읽는다. */
     private fun getEnabledPatternTypes(): Set<PatternType> {
-        val prefs = getApplication<Application>().getSharedPreferences("stats_prefs", 0)
-        val stored = prefs.getStringSet("pattern_insights_enabled_types", null)
+        val stored = statsPrefs.getStringSet("pattern_insights_enabled_types", null)
             ?: return PatternType.values().toSet() // 기본값: 전체 활성
         return stored.mapNotNull { name ->
             try { PatternType.valueOf(name) } catch (_: Exception) { null }
@@ -358,8 +363,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
 
     /** 사용자가 선택한 패턴 유형을 저장한다. */
     fun saveEnabledPatternTypes(enabledTypes: Set<PatternType>) {
-        val prefs = getApplication<Application>().getSharedPreferences("stats_prefs", 0)
-        prefs.edit().putStringSet("pattern_insights_enabled_types",
+        statsPrefs.edit().putStringSet("pattern_insights_enabled_types",
             enabledTypes.map { it.name }.toSet()).apply()
     }
 

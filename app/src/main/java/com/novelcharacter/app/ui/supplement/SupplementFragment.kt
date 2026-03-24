@@ -184,8 +184,22 @@ class SupplementFragment : Fragment() {
 
         suppressSpinnerEvents = true
         binding.spinnerUniverse.adapter = spinnerAdapter
-        binding.spinnerUniverse.setSelection(0)
+
+        // 저장된 세계관 필터 복원
+        val savedUniverseId = viewModel.selectedUniverseId
+        val restoredPos = if (savedUniverseId != null) {
+            val idx = univs.indexOfFirst { it.id == savedUniverseId }
+            if (idx >= 0) idx + 1 else 0
+        } else 0
+        binding.spinnerUniverse.setSelection(restoredPos)
         suppressSpinnerEvents = false
+
+        // 복원된 세계관에 맞춰 작품 스피너도 갱신
+        if (restoredPos > 0) {
+            val restoredUniverse = univs[restoredPos - 1]
+            filteredNovels = viewModel.getNovelsForUniverse(restoredUniverse.id)
+            setupNovelSpinner(filteredNovels)
+        }
 
         binding.spinnerUniverse.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
@@ -214,7 +228,14 @@ class SupplementFragment : Fragment() {
 
         suppressSpinnerEvents = true
         binding.spinnerNovel.adapter = spinnerAdapter
-        binding.spinnerNovel.setSelection(0)
+
+        // 저장된 작품 필터 복원
+        val savedNovelId = viewModel.selectedNovelId
+        val restoredNovelPos = if (savedNovelId != null) {
+            val idx = novels.indexOfFirst { it.id == savedNovelId }
+            if (idx >= 0) idx + 1 else 0
+        } else 0
+        binding.spinnerNovel.setSelection(restoredNovelPos)
         suppressSpinnerEvents = false
 
         binding.spinnerNovel.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {

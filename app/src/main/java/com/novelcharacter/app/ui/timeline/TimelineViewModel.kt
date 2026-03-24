@@ -1,6 +1,7 @@
 package com.novelcharacter.app.ui.timeline
 
 import android.app.Application
+import android.content.Context
 import androidx.lifecycle.*
 import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.R
@@ -20,6 +21,7 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
     private val timelineRepository = app.timelineRepository
     private val novelRepository = app.novelRepository
     private val characterRepository = app.characterRepository
+    private val prefs = application.getSharedPreferences("timeline_ui_state", Context.MODE_PRIVATE)
 
     private val _error = MutableLiveData<String?>()
     val error: LiveData<String?> = _error
@@ -42,19 +44,23 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
     }
 
     // ===== Zoom Level Management =====
-    private val _zoomLevel = MutableLiveData(4)
+    private val _zoomLevel = MutableLiveData(prefs.getInt("zoom_level", 4))
     val zoomLevel: LiveData<Int> = _zoomLevel
 
-    private val _centerYear = MutableLiveData(0)
+    private val _centerYear = MutableLiveData(prefs.getInt("center_year", 0))
     val centerYear: LiveData<Int> = _centerYear
 
     private val _selectedYear = MutableLiveData<Int?>(null)
     val selectedYear: LiveData<Int?> = _selectedYear
 
     // ===== Timeline Filters =====
-    private val _filterNovelId = MutableLiveData<Long?>(null)
+    private val _filterNovelId = MutableLiveData<Long?>(
+        if (prefs.contains("filter_novel_id")) prefs.getLong("filter_novel_id", -1L) else null
+    )
     val filterNovelId: LiveData<Long?> = _filterNovelId
-    private val _filterCharacterId = MutableLiveData<Long?>(null)
+    private val _filterCharacterId = MutableLiveData<Long?>(
+        if (prefs.contains("filter_character_id")) prefs.getLong("filter_character_id", -1L) else null
+    )
     val filterCharacterId: LiveData<Long?> = _filterCharacterId
 
     // 소설 필터에 연동된 캐릭터 목록
@@ -76,19 +82,28 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
 
     fun setFilterNovel(novelId: Long?) {
         _filterNovelId.value = novelId
+        prefs.edit().apply {
+            if (novelId != null) putLong("filter_novel_id", novelId) else remove("filter_novel_id")
+        }.apply()
         // 소설 필터 변경 시 캐릭터 필터 초기화
         if (novelId != null && _filterCharacterId.value != null) {
             val chars = allCharacters.value ?: emptyList()
             val selectedChar = chars.find { it.id == _filterCharacterId.value }
             if (selectedChar?.novelId != novelId) {
-                _filterCharacterId.value = null
+                setFilterCharacter(null)
             }
         }
     }
-    fun setFilterCharacter(characterId: Long?) { _filterCharacterId.value = characterId }
+    fun setFilterCharacter(characterId: Long?) {
+        _filterCharacterId.value = characterId
+        prefs.edit().apply {
+            if (characterId != null) putLong("filter_character_id", characterId) else remove("filter_character_id")
+        }.apply()
+    }
     fun clearFilters() {
         _filterNovelId.value = null
         _filterCharacterId.value = null
+        prefs.edit().remove("filter_novel_id").remove("filter_character_id").apply()
     }
 
     val visibleRange: LiveData<Pair<Int, Int>> = MediatorLiveData<Pair<Int, Int>>().apply {
@@ -194,25 +209,37 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
     // ===== Zoom controls =====
     fun zoomIn() {
         val current = _zoomLevel.value ?: 4
-        if (current < 5) _zoomLevel.value = current + 1
+        if (current < 5) {
+            _zoomLevel.value = current + 1
+            prefs.edit().putInt("zoom_level", current + 1).apply()
+        }
     }
 
     fun zoomOut() {
         val current = _zoomLevel.value ?: 4
-        if (current > 1) _zoomLevel.value = current - 1
+        if (current > 1) {
+            _zoomLevel.value = current - 1
+            prefs.edit().putInt("zoom_level", current - 1).apply()
+        }
     }
 
     fun setZoomLevel(level: Int) {
-        _zoomLevel.value = level.coerceIn(1, 5)
+        val clamped = level.coerceIn(1, 5)
+        _zoomLevel.value = clamped
+        prefs.edit().putInt("zoom_level", clamped).apply()
     }
 
     fun setCenter(year: Int) {
         _centerYear.value = year
+        prefs.edit().putInt("center_year", year).apply()
     }
 
     fun setSelectedYear(year: Int?) {
         _selectedYear.value = year
-        if (year != null) _centerYear.value = year
+        if (year != null) {
+            _centerYear.value = year
+            prefs.edit().putInt("center_year", year).apply()
+        }
     }
 
     // ===== Data access =====

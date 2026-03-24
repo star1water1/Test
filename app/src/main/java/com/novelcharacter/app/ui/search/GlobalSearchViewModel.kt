@@ -35,9 +35,10 @@ class GlobalSearchViewModel(application: Application) : AndroidViewModel(applica
     private val characterRepository = app.characterRepository
     private val timelineRepository = app.timelineRepository
     private val searchPresetRepository = app.searchPresetRepository
+    private val prefs = application.getSharedPreferences("search_ui_state", android.content.Context.MODE_PRIVATE)
 
     private val _searchQuery = MutableLiveData("")
-    private val _sortMode = MutableLiveData(SearchPreset.SORT_RELEVANCE)
+    private val _sortMode = MutableLiveData(prefs.getString("sort_mode", SearchPreset.SORT_RELEVANCE) ?: SearchPreset.SORT_RELEVANCE)
     private val _fieldFilters = MutableLiveData<List<FieldFilter>>(emptyList())
 
     val presets: LiveData<List<SearchPreset>> = searchPresetRepository.allPresets
@@ -208,6 +209,7 @@ class GlobalSearchViewModel(application: Application) : AndroidViewModel(applica
 
     fun setSortMode(mode: String) {
         _sortMode.value = mode
+        prefs.edit().putString("sort_mode", mode).apply()
     }
 
     fun addFieldFilter(filter: FieldFilter) {
