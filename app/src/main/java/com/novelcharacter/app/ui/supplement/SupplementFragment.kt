@@ -194,12 +194,7 @@ class SupplementFragment : Fragment() {
         binding.spinnerUniverse.setSelection(restoredPos)
         suppressSpinnerEvents = false
 
-        // 복원된 세계관에 맞춰 작품 스피너도 갱신
-        if (restoredPos > 0) {
-            val restoredUniverse = univs[restoredPos - 1]
-            filteredNovels = viewModel.getNovelsForUniverse(restoredUniverse.id)
-            setupNovelSpinner(filteredNovels)
-        }
+        // 작품 스피너는 novelList 옵저버에서 복원됨 (이 시점에 novelList 미로드)
 
         binding.spinnerUniverse.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
