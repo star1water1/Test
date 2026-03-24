@@ -598,6 +598,13 @@ class CharacterDetailFragment : Fragment() {
 
             override fun getItemCount() = imagePaths.size
         }
+
+        // 이미지가 2장 이상이면 랜덤 위치에서 시작
+        if (imagePaths.size > 1) {
+            binding.imageViewPager.setCurrentItem(
+                kotlin.random.Random.nextInt(imagePaths.size), false
+            )
+        }
     }
 
     private var appDir: java.io.File? = null
