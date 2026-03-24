@@ -773,7 +773,7 @@ class ExcelExporter(context: Context) {
         val allCharacters = db.characterDao().getAllCharactersList()
         val charMap = allCharacters.associateBy { it.id }
 
-        val allFactions = db.factionDao().getAllFactions()
+        val allFactions = db.factionDao().getAllFactionsList()
         val factionMap = allFactions.associateBy { it.id }
 
         val allUniverses = db.universeDao().getAllUniversesList()

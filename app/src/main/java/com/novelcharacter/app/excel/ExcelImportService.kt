@@ -463,7 +463,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
             val universeCode = if (universeCodeColIndex >= 0) getCellString(row, universeCodeColIndex) else ""
             val universe = (if (universeCode.isNotBlank()) db.universeDao().getUniverseByCode(universeCode) else null)
-                ?: db.universeDao().getUniverseByName(universeName) ?: run { newCount++; continue }
+                ?: db.universeDao().getUniverseByName(universeName)
+            if (universe == null) { newCount++; continue }
 
             val name = getCellString(row, nameColIndex)
             val type = getCellString(row, typeColIndex)
@@ -643,7 +644,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 ?: run {
                     val novelId = if (novelTitle.isNotBlank()) allNovels.find { it.title == novelTitle }?.id else null
                     findCharacterByName(charName, novelId)
-                } ?: run { newCount++; continue }
+                }
+            if (character == null) { newCount++; continue }
 
             val existing = db.characterStateChangeDao().getChangeByNaturalKey(character.id, year, fieldKey, newValue)
             if (existing == null) newCount++ else unchangedCount++
@@ -679,8 +681,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
             val char1Code = if (char1CodeColIndex >= 0) getCellString(row, char1CodeColIndex) else ""
             val char2Code = if (char2CodeColIndex >= 0) getCellString(row, char2CodeColIndex) else ""
-            val char1 = (if (char1Code.isNotBlank()) db.characterDao().getCharacterByCode(char1Code) else null) ?: findCharacterByName(char1Name, null) ?: run { newCount++; continue }
-            val char2 = (if (char2Code.isNotBlank()) db.characterDao().getCharacterByCode(char2Code) else null) ?: findCharacterByName(char2Name, null) ?: run { newCount++; continue }
+            val char1 = (if (char1Code.isNotBlank()) db.characterDao().getCharacterByCode(char1Code) else null) ?: findCharacterByName(char1Name, null)
+            if (char1 == null) { newCount++; continue }
+            val char2 = (if (char2Code.isNotBlank()) db.characterDao().getCharacterByCode(char2Code) else null) ?: findCharacterByName(char2Name, null)
+            if (char2 == null) { newCount++; continue }
             if (char1.id == char2.id) continue
 
             val existingRels = db.characterRelationshipDao().getRelationshipsForCharacterList(char1.id)
@@ -723,13 +727,16 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val day = parseNumber(getCellString(row, dayColIndex))?.toInt()
             val char1Code = if (char1CodeColIndex >= 0) getCellString(row, char1CodeColIndex) else ""
             val char2Code = if (char2CodeColIndex >= 0) getCellString(row, char2CodeColIndex) else ""
-            val char1 = (if (char1Code.isNotBlank()) db.characterDao().getCharacterByCode(char1Code) else null) ?: findCharacterByName(char1Name, null) ?: run { newCount++; continue }
-            val char2 = (if (char2Code.isNotBlank()) db.characterDao().getCharacterByCode(char2Code) else null) ?: findCharacterByName(char2Name, null) ?: run { newCount++; continue }
+            val char1 = (if (char1Code.isNotBlank()) db.characterDao().getCharacterByCode(char1Code) else null) ?: findCharacterByName(char1Name, null)
+            if (char1 == null) { newCount++; continue }
+            val char2 = (if (char2Code.isNotBlank()) db.characterDao().getCharacterByCode(char2Code) else null) ?: findCharacterByName(char2Name, null)
+            if (char2 == null) { newCount++; continue }
 
             val relationships = db.characterRelationshipDao().getRelationshipsForCharacterList(char1.id)
             val relationship = relationships.find { rel ->
                 (rel.characterId1 == char1.id && rel.characterId2 == char2.id) || (rel.characterId1 == char2.id && rel.characterId2 == char1.id)
-            } ?: run { newCount++; continue }
+            }
+            if (relationship == null) { newCount++; continue }
 
             val existing = db.characterRelationshipChangeDao().getChangeByNaturalKey(relationship.id, year, month, day)
             if (existing == null) newCount++ else unchangedCount++
@@ -840,10 +847,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
             val faction = (if (factionCode.isNotBlank()) db.factionDao().getByCode(factionCode) else null)
                 ?: db.factionDao().getAllFactionsList().find { it.name == factionName }
-                ?: run { newCount++; continue }
+            if (faction == null) { newCount++; continue }
             val character = (if (charCode.isNotBlank()) db.characterDao().getCharacterByCode(charCode) else null)
                 ?: db.characterDao().getCharacterByName(charName)
-                ?: run { newCount++; continue }
+            if (character == null) { newCount++; continue }
 
             val existingMembership = db.factionMembershipDao().getActiveMembership(faction.id, character.id)
             if (existingMembership != null && leaveType == null) unchangedCount++ else newCount++
@@ -1694,7 +1701,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val factionColIndex = cols["세력"] ?: -1
         val createdAtColIndex = cols["생성일"] ?: -1
 
-        val allFactions = if (factionColIndex >= 0) db.factionDao().getAllFactions() else emptyList()
+        val allFactions = if (factionColIndex >= 0) db.factionDao().getAllFactionsList() else emptyList()
 
         for (i in 1..sheet.lastRowNum) {
             try {
