@@ -179,6 +179,15 @@ class SupplementViewModel(application: Application) : AndroidViewModel(applicati
                     _universeList.value = universes
                     _novelList.value = novels
                     _totalCount.value = characters.size
+
+                    // 삭제된 엔티티 참조 정리: 복원된 ID가 현재 데이터에 없으면 필터 해제
+                    if (selectedUniverseId != null && universes.none { it.id == selectedUniverseId }) {
+                        setUniverseFilter(null)
+                    }
+                    if (selectedNovelId != null && novels.none { it.id == selectedNovelId }) {
+                        setNovelFilter(null)
+                    }
+
                     applyFiltersInternal()
                     _isLoading.value = false
                 }

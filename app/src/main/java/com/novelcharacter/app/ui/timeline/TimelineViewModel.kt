@@ -229,16 +229,26 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
         prefs.edit().putInt("zoom_level", clamped).apply()
     }
 
+    private var centerYearSaveJob: Job? = null
+
+    private fun debounceSaveCenterYear(year: Int) {
+        centerYearSaveJob?.cancel()
+        centerYearSaveJob = viewModelScope.launch {
+            delay(500)
+            prefs.edit().putInt("center_year", year).apply()
+        }
+    }
+
     fun setCenter(year: Int) {
         _centerYear.value = year
-        prefs.edit().putInt("center_year", year).apply()
+        debounceSaveCenterYear(year)
     }
 
     fun setSelectedYear(year: Int?) {
         _selectedYear.value = year
         if (year != null) {
             _centerYear.value = year
-            prefs.edit().putInt("center_year", year).apply()
+            debounceSaveCenterYear(year)
         }
     }
 
@@ -259,6 +269,9 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
     override fun onCleared() {
         super.onCleared()
         allEvents.removeObserver(densityObserver)
+        // 디바운스 중인 center_year를 즉시 저장
+        centerYearSaveJob?.cancel()
+        _centerYear.value?.let { prefs.edit().putInt("center_year", it).apply() }
         errorClearJob?.cancel()
     }
 

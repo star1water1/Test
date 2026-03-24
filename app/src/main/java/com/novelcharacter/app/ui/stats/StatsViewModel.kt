@@ -118,10 +118,18 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
         statsJob = viewModelScope.launch {
             try {
                 val snapshot = ensureSnapshot()
-                val filtered = getFilteredSnapshot(snapshot)
 
                 // 작품 목록 설정
                 _novelList.value = snapshot.novels.map { it.id to it.title }
+
+                // 삭제된 소설 참조 정리: 복원된 ID가 현재 데이터에 없으면 필터 해제
+                val currentNovelId = _selectedNovelId.value
+                if (currentNovelId != null && snapshot.novels.none { it.id == currentNovelId }) {
+                    _selectedNovelId.value = null
+                    statsPrefs.edit().remove("selected_novel_id").apply()
+                }
+
+                val filtered = getFilteredSnapshot(snapshot)
 
                 // 모든 통계를 병렬로 계산한 후 한 번에 LiveData에 반영
                 val summaryDeferred = async(Dispatchers.IO) { provider.computeSummary(filtered) }
