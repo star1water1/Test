@@ -1010,6 +1010,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
         // Build code index for duplicate detection within file
         val codesSeen = mutableMapOf<String, Int>()
+        val entitySeen = mutableMapOf<Long, Int>()
 
         for (i in 1..sheet.lastRowNum) {
             try {
@@ -1065,6 +1066,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 }
 
                 if (existing != null) {
+                    val prevRow = entitySeen[existing.id]
+                    if (prevRow != null) {
+                        result.warnings.add("세계관 행 $i: 행 $prevRow 과 같은 항목('$name')을 다시 덮어씀")
+                    }
+                    entitySeen[existing.id] = i
                     db.universeDao().update(existing.copy(
                         name = name, description = description, displayOrder = displayOrder ?: existing.displayOrder,
                         borderColor = borderColor, borderWidthDp = borderWidthDp,
@@ -1080,7 +1086,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 } else {
                     val newCode = if (code.isNotBlank()) code else generateEntityCode()
                     if (code.isBlank()) result.newCodesGenerated++
-                    db.universeDao().insert(Universe(
+                    val newId = db.universeDao().insert(Universe(
                         name = name, description = description, code = newCode,
                         displayOrder = displayOrder ?: i.toLong(), borderColor = borderColor, borderWidthDp = borderWidthDp,
                         imagePaths = imagePaths, imageMode = imageMode,
@@ -1090,6 +1096,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         imageNovelId = imageNovelId,
                         createdAt = createdAt
                     ))
+                    entitySeen[newId] = i
                     result.newUniverses++
                 }
             } catch (e: Exception) {
@@ -1126,6 +1133,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val createdAtColIndex = cols["생성일"] ?: -1
 
         val codesSeen = mutableMapOf<String, Int>()
+        val entitySeen = mutableMapOf<Long, Int>()
 
         for (i in 1..sheet.lastRowNum) {
             try {
@@ -1187,6 +1195,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val effectiveInherit = if (inheritBorderColIndex >= 0) parseBoolean(getCellString(row, inheritBorderColIndex)) else borderColor.isBlank()
 
                 if (existing != null) {
+                    val prevRow = entitySeen[existing.id]
+                    if (prevRow != null) {
+                        result.warnings.add("작품 행 $i: 행 $prevRow 과 같은 항목('$title')을 다시 덮어씀")
+                    }
+                    entitySeen[existing.id] = i
                     db.novelDao().update(existing.copy(
                         title = title, description = description, universeId = universeId,
                         displayOrder = displayOrder ?: existing.displayOrder, borderColor = borderColor, borderWidthDp = borderWidthDp,
@@ -1201,7 +1214,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 } else {
                     val newCode = if (code.isNotBlank()) code else generateEntityCode()
                     if (code.isBlank()) result.newCodesGenerated++
-                    db.novelDao().insert(Novel(
+                    val newId = db.novelDao().insert(Novel(
                         title = title, description = description, universeId = universeId,
                         code = newCode, displayOrder = displayOrder ?: i.toLong(),
                         borderColor = borderColor, borderWidthDp = borderWidthDp,
@@ -1210,6 +1223,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         imageCharacterId = novelImageCharId, standardYear = standardYear,
                         createdAt = createdAt
                     ))
+                    entitySeen[newId] = i
                     result.newNovels++
                 }
             } catch (e: Exception) {
@@ -1238,6 +1252,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val orderColIndex = cols["순서"] ?: -1
         val requiredColIndex = cols["필수여부"] ?: 7
         val universeCodeColIndex = cols["세계관코드"] ?: -1
+
+        val entitySeen = mutableMapOf<Long, Int>()
 
         for (i in 1..sheet.lastRowNum) {
             try {
@@ -1278,6 +1294,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
                 val existing = db.fieldDefinitionDao().getFieldByKey(universe.id, key)
                 if (existing != null) {
+                    val prevRow = entitySeen[existing.id]
+                    if (prevRow != null) {
+                        result.warnings.add("필드 정의 행 $i: 행 $prevRow 과 같은 항목('$name')을 다시 덮어씀")
+                    }
+                    entitySeen[existing.id] = i
                     if (existing.type != type && type.isNotBlank()) {
                         result.warnings.add("필드 정의 행 $i: 필드 '$name'의 타입이 '${existing.type}'에서 '$type'(으)로 변경됨 — 기존 값 호환성을 확인하세요")
                     }
@@ -1287,11 +1308,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     ))
                     result.updatedFields++
                 } else {
-                    db.fieldDefinitionDao().insert(FieldDefinition(
+                    val newId = db.fieldDefinitionDao().insert(FieldDefinition(
                         universeId = universe.id, key = key, name = name, type = type,
                         config = config, groupName = groupName, displayOrder = displayOrder ?: i,
                         isRequired = isRequired
                     ))
+                    entitySeen[newId] = i
                     result.newFields++
                 }
             } catch (e: Exception) {
@@ -1363,6 +1385,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val columnFieldMap = buildColumnFieldMap(headerRow, fields, fixedColIndices)
 
         val codesSeen = mutableMapOf<String, Int>()
+        val entitySeen = mutableMapOf<Long, Int>()
 
         for (i in 1..sheet.lastRowNum) {
             try {
@@ -1475,6 +1498,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     ))
                     result.newCharacters++
                 }
+
+                val prevRow = entitySeen[charId]
+                if (prevRow != null) {
+                    result.warnings.add("캐릭터 행 $i: 행 $prevRow 과 같은 항목('$name')을 다시 덮어씀")
+                }
+                entitySeen[charId] = i
 
                 // 태그 가져오기 (빈 셀 = 기존 태그 유지, 명시적 값이 있을 때만 교체)
                 if (tagsColIndex >= 0) {
@@ -1717,6 +1746,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val createdAtColIndex = cols["생성일"] ?: -1
 
         val allFactions = if (factionColIndex >= 0) db.factionDao().getAllFactionsList() else emptyList()
+        val entitySeen = mutableMapOf<Long, Int>()
 
         for (i in 1..sheet.lastRowNum) {
             try {
@@ -1764,6 +1794,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 }
 
                 if (existing != null) {
+                    val prevRow = entitySeen[existing.id]
+                    if (prevRow != null) {
+                        result.warnings.add("관계 행 $i: 행 $prevRow 과 같은 항목을 다시 덮어씀")
+                    }
+                    entitySeen[existing.id] = i
                     db.characterRelationshipDao().update(existing.copy(
                         description = description,
                         intensity = if (intensityColIndex >= 0) intensity else existing.intensity,
@@ -1774,13 +1809,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     ))
                     result.updatedRelationships++
                 } else {
-                    db.characterRelationshipDao().insert(CharacterRelationship(
+                    val newId = db.characterRelationshipDao().insert(CharacterRelationship(
                         characterId1 = char1.id, characterId2 = char2.id,
                         relationshipType = relationshipType, description = description,
                         intensity = intensity, isBidirectional = isBidirectional,
                         displayOrder = displayOrder ?: i, factionId = factionId,
                         createdAt = createdAt
                     ))
+                    entitySeen[newId] = i
                     result.newRelationships++
                 }
             } catch (e: Exception) {
@@ -2116,6 +2152,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val createdAtColIndex = cols["생성일"] ?: -1
 
         val codesSeen = mutableMapOf<String, Int>()
+        val entitySeen = mutableMapOf<Long, Int>()
 
         for (i in 1..sheet.lastRowNum) {
             try {
@@ -2183,6 +2220,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 }
 
                 if (existing != null) {
+                    val prevRow = entitySeen[existing.id]
+                    if (prevRow != null) {
+                        result.warnings.add("세력 행 $i: 행 $prevRow 과 같은 항목('$name')을 다시 덮어씀")
+                    }
+                    entitySeen[existing.id] = i
                     db.factionDao().update(existing.copy(
                         name = name,
                         universeId = universeId,
@@ -2197,7 +2239,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 } else {
                     val newCode = if (code.isNotBlank()) code else generateEntityCode()
                     if (code.isBlank()) result.newCodesGenerated++
-                    db.factionDao().insert(Faction(
+                    val newId = db.factionDao().insert(Faction(
                         name = name,
                         universeId = universeId,
                         description = description,
@@ -2208,6 +2250,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         displayOrder = displayOrder ?: i,
                         createdAt = createdAt
                     ))
+                    entitySeen[newId] = i
                     result.newFactions++
                 }
             } catch (e: Exception) {
