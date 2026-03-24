@@ -936,6 +936,15 @@
     <string name="linkage_rule_birth_anchor">출생연도 기준 (표준 년도 변경 시 나이 재계산)</string>
     <string name="linkage_rule_label">연동 규칙</string>
 
+    <!-- Age-BirthYear Linkage Conflict -->
+    <string name="age_linkage_conflict_title">나이-출생연도 불일치</string>
+    <string name="age_linkage_conflict_message">기준연도 %1$d 기준으로 나이(%2$d)와 출생연도(%3$d)가 맞지 않습니다.\n\n예상 나이: %4$d</string>
+    <string name="age_linkage_option_adjust_birth">출생연도를 %1$d(으)로 변경 (나이 %2$d 유지)</string>
+    <string name="age_linkage_option_adjust_age">나이를 %1$d(으)로 변경 (출생연도 %2$d 유지)</string>
+    <string name="age_linkage_option_adjust_std_year">기준연도를 %1$d(으)로 변경 (나이 %2$d, 출생연도 %3$d 유지)</string>
+    <string name="age_linkage_option_adjust_std_year_with_warn">기준연도를 %1$d(으)로 변경 (나이 %2$d, 출생연도 %3$d 유지)\n⚠ 이 작품의 다른 캐릭터 %4$d명에게도 영향</string>
+    <string name="apply">적용</string>
+
     <!-- Feature: Body Analysis -->
     <string name="body_analysis_title">체형 분석</string>
     <string name="body_type_label">체형 분류</string>

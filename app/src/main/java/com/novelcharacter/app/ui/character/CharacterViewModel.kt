@@ -14,7 +14,9 @@ import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.data.model.RecentActivity
 import com.novelcharacter.app.data.model.TimelineEvent
+import com.novelcharacter.app.data.model.SemanticRole
 import com.novelcharacter.app.util.SemanticFieldSyncHelper
+import com.novelcharacter.app.util.StandardYearSyncHelper
 import android.util.Log
 import androidx.room.withTransaction
 import kotlinx.coroutines.launch
@@ -150,6 +152,83 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         val novel = novelRepository.getNovelById(novelId) ?: return null
         return novel.universeId
     }
+
+    // ===== 나이-출생연도 불일치 감지 =====
+
+    data class AgeLinkageConflict(
+        val inputAge: Int,
+        val inputBirthYear: Int,
+        val currentStdYear: Int,
+        val expectedAge: Int,
+        val suggestedBirthYear: Int,
+        val suggestedStdYear: Int,
+        val affectedCharacterCount: Int,
+        val ageFieldId: Long,
+        val birthYearFieldId: Long,
+        val novelId: Long
+    )
+
+    /**
+     * 저장 전 나이-출생연도 불일치를 감지한다.
+     * 둘 다 값이 있고 standardYear와 맞지 않을 때만 conflict 반환.
+     * @param novelId 캐릭터가 속한 작품 ID (신규 캐릭터용 — DB 조회 없이 직접 전달)
+     * @param characterId 기존 캐릭터 ID (연동 확인용, 신규면 -1)
+     */
+    suspend fun detectAgeLinkageConflict(
+        novelId: Long?,
+        characterId: Long,
+        fieldValues: List<CharacterFieldValue>
+    ): AgeLinkageConflict? {
+        if (novelId == null) return null
+        val novel = novelRepository.getNovelById(novelId) ?: return null
+        val stdYear = novel.standardYear ?: return null
+        val universeId = novel.universeId ?: return null
+
+        // 연동 활성 확인 (신규 캐릭터는 기본 활성)
+        if (characterId > 0 && !semanticSyncHelper.isLinked(characterId)) return null
+
+        val fields = universeRepository.getFieldsByUniverseList(universeId)
+        val ageField = fields.find { SemanticRole.fromConfig(it.config) == SemanticRole.AGE } ?: return null
+        val birthYearField = fields.find { SemanticRole.fromConfig(it.config) == SemanticRole.BIRTH_YEAR } ?: return null
+
+        val inputAge = fieldValues.find { it.fieldDefinitionId == ageField.id }
+            ?.value?.trim()?.toIntOrNull() ?: return null
+        val inputBirthYear = fieldValues.find { it.fieldDefinitionId == birthYearField.id }
+            ?.value?.trim()?.toIntOrNull() ?: return null
+
+        val expectedAge = stdYear - inputBirthYear
+        if (inputAge == expectedAge) return null
+
+        // 기준연도 변경 시 영향받는 다른 캐릭터 수
+        val linkedCount = characterRepository.getCharactersByNovelList(novelId)
+            .filter { it.id != characterId }
+            .count { semanticSyncHelper.isLinked(it.id) }
+
+        return AgeLinkageConflict(
+            inputAge = inputAge,
+            inputBirthYear = inputBirthYear,
+            currentStdYear = stdYear,
+            expectedAge = expectedAge,
+            suggestedBirthYear = stdYear - inputAge,
+            suggestedStdYear = inputBirthYear + inputAge,
+            affectedCharacterCount = linkedCount,
+            ageFieldId = ageField.id,
+            birthYearFieldId = birthYearField.id,
+            novelId = novelId
+        )
+    }
+
+    /**
+     * 기준연도 변경 옵션 선택 시: novel.standardYear 업데이트 + 다른 캐릭터 일괄 재계산.
+     */
+    suspend fun applyStandardYearChange(novelId: Long, oldStdYear: Int, newStdYear: Int) {
+        val novel = novelRepository.getNovelById(novelId) ?: return
+        val updatedNovel = novel.copy(standardYear = newStdYear)
+        novelRepository.updateNovel(updatedNovel)
+        standardYearSyncHelper.onStandardYearChanged(updatedNovel, oldStdYear, newStdYear)
+    }
+
+    private val standardYearSyncHelper = StandardYearSyncHelper(characterRepository, universeRepository)
 
     /** 캐릭터가 속한 세계관의 관계 유형 목록을 반환 (세계관 미배정 시 기본 유형) */
     suspend fun getRelationshipTypesForCharacter(characterId: Long): List<String> {

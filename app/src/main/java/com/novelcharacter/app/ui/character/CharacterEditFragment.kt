@@ -1076,15 +1076,45 @@ class CharacterEditFragment : Fragment() {
     }
 
     private suspend fun performSave(character: Character, isUpdate: Boolean, targetCharacterId: Long) {
+        // 저장 전 나이-출생연도 불일치 감지 (삽입 전에 체크하여 고아 레코드 방지)
+        val tempCharId = if (isUpdate) targetCharacterId else -1L
+        val tempFieldValues = collectFieldValues(tempCharId)
+        val conflict = viewModel.detectAgeLinkageConflict(
+            novelId = character.novelId,
+            characterId = tempCharId,
+            fieldValues = tempFieldValues
+        )
+        if (conflict != null && isAdded && view != null) {
+            withContext(Dispatchers.Main) {
+                showAgeLinkageConflictDialog(conflict, character, isUpdate, targetCharacterId)
+            }
+            return
+        }
+
+        executeSave(character, isUpdate, targetCharacterId, tempFieldValues)
+    }
+
+    /**
+     * 실제 저장 실행 (불일치 감지 후 또는 해결 후 호출)
+     * @param resolvedFieldValues 불일치 해결 후 수정된 필드값 목록 (null이면 다시 수집)
+     */
+    private suspend fun executeSave(
+        character: Character,
+        isUpdate: Boolean,
+        targetCharacterId: Long,
+        resolvedFieldValues: List<CharacterFieldValue>? = null
+    ) {
         val savedCharId: Long
         if (isUpdate && targetCharacterId != -1L) {
-            val fieldValues = collectFieldValues(targetCharacterId)
+            val fieldValues = resolvedFieldValues?.map { it.copy(characterId = targetCharacterId) }
+                ?: collectFieldValues(targetCharacterId)
             viewModel.updateCharacterWithFields(character, fieldValues)
             savedCharId = targetCharacterId
             cleanupRemovedImages(existingCharacter?.imagePaths, imagePaths)
         } else {
             val newId = viewModel.insertCharacterSuspend(character)
-            val fieldValues = collectFieldValues(newId)
+            val fieldValues = resolvedFieldValues?.map { it.copy(characterId = newId) }
+                ?: collectFieldValues(newId)
             viewModel.saveAllFieldValues(newId, fieldValues)
             savedCharId = newId
         }
@@ -1098,6 +1128,88 @@ class CharacterEditFragment : Fragment() {
             Toast.makeText(requireContext(), R.string.saved_successfully, Toast.LENGTH_SHORT).show()
             findNavController().popBackStack()
         }
+    }
+
+    private fun showAgeLinkageConflictDialog(
+        conflict: CharacterViewModel.AgeLinkageConflict,
+        character: Character,
+        isUpdate: Boolean,
+        targetCharacterId: Long
+    ) {
+        val options = arrayOf(
+            getString(R.string.age_linkage_option_adjust_birth,
+                conflict.suggestedBirthYear, conflict.inputAge),
+            getString(R.string.age_linkage_option_adjust_age,
+                conflict.expectedAge, conflict.inputBirthYear),
+            if (conflict.affectedCharacterCount > 0)
+                getString(R.string.age_linkage_option_adjust_std_year_with_warn,
+                    conflict.suggestedStdYear, conflict.inputAge, conflict.inputBirthYear,
+                    conflict.affectedCharacterCount)
+            else
+                getString(R.string.age_linkage_option_adjust_std_year,
+                    conflict.suggestedStdYear, conflict.inputAge, conflict.inputBirthYear)
+        )
+
+        var selected = 0
+        AlertDialog.Builder(requireContext())
+            .setTitle(R.string.age_linkage_conflict_title)
+            .setMessage(getString(R.string.age_linkage_conflict_message,
+                conflict.currentStdYear, conflict.inputAge, conflict.inputBirthYear, conflict.expectedAge))
+            .setSingleChoiceItems(options, 0) { _, which -> selected = which }
+            .setPositiveButton(R.string.apply) { _, _ ->
+                viewLifecycleOwner.lifecycleScope.launch {
+                    try {
+                        val fieldValues = collectFieldValues(
+                            if (isUpdate) targetCharacterId else -1L
+                        ).toMutableList()
+
+                        when (selected) {
+                            0 -> {
+                                // 출생연도 변경 (나이 유지)
+                                val idx = fieldValues.indexOfFirst { it.fieldDefinitionId == conflict.birthYearFieldId }
+                                val newVal = CharacterFieldValue(
+                                    characterId = 0, // executeSave에서 재설정됨
+                                    fieldDefinitionId = conflict.birthYearFieldId,
+                                    value = conflict.suggestedBirthYear.toString()
+                                )
+                                if (idx >= 0) fieldValues[idx] = newVal else fieldValues.add(newVal)
+                            }
+                            1 -> {
+                                // 나이 변경 (출생연도 유지)
+                                val idx = fieldValues.indexOfFirst { it.fieldDefinitionId == conflict.ageFieldId }
+                                val newVal = CharacterFieldValue(
+                                    characterId = 0,
+                                    fieldDefinitionId = conflict.ageFieldId,
+                                    value = conflict.expectedAge.toString()
+                                )
+                                if (idx >= 0) fieldValues[idx] = newVal else fieldValues.add(newVal)
+                            }
+                            2 -> {
+                                // 기준연도 변경 (둘 다 유지) + 다른 캐릭터 일괄 재계산
+                                viewModel.applyStandardYearChange(
+                                    conflict.novelId,
+                                    conflict.currentStdYear,
+                                    conflict.suggestedStdYear
+                                )
+                            }
+                        }
+
+                        executeSave(character, isUpdate, targetCharacterId, fieldValues)
+                    } catch (e: Exception) {
+                        if (isAdded && _binding != null) {
+                            Toast.makeText(requireContext(), R.string.save_failed, Toast.LENGTH_SHORT).show()
+                        }
+                        resetSavingState()
+                    }
+                }
+            }
+            .setNegativeButton(R.string.cancel) { _, _ ->
+                resetSavingState()
+            }
+            .setOnCancelListener {
+                resetSavingState()
+            }
+            .show()
     }
 
     private fun resetSavingState() {

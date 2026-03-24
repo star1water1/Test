@@ -110,6 +110,10 @@ class SemanticFieldSyncHelper(
         }
     }
 
+    /** standardYear 연동 활성 여부를 외부에서 확인할 수 있도록 프록시 제공 */
+    suspend fun isLinked(characterId: Long): Boolean =
+        standardYearSyncHelper.isLinked(characterId)
+
     private fun findFieldByRole(fields: List<FieldDefinition>, role: SemanticRole): FieldDefinition? {
         return fields.find { SemanticRole.fromConfig(it.config) == role }
     }
