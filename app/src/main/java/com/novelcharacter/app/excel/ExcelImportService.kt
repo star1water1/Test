@@ -2369,6 +2369,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val headerName = getCellString(headerRow, col)
             if (headerName.isBlank()) continue
             val trimmedHeader = headerName.trim()
+                .removeSuffix(" (쉼표 구분)")
             val field = fields.find { it.name == trimmedHeader }
                 ?: fields.find { it.name.equals(trimmedHeader, ignoreCase = true) }
             if (field != null) {

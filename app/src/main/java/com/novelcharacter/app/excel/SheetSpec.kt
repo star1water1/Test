@@ -162,7 +162,8 @@ fun characterSpec(fields: List<FieldDefinition>, novelTitles: List<String>) = Sh
                     if (arr != null) (0 until arr.length()).map { arr.getString(it) } else null
                 } catch (_: Exception) { null }
             } else null
-            add(ColumnSpec(field.name, required = field.isRequired, dropdownOptions = options))
+            val headerName = if (field.type == "MULTI_TEXT") "${field.name} (쉼표 구분)" else field.name
+            add(ColumnSpec(headerName, required = field.isRequired, dropdownOptions = options))
         }
         add(ColumnSpec("이미지경로", readOnly = true, width = 4000))
         add(ColumnSpec("작품", dropdownOptions = novelTitles.takeIf { it.isNotEmpty() }, width = 6000))
