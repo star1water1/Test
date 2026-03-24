@@ -10,6 +10,7 @@ import android.widget.ImageView
 import android.widget.RadioButton
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
+import androidx.core.os.bundleOf
 import androidx.fragment.app.DialogFragment
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -34,18 +35,15 @@ class DuplicateCharacterDialog : DialogFragment() {
         SAVE_ANYWAY
     }
 
-    data class Result(
-        val resolution: Resolution,
-        val selectedCharacter: Character? = null
-    )
-
-    var onResolved: ((Result) -> Unit)? = null
-
     private var candidates: List<DuplicateCandidate> = emptyList()
     private var isEditMode: Boolean = false
     private var selectedPosition: Int = -1
 
     companion object {
+        const val RESULT_KEY = "duplicate_character_result"
+        const val RESULT_RESOLUTION = "resolution"
+        const val RESULT_SELECTED_CHARACTER_ID = "selected_character_id"
+
         private const val ARG_IS_EDIT_MODE = "is_edit_mode"
         private const val ARG_CANDIDATES_JSON = "candidates_json"
         private const val STATE_SELECTED_POSITION = "selected_position"
@@ -64,14 +62,12 @@ class DuplicateCharacterDialog : DialogFragment() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // arguments에서 candidates 복원 (회전 시에도 안전)
         arguments?.getString(ARG_CANDIDATES_JSON)?.let { json ->
             candidates = try {
                 Gson().fromJson(json, CANDIDATE_LIST_TYPE) ?: emptyList()
             } catch (e: Exception) { emptyList() }
         }
         isEditMode = arguments?.getBoolean(ARG_IS_EDIT_MODE, false) ?: false
-        // savedInstanceState에서 선택 상태 복원
         savedInstanceState?.let {
             selectedPosition = it.getInt(STATE_SELECTED_POSITION, -1)
         }
@@ -80,6 +76,13 @@ class DuplicateCharacterDialog : DialogFragment() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putInt(STATE_SELECTED_POSITION, selectedPosition)
+    }
+
+    private fun sendResult(resolution: Resolution, selectedCharacterId: Long = -1L) {
+        parentFragmentManager.setFragmentResult(RESULT_KEY, bundleOf(
+            RESULT_RESOLUTION to resolution.name,
+            RESULT_SELECTED_CHARACTER_ID to selectedCharacterId
+        ))
     }
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
@@ -101,7 +104,6 @@ class DuplicateCharacterDialog : DialogFragment() {
         rvCandidates.layoutManager = LinearLayoutManager(requireContext())
         rvCandidates.adapter = adapter
 
-        // 후보가 1개이거나 이전 선택이 있으면 자동 선택
         val initialSelection = when {
             selectedPosition >= 0 && selectedPosition < candidates.size -> selectedPosition
             candidates.size == 1 -> 0
@@ -116,24 +118,22 @@ class DuplicateCharacterDialog : DialogFragment() {
             .setTitle(R.string.duplicate_character_title)
             .setView(view)
             .setNegativeButton(R.string.duplicate_action_cancel) { _, _ ->
-                onResolved?.invoke(Result(Resolution.CANCEL))
+                sendResult(Resolution.CANCEL)
             }
 
         if (isEditMode) {
-            // 수정 모드: 취소 / 그대로 저장(동명이인)
             builder.setPositiveButton(R.string.duplicate_action_save_anyway) { _, _ ->
-                onResolved?.invoke(Result(Resolution.SAVE_ANYWAY))
+                sendResult(Resolution.SAVE_ANYWAY)
             }
             tvSelectHint.visibility = View.GONE
         } else {
-            // 신규 모드: 취소 / 기존 캐릭터 업데이트 / 동명이인으로 새로 생성
             tvSelectHint.visibility = View.VISIBLE
             builder.setPositiveButton(R.string.duplicate_action_update) { _, _ ->
-                val selected = candidates.getOrNull(selectedPosition)
-                onResolved?.invoke(Result(Resolution.UPDATE_EXISTING, selected?.character))
+                val selectedId = candidates.getOrNull(selectedPosition)?.character?.id ?: -1L
+                sendResult(Resolution.UPDATE_EXISTING, selectedId)
             }
             builder.setNeutralButton(R.string.duplicate_action_create_new) { _, _ ->
-                onResolved?.invoke(Result(Resolution.CREATE_NEW))
+                sendResult(Resolution.CREATE_NEW)
             }
         }
 
@@ -147,14 +147,13 @@ class DuplicateCharacterDialog : DialogFragment() {
     private fun updateButtonState() {
         val alertDialog = dialog as? AlertDialog ?: return
         if (!isEditMode) {
-            // "기존 캐릭터 업데이트" 버튼은 선택 시에만 활성화
             alertDialog.getButton(AlertDialog.BUTTON_POSITIVE)?.isEnabled = selectedPosition >= 0
         }
     }
 
     override fun onCancel(dialog: android.content.DialogInterface) {
         super.onCancel(dialog)
-        onResolved?.invoke(Result(Resolution.CANCEL))
+        sendResult(Resolution.CANCEL)
     }
 
     private class CandidateAdapter(
@@ -193,7 +192,6 @@ class DuplicateCharacterDialog : DialogFragment() {
                 holder.tvMemo.text = if (memo.length > 50) memo.substring(0, 50) + "…" else memo
             }
 
-            // Load first image thumbnail
             val imagePaths = try {
                 Gson().fromJson<List<String>>(character.imagePaths, GsonTypes.STRING_LIST) ?: emptyList()
             } catch (e: Exception) { emptyList() }

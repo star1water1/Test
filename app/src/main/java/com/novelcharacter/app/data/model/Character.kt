@@ -18,7 +18,8 @@ import androidx.room.PrimaryKey
     ],
     indices = [Index("novelId"), Index(value = ["code"], unique = true),
                Index(value = ["novelId", "isPinned", "displayOrder"]),
-               Index(value = ["isPinned", "displayOrder"])]
+               Index(value = ["isPinned", "displayOrder"]),
+               Index("name")]
 )
 data class Character(
     @PrimaryKey(autoGenerate = true)

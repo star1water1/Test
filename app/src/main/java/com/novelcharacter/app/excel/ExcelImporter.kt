@@ -349,7 +349,10 @@ class ExcelImporter(context: Context) {
             val strategy = showRestorePreviewDialog(analysis) ?: return
 
             // Phase 3.5: 동명이인 충돌 해결 다이얼로그
-            val resolvedConflicts: Map<String, CharacterConflict> = if (analysis.characterConflicts.isNotEmpty()) {
+            // OVERWRITE 전략은 기존 데이터 전부 삭제 후 재삽입이므로 충돌 해결 불필요
+            val resolvedConflicts: Map<String, CharacterConflict> = if (
+                strategy != ImportStrategy.OVERWRITE && analysis.characterConflicts.isNotEmpty()
+            ) {
                 showConflictResolutionDialog(analysis.characterConflicts) ?: return
             } else {
                 emptyMap()

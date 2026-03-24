@@ -988,6 +988,7 @@ class CharacterEditFragment : Fragment() {
                         }
 
                         val isEdit = characterId != -1L
+                        if (!isAdded) { resetSavingState(); return@launch }
                         showDuplicateDialog(candidates, isEdit, character)
                     } else {
                         performSave(character, isUpdate = characterId != -1L, targetCharacterId = characterId)
@@ -1007,9 +1008,17 @@ class CharacterEditFragment : Fragment() {
         isEditMode: Boolean,
         character: Character
     ) {
-        val dialog = DuplicateCharacterDialog.newInstance(candidates, isEditMode)
-        dialog.onResolved = resolved@{ result ->
-            when (result.resolution) {
+        // Fragment Result API로 결과 수신 (회전에도 안전)
+        childFragmentManager.setFragmentResultListener(
+            DuplicateCharacterDialog.RESULT_KEY,
+            viewLifecycleOwner
+        ) { _, bundle ->
+            val resolutionName = bundle.getString(DuplicateCharacterDialog.RESULT_RESOLUTION)
+                ?: DuplicateCharacterDialog.Resolution.CANCEL.name
+            val resolution = DuplicateCharacterDialog.Resolution.valueOf(resolutionName)
+            val selectedCharId = bundle.getLong(DuplicateCharacterDialog.RESULT_SELECTED_CHARACTER_ID, -1L)
+
+            when (resolution) {
                 DuplicateCharacterDialog.Resolution.CANCEL -> {
                     resetSavingState()
                 }
@@ -1026,10 +1035,11 @@ class CharacterEditFragment : Fragment() {
                     }
                 }
                 DuplicateCharacterDialog.Resolution.UPDATE_EXISTING -> {
-                    val target = result.selectedCharacter
-                    if (target == null) { resetSavingState(); return@resolved }
+                    if (selectedCharId == -1L) { resetSavingState(); return@setFragmentResultListener }
                     viewLifecycleOwner.lifecycleScope.launch {
                         try {
+                            val target = viewModel.getCharacterByIdSuspend(selectedCharId)
+                            if (target == null) { resetSavingState(); return@launch }
                             val updatedChar = character.copy(
                                 id = target.id,
                                 code = target.code,
@@ -1060,6 +1070,8 @@ class CharacterEditFragment : Fragment() {
                 }
             }
         }
+
+        val dialog = DuplicateCharacterDialog.newInstance(candidates, isEditMode)
         dialog.show(childFragmentManager, "duplicate_character")
     }
 
@@ -1081,11 +1093,11 @@ class CharacterEditFragment : Fragment() {
         val tagList = tagText.split(",").map { it.trim() }.filter { it.isNotBlank() }
         viewModel.replaceAllTagsSuspend(savedCharId, tagList.map { CharacterTag(characterId = savedCharId, tag = it) })
 
+        resetSavingState()
         if (isAdded && view != null) {
             Toast.makeText(requireContext(), R.string.saved_successfully, Toast.LENGTH_SHORT).show()
             findNavController().popBackStack()
         }
-        resetSavingState()
     }
 
     private fun resetSavingState() {
