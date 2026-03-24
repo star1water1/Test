@@ -32,6 +32,7 @@ class BatchFieldValueBottomSheet : BottomSheetDialogFragment() {
     private var universes: List<Universe> = emptyList()
     private var fields: List<FieldDefinition> = emptyList()
     private var selectedField: FieldDefinition? = null
+    private var fieldLoadJob: kotlinx.coroutines.Job? = null
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
@@ -97,7 +98,8 @@ class BatchFieldValueBottomSheet : BottomSheetDialogFragment() {
     }
 
     private fun loadFieldsForUniverse(universeId: Long) {
-        viewLifecycleOwner.lifecycleScope.launch {
+        fieldLoadJob?.cancel() // 이전 로드 취소 → 세계관 빠른 전환 시 경합 방지
+        fieldLoadJob = viewLifecycleOwner.lifecycleScope.launch {
             val allFields = batchViewModel.getFieldsByUniverseList(universeId)
             // CALCULATED 필드는 제외 (자동 계산 → 수동 설정 불가)
             fields = allFields.filter { it.type != "CALCULATED" }

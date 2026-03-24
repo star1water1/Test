@@ -34,6 +34,7 @@ class BatchNovelChangeBottomSheet : BottomSheetDialogFragment() {
         super.onViewCreated(view, savedInstanceState)
 
         val count = batchViewModel.selectedCount.value ?: 0
+        binding.btnConfirm.isEnabled = false // 데이터 로드 전 클릭 방지
 
         viewLifecycleOwner.lifecycleScope.launch {
             novels = batchViewModel.getAllNovelsList()
