@@ -69,17 +69,15 @@ object BackupEncryptor {
             .array()
     }
 
-    /**
-     * Encrypt a file using chunked GCM encryption (v2 format).
-     * 각 청크를 독립적으로 암호화하여 복호화 시 청크 단위로 처리 가능.
-     * 피크 메모리: ~2MB (CHUNK_SIZE + 암호화 결과)
-     *
-     * Output format (v2):
-     *   [MAGIC "NCB2": 4B][chunkSize: 4B]
-     *   [chunk1_IV: 12B][chunk1_encrypted + GCM tag]
-     *   [chunk2_IV: 12B][chunk2_encrypted + GCM tag]
-     *   ...
-     */
+    // Encrypt a file using chunked GCM encryption (v2 format).
+    // 각 청크를 독립적으로 암호화하여 복호화 시 청크 단위로 처리 가능.
+    // 피크 메모리: ~2MB (CHUNK_SIZE + 암호화 결과)
+    //
+    // Output format (v2):
+    //   MAGIC "NCB2"(4B) + chunkSize(4B)
+    //   chunk1_IV(12B) + chunk1_encrypted + GCM tag
+    //   chunk2_IV(12B) + chunk2_encrypted + GCM tag
+    //   ...
     fun encryptFile(inputFile: File, outputFile: File) {
         FileOutputStream(outputFile).use { fos ->
             // v2 헤더
@@ -104,15 +102,13 @@ object BackupEncryptor {
         }
     }
 
-    /**
-     * Decrypt a file. 자동으로 v1(레거시)/v2(청크) 형식을 감지한다.
-     *
-     * v1: [IV: 12B][전체 암호문 + GCM tag] — 전체 로드, 기존 백업 호환
-     * v2: [MAGIC "NCB2": 4B][chunkSize: 4B][chunks...] — 청크 단위 복호화
-     *
-     * doFinal() 기반으로 GCM 인증 태그를 항상 검증.
-     * CipherInputStream은 일부 Android 버전에서 태그 검증을 건너뛸 수 있으므로 사용하지 않음.
-     */
+    // Decrypt a file. 자동으로 v1(레거시)/v2(청크) 형식을 감지한다.
+    //
+    // v1: IV(12B) + 전체 암호문 + GCM tag — 전체 로드, 기존 백업 호환
+    // v2: MAGIC "NCB2"(4B) + chunkSize(4B) + chunks — 청크 단위 복호화
+    //
+    // doFinal() 기반으로 GCM 인증 태그를 항상 검증.
+    // CipherInputStream은 일부 Android 버전에서 태그 검증을 건너뛸 수 있으므로 사용하지 않음.
     fun decryptFile(inputFile: File, outputFile: File) {
         val tempFile = File(outputFile.parentFile, outputFile.name + ".tmp")
         try {
