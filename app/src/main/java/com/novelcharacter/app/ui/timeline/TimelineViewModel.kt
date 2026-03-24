@@ -366,10 +366,35 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
 
     fun deleteEvent(event: TimelineEvent) = viewModelScope.launch {
         try {
+            // 삭제 전에 연결된 캐릭터의 상태변화 정리 (삭제 후에는 cross-ref 소실)
+            if (event.eventType == TimelineEvent.TYPE_BIRTH || event.eventType == TimelineEvent.TYPE_DEATH) {
+                cleanupStateChangesForDeletedEvent(event)
+            }
             timelineRepository.deleteEvent(event)
         } catch (e: Exception) {
             Log.e("TimelineViewModel", "Failed to delete event", e)
             showError(e.message)
+        }
+    }
+
+    /**
+     * 출생/사망 사건 삭제 전, 연결된 캐릭터의 상태변화 + 필드값을 정리.
+     * syncEventTypeToStateChanges()의 역방향 처리.
+     */
+    private suspend fun cleanupStateChangesForDeletedEvent(event: TimelineEvent) {
+        val characterIds = timelineRepository.getCharacterIdsForEvent(event.id)
+        for (charId in characterIds) {
+            try {
+                val character = characterRepository.getCharacterById(charId) ?: continue
+                val novel = character.novelId?.let { novelRepository.getNovelById(it) } ?: continue
+                val universeId = novel.universeId ?: continue
+                when (event.eventType) {
+                    TimelineEvent.TYPE_BIRTH -> semanticSyncHelper.onBirthEventDeleted(charId, universeId)
+                    TimelineEvent.TYPE_DEATH -> semanticSyncHelper.onDeathEventDeleted(charId, universeId)
+                }
+            } catch (e: Exception) {
+                Log.w("TimelineViewModel", "Failed to cleanup state changes for character $charId", e)
+            }
         }
     }
 }

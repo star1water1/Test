@@ -149,6 +149,32 @@ class SemanticFieldSyncHelper(
         }
     }
 
+    /**
+     * 출생 사건 삭제 시 관련 상태변화 + 필드값 정리.
+     * - __birth CharacterStateChange 삭제
+     * - birth_year, age, birth_date 필드값 클리어
+     */
+    suspend fun onBirthEventDeleted(characterId: Long, universeId: Long) = syncMutex.withLock {
+        val fields = universeRepository.getFieldsByUniverseList(universeId)
+        deleteStateChangeByKey(characterId, CharacterStateChange.KEY_BIRTH)
+        findFieldByRole(fields, SemanticRole.BIRTH_YEAR)?.let { deleteFieldValueIfExists(characterId, it.id) }
+        findFieldByRole(fields, SemanticRole.AGE)?.let { deleteFieldValueIfExists(characterId, it.id) }
+        findFieldByRole(fields, SemanticRole.BIRTH_DATE)?.let { deleteFieldValueIfExists(characterId, it.id) }
+    }
+
+    /**
+     * 사망 사건 삭제 시 관련 상태변화 + 필드값 정리.
+     * - __death CharacterStateChange 삭제
+     * - death_year 필드값 클리어
+     * - alive 필드를 "생존"으로 복원 (출생 기록이 있을 때) 또는 클리어
+     */
+    suspend fun onDeathEventDeleted(characterId: Long, universeId: Long) = syncMutex.withLock {
+        val fields = universeRepository.getFieldsByUniverseList(universeId)
+        deleteStateChangeByKey(characterId, CharacterStateChange.KEY_DEATH)
+        findFieldByRole(fields, SemanticRole.DEATH_YEAR)?.let { deleteFieldValueIfExists(characterId, it.id) }
+        syncDeathToAlive(characterId, fields, isDead = false)
+    }
+
     /** standardYear 연동 활성 여부를 외부에서 확인할 수 있도록 프록시 제공 */
     suspend fun isLinked(characterId: Long): Boolean =
         standardYearSyncHelper.isLinked(characterId)
