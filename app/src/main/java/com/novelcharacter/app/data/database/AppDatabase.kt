@@ -66,7 +66,7 @@ import com.novelcharacter.app.data.model.Universe
         Faction::class,
         FactionMembership::class
     ],
-    version = 29,
+    version = 30,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -1210,6 +1210,118 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_29_30 = object : Migration(29, 30) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "Migrating database from version 29 to 30")
+
+                // 1. alive 필드에 semanticRole 추가 (아직 없는 경우)
+                val cursor = db.query("""
+                    SELECT id, config FROM field_definitions
+                    WHERE key = 'alive' AND type = 'SELECT'
+                    AND config LIKE '%생존%'
+                    AND config NOT LIKE '%semanticRole%'
+                """)
+                while (cursor.moveToNext()) {
+                    val id = cursor.getLong(0)
+                    val config = cursor.getString(1)
+                    try {
+                        val json = JSONObject(config)
+                        json.put("semanticRole", "alive")
+                        // options에서 aliveValue/deadValue 추론
+                        val options = json.optJSONArray("options")
+                        if (options != null) {
+                            for (i in 0 until options.length()) {
+                                val opt = options.optString(i)
+                                if (opt == "생존" && !json.has("aliveValue")) json.put("aliveValue", "생존")
+                                if (opt == "사망" && !json.has("deadValue")) json.put("deadValue", "사망")
+                            }
+                        }
+                        db.execSQL(
+                            "UPDATE field_definitions SET config = ? WHERE id = ?",
+                            arrayOf(json.toString(), id)
+                        )
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to update config for field_definition $id", e)
+                    }
+                }
+                cursor.close()
+
+                // 2. __death가 있는 캐릭터의 alive 필드를 "사망"으로, __birth만 있으면 "생존"으로
+                val aliveCursor = db.query("""
+                    SELECT id, universeId FROM field_definitions
+                    WHERE config LIKE '%"semanticRole":"alive"%'
+                """)
+                while (aliveCursor.moveToNext()) {
+                    val fieldDefId = aliveCursor.getLong(0)
+                    val universeId = aliveCursor.getLong(1)
+
+                    val charCursor = db.query("""
+                        SELECT c.id FROM characters c
+                        JOIN novels n ON c.novelId = n.id
+                        WHERE n.universeId = ?
+                    """, arrayOf(universeId.toString()))
+
+                    while (charCursor.moveToNext()) {
+                        val charId = charCursor.getLong(0)
+                        val hasDeath = db.query(
+                            "SELECT 1 FROM character_state_changes WHERE characterId = ? AND fieldKey = '__death' LIMIT 1",
+                            arrayOf(charId.toString())
+                        ).use { it.moveToFirst() }
+
+                        val hasBirth = db.query(
+                            "SELECT 1 FROM character_state_changes WHERE characterId = ? AND fieldKey = '__birth' LIMIT 1",
+                            arrayOf(charId.toString())
+                        ).use { it.moveToFirst() }
+
+                        val currentValue = db.query(
+                            "SELECT value FROM character_field_values WHERE characterId = ? AND fieldDefinitionId = ?",
+                            arrayOf(charId.toString(), fieldDefId.toString())
+                        ).use { c ->
+                            if (c.moveToFirst()) c.getString(0) else null
+                        }
+
+                        val newAliveValue = when {
+                            hasDeath && currentValue.isNullOrEmpty() -> "사망"
+                            !hasDeath && hasBirth && currentValue.isNullOrEmpty() -> "생존"
+                            else -> null
+                        }
+
+                        if (newAliveValue != null) {
+                            if (currentValue != null) {
+                                db.execSQL(
+                                    "UPDATE character_field_values SET value = ? WHERE characterId = ? AND fieldDefinitionId = ?",
+                                    arrayOf(newAliveValue, charId, fieldDefId)
+                                )
+                            } else {
+                                db.execSQL(
+                                    "INSERT INTO character_field_values (characterId, fieldDefinitionId, value) VALUES (?, ?, ?)",
+                                    arrayOf(charId, fieldDefId, newAliveValue)
+                                )
+                            }
+
+                            // __alive 상태변화 삽입
+                            val hasAliveChange = db.query(
+                                "SELECT 1 FROM character_state_changes WHERE characterId = ? AND fieldKey = '__alive' LIMIT 1",
+                                arrayOf(charId.toString())
+                            ).use { it.moveToFirst() }
+
+                            if (!hasAliveChange) {
+                                val status = if (newAliveValue == "사망") "dead" else "alive"
+                                db.execSQL(
+                                    "INSERT INTO character_state_changes (characterId, year, fieldKey, newValue, description, createdAt) VALUES (?, 0, '__alive', ?, '', ?)",
+                                    arrayOf(charId, status, System.currentTimeMillis())
+                                )
+                            }
+                        }
+                    }
+                    charCursor.close()
+                }
+                aliveCursor.close()
+
+                Log.i(TAG, "Migration from version 29 to 30 completed successfully")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -1217,7 +1329,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "novel_character_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30)
                     .addCallback(SeedCallback(context.applicationContext))
                     .build()
                     .also { INSTANCE = it }

@@ -143,6 +143,8 @@ class SemanticFieldSyncHelper(
                 if (deathYearField != null && change.year != 0) {
                     upsertFieldValue(characterId, deathYearField.id, change.year.toString())
                 }
+                // 타임라인에서 사망 추가 시 alive 필드도 동기화
+                syncDeathToAlive(characterId, fields, isDead = true)
             }
         }
     }
