@@ -20,6 +20,11 @@ import com.novelcharacter.app.data.model.FieldType
 import com.novelcharacter.app.data.model.SearchPreset
 import com.novelcharacter.app.data.model.UserPresetTemplate
 import com.novelcharacter.app.data.model.generateEntityCode
+import com.novelcharacter.app.data.model.SemanticRole
+import com.novelcharacter.app.data.repository.CharacterRepository
+import com.novelcharacter.app.data.repository.NovelRepository
+import com.novelcharacter.app.data.repository.UniverseRepository
+import com.novelcharacter.app.util.SemanticFieldSyncHelper
 import org.apache.poi.ss.usermodel.CellType
 import org.apache.poi.ss.usermodel.Row
 import org.apache.poi.ss.usermodel.Sheet
@@ -108,6 +113,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private val novelIdCache = mutableMapOf<Pair<String, Long?>, Long?>()
     private var truncatedFieldCount = 0
     private val truncatedDetails = mutableListOf<String>()
+
+    // 임포트 후 시맨틱 동기화 대상 (characterId → universeId)
+    private val pendingSyncCharacters = mutableMapOf<Long, Long>()
 
     // ── Header alias map for tolerant import (Sprint C) ──
 
@@ -250,6 +258,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     ): ImportResult {
         val result = ImportResult()
         novelIdCache.clear()
+        pendingSyncCharacters.clear()
         processedRowsSoFar = 0
         truncatedFieldCount = 0
         truncatedDetails.clear()
@@ -322,6 +331,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             if (effectiveOptions.presetTemplates) importUserPresetTemplates(workbook, result, onProgress, totalRows)
             if (effectiveOptions.searchPresets) importSearchPresets(workbook, result, onProgress, totalRows)
             if (effectiveOptions.appSettings) importAppSettings(workbook, result)
+
+            // Phase 5: 시맨틱 필드 동기화 (출생/사망연도 ↔ 상태변화 ↔ 생존여부)
+            if (pendingSyncCharacters.isNotEmpty()) {
+                runPostImportSemanticSync()
+            }
         }
 
         if (truncatedFieldCount > 0) {
@@ -1518,6 +1532,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 }
 
                 // 동적 필드 값 가져오기 (빈 셀 = 기존 값 삭제)
+                var hasSemanticField = false
                 for ((colIndex, field) in columnFieldMap) {
                     val value = getCellString(row, colIndex)
                     val existingValue = db.characterFieldValueDao().getValue(charId, field.id)
@@ -1529,9 +1544,16 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                                 characterId = charId, fieldDefinitionId = field.id, value = value
                             ))
                         }
+                        if (!hasSemanticField && SemanticRole.fromConfig(field.config) != null) {
+                            hasSemanticField = true
+                        }
                     } else if (existingValue != null) {
                         db.characterFieldValueDao().deleteValue(charId, field.id)
                     }
+                }
+                // 시맨틱 역할 필드가 임포트되었으면 동기화 대상에 추가
+                if (hasSemanticField && universe != null) {
+                    pendingSyncCharacters[charId] = universe.id
                 }
             } catch (e: Exception) {
                 result.skippedRows++
@@ -1715,6 +1737,15 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         createdAt = createdAt
                     ))
                     result.newStateChanges++
+                }
+
+                // __death/__birth 상태변화 임포트 시 필드 동기화 대상에 추가
+                if (fieldKey == CharacterStateChange.KEY_DEATH || fieldKey == CharacterStateChange.KEY_BIRTH) {
+                    val novel = character.novelId?.let { db.novelDao().getNovelById(it) }
+                    val uId = novel?.universeId
+                    if (uId != null) {
+                        pendingSyncCharacters[character.id] = uId
+                    }
                 }
             } catch (e: Exception) {
                 result.skippedRows++
@@ -2534,6 +2565,32 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             return raw.substring(0, maxLength)
         }
         return raw
+    }
+
+    /**
+     * 임포트 후 시맨틱 필드 동기화.
+     * 필드값 → 상태변화, 상태변화 → 필드값 양방향 동기화 수행.
+     */
+    private suspend fun runPostImportSemanticSync() {
+        val characterRepository = CharacterRepository(
+            db, db.characterDao(), db.characterFieldValueDao(),
+            db.characterStateChangeDao(), db.characterTagDao(),
+            db.characterRelationshipDao(), db.nameBankDao()
+        )
+        val universeRepository = UniverseRepository(
+            db, db.universeDao(), db.fieldDefinitionDao(), db.novelDao()
+        )
+        val novelRepository = NovelRepository(db, db.novelDao())
+        val syncHelper = SemanticFieldSyncHelper(characterRepository, universeRepository, novelRepository)
+
+        for ((characterId, universeId) in pendingSyncCharacters) {
+            try {
+                val fieldValues = db.characterFieldValueDao().getValuesByCharacterList(characterId)
+                syncHelper.syncFieldToStateChange(characterId, universeId, fieldValues)
+            } catch (e: Exception) {
+                android.util.Log.w("ExcelImport", "Post-import sync failed for character $characterId", e)
+            }
+        }
     }
 
     companion object {
