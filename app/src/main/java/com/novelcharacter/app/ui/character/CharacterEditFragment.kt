@@ -976,39 +976,125 @@ class CharacterEditFragment : Fragment() {
             binding.btnSave.isEnabled = false
             viewLifecycleOwner.lifecycleScope.launch {
                 try {
-                    val savedCharId: Long
-                    if (characterId != -1L) {
-                        val fieldValues = collectFieldValues(characterId)
-                        viewModel.updateCharacterWithFields(character, fieldValues)
-                        savedCharId = characterId
-                        // 저장 성공: 이전 이미지 목록에서 제거된 파일을 디스크에서 삭제
-                        cleanupRemovedImages(existingCharacter?.imagePaths, imagePaths)
+                    // 중복 이름 체크
+                    val duplicates = viewModel.getAllCharactersByName(name)
+                        .filter { it.id != characterId } // 자기 자신 제외 (수정 시)
+
+                    if (duplicates.isNotEmpty()) {
+                        // 중복 후보 목록 구성 (작품명 포함)
+                        val candidates = duplicates.map { dup ->
+                            val novelTitle = dup.novelId?.let { viewModel.getNovelById(it)?.title }
+                            DuplicateCandidate(dup, novelTitle)
+                        }
+
+                        val isEdit = characterId != -1L
+                        // 다이얼로그 표시 (메인 스레드에서)
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                            showDuplicateDialog(candidates, isEdit, character)
+                        }
                     } else {
-                        val newId = viewModel.insertCharacterSuspend(character)
-                        val fieldValues = collectFieldValues(newId)
-                        viewModel.saveAllFieldValues(newId, fieldValues)
-                        savedCharId = newId
-                    }
-
-                    val tagText = binding.editTags.text.toString()
-                    val tagList = tagText.split(",").map { it.trim() }.filter { it.isNotBlank() }
-                    viewModel.replaceAllTagsSuspend(savedCharId, tagList.map { CharacterTag(characterId = savedCharId, tag = it) })
-
-                    if (isAdded && view != null) {
-                        Toast.makeText(requireContext(), R.string.saved_successfully, Toast.LENGTH_SHORT).show()
-                        findNavController().popBackStack()
+                        performSave(character, isUpdate = characterId != -1L, targetCharacterId = characterId)
                     }
                 } catch (e: Exception) {
                     if (isAdded && _binding != null) {
                         Toast.makeText(requireContext(), R.string.save_failed, Toast.LENGTH_SHORT).show()
                     }
-                } finally {
-                    isSaving = false
-                    if (_binding != null) {
-                        binding.btnSave.isEnabled = true
+                    resetSavingState()
+                }
+            }
+        }
+    }
+
+    private fun showDuplicateDialog(
+        candidates: List<DuplicateCandidate>,
+        isEditMode: Boolean,
+        character: Character
+    ) {
+        val dialog = DuplicateCharacterDialog.newInstance(candidates, isEditMode)
+        dialog.onResolved = resolved@{ result ->
+            when (result.resolution) {
+                DuplicateCharacterDialog.Resolution.CANCEL -> {
+                    resetSavingState()
+                }
+                DuplicateCharacterDialog.Resolution.CREATE_NEW -> {
+                    viewLifecycleOwner.lifecycleScope.launch {
+                        try {
+                            performSave(character, isUpdate = false, targetCharacterId = -1L)
+                        } catch (e: Exception) {
+                            if (isAdded && _binding != null) {
+                                Toast.makeText(requireContext(), R.string.save_failed, Toast.LENGTH_SHORT).show()
+                            }
+                            resetSavingState()
+                        }
+                    }
+                }
+                DuplicateCharacterDialog.Resolution.UPDATE_EXISTING -> {
+                    val target = result.selectedCharacter
+                    if (target == null) { resetSavingState(); return@resolved }
+                    viewLifecycleOwner.lifecycleScope.launch {
+                        try {
+                            val updatedChar = character.copy(
+                                id = target.id,
+                                code = target.code,
+                                createdAt = target.createdAt,
+                                displayOrder = target.displayOrder,
+                                isPinned = target.isPinned
+                            )
+                            performSave(updatedChar, isUpdate = true, targetCharacterId = target.id)
+                        } catch (e: Exception) {
+                            if (isAdded && _binding != null) {
+                                Toast.makeText(requireContext(), R.string.save_failed, Toast.LENGTH_SHORT).show()
+                            }
+                            resetSavingState()
+                        }
+                    }
+                }
+                DuplicateCharacterDialog.Resolution.SAVE_ANYWAY -> {
+                    viewLifecycleOwner.lifecycleScope.launch {
+                        try {
+                            performSave(character, isUpdate = true, targetCharacterId = characterId)
+                        } catch (e: Exception) {
+                            if (isAdded && _binding != null) {
+                                Toast.makeText(requireContext(), R.string.save_failed, Toast.LENGTH_SHORT).show()
+                            }
+                            resetSavingState()
+                        }
                     }
                 }
             }
+        }
+        dialog.show(childFragmentManager, "duplicate_character")
+    }
+
+    private suspend fun performSave(character: Character, isUpdate: Boolean, targetCharacterId: Long) {
+        val savedCharId: Long
+        if (isUpdate && targetCharacterId != -1L) {
+            val fieldValues = collectFieldValues(targetCharacterId)
+            viewModel.updateCharacterWithFields(character, fieldValues)
+            savedCharId = targetCharacterId
+            cleanupRemovedImages(existingCharacter?.imagePaths, imagePaths)
+        } else {
+            val newId = viewModel.insertCharacterSuspend(character)
+            val fieldValues = collectFieldValues(newId)
+            viewModel.saveAllFieldValues(newId, fieldValues)
+            savedCharId = newId
+        }
+
+        val tagText = binding.editTags.text.toString()
+        val tagList = tagText.split(",").map { it.trim() }.filter { it.isNotBlank() }
+        viewModel.replaceAllTagsSuspend(savedCharId, tagList.map { CharacterTag(characterId = savedCharId, tag = it) })
+
+        if (isAdded && view != null) {
+            Toast.makeText(requireContext(), R.string.saved_successfully, Toast.LENGTH_SHORT).show()
+            findNavController().popBackStack()
+        }
+        resetSavingState()
+    }
+
+    private fun resetSavingState() {
+        isSaving = false
+        if (_binding != null) {
+            binding.btnSave.isEnabled = true
         }
     }
 

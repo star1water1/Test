@@ -248,6 +248,9 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     suspend fun getAllCharactersList(): List<Character> =
         characterRepository.getAllCharactersList()
 
+    suspend fun getAllCharactersByName(name: String): List<Character> =
+        characterRepository.getAllCharactersByName(name)
+
     suspend fun getCharactersByNovelList(novelId: Long): List<Character> =
         characterRepository.getCharactersByNovelList(novelId)
 

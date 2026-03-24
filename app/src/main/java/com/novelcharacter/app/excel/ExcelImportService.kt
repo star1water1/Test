@@ -45,7 +45,24 @@ data class CategoryAnalysis(
 }
 
 data class RestoreAnalysis(
-    val categories: List<CategoryAnalysis>
+    val categories: List<CategoryAnalysis>,
+    val characterConflicts: List<CharacterConflict> = emptyList()
+)
+
+enum class ConflictResolution {
+    SKIP,
+    CREATE_NEW,
+    UPDATE_EXISTING
+}
+
+data class CharacterConflict(
+    val excelRowIndex: Int,
+    val sheetName: String,
+    val excelName: String,
+    val excelNovelTitle: String?,
+    val existingCharacters: List<Character>,
+    var resolution: ConflictResolution = ConflictResolution.CREATE_NEW,
+    var selectedExistingId: Long? = null
 )
 
 data class ImportResult(
@@ -226,6 +243,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         workbook: Workbook,
         options: ExportOptions = ExportOptions(),
         strategy: ImportStrategy = ImportStrategy.MERGE,
+        resolvedConflicts: Map<String, CharacterConflict> = emptyMap(),
         onProgress: (ImportProgress) -> Unit = {}
     ): ImportResult {
         val result = ImportResult()
@@ -285,8 +303,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
             // Phase 2: Entity data (characters)
             if (effectiveOptions.characters) {
-                importCharacterSheets(workbook, result, onProgress, totalRows)
-                importUnclassifiedCharacters(workbook, result, onProgress, totalRows)
+                importCharacterSheets(workbook, result, resolvedConflicts, onProgress, totalRows)
+                importUnclassifiedCharacters(workbook, result, resolvedConflicts, onProgress, totalRows)
             }
 
             // Phase 3: Relationships and references
@@ -324,13 +342,18 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         onProgress: (ImportProgress) -> Unit = {}
     ): RestoreAnalysis {
         val categories = mutableListOf<CategoryAnalysis>()
+        var characterConflicts = emptyList<CharacterConflict>()
         processedRowsSoFar = 0
         val totalRows = countTotalRows(workbook)
 
         if (options.universes) categories.add(analyzeUniverses(workbook, onProgress, totalRows))
         if (options.novels) categories.add(analyzeNovels(workbook, onProgress, totalRows))
         if (options.fieldDefinitions) categories.add(analyzeFieldDefinitions(workbook, onProgress, totalRows))
-        if (options.characters) categories.add(analyzeCharacters(workbook, onProgress, totalRows))
+        if (options.characters) {
+            val charResult = analyzeCharacters(workbook, onProgress, totalRows)
+            categories.add(charResult.category)
+            characterConflicts = charResult.conflicts
+        }
         if (options.timeline) categories.add(analyzeTimeline(workbook, onProgress, totalRows))
         if (options.stateChanges) categories.add(analyzeStateChanges(workbook, onProgress, totalRows))
         if (options.relationships) categories.add(analyzeRelationships(workbook, onProgress, totalRows))
@@ -341,7 +364,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         if (options.presetTemplates) categories.add(analyzePresetTemplates(workbook, onProgress, totalRows))
         if (options.searchPresets) categories.add(analyzeSearchPresets(workbook, onProgress, totalRows))
 
-        return RestoreAnalysis(categories)
+        return RestoreAnalysis(categories, characterConflicts)
     }
 
     private suspend fun analyzeUniverses(workbook: Workbook, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
@@ -450,9 +473,15 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         return CategoryAnalysis("fieldDefinitions", "필드 정의", inBackup, newCount, updateCount, unchangedCount, existingTotal)
     }
 
-    private suspend fun analyzeCharacters(workbook: Workbook, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
+    data class CharacterAnalysisResult(
+        val category: CategoryAnalysis,
+        val conflicts: List<CharacterConflict>
+    )
+
+    private suspend fun analyzeCharacters(workbook: Workbook, onProgress: (ImportProgress) -> Unit, totalRows: Int): CharacterAnalysisResult {
         val existingTotal = db.characterDao().getAllCharactersList().size
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0
+        val allConflicts = mutableListOf<CharacterConflict>()
 
         // 세계관별 캐릭터 시트 분석
         val universes = db.universeDao().getAllUniversesList()
@@ -461,10 +490,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val sheet = findSheetForUniverse(workbook, universe.name, reservedNames) ?: continue
             val headerRow = sheet.getRow(0) ?: continue
             if (!isValidHeader(headerRow, "이름")) continue
-            val result = analyzeCharacterSheet(sheet, headerRow)
+            val result = analyzeCharacterSheet(sheet, headerRow, universe.name)
             inBackup += result.first; newCount += result.second; updateCount += result.third
-            // fourth element = unchanged
             unchangedCount += (result.first - result.second - result.third)
+            allConflicts.addAll(result.fourth)
         }
 
         // 미분류 캐릭터 분석
@@ -472,25 +501,32 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         if (unclSheet != null) {
             val headerRow = unclSheet.getRow(0)
             if (headerRow != null && isValidHeader(headerRow, "이름")) {
-                val result = analyzeCharacterSheet(unclSheet, headerRow)
+                val result = analyzeCharacterSheet(unclSheet, headerRow, UNCLASSIFIED_SHEET_NAME)
                 inBackup += result.first; newCount += result.second; updateCount += result.third
                 unchangedCount += (result.first - result.second - result.third)
+                allConflicts.addAll(result.fourth)
             }
         }
 
         reportProgress(onProgress, "캐릭터 분석", 0, totalRows)
-        return CategoryAnalysis("characters", "캐릭터", inBackup, newCount, updateCount, unchangedCount, existingTotal)
+        val category = CategoryAnalysis("characters", "캐릭터", inBackup, newCount, updateCount, unchangedCount, existingTotal)
+        return CharacterAnalysisResult(category, allConflicts)
     }
 
-    /** @return Triple(inBackup, newCount, updateCount) */
-    private suspend fun analyzeCharacterSheet(sheet: Sheet, headerRow: Row): Triple<Int, Int, Int> {
+    /** @return Quad(inBackup, newCount, updateCount, conflicts) */
+    private data class SheetAnalysis(val first: Int, val second: Int, val third: Int, val fourth: List<CharacterConflict>)
+
+    private suspend fun analyzeCharacterSheet(sheet: Sheet, headerRow: Row, sheetLabel: String): SheetAnalysis {
         val cols = resolveHeaderColumns(headerRow)
         val nameColIndex = cols["이름"] ?: 0
         val codeColIndex = cols["코드"] ?: -1
         val memoColIndex = cols["메모"] ?: -1
         val anotherNameColIndex = cols["이명"] ?: -1
+        val novelColIndex = cols["작품"] ?: -1
 
         var inBackup = 0; var newCount = 0; var updateCount = 0
+        val conflicts = mutableListOf<CharacterConflict>()
+
         for (i in 1..sheet.lastRowNum) {
             val row = sheet.getRow(i) ?: continue
             val name = getCellString(row, nameColIndex)
@@ -498,14 +534,40 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             inBackup++
 
             val code = if (codeColIndex >= 0) getCellString(row, codeColIndex) else ""
-            val existing = if (code.isNotBlank()) db.characterDao().getCharacterByCode(code) else db.characterDao().getCharacterByName(name)
-            if (existing == null) { newCount++; continue }
-
-            val memo = if (memoColIndex >= 0) getCellString(row, memoColIndex) else ""
-            val anotherName = if (anotherNameColIndex >= 0) getCellString(row, anotherNameColIndex) else ""
-            if (existing.name != name || existing.memo != memo || existing.anotherName != anotherName) updateCount++
+            if (code.isNotBlank()) {
+                // 코드 기반 매칭: 충돌 없음 (코드가 권위적)
+                val existing = db.characterDao().getCharacterByCode(code)
+                if (existing == null) { newCount++; continue }
+                val memo = if (memoColIndex >= 0) getCellString(row, memoColIndex) else ""
+                val anotherName = if (anotherNameColIndex >= 0) getCellString(row, anotherNameColIndex) else ""
+                if (existing.name != name || existing.memo != memo || existing.anotherName != anotherName) updateCount++
+            } else {
+                // 코드 없음: 이름 기반 매칭 — 동명이인 충돌 가능
+                val allMatches = db.characterDao().getAllCharactersByName(name)
+                if (allMatches.isEmpty()) {
+                    newCount++
+                } else if (allMatches.size == 1) {
+                    // 단일 매칭: 기존 동작과 동일
+                    val existing = allMatches[0]
+                    val memo = if (memoColIndex >= 0) getCellString(row, memoColIndex) else ""
+                    val anotherName = if (anotherNameColIndex >= 0) getCellString(row, anotherNameColIndex) else ""
+                    if (existing.name != name || existing.memo != memo || existing.anotherName != anotherName) updateCount++
+                } else {
+                    // 다중 매칭: 충돌 발생
+                    val novelTitle = if (novelColIndex >= 0) getCellString(row, novelColIndex) else null
+                    conflicts.add(CharacterConflict(
+                        excelRowIndex = i,
+                        sheetName = sheetLabel,
+                        excelName = name,
+                        excelNovelTitle = novelTitle?.ifBlank { null },
+                        existingCharacters = allMatches
+                    ))
+                    // 충돌은 사용자 결정 전까지 분류 미정이므로 newCount에 임시 포함
+                    newCount++
+                }
+            }
         }
-        return Triple(inBackup, newCount, updateCount)
+        return SheetAnalysis(inBackup, newCount, updateCount, conflicts)
     }
 
     private suspend fun analyzeTimeline(workbook: Workbook, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
@@ -1224,7 +1286,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     // ── 세계관별 캐릭터 시트 가져오기 ──
 
-    private suspend fun importCharacterSheets(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
+    private suspend fun importCharacterSheets(workbook: Workbook, result: ImportResult, resolvedConflicts: Map<String, CharacterConflict>, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val universes = db.universeDao().getAllUniversesList()
         val reservedNames = RESERVED_SHEET_NAMES
 
@@ -1234,18 +1296,18 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             if (!isValidHeader(headerRow, "이름")) continue
 
             val fields = db.fieldDefinitionDao().getFieldsByUniverseList(universe.id)
-            importCharacterRows(sheet, headerRow, universe, fields, result, onProgress, totalRows)
+            importCharacterRows(sheet, headerRow, universe, fields, result, resolvedConflicts, universe.name, onProgress, totalRows)
         }
     }
 
     // ── 미분류 캐릭터 가져오기 ──
 
-    private suspend fun importUnclassifiedCharacters(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
+    private suspend fun importUnclassifiedCharacters(workbook: Workbook, result: ImportResult, resolvedConflicts: Map<String, CharacterConflict>, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val sheet = workbook.getSheet(UNCLASSIFIED_SHEET_NAME) ?: return
         val headerRow = sheet.getRow(0) ?: return
         if (!isValidHeader(headerRow, "이름")) return
 
-        importCharacterRows(sheet, headerRow, null, emptyList(), result, onProgress, totalRows)
+        importCharacterRows(sheet, headerRow, null, emptyList(), result, resolvedConflicts, UNCLASSIFIED_SHEET_NAME, onProgress, totalRows)
     }
 
     /**
@@ -1260,6 +1322,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         universe: Universe?,
         fields: List<FieldDefinition>,
         result: ImportResult,
+        resolvedConflicts: Map<String, CharacterConflict>,
+        sheetLabel: String,
         onProgress: (ImportProgress) -> Unit,
         totalRows: Int
     ) {
@@ -1322,9 +1386,26 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val charIsPinned = if (pinnedColIndex >= 0) parseBoolean(getCellString(row, pinnedColIndex)) else false
                 val createdAt = if (createdAtColIndex >= 0) parseNumber(getCellString(row, createdAtColIndex))?.toLong() ?: System.currentTimeMillis() else System.currentTimeMillis()
 
+                // 충돌 해결 확인
+                val conflictKey = "$sheetLabel:$i"
+                val conflict = resolvedConflicts[conflictKey]
+                if (conflict != null && conflict.resolution == ConflictResolution.SKIP) {
+                    result.skippedRows++
+                    continue
+                }
+
                 // Code-first matching (Sprint A strict rule)
                 val existingChar: Character?
-                if (code.isNotBlank()) {
+                if (conflict != null) {
+                    // 충돌이 해결된 행: 사용자 결정에 따라 매칭
+                    existingChar = when (conflict.resolution) {
+                        ConflictResolution.CREATE_NEW -> null // 강제 신규 생성
+                        ConflictResolution.UPDATE_EXISTING -> {
+                            conflict.selectedExistingId?.let { db.characterDao().getCharacterById(it) }
+                        }
+                        ConflictResolution.SKIP -> null // 이미 위에서 처리됨
+                    }
+                } else if (code.isNotBlank()) {
                     existingChar = db.characterDao().getCharacterByCode(code)
                     // Code present but not found => new entity
                 } else {

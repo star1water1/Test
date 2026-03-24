@@ -1074,4 +1074,23 @@
     <!-- 보충 모드 배너 -->
     <string name="supplement_banner_issues">미흡 항목: %s</string>
     <string name="supplement_progress_format">%1$d/%2$d</string>
+
+    <!-- 캐릭터 중복 감지 -->
+    <string name="duplicate_character_title">동일한 이름의 캐릭터가 존재합니다</string>
+    <string name="duplicate_character_message">\'%1$s\' 이름을 가진 캐릭터가 이미 %2$d명 존재합니다.</string>
+    <string name="duplicate_action_cancel">취소</string>
+    <string name="duplicate_action_update">기존 캐릭터 업데이트</string>
+    <string name="duplicate_action_create_new">동명이인으로 새로 생성</string>
+    <string name="duplicate_action_save_anyway">그대로 저장 (동명이인)</string>
+    <string name="duplicate_select_target">업데이트할 캐릭터를 선택하세요</string>
+    <string name="duplicate_novel_none">작품 미지정</string>
+
+    <!-- 임포트 충돌 해결 -->
+    <string name="import_conflict_title">동명이인 충돌 해결</string>
+    <string name="import_conflict_message">%d건의 이름 충돌이 발견되었습니다</string>
+    <string name="import_conflict_skip">건너뛰기 (가져오지 않음)</string>
+    <string name="import_conflict_create_new">동명이인으로 새로 생성</string>
+    <string name="import_conflict_update_format">기존 캐릭터 업데이트: %1$s (%2$s)</string>
+    <string name="import_conflict_row_format">행 %1$d: %2$s</string>
+    <string name="import_conflict_confirm">확인</string>
 </resources>

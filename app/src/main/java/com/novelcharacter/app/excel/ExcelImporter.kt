@@ -348,6 +348,13 @@ class ExcelImporter(context: Context) {
             // Phase 3: 미리보기 + 전략 선택 다이얼로그
             val strategy = showRestorePreviewDialog(analysis) ?: return
 
+            // Phase 3.5: 동명이인 충돌 해결 다이얼로그
+            val resolvedConflicts: Map<String, CharacterConflict> = if (analysis.characterConflicts.isNotEmpty()) {
+                showConflictResolutionDialog(analysis.characterConflicts) ?: return
+            } else {
+                emptyMap()
+            }
+
             // Phase 4: 실제 가져오기 진행
             progressDialog = null
             progressText = null
@@ -383,7 +390,7 @@ class ExcelImporter(context: Context) {
                 }
             }
 
-            val result = importService.importAll(workbook, options, strategy) { progress ->
+            val result = importService.importAll(workbook, options, strategy, resolvedConflicts) { progress ->
                 val pct = if (progress.totalRows > 0) {
                     (progress.processedRows * 100 / progress.totalRows).coerceAtMost(100)
                 } else 0
@@ -577,6 +584,167 @@ class ExcelImporter(context: Context) {
                         cont.resume(strategy, null)
                     }
                     .setNegativeButton(com.novelcharacter.app.R.string.cancel) { _, _ ->
+                        cont.resume(null, null)
+                    }
+                    .setOnCancelListener {
+                        cont.resume(null, null)
+                    }
+                    .show()
+            }
+        }
+    }
+
+    // ── 동명이인 충돌 해결 다이얼로그 ──
+
+    private suspend fun showConflictResolutionDialog(
+        conflicts: List<CharacterConflict>
+    ): Map<String, CharacterConflict>? {
+        val activity = currentActivityRef?.get()
+        if (activity == null || activity.isFinishing || activity.isDestroyed) {
+            return conflicts.associateBy { "${it.sheetName}:${it.excelRowIndex}" }
+        }
+
+        // 사전에 소설 제목 로드 (IO 스레드)
+        val novelTitleCache = mutableMapOf<Long, String>()
+        for (conflict in conflicts) {
+            for (char in conflict.existingCharacters) {
+                val nid = char.novelId ?: continue
+                if (nid !in novelTitleCache) {
+                    novelTitleCache[nid] = db.novelDao().getNovelById(nid)?.title
+                        ?: appContext.getString(com.novelcharacter.app.R.string.duplicate_novel_none)
+                }
+            }
+        }
+
+        return withContext(Dispatchers.Main) {
+            kotlinx.coroutines.suspendCancellableCoroutine { cont ->
+                val act = currentActivityRef?.get()
+                if (act == null || act.isFinishing || act.isDestroyed) {
+                    cont.resume(conflicts.associateBy { "${it.sheetName}:${it.excelRowIndex}" }, null)
+                    return@suspendCancellableCoroutine
+                }
+
+                val dp = act.resources.displayMetrics.density
+                val dp8 = (8 * dp).toInt()
+                val dp16 = (16 * dp).toInt()
+
+                val scrollView = ScrollView(act).apply {
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    )
+                }
+                val container = LinearLayout(act).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(dp16, dp8, dp16, dp8)
+                }
+                scrollView.addView(container)
+
+                // 안내 메시지
+                val messageView = TextView(act).apply {
+                    text = appContext.getString(com.novelcharacter.app.R.string.import_conflict_message, conflicts.size)
+                    textSize = 13f
+                    setPadding(0, 0, 0, dp8)
+                }
+                container.addView(messageView)
+
+                // 충돌별 RadioGroup 매핑
+                data class ConflictUI(val conflict: CharacterConflict, val radioGroup: RadioGroup, val updateRadios: Map<Int, Long>)
+                val conflictUIs = mutableListOf<ConflictUI>()
+
+                for (conflict in conflicts) {
+                    // 구분선
+                    val divider = android.view.View(act).apply {
+                        layoutParams = LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT, 1
+                        ).apply { setMargins(0, dp8, 0, dp8) }
+                        setBackgroundColor(0x33888888)
+                    }
+                    container.addView(divider)
+
+                    // 행 정보
+                    val rowLabel = TextView(act).apply {
+                        text = appContext.getString(com.novelcharacter.app.R.string.import_conflict_row_format,
+                            conflict.excelRowIndex, conflict.excelName)
+                        setTypeface(null, Typeface.BOLD)
+                        textSize = 13f
+                    }
+                    container.addView(rowLabel)
+
+                    if (!conflict.excelNovelTitle.isNullOrBlank()) {
+                        val novelLabel = TextView(act).apply {
+                            text = "  작품: ${conflict.excelNovelTitle}"
+                            textSize = 11f
+                            alpha = 0.7f
+                        }
+                        container.addView(novelLabel)
+                    }
+
+                    // 선택지 RadioGroup
+                    val radioGroup = RadioGroup(act).apply {
+                        setPadding(dp8, dp8 / 2, 0, 0)
+                    }
+
+                    // 옵션 1: 건너뛰기
+                    val skipRadio = RadioButton(act).apply {
+                        id = android.view.View.generateViewId()
+                        text = appContext.getString(com.novelcharacter.app.R.string.import_conflict_skip)
+                        textSize = 12f
+                    }
+                    radioGroup.addView(skipRadio)
+
+                    // 옵션 2: 동명이인으로 새로 생성 (기본값)
+                    val createNewRadio = RadioButton(act).apply {
+                        id = android.view.View.generateViewId()
+                        text = appContext.getString(com.novelcharacter.app.R.string.import_conflict_create_new)
+                        textSize = 12f
+                        isChecked = true
+                    }
+                    radioGroup.addView(createNewRadio)
+
+                    // 옵션 3+: 기존 캐릭터 업데이트 (매칭된 캐릭터당 1개)
+                    val updateRadios = mutableMapOf<Int, Long>()
+                    for (existing in conflict.existingCharacters) {
+                        val novelTitle = existing.novelId?.let { nid ->
+                            novelTitleCache[nid]
+                        } ?: appContext.getString(com.novelcharacter.app.R.string.duplicate_novel_none)
+                        val updateRadio = RadioButton(act).apply {
+                            id = android.view.View.generateViewId()
+                            text = appContext.getString(com.novelcharacter.app.R.string.import_conflict_update_format,
+                                existing.name, novelTitle)
+                            textSize = 12f
+                        }
+                        updateRadios[updateRadio.id] = existing.id
+                        radioGroup.addView(updateRadio)
+                    }
+
+                    container.addView(radioGroup)
+                    conflictUIs.add(ConflictUI(conflict, radioGroup, updateRadios))
+                }
+
+                AlertDialog.Builder(act)
+                    .setTitle(com.novelcharacter.app.R.string.import_conflict_title)
+                    .setView(scrollView)
+                    .setPositiveButton(com.novelcharacter.app.R.string.import_conflict_confirm) { _, _ ->
+                        // 각 충돌의 선택 결과 수집
+                        val resultMap = mutableMapOf<String, CharacterConflict>()
+                        for (ui in conflictUIs) {
+                            val checkedId = ui.radioGroup.checkedRadioButtonId
+                            val key = "${ui.conflict.sheetName}:${ui.conflict.excelRowIndex}"
+                            val selectedExistingId = ui.updateRadios[checkedId]
+                            val resolution = when {
+                                selectedExistingId != null -> ConflictResolution.UPDATE_EXISTING
+                                checkedId == ui.radioGroup.getChildAt(0).id -> ConflictResolution.SKIP
+                                else -> ConflictResolution.CREATE_NEW
+                            }
+                            resultMap[key] = ui.conflict.copy(
+                                resolution = resolution,
+                                selectedExistingId = selectedExistingId
+                            )
+                        }
+                        cont.resume(resultMap, null)
+                    }
+                    .setNegativeButton(com.novelcharacter.app.R.string.duplicate_action_cancel) { _, _ ->
                         cont.resume(null, null)
                     }
                     .setOnCancelListener {

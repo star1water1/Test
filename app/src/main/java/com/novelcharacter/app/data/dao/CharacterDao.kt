@@ -37,6 +37,9 @@ interface CharacterDao {
     @Query("SELECT * FROM characters WHERE name = :name LIMIT 1")
     suspend fun getCharacterByName(name: String): Character?
 
+    @Query("SELECT * FROM characters WHERE name = :name")
+    suspend fun getAllCharactersByName(name: String): List<Character>
+
     @Query("SELECT * FROM characters WHERE code = :code LIMIT 1")
     suspend fun getCharacterByCode(code: String): Character?
 
