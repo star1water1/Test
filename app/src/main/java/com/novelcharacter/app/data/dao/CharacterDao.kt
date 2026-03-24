@@ -80,4 +80,15 @@ interface CharacterDao {
 
     @Query("DELETE FROM characters")
     suspend fun deleteAll()
+
+    // ===== 일괄 편집용 배치 메서드 =====
+
+    @Query("UPDATE characters SET novelId = :novelId, updatedAt = :now WHERE id IN (:ids)")
+    suspend fun updateNovelIdForIds(ids: List<Long>, novelId: Long?, now: Long = System.currentTimeMillis())
+
+    @Query("UPDATE characters SET isPinned = :isPinned WHERE id IN (:ids)")
+    suspend fun setPinnedForIds(ids: List<Long>, isPinned: Boolean)
+
+    @Query("DELETE FROM characters WHERE id IN (:ids)")
+    suspend fun deleteByIds(ids: List<Long>)
 }

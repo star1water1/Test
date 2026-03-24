@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingBottom="16dp">
+
+    <!-- Drag indicator -->
+    <View
+        android:layout_width="40dp"
+        android:layout_height="4dp"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginTop="8dp"
+        android:layout_marginBottom="12dp"
+        android:background="@color/text_secondary" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingHorizontal="20dp"
+        android:paddingBottom="8dp"
+        android:text="@string/batch_action"
+        android:textSize="18sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/selectedCountLabel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingHorizontal="20dp"
+        android:paddingBottom="12dp"
+        android:textSize="13sp"
+        android:textColor="@color/text_secondary" />
+
+    <TextView
+        android:id="@+id/opChangeNovel"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="20dp"
+        android:text="@string/batch_op_change_novel"
+        android:textSize="15sp"
+        android:background="?attr/selectableItemBackground"
+        android:drawableStart="@android:drawable/ic_menu_edit"
+        android:drawablePadding="16dp" />
+
+    <TextView
+        android:id="@+id/opAddTags"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="20dp"
+        android:text="@string/batch_op_add_tags"
+        android:textSize="15sp"
+        android:background="?attr/selectableItemBackground"
+        android:drawableStart="@android:drawable/ic_menu_add"
+        android:drawablePadding="16dp" />
+
+    <TextView
+        android:id="@+id/opRemoveTags"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="20dp"
+        android:text="@string/batch_op_remove_tags"
+        android:textSize="15sp"
+        android:background="?attr/selectableItemBackground"
+        android:drawableStart="@android:drawable/ic_menu_close_clear_cancel"
+        android:drawablePadding="16dp" />
+
+    <TextView
+        android:id="@+id/opSetField"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="20dp"
+        android:text="@string/batch_op_set_field"
+        android:textSize="15sp"
+        android:background="?attr/selectableItemBackground"
+        android:drawableStart="@android:drawable/ic_menu_manage"
+        android:drawablePadding="16dp" />
+
+    <TextView
+        android:id="@+id/opClearField"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="20dp"
+        android:text="@string/batch_op_clear_field"
+        android:textSize="15sp"
+        android:background="?attr/selectableItemBackground"
+        android:drawableStart="@android:drawable/ic_menu_revert"
+        android:drawablePadding="16dp" />
+
+    <TextView
+        android:id="@+id/opPin"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="20dp"
+        android:text="@string/batch_op_pin"
+        android:textSize="15sp"
+        android:background="?attr/selectableItemBackground"
+        android:drawableStart="@android:drawable/btn_star_big_on"
+        android:drawablePadding="16dp" />
+
+    <TextView
+        android:id="@+id/opUnpin"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="20dp"
+        android:text="@string/batch_op_unpin"
+        android:textSize="15sp"
+        android:background="?attr/selectableItemBackground"
+        android:drawableStart="@android:drawable/btn_star_big_off"
+        android:drawablePadding="16dp" />
+
+    <TextView
+        android:id="@+id/opAppendMemo"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="20dp"
+        android:text="@string/batch_op_append_memo"
+        android:textSize="15sp"
+        android:background="?attr/selectableItemBackground"
+        android:drawableStart="@android:drawable/ic_menu_my_calendar"
+        android:drawablePadding="16dp" />
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginHorizontal="16dp"
+        android:layout_marginVertical="4dp"
+        android:background="@color/text_secondary"
+        android:alpha="0.2" />
+
+    <TextView
+        android:id="@+id/opDelete"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="20dp"
+        android:text="@string/batch_op_delete"
+        android:textSize="15sp"
+        android:textColor="@android:color/holo_red_dark"
+        android:background="?attr/selectableItemBackground"
+        android:drawableStart="@android:drawable/ic_menu_delete"
+        android:drawablePadding="16dp" />
+
+</LinearLayout>

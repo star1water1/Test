@@ -39,6 +39,10 @@ interface UniverseDao {
     @Query("UPDATE universes SET imageCharacterId = NULL, imageMode = 'none' WHERE imageCharacterId = :characterId")
     suspend fun clearImageCharacterRef(characterId: Long)
 
+    /** 여러 캐릭터의 이미지 참조 일괄 정리 (배치 삭제용) */
+    @Query("UPDATE universes SET imageCharacterId = NULL, imageMode = 'none' WHERE imageCharacterId IN (:characterIds)")
+    suspend fun clearImageCharacterRefs(characterIds: List<Long>)
+
     @Query("UPDATE universes SET imageNovelId = NULL, imageMode = 'none' WHERE imageNovelId = :novelId")
     suspend fun clearImageNovelRef(novelId: Long)
 

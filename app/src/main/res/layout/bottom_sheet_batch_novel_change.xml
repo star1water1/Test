@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingHorizontal="20dp"
+    android:paddingBottom="16dp">
+
+    <View
+        android:layout_width="40dp"
+        android:layout_height="4dp"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginTop="8dp"
+        android:layout_marginBottom="12dp"
+        android:background="@color/text_secondary" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingBottom="12dp"
+        android:text="@string/batch_novel_title"
+        android:textSize="18sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/warningText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/batch_novel_universe_warning"
+        android:textSize="12sp"
+        android:textColor="@android:color/holo_orange_dark"
+        android:visibility="gone"
+        android:paddingBottom="8dp" />
+
+    <Spinner
+        android:id="@+id/novelSpinner"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="12dp" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnConfirm"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:enabled="false" />
+
+</LinearLayout>

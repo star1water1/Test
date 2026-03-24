@@ -15,9 +15,14 @@ import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.RecyclerView
+import com.google.android.material.snackbar.Snackbar
 import com.novelcharacter.app.R
 import com.novelcharacter.app.databinding.FragmentCharacterListBinding
 import com.novelcharacter.app.ui.adapter.CharacterAdapter
+import com.novelcharacter.app.ui.character.batch.BatchEditViewModel
+import com.novelcharacter.app.ui.character.batch.BatchOperationBottomSheet
+import com.novelcharacter.app.ui.character.batch.BatchOperationResult
+import com.novelcharacter.app.ui.character.batch.BatchSelectByFilterBottomSheet
 import com.novelcharacter.app.util.navigateSafe
 
 class CharacterListFragment : Fragment() {
@@ -27,12 +32,16 @@ class CharacterListFragment : Fragment() {
     private val viewModel: CharacterViewModel by viewModels()
 
     private lateinit var adapter: CharacterAdapter
+    private val batchViewModel: BatchEditViewModel by viewModels()
     private var itemTouchHelper: ItemTouchHelper? = null
     private var novelId: Long = -1L
 
     // Comparison mode
     private var isCompareMode = false
     private val selectedForCompare = mutableSetOf<Long>()
+
+    // Batch edit mode
+    private var isBatchEditMode = false
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
@@ -51,8 +60,15 @@ class CharacterListFragment : Fragment() {
         setupSearch()
         setupFab()
         setupCompareButton()
+        setupBatchEditBar()
         setupToolbarMenu()
         observeData()
+        observeBatchEdit()
+
+        // 회전 후 배치 편집 모드 복원
+        if (savedInstanceState?.getBoolean("isBatchEditMode") == true) {
+            enterBatchEditMode()
+        }
 
         if (novelId != -1L) {
             binding.toolbar.setNavigationIcon(androidx.appcompat.R.drawable.abc_ic_ab_back_material)
@@ -64,12 +80,14 @@ class CharacterListFragment : Fragment() {
         adapter = CharacterAdapter(
             coroutineScope = viewLifecycleOwner.lifecycleScope,
             onClick = { character ->
-                if (isCompareMode) {
-                    toggleCompareSelection(character.id)
-                } else {
-                    viewModel.recordRecentActivity(character.id, character.name)
-                    val bundle = Bundle().apply { putLong("characterId", character.id) }
-                    findNavController().navigateSafe(R.id.characterListFragment, R.id.characterDetailFragment, bundle)
+                when {
+                    isBatchEditMode -> batchViewModel.toggleSelection(character.id)
+                    isCompareMode -> toggleCompareSelection(character.id)
+                    else -> {
+                        viewModel.recordRecentActivity(character.id, character.name)
+                        val bundle = Bundle().apply { putLong("characterId", character.id) }
+                        findNavController().navigateSafe(R.id.characterListFragment, R.id.characterDetailFragment, bundle)
+                    }
                 }
             },
             onEditClick = { character ->
@@ -136,7 +154,14 @@ class CharacterListFragment : Fragment() {
         binding.toolbar.setOnMenuItemClickListener { item ->
             when (item.itemId) {
                 R.id.action_reorder -> {
+                    if (isBatchEditMode) exitBatchEditMode()
                     toggleReorderMode()
+                    true
+                }
+                R.id.action_batch_edit -> {
+                    if (isCompareMode) exitCompareMode()
+                    if (adapter.isReorderMode()) toggleReorderMode()
+                    enterBatchEditMode()
                     true
                 }
                 else -> false
@@ -253,6 +278,103 @@ class CharacterListFragment : Fragment() {
             }
             findNavController().navigateSafe(R.id.characterListFragment, R.id.characterEditFragment, bundle)
         }
+    }
+
+    // ===== 일괄 편집 모드 =====
+
+    private fun setupBatchEditBar() {
+        binding.btnBatchClose.setOnClickListener { exitBatchEditMode() }
+        binding.btnBatchSelectAll.setOnClickListener {
+            val visibleIds = adapter.currentList.map { it.id }
+            batchViewModel.selectAll(visibleIds)
+        }
+        binding.btnBatchDeselectAll.setOnClickListener {
+            batchViewModel.deselectAll()
+        }
+        binding.btnBatchFilter.setOnClickListener {
+            BatchSelectByFilterBottomSheet.newInstance()
+                .show(childFragmentManager, BatchSelectByFilterBottomSheet.TAG)
+        }
+        binding.btnBatchAction.setOnClickListener {
+            val count = batchViewModel.selectedCount.value ?: 0
+            if (count > 0) {
+                val sheet = BatchOperationBottomSheet.newInstance(count)
+                sheet.show(childFragmentManager, BatchOperationBottomSheet.TAG)
+            }
+        }
+    }
+
+    private fun enterBatchEditMode() {
+        isBatchEditMode = true
+        adapter.setSelectionMode(true)
+        binding.batchEditBar.visibility = View.VISIBLE
+        binding.compareLayout.visibility = View.GONE
+        binding.fabAddCharacter.visibility = View.GONE
+        Toast.makeText(requireContext(), R.string.batch_enter_hint, Toast.LENGTH_SHORT).show()
+    }
+
+    private fun exitBatchEditMode() {
+        isBatchEditMode = false
+        batchViewModel.deselectAll()
+        adapter.resetState()
+        binding.batchEditBar.visibility = View.GONE
+        binding.compareLayout.visibility = View.VISIBLE
+        binding.fabAddCharacter.visibility = View.VISIBLE
+    }
+
+    private fun observeBatchEdit() {
+        batchViewModel.selectedIds.observe(viewLifecycleOwner) { ids ->
+            if (isBatchEditMode) {
+                adapter.setSelectedIds(ids)
+                val count = ids.size
+                binding.batchSelectedCount.text = if (count == 0) {
+                    getString(R.string.batch_selected_count_zero)
+                } else {
+                    getString(R.string.batch_selected_count, count)
+                }
+                binding.btnBatchAction.isEnabled = count > 0
+            }
+        }
+
+        batchViewModel.operationResult.observe(viewLifecycleOwner) { result ->
+            if (result == null || _binding == null) return@observe
+            batchViewModel.clearResult()
+
+            when (result) {
+                is BatchOperationResult.Success -> {
+                    val opLabel = getOperationLabel(result.operation)
+                    val message = getString(R.string.batch_success_format, result.affectedCount, opLabel)
+                    Snackbar.make(binding.root, message, Snackbar.LENGTH_SHORT).show()
+
+                    // 배치 작업 후 리스트 강제 갱신 (한 번만)
+                    viewModel.refreshList()
+                }
+                is BatchOperationResult.Error -> {
+                    Snackbar.make(
+                        binding.root,
+                        getString(R.string.batch_error_format, result.message),
+                        Snackbar.LENGTH_LONG
+                    ).show()
+                }
+            }
+        }
+    }
+
+    private fun getOperationLabel(operation: String): String = when (operation) {
+        "setPinned" -> getString(R.string.batch_op_result_pin)
+        "changeNovel" -> getString(R.string.batch_op_result_change_novel)
+        "addTags" -> getString(R.string.batch_op_result_add_tags)
+        "removeTags" -> getString(R.string.batch_op_result_remove_tags)
+        "setFieldValue" -> getString(R.string.batch_op_result_set_field)
+        "clearFieldValue" -> getString(R.string.batch_op_result_clear_field)
+        "appendMemo" -> getString(R.string.batch_op_result_append_memo)
+        "delete" -> getString(R.string.batch_op_result_delete)
+        else -> operation
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putBoolean("isBatchEditMode", isBatchEditMode)
     }
 
     private fun observeData() {

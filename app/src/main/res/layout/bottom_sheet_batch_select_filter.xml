@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingHorizontal="20dp"
+    android:paddingBottom="16dp">
+
+    <View
+        android:layout_width="40dp"
+        android:layout_height="4dp"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginTop="8dp"
+        android:layout_marginBottom="12dp"
+        android:background="@color/text_secondary" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingBottom="12dp"
+        android:text="@string/batch_filter_title"
+        android:textSize="18sp"
+        android:textStyle="bold" />
+
+    <!-- 작품별 필터 -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/batch_filter_by_novel"
+        android:textSize="14sp"
+        android:textStyle="bold"
+        android:paddingBottom="4dp" />
+
+    <Spinner
+        android:id="@+id/filterNovelSpinner"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="12dp" />
+
+    <!-- 태그별 필터 -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/batch_filter_by_tag"
+        android:textSize="14sp"
+        android:textStyle="bold"
+        android:paddingBottom="4dp" />
+
+    <com.google.android.material.chip.ChipGroup
+        android:id="@+id/filterTagChipGroup"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="12dp" />
+
+    <!-- 선택 모드 -->
+    <RadioGroup
+        android:id="@+id/selectionModeGroup"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginBottom="12dp">
+
+        <RadioButton
+            android:id="@+id/radioAddToSelection"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/batch_filter_add_to_selection"
+            android:checked="true" />
+
+        <RadioButton
+            android:id="@+id/radioReplaceSelection"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/batch_filter_replace_selection"
+            android:layout_marginStart="16dp" />
+
+    </RadioGroup>
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnApplyFilter"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/apply" />
+
+</LinearLayout>

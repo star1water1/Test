@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingHorizontal="20dp"
+    android:paddingBottom="16dp">
+
+    <View
+        android:layout_width="40dp"
+        android:layout_height="4dp"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginTop="8dp"
+        android:layout_marginBottom="12dp"
+        android:background="@color/text_secondary" />
+
+    <TextView
+        android:id="@+id/titleText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingBottom="12dp"
+        android:textSize="18sp"
+        android:textStyle="bold" />
+
+    <com.google.android.material.textfield.TextInputLayout
+        android:id="@+id/tagInputLayout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="@string/batch_tag_input_hint"
+        android:layout_marginBottom="8dp">
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/tagInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="text" />
+
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <TextView
+        android:id="@+id/existingTagsLabel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/batch_tag_existing"
+        android:textSize="13sp"
+        android:textColor="@color/text_secondary"
+        android:paddingBottom="4dp" />
+
+    <com.google.android.material.chip.ChipGroup
+        android:id="@+id/tagChipGroup"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="12dp" />
+
+    <TextView
+        android:id="@+id/emptyTagsText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/batch_tag_no_tags"
+        android:textSize="13sp"
+        android:textColor="@color/text_secondary"
+        android:visibility="gone"
+        android:layout_marginBottom="12dp" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnConfirm"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/apply" />
+
+</LinearLayout>

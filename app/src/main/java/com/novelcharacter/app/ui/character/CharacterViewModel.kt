@@ -73,6 +73,14 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         _searchQuery.value = query
     }
 
+    /** 현재 검색어 반환 (배치 작업 후 갱신 트리거용) */
+    fun getSearchQuery(): String = _searchQuery.value ?: ""
+
+    /** LiveData 강제 재평가 트리거 (배치 작업 후 리스트 갱신용) */
+    fun refreshList() {
+        _searchQuery.value = _searchQuery.value
+    }
+
     fun getCharacterById(id: Long): LiveData<Character?> = characterRepository.getCharacterByIdLive(id)
 
     fun getEventsForCharacter(characterId: Long): LiveData<List<TimelineEvent>> =

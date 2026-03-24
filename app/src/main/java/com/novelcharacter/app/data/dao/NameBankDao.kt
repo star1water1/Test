@@ -42,6 +42,10 @@ interface NameBankDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertAll(entries: List<NameBankEntry>)
 
+    /** 여러 캐릭터의 이름뱅크 사용 상태 일괄 해제 (배치 삭제용) */
+    @Query("UPDATE name_bank SET isUsed = 0, usedByCharacterId = NULL WHERE usedByCharacterId IN (:characterIds)")
+    suspend fun resetUsageByCharacterIds(characterIds: List<Long>)
+
     @Query("DELETE FROM name_bank")
     suspend fun deleteAll()
 }
