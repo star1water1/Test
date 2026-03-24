@@ -44,7 +44,7 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
     }
 
     // ===== Zoom Level Management =====
-    private val _zoomLevel = MutableLiveData(prefs.getInt("zoom_level", 4))
+    private val _zoomLevel = MutableLiveData(prefs.getInt("zoom_level", 4).coerceIn(1, 5))
     val zoomLevel: LiveData<Int> = _zoomLevel
 
     private val _centerYear = MutableLiveData(prefs.getInt("center_year", 0))
