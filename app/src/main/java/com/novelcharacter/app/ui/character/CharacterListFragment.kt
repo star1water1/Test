@@ -333,7 +333,13 @@ class CharacterListFragment : Fragment() {
                 } else {
                     getString(R.string.batch_selected_count, count)
                 }
-                binding.btnBatchAction.isEnabled = count > 0
+                binding.btnBatchAction.isEnabled = count > 0 && batchViewModel.isProcessing.value != true
+            }
+        }
+
+        batchViewModel.isProcessing.observe(viewLifecycleOwner) { processing ->
+            if (isBatchEditMode) {
+                binding.btnBatchAction.isEnabled = !processing && (batchViewModel.selectedCount.value ?: 0) > 0
             }
         }
 

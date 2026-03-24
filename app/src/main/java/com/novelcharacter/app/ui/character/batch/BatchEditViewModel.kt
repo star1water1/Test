@@ -177,6 +177,7 @@ class BatchEditViewModel(application: Application) : AndroidViewModel(applicatio
     // ===== 내부 유틸리티 =====
 
     private fun launchBatchOp(opName: String, block: suspend (List<Long>) -> Int) {
+        if (_isProcessing.value == true) return // 중복 실행 방지
         val ids = _selectedIds.value?.toList()
         if (ids.isNullOrEmpty()) return
 
