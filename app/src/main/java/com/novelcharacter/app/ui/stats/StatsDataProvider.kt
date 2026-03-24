@@ -1203,9 +1203,12 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
         // 히스토그램
         val histogram = if (binning != null && binning.mode == "custom") {
             val ranges = binning.parseRanges()
+            val lastRange = ranges.lastOrNull()
             val counts = mutableMapOf<String, Int>()
             for (range in ranges) {
-                counts[range.label] = values.count { range.contains(it) }
+                counts[range.label] = values.count {
+                    if (range === lastRange) range.containsInclusive(it) else range.contains(it)
+                }
             }
             counts
         } else {
@@ -1294,7 +1297,8 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
     // ===== 데이터 현황 (신규 - 기존 여러 compute 통합) =====
     fun computeDataOverview(s: StatsSnapshot): DataOverviewStats {
         val novelMap = s.novels.associateBy { it.id }
-        val fieldDefByUniverse = s.fieldDefinitions.groupBy { it.universeId }
+        val fieldDefByUniverse = s.fieldDefinitions.filter { it.type != "CALCULATED" }
+            .groupBy { it.universeId }
         val charFieldValuesByChar = s.fieldValues.groupBy { it.characterId }
         val valuesByFieldDef = s.fieldValues.filter { it.value.isNotBlank() }.groupBy { it.fieldDefinitionId }
 
@@ -1316,8 +1320,8 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
             if (rates.isEmpty()) 0f else rates.average().toFloat()
         }
 
-        // 개별 필드별 완성도
-        val fieldCompletionDetails = s.fieldDefinitions.map { fd ->
+        // 개별 필드별 완성도 (CALCULATED 필드 제외)
+        val fieldCompletionDetails = s.fieldDefinitions.filter { it.type != "CALCULATED" }.map { fd ->
             val universeNovels = s.novels.filter { it.universeId == fd.universeId }.map { it.id }.toSet()
             val relevantChars = s.characters.filter { it.novelId in universeNovels }
             val filled = valuesByFieldDef[fd.id]?.count { it.value.isNotBlank() } ?: 0
