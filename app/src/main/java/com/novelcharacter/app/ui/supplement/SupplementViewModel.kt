@@ -181,11 +181,14 @@ class SupplementViewModel(application: Application) : AndroidViewModel(applicati
                     _totalCount.value = characters.size
 
                     // 삭제된 엔티티 참조 정리: 복원된 ID가 현재 데이터에 없으면 필터 해제
+                    // setter를 사용하지 않고 직접 수정하여 불필요한 비동기 applyFilters() 호출 방지
                     if (selectedUniverseId != null && universes.none { it.id == selectedUniverseId }) {
-                        setUniverseFilter(null)
+                        selectedUniverseId = null
+                        prefs.edit().remove("universe_id").apply()
                     }
                     if (selectedNovelId != null && novels.none { it.id == selectedNovelId }) {
-                        setNovelFilter(null)
+                        selectedNovelId = null
+                        prefs.edit().remove("novel_id").apply()
                     }
 
                     applyFiltersInternal()
