@@ -224,6 +224,8 @@ class FieldEditDialog : DialogFragment() {
 
     private var linkageRuleContainer: View? = null
     private var linkageRuleSpinner: android.widget.Spinner? = null
+    private var existingAliveValue: String? = null
+    private var existingDeadValue: String? = null
 
     private fun setupLinkageRuleSpinner(binding: DialogFieldEditBinding) {
         val density = resources.displayMetrics.density
@@ -893,6 +895,16 @@ class FieldEditDialog : DialogFragment() {
                     linkageRuleSpinner?.setSelection(if (linkageRule == "birth_anchor") 1 else 0)
                 } catch (_: Exception) {}
             }
+            // ALIVE면 기존 aliveValue/deadValue 보존 (편집 시 config에 반영)
+            if (semanticRole == SemanticRole.ALIVE) {
+                try {
+                    val configJson = org.json.JSONObject(field.config)
+                    val existingAlive = configJson.optString("aliveValue", "")
+                    val existingDead = configJson.optString("deadValue", "")
+                    if (existingAlive.isNotEmpty()) existingAliveValue = existingAlive
+                    if (existingDead.isNotEmpty()) existingDeadValue = existingDead
+                } catch (_: Exception) {}
+            }
         }
 
         // Stats config
@@ -1163,6 +1175,18 @@ class FieldEditDialog : DialogFragment() {
                 if (role == SemanticRole.AGE) {
                     val rulePos = linkageRuleSpinner?.selectedItemPosition ?: 0
                     config["linkageRule"] = if (rulePos == 1) "birth_anchor" else "age_anchor"
+                }
+                // ALIVE 역할이면 aliveValue/deadValue 자동 매핑
+                if (role == SemanticRole.ALIVE) {
+                    val options = config["options"] as? List<*>
+                    if (options != null && options.size >= 2) {
+                        config["aliveValue"] = existingAliveValue ?: options[0].toString()
+                        config["deadValue"] = existingDeadValue ?: options[1].toString()
+                    } else {
+                        // 옵션이 부족하더라도 기존 값이 있으면 보존
+                        existingAliveValue?.let { config["aliveValue"] = it }
+                        existingDeadValue?.let { config["deadValue"] = it }
+                    }
                 }
             }
         }

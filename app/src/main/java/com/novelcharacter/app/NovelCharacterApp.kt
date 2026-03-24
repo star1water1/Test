@@ -79,6 +79,111 @@ class NovelCharacterApp : Application() {
         } catch (e: Exception) {
             android.util.Log.e("NovelCharacterApp", "Failed to schedule background workers", e)
         }
+        // 생존여부↔사망연도 연동 데이터 마이그레이션 (1회)
+        migrateAliveSyncIfNeeded()
+    }
+
+    private fun migrateAliveSyncIfNeeded() {
+        val prefs = getSharedPreferences("app_migrations", MODE_PRIVATE)
+        if (prefs.getBoolean("alive_sync_migrated", false)) return
+
+        appScope.launch(Dispatchers.IO) {
+            try {
+                val db = database
+                val allUniverses = db.universeDao().getAllUniversesList()
+
+                for (universe in allUniverses) {
+                    val fields = db.fieldDefinitionDao().getFieldsByUniverseList(universe.id)
+                    // alive 필드 찾기: key="alive" + type="SELECT" + semanticRole 없음
+                    val aliveField = fields.find { f ->
+                        f.key == "alive" && f.type == "SELECT" &&
+                            com.novelcharacter.app.data.model.SemanticRole.fromConfig(f.config) == null
+                    }
+                    if (aliveField != null) {
+                        // semanticRole + 매핑 자동 부여
+                        val config = try { org.json.JSONObject(aliveField.config) } catch (_: Exception) { org.json.JSONObject() }
+                        config.put("semanticRole", "alive")
+                        val options = config.optJSONArray("options")
+                        if (options != null && options.length() >= 2) {
+                            config.put("aliveValue", options.getString(0))
+                            config.put("deadValue", options.getString(1))
+                        }
+                        db.fieldDefinitionDao().update(aliveField.copy(config = config.toString()))
+                    }
+
+                    // 이제 semanticRole이 alive인 필드 (방금 업데이트 포함)
+                    val updatedFields = db.fieldDefinitionDao().getFieldsByUniverseList(universe.id)
+                    val aliveFieldFinal = updatedFields.find {
+                        com.novelcharacter.app.data.model.SemanticRole.fromConfig(it.config) == com.novelcharacter.app.data.model.SemanticRole.ALIVE
+                    } ?: continue
+                    val aliveConfig = try { org.json.JSONObject(aliveFieldFinal.config) } catch (_: Exception) { continue }
+                    val aliveVal = aliveConfig.optString("aliveValue", "")
+                    val deadVal = aliveConfig.optString("deadValue", "")
+                    if (aliveVal.isBlank() || deadVal.isBlank()) continue
+
+                    // 해당 세계관 캐릭터 처리
+                    val novels = db.novelDao().getNovelsByUniverseList(universe.id)
+                    for (novel in novels) {
+                        val characters = db.characterDao().getCharactersByNovelList(novel.id)
+                        for (char in characters) {
+                            val changes = db.characterStateChangeDao().getChangesByCharacterList(char.id)
+                            val hasDeath = changes.any { it.fieldKey == com.novelcharacter.app.data.model.CharacterStateChange.KEY_DEATH }
+                            val hasBirth = changes.any { it.fieldKey == com.novelcharacter.app.data.model.CharacterStateChange.KEY_BIRTH }
+                            val hasAlive = changes.any { it.fieldKey == com.novelcharacter.app.data.model.CharacterStateChange.KEY_ALIVE }
+
+                            if (hasAlive) continue // 이미 __alive 있으면 스킵
+
+                            val currentValue = db.characterFieldValueDao().getValue(char.id, aliveFieldFinal.id)
+
+                            if (hasDeath) {
+                                // 사망연도 있는 캐릭터 → alive=사망 + __alive="dead"
+                                if (currentValue == null || currentValue.value != deadVal) {
+                                    if (currentValue != null) {
+                                        db.characterFieldValueDao().update(currentValue.copy(value = deadVal))
+                                    } else {
+                                        db.characterFieldValueDao().insert(
+                                            com.novelcharacter.app.data.model.CharacterFieldValue(
+                                                characterId = char.id, fieldDefinitionId = aliveFieldFinal.id, value = deadVal
+                                            )
+                                        )
+                                    }
+                                }
+                                db.characterStateChangeDao().insert(
+                                    com.novelcharacter.app.data.model.CharacterStateChange(
+                                        characterId = char.id, year = 0,
+                                        fieldKey = com.novelcharacter.app.data.model.CharacterStateChange.KEY_ALIVE,
+                                        newValue = "dead"
+                                    )
+                                )
+                            } else if (hasBirth && (currentValue == null || currentValue.value.isBlank())) {
+                                // 출생연도만 있고 alive 비어있음 → alive=생존 + __alive="alive"
+                                if (currentValue != null) {
+                                    db.characterFieldValueDao().update(currentValue.copy(value = aliveVal))
+                                } else {
+                                    db.characterFieldValueDao().insert(
+                                        com.novelcharacter.app.data.model.CharacterFieldValue(
+                                            characterId = char.id, fieldDefinitionId = aliveFieldFinal.id, value = aliveVal
+                                        )
+                                    )
+                                }
+                                db.characterStateChangeDao().insert(
+                                    com.novelcharacter.app.data.model.CharacterStateChange(
+                                        characterId = char.id, year = 0,
+                                        fieldKey = com.novelcharacter.app.data.model.CharacterStateChange.KEY_ALIVE,
+                                        newValue = "alive"
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
+
+                prefs.edit().putBoolean("alive_sync_migrated", true).apply()
+                android.util.Log.i("NovelCharacterApp", "Alive sync migration completed")
+            } catch (e: Exception) {
+                android.util.Log.e("NovelCharacterApp", "Alive sync migration failed", e)
+            }
+        }
     }
 
     /**

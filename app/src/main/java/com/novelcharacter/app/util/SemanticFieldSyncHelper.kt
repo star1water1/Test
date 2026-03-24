@@ -9,6 +9,7 @@ import com.novelcharacter.app.data.repository.NovelRepository
 import com.novelcharacter.app.data.repository.UniverseRepository
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import org.json.JSONObject
 
 /**
  * 커스텀 필드(FieldDefinition)와 시스템 특수 필드(CharacterStateChange)를
@@ -54,8 +55,44 @@ class SemanticFieldSyncHelper(
                     upsertStateChange(characterId, CharacterStateChange.KEY_BIRTH, year, parts.first, parts.second)
                 }
                 SemanticRole.DEATH_YEAR -> {
-                    val year = value.value.trim().toIntOrNull() ?: continue
-                    upsertStateChange(characterId, CharacterStateChange.KEY_DEATH, year, null, null)
+                    val raw = value.value.trim()
+                    val year = raw.toIntOrNull()
+                    if (year != null) {
+                        upsertStateChange(characterId, CharacterStateChange.KEY_DEATH, year, null, null)
+                        syncDeathToAlive(characterId, fields, isDead = true)
+                    } else if (raw.isEmpty()) {
+                        // 사망연도 클리어 → __death 삭제 + alive 갱신
+                        deleteStateChangeByKey(characterId, CharacterStateChange.KEY_DEATH)
+                        syncDeathToAlive(characterId, fields, isDead = false)
+                    }
+                }
+                SemanticRole.ALIVE -> {
+                    val raw = value.value.trim()
+                    if (raw.isEmpty()) continue
+                    val aliveField = fieldMap[value.fieldDefinitionId] ?: continue
+                    val config = try { JSONObject(aliveField.config) } catch (_: Exception) { continue }
+                    val aliveVal = config.optString("aliveValue", "")
+                    val deadVal = config.optString("deadValue", "")
+
+                    when (raw) {
+                        deadVal -> {
+                            // "사망" 선택 → 사망연도는 건드리지 않음 (연도 불명 사망 허용)
+                            upsertAliveStateChange(characterId, "dead")
+                        }
+                        aliveVal -> {
+                            // "생존" 선택 → 사망연도 있으면 클리어
+                            upsertAliveStateChange(characterId, "alive")
+                            val deathYearField = findFieldByRole(fields, SemanticRole.DEATH_YEAR)
+                            if (deathYearField != null) {
+                                deleteFieldValueIfExists(characterId, deathYearField.id)
+                            }
+                            deleteStateChangeByKey(characterId, CharacterStateChange.KEY_DEATH)
+                        }
+                        else -> {
+                            // "불명" 등 중립 → 사망연도 유지
+                            upsertAliveStateChange(characterId, "unknown")
+                        }
+                    }
                 }
                 SemanticRole.AGE -> {
                     // 나이 → 출생연도 역산: birthYear = standardYear - age
@@ -208,5 +245,56 @@ class SemanticFieldSyncHelper(
                 )
             )
         }
+    }
+
+    // ── 생존여부 ↔ 사망연도 연동 헬퍼 ──
+
+    /**
+     * 사망연도 변경 시 alive 필드를 자동 갱신.
+     * @param isDead true면 사망 확정, false면 사망연도 클리어됨
+     */
+    private suspend fun syncDeathToAlive(characterId: Long, fields: List<FieldDefinition>, isDead: Boolean) {
+        val aliveField = findFieldByRole(fields, SemanticRole.ALIVE) ?: return
+        val config = try { JSONObject(aliveField.config) } catch (_: Exception) { return }
+        val targetValue = if (isDead) {
+            config.optString("deadValue", "")
+        } else {
+            val hasBirth = findStateChange(characterId, CharacterStateChange.KEY_BIRTH) != null
+            if (hasBirth) config.optString("aliveValue", "") else ""
+        }
+        if (targetValue.isNotBlank()) {
+            upsertFieldValue(characterId, aliveField.id, targetValue)
+            upsertAliveStateChange(characterId, if (isDead) "dead" else "alive")
+        } else {
+            deleteFieldValueIfExists(characterId, aliveField.id)
+            deleteStateChangeByKey(characterId, CharacterStateChange.KEY_ALIVE)
+        }
+    }
+
+    private suspend fun upsertAliveStateChange(characterId: Long, status: String) {
+        val existing = findStateChange(characterId, CharacterStateChange.KEY_ALIVE)
+        if (existing != null) {
+            characterRepository.updateStateChange(existing.copy(newValue = status))
+        } else {
+            characterRepository.insertStateChange(
+                CharacterStateChange(
+                    characterId = characterId,
+                    year = 0,
+                    fieldKey = CharacterStateChange.KEY_ALIVE,
+                    newValue = status
+                )
+            )
+        }
+    }
+
+    private suspend fun deleteStateChangeByKey(characterId: Long, fieldKey: String) {
+        val existing = findStateChange(characterId, fieldKey)
+        if (existing != null) {
+            characterRepository.deleteStateChange(existing)
+        }
+    }
+
+    private suspend fun deleteFieldValueIfExists(characterId: Long, fieldId: Long) {
+        characterRepository.deleteFieldValue(characterId, fieldId)
     }
 }

@@ -49,17 +49,31 @@ class TimeStateResolver {
             result[CharacterStateChange.KEY_AGE] = if (age >= 0) age.toString() else ""
         }
 
-        // Check alive status (use newValue for birth/death year when available)
+        // Check alive status: __alive StateChange 우선, 없으면 birth/death 기반 계산
         val deathChange = relevantChanges.findLast { it.fieldKey == CharacterStateChange.KEY_DEATH }
         val deathYear = deathChange?.let { change ->
             change.newValue.toIntOrNull()
                 ?: if (change.newValue.isBlank()) change.year else null
         }
-        if (deathYear != null && targetYear >= deathYear) {
-            result[CharacterStateChange.KEY_ALIVE] = "false"
-        } else if (birthYear != null && targetYear >= birthYear) {
-            // If born and not yet dead, alive
-            result[CharacterStateChange.KEY_ALIVE] = "true"
+        val aliveChange = relevantChanges.findLast { it.fieldKey == CharacterStateChange.KEY_ALIVE }
+        if (aliveChange != null) {
+            // 명시적 생존여부 StateChange가 있으면 우선 사용
+            result[CharacterStateChange.KEY_ALIVE] = when (aliveChange.newValue) {
+                "dead" -> "false"
+                "alive" -> "true"
+                else -> "" // "unknown" 등 → 표시 안 함
+            }
+            // 사망연도 기반 타임라인 보정: 사망 이전 시점이면 생존으로 표시
+            if (deathYear != null && targetYear < deathYear) {
+                result[CharacterStateChange.KEY_ALIVE] = "true"
+            }
+        } else {
+            // 하위호환: __alive 없으면 기존 birth/death 기반 계산
+            if (deathYear != null && targetYear >= deathYear) {
+                result[CharacterStateChange.KEY_ALIVE] = "false"
+            } else if (birthYear != null && targetYear >= birthYear) {
+                result[CharacterStateChange.KEY_ALIVE] = "true"
+            }
         }
 
         // Evaluate calculated fields
