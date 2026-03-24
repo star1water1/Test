@@ -176,6 +176,9 @@ class RelationshipGraphFragment : Fragment() {
     private var _binding: FragmentRelationshipGraphBinding? = null
     private val binding get() = _binding!!
     private val viewModel: RelationshipGraphViewModel by viewModels()
+    private val prefs by lazy {
+        requireContext().getSharedPreferences("graph_ui_state", android.content.Context.MODE_PRIVATE)
+    }
     private var selectedRelTypes = mutableSetOf<String>()  // 빈 셋 = 전체
     private var selectedFactions = mutableSetOf<Long>()   // 빈 셋 = 전체 세력
     private var isTimeViewEnabled = false
@@ -199,6 +202,9 @@ class RelationshipGraphFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
+        // SharedPreferences에서 상태 복원
+        restoreState()
+
         binding.toolbar.setNavigationOnClickListener { findNavController().popBackStack() }
 
         binding.graphView.setOnNodeClickListener { characterId ->
@@ -217,6 +223,15 @@ class RelationshipGraphFragment : Fragment() {
         observeFactionData()
         observeData()
         viewModel.loadData()
+    }
+
+    private fun restoreState() {
+        binding.graphView.showFactionArea = prefs.getBoolean("show_faction_area", true)
+        binding.graphView.showFactionBorder = prefs.getBoolean("show_faction_border", true)
+        binding.graphView.showFactionEdges = prefs.getBoolean("show_faction_edges", true)
+        isTimeViewEnabled = prefs.getBoolean("time_view_enabled", false)
+        currentUniverseId = if (prefs.contains("universe_id")) prefs.getLong("universe_id", -1L) else null
+        currentNovelId = if (prefs.contains("novel_id")) prefs.getLong("novel_id", -1L) else null
     }
 
     private fun observeUniversesAndNovels() {
@@ -243,13 +258,13 @@ class RelationshipGraphFragment : Fragment() {
         val chipGroup = binding.factionDisplayModeChipGroup
         chipGroup.removeAllViews()
 
-        data class ToggleOption(val labelRes: Int, val getter: () -> Boolean, val setter: (Boolean) -> Unit)
+        data class ToggleOption(val labelRes: Int, val prefsKey: String, val getter: () -> Boolean, val setter: (Boolean) -> Unit)
         val options = listOf(
-            ToggleOption(R.string.faction_display_mode_area,
+            ToggleOption(R.string.faction_display_mode_area, "show_faction_area",
                 { binding.graphView.showFactionArea }, { binding.graphView.showFactionArea = it }),
-            ToggleOption(R.string.faction_display_mode_border,
+            ToggleOption(R.string.faction_display_mode_border, "show_faction_border",
                 { binding.graphView.showFactionBorder }, { binding.graphView.showFactionBorder = it }),
-            ToggleOption(R.string.faction_display_mode_edges,
+            ToggleOption(R.string.faction_display_mode_edges, "show_faction_edges",
                 { binding.graphView.showFactionEdges }, { binding.graphView.showFactionEdges = it })
         )
 
@@ -262,6 +277,7 @@ class RelationshipGraphFragment : Fragment() {
                     val newValue = !option.getter()
                     option.setter(newValue)
                     isChecked = newValue
+                    prefs.edit().putBoolean(option.prefsKey, newValue).apply()
                     refreshGraph()
                 }
             }
@@ -337,12 +353,26 @@ class RelationshipGraphFragment : Fragment() {
     }
 
     private fun setupUniverseSpinner(universes: List<Universe>) {
+        // 삭제된 세계관 참조 정리
+        if (currentUniverseId != null && universes.none { it.id == currentUniverseId }) {
+            currentUniverseId = null
+            currentNovelId = null
+            prefs.edit().remove("universe_id").remove("novel_id").apply()
+        }
+
         val names = mutableListOf(getString(R.string.graph_filter_all_universes))
         names.addAll(universes.map { it.name })
 
         val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, names)
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         binding.universeFilterSpinner.adapter = adapter
+
+        // 저장된 세계관 필터 복원
+        val restoredPos = if (currentUniverseId != null) {
+            val idx = universes.indexOfFirst { it.id == currentUniverseId }
+            if (idx >= 0) idx + 1 else 0
+        } else 0
+        binding.universeFilterSpinner.setSelection(restoredPos)
 
         binding.universeFilterSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
@@ -351,6 +381,10 @@ class RelationshipGraphFragment : Fragment() {
                     currentUniverseId = newUniverseId
                     currentNovelId = null
                     selectedFactions.clear()
+                    prefs.edit().apply {
+                        if (newUniverseId != null) putLong("universe_id", newUniverseId) else remove("universe_id")
+                        remove("novel_id")
+                    }.apply()
                     updateNovelSpinner()
                     setupFactionChips()
                     refreshGraph()
@@ -373,6 +407,12 @@ class RelationshipGraphFragment : Fragment() {
             return
         }
 
+        // 삭제된 작품 참조 정리
+        if (currentNovelId != null && filteredNovels.none { it.id == currentNovelId }) {
+            currentNovelId = null
+            prefs.edit().remove("novel_id").apply()
+        }
+
         binding.novelFilterSpinner.visibility = View.VISIBLE
         val names = mutableListOf(getString(R.string.graph_filter_all_novels))
         names.addAll(filteredNovels.map { it.title })
@@ -381,11 +421,21 @@ class RelationshipGraphFragment : Fragment() {
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         binding.novelFilterSpinner.adapter = adapter
 
+        // 저장된 작품 필터 복원
+        val restoredPos = if (currentNovelId != null) {
+            val idx = filteredNovels.indexOfFirst { it.id == currentNovelId }
+            if (idx >= 0) idx + 1 else 0
+        } else 0
+        binding.novelFilterSpinner.setSelection(restoredPos)
+
         binding.novelFilterSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
                 val newNovelId = if (position == 0) null else filteredNovels[position - 1].id
                 if (newNovelId != currentNovelId) {
                     currentNovelId = newNovelId
+                    prefs.edit().apply {
+                        if (newNovelId != null) putLong("novel_id", newNovelId) else remove("novel_id")
+                    }.apply()
                     refreshGraph()
                 }
             }
@@ -394,8 +444,14 @@ class RelationshipGraphFragment : Fragment() {
     }
 
     private fun setupTimeSlider() {
+        // 저장된 시간뷰 상태 복원
+        binding.switchTimeView.isChecked = isTimeViewEnabled
+        binding.graphYearSlider.visibility = if (isTimeViewEnabled) View.VISIBLE else View.GONE
+        binding.yearLabel.visibility = if (isTimeViewEnabled) View.VISIBLE else View.GONE
+
         binding.switchTimeView.setOnCheckedChangeListener { _, isChecked ->
             isTimeViewEnabled = isChecked
+            prefs.edit().putBoolean("time_view_enabled", isChecked).apply()
             binding.graphYearSlider.visibility = if (isChecked) View.VISIBLE else View.GONE
             binding.yearLabel.visibility = if (isChecked) View.VISIBLE else View.GONE
             if (!isChecked) {
