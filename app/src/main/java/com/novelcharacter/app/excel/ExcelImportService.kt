@@ -227,8 +227,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         return try {
             val gson = com.google.gson.Gson()
             val paths = gson.fromJson(imagePathsJson, Array<String>::class.java)
+                ?: return "[]"
             if (imagePathRemap.isEmpty()) gson.toJson(paths) else {
-                val remapped = paths?.map { remapImagePath(it) } ?: return imagePathsJson
+                val remapped = paths.map { remapImagePath(it) }
                 gson.toJson(remapped)
             }
         } catch (_: Exception) {
