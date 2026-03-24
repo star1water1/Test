@@ -2153,7 +2153,7 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
             entries.add(
                 RankingEntry(
                     characterId = char.id,
-                    characterName = char.displayName,
+                    characterName = char.name,
                     rank = currentRank,
                     value = sorted[i].numericValue,
                     displayValue = sorted[i].displayValue,
