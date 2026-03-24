@@ -291,9 +291,13 @@ class UniverseAdapter(
                     thumbnailCache.put(path, bitmap)
                     val pos = bindingAdapterPosition
                     if (pos != RecyclerView.NO_POSITION) {
-                        val current = if (isReorderMode && pos < reorderList.size) reorderList[pos] else getItem(pos)
-                        if (current.id == universeId) {
-                            binding.universeImage.setImageBitmap(bitmap)
+                        try {
+                            val current = if (isReorderMode && pos < reorderList.size) reorderList[pos] else getItem(pos)
+                            if (current.id == universeId) {
+                                binding.universeImage.setImageBitmap(bitmap)
+                            }
+                        } catch (_: IndexOutOfBoundsException) {
+                            // List may have been updated between position check and getItem
                         }
                     }
                 }

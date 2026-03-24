@@ -300,6 +300,7 @@ class CharacterDetailFragment : Fragment() {
                     (requireActivity().application as com.novelcharacter.app.NovelCharacterApp).universeRepository
                 )
                 val isLinked = stdHelper.isLinked(character.id)
+                if (_binding == null) return@launch
                 binding.stdYearLinkSwitch.setOnCheckedChangeListener(null)
                 binding.stdYearLinkSwitch.isChecked = isLinked
                 binding.stdYearLinkSwitch.setOnCheckedChangeListener { _, checked ->

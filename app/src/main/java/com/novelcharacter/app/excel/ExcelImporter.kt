@@ -185,9 +185,10 @@ class ExcelImporter(context: Context) {
                     if (entry.isDirectory) continue
                     when {
                         entry.name == "data.xlsx" -> {
-                            xlsxFile = File(extractDir, "data.xlsx")
+                            val target = File(extractDir, "data.xlsx")
+                            xlsxFile = target
                             zip.getInputStream(entry).use { input ->
-                                FileOutputStream(xlsxFile!!).use { output -> input.copyTo(output) }
+                                FileOutputStream(target).use { output -> input.copyTo(output) }
                             }
                         }
                         entry.name == "image_map.json" -> {
@@ -210,7 +211,7 @@ class ExcelImporter(context: Context) {
                 hasImages = imageCount > 0
             }
 
-            if (xlsxFile == null || !xlsxFile!!.exists()) {
+            if (xlsxFile?.exists() != true) {
                 withContext(Dispatchers.Main) {
                     Toast.makeText(appContext, com.novelcharacter.app.R.string.import_zip_no_data, Toast.LENGTH_LONG).show()
                 }
@@ -230,8 +231,9 @@ class ExcelImporter(context: Context) {
             }
 
             // xlsx 가져오기
+            val verifiedXlsx = xlsxFile ?: return  // already checked above
             importService.imagePathRemap = if (options.images) imagePathRemap else emptyMap()
-            importFromXlsx(xlsxFile!!, options)
+            importFromXlsx(verifiedXlsx, options)
             importService.imagePathRemap = emptyMap()
 
         } finally {

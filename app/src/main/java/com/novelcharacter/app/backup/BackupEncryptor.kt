@@ -128,6 +128,9 @@ object BackupEncryptor {
                 ) {
                     // v2: 청크 단위 복호화
                     val chunkSize = ByteBuffer.wrap(header, 4, 4).int
+                    require(chunkSize in 1..CHUNK_SIZE * 2) {
+                        "Invalid chunk size in backup header: $chunkSize"
+                    }
                     decryptChunked(fis, tempFile, chunkSize)
                 } else {
                     // v1: 레거시 전체 로드 (헤더를 이미 소비했으므로 새로 열어야 함)
