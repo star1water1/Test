@@ -1251,6 +1251,7 @@ abstract class AppDatabase : RoomDatabase() {
                     SELECT id, universeId FROM field_definitions
                     WHERE config LIKE '%"semanticRole":"alive"%'
                 """)
+                try {
                 while (aliveCursor.moveToNext()) {
                     val fieldDefId = aliveCursor.getLong(0)
                     val universeId = aliveCursor.getLong(1)
@@ -1261,6 +1262,7 @@ abstract class AppDatabase : RoomDatabase() {
                         WHERE n.universeId = ?
                     """, arrayOf(universeId.toString()))
 
+                    try {
                     while (charCursor.moveToNext()) {
                         val charId = charCursor.getLong(0)
                         val hasDeath = db.query(
@@ -1314,9 +1316,13 @@ abstract class AppDatabase : RoomDatabase() {
                             }
                         }
                     }
-                    charCursor.close()
+                    } finally {
+                        charCursor.close()
+                    }
                 }
-                aliveCursor.close()
+                } finally {
+                    aliveCursor.close()
+                }
 
                 Log.i(TAG, "Migration from version 29 to 30 completed successfully")
             }
