@@ -1438,6 +1438,17 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         createdAt = if (createdAtColIndex >= 0) createdAt else existingChar.createdAt
                     ))
                     result.updatedCharacters++
+
+                    // 세계관이 변경된 경우 이전 세계관의 고아 필드값 정리
+                    if (universe != null) {
+                        val oldNovelId = existingChar.novelId
+                        val oldUniverseId = if (oldNovelId != null) {
+                            db.novelDao().getNovelById(oldNovelId)?.universeId
+                        } else null
+                        if (oldUniverseId != null && oldUniverseId != universe.id) {
+                            db.characterFieldValueDao().deleteValuesNotInUniverse(charId, universe.id)
+                        }
+                    }
                 } else {
                     val newCode = if (code.isNotBlank()) code else generateEntityCode()
                     if (code.isBlank()) result.newCodesGenerated++

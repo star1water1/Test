@@ -80,4 +80,14 @@ interface CharacterFieldValueDao {
         WHERE cfv.fieldDefinitionId = :fieldDefId AND cfv.value LIKE '%' || :value || '%' ESCAPE '\'
     """)
     suspend fun getCharacterIdsByFieldValueContains(fieldDefId: Long, value: String): List<Long>
+
+    /** 특정 세계관에 속하지 않는 필드값 삭제 (세계관 변경 시 고아 필드값 정리용) */
+    @Query("""
+        DELETE FROM character_field_values
+        WHERE characterId = :characterId
+        AND fieldDefinitionId NOT IN (
+            SELECT id FROM field_definitions WHERE universeId = :universeId
+        )
+    """)
+    suspend fun deleteValuesNotInUniverse(characterId: Long, universeId: Long)
 }
