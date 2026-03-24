@@ -521,6 +521,13 @@ class RelationshipGraphFragment : Fragment() {
         binding.graphYearSlider.valueTo = (maxYear + padding).toFloat()
         binding.graphYearSlider.stepSize = 1f
         binding.graphYearSlider.value = maxYear.toFloat()
+
+        // 시간뷰 복원 시 currentYear 초기화 (슬라이더 범위 설정 후에야 가능)
+        if (isTimeViewEnabled && currentYear == null) {
+            currentYear = maxYear
+            binding.yearLabel.text = getString(R.string.year_label_format, maxYear)
+            viewModel.updateFactionMembershipsForYear(maxYear)
+        }
     }
 
     private fun setupFilterChips(relationships: List<CharacterRelationship>) {
