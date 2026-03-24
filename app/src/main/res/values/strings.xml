@@ -1167,5 +1167,4 @@
     <string name="batch_op_result_clear_field">필드값 삭제</string>
     <string name="batch_op_result_append_memo">메모 추가</string>
     <string name="batch_op_result_delete">삭제</string>
-    <string name="close">닫기</string>
 </resources>
