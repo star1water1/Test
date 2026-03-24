@@ -37,6 +37,8 @@ class BatchNovelChangeBottomSheet : BottomSheetDialogFragment() {
 
         viewLifecycleOwner.lifecycleScope.launch {
             novels = batchViewModel.getAllNovelsList()
+            // 선택 캐릭터들의 현재 세계관 ID 수집 (경고 표시용)
+            val currentUniverseIds = batchViewModel.getUniverseIdsForSelection().toSet()
             if (_binding == null) return@launch
 
             val names = mutableListOf(getString(R.string.batch_novel_none))
@@ -52,6 +54,12 @@ class BatchNovelChangeBottomSheet : BottomSheetDialogFragment() {
                     val novelTitle = if (position > 0) novels[position - 1].title else getString(R.string.batch_novel_none)
                     binding.btnConfirm.text = getString(R.string.batch_novel_confirm, count, novelTitle)
                     binding.btnConfirm.isEnabled = true
+
+                    // 다른 세계관으로 이동 시 경고 표시
+                    val selectedUniverseId = if (position > 0) novels[position - 1].universeId else null
+                    val isDifferentUniverse = currentUniverseIds.isNotEmpty() &&
+                        (selectedUniverseId == null || selectedUniverseId !in currentUniverseIds)
+                    binding.warningText.visibility = if (isDifferentUniverse) View.VISIBLE else View.GONE
                 }
                 override fun onNothingSelected(parent: AdapterView<*>?) {}
             }

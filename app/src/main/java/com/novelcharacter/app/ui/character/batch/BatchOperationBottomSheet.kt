@@ -76,7 +76,6 @@ class BatchOperationBottomSheet : BottomSheetDialogFragment() {
         }
 
         binding.opDelete.setOnClickListener {
-            dismiss()
             showDeleteConfirmation(count)
         }
     }
@@ -88,6 +87,7 @@ class BatchOperationBottomSheet : BottomSheetDialogFragment() {
             .setMessage(getString(R.string.batch_delete_confirm_message, count))
             .setPositiveButton(R.string.delete) { _, _ ->
                 batchViewModel.deleteSelected()
+                dismiss()
             }
             .setNegativeButton(R.string.cancel, null)
             .show()

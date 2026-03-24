@@ -88,8 +88,7 @@ class BatchEditViewModel(application: Application) : AndroidViewModel(applicatio
         val ids = _selectedIds.value?.toList() ?: return emptyList()
         val universeIds = mutableSetOf<Long>()
         for (chunk in ids.chunked(900)) {
-            val characters = characterRepository.getAllCharactersList()
-                .filter { it.id in chunk.toSet() }
+            val characters = app.database.characterDao().getCharactersByIds(chunk)
             for (char in characters) {
                 val novelId = char.novelId ?: continue
                 val novel = novelRepository.getNovelById(novelId) ?: continue

@@ -288,16 +288,19 @@ class CharacterRepository(
     }
 
     suspend fun batchAddTags(ids: List<Long>, tags: List<String>) {
+        if (tags.isEmpty()) return
         db.withTransaction {
-            val tagEntities = ids.flatMap { charId ->
-                tags.map { tag -> CharacterTag(characterId = charId, tag = tag) }
+            for (chunk in ids.chunked(CHUNK_SIZE)) {
+                val tagEntities = chunk.flatMap { charId ->
+                    tags.map { tag -> CharacterTag(characterId = charId, tag = tag) }
+                }
+                characterTagDao.insertAll(tagEntities) // IGNORE 전략으로 중복 무시
             }
-            // IGNORE 전략으로 중복 무시
-            characterTagDao.insertAll(tagEntities)
         }
     }
 
     suspend fun batchRemoveTags(ids: List<Long>, tags: List<String>) {
+        if (tags.isEmpty()) return
         db.withTransaction {
             for (chunk in ids.chunked(CHUNK_SIZE)) {
                 characterTagDao.deleteTagsFromCharacters(chunk, tags)

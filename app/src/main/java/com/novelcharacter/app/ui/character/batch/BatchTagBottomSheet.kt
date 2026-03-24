@@ -45,6 +45,17 @@ class BatchTagBottomSheet : BottomSheetDialogFragment() {
             binding.titleText.text = getString(R.string.batch_tag_add_title)
             binding.tagInputLayout.visibility = View.VISIBLE
             loadAllDistinctTags()
+
+            // 입력 변경 시 확인 버튼 텍스트 실시간 업데이트
+            binding.tagInput.addTextChangedListener(object : android.text.TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count2: Int, after: Int) {}
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count2: Int) {
+                    val tags = s.toString().split(",").map { it.trim() }.filter { it.isNotBlank() }
+                    binding.btnConfirm.text = getString(R.string.batch_tag_add_confirm, tags.size, count)
+                    binding.btnConfirm.isEnabled = tags.isNotEmpty()
+                }
+                override fun afterTextChanged(s: android.text.Editable?) {}
+            })
         }
 
         binding.btnConfirm.setOnClickListener {

@@ -8,6 +8,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.activityViewModels
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
@@ -32,7 +33,7 @@ class CharacterListFragment : Fragment() {
     private val viewModel: CharacterViewModel by viewModels()
 
     private lateinit var adapter: CharacterAdapter
-    private val batchViewModel: BatchEditViewModel by viewModels()
+    private val batchViewModel: BatchEditViewModel by activityViewModels()
     private var itemTouchHelper: ItemTouchHelper? = null
     private var novelId: Long = -1L
 
@@ -338,7 +339,6 @@ class CharacterListFragment : Fragment() {
 
         batchViewModel.operationResult.observe(viewLifecycleOwner) { result ->
             if (result == null || _binding == null) return@observe
-            batchViewModel.clearResult()
 
             when (result) {
                 is BatchOperationResult.Success -> {
@@ -357,6 +357,8 @@ class CharacterListFragment : Fragment() {
                     ).show()
                 }
             }
+
+            batchViewModel.clearResult()
         }
     }
 
