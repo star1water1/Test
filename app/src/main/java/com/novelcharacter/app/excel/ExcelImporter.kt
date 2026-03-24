@@ -7,6 +7,7 @@ import android.net.Uri
 import android.view.Gravity
 import android.widget.LinearLayout
 import android.widget.ProgressBar
+import android.widget.CheckBox
 import android.widget.RadioButton
 import android.widget.RadioGroup
 import android.widget.ScrollView
@@ -607,14 +608,18 @@ class ExcelImporter(context: Context) {
             return conflicts.associateBy { "${it.sheetName}:${it.excelRowIndex}" }
         }
 
-        // 사전에 소설 제목 로드 (IO 스레드)
+        // 사전에 소설 제목 및 세계관 이름 로드 (IO 스레드)
         val novelTitleCache = mutableMapOf<Long, String>()
+        val novelUniverseNameCache = mutableMapOf<Long, String?>()
         for (conflict in conflicts) {
             for (char in conflict.existingCharacters) {
                 val nid = char.novelId ?: continue
                 if (nid !in novelTitleCache) {
-                    novelTitleCache[nid] = db.novelDao().getNovelById(nid)?.title
+                    val novel = db.novelDao().getNovelById(nid)
+                    novelTitleCache[nid] = novel?.title
                         ?: appContext.getString(com.novelcharacter.app.R.string.duplicate_novel_none)
+                    val univName = novel?.universeId?.let { db.universeDao().getUniverseById(it)?.name }
+                    novelUniverseNameCache[nid] = univName
                 }
             }
         }
@@ -652,7 +657,13 @@ class ExcelImporter(context: Context) {
                 container.addView(messageView)
 
                 // 충돌별 RadioGroup 매핑
-                data class ConflictUI(val conflict: CharacterConflict, val radioGroup: RadioGroup, val skipRadioId: Int, val updateRadios: Map<Int, Long>)
+                data class ConflictUI(
+                    val conflict: CharacterConflict,
+                    val radioGroup: RadioGroup,
+                    val skipRadioId: Int,
+                    val updateRadios: Map<Int, Long>,
+                    val cleanupCheckboxes: Map<Int, CheckBox> = emptyMap()  // updateRadioId → CheckBox
+                )
                 val conflictUIs = mutableListOf<ConflictUI>()
 
                 for (conflict in conflicts) {
@@ -707,6 +718,8 @@ class ExcelImporter(context: Context) {
 
                     // 옵션 3+: 기존 캐릭터 업데이트 (매칭된 캐릭터당 1개)
                     val updateRadios = mutableMapOf<Int, Long>()
+                    val cleanupCheckboxes = mutableMapOf<Int, CheckBox>()
+                    val importingSheetName = conflict.sheetName
                     for (existing in conflict.existingCharacters) {
                         val novelTitle = existing.novelId?.let { nid ->
                             novelTitleCache[nid]
@@ -719,10 +732,32 @@ class ExcelImporter(context: Context) {
                         }
                         updateRadios[updateRadio.id] = existing.id
                         radioGroup.addView(updateRadio)
+
+                        // 세계관이 다른 캐릭터면 필드 정리 체크박스 추가
+                        val existingUniverseName = existing.novelId?.let { novelUniverseNameCache[it] }
+                        if (existingUniverseName != null && existingUniverseName != importingSheetName) {
+                            val cleanupCb = CheckBox(act).apply {
+                                text = appContext.getString(com.novelcharacter.app.R.string.import_conflict_cleanup_fields,
+                                    existingUniverseName)
+                                textSize = 11f
+                                alpha = 0.85f
+                                setPadding((32 * dp).toInt(), 0, 0, 0)
+                                visibility = android.view.View.GONE
+                                isChecked = true
+                            }
+                            cleanupCheckboxes[updateRadio.id] = cleanupCb
+                            radioGroup.addView(cleanupCb)
+                        }
+                    }
+
+                    // 라디오 선택 변경 시 해당 체크박스만 표시
+                    radioGroup.setOnCheckedChangeListener { _, checkedId ->
+                        cleanupCheckboxes.values.forEach { it.visibility = android.view.View.GONE }
+                        cleanupCheckboxes[checkedId]?.visibility = android.view.View.VISIBLE
                     }
 
                     container.addView(radioGroup)
-                    conflictUIs.add(ConflictUI(conflict, radioGroup, skipRadio.id, updateRadios))
+                    conflictUIs.add(ConflictUI(conflict, radioGroup, skipRadio.id, updateRadios, cleanupCheckboxes))
                 }
 
                 AlertDialog.Builder(act)
@@ -740,9 +775,13 @@ class ExcelImporter(context: Context) {
                                 checkedId == ui.skipRadioId -> ConflictResolution.SKIP
                                 else -> ConflictResolution.CREATE_NEW
                             }
+                            val cleanupOldFields = if (selectedExistingId != null) {
+                                ui.cleanupCheckboxes[checkedId]?.isChecked == true
+                            } else false
                             resultMap[key] = ui.conflict.copy(
                                 resolution = resolution,
-                                selectedExistingId = selectedExistingId
+                                selectedExistingId = selectedExistingId,
+                                cleanupOldFields = cleanupOldFields
                             )
                         }
                         cont.resume(resultMap, null)

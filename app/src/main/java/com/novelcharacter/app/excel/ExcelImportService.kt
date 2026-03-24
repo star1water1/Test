@@ -62,7 +62,8 @@ data class CharacterConflict(
     val excelNovelTitle: String?,
     val existingCharacters: List<Character>,
     var resolution: ConflictResolution = ConflictResolution.CREATE_NEW,
-    var selectedExistingId: Long? = null
+    var selectedExistingId: Long? = null,
+    var cleanupOldFields: Boolean = false
 )
 
 data class ImportResult(
@@ -1439,15 +1440,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     ))
                     result.updatedCharacters++
 
-                    // 세계관이 변경된 경우 이전 세계관의 고아 필드값 정리
-                    if (universe != null) {
-                        val oldNovelId = existingChar.novelId
-                        val oldUniverseId = if (oldNovelId != null) {
-                            db.novelDao().getNovelById(oldNovelId)?.universeId
-                        } else null
-                        if (oldUniverseId != null && oldUniverseId != universe.id) {
-                            db.characterFieldValueDao().deleteValuesNotInUniverse(charId, universe.id)
-                        }
+                    // 사용자가 이전 세계관 필드값 삭제를 선택한 경우 정리
+                    if (universe != null && conflict?.cleanupOldFields == true) {
+                        db.characterFieldValueDao().deleteValuesNotInUniverse(charId, universe.id)
                     }
                 } else {
                     val newCode = if (code.isNotBlank()) code else generateEntityCode()
