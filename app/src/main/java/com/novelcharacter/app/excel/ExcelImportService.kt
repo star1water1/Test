@@ -2466,7 +2466,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     companion object {
         private const val MAX_FIELD_LENGTH = 10000
         private const val GUIDE_SHEET_NAME = "사용 안내"
-        private const val UNCLASSIFIED_SHEET_NAME = "미분류 캐릭터"
+        internal const val UNCLASSIFIED_SHEET_NAME = "미분류 캐릭터"
     }
 }
 

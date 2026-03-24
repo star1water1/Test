@@ -735,7 +735,9 @@ class ExcelImporter(context: Context) {
 
                         // 세계관이 다른 캐릭터면 필드 정리 체크박스 추가
                         val existingUniverseName = existing.novelId?.let { novelUniverseNameCache[it] }
-                        if (existingUniverseName != null && existingUniverseName != importingSheetName) {
+                        if (existingUniverseName != null
+                            && existingUniverseName != importingSheetName
+                            && importingSheetName != ExcelImportService.UNCLASSIFIED_SHEET_NAME) {
                             val cleanupCb = CheckBox(act).apply {
                                 text = appContext.getString(com.novelcharacter.app.R.string.import_conflict_cleanup_fields,
                                     existingUniverseName)
