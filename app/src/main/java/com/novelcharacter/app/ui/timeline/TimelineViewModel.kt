@@ -44,6 +44,11 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
         _eventDensity.value = density
     }
 
+    // ===== Timeline Filters =====
+    private val _filterNovelId = MutableLiveData<Long?>(
+        if (prefs.contains("filter_novel_id")) prefs.getLong("filter_novel_id", -1L) else null
+    )
+
     init {
         allEvents.observeForever(densityObserver)
         // 저장된 작품 필터의 novelEventIds 캐시 초기 로딩
@@ -63,11 +68,6 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
 
     private val _selectedYear = MutableLiveData<Int?>(null)
     val selectedYear: LiveData<Int?> = _selectedYear
-
-    // ===== Timeline Filters =====
-    private val _filterNovelId = MutableLiveData<Long?>(
-        if (prefs.contains("filter_novel_id")) prefs.getLong("filter_novel_id", -1L) else null
-    )
     val filterNovelId: LiveData<Long?> = _filterNovelId
     private val _filterCharacterId = MutableLiveData<Long?>(
         if (prefs.contains("filter_character_id")) prefs.getLong("filter_character_id", -1L) else null

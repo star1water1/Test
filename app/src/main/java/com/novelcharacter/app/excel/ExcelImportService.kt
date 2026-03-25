@@ -1761,11 +1761,13 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 // Resolve character: code-first, then strict name lookup (동명이인 모호성 감지)
                 val character: Character = when {
                     charCode.isNotBlank() -> {
-                        db.characterDao().getCharacterByCode(charCode) ?: run {
+                        val found = db.characterDao().getCharacterByCode(charCode)
+                        if (found == null) {
                             result.skippedRows++
                             result.errors.add("상태변화 행 $i: 코드 '${charCode}'에 해당하는 캐릭터를 찾을 수 없음")
                             continue
                         }
+                        found
                     }
                     else -> when (val resolved = findCharacterStrict(charName, charCode)) {
                         is CharLookupResult.Found -> resolved.character
