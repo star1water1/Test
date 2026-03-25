@@ -327,6 +327,8 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
 
     fun updateEvent(event: TimelineEvent, characterIds: List<Long>, novelIds: List<Long> = emptyList()) = viewModelScope.launch {
         try {
+            // 타입 변경 감지를 위해 기존 이벤트 조회
+            val oldEvent = timelineRepository.getEventById(event.id)
             db.withTransaction {
                 timelineRepository.updateEvent(event)
                 timelineRepository.updateEventCharacters(event.id, characterIds)
@@ -335,6 +337,11 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
             // novelEventIds 캐시 갱신
             _filterNovelId.value?.let { nid ->
                 _novelEventIds.value = timelineRepository.getEventIdsByNovel(nid).toSet()
+            }
+            // 이전 타입이 birth/death였고 새 타입이 달라졌으면 상태변화 정리
+            if (oldEvent != null && oldEvent.eventType != event.eventType &&
+                (oldEvent.eventType == TimelineEvent.TYPE_BIRTH || oldEvent.eventType == TimelineEvent.TYPE_DEATH)) {
+                cleanupStateChangesForDeletedEvent(oldEvent)
             }
             syncEventTypeToStateChanges(event, characterIds)
         } catch (e: Exception) {
@@ -354,6 +361,8 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
     ) = viewModelScope.launch {
         try {
             val oldYear = event.year - delta
+            // 타입 변경 감지를 위해 기존 이벤트 조회
+            val oldEvent = timelineRepository.getEventById(event.id)
             db.withTransaction {
                 timelineRepository.updateEvent(event)
                 timelineRepository.updateEventCharacters(event.id, characterIds)
@@ -394,6 +403,11 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
             // novelEventIds 캐시 갱신
             _filterNovelId.value?.let { nid ->
                 _novelEventIds.value = timelineRepository.getEventIdsByNovel(nid).toSet()
+            }
+            // 이전 타입이 birth/death였고 새 타입이 달라졌으면 상태변화 정리
+            if (oldEvent != null && oldEvent.eventType != event.eventType &&
+                (oldEvent.eventType == TimelineEvent.TYPE_BIRTH || oldEvent.eventType == TimelineEvent.TYPE_DEATH)) {
+                cleanupStateChangesForDeletedEvent(oldEvent)
             }
             syncEventTypeToStateChanges(event, characterIds)
         } catch (e: Exception) {
