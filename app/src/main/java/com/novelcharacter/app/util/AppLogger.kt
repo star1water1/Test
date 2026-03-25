@@ -15,7 +15,10 @@ object AppLogger {
     private lateinit var logFile: File
     private lateinit var crashFile: File
     private const val MAX_SIZE = 512 * 1024L // 512KB
-    private val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+    private const val DATE_PATTERN = "yyyy-MM-dd HH:mm:ss"
+
+    /** SimpleDateFormat은 스레드 안전하지 않으므로 호출 시마다 생성 */
+    private fun newDateFormat() = SimpleDateFormat(DATE_PATTERN, Locale.getDefault())
 
     // 엔트리 구분자 (파싱용)
     private const val ENTRY_SEPARATOR = "──────────"
@@ -42,7 +45,7 @@ object AppLogger {
                 }
                 logFile.appendText(buildString {
                     appendLine(ENTRY_SEPARATOR)
-                    appendLine("[${dateFormat.format(Date())}][$level][$tag] $message")
+                    appendLine("[${newDateFormat().format(Date())}][$level][$tag] $message")
                     if (throwable != null) {
                         appendLine(throwable.stackTraceToString())
                     }
@@ -136,7 +139,7 @@ object AppLogger {
         val match = regex.find(header) ?: return null
         val (timeStr, level, tag, message) = match.destructured
         val timestamp = try {
-            dateFormat.parse(timeStr)?.time ?: 0L
+            newDateFormat().parse(timeStr)?.time ?: 0L
         } catch (_: Exception) { 0L }
         return LogEntry(
             timestamp = timestamp,
@@ -161,7 +164,7 @@ object AppLogger {
                 // 첫 줄: "2026-03-25 14:30:00 ==="
                 val timeStr = lines[0].removeSuffix("===").trim()
                 val timestamp = try {
-                    dateFormat.parse(timeStr)?.time ?: 0L
+                    newDateFormat().parse(timeStr)?.time ?: 0L
                 } catch (_: Exception) { 0L }
                 val body = lines.drop(1).joinToString("\n").trim()
                 val threadName = if (body.startsWith("Thread: ")) {
