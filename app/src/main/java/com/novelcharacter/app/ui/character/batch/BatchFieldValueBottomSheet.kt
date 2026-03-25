@@ -187,14 +187,23 @@ class BatchFieldValueBottomSheet : BottomSheetDialogFragment() {
     }
 
     private fun parseGradeOptions(configJson: String): List<String> {
-        val baseGrades = listOf("C", "B", "A", "S")
+        val defaultGrades = listOf("C", "B", "A", "S")
         return try {
             val config: Map<String, Any> = gson.fromJson(configJson, GsonTypes.STRING_ANY_MAP)
+            @Suppress("UNCHECKED_CAST")
+            val gradesMap = config["grades"] as? Map<String, Any>
+            val gradeKeys = if (gradesMap != null) {
+                gradesMap.entries
+                    .sortedBy { (it.value as? Number)?.toDouble() ?: 0.0 }
+                    .map { it.key }
+            } else {
+                defaultGrades
+            }
             val allowNegative = config["allowNegative"] as? Boolean ?: false
             if (allowNegative) {
-                baseGrades.flatMap { listOf("-$it", it) }
-            } else baseGrades
-        } catch (_: Exception) { baseGrades }
+                gradeKeys.flatMap { listOf("-$it", it) }
+            } else gradeKeys
+        } catch (_: Exception) { defaultGrades }
     }
 
     override fun onDestroyView() {

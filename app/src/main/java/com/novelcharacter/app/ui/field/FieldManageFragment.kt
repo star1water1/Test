@@ -164,10 +164,28 @@ class FieldManageFragment : Fragment() {
                 showFieldEditDialog(field)
             }
             .setNegativeButton(R.string.delete) { _, _ ->
-                viewModel.deleteField(field)
+                confirmDeleteField(field)
             }
             .setNeutralButton(R.string.cancel, null)
             .show()
+    }
+
+    private fun confirmDeleteField(field: FieldDefinition) {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val refs = viewModel.getReferencingCalculatedFields(universeId, field.key)
+            if (refs.isEmpty()) {
+                viewModel.deleteField(field)
+                return@launch
+            }
+            val names = refs.joinToString("\n") { "  • ${it.name}" }
+            if (!isAdded) return@launch
+            AlertDialog.Builder(requireContext())
+                .setTitle(R.string.delete_field_warning_title)
+                .setMessage(getString(R.string.delete_field_warning_message, field.name, names))
+                .setPositiveButton(R.string.delete) { _, _ -> viewModel.deleteField(field) }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+        }
     }
 
     /** 다른 세계관 + 프리셋에서 필드 가져오기 (중복 자동 표시) */

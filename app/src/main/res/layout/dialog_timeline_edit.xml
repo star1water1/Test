@@ -107,19 +107,29 @@
 
         </com.google.android.material.textfield.TextInputLayout>
 
-        <!-- 작품 선택 -->
+        <!-- 작품 선택 (다대다: 복수 작품 체크박스) -->
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/select_novel"
-            android:textSize="12sp"
-            android:textColor="@color/text_secondary" />
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:textColor="@color/primary"
+            android:layout_marginBottom="8dp" />
 
         <Spinner
             android:id="@+id/spinnerNovel"
             android:layout_width="match_parent"
             android:layout_height="48dp"
-            android:layout_marginBottom="12dp" />
+            android:layout_marginBottom="12dp"
+            android:visibility="gone" />
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/novelSelectRecyclerView"
+            android:layout_width="match_parent"
+            android:layout_height="150dp"
+            android:layout_marginBottom="12dp"
+            android:nestedScrollingEnabled="false" />
 
         <!-- 관련 캐릭터 선택 -->
         <TextView

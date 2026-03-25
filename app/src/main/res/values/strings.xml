@@ -165,6 +165,8 @@
     <string name="auto_calculated">%s: (자동 계산)</string>
     <string name="image_save_failed">이미지 저장에 실패했습니다</string>
     <string name="confirm_delete_field">\"%s\" 필드를 삭제하시겠습니까?</string>
+    <string name="delete_field_warning_title">필드 삭제 경고</string>
+    <string name="delete_field_warning_message">\'%1$s\' 필드를 삭제하면 다음 계산 필드의 수식이 영향을 받습니다:\n\n%2$s\n\n해당 필드의 계산 결과가 부정확해질 수 있습니다. 삭제하시겠습니까?</string>
     <string name="enter_name">이름을 입력하세요</string>
     <string name="name_too_long">이름이 너무 깁니다 (최대 100자)</string>
     <string name="required_field_empty">필수 필드 \'%1$s\'을(를) 입력하세요</string>
@@ -253,6 +255,10 @@
     <string name="all_novels_filter">전체 작품</string>
     <string name="all_characters_filter">전체 캐릭터</string>
     <string name="all_novels_event">전체</string>
+    <string name="shift_events_title">연관 사건 이동</string>
+    <string name="shift_this_only">이 사건만 이동</string>
+    <string name="shift_after_events">이후 사건 %1$d건도 함께 %2$s 이동</string>
+    <string name="shift_before_events">이전 사건 %1$d건도 함께 %2$s 이동</string>
 
     <!-- NameBankFragment -->
     <string name="edit_name_title">이름 편집</string>

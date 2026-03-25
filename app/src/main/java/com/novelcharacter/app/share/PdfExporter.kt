@@ -49,9 +49,16 @@ class PdfExporter(private val context: Context) {
         val fieldDefs = app.universeRepository.getFieldsByUniverseList(config.universeId)
         val fieldValues = db.characterFieldValueDao().getAllValuesList()
         val relationships = app.characterRepository.getAllRelationships()
+        // 사건: 크로스레프 기반 필터링 (다대다)
+        val allEventNovelCrossRefs = db.timelineDao().getAllEventNovelCrossRefs()
+        val eventIdsWithNovels = allEventNovelCrossRefs
+            .filter { it.novelId in novelIds }
+            .map { it.eventId }
+            .toSet()
         val events = app.timelineRepository.getAllEventsList()
-            .filter { it.novelId in novelIds || it.universeId == config.universeId }
+            .filter { it.id in eventIdsWithNovels || it.universeId == config.universeId }
             .sortedBy { it.year }
+        val eventNovelIdMap = allEventNovelCrossRefs.groupBy({ it.eventId }, { it.novelId })
         val nameBank = if (config.includeNameBank) db.nameBankDao().getAllNamesList() else emptyList()
 
         return buildString {
@@ -143,9 +150,38 @@ class PdfExporter(private val context: Context) {
                     }
 
                     // Field values (ordered by field displayOrder)
+                    // CALCULATED 필드는 DB에 저장되지 않으므로 FormulaEvaluator로 실시간 계산
                     val charValueMap = (fieldValuesByChar[char.id] ?: emptyList()).associateBy { it.fieldDefinitionId }
+                    val calculatedResults = run {
+                        val calcFields = fieldDefs.filter { it.type == "CALCULATED" }
+                        if (calcFields.isEmpty()) emptyMap()
+                        else {
+                            val keyValues = mutableMapOf<String, String>()
+                            for (fd in fieldDefs) {
+                                val v = charValueMap[fd.id]?.value ?: ""
+                                if (v.isNotBlank()) keyValues[fd.key] = v
+                            }
+                            val evaluator = com.novelcharacter.app.util.FormulaEvaluator(keyValues, fieldDefs)
+                            calcFields.mapNotNull { fd ->
+                                val formula = try {
+                                    org.json.JSONObject(fd.config).optString("formula", "")
+                                } catch (_: Exception) { "" }
+                                if (formula.isBlank()) return@mapNotNull null
+                                try {
+                                    val value = evaluator.evaluate(formula)
+                                    if (value.isNaN() || value.isInfinite()) return@mapNotNull null
+                                    val formatted = if (value == value.toLong().toDouble()) value.toLong().toString() else "%.2f".format(value)
+                                    fd.id to formatted
+                                } catch (_: Exception) { null }
+                            }.toMap()
+                        }
+                    }
                     val orderedFieldValues = fieldDefs.mapNotNull { fd ->
-                        charValueMap[fd.id]?.let { fv -> fd to fv }
+                        if (fd.type == "CALCULATED") {
+                            calculatedResults[fd.id]?.let { v -> fd to CharacterFieldValue(characterId = char.id, fieldDefinitionId = fd.id, value = v) }
+                        } else {
+                            charValueMap[fd.id]?.let { fv -> fd to fv }
+                        }
                     }.filter { it.second.value.isNotBlank() }
                     if (orderedFieldValues.isNotEmpty()) {
                         append("<table>")
@@ -179,10 +215,14 @@ class PdfExporter(private val context: Context) {
             if (config.includeTimeline && events.isNotEmpty()) {
                 append("<div class='page-break'></div>")
                 append("<h2 id='timeline'>타임라인</h2>")
-                append("<table class='event-row'><tr><th>연도</th><th>설명</th></tr>")
+                append("<table class='event-row'><tr><th>연도</th><th>설명</th><th>작품</th></tr>")
                 for (event in events) {
+                    val novelNames = (eventNovelIdMap[event.id] ?: emptyList())
+                        .mapNotNull { nid -> novels.find { it.id == nid }?.title }
+                        .joinToString(", ")
                     append("<tr><td>${escHtml(event.getFormattedDate())}</td>")
-                    append("<td>${escHtml(event.description)}</td></tr>")
+                    append("<td>${escHtml(event.description)}</td>")
+                    append("<td>${escHtml(novelNames)}</td></tr>")
                 }
                 append("</table>")
             }

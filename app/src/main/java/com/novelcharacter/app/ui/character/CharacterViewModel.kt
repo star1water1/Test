@@ -15,6 +15,7 @@ import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.data.model.RecentActivity
 import com.novelcharacter.app.data.model.TimelineEvent
 import com.novelcharacter.app.data.model.SemanticRole
+import com.novelcharacter.app.util.EventEditDialogHelper.ShiftDirection
 import com.novelcharacter.app.util.SemanticFieldSyncHelper
 import com.novelcharacter.app.util.StandardYearSyncHelper
 import android.util.Log
@@ -443,11 +444,12 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     // ===== Event CRUD (캐릭터 화면에서 사건 생성용) =====
     private val db = app.database
 
-    fun insertEvent(event: TimelineEvent, characterIds: List<Long>) = viewModelScope.launch {
+    fun insertEvent(event: TimelineEvent, characterIds: List<Long>, novelIds: List<Long> = emptyList()) = viewModelScope.launch {
         try {
             db.withTransaction {
                 val eventId = timelineRepository.insertEvent(event)
                 timelineRepository.updateEventCharacters(eventId, characterIds)
+                timelineRepository.updateEventNovels(eventId, novelIds)
             }
             syncEventTypeToStateChanges(event, characterIds)
         } catch (e: Exception) {
@@ -455,17 +457,77 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
-    fun updateEvent(event: TimelineEvent, characterIds: List<Long>) = viewModelScope.launch {
+    fun updateEvent(event: TimelineEvent, characterIds: List<Long>, novelIds: List<Long> = emptyList()) = viewModelScope.launch {
         try {
             db.withTransaction {
                 timelineRepository.updateEvent(event)
                 timelineRepository.updateEventCharacters(event.id, characterIds)
+                timelineRepository.updateEventNovels(event.id, novelIds)
             }
             syncEventTypeToStateChanges(event, characterIds)
         } catch (e: Exception) {
             Log.e("CharacterViewModel", "Failed to update event", e)
         }
     }
+
+    fun updateEventAndShiftOthers(
+        event: TimelineEvent,
+        characterIds: List<Long>,
+        novelIds: List<Long>,
+        shiftDirection: ShiftDirection,
+        delta: Int,
+        originalNovelIds: List<Long>,
+        originalUniverseId: Long?
+    ) = viewModelScope.launch {
+        try {
+            val oldYear = event.year - delta
+            db.withTransaction {
+                timelineRepository.updateEvent(event)
+                timelineRepository.updateEventCharacters(event.id, characterIds)
+                timelineRepository.updateEventNovels(event.id, novelIds)
+
+                val scopeEvents = when {
+                    originalNovelIds.isNotEmpty() ->
+                        originalNovelIds.flatMap { timelineRepository.getEventsByNovelList(it) }
+                            .distinctBy { it.id }
+                    originalUniverseId != null -> timelineRepository.getEventsByUniverseList(originalUniverseId)
+                    else -> timelineRepository.getAllEventsList()
+                }.filter { it.id != event.id }
+
+                val eventsToShift = scopeEvents.filter { e ->
+                    when (shiftDirection) {
+                        ShiftDirection.AFTER -> e.year >= oldYear
+                        ShiftDirection.BEFORE -> e.year <= oldYear
+                    }
+                }
+
+                if (eventsToShift.isNotEmpty()) {
+                    val shifted = eventsToShift.mapNotNull { e ->
+                        val newYear = e.year.toLong() + delta.toLong()
+                        if (newYear in Int.MIN_VALUE.toLong()..Int.MAX_VALUE.toLong()) {
+                            e.copy(year = newYear.toInt())
+                        } else null
+                    }
+                    timelineRepository.updateAllEvents(shifted)
+
+                    for (s in shifted) {
+                        if (s.eventType == TimelineEvent.TYPE_BIRTH || s.eventType == TimelineEvent.TYPE_DEATH) {
+                            val charIds = timelineRepository.getCharacterIdsForEvent(s.id)
+                            syncEventTypeToStateChanges(s, charIds)
+                        }
+                    }
+                }
+            }
+            syncEventTypeToStateChanges(event, characterIds)
+        } catch (e: Exception) {
+            Log.e("CharacterViewModel", "Failed to shift events", e)
+        }
+    }
+
+    suspend fun getNovelIdsForEvent(eventId: Long) = timelineRepository.getNovelIdsForEvent(eventId)
+    suspend fun getEventsByNovelList(novelId: Long) = timelineRepository.getEventsByNovelList(novelId)
+    suspend fun getEventsByUniverseList(universeId: Long) = timelineRepository.getEventsByUniverseList(universeId)
+    suspend fun getAllEventsList() = timelineRepository.getAllEventsList()
 
     private suspend fun syncEventTypeToStateChanges(event: TimelineEvent, characterIds: List<Long>) {
         val fieldKey = when (event.eventType) {

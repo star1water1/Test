@@ -3,8 +3,10 @@ package com.novelcharacter.app.data.repository
 import androidx.lifecycle.LiveData
 import com.novelcharacter.app.data.dao.TimelineDao
 import com.novelcharacter.app.data.model.Character
+import com.novelcharacter.app.data.model.EventNovelName
 import com.novelcharacter.app.data.model.TimelineCharacterCrossRef
 import com.novelcharacter.app.data.model.TimelineEvent
+import com.novelcharacter.app.data.model.TimelineEventNovelCrossRef
 
 class TimelineRepository(
     private val timelineDao: TimelineDao
@@ -27,6 +29,10 @@ class TimelineRepository(
     suspend fun insertAllEvents(events: List<TimelineEvent>) = timelineDao.insertAll(events)
     fun getEventsByUniverse(universeId: Long): LiveData<List<TimelineEvent>> =
         timelineDao.getEventsByUniverse(universeId)
+    suspend fun getEventsByUniverseList(universeId: Long): List<TimelineEvent> =
+        timelineDao.getEventsByUniverseList(universeId)
+    suspend fun updateAllEvents(events: List<TimelineEvent>) =
+        timelineDao.updateAll(events)
     fun getEventsByYearMonthDay(year: Int, month: Int?, day: Int?): LiveData<List<TimelineEvent>> =
         timelineDao.getEventsByYearMonthDay(year, month, day)
     fun getEventsForCharacterInRange(characterId: Long, startYear: Int, endYear: Int): LiveData<List<TimelineEvent>> =
@@ -65,4 +71,23 @@ class TimelineRepository(
 
     suspend fun getCharactersForEvent(eventId: Long): List<Character> =
         timelineDao.getCharactersForEvent(eventId)
+
+    // ===== Timeline-Novel linkage (다대다: 사건 ↔ 작품) =====
+    suspend fun getNovelIdsForEvent(eventId: Long): List<Long> =
+        timelineDao.getNovelIdsForEvent(eventId)
+
+    suspend fun getEventIdsByNovel(novelId: Long): List<Long> =
+        timelineDao.getEventIdsByNovel(novelId)
+
+    suspend fun updateEventNovels(eventId: Long, novelIds: List<Long>) =
+        timelineDao.replaceEventNovels(eventId, novelIds)
+
+    suspend fun getAllEventNovelCrossRefs(): List<TimelineEventNovelCrossRef> =
+        timelineDao.getAllEventNovelCrossRefs()
+
+    suspend fun getAllEventNovelNames(): List<EventNovelName> =
+        timelineDao.getAllEventNovelNames()
+
+    suspend fun getEventByNaturalKey(year: Int, description: String): TimelineEvent? =
+        timelineDao.getEventByNaturalKey(year, description)
 }

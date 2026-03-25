@@ -48,6 +48,14 @@ interface FactionMembershipDao {
     @Query("DELETE FROM faction_memberships WHERE factionId = :factionId AND characterId = :characterId AND leaveType IS NULL")
     suspend fun deleteActiveMembership(factionId: Long, characterId: Long)
 
+    /** 지정 세계관에 속하지 않는 세력의 소속 기록 삭제 (배치 작품 변경 시 사용) */
+    @Query("""
+        DELETE FROM faction_memberships
+        WHERE characterId = :characterId
+          AND factionId NOT IN (SELECT id FROM factions WHERE universeId = :universeId)
+    """)
+    suspend fun deleteMembershipsNotInUniverse(characterId: Long, universeId: Long)
+
     @Query("DELETE FROM faction_memberships")
     suspend fun deleteAll()
 }

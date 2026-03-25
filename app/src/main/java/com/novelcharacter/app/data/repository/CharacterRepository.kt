@@ -281,6 +281,7 @@ class CharacterRepository(
                 if (newUniverseId != null) {
                     for (charId in ids) {
                         db.characterFieldValueDao().deleteValuesNotInUniverse(charId, newUniverseId)
+                        db.factionMembershipDao().deleteMembershipsNotInUniverse(charId, newUniverseId)
                     }
                 }
             }

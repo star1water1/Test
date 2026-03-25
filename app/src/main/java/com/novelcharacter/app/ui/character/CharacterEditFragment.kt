@@ -303,13 +303,32 @@ class CharacterEditFragment : Fragment() {
                         val optionWithBlank = mutableListOf(getString(R.string.no_selection))
                         optionWithBlank.addAll(options)
                         val idx = optionWithBlank.indexOf(savedValue)
-                        if (idx >= 0) widget.setSelection(idx)
+                        if (idx >= 0) {
+                            widget.setSelection(idx)
+                        } else if (savedValue.isNotBlank()) {
+                            // 고아 값: 현재 옵션에 없지만 저장된 값을 스피너에 추가하여 보존
+                            optionWithBlank.add(savedValue)
+                            val ctx = context ?: continue
+                            widget.adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item, optionWithBlank).also {
+                                it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+                            }
+                            widget.setSelection(optionWithBlank.size - 1)
+                        }
                     } else if (fieldType == FieldType.GRADE) {
                         val grades = parseGradeOptions(field.config)
                         val gradeWithBlank = mutableListOf(getString(R.string.no_grade_selected))
                         gradeWithBlank.addAll(grades)
                         val idx = gradeWithBlank.indexOf(savedValue)
-                        if (idx >= 0) widget.setSelection(idx)
+                        if (idx >= 0) {
+                            widget.setSelection(idx)
+                        } else if (savedValue.isNotBlank()) {
+                            gradeWithBlank.add(savedValue)
+                            val ctx = context ?: continue
+                            widget.adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item, gradeWithBlank).also {
+                                it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+                            }
+                            widget.setSelection(gradeWithBlank.size - 1)
+                        }
                     }
                 }
             }
@@ -635,6 +654,40 @@ class CharacterEditFragment : Fragment() {
                 }
             }
         }
+
+        // 동적 필드에 변경 추적 리스너 추가
+        attachDynamicFieldChangeTracking()
+    }
+
+    private fun attachDynamicFieldChangeTracking() {
+        val watcher = object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                hasUnsavedChanges = true
+                updateSaveButtonState()
+            }
+            override fun afterTextChanged(s: android.text.Editable?) {}
+        }
+        for ((_, widget) in fieldInputMap) {
+            when (widget) {
+                is TextInputEditText -> widget.addTextChangedListener(watcher)
+                is MaterialAutoCompleteTextView -> widget.addTextChangedListener(watcher)
+                is Spinner -> widget.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                    private var initialized = false
+                    override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                        if (initialized) { hasUnsavedChanges = true; updateSaveButtonState() }
+                        initialized = true
+                    }
+                    override fun onNothingSelected(parent: AdapterView<*>?) {}
+                }
+                is LinearLayout -> {
+                    for (i in 0 until widget.childCount) {
+                        val partLayout = widget.getChildAt(i) as? TextInputLayout
+                        partLayout?.editText?.addTextChangedListener(watcher)
+                    }
+                }
+            }
+        }
     }
 
     private fun parseSelectOptions(configJson: String): List<String> {
@@ -650,24 +703,28 @@ class CharacterEditFragment : Fragment() {
     }
 
     private fun parseGradeOptions(configJson: String): List<String> {
-        val baseGrades = listOf("C", "B", "A", "S")
+        val defaultGrades = listOf("C", "B", "A", "S")
         return try {
             val configMap: Map<String, Any> = gson.fromJson(
                 configJson, com.novelcharacter.app.util.GsonTypes.STRING_ANY_MAP
             )
+            @Suppress("UNCHECKED_CAST")
+            val gradesMap = configMap["grades"] as? Map<String, Any>
+            val gradeKeys = if (gradesMap != null) {
+                gradesMap.entries
+                    .sortedBy { (it.value as? Number)?.toDouble() ?: 0.0 }
+                    .map { it.key }
+            } else {
+                defaultGrades
+            }
             val allowNegative = configMap["allowNegative"] as? Boolean ?: false
             if (allowNegative) {
-                val result = mutableListOf<String>()
-                for (grade in baseGrades) {
-                    result.add("-$grade")
-                    result.add(grade)
-                }
-                result
+                gradeKeys.flatMap { listOf("-$it", it) }
             } else {
-                baseGrades
+                gradeKeys
             }
         } catch (e: Exception) {
-            baseGrades
+            defaultGrades
         }
     }
 
@@ -1230,11 +1287,27 @@ class CharacterEditFragment : Fragment() {
                 override suspend fun getAllNovelsList(): List<Novel> = viewModel.getAllNovelsList()
                 override suspend fun getAllCharactersList(): List<com.novelcharacter.app.data.model.Character> = viewModel.getAllCharactersList()
                 override suspend fun getCharacterIdsForEvent(eventId: Long): List<Long> = viewModel.getCharacterIdsForEvent(eventId)
-                override fun insertEvent(event: com.novelcharacter.app.data.model.TimelineEvent, characterIds: List<Long>) {
-                    viewModel.insertEvent(event, characterIds)
+                override suspend fun getNovelIdsForEvent(eventId: Long): List<Long> = viewModel.getNovelIdsForEvent(eventId)
+                override fun insertEvent(event: com.novelcharacter.app.data.model.TimelineEvent, characterIds: List<Long>, novelIds: List<Long>) {
+                    viewModel.insertEvent(event, characterIds, novelIds)
                 }
-                override fun updateEvent(event: com.novelcharacter.app.data.model.TimelineEvent, characterIds: List<Long>) {
-                    viewModel.updateEvent(event, characterIds)
+                override fun updateEvent(event: com.novelcharacter.app.data.model.TimelineEvent, characterIds: List<Long>, novelIds: List<Long>) {
+                    viewModel.updateEvent(event, characterIds, novelIds)
+                }
+                override suspend fun getEventsInScope(novelIds: List<Long>, universeId: Long?): List<com.novelcharacter.app.data.model.TimelineEvent> {
+                    return when {
+                        novelIds.isNotEmpty() ->
+                            novelIds.flatMap { viewModel.getEventsByNovelList(it) }.distinctBy { it.id }
+                        universeId != null -> viewModel.getEventsByUniverseList(universeId)
+                        else -> viewModel.getAllEventsList()
+                    }
+                }
+                override fun updateEventAndShiftOthers(
+                    event: com.novelcharacter.app.data.model.TimelineEvent, characterIds: List<Long>, novelIds: List<Long>,
+                    shiftDirection: com.novelcharacter.app.util.EventEditDialogHelper.ShiftDirection,
+                    delta: Int, originalNovelIds: List<Long>, originalUniverseId: Long?
+                ) {
+                    viewModel.updateEventAndShiftOthers(event, characterIds, novelIds, shiftDirection, delta, originalNovelIds, originalUniverseId)
                 }
             }
             val novelPosition = binding.spinnerNovel.selectedItemPosition
@@ -1242,7 +1315,7 @@ class CharacterEditFragment : Fragment() {
             eventHelper.showEventDialog(
                 dataProvider = dataProvider,
                 preSelectedCharacterIds = setOf(characterId),
-                preSelectedNovelId = selectedNovelId
+                preSelectedNovelIds = listOfNotNull(selectedNovelId)
             )
         }
     }

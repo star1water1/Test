@@ -34,6 +34,15 @@ class TimelineAdapter(
     private val loadCharactersForEvent: suspend (Long) -> List<Character> = { emptyList() }
 ) : ListAdapter<TimelineDisplayItem, RecyclerView.ViewHolder>(TimelineDisplayDiffCallback()) {
 
+    /** 사건 ID → 연결 작품명 리스트 (외부에서 설정) */
+    var novelNamesMap: Map<Long, List<String>> = emptyMap()
+        set(value) {
+            if (field != value) {
+                field = value
+                notifyItemRangeChanged(0, itemCount)
+            }
+        }
+
     var isReorderMode: Boolean = false
         set(value) {
             if (field != value) {
@@ -210,6 +219,15 @@ class TimelineAdapter(
             // 간편 사건 시각적 구분: 반투명 배경
             binding.root.alpha = if (event.isTemporary) 0.7f else 1.0f
 
+            // 연결 작품명 표시
+            val novelNames = novelNamesMap[event.id]
+            if (!novelNames.isNullOrEmpty()) {
+                binding.novelNamesText.text = novelNames.joinToString(", ")
+                binding.novelNamesText.visibility = android.view.View.VISIBLE
+            } else {
+                binding.novelNamesText.visibility = android.view.View.GONE
+            }
+
             // Load related character chips via callback (repository 경유)
             binding.characterChipGroup.removeAllViews()
             val eventId = event.id
@@ -237,6 +255,7 @@ class TimelineAdapter(
 
         private fun bindGroup(group: TimelineDisplayItem.GroupHeader) {
             binding.dragHandle.visibility = android.view.View.GONE
+            binding.novelNamesText.visibility = android.view.View.GONE
             binding.yearText.text = group.label
             binding.calendarTypeText.text = ""
             binding.descriptionText.text = binding.root.context.getString(R.string.event_count_format, group.eventCount)

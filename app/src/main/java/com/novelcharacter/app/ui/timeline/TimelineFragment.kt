@@ -295,13 +295,33 @@ class TimelineFragment : Fragment() {
         }
     }
 
+    private var cachedNovelNamesMap: Map<Long, List<String>> = emptyMap()
+
+    private fun loadNovelNamesMap() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val eventNovelNames = viewModel.getAllEventNovelNames()
+            cachedNovelNamesMap = eventNovelNames.groupBy({ it.eventId }, { it.title })
+            adapter.novelNamesMap = cachedNovelNamesMap
+        }
+    }
+
     private fun observeData() {
+        // 연결 작품명 최초 로드
+        loadNovelNamesMap()
+
         // Observe search results (falls back to filteredEvents when query is empty)
         viewModel.searchResults.observe(viewLifecycleOwner) { events ->
             adapter.submitEventList(events)
             val isEmpty = events.isEmpty()
             binding.emptyText.visibility = if (isEmpty) View.VISIBLE else View.GONE
             binding.timelineRecyclerView.visibility = if (isEmpty) View.GONE else View.VISIBLE
+            // 캐시된 작품명 적용 (DB 재조회 없음)
+            adapter.novelNamesMap = cachedNovelNamesMap
+        }
+
+        // 사건 목록 변경 시 작품명 캐시 갱신 (삽입/수정/삭제 시에만 갱신)
+        viewModel.allEvents.observe(viewLifecycleOwner) { _ ->
+            loadNovelNamesMap()
         }
 
         // Observe zoom level changes
@@ -432,11 +452,27 @@ class TimelineFragment : Fragment() {
             override suspend fun getAllNovelsList(): List<Novel> = viewModel.getAllNovelsList()
             override suspend fun getAllCharactersList(): List<Character> = viewModel.getAllCharactersList()
             override suspend fun getCharacterIdsForEvent(eventId: Long): List<Long> = viewModel.getCharacterIdsForEvent(eventId)
-            override fun insertEvent(event: TimelineEvent, characterIds: List<Long>) {
-                viewModel.insertEvent(event, characterIds)
+            override suspend fun getNovelIdsForEvent(eventId: Long): List<Long> = viewModel.getNovelIdsForEvent(eventId)
+            override fun insertEvent(event: TimelineEvent, characterIds: List<Long>, novelIds: List<Long>) {
+                viewModel.insertEvent(event, characterIds, novelIds)
             }
-            override fun updateEvent(event: TimelineEvent, characterIds: List<Long>) {
-                viewModel.updateEvent(event, characterIds)
+            override fun updateEvent(event: TimelineEvent, characterIds: List<Long>, novelIds: List<Long>) {
+                viewModel.updateEvent(event, characterIds, novelIds)
+            }
+            override suspend fun getEventsInScope(novelIds: List<Long>, universeId: Long?): List<TimelineEvent> {
+                return when {
+                    novelIds.isNotEmpty() ->
+                        novelIds.flatMap { viewModel.getEventsByNovelList(it) }.distinctBy { it.id }
+                    universeId != null -> viewModel.getEventsByUniverseList(universeId)
+                    else -> viewModel.getAllEventsList()
+                }
+            }
+            override fun updateEventAndShiftOthers(
+                event: TimelineEvent, characterIds: List<Long>, novelIds: List<Long>,
+                shiftDirection: com.novelcharacter.app.util.EventEditDialogHelper.ShiftDirection,
+                delta: Int, originalNovelIds: List<Long>, originalUniverseId: Long?
+            ) {
+                viewModel.updateEventAndShiftOthers(event, characterIds, novelIds, shiftDirection, delta, originalNovelIds, originalUniverseId)
             }
         }
         eventHelper.showEventDialog(dataProvider = dataProvider, event = event)
@@ -471,10 +507,9 @@ class TimelineFragment : Fragment() {
                     year = year,
                     description = desc,
                     isTemporary = true,
-                    novelId = currentNovel?.id,
                     universeId = currentNovel?.universeId
                 )
-                viewModel.insertEvent(quickEvent, emptyList())
+                viewModel.insertEvent(quickEvent, emptyList(), listOfNotNull(currentNovel?.id))
                 Toast.makeText(ctx, R.string.quick_event_added, Toast.LENGTH_SHORT).show()
             }
             .setNegativeButton(R.string.cancel, null)

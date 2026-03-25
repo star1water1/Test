@@ -9,19 +9,13 @@ import androidx.room.PrimaryKey
     tableName = "timeline_events",
     foreignKeys = [
         ForeignKey(
-            entity = Novel::class,
-            parentColumns = ["id"],
-            childColumns = ["novelId"],
-            onDelete = ForeignKey.SET_NULL
-        ),
-        ForeignKey(
             entity = Universe::class,
             parentColumns = ["id"],
             childColumns = ["universeId"],
             onDelete = ForeignKey.SET_NULL
         )
     ],
-    indices = [Index("novelId"), Index("year"), Index("universeId")]
+    indices = [Index("year"), Index("universeId")]
 )
 data class TimelineEvent(
     @PrimaryKey(autoGenerate = true)
@@ -33,7 +27,7 @@ data class TimelineEvent(
     val description: String,
     val eventType: String = "",       // "", "birth", "death" — 시맨틱 사건 유형
     val universeId: Long? = null,
-    val novelId: Long? = null,
+    // novelId 제거됨 — timeline_event_novel_cross_ref 다대다 테이블로 이동
     val displayOrder: Int = 0,
     val isTemporary: Boolean = false,  // 간편 모드에서 임시 배치된 사건
     val createdAt: Long = System.currentTimeMillis()

@@ -616,8 +616,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val novelId = (if (novelCode.isNotBlank()) db.novelDao().getNovelByCode(novelCode)?.id else null)
                 ?: if (novelTitle.isNotBlank()) allNovels.find { it.title == novelTitle }?.id else null
 
-            val existing = if (novelId != null) db.timelineDao().getEventByNaturalKey(year, description, novelId)
-            else db.timelineDao().getEventByNaturalKeyNoNovel(year, description)
+            val existing = db.timelineDao().getEventByNaturalKey(year, description)
             if (existing == null) newCount++ else unchangedCount++ // 사건은 natural key 매칭이므로 키가 같으면 동일
         }
         reportProgress(onProgress, "사건 분석", sheet.lastRowNum, totalRows)
@@ -1240,6 +1239,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     ))
                     entitySeen[newId] = i
                     result.newNovels++
+                    if (universeId == null && (universeName.isNotBlank() || universeCode.isNotBlank())) {
+                        result.warnings.add("작품 행 $i: 세계관 '${universeName}'을(를) 찾을 수 없어 세계관 미지정 상태로 생성됨")
+                    }
                 }
             } catch (e: Exception) {
                 result.skippedRows++
@@ -1281,7 +1283,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     db.universeDao().getUniverseByCode(universeCode)
                 } else null)
                     ?: db.universeDao().getUniverseByName(universeName)
-                    ?: continue
+                if (universe == null) {
+                    result.skippedRows++
+                    result.errors.add("필드 정의 행 $i: 세계관 '${universeName}'을(를) 찾을 수 없음")
+                    continue
+                }
 
                 val key = getCellString(row, keyColIndex)
                 if (key.isBlank()) continue
@@ -1610,18 +1616,20 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val isTemporary = if (isTemporaryColIndex >= 0) parseBoolean(getCellString(row, isTemporaryColIndex)) else false
                 val createdAt = if (createdAtColIndex >= 0) parseNumber(getCellString(row, createdAtColIndex))?.toLong() ?: System.currentTimeMillis() else System.currentTimeMillis()
 
-                val resolvedNovel = if (novelCode.isNotBlank()) {
-                    db.novelDao().getNovelByCode(novelCode)
-                } else null
-                    ?: if (novelTitle.isNotBlank()) allNovels.find { it.title == novelTitle } else null
-                val novelId = resolvedNovel?.id
-                val universeId = resolvedNovel?.universeId
-
-                val existingEvent = if (novelId != null) {
-                    db.timelineDao().getEventByNaturalKey(year, description, novelId)
+                // 작품 해석: 콤마 구분 복수 작품 지원
+                val novelTitles = splitCsv(novelTitle)
+                val novelCodes = splitCsv(novelCode)
+                val resolvedNovels = if (novelCodes.isNotEmpty()) {
+                    novelCodes.mapNotNull { code -> db.novelDao().getNovelByCode(code) }
                 } else {
-                    db.timelineDao().getEventByNaturalKeyNoNovel(year, description)
+                    emptyList()
+                }.ifEmpty {
+                    novelTitles.mapNotNull { title -> allNovels.find { it.title == title } }
                 }
+                val novelIds = resolvedNovels.map { it.id }
+                val universeId = resolvedNovels.firstOrNull()?.universeId
+
+                val existingEvent = db.timelineDao().getEventByNaturalKey(year, description)
 
                 val eventId: Long
                 if (existingEvent != null) {
@@ -1629,29 +1637,38 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     db.timelineDao().update(existingEvent.copy(
                         month = month, day = day, calendarType = calendarType,
                         eventType = if (eventTypeColIndex >= 0) eventType else existingEvent.eventType,
-                        novelId = novelId, universeId = universeId,
+                        universeId = universeId,
                         displayOrder = displayOrder ?: existingEvent.displayOrder,
                         isTemporary = if (isTemporaryColIndex >= 0) isTemporary else existingEvent.isTemporary,
                         createdAt = if (createdAtColIndex >= 0) createdAt else existingEvent.createdAt
                     ))
+                    db.timelineDao().replaceEventNovels(eventId, novelIds)
                     result.updatedEvents++
                 } else {
                     eventId = db.timelineDao().insert(TimelineEvent(
                         year = year, month = month, day = day,
                         calendarType = calendarType, description = description,
                         eventType = eventType,
-                        novelId = novelId, universeId = universeId,
+                        universeId = universeId,
                         displayOrder = displayOrder ?: i, isTemporary = isTemporary,
                         createdAt = createdAt
                     ))
+                    db.timelineDao().replaceEventNovels(eventId, novelIds)
                     result.newEvents++
+                    if (novelIds.isEmpty() && novelTitle.isNotBlank()) {
+                        result.warnings.add("사건 행 $i: 작품 '${novelTitle}'을(를) 찾을 수 없어 작품 미지정 상태로 생성됨")
+                    }
                 }
 
                 val characterNames = getCellString(row, charColIndex)
                 if (characterNames.isNotBlank()) {
                     val names = splitCsv(characterNames)
                     val resolvedCharacters = names.mapNotNull { charName ->
-                        findCharacterByName(charName, novelId)
+                        val found = findCharacterByName(charName, novelIds.firstOrNull())
+                        if (found == null) {
+                            result.warnings.add("사건 행 $i: 연결 캐릭터 '${charName}'을(를) 찾을 수 없음")
+                        }
+                        found
                     }
                     if (resolvedCharacters.isNotEmpty()) {
                         db.timelineDao().deleteCrossRefsByEvent(eventId)
@@ -1742,7 +1759,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         val novelId = if (novelTitle.isNotBlank()) allNovels.find { it.title == novelTitle }?.id else null
                         findCharacterByName(charName, novelId)
                     }
-                    ?: continue
+                if (character == null) {
+                    result.skippedRows++
+                    result.errors.add("상태변화 행 $i: 캐릭터 '${charName}'을(를) 찾을 수 없음")
+                    continue
+                }
 
                 val existing = db.characterStateChangeDao()
                     .getChangeByNaturalKey(character.id, year, fieldKey, newValue)
@@ -1824,15 +1845,33 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val factionName = if (factionColIndex >= 0) getCellString(row, factionColIndex) else ""
                 val factionId = if (factionName.isNotBlank()) allFactions.find { it.name == factionName }?.id else null
 
-                val char1 = (if (char1Code.isNotBlank()) {
-                    db.characterDao().getCharacterByCode(char1Code)
-                } else null)
-                    ?: findCharacterByName(char1Name, null) ?: continue
+                val char1 = when (val r = findCharacterStrict(char1Name, char1Code)) {
+                    is CharLookupResult.Found -> r.character
+                    is CharLookupResult.Ambiguous -> {
+                        result.skippedRows++
+                        result.errors.add("관계 행 $i: '${char1Name}' 이름의 캐릭터가 ${r.count}명 존재합니다. 코드(code) 열을 사용하여 정확한 매칭을 해주세요.")
+                        continue
+                    }
+                    is CharLookupResult.NotFound -> {
+                        result.skippedRows++
+                        result.errors.add("관계 행 $i: 캐릭터1 '${char1Name}'을(를) 찾을 수 없음")
+                        continue
+                    }
+                }
 
-                val char2 = (if (char2Code.isNotBlank()) {
-                    db.characterDao().getCharacterByCode(char2Code)
-                } else null)
-                    ?: findCharacterByName(char2Name, null) ?: continue
+                val char2 = when (val r = findCharacterStrict(char2Name, char2Code)) {
+                    is CharLookupResult.Found -> r.character
+                    is CharLookupResult.Ambiguous -> {
+                        result.skippedRows++
+                        result.errors.add("관계 행 $i: '${char2Name}' 이름의 캐릭터가 ${r.count}명 존재합니다. 코드(code) 열을 사용하여 정확한 매칭을 해주세요.")
+                        continue
+                    }
+                    is CharLookupResult.NotFound -> {
+                        result.skippedRows++
+                        result.errors.add("관계 행 $i: 캐릭터2 '${char2Name}'을(를) 찾을 수 없음")
+                        continue
+                    }
+                }
 
                 if (char1.id == char2.id) {
                     result.skippedRows++
@@ -1924,17 +1963,44 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val char1Code = if (char1CodeColIndex >= 0) getCellString(row, char1CodeColIndex) else ""
                 val char2Code = if (char2CodeColIndex >= 0) getCellString(row, char2CodeColIndex) else ""
 
-                val char1 = (if (char1Code.isNotBlank()) db.characterDao().getCharacterByCode(char1Code) else null)
-                    ?: findCharacterByName(char1Name, null) ?: continue
-                val char2 = (if (char2Code.isNotBlank()) db.characterDao().getCharacterByCode(char2Code) else null)
-                    ?: findCharacterByName(char2Name, null) ?: continue
+                val char1 = when (val r = findCharacterStrict(char1Name, char1Code)) {
+                    is CharLookupResult.Found -> r.character
+                    is CharLookupResult.Ambiguous -> {
+                        result.skippedRows++
+                        result.errors.add("관계변화 행 $i: '${char1Name}' 이름의 캐릭터가 ${r.count}명 존재합니다. 코드(code) 열을 사용하여 정확한 매칭을 해주세요.")
+                        continue
+                    }
+                    is CharLookupResult.NotFound -> {
+                        result.skippedRows++
+                        result.errors.add("관계변화 행 $i: 캐릭터1 '${char1Name}'을(를) 찾을 수 없음")
+                        continue
+                    }
+                }
+                val char2 = when (val r = findCharacterStrict(char2Name, char2Code)) {
+                    is CharLookupResult.Found -> r.character
+                    is CharLookupResult.Ambiguous -> {
+                        result.skippedRows++
+                        result.errors.add("관계변화 행 $i: '${char2Name}' 이름의 캐릭터가 ${r.count}명 존재합니다. 코드(code) 열을 사용하여 정확한 매칭을 해주세요.")
+                        continue
+                    }
+                    is CharLookupResult.NotFound -> {
+                        result.skippedRows++
+                        result.errors.add("관계변화 행 $i: 캐릭터2 '${char2Name}'을(를) 찾을 수 없음")
+                        continue
+                    }
+                }
 
                 // Find the relationship between these characters
                 val relationships = db.characterRelationshipDao().getRelationshipsForCharacterList(char1.id)
                 val relationship = relationships.find { rel ->
                     (rel.characterId1 == char1.id && rel.characterId2 == char2.id) ||
                     (rel.characterId1 == char2.id && rel.characterId2 == char1.id)
-                } ?: continue
+                }
+                if (relationship == null) {
+                    result.skippedRows++
+                    result.errors.add("관계변화 행 $i: '${char1Name}'과(와) '${char2Name}' 간의 관계를 찾을 수 없음")
+                    continue
+                }
 
                 val existing = db.characterRelationshipChangeDao().getChangeByNaturalKey(
                     relationship.id, year, month, day
@@ -2365,16 +2431,19 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     continue
                 }
 
-                // Resolve character
-                val character: com.novelcharacter.app.data.model.Character? = if (charCode.isNotBlank()) {
-                    db.characterDao().getCharacterByCode(charCode)
-                } else {
-                    db.characterDao().getCharacterByName(charName)
-                }
-                if (character == null) {
-                    result.skippedRows++
-                    result.errors.add("세력 소속 행 $i: 캐릭터 '$charName'을(를) 찾을 수 없음")
-                    continue
+                // Resolve character (동명이인 모호성 감지 포함)
+                val character: com.novelcharacter.app.data.model.Character = when (val r = findCharacterStrict(charName, charCode)) {
+                    is CharLookupResult.Found -> r.character
+                    is CharLookupResult.Ambiguous -> {
+                        result.skippedRows++
+                        result.errors.add("세력 소속 행 $i: '$charName' 이름의 캐릭터가 ${r.count}명 존재합니다. 코드(code) 열을 사용하여 정확한 매칭을 해주세요.")
+                        continue
+                    }
+                    is CharLookupResult.NotFound -> {
+                        result.skippedRows++
+                        result.errors.add("세력 소속 행 $i: 캐릭터 '$charName'을(를) 찾을 수 없음")
+                        continue
+                    }
                 }
 
                 val joinYear = if (joinYearColIndex >= 0) parseNumber(getCellString(row, joinYearColIndex))?.toInt() else null
@@ -2521,6 +2590,27 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             if (match != null) return match
         }
         return db.characterDao().getCharacterByName(name)
+    }
+
+    /** 코드/이름 기반 캐릭터 조회 — 동명이인 모호성 감지 포함 */
+    private sealed class CharLookupResult {
+        data class Found(val character: Character) : CharLookupResult()
+        data class Ambiguous(val count: Int) : CharLookupResult()
+        data object NotFound : CharLookupResult()
+    }
+
+    private suspend fun findCharacterStrict(name: String, code: String): CharLookupResult {
+        if (code.isNotBlank()) {
+            val byCode = db.characterDao().getCharacterByCode(code)
+            if (byCode != null) return CharLookupResult.Found(byCode)
+        }
+        if (name.isBlank()) return CharLookupResult.NotFound
+        val matches = db.characterDao().getAllCharactersByName(name)
+        return when {
+            matches.isEmpty() -> CharLookupResult.NotFound
+            matches.size == 1 -> CharLookupResult.Found(matches[0])
+            else -> CharLookupResult.Ambiguous(matches.size)
+        }
     }
 
     /**

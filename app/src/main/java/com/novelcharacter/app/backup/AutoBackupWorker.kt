@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.novelcharacter.app.data.database.AppDatabase
+import com.novelcharacter.app.data.model.TimelineEvent
 import org.apache.poi.ss.usermodel.FillPatternType
 import org.apache.poi.ss.usermodel.IndexedColors
 import org.apache.poi.xssf.usermodel.XSSFCellStyle
@@ -308,9 +309,13 @@ class AutoBackupWorker(
         val allCharacters = db.characterDao().getAllCharactersList()
         val charMap = allCharacters.associateBy { it.id }
 
+        // Batch load event-novel cross-refs
+        val allEventNovelCrossRefs = db.timelineDao().getAllEventNovelCrossRefs()
+        val eventNovelIdMap = allEventNovelCrossRefs.groupBy({ it.eventId }, { it.novelId })
+
         val sheetName = sanitizeSheetName("사건 연표", usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
-        val headers = listOf("연도", "월", "일", "역법", "사건 설명", "관련 작품", "관련 캐릭터", "관련작품코드", "정렬순서", "임시배치", "생성일")
+        val headers = listOf("연도", "월", "일", "역법", "사건 유형", "사건 설명", "관련 작품", "관련 캐릭터", "관련작품코드", "정렬순서", "임시배치", "생성일")
         val headerRow = sheet.createRow(0)
         headers.forEachIndexed { i, h ->
             headerRow.createCell(i).apply { setCellValue(h); cellStyle = headerStyle }
@@ -321,15 +326,17 @@ class AutoBackupWorker(
             e.month?.let { row.createCell(1).setCellValue(it.toDouble()) }
             e.day?.let { row.createCell(2).setCellValue(it.toDouble()) }
             row.createCell(3).setCellValue(e.calendarType)
-            row.createCell(4).setCellValue(e.description)
-            val novel = e.novelId?.let { novelMap[it] }
-            row.createCell(5).setCellValue(novel?.title ?: "")
+            row.createCell(4).setCellValue(eventTypeToLabel(e.eventType))
+            row.createCell(5).setCellValue(e.description)
+            val novelIds = eventNovelIdMap[e.id] ?: emptyList()
+            val novels = novelIds.mapNotNull { novelMap[it] }
+            row.createCell(6).setCellValue(novels.joinToString(", ") { it.title })
             val characterNames = (eventCharMap[e.id] ?: emptyList()).mapNotNull { charMap[it]?.name }
-            row.createCell(6).setCellValue(characterNames.joinToString(", "))
-            row.createCell(7).setCellValue(novel?.code ?: "")
-            row.createCell(8).setCellValue(e.displayOrder.toDouble())
-            row.createCell(9).setCellValue(if (e.isTemporary) "Y" else "N")
-            row.createCell(10).setCellValue(e.createdAt.toDouble())
+            row.createCell(7).setCellValue(characterNames.joinToString(", "))
+            row.createCell(8).setCellValue(novels.mapNotNull { it.code }.joinToString(", "))
+            row.createCell(9).setCellValue(e.displayOrder.toDouble())
+            row.createCell(10).setCellValue(if (e.isTemporary) "Y" else "N")
+            row.createCell(11).setCellValue(e.createdAt.toDouble())
         }
     }
 
@@ -655,6 +662,12 @@ class AutoBackupWorker(
             row.createCell(8).setCellValue(character?.code ?: "")
             row.createCell(9).setCellValue(membership.createdAt.toDouble())
         }
+    }
+
+    private fun eventTypeToLabel(eventType: String): String = when (eventType) {
+        TimelineEvent.TYPE_BIRTH -> "탄생"
+        TimelineEvent.TYPE_DEATH -> "사망"
+        else -> "일반"
     }
 
     private fun sanitizeSheetName(name: String, usedNames: MutableSet<String>): String {

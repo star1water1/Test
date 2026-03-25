@@ -116,6 +116,20 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
         return universeRepository.getFieldsByUniverseList(universeId).map { it.key }.toSet()
     }
 
+    /** 지정 필드 키를 formula에서 참조하는 CALCULATED 필드 목록 조회 */
+    suspend fun getReferencingCalculatedFields(universeId: Long, fieldKey: String): List<FieldDefinition> {
+        val allFields = universeRepository.getFieldsByUniverseList(universeId)
+        return allFields.filter { field ->
+            if (field.type != "CALCULATED") return@filter false
+            val formula = try {
+                org.json.JSONObject(field.config).optString("formula", "")
+            } catch (_: Exception) { "" }
+            formula.contains("field('$fieldKey')") ||
+                formula.contains("field(\"$fieldKey\")") ||
+                formula.contains("field($fieldKey)")
+        }
+    }
+
     /** 선택된 필드를 현재 세계관으로 복사 */
     fun importFields(targetUniverseId: Long, sourceFields: List<FieldDefinition>) = viewModelScope.launch {
         try {

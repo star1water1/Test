@@ -58,11 +58,24 @@ class WorldPackageExporter(private val context: Context) {
             .filter { it.characterId1 in characterIds || it.characterId2 in characterIds }
         val relChanges = app.characterRepository.getAllRelationshipChanges()
             .filter { rc -> relationships.any { it.id == rc.relationshipId } }
+        // 사건: 크로스레프 기반 필터링 (다대다)
+        val allEventNovelCrossRefs = db.timelineDao().getAllEventNovelCrossRefs()
+        val eventIdsWithNovels = allEventNovelCrossRefs
+            .filter { it.novelId in novelIds }
+            .map { it.eventId }
+            .toSet()
         val events = app.timelineRepository.getAllEventsList()
-            .filter { it.novelId in novelIds || it.universeId == config.universeId }
+            .filter { it.id in eventIdsWithNovels || it.universeId == config.universeId }
         val crossRefs = db.timelineDao().getAllCrossRefs()
             .filter { cr -> events.any { it.id == cr.eventId } }
+        val eventNovelCrossRefs = allEventNovelCrossRefs
+            .filter { cr -> events.any { it.id == cr.eventId } }
         val nameBank = db.nameBankDao().getAllNamesList()
+        val factions = db.factionDao().getAllFactionsList()
+            .filter { it.universeId == config.universeId }
+        val factionIds = factions.map { it.id }.toSet()
+        val factionMemberships = db.factionMembershipDao().getAllMembershipsList()
+            .filter { it.factionId in factionIds }
 
         // Create ZIP
         val fileName = "${universe.name.replace(Regex("[^\\w가-힣]"), "_")}.ncworld"
@@ -87,7 +100,10 @@ class WorldPackageExporter(private val context: Context) {
                 writeJsonEntry(zip, "relationship_changes.json", relChanges)
                 writeJsonEntry(zip, "timeline_events.json", events)
                 writeJsonEntry(zip, "timeline_cross_refs.json", crossRefs)
+                writeJsonEntry(zip, "timeline_event_novel_cross_refs.json", eventNovelCrossRefs)
                 writeJsonEntry(zip, "name_bank.json", nameBank)
+                writeJsonEntry(zip, "factions.json", factions)
+                writeJsonEntry(zip, "faction_memberships.json", factionMemberships)
 
                 // Images
                 if (config.includeImages) {
