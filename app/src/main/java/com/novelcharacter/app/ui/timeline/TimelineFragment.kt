@@ -75,8 +75,9 @@ class TimelineFragment : Fragment() {
                     getString(R.string.delete),
                     getString(R.string.set_as_standard_year)
                 )
+                val title = "${getString(R.string.event_year_format, event.year)} — ${event.description.take(50)}"
                 AlertDialog.Builder(requireContext())
-                    .setTitle(getString(R.string.event_year_format, event.year))
+                    .setTitle(title)
                     .setItems(items.toTypedArray()) { _, which ->
                         when (which) {
                             0 -> showEditEventDialog(event)
