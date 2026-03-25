@@ -49,6 +49,9 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
         if (prefs.contains("filter_novel_id")) prefs.getLong("filter_novel_id", -1L) else null
     )
 
+    // 작품 필터 기반 사건 ID 캐시 (인메모리 검색 필터용)
+    private val _novelEventIds = MutableLiveData<Set<Long>?>(null)
+
     init {
         allEvents.observeForever(densityObserver)
         // 저장된 작품 필터의 novelEventIds 캐시 초기 로딩
@@ -179,9 +182,6 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
         }
         application.getString(resId)
     }
-
-    // 작품 필터 기반 사건 ID 캐시 (인메모리 검색 필터용)
-    private val _novelEventIds = MutableLiveData<Set<Long>?>(null)
 
     // ===== Search =====
     private val _searchQuery = MutableLiveData("")
