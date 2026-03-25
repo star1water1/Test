@@ -1758,18 +1758,28 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val charCode = if (charCodeColIndex >= 0) getCellString(row, charCodeColIndex) else ""
                 val createdAt = if (createdAtColIndex >= 0) parseNumber(getCellString(row, createdAtColIndex))?.toLong() ?: System.currentTimeMillis() else System.currentTimeMillis()
 
-                // Resolve character: code-first, then name (Sprint A)
-                val character = (if (charCode.isNotBlank()) {
-                    db.characterDao().getCharacterByCode(charCode)
-                } else null)
-                    ?: run {
-                        val novelId = if (novelTitle.isNotBlank()) allNovels.find { it.title == novelTitle }?.id else null
-                        findCharacterByName(charName, novelId)
+                // Resolve character: code-first, then strict name lookup (동명이인 모호성 감지)
+                val character: Character = when {
+                    charCode.isNotBlank() -> {
+                        db.characterDao().getCharacterByCode(charCode) ?: run {
+                            result.skippedRows++
+                            result.errors.add("상태변화 행 $i: 코드 '${charCode}'에 해당하는 캐릭터를 찾을 수 없음")
+                            continue
+                        }
                     }
-                if (character == null) {
-                    result.skippedRows++
-                    result.errors.add("상태변화 행 $i: 캐릭터 '${charName}'을(를) 찾을 수 없음")
-                    continue
+                    else -> when (val resolved = findCharacterStrict(charName, charCode)) {
+                        is CharLookupResult.Found -> resolved.character
+                        is CharLookupResult.Ambiguous -> {
+                            result.skippedRows++
+                            result.errors.add("상태변화 행 $i: '${charName}' 이름의 캐릭터가 ${resolved.count}명 존재합니다. 코드 컬럼으로 구분하세요.")
+                            continue
+                        }
+                        is CharLookupResult.NotFound -> {
+                            result.skippedRows++
+                            result.errors.add("상태변화 행 $i: 캐릭터 '${charName}'을(를) 찾을 수 없음")
+                            continue
+                        }
+                    }
                 }
 
                 val existing = db.characterStateChangeDao()
