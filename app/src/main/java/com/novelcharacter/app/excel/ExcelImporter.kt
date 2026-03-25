@@ -351,8 +351,8 @@ class ExcelImporter(context: Context) {
             withContext(Dispatchers.Main) { dismissDialogSafely(progressDialog) }
 
             // Phase 3: 미리보기 + 전략 선택 다이얼로그
-            val (strategy, deleteNotInExcel) = showRestorePreviewDialog(analysis) ?: return
-            val effectiveOptions = if (deleteNotInExcel) options.copy(deleteNotInExcel = true) else options
+            val (strategy, deleteOpts) = showRestorePreviewDialog(analysis) ?: return
+            val effectiveOptions = if (deleteOpts.hasAny) options.copy(deleteOptions = deleteOpts) else options
 
             // Phase 3.5: 동명이인 충돌 해결 다이얼로그
             // OVERWRITE 전략은 기존 데이터 전부 삭제 후 재삽입이므로 충돌 해결 불필요
@@ -432,18 +432,18 @@ class ExcelImporter(context: Context) {
 
     // ── 복원 미리보기 + 전략 선택 다이얼로그 ──
 
-    /** @return Pair(strategy, deleteNotInExcel) or null if cancelled */
-    private suspend fun showRestorePreviewDialog(analysis: RestoreAnalysis): Pair<ImportStrategy, Boolean>? {
+    /** @return Pair(strategy, deleteOptions) or null if cancelled */
+    private suspend fun showRestorePreviewDialog(analysis: RestoreAnalysis): Pair<ImportStrategy, DeleteOptions>? {
         val activity = currentActivityRef?.get()
         if (activity == null || activity.isFinishing || activity.isDestroyed) {
-            return Pair(ImportStrategy.MERGE, false)
+            return Pair(ImportStrategy.MERGE, DeleteOptions())
         }
 
         return withContext(Dispatchers.Main) {
             kotlinx.coroutines.suspendCancellableCoroutine { cont ->
                 val act = currentActivityRef?.get()
                 if (act == null || act.isFinishing || act.isDestroyed) {
-                    cont.resume(Pair(ImportStrategy.MERGE, false), null)
+                    cont.resume(Pair(ImportStrategy.MERGE, DeleteOptions()), null)
                     return@suspendCancellableCoroutine
                 }
 
@@ -578,27 +578,34 @@ class ExcelImporter(context: Context) {
 
                 container.addView(radioGroup)
 
-                // MERGE 모드 삭제 옵션 체크박스
-                val deleteCheckBox = CheckBox(act).apply {
+                // MERGE 모드 항목별 삭제 옵션
+                val deletableCats = analysis.categories.filter { it.onlyInDb > 0 }
+                val deleteSectionLabel = TextView(act).apply {
                     text = appContext.getString(com.novelcharacter.app.R.string.restore_merge_delete_option)
+                    setTypeface(null, Typeface.BOLD)
                     textSize = 13f
-                    setPadding(dp8, dp8, 0, 0)
-                    visibility = if (totalOnlyInDb > 0) android.view.View.VISIBLE else android.view.View.GONE
+                    setPadding(0, dp16, 0, dp8 / 2)
+                    visibility = if (deletableCats.isNotEmpty()) android.view.View.VISIBLE else android.view.View.GONE
                 }
-                container.addView(deleteCheckBox)
+                container.addView(deleteSectionLabel)
 
-                if (totalOnlyInDb > 0) {
-                    val deleteDesc = TextView(act).apply {
-                        val deleteParts = analysis.categories
-                            .filter { it.onlyInDb > 0 }
-                            .map { "${it.label} ${it.onlyInDb}개" }
-                        text = appContext.getString(com.novelcharacter.app.R.string.restore_merge_delete_desc, deleteParts.joinToString(", "))
-                        textSize = 11f
-                        setPadding(dp16 * 2 + dp8, 0, 0, 0)
-                        alpha = 0.7f
-                    }
-                    container.addView(deleteDesc)
+                // 카테고리별 체크박스 생성
+                data class DeleteCatCheckbox(val key: String, val checkbox: CheckBox)
+                val deleteCatCheckboxes = mutableListOf<DeleteCatCheckbox>()
+                val deleteContainer = LinearLayout(act).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(dp16, 0, 0, 0)
+                    visibility = if (deletableCats.isNotEmpty()) android.view.View.VISIBLE else android.view.View.GONE
                 }
+                for (cat in deletableCats) {
+                    val cb = CheckBox(act).apply {
+                        text = "${cat.label} (${cat.onlyInDb}개)"
+                        textSize = 13f
+                    }
+                    deleteContainer.addView(cb)
+                    deleteCatCheckboxes.add(DeleteCatCheckbox(cat.key, cb))
+                }
+                container.addView(deleteContainer)
 
                 // OVERWRITE 선택 시 삭제 옵션 숨김
                 radioGroup.setOnCheckedChangeListener { _, checkedId ->
@@ -607,11 +614,9 @@ class ExcelImporter(context: Context) {
                     } else {
                         android.view.View.GONE
                     }
-                    deleteCheckBox.visibility = if (checkedId == mergeRadio.id && totalOnlyInDb > 0) {
-                        android.view.View.VISIBLE
-                    } else {
-                        android.view.View.GONE
-                    }
+                    val showDelete = checkedId == mergeRadio.id && deletableCats.isNotEmpty()
+                    deleteSectionLabel.visibility = if (showDelete) android.view.View.VISIBLE else android.view.View.GONE
+                    deleteContainer.visibility = if (showDelete) android.view.View.VISIBLE else android.view.View.GONE
                 }
 
                 AlertDialog.Builder(act)
@@ -619,8 +624,21 @@ class ExcelImporter(context: Context) {
                     .setView(scrollView)
                     .setPositiveButton(com.novelcharacter.app.R.string.restore_action) { _, _ ->
                         val strategy = if (overwriteRadio.isChecked) ImportStrategy.OVERWRITE else ImportStrategy.MERGE
-                        val deleteNotInExcel = mergeRadio.isChecked && deleteCheckBox.isChecked
-                        cont.resume(Pair(strategy, deleteNotInExcel), null)
+                        // 카테고리별 삭제 옵션 수집
+                        val deleteOpts = if (mergeRadio.isChecked) {
+                            val checked = deleteCatCheckboxes.filter { it.checkbox.isChecked }.map { it.key }.toSet()
+                            DeleteOptions(
+                                characters = "characters" in checked,
+                                timeline = "timeline" in checked,
+                                stateChanges = "stateChanges" in checked,
+                                relationships = "relationships" in checked,
+                                relationshipChanges = "relationshipChanges" in checked,
+                                nameBank = "nameBank" in checked,
+                                factions = "factions" in checked,
+                                factionMemberships = "factionMemberships" in checked
+                            )
+                        } else DeleteOptions()
+                        cont.resume(Pair(strategy, deleteOpts), null)
                     }
                     .setNegativeButton(com.novelcharacter.app.R.string.cancel) { _, _ ->
                         cont.resume(null, null)

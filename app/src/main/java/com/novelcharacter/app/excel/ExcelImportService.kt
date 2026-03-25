@@ -375,8 +375,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             if (effectiveOptions.searchPresets) importSearchPresets(workbook, result, onProgress, totalRows)
             if (effectiveOptions.appSettings) importAppSettings(workbook, result)
 
-            // Phase 5: 엑셀에 없는 항목 삭제 (MERGE + deleteNotInExcel 옵션)
-            if (strategy == ImportStrategy.MERGE && effectiveOptions.deleteNotInExcel) {
+            // Phase 5: 엑셀에 없는 항목 삭제 (MERGE + deleteOptions)
+            if (strategy == ImportStrategy.MERGE && effectiveOptions.deleteOptions.hasAny) {
                 deleteUnmatchedEntities(effectiveOptions, result)
             }
 
@@ -2849,8 +2849,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     // ── 엑셀에 없는 항목 삭제 ──
 
     private suspend fun deleteUnmatchedEntities(options: ExportOptions, result: ImportResult) {
+        val del = options.deleteOptions
+
         // 캐릭터: 임포트된 세계관 범위 내
-        if (options.characters) {
+        if (del.characters) {
             for ((universeId, matchedIds) in matchedCharacterIds) {
                 val allIds = db.characterDao().getCharacterIdsByUniverse(universeId)
                 for (id in allIds) {
@@ -2863,7 +2865,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         }
 
         // 사건 연표
-        if (options.timeline && matchedEventIds.isNotEmpty()) {
+        if (del.timeline && matchedEventIds.isNotEmpty()) {
             val allIds = db.timelineDao().getAllEventIds()
             for (id in allIds) {
                 if (id !in matchedEventIds) {
@@ -2874,7 +2876,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         }
 
         // 관계
-        if (options.relationships && matchedRelationshipIds.isNotEmpty()) {
+        if (del.relationships && matchedRelationshipIds.isNotEmpty()) {
             val allIds = db.characterRelationshipDao().getAllRelationshipIds()
             for (id in allIds) {
                 if (id !in matchedRelationshipIds) {
@@ -2885,7 +2887,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         }
 
         // 관계 변화
-        if (options.relationshipChanges && matchedRelationshipChangeIds.isNotEmpty()) {
+        if (del.relationshipChanges && matchedRelationshipChangeIds.isNotEmpty()) {
             val allIds = db.characterRelationshipChangeDao().getAllChangeIds()
             for (id in allIds) {
                 if (id !in matchedRelationshipChangeIds) {
@@ -2896,7 +2898,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         }
 
         // 상태 변화
-        if (options.stateChanges && matchedStateChangeIds.isNotEmpty()) {
+        if (del.stateChanges && matchedStateChangeIds.isNotEmpty()) {
             val allIds = db.characterStateChangeDao().getAllChangeIds()
             for (id in allIds) {
                 if (id !in matchedStateChangeIds) {
@@ -2907,7 +2909,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         }
 
         // 이름 은행
-        if (options.nameBank && matchedNameBankIds.isNotEmpty()) {
+        if (del.nameBank && matchedNameBankIds.isNotEmpty()) {
             val allIds = db.nameBankDao().getAllEntryIds()
             for (id in allIds) {
                 if (id !in matchedNameBankIds) {
@@ -2918,7 +2920,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         }
 
         // 세력
-        if (options.factions && matchedFactionIds.isNotEmpty()) {
+        if (del.factions && matchedFactionIds.isNotEmpty()) {
             val allIds = db.factionDao().getAllFactionIds()
             for (id in allIds) {
                 if (id !in matchedFactionIds) {
@@ -2929,7 +2931,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         }
 
         // 세력 소속
-        if (options.factionMemberships && matchedFactionMembershipIds.isNotEmpty()) {
+        if (del.factionMemberships && matchedFactionMembershipIds.isNotEmpty()) {
             val allIds = db.factionMembershipDao().getAllMembershipIds()
             for (id in allIds) {
                 if (id !in matchedFactionMembershipIds) {
