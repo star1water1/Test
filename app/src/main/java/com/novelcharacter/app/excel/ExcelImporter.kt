@@ -156,13 +156,15 @@ class ExcelImporter(context: Context) {
 
     // ── ZIP 감지 ──
 
+    /**
+     * 앱의 이미지 포함 ZIP 패키지인지 감지.
+     * .xlsx 파일도 내부적으로 ZIP 형식이므로 단순 매직바이트 검사로는 구분 불가.
+     * ZIP 내부에 data.xlsx 엔트리가 있는 경우에만 앱 ZIP 패키지로 판정.
+     */
     private fun isZipFile(file: File): Boolean {
         return try {
-            file.inputStream().use { input ->
-                val magic = ByteArray(4)
-                val read = input.read(magic)
-                read >= 4 && magic[0] == 0x50.toByte() && magic[1] == 0x4B.toByte()
-                    && magic[2] == 0x03.toByte() && magic[3] == 0x04.toByte()
+            ZipFile(file).use { zip ->
+                zip.getEntry("data.xlsx") != null
             }
         } catch (_: Exception) { false }
     }
