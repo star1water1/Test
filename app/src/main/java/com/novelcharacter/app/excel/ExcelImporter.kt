@@ -578,8 +578,10 @@ class ExcelImporter(context: Context) {
 
                 container.addView(radioGroup)
 
-                // MERGE 모드 항목별 삭제 옵션
-                val deletableCats = analysis.categories.filter { it.onlyInDb > 0 }
+                // MERGE 모드 항목별 삭제 옵션 (삭제 지원 카테고리만 표시)
+                val deletableKeys = setOf("characters", "timeline", "stateChanges", "relationships",
+                    "relationshipChanges", "nameBank", "factions", "factionMemberships")
+                val deletableCats = analysis.categories.filter { it.onlyInDb > 0 && it.key in deletableKeys }
                 val deleteSectionLabel = TextView(act).apply {
                     text = appContext.getString(com.novelcharacter.app.R.string.restore_merge_delete_option)
                     setTypeface(null, Typeface.BOLD)
