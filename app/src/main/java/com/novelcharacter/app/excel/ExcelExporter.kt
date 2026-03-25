@@ -749,7 +749,7 @@ class ExcelExporter(context: Context) {
             row.createCell(7).setCellValue(characterNames.joinToString(", "))
 
             // 관련작품코드 (readOnly)
-            row.createCell(8).setCellValue(novels.joinToString(", ") { it.code ?: "" })
+            row.createCell(8).setCellValue(novels.mapNotNull { it.code }.joinToString(", "))
             row.createCell(9).setCellValue(event.displayOrder.toDouble())
             row.createCell(10).setCellValue(if (event.isTemporary) "Y" else "N")
             row.createCell(11).setCellValue(event.createdAt.toDouble())

@@ -46,6 +46,12 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
 
     init {
         allEvents.observeForever(densityObserver)
+        // 저장된 작품 필터의 novelEventIds 캐시 초기 로딩
+        _filterNovelId.value?.let { nid ->
+            viewModelScope.launch {
+                _novelEventIds.value = timelineRepository.getEventIdsByNovel(nid).toSet()
+            }
+        }
     }
 
     // ===== Zoom Level Management =====
@@ -197,12 +203,13 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
             val novelEventIdSet = _novelEventIds.value
 
             // 검색도 AND 조합 필터 적용
+            // novelId가 설정됐지만 캐시가 아직 로딩 중이면 빈 결과 반환 (레이스 방지)
             when {
                 characterId != null -> {
                     timelineRepository.getEventsForCharacterInRange(characterId, start, end).map { events ->
                         events.filter {
                             it.description.contains(query, ignoreCase = true) &&
-                                (novelId == null || novelEventIdSet == null || it.id in novelEventIdSet)
+                                (novelId == null || (novelEventIdSet != null && it.id in novelEventIdSet))
                         }
                     }
                 }
@@ -210,7 +217,7 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
                     timelineRepository.searchEvents(query).map { events ->
                         events.filter { event ->
                             event.year in start..end &&
-                                (novelId == null || novelEventIdSet == null || event.id in novelEventIdSet)
+                                (novelId == null || (novelEventIdSet != null && event.id in novelEventIdSet))
                         }
                     }
                 }
@@ -384,6 +391,10 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
                     }
                 }
             }
+            // novelEventIds 캐시 갱신
+            _filterNovelId.value?.let { nid ->
+                _novelEventIds.value = timelineRepository.getEventIdsByNovel(nid).toSet()
+            }
             syncEventTypeToStateChanges(event, characterIds)
         } catch (e: Exception) {
             Log.e("TimelineViewModel", "Failed to shift events", e)
@@ -454,6 +465,10 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
                 cleanupStateChangesForDeletedEvent(event)
             }
             timelineRepository.deleteEvent(event)
+            // novelEventIds 캐시 갱신
+            _filterNovelId.value?.let { nid ->
+                _novelEventIds.value = timelineRepository.getEventIdsByNovel(nid).toSet()
+            }
         } catch (e: Exception) {
             Log.e("TimelineViewModel", "Failed to delete event", e)
             showError(e.message)

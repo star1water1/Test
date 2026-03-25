@@ -96,16 +96,19 @@ class EventEditDialogHelper(
                 if (typeIndex >= 0) dialogBinding.spinnerEventType.setSelection(typeIndex)
             }
 
-            // Novel checkboxes (다대다 — 복수 작품 선택)
-            dialogBinding.spinnerNovel.visibility = View.GONE
-            setupNovelCheckboxes(dialogBinding, novels, selectedNovelIds)
-
             // Character checkboxes — 선택된 작품 기준 자동 정렬
             fun filteredChars(): List<Character> {
                 if (selectedNovelIds.isEmpty()) return characters
                 return characters.sortedWith(compareBy<Character> {
                     if (it.novelId in selectedNovelIds) 0 else 1
                 }.thenBy { it.name })
+            }
+
+            // Novel checkboxes (다대다 — 복수 작품 선택)
+            // 작품 선택 변경 시 캐릭터 목록 자동 갱신
+            dialogBinding.spinnerNovel.visibility = View.GONE
+            setupNovelCheckboxes(dialogBinding, novels, selectedNovelIds) {
+                setupCharacterCheckboxes(dialogBinding, filteredChars(), selectedCharIds)
             }
             setupCharacterCheckboxes(dialogBinding, filteredChars(), selectedCharIds)
 
@@ -263,7 +266,8 @@ class EventEditDialogHelper(
     private fun setupNovelCheckboxes(
         dialogBinding: DialogTimelineEditBinding,
         novels: List<Novel>,
-        selectedIds: MutableSet<Long>
+        selectedIds: MutableSet<Long>,
+        onChanged: (() -> Unit)? = null
     ) {
         val recyclerView = dialogBinding.novelSelectRecyclerView
         recyclerView.layoutManager = LinearLayoutManager(context)
@@ -288,6 +292,7 @@ class EventEditDialogHelper(
                 checkBox.setOnCheckedChangeListener { _, isChecked ->
                     if (isChecked) selectedIds.add(novel.id)
                     else selectedIds.remove(novel.id)
+                    onChanged?.invoke()
                 }
             }
 

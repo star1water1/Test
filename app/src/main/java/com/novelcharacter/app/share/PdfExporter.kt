@@ -215,10 +215,14 @@ class PdfExporter(private val context: Context) {
             if (config.includeTimeline && events.isNotEmpty()) {
                 append("<div class='page-break'></div>")
                 append("<h2 id='timeline'>타임라인</h2>")
-                append("<table class='event-row'><tr><th>연도</th><th>설명</th></tr>")
+                append("<table class='event-row'><tr><th>연도</th><th>설명</th><th>작품</th></tr>")
                 for (event in events) {
+                    val novelNames = (eventNovelIdMap[event.id] ?: emptyList())
+                        .mapNotNull { nid -> novels.find { it.id == nid }?.title }
+                        .joinToString(", ")
                     append("<tr><td>${escHtml(event.getFormattedDate())}</td>")
-                    append("<td>${escHtml(event.description)}</td></tr>")
+                    append("<td>${escHtml(event.description)}</td>")
+                    append("<td>${escHtml(novelNames)}</td></tr>")
                 }
                 append("</table>")
             }

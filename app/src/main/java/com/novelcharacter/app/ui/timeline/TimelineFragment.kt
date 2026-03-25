@@ -295,19 +295,33 @@ class TimelineFragment : Fragment() {
         }
     }
 
+    private var cachedNovelNamesMap: Map<Long, List<String>> = emptyMap()
+
+    private fun loadNovelNamesMap() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val eventNovelNames = viewModel.getAllEventNovelNames()
+            cachedNovelNamesMap = eventNovelNames.groupBy({ it.eventId }, { it.title })
+            adapter.novelNamesMap = cachedNovelNamesMap
+        }
+    }
+
     private fun observeData() {
+        // 연결 작품명 최초 로드
+        loadNovelNamesMap()
+
         // Observe search results (falls back to filteredEvents when query is empty)
         viewModel.searchResults.observe(viewLifecycleOwner) { events ->
             adapter.submitEventList(events)
             val isEmpty = events.isEmpty()
             binding.emptyText.visibility = if (isEmpty) View.VISIBLE else View.GONE
             binding.timelineRecyclerView.visibility = if (isEmpty) View.GONE else View.VISIBLE
-            // 연결 작품명 일괄 로드
-            viewLifecycleOwner.lifecycleScope.launch {
-                val eventNovelNames = viewModel.getAllEventNovelNames()
-                val namesMap = eventNovelNames.groupBy({ it.eventId }, { it.title })
-                adapter.novelNamesMap = namesMap
-            }
+            // 캐시된 작품명 적용 (DB 재조회 없음)
+            adapter.novelNamesMap = cachedNovelNamesMap
+        }
+
+        // 사건 목록 변경 시 작품명 캐시 갱신 (삽입/수정/삭제 시에만 갱신)
+        viewModel.allEvents.observe(viewLifecycleOwner) { _ ->
+            loadNovelNamesMap()
         }
 
         // Observe zoom level changes
