@@ -65,6 +65,11 @@ interface CharacterStateChangeDao {
         WHERE fieldKey IN (
             SELECT `key` FROM field_definitions WHERE universeId = :universeId
         )
+        AND characterId IN (
+            SELECT c.id FROM characters c
+            INNER JOIN novels n ON c.novelId = n.id
+            WHERE n.universeId = :universeId
+        )
     """)
     suspend fun deleteAllChangesByUniverse(universeId: Long)
 
