@@ -1424,7 +1424,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val pinnedColIndex = cols["고정"] ?: -1
         val createdAtColIndex = cols["생성일"] ?: -1
         val fixedColIndices = setOf(nameColIndex, anotherNameColIndex, lastNameColIndex, firstNameColIndex, imageColIndex, novelColIndex, memoColIndex, tagsColIndex, codeColIndex, novelCodeColIndex, orderColIndex, pinnedColIndex, createdAtColIndex).filter { it >= 0 }.toSet()
-        val columnFieldMap = buildColumnFieldMap(headerRow, fields, fixedColIndices)
+        val columnFieldMap = buildColumnFieldMap(headerRow, fields, fixedColIndices, universe, result, sheetLabel)
 
         val codesSeen = mutableMapOf<String, Int>()
         val entitySeen = mutableMapOf<Long, Int>()
@@ -2588,19 +2588,62 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         return null
     }
 
-    private fun buildColumnFieldMap(headerRow: Row, fields: List<FieldDefinition>, fixedColIndices: Set<Int>): Map<Int, FieldDefinition> {
+    private suspend fun buildColumnFieldMap(
+        headerRow: Row,
+        fields: List<FieldDefinition>,
+        fixedColIndices: Set<Int>,
+        universe: Universe?,
+        result: ImportResult,
+        sheetLabel: String
+    ): Map<Int, FieldDefinition> {
         val map = mutableMapOf<Int, FieldDefinition>()
         val lastCol = headerRow.lastCellNum.toInt()
+        var autoCreateCount = 0
+        val maxOrder = fields.maxOfOrNull { it.displayOrder } ?: 0
+
         for (col in 0 until lastCol) {
             if (col in fixedColIndices) continue
             val headerName = getCellString(headerRow, col)
             if (headerName.isBlank()) continue
             val trimmedHeader = headerName.trim()
                 .removeSuffix(" (쉼표 구분)")
-            val field = fields.find { it.name == trimmedHeader }
-                ?: fields.find { it.name.equals(trimmedHeader, ignoreCase = true) }
+
+            // 1차: name 완전 일치
+            var field = fields.find { it.name == trimmedHeader }
+            // 2차: name 대소문자 무시
+            if (field == null) field = fields.find { it.name.equals(trimmedHeader, ignoreCase = true) }
+            // 3차: key 완전 일치 (사용자가 key를 헤더로 사용한 경우)
+            if (field == null) field = fields.find { it.key == trimmedHeader }
+            // 4차: key 대소문자 무시
+            if (field == null) field = fields.find { it.key.equals(trimmedHeader, ignoreCase = true) }
+
             if (field != null) {
                 map[col] = field
+            } else if (universe != null) {
+                // 매칭 실패 → 자동 필드 생성 (TEXT 타입)
+                val baseKey = "auto_${trimmedHeader.lowercase().replace(Regex("[^a-z0-9가-힣_]"), "_")}"
+                // key 충돌 방지
+                var autoKey = baseKey
+                var suffix = 1
+                while (db.fieldDefinitionDao().getFieldByKey(universe.id, autoKey) != null) {
+                    autoKey = "${baseKey}_${++suffix}"
+                }
+                val newField = FieldDefinition(
+                    universeId = universe.id,
+                    key = autoKey,
+                    name = trimmedHeader,
+                    type = "TEXT",
+                    groupName = "자동 생성",
+                    displayOrder = maxOrder + 1 + autoCreateCount++
+                )
+                val newId = db.fieldDefinitionDao().insert(newField)
+                val created = newField.copy(id = newId)
+                map[col] = created
+                result.warnings.add("$sheetLabel: 컬럼 '$trimmedHeader' → TEXT 필드로 자동 생성됨")
+                result.newFields++
+            } else {
+                // 미분류 캐릭터 시트: 세계관 없어 자동 생성 불가 → 경고만
+                result.warnings.add("$sheetLabel: 컬럼 '$trimmedHeader'에 대한 필드 정의를 찾을 수 없어 무시됨")
             }
         }
         return map
