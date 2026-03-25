@@ -319,11 +319,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             deferredUniverseImageNovelCodes.clear()
             deferredNovelImageCharCodes.clear()
             if (effectiveOptions.universes) importUniverses(workbook, result, onProgress, totalRows)
-            if (effectiveOptions.novels) {
-                importNovels(workbook, result, onProgress, totalRows)
-                // Novel 임포트 완료 → Universe의 imageNovelId 코드 해석 가능
-                applyDeferredUniverseNovelRefs()
-            }
+            if (effectiveOptions.novels) importNovels(workbook, result, onProgress, totalRows)
+            // Novel 임포트 완료 (또는 기존 DB 유지) → Universe의 imageNovelId 코드 해석
+            applyDeferredUniverseNovelRefs()
             if (effectiveOptions.fieldDefinitions) importFieldDefinitions(workbook, result, onProgress, totalRows)
 
             // Phase 2: Entity data (characters)
