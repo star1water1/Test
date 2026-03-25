@@ -308,6 +308,10 @@ class AutoBackupWorker(
         val allCharacters = db.characterDao().getAllCharactersList()
         val charMap = allCharacters.associateBy { it.id }
 
+        // Batch load event-novel cross-refs
+        val allEventNovelCrossRefs = db.timelineDao().getAllEventNovelCrossRefs()
+        val eventNovelIdMap = allEventNovelCrossRefs.groupBy({ it.eventId }, { it.novelId })
+
         val sheetName = sanitizeSheetName("사건 연표", usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
         val headers = listOf("연도", "월", "일", "역법", "사건 설명", "관련 작품", "관련 캐릭터", "관련작품코드", "정렬순서", "임시배치", "생성일")
@@ -322,11 +326,12 @@ class AutoBackupWorker(
             e.day?.let { row.createCell(2).setCellValue(it.toDouble()) }
             row.createCell(3).setCellValue(e.calendarType)
             row.createCell(4).setCellValue(e.description)
-            val novel = e.novelId?.let { novelMap[it] }
-            row.createCell(5).setCellValue(novel?.title ?: "")
+            val novelIds = eventNovelIdMap[e.id] ?: emptyList()
+            val novels = novelIds.mapNotNull { novelMap[it] }
+            row.createCell(5).setCellValue(novels.joinToString(", ") { it.title })
             val characterNames = (eventCharMap[e.id] ?: emptyList()).mapNotNull { charMap[it]?.name }
             row.createCell(6).setCellValue(characterNames.joinToString(", "))
-            row.createCell(7).setCellValue(novel?.code ?: "")
+            row.createCell(7).setCellValue(novels.mapNotNull { it.code }.joinToString(", "))
             row.createCell(8).setCellValue(e.displayOrder.toDouble())
             row.createCell(9).setCellValue(if (e.isTemporary) "Y" else "N")
             row.createCell(10).setCellValue(e.createdAt.toDouble())
