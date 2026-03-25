@@ -1634,15 +1634,22 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val eventId: Long
                 if (existingEvent != null) {
                     eventId = existingEvent.id
+                    // 작품 해석 실패 시 기존 세계관 보존
+                    val effectiveUniverseId = if (novelIds.isNotEmpty()) universeId else existingEvent.universeId
                     db.timelineDao().update(existingEvent.copy(
                         month = month, day = day, calendarType = calendarType,
                         eventType = if (eventTypeColIndex >= 0) eventType else existingEvent.eventType,
-                        universeId = universeId,
+                        universeId = effectiveUniverseId,
                         displayOrder = displayOrder ?: existingEvent.displayOrder,
                         isTemporary = if (isTemporaryColIndex >= 0) isTemporary else existingEvent.isTemporary,
                         createdAt = if (createdAtColIndex >= 0) createdAt else existingEvent.createdAt
                     ))
-                    db.timelineDao().replaceEventNovels(eventId, novelIds)
+                    // 작품이 해석된 경우에만 M2M 교체; 해석 실패 시 기존 관계 유지 + 경고
+                    if (novelIds.isNotEmpty()) {
+                        db.timelineDao().replaceEventNovels(eventId, novelIds)
+                    } else if (novelTitle.isNotBlank()) {
+                        result.warnings.add("사건 행 $i: 작품 '${novelTitle}'을(를) 찾을 수 없어 기존 작품 연결을 유지합니다")
+                    }
                     result.updatedEvents++
                 } else {
                     eventId = db.timelineDao().insert(TimelineEvent(
