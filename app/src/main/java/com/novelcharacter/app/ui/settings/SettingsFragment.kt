@@ -22,6 +22,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import com.novelcharacter.app.databinding.FragmentSettingsBinding
+import com.novelcharacter.app.util.AppLogger
 import com.novelcharacter.app.util.ThemeHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -65,6 +66,7 @@ class SettingsFragment : Fragment() {
                     Toast.makeText(ctx, R.string.backup_export_success, Toast.LENGTH_SHORT).show()
                 }
             } catch (e: Exception) {
+                AppLogger.error("Settings", "백업 내보내기 실패", e)
                 if (_binding != null) {
                     Toast.makeText(ctx, getString(R.string.backup_export_failed, e.message), Toast.LENGTH_LONG).show()
                 }
@@ -223,6 +225,12 @@ class SettingsFragment : Fragment() {
         }
 
         loadBackupStatus()
+
+        // Error log section
+        binding.viewErrorLogRow.setOnClickListener {
+            showErrorLogDialog()
+        }
+        loadErrorLogSummary()
     }
 
     private fun loadBackupStatus() {
@@ -461,6 +469,7 @@ class SettingsFragment : Fragment() {
                 // 즉시 삭제하면 경쟁 조건 발생. cacheDir 파일은 시스템이 관리.
                 restoreFromEncryptedFile(tempEncFile)
             } catch (e: Exception) {
+                AppLogger.error("Settings", "백업 복원 실패 (복호화)", e)
                 if (_binding != null) {
                     Toast.makeText(ctx, getString(R.string.backup_restore_failed, e.message), Toast.LENGTH_LONG).show()
                 }
@@ -505,12 +514,110 @@ class SettingsFragment : Fragment() {
                 importer.importFromLocalFile(tempXlsx!!)
 
             } catch (e: Exception) {
+                AppLogger.error("Settings", "백업 복원 실패", e)
                 if (progressDialog.isShowing) progressDialog.dismiss()
                 if (_binding != null) {
                     Toast.makeText(ctx, getString(R.string.backup_restore_failed, e.message), Toast.LENGTH_LONG).show()
                 }
             }
         }
+    }
+
+    // ── Error Log ──
+
+    private fun loadErrorLogSummary() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val count = withContext(Dispatchers.IO) { AppLogger.getErrorCount() }
+            if (_binding == null) return@launch
+            if (count == 0) {
+                binding.errorLogSummaryText.text = getString(R.string.error_log_no_errors)
+            } else {
+                val lastTime = withContext(Dispatchers.IO) { AppLogger.getLastErrorTime() }
+                val timeStr = if (lastTime != null && lastTime > 0) {
+                    SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(lastTime))
+                } else "?"
+                binding.errorLogSummaryText.text = getString(R.string.error_log_summary, timeStr, count)
+            }
+        }
+    }
+
+    private fun showErrorLogDialog() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val maxDisplay = 100
+            val entries = withContext(Dispatchers.IO) { AppLogger.readAllLogs(maxDisplay + 1) }
+            if (_binding == null) return@launch
+            val ctx = requireContext()
+
+            if (entries.isEmpty()) {
+                MaterialAlertDialogBuilder(ctx)
+                    .setTitle(R.string.settings_error_log)
+                    .setMessage(getString(R.string.error_log_empty))
+                    .setPositiveButton(android.R.string.ok, null)
+                    .show()
+                return@launch
+            }
+
+            val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+            val displayEntries = entries.take(maxDisplay)
+            val sb = StringBuilder()
+            for (entry in displayEntries) {
+                val timeStr = if (entry.timestamp > 0) dateFormat.format(Date(entry.timestamp)) else "?"
+                sb.appendLine("[${entry.level}] $timeStr")
+                sb.appendLine("[${entry.tag}] ${entry.message}")
+                if (!entry.stackTrace.isNullOrBlank()) {
+                    val trace = entry.stackTrace.lines().take(8).joinToString("\n")
+                    sb.appendLine(trace)
+                    if (entry.stackTrace.lines().size > 8) sb.appendLine("  ...")
+                }
+                sb.appendLine()
+            }
+            if (entries.size > maxDisplay) {
+                sb.appendLine(getString(R.string.error_log_more, entries.size - maxDisplay))
+            }
+
+            MaterialAlertDialogBuilder(ctx)
+                .setTitle(R.string.settings_error_log)
+                .setMessage(sb.toString().trimEnd())
+                .setPositiveButton(android.R.string.ok, null)
+                .setNeutralButton(R.string.error_log_share) { _, _ -> shareErrorLogs() }
+                .setNegativeButton(R.string.error_log_clear) { _, _ -> confirmClearLogs() }
+                .show()
+        }
+    }
+
+    private fun shareErrorLogs() {
+        val ctx = requireContext()
+        val files = AppLogger.getLogFiles()
+        if (files.isEmpty()) {
+            Toast.makeText(ctx, R.string.error_log_empty, Toast.LENGTH_SHORT).show()
+            return
+        }
+        val authority = "${ctx.packageName}.provider"
+        val uris = files.mapNotNull { file ->
+            try {
+                androidx.core.content.FileProvider.getUriForFile(ctx, authority, file)
+            } catch (_: Exception) { null }
+        }
+        if (uris.isEmpty()) return
+        val intent = android.content.Intent(android.content.Intent.ACTION_SEND_MULTIPLE).apply {
+            type = "text/plain"
+            putParcelableArrayListExtra(android.content.Intent.EXTRA_STREAM, ArrayList(uris))
+            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        startActivity(android.content.Intent.createChooser(intent, getString(R.string.error_log_share)))
+    }
+
+    private fun confirmClearLogs() {
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.settings_error_log)
+            .setMessage(R.string.error_log_clear_confirm)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                AppLogger.clearAllLogs()
+                Toast.makeText(requireContext(), R.string.error_log_cleared, Toast.LENGTH_SHORT).show()
+                loadErrorLogSummary()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
     }
 
     override fun onDestroyView() {

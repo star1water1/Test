@@ -421,6 +421,19 @@
     <string name="maintenance_clean_orphan_done">고아 데이터 정리 완료</string>
     <string name="maintenance_fk_violations">FK 위반: %d건</string>
 
+    <!-- Error Log -->
+    <string name="settings_error_log">오류 로그</string>
+    <string name="settings_view_error_log">오류 로그 보기</string>
+    <string name="settings_view_error_log_desc">앱 사용 중 발생한 오류 및 크래시 기록</string>
+    <string name="error_log_no_errors">기록된 오류 없음</string>
+    <string name="error_log_summary">마지막 오류: %1$s (%2$d건)</string>
+    <string name="error_log_empty">기록된 오류가 없습니다.</string>
+    <string name="error_log_clear_confirm">모든 오류 로그를 삭제하시겠습니까?</string>
+    <string name="error_log_cleared">오류 로그가 삭제되었습니다</string>
+    <string name="error_log_share">공유</string>
+    <string name="error_log_clear">삭제</string>
+    <string name="error_log_more">… 외 %d건 (공유로 전체 확인)</string>
+
     <!-- Accessibility -->
     <string name="close_button_desc">닫기</string>
     <string name="image_carousel_desc">캐릭터 이미지 캐러셀</string>

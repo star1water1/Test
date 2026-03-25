@@ -19,6 +19,7 @@ import com.novelcharacter.app.backup.AutoBackupWorker
 import com.novelcharacter.app.backup.BackupEncryptor
 import com.novelcharacter.app.backup.BackupStatusStore
 import com.novelcharacter.app.notification.BirthdayWorker
+import com.novelcharacter.app.util.AppLogger
 import com.novelcharacter.app.util.ThemeHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -65,6 +66,7 @@ class NovelCharacterApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        AppLogger.init(filesDir)
         // Apply saved theme from SharedPreferences cache (non-blocking)
         ThemeHelper.applyTheme(ThemeHelper.getSavedTheme(this))
         // Migrate DataStore → SharedPreferences cache on first launch

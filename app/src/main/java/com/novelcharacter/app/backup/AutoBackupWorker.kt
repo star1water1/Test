@@ -10,6 +10,7 @@ import org.apache.poi.ss.usermodel.FillPatternType
 import org.apache.poi.ss.usermodel.IndexedColors
 import org.apache.poi.xssf.usermodel.XSSFCellStyle
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
+import com.novelcharacter.app.util.AppLogger
 import com.novelcharacter.app.util.ThemeHelper
 import java.io.File
 import java.text.SimpleDateFormat
@@ -69,6 +70,7 @@ class AutoBackupWorker(
             Result.success()
         } catch (e: Exception) {
             Log.e(TAG, "Auto backup failed", e)
+            AppLogger.error(TAG, "자동 백업 실패: ${e.message}", e)
             statusStore.recordFailure(e.message ?: "Unknown error")
             if (runAttemptCount < 3) Result.retry() else Result.failure()
         }
