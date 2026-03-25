@@ -117,6 +117,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     // 임포트 후 시맨틱 동기화 대상 (characterId → universeId)
     private val pendingSyncCharacters = mutableMapOf<Long, Long>()
 
+    // Phase 1에서 FK 참조를 deferred 처리 (코드 기반 해석)
+    private val deferredUniverseImageCharCodes = mutableMapOf<Long, String>()  // universeId → charCode
+    private val deferredUniverseImageNovelCodes = mutableMapOf<Long, String>() // universeId → novelCode
+    private val deferredNovelImageCharCodes = mutableMapOf<Long, String>()     // novelId → charCode
+
     // ── Header alias map for tolerant import (Sprint C) ──
 
     private val headerAliases: Map<String, String> = buildMap {
@@ -141,8 +146,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         alias("이름(First)", "first_name", "firstName", "given_name")
         alias("이미지경로", "image_path", "이미지 경로", "image_file", "imagepath", "imagepaths")
         alias("이미지모드", "image_mode", "이미지 모드")
-        alias("이미지캐릭터ID", "image_character_id", "이미지 캐릭터 ID")
-        alias("이미지작품ID", "image_novel_id", "이미지 작품 ID")
+        alias("이미지캐릭터코드", "이미지캐릭터ID", "image_character_id", "image_character_code", "이미지 캐릭터 ID")
+        alias("이미지작품코드", "이미지작품ID", "image_novel_id", "image_novel_code", "이미지 작품 ID")
         alias("작품", "novel")
         alias("메모", "memo", "비고", "note", "notes")
         alias("태그", "tags", "tag")
@@ -309,8 +314,16 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             }
 
             // Phase 1: Schema definitions (universes, novels, field definitions)
+            // imageCharacterId/imageNovelId는 null로 deferred 처리 (FK 안전)
+            deferredUniverseImageCharCodes.clear()
+            deferredUniverseImageNovelCodes.clear()
+            deferredNovelImageCharCodes.clear()
             if (effectiveOptions.universes) importUniverses(workbook, result, onProgress, totalRows)
-            if (effectiveOptions.novels) importNovels(workbook, result, onProgress, totalRows)
+            if (effectiveOptions.novels) {
+                importNovels(workbook, result, onProgress, totalRows)
+                // Novel 임포트 완료 → Universe의 imageNovelId 코드 해석 가능
+                applyDeferredUniverseNovelRefs()
+            }
             if (effectiveOptions.fieldDefinitions) importFieldDefinitions(workbook, result, onProgress, totalRows)
 
             // Phase 2: Entity data (characters)
@@ -318,6 +331,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 importCharacterSheets(workbook, result, resolvedConflicts, onProgress, totalRows)
                 importUnclassifiedCharacters(workbook, result, resolvedConflicts, onProgress, totalRows)
             }
+            // Character 임포트 완료 → imageCharacterId 코드 해석 가능
+            applyDeferredCharacterRefs()
 
             // Phase 3: Relationships and references
             if (effectiveOptions.timeline) importTimeline(workbook, result, onProgress, totalRows)
@@ -1018,8 +1033,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val imageModeColIndex = cols["이미지모드"] ?: -1
         val customRelTypesColIndex = cols["커스텀관계유형"] ?: -1
         val customRelColorsColIndex = cols["커스텀관계색상"] ?: -1
-        val imageCharIdColIndex = cols["이미지캐릭터ID"] ?: -1
-        val imageNovelIdColIndex = cols["이미지작품ID"] ?: -1
+        val imageCharCodeColIndex = cols["이미지캐릭터코드"] ?: -1
+        val imageNovelCodeColIndex = cols["이미지작품코드"] ?: -1
         val createdAtColIndex = cols["생성일"] ?: -1
 
         // Build code index for duplicate detection within file
@@ -1045,8 +1060,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val imageMode = if (imageModeColIndex >= 0) getCellString(row, imageModeColIndex).ifBlank { "none" } else "none"
                 val customRelTypes = if (customRelTypesColIndex >= 0) getCellString(row, customRelTypesColIndex) else ""
                 val customRelColors = if (customRelColorsColIndex >= 0) getCellString(row, customRelColorsColIndex) else ""
-                val imageCharId = if (imageCharIdColIndex >= 0) parseNumber(getCellString(row, imageCharIdColIndex))?.toLong() else null
-                val imageNovelId = if (imageNovelIdColIndex >= 0) parseNumber(getCellString(row, imageNovelIdColIndex))?.toLong() else null
+                val imageCharCode = if (imageCharCodeColIndex >= 0) getCellString(row, imageCharCodeColIndex).ifBlank { null } else null
+                val imageNovelCode = if (imageNovelCodeColIndex >= 0) getCellString(row, imageNovelCodeColIndex).ifBlank { null } else null
                 val createdAt = if (createdAtColIndex >= 0) parseNumber(getCellString(row, createdAtColIndex))?.toLong() ?: System.currentTimeMillis() else System.currentTimeMillis()
 
                 // Duplicate code detection within file (last-write-wins)
@@ -1089,13 +1104,15 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         name = name, description = description, displayOrder = displayOrder ?: existing.displayOrder,
                         borderColor = borderColor, borderWidthDp = borderWidthDp,
                         imagePaths = imagePaths, imageMode = imageMode,
-                        // 구버전 파일(컬럼 없음)에서는 기존값 유지
                         customRelationshipTypes = if (customRelTypesColIndex >= 0) customRelTypes else existing.customRelationshipTypes,
                         customRelationshipColors = if (customRelColorsColIndex >= 0) customRelColors else existing.customRelationshipColors,
-                        imageCharacterId = if (imageCharIdColIndex >= 0) imageCharId else existing.imageCharacterId,
-                        imageNovelId = if (imageNovelIdColIndex >= 0) imageNovelId else existing.imageNovelId,
+                        // imageCharacterId/imageNovelId: deferred (Phase 2 후 코드 기반 해석)
+                        imageCharacterId = if (imageCharCodeColIndex >= 0) null else existing.imageCharacterId,
+                        imageNovelId = if (imageNovelCodeColIndex >= 0) null else existing.imageNovelId,
                         createdAt = if (createdAtColIndex >= 0) createdAt else existing.createdAt
                     ))
+                    if (imageCharCode != null) deferredUniverseImageCharCodes[existing.id] = imageCharCode
+                    if (imageNovelCode != null) deferredUniverseImageNovelCodes[existing.id] = imageNovelCode
                     result.updatedUniverses++
                 } else {
                     val newCode = if (code.isNotBlank()) code else generateEntityCode()
@@ -1106,10 +1123,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         imagePaths = imagePaths, imageMode = imageMode,
                         customRelationshipTypes = customRelTypes,
                         customRelationshipColors = customRelColors,
-                        imageCharacterId = imageCharId,
-                        imageNovelId = imageNovelId,
+                        imageCharacterId = null, // deferred
+                        imageNovelId = null,     // deferred
                         createdAt = createdAt
                     ))
+                    if (imageCharCode != null) deferredUniverseImageCharCodes[newId] = imageCharCode
+                    if (imageNovelCode != null) deferredUniverseImageNovelCodes[newId] = imageNovelCode
                     entitySeen[newId] = i
                     result.newUniverses++
                 }
@@ -1140,7 +1159,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val borderWidthColIndex = cols["테두리두께"] ?: -1
         val novelImagePathColIndex = cols["이미지경로"] ?: -1
         val novelImageModeColIndex = cols["이미지모드"] ?: -1
-        val imageCharIdColIndex = cols["이미지캐릭터ID"] ?: -1
+        val imageCharCodeColIndex = cols["이미지캐릭터코드"] ?: -1
         val inheritBorderColIndex = cols["테두리상속"] ?: -1
         val novelPinnedColIndex = cols["고정"] ?: -1
         val standardYearColIndex = cols["표준연도"] ?: -1
@@ -1168,7 +1187,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val rawNovelImagePaths = if (novelImagePathColIndex >= 0) getCellString(row, novelImagePathColIndex) else "[]"
                 val novelImagePaths = remapImagePaths(rawNovelImagePaths)
                 val novelImageMode = if (novelImageModeColIndex >= 0) getCellString(row, novelImageModeColIndex).ifBlank { "none" } else "none"
-                val novelImageCharId = if (imageCharIdColIndex >= 0) parseNumber(getCellString(row, imageCharIdColIndex))?.toLong() else null
+                val novelImageCharCode = if (imageCharCodeColIndex >= 0) getCellString(row, imageCharCodeColIndex).ifBlank { null } else null
                 val novelIsPinned = if (novelPinnedColIndex >= 0) parseBoolean(getCellString(row, novelPinnedColIndex)) else false
                 val standardYear = if (standardYearColIndex >= 0) parseNumber(getCellString(row, standardYearColIndex))?.toInt() else null
                 val createdAt = if (createdAtColIndex >= 0) parseNumber(getCellString(row, createdAtColIndex))?.toLong() ?: System.currentTimeMillis() else System.currentTimeMillis()
@@ -1220,10 +1239,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         inheritUniverseBorder = if (inheritBorderColIndex >= 0) effectiveInherit else existing.inheritUniverseBorder,
                         isPinned = if (novelPinnedColIndex >= 0) novelIsPinned else existing.isPinned,
                         imagePaths = novelImagePaths, imageMode = novelImageMode,
-                        imageCharacterId = if (imageCharIdColIndex >= 0) novelImageCharId else existing.imageCharacterId,
+                        // imageCharacterId: deferred (Phase 2 후 코드 기반 해석)
+                        imageCharacterId = if (imageCharCodeColIndex >= 0) null else existing.imageCharacterId,
                         standardYear = if (standardYearColIndex >= 0) standardYear else existing.standardYear,
                         createdAt = if (createdAtColIndex >= 0) createdAt else existing.createdAt
                     ))
+                    if (novelImageCharCode != null) deferredNovelImageCharCodes[existing.id] = novelImageCharCode
                     result.updatedNovels++
                 } else {
                     val newCode = if (code.isNotBlank()) code else generateEntityCode()
@@ -1234,9 +1255,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         borderColor = borderColor, borderWidthDp = borderWidthDp,
                         inheritUniverseBorder = effectiveInherit, isPinned = novelIsPinned,
                         imagePaths = novelImagePaths, imageMode = novelImageMode,
-                        imageCharacterId = novelImageCharId, standardYear = standardYear,
+                        imageCharacterId = null, // deferred
+                        standardYear = standardYear,
                         createdAt = createdAt
                     ))
+                    if (novelImageCharCode != null) deferredNovelImageCharCodes[newId] = novelImageCharCode
                     entitySeen[newId] = i
                     result.newNovels++
                     if (universeId == null && (universeName.isNotBlank() || universeCode.isNotBlank())) {
@@ -2703,6 +2726,33 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
      * 임포트 후 시맨틱 필드 동기화.
      * 필드값 → 상태변화, 상태변화 → 필드값 양방향 동기화 수행.
      */
+    // ── Deferred FK 해석 (코드 기반) ──
+
+    private suspend fun applyDeferredUniverseNovelRefs() {
+        for ((universeId, novelCode) in deferredUniverseImageNovelCodes) {
+            val novelId = db.novelDao().getNovelByCode(novelCode)?.id ?: continue
+            val universe = db.universeDao().getUniverseById(universeId) ?: continue
+            db.universeDao().update(universe.copy(imageNovelId = novelId))
+        }
+        deferredUniverseImageNovelCodes.clear()
+    }
+
+    private suspend fun applyDeferredCharacterRefs() {
+        for ((novelId, charCode) in deferredNovelImageCharCodes) {
+            val charId = db.characterDao().getCharacterByCode(charCode)?.id ?: continue
+            val novel = db.novelDao().getNovelById(novelId) ?: continue
+            db.novelDao().update(novel.copy(imageCharacterId = charId))
+        }
+        deferredNovelImageCharCodes.clear()
+
+        for ((universeId, charCode) in deferredUniverseImageCharCodes) {
+            val charId = db.characterDao().getCharacterByCode(charCode)?.id ?: continue
+            val universe = db.universeDao().getUniverseById(universeId) ?: continue
+            db.universeDao().update(universe.copy(imageCharacterId = charId))
+        }
+        deferredUniverseImageCharCodes.clear()
+    }
+
     private suspend fun runPostImportSemanticSync() {
         val characterRepository = CharacterRepository(
             db, db.characterDao(), db.characterFieldValueDao(),

@@ -466,6 +466,10 @@ class ExcelExporter(context: Context) {
         val universes = db.universeDao().getAllUniversesList()
         if (universes.isEmpty()) return
 
+        // imageCharacterId/imageNovelId → code 해석용 맵
+        val charCodeMap = db.characterDao().getAllCharactersList().associate { it.id to it.code }
+        val novelCodeMap = db.novelDao().getAllNovelsList().associate { it.id to it.code }
+
         val spec = universeSpec()
         val sheetName = sanitizeSheetName(spec.sheetName, usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
@@ -483,8 +487,8 @@ class ExcelExporter(context: Context) {
             row.createCell(7).setCellValue(universe.imageMode)
             row.createCell(8).setCellValue(universe.customRelationshipTypes)
             row.createCell(9).setCellValue(universe.customRelationshipColors)
-            universe.imageCharacterId?.let { row.createCell(10).setCellValue(it.toDouble()) }
-            universe.imageNovelId?.let { row.createCell(11).setCellValue(it.toDouble()) }
+            universe.imageCharacterId?.let { id -> charCodeMap[id]?.let { row.createCell(10).setCellValue(it) } }
+            universe.imageNovelId?.let { id -> novelCodeMap[id]?.let { row.createCell(11).setCellValue(it) } }
             row.createCell(12).setCellValue(universe.createdAt.toDouble())
         }
 
@@ -499,6 +503,7 @@ class ExcelExporter(context: Context) {
         if (novels.isEmpty()) return
 
         val universeMap = universes.associateBy { it.id }
+        val charCodeMap = db.characterDao().getAllCharactersList().associate { it.id to it.code }
         val spec = novelSpec(universes.map { it.name })
         val sheetName = sanitizeSheetName(spec.sheetName, usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
@@ -517,7 +522,7 @@ class ExcelExporter(context: Context) {
             row.createCell(7).setCellValue(novel.borderWidthDp.toDouble())
             row.createCell(8).setCellValue(novel.imagePaths)
             row.createCell(9).setCellValue(novel.imageMode)
-            novel.imageCharacterId?.let { row.createCell(10).setCellValue(it.toDouble()) }
+            novel.imageCharacterId?.let { id -> charCodeMap[id]?.let { row.createCell(10).setCellValue(it) } }
             row.createCell(11).setCellValue(if (novel.inheritUniverseBorder) "Y" else "N")
             row.createCell(12).setCellValue(if (novel.isPinned) "Y" else "N")
             novel.standardYear?.let { row.createCell(13).setCellValue(it.toDouble()) }
