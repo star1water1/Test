@@ -13,6 +13,7 @@ import androidx.room.withTransaction
 import com.novelcharacter.app.data.model.CharacterStateChange
 import com.novelcharacter.app.util.EventEditDialogHelper.ShiftDirection
 import com.novelcharacter.app.util.SemanticFieldSyncHelper
+import com.novelcharacter.app.util.StandardYearSyncHelper
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -272,6 +273,20 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
         if (year != null) {
             _centerYear.value = year
             debounceSaveCenterYear(year)
+        }
+    }
+
+    // ===== Standard Year ====
+
+    fun setNovelStandardYear(novel: Novel, oldStdYear: Int?, newStdYear: Int) = viewModelScope.launch {
+        try {
+            val updatedNovel = novel.copy(standardYear = newStdYear)
+            novelRepository.updateNovel(updatedNovel)
+            val syncHelper = StandardYearSyncHelper(characterRepository, universeRepository)
+            syncHelper.onStandardYearChanged(updatedNovel, oldStdYear, newStdYear)
+        } catch (e: Exception) {
+            Log.e("TimelineViewModel", "Failed to set standard year", e)
+            showError(e.message)
         }
     }
 
