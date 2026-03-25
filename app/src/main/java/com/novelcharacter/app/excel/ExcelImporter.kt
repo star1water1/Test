@@ -924,16 +924,30 @@ class ExcelImporter(context: Context) {
         if (act.isFinishing || act.isDestroyed) return
 
         val sb = StringBuilder()
+        val maxDetailItems = 30
+        val maxShownItems = 20
         if (result.errors.isNotEmpty()) {
             sb.appendLine("── 오류 (${result.errors.size}건) ──")
-            result.errors.forEachIndexed { i, err ->
-                sb.appendLine("${i + 1}. $err")
+            if (result.errors.size <= maxDetailItems) {
+                result.errors.forEachIndexed { i, err ->
+                    sb.appendLine("${i + 1}. $err")
+                }
+            } else {
+                result.errors.take(maxShownItems).forEachIndexed { i, err ->
+                    sb.appendLine("${i + 1}. $err")
+                }
+                sb.appendLine("... 외 ${result.errors.size - maxShownItems}건")
             }
         }
         if (result.warnings.isNotEmpty()) {
             if (sb.isNotEmpty()) sb.appendLine()
             sb.appendLine("── 경고 (${result.warnings.size}건) ──")
-            result.warnings.forEach { sb.appendLine("• $it") }
+            if (result.warnings.size <= maxDetailItems) {
+                result.warnings.forEach { sb.appendLine("• $it") }
+            } else {
+                result.warnings.take(maxShownItems).forEach { sb.appendLine("• $it") }
+                sb.appendLine("... 외 ${result.warnings.size - maxShownItems}건")
+            }
         }
 
         val scrollView = android.widget.ScrollView(act)
