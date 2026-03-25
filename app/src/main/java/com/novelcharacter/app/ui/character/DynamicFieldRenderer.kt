@@ -276,7 +276,7 @@ class DynamicFieldRenderer(
             // 섹션 0: 다층 태그 (V2)
             if (analysisConfig.isInsightEnabled(BodyAnalysisConfig.INSIGHT_BODY_TAGS) &&
                 result.bodyTags.isNotEmpty()) {
-                addRow("체형 태그", result.bodyTags.joinToString(" · "))
+                addRow(getString(R.string.body_tags_label), result.bodyTags.joinToString(" · "))
             }
 
             // 섹션 1: 체형 분류 + 실루엣
@@ -301,14 +301,14 @@ class DynamicFieldRenderer(
             // 섹션 2.5: 프레임 + 프로포션 (V2)
             if (analysisConfig.isInsightEnabled(BodyAnalysisConfig.INSIGHT_FRAME_SIZE) && result.frameSize != null) {
                 val heightStr = result.height?.let { " (${"%.0f".format(it)}cm)" } ?: ""
-                addRow("프레임", "${result.frameSize}$heightStr")
+                addRow(getString(R.string.body_frame_label), "${result.frameSize}$heightStr")
             }
             if (analysisConfig.isInsightEnabled(BodyAnalysisConfig.INSIGHT_PROPORTION)) {
                 result.volumeIndex?.let { vi ->
-                    addRow("볼륨 지수", "${"%.2f".format(vi)} (${BodyAnalysisHelper.volumeLabel(vi)})")
+                    addRow(getString(R.string.body_volume_label), "${"%.2f".format(vi)} (${BodyAnalysisHelper.volumeLabel(vi)})")
                 }
                 result.curvesIndex?.let { ci ->
-                    addRow("곡선 지수", "${"%.2f".format(ci)} (${BodyAnalysisHelper.curvesLabel(ci)})")
+                    addRow(getString(R.string.body_curves_label), "${"%.2f".format(ci)} (${BodyAnalysisHelper.curvesLabel(ci)})")
                 }
             }
 

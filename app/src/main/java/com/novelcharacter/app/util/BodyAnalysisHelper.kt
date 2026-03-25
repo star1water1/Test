@@ -129,12 +129,8 @@ class BodyAnalysisHelper {
         // 4. 기존 체형 분류 (하위호환)
         val bodyType = config.bodyTypeRules
             .sortedBy { it.priority }
-            .firstOrNull { rule ->
-                rule.conditions.all { (key, range) ->
-                    val v = computedValues[key] ?: return@all false
-                    (range.min == null || v >= range.min) && (range.max == null || v <= range.max)
-                }
-            }?.label ?: config.defaultBodyType
+            .firstOrNull { matchesRule(it.conditions, computedValues) }
+            ?.label ?: config.defaultBodyType
 
         // 5. 다층 태그 분류 (V2)
         val effectiveTagRules = if (config.bodyTagRules.isNotEmpty()) {
@@ -215,7 +211,7 @@ class BodyAnalysisHelper {
         // 12. 실루엣 설명 — 다층 태그 통합 (V2)
         val silhouetteDescription = buildSilhouetteDescription(
             bodyTags.ifEmpty { listOf(bodyType) },
-            bustWaistDiff, waistHipDiff, heightCm, cupSize
+            bustWaistDiff, waistHipDiff, heightCm
         )
 
         return BodyAnalysisResult(
@@ -251,8 +247,7 @@ class BodyAnalysisHelper {
         tags: List<String>,
         bustWaistDiff: Double,
         waistHipDiff: Double,
-        heightCm: Double?,
-        cupSize: String
+        heightCm: Double?
     ): String {
         val parts = mutableListOf<String>()
 
