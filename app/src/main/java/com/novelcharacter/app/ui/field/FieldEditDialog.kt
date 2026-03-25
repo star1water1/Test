@@ -26,6 +26,7 @@ import com.novelcharacter.app.data.model.FieldType
 import com.novelcharacter.app.data.model.SemanticRole
 import com.novelcharacter.app.data.model.StructuredInputConfig
 import com.novelcharacter.app.databinding.DialogFieldEditBinding
+import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -1058,7 +1059,7 @@ class FieldEditDialog : DialogFragment() {
         val app = requireContext().applicationContext as com.novelcharacter.app.NovelCharacterApp
         val fieldValueDao = app.database.characterFieldValueDao()
 
-        CoroutineScope(Dispatchers.Main).launch {
+        lifecycleScope.launch {
             val values = withContext(Dispatchers.IO) {
                 fieldValueDao.getValuesByFieldDef(field.id)
             }
@@ -1115,7 +1116,7 @@ class FieldEditDialog : DialogFragment() {
         // Support both callback (for non-rotation case) and FragmentResult (survives rotation)
         if (onSave != null) {
             onSave?.invoke(field)
-        } else {
+        } else if (isAdded) {
             setFragmentResult(RESULT_KEY, bundleOf(RESULT_FIELD_JSON to Gson().toJson(field)))
         }
     }
