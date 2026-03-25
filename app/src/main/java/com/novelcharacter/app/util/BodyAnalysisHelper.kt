@@ -94,12 +94,16 @@ class BodyAnalysisHelper {
         // 1. 컵 사이즈 — 흉곽 보정 (V2)
         val underbust = waist + config.ribOffset
         val diff = bust - underbust
-        val cupSize = config.cupMapping
-            .sortedBy { it.maxDiff }
-            .firstOrNull { diff <= it.maxDiff }?.label ?: "?"
-        val cupIndex = config.cupMapping
-            .sortedBy { it.maxDiff }
-            .indexOfFirst { diff <= it.maxDiff }
+        val cupSize = if (diff > 0) {
+            config.cupMapping
+                .sortedBy { it.maxDiff }
+                .firstOrNull { diff <= it.maxDiff }?.label ?: "?"
+        } else "—"
+        val cupIndex = if (diff > 0) {
+            config.cupMapping
+                .sortedBy { it.maxDiff }
+                .indexOfFirst { diff <= it.maxDiff }
+        } else -1
 
         // 2. BMI
         val bmi = if (heightCm != null && weightKg != null && heightCm > 0 && weightKg > 0) {
@@ -133,8 +137,13 @@ class BodyAnalysisHelper {
             }?.label ?: config.defaultBodyType
 
         // 5. 다층 태그 분류 (V2)
-        val effectiveTagRules = config.bodyTagRules.ifEmpty {
-            // bodyTagRules 미설정 → 기존 bodyTypeRules를 silhouette 레이어로 변환
+        val effectiveTagRules = if (config.bodyTagRules.isNotEmpty()) {
+            config.bodyTagRules
+        } else if (config.bodyTypeRules == BodyAnalysisConfig.DEFAULT_BODY_TYPE_RULES) {
+            // 기본 규칙 → DEFAULT_BODY_TAG_RULES 사용 (build/silhouette/special 전체)
+            BodyAnalysisConfig.DEFAULT_BODY_TAG_RULES
+        } else {
+            // 사용자 커스텀 bodyTypeRules → silhouette 레이어로 변환
             config.bodyTypeRules.map {
                 BodyAnalysisConfig.BodyTagRule(it.label, "silhouette", it.conditions, it.priority)
             }
