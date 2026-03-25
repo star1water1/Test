@@ -188,7 +188,7 @@ class SystemMaintenanceService(
             }
             for (path in paths) {
                 val file = java.io.File(path)
-                if (!file.exists() || !file.canonicalPath.startsWith(appDir.canonicalPath)) {
+                if (!file.exists() || !file.canonicalPath.startsWith(appDir.canonicalPath + java.io.File.separator)) {
                     orphanCount++
                     details.add("${character.name}: $path")
                 }

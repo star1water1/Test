@@ -136,7 +136,7 @@ class CharacterEditFragment : Fragment() {
             val validated = if (dir != null) {
                 saved.filter { path ->
                     try {
-                        java.io.File(path).canonicalPath.startsWith(dir.canonicalPath)
+                        java.io.File(path).canonicalPath.startsWith(dir.canonicalPath + java.io.File.separator)
                     } catch (_: Exception) { false }
                 }
             } else {
@@ -961,7 +961,7 @@ class CharacterEditFragment : Fragment() {
         return try {
             val file = java.io.File(path)
             val dir = appDir ?: return null
-            if (!file.canonicalPath.startsWith(dir.canonicalPath)) {
+            if (!file.canonicalPath.startsWith(dir.canonicalPath + java.io.File.separator)) {
                 return null // Reject paths outside app directory
             }
             val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }

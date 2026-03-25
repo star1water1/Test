@@ -71,7 +71,7 @@ class NovelListFragment : Fragment() {
                         }
                         if (exceededLimit) { file.delete(); return@withContext null }
                         val canonical = file.canonicalPath
-                        if (!canonical.startsWith(ctx.filesDir.canonicalPath)) {
+                        if (!canonical.startsWith(ctx.filesDir.canonicalPath + java.io.File.separator)) {
                             file.delete()
                             return@withContext null
                         }

@@ -114,7 +114,7 @@ class WorldPackageExporter(private val context: Context) {
                             val paths = gson.fromJson(char.imagePaths, Array<String>::class.java)
                             paths?.forEachIndexed { index, path ->
                                 val imageFile = File(path)
-                                if (imageFile.exists() && imageFile.canonicalPath.startsWith(appDir.canonicalPath)) {
+                                if (imageFile.exists() && imageFile.canonicalPath.startsWith(appDir.canonicalPath + File.separator)) {
                                     zip.putNextEntry(ZipEntry("images/${char.id}_$index.jpg"))
                                     imageFile.inputStream().use { it.copyTo(zip) }
                                     zip.closeEntry()

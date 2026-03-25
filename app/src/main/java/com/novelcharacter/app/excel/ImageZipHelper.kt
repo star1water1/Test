@@ -43,7 +43,7 @@ object ImageZipHelper {
         val existingImages = imagePathSet.filter { path ->
             val file = File(path)
             file.exists() && try {
-                file.canonicalPath.startsWith(appDir.canonicalPath)
+                file.canonicalPath.startsWith(appDir.canonicalPath + File.separator)
             } catch (_: Exception) { false }
         }
 

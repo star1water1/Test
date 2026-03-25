@@ -325,7 +325,7 @@ class CharacterAdapter(
             return try {
                 val file = java.io.File(path)
                 val appDir = binding.root.context.filesDir
-                if (!file.canonicalPath.startsWith(appDir.canonicalPath)) {
+                if (!file.canonicalPath.startsWith(appDir.canonicalPath + java.io.File.separator)) {
                     return null
                 }
                 val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
