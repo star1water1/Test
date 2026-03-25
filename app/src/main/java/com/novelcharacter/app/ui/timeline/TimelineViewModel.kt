@@ -11,6 +11,7 @@ import com.novelcharacter.app.data.model.TimelineEvent
 import android.util.Log
 import androidx.room.withTransaction
 import com.novelcharacter.app.data.model.CharacterStateChange
+import com.novelcharacter.app.util.EventEditDialogHelper.ShiftDirection
 import com.novelcharacter.app.util.SemanticFieldSyncHelper
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -313,6 +314,61 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
             showError(e.message)
         }
     }
+
+    fun updateEventAndShiftOthers(
+        event: TimelineEvent,
+        characterIds: List<Long>,
+        shiftDirection: ShiftDirection,
+        delta: Int,
+        originalNovelId: Long?,
+        originalUniverseId: Long?
+    ) = viewModelScope.launch {
+        try {
+            val oldYear = event.year - delta
+            db.withTransaction {
+                timelineRepository.updateEvent(event)
+                timelineRepository.updateEventCharacters(event.id, characterIds)
+
+                val scopeEvents = when {
+                    originalNovelId != null -> timelineRepository.getEventsByNovelList(originalNovelId)
+                    originalUniverseId != null -> timelineRepository.getEventsByUniverseList(originalUniverseId)
+                    else -> timelineRepository.getAllEventsList()
+                }.filter { it.id != event.id }
+
+                val eventsToShift = scopeEvents.filter { e ->
+                    when (shiftDirection) {
+                        ShiftDirection.AFTER -> e.year >= oldYear
+                        ShiftDirection.BEFORE -> e.year <= oldYear
+                    }
+                }
+
+                if (eventsToShift.isNotEmpty()) {
+                    val shifted = eventsToShift.mapNotNull { e ->
+                        val newYear = e.year.toLong() + delta.toLong()
+                        if (newYear in Int.MIN_VALUE.toLong()..Int.MAX_VALUE.toLong()) {
+                            e.copy(year = newYear.toInt())
+                        } else null
+                    }
+                    timelineRepository.updateAllEvents(shifted)
+
+                    for (s in shifted) {
+                        if (s.eventType == TimelineEvent.TYPE_BIRTH || s.eventType == TimelineEvent.TYPE_DEATH) {
+                            val charIds = timelineRepository.getCharacterIdsForEvent(s.id)
+                            syncEventTypeToStateChanges(s, charIds)
+                        }
+                    }
+                }
+            }
+            syncEventTypeToStateChanges(event, characterIds)
+        } catch (e: Exception) {
+            Log.e("TimelineViewModel", "Failed to shift events", e)
+            showError(e.message)
+        }
+    }
+
+    suspend fun getEventsByNovelList(novelId: Long) = timelineRepository.getEventsByNovelList(novelId)
+    suspend fun getEventsByUniverseList(universeId: Long) = timelineRepository.getEventsByUniverseList(universeId)
+    suspend fun getAllEventsList() = timelineRepository.getAllEventsList()
 
     /**
      * 사건 유형이 birth/death이면 관련 캐릭터의 상태변화 + 필드 동기화.

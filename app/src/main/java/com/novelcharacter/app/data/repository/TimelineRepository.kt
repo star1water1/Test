@@ -27,6 +27,10 @@ class TimelineRepository(
     suspend fun insertAllEvents(events: List<TimelineEvent>) = timelineDao.insertAll(events)
     fun getEventsByUniverse(universeId: Long): LiveData<List<TimelineEvent>> =
         timelineDao.getEventsByUniverse(universeId)
+    suspend fun getEventsByUniverseList(universeId: Long): List<TimelineEvent> =
+        timelineDao.getEventsByUniverseList(universeId)
+    suspend fun updateAllEvents(events: List<TimelineEvent>) =
+        timelineDao.updateAll(events)
     fun getEventsByYearMonthDay(year: Int, month: Int?, day: Int?): LiveData<List<TimelineEvent>> =
         timelineDao.getEventsByYearMonthDay(year, month, day)
     fun getEventsForCharacterInRange(characterId: Long, startYear: Int, endYear: Int): LiveData<List<TimelineEvent>> =

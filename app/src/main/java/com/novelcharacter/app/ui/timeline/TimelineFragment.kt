@@ -438,6 +438,20 @@ class TimelineFragment : Fragment() {
             override fun updateEvent(event: TimelineEvent, characterIds: List<Long>) {
                 viewModel.updateEvent(event, characterIds)
             }
+            override suspend fun getEventsInScope(novelId: Long?, universeId: Long?): List<TimelineEvent> {
+                return when {
+                    novelId != null -> viewModel.getEventsByNovelList(novelId)
+                    universeId != null -> viewModel.getEventsByUniverseList(universeId)
+                    else -> viewModel.getAllEventsList()
+                }
+            }
+            override fun updateEventAndShiftOthers(
+                event: TimelineEvent, characterIds: List<Long>,
+                shiftDirection: com.novelcharacter.app.util.EventEditDialogHelper.ShiftDirection,
+                delta: Int, originalNovelId: Long?, originalUniverseId: Long?
+            ) {
+                viewModel.updateEventAndShiftOthers(event, characterIds, shiftDirection, delta, originalNovelId, originalUniverseId)
+            }
         }
         eventHelper.showEventDialog(dataProvider = dataProvider, event = event)
     }

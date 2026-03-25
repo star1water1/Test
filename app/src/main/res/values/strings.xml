@@ -255,6 +255,10 @@
     <string name="all_novels_filter">전체 작품</string>
     <string name="all_characters_filter">전체 캐릭터</string>
     <string name="all_novels_event">전체</string>
+    <string name="shift_events_title">연관 사건 이동</string>
+    <string name="shift_this_only">이 사건만 이동</string>
+    <string name="shift_after_events">이후 사건 %1$d건도 함께 %2$s 이동</string>
+    <string name="shift_before_events">이전 사건 %1$d건도 함께 %2$s 이동</string>
 
     <!-- NameBankFragment -->
     <string name="edit_name_title">이름 편집</string>

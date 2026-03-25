@@ -17,7 +17,9 @@ import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.TimelineEvent
 import com.novelcharacter.app.databinding.DialogTimelineEditBinding
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * 재사용 가능한 사건(TimelineEvent) 편집 다이얼로그 헬퍼.
@@ -29,12 +31,23 @@ class EventEditDialogHelper(
     private val layoutInflater: LayoutInflater
 ) {
 
+    enum class ShiftDirection { BEFORE, AFTER }
+
     interface DataProvider {
         suspend fun getAllNovelsList(): List<Novel>
         suspend fun getAllCharactersList(): List<Character>
         suspend fun getCharacterIdsForEvent(eventId: Long): List<Long>
         fun insertEvent(event: TimelineEvent, characterIds: List<Long>)
         fun updateEvent(event: TimelineEvent, characterIds: List<Long>)
+        suspend fun getEventsInScope(novelId: Long?, universeId: Long?): List<TimelineEvent>
+        fun updateEventAndShiftOthers(
+            event: TimelineEvent,
+            characterIds: List<Long>,
+            shiftDirection: ShiftDirection,
+            delta: Int,
+            originalNovelId: Long?,
+            originalUniverseId: Long?
+        )
     }
 
     fun showEventDialog(
@@ -168,14 +181,89 @@ class EventEditDialogHelper(
 
                     if (event == null) {
                         dataProvider.insertEvent(newEvent, selectedCharIds.toList())
+                        onSaved?.invoke()
+                        alertDialog.dismiss()
                     } else {
-                        dataProvider.updateEvent(newEvent, selectedCharIds.toList())
+                        val oldYear = event.year
+                        val delta = newEvent.year - oldYear
+                        val hasScope = event.novelId != null || event.universeId != null
+                        if (delta != 0 && hasScope) {
+                            lifecycleScope.launch {
+                                showYearShiftDialog(
+                                    dataProvider, newEvent, selectedCharIds.toList(),
+                                    delta, oldYear,
+                                    originalNovelId = event.novelId,
+                                    originalUniverseId = event.universeId,
+                                    onSaved, alertDialog
+                                )
+                            }
+                        } else {
+                            dataProvider.updateEvent(newEvent, selectedCharIds.toList())
+                            onSaved?.invoke()
+                            alertDialog.dismiss()
+                        }
                     }
-                    onSaved?.invoke()
-                    alertDialog.dismiss()
                 }
             }
             alertDialog.show()
+        }
+    }
+
+    private suspend fun showYearShiftDialog(
+        dataProvider: DataProvider,
+        newEvent: TimelineEvent,
+        characterIds: List<Long>,
+        delta: Int,
+        oldYear: Int,
+        originalNovelId: Long?,
+        originalUniverseId: Long?,
+        onSaved: (() -> Unit)?,
+        parentDialog: AlertDialog
+    ) {
+        val scopeEvents = dataProvider.getEventsInScope(originalNovelId, originalUniverseId)
+            .filter { it.id != newEvent.id }
+        val afterCount = scopeEvents.count { it.year >= oldYear }
+        val beforeCount = scopeEvents.count { it.year <= oldYear }
+
+        val direction = if (delta > 0) "${delta}년 뒤로" else "${-delta}년 앞으로"
+        val items = mutableListOf(context.getString(R.string.shift_this_only))
+        val actions = mutableListOf<() -> Unit>()
+        actions.add {
+            dataProvider.updateEvent(newEvent, characterIds)
+            onSaved?.invoke()
+            if (parentDialog.isShowing) parentDialog.dismiss()
+        }
+        if (afterCount > 0) {
+            items.add(context.getString(R.string.shift_after_events, afterCount, direction))
+            actions.add {
+                dataProvider.updateEventAndShiftOthers(
+                    newEvent, characterIds, ShiftDirection.AFTER, delta,
+                    originalNovelId, originalUniverseId
+                )
+                onSaved?.invoke()
+                if (parentDialog.isShowing) parentDialog.dismiss()
+            }
+        }
+        if (beforeCount > 0) {
+            items.add(context.getString(R.string.shift_before_events, beforeCount, direction))
+            actions.add {
+                dataProvider.updateEventAndShiftOthers(
+                    newEvent, characterIds, ShiftDirection.BEFORE, delta,
+                    originalNovelId, originalUniverseId
+                )
+                onSaved?.invoke()
+                if (parentDialog.isShowing) parentDialog.dismiss()
+            }
+        }
+
+        withContext(Dispatchers.Main) {
+            AlertDialog.Builder(context)
+                .setTitle(R.string.shift_events_title)
+                .setItems(items.toTypedArray()) { _, which ->
+                    actions.getOrNull(which)?.invoke()
+                }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
         }
     }
 
