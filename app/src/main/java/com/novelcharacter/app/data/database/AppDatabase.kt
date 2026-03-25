@@ -42,6 +42,7 @@ import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.TimelineCharacterCrossRef
 import com.novelcharacter.app.data.model.TimelineEvent
+import com.novelcharacter.app.data.model.TimelineEventNovelCrossRef
 import com.novelcharacter.app.data.model.CharacterRelationship
 import com.novelcharacter.app.data.model.NameBankEntry
 import com.novelcharacter.app.data.model.Universe
@@ -52,6 +53,7 @@ import com.novelcharacter.app.data.model.Universe
         Character::class,
         TimelineEvent::class,
         TimelineCharacterCrossRef::class,
+        TimelineEventNovelCrossRef::class,
         Universe::class,
         FieldDefinition::class,
         CharacterFieldValue::class,
@@ -66,7 +68,7 @@ import com.novelcharacter.app.data.model.Universe
         Faction::class,
         FactionMembership::class
     ],
-    version = 31,
+    version = 32,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -1336,6 +1338,60 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_31_32 = object : Migration(31, 32) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "Migrating database from version 31 to 32 — TimelineEvent novelId → M2M cross-ref")
+
+                // 1) 크로스레프 테이블 생성
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `timeline_event_novel_cross_ref` (
+                        `eventId` INTEGER NOT NULL,
+                        `novelId` INTEGER NOT NULL,
+                        PRIMARY KEY(`eventId`, `novelId`),
+                        FOREIGN KEY(`eventId`) REFERENCES `timeline_events`(`id`) ON DELETE CASCADE,
+                        FOREIGN KEY(`novelId`) REFERENCES `novels`(`id`) ON DELETE CASCADE
+                    )
+                """)
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_timeline_event_novel_cross_ref_eventId` ON `timeline_event_novel_cross_ref`(`eventId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_timeline_event_novel_cross_ref_novelId` ON `timeline_event_novel_cross_ref`(`novelId`)")
+
+                // 2) 기존 novelId 데이터를 크로스레프로 이전
+                db.execSQL("""
+                    INSERT INTO `timeline_event_novel_cross_ref` (`eventId`, `novelId`)
+                    SELECT `id`, `novelId` FROM `timeline_events` WHERE `novelId` IS NOT NULL
+                """)
+
+                // 3) timeline_events에서 novelId 컬럼 제거 (Room은 ALTER DROP COLUMN 미지원 → 테이블 재생성)
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `timeline_events_new` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `year` INTEGER NOT NULL,
+                        `month` INTEGER,
+                        `day` INTEGER,
+                        `calendarType` TEXT NOT NULL DEFAULT '천개력',
+                        `description` TEXT NOT NULL,
+                        `eventType` TEXT NOT NULL DEFAULT '',
+                        `universeId` INTEGER,
+                        `displayOrder` INTEGER NOT NULL DEFAULT 0,
+                        `isTemporary` INTEGER NOT NULL DEFAULT 0,
+                        `createdAt` INTEGER NOT NULL DEFAULT 0,
+                        FOREIGN KEY(`universeId`) REFERENCES `universes`(`id`) ON DELETE SET NULL
+                    )
+                """)
+                db.execSQL("""
+                    INSERT INTO `timeline_events_new` (`id`, `year`, `month`, `day`, `calendarType`, `description`, `eventType`, `universeId`, `displayOrder`, `isTemporary`, `createdAt`)
+                    SELECT `id`, `year`, `month`, `day`, `calendarType`, `description`, `eventType`, `universeId`, `displayOrder`, `isTemporary`, `createdAt`
+                    FROM `timeline_events`
+                """)
+                db.execSQL("DROP TABLE `timeline_events`")
+                db.execSQL("ALTER TABLE `timeline_events_new` RENAME TO `timeline_events`")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_timeline_events_year` ON `timeline_events`(`year`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_timeline_events_universeId` ON `timeline_events`(`universeId`)")
+
+                Log.i(TAG, "Migration from version 31 to 32 completed successfully")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -1343,7 +1399,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "novel_character_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32)
                     .addCallback(SeedCallback(context.applicationContext))
                     .build()
                     .also { INSTANCE = it }

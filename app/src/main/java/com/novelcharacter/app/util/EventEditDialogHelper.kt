@@ -37,15 +37,17 @@ class EventEditDialogHelper(
         suspend fun getAllNovelsList(): List<Novel>
         suspend fun getAllCharactersList(): List<Character>
         suspend fun getCharacterIdsForEvent(eventId: Long): List<Long>
-        fun insertEvent(event: TimelineEvent, characterIds: List<Long>)
-        fun updateEvent(event: TimelineEvent, characterIds: List<Long>)
-        suspend fun getEventsInScope(novelId: Long?, universeId: Long?): List<TimelineEvent>
+        suspend fun getNovelIdsForEvent(eventId: Long): List<Long>
+        fun insertEvent(event: TimelineEvent, characterIds: List<Long>, novelIds: List<Long>)
+        fun updateEvent(event: TimelineEvent, characterIds: List<Long>, novelIds: List<Long>)
+        suspend fun getEventsInScope(novelIds: List<Long>, universeId: Long?): List<TimelineEvent>
         fun updateEventAndShiftOthers(
             event: TimelineEvent,
             characterIds: List<Long>,
+            novelIds: List<Long>,
             shiftDirection: ShiftDirection,
             delta: Int,
-            originalNovelId: Long?,
+            originalNovelIds: List<Long>,
             originalUniverseId: Long?
         )
     }
@@ -54,7 +56,7 @@ class EventEditDialogHelper(
         dataProvider: DataProvider,
         event: TimelineEvent? = null,
         preSelectedCharacterIds: Set<Long> = emptySet(),
-        preSelectedNovelId: Long? = null,
+        preSelectedNovelIds: List<Long> = emptyList(),
         onSaved: (() -> Unit)? = null
     ) {
         lifecycleScope.launch {
@@ -64,6 +66,11 @@ class EventEditDialogHelper(
                 dataProvider.getCharacterIdsForEvent(event.id).toMutableSet()
             } else {
                 preSelectedCharacterIds.toMutableSet()
+            }
+            val selectedNovelIds = if (event != null) {
+                dataProvider.getNovelIdsForEvent(event.id).toMutableSet()
+            } else {
+                preSelectedNovelIds.toMutableSet()
             }
 
             val dialogBinding = DialogTimelineEditBinding.inflate(layoutInflater)
@@ -89,36 +96,18 @@ class EventEditDialogHelper(
                 if (typeIndex >= 0) dialogBinding.spinnerEventType.setSelection(typeIndex)
             }
 
-            // Novel spinner
-            val novelNames = mutableListOf(context.getString(R.string.all_novels_event))
-            novelNames.addAll(novels.map { it.title })
-            val novelAdapter = ArrayAdapter(context, android.R.layout.simple_spinner_item, novelNames)
-            novelAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-            dialogBinding.spinnerNovel.adapter = novelAdapter
+            // Novel checkboxes (다대다 — 복수 작품 선택)
+            dialogBinding.spinnerNovel.visibility = View.GONE
+            setupNovelCheckboxes(dialogBinding, novels, selectedNovelIds)
 
-            // 사전 선택된 작품 또는 기존 이벤트의 작품
-            val preNovelId = event?.novelId ?: preSelectedNovelId
-            preNovelId?.let { nid ->
-                val index = novels.indexOfFirst { it.id == nid }
-                if (index >= 0) dialogBinding.spinnerNovel.setSelection(index + 1)
-            }
-
-            // Character checkboxes — 작품 선택 시 자동 필터링
-            fun filteredChars(novelPos: Int): List<Character> {
-                if (novelPos <= 0) return characters
-                val novelId = novels.getOrNull(novelPos - 1)?.id ?: return characters
+            // Character checkboxes — 선택된 작품 기준 자동 정렬
+            fun filteredChars(): List<Character> {
+                if (selectedNovelIds.isEmpty()) return characters
                 return characters.sortedWith(compareBy<Character> {
-                    if (it.novelId == novelId) 0 else 1
+                    if (it.novelId in selectedNovelIds) 0 else 1
                 }.thenBy { it.name })
             }
-            setupCharacterCheckboxes(dialogBinding, filteredChars(dialogBinding.spinnerNovel.selectedItemPosition), selectedCharIds)
-
-            dialogBinding.spinnerNovel.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-                override fun onItemSelected(parent: AdapterView<*>?, v: View?, pos: Int, id: Long) {
-                    setupCharacterCheckboxes(dialogBinding, filteredChars(pos), selectedCharIds)
-                }
-                override fun onNothingSelected(parent: AdapterView<*>?) {}
-            }
+            setupCharacterCheckboxes(dialogBinding, filteredChars(), selectedCharIds)
 
             val alertDialog = AlertDialog.Builder(context)
                 .setTitle(if (event == null) R.string.add_event else R.string.edit_event)
@@ -160,10 +149,10 @@ class EventEditDialogHelper(
                     val calendarType = dialogBinding.editCalendarType.text.toString().trim()
                     val selectedTypeIndex = dialogBinding.spinnerEventType.selectedItemPosition
                     val selectedEventType = eventTypes.getOrNull(selectedTypeIndex)?.first ?: TimelineEvent.TYPE_NONE
-                    val novelPosition = dialogBinding.spinnerNovel.selectedItemPosition
-                    val selectedNovel = if (novelPosition > 0) novels.getOrNull(novelPosition - 1) else null
-                    val novelId = selectedNovel?.id
-                    val universeId = selectedNovel?.universeId
+
+                    // 선택된 작품들에서 세계관 ID 결정 (첫 번째 작품 기준)
+                    val selectedNovels = novels.filter { it.id in selectedNovelIds }
+                    val universeId = selectedNovels.firstOrNull()?.universeId
 
                     val newEvent = TimelineEvent(
                         id = event?.id ?: 0,
@@ -174,31 +163,34 @@ class EventEditDialogHelper(
                         description = description,
                         eventType = selectedEventType,
                         universeId = universeId,
-                        novelId = novelId,
                         isTemporary = false,
                         createdAt = event?.createdAt ?: System.currentTimeMillis()
                     )
+                    val novelIdsList = selectedNovelIds.toList()
 
                     if (event == null) {
-                        dataProvider.insertEvent(newEvent, selectedCharIds.toList())
+                        dataProvider.insertEvent(newEvent, selectedCharIds.toList(), novelIdsList)
                         onSaved?.invoke()
                         alertDialog.dismiss()
                     } else {
                         val oldYear = event.year
                         val delta = newEvent.year - oldYear
-                        val hasScope = event.novelId != null || event.universeId != null
+                        // 기존 연결된 작품 IDs를 원본 scope로 사용
+                        val originalNovelIds = dataProvider.getNovelIdsForEvent(event.id)
+                        val hasScope = originalNovelIds.isNotEmpty() || event.universeId != null
                         if (delta != 0 && hasScope) {
                             lifecycleScope.launch {
                                 showYearShiftDialog(
                                     dataProvider, newEvent, selectedCharIds.toList(),
+                                    novelIdsList,
                                     delta, oldYear,
-                                    originalNovelId = event.novelId,
+                                    originalNovelIds = originalNovelIds,
                                     originalUniverseId = event.universeId,
                                     onSaved, alertDialog
                                 )
                             }
                         } else {
-                            dataProvider.updateEvent(newEvent, selectedCharIds.toList())
+                            dataProvider.updateEvent(newEvent, selectedCharIds.toList(), novelIdsList)
                             onSaved?.invoke()
                             alertDialog.dismiss()
                         }
@@ -213,14 +205,15 @@ class EventEditDialogHelper(
         dataProvider: DataProvider,
         newEvent: TimelineEvent,
         characterIds: List<Long>,
+        novelIds: List<Long>,
         delta: Int,
         oldYear: Int,
-        originalNovelId: Long?,
+        originalNovelIds: List<Long>,
         originalUniverseId: Long?,
         onSaved: (() -> Unit)?,
         parentDialog: AlertDialog
     ) {
-        val scopeEvents = dataProvider.getEventsInScope(originalNovelId, originalUniverseId)
+        val scopeEvents = dataProvider.getEventsInScope(originalNovelIds, originalUniverseId)
             .filter { it.id != newEvent.id }
         val afterCount = scopeEvents.count { it.year >= oldYear }
         val beforeCount = scopeEvents.count { it.year <= oldYear }
@@ -229,7 +222,7 @@ class EventEditDialogHelper(
         val items = mutableListOf(context.getString(R.string.shift_this_only))
         val actions = mutableListOf<() -> Unit>()
         actions.add {
-            dataProvider.updateEvent(newEvent, characterIds)
+            dataProvider.updateEvent(newEvent, characterIds, novelIds)
             onSaved?.invoke()
             if (parentDialog.isShowing) parentDialog.dismiss()
         }
@@ -237,8 +230,8 @@ class EventEditDialogHelper(
             items.add(context.getString(R.string.shift_after_events, afterCount, direction))
             actions.add {
                 dataProvider.updateEventAndShiftOthers(
-                    newEvent, characterIds, ShiftDirection.AFTER, delta,
-                    originalNovelId, originalUniverseId
+                    newEvent, characterIds, novelIds, ShiftDirection.AFTER, delta,
+                    originalNovelIds, originalUniverseId
                 )
                 onSaved?.invoke()
                 if (parentDialog.isShowing) parentDialog.dismiss()
@@ -248,8 +241,8 @@ class EventEditDialogHelper(
             items.add(context.getString(R.string.shift_before_events, beforeCount, direction))
             actions.add {
                 dataProvider.updateEventAndShiftOthers(
-                    newEvent, characterIds, ShiftDirection.BEFORE, delta,
-                    originalNovelId, originalUniverseId
+                    newEvent, characterIds, novelIds, ShiftDirection.BEFORE, delta,
+                    originalNovelIds, originalUniverseId
                 )
                 onSaved?.invoke()
                 if (parentDialog.isShowing) parentDialog.dismiss()
@@ -264,6 +257,41 @@ class EventEditDialogHelper(
                 }
                 .setNegativeButton(R.string.cancel, null)
                 .show()
+        }
+    }
+
+    private fun setupNovelCheckboxes(
+        dialogBinding: DialogTimelineEditBinding,
+        novels: List<Novel>,
+        selectedIds: MutableSet<Long>
+    ) {
+        val recyclerView = dialogBinding.novelSelectRecyclerView
+        recyclerView.layoutManager = LinearLayoutManager(context)
+        recyclerView.adapter = object : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
+            override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
+                val checkBox = CheckBox(parent.context).apply {
+                    layoutParams = RecyclerView.LayoutParams(
+                        RecyclerView.LayoutParams.MATCH_PARENT,
+                        RecyclerView.LayoutParams.WRAP_CONTENT
+                    ).apply { bottomMargin = 4 }
+                    textSize = 14f
+                }
+                return object : RecyclerView.ViewHolder(checkBox) {}
+            }
+
+            override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
+                val novel = novels[position]
+                val checkBox = holder.itemView as CheckBox
+                checkBox.text = novel.title
+                checkBox.setOnCheckedChangeListener(null)
+                checkBox.isChecked = selectedIds.contains(novel.id)
+                checkBox.setOnCheckedChangeListener { _, isChecked ->
+                    if (isChecked) selectedIds.add(novel.id)
+                    else selectedIds.remove(novel.id)
+                }
+            }
+
+            override fun getItemCount() = novels.size
         }
     }
 

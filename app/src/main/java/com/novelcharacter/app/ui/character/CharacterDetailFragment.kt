@@ -171,27 +171,29 @@ class CharacterDetailFragment : Fragment() {
                 override suspend fun getAllNovelsList() = viewModel.getAllNovelsList()
                 override suspend fun getAllCharactersList() = viewModel.getAllCharactersList()
                 override suspend fun getCharacterIdsForEvent(eventId: Long) = viewModel.getCharacterIdsForEvent(eventId)
-                override fun insertEvent(event: com.novelcharacter.app.data.model.TimelineEvent, characterIds: List<Long>) { viewModel.insertEvent(event, characterIds) }
-                override fun updateEvent(event: com.novelcharacter.app.data.model.TimelineEvent, characterIds: List<Long>) { viewModel.updateEvent(event, characterIds) }
-                override suspend fun getEventsInScope(novelId: Long?, universeId: Long?): List<com.novelcharacter.app.data.model.TimelineEvent> {
+                override suspend fun getNovelIdsForEvent(eventId: Long) = viewModel.getNovelIdsForEvent(eventId)
+                override fun insertEvent(event: com.novelcharacter.app.data.model.TimelineEvent, characterIds: List<Long>, novelIds: List<Long>) { viewModel.insertEvent(event, characterIds, novelIds) }
+                override fun updateEvent(event: com.novelcharacter.app.data.model.TimelineEvent, characterIds: List<Long>, novelIds: List<Long>) { viewModel.updateEvent(event, characterIds, novelIds) }
+                override suspend fun getEventsInScope(novelIds: List<Long>, universeId: Long?): List<com.novelcharacter.app.data.model.TimelineEvent> {
                     return when {
-                        novelId != null -> viewModel.getEventsByNovelList(novelId)
+                        novelIds.isNotEmpty() ->
+                            novelIds.flatMap { viewModel.getEventsByNovelList(it) }.distinctBy { it.id }
                         universeId != null -> viewModel.getEventsByUniverseList(universeId)
                         else -> viewModel.getAllEventsList()
                     }
                 }
                 override fun updateEventAndShiftOthers(
-                    event: com.novelcharacter.app.data.model.TimelineEvent, characterIds: List<Long>,
+                    event: com.novelcharacter.app.data.model.TimelineEvent, characterIds: List<Long>, novelIds: List<Long>,
                     shiftDirection: com.novelcharacter.app.util.EventEditDialogHelper.ShiftDirection,
-                    delta: Int, originalNovelId: Long?, originalUniverseId: Long?
+                    delta: Int, originalNovelIds: List<Long>, originalUniverseId: Long?
                 ) {
-                    viewModel.updateEventAndShiftOthers(event, characterIds, shiftDirection, delta, originalNovelId, originalUniverseId)
+                    viewModel.updateEventAndShiftOthers(event, characterIds, novelIds, shiftDirection, delta, originalNovelIds, originalUniverseId)
                 }
             }
             eventHelper.showEventDialog(
                 dataProvider = dataProvider,
                 preSelectedCharacterIds = setOf(characterId),
-                preSelectedNovelId = cachedCharacter?.novelId
+                preSelectedNovelIds = listOfNotNull(cachedCharacter?.novelId)
             )
         }
     }

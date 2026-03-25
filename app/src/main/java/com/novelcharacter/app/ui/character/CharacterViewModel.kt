@@ -444,11 +444,12 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     // ===== Event CRUD (캐릭터 화면에서 사건 생성용) =====
     private val db = app.database
 
-    fun insertEvent(event: TimelineEvent, characterIds: List<Long>) = viewModelScope.launch {
+    fun insertEvent(event: TimelineEvent, characterIds: List<Long>, novelIds: List<Long> = emptyList()) = viewModelScope.launch {
         try {
             db.withTransaction {
                 val eventId = timelineRepository.insertEvent(event)
                 timelineRepository.updateEventCharacters(eventId, characterIds)
+                timelineRepository.updateEventNovels(eventId, novelIds)
             }
             syncEventTypeToStateChanges(event, characterIds)
         } catch (e: Exception) {
@@ -456,11 +457,12 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
-    fun updateEvent(event: TimelineEvent, characterIds: List<Long>) = viewModelScope.launch {
+    fun updateEvent(event: TimelineEvent, characterIds: List<Long>, novelIds: List<Long> = emptyList()) = viewModelScope.launch {
         try {
             db.withTransaction {
                 timelineRepository.updateEvent(event)
                 timelineRepository.updateEventCharacters(event.id, characterIds)
+                timelineRepository.updateEventNovels(event.id, novelIds)
             }
             syncEventTypeToStateChanges(event, characterIds)
         } catch (e: Exception) {
@@ -471,9 +473,10 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     fun updateEventAndShiftOthers(
         event: TimelineEvent,
         characterIds: List<Long>,
+        novelIds: List<Long>,
         shiftDirection: ShiftDirection,
         delta: Int,
-        originalNovelId: Long?,
+        originalNovelIds: List<Long>,
         originalUniverseId: Long?
     ) = viewModelScope.launch {
         try {
@@ -481,9 +484,12 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
             db.withTransaction {
                 timelineRepository.updateEvent(event)
                 timelineRepository.updateEventCharacters(event.id, characterIds)
+                timelineRepository.updateEventNovels(event.id, novelIds)
 
                 val scopeEvents = when {
-                    originalNovelId != null -> timelineRepository.getEventsByNovelList(originalNovelId)
+                    originalNovelIds.isNotEmpty() ->
+                        originalNovelIds.flatMap { timelineRepository.getEventsByNovelList(it) }
+                            .distinctBy { it.id }
                     originalUniverseId != null -> timelineRepository.getEventsByUniverseList(originalUniverseId)
                     else -> timelineRepository.getAllEventsList()
                 }.filter { it.id != event.id }
@@ -518,6 +524,7 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    suspend fun getNovelIdsForEvent(eventId: Long) = timelineRepository.getNovelIdsForEvent(eventId)
     suspend fun getEventsByNovelList(novelId: Long) = timelineRepository.getEventsByNovelList(novelId)
     suspend fun getEventsByUniverseList(universeId: Long) = timelineRepository.getEventsByUniverseList(universeId)
     suspend fun getAllEventsList() = timelineRepository.getAllEventsList()

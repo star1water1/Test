@@ -616,8 +616,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val novelId = (if (novelCode.isNotBlank()) db.novelDao().getNovelByCode(novelCode)?.id else null)
                 ?: if (novelTitle.isNotBlank()) allNovels.find { it.title == novelTitle }?.id else null
 
-            val existing = if (novelId != null) db.timelineDao().getEventByNaturalKey(year, description, novelId)
-            else db.timelineDao().getEventByNaturalKeyNoNovel(year, description)
+            val existing = db.timelineDao().getEventByNaturalKey(year, description)
             if (existing == null) newCount++ else unchangedCount++ // 사건은 natural key 매칭이므로 키가 같으면 동일
         }
         reportProgress(onProgress, "사건 분석", sheet.lastRowNum, totalRows)
@@ -1617,18 +1616,20 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val isTemporary = if (isTemporaryColIndex >= 0) parseBoolean(getCellString(row, isTemporaryColIndex)) else false
                 val createdAt = if (createdAtColIndex >= 0) parseNumber(getCellString(row, createdAtColIndex))?.toLong() ?: System.currentTimeMillis() else System.currentTimeMillis()
 
-                val resolvedNovel = if (novelCode.isNotBlank()) {
-                    db.novelDao().getNovelByCode(novelCode)
-                } else null
-                    ?: if (novelTitle.isNotBlank()) allNovels.find { it.title == novelTitle } else null
-                val novelId = resolvedNovel?.id
-                val universeId = resolvedNovel?.universeId
-
-                val existingEvent = if (novelId != null) {
-                    db.timelineDao().getEventByNaturalKey(year, description, novelId)
+                // 작품 해석: 콤마 구분 복수 작품 지원
+                val novelTitles = splitCsv(novelTitle)
+                val novelCodes = splitCsv(novelCode)
+                val resolvedNovels = if (novelCodes.isNotEmpty()) {
+                    novelCodes.mapNotNull { code -> db.novelDao().getNovelByCode(code) }
                 } else {
-                    db.timelineDao().getEventByNaturalKeyNoNovel(year, description)
+                    emptyList()
+                }.ifEmpty {
+                    novelTitles.mapNotNull { title -> allNovels.find { it.title == title } }
                 }
+                val novelIds = resolvedNovels.map { it.id }
+                val universeId = resolvedNovels.firstOrNull()?.universeId
+
+                val existingEvent = db.timelineDao().getEventByNaturalKey(year, description)
 
                 val eventId: Long
                 if (existingEvent != null) {
@@ -1636,23 +1637,25 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     db.timelineDao().update(existingEvent.copy(
                         month = month, day = day, calendarType = calendarType,
                         eventType = if (eventTypeColIndex >= 0) eventType else existingEvent.eventType,
-                        novelId = novelId, universeId = universeId,
+                        universeId = universeId,
                         displayOrder = displayOrder ?: existingEvent.displayOrder,
                         isTemporary = if (isTemporaryColIndex >= 0) isTemporary else existingEvent.isTemporary,
                         createdAt = if (createdAtColIndex >= 0) createdAt else existingEvent.createdAt
                     ))
+                    db.timelineDao().replaceEventNovels(eventId, novelIds)
                     result.updatedEvents++
                 } else {
                     eventId = db.timelineDao().insert(TimelineEvent(
                         year = year, month = month, day = day,
                         calendarType = calendarType, description = description,
                         eventType = eventType,
-                        novelId = novelId, universeId = universeId,
+                        universeId = universeId,
                         displayOrder = displayOrder ?: i, isTemporary = isTemporary,
                         createdAt = createdAt
                     ))
+                    db.timelineDao().replaceEventNovels(eventId, novelIds)
                     result.newEvents++
-                    if (novelId == null && novelTitle.isNotBlank()) {
+                    if (novelIds.isEmpty() && novelTitle.isNotBlank()) {
                         result.warnings.add("사건 행 $i: 작품 '${novelTitle}'을(를) 찾을 수 없어 작품 미지정 상태로 생성됨")
                     }
                 }
@@ -1661,7 +1664,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 if (characterNames.isNotBlank()) {
                     val names = splitCsv(characterNames)
                     val resolvedCharacters = names.mapNotNull { charName ->
-                        val found = findCharacterByName(charName, novelId)
+                        val found = findCharacterByName(charName, novelIds.firstOrNull())
                         if (found == null) {
                             result.warnings.add("사건 행 $i: 연결 캐릭터 '${charName}'을(를) 찾을 수 없음")
                         }

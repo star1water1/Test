@@ -49,9 +49,16 @@ class PdfExporter(private val context: Context) {
         val fieldDefs = app.universeRepository.getFieldsByUniverseList(config.universeId)
         val fieldValues = db.characterFieldValueDao().getAllValuesList()
         val relationships = app.characterRepository.getAllRelationships()
+        // 사건: 크로스레프 기반 필터링 (다대다)
+        val allEventNovelCrossRefs = db.timelineDao().getAllEventNovelCrossRefs()
+        val eventIdsWithNovels = allEventNovelCrossRefs
+            .filter { it.novelId in novelIds }
+            .map { it.eventId }
+            .toSet()
         val events = app.timelineRepository.getAllEventsList()
-            .filter { it.novelId in novelIds || it.universeId == config.universeId }
+            .filter { it.id in eventIdsWithNovels || it.universeId == config.universeId }
             .sortedBy { it.year }
+        val eventNovelIdMap = allEventNovelCrossRefs.groupBy({ it.eventId }, { it.novelId })
         val nameBank = if (config.includeNameBank) db.nameBankDao().getAllNamesList() else emptyList()
 
         return buildString {

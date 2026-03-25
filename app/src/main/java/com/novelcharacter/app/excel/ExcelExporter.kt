@@ -728,6 +728,9 @@ class ExcelExporter(context: Context) {
         val eventCharIdMap = allCrossRefs.groupBy({ it.eventId }, { it.characterId })
         val allChars = db.characterDao().getAllCharactersList()
         val charMap = allChars.associateBy { it.id }
+        // Novel cross-ref: 사건별 연결 작품 (다대다)
+        val allEventNovelCrossRefs = db.timelineDao().getAllEventNovelCrossRefs()
+        val eventNovelIdMap = allEventNovelCrossRefs.groupBy({ it.eventId }, { it.novelId })
 
         events.forEachIndexed { index, event ->
             val row = sheet.createRow(index + 1)
@@ -738,14 +741,15 @@ class ExcelExporter(context: Context) {
             row.createCell(4).setCellValue(eventTypeToLabel(event.eventType))
             row.createCell(5).setCellValue(event.description)
 
-            val novel = event.novelId?.let { novelMap[it] }
-            row.createCell(6).setCellValue(novel?.title ?: "")
+            val novelIds = eventNovelIdMap[event.id] ?: emptyList()
+            val novels = novelIds.mapNotNull { novelMap[it] }
+            row.createCell(6).setCellValue(novels.joinToString(", ") { it.title })
 
             val characterNames = (eventCharIdMap[event.id] ?: emptyList()).mapNotNull { charMap[it]?.name }
             row.createCell(7).setCellValue(characterNames.joinToString(", "))
 
             // 관련작품코드 (readOnly)
-            row.createCell(8).setCellValue(novel?.code ?: "")
+            row.createCell(8).setCellValue(novels.joinToString(", ") { it.code ?: "" })
             row.createCell(9).setCellValue(event.displayOrder.toDouble())
             row.createCell(10).setCellValue(if (event.isTemporary) "Y" else "N")
             row.createCell(11).setCellValue(event.createdAt.toDouble())

@@ -92,6 +92,15 @@
                 android:textSize="13sp"
                 android:textColor="@color/on_surface" />
 
+            <TextView
+                android:id="@+id/novelNamesText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:textSize="11sp"
+                android:textColor="@color/text_secondary"
+                android:visibility="gone" />
+
             <com.google.android.material.chip.ChipGroup
                 android:id="@+id/characterChipGroup"
                 android:layout_width="match_parent"

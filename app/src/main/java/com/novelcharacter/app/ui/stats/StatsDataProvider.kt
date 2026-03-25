@@ -22,7 +22,8 @@ data class StatsSnapshot(
     val fieldValues: List<CharacterFieldValue>,
     val crossRefs: List<TimelineCharacterCrossRef>,
     val factions: List<Faction> = emptyList(),
-    val factionMemberships: List<FactionMembership> = emptyList()
+    val factionMemberships: List<FactionMembership> = emptyList(),
+    val eventNovelCrossRefs: List<TimelineEventNovelCrossRef> = emptyList()
 )
 
 // ===== 요약 통계 =====
@@ -408,7 +409,8 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
             fieldValues = db.characterFieldValueDao().getAllValuesList(),
             crossRefs = db.timelineDao().getAllCrossRefs(),
             factions = app.factionRepository.getAllFactionsList(),
-            factionMemberships = app.factionRepository.getAllMembershipsList()
+            factionMemberships = app.factionRepository.getAllMembershipsList(),
+            eventNovelCrossRefs = db.timelineDao().getAllEventNovelCrossRefs()
         )
     }
 
@@ -416,7 +418,8 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
     fun filterByNovel(s: StatsSnapshot, novelId: Long): StatsSnapshot {
         val novel = s.novels.find { it.id == novelId } ?: return s
         val charIds = s.characters.filter { it.novelId == novelId }.map { it.id }.toSet()
-        val eventIds = s.events.filter { it.novelId == novelId }.map { it.id }.toSet()
+        val eventIdsForNovel = s.eventNovelCrossRefs.filter { it.novelId == novelId }.map { it.eventId }.toSet()
+        val eventIds = eventIdsForNovel
         val filteredRelationships = s.relationships.filter { it.characterId1 in charIds || it.characterId2 in charIds }
         val relIds = filteredRelationships.map { it.id }.toSet()
         // nameBank: 작품 필터 시 해당 작품 캐릭터가 사용한 이름만 포함 (미사용 이름 제외)
@@ -431,7 +434,7 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
             characters = s.characters.filter { it.novelId == novelId },
             novels = listOf(novel),
             universes = s.universes.filter { it.id == novel.universeId },
-            events = s.events.filter { it.novelId == novelId },
+            events = s.events.filter { it.id in eventIdsForNovel },
             relationships = filteredRelationships,
             relationshipChanges = s.relationshipChanges.filter { it.relationshipId in relIds },
             tags = s.tags.filter { it.characterId in charIds },
@@ -441,7 +444,8 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
             fieldValues = s.fieldValues.filter { it.characterId in charIds },
             crossRefs = s.crossRefs.filter { it.characterId in charIds || it.eventId in eventIds },
             factions = filteredFactions,
-            factionMemberships = filteredMemberships
+            factionMemberships = filteredMemberships,
+            eventNovelCrossRefs = s.eventNovelCrossRefs.filter { it.eventId in eventIds }
         )
     }
 
@@ -739,9 +743,21 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
 
         val yearDensity = s.events.groupBy { it.year }.mapValues { it.value.size }
 
-        val novelEventCounts = s.events.groupBy { it.novelId }
-            .mapKeys { (novelId, _) -> novelId?.let { novelMap[it]?.title } ?: "미지정" }
-            .mapValues { it.value.size }
+        // 크로스레프 기반: 하나의 사건이 여러 작품에 카운트될 수 있음
+        val eventIdSet = s.events.map { it.id }.toSet()
+        val novelEventCounts = run {
+            val counts = mutableMapOf<String, Int>()
+            val eventNovels = s.eventNovelCrossRefs.filter { it.eventId in eventIdSet }
+            for (cr in eventNovels) {
+                val title = novelMap[cr.novelId]?.title ?: "미지정"
+                counts[title] = (counts[title] ?: 0) + 1
+            }
+            // 작품 미연결 사건 수
+            val linkedEventIds = eventNovels.map { it.eventId }.toSet()
+            val unlinkedCount = s.events.count { it.id !in linkedEventIds }
+            if (unlinkedCount > 0) counts["미지정"] = (counts["미지정"] ?: 0) + unlinkedCount
+            counts
+        }
 
         val eventCharCounts = s.crossRefs.groupBy { it.eventId }.mapValues { it.value.size }
         val avgCharsPerEvent = if (s.events.isNotEmpty()) {
@@ -1534,7 +1550,9 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
      */
     fun computeCrossNovelComparison(s: StatsSnapshot): CrossNovelComparison {
         val charsByNovel = s.characters.groupBy { it.novelId }
-        val eventsByNovel = s.events.groupBy { it.novelId }
+        // 크로스레프 기반 사건-작품 매핑
+        val eventIdsByNovel = s.eventNovelCrossRefs.groupBy({ it.novelId }, { it.eventId })
+        val eventById = s.events.associateBy { it.id }
 
         // 전체 복잡도를 한 번만 계산하고 캐릭터 ID로 매핑
         val allComplexities = computeCharacterComplexities(s)
@@ -1543,7 +1561,7 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
         val entries = s.novels.map { novel ->
             val chars = charsByNovel[novel.id] ?: emptyList()
             val charIds = chars.map { it.id }.toSet()
-            val events = eventsByNovel[novel.id] ?: emptyList()
+            val events = (eventIdsByNovel[novel.id] ?: emptyList()).mapNotNull { eventById[it] }
 
             // 이 작품 캐릭터의 관계 수
             val relCount = s.relationships.count { it.characterId1 in charIds || it.characterId2 in charIds }

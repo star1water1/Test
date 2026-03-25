@@ -302,6 +302,12 @@ class TimelineFragment : Fragment() {
             val isEmpty = events.isEmpty()
             binding.emptyText.visibility = if (isEmpty) View.VISIBLE else View.GONE
             binding.timelineRecyclerView.visibility = if (isEmpty) View.GONE else View.VISIBLE
+            // 연결 작품명 일괄 로드
+            viewLifecycleOwner.lifecycleScope.launch {
+                val eventNovelNames = viewModel.getAllEventNovelNames()
+                val namesMap = eventNovelNames.groupBy({ it.eventId }, { it.title })
+                adapter.novelNamesMap = namesMap
+            }
         }
 
         // Observe zoom level changes
@@ -432,25 +438,27 @@ class TimelineFragment : Fragment() {
             override suspend fun getAllNovelsList(): List<Novel> = viewModel.getAllNovelsList()
             override suspend fun getAllCharactersList(): List<Character> = viewModel.getAllCharactersList()
             override suspend fun getCharacterIdsForEvent(eventId: Long): List<Long> = viewModel.getCharacterIdsForEvent(eventId)
-            override fun insertEvent(event: TimelineEvent, characterIds: List<Long>) {
-                viewModel.insertEvent(event, characterIds)
+            override suspend fun getNovelIdsForEvent(eventId: Long): List<Long> = viewModel.getNovelIdsForEvent(eventId)
+            override fun insertEvent(event: TimelineEvent, characterIds: List<Long>, novelIds: List<Long>) {
+                viewModel.insertEvent(event, characterIds, novelIds)
             }
-            override fun updateEvent(event: TimelineEvent, characterIds: List<Long>) {
-                viewModel.updateEvent(event, characterIds)
+            override fun updateEvent(event: TimelineEvent, characterIds: List<Long>, novelIds: List<Long>) {
+                viewModel.updateEvent(event, characterIds, novelIds)
             }
-            override suspend fun getEventsInScope(novelId: Long?, universeId: Long?): List<TimelineEvent> {
+            override suspend fun getEventsInScope(novelIds: List<Long>, universeId: Long?): List<TimelineEvent> {
                 return when {
-                    novelId != null -> viewModel.getEventsByNovelList(novelId)
+                    novelIds.isNotEmpty() ->
+                        novelIds.flatMap { viewModel.getEventsByNovelList(it) }.distinctBy { it.id }
                     universeId != null -> viewModel.getEventsByUniverseList(universeId)
                     else -> viewModel.getAllEventsList()
                 }
             }
             override fun updateEventAndShiftOthers(
-                event: TimelineEvent, characterIds: List<Long>,
+                event: TimelineEvent, characterIds: List<Long>, novelIds: List<Long>,
                 shiftDirection: com.novelcharacter.app.util.EventEditDialogHelper.ShiftDirection,
-                delta: Int, originalNovelId: Long?, originalUniverseId: Long?
+                delta: Int, originalNovelIds: List<Long>, originalUniverseId: Long?
             ) {
-                viewModel.updateEventAndShiftOthers(event, characterIds, shiftDirection, delta, originalNovelId, originalUniverseId)
+                viewModel.updateEventAndShiftOthers(event, characterIds, novelIds, shiftDirection, delta, originalNovelIds, originalUniverseId)
             }
         }
         eventHelper.showEventDialog(dataProvider = dataProvider, event = event)
@@ -485,10 +493,9 @@ class TimelineFragment : Fragment() {
                     year = year,
                     description = desc,
                     isTemporary = true,
-                    novelId = currentNovel?.id,
                     universeId = currentNovel?.universeId
                 )
-                viewModel.insertEvent(quickEvent, emptyList())
+                viewModel.insertEvent(quickEvent, emptyList(), listOfNotNull(currentNovel?.id))
                 Toast.makeText(ctx, R.string.quick_event_added, Toast.LENGTH_SHORT).show()
             }
             .setNegativeButton(R.string.cancel, null)

@@ -90,6 +90,12 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
         prefs.edit().apply {
             if (novelId != null) putLong("filter_novel_id", novelId) else remove("filter_novel_id")
         }.apply()
+        // 작품 필터 기반 사건 ID 캐시 갱신
+        viewModelScope.launch {
+            _novelEventIds.value = if (novelId != null) {
+                timelineRepository.getEventIdsByNovel(novelId).toSet()
+            } else null
+        }
         // 소설 필터 변경 시 캐릭터 필터 초기화
         if (novelId != null && _filterCharacterId.value != null) {
             val chars = allCharacters.value ?: emptyList()
@@ -168,6 +174,9 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
         application.getString(resId)
     }
 
+    // 작품 필터 기반 사건 ID 캐시 (인메모리 검색 필터용)
+    private val _novelEventIds = MutableLiveData<Set<Long>?>(null)
+
     // ===== Search =====
     private val _searchQuery = MutableLiveData("")
     private val _searchTrigger = MediatorLiveData<Unit>().apply {
@@ -175,6 +184,7 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
         addSource(visibleRange) { value = Unit }
         addSource(_filterNovelId) { value = Unit }
         addSource(_filterCharacterId) { value = Unit }
+        addSource(_novelEventIds) { value = Unit }
     }
     val searchResults: LiveData<List<TimelineEvent>> = _searchTrigger.switchMap {
         val query = _searchQuery.value
@@ -184,6 +194,7 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
             val (start, end) = visibleRange.value ?: Pair(-5, 5)
             val novelId = _filterNovelId.value
             val characterId = _filterCharacterId.value
+            val novelEventIdSet = _novelEventIds.value
 
             // 검색도 AND 조합 필터 적용
             when {
@@ -191,7 +202,7 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
                     timelineRepository.getEventsForCharacterInRange(characterId, start, end).map { events ->
                         events.filter {
                             it.description.contains(query, ignoreCase = true) &&
-                                (novelId == null || it.novelId == novelId)
+                                (novelId == null || novelEventIdSet == null || it.id in novelEventIdSet)
                         }
                     }
                 }
@@ -199,7 +210,7 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
                     timelineRepository.searchEvents(query).map { events ->
                         events.filter { event ->
                             event.year in start..end &&
-                                (novelId == null || event.novelId == novelId)
+                                (novelId == null || novelEventIdSet == null || event.id in novelEventIdSet)
                         }
                     }
                 }
@@ -289,11 +300,16 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    fun insertEvent(event: TimelineEvent, characterIds: List<Long>) = viewModelScope.launch {
+    fun insertEvent(event: TimelineEvent, characterIds: List<Long>, novelIds: List<Long> = emptyList()) = viewModelScope.launch {
         try {
             db.withTransaction {
                 val eventId = timelineRepository.insertEvent(event)
                 timelineRepository.updateEventCharacters(eventId, characterIds)
+                timelineRepository.updateEventNovels(eventId, novelIds)
+            }
+            // novelEventIds 캐시 갱신
+            _filterNovelId.value?.let { nid ->
+                _novelEventIds.value = timelineRepository.getEventIdsByNovel(nid).toSet()
             }
             syncEventTypeToStateChanges(event, characterIds)
         } catch (e: Exception) {
@@ -302,11 +318,16 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    fun updateEvent(event: TimelineEvent, characterIds: List<Long>) = viewModelScope.launch {
+    fun updateEvent(event: TimelineEvent, characterIds: List<Long>, novelIds: List<Long> = emptyList()) = viewModelScope.launch {
         try {
             db.withTransaction {
                 timelineRepository.updateEvent(event)
                 timelineRepository.updateEventCharacters(event.id, characterIds)
+                timelineRepository.updateEventNovels(event.id, novelIds)
+            }
+            // novelEventIds 캐시 갱신
+            _filterNovelId.value?.let { nid ->
+                _novelEventIds.value = timelineRepository.getEventIdsByNovel(nid).toSet()
             }
             syncEventTypeToStateChanges(event, characterIds)
         } catch (e: Exception) {
@@ -318,9 +339,10 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
     fun updateEventAndShiftOthers(
         event: TimelineEvent,
         characterIds: List<Long>,
+        novelIds: List<Long>,
         shiftDirection: ShiftDirection,
         delta: Int,
-        originalNovelId: Long?,
+        originalNovelIds: List<Long>,
         originalUniverseId: Long?
     ) = viewModelScope.launch {
         try {
@@ -328,9 +350,12 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
             db.withTransaction {
                 timelineRepository.updateEvent(event)
                 timelineRepository.updateEventCharacters(event.id, characterIds)
+                timelineRepository.updateEventNovels(event.id, novelIds)
 
                 val scopeEvents = when {
-                    originalNovelId != null -> timelineRepository.getEventsByNovelList(originalNovelId)
+                    originalNovelIds.isNotEmpty() ->
+                        originalNovelIds.flatMap { timelineRepository.getEventsByNovelList(it) }
+                            .distinctBy { it.id }
                     originalUniverseId != null -> timelineRepository.getEventsByUniverseList(originalUniverseId)
                     else -> timelineRepository.getAllEventsList()
                 }.filter { it.id != event.id }
@@ -366,9 +391,11 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    suspend fun getNovelIdsForEvent(eventId: Long) = timelineRepository.getNovelIdsForEvent(eventId)
     suspend fun getEventsByNovelList(novelId: Long) = timelineRepository.getEventsByNovelList(novelId)
     suspend fun getEventsByUniverseList(universeId: Long) = timelineRepository.getEventsByUniverseList(universeId)
     suspend fun getAllEventsList() = timelineRepository.getAllEventsList()
+    suspend fun getAllEventNovelNames() = timelineRepository.getAllEventNovelNames()
 
     /**
      * 사건 유형이 birth/death이면 관련 캐릭터의 상태변화 + 필드 동기화.
