@@ -866,6 +866,9 @@ class FieldEditDialog : DialogFragment() {
     }
 
     private fun collectBodyAnalysisConfig(binding: DialogFieldEditBinding): BodyAnalysisConfig {
+        // 기존 config에서 UI 미노출 필드 보존
+        val existingConfig = existingField?.let { BodyAnalysisConfig.fromConfig(it.config) }
+
         // 컵 매핑
         val cupMapping = cupMappingRows.mapNotNull { row ->
             val maxDiff = row.editMaxDiff.text.toString().toDoubleOrNull()
@@ -903,6 +906,7 @@ class FieldEditDialog : DialogFragment() {
             bodyTypeRules = bodyTypeRules,
             enabledInsights = enabledInsights.ifEmpty { BodyAnalysisConfig.DEFAULT_ENABLED_INSIGHTS },
             ribOffset = ribOffset,
+            bodyTagRules = existingConfig?.bodyTagRules ?: emptyList(),  // UI 미노출 → 기존값 보존
             goldenRatioIdeals = goldenIdeals.ifEmpty { BodyAnalysisConfig.DEFAULT_GOLDEN_RATIO_IDEALS }
         )
     }
