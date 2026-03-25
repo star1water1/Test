@@ -178,11 +178,11 @@ class EventEditDialogHelper(
                     } else {
                         val oldYear = event.year
                         val delta = newEvent.year - oldYear
-                        // 기존 연결된 작품 IDs를 원본 scope로 사용
-                        val originalNovelIds = dataProvider.getNovelIdsForEvent(event.id)
-                        val hasScope = originalNovelIds.isNotEmpty() || event.universeId != null
-                        if (delta != 0 && hasScope) {
-                            lifecycleScope.launch {
+                        lifecycleScope.launch {
+                            // 기존 연결된 작품 IDs를 원본 scope로 사용 (suspend)
+                            val originalNovelIds = dataProvider.getNovelIdsForEvent(event.id)
+                            val hasScope = originalNovelIds.isNotEmpty() || event.universeId != null
+                            if (delta != 0 && hasScope) {
                                 showYearShiftDialog(
                                     dataProvider, newEvent, selectedCharIds.toList(),
                                     novelIdsList,
@@ -191,11 +191,11 @@ class EventEditDialogHelper(
                                     originalUniverseId = event.universeId,
                                     onSaved, alertDialog
                                 )
+                            } else {
+                                dataProvider.updateEvent(newEvent, selectedCharIds.toList(), novelIdsList)
+                                onSaved?.invoke()
+                                if (alertDialog.isShowing) alertDialog.dismiss()
                             }
-                        } else {
-                            dataProvider.updateEvent(newEvent, selectedCharIds.toList(), novelIdsList)
-                            onSaved?.invoke()
-                            alertDialog.dismiss()
                         }
                     }
                 }
