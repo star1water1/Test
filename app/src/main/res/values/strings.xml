@@ -944,6 +944,8 @@
     <string name="restore_strategy_overwrite_desc">선택한 항목의 기존 데이터를 모두 삭제하고\n백업 데이터로 교체합니다.</string>
     <string name="restore_strategy_label">복원 방식</string>
     <string name="restore_overwrite_warning">⚠ DB에만 있는 데이터가 삭제됩니다: %s</string>
+    <string name="restore_merge_delete_option">엑셀에 없는 항목 삭제</string>
+    <string name="restore_merge_delete_desc">대상: %s</string>
     <string name="restore_preview_summary">신규 %1$d / 변경 %2$d / 동일 %3$d</string>
     <string name="restore_preview_db_info">현재 DB: %1$d개, 백업에 없음: %2$d개</string>
     <string name="restore_preview_no_change">변경 없음</string>

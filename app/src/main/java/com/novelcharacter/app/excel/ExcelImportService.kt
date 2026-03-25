@@ -98,6 +98,15 @@ data class ImportResult(
     var updatedFactions: Int = 0,
     var newFactionMemberships: Int = 0,
     var updatedFactionMemberships: Int = 0,
+    var deletedCharacters: Int = 0,
+    var deletedRelationships: Int = 0,
+    var deletedEvents: Int = 0,
+    var deletedStateChanges: Int = 0,
+    var deletedRelationshipChanges: Int = 0,
+    var deletedNameBank: Int = 0,
+    var deletedFields: Int = 0,
+    var deletedFactions: Int = 0,
+    var deletedFactionMemberships: Int = 0,
     var restoredSettings: Int = 0,
     var skippedRows: Int = 0,
     val errors: MutableList<String> = mutableListOf(),
@@ -116,6 +125,16 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     // 임포트 후 시맨틱 동기화 대상 (characterId → universeId)
     private val pendingSyncCharacters = mutableMapOf<Long, Long>()
+
+    // "엑셀에 없는 항목 삭제" 옵션용 — 임포트 중 매칭된 entity ID 추적
+    private val matchedCharacterIds = mutableMapOf<Long, MutableSet<Long>>()  // universeId → charId set
+    private val matchedEventIds = mutableSetOf<Long>()
+    private val matchedRelationshipIds = mutableSetOf<Long>()
+    private val matchedRelationshipChangeIds = mutableSetOf<Long>()
+    private val matchedStateChangeIds = mutableSetOf<Long>()
+    private val matchedNameBankIds = mutableSetOf<Long>()
+    private val matchedFactionIds = mutableSetOf<Long>()
+    private val matchedFactionMembershipIds = mutableSetOf<Long>()
 
     // Phase 1에서 FK 참조를 deferred 처리 (코드 기반 해석)
     private val deferredUniverseImageCharCodes = mutableMapOf<Long, String>()  // universeId → charCode
@@ -313,6 +332,16 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 if (effectiveOptions.searchPresets) db.searchPresetDao().deleteAll()
             }
 
+            // Matched ID 추적 초기화 (deleteNotInExcel 옵션용)
+            matchedCharacterIds.clear()
+            matchedEventIds.clear()
+            matchedRelationshipIds.clear()
+            matchedRelationshipChangeIds.clear()
+            matchedStateChangeIds.clear()
+            matchedNameBankIds.clear()
+            matchedFactionIds.clear()
+            matchedFactionMembershipIds.clear()
+
             // Phase 1: Schema definitions (universes, novels, field definitions)
             // imageCharacterId/imageNovelId는 null로 deferred 처리 (FK 안전)
             deferredUniverseImageCharCodes.clear()
@@ -346,7 +375,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             if (effectiveOptions.searchPresets) importSearchPresets(workbook, result, onProgress, totalRows)
             if (effectiveOptions.appSettings) importAppSettings(workbook, result)
 
-            // Phase 5: 시맨틱 필드 동기화 (출생/사망연도 ↔ 상태변화 ↔ 생존여부)
+            // Phase 5: 엑셀에 없는 항목 삭제 (MERGE + deleteNotInExcel 옵션)
+            if (strategy == ImportStrategy.MERGE && effectiveOptions.deleteNotInExcel) {
+                deleteUnmatchedEntities(effectiveOptions, result)
+            }
+
+            // Phase 6: 시맨틱 필드 동기화 (출생/사망연도 ↔ 상태변화 ↔ 생존여부)
             if (pendingSyncCharacters.isNotEmpty()) {
                 runPostImportSemanticSync()
             }
@@ -1541,6 +1575,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     result.newCharacters++
                 }
 
+                // matched ID 추적 (deleteNotInExcel용)
+                if (universe != null) {
+                    matchedCharacterIds.getOrPut(universe.id) { mutableSetOf() }.add(charId)
+                }
+
                 val prevRow = entitySeen[charId]
                 if (prevRow != null) {
                     result.warnings.add("캐릭터 행 $i: 행 $prevRow 과 같은 항목('$name')을 다시 덮어씀")
@@ -1687,6 +1726,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         result.warnings.add("사건 행 $i: 작품 '${novelTitle}'을(를) 찾을 수 없어 작품 미지정 상태로 생성됨")
                     }
                 }
+                matchedEventIds.add(eventId)
 
                 val characterNames = getCellString(row, charColIndex)
                 if (characterNames.isNotBlank()) {
@@ -1813,13 +1853,15 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         month = month, day = day, description = description,
                         createdAt = if (createdAtColIndex >= 0) createdAt else existing.createdAt
                     ))
+                    matchedStateChangeIds.add(existing.id)
                     result.updatedStateChanges++
                 } else {
-                    db.characterStateChangeDao().insert(CharacterStateChange(
+                    val newId = db.characterStateChangeDao().insert(CharacterStateChange(
                         characterId = character.id, year = year, month = month, day = day,
                         fieldKey = fieldKey, newValue = newValue, description = description,
                         createdAt = createdAt
                     ))
+                    matchedStateChangeIds.add(newId)
                     result.newStateChanges++
                 }
 
@@ -1940,6 +1982,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         factionId = if (factionColIndex >= 0) factionId else existing.factionId,
                         createdAt = if (createdAtColIndex >= 0) createdAt else existing.createdAt
                     ))
+                    matchedRelationshipIds.add(existing.id)
                     result.updatedRelationships++
                 } else {
                     val newId = db.characterRelationshipDao().insert(CharacterRelationship(
@@ -1949,6 +1992,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         displayOrder = displayOrder ?: i, factionId = factionId,
                         createdAt = createdAt
                     ))
+                    matchedRelationshipIds.add(newId)
                     entitySeen[newId] = i
                     result.newRelationships++
                 }
@@ -2052,15 +2096,17 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         eventId = if (eventIdColIndex >= 0) eventId else existing.eventId,
                         createdAt = if (createdAtColIndex >= 0) createdAt else existing.createdAt
                     ))
+                    matchedRelationshipChangeIds.add(existing.id)
                     result.updatedRelationshipChanges++
                 } else {
-                    db.characterRelationshipChangeDao().insert(CharacterRelationshipChange(
+                    val newId = db.characterRelationshipChangeDao().insert(CharacterRelationshipChange(
                         relationshipId = relationship.id,
                         year = year, month = month, day = day,
                         relationshipType = relationshipType, description = description,
                         intensity = intensity, isBidirectional = isBidirectional,
                         eventId = eventId, createdAt = createdAt
                     ))
+                    matchedRelationshipChangeIds.add(newId)
                     result.newRelationshipChanges++
                 }
             } catch (e: Exception) {
@@ -2123,6 +2169,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         isUsed = effectiveIsUsed, usedByCharacterId = usedByCharacterId,
                         createdAt = if (createdAtColIndex >= 0) createdAt else existing.createdAt
                     ))
+                    matchedNameBankIds.add(existing.id)
                     result.updatedNameBank++
                 } else {
                     val newEntry = NameBankEntry(
@@ -2131,6 +2178,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         createdAt = createdAt
                     )
                     val newId = db.nameBankDao().insert(newEntry)
+                    matchedNameBankIds.add(newId)
                     existingNamesMap[mapKey] = newEntry.copy(id = newId)
                     result.newNameBank++
                 }
@@ -2395,6 +2443,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         displayOrder = displayOrder ?: existing.displayOrder,
                         createdAt = if (createdAtColIndex >= 0) createdAt else existing.createdAt
                     ))
+                    matchedFactionIds.add(existing.id)
                     result.updatedFactions++
                 } else {
                     val newCode = if (code.isNotBlank()) code else generateEntityCode()
@@ -2410,6 +2459,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         displayOrder = displayOrder ?: i,
                         createdAt = createdAt
                     ))
+                    matchedFactionIds.add(newId)
                     entitySeen[newId] = i
                     result.newFactions++
                 }
@@ -2511,6 +2561,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         departedIntensity = departedIntensity,
                         createdAt = if (createdAtColIndex >= 0) createdAt else existingMembership.createdAt
                     ))
+                    matchedFactionMembershipIds.add(existingMembership.id)
                     result.updatedFactionMemberships++
                 } else {
                     // Insert new membership
@@ -2557,6 +2608,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         }
                     }
 
+                    matchedFactionMembershipIds.add(membershipId)
                     result.newFactionMemberships++
                 }
             } catch (e: Exception) {
@@ -2792,6 +2844,100 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             db.universeDao().update(universe.copy(imageCharacterId = charId))
         }
         deferredUniverseImageCharCodes.clear()
+    }
+
+    // ── 엑셀에 없는 항목 삭제 ──
+
+    private suspend fun deleteUnmatchedEntities(options: ExportOptions, result: ImportResult) {
+        // 캐릭터: 임포트된 세계관 범위 내
+        if (options.characters) {
+            for ((universeId, matchedIds) in matchedCharacterIds) {
+                val allIds = db.characterDao().getCharacterIdsByUniverse(universeId)
+                for (id in allIds) {
+                    if (id !in matchedIds) {
+                        try { db.characterDao().deleteById(id); result.deletedCharacters++ }
+                        catch (_: Exception) { }
+                    }
+                }
+            }
+        }
+
+        // 사건 연표
+        if (options.timeline && matchedEventIds.isNotEmpty()) {
+            val allIds = db.timelineDao().getAllEventIds()
+            for (id in allIds) {
+                if (id !in matchedEventIds) {
+                    try { db.timelineDao().deleteById(id); result.deletedEvents++ }
+                    catch (_: Exception) { }
+                }
+            }
+        }
+
+        // 관계
+        if (options.relationships && matchedRelationshipIds.isNotEmpty()) {
+            val allIds = db.characterRelationshipDao().getAllRelationshipIds()
+            for (id in allIds) {
+                if (id !in matchedRelationshipIds) {
+                    try { db.characterRelationshipDao().deleteById(id); result.deletedRelationships++ }
+                    catch (_: Exception) { }
+                }
+            }
+        }
+
+        // 관계 변화
+        if (options.relationshipChanges && matchedRelationshipChangeIds.isNotEmpty()) {
+            val allIds = db.characterRelationshipChangeDao().getAllChangeIds()
+            for (id in allIds) {
+                if (id !in matchedRelationshipChangeIds) {
+                    try { db.characterRelationshipChangeDao().deleteById(id); result.deletedRelationshipChanges++ }
+                    catch (_: Exception) { }
+                }
+            }
+        }
+
+        // 상태 변화
+        if (options.stateChanges && matchedStateChangeIds.isNotEmpty()) {
+            val allIds = db.characterStateChangeDao().getAllChangeIds()
+            for (id in allIds) {
+                if (id !in matchedStateChangeIds) {
+                    try { db.characterStateChangeDao().deleteById(id); result.deletedStateChanges++ }
+                    catch (_: Exception) { }
+                }
+            }
+        }
+
+        // 이름 은행
+        if (options.nameBank && matchedNameBankIds.isNotEmpty()) {
+            val allIds = db.nameBankDao().getAllEntryIds()
+            for (id in allIds) {
+                if (id !in matchedNameBankIds) {
+                    try { db.nameBankDao().deleteById(id); result.deletedNameBank++ }
+                    catch (_: Exception) { }
+                }
+            }
+        }
+
+        // 세력
+        if (options.factions && matchedFactionIds.isNotEmpty()) {
+            val allIds = db.factionDao().getAllFactionIds()
+            for (id in allIds) {
+                if (id !in matchedFactionIds) {
+                    try { db.factionDao().deleteById(id); result.deletedFactions++ }
+                    catch (_: Exception) { }
+                }
+            }
+        }
+
+        // 세력 소속
+        if (options.factionMemberships && matchedFactionMembershipIds.isNotEmpty()) {
+            val allIds = db.factionMembershipDao().getAllMembershipIds()
+            for (id in allIds) {
+                if (id !in matchedFactionMembershipIds) {
+                    try { db.factionMembershipDao().deleteById(id); result.deletedFactionMemberships++ }
+                    catch (_: Exception) { }
+                }
+            }
+        }
     }
 
     private suspend fun runPostImportSemanticSync() {

@@ -31,7 +31,9 @@ data class ExportOptions(
     val presetTemplates: Boolean = true,
     val searchPresets: Boolean = true,
     val appSettings: Boolean = true,
-    val images: Boolean = false
+    val images: Boolean = false,
+    /** MERGE 모드에서 엑셀에 없는 항목을 삭제할지 여부 (미리보기 다이얼로그에서 설정) */
+    val deleteNotInExcel: Boolean = false
 ) {
     fun toBooleanArray() = booleanArrayOf(
         universes, novels, characters, fieldDefinitions,

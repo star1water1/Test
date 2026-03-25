@@ -48,4 +48,10 @@ interface NameBankDao {
 
     @Query("DELETE FROM name_bank")
     suspend fun deleteAll()
+
+    @Query("SELECT id FROM name_bank")
+    suspend fun getAllEntryIds(): List<Long>
+
+    @Query("DELETE FROM name_bank WHERE id = :id")
+    suspend fun deleteById(id: Long)
 }

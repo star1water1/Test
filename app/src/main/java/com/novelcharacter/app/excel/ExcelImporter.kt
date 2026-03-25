@@ -351,7 +351,8 @@ class ExcelImporter(context: Context) {
             withContext(Dispatchers.Main) { dismissDialogSafely(progressDialog) }
 
             // Phase 3: 미리보기 + 전략 선택 다이얼로그
-            val strategy = showRestorePreviewDialog(analysis) ?: return
+            val (strategy, deleteNotInExcel) = showRestorePreviewDialog(analysis) ?: return
+            val effectiveOptions = if (deleteNotInExcel) options.copy(deleteNotInExcel = true) else options
 
             // Phase 3.5: 동명이인 충돌 해결 다이얼로그
             // OVERWRITE 전략은 기존 데이터 전부 삭제 후 재삽입이므로 충돌 해결 불필요
@@ -398,7 +399,7 @@ class ExcelImporter(context: Context) {
                 }
             }
 
-            val result = importService.importAll(workbook, options, strategy, resolvedConflicts) { progress ->
+            val result = importService.importAll(workbook, effectiveOptions, strategy, resolvedConflicts) { progress ->
                 val pct = if (progress.totalRows > 0) {
                     (progress.processedRows * 100 / progress.totalRows).coerceAtMost(100)
                 } else 0
@@ -431,17 +432,18 @@ class ExcelImporter(context: Context) {
 
     // ── 복원 미리보기 + 전략 선택 다이얼로그 ──
 
-    private suspend fun showRestorePreviewDialog(analysis: RestoreAnalysis): ImportStrategy? {
+    /** @return Pair(strategy, deleteNotInExcel) or null if cancelled */
+    private suspend fun showRestorePreviewDialog(analysis: RestoreAnalysis): Pair<ImportStrategy, Boolean>? {
         val activity = currentActivityRef?.get()
         if (activity == null || activity.isFinishing || activity.isDestroyed) {
-            return ImportStrategy.MERGE
+            return Pair(ImportStrategy.MERGE, false)
         }
 
         return withContext(Dispatchers.Main) {
             kotlinx.coroutines.suspendCancellableCoroutine { cont ->
                 val act = currentActivityRef?.get()
                 if (act == null || act.isFinishing || act.isDestroyed) {
-                    cont.resume(ImportStrategy.MERGE, null)
+                    cont.resume(Pair(ImportStrategy.MERGE, false), null)
                     return@suspendCancellableCoroutine
                 }
 
@@ -574,22 +576,51 @@ class ExcelImporter(context: Context) {
                 }
                 radioGroup.addView(overwriteWarning)
 
+                container.addView(radioGroup)
+
+                // MERGE 모드 삭제 옵션 체크박스
+                val deleteCheckBox = CheckBox(act).apply {
+                    text = appContext.getString(com.novelcharacter.app.R.string.restore_merge_delete_option)
+                    textSize = 13f
+                    setPadding(dp8, dp8, 0, 0)
+                    visibility = if (totalOnlyInDb > 0) android.view.View.VISIBLE else android.view.View.GONE
+                }
+                container.addView(deleteCheckBox)
+
+                if (totalOnlyInDb > 0) {
+                    val deleteDesc = TextView(act).apply {
+                        val deleteParts = analysis.categories
+                            .filter { it.onlyInDb > 0 }
+                            .map { "${it.label} ${it.onlyInDb}개" }
+                        text = appContext.getString(com.novelcharacter.app.R.string.restore_merge_delete_desc, deleteParts.joinToString(", "))
+                        textSize = 11f
+                        setPadding(dp16 * 2 + dp8, 0, 0, 0)
+                        alpha = 0.7f
+                    }
+                    container.addView(deleteDesc)
+                }
+
+                // OVERWRITE 선택 시 삭제 옵션 숨김
                 radioGroup.setOnCheckedChangeListener { _, checkedId ->
                     overwriteWarning.visibility = if (checkedId == overwriteRadio.id && totalOnlyInDb > 0) {
                         android.view.View.VISIBLE
                     } else {
                         android.view.View.GONE
                     }
+                    deleteCheckBox.visibility = if (checkedId == mergeRadio.id && totalOnlyInDb > 0) {
+                        android.view.View.VISIBLE
+                    } else {
+                        android.view.View.GONE
+                    }
                 }
-
-                container.addView(radioGroup)
 
                 AlertDialog.Builder(act)
                     .setTitle(com.novelcharacter.app.R.string.restore_preview_title)
                     .setView(scrollView)
                     .setPositiveButton(com.novelcharacter.app.R.string.restore_action) { _, _ ->
                         val strategy = if (overwriteRadio.isChecked) ImportStrategy.OVERWRITE else ImportStrategy.MERGE
-                        cont.resume(strategy, null)
+                        val deleteNotInExcel = mergeRadio.isChecked && deleteCheckBox.isChecked
+                        cont.resume(Pair(strategy, deleteNotInExcel), null)
                     }
                     .setNegativeButton(com.novelcharacter.app.R.string.cancel) { _, _ ->
                         cont.resume(null, null)
@@ -892,6 +923,23 @@ class ExcelImporter(context: Context) {
             parts.add(r.getString(com.novelcharacter.app.R.string.import_result_name_mappings, result.nameBasedMappings))
         if (result.newCodesGenerated > 0)
             parts.add(r.getString(com.novelcharacter.app.R.string.import_result_new_codes, result.newCodesGenerated))
+
+        // 삭제 건수 요약
+        val totalDeleted = result.deletedCharacters + result.deletedRelationships + result.deletedEvents +
+            result.deletedStateChanges + result.deletedRelationshipChanges + result.deletedNameBank +
+            result.deletedFields + result.deletedFactions + result.deletedFactionMemberships
+        if (totalDeleted > 0) {
+            val delParts = mutableListOf<String>()
+            if (result.deletedCharacters > 0) delParts.add("캐릭터 ${result.deletedCharacters}")
+            if (result.deletedEvents > 0) delParts.add("사건 ${result.deletedEvents}")
+            if (result.deletedRelationships > 0) delParts.add("관계 ${result.deletedRelationships}")
+            if (result.deletedStateChanges > 0) delParts.add("상태변화 ${result.deletedStateChanges}")
+            if (result.deletedRelationshipChanges > 0) delParts.add("관계변화 ${result.deletedRelationshipChanges}")
+            if (result.deletedNameBank > 0) delParts.add("이름 ${result.deletedNameBank}")
+            if (result.deletedFactions > 0) delParts.add("세력 ${result.deletedFactions}")
+            if (result.deletedFactionMemberships > 0) delParts.add("세력소속 ${result.deletedFactionMemberships}")
+            parts.add("🗑 삭제: ${delParts.joinToString(", ")}")
+        }
 
         if (result.warnings.isNotEmpty()) {
             parts.add("⚠ ${result.warnings.size}건 경고")

@@ -58,4 +58,7 @@ interface CharacterRelationshipDao {
 
     @Query("DELETE FROM character_relationships")
     suspend fun deleteAll()
+
+    @Query("SELECT id FROM character_relationships")
+    suspend fun getAllRelationshipIds(): List<Long>
 }
