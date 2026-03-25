@@ -987,6 +987,10 @@
     <string name="body_height_relative_label">키 대비 비율</string>
     <string name="body_golden_ratio_label">골든 비율</string>
     <string name="body_ranking_label">작품 내 순위</string>
+    <string name="body_tags_label">체형 태그</string>
+    <string name="body_frame_label">프레임</string>
+    <string name="body_volume_label">볼륨 지수</string>
+    <string name="body_curves_label">곡선 지수</string>
     <string name="body_analysis_settings_title">체형 분석 설정</string>
     <string name="body_cup_mapping_title">컵 사이즈 매핑</string>
     <string name="body_type_preset_title">체형 분류 프리셋</string>

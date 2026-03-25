@@ -681,10 +681,63 @@ class FieldEditDialog : DialogFragment() {
         }
 
         // 인사이트 토글 생성
+        // ── 흉곽 보정값 (V2) ──
+        val ribOffsetEdit = EditText(ctx).apply {
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+            hint = "흉곽 보정값 (0=기존, 권장 6.0)"
+            setText("0.0")
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = (4 * density).toInt() }
+        }
+        val ribOffsetLabel = TextView(ctx).apply {
+            text = "흉곽 보정 (cm) — 높을수록 컵 사이즈↓"
+            textSize = 12f
+            alpha = 0.7f
+        }
+        binding.insightTogglesContainer.addView(ribOffsetLabel, 0)
+        binding.insightTogglesContainer.addView(ribOffsetEdit, 1)
+        // Store reference for later use
+        ribOffsetEdit.tag = "ribOffsetEdit"
+
+        // ── 골든비율 이상값 (V2) ──
+        val idealEntries = listOf(
+            "whr" to "WHR 이상값 (기본 0.70)",
+            "bustHipRatio" to "B/H 이상값 (기본 1.00)",
+            "waistHeight" to "W/키 이상값 (기본 0.40)",
+            "bustHeight" to "B/키 이상값 (기본 0.52)"
+        )
+        val goldenIdealEdits = mutableMapOf<String, EditText>()
+        val idealLabel = TextView(ctx).apply {
+            text = "골든비율 이상값"
+            textSize = 12f
+            alpha = 0.7f
+            setPadding(0, (12 * density).toInt(), 0, (4 * density).toInt())
+        }
+        binding.insightTogglesContainer.addView(idealLabel, 2)
+        var insertIdx = 3
+        for ((key, hint) in idealEntries) {
+            val edit = EditText(ctx).apply {
+                inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+                this.hint = hint
+                tag = "goldenIdeal_$key"
+                setText(BodyAnalysisConfig.DEFAULT_GOLDEN_RATIO_IDEALS[key]?.toString() ?: "")
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { bottomMargin = (2 * density).toInt() }
+            }
+            binding.insightTogglesContainer.addView(edit, insertIdx++)
+            goldenIdealEdits[key] = edit
+        }
+
+        // 인사이트 토글 생성
         val insightKeys = listOf(
+            BodyAnalysisConfig.INSIGHT_BODY_TAGS to "다층 태그",
             BodyAnalysisConfig.INSIGHT_BODY_TYPE to "체형 분류",
             BodyAnalysisConfig.INSIGHT_SILHOUETTE to "실루엣 설명",
             BodyAnalysisConfig.INSIGHT_CUP_SIZE to "컵 사이즈",
+            BodyAnalysisConfig.INSIGHT_FRAME_SIZE to "프레임 사이즈",
+            BodyAnalysisConfig.INSIGHT_PROPORTION to "볼륨/곡선 지수",
             BodyAnalysisConfig.INSIGHT_BWH_DIFF to "B/W/H 차이",
             BodyAnalysisConfig.INSIGHT_NORMALIZED_RATIO to "정규화 비율",
             BodyAnalysisConfig.INSIGHT_BMI to "BMI",
@@ -834,10 +887,23 @@ class FieldEditDialog : DialogFragment() {
         // 인사이트 토글
         val enabledInsights = insightToggleSwitches.mapValues { it.value.isChecked }
 
+        // ribOffset (V2)
+        val ribOffsetView = binding.insightTogglesContainer.findViewWithTag<EditText>("ribOffsetEdit")
+        val ribOffset = ribOffsetView?.text?.toString()?.toDoubleOrNull()?.coerceIn(0.0, 10.0) ?: 0.0
+
+        // 골든비율 이상값 (V2)
+        val goldenIdeals = mutableMapOf<String, Double>()
+        for (key in listOf("whr", "bustHipRatio", "waistHeight", "bustHeight")) {
+            val edit = binding.insightTogglesContainer.findViewWithTag<EditText>("goldenIdeal_$key")
+            edit?.text?.toString()?.toDoubleOrNull()?.let { goldenIdeals[key] = it }
+        }
+
         return BodyAnalysisConfig(
             cupMapping = cupMapping,
             bodyTypeRules = bodyTypeRules,
-            enabledInsights = enabledInsights.ifEmpty { BodyAnalysisConfig.DEFAULT_ENABLED_INSIGHTS }
+            enabledInsights = enabledInsights.ifEmpty { BodyAnalysisConfig.DEFAULT_ENABLED_INSIGHTS },
+            ribOffset = ribOffset,
+            goldenRatioIdeals = goldenIdeals.ifEmpty { BodyAnalysisConfig.DEFAULT_GOLDEN_RATIO_IDEALS }
         )
     }
 
@@ -994,6 +1060,14 @@ class FieldEditDialog : DialogFragment() {
             // 인사이트 토글 복원
             for ((key, switch) in insightToggleSwitches) {
                 switch.isChecked = bodyConfig.isInsightEnabled(key)
+            }
+            // ribOffset 복원 (V2)
+            val ribOffsetView = binding.insightTogglesContainer.findViewWithTag<EditText>("ribOffsetEdit")
+            ribOffsetView?.setText(bodyConfig.ribOffset.toString())
+            // 골든비율 이상값 복원 (V2)
+            for ((key, value) in bodyConfig.goldenRatioIdeals) {
+                val edit = binding.insightTogglesContainer.findViewWithTag<EditText>("goldenIdeal_$key")
+                edit?.setText(value.toString())
             }
         }
 

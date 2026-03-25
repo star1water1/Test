@@ -19,7 +19,10 @@ data class BodyAnalysisConfig(
     val underbustEstimation: String = "waist",
     val bodyTypeRules: List<BodyTypeRule> = DEFAULT_BODY_TYPE_RULES,
     val defaultBodyType: String = "보통체형",
-    val enabledInsights: Map<String, Boolean> = DEFAULT_ENABLED_INSIGHTS
+    val enabledInsights: Map<String, Boolean> = DEFAULT_ENABLED_INSIGHTS,
+    val ribOffset: Double = 0.0,                                        // 흉곽 보정 (0=기존, 권장 6.0)
+    val bodyTagRules: List<BodyTagRule> = emptyList(),                   // 다층 태그 (비어있으면 bodyTypeRules에서 변환)
+    val goldenRatioIdeals: Map<String, Double> = DEFAULT_GOLDEN_RATIO_IDEALS  // 사용자 정의 이상값
 ) {
     data class CupMappingEntry(val maxDiff: Double, val label: String)
 
@@ -27,6 +30,13 @@ data class BodyAnalysisConfig(
         val label: String,
         val conditions: Map<String, RangeCondition>,
         val priority: Int
+    )
+
+    data class BodyTagRule(
+        val label: String,
+        val layer: String,    // "build" | "silhouette" | "special"
+        val conditions: Map<String, RangeCondition>,
+        val priority: Int = 0
     )
 
     data class RangeCondition(val min: Double? = null, val max: Double? = null)
@@ -48,6 +58,9 @@ data class BodyAnalysisConfig(
         const val INSIGHT_GOLDEN_RATIO = "goldenRatio"
         const val INSIGHT_SILHOUETTE = "silhouette"
         const val INSIGHT_RANKING = "ranking"
+        const val INSIGHT_BODY_TAGS = "bodyTags"
+        const val INSIGHT_FRAME_SIZE = "frameSize"
+        const val INSIGHT_PROPORTION = "proportion"
 
         val DEFAULT_CUP_MAPPING = listOf(
             CupMappingEntry(7.5, "AA"),
@@ -106,6 +119,40 @@ data class BodyAnalysisConfig(
             )
         )
 
+        val DEFAULT_BODY_TAG_RULES = listOf(
+            // Build layer (BMI 기반)
+            BodyTagRule("마른 체형", "build", mapOf("bmi" to RangeCondition(max = 18.5)), 1),
+            BodyTagRule("표준 체형", "build", mapOf("bmi" to RangeCondition(min = 18.5, max = 25.0)), 2),
+            BodyTagRule("풍만 체형", "build", mapOf("bmi" to RangeCondition(min = 25.0)), 3),
+            // Silhouette layer (곡선/비율 기반)
+            BodyTagRule("모래시계", "silhouette", mapOf(
+                "whr" to RangeCondition(max = 0.72), "bustWaistDiff" to RangeCondition(min = 18.0)
+            ), 1),
+            BodyTagRule("슬렌더", "silhouette", mapOf(
+                "bustWaistDiff" to RangeCondition(max = 13.0), "waistHipDiff" to RangeCondition(max = 13.0)
+            ), 2),
+            BodyTagRule("탄탄형", "silhouette", mapOf(
+                "whr" to RangeCondition(min = 0.70, max = 0.80),
+                "bustHipRatio" to RangeCondition(min = 0.93, max = 1.07)
+            ), 3),
+            BodyTagRule("배형", "silhouette", mapOf("whr" to RangeCondition(min = 0.85)), 4),
+            // Special layer (누적)
+            BodyTagRule("모델급", "special", mapOf(
+                "height" to RangeCondition(min = 170.0), "whr" to RangeCondition(max = 0.73)
+            ), 1),
+            BodyTagRule("아담한", "special", mapOf(
+                "height" to RangeCondition(max = 158.0), "bust" to RangeCondition(max = 82.0)
+            ), 2),
+            BodyTagRule("볼륨 압도적", "special", mapOf("cupIndex" to RangeCondition(min = 8.0)), 3)
+        )
+
+        val DEFAULT_GOLDEN_RATIO_IDEALS = mapOf(
+            "whr" to 0.70,
+            "bustHipRatio" to 1.00,
+            "waistHeight" to 0.40,
+            "bustHeight" to 0.52
+        )
+
         val DEFAULT_ENABLED_INSIGHTS = mapOf(
             INSIGHT_BODY_TYPE to true,
             INSIGHT_CUP_SIZE to true,
@@ -116,7 +163,10 @@ data class BodyAnalysisConfig(
             INSIGHT_HEIGHT_RELATIVE to true,
             INSIGHT_GOLDEN_RATIO to true,
             INSIGHT_SILHOUETTE to true,
-            INSIGHT_RANKING to true
+            INSIGHT_RANKING to true,
+            INSIGHT_BODY_TAGS to true,
+            INSIGHT_FRAME_SIZE to true,
+            INSIGHT_PROPORTION to true
         )
 
         val DEFAULT = BodyAnalysisConfig()
@@ -174,6 +224,48 @@ data class BodyAnalysisConfig(
 
                 val defaultBodyType = obj.optString("defaultBodyType", "보통체형")
 
+                // Rib offset
+                val ribOffset = obj.optDouble("ribOffset", 0.0)
+
+                // Body tag rules (multi-tag)
+                val bodyTagRules = mutableListOf<BodyTagRule>()
+                val tagRulesArr = obj.optJSONArray("bodyTagRules")
+                if (tagRulesArr != null) {
+                    for (i in 0 until tagRulesArr.length()) {
+                        val ruleObj = tagRulesArr.getJSONObject(i)
+                        val conditions = mutableMapOf<String, RangeCondition>()
+                        val condObj = ruleObj.optJSONObject("conditions")
+                        if (condObj != null) {
+                            val keys = condObj.keys()
+                            while (keys.hasNext()) {
+                                val k = keys.next()
+                                val rangeObj = condObj.getJSONObject(k)
+                                conditions[k] = RangeCondition(
+                                    min = if (rangeObj.has("min")) rangeObj.getDouble("min") else null,
+                                    max = if (rangeObj.has("max")) rangeObj.getDouble("max") else null
+                                )
+                            }
+                        }
+                        bodyTagRules.add(BodyTagRule(
+                            label = ruleObj.optString("label", ""),
+                            layer = ruleObj.optString("layer", "silhouette"),
+                            conditions = conditions,
+                            priority = ruleObj.optInt("priority", i)
+                        ))
+                    }
+                }
+
+                // Golden ratio ideals
+                val goldenRatioIdeals = mutableMapOf<String, Double>()
+                val idealsObj = obj.optJSONObject("goldenRatioIdeals")
+                if (idealsObj != null) {
+                    val keys = idealsObj.keys()
+                    while (keys.hasNext()) {
+                        val k = keys.next()
+                        goldenRatioIdeals[k] = idealsObj.optDouble(k, 0.0)
+                    }
+                }
+
                 // Enabled insights
                 val enabledInsights = mutableMapOf<String, Boolean>()
                 val insightsObj = obj.optJSONObject("enabledInsights")
@@ -190,7 +282,10 @@ data class BodyAnalysisConfig(
                     underbustEstimation = underbustEstimation,
                     bodyTypeRules = bodyTypeRules.ifEmpty { DEFAULT_BODY_TYPE_RULES },
                     defaultBodyType = defaultBodyType,
-                    enabledInsights = if (enabledInsights.isEmpty()) DEFAULT_ENABLED_INSIGHTS else enabledInsights
+                    enabledInsights = if (enabledInsights.isEmpty()) DEFAULT_ENABLED_INSIGHTS else enabledInsights,
+                    ribOffset = ribOffset,
+                    bodyTagRules = bodyTagRules,
+                    goldenRatioIdeals = if (goldenRatioIdeals.isEmpty()) DEFAULT_GOLDEN_RATIO_IDEALS else goldenRatioIdeals
                 )
             } catch (_: Exception) {
                 DEFAULT
@@ -238,6 +333,41 @@ data class BodyAnalysisConfig(
                 put("bodyTypeRules", rulesArr)
 
                 put("defaultBodyType", config.defaultBodyType)
+
+                // Rib offset
+                if (config.ribOffset != 0.0) {
+                    put("ribOffset", config.ribOffset)
+                }
+
+                // Body tag rules
+                if (config.bodyTagRules.isNotEmpty()) {
+                    val tagRulesArr = JSONArray()
+                    for (rule in config.bodyTagRules) {
+                        tagRulesArr.put(JSONObject().apply {
+                            put("label", rule.label)
+                            put("layer", rule.layer)
+                            put("priority", rule.priority)
+                            val condObj = JSONObject()
+                            for ((k, range) in rule.conditions) {
+                                condObj.put(k, JSONObject().apply {
+                                    range.min?.let { put("min", it) }
+                                    range.max?.let { put("max", it) }
+                                })
+                            }
+                            put("conditions", condObj)
+                        })
+                    }
+                    put("bodyTagRules", tagRulesArr)
+                }
+
+                // Golden ratio ideals (사용자 정의 시에만 저장)
+                if (config.goldenRatioIdeals != DEFAULT_GOLDEN_RATIO_IDEALS) {
+                    val idealsObj = JSONObject()
+                    for ((k, v) in config.goldenRatioIdeals) {
+                        idealsObj.put(k, v)
+                    }
+                    put("goldenRatioIdeals", idealsObj)
+                }
 
                 // Enabled insights
                 val insightsObj = JSONObject()
