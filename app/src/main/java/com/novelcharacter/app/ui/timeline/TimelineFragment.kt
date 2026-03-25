@@ -456,7 +456,9 @@ class TimelineFragment : Fragment() {
                 return@launch
             }
 
-            val novels = novelIds.mapNotNull { viewModel.getAllNovelsList().find { n -> n.id == it } }
+            val allNovels = viewModel.getAllNovelsList()
+            val novelIdSet = novelIds.toSet()
+            val novels = allNovels.filter { it.id in novelIdSet }
             if (novels.isEmpty()) return@launch
 
             if (novels.size == 1) {
@@ -464,21 +466,18 @@ class TimelineFragment : Fragment() {
             } else {
                 // 복수 작품 → 선택 다이얼로그
                 val names = novels.map { it.title }.toTypedArray()
-                withContext(kotlinx.coroutines.Dispatchers.Main) {
-                    AlertDialog.Builder(requireContext())
-                        .setTitle(R.string.standard_year_select_novel)
-                        .setItems(names) { _, which ->
-                            confirmSetStandardYear(novels[which], event.year)
-                        }
-                        .show()
-                }
+                AlertDialog.Builder(requireContext())
+                    .setTitle(R.string.standard_year_select_novel)
+                    .setItems(names) { _, which ->
+                        confirmSetStandardYear(novels[which], event.year)
+                    }
+                    .show()
             }
         }
     }
 
     private fun confirmSetStandardYear(novel: com.novelcharacter.app.data.model.Novel, year: Int) {
-        val oldStdYear = novel.standardYear
-        if (oldStdYear == year) {
+        if (novel.standardYear == year) {
             Toast.makeText(requireContext(), getString(R.string.standard_year_already_set, year), Toast.LENGTH_SHORT).show()
             return
         }
@@ -486,7 +485,7 @@ class TimelineFragment : Fragment() {
             .setTitle(R.string.set_as_standard_year)
             .setMessage(getString(R.string.standard_year_confirm, novel.title, year))
             .setPositiveButton(android.R.string.ok) { _, _ ->
-                viewModel.setNovelStandardYear(novel, oldStdYear, year)
+                viewModel.setNovelStandardYear(novel.id, year)
                 Toast.makeText(requireContext(), getString(R.string.standard_year_set_done, novel.title, year), Toast.LENGTH_SHORT).show()
             }
             .setNegativeButton(android.R.string.cancel, null)

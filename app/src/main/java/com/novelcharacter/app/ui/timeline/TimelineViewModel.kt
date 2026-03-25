@@ -278,8 +278,11 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
 
     // ===== Standard Year ====
 
-    fun setNovelStandardYear(novel: Novel, oldStdYear: Int?, newStdYear: Int) = viewModelScope.launch {
+    fun setNovelStandardYear(novelId: Long, newStdYear: Int) = viewModelScope.launch {
         try {
+            // DB에서 최신 Novel을 읽어 stale 데이터 방지
+            val novel = novelRepository.getNovelById(novelId) ?: return@launch
+            val oldStdYear = novel.standardYear
             val updatedNovel = novel.copy(standardYear = newStdYear)
             novelRepository.updateNovel(updatedNovel)
             val syncHelper = StandardYearSyncHelper(characterRepository, universeRepository)
