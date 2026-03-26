@@ -79,6 +79,9 @@ class TimelineRepository(
     suspend fun getEventIdsByNovel(novelId: Long): List<Long> =
         timelineDao.getEventIdsByNovel(novelId)
 
+    suspend fun getEventIdsForCharacter(characterId: Long): List<Long> =
+        timelineDao.getEventIdsForCharacter(characterId)
+
     suspend fun updateEventNovels(eventId: Long, novelIds: List<Long>) =
         timelineDao.replaceEventNovels(eventId, novelIds)
 

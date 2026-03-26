@@ -310,6 +310,23 @@ class TimelineFragment : Fragment() {
         }
     }
 
+    /** 현재 center year에 해당하는 사건으로 RecyclerView 스크롤 */
+    private fun scrollToCurrentYear() {
+        val targetYear = viewModel.centerYear.value ?: return
+        val position = adapter.currentList.indexOfFirst { item ->
+            when (item) {
+                is com.novelcharacter.app.ui.adapter.TimelineDisplayItem.EventItem ->
+                    item.event.year == targetYear
+                is com.novelcharacter.app.ui.adapter.TimelineDisplayItem.GroupHeader ->
+                    item.events.any { it.year == targetYear }
+            }
+        }
+        if (position >= 0) {
+            (binding.timelineRecyclerView.layoutManager as? LinearLayoutManager)
+                ?.scrollToPositionWithOffset(position, 0)
+        }
+    }
+
     private fun observeData() {
         // 연결 작품명 최초 로드
         loadNovelNamesMap()
@@ -322,6 +339,8 @@ class TimelineFragment : Fragment() {
             binding.timelineRecyclerView.visibility = if (isEmpty) View.GONE else View.VISIBLE
             // 캐시된 작품명 적용 (DB 재조회 없음)
             adapter.novelNamesMap = cachedNovelNamesMap
+            // 이동 후 해당 연도의 사건으로 스크롤
+            scrollToCurrentYear()
         }
 
         // 사건 목록 변경 시 작품명 캐시 갱신 (삽입/수정/삭제 시에만 갱신)
@@ -340,10 +359,25 @@ class TimelineFragment : Fragment() {
             binding.zoomLevelLabel.text = label
         }
 
-        // Observe visible range to update year range label and density bar range
+        // Observe visible range to update density bar range
         viewModel.visibleRange.observe(viewLifecycleOwner) { (start, end) ->
-            binding.yearRangeLabel.text = getString(R.string.year_range_format, start, end)
             binding.eventDensityBar.setRange(start, end)
+        }
+
+        // ===== Event navigation (이전/다음 사건) =====
+        binding.btnPrevEvent.setOnClickListener { viewModel.navigateToPreviousEvent() }
+        binding.btnNextEvent.setOnClickListener { viewModel.navigateToNextEvent() }
+
+        viewModel.navState.observe(viewLifecycleOwner) { state ->
+            binding.btnPrevEvent.isEnabled = state.hasPrevious
+            binding.btnNextEvent.isEnabled = state.hasNext
+            binding.navStatusLabel.text = when {
+                state.totalCount > 0 && state.currentIndex >= 0 ->
+                    "${state.currentIndex + 1} / ${state.totalCount}"
+                state.totalCount > 0 ->
+                    getString(R.string.event_nav_count, state.totalCount)
+                else -> ""
+            }
         }
 
         // Update slider range and density bar based on all events data

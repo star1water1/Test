@@ -98,11 +98,28 @@
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:paddingHorizontal="16dp"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="8dp"
         android:paddingBottom="4dp"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/yearSlider">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnPrevEvent"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:minWidth="0dp"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:paddingHorizontal="8dp"
+            android:text="@string/prev_event_short"
+            android:textSize="12sp"
+            android:enabled="false"
+            app:icon="@android:drawable/ic_media_previous"
+            app:iconSize="14dp"
+            app:iconPadding="2dp" />
 
         <TextView
             android:id="@+id/minYearLabel"
@@ -112,13 +129,14 @@
             android:textColor="@color/text_secondary" />
 
         <TextView
-            android:id="@+id/yearRangeLabel"
+            android:id="@+id/navStatusLabel"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:gravity="center"
             android:textSize="12sp"
-            android:textColor="@color/text_secondary" />
+            android:textColor="@color/primary"
+            android:textStyle="bold" />
 
         <TextView
             android:id="@+id/maxYearLabel"
@@ -126,6 +144,23 @@
             android:layout_height="wrap_content"
             android:textSize="12sp"
             android:textColor="@color/text_secondary" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnNextEvent"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:minWidth="0dp"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:paddingHorizontal="8dp"
+            android:text="@string/next_event_short"
+            android:textSize="12sp"
+            android:enabled="false"
+            app:icon="@android:drawable/ic_media_next"
+            app:iconGravity="end"
+            app:iconSize="14dp"
+            app:iconPadding="2dp" />
 
     </LinearLayout>
 

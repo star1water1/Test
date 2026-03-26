@@ -610,6 +610,11 @@
     <string name="timeline_distributed">연도가 자동 배분되었습니다</string>
     <string name="timeline_survival_bar">생존 기간</string>
 
+    <!-- Event Navigation -->
+    <string name="prev_event_short">이전</string>
+    <string name="next_event_short">다음</string>
+    <string name="event_nav_count">사건 %d개</string>
+
     <!-- Growth Chart -->
     <string name="growth_chart">성장 그래프</string>
     <string name="growth_chart_title">%s 성장 곡선</string>

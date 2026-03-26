@@ -52,6 +52,8 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
 
     // 작품 필터 기반 사건 ID 캐시 (인메모리 검색 필터용)
     private val _novelEventIds = MutableLiveData<Set<Long>?>(null)
+    // 캐릭터 필터 기반 사건 ID 캐시
+    private val _characterEventIds = MutableLiveData<Set<Long>?>(null)
 
     init {
         allEvents.observeForever(densityObserver)
@@ -59,6 +61,12 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
         _filterNovelId.value?.let { nid ->
             viewModelScope.launch {
                 _novelEventIds.value = timelineRepository.getEventIdsByNovel(nid).toSet()
+            }
+        }
+        // 저장된 캐릭터 필터의 characterEventIds 캐시 초기 로딩
+        _filterCharacterId.value?.let { cid ->
+            viewModelScope.launch {
+                _characterEventIds.value = timelineRepository.getEventIdsForCharacter(cid).toSet()
             }
         }
     }
@@ -120,6 +128,11 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
         prefs.edit().apply {
             if (characterId != null) putLong("filter_character_id", characterId) else remove("filter_character_id")
         }.apply()
+        viewModelScope.launch {
+            _characterEventIds.value = if (characterId != null) {
+                timelineRepository.getEventIdsForCharacter(characterId).toSet()
+            } else null
+        }
     }
     fun clearFilters() {
         _filterNovelId.value = null
@@ -291,6 +304,79 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
             Log.e("TimelineViewModel", "Failed to set standard year", e)
             showError(e.message)
         }
+    }
+
+    // ===== Event Navigation (이전/다음 사건 이동) =====
+
+    data class EventNavState(
+        val hasPrevious: Boolean,
+        val hasNext: Boolean,
+        val currentIndex: Int,   // 0-based, -1 if between events
+        val totalCount: Int
+    )
+
+    private fun getFilteredEventsInMemory(): List<TimelineEvent> {
+        val events = allEvents.value ?: emptyList()
+        val novelId = _filterNovelId.value
+        val characterId = _filterCharacterId.value
+        val novelIds = _novelEventIds.value
+        val charIds = _characterEventIds.value
+        val query = _searchQuery.value?.takeIf { it.isNotBlank() }
+
+        return events.filter { event ->
+            val matchNovel = novelId == null || (novelIds != null && event.id in novelIds)
+            val matchChar = characterId == null || (charIds != null && event.id in charIds)
+            val matchQuery = query == null || event.description.contains(query, ignoreCase = true)
+            matchNovel && matchChar && matchQuery
+        }
+    }
+
+    private fun computeNavState(): EventNavState {
+        val filtered = getFilteredEventsInMemory()
+        val center = _centerYear.value ?: 0
+
+        if (filtered.isEmpty()) return EventNavState(false, false, -1, 0)
+
+        val hasPrev = filtered.any { it.year < center }
+        val hasNext = filtered.any { it.year > center }
+
+        // 현재 center에 가장 가까운 위치 찾기
+        val exactIdx = filtered.indexOfFirst { it.year >= center }
+        val currentIdx = when {
+            exactIdx == -1 -> filtered.lastIndex               // 모든 사건이 center 이전
+            filtered[exactIdx].year == center -> exactIdx      // 정확히 일치
+            exactIdx > 0 -> exactIdx - 1                       // center가 두 사건 사이
+            else -> -1                                         // center가 첫 사건 이전
+        }
+
+        return EventNavState(hasPrev, hasNext, currentIdx, filtered.size)
+    }
+
+    val navState: LiveData<EventNavState> = MediatorLiveData<EventNavState>().apply {
+        val update = { _: Any? -> value = computeNavState() }
+        addSource(allEvents, update)
+        addSource(_centerYear, update)
+        addSource(_filterNovelId, update)
+        addSource(_filterCharacterId, update)
+        addSource(_novelEventIds, update)
+        addSource(_characterEventIds, update)
+        addSource(_searchQuery, update)
+    }
+
+    /** 현재 center year 기준으로 직전 사건의 연도로 이동 */
+    fun navigateToPreviousEvent() {
+        val filtered = getFilteredEventsInMemory()
+        val center = _centerYear.value ?: 0
+        val target = filtered.lastOrNull { it.year < center } ?: return
+        setSelectedYear(target.year)
+    }
+
+    /** 현재 center year 기준으로 직후 사건의 연도로 이동 */
+    fun navigateToNextEvent() {
+        val filtered = getFilteredEventsInMemory()
+        val center = _centerYear.value ?: 0
+        val target = filtered.firstOrNull { it.year > center } ?: return
+        setSelectedYear(target.year)
     }
 
     // ===== Data access =====
