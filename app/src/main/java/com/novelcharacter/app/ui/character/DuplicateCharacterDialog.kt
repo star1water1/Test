@@ -200,8 +200,12 @@ class DuplicateCharacterDialog : DialogFragment() {
                 try {
                     val options = BitmapFactory.Options().apply { inSampleSize = 4 }
                     val bitmap = BitmapFactory.decodeFile(imagePaths[0], options)
-                    holder.ivThumbnail.setImageBitmap(bitmap)
-                    holder.ivThumbnail.visibility = View.VISIBLE
+                    if (bitmap != null) {
+                        holder.ivThumbnail.setImageBitmap(bitmap)
+                        holder.ivThumbnail.visibility = View.VISIBLE
+                    } else {
+                        holder.ivThumbnail.visibility = View.GONE
+                    }
                 } catch (e: Exception) {
                     holder.ivThumbnail.visibility = View.GONE
                 }

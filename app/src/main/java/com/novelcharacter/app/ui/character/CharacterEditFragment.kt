@@ -1565,6 +1565,7 @@ class CharacterEditFragment : Fragment() {
             val fieldValues = resolvedFieldValues.map { it.copy(characterId = characterId) }
             viewModel.updateCharacterWithFields(character, fieldValues)
             savedCharId = characterId
+            cleanupRemovedImages(existingCharacter?.imagePaths, imagePaths)
         } else {
             val newId = viewModel.insertCharacterSuspend(character)
             val fieldValues = resolvedFieldValues.map { it.copy(characterId = newId) }
