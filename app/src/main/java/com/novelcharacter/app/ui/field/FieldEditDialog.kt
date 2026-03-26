@@ -1349,9 +1349,13 @@ class FieldEditDialog : DialogFragment() {
                 val withStructured = StructuredInputConfig.applyToConfig(configJson, structuredConfig)
                 val statsConfig = collectStatsConfig(binding, type)
                 val withStats = FieldStatsConfig.applyToConfig(withStructured, statsConfig)
-                return if (type == FieldType.BODY_SIZE) {
-                    BodyAnalysisConfig.applyToConfig(withStats, collectBodyAnalysisConfig(binding))
+                // 구조화 입력 경로에서도 Random config 적용
+                val withRandom = if (type in listOf(FieldType.NUMBER, FieldType.SELECT, FieldType.GRADE)) {
+                    com.novelcharacter.app.data.model.RandomConfig.applyToConfig(withStats, collectRandomConfig(binding, type))
                 } else withStats
+                return if (type == FieldType.BODY_SIZE) {
+                    BodyAnalysisConfig.applyToConfig(withRandom, collectBodyAnalysisConfig(binding))
+                } else withRandom
             }
         }
 
