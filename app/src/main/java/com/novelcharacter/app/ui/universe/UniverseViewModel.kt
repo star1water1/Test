@@ -159,12 +159,16 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
 
     fun applyPreset(template: PresetTemplates.PresetTemplate) =
         viewModelScope.launch {
-            db.withTransaction {
-                val universeId = universeRepository.insertUniverse(template.universe)
-                val fieldsWithId = template.fields.map { it.copy(universeId = universeId) }
-                universeRepository.insertAllFields(fieldsWithId)
+            try {
+                db.withTransaction {
+                    val universeId = universeRepository.insertUniverse(template.universe)
+                    val fieldsWithId = template.fields.map { it.copy(universeId = universeId) }
+                    universeRepository.insertAllFields(fieldsWithId)
+                }
+                _presetApplied.value = Event(template.universe.name)
+            } catch (e: Exception) {
+                Log.e("UniverseViewModel", "Failed to apply preset", e)
             }
-            _presetApplied.value = Event(template.universe.name)
         }
 
     private val gson = Gson()
@@ -339,9 +343,13 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun recordRecentActivity(entityType: String, entityId: Long, title: String) = viewModelScope.launch {
-        recentActivityDao.upsert(
-            RecentActivity(entityType = entityType, entityId = entityId, title = title)
-        )
-        recentActivityDao.trimToMax(RecentActivity.MAX_ENTRIES)
+        try {
+            recentActivityDao.upsert(
+                RecentActivity(entityType = entityType, entityId = entityId, title = title)
+            )
+            recentActivityDao.trimToMax(RecentActivity.MAX_ENTRIES)
+        } catch (e: Exception) {
+            Log.e("UniverseViewModel", "Failed to record recent activity", e)
+        }
     }
 }
