@@ -57,8 +57,24 @@ class BodyGeneratorBottomSheet : BottomSheetDialogFragment() {
         super.onViewCreated(view, savedInstanceState)
         setupHeightOptions()
         setupBodyTypeOptions()
-        setupBaseCharacterSpinner()
-        setupRelativeOptions()
+        if (novelCharacters.isNotEmpty()) {
+            setupBaseCharacterSpinner()
+            setupRelativeOptions()
+        } else {
+            // 캐릭터 없으면 상대 생성 섹션 숨김
+            binding.spinnerBaseCharacter.visibility = View.GONE
+            binding.relativeOptionsContainer.visibility = View.GONE
+            // 라벨도 숨김
+            (binding.spinnerBaseCharacter.parent as? ViewGroup)?.let { parent ->
+                for (i in 0 until parent.childCount) {
+                    val child = parent.getChildAt(i)
+                    if (child is android.widget.TextView && child.text == getString(R.string.body_gen_relative)) {
+                        child.visibility = View.GONE
+                        break
+                    }
+                }
+            }
+        }
         showDistribution()
 
         binding.btnGenerate.setOnClickListener { generateAndPreview() }

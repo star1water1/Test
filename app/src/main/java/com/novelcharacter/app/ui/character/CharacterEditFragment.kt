@@ -487,31 +487,6 @@ class CharacterEditFragment : Fragment() {
                         fieldInputMap[field.id] = partsContainer
                     } else {
                         // 일반 텍스트 입력
-                        // BODY_SIZE 비구조화 → 🎲 버튼 추가
-                        if (fieldType == FieldType.BODY_SIZE) {
-                            val genBtnRow = LinearLayout(context).apply {
-                                orientation = LinearLayout.HORIZONTAL
-                                layoutParams = ViewGroup.MarginLayoutParams(
-                                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-                                ).apply { topMargin = (4 * density).toInt() }
-                            }
-                            val genLabel = TextView(context).apply {
-                                text = field.name
-                                textSize = 14f
-                                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-                            }
-                            genBtnRow.addView(genLabel)
-                            val genBtn = com.google.android.material.button.MaterialButton(
-                                context, null, com.google.android.material.R.attr.materialButtonOutlinedStyle
-                            ).apply {
-                                text = "🎲"
-                                textSize = 14f; minWidth = 0; minimumWidth = 0
-                                setPadding((8 * density).toInt(), 0, (8 * density).toInt(), 0)
-                                setOnClickListener { showBodyGenerator(field) }
-                            }
-                            genBtnRow.addView(genBtn)
-                            binding.dynamicFormContainer.addView(genBtnRow)
-                        }
                         val format = DisplayFormat.fromConfig(field.config)
                         val inputLayout = TextInputLayout(context).apply {
                             layoutParams = ViewGroup.MarginLayoutParams(
@@ -541,7 +516,31 @@ class CharacterEditFragment : Fragment() {
                             threshold = 1 // 1글자부터 자동완성 제안
                         }
                         inputLayout.addView(editText)
-                        binding.dynamicFormContainer.addView(inputLayout)
+                        if (fieldType == FieldType.BODY_SIZE) {
+                            // BODY_SIZE 비구조화: inputLayout + 🎲 버튼 수평 배치
+                            val row = LinearLayout(context).apply {
+                                orientation = LinearLayout.HORIZONTAL
+                                layoutParams = ViewGroup.MarginLayoutParams(
+                                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+                                ).apply { bottomMargin = (8 * density).toInt() }
+                            }
+                            inputLayout.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                            row.addView(inputLayout)
+                            val genBtn = com.google.android.material.button.MaterialButton(
+                                context, null, com.google.android.material.R.attr.materialButtonOutlinedStyle
+                            ).apply {
+                                text = "🎲"; textSize = 14f; minWidth = 0; minimumWidth = 0
+                                setPadding((8 * density).toInt(), 0, (8 * density).toInt(), 0)
+                                layoutParams = LinearLayout.LayoutParams(
+                                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
+                                ).apply { topMargin = (8 * density).toInt() }
+                                setOnClickListener { showBodyGenerator(field) }
+                            }
+                            row.addView(genBtn)
+                            binding.dynamicFormContainer.addView(row)
+                        } else {
+                            binding.dynamicFormContainer.addView(inputLayout)
+                        }
                         fieldInputMap[field.id] = editText
 
                         // 자동완성 데이터 로드 (세계관 내 같은 필드의 기존 값)
