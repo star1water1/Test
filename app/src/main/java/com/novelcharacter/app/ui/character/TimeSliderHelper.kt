@@ -120,14 +120,16 @@ class TimeSliderHelper(
             val changes = viewModel.getChangesByCharacterList(characterId)
             if (!isBindingAlive()) return@launch
             try {
-                if (changes.isEmpty()) {
+                // 시간축과 무관한 시스템 상태변경(year=0) 제외: __alive, __std_year_link 등
+                val timeRelevantChanges = changes.filter { it.year != 0 }
+                if (timeRelevantChanges.isEmpty()) {
                     binding.yearSlider.isEnabled = false
                     binding.minYearLabel.text = ""
                     binding.maxYearLabel.text = ""
                     return@launch
                 }
 
-                val years = changes.map { it.year }
+                val years = timeRelevantChanges.map { it.year }
                 val minYear = years.minOrNull() ?: return@launch
                 val maxYear = years.maxOrNull() ?: return@launch
 
