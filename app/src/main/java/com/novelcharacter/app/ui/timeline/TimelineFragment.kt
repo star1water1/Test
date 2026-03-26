@@ -311,6 +311,13 @@ class TimelineFragment : Fragment() {
         }
     }
 
+    /** 값을 valueFrom 기준 stepSize 배수로 정렬 (Slider 제약 충족) */
+    private fun alignToStep(value: Float, valueFrom: Float, stepSize: Float): Float {
+        if (stepSize <= 0f) return value
+        val steps = kotlin.math.round((value - valueFrom) / stepSize)
+        return valueFrom + steps * stepSize
+    }
+
     /** 현재 center year에 해당하는 사건으로 RecyclerView 스크롤 */
     private fun scrollToCurrentYear() {
         val targetYear = viewModel.centerYear.value ?: return
@@ -419,7 +426,8 @@ class TimelineFragment : Fragment() {
             if (year != null) {
                 val slider = binding.yearSlider
                 if (slider.valueFrom < slider.valueTo) {
-                    val clampedValue = year.toFloat().coerceIn(slider.valueFrom, slider.valueTo)
+                    val aligned = alignToStep(year.toFloat(), slider.valueFrom, slider.stepSize)
+                    val clampedValue = aligned.coerceIn(slider.valueFrom, slider.valueTo)
                     if (slider.value != clampedValue) {
                         slider.value = clampedValue
                     }
@@ -480,9 +488,10 @@ class TimelineFragment : Fragment() {
         binding.yearSlider.valueFrom = minOf(binding.yearSlider.valueFrom, finalFrom)
         binding.yearSlider.valueTo = maxOf(binding.yearSlider.valueTo, finalTo)
 
-        // Set value within new range
+        // Set value within new range, aligned to step grid
         val currentCenter = viewModel.centerYear.value ?: 0
-        val clampedValue = currentCenter.toFloat().coerceIn(finalFrom, finalTo)
+        val aligned = alignToStep(currentCenter.toFloat(), finalFrom, stepSize)
+        val clampedValue = aligned.coerceIn(finalFrom, finalTo)
         binding.yearSlider.value = clampedValue
 
         // Now safely narrow the range

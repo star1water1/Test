@@ -372,6 +372,7 @@ class CharacterDetailFragment : Fragment() {
                 // 체형 분석 순위 데이터 계산
                 fieldRenderer.bodyRankingInfo = computeBodyRanking(fields, values, character, novel)
 
+                if (_binding == null) return@launch
                 val sliderYear = timeSliderHelper.currentSliderYear
                 if (timeSliderHelper.isTimeViewActive && sliderYear != null) {
                     timeSliderHelper.applyTimeView(sliderYear)
