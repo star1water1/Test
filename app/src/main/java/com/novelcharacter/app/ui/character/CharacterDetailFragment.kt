@@ -869,8 +869,10 @@ class CharacterDetailFragment : Fragment() {
                             renderer.render(character, fieldValues, fieldDefs, relationships, charBitmap, config)
                         }
 
-                        // Save to cache and share
-                        val file = java.io.File(requireContext().cacheDir, "character_card_${character.id}.png")
+                        // Save to cache/exports and share
+                        val exportsDir = java.io.File(requireContext().cacheDir, "exports")
+                        exportsDir.mkdirs()
+                        val file = java.io.File(exportsDir, "character_card_${character.id}.png")
                         withContext(Dispatchers.IO) {
                             file.outputStream().use { cardBitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
                         }

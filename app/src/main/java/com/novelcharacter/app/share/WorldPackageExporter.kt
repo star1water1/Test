@@ -79,7 +79,9 @@ class WorldPackageExporter(private val context: Context) {
 
         // Create ZIP
         val fileName = "${universe.name.replace(Regex("[^\\w가-힣]"), "_")}.ncworld"
-        val outputFile = File(context.cacheDir, fileName)
+        val exportsDir = File(context.cacheDir, "exports")
+        exportsDir.mkdirs()
+        val outputFile = File(exportsDir, fileName)
 
         try {
             ZipOutputStream(FileOutputStream(outputFile)).use { zip ->
