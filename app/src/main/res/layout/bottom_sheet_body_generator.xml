@@ -16,7 +16,7 @@
             android:layout_height="4dp"
             android:layout_gravity="center_horizontal"
             android:layout_marginBottom="16dp"
-            android:background="@drawable/drag_handle_bg" />
+            android:background="@drawable/bg_drag_indicator" />
 
         <TextView
             android:layout_width="wrap_content"
@@ -137,7 +137,7 @@
             android:orientation="vertical"
             android:visibility="gone"
             android:padding="12dp"
-            android:background="@drawable/insight_card_bg">
+            android:background="?attr/colorSurfaceVariant">
 
             <TextView
                 android:id="@+id/previewMeasurements"
