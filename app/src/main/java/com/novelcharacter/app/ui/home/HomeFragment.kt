@@ -42,6 +42,13 @@ class HomeFragment : Fragment() {
         TabLayoutMediator(binding.tabLayout, binding.viewPager) { tab, position ->
             tab.text = tabTitles[position]
         }.attach()
+
+        // 글로벌 검색에서 사건 클릭 시 연표 탭으로 자동 전환
+        val prefs = requireContext().getSharedPreferences("timeline_ui_state", android.content.Context.MODE_PRIVATE)
+        if (prefs.getBoolean("pending_navigate", false)) {
+            prefs.edit().remove("pending_navigate").apply()
+            binding.viewPager.setCurrentItem(1, false) // 연표 탭 (인덱스 1)
+        }
     }
 
     override fun onDestroyView() {

@@ -1981,7 +1981,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         intensity = if (intensityColIndex >= 0) intensity else existing.intensity,
                         isBidirectional = if (bidirectionalColIndex >= 0) isBidirectional else existing.isBidirectional,
                         displayOrder = displayOrder ?: existing.displayOrder,
-                        factionId = if (factionColIndex >= 0) factionId else existing.factionId,
+                        factionId = if (factionColIndex >= 0 && factionName.isNotBlank()) factionId else existing.factionId,
                         createdAt = if (createdAtColIndex >= 0) createdAt else existing.createdAt
                     ))
                     matchedRelationshipIds.add(existing.id)

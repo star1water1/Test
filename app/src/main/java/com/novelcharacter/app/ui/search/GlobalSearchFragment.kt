@@ -58,7 +58,12 @@ class GlobalSearchFragment : Fragment() {
                 val bundle = Bundle().apply { putLong("characterId", character.id) }
                 findNavController().navigateSafe(R.id.globalSearchFragment, R.id.characterDetailFragment, bundle)
             },
-            onEventClick = { /* Events don't have a detail screen */ },
+            onEventClick = { event ->
+                // 연표 탭으로 이동하여 해당 연도 표시
+                val prefs = requireContext().getSharedPreferences("timeline_ui_state", android.content.Context.MODE_PRIVATE)
+                prefs.edit().putInt("center_year", event.year).putBoolean("pending_navigate", true).apply()
+                findNavController().navigateSafe(R.id.globalSearchFragment, R.id.homeFragment)
+            },
             onNovelClick = { novel ->
                 val bundle = Bundle().apply { putLong("novelId", novel.id) }
                 findNavController().navigateSafe(R.id.globalSearchFragment, R.id.characterListFragment, bundle)
