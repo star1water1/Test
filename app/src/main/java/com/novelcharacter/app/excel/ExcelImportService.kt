@@ -2784,11 +2784,23 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val raw = when (cell.cellType) {
             CellType.STRING -> cell.stringCellValue?.trim() ?: ""
             CellType.NUMERIC -> {
-                val value = cell.numericCellValue
-                when {
-                    value.isNaN() || value.isInfinite() -> ""
-                    value == value.toLong().toDouble() -> value.toLong().toString()
-                    else -> value.toString()
+                if (org.apache.poi.ss.usermodel.DateUtil.isCellDateFormatted(cell)) {
+                    // 엑셀이 날짜로 자동 변환한 셀 → YYYY-MM-DD 문자열로 반환
+                    // (parseBirthDate가 3파트 날짜에서 연도를 자동 제거)
+                    val date = cell.dateCellValue
+                    val cal = java.util.Calendar.getInstance().apply { time = date }
+                    "%d-%02d-%02d".format(
+                        cal.get(java.util.Calendar.YEAR),
+                        cal.get(java.util.Calendar.MONTH) + 1,
+                        cal.get(java.util.Calendar.DAY_OF_MONTH)
+                    )
+                } else {
+                    val value = cell.numericCellValue
+                    when {
+                        value.isNaN() || value.isInfinite() -> ""
+                        value == value.toLong().toDouble() -> value.toLong().toString()
+                        else -> value.toString()
+                    }
                 }
             }
             CellType.BOOLEAN -> if (cell.booleanCellValue) "Y" else "N"
