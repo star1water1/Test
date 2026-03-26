@@ -112,6 +112,7 @@ class FieldEditDialog : DialogFragment() {
         setupTypeSpinner(binding)
         setupSemanticRoleSpinner(binding)
         setupStatsSection(binding)
+        setupRandomSection(binding)
         setupStructuredInputSection(binding)
         setupBodyAnalysisSection(binding)
         populateFields(binding)
@@ -173,6 +174,10 @@ class FieldEditDialog : DialogFragment() {
                 // 상위 % 표기: NUMBER, CALCULATED, BODY_SIZE, GRADE
                 val isNumericType = selectedType == FieldType.NUMBER || selectedType == FieldType.CALCULATED || selectedType == FieldType.BODY_SIZE || selectedType == FieldType.GRADE
                 binding.percentileLayout.visibility = if (isNumericType) View.VISIBLE else View.GONE
+                // 랜덤 생성: NUMBER, SELECT, GRADE
+                val isRandomizable = selectedType == FieldType.NUMBER || selectedType == FieldType.SELECT || selectedType == FieldType.GRADE
+                binding.randomLayout.visibility = if (isRandomizable) View.VISIBLE else View.GONE
+                if (isRandomizable) updateRandomNumberOptionsVisibility(binding)
             }
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
@@ -274,6 +279,44 @@ class FieldEditDialog : DialogFragment() {
 
         linkageRuleContainer = container
         linkageRuleSpinner = spinner
+    }
+
+    private fun setupRandomSection(binding: DialogFieldEditBinding) {
+        // 소수점 자릿수 스피너
+        val decimalOptions = arrayOf("0", "1", "2")
+        binding.spinnerDecimalPlaces.adapter = android.widget.ArrayAdapter(
+            requireContext(), android.R.layout.simple_spinner_item, decimalOptions
+        ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+
+        binding.switchRandomEnabled.setOnCheckedChangeListener { _, isChecked ->
+            updateRandomNumberOptionsVisibility(binding)
+        }
+    }
+
+    private fun updateRandomNumberOptionsVisibility(binding: DialogFieldEditBinding) {
+        val typePos = binding.spinnerFieldType.selectedItemPosition
+        val selectedType = FieldType.entries.getOrNull(typePos)
+        val showNumberOptions = binding.switchRandomEnabled.isChecked && selectedType == FieldType.NUMBER
+        binding.randomNumberOptions.visibility = if (showNumberOptions) View.VISIBLE else View.GONE
+    }
+
+    private fun collectRandomConfig(binding: DialogFieldEditBinding, type: FieldType): com.novelcharacter.app.data.model.RandomConfig {
+        if (!binding.switchRandomEnabled.isChecked) return com.novelcharacter.app.data.model.RandomConfig()
+        return when (type) {
+            FieldType.NUMBER -> {
+                val min = binding.editRandomMin.text.toString().toDoubleOrNull()
+                val max = binding.editRandomMax.text.toString().toDoubleOrNull()
+                val dp = binding.spinnerDecimalPlaces.selectedItemPosition
+                com.novelcharacter.app.data.model.RandomConfig(
+                    enabled = true,
+                    min = min?.let { max?.let { mx -> minOf(it, mx) } ?: it } ?: min,
+                    max = max?.let { min?.let { mn -> maxOf(it, mn) } ?: it } ?: max,
+                    decimalPlaces = dp
+                )
+            }
+            FieldType.SELECT, FieldType.GRADE -> com.novelcharacter.app.data.model.RandomConfig(enabled = true)
+            else -> com.novelcharacter.app.data.model.RandomConfig()
+        }
     }
 
     private fun setupStatsSection(binding: DialogFieldEditBinding) {
@@ -978,6 +1021,14 @@ class FieldEditDialog : DialogFragment() {
             }
         }
 
+        // Random config
+        val randomConfig = com.novelcharacter.app.data.model.RandomConfig.fromConfig(field.config)
+        binding.switchRandomEnabled.isChecked = randomConfig.enabled
+        if (randomConfig.min != null) binding.editRandomMin.setText(randomConfig.min.toString())
+        if (randomConfig.max != null) binding.editRandomMax.setText(randomConfig.max.toString())
+        binding.spinnerDecimalPlaces.setSelection(randomConfig.decimalPlaces.coerceIn(0, 2))
+        updateRandomNumberOptionsVisibility(binding)
+
         // Stats config
         val statsConfig = FieldStatsConfig.fromConfig(field.config)
         binding.switchStatsEnabled.isChecked = statsConfig.enabled
@@ -1318,9 +1369,13 @@ class FieldEditDialog : DialogFragment() {
         val statsConfig = collectStatsConfig(binding, type)
         val configJson = Gson().toJson(config)
         val withStats = FieldStatsConfig.applyToConfig(configJson, statsConfig)
-        return if (type == FieldType.BODY_SIZE) {
-            BodyAnalysisConfig.applyToConfig(withStats, collectBodyAnalysisConfig(binding))
+        // Random config (NUMBER, SELECT, GRADE)
+        val withRandom = if (type == FieldType.NUMBER || type == FieldType.SELECT || type == FieldType.GRADE) {
+            com.novelcharacter.app.data.model.RandomConfig.applyToConfig(withStats, collectRandomConfig(binding, type))
         } else withStats
+        return if (type == FieldType.BODY_SIZE) {
+            BodyAnalysisConfig.applyToConfig(withRandom, collectBodyAnalysisConfig(binding))
+        } else withRandom
     }
 
     private fun collectStatsConfig(binding: DialogFieldEditBinding, type: FieldType): FieldStatsConfig {

@@ -278,6 +278,87 @@
                 </LinearLayout>
             </LinearLayout>
 
+            <!-- 랜덤 생성 (NUMBER, SELECT, GRADE 전용) -->
+            <LinearLayout
+                android:id="@+id/randomLayout"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone"
+                android:layout_marginBottom="12dp">
+
+                <androidx.appcompat.widget.SwitchCompat
+                    android:id="@+id/switchRandomEnabled"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/random_enabled"
+                    android:layout_marginBottom="4dp" />
+
+                <LinearLayout
+                    android:id="@+id/randomNumberOptions"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal">
+
+                        <com.google.android.material.textfield.TextInputLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginEnd="4dp"
+                            android:hint="@string/random_min">
+                            <com.google.android.material.textfield.TextInputEditText
+                                android:id="@+id/editRandomMin"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:inputType="numberDecimal|numberSigned" />
+                        </com.google.android.material.textfield.TextInputLayout>
+
+                        <com.google.android.material.textfield.TextInputLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginStart="4dp"
+                            android:hint="@string/random_max">
+                            <com.google.android.material.textfield.TextInputEditText
+                                android:id="@+id/editRandomMax"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:inputType="numberDecimal|numberSigned" />
+                        </com.google.android.material.textfield.TextInputLayout>
+
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginTop="4dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/random_decimal_places"
+                            android:textSize="14sp"
+                            android:layout_marginEnd="8dp" />
+
+                        <Spinner
+                            android:id="@+id/spinnerDecimalPlaces"
+                            android:layout_width="wrap_content"
+                            android:layout_height="40dp" />
+
+                    </LinearLayout>
+
+                </LinearLayout>
+
+            </LinearLayout>
+
             <!-- 시스템 연동 (CALCULATED 제외) -->
             <LinearLayout
                 android:id="@+id/semanticRoleLayout"

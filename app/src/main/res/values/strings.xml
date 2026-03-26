@@ -1015,6 +1015,16 @@
     <string name="body_gen_independent">독립 조절</string>
     <string name="body_gen_bust_size">가슴 크기</string>
     <string name="body_gen_hip_size">엉덩이 크기</string>
+
+    <!-- Random Field -->
+    <string name="random_enabled">랜덤 생성</string>
+    <string name="random_min">최솟값</string>
+    <string name="random_max">최댓값</string>
+    <string name="random_decimal_places">소수점 자릿수</string>
+    <string name="random_birthday_season">계절 선택</string>
+    <string name="random_applied">랜덤 적용: %s</string>
+    <string name="random_no_options">선택할 수 있는 항목이 없습니다</string>
+
     <string name="body_gen_relative">기준 캐릭터 (상대 생성)</string>
     <string name="body_gen_no_base">선택 안 함</string>
     <string name="body_gen_height_adjust">키 조절</string>

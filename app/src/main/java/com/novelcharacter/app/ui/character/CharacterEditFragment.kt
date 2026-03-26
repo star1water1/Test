@@ -36,6 +36,7 @@ import com.novelcharacter.app.data.model.generateEntityCode
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.DisplayFormat
 import com.novelcharacter.app.data.model.FieldType
+import com.novelcharacter.app.data.model.SemanticRole
 import com.novelcharacter.app.data.model.StructuredInputConfig
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.databinding.FragmentCharacterEditBinding
@@ -274,6 +275,90 @@ class CharacterEditFragment : Fragment() {
         binding.editMemo.setText(character.memo)
     }
 
+    // ===== 🎲 랜덤 값 생성 =====
+
+    private fun createDiceButton(context: android.content.Context, density: Float, action: () -> Unit): com.google.android.material.button.MaterialButton {
+        return com.google.android.material.button.MaterialButton(
+            context, null, com.google.android.material.R.attr.materialButtonOutlinedStyle
+        ).apply {
+            text = "🎲"; textSize = 14f; minWidth = 0; minimumWidth = 0
+            setPadding((8 * density).toInt(), 0, (8 * density).toInt(), 0)
+            layoutParams = android.widget.LinearLayout.LayoutParams(
+                android.view.ViewGroup.LayoutParams.WRAP_CONTENT, android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            setOnClickListener { action() }
+        }
+    }
+
+    private fun showBirthdaySeasonDialog(field: com.novelcharacter.app.data.model.FieldDefinition) {
+        val seasons = com.novelcharacter.app.util.FieldRandomGenerator.Season.entries
+        val labels = seasons.map { it.label }.toTypedArray()
+        androidx.appcompat.app.AlertDialog.Builder(requireContext())
+            .setTitle(R.string.random_birthday_season)
+            .setItems(labels) { _, which ->
+                val date = com.novelcharacter.app.util.FieldRandomGenerator.generateBirthday(seasons[which])
+                applyRandomValue(field, date)
+            }
+            .show()
+    }
+
+    private fun applyRandomForField(field: com.novelcharacter.app.data.model.FieldDefinition, type: FieldType) {
+        val config = com.novelcharacter.app.data.model.RandomConfig.fromConfig(field.config)
+        val value: String? = when (type) {
+            FieldType.NUMBER -> com.novelcharacter.app.util.FieldRandomGenerator.generateNumber(
+                config.min ?: 0.0, config.max ?: 100.0, config.decimalPlaces
+            )
+            FieldType.SELECT -> {
+                val options = try {
+                    val json = org.json.JSONObject(field.config)
+                    val arr = json.optJSONArray("options")
+                    if (arr != null) (0 until arr.length()).map { arr.getString(it) } else emptyList()
+                } catch (_: Exception) { emptyList() }
+                com.novelcharacter.app.util.FieldRandomGenerator.generateSelect(options)
+            }
+            FieldType.GRADE -> {
+                val grades = try {
+                    val json = org.json.JSONObject(field.config)
+                    val obj = json.optJSONObject("grades")
+                    obj?.keys()?.asSequence()?.toList() ?: listOf("C", "B", "A", "S")
+                } catch (_: Exception) { listOf("C", "B", "A", "S") }
+                com.novelcharacter.app.util.FieldRandomGenerator.generateGrade(grades)
+            }
+            else -> return
+        }
+        if (value == null) {
+            android.widget.Toast.makeText(requireContext(), R.string.random_no_options, android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+        applyRandomValue(field, value)
+    }
+
+    private fun applyRandomValue(field: com.novelcharacter.app.data.model.FieldDefinition, value: String) {
+        val widget = fieldInputMap[field.id]
+        when (widget) {
+            is android.widget.EditText -> widget.setText(value)
+            is android.widget.LinearLayout -> {
+                // 구조화 입력: "MM-DD" 등을 parts로 분리
+                val parts = value.split("-")
+                for (i in 0 until minOf(widget.childCount, parts.size)) {
+                    val child = widget.getChildAt(i)
+                    if (child is com.google.android.material.textfield.TextInputLayout) {
+                        child.editText?.setText(parts.getOrNull(i) ?: "")
+                    }
+                }
+            }
+            is android.widget.Spinner -> {
+                val idx = (0 until widget.count).firstOrNull {
+                    widget.getItemAtPosition(it).toString() == value
+                } ?: return
+                widget.setSelection(idx)
+            }
+        }
+        hasUnsavedChanges = true
+        updateSaveButtonState()
+        android.widget.Toast.makeText(requireContext(), getString(R.string.random_applied, value), android.widget.Toast.LENGTH_SHORT).show()
+    }
+
     private fun showBodyGenerator(bodySizeField: com.novelcharacter.app.data.model.FieldDefinition) {
         val sheet = BodyGeneratorBottomSheet()
         sheet.analysisConfig = com.novelcharacter.app.data.model.BodyAnalysisConfig.fromConfig(bodySizeField.config)
@@ -431,21 +516,15 @@ class CharacterEditFragment : Fragment() {
                             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
                         }
                         labelRow.addView(label)
-                        // 🎲 생성 버튼 (BODY_SIZE 필드만)
-                        if (fieldType == FieldType.BODY_SIZE) {
-                            val genBtn = com.google.android.material.button.MaterialButton(
-                                context, null, com.google.android.material.R.attr.materialButtonOutlinedStyle
-                            ).apply {
-                                text = "🎲"
-                                textSize = 14f
-                                minWidth = 0
-                                minimumWidth = 0
-                                setPadding((8 * density).toInt(), 0, (8 * density).toInt(), 0)
-                                layoutParams = LinearLayout.LayoutParams(
-                                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
-                                )
-                                setOnClickListener { showBodyGenerator(field) }
-                            }
+                        // 🎲 생성 버튼
+                        val diceAction: (() -> Unit)? = when {
+                            fieldType == FieldType.BODY_SIZE -> {{ showBodyGenerator(field) }}
+                            SemanticRole.fromConfig(field.config) == SemanticRole.BIRTH_DATE -> {{ showBirthdaySeasonDialog(field) }}
+                            com.novelcharacter.app.data.model.RandomConfig.fromConfig(field.config).enabled -> {{ applyRandomForField(field, fieldType) }}
+                            else -> null
+                        }
+                        if (diceAction != null) {
+                            val genBtn = createDiceButton(context, density, diceAction)
                             labelRow.addView(genBtn)
                         }
                         binding.dynamicFormContainer.addView(labelRow)
@@ -516,8 +595,14 @@ class CharacterEditFragment : Fragment() {
                             threshold = 1 // 1글자부터 자동완성 제안
                         }
                         inputLayout.addView(editText)
-                        if (fieldType == FieldType.BODY_SIZE) {
-                            // BODY_SIZE 비구조화: inputLayout + 🎲 버튼 수평 배치
+                        // 비구조화 필드에 🎲 버튼 추가 판정
+                        val unstructuredDiceAction: (() -> Unit)? = when {
+                            fieldType == FieldType.BODY_SIZE -> {{ showBodyGenerator(field) }}
+                            SemanticRole.fromConfig(field.config) == SemanticRole.BIRTH_DATE -> {{ showBirthdaySeasonDialog(field) }}
+                            com.novelcharacter.app.data.model.RandomConfig.fromConfig(field.config).enabled -> {{ applyRandomForField(field, fieldType) }}
+                            else -> null
+                        }
+                        if (unstructuredDiceAction != null) {
                             val row = LinearLayout(context).apply {
                                 orientation = LinearLayout.HORIZONTAL
                                 layoutParams = ViewGroup.MarginLayoutParams(
@@ -526,15 +611,10 @@ class CharacterEditFragment : Fragment() {
                             }
                             inputLayout.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
                             row.addView(inputLayout)
-                            val genBtn = com.google.android.material.button.MaterialButton(
-                                context, null, com.google.android.material.R.attr.materialButtonOutlinedStyle
-                            ).apply {
-                                text = "🎲"; textSize = 14f; minWidth = 0; minimumWidth = 0
-                                setPadding((8 * density).toInt(), 0, (8 * density).toInt(), 0)
-                                layoutParams = LinearLayout.LayoutParams(
-                                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
-                                ).apply { topMargin = (8 * density).toInt() }
-                                setOnClickListener { showBodyGenerator(field) }
+                            val genBtn = createDiceButton(context, density, unstructuredDiceAction).apply {
+                                layoutParams = (layoutParams as LinearLayout.LayoutParams).apply {
+                                    topMargin = (8 * density).toInt()
+                                }
                             }
                             row.addView(genBtn)
                             binding.dynamicFormContainer.addView(row)
