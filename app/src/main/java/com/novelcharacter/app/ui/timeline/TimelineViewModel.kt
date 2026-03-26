@@ -302,6 +302,22 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
             novelRepository.updateNovel(updatedNovel)
             val syncHelper = StandardYearSyncHelper(characterRepository, universeRepository)
             syncHelper.onStandardYearChanged(updatedNovel, oldStdYear, newStdYear)
+
+            // 표준연도 변경 후 시맨틱 필드 전체 재동기화 (나이/생존여부 재계산)
+            val universeId = novel.universeId
+            if (universeId != null) {
+                val characters = characterRepository.getCharactersByNovelList(novelId)
+                for (character in characters) {
+                    try {
+                        if (syncHelper.isLinked(character.id)) {
+                            val values = characterRepository.getValuesByCharacterList(character.id)
+                            semanticSyncHelper.syncFieldToStateChange(character.id, universeId, values)
+                        }
+                    } catch (e: Exception) {
+                        Log.w("TimelineViewModel", "Failed to sync semantic fields for character ${character.id}", e)
+                    }
+                }
+            }
         } catch (e: Exception) {
             Log.e("TimelineViewModel", "Failed to set standard year", e)
             showError(e.message)
