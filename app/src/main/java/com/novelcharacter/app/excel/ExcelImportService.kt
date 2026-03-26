@@ -25,6 +25,7 @@ import com.novelcharacter.app.data.repository.CharacterRepository
 import com.novelcharacter.app.data.repository.NovelRepository
 import com.novelcharacter.app.data.repository.UniverseRepository
 import com.novelcharacter.app.util.SemanticFieldSyncHelper
+import org.apache.poi.ss.usermodel.Cell
 import org.apache.poi.ss.usermodel.CellType
 import org.apache.poi.ss.usermodel.Row
 import org.apache.poi.ss.usermodel.Sheet
@@ -2832,10 +2833,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
      */
     private fun isCellLikelyDate(cell: Cell): Boolean {
         if (org.apache.poi.ss.usermodel.DateUtil.isCellDateFormatted(cell)) return true
-        val fmt = try { cell.cellStyle?.dataFormatString } catch (_: Exception) { null }
+        val fmt: String = try { cell.cellStyle?.dataFormatString } catch (_: Exception) { null }
             ?: return false
         if (fmt == "General" || fmt == "@") return false
-        val lower = fmt.lowercase()
+        val lower = fmt.lowercase(java.util.Locale.ROOT)
         // y+d 조합 또는 CJK 날짜 문자가 포함된 포맷 감지
         return (lower.contains("y") && lower.contains("d")) ||
                 lower.contains("년") || lower.contains("월") || lower.contains("일")
