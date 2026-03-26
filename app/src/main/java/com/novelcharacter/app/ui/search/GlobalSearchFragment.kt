@@ -61,7 +61,7 @@ class GlobalSearchFragment : Fragment() {
             onEventClick = { event ->
                 // 연표 탭으로 이동하여 해당 연도 표시
                 val prefs = requireContext().getSharedPreferences("timeline_ui_state", android.content.Context.MODE_PRIVATE)
-                prefs.edit().putInt("center_year", event.year).putBoolean("pending_navigate", true).apply()
+                prefs.edit().putInt("center_year", event.year).putBoolean("pending_navigate", true).commit()
                 findNavController().navigateSafe(R.id.globalSearchFragment, R.id.homeFragment)
             },
             onNovelClick = { novel ->

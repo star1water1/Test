@@ -620,6 +620,17 @@ class TimelineFragment : Fragment() {
             .show()
     }
 
+    override fun onResume() {
+        super.onResume()
+        // 글로벌 검색에서 사건 클릭 시 전달된 연도로 이동
+        val prefs = requireContext().getSharedPreferences("timeline_ui_state", android.content.Context.MODE_PRIVATE)
+        if (prefs.getBoolean("pending_navigate", false)) {
+            prefs.edit().remove("pending_navigate").apply()
+            val year = prefs.getInt("center_year", 0)
+            viewModel.setSelectedYear(year)
+        }
+    }
+
     override fun onDestroyView() {
         searchJob?.cancel()
         itemTouchHelper?.attachToRecyclerView(null)
