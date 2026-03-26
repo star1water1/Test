@@ -82,11 +82,12 @@ object BirthdayHelper {
      */
     fun daysUntilBirthday(todayMonth: Int, todayDay: Int, todayYear: Int,
                           birthMonth: Int, birthDay: Int): Int {
+        // DST 전환일 오차 방지를 위해 정오(12시) 기준 계산
         val today = Calendar.getInstance().apply {
             set(Calendar.YEAR, todayYear)
             set(Calendar.MONTH, todayMonth - 1)
             set(Calendar.DAY_OF_MONTH, todayDay)
-            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.HOUR_OF_DAY, 12)
             set(Calendar.MINUTE, 0)
             set(Calendar.SECOND, 0)
             set(Calendar.MILLISECOND, 0)
@@ -98,7 +99,7 @@ object BirthdayHelper {
             set(Calendar.YEAR, todayYear)
             set(Calendar.MONTH, birthMonth - 1)
             set(Calendar.DAY_OF_MONTH, effectiveDay)
-            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.HOUR_OF_DAY, 12)
             set(Calendar.MINUTE, 0)
             set(Calendar.SECOND, 0)
             set(Calendar.MILLISECOND, 0)
@@ -109,6 +110,7 @@ object BirthdayHelper {
             val nextYear = todayYear + 1
             val nextEffectiveDay = adjustLeapDay(birthMonth, birthDay, nextYear)
             birthday.set(Calendar.YEAR, nextYear)
+            birthday.set(Calendar.MONTH, birthMonth - 1) // year 변경 시 month 재설정 보장
             birthday.set(Calendar.DAY_OF_MONTH, nextEffectiveDay)
         }
 

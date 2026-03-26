@@ -221,6 +221,7 @@ class CharacterListFragment : Fragment() {
                 adapter.setSelectionMode(true)
                 binding.btnCompare.text = getString(R.string.compare_mode_label)
                 binding.btnCancelCompare.visibility = View.VISIBLE
+                updateBirthdayBannerVisibility(false)
                 Toast.makeText(requireContext(), R.string.compare_select_hint, Toast.LENGTH_SHORT).show()
             } else {
                 // Execute comparison
@@ -246,6 +247,7 @@ class CharacterListFragment : Fragment() {
         adapter.resetState()  // batch reset: clears selection + mode in single notify
         binding.btnCompare.text = getString(R.string.compare_button)
         binding.btnCancelCompare.visibility = View.GONE
+        updateBirthdayBannerVisibility(true)
     }
 
     private fun updateCompareButtonText() {
@@ -456,6 +458,8 @@ class CharacterListFragment : Fragment() {
         itemTouchHelper?.attachToRecyclerView(null)
         itemTouchHelper = null
         binding.characterRecyclerView.adapter = null
+        binding.birthdayRecyclerView.adapter = null
+        birthdayBannerAdapter = null
         super.onDestroyView()
         _binding = null
     }
