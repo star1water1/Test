@@ -33,7 +33,9 @@ import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.FactionMembership
 import com.novelcharacter.app.data.repository.FactionRepository
 import com.novelcharacter.app.databinding.FragmentCharacterDetailBinding
+import com.novelcharacter.app.share.CardTheme
 import com.novelcharacter.app.share.CharacterCardRenderer
+import com.novelcharacter.app.share.PdfConfig
 import com.novelcharacter.app.share.PdfExporter
 import com.novelcharacter.app.ui.adapter.TimelineAdapter
 import kotlinx.coroutines.Dispatchers
@@ -830,7 +832,7 @@ class CharacterDetailFragment : Fragment() {
             getString(R.string.share_card_theme_fantasy),
             getString(R.string.share_card_theme_modern)
         )
-        val themeValues = CharacterCardRenderer.CardTheme.entries.toTypedArray()
+        val themeValues = CardTheme.entries.toTypedArray()
 
         AlertDialog.Builder(requireContext())
             .setTitle(R.string.share_card_theme)
@@ -908,7 +910,7 @@ class CharacterDetailFragment : Fragment() {
                 }
 
                 val pdfExporter = PdfExporter(requireContext())
-                val config = PdfExporter.PdfConfig(
+                val config = PdfConfig(
                     universeId = universeId,
                     novelIds = listOf(novelId),
                     characterIds = listOf(characterId)
