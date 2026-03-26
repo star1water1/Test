@@ -13,6 +13,7 @@ import androidx.room.withTransaction
 import com.novelcharacter.app.data.model.CharacterStateChange
 import com.novelcharacter.app.util.EventEditDialogHelper.ShiftDirection
 import com.novelcharacter.app.util.SemanticFieldSyncHelper
+import com.novelcharacter.app.util.StandardYearSyncHelper
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -44,6 +45,14 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
         _eventDensity.value = density
     }
 
+    // ===== Timeline Filters =====
+    private val _filterNovelId = MutableLiveData<Long?>(
+        if (prefs.contains("filter_novel_id")) prefs.getLong("filter_novel_id", -1L) else null
+    )
+
+    // 작품 필터 기반 사건 ID 캐시 (인메모리 검색 필터용)
+    private val _novelEventIds = MutableLiveData<Set<Long>?>(null)
+
     init {
         allEvents.observeForever(densityObserver)
         // 저장된 작품 필터의 novelEventIds 캐시 초기 로딩
@@ -63,11 +72,6 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
 
     private val _selectedYear = MutableLiveData<Int?>(null)
     val selectedYear: LiveData<Int?> = _selectedYear
-
-    // ===== Timeline Filters =====
-    private val _filterNovelId = MutableLiveData<Long?>(
-        if (prefs.contains("filter_novel_id")) prefs.getLong("filter_novel_id", -1L) else null
-    )
     val filterNovelId: LiveData<Long?> = _filterNovelId
     private val _filterCharacterId = MutableLiveData<Long?>(
         if (prefs.contains("filter_character_id")) prefs.getLong("filter_character_id", -1L) else null
@@ -180,9 +184,6 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
         application.getString(resId)
     }
 
-    // 작품 필터 기반 사건 ID 캐시 (인메모리 검색 필터용)
-    private val _novelEventIds = MutableLiveData<Set<Long>?>(null)
-
     // ===== Search =====
     private val _searchQuery = MutableLiveData("")
     private val _searchTrigger = MediatorLiveData<Unit>().apply {
@@ -272,6 +273,23 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
         if (year != null) {
             _centerYear.value = year
             debounceSaveCenterYear(year)
+        }
+    }
+
+    // ===== Standard Year ====
+
+    fun setNovelStandardYear(novelId: Long, newStdYear: Int) = viewModelScope.launch {
+        try {
+            // DB에서 최신 Novel을 읽어 stale 데이터 방지
+            val novel = novelRepository.getNovelById(novelId) ?: return@launch
+            val oldStdYear = novel.standardYear
+            val updatedNovel = novel.copy(standardYear = newStdYear)
+            novelRepository.updateNovel(updatedNovel)
+            val syncHelper = StandardYearSyncHelper(characterRepository, universeRepository)
+            syncHelper.onStandardYearChanged(updatedNovel, oldStdYear, newStdYear)
+        } catch (e: Exception) {
+            Log.e("TimelineViewModel", "Failed to set standard year", e)
+            showError(e.message)
         }
     }
 

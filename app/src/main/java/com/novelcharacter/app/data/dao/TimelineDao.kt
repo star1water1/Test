@@ -219,6 +219,9 @@ interface TimelineDao {
 
     @Query("DELETE FROM timeline_event_novel_cross_ref")
     suspend fun deleteAllEventNovelCrossRefs()
+
+    @Query("SELECT id FROM timeline_events")
+    suspend fun getAllEventIds(): List<Long>
 }
 
 data class YearCount(

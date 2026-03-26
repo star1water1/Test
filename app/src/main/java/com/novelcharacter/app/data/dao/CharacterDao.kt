@@ -91,4 +91,7 @@ interface CharacterDao {
 
     @Query("DELETE FROM characters WHERE id IN (:ids)")
     suspend fun deleteByIds(ids: List<Long>)
+
+    @Query("SELECT c.id FROM characters c INNER JOIN novels n ON c.novelId = n.id WHERE n.universeId = :universeId")
+    suspend fun getCharacterIdsByUniverse(universeId: Long): List<Long>
 }

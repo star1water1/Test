@@ -129,7 +129,7 @@
             android:layout_width="match_parent"
             android:layout_height="150dp"
             android:layout_marginBottom="12dp"
-            android:nestedScrollingEnabled="false" />
+            android:nestedScrollingEnabled="true" />
 
         <!-- 관련 캐릭터 선택 -->
         <TextView
@@ -145,7 +145,7 @@
             android:id="@+id/characterSelectRecyclerView"
             android:layout_width="match_parent"
             android:layout_height="200dp"
-            android:nestedScrollingEnabled="false" />
+            android:nestedScrollingEnabled="true" />
 
     </LinearLayout>
 </androidx.core.widget.NestedScrollView>

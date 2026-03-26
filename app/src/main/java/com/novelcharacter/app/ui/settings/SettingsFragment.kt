@@ -22,7 +22,9 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import com.novelcharacter.app.databinding.FragmentSettingsBinding
+import com.novelcharacter.app.util.AppLogger
 import com.novelcharacter.app.util.ThemeHelper
+import androidx.room.withTransaction
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -65,6 +67,7 @@ class SettingsFragment : Fragment() {
                     Toast.makeText(ctx, R.string.backup_export_success, Toast.LENGTH_SHORT).show()
                 }
             } catch (e: Exception) {
+                AppLogger.error("Settings", "백업 내보내기 실패", e)
                 if (_binding != null) {
                     Toast.makeText(ctx, getString(R.string.backup_export_failed, e.message), Toast.LENGTH_LONG).show()
                 }
@@ -223,6 +226,17 @@ class SettingsFragment : Fragment() {
         }
 
         loadBackupStatus()
+
+        // Error log section
+        binding.viewErrorLogRow.setOnClickListener {
+            showErrorLogDialog()
+        }
+        loadErrorLogSummary()
+
+        // App reset
+        binding.resetAppRow.setOnClickListener {
+            showResetConfirmDialog()
+        }
     }
 
     private fun loadBackupStatus() {
@@ -461,6 +475,7 @@ class SettingsFragment : Fragment() {
                 // 즉시 삭제하면 경쟁 조건 발생. cacheDir 파일은 시스템이 관리.
                 restoreFromEncryptedFile(tempEncFile)
             } catch (e: Exception) {
+                AppLogger.error("Settings", "백업 복원 실패 (복호화)", e)
                 if (_binding != null) {
                     Toast.makeText(ctx, getString(R.string.backup_restore_failed, e.message), Toast.LENGTH_LONG).show()
                 }
@@ -505,9 +520,207 @@ class SettingsFragment : Fragment() {
                 importer.importFromLocalFile(tempXlsx!!)
 
             } catch (e: Exception) {
+                AppLogger.error("Settings", "백업 복원 실패", e)
                 if (progressDialog.isShowing) progressDialog.dismiss()
                 if (_binding != null) {
                     Toast.makeText(ctx, getString(R.string.backup_restore_failed, e.message), Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    // ── Error Log ──
+
+    private fun loadErrorLogSummary() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val count = withContext(Dispatchers.IO) { AppLogger.getErrorCount() }
+            if (_binding == null) return@launch
+            if (count == 0) {
+                binding.errorLogSummaryText.text = getString(R.string.error_log_no_errors)
+            } else {
+                val lastTime = withContext(Dispatchers.IO) { AppLogger.getLastErrorTime() }
+                val timeStr = if (lastTime != null && lastTime > 0) {
+                    SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(lastTime))
+                } else "?"
+                binding.errorLogSummaryText.text = getString(R.string.error_log_summary, timeStr, count)
+            }
+        }
+    }
+
+    private fun showErrorLogDialog() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val maxDisplay = 100
+            val entries = withContext(Dispatchers.IO) { AppLogger.readAllLogs(maxDisplay + 1) }
+            if (_binding == null) return@launch
+            val ctx = requireContext()
+
+            if (entries.isEmpty()) {
+                MaterialAlertDialogBuilder(ctx)
+                    .setTitle(R.string.settings_error_log)
+                    .setMessage(getString(R.string.error_log_empty))
+                    .setPositiveButton(android.R.string.ok, null)
+                    .show()
+                return@launch
+            }
+
+            val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+            val displayEntries = entries.take(maxDisplay)
+            val sb = StringBuilder()
+            for (entry in displayEntries) {
+                val timeStr = if (entry.timestamp > 0) dateFormat.format(Date(entry.timestamp)) else "?"
+                sb.appendLine("[${entry.level}] $timeStr")
+                sb.appendLine("[${entry.tag}] ${entry.message}")
+                if (!entry.stackTrace.isNullOrBlank()) {
+                    val trace = entry.stackTrace.lines().take(8).joinToString("\n")
+                    sb.appendLine(trace)
+                    if (entry.stackTrace.lines().size > 8) sb.appendLine("  ...")
+                }
+                sb.appendLine()
+            }
+            if (entries.size > maxDisplay) {
+                sb.appendLine(getString(R.string.error_log_more, entries.size - maxDisplay))
+            }
+
+            MaterialAlertDialogBuilder(ctx)
+                .setTitle(R.string.settings_error_log)
+                .setMessage(sb.toString().trimEnd())
+                .setPositiveButton(android.R.string.ok, null)
+                .setNeutralButton(R.string.error_log_share) { _, _ -> shareErrorLogs() }
+                .setNegativeButton(R.string.error_log_clear) { _, _ -> confirmClearLogs() }
+                .show()
+        }
+    }
+
+    private fun shareErrorLogs() {
+        val ctx = requireContext()
+        val files = AppLogger.getLogFiles()
+        if (files.isEmpty()) {
+            Toast.makeText(ctx, R.string.error_log_empty, Toast.LENGTH_SHORT).show()
+            return
+        }
+        val authority = "${ctx.packageName}.provider"
+        val uris = files.mapNotNull { file ->
+            try {
+                androidx.core.content.FileProvider.getUriForFile(ctx, authority, file)
+            } catch (_: Exception) { null }
+        }
+        if (uris.isEmpty()) return
+        val intent = android.content.Intent(android.content.Intent.ACTION_SEND_MULTIPLE).apply {
+            type = "text/plain"
+            putParcelableArrayListExtra(android.content.Intent.EXTRA_STREAM, ArrayList(uris))
+            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        startActivity(android.content.Intent.createChooser(intent, getString(R.string.error_log_share)))
+    }
+
+    private fun confirmClearLogs() {
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.settings_error_log)
+            .setMessage(R.string.error_log_clear_confirm)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                AppLogger.clearAllLogs()
+                Toast.makeText(requireContext(), R.string.error_log_cleared, Toast.LENGTH_SHORT).show()
+                loadErrorLogSummary()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    // ── App Reset ──
+
+    private fun showResetConfirmDialog() {
+        val ctx = requireContext()
+        val deleteBackupsCheckBox = android.widget.CheckBox(ctx).apply {
+            text = getString(R.string.reset_delete_backups)
+            setPadding((16 * resources.displayMetrics.density).toInt(), 0, 0, 0)
+        }
+
+        MaterialAlertDialogBuilder(ctx)
+            .setTitle(R.string.reset_confirm_title)
+            .setMessage(R.string.reset_confirm_message)
+            .setView(deleteBackupsCheckBox)
+            .setPositiveButton(R.string.reset_action) { _, _ ->
+                // 2단계 최종 확인
+                MaterialAlertDialogBuilder(ctx)
+                    .setTitle(R.string.reset_confirm_title)
+                    .setMessage(R.string.reset_final_confirm)
+                    .setPositiveButton(R.string.reset_action) { _, _ ->
+                        executeReset(deleteBackupsCheckBox.isChecked)
+                    }
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun executeReset(deleteBackups: Boolean) {
+        val ctx = requireContext()
+        val app = ctx.applicationContext as NovelCharacterApp
+        val db = app.database
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            try {
+                // DB 초기화 (트랜잭션 내 FK CASCADE 안전 순서)
+                db.withTransaction {
+                    db.characterRelationshipChangeDao().deleteAll()
+                    db.characterRelationshipDao().deleteAll()
+                    db.factionMembershipDao().deleteAll()
+                    db.factionDao().deleteAll()
+                    db.characterStateChangeDao().deleteAll()
+                    db.timelineDao().deleteAllCrossRefs()
+                    db.timelineDao().deleteAllEventNovelCrossRefs()
+                    db.timelineDao().deleteAllEvents()
+                    db.characterDao().deleteAll()
+                    db.fieldDefinitionDao().deleteAll()
+                    db.novelDao().deleteAll()
+                    db.universeDao().deleteAll()
+                    db.nameBankDao().deleteAll()
+                    db.userPresetTemplateDao().deleteAll()
+                    db.searchPresetDao().deleteAll()
+                    db.recentActivityDao().deleteAll()
+                }
+
+                // SharedPreferences 초기화 (테마 제외)
+                withContext(Dispatchers.IO) {
+                    listOf(
+                        "image_index_prefs", "timeline_ui_state", "stats_prefs",
+                        "supplement_criteria", "search_filters", "namebank_prefs",
+                        "graph_prefs", "universe_list_state", "app_migrations"
+                    ).forEach { name ->
+                        ctx.getSharedPreferences(name, android.content.Context.MODE_PRIVATE)
+                            .edit().clear().apply()
+                    }
+                }
+
+                // 파일 삭제
+                withContext(Dispatchers.IO) {
+                    // 이미지 파일
+                    ctx.filesDir.listFiles()?.filter {
+                        it.isFile && (it.name.endsWith(".jpg") || it.name.endsWith(".png") || it.name.endsWith(".webp"))
+                    }?.forEach { it.delete() }
+
+                    // 로그
+                    AppLogger.clearAllLogs()
+
+                    // 백업 (선택)
+                    if (deleteBackups) {
+                        java.io.File(ctx.filesDir, "backups").deleteRecursively()
+                    }
+
+                    // DataStore
+                    app.backupStatusStore.clear()
+                }
+
+                if (_binding != null) {
+                    Toast.makeText(ctx, R.string.reset_complete, Toast.LENGTH_LONG).show()
+                    loadBackupStatus()
+                    loadErrorLogSummary()
+                }
+            } catch (e: Exception) {
+                AppLogger.error("Settings", "앱 초기화 실패", e)
+                if (_binding != null) {
+                    Toast.makeText(ctx, "초기화 실패: ${e.message}", Toast.LENGTH_LONG).show()
                 }
             }
         }

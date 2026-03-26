@@ -276,7 +276,7 @@ class NovelAdapter(
         return try {
             val file = File(path)
             val appDir = context.filesDir
-            if (!file.canonicalPath.startsWith(appDir.canonicalPath)) return null
+            if (!file.canonicalPath.startsWith(appDir.canonicalPath + File.separator)) return null
             if (!file.exists()) return null
             val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             BitmapFactory.decodeFile(path, options)

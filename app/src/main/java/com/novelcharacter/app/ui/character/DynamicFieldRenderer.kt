@@ -273,6 +273,12 @@ class DynamicFieldRenderer(
                 })
             }
 
+            // 섹션 0: 다층 태그 (V2)
+            if (analysisConfig.isInsightEnabled(BodyAnalysisConfig.INSIGHT_BODY_TAGS) &&
+                result.bodyTags.isNotEmpty()) {
+                addRow(getString(R.string.body_tags_label), result.bodyTags.joinToString(" · "))
+            }
+
             // 섹션 1: 체형 분류 + 실루엣
             if (analysisConfig.isInsightEnabled(BodyAnalysisConfig.INSIGHT_BODY_TYPE)) {
                 result.bodyType?.let { addRow(getString(R.string.body_type_label), it) }
@@ -281,11 +287,28 @@ class DynamicFieldRenderer(
                 result.silhouetteDescription?.let { addSubRow(it) }
             }
 
-            // 섹션 2: 컵 사이즈
+            // 섹션 2: 컵 사이즈 (보정 표시)
             if (analysisConfig.isInsightEnabled(BodyAnalysisConfig.INSIGHT_CUP_SIZE)) {
                 result.cupSize?.let { cup ->
-                    val diffStr = result.bustDiff?.let { " (차이 ${"%.1f".format(it)}cm)" } ?: ""
-                    addRow(getString(R.string.cup_size_label), "$cup$diffStr")
+                    val diffStr = result.bustDiff?.let { d -> " (차이 ${"%.1f".format(d)}cm)" } ?: ""
+                    val ubStr = if (result.adjustedUnderbust != null && result.adjustedUnderbust != result.waist) {
+                        " [보정 UB ${"%.0f".format(result.adjustedUnderbust)}]"
+                    } else ""
+                    addRow(getString(R.string.cup_size_label), "$cup$diffStr$ubStr")
+                }
+            }
+
+            // 섹션 2.5: 프레임 + 프로포션 (V2)
+            if (analysisConfig.isInsightEnabled(BodyAnalysisConfig.INSIGHT_FRAME_SIZE) && result.frameSize != null) {
+                val heightStr = result.height?.let { " (${"%.0f".format(it)}cm)" } ?: ""
+                addRow(getString(R.string.body_frame_label), "${result.frameSize}$heightStr")
+            }
+            if (analysisConfig.isInsightEnabled(BodyAnalysisConfig.INSIGHT_PROPORTION)) {
+                result.volumeIndex?.let { vi ->
+                    addRow(getString(R.string.body_volume_label), "${"%.2f".format(vi)} (${BodyAnalysisHelper.volumeLabel(vi)})")
+                }
+                result.curvesIndex?.let { ci ->
+                    addRow(getString(R.string.body_curves_label), "${"%.2f".format(ci)} (${BodyAnalysisHelper.curvesLabel(ci)})")
                 }
             }
 

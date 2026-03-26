@@ -10,6 +10,7 @@ import org.apache.poi.ss.usermodel.FillPatternType
 import org.apache.poi.ss.usermodel.IndexedColors
 import org.apache.poi.xssf.usermodel.XSSFCellStyle
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
+import com.novelcharacter.app.util.AppLogger
 import com.novelcharacter.app.util.ThemeHelper
 import java.io.File
 import java.text.SimpleDateFormat
@@ -69,6 +70,7 @@ class AutoBackupWorker(
             Result.success()
         } catch (e: Exception) {
             Log.e(TAG, "Auto backup failed", e)
+            AppLogger.error(TAG, "자동 백업 실패: ${e.message}", e)
             statusStore.recordFailure(e.message ?: "Unknown error")
             if (runAttemptCount < 3) Result.retry() else Result.failure()
         }
@@ -142,9 +144,12 @@ class AutoBackupWorker(
         val universes = db.universeDao().getAllUniversesList()
         if (universes.isEmpty()) return
 
+        val charCodeMap = db.characterDao().getAllCharactersList().associate { it.id to it.code }
+        val novelCodeMap = db.novelDao().getAllNovelsList().associate { it.id to it.code }
+
         val sheetName = sanitizeSheetName("세계관", usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
-        val headers = listOf("이름", "설명", "코드", "정렬순서", "테두리색", "테두리두께", "이미지경로", "이미지모드", "커스텀관계유형", "커스텀관계색상", "이미지캐릭터ID", "이미지작품ID", "생성일")
+        val headers = listOf("이름", "설명", "코드", "정렬순서", "테두리색", "테두리두께", "이미지경로", "이미지모드", "커스텀관계유형", "커스텀관계색상", "이미지캐릭터코드", "이미지작품코드", "생성일")
         val headerRow = sheet.createRow(0)
         headers.forEachIndexed { i, h ->
             headerRow.createCell(i).apply { setCellValue(h); cellStyle = headerStyle }
@@ -161,8 +166,8 @@ class AutoBackupWorker(
             row.createCell(7).setCellValue(u.imageMode)
             row.createCell(8).setCellValue(u.customRelationshipTypes)
             row.createCell(9).setCellValue(u.customRelationshipColors)
-            u.imageCharacterId?.let { row.createCell(10).setCellValue(it.toDouble()) }
-            u.imageNovelId?.let { row.createCell(11).setCellValue(it.toDouble()) }
+            u.imageCharacterId?.let { id -> charCodeMap[id]?.let { row.createCell(10).setCellValue(it) } }
+            u.imageNovelId?.let { id -> novelCodeMap[id]?.let { row.createCell(11).setCellValue(it) } }
             row.createCell(12).setCellValue(u.createdAt.toDouble())
         }
     }
@@ -175,9 +180,11 @@ class AutoBackupWorker(
         val universes = db.universeDao().getAllUniversesList()
         if (novels.isEmpty()) return
 
+        val charCodeMap = db.characterDao().getAllCharactersList().associate { it.id to it.code }
+
         val sheetName = sanitizeSheetName("작품", usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
-        val headers = listOf("제목", "설명", "세계관", "코드", "세계관코드", "정렬순서", "테두리색", "테두리두께", "이미지경로", "이미지모드", "이미지캐릭터ID", "테두리상속", "고정", "표준연도", "생성일")
+        val headers = listOf("제목", "설명", "세계관", "코드", "세계관코드", "정렬순서", "테두리색", "테두리두께", "이미지경로", "이미지모드", "이미지캐릭터코드", "테두리상속", "고정", "표준연도", "생성일")
         val universeMap = universes.associateBy { it.id }
         val headerRow = sheet.createRow(0)
         headers.forEachIndexed { i, h ->
@@ -196,7 +203,7 @@ class AutoBackupWorker(
             row.createCell(7).setCellValue(n.borderWidthDp.toDouble())
             row.createCell(8).setCellValue(n.imagePaths)
             row.createCell(9).setCellValue(n.imageMode)
-            n.imageCharacterId?.let { row.createCell(10).setCellValue(it.toDouble()) }
+            n.imageCharacterId?.let { id -> charCodeMap[id]?.let { row.createCell(10).setCellValue(it) } }
             row.createCell(11).setCellValue(if (n.inheritUniverseBorder) "Y" else "N")
             row.createCell(12).setCellValue(if (n.isPinned) "Y" else "N")
             n.standardYear?.let { row.createCell(13).setCellValue(it.toDouble()) }

@@ -104,8 +104,8 @@ fun universeSpec() = SheetSpec(
         ColumnSpec("이미지모드", dropdownOptions = listOf("none", "custom", "random_character", "select_character", "random_novel", "select_novel"), width = 5000),
         ColumnSpec("커스텀관계유형", width = 10000),
         ColumnSpec("커스텀관계색상", width = 10000),
-        ColumnSpec("이미지캐릭터ID", width = 5000),
-        ColumnSpec("이미지작품ID", width = 5000),
+        ColumnSpec("이미지캐릭터코드", width = 5000),
+        ColumnSpec("이미지작품코드", width = 5000),
         ColumnSpec("생성일", readOnly = true, width = 5000)
     )
 )
@@ -123,7 +123,7 @@ fun novelSpec(universeNames: List<String>) = SheetSpec(
         ColumnSpec("테두리두께", width = 3000),
         ColumnSpec("이미지경로", width = 8000),
         ColumnSpec("이미지모드", dropdownOptions = listOf("none", "custom", "random_character", "select_character"), width = 5000),
-        ColumnSpec("이미지캐릭터ID", width = 5000),
+        ColumnSpec("이미지캐릭터코드", width = 5000),
         ColumnSpec("테두리상속", dropdownOptions = listOf("Y", "N"), width = 3000),
         ColumnSpec("고정", dropdownOptions = listOf("Y", "N"), width = 3000),
         ColumnSpec("표준연도", width = 3000),

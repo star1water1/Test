@@ -65,9 +65,20 @@ interface CharacterStateChangeDao {
         WHERE fieldKey IN (
             SELECT `key` FROM field_definitions WHERE universeId = :universeId
         )
+        AND characterId IN (
+            SELECT c.id FROM characters c
+            INNER JOIN novels n ON c.novelId = n.id
+            WHERE n.universeId = :universeId
+        )
     """)
     suspend fun deleteAllChangesByUniverse(universeId: Long)
 
     @Query("DELETE FROM character_state_changes")
     suspend fun deleteAll()
+
+    @Query("SELECT id FROM character_state_changes")
+    suspend fun getAllChangeIds(): List<Long>
+
+    @Query("DELETE FROM character_state_changes WHERE id = :id")
+    suspend fun deleteById(id: Long)
 }

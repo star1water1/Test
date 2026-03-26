@@ -31,7 +31,9 @@ data class ExportOptions(
     val presetTemplates: Boolean = true,
     val searchPresets: Boolean = true,
     val appSettings: Boolean = true,
-    val images: Boolean = false
+    val images: Boolean = false,
+    /** MERGE 모드에서 엑셀에 없는 항목을 카테고리별로 삭제할지 여부 */
+    val deleteOptions: DeleteOptions = DeleteOptions()
 ) {
     fun toBooleanArray() = booleanArrayOf(
         universes, novels, characters, fieldDefinitions,
@@ -78,4 +80,22 @@ data class ExportOptions(
             )
         }
     }
+}
+
+/**
+ * MERGE 모드에서 "엑셀에 없는 항목 삭제" 시 카테고리별 선택.
+ * 각 필드가 true이면 해당 카테고리의 미매칭 항목을 삭제한다.
+ */
+data class DeleteOptions(
+    val characters: Boolean = false,
+    val timeline: Boolean = false,
+    val stateChanges: Boolean = false,
+    val relationships: Boolean = false,
+    val relationshipChanges: Boolean = false,
+    val nameBank: Boolean = false,
+    val factions: Boolean = false,
+    val factionMemberships: Boolean = false
+) {
+    val hasAny: Boolean get() = characters || timeline || stateChanges || relationships ||
+        relationshipChanges || nameBank || factions || factionMemberships
 }

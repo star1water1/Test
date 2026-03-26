@@ -107,7 +107,7 @@ class ImageViewerFragment : Fragment() {
         imagePaths = if (dir != null) {
             rawPaths.filter { path ->
                 try {
-                    java.io.File(path).canonicalPath.startsWith(dir.canonicalPath)
+                    java.io.File(path).canonicalPath.startsWith(dir.canonicalPath + java.io.File.separator)
                 } catch (_: Exception) { false }
             }
         } else {
@@ -180,7 +180,7 @@ class ImageViewerFragment : Fragment() {
         return try {
             val file = java.io.File(path)
             val dir = appDir ?: return null
-            if (!file.canonicalPath.startsWith(dir.canonicalPath)) return null
+            if (!file.canonicalPath.startsWith(dir.canonicalPath + java.io.File.separator)) return null
             val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             BitmapFactory.decodeFile(path, options)
             var inSampleSize = 1

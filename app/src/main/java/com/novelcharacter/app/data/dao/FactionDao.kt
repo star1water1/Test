@@ -38,4 +38,10 @@ interface FactionDao {
 
     @Query("DELETE FROM factions")
     suspend fun deleteAll()
+
+    @Query("SELECT id FROM factions")
+    suspend fun getAllFactionIds(): List<Long>
+
+    @Query("DELETE FROM factions WHERE id = :id")
+    suspend fun deleteById(id: Long)
 }

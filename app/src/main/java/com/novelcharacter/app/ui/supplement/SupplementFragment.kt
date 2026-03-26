@@ -457,7 +457,7 @@ class SupplementFragment : Fragment() {
                         val bitmap = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                             try {
                                 val file = java.io.File(path)
-                                if (!file.exists() || !file.canonicalPath.startsWith(appDir.canonicalPath)) return@withContext null
+                                if (!file.exists() || !file.canonicalPath.startsWith(appDir.canonicalPath + java.io.File.separator)) return@withContext null
                                 val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                                 BitmapFactory.decodeFile(path, options)
                                 val targetSize = (48 * itemView.context.resources.displayMetrics.density).toInt()

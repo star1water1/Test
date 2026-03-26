@@ -70,16 +70,21 @@ class TimelineFragment : Fragment() {
                 showEditEventDialog(event)
             },
             onLongClick = { event ->
+                val items = mutableListOf(
+                    getString(R.string.edit),
+                    getString(R.string.delete),
+                    getString(R.string.set_as_standard_year)
+                )
+                val title = "${getString(R.string.event_year_format, event.year)} — ${event.description.take(50)}"
                 AlertDialog.Builder(requireContext())
-                    .setTitle(getString(R.string.event_year_format, event.year))
-                    .setMessage(event.description.take(100))
-                    .setPositiveButton(R.string.edit) { _, _ ->
-                        showEditEventDialog(event)
+                    .setTitle(title)
+                    .setItems(items.toTypedArray()) { _, which ->
+                        when (which) {
+                            0 -> showEditEventDialog(event)
+                            1 -> viewModel.deleteEvent(event)
+                            2 -> showSetStandardYearDialog(event)
+                        }
                     }
-                    .setNegativeButton(R.string.delete) { _, _ ->
-                        viewModel.deleteEvent(event)
-                    }
-                    .setNeutralButton(R.string.cancel, null)
                     .show()
             },
             coroutineScope = viewLifecycleOwner.lifecycleScope,
@@ -442,6 +447,50 @@ class TimelineFragment : Fragment() {
         // Show min/max year labels (actual min/max, not padded range)
         binding.minYearLabel.text = getString(R.string.slider_min_year, minYear)
         binding.maxYearLabel.text = getString(R.string.slider_max_year, maxYear)
+    }
+
+    private fun showSetStandardYearDialog(event: TimelineEvent) {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val novelIds = viewModel.getNovelIdsForEvent(event.id)
+            if (novelIds.isEmpty()) {
+                Toast.makeText(requireContext(), R.string.standard_year_no_novel, Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+
+            val allNovels = viewModel.getAllNovelsList()
+            val novelIdSet = novelIds.toSet()
+            val novels = allNovels.filter { it.id in novelIdSet }
+            if (novels.isEmpty()) return@launch
+
+            if (novels.size == 1) {
+                confirmSetStandardYear(novels[0], event.year)
+            } else {
+                // 복수 작품 → 선택 다이얼로그
+                val names = novels.map { it.title }.toTypedArray()
+                AlertDialog.Builder(requireContext())
+                    .setTitle(R.string.standard_year_select_novel)
+                    .setItems(names) { _, which ->
+                        confirmSetStandardYear(novels[which], event.year)
+                    }
+                    .show()
+            }
+        }
+    }
+
+    private fun confirmSetStandardYear(novel: com.novelcharacter.app.data.model.Novel, year: Int) {
+        if (novel.standardYear == year) {
+            Toast.makeText(requireContext(), getString(R.string.standard_year_already_set, year), Toast.LENGTH_SHORT).show()
+            return
+        }
+        AlertDialog.Builder(requireContext())
+            .setTitle(R.string.set_as_standard_year)
+            .setMessage(getString(R.string.standard_year_confirm, novel.title, year))
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                viewModel.setNovelStandardYear(novel.id, year)
+                Toast.makeText(requireContext(), getString(R.string.standard_year_set_done, novel.title, year), Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
     }
 
     private fun showEditEventDialog(event: TimelineEvent?) {

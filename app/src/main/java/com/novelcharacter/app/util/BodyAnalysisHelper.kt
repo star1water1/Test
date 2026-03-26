@@ -12,12 +12,16 @@ data class BodyAnalysisResult(
     val height: Double? = null,
     val weight: Double? = null,
 
-    // 체형 분류
+    // 체형 분류 (기존 호환)
     val bodyType: String? = null,
+
+    // 다층 태그 (V2)
+    val bodyTags: List<String> = emptyList(),
 
     // 컵 사이즈
     val cupSize: String? = null,
     val bustDiff: Double? = null,
+    val adjustedUnderbust: Double? = null,
 
     // BMI
     val bmi: Double? = null,
@@ -40,6 +44,11 @@ data class BodyAnalysisResult(
     val bustHeightRatio: Double? = null,
     val waistHeightRatio: Double? = null,
     val hipHeightRatio: Double? = null,
+
+    // 프레임/프로포션 (V2)
+    val frameSize: String? = null,
+    val volumeIndex: Double? = null,
+    val curvesIndex: Double? = null,
 
     // 골든 비율
     val goldenRatioScore: Double? = null,
@@ -82,18 +91,26 @@ class BodyAnalysisHelper {
         val whr = if (hip > 0) waist / hip else 0.0
         val bustHipRatio = if (hip > 0) bust / hip else 0.0
 
-        // 1. 컵 사이즈
-        val underbust = waist  // config.underbustEstimation에 따라 확장 가능
+        // 1. 컵 사이즈 — 흉곽 보정 (V2)
+        val underbust = waist + config.ribOffset
         val diff = bust - underbust
-        val cupSize = config.cupMapping
-            .sortedBy { it.maxDiff }
-            .firstOrNull { diff <= it.maxDiff }?.label ?: "?"
+        val cupSize = if (diff > 0) {
+            config.cupMapping
+                .sortedBy { it.maxDiff }
+                .firstOrNull { diff <= it.maxDiff }?.label ?: "?"
+        } else "—"
+        val cupIndex = if (diff > 0) {
+            config.cupMapping
+                .sortedBy { it.maxDiff }
+                .indexOfFirst { diff <= it.maxDiff }
+        } else -1
 
-        // 2. 체형 분류 (config 기반 rule 매칭)
+        // 2. BMI
         val bmi = if (heightCm != null && weightKg != null && heightCm > 0 && weightKg > 0) {
             weightKg / ((heightCm / 100.0) * (heightCm / 100.0))
         } else null
 
+        // 3. computedValues (조건 평가용)
         val computedValues = mutableMapOf(
             "bust" to bust,
             "waist" to waist,
@@ -102,22 +119,44 @@ class BodyAnalysisHelper {
             "waistHipDiff" to waistHipDiff,
             "bustHipDiff" to bustHipDiff,
             "whr" to whr,
-            "bustHipRatio" to bustHipRatio
+            "bustHipRatio" to bustHipRatio,
+            "cupIndex" to cupIndex.toDouble()
         )
         heightCm?.let { computedValues["height"] = it }
         weightKg?.let { computedValues["weight"] = it }
         bmi?.let { computedValues["bmi"] = it }
 
+        // 4. 기존 체형 분류 (하위호환)
         val bodyType = config.bodyTypeRules
             .sortedBy { it.priority }
-            .firstOrNull { rule ->
-                rule.conditions.all { (key, range) ->
-                    val v = computedValues[key] ?: return@all false
-                    (range.min == null || v >= range.min) && (range.max == null || v <= range.max)
-                }
-            }?.label ?: config.defaultBodyType
+            .firstOrNull { matchesRule(it.conditions, computedValues) }
+            ?.label ?: config.defaultBodyType
 
-        // 3. BMI 카테고리 (소설 캐릭터 맥락 용어)
+        // 5. 다층 태그 분류 (V2)
+        val effectiveTagRules = if (config.bodyTagRules.isNotEmpty()) {
+            config.bodyTagRules
+        } else if (config.bodyTypeRules == BodyAnalysisConfig.DEFAULT_BODY_TYPE_RULES) {
+            // 기본 규칙 → DEFAULT_BODY_TAG_RULES 사용 (build/silhouette/special 전체)
+            BodyAnalysisConfig.DEFAULT_BODY_TAG_RULES
+        } else {
+            // 사용자 커스텀 bodyTypeRules → silhouette 레이어로 변환
+            config.bodyTypeRules.map {
+                BodyAnalysisConfig.BodyTagRule(it.label, "silhouette", it.conditions, it.priority)
+            }
+        }
+        val bodyTags = mutableListOf<String>()
+        for (layer in listOf("build", "silhouette", "special")) {
+            val layerRules = effectiveTagRules.filter { it.layer == layer }.sortedBy { it.priority }
+            if (layer == "special") {
+                // special: 조건 만족하는 모두 (누적)
+                bodyTags.addAll(layerRules.filter { matchesRule(it.conditions, computedValues) }.map { it.label })
+            } else {
+                // build/silhouette: 첫 매칭만 (배타적)
+                layerRules.firstOrNull { matchesRule(it.conditions, computedValues) }?.let { bodyTags.add(it.label) }
+            }
+        }
+
+        // 6. BMI 카테고리
         val bmiCategory = bmi?.let {
             when {
                 it < 18.5 -> "마른 편"
@@ -127,74 +166,76 @@ class BodyAnalysisHelper {
             }
         }
 
-        // 4. 정규화 비율 (bust=1 기준)
+        // 7. 정규화 비율
         val bwhRatioDisplay = "${bust.roundToInt()} : ${waist.roundToInt()} : ${hip.roundToInt()}"
         val normalizedRatio = if (bust > 0) {
             "%.2f : %.2f : %.2f".format(1.0, waist / bust, hip / bust)
         } else bwhRatioDisplay
 
-        // 5. 키 대비 비율 (heightCm이 0이면 null 처리)
+        // 8. 키 대비 비율
         val safeHeight = heightCm?.takeIf { it > 0 }
         val bustHeightRatio = safeHeight?.let { bust / it }
         val waistHeightRatio = safeHeight?.let { waist / it }
         val hipHeightRatio = safeHeight?.let { hip / it }
 
-        // 6. 골든 비율 점수 (유효한 키가 있을 때만)
+        // 9. 프레임 사이즈 (V2 — 키 기반)
+        val frameSize = safeHeight?.let {
+            when {
+                it < 158 -> "소형"
+                it < 168 -> "중형"
+                it < 175 -> "준대형"
+                else -> "대형"
+            }
+        }
+
+        // 10. 키 대비 볼륨/곡선 지수 (V2)
+        val volumeIndex = safeHeight?.let { (bust + waist + hip) / (3.0 * it) }
+        val curvesIndex = safeHeight?.let { (bustWaistDiff + waistHipDiff) / it }
+
+        // 11. 골든 비율 점수 — 사용자 정의 이상값 (V2)
+        val ideals = config.goldenRatioIdeals
         val goldenRatioDetails = if (safeHeight != null) {
-            val items = mutableListOf<GoldenRatioItem>()
-
-            // W/H 이상: 0.70
-            items.add(goldenRatioItem("허리/엉덩이", whr, 0.70))
-
-            // B/H 이상: 1.00
-            items.add(goldenRatioItem("가슴/엉덩이", bustHipRatio, 1.00))
-
-            // waist/height 이상: 0.40
-            val whrHeight = waist / safeHeight
-            items.add(goldenRatioItem("허리/키", whrHeight, 0.40))
-
-            // bust/height 이상: 0.52
-            items.add(goldenRatioItem("가슴/키", bust / safeHeight, 0.52))
-
-            items
+            listOf(
+                goldenRatioItem("허리/엉덩이", whr, ideals["whr"] ?: 0.70),
+                goldenRatioItem("가슴/엉덩이", bustHipRatio, ideals["bustHipRatio"] ?: 1.00),
+                goldenRatioItem("허리/키", waist / safeHeight, ideals["waistHeight"] ?: 0.40),
+                goldenRatioItem("가슴/키", bust / safeHeight, ideals["bustHeight"] ?: 0.52)
+            )
         } else null
 
         val goldenRatioScore = goldenRatioDetails?.let { details ->
-            // 각 항목 편차의 평균을 100에서 감산 (편차 0% → 100점)
             val avgDeviation = details.map { abs(it.deviationPercent) }.average()
             (100.0 - avgDeviation * 5).coerceIn(0.0, 100.0)
         }
 
-        // 7. 실루엣 설명 생성
+        // 12. 실루엣 설명 — 다층 태그 통합 (V2)
         val silhouetteDescription = buildSilhouetteDescription(
-            bodyType, bustWaistDiff, waistHipDiff, heightCm, cupSize
+            bodyTags.ifEmpty { listOf(bodyType) },
+            bustWaistDiff, waistHipDiff, heightCm
         )
 
         return BodyAnalysisResult(
-            bust = bust,
-            waist = waist,
-            hip = hip,
-            height = heightCm,
-            weight = weightKg,
+            bust = bust, waist = waist, hip = hip,
+            height = heightCm, weight = weightKg,
             bodyType = bodyType,
-            cupSize = cupSize,
-            bustDiff = diff,
-            bmi = bmi,
-            bmiCategory = bmiCategory,
+            bodyTags = bodyTags,
+            cupSize = cupSize, bustDiff = diff, adjustedUnderbust = underbust,
+            bmi = bmi, bmiCategory = bmiCategory,
             whr = whr,
-            bustWaistDiff = bustWaistDiff,
-            waistHipDiff = waistHipDiff,
-            bustHipDiff = bustHipDiff,
-            bustHipRatio = bustHipRatio,
-            normalizedRatio = normalizedRatio,
-            bwhRatioDisplay = bwhRatioDisplay,
-            bustHeightRatio = bustHeightRatio,
-            waistHeightRatio = waistHeightRatio,
-            hipHeightRatio = hipHeightRatio,
-            goldenRatioScore = goldenRatioScore,
-            goldenRatioDetails = goldenRatioDetails,
+            bustWaistDiff = bustWaistDiff, waistHipDiff = waistHipDiff, bustHipDiff = bustHipDiff,
+            bustHipRatio = bustHipRatio, normalizedRatio = normalizedRatio, bwhRatioDisplay = bwhRatioDisplay,
+            bustHeightRatio = bustHeightRatio, waistHeightRatio = waistHeightRatio, hipHeightRatio = hipHeightRatio,
+            frameSize = frameSize, volumeIndex = volumeIndex, curvesIndex = curvesIndex,
+            goldenRatioScore = goldenRatioScore, goldenRatioDetails = goldenRatioDetails,
             silhouetteDescription = silhouetteDescription
         )
+    }
+
+    private fun matchesRule(conditions: Map<String, BodyAnalysisConfig.RangeCondition>, values: Map<String, Double>): Boolean {
+        return conditions.all { (key, range) ->
+            val v = values[key] ?: return@all false
+            (range.min == null || v >= range.min) && (range.max == null || v <= range.max)
+        }
     }
 
     private fun goldenRatioItem(label: String, actual: Double, ideal: Double): GoldenRatioItem {
@@ -203,11 +244,10 @@ class BodyAnalysisHelper {
     }
 
     private fun buildSilhouetteDescription(
-        bodyType: String,
+        tags: List<String>,
         bustWaistDiff: Double,
         waistHipDiff: Double,
-        heightCm: Double?,
-        cupSize: String
+        heightCm: Double?
     ): String {
         val parts = mutableListOf<String>()
 
@@ -236,7 +276,8 @@ class BodyAnalysisHelper {
             waistHipDiff > bustWaistDiff + 5 -> parts.add("엉덩이가 강조된")
         }
 
-        parts.add("$bodyType")
+        // 다층 태그 조합
+        parts.add(tags.joinToString(" · "))
 
         return parts.joinToString(" ")
     }
@@ -248,17 +289,26 @@ class BodyAnalysisHelper {
             return cleaned.toDoubleOrNull()
         }
 
-        /**
-         * 여러 캐릭터의 BWH 데이터로부터 순위를 계산한다.
-         * @param currentBust 현재 캐릭터의 가슴 측정값
-         * @param allBustValues 모든 캐릭터의 가슴 측정값 리스트
-         * @return 순위 (1 = 최대)
-         */
         fun computeRank(currentValue: Double, allValues: List<Double>): Int {
             if (allValues.isEmpty()) return 0
-            // 자기보다 큰 값의 수 + 1 = 순위 (동점은 같은 순위)
             val higherCount = allValues.count { it > currentValue }
             return higherCount + 1
+        }
+
+        /** 볼륨 지수 해석 라벨 */
+        fun volumeLabel(index: Double): String = when {
+            index < 0.45 -> "마른"
+            index < 0.50 -> "보통"
+            index < 0.55 -> "볼륨감"
+            else -> "매우 볼륨감"
+        }
+
+        /** 곡선 지수 해석 라벨 */
+        fun curvesLabel(index: Double): String = when {
+            index < 0.10 -> "일자형"
+            index < 0.20 -> "보통"
+            index < 0.30 -> "곡선적"
+            else -> "매우 곡선적"
         }
     }
 }

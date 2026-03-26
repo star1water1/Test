@@ -281,6 +281,12 @@
 
     <!-- Remaining hardcoded strings -->
     <string name="event_year_format">%d년</string>
+    <string name="set_as_standard_year">표준연도로 설정</string>
+    <string name="standard_year_no_novel">이 사건에 연결된 작품이 없습니다</string>
+    <string name="standard_year_select_novel">표준연도를 설정할 작품 선택</string>
+    <string name="standard_year_confirm">\'%1$s\'의 표준연도를 %2$d년으로 설정하시겠습니까?\n\n연결된 캐릭터의 나이/출생연도가 자동 재계산됩니다.</string>
+    <string name="standard_year_set_done">\'%1$s\' 표준연도: %2$d년</string>
+    <string name="standard_year_already_set">이미 %d년으로 설정되어 있습니다</string>
     <string name="max_compare_limit">최대 3명까지 비교할 수 있습니다</string>
     <string name="compare_mode_label">비교하기</string>
     <string name="compare_select_hint">비교할 캐릭터를 선택하세요 (2~3명)</string>
@@ -394,6 +400,17 @@
     <string name="settings_theme_light">라이트</string>
     <string name="settings_theme_dark">다크</string>
     <string name="settings_data">데이터 관리</string>
+    <!-- App Reset -->
+    <string name="settings_reset_app">앱 초기화</string>
+    <string name="settings_reset_app_desc">모든 데이터를 삭제하고 초기 상태로 되돌립니다</string>
+    <string name="reset_confirm_title">앱 초기화</string>
+    <string name="reset_confirm_message">모든 세계관, 작품, 캐릭터, 사건 등 앱 데이터가 삭제됩니다.\n\n이 작업은 되돌릴 수 없습니다.</string>
+    <string name="reset_delete_backups">백업 파일도 삭제</string>
+    <string name="reset_final_confirm">정말로 초기화하시겠습니까?</string>
+    <string name="reset_in_progress">초기화 중…</string>
+    <string name="reset_complete">앱이 초기화되었습니다</string>
+    <string name="reset_action">초기화</string>
+
     <string name="settings_about">앱 정보</string>
     <string name="settings_version_format">버전 %s</string>
     <string name="settings_backup">백업/복원</string>
@@ -420,6 +437,19 @@
     <string name="maintenance_clean_orphan_desc">삭제된 캐릭터의 잔여 데이터를 정리합니다</string>
     <string name="maintenance_clean_orphan_done">고아 데이터 정리 완료</string>
     <string name="maintenance_fk_violations">FK 위반: %d건</string>
+
+    <!-- Error Log -->
+    <string name="settings_error_log">오류 로그</string>
+    <string name="settings_view_error_log">오류 로그 보기</string>
+    <string name="settings_view_error_log_desc">앱 사용 중 발생한 오류 및 크래시 기록</string>
+    <string name="error_log_no_errors">기록된 오류 없음</string>
+    <string name="error_log_summary">마지막 오류: %1$s (%2$d건)</string>
+    <string name="error_log_empty">기록된 오류가 없습니다.</string>
+    <string name="error_log_clear_confirm">모든 오류 로그를 삭제하시겠습니까?</string>
+    <string name="error_log_cleared">오류 로그가 삭제되었습니다</string>
+    <string name="error_log_share">공유</string>
+    <string name="error_log_clear">삭제</string>
+    <string name="error_log_more">… 외 %d건 (공유로 전체 확인)</string>
 
     <!-- Accessibility -->
     <string name="close_button_desc">닫기</string>
@@ -931,6 +961,8 @@
     <string name="restore_strategy_overwrite_desc">선택한 항목의 기존 데이터를 모두 삭제하고\n백업 데이터로 교체합니다.</string>
     <string name="restore_strategy_label">복원 방식</string>
     <string name="restore_overwrite_warning">⚠ DB에만 있는 데이터가 삭제됩니다: %s</string>
+    <string name="restore_merge_delete_option">엑셀에 없는 항목 삭제</string>
+    <string name="restore_merge_delete_desc">대상: %s</string>
     <string name="restore_preview_summary">신규 %1$d / 변경 %2$d / 동일 %3$d</string>
     <string name="restore_preview_db_info">현재 DB: %1$d개, 백업에 없음: %2$d개</string>
     <string name="restore_preview_no_change">변경 없음</string>
@@ -966,6 +998,29 @@
     <string name="body_height_relative_label">키 대비 비율</string>
     <string name="body_golden_ratio_label">골든 비율</string>
     <string name="body_ranking_label">작품 내 순위</string>
+    <string name="body_tags_label">체형 태그</string>
+    <string name="body_frame_label">프레임</string>
+    <string name="body_volume_label">볼륨 지수</string>
+    <string name="body_curves_label">곡선 지수</string>
+
+    <!-- Body Generator -->
+    <string name="body_generator_title">신체 수치 생성</string>
+    <string name="body_gen_height">키</string>
+    <string name="body_gen_body_type">체형</string>
+    <string name="body_gen_relative">기준 캐릭터 (상대 생성)</string>
+    <string name="body_gen_no_base">선택 안 함</string>
+    <string name="body_gen_height_adjust">키 조절</string>
+    <string name="body_gen_volume_adjust">체형 조절</string>
+    <string name="body_gen_generate">🎲 생성</string>
+    <string name="body_gen_regenerate">다시 생성</string>
+    <string name="body_gen_apply">적용</string>
+    <string name="body_gen_preview_measurements">키: %1$dcm  몸무게: %2$dkg\nBWH: %3$s</string>
+    <string name="body_gen_distribution">풍만 %1$d / 보통 %2$d / 마름 %3$d%4$s</string>
+    <string name="body_gen_cat_slim">마름</string>
+    <string name="body_gen_cat_normal">보통</string>
+    <string name="body_gen_cat_voluptuous">풍만</string>
+    <string name="body_gen_recommend">추천!</string>
+
     <string name="body_analysis_settings_title">체형 분석 설정</string>
     <string name="body_cup_mapping_title">컵 사이즈 매핑</string>
     <string name="body_type_preset_title">체형 분류 프리셋</string>

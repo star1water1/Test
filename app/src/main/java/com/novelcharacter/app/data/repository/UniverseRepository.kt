@@ -29,6 +29,9 @@ class UniverseRepository(
     }
     suspend fun updateUniverse(universe: Universe) = universeDao.update(universe)
     suspend fun deleteUniverse(universe: Universe) {
+        // 이미지 파일 경로를 트랜잭션 전에 파싱 (DB 삭제 후에는 접근 불가)
+        val imageFiles = parseImagePaths(universe.imagePaths)
+
         db.withTransaction {
             // FieldDefinition은 FK CASCADE로 삭제되지만,
             // CharacterStateChange는 string fieldKey 참조라 CASCADE 대상이 아니므로 명시적 삭제
@@ -36,6 +39,24 @@ class UniverseRepository(
             db.characterStateChangeDao().deleteAllChangesByUniverse(universe.id)
             db.recentActivityDao().deleteByEntity(RecentActivity.TYPE_UNIVERSE, universe.id)
             universeDao.delete(universe)
+        }
+
+        // DB 트랜잭션 성공 후 디스크에서 이미지 파일 삭제
+        for (file in imageFiles) {
+            try {
+                if (file.exists()) file.delete()
+            } catch (e: Exception) {
+                android.util.Log.w("UniverseRepository", "Failed to delete image: ${file.absolutePath}", e)
+            }
+        }
+    }
+
+    private fun parseImagePaths(imagePathsJson: String): List<java.io.File> {
+        return try {
+            val raw: List<String?>? = com.google.gson.Gson().fromJson(imagePathsJson, com.novelcharacter.app.util.GsonTypes.STRING_LIST)
+            raw?.filterNotNull()?.map { java.io.File(it) } ?: emptyList()
+        } catch (_: Exception) {
+            emptyList()
         }
     }
     suspend fun updateUniverseDisplayOrders(universes: List<Universe>) = universeDao.updateAll(universes)

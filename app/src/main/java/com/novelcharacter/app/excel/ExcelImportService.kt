@@ -98,6 +98,15 @@ data class ImportResult(
     var updatedFactions: Int = 0,
     var newFactionMemberships: Int = 0,
     var updatedFactionMemberships: Int = 0,
+    var deletedCharacters: Int = 0,
+    var deletedRelationships: Int = 0,
+    var deletedEvents: Int = 0,
+    var deletedStateChanges: Int = 0,
+    var deletedRelationshipChanges: Int = 0,
+    var deletedNameBank: Int = 0,
+    var deletedFields: Int = 0,
+    var deletedFactions: Int = 0,
+    var deletedFactionMemberships: Int = 0,
     var restoredSettings: Int = 0,
     var skippedRows: Int = 0,
     val errors: MutableList<String> = mutableListOf(),
@@ -116,6 +125,21 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     // 임포트 후 시맨틱 동기화 대상 (characterId → universeId)
     private val pendingSyncCharacters = mutableMapOf<Long, Long>()
+
+    // "엑셀에 없는 항목 삭제" 옵션용 — 임포트 중 매칭된 entity ID 추적
+    private val matchedCharacterIds = mutableMapOf<Long, MutableSet<Long>>()  // universeId → charId set
+    private val matchedEventIds = mutableSetOf<Long>()
+    private val matchedRelationshipIds = mutableSetOf<Long>()
+    private val matchedRelationshipChangeIds = mutableSetOf<Long>()
+    private val matchedStateChangeIds = mutableSetOf<Long>()
+    private val matchedNameBankIds = mutableSetOf<Long>()
+    private val matchedFactionIds = mutableSetOf<Long>()
+    private val matchedFactionMembershipIds = mutableSetOf<Long>()
+
+    // Phase 1에서 FK 참조를 deferred 처리 (코드 기반 해석)
+    private val deferredUniverseImageCharCodes = mutableMapOf<Long, String>()  // universeId → charCode
+    private val deferredUniverseImageNovelCodes = mutableMapOf<Long, String>() // universeId → novelCode
+    private val deferredNovelImageCharCodes = mutableMapOf<Long, String>()     // novelId → charCode
 
     // ── Header alias map for tolerant import (Sprint C) ──
 
@@ -141,8 +165,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         alias("이름(First)", "first_name", "firstName", "given_name")
         alias("이미지경로", "image_path", "이미지 경로", "image_file", "imagepath", "imagepaths")
         alias("이미지모드", "image_mode", "이미지 모드")
-        alias("이미지캐릭터ID", "image_character_id", "이미지 캐릭터 ID")
-        alias("이미지작품ID", "image_novel_id", "이미지 작품 ID")
+        alias("이미지캐릭터코드", "이미지캐릭터ID", "image_character_id", "image_character_code", "이미지 캐릭터 ID")
+        alias("이미지작품코드", "이미지작품ID", "image_novel_id", "image_novel_code", "이미지 작품 ID")
         alias("작품", "novel")
         alias("메모", "memo", "비고", "note", "notes")
         alias("태그", "tags", "tag")
@@ -308,9 +332,25 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 if (effectiveOptions.searchPresets) db.searchPresetDao().deleteAll()
             }
 
+            // Matched ID 추적 초기화 (deleteNotInExcel 옵션용)
+            matchedCharacterIds.clear()
+            matchedEventIds.clear()
+            matchedRelationshipIds.clear()
+            matchedRelationshipChangeIds.clear()
+            matchedStateChangeIds.clear()
+            matchedNameBankIds.clear()
+            matchedFactionIds.clear()
+            matchedFactionMembershipIds.clear()
+
             // Phase 1: Schema definitions (universes, novels, field definitions)
+            // imageCharacterId/imageNovelId는 null로 deferred 처리 (FK 안전)
+            deferredUniverseImageCharCodes.clear()
+            deferredUniverseImageNovelCodes.clear()
+            deferredNovelImageCharCodes.clear()
             if (effectiveOptions.universes) importUniverses(workbook, result, onProgress, totalRows)
             if (effectiveOptions.novels) importNovels(workbook, result, onProgress, totalRows)
+            // Novel 임포트 완료 (또는 기존 DB 유지) → Universe의 imageNovelId 코드 해석
+            applyDeferredUniverseNovelRefs()
             if (effectiveOptions.fieldDefinitions) importFieldDefinitions(workbook, result, onProgress, totalRows)
 
             // Phase 2: Entity data (characters)
@@ -318,6 +358,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 importCharacterSheets(workbook, result, resolvedConflicts, onProgress, totalRows)
                 importUnclassifiedCharacters(workbook, result, resolvedConflicts, onProgress, totalRows)
             }
+            // Character 임포트 완료 → imageCharacterId 코드 해석 가능
+            applyDeferredCharacterRefs()
 
             // Phase 3: Relationships and references
             if (effectiveOptions.timeline) importTimeline(workbook, result, onProgress, totalRows)
@@ -333,7 +375,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             if (effectiveOptions.searchPresets) importSearchPresets(workbook, result, onProgress, totalRows)
             if (effectiveOptions.appSettings) importAppSettings(workbook, result)
 
-            // Phase 5: 시맨틱 필드 동기화 (출생/사망연도 ↔ 상태변화 ↔ 생존여부)
+            // Phase 5: 엑셀에 없는 항목 삭제 (MERGE + deleteOptions)
+            if (strategy == ImportStrategy.MERGE && effectiveOptions.deleteOptions.hasAny) {
+                deleteUnmatchedEntities(effectiveOptions, result)
+            }
+
+            // Phase 6: 시맨틱 필드 동기화 (출생/사망연도 ↔ 상태변화 ↔ 생존여부)
             if (pendingSyncCharacters.isNotEmpty()) {
                 runPostImportSemanticSync()
             }
@@ -1018,8 +1065,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val imageModeColIndex = cols["이미지모드"] ?: -1
         val customRelTypesColIndex = cols["커스텀관계유형"] ?: -1
         val customRelColorsColIndex = cols["커스텀관계색상"] ?: -1
-        val imageCharIdColIndex = cols["이미지캐릭터ID"] ?: -1
-        val imageNovelIdColIndex = cols["이미지작품ID"] ?: -1
+        val imageCharCodeColIndex = cols["이미지캐릭터코드"] ?: -1
+        val imageNovelCodeColIndex = cols["이미지작품코드"] ?: -1
         val createdAtColIndex = cols["생성일"] ?: -1
 
         // Build code index for duplicate detection within file
@@ -1045,8 +1092,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val imageMode = if (imageModeColIndex >= 0) getCellString(row, imageModeColIndex).ifBlank { "none" } else "none"
                 val customRelTypes = if (customRelTypesColIndex >= 0) getCellString(row, customRelTypesColIndex) else ""
                 val customRelColors = if (customRelColorsColIndex >= 0) getCellString(row, customRelColorsColIndex) else ""
-                val imageCharId = if (imageCharIdColIndex >= 0) parseNumber(getCellString(row, imageCharIdColIndex))?.toLong() else null
-                val imageNovelId = if (imageNovelIdColIndex >= 0) parseNumber(getCellString(row, imageNovelIdColIndex))?.toLong() else null
+                val imageCharCode = if (imageCharCodeColIndex >= 0) getCellString(row, imageCharCodeColIndex).ifBlank { null } else null
+                val imageNovelCode = if (imageNovelCodeColIndex >= 0) getCellString(row, imageNovelCodeColIndex).ifBlank { null } else null
                 val createdAt = if (createdAtColIndex >= 0) parseNumber(getCellString(row, createdAtColIndex))?.toLong() ?: System.currentTimeMillis() else System.currentTimeMillis()
 
                 // Duplicate code detection within file (last-write-wins)
@@ -1089,13 +1136,15 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         name = name, description = description, displayOrder = displayOrder ?: existing.displayOrder,
                         borderColor = borderColor, borderWidthDp = borderWidthDp,
                         imagePaths = imagePaths, imageMode = imageMode,
-                        // 구버전 파일(컬럼 없음)에서는 기존값 유지
                         customRelationshipTypes = if (customRelTypesColIndex >= 0) customRelTypes else existing.customRelationshipTypes,
                         customRelationshipColors = if (customRelColorsColIndex >= 0) customRelColors else existing.customRelationshipColors,
-                        imageCharacterId = if (imageCharIdColIndex >= 0) imageCharId else existing.imageCharacterId,
-                        imageNovelId = if (imageNovelIdColIndex >= 0) imageNovelId else existing.imageNovelId,
+                        // imageCharacterId/imageNovelId: deferred (Phase 2 후 코드 기반 해석)
+                        imageCharacterId = if (imageCharCodeColIndex >= 0) null else existing.imageCharacterId,
+                        imageNovelId = if (imageNovelCodeColIndex >= 0) null else existing.imageNovelId,
                         createdAt = if (createdAtColIndex >= 0) createdAt else existing.createdAt
                     ))
+                    if (imageCharCode != null) deferredUniverseImageCharCodes[existing.id] = imageCharCode
+                    if (imageNovelCode != null) deferredUniverseImageNovelCodes[existing.id] = imageNovelCode
                     result.updatedUniverses++
                 } else {
                     val newCode = if (code.isNotBlank()) code else generateEntityCode()
@@ -1106,10 +1155,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         imagePaths = imagePaths, imageMode = imageMode,
                         customRelationshipTypes = customRelTypes,
                         customRelationshipColors = customRelColors,
-                        imageCharacterId = imageCharId,
-                        imageNovelId = imageNovelId,
+                        imageCharacterId = null, // deferred
+                        imageNovelId = null,     // deferred
                         createdAt = createdAt
                     ))
+                    if (imageCharCode != null) deferredUniverseImageCharCodes[newId] = imageCharCode
+                    if (imageNovelCode != null) deferredUniverseImageNovelCodes[newId] = imageNovelCode
                     entitySeen[newId] = i
                     result.newUniverses++
                 }
@@ -1140,7 +1191,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val borderWidthColIndex = cols["테두리두께"] ?: -1
         val novelImagePathColIndex = cols["이미지경로"] ?: -1
         val novelImageModeColIndex = cols["이미지모드"] ?: -1
-        val imageCharIdColIndex = cols["이미지캐릭터ID"] ?: -1
+        val imageCharCodeColIndex = cols["이미지캐릭터코드"] ?: -1
         val inheritBorderColIndex = cols["테두리상속"] ?: -1
         val novelPinnedColIndex = cols["고정"] ?: -1
         val standardYearColIndex = cols["표준연도"] ?: -1
@@ -1168,7 +1219,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val rawNovelImagePaths = if (novelImagePathColIndex >= 0) getCellString(row, novelImagePathColIndex) else "[]"
                 val novelImagePaths = remapImagePaths(rawNovelImagePaths)
                 val novelImageMode = if (novelImageModeColIndex >= 0) getCellString(row, novelImageModeColIndex).ifBlank { "none" } else "none"
-                val novelImageCharId = if (imageCharIdColIndex >= 0) parseNumber(getCellString(row, imageCharIdColIndex))?.toLong() else null
+                val novelImageCharCode = if (imageCharCodeColIndex >= 0) getCellString(row, imageCharCodeColIndex).ifBlank { null } else null
                 val novelIsPinned = if (novelPinnedColIndex >= 0) parseBoolean(getCellString(row, novelPinnedColIndex)) else false
                 val standardYear = if (standardYearColIndex >= 0) parseNumber(getCellString(row, standardYearColIndex))?.toInt() else null
                 val createdAt = if (createdAtColIndex >= 0) parseNumber(getCellString(row, createdAtColIndex))?.toLong() ?: System.currentTimeMillis() else System.currentTimeMillis()
@@ -1220,10 +1271,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         inheritUniverseBorder = if (inheritBorderColIndex >= 0) effectiveInherit else existing.inheritUniverseBorder,
                         isPinned = if (novelPinnedColIndex >= 0) novelIsPinned else existing.isPinned,
                         imagePaths = novelImagePaths, imageMode = novelImageMode,
-                        imageCharacterId = if (imageCharIdColIndex >= 0) novelImageCharId else existing.imageCharacterId,
+                        // imageCharacterId: deferred (Phase 2 후 코드 기반 해석)
+                        imageCharacterId = if (imageCharCodeColIndex >= 0) null else existing.imageCharacterId,
                         standardYear = if (standardYearColIndex >= 0) standardYear else existing.standardYear,
                         createdAt = if (createdAtColIndex >= 0) createdAt else existing.createdAt
                     ))
+                    if (novelImageCharCode != null) deferredNovelImageCharCodes[existing.id] = novelImageCharCode
                     result.updatedNovels++
                 } else {
                     val newCode = if (code.isNotBlank()) code else generateEntityCode()
@@ -1234,9 +1287,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         borderColor = borderColor, borderWidthDp = borderWidthDp,
                         inheritUniverseBorder = effectiveInherit, isPinned = novelIsPinned,
                         imagePaths = novelImagePaths, imageMode = novelImageMode,
-                        imageCharacterId = novelImageCharId, standardYear = standardYear,
+                        imageCharacterId = null, // deferred
+                        standardYear = standardYear,
                         createdAt = createdAt
                     ))
+                    if (novelImageCharCode != null) deferredNovelImageCharCodes[newId] = novelImageCharCode
                     entitySeen[newId] = i
                     result.newNovels++
                     if (universeId == null && (universeName.isNotBlank() || universeCode.isNotBlank())) {
@@ -1403,7 +1458,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val pinnedColIndex = cols["고정"] ?: -1
         val createdAtColIndex = cols["생성일"] ?: -1
         val fixedColIndices = setOf(nameColIndex, anotherNameColIndex, lastNameColIndex, firstNameColIndex, imageColIndex, novelColIndex, memoColIndex, tagsColIndex, codeColIndex, novelCodeColIndex, orderColIndex, pinnedColIndex, createdAtColIndex).filter { it >= 0 }.toSet()
-        val columnFieldMap = buildColumnFieldMap(headerRow, fields, fixedColIndices)
+        val columnFieldMap = buildColumnFieldMap(headerRow, fields, fixedColIndices, universe, result, sheetLabel)
 
         val codesSeen = mutableMapOf<String, Int>()
         val entitySeen = mutableMapOf<Long, Int>()
@@ -1520,6 +1575,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     result.newCharacters++
                 }
 
+                // matched ID 추적 (deleteNotInExcel용)
+                if (universe != null) {
+                    matchedCharacterIds.getOrPut(universe.id) { mutableSetOf() }.add(charId)
+                }
+
                 val prevRow = entitySeen[charId]
                 if (prevRow != null) {
                     result.warnings.add("캐릭터 행 $i: 행 $prevRow 과 같은 항목('$name')을 다시 덮어씀")
@@ -1634,15 +1694,22 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val eventId: Long
                 if (existingEvent != null) {
                     eventId = existingEvent.id
+                    // 작품 해석 실패 시 기존 세계관 보존
+                    val effectiveUniverseId = if (novelIds.isNotEmpty()) universeId else existingEvent.universeId
                     db.timelineDao().update(existingEvent.copy(
                         month = month, day = day, calendarType = calendarType,
                         eventType = if (eventTypeColIndex >= 0) eventType else existingEvent.eventType,
-                        universeId = universeId,
+                        universeId = effectiveUniverseId,
                         displayOrder = displayOrder ?: existingEvent.displayOrder,
                         isTemporary = if (isTemporaryColIndex >= 0) isTemporary else existingEvent.isTemporary,
                         createdAt = if (createdAtColIndex >= 0) createdAt else existingEvent.createdAt
                     ))
-                    db.timelineDao().replaceEventNovels(eventId, novelIds)
+                    // 작품이 해석된 경우에만 M2M 교체; 해석 실패 시 기존 관계 유지 + 경고
+                    if (novelIds.isNotEmpty()) {
+                        db.timelineDao().replaceEventNovels(eventId, novelIds)
+                    } else if (novelTitle.isNotBlank()) {
+                        result.warnings.add("사건 행 $i: 작품 '${novelTitle}'을(를) 찾을 수 없어 기존 작품 연결을 유지합니다")
+                    }
                     result.updatedEvents++
                 } else {
                     eventId = db.timelineDao().insert(TimelineEvent(
@@ -1659,6 +1726,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         result.warnings.add("사건 행 $i: 작품 '${novelTitle}'을(를) 찾을 수 없어 작품 미지정 상태로 생성됨")
                     }
                 }
+                matchedEventIds.add(eventId)
 
                 val characterNames = getCellString(row, charColIndex)
                 if (characterNames.isNotBlank()) {
@@ -1751,18 +1819,30 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val charCode = if (charCodeColIndex >= 0) getCellString(row, charCodeColIndex) else ""
                 val createdAt = if (createdAtColIndex >= 0) parseNumber(getCellString(row, createdAtColIndex))?.toLong() ?: System.currentTimeMillis() else System.currentTimeMillis()
 
-                // Resolve character: code-first, then name (Sprint A)
-                val character = (if (charCode.isNotBlank()) {
-                    db.characterDao().getCharacterByCode(charCode)
-                } else null)
-                    ?: run {
-                        val novelId = if (novelTitle.isNotBlank()) allNovels.find { it.title == novelTitle }?.id else null
-                        findCharacterByName(charName, novelId)
+                // Resolve character: code-first, then strict name lookup (동명이인 모호성 감지)
+                val character: Character = when {
+                    charCode.isNotBlank() -> {
+                        val found = db.characterDao().getCharacterByCode(charCode)
+                        if (found == null) {
+                            result.skippedRows++
+                            result.errors.add("상태변화 행 $i: 코드 '${charCode}'에 해당하는 캐릭터를 찾을 수 없음")
+                            continue
+                        }
+                        found
                     }
-                if (character == null) {
-                    result.skippedRows++
-                    result.errors.add("상태변화 행 $i: 캐릭터 '${charName}'을(를) 찾을 수 없음")
-                    continue
+                    else -> when (val resolved = findCharacterStrict(charName, charCode)) {
+                        is CharLookupResult.Found -> resolved.character
+                        is CharLookupResult.Ambiguous -> {
+                            result.skippedRows++
+                            result.errors.add("상태변화 행 $i: '${charName}' 이름의 캐릭터가 ${resolved.count}명 존재합니다. 코드 컬럼으로 구분하세요.")
+                            continue
+                        }
+                        is CharLookupResult.NotFound -> {
+                            result.skippedRows++
+                            result.errors.add("상태변화 행 $i: 캐릭터 '${charName}'을(를) 찾을 수 없음")
+                            continue
+                        }
+                    }
                 }
 
                 val existing = db.characterStateChangeDao()
@@ -1773,13 +1853,15 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         month = month, day = day, description = description,
                         createdAt = if (createdAtColIndex >= 0) createdAt else existing.createdAt
                     ))
+                    matchedStateChangeIds.add(existing.id)
                     result.updatedStateChanges++
                 } else {
-                    db.characterStateChangeDao().insert(CharacterStateChange(
+                    val newId = db.characterStateChangeDao().insert(CharacterStateChange(
                         characterId = character.id, year = year, month = month, day = day,
                         fieldKey = fieldKey, newValue = newValue, description = description,
                         createdAt = createdAt
                     ))
+                    matchedStateChangeIds.add(newId)
                     result.newStateChanges++
                 }
 
@@ -1900,6 +1982,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         factionId = if (factionColIndex >= 0) factionId else existing.factionId,
                         createdAt = if (createdAtColIndex >= 0) createdAt else existing.createdAt
                     ))
+                    matchedRelationshipIds.add(existing.id)
                     result.updatedRelationships++
                 } else {
                     val newId = db.characterRelationshipDao().insert(CharacterRelationship(
@@ -1909,6 +1992,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         displayOrder = displayOrder ?: i, factionId = factionId,
                         createdAt = createdAt
                     ))
+                    matchedRelationshipIds.add(newId)
                     entitySeen[newId] = i
                     result.newRelationships++
                 }
@@ -2012,15 +2096,17 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         eventId = if (eventIdColIndex >= 0) eventId else existing.eventId,
                         createdAt = if (createdAtColIndex >= 0) createdAt else existing.createdAt
                     ))
+                    matchedRelationshipChangeIds.add(existing.id)
                     result.updatedRelationshipChanges++
                 } else {
-                    db.characterRelationshipChangeDao().insert(CharacterRelationshipChange(
+                    val newId = db.characterRelationshipChangeDao().insert(CharacterRelationshipChange(
                         relationshipId = relationship.id,
                         year = year, month = month, day = day,
                         relationshipType = relationshipType, description = description,
                         intensity = intensity, isBidirectional = isBidirectional,
                         eventId = eventId, createdAt = createdAt
                     ))
+                    matchedRelationshipChangeIds.add(newId)
                     result.newRelationshipChanges++
                 }
             } catch (e: Exception) {
@@ -2083,6 +2169,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         isUsed = effectiveIsUsed, usedByCharacterId = usedByCharacterId,
                         createdAt = if (createdAtColIndex >= 0) createdAt else existing.createdAt
                     ))
+                    matchedNameBankIds.add(existing.id)
                     result.updatedNameBank++
                 } else {
                     val newEntry = NameBankEntry(
@@ -2091,6 +2178,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         createdAt = createdAt
                     )
                     val newId = db.nameBankDao().insert(newEntry)
+                    matchedNameBankIds.add(newId)
                     existingNamesMap[mapKey] = newEntry.copy(id = newId)
                     result.newNameBank++
                 }
@@ -2355,6 +2443,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         displayOrder = displayOrder ?: existing.displayOrder,
                         createdAt = if (createdAtColIndex >= 0) createdAt else existing.createdAt
                     ))
+                    matchedFactionIds.add(existing.id)
                     result.updatedFactions++
                 } else {
                     val newCode = if (code.isNotBlank()) code else generateEntityCode()
@@ -2370,6 +2459,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         displayOrder = displayOrder ?: i,
                         createdAt = createdAt
                     ))
+                    matchedFactionIds.add(newId)
                     entitySeen[newId] = i
                     result.newFactions++
                 }
@@ -2471,6 +2561,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         departedIntensity = departedIntensity,
                         createdAt = if (createdAtColIndex >= 0) createdAt else existingMembership.createdAt
                     ))
+                    matchedFactionMembershipIds.add(existingMembership.id)
                     result.updatedFactionMemberships++
                 } else {
                     // Insert new membership
@@ -2517,6 +2608,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         }
                     }
 
+                    matchedFactionMembershipIds.add(membershipId)
                     result.newFactionMemberships++
                 }
             } catch (e: Exception) {
@@ -2548,19 +2640,62 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         return null
     }
 
-    private fun buildColumnFieldMap(headerRow: Row, fields: List<FieldDefinition>, fixedColIndices: Set<Int>): Map<Int, FieldDefinition> {
+    private suspend fun buildColumnFieldMap(
+        headerRow: Row,
+        fields: List<FieldDefinition>,
+        fixedColIndices: Set<Int>,
+        universe: Universe?,
+        result: ImportResult,
+        sheetLabel: String
+    ): Map<Int, FieldDefinition> {
         val map = mutableMapOf<Int, FieldDefinition>()
         val lastCol = headerRow.lastCellNum.toInt()
+        var autoCreateCount = 0
+        val maxOrder = fields.maxOfOrNull { it.displayOrder } ?: 0
+
         for (col in 0 until lastCol) {
             if (col in fixedColIndices) continue
             val headerName = getCellString(headerRow, col)
             if (headerName.isBlank()) continue
             val trimmedHeader = headerName.trim()
                 .removeSuffix(" (쉼표 구분)")
-            val field = fields.find { it.name == trimmedHeader }
-                ?: fields.find { it.name.equals(trimmedHeader, ignoreCase = true) }
+
+            // 1차: name 완전 일치
+            var field = fields.find { it.name == trimmedHeader }
+            // 2차: name 대소문자 무시
+            if (field == null) field = fields.find { it.name.equals(trimmedHeader, ignoreCase = true) }
+            // 3차: key 완전 일치 (사용자가 key를 헤더로 사용한 경우)
+            if (field == null) field = fields.find { it.key == trimmedHeader }
+            // 4차: key 대소문자 무시
+            if (field == null) field = fields.find { it.key.equals(trimmedHeader, ignoreCase = true) }
+
             if (field != null) {
                 map[col] = field
+            } else if (universe != null) {
+                // 매칭 실패 → 자동 필드 생성 (TEXT 타입)
+                val baseKey = "auto_${trimmedHeader.lowercase().replace(Regex("[^a-z0-9가-힣_]"), "_")}"
+                // key 충돌 방지
+                var autoKey = baseKey
+                var suffix = 1
+                while (db.fieldDefinitionDao().getFieldByKey(universe.id, autoKey) != null) {
+                    autoKey = "${baseKey}_${++suffix}"
+                }
+                val newField = FieldDefinition(
+                    universeId = universe.id,
+                    key = autoKey,
+                    name = trimmedHeader,
+                    type = "TEXT",
+                    groupName = "자동 생성",
+                    displayOrder = maxOrder + 1 + autoCreateCount++
+                )
+                val newId = db.fieldDefinitionDao().insert(newField)
+                val created = newField.copy(id = newId)
+                map[col] = created
+                result.warnings.add("$sheetLabel: 컬럼 '$trimmedHeader' → TEXT 필드로 자동 생성됨")
+                result.newFields++
+            } else {
+                // 미분류 캐릭터 시트: 세계관 없어 자동 생성 불가 → 경고만
+                result.warnings.add("$sheetLabel: 컬럼 '$trimmedHeader'에 대한 필드 정의를 찾을 수 없어 무시됨")
             }
         }
         return map
@@ -2649,11 +2784,23 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val raw = when (cell.cellType) {
             CellType.STRING -> cell.stringCellValue?.trim() ?: ""
             CellType.NUMERIC -> {
-                val value = cell.numericCellValue
-                when {
-                    value.isNaN() || value.isInfinite() -> ""
-                    value == value.toLong().toDouble() -> value.toLong().toString()
-                    else -> value.toString()
+                if (org.apache.poi.ss.usermodel.DateUtil.isCellDateFormatted(cell)) {
+                    // 엑셀이 날짜로 자동 변환한 셀 → YYYY-MM-DD 문자열로 반환
+                    // (parseBirthDate가 3파트 날짜에서 연도를 자동 제거)
+                    val date = cell.dateCellValue
+                    val cal = java.util.Calendar.getInstance().apply { time = date }
+                    "%d-%02d-%02d".format(
+                        cal.get(java.util.Calendar.YEAR),
+                        cal.get(java.util.Calendar.MONTH) + 1,
+                        cal.get(java.util.Calendar.DAY_OF_MONTH)
+                    )
+                } else {
+                    val value = cell.numericCellValue
+                    when {
+                        value.isNaN() || value.isInfinite() -> ""
+                        value == value.toLong().toDouble() -> value.toLong().toString()
+                        else -> value.toString()
+                    }
                 }
             }
             CellType.BOOLEAN -> if (cell.booleanCellValue) "Y" else "N"
@@ -2684,6 +2831,129 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
      * 임포트 후 시맨틱 필드 동기화.
      * 필드값 → 상태변화, 상태변화 → 필드값 양방향 동기화 수행.
      */
+    // ── Deferred FK 해석 (코드 기반) ──
+
+    private suspend fun applyDeferredUniverseNovelRefs() {
+        for ((universeId, novelCode) in deferredUniverseImageNovelCodes) {
+            val novelId = db.novelDao().getNovelByCode(novelCode)?.id ?: continue
+            val universe = db.universeDao().getUniverseById(universeId) ?: continue
+            db.universeDao().update(universe.copy(imageNovelId = novelId))
+        }
+        deferredUniverseImageNovelCodes.clear()
+    }
+
+    private suspend fun applyDeferredCharacterRefs() {
+        for ((novelId, charCode) in deferredNovelImageCharCodes) {
+            val charId = db.characterDao().getCharacterByCode(charCode)?.id ?: continue
+            val novel = db.novelDao().getNovelById(novelId) ?: continue
+            db.novelDao().update(novel.copy(imageCharacterId = charId))
+        }
+        deferredNovelImageCharCodes.clear()
+
+        for ((universeId, charCode) in deferredUniverseImageCharCodes) {
+            val charId = db.characterDao().getCharacterByCode(charCode)?.id ?: continue
+            val universe = db.universeDao().getUniverseById(universeId) ?: continue
+            db.universeDao().update(universe.copy(imageCharacterId = charId))
+        }
+        deferredUniverseImageCharCodes.clear()
+    }
+
+    // ── 엑셀에 없는 항목 삭제 ──
+
+    private suspend fun deleteUnmatchedEntities(options: ExportOptions, result: ImportResult) {
+        val del = options.deleteOptions
+
+        // 캐릭터: 임포트된 세계관 범위 내
+        if (del.characters) {
+            for ((universeId, matchedIds) in matchedCharacterIds) {
+                val allIds = db.characterDao().getCharacterIdsByUniverse(universeId)
+                for (id in allIds) {
+                    if (id !in matchedIds) {
+                        try { db.characterDao().deleteById(id); result.deletedCharacters++ }
+                        catch (_: Exception) { }
+                    }
+                }
+            }
+        }
+
+        // 사건 연표
+        if (del.timeline && matchedEventIds.isNotEmpty()) {
+            val allIds = db.timelineDao().getAllEventIds()
+            for (id in allIds) {
+                if (id !in matchedEventIds) {
+                    try { db.timelineDao().deleteById(id); result.deletedEvents++ }
+                    catch (_: Exception) { }
+                }
+            }
+        }
+
+        // 관계
+        if (del.relationships && matchedRelationshipIds.isNotEmpty()) {
+            val allIds = db.characterRelationshipDao().getAllRelationshipIds()
+            for (id in allIds) {
+                if (id !in matchedRelationshipIds) {
+                    try { db.characterRelationshipDao().deleteById(id); result.deletedRelationships++ }
+                    catch (_: Exception) { }
+                }
+            }
+        }
+
+        // 관계 변화
+        if (del.relationshipChanges && matchedRelationshipChangeIds.isNotEmpty()) {
+            val allIds = db.characterRelationshipChangeDao().getAllChangeIds()
+            for (id in allIds) {
+                if (id !in matchedRelationshipChangeIds) {
+                    try { db.characterRelationshipChangeDao().deleteById(id); result.deletedRelationshipChanges++ }
+                    catch (_: Exception) { }
+                }
+            }
+        }
+
+        // 상태 변화
+        if (del.stateChanges && matchedStateChangeIds.isNotEmpty()) {
+            val allIds = db.characterStateChangeDao().getAllChangeIds()
+            for (id in allIds) {
+                if (id !in matchedStateChangeIds) {
+                    try { db.characterStateChangeDao().deleteById(id); result.deletedStateChanges++ }
+                    catch (_: Exception) { }
+                }
+            }
+        }
+
+        // 이름 은행
+        if (del.nameBank && matchedNameBankIds.isNotEmpty()) {
+            val allIds = db.nameBankDao().getAllEntryIds()
+            for (id in allIds) {
+                if (id !in matchedNameBankIds) {
+                    try { db.nameBankDao().deleteById(id); result.deletedNameBank++ }
+                    catch (_: Exception) { }
+                }
+            }
+        }
+
+        // 세력
+        if (del.factions && matchedFactionIds.isNotEmpty()) {
+            val allIds = db.factionDao().getAllFactionIds()
+            for (id in allIds) {
+                if (id !in matchedFactionIds) {
+                    try { db.factionDao().deleteById(id); result.deletedFactions++ }
+                    catch (_: Exception) { }
+                }
+            }
+        }
+
+        // 세력 소속
+        if (del.factionMemberships && matchedFactionMembershipIds.isNotEmpty()) {
+            val allIds = db.factionMembershipDao().getAllMembershipIds()
+            for (id in allIds) {
+                if (id !in matchedFactionMembershipIds) {
+                    try { db.factionMembershipDao().deleteById(id); result.deletedFactionMemberships++ }
+                    catch (_: Exception) { }
+                }
+            }
+        }
+    }
+
     private suspend fun runPostImportSemanticSync() {
         val characterRepository = CharacterRepository(
             db, db.characterDao(), db.characterFieldValueDao(),

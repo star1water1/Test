@@ -184,15 +184,28 @@ class SemanticFieldSyncHelper(
     }
 
     /**
-     * "MM-DD" 또는 "M-D" 형식의 생일 문자열을 파싱.
+     * "MM-DD", "M-D", 또는 "YYYY-MM-DD" 형식의 생일 문자열을 파싱.
+     * 엑셀이 날짜를 자동 변환하여 연도가 붙는 경우 연도를 무시하고 월/일만 추출.
      * @return Pair(month, day) 또는 null
      */
     private fun parseBirthDate(value: String): Pair<Int, Int>? {
         val trimmed = value.trim()
         val parts = trimmed.split("-", "/", ".")
-        if (parts.size != 2) return null
-        val month = parts[0].trim().toIntOrNull() ?: return null
-        val day = parts[1].trim().toIntOrNull() ?: return null
+        val month: Int?
+        val day: Int?
+        when (parts.size) {
+            2 -> {
+                month = parts[0].trim().toIntOrNull()
+                day = parts[1].trim().toIntOrNull()
+            }
+            3 -> {
+                // YYYY-MM-DD → 연도 무시, 월/일만 추출
+                month = parts[1].trim().toIntOrNull()
+                day = parts[2].trim().toIntOrNull()
+            }
+            else -> return null
+        }
+        if (month == null || day == null) return null
         if (month !in 1..12 || !isValidDay(month, day)) return null
         return month to day
     }

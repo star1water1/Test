@@ -47,4 +47,8 @@ class BackupStatusStore(private val context: Context) {
             lastFailureReason = prefs[KEY_LAST_FAILURE_REASON] ?: ""
         )
     }
+
+    suspend fun clear() {
+        context.backupDataStore.edit { it.clear() }
+    }
 }
