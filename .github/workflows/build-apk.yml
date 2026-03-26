@@ -1,0 +1,89 @@
+name: Build APK
+
+# 트리거: main/master 또는 모든 브랜치에 push 시 빌드
+# 수동 실행도 가능 (workflow_dispatch)
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: '빌드 타입'
+        required: true
+        default: 'debug'
+        type: choice
+        options:
+          - debug
+          - release
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('**/*.gradle.kts', '**/gradle-wrapper.properties') }}
+          restore-keys: gradle-
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      # Debug 빌드
+      - name: Build Debug APK
+        if: github.event.inputs.build_type != 'release'
+        run: ./gradlew assembleDebug --no-daemon
+
+      # Release 빌드 (서명 키 있을 때만)
+      - name: Build Release APK
+        if: github.event.inputs.build_type == 'release'
+        run: ./gradlew assembleRelease --no-daemon
+
+      # Debug APK 업로드
+      - name: Upload Debug APK
+        if: github.event.inputs.build_type != 'release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: NovelCharacter-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
+
+      # Release APK 업로드
+      - name: Upload Release APK
+        if: github.event.inputs.build_type == 'release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: NovelCharacter-release
+          path: app/build/outputs/apk/release/app-release*.apk
+          retention-days: 90
+
+      # 빌드 정보 출력
+      - name: Build Summary
+        if: always()
+        run: |
+          echo "## Build Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -f app/build/outputs/apk/debug/app-debug.apk ]; then
+            SIZE=$(du -h app/build/outputs/apk/debug/app-debug.apk | cut -f1)
+            echo "- Debug APK: $SIZE" >> $GITHUB_STEP_SUMMARY
+          fi
+          if ls app/build/outputs/apk/release/app-release*.apk 1>/dev/null 2>&1; then
+            SIZE=$(du -h app/build/outputs/apk/release/app-release*.apk | cut -f1)
+            echo "- Release APK: $SIZE" >> $GITHUB_STEP_SUMMARY
+          fi
