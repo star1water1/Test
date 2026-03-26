@@ -112,7 +112,7 @@ class BatchEditViewModel(application: Application) : AndroidViewModel(applicatio
         if (newNovelId != null) {
             val newNovel = novelRepository.getNovelById(newNovelId)
             val newUniverseId = newNovel?.universeId
-            if (newUniverseId != null && newNovel.standardYear != null) {
+            if (newUniverseId != null && newNovel?.standardYear != null) {
                 for (charId in ids) {
                     try {
                         if (stdYearSyncHelper.isLinked(charId)) {

@@ -12,6 +12,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 class StatsViewModel(application: Application) : AndroidViewModel(application) {
@@ -20,6 +22,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
     private val provider = StatsDataProvider(app)
 
     @Volatile private var cachedSnapshot: StatsSnapshot? = null
+    private val snapshotMutex = Mutex()
 
     // 작품 필터 (SharedPreferences에서 복원)
     private val statsPrefs = application.getSharedPreferences("stats_prefs", 0)
@@ -83,9 +86,12 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
     val error: LiveData<String?> = _error
 
     private suspend fun ensureSnapshot(): StatsSnapshot {
-        return cachedSnapshot ?: withContext(Dispatchers.IO) {
-            provider.loadSnapshot()
-        }.also { cachedSnapshot = it }
+        cachedSnapshot?.let { return it }
+        return snapshotMutex.withLock {
+            cachedSnapshot ?: withContext(Dispatchers.IO) {
+                provider.loadSnapshot()
+            }.also { cachedSnapshot = it }
+        }
     }
 
     private fun getFilteredSnapshot(snapshot: StatsSnapshot): StatsSnapshot {
