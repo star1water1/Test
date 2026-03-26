@@ -1164,7 +1164,7 @@ class FieldEditDialog : DialogFragment() {
                     oldType, newType, nonEmptyValues.size, compatible, incompatible))
                 .setPositiveButton(getString(R.string.field_type_change_proceed)) { _, _ ->
                     // 호환 불가 값을 빈 문자열로 초기화
-                    CoroutineScope(Dispatchers.IO).launch {
+                    lifecycleScope.launch(Dispatchers.IO) {
                         val toReset = nonEmptyValues.filter { !isValueCompatible(it.value, newType) }
                         toReset.forEach { fv ->
                             fieldValueDao.update(fv.copy(value = ""))
