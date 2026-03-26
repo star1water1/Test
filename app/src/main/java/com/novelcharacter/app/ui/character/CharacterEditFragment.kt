@@ -312,16 +312,14 @@ class CharacterEditFragment : Fragment() {
                 val options = try {
                     val json = org.json.JSONObject(field.config)
                     val arr = json.optJSONArray("options")
-                    if (arr != null) (0 until arr.length()).map { arr.getString(it) } else emptyList()
+                    if (arr != null) (0 until arr.length()).map { arr.getString(it) }.filter { it.isNotBlank() }
+                    else emptyList()
                 } catch (_: Exception) { emptyList() }
                 com.novelcharacter.app.util.FieldRandomGenerator.generateSelect(options)
             }
             FieldType.GRADE -> {
-                val grades = try {
-                    val json = org.json.JSONObject(field.config)
-                    val obj = json.optJSONObject("grades")
-                    obj?.keys()?.asSequence()?.toList() ?: listOf("C", "B", "A", "S")
-                } catch (_: Exception) { listOf("C", "B", "A", "S") }
+                // parseGradeOptions()를 사용하여 allowNegative 포함 전체 등급 목록 획득
+                val grades = parseGradeOptions(field.config)
                 com.novelcharacter.app.util.FieldRandomGenerator.generateGrade(grades)
             }
             else -> return
@@ -664,22 +662,41 @@ class CharacterEditFragment : Fragment() {
                         inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
                     }
                     inputLayout.addView(editText)
-                    binding.dynamicFormContainer.addView(inputLayout)
+                    if (com.novelcharacter.app.data.model.RandomConfig.fromConfig(field.config).enabled) {
+                        val row = LinearLayout(context).apply {
+                            orientation = LinearLayout.HORIZONTAL
+                            layoutParams = ViewGroup.MarginLayoutParams(
+                                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+                            ).apply { bottomMargin = (8 * density).toInt() }
+                        }
+                        inputLayout.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                        row.addView(inputLayout)
+                        row.addView(createDiceButton(context, density) { applyRandomForField(field, fieldType) })
+                        binding.dynamicFormContainer.addView(row)
+                    } else {
+                        binding.dynamicFormContainer.addView(inputLayout)
+                    }
                     fieldInputMap[field.id] = editText
                 }
 
                 FieldType.SELECT -> {
+                    val labelRow = LinearLayout(context).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        gravity = android.view.Gravity.CENTER_VERTICAL
+                        layoutParams = ViewGroup.MarginLayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+                        ).apply { topMargin = (4 * density).toInt() }
+                    }
                     val label = TextView(context).apply {
                         text = field.name
                         textSize = 14f
-                        layoutParams = ViewGroup.MarginLayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT,
-                            ViewGroup.LayoutParams.WRAP_CONTENT
-                        ).apply {
-                            topMargin = (4 * density).toInt()
-                        }
+                        layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
                     }
-                    binding.dynamicFormContainer.addView(label)
+                    labelRow.addView(label)
+                    if (com.novelcharacter.app.data.model.RandomConfig.fromConfig(field.config).enabled) {
+                        labelRow.addView(createDiceButton(context, density) { applyRandomForField(field, fieldType) })
+                    }
+                    binding.dynamicFormContainer.addView(labelRow)
 
                     val options = parseSelectOptions(field.config)
                     val optionsWithBlank = mutableListOf(getString(R.string.no_selection))
@@ -705,17 +722,23 @@ class CharacterEditFragment : Fragment() {
                 }
 
                 FieldType.GRADE -> {
+                    val gradeLabelRow = LinearLayout(context).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        gravity = android.view.Gravity.CENTER_VERTICAL
+                        layoutParams = ViewGroup.MarginLayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+                        ).apply { topMargin = (4 * density).toInt() }
+                    }
                     val label = TextView(context).apply {
                         text = field.name
                         textSize = 14f
-                        layoutParams = ViewGroup.MarginLayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT,
-                            ViewGroup.LayoutParams.WRAP_CONTENT
-                        ).apply {
-                            topMargin = (4 * density).toInt()
-                        }
+                        layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
                     }
-                    binding.dynamicFormContainer.addView(label)
+                    gradeLabelRow.addView(label)
+                    if (com.novelcharacter.app.data.model.RandomConfig.fromConfig(field.config).enabled) {
+                        gradeLabelRow.addView(createDiceButton(context, density) { applyRandomForField(field, fieldType) })
+                    }
+                    binding.dynamicFormContainer.addView(gradeLabelRow)
 
                     val grades = parseGradeOptions(field.config)
                     val gradesWithBlank = mutableListOf(getString(R.string.no_grade_selected))
