@@ -1,12 +1,20 @@
 package com.novelcharacter.app.ui.character
 
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.os.Bundle
+import android.print.PrintAttributes
+import android.print.PrintManager
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import android.widget.ImageView
+import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
+import androidx.core.content.FileProvider
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
@@ -25,6 +33,8 @@ import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.FactionMembership
 import com.novelcharacter.app.data.repository.FactionRepository
 import com.novelcharacter.app.databinding.FragmentCharacterDetailBinding
+import com.novelcharacter.app.share.CharacterCardRenderer
+import com.novelcharacter.app.share.PdfExporter
 import com.novelcharacter.app.ui.adapter.TimelineAdapter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -64,6 +74,15 @@ class CharacterDetailFragment : Fragment() {
         appDir = requireContext().filesDir
 
         binding.toolbar.setNavigationOnClickListener { findNavController().popBackStack() }
+        binding.toolbar.inflateMenu(R.menu.character_detail_menu)
+        binding.toolbar.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                R.id.action_growth_chart -> { navigateToGrowthChart(); true }
+                R.id.action_share_card -> { shareCharacterCard(); true }
+                R.id.action_share_pdf -> { sharePdf(); true }
+                else -> false
+            }
+        }
 
         binding.fabEdit.setOnClickListener {
             val bundle = Bundle().apply { putLong("characterId", characterId) }
@@ -788,6 +807,126 @@ class CharacterDetailFragment : Fragment() {
                     setPadding(0, (2 * density).toInt(), 0, (2 * density).toInt())
                 }
                 container.addView(tv)
+            }
+        }
+    }
+
+    // ===== Menu actions =====
+
+    private fun navigateToGrowthChart() {
+        val bundle = Bundle().apply { putLong("characterId", characterId) }
+        findNavController().navigateSafe(
+            R.id.characterDetailFragment, R.id.characterGrowthFragment, bundle
+        )
+    }
+
+    private fun shareCharacterCard() {
+        val character = cachedCharacter ?: return
+        val app = requireActivity().application as NovelCharacterApp
+
+        val themes = arrayOf(
+            getString(R.string.share_card_theme_light),
+            getString(R.string.share_card_theme_dark),
+            getString(R.string.share_card_theme_fantasy),
+            getString(R.string.share_card_theme_modern)
+        )
+        val themeValues = CharacterCardRenderer.CardTheme.entries.toTypedArray()
+
+        AlertDialog.Builder(requireContext())
+            .setTitle(R.string.share_card_theme)
+            .setItems(themes) { _, which ->
+                val selectedTheme = themeValues[which]
+                viewLifecycleOwner.lifecycleScope.launch {
+                    try {
+                        val fieldValues = withContext(Dispatchers.IO) {
+                            app.characterRepository.getValuesByCharacterList(characterId)
+                        }
+                        val novelId = character.novelId
+                        val universeId = if (novelId != null) {
+                            withContext(Dispatchers.IO) { app.novelRepository.getNovelById(novelId) }?.universeId
+                        } else null
+                        val fieldDefs = if (universeId != null) {
+                            withContext(Dispatchers.IO) { app.universeRepository.getFieldsByUniverseList(universeId) }
+                        } else emptyList()
+                        val relationships = withContext(Dispatchers.IO) {
+                            app.characterRepository.getRelationshipsForCharacterList(characterId).map { rel ->
+                                val otherId = if (rel.characterId1 == characterId) rel.characterId2 else rel.characterId1
+                                val otherName = app.characterRepository.getCharacterById(otherId)?.name ?: "?"
+                                otherName to rel.relationshipType
+                            }
+                        }
+
+                        val charBitmap = withContext(Dispatchers.IO) {
+                            try {
+                                val paths: List<String> = GSON.fromJson(character.imagePaths, IMAGE_PATHS_TYPE) ?: emptyList()
+                                if (paths.isNotEmpty()) BitmapFactory.decodeFile(paths[0]) else null
+                            } catch (_: Exception) { null }
+                        }
+
+                        val config = CharacterCardRenderer.CardConfig(theme = selectedTheme)
+                        val renderer = CharacterCardRenderer(requireContext())
+                        val cardBitmap = withContext(Dispatchers.Default) {
+                            renderer.render(character, fieldValues, fieldDefs, relationships, charBitmap, config)
+                        }
+
+                        // Save to cache and share
+                        val file = java.io.File(requireContext().cacheDir, "character_card_${character.id}.png")
+                        withContext(Dispatchers.IO) {
+                            file.outputStream().use { cardBitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                        }
+                        val uri = FileProvider.getUriForFile(requireContext(), "${requireContext().packageName}.fileprovider", file)
+                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                            type = "image/png"
+                            putExtra(Intent.EXTRA_STREAM, uri)
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        startActivity(Intent.createChooser(shareIntent, getString(R.string.share_character_card)))
+                    } catch (e: Exception) {
+                        if (isAdded) Toast.makeText(requireContext(), e.message, Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+            .show()
+    }
+
+    private fun sharePdf() {
+        val character = cachedCharacter ?: return
+        val app = requireActivity().application as NovelCharacterApp
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            try {
+                val novelId = character.novelId ?: run {
+                    Toast.makeText(requireContext(), "작품이 지정되지 않은 캐릭터입니다", Toast.LENGTH_SHORT).show()
+                    return@launch
+                }
+                val novel = withContext(Dispatchers.IO) { app.novelRepository.getNovelById(novelId) }
+                val universeId = novel?.universeId ?: run {
+                    Toast.makeText(requireContext(), "세계관을 찾을 수 없습니다", Toast.LENGTH_SHORT).show()
+                    return@launch
+                }
+
+                val pdfExporter = PdfExporter(requireContext())
+                val config = PdfExporter.PdfConfig(
+                    universeId = universeId,
+                    novelIds = listOf(novelId),
+                    characterIds = listOf(characterId)
+                )
+                val html = withContext(Dispatchers.IO) { pdfExporter.generateHtml(config) }
+
+                // Use WebView to print as PDF
+                val webView = WebView(requireContext())
+                webView.webViewClient = object : WebViewClient() {
+                    override fun onPageFinished(view: WebView, url: String?) {
+                        val printManager = requireContext().getSystemService(android.content.Context.PRINT_SERVICE) as PrintManager
+                        val jobName = "${character.name}_${getString(R.string.share_pdf_export)}"
+                        view.createPrintDocumentAdapter(jobName).let { adapter ->
+                            printManager.print(jobName, adapter, PrintAttributes.Builder().build())
+                        }
+                    }
+                }
+                webView.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
+            } catch (e: Exception) {
+                if (isAdded) Toast.makeText(requireContext(), e.message, Toast.LENGTH_SHORT).show()
             }
         }
     }

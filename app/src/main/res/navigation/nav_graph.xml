@@ -109,6 +109,10 @@
         <action
             android:id="@+id/action_detail_to_faction_manage"
             app:destination="@id/factionManageFragment" />
+
+        <action
+            android:id="@+id/action_detail_to_growth"
+            app:destination="@id/characterGrowthFragment" />
     </fragment>
 
     <fragment

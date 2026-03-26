@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <item
+        android:id="@+id/action_growth_chart"
+        android:title="@string/growth_chart"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/action_share_card"
+        android:title="@string/share_character_card"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/action_share_pdf"
+        android:title="@string/share_pdf_export"
+        app:showAsAction="never" />
+
+</menu>

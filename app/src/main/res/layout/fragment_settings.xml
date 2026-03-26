@@ -166,6 +166,24 @@
 
             </LinearLayout>
 
+            <!-- World Package Export -->
+            <LinearLayout
+                android:id="@+id/worldPackageRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp"
+                android:background="?attr/selectableItemBackground">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/share_world_package"
+                    android:textSize="16sp"
+                    android:textColor="?attr/colorOnSurface" />
+
+            </LinearLayout>
+
             <!-- Import -->
             <LinearLayout
                 android:id="@+id/importRow"

@@ -1,5 +1,6 @@
 package com.novelcharacter.app.ui.settings
 
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
@@ -9,6 +10,7 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import androidx.core.content.FileProvider
 import androidx.fragment.app.Fragment
 import androidx.navigation.fragment.findNavController
 import androidx.lifecycle.lifecycleScope
@@ -17,6 +19,7 @@ import com.novelcharacter.app.R
 import com.novelcharacter.app.backup.BackupEncryptor
 import com.novelcharacter.app.backup.BackupStatusStore
 import com.novelcharacter.app.data.maintenance.SystemMaintenanceService
+import com.novelcharacter.app.share.WorldPackageExporter
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -120,6 +123,10 @@ class SettingsFragment : Fragment() {
         // Data management
         binding.exportRow.setOnClickListener {
             exportToExcel()
+        }
+
+        binding.worldPackageRow.setOnClickListener {
+            exportWorldPackage()
         }
 
         binding.importRow.setOnClickListener {
@@ -311,6 +318,58 @@ class SettingsFragment : Fragment() {
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
+    }
+
+    private fun exportWorldPackage() {
+        if (!isAdded) return
+        val app = requireContext().applicationContext as NovelCharacterApp
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            try {
+                val universes = withContext(Dispatchers.IO) {
+                    app.database.universeDao().getAllUniversesList()
+                }
+                if (universes.isEmpty()) {
+                    Toast.makeText(requireContext(), "내보낼 세계관이 없습니다", Toast.LENGTH_SHORT).show()
+                    return@launch
+                }
+
+                val names = universes.map { it.name }.toTypedArray()
+                AlertDialog.Builder(requireContext())
+                    .setTitle(R.string.share_world_package)
+                    .setItems(names) { _, which ->
+                        val universe = universes[which]
+                        viewLifecycleOwner.lifecycleScope.launch {
+                            try {
+                                Toast.makeText(requireContext(), R.string.export_preparing, Toast.LENGTH_SHORT).show()
+                                val exporter = WorldPackageExporter(requireContext())
+                                val config = WorldPackageExporter.ExportConfig(universeId = universe.id)
+                                val file = withContext(Dispatchers.IO) { exporter.export(config) }
+
+                                if (!isAdded) return@launch
+                                val uri = FileProvider.getUriForFile(
+                                    requireContext(),
+                                    "${requireContext().packageName}.fileprovider",
+                                    file
+                                )
+                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "application/zip"
+                                    putExtra(Intent.EXTRA_STREAM, uri)
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                }
+                                startActivity(Intent.createChooser(shareIntent, getString(R.string.share_world_package)))
+                            } catch (e: Exception) {
+                                if (isAdded) {
+                                    Toast.makeText(requireContext(), e.message, Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        }
+                    }
+                    .show()
+            } catch (e: Exception) {
+                if (isAdded) Toast.makeText(requireContext(), e.message, Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     private fun exportToExcel() {
