@@ -231,6 +231,11 @@ class SettingsFragment : Fragment() {
             showErrorLogDialog()
         }
         loadErrorLogSummary()
+
+        // App reset
+        binding.resetAppRow.setOnClickListener {
+            showResetConfirmDialog()
+        }
     }
 
     private fun loadBackupStatus() {
@@ -618,6 +623,108 @@ class SettingsFragment : Fragment() {
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
+    }
+
+    // ── App Reset ──
+
+    private fun showResetConfirmDialog() {
+        val ctx = requireContext()
+        val deleteBackupsCheckBox = android.widget.CheckBox(ctx).apply {
+            text = getString(R.string.reset_delete_backups)
+            setPadding((16 * resources.displayMetrics.density).toInt(), 0, 0, 0)
+        }
+
+        MaterialAlertDialogBuilder(ctx)
+            .setTitle(R.string.reset_confirm_title)
+            .setMessage(R.string.reset_confirm_message)
+            .setView(deleteBackupsCheckBox)
+            .setPositiveButton(R.string.reset_action) { _, _ ->
+                // 2단계 최종 확인
+                MaterialAlertDialogBuilder(ctx)
+                    .setTitle(R.string.reset_confirm_title)
+                    .setMessage(R.string.reset_final_confirm)
+                    .setPositiveButton(R.string.reset_action) { _, _ ->
+                        executeReset(deleteBackupsCheckBox.isChecked)
+                    }
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun executeReset(deleteBackups: Boolean) {
+        val ctx = requireContext()
+        val app = ctx.applicationContext as NovelCharacterApp
+        val db = app.database
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            try {
+                // DB 초기화 (트랜잭션 내 FK CASCADE 안전 순서)
+                withContext(Dispatchers.IO) {
+                    db.runInTransaction {
+                        db.characterRelationshipChangeDao().deleteAll()
+                        db.characterRelationshipDao().deleteAll()
+                        db.factionMembershipDao().deleteAll()
+                        db.factionDao().deleteAll()
+                        db.characterStateChangeDao().deleteAll()
+                        db.timelineDao().deleteAllCrossRefs()
+                        db.timelineDao().deleteAllEventNovelCrossRefs()
+                        db.timelineDao().deleteAllEvents()
+                        db.characterDao().deleteAll()
+                        db.fieldDefinitionDao().deleteAll()
+                        db.novelDao().deleteAll()
+                        db.universeDao().deleteAll()
+                        db.nameBankDao().deleteAll()
+                        db.userPresetTemplateDao().deleteAll()
+                        db.searchPresetDao().deleteAll()
+                        db.recentActivityDao().deleteAll()
+                    }
+                }
+
+                // SharedPreferences 초기화 (테마 제외)
+                withContext(Dispatchers.IO) {
+                    listOf(
+                        "image_index_prefs", "timeline_ui_state", "stats_prefs",
+                        "supplement_criteria", "search_filters", "namebank_prefs",
+                        "graph_prefs", "universe_list_state", "app_migrations"
+                    ).forEach { name ->
+                        ctx.getSharedPreferences(name, android.content.Context.MODE_PRIVATE)
+                            .edit().clear().apply()
+                    }
+                }
+
+                // 파일 삭제
+                withContext(Dispatchers.IO) {
+                    // 이미지 파일
+                    ctx.filesDir.listFiles()?.filter {
+                        it.isFile && (it.name.endsWith(".jpg") || it.name.endsWith(".png") || it.name.endsWith(".webp"))
+                    }?.forEach { it.delete() }
+
+                    // 로그
+                    AppLogger.clearAllLogs()
+
+                    // 백업 (선택)
+                    if (deleteBackups) {
+                        java.io.File(ctx.filesDir, "backups").deleteRecursively()
+                    }
+
+                    // DataStore
+                    app.backupStatusStore.clear()
+                }
+
+                if (_binding != null) {
+                    Toast.makeText(ctx, R.string.reset_complete, Toast.LENGTH_LONG).show()
+                    loadBackupStatus()
+                    loadErrorLogSummary()
+                }
+            } catch (e: Exception) {
+                AppLogger.error("Settings", "앱 초기화 실패", e)
+                if (_binding != null) {
+                    Toast.makeText(ctx, "초기화 실패: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
     }
 
     override fun onDestroyView() {

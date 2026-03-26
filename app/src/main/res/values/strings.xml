@@ -400,6 +400,17 @@
     <string name="settings_theme_light">라이트</string>
     <string name="settings_theme_dark">다크</string>
     <string name="settings_data">데이터 관리</string>
+    <!-- App Reset -->
+    <string name="settings_reset_app">앱 초기화</string>
+    <string name="settings_reset_app_desc">모든 데이터를 삭제하고 초기 상태로 되돌립니다</string>
+    <string name="reset_confirm_title">앱 초기화</string>
+    <string name="reset_confirm_message">모든 세계관, 작품, 캐릭터, 사건 등 앱 데이터가 삭제됩니다.\n\n이 작업은 되돌릴 수 없습니다.</string>
+    <string name="reset_delete_backups">백업 파일도 삭제</string>
+    <string name="reset_final_confirm">정말로 초기화하시겠습니까?</string>
+    <string name="reset_in_progress">초기화 중…</string>
+    <string name="reset_complete">앱이 초기화되었습니다</string>
+    <string name="reset_action">초기화</string>
+
     <string name="settings_about">앱 정보</string>
     <string name="settings_version_format">버전 %s</string>
     <string name="settings_backup">백업/복원</string>

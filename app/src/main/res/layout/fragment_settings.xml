@@ -351,6 +351,38 @@
                 android:background="?attr/colorOnSurfaceVariant"
                 android:alpha="0.2" />
 
+            <!-- App Reset -->
+            <LinearLayout
+                android:id="@+id/resetAppRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp"
+                android:background="?attr/selectableItemBackground">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/settings_reset_app"
+                    android:textSize="16sp"
+                    android:textColor="#FF5722" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/settings_reset_app_desc"
+                    android:textSize="13sp"
+                    android:textColor="?attr/colorOnSurfaceVariant"
+                    android:layout_marginTop="2dp" />
+
+            </LinearLayout>
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:background="?attr/colorOnSurfaceVariant"
+                android:alpha="0.2" />
+
             <!-- Version info -->
             <LinearLayout
                 android:layout_width="match_parent"
