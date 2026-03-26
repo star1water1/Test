@@ -1602,7 +1602,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 // 동적 필드 값 가져오기 (빈 셀 = 기존 값 삭제)
                 var hasSemanticField = false
                 for ((colIndex, field) in columnFieldMap) {
-                    val value = getCellString(row, colIndex)
+                    val isDateField = SemanticRole.fromConfig(field.config) == SemanticRole.BIRTH_DATE
+                    val value = getCellString(row, colIndex, dateHint = isDateField)
                     val existingValue = db.characterFieldValueDao().getValue(charId, field.id)
                     if (value.isNotBlank()) {
                         if (existingValue != null) {
@@ -2779,13 +2780,16 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         return day in 1..maxDay
     }
 
-    private fun getCellString(row: Row, cellIndex: Int, maxLength: Int = MAX_FIELD_LENGTH): String {
+    /**
+     * @param dateHint true이면 숫자 셀을 적극적으로 날짜 변환 시도 (생일 등 날짜 필드용)
+     */
+    private fun getCellString(row: Row, cellIndex: Int, maxLength: Int = MAX_FIELD_LENGTH, dateHint: Boolean = false): String {
         if (cellIndex < 0) return ""
         val cell = row.getCell(cellIndex) ?: return ""
         val raw = when (cell.cellType) {
             CellType.STRING -> cell.stringCellValue?.trim() ?: ""
             CellType.NUMERIC -> {
-                if (isCellLikelyDate(cell)) {
+                if (isCellLikelyDate(cell, dateHint)) {
                     formatDateCell(cell)
                 } else {
                     val value = cell.numericCellValue
@@ -2804,8 +2808,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     try {
                         val value = cell.numericCellValue
                         if (value.isNaN() || value.isInfinite()) "" else {
-                            // 수식 결과가 날짜 시리얼 넘버일 수 있음
-                            if (isCellLikelyDate(cell)) {
+                            if (isCellLikelyDate(cell, dateHint)) {
                                 formatDateCell(cell)
                             } else if (value == value.toLong().toDouble()) {
                                 value.toLong().toString()
@@ -2828,32 +2831,48 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     }
 
     /**
-     * POI의 DateUtil.isCellDateFormatted()가 감지하지 못하는 로케일별 날짜 포맷까지 커버.
-     * 한국어(년/월/일), 일본어, 중국어 날짜 포맷 및 커스텀 날짜 포맷을 추가 감지한다.
+     * 셀이 날짜인지 판정. 3단계 감지:
+     * 1. POI 기본 감지 (내장 포맷 ID + 포맷 문자열 패턴)
+     * 2. 로케일별 포맷 추가 감지 (CJK 날짜 문자, m+d 조합 등)
+     * 3. dateHint가 true이면 (생일 등 날짜 필드) 값 범위 기반 적극 감지
      */
-    private fun isCellLikelyDate(cell: Cell): Boolean {
+    private fun isCellLikelyDate(cell: Cell, dateHint: Boolean = false): Boolean {
         if (org.apache.poi.ss.usermodel.DateUtil.isCellDateFormatted(cell)) return true
         val fmt: String = try { cell.cellStyle?.dataFormatString } catch (_: Exception) { null }
             ?: return false
-        if (fmt == "General" || fmt == "@") return false
+        if (fmt == "@") return false // 텍스트 포맷 — 날짜 아님
         val lower = fmt.lowercase(java.util.Locale.ROOT)
-        // y+d 조합 또는 CJK 날짜 문자가 포함된 포맷 감지
-        return (lower.contains("y") && lower.contains("d")) ||
-                lower.contains("년") || lower.contains("월") || lower.contains("일")
+        // 포맷 문자열 기반 감지 (General 제외)
+        if (fmt != "General") {
+            if ((lower.contains("y") && (lower.contains("d") || lower.contains("m"))) ||
+                (lower.contains("d") && lower.contains("m") && !lower.contains("h") && !lower.contains("s")) ||
+                lower.contains("년") || lower.contains("월") || lower.contains("일")) {
+                return true
+            }
+        }
+        // dateHint: 날짜 필드라고 알려진 경우, 유효한 엑셀 날짜 시리얼 넘버 범위이면 날짜로 판정
+        if (dateHint) {
+            val value = cell.numericCellValue
+            return value > 0 && value < 2958466 && value == kotlin.math.floor(value)
+        }
+        return false
     }
 
-    /** 날짜로 판정된 NUMERIC 셀을 YYYY-MM-DD 문자열로 변환 */
+    /** 날짜로 판정된 NUMERIC 셀을 MM-DD 또는 YYYY-MM-DD 문자열로 변환 */
     private fun formatDateCell(cell: Cell): String {
         return try {
             val date = cell.dateCellValue
             val cal = java.util.Calendar.getInstance().apply { time = date }
-            "%d-%02d-%02d".format(
-                cal.get(java.util.Calendar.YEAR),
-                cal.get(java.util.Calendar.MONTH) + 1,
-                cal.get(java.util.Calendar.DAY_OF_MONTH)
-            )
+            val year = cal.get(java.util.Calendar.YEAR)
+            val month = cal.get(java.util.Calendar.MONTH) + 1
+            val day = cal.get(java.util.Calendar.DAY_OF_MONTH)
+            // 1900/1904 기준 연도(엑셀 기본)면 월-일만 반환, 아니면 연-월-일
+            if (year == 1900 || year == 1904) {
+                "%02d-%02d".format(month, day)
+            } else {
+                "%d-%02d-%02d".format(year, month, day)
+            }
         } catch (_: Exception) {
-            // dateCellValue 변환 실패 시 숫자 그대로 반환
             val value = cell.numericCellValue
             if (value == value.toLong().toDouble()) value.toLong().toString() else value.toString()
         }
