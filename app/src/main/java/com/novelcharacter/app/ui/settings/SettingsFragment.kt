@@ -24,6 +24,7 @@ import java.util.Locale
 import com.novelcharacter.app.databinding.FragmentSettingsBinding
 import com.novelcharacter.app.util.AppLogger
 import com.novelcharacter.app.util.ThemeHelper
+import androidx.room.withTransaction
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -661,25 +662,23 @@ class SettingsFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             try {
                 // DB 초기화 (트랜잭션 내 FK CASCADE 안전 순서)
-                withContext(Dispatchers.IO) {
-                    db.runInTransaction {
-                        db.characterRelationshipChangeDao().deleteAll()
-                        db.characterRelationshipDao().deleteAll()
-                        db.factionMembershipDao().deleteAll()
-                        db.factionDao().deleteAll()
-                        db.characterStateChangeDao().deleteAll()
-                        db.timelineDao().deleteAllCrossRefs()
-                        db.timelineDao().deleteAllEventNovelCrossRefs()
-                        db.timelineDao().deleteAllEvents()
-                        db.characterDao().deleteAll()
-                        db.fieldDefinitionDao().deleteAll()
-                        db.novelDao().deleteAll()
-                        db.universeDao().deleteAll()
-                        db.nameBankDao().deleteAll()
-                        db.userPresetTemplateDao().deleteAll()
-                        db.searchPresetDao().deleteAll()
-                        db.recentActivityDao().deleteAll()
-                    }
+                db.withTransaction {
+                    db.characterRelationshipChangeDao().deleteAll()
+                    db.characterRelationshipDao().deleteAll()
+                    db.factionMembershipDao().deleteAll()
+                    db.factionDao().deleteAll()
+                    db.characterStateChangeDao().deleteAll()
+                    db.timelineDao().deleteAllCrossRefs()
+                    db.timelineDao().deleteAllEventNovelCrossRefs()
+                    db.timelineDao().deleteAllEvents()
+                    db.characterDao().deleteAll()
+                    db.fieldDefinitionDao().deleteAll()
+                    db.novelDao().deleteAll()
+                    db.universeDao().deleteAll()
+                    db.nameBankDao().deleteAll()
+                    db.userPresetTemplateDao().deleteAll()
+                    db.searchPresetDao().deleteAll()
+                    db.recentActivityDao().deleteAll()
                 }
 
                 // SharedPreferences 초기화 (테마 제외)
