@@ -1012,6 +1012,9 @@
     <string name="body_generator_title">신체 수치 생성</string>
     <string name="body_gen_height">키</string>
     <string name="body_gen_body_type">체형</string>
+    <string name="body_gen_independent">독립 조절</string>
+    <string name="body_gen_bust_size">가슴 크기</string>
+    <string name="body_gen_hip_size">엉덩이 크기</string>
     <string name="body_gen_relative">기준 캐릭터 (상대 생성)</string>
     <string name="body_gen_no_base">선택 안 함</string>
     <string name="body_gen_height_adjust">키 조절</string>

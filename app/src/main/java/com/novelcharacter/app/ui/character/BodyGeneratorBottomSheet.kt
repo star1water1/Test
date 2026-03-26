@@ -46,6 +46,7 @@ class BodyGeneratorBottomSheet : BottomSheetDialogFragment() {
     var analysisConfig: BodyAnalysisConfig = BodyAnalysisConfig.DEFAULT
 
     private var currentGenerated: BodyGenerator.GeneratedBody? = null
+    private var independentMode = false
     private val preset = BodyGenerator.GenerationPreset()
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
@@ -57,6 +58,7 @@ class BodyGeneratorBottomSheet : BottomSheetDialogFragment() {
         super.onViewCreated(view, savedInstanceState)
         setupHeightOptions()
         setupBodyTypeOptions()
+        setupIndependentAdjust()
         if (novelCharacters.isNotEmpty()) {
             setupBaseCharacterSpinner()
             setupRelativeOptions()
@@ -126,7 +128,12 @@ class BodyGeneratorBottomSheet : BottomSheetDialogFragment() {
 
         binding.spinnerBaseCharacter.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: android.widget.AdapterView<*>?, v: View?, pos: Int, id: Long) {
-                binding.relativeOptionsContainer.visibility = if (pos > 0) View.VISIBLE else View.GONE
+                val isRelative = pos > 0
+                binding.relativeOptionsContainer.visibility = if (isRelative) View.VISIBLE else View.GONE
+                // 상대 생성 모드에서는 독립 조절 숨김
+                binding.independentAdjustHeader.visibility = if (isRelative) View.GONE else View.VISIBLE
+                if (isRelative) binding.independentContainer.visibility = View.GONE
+                else if (independentMode) binding.independentContainer.visibility = View.VISIBLE
             }
             override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
         }
@@ -148,6 +155,56 @@ class BodyGeneratorBottomSheet : BottomSheetDialogFragment() {
             }
             binding.rgRelativeVolume.addView(rbV)
             if (i == 2) rbV.isChecked = true
+        }
+    }
+
+    private fun setupIndependentAdjust() {
+        val density = resources.displayMetrics.density
+        // 가슴 크기 라디오 버튼 생성
+        for ((i, option) in preset.bustOverrides.withIndex()) {
+            val rb = RadioButton(requireContext()).apply {
+                id = View.generateViewId(); text = option.label; textSize = 11f; tag = i
+                setPadding((2 * density).toInt(), 0, (2 * density).toInt(), 0)
+            }
+            binding.rgBustSize.addView(rb)
+            if (i == 2) rb.isChecked = true // "보통" 기본
+        }
+        // 엉덩이 크기 라디오 버튼 생성
+        for ((i, option) in preset.hipOverrides.withIndex()) {
+            val rb = RadioButton(requireContext()).apply {
+                id = View.generateViewId(); text = option.label; textSize = 11f; tag = i
+                setPadding((2 * density).toInt(), 0, (2 * density).toInt(), 0)
+            }
+            binding.rgHipSize.addView(rb)
+            if (i == 2) rb.isChecked = true
+        }
+        // 초기 동기화
+        syncBustHipToBodyType()
+
+        // 토글 리스너
+        binding.switchIndependent.setOnCheckedChangeListener { _, isChecked ->
+            independentMode = isChecked
+            binding.independentContainer.visibility = if (isChecked) View.VISIBLE else View.GONE
+            if (!isChecked) syncBustHipToBodyType()
+        }
+        // 체형 변경 시 동기화 (토글 OFF일 때만)
+        binding.rgBodyType.setOnCheckedChangeListener { _, _ ->
+            if (!independentMode) syncBustHipToBodyType()
+        }
+    }
+
+    private fun syncBustHipToBodyType() {
+        val bIdx = getSelectedIndex(binding.rgBodyType)
+        val bodyType = preset.bodyTypeOptions.getOrNull(bIdx) ?: return
+        selectNearestOverride(binding.rgBustSize, preset.bustOverrides, bodyType.bustBonus)
+        selectNearestOverride(binding.rgHipSize, preset.hipOverrides, bodyType.hipBonus)
+    }
+
+    private fun selectNearestOverride(rg: RadioGroup, options: List<BodyGenerator.SizeOverride>, targetBonus: Double) {
+        val nearestIdx = options.indices.minByOrNull { kotlin.math.abs(options[it].bonus - targetBonus) } ?: return
+        for (i in 0 until rg.childCount) {
+            val rb = rg.getChildAt(i) as? RadioButton ?: continue
+            if ((rb.tag as? Int) == nearestIdx) { rb.isChecked = true; break }
         }
     }
 
@@ -204,7 +261,9 @@ class BodyGeneratorBottomSheet : BottomSheetDialogFragment() {
             val bIdx = getSelectedIndex(binding.rgBodyType)
             val hOpt = preset.heightOptions.getOrNull(hIdx) ?: preset.heightOptions[1]
             val bOpt = preset.bodyTypeOptions.getOrNull(bIdx) ?: preset.bodyTypeOptions[2]
-            BodyGenerator.generate(hOpt, bOpt)
+            val bustOvr = if (independentMode) preset.bustOverrides.getOrNull(getSelectedIndex(binding.rgBustSize)) else null
+            val hipOvr = if (independentMode) preset.hipOverrides.getOrNull(getSelectedIndex(binding.rgHipSize)) else null
+            BodyGenerator.generate(hOpt, bOpt, bustOvr, hipOvr)
         }
 
         currentGenerated = body

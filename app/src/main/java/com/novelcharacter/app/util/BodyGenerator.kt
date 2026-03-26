@@ -19,9 +19,14 @@ object BodyGenerator {
         val bmiTarget: Double       // 목표 BMI (몸무게 역산용)
     )
 
+    /** 가슴/엉덩이 독립 조절용 오버라이드 */
+    data class SizeOverride(val label: String, val bonus: Double)
+
     data class GenerationPreset(
         val heightOptions: List<HeightOption> = DEFAULT_HEIGHT_OPTIONS,
-        val bodyTypeOptions: List<BodyTypeOption> = DEFAULT_BODY_TYPE_OPTIONS
+        val bodyTypeOptions: List<BodyTypeOption> = DEFAULT_BODY_TYPE_OPTIONS,
+        val bustOverrides: List<SizeOverride> = DEFAULT_BUST_OVERRIDES,
+        val hipOverrides: List<SizeOverride> = DEFAULT_HIP_OVERRIDES
     )
 
     data class GeneratedBody(
@@ -51,11 +56,34 @@ object BodyGenerator {
         BodyTypeOption("풍만", 73.0, 32.0, 26.0, 24.0)
     )
 
+    val DEFAULT_BUST_OVERRIDES = listOf(
+        SizeOverride("작음", 8.0),
+        SizeOverride("보통-작음", 14.0),
+        SizeOverride("보통", 20.0),
+        SizeOverride("보통-큼", 26.0),
+        SizeOverride("큼", 33.0)
+    )
+
+    val DEFAULT_HIP_OVERRIDES = listOf(
+        SizeOverride("작음", 10.0),
+        SizeOverride("보통-작음", 14.0),
+        SizeOverride("보통", 18.0),
+        SizeOverride("보통-큼", 22.0),
+        SizeOverride("큼", 27.0)
+    )
+
     // ── 생성 알고리즘 ──
 
+    /**
+     * 신체 수치 생성.
+     * @param bustOverride null이면 체형의 bustBonus 사용, 비null이면 독립 오버라이드
+     * @param hipOverride null이면 체형의 hipBonus 사용, 비null이면 독립 오버라이드
+     */
     fun generate(
         heightOption: HeightOption,
         bodyTypeOption: BodyTypeOption,
+        bustOverride: SizeOverride? = null,
+        hipOverride: SizeOverride? = null,
         random: Random = Random.Default
     ): GeneratedBody {
         val height = (heightOption.center + random.nextDouble(-heightOption.variance, heightOption.variance))
@@ -64,13 +92,20 @@ object BodyGenerator {
         val waist = (bodyTypeOption.waistBase + (height - 160.0) * 0.15 + random.nextDouble(-2.0, 2.0))
             .coerceIn(45.0, 110.0)
 
-        val bust = (waist + bodyTypeOption.bustBonus + random.nextDouble(-3.0, 3.0))
+        val effectiveBustBonus = bustOverride?.bonus ?: bodyTypeOption.bustBonus
+        val effectiveHipBonus = hipOverride?.bonus ?: bodyTypeOption.hipBonus
+
+        val bust = (waist + effectiveBustBonus + random.nextDouble(-3.0, 3.0))
             .coerceIn(60.0, 150.0)
 
-        val hip = (waist + bodyTypeOption.hipBonus + random.nextDouble(-3.0, 3.0))
+        val hip = (waist + effectiveHipBonus + random.nextDouble(-3.0, 3.0))
             .coerceIn(60.0, 150.0)
 
-        val weight = (bodyTypeOption.bmiTarget * (height / 100.0) * (height / 100.0) + random.nextDouble(-2.0, 2.0))
+        // 체중 보정: 가슴/엉덩이 오버라이드로 인한 체적 변화 반영
+        val bustDelta = effectiveBustBonus - bodyTypeOption.bustBonus
+        val hipDelta = effectiveHipBonus - bodyTypeOption.hipBonus
+        val weightAdj = bustDelta * 0.04 + hipDelta * 0.03
+        val weight = (bodyTypeOption.bmiTarget * (height / 100.0) * (height / 100.0) + weightAdj + random.nextDouble(-2.0, 2.0))
             .coerceIn(30.0, 150.0)
 
         return GeneratedBody(
