@@ -274,6 +274,48 @@ class CharacterEditFragment : Fragment() {
         binding.editMemo.setText(character.memo)
     }
 
+    private fun showBodyGenerator(bodySizeField: com.novelcharacter.app.data.model.FieldDefinition) {
+        val sheet = BodyGeneratorBottomSheet()
+        sheet.analysisConfig = com.novelcharacter.app.data.model.BodyAnalysisConfig.fromConfig(bodySizeField.config)
+        // TODO: 같은 작품의 캐릭터 목록을 제공하여 상대 생성/분포 활성화
+        sheet.onApply = { body ->
+            // BWH 필드에 값 채우기
+            val bwhView = fieldInputMap[bodySizeField.id]
+            if (bwhView is android.widget.LinearLayout) {
+                val parts = body.bwhString.split("-")
+                for (i in 0 until minOf(bwhView.childCount, parts.size)) {
+                    val child = bwhView.getChildAt(i)
+                    if (child is com.google.android.material.textfield.TextInputLayout) {
+                        child.editText?.setText(parts[i])
+                    }
+                }
+            } else if (bwhView is android.widget.EditText) {
+                bwhView.setText(body.bwhString)
+            }
+            // 키 필드 채우기
+            for ((id, view) in fieldInputMap) {
+                val fd = fieldDefinitions.find { it.id == id } ?: continue
+                val role = com.novelcharacter.app.data.model.SemanticRole.fromConfig(fd.config)
+                if (role == com.novelcharacter.app.data.model.SemanticRole.HEIGHT) {
+                    val editText = when (view) {
+                        is android.widget.EditText -> view
+                        is com.google.android.material.textfield.TextInputLayout -> view.editText
+                        else -> null
+                    }
+                    editText?.setText(body.height.toInt().toString())
+                } else if (role == com.novelcharacter.app.data.model.SemanticRole.WEIGHT) {
+                    val editText = when (view) {
+                        is android.widget.EditText -> view
+                        is com.google.android.material.textfield.TextInputLayout -> view.editText
+                        else -> null
+                    }
+                    editText?.setText(body.weight.toInt().toString())
+                }
+            }
+        }
+        sheet.show(childFragmentManager, "body_generator")
+    }
+
     private suspend fun loadFieldValues(characterId: Long) {
         val values = viewModel.getValuesByCharacterList(characterId)
         val valueMap = values.associateBy { it.fieldDefinitionId }
@@ -376,17 +418,37 @@ class CharacterEditFragment : Fragment() {
                     val structuredConfig = StructuredInputConfig.fromConfig(field.config)
                     if (structuredConfig.enabled && structuredConfig.parts.isNotEmpty()) {
                         // 구조화 입력: 파트별 개별 입력 필드
-                        val label = TextView(context).apply {
-                            text = field.name
-                            textSize = 14f
+                        val labelRow = LinearLayout(context).apply {
+                            orientation = LinearLayout.HORIZONTAL
                             layoutParams = ViewGroup.MarginLayoutParams(
                                 ViewGroup.LayoutParams.MATCH_PARENT,
                                 ViewGroup.LayoutParams.WRAP_CONTENT
-                            ).apply {
-                                topMargin = (4 * density).toInt()
-                            }
+                            ).apply { topMargin = (4 * density).toInt() }
                         }
-                        binding.dynamicFormContainer.addView(label)
+                        val label = TextView(context).apply {
+                            text = field.name
+                            textSize = 14f
+                            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                        }
+                        labelRow.addView(label)
+                        // 🎲 생성 버튼 (BODY_SIZE 필드만)
+                        if (fieldType == FieldType.BODY_SIZE) {
+                            val genBtn = com.google.android.material.button.MaterialButton(
+                                context, null, com.google.android.material.R.attr.materialButtonOutlinedStyle
+                            ).apply {
+                                text = "🎲"
+                                textSize = 14f
+                                minWidth = 0
+                                minimumWidth = 0
+                                setPadding((8 * density).toInt(), 0, (8 * density).toInt(), 0)
+                                layoutParams = LinearLayout.LayoutParams(
+                                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
+                                )
+                                setOnClickListener { showBodyGenerator(field) }
+                            }
+                            labelRow.addView(genBtn)
+                        }
+                        binding.dynamicFormContainer.addView(labelRow)
 
                         val partsContainer = LinearLayout(context).apply {
                             orientation = LinearLayout.HORIZONTAL

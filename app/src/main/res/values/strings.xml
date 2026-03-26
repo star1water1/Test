@@ -991,6 +991,25 @@
     <string name="body_frame_label">프레임</string>
     <string name="body_volume_label">볼륨 지수</string>
     <string name="body_curves_label">곡선 지수</string>
+
+    <!-- Body Generator -->
+    <string name="body_generator_title">신체 수치 생성</string>
+    <string name="body_gen_height">키</string>
+    <string name="body_gen_body_type">체형</string>
+    <string name="body_gen_relative">기준 캐릭터 (상대 생성)</string>
+    <string name="body_gen_no_base">선택 안 함</string>
+    <string name="body_gen_height_adjust">키 조절</string>
+    <string name="body_gen_volume_adjust">체형 조절</string>
+    <string name="body_gen_generate">🎲 생성</string>
+    <string name="body_gen_regenerate">다시 생성</string>
+    <string name="body_gen_apply">적용</string>
+    <string name="body_gen_preview_measurements">키: %1$dcm  몸무게: %2$dkg\nBWH: %3$s</string>
+    <string name="body_gen_distribution">풍만 %1$d / 보통 %2$d / 마름 %3$d%4$s</string>
+    <string name="body_gen_cat_slim">마름</string>
+    <string name="body_gen_cat_normal">보통</string>
+    <string name="body_gen_cat_voluptuous">풍만</string>
+    <string name="body_gen_recommend">추천!</string>
+
     <string name="body_analysis_settings_title">체형 분석 설정</string>
     <string name="body_cup_mapping_title">컵 사이즈 매핑</string>
     <string name="body_type_preset_title">체형 분류 프리셋</string>
