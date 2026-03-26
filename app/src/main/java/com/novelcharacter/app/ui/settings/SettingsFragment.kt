@@ -657,7 +657,7 @@ class SettingsFragment : Fragment() {
             Toast.makeText(ctx, R.string.error_log_empty, Toast.LENGTH_SHORT).show()
             return
         }
-        val authority = "${ctx.packageName}.provider"
+        val authority = "${ctx.packageName}.fileprovider"
         val uris = files.mapNotNull { file ->
             try {
                 androidx.core.content.FileProvider.getUriForFile(ctx, authority, file)
