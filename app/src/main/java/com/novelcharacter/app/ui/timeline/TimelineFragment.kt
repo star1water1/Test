@@ -39,6 +39,7 @@ class TimelineFragment : Fragment() {
     private lateinit var scaleGestureDetector: ScaleGestureDetector
     private var itemTouchHelper: ItemTouchHelper? = null
     private var isReorderMode = false
+    private var pendingScrollToYear = false
 
     // Cached data for spinner filters
     private var cachedNovels: List<Novel> = emptyList()
@@ -339,8 +340,11 @@ class TimelineFragment : Fragment() {
             binding.timelineRecyclerView.visibility = if (isEmpty) View.GONE else View.VISIBLE
             // 캐시된 작품명 적용 (DB 재조회 없음)
             adapter.novelNamesMap = cachedNovelNamesMap
-            // 이동 후 해당 연도의 사건으로 스크롤
-            scrollToCurrentYear()
+            // 이동 후 해당 연도의 사건으로 스크롤 (네비게이션으로 인한 변경일 때만)
+            if (pendingScrollToYear) {
+                pendingScrollToYear = false
+                scrollToCurrentYear()
+            }
         }
 
         // 사건 목록 변경 시 작품명 캐시 갱신 (삽입/수정/삭제 시에만 갱신)
@@ -365,8 +369,14 @@ class TimelineFragment : Fragment() {
         }
 
         // ===== Event navigation (이전/다음 사건) =====
-        binding.btnPrevEvent.setOnClickListener { viewModel.navigateToPreviousEvent() }
-        binding.btnNextEvent.setOnClickListener { viewModel.navigateToNextEvent() }
+        binding.btnPrevEvent.setOnClickListener {
+            pendingScrollToYear = true
+            viewModel.navigateToPreviousEvent()
+        }
+        binding.btnNextEvent.setOnClickListener {
+            pendingScrollToYear = true
+            viewModel.navigateToNextEvent()
+        }
 
         viewModel.navState.observe(viewLifecycleOwner) { state ->
             binding.btnPrevEvent.isEnabled = state.hasPrevious
@@ -408,9 +418,11 @@ class TimelineFragment : Fragment() {
         viewModel.selectedYear.observe(viewLifecycleOwner) { year ->
             if (year != null) {
                 val slider = binding.yearSlider
-                val clampedValue = year.toFloat().coerceIn(slider.valueFrom, slider.valueTo)
-                if (slider.value != clampedValue) {
-                    slider.value = clampedValue
+                if (slider.valueFrom < slider.valueTo) {
+                    val clampedValue = year.toFloat().coerceIn(slider.valueFrom, slider.valueTo)
+                    if (slider.value != clampedValue) {
+                        slider.value = clampedValue
+                    }
                 }
             }
         }
