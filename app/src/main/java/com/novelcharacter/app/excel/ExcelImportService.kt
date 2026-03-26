@@ -2784,16 +2784,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val raw = when (cell.cellType) {
             CellType.STRING -> cell.stringCellValue?.trim() ?: ""
             CellType.NUMERIC -> {
-                if (org.apache.poi.ss.usermodel.DateUtil.isCellDateFormatted(cell)) {
-                    // 엑셀이 날짜로 자동 변환한 셀 → YYYY-MM-DD 문자열로 반환
-                    // (parseBirthDate가 3파트 날짜에서 연도를 자동 제거)
-                    val date = cell.dateCellValue
-                    val cal = java.util.Calendar.getInstance().apply { time = date }
-                    "%d-%02d-%02d".format(
-                        cal.get(java.util.Calendar.YEAR),
-                        cal.get(java.util.Calendar.MONTH) + 1,
-                        cal.get(java.util.Calendar.DAY_OF_MONTH)
-                    )
+                if (isCellLikelyDate(cell)) {
+                    formatDateCell(cell)
                 } else {
                     val value = cell.numericCellValue
                     when {
@@ -2811,7 +2803,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     try {
                         val value = cell.numericCellValue
                         if (value.isNaN() || value.isInfinite()) "" else {
-                            if (value == value.toLong().toDouble()) value.toLong().toString() else value.toString()
+                            // 수식 결과가 날짜 시리얼 넘버일 수 있음
+                            if (isCellLikelyDate(cell)) {
+                                formatDateCell(cell)
+                            } else if (value == value.toLong().toDouble()) {
+                                value.toLong().toString()
+                            } else {
+                                value.toString()
+                            }
                         }
                     } catch (_: Exception) { "" }
                 }
@@ -2825,6 +2824,38 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             return raw.substring(0, maxLength)
         }
         return raw
+    }
+
+    /**
+     * POI의 DateUtil.isCellDateFormatted()가 감지하지 못하는 로케일별 날짜 포맷까지 커버.
+     * 한국어(년/월/일), 일본어, 중국어 날짜 포맷 및 커스텀 날짜 포맷을 추가 감지한다.
+     */
+    private fun isCellLikelyDate(cell: Cell): Boolean {
+        if (org.apache.poi.ss.usermodel.DateUtil.isCellDateFormatted(cell)) return true
+        val fmt = try { cell.cellStyle?.dataFormatString } catch (_: Exception) { null }
+            ?: return false
+        if (fmt == "General" || fmt == "@") return false
+        val lower = fmt.lowercase()
+        // y+d 조합 또는 CJK 날짜 문자가 포함된 포맷 감지
+        return (lower.contains("y") && lower.contains("d")) ||
+                lower.contains("년") || lower.contains("월") || lower.contains("일")
+    }
+
+    /** 날짜로 판정된 NUMERIC 셀을 YYYY-MM-DD 문자열로 변환 */
+    private fun formatDateCell(cell: Cell): String {
+        return try {
+            val date = cell.dateCellValue
+            val cal = java.util.Calendar.getInstance().apply { time = date }
+            "%d-%02d-%02d".format(
+                cal.get(java.util.Calendar.YEAR),
+                cal.get(java.util.Calendar.MONTH) + 1,
+                cal.get(java.util.Calendar.DAY_OF_MONTH)
+            )
+        } catch (_: Exception) {
+            // dateCellValue 변환 실패 시 숫자 그대로 반환
+            val value = cell.numericCellValue
+            if (value == value.toLong().toDouble()) value.toLong().toString() else value.toString()
+        }
     }
 
     /**
