@@ -49,6 +49,11 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
     private val _filterNovelId = MutableLiveData<Long?>(
         if (prefs.contains("filter_novel_id")) prefs.getLong("filter_novel_id", -1L) else null
     )
+    private val _filterCharacterId = MutableLiveData<Long?>(
+        if (prefs.contains("filter_character_id")) prefs.getLong("filter_character_id", -1L) else null
+    )
+    val filterNovelId: LiveData<Long?> = _filterNovelId
+    val filterCharacterId: LiveData<Long?> = _filterCharacterId
 
     // 작품 필터 기반 사건 ID 캐시 (인메모리 검색 필터용)
     private val _novelEventIds = MutableLiveData<Set<Long>?>(null)
@@ -80,11 +85,6 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
 
     private val _selectedYear = MutableLiveData<Int?>(null)
     val selectedYear: LiveData<Int?> = _selectedYear
-    val filterNovelId: LiveData<Long?> = _filterNovelId
-    private val _filterCharacterId = MutableLiveData<Long?>(
-        if (prefs.contains("filter_character_id")) prefs.getLong("filter_character_id", -1L) else null
-    )
-    val filterCharacterId: LiveData<Long?> = _filterCharacterId
 
     // 소설 필터에 연동된 캐릭터 목록
     private val _filteredCharacters = MediatorLiveData<List<Character>>().apply {
@@ -137,6 +137,8 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
     fun clearFilters() {
         _filterNovelId.value = null
         _filterCharacterId.value = null
+        _novelEventIds.value = null
+        _characterEventIds.value = null
         prefs.edit().remove("filter_novel_id").remove("filter_character_id").apply()
     }
 
