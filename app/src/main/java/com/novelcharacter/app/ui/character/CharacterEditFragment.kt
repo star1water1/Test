@@ -487,6 +487,31 @@ class CharacterEditFragment : Fragment() {
                         fieldInputMap[field.id] = partsContainer
                     } else {
                         // 일반 텍스트 입력
+                        // BODY_SIZE 비구조화 → 🎲 버튼 추가
+                        if (fieldType == FieldType.BODY_SIZE) {
+                            val genBtnRow = LinearLayout(context).apply {
+                                orientation = LinearLayout.HORIZONTAL
+                                layoutParams = ViewGroup.MarginLayoutParams(
+                                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+                                ).apply { topMargin = (4 * density).toInt() }
+                            }
+                            val genLabel = TextView(context).apply {
+                                text = field.name
+                                textSize = 14f
+                                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                            }
+                            genBtnRow.addView(genLabel)
+                            val genBtn = com.google.android.material.button.MaterialButton(
+                                context, null, com.google.android.material.R.attr.materialButtonOutlinedStyle
+                            ).apply {
+                                text = "🎲"
+                                textSize = 14f; minWidth = 0; minimumWidth = 0
+                                setPadding((8 * density).toInt(), 0, (8 * density).toInt(), 0)
+                                setOnClickListener { showBodyGenerator(field) }
+                            }
+                            genBtnRow.addView(genBtn)
+                            binding.dynamicFormContainer.addView(genBtnRow)
+                        }
                         val format = DisplayFormat.fromConfig(field.config)
                         val inputLayout = TextInputLayout(context).apply {
                             layoutParams = ViewGroup.MarginLayoutParams(
