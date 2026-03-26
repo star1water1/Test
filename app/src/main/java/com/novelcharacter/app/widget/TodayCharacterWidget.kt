@@ -34,6 +34,16 @@ class TodayCharacterWidget : AppWidgetProvider() {
                 // 오늘 생일인 캐릭터 검색
                 val birthChanges = db.characterStateChangeDao()
                     .getChangesByFieldAndDate(CharacterStateChange.KEY_BIRTH, month, day)
+                    .toMutableList()
+
+                // 비윤년 2월 28일: 2월 29일 생일 캐릭터도 포함
+                if (month == 2 && day == 28) {
+                    val isLeapYear = calendar.getActualMaximum(Calendar.DAY_OF_MONTH) == 29
+                    if (!isLeapYear) {
+                        birthChanges.addAll(db.characterStateChangeDao()
+                            .getChangesByFieldAndDate(CharacterStateChange.KEY_BIRTH, 2, 29))
+                    }
+                }
 
                 val widgetText: String = if (birthChanges.isNotEmpty()) {
                     val charIds = birthChanges.map { it.characterId }.distinct()
