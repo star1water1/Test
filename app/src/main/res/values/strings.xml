@@ -778,6 +778,13 @@
     <string name="widget_random_character">오늘의 캐릭터: %s</string>
     <string name="widget_birthday_today">오늘 생일: %s</string>
     <string name="widget_add_character">+ 캐릭터</string>
+
+    <!-- Birthday Banner -->
+    <string name="birthday_banner_title">🎂 다가오는 생일</string>
+    <string name="birthday_banner_title_count">🎂 다가오는 생일 (%d명)</string>
+    <string name="birthday_today">오늘! 🎂</string>
+    <string name="birthday_tomorrow">내일</string>
+    <string name="birthday_d_day">D-%d</string>
     <string name="widget_add_event">+ 사건</string>
 
     <!-- Share / Export -->

@@ -15,6 +15,8 @@ import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.data.model.RecentActivity
 import com.novelcharacter.app.data.model.TimelineEvent
 import com.novelcharacter.app.data.model.SemanticRole
+import com.novelcharacter.app.data.model.BirthdayCharacterItem
+import com.novelcharacter.app.util.BirthdayHelper
 import com.novelcharacter.app.util.EventEditDialogHelper.ShiftDirection
 import com.novelcharacter.app.util.SemanticFieldSyncHelper
 import com.novelcharacter.app.util.StandardYearSyncHelper
@@ -36,6 +38,43 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     val allNovels: LiveData<List<Novel>> = novelRepository.allNovels
 
     private val _currentNovelId = MutableLiveData<Long?>()
+
+    // ===== 다가오는 생일 (반응형: DB 변경 시 자동 갱신) =====
+    private val birthChangesLive: LiveData<List<CharacterStateChange>> =
+        app.database.characterStateChangeDao().observeChangesWithDate(CharacterStateChange.KEY_BIRTH)
+
+    private val _birthdayTrigger = MediatorLiveData<Unit>().apply {
+        addSource(birthChangesLive) { value = Unit }
+        addSource(_currentNovelId) { value = Unit }
+    }
+
+    val upcomingBirthdays: LiveData<List<BirthdayCharacterItem>> = _birthdayTrigger.switchMap {
+        liveData {
+            val changes = birthChangesLive.value ?: emptyList()
+            val upcoming = BirthdayHelper.filterUpcoming(changes)
+            if (upcoming.isEmpty()) {
+                emit(emptyList())
+                return@liveData
+            }
+            val charIds = upcoming.map { it.characterId }
+            val characters = characterRepository.getCharactersByIds(charIds)
+            val charMap = characters.associateBy { it.id }
+
+            val novelId = _currentNovelId.value
+            val items = upcoming.mapNotNull { b ->
+                val char = charMap[b.characterId] ?: return@mapNotNull null
+                // 작품 필터 적용
+                if (novelId != null && novelId != -1L && char.novelId != novelId) return@mapNotNull null
+                BirthdayCharacterItem(
+                    character = char,
+                    birthMonth = b.birthMonth,
+                    birthDay = b.birthDay,
+                    daysUntil = b.daysUntil
+                )
+            }
+            emit(items)
+        }
+    }
 
     val filteredCharacters: LiveData<List<Character>> = _currentNovelId.switchMap { novelId ->
         if (novelId == null || novelId == -1L) {

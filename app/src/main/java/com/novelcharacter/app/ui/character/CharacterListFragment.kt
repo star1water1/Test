@@ -19,6 +19,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.snackbar.Snackbar
 import com.novelcharacter.app.R
 import com.novelcharacter.app.databinding.FragmentCharacterListBinding
+import com.novelcharacter.app.ui.adapter.BirthdayBannerAdapter
 import com.novelcharacter.app.ui.adapter.CharacterAdapter
 import com.novelcharacter.app.ui.character.batch.BatchEditViewModel
 import com.novelcharacter.app.ui.character.batch.BatchOperationBottomSheet
@@ -62,6 +63,7 @@ class CharacterListFragment : Fragment() {
         setupFab()
         setupCompareButton()
         setupBatchEditBar()
+        setupBirthdayBanner()
         setupToolbarMenu()
         observeData()
         observeBatchEdit()
@@ -176,6 +178,7 @@ class CharacterListFragment : Fragment() {
             adapter.setReorderMode(false)
             binding.searchEdit.isEnabled = true
             binding.searchEdit.alpha = 1f
+            updateBirthdayBannerVisibility(true)
             Toast.makeText(requireContext(), R.string.reorder_saved, Toast.LENGTH_SHORT).show()
         } else {
             // Block reorder when search is active
@@ -188,6 +191,7 @@ class CharacterListFragment : Fragment() {
             // 순서변경 모드에서 검색 UI를 명시적으로 비활성화
             binding.searchEdit.isEnabled = false
             binding.searchEdit.alpha = 0.5f
+            updateBirthdayBannerVisibility(false)
             Toast.makeText(requireContext(), R.string.reorder_hint, Toast.LENGTH_SHORT).show()
         }
     }
@@ -305,12 +309,63 @@ class CharacterListFragment : Fragment() {
         }
     }
 
+    // ===== 생일 배너 =====
+    private var birthdayBannerAdapter: BirthdayBannerAdapter? = null
+    private var hasBirthdayData = false
+
+    private fun setupBirthdayBanner() {
+        val adapter = BirthdayBannerAdapter(
+            coroutineScope = viewLifecycleOwner.lifecycleScope,
+            onClick = { item ->
+                viewModel.recordRecentActivity(item.character.id, item.character.name)
+                val bundle = Bundle().apply { putLong("characterId", item.character.id) }
+                findNavController().navigateSafe(R.id.characterListFragment, R.id.characterDetailFragment, bundle)
+            }
+        )
+        birthdayBannerAdapter = adapter
+        binding.birthdayRecyclerView.layoutManager =
+            androidx.recyclerview.widget.LinearLayoutManager(requireContext(), androidx.recyclerview.widget.LinearLayoutManager.HORIZONTAL, false)
+        binding.birthdayRecyclerView.adapter = adapter
+
+        // 접기 상태 복원
+        val prefs = requireContext().getSharedPreferences("character_list_ui", android.content.Context.MODE_PRIVATE)
+        val collapsed = prefs.getBoolean("birthday_banner_collapsed", false)
+        binding.birthdayRecyclerView.visibility = if (collapsed) View.GONE else View.VISIBLE
+        binding.btnToggleBirthday.rotation = if (collapsed) 180f else 0f
+
+        binding.btnToggleBirthday.setOnClickListener {
+            val isVisible = binding.birthdayRecyclerView.visibility == View.VISIBLE
+            binding.birthdayRecyclerView.visibility = if (isVisible) View.GONE else View.VISIBLE
+            binding.btnToggleBirthday.rotation = if (isVisible) 180f else 0f
+            prefs.edit().putBoolean("birthday_banner_collapsed", isVisible).apply()
+        }
+
+        viewModel.upcomingBirthdays.observe(viewLifecycleOwner) { items ->
+            hasBirthdayData = !items.isNullOrEmpty()
+            if (items.isNullOrEmpty()) {
+                binding.birthdayBanner.visibility = View.GONE
+            } else {
+                // 배치편집/비교/재정렬 모드가 아닐 때만 표시
+                val showBanner = !isBatchEditMode && !isCompareMode && !this.adapter.isReorderMode()
+                binding.birthdayBanner.visibility = if (showBanner) View.VISIBLE else View.GONE
+                this.birthdayBannerAdapter?.submitList(items)
+                binding.birthdayTitle.text = getString(R.string.birthday_banner_title_count, items.size)
+            }
+        }
+    }
+
+    private fun updateBirthdayBannerVisibility(show: Boolean) {
+        if (_binding == null) return
+        binding.birthdayBanner.visibility = if (show && hasBirthdayData) View.VISIBLE else View.GONE
+    }
+
     private fun enterBatchEditMode() {
         isBatchEditMode = true
         adapter.setSelectionMode(true)
         binding.batchEditBar.visibility = View.VISIBLE
         binding.compareLayout.visibility = View.GONE
         binding.fabAddCharacter.visibility = View.GONE
+        updateBirthdayBannerVisibility(false)
         Toast.makeText(requireContext(), R.string.batch_enter_hint, Toast.LENGTH_SHORT).show()
     }
 
@@ -321,6 +376,7 @@ class CharacterListFragment : Fragment() {
         binding.batchEditBar.visibility = View.GONE
         binding.compareLayout.visibility = View.VISIBLE
         binding.fabAddCharacter.visibility = View.VISIBLE
+        updateBirthdayBannerVisibility(true)
     }
 
     private fun observeBatchEdit() {

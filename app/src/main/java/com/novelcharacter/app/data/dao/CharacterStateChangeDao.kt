@@ -45,6 +45,14 @@ interface CharacterStateChangeDao {
     @Query("SELECT * FROM character_state_changes WHERE fieldKey = :fieldKey AND month = :month AND day = :day")
     suspend fun getChangesByFieldAndDate(fieldKey: String, month: Int, day: Int): List<CharacterStateChange>
 
+    /** 생일(month/day)이 있는 상태변경 전체 — 일회성 조회 (Worker/Widget용) */
+    @Query("SELECT * FROM character_state_changes WHERE fieldKey = :fieldKey AND month IS NOT NULL AND day IS NOT NULL")
+    suspend fun getChangesWithDate(fieldKey: String): List<CharacterStateChange>
+
+    /** 생일(month/day)이 있는 상태변경 전체 — 반응형 (테이블 변경 시 자동 갱신) */
+    @Query("SELECT * FROM character_state_changes WHERE fieldKey = :fieldKey AND month IS NOT NULL AND day IS NOT NULL")
+    fun observeChangesWithDate(fieldKey: String): LiveData<List<CharacterStateChange>>
+
     @Query("DELETE FROM character_state_changes WHERE fieldKey = :fieldKey")
     suspend fun deleteChangesByFieldKey(fieldKey: String)
 

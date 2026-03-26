@@ -10,11 +10,11 @@ import com.novelcharacter.app.MainActivity
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.database.AppDatabase
 import com.novelcharacter.app.data.model.CharacterStateChange
+import com.novelcharacter.app.util.BirthdayHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
-import java.util.Calendar
 
 /**
  * 오늘의 캐릭터 / 생일 위젯 (4x1).
@@ -27,29 +27,14 @@ class TodayCharacterWidget : AppWidgetProvider() {
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
                 val db = AppDatabase.getDatabase(context)
-                val calendar = Calendar.getInstance()
-                val month = calendar.get(Calendar.MONTH) + 1
-                val day = calendar.get(Calendar.DAY_OF_MONTH)
 
-                // 오늘 생일인 캐릭터 검색
-                val birthChanges = db.characterStateChangeDao()
-                    .getChangesByFieldAndDate(CharacterStateChange.KEY_BIRTH, month, day)
-                    .toMutableList()
+                // BirthdayHelper로 오늘 생일 캐릭터 조회 (윤년 처리 포함)
+                val allBirthChanges = db.characterStateChangeDao()
+                    .getChangesWithDate(CharacterStateChange.KEY_BIRTH)
+                val birthdayCharIds = BirthdayHelper.getTodayBirthdayCharacterIds(allBirthChanges)
 
-                // 비윤년 2월 28일: 2월 29일 생일 캐릭터도 포함
-                if (month == 2 && day == 28) {
-                    val isLeapYear = calendar.getActualMaximum(Calendar.DAY_OF_MONTH) == 29
-                    if (!isLeapYear) {
-                        birthChanges.addAll(db.characterStateChangeDao()
-                            .getChangesByFieldAndDate(CharacterStateChange.KEY_BIRTH, 2, 29))
-                    }
-                }
-
-                val widgetText: String = if (birthChanges.isNotEmpty()) {
-                    val charIds = birthChanges.map { it.characterId }.distinct()
-                    val names = if (charIds.isNotEmpty()) {
-                        db.characterDao().getCharactersByIds(charIds).map { it.name }
-                    } else emptyList()
+                val widgetText: String = if (birthdayCharIds.isNotEmpty()) {
+                    val names = db.characterDao().getCharactersByIds(birthdayCharIds).map { it.name }
                     context.getString(R.string.widget_birthday_today, names.joinToString(", "))
                 } else {
                     val allChars = db.characterDao().getAllCharactersList()
