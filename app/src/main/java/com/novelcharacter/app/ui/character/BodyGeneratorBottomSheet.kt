@@ -91,6 +91,15 @@ class BodyGeneratorBottomSheet : BottomSheetDialogFragment() {
 
     private fun setupHeightOptions() {
         val density = resources.displayMetrics.density
+        // "상관없음" 옵션 (tag = -1)
+        val rbAny = RadioButton(requireContext()).apply {
+            id = View.generateViewId()
+            text = getString(R.string.body_gen_any)
+            textSize = 13f
+            tag = -1
+            setPadding((4 * density).toInt(), 0, (4 * density).toInt(), 0)
+        }
+        binding.rgHeight.addView(rbAny)
         for ((i, option) in preset.heightOptions.withIndex()) {
             val rb = RadioButton(requireContext()).apply {
                 id = View.generateViewId()
@@ -106,6 +115,15 @@ class BodyGeneratorBottomSheet : BottomSheetDialogFragment() {
 
     private fun setupBodyTypeOptions() {
         val density = resources.displayMetrics.density
+        // "상관없음" 옵션 (tag = -1)
+        val rbAny = RadioButton(requireContext()).apply {
+            id = View.generateViewId()
+            text = getString(R.string.body_gen_any)
+            textSize = 13f
+            tag = -1
+            setPadding((4 * density).toInt(), 0, (4 * density).toInt(), 0)
+        }
+        binding.rgBodyType.addView(rbAny)
         for ((i, option) in preset.bodyTypeOptions.withIndex()) {
             val rb = RadioButton(requireContext()).apply {
                 id = View.generateViewId()
@@ -158,6 +176,9 @@ class BodyGeneratorBottomSheet : BottomSheetDialogFragment() {
         }
     }
 
+    private var cupMode = false
+    private var cupSizeDiffs: List<Pair<String, Double>> = emptyList() // label, midDiff
+
     private fun setupIndependentAdjust() {
         val density = resources.displayMetrics.density
         // 가슴 크기 라디오 버튼 생성
@@ -178,6 +199,10 @@ class BodyGeneratorBottomSheet : BottomSheetDialogFragment() {
             binding.rgHipSize.addView(rb)
             if (i == 2) rb.isChecked = true
         }
+
+        // 컵 사이즈 지정 라디오 버튼 생성
+        setupCupSizeOptions(density)
+
         // 초기 동기화
         syncBustHipToBodyType()
 
@@ -185,11 +210,53 @@ class BodyGeneratorBottomSheet : BottomSheetDialogFragment() {
         binding.switchIndependent.setOnCheckedChangeListener { _, isChecked ->
             independentMode = isChecked
             binding.independentContainer.visibility = if (isChecked) View.VISIBLE else View.GONE
-            if (!isChecked) syncBustHipToBodyType()
+            if (!isChecked) {
+                syncBustHipToBodyType()
+                cupMode = false
+                binding.switchCupMode.isChecked = false
+            }
         }
         // 체형 변경 시 동기화 (토글 OFF일 때만)
         binding.rgBodyType.setOnCheckedChangeListener { _, _ ->
             if (!independentMode) syncBustHipToBodyType()
+        }
+    }
+
+    private fun setupCupSizeOptions(density: Float) {
+        // cupMapping에서 컵 사이즈 중앙값 계산 (J+ 제외)
+        val mapping = analysisConfig.cupMapping.filter { it.maxDiff < 900 }.sortedBy { it.maxDiff }
+        var prevMax = 0.0
+        cupSizeDiffs = mapping.map { entry ->
+            val midDiff = (prevMax + entry.maxDiff) / 2.0
+            prevMax = entry.maxDiff
+            entry.label to midDiff
+        }
+
+        // "미지정" + 각 컵 사이즈 RadioButton
+        val rbNone = RadioButton(requireContext()).apply {
+            id = View.generateViewId(); text = getString(R.string.body_gen_cup_none); textSize = 11f; tag = -1
+            setPadding((2 * density).toInt(), 0, (2 * density).toInt(), 0)
+            isChecked = true
+        }
+        binding.rgCupSize.addView(rbNone)
+        for ((i, pair) in cupSizeDiffs.withIndex()) {
+            val rb = RadioButton(requireContext()).apply {
+                id = View.generateViewId(); text = pair.first; textSize = 11f; tag = i
+                setPadding((2 * density).toInt(), 0, (2 * density).toInt(), 0)
+            }
+            binding.rgCupSize.addView(rb)
+        }
+
+        // 컵 모드 토글
+        binding.switchCupMode.setOnCheckedChangeListener { _, isChecked ->
+            cupMode = isChecked
+            binding.cupSizeContainer.visibility = if (isChecked) View.VISIBLE else View.GONE
+            // 컵 모드 시 가슴 크기 RadioGroup 비활성화
+            binding.rgBustSize.isEnabled = !isChecked
+            for (i in 0 until binding.rgBustSize.childCount) {
+                binding.rgBustSize.getChildAt(i).isEnabled = !isChecked
+            }
+            binding.rgBustSize.alpha = if (isChecked) 0.4f else 1f
         }
     }
 
@@ -259,11 +326,19 @@ class BodyGeneratorBottomSheet : BottomSheetDialogFragment() {
             // 기본 생성
             val hIdx = getSelectedIndex(binding.rgHeight)
             val bIdx = getSelectedIndex(binding.rgBodyType)
-            val hOpt = preset.heightOptions.getOrNull(hIdx) ?: preset.heightOptions[1]
-            val bOpt = preset.bodyTypeOptions.getOrNull(bIdx) ?: preset.bodyTypeOptions[2]
-            val bustOvr = if (independentMode) preset.bustOverrides.getOrNull(getSelectedIndex(binding.rgBustSize)) else null
+            // "상관없음"(-1)이면 랜덤 선택
+            val hOpt = if (hIdx == -1) preset.heightOptions.random()
+                else preset.heightOptions.getOrNull(hIdx) ?: preset.heightOptions[1]
+            val bOpt = if (bIdx == -1) preset.bodyTypeOptions.random()
+                else preset.bodyTypeOptions.getOrNull(bIdx) ?: preset.bodyTypeOptions[2]
+            val bustOvr = if (independentMode && !cupMode) preset.bustOverrides.getOrNull(getSelectedIndex(binding.rgBustSize)) else null
             val hipOvr = if (independentMode) preset.hipOverrides.getOrNull(getSelectedIndex(binding.rgHipSize)) else null
-            BodyGenerator.generate(hOpt, bOpt, bustOvr, hipOvr)
+            // 컵 사이즈 지정
+            val cupDiff = if (cupMode) {
+                val cupIdx = getSelectedIndex(binding.rgCupSize)
+                cupSizeDiffs.getOrNull(cupIdx)?.second
+            } else null
+            BodyGenerator.generate(hOpt, bOpt, bustOvr, hipOvr, cupDiff, analysisConfig.ribOffset)
         }
 
         currentGenerated = body

@@ -78,12 +78,16 @@ object BodyGenerator {
      * 신체 수치 생성.
      * @param bustOverride null이면 체형의 bustBonus 사용, 비null이면 독립 오버라이드
      * @param hipOverride null이면 체형의 hipBonus 사용, 비null이면 독립 오버라이드
+     * @param targetCupDiff non-null이면 컵 사이즈 역산으로 bust 결정 (bustOverride보다 우선)
+     * @param ribOffset 컵 역산용 흉곽 보정값 (BodyAnalysisConfig.ribOffset)
      */
     fun generate(
         heightOption: HeightOption,
         bodyTypeOption: BodyTypeOption,
         bustOverride: SizeOverride? = null,
         hipOverride: SizeOverride? = null,
+        targetCupDiff: Double? = null,
+        ribOffset: Double = 0.0,
         random: Random = Random.Default
     ): GeneratedBody {
         val height = (heightOption.center + random.nextDouble(-heightOption.variance, heightOption.variance))
@@ -95,14 +99,20 @@ object BodyGenerator {
         val effectiveBustBonus = bustOverride?.bonus ?: bodyTypeOption.bustBonus
         val effectiveHipBonus = hipOverride?.bonus ?: bodyTypeOption.hipBonus
 
-        val bust = (waist + effectiveBustBonus + random.nextDouble(-3.0, 3.0))
-            .coerceIn(60.0, 150.0)
+        val bust = if (targetCupDiff != null) {
+            // 컵 사이즈 역산: underbust = waist + ribOffset, bust = underbust + cupDiff
+            val underbust = waist + ribOffset
+            (underbust + targetCupDiff + random.nextDouble(-1.5, 1.5)).coerceIn(60.0, 150.0)
+        } else {
+            (waist + effectiveBustBonus + random.nextDouble(-3.0, 3.0)).coerceIn(60.0, 150.0)
+        }
 
         val hip = (waist + effectiveHipBonus + random.nextDouble(-3.0, 3.0))
             .coerceIn(60.0, 150.0)
 
         // 체중 보정: 가슴/엉덩이 오버라이드로 인한 체적 변화 반영
-        val bustDelta = effectiveBustBonus - bodyTypeOption.bustBonus
+        val actualBustBonus = bust - waist
+        val bustDelta = actualBustBonus - bodyTypeOption.bustBonus
         val hipDelta = effectiveHipBonus - bodyTypeOption.hipBonus
         val weightAdj = bustDelta * 0.04 + hipDelta * 0.03
         val weight = (bodyTypeOption.bmiTarget * (height / 100.0) * (height / 100.0) + weightAdj + random.nextDouble(-2.0, 2.0))

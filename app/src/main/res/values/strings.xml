@@ -1020,8 +1020,11 @@
     <string name="body_gen_height">키</string>
     <string name="body_gen_body_type">체형</string>
     <string name="body_gen_independent">독립 조절</string>
+    <string name="body_gen_any">상관없음</string>
     <string name="body_gen_bust_size">가슴 크기</string>
     <string name="body_gen_hip_size">엉덩이 크기</string>
+    <string name="body_gen_cup_mode">컵 사이즈 지정</string>
+    <string name="body_gen_cup_none">미지정</string>
 
     <!-- Random Field -->
     <string name="random_enabled">랜덤 생성</string>
