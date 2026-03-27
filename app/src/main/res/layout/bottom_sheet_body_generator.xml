@@ -36,12 +36,19 @@
             android:textStyle="bold"
             android:layout_marginBottom="4dp" />
 
-        <RadioGroup
-            android:id="@+id/rgHeight"
+        <HorizontalScrollView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:layout_marginBottom="12dp" />
+            android:scrollbars="none"
+            android:layout_marginBottom="12dp">
+
+            <RadioGroup
+                android:id="@+id/rgHeight"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal" />
+
+        </HorizontalScrollView>
 
         <!-- 체형 옵션 -->
         <TextView
@@ -52,12 +59,19 @@
             android:textStyle="bold"
             android:layout_marginBottom="4dp" />
 
-        <RadioGroup
-            android:id="@+id/rgBodyType"
+        <HorizontalScrollView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:layout_marginBottom="8dp" />
+            android:scrollbars="none"
+            android:layout_marginBottom="8dp">
+
+            <RadioGroup
+                android:id="@+id/rgBodyType"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal" />
+
+        </HorizontalScrollView>
 
         <!-- 가슴/엉덩이 독립 조절 -->
         <LinearLayout
@@ -99,12 +113,19 @@
                 android:textSize="12sp"
                 android:layout_marginBottom="2dp" />
 
-            <RadioGroup
-                android:id="@+id/rgBustSize"
+            <HorizontalScrollView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:layout_marginBottom="8dp" />
+                android:scrollbars="none"
+                android:layout_marginBottom="8dp">
+
+                <RadioGroup
+                    android:id="@+id/rgBustSize"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal" />
+
+            </HorizontalScrollView>
 
             <TextView
                 android:layout_width="wrap_content"
@@ -113,12 +134,19 @@
                 android:textSize="12sp"
                 android:layout_marginBottom="2dp" />
 
-            <RadioGroup
-                android:id="@+id/rgHipSize"
+            <HorizontalScrollView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:layout_marginBottom="8dp" />
+                android:scrollbars="none"
+                android:layout_marginBottom="8dp">
+
+                <RadioGroup
+                    android:id="@+id/rgHipSize"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal" />
+
+            </HorizontalScrollView>
 
             <!-- 컵 사이즈 지정 -->
             <LinearLayout
@@ -197,12 +225,19 @@
                 android:textSize="12sp"
                 android:layout_marginBottom="2dp" />
 
-            <RadioGroup
-                android:id="@+id/rgRelativeHeight"
+            <HorizontalScrollView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:layout_marginBottom="8dp" />
+                android:scrollbars="none"
+                android:layout_marginBottom="8dp">
+
+                <RadioGroup
+                    android:id="@+id/rgRelativeHeight"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal" />
+
+            </HorizontalScrollView>
 
             <TextView
                 android:layout_width="wrap_content"
@@ -211,11 +246,18 @@
                 android:textSize="12sp"
                 android:layout_marginBottom="2dp" />
 
-            <RadioGroup
-                android:id="@+id/rgRelativeVolume"
+            <HorizontalScrollView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal" />
+                android:scrollbars="none">
+
+                <RadioGroup
+                    android:id="@+id/rgRelativeVolume"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal" />
+
+            </HorizontalScrollView>
 
         </LinearLayout>
 
