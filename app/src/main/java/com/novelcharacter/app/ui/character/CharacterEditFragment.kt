@@ -498,7 +498,19 @@ class CharacterEditFragment : Fragment() {
 
             when (fieldType) {
                 FieldType.TEXT, FieldType.BODY_SIZE -> {
-                    val structuredConfig = StructuredInputConfig.fromConfig(field.config)
+                    var structuredConfig = StructuredInputConfig.fromConfig(field.config)
+                    // BODY_SIZE 타입인데 structuredInput 설정이 없으면 기본 B-W-H 구조화 입력 자동 적용
+                    if (fieldType == FieldType.BODY_SIZE && !structuredConfig.enabled) {
+                        structuredConfig = StructuredInputConfig(
+                            enabled = true,
+                            separator = "-",
+                            parts = listOf(
+                                StructuredInputConfig.Part("B", "cm", "number"),
+                                StructuredInputConfig.Part("W", "cm", "number"),
+                                StructuredInputConfig.Part("H", "cm", "number")
+                            )
+                        )
+                    }
                     if (structuredConfig.enabled && structuredConfig.parts.isNotEmpty()) {
                         // 구조화 입력: 파트별 개별 입력 필드
                         val labelRow = LinearLayout(context).apply {
