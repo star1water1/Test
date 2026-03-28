@@ -66,6 +66,90 @@
     </LinearLayout>
 
     <LinearLayout
+        android:id="@+id/batchEditBar"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="8dp"
+        android:paddingVertical="4dp"
+        android:background="@color/surface"
+        android:visibility="gone"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/compareLayout">
+
+        <ImageButton
+            android:id="@+id/btnBatchClose"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/close"
+            android:src="@android:drawable/ic_menu_close_clear_cancel"
+            android:scaleType="centerInside" />
+
+        <TextView
+            android:id="@+id/batchSelectedCount"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/batch_selected_count_zero"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:paddingStart="4dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnBatchSelectAll"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/batch_select_all"
+            android:textSize="11sp"
+            android:minWidth="48dp"
+            android:minHeight="36dp"
+            android:insetTop="0dp"
+            android:insetBottom="0dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnBatchDeselectAll"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/batch_deselect_all"
+            android:textSize="11sp"
+            android:minWidth="48dp"
+            android:minHeight="36dp"
+            android:insetTop="0dp"
+            android:insetBottom="0dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnBatchFilter"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/batch_filter_title"
+            android:textSize="11sp"
+            android:minWidth="48dp"
+            android:minHeight="36dp"
+            android:insetTop="0dp"
+            android:insetBottom="0dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnBatchAction"
+            style="@style/Widget.Material3.Button"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/batch_action"
+            android:textSize="12sp"
+            android:minWidth="56dp"
+            android:minHeight="36dp"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:enabled="false" />
+
+    </LinearLayout>
+
+    <LinearLayout
         android:id="@+id/emptyText"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
@@ -75,7 +159,7 @@
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/compareLayout">
+        app:layout_constraintTop_toBottomOf="@id/batchEditBar">
 
         <ImageView
             android:layout_width="64dp"
@@ -112,7 +196,7 @@
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/compareLayout" />
+        app:layout_constraintTop_toBottomOf="@id/batchEditBar" />
 
     <com.google.android.material.floatingactionbutton.FloatingActionButton
         android:id="@+id/fabAddCharacter"

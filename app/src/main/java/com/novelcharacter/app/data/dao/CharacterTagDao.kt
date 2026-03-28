@@ -35,4 +35,12 @@ interface CharacterTagDao {
         deleteAllByCharacter(characterId)
         insertAll(tags)
     }
+
+    // ===== 일괄 편집용 배치 메서드 =====
+
+    @Query("SELECT DISTINCT tag FROM character_tags WHERE characterId IN (:characterIds) ORDER BY tag ASC")
+    suspend fun getDistinctTagsForCharacters(characterIds: List<Long>): List<String>
+
+    @Query("DELETE FROM character_tags WHERE characterId IN (:characterIds) AND tag IN (:tags)")
+    suspend fun deleteTagsFromCharacters(characterIds: List<Long>, tags: List<String>)
 }

@@ -90,4 +90,14 @@ interface CharacterFieldValueDao {
         )
     """)
     suspend fun deleteValuesNotInUniverse(characterId: Long, universeId: Long)
+
+    // ===== 일괄 편집용 배치 메서드 =====
+
+    /** 여러 캐릭터의 특정 필드값 일괄 삭제 */
+    @Query("DELETE FROM character_field_values WHERE characterId IN (:characterIds) AND fieldDefinitionId = :fieldDefId")
+    suspend fun deleteFieldValueForCharacters(characterIds: List<Long>, fieldDefId: Long)
+
+    /** 필드값 upsert (일괄 설정용 — 기존 값이 있으면 교체, 없으면 삽입) */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(value: CharacterFieldValue): Long
 }

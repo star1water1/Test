@@ -5,4 +5,8 @@
         android:id="@+id/action_reorder"
         android:title="@string/reorder_mode"
         app:showAsAction="never" />
+    <item
+        android:id="@+id/action_batch_edit"
+        android:title="@string/batch_edit_mode"
+        app:showAsAction="never" />
 </menu>

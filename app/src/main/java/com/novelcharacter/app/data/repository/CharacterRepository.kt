@@ -254,4 +254,142 @@ class CharacterRepository(
 
     suspend fun setPinned(id: Long, isPinned: Boolean) =
         characterDao.setPinned(id, isPinned)
+
+    // ===== 일괄 편집용 배치 메서드 =====
+
+    /** IN 절 999 제한을 회피하기 위한 청크 분할 유틸리티 */
+    private val CHUNK_SIZE = 900
+
+    suspend fun batchSetPinned(ids: List<Long>, isPinned: Boolean) {
+        db.withTransaction {
+            for (chunk in ids.chunked(CHUNK_SIZE)) {
+                characterDao.setPinnedForIds(chunk, isPinned)
+            }
+        }
+    }
+
+    suspend fun batchChangeNovel(ids: List<Long>, newNovelId: Long?) {
+        val now = System.currentTimeMillis()
+        db.withTransaction {
+            for (chunk in ids.chunked(CHUNK_SIZE)) {
+                characterDao.updateNovelIdForIds(chunk, newNovelId, now)
+            }
+            // 다른 세계관으로 이동 시 고아 필드값 정리
+            if (newNovelId != null) {
+                val novel = db.novelDao().getNovelById(newNovelId)
+                val newUniverseId = novel?.universeId
+                if (newUniverseId != null) {
+                    for (charId in ids) {
+                        db.characterFieldValueDao().deleteValuesNotInUniverse(charId, newUniverseId)
+                    }
+                }
+            }
+        }
+    }
+
+    suspend fun batchAddTags(ids: List<Long>, tags: List<String>) {
+        if (tags.isEmpty()) return
+        db.withTransaction {
+            for (chunk in ids.chunked(CHUNK_SIZE)) {
+                val tagEntities = chunk.flatMap { charId ->
+                    tags.map { tag -> CharacterTag(characterId = charId, tag = tag) }
+                }
+                characterTagDao.insertAll(tagEntities) // IGNORE 전략으로 중복 무시
+            }
+        }
+    }
+
+    suspend fun batchRemoveTags(ids: List<Long>, tags: List<String>) {
+        if (tags.isEmpty()) return
+        // deleteTagsFromCharacters는 이중 IN 절(characterIds + tags) 사용
+        // SQLite 변수 제한(API 31 미만: 999)을 초과하지 않도록 chunk 크기 조정
+        val adjustedChunk = (CHUNK_SIZE - tags.size).coerceAtLeast(1)
+        db.withTransaction {
+            for (chunk in ids.chunked(adjustedChunk)) {
+                characterTagDao.deleteTagsFromCharacters(chunk, tags)
+            }
+        }
+    }
+
+    suspend fun batchSetFieldValue(ids: List<Long>, fieldDefId: Long, value: String) {
+        db.withTransaction {
+            for (charId in ids) {
+                db.characterFieldValueDao().upsert(
+                    CharacterFieldValue(characterId = charId, fieldDefinitionId = fieldDefId, value = value)
+                )
+            }
+        }
+    }
+
+    suspend fun batchClearFieldValue(ids: List<Long>, fieldDefId: Long) {
+        db.withTransaction {
+            for (chunk in ids.chunked(CHUNK_SIZE)) {
+                db.characterFieldValueDao().deleteFieldValueForCharacters(chunk, fieldDefId)
+            }
+        }
+    }
+
+    suspend fun batchAppendMemo(ids: List<Long>, text: String, prepend: Boolean) {
+        db.withTransaction {
+            for (chunk in ids.chunked(CHUNK_SIZE)) {
+                val characters = characterDao.getCharactersByIds(chunk)
+                val updated = characters.map {
+                    val newMemo = when {
+                        it.memo.isBlank() -> text
+                        prepend -> "$text\n${it.memo}"
+                        else -> "${it.memo}\n$text"
+                    }
+                    it.copy(memo = newMemo, updatedAt = System.currentTimeMillis())
+                }
+                characterDao.updateAll(updated)
+            }
+        }
+    }
+
+    /**
+     * 일괄 삭제. 단일 삭제(deleteCharacter)의 6단계 정리를 배치로 수행:
+     * 1. 이미지 경로 수집 (트랜잭션 전)
+     * 2. nameBank 사용 해제
+     * 3. recentActivity 삭제
+     * 4. novel/universe 이미지 참조 정리
+     * 5. character 삭제 (FK CASCADE로 태그/필드값/관계/세력소속/타임라인 정리)
+     * 6. 이미지 파일 디스크 삭제 (트랜잭션 후)
+     */
+    suspend fun batchDelete(ids: List<Long>) {
+        // 1. 트랜잭션 전: 이미지 경로 수집
+        val allImageFiles = mutableListOf<File>()
+        for (chunk in ids.chunked(CHUNK_SIZE)) {
+            val characters = characterDao.getCharactersByIds(chunk)
+            characters.forEach { allImageFiles.addAll(parseImagePaths(it.imagePaths)) }
+        }
+
+        // 2-5. 단일 트랜잭션으로 DB 정리
+        db.withTransaction {
+            for (chunk in ids.chunked(CHUNK_SIZE)) {
+                nameBankDao.resetUsageByCharacterIds(chunk)
+                recentActivityDao.deleteByEntityIds(RecentActivity.TYPE_CHARACTER, chunk)
+                db.novelDao().clearImageCharacterRefs(chunk)
+                db.universeDao().clearImageCharacterRefs(chunk)
+                characterDao.deleteByIds(chunk) // FK CASCADE가 나머지 정리
+            }
+        }
+
+        // 6. 트랜잭션 후: 디스크에서 이미지 삭제
+        for (file in allImageFiles) {
+            try {
+                if (file.exists()) file.delete()
+            } catch (e: Exception) {
+                Log.w("CharacterRepository", "Failed to delete image: ${file.absolutePath}", e)
+            }
+        }
+    }
+
+    /** 선택 캐릭터의 고유 태그 목록 (일괄 삭제 UI용) */
+    suspend fun getDistinctTagsForCharacters(ids: List<Long>): List<String> {
+        val allTags = mutableSetOf<String>()
+        for (chunk in ids.chunked(CHUNK_SIZE)) {
+            allTags.addAll(characterTagDao.getDistinctTagsForCharacters(chunk))
+        }
+        return allTags.sorted()
+    }
 }

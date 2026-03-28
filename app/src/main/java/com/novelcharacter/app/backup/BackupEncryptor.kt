@@ -193,7 +193,12 @@ object BackupEncryptor {
         FileInputStream(inputFile).use { fis ->
             // IV 읽기
             val iv = ByteArray(GCM_IV_LENGTH)
-            readFully(fis, iv)
+            val ivRead = readFully(fis, iv)
+            if (ivRead != GCM_IV_LENGTH) {
+                throw java.io.IOException(
+                    "Incomplete IV: expected $GCM_IV_LENGTH bytes but read $ivRead. The backup file may be corrupted."
+                )
+            }
 
             // 암호문 직접 읽기 (copyOfRange 제거)
             val ciphertextSize = (fileSize - GCM_IV_LENGTH).toInt()
@@ -203,6 +208,11 @@ object BackupEncryptor {
                 val read = fis.read(ciphertext, totalRead, ciphertextSize - totalRead)
                 if (read == -1) break
                 totalRead += read
+            }
+            if (totalRead != ciphertextSize) {
+                throw java.io.IOException(
+                    "Incomplete ciphertext: expected $ciphertextSize bytes but read $totalRead. The backup file may be corrupted or truncated."
+                )
             }
 
             // doFinal()로 GCM 태그 검증 + 복호화

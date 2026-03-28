@@ -30,4 +30,8 @@ interface RecentActivityDao {
      */
     @Query("DELETE FROM recent_activities WHERE id NOT IN (SELECT id FROM recent_activities ORDER BY accessedAt DESC LIMIT :maxEntries)")
     suspend fun trimToMax(maxEntries: Int = 10)
+
+    /** 여러 엔티티의 최근 활동 일괄 삭제 (배치 삭제용) */
+    @Query("DELETE FROM recent_activities WHERE entityType = :entityType AND entityId IN (:entityIds)")
+    suspend fun deleteByEntityIds(entityType: String, entityIds: List<Long>)
 }
