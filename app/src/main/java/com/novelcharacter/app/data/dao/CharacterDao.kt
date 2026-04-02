@@ -6,16 +6,16 @@ import com.novelcharacter.app.data.model.Character
 
 @Dao
 interface CharacterDao {
-    @Query("SELECT * FROM characters ORDER BY name ASC")
+    @Query("SELECT * FROM characters ORDER BY displayOrder ASC, name ASC")
     fun getAllCharacters(): LiveData<List<Character>>
 
-    @Query("SELECT * FROM characters ORDER BY name ASC")
+    @Query("SELECT * FROM characters ORDER BY displayOrder ASC, name ASC")
     suspend fun getAllCharactersList(): List<Character>
 
-    @Query("SELECT * FROM characters WHERE novelId = :novelId ORDER BY name ASC")
+    @Query("SELECT * FROM characters WHERE novelId = :novelId ORDER BY displayOrder ASC, name ASC")
     fun getCharactersByNovel(novelId: Long): LiveData<List<Character>>
 
-    @Query("SELECT * FROM characters WHERE novelId = :novelId ORDER BY name ASC")
+    @Query("SELECT * FROM characters WHERE novelId = :novelId ORDER BY displayOrder ASC, name ASC")
     suspend fun getCharactersByNovelList(novelId: Long): List<Character>
 
     @Query("SELECT * FROM characters WHERE id = :id")
@@ -24,7 +24,7 @@ interface CharacterDao {
     @Query("SELECT * FROM characters WHERE id = :id")
     fun getCharacterByIdLive(id: Long): LiveData<Character?>
 
-    @Query("SELECT * FROM characters WHERE name LIKE '%' || :query || '%'")
+    @Query("SELECT * FROM characters WHERE name LIKE '%' || :query || '%' OR anotherName LIKE '%' || :query || '%'")
     fun searchCharacters(query: String): LiveData<List<Character>>
 
     @Query("SELECT * FROM characters WHERE name = :name AND novelId = :novelId LIMIT 1")
@@ -50,4 +50,7 @@ interface CharacterDao {
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertAll(characters: List<Character>)
+
+    @Update
+    suspend fun updateAll(characters: List<Character>)
 }

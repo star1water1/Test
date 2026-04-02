@@ -130,4 +130,26 @@
         android:label="검색"
         tools:layout="@layout/fragment_global_search" />
 
+    <fragment
+        android:id="@+id/imageViewerFragment"
+        android:name="com.novelcharacter.app.ui.character.ImageViewerFragment"
+        android:label="@string/image_viewer">
+
+        <argument
+            android:name="imagePaths"
+            app:argType="string"
+            android:defaultValue="[]" />
+
+        <argument
+            android:name="startPosition"
+            app:argType="integer"
+            android:defaultValue="0" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/settingsFragment"
+        android:name="com.novelcharacter.app.ui.settings.SettingsFragment"
+        android:label="@string/tab_settings"
+        tools:layout="@layout/fragment_settings" />
+
 </navigation>

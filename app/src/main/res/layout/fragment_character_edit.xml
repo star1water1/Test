@@ -56,6 +56,21 @@
 
             </com.google.android.material.textfield.TextInputLayout>
 
+            <!-- Another name input -->
+            <com.google.android.material.textfield.TextInputLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                android:hint="@string/hint_another_name">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/editAnotherName"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:inputType="text" />
+
+            </com.google.android.material.textfield.TextInputLayout>
+
             <!-- Tags input -->
             <com.google.android.material.textfield.TextInputLayout
                 android:layout_width="match_parent"

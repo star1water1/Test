@@ -151,6 +151,13 @@ class CharacterDetailFragment : Fragment() {
 
         binding.detailName.text = character.name
 
+        if (character.anotherName.isNotBlank()) {
+            binding.detailAnotherName.visibility = View.VISIBLE
+            binding.detailAnotherName.text = character.anotherName
+        } else {
+            binding.detailAnotherName.visibility = View.GONE
+        }
+
         viewLifecycleOwner.lifecycleScope.launch {
             val novel = character.novelId?.let { viewModel.getNovelById(it) }
             if (_binding == null) return@launch
@@ -219,6 +226,13 @@ class CharacterDetailFragment : Fragment() {
                 (imageView.getTag(R.id.image_load_job) as? kotlinx.coroutines.Job)?.cancel()
                 imageView.setImageResource(R.drawable.ic_character_placeholder)
                 val path = imagePaths[position]
+                imageView.setOnClickListener {
+                    val bundle = Bundle().apply {
+                        putString("imagePaths", imagePathsJson)
+                        putInt("startPosition", position)
+                    }
+                    findNavController().navigateSafe(R.id.characterDetailFragment, R.id.imageViewerFragment, bundle)
+                }
                 val boundPosition = position
                 val job = viewLifecycleOwner.lifecycleScope.launch {
                     val bitmap = withContext(Dispatchers.IO) {

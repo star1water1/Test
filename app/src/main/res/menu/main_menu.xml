@@ -23,4 +23,9 @@
         android:title="@string/load_preset"
         app:showAsAction="never" />
 
+    <item
+        android:id="@+id/action_reorder"
+        android:title="@string/reorder_mode"
+        app:showAsAction="never" />
+
 </menu>
