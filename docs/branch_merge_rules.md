@@ -100,9 +100,37 @@ Claude Code로 작업하는 경우 위 규칙을 다음과 같이 적용한다:
 
 > 주의: 위 7개 브랜치는 최대 405커밋 낡은 코드 기준이므로 rebase/병합하면 이미 개선된 master 코드를 되돌리는 회귀가 발생한다. clTCB를 제외하고는 브랜치 자체를 살리지 말고, 유효 수정만 master 기준으로 새로 작성한다.
 
-### 5-3. 이미 병합된 브랜치 삭제 `[상태: 미완료]`
+### 5-3. 이미 병합된 브랜치 삭제 `[상태: 검증 완료 (2026-07-03) — 소유자 실행 대기]`
 
-위 7개를 제외한 나머지 `claude/*` 브랜치 32개는 모든 커밋이 이미 master에 포함되어 있으므로 안전하게 삭제할 수 있다. 기본 브랜치를 master로 변경한 후(5-1 완료 후) `claude/decide-next-project-wXxtv`도 삭제 대상에 포함된다.
+> **2026-07-03 재검증 결과:** 원격의 `claude/*` 브랜치 42개 전부가 삭제 안전 판정. Claude Code 원격 환경의 git 프록시가 브랜치 삭제 push를 차단(403)하므로, 삭제는 **저장소 소유자가 로컬 또는 GitHub 웹**(Branches 페이지의 휴지통 버튼)에서 실행해야 한다.
+
+**소유자 실행용 일괄 삭제 명령 (로컬 클론에서):**
+
+```bash
+git push origin --delete \
+  claude/add-feature-audit-docs-IEJoE claude/check-repo-status-x0ZGj claude/code-review-4AWIG \
+  claude/code-review-5vDrS claude/code-review-BYF96 claude/code-review-Qwbrw \
+  claude/code-review-audit-3I54e claude/code-review-audit-jvTTz claude/code-review-fixes-tCBvo \
+  claude/code-review-lDBLu claude/code-review-lklof claude/code-review-session-z4dXq \
+  claude/decide-next-project-wXxtv claude/excel-integration-refactor-4jY1w claude/fix-bugs-DHYJA \
+  claude/fix-bugs-and-errors-EYrbg claude/fix-bugs-and-errors-p4HXB claude/fix-bugs-ypCEq \
+  claude/fix-code-bugs-2k2gI claude/fix-code-bugs-BTbwL claude/fix-code-bugs-F28Yo \
+  claude/fix-code-bugs-RmTHB claude/fix-code-bugs-U9V3K claude/fix-code-bugs-UVKKC \
+  claude/fix-code-bugs-clTCB claude/fix-code-bugs-eyArv claude/fix-startup-crash-9GjCN \
+  claude/main-merge-update-rules-yv8wrk claude/project-review-XHj6Y claude/project-review-odoSj \
+  claude/reapply-valid-review-fixes claude/review-codebase-ukmPz claude/review-design-feedback-SjaTO \
+  claude/review-errors-IZIR3 claude/review-principles-code-wtnGC claude/usability-review-fixes \
+  claude/code-review-5rddC claude/code-review-GpR1S claude/code-review-W3FT4 \
+  claude/general-code-review-D7RIN claude/review-project-status-Tzh8W \
+  claude/sprint-2-implementation-e8g5R claude/branch-cleanup-record
+```
+
+**삭제 근거 및 복구용 스냅숏 (2026-07-03 tip 기준):**
+
+- 36개는 모든 커밋이 master에 완전 포함(`git rev-list --count origin/master..<브랜치> = 0`) — 내용 유실 없음.
+- 고유 커밋 보유 6개는 5-2 검토(분석+독립 재검증)에서 "이미 반영/대체됨/재작성 완료" 판정을 받았고, 삭제 직전 재검증에서 **tip이 검토 시점과 동일**함을 확인 — 검토 이후 새 커밋 없음:
+  `code-review-5rddC@00e1fb0`, `code-review-GpR1S@6a0942f`, `code-review-W3FT4@94748bd`, `general-code-review-D7RIN@46cd503`, `review-project-status-Tzh8W@41ba5bd`, `sprint-2-implementation-e8g5R@7936dba`
+- 복구가 필요하면 위 SHA로 브랜치를 재생성하면 된다 (GitHub는 미도달 커밋을 약 90일 보관).
 
 ## 6) 요약 (한 줄 규칙)
 
@@ -117,3 +145,4 @@ Claude Code로 작업하는 경우 위 규칙을 다음과 같이 적용한다:
 | v1.0 | 2026.07.03 | 초기 작성 — 병합 규칙 6개, Claude Code 세션 규칙, 일회성 정리 작업 수록 |
 | v1.1 | 2026.07.03 | 5-1 완료 표시 — GitHub 기본 브랜치가 master로 변경됨 (원격 HEAD 확인) |
 | v1.2 | 2026.07.03 | 5-2 조치 완료 표시 — clTCB 병합(PR #10), 유효 수정 10건 재적용 병합(PR #11) |
+| v1.3 | 2026.07.03 | 5-3 검증 완료 — 42개 전 브랜치 삭제 안전 판정, 복구 스냅숏·일괄 삭제 명령 수록 (환경 제약으로 삭제 실행은 소유자 몫) |
