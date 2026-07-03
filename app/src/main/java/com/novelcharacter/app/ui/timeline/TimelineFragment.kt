@@ -359,6 +359,13 @@ class TimelineFragment : Fragment() {
             loadNovelNamesMap()
         }
 
+        // DB 작업 실패 시 사용자에게 알림 (null = 자동 클리어 신호이므로 무시)
+        viewModel.error.observe(viewLifecycleOwner) { message ->
+            if (!message.isNullOrBlank()) {
+                Toast.makeText(requireContext(), message, Toast.LENGTH_SHORT).show()
+            }
+        }
+
         // Observe zoom level changes
         viewModel.zoomLevel.observe(viewLifecycleOwner) { level ->
             adapter.zoomLevel = level

@@ -290,11 +290,15 @@ class ExcelExporter(context: Context) {
         val dvHelper = sheet.dataValidationHelper
         val dvConstraint = dvHelper.createExplicitListConstraint(options.toTypedArray())
         val validation = dvHelper.createValidation(dvConstraint, addressList)
+        val joinedOptions = options.joinToString(", ")
         validation.showErrorBox = true
         validation.errorStyle = DataValidation.ErrorStyle.WARNING
-        validation.createErrorBox("입력 오류", "목록에서 선택하세요: ${options.joinToString(", ")}")
+        validation.createErrorBox(
+            appContext.getString(R.string.export_validation_error_title),
+            appContext.getString(R.string.export_validation_error_message, joinedOptions)
+        )
         validation.showPromptBox = true
-        validation.createPromptBox("선택", options.joinToString(", "))
+        validation.createPromptBox(appContext.getString(R.string.export_validation_prompt_title), joinedOptions)
         sheet.addValidationData(validation)
     }
 

@@ -17,6 +17,7 @@ import androidx.navigation.ui.setupWithNavController
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.novelcharacter.app.databinding.ActivityMainBinding
 import com.novelcharacter.app.util.ThemeHelper
+import com.novelcharacter.app.util.navigateSafe
 
 class MainActivity : AppCompatActivity() {
 
@@ -92,8 +93,8 @@ class MainActivity : AppCompatActivity() {
                 .setPopUpTo(navController.graph.startDestinationId, inclusive = false)
                 .setLaunchSingleTop(true)
                 .build()
-            navController.navigate(item.itemId, null, navOptions)
-            true
+            // 그래프에 없는 목적지/상태 저장 후 탐색으로 인한 크래시 방어 (실패 시 탭 선택 안 함)
+            navController.navigateSafe(item.itemId, null, navOptions)
         }
 
         binding.bottomNav.setOnItemReselectedListener { item ->

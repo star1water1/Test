@@ -18,6 +18,7 @@ import androidx.fragment.app.setFragmentResult
 import com.google.gson.Gson
 import com.novelcharacter.app.R
 import com.google.android.material.tabs.TabLayout
+import com.novelcharacter.app.data.model.CharacterFieldValue
 import com.novelcharacter.app.data.model.DisplayFormat
 import com.novelcharacter.app.data.model.BodyAnalysisConfig
 import com.novelcharacter.app.data.model.FieldDefinition
@@ -26,7 +27,10 @@ import com.novelcharacter.app.data.model.FieldType
 import com.novelcharacter.app.data.model.SemanticRole
 import com.novelcharacter.app.data.model.StructuredInputConfig
 import com.novelcharacter.app.databinding.DialogFieldEditBinding
+import com.novelcharacter.app.util.setValidatedPositiveButton
 import androidx.lifecycle.lifecycleScope
+import androidx.room.withTransaction
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -34,7 +38,8 @@ import kotlinx.coroutines.withContext
 
 class FieldEditDialog : DialogFragment() {
 
-    private var onSave: ((FieldDefinition) -> Unit)? = null
+    /** 저장 콜백. false를 반환하면 저장이 거부된 것으로 간주하고 다이얼로그를 닫지 않는다. */
+    private var onSave: ((FieldDefinition) -> Boolean)? = null
     private var universeId: Long = 0
     private var existingField: FieldDefinition? = null
 
@@ -97,7 +102,8 @@ class FieldEditDialog : DialogFragment() {
         return if (pos in types.indices) types[pos].name else "TEXT"
     }
 
-    fun setOnSaveListener(listener: (FieldDefinition) -> Unit) {
+    /** [listener]가 false를 반환하면(예: 키 중복 거부) 다이얼로그가 닫히지 않고 입력이 유지된다. */
+    fun setOnSaveListener(listener: (FieldDefinition) -> Boolean) {
         onSave = listener
     }
 
@@ -117,14 +123,16 @@ class FieldEditDialog : DialogFragment() {
         setupBodyAnalysisSection(binding)
         populateFields(binding)
 
-        return AlertDialog.Builder(requireContext())
+        val dialog = AlertDialog.Builder(requireContext())
             .setTitle(if (existingField == null) R.string.add_field else R.string.edit_field)
             .setView(binding.root)
-            .setPositiveButton(R.string.save) { _, _ ->
-                saveField(binding)
-            }
+            .setPositiveButton(R.string.save, null)
             .setNegativeButton(R.string.cancel, null)
             .create()
+        // 검증 실패 시 다이얼로그를 닫지 않는다 (입력 유실 방지).
+        // 타입 변경 영향 분석(비동기) 경로는 checkTypeChangeImpact가 완료 시점에 직접 닫는다.
+        dialog.setValidatedPositiveButton { saveField(binding) }
+        return dialog
     }
 
     private fun setupTypeSpinner(binding: DialogFieldEditBinding) {
@@ -1138,7 +1146,8 @@ class FieldEditDialog : DialogFragment() {
         }
     }
 
-    private fun saveField(binding: DialogFieldEditBinding) {
+    /** @return true면 저장이 동기적으로 완료되어 다이얼로그를 닫아도 된다. false면 유지(검증 실패 또는 비동기 처리 진행 중). */
+    private fun saveField(binding: DialogFieldEditBinding): Boolean {
         val name = binding.editFieldName.text.toString().trim()
         val key = binding.editFieldKey.text.toString().trim()
         val groupName = binding.editGroupName.text.toString().trim().ifEmpty { getString(R.string.default_group_name) }
@@ -1146,7 +1155,7 @@ class FieldEditDialog : DialogFragment() {
 
         if (name.isEmpty() || key.isEmpty()) {
             android.widget.Toast.makeText(requireContext(), getString(R.string.field_name_key_required), android.widget.Toast.LENGTH_SHORT).show()
-            return
+            return false
         }
 
         val types = FieldType.entries.toTypedArray()
@@ -1177,10 +1186,13 @@ class FieldEditDialog : DialogFragment() {
 
         // 타입 변경 시 기존 값 호환성 영향 분석
         val oldType = existingField?.type
-        if (existingField != null && oldType != null && oldType != selectedType.name) {
+        return if (existingField != null && oldType != null && oldType != selectedType.name) {
+            // 분석 중 재클릭으로 인한 중복 실행을 막고, 완료 시점에 checkTypeChangeImpact가 저장·닫기를 처리한다
+            setSaveButtonEnabled(false)
             checkTypeChangeImpact(field, oldType, selectedType.name)
+            false
         } else {
-            deliverResult(field)
+            deliverResult(field) // 콜백이 저장을 거부하면(false) 다이얼로그를 유지한다
         }
     }
 
@@ -1189,44 +1201,78 @@ class FieldEditDialog : DialogFragment() {
         val fieldValueDao = app.database.characterFieldValueDao()
 
         lifecycleScope.launch {
-            val values = withContext(Dispatchers.IO) {
-                fieldValueDao.getValuesByFieldDef(field.id)
+            try {
+                val values = withContext(Dispatchers.IO) {
+                    fieldValueDao.getValuesByFieldDef(field.id)
+                }
+
+                val nonEmptyValues = values.filter { it.value.isNotBlank() }
+                if (nonEmptyValues.isEmpty()) {
+                    // 기존 값이 없으면 바로 저장
+                    completeSave(field)
+                    return@launch
+                }
+
+                val compatible = nonEmptyValues.count { isValueCompatible(it.value, newType) }
+                val incompatible = nonEmptyValues.size - compatible
+
+                if (incompatible == 0) {
+                    completeSave(field)
+                    return@launch
+                }
+
+                val ctx = context ?: return@launch
+                AlertDialog.Builder(ctx)
+                    .setTitle(getString(R.string.field_type_change_title))
+                    .setMessage(getString(R.string.field_type_change_message,
+                        oldType, newType, nonEmptyValues.size, compatible, incompatible))
+                    .setPositiveButton(getString(R.string.field_type_change_proceed)) { _, _ ->
+                        resetIncompatibleValuesAndSave(app, field, nonEmptyValues, newType)
+                    }
+                    .setNegativeButton(getString(R.string.cancel)) { _, _ ->
+                        setSaveButtonEnabled(true)
+                    }
+                    .setOnCancelListener { setSaveButtonEnabled(true) }
+                    .show()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                android.util.Log.e("FieldEditDialog", "Type change impact check failed", e)
+                context?.let { android.widget.Toast.makeText(it, R.string.save_failed, android.widget.Toast.LENGTH_SHORT).show() }
+                setSaveButtonEnabled(true)
             }
+        }
+    }
 
-            val nonEmptyValues = values.filter { it.value.isNotBlank() }
-            if (nonEmptyValues.isEmpty()) {
-                // 기존 값이 없으면 바로 저장
-                deliverResult(field)
-                return@launch
-            }
-
-            val compatible = nonEmptyValues.count { isValueCompatible(it.value, newType) }
-            val incompatible = nonEmptyValues.size - compatible
-
-            if (incompatible == 0) {
-                deliverResult(field)
-                return@launch
-            }
-
-            val ctx = context ?: return@launch
-            AlertDialog.Builder(ctx)
-                .setTitle(getString(R.string.field_type_change_title))
-                .setMessage(getString(R.string.field_type_change_message,
-                    oldType, newType, nonEmptyValues.size, compatible, incompatible))
-                .setPositiveButton(getString(R.string.field_type_change_proceed)) { _, _ ->
-                    // 호환 불가 값을 빈 문자열로 초기화
-                    lifecycleScope.launch(Dispatchers.IO) {
-                        val toReset = nonEmptyValues.filter { !isValueCompatible(it.value, newType) }
-                        toReset.forEach { fv ->
-                            fieldValueDao.update(fv.copy(value = ""))
-                        }
-                        withContext(Dispatchers.Main) {
-                            deliverResult(field)
-                        }
+    /** 호환 불가 값을 트랜잭션으로 일괄 초기화한 뒤 저장을 완결한다. 실패 시 다이얼로그를 유지하고 저장 버튼을 되살린다. */
+    private fun resetIncompatibleValuesAndSave(
+        app: com.novelcharacter.app.NovelCharacterApp,
+        field: FieldDefinition,
+        nonEmptyValues: List<CharacterFieldValue>,
+        newType: String
+    ) {
+        val fieldValueDao = app.database.characterFieldValueDao()
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                // 초기화가 중간에 끊겨 일부 값만 지워지는 일이 없도록 트랜잭션으로 묶는다
+                app.database.withTransaction {
+                    val toReset = nonEmptyValues.filter { !isValueCompatible(it.value, newType) }
+                    toReset.forEach { fv ->
+                        fieldValueDao.update(fv.copy(value = ""))
                     }
                 }
-                .setNegativeButton(getString(R.string.cancel), null)
-                .show()
+                withContext(Dispatchers.Main) {
+                    completeSave(field)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                android.util.Log.e("FieldEditDialog", "Incompatible value reset failed", e)
+                withContext(Dispatchers.Main) {
+                    context?.let { android.widget.Toast.makeText(it, R.string.save_failed, android.widget.Toast.LENGTH_SHORT).show() }
+                    setSaveButtonEnabled(true)
+                }
+            }
         }
     }
 
@@ -1241,13 +1287,31 @@ class FieldEditDialog : DialogFragment() {
         }
     }
 
-    private fun deliverResult(field: FieldDefinition) {
+    /** @return 결과가 수락되었으면 true. onSave 콜백이 false를 반환하면(예: 키 중복 거부) 다이얼로그를 유지해야 한다. */
+    private fun deliverResult(field: FieldDefinition): Boolean {
         // Support both callback (for non-rotation case) and FragmentResult (survives rotation)
-        if (onSave != null) {
-            onSave?.invoke(field)
-        } else if (isAdded) {
-            setFragmentResult(RESULT_KEY, bundleOf(RESULT_FIELD_JSON to Gson().toJson(field)))
+        val listener = onSave
+        return if (listener != null) {
+            listener(field)
+        } else {
+            if (isAdded) {
+                setFragmentResult(RESULT_KEY, bundleOf(RESULT_FIELD_JSON to Gson().toJson(field)))
+            }
+            true
         }
+    }
+
+    /** 비동기 경로의 저장 완결 처리: 결과가 수락되면 다이얼로그를 닫고, 거부되면 저장 버튼을 되살린다. */
+    private fun completeSave(field: FieldDefinition) {
+        if (deliverResult(field)) {
+            dismissAllowingStateLoss()
+        } else {
+            setSaveButtonEnabled(true)
+        }
+    }
+
+    private fun setSaveButtonEnabled(enabled: Boolean) {
+        (dialog as? AlertDialog)?.getButton(AlertDialog.BUTTON_POSITIVE)?.isEnabled = enabled
     }
 
     private fun buildConfig(binding: DialogFieldEditBinding, type: FieldType): String {
