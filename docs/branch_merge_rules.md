@@ -77,21 +77,26 @@ Claude Code로 작업하는 경우 위 규칙을 다음과 같이 적용한다:
 
 이 설정이 바뀌지 않으면 새 세션·새 PR이 계속 낡은 브랜치를 기준으로 생성되어 이 규칙 전체가 무력화된다. (이 변경은 git 명령으로 불가능하며 저장소 설정에서만 가능하다.)
 
-### 5-2. 미병합 브랜치 7개 처리 `[상태: 미완료]`
+### 5-2. 미병합 브랜치 7개 처리 `[상태: 검토 완료 (2026-07-03), 조치 대기]`
 
-2026-07-03 기준, master에 없는 고유 커밋을 가진 브랜치는 아래 7개다. 내용을 검토하여 유효하면 master로 병합하고, 이미 다른 경로로 반영되었거나 폐기 대상이면 삭제한다:
+2026-07-03 기준, master에 없는 고유 커밋을 가진 브랜치는 아래 7개다. 각 브랜치의 수정 내용을 현재 master 코드와 전수 대조하고(브랜치별 분석 + 독립 재검증 2단계), 충돌을 `git merge-tree`로 테스트한 결과:
 
-| 브랜치 | 고유 커밋 | 내용 | 권고 |
-|--------|-----------|------|------|
-| `claude/code-review-5rddC` | 5 | 코드 리뷰 버그 수정 (1~5차, 총 39건) | 검토 후 병합 |
-| `claude/code-review-GpR1S` | 3 | 데이터 유실/크래시/race condition 수정 | 검토 후 병합 |
-| `claude/code-review-W3FT4` | 1 | ThemeHelper ANR·비트맵 메모리 누수 수정 | 검토 후 병합 |
-| `claude/fix-code-bugs-clTCB` | 1 | CharacterViewModel newValue 누락 수정 | 검토 후 병합 |
-| `claude/general-code-review-D7RIN` | 1 | 보안 검증·에러 처리·문자열 외부화 | 검토 후 병합 |
-| `claude/review-project-status-Tzh8W` | 3 | Critical/High/Medium 29건 수정 + .gitignore | 검토 후 병합 |
-| `claude/sprint-2-implementation-e8g5R` | 1 | PR #6 merge commit뿐 (내용은 master에 이미 반영) | 삭제 가능 |
+| 브랜치 | 고유 커밋 | 판정 | 근거 요약 |
+|--------|-----------|------|-----------|
+| `claude/fix-code-bugs-clTCB` | 1 | **병합** | 현재 master HEAD에서 분기. 유일한 수정(CharacterViewModel `newValue` 누락 — 출생/사망 연도 수정 시 나이 오표시)이 여전히 유효하고 충돌 없음(fast-forward 가능) |
+| `claude/code-review-GpR1S` | 3 | **선별 재적용 후 삭제** | 수정 16건 중 유효 8건 / 이미 반영 5건 / 대체됨 1건 / **적용 시 회귀 유발 2건**. 9개 파일 충돌 → 통째 병합 금지 |
+| `claude/general-code-review-D7RIN` | 1 | **선별 재적용 후 삭제** | 수정 7건 중 유효 2건(Excel 가져오기 파일 크기 검사 우회, 내보내기 하드코딩 문자열)뿐. 4개 파일 충돌 |
+| `claude/code-review-5rddC` | 5 | **삭제** | 수정 25건 중 24건이 이미 master에 동일하거나 더 나은 형태로 반영, 1건은 브랜치 내에서 스스로 되돌린 것. 24개 파일 충돌 |
+| `claude/code-review-W3FT4` | 1 | **삭제** | 두 문제 모두 master가 더 나은 방식으로 해결(테마 설정 보존 방식 ANR 수정 등). 브랜치안 적용 시 오히려 회귀(설정 유실, bitmap.recycle 크래시) |
+| `claude/review-project-status-Tzh8W` | 3 | **삭제** | 수정 18건 중 16건 이미 반영, 남은 것은 실익 없는 마이크로 최적화 2줄뿐. 19개 파일 충돌 |
+| `claude/sprint-2-implementation-e8g5R` | 1 | **삭제** | 고유 커밋이 불필요한 merge commit 1개뿐. 브랜치 트리가 master에 이미 포함(병합해도 변화 0) |
 
-> 주의: 이 브랜치들은 서로 다른 시점의 코드를 기준으로 하므로, 병합 시 충돌이 나거나 이미 다른 커밋으로 해결된 문제를 다시 건드릴 수 있다. 병합 전 반드시 최신 master 기준으로 rebase하고 내용의 유효성을 확인한다.
+**유효 수정 목록 (낡은 브랜치를 병합하지 말고 최신 master 위에 새로 재적용할 것):**
+
+- GpR1S에서 8건: FormulaEvaluator 이중 부정 버그(`--3`이 `-3`으로 계산됨), FieldManageFragment 드래그 순서 저장 race, TimelineFragment error LiveData 미관찰(에러가 조용히 사라짐), MainActivity 하단 네비 크래시 가드(기존 `navigateSafe` 유틸 재사용), NameBankFragment·FieldEditDialog 검증 실패 시 다이얼로그 유지(입력 유실 방지), TimeSliderHelper 동시 실행 Job 취소, AutoBackupWorker rotateBackups 실패 분리
+- D7RIN에서 2건: ExcelImporter 파일 크기 `-1L`일 때 ZIP bomb 크기 제한 우회, ExcelExporter 검증 박스 하드코딩 문자열 외부화
+
+> 주의: 위 7개 브랜치는 최대 405커밋 낡은 코드 기준이므로 rebase/병합하면 이미 개선된 master 코드를 되돌리는 회귀가 발생한다. clTCB를 제외하고는 브랜치 자체를 살리지 말고, 유효 수정만 master 기준으로 새로 작성한다.
 
 ### 5-3. 이미 병합된 브랜치 삭제 `[상태: 미완료]`
 
