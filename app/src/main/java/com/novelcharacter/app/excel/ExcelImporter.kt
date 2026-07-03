@@ -98,16 +98,17 @@ class ExcelImporter(context: Context) {
     fun importFromLocalFile(file: File) {
         ensureActiveScope().launch {
             try {
-                if (file.length() > MAX_IMPORT_FILE_SIZE) {
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(appContext, com.novelcharacter.app.R.string.import_file_too_large, Toast.LENGTH_LONG).show()
-                    }
-                    return@launch
-                }
-
                 if (isZipFile(file)) {
+                    // 이미지 포함 백업(ZIP)은 전체 크기 대신 해제 단계에서 엔트리별 상한을 검사한다
+                    // (전체 상한을 걸면 앱이 만든 대용량 백업이 스스로 복원 불가가 됨)
                     importFromZip(file)
                 } else {
+                    if (file.length() > MAX_IMPORT_FILE_SIZE) {
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(appContext, com.novelcharacter.app.R.string.import_xlsx_too_large, Toast.LENGTH_LONG).show()
+                        }
+                        return@launch
+                    }
                     importFromXlsx(file)
                 }
             } catch (e: Exception) {
@@ -122,9 +123,9 @@ class ExcelImporter(context: Context) {
     private fun importFromUri(uri: Uri) {
         ensureActiveScope().launch {
             try {
-                // 파일 크기 체크
+                // 파일 크기 체크 (외부 파일 전체 상한 — 이미지 포함 ZIP 왕복을 보장하는 수준으로 넉넉히)
                 val fileSize = appContext.contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: -1L
-                if (fileSize > MAX_IMPORT_FILE_SIZE) {
+                if (fileSize > MAX_EXTERNAL_FILE_SIZE) {
                     withContext(Dispatchers.Main) {
                         Toast.makeText(appContext, com.novelcharacter.app.R.string.import_file_too_large, Toast.LENGTH_LONG).show()
                     }
@@ -136,9 +137,9 @@ class ExcelImporter(context: Context) {
                 val tempFile = File(appContext.cacheDir, "import_temp_${System.currentTimeMillis()}")
                 try {
                     val copied = appContext.contentResolver.openInputStream(uri)?.use { input ->
-                        FileOutputStream(tempFile).use { output -> copyWithLimit(input, output, MAX_IMPORT_FILE_SIZE) }
+                        FileOutputStream(tempFile).use { output -> copyWithLimit(input, output, MAX_EXTERNAL_FILE_SIZE) }
                     } ?: throw Exception("Cannot open file input stream")
-                    if (copied > MAX_IMPORT_FILE_SIZE) {
+                    if (copied > MAX_EXTERNAL_FILE_SIZE) {
                         withContext(Dispatchers.Main) {
                             Toast.makeText(appContext, com.novelcharacter.app.R.string.import_file_too_large, Toast.LENGTH_LONG).show()
                         }
@@ -148,6 +149,12 @@ class ExcelImporter(context: Context) {
                     if (isZipFile(tempFile)) {
                         importFromZip(tempFile)
                     } else {
+                        if (tempFile.length() > MAX_IMPORT_FILE_SIZE) {
+                            withContext(Dispatchers.Main) {
+                                Toast.makeText(appContext, com.novelcharacter.app.R.string.import_xlsx_too_large, Toast.LENGTH_LONG).show()
+                            }
+                            return@launch
+                        }
                         importFromXlsx(tempFile)
                     }
                 } finally {
@@ -189,30 +196,62 @@ class ExcelImporter(context: Context) {
             var imageMapJson: String? = null
             val hasImages: Boolean
 
+            // ZIP bomb 방어는 전체 파일 크기가 아니라 해제 지점에서 엔트리별로 수행한다
+            // (엔트리 헤더의 크기 선언은 신뢰할 수 없으므로 실제 해제 바이트를 계수)
             ZipFile(zipTempFile).use { zip ->
                 var imageCount = 0
+                var imageTotalBytes = 0L
                 for (entry in zip.entries()) {
                     if (entry.isDirectory) continue
                     when {
                         entry.name == "data.xlsx" -> {
                             val target = File(extractDir, "data.xlsx")
                             xlsxFile = target
-                            zip.getInputStream(entry).use { input ->
-                                FileOutputStream(target).use { output -> input.copyTo(output) }
+                            val copied = zip.getInputStream(entry).use { input ->
+                                FileOutputStream(target).use { output -> copyWithLimit(input, output, MAX_IMPORT_FILE_SIZE) }
+                            }
+                            if (copied > MAX_IMPORT_FILE_SIZE) {
+                                withContext(Dispatchers.Main) {
+                                    Toast.makeText(appContext, com.novelcharacter.app.R.string.import_xlsx_too_large, Toast.LENGTH_LONG).show()
+                                }
+                                return
                             }
                         }
                         entry.name == "image_map.json" -> {
-                            imageMapJson = zip.getInputStream(entry).use { it.bufferedReader().readText() }
+                            val bos = java.io.ByteArrayOutputStream()
+                            val copied = zip.getInputStream(entry).use { input -> copyWithLimit(input, bos, MAX_IMAGE_MAP_SIZE) }
+                            if (copied > MAX_IMAGE_MAP_SIZE) {
+                                // 비정상적으로 큰 매핑 파일은 무시 (이미지 재매핑 없이 데이터만 가져오기)
+                                Log.w("ExcelImporter", "image_map.json exceeds limit, ignoring")
+                                imageMapJson = null
+                            } else {
+                                imageMapJson = bos.toString(Charsets.UTF_8.name())
+                            }
                         }
                         entry.name.startsWith("images/") -> {
+                            if (imageCount >= MAX_IMAGE_ENTRY_COUNT) {
+                                withContext(Dispatchers.Main) {
+                                    Toast.makeText(appContext, com.novelcharacter.app.R.string.import_too_many_images, Toast.LENGTH_LONG).show()
+                                }
+                                return
+                            }
                             val imageFile = File(extractDir, entry.name)
                             if (!imageFile.canonicalPath.startsWith(extractDir.canonicalPath + File.separator)) {
                                 Log.w("ExcelImporter", "Skipping suspicious zip entry: ${entry.name}")
                                 continue
                             }
                             imageFile.parentFile?.mkdirs()
-                            zip.getInputStream(entry).use { input ->
-                                FileOutputStream(imageFile).use { output -> input.copyTo(output) }
+                            val copied = zip.getInputStream(entry).use { input ->
+                                FileOutputStream(imageFile).use { output ->
+                                    copyWithLimit(input, output, MAX_IMAGE_TOTAL_SIZE - imageTotalBytes)
+                                }
+                            }
+                            imageTotalBytes += copied
+                            if (imageTotalBytes > MAX_IMAGE_TOTAL_SIZE) {
+                                withContext(Dispatchers.Main) {
+                                    Toast.makeText(appContext, com.novelcharacter.app.R.string.import_images_too_large, Toast.LENGTH_LONG).show()
+                                }
+                                return
                             }
                             imageCount++
                         }
@@ -1056,6 +1095,10 @@ class ExcelImporter(context: Context) {
     }
 
     companion object {
-        private const val MAX_IMPORT_FILE_SIZE = 50L * 1024 * 1024 // 50MB (ZIP with images can be larger)
+        private const val MAX_IMPORT_FILE_SIZE = 50L * 1024 * 1024 // xlsx(데이터 시트) 파싱 상한 — POI 메모리 보호
+        private const val MAX_EXTERNAL_FILE_SIZE = 512L * 1024 * 1024 // 외부 파일(URI) 전체 상한 — 이미지 포함 ZIP 왕복 보장
+        private const val MAX_IMAGE_ENTRY_COUNT = 2000 // ZIP 이미지 엔트리 개수 상한
+        private const val MAX_IMAGE_TOTAL_SIZE = 1024L * 1024 * 1024 // ZIP 이미지 총 해제 용량 상한 (1GB)
+        private const val MAX_IMAGE_MAP_SIZE = 10L * 1024 * 1024 // image_map.json 상한
     }
 }

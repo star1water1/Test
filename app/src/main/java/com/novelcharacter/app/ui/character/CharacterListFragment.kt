@@ -98,16 +98,33 @@ class CharacterListFragment : Fragment() {
                 findNavController().navigateSafe(R.id.characterListFragment, R.id.characterEditFragment, bundle)
             },
             onDeleteClick = { character ->
-                androidx.appcompat.app.AlertDialog.Builder(requireContext())
-                    .setIcon(android.R.drawable.ic_dialog_alert)
-                    .setTitle(R.string.delete_warning_title)
-                    .setMessage(R.string.confirm_delete)
-                    .setPositiveButton(R.string.yes) { _, _ ->
-                        viewModel.deleteCharacter(character)
-                        com.novelcharacter.app.util.ImageIndexPrefs.clear(requireContext(), "character", character.id)
+                // 연쇄 삭제 범위를 집계해 사전 고지 (undo가 없으므로 사전 고지가 유일한 방어선)
+                viewLifecycleOwner.lifecycleScope.launch {
+                    val impact = viewModel.getCharacterDeleteImpact(character)
+                    if (!isAdded) return@launch
+                    val details = buildList {
+                        if (impact.relationships > 0) add(getString(R.string.delete_impact_relationships, impact.relationships))
+                        if (impact.stateChanges > 0) add(getString(R.string.delete_impact_state_changes, impact.stateChanges))
+                        if (impact.factionMemberships > 0) add(getString(R.string.delete_impact_memberships, impact.factionMemberships))
+                        if (impact.images > 0) add(getString(R.string.delete_impact_images, impact.images))
                     }
-                    .setNegativeButton(R.string.no, null)
-                    .show()
+                    val message = if (details.isEmpty()) {
+                        getString(R.string.confirm_delete)
+                    } else {
+                        getString(R.string.confirm_delete) + "\n\n" +
+                            getString(R.string.delete_impact_header) + "\n" + details.joinToString("\n")
+                    }
+                    androidx.appcompat.app.AlertDialog.Builder(requireContext())
+                        .setIcon(android.R.drawable.ic_dialog_alert)
+                        .setTitle(R.string.delete_warning_title)
+                        .setMessage(message)
+                        .setPositiveButton(R.string.yes) { _, _ ->
+                            viewModel.deleteCharacter(character)
+                            com.novelcharacter.app.util.ImageIndexPrefs.clear(requireContext(), "character", character.id)
+                        }
+                        .setNegativeButton(R.string.no, null)
+                        .show()
+                }
             },
             onPinClick = { character ->
                 viewModel.togglePin(character)

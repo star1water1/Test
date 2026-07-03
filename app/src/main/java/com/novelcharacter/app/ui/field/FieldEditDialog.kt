@@ -43,6 +43,9 @@ class FieldEditDialog : DialogFragment() {
     private var universeId: Long = 0
     private var existingField: FieldDefinition? = null
 
+    // 수식 검증용 — 현재 세계관의 필드 키 목록 (비동기 로드, 로드 전이면 키 존재 검사만 생략)
+    private var universeFieldKeys: Set<String>? = null
+
     // 동적 분석 항목 관리
     private data class AnalysisRow(
         val container: View,
@@ -129,6 +132,17 @@ class FieldEditDialog : DialogFragment() {
             .setPositiveButton(R.string.save, null)
             .setNegativeButton(R.string.cancel, null)
             .create()
+        // 수식 검증용 필드 키 목록 로드 (프리셋 편집(universeId=0)은 DB에 없으므로 제외)
+        if (universeId != 0L) {
+            lifecycleScope.launch {
+                try {
+                    val app = requireContext().applicationContext as com.novelcharacter.app.NovelCharacterApp
+                    universeFieldKeys = app.database.fieldDefinitionDao()
+                        .getFieldsByUniverseList(universeId).map { it.key }.toSet()
+                } catch (_: Exception) { /* 로드 실패 시 키 존재 검사만 생략 */ }
+            }
+        }
+
         // 검증 실패 시 다이얼로그를 닫지 않는다 (입력 유실 방지).
         // 타입 변경 영향 분석(비동기) 경로는 checkTypeChangeImpact가 완료 시점에 직접 닫는다.
         dialog.setValidatedPositiveButton { saveField(binding) }
@@ -1184,16 +1198,62 @@ class FieldEditDialog : DialogFragment() {
             )
         }
 
-        // 타입 변경 시 기존 값 호환성 영향 분석
+        // 수식 검증 — 차단하지 않고 경고 (아직 만들지 않은 필드를 나중에 만드는 작업 순서 존중)
+        if (selectedType == FieldType.CALCULATED) {
+            val problems = validateFormula(binding.editFormula.text.toString().trim(), key)
+            if (problems.isNotEmpty()) {
+                AlertDialog.Builder(requireContext())
+                    .setTitle(R.string.formula_warn_title)
+                    .setMessage(getString(R.string.formula_warn_message, problems.joinToString("\n· ", prefix = "· ")))
+                    .setPositiveButton(R.string.formula_warn_save_anyway) { _, _ ->
+                        if (finishSave(field)) dismissAllowingStateLoss()
+                    }
+                    .setNegativeButton(R.string.formula_warn_fix, null)
+                    .show()
+                return false
+            }
+        }
+
+        return finishSave(field)
+    }
+
+    /** 타입 변경 영향 분석(비동기) 또는 즉시 전달로 저장을 마무리한다. @return true면 다이얼로그를 닫아도 된다. */
+    private fun finishSave(field: FieldDefinition): Boolean {
         val oldType = existingField?.type
-        return if (existingField != null && oldType != null && oldType != selectedType.name) {
+        return if (existingField != null && oldType != null && oldType != field.type) {
             // 분석 중 재클릭으로 인한 중복 실행을 막고, 완료 시점에 checkTypeChangeImpact가 저장·닫기를 처리한다
             setSaveButtonEnabled(false)
-            checkTypeChangeImpact(field, oldType, selectedType.name)
+            checkTypeChangeImpact(field, oldType, field.type)
             false
         } else {
             deliverResult(field) // 콜백이 저장을 거부하면(false) 다이얼로그를 유지한다
         }
+    }
+
+    /** 수식의 잠재 문제 목록 (빈 리스트면 통과). 경고 용도이며 저장을 차단하지 않는다. */
+    private fun validateFormula(formula: String, currentKey: String): List<String> {
+        if (formula.isBlank()) return emptyList()
+        val problems = mutableListOf<String>()
+        var depth = 0
+        var unbalanced = false
+        for (ch in formula) {
+            when (ch) {
+                '(' -> depth++
+                ')' -> { depth--; if (depth < 0) unbalanced = true }
+            }
+        }
+        if (depth != 0 || unbalanced) problems.add(getString(R.string.formula_warn_paren))
+        val keys = universeFieldKeys
+        if (keys != null) {
+            val missing = Regex("""field\(\s*['"]?([^'")]+?)['"]?\s*\)""").findAll(formula)
+                .map { it.groupValues[1].trim() }
+                .filter { it.isNotEmpty() && it !in keys && it != currentKey }
+                .distinct().toList()
+            if (missing.isNotEmpty()) {
+                problems.add(getString(R.string.formula_warn_missing_keys, missing.joinToString(", ")))
+            }
+        }
+        return problems
     }
 
     private fun checkTypeChangeImpact(field: FieldDefinition, oldType: String, newType: String) {
@@ -1334,12 +1394,21 @@ class FieldEditDialog : DialogFragment() {
                 }
             }
             FieldType.GRADE -> {
-                val grades = mapOf(
-                    "C" to (binding.editGradeC.text.toString().toDoubleOrNull() ?: 0.5),
-                    "B" to (binding.editGradeB.text.toString().toDoubleOrNull() ?: 1.0),
-                    "A" to (binding.editGradeA.text.toString().toDoubleOrNull() ?: 2.0),
-                    "S" to (binding.editGradeS.text.toString().toDoubleOrNull() ?: 3.0)
-                )
+                // 기존 config의 커스텀 등급(C/B/A/S 외 키 — 엑셀 필드정의로 만든 D/SS 등)을 보존한다
+                val grades = mutableMapOf<String, Double>()
+                try {
+                    val cfg = existingField?.config
+                    if (!cfg.isNullOrBlank()) {
+                        val gradesJson = org.json.JSONObject(cfg).optJSONObject("grades")
+                        gradesJson?.keys()?.forEach { k ->
+                            grades[k] = gradesJson.optDouble(k, 0.0)
+                        }
+                    }
+                } catch (_: Exception) { /* 손상된 config는 기본 4등급으로 재구성 */ }
+                grades["C"] = binding.editGradeC.text.toString().toDoubleOrNull() ?: 0.5
+                grades["B"] = binding.editGradeB.text.toString().toDoubleOrNull() ?: 1.0
+                grades["A"] = binding.editGradeA.text.toString().toDoubleOrNull() ?: 2.0
+                grades["S"] = binding.editGradeS.text.toString().toDoubleOrNull() ?: 3.0
                 config["grades"] = grades
                 config["allowNegative"] = binding.switchAllowNegative.isChecked
             }

@@ -387,6 +387,19 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             }
         }
 
+        // 인식되지 않은 시트 경고 — 개명된 캐릭터 시트 등이 무통보로 무시되지 않도록 한다
+        val recognizedSheets = mutableSetOf(GUIDE_SHEET_NAME, UNCLASSIFIED_SHEET_NAME)
+        recognizedSheets.addAll(RESERVED_SHEET_NAMES)
+        for (u in db.universeDao().getAllUniversesList()) {
+            findSheetForUniverse(workbook, u.name, RESERVED_SHEET_NAMES)?.let { recognizedSheets.add(it.sheetName) }
+        }
+        for (idx in 0 until workbook.numberOfSheets) {
+            val name = workbook.getSheetName(idx)
+            if (name !in recognizedSheets) {
+                result.warnings.add("시트 '$name'은(는) 인식되지 않아 무시되었습니다 — 캐릭터 시트라면 이름이 세계관 이름과 일치해야 합니다")
+            }
+        }
+
         if (truncatedFieldCount > 0) {
             val detail = if (truncatedDetails.size <= 5) {
                 truncatedDetails.joinToString(", ")
@@ -1037,6 +1050,27 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     }
 
     /**
+     * 헤더 첫 컬럼 검증 + 실패 시 시트를 건너뛰는 이유를 오류로 보고 (무통보 스킵 방지).
+     */
+    private fun checkHeaderOrReport(sheet: Sheet, headerRow: Row, expectedFirstHeader: String, result: ImportResult): Boolean {
+        if (isValidHeader(headerRow, expectedFirstHeader)) return true
+        val actual = getCellString(headerRow, 0)
+        result.errors.add(
+            "시트 '${sheet.sheetName}': 첫 번째 컬럼은 '$expectedFirstHeader'이어야 합니다 (현재: '$actual') — 시트를 건너뛰었습니다. 다른 컬럼 순서는 바꿔도 되지만 첫 컬럼은 고정입니다."
+        )
+        return false
+    }
+
+    /** 필수 컬럼 조회. 없으면 오류를 보고하고 null 반환 — 하드코딩 위치 폴백으로 이웃 컬럼을 오독하지 않도록 한다. */
+    private fun requiredCol(cols: Map<String, Int>, name: String, sheetName: String, result: ImportResult): Int? {
+        val idx = cols[name]
+        if (idx == null) {
+            result.errors.add("시트 '$sheetName': 필수 컬럼 '$name'을(를) 찾을 수 없어 시트를 건너뛰었습니다.")
+        }
+        return idx
+    }
+
+    /**
      * 시트를 찾고, 못 찾으면 경고를 남기고 null 반환.
      */
     private fun findSheet(workbook: Workbook, sheetName: String, result: ImportResult): Sheet? {
@@ -1053,7 +1087,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val spec = universeSpec()
         val sheet = findSheet(workbook, spec.sheetName, result) ?: return
         val headerRow = sheet.getRow(0) ?: return
-        if (!isValidHeader(headerRow, spec.firstColumnHeader)) return
+        if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
 
         val cols = resolveHeaderColumns(headerRow)
         val nameColIndex = cols[spec.firstColumnHeader] ?: cols["이름"] ?: 0
@@ -1179,7 +1213,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val spec = novelSpec(emptyList())
         val sheet = findSheet(workbook, spec.sheetName, result) ?: return
         val headerRow = sheet.getRow(0) ?: return
-        if (!isValidHeader(headerRow, spec.firstColumnHeader)) return
+        if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
 
         val cols = resolveHeaderColumns(headerRow)
         val titleColIndex = cols[spec.firstColumnHeader] ?: cols["제목"] ?: 0
@@ -1313,7 +1347,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val spec = fieldDefinitionSpec(emptyList())
         val sheet = findSheet(workbook, spec.sheetName, result) ?: return
         val headerRow = sheet.getRow(0) ?: return
-        if (!isValidHeader(headerRow, spec.firstColumnHeader)) return
+        if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
 
         val cols = resolveHeaderColumns(headerRow)
         val universeNameColIndex = cols[spec.firstColumnHeader] ?: cols["세계관"] ?: 0
@@ -1410,7 +1444,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         for (universe in universes) {
             val sheet = findSheetForUniverse(workbook, universe.name, reservedNames) ?: continue
             val headerRow = sheet.getRow(0) ?: continue
-            if (!isValidHeader(headerRow, "이름")) continue
+            if (!checkHeaderOrReport(sheet, headerRow, "이름", result)) continue
 
             val fields = db.fieldDefinitionDao().getFieldsByUniverseList(universe.id)
             importCharacterRows(sheet, headerRow, universe, fields, result, resolvedConflicts, universe.name, onProgress, totalRows)
@@ -1422,7 +1456,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private suspend fun importUnclassifiedCharacters(workbook: Workbook, result: ImportResult, resolvedConflicts: Map<String, CharacterConflict>, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val sheet = workbook.getSheet(UNCLASSIFIED_SHEET_NAME) ?: return
         val headerRow = sheet.getRow(0) ?: return
-        if (!isValidHeader(headerRow, "이름")) return
+        if (!checkHeaderOrReport(sheet, headerRow, "이름", result)) return
 
         importCharacterRows(sheet, headerRow, null, emptyList(), result, resolvedConflicts, UNCLASSIFIED_SHEET_NAME, onProgress, totalRows)
     }
@@ -1604,6 +1638,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 for ((colIndex, field) in columnFieldMap) {
                     val isDateField = SemanticRole.fromConfig(field.config) == SemanticRole.BIRTH_DATE
                     val value = getCellString(row, colIndex, dateHint = isDateField)
+                    // NUMBER 필드 타입 검증: 거부하지 않고 저장하되 경고 (수용·교정 원칙 — 통계 누락을 인지시킴)
+                    if (value.isNotBlank() && field.type == "NUMBER" && value.toDoubleOrNull() == null) {
+                        result.warnings.add("캐릭터 행 $i: 숫자 필드 '${field.name}'에 숫자가 아닌 값 '$value'이(가) 저장됨 — 통계에서 제외될 수 있습니다")
+                    }
                     val existingValue = db.characterFieldValueDao().getValue(charId, field.id)
                     if (value.isNotBlank()) {
                         if (existingValue != null) {
@@ -1639,7 +1677,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val spec = timelineSpec(emptyList())
         val sheet = findSheet(workbook, spec.sheetName, result) ?: return
         val headerRow = sheet.getRow(0) ?: return
-        if (!isValidHeader(headerRow, spec.firstColumnHeader)) return
+        if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
 
         val cols = resolveHeaderColumns(headerRow)
         val yearColIndex = cols["연도"] ?: 0
@@ -1647,7 +1685,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val dayColIndex = cols["일"] ?: 2
         val calendarColIndex = cols["역법"] ?: 3
         val eventTypeColIndex = cols["사건 유형"] ?: -1
-        val descColIndex = cols["사건 설명"] ?: cols.entries.firstOrNull { it.key.contains("설명") }?.value ?: 4
+        // 필수 컬럼: 위치 폴백을 쓰면 컬럼 삭제 시 이웃 컬럼 데이터가 사건 설명으로 오기록되므로 검증 후 스킵
+        val descColIndex = cols["사건 설명"]
+            ?: cols.entries.firstOrNull { it.key.contains("설명") }?.value
+            ?: requiredCol(cols, "사건 설명", sheet.sheetName, result) ?: return
         val novelColIndex = cols["관련 작품"] ?: 5
         val charColIndex = cols["관련 캐릭터"] ?: 6
         val novelCodeColIndex = cols["관련작품코드"] ?: -1
@@ -1661,7 +1702,15 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             try {
                 val row = sheet.getRow(i) ?: continue
                 val yearStr = getCellString(row, yearColIndex)
-                val year = parseNumber(yearStr)?.toInt() ?: continue
+                val year = parseNumber(yearStr)?.toInt()
+                if (year == null) {
+                    // 행이 조용히 사라지지 않도록 보고 (빈 행은 제외)
+                    if (yearStr.isNotBlank() || !getCellString(row, descColIndex).isBlank()) {
+                        result.skippedRows++
+                        result.errors.add("연표 행 $i: 연도 '$yearStr'을(를) 숫자로 해석할 수 없어 행을 건너뛰었습니다")
+                    }
+                    continue
+                }
                 val description = getCellString(row, descColIndex)
                 if (description.isBlank()) continue
 
@@ -1781,17 +1830,18 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val spec = stateChangeSpec()
         val sheet = findSheet(workbook, spec.sheetName, result) ?: return
         val headerRow = sheet.getRow(0) ?: return
-        if (!isValidHeader(headerRow, spec.firstColumnHeader)) return
+        if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
 
         val cols = resolveHeaderColumns(headerRow)
         val charNameColIndex = cols["캐릭터"] ?: 0
         val novelColIndex = cols["작품"] ?: 1
-        val yearColIndex = cols["연도"] ?: 2
-        val monthColIndex = cols["월"] ?: 3
-        val dayColIndex = cols["일"] ?: 4
-        val fieldKeyColIndex = cols["필드키"] ?: 5
-        val newValueColIndex = cols["새 값"] ?: 6
-        val descColIndex = cols["설명"] ?: 7
+        // 필수 컬럼: 위치 폴백을 쓰면 컬럼 삭제 시 이웃 컬럼 데이터가 그대로 기록되므로 검증 후 스킵
+        val yearColIndex = requiredCol(cols, "연도", sheet.sheetName, result) ?: return
+        val monthColIndex = cols["월"] ?: -1
+        val dayColIndex = cols["일"] ?: -1
+        val fieldKeyColIndex = requiredCol(cols, "필드키", sheet.sheetName, result) ?: return
+        val newValueColIndex = requiredCol(cols, "새 값", sheet.sheetName, result) ?: return
+        val descColIndex = cols["설명"] ?: -1
         val charCodeColIndex = cols["캐릭터코드"] ?: -1
         val createdAtColIndex = cols["생성일"] ?: -1
 
@@ -1805,7 +1855,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
                 val novelTitle = getCellString(row, novelColIndex)
                 val yearStr = getCellString(row, yearColIndex)
-                val year = parseNumber(yearStr)?.toInt() ?: continue
+                val year = parseNumber(yearStr)?.toInt()
+                if (year == null) {
+                    result.skippedRows++
+                    result.errors.add("상태변화 행 $i: 연도 '$yearStr'을(를) 숫자로 해석할 수 없어 행을 건너뛰었습니다")
+                    continue
+                }
 
                 val month = parseNumber(getCellString(row, monthColIndex))?.toInt()?.takeIf { it in 1..12 }
                 val day = parseNumber(getCellString(row, dayColIndex))?.toInt()?.takeIf { d -> d in 1..31 && isValidDay(month, d) }
@@ -1889,13 +1944,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val spec = relationshipSpec()
         val sheet = findSheet(workbook, spec.sheetName, result) ?: return
         val headerRow = sheet.getRow(0) ?: return
-        if (!isValidHeader(headerRow, spec.firstColumnHeader)) return
+        if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
 
         val cols = resolveHeaderColumns(headerRow)
         val char1NameColIndex = cols["캐릭터1"] ?: 0
-        val char2NameColIndex = cols["캐릭터2"] ?: 1
-        val typeColIndex = cols["관계 유형"] ?: 2
-        val descColIndex = cols["설명"] ?: 3
+        // 필수 컬럼: 위치 폴백으로 이웃 컬럼을 오독하지 않도록 검증 후 스킵
+        val char2NameColIndex = requiredCol(cols, "캐릭터2", sheet.sheetName, result) ?: return
+        val typeColIndex = requiredCol(cols, "관계 유형", sheet.sheetName, result) ?: return
+        val descColIndex = cols["설명"] ?: -1
         val intensityColIndex = cols["강도"] ?: -1
         val bidirectionalColIndex = cols["양방향"] ?: -1
         val displayOrderColIndex = cols["표시순서"] ?: -1
@@ -2011,14 +2067,15 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private suspend fun importRelationshipChanges(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val sheet = findSheet(workbook, "관계 변화", result) ?: return
         val headerRow = sheet.getRow(0) ?: return
-        if (!isValidHeader(headerRow, "캐릭터1")) return
+        if (!checkHeaderOrReport(sheet, headerRow, "캐릭터1", result)) return
 
         val cols = resolveHeaderColumns(headerRow)
         val char1NameColIndex = cols["캐릭터1"] ?: 0
-        val char2NameColIndex = cols["캐릭터2"] ?: 1
-        val yearColIndex = cols["연도"] ?: 2
-        val monthColIndex = cols["월"] ?: 3
-        val dayColIndex = cols["일"] ?: 4
+        // 필수 컬럼: 위치 폴백으로 이웃 컬럼을 오독하지 않도록 검증 후 스킵
+        val char2NameColIndex = requiredCol(cols, "캐릭터2", sheet.sheetName, result) ?: return
+        val yearColIndex = requiredCol(cols, "연도", sheet.sheetName, result) ?: return
+        val monthColIndex = cols["월"] ?: -1
+        val dayColIndex = cols["일"] ?: -1
         val relTypeColIndex = cols["관계 유형"] ?: 5
         val descColIndex = cols["설명"] ?: 6
         val intensityColIndex = cols["강도"] ?: 7
@@ -2036,7 +2093,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 if (char1Name.isBlank() || char2Name.isBlank()) continue
 
                 val yearStr = getCellString(row, yearColIndex)
-                val year = parseNumber(yearStr)?.toInt() ?: continue
+                val year = parseNumber(yearStr)?.toInt()
+                if (year == null) {
+                    result.skippedRows++
+                    result.errors.add("관계 변화 행 $i: 연도 '$yearStr'을(를) 숫자로 해석할 수 없어 행을 건너뛰었습니다")
+                    continue
+                }
                 val month = parseNumber(getCellString(row, monthColIndex))?.toInt()?.takeIf { it in 1..12 }
                 val day = parseNumber(getCellString(row, dayColIndex))?.toInt()?.takeIf { d -> d in 1..31 && isValidDay(month, d) }
                 val relationshipType = getCellString(row, relTypeColIndex)
@@ -2125,7 +2187,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val spec = nameBankSpec()
         val sheet = findSheet(workbook, spec.sheetName, result) ?: return
         val headerRow = sheet.getRow(0) ?: return
-        if (!isValidHeader(headerRow, spec.firstColumnHeader)) return
+        if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
 
         val cols = resolveHeaderColumns(headerRow)
         val nameColIndex = cols["이름"] ?: 0
@@ -2198,7 +2260,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val spec = userPresetTemplateSpec()
         val sheet = findSheet(workbook, spec.sheetName, result) ?: return
         val headerRow = sheet.getRow(0) ?: return
-        if (!isValidHeader(headerRow, spec.firstColumnHeader)) return
+        if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
 
         val cols = resolveHeaderColumns(headerRow)
         val nameColIndex = cols["이름"] ?: 0
@@ -2254,7 +2316,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val spec = searchPresetSpec()
         val sheet = findSheet(workbook, spec.sheetName, result) ?: return
         val headerRow = sheet.getRow(0) ?: return
-        if (!isValidHeader(headerRow, spec.firstColumnHeader)) return
+        if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
 
         val cols = resolveHeaderColumns(headerRow)
         val nameColIndex = cols["이름"] ?: 0
@@ -2313,7 +2375,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val spec = appSettingsSpec()
         val sheet = findSheet(workbook, spec.sheetName, result) ?: return
         val headerRow = sheet.getRow(0) ?: return
-        if (!isValidHeader(headerRow, spec.firstColumnHeader)) return
+        if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
 
         val cols = resolveHeaderColumns(headerRow)
         val keyColIndex = cols["설정키"] ?: 0
@@ -2347,7 +2409,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val spec = factionSpec()
         val sheet = findSheet(workbook, spec.sheetName, result) ?: return
         val headerRow = sheet.getRow(0) ?: return
-        if (!isValidHeader(headerRow, spec.firstColumnHeader)) return
+        if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
 
         val cols = resolveHeaderColumns(headerRow)
         val nameColIndex = cols[spec.firstColumnHeader] ?: cols["이름"] ?: 0
@@ -2479,7 +2541,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val spec = factionMembershipSpec()
         val sheet = findSheet(workbook, spec.sheetName, result) ?: return
         val headerRow = sheet.getRow(0) ?: return
-        if (!isValidHeader(headerRow, spec.firstColumnHeader)) return
+        if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
 
         val cols = resolveHeaderColumns(headerRow)
         val factionNameColIndex = cols[spec.firstColumnHeader] ?: cols["세력"] ?: 0

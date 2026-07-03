@@ -133,13 +133,23 @@ class UniverseListFragment : Fragment() {
                 showUniverseEditDialog(universe)
             },
             onDeleteClick = { universe ->
-                AlertDialog.Builder(requireContext())
-                    .setMessage(getString(R.string.confirm_delete_universe, universe.name))
-                    .setPositiveButton(R.string.yes) { _, _ ->
-                        viewModel.deleteUniverse(universe)
-                    }
-                    .setNegativeButton(R.string.no, null)
-                    .show()
+                // 연쇄 삭제 범위(작품 연결 해제, 필드 정의·필드값 삭제)를 집계해 사전 고지
+                viewLifecycleOwner.lifecycleScope.launch {
+                    val impact = viewModel.getUniverseDeleteImpact(universe.id)
+                    if (!isAdded) return@launch
+                    val message = getString(R.string.confirm_delete_universe, universe.name) + "\n\n" +
+                        getString(
+                            R.string.delete_impact_universe,
+                            impact.novels, impact.fieldDefinitions, impact.fieldValues
+                        )
+                    AlertDialog.Builder(requireContext())
+                        .setMessage(message)
+                        .setPositiveButton(R.string.yes) { _, _ ->
+                            viewModel.deleteUniverse(universe)
+                        }
+                        .setNegativeButton(R.string.no, null)
+                        .show()
+                }
             },
             onFieldManageClick = { universe ->
                 val bundle = Bundle().apply { putLong("universeId", universe.id) }

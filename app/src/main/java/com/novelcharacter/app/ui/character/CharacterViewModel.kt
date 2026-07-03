@@ -131,6 +131,22 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
 
     suspend fun getCharacterByIdSuspend(id: Long): Character? = characterRepository.getCharacterById(id)
 
+    /** 삭제 확인 다이얼로그용 — 함께 영구 삭제되는 데이터 범위 집계 */
+    data class CharacterDeleteImpact(
+        val relationships: Int,
+        val stateChanges: Int,
+        val factionMemberships: Int,
+        val images: Int
+    )
+
+    suspend fun getCharacterDeleteImpact(character: Character): CharacterDeleteImpact {
+        val relationships = characterRepository.getRelationshipsForCharacterList(character.id).size
+        val stateChanges = characterRepository.getChangesByCharacterList(character.id).size
+        val memberships = app.database.factionMembershipDao().getMembershipsByCharacterList(character.id).size
+        val images = try { org.json.JSONArray(character.imagePaths).length() } catch (_: Exception) { 0 }
+        return CharacterDeleteImpact(relationships, stateChanges, memberships, images)
+    }
+
     suspend fun getCharactersForEvent(eventId: Long): List<Character> =
         timelineRepository.getCharactersForEvent(eventId)
 

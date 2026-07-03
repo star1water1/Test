@@ -157,6 +157,12 @@ class FieldManageFragment : Fragment() {
                 viewModel.clearSaveError()
             }
         }
+        viewModel.saveInfo.observe(viewLifecycleOwner) { info ->
+            if (info != null) {
+                android.widget.Toast.makeText(requireContext(), info, android.widget.Toast.LENGTH_LONG).show()
+                viewModel.clearSaveInfo()
+            }
+        }
     }
 
     private fun showFieldEditDialog(field: FieldDefinition?) {

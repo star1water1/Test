@@ -14,6 +14,9 @@ class FormulaEvaluator(
     // Track field keys currently being resolved to detect circular references
     private val resolvingFields = mutableSetOf<String>()
 
+    // 중첩 CALCULATED 평가 결과 캐시 (인스턴스 수명 동안 유효 — 동일 필드 반복 평가 방지)
+    private val calculatedCache = mutableMapOf<String, Double>()
+
     fun evaluate(formula: String): Double {
         val tokens = tokenize(formula)
         if (tokens.size >= MAX_TOKENS) {
@@ -26,22 +29,45 @@ class FormulaEvaluator(
 
     private fun resolveField(key: String): Double {
         if (!resolvingFields.add(key)) {
-            Log.w("FormulaEvaluator", "Circular reference detected for field '$key', returning 0.0")
-            return 0.0
+            // 순환 참조는 0이 아닌 NaN으로 알린다 (조용한 오답 대신 오류 표시로 전파)
+            Log.w("FormulaEvaluator", "Circular reference detected for field '$key', returning NaN")
+            return Double.NaN
         }
         try {
+            val fieldDef = fieldDefinitions.find { it.key == key }
+            // CALCULATED 필드는 저장값(엑셀 유입 정적 값 포함) 대신 항상 수식을 재귀 평가한다
+            if (fieldDef != null && fieldDef.type == "CALCULATED") {
+                calculatedCache[key]?.let { return it }
+                val formula = extractFormula(fieldDef)
+                if (formula.isNullOrBlank()) {
+                    Log.w("FormulaEvaluator", "CALCULATED field '$key' has no formula, defaulting to 0.0")
+                    return 0.0
+                }
+                val result = evaluate(formula)
+                calculatedCache[key] = result
+                return result
+            }
             val value = fieldValues[key]
             if (value == null) {
                 Log.w("FormulaEvaluator", "Field '$key' not found in values, defaulting to 0.0")
                 return 0.0
             }
-            val fieldDef = fieldDefinitions.find { it.key == key }
             if (fieldDef != null && fieldDef.type == "GRADE") {
                 return resolveGradeValue(fieldDef, value)
             }
             return value.toDoubleOrNull() ?: 0.0
         } finally {
             resolvingFields.remove(key)
+        }
+    }
+
+    private fun extractFormula(fieldDef: FieldDefinition): String? {
+        return try {
+            val config = Gson().fromJson<Map<String, Any>>(fieldDef.config, GsonTypes.STRING_ANY_MAP)
+            config["formula"] as? String
+        } catch (e: Exception) {
+            Log.w("FormulaEvaluator", "Failed to parse config for field '${fieldDef.key}'", e)
+            null
         }
     }
 

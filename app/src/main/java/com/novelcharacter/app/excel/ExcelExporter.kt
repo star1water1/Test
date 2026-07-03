@@ -55,6 +55,19 @@ class ExcelExporter(context: Context) {
 
     private lateinit var styles: ExcelStyles
 
+    // XLSX 셀 규격(32,767자) 초과로 잘린 셀 수 — 내보내기 1회 단위 집계
+    private var truncatedCellCount = 0
+
+    /** 셀 한도 초과 텍스트를 잘라 기록한다 — 값 하나 때문에 전체 내보내기가 실패(POI 예외)하지 않도록. */
+    private fun org.apache.poi.ss.usermodel.Cell.setTextSafe(value: String) {
+        if (value.length > XLSX_CELL_LIMIT) {
+            setCellValue(value.take(XLSX_CELL_LIMIT))
+            truncatedCellCount++
+        } else {
+            setCellValue(value)
+        }
+    }
+
     /**
      * @param options 내보내기에 포함할 항목 선택
      * @param onFileReady if non-null, called with the temp file instead of opening a share sheet.
@@ -68,6 +81,7 @@ class ExcelExporter(context: Context) {
             }
             var workbook: XSSFWorkbook? = null
             try {
+                truncatedCellCount = 0
                 workbook = XSSFWorkbook()
                 styles = ExcelStyles(workbook)
                 val usedSheetNames = mutableSetOf<String>()
@@ -112,6 +126,13 @@ class ExcelExporter(context: Context) {
                 }
 
                 withContext(Dispatchers.Main) {
+                    if (truncatedCellCount > 0) {
+                        Toast.makeText(
+                            appContext,
+                            appContext.getString(R.string.export_cells_truncated, truncatedCellCount),
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
                     if (onFileReady != null) {
                         onFileReady(file, fileName)
                     } else {
@@ -371,6 +392,10 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "■ 빨간 헤더 = 필수 입력 컬럼 (비워두면 해당 행 무시됨)"),
             GuideLine("", styles.guideBody, "■ 회색 헤더/셀 = 수정 불가 (앱 내부 데이터, 수정해도 무시됨)"),
             GuideLine("", styles.guideBody, ""),
+            GuideLine("길이 제한", styles.guideSection, ""),
+            GuideLine("", styles.guideBody, "• 셀당 최대 32,767자(엑셀 규격) — 초과분은 내보내기 시 잘려 기록됩니다."),
+            GuideLine("", styles.guideBody, "• 가져오기 시 필드값은 10,000자까지 저장되며, 초과분은 잘리고 결과 요약에 표시됩니다."),
+            GuideLine("", styles.guideBody, ""),
             GuideLine("코드 컬럼 안내 (중요)", styles.guideSection, ""),
             GuideLine("", styles.guideBody, "• 회색 코드 컬럼은 자동 생성된 고유 식별자입니다. 수정하지 마세요."),
             GuideLine("", styles.guideBody, "• 코드가 데이터 매칭의 1순위입니다. 이름/제목은 자유롭게 변경 가능합니다."),
@@ -482,12 +507,12 @@ class ExcelExporter(context: Context) {
         universes.forEachIndexed { index, universe ->
             val row = sheet.createRow(index + 1)
             row.createCell(0).setCellValue(universe.name)
-            row.createCell(1).setCellValue(universe.description)
+            row.createCell(1).setTextSafe(universe.description)
             row.createCell(2).setCellValue(universe.code)
             row.createCell(3).setCellValue(universe.displayOrder.toDouble())
             row.createCell(4).setCellValue(universe.borderColor)
             row.createCell(5).setCellValue(universe.borderWidthDp.toDouble())
-            row.createCell(6).setCellValue(universe.imagePaths)
+            row.createCell(6).setTextSafe(universe.imagePaths)
             row.createCell(7).setCellValue(universe.imageMode)
             row.createCell(8).setCellValue(universe.customRelationshipTypes)
             row.createCell(9).setCellValue(universe.customRelationshipColors)
@@ -516,7 +541,7 @@ class ExcelExporter(context: Context) {
         novels.forEachIndexed { index, novel ->
             val row = sheet.createRow(index + 1)
             row.createCell(0).setCellValue(novel.title)
-            row.createCell(1).setCellValue(novel.description)
+            row.createCell(1).setTextSafe(novel.description)
             val universe = novel.universeId?.let { universeMap[it] }
             row.createCell(2).setCellValue(universe?.name ?: "")
             row.createCell(3).setCellValue(novel.code)
@@ -524,7 +549,7 @@ class ExcelExporter(context: Context) {
             row.createCell(5).setCellValue(novel.displayOrder.toDouble())
             row.createCell(6).setCellValue(novel.borderColor)
             row.createCell(7).setCellValue(novel.borderWidthDp.toDouble())
-            row.createCell(8).setCellValue(novel.imagePaths)
+            row.createCell(8).setTextSafe(novel.imagePaths)
             row.createCell(9).setCellValue(novel.imageMode)
             novel.imageCharacterId?.let { id -> charCodeMap[id]?.let { row.createCell(10).setCellValue(it) } }
             row.createCell(11).setCellValue(if (novel.inheritUniverseBorder) "Y" else "N")
@@ -560,7 +585,7 @@ class ExcelExporter(context: Context) {
             row.createCell(1).setCellValue(field.key)
             row.createCell(2).setCellValue(field.name)
             row.createCell(3).setCellValue(field.type)
-            row.createCell(4).setCellValue(field.config)
+            row.createCell(4).setTextSafe(field.config)
             row.createCell(5).setCellValue(field.groupName)
             row.createCell(6).setCellValue(field.displayOrder.toDouble())
             row.createCell(7).setCellValue(if (field.isRequired) "Y" else "N")
@@ -652,7 +677,7 @@ class ExcelExporter(context: Context) {
             row.createCell(col++).setCellValue(character.firstName)
 
             // 이명
-            row.createCell(col++).setCellValue(character.anotherName)
+            row.createCell(col++).setTextSafe(character.anotherName)
 
             // 동적 필드 (CALCULATED 필드는 FormulaEvaluator로 실시간 계산)
             val calculatedFields = fields.filter { it.type == "CALCULATED" }
@@ -684,17 +709,17 @@ class ExcelExporter(context: Context) {
                 } else {
                     fieldValueMap[field.id]?.value ?: ""
                 }
-                row.createCell(col++).setCellValue(value)
+                row.createCell(col++).setTextSafe(value)
             }
 
             // 이미지경로 (readOnly)
-            row.createCell(col++).setCellValue(character.imagePaths)
+            row.createCell(col++).setTextSafe(character.imagePaths)
 
             // 작품
             row.createCell(col++).setCellValue(novel?.title ?: "")
 
             // 메모
-            row.createCell(col++).setCellValue(character.memo)
+            row.createCell(col++).setTextSafe(character.memo)
 
             // 태그
             val tags = allTags[character.id] ?: emptyList()
@@ -748,7 +773,7 @@ class ExcelExporter(context: Context) {
             event.day?.let { row.createCell(2).setCellValue(it.toDouble()) }
             row.createCell(3).setCellValue(event.calendarType)
             row.createCell(4).setCellValue(eventTypeToLabel(event.eventType))
-            row.createCell(5).setCellValue(event.description)
+            row.createCell(5).setTextSafe(event.description)
 
             val novelIds = eventNovelIdMap[event.id] ?: emptyList()
             val novels = novelIds.mapNotNull { novelMap[it] }
@@ -802,8 +827,8 @@ class ExcelExporter(context: Context) {
             change.month?.let { row.createCell(3).setCellValue(it.toDouble()) }
             change.day?.let { row.createCell(4).setCellValue(it.toDouble()) }
             row.createCell(5).setCellValue(change.fieldKey)
-            row.createCell(6).setCellValue(change.newValue)
-            row.createCell(7).setCellValue(change.description)
+            row.createCell(6).setTextSafe(change.newValue)
+            row.createCell(7).setTextSafe(change.description)
             // 캐릭터코드 (readOnly)
             row.createCell(8).setCellValue(character.code)
             row.createCell(9).setCellValue(change.createdAt.toDouble())
@@ -838,7 +863,7 @@ class ExcelExporter(context: Context) {
             row.createCell(0).setCellValue(char1?.name ?: "")
             row.createCell(1).setCellValue(char2?.name ?: "")
             row.createCell(2).setCellValue(rel.relationshipType)
-            row.createCell(3).setCellValue(rel.description)
+            row.createCell(3).setTextSafe(rel.description)
             row.createCell(4).setCellValue(rel.intensity.toDouble())
             row.createCell(5).setCellValue(if (rel.isBidirectional) "Y" else "N")
             row.createCell(6).setCellValue(rel.displayOrder.toDouble())
@@ -879,7 +904,7 @@ class ExcelExporter(context: Context) {
             rc.month?.let { row.createCell(3).setCellValue(it.toDouble()) }
             rc.day?.let { row.createCell(4).setCellValue(it.toDouble()) }
             row.createCell(5).setCellValue(rc.relationshipType)
-            row.createCell(6).setCellValue(rc.description)
+            row.createCell(6).setTextSafe(rc.description)
             row.createCell(7).setCellValue(rc.intensity.toDouble())
             row.createCell(8).setCellValue(if (rc.isBidirectional) "Y" else "N")
             rc.eventId?.let { row.createCell(9).setCellValue(it.toDouble()) }
@@ -911,7 +936,7 @@ class ExcelExporter(context: Context) {
             row.createCell(0).setCellValue(entry.name)
             row.createCell(1).setCellValue(entry.gender)
             row.createCell(2).setCellValue(entry.origin)
-            row.createCell(3).setCellValue(entry.notes)
+            row.createCell(3).setTextSafe(entry.notes)
             row.createCell(4).setCellValue(if (entry.isUsed) "Y" else "N")
             row.createCell(5).setCellValue(usedByChar?.name ?: "")
             // 사용캐릭터코드 (readOnly)
@@ -942,7 +967,7 @@ class ExcelExporter(context: Context) {
             row.createCell(0).setCellValue(faction.name)
             row.createCell(1).setCellValue(universe?.name ?: "")
             row.createCell(2).setCellValue(universe?.code ?: "")
-            row.createCell(3).setCellValue(faction.description)
+            row.createCell(3).setTextSafe(faction.description)
             row.createCell(4).setCellValue(faction.color)
             row.createCell(5).setCellValue(faction.autoRelationType)
             row.createCell(6).setCellValue(faction.autoRelationIntensity.toDouble())
@@ -1019,8 +1044,8 @@ class ExcelExporter(context: Context) {
         templates.forEachIndexed { i, t ->
             val row = sheet.createRow(i + 1)
             row.createCell(0).setCellValue(t.name)
-            row.createCell(1).setCellValue(t.description)
-            row.createCell(2).setCellValue(t.fieldsJson)
+            row.createCell(1).setTextSafe(t.description)
+            row.createCell(2).setTextSafe(t.fieldsJson)
             row.createCell(3).setCellValue(if (t.isBuiltIn) "Y" else "N")
             row.createCell(4).setCellValue(t.createdAt.toDouble())
             row.createCell(5).setCellValue(t.updatedAt.toDouble())
@@ -1044,7 +1069,7 @@ class ExcelExporter(context: Context) {
             val row = sheet.createRow(i + 1)
             row.createCell(0).setCellValue(p.name)
             row.createCell(1).setCellValue(p.query)
-            row.createCell(2).setCellValue(p.filtersJson)
+            row.createCell(2).setTextSafe(p.filtersJson)
             row.createCell(3).setCellValue(p.sortMode)
             row.createCell(4).setCellValue(if (p.isDefault) "Y" else "N")
             row.createCell(5).setCellValue(p.createdAt.toDouble())
@@ -1079,5 +1104,6 @@ class ExcelExporter(context: Context) {
     companion object {
         private const val DROPDOWN_EXTRA_ROWS = 100
         private const val MAX_DROPDOWN_ROWS = 10000
+        private const val XLSX_CELL_LIMIT = 32767 // XLSX 셀 텍스트 규격 한도
     }
 }

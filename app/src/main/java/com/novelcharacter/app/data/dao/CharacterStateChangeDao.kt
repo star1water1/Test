@@ -42,6 +42,15 @@ interface CharacterStateChangeDao {
     @Query("SELECT * FROM character_state_changes WHERE characterId = :characterId AND year = :year AND fieldKey = :fieldKey AND newValue = :newValue LIMIT 1")
     suspend fun getChangeByNaturalKey(characterId: Long, year: Int, fieldKey: String, newValue: String): CharacterStateChange?
 
+    /** 필드 키 변경 시 해당 세계관 캐릭터들의 상태변화 이력 fieldKey를 일괄 갱신 (무통보 이력 파손 방지) */
+    @Query("""
+        UPDATE character_state_changes SET fieldKey = :newKey
+        WHERE fieldKey = :oldKey AND characterId IN (
+            SELECT c.id FROM characters c JOIN novels n ON c.novelId = n.id WHERE n.universeId = :universeId
+        )
+    """)
+    suspend fun migrateFieldKeyForUniverse(universeId: Long, oldKey: String, newKey: String): Int
+
     @Query("SELECT * FROM character_state_changes WHERE fieldKey = :fieldKey AND month = :month AND day = :day")
     suspend fun getChangesByFieldAndDate(fieldKey: String, month: Int, day: Int): List<CharacterStateChange>
 
