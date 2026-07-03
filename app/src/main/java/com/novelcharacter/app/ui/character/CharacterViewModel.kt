@@ -579,7 +579,7 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
                 val existing = characterRepository.getChangesByCharacterList(charId)
                     .find { it.fieldKey == fieldKey }
                 val change = if (existing != null) {
-                    existing.copy(year = event.year, month = event.month, day = event.day)
+                    existing.copy(year = event.year, month = event.month, day = event.day, newValue = event.year.toString())
                         .also { characterRepository.updateStateChange(it) }
                 } else {
                     CharacterStateChange(
