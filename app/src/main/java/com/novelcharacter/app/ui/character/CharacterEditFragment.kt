@@ -209,12 +209,14 @@ class CharacterEditFragment : Fragment() {
                     if (_binding == null) return@launch
                     buildDynamicForm()
 
-                    // 회전 복원된 필드값이 있으면 우선 적용, 없으면 DB에서 로드
+                    // 회전 복원된 필드값이 있으면 우선 적용, 없으면 DB에서 로드.
+                    // 스피너 초기(position 0) 콜백은 폼이 비어 있으므로 복원값을 소비하지 않고 보존한다
+                    // (여기서 소거하면 이후 실제 작품 선택 콜백이 DB 값으로 덮어써 회전 직전 입력이 유실됨)
                     val saved = pendingFieldValues
-                    if (saved != null) {
+                    if (saved != null && fieldDefinitions.isNotEmpty()) {
                         restoreFieldValues(saved)
                         pendingFieldValues = null
-                    } else {
+                    } else if (saved == null) {
                         val existing = existingCharacter
                         if (existing != null) {
                             loadFieldValues(existing.id)

@@ -79,6 +79,16 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    /** 삭제 확인 다이얼로그용 — 연쇄 삭제/해제 범위 집계 */
+    data class UniverseDeleteImpact(val novels: Int, val fieldDefinitions: Int, val fieldValues: Int)
+
+    suspend fun getUniverseDeleteImpact(universeId: Long): UniverseDeleteImpact {
+        val novels = db.novelDao().getNovelsByUniverseList(universeId).size
+        val fields = db.fieldDefinitionDao().getFieldsByUniverseList(universeId).size
+        val values = db.characterFieldValueDao().countValuesByUniverse(universeId)
+        return UniverseDeleteImpact(novels, fields, values)
+    }
+
     fun updateDisplayOrders(universes: List<Universe>) = viewModelScope.launch {
         try {
             universeRepository.updateUniverseDisplayOrders(universes)

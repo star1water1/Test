@@ -6,6 +6,7 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.switchMap
 import androidx.lifecycle.viewModelScope
+import androidx.room.withTransaction
 import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.Universe
@@ -26,6 +27,11 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
     private val _saveError = MutableLiveData<String?>()
     val saveError: LiveData<String?> = _saveError
     fun clearSaveError() { _saveError.value = null }
+
+    /** 필드 저장 시 자동 교정 등 정보성 알림 (일회성) */
+    private val _saveInfo = MutableLiveData<String?>()
+    val saveInfo: LiveData<String?> = _saveInfo
+    fun clearSaveInfo() { _saveInfo.value = null }
 
     val fields: LiveData<List<FieldDefinition>> = _universeId.switchMap { id ->
         universeRepository.getFieldsByUniverse(id)
@@ -49,7 +55,18 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
 
     fun updateField(field: FieldDefinition) = viewModelScope.launch {
         try {
-            universeRepository.updateField(field)
+            // 키 변경 자동 감지: 참조 수식·상태변화 이력이 무통보로 파손되지 않도록 함께 갱신한다
+            val old = app.database.fieldDefinitionDao().getFieldById(field.id)
+            if (old != null && old.key != field.key) {
+                val (formulaCount, historyCount) = migrateFieldKey(old, field)
+                if (formulaCount > 0 || historyCount > 0) {
+                    _saveInfo.postValue(
+                        "필드 키 변경('${old.key}'→'${field.key}'): 참조 수식 ${formulaCount}건, 상태변화 이력 ${historyCount}건을 자동으로 갱신했습니다."
+                    )
+                }
+            } else {
+                universeRepository.updateField(field)
+            }
         } catch (e: android.database.sqlite.SQLiteConstraintException) {
             Log.e("FieldViewModel", "Duplicate field key on update: ${field.key}", e)
             _saveError.postValue("필드 키 '${field.key}'이(가) 이미 존재합니다.")
@@ -57,6 +74,34 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
             Log.e("FieldViewModel", "Failed to update field", e)
             _saveError.postValue("필드 수정에 실패했습니다.")
         }
+    }
+
+    /** 키 변경 시 참조 수식과 상태변화 이력을 필드 저장과 함께 단일 트랜잭션으로 갱신한다. */
+    private suspend fun migrateFieldKey(old: FieldDefinition, new: FieldDefinition): Pair<Int, Int> {
+        var formulaCount = 0
+        var historyCount = 0
+        app.database.withTransaction {
+            val referencing = getReferencingCalculatedFields(new.universeId, old.key)
+                .filter { it.id != new.id }
+            // field('키') / field("키") / field(키) 3형태 완전 일치 치환 (부분 문자열 오탐 방지)
+            val refRegex = Regex("""field\(\s*(['"]?)${Regex.escape(old.key)}\1\s*\)""")
+            for (f in referencing) {
+                val cfg = org.json.JSONObject(f.config)
+                val formula = cfg.optString("formula", "")
+                val updated = refRegex.replace(formula) { m ->
+                    "field(${m.groupValues[1]}${new.key}${m.groupValues[1]})"
+                }
+                if (updated != formula) {
+                    cfg.put("formula", updated)
+                    universeRepository.updateField(f.copy(config = cfg.toString()))
+                    formulaCount++
+                }
+            }
+            historyCount = app.database.characterStateChangeDao()
+                .migrateFieldKeyForUniverse(new.universeId, old.key, new.key)
+            universeRepository.updateField(new)
+        }
+        return formulaCount to historyCount
     }
 
     fun deleteField(field: FieldDefinition) = viewModelScope.launch {

@@ -91,6 +91,13 @@ interface CharacterFieldValueDao {
     """)
     suspend fun deleteValuesNotInUniverse(characterId: Long, universeId: Long)
 
+    /** 세계관 삭제 영향 고지용 — 해당 세계관 필드 정의에 걸린 값 총수 */
+    @Query("""
+        SELECT COUNT(*) FROM character_field_values
+        WHERE fieldDefinitionId IN (SELECT id FROM field_definitions WHERE universeId = :universeId)
+    """)
+    suspend fun countValuesByUniverse(universeId: Long): Int
+
     // ===== 일괄 편집용 배치 메서드 =====
 
     /** 여러 캐릭터의 특정 필드값 일괄 삭제 */

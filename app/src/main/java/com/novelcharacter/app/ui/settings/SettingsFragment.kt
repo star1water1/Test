@@ -276,7 +276,9 @@ class SettingsFragment : Fragment() {
             val backupCount = backupDir.listFiles { f ->
                 f.name.startsWith("NovelCharacter_AutoBackup_") && f.name.endsWith(".enc")
             }?.size ?: 0
-            sb.append(getString(R.string.backup_file_count, backupCount))
+            sb.appendLine(getString(R.string.backup_file_count, backupCount))
+            // 기기 종속 암호화 상시 고지 — 폰 교체용 백업으로 오인하지 않도록
+            sb.append(getString(R.string.backup_device_bound_caption))
 
             binding.backupStatusText.text = sb.toString()
         }
@@ -467,10 +469,18 @@ class SettingsFragment : Fragment() {
             return
         }
 
-        pendingBackupExportFile = latestBackup
-        val dateFormat = SimpleDateFormat("yyyyMMdd_HHmm", Locale.getDefault())
-        val fileName = "NovelCharacter_Backup_${dateFormat.format(Date(latestBackup.lastModified()))}.enc"
-        backupExportLauncher.launch(fileName)
+        // 기기 종속 암호화 고지 — 기기 이전용으로 오인해 데이터를 잃지 않도록 내보내기 전에 알린다
+        AlertDialog.Builder(requireContext())
+            .setTitle(R.string.backup_device_bound_title)
+            .setMessage(R.string.backup_device_bound_message)
+            .setPositiveButton(R.string.backup_export_continue) { _, _ ->
+                pendingBackupExportFile = latestBackup
+                val dateFormat = SimpleDateFormat("yyyyMMdd_HHmm", Locale.getDefault())
+                val fileName = "NovelCharacter_Backup_${dateFormat.format(Date(latestBackup.lastModified()))}.enc"
+                backupExportLauncher.launch(fileName)
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
     }
 
     private fun showInternalBackupList() {
@@ -582,7 +592,12 @@ class SettingsFragment : Fragment() {
                 AppLogger.error("Settings", "백업 복원 실패", e)
                 if (progressDialog.isShowing) progressDialog.dismiss()
                 if (_binding != null) {
-                    Toast.makeText(ctx, getString(R.string.backup_restore_failed, e.message), Toast.LENGTH_LONG).show()
+                    // 복호화 실패의 가장 흔한 원인(다른 기기의 백업)을 함께 안내
+                    Toast.makeText(
+                        ctx,
+                        getString(R.string.backup_restore_failed, e.message) + "\n" + getString(R.string.backup_restore_device_hint),
+                        Toast.LENGTH_LONG
+                    ).show()
                 }
             }
         }
