@@ -305,10 +305,30 @@
     <string name="export_validation_prompt_title">선택</string>
     <string name="export_cells_truncated">셀 %1$d개가 엑셀 한도(32,767자)를 넘어 잘려 기록되었습니다</string>
     <string name="backup_device_bound_title">이 기기 전용 백업</string>
-    <string name="backup_device_bound_message">이 백업 파일(.enc)은 암호화되어 이 기기에서만 복원할 수 있습니다.\n\n폰 교체 등 다른 기기로 데이터를 옮기려면 \'엑셀로 내보내기\'(이미지 포함)를 사용하세요.</string>
+    <string name="backup_device_bound_message">이 백업 파일(.enc)은 암호화되어 이 기기에서만 복원할 수 있습니다.\n\n다른 기기로 데이터를 옮기려면 \'이식 가능 백업\'(암호 설정) 또는 \'엑셀로 내보내기\'를 사용하세요.</string>
     <string name="backup_export_continue">계속 내보내기</string>
-    <string name="backup_device_bound_caption">※ 백업은 이 기기 전용입니다. 기기 이전은 엑셀 내보내기를 이용하세요.</string>
-    <string name="backup_restore_device_hint">다른 기기에서 만든 백업은 복원할 수 없습니다 (백업은 만든 기기 전용). 기기 이전은 엑셀 내보내기/가져오기를 이용하세요.</string>
+    <string name="backup_device_bound_caption">※ 자동 백업은 이 기기 전용입니다. 기기 이전은 \'백업 내보내기 → 이식 가능 백업\'을 이용하세요.</string>
+    <string name="backup_restore_device_hint">다른 기기에서 만든 기기 전용 백업은 복원할 수 없습니다. 기기 이전은 \'이식 가능 백업\'(암호 설정) 또는 엑셀 내보내기/가져오기를 이용하세요.</string>
+    <!-- 이식 가능(암호) 백업 -->
+    <string name="backup_export_format_title">백업 내보내기 형식</string>
+    <string name="backup_export_portable">이식 가능 백업 — 암호 설정, 다른 기기에서 복원 가능</string>
+    <string name="backup_export_device_only">기기 전용 백업 — 이 기기에서만 복원 가능</string>
+    <string name="backup_passphrase_set_title">백업 암호 설정</string>
+    <string name="backup_passphrase_enter_title">백업 암호 입력</string>
+    <string name="backup_passphrase_hint">암호</string>
+    <string name="backup_passphrase_confirm_hint">암호 확인</string>
+    <string name="backup_passphrase_message">이 암호를 잊으면 백업을 복원할 수 없습니다. 안전한 곳에 보관하세요.</string>
+    <string name="backup_passphrase_too_short">암호는 최소 %1$d자 이상이어야 합니다</string>
+    <string name="backup_passphrase_mismatch">암호가 일치하지 않습니다</string>
+    <string name="backup_passphrase_wrong">암호가 올바르지 않습니다. 다시 입력해 주세요.</string>
+    <string name="backup_portable_preparing">이식 가능 백업 생성 중…</string>
+    <string name="backup_restore_portable_still_ok">단, 암호를 설정해 만든 \'이식 가능 백업\' 파일은 지금도 복원할 수 있습니다.</string>
+    <!-- 캐릭터 편집 드래프트 자동저장 (B-6) -->
+    <string name="draft_restore_title">작성 중이던 초안</string>
+    <string name="draft_restore_message">%1$s에 자동 저장된 미저장 초안이 있습니다. 복원할까요?</string>
+    <string name="draft_restore_apply">복원</string>
+    <string name="draft_restore_discard">삭제</string>
+    <string name="draft_restore_later">나중에</string>
     <string name="backup_options">자동 백업 옵션</string>
     <string name="backup_options_value">이미지 %1$s · 보관 %2$d개</string>
     <string name="backup_option_images_on">포함</string>

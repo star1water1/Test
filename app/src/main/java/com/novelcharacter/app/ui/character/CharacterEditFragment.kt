@@ -40,6 +40,8 @@ import com.novelcharacter.app.data.model.SemanticRole
 import com.novelcharacter.app.data.model.StructuredInputConfig
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.databinding.FragmentCharacterEditBinding
+import com.novelcharacter.app.ui.timeline.EventEditDialogFragment
+import com.novelcharacter.app.util.CharacterDraftPrefs
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -47,7 +49,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.util.UUID
 
-class CharacterEditFragment : Fragment() {
+class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
 
     private var _binding: FragmentCharacterEditBinding? = null
     private val binding get() = _binding!!
@@ -67,6 +69,8 @@ class CharacterEditFragment : Fragment() {
     private var currentUniverseId: Long? = null
     private var hasUnsavedChanges = false
     private var pendingFieldValues: Bundle? = null
+    // 저장 완료/명시적 폐기 후 onPause의 드래프트 재기록 차단 (B-6)
+    private var suppressDraftSave = false
 
     // 보충 모드
     private var supplementMode = false
@@ -97,23 +101,132 @@ class CharacterEditFragment : Fragment() {
             val widget = fieldInputMap[field.id] ?: continue
             val fieldType = FieldType.fromName(field.type)
             if (fieldType == FieldType.CALCULATED) continue
-            val value: String = when (widget) {
-                is MaterialAutoCompleteTextView -> widget.text.toString()
-                is TextInputEditText -> widget.text.toString()
-                is Spinner -> widget.selectedItemPosition.toString()
-                is LinearLayout -> {
-                    val parts = mutableListOf<String>()
-                    for (i in 0 until widget.childCount) {
-                        val partLayout = widget.getChildAt(i) as? TextInputLayout
-                        parts.add(partLayout?.editText?.text?.toString() ?: "")
-                    }
-                    parts.joinToString("\u001F")
-                }
-                else -> ""
-            }
-            fieldValues.putString(field.id.toString(), value)
+            fieldValues.putString(field.id.toString(), widgetStateString(widget))
         }
         outState.putBundle("fieldValues", fieldValues)
+    }
+
+    /** 입력 위젯의 현재 값 직렬화 — 회전 Bundle과 영구 드래프트가 같은 포맷을 공유한다 */
+    private fun widgetStateString(widget: Any): String = when (widget) {
+        is MaterialAutoCompleteTextView -> widget.text.toString()
+        is TextInputEditText -> widget.text.toString()
+        is Spinner -> widget.selectedItemPosition.toString()
+        is LinearLayout -> {
+            val parts = mutableListOf<String>()
+            for (i in 0 until widget.childCount) {
+                val partLayout = widget.getChildAt(i) as? TextInputLayout
+                parts.add(partLayout?.editText?.text?.toString() ?: "")
+            }
+            parts.joinToString("\u001F")
+        }
+        else -> ""
+    }
+
+    /**
+     * 영구 드래프트 자동저장 (B-6).
+     * onSaveInstanceState는 태스크 제거 시 소실되므로, 화면 이탈 시점(onPause)에
+     * 미저장 변경이 있으면 SharedPreferences 드래프트로도 기록한다.
+     */
+    override fun onPause() {
+        super.onPause()
+        if (_binding == null || suppressDraftSave || !hasUnsavedChanges) return
+        val ctx = context?.applicationContext ?: return
+        CharacterDraftPrefs.save(ctx, characterId, collectDraft())
+    }
+
+    private fun collectDraft(): CharacterDraftPrefs.Draft {
+        val novelPosition = binding.spinnerNovel.selectedItemPosition
+        val selectedNovelId =
+            if (novelPosition > 0 && novelPosition - 1 < novels.size) novels[novelPosition - 1].id else -1L
+        val fieldValues = mutableMapOf<String, String>()
+        for (field in fieldDefinitions) {
+            val widget = fieldInputMap[field.id] ?: continue
+            if (FieldType.fromName(field.type) == FieldType.CALCULATED) continue
+            fieldValues[field.id.toString()] = widgetStateString(widget)
+        }
+        return CharacterDraftPrefs.Draft(
+            name = binding.editName.text.toString(),
+            firstName = binding.editFirstName.text.toString(),
+            lastName = binding.editLastName.text.toString(),
+            anotherName = binding.editAnotherName.text.toString(),
+            tags = binding.editTags.text.toString(),
+            memo = binding.editMemo.text.toString(),
+            novelId = selectedNovelId,
+            imagePaths = imagePaths.toList(),
+            fieldValues = fieldValues,
+            savedAt = System.currentTimeMillis()
+        )
+    }
+
+    /** 저장 완료/명시적 폐기 시 드래프트 제거 + 이후 onPause의 재기록 차단 */
+    private fun clearDraft() {
+        suppressDraftSave = true
+        val ctx = context?.applicationContext ?: return
+        CharacterDraftPrefs.clear(ctx, characterId)
+    }
+
+    /** 태스크 제거 등으로 살아남은 미저장 드래프트가 있으면 복원 제안 (B-6) */
+    private fun maybeOfferDraftRestore() {
+        val ctx = context ?: return
+        val draft = CharacterDraftPrefs.load(ctx, characterId) ?: return
+        val timeStr = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault())
+            .format(java.util.Date(draft.savedAt))
+        AlertDialog.Builder(ctx)
+            .setTitle(R.string.draft_restore_title)
+            .setMessage(getString(R.string.draft_restore_message, timeStr))
+            .setPositiveButton(R.string.draft_restore_apply) { _, _ -> applyDraft(draft) }
+            .setNegativeButton(R.string.draft_restore_discard) { _, _ ->
+                // 저장된 드래프트만 버림 — 이후 새 변경은 다시 자동저장된다
+                CharacterDraftPrefs.clear(ctx, characterId)
+            }
+            .setNeutralButton(R.string.draft_restore_later, null)
+            .show()
+    }
+
+    private fun applyDraft(draft: CharacterDraftPrefs.Draft) {
+        if (_binding == null) return
+        binding.editName.setText(draft.name)
+        binding.editFirstName.setText(draft.firstName)
+        binding.editLastName.setText(draft.lastName)
+        binding.editAnotherName.setText(draft.anotherName)
+        binding.editTags.setText(draft.tags)
+        binding.editMemo.setText(draft.memo)
+
+        // 이미지 경로: 내부 저장소 경로만 수용 (회전 복원과 동일한 검증)
+        val dir = appDir
+        if (draft.imagePaths.isNotEmpty() && dir != null) {
+            val validated = draft.imagePaths.filter { path ->
+                try {
+                    File(path).canonicalPath.startsWith(dir.canonicalPath + File.separator)
+                } catch (_: Exception) {
+                    false
+                }
+            }
+            imagePaths.clear()
+            imagePaths.addAll(validated)
+            updateImageList()
+        }
+
+        // 동적 필드: 회전 복원과 동일한 지연 소비 메커니즘(pendingFieldValues) 재사용
+        if (draft.novelId != -1L) {
+            val index = novels.indexOfFirst { it.id == draft.novelId }
+            if (index >= 0) {
+                val bundle = Bundle()
+                draft.fieldValues.forEach { (k, v) -> bundle.putString(k, v) }
+                val targetPos = index + 1
+                if (binding.spinnerNovel.selectedItemPosition == targetPos && fieldDefinitions.isNotEmpty()) {
+                    // 해당 작품 기준으로 폼이 이미 빌드됨 — 즉시 적용
+                    restoreFieldValues(bundle)
+                } else {
+                    // 스피너 콜백의 buildDynamicForm 이후 소비되도록 보관
+                    pendingFieldValues = bundle
+                    binding.spinnerNovel.setSelection(targetPos)
+                }
+            }
+        }
+
+        hasUnsavedChanges = true
+        updateSaveButtonState()
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
@@ -175,6 +288,10 @@ class CharacterEditFragment : Fragment() {
             loadNovels()
             if (characterId != -1L) {
                 loadExistingCharacter()
+            }
+            // 회전 재생성(savedInstanceState 보유)이 아니면 영구 드래프트 복원 제안 (B-6)
+            if (savedInstanceState == null) {
+                maybeOfferDraftRestore()
             }
         }
     }
@@ -1404,6 +1521,7 @@ class CharacterEditFragment : Fragment() {
         viewModel.replaceAllTagsSuspend(savedCharId, tagList.map { CharacterTag(characterId = savedCharId, tag = it) })
 
         resetSavingState()
+        clearDraft()
         if (isAdded && view != null) {
             Toast.makeText(requireContext(), R.string.saved_successfully, Toast.LENGTH_SHORT).show()
             findNavController().popBackStack()
@@ -1505,45 +1623,44 @@ class CharacterEditFragment : Fragment() {
                 Toast.makeText(requireContext(), R.string.save_character_first, Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
-            val eventHelper = com.novelcharacter.app.util.EventEditDialogHelper(
-                requireContext(), viewLifecycleOwner.lifecycleScope, layoutInflater
-            )
-            val dataProvider = object : com.novelcharacter.app.util.EventEditDialogHelper.DataProvider {
-                override suspend fun getAllNovelsList(): List<Novel> = viewModel.getAllNovelsList()
-                override suspend fun getAllCharactersList(): List<com.novelcharacter.app.data.model.Character> = viewModel.getAllCharactersList()
-                override suspend fun getCharacterIdsForEvent(eventId: Long): List<Long> = viewModel.getCharacterIdsForEvent(eventId)
-                override suspend fun getNovelIdsForEvent(eventId: Long): List<Long> = viewModel.getNovelIdsForEvent(eventId)
-                override fun insertEvent(event: com.novelcharacter.app.data.model.TimelineEvent, characterIds: List<Long>, novelIds: List<Long>) {
-                    viewModel.insertEvent(event, characterIds, novelIds)
-                }
-                override fun updateEvent(event: com.novelcharacter.app.data.model.TimelineEvent, characterIds: List<Long>, novelIds: List<Long>) {
-                    viewModel.updateEvent(event, characterIds, novelIds)
-                }
-                override suspend fun getEventsInScope(novelIds: List<Long>, universeId: Long?): List<com.novelcharacter.app.data.model.TimelineEvent> {
-                    return when {
-                        novelIds.isNotEmpty() ->
-                            novelIds.flatMap { viewModel.getEventsByNovelList(it) }.distinctBy { it.id }
-                        universeId != null -> viewModel.getEventsByUniverseList(universeId)
-                        else -> viewModel.getAllEventsList()
-                    }
-                }
-                override fun updateEventAndShiftOthers(
-                    event: com.novelcharacter.app.data.model.TimelineEvent, characterIds: List<Long>, novelIds: List<Long>,
-                    shiftDirection: com.novelcharacter.app.util.EventEditDialogHelper.ShiftDirection,
-                    delta: Int, originalNovelIds: List<Long>, originalUniverseId: Long?
-                ) {
-                    viewModel.updateEventAndShiftOthers(event, characterIds, novelIds, shiftDirection, delta, originalNovelIds, originalUniverseId)
-                }
-            }
             val novelPosition = binding.spinnerNovel.selectedItemPosition
             val selectedNovelId = if (novelPosition > 0 && novelPosition - 1 < novels.size) novels[novelPosition - 1].id else null
-            eventHelper.showEventDialog(
-                dataProvider = dataProvider,
+            EventEditDialogFragment.show(
+                childFragmentManager,
                 preSelectedCharacterIds = setOf(characterId),
                 preSelectedNovelIds = listOfNotNull(selectedNovelId)
             )
         }
     }
+
+    override fun eventDialogDataProvider(): EventEditDialogFragment.DataProvider =
+        object : EventEditDialogFragment.DataProvider {
+            override suspend fun getAllNovelsList(): List<Novel> = viewModel.getAllNovelsList()
+            override suspend fun getAllCharactersList(): List<com.novelcharacter.app.data.model.Character> = viewModel.getAllCharactersList()
+            override suspend fun getCharacterIdsForEvent(eventId: Long): List<Long> = viewModel.getCharacterIdsForEvent(eventId)
+            override suspend fun getNovelIdsForEvent(eventId: Long): List<Long> = viewModel.getNovelIdsForEvent(eventId)
+            override fun insertEvent(event: com.novelcharacter.app.data.model.TimelineEvent, characterIds: List<Long>, novelIds: List<Long>) {
+                viewModel.insertEvent(event, characterIds, novelIds)
+            }
+            override fun updateEvent(event: com.novelcharacter.app.data.model.TimelineEvent, characterIds: List<Long>, novelIds: List<Long>) {
+                viewModel.updateEvent(event, characterIds, novelIds)
+            }
+            override suspend fun getEventsInScope(novelIds: List<Long>, universeId: Long?): List<com.novelcharacter.app.data.model.TimelineEvent> {
+                return when {
+                    novelIds.isNotEmpty() ->
+                        novelIds.flatMap { viewModel.getEventsByNovelList(it) }.distinctBy { it.id }
+                    universeId != null -> viewModel.getEventsByUniverseList(universeId)
+                    else -> viewModel.getAllEventsList()
+                }
+            }
+            override fun updateEventAndShiftOthers(
+                event: com.novelcharacter.app.data.model.TimelineEvent, characterIds: List<Long>, novelIds: List<Long>,
+                shiftDirection: EventEditDialogFragment.ShiftDirection,
+                delta: Int, originalNovelIds: List<Long>, originalUniverseId: Long?
+            ) {
+                viewModel.updateEventAndShiftOthers(event, characterIds, novelIds, shiftDirection, delta, originalNovelIds, originalUniverseId)
+            }
+        }
 
     private fun handleBackPress() {
         if (hasUnsavedChanges) {
@@ -1552,6 +1669,8 @@ class CharacterEditFragment : Fragment() {
                 .setTitle(R.string.unsaved_changes_title)
                 .setMessage(R.string.unsaved_changes_message)
                 .setPositiveButton(R.string.discard) { _, _ ->
+                    // 명시적 폐기 — 드래프트도 함께 제거 (재진입 시 되살아나지 않도록)
+                    clearDraft()
                     findNavController().popBackStack()
                 }
                 .setNegativeButton(R.string.stay, null)
@@ -1575,6 +1694,7 @@ class CharacterEditFragment : Fragment() {
         binding.editLastName.addTextChangedListener(changeWatcher)
         binding.editAnotherName.addTextChangedListener(changeWatcher)
         binding.editMemo.addTextChangedListener(changeWatcher)
+        binding.editTags.addTextChangedListener(changeWatcher)
     }
 
     private fun updateSaveButtonState() {
@@ -1717,6 +1837,7 @@ class CharacterEditFragment : Fragment() {
         viewModel.replaceAllTagsSuspend(savedCharId, tagList.map { CharacterTag(characterId = savedCharId, tag = it) })
 
         resetSupplementSavingState()
+        clearDraft()
         if (isAdded && view != null) {
             Toast.makeText(requireContext(), R.string.saved_successfully, Toast.LENGTH_SHORT).show()
             navigateToNextSupplement()

@@ -28,6 +28,7 @@ import java.util.Locale
 import com.novelcharacter.app.databinding.FragmentSettingsBinding
 import com.novelcharacter.app.util.AppLogger
 import com.novelcharacter.app.util.ThemeHelper
+import com.novelcharacter.app.util.setValidatedPositiveButton
 import androidx.room.withTransaction
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -499,10 +500,15 @@ class SettingsFragment : Fragment() {
         if (!isAdded) return
 
         if (!BackupEncryptor.isKeyAvailable()) {
+            // 기기 키가 없어도 암호(패스프레이즈)로 만든 이식 가능 백업은 복원할 수 있으므로
+            // 외부 파일 복원 경로는 열어둔다
             AlertDialog.Builder(requireContext())
                 .setTitle(R.string.backup_restore_title)
-                .setMessage(R.string.backup_restore_key_missing)
-                .setPositiveButton(R.string.confirm, null)
+                .setMessage(getString(R.string.backup_restore_key_missing) + "\n\n" + getString(R.string.backup_restore_portable_still_ok))
+                .setPositiveButton(R.string.backup_restore_from_external) { _, _ ->
+                    restoreFileLauncher.launch(arrayOf("application/octet-stream"))
+                }
+                .setNegativeButton(R.string.cancel, null)
                 .show()
             return
         }
@@ -538,7 +544,29 @@ class SettingsFragment : Fragment() {
             return
         }
 
-        // 기기 종속 암호화 고지 — 기기 이전용으로 오인해 데이터를 잃지 않도록 내보내기 전에 알린다
+        // 형식 선택: 이식 가능(암호 설정, 다른 기기 복원 가능) / 기기 전용(현재 기기에서만 복원)
+        AlertDialog.Builder(requireContext())
+            .setTitle(R.string.backup_export_format_title)
+            .setItems(
+                arrayOf(
+                    getString(R.string.backup_export_portable),
+                    getString(R.string.backup_export_device_only)
+                )
+            ) { _, which ->
+                when (which) {
+                    0 -> showSetPassphraseDialog { passphrase ->
+                        exportPortableBackup(latestBackup, passphrase)
+                    }
+                    1 -> confirmDeviceOnlyExport(latestBackup)
+                }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    /** 기기 전용 내보내기 — 기기 종속 암호화 고지 후 원본 .enc를 그대로 복사 */
+    private fun confirmDeviceOnlyExport(latestBackup: File) {
+        if (!isAdded) return
         AlertDialog.Builder(requireContext())
             .setTitle(R.string.backup_device_bound_title)
             .setMessage(R.string.backup_device_bound_message)
@@ -550,6 +578,144 @@ class SettingsFragment : Fragment() {
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
+    }
+
+    /**
+     * 이식 가능 백업용 암호 설정 다이얼로그 (암호 + 확인 입력).
+     * 검증 통과 시에만 onSet 호출 — 최소 길이/일치 여부를 다이얼로그 안에서 안내.
+     */
+    private fun showSetPassphraseDialog(onSet: (CharArray) -> Unit) {
+        if (!isAdded) return
+        val ctx = requireContext()
+        val density = resources.displayMetrics.density
+        val pad = (24 * density).toInt()
+
+        val container = android.widget.LinearLayout(ctx).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(pad, (8 * density).toInt(), pad, 0)
+        }
+        val passwordType =
+            android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+        val editPass = android.widget.EditText(ctx).apply {
+            hint = getString(R.string.backup_passphrase_hint)
+            inputType = passwordType
+        }
+        val editConfirm = android.widget.EditText(ctx).apply {
+            hint = getString(R.string.backup_passphrase_confirm_hint)
+            inputType = passwordType
+        }
+        container.addView(editPass)
+        container.addView(editConfirm)
+
+        val dialog = AlertDialog.Builder(ctx)
+            .setTitle(R.string.backup_passphrase_set_title)
+            .setMessage(R.string.backup_passphrase_message)
+            .setView(container)
+            .setPositiveButton(R.string.confirm, null)
+            .setNegativeButton(R.string.cancel, null)
+            .create()
+        dialog.setValidatedPositiveButton {
+            val pass = editPass.text.toString()
+            val confirm = editConfirm.text.toString()
+            when {
+                pass.length < BackupEncryptor.MIN_PASSPHRASE_LENGTH -> {
+                    Toast.makeText(
+                        ctx,
+                        getString(R.string.backup_passphrase_too_short, BackupEncryptor.MIN_PASSPHRASE_LENGTH),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    false
+                }
+                pass != confirm -> {
+                    Toast.makeText(ctx, R.string.backup_passphrase_mismatch, Toast.LENGTH_SHORT).show()
+                    false
+                }
+                else -> {
+                    onSet(pass.toCharArray())
+                    true
+                }
+            }
+        }
+        dialog.show()
+    }
+
+    /** 복원용 암호 입력 다이얼로그. */
+    private fun showEnterPassphraseDialog(onEntered: (CharArray) -> Unit) {
+        if (!isAdded) return
+        val ctx = requireContext()
+        val density = resources.displayMetrics.density
+        val pad = (24 * density).toInt()
+
+        val container = android.widget.LinearLayout(ctx).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(pad, (8 * density).toInt(), pad, 0)
+        }
+        val editPass = android.widget.EditText(ctx).apply {
+            hint = getString(R.string.backup_passphrase_hint)
+            inputType =
+                android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
+        container.addView(editPass)
+
+        val dialog = AlertDialog.Builder(ctx)
+            .setTitle(R.string.backup_passphrase_enter_title)
+            .setView(container)
+            .setPositiveButton(R.string.confirm, null)
+            .setNegativeButton(R.string.cancel, null)
+            .create()
+        dialog.setValidatedPositiveButton {
+            val pass = editPass.text.toString()
+            if (pass.isEmpty()) {
+                Toast.makeText(ctx, R.string.backup_passphrase_enter_title, Toast.LENGTH_SHORT).show()
+                false
+            } else {
+                onEntered(pass.toCharArray())
+                true
+            }
+        }
+        dialog.show()
+    }
+
+    /**
+     * 이식 가능 백업 생성: 기기 전용 .enc 복호화 → 암호 기반 재암호화 → SAF 저장.
+     * 중간 평문 파일은 재암호화 직후 즉시 삭제한다.
+     */
+    private fun exportPortableBackup(deviceEncFile: File, passphrase: CharArray) {
+        if (!isAdded) return
+        val ctx = requireContext().applicationContext
+        val progressDialog = createProgressDialog(R.string.backup_portable_preparing)
+        progressDialog.show()
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            try {
+                val portableFile = withContext(Dispatchers.IO) {
+                    val plainTemp = File.createTempFile("export_plain_", ".xlsx", ctx.cacheDir)
+                    try {
+                        BackupEncryptor.decryptFile(deviceEncFile, plainTemp)
+                        val portable = File.createTempFile("export_portable_", ".enc", ctx.cacheDir)
+                        BackupEncryptor.encryptFilePortable(plainTemp, portable, passphrase)
+                        portable
+                    } finally {
+                        plainTemp.delete()
+                    }
+                }
+                progressDialog.dismiss()
+                if (!isAdded || _binding == null) return@launch
+                pendingBackupExportFile = portableFile
+                val dateFormat = SimpleDateFormat("yyyyMMdd_HHmm", Locale.getDefault())
+                val fileName =
+                    "NovelCharacter_Backup_${dateFormat.format(Date(deviceEncFile.lastModified()))}_portable.enc"
+                backupExportLauncher.launch(fileName)
+            } catch (e: Exception) {
+                AppLogger.error("Settings", "이식 가능 백업 생성 실패", e)
+                if (progressDialog.isShowing) progressDialog.dismiss()
+                if (_binding != null) {
+                    Toast.makeText(ctx, getString(R.string.backup_export_failed, e.message), Toast.LENGTH_LONG).show()
+                }
+            } finally {
+                passphrase.fill(' ')
+            }
+        }
     }
 
     private fun showInternalBackupList() {
@@ -611,7 +777,16 @@ class SettingsFragment : Fragment() {
                 // tempEncFile 삭제를 여기서 하지 않음:
                 // restoreFromEncryptedFile()이 별도 코루틴을 실행하여 비동기로 파일을 읽으므로
                 // 즉시 삭제하면 경쟁 조건 발생. cacheDir 파일은 시스템이 관리.
-                restoreFromEncryptedFile(tempEncFile)
+                val isPortable = withContext(Dispatchers.IO) { BackupEncryptor.isPortableFormat(tempEncFile) }
+                if (!isAdded) return@launch
+                if (isPortable) {
+                    // 이식 가능 형식 — 기기 키 대신 암호 입력으로 복원
+                    showEnterPassphraseDialog { passphrase ->
+                        restoreFromPortableFile(tempEncFile, passphrase)
+                    }
+                } else {
+                    restoreFromEncryptedFile(tempEncFile)
+                }
             } catch (e: Exception) {
                 AppLogger.error("Settings", "백업 복원 실패 (복호화)", e)
                 if (_binding != null) {
@@ -621,15 +796,11 @@ class SettingsFragment : Fragment() {
         }
     }
 
-    private fun restoreFromEncryptedFile(encFile: File) {
-        if (!isAdded) return
-
+    /** 불확정 진행 표시 다이얼로그 (복호화/재암호화 등 IO 작업용) */
+    private fun createProgressDialog(messageRes: Int): AlertDialog {
         val ctx = requireContext()
-        val dialogView = LayoutInflater.from(ctx).inflate(
-            android.R.layout.simple_list_item_1, null
-        )
-        val progressDialog = MaterialAlertDialogBuilder(ctx)
-            .setMessage(getString(R.string.backup_restore_decrypting))
+        return MaterialAlertDialogBuilder(ctx)
+            .setMessage(getString(messageRes))
             .setCancelable(false)
             .setView(android.widget.ProgressBar(ctx).apply {
                 isIndeterminate = true
@@ -637,6 +808,13 @@ class SettingsFragment : Fragment() {
                 setPadding(pad, pad, pad, pad)
             })
             .create()
+    }
+
+    private fun restoreFromEncryptedFile(encFile: File) {
+        if (!isAdded) return
+
+        val ctx = requireContext()
+        val progressDialog = createProgressDialog(R.string.backup_restore_decrypting)
         progressDialog.show()
 
         viewLifecycleOwner.lifecycleScope.launch {
@@ -668,6 +846,55 @@ class SettingsFragment : Fragment() {
                         Toast.LENGTH_LONG
                     ).show()
                 }
+            }
+        }
+    }
+
+    /**
+     * 이식 가능(암호) 백업 복원. 잘못된 암호(GCM 태그 검증 실패)는
+     * 오류로 끝내지 않고 재입력 다이얼로그로 되돌린다 — 변수 제어 원칙.
+     */
+    private fun restoreFromPortableFile(encFile: File, passphrase: CharArray) {
+        if (!isAdded) return
+
+        val ctx = requireContext()
+        val progressDialog = createProgressDialog(R.string.backup_restore_decrypting)
+        progressDialog.show()
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            try {
+                val tempXlsx = withContext(Dispatchers.IO) {
+                    val xlsx = File.createTempFile("restore_", ".xlsx", ctx.cacheDir)
+                    try {
+                        BackupEncryptor.decryptFilePortable(encFile, xlsx, passphrase)
+                    } catch (e: Exception) {
+                        xlsx.delete()
+                        throw e
+                    }
+                    xlsx
+                }
+                if (_binding == null) return@launch
+
+                progressDialog.dismiss()
+                // tempXlsx 삭제를 여기서 하지 않음 — importFromLocalFile()이 비동기로 읽음
+                importer.importFromLocalFile(tempXlsx)
+            } catch (e: javax.crypto.AEADBadTagException) {
+                // 잘못된 암호 — 재입력 기회 제공
+                if (progressDialog.isShowing) progressDialog.dismiss()
+                if (_binding != null && isAdded) {
+                    Toast.makeText(ctx, R.string.backup_passphrase_wrong, Toast.LENGTH_SHORT).show()
+                    showEnterPassphraseDialog { retry ->
+                        restoreFromPortableFile(encFile, retry)
+                    }
+                }
+            } catch (e: Exception) {
+                AppLogger.error("Settings", "이식 백업 복원 실패", e)
+                if (progressDialog.isShowing) progressDialog.dismiss()
+                if (_binding != null) {
+                    Toast.makeText(ctx, getString(R.string.backup_restore_failed, e.message), Toast.LENGTH_LONG).show()
+                }
+            } finally {
+                passphrase.fill(' ')
             }
         }
     }
