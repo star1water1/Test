@@ -194,6 +194,14 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     suspend fun getFieldValuesForUniverse(universeId: Long, fieldDefId: Long): List<String> =
         characterRepository.getFieldValuesForUniverse(universeId, fieldDefId)
 
+    /** 여러 캐릭터의 전체 필드값 일괄 조회 (백분위 배치 계산용) */
+    suspend fun getValuesForCharacters(characterIds: List<Long>): List<CharacterFieldValue> =
+        characterRepository.getValuesForCharacters(characterIds)
+
+    /** 세계관 전체 필드값 일괄 조회 (자동완성 배치 로드용) */
+    suspend fun getAllFieldValuesForUniverse(universeId: Long): List<CharacterFieldValue> =
+        characterRepository.getAllFieldValuesForUniverse(universeId)
+
     suspend fun saveAllFieldValues(characterId: Long, values: List<CharacterFieldValue>) {
         characterRepository.saveAllFieldValues(characterId, values)
         val universeId = getUniverseIdForCharacter(characterId)

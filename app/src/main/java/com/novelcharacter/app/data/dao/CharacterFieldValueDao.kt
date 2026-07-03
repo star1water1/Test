@@ -67,6 +67,19 @@ interface CharacterFieldValueDao {
     @Query("SELECT * FROM character_field_values WHERE fieldDefinitionId = :fieldDefId")
     suspend fun getValuesByFieldDef(fieldDefId: Long): List<CharacterFieldValue>
 
+    /** 여러 캐릭터의 전체 필드값 일괄 조회 (백분위 배치 계산용 — 캐릭터당 개별 쿼리 N+1 방지) */
+    @Query("SELECT * FROM character_field_values WHERE characterId IN (:characterIds)")
+    suspend fun getValuesForCharacters(characterIds: List<Long>): List<CharacterFieldValue>
+
+    /** 세계관 전체의 필드값 일괄 조회 (편집 화면 자동완성 배치 로드용) */
+    @Query("""
+        SELECT cfv.* FROM character_field_values cfv
+        INNER JOIN characters c ON cfv.characterId = c.id
+        INNER JOIN novels n ON c.novelId = n.id
+        WHERE n.universeId = :universeId AND cfv.value != ''
+    """)
+    suspend fun getAllValuesForUniverse(universeId: Long): List<CharacterFieldValue>
+
     /** 특정 필드에 특정 값을 가진 캐릭터 ID 조회 (필터링용) */
     @Query("""
         SELECT DISTINCT cfv.characterId FROM character_field_values cfv
