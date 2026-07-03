@@ -465,10 +465,11 @@ class UniverseListFragment : Fragment() {
                             val dupIdx = fields.indexOfFirst { it.key == editedField.key && it !== field }
                             if (dupIdx >= 0) {
                                 Toast.makeText(ctx, R.string.preset_field_key_duplicate, Toast.LENGTH_SHORT).show()
-                                return@setOnSaveListener
+                                return@setOnSaveListener false // 거부: 다이얼로그 유지 (입력 보존)
                             }
                             fields[index] = editedField
                             rebuildFieldList()
+                            true
                         }
                         dialog.show(childFragmentManager, "edit_preset_field")
                     }
@@ -513,10 +514,11 @@ class UniverseListFragment : Fragment() {
                 dialog.setOnSaveListener { newField ->
                     if (fields.any { it.key == newField.key }) {
                         Toast.makeText(ctx, R.string.preset_field_key_duplicate, Toast.LENGTH_SHORT).show()
-                        return@setOnSaveListener
+                        return@setOnSaveListener false // 거부: 다이얼로그 유지 (입력 보존)
                     }
                     fields.add(newField)
                     rebuildFieldList()
+                    true
                 }
                 dialog.show(childFragmentManager, "add_preset_field")
             }

@@ -83,12 +83,16 @@ class FormulaEvaluator(
                 formula[i] in "+-*/" -> {
                     // Handle unary minus/plus: treat as sign if at start, after '(' or after another operator
                     if ((formula[i] == '-' || formula[i] == '+') && (tokens.isEmpty() || tokens.last() is Token.LParen || tokens.last() is Token.Op || tokens.last() is Token.Separator)) {
-                        if (formula[i] == '-') {
-                            tokens.add(Token.Num(0.0))
-                            tokens.add(Token.Op('-'))
+                        // Collapse a run of consecutive signs; negate only when the minus count is odd ("--3" == 3)
+                        var minusCount = 0
+                        while (i < formula.length && (formula[i] == '-' || formula[i] == '+' || formula[i].isWhitespace())) {
+                            if (formula[i] == '-') minusCount++
+                            i++
                         }
-                        // Unary plus: simply skip it ("+5" → "5")
-                        i++
+                        if (minusCount % 2 == 1) {
+                            // High-precedence unary negation token so "5*-3" binds as 5*(-3), not (5*0)-3
+                            tokens.add(Token.Op(UNARY_MINUS))
+                        }
                     } else {
                         tokens.add(Token.Op(formula[i]))
                         i++
@@ -152,6 +156,7 @@ class FormulaEvaluator(
     private fun precedence(op: Char): Int = when (op) {
         '+', '-' -> 1
         '*', '/' -> 2
+        UNARY_MINUS -> 3
         else -> 0
     }
 
@@ -177,8 +182,15 @@ class FormulaEvaluator(
                     }
                 }
                 is Token.Op -> {
-                    while (stack.isNotEmpty() && stack.last() is Token.Op && precedence((stack.last() as Token.Op).op) >= precedence(token.op)) {
-                        output.add(stack.removeLast())
+                    val prec = precedence(token.op)
+                    while (stack.isNotEmpty() && stack.last() is Token.Op) {
+                        val topPrec = precedence((stack.last() as Token.Op).op)
+                        // 단항 부정은 우결합이므로 같은 우선순위끼리는 pop하지 않는다 (예: "--x"의 중첩 부정)
+                        if (topPrec > prec || (topPrec == prec && token.op != UNARY_MINUS)) {
+                            output.add(stack.removeLast())
+                        } else {
+                            break
+                        }
                     }
                     stack.addLast(token)
                 }
@@ -213,16 +225,21 @@ class FormulaEvaluator(
             when (token) {
                 is Token.Num -> stack.addLast(token.value)
                 is Token.Op -> {
-                    if (stack.size < 2) return Double.NaN
-                    val b = stack.removeLast()
-                    val a = stack.removeLast()
-                    stack.addLast(when (token.op) {
-                        '+' -> a + b
-                        '-' -> a - b
-                        '*' -> a * b
-                        '/' -> if (b != 0.0) a / b else Double.NaN
-                        else -> 0.0
-                    })
+                    if (token.op == UNARY_MINUS) {
+                        if (stack.isEmpty()) return Double.NaN
+                        stack.addLast(-stack.removeLast())
+                    } else {
+                        if (stack.size < 2) return Double.NaN
+                        val b = stack.removeLast()
+                        val a = stack.removeLast()
+                        stack.addLast(when (token.op) {
+                            '+' -> a + b
+                            '-' -> a - b
+                            '*' -> a * b
+                            '/' -> if (b != 0.0) a / b else Double.NaN
+                            else -> 0.0
+                        })
+                    }
                 }
                 is Token.Func -> {
                     val arity = token.arity
@@ -245,5 +262,8 @@ class FormulaEvaluator(
 
     companion object {
         private const val MAX_TOKENS = 500
+
+        // 단항 부정 내부 토큰. 수식 입력에서 '~'는 연산자로 토큰화되지 않으므로 충돌하지 않는다.
+        private const val UNARY_MINUS = '~'
     }
 }

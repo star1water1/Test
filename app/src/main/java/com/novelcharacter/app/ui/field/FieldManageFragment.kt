@@ -89,6 +89,9 @@ class FieldManageFragment : Fragment() {
         }
     }
 
+    // 드래그 후 저장할 순서를 보관 (ListAdapter 비동기 diff가 끝나기 전 currentList가 stale할 수 있음)
+    private var pendingOrderList: List<FieldDefinition>? = null
+
     private fun setupRecyclerView() {
         adapter = FieldDefinitionAdapter(
             onClick = { field ->
@@ -112,10 +115,12 @@ class FieldManageFragment : Fragment() {
                 val from = viewHolder.bindingAdapterPosition
                 val to = target.bindingAdapterPosition
                 if (from == RecyclerView.NO_POSITION || to == RecyclerView.NO_POSITION) return false
-                val list = adapter.currentList.toMutableList()
+                // 빠른 연속 이동 시 currentList는 아직 이전 diff가 커밋되지 않았을 수 있으므로 pending을 우선 사용
+                val list = (pendingOrderList ?: adapter.currentList).toMutableList()
                 if (from < 0 || to < 0 || from >= list.size || to >= list.size) return false
                 val item = list.removeAt(from)
                 list.add(to, item)
+                pendingOrderList = list
                 adapter.submitList(list)
                 return true
             }
@@ -124,7 +129,10 @@ class FieldManageFragment : Fragment() {
 
             override fun clearView(recyclerView: RecyclerView, viewHolder: RecyclerView.ViewHolder) {
                 super.clearView(recyclerView, viewHolder)
-                viewModel.updateFieldOrder(adapter.currentList)
+                // 이동이 한 번도 없었다면(pending == null) 저장할 변경도 없다
+                val listToSave = pendingOrderList ?: return
+                pendingOrderList = null
+                viewModel.updateFieldOrder(listToSave)
             }
         })
         itemTouchHelper?.attachToRecyclerView(binding.fieldRecyclerView)

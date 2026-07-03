@@ -24,6 +24,7 @@ import kotlinx.coroutines.withContext
 import org.apache.poi.ss.usermodel.WorkbookFactory
 import android.util.Log
 import android.graphics.Typeface
+import com.novelcharacter.app.util.copyWithLimit
 import java.io.File
 import java.io.FileOutputStream
 import java.util.UUID
@@ -131,11 +132,18 @@ class ExcelImporter(context: Context) {
                 }
 
                 // 파일을 임시로 복사하여 형식 감지
+                // statSize를 보고하지 않는 콘텐츠 프로바이더(-1L)가 있으므로 복사 단계에서도 크기 상한을 강제한다
                 val tempFile = File(appContext.cacheDir, "import_temp_${System.currentTimeMillis()}")
                 try {
-                    appContext.contentResolver.openInputStream(uri)?.use { input ->
-                        FileOutputStream(tempFile).use { output -> input.copyTo(output) }
+                    val copied = appContext.contentResolver.openInputStream(uri)?.use { input ->
+                        FileOutputStream(tempFile).use { output -> copyWithLimit(input, output, MAX_IMPORT_FILE_SIZE) }
                     } ?: throw Exception("Cannot open file input stream")
+                    if (copied > MAX_IMPORT_FILE_SIZE) {
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(appContext, com.novelcharacter.app.R.string.import_file_too_large, Toast.LENGTH_LONG).show()
+                        }
+                        return@launch
+                    }
 
                     if (isZipFile(tempFile)) {
                         importFromZip(tempFile)

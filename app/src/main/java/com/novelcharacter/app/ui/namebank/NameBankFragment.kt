@@ -20,6 +20,7 @@ import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.NameBankEntry
 import com.novelcharacter.app.databinding.FragmentNameBankBinding
 import com.novelcharacter.app.ui.adapter.NameBankAdapter
+import com.novelcharacter.app.util.setValidatedPositiveButton
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -115,32 +116,36 @@ class NameBankFragment : Fragment() {
             editNotes.setText(existing.notes)
         }
 
-        AlertDialog.Builder(context)
+        // 검증 실패 시 다이얼로그를 닫지 않는다 (입력 유실 방지)
+        val dialog = AlertDialog.Builder(context)
             .setTitle(if (existing != null) getString(R.string.edit_name_title) else getString(R.string.add_name_title))
             .setView(layout)
-            .setPositiveButton(getString(R.string.save)) { _, _ ->
-                val name = editName.text.toString().trim()
-                if (name.isBlank()) {
-                    Toast.makeText(context, R.string.enter_name, Toast.LENGTH_SHORT).show()
-                    return@setPositiveButton
-                }
-                val gender = if (spinnerGender.selectedItemPosition > 0)
-                    genderOptions[spinnerGender.selectedItemPosition] else ""
-                val origin = editOrigin.text.toString().trim()
-                val notes = editNotes.text.toString().trim()
-
-                if (existing != null) {
-                    viewModel.update(existing.copy(
-                        name = name, gender = gender, origin = origin, notes = notes
-                    ))
-                } else {
-                    viewModel.insert(NameBankEntry(
-                        name = name, gender = gender, origin = origin, notes = notes
-                    ))
-                }
-            }
+            .setPositiveButton(getString(R.string.save), null)
             .setNegativeButton(getString(R.string.cancel), null)
-            .show()
+            .create()
+        dialog.setValidatedPositiveButton {
+            val name = editName.text.toString().trim()
+            if (name.isBlank()) {
+                Toast.makeText(context, R.string.enter_name, Toast.LENGTH_SHORT).show()
+                return@setValidatedPositiveButton false
+            }
+            val gender = if (spinnerGender.selectedItemPosition > 0)
+                genderOptions[spinnerGender.selectedItemPosition] else ""
+            val origin = editOrigin.text.toString().trim()
+            val notes = editNotes.text.toString().trim()
+
+            if (existing != null) {
+                viewModel.update(existing.copy(
+                    name = name, gender = gender, origin = origin, notes = notes
+                ))
+            } else {
+                viewModel.insert(NameBankEntry(
+                    name = name, gender = gender, origin = origin, notes = notes
+                ))
+            }
+            true
+        }
+        dialog.show()
     }
 
     private fun showOptionsDialog(entry: NameBankEntry) {

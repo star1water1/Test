@@ -31,10 +31,13 @@ class TimeSliderHelper(
 
     private val timeStateResolver = TimeStateResolver()
     private var applyTimeViewJob: Job? = null
+    private var updateSliderJob: Job? = null
 
     fun cancelJob() {
         applyTimeViewJob?.cancel()
         applyTimeViewJob = null
+        updateSliderJob?.cancel()
+        updateSliderJob = null
     }
 
     fun setup() {
@@ -116,7 +119,9 @@ class TimeSliderHelper(
     }
 
     fun updateSliderRange() {
-        viewLifecycleOwner.lifecycleScope.launch {
+        // 동시 호출 시 이전 갱신을 취소해 슬라이더 범위가 뒤섞이지 않도록 함
+        updateSliderJob?.cancel()
+        updateSliderJob = viewLifecycleOwner.lifecycleScope.launch {
             val changes = viewModel.getChangesByCharacterList(characterId)
             if (!isBindingAlive()) return@launch
             try {

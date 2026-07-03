@@ -421,7 +421,8 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
     }
 
     private fun showError(message: String?) {
-        _error.value = message
+        // 예외 메시지가 null이어도 실패를 알린다 (null 값은 자동 클리어 신호로만 사용되므로)
+        _error.value = message ?: app.getString(R.string.operation_failed)
         errorClearJob?.cancel()
         errorClearJob = viewModelScope.launch {
             delay(3000)
