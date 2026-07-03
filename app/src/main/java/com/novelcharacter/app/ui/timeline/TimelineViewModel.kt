@@ -11,7 +11,7 @@ import com.novelcharacter.app.data.model.TimelineEvent
 import android.util.Log
 import androidx.room.withTransaction
 import com.novelcharacter.app.data.model.CharacterStateChange
-import com.novelcharacter.app.util.EventEditDialogHelper.ShiftDirection
+import com.novelcharacter.app.ui.timeline.EventEditDialogFragment.ShiftDirection
 import com.novelcharacter.app.util.SemanticFieldSyncHelper
 import com.novelcharacter.app.util.StandardYearSyncHelper
 import kotlinx.coroutines.Job

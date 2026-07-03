@@ -8,10 +8,14 @@ import java.io.FileOutputStream
 import java.io.InputStream
 import java.nio.ByteBuffer
 import java.security.KeyStore
+import java.security.SecureRandom
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
+import javax.crypto.SecretKeyFactory
 import javax.crypto.spec.GCMParameterSpec
+import javax.crypto.spec.PBEKeySpec
+import javax.crypto.spec.SecretKeySpec
 
 object BackupEncryptor {
 
@@ -29,6 +33,15 @@ object BackupEncryptor {
 
     // v1 레거시 제한 (전체 로드 방식이므로 메모리 보호용)
     private const val MAX_LEGACY_FILE_SIZE = 256L * 1024 * 1024 // 256MB
+
+    // 이식 가능(패스프레이즈) 형식 — 기기 KeyStore 대신 PBKDF2 유도 키를 사용하므로
+    // 암호만 알면 어느 기기에서든 복원 가능
+    private val PORTABLE_MAGIC = byteArrayOf(0x4E, 0x43, 0x50, 0x31)  // "NCP1"
+    private const val PBKDF2_ALGORITHM = "PBKDF2WithHmacSHA256"
+    private const val PBKDF2_ITERATIONS = 200_000
+    private const val MAX_PBKDF2_ITERATIONS = 5_000_000  // 헤더 조작으로 인한 CPU 소진 방지
+    private const val SALT_LENGTH = 16
+    const val MIN_PASSPHRASE_LENGTH = 6
 
     private fun getOrCreateKey(): SecretKey {
         val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
@@ -83,22 +96,112 @@ object BackupEncryptor {
             // v2 헤더
             fos.write(FORMAT_MAGIC)
             fos.write(ByteBuffer.allocate(4).putInt(CHUNK_SIZE).array())
+            encryptChunks(inputFile, fos, getOrCreateKey())
+        }
+    }
 
-            // 청크 단위 암호화
-            FileInputStream(inputFile).use { fis ->
-                val buffer = ByteArray(CHUNK_SIZE)
-                var bytesRead: Int
-                while (fis.read(buffer).also { bytesRead = it } != -1) {
-                    val cipher = Cipher.getInstance(TRANSFORMATION)
-                    cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey())
-                    val iv = cipher.iv  // 12 bytes, 청크마다 새 IV
+    /** 청크 단위 암호화 공통 루틴. 청크마다 새 IV로 [IV(12B)][암호문+GCM 태그]를 기록. */
+    private fun encryptChunks(inputFile: File, fos: FileOutputStream, key: SecretKey) {
+        FileInputStream(inputFile).use { fis ->
+            val buffer = ByteArray(CHUNK_SIZE)
+            var bytesRead: Int
+            while (fis.read(buffer).also { bytesRead = it } != -1) {
+                val cipher = Cipher.getInstance(TRANSFORMATION)
+                cipher.init(Cipher.ENCRYPT_MODE, key)
+                val iv = cipher.iv  // 12 bytes, 청크마다 새 IV
 
-                    val encrypted = cipher.doFinal(buffer, 0, bytesRead)
+                val encrypted = cipher.doFinal(buffer, 0, bytesRead)
 
-                    fos.write(iv)
-                    fos.write(encrypted)  // 암호문 + GCM 태그
-                }
+                fos.write(iv)
+                fos.write(encrypted)  // 암호문 + GCM 태그
             }
+        }
+    }
+
+    // ── 이식 가능(패스프레이즈) 형식 ──
+
+    /**
+     * 파일이 이식 가능(NCP1) 형식인지 검사한다. 복원 진입 시 암호 입력 여부 분기에 사용.
+     */
+    fun isPortableFormat(file: File): Boolean {
+        return try {
+            FileInputStream(file).use { fis ->
+                val magic = ByteArray(PORTABLE_MAGIC.size)
+                readFully(fis, magic) == PORTABLE_MAGIC.size && magic.contentEquals(PORTABLE_MAGIC)
+            }
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /** 패스프레이즈에서 AES-256 키를 유도한다. */
+    private fun deriveKey(passphrase: CharArray, salt: ByteArray, iterations: Int): SecretKey {
+        val spec = PBEKeySpec(passphrase, salt, iterations, 256)
+        try {
+            val factory = SecretKeyFactory.getInstance(PBKDF2_ALGORITHM)
+            return SecretKeySpec(factory.generateSecret(spec).encoded, "AES")
+        } finally {
+            spec.clearPassword()
+        }
+    }
+
+    /**
+     * 패스프레이즈 기반 이식 가능 암호화. 기기 이전/공유용.
+     *
+     * Output format (NCP1):
+     *   MAGIC "NCP1"(4B) + iterations(4B) + salt(16B) + chunkSize(4B)
+     *   chunk1_IV(12B) + chunk1_encrypted + GCM tag
+     *   ...
+     */
+    fun encryptFilePortable(inputFile: File, outputFile: File, passphrase: CharArray) {
+        require(passphrase.size >= MIN_PASSPHRASE_LENGTH) {
+            "Passphrase must be at least $MIN_PASSPHRASE_LENGTH characters"
+        }
+        val salt = ByteArray(SALT_LENGTH).also { SecureRandom().nextBytes(it) }
+        val key = deriveKey(passphrase, salt, PBKDF2_ITERATIONS)
+        FileOutputStream(outputFile).use { fos ->
+            fos.write(PORTABLE_MAGIC)
+            fos.write(ByteBuffer.allocate(4).putInt(PBKDF2_ITERATIONS).array())
+            fos.write(salt)
+            fos.write(ByteBuffer.allocate(4).putInt(CHUNK_SIZE).array())
+            encryptChunks(inputFile, fos, key)
+        }
+    }
+
+    /**
+     * 이식 가능(NCP1) 형식 복호화. 잘못된 암호는 첫 청크의 GCM 태그 검증 실패
+     * (javax.crypto.AEADBadTagException)로 감지된다.
+     */
+    fun decryptFilePortable(inputFile: File, outputFile: File, passphrase: CharArray) {
+        val tempFile = File(outputFile.parentFile, outputFile.name + ".tmp")
+        try {
+            FileInputStream(inputFile).use { fis ->
+                val magic = ByteArray(PORTABLE_MAGIC.size)
+                require(readFully(fis, magic) == PORTABLE_MAGIC.size && magic.contentEquals(PORTABLE_MAGIC)) {
+                    "Not a portable backup file"
+                }
+                val intBuf = ByteArray(4)
+                require(readFully(fis, intBuf) == 4) { "Corrupted portable backup header (iterations)" }
+                val iterations = ByteBuffer.wrap(intBuf).int
+                require(iterations in 1..MAX_PBKDF2_ITERATIONS) { "Invalid iteration count: $iterations" }
+
+                val salt = ByteArray(SALT_LENGTH)
+                require(readFully(fis, salt) == SALT_LENGTH) { "Corrupted portable backup header (salt)" }
+                require(readFully(fis, intBuf) == 4) { "Corrupted portable backup header (chunk size)" }
+                val chunkSize = ByteBuffer.wrap(intBuf).int
+                require(chunkSize in 1..CHUNK_SIZE * 2) { "Invalid chunk size in backup header: $chunkSize" }
+
+                val key = deriveKey(passphrase, salt, iterations)
+                decryptChunked(fis, tempFile, chunkSize, key)
+            }
+
+            if (!tempFile.renameTo(outputFile)) {
+                tempFile.copyTo(outputFile, overwrite = true)
+                tempFile.delete()
+            }
+        } catch (e: Exception) {
+            tempFile.delete()
+            throw e
         }
     }
 
@@ -127,7 +230,7 @@ object BackupEncryptor {
                     require(chunkSize in 1..CHUNK_SIZE * 2) {
                         "Invalid chunk size in backup header: $chunkSize"
                     }
-                    decryptChunked(fis, tempFile, chunkSize)
+                    decryptChunked(fis, tempFile, chunkSize, getOrCreateKey())
                 } else {
                     // v1: 레거시 전체 로드 (헤더를 이미 소비했으므로 새로 열어야 함)
                     fis.close()
@@ -152,7 +255,7 @@ object BackupEncryptor {
      * v2 청크 복호화. 각 청크를 독립적으로 복호화하여 메모리 사용 최소화.
      * 피크 메모리: ~2MB (암호문 청크 + 복호화 결과)
      */
-    private fun decryptChunked(fis: InputStream, outputFile: File, chunkSize: Int) {
+    private fun decryptChunked(fis: InputStream, outputFile: File, chunkSize: Int, key: SecretKey) {
         val maxEncryptedChunkSize = chunkSize + GCM_TAG_BYTES
         FileOutputStream(outputFile).use { fos ->
             while (true) {
@@ -168,7 +271,7 @@ object BackupEncryptor {
 
                 // 복호화 + GCM 태그 검증
                 val cipher = Cipher.getInstance(TRANSFORMATION)
-                cipher.init(Cipher.DECRYPT_MODE, getOrCreateKey(), GCMParameterSpec(GCM_TAG_LENGTH, iv))
+                cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(GCM_TAG_LENGTH, iv))
                 val decrypted = cipher.doFinal(encryptedChunk)
                 fos.write(decrypted)
             }

@@ -8,8 +8,6 @@ import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
 import android.view.ViewGroup
-import android.widget.EditText
-import android.widget.LinearLayout
 import android.widget.ArrayAdapter
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
@@ -29,7 +27,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-class TimelineFragment : Fragment() {
+class TimelineFragment : Fragment(), EventEditDialogFragment.Host {
 
     private var _binding: FragmentTimelineBinding? = null
     private val binding get() = _binding!!
@@ -63,6 +61,25 @@ class TimelineFragment : Fragment() {
         setupFilters()
         setupFab()
         observeData()
+
+        // 간편 사건 추가 결과 수신 (DialogFragment — 회전/재생성에도 안전)
+        childFragmentManager.setFragmentResultListener(
+            QuickAddEventDialogFragment.RESULT_KEY, viewLifecycleOwner
+        ) { _, bundle ->
+            val year = bundle.getInt(QuickAddEventDialogFragment.RESULT_YEAR)
+            val desc = bundle.getString(QuickAddEventDialogFragment.RESULT_DESCRIPTION) ?: return@setFragmentResultListener
+            val currentNovel = viewModel.filterNovelId.value?.let { nid ->
+                cachedNovels.find { it.id == nid }
+            }
+            val quickEvent = TimelineEvent(
+                year = year,
+                description = desc,
+                isTemporary = true,
+                universeId = currentNovel?.universeId
+            )
+            viewModel.insertEvent(quickEvent, emptyList(), listOfNotNull(currentNovel?.id))
+            Toast.makeText(requireContext(), R.string.quick_event_added, Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun setupRecyclerView() {
@@ -555,11 +572,8 @@ class TimelineFragment : Fragment() {
             .show()
     }
 
-    private fun showEditEventDialog(event: TimelineEvent?) {
-        val eventHelper = com.novelcharacter.app.util.EventEditDialogHelper(
-            requireContext(), viewLifecycleOwner.lifecycleScope, layoutInflater
-        )
-        val dataProvider = object : com.novelcharacter.app.util.EventEditDialogHelper.DataProvider {
+    override fun eventDialogDataProvider(): EventEditDialogFragment.DataProvider =
+        object : EventEditDialogFragment.DataProvider {
             override suspend fun getAllNovelsList(): List<Novel> = viewModel.getAllNovelsList()
             override suspend fun getAllCharactersList(): List<Character> = viewModel.getAllCharactersList()
             override suspend fun getCharacterIdsForEvent(eventId: Long): List<Long> = viewModel.getCharacterIdsForEvent(eventId)
@@ -580,51 +594,20 @@ class TimelineFragment : Fragment() {
             }
             override fun updateEventAndShiftOthers(
                 event: TimelineEvent, characterIds: List<Long>, novelIds: List<Long>,
-                shiftDirection: com.novelcharacter.app.util.EventEditDialogHelper.ShiftDirection,
+                shiftDirection: EventEditDialogFragment.ShiftDirection,
                 delta: Int, originalNovelIds: List<Long>, originalUniverseId: Long?
             ) {
                 viewModel.updateEventAndShiftOthers(event, characterIds, novelIds, shiftDirection, delta, originalNovelIds, originalUniverseId)
             }
         }
-        eventHelper.showEventDialog(dataProvider = dataProvider, event = event)
+
+    private fun showEditEventDialog(event: TimelineEvent?) {
+        EventEditDialogFragment.show(childFragmentManager, event = event)
     }
 
     /** 간편 사건 추가: 연도 + 한줄 설명만으로 임시 사건 생성 */
     private fun showQuickAddDialog(year: Int) {
-        val ctx = context ?: return
-        val density = resources.displayMetrics.density
-
-        val container = LinearLayout(ctx).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding((24 * density).toInt(), (16 * density).toInt(), (24 * density).toInt(), 0)
-        }
-
-        val editDescription = EditText(ctx).apply {
-            hint = getString(R.string.hint_quick_event_desc)
-            isSingleLine = true
-        }
-        container.addView(editDescription)
-
-        AlertDialog.Builder(ctx)
-            .setTitle(getString(R.string.quick_add_event_title, year))
-            .setView(container)
-            .setPositiveButton(R.string.save) { _, _ ->
-                val desc = editDescription.text.toString().trim()
-                if (desc.isEmpty()) return@setPositiveButton
-                val currentNovel = viewModel.filterNovelId.value?.let { nid ->
-                    cachedNovels.find { it.id == nid }
-                }
-                val quickEvent = TimelineEvent(
-                    year = year,
-                    description = desc,
-                    isTemporary = true,
-                    universeId = currentNovel?.universeId
-                )
-                viewModel.insertEvent(quickEvent, emptyList(), listOfNotNull(currentNovel?.id))
-                Toast.makeText(ctx, R.string.quick_event_added, Toast.LENGTH_SHORT).show()
-            }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
+        QuickAddEventDialogFragment.show(childFragmentManager, year)
     }
 
     override fun onResume() {

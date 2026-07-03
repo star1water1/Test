@@ -17,7 +17,7 @@ import com.novelcharacter.app.data.model.TimelineEvent
 import com.novelcharacter.app.data.model.SemanticRole
 import com.novelcharacter.app.data.model.BirthdayCharacterItem
 import com.novelcharacter.app.util.BirthdayHelper
-import com.novelcharacter.app.util.EventEditDialogHelper.ShiftDirection
+import com.novelcharacter.app.ui.timeline.EventEditDialogFragment.ShiftDirection
 import com.novelcharacter.app.util.SemanticFieldSyncHelper
 import com.novelcharacter.app.util.StandardYearSyncHelper
 import android.util.Log

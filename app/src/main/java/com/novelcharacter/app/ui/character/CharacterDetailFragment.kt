@@ -42,7 +42,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-class CharacterDetailFragment : Fragment() {
+class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.EventEditDialogFragment.Host {
 
     private var _binding: FragmentCharacterDetailBinding? = null
     private val binding get() = _binding!!
@@ -183,41 +183,38 @@ class CharacterDetailFragment : Fragment() {
 
         // 사건 추가 버튼
         binding.btnAddEvent.setOnClickListener {
-            val eventHelper = com.novelcharacter.app.util.EventEditDialogHelper(
-                context = requireContext(),
-                lifecycleScope = viewLifecycleOwner.lifecycleScope,
-                layoutInflater = layoutInflater
-            )
-            val dataProvider = object : com.novelcharacter.app.util.EventEditDialogHelper.DataProvider {
-                override suspend fun getAllNovelsList() = viewModel.getAllNovelsList()
-                override suspend fun getAllCharactersList() = viewModel.getAllCharactersList()
-                override suspend fun getCharacterIdsForEvent(eventId: Long) = viewModel.getCharacterIdsForEvent(eventId)
-                override suspend fun getNovelIdsForEvent(eventId: Long) = viewModel.getNovelIdsForEvent(eventId)
-                override fun insertEvent(event: com.novelcharacter.app.data.model.TimelineEvent, characterIds: List<Long>, novelIds: List<Long>) { viewModel.insertEvent(event, characterIds, novelIds) }
-                override fun updateEvent(event: com.novelcharacter.app.data.model.TimelineEvent, characterIds: List<Long>, novelIds: List<Long>) { viewModel.updateEvent(event, characterIds, novelIds) }
-                override suspend fun getEventsInScope(novelIds: List<Long>, universeId: Long?): List<com.novelcharacter.app.data.model.TimelineEvent> {
-                    return when {
-                        novelIds.isNotEmpty() ->
-                            novelIds.flatMap { viewModel.getEventsByNovelList(it) }.distinctBy { it.id }
-                        universeId != null -> viewModel.getEventsByUniverseList(universeId)
-                        else -> viewModel.getAllEventsList()
-                    }
-                }
-                override fun updateEventAndShiftOthers(
-                    event: com.novelcharacter.app.data.model.TimelineEvent, characterIds: List<Long>, novelIds: List<Long>,
-                    shiftDirection: com.novelcharacter.app.util.EventEditDialogHelper.ShiftDirection,
-                    delta: Int, originalNovelIds: List<Long>, originalUniverseId: Long?
-                ) {
-                    viewModel.updateEventAndShiftOthers(event, characterIds, novelIds, shiftDirection, delta, originalNovelIds, originalUniverseId)
-                }
-            }
-            eventHelper.showEventDialog(
-                dataProvider = dataProvider,
+            com.novelcharacter.app.ui.timeline.EventEditDialogFragment.show(
+                childFragmentManager,
                 preSelectedCharacterIds = setOf(characterId),
                 preSelectedNovelIds = listOfNotNull(cachedCharacter?.novelId)
             )
         }
     }
+
+    override fun eventDialogDataProvider(): com.novelcharacter.app.ui.timeline.EventEditDialogFragment.DataProvider =
+        object : com.novelcharacter.app.ui.timeline.EventEditDialogFragment.DataProvider {
+            override suspend fun getAllNovelsList() = viewModel.getAllNovelsList()
+            override suspend fun getAllCharactersList() = viewModel.getAllCharactersList()
+            override suspend fun getCharacterIdsForEvent(eventId: Long) = viewModel.getCharacterIdsForEvent(eventId)
+            override suspend fun getNovelIdsForEvent(eventId: Long) = viewModel.getNovelIdsForEvent(eventId)
+            override fun insertEvent(event: com.novelcharacter.app.data.model.TimelineEvent, characterIds: List<Long>, novelIds: List<Long>) { viewModel.insertEvent(event, characterIds, novelIds) }
+            override fun updateEvent(event: com.novelcharacter.app.data.model.TimelineEvent, characterIds: List<Long>, novelIds: List<Long>) { viewModel.updateEvent(event, characterIds, novelIds) }
+            override suspend fun getEventsInScope(novelIds: List<Long>, universeId: Long?): List<com.novelcharacter.app.data.model.TimelineEvent> {
+                return when {
+                    novelIds.isNotEmpty() ->
+                        novelIds.flatMap { viewModel.getEventsByNovelList(it) }.distinctBy { it.id }
+                    universeId != null -> viewModel.getEventsByUniverseList(universeId)
+                    else -> viewModel.getAllEventsList()
+                }
+            }
+            override fun updateEventAndShiftOthers(
+                event: com.novelcharacter.app.data.model.TimelineEvent, characterIds: List<Long>, novelIds: List<Long>,
+                shiftDirection: com.novelcharacter.app.ui.timeline.EventEditDialogFragment.ShiftDirection,
+                delta: Int, originalNovelIds: List<Long>, originalUniverseId: Long?
+            ) {
+                viewModel.updateEventAndShiftOthers(event, characterIds, novelIds, shiftDirection, delta, originalNovelIds, originalUniverseId)
+            }
+        }
 
     private fun observeFactions() {
         factionRepository.getMembershipsByCharacter(characterId).observe(viewLifecycleOwner) { memberships ->
