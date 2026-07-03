@@ -153,8 +153,21 @@
 
 ---
 
+## 브랜치·병합 규칙
+
+**모든 최신 업데이트는 항상 메인 브랜치(`master`)에 병합한다.** master가 언제나 최신 코드의 유일한 기준이며, master에 병합되지 않은 작업은 완료된 것으로 간주하지 않는다. 상세 규칙은 `docs/branch_merge_rules.md`를 따른다.
+
+- **작업 시작:** 반드시 최신 `origin/master`에서 분기한다. 지정받은 작업 브랜치가 master보다 뒤처져 있으면 — 고유 커밋이 없을 때는 `git fetch origin master && git checkout -B <작업브랜치> origin/master`로 재분기하고, 고유 커밋이 있을 때는 `git merge origin/master`(또는 rebase)로 먼저 최신화한 뒤 작업한다.
+- **작업 완료:** base 브랜치를 `master`로 지정한 PR을 만들어 병합한다. 저장소 기본 브랜치 설정과 무관하게 PR base는 항상 `master`여야 한다.
+- **병합 후:** 병합이 끝난 작업 브랜치는 삭제한다.
+- **금지:** master에 대한 직접 push 및 force-push. (작업 브랜치의 force-push는 금지 대상이 아니다.)
+- **충돌:** 작업 브랜치 쪽에서 `origin/master`를 merge/rebase하여 해결한 뒤 병합한다.
+
+---
+
 ## 문서 이력
 
 | 버전 | 날짜 | 변경 내용 |
 |------|------|-----------|
 | v1.0 | 2026.03.20 | 초기 작성 — 5대 원칙, 판단 기준, 품질 기준, 통계 시스템 설계 기준 수록 |
+| v1.1 | 2026.07.03 | 브랜치·병합 규칙 추가 — 모든 업데이트는 항상 master에 병합 (상세: docs/branch_merge_rules.md) |
