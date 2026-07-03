@@ -63,11 +63,16 @@ class RelationshipGraphViewModel(application: android.app.Application) : Android
     private val _characterFactionMap = MutableLiveData<Map<Long, List<Pair<Long, Int>>>>()
     val characterFactionMap: LiveData<Map<Long, List<Pair<Long, Int>>>> = _characterFactionMap
 
+    // 시간뷰의 생사 판정용 상태변화 전체 (birth/death/alive 키만 사용)
+    private val _stateChanges = MutableLiveData<List<com.novelcharacter.app.data.model.CharacterStateChange>>()
+    val stateChanges: LiveData<List<com.novelcharacter.app.data.model.CharacterStateChange>> = _stateChanges
+
     fun loadData() {
         viewModelScope.launch {
             _characters.value = characterRepository.getAllCharactersList()
             _relationships.value = characterRepository.getAllRelationships()
             _relationshipChanges.value = characterRepository.getAllRelationshipChanges()
+            _stateChanges.value = characterRepository.getAllStateChangesList()
 
             val universeList = universeRepository.getAllUniversesList()
             _universes.value = universeList
@@ -125,6 +130,47 @@ class RelationshipGraphViewModel(application: android.app.Application) : Android
         val allFactions = _factions.value ?: return
         val allMemberships = _factionMemberships.value ?: return
         buildCharacterFactionMap(allFactions, allMemberships, year)
+    }
+
+    /**
+     * 해당 연도에 사망 상태인 캐릭터 ID 집합.
+     * TimeStateResolver와 동일한 우선순위: 명시적 __alive 상태변화(연도 이하 최신)가 있으면 그 값을,
+     * 없으면 __death 연도(newValue 우선, 없으면 기록 연도) 기준으로 판정한다.
+     */
+    fun deceasedCharacterIdsAtYear(year: Int): Set<Long> {
+        val changes = _stateChanges.value ?: return emptySet()
+        val deceased = mutableSetOf<Long>()
+        for ((charId, charChanges) in changes.groupBy { it.characterId }) {
+            val aliveChange = charChanges
+                .filter { it.fieldKey == com.novelcharacter.app.data.model.CharacterStateChange.KEY_ALIVE && it.year <= year }
+                .maxWithOrNull(compareBy({ it.year }, { it.month ?: 0 }, { it.day ?: 0 }, { it.id }))
+            if (aliveChange != null) {
+                if (aliveChange.newValue.equals("false", ignoreCase = true)) deceased.add(charId)
+                continue
+            }
+            val deathChange = charChanges.firstOrNull {
+                it.fieldKey == com.novelcharacter.app.data.model.CharacterStateChange.KEY_DEATH
+            } ?: continue
+            val deathYear = deathChange.newValue.toIntOrNull() ?: deathChange.year
+            if (year >= deathYear) deceased.add(charId)
+        }
+        return deceased
+    }
+
+    /**
+     * 세력 자동 관계 엣지가 해당 연도에 유효한지 — 두 캐릭터 모두 그 세력에 재적 중이어야 한다.
+     * (세력 링은 연도에 반응하는데 세력 엣지는 남던 자기모순 해소; 일반 관계는 형성 시점 정보가 없어 항상 유효로 둠)
+     */
+    fun isFactionEdgeActiveAtYear(rel: CharacterRelationship, year: Int): Boolean {
+        val factionId = rel.factionId ?: return true
+        val memberships = _factionMemberships.value ?: return true
+        val active1 = memberships.any {
+            it.factionId == factionId && it.characterId == rel.characterId1 && it.isActiveAtYear(year)
+        }
+        val active2 = memberships.any {
+            it.factionId == factionId && it.characterId == rel.characterId2 && it.isActiveAtYear(year)
+        }
+        return active1 && active2
     }
 
     /**
@@ -500,27 +546,49 @@ class RelationshipGraphFragment : Fragment() {
             combinedData.value = Triple(chars, rels, changes)
         }
 
-        combinedData.observe(viewLifecycleOwner) { (characters, relationships, relChanges) ->
+        combinedData.observe(viewLifecycleOwner) { (characters, relationships, _) ->
             setupFilterChips(relationships)
-            updateYearSliderRange(relChanges)
-            binding.yearSliderLayout.visibility =
-                if (relChanges.isNotEmpty()) View.VISIBLE else View.GONE
+            updateTimeControls()
             updateGraph(characters, relationships)
         }
+
+        // 상태변화(생몰년)·세력 멤버십(가입/탈퇴 연도)도 시간축 데이터이므로 슬라이더 범위/가시성에 반영
+        viewModel.stateChanges.observe(viewLifecycleOwner) { updateTimeControls() }
+        viewModel.factionMemberships.observe(viewLifecycleOwner) { updateTimeControls() }
     }
 
-    private fun updateYearSliderRange(changes: List<CharacterRelationshipChange>) {
-        if (changes.isEmpty()) return
+    /** 시간축 데이터(관계변화 + 멤버십 가입/탈퇴 + 상태변화)의 연도를 모두 모은다. */
+    private fun collectTimelineYears(): List<Int> {
+        val years = mutableListOf<Int>()
+        viewModel.relationshipChanges.value?.forEach { years.add(it.year) }
+        viewModel.factionMemberships.value?.forEach { m ->
+            m.joinYear?.let { years.add(it) }
+            m.leaveYear?.let { years.add(it) }
+        }
+        // year=0은 시간축과 무관한 시스템 상태변경(__alive 등)일 수 있어 제외
+        viewModel.stateChanges.value?.forEach { if (it.year != 0) years.add(it.year) }
+        return years
+    }
 
-        val minYear = changes.minOf { it.year }
-        val maxYear = changes.maxOf { it.year }
+    /**
+     * 시간뷰 컨트롤 갱신. 관계변화가 없어도 생몰년·멤버십 연도만 있으면 슬라이더를 쓸 수 있게 한다
+     * (기존에는 관계변화 0건이면 시간뷰 자체가 숨겨졌음).
+     */
+    private fun updateTimeControls() {
+        val years = collectTimelineYears()
+        binding.yearSliderLayout.visibility = if (years.isNotEmpty()) View.VISIBLE else View.GONE
+        if (years.isEmpty()) return
+
+        val minYear = years.min()
+        val maxYear = years.max()
         val padding = ((maxYear - minYear) * 0.1f).toInt().coerceAtLeast(10)
 
         binding.graphYearSlider.stepSize = 0f
         binding.graphYearSlider.valueFrom = (minYear - padding).toFloat()
         binding.graphYearSlider.valueTo = (maxYear + padding).toFloat()
         binding.graphYearSlider.stepSize = 1f
-        binding.graphYearSlider.value = maxYear.toFloat()
+        binding.graphYearSlider.value = (currentYear ?: maxYear).toFloat()
+            .coerceIn((minYear - padding).toFloat(), (maxYear + padding).toFloat())
 
         // 시간뷰 복원 시 currentYear 초기화 (슬라이더 범위 설정 후에야 가능)
         if (isTimeViewEnabled && currentYear == null) {
@@ -650,12 +718,16 @@ class RelationshipGraphFragment : Fragment() {
                 label = resolved.resolvedType,
                 intensity = resolved.resolvedIntensity,
                 isBidirectional = resolved.resolvedBidirectional,
+                // 세력 자동 관계는 두 캐릭터가 모두 재적 중일 때만 유효 — 아니면 점선 표시
+                isActive = viewModel.isFactionEdgeActiveAtYear(rel, year),
                 factionId = rel.factionId,
                 isSecondary = isEdgeSecondary
             )
         }
 
         binding.graphView.updateEdges(edges)
+        // 해당 시점 사망 캐릭터 표시 갱신 (노드 레이아웃은 유지)
+        binding.graphView.updateDeceased(viewModel.deceasedCharacterIdsAtYear(year))
     }
 
     private fun updateGraph(allCharacters: List<Character>, allRelationships: List<CharacterRelationship>) {
@@ -737,6 +809,11 @@ class RelationshipGraphFragment : Fragment() {
                 .toSet()
         } else null
 
+        // 시간뷰 활성 시 해당 시점 사망 캐릭터 집합 (회색 + † 표시)
+        val deceasedIds = if (isTimeViewEnabled && currentYear != null) {
+            viewModel.deceasedCharacterIdsAtYear(currentYear!!)
+        } else emptySet()
+
         val nodes = characters.map { char ->
             val factionPairs = charFactionMap[char.id] ?: emptyList()
             val isSecondaryByNovel = primaryIds != null && char.id !in primaryIds
@@ -746,7 +823,8 @@ class RelationshipGraphFragment : Fragment() {
                 label = char.name,
                 isSecondary = isSecondaryByNovel || isSecondaryByFaction,
                 factionIds = factionPairs.map { it.first },
-                factionColors = factionPairs.map { it.second }
+                factionColors = factionPairs.map { it.second },
+                isDeceased = char.id in deceasedIds
             )
         }
         val hideFactionEdges = !binding.graphView.showFactionEdges
@@ -765,6 +843,8 @@ class RelationshipGraphFragment : Fragment() {
                     label = resolved.resolvedType,
                     intensity = resolved.resolvedIntensity,
                     isBidirectional = resolved.resolvedBidirectional,
+                    // 세력 자동 관계는 두 캐릭터가 모두 재적 중일 때만 유효 — 아니면 점선
+                    isActive = viewModel.isFactionEdgeActiveAtYear(rel, currentYear!!),
                     factionId = rel.factionId,
                     isSecondary = isEdgeSecondary
                 )

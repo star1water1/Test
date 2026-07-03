@@ -129,12 +129,29 @@ class CharacterRepository(
     suspend fun getFieldValuesForUniverse(universeId: Long, fieldDefId: Long): List<String> =
         characterFieldValueDao.getFieldValuesForUniverse(universeId, fieldDefId)
 
+    /** 여러 캐릭터의 전체 필드값 일괄 조회 (IN 절 999 제한 회피를 위한 청크 분할) */
+    suspend fun getValuesForCharacters(characterIds: List<Long>): List<CharacterFieldValue> {
+        val result = mutableListOf<CharacterFieldValue>()
+        for (chunk in characterIds.chunked(CHUNK_SIZE)) {
+            result.addAll(characterFieldValueDao.getValuesForCharacters(chunk))
+        }
+        return result
+    }
+
+    /** 세계관 전체 필드값 일괄 조회 (편집 화면 자동완성 배치 로드용) */
+    suspend fun getAllFieldValuesForUniverse(universeId: Long): List<CharacterFieldValue> =
+        characterFieldValueDao.getAllValuesForUniverse(universeId)
+
     // ===== CharacterStateChange =====
     fun getChangesByCharacter(characterId: Long): LiveData<List<CharacterStateChange>> =
         characterStateChangeDao.getChangesByCharacter(characterId)
 
     suspend fun getChangesByCharacterList(characterId: Long): List<CharacterStateChange> =
         characterStateChangeDao.getChangesByCharacterList(characterId)
+
+    /** 전체 상태변화 일괄 조회 (관계도 시간뷰의 생사 판정용) */
+    suspend fun getAllStateChangesList(): List<CharacterStateChange> =
+        characterStateChangeDao.getAllChangesList()
 
     suspend fun getChangesUpToYear(characterId: Long, year: Int): List<CharacterStateChange> =
         characterStateChangeDao.getChangesUpToYear(characterId, year)

@@ -564,12 +564,16 @@ class CharacterDetailFragment : Fragment() {
 
         val allFields = viewModel.getFieldsByUniverseList(universeIdForFields)
 
+        // 캐릭터당 개별 쿼리(N+1) 대신 범위 전체 값을 1회 배치 조회 후 인메모리 그룹핑
+        val fieldIdToKey = allFields.associateBy({ it.id }, { it.key })
+        val valuesByChar = viewModel.getValuesForCharacters(characters.map { it.id })
+            .groupBy { it.characterId }
+
         return characters.mapNotNull { char ->
-            val charValues = viewModel.getValuesByCharacterList(char.id)
             val charKeyValues = mutableMapOf<String, String>()
-            for (f in allFields) {
-                val v = charValues.firstOrNull { it.fieldDefinitionId == f.id }?.value ?: ""
-                if (v.isNotBlank()) charKeyValues[f.key] = v
+            for (v in valuesByChar[char.id].orEmpty()) {
+                val key = fieldIdToKey[v.fieldDefinitionId] ?: continue
+                if (v.value.isNotBlank()) charKeyValues[key] = v.value
             }
             val eval = com.novelcharacter.app.util.FormulaEvaluator(charKeyValues, allFields)
             try { eval.evaluate(formula).takeIf { it.isFinite() } } catch (_: Exception) { null }

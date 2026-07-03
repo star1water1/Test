@@ -20,6 +20,7 @@ data class GraphNode(
     val isSecondary: Boolean = false,
     val factionIds: List<Long> = emptyList(),
     val factionColors: List<Int> = emptyList(),  // parsed Color ints
+    val isDeceased: Boolean = false,             // 시간뷰에서 해당 시점 사망 상태 (회색 + †)
     var x: Float = 0f,
     var y: Float = 0f
 )
@@ -59,8 +60,11 @@ class RelationshipGraphView @JvmOverloads constructor(
     // 엣지 쌍별 개수 캐시 (setGraphData/updateEdges 시 갱신, onDraw마다 재생성 방지)
     private var cachedPairEdgeCount = mapOf<Long, Int>()
 
+    private val defaultNodeColor = ContextCompat.getColor(context, R.color.graph_node_fill)
+    private val deceasedNodeColor = 0xFF9E9E9E.toInt() // 시간뷰 사망 노드 회색
+
     private val nodePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = ContextCompat.getColor(context, R.color.graph_node_fill)
+        color = defaultNodeColor
         style = Paint.Style.FILL
     }
 
@@ -256,6 +260,14 @@ class RelationshipGraphView @JvmOverloads constructor(
     fun updateEdges(edgeList: List<GraphEdge>) {
         edges = edgeList.toList()
         rebuildPairEdgeCache()
+        invalidate()
+    }
+
+    /**
+     * 시점 변경 시 사망 상태만 갱신 (노드 레이아웃 유지).
+     */
+    fun updateDeceased(deceasedIds: Set<Long>) {
+        nodes = nodes.map { it.copy(isDeceased = it.id in deceasedIds) }
         invalidate()
     }
 
@@ -595,22 +607,27 @@ class RelationshipGraphView @JvmOverloads constructor(
                 }
             }
 
+            // 시간뷰: 해당 시점 사망 캐릭터는 회색 처리.
+            // Paint.color 설정은 알파를 함께 초기화하므로 반드시 알파보다 먼저 설정한다
+            nodePaint.color = if (node.isDeceased) deceasedNodeColor else defaultNodeColor
             if (node.isSecondary) {
-                nodePaint.alpha = 100
+                nodePaint.alpha = if (node.isDeceased) 80 else 100
                 nodeStrokePaint.pathEffect = dashEffect
             } else {
-                nodePaint.alpha = 255
+                nodePaint.alpha = if (node.isDeceased) 160 else 255
                 nodeStrokePaint.pathEffect = null
             }
             canvas.drawCircle(node.x, node.y, nodeRadius, nodePaint)
             canvas.drawCircle(node.x, node.y, nodeRadius, nodeStrokePaint)
 
             textPaint.alpha = if (node.isSecondary) 120 else 255
-            // 노드 이름: 6글자까지 표시 (원래 4글자)
-            val label = if (node.label.length > 6) node.label.take(6) + "…" else node.label
+            // 노드 이름: 6글자까지 표시 (원래 4글자), 시간뷰 사망 시 † 접두
+            val baseLabel = if (node.label.length > 6) node.label.take(6) + "…" else node.label
+            val label = if (node.isDeceased) "†$baseLabel" else baseLabel
             canvas.drawText(label, node.x, node.y + textPaint.textSize / 3, textPaint)
         }
         // Reset paint states
+        nodePaint.color = defaultNodeColor
         nodePaint.alpha = 255
         nodeStrokePaint.pathEffect = null
         textPaint.alpha = 255

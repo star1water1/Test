@@ -495,6 +495,9 @@ class CharacterEditFragment : Fragment() {
         val context = context ?: return
         val density = resources.displayMetrics.density
 
+        // 자동완성 대상 수집 (필드마다 개별 쿼리 대신 루프 종료 후 1회 배치 조회)
+        val autoCompleteTargets = mutableListOf<Triple<Long, DisplayFormat?, MaterialAutoCompleteTextView>>()
+
         for (field in fieldDefinitions.sortedBy { it.displayOrder }) {
             val fieldType = FieldType.fromName(field.type)
 
@@ -646,26 +649,8 @@ class CharacterEditFragment : Fragment() {
                         }
                         fieldInputMap[field.id] = editText
 
-                        // 자동완성 데이터 로드 (세계관 내 같은 필드의 기존 값)
-                        val uId = currentUniverseId
-                        if (uId != null) {
-                            viewLifecycleOwner.lifecycleScope.launch {
-                                val existingValues = viewModel.getFieldValuesForUniverse(uId, field.id)
-                                val suggestions = if (format == DisplayFormat.COMMA_LIST || format == DisplayFormat.BULLET_LIST) {
-                                    existingValues.flatMap { it.split(",").map { v -> v.trim() } }
-                                        .filter { it.isNotBlank() }.distinct().sorted()
-                                } else {
-                                    existingValues.filter { it.isNotBlank() }.distinct().sorted()
-                                }
-                                if (suggestions.isNotEmpty() && _binding != null) {
-                                    editText.setAdapter(ArrayAdapter(
-                                        requireContext(),
-                                        android.R.layout.simple_dropdown_item_1line,
-                                        suggestions
-                                    ))
-                                }
-                            }
-                        }
+                        // 자동완성 데이터는 루프 종료 후 배치 조회로 채움
+                        autoCompleteTargets.add(Triple(field.id, format, editText))
                     }
                 }
 
@@ -865,6 +850,32 @@ class CharacterEditFragment : Fragment() {
                     inputLayout.addView(editText)
                     binding.dynamicFormContainer.addView(inputLayout)
                     fieldInputMap[field.id] = editText
+                }
+            }
+        }
+
+        // 자동완성 데이터 배치 로드: 필드마다 개별 쿼리(M회) 대신 세계관 전체 값을 1회 조회 후 필드별 분배
+        val uId = currentUniverseId
+        if (uId != null && autoCompleteTargets.isNotEmpty()) {
+            viewLifecycleOwner.lifecycleScope.launch {
+                val valuesByField = viewModel.getAllFieldValuesForUniverse(uId)
+                    .groupBy { it.fieldDefinitionId }
+                if (_binding == null) return@launch
+                for ((fieldId, format, editText) in autoCompleteTargets) {
+                    val existingValues = valuesByField[fieldId].orEmpty().map { it.value }
+                    val suggestions = if (format == DisplayFormat.COMMA_LIST || format == DisplayFormat.BULLET_LIST) {
+                        existingValues.flatMap { it.split(",").map { v -> v.trim() } }
+                            .filter { it.isNotBlank() }.distinct().sorted()
+                    } else {
+                        existingValues.filter { it.isNotBlank() }.distinct().sorted()
+                    }
+                    if (suggestions.isNotEmpty()) {
+                        editText.setAdapter(ArrayAdapter(
+                            requireContext(),
+                            android.R.layout.simple_dropdown_item_1line,
+                            suggestions
+                        ))
+                    }
                 }
             }
         }

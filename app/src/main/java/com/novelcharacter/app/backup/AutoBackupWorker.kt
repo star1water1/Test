@@ -27,11 +27,11 @@ class AutoBackupWorker(
         private const val BACKUP_DIR_NAME = "backups"
         private const val BACKUP_PREFIX = "NovelCharacter_AutoBackup_"
         private const val BACKUP_EXTENSION = ".enc"
-        private const val MAX_BACKUPS = 3
     }
 
     override suspend fun doWork(): Result {
         val statusStore = BackupStatusStore(appContext)
+        val settings = BackupSettingsStore(appContext).getSettings()
         return try {
             Log.i(TAG, "Starting auto backup...")
             val db = AppDatabase.getDatabase(appContext)
@@ -57,14 +57,14 @@ class AutoBackupWorker(
                 exportAppSettings(workbook, headerStyle, usedSheetNames)
 
                 // Write workbook to bytes, encrypt, and save to internal storage
-                saveEncryptedBackup(workbook)
+                saveEncryptedBackup(workbook, settings.includeImages)
             } finally {
                 try { workbook.close() } catch (e: Exception) { Log.w(TAG, "Failed to close workbook", e) }
             }
 
             // Rotate old backups (non-critical: rotation failure must not fail a completed backup)
             try {
-                rotateBackups()
+                rotateBackups(settings.maxBackups)
             } catch (e: Exception) {
                 Log.w(TAG, "Backup rotation failed, will retry next time", e)
             }
@@ -80,7 +80,7 @@ class AutoBackupWorker(
         }
     }
 
-    private suspend fun saveEncryptedBackup(workbook: XSSFWorkbook) {
+    private suspend fun saveEncryptedBackup(workbook: XSSFWorkbook, includeImages: Boolean) {
         val backupDir = File(appContext.filesDir, BACKUP_DIR_NAME)
         if (!backupDir.exists()) {
             backupDir.mkdirs()
@@ -98,11 +98,15 @@ class AutoBackupWorker(
                 workbook.write(fos)
             }
 
-            // 2. 이미지 포함 ZIP 래핑
-            val db = AppDatabase.getDatabase(appContext)
-            val hasImages = com.novelcharacter.app.excel.ImageZipHelper.wrapWithImages(
-                tempXlsx, tempZip, db, appContext
-            )
+            // 2. 이미지 포함 ZIP 래핑 (설정으로 제외 가능 — 용량 절약)
+            val hasImages = if (includeImages) {
+                val db = AppDatabase.getDatabase(appContext)
+                com.novelcharacter.app.excel.ImageZipHelper.wrapWithImages(
+                    tempXlsx, tempZip, db, appContext
+                )
+            } else {
+                false
+            }
 
             // 3. 암호화 (이미지가 있으면 ZIP, 없으면 XLSX)
             val sourceFile = if (hasImages) tempZip else tempXlsx
@@ -115,10 +119,10 @@ class AutoBackupWorker(
             tempZip.delete()
         }
 
-        Log.i(TAG, "Encrypted backup saved (with images): ${backupFile.absolutePath}")
+        Log.i(TAG, "Encrypted backup saved (includeImages=$includeImages): ${backupFile.absolutePath}")
     }
 
-    private fun rotateBackups() {
+    private fun rotateBackups(maxBackups: Int) {
         val backupDir = File(appContext.filesDir, BACKUP_DIR_NAME)
         if (!backupDir.exists()) return
 
@@ -132,8 +136,8 @@ class AutoBackupWorker(
             file.name.startsWith(BACKUP_PREFIX) && file.name.endsWith(BACKUP_EXTENSION)
         }?.sortedByDescending { it.lastModified() } ?: return
 
-        if (backupFiles.size > MAX_BACKUPS) {
-            backupFiles.drop(MAX_BACKUPS).forEach { file ->
+        if (backupFiles.size > maxBackups) {
+            backupFiles.drop(maxBackups).forEach { file ->
                 if (file.delete()) {
                     Log.i(TAG, "Deleted old backup: ${file.name}")
                 }

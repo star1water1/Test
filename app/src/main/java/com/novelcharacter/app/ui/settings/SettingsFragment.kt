@@ -17,6 +17,7 @@ import androidx.lifecycle.lifecycleScope
 import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.R
 import com.novelcharacter.app.backup.BackupEncryptor
+import com.novelcharacter.app.backup.BackupSettingsStore
 import com.novelcharacter.app.backup.BackupStatusStore
 import com.novelcharacter.app.data.maintenance.SystemMaintenanceService
 import com.novelcharacter.app.share.WorldPackageExporter
@@ -136,6 +137,11 @@ class SettingsFragment : Fragment() {
         binding.backupRestoreRow.setOnClickListener {
             showBackupRestoreDialog()
         }
+
+        binding.backupOptionsRow.setOnClickListener {
+            showBackupOptionsDialog()
+        }
+        updateBackupOptionsLabel()
 
         // Maintenance
         val app = requireContext().applicationContext as NovelCharacterApp
@@ -271,12 +277,16 @@ class SettingsFragment : Fragment() {
                 }
             }
 
-            // Count backup files
+            // Count backup files + total size (용량 잠식을 사용자가 인지할 수 있도록)
             val backupDir = File(filesDir, "backups")
-            val backupCount = backupDir.listFiles { f ->
+            val backupFiles = backupDir.listFiles { f ->
                 f.name.startsWith("NovelCharacter_AutoBackup_") && f.name.endsWith(".enc")
-            }?.size ?: 0
-            sb.appendLine(getString(R.string.backup_file_count, backupCount))
+            } ?: emptyArray()
+            val totalMb = String.format(Locale.US, "%.1f", backupFiles.sumOf { it.length() } / 1024.0 / 1024.0)
+            sb.appendLine(
+                getString(R.string.backup_file_count, backupFiles.size) +
+                    getString(R.string.backup_total_size_suffix, totalMb)
+            )
             // 기기 종속 암호화 상시 고지 — 폰 교체용 백업으로 오인하지 않도록
             sb.append(getString(R.string.backup_device_bound_caption))
 
@@ -425,6 +435,65 @@ class SettingsFragment : Fragment() {
     }
 
     // ── 백업/복원 ──
+
+    /** 자동 백업 옵션 행의 현재값 라벨 갱신 */
+    private fun updateBackupOptionsLabel() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val settings = BackupSettingsStore(requireContext().applicationContext).getSettings()
+            if (_binding == null) return@launch
+            val imagesText = getString(
+                if (settings.includeImages) R.string.backup_option_images_on else R.string.backup_option_images_off
+            )
+            binding.backupOptionsValue.text =
+                getString(R.string.backup_options_value, imagesText, settings.maxBackups)
+        }
+    }
+
+    /** 자동 백업 옵션 다이얼로그 — 이미지 포함 토글, 보관 개수 선택 */
+    private fun showBackupOptionsDialog() {
+        if (!isAdded) return
+        val store = BackupSettingsStore(requireContext().applicationContext)
+        viewLifecycleOwner.lifecycleScope.launch {
+            val settings = store.getSettings()
+            if (_binding == null || !isAdded) return@launch
+            val imagesLabel = getString(
+                R.string.backup_option_toggle_images,
+                getString(if (settings.includeImages) R.string.backup_option_images_on else R.string.backup_option_images_off)
+            )
+            val maxLabel = getString(R.string.backup_option_choose_max, settings.maxBackups)
+            AlertDialog.Builder(requireContext())
+                .setTitle(R.string.backup_options)
+                .setItems(arrayOf(imagesLabel, maxLabel)) { _, which ->
+                    when (which) {
+                        0 -> viewLifecycleOwner.lifecycleScope.launch {
+                            store.setIncludeImages(!settings.includeImages)
+                            updateBackupOptionsLabel()
+                        }
+                        1 -> showMaxBackupsDialog(store, settings.maxBackups)
+                    }
+                }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+        }
+    }
+
+    private fun showMaxBackupsDialog(store: BackupSettingsStore, current: Int) {
+        if (!isAdded) return
+        val choices = BackupSettingsStore.MAX_BACKUPS_CHOICES
+        val labels = choices.map { getString(R.string.backup_max_item, it) }.toTypedArray()
+        val checked = choices.indexOf(current).coerceAtLeast(0)
+        AlertDialog.Builder(requireContext())
+            .setTitle(R.string.backup_option_max_title)
+            .setSingleChoiceItems(labels, checked) { dialog, which ->
+                viewLifecycleOwner.lifecycleScope.launch {
+                    store.setMaxBackups(choices[which])
+                    updateBackupOptionsLabel()
+                }
+                dialog.dismiss()
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
 
     private fun showBackupRestoreDialog() {
         if (!isAdded) return
