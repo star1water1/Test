@@ -135,6 +135,10 @@ class SettingsFragment : Fragment() {
             importFromExcel()
         }
 
+        binding.trashRow.setOnClickListener {
+            findNavController().navigate(R.id.trashFragment)
+        }
+
         binding.backupRestoreRow.setOnClickListener {
             showBackupRestoreDialog()
         }

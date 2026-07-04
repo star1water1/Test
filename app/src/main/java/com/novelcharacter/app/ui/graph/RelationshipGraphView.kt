@@ -36,12 +36,28 @@ data class GraphEdge(
     val isSecondary: Boolean = false   // 세력 필터 시 해당 세력 관계가 아니면 흐리게
 )
 
+/** 세력 간 관계 엣지 (B-3) — 세력 영역 중심점 사이에 그려진다 */
+data class FactionRelationEdge(
+    val factionId1: Long,
+    val factionId2: Long,
+    val label: String,
+    val intensity: Int = 5,
+    val isBidirectional: Boolean = true
+)
+
 class RelationshipGraphView @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0
 ) : View(context, attrs, defStyleAttr) {
 
     private var nodes = listOf<GraphNode>()
     private var edges = listOf<GraphEdge>()
+    private var factionRelationEdges = listOf<FactionRelationEdge>()
+
+    /** 세력 간 관계 엣지 설정 (B-3) — 세력 영역 표시가 켜져 있을 때 함께 그려진다 */
+    fun setFactionRelationEdges(edgeList: List<FactionRelationEdge>) {
+        factionRelationEdges = edgeList
+        invalidate()
+    }
 
     /** 세력 표기: 영역(배경 영역) 토글 */
     var showFactionArea: Boolean = true
@@ -471,6 +487,7 @@ class RelationshipGraphView @JvmOverloads constructor(
         // Draw faction backgrounds (before edges and nodes)
         if (showFactionArea) {
             drawFactionBackgrounds(canvas)
+            drawFactionRelationEdges(canvas)
         }
 
         // 같은 노드 쌍 사이의 곡선 오프셋 인덱스
@@ -711,6 +728,60 @@ class RelationshipGraphView @JvmOverloads constructor(
             factionBgPaint.pathEffect = cornerEffect
             canvas.drawPath(factionHullPath, factionBgPaint)
             factionBgPaint.pathEffect = null
+        }
+    }
+
+    /**
+     * 세력 간 관계 엣지 (B-3) — 각 세력의 멤버 노드 중심점 사이에
+     * 관계 유형 색/강도 굵기의 선과 라벨을 그린다. 단방향이면 화살표.
+     */
+    private fun drawFactionRelationEdges(canvas: Canvas) {
+        if (factionRelationEdges.isEmpty()) return
+
+        // 세력별 멤버 노드 중심점 계산
+        val sums = mutableMapOf<Long, FloatArray>()  // factionId -> [sumX, sumY, count]
+        for (node in nodes) {
+            for (fId in node.factionIds) {
+                val acc = sums.getOrPut(fId) { floatArrayOf(0f, 0f, 0f) }
+                acc[0] += node.x
+                acc[1] += node.y
+                acc[2] += 1f
+            }
+        }
+        if (sums.isEmpty()) return
+
+        for (edge in factionRelationEdges) {
+            val from = sums[edge.factionId1] ?: continue
+            val to = sums[edge.factionId2] ?: continue
+            val fromX = from[0] / from[2]
+            val fromY = from[1] / from[2]
+            val toX = to[0] / to[2]
+            val toY = to[1] / to[2]
+
+            val edgeColor = relationshipColors[edge.label]
+                ?: ContextCompat.getColor(context, R.color.graph_edge)
+
+            edgePaint.color = Color.argb(200, Color.red(edgeColor), Color.green(edgeColor), Color.blue(edgeColor))
+            edgePaint.strokeWidth = (edge.intensity * 0.8f).coerceIn(2f, 8f)
+            edgePaint.pathEffect = null
+            canvas.drawLine(fromX, fromY, toX, toY, edgePaint)
+            if (!edge.isBidirectional) {
+                drawArrow(canvas, fromX, fromY, toX, toY, edgeColor)
+            }
+
+            // 라벨 (반투명 배경)
+            val midX = (fromX + toX) / 2
+            val midY = (fromY + toY) / 2
+            val labelWidth = edgeLabelPaint.measureText(edge.label)
+            val labelHeight = edgeLabelPaint.textSize
+            val labelY = midY - 6f
+            labelBgPaint.color = if (isDarkMode) Color.argb(180, 0, 0, 0) else Color.argb(210, 255, 255, 255)
+            canvas.drawRoundRect(
+                midX - labelWidth / 2 - 4f, labelY - labelHeight + 2f,
+                midX + labelWidth / 2 + 4f, labelY + 4f, 4f, 4f, labelBgPaint
+            )
+            edgeLabelPaint.color = Color.argb(255, Color.red(edgeColor), Color.green(edgeColor), Color.blue(edgeColor))
+            canvas.drawText(edge.label, midX, labelY, edgeLabelPaint)
         }
     }
 

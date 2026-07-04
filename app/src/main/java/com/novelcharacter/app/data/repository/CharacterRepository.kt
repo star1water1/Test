@@ -1,6 +1,5 @@
 package com.novelcharacter.app.data.repository
 
-import android.util.Log
 import androidx.lifecycle.LiveData
 import androidx.room.withTransaction
 import com.google.gson.Gson
@@ -56,10 +55,12 @@ class CharacterRepository(
     }
 
     suspend fun deleteCharacter(character: Character) {
-        // 이미지 파일 경로를 트랜잭션 전에 파싱 (DB 삭제 후에는 접근 불가)
-        val imageFiles = parseImagePaths(character.imagePaths)
+        val trash = TrashRepository(db)
+        val imagePaths = parseImagePaths(character.imagePaths).map { it.absolutePath }
 
         db.withTransaction {
+            // 휴지통 스냅샷 — CASCADE 삭제 전에 연관 데이터를 통째로 보관 (B-7)
+            trash.snapshotCharacter(character, imagePaths)
             nameBankDao.resetUsageByCharacter(character.id)
             recentActivityDao.deleteByEntity(RecentActivity.TYPE_CHARACTER, character.id)
             // 이 캐릭터를 이미지로 참조하는 작품/세계관의 댕글링 참조 정리
@@ -68,14 +69,9 @@ class CharacterRepository(
             characterDao.delete(character)
         }
 
-        // DB 트랜잭션 성공 후 디스크에서 이미지 파일 삭제
-        for (file in imageFiles) {
-            try {
-                if (file.exists()) file.delete()
-            } catch (e: Exception) {
-                Log.w("CharacterRepository", "Failed to delete image: ${file.absolutePath}", e)
-            }
-        }
+        // 이미지 파일은 즉시 지우지 않는다 — 복원을 위해 스냅샷이 살아 있는 동안 유지되고,
+        // 휴지통 영구 삭제/자동 정리 시점에 함께 삭제된다 (TrashRepository.purgeSnapshot)
+        trash.pruneIfNeeded()
     }
 
     private fun parseImagePaths(imagePathsJson: String): List<File> {
@@ -372,19 +368,21 @@ class CharacterRepository(
      * 3. recentActivity 삭제
      * 4. novel/universe 이미지 참조 정리
      * 5. character 삭제 (FK CASCADE로 태그/필드값/관계/세력소속/타임라인 정리)
-     * 6. 이미지 파일 디스크 삭제 (트랜잭션 후)
+     * ※ 삭제 전 캐릭터별 휴지통 스냅샷 보관, 이미지 파일은 휴지통 정리 시점에 삭제 (B-7)
      */
     suspend fun batchDelete(ids: List<Long>) {
-        // 1. 트랜잭션 전: 이미지 경로 수집
-        val allImageFiles = mutableListOf<File>()
-        for (chunk in ids.chunked(CHUNK_SIZE)) {
-            val characters = characterDao.getCharactersByIds(chunk)
-            characters.forEach { allImageFiles.addAll(parseImagePaths(it.imagePaths)) }
-        }
+        val trash = TrashRepository(db)
 
-        // 2-5. 단일 트랜잭션으로 DB 정리
+        // 2-5. 단일 트랜잭션으로 DB 정리 (삭제 전 캐릭터별 휴지통 스냅샷 보관)
         db.withTransaction {
             for (chunk in ids.chunked(CHUNK_SIZE)) {
+                val characters = characterDao.getCharactersByIds(chunk)
+                for (character in characters) {
+                    trash.snapshotCharacter(
+                        character,
+                        parseImagePaths(character.imagePaths).map { it.absolutePath }
+                    )
+                }
                 nameBankDao.resetUsageByCharacterIds(chunk)
                 recentActivityDao.deleteByEntityIds(RecentActivity.TYPE_CHARACTER, chunk)
                 db.novelDao().clearImageCharacterRefs(chunk)
@@ -393,14 +391,8 @@ class CharacterRepository(
             }
         }
 
-        // 6. 트랜잭션 후: 디스크에서 이미지 삭제
-        for (file in allImageFiles) {
-            try {
-                if (file.exists()) file.delete()
-            } catch (e: Exception) {
-                Log.w("CharacterRepository", "Failed to delete image: ${file.absolutePath}", e)
-            }
-        }
+        // 이미지 파일은 스냅샷과 함께 유지 — 휴지통 정리 시점에 삭제 (B-7)
+        trash.pruneIfNeeded()
     }
 
     /** 선택 캐릭터의 고유 태그 목록 (일괄 삭제 UI용) */

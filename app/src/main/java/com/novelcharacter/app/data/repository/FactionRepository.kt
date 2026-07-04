@@ -7,6 +7,7 @@ import com.novelcharacter.app.data.model.CharacterRelationship
 import com.novelcharacter.app.data.model.CharacterRelationshipChange
 import com.novelcharacter.app.data.model.Faction
 import com.novelcharacter.app.data.model.FactionMembership
+import com.novelcharacter.app.data.model.FactionRelationship
 
 class FactionRepository(private val db: AppDatabase) {
 
@@ -14,6 +15,7 @@ class FactionRepository(private val db: AppDatabase) {
     private val membershipDao = db.factionMembershipDao()
     private val relationshipDao = db.characterRelationshipDao()
     private val relationshipChangeDao = db.characterRelationshipChangeDao()
+    private val factionRelationshipDao = db.factionRelationshipDao()
 
     // ===== Faction CRUD =====
 
@@ -67,6 +69,30 @@ class FactionRepository(private val db: AppDatabase) {
 
     suspend fun getAllMembershipsList(): List<FactionMembership> =
         membershipDao.getAllMembershipsList()
+
+    // ===== 세력 간 관계 (B-3) =====
+
+    fun getFactionRelationshipsForFaction(factionId: Long): LiveData<List<FactionRelationship>> =
+        factionRelationshipDao.getRelationshipsForFaction(factionId)
+
+    suspend fun getFactionRelationshipsForFactionList(factionId: Long): List<FactionRelationship> =
+        factionRelationshipDao.getRelationshipsForFactionList(factionId)
+
+    suspend fun getFactionRelationshipsByUniverseList(universeId: Long): List<FactionRelationship> =
+        factionRelationshipDao.getRelationshipsByUniverseList(universeId)
+
+    suspend fun getAllFactionRelationshipsList(): List<FactionRelationship> =
+        factionRelationshipDao.getAllRelationshipsList()
+
+    /** @return 삽입된 id, 동일 (세력쌍, 유형) 관계가 이미 있으면 -1 */
+    suspend fun insertFactionRelationship(relationship: FactionRelationship): Long =
+        factionRelationshipDao.insert(relationship)
+
+    suspend fun updateFactionRelationship(relationship: FactionRelationship) =
+        factionRelationshipDao.update(relationship)
+
+    suspend fun deleteFactionRelationship(relationship: FactionRelationship) =
+        factionRelationshipDao.delete(relationship)
 
     // ===== 핵심 비즈니스 로직: 가입 =====
 
