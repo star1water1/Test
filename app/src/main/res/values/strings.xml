@@ -1527,4 +1527,13 @@
     <string name="result_name_mark_used_failed">이름 사용 처리 실패</string>
     <string name="result_name_marked_available">이름 사용 해제됨</string>
     <string name="result_name_mark_available_failed">이름 사용 해제 실패</string>
+    <string name="result_trash_purged">\"%1$s\" 영구 삭제됨</string>
+    <string name="result_trash_purge_failed">영구 삭제 실패</string>
+    <string name="result_trash_emptied">휴지통 비움 — %1$d개 영구 삭제됨</string>
+    <string name="result_trash_empty_none">휴지통이 이미 비어 있습니다</string>
+    <string name="result_trash_empty_failed">휴지통 비우기 실패</string>
+    <string name="result_trash_restore_failed">복원 실패</string>
+    <string name="result_batch_summary">일괄 %1$s %2$d건</string>
+    <string name="result_batch_sync_warning">일부 캐릭터 동기화 실패 %1$d건 — 나이/생존 등 재계산이 누락됐을 수 있습니다</string>
+    <string name="batch_success_with_warning">%1$d개 캐릭터 %2$s (동기화 실패 %3$d건)</string>
 </resources>

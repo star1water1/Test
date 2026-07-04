@@ -4,6 +4,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
 import com.google.android.material.snackbar.Snackbar
+import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.R
 
 /**
@@ -19,6 +20,23 @@ import com.novelcharacter.app.R
 fun Fragment.notifyResult(result: OpResult) {
     val duration = if (result.success && result.detail == null) Snackbar.LENGTH_SHORT else Snackbar.LENGTH_LONG
     showResultSnackbar(result.summary, duration, result.detail)
+}
+
+/**
+ * ViewModel을 거치지 않는 Fragment 직접 조작(IO·공유·휴지통 등)에서
+ * 결과를 즉시 알리고 작업 이력에도 기록한다 — reportResult(ViewModel용)의 Fragment 대응.
+ */
+fun Fragment.reportAndNotify(result: OpResult) {
+    (context?.applicationContext as? NovelCharacterApp)?.operationLogRepository?.logAsync(result)
+    notifyResult(result)
+}
+
+/**
+ * 작업 이력에만 기록한다(즉시 알림 없음). 이미 자체 Toast/다이얼로그로 알리는 Fragment 조작이
+ * 이력 완성도를 위해 기록만 추가할 때 사용.
+ */
+fun Fragment.logOperation(result: OpResult) {
+    (context?.applicationContext as? NovelCharacterApp)?.operationLogRepository?.logAsync(result)
 }
 
 fun Fragment.notifySuccess(message: String) =

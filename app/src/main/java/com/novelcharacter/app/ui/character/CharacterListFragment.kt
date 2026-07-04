@@ -27,6 +27,8 @@ import com.novelcharacter.app.ui.character.batch.BatchOperationResult
 import com.novelcharacter.app.ui.character.batch.BatchSelectByFilterBottomSheet
 import com.novelcharacter.app.util.navigateSafe
 import com.novelcharacter.app.util.notifyResult
+import com.novelcharacter.app.util.logOperation
+import com.novelcharacter.app.util.OpResult
 
 class CharacterListFragment : Fragment() {
 
@@ -426,8 +428,26 @@ class CharacterListFragment : Fragment() {
             when (result) {
                 is BatchOperationResult.Success -> {
                     val opLabel = getOperationLabel(result.operation)
-                    val message = getString(R.string.batch_success_format, result.affectedCount, opLabel)
-                    Snackbar.make(binding.root, message, Snackbar.LENGTH_SHORT).show()
+                    // 시맨틱 동기화 부분 실패는 조용히 넘기지 않고 경고로 승격 (변수 제어)
+                    if (result.syncFailures > 0) {
+                        val message = getString(
+                            R.string.batch_success_with_warning,
+                            result.affectedCount, opLabel, result.syncFailures
+                        )
+                        Snackbar.make(binding.root, message, Snackbar.LENGTH_LONG).show()
+                        logOperation(OpResult.failure(
+                            OpResult.CAT_BATCH,
+                            getString(R.string.result_batch_summary, opLabel, result.affectedCount),
+                            getString(R.string.result_batch_sync_warning, result.syncFailures)
+                        ))
+                    } else {
+                        val message = getString(R.string.batch_success_format, result.affectedCount, opLabel)
+                        Snackbar.make(binding.root, message, Snackbar.LENGTH_SHORT).show()
+                        logOperation(OpResult.success(
+                            OpResult.CAT_BATCH,
+                            getString(R.string.result_batch_summary, opLabel, result.affectedCount)
+                        ))
+                    }
 
                     // 배치 작업 후 리스트 강제 갱신 (한 번만)
                     viewModel.refreshList()
@@ -438,6 +458,7 @@ class CharacterListFragment : Fragment() {
                         getString(R.string.batch_error_format, result.message),
                         Snackbar.LENGTH_LONG
                     ).show()
+                    logOperation(OpResult.failure(OpResult.CAT_BATCH, result.message))
                 }
             }
 

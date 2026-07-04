@@ -17,6 +17,9 @@ import com.novelcharacter.app.data.model.TrashSnapshot
 import com.novelcharacter.app.data.repository.TrashRepository
 import com.novelcharacter.app.databinding.FragmentTrashBinding
 import com.novelcharacter.app.databinding.ItemTrashBinding
+import com.novelcharacter.app.util.OpResult
+import com.novelcharacter.app.util.logOperation
+import com.novelcharacter.app.util.reportAndNotify
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -85,6 +88,8 @@ class TrashFragment : Fragment() {
                 if (!isAdded) return@launch
                 if (result == null) {
                     Toast.makeText(requireContext(), R.string.trash_restore_failed, Toast.LENGTH_SHORT).show()
+                    logOperation(OpResult.failure(OpResult.CAT_TRASH,
+                        getString(R.string.result_trash_restore_failed)))
                     return@launch
                 }
                 Toast.makeText(
@@ -92,6 +97,9 @@ class TrashFragment : Fragment() {
                     getString(R.string.trash_restored, result.restoredName),
                     Toast.LENGTH_SHORT
                 ).show()
+                // 즉시 알림은 위 Toast/부분복원 다이얼로그가 담당 — 이력만 추가
+                logOperation(OpResult.success(OpResult.CAT_TRASH,
+                    getString(R.string.trash_restored, result.restoredName)))
                 // 참조 소실로 생략된 연관 데이터가 있으면 조용히 넘기지 않고 알린다 (변수 제어)
                 if (result.hasSkipped) {
                     val details = mutableListOf<String>()
@@ -110,6 +118,8 @@ class TrashFragment : Fragment() {
                 if (isAdded) {
                     Toast.makeText(requireContext(), R.string.trash_restore_failed, Toast.LENGTH_SHORT).show()
                 }
+                logOperation(OpResult.failure(OpResult.CAT_TRASH,
+                    getString(R.string.result_trash_restore_failed), e.message))
             }
         }
     }
@@ -120,7 +130,14 @@ class TrashFragment : Fragment() {
             .setMessage(getString(R.string.trash_purge_confirm, snapshot.entityName))
             .setPositiveButton(R.string.delete) { _, _ ->
                 viewLifecycleOwner.lifecycleScope.launch {
-                    trashRepository.purgeSnapshot(snapshot)
+                    try {
+                        trashRepository.purgeSnapshot(snapshot)
+                        if (isAdded) reportAndNotify(OpResult.success(OpResult.CAT_TRASH,
+                            getString(R.string.result_trash_purged, snapshot.entityName)))
+                    } catch (e: Exception) {
+                        if (isAdded) reportAndNotify(OpResult.failure(OpResult.CAT_TRASH,
+                            getString(R.string.result_trash_purge_failed), e.message))
+                    }
                 }
             }
             .setNegativeButton(R.string.cancel, null)
@@ -133,7 +150,15 @@ class TrashFragment : Fragment() {
             .setMessage(R.string.trash_empty_confirm)
             .setPositiveButton(R.string.delete) { _, _ ->
                 viewLifecycleOwner.lifecycleScope.launch {
-                    trashRepository.emptyTrash()
+                    try {
+                        val purged = trashRepository.emptyTrash()
+                        if (isAdded) reportAndNotify(OpResult.success(OpResult.CAT_TRASH,
+                            if (purged > 0) getString(R.string.result_trash_emptied, purged)
+                            else getString(R.string.result_trash_empty_none)))
+                    } catch (e: Exception) {
+                        if (isAdded) reportAndNotify(OpResult.failure(OpResult.CAT_TRASH,
+                            getString(R.string.result_trash_empty_failed), e.message))
+                    }
                 }
             }
             .setNegativeButton(R.string.cancel, null)

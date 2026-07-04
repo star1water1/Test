@@ -212,9 +212,11 @@ class TrashRepository(private val db: AppDatabase) {
         trashDao.deleteById(snapshot.id)
     }
 
-    /** 휴지통 비우기 */
-    suspend fun emptyTrash() {
-        trashDao.getAllList().forEach { purgeSnapshot(it) }
+    /** 휴지통 비우기 — 영구 삭제한 스냅샷 개수를 반환한다(결과 통보용) */
+    suspend fun emptyTrash(): Int {
+        val all = trashDao.getAllList()
+        all.forEach { purgeSnapshot(it) }
+        return all.size
     }
 
     /** 보관 기한/개수 초과분 자동 정리 — 스냅샷 추가 후 호출 */
