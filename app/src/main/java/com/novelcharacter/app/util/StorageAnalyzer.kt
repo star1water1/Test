@@ -115,7 +115,7 @@ object StorageAnalyzer {
         val snapshots = runCatching { db.trashSnapshotDao().getAllList() }.getOrDefault(emptyList())
         for (snap in snapshots) {
             val paths: List<String?>? = runCatching {
-                gson.fromJson(snap.imagePaths, GsonTypes.STRING_LIST)
+                gson.fromJson<List<String?>>(snap.imagePaths, GsonTypes.STRING_LIST)
             }.getOrNull()
             paths?.filterNotNull()?.forEach { p ->
                 runCatching { File(p).canonicalPath }.getOrNull()?.let { result.add(it) }
