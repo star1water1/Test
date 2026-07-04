@@ -323,6 +323,46 @@
     <string name="backup_passphrase_wrong">암호가 올바르지 않습니다. 다시 입력해 주세요.</string>
     <string name="backup_portable_preparing">이식 가능 백업 생성 중…</string>
     <string name="backup_restore_portable_still_ok">단, 암호를 설정해 만든 \'이식 가능 백업\' 파일은 지금도 복원할 수 있습니다.</string>
+    <!-- 휴지통 (B-7) -->
+    <string name="trash_title">휴지통</string>
+    <string name="settings_trash_desc">삭제된 캐릭터를 보관·복원합니다</string>
+    <string name="trash_empty_hint">휴지통이 비어 있습니다</string>
+    <string name="trash_retention_caption">삭제된 캐릭터는 연관 데이터(필드값·관계·사건 연결 등)와 함께 최대 30개, 30일까지 보관됩니다.</string>
+    <string name="trash_type_character">캐릭터</string>
+    <string name="trash_item_meta">%1$s · 삭제 %2$s</string>
+    <string name="trash_restore">복원</string>
+    <string name="trash_delete_forever">영구 삭제</string>
+    <string name="trash_empty_all">모두 비우기</string>
+    <string name="trash_restore_confirm">\'%1$s\'을(를) 복원할까요? 연관 데이터도 함께 복원됩니다.</string>
+    <string name="trash_purge_confirm">\'%1$s\'을(를) 영구 삭제할까요? 되돌릴 수 없습니다.</string>
+    <string name="trash_empty_confirm">휴지통의 모든 항목을 영구 삭제할까요? 되돌릴 수 없습니다.</string>
+    <string name="trash_restored">\'%1$s\' 복원 완료</string>
+    <string name="trash_restore_failed">복원에 실패했습니다</string>
+    <string name="trash_restore_partial_title">일부 항목 복원 제외</string>
+    <string name="trash_restore_partial">다음 연관 데이터는 참조 대상이 삭제되어 복원에서 제외되었습니다:\n%1$s</string>
+    <string name="trash_skip_novel">- 소속 작품이 삭제되어 미배정으로 복원됨</string>
+    <string name="trash_skip_fields">- 필드값 %1$d개 (필드 정의 삭제됨)</string>
+    <string name="trash_skip_relationships">- 관계 %1$d개 (상대 캐릭터 삭제 또는 중복)</string>
+    <string name="trash_skip_memberships">- 세력 소속 %1$d개 (세력 삭제됨)</string>
+    <string name="trash_skip_events">- 사건 연결 %1$d개 (사건 삭제됨)</string>
+    <!-- 세력 간 관계 (B-3) -->
+    <string name="faction_relationships">세력 간 관계</string>
+    <string name="faction_relationship_add">관계 추가</string>
+    <string name="faction_relationship_empty">등록된 세력 간 관계가 없습니다.\n\'관계 추가\'로 세력 사이의 동맹·적대 등을 정의하세요.</string>
+    <string name="faction_relationship_target">상대 세력</string>
+    <string name="faction_relationship_type_hint">관계 유형 (예: 동맹, 적대, 종속)</string>
+    <string name="faction_relationship_desc_hint">설명 (선택)</string>
+    <string name="faction_relationship_bidirectional">양방향 관계</string>
+    <string name="faction_relationship_intensity">강도: %1$d</string>
+    <string name="faction_relationship_type_required">관계 유형을 입력하세요</string>
+    <string name="faction_relationship_duplicate">같은 상대·유형의 관계가 이미 있습니다</string>
+    <string name="faction_relationship_need_two">관계를 만들려면 같은 세계관에 세력이 2개 이상 필요합니다</string>
+    <string name="faction_relationship_edit">관계 편집</string>
+    <string name="faction_relationship_delete_confirm">이 세력 간 관계를 삭제할까요?</string>
+    <string name="faction_relationship_direction_to">→ %1$s</string>
+    <string name="faction_relationship_direction_from">← %1$s</string>
+    <string name="faction_relationship_direction_both">↔ %1$s</string>
+    <string name="faction_relationship_item_format">%1$s : %2$s (강도 %3$d)</string>
     <!-- 캐릭터 편집 드래프트 자동저장 (B-6) -->
     <string name="draft_restore_title">작성 중이던 초안</string>
     <string name="draft_restore_message">%1$s에 자동 저장된 미저장 초안이 있습니다. 복원할까요?</string>

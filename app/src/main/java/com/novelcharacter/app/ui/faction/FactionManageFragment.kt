@@ -282,19 +282,227 @@ class FactionManageFragment : Fragment() {
             .show()
     }
 
-    // ===== 세력 옵션 (편집/삭제) =====
+    // ===== 세력 옵션 (편집/관계/삭제) =====
 
     private fun showFactionOptionsDialog(faction: Faction) {
+        val items = arrayOf(
+            getString(R.string.edit),
+            getString(R.string.faction_relationships),
+            getString(R.string.delete)
+        )
         AlertDialog.Builder(requireContext())
             .setTitle(faction.name)
-            .setPositiveButton(R.string.edit) { _, _ ->
-                showFactionEditDialog(faction)
+            .setItems(items) { _, which ->
+                when (which) {
+                    0 -> showFactionEditDialog(faction)
+                    1 -> showFactionRelationshipsDialog(faction)
+                    2 -> showDeleteFactionDialog(faction)
+                }
             }
-            .setNegativeButton(R.string.delete) { _, _ ->
-                showDeleteFactionDialog(faction)
-            }
-            .setNeutralButton(R.string.cancel, null)
+            .setNegativeButton(R.string.cancel, null)
             .show()
+    }
+
+    // ===== 세력 간 관계 (B-3) =====
+
+    private val factionRepository
+        get() = (requireActivity().application as com.novelcharacter.app.NovelCharacterApp).factionRepository
+
+    /** 세력의 관계 목록 다이얼로그 — 항목 클릭 시 편집/삭제, 버튼으로 추가 */
+    private fun showFactionRelationshipsDialog(faction: Faction) {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val relationships = factionRepository.getFactionRelationshipsForFactionList(faction.id)
+            val factions = factionRepository.getFactionsByUniverseList(universeId)
+            if (!isAdded) return@launch
+            val nameById = factions.associateBy({ it.id }, { it.name })
+
+            val labels = relationships.map { rel ->
+                val otherId = if (rel.factionId1 == faction.id) rel.factionId2 else rel.factionId1
+                val otherName = nameById[otherId] ?: "?"
+                val directed = when {
+                    rel.isBidirectional -> getString(R.string.faction_relationship_direction_both, otherName)
+                    rel.factionId1 == faction.id -> getString(R.string.faction_relationship_direction_to, otherName)
+                    else -> getString(R.string.faction_relationship_direction_from, otherName)
+                }
+                getString(R.string.faction_relationship_item_format, directed, rel.relationType, rel.intensity)
+            }
+
+            val builder = AlertDialog.Builder(requireContext())
+                .setTitle("${getString(R.string.faction_relationships)} — ${faction.name}")
+            if (labels.isEmpty()) {
+                builder.setMessage(R.string.faction_relationship_empty)
+            } else {
+                builder.setItems(labels.toTypedArray()) { _, which ->
+                    showFactionRelationshipOptions(faction, relationships[which], nameById)
+                }
+            }
+            builder.setPositiveButton(R.string.faction_relationship_add) { _, _ ->
+                showFactionRelationshipEditDialog(faction, existing = null, otherName = null)
+            }
+            builder.setNegativeButton(R.string.cancel, null)
+            builder.show()
+        }
+    }
+
+    private fun showFactionRelationshipOptions(
+        faction: Faction,
+        relationship: com.novelcharacter.app.data.model.FactionRelationship,
+        nameById: Map<Long, String>
+    ) {
+        val otherId = if (relationship.factionId1 == faction.id) relationship.factionId2 else relationship.factionId1
+        AlertDialog.Builder(requireContext())
+            .setTitle(relationship.relationType)
+            .setItems(arrayOf(getString(R.string.edit), getString(R.string.delete))) { _, which ->
+                when (which) {
+                    0 -> showFactionRelationshipEditDialog(faction, relationship, nameById[otherId])
+                    1 -> AlertDialog.Builder(requireContext())
+                        .setMessage(R.string.faction_relationship_delete_confirm)
+                        .setPositiveButton(R.string.delete) { _, _ ->
+                            viewLifecycleOwner.lifecycleScope.launch {
+                                factionRepository.deleteFactionRelationship(relationship)
+                                if (isAdded) showFactionRelationshipsDialog(faction)
+                            }
+                        }
+                        .setNegativeButton(R.string.cancel, null)
+                        .show()
+                }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    /**
+     * 관계 추가/편집 다이얼로그.
+     * 신규: 상대 세력 스피너 선택. 편집: 상대는 고정, 유형/설명/강도/방향만 수정.
+     */
+    private fun showFactionRelationshipEditDialog(
+        faction: Faction,
+        existing: com.novelcharacter.app.data.model.FactionRelationship?,
+        otherName: String?
+    ) {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val others = factionRepository.getFactionsByUniverseList(universeId)
+                .filter { it.id != faction.id }
+            if (!isAdded) return@launch
+            if (existing == null && others.isEmpty()) {
+                Toast.makeText(requireContext(), R.string.faction_relationship_need_two, Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+
+            val ctx = requireContext()
+            val density = resources.displayMetrics.density
+            val pad = (20 * density).toInt()
+            val container = LinearLayout(ctx).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(pad, (8 * density).toInt(), pad, 0)
+            }
+
+            // 상대 세력 — 신규일 때만 선택 가능
+            val targetSpinner = android.widget.Spinner(ctx)
+            if (existing == null) {
+                val spinnerAdapter = android.widget.ArrayAdapter(
+                    ctx, android.R.layout.simple_spinner_item, others.map { it.name }
+                )
+                spinnerAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+                targetSpinner.adapter = spinnerAdapter
+                container.addView(android.widget.TextView(ctx).apply {
+                    text = getString(R.string.faction_relationship_target)
+                    textSize = 13f
+                })
+                container.addView(targetSpinner)
+            }
+
+            val editType = EditText(ctx).apply {
+                hint = getString(R.string.faction_relationship_type_hint)
+                setText(existing?.relationType ?: "")
+                isSingleLine = true
+            }
+            container.addView(editType)
+
+            val editDesc = EditText(ctx).apply {
+                hint = getString(R.string.faction_relationship_desc_hint)
+                setText(existing?.description ?: "")
+            }
+            container.addView(editDesc)
+
+            val intensityLabel = android.widget.TextView(ctx).apply {
+                text = getString(R.string.faction_relationship_intensity, existing?.intensity ?: 5)
+                textSize = 13f
+            }
+            container.addView(intensityLabel)
+            val intensitySlider = Slider(ctx).apply {
+                valueFrom = 1f
+                valueTo = 10f
+                stepSize = 1f
+                value = (existing?.intensity ?: 5).toFloat()
+                addOnChangeListener { _, value, _ ->
+                    intensityLabel.text = getString(R.string.faction_relationship_intensity, value.toInt())
+                }
+            }
+            container.addView(intensitySlider)
+
+            val bidirectionalCheck = CheckBox(ctx).apply {
+                text = getString(R.string.faction_relationship_bidirectional)
+                isChecked = existing?.isBidirectional ?: true
+            }
+            container.addView(bidirectionalCheck)
+
+            val title = if (existing == null) {
+                getString(R.string.faction_relationship_add)
+            } else {
+                "${getString(R.string.faction_relationship_edit)} — ${otherName ?: ""}"
+            }
+
+            AlertDialog.Builder(ctx)
+                .setTitle(title)
+                .setView(container)
+                .setPositiveButton(R.string.save) { _, _ ->
+                    val type = editType.text.toString().trim()
+                    if (type.isEmpty()) {
+                        Toast.makeText(ctx, R.string.faction_relationship_type_required, Toast.LENGTH_SHORT).show()
+                        return@setPositiveButton
+                    }
+                    viewLifecycleOwner.lifecycleScope.launch {
+                        val duplicated: Boolean = if (existing == null) {
+                            val target = others.getOrNull(targetSpinner.selectedItemPosition)
+                                ?: return@launch
+                            val inserted = factionRepository.insertFactionRelationship(
+                                com.novelcharacter.app.data.model.FactionRelationship(
+                                    factionId1 = faction.id,
+                                    factionId2 = target.id,
+                                    relationType = type,
+                                    description = editDesc.text.toString().trim(),
+                                    intensity = intensitySlider.value.toInt(),
+                                    isBidirectional = bidirectionalCheck.isChecked
+                                )
+                            )
+                            inserted == -1L
+                        } else {
+                            try {
+                                factionRepository.updateFactionRelationship(
+                                    existing.copy(
+                                        relationType = type,
+                                        description = editDesc.text.toString().trim(),
+                                        intensity = intensitySlider.value.toInt(),
+                                        isBidirectional = bidirectionalCheck.isChecked
+                                    )
+                                )
+                                false
+                            } catch (e: Exception) {
+                                // (세력쌍, 유형) 유니크 충돌
+                                true
+                            }
+                        }
+                        if (!isAdded) return@launch
+                        if (duplicated) {
+                            Toast.makeText(requireContext(), R.string.faction_relationship_duplicate, Toast.LENGTH_SHORT).show()
+                        }
+                        showFactionRelationshipsDialog(faction)
+                    }
+                }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+        }
     }
 
     private fun showDeleteFactionDialog(faction: Faction) {

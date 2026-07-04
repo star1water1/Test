@@ -57,6 +57,10 @@ class RelationshipGraphViewModel(application: android.app.Application) : Android
     private val _factionMemberships = MutableLiveData<List<FactionMembership>>()
     val factionMemberships: LiveData<List<FactionMembership>> = _factionMemberships
 
+    // 세력 간 관계 (B-3) — 세력 영역 중심점 사이 엣지로 표시
+    private val _factionRelationships = MutableLiveData<List<com.novelcharacter.app.data.model.FactionRelationship>>()
+    val factionRelationships: LiveData<List<com.novelcharacter.app.data.model.FactionRelationship>> = _factionRelationships
+
     /**
      * characterId -> List<Pair<factionId, factionColor(parsed Int)>>
      */
@@ -90,6 +94,8 @@ class RelationshipGraphViewModel(application: android.app.Application) : Android
 
             val allMemberships = factionRepository.getAllMembershipsList()
             _factionMemberships.value = allMemberships
+
+            _factionRelationships.value = factionRepository.getAllFactionRelationshipsList()
 
             buildCharacterFactionMap(allFactions, allMemberships, year = null)
         }
@@ -297,6 +303,20 @@ class RelationshipGraphFragment : Fragment() {
         }
         viewModel.characterFactionMap.observe(viewLifecycleOwner) {
             refreshGraph()
+        }
+        // 세력 간 관계 엣지 (B-3)
+        viewModel.factionRelationships.observe(viewLifecycleOwner) { relationships ->
+            binding.graphView.setFactionRelationEdges(
+                relationships.map { rel ->
+                    FactionRelationEdge(
+                        factionId1 = rel.factionId1,
+                        factionId2 = rel.factionId2,
+                        label = rel.relationType,
+                        intensity = rel.intensity,
+                        isBidirectional = rel.isBidirectional
+                    )
+                }
+            )
         }
     }
 

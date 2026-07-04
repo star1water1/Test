@@ -627,7 +627,7 @@ class ExcelImporter(context: Context) {
 
                 // MERGE 모드 항목별 삭제 옵션 (삭제 지원 카테고리만 표시)
                 val deletableKeys = setOf("characters", "timeline", "stateChanges", "relationships",
-                    "relationshipChanges", "nameBank", "factions", "factionMemberships")
+                    "relationshipChanges", "nameBank", "factions", "factionMemberships", "factionRelationships")
                 val deletableCats = analysis.categories.filter { it.onlyInDb > 0 && it.key in deletableKeys }
                 val deleteSectionLabel = TextView(act).apply {
                     text = appContext.getString(com.novelcharacter.app.R.string.restore_merge_delete_option)
@@ -684,7 +684,8 @@ class ExcelImporter(context: Context) {
                                 relationshipChanges = "relationshipChanges" in checked,
                                 nameBank = "nameBank" in checked,
                                 factions = "factions" in checked,
-                                factionMemberships = "factionMemberships" in checked
+                                factionMemberships = "factionMemberships" in checked,
+                                factionRelationships = "factionRelationships" in checked
                             )
                         } else DeleteOptions()
                         cont.resume(Pair(strategy, deleteOpts), null)
@@ -983,6 +984,8 @@ class ExcelImporter(context: Context) {
         if (ptTotal > 0) parts.add(r.getString(com.novelcharacter.app.R.string.import_result_preset_templates, ptTotal))
         val spTotal = result.newSearchPresets + result.updatedSearchPresets
         if (spTotal > 0) parts.add(r.getString(com.novelcharacter.app.R.string.import_result_search_presets, spTotal))
+        val frTotal = result.newFactionRelationships + result.updatedFactionRelationships
+        if (frTotal > 0) parts.add("세력 관계 ${frTotal}건")
         if (result.restoredSettings > 0) parts.add(r.getString(com.novelcharacter.app.R.string.import_result_settings, result.restoredSettings))
         if (result.skippedRows > 0)
             parts.add(r.getString(com.novelcharacter.app.R.string.import_result_skipped, result.skippedRows))
@@ -994,7 +997,8 @@ class ExcelImporter(context: Context) {
         // 삭제 건수 요약
         val totalDeleted = result.deletedCharacters + result.deletedRelationships + result.deletedEvents +
             result.deletedStateChanges + result.deletedRelationshipChanges + result.deletedNameBank +
-            result.deletedFields + result.deletedFactions + result.deletedFactionMemberships
+            result.deletedFields + result.deletedFactions + result.deletedFactionMemberships +
+            result.deletedFactionRelationships
         if (totalDeleted > 0) {
             val delParts = mutableListOf<String>()
             if (result.deletedCharacters > 0) delParts.add("캐릭터 ${result.deletedCharacters}")
@@ -1005,6 +1009,7 @@ class ExcelImporter(context: Context) {
             if (result.deletedNameBank > 0) delParts.add("이름 ${result.deletedNameBank}")
             if (result.deletedFactions > 0) delParts.add("세력 ${result.deletedFactions}")
             if (result.deletedFactionMemberships > 0) delParts.add("세력소속 ${result.deletedFactionMemberships}")
+            if (result.deletedFactionRelationships > 0) delParts.add("세력관계 ${result.deletedFactionRelationships}")
             parts.add("🗑 삭제: ${delParts.joinToString(", ")}")
         }
 

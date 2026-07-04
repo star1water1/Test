@@ -80,6 +80,7 @@ val RESERVED_SHEET_NAMES = setOf(
     nameBankSpec().sheetName,
     factionSpec().sheetName,
     factionMembershipSpec().sheetName,
+    factionRelationshipSpec().sheetName,
     userPresetTemplateSpec().sheetName,
     searchPresetSpec().sheetName,
     appSettingsSpec().sheetName
@@ -314,6 +315,25 @@ fun factionMembershipSpec(factionNames: List<String> = emptyList()) = SheetSpec(
         ColumnSpec("탈퇴후강도", width = 3000),
         ColumnSpec("세력코드", readOnly = true, width = 4000),
         ColumnSpec("캐릭터코드", readOnly = true, width = 4000),
+        ColumnSpec("생성일", readOnly = true, width = 5000)
+    )
+)
+
+fun factionRelationshipSpec(
+    factionNames: List<String> = emptyList(),
+    customTypes: List<String> = emptyList()
+) = SheetSpec(
+    sheetName = "세력 관계",
+    columns = listOf(
+        ColumnSpec("세력1", required = true, dropdownOptions = factionNames.takeIf { it.isNotEmpty() }, width = 8000),
+        ColumnSpec("세력2", required = true, dropdownOptions = factionNames.takeIf { it.isNotEmpty() }, width = 8000),
+        ColumnSpec("관계 유형", required = true, dropdownOptions = (Universe.DEFAULT_RELATIONSHIP_TYPES + customTypes).distinct(), width = 5000),
+        ColumnSpec("설명", width = 10000),
+        ColumnSpec("강도", width = 3000),
+        ColumnSpec("양방향", dropdownOptions = listOf("Y", "N"), width = 3000),
+        ColumnSpec("표시순서", width = 3000),
+        ColumnSpec("세력1코드", readOnly = true, width = 4000),
+        ColumnSpec("세력2코드", readOnly = true, width = 4000),
         ColumnSpec("생성일", readOnly = true, width = 5000)
     )
 )

@@ -98,6 +98,7 @@ class ExcelExporter(context: Context) {
                 if (options.nameBank) exportNameBank(workbook, usedSheetNames)
                 if (options.factions) exportFactions(workbook, usedSheetNames)
                 if (options.factionMemberships) exportFactionMemberships(workbook, usedSheetNames)
+                if (options.factionRelationships) exportFactionRelationships(workbook, usedSheetNames)
                 if (options.presetTemplates) exportUserPresetTemplates(workbook, usedSheetNames)
                 if (options.searchPresets) exportSearchPresets(workbook, usedSheetNames)
                 if (options.appSettings) exportAppSettings(workbook, usedSheetNames)
@@ -1018,6 +1019,41 @@ class ExcelExporter(context: Context) {
         }
 
         applySpecFormatting(sheet, spec, allMemberships.size)
+    }
+
+    // ── 세력 관계 (B-3) ──
+
+    private suspend fun exportFactionRelationships(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
+        val allRelationships = db.factionRelationshipDao().getAllRelationshipsList()
+        if (allRelationships.isEmpty()) return
+
+        val allFactions = db.factionDao().getAllFactionsList()
+        val factionMap = allFactions.associateBy { it.id }
+        val customTypes = db.universeDao().getAllUniversesList()
+            .flatMap { it.getRelationshipTypes() }.distinct()
+
+        val spec = factionRelationshipSpec(allFactions.map { it.name }, customTypes)
+        val sheetName = sanitizeSheetName(spec.sheetName, usedSheetNames)
+        val sheet = workbook.createSheet(sheetName)
+        writeHeaderRow(sheet, spec)
+
+        allRelationships.forEachIndexed { i, rel ->
+            val row = sheet.createRow(i + 1)
+            val faction1 = factionMap[rel.factionId1]
+            val faction2 = factionMap[rel.factionId2]
+            row.createCell(0).setCellValue(faction1?.name ?: "")
+            row.createCell(1).setCellValue(faction2?.name ?: "")
+            row.createCell(2).setCellValue(rel.relationType)
+            row.createCell(3).setTextSafe(rel.description)
+            row.createCell(4).setCellValue(rel.intensity.toDouble())
+            row.createCell(5).setCellValue(if (rel.isBidirectional) "Y" else "N")
+            row.createCell(6).setCellValue(rel.displayOrder.toDouble())
+            row.createCell(7).setCellValue(faction1?.code ?: "")
+            row.createCell(8).setCellValue(faction2?.code ?: "")
+            row.createCell(9).setCellValue(rel.createdAt.toDouble())
+        }
+
+        applySpecFormatting(sheet, spec, allRelationships.size)
     }
 
     // ── ZIP + 이미지 래핑 ──
