@@ -38,6 +38,8 @@ import com.novelcharacter.app.data.dao.EventFieldValueDao
 import com.novelcharacter.app.data.model.EventFieldValue
 import com.novelcharacter.app.data.dao.OperationLogDao
 import com.novelcharacter.app.data.model.OperationLog
+import com.novelcharacter.app.data.dao.CharacterListPresetDao
+import com.novelcharacter.app.data.model.CharacterListPreset
 import com.novelcharacter.app.data.model.generateEntityCode
 import com.novelcharacter.app.data.model.RecentActivity
 import com.novelcharacter.app.data.model.UserPresetTemplate
@@ -79,9 +81,10 @@ import com.novelcharacter.app.data.model.Universe
         FactionRelationship::class,
         TrashSnapshot::class,
         EventFieldValue::class,
-        OperationLog::class
+        OperationLog::class,
+        CharacterListPreset::class
     ],
-    version = 36,
+    version = 37,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -105,6 +108,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun trashSnapshotDao(): TrashSnapshotDao
     abstract fun eventFieldValueDao(): EventFieldValueDao
     abstract fun operationLogDao(): OperationLogDao
+    abstract fun characterListPresetDao(): CharacterListPresetDao
 
     companion object {
         private const val TAG = "AppDatabase"
@@ -1531,6 +1535,29 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_36_37 = object : Migration(36, 37) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "Migrating database from version 36 to 37 — character_list_presets (캐릭터 탭 필터/정렬 프리셋)")
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `character_list_presets` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `tagsJson` TEXT NOT NULL DEFAULT '[]',
+                        `fieldFiltersJson` TEXT NOT NULL DEFAULT '{}',
+                        `sortKind` TEXT NOT NULL DEFAULT 'manual',
+                        `sortFieldKey` TEXT,
+                        `sortAscending` INTEGER NOT NULL DEFAULT 1,
+                        `bodySizePartIndex` INTEGER,
+                        `isDefault` INTEGER NOT NULL DEFAULT 0,
+                        `createdAt` INTEGER NOT NULL,
+                        `updatedAt` INTEGER NOT NULL
+                    )
+                """)
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_character_list_presets_name` ON `character_list_presets`(`name`)")
+                Log.i(TAG, "Migration from version 36 to 37 completed successfully")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -1538,7 +1565,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "novel_character_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37)
                     .addCallback(SeedCallback(context.applicationContext))
                     .build()
                     .also { INSTANCE = it }
