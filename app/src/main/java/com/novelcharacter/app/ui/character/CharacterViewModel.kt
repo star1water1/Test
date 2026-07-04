@@ -6,8 +6,19 @@ import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.R
 import com.novelcharacter.app.util.OpResult
 import com.novelcharacter.app.util.reportResult
+import com.novelcharacter.app.util.FieldFilterHelper
+import com.novelcharacter.app.util.FieldValueSorter
+import com.novelcharacter.app.util.FormulaEvaluator
 import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.CharacterFieldValue
+import com.novelcharacter.app.data.model.CharacterListPreset
+import com.novelcharacter.app.data.model.FieldFilter
+import com.novelcharacter.app.data.model.StructuredInputConfig
+import com.google.gson.Gson
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import com.novelcharacter.app.data.model.CharacterRelationship
 import com.novelcharacter.app.data.model.CharacterRelationshipChange
 import com.novelcharacter.app.data.model.CharacterStateChange
@@ -26,6 +37,22 @@ import com.novelcharacter.app.util.StandardYearSyncHelper
 import android.util.Log
 import androidx.room.withTransaction
 import kotlinx.coroutines.launch
+
+/** 캐릭터 목록 정렬 사양. [kind]는 CharacterListPreset.SORT_* 상수. */
+data class CharacterSort(
+    val kind: String = CharacterListPreset.SORT_MANUAL,
+    val fieldKey: String? = null,
+    val ascending: Boolean = true,
+    val bodySizePartIndex: Int? = null
+)
+
+/** 정렬 UI가 제시할 정렬 가능 필드(세계관 간 (key,type) 병합 결과). */
+data class SortableField(
+    val key: String,
+    val name: String,
+    val type: String,
+    val bodySizePartLabels: List<String> = emptyList()
+)
 
 class CharacterViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -97,7 +124,9 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         addSource(_searchQuery) { value = Unit }
         addSource(_currentNovelId) { value = Unit }
     }
-    val searchResults: LiveData<List<Character>> = _searchTrigger.switchMap {
+
+    /** 작품 스코프 + 텍스트 검색만 적용한 기반 목록 (필터·정렬 이전 단계). */
+    private val baseCharacters: LiveData<List<Character>> = _searchTrigger.switchMap {
         val query = _searchQuery.value
         if (query.isNullOrBlank()) {
             filteredCharacters
@@ -110,6 +139,48 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
                     characters.filter { it.novelId == novelId }
                 }
             }
+        }
+    }
+
+    // ===== 필터 / 정렬 상태 (SharedPreferences 영속) =====
+    private val prefs = app.getSharedPreferences("character_list_ui", android.content.Context.MODE_PRIVATE)
+    private val gson = Gson()
+
+    private val _sortSpec = MutableLiveData(loadSavedSort())
+    val sortSpec: LiveData<CharacterSort> = _sortSpec
+    private val _fieldFilters = MutableLiveData(loadSavedFieldFilters())
+    val fieldFilters: LiveData<List<FieldFilter>> = _fieldFilters
+    private val _tagFilters = MutableLiveData(loadSavedTagFilters())
+    val tagFilters: LiveData<Set<String>> = _tagFilters
+
+    private val listTrigger = MediatorLiveData<Unit>().apply {
+        addSource(baseCharacters) { value = Unit }
+        addSource(_sortSpec) { value = Unit }
+        addSource(_fieldFilters) { value = Unit }
+        addSource(_tagFilters) { value = Unit }
+    }
+
+    private var computeJob: Job? = null
+
+    private val _searchResults = MediatorLiveData<List<Character>>().apply {
+        addSource(listTrigger) { recompute() }
+    }
+    /** 최종 목록: 작품 스코프 + 검색 + 필터 + 정렬. Fragment가 관측한다. */
+    val searchResults: LiveData<List<Character>> = _searchResults
+
+    /** 필터/정렬 재계산 — 디바운스 후 백그라운드에서 필터·정렬을 적용해 emit. */
+    private fun recompute() {
+        computeJob?.cancel()
+        computeJob = viewModelScope.launch {
+            delay(120) // 연속 변경 시 마지막 상태만 계산
+            val base = baseCharacters.value ?: emptyList()
+            val filters = _fieldFilters.value ?: emptyList()
+            val tags = _tagFilters.value ?: emptySet()
+            val sort = _sortSpec.value ?: CharacterSort()
+            val result = withContext(Dispatchers.Default) {
+                applyFiltersAndSort(base, filters, tags, sort)
+            }
+            _searchResults.value = result
         }
     }
 
@@ -127,6 +198,324 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     /** LiveData 강제 재평가 트리거 (배치 작업 후 리스트 갱신용) */
     fun refreshList() {
         _searchQuery.value = _searchQuery.value
+    }
+
+    // ===== 필터 / 정렬 세터 =====
+
+    fun setSortSpec(sort: CharacterSort) {
+        _sortSpec.value = sort
+        saveSort(sort)
+    }
+
+    fun setFieldFilters(filters: List<FieldFilter>) {
+        _fieldFilters.value = filters
+        prefs.edit().putString("field_filters_json", FieldFilterHelper.filtersToJson(filters)).apply()
+    }
+
+    fun addFieldFilter(filter: FieldFilter) {
+        val cur = _fieldFilters.value?.toMutableList() ?: mutableListOf()
+        cur.removeAll { it.fieldId == filter.fieldId }  // 같은 필드 기존 필터 교체
+        cur.add(filter)
+        setFieldFilters(cur)
+    }
+
+    fun removeFieldFilter(fieldId: Long) {
+        setFieldFilters((_fieldFilters.value ?: emptyList()).filter { it.fieldId != fieldId })
+    }
+
+    fun setTagFilters(tags: Set<String>) {
+        _tagFilters.value = tags
+        prefs.edit().putString("tag_filters_json", gson.toJson(tags.toList())).apply()
+    }
+
+    fun clearAllFilters() {
+        setFieldFilters(emptyList())
+        setTagFilters(emptySet())
+    }
+
+    fun hasActiveFilters(): Boolean =
+        !_fieldFilters.value.isNullOrEmpty() || !_tagFilters.value.isNullOrEmpty()
+
+    // ===== 필터/정렬 적용 (백그라운드) =====
+
+    private suspend fun applyFiltersAndSort(
+        base: List<Character>,
+        filters: List<FieldFilter>,
+        tags: Set<String>,
+        sort: CharacterSort
+    ): List<Character> {
+        var chars = base
+        if (filters.isNotEmpty()) {
+            val ids = FieldFilterHelper.applyFieldFilters(app.database.characterFieldValueDao(), filters)
+            chars = chars.filter { it.id in ids }
+        }
+        if (tags.isNotEmpty()) {
+            // 태그 필터: 선택 태그 중 하나라도 가진 캐릭터(OR)
+            val taggedIds = app.database.characterTagDao().getAllTagsList()
+                .filter { it.tag in tags }.map { it.characterId }.toSet()
+            chars = chars.filter { it.id in taggedIds }
+        }
+        return sortCharacters(chars, sort)
+    }
+
+    private suspend fun sortCharacters(chars: List<Character>, sort: CharacterSort): List<Character> {
+        return when (sort.kind) {
+            CharacterListPreset.SORT_NAME ->
+                chars.sortedWithDir(sort.ascending) { it.name.lowercase() }
+            CharacterListPreset.SORT_CREATED ->
+                chars.sortedWithDir(sort.ascending) { it.createdAt }
+            CharacterListPreset.SORT_RECENT ->
+                chars.sortedWithDir(sort.ascending) { it.updatedAt }
+            CharacterListPreset.SORT_FIELD ->
+                sortByField(chars, sort.fieldKey, sort.ascending, sort.bodySizePartIndex)
+            else ->
+                // SORT_MANUAL: 핀 최상단 + displayOrder + 이름 (검색 결과도 동일 순서로 정규화)
+                chars.sortedWith(
+                    compareByDescending<Character> { it.isPinned }
+                        .thenBy { it.displayOrder }
+                        .thenBy { it.name.lowercase() }
+                )
+        }
+    }
+
+    private fun <R : Comparable<R>> List<Character>.sortedWithDir(
+        ascending: Boolean, selector: (Character) -> R
+    ): List<Character> = if (ascending) sortedBy(selector) else sortedByDescending(selector)
+
+    /** 커스텀 필드값 정렬. 값 없음/파싱불가는 방향과 무관하게 최후순. */
+    private suspend fun sortByField(
+        chars: List<Character>, fieldKey: String?, ascending: Boolean, partIndex: Int?
+    ): List<Character> {
+        if (fieldKey == null || chars.isEmpty()) return chars
+        val fieldDefs = getCharacterFieldsForKey(fieldKey)
+        if (fieldDefs.isEmpty()) return chars
+
+        val useNumeric = fieldDefs.values.any { FieldValueSorter.isNumericSortType(it.type) }
+        if (useNumeric) {
+            val allCalc = fieldDefs.values.all { it.type == "CALCULATED" }
+            val keyMap: Map<Long, Double?> =
+                if (allCalc) computeCalculatedValues(chars, fieldKey)
+                else computeStoredNumeric(chars, fieldDefs, partIndex)
+            return chars.sortedWith(nullsLastComparator(ascending) { keyMap[it.id] })
+        } else {
+            val stored = characterRepository.getValuesForCharacters(chars.map { it.id })
+                .filter { it.fieldDefinitionId in fieldDefs.keys }
+                .associateBy { it.characterId }
+            val keyMap: Map<Long, String?> = chars.associate { c ->
+                val fv = stored[c.id]
+                val ownerFd = fv?.let { fieldDefs[it.fieldDefinitionId] }
+                c.id to (if (fv != null && ownerFd != null) FieldValueSorter.textValue(ownerFd, fv.value) else null)
+            }
+            return chars.sortedWith(nullsLastComparator(ascending) { keyMap[it.id] })
+        }
+    }
+
+    /** 값 있는 항목은 방향대로, null(값 없음)은 항상 뒤로. 동값은 이름 오름차순으로 안정화. */
+    private fun <R : Comparable<R>> nullsLastComparator(
+        ascending: Boolean, selector: (Character) -> R?
+    ): Comparator<Character> = Comparator { a, b ->
+        val va = selector(a); val vb = selector(b)
+        val primary = when {
+            va == null && vb == null -> 0
+            va == null -> 1
+            vb == null -> -1
+            else -> if (ascending) va.compareTo(vb) else vb.compareTo(va)
+        }
+        if (primary != 0) primary else a.name.lowercase().compareTo(b.name.lowercase())
+    }
+
+    private suspend fun computeStoredNumeric(
+        chars: List<Character>, fieldDefs: Map<Long, FieldDefinition>, partIndex: Int?
+    ): Map<Long, Double?> {
+        val stored = characterRepository.getValuesForCharacters(chars.map { it.id })
+            .filter { it.fieldDefinitionId in fieldDefs.keys }
+            .associateBy { it.characterId }
+        return chars.associate { c ->
+            val fv = stored[c.id]
+            val ownerFd = fv?.let { fieldDefs[it.fieldDefinitionId] }
+            c.id to (if (fv != null && ownerFd != null) FieldValueSorter.numericValue(ownerFd, fv.value, partIndex) else null)
+        }
+    }
+
+    /** CALCULATED 필드: 캐릭터별 세계관 필드맵으로 라이브 평가(ExcelExporter/Stats와 동일 방식). */
+    private suspend fun computeCalculatedValues(chars: List<Character>, fieldKey: String): Map<Long, Double?> {
+        val valuesByChar = characterRepository.getValuesForCharacters(chars.map { it.id }).groupBy { it.characterId }
+        val universeFieldsCache = mutableMapOf<Long, List<FieldDefinition>>()
+        val novelUniverseCache = mutableMapOf<Long, Long?>()
+        val result = mutableMapOf<Long, Double?>()
+        for (c in chars) {
+            val novelId = c.novelId
+            val uid = if (novelId == null) null
+                else novelUniverseCache.getOrPut(novelId) { novelRepository.getNovelById(novelId)?.universeId }
+            if (uid == null) { result[c.id] = null; continue }
+            val uFields = universeFieldsCache.getOrPut(uid) { universeRepository.getFieldsByUniverseList(uid) }
+            val calcFd = uFields.firstOrNull { it.key == fieldKey && it.type == "CALCULATED" }
+            if (calcFd == null) { result[c.id] = null; continue }
+            val formula = try { org.json.JSONObject(calcFd.config).optString("formula", "") } catch (_: Exception) { "" }
+            if (formula.isBlank()) { result[c.id] = null; continue }
+            val idToKey = uFields.associate { it.id to it.key }
+            val fieldMap = valuesByChar[c.id].orEmpty()
+                .mapNotNull { fv -> idToKey[fv.fieldDefinitionId]?.let { k -> k to fv.value } }
+                .toMap()
+            val v = try { FormulaEvaluator(fieldMap, uFields).evaluate(formula) } catch (_: Exception) { Double.NaN }
+            result[c.id] = if (v.isFinite()) v else null
+        }
+        return result
+    }
+
+    /** 정렬 대상 fieldKey에 해당하는 캐릭터 필드정의(세계관별) 수집. */
+    private suspend fun getCharacterFieldsForKey(fieldKey: String): Map<Long, FieldDefinition> {
+        val result = mutableMapOf<Long, FieldDefinition>()
+        for (uid in scopedUniverseIds()) {
+            universeRepository.getFieldsByUniverseList(uid).filter { it.key == fieldKey }.forEach { result[it.id] = it }
+        }
+        return result
+    }
+
+    private suspend fun scopedUniverseIds(): List<Long> {
+        val novelId = _currentNovelId.value
+        return if (novelId != null && novelId != -1L) {
+            listOfNotNull(novelRepository.getNovelById(novelId)?.universeId)
+        } else {
+            universeRepository.getAllUniversesList().map { it.id }
+        }
+    }
+
+    // ===== 필터/정렬 UI 제공 데이터 =====
+
+    /** 현재 스코프의 정렬 가능 필드 (전체 스코프는 (key,type) 병합). CALCULATED 포함. */
+    suspend fun getSortableFields(): List<SortableField> {
+        val seen = LinkedHashMap<String, SortableField>()
+        for (uid in scopedUniverseIds()) {
+            for (fd in universeRepository.getFieldsByUniverseList(uid)) {
+                val mk = "${fd.key}|${fd.type}"
+                if (mk !in seen) {
+                    val parts = if (fd.type == "BODY_SIZE") {
+                        val sic = StructuredInputConfig.fromConfig(fd.config)
+                        if (sic.enabled && sic.parts.isNotEmpty()) sic.parts.map { it.label }
+                        else listOf("가슴(B)", "허리(W)", "엉덩이(H)")
+                    } else emptyList()
+                    seen[mk] = SortableField(fd.key, fd.name, fd.type, parts)
+                }
+            }
+        }
+        return seen.values.toList()
+    }
+
+    /** 필터 UI용 세계관 목록 (작품 선택 시 그 세계관만, 전체면 모두). */
+    suspend fun getScopedUniverses(): List<Universe> {
+        val novelId = _currentNovelId.value
+        return if (novelId != null && novelId != -1L) {
+            val uid = novelRepository.getNovelById(novelId)?.universeId
+            if (uid != null) listOfNotNull(universeRepository.getUniverseById(uid)) else emptyList()
+        } else {
+            universeRepository.getAllUniversesList()
+        }
+    }
+
+    /** 필터 UI용 필드 목록 (CALCULATED 제외 — DB 값이 없어 필터 불가). */
+    suspend fun getFilterableFields(universeId: Long): List<FieldDefinition> =
+        universeRepository.getFieldsByUniverseList(universeId).filter { it.type != "CALCULATED" }
+
+    /** 필터 UI용 특정 필드의 유니크 값 목록. */
+    suspend fun getFieldValues(fieldDefId: Long): List<String> =
+        app.database.characterFieldValueDao().getValuesByFieldDef(fieldDefId)
+            .filter { it.value.isNotBlank() }.map { it.value }.distinct().sorted()
+
+    // ===== 프리셋 =====
+
+    val presets: LiveData<List<CharacterListPreset>> = app.characterListPresetRepository.allPresets
+
+    fun saveAsPreset(name: String) = viewModelScope.launch {
+        try {
+            app.characterListPresetRepository.insertPreset(currentPreset(name))
+            reportResult(_result, OpResult.success(OpResult.CAT_PRESET,
+                app.getString(R.string.result_preset_saved, name)))
+        } catch (e: IllegalStateException) {
+            reportResult(_result, OpResult.failure(OpResult.CAT_PRESET,
+                app.getString(R.string.search_preset_limit_reached, CharacterListPreset.MAX_PRESETS)))
+        } catch (e: Exception) {
+            Log.e("CharacterViewModel", "Failed to save preset", e)
+            reportResult(_result, OpResult.failure(OpResult.CAT_PRESET,
+                app.getString(R.string.result_preset_save_failed), e.message))
+        }
+    }
+
+    fun applyPreset(preset: CharacterListPreset) {
+        val tags = try {
+            (gson.fromJson(preset.tagsJson, Array<String>::class.java) ?: arrayOf()).toSet()
+        } catch (_: Exception) { emptySet() }
+        setTagFilters(tags)
+        setFieldFilters(FieldFilterHelper.filtersFromJson(preset.fieldFiltersJson))
+        setSortSpec(CharacterSort(preset.sortKind, preset.sortFieldKey, preset.sortAscending, preset.bodySizePartIndex))
+    }
+
+    fun updatePreset(preset: CharacterListPreset, newName: String) = viewModelScope.launch {
+        try {
+            app.characterListPresetRepository.updatePreset(currentPreset(newName).copy(id = preset.id, isDefault = preset.isDefault))
+            reportResult(_result, OpResult.success(OpResult.CAT_PRESET,
+                app.getString(R.string.result_preset_updated, newName)))
+        } catch (e: Exception) {
+            Log.e("CharacterViewModel", "Failed to update preset", e)
+            reportResult(_result, OpResult.failure(OpResult.CAT_PRESET,
+                app.getString(R.string.result_preset_update_failed), e.message))
+        }
+    }
+
+    fun deletePreset(id: Long, name: String) = viewModelScope.launch {
+        try {
+            app.characterListPresetRepository.deletePreset(id)
+            reportResult(_result, OpResult.success(OpResult.CAT_PRESET,
+                app.getString(R.string.result_preset_deleted, name)))
+        } catch (e: Exception) {
+            Log.e("CharacterViewModel", "Failed to delete preset", e)
+            reportResult(_result, OpResult.failure(OpResult.CAT_PRESET,
+                app.getString(R.string.result_preset_delete_failed), e.message))
+        }
+    }
+
+    private fun currentPreset(name: String): CharacterListPreset {
+        val sort = _sortSpec.value ?: CharacterSort()
+        return CharacterListPreset(
+            name = name,
+            tagsJson = gson.toJson((_tagFilters.value ?: emptySet()).toList()),
+            fieldFiltersJson = FieldFilterHelper.filtersToJson(_fieldFilters.value ?: emptyList()),
+            sortKind = sort.kind,
+            sortFieldKey = sort.fieldKey,
+            sortAscending = sort.ascending,
+            bodySizePartIndex = sort.bodySizePartIndex
+        )
+    }
+
+    // ===== 상태 영속화 =====
+
+    private fun loadSavedSort(): CharacterSort {
+        val kind = prefs.getString("sort_kind", CharacterListPreset.SORT_MANUAL) ?: CharacterListPreset.SORT_MANUAL
+        return CharacterSort(
+            kind = kind,
+            fieldKey = prefs.getString("sort_field_key", null),
+            ascending = prefs.getBoolean("sort_ascending", true),
+            bodySizePartIndex = prefs.getInt("sort_body_part", -1).takeIf { it >= 0 }
+        )
+    }
+
+    private fun saveSort(sort: CharacterSort) {
+        prefs.edit()
+            .putString("sort_kind", sort.kind)
+            .putString("sort_field_key", sort.fieldKey)
+            .putBoolean("sort_ascending", sort.ascending)
+            .putInt("sort_body_part", sort.bodySizePartIndex ?: -1)
+            .apply()
+    }
+
+    private fun loadSavedFieldFilters(): List<FieldFilter> =
+        FieldFilterHelper.filtersFromJson(prefs.getString("field_filters_json", "{}") ?: "{}")
+
+    private fun loadSavedTagFilters(): Set<String> {
+        val json = prefs.getString("tag_filters_json", null) ?: return emptySet()
+        return try {
+            (gson.fromJson(json, Array<String>::class.java) ?: arrayOf()).toSet()
+        } catch (_: Exception) { emptySet() }
     }
 
     fun getCharacterById(id: Long): LiveData<Character?> = characterRepository.getCharacterByIdLive(id)
