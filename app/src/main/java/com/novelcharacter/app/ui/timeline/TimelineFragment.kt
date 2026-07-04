@@ -62,18 +62,6 @@ class TimelineFragment : Fragment(), EventEditDialogFragment.Host {
         setupFab()
         observeData()
 
-        // 롱프레스 전용 기능(재정렬/간편 추가) 1회성 힌트 (B-8)
-        val hintCtx = requireContext()
-        if (savedInstanceState == null &&
-            !com.novelcharacter.app.util.OnboardingPrefs.isShown(hintCtx, com.novelcharacter.app.util.OnboardingPrefs.KEY_TIMELINE_HINT_SHOWN)
-        ) {
-            com.novelcharacter.app.util.OnboardingPrefs.markShown(hintCtx, com.novelcharacter.app.util.OnboardingPrefs.KEY_TIMELINE_HINT_SHOWN)
-            com.google.android.material.snackbar.Snackbar
-                .make(binding.root, R.string.hint_timeline_longpress, com.google.android.material.snackbar.Snackbar.LENGTH_INDEFINITE)
-                .setAction(R.string.hint_dismiss) { }
-                .show()
-        }
-
         // 간편 사건 추가 결과 수신 (DialogFragment — 회전/재생성에도 안전)
         childFragmentManager.setFragmentResultListener(
             QuickAddEventDialogFragment.RESULT_KEY, viewLifecycleOwner
@@ -634,6 +622,29 @@ class TimelineFragment : Fragment(), EventEditDialogFragment.Host {
             val year = prefs.getInt("center_year", 0)
             viewModel.setSelectedYear(year)
         }
+        maybeShowLongPressHint()
+    }
+
+    /**
+     * 롱프레스 전용 기능(재정렬/간편 추가) 1회성 힌트 (B-8).
+     *
+     * 반드시 onResume에서 호출한다 — onViewCreated 시점에는 홈 ViewPager2가 이 탭을
+     * 화면 밖에서 미리 생성하는 중이라 뷰가 윈도우에 부착되지 않아 Snackbar.make가
+     * "No suitable parent found"로 크래시한다(v35 업데이트 직후 전 사용자 크래시 루프의 원인).
+     * ViewPager2는 현재 보이는 페이지만 RESUMED로 올리므로, onResume 시점에는
+     * (a) 뷰 부착이 보장되고 (b) 사용자가 실제로 이 탭을 볼 때만 힌트가 소비된다.
+     */
+    private fun maybeShowLongPressHint() {
+        val ctx = context ?: return
+        if (com.novelcharacter.app.util.OnboardingPrefs.isShown(ctx, com.novelcharacter.app.util.OnboardingPrefs.KEY_TIMELINE_HINT_SHOWN)) return
+        val root = _binding?.root ?: return
+        // 이중 방어: 부착 전이면 이번에는 건너뛴다 — 플래그를 소비하지 않았으므로 다음 onResume에 다시 시도된다
+        if (!root.isAttachedToWindow) return
+        com.novelcharacter.app.util.OnboardingPrefs.markShown(ctx, com.novelcharacter.app.util.OnboardingPrefs.KEY_TIMELINE_HINT_SHOWN)
+        com.google.android.material.snackbar.Snackbar
+            .make(root, R.string.hint_timeline_longpress, com.google.android.material.snackbar.Snackbar.LENGTH_INDEFINITE)
+            .setAction(R.string.hint_dismiss) { }
+            .show()
     }
 
     override fun onDestroyView() {
