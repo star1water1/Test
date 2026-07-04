@@ -72,8 +72,14 @@ class NovelCharacterApp : Application() {
         // Apply saved theme from SharedPreferences cache (non-blocking)
         ThemeHelper.applyTheme(ThemeHelper.getSavedTheme(this))
         // Migrate DataStore → SharedPreferences cache on first launch
+        // 업데이트 후 첫 실행에만 타는 경로 — DataStore 파일 손상 등으로 예외가 나면
+        // appScope의 비보호 코루틴이라 앱이 즉사하므로 반드시 감싼다 (실패 시 시스템 테마 폴백, 다음 실행에 재시도)
         appScope.launch(Dispatchers.IO) {
-            ThemeHelper.migrateCacheIfNeeded(this@NovelCharacterApp)
+            try {
+                ThemeHelper.migrateCacheIfNeeded(this@NovelCharacterApp)
+            } catch (e: Exception) {
+                android.util.Log.e("NovelCharacterApp", "Theme cache migration failed — falling back to system theme", e)
+            }
         }
         createNotificationChannel()
         checkBackupKeyAvailability()
