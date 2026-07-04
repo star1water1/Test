@@ -395,7 +395,7 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, ""),
             GuideLine("길이 제한", styles.guideSection, ""),
             GuideLine("", styles.guideBody, "• 셀당 최대 32,767자(엑셀 규격) — 초과분은 내보내기 시 잘려 기록됩니다."),
-            GuideLine("", styles.guideBody, "• 가져오기 시 필드값은 10,000자까지 저장되며, 초과분은 잘리고 결과 요약에 표시됩니다."),
+            GuideLine("", styles.guideBody, "• 가져오기도 동일하게 32,767자까지 저장됩니다 — 내보낸 파일을 그대로 들여오면 잘리지 않습니다."),
             GuideLine("", styles.guideBody, ""),
             GuideLine("코드 컬럼 안내 (중요)", styles.guideSection, ""),
             GuideLine("", styles.guideBody, "• 회색 코드 컬럼은 자동 생성된 고유 식별자입니다. 수정하지 마세요."),
@@ -403,13 +403,15 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "• 새 행을 추가할 때는 코드를 비워두세요. 자동으로 생성됩니다."),
             GuideLine("", styles.guideBody, "• 코드가 없으면 이름 기반으로 매칭되지만, 경고가 표시됩니다."),
             GuideLine("", styles.guideBody, "• 참조 코드(작품코드, 세계관코드 등)도 동일한 규칙을 따릅니다."),
+            GuideLine("", styles.guideBody, "• 사건 연표/상태변화/관계 변화 시트에도 코드 열이 있습니다. 지우지 마세요 —"),
+            GuideLine("", styles.guideBody, "  설명·연도·값을 편집해도 같은 항목으로 인식하는 기준입니다. (구버전 파일도 계속 가져올 수 있습니다)"),
             GuideLine("", styles.guideBody, ""),
             GuideLine("시트별 안내", styles.guideSection, ""),
             GuideLine("", styles.guideBody, "• 세계관: 코드로 기존 데이터 매칭. 코드 없을 시 이름으로 매칭"),
             GuideLine("", styles.guideBody, "• 작품: 코드로 매칭. 코드 없을 시 제목+세계관으로 매칭"),
             GuideLine("", styles.guideBody, "• 필드 정의: 세계관+필드키로 매칭. 타입은 드롭다운에서 선택"),
             GuideLine("", styles.guideBody, "• 캐릭터 시트 (세계관 이름): 코드로 매칭. 코드 없을 시 이름+작품으로 매칭"),
-            GuideLine("", styles.guideBody, "• 사건 연표: 연도+설명으로 매칭. 관련 캐릭터는 쉼표로 구분"),
+            GuideLine("", styles.guideBody, "• 사건 연표: 코드로 매칭 (코드 없을 시 연도+설명). 관련 캐릭터는 쉼표로 구분"),
             GuideLine("", styles.guideBody, "• 캐릭터 관계: 관계 유형은 드롭다운에서 선택"),
             GuideLine("", styles.guideBody, "• 이름 은행: 이름+성별로 매칭. 사용여부는 Y/N"),
             GuideLine("", styles.guideBody, ""),
@@ -804,12 +806,14 @@ class ExcelExporter(context: Context) {
             row.createCell(8).setCellValue(novels.mapNotNull { it.code }.joinToString(", "))
             row.createCell(9).setCellValue(event.displayOrder.toDouble())
             row.createCell(10).setCellValue(if (event.isTemporary) "Y" else "N")
-            row.createCell(11).setCellValue(event.createdAt.toDouble())
+            // 코드 (readOnly) — 왕복 안정 식별자: 설명·연도를 외부에서 편집해도 같은 사건으로 인식
+            row.createCell(11).setCellValue(event.code ?: "")
+            row.createCell(12).setCellValue(event.createdAt.toDouble())
 
             // 사건 커스텀 필드 값 (B-10)
             val fieldValues = eventFieldValuesByEvent[event.id]?.associateBy { it.fieldDefinitionId } ?: emptyMap()
             eventFieldColumns.forEachIndexed { fi, (fieldDef, _) ->
-                fieldValues[fieldDef.id]?.let { row.createCell(12 + fi).setTextSafe(it.value) }
+                fieldValues[fieldDef.id]?.let { row.createCell(13 + fi).setTextSafe(it.value) }
             }
         }
 
@@ -855,7 +859,9 @@ class ExcelExporter(context: Context) {
             row.createCell(7).setTextSafe(change.description)
             // 캐릭터코드 (readOnly)
             row.createCell(8).setCellValue(character.code)
-            row.createCell(9).setCellValue(change.createdAt.toDouble())
+            // 코드 (readOnly) — 왕복 안정 식별자: 값·연도를 외부에서 편집해도 같은 이력으로 인식
+            row.createCell(9).setCellValue(change.code ?: "")
+            row.createCell(10).setCellValue(change.createdAt.toDouble())
         }
 
         applySpecFormatting(sheet, spec, allChanges.size)
@@ -911,6 +917,8 @@ class ExcelExporter(context: Context) {
         val relMap = allRelationships.associateBy { it.id }
         val allCharacters = db.characterDao().getAllCharactersList()
         val charMap = allCharacters.associateBy { it.id }
+        // 연결 사건 참조는 id가 아닌 code로 기록 — id는 복원/기기 이전 시 변한다
+        val eventCodeById = db.timelineDao().getAllEventsList().associate { it.id to it.code }
 
         val spec = relationshipChangeSpec()
         val sheetName = sanitizeSheetName(spec.sheetName, usedSheetNames)
@@ -931,10 +939,12 @@ class ExcelExporter(context: Context) {
             row.createCell(6).setTextSafe(rc.description)
             row.createCell(7).setCellValue(rc.intensity.toDouble())
             row.createCell(8).setCellValue(if (rc.isBidirectional) "Y" else "N")
-            rc.eventId?.let { row.createCell(9).setCellValue(it.toDouble()) }
-            row.createCell(10).setCellValue(char1?.code ?: "")
-            row.createCell(11).setCellValue(char2?.code ?: "")
-            row.createCell(12).setCellValue(rc.createdAt.toDouble())
+            rc.eventId?.let { eid -> eventCodeById[eid]?.let { row.createCell(9).setCellValue(it) } }
+            // 코드 (readOnly) — 왕복 안정 식별자
+            row.createCell(10).setCellValue(rc.code ?: "")
+            row.createCell(11).setCellValue(char1?.code ?: "")
+            row.createCell(12).setCellValue(char2?.code ?: "")
+            row.createCell(13).setCellValue(rc.createdAt.toDouble())
         }
 
         applySpecFormatting(sheet, spec, allChanges.size)
@@ -1163,6 +1173,6 @@ class ExcelExporter(context: Context) {
     companion object {
         private const val DROPDOWN_EXTRA_ROWS = 100
         private const val MAX_DROPDOWN_ROWS = 10000
-        private const val XLSX_CELL_LIMIT = 32767 // XLSX 셀 텍스트 규격 한도
+        private const val XLSX_CELL_LIMIT = EXCEL_CELL_TEXT_LIMIT // 단일 소스: SheetSpec.EXCEL_CELL_TEXT_LIMIT
     }
 }

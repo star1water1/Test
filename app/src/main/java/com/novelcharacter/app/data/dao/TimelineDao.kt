@@ -120,6 +120,10 @@ interface TimelineDao {
     @Query("SELECT * FROM timeline_events WHERE year = :year AND description = :description LIMIT 1")
     suspend fun getEventByNaturalKey(year: Int, description: String): TimelineEvent?
 
+    /** 엑셀 왕복 안정 식별자 매칭 — 코드 우선, 자연키는 구버전 파일 폴백 */
+    @Query("SELECT * FROM timeline_events WHERE code = :code LIMIT 1")
+    suspend fun getEventByCode(code: String): TimelineEvent?
+
     // Timeline filtering
     @Transaction
     @Query("""

@@ -72,15 +72,8 @@ class FormulaEvaluator(
     }
 
     private fun resolveGradeValue(fieldDef: FieldDefinition, gradeLabel: String): Double {
-        // Parse config JSON to get grade mappings
-        val config = try { Gson().fromJson<Map<String, Any>>(fieldDef.config, GsonTypes.STRING_ANY_MAP) } catch (e: Exception) { Log.w("FormulaEvaluator", "Failed to parse grade config for field '${fieldDef.key}'", e); emptyMap() }
-        val grades = (config["grades"] as? Map<*, *>) ?: return 0.0
-        val allowNegative = config["allowNegative"] as? Boolean ?: false
-        // gradeLabel could be "A", "-B", "+A" etc
-        val isNegative = allowNegative && gradeLabel.startsWith("-")
-        val cleanLabel = gradeLabel.removePrefix("-").removePrefix("+")
-        val baseValue = (grades[cleanLabel] as? Number)?.toDouble() ?: 0.0
-        return if (isNegative) -baseValue else baseValue
+        // 등급 해석 단일 소스 위임. 수식 경로는 미정의 라벨을 0.0으로 취급한다 (기존 시맨틱 보존).
+        return GradeValueResolver.resolveFromConfig(fieldDef, gradeLabel) ?: 0.0
     }
 
     private fun sumAllGrades(): Double {

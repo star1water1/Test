@@ -36,6 +36,7 @@ import com.novelcharacter.app.data.model.FactionRelationship
 import com.novelcharacter.app.data.model.TrashSnapshot
 import com.novelcharacter.app.data.dao.EventFieldValueDao
 import com.novelcharacter.app.data.model.EventFieldValue
+import com.novelcharacter.app.data.model.generateEntityCode
 import com.novelcharacter.app.data.model.RecentActivity
 import com.novelcharacter.app.data.model.UserPresetTemplate
 import com.novelcharacter.app.data.model.SearchPreset
@@ -77,7 +78,7 @@ import com.novelcharacter.app.data.model.Universe
         TrashSnapshot::class,
         EventFieldValue::class
     ],
-    version = 34,
+    version = 35,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -1474,6 +1475,35 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_34_35 = object : Migration(34, 35) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "Migrating database from version 34 to 35 — 사건/상태변화/관계변화 안정 식별자(code)")
+
+                // 엑셀 왕복 시 자연키(설명·연도·값) 편집이 "중복 생성"으로 이어지지 않도록,
+                // 캐릭터·세계관 등과 동일한 code(UUID 16자) 체계를 세 엔티티로 확장한다.
+                // 순서: 컬럼 추가 → 전 행 백필 → 유니크 인덱스 (백필이 먼저라 충돌 불가)
+                val tables = listOf(
+                    "timeline_events" to "index_timeline_events_code",
+                    "character_state_changes" to "index_character_state_changes_code",
+                    "character_relationship_changes" to "index_character_relationship_changes_code"
+                )
+                for ((table, indexName) in tables) {
+                    db.execSQL("ALTER TABLE `$table` ADD COLUMN `code` TEXT")
+                    val cursor = db.query("SELECT id FROM `$table` WHERE code IS NULL")
+                    while (cursor.moveToNext()) {
+                        db.execSQL(
+                            "UPDATE `$table` SET code = ? WHERE id = ?",
+                            arrayOf(generateEntityCode(), cursor.getLong(0))
+                        )
+                    }
+                    cursor.close()
+                    db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `$indexName` ON `$table`(`code`)")
+                }
+
+                Log.i(TAG, "Migration from version 34 to 35 completed successfully")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -1481,7 +1511,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "novel_character_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35)
                     .addCallback(SeedCallback(context.applicationContext))
                     .build()
                     .also { INSTANCE = it }

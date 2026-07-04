@@ -109,7 +109,7 @@ class CharacterListFragment : Fragment() {
                 findNavController().navigateSafe(R.id.characterListFragment, R.id.characterEditFragment, bundle)
             },
             onDeleteClick = { character ->
-                // 연쇄 삭제 범위를 집계해 사전 고지 (undo가 없으므로 사전 고지가 유일한 방어선)
+                // 연쇄 삭제 범위 사전 고지 + 휴지통 복원 안내 (B-7 이후 삭제는 30일 스냅샷 보관 — 고지를 실제 동작과 일치시킨다)
                 viewLifecycleOwner.lifecycleScope.launch {
                     val impact = viewModel.getCharacterDeleteImpact(character)
                     if (!isAdded) return@launch
@@ -120,10 +120,11 @@ class CharacterListFragment : Fragment() {
                         if (impact.images > 0) add(getString(R.string.delete_impact_images, impact.images))
                     }
                     val message = if (details.isEmpty()) {
-                        getString(R.string.confirm_delete)
+                        getString(R.string.confirm_delete) + "\n\n" + getString(R.string.delete_trash_notice)
                     } else {
                         getString(R.string.confirm_delete) + "\n\n" +
-                            getString(R.string.delete_impact_header) + "\n" + details.joinToString("\n")
+                            getString(R.string.delete_impact_header) + "\n" + details.joinToString("\n") +
+                            "\n\n" + getString(R.string.delete_trash_notice)
                     }
                     androidx.appcompat.app.AlertDialog.Builder(requireContext())
                         .setIcon(android.R.drawable.ic_dialog_alert)

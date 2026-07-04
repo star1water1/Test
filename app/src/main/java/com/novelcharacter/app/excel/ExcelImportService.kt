@@ -205,6 +205,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         alias("관계 유형", "relationship_type", "관계유형")
         alias("캐릭터1코드", "character1_code")
         alias("캐릭터2코드", "character2_code")
+        // 관계 변화 — 연결 사건 참조 (코드 우선, ID는 구버전 파일 폴백)
+        alias("연결사건코드", "linked_event_code", "event_code")
+        alias("연결사건ID", "linked_event_id")
         // Relationship extra
         alias("강도", "intensity")
         alias("양방향", "bidirectional", "is_bidirectional")
@@ -671,6 +674,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val descColIndex = cols["사건 설명"] ?: 4
         val novelColIndex = cols["관련 작품"] ?: 5
         val novelCodeColIndex = cols["관련작품코드"] ?: -1
+        val codeColIndex = cols["코드"] ?: -1
 
         val allNovels = db.novelDao().getAllNovelsList()
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0
@@ -687,8 +691,15 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val novelId = (if (novelCode.isNotBlank()) db.novelDao().getNovelByCode(novelCode)?.id else null)
                 ?: if (novelTitle.isNotBlank()) allNovels.find { it.title == novelTitle }?.id else null
 
-            val existing = db.timelineDao().getEventByNaturalKey(year, description)
-            if (existing == null) newCount++ else unchangedCount++ // 사건은 natural key 매칭이므로 키가 같으면 동일
+            // 실제 임포트와 동일한 매칭: 코드 우선 → 자연키 폴백
+            val fileCode = if (codeColIndex >= 0) getCellString(row, codeColIndex) else ""
+            val byCode = if (fileCode.isNotBlank()) db.timelineDao().getEventByCode(fileCode) else null
+            val existing = byCode ?: db.timelineDao().getEventByNaturalKey(year, description)
+            when {
+                existing == null -> newCount++
+                byCode != null && (existing.year != year || existing.description != description) -> updateCount++
+                else -> unchangedCount++
+            }
         }
         reportProgress(onProgress, "사건 분석", sheet.lastRowNum, totalRows)
         return CategoryAnalysis("timeline", "사건 연표", inBackup, newCount, updateCount, unchangedCount, existingTotal)
@@ -707,10 +718,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val fieldKeyColIndex = cols["필드키"] ?: 5
         val newValueColIndex = cols["새 값"] ?: 6
         val charCodeColIndex = cols["캐릭터코드"] ?: -1
+        val codeColIndex = cols["코드"] ?: -1
         val novelColIndex = cols["작품"] ?: 1
 
         val allNovels = db.novelDao().getAllNovelsList()
-        var inBackup = 0; var newCount = 0; var unchangedCount = 0
+        var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0
 
         for (i in 1..sheet.lastRowNum) {
             val row = sheet.getRow(i) ?: continue
@@ -732,11 +744,19 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 }
             if (character == null) { continue }
 
-            val existing = db.characterStateChangeDao().getChangeByNaturalKey(character.id, year, fieldKey, newValue)
-            if (existing == null) newCount++ else unchangedCount++
+            // 실제 임포트와 동일한 매칭: 코드 우선 → 자연키 폴백
+            val fileCode = if (codeColIndex >= 0) getCellString(row, codeColIndex) else ""
+            val byCode = if (fileCode.isNotBlank()) db.characterStateChangeDao().getChangeByCode(fileCode) else null
+            val existing = byCode ?: db.characterStateChangeDao().getChangeByNaturalKey(character.id, year, fieldKey, newValue)
+            when {
+                existing == null -> newCount++
+                byCode != null && (existing.year != year || existing.fieldKey != fieldKey ||
+                    existing.newValue != newValue || existing.characterId != character.id) -> updateCount++
+                else -> unchangedCount++
+            }
         }
         reportProgress(onProgress, "상태 변화 분석", sheet.lastRowNum, totalRows)
-        return CategoryAnalysis("stateChanges", "상태 변화", inBackup, newCount, 0, unchangedCount, existingTotal)
+        return CategoryAnalysis("stateChanges", "상태 변화", inBackup, newCount, updateCount, unchangedCount, existingTotal)
     }
 
     private suspend fun analyzeRelationships(workbook: Workbook, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
@@ -796,10 +816,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val yearColIndex = cols["연도"] ?: 2
         val monthColIndex = cols["월"] ?: 3
         val dayColIndex = cols["일"] ?: 4
+        val codeColIndex = cols["코드"] ?: -1
         val char1CodeColIndex = cols["캐릭터1코드"] ?: -1
         val char2CodeColIndex = cols["캐릭터2코드"] ?: -1
 
-        var inBackup = 0; var newCount = 0; var unchangedCount = 0
+        var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0
         for (i in 1..sheet.lastRowNum) {
             val row = sheet.getRow(i) ?: continue
             val char1Name = getCellString(row, char1NameColIndex)
@@ -810,6 +831,15 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
             val month = parseNumber(getCellString(row, monthColIndex))?.toInt()
             val day = parseNumber(getCellString(row, dayColIndex))?.toInt()
+
+            // 실제 임포트와 동일한 매칭: 코드 우선 (캐릭터 해석 없이도 정체성 판정 가능)
+            val fileCode = if (codeColIndex >= 0) getCellString(row, codeColIndex) else ""
+            val byCode = if (fileCode.isNotBlank()) db.characterRelationshipChangeDao().getChangeByCode(fileCode) else null
+            if (byCode != null) {
+                if (byCode.year != year || byCode.month != month || byCode.day != day) updateCount++ else unchangedCount++
+                continue
+            }
+
             val char1Code = if (char1CodeColIndex >= 0) getCellString(row, char1CodeColIndex) else ""
             val char2Code = if (char2CodeColIndex >= 0) getCellString(row, char2CodeColIndex) else ""
             val char1 = (if (char1Code.isNotBlank()) db.characterDao().getCharacterByCode(char1Code) else null) ?: findCharacterByName(char1Name, null)
@@ -827,7 +857,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             if (existing == null) newCount++ else unchangedCount++
         }
         reportProgress(onProgress, "관계 변화 분석", sheet.lastRowNum, totalRows)
-        return CategoryAnalysis("relationshipChanges", "관계 변화", inBackup, newCount, 0, unchangedCount, existingTotal)
+        return CategoryAnalysis("relationshipChanges", "관계 변화", inBackup, newCount, updateCount, unchangedCount, existingTotal)
     }
 
     private suspend fun analyzeNameBank(workbook: Workbook, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
@@ -1749,9 +1779,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val novelCodeColIndex = cols["관련작품코드"] ?: -1
         val displayOrderColIndex = cols["정렬순서"] ?: -1
         val isTemporaryColIndex = cols["임시배치"] ?: -1
+        val codeColIndex = cols["코드"] ?: -1
         val createdAtColIndex = cols["생성일"] ?: -1
 
         val allNovels = db.novelDao().getAllNovelsList()
+        val eventCodesSeen = mutableSetOf<String>()
 
         // 사건 커스텀 필드 컬럼 (B-10): "필드:{이름}" 또는 "필드:{이름}({세계관})" 헤더 스캔
         val allEventFields = db.fieldDefinitionDao().getAllFieldsList(FieldDefinition.ENTITY_EVENT)
@@ -1811,7 +1843,13 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val novelIds = resolvedNovels.map { it.id }
                 val universeId = resolvedNovels.firstOrNull()?.universeId
 
-                val existingEvent = db.timelineDao().getEventByNaturalKey(year, description)
+                val fileCode = if (codeColIndex >= 0) getCellString(row, codeColIndex) else ""
+                if (fileCode.isNotBlank() && !eventCodesSeen.add(fileCode)) {
+                    result.warnings.add("연표 행 $i: 코드 '${fileCode}'가 파일 내에서 중복되어 같은 사건을 덮어씁니다")
+                }
+                // 매칭: 코드 우선(설명·연도 편집을 같은 사건으로 인식) → 자연키 폴백(구버전 파일 호환)
+                val existingEvent = (if (fileCode.isNotBlank()) db.timelineDao().getEventByCode(fileCode) else null)
+                    ?: db.timelineDao().getEventByNaturalKey(year, description)
 
                 val eventId: Long
                 if (existingEvent != null) {
@@ -1819,12 +1857,16 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     // 작품 해석 실패 시 기존 세계관 보존
                     val effectiveUniverseId = if (novelIds.isNotEmpty()) universeId else existingEvent.universeId
                     db.timelineDao().update(existingEvent.copy(
+                        // 코드 매칭 시 연도·설명은 편집 가능한 값 (자연키 매칭 시엔 동일값이라 무해)
+                        year = year, description = description,
                         month = month, day = day, calendarType = calendarType,
                         eventType = if (eventTypeColIndex >= 0) eventType else existingEvent.eventType,
                         universeId = effectiveUniverseId,
                         displayOrder = displayOrder ?: existingEvent.displayOrder,
                         isTemporary = if (isTemporaryColIndex >= 0) isTemporary else existingEvent.isTemporary,
-                        createdAt = if (createdAtColIndex >= 0) createdAt else existingEvent.createdAt
+                        createdAt = if (createdAtColIndex >= 0) createdAt else existingEvent.createdAt,
+                        // 코드 없는 기존 행은 점진 백필 (기존 코드는 절대 덮어쓰지 않음 — 외부 참조 보호)
+                        code = existingEvent.code ?: fileCode.takeIf { it.isNotBlank() } ?: generateEntityCode()
                     ))
                     // 작품이 해석된 경우에만 M2M 교체; 해석 실패 시 기존 관계 유지 + 경고
                     if (novelIds.isNotEmpty()) {
@@ -1840,7 +1882,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         eventType = eventType,
                         universeId = universeId,
                         displayOrder = displayOrder ?: i, isTemporary = isTemporary,
-                        createdAt = createdAt
+                        createdAt = createdAt,
+                        // 파일의 코드를 보존해 기기 이전 후에도 왕복 정체성 유지 (없으면 자동 생성)
+                        code = fileCode.takeIf { it.isNotBlank() } ?: generateEntityCode()
                     ))
                     db.timelineDao().replaceEventNovels(eventId, novelIds)
                     result.newEvents++
@@ -1942,9 +1986,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val newValueColIndex = requiredCol(cols, "새 값", sheet.sheetName, result) ?: return
         val descColIndex = cols["설명"] ?: -1
         val charCodeColIndex = cols["캐릭터코드"] ?: -1
+        val codeColIndex = cols["코드"] ?: -1
         val createdAtColIndex = cols["생성일"] ?: -1
 
         val allNovels = db.novelDao().getAllNovelsList()
+        val changeCodesSeen = mutableSetOf<String>()
 
         for (i in 1..sheet.lastRowNum) {
             try {
@@ -2001,13 +2047,21 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     }
                 }
 
-                val existing = db.characterStateChangeDao()
-                    .getChangeByNaturalKey(character.id, year, fieldKey, newValue)
+                val fileCode = if (codeColIndex >= 0) getCellString(row, codeColIndex) else ""
+                if (fileCode.isNotBlank() && !changeCodesSeen.add(fileCode)) {
+                    result.warnings.add("상태변화 행 $i: 코드 '${fileCode}'가 파일 내에서 중복되어 같은 이력을 덮어씁니다")
+                }
+                // 매칭: 코드 우선(연도·필드키·값 편집을 같은 이력으로 인식) → 자연키 폴백(구버전 파일 호환)
+                val existing = (if (fileCode.isNotBlank()) db.characterStateChangeDao().getChangeByCode(fileCode) else null)
+                    ?: db.characterStateChangeDao().getChangeByNaturalKey(character.id, year, fieldKey, newValue)
 
                 if (existing != null) {
                     db.characterStateChangeDao().update(existing.copy(
+                        // 코드 매칭 시 자연키 구성 요소도 편집 가능한 값 (자연키 매칭 시엔 동일값이라 무해)
+                        characterId = character.id, year = year, fieldKey = fieldKey, newValue = newValue,
                         month = month, day = day, description = description,
-                        createdAt = if (createdAtColIndex >= 0) createdAt else existing.createdAt
+                        createdAt = if (createdAtColIndex >= 0) createdAt else existing.createdAt,
+                        code = existing.code ?: fileCode.takeIf { it.isNotBlank() } ?: generateEntityCode()
                     ))
                     matchedStateChangeIds.add(existing.id)
                     result.updatedStateChanges++
@@ -2015,7 +2069,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     val newId = db.characterStateChangeDao().insert(CharacterStateChange(
                         characterId = character.id, year = year, month = month, day = day,
                         fieldKey = fieldKey, newValue = newValue, description = description,
-                        createdAt = createdAt
+                        createdAt = createdAt,
+                        code = fileCode.takeIf { it.isNotBlank() } ?: generateEntityCode()
                     ))
                     matchedStateChangeIds.add(newId)
                     result.newStateChanges++
@@ -2180,9 +2235,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val intensityColIndex = cols["강도"] ?: 7
         val bidirectionalColIndex = cols["양방향"] ?: 8
         val eventIdColIndex = cols["연결사건ID"] ?: -1
+        val eventCodeColIndex = cols["연결사건코드"] ?: -1
+        val codeColIndex = cols["코드"] ?: -1
         val char1CodeColIndex = cols["캐릭터1코드"] ?: -1
         val char2CodeColIndex = cols["캐릭터2코드"] ?: -1
         val createdAtColIndex = cols["생성일"] ?: -1
+        val changeCodesSeen = mutableSetOf<String>()
 
         for (i in 1..sheet.lastRowNum) {
             try {
@@ -2204,7 +2262,20 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val description = getCellString(row, descColIndex)
                 val intensity = parseNumber(getCellString(row, intensityColIndex))?.toInt()?.coerceIn(1, 10) ?: 5
                 val isBidirectional = parseBoolean(getCellString(row, bidirectionalColIndex))
-                val eventId = if (eventIdColIndex >= 0) parseNumber(getCellString(row, eventIdColIndex))?.toLong() else null
+                // 연결 사건 해석: 코드 우선 (id는 복원/기기 이전 시 변하므로 구버전 폴백 전용)
+                val eventColumnPresent = eventCodeColIndex >= 0 || eventIdColIndex >= 0
+                val eventCode = if (eventCodeColIndex >= 0) getCellString(row, eventCodeColIndex) else ""
+                val eventId: Long? = when {
+                    eventCode.isNotBlank() -> {
+                        val found = db.timelineDao().getEventByCode(eventCode)?.id
+                        if (found == null) {
+                            result.warnings.add("관계변화 행 $i: 연결사건코드 '${eventCode}'에 해당하는 사건을 찾을 수 없어 연결을 비웁니다")
+                        }
+                        found
+                    }
+                    eventIdColIndex >= 0 -> parseNumber(getCellString(row, eventIdColIndex))?.toLong()
+                    else -> null
+                }
                 val createdAt = if (createdAtColIndex >= 0) parseNumber(getCellString(row, createdAtColIndex))?.toLong() ?: System.currentTimeMillis() else System.currentTimeMillis()
 
                 val char1Code = if (char1CodeColIndex >= 0) getCellString(row, char1CodeColIndex) else ""
@@ -2249,15 +2320,22 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     continue
                 }
 
-                val existing = db.characterRelationshipChangeDao().getChangeByNaturalKey(
-                    relationship.id, year, month, day
-                )
+                val fileCode = if (codeColIndex >= 0) getCellString(row, codeColIndex) else ""
+                if (fileCode.isNotBlank() && !changeCodesSeen.add(fileCode)) {
+                    result.warnings.add("관계변화 행 $i: 코드 '${fileCode}'가 파일 내에서 중복되어 같은 이력을 덮어씁니다")
+                }
+                // 매칭: 코드 우선(연월일 편집을 같은 이력으로 인식) → 자연키 폴백(구버전 파일 호환)
+                val existing = (if (fileCode.isNotBlank()) db.characterRelationshipChangeDao().getChangeByCode(fileCode) else null)
+                    ?: db.characterRelationshipChangeDao().getChangeByNaturalKey(relationship.id, year, month, day)
                 if (existing != null) {
                     db.characterRelationshipChangeDao().update(existing.copy(
+                        // 코드 매칭 시 자연키 구성 요소도 편집 가능한 값 (자연키 매칭 시엔 동일값이라 무해)
+                        relationshipId = relationship.id, year = year, month = month, day = day,
                         relationshipType = relationshipType, description = description,
                         intensity = intensity, isBidirectional = isBidirectional,
-                        eventId = if (eventIdColIndex >= 0) eventId else existing.eventId,
-                        createdAt = if (createdAtColIndex >= 0) createdAt else existing.createdAt
+                        eventId = if (eventColumnPresent) eventId else existing.eventId,
+                        createdAt = if (createdAtColIndex >= 0) createdAt else existing.createdAt,
+                        code = existing.code ?: fileCode.takeIf { it.isNotBlank() } ?: generateEntityCode()
                     ))
                     matchedRelationshipChangeIds.add(existing.id)
                     result.updatedRelationshipChanges++
@@ -2267,7 +2345,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         year = year, month = month, day = day,
                         relationshipType = relationshipType, description = description,
                         intensity = intensity, isBidirectional = isBidirectional,
-                        eventId = eventId, createdAt = createdAt
+                        eventId = eventId, createdAt = createdAt,
+                        code = fileCode.takeIf { it.isNotBlank() } ?: generateEntityCode()
                     ))
                     matchedRelationshipChangeIds.add(newId)
                     result.newRelationshipChanges++
@@ -3322,7 +3401,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     }
 
     companion object {
-        private const val MAX_FIELD_LENGTH = 10000
+        // 가져오기 저장 한도 = 내보내기 절단 한도 (SheetSpec 단일 소스).
+        // 값이 어긋나면 순수 왕복만으로 데이터가 잘리므로 별도 값을 두지 않는다.
+        private const val MAX_FIELD_LENGTH = EXCEL_CELL_TEXT_LIMIT
         private const val GUIDE_SHEET_NAME = "사용 안내"
         internal const val UNCLASSIFIED_SHEET_NAME = "미분류 캐릭터"
     }

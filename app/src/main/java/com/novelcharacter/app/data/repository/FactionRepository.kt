@@ -9,6 +9,17 @@ import com.novelcharacter.app.data.model.Faction
 import com.novelcharacter.app.data.model.FactionMembership
 import com.novelcharacter.app.data.model.FactionRelationship
 
+/**
+ * 세력 가입 결과. 자동관계 정책은 "수동 관계 우선" — 동일 (캐릭터쌍, 유형)의 수동 관계가 이미 있으면
+ * 자동관계를 만들지 않고(가로채지도 않고) 건너뛴 건수를 집계해 사용자에게 알린다.
+ * 수동 관계에 factionId를 부착하는 방식은 탈퇴 시 사용자가 만든 관계가 삭제되는 조용한 유실 경로가 되므로 금지.
+ */
+data class MemberAddResult(
+    val added: Int,
+    val autoRelationsCreated: Int,
+    val autoRelationsSkipped: Int
+)
+
 class FactionRepository(private val db: AppDatabase) {
 
     private val factionDao = db.factionDao()
@@ -99,14 +110,16 @@ class FactionRepository(private val db: AppDatabase) {
     /**
      * 캐릭터를 세력에 가입시키고 기존 활성 멤버들과 자동 관계를 생성한다.
      * 이미 활성 멤버십이 있으면 무시한다.
+     * 동일 (캐릭터쌍, 유형)의 수동 관계가 있으면 자동관계는 건너뛰고 결과에 집계한다 (수동 관계 우선).
      */
-    suspend fun addMember(factionId: Long, characterId: Long, joinYear: Int? = null): Boolean {
+    suspend fun addMember(factionId: Long, characterId: Long, joinYear: Int? = null): MemberAddResult {
         return db.withTransaction {
             // 이미 활성 멤버인지 체크
             val existing = membershipDao.getActiveMembership(factionId, characterId)
-            if (existing != null) return@withTransaction false
+            if (existing != null) return@withTransaction MemberAddResult(0, 0, 0)
 
-            val faction = factionDao.getById(factionId) ?: return@withTransaction false
+            val faction = factionDao.getById(factionId)
+                ?: return@withTransaction MemberAddResult(0, 0, 0)
 
             // 멤버십 생성
             membershipDao.insert(FactionMembership(
@@ -121,37 +134,35 @@ class FactionRepository(private val db: AppDatabase) {
                 .filter { it.characterId != characterId }
                 .map { it.characterId }
 
-            if (otherCharIds.isNotEmpty()) {
-                val newRelationships = otherCharIds.map { otherCharId ->
-                    val (c1, c2) = if (characterId < otherCharId)
-                        characterId to otherCharId else otherCharId to characterId
-                    CharacterRelationship(
-                        characterId1 = c1,
-                        characterId2 = c2,
-                        relationshipType = faction.autoRelationType,
-                        intensity = faction.autoRelationIntensity,
-                        isBidirectional = true,
-                        factionId = factionId
-                    )
-                }
-                relationshipDao.insertAll(newRelationships)
-            }
-
-            true
+            val (created, skipped) = insertAutoRelations(faction, characterId, otherCharIds)
+            MemberAddResult(added = 1, autoRelationsCreated = created, autoRelationsSkipped = skipped)
         }
     }
 
     /**
      * 여러 캐릭터를 세력에 일괄 가입시킨다.
      * 하나의 트랜잭션으로 감싸서 원자적으로 실행하며, 순차 추가하여 관계가 올바르게 캐스케이딩된다.
+     * 활성 멤버 목록은 최초 1회만 조회하고 로컬로 누적한다 (반복 재조회 O(N²) 제거 — 생성되는 관계 쌍은 동일).
      */
-    suspend fun addMembers(factionId: Long, characterIds: List<Long>, joinYear: Int? = null): Int {
+    suspend fun addMembers(factionId: Long, characterIds: List<Long>, joinYear: Int? = null): MemberAddResult {
         return db.withTransaction {
             var addedCount = 0
-            val faction = factionDao.getById(factionId) ?: return@withTransaction 0
+            var createdTotal = 0
+            var skippedTotal = 0
+            val faction = factionDao.getById(factionId)
+                ?: return@withTransaction MemberAddResult(0, 0, 0)
+
+            val activeCharIds = membershipDao.getActiveMembershipsByFaction(factionId)
+                .map { it.characterId }
+                .toMutableSet()
+
             for (characterId in characterIds) {
+                if (characterId in activeCharIds) continue
                 val existing = membershipDao.getActiveMembership(factionId, characterId)
-                if (existing != null) continue
+                if (existing != null) {
+                    activeCharIds.add(characterId)
+                    continue
+                }
 
                 membershipDao.insert(FactionMembership(
                     factionId = factionId,
@@ -159,30 +170,44 @@ class FactionRepository(private val db: AppDatabase) {
                     joinYear = joinYear
                 ))
 
-                val activeMembers = membershipDao.getActiveMembershipsByFaction(factionId)
-                val otherCharIds = activeMembers
-                    .filter { it.characterId != characterId }
-                    .map { it.characterId }
+                val otherCharIds = activeCharIds.filter { it != characterId }
+                val (created, skipped) = insertAutoRelations(faction, characterId, otherCharIds)
+                createdTotal += created
+                skippedTotal += skipped
 
-                if (otherCharIds.isNotEmpty()) {
-                    val newRelationships = otherCharIds.map { otherCharId ->
-                        val (c1, c2) = if (characterId < otherCharId)
-                            characterId to otherCharId else otherCharId to characterId
-                        CharacterRelationship(
-                            characterId1 = c1,
-                            characterId2 = c2,
-                            relationshipType = faction.autoRelationType,
-                            intensity = faction.autoRelationIntensity,
-                            isBidirectional = true,
-                            factionId = factionId
-                        )
-                    }
-                    relationshipDao.insertAll(newRelationships)
-                }
+                activeCharIds.add(characterId)
                 addedCount++
             }
-            addedCount
+            MemberAddResult(addedCount, createdTotal, skippedTotal)
         }
+    }
+
+    /**
+     * 신규 멤버와 기존 멤버들 간 자동 관계 삽입.
+     * @return (생성 건수, 기존 수동 관계와 충돌해 건너뛴 건수)
+     * INSERT IGNORE의 -1 반환을 검사해 무통보 누락을 집계로 전환한다 (변수 제어).
+     */
+    private suspend fun insertAutoRelations(
+        faction: Faction,
+        characterId: Long,
+        otherCharIds: List<Long>
+    ): Pair<Int, Int> {
+        if (otherCharIds.isEmpty()) return 0 to 0
+        val newRelationships = otherCharIds.map { otherCharId ->
+            val (c1, c2) = if (characterId < otherCharId)
+                characterId to otherCharId else otherCharId to characterId
+            CharacterRelationship(
+                characterId1 = c1,
+                characterId2 = c2,
+                relationshipType = faction.autoRelationType,
+                intensity = faction.autoRelationIntensity,
+                isBidirectional = true,
+                factionId = faction.id
+            )
+        }
+        val insertedIds = relationshipDao.insertAll(newRelationships)
+        val skipped = insertedIds.count { it == -1L }
+        return (insertedIds.size - skipped) to skipped
     }
 
     // ===== 핵심 비즈니스 로직: 순수 제거 =====

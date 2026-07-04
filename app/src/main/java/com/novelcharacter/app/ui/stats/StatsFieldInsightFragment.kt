@@ -151,8 +151,12 @@ class StatsFieldInsightFragment : Fragment() {
             // 필드 이름 텍스트
             val headerText = TextView(ctx).apply {
                 val uniPrefix = if (insight.universeName.isNotEmpty()) "${insight.universeName} · " else ""
+                // 사건 필드는 캐릭터 필드와 구분해 표기 (모수도 캐릭터 수가 아닌 사건 수)
+                val entityPrefix = if (insight.fieldDefinition.entityType == com.novelcharacter.app.data.model.FieldDefinition.ENTITY_EVENT) {
+                    getString(R.string.stats_event_field_prefix) + " · "
+                } else ""
                 val typeLabel = com.novelcharacter.app.data.model.FieldType.fromName(insight.fieldDefinition.type)?.label ?: insight.fieldDefinition.type
-                text = "$uniPrefix[${insight.fieldDefinition.groupName}] ${insight.fieldDefinition.name} ($typeLabel)"
+                text = "$entityPrefix$uniPrefix[${insight.fieldDefinition.groupName}] ${insight.fieldDefinition.name} ($typeLabel)"
                 textSize = textSizeSp
                 setTextColor(ContextCompat.getColor(ctx, R.color.primary))
                 setTypeface(null, Typeface.BOLD)
@@ -179,8 +183,11 @@ class StatsFieldInsightFragment : Fragment() {
     private fun makeCompletionText(insight: FieldInsightResult): TextView {
         val rate = if (insight.totalCount > 0) insight.filledCount * 100f / insight.totalCount else 0f
         val textSizeSp = resources.getDimension(R.dimen.stats_text_body_sm) / resources.displayMetrics.scaledDensity
+        // 사건 필드의 모수는 캐릭터가 아니라 사건 수 — 단위를 구분해 표기
+        val isEventField = insight.fieldDefinition.entityType == com.novelcharacter.app.data.model.FieldDefinition.ENTITY_EVENT
+        val completionRes = if (isEventField) R.string.stats_field_insight_completion_events else R.string.stats_field_insight_completion
         return TextView(requireContext()).apply {
-            text = getString(R.string.stats_field_insight_completion, insight.filledCount, insight.totalCount, rate)
+            text = getString(completionRes, insight.filledCount, insight.totalCount, rate)
             textSize = textSizeSp
             setTextColor(ContextCompat.getColor(requireContext(), R.color.text_secondary))
             val lp = LinearLayout.LayoutParams(
@@ -620,9 +627,17 @@ class StatsFieldInsightFragment : Fragment() {
         binding.cardCrossAnalysis.visibility = View.VISIBLE
         binding.crossAnalysisTitle.text = getString(R.string.stats_cross_title, result.field1Name, result.field2Name)
 
+        // 필터 정보 + 다중값 해석 기준 고지 (셀 값 = 조합을 가진 캐릭터 수, 다중값 필드는 여러 칸 기여 가능)
+        val captions = mutableListOf<String>()
         if (result.filterFieldName != null && result.filterValue != null) {
+            captions.add(getString(R.string.stats_cross_filter_info, result.filterFieldName, result.filterValue, result.filteredCount, result.totalCount))
+        }
+        if (result.multiValue) {
+            captions.add(getString(R.string.stats_cross_multi_value_note))
+        }
+        if (captions.isNotEmpty()) {
             binding.crossAnalysisFilter.visibility = View.VISIBLE
-            binding.crossAnalysisFilter.text = getString(R.string.stats_cross_filter_info, result.filterFieldName, result.filterValue, result.filteredCount, result.totalCount)
+            binding.crossAnalysisFilter.text = captions.joinToString("\n")
         } else {
             binding.crossAnalysisFilter.visibility = View.GONE
         }

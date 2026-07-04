@@ -750,9 +750,17 @@ class FactionManageFragment : Fragment() {
                     if (selectedIds.isEmpty()) return@setPositiveButton
 
                     val joinYear = editYear.text.toString().trim().toIntOrNull()
-                    viewModel.addMembers(faction.id, selectedIds.toList(), joinYear) { count ->
-                        if (count > 0) {
-                            Toast.makeText(ctx, getString(R.string.faction_members_added, count), Toast.LENGTH_SHORT).show()
+                    viewModel.addMembers(faction.id, selectedIds.toList(), joinYear) { result ->
+                        if (!isAdded) return@addMembers
+                        // 수동 관계 우선 정책: 건너뛴 자동관계는 반드시 통보 (조용한 불일치 방지)
+                        val parts = mutableListOf<String>()
+                        if (result.added > 0) parts.add(getString(R.string.faction_members_added, result.added))
+                        if (result.autoRelationsSkipped > 0) {
+                            parts.add(getString(R.string.faction_auto_relation_skipped, result.autoRelationsSkipped))
+                        }
+                        if (parts.isNotEmpty()) {
+                            val duration = if (result.autoRelationsSkipped > 0) Toast.LENGTH_LONG else Toast.LENGTH_SHORT
+                            Toast.makeText(ctx, parts.joinToString("\n"), duration).show()
                         }
                     }
                 }

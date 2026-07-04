@@ -23,7 +23,10 @@ data class StatsSnapshot(
     val crossRefs: List<TimelineCharacterCrossRef>,
     val factions: List<Faction> = emptyList(),
     val factionMemberships: List<FactionMembership> = emptyList(),
-    val eventNovelCrossRefs: List<TimelineEventNovelCrossRef> = emptyList()
+    val eventNovelCrossRefs: List<TimelineEventNovelCrossRef> = emptyList(),
+    // 사건 커스텀 필드 (B-10) — "모든 필드가 통계에서 분석 가능해야 한다"(원칙 02)
+    val eventFieldDefinitions: List<FieldDefinition> = emptyList(),
+    val eventFieldValues: List<EventFieldValue> = emptyList()
 )
 
 // ===== 요약 통계 =====
@@ -271,7 +274,9 @@ data class CrossAnalysisResult(
     val filterValue: String?,
     val crossTable: Map<String, Map<String, Int>>,
     val totalCount: Int,
-    val filteredCount: Int
+    val filteredCount: Int,
+    /** 다중값 필드 포함 여부 — true면 한 캐릭터가 여러 칸에 집계될 수 있음을 UI가 고지한다 */
+    val multiValue: Boolean = false
 )
 
 // ===== 작품별 비교 분석 (신규 - 원칙 05) =====
@@ -410,7 +415,9 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
             crossRefs = db.timelineDao().getAllCrossRefs(),
             factions = app.factionRepository.getAllFactionsList(),
             factionMemberships = app.factionRepository.getAllMembershipsList(),
-            eventNovelCrossRefs = db.timelineDao().getAllEventNovelCrossRefs()
+            eventNovelCrossRefs = db.timelineDao().getAllEventNovelCrossRefs(),
+            eventFieldDefinitions = db.fieldDefinitionDao().getAllFieldsList(FieldDefinition.ENTITY_EVENT),
+            eventFieldValues = db.eventFieldValueDao().getAllValuesList()
         )
     }
 
@@ -445,7 +452,9 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
             crossRefs = s.crossRefs.filter { it.characterId in charIds || it.eventId in eventIds },
             factions = filteredFactions,
             factionMemberships = filteredMemberships,
-            eventNovelCrossRefs = s.eventNovelCrossRefs.filter { it.eventId in eventIds }
+            eventNovelCrossRefs = s.eventNovelCrossRefs.filter { it.eventId in eventIds },
+            eventFieldDefinitions = s.eventFieldDefinitions.filter { it.universeId == novel.universeId },
+            eventFieldValues = s.eventFieldValues.filter { it.eventId in eventIdsForNovel }
         )
     }
 
@@ -550,12 +559,17 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
             .mapValues { it.value.size }
 
         // 분석적 인사이트: 주요 필드 값 TOP 5 (필드 이름 기준으로 세계관 간 통합 집계)
+        // 필드 인사이트와 동일한 파싱 규칙(getFieldValues: 콤마/구조화/라벨/카테고리)과 동일한
+        // enabled 필터를 적용해 화면 간 수치가 일치하도록 한다. config 파싱은 필드당 1회 캐시.
         val fieldDefById = s.fieldDefinitions.associateBy { it.id }
+        val statsConfigCache = mutableMapOf<Long, FieldStatsConfig>()
         val topFieldValues = s.fieldValues
             .filter { it.value.isNotBlank() }
-            .mapNotNull { fv ->
-                val fd = fieldDefById[fv.fieldDefinitionId] ?: return@mapNotNull null
-                Pair(fd.name, fv.value)
+            .flatMap { fv ->
+                val fd = fieldDefById[fv.fieldDefinitionId] ?: return@flatMap emptyList<Pair<String, String>>()
+                val cfg = statsConfigCache.getOrPut(fd.id) { FieldStatsConfig.fromConfig(fd.config) }
+                if (!cfg.enabled) return@flatMap emptyList<Pair<String, String>>()
+                getFieldValues(fd, fv.value, cfg).map { Pair(fd.name, it) }
             }
             .groupBy { it }
             .mapValues { it.value.size }
@@ -1046,53 +1060,95 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
             .filter { FieldStatsConfig.fromConfig(it.config).enabled }
             .groupBy { it.key to it.type }
 
-        return fieldGroups.mapNotNull { (_, fds) ->
+        val characterInsights = fieldGroups.map { (_, fds) ->
             val primaryFd = fds.first()
             val statsConfig = FieldStatsConfig.fromConfig(primaryFd.config)
 
             // 그룹 내 모든 필드의 값을 합산 (CALCULATED 포함)
             val rawValues = fds.flatMap { fd -> augmentedValuesByFieldDef[fd.id] ?: emptyList() }
+                .map { it.value }
 
             // 관련 세계관 전체의 캐릭터 수
             val universeIds = fds.map { it.universeId }.toSet()
             val relevantNovelIds = s.novels.filter { it.universeId in universeIds }.map { it.id }.toSet()
             val totalCount = s.characters.count { it.novelId in relevantNovelIds }
-            val filledCount = rawValues.size
-
-            val analysisResults = statsConfig.analyses.flatMap { entry ->
-                when (entry.type) {
-                    FieldStatsConfig.StatsType.DISTRIBUTION -> {
-                        val dist = computeFieldDistribution(primaryFd, rawValues, statsConfig, entry.limit)
-                        listOf(AnalysisResult(entry, dist, null))
-                    }
-                    FieldStatsConfig.StatsType.NUMERIC -> {
-                        computeNumericAnalysis(primaryFd, rawValues, statsConfig, entry)
-                    }
-                    FieldStatsConfig.StatsType.RANKING -> {
-                        val dist = computeFieldDistribution(primaryFd, rawValues, statsConfig, entry.limit)
-                        val ranked = dist.entries.sortedByDescending { it.value }
-                            .take(entry.limit)
-                            .associate { it.key to it.value }
-                        listOf(AnalysisResult(entry, ranked, null))
-                    }
-                }
-            }
 
             val universeName = if (fds.size == 1) {
                 universeMap[primaryFd.universeId]?.name ?: ""
             } else ""
 
-            FieldInsightResult(primaryFd, statsConfig, analysisResults, totalCount, filledCount,
-                universeName = universeName)
+            buildFieldInsight(primaryFd, statsConfig, rawValues, totalCount, universeName)
         }
+
+        // ── 사건 필드 인사이트 (B-10 후속): 캐릭터 필드와 동일 규칙으로 편입 (원칙 02) ──
+        val eventValueStringsByFieldDef = mutableMapOf<Long, MutableList<String>>()
+        s.eventFieldValues.filter { it.value.isNotBlank() }.forEach { fv ->
+            eventValueStringsByFieldDef.getOrPut(fv.fieldDefinitionId) { mutableListOf() }.add(fv.value)
+        }
+        for ((_, fieldMap) in computeAllEventCalculatedValues(s)) {
+            for ((fieldDefId, value) in fieldMap) {
+                eventValueStringsByFieldDef.getOrPut(fieldDefId) { mutableListOf() }.add(value)
+            }
+        }
+        val eventFieldGroups = s.eventFieldDefinitions
+            .filter { FieldStatsConfig.fromConfig(it.config).enabled }
+            .groupBy { it.key to it.type }
+        val eventInsights = eventFieldGroups.map { (_, fds) ->
+            val primaryFd = fds.first()
+            val statsConfig = FieldStatsConfig.fromConfig(primaryFd.config)
+            val rawValues = fds.flatMap { fd -> eventValueStringsByFieldDef[fd.id] ?: emptyList() }
+
+            // 모수 = 해당 세계관들의 사건 수 (사건 필드는 세계관 소속 사건에만 부여 가능)
+            val universeIds = fds.map { it.universeId }.toSet()
+            val totalCount = s.events.count { it.universeId in universeIds }
+
+            val universeName = if (fds.size == 1) {
+                universeMap[primaryFd.universeId]?.name ?: ""
+            } else ""
+
+            buildFieldInsight(primaryFd, statsConfig, rawValues, totalCount, universeName)
+        }
+
+        return characterInsights + eventInsights
+    }
+
+    /** 필드 1개(세계관 통합 그룹)의 분석 결과 조립 — 캐릭터/사건 필드 공용 */
+    private fun buildFieldInsight(
+        primaryFd: FieldDefinition,
+        statsConfig: FieldStatsConfig,
+        rawValues: List<String>,
+        totalCount: Int,
+        universeName: String
+    ): FieldInsightResult {
+        val analysisResults = statsConfig.analyses.flatMap { entry ->
+            when (entry.type) {
+                FieldStatsConfig.StatsType.DISTRIBUTION -> {
+                    val dist = computeFieldDistribution(primaryFd, rawValues, statsConfig, entry.limit)
+                    listOf(AnalysisResult(entry, dist, null))
+                }
+                FieldStatsConfig.StatsType.NUMERIC -> {
+                    computeNumericAnalysis(primaryFd, rawValues, statsConfig, entry)
+                }
+                FieldStatsConfig.StatsType.RANKING -> {
+                    val dist = computeFieldDistribution(primaryFd, rawValues, statsConfig, entry.limit)
+                    val ranked = dist.entries.sortedByDescending { it.value }
+                        .take(entry.limit)
+                        .associate { it.key to it.value }
+                    listOf(AnalysisResult(entry, ranked, null))
+                }
+            }
+        }
+        return FieldInsightResult(primaryFd, statsConfig, analysisResults, totalCount, rawValues.size,
+            universeName = universeName)
     }
 
     /**
      * NUMERIC 분석 생성. BODY_SIZE는 파트별 개별 수치 통계를 반환한다.
+     * 값 문자열 목록 기반 — 캐릭터/사건 등 어떤 엔티티의 필드값이든 동일하게 처리한다 (원칙 01).
      */
     private fun computeNumericAnalysis(
         fd: FieldDefinition,
-        rawValues: List<CharacterFieldValue>,
+        rawValues: List<String>,
         statsConfig: FieldStatsConfig,
         entry: FieldStatsConfig.AnalysisEntry
     ): List<AnalysisResult> {
@@ -1102,7 +1158,7 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
             val partCount = if (structuredConfig.enabled && structuredConfig.parts.isNotEmpty()) {
                 structuredConfig.parts.size
             } else {
-                rawValues.firstOrNull()?.value?.split(separator)?.size ?: 1
+                rawValues.firstOrNull()?.split(separator)?.size ?: 1
             }
 
             return (0 until partCount).mapNotNull { partIdx ->
@@ -1110,8 +1166,8 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
                     structuredConfig.parts[partIdx].label
                 } else "파트${partIdx + 1}"
 
-                val numericValues = rawValues.mapNotNull { cfv ->
-                    val parts = cfv.value.split(separator).map { it.trim() }
+                val numericValues = rawValues.mapNotNull { value ->
+                    val parts = value.split(separator).map { it.trim() }
                     parts.getOrNull(partIdx)?.toFloatOrNull()
                 }
                 if (numericValues.isNotEmpty()) {
@@ -1125,7 +1181,7 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
         }
 
         // 기본 NUMERIC 분석
-        val numericValues = rawValues.mapNotNull { it.value.toFloatOrNull() }
+        val numericValues = rawValues.mapNotNull { it.toFloatOrNull() }
         val summary = if (numericValues.isNotEmpty()) {
             computeNumericSummary(numericValues, statsConfig.binning)
         } else null
@@ -1134,14 +1190,14 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
 
     private fun computeFieldDistribution(
         fd: FieldDefinition,
-        rawValues: List<CharacterFieldValue>,
+        rawValues: List<String>,
         statsConfig: FieldStatsConfig,
         limit: Int
     ): Map<String, Int> {
         val allValues = mutableListOf<String>()
 
-        for (fv in rawValues) {
-            allValues.addAll(getFieldValues(fd, fv.value, statsConfig))
+        for (value in rawValues) {
+            allValues.addAll(getFieldValues(fd, value, statsConfig))
         }
 
         return allValues.groupBy { it }
@@ -1278,7 +1334,10 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
             s.characters.map { it.id }.toSet()
         }
 
-        // 교차표 구성
+        // 교차표 구성 — 셀 값의 의미: 해당 (값1, 값2) 조합을 가진 "캐릭터 수".
+        // 캐릭터당 중복 값 쌍은 distinct로 1회만 집계한다 (같은 조합 중복 기여 방지).
+        // 다중값 필드로 한 캐릭터가 서로 다른 여러 칸에 기여하는 것은 다중값의 본질이므로 유지하고,
+        // multiValue 플래그로 UI가 해석 기준을 고지한다.
         val crossTable = mutableMapOf<String, MutableMap<String, Int>>()
         var filteredCount = 0
 
@@ -1287,8 +1346,8 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
             val val1Raw = charValues.find { it.fieldDefinitionId == field1Id }?.value ?: continue
             val val2Raw = charValues.find { it.fieldDefinitionId == field2Id }?.value ?: continue
 
-            val values1 = getFieldValues(field1, val1Raw, config1)
-            val values2 = getFieldValues(field2, val2Raw, config2)
+            val values1 = getFieldValues(field1, val1Raw, config1).distinct()
+            val values2 = getFieldValues(field2, val2Raw, config2).distinct()
 
             for (v1 in values1) {
                 for (v2 in values2) {
@@ -1299,6 +1358,8 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
             filteredCount++
         }
 
+        val multiValue = isMultiValueField(field1) || isMultiValueField(field2)
+
         return CrossAnalysisResult(
             field1Name = field1.name,
             field2Name = field2.name,
@@ -1306,8 +1367,17 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
             filterValue = filterValue,
             crossTable = crossTable,
             totalCount = s.characters.size,
-            filteredCount = filteredCount
+            filteredCount = filteredCount,
+            multiValue = multiValue
         )
+    }
+
+    /** 한 캐릭터가 여러 값을 가질 수 있는 필드인가 (교차분석 해석 고지용) */
+    private fun isMultiValueField(fd: FieldDefinition): Boolean {
+        if (fd.type == "MULTI_TEXT" || fd.type == "BODY_SIZE") return true
+        if (StructuredInputConfig.fromConfig(fd.config).enabled) return true
+        val format = DisplayFormat.fromConfig(fd.config)
+        return format == DisplayFormat.COMMA_LIST || format == DisplayFormat.BULLET_LIST
     }
 
     // ===== 데이터 현황 (신규 - 기존 여러 compute 통합) =====
@@ -2259,21 +2329,66 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
     }
 
     /**
-     * GRADE 필드의 라벨을 숫자 값으로 변환 (FormulaEvaluator의 로직 재사용)
+     * 사건 CALCULATED 필드 일괄 계산 — computeAllCalculatedValues의 사건판.
+     * @return Map<eventId, Map<fieldDefinitionId, 계산값 문자열>>
+     */
+    private fun computeAllEventCalculatedValues(s: StatsSnapshot): Map<Long, Map<Long, String>> {
+        val calculatedFields = s.eventFieldDefinitions.filter { it.type == "CALCULATED" }
+        if (calculatedFields.isEmpty()) return emptyMap()
+
+        val fieldDefByUniverse = s.eventFieldDefinitions.groupBy { it.universeId }
+        val allFieldDefById = s.eventFieldDefinitions.associateBy { it.id }
+        val valuesByEvent = s.eventFieldValues.groupBy { it.eventId }
+
+        data class CalcFieldInfo(val fd: FieldDefinition, val formula: String)
+        val calcFieldsByUniverse = mutableMapOf<Long, List<CalcFieldInfo>>()
+        for ((universeId, fields) in fieldDefByUniverse) {
+            val calcInfos = fields.filter { it.type == "CALCULATED" }.mapNotNull { fd ->
+                val formula = try {
+                    org.json.JSONObject(fd.config).optString("formula", "")
+                } catch (_: Exception) { "" }
+                if (formula.isNotBlank()) CalcFieldInfo(fd, formula) else null
+            }
+            if (calcInfos.isNotEmpty()) calcFieldsByUniverse[universeId] = calcInfos
+        }
+        if (calcFieldsByUniverse.isEmpty()) return emptyMap()
+
+        val result = mutableMapOf<Long, MutableMap<Long, String>>()
+        for (event in s.events) {
+            val universeId = event.universeId ?: continue
+            val calcInfos = calcFieldsByUniverse[universeId] ?: continue
+            val universeFields = fieldDefByUniverse[universeId] ?: continue
+
+            val values = valuesByEvent[event.id] ?: emptyList()
+            val fieldKeyValues = mutableMapOf<String, String>()
+            for (fv in values) {
+                val fDef = allFieldDefById[fv.fieldDefinitionId] ?: continue
+                fieldKeyValues[fDef.key] = fv.value
+            }
+
+            val evaluator = FormulaEvaluator(fieldKeyValues, universeFields)
+            val eventCalcValues = mutableMapOf<Long, String>()
+            for ((fd, formula) in calcInfos) {
+                try {
+                    val value = evaluator.evaluate(formula)
+                    if (!value.isNaN() && !value.isInfinite()) {
+                        eventCalcValues[fd.id] = if (value == value.toLong().toDouble()) {
+                            value.toLong().toString()
+                        } else "%.2f".format(value)
+                    }
+                } catch (_: Exception) { /* 평가 실패 시 해당 필드 제외 */ }
+            }
+            if (eventCalcValues.isNotEmpty()) {
+                result[event.id] = eventCalcValues
+            }
+        }
+        return result
+    }
+
+    /**
+     * GRADE 필드의 라벨을 숫자 값으로 변환 — 등급 해석 단일 소스(GradeValueResolver) 위임.
      */
     private fun resolveGradeValueForRanking(fieldDef: FieldDefinition, gradeLabel: String): Double? {
-        return try {
-            val config = com.google.gson.Gson().fromJson<Map<String, Any>>(
-                fieldDef.config, com.novelcharacter.app.util.GsonTypes.STRING_ANY_MAP
-            ) ?: return null
-            val grades = (config["grades"] as? Map<*, *>) ?: return null
-            val allowNegative = config["allowNegative"] as? Boolean ?: false
-            val isNegative = allowNegative && gradeLabel.startsWith("-")
-            val cleanLabel = gradeLabel.removePrefix("-").removePrefix("+")
-            val baseValue = (grades[cleanLabel] as? Number)?.toDouble() ?: return null
-            if (isNegative) -baseValue else baseValue
-        } catch (e: Exception) {
-            null
-        }
+        return com.novelcharacter.app.util.GradeValueResolver.resolveFromConfig(fieldDef, gradeLabel)
     }
 }

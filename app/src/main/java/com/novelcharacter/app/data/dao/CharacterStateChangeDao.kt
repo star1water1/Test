@@ -42,6 +42,10 @@ interface CharacterStateChangeDao {
     @Query("SELECT * FROM character_state_changes WHERE characterId = :characterId AND year = :year AND fieldKey = :fieldKey AND newValue = :newValue LIMIT 1")
     suspend fun getChangeByNaturalKey(characterId: Long, year: Int, fieldKey: String, newValue: String): CharacterStateChange?
 
+    /** 엑셀 왕복 안정 식별자 매칭 — 코드 우선, 자연키는 구버전 파일 폴백 */
+    @Query("SELECT * FROM character_state_changes WHERE code = :code LIMIT 1")
+    suspend fun getChangeByCode(code: String): CharacterStateChange?
+
     /** 필드 키 변경 시 해당 세계관 캐릭터들의 상태변화 이력 fieldKey를 일괄 갱신 (무통보 이력 파손 방지) */
     @Query("""
         UPDATE character_state_changes SET fieldKey = :newKey
