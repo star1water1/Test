@@ -740,9 +740,14 @@ abstract class AppDatabase : RoomDatabase() {
             override fun onOpen(db: SupportSQLiteDatabase) {
                 super.onOpen(db)
                 CoroutineScope(Dispatchers.IO).launch {
-                    // INSTANCE는 build() 완료 후 설정되므로 여기서 getDatabase()로 안전하게 참조
-                    val database = getDatabase(context)
-                    seedBuiltInPresets(database)
+                    // 루트 코루틴이라 예외가 새면 프로세스가 죽는다 — 시드 실패는 치명이 아니므로 로그로 격리
+                    try {
+                        // INSTANCE는 build() 완료 후 설정되므로 여기서 getDatabase()로 안전하게 참조
+                        val database = getDatabase(context)
+                        seedBuiltInPresets(database)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Built-in preset seeding failed (non-fatal)", e)
+                    }
                 }
             }
 
