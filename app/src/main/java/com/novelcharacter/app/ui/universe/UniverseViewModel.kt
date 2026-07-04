@@ -12,8 +12,12 @@ import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.data.model.RecentActivity
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.UserPresetTemplate
+import com.novelcharacter.app.R
 import com.novelcharacter.app.util.PresetTemplates
 import com.novelcharacter.app.util.Event
+import com.novelcharacter.app.util.OpResult
+import com.novelcharacter.app.util.reportResult
+import com.novelcharacter.app.util.logResult
 import com.google.gson.Gson
 import android.util.Log
 import kotlinx.coroutines.Job
@@ -31,6 +35,11 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
     val allUniverses: LiveData<List<Universe>> = universeRepository.allUniverses
     val recentActivities: LiveData<List<RecentActivity>> = recentActivityDao.getRecentActivities(5)
     val userPresets: LiveData<List<UserPresetTemplate>> = userPresetDao.getAllTemplates()
+
+    // 데이터 처리 결과 알림 채널 (변수 제어: 모든 의미있는 조작 결과 통보)
+    private val _result = MutableLiveData<OpResult?>()
+    val result: LiveData<OpResult?> = _result
+    fun clearResult() { _result.value = null }
 
     // 각 세계관의 작품 수, 필드 수를 캐시
     private val _universeNovelCounts = MutableLiveData<Map<Long, Int>>()
@@ -59,24 +68,36 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
     fun insertUniverse(universe: Universe) = viewModelScope.launch {
         try {
             universeRepository.insertUniverse(universe)
+            reportResult(_result, OpResult.success(OpResult.CAT_UNIVERSE,
+                app.getString(R.string.result_universe_saved, universe.name)))
         } catch (e: Exception) {
             Log.e("UniverseViewModel", "Failed to insert universe", e)
+            reportResult(_result, OpResult.failure(OpResult.CAT_UNIVERSE,
+                app.getString(R.string.result_universe_save_failed), e.message))
         }
     }
 
     fun updateUniverse(universe: Universe) = viewModelScope.launch {
         try {
             universeRepository.updateUniverse(universe)
+            reportResult(_result, OpResult.success(OpResult.CAT_UNIVERSE,
+                app.getString(R.string.result_universe_updated, universe.name)))
         } catch (e: Exception) {
             Log.e("UniverseViewModel", "Failed to update universe", e)
+            reportResult(_result, OpResult.failure(OpResult.CAT_UNIVERSE,
+                app.getString(R.string.result_universe_update_failed), e.message))
         }
     }
 
     fun deleteUniverse(universe: Universe) = viewModelScope.launch {
         try {
             universeRepository.deleteUniverse(universe)
+            reportResult(_result, OpResult.success(OpResult.CAT_UNIVERSE,
+                app.getString(R.string.result_universe_deleted, universe.name)))
         } catch (e: Exception) {
             Log.e("UniverseViewModel", "Failed to delete universe", e)
+            reportResult(_result, OpResult.failure(OpResult.CAT_UNIVERSE,
+                app.getString(R.string.result_universe_delete_failed), e.message))
         }
     }
 
@@ -93,8 +114,11 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
     fun updateDisplayOrders(universes: List<Universe>) = viewModelScope.launch {
         try {
             universeRepository.updateUniverseDisplayOrders(universes)
+            // 재정렬은 초고빈도 조작 — 성공은 시각 변화가 피드백(무통보), 실패만 알림 (원칙 04)
         } catch (e: Exception) {
             Log.e("UniverseViewModel", "Failed to update display orders", e)
+            reportResult(_result, OpResult.failure(OpResult.CAT_UNIVERSE,
+                app.getString(R.string.result_universe_reorder_failed), e.message))
         }
     }
 
@@ -121,8 +145,13 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
                 }
             }
             Log.i("UniverseViewModel", "Restored $restored built-in presets")
+            reportResult(_result, OpResult.success(OpResult.CAT_PRESET,
+                if (restored > 0) app.getString(R.string.result_preset_restored, restored)
+                else app.getString(R.string.result_preset_restore_none)))
         } catch (e: Exception) {
             Log.e("UniverseViewModel", "Failed to restore built-in presets", e)
+            reportResult(_result, OpResult.failure(OpResult.CAT_PRESET,
+                app.getString(R.string.result_preset_restore_failed), e.message))
         }
     }
 
@@ -136,8 +165,12 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
                 description = description,
                 fieldsJson = json
             ))
+            reportResult(_result, OpResult.success(OpResult.CAT_PRESET,
+                app.getString(R.string.result_preset_saved, name)))
         } catch (e: Exception) {
             Log.e("UniverseViewModel", "Failed to save user preset", e)
+            reportResult(_result, OpResult.failure(OpResult.CAT_PRESET,
+                app.getString(R.string.result_preset_save_failed), e.message))
         }
     }
 
@@ -145,8 +178,12 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
     fun updateUserPreset(preset: UserPresetTemplate) = viewModelScope.launch {
         try {
             userPresetDao.update(preset.copy(updatedAt = System.currentTimeMillis()))
+            reportResult(_result, OpResult.success(OpResult.CAT_PRESET,
+                app.getString(R.string.result_preset_updated, preset.name)))
         } catch (e: Exception) {
             Log.e("UniverseViewModel", "Failed to update user preset", e)
+            reportResult(_result, OpResult.failure(OpResult.CAT_PRESET,
+                app.getString(R.string.result_preset_update_failed), e.message))
         }
     }
 
@@ -154,8 +191,12 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
     fun deleteUserPreset(preset: UserPresetTemplate) = viewModelScope.launch {
         try {
             userPresetDao.delete(preset)
+            reportResult(_result, OpResult.success(OpResult.CAT_PRESET,
+                app.getString(R.string.result_preset_deleted, preset.name)))
         } catch (e: Exception) {
             Log.e("UniverseViewModel", "Failed to delete user preset", e)
+            reportResult(_result, OpResult.failure(OpResult.CAT_PRESET,
+                app.getString(R.string.result_preset_delete_failed), e.message))
         }
     }
 
@@ -172,8 +213,13 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
                     universeRepository.insertAllFields(fieldsWithId)
                 }
                 _presetApplied.value = Event(template.universe.name)
+                // 성공은 presetApplied 이벤트로 이미 통보 — 이력만 추가
+                logResult(OpResult.success(OpResult.CAT_PRESET,
+                    app.getString(R.string.result_preset_applied, template.universe.name)))
             } catch (e: Exception) {
                 Log.e("UniverseViewModel", "Failed to apply preset", e)
+                reportResult(_result, OpResult.failure(OpResult.CAT_PRESET,
+                    app.getString(R.string.result_preset_apply_failed), e.message))
             }
         }
 

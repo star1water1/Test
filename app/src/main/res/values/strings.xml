@@ -1439,4 +1439,46 @@
     <string name="op_cat_trash">휴지통</string>
     <string name="op_cat_maintenance">유지보수</string>
     <string name="op_cat_batch">일괄 작업</string>
+
+    <!-- 결과 알림 요약 (Layer 5) — 세계관/작품/세력/프리셋 -->
+    <string name="result_universe_saved">세계관 \"%1$s\" 저장됨</string>
+    <string name="result_universe_updated">세계관 \"%1$s\" 수정됨</string>
+    <string name="result_universe_deleted">세계관 \"%1$s\" 삭제됨</string>
+    <string name="result_universe_save_failed">세계관 저장 실패</string>
+    <string name="result_universe_update_failed">세계관 수정 실패</string>
+    <string name="result_universe_delete_failed">세계관 삭제 실패</string>
+    <string name="result_universe_reorder_failed">세계관 순서 변경 실패</string>
+    <string name="result_novel_saved">작품 \"%1$s\" 저장됨</string>
+    <string name="result_novel_updated">작품 \"%1$s\" 수정됨</string>
+    <string name="result_novel_deleted">작품 \"%1$s\" 삭제됨</string>
+    <string name="result_novel_save_failed">작품 저장 실패</string>
+    <string name="result_novel_update_failed">작품 수정 실패</string>
+    <string name="result_novel_delete_failed">작품 삭제 실패</string>
+    <string name="result_novel_reorder_failed">작품 순서 변경 실패</string>
+    <string name="result_novel_pin_failed">작품 고정 변경 실패</string>
+    <string name="result_novel_stdyear_sync_failed">표준연도 변경 반영 실패 — 캐릭터 나이가 갱신되지 않았을 수 있습니다</string>
+    <string name="result_preset_restored">기본 프리셋 %1$d개 복원됨</string>
+    <string name="result_preset_restore_none">복원할 기본 프리셋이 없습니다</string>
+    <string name="result_preset_restore_failed">기본 프리셋 복원 실패</string>
+    <string name="result_preset_saved">프리셋 \"%1$s\" 저장됨</string>
+    <string name="result_preset_save_failed">프리셋 저장 실패</string>
+    <string name="result_preset_updated">프리셋 \"%1$s\" 수정됨</string>
+    <string name="result_preset_update_failed">프리셋 수정 실패</string>
+    <string name="result_preset_deleted">프리셋 \"%1$s\" 삭제됨</string>
+    <string name="result_preset_delete_failed">프리셋 삭제 실패</string>
+    <string name="result_preset_applied">프리셋 \"%1$s\" 적용됨</string>
+    <string name="result_preset_apply_failed">프리셋 적용 실패</string>
+    <string name="result_faction_saved">세력 \"%1$s\" 저장됨</string>
+    <string name="result_faction_updated">세력 \"%1$s\" 수정됨</string>
+    <string name="result_faction_deleted">세력 \"%1$s\" 삭제됨</string>
+    <string name="result_faction_save_failed">세력 저장 실패</string>
+    <string name="result_faction_update_failed">세력 수정 실패</string>
+    <string name="result_faction_delete_failed">세력 삭제 실패</string>
+    <string name="result_faction_reorder_failed">세력 순서 변경 실패</string>
+    <string name="result_faction_member_added">세력 멤버 %1$d명 추가됨</string>
+    <string name="result_faction_member_add_failed">세력 멤버 추가 실패</string>
+    <string name="result_faction_member_removed">세력 멤버 제거됨</string>
+    <string name="result_faction_member_remove_failed">세력 멤버 제거 실패</string>
+    <string name="result_faction_member_departed">세력 멤버 탈퇴 처리됨</string>
+    <string name="result_faction_member_depart_failed">세력 멤버 탈퇴 처리 실패</string>
 </resources>

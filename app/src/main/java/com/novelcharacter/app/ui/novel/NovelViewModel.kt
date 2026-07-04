@@ -7,9 +7,12 @@ import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.switchMap
 import androidx.lifecycle.viewModelScope
 import com.novelcharacter.app.NovelCharacterApp
+import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.RecentActivity
 import com.novelcharacter.app.util.StandardYearSyncHelper
+import com.novelcharacter.app.util.OpResult
+import com.novelcharacter.app.util.reportResult
 import com.google.gson.Gson
 import android.util.Log
 import kotlinx.coroutines.launch
@@ -24,6 +27,11 @@ class NovelViewModel(application: Application) : AndroidViewModel(application) {
     private val standardYearSyncHelper = StandardYearSyncHelper(characterRepository, universeRepository)
     private val gson = Gson()
     val allNovels: LiveData<List<Novel>> = novelRepository.allNovels
+
+    // 데이터 처리 결과 알림 채널 (변수 제어: 모든 의미있는 조작 결과 통보)
+    private val _result = MutableLiveData<OpResult?>()
+    val result: LiveData<OpResult?> = _result
+    fun clearResult() { _result.value = null }
 
     private val _universeId = MutableLiveData<Long?>()
 
@@ -52,40 +60,58 @@ class NovelViewModel(application: Application) : AndroidViewModel(application) {
     fun insertNovel(novel: Novel) = viewModelScope.launch {
         try {
             novelRepository.insertNovel(novel)
+            reportResult(_result, OpResult.success(OpResult.CAT_NOVEL,
+                app.getString(R.string.result_novel_saved, novel.title)))
         } catch (e: Exception) {
             Log.e("NovelViewModel", "Failed to insert novel", e)
+            reportResult(_result, OpResult.failure(OpResult.CAT_NOVEL,
+                app.getString(R.string.result_novel_save_failed), e.message))
         }
     }
 
     fun updateNovel(novel: Novel) = viewModelScope.launch {
         try {
             novelRepository.updateNovel(novel)
+            reportResult(_result, OpResult.success(OpResult.CAT_NOVEL,
+                app.getString(R.string.result_novel_updated, novel.title)))
         } catch (e: Exception) {
             Log.e("NovelViewModel", "Failed to update novel", e)
+            reportResult(_result, OpResult.failure(OpResult.CAT_NOVEL,
+                app.getString(R.string.result_novel_update_failed), e.message))
         }
     }
 
     fun deleteNovel(novel: Novel) = viewModelScope.launch {
         try {
             novelRepository.deleteNovel(novel)
+            reportResult(_result, OpResult.success(OpResult.CAT_NOVEL,
+                app.getString(R.string.result_novel_deleted, novel.title)))
         } catch (e: Exception) {
             Log.e("NovelViewModel", "Failed to delete novel", e)
+            reportResult(_result, OpResult.failure(OpResult.CAT_NOVEL,
+                app.getString(R.string.result_novel_delete_failed), e.message))
         }
     }
 
     fun updateDisplayOrders(novels: List<Novel>) = viewModelScope.launch {
         try {
             novelRepository.updateNovelDisplayOrders(novels)
+            // 재정렬은 초고빈도 조작 — 성공 무통보, 실패만 알림 (원칙 04)
         } catch (e: Exception) {
             Log.e("NovelViewModel", "Failed to update display orders", e)
+            reportResult(_result, OpResult.failure(OpResult.CAT_NOVEL,
+                app.getString(R.string.result_novel_reorder_failed), e.message))
         }
     }
 
     fun togglePin(novel: Novel) = viewModelScope.launch {
         try {
             novelRepository.setPinned(novel.id, !novel.isPinned)
+            // 핀 토글은 초고빈도 조작 — 성공 무통보, 실패만 알림 (원칙 04)
         } catch (e: Exception) {
             Log.e("NovelViewModel", "Failed to toggle pin", e)
+            reportResult(_result, OpResult.failure(OpResult.CAT_NOVEL,
+                app.getString(R.string.result_novel_pin_failed), e.message))
         }
     }
 
@@ -134,8 +160,11 @@ class NovelViewModel(application: Application) : AndroidViewModel(application) {
     fun onStandardYearChanged(novel: Novel, oldStdYear: Int?, newStdYear: Int?) = viewModelScope.launch {
         try {
             standardYearSyncHelper.onStandardYearChanged(novel, oldStdYear, newStdYear)
+            // 성공은 작품 저장 알림에 포함 — 실패만 별도 통보 (캐릭터 나이 파급 실패 방지)
         } catch (e: Exception) {
             Log.e("NovelViewModel", "Failed to sync standard year change", e)
+            reportResult(_result, OpResult.failure(OpResult.CAT_NOVEL,
+                app.getString(R.string.result_novel_stdyear_sync_failed), e.message))
         }
     }
 

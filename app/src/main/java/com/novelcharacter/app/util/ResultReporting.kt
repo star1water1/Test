@@ -16,6 +16,14 @@ fun AndroidViewModel.reportResult(channel: MutableLiveData<OpResult?>, result: O
 }
 
 /**
+ * 작업 이력에만 기록한다(즉시 알림은 하지 않음). 이미 자체 Toast/Event로 성공을 알리는 조작이
+ * 이력 완성도를 위해 기록만 추가할 때 사용한다 — 중복 알림 방지.
+ */
+fun AndroidViewModel.logResult(result: OpResult) {
+    (getApplication() as NovelCharacterApp).operationLogRepository.logAsync(result)
+}
+
+/**
  * 결과 채널을 갖는 ViewModel용 공통 인터페이스(선택적).
  * 구현하면 Fragment가 result/clearResult를 일관되게 관측할 수 있다.
  */
