@@ -139,6 +139,13 @@ class SettingsFragment : Fragment() {
             findNavController().navigate(R.id.trashFragment)
         }
 
+        binding.storageRow.setOnClickListener {
+            findNavController().navigate(R.id.storageFragment)
+        }
+
+        // 자동 백업 이미지 기본값이 데이터 전용으로 바뀐 것을 최초 1회 고지 (변수 제어 — 무통보 변경 금지)
+        maybeShowBackupImageNotice()
+
         binding.backupRestoreRow.setOnClickListener {
             showBackupRestoreDialog()
         }
@@ -297,6 +304,21 @@ class SettingsFragment : Fragment() {
 
             binding.backupStatusText.text = sb.toString()
         }
+    }
+
+    /**
+     * 자동 백업 이미지 포함 기본값이 데이터 전용(false)으로 바뀐 것을 최초 1회 안내한다.
+     * 무통보 변경 금지(변수 제어) — 이미지는 앱에 그대로 보관되며 재활성화 경로를 함께 알린다.
+     */
+    private fun maybeShowBackupImageNotice() {
+        val ctx = context ?: return
+        if (com.novelcharacter.app.util.OnboardingPrefs.isShown(ctx, com.novelcharacter.app.util.OnboardingPrefs.KEY_BACKUP_IMAGE_NOTICE_SHOWN)) return
+        com.novelcharacter.app.util.OnboardingPrefs.markShown(ctx, com.novelcharacter.app.util.OnboardingPrefs.KEY_BACKUP_IMAGE_NOTICE_SHOWN)
+        AlertDialog.Builder(ctx)
+            .setTitle(R.string.backup_image_notice_title)
+            .setMessage(R.string.backup_image_notice_message)
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {

@@ -200,6 +200,12 @@
         android:label="@string/trash_title"
         tools:layout="@layout/fragment_trash" />
 
+    <fragment
+        android:id="@+id/storageFragment"
+        android:name="com.novelcharacter.app.ui.settings.StorageFragment"
+        android:label="@string/storage_title"
+        tools:layout="@layout/fragment_storage" />
+
     <!-- Statistics -->
     <fragment
         android:id="@+id/statsMainFragment"

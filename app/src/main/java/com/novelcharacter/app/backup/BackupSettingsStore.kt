@@ -13,7 +13,11 @@ private val Context.backupSettingsDataStore: DataStore<Preferences> by preferenc
 
 /**
  * 자동 백업 옵션 저장소 — 이미지 포함 여부, 보관 개수.
- * 기본값은 기존 동작(이미지 포함, 3개 보관)과 동일하며, 사용자가 자율적으로 조정할 수 있다.
+ *
+ * 이미지 포함 기본값은 false(데이터 전용)이다. 자동 백업 .enc는 이미지가 든 filesDir 안에
+ * 저장되므로 이미지를 포함해도 filesDir 손실에 대한 추가 보호가 없고(순수 용량 낭비),
+ * 기기 이전은 '이미지 포함 내보내기'가 담당한다. 사용자는 이미지 포함/보관 개수를 자율 조정할 수 있으며,
+ * 기존에 값을 명시 설정한 사용자는 그 값이 그대로 유지된다(기본값은 미설정일 때만 적용).
  */
 class BackupSettingsStore(private val context: Context) {
 
@@ -21,7 +25,8 @@ class BackupSettingsStore(private val context: Context) {
         private val KEY_INCLUDE_IMAGES = booleanPreferencesKey("include_images")
         private val KEY_MAX_BACKUPS = intPreferencesKey("max_backups")
 
-        const val DEFAULT_INCLUDE_IMAGES = true
+        // 데이터 전용이 sane default — 이미지는 filesDir에 영구 보관되므로 매일 재복사할 이유가 없다.
+        const val DEFAULT_INCLUDE_IMAGES = false
         const val DEFAULT_MAX_BACKUPS = 3
 
         /** 보관 개수 선택지 */
