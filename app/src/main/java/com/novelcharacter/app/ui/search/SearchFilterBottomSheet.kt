@@ -12,6 +12,7 @@ import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.google.android.material.chip.Chip
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.FieldDefinition
+import com.novelcharacter.app.data.model.FieldFilter
 import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.databinding.BottomSheetSearchFilterBinding
 import kotlinx.coroutines.launch

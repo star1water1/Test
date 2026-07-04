@@ -2,23 +2,16 @@ package com.novelcharacter.app.ui.search
 
 import android.app.Application
 import androidx.lifecycle.*
-import com.google.gson.Gson
-import com.google.gson.reflect.TypeToken
 import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.Character
+import com.novelcharacter.app.data.model.FieldFilter
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.SearchPreset
 import com.novelcharacter.app.data.model.TimelineEvent
 import com.novelcharacter.app.util.Event
+import com.novelcharacter.app.util.FieldFilterHelper
 import kotlinx.coroutines.launch
-
-data class FieldFilter(
-    val fieldId: Long,
-    val fieldName: String,
-    val values: List<String>,
-    val matchMode: String = "exact"  // "exact" | "contains"
-)
 
 sealed class SearchResultItem {
     data class SectionHeader(val title: String) : SearchResultItem()
@@ -48,7 +41,6 @@ class GlobalSearchViewModel(application: Application) : AndroidViewModel(applica
     private val _presetAppliedEvent = MutableLiveData<Event<String>?>()
     val presetAppliedEvent: LiveData<Event<String>?> = _presetAppliedEvent
 
-    private val gson = Gson()
     private val db = app.database
 
     init {
@@ -189,7 +181,7 @@ class GlobalSearchViewModel(application: Application) : AndroidViewModel(applica
 
             if (filters.isNotEmpty()) {
                 viewModelScope.launch {
-                    filteredCharIds = applyFieldFilters(filters)
+                    filteredCharIds = FieldFilterHelper.applyFieldFilters(db.characterFieldValueDao(), filters)
                     filterReady = true
                     // addSource 콜백이 이미 실행되어 데이터가 채워졌을 수 있으므로 combine 호출
                     combine()
@@ -230,41 +222,12 @@ class GlobalSearchViewModel(application: Application) : AndroidViewModel(applica
         _fieldFilters.value = emptyList()
     }
 
-    fun getFiltersJson(): String {
-        val filters = _fieldFilters.value ?: emptyList()
-        return if (filters.isEmpty()) "{}" else gson.toJson(filters)
-    }
+    fun getFiltersJson(): String =
+        FieldFilterHelper.filtersToJson(_fieldFilters.value ?: emptyList())
 
     fun applyFiltersFromJson(json: String) {
-        if (json.isBlank() || json == "{}") {
-            _fieldFilters.value = emptyList()
-            return
-        }
-        try {
-            val type = object : TypeToken<List<FieldFilter>>() {}.type
-            val filters: List<FieldFilter> = gson.fromJson(json, type)
-            _fieldFilters.value = filters
-        } catch (_: Exception) {
-            _fieldFilters.value = emptyList()
-        }
+        _fieldFilters.value = FieldFilterHelper.filtersFromJson(json)
     }
-
-    private suspend fun applyFieldFilters(filters: List<FieldFilter>): Set<Long> {
-        var resultIds: Set<Long>? = null
-        for (filter in filters) {
-            val idsForFilter = mutableSetOf<Long>()
-            for (value in filter.values) {
-                val ids = when (filter.matchMode) {
-                    "contains" -> db.characterFieldValueDao().getCharacterIdsByFieldValueContains(filter.fieldId, com.novelcharacter.app.data.repository.sanitizeLikeQuery(value))
-                    else -> db.characterFieldValueDao().getCharacterIdsByFieldValue(filter.fieldId, value)
-                }
-                idsForFilter.addAll(ids)
-            }
-            resultIds = resultIds?.intersect(idsForFilter) ?: idsForFilter
-        }
-        return resultIds ?: emptySet()
-    }
-
 
     /** 특정 필드의 유니크 값 목록 조회 (필터 UI용) */
     suspend fun getFieldValues(fieldDefId: Long): List<String> {
