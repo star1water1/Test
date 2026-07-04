@@ -55,17 +55,6 @@ class CharacterListFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        // 카드 이미지 롱프레스(이미지 뷰어) 1회성 힌트 (B-8)
-        val hintCtx = requireContext()
-        if (savedInstanceState == null &&
-            !com.novelcharacter.app.util.OnboardingPrefs.isShown(hintCtx, com.novelcharacter.app.util.OnboardingPrefs.KEY_CHARACTER_IMAGE_HINT_SHOWN)
-        ) {
-            com.novelcharacter.app.util.OnboardingPrefs.markShown(hintCtx, com.novelcharacter.app.util.OnboardingPrefs.KEY_CHARACTER_IMAGE_HINT_SHOWN)
-            com.google.android.material.snackbar.Snackbar
-                .make(binding.root, R.string.hint_character_image_longpress, com.google.android.material.snackbar.Snackbar.LENGTH_LONG)
-                .show()
-        }
-
         novelId = arguments?.getLong("novelId", -1L) ?: -1L
         viewModel.setNovelFilter(novelId)
 
@@ -480,6 +469,27 @@ class CharacterListFragment : Fragment() {
             binding.emptyText.visibility = if (isEmpty) View.VISIBLE else View.GONE
             binding.characterRecyclerView.visibility = if (isEmpty) View.GONE else View.VISIBLE
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        maybeShowImageLongPressHint()
+    }
+
+    /**
+     * 카드 이미지 롱프레스(이미지 뷰어) 1회성 힌트 (B-8).
+     * onViewCreated가 아닌 onResume에서 호출한다 — 뷰가 윈도우에 부착되기 전
+     * Snackbar.make는 "No suitable parent found"로 크래시할 수 있다 (TimelineFragment 동일 패턴 참조).
+     */
+    private fun maybeShowImageLongPressHint() {
+        val ctx = context ?: return
+        if (com.novelcharacter.app.util.OnboardingPrefs.isShown(ctx, com.novelcharacter.app.util.OnboardingPrefs.KEY_CHARACTER_IMAGE_HINT_SHOWN)) return
+        val root = _binding?.root ?: return
+        if (!root.isAttachedToWindow) return
+        com.novelcharacter.app.util.OnboardingPrefs.markShown(ctx, com.novelcharacter.app.util.OnboardingPrefs.KEY_CHARACTER_IMAGE_HINT_SHOWN)
+        com.google.android.material.snackbar.Snackbar
+            .make(root, R.string.hint_character_image_longpress, com.google.android.material.snackbar.Snackbar.LENGTH_LONG)
+            .show()
     }
 
     override fun onDestroyView() {
