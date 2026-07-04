@@ -199,6 +199,39 @@ class SystemMaintenanceService(
     }
 
     /**
+     * 고아 이미지 파일 정리 — 디스크(filesDir 루트)에는 있으나 DB·휴지통 어디서도 참조되지 않는
+     * 이미지 파일을 삭제한다. 편집 중 교체·임포트 재매핑·참조 소실 등으로 누적된 파일이 대상.
+     *
+     * 무손실 보장: (1) 참조 집합 = DB(캐릭터/세계관/작품) ∪ 휴지통 보류 이미지 를 유일 기준으로 삼고,
+     * (2) 휴지통 복원 대상 이미지는 반드시 제외하며, (3) backups/exports 등 하위 디렉토리와
+     * 비이미지 파일은 건드리지 않는다.
+     *
+     * @return Pair(삭제 파일 수, 확보 바이트 수)
+     */
+    suspend fun cleanOrphanImageFiles(): Pair<Int, Long> {
+        val filesDir = context.filesDir
+        val gson = Gson()
+
+        val referenced = com.novelcharacter.app.excel.ImageZipHelper.collectAllImagePaths(db, gson)
+            .mapNotNull { runCatching { java.io.File(it).canonicalPath }.getOrNull() }
+            .toSet()
+        val trashHeld = com.novelcharacter.app.util.StorageAnalyzer.collectTrashHeldPaths(db, gson)
+        val keep = referenced + trashHeld
+
+        val rootFiles = filesDir.listFiles { f -> f.isFile } ?: return 0 to 0L
+        var deleted = 0
+        var freed = 0L
+        for (f in rootFiles) {
+            if (!com.novelcharacter.app.util.StorageAnalyzer.isImageFile(f.name)) continue
+            val canonical = runCatching { f.canonicalPath }.getOrDefault(f.absolutePath)
+            if (canonical in keep) continue
+            val len = f.length()
+            if (f.delete()) { deleted++; freed += len }
+        }
+        return deleted to freed
+    }
+
+    /**
      * Fix NameBankEntry records where isUsed=true but usedByCharacterId is NULL
      * (can happen if FK SET_NULL fires without going through CharacterRepository.deleteCharacter).
      */

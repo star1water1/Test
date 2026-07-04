@@ -1366,4 +1366,41 @@
     <string name="batch_op_result_clear_field">필드값 삭제</string>
     <string name="batch_op_result_append_memo">메모 추가</string>
     <string name="batch_op_result_delete">삭제</string>
+
+    <!-- 저장 공간 분석/최적화 -->
+    <string name="storage_title">저장 공간</string>
+    <string name="settings_storage_desc">앱 용량을 분류별로 확인하고 불필요한 파일을 정리합니다</string>
+    <string name="storage_total_label">전체 사용량</string>
+    <string name="storage_total_hint">아래는 앱 내부 저장소의 분류별 용량입니다. 자동 백업과 내보내기 캐시가 용량의 큰 부분을 차지할 수 있습니다.</string>
+    <string name="storage_cleanup_section">정리</string>
+    <string name="storage_file_count">%d개</string>
+
+    <string name="storage_cat_referenced">이미지 (사용 중)</string>
+    <string name="storage_cat_backups">자동 백업</string>
+    <string name="storage_cat_export_cache">내보내기 캐시</string>
+    <string name="storage_cat_orphan">고아 이미지 (미참조)</string>
+    <string name="storage_cat_trash">휴지통 보류 이미지</string>
+    <string name="storage_cat_database">데이터베이스</string>
+    <string name="storage_cat_logs">로그</string>
+    <string name="storage_cat_other">기타</string>
+
+    <string name="storage_clean_orphan_images">고아 이미지 정리</string>
+    <string name="storage_clean_orphan_desc">더 이상 어떤 캐릭터·세계관·작품에서도 쓰이지 않는 이미지 파일을 삭제합니다 (휴지통 복원 대상은 보존).</string>
+    <string name="storage_clean_orphan_confirm">사용 중이거나 휴지통에 보관된 이미지는 건드리지 않고, 어디에서도 참조되지 않는 이미지 파일만 삭제합니다. 계속할까요?</string>
+    <string name="storage_clean_orphan_done">고아 이미지 %1$d개 삭제 (%2$s 확보)</string>
+
+    <string name="storage_clear_export_cache">내보내기 캐시 비우기</string>
+    <string name="storage_clear_export_cache_desc">엑셀/월드패키지/카드 내보내기의 임시 산출물을 삭제합니다. 원본 데이터·이미지에는 영향이 없으며 필요 시 다시 생성됩니다.</string>
+    <string name="storage_clear_cache_confirm">내보내기 임시 파일을 모두 삭제합니다. 원본 데이터에는 영향이 없습니다. 계속할까요?</string>
+    <string name="storage_clear_cache_done">내보내기 캐시 정리 완료 (%s 확보)</string>
+
+    <string name="storage_manage_backup">자동 백업 관리</string>
+    <string name="storage_manage_backup_desc">이미지 포함 여부·보관 개수는 설정의 \'자동 백업 관리\'에서 조정합니다.</string>
+
+    <string name="storage_clean_run">정리</string>
+    <string name="storage_working">정리 중…</string>
+
+    <!-- 자동 백업 이미지 기본값 변경 1회 고지 -->
+    <string name="backup_image_notice_title">자동 백업이 데이터 전용으로 바뀌었어요</string>
+    <string name="backup_image_notice_message">용량 절약을 위해 자동 백업은 이제 이미지를 포함하지 않습니다(데이터만 백업). 이미지는 앱에 그대로 보관되므로 데이터 보호에는 변화가 없습니다.\n\n기기 이전(폰 교체)용 이미지 백업이 필요하면 \'이미지 포함 내보내기\'를 사용하세요. 자동 백업에 이미지를 다시 포함하려면 설정 &gt; 자동 백업 관리에서 켤 수 있습니다.</string>
 </resources>
