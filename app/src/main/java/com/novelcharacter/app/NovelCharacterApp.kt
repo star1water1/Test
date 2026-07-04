@@ -16,6 +16,7 @@ import com.novelcharacter.app.data.repository.NameBankRepository
 import com.novelcharacter.app.data.repository.SearchPresetRepository
 import com.novelcharacter.app.data.repository.FactionRepository
 import com.novelcharacter.app.data.repository.TrashRepository
+import com.novelcharacter.app.data.repository.OperationLogRepository
 import com.novelcharacter.app.backup.AutoBackupWorker
 import com.novelcharacter.app.backup.BackupEncryptor
 import com.novelcharacter.app.backup.BackupStatusStore
@@ -56,6 +57,7 @@ class NovelCharacterApp : Application() {
     val searchPresetRepository by lazy { SearchPresetRepository(database.searchPresetDao()) }
     val factionRepository by lazy { FactionRepository(database) }
     val trashRepository by lazy { TrashRepository(database) }
+    val operationLogRepository by lazy { OperationLogRepository(database) }
     val recentActivityDao by lazy { database.recentActivityDao() }
     val backupStatusStore by lazy { BackupStatusStore(this) }
 

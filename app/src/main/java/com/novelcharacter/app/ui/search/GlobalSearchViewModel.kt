@@ -10,7 +10,7 @@ import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.SearchPreset
 import com.novelcharacter.app.data.model.TimelineEvent
-import com.novelcharacter.app.ui.universe.UniverseViewModel.Event
+import com.novelcharacter.app.util.Event
 import kotlinx.coroutines.launch
 
 data class FieldFilter(

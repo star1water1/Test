@@ -13,6 +13,7 @@ import com.novelcharacter.app.data.model.RecentActivity
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.UserPresetTemplate
 import com.novelcharacter.app.util.PresetTemplates
+import com.novelcharacter.app.util.Event
 import com.google.gson.Gson
 import android.util.Log
 import kotlinx.coroutines.Job
@@ -158,12 +159,7 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    // SingleLiveEvent pattern: wrap value so observer consumes it only once
-    class Event<out T>(private val content: T) {
-        private var hasBeenHandled = false
-        fun getContentIfNotHandled(): T? = if (hasBeenHandled) null else { hasBeenHandled = true; content }
-    }
-
+    // SingleLiveEvent는 util.Event로 승격됨 (중복 정의 제거)
     private val _presetApplied = MutableLiveData<Event<String>?>()
     val presetApplied: LiveData<Event<String>?> = _presetApplied
 
