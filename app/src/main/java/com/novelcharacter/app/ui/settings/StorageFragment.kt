@@ -163,9 +163,19 @@ class StorageFragment : Fragment() {
         showResult(getString(R.string.storage_working))
         viewLifecycleOwner.lifecycleScope.launch {
             val service = SystemMaintenanceService(ctx.applicationContext, app.database)
-            val (count, freed) = service.cleanOrphanImageFiles()
+            val result = service.cleanOrphanImageFiles()
             if (_binding == null) return@launch
-            showResult(getString(R.string.storage_clean_orphan_done, count, StorageAnalyzer.formatBytes(freed)))
+            when {
+                // 참조 집합이 불완전(데이터 손상)해 안전을 위해 삭제하지 않음
+                result.aborted -> showResult(getString(R.string.storage_clean_orphan_aborted))
+                else -> {
+                    val base = getString(R.string.storage_clean_orphan_done, result.deleted, StorageAnalyzer.formatBytes(result.freed))
+                    val msg = if (result.skippedRecent > 0) {
+                        base + "\n" + getString(R.string.storage_clean_orphan_skipped_recent, result.skippedRecent)
+                    } else base
+                    showResult(msg)
+                }
+            }
             loadReport()
         }
     }

@@ -115,6 +115,40 @@ object ImageZipHelper {
         return paths
     }
 
+    /** 이미지 경로 수집 결과 — 파싱 실패가 하나라도 있으면 참조 집합이 불완전함을 알린다. */
+    data class CollectResult(val paths: Set<String>, val anyParseFailed: Boolean)
+
+    /**
+     * collectAllImagePaths의 fail-safe 변형.
+     *
+     * imagePaths JSON이 손상되어 파싱에 실패하면 그 항목의 이미지가 참조 집합에서 누락된다.
+     * 이 상태로 고아 정리를 강행하면 손상 1건이 실사용 이미지 전부의 삭제로 번질 수 있으므로,
+     * 파싱 실패 여부를 별도로 보고해 호출부(고아 정리)가 안전하게 중단할 수 있게 한다.
+     * (빈 값 "[]"·blank는 실패가 아니라 "이미지 없음"으로 구분한다.)
+     */
+    suspend fun collectAllImagePathsWithStatus(db: AppDatabase, gson: Gson = Gson()): CollectResult {
+        val paths = mutableSetOf<String>()
+        var anyFailed = false
+
+        fun consume(json: String) {
+            if (json.isBlank() || json == "[]") return
+            val parsed = try {
+                gson.fromJson(json, Array<String>::class.java)
+            } catch (_: Exception) {
+                anyFailed = true
+                return
+            }
+            if (parsed == null) { anyFailed = true; return }
+            paths.addAll(parsed)
+        }
+
+        for (c in db.characterDao().getAllCharactersList()) consume(c.imagePaths)
+        for (u in db.universeDao().getAllUniversesList()) consume(u.imagePaths)
+        for (n in db.novelDao().getAllNovelsList()) consume(n.imagePaths)
+
+        return CollectResult(paths, anyFailed)
+    }
+
     private fun parseImagePaths(json: String, gson: Gson): Array<String>? {
         if (json.isBlank() || json == "[]") return null
         return try {

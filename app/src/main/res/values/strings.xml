@@ -1386,8 +1386,10 @@
 
     <string name="storage_clean_orphan_images">고아 이미지 정리</string>
     <string name="storage_clean_orphan_desc">더 이상 어떤 캐릭터·세계관·작품에서도 쓰이지 않는 이미지 파일을 삭제합니다 (휴지통 복원 대상은 보존).</string>
-    <string name="storage_clean_orphan_confirm">사용 중이거나 휴지통에 보관된 이미지는 건드리지 않고, 어디에서도 참조되지 않는 이미지 파일만 삭제합니다. 계속할까요?</string>
+    <string name="storage_clean_orphan_confirm">사용 중이거나 휴지통에 보관된 이미지, 미저장 편집 중인 이미지는 건드리지 않고, 어디에서도 참조되지 않는 이미지 파일만 삭제합니다. 계속할까요?</string>
     <string name="storage_clean_orphan_done">고아 이미지 %1$d개 삭제 (%2$s 확보)</string>
+    <string name="storage_clean_orphan_skipped_recent">최근 편집·가져오기 중일 수 있는 파일 %1$d개는 안전을 위해 보호했습니다.</string>
+    <string name="storage_clean_orphan_aborted">일부 데이터를 읽을 수 없어 안전을 위해 정리를 중단했습니다. 설정 &gt; 시스템 관리의 무결성 점검 후 다시 시도하세요.</string>
 
     <string name="storage_clear_export_cache">내보내기 캐시 비우기</string>
     <string name="storage_clear_export_cache_desc">엑셀/월드패키지/카드 내보내기의 임시 산출물을 삭제합니다. 원본 데이터·이미지에는 영향이 없으며 필요 시 다시 생성됩니다.</string>
