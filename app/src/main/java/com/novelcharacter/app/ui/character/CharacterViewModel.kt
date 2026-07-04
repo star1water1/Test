@@ -556,7 +556,8 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         shiftDirection: ShiftDirection,
         delta: Int,
         originalNovelIds: List<Long>,
-        originalUniverseId: Long?
+        originalUniverseId: Long?,
+        eventFieldValues: List<com.novelcharacter.app.data.model.EventFieldValue>? = null
     ) = viewModelScope.launch {
         try {
             val oldYear = event.year - delta
@@ -564,6 +565,9 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
                 timelineRepository.updateEvent(event)
                 timelineRepository.updateEventCharacters(event.id, characterIds)
                 timelineRepository.updateEventNovels(event.id, novelIds)
+                if (eventFieldValues != null) {
+                    db.eventFieldValueDao().replaceAllByEvent(event.id, eventFieldValues.map { it.copy(eventId = event.id) })
+                }
 
                 val scopeEvents = when {
                     originalNovelIds.isNotEmpty() ->
