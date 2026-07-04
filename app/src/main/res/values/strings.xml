@@ -1540,4 +1540,6 @@
     <string name="result_excel_export_failed">엑셀 내보내기 실패</string>
     <string name="result_excel_saved">엑셀 파일 저장 완료</string>
     <string name="result_excel_save_failed">엑셀 파일 저장 실패</string>
+    <string name="result_pdf_shared">PDF 공유 — %1$s</string>
+    <string name="result_pdf_share_failed">PDF 공유 실패</string>
 </resources>

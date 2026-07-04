@@ -22,6 +22,8 @@ import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.novelcharacter.app.util.navigateSafe
 import com.novelcharacter.app.util.notifyResult
+import com.novelcharacter.app.util.logOperation
+import com.novelcharacter.app.util.OpResult
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.chip.Chip
 import com.google.gson.Gson
@@ -943,8 +945,13 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
                     }
                 }
                 webView.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
+                // PDF는 시스템 인쇄 대화상자로 넘어가므로 성공 통보는 그쪽이 담당 — 이력만 기록
+                logOperation(OpResult.success(OpResult.CAT_SHARE,
+                    getString(R.string.result_pdf_shared, character.name)))
             } catch (e: Exception) {
                 if (isAdded) Toast.makeText(requireContext(), e.message, Toast.LENGTH_SHORT).show()
+                logOperation(OpResult.failure(OpResult.CAT_SHARE,
+                    getString(R.string.result_pdf_share_failed), e.message))
             }
         }
     }

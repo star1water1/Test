@@ -39,12 +39,23 @@
 - 재사용: `FieldViewModel.saveError/saveInfo` 채널, `RecentActivity` 엔티티(이력 템플릿), `ExcelImporter` 결과 다이얼로그 구조, 건수 표기(`FactionManageFragment` addMembers).
 - 미사용: `AppLogger`(오류 전용), `RecentActivity`(최근 열람 전용 — 신규 `OperationLog` 사용).
 
-## 구현 배치
-1. **인프라(본 커밋)**: Layer 1~3 + 이력 화면·설정 진입. DB v36.
-2. Layer 4 자동 백업 시스템 알림.
-3. Layer 5 갭 메우기: 세계관/작품/세력 → 필드/관계/상태변화 → 사건/이름은행 → IO/배치/휴지통.
+## 구현 배치 (모두 완료)
+1. **인프라**: Layer 1~3 + 이력 화면·설정 진입. DB v36.
+2. **Layer 4** 자동 백업 시스템 알림.
+3. **Layer 5 갭 메우기**:
+   - **5-a 세계관/작품/세력/프리셋**: `UniverseViewModel`·`NovelViewModel`·`FactionViewModel`에 result 채널. CRUD 성공+실패, 재정렬·핀토글 failure-only. 프리셋 복원/저장/수정/삭제/적용, 세력 멤버 추가(이력만)/제거/탈퇴. `UniverseListFragment`의 낙관적 Toast 3건 제거→실제 결과·건수 통보.
+   - **5-b 필드/관계/상태변화/캐릭터삭제**: `FieldViewModel` `saveError/saveInfo`→`result` 일원화(키변경 자동교정 상세 노출). `CharacterViewModel`에 result 채널 — 관계·관계변화·상태변화 CRUD·캐릭터 삭제 성공+실패, 재정렬·핀토글 failure-only. `StateChangeHelper` 낙관적 Toast 제거→실제 완료 후 통보.
+   - **5-c 사건/이름은행**: `TimelineViewModel` `_error`→`result` 일원화(showError 실패 라우팅, 자동클리어 타이머 제거, 실패도 이력 기록), 사건 저장/수정/이동/삭제·표준연도 변경 성공. `NameBankViewModel` 추가/수정/삭제·사용처리/해제.
+   - **5-d IO/배치/휴지통**: `TrashRepository.emptyTrash()` 건수 반환, `TrashFragment` 영구삭제·비우기 성공(건수)/실패 통보 + 복원 이력. `BatchEditViewModel` 시맨틱 동기화 부분 실패 집계(`syncFailures`)→경고 승격 + 배치 이력. `ExcelExporter` 시트/행 요약 + 내보내기·저장 이력. PDF 공유 이력. (월드패키지·카드 공유는 UI 미연결/미존재로 대상 아님.)
+
+### ViewModel 없는 Fragment 직접 조작 지원
+`util/ResultNotify.kt`에 `Fragment.reportAndNotify(result)`(알림+이력)와 `Fragment.logOperation(result)`(이력만) 추가 — TrashFragment·ExcelExporter·PDF 공유 등 AndroidViewModel을 거치지 않는 IO/공유/휴지통 조작용. `ExcelExporter`는 `appContext`를 `NovelCharacterApp`으로 캐스팅해 `operationLogRepository.logAsync` 직접 호출.
+
+### 중복 알림 방지 원칙
+자체 Toast/Event로 이미 성공을 알리는 조작(프리셋 적용, 세력 멤버추가, 휴지통 복원)은 `logResult`/`logOperation`으로 **이력만** 추가하고 즉시 알림은 기존 경로가 담당. result 채널로 통보하는 조작은 낙관적 Toast를 제거해 실제 성공/실패를 정확히 반영.
 
 ## 문서 이력
 | 버전 | 날짜 | 변경 |
 |------|------|------|
 | v1.0 | 2026.07.04 | 초기 — 조사·설계·범위 규칙, 인프라(Layer 1~3) 구현 |
+| v1.1 | 2026.07.04 | Layer 4·5 전 계층 구현 완료 기록 — 7개 ViewModel result 채널, Fragment 직접 조작용 헬퍼, 낙관적 Toast 정리 |
