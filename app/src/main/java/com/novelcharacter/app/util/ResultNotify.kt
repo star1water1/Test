@@ -4,6 +4,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
 import com.google.android.material.snackbar.Snackbar
+import com.novelcharacter.app.R
 
 /**
  * 데이터 처리 결과를 사용자에게 즉시 알리는 Fragment 확장함수 모음.

@@ -229,15 +229,25 @@ class NovelCharacterApp : Application() {
     }
 
     private fun createNotificationChannel() {
-        val channel = NotificationChannel(
+        val manager = getSystemService(NotificationManager::class.java) ?: return
+        val birthday = NotificationChannel(
             BIRTHDAY_CHANNEL_ID,
             getString(R.string.notification_channel_birthday_name),
             NotificationManager.IMPORTANCE_DEFAULT
         ).apply {
             description = getString(R.string.notification_channel_birthday_desc)
         }
-        val manager = getSystemService(NotificationManager::class.java) ?: return
-        manager.createNotificationChannel(channel)
+        manager.createNotificationChannel(birthday)
+
+        // 자동 백업 실패 통지용 채널 (사용자가 개별 제어 가능하도록 별도 채널)
+        val backup = NotificationChannel(
+            BACKUP_CHANNEL_ID,
+            getString(R.string.notification_channel_backup_name),
+            NotificationManager.IMPORTANCE_HIGH
+        ).apply {
+            description = getString(R.string.notification_channel_backup_desc)
+        }
+        manager.createNotificationChannel(backup)
     }
 
     private fun scheduleBirthdayCheck() {
@@ -280,5 +290,6 @@ class NovelCharacterApp : Application() {
 
     companion object {
         const val BIRTHDAY_CHANNEL_ID = "birthday_channel"
+        const val BACKUP_CHANNEL_ID = "backup_channel"
     }
 }
