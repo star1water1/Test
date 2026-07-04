@@ -90,6 +90,12 @@ val RESERVED_SHEET_NAMES = setOf(
 fun splitCsv(value: String): List<String> =
     value.split(",").map { it.trim() }.filter { it.isNotBlank() }
 
+/**
+ * XLSX 셀 텍스트 규격 한도. 내보내기 절단과 가져오기 저장 한도가 반드시 같은 값을 참조해야
+ * 왕복(내보내기→들여오기)에서 데이터가 추가로 잘리지 않는다 — 단일 소스로 여기서만 정의한다.
+ */
+const val EXCEL_CELL_TEXT_LIMIT = 32767
+
 // ── Sheet Spec factories ──
 
 fun universeSpec() = SheetSpec(
@@ -192,6 +198,7 @@ fun timelineSpec(novelTitles: List<String>, eventFieldHeaders: List<String> = em
         ColumnSpec("관련작품코드", readOnly = true, width = 4000),
         ColumnSpec("정렬순서", width = 3000),
         ColumnSpec("임시배치", dropdownOptions = listOf("Y", "N"), width = 3000),
+        ColumnSpec("코드", readOnly = true, width = 4000),
         ColumnSpec("생성일", readOnly = true, width = 5000)
     ) + eventFieldHeaders.map { ColumnSpec(it, width = 6000) }  // 사건 커스텀 필드 (B-10)
 )
@@ -208,6 +215,7 @@ fun stateChangeSpec() = SheetSpec(
         ColumnSpec("새 값", width = 5000),
         ColumnSpec("설명", width = 10000),
         ColumnSpec("캐릭터코드", readOnly = true, width = 4000),
+        ColumnSpec("코드", readOnly = true, width = 4000),
         ColumnSpec("생성일", readOnly = true, width = 5000)
     )
 )
@@ -241,7 +249,10 @@ fun relationshipChangeSpec() = SheetSpec(
         ColumnSpec("설명", width = 10000),
         ColumnSpec("강도", width = 3000),
         ColumnSpec("양방향", dropdownOptions = listOf("Y", "N"), width = 3000),
-        ColumnSpec("연결사건ID", width = 4000),
+        // 사건 참조는 코드 기반 — DB id는 복원/기기 이전 시 변해 참조로 부적합.
+        // 가져오기는 구버전 "연결사건ID" 컬럼도 계속 인식한다 (하위 호환).
+        ColumnSpec("연결사건코드", readOnly = true, width = 4000),
+        ColumnSpec("코드", readOnly = true, width = 4000),
         ColumnSpec("캐릭터1코드", readOnly = true, width = 4000),
         ColumnSpec("캐릭터2코드", readOnly = true, width = 4000),
         ColumnSpec("생성일", readOnly = true, width = 5000)

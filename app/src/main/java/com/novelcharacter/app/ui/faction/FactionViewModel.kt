@@ -10,6 +10,7 @@ import androidx.lifecycle.viewModelScope
 import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.data.model.Faction
 import com.novelcharacter.app.data.model.FactionMembership
+import com.novelcharacter.app.data.repository.MemberAddResult
 import kotlinx.coroutines.launch
 
 class FactionViewModel(application: Application) : AndroidViewModel(application) {
@@ -72,21 +73,31 @@ class FactionViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun addMember(factionId: Long, characterId: Long, joinYear: Int? = null) = viewModelScope.launch {
+    fun addMember(
+        factionId: Long,
+        characterId: Long,
+        joinYear: Int? = null,
+        onResult: (MemberAddResult) -> Unit = {}
+    ) = viewModelScope.launch {
         try {
-            factionRepository.addMember(factionId, characterId, joinYear)
+            onResult(factionRepository.addMember(factionId, characterId, joinYear))
         } catch (e: Exception) {
             Log.e("FactionViewModel", "Failed to add member", e)
+            onResult(MemberAddResult(0, 0, 0))
         }
     }
 
-    fun addMembers(factionId: Long, characterIds: List<Long>, joinYear: Int?, onResult: (Int) -> Unit = {}) = viewModelScope.launch {
+    fun addMembers(
+        factionId: Long,
+        characterIds: List<Long>,
+        joinYear: Int?,
+        onResult: (MemberAddResult) -> Unit = {}
+    ) = viewModelScope.launch {
         try {
-            val count = factionRepository.addMembers(factionId, characterIds, joinYear)
-            onResult(count)
+            onResult(factionRepository.addMembers(factionId, characterIds, joinYear))
         } catch (e: Exception) {
             Log.e("FactionViewModel", "Failed to add members", e)
-            onResult(0)
+            onResult(MemberAddResult(0, 0, 0))
         }
     }
 

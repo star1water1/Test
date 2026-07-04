@@ -21,6 +21,10 @@ interface CharacterRelationshipChangeDao {
     @Query("SELECT * FROM character_relationship_changes WHERE relationshipId = :relationshipId AND year = :year AND (month = :month OR (month IS NULL AND :month IS NULL)) AND (day = :day OR (day IS NULL AND :day IS NULL)) LIMIT 1")
     suspend fun getChangeByNaturalKey(relationshipId: Long, year: Int, month: Int?, day: Int?): CharacterRelationshipChange?
 
+    /** 엑셀 왕복 안정 식별자 매칭 — 코드 우선, 자연키는 구버전 파일 폴백 */
+    @Query("SELECT * FROM character_relationship_changes WHERE code = :code LIMIT 1")
+    suspend fun getChangeByCode(code: String): CharacterRelationshipChange?
+
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(change: CharacterRelationshipChange): Long
 

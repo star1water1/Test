@@ -53,6 +53,9 @@ class CharacterGrowthFragment : Fragment() {
     private var compareCharacterIds = mutableListOf<Long>()
     private var selectedFieldKeys = mutableSetOf<String>()
 
+    // 기준 캐릭터 세계관의 필드 정의 (key → 정의). 등급 해석·라벨 표기에 사용.
+    private var fieldsByKey: Map<String, FieldDefinition> = emptyMap()
+
     // 라인 색상 팔레트
     private val lineColors = listOf(
         Color.parseColor("#5C6BC0"), // primary
@@ -136,6 +139,7 @@ class CharacterGrowthFragment : Fragment() {
 
             // NUMBER, GRADE 타입 필드만 필터
             val numericFields = fields.filter { it.type == "NUMBER" || it.type == "GRADE" }
+            fieldsByKey = numericFields.associateBy { it.key }
 
             if (numericFields.isEmpty()) {
                 binding.emptyState.visibility = View.VISIBLE
@@ -218,7 +222,7 @@ class CharacterGrowthFragment : Fragment() {
 
                 if (entries.isEmpty()) continue
 
-                val label = "${char.name} - $fieldKey"
+                val label = "${char.name} - ${fieldsByKey[fieldKey]?.name ?: fieldKey}"
                 val dataSet = LineDataSet(entries, label).apply {
                     color = lineColors[colorIndex % lineColors.size]
                     setCircleColor(color)
@@ -252,17 +256,9 @@ class CharacterGrowthFragment : Fragment() {
         // 숫자인 경우 직접 파싱
         value.toFloatOrNull()?.let { return it }
 
-        // GRADE 타입: 기본 매핑 사용 (커스텀 매핑은 FieldDefinition config에서)
-        val defaultGradeMap = mapOf(
-            "SSS" to 15f, "SS" to 13f, "S+" to 11f, "S" to 10f, "S-" to 9f,
-            "A+" to 8.5f, "A" to 8f, "A-" to 7.5f,
-            "B+" to 7f, "B" to 6f, "B-" to 5.5f,
-            "C+" to 5f, "C" to 4f, "C-" to 3.5f,
-            "D+" to 3f, "D" to 2f, "D-" to 1.5f,
-            "E" to 1f, "F" to 0f
-        )
-
-        return defaultGradeMap[value.uppercase()] ?: 0f
+        // GRADE 라벨: 필드 config의 사용자 정의 등급 우선, 미정의 시 표준 기본맵 폴백 — 통계 랭킹·수식과 동일 해석
+        return com.novelcharacter.app.util.GradeValueResolver
+            .resolveForDisplay(fieldsByKey[fieldKey], value)?.toFloat() ?: 0f
     }
 
     override fun onDestroyView() {

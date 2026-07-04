@@ -118,8 +118,15 @@ class TrashRepository(private val db: AppDatabase) {
             )
 
             // 상태변화·태그 — 캐릭터 외 참조 없음
+            // code 충돌 시 재발급 (캐릭터 code와 동일 규칙): 복원 전 엑셀 임포트로 같은 코드가
+            // 재생성된 경우 유니크 위반으로 복원 전체가 실패하는 것을 방지. 레거시(null) 코드는 신규 발급.
             db.characterStateChangeDao().insertAll(
-                data.stateChanges.map { it.copy(id = 0, characterId = targetId) }
+                data.stateChanges.map { change ->
+                    val safeCode = change.code
+                        ?.takeIf { c -> db.characterStateChangeDao().getChangeByCode(c) == null }
+                        ?: generateEntityCode()
+                    change.copy(id = 0, characterId = targetId, code = safeCode)
+                }
             )
             db.characterTagDao().insertAll(
                 data.tags.map { it.copy(id = 0, characterId = targetId) }
@@ -151,7 +158,11 @@ class TrashRepository(private val db: AppDatabase) {
                     .filter { it.relationshipId == rel.id }
                     .map { change ->
                         val eventId = change.eventId?.takeIf { db.timelineDao().getEventById(it) != null }
-                        change.copy(id = 0, relationshipId = newRelId, eventId = eventId)
+                        // code 충돌 시 재발급 — 상태변화 복원과 동일 규칙
+                        val safeCode = change.code
+                            ?.takeIf { c -> db.characterRelationshipChangeDao().getChangeByCode(c) == null }
+                            ?: generateEntityCode()
+                        change.copy(id = 0, relationshipId = newRelId, eventId = eventId, code = safeCode)
                     }
                 if (changes.isNotEmpty()) {
                     db.characterRelationshipChangeDao().insertAll(changes)
