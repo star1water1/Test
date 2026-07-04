@@ -17,7 +17,9 @@ import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.snackbar.Snackbar
+import com.google.android.material.chip.Chip
 import com.novelcharacter.app.R
+import com.novelcharacter.app.data.model.CharacterListPreset
 import com.novelcharacter.app.databinding.FragmentCharacterListBinding
 import com.novelcharacter.app.ui.adapter.BirthdayBannerAdapter
 import com.novelcharacter.app.ui.adapter.CharacterAdapter
@@ -67,6 +69,7 @@ class CharacterListFragment : Fragment() {
         setupCompareButton()
         setupBatchEditBar()
         setupBirthdayBanner()
+        setupFilterSort()
         setupToolbarMenu()
         observeData()
         observeBatchEdit()
@@ -199,9 +202,16 @@ class CharacterListFragment : Fragment() {
             adapter.setReorderMode(false)
             binding.searchEdit.isEnabled = true
             binding.searchEdit.alpha = 1f
+            setFilterSortBarVisible(true)
             updateBirthdayBannerVisibility(true)
             Toast.makeText(requireContext(), R.string.reorder_saved, Toast.LENGTH_SHORT).show()
         } else {
+            // 재정렬은 기본(수동) 정렬 + 필터 없음일 때만 — 정렬/필터된 부분집합에 displayOrder를 찍으면 순서가 손상됨
+            val sortManual = (viewModel.sortSpec.value?.kind ?: CharacterListPreset.SORT_MANUAL) == CharacterListPreset.SORT_MANUAL
+            if (!sortManual || viewModel.hasActiveFilters()) {
+                Toast.makeText(requireContext(), R.string.reorder_needs_manual_sort, Toast.LENGTH_SHORT).show()
+                return
+            }
             // Block reorder when search is active
             val query = binding.searchEdit.text?.toString().orEmpty()
             if (query.isNotBlank()) {
@@ -212,6 +222,7 @@ class CharacterListFragment : Fragment() {
             // 순서변경 모드에서 검색 UI를 명시적으로 비활성화
             binding.searchEdit.isEnabled = false
             binding.searchEdit.alpha = 0.5f
+            setFilterSortBarVisible(false)
             updateBirthdayBannerVisibility(false)
             Toast.makeText(requireContext(), R.string.reorder_hint, Toast.LENGTH_SHORT).show()
         }
@@ -242,6 +253,7 @@ class CharacterListFragment : Fragment() {
                 adapter.setSelectionMode(true)
                 binding.btnCompare.text = getString(R.string.compare_mode_label)
                 binding.btnCancelCompare.visibility = View.VISIBLE
+                setFilterSortBarVisible(false)
                 updateBirthdayBannerVisibility(false)
                 Toast.makeText(requireContext(), R.string.compare_select_hint, Toast.LENGTH_SHORT).show()
             } else {
@@ -268,6 +280,7 @@ class CharacterListFragment : Fragment() {
         adapter.resetState()  // batch reset: clears selection + mode in single notify
         binding.btnCompare.text = getString(R.string.compare_button)
         binding.btnCancelCompare.visibility = View.GONE
+        setFilterSortBarVisible(true)
         updateBirthdayBannerVisibility(true)
     }
 
@@ -388,6 +401,7 @@ class CharacterListFragment : Fragment() {
         binding.batchEditBar.visibility = View.VISIBLE
         binding.compareLayout.visibility = View.GONE
         binding.fabAddCharacter.visibility = View.GONE
+        setFilterSortBarVisible(false)
         updateBirthdayBannerVisibility(false)
         Toast.makeText(requireContext(), R.string.batch_enter_hint, Toast.LENGTH_SHORT).show()
     }
@@ -399,6 +413,7 @@ class CharacterListFragment : Fragment() {
         binding.batchEditBar.visibility = View.GONE
         binding.compareLayout.visibility = View.VISIBLE
         binding.fabAddCharacter.visibility = View.VISIBLE
+        setFilterSortBarVisible(true)
         updateBirthdayBannerVisibility(true)
     }
 
@@ -483,14 +498,21 @@ class CharacterListFragment : Fragment() {
         outState.putBoolean("isBatchEditMode", isBatchEditMode)
     }
 
+    private var lastListEmpty = false
+
     private fun observeData() {
         viewModel.searchResults.observe(viewLifecycleOwner) { characters ->
             adapter.refreshRandomImages(context)
             adapter.submitList(characters)
-            val isEmpty = characters.isEmpty()
-            binding.emptyText.visibility = if (isEmpty) View.VISIBLE else View.GONE
-            binding.characterRecyclerView.visibility = if (isEmpty) View.GONE else View.VISIBLE
+            lastListEmpty = characters.isEmpty()
+            updateEmptyState()
         }
+
+        // 정렬/필터/프리셋 상태 관측
+        viewModel.sortSpec.observe(viewLifecycleOwner) { updateSortChip(it) }
+        viewModel.fieldFilters.observe(viewLifecycleOwner) { renderFilterChips(); updateEmptyState() }
+        viewModel.tagFilters.observe(viewLifecycleOwner) { renderFilterChips(); updateEmptyState() }
+        viewModel.presets.observe(viewLifecycleOwner) { renderPresetChips(it ?: emptyList()) }
 
         // 데이터 처리 결과 알림 (캐릭터 삭제 등 즉시 통보 + 작업 이력 기록)
         viewModel.result.observe(viewLifecycleOwner) { result ->
@@ -499,6 +521,187 @@ class CharacterListFragment : Fragment() {
                 viewModel.clearResult()
             }
         }
+    }
+
+    /** 빈 상태: 필터로 비면 필터 안내 + 지우기, 아니면 일반 안내. */
+    private fun updateEmptyState() {
+        if (_binding == null) return
+        binding.characterRecyclerView.visibility = if (lastListEmpty) View.GONE else View.VISIBLE
+        binding.emptyText.visibility = if (lastListEmpty) View.VISIBLE else View.GONE
+        if (lastListEmpty) {
+            val filtered = viewModel.hasActiveFilters()
+            binding.emptyTitle.setText(if (filtered) R.string.empty_filtered_title else R.string.no_characters)
+            binding.emptyHint.setText(if (filtered) R.string.empty_filtered_hint else R.string.empty_character_hint)
+            binding.btnClearFilters.visibility = if (filtered) View.VISIBLE else View.GONE
+        }
+    }
+
+    // ===== 필터 / 정렬 UI =====
+
+    private fun setupFilterSort() {
+        binding.btnSort.setOnClickListener { openSortSheet() }
+        binding.btnSortDir.setOnClickListener {
+            val cur = viewModel.sortSpec.value ?: CharacterSort()
+            // 기본(수동) 정렬은 방향 개념이 없어 기준 선택 시트를 연다
+            if (cur.kind == CharacterListPreset.SORT_MANUAL) openSortSheet()
+            else viewModel.setSortSpec(cur.copy(ascending = !cur.ascending))
+        }
+        binding.btnFilter.setOnClickListener { openFilterSheet() }
+        binding.btnClearFilters.setOnClickListener { viewModel.clearAllFilters() }
+    }
+
+    private fun openSortSheet() {
+        val sheet = CharacterSortBottomSheet()
+        sheet.currentSort = viewModel.sortSpec.value ?: CharacterSort()
+        sheet.loadSortableFields = { viewModel.getSortableFields() }
+        sheet.onSortSelected = { viewModel.setSortSpec(it) }
+        sheet.show(childFragmentManager, CharacterSortBottomSheet.TAG)
+    }
+
+    private fun openFilterSheet() {
+        val sheet = CharacterFilterBottomSheet()
+        sheet.currentTags = viewModel.tagFilters.value ?: emptySet()
+        sheet.loadAllTags = { viewModel.getAllDistinctTags() }
+        sheet.loadUniverses = { viewModel.getScopedUniverses() }
+        sheet.loadFields = { uid -> viewModel.getFilterableFields(uid) }
+        sheet.loadFieldValues = { fid -> viewModel.getFieldValues(fid) }
+        sheet.onApply = { tags, filter ->
+            viewModel.setTagFilters(tags)
+            if (filter != null) viewModel.addFieldFilter(filter)
+        }
+        sheet.show(childFragmentManager, CharacterFilterBottomSheet.TAG)
+    }
+
+    private fun updateSortChip(sort: CharacterSort) {
+        if (_binding == null) return
+        val isManual = sort.kind == CharacterListPreset.SORT_MANUAL
+        binding.btnSortDir.visibility = if (isManual) View.INVISIBLE else View.VISIBLE
+        binding.btnSortDir.setImageResource(
+            if (sort.ascending) android.R.drawable.arrow_up_float else android.R.drawable.arrow_down_float
+        )
+        val staticLabel = when (sort.kind) {
+            CharacterListPreset.SORT_NAME -> getString(R.string.sort_label_name)
+            CharacterListPreset.SORT_CREATED -> getString(R.string.sort_label_created)
+            CharacterListPreset.SORT_RECENT -> getString(R.string.sort_label_recent)
+            CharacterListPreset.SORT_FIELD -> null  // 필드명은 비동기 조회
+            else -> getString(R.string.sort_label_manual)
+        }
+        if (staticLabel != null) {
+            binding.btnSort.text = getString(R.string.sort_chip_format, staticLabel)
+        } else {
+            // 필드 정렬: 표시 이름을 조회
+            viewLifecycleOwner.lifecycleScope.launch {
+                val name = viewModel.getSortableFields().firstOrNull { it.key == sort.fieldKey }?.name
+                    ?: sort.fieldKey ?: getString(R.string.sort_label_manual)
+                if (_binding != null) binding.btnSort.text = getString(R.string.sort_chip_format, name)
+            }
+        }
+    }
+
+    private fun renderFilterChips() {
+        if (_binding == null) return
+        binding.filterChipGroup.removeAllViews()
+        val ctx = context ?: return
+        for (tag in viewModel.tagFilters.value ?: emptySet()) {
+            binding.filterChipGroup.addView(Chip(ctx).apply {
+                text = getString(R.string.filter_chip_tag_format, tag)
+                isCloseIconVisible = true
+                setOnCloseIconClickListener {
+                    viewModel.setTagFilters((viewModel.tagFilters.value ?: emptySet()) - tag)
+                }
+            })
+        }
+        for (f in viewModel.fieldFilters.value ?: emptyList()) {
+            binding.filterChipGroup.addView(Chip(ctx).apply {
+                text = getString(R.string.filter_chip_field_format, f.fieldName, f.values.joinToString(", "))
+                isCloseIconVisible = true
+                setOnCloseIconClickListener { viewModel.removeFieldFilter(f.fieldId) }
+            })
+        }
+    }
+
+    private fun renderPresetChips(presets: List<CharacterListPreset>) {
+        if (_binding == null) return
+        binding.presetChipGroup.removeAllViews()
+        val ctx = context ?: return
+        for (p in presets) {
+            binding.presetChipGroup.addView(Chip(ctx).apply {
+                text = p.name
+                setOnClickListener { viewModel.applyPreset(p) }
+                setOnLongClickListener { showPresetOptionsDialog(p); true }
+            })
+        }
+        binding.presetChipGroup.addView(Chip(ctx).apply {
+            text = getString(R.string.character_preset_save_chip)
+            setOnClickListener { showSavePresetDialog() }
+        })
+    }
+
+    private fun showSavePresetDialog() {
+        val ctx = requireContext()
+        val input = android.widget.EditText(ctx).apply { hint = getString(R.string.character_preset_name_hint) }
+        val pad = (20 * resources.displayMetrics.density).toInt()
+        val container = android.widget.FrameLayout(ctx).apply { setPadding(pad, pad / 2, pad, 0); addView(input) }
+        androidx.appcompat.app.AlertDialog.Builder(ctx)
+            .setTitle(R.string.character_preset_save)
+            .setView(container)
+            .setPositiveButton(R.string.save) { _, _ ->
+                val name = input.text.toString().trim()
+                if (name.isNotEmpty()) viewModel.saveAsPreset(name)
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun showPresetOptionsDialog(preset: CharacterListPreset) {
+        val ctx = requireContext()
+        val options = arrayOf(
+            getString(R.string.character_preset_apply),
+            getString(R.string.preset_edit_name),
+            getString(R.string.character_preset_save),   // 현재 상태로 갱신
+            getString(R.string.delete)
+        )
+        androidx.appcompat.app.AlertDialog.Builder(ctx)
+            .setTitle(preset.name)
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> viewModel.applyPreset(preset)
+                    1 -> showRenamePresetDialog(preset)
+                    2 -> viewModel.overwritePreset(preset)
+                    3 -> androidx.appcompat.app.AlertDialog.Builder(ctx)
+                        .setTitle(R.string.delete)
+                        .setMessage(preset.name)
+                        .setPositiveButton(R.string.delete) { _, _ -> viewModel.deletePreset(preset.id, preset.name) }
+                        .setNegativeButton(R.string.cancel, null)
+                        .show()
+                }
+            }
+            .show()
+    }
+
+    private fun showRenamePresetDialog(preset: CharacterListPreset) {
+        val ctx = requireContext()
+        val input = android.widget.EditText(ctx).apply {
+            hint = getString(R.string.character_preset_name_hint)
+            setText(preset.name)
+        }
+        val pad = (20 * resources.displayMetrics.density).toInt()
+        val container = android.widget.FrameLayout(ctx).apply { setPadding(pad, pad / 2, pad, 0); addView(input) }
+        androidx.appcompat.app.AlertDialog.Builder(ctx)
+            .setTitle(R.string.preset_edit_name)
+            .setView(container)
+            .setPositiveButton(R.string.save) { _, _ ->
+                val name = input.text.toString().trim()
+                if (name.isNotEmpty()) viewModel.renamePreset(preset, name)
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    /** 필터/정렬 바는 일반 탐색 모드에서만 노출(배치/비교/재정렬 중 숨김). */
+    private fun setFilterSortBarVisible(visible: Boolean) {
+        if (_binding == null) return
+        binding.filterSortBar.visibility = if (visible) View.VISIBLE else View.GONE
     }
 
     override fun onResume() {

@@ -450,13 +450,29 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         setSortSpec(CharacterSort(preset.sortKind, preset.sortFieldKey, preset.sortAscending, preset.bodySizePartIndex))
     }
 
-    fun updatePreset(preset: CharacterListPreset, newName: String) = viewModelScope.launch {
+    /** 이름만 변경 — 저장된 필터/정렬 내용은 유지. */
+    fun renamePreset(preset: CharacterListPreset, newName: String) = viewModelScope.launch {
         try {
-            app.characterListPresetRepository.updatePreset(currentPreset(newName).copy(id = preset.id, isDefault = preset.isDefault))
+            app.characterListPresetRepository.updatePreset(preset.copy(name = newName))
             reportResult(_result, OpResult.success(OpResult.CAT_PRESET,
                 app.getString(R.string.result_preset_updated, newName)))
         } catch (e: Exception) {
-            Log.e("CharacterViewModel", "Failed to update preset", e)
+            Log.e("CharacterViewModel", "Failed to rename preset", e)
+            reportResult(_result, OpResult.failure(OpResult.CAT_PRESET,
+                app.getString(R.string.result_preset_update_failed), e.message))
+        }
+    }
+
+    /** 현재 필터/정렬 상태로 프리셋 내용을 덮어쓰기 — 이름 유지. */
+    fun overwritePreset(preset: CharacterListPreset) = viewModelScope.launch {
+        try {
+            app.characterListPresetRepository.updatePreset(
+                currentPreset(preset.name).copy(id = preset.id, isDefault = preset.isDefault)
+            )
+            reportResult(_result, OpResult.success(OpResult.CAT_PRESET,
+                app.getString(R.string.result_preset_updated, preset.name)))
+        } catch (e: Exception) {
+            Log.e("CharacterViewModel", "Failed to overwrite preset", e)
             reportResult(_result, OpResult.failure(OpResult.CAT_PRESET,
                 app.getString(R.string.result_preset_update_failed), e.message))
         }

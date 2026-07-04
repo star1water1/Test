@@ -65,6 +65,84 @@
 
     </LinearLayout>
 
+    <!-- 필터 / 정렬 바 -->
+    <LinearLayout
+        android:id="@+id/filterSortBar"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="8dp"
+        android:paddingBottom="2dp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/compareLayout">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnSort"
+            style="@style/Widget.Material3.Button.TonalButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/sort_button"
+            android:textSize="12sp"
+            android:minWidth="56dp"
+            android:minHeight="36dp"
+            android:insetTop="0dp"
+            android:insetBottom="0dp" />
+
+        <ImageButton
+            android:id="@+id/btnSortDir"
+            android:layout_width="34dp"
+            android:layout_height="34dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@android:drawable/arrow_down_float"
+            android:scaleType="centerInside"
+            android:contentDescription="@string/sort_direction" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnFilter"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/filter_button"
+            android:textSize="12sp"
+            android:minWidth="48dp"
+            android:minHeight="36dp"
+            android:insetTop="0dp"
+            android:insetBottom="0dp" />
+
+        <HorizontalScrollView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:scrollbars="none">
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <com.google.android.material.chip.ChipGroup
+                    android:id="@+id/presetChipGroup"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    app:singleLine="true"
+                    app:chipSpacingHorizontal="4dp" />
+
+                <com.google.android.material.chip.ChipGroup
+                    android:id="@+id/filterChipGroup"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    app:singleLine="true"
+                    app:chipSpacingHorizontal="4dp" />
+
+            </LinearLayout>
+
+        </HorizontalScrollView>
+
+    </LinearLayout>
+
     <LinearLayout
         android:id="@+id/batchEditBar"
         android:layout_width="0dp"
@@ -77,7 +155,7 @@
         android:visibility="gone"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/compareLayout">
+        app:layout_constraintTop_toBottomOf="@id/filterSortBar">
 
         <ImageButton
             android:id="@+id/btnBatchClose"
@@ -221,6 +299,7 @@
             android:contentDescription="@string/no_characters" />
 
         <TextView
+            android:id="@+id/emptyTitle"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/no_characters"
@@ -229,12 +308,22 @@
             android:textStyle="bold" />
 
         <TextView
+            android:id="@+id/emptyHint"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/empty_character_hint"
             android:textColor="@color/text_secondary"
             android:textSize="13sp"
             android:layout_marginTop="4dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnClearFilters"
+            style="@style/Widget.Material3.Button.TonalButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="@string/filter_clear"
+            android:visibility="gone" />
 
     </LinearLayout>
 
