@@ -198,37 +198,59 @@ class SystemMaintenanceService(
         return IntegrityResult(orphanImages = orphanCount, details = details)
     }
 
+    data class OrphanCleanupResult(
+        val deleted: Int = 0,
+        val freed: Long = 0L,
+        val skippedRecent: Int = 0,   // 최근 변경(편집/임포트 진행 중 가능)으로 보호한 파일 수
+        val aborted: Boolean = false, // 참조 집합이 불완전(JSON 손상)해 안전을 위해 중단
+    )
+
     /**
-     * 고아 이미지 파일 정리 — 디스크(filesDir 루트)에는 있으나 DB·휴지통 어디서도 참조되지 않는
+     * 고아 이미지 파일 정리 — 디스크(filesDir 루트)에는 있으나 어디에서도 참조되지 않는
      * 이미지 파일을 삭제한다. 편집 중 교체·임포트 재매핑·참조 소실 등으로 누적된 파일이 대상.
      *
-     * 무손실 보장: (1) 참조 집합 = DB(캐릭터/세계관/작품) ∪ 휴지통 보류 이미지 를 유일 기준으로 삼고,
-     * (2) 휴지통 복원 대상 이미지는 반드시 제외하며, (3) backups/exports 등 하위 디렉토리와
-     * 비이미지 파일은 건드리지 않는다.
-     *
-     * @return Pair(삭제 파일 수, 확보 바이트 수)
+     * 무손실 보장(다층 방어):
+     * (1) 참조 집합 = DB(캐릭터/세계관/작품) ∪ 휴지통 보류 이미지 ∪ **미저장 편집 드래프트 이미지**.
+     *     드래프트(B-6)는 DB 미커밋이지만 사용자 작업물이므로 반드시 보존한다.
+     * (2) imagePaths JSON이 하나라도 손상돼 참조 집합이 불완전할 수 있으면 **삭제하지 않고 중단**한다
+     *     (fail-safe — 손상 1건이 실사용 이미지 전부 삭제로 번지는 것을 방지).
+     * (3) 최근(기본 24시간) 수정된 파일은 편집/임포트가 진행 중일 수 있어 보호한다.
+     * (4) backups/exports 등 하위 디렉토리와 비이미지 파일은 건드리지 않는다.
      */
-    suspend fun cleanOrphanImageFiles(): Pair<Int, Long> {
+    suspend fun cleanOrphanImageFiles(recentGuardMillis: Long = 24L * 60 * 60 * 1000): OrphanCleanupResult {
         val filesDir = context.filesDir
         val gson = Gson()
 
-        val referenced = com.novelcharacter.app.excel.ImageZipHelper.collectAllImagePaths(db, gson)
+        // (2) 참조 집합 불완전 감지 — 파싱 실패 시 삭제 강행 금지
+        val collect = com.novelcharacter.app.excel.ImageZipHelper.collectAllImagePathsWithStatus(db, gson)
+        val trashStatus = com.novelcharacter.app.util.StorageAnalyzer.collectTrashHeldPathsWithStatus(db, gson)
+        if (collect.anyParseFailed || trashStatus.anyParseFailed) {
+            return OrphanCleanupResult(aborted = true)
+        }
+
+        val referenced = collect.paths
             .mapNotNull { runCatching { java.io.File(it).canonicalPath }.getOrNull() }
             .toSet()
-        val trashHeld = com.novelcharacter.app.util.StorageAnalyzer.collectTrashHeldPaths(db, gson)
-        val keep = referenced + trashHeld
+        val trashHeld = trashStatus.paths
+        // (1) 드래프트 이미지 포함
+        val draftHeld = com.novelcharacter.app.util.CharacterDraftPrefs.collectAllDraftImagePaths(context)
+        val keep = referenced + trashHeld + draftHeld
 
-        val rootFiles = filesDir.listFiles { f -> f.isFile } ?: return 0 to 0L
+        val rootFiles = filesDir.listFiles { f -> f.isFile } ?: return OrphanCleanupResult()
+        val now = System.currentTimeMillis()
         var deleted = 0
         var freed = 0L
+        var skippedRecent = 0
         for (f in rootFiles) {
             if (!com.novelcharacter.app.util.StorageAnalyzer.isImageFile(f.name)) continue
             val canonical = runCatching { f.canonicalPath }.getOrDefault(f.absolutePath)
             if (canonical in keep) continue
+            // (3) 최근 수정 파일 보호 (편집/임포트 in-flight)
+            if (now - f.lastModified() < recentGuardMillis) { skippedRecent++; continue }
             val len = f.length()
             if (f.delete()) { deleted++; freed += len }
         }
-        return deleted to freed
+        return OrphanCleanupResult(deleted = deleted, freed = freed, skippedRecent = skippedRecent)
     }
 
     /**

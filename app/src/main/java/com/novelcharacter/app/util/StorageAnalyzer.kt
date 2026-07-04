@@ -50,8 +50,10 @@ object StorageAnalyzer {
         val filesDir = context.filesDir
         val gson = Gson()
 
-        // 참조 집합: DB(캐릭터/세계관/작품) + 휴지통 보류 이미지
-        val referencedPaths = ImageZipHelper.collectAllImagePaths(db, gson)
+        // 참조 집합: DB(캐릭터/세계관/작품) + 휴지통 보류 + 미저장 편집 드래프트 이미지.
+        // 드래프트(B-6)는 DB 미커밋이지만 사용자 작업물이므로 '고아'로 오분류하지 않는다.
+        val referencedPaths = (ImageZipHelper.collectAllImagePaths(db, gson) +
+            com.novelcharacter.app.util.CharacterDraftPrefs.collectAllDraftImagePaths(context))
             .mapNotNull { runCatching { File(it).canonicalPath }.getOrNull() }
             .toSet()
         val trashHeldPaths = collectTrashHeldPaths(db, gson)  // suspend — DB 접근
@@ -83,6 +85,14 @@ object StorageAnalyzer {
         val backupFiles = backupDir.listFiles { f -> f.isFile && f.name.endsWith(".enc") } ?: emptyArray()
         val backupBytes = backupFiles.sumOf { it.length() }
 
+        // 총량 정확도: 루트의 하위 디렉토리(datastore 등)도 '기타'에 합산 — backups는 별도 계산이므로 제외
+        val subDirs = filesDir.listFiles { f -> f.isDirectory } ?: emptyArray()
+        for (dir in subDirs) {
+            if (dir.name == BACKUP_DIR) continue
+            val dirBytes = dirSize(dir)
+            if (dirBytes > 0) { otherBytes += dirBytes; otherCount++ }
+        }
+
         // 내보내기 캐시
         val exportsDir = File(context.cacheDir, EXPORTS_DIR)
         val exportFiles = exportsDir.listFiles { f -> f.isFile } ?: emptyArray()
@@ -110,18 +120,39 @@ object StorageAnalyzer {
      * 휴지통 스냅샷이 복원용으로 보류 중인 이미지의 canonical 경로 집합.
      * 고아 판정에서 반드시 제외해야 복원이 깨지지 않는다.
      */
-    suspend fun collectTrashHeldPaths(db: AppDatabase, gson: Gson = Gson()): Set<String> {
+    suspend fun collectTrashHeldPaths(db: AppDatabase, gson: Gson = Gson()): Set<String> =
+        collectTrashHeldPathsWithStatus(db, gson).paths
+
+    /** 위와 동일하되 파싱 실패 여부를 함께 보고한다(고아 정리 fail-safe용). */
+    suspend fun collectTrashHeldPathsWithStatus(
+        db: AppDatabase,
+        gson: Gson = Gson()
+    ): ImageZipHelper.CollectResult {
         val result = mutableSetOf<String>()
+        var anyFailed = false
         val snapshots = runCatching { db.trashSnapshotDao().getAllList() }.getOrDefault(emptyList())
         for (snap in snapshots) {
+            val json = snap.imagePaths
+            if (json.isBlank() || json == "[]") continue
             val paths: List<String?>? = runCatching {
-                gson.fromJson<List<String?>>(snap.imagePaths, GsonTypes.STRING_LIST)
+                gson.fromJson<List<String?>>(json, GsonTypes.STRING_LIST)
             }.getOrNull()
-            paths?.filterNotNull()?.forEach { p ->
+            if (paths == null) { anyFailed = true; continue }
+            paths.filterNotNull().forEach { p ->
                 runCatching { File(p).canonicalPath }.getOrNull()?.let { result.add(it) }
             }
         }
-        return result
+        return ImageZipHelper.CollectResult(result, anyFailed)
+    }
+
+    /** 디렉토리 재귀 크기 (심링크 순환 방지 위해 실제 파일만 합산) */
+    private fun dirSize(dir: File): Long {
+        var total = 0L
+        val children = dir.listFiles() ?: return 0L
+        for (c in children) {
+            total += if (c.isDirectory) dirSize(c) else c.length()
+        }
+        return total
     }
 
     /** 내보내기 캐시 비우기 — 재생성 가능한 산출물만 삭제. @return 삭제 바이트 수 */

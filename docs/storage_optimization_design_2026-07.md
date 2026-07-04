@@ -61,7 +61,19 @@
 - 고아 정리의 오삭제 → 참조 집합 + 휴지통 보류분 이중 제외로 방지. 캐노니컬 경로 검증 재사용.
 - 대량 파일 실측 지연 → IO 스레드 + 로딩 표시. listFiles 1회 순회.
 
+## 5. 사후 적대적 검토 후속 수정 (v1.1)
+
+PR #23 병합 후 "이번 업데이트가 문제없이 적용됐는가" 재검토에서, **고아 이미지 정리에 데이터 유실 결함 2건**을 발견해 수정했다(분석 화면 보기·캐시 비우기·백업 기본값은 문제없음 확인).
+
+- **결함 1 (드래프트 이미지 오삭제, P0):** 참조 집합이 DB 커밋 이미지만 근거로 삼아, 미저장 편집 드래프트(B-6, `CharacterDraftPrefs.imagePaths`는 SharedPreferences에 보관)의 이미지가 고아로 오삭제됐다. → `CharacterDraftPrefs.collectAllDraftImagePaths()` 신설, 정리·분석의 참조 집합에 합집합으로 포함.
+- **결함 2 (JSON 손상 시 fail-open, P0):** `ImageZipHelper.parseImagePaths`가 파싱 실패와 "이미지 없음"을 모두 null로 반환해, 어느 캐릭터의 imagePaths JSON 손상 1건이 그 이미지 전부의 삭제로 번질 수 있었다. → `collectAllImagePathsWithStatus`/`collectTrashHeldPathsWithStatus`로 파싱 실패를 구별, 실패 감지 시 **삭제하지 않고 중단**(fail-safe) + 사용자 고지.
+- **방어 심화:** 최근 24시간 내 수정된 파일은 편집/임포트 진행 중일 수 있어 삭제에서 보호(`recentGuardMillis`).
+- **경미 보강:** 분석 총량에 루트 하위 디렉토리(datastore 등) 합산(backups 제외 — 중복 방지); 1회 고지를 실제 영향받는 사용자(현재 이미지 미포함)에게만 표시하고 `markShown`을 표시 성공 이후로 이동.
+
+`cleanOrphanImageFiles` 반환형을 `OrphanCleanupResult(deleted, freed, skippedRecent, aborted)`로 확장, StorageFragment가 중단/보호 건수를 사용자에게 고지.
+
 ## 문서 이력
 | 버전 | 날짜 | 변경 |
 |------|------|------|
 | v1.0 | 2026.07.04 | 초기 — 진단(S-1~S-3) + 설계(D-S1~D-S3) |
+| v1.1 | 2026.07.04 | 사후 적대적 검토 — 고아 정리 데이터 유실 결함 2건 수정(드래프트 포함·fail-safe), 방어 심화 |

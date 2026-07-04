@@ -52,4 +52,25 @@ object CharacterDraftPrefs {
     fun clear(context: Context, characterId: Long) {
         prefs(context).edit().remove(key(characterId)).apply()
     }
+
+    /**
+     * 저장된 모든 드래프트가 참조하는 이미지의 canonical 경로 집합.
+     *
+     * 드래프트 이미지는 DB에 아직 커밋되지 않았지만 사용자의 미저장 작업물이므로,
+     * 고아 이미지 정리·저장 공간 분석의 "참조 집합"에 반드시 포함해야 오삭제/오분류를 막는다.
+     */
+    fun collectAllDraftImagePaths(context: Context): Set<String> {
+        val gson = Gson()
+        val result = mutableSetOf<String>()
+        val all = try { prefs(context).all } catch (_: Exception) { return emptySet() }
+        for ((k, v) in all) {
+            if (!k.startsWith("draft_")) continue
+            val json = v as? String ?: continue
+            val draft = try { gson.fromJson(json, Draft::class.java) } catch (_: Exception) { null } ?: continue
+            for (p in draft.imagePaths) {
+                runCatching { java.io.File(p).canonicalPath }.getOrNull()?.let { result.add(it) }
+            }
+        }
+        return result
+    }
 }
