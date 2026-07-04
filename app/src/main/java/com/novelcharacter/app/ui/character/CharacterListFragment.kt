@@ -55,6 +55,17 @@ class CharacterListFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
+        // 카드 이미지 롱프레스(이미지 뷰어) 1회성 힌트 (B-8)
+        val hintCtx = requireContext()
+        if (savedInstanceState == null &&
+            !com.novelcharacter.app.util.OnboardingPrefs.isShown(hintCtx, com.novelcharacter.app.util.OnboardingPrefs.KEY_CHARACTER_IMAGE_HINT_SHOWN)
+        ) {
+            com.novelcharacter.app.util.OnboardingPrefs.markShown(hintCtx, com.novelcharacter.app.util.OnboardingPrefs.KEY_CHARACTER_IMAGE_HINT_SHOWN)
+            com.google.android.material.snackbar.Snackbar
+                .make(binding.root, R.string.hint_character_image_longpress, com.google.android.material.snackbar.Snackbar.LENGTH_LONG)
+                .show()
+        }
+
         novelId = arguments?.getLong("novelId", -1L) ?: -1L
         viewModel.setNovelFilter(novelId)
 

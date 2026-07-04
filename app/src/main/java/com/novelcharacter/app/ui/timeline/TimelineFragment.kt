@@ -62,6 +62,18 @@ class TimelineFragment : Fragment(), EventEditDialogFragment.Host {
         setupFab()
         observeData()
 
+        // 롱프레스 전용 기능(재정렬/간편 추가) 1회성 힌트 (B-8)
+        val hintCtx = requireContext()
+        if (savedInstanceState == null &&
+            !com.novelcharacter.app.util.OnboardingPrefs.isShown(hintCtx, com.novelcharacter.app.util.OnboardingPrefs.KEY_TIMELINE_HINT_SHOWN)
+        ) {
+            com.novelcharacter.app.util.OnboardingPrefs.markShown(hintCtx, com.novelcharacter.app.util.OnboardingPrefs.KEY_TIMELINE_HINT_SHOWN)
+            com.google.android.material.snackbar.Snackbar
+                .make(binding.root, R.string.hint_timeline_longpress, com.google.android.material.snackbar.Snackbar.LENGTH_INDEFINITE)
+                .setAction(R.string.hint_dismiss) { }
+                .show()
+        }
+
         // 간편 사건 추가 결과 수신 (DialogFragment — 회전/재생성에도 안전)
         childFragmentManager.setFragmentResultListener(
             QuickAddEventDialogFragment.RESULT_KEY, viewLifecycleOwner
@@ -578,11 +590,13 @@ class TimelineFragment : Fragment(), EventEditDialogFragment.Host {
             override suspend fun getAllCharactersList(): List<Character> = viewModel.getAllCharactersList()
             override suspend fun getCharacterIdsForEvent(eventId: Long): List<Long> = viewModel.getCharacterIdsForEvent(eventId)
             override suspend fun getNovelIdsForEvent(eventId: Long): List<Long> = viewModel.getNovelIdsForEvent(eventId)
-            override fun insertEvent(event: TimelineEvent, characterIds: List<Long>, novelIds: List<Long>) {
-                viewModel.insertEvent(event, characterIds, novelIds)
+            override suspend fun getEventFieldsForUniverse(universeId: Long) = viewModel.getEventFieldsForUniverse(universeId)
+            override suspend fun getEventFieldValuesForEvent(eventId: Long) = viewModel.getEventFieldValuesForEvent(eventId)
+            override fun insertEvent(event: TimelineEvent, characterIds: List<Long>, novelIds: List<Long>, eventFieldValues: List<com.novelcharacter.app.data.model.EventFieldValue>) {
+                viewModel.insertEvent(event, characterIds, novelIds, eventFieldValues)
             }
-            override fun updateEvent(event: TimelineEvent, characterIds: List<Long>, novelIds: List<Long>) {
-                viewModel.updateEvent(event, characterIds, novelIds)
+            override fun updateEvent(event: TimelineEvent, characterIds: List<Long>, novelIds: List<Long>, eventFieldValues: List<com.novelcharacter.app.data.model.EventFieldValue>) {
+                viewModel.updateEvent(event, characterIds, novelIds, eventFieldValues)
             }
             override suspend fun getEventsInScope(novelIds: List<Long>, universeId: Long?): List<TimelineEvent> {
                 return when {
@@ -595,9 +609,10 @@ class TimelineFragment : Fragment(), EventEditDialogFragment.Host {
             override fun updateEventAndShiftOthers(
                 event: TimelineEvent, characterIds: List<Long>, novelIds: List<Long>,
                 shiftDirection: EventEditDialogFragment.ShiftDirection,
-                delta: Int, originalNovelIds: List<Long>, originalUniverseId: Long?
+                delta: Int, originalNovelIds: List<Long>, originalUniverseId: Long?,
+                eventFieldValues: List<com.novelcharacter.app.data.model.EventFieldValue>
             ) {
-                viewModel.updateEventAndShiftOthers(event, characterIds, novelIds, shiftDirection, delta, originalNovelIds, originalUniverseId)
+                viewModel.updateEventAndShiftOthers(event, characterIds, novelIds, shiftDirection, delta, originalNovelIds, originalUniverseId, eventFieldValues)
             }
         }
 

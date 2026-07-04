@@ -53,6 +53,7 @@ class FieldManageFragment : Fragment() {
 
         viewModel.setUniverseId(universeId)
         setupToolbar()
+        setupEntityTypeToggle()
         setupRecyclerView()
         setupFab()
         observeData()
@@ -165,8 +166,26 @@ class FieldManageFragment : Fragment() {
         }
     }
 
+    /** 캐릭터 필드 / 사건 필드 관리 대상 전환 (B-10) */
+    private fun setupEntityTypeToggle() {
+        binding.entityTypeChipGroup.setOnCheckedStateChangeListener { _, checkedIds ->
+            val type = if (checkedIds.contains(R.id.chipEventFields)) {
+                FieldDefinition.ENTITY_EVENT
+            } else {
+                FieldDefinition.ENTITY_CHARACTER
+            }
+            viewModel.setEntityType(type)
+        }
+        viewModel.entityType.observe(viewLifecycleOwner) { type ->
+            val targetId = if (type == FieldDefinition.ENTITY_EVENT) R.id.chipEventFields else R.id.chipCharacterFields
+            if (binding.entityTypeChipGroup.checkedChipId != targetId) {
+                binding.entityTypeChipGroup.check(targetId)
+            }
+        }
+    }
+
     private fun showFieldEditDialog(field: FieldDefinition?) {
-        val dialog = FieldEditDialog.newInstance(universeId, field)
+        val dialog = FieldEditDialog.newInstance(universeId, field, viewModel.currentEntityType())
         dialog.show(childFragmentManager, "FieldEditDialog")
     }
 

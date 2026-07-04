@@ -1194,7 +1194,9 @@ class FieldEditDialog : DialogFragment() {
                 type = selectedType.name,
                 config = config,
                 groupName = groupName,
-                isRequired = isRequired
+                isRequired = isRequired,
+                entityType = arguments?.getString(ARG_ENTITY_TYPE)
+                    ?: FieldDefinition.ENTITY_CHARACTER
             )
         }
 
@@ -1574,11 +1576,17 @@ class FieldEditDialog : DialogFragment() {
         const val RESULT_FIELD_JSON = "field_json"
         private const val ARG_UNIVERSE_ID = "universeId"
         private const val ARG_FIELD_JSON = "fieldJson"
+        private const val ARG_ENTITY_TYPE = "entityType"
 
-        fun newInstance(universeId: Long, field: FieldDefinition?): FieldEditDialog {
+        fun newInstance(
+            universeId: Long,
+            field: FieldDefinition?,
+            entityType: String = FieldDefinition.ENTITY_CHARACTER
+        ): FieldEditDialog {
             return FieldEditDialog().apply {
                 arguments = Bundle().apply {
                     putLong(ARG_UNIVERSE_ID, universeId)
+                    putString(ARG_ENTITY_TYPE, field?.entityType ?: entityType)
                     if (field != null) {
                         putString(ARG_FIELD_JSON, Gson().toJson(field))
                     }

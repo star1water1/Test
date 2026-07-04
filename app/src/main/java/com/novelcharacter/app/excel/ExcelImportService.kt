@@ -1753,6 +1753,22 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
         val allNovels = db.novelDao().getAllNovelsList()
 
+        // 사건 커스텀 필드 컬럼 (B-10): "필드:{이름}" 또는 "필드:{이름}({세계관})" 헤더 스캔
+        val allEventFields = db.fieldDefinitionDao().getAllFieldsList(FieldDefinition.ENTITY_EVENT)
+        val universeNamesById = db.universeDao().getAllUniversesList().associate { it.id to it.name }
+        val eventFieldColumns = mutableListOf<Triple<Int, String, String?>>()  // (colIndex, 필드명, 세계관명?)
+        for (ci in 0 until headerRow.lastCellNum) {
+            val header = getCellString(headerRow, ci)
+            if (!header.startsWith("필드:")) continue
+            val body = header.removePrefix("필드:").trim()
+            val match = Regex("""^(.+)\((.+)\)$""").find(body)
+            if (match != null) {
+                eventFieldColumns.add(Triple(ci, match.groupValues[1].trim(), match.groupValues[2].trim()))
+            } else {
+                eventFieldColumns.add(Triple(ci, body, null))
+            }
+        }
+
         for (i in 1..sheet.lastRowNum) {
             try {
                 val row = sheet.getRow(i) ?: continue
@@ -1833,6 +1849,34 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     }
                 }
                 matchedEventIds.add(eventId)
+
+                // 사건 커스텀 필드 값 반영 (B-10) — 빈 셀 = 기존 값 삭제 (캐릭터 필드와 동일 규약)
+                val eventUniverseId = if (existingEvent != null) {
+                    if (novelIds.isNotEmpty()) universeId else existingEvent.universeId
+                } else {
+                    universeId
+                }
+                if (eventFieldColumns.isNotEmpty() && eventUniverseId != null) {
+                    val universeFields = allEventFields.filter { it.universeId == eventUniverseId }
+                    val universeName = universeNamesById[eventUniverseId]
+                    val newValues = mutableListOf<com.novelcharacter.app.data.model.EventFieldValue>()
+                    var anyColumnMatched = false
+                    for ((ci, fieldName, uName) in eventFieldColumns) {
+                        if (uName != null && uName != universeName) continue
+                        val fieldDef = universeFields.find { it.name == fieldName } ?: continue
+                        anyColumnMatched = true
+                        val cellValue = getCellString(row, ci)
+                        if (cellValue.isNotBlank()) {
+                            newValues.add(com.novelcharacter.app.data.model.EventFieldValue(
+                                eventId = eventId, fieldDefinitionId = fieldDef.id, value = cellValue
+                            ))
+                        }
+                    }
+                    // 이 세계관에 해당하는 필드 컬럼이 하나라도 있을 때만 교체 (구버전 파일 보호)
+                    if (anyColumnMatched) {
+                        db.eventFieldValueDao().replaceAllByEvent(eventId, newValues)
+                    }
+                }
 
                 val characterNames = getCellString(row, charColIndex)
                 if (characterNames.isNotBlank()) {

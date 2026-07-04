@@ -363,6 +363,17 @@
     <string name="faction_relationship_direction_from">← %1$s</string>
     <string name="faction_relationship_direction_both">↔ %1$s</string>
     <string name="faction_relationship_item_format">%1$s : %2$s (강도 %3$d)</string>
+    <!-- 사건 커스텀 필드 (B-10) -->
+    <string name="event_custom_fields">사건 필드</string>
+    <string name="field_target_character">캐릭터 필드</string>
+    <string name="field_target_event">사건 필드</string>
+    <!-- 온보딩/기능 힌트 (B-8) -->
+    <string name="onboarding_welcome_title">시작하기</string>
+    <string name="onboarding_welcome_message">이 앱은 다음 구조로 이루어져 있습니다:\n\n세계관 → 작품 → 캐릭터 → 사건\n\n① \'세계관\' 탭에서 세계관을 만들고\n② 세계관 안에 작품을, 작품 안에 캐릭터를 추가하세요\n③ \'연표\' 탭에서 사건을 배치하고 캐릭터와 연결할 수 있습니다\n\n필드(속성)는 세계관 단위로 자유롭게 정의할 수 있고, 모든 데이터는 엑셀로 내보내고 다시 들여올 수 있습니다.</string>
+    <string name="onboarding_welcome_start">시작하기</string>
+    <string name="hint_timeline_longpress">힌트: ➕ 버튼을 길게 누르면 재정렬 모드, 하단 밀도 바의 연도를 길게 누르면 간편 사건 추가예요.</string>
+    <string name="hint_character_image_longpress">힌트: 캐릭터 카드의 이미지를 길게 누르면 크게 볼 수 있어요.</string>
+    <string name="hint_dismiss">확인</string>
     <!-- 캐릭터 편집 드래프트 자동저장 (B-6) -->
     <string name="draft_restore_title">작성 중이던 초안</string>
     <string name="draft_restore_message">%1$s에 자동 저장된 미저장 초안이 있습니다. 복원할까요?</string>

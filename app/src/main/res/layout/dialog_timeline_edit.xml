@@ -147,5 +147,25 @@
             android:layout_height="200dp"
             android:nestedScrollingEnabled="true" />
 
+        <!-- 사건 커스텀 필드 (B-10) — 선택된 작품의 세계관 필드로 동적 구성 -->
+        <TextView
+            android:id="@+id/eventFieldSectionLabel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:layout_marginBottom="8dp"
+            android:text="@string/event_custom_fields"
+            android:textColor="@color/primary"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
+
+        <LinearLayout
+            android:id="@+id/eventFieldContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone" />
+
     </LinearLayout>
 </androidx.core.widget.NestedScrollView>

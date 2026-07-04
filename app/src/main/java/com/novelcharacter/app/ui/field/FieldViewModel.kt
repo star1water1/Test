@@ -33,13 +33,33 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
     val saveInfo: LiveData<String?> = _saveInfo
     fun clearSaveInfo() { _saveInfo.value = null }
 
-    val fields: LiveData<List<FieldDefinition>> = _universeId.switchMap { id ->
-        universeRepository.getFieldsByUniverse(id)
+    // 관리 대상 (B-10): 캐릭터 필드 / 사건 필드 전환
+    private val _entityType = MutableLiveData(FieldDefinition.ENTITY_CHARACTER)
+    val entityType: LiveData<String> = _entityType
+
+    private val _fieldsTrigger = MediatorLiveData<Unit>().apply {
+        addSource(_universeId) { value = Unit }
+        addSource(_entityType) { value = Unit }
+    }
+
+    val fields: LiveData<List<FieldDefinition>> = _fieldsTrigger.switchMap {
+        val id = _universeId.value ?: return@switchMap MutableLiveData(emptyList<FieldDefinition>())
+        if (_entityType.value == FieldDefinition.ENTITY_EVENT) {
+            universeRepository.getEventFieldsByUniverse(id)
+        } else {
+            universeRepository.getFieldsByUniverse(id)
+        }
     }
 
     fun setUniverseId(id: Long) {
         _universeId.value = id
     }
+
+    fun setEntityType(type: String) {
+        if (_entityType.value != type) _entityType.value = type
+    }
+
+    fun currentEntityType(): String = _entityType.value ?: FieldDefinition.ENTITY_CHARACTER
 
     fun insertField(field: FieldDefinition) = viewModelScope.launch {
         try {

@@ -17,9 +17,13 @@ import androidx.recyclerview.widget.RecyclerView
 import com.google.gson.Gson
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.Character
+import com.novelcharacter.app.data.model.EventFieldValue
+import com.novelcharacter.app.data.model.FieldDefinition
+import com.novelcharacter.app.data.model.FieldType
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.TimelineEvent
 import com.novelcharacter.app.databinding.DialogTimelineEditBinding
+import com.novelcharacter.app.util.FieldOptionParser
 import com.novelcharacter.app.util.isValidDay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -45,8 +49,10 @@ class EventEditDialogFragment : DialogFragment() {
         suspend fun getAllCharactersList(): List<Character>
         suspend fun getCharacterIdsForEvent(eventId: Long): List<Long>
         suspend fun getNovelIdsForEvent(eventId: Long): List<Long>
-        fun insertEvent(event: TimelineEvent, characterIds: List<Long>, novelIds: List<Long>)
-        fun updateEvent(event: TimelineEvent, characterIds: List<Long>, novelIds: List<Long>)
+        suspend fun getEventFieldsForUniverse(universeId: Long): List<FieldDefinition>
+        suspend fun getEventFieldValuesForEvent(eventId: Long): List<EventFieldValue>
+        fun insertEvent(event: TimelineEvent, characterIds: List<Long>, novelIds: List<Long>, eventFieldValues: List<EventFieldValue>)
+        fun updateEvent(event: TimelineEvent, characterIds: List<Long>, novelIds: List<Long>, eventFieldValues: List<EventFieldValue>)
         suspend fun getEventsInScope(novelIds: List<Long>, universeId: Long?): List<TimelineEvent>
         fun updateEventAndShiftOthers(
             event: TimelineEvent,
@@ -55,7 +61,8 @@ class EventEditDialogFragment : DialogFragment() {
             shiftDirection: ShiftDirection,
             delta: Int,
             originalNovelIds: List<Long>,
-            originalUniverseId: Long?
+            originalUniverseId: Long?,
+            eventFieldValues: List<EventFieldValue>
         )
     }
 
@@ -75,6 +82,11 @@ class EventEditDialogFragment : DialogFragment() {
     private var novels: List<Novel> = emptyList()
     private var characters: List<Character> = emptyList()
     private var eventTypes: List<Pair<String, String>> = emptyList()
+
+    // 사건 커스텀 필드 (B-10)
+    private var eventFields: List<FieldDefinition> = emptyList()
+    private val eventFieldInputMap = mutableMapOf<Long, Any>()  // fieldId -> EditText/Spinner
+    private var pendingEventFieldValues: MutableMap<String, String>? = null
 
     private fun requireProvider(): DataProvider =
         (parentFragment as? Host ?: activity as? Host)?.eventDialogDataProvider()
@@ -107,6 +119,13 @@ class EventEditDialogFragment : DialogFragment() {
             selectedCharIds.addAll(it.toList())
             selectedNovelIds.addAll(savedInstanceState.getLongArray(STATE_NOVEL_IDS)?.toList() ?: emptyList())
             selectionsInitialized = true
+        }
+        savedInstanceState?.getBundle(STATE_EVENT_FIELD_VALUES)?.let { bundle ->
+            val restored = mutableMapOf<String, String>()
+            for (key in bundle.keySet()) {
+                bundle.getString(key)?.let { restored[key] = it }
+            }
+            pendingEventFieldValues = restored
         }
         val isRecreated = savedInstanceState != null
 
@@ -142,10 +161,21 @@ class EventEditDialogFragment : DialogFragment() {
             }
             if (_binding == null) return@launch
             if (!isRecreated) {
-                editingEvent?.let { fillInitialValues(it) }
+                editingEvent?.let { event ->
+                    fillInitialValues(event)
+                    // 기존 사건 필드값 → 폼 빌드 후 지연 적용
+                    val values = provider.getEventFieldValuesForEvent(event.id)
+                    if (values.isNotEmpty() && pendingEventFieldValues == null) {
+                        pendingEventFieldValues = values
+                            .associate { it.fieldDefinitionId.toString() to it.value }
+                            .toMutableMap()
+                    }
+                }
             }
+            if (_binding == null) return@launch
             setupNovelCheckboxes()
             setupCharacterCheckboxes()
+            rebuildEventFieldSection()
         }
 
         return alertDialog
@@ -156,6 +186,15 @@ class EventEditDialogFragment : DialogFragment() {
         if (selectionsInitialized) {
             outState.putLongArray(STATE_CHAR_IDS, selectedCharIds.toLongArray())
             outState.putLongArray(STATE_NOVEL_IDS, selectedNovelIds.toLongArray())
+        }
+        // 사건 필드 입력 (동적 위젯은 ID가 없어 자동 복원 대상이 아님)
+        if (eventFieldInputMap.isNotEmpty() || pendingEventFieldValues != null) {
+            val bundle = Bundle()
+            pendingEventFieldValues?.forEach { (k, v) -> bundle.putString(k, v) }
+            for ((fieldId, widget) in eventFieldInputMap) {
+                bundle.putString(fieldId.toString(), eventFieldWidgetValue(widget))
+            }
+            outState.putBundle(STATE_EVENT_FIELD_VALUES, bundle)
         }
     }
 
@@ -239,8 +278,9 @@ class EventEditDialogFragment : DialogFragment() {
         val novelIdsList = selectedNovelIds.toList()
         val provider = requireProvider()
 
+        val eventFieldValues = collectEventFieldValues()
         if (event == null) {
-            provider.insertEvent(newEvent, selectedCharIds.toList(), novelIdsList)
+            provider.insertEvent(newEvent, selectedCharIds.toList(), novelIdsList, eventFieldValues)
             dismiss()
         } else {
             val delta = newEvent.year - event.year
@@ -253,10 +293,11 @@ class EventEditDialogFragment : DialogFragment() {
                         provider, newEvent, selectedCharIds.toList(), novelIdsList,
                         delta, event.year,
                         originalNovelIds = originalNovelIds,
-                        originalUniverseId = event.universeId
+                        originalUniverseId = event.universeId,
+                        eventFieldValues = eventFieldValues
                     )
                 } else {
-                    provider.updateEvent(newEvent, selectedCharIds.toList(), novelIdsList)
+                    provider.updateEvent(newEvent, selectedCharIds.toList(), novelIdsList, eventFieldValues)
                     dismissAllowingStateLoss()
                 }
             }
@@ -276,7 +317,8 @@ class EventEditDialogFragment : DialogFragment() {
         delta: Int,
         oldYear: Int,
         originalNovelIds: List<Long>,
-        originalUniverseId: Long?
+        originalUniverseId: Long?,
+        eventFieldValues: List<EventFieldValue>
     ) {
         val scopeEvents = provider.getEventsInScope(originalNovelIds, originalUniverseId)
             .filter { it.id != newEvent.id }
@@ -287,7 +329,7 @@ class EventEditDialogFragment : DialogFragment() {
         val items = mutableListOf(getString(R.string.shift_this_only))
         val actions = mutableListOf<() -> Unit>()
         actions.add {
-            provider.updateEvent(newEvent, characterIds, novelIds)
+            provider.updateEvent(newEvent, characterIds, novelIds, eventFieldValues)
             dismissAllowingStateLoss()
         }
         if (afterCount > 0) {
@@ -295,7 +337,7 @@ class EventEditDialogFragment : DialogFragment() {
             actions.add {
                 provider.updateEventAndShiftOthers(
                     newEvent, characterIds, novelIds, ShiftDirection.AFTER, delta,
-                    originalNovelIds, originalUniverseId
+                    originalNovelIds, originalUniverseId, eventFieldValues
                 )
                 dismissAllowingStateLoss()
             }
@@ -305,7 +347,7 @@ class EventEditDialogFragment : DialogFragment() {
             actions.add {
                 provider.updateEventAndShiftOthers(
                     newEvent, characterIds, novelIds, ShiftDirection.BEFORE, delta,
-                    originalNovelIds, originalUniverseId
+                    originalNovelIds, originalUniverseId, eventFieldValues
                 )
                 dismissAllowingStateLoss()
             }
@@ -321,6 +363,133 @@ class EventEditDialogFragment : DialogFragment() {
                 .setNegativeButton(R.string.cancel, null)
                 .show()
         }
+    }
+
+    // ── 사건 커스텀 필드 (B-10) ──
+
+    /** 선택된 작품의 세계관 기준으로 사건 필드 입력 섹션 재구성. 입력 중이던 값은 보존. */
+    private fun rebuildEventFieldSection() {
+        if (_binding == null) return
+        // 현재 입력값 보존
+        if (eventFieldInputMap.isNotEmpty()) {
+            val preserved = pendingEventFieldValues ?: mutableMapOf()
+            for ((fieldId, widget) in eventFieldInputMap) {
+                preserved[fieldId.toString()] = eventFieldWidgetValue(widget)
+            }
+            pendingEventFieldValues = preserved
+        }
+
+        val universeId = novels.firstOrNull { it.id in selectedNovelIds }?.universeId
+        if (universeId == null) {
+            eventFields = emptyList()
+            eventFieldInputMap.clear()
+            binding.eventFieldContainer.removeAllViews()
+            binding.eventFieldContainer.visibility = View.GONE
+            binding.eventFieldSectionLabel.visibility = View.GONE
+            return
+        }
+
+        lifecycleScope.launch {
+            val fields = requireProvider().getEventFieldsForUniverse(universeId)
+            if (_binding == null) return@launch
+            eventFields = fields
+                .filter { FieldType.fromName(it.type) != FieldType.CALCULATED }
+                .sortedBy { it.displayOrder }
+            buildEventFieldInputs()
+        }
+    }
+
+    private fun buildEventFieldInputs() {
+        val ctx = context ?: return
+        eventFieldInputMap.clear()
+        binding.eventFieldContainer.removeAllViews()
+
+        if (eventFields.isEmpty()) {
+            binding.eventFieldContainer.visibility = View.GONE
+            binding.eventFieldSectionLabel.visibility = View.GONE
+            return
+        }
+        binding.eventFieldContainer.visibility = View.VISIBLE
+        binding.eventFieldSectionLabel.visibility = View.VISIBLE
+
+        val density = resources.displayMetrics.density
+        for (field in eventFields) {
+            val saved = pendingEventFieldValues?.get(field.id.toString()) ?: ""
+            when (FieldType.fromName(field.type)) {
+                FieldType.SELECT, FieldType.GRADE -> {
+                    val label = android.widget.TextView(ctx).apply {
+                        text = field.name
+                        textSize = 13f
+                    }
+                    binding.eventFieldContainer.addView(label)
+
+                    val options = mutableListOf(getString(R.string.no_selection))
+                    options.addAll(
+                        if (FieldType.fromName(field.type) == FieldType.SELECT) {
+                            FieldOptionParser.parseSelectOptions(field.config)
+                        } else {
+                            FieldOptionParser.parseGradeOptions(field.config)
+                        }
+                    )
+                    // 고아 값 보존: 저장된 값이 현재 옵션에 없어도 유실하지 않는다
+                    if (saved.isNotBlank() && saved !in options) options.add(saved)
+
+                    val spinner = android.widget.Spinner(ctx).apply {
+                        val spinnerAdapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item, options)
+                        spinnerAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+                        adapter = spinnerAdapter
+                        val idx = options.indexOf(saved)
+                        if (idx > 0) setSelection(idx)
+                    }
+                    binding.eventFieldContainer.addView(spinner)
+                    eventFieldInputMap[field.id] = spinner
+                }
+                else -> {
+                    val editText = android.widget.EditText(ctx).apply {
+                        hint = field.name
+                        setText(saved)
+                        if (FieldType.fromName(field.type) == FieldType.NUMBER) {
+                            inputType = android.text.InputType.TYPE_CLASS_NUMBER or
+                                android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL or
+                                android.text.InputType.TYPE_NUMBER_FLAG_SIGNED
+                        }
+                        layoutParams = android.widget.LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+                        ).apply { bottomMargin = (4 * density).toInt() }
+                    }
+                    binding.eventFieldContainer.addView(editText)
+                    eventFieldInputMap[field.id] = editText
+                }
+            }
+        }
+    }
+
+    private fun eventFieldWidgetValue(widget: Any): String = when (widget) {
+        is android.widget.EditText -> widget.text.toString().trim()
+        is android.widget.Spinner -> {
+            val pos = widget.selectedItemPosition
+            if (pos <= 0) "" else widget.selectedItem?.toString() ?: ""
+        }
+        else -> ""
+    }
+
+    /** 빈 값은 저장하지 않는다 — replaceAllByEvent가 전체 교체하므로 삭제와 동치 */
+    private fun collectEventFieldValues(): List<EventFieldValue> {
+        val result = mutableListOf<EventFieldValue>()
+        for (field in eventFields) {
+            val widget = eventFieldInputMap[field.id] ?: continue
+            val value = eventFieldWidgetValue(widget)
+            if (value.isNotBlank()) {
+                result.add(
+                    EventFieldValue(
+                        eventId = editingEvent?.id ?: 0,
+                        fieldDefinitionId = field.id,
+                        value = value
+                    )
+                )
+            }
+        }
+        return result
     }
 
     private fun setupNovelCheckboxes() {
@@ -347,8 +516,9 @@ class EventEditDialogFragment : DialogFragment() {
                 checkBox.setOnCheckedChangeListener { _, isChecked ->
                     if (isChecked) selectedNovelIds.add(novel.id)
                     else selectedNovelIds.remove(novel.id)
-                    // 작품 선택 변경 시 캐릭터 정렬 갱신
+                    // 작품 선택 변경 시 캐릭터 정렬 + 사건 필드(세계관 기준) 갱신
                     setupCharacterCheckboxes()
+                    rebuildEventFieldSection()
                 }
             }
 
@@ -395,6 +565,7 @@ class EventEditDialogFragment : DialogFragment() {
         private const val ARG_PRE_NOVEL_IDS = "preSelectedNovelIds"
         private const val STATE_CHAR_IDS = "selectedCharIds"
         private const val STATE_NOVEL_IDS = "selectedNovelIds"
+        private const val STATE_EVENT_FIELD_VALUES = "eventFieldValues"
 
         /**
          * 다이얼로그 표시. 호스트 프래그먼트의 childFragmentManager로 띄워야

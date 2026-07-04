@@ -753,10 +753,27 @@ class ExcelExporter(context: Context) {
         val novels = db.novelDao().getAllNovelsList()
         val novelMap = novels.associateBy { it.id }
 
-        val spec = timelineSpec(novels.map { it.title })
+        // 사건 커스텀 필드 (B-10) — 필드명 중복 시 세계관명으로 구분한 헤더 "필드:{이름}"
+        val eventFields = db.fieldDefinitionDao().getAllFieldsList(
+            com.novelcharacter.app.data.model.FieldDefinition.ENTITY_EVENT
+        )
+        val universesById = db.universeDao().getAllUniversesList().associateBy { it.id }
+        val fieldNameCounts = eventFields.groupingBy { it.name }.eachCount()
+        val eventFieldColumns = eventFields.map { f ->
+            val header = if ((fieldNameCounts[f.name] ?: 0) > 1) {
+                "필드:${f.name}(${universesById[f.universeId]?.name ?: f.universeId})"
+            } else {
+                "필드:${f.name}"
+            }
+            f to header
+        }
+
+        val spec = timelineSpec(novels.map { it.title }, eventFieldColumns.map { it.second })
         val sheetName = sanitizeSheetName(spec.sheetName, usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
         writeHeaderRow(sheet, spec)
+
+        val eventFieldValuesByEvent = db.eventFieldValueDao().getAllValuesList().groupBy { it.eventId }
 
         // Batch load all cross-refs and characters to avoid N+1 queries
         val allCrossRefs = db.timelineDao().getAllCrossRefs()
@@ -788,6 +805,12 @@ class ExcelExporter(context: Context) {
             row.createCell(9).setCellValue(event.displayOrder.toDouble())
             row.createCell(10).setCellValue(if (event.isTemporary) "Y" else "N")
             row.createCell(11).setCellValue(event.createdAt.toDouble())
+
+            // 사건 커스텀 필드 값 (B-10)
+            val fieldValues = eventFieldValuesByEvent[event.id]?.associateBy { it.fieldDefinitionId } ?: emptyMap()
+            eventFieldColumns.forEachIndexed { fi, (fieldDef, _) ->
+                fieldValues[fieldDef.id]?.let { row.createCell(12 + fi).setTextSafe(it.value) }
+            }
         }
 
         applySpecFormatting(sheet, spec, events.size)

@@ -178,7 +178,7 @@ fun characterSpec(fields: List<FieldDefinition>, novelTitles: List<String>) = Sh
     }
 )
 
-fun timelineSpec(novelTitles: List<String>) = SheetSpec(
+fun timelineSpec(novelTitles: List<String>, eventFieldHeaders: List<String> = emptyList()) = SheetSpec(
     sheetName = "사건 연표",
     columns = listOf(
         ColumnSpec("연도", required = true, width = 3000),
@@ -193,7 +193,7 @@ fun timelineSpec(novelTitles: List<String>) = SheetSpec(
         ColumnSpec("정렬순서", width = 3000),
         ColumnSpec("임시배치", dropdownOptions = listOf("Y", "N"), width = 3000),
         ColumnSpec("생성일", readOnly = true, width = 5000)
-    )
+    ) + eventFieldHeaders.map { ColumnSpec(it, width = 6000) }  // 사건 커스텀 필드 (B-10)
 )
 
 fun stateChangeSpec() = SheetSpec(

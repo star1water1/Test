@@ -34,6 +34,8 @@ import com.novelcharacter.app.data.model.Faction
 import com.novelcharacter.app.data.model.FactionMembership
 import com.novelcharacter.app.data.model.FactionRelationship
 import com.novelcharacter.app.data.model.TrashSnapshot
+import com.novelcharacter.app.data.dao.EventFieldValueDao
+import com.novelcharacter.app.data.model.EventFieldValue
 import com.novelcharacter.app.data.model.RecentActivity
 import com.novelcharacter.app.data.model.UserPresetTemplate
 import com.novelcharacter.app.data.model.SearchPreset
@@ -72,9 +74,10 @@ import com.novelcharacter.app.data.model.Universe
         Faction::class,
         FactionMembership::class,
         FactionRelationship::class,
-        TrashSnapshot::class
+        TrashSnapshot::class,
+        EventFieldValue::class
     ],
-    version = 33,
+    version = 34,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -96,6 +99,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun factionMembershipDao(): FactionMembershipDao
     abstract fun factionRelationshipDao(): FactionRelationshipDao
     abstract fun trashSnapshotDao(): TrashSnapshotDao
+    abstract fun eventFieldValueDao(): EventFieldValueDao
 
     companion object {
         private const val TAG = "AppDatabase"
@@ -1441,6 +1445,35 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_33_34 = object : Migration(33, 34) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "Migrating database from version 33 to 34 — field entityType + event_field_values")
+
+                // 필드 정의에 대상 구분 추가 (기존 필드는 전부 캐릭터 필드)
+                db.execSQL("ALTER TABLE field_definitions ADD COLUMN entityType TEXT NOT NULL DEFAULT 'character'")
+                // 유니크 인덱스를 (universeId, key) → (universeId, entityType, key)로 교체
+                db.execSQL("DROP INDEX IF EXISTS `index_field_definitions_universeId_key`")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_field_definitions_universeId_entityType_key` ON `field_definitions`(`universeId`, `entityType`, `key`)")
+
+                // 사건 필드값 (B-10)
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `event_field_values` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `eventId` INTEGER NOT NULL,
+                        `fieldDefinitionId` INTEGER NOT NULL,
+                        `value` TEXT NOT NULL,
+                        FOREIGN KEY(`eventId`) REFERENCES `timeline_events`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE,
+                        FOREIGN KEY(`fieldDefinitionId`) REFERENCES `field_definitions`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                """)
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_event_field_values_eventId` ON `event_field_values`(`eventId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_event_field_values_fieldDefinitionId` ON `event_field_values`(`fieldDefinitionId`)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_event_field_values_eventId_fieldDefinitionId` ON `event_field_values`(`eventId`, `fieldDefinitionId`)")
+
+                Log.i(TAG, "Migration from version 33 to 34 completed successfully")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -1448,7 +1481,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "novel_character_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34)
                     .addCallback(SeedCallback(context.applicationContext))
                     .build()
                     .also { INSTANCE = it }
