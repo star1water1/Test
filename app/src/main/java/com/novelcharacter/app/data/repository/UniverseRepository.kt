@@ -68,6 +68,13 @@ class UniverseRepository(
     suspend fun getFieldsByUniverseList(universeId: Long): List<FieldDefinition> =
         fieldDefinitionDao.getFieldsByUniverseList(universeId)
 
+    // 사건 필드 (B-10) — entityType = "event"
+    fun getEventFieldsByUniverse(universeId: Long): LiveData<List<FieldDefinition>> =
+        fieldDefinitionDao.getFieldsByUniverse(universeId, FieldDefinition.ENTITY_EVENT)
+
+    suspend fun getEventFieldsByUniverseList(universeId: Long): List<FieldDefinition> =
+        fieldDefinitionDao.getFieldsByUniverseList(universeId, FieldDefinition.ENTITY_EVENT)
+
     suspend fun getFieldById(id: Long): FieldDefinition? =
         fieldDefinitionDao.getFieldById(id)
 
@@ -94,13 +101,17 @@ class UniverseRepository(
 
     suspend fun deleteField(field: FieldDefinition) {
         db.withTransaction {
-            // 같은 key를 가진 다른 세계관의 필드가 없으면 전체 삭제 (고아 캐릭터 포함)
-            // 있으면 해당 세계관의 캐릭터에 한정하여 삭제
-            val otherFieldsWithSameKey = fieldDefinitionDao.countFieldsByKeyExcluding(field.key, field.id)
-            if (otherFieldsWithSameKey == 0) {
-                db.characterStateChangeDao().deleteChangesByFieldKey(field.key)
-            } else {
-                db.characterStateChangeDao().deleteChangesByFieldKeyAndUniverse(field.key, field.universeId)
+            // 상태변화 이력(fieldKey 문자열 참조) 정리는 캐릭터 필드에만 해당.
+            // 사건 필드값은 FK CASCADE로 함께 삭제된다.
+            if (field.entityType == FieldDefinition.ENTITY_CHARACTER) {
+                // 같은 key를 가진 다른 세계관의 필드가 없으면 전체 삭제 (고아 캐릭터 포함)
+                // 있으면 해당 세계관의 캐릭터에 한정하여 삭제
+                val otherFieldsWithSameKey = fieldDefinitionDao.countFieldsByKeyExcluding(field.key, field.id)
+                if (otherFieldsWithSameKey == 0) {
+                    db.characterStateChangeDao().deleteChangesByFieldKey(field.key)
+                } else {
+                    db.characterStateChangeDao().deleteChangesByFieldKeyAndUniverse(field.key, field.universeId)
+                }
             }
             fieldDefinitionDao.delete(field)
         }

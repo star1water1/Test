@@ -1032,43 +1032,11 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         }
     }
 
-    private fun parseSelectOptions(configJson: String): List<String> {
-        return try {
-            val configMap: Map<String, Any> = gson.fromJson(
-                configJson, com.novelcharacter.app.util.GsonTypes.STRING_ANY_MAP
-            )
-            @Suppress("UNCHECKED_CAST")
-            (configMap["options"] as? List<*>)?.mapNotNull { it as? String } ?: emptyList()
-        } catch (e: Exception) {
-            emptyList()
-        }
-    }
+    private fun parseSelectOptions(configJson: String): List<String> =
+        com.novelcharacter.app.util.FieldOptionParser.parseSelectOptions(configJson)
 
-    private fun parseGradeOptions(configJson: String): List<String> {
-        val defaultGrades = listOf("C", "B", "A", "S")
-        return try {
-            val configMap: Map<String, Any> = gson.fromJson(
-                configJson, com.novelcharacter.app.util.GsonTypes.STRING_ANY_MAP
-            )
-            @Suppress("UNCHECKED_CAST")
-            val gradesMap = configMap["grades"] as? Map<String, Any>
-            val gradeKeys = if (gradesMap != null) {
-                gradesMap.entries
-                    .sortedBy { (it.value as? Number)?.toDouble() ?: 0.0 }
-                    .map { it.key }
-            } else {
-                defaultGrades
-            }
-            val allowNegative = configMap["allowNegative"] as? Boolean ?: false
-            if (allowNegative) {
-                gradeKeys.flatMap { listOf("-$it", it) }
-            } else {
-                gradeKeys
-            }
-        } catch (e: Exception) {
-            defaultGrades
-        }
-    }
+    private fun parseGradeOptions(configJson: String): List<String> =
+        com.novelcharacter.app.util.FieldOptionParser.parseGradeOptions(configJson)
 
     private fun validateRequiredFields(): String? {
         for (field in fieldDefinitions) {
@@ -1639,11 +1607,13 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
             override suspend fun getAllCharactersList(): List<com.novelcharacter.app.data.model.Character> = viewModel.getAllCharactersList()
             override suspend fun getCharacterIdsForEvent(eventId: Long): List<Long> = viewModel.getCharacterIdsForEvent(eventId)
             override suspend fun getNovelIdsForEvent(eventId: Long): List<Long> = viewModel.getNovelIdsForEvent(eventId)
-            override fun insertEvent(event: com.novelcharacter.app.data.model.TimelineEvent, characterIds: List<Long>, novelIds: List<Long>) {
-                viewModel.insertEvent(event, characterIds, novelIds)
+            override suspend fun getEventFieldsForUniverse(universeId: Long) = viewModel.getEventFieldsForUniverse(universeId)
+            override suspend fun getEventFieldValuesForEvent(eventId: Long) = viewModel.getEventFieldValuesForEvent(eventId)
+            override fun insertEvent(event: com.novelcharacter.app.data.model.TimelineEvent, characterIds: List<Long>, novelIds: List<Long>, eventFieldValues: List<com.novelcharacter.app.data.model.EventFieldValue>) {
+                viewModel.insertEvent(event, characterIds, novelIds, eventFieldValues)
             }
-            override fun updateEvent(event: com.novelcharacter.app.data.model.TimelineEvent, characterIds: List<Long>, novelIds: List<Long>) {
-                viewModel.updateEvent(event, characterIds, novelIds)
+            override fun updateEvent(event: com.novelcharacter.app.data.model.TimelineEvent, characterIds: List<Long>, novelIds: List<Long>, eventFieldValues: List<com.novelcharacter.app.data.model.EventFieldValue>) {
+                viewModel.updateEvent(event, characterIds, novelIds, eventFieldValues)
             }
             override suspend fun getEventsInScope(novelIds: List<Long>, universeId: Long?): List<com.novelcharacter.app.data.model.TimelineEvent> {
                 return when {
@@ -1656,9 +1626,10 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
             override fun updateEventAndShiftOthers(
                 event: com.novelcharacter.app.data.model.TimelineEvent, characterIds: List<Long>, novelIds: List<Long>,
                 shiftDirection: EventEditDialogFragment.ShiftDirection,
-                delta: Int, originalNovelIds: List<Long>, originalUniverseId: Long?
+                delta: Int, originalNovelIds: List<Long>, originalUniverseId: Long?,
+                eventFieldValues: List<com.novelcharacter.app.data.model.EventFieldValue>
             ) {
-                viewModel.updateEventAndShiftOthers(event, characterIds, novelIds, shiftDirection, delta, originalNovelIds, originalUniverseId)
+                viewModel.updateEventAndShiftOthers(event, characterIds, novelIds, shiftDirection, delta, originalNovelIds, originalUniverseId, eventFieldValues)
             }
         }
 

@@ -507,12 +507,20 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     // ===== Event CRUD (캐릭터 화면에서 사건 생성용) =====
     private val db = app.database
 
-    fun insertEvent(event: TimelineEvent, characterIds: List<Long>, novelIds: List<Long> = emptyList()) = viewModelScope.launch {
+    fun insertEvent(
+        event: TimelineEvent,
+        characterIds: List<Long>,
+        novelIds: List<Long> = emptyList(),
+        eventFieldValues: List<com.novelcharacter.app.data.model.EventFieldValue>? = null
+    ) = viewModelScope.launch {
         try {
             db.withTransaction {
                 val eventId = timelineRepository.insertEvent(event)
                 timelineRepository.updateEventCharacters(eventId, characterIds)
                 timelineRepository.updateEventNovels(eventId, novelIds)
+                if (eventFieldValues != null) {
+                    db.eventFieldValueDao().replaceAllByEvent(eventId, eventFieldValues.map { it.copy(eventId = eventId) })
+                }
             }
             syncEventTypeToStateChanges(event, characterIds)
         } catch (e: Exception) {
@@ -520,12 +528,20 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
-    fun updateEvent(event: TimelineEvent, characterIds: List<Long>, novelIds: List<Long> = emptyList()) = viewModelScope.launch {
+    fun updateEvent(
+        event: TimelineEvent,
+        characterIds: List<Long>,
+        novelIds: List<Long> = emptyList(),
+        eventFieldValues: List<com.novelcharacter.app.data.model.EventFieldValue>? = null
+    ) = viewModelScope.launch {
         try {
             db.withTransaction {
                 timelineRepository.updateEvent(event)
                 timelineRepository.updateEventCharacters(event.id, characterIds)
                 timelineRepository.updateEventNovels(event.id, novelIds)
+                if (eventFieldValues != null) {
+                    db.eventFieldValueDao().replaceAllByEvent(event.id, eventFieldValues.map { it.copy(eventId = event.id) })
+                }
             }
             syncEventTypeToStateChanges(event, characterIds)
         } catch (e: Exception) {
@@ -540,7 +556,8 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         shiftDirection: ShiftDirection,
         delta: Int,
         originalNovelIds: List<Long>,
-        originalUniverseId: Long?
+        originalUniverseId: Long?,
+        eventFieldValues: List<com.novelcharacter.app.data.model.EventFieldValue>? = null
     ) = viewModelScope.launch {
         try {
             val oldYear = event.year - delta
@@ -548,6 +565,9 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
                 timelineRepository.updateEvent(event)
                 timelineRepository.updateEventCharacters(event.id, characterIds)
                 timelineRepository.updateEventNovels(event.id, novelIds)
+                if (eventFieldValues != null) {
+                    db.eventFieldValueDao().replaceAllByEvent(event.id, eventFieldValues.map { it.copy(eventId = event.id) })
+                }
 
                 val scopeEvents = when {
                     originalNovelIds.isNotEmpty() ->
@@ -588,6 +608,10 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     suspend fun getNovelIdsForEvent(eventId: Long) = timelineRepository.getNovelIdsForEvent(eventId)
+    suspend fun getEventFieldsForUniverse(universeId: Long) =
+        db.fieldDefinitionDao().getFieldsByUniverseList(universeId, com.novelcharacter.app.data.model.FieldDefinition.ENTITY_EVENT)
+    suspend fun getEventFieldValuesForEvent(eventId: Long) =
+        db.eventFieldValueDao().getValuesByEventList(eventId)
     suspend fun getEventsByNovelList(novelId: Long) = timelineRepository.getEventsByNovelList(novelId)
     suspend fun getEventsByUniverseList(universeId: Long) = timelineRepository.getEventsByUniverseList(universeId)
     suspend fun getAllEventsList() = timelineRepository.getAllEventsList()

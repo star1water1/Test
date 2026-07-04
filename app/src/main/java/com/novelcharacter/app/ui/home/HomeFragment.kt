@@ -49,6 +49,19 @@ class HomeFragment : Fragment() {
             binding.viewPager.setCurrentItem(1, false) // 연표 탭 (인덱스 1)
             // pending_navigate 플래그 소비는 TimelineFragment.onResume()에서 처리
         }
+
+        // 첫 실행 구조 안내 (B-8) — 1회만 표시
+        val ctx = requireContext()
+        if (savedInstanceState == null &&
+            !com.novelcharacter.app.util.OnboardingPrefs.isShown(ctx, com.novelcharacter.app.util.OnboardingPrefs.KEY_WELCOME_SHOWN)
+        ) {
+            com.novelcharacter.app.util.OnboardingPrefs.markShown(ctx, com.novelcharacter.app.util.OnboardingPrefs.KEY_WELCOME_SHOWN)
+            androidx.appcompat.app.AlertDialog.Builder(ctx)
+                .setTitle(R.string.onboarding_welcome_title)
+                .setMessage(R.string.onboarding_welcome_message)
+                .setPositiveButton(R.string.onboarding_welcome_start, null)
+                .show()
+        }
     }
 
     override fun onDestroyView() {
