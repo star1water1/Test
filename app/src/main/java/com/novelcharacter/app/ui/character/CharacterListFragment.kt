@@ -26,6 +26,7 @@ import com.novelcharacter.app.ui.character.batch.BatchOperationBottomSheet
 import com.novelcharacter.app.ui.character.batch.BatchOperationResult
 import com.novelcharacter.app.ui.character.batch.BatchSelectByFilterBottomSheet
 import com.novelcharacter.app.util.navigateSafe
+import com.novelcharacter.app.util.notifyResult
 
 class CharacterListFragment : Fragment() {
 
@@ -468,6 +469,14 @@ class CharacterListFragment : Fragment() {
             val isEmpty = characters.isEmpty()
             binding.emptyText.visibility = if (isEmpty) View.VISIBLE else View.GONE
             binding.characterRecyclerView.visibility = if (isEmpty) View.GONE else View.VISIBLE
+        }
+
+        // 데이터 처리 결과 알림 (캐릭터 삭제 등 즉시 통보 + 작업 이력 기록)
+        viewModel.result.observe(viewLifecycleOwner) { result ->
+            result?.let {
+                notifyResult(it)
+                viewModel.clearResult()
+            }
         }
     }
 

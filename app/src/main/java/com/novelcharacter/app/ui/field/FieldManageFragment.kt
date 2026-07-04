@@ -23,6 +23,7 @@ import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.databinding.FragmentFieldManageBinding
 import com.novelcharacter.app.ui.adapter.FieldDefinitionAdapter
+import com.novelcharacter.app.util.notifyResult
 import kotlinx.coroutines.launch
 
 class FieldManageFragment : Fragment() {
@@ -152,16 +153,11 @@ class FieldManageFragment : Fragment() {
             binding.emptyText.visibility = if (isEmpty) View.VISIBLE else View.GONE
             binding.fieldRecyclerView.visibility = if (isEmpty) View.GONE else View.VISIBLE
         }
-        viewModel.saveError.observe(viewLifecycleOwner) { error ->
-            if (error != null) {
-                android.widget.Toast.makeText(requireContext(), error, android.widget.Toast.LENGTH_LONG).show()
-                viewModel.clearSaveError()
-            }
-        }
-        viewModel.saveInfo.observe(viewLifecycleOwner) { info ->
-            if (info != null) {
-                android.widget.Toast.makeText(requireContext(), info, android.widget.Toast.LENGTH_LONG).show()
-                viewModel.clearSaveInfo()
+        // 데이터 처리 결과 알림 (성공/실패·자동 교정 즉시 통보 + 작업 이력 기록)
+        viewModel.result.observe(viewLifecycleOwner) { result ->
+            result?.let {
+                notifyResult(it)
+                viewModel.clearResult()
             }
         }
     }

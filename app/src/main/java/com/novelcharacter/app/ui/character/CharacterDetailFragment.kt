@@ -21,6 +21,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.novelcharacter.app.util.navigateSafe
+import com.novelcharacter.app.util.notifyResult
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.chip.Chip
 import com.google.gson.Gson
@@ -150,6 +151,14 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
     // ===== Character display =====
 
     private fun observeCharacter() {
+        // 데이터 처리 결과 알림 (관계·관계변화·상태변화 등 즉시 통보 + 작업 이력 기록)
+        viewModel.result.observe(viewLifecycleOwner) { result ->
+            result?.let {
+                notifyResult(it)
+                viewModel.clearResult()
+            }
+        }
+
         viewModel.getCharacterById(characterId).observe(viewLifecycleOwner) { character ->
             character?.let {
                 cachedCharacter = it
