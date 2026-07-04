@@ -6,6 +6,7 @@ import android.net.Uri
 import android.util.Log
 import android.widget.Toast
 import androidx.core.content.FileProvider
+import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.database.AppDatabase
 import com.novelcharacter.app.data.model.Character
@@ -15,6 +16,7 @@ import com.novelcharacter.app.data.model.CharacterTag
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.TimelineEvent
+import com.novelcharacter.app.util.OpResult
 import com.novelcharacter.app.util.ThemeHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -103,6 +105,16 @@ class ExcelExporter(context: Context) {
                 if (options.searchPresets) exportSearchPresets(workbook, usedSheetNames)
                 if (options.appSettings) exportAppSettings(workbook, usedSheetNames)
 
+                // 내보내기 요약(시트/행 건수) — 사용 안내 시트는 데이터가 아니므로 제외
+                var exportedSheets = 0
+                var exportedRows = 0
+                for (i in 0 until workbook.numberOfSheets) {
+                    val s = workbook.getSheetAt(i)
+                    if (s.sheetName == "사용 안내") continue
+                    exportedSheets++
+                    exportedRows += maxOf(0, s.physicalNumberOfRows - 1)
+                }
+
                 val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
                 val xlsxFileName = "NovelCharacter_$timestamp.xlsx"
                 val xlsxFile = saveWorkbook(workbook, xlsxFileName)
@@ -126,6 +138,7 @@ class ExcelExporter(context: Context) {
                     fileName = xlsxFileName
                 }
 
+                val exportSummary = appContext.getString(R.string.result_excel_exported, exportedSheets, exportedRows)
                 withContext(Dispatchers.Main) {
                     if (truncatedCellCount > 0) {
                         Toast.makeText(
@@ -135,16 +148,23 @@ class ExcelExporter(context: Context) {
                         ).show()
                     }
                     if (onFileReady != null) {
+                        // 저장(SAF) 모드: 실제 완료는 writeToUri에서 통보 — 여기선 이력만 기록
                         onFileReady(file, fileName)
                     } else {
+                        // 공유 모드: 공유 시트가 열리기 전 요약 통보
+                        Toast.makeText(appContext, exportSummary, Toast.LENGTH_SHORT).show()
                         shareFile(file, isZip = options.images)
                     }
                 }
+                logExportResult(OpResult.success(OpResult.CAT_EXCEL, exportSummary,
+                    if (truncatedCellCount > 0) appContext.getString(R.string.export_cells_truncated, truncatedCellCount) else null))
             } catch (e: Exception) {
                 android.util.Log.e("ExcelExporter", "Export failed", e)
                 withContext(Dispatchers.Main) {
                     Toast.makeText(appContext, appContext.getString(R.string.export_failed_retry), Toast.LENGTH_LONG).show()
                 }
+                logExportResult(OpResult.failure(OpResult.CAT_EXCEL,
+                    appContext.getString(R.string.result_excel_export_failed), e.message))
             } finally {
                 try { workbook?.close() } catch (e: Exception) { android.util.Log.w("ExcelExporter", "Failed to close workbook", e) }
                 isExporting.set(false)
@@ -160,6 +180,8 @@ class ExcelExporter(context: Context) {
                     withContext(Dispatchers.Main) {
                         Toast.makeText(appContext, appContext.getString(R.string.export_save_failed), Toast.LENGTH_LONG).show()
                     }
+                    logExportResult(OpResult.failure(OpResult.CAT_EXCEL,
+                        appContext.getString(R.string.result_excel_save_failed)))
                     return@launch
                 }
                 outputStream.use { out ->
@@ -171,13 +193,22 @@ class ExcelExporter(context: Context) {
                 withContext(Dispatchers.Main) {
                     Toast.makeText(appContext, appContext.getString(R.string.export_save_success), Toast.LENGTH_SHORT).show()
                 }
+                logExportResult(OpResult.success(OpResult.CAT_EXCEL,
+                    appContext.getString(R.string.result_excel_saved)))
             } catch (e: Exception) {
                 android.util.Log.e("ExcelExporter", "Save to URI failed", e)
                 withContext(Dispatchers.Main) {
                     Toast.makeText(appContext, appContext.getString(R.string.export_save_failed), Toast.LENGTH_LONG).show()
                 }
+                logExportResult(OpResult.failure(OpResult.CAT_EXCEL,
+                    appContext.getString(R.string.result_excel_save_failed), e.message))
             }
         }
+    }
+
+    /** 내보내기 결과를 작업 이력에 기록한다(즉시 알림은 Toast/공유시트가 담당). */
+    private fun logExportResult(result: OpResult) {
+        (appContext as? NovelCharacterApp)?.operationLogRepository?.logAsync(result)
     }
 
     @Synchronized

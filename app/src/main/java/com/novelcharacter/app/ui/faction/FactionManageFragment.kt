@@ -28,6 +28,7 @@ import com.novelcharacter.app.databinding.FragmentFactionManageBinding
 import com.novelcharacter.app.ui.adapter.FactionAdapter
 import com.novelcharacter.app.ui.adapter.FactionMemberAdapter
 import com.novelcharacter.app.ui.adapter.FactionMemberItem
+import com.novelcharacter.app.util.notifyResult
 import kotlinx.coroutines.launch
 
 class FactionManageFragment : Fragment() {
@@ -131,6 +132,14 @@ class FactionManageFragment : Fragment() {
             viewLifecycleOwner.lifecycleScope.launch {
                 val counts = viewModel.getActiveMemberCountsForFactions(factions.map { it.id })
                 adapter.updateMemberCounts(counts)
+            }
+        }
+
+        // 데이터 처리 결과 알림 (성공/실패 즉시 통보 + 작업 이력 기록)
+        viewModel.result.observe(viewLifecycleOwner) { result ->
+            result?.let {
+                notifyResult(it)
+                viewModel.clearResult()
             }
         }
     }

@@ -13,9 +13,16 @@ import com.novelcharacter.app.util.StandardYearSyncHelper
 import kotlinx.coroutines.launch
 
 sealed class BatchOperationResult {
-    data class Success(val operation: String, val affectedCount: Int) : BatchOperationResult()
+    /**
+     * @param affectedCount 실제 반영된 캐릭터 수
+     * @param syncFailures 시맨틱 필드(나이/생존 등) 재동기화에 실패한 캐릭터 수 — 조용한 부분 실패를 통보하기 위해 집계
+     */
+    data class Success(val operation: String, val affectedCount: Int, val syncFailures: Int = 0) : BatchOperationResult()
     data class Error(val message: String) : BatchOperationResult()
 }
+
+/** 배치 작업 내부 집계 결과 (반영 건수 + 동기화 실패 건수) */
+private data class BatchCounts(val affected: Int, val syncFailures: Int = 0)
 
 class BatchEditViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -102,13 +109,14 @@ class BatchEditViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun setPinned(pinned: Boolean) = launchBatchOp("setPinned") { ids ->
         characterRepository.batchSetPinned(ids, pinned)
-        ids.size
+        BatchCounts(ids.size)
     }
 
     fun changeNovel(newNovelId: Long?) = launchBatchOp("changeNovel") { ids ->
         characterRepository.batchChangeNovel(ids, newNovelId)
 
         // 시맨틱 필드 재동기화 (standardYear가 달라질 수 있으므로)
+        var syncFailures = 0
         if (newNovelId != null) {
             val newNovel = novelRepository.getNovelById(newNovelId)
             val newUniverseId = newNovel?.universeId
@@ -121,27 +129,29 @@ class BatchEditViewModel(application: Application) : AndroidViewModel(applicatio
                         }
                     } catch (e: Exception) {
                         Log.w(TAG, "Failed to sync semantic fields for character $charId after novel change", e)
+                        syncFailures++
                     }
                 }
             }
         }
-        ids.size
+        BatchCounts(ids.size, syncFailures)
     }
 
     fun addTags(tags: List<String>) = launchBatchOp("addTags") { ids ->
         characterRepository.batchAddTags(ids, tags)
-        ids.size
+        BatchCounts(ids.size)
     }
 
     fun removeTags(tags: List<String>) = launchBatchOp("removeTags") { ids ->
         characterRepository.batchRemoveTags(ids, tags)
-        ids.size
+        BatchCounts(ids.size)
     }
 
     fun setFieldValue(fieldDefId: Long, value: String) = launchBatchOp("setFieldValue") { ids ->
         characterRepository.batchSetFieldValue(ids, fieldDefId, value)
 
         // 시맨틱 필드 동기화 (나이/출생연도/사망연도/생존여부 변경 시)
+        var syncFailures = 0
         val fieldDef = app.database.fieldDefinitionDao().getFieldById(fieldDefId)
         if (fieldDef != null && SemanticRole.fromConfig(fieldDef.config) != null) {
             for (charId in ids) {
@@ -151,16 +161,18 @@ class BatchEditViewModel(application: Application) : AndroidViewModel(applicatio
                     semanticSyncHelper.syncFieldToStateChange(charId, universeId, allValues)
                 } catch (e: Exception) {
                     Log.w(TAG, "Failed to sync semantic field for character $charId", e)
+                    syncFailures++
                 }
             }
         }
-        ids.size
+        BatchCounts(ids.size, syncFailures)
     }
 
     fun clearFieldValue(fieldDefId: Long) = launchBatchOp("clearFieldValue") { ids ->
         characterRepository.batchClearFieldValue(ids, fieldDefId)
 
         // 시맨틱 필드 동기화 (출생연도/사망연도 등 초기화 시 나이 등 재계산)
+        var syncFailures = 0
         val fieldDef = app.database.fieldDefinitionDao().getFieldById(fieldDefId)
         if (fieldDef != null && SemanticRole.fromConfig(fieldDef.config) != null) {
             for (charId in ids) {
@@ -170,27 +182,28 @@ class BatchEditViewModel(application: Application) : AndroidViewModel(applicatio
                     semanticSyncHelper.syncFieldToStateChange(charId, universeId, allValues)
                 } catch (e: Exception) {
                     Log.w(TAG, "Failed to sync semantic field for character $charId after clear", e)
+                    syncFailures++
                 }
             }
         }
-        ids.size
+        BatchCounts(ids.size, syncFailures)
     }
 
     fun appendMemo(text: String, prepend: Boolean) = launchBatchOp("appendMemo") { ids ->
         characterRepository.batchAppendMemo(ids, text, prepend)
-        ids.size
+        BatchCounts(ids.size)
     }
 
     fun deleteSelected() = launchBatchOp("delete") { ids ->
         characterRepository.batchDelete(ids)
         val count = ids.size
         _selectedIds.postValue(emptySet()) // 삭제 후 선택 해제
-        count
+        BatchCounts(count)
     }
 
     // ===== 내부 유틸리티 =====
 
-    private fun launchBatchOp(opName: String, block: suspend (List<Long>) -> Int) {
+    private fun launchBatchOp(opName: String, block: suspend (List<Long>) -> BatchCounts) {
         if (_isProcessing.value == true) return // 중복 실행 방지
         val ids = _selectedIds.value?.toList()
         if (ids.isNullOrEmpty()) return
@@ -198,8 +211,8 @@ class BatchEditViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             _isProcessing.value = true
             try {
-                val count = block(ids)
-                _operationResult.value = BatchOperationResult.Success(opName, count)
+                val counts = block(ids)
+                _operationResult.value = BatchOperationResult.Success(opName, counts.affected, counts.syncFailures)
             } catch (e: Exception) {
                 Log.e(TAG, "Batch operation '$opName' failed", e)
                 _operationResult.value = BatchOperationResult.Error(

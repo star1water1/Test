@@ -12,6 +12,8 @@ import android.util.Log
 import androidx.room.withTransaction
 import com.novelcharacter.app.data.model.CharacterStateChange
 import com.novelcharacter.app.ui.timeline.EventEditDialogFragment.ShiftDirection
+import com.novelcharacter.app.util.OpResult
+import com.novelcharacter.app.util.reportResult
 import com.novelcharacter.app.util.SemanticFieldSyncHelper
 import com.novelcharacter.app.util.StandardYearSyncHelper
 import kotlinx.coroutines.Job
@@ -29,8 +31,10 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
     private val semanticSyncHelper = SemanticFieldSyncHelper(characterRepository, universeRepository, novelRepository)
     private val prefs = application.getSharedPreferences("timeline_ui_state", Context.MODE_PRIVATE)
 
-    private val _error = MutableLiveData<String?>()
-    val error: LiveData<String?> = _error
+    // 데이터 처리 결과 알림 채널 — 사건 저장/수정/삭제 성공·실패를 OpResult로 일원화
+    private val _result = MutableLiveData<OpResult?>()
+    val result: LiveData<OpResult?> = _result
+    fun clearResult() { _result.value = null }
 
     val allEvents: LiveData<List<TimelineEvent>> = timelineRepository.allEvents
     val allNovels: LiveData<List<Novel>> = novelRepository.allNovels
@@ -318,6 +322,8 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
                     }
                 }
             }
+            reportResult(_result, OpResult.success(OpResult.CAT_EVENT,
+                app.getString(R.string.result_event_stdyear_updated, newStdYear)))
         } catch (e: Exception) {
             Log.e("TimelineViewModel", "Failed to set standard year", e)
             showError(e.message)
@@ -409,25 +415,18 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
     suspend fun getCharactersByNovel(novelId: Long): List<Character> =
         characterRepository.getCharactersByNovelList(novelId)
 
-    private var errorClearJob: Job? = null
-
     override fun onCleared() {
         super.onCleared()
         allEvents.removeObserver(densityObserver)
         // 디바운스 중인 center_year를 즉시 저장
         centerYearSaveJob?.cancel()
         _centerYear.value?.let { prefs.edit().putInt("center_year", it).apply() }
-        errorClearJob?.cancel()
     }
 
     private fun showError(message: String?) {
-        // 예외 메시지가 null이어도 실패를 알린다 (null 값은 자동 클리어 신호로만 사용되므로)
-        _error.value = message ?: app.getString(R.string.operation_failed)
-        errorClearJob?.cancel()
-        errorClearJob = viewModelScope.launch {
-            delay(3000)
-            _error.value = null
-        }
+        // 예외 메시지가 null이어도 실패를 알린다 — 결과 채널로 통보 + 작업 이력 기록
+        reportResult(_result, OpResult.failure(OpResult.CAT_EVENT,
+            message ?: app.getString(R.string.operation_failed)))
     }
 
     fun insertEvent(
@@ -450,6 +449,8 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
                 _novelEventIds.value = timelineRepository.getEventIdsByNovel(nid).toSet()
             }
             syncEventTypeToStateChanges(event, characterIds)
+            reportResult(_result, OpResult.success(OpResult.CAT_EVENT,
+                app.getString(R.string.result_event_added)))
         } catch (e: Exception) {
             Log.e("TimelineViewModel", "Failed to insert event", e)
             showError(e.message)
@@ -483,6 +484,8 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
                 cleanupStateChangesForDeletedEvent(oldEvent)
             }
             syncEventTypeToStateChanges(event, characterIds)
+            reportResult(_result, OpResult.success(OpResult.CAT_EVENT,
+                app.getString(R.string.result_event_updated)))
         } catch (e: Exception) {
             Log.e("TimelineViewModel", "Failed to update event", e)
             showError(e.message)
@@ -553,6 +556,8 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
                 cleanupStateChangesForDeletedEvent(oldEvent)
             }
             syncEventTypeToStateChanges(event, characterIds)
+            reportResult(_result, OpResult.success(OpResult.CAT_EVENT,
+                app.getString(R.string.result_event_updated)))
         } catch (e: Exception) {
             Log.e("TimelineViewModel", "Failed to shift events", e)
             showError(e.message)
@@ -630,6 +635,8 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
             _filterNovelId.value?.let { nid ->
                 _novelEventIds.value = timelineRepository.getEventIdsByNovel(nid).toSet()
             }
+            reportResult(_result, OpResult.success(OpResult.CAT_EVENT,
+                app.getString(R.string.result_event_deleted)))
         } catch (e: Exception) {
             Log.e("TimelineViewModel", "Failed to delete event", e)
             showError(e.message)

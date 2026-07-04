@@ -16,6 +16,7 @@ import com.novelcharacter.app.data.repository.NameBankRepository
 import com.novelcharacter.app.data.repository.SearchPresetRepository
 import com.novelcharacter.app.data.repository.FactionRepository
 import com.novelcharacter.app.data.repository.TrashRepository
+import com.novelcharacter.app.data.repository.OperationLogRepository
 import com.novelcharacter.app.backup.AutoBackupWorker
 import com.novelcharacter.app.backup.BackupEncryptor
 import com.novelcharacter.app.backup.BackupStatusStore
@@ -56,6 +57,7 @@ class NovelCharacterApp : Application() {
     val searchPresetRepository by lazy { SearchPresetRepository(database.searchPresetDao()) }
     val factionRepository by lazy { FactionRepository(database) }
     val trashRepository by lazy { TrashRepository(database) }
+    val operationLogRepository by lazy { OperationLogRepository(database) }
     val recentActivityDao by lazy { database.recentActivityDao() }
     val backupStatusStore by lazy { BackupStatusStore(this) }
 
@@ -227,15 +229,25 @@ class NovelCharacterApp : Application() {
     }
 
     private fun createNotificationChannel() {
-        val channel = NotificationChannel(
+        val manager = getSystemService(NotificationManager::class.java) ?: return
+        val birthday = NotificationChannel(
             BIRTHDAY_CHANNEL_ID,
             getString(R.string.notification_channel_birthday_name),
             NotificationManager.IMPORTANCE_DEFAULT
         ).apply {
             description = getString(R.string.notification_channel_birthday_desc)
         }
-        val manager = getSystemService(NotificationManager::class.java) ?: return
-        manager.createNotificationChannel(channel)
+        manager.createNotificationChannel(birthday)
+
+        // 자동 백업 실패 통지용 채널 (사용자가 개별 제어 가능하도록 별도 채널)
+        val backup = NotificationChannel(
+            BACKUP_CHANNEL_ID,
+            getString(R.string.notification_channel_backup_name),
+            NotificationManager.IMPORTANCE_HIGH
+        ).apply {
+            description = getString(R.string.notification_channel_backup_desc)
+        }
+        manager.createNotificationChannel(backup)
     }
 
     private fun scheduleBirthdayCheck() {
@@ -278,5 +290,6 @@ class NovelCharacterApp : Application() {
 
     companion object {
         const val BIRTHDAY_CHANNEL_ID = "birthday_channel"
+        const val BACKUP_CHANNEL_ID = "backup_channel"
     }
 }

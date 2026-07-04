@@ -143,6 +143,10 @@ class SettingsFragment : Fragment() {
             findNavController().navigate(R.id.storageFragment)
         }
 
+        binding.operationHistoryRow.setOnClickListener {
+            findNavController().navigate(R.id.operationHistoryFragment)
+        }
+
         // 자동 백업 이미지 기본값이 데이터 전용으로 바뀐 것을 최초 1회 고지 (변수 제어 — 무통보 변경 금지)
         maybeShowBackupImageNotice()
 

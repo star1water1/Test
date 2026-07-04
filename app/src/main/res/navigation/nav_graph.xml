@@ -206,6 +206,12 @@
         android:label="@string/storage_title"
         tools:layout="@layout/fragment_storage" />
 
+    <fragment
+        android:id="@+id/operationHistoryFragment"
+        android:name="com.novelcharacter.app.ui.settings.OperationHistoryFragment"
+        android:label="@string/operation_history_title"
+        tools:layout="@layout/fragment_operation_history" />
+
     <!-- Statistics -->
     <fragment
         android:id="@+id/statsMainFragment"

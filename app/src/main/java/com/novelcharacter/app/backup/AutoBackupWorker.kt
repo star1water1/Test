@@ -71,13 +71,35 @@ class AutoBackupWorker(
 
             statusStore.recordSuccess()
             Log.i(TAG, "Auto backup completed successfully")
+            logResult(com.novelcharacter.app.util.OpResult.success(
+                com.novelcharacter.app.util.OpResult.CAT_BACKUP,
+                appContext.getString(com.novelcharacter.app.R.string.backup_result_auto_success)
+            ))
             Result.success()
         } catch (e: Exception) {
             Log.e(TAG, "Auto backup failed", e)
             AppLogger.error(TAG, "자동 백업 실패: ${e.message}", e)
             statusStore.recordFailure(e.message ?: "Unknown error")
-            if (runAttemptCount < 3) Result.retry() else Result.failure()
+            val willRetry = runAttemptCount < 3
+            if (!willRetry) {
+                // 재시도 소진 — 최종 실패. 시스템 알림으로 능동 통지 + 이력 기록.
+                com.novelcharacter.app.notification.NotificationHelper
+                    .showBackupFailedNotification(appContext, e.message ?: "Unknown error")
+                logResult(com.novelcharacter.app.util.OpResult.failure(
+                    com.novelcharacter.app.util.OpResult.CAT_BACKUP,
+                    appContext.getString(com.novelcharacter.app.R.string.backup_result_auto_failed),
+                    detail = e.message
+                ))
+            }
+            if (willRetry) Result.retry() else Result.failure()
         }
+    }
+
+    private fun logResult(result: com.novelcharacter.app.util.OpResult) {
+        try {
+            (appContext.applicationContext as? com.novelcharacter.app.NovelCharacterApp)
+                ?.operationLogRepository?.logAsync(result)
+        } catch (_: Exception) { /* 이력 기록 실패는 무시 */ }
     }
 
     private suspend fun saveEncryptedBackup(workbook: XSSFWorkbook, includeImages: Boolean) {

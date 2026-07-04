@@ -26,6 +26,7 @@ import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.RecyclerView
 import com.novelcharacter.app.ui.adapter.NovelAdapter
 import com.novelcharacter.app.util.navigateSafe
+import com.novelcharacter.app.util.notifyResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -223,6 +224,14 @@ class NovelListFragment : Fragment() {
         }
         viewModel.universeBorder.observe(viewLifecycleOwner) { (color, width) ->
             adapter.setUniverseBorder(color, width)
+        }
+
+        // 데이터 처리 결과 알림 (성공/실패 즉시 통보 + 작업 이력 기록)
+        viewModel.result.observe(viewLifecycleOwner) { result ->
+            result?.let {
+                notifyResult(it)
+                viewModel.clearResult()
+            }
         }
     }
 

@@ -9,9 +9,12 @@ import androidx.lifecycle.switchMap
 import androidx.lifecycle.viewModelScope
 import androidx.room.withTransaction
 import com.novelcharacter.app.NovelCharacterApp
+import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.util.PresetTemplates
+import com.novelcharacter.app.util.OpResult
+import com.novelcharacter.app.util.reportResult
 import android.util.Log
 import kotlinx.coroutines.launch
 
@@ -24,15 +27,10 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
     private val _universeId = MutableLiveData<Long>()
     val universeId: LiveData<Long> = _universeId
 
-    /** 필드 저장 실패 시 사용자에게 표시할 일회성 에러 이벤트 */
-    private val _saveError = MutableLiveData<String?>()
-    val saveError: LiveData<String?> = _saveError
-    fun clearSaveError() { _saveError.value = null }
-
-    /** 필드 저장 시 자동 교정 등 정보성 알림 (일회성) */
-    private val _saveInfo = MutableLiveData<String?>()
-    val saveInfo: LiveData<String?> = _saveInfo
-    fun clearSaveInfo() { _saveInfo.value = null }
+    // 데이터 처리 결과 알림 채널 — 필드 저장 성공/실패·자동 교정 정보를 OpResult로 일원화
+    private val _result = MutableLiveData<OpResult?>()
+    val result: LiveData<OpResult?> = _result
+    fun clearResult() { _result.value = null }
 
     // 관리 대상 (B-10): 캐릭터 필드 / 사건 필드 전환
     private val _entityType = MutableLiveData(FieldDefinition.ENTITY_CHARACTER)
@@ -65,12 +63,16 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
     fun insertField(field: FieldDefinition) = viewModelScope.launch {
         try {
             universeRepository.insertField(field)
+            reportResult(_result, OpResult.success(OpResult.CAT_FIELD,
+                app.getString(R.string.result_field_added, field.name)))
         } catch (e: android.database.sqlite.SQLiteConstraintException) {
             Log.e("FieldViewModel", "Duplicate field key: ${field.key}", e)
-            _saveError.postValue("필드 키 '${field.key}'이(가) 이미 존재합니다.")
+            reportResult(_result, OpResult.failure(OpResult.CAT_FIELD,
+                "필드 키 '${field.key}'이(가) 이미 존재합니다."))
         } catch (e: Exception) {
             Log.e("FieldViewModel", "Failed to insert field", e)
-            _saveError.postValue("필드 저장에 실패했습니다.")
+            reportResult(_result, OpResult.failure(OpResult.CAT_FIELD,
+                "필드 저장에 실패했습니다.", e.message))
         }
     }
 
@@ -80,20 +82,25 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
             val old = app.database.fieldDefinitionDao().getFieldById(field.id)
             if (old != null && old.key != field.key) {
                 val (formulaCount, historyCount) = migrateFieldKey(old, field)
-                if (formulaCount > 0 || historyCount > 0) {
-                    _saveInfo.postValue(
-                        "필드 키 변경('${old.key}'→'${field.key}'): 참조 수식 ${formulaCount}건, 상태변화 이력 ${historyCount}건을 자동으로 갱신했습니다."
-                    )
-                }
+                // 자동 교정이 일어났으면 상세로 노출 (조용한 파급 방지)
+                val detail = if (formulaCount > 0 || historyCount > 0)
+                    "필드 키 변경('${old.key}'→'${field.key}'): 참조 수식 ${formulaCount}건, 상태변화 이력 ${historyCount}건을 자동으로 갱신했습니다."
+                    else null
+                reportResult(_result, OpResult.success(OpResult.CAT_FIELD,
+                    app.getString(R.string.result_field_updated, field.name), detail))
             } else {
                 universeRepository.updateField(field)
+                reportResult(_result, OpResult.success(OpResult.CAT_FIELD,
+                    app.getString(R.string.result_field_updated, field.name)))
             }
         } catch (e: android.database.sqlite.SQLiteConstraintException) {
             Log.e("FieldViewModel", "Duplicate field key on update: ${field.key}", e)
-            _saveError.postValue("필드 키 '${field.key}'이(가) 이미 존재합니다.")
+            reportResult(_result, OpResult.failure(OpResult.CAT_FIELD,
+                "필드 키 '${field.key}'이(가) 이미 존재합니다."))
         } catch (e: Exception) {
             Log.e("FieldViewModel", "Failed to update field", e)
-            _saveError.postValue("필드 수정에 실패했습니다.")
+            reportResult(_result, OpResult.failure(OpResult.CAT_FIELD,
+                app.getString(R.string.result_field_update_failed), e.message))
         }
     }
 
@@ -128,8 +135,12 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
     fun deleteField(field: FieldDefinition) = viewModelScope.launch {
         try {
             universeRepository.deleteField(field)
+            reportResult(_result, OpResult.success(OpResult.CAT_FIELD,
+                app.getString(R.string.result_field_deleted, field.name)))
         } catch (e: Exception) {
             Log.e("FieldViewModel", "Failed to delete field", e)
+            reportResult(_result, OpResult.failure(OpResult.CAT_FIELD,
+                app.getString(R.string.result_field_delete_failed), e.message))
         }
     }
 
@@ -137,8 +148,11 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
         try {
             val updated = fields.mapIndexed { index, field -> field.copy(displayOrder = index) }
             universeRepository.updateFieldsOrder(updated)
+            // 재정렬은 초고빈도 조작 — 성공 무통보, 실패만 알림 (원칙 04)
         } catch (e: Exception) {
             Log.e("FieldViewModel", "Failed to update field order", e)
+            reportResult(_result, OpResult.failure(OpResult.CAT_FIELD,
+                app.getString(R.string.result_field_reorder_failed), e.message))
         }
     }
 
@@ -214,9 +228,16 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
                 }
             if (newFields.isNotEmpty()) {
                 universeRepository.insertAllFields(newFields)
+                reportResult(_result, OpResult.success(OpResult.CAT_FIELD,
+                    app.getString(R.string.result_field_imported, newFields.size)))
+            } else {
+                reportResult(_result, OpResult.success(OpResult.CAT_FIELD,
+                    app.getString(R.string.result_field_import_none)))
             }
         } catch (e: Exception) {
             Log.e("FieldViewModel", "Failed to import fields", e)
+            reportResult(_result, OpResult.failure(OpResult.CAT_FIELD,
+                app.getString(R.string.result_field_import_failed), e.message))
         }
     }
 }

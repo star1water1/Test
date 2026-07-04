@@ -32,6 +32,7 @@ import androidx.recyclerview.widget.ItemTouchHelper
 import com.novelcharacter.app.ui.adapter.UniverseAdapter
 import com.novelcharacter.app.util.PresetTemplates
 import com.novelcharacter.app.util.navigateSafe
+import com.novelcharacter.app.util.notifyResult
 
 class UniverseListFragment : Fragment() {
 
@@ -298,8 +299,8 @@ class UniverseListFragment : Fragment() {
             visibility = View.VISIBLE
             setOnClickListener {
                 bottomSheet.dismiss()
+                // 결과는 viewModel.result 채널이 실제 복원 건수와 함께 통보
                 viewModel.restoreBuiltInPresets()
-                Toast.makeText(requireContext(), R.string.preset_restored, Toast.LENGTH_SHORT).show()
             }
         }
 
@@ -554,8 +555,8 @@ class UniverseListFragment : Fragment() {
                 // Update displayOrder and save
                 val updatedFields = fields.mapIndexed { i, f -> f.copy(displayOrder = i) }
                 val newJson = PresetTemplates.fieldsToJson(updatedFields)
+                // 결과는 viewModel.result 채널이 통보 (중복 알림 방지)
                 viewModel.updateUserPreset(preset.copy(fieldsJson = newJson))
-                Toast.makeText(ctx, R.string.preset_fields_saved, Toast.LENGTH_SHORT).show()
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
@@ -604,8 +605,8 @@ class UniverseListFragment : Fragment() {
                 val name = nameEdit.text.toString().trim()
                 val desc = descEdit.text.toString().trim()
                 if (name.isNotEmpty()) {
+                    // 결과는 viewModel.result 채널이 통보 (중복 알림 방지)
                     viewModel.saveAsUserPreset(universe.id, name, desc)
-                    Toast.makeText(ctx, getString(R.string.preset_saved, name), Toast.LENGTH_SHORT).show()
                 }
             }
             .setNegativeButton(R.string.cancel, null)
@@ -626,6 +627,14 @@ class UniverseListFragment : Fragment() {
 
         viewModel.universeFieldCounts.observe(viewLifecycleOwner) { counts ->
             adapter.updateFieldCounts(counts)
+        }
+
+        // 데이터 처리 결과 알림 (성공/실패 즉시 통보 + 작업 이력 기록)
+        viewModel.result.observe(viewLifecycleOwner) { result ->
+            result?.let {
+                notifyResult(it)
+                viewModel.clearResult()
+            }
         }
 
         viewModel.presetApplied.observe(viewLifecycleOwner) { event ->

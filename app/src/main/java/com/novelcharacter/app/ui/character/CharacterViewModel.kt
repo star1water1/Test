@@ -3,6 +3,9 @@ package com.novelcharacter.app.ui.character
 import android.app.Application
 import androidx.lifecycle.*
 import com.novelcharacter.app.NovelCharacterApp
+import com.novelcharacter.app.R
+import com.novelcharacter.app.util.OpResult
+import com.novelcharacter.app.util.reportResult
 import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.CharacterFieldValue
 import com.novelcharacter.app.data.model.CharacterRelationship
@@ -36,6 +39,11 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
 
     val allCharacters: LiveData<List<Character>> = characterRepository.allCharacters
     val allNovels: LiveData<List<Novel>> = novelRepository.allNovels
+
+    // 데이터 처리 결과 알림 채널 (관계·관계변화·상태변화·삭제 결과 통보)
+    private val _result = MutableLiveData<OpResult?>()
+    val result: LiveData<OpResult?> = _result
+    fun clearResult() { _result.value = null }
 
     private val _currentNovelId = MutableLiveData<Long?>()
 
@@ -175,8 +183,12 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
             characterRepository.deleteCharacter(character)
             // 삭제 후 switchMap 재평가를 강제하여 캐시된 LiveData 갱신
             _searchQuery.value = _searchQuery.value
+            reportResult(_result, OpResult.success(OpResult.CAT_CHARACTER,
+                app.getString(R.string.result_character_deleted, character.name)))
         } catch (e: Exception) {
             Log.e("CharacterViewModel", "Failed to delete character", e)
+            reportResult(_result, OpResult.failure(OpResult.CAT_CHARACTER,
+                app.getString(R.string.result_character_delete_failed), e.message))
         }
     }
 
@@ -326,8 +338,12 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         try {
             characterRepository.insertStateChange(change)
             syncStateChangeToField(change)
+            reportResult(_result, OpResult.success(OpResult.CAT_CHARACTER,
+                app.getString(R.string.result_state_change_added)))
         } catch (e: Exception) {
             Log.e("CharacterViewModel", "Failed to insert state change", e)
+            reportResult(_result, OpResult.failure(OpResult.CAT_CHARACTER,
+                app.getString(R.string.result_state_change_add_failed), e.message))
         }
     }
 
@@ -335,8 +351,12 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         try {
             characterRepository.updateStateChange(change)
             syncStateChangeToField(change)
+            reportResult(_result, OpResult.success(OpResult.CAT_CHARACTER,
+                app.getString(R.string.result_state_change_updated)))
         } catch (e: Exception) {
             Log.e("CharacterViewModel", "Failed to update state change", e)
+            reportResult(_result, OpResult.failure(OpResult.CAT_CHARACTER,
+                app.getString(R.string.result_state_change_update_failed), e.message))
         }
     }
 
@@ -349,8 +369,12 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     fun deleteStateChange(change: CharacterStateChange) = viewModelScope.launch {
         try {
             characterRepository.deleteStateChange(change)
+            reportResult(_result, OpResult.success(OpResult.CAT_CHARACTER,
+                app.getString(R.string.result_state_change_deleted)))
         } catch (e: Exception) {
             Log.e("CharacterViewModel", "Failed to delete state change", e)
+            reportResult(_result, OpResult.failure(OpResult.CAT_CHARACTER,
+                app.getString(R.string.result_state_change_delete_failed), e.message))
         }
     }
 
@@ -361,24 +385,36 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     fun insertRelationship(relationship: CharacterRelationship) = viewModelScope.launch {
         try {
             characterRepository.insertRelationship(relationship)
+            reportResult(_result, OpResult.success(OpResult.CAT_RELATIONSHIP,
+                app.getString(R.string.result_relationship_added)))
         } catch (e: Exception) {
             Log.e("CharacterViewModel", "Failed to insert relationship", e)
+            reportResult(_result, OpResult.failure(OpResult.CAT_RELATIONSHIP,
+                app.getString(R.string.result_relationship_add_failed), e.message))
         }
     }
 
     fun updateRelationship(relationship: CharacterRelationship) = viewModelScope.launch {
         try {
             characterRepository.updateRelationship(relationship)
+            reportResult(_result, OpResult.success(OpResult.CAT_RELATIONSHIP,
+                app.getString(R.string.result_relationship_updated)))
         } catch (e: Exception) {
             Log.e("CharacterViewModel", "Failed to update relationship", e)
+            reportResult(_result, OpResult.failure(OpResult.CAT_RELATIONSHIP,
+                app.getString(R.string.result_relationship_update_failed), e.message))
         }
     }
 
     fun deleteRelationshipById(id: Long) = viewModelScope.launch {
         try {
             characterRepository.deleteRelationshipById(id)
+            reportResult(_result, OpResult.success(OpResult.CAT_RELATIONSHIP,
+                app.getString(R.string.result_relationship_deleted)))
         } catch (e: Exception) {
             Log.e("CharacterViewModel", "Failed to delete relationship", e)
+            reportResult(_result, OpResult.failure(OpResult.CAT_RELATIONSHIP,
+                app.getString(R.string.result_relationship_delete_failed), e.message))
         }
     }
 
@@ -391,8 +427,11 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     fun updateRelationshipOrders(relationships: List<CharacterRelationship>) = viewModelScope.launch {
         try {
             characterRepository.updateRelationshipOrders(relationships)
+            // 재정렬은 초고빈도 조작 — 성공 무통보, 실패만 알림 (원칙 04)
         } catch (e: Exception) {
             Log.e("CharacterViewModel", "Failed to update relationship orders", e)
+            reportResult(_result, OpResult.failure(OpResult.CAT_RELATIONSHIP,
+                app.getString(R.string.result_relationship_reorder_failed), e.message))
         }
     }
 
@@ -418,24 +457,36 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     fun insertRelationshipChange(change: CharacterRelationshipChange) = viewModelScope.launch {
         try {
             characterRepository.insertRelationshipChange(change)
+            reportResult(_result, OpResult.success(OpResult.CAT_RELATIONSHIP,
+                app.getString(R.string.result_relationship_change_added)))
         } catch (e: Exception) {
             Log.e("CharacterViewModel", "Failed to insert relationship change", e)
+            reportResult(_result, OpResult.failure(OpResult.CAT_RELATIONSHIP,
+                app.getString(R.string.result_relationship_change_add_failed), e.message))
         }
     }
 
     fun updateRelationshipChange(change: CharacterRelationshipChange) = viewModelScope.launch {
         try {
             characterRepository.updateRelationshipChange(change)
+            reportResult(_result, OpResult.success(OpResult.CAT_RELATIONSHIP,
+                app.getString(R.string.result_relationship_change_updated)))
         } catch (e: Exception) {
             Log.e("CharacterViewModel", "Failed to update relationship change", e)
+            reportResult(_result, OpResult.failure(OpResult.CAT_RELATIONSHIP,
+                app.getString(R.string.result_relationship_change_update_failed), e.message))
         }
     }
 
     fun deleteRelationshipChange(change: CharacterRelationshipChange) = viewModelScope.launch {
         try {
             characterRepository.deleteRelationshipChange(change)
+            reportResult(_result, OpResult.success(OpResult.CAT_RELATIONSHIP,
+                app.getString(R.string.result_relationship_change_deleted)))
         } catch (e: Exception) {
             Log.e("CharacterViewModel", "Failed to delete relationship change", e)
+            reportResult(_result, OpResult.failure(OpResult.CAT_RELATIONSHIP,
+                app.getString(R.string.result_relationship_change_delete_failed), e.message))
         }
     }
 
@@ -480,16 +531,22 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     fun updateCharacterDisplayOrders(characters: List<Character>) = viewModelScope.launch {
         try {
             characterRepository.updateCharacterDisplayOrders(characters)
+            // 재정렬은 초고빈도 조작 — 성공 무통보, 실패만 알림 (원칙 04)
         } catch (e: Exception) {
             Log.e("CharacterViewModel", "Failed to update display orders", e)
+            reportResult(_result, OpResult.failure(OpResult.CAT_CHARACTER,
+                app.getString(R.string.result_character_reorder_failed), e.message))
         }
     }
 
     fun togglePin(character: Character) = viewModelScope.launch {
         try {
             characterRepository.setPinned(character.id, !character.isPinned)
+            // 핀 토글은 초고빈도 조작 — 성공 무통보, 실패만 알림 (원칙 04)
         } catch (e: Exception) {
             Log.e("CharacterViewModel", "Failed to toggle pin", e)
+            reportResult(_result, OpResult.failure(OpResult.CAT_CHARACTER,
+                app.getString(R.string.result_character_pin_failed), e.message))
         }
     }
 

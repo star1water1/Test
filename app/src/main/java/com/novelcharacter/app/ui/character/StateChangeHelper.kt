@@ -149,8 +149,7 @@ class StateChangeHelper(
                 } else {
                     viewModel.insertStateChange(change)
                 }
-
-                Toast.makeText(context, getString(R.string.state_change_saved), Toast.LENGTH_SHORT).show()
+                // 결과는 viewModel.result 채널이 실제 완료 후 통보 (낙관적 오탐·중복 알림 방지)
             }
             .setNegativeButton(getString(R.string.cancel), null)
             .show()
@@ -165,8 +164,8 @@ class StateChangeHelper(
                 showStateChangeDialog(change)
             }
             .setNegativeButton(R.string.delete) { _, _ ->
+                // 결과는 viewModel.result 채널이 실제 완료 후 통보
                 viewModel.deleteStateChange(change)
-                Toast.makeText(context, getString(R.string.state_change_deleted), Toast.LENGTH_SHORT).show()
             }
             .setNeutralButton(R.string.cancel, null)
             .show()
