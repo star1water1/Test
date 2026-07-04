@@ -23,6 +23,7 @@ import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.TimelineEvent
 import com.novelcharacter.app.databinding.FragmentTimelineBinding
 import com.novelcharacter.app.ui.adapter.TimelineAdapter
+import com.novelcharacter.app.util.notifyResult
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -376,10 +377,11 @@ class TimelineFragment : Fragment(), EventEditDialogFragment.Host {
             loadNovelNamesMap()
         }
 
-        // DB 작업 실패 시 사용자에게 알림 (null = 자동 클리어 신호이므로 무시)
-        viewModel.error.observe(viewLifecycleOwner) { message ->
-            if (!message.isNullOrBlank()) {
-                Toast.makeText(requireContext(), message, Toast.LENGTH_SHORT).show()
+        // 데이터 처리 결과 알림 (사건 저장/수정/삭제 성공·실패 즉시 통보 + 작업 이력 기록)
+        viewModel.result.observe(viewLifecycleOwner) { result ->
+            result?.let {
+                notifyResult(it)
+                viewModel.clearResult()
             }
         }
 

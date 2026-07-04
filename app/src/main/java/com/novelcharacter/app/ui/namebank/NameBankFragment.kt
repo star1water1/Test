@@ -20,6 +20,7 @@ import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.NameBankEntry
 import com.novelcharacter.app.databinding.FragmentNameBankBinding
 import com.novelcharacter.app.ui.adapter.NameBankAdapter
+import com.novelcharacter.app.util.notifyResult
 import com.novelcharacter.app.util.setValidatedPositiveButton
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -92,6 +93,14 @@ class NameBankFragment : Fragment() {
         viewModel.displayedNames.observe(viewLifecycleOwner) { names ->
             adapter.submitList(names)
             binding.emptyText.visibility = if (names.isEmpty()) View.VISIBLE else View.GONE
+        }
+
+        // 데이터 처리 결과 알림 (이름 추가/수정/삭제·사용처리/해제 즉시 통보 + 작업 이력 기록)
+        viewModel.result.observe(viewLifecycleOwner) { result ->
+            result?.let {
+                notifyResult(it)
+                viewModel.clearResult()
+            }
         }
     }
 

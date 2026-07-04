@@ -1513,4 +1513,18 @@
     <string name="result_character_delete_failed">캐릭터 삭제 실패</string>
     <string name="result_character_reorder_failed">캐릭터 순서 변경 실패</string>
     <string name="result_character_pin_failed">캐릭터 고정 변경 실패</string>
+    <string name="result_event_added">사건 저장됨</string>
+    <string name="result_event_updated">사건 수정됨</string>
+    <string name="result_event_deleted">사건 삭제됨</string>
+    <string name="result_event_stdyear_updated">표준연도가 %1$d(으)로 변경됨</string>
+    <string name="result_name_added">이름 \"%1$s\" 추가됨</string>
+    <string name="result_name_updated">이름 \"%1$s\" 수정됨</string>
+    <string name="result_name_deleted">이름 \"%1$s\" 삭제됨</string>
+    <string name="result_name_add_failed">이름 추가 실패</string>
+    <string name="result_name_update_failed">이름 수정 실패</string>
+    <string name="result_name_delete_failed">이름 삭제 실패</string>
+    <string name="result_name_marked_used">이름 사용 처리됨</string>
+    <string name="result_name_mark_used_failed">이름 사용 처리 실패</string>
+    <string name="result_name_marked_available">이름 사용 해제됨</string>
+    <string name="result_name_mark_available_failed">이름 사용 해제 실패</string>
 </resources>
