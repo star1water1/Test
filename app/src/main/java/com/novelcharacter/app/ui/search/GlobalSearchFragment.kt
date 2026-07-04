@@ -18,6 +18,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.chip.Chip
 import com.novelcharacter.app.R
+import com.novelcharacter.app.data.model.FieldFilter
 import com.novelcharacter.app.data.model.SearchPreset
 import com.novelcharacter.app.databinding.FragmentGlobalSearchBinding
 import com.novelcharacter.app.ui.adapter.GlobalSearchAdapter

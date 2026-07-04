@@ -1,7 +1,6 @@
-package com.novelcharacter.app.ui.search
+package com.novelcharacter.app.ui.character
 
 import android.os.Bundle
-import android.widget.Toast
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -14,35 +13,64 @@ import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.FieldFilter
 import com.novelcharacter.app.data.model.Universe
-import com.novelcharacter.app.databinding.BottomSheetSearchFilterBinding
+import com.novelcharacter.app.databinding.BottomSheetCharacterFilterBinding
 import kotlinx.coroutines.launch
 
-class SearchFilterBottomSheet : BottomSheetDialogFragment() {
+/**
+ * 캐릭터 목록 필터 시트 — 태그(다중 선택) + 필드 값(세계관→필드→값, exact/contains)을 한 시트에.
+ * `SearchFilterBottomSheet`의 필드-값 흐름을 답습하되 중첩 시트 없이 태그까지 한 곳에서 처리한다.
+ * 적용 시 태그 집합을 통째로 반영하고, 필드+값이 선택돼 있으면 필드 필터 하나를 추가한다.
+ */
+class CharacterFilterBottomSheet : BottomSheetDialogFragment() {
 
-    private var _binding: BottomSheetSearchFilterBinding? = null
+    var currentTags: Set<String> = emptySet()
+    var loadAllTags: (suspend () -> List<String>)? = null
+    var loadUniverses: (suspend () -> List<Universe>)? = null
+    var loadFields: (suspend (Long) -> List<FieldDefinition>)? = null
+    var loadFieldValues: (suspend (Long) -> List<String>)? = null
+    var onApply: ((tags: Set<String>, fieldFilter: FieldFilter?) -> Unit)? = null
+
+    private var _binding: BottomSheetCharacterFilterBinding? = null
     private val binding get() = _binding!!
 
     private var universes: List<Universe> = emptyList()
     private var fields: List<FieldDefinition> = emptyList()
     private var fieldValues: List<String> = emptyList()
 
-    var onFilterApplied: ((FieldFilter) -> Unit)? = null
-    var loadUniverses: (suspend () -> List<Universe>)? = null
-    var loadFields: (suspend (Long) -> List<FieldDefinition>)? = null
-    var loadFieldValues: (suspend (Long) -> List<String>)? = null
-
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
     ): View {
-        _binding = BottomSheetSearchFilterBinding.inflate(inflater, container, false)
+        _binding = BottomSheetCharacterFilterBinding.inflate(inflater, container, false)
         return binding.root
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        setupTags()
         setupUniverseSpinner()
-        setupFieldSpinner()
-        setupApplyButton()
+        binding.btnApplyFilter.setOnClickListener { apply() }
+    }
+
+    private fun setupTags() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val tags = loadAllTags?.invoke() ?: emptyList()
+            if (!isAdded || _binding == null) return@launch
+            val ctx = context ?: return@launch
+            if (tags.isEmpty()) {
+                binding.noTagsText.visibility = View.VISIBLE
+                return@launch
+            }
+            binding.noTagsText.visibility = View.GONE
+            for (tag in tags) {
+                val chip = Chip(ctx).apply {
+                    text = tag
+                    isCheckable = true
+                    isChecked = tag in currentTags
+                    textSize = 13f
+                }
+                binding.tagChipGroup.addView(chip)
+            }
+        }
     }
 
     private fun setupUniverseSpinner() {
@@ -50,7 +78,6 @@ class SearchFilterBottomSheet : BottomSheetDialogFragment() {
             universes = loadUniverses?.invoke() ?: emptyList()
             if (!isAdded || _binding == null) return@launch
             val ctx = context ?: return@launch
-
             if (universes.isEmpty()) {
                 binding.spinnerUniverse.adapter = ArrayAdapter(
                     ctx, android.R.layout.simple_spinner_dropdown_item,
@@ -58,24 +85,16 @@ class SearchFilterBottomSheet : BottomSheetDialogFragment() {
                 )
                 return@launch
             }
-
-            val names = universes.map { it.name }
             binding.spinnerUniverse.adapter = ArrayAdapter(
-                ctx, android.R.layout.simple_spinner_dropdown_item, names
+                ctx, android.R.layout.simple_spinner_dropdown_item, universes.map { it.name }
             )
-
             binding.spinnerUniverse.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
                 override fun onItemSelected(parent: AdapterView<*>?, v: View?, position: Int, id: Long) {
-                    val universe = universes.getOrNull(position) ?: return
-                    loadFieldsForUniverse(universe.id)
+                    universes.getOrNull(position)?.let { loadFieldsForUniverse(it.id) }
                 }
                 override fun onNothingSelected(parent: AdapterView<*>?) {}
             }
-
-            // 첫 번째 세계관의 필드 로드
-            if (universes.isNotEmpty()) {
-                loadFieldsForUniverse(universes[0].id)
-            }
+            loadFieldsForUniverse(universes[0].id)
         }
     }
 
@@ -84,7 +103,6 @@ class SearchFilterBottomSheet : BottomSheetDialogFragment() {
             fields = loadFields?.invoke(universeId) ?: emptyList()
             if (!isAdded || _binding == null) return@launch
             val ctx = context ?: return@launch
-
             if (fields.isEmpty()) {
                 binding.spinnerField.adapter = ArrayAdapter(
                     ctx, android.R.layout.simple_spinner_dropdown_item,
@@ -93,29 +111,17 @@ class SearchFilterBottomSheet : BottomSheetDialogFragment() {
                 binding.valueChipGroup.removeAllViews()
                 return@launch
             }
-
-            val names = fields.map { it.name }
             binding.spinnerField.adapter = ArrayAdapter(
-                ctx, android.R.layout.simple_spinner_dropdown_item, names
+                ctx, android.R.layout.simple_spinner_dropdown_item, fields.map { it.name }
             )
-
             binding.spinnerField.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
                 override fun onItemSelected(parent: AdapterView<*>?, v: View?, position: Int, id: Long) {
-                    val field = fields.getOrNull(position) ?: return
-                    loadValuesForField(field.id)
+                    fields.getOrNull(position)?.let { loadValuesForField(it.id) }
                 }
                 override fun onNothingSelected(parent: AdapterView<*>?) {}
             }
-
-            // 첫 번째 필드의 값 로드
-            if (fields.isNotEmpty()) {
-                loadValuesForField(fields[0].id)
-            }
+            loadValuesForField(fields[0].id)
         }
-    }
-
-    private fun setupFieldSpinner() {
-        // Initial setup handled by universe selection
     }
 
     private fun loadValuesForField(fieldDefId: Long) {
@@ -123,15 +129,12 @@ class SearchFilterBottomSheet : BottomSheetDialogFragment() {
             fieldValues = loadFieldValues?.invoke(fieldDefId) ?: emptyList()
             if (!isAdded || _binding == null) return@launch
             val ctx = context ?: return@launch
-
             binding.valueChipGroup.removeAllViews()
-
             if (fieldValues.isEmpty()) {
                 binding.emptyValuesText.visibility = View.VISIBLE
                 return@launch
             }
             binding.emptyValuesText.visibility = View.GONE
-
             for (value in fieldValues) {
                 val chip = Chip(ctx).apply {
                     text = value
@@ -144,36 +147,25 @@ class SearchFilterBottomSheet : BottomSheetDialogFragment() {
         }
     }
 
-    private fun setupApplyButton() {
-        binding.btnApplyFilter.setOnClickListener {
-            val fieldPosition = binding.spinnerField.selectedItemPosition
-            val field = fields.getOrNull(fieldPosition) ?: return@setOnClickListener
-
-            val selectedValues = mutableListOf<String>()
-            for (i in 0 until binding.valueChipGroup.childCount) {
-                val chip = binding.valueChipGroup.getChildAt(i) as? Chip
-                if (chip?.isChecked == true) {
-                    selectedValues.add(chip.text.toString())
-                }
-            }
-
-            if (selectedValues.isEmpty()) {
-                Toast.makeText(requireContext(), getString(R.string.search_filter_select_values), Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
-
-            val matchMode = if (binding.radioContains.isChecked) "contains" else "exact"
-
-            val filter = FieldFilter(
-                fieldId = field.id,
-                fieldName = field.name,
-                values = selectedValues,
-                matchMode = matchMode
-            )
-
-            onFilterApplied?.invoke(filter)
-            dismiss()
+    private fun apply() {
+        // 태그: 시트의 선택 상태를 통째로 반영
+        val selectedTags = mutableSetOf<String>()
+        for (i in 0 until binding.tagChipGroup.childCount) {
+            (binding.tagChipGroup.getChildAt(i) as? Chip)?.let { if (it.isChecked) selectedTags.add(it.text.toString()) }
         }
+        // 필드 값: 필드+값이 선택돼 있으면 필터 하나 생성
+        val field = fields.getOrNull(binding.spinnerField.selectedItemPosition)
+        val selectedValues = mutableListOf<String>()
+        for (i in 0 until binding.valueChipGroup.childCount) {
+            (binding.valueChipGroup.getChildAt(i) as? Chip)?.let { if (it.isChecked) selectedValues.add(it.text.toString()) }
+        }
+        val filter = if (field != null && selectedValues.isNotEmpty()) {
+            val matchMode = if (binding.radioContains.isChecked) "contains" else "exact"
+            FieldFilter(field.id, field.name, selectedValues, matchMode)
+        } else null
+
+        onApply?.invoke(selectedTags, filter)
+        dismiss()
     }
 
     override fun onDestroyView() {
@@ -181,7 +173,5 @@ class SearchFilterBottomSheet : BottomSheetDialogFragment() {
         _binding = null
     }
 
-    companion object {
-        const val TAG = "SearchFilterBottomSheet"
-    }
+    companion object { const val TAG = "CharacterFilterBottomSheet" }
 }
