@@ -38,26 +38,38 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
     private val loadMutex = Mutex()
     private var loadJob: Job? = null
 
+    /**
+     * 복원 다이얼로그용 — **지금 실제로 숨겨져 있는** 카드들의 id→제목.
+     * prefs 키를 스캔하지 않고 매 refresh마다 라이브 산출하므로, 재노출됐거나 더 이상
+     * 해당하지 않는(dead) 항목이 목록에 남지 않는다(리뷰 Finding 2 대응).
+     */
+    @Volatile private var hiddenTitles: Map<String, String> = emptyMap()
+
     fun refresh() {
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
             _loading.value = true
-            val result = withContext(Dispatchers.Default) {
+            val (visible, hidden) = withContext(Dispatchers.Default) {
                 loadMutex.withLock {
                     val snapshot = statsProvider.loadSnapshot()
                     val enabled = prefs.enabledCategories()
-                    engine.run(snapshot, statsProvider, enabled)
-                        .filterNot { prefs.isDismissed(it) }
+                    val all = engine.run(snapshot, statsProvider, enabled)
+                    val hidden = all.filter { prefs.isDismissed(it) }.associate { it.id to it.title }
+                    val visible = all.filterNot { prefs.isDismissed(it) }
+                    visible to hidden
                 }
             }
-            _insights.value = result
-            _errorCount.value = result.count { it.category.isError }
+            hiddenTitles = hidden
+            _insights.value = visible
+            _errorCount.value = visible.count { it.category.isError }
             _loading.value = false
         }
     }
 
     fun dismiss(insight: AssistantInsight) {
         prefs.dismiss(insight)
+        // 방금 숨긴 카드를 즉시 복원 목록에 반영(다음 refresh 전에도 정확하도록).
+        hiddenTitles = hiddenTitles + (insight.id to insight.title)
         val remaining = _insights.value.orEmpty().filterNot { it.id == insight.id }
         _insights.value = remaining
         _errorCount.value = remaining.count { it.category.isError }
@@ -69,11 +81,12 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
     /** 숨긴 카드를 복원한다. 다시 조건을 만족하면 목록에 재등장. */
     fun restore(id: String) {
         prefs.undismiss(id)
+        hiddenTitles = hiddenTitles - id
         refresh()
     }
 
     /** 현재 숨김 상태인 카드들의 id→제목(복원 다이얼로그 목록용). */
-    fun dismissedTitles(): Map<String, String> = prefs.dismissedTitles()
+    fun dismissedTitles(): Map<String, String> = hiddenTitles
 
     fun isCategoryEnabled(category: InsightCategory) = prefs.isCategoryEnabled(category)
 

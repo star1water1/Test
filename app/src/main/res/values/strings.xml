@@ -1645,6 +1645,7 @@
     <string name="assistant_age_fixed">나이·출생연도를 맞췄어요</string>
     <string name="assistant_assign_novel_title">%1$s을(를) 어느 작품에?</string>
     <string name="assistant_assign_no_novels">먼저 작품을 만들어 주세요</string>
+    <string name="assistant_character_gone">해당 캐릭터를 찾을 수 없어요</string>
     <string name="assistant_novel_assigned">%1$s을(를) \'%2$s\'에 배정했어요</string>
     <string name="assistant_dismissed">숨겼어요</string>
     <string name="assistant_undo">실행취소</string>

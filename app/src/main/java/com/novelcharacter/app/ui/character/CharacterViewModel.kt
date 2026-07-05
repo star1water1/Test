@@ -768,11 +768,15 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
-    /** 작품 미배정 캐릭터를 작품에 배정한다. 대상 작품 목록의 말미에 배치(순서 일관성). */
-    suspend fun assignNovel(characterId: Long, novelId: Long) {
-        val character = characterRepository.getCharacterById(characterId) ?: return
-        val order = characterRepository.getNextDisplayOrderInNovel(novelId)
-        characterRepository.updateCharacter(character.copy(novelId = novelId, displayOrder = order))
+    /**
+     * 작품 미배정 캐릭터를 작품에 배정한다. 정규 경로(`batchChangeNovel`)를 통해 세계관이
+     * 바뀌는 경우 고아 필드값·세력 소속 정리 + `updatedAt` 갱신까지 일관 처리한다.
+     * 캐릭터가 이미 삭제됐으면 false(호출부가 "성공" 오알림을 피하도록).
+     */
+    suspend fun assignNovel(characterId: Long, novelId: Long): Boolean {
+        if (characterRepository.getCharacterById(characterId) == null) return false
+        characterRepository.batchChangeNovel(listOf(characterId), novelId)
+        return true
     }
 
     /** 캐릭터가 속한 세계관의 관계 유형 목록을 반환 (세계관 미배정 시 기본 유형) */
