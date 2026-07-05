@@ -12,7 +12,7 @@ object OnboardingPrefs {
 
     const val KEY_WELCOME_SHOWN = "welcome_shown"
     const val KEY_TIMELINE_HINT_SHOWN = "timeline_longpress_hint_shown"
-    const val KEY_CHARACTER_IMAGE_HINT_SHOWN = "character_image_hint_shown"
+    const val KEY_CHARACTER_MULTISELECT_HINT_SHOWN = "character_multiselect_hint_shown"
     const val KEY_BACKUP_IMAGE_NOTICE_SHOWN = "backup_image_default_notice_shown"
 
     private fun prefs(context: Context) =
