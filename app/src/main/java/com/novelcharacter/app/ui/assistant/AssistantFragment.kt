@@ -195,9 +195,14 @@ class AssistantFragment : Fragment() {
                 .setItems(titles) { _, which ->
                     val novel = novels[which]
                     viewLifecycleOwner.lifecycleScope.launch {
-                        characterViewModel.assignNovel(characterId, novel.id)
+                        val ok = characterViewModel.assignNovel(characterId, novel.id)
                         if (!isAdded) return@launch
-                        notifySuccess(getString(R.string.assistant_novel_assigned, characterName, novel.title))
+                        if (ok) {
+                            notifySuccess(getString(R.string.assistant_novel_assigned, characterName, novel.title))
+                        } else {
+                            // 스냅샷 이후 캐릭터가 삭제된 경우 — 성공으로 오인 통보하지 않는다(변수 제어).
+                            notifyError(getString(R.string.assistant_character_gone))
+                        }
                         viewModel.refresh()
                     }
                 }
