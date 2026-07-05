@@ -63,6 +63,18 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         _errorCount.value = remaining.count { it.category.isError }
     }
 
+    /** 방금 숨긴 카드를 되돌린다(실행취소). */
+    fun undismiss(insight: AssistantInsight) = restore(insight.id)
+
+    /** 숨긴 카드를 복원한다. 다시 조건을 만족하면 목록에 재등장. */
+    fun restore(id: String) {
+        prefs.undismiss(id)
+        refresh()
+    }
+
+    /** 현재 숨김 상태인 카드들의 id→제목(복원 다이얼로그 목록용). */
+    fun dismissedTitles(): Map<String, String> = prefs.dismissedTitles()
+
     fun isCategoryEnabled(category: InsightCategory) = prefs.isCategoryEnabled(category)
 
     fun setCategoryEnabled(category: InsightCategory, enabled: Boolean) {

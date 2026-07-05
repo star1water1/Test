@@ -45,6 +45,23 @@ fun Fragment.notifySuccess(message: String) =
 fun Fragment.notifyError(message: String) =
     showResultSnackbar(message, Snackbar.LENGTH_LONG, null)
 
+/**
+ * 액션 버튼(예: '실행취소')이 달린 결과 스낵바. 생명주기 안전 관례는 [showResultSnackbar]와 동일하되,
+ * 뷰가 없어 Toast로 폴백되면 액션은 노출되지 않는다(폴백 시 [onAction] 미호출).
+ */
+fun Fragment.notifyWithAction(message: String, actionLabel: CharSequence, onAction: () -> Unit) {
+    if (!isAdded) return
+    val root = view
+    if (root == null || !root.isAttachedToWindow) {
+        val ctx = context ?: return
+        Toast.makeText(ctx, message, Toast.LENGTH_LONG).show()
+        return
+    }
+    Snackbar.make(root, message, Snackbar.LENGTH_LONG)
+        .setAction(actionLabel) { onAction() }
+        .show()
+}
+
 private fun Fragment.showResultSnackbar(message: String, duration: Int, detail: String?) {
     if (!isAdded) return
     val root = view

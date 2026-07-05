@@ -10,10 +10,20 @@ import com.novelcharacter.app.util.BirthdayHelper
 private fun namesPreview(names: List<String>, max: Int = 3): String =
     names.take(max).joinToString(", ")
 
+/** 액션 대상 캐릭터 참조(집계 카드가 "첫 대상"을 지목하기 위해 id를 보존). */
+private data class CharRef(val id: Long, val name: String)
+
+/** 캐릭터 상세로 이동하는 부가 액션(공통). */
+private fun openCharacter(res: android.content.Context, characterId: Long): InsightAction.Navigate =
+    InsightAction.Navigate(
+        destId = R.id.characterDetailFragment,
+        characterId = characterId,
+        label = res.getString(R.string.assistant_action_open_character)
+    )
+
 /**
- * 정합성 문제(오류) provider — 진짜 모순을 진지한 톤으로, 교정 경로와 함께 제시한다.
- * 유형별 집계 1카드(캐릭터마다 카드 X). 카드를 누르면 "다음에 고칠" 캐릭터 상세로 이동하고,
- * 거기서 기존 나이-출생연도 교정 플로우로 바로잡을 수 있다.
+ * 정합성 문제(오류) provider — 진짜 모순을 진지한 톤으로, 명료한 설명과 교정 경로와 함께 제시한다.
+ * 나이 카드의 기본 액션은 '고치기'(탭 안에서 라이브 재검출 후 교정 다이얼로그) — 통계탭이 못 하는 차별점.
  */
 class ConsistencyProvider : InsightProvider {
     override val category = InsightCategory.CONSISTENCY
@@ -29,12 +39,12 @@ class ConsistencyProvider : InsightProvider {
                 res.getString(
                     R.string.assistant_age_detail_one,
                     first.characterName, first.standardYear, first.inputAge,
-                    first.inputBirthYear, first.suggestedBirthYear
+                    first.inputBirthYear, first.suggestedBirthYear, first.expectedAge
                 )
             } else {
                 res.getString(
                     R.string.assistant_age_detail_many,
-                    first.characterName, ages.size - 1
+                    first.characterName, ages.size - 1, first.standardYear
                 )
             }
             out.add(
@@ -45,11 +55,11 @@ class ConsistencyProvider : InsightProvider {
                     title = res.getString(R.string.assistant_age_title, ages.size),
                     detail = detail,
                     count = ages.size,
-                    action = InsightAction.Navigate(
-                        destId = R.id.characterDetailFragment,
-                        characterId = first.characterId,
-                        label = res.getString(R.string.assistant_age_action)
-                    )
+                    primaryAction = InsightAction.Fix(
+                        kind = InsightAction.FixKind.AgeLinkage(first.characterId),
+                        label = res.getString(R.string.assistant_action_fix)
+                    ),
+                    secondaryActions = listOf(openCharacter(res, first.characterId))
                 )
             )
         }
@@ -68,6 +78,7 @@ class ConsistencyProvider : InsightProvider {
                     first.characterName, deaths.size - 1
                 )
             }
+            // 사망<출생은 둘 중 무엇이 오타인지 알 수 없어 안전한 자동교정이 없다 → 확인(이동)만.
             out.add(
                 AssistantInsight(
                     id = "consistency_death",
@@ -76,10 +87,10 @@ class ConsistencyProvider : InsightProvider {
                     title = res.getString(R.string.assistant_death_title, deaths.size),
                     detail = detail,
                     count = deaths.size,
-                    action = InsightAction.Navigate(
+                    primaryAction = InsightAction.Navigate(
                         destId = R.id.characterDetailFragment,
                         characterId = first.characterId,
-                        label = res.getString(R.string.assistant_death_action)
+                        label = res.getString(R.string.assistant_action_check)
                     )
                 )
             )
@@ -90,98 +101,120 @@ class ConsistencyProvider : InsightProvider {
 }
 
 /**
- * 데이터 건강 제안 provider — [DataHealthStats]를 유형별 집계 카드로 흡수하고
- * 상세는 기존 데이터 건강 화면으로 링크한다(로직 중복 없음). 부드러운 톤, 끌 수 있음.
- * 완성도(fill-rate %)는 헤드라인으로 쓰지 않는다(원칙 02 안티패턴 회피).
+ * 데이터 건강 제안 provider — 부드럽고 끌 수 있음. 캐릭터 특정 카드는 **그 캐릭터를 바로 열 수 있게**
+ * id를 스냅샷에서 직접 산출한다(`DataHealthStats`는 이름만 담고 id가 없으므로). 완성도(fill-rate %)는
+ * 헤드라인으로 쓰지 않는다(원칙 02).
  */
 class HealthProvider : InsightProvider {
     override val category = InsightCategory.HEALTH
 
     override fun provide(ctx: InsightContext): List<AssistantInsight> {
         val res = ctx.context
-        val h = ctx.dataHealth
+        val s = ctx.snapshot
         val out = mutableListOf<AssistantInsight>()
-        val action = InsightAction.Navigate(
+
+        val relCharIds = s.relationships.flatMap { listOf(it.characterId1, it.characterId2) }.toSet()
+        val eventCharIds = s.crossRefs.map { it.characterId }.toSet()
+        fun refs(list: List<com.novelcharacter.app.data.model.Character>) = list.map { CharRef(it.id, it.name) }
+
+        // 작품 미배정 — '작품 지정'(그 자리에서) + 캐릭터 열기
+        val noNovel = refs(s.characters.filter { it.novelId == null })
+        if (noNovel.isNotEmpty()) {
+            val first = noNovel.first()
+            out.add(
+                AssistantInsight(
+                    id = "health_no_novel",
+                    category = category,
+                    severity = InsightSeverity.HEALTH_NO_NOVEL,
+                    title = res.getString(R.string.assistant_health_no_novel_title, noNovel.size),
+                    detail = res.getString(R.string.assistant_health_no_novel_detail, namesPreview(noNovel.map { it.name })),
+                    count = noNovel.size,
+                    primaryAction = InsightAction.Fix(
+                        kind = InsightAction.FixKind.AssignNovel(first.id, first.name),
+                        label = res.getString(R.string.assistant_action_assign_novel)
+                    ),
+                    secondaryActions = listOf(openCharacter(res, first.id))
+                )
+            )
+        }
+
+        // 관계 없음 / 사건 없음 / 이미지 없음 — 기본 '캐릭터 열기' + 데이터 건강 전체
+        val isolated = refs(s.characters.filter { it.id !in relCharIds })
+        if (isolated.isNotEmpty()) out.add(
+            characterCard(
+                res, "health_isolated", InsightSeverity.HEALTH_ISOLATED,
+                res.getString(R.string.assistant_health_isolated_title, isolated.size),
+                res.getString(R.string.assistant_health_isolated_detail, namesPreview(isolated.map { it.name })),
+                isolated
+            )
+        )
+        val unlinked = refs(s.characters.filter { it.id !in eventCharIds })
+        if (unlinked.isNotEmpty()) out.add(
+            characterCard(
+                res, "health_unlinked", InsightSeverity.HEALTH_UNLINKED,
+                res.getString(R.string.assistant_health_unlinked_title, unlinked.size),
+                res.getString(R.string.assistant_health_unlinked_detail, namesPreview(unlinked.map { it.name })),
+                unlinked
+            )
+        )
+        val noImage = refs(s.characters.filter { it.imagePaths.isBlank() || it.imagePaths == "[]" })
+        if (noImage.isNotEmpty()) out.add(
+            characterCard(
+                res, "health_no_image", InsightSeverity.HEALTH_NO_IMAGE,
+                res.getString(R.string.assistant_health_no_image_title, noImage.size),
+                res.getString(R.string.assistant_health_no_image_detail, namesPreview(noImage.map { it.name })),
+                noImage
+            )
+        )
+
+        // 캐릭터 특정이 아닌 카드 — 데이터 건강 화면으로만 이동
+        val h = ctx.dataHealth
+        val healthAction = InsightAction.Navigate(
             destId = R.id.statsDataHealthDetailFragment,
             label = res.getString(R.string.assistant_health_action)
         )
-
-        if (h.noNovelChars.isNotEmpty()) {
-            out.add(
-                card(
-                    "health_no_novel", InsightSeverity.HEALTH_NO_NOVEL,
-                    res.getString(R.string.assistant_health_no_novel_title, h.noNovelChars.size),
-                    res.getString(R.string.assistant_health_no_novel_detail, namesPreview(h.noNovelChars)),
-                    h.noNovelChars.size, action
-                )
+        if (h.duplicateTags.isNotEmpty()) out.add(
+            AssistantInsight(
+                id = "health_dup_tags", category = category, severity = InsightSeverity.HEALTH_DUP_TAGS,
+                title = res.getString(R.string.assistant_health_dup_tags_title, h.duplicateTags.size),
+                detail = res.getString(R.string.assistant_health_dup_tags_detail, namesPreview(h.duplicateTags)),
+                count = h.duplicateTags.size, primaryAction = healthAction
             )
-        }
-        if (h.isolatedChars.isNotEmpty()) {
-            out.add(
-                card(
-                    "health_isolated", InsightSeverity.HEALTH_ISOLATED,
-                    res.getString(R.string.assistant_health_isolated_title, h.isolatedChars.size),
-                    res.getString(R.string.assistant_health_isolated_detail, namesPreview(h.isolatedChars)),
-                    h.isolatedChars.size, action
-                )
+        )
+        if (h.emptyDescRelationships > 0) out.add(
+            AssistantInsight(
+                id = "health_empty_rel", category = category, severity = InsightSeverity.HEALTH_EMPTY_REL,
+                title = res.getString(R.string.assistant_health_empty_rel_title, h.emptyDescRelationships),
+                detail = res.getString(R.string.assistant_health_empty_rel_detail),
+                count = h.emptyDescRelationships, primaryAction = healthAction
             )
-        }
-        if (h.unlinkedChars.isNotEmpty()) {
-            out.add(
-                card(
-                    "health_unlinked", InsightSeverity.HEALTH_UNLINKED,
-                    res.getString(R.string.assistant_health_unlinked_title, h.unlinkedChars.size),
-                    res.getString(R.string.assistant_health_unlinked_detail, namesPreview(h.unlinkedChars)),
-                    h.unlinkedChars.size, action
-                )
-            )
-        }
-        if (h.duplicateTags.isNotEmpty()) {
-            out.add(
-                card(
-                    "health_dup_tags", InsightSeverity.HEALTH_DUP_TAGS,
-                    res.getString(R.string.assistant_health_dup_tags_title, h.duplicateTags.size),
-                    res.getString(R.string.assistant_health_dup_tags_detail, namesPreview(h.duplicateTags)),
-                    h.duplicateTags.size, action
-                )
-            )
-        }
-        if (h.emptyDescRelationships > 0) {
-            out.add(
-                card(
-                    "health_empty_rel", InsightSeverity.HEALTH_EMPTY_REL,
-                    res.getString(R.string.assistant_health_empty_rel_title, h.emptyDescRelationships),
-                    res.getString(R.string.assistant_health_empty_rel_detail),
-                    h.emptyDescRelationships, action
-                )
-            )
-        }
-        if (h.noImageChars.isNotEmpty()) {
-            out.add(
-                card(
-                    "health_no_image", InsightSeverity.HEALTH_NO_IMAGE,
-                    res.getString(R.string.assistant_health_no_image_title, h.noImageChars.size),
-                    res.getString(R.string.assistant_health_no_image_detail, namesPreview(h.noImageChars)),
-                    h.noImageChars.size, action
-                )
-            )
-        }
+        )
         return out
     }
 
-    private fun card(
-        id: String, severity: Int, title: String, detail: String,
-        count: Int, action: InsightAction
-    ) = AssistantInsight(
-        id = id, category = category, severity = severity,
-        title = title, detail = detail, count = count, action = action
-    )
+    /** 캐릭터 특정 건강 카드: 기본=첫 캐릭터 열기, 부가=데이터 건강 전체. */
+    private fun characterCard(
+        res: android.content.Context, id: String, severity: Int,
+        title: String, detail: String, refs: List<CharRef>
+    ): AssistantInsight {
+        val first = refs.first()
+        return AssistantInsight(
+            id = id, category = category, severity = severity,
+            title = title, detail = detail, count = refs.size,
+            primaryAction = openCharacter(res, first.id),
+            secondaryActions = listOf(
+                InsightAction.Navigate(
+                    destId = R.id.statsDataHealthDetailFragment,
+                    label = res.getString(R.string.assistant_health_action)
+                )
+            )
+        )
+    }
 }
 
 /**
- * 편향·패턴 인사이트 provider — 기존 패턴 감지 엔진([StatsDataProvider.detectPatterns])의
- * 결과를 카드로 옮긴다. 필드 값 쏠림·사건 밀도·서사 공백 등 실질적 인사이트의 핵심이며,
- * 커스텀 필드도 자동으로 포함된다(적응형, 원칙 05).
+ * 편향·패턴 인사이트 provider — 기존 패턴 감지 엔진([StatsDataProvider.detectPatterns]) 결과를 카드로.
+ * 필드 값 쏠림·사건 밀도·서사 공백 등 실질적 인사이트의 핵심이며, 커스텀 필드도 자동 포함(적응형).
  */
 class BiasProvider : InsightProvider {
     override val category = InsightCategory.BIAS
@@ -197,7 +230,7 @@ class BiasProvider : InsightProvider {
             }
             val detail = if (p.suggestion.isBlank()) p.description
                 else "${p.description}\n\n${p.suggestion}"
-            val action = p.fieldDefId?.let {
+            val primary = p.fieldDefId?.let {
                 InsightAction.Navigate(
                     destId = R.id.statsFieldInsightFragment,
                     label = res.getString(R.string.assistant_bias_action)
@@ -213,7 +246,7 @@ class BiasProvider : InsightProvider {
                 count = 0,
                 // 개수 대신 심각도로 재노출 판정 — 편향이 악화되면(MEDIUM→HIGH) 다시 뜬다.
                 resurfaceValue = severity,
-                action = action
+                primaryAction = primary
             )
         }
     }
@@ -259,7 +292,7 @@ class NudgeProvider : InsightProvider {
                     count = upcoming.size,
                     // 개수가 같아도 날짜가 가까워지면 다시 뜨도록: 가까울수록 값이 커진다.
                     resurfaceValue = upcoming.size + (7 - nearest.daysUntil),
-                    action = InsightAction.Navigate(
+                    primaryAction = InsightAction.Navigate(
                         destId = R.id.characterDetailFragment,
                         characterId = nearest.characterId,
                         label = res.getString(R.string.assistant_nudge_birthday_action)
@@ -279,7 +312,7 @@ class NudgeProvider : InsightProvider {
                     title = res.getString(R.string.assistant_nudge_unused_names_title, unusedNames.size),
                     detail = res.getString(R.string.assistant_nudge_unused_names_detail),
                     count = unusedNames.size,
-                    action = InsightAction.Navigate(
+                    primaryAction = InsightAction.Navigate(
                         destId = R.id.nameBankFragment,
                         label = res.getString(R.string.assistant_nudge_unused_names_action)
                     )
@@ -304,7 +337,7 @@ class NudgeProvider : InsightProvider {
                         R.string.assistant_nudge_stale_detail, namesPreview(stale.map { it.name })
                     ),
                     count = stale.size,
-                    action = InsightAction.Navigate(
+                    primaryAction = InsightAction.Navigate(
                         destId = R.id.characterDetailFragment,
                         characterId = oldest.id,
                         label = res.getString(R.string.assistant_nudge_stale_action)

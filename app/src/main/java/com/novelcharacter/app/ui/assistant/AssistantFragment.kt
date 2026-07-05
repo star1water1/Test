@@ -10,6 +10,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.core.os.bundleOf
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
+import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -18,11 +19,17 @@ import androidx.recyclerview.widget.RecyclerView
 import com.novelcharacter.app.R
 import com.novelcharacter.app.databinding.FragmentAssistantBinding
 import com.novelcharacter.app.databinding.ItemAssistantInsightBinding
+import com.novelcharacter.app.ui.character.CharacterViewModel
 import com.novelcharacter.app.util.navigateSafe
+import com.novelcharacter.app.util.notifyError
+import com.novelcharacter.app.util.notifySuccess
+import com.novelcharacter.app.util.notifyWithAction
+import kotlinx.coroutines.launch
 
 /**
  * 창작 어시스턴트 화면 — 정합성 오류·편향 인사이트·건강 제안·넛지를 심각도순 카드로 보여준다.
- * HomeFragment의 마지막 탭. ViewModel은 부모(HomeFragment)와 공유하여 스냅샷을 한 번만 로드한다.
+ * 행위자화(A2): 카드의 기본 버튼으로 그 자리에서 교정(나이 불일치·작품 지정)하고, 부가 대처와
+ * '숨기기'는 ⋮ 오버플로에 담아 대처의 수는 늘리되 화면은 어지럽지 않게 한다.
  */
 class AssistantFragment : Fragment() {
 
@@ -32,9 +39,12 @@ class AssistantFragment : Fragment() {
     // 부모(HomeFragment) 스코프로 공유 — 탭 배지와 카드 목록이 같은 상태를 관찰한다.
     private val viewModel: AssistantViewModel by viewModels({ requireParentFragment() })
 
+    // 교정(픽스)용 — 캐릭터 변경의 정규 경로(검출/적용)를 재사용한다. 생성은 지연·가벼움.
+    private val characterViewModel: CharacterViewModel by viewModels()
+
     private val adapter = AssistantInsightAdapter(
-        onAction = { onAction(it) },
-        onDismiss = { viewModel.dismiss(it) }
+        onExecute = { _, action -> executeAction(action) },
+        onOverflow = { insight, anchor -> showCardOverflow(insight, anchor) }
     )
 
     override fun onCreateView(
@@ -49,7 +59,7 @@ class AssistantFragment : Fragment() {
 
         binding.insightRecyclerView.layoutManager = LinearLayoutManager(requireContext())
         binding.insightRecyclerView.adapter = adapter
-        binding.overflowButton.setOnClickListener { showOverflowMenu(it) }
+        binding.overflowButton.setOnClickListener { showScreenMenu(it) }
 
         viewModel.insights.observe(viewLifecycleOwner) { list ->
             adapter.submitList(list)
@@ -57,7 +67,6 @@ class AssistantFragment : Fragment() {
         }
         viewModel.loading.observe(viewLifecycleOwner) { loading ->
             binding.progressBar.visibility = if (loading) View.VISIBLE else View.GONE
-            // 로딩 중에는 빈 상태 문구를 잠깐이라도 깜빡이지 않게 숨긴다.
             if (loading) binding.emptyState.visibility = View.GONE
         }
     }
@@ -68,24 +77,147 @@ class AssistantFragment : Fragment() {
         viewModel.refresh()
     }
 
-    private fun onAction(insight: AssistantInsight) {
-        when (val action = insight.action) {
+    // ===== 액션 디스패치 =====
+
+    private fun executeAction(action: InsightAction) {
+        when (action) {
             is InsightAction.Navigate -> {
                 val args = action.characterId?.let { bundleOf("characterId" to it) }
                 findNavController().navigateSafe(R.id.homeFragment, action.destId, args)
             }
-            null -> {}
+            is InsightAction.Fix -> handleFix(action.kind)
         }
     }
 
-    private fun showOverflowMenu(anchor: View) {
+    private fun handleFix(kind: InsightAction.FixKind) {
+        when (kind) {
+            is InsightAction.FixKind.AgeLinkage -> startAgeFix(kind.characterId)
+            is InsightAction.FixKind.AssignNovel -> startAssignNovel(kind.characterId, kind.characterName)
+        }
+    }
+
+    /** 카드별 ⋮ 오버플로 — 부가 액션 + '숨기기'. 숨기기를 2탭 뒤로 두어 오탭을 막는다. */
+    private fun showCardOverflow(insight: AssistantInsight, anchor: View) {
+        val popup = PopupMenu(requireContext(), anchor)
+        insight.secondaryActions.forEachIndexed { i, action ->
+            popup.menu.add(0, i, i, action.label)
+        }
+        if (insight.dismissible) {
+            popup.menu.add(0, MENU_DISMISS, insight.secondaryActions.size, R.string.assistant_dismiss)
+        }
+        popup.setOnMenuItemClickListener { item ->
+            if (item.itemId == MENU_DISMISS) {
+                dismissWithUndo(insight)
+            } else {
+                insight.secondaryActions.getOrNull(item.itemId)?.let { executeAction(it) }
+            }
+            true
+        }
+        popup.show()
+    }
+
+    private fun dismissWithUndo(insight: AssistantInsight) {
+        viewModel.dismiss(insight)
+        notifyWithAction(getString(R.string.assistant_dismissed), getString(R.string.assistant_undo)) {
+            viewModel.undismiss(insight)
+        }
+    }
+
+    // ===== 나이-출생연도 교정 (탭 안에서 완결) =====
+
+    private fun startAgeFix(characterId: Long) {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val conflict = characterViewModel.detectAgeLinkageConflictForCharacter(characterId)
+            if (!isAdded) return@launch
+            if (conflict == null) {
+                // 스냅샷이 낡아 이미 해결된 경우 — 억지로 교정하지 않고 알리고 갱신.
+                notifySuccess(getString(R.string.assistant_age_resolved))
+                viewModel.refresh()
+                return@launch
+            }
+            showAgeResolutionDialog(characterId, conflict)
+        }
+    }
+
+    private fun showAgeResolutionDialog(characterId: Long, conflict: CharacterViewModel.AgeLinkageConflict) {
+        val options = arrayOf<CharSequence>(
+            getString(R.string.age_linkage_option_adjust_birth, conflict.suggestedBirthYear, conflict.inputAge),
+            getString(R.string.age_linkage_option_adjust_age, conflict.expectedAge, conflict.inputBirthYear),
+            if (conflict.affectedCharacterCount > 0) {
+                getString(
+                    R.string.age_linkage_option_adjust_std_year_with_warn,
+                    conflict.suggestedStdYear, conflict.inputAge, conflict.inputBirthYear, conflict.affectedCharacterCount
+                )
+            } else {
+                getString(
+                    R.string.age_linkage_option_adjust_std_year,
+                    conflict.suggestedStdYear, conflict.inputAge, conflict.inputBirthYear
+                )
+            }
+        )
+        var selected = 0
+        AlertDialog.Builder(requireContext())
+            // 제목에 기준연도를 노출해 "무엇이 왜 어긋났는지"가 다이얼로그에서도 분명하게(문제 1).
+            .setTitle(getString(R.string.assistant_age_dialog_title, conflict.currentStdYear))
+            .setSingleChoiceItems(options, 0) { _, which -> selected = which }
+            .setPositiveButton(R.string.apply) { _, _ -> applyAgeFix(characterId, conflict, selected) }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun applyAgeFix(characterId: Long, conflict: CharacterViewModel.AgeLinkageConflict, selected: Int) {
+        val choice = when (selected) {
+            0 -> CharacterViewModel.AgeResolution.BIRTH_YEAR
+            1 -> CharacterViewModel.AgeResolution.AGE
+            else -> CharacterViewModel.AgeResolution.STANDARD_YEAR
+        }
+        viewLifecycleOwner.lifecycleScope.launch {
+            characterViewModel.resolveAgeLinkage(characterId, conflict, choice)
+            if (!isAdded) return@launch
+            notifySuccess(getString(R.string.assistant_age_fixed))
+            viewModel.refresh()
+        }
+    }
+
+    // ===== 작품 지정 (탭 안에서 완결) =====
+
+    private fun startAssignNovel(characterId: Long, characterName: String) {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val novels = characterViewModel.getAllNovelsList()
+            if (!isAdded) return@launch
+            if (novels.isEmpty()) {
+                notifyError(getString(R.string.assistant_assign_no_novels))
+                return@launch
+            }
+            val titles = novels.map { it.title }.toTypedArray<CharSequence>()
+            AlertDialog.Builder(requireContext())
+                .setTitle(getString(R.string.assistant_assign_novel_title, characterName))
+                .setItems(titles) { _, which ->
+                    val novel = novels[which]
+                    viewLifecycleOwner.lifecycleScope.launch {
+                        characterViewModel.assignNovel(characterId, novel.id)
+                        if (!isAdded) return@launch
+                        notifySuccess(getString(R.string.assistant_novel_assigned, characterName, novel.title))
+                        viewModel.refresh()
+                    }
+                }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+        }
+    }
+
+    // ===== 화면 메뉴 (새로고침 / 표시할 항목 / 숨긴 항목 복원) =====
+
+    private fun showScreenMenu(anchor: View) {
         PopupMenu(requireContext(), anchor).apply {
             menu.add(0, MENU_REFRESH, 0, R.string.assistant_refresh)
             menu.add(0, MENU_CATEGORIES, 1, R.string.assistant_categories)
+            menu.add(0, MENU_RESTORE, 2, R.string.assistant_restore_hidden)
             setOnMenuItemClickListener { item ->
                 when (item.itemId) {
                     MENU_REFRESH -> { viewModel.refresh(); true }
                     MENU_CATEGORIES -> { showCategoryDialog(); true }
+                    MENU_RESTORE -> { showRestoreDialog(); true }
                     else -> false
                 }
             }
@@ -106,6 +238,21 @@ class AssistantFragment : Fragment() {
             .show()
     }
 
+    private fun showRestoreDialog() {
+        val titles = viewModel.dismissedTitles()
+        if (titles.isEmpty()) {
+            notifySuccess(getString(R.string.assistant_no_hidden))
+            return
+        }
+        val ids = titles.keys.toList()
+        val labels = ids.map { titles[it] ?: "" }.toTypedArray<CharSequence>()
+        AlertDialog.Builder(requireContext())
+            .setTitle(R.string.assistant_restore_hidden)
+            .setItems(labels) { _, which -> viewModel.restore(ids[which]) }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
     override fun onDestroyView() {
         binding.insightRecyclerView.adapter = null
         super.onDestroyView()
@@ -115,6 +262,9 @@ class AssistantFragment : Fragment() {
     companion object {
         private const val MENU_REFRESH = 1
         private const val MENU_CATEGORIES = 2
+        private const val MENU_RESTORE = 3
+        // 카드 오버플로에서 '숨기기'가 부가 액션 인덱스와 겹치지 않도록 큰 값 사용.
+        private const val MENU_DISMISS = 10001
     }
 }
 
@@ -134,23 +284,23 @@ internal fun categoryLabelRes(category: InsightCategory): Int = when (category) 
 }
 
 private class AssistantInsightAdapter(
-    private val onAction: (AssistantInsight) -> Unit,
-    private val onDismiss: (AssistantInsight) -> Unit
+    private val onExecute: (AssistantInsight, InsightAction) -> Unit,
+    private val onOverflow: (AssistantInsight, View) -> Unit
 ) : ListAdapter<AssistantInsight, AssistantInsightAdapter.VH>(DIFF) {
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
         val binding = ItemAssistantInsightBinding.inflate(
             LayoutInflater.from(parent.context), parent, false
         )
-        return VH(binding, onAction, onDismiss)
+        return VH(binding, onExecute, onOverflow)
     }
 
     override fun onBindViewHolder(holder: VH, position: Int) = holder.bind(getItem(position))
 
     class VH(
         private val binding: ItemAssistantInsightBinding,
-        private val onAction: (AssistantInsight) -> Unit,
-        private val onDismiss: (AssistantInsight) -> Unit
+        private val onExecute: (AssistantInsight, InsightAction) -> Unit,
+        private val onOverflow: (AssistantInsight, View) -> Unit
     ) : RecyclerView.ViewHolder(binding.root) {
 
         fun bind(insight: AssistantInsight) {
@@ -165,18 +315,23 @@ private class AssistantInsightAdapter(
             binding.titleText.text = insight.title
             binding.detailText.text = insight.detail
 
-            val action = insight.action
-            if (action is InsightAction.Navigate) {
+            // 기본 액션 = 눈에 띄는 버튼(왼쪽)
+            val primary = insight.primaryAction
+            if (primary != null) {
                 binding.actionButton.visibility = View.VISIBLE
-                binding.actionButton.text = action.label
-                binding.actionButton.setOnClickListener { onAction(insight) }
+                binding.actionButton.text = primary.label
+                binding.actionButton.setOnClickListener { onExecute(insight, primary) }
             } else {
                 binding.actionButton.visibility = View.GONE
                 binding.actionButton.setOnClickListener(null)
             }
 
-            binding.dismissButton.visibility = if (insight.dismissible) View.VISIBLE else View.GONE
-            binding.dismissButton.setOnClickListener { onDismiss(insight) }
+            // ⋮ 오버플로 = 부가 액션 + 숨기기
+            val hasOverflow = insight.secondaryActions.isNotEmpty() || insight.dismissible
+            binding.overflowButton.visibility = if (hasOverflow) View.VISIBLE else View.GONE
+            binding.overflowButton.setOnClickListener(
+                if (hasOverflow) View.OnClickListener { onOverflow(insight, binding.overflowButton) } else null
+            )
         }
     }
 

@@ -34,13 +34,36 @@ class AssistantPrefs(context: Context) {
     }
 
     fun dismiss(insight: AssistantInsight) {
-        sp.edit().putInt(dismissKey(insight.id), insight.resurfaceValue).apply()
+        // 재노출 판정값과 함께, 복원 UI가 목록에 이름을 보여줄 수 있도록 제목도 저장한다.
+        sp.edit()
+            .putInt(dismissKey(insight.id), insight.resurfaceValue)
+            .putString(titleKey(insight.id), insight.title)
+            .apply()
+    }
+
+    /** 특정 카드의 숨김을 해제(복원). */
+    fun undismiss(id: String) {
+        sp.edit().remove(dismissKey(id)).remove(titleKey(id)).apply()
+    }
+
+    /** 현재 숨김 상태인 카드들의 id→제목. 복원 다이얼로그 목록용. */
+    fun dismissedTitles(): Map<String, String> {
+        val result = LinkedHashMap<String, String>()
+        for ((key, value) in sp.all) {
+            if (key.startsWith(TITLE_PREFIX) && value is String) {
+                result[key.removePrefix(TITLE_PREFIX)] = value
+            }
+        }
+        return result
     }
 
     private fun catKey(category: InsightCategory) = "cat_${category.name}"
-    private fun dismissKey(id: String) = "dismiss_$id"
+    private fun dismissKey(id: String) = "$DISMISS_PREFIX$id"
+    private fun titleKey(id: String) = "$TITLE_PREFIX$id"
 
     companion object {
         private const val PREFS_NAME = "assistant_prefs"
+        private const val DISMISS_PREFIX = "dismiss_"
+        private const val TITLE_PREFIX = "dtitle_"
     }
 }

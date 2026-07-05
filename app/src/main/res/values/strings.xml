@@ -1593,11 +1593,11 @@
 
     <!-- 정합성 문제 -->
     <string name="assistant_age_title">나이·출생연도 불일치 %1$d명</string>
-    <string name="assistant_age_detail_one">%1$s — 표준연도 %2$d년 기준 나이(%3$d)와 출생연도(%4$d)가 어긋납니다. 나이대로면 출생연도는 %5$d년이어야 합니다.</string>
-    <string name="assistant_age_detail_many">%1$s 외 %2$d명 — 표준연도와 나이·출생연도가 어긋납니다. 카드를 눌러 하나씩 확인해 바로잡으세요.</string>
+    <string name="assistant_age_detail_one">%1$s — 표준연도 %2$d년 기준, 나이(%3$d)와 출생연도(%4$d)가 어긋납니다. 나이대로면 출생연도 %5$d년, 출생연도대로면 나이 %6$d살.</string>
+    <string name="assistant_age_detail_many">%1$s 외 %2$d명 — 표준연도 %3$d년과 나이·출생연도가 어긋납니다. \'고치기\'로 먼저 %1$s부터 바로잡으세요.</string>
     <string name="assistant_age_action">확인하고 고치기</string>
     <string name="assistant_death_title">사망연도가 출생보다 앞선 캐릭터 %1$d명</string>
-    <string name="assistant_death_detail_one">%1$s — 출생 %2$d년, 사망 %3$d년으로 사망이 출생보다 앞섭니다.</string>
+    <string name="assistant_death_detail_one">%1$s — 출생 %2$d년, 사망 %3$d년으로 사망이 출생보다 앞섭니다. 둘 중 하나가 오타일 수 있어요.</string>
     <string name="assistant_death_detail_many">%1$s 외 %2$d명 — 사망연도가 출생연도보다 앞섭니다. 카드를 눌러 확인하세요.</string>
     <string name="assistant_death_action">확인하기</string>
 
@@ -1633,4 +1633,21 @@
     <string name="assistant_nudge_stale_title">오래 손대지 않은 캐릭터 %1$d명</string>
     <string name="assistant_nudge_stale_detail">%1$s 등 — 3개월 넘게 변화가 없었어요. 다시 들여다볼 때일지도 몰라요.</string>
     <string name="assistant_nudge_stale_action">캐릭터 보기</string>
+
+    <!-- 어시스턴트 실질화 (Phase A2) — 행위자화 -->
+    <string name="assistant_card_more">추가 작업</string>
+    <string name="assistant_action_fix">고치기</string>
+    <string name="assistant_action_open_character">캐릭터 열기</string>
+    <string name="assistant_action_check">확인하기</string>
+    <string name="assistant_action_assign_novel">작품 지정</string>
+    <string name="assistant_age_dialog_title">나이-출생연도 불일치 · 기준연도 %1$d년</string>
+    <string name="assistant_age_resolved">이미 해결됐어요</string>
+    <string name="assistant_age_fixed">나이·출생연도를 맞췄어요</string>
+    <string name="assistant_assign_novel_title">%1$s을(를) 어느 작품에?</string>
+    <string name="assistant_assign_no_novels">먼저 작품을 만들어 주세요</string>
+    <string name="assistant_novel_assigned">%1$s을(를) \'%2$s\'에 배정했어요</string>
+    <string name="assistant_dismissed">숨겼어요</string>
+    <string name="assistant_undo">실행취소</string>
+    <string name="assistant_restore_hidden">숨긴 항목 복원</string>
+    <string name="assistant_no_hidden">숨긴 항목이 없습니다</string>
 </resources>
