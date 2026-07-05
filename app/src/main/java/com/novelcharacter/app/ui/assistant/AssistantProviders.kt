@@ -59,8 +59,8 @@ class ConsistencyProvider : InsightProvider {
     override fun provide(ctx: InsightContext): List<AssistantInsight> {
         val res = ctx.context
         val out = mutableListOf<AssistantInsight>()
-        // ConsistencyChecker 결과는 id/name만 담으므로 썸네일용 imagePaths는 스냅샷에서 조회.
-        val imgByChar = ctx.snapshot.characters.associate { it.id to it.imagePaths }
+        // ConsistencyChecker 결과는 id/name만 담으므로 썸네일 imagePaths·정렬용 updatedAt은 스냅샷에서 조회.
+        val charById = ctx.snapshot.characters.associateBy { it.id }
 
         val ages = ctx.consistency.ageMismatches
         if (ages.isNotEmpty()) {
@@ -87,7 +87,8 @@ class ConsistencyProvider : InsightProvider {
                         it.standardYear, it.inputAge, it.inputBirthYear, it.expectedAge
                     ),
                     fixType = AffectedFixType.AGE_LINKAGE,
-                    imagePath = CharacterImageLoader.firstImagePath(imgByChar[it.characterId])
+                    imagePath = CharacterImageLoader.firstImagePath(charById[it.characterId]?.imagePaths),
+                    updatedAt = charById[it.characterId]?.updatedAt
                 )
             }
             out.add(
@@ -117,7 +118,8 @@ class ConsistencyProvider : InsightProvider {
                     characterId = it.characterId,
                     name = it.characterName,
                     subtitle = res.getString(R.string.assistant_affected_death_subtitle, it.birthYear, it.deathYear),
-                    imagePath = CharacterImageLoader.firstImagePath(imgByChar[it.characterId])
+                    imagePath = CharacterImageLoader.firstImagePath(charById[it.characterId]?.imagePaths),
+                    updatedAt = charById[it.characterId]?.updatedAt
                 )
             }
             out.add(
@@ -158,7 +160,8 @@ class HealthProvider : InsightProvider {
             val affected = noNovel.map {
                 AffectedRow(
                     it.id, it.name, fixType = AffectedFixType.ASSIGN_NOVEL,
-                    imagePath = CharacterImageLoader.firstImagePath(it.imagePaths)
+                    imagePath = CharacterImageLoader.firstImagePath(it.imagePaths),
+                    updatedAt = it.updatedAt
                 )
             }
             out.add(
@@ -234,7 +237,11 @@ class HealthProvider : InsightProvider {
         if (chars.isEmpty()) return null
         val first = chars.first()
         val affected = chars.map {
-            AffectedRow(it.id, it.name, imagePath = CharacterImageLoader.firstImagePath(it.imagePaths))
+            AffectedRow(
+                it.id, it.name,
+                imagePath = CharacterImageLoader.firstImagePath(it.imagePaths),
+                updatedAt = it.updatedAt
+            )
         }
         return aggregateCard(
             res, id, category, severity,
@@ -312,7 +319,8 @@ class NudgeProvider : InsightProvider {
                 val c = charById[u.characterId] ?: return@mapNotNull null
                 AffectedRow(
                     c.id, c.name, subtitle = whenText(res, u.daysUntil),
-                    imagePath = CharacterImageLoader.firstImagePath(c.imagePaths)
+                    imagePath = CharacterImageLoader.firstImagePath(c.imagePaths),
+                    updatedAt = c.updatedAt
                 )
             }
             out.add(
@@ -351,7 +359,11 @@ class NudgeProvider : InsightProvider {
         if (stale.size >= STALE_MIN_COUNT) {
             val oldest = stale.first()
             val affected = stale.map {
-                AffectedRow(it.id, it.name, imagePath = CharacterImageLoader.firstImagePath(it.imagePaths))
+                AffectedRow(
+                    it.id, it.name,
+                    imagePath = CharacterImageLoader.firstImagePath(it.imagePaths),
+                    updatedAt = it.updatedAt
+                )
             }
             out.add(
                 aggregateCard(

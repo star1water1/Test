@@ -1,10 +1,12 @@
 package com.novelcharacter.app.ui.assistant
 
+import android.annotation.SuppressLint
 import android.content.DialogInterface
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.PopupMenu
 import androidx.core.os.bundleOf
 import androidx.fragment.app.setFragmentResult
 import androidx.fragment.app.viewModels
@@ -24,6 +26,8 @@ import com.novelcharacter.app.ui.character.CharacterViewModel
 import com.novelcharacter.app.util.loadCharacterThumbnail
 import com.novelcharacter.app.util.navigateSafe
 import kotlinx.coroutines.Job
+import java.text.Collator
+import java.util.Locale
 
 /**
  * '전체 보기' 시트 — 집계 카드가 대표하는 **영향 캐릭터 전체**를 목록으로 펼친다(대량 데이터 대응).
@@ -31,6 +35,7 @@ import kotlinx.coroutines.Job
  *
  * 회전 안전: 행 데이터는 arguments에 JSON으로 실어오고(람다 주입 X), 교정은 시트 자체
  * [CharacterViewModel]로 수행하며, 부모에는 dismiss 시 `setFragmentResult`로 **한 번만** 갱신 신호를 준다.
+ * 교정으로 줄어든 `rows`와 `changed`는 [onSaveInstanceState]로 보존해 회전 후에도 진행/갱신 신호가 살아남는다.
  */
 class AffectedCharactersSheet : BottomSheetDialogFragment() {
 
@@ -44,6 +49,14 @@ class AffectedCharactersSheet : BottomSheetDialogFragment() {
     private var changed = false
     private lateinit var rowAdapter: RowAdapter
 
+    /** 정렬(비파괴): 보는 순서만 바꾼다. 캐릭터 목록 순서(displayOrder)엔 영향 없음. */
+    private enum class SortMode { DEFAULT, NAME, RECENT, CREATED }
+    private var sortMode = SortMode.DEFAULT
+    /** '기본 순서' 기준 = provider 원래 순서. arguments 원본에서 고정(회전·교정과 무관하게 안정적). */
+    private val arrivalIndex = HashMap<Long, Int>()
+    private val nameComparator: Comparator<String> =
+        Collator.getInstance(Locale.KOREAN).let { c -> Comparator { a, b -> c.compare(a, b) } }
+
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
     ): View {
@@ -55,17 +68,64 @@ class AffectedCharactersSheet : BottomSheetDialogFragment() {
         super.onViewCreated(view, savedInstanceState)
         binding.sheetTitle.text = requireArguments().getString(ARG_TITLE)
 
-        val json = requireArguments().getString(ARG_ROWS).orEmpty()
-        val parsed: List<AffectedRow> = runCatching {
-            Gson().fromJson<List<AffectedRow>>(json, object : TypeToken<List<AffectedRow>>() {}.type)
-        }.getOrNull() ?: emptyList()
+        // '기본 순서' 기준 = provider가 넣어준 원래 순서. arguments 원본에서 고정.
+        val original = parseRows(requireArguments().getString(ARG_ROWS).orEmpty())
+        arrivalIndex.clear()
+        original.forEachIndexed { i, r -> arrivalIndex[r.characterId] = i }
+
+        // 작업 목록: 회전 저장분(교정으로 줄어든 상태) 우선, 없으면 원본. 이렇게 안 하면 회전 시
+        // 고친 행이 되살아나고 changed=false로 리셋돼 부모 refresh 신호가 유실된다.
+        val working = savedInstanceState?.getString(STATE_ROWS)?.let(::parseRows) ?: original
         rows.clear()
-        rows.addAll(parsed)
+        rows.addAll(working)
+        changed = savedInstanceState?.getBoolean(STATE_CHANGED) ?: false
+        sortMode = savedInstanceState?.getString(STATE_SORT)
+            ?.let { runCatching { SortMode.valueOf(it) }.getOrNull() } ?: SortMode.DEFAULT
 
         rowAdapter = RowAdapter()
         binding.affectedRecyclerView.layoutManager = LinearLayoutManager(requireContext())
         binding.affectedRecyclerView.adapter = rowAdapter
+        binding.btnSheetSort.setOnClickListener { anchor -> showSortMenu(anchor) }
+        applySort()   // 현재 sortMode대로 정렬 + 버튼 라벨 반영
         updateCount()
+    }
+
+    private fun parseRows(json: String): List<AffectedRow> = runCatching {
+        Gson().fromJson<List<AffectedRow>>(json, object : TypeToken<List<AffectedRow>>() {}.type)
+    }.getOrNull() ?: emptyList()
+
+    /** 정렬 선택 메뉴 — 비파괴. 캐릭터 목록 순서는 건드리지 않는다. */
+    private fun showSortMenu(anchor: View) {
+        val popup = PopupMenu(requireContext(), anchor)
+        SortMode.values().forEachIndexed { i, m -> popup.menu.add(0, i, i, sortLabelRes(m)) }
+        popup.setOnMenuItemClickListener { item ->
+            sortMode = SortMode.values()[item.itemId]
+            applySort()
+            true
+        }
+        popup.show()
+    }
+
+    @SuppressLint("NotifyDataSetChanged")
+    private fun applySort() {
+        val cmp: Comparator<AffectedRow> = when (sortMode) {
+            SortMode.DEFAULT -> compareBy { arrivalIndex[it.characterId] ?: Int.MAX_VALUE }
+            SortMode.NAME -> compareBy(nameComparator) { it.name }
+            // 최근 수정 우선(내림차순). updatedAt 없으면 뒤로, 동률은 이름순.
+            SortMode.RECENT -> compareByDescending<AffectedRow> { it.updatedAt ?: Long.MIN_VALUE }
+                .thenBy(nameComparator) { it.name }
+            SortMode.CREATED -> compareBy { it.characterId }  // PK 증가분 ≈ 생성순
+        }
+        rows.sortWith(cmp)
+        if (::rowAdapter.isInitialized) rowAdapter.notifyDataSetChanged()
+        binding.btnSheetSort.setText(sortLabelRes(sortMode))
+    }
+
+    private fun sortLabelRes(m: SortMode): Int = when (m) {
+        SortMode.DEFAULT -> R.string.assistant_sort_default
+        SortMode.NAME -> R.string.assistant_sort_name
+        SortMode.RECENT -> R.string.assistant_sort_recent
+        SortMode.CREATED -> R.string.assistant_sort_created
     }
 
     override fun onStart() {
@@ -112,6 +172,14 @@ class AffectedCharactersSheet : BottomSheetDialogFragment() {
             updateCount()
         }
         if (rows.isEmpty()) dismiss()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        // 교정으로 줄어든 현재 rows·changed·정렬 보존 → 회전 후에도 진행 상태와 refresh 신호·정렬 유지.
+        outState.putString(STATE_ROWS, Gson().toJson(rows))
+        outState.putBoolean(STATE_CHANGED, changed)
+        outState.putString(STATE_SORT, sortMode.name)
     }
 
     override fun onDismiss(dialog: DialogInterface) {
@@ -176,6 +244,9 @@ class AffectedCharactersSheet : BottomSheetDialogFragment() {
         const val TAG = "AffectedCharactersSheet"
         private const val ARG_TITLE = "title"
         private const val ARG_ROWS = "rows"
+        private const val STATE_ROWS = "state_rows"
+        private const val STATE_CHANGED = "state_changed"
+        private const val STATE_SORT = "state_sort"
 
         fun newInstance(title: String, rows: List<AffectedRow>): AffectedCharactersSheet =
             AffectedCharactersSheet().apply {
