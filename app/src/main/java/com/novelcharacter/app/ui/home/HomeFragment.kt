@@ -5,10 +5,13 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.viewModels
 import androidx.viewpager2.adapter.FragmentStateAdapter
 import com.google.android.material.tabs.TabLayoutMediator
 import com.novelcharacter.app.R
 import com.novelcharacter.app.databinding.FragmentHomeBinding
+import com.novelcharacter.app.ui.assistant.AssistantFragment
+import com.novelcharacter.app.ui.assistant.AssistantViewModel
 import com.novelcharacter.app.ui.namebank.NameBankFragment
 import com.novelcharacter.app.ui.timeline.TimelineFragment
 import com.novelcharacter.app.ui.universe.UniverseListFragment
@@ -18,11 +21,15 @@ class HomeFragment : Fragment() {
     private var _binding: FragmentHomeBinding? = null
     private val binding get() = _binding!!
 
+    // AssistantFragment(마지막 탭)와 공유 — 탭 배지가 어시스턴트 상태를 관찰한다.
+    private val assistantViewModel: AssistantViewModel by viewModels()
+
     private val tabTitles by lazy {
         arrayOf(
             getString(R.string.tab_universes),
             getString(R.string.tab_timeline),
-            getString(R.string.tab_name_bank)
+            getString(R.string.tab_name_bank),
+            getString(R.string.assistant_tab)
         )
     }
 
@@ -42,6 +49,21 @@ class HomeFragment : Fragment() {
         TabLayoutMediator(binding.tabLayout, binding.viewPager) { tab, position ->
             tab.text = tabTitles[position]
         }.attach()
+
+        // 어시스턴트 탭 배지 — 현재 표시 중인 정합성 오류 수를 능동 신호로 띄운다.
+        assistantViewModel.errorCount.observe(viewLifecycleOwner) { count ->
+            val tab = binding.tabLayout.getTabAt(ASSISTANT_TAB_INDEX) ?: return@observe
+            if (count > 0) {
+                tab.orCreateBadge.apply {
+                    number = count
+                    isVisible = true
+                }
+            } else {
+                tab.removeBadge()
+            }
+        }
+        // 탭을 열기 전에도 배지가 뜨도록 초기 1회 로드.
+        assistantViewModel.refresh()
 
         // 글로벌 검색에서 사건 클릭 시 연표 탭으로 자동 전환
         val prefs = requireContext().getSharedPreferences("timeline_ui_state", android.content.Context.MODE_PRIVATE)
@@ -71,15 +93,20 @@ class HomeFragment : Fragment() {
     }
 
     private inner class HomePagerAdapter(fragment: Fragment) : FragmentStateAdapter(fragment) {
-        override fun getItemCount(): Int = 3
+        override fun getItemCount(): Int = 4
 
         override fun createFragment(position: Int): Fragment {
             return when (position) {
                 0 -> UniverseListFragment()
                 1 -> TimelineFragment()
                 2 -> NameBankFragment()
+                3 -> AssistantFragment()
                 else -> throw IllegalStateException("Invalid position $position")
             }
         }
+    }
+
+    companion object {
+        private const val ASSISTANT_TAB_INDEX = 3
     }
 }
