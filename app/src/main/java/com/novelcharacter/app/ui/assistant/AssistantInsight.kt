@@ -50,7 +50,9 @@ data class AffectedRow(
     val characterId: Long,
     val name: String,
     val subtitle: String? = null,
-    val fixType: AffectedFixType? = null
+    val fixType: AffectedFixType? = null,
+    /** 첫 이미지 절대경로(내부 저장소). null이면 플레이스홀더. 시트 행 썸네일용. */
+    val imagePath: String? = null
 )
 
 /** 시트 행에서 실행 가능한 교정 종류(그 외는 열기 전용). */

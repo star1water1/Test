@@ -1650,7 +1650,7 @@
     <!-- A3 PR1 — 집계 카드 전체 보기(영향 캐릭터 목록) -->
     <string name="assistant_action_view_all">전체 보기 (%1$d명)</string>
     <string name="assistant_affected_remaining">남은 %1$d명</string>
-    <string name="assistant_affected_age_subtitle">나이 %1$d · 출생 %2$d</string>
+    <string name="assistant_affected_age_subtitle">기준연도 %1$d · 나이 %2$d · 출생 %3$d → 예상 나이 %4$d</string>
     <string name="assistant_affected_death_subtitle">출생 %1$d · 사망 %2$d</string>
     <string name="assistant_age_dialog_title_named">%1$s — 나이·출생연도 불일치 (기준연도 %2$d년)</string>
     <string name="assistant_novel_assigned">%1$s을(를) \'%2$s\'에 배정했어요</string>

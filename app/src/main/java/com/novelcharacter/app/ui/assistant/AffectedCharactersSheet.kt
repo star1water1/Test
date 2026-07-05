@@ -8,6 +8,7 @@ import android.view.ViewGroup
 import androidx.core.os.bundleOf
 import androidx.fragment.app.setFragmentResult
 import androidx.fragment.app.viewModels
+import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -20,7 +21,9 @@ import com.novelcharacter.app.R
 import com.novelcharacter.app.databinding.ItemAffectedCharacterBinding
 import com.novelcharacter.app.databinding.SheetAffectedCharactersBinding
 import com.novelcharacter.app.ui.character.CharacterViewModel
+import com.novelcharacter.app.util.loadCharacterThumbnail
 import com.novelcharacter.app.util.navigateSafe
+import kotlinx.coroutines.Job
 
 /**
  * '전체 보기' 시트 — 집계 카드가 대표하는 **영향 캐릭터 전체**를 목록으로 펼친다(대량 데이터 대응).
@@ -129,11 +132,25 @@ class AffectedCharactersSheet : BottomSheetDialogFragment() {
 
         override fun getItemCount(): Int = rows.size
         override fun onBindViewHolder(holder: RowVH, position: Int) = holder.bind(rows[position])
+        override fun onViewRecycled(holder: RowVH) = holder.recycle()
     }
 
     private inner class RowVH(private val b: ItemAffectedCharacterBinding) : RecyclerView.ViewHolder(b.root) {
+        private var thumbJob: Job? = null
+
+        fun recycle() {
+            thumbJob?.cancel()
+            thumbJob = null
+        }
+
         fun bind(row: AffectedRow) {
             b.nameText.text = row.name
+            // 캐릭터 일러스트(있으면) — 앱 공용 유틸로 재활용-안전 로드, 재활용 시 취소.
+            thumbJob?.cancel()
+            thumbJob = b.thumbnail.loadCharacterThumbnail(
+                row.imagePath, lifecycleScope,
+                isValid = { bindingAdapterPosition != RecyclerView.NO_POSITION }
+            )
             b.subtitleText.visibility = if (row.subtitle.isNullOrBlank()) View.GONE else View.VISIBLE
             b.subtitleText.text = row.subtitle
             b.root.contentDescription = row.name

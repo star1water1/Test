@@ -5,6 +5,7 @@ import com.novelcharacter.app.data.model.CharacterStateChange
 import com.novelcharacter.app.ui.stats.PatternSeverity
 import com.novelcharacter.app.ui.stats.PatternType
 import com.novelcharacter.app.util.BirthdayHelper
+import com.novelcharacter.app.util.CharacterImageLoader
 
 /** 이름 목록 미리보기 — 앞의 [max]개만 콤마로 잇는다. */
 private fun namesPreview(names: List<String>, max: Int = 3): String =
@@ -58,6 +59,8 @@ class ConsistencyProvider : InsightProvider {
     override fun provide(ctx: InsightContext): List<AssistantInsight> {
         val res = ctx.context
         val out = mutableListOf<AssistantInsight>()
+        // ConsistencyChecker 결과는 id/name만 담으므로 썸네일용 imagePaths는 스냅샷에서 조회.
+        val imgByChar = ctx.snapshot.characters.associate { it.id to it.imagePaths }
 
         val ages = ctx.consistency.ageMismatches
         if (ages.isNotEmpty()) {
@@ -78,8 +81,13 @@ class ConsistencyProvider : InsightProvider {
                 AffectedRow(
                     characterId = it.characterId,
                     name = it.characterName,
-                    subtitle = res.getString(R.string.assistant_affected_age_subtitle, it.inputAge, it.inputBirthYear),
-                    fixType = AffectedFixType.AGE_LINKAGE
+                    // 기준연도·예상 나이를 함께 보여 무엇이 왜 어긋났는지 행에서도 즉시 이해되게(피드백).
+                    subtitle = res.getString(
+                        R.string.assistant_affected_age_subtitle,
+                        it.standardYear, it.inputAge, it.inputBirthYear, it.expectedAge
+                    ),
+                    fixType = AffectedFixType.AGE_LINKAGE,
+                    imagePath = CharacterImageLoader.firstImagePath(imgByChar[it.characterId])
                 )
             }
             out.add(
@@ -108,7 +116,8 @@ class ConsistencyProvider : InsightProvider {
                 AffectedRow(
                     characterId = it.characterId,
                     name = it.characterName,
-                    subtitle = res.getString(R.string.assistant_affected_death_subtitle, it.birthYear, it.deathYear)
+                    subtitle = res.getString(R.string.assistant_affected_death_subtitle, it.birthYear, it.deathYear),
+                    imagePath = CharacterImageLoader.firstImagePath(imgByChar[it.characterId])
                 )
             }
             out.add(
@@ -146,7 +155,12 @@ class HealthProvider : InsightProvider {
         val noNovel = s.characters.filter { it.novelId == null }.sortedBy { it.name }
         if (noNovel.isNotEmpty()) {
             val first = noNovel.first()
-            val affected = noNovel.map { AffectedRow(it.id, it.name, fixType = AffectedFixType.ASSIGN_NOVEL) }
+            val affected = noNovel.map {
+                AffectedRow(
+                    it.id, it.name, fixType = AffectedFixType.ASSIGN_NOVEL,
+                    imagePath = CharacterImageLoader.firstImagePath(it.imagePaths)
+                )
+            }
             out.add(
                 aggregateCard(
                     res, "health_no_novel", category, InsightSeverity.HEALTH_NO_NOVEL,
@@ -219,7 +233,9 @@ class HealthProvider : InsightProvider {
     ): AssistantInsight? {
         if (chars.isEmpty()) return null
         val first = chars.first()
-        val affected = chars.map { AffectedRow(it.id, it.name) }
+        val affected = chars.map {
+            AffectedRow(it.id, it.name, imagePath = CharacterImageLoader.firstImagePath(it.imagePaths))
+        }
         return aggregateCard(
             res, id, category, severity,
             title(chars.size), detail(namesPreview(chars.map { it.name })), affected,
@@ -294,7 +310,10 @@ class NudgeProvider : InsightProvider {
             }
             val affected = upcoming.mapNotNull { u ->
                 val c = charById[u.characterId] ?: return@mapNotNull null
-                AffectedRow(c.id, c.name, subtitle = whenText(res, u.daysUntil))
+                AffectedRow(
+                    c.id, c.name, subtitle = whenText(res, u.daysUntil),
+                    imagePath = CharacterImageLoader.firstImagePath(c.imagePaths)
+                )
             }
             out.add(
                 aggregateCard(
@@ -331,7 +350,9 @@ class NudgeProvider : InsightProvider {
         val stale = s.characters.filter { now - it.updatedAt > STALE_THRESHOLD_MS }.sortedBy { it.updatedAt }
         if (stale.size >= STALE_MIN_COUNT) {
             val oldest = stale.first()
-            val affected = stale.map { AffectedRow(it.id, it.name) }
+            val affected = stale.map {
+                AffectedRow(it.id, it.name, imagePath = CharacterImageLoader.firstImagePath(it.imagePaths))
+            }
             out.add(
                 aggregateCard(
                     res, "nudge_stale", category, InsightSeverity.NUDGE_STALE,
