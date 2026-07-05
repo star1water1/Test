@@ -27,7 +27,9 @@ data class InsightContext(
     val snapshot: StatsSnapshot,
     val dataHealth: DataHealthStats,
     val consistency: ConsistencyChecker.Result,
-    val patterns: List<PatternInsight>
+    val patterns: List<PatternInsight>,
+    /** 분포·필드값 해석 등 추가 계산이 필요한 provider(편향 드릴다운 등)를 위한 재사용 진입점. */
+    val statsProvider: StatsDataProvider
 )
 
 /** 카드 정렬용 심각도. 정합성 오류가 항상 최상단에 오도록 배치한다. */
@@ -71,7 +73,8 @@ class AssistantEngine(
             snapshot = snapshot,
             dataHealth = statsProvider.computeDataHealth(snapshot),
             consistency = ConsistencyChecker.check(snapshot),
-            patterns = statsProvider.detectPatterns(snapshot)
+            patterns = statsProvider.detectPatterns(snapshot),
+            statsProvider = statsProvider
         )
         return providers
             .filter { it.category in enabledCategories }
