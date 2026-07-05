@@ -30,8 +30,7 @@ class CharacterAdapter(
     private val onEditClick: (Character) -> Unit,
     private val onDeleteClick: (Character) -> Unit,
     private val onPinClick: ((Character) -> Unit)? = null,
-    private val onImageClick: ((imagePaths: String, startIndex: Int) -> Unit)? = null,
-    /** 카드 롱프레스(일반 탐색 모드 한정) — 일괄편집 진입 가속기. 반환값 = 이벤트 소비 여부. */
+    /** 카드 롱프레스(일반 탐색 모드 한정) — 일괄편집 진입 가속기. 이미지 포함 카드 전체에 적용. 반환값 = 이벤트 소비 여부. */
     private val onLongClick: ((Character) -> Boolean)? = null
 ) : ListAdapter<Character, CharacterAdapter.CharacterViewHolder>(CharacterDiffCallback()) {
 
@@ -272,13 +271,18 @@ class CharacterAdapter(
                 binding.imageCountBadge.visibility = View.GONE
             }
 
-            // 이미지 영역: 탭 → 상세 화면 이동, 롱클릭 → 이미지 뷰어
-            // reorder/selection mode에서는 비활성 (조건 분기에 의해 보장)
-            if (!isReorderMode && !isSelectionMode && paths.isNotEmpty() && onImageClick != null) {
+            // 이미지 영역: 탭 → 상세(카드 탭과 동일), 롱프레스 → 일괄편집 진입(카드 전체와 동일).
+            // 이미지가 셀 대부분을 차지하므로 롱프레스를 뷰어가 가로채면 '롱프레스=다중선택'이 안 먹는다
+            // → 리스트에선 롱프레스를 다중선택에 양보하고, 이미지 뷰어는 상세화면(이미지 탭)에서 연다.
+            // reorder/selection mode에서는 비활성.
+            if (!isReorderMode && !isSelectionMode) {
                 binding.characterImage.setOnClickListener { onClick(character) }
-                binding.characterImage.setOnLongClickListener {
-                    onImageClick.invoke(character.imagePaths, idx % paths.size)
-                    true
+                if (onLongClick != null) {
+                    binding.characterImage.setOnLongClickListener { onLongClick.invoke(character) }
+                    binding.characterImage.isLongClickable = true
+                } else {
+                    binding.characterImage.setOnLongClickListener(null)
+                    binding.characterImage.isLongClickable = false
                 }
             } else {
                 binding.characterImage.setOnClickListener(null)

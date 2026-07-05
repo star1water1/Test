@@ -137,15 +137,8 @@ class CharacterListFragment : Fragment() {
             onPinClick = { character ->
                 viewModel.togglePin(character)
             },
-            onImageClick = { imagePaths, startIndex ->
-                val bundle = Bundle().apply {
-                    putString("imagePaths", imagePaths)
-                    putInt("startPosition", startIndex)
-                }
-                findNavController().navigateSafe(R.id.characterListFragment, R.id.imageViewerFragment, bundle)
-            },
-            // 롱프레스 = 일괄편집 진입 가속기(보조 경로). 주 진입은 툴바 아이콘.
-            // 일반 탐색 모드일 때만 동작 — 진입 후 롱프레스한 캐릭터를 바로 선택한다.
+            // 롱프레스 = 일괄편집 진입(카드 전체·이미지 포함). 주 진입은 툴바 아이콘, 롱프레스는 사용자가 요청한 가속기.
+            // 일반 탐색 모드일 때만 동작 — 진입 후 롱프레스한 캐릭터를 바로 선택한다. (이미지 뷰어는 상세화면에서)
             onLongClick = { character ->
                 if (!isBatchEditMode && !isCompareMode && !adapter.isReorderMode()) {
                     enterBatchEditMode()
@@ -743,22 +736,22 @@ class CharacterListFragment : Fragment() {
 
     override fun onResume() {
         super.onResume()
-        maybeShowImageLongPressHint()
+        maybeShowMultiSelectHint()
     }
 
     /**
-     * 카드 이미지 롱프레스(이미지 뷰어) 1회성 힌트 (B-8).
+     * 롱프레스=다중선택 진입 1회성 힌트 (B-8). 롱프레스는 화면만 봐선 알 수 없어 첫 방문 시 한 번만 안내.
      * onViewCreated가 아닌 onResume에서 호출한다 — 뷰가 윈도우에 부착되기 전
      * Snackbar.make는 "No suitable parent found"로 크래시할 수 있다 (TimelineFragment 동일 패턴 참조).
      */
-    private fun maybeShowImageLongPressHint() {
+    private fun maybeShowMultiSelectHint() {
         val ctx = context ?: return
-        if (com.novelcharacter.app.util.OnboardingPrefs.isShown(ctx, com.novelcharacter.app.util.OnboardingPrefs.KEY_CHARACTER_IMAGE_HINT_SHOWN)) return
+        if (com.novelcharacter.app.util.OnboardingPrefs.isShown(ctx, com.novelcharacter.app.util.OnboardingPrefs.KEY_CHARACTER_MULTISELECT_HINT_SHOWN)) return
         val root = _binding?.root ?: return
         if (!root.isAttachedToWindow) return
-        com.novelcharacter.app.util.OnboardingPrefs.markShown(ctx, com.novelcharacter.app.util.OnboardingPrefs.KEY_CHARACTER_IMAGE_HINT_SHOWN)
+        com.novelcharacter.app.util.OnboardingPrefs.markShown(ctx, com.novelcharacter.app.util.OnboardingPrefs.KEY_CHARACTER_MULTISELECT_HINT_SHOWN)
         com.google.android.material.snackbar.Snackbar
-            .make(root, R.string.hint_character_image_longpress, com.google.android.material.snackbar.Snackbar.LENGTH_LONG)
+            .make(root, R.string.hint_character_longpress_select, com.google.android.material.snackbar.Snackbar.LENGTH_LONG)
             .show()
     }
 
