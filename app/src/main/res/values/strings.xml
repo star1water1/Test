@@ -1576,4 +1576,61 @@
     <string name="character_preset_options">프리셋 옵션</string>
     <string name="character_preset_apply">적용</string>
     <string name="reorder_needs_manual_sort">필터를 지우고 정렬을 \'기본(수동)\'으로 두어야 순서를 바꿀 수 있습니다</string>
+
+    <!-- 창작 어시스턴트 (Creator Assistant) -->
+    <string name="assistant_tab">어시스턴트</string>
+    <string name="assistant_title">어시스턴트</string>
+    <string name="assistant_menu">메뉴</string>
+    <string name="assistant_refresh">새로고침</string>
+    <string name="assistant_categories">표시할 항목</string>
+    <string name="assistant_dismiss">숨기기</string>
+    <string name="assistant_empty_title">지금은 손볼 게 없어요</string>
+    <string name="assistant_empty_hint">정합성 문제나 눈에 띄는 편향이 발견되면 여기서 먼저 알려드릴게요.</string>
+    <string name="assistant_cat_consistency">정합성 문제</string>
+    <string name="assistant_cat_health">데이터 건강</string>
+    <string name="assistant_cat_bias">편향·패턴</string>
+    <string name="assistant_cat_nudge">넛지</string>
+
+    <!-- 정합성 문제 -->
+    <string name="assistant_age_title">나이·출생연도 불일치 %1$d명</string>
+    <string name="assistant_age_detail_one">%1$s — 표준연도 %2$d년 기준 나이(%3$d)와 출생연도(%4$d)가 어긋납니다. 나이대로면 출생연도는 %5$d년이어야 합니다.</string>
+    <string name="assistant_age_detail_many">%1$s 외 %2$d명 — 표준연도와 나이·출생연도가 어긋납니다. 카드를 눌러 하나씩 확인해 바로잡으세요.</string>
+    <string name="assistant_age_action">확인하고 고치기</string>
+    <string name="assistant_death_title">사망연도가 출생보다 앞선 캐릭터 %1$d명</string>
+    <string name="assistant_death_detail_one">%1$s — 출생 %2$d년, 사망 %3$d년으로 사망이 출생보다 앞섭니다.</string>
+    <string name="assistant_death_detail_many">%1$s 외 %2$d명 — 사망연도가 출생연도보다 앞섭니다. 카드를 눌러 확인하세요.</string>
+    <string name="assistant_death_action">확인하기</string>
+
+    <!-- 데이터 건강 제안 -->
+    <string name="assistant_health_action">데이터 건강 열기</string>
+    <string name="assistant_health_no_novel_title">작품에 배정되지 않은 캐릭터 %1$d명</string>
+    <string name="assistant_health_no_novel_detail">%1$s 등 — 작품이 없으면 통계·필터에서 소외됩니다. 작품을 지정해보세요.</string>
+    <string name="assistant_health_isolated_title">관계가 하나도 없는 캐릭터 %1$d명</string>
+    <string name="assistant_health_isolated_detail">%1$s 등 — 관계를 맺으면 관계도와 통계가 풍부해집니다.</string>
+    <string name="assistant_health_unlinked_title">사건에 연결되지 않은 캐릭터 %1$d명</string>
+    <string name="assistant_health_unlinked_detail">%1$s 등 — 연표 사건에 연결하면 서사 속 위치가 또렷해집니다.</string>
+    <string name="assistant_health_no_image_title">이미지가 없는 캐릭터 %1$d명</string>
+    <string name="assistant_health_no_image_detail">%1$s 등 — 필요하다면 이미지를 등록해보세요.</string>
+    <string name="assistant_health_dup_tags_title">중복으로 보이는 태그 %1$d개</string>
+    <string name="assistant_health_dup_tags_detail">%1$s 등 — 대소문자·공백 차이로 갈라진 태그를 정리하면 분류가 깔끔해집니다.</string>
+    <string name="assistant_health_empty_rel_title">설명이 비어 있는 관계 %1$d개</string>
+    <string name="assistant_health_empty_rel_detail">관계에 설명을 더하면 인물 간 맥락이 분명해집니다.</string>
+
+    <!-- 편향·패턴 인사이트 -->
+    <string name="assistant_bias_action">필드 인사이트 열기</string>
+
+    <!-- 넛지 -->
+    <string name="assistant_nudge_birthday_title">임박한 생일 %1$d명</string>
+    <string name="assistant_nudge_birthday_detail_one">%1$s의 생일이 %2$s입니다.</string>
+    <string name="assistant_nudge_birthday_detail_many">%1$s 외 %2$d명의 생일이 다가옵니다. 가장 가까운 생일은 %3$s입니다.</string>
+    <string name="assistant_nudge_birthday_today">오늘</string>
+    <string name="assistant_nudge_birthday_tomorrow">내일</string>
+    <string name="assistant_nudge_birthday_days">%1$d일 뒤</string>
+    <string name="assistant_nudge_birthday_action">캐릭터 보기</string>
+    <string name="assistant_nudge_unused_names_title">쓰이지 않은 이름 %1$d개</string>
+    <string name="assistant_nudge_unused_names_detail">이름은행에 미사용 이름이 쌓여 있어요. 새 캐릭터에 활용해보세요.</string>
+    <string name="assistant_nudge_unused_names_action">이름은행 열기</string>
+    <string name="assistant_nudge_stale_title">오래 손대지 않은 캐릭터 %1$d명</string>
+    <string name="assistant_nudge_stale_detail">%1$s 등 — 3개월 넘게 변화가 없었어요. 다시 들여다볼 때일지도 몰라요.</string>
+    <string name="assistant_nudge_stale_action">캐릭터 보기</string>
 </resources>
