@@ -719,6 +719,62 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
 
     private val standardYearSyncHelper = StandardYearSyncHelper(characterRepository, universeRepository)
 
+    // ===== 어시스턴트 교정(Phase A2) — 저장된 캐릭터를 정규 경로로 그 자리에서 고친다 =====
+
+    /** 나이-출생연도 교정 선택지(편집화면 다이얼로그의 라디오 순서와 동일: 0/1/2). */
+    enum class AgeResolution { BIRTH_YEAR, AGE, STANDARD_YEAR }
+
+    /**
+     * 저장된 캐릭터의 나이-출생연도 모순을 라이브로 재검출한다(스냅샷이 낡았을 수 있으므로).
+     * 이미 해결됐으면 null.
+     */
+    suspend fun detectAgeLinkageConflictForCharacter(characterId: Long): AgeLinkageConflict? {
+        val character = characterRepository.getCharacterById(characterId) ?: return null
+        val values = characterRepository.getValuesByCharacterList(characterId)
+        return detectAgeLinkageConflict(character.novelId, characterId, values)
+    }
+
+    /**
+     * 모순을 사용자가 고른 방식으로 교정한다. 편집화면과 동일 규칙을 정규 메서드로만 반영:
+     * 출생/나이 변경은 [saveAllFieldValues](내부에서 semanticSync 실행), 기준연도 변경은
+     * [applyStandardYearChange](작품 전체 재계산). 직접 sync를 손대지 않아 편집 경로와 로직이 일치한다.
+     */
+    suspend fun resolveAgeLinkage(characterId: Long, conflict: AgeLinkageConflict, choice: AgeResolution) {
+        when (choice) {
+            AgeResolution.BIRTH_YEAR -> {
+                val values = characterRepository.getValuesByCharacterList(characterId).toMutableList()
+                upsertFieldValueInList(values, characterId, conflict.birthYearFieldId, conflict.suggestedBirthYear.toString())
+                saveAllFieldValues(characterId, values)
+            }
+            AgeResolution.AGE -> {
+                val values = characterRepository.getValuesByCharacterList(characterId).toMutableList()
+                upsertFieldValueInList(values, characterId, conflict.ageFieldId, conflict.expectedAge.toString())
+                saveAllFieldValues(characterId, values)
+            }
+            AgeResolution.STANDARD_YEAR -> {
+                applyStandardYearChange(conflict.novelId, conflict.currentStdYear, conflict.suggestedStdYear)
+            }
+        }
+    }
+
+    private fun upsertFieldValueInList(
+        values: MutableList<CharacterFieldValue>, characterId: Long, fieldDefId: Long, value: String
+    ) {
+        val idx = values.indexOfFirst { it.fieldDefinitionId == fieldDefId }
+        if (idx >= 0) {
+            values[idx] = values[idx].copy(value = value)
+        } else {
+            values.add(CharacterFieldValue(characterId = characterId, fieldDefinitionId = fieldDefId, value = value))
+        }
+    }
+
+    /** 작품 미배정 캐릭터를 작품에 배정한다. 대상 작품 목록의 말미에 배치(순서 일관성). */
+    suspend fun assignNovel(characterId: Long, novelId: Long) {
+        val character = characterRepository.getCharacterById(characterId) ?: return
+        val order = characterRepository.getNextDisplayOrderInNovel(novelId)
+        characterRepository.updateCharacter(character.copy(novelId = novelId, displayOrder = order))
+    }
+
     /** 캐릭터가 속한 세계관의 관계 유형 목록을 반환 (세계관 미배정 시 기본 유형) */
     suspend fun getRelationshipTypesForCharacter(characterId: Long): List<String> {
         val universeId = getUniverseIdForCharacter(characterId) ?: return Universe.DEFAULT_RELATIONSHIP_TYPES

@@ -47,6 +47,10 @@ class CharacterRepository(
     }
     suspend fun updateCharacter(character: Character) = characterDao.update(character)
 
+    /** 대상 작품의 다음 표시 순서(말미 배치용). 작품 배정 시 순서 일관성을 위해 사용. */
+    suspend fun getNextDisplayOrderInNovel(novelId: Long): Long =
+        characterDao.getNextDisplayOrderInNovel(novelId)
+
     suspend fun updateCharacterWithFields(character: Character, values: List<CharacterFieldValue>) {
         db.withTransaction {
             characterDao.update(character)
