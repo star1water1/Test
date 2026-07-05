@@ -30,7 +30,9 @@ class CharacterAdapter(
     private val onEditClick: (Character) -> Unit,
     private val onDeleteClick: (Character) -> Unit,
     private val onPinClick: ((Character) -> Unit)? = null,
-    private val onImageClick: ((imagePaths: String, startIndex: Int) -> Unit)? = null
+    private val onImageClick: ((imagePaths: String, startIndex: Int) -> Unit)? = null,
+    /** 카드 롱프레스(일반 탐색 모드 한정) — 일괄편집 진입 가속기. 반환값 = 이벤트 소비 여부. */
+    private val onLongClick: ((Character) -> Boolean)? = null
 ) : ListAdapter<Character, CharacterAdapter.CharacterViewHolder>(CharacterDiffCallback()) {
 
     private var isSelectionMode = false
@@ -213,8 +215,14 @@ class CharacterAdapter(
                 }
 
                 binding.root.setOnClickListener { onClick(character) }
-                binding.root.setOnLongClickListener(null)
-                binding.root.isLongClickable = false
+                // 선택/비교 모드가 아닐 때만 롱프레스 = 일괄편집 진입(보조). 선택 모드에선 탭이 토글이므로 롱프레스 비활성.
+                if (!isSelectionMode && onLongClick != null) {
+                    binding.root.setOnLongClickListener { onLongClick.invoke(character) }
+                    binding.root.isLongClickable = true
+                } else {
+                    binding.root.setOnLongClickListener(null)
+                    binding.root.isLongClickable = false
+                }
             }
 
             // More button popup menu

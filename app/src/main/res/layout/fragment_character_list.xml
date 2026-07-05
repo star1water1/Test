@@ -176,41 +176,15 @@
             android:textStyle="bold"
             android:paddingStart="4dp" />
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnBatchSelectAll"
-            style="@style/Widget.Material3.Button.TextButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/batch_select_all"
-            android:textSize="11sp"
-            android:minWidth="48dp"
-            android:minHeight="36dp"
-            android:insetTop="0dp"
-            android:insetBottom="0dp" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnBatchDeselectAll"
-            style="@style/Widget.Material3.Button.TextButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/batch_deselect_all"
-            android:textSize="11sp"
-            android:minWidth="48dp"
-            android:minHeight="36dp"
-            android:insetTop="0dp"
-            android:insetBottom="0dp" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnBatchFilter"
-            style="@style/Widget.Material3.Button.TextButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/batch_filter_title"
-            android:textSize="11sp"
-            android:minWidth="48dp"
-            android:minHeight="36dp"
-            android:insetTop="0dp"
-            android:insetBottom="0dp" />
+        <ImageButton
+            android:id="@+id/btnBatchOverflow"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:layout_marginEnd="4dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/more_options"
+            android:src="@drawable/ic_more_vert"
+            android:scaleType="centerInside" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnBatchAction"

@@ -6,6 +6,7 @@ import android.text.TextWatcher
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.PopupMenu
 import android.widget.Toast
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
@@ -142,6 +143,17 @@ class CharacterListFragment : Fragment() {
                     putInt("startPosition", startIndex)
                 }
                 findNavController().navigateSafe(R.id.characterListFragment, R.id.imageViewerFragment, bundle)
+            },
+            // 롱프레스 = 일괄편집 진입 가속기(보조 경로). 주 진입은 툴바 아이콘.
+            // 일반 탐색 모드일 때만 동작 — 진입 후 롱프레스한 캐릭터를 바로 선택한다.
+            onLongClick = { character ->
+                if (!isBatchEditMode && !isCompareMode && !adapter.isReorderMode()) {
+                    enterBatchEditMode()
+                    batchViewModel.toggleSelection(character.id)
+                    true
+                } else {
+                    false
+                }
             }
         )
         binding.characterRecyclerView.layoutManager = GridLayoutManager(requireContext(), 3)
@@ -325,16 +337,31 @@ class CharacterListFragment : Fragment() {
 
     private fun setupBatchEditBar() {
         binding.btnBatchClose.setOnClickListener { exitBatchEditMode() }
-        binding.btnBatchSelectAll.setOnClickListener {
-            val visibleIds = adapter.currentList.map { it.id }
-            batchViewModel.selectAll(visibleIds)
-        }
-        binding.btnBatchDeselectAll.setOnClickListener {
-            batchViewModel.deselectAll()
-        }
-        binding.btnBatchFilter.setOnClickListener {
-            BatchSelectByFilterBottomSheet.newInstance()
-                .show(childFragmentManager, BatchSelectByFilterBottomSheet.TAG)
+        // 전체/해제/필터 = 보조 조작이라 ⋮ 오버플로로 접어 '작업' 버튼이 좁은 화면에서도 잘리지 않게 한다.
+        binding.btnBatchOverflow.setOnClickListener { anchor ->
+            val popup = PopupMenu(requireContext(), anchor)
+            popup.menu.add(0, MENU_SELECT_ALL, 0, R.string.batch_select_all)
+            popup.menu.add(0, MENU_DESELECT_ALL, 1, R.string.batch_deselect_all)
+            popup.menu.add(0, MENU_FILTER_SELECT, 2, R.string.batch_filter_title)
+            popup.setOnMenuItemClickListener { item ->
+                when (item.itemId) {
+                    MENU_SELECT_ALL -> {
+                        batchViewModel.selectAll(adapter.currentList.map { it.id })
+                        true
+                    }
+                    MENU_DESELECT_ALL -> {
+                        batchViewModel.deselectAll()
+                        true
+                    }
+                    MENU_FILTER_SELECT -> {
+                        BatchSelectByFilterBottomSheet.newInstance()
+                            .show(childFragmentManager, BatchSelectByFilterBottomSheet.TAG)
+                        true
+                    }
+                    else -> false
+                }
+            }
+            popup.show()
         }
         binding.btnBatchAction.setOnClickListener {
             val count = batchViewModel.selectedCount.value ?: 0
@@ -403,7 +430,23 @@ class CharacterListFragment : Fragment() {
         binding.fabAddCharacter.visibility = View.GONE
         setFilterSortBarVisible(false)
         updateBirthdayBannerVisibility(false)
-        Toast.makeText(requireContext(), R.string.batch_enter_hint, Toast.LENGTH_SHORT).show()
+        // 진입 즉시 현재 선택 상태를 반영. observeBatchEdit의 즉시 전달은 isBatchEditMode=false 시점에
+        // 걸러지므로(onViewCreated 순서), 메뉴 진입(선택 0 → 상시 안내)과 회전 복원(살아남은 선택
+        // 하이라이트·수·'작업' 활성)을 여기서 초기화한다.
+        val surviving = batchViewModel.selectedIds.value ?: emptySet()
+        adapter.setSelectedIds(surviving)
+        renderBatchSelection(surviving.size)
+    }
+
+    /** 배치바 선택 수 표기 + '작업' 활성. 0이면 상시 행동 안내(사라지는 Toast 대체)를 보여준다. */
+    private fun renderBatchSelection(count: Int) {
+        if (_binding == null) return
+        binding.batchSelectedCount.text = if (count == 0) {
+            getString(R.string.batch_enter_hint)
+        } else {
+            getString(R.string.batch_selected_count, count)
+        }
+        binding.btnBatchAction.isEnabled = count > 0 && batchViewModel.isProcessing.value != true
     }
 
     private fun exitBatchEditMode() {
@@ -421,13 +464,7 @@ class CharacterListFragment : Fragment() {
         batchViewModel.selectedIds.observe(viewLifecycleOwner) { ids ->
             if (isBatchEditMode) {
                 adapter.setSelectedIds(ids)
-                val count = ids.size
-                binding.batchSelectedCount.text = if (count == 0) {
-                    getString(R.string.batch_selected_count_zero)
-                } else {
-                    getString(R.string.batch_selected_count, count)
-                }
-                binding.btnBatchAction.isEnabled = count > 0 && batchViewModel.isProcessing.value != true
+                renderBatchSelection(ids.size)
             }
         }
 
@@ -734,5 +771,12 @@ class CharacterListFragment : Fragment() {
         birthdayBannerAdapter = null
         super.onDestroyView()
         _binding = null
+    }
+
+    companion object {
+        // 일괄편집 ⋮ 오버플로 메뉴 항목 id
+        private const val MENU_SELECT_ALL = 1
+        private const val MENU_DESELECT_ALL = 2
+        private const val MENU_FILTER_SELECT = 3
     }
 }
