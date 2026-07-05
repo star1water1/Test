@@ -31,8 +31,32 @@ data class AssistantInsight(
     val primaryAction: InsightAction? = null,
     /** ⋮ 오버플로에 들어가는 부가 행동들. '숨기기'는 별도로 뷰가 항상 덧붙인다. */
     val secondaryActions: List<InsightAction> = emptyList(),
+    /**
+     * 이 카드가 대표하는 **영향 캐릭터 전체 목록**(대량 데이터에서 "대표 1명"만 처리되던 문제 해결).
+     * N>1이면 기본 액션이 '전체 보기'가 되어 이 목록을 시트로 펼친다. 카드 키가 캐릭터가 아닌
+     * 카드(중복 태그·빈 관계 설명·미사용 이름·편향 등)는 비어 있다.
+     */
+    val affected: List<AffectedRow> = emptyList(),
     val dismissible: Boolean = true
 )
+
+/**
+ * '전체 보기' 시트의 한 행 = 영향받는 캐릭터 하나. 회전 안전을 위해 시트 arguments로 JSON 직렬화되므로
+ * (프로젝트에 kotlin-parcelize 미도입) 평범한 직렬화 가능 데이터 클래스로 둔다.
+ * @property subtitle 무엇이 문제인지 한 줄(예: "나이 25 · 출생 1470", "3일 뒤"). null이면 이름만.
+ * @property fixType null이면 열기 전용, 아니면 시트 행에서 그 자리 교정 가능.
+ */
+data class AffectedRow(
+    val characterId: Long,
+    val name: String,
+    val subtitle: String? = null,
+    val fixType: AffectedFixType? = null,
+    /** 첫 이미지 절대경로(내부 저장소). null이면 플레이스홀더. 시트 행 썸네일용. */
+    val imagePath: String? = null
+)
+
+/** 시트 행에서 실행 가능한 교정 종류(그 외는 열기 전용). */
+enum class AffectedFixType { AGE_LINKAGE, ASSIGN_NOVEL }
 
 /**
  * 인사이트 분류. 배지·정렬·카테고리 on/off의 단위이자 2단 모델의 기준.
@@ -74,6 +98,9 @@ sealed interface InsightAction {
         val kind: FixKind,
         override val label: String
     ) : InsightAction
+
+    /** 영향 캐릭터 [AssistantInsight.affected] 전체를 시트로 펼쳐 각각 열기/교정한다. */
+    data class ShowAffected(override val label: String) : InsightAction
 
     /** 교정 종류. 프래그먼트가 이 타입으로 분기해 다이얼로그/적용을 수행한다. */
     sealed interface FixKind {
