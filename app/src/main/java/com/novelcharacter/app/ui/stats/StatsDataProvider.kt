@@ -341,7 +341,19 @@ data class PatternInsight(
     val title: String,
     val description: String,
     val suggestion: String,
-    val fieldDefId: Long? = null
+    val fieldDefId: Long? = null,
+    /**
+     * 드릴다운(어시스턴트 '전체 보기')용 구조화 필드 — 문자열 파싱 없이 해당 캐릭터를 뽑기 위함.
+     * [mergedFieldDefIds]: 같은 (key,type)로 묶인 전 세계관 fieldDefId 전체(단일 fieldDefId 저장 시
+     * 다세계관 과소집계되던 문제 해결). [drilldownValues]: 그 값을 가진(또는 [drilldownExclude]면
+     * 갖지 않은) 캐릭터를 시트에 펼친다. [population]: 스코프 내 값 총수(최소 모집단 게이트용).
+     */
+    val fieldKey: String? = null,
+    val fieldType: String? = null,
+    val mergedFieldDefIds: List<Long> = emptyList(),
+    val drilldownValues: List<String> = emptyList(),
+    val drilldownExclude: Boolean = false,
+    val population: Int = 0
 )
 
 // ===== 세력 통계 =====
@@ -1756,7 +1768,14 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
                         title = "${fieldName}: '${topEntry.key}' 편중",
                         description = "${fieldName} 분포에서 '${topEntry.key}'이(가) ${String.format("%.0f", topPct)}%를 차지하여 편중되어 있습니다.",
                         suggestion = "다양성을 위해 다른 ${fieldName} 값을 가진 캐릭터 추가를 고려해보세요.",
-                        fieldDefId = fd.id
+                        fieldDefId = fd.id,
+                        fieldKey = fd.key,
+                        fieldType = fd.type,
+                        mergedFieldDefIds = allFieldDefIds.toList(),
+                        // 편중된 그 값(최빈)을 가진 캐릭터를 그대로 펼친다 — "누가 이 편중을 이루나"가 직관적.
+                        drilldownValues = listOf(topEntry.key),
+                        drilldownExclude = false,
+                        population = total
                     ))
                 }
             }
@@ -1789,7 +1808,14 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
                         title = "${fieldName}: 희소 값 발견",
                         description = "${fieldName}에서 $outlierNames 등이 각 1명에게만 해당됩니다.",
                         suggestion = "의도적인 개성 부여인지, 오입력인지 확인해보세요.",
-                        fieldDefId = fd.id
+                        fieldDefId = fd.id,
+                        fieldKey = fd.key,
+                        fieldType = fd.type,
+                        mergedFieldDefIds = allFieldDefIds.toList(),
+                        // 희소 값(각 1명)을 가진 캐릭터 전부를 펼친다.
+                        drilldownValues = singletons.map { it.key },
+                        drilldownExclude = false,
+                        population = total
                     ))
                 }
             }
@@ -1987,6 +2013,66 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
                     )
                 }
             }
+        }
+        return result.sortedBy { it.characterName }
+    }
+
+    /**
+     * (key,type)로 묶인 여러 fieldDefId 전체에 걸쳐, 주어진 [values] 중 하나라도 가진(또는 [exclude]면
+     * 하나도 갖지 않은) 캐릭터를 반환한다. detectPatterns가 다세계관을 합산해 감지하므로, 드릴다운도
+     * 단일 fieldDefId가 아니라 **병합 id 전체**를 순회해야 과소집계되지 않는다. getFieldValues 파싱 재사용.
+     */
+    fun getCharactersByFieldKeyValues(
+        s: StatsSnapshot,
+        fieldDefIds: List<Long>,
+        values: Set<String>,
+        exclude: Boolean = false
+    ): List<FieldValueCharacter> {
+        if (fieldDefIds.isEmpty() || values.isEmpty()) return emptyList()
+        val idSet = fieldDefIds.toSet()
+        val defById = s.fieldDefinitions.filter { it.id in idSet }.associateBy { it.id }
+        if (defById.isEmpty()) return emptyList()
+        val charMap = s.characters.associateBy { it.id }
+        // 캐릭터별로 이 (key,type) 그룹에서 파싱된 값 집합을 모은다.
+        val perChar = HashMap<Long, MutableSet<String>>()
+
+        for (fv in s.fieldValues) {
+            val fd = defById[fv.fieldDefinitionId] ?: continue
+            if (fd.type == "CALCULATED") continue
+            val cfg = FieldStatsConfig.fromConfig(fd.config)
+            val parsed = getFieldValues(fd, fv.value, cfg)
+            if (parsed.isNotEmpty()) perChar.getOrPut(fv.characterId) { mutableSetOf() }.addAll(parsed)
+        }
+        val calcDefs = defById.values.filter { it.type == "CALCULATED" }
+        if (calcDefs.isNotEmpty()) {
+            val calc = computeAllCalculatedValues(s)
+            for ((charId, fieldMap) in calc) {
+                for (fd in calcDefs) {
+                    val v = fieldMap[fd.id] ?: continue
+                    val cfg = FieldStatsConfig.fromConfig(fd.config)
+                    perChar.getOrPut(charId) { mutableSetOf() }.addAll(getFieldValues(fd, v, cfg))
+                }
+            }
+        }
+
+        val result = mutableListOf<FieldValueCharacter>()
+        for ((charId, vals) in perChar) {
+            val matched = vals.firstOrNull { it in values }
+            val include = if (exclude) matched == null else matched != null
+            if (!include) continue
+            val char = charMap[charId] ?: continue
+            val shownValue = matched ?: vals.firstOrNull { it !in values } ?: vals.firstOrNull() ?: ""
+            val images = try {
+                com.google.gson.Gson().fromJson(char.imagePaths, Array<String>::class.java)?.toList() ?: emptyList()
+            } catch (_: Exception) { emptyList() }
+            result.add(
+                FieldValueCharacter(
+                    characterId = char.id,
+                    characterName = char.name,
+                    fieldValue = shownValue,
+                    imageUri = images.firstOrNull()
+                )
+            )
         }
         return result.sortedBy { it.characterName }
     }
