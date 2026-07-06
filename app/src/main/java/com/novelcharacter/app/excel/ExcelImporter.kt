@@ -1013,6 +1013,11 @@ class ExcelImporter(context: Context) {
             parts.add("🗑 삭제: ${delParts.joinToString(", ")}")
         }
 
+        // 빈 셀로 비워진 값 요약 (F1-A 규칙 가: 열은 있으나 셀이 비어 삭제된 필드/태그)
+        if (result.clearedFields > 0) {
+            parts.add("🧹 빈 셀로 지워진 값 ${result.clearedFields}건")
+        }
+
         if (result.warnings.isNotEmpty()) {
             parts.add("⚠ ${result.warnings.size}건 경고")
         }
