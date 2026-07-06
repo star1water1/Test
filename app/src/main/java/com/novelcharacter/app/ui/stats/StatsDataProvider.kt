@@ -1739,13 +1739,20 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
     fun detectPatterns(s: StatsSnapshot, enabledTypes: Set<PatternType> = PatternType.values().toSet()): List<PatternInsight> {
         val insights = mutableListOf<PatternInsight>()
 
+        // 필드값을 fieldDefinitionId로 **한 번만** 그룹화 — 필드 그룹마다 전체 테이블을 재필터하던
+        // O(C·F²)를 O(C·F)로(받쳐주는 확장성). 아래 모든 그룹·작품별 비교가 이 버킷을 재사용한다.
+        val valuesByDefId: Map<Long, List<CharacterFieldValue>> = s.fieldValues.groupBy { it.fieldDefinitionId }
+        // 작품별 비교에서 필드가 속한 세계관의 대표 작품 조회 — fd마다 novels/universes를 중첩 탐색하던 것 제거.
+        val validUniverseIds = s.universes.mapTo(HashSet()) { it.id }
+        val firstNovelByUniverse: Map<Long, com.novelcharacter.app.data.model.Novel> =
+            s.novels.filter { it.universeId != null }.groupBy { it.universeId!! }.mapValues { it.value.first() }
+
         // 필드별 분포 패턴 감지
         val fieldsByKey = s.fieldDefinitions.groupBy { Pair(it.key, it.type) }
 
         for ((keyType, fieldDefs) in fieldsByKey) {
-            // 동일 키의 모든 세계관 필드 값 합산
-            val allFieldDefIds = fieldDefs.map { it.id }.toSet()
-            val rawValues = s.fieldValues.filter { it.fieldDefinitionId in allFieldDefIds }
+            // 동일 키의 모든 세계관 필드 값 합산 (사전 그룹 버킷 재사용)
+            val rawValues = fieldDefs.flatMap { valuesByDefId[it.id].orEmpty() }
             if (rawValues.isEmpty()) continue
 
             val fd = fieldDefs.first()
@@ -1894,12 +1901,9 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
                 if (fieldDefs.size < 2) continue
                 val novelPatterns = mutableListOf<Pair<String, String>>() // (작품명, 주요값)
                 for (fd in fieldDefs) {
-                    val novel = s.novels.find { n ->
-                        s.universes.find { it.id == fd.universeId }?.let { uni ->
-                            n.universeId == uni.id
-                        } == true
-                    } ?: continue
-                    val fvs = s.fieldValues.filter { it.fieldDefinitionId == fd.id }
+                    val novel = fd.universeId.takeIf { it in validUniverseIds }
+                        ?.let { firstNovelByUniverse[it] } ?: continue
+                    val fvs = valuesByDefId[fd.id].orEmpty()
                     val statsConfig = FieldStatsConfig.fromConfig(fd.config)
                     val values = fvs.flatMap { getFieldValues(fd, it.value, statsConfig) }
                     val topVal = values.groupBy { it }.maxByOrNull { it.value.size }
@@ -2034,7 +2038,8 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
         s: StatsSnapshot,
         fieldDefIds: List<Long>,
         values: Set<String>,
-        exclude: Boolean = false
+        exclude: Boolean = false,
+        valuesByDefId: Map<Long, List<CharacterFieldValue>>? = null
     ): List<FieldValueCharacter> {
         if (fieldDefIds.isEmpty() || values.isEmpty()) return emptyList()
         val idSet = fieldDefIds.toSet()
@@ -2050,8 +2055,11 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
         val refDef = defById[fieldDefIds.first()] ?: defById.values.first()
         if (refDef.type != "CALCULATED") {
             val refCfg = FieldStatsConfig.fromConfig(refDef.config)
-            for (fv in s.fieldValues) {
-                if (fv.fieldDefinitionId !in idSet) continue
+            // 관련 def 값만 순회 — 편향 카드마다 전체 fieldValues를 스캔하던 것 방지(P1-D).
+            // 사전 그룹([valuesByDefId])이 있으면 재사용해 카드 수 × 전체스캔의 제곱 폭발을 없앤다.
+            val relevant = if (valuesByDefId != null) idSet.flatMap { valuesByDefId[it].orEmpty() }
+                           else s.fieldValues.filter { it.fieldDefinitionId in idSet }
+            for (fv in relevant) {
                 val parsed = getFieldValues(refDef, fv.value, refCfg)
                 if (parsed.isNotEmpty()) perChar.getOrPut(fv.characterId) { mutableSetOf() }.addAll(parsed)
             }

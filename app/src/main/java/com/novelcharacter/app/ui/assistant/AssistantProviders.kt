@@ -294,7 +294,8 @@ class BiasProvider : InsightProvider {
         // 드릴다운(편중/이상치): 해당 값 캐릭터를 펼쳐 각자 열어볼 수 있게 → 카드가 실제로 쓸모 있어진다.
         if (p.drilldownValues.isNotEmpty() && p.mergedFieldDefIds.isNotEmpty()) {
             val chars = ctx.statsProvider.getCharactersByFieldKeyValues(
-                ctx.snapshot, p.mergedFieldDefIds, p.drilldownValues.toSet(), p.drilldownExclude
+                ctx.snapshot, p.mergedFieldDefIds, p.drilldownValues.toSet(), p.drilldownExclude,
+                valuesByDefId = ctx.valuesByDefId
             )
             if (chars.isNotEmpty()) {
                 val updatedById = ctx.snapshot.characters.associate { it.id to it.updatedAt }

@@ -94,9 +94,10 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun getFilteredSnapshot(snapshot: StatsSnapshot): StatsSnapshot {
+    private suspend fun getFilteredSnapshot(snapshot: StatsSnapshot): StatsSnapshot {
         val novelId = _selectedNovelId.value ?: return snapshot
-        return provider.filterByNovel(snapshot, novelId)
+        // 필터(약 16개 전체 리스트 순회)를 IO로 — 노벨 필터 활성 시 규모에 비례한 메인 스레드 잰크 방지(P2-5).
+        return withContext(Dispatchers.IO) { provider.filterByNovel(snapshot, novelId) }
     }
 
     @Volatile private var isRefreshing = false
@@ -422,10 +423,11 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
         _subgroupAnalysis.value = null
     }
 
-    /** 현재 스냅샷의 필드 정의 목록 반환 (하위 그룹 분석 필드 선택용) */
+    /** 현재 스냅샷의 필드 정의 목록 반환 (하위 그룹 분석 필드 선택용) — 동기 getter라 필터를 인라인 수행. */
     fun getFieldDefinitions(): List<FieldDefinition> {
         val snapshot = cachedSnapshot ?: return emptyList()
-        val filtered = getFilteredSnapshot(snapshot)
+        val novelId = _selectedNovelId.value
+        val filtered = if (novelId != null) provider.filterByNovel(snapshot, novelId) else snapshot
         return filtered.fieldDefinitions
     }
 

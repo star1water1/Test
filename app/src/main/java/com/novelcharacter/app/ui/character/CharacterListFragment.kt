@@ -578,7 +578,9 @@ class CharacterListFragment : Fragment() {
 
     private fun observeData() {
         viewModel.searchResults.observe(viewLifecycleOwner) { characters ->
-            adapter.refreshRandomImages(context)
+            // 리스트 갱신마다 이미지 인덱스를 초기화하지 않는다(P2-1). 매 emission(핀·필터·정렬·검색)마다
+            // clearAll하면 영속 인덱스가 무력화되고 전 캐릭터 썸네일이 재랜덤·O(N) 메인스레드 쓰기가 발생했다.
+            // 인덱스는 bind에서 없을 때만 배정·저장되며, 표시는 `idx % paths.size`로 항상 안전하다.
             adapter.submitList(characters)
             lastListEmpty = characters.isEmpty()
             updateEmptyState()
