@@ -98,23 +98,9 @@ class BirthdayBannerAdapter(
             val path = paths[0]
             val appDir = binding.root.context.filesDir
             loadJob = coroutineScope.launch {
+                // 공용 유틸 위임 — filesDir 경로 가드 + 총 픽셀 상한(파노라마 OOM 방지, P2-6).
                 val bitmap = withContext(Dispatchers.IO) {
-                    try {
-                        val file = java.io.File(path)
-                        if (!file.canonicalPath.startsWith(appDir.canonicalPath + java.io.File.separator)) return@withContext null
-                        val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                        BitmapFactory.decodeFile(path, options)
-                        val (h, w) = options.outHeight to options.outWidth
-                        var inSampleSize = 1
-                        if (h > 128 || w > 128) {
-                            while (inSampleSize < 512 && h / (inSampleSize * 2) >= 128 && w / (inSampleSize * 2) >= 128) {
-                                inSampleSize *= 2
-                            }
-                        }
-                        options.inSampleSize = inSampleSize
-                        options.inJustDecodeBounds = false
-                        BitmapFactory.decodeFile(path, options)
-                    } catch (_: Exception) { null }
+                    com.novelcharacter.app.util.CharacterImageLoader.decodeThumbnail(path, appDir, 128)
                 }
                 if (bitmap != null && bindingAdapterPosition != RecyclerView.NO_POSITION) {
                     binding.birthdayCharImage.setImageBitmap(bitmap)

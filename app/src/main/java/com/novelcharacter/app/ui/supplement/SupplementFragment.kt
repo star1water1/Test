@@ -454,23 +454,10 @@ class SupplementFragment : Fragment() {
                     val appDir = itemView.context.filesDir
                     val charId = target.character.id
                     scope?.launch {
+                        val targetSize = (48 * itemView.context.resources.displayMetrics.density).toInt().coerceAtLeast(1)
+                        // 공용 유틸 위임 — filesDir 경로 가드 + 총 픽셀 상한(파노라마 OOM 방지, P2-6).
                         val bitmap = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                            try {
-                                val file = java.io.File(path)
-                                if (!file.exists() || !file.canonicalPath.startsWith(appDir.canonicalPath + java.io.File.separator)) return@withContext null
-                                val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                                BitmapFactory.decodeFile(path, options)
-                                val targetSize = (48 * itemView.context.resources.displayMetrics.density).toInt()
-                                var sampleSize = 1
-                                val halfH = options.outHeight / 2
-                                val halfW = options.outWidth / 2
-                                while (sampleSize < 1024 && halfH / sampleSize >= targetSize && halfW / sampleSize >= targetSize) {
-                                    sampleSize *= 2
-                                }
-                                options.inSampleSize = sampleSize
-                                options.inJustDecodeBounds = false
-                                BitmapFactory.decodeFile(path, options)
-                            } catch (_: Exception) { null }
+                            com.novelcharacter.app.util.CharacterImageLoader.decodeThumbnail(path, appDir, targetSize)
                         }
                         // ViewHolder가 재활용되었을 수 있으므로 검증
                         if (bitmap != null && bindingAdapterPosition != RecyclerView.NO_POSITION) {
