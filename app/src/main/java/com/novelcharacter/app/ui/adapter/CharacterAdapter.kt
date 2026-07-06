@@ -2,7 +2,6 @@ package com.novelcharacter.app.ui.adapter
 
 import android.annotation.SuppressLint
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.util.LruCache
 import android.view.LayoutInflater
 import android.view.MotionEvent
@@ -310,7 +309,7 @@ class CharacterAdapter(
                 val boundPath = path
                 loadJob = coroutineScope.launch {
                     val bitmap = withContext(Dispatchers.IO) {
-                        decodeSampledBitmap(boundPath, 256, 256)
+                        com.novelcharacter.app.util.CharacterImageLoader.decodeThumbnail(boundPath, binding.root.context.filesDir, 256)
                     }
                     if (bitmap != null) {
                         thumbnailCache.put(boundPath, bitmap)
@@ -333,37 +332,6 @@ class CharacterAdapter(
             }
         }
 
-        private fun decodeSampledBitmap(path: String, reqWidth: Int, reqHeight: Int): Bitmap? {
-            return try {
-                val file = java.io.File(path)
-                val appDir = binding.root.context.filesDir
-                if (!file.canonicalPath.startsWith(appDir.canonicalPath + java.io.File.separator)) {
-                    return null
-                }
-                val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                BitmapFactory.decodeFile(path, options)
-                options.inSampleSize = calculateInSampleSize(options, reqWidth, reqHeight)
-                options.inJustDecodeBounds = false
-                BitmapFactory.decodeFile(path, options)
-            } catch (e: Exception) {
-                null
-            }
-        }
-
-        private fun calculateInSampleSize(
-            options: BitmapFactory.Options, reqWidth: Int, reqHeight: Int
-        ): Int {
-            val (height, width) = options.outHeight to options.outWidth
-            var inSampleSize = 1
-            if (height > reqHeight || width > reqWidth) {
-                val halfHeight = height / 2
-                val halfWidth = width / 2
-                while (inSampleSize < 1024 && halfHeight / inSampleSize >= reqHeight && halfWidth / inSampleSize >= reqWidth) {
-                    inSampleSize *= 2
-                }
-            }
-            return inSampleSize
-        }
     }
 
     class CharacterDiffCallback : DiffUtil.ItemCallback<Character>() {

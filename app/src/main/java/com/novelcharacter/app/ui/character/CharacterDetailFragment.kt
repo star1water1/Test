@@ -2,7 +2,6 @@ package com.novelcharacter.app.ui.character
 
 import android.content.Intent
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.os.Bundle
 import android.print.PrintAttributes
 import android.print.PrintManager
@@ -634,7 +633,7 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
                 val boundPosition = position
                 val job = viewLifecycleOwner.lifecycleScope.launch {
                     val bitmap = withContext(Dispatchers.IO) {
-                        decodeSampledBitmap(path, 1024, 1024)
+                        com.novelcharacter.app.util.CharacterImageLoader.decodeThumbnail(path, getAppDir(), 1024)
                     }
                     if (bitmap != null && holder.bindingAdapterPosition == boundPosition && isAdded) {
                         imageView.setImageBitmap(bitmap)
@@ -663,39 +662,6 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
     private var appDir: java.io.File? = null
     private fun getAppDir(): java.io.File {
         return appDir ?: requireContext().filesDir.also { appDir = it }
-    }
-
-    private fun decodeSampledBitmap(path: String, reqWidth: Int, reqHeight: Int): Bitmap? {
-        return try {
-            val file = java.io.File(path)
-            val dir = appDir ?: return null
-            if (!file.canonicalPath.startsWith(dir.canonicalPath + java.io.File.separator)) {
-                return null
-            }
-            val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            BitmapFactory.decodeFile(path, options)
-
-            options.inSampleSize = calculateInSampleSize(options, reqWidth, reqHeight)
-            options.inJustDecodeBounds = false
-            BitmapFactory.decodeFile(path, options)
-        } catch (e: Exception) {
-            null
-        }
-    }
-
-    private fun calculateInSampleSize(
-        options: BitmapFactory.Options, reqWidth: Int, reqHeight: Int
-    ): Int {
-        val (height, width) = options.outHeight to options.outWidth
-        var inSampleSize = 1
-        if (height > reqHeight || width > reqWidth) {
-            val halfHeight = height / 2
-            val halfWidth = width / 2
-            while (inSampleSize < 1024 && halfHeight / inSampleSize >= reqHeight && halfWidth / inSampleSize >= reqWidth) {
-                inSampleSize *= 2
-            }
-        }
-        return inSampleSize
     }
 
     /**
@@ -875,10 +841,9 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
                         }
 
                         val charBitmap = withContext(Dispatchers.IO) {
-                            try {
-                                val paths: List<String> = GSON.fromJson(character.imagePaths, IMAGE_PATHS_TYPE) ?: emptyList()
-                                if (paths.isNotEmpty()) BitmapFactory.decodeFile(paths[0]) else null
-                            } catch (_: Exception) { null }
+                            // 풀사이즈·무가드 디코드는 대용량 이미지에서 OOM 위험 → 공용 유틸로 다운샘플+경로가드.
+                            com.novelcharacter.app.util.CharacterImageLoader.firstImagePath(character.imagePaths)
+                                ?.let { com.novelcharacter.app.util.CharacterImageLoader.decodeThumbnail(it, getAppDir(), 1024) }
                         }
 
                         val config = CharacterCardRenderer.CardConfig(theme = selectedTheme)
