@@ -8,6 +8,7 @@ import com.novelcharacter.app.data.model.CharacterFieldValue
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.SemanticRole
+import com.novelcharacter.app.data.repository.UniverseMoveCounts
 import com.novelcharacter.app.util.SemanticFieldSyncHelper
 import com.novelcharacter.app.util.StandardYearSyncHelper
 import kotlinx.coroutines.launch
@@ -16,13 +17,23 @@ sealed class BatchOperationResult {
     /**
      * @param affectedCount 실제 반영된 캐릭터 수
      * @param syncFailures 시맨틱 필드(나이/생존 등) 재동기화에 실패한 캐릭터 수 — 조용한 부분 실패를 통보하기 위해 집계
+     * @param move 세계관 이동(작품 변경) 시 필드 이관/제거 집계 — 유실을 사용자에게 고지하기 위해 전달
      */
-    data class Success(val operation: String, val affectedCount: Int, val syncFailures: Int = 0) : BatchOperationResult()
+    data class Success(
+        val operation: String,
+        val affectedCount: Int,
+        val syncFailures: Int = 0,
+        val move: UniverseMoveCounts = UniverseMoveCounts()
+    ) : BatchOperationResult()
     data class Error(val message: String) : BatchOperationResult()
 }
 
-/** 배치 작업 내부 집계 결과 (반영 건수 + 동기화 실패 건수) */
-private data class BatchCounts(val affected: Int, val syncFailures: Int = 0)
+/** 배치 작업 내부 집계 결과 (반영 건수 + 동기화 실패 건수 + 세계관 이동 집계) */
+private data class BatchCounts(
+    val affected: Int,
+    val syncFailures: Int = 0,
+    val move: UniverseMoveCounts = UniverseMoveCounts()
+)
 
 class BatchEditViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -113,7 +124,7 @@ class BatchEditViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun changeNovel(newNovelId: Long?) = launchBatchOp("changeNovel") { ids ->
-        characterRepository.batchChangeNovel(ids, newNovelId)
+        val move = characterRepository.batchChangeNovel(ids, newNovelId)
 
         // 시맨틱 필드 재동기화 (standardYear가 달라질 수 있으므로)
         var syncFailures = 0
@@ -134,7 +145,7 @@ class BatchEditViewModel(application: Application) : AndroidViewModel(applicatio
                 }
             }
         }
-        BatchCounts(ids.size, syncFailures)
+        BatchCounts(ids.size, syncFailures, move)
     }
 
     fun addTags(tags: List<String>) = launchBatchOp("addTags") { ids ->

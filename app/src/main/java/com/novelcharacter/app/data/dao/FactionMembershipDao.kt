@@ -56,6 +56,14 @@ interface FactionMembershipDao {
     """)
     suspend fun deleteMembershipsNotInUniverse(characterId: Long, universeId: Long)
 
+    /** 삭제 예정(세계관 이동 시 제거될) 소속 기록 수 — 파괴 전 스냅샷 판단·고지용 */
+    @Query("""
+        SELECT COUNT(*) FROM faction_memberships
+        WHERE characterId = :characterId
+          AND factionId NOT IN (SELECT id FROM factions WHERE universeId = :universeId)
+    """)
+    suspend fun countMembershipsNotInUniverse(characterId: Long, universeId: Long): Int
+
     @Query("DELETE FROM faction_memberships")
     suspend fun deleteAll()
 

@@ -642,6 +642,31 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         return novel.universeId
     }
 
+    /** 작품 id → 세계관 id (없으면 null). 편집화면 세계관 이동 감지용. */
+    suspend fun universeIdForNovel(novelId: Long?): Long? {
+        val id = novelId ?: return null
+        return novelRepository.getNovelById(id)?.universeId
+    }
+
+    /** 세계관 이동 시 유실될 필드값·세력 소속 수를 미리 센다(확인 다이얼로그·고지용, 파괴 없음). */
+    suspend fun countCrossUniverseLoss(characterId: Long, newUniverseId: Long) =
+        characterRepository.countCrossUniverseLoss(characterId, newUniverseId)
+
+    /**
+     * 편집화면에서 다른 세계관으로 이동 저장. 같은 이름 필드는 이관, 대응 없는 값·세력은 스냅샷(되돌리기) 후 제거.
+     * 저장된 최종 값으로 시맨틱 필드 동기화까지 정규 경로로 수행한다.
+     */
+    suspend fun updateCharacterAcrossUniverse(
+        character: Character,
+        values: List<CharacterFieldValue>,
+        newUniverseId: Long
+    ): com.novelcharacter.app.data.repository.UniverseMoveCounts {
+        val counts = characterRepository.updateCharacterAcrossUniverse(character, values, newUniverseId)
+        val stored = characterRepository.getValuesByCharacterList(character.id)
+        semanticSyncHelper.syncFieldToStateChange(character.id, newUniverseId, stored)
+        return counts
+    }
+
     // ===== 나이-출생연도 불일치 감지 =====
 
     data class AgeLinkageConflict(

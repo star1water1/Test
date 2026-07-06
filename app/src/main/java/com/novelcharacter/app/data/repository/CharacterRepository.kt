@@ -9,6 +9,30 @@ import com.novelcharacter.app.data.model.*
 import com.novelcharacter.app.util.GsonTypes
 import java.io.File
 
+/**
+ * 세계관 이동(작품 변경) 시 필드값 처리 결과 집계.
+ * @param remappedValues 같은 key 필드로 이관된 값 수
+ * @param removedValues 새 세계관에 대응 필드가 없어 제거된 값 수
+ * @param removedMemberships 새 세계관에 없어 제거된 세력 소속 수
+ * @param snapshotted 파괴 전 휴지통 스냅샷을 남긴 캐릭터 수(되돌리기 가능)
+ */
+data class UniverseMoveCounts(
+    val remappedValues: Int = 0,
+    val removedValues: Int = 0,
+    val removedMemberships: Int = 0,
+    val snapshotted: Int = 0
+) {
+    operator fun plus(o: UniverseMoveCounts) = UniverseMoveCounts(
+        remappedValues + o.remappedValues,
+        removedValues + o.removedValues,
+        removedMemberships + o.removedMemberships,
+        snapshotted + o.snapshotted
+    )
+
+    /** 실제 제거(유실)가 발생했는가 — 고지 필요 여부. */
+    val hasRemoval: Boolean get() = removedValues > 0 || removedMemberships > 0
+}
+
 class CharacterRepository(
     private val db: AppDatabase,
     private val characterDao: CharacterDao,
@@ -282,23 +306,129 @@ class CharacterRepository(
         }
     }
 
-    suspend fun batchChangeNovel(ids: List<Long>, newNovelId: Long?) {
+    /**
+     * 캐릭터를 작품에 재배정한다. 다른 세계관으로 이동하는 경우(개발 의도: 변수 제어 · 유기적 연결):
+     * - 새 세계관에 **같은 key** 필드가 있으면 값을 그 필드로 **이관(재매핑)**한다(유실 없음).
+     * - 대응 필드가 없는 값·새 세계관에 없는 세력 소속은 제거하되, **제거가 실제로 일어나는 경우에만**
+     *   파괴 전 휴지통 스냅샷을 남겨 **되돌릴 수 있게** 한다.
+     * 반환값으로 이관/제거 건수를 집계해 호출부가 사용자에게 고지할 수 있게 한다.
+     */
+    suspend fun batchChangeNovel(ids: List<Long>, newNovelId: Long?): UniverseMoveCounts {
         val now = System.currentTimeMillis()
+        var agg = UniverseMoveCounts()
         db.withTransaction {
-            for (chunk in ids.chunked(CHUNK_SIZE)) {
-                characterDao.updateNovelIdForIds(chunk, newNovelId, now)
-            }
-            // 다른 세계관으로 이동 시 고아 필드값 정리
-            if (newNovelId != null) {
-                val novel = db.novelDao().getNovelById(newNovelId)
-                val newUniverseId = novel?.universeId
-                if (newUniverseId != null) {
-                    for (charId in ids) {
-                        db.characterFieldValueDao().deleteValuesNotInUniverse(charId, newUniverseId)
-                        db.factionMembershipDao().deleteMembershipsNotInUniverse(charId, newUniverseId)
+            val newUniverseId = newNovelId?.let { db.novelDao().getNovelById(it)?.universeId }
+            if (newUniverseId != null) {
+                val trash = TrashRepository(db)
+                val allDefsById = db.fieldDefinitionDao().getAllFieldsList().associateBy { it.id }
+                val newDefByKey = db.fieldDefinitionDao().getFieldsByUniverseList(newUniverseId).associateBy { it.key }
+                for (chunk in ids.chunked(CHUNK_SIZE)) {
+                    for (character in characterDao.getCharactersByIds(chunk)) {
+                        val curUniverse = character.novelId?.let { db.novelDao().getNovelById(it)?.universeId }
+                        if (curUniverse == newUniverseId) continue // 같은 세계관 내 이동은 정리 불필요
+                        agg += migrateCharacterFieldsToUniverse(character, newUniverseId, allDefsById, newDefByKey, trash)
                     }
                 }
             }
+            // novelId 갱신은 이관/스냅샷 '후' — 스냅샷이 옛 소속을 담도록
+            for (chunk in ids.chunked(CHUNK_SIZE)) {
+                characterDao.updateNovelIdForIds(chunk, newNovelId, now)
+            }
+        }
+        return agg
+    }
+
+    /**
+     * 한 캐릭터의 필드값을 [newUniverseId] 세계관으로 이관/정리한다. 상위 트랜잭션 안에서 호출할 것.
+     * 같은 key 필드로 재매핑하고, 대응 없는 값·타 세계관 세력 소속은 제거하며, 유실 시에만 스냅샷을 남긴다.
+     */
+    private suspend fun migrateCharacterFieldsToUniverse(
+        character: Character,
+        newUniverseId: Long,
+        allDefsById: Map<Long, FieldDefinition>,
+        newDefByKey: Map<String, FieldDefinition>,
+        trash: TrashRepository
+    ): UniverseMoveCounts {
+        val oldValues = characterFieldValueDao.getValuesByCharacterList(character.id)
+        val finalValues = ArrayList<CharacterFieldValue>(oldValues.size)
+        val usedDefIds = HashSet<Long>()
+        var remapped = 0
+        var removedValues = 0
+        for (v in oldValues) {
+            val key = allDefsById[v.fieldDefinitionId]?.key
+            val newDef = key?.let { newDefByKey[it] }
+            when {
+                newDef == null -> removedValues++                          // 새 세계관에 대응 필드 없음
+                !usedDefIds.add(newDef.id) -> removedValues++             // 같은 def로 이미 이관됨(중복 방지)
+                newDef.id == v.fieldDefinitionId -> finalValues.add(v)    // 이미 새 세계관 소속
+                else -> { finalValues.add(v.copy(fieldDefinitionId = newDef.id)); remapped++ }
+            }
+        }
+        val orphanMemberships = db.factionMembershipDao().countMembershipsNotInUniverse(character.id, newUniverseId)
+        val willLose = removedValues > 0 || orphanMemberships > 0
+        if (willLose) {
+            trash.snapshotCharacter(character, parseImagePaths(character.imagePaths).map { it.absolutePath })
+        }
+        characterFieldValueDao.replaceAllByCharacter(character.id, finalValues)
+        if (orphanMemberships > 0) db.factionMembershipDao().deleteMembershipsNotInUniverse(character.id, newUniverseId)
+        return UniverseMoveCounts(remapped, removedValues, orphanMemberships, if (willLose) 1 else 0)
+    }
+
+    /** 세계관 이동 시 유실될 값·세력 소속 수를 미리 센다(편집화면 확인 다이얼로그·고지용, 파괴 없음). */
+    suspend fun countCrossUniverseLoss(characterId: Long, newUniverseId: Long): UniverseMoveCounts {
+        val old = characterFieldValueDao.getValuesByCharacterList(characterId)
+        val allDefsById = db.fieldDefinitionDao().getAllFieldsList().associateBy { it.id }
+        val newKeys = db.fieldDefinitionDao().getFieldsByUniverseList(newUniverseId).map { it.key }.toSet()
+        var removed = 0
+        var remappable = 0
+        for (v in old) {
+            val key = allDefsById[v.fieldDefinitionId]?.key
+            if (key == null || key !in newKeys) removed++ else remappable++
+        }
+        val memberships = db.factionMembershipDao().countMembershipsNotInUniverse(characterId, newUniverseId)
+        return UniverseMoveCounts(remappable, removed, memberships, 0)
+    }
+
+    /**
+     * 편집화면에서 캐릭터를 다른 세계관으로 옮겨 저장할 때: 입력한 폼 값을 우선하되,
+     * 폼이 채우지 않은 같은 key 필드는 기존 값으로 이관(유실 방지)하고, 대응 없는 값·타 세계관 세력은
+     * 제거하되 파괴 전 스냅샷을 남긴다. [formValues]는 characterId가 채워진 상태여야 한다.
+     */
+    suspend fun updateCharacterAcrossUniverse(
+        character: Character,
+        formValues: List<CharacterFieldValue>,
+        newUniverseId: Long
+    ): UniverseMoveCounts {
+        return db.withTransaction {
+            val allDefsById = db.fieldDefinitionDao().getAllFieldsList().associateBy { it.id }
+            val newDefByKey = db.fieldDefinitionDao().getFieldsByUniverseList(newUniverseId).associateBy { it.key }
+            val old = characterFieldValueDao.getValuesByCharacterList(character.id)
+            val formNonBlank = formValues.filter { it.value.isNotBlank() }
+            val formDefIds = formNonBlank.map { it.fieldDefinitionId }.toHashSet()
+
+            val gapFills = LinkedHashMap<Long, CharacterFieldValue>() // 새 defId -> 이관값(폼 미입력분)
+            var remapped = 0
+            var removed = 0
+            for (v in old) {
+                if (v.value.isBlank()) continue
+                val key = allDefsById[v.fieldDefinitionId]?.key
+                val newDef = key?.let { newDefByKey[it] }
+                if (newDef == null) { removed++; continue }        // 대응 필드 없음 → 제거
+                if (newDef.id in formDefIds) continue              // 사용자가 새 값 입력 → 폼 우선
+                if (gapFills.containsKey(newDef.id)) continue       // 이미 이관됨(중복 방지)
+                gapFills[newDef.id] = v.copy(fieldDefinitionId = newDef.id)
+                remapped++
+            }
+            val orphanMemberships = db.factionMembershipDao().countMembershipsNotInUniverse(character.id, newUniverseId)
+            val willLose = removed > 0 || orphanMemberships > 0
+            if (willLose) {
+                val persisted = characterDao.getCharacterById(character.id) ?: character
+                TrashRepository(db).snapshotCharacter(persisted, parseImagePaths(persisted.imagePaths).map { it.absolutePath })
+            }
+            characterDao.update(character)
+            characterFieldValueDao.replaceAllByCharacter(character.id, formNonBlank + gapFills.values)
+            if (orphanMemberships > 0) db.factionMembershipDao().deleteMembershipsNotInUniverse(character.id, newUniverseId)
+            UniverseMoveCounts(remapped, removed, orphanMemberships, if (willLose) 1 else 0)
         }
     }
 

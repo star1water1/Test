@@ -1467,13 +1467,29 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         character: Character,
         isUpdate: Boolean,
         targetCharacterId: Long,
-        resolvedFieldValues: List<CharacterFieldValue>? = null
+        resolvedFieldValues: List<CharacterFieldValue>? = null,
+        crossUniverseConfirmed: Boolean = false
     ) {
         val savedCharId: Long
         if (isUpdate && targetCharacterId != -1L) {
             val fieldValues = resolvedFieldValues?.map { it.copy(characterId = targetCharacterId) }
                 ?: collectFieldValues(targetCharacterId)
-            viewModel.updateCharacterWithFields(character, fieldValues)
+            // 다른 세계관으로 이동하는 저장이면 유실 고지·이관 처리(변수 제어: 조용한 필드값 유실 방지)
+            val crossUniv = crossUniverseTargetId(character)
+            if (crossUniv != null && !crossUniverseConfirmed) {
+                val loss = viewModel.countCrossUniverseLoss(targetCharacterId, crossUniv)
+                if (loss.hasRemoval) {
+                    showCrossUniverseMoveDialog(loss,
+                        onConfirm = {
+                            viewLifecycleOwner.lifecycleScope.launch {
+                                executeSave(character, isUpdate, targetCharacterId, fieldValues, crossUniverseConfirmed = true)
+                            }
+                        },
+                        onCancel = { resetSavingState() })
+                    return
+                }
+            }
+            applyCharacterUpdate(character, fieldValues, crossUniv)
             savedCharId = targetCharacterId
             cleanupRemovedImages(existingCharacter?.imagePaths, imagePaths)
         } else {
@@ -1788,12 +1804,27 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
     private suspend fun executeSupplementSave(
         character: Character,
         isUpdate: Boolean,
-        resolvedFieldValues: List<CharacterFieldValue>
+        resolvedFieldValues: List<CharacterFieldValue>,
+        crossUniverseConfirmed: Boolean = false
     ) {
         val savedCharId: Long
         if (isUpdate && characterId != -1L) {
             val fieldValues = resolvedFieldValues.map { it.copy(characterId = characterId) }
-            viewModel.updateCharacterWithFields(character, fieldValues)
+            val crossUniv = crossUniverseTargetId(character)
+            if (crossUniv != null && !crossUniverseConfirmed) {
+                val loss = viewModel.countCrossUniverseLoss(characterId, crossUniv)
+                if (loss.hasRemoval) {
+                    showCrossUniverseMoveDialog(loss,
+                        onConfirm = {
+                            viewLifecycleOwner.lifecycleScope.launch {
+                                executeSupplementSave(character, isUpdate, resolvedFieldValues, crossUniverseConfirmed = true)
+                            }
+                        },
+                        onCancel = { resetSupplementSavingState() })
+                    return
+                }
+            }
+            applyCharacterUpdate(character, fieldValues, crossUniv)
             savedCharId = characterId
             cleanupRemovedImages(existingCharacter?.imagePaths, imagePaths)
         } else {
@@ -1813,6 +1844,42 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
             Toast.makeText(requireContext(), R.string.saved_successfully, Toast.LENGTH_SHORT).show()
             navigateToNextSupplement()
         }
+    }
+
+    /** 다른 세계관으로 이동하는 저장이면 새 세계관 id, 아니면 null(기존·새 세계관 모두 있고 서로 다를 때). */
+    private suspend fun crossUniverseTargetId(character: Character): Long? {
+        val old = viewModel.universeIdForNovel(existingCharacter?.novelId)
+        val new = viewModel.universeIdForNovel(character.novelId)
+        return if (old != null && new != null && old != new) new else null
+    }
+
+    /** 세계관 이동 여부에 따라 이관 저장(같은 이름 필드 유지·유실 시 스냅샷) 또는 일반 저장을 선택한다. */
+    private suspend fun applyCharacterUpdate(
+        character: Character,
+        values: List<CharacterFieldValue>,
+        crossUniverseId: Long?
+    ) {
+        if (crossUniverseId != null) viewModel.updateCharacterAcrossUniverse(character, values, crossUniverseId)
+        else viewModel.updateCharacterWithFields(character, values)
+    }
+
+    /** 세계관 이동 시 유실(제거) 고지 다이얼로그 — 같은 이름 필드 이관·제거분 휴지통 백업(복원 가능) 안내. */
+    private fun showCrossUniverseMoveDialog(
+        loss: com.novelcharacter.app.data.repository.UniverseMoveCounts,
+        onConfirm: () -> Unit,
+        onCancel: () -> Unit
+    ) {
+        if (!isAdded || view == null) { onCancel(); return }
+        AlertDialog.Builder(requireContext())
+            .setTitle(R.string.cross_universe_move_title)
+            .setMessage(getString(
+                R.string.cross_universe_move_message,
+                loss.removedValues, loss.removedMemberships, loss.remappedValues
+            ))
+            .setPositiveButton(R.string.cross_universe_move_confirm) { _, _ -> onConfirm() }
+            .setNegativeButton(R.string.cancel) { _, _ -> onCancel() }
+            .setOnCancelListener { onCancel() }
+            .show()
     }
 
     private fun resetSupplementSavingState() {

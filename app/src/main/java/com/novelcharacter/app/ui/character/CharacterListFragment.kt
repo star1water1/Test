@@ -503,12 +503,28 @@ class CharacterListFragment : Fragment() {
                             getString(R.string.result_batch_summary, opLabel, result.affectedCount),
                             getString(R.string.result_batch_sync_warning, result.syncFailures)
                         ))
+                    } else if (result.move.hasRemoval) {
+                        // 세계관 이동으로 대응 없는 필드값·세력 소속이 제거된 경우 — 유실을 고지(변수 제어).
+                        // 같은 이름 필드는 이관되고, 제거분은 휴지통에 백업되어 복원 가능함을 알린다.
+                        val message = getString(
+                            R.string.batch_move_removed_warning,
+                            result.affectedCount, result.move.removedValues, result.move.removedMemberships
+                        )
+                        Snackbar.make(binding.root, message, Snackbar.LENGTH_LONG).show()
+                        logOperation(OpResult.success(
+                            OpResult.CAT_BATCH,
+                            getString(R.string.result_batch_summary, opLabel, result.affectedCount),
+                            getString(R.string.result_batch_move_detail, result.move.remappedValues, result.move.removedValues, result.move.removedMemberships)
+                        ))
                     } else {
+                        val remapNote = if (result.move.remappedValues > 0)
+                            getString(R.string.result_batch_move_remapped, result.move.remappedValues) else null
                         val message = getString(R.string.batch_success_format, result.affectedCount, opLabel)
                         Snackbar.make(binding.root, message, Snackbar.LENGTH_SHORT).show()
                         logOperation(OpResult.success(
                             OpResult.CAT_BATCH,
-                            getString(R.string.result_batch_summary, opLabel, result.affectedCount)
+                            getString(R.string.result_batch_summary, opLabel, result.affectedCount),
+                            remapNote
                         ))
                     }
 
