@@ -52,7 +52,9 @@ data class AffectedRow(
     val subtitle: String? = null,
     val fixType: AffectedFixType? = null,
     /** 첫 이미지 절대경로(내부 저장소). null이면 플레이스홀더. 시트 행 썸네일용. */
-    val imagePath: String? = null
+    val imagePath: String? = null,
+    /** 시트 '최근 수정순' 정렬용(provider가 스냅샷에서 채움). null이면 그 정렬에서 뒤로. */
+    val updatedAt: Long? = null
 )
 
 /** 시트 행에서 실행 가능한 교정 종류(그 외는 열기 전용). */

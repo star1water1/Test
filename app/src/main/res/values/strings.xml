@@ -1650,6 +1650,11 @@
     <!-- A3 PR1 — 집계 카드 전체 보기(영향 캐릭터 목록) -->
     <string name="assistant_action_view_all">전체 보기 (%1$d명)</string>
     <string name="assistant_affected_remaining">남은 %1$d명</string>
+    <!-- 전체 보기 시트 정렬(비파괴 — 보는 순서만) -->
+    <string name="assistant_sort_default">기본 순서</string>
+    <string name="assistant_sort_name">이름순</string>
+    <string name="assistant_sort_recent">최근 수정순</string>
+    <string name="assistant_sort_created">생성순</string>
     <string name="assistant_affected_age_subtitle">기준연도 %1$d · 나이 %2$d · 출생 %3$d → 예상 나이 %4$d</string>
     <string name="assistant_affected_death_subtitle">출생 %1$d · 사망 %2$d</string>
     <string name="assistant_age_dialog_title_named">%1$s — 나이·출생연도 불일치 (기준연도 %2$d년)</string>
