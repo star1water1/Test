@@ -271,7 +271,9 @@ fun nameBankSpec() = SheetSpec(
         ColumnSpec("사용여부", dropdownOptions = listOf("Y", "N"), width = 4000),
         ColumnSpec("사용 캐릭터", width = 5000),
         ColumnSpec("사용캐릭터코드", readOnly = true, width = 4000),
-        ColumnSpec("생성일", readOnly = true, width = 5000)
+        ColumnSpec("생성일", readOnly = true, width = 5000),
+        // 이름 은행 항목 자체의 안정 식별자 (F3-D) — 왕복 매칭 기준, 수정 금지
+        ColumnSpec("코드", readOnly = true, width = 4000)
     )
 )
 
