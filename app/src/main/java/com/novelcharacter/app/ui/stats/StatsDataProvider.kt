@@ -1756,6 +1756,8 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
             val dist = allValues.groupBy { it }.mapValues { it.value.size }
             val total = allValues.size
             val fieldName = fd.name
+            // 게이트용 '모집단'은 값 개수(total)가 아니라 이 필드에 값을 가진 실제 캐릭터 수(다값 필드 보정).
+            val peopleCount = rawValues.map { it.characterId }.distinct().size
 
             // 패턴 1: 편중 (단일 값 60%+)
             val topEntry = dist.maxByOrNull { it.value }
@@ -1771,11 +1773,12 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
                         fieldDefId = fd.id,
                         fieldKey = fd.key,
                         fieldType = fd.type,
-                        mergedFieldDefIds = allFieldDefIds.toList(),
+                        // 기준 def(fd=first)를 맨 앞에 둔다 — 드릴다운도 이 def의 config로 파싱해 %와 일치.
+                        mergedFieldDefIds = fieldDefs.map { it.id },
                         // 편중된 그 값(최빈)을 가진 캐릭터를 그대로 펼친다 — "누가 이 편중을 이루나"가 직관적.
                         drilldownValues = listOf(topEntry.key),
                         drilldownExclude = false,
-                        population = total
+                        population = peopleCount
                     ))
                 }
             }
@@ -1791,7 +1794,12 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
                         title = "${fieldName}: 균형 양호",
                         description = "${fieldName}의 값이 ${dist.size}개 범주에 고르게 분포되어 있습니다.",
                         suggestion = "",
-                        fieldDefId = fd.id
+                        fieldDefId = fd.id,
+                        // 드릴다운은 없지만 최소 모집단 게이트가 적용되도록 필드 식별/모집단은 채운다.
+                        fieldKey = fd.key,
+                        fieldType = fd.type,
+                        mergedFieldDefIds = fieldDefs.map { it.id },
+                        population = peopleCount
                     ))
                 }
             }
@@ -1811,11 +1819,11 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
                         fieldDefId = fd.id,
                         fieldKey = fd.key,
                         fieldType = fd.type,
-                        mergedFieldDefIds = allFieldDefIds.toList(),
+                        mergedFieldDefIds = fieldDefs.map { it.id },
                         // 희소 값(각 1명)을 가진 캐릭터 전부를 펼친다.
                         drilldownValues = singletons.map { it.key },
                         drilldownExclude = false,
-                        population = total
+                        population = peopleCount
                     ))
                 }
             }
@@ -2036,12 +2044,17 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
         // 캐릭터별로 이 (key,type) 그룹에서 파싱된 값 집합을 모은다.
         val perChar = HashMap<Long, MutableSet<String>>()
 
-        for (fv in s.fieldValues) {
-            val fd = defById[fv.fieldDefinitionId] ?: continue
-            if (fd.type == "CALCULATED") continue
-            val cfg = FieldStatsConfig.fromConfig(fd.config)
-            val parsed = getFieldValues(fd, fv.value, cfg)
-            if (parsed.isNotEmpty()) perChar.getOrPut(fv.characterId) { mutableSetOf() }.addAll(parsed)
+        // detectPatterns가 그룹 전체를 '첫 번째' def의 config로 파싱해 %/분포를 냈으므로, 드릴다운도 동일한
+        // 기준 def(fieldDefIds.first())로 파싱해야 값 공간이 일치하고 인원이 %와 어긋나지 않는다
+        // (같은 필드라도 세계관별 config(값 카테고리 등)가 다를 때의 과소/과대집계 방지).
+        val refDef = defById[fieldDefIds.first()] ?: defById.values.first()
+        if (refDef.type != "CALCULATED") {
+            val refCfg = FieldStatsConfig.fromConfig(refDef.config)
+            for (fv in s.fieldValues) {
+                if (fv.fieldDefinitionId !in idSet) continue
+                val parsed = getFieldValues(refDef, fv.value, refCfg)
+                if (parsed.isNotEmpty()) perChar.getOrPut(fv.characterId) { mutableSetOf() }.addAll(parsed)
+            }
         }
         val calcDefs = defById.values.filter { it.type == "CALCULATED" }
         if (calcDefs.isNotEmpty()) {

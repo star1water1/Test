@@ -8,6 +8,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.PopupMenu
 import android.widget.Toast
+import androidx.activity.OnBackPressedCallback
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.fragment.app.viewModels
@@ -51,6 +52,17 @@ class CharacterListFragment : Fragment() {
     // Batch edit mode
     private var isBatchEditMode = false
 
+    // 배치/비교 모드에서 뒤로가기 = 화면 이탈이 아니라 모드 종료(선택 해제). 롱프레스 진입이 잦아진 만큼
+    // 뒤로가기로 취소하려다 화면을 뜨며 선택을 흘리는 걸 막는다. isEnabled는 모드 전환 시 토글.
+    private val batchBackCallback = object : OnBackPressedCallback(false) {
+        override fun handleOnBackPressed() {
+            when {
+                isBatchEditMode -> exitBatchEditMode()
+                isCompareMode -> exitCompareMode()
+            }
+        }
+    }
+
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
     ): View {
@@ -74,6 +86,8 @@ class CharacterListFragment : Fragment() {
         setupToolbarMenu()
         observeData()
         observeBatchEdit()
+
+        requireActivity().onBackPressedDispatcher.addCallback(viewLifecycleOwner, batchBackCallback)
 
         // 회전 후 배치 편집 모드 복원
         if (savedInstanceState?.getBoolean("isBatchEditMode") == true) {
@@ -254,6 +268,7 @@ class CharacterListFragment : Fragment() {
             if (!isCompareMode) {
                 // Enter compare mode
                 isCompareMode = true
+                batchBackCallback.isEnabled = true
                 selectedForCompare.clear()
                 adapter.setSelectionMode(true)
                 binding.btnCompare.text = getString(R.string.compare_mode_label)
@@ -281,6 +296,7 @@ class CharacterListFragment : Fragment() {
 
     private fun exitCompareMode() {
         isCompareMode = false
+        batchBackCallback.isEnabled = false
         selectedForCompare.clear()
         adapter.resetState()  // batch reset: clears selection + mode in single notify
         binding.btnCompare.text = getString(R.string.compare_button)
@@ -429,6 +445,7 @@ class CharacterListFragment : Fragment() {
         val surviving = batchViewModel.selectedIds.value ?: emptySet()
         adapter.setSelectedIds(surviving)
         renderBatchSelection(surviving.size)
+        batchBackCallback.isEnabled = true
     }
 
     /** 배치바 선택 수 표기 + '작업' 활성. 0이면 상시 행동 안내(사라지는 Toast 대체)를 보여준다. */
@@ -444,6 +461,7 @@ class CharacterListFragment : Fragment() {
 
     private fun exitBatchEditMode() {
         isBatchEditMode = false
+        batchBackCallback.isEnabled = false
         batchViewModel.deselectAll()
         adapter.resetState()
         binding.batchEditBar.visibility = View.GONE
@@ -756,6 +774,11 @@ class CharacterListFragment : Fragment() {
     }
 
     override fun onDestroyView() {
+        // 배치 선택은 activity 스코프라 화면 이탈 후에도 남는다 → 회전이 아닌 실제 이탈이면 비워
+        // 다른(다른 작품) 목록에서 안 보이는 캐릭터가 선택된 채 일괄 작업/삭제되는 것을 막는다.
+        if (isBatchEditMode && activity?.isChangingConfigurations != true) {
+            batchViewModel.deselectAll()
+        }
         searchJob?.cancel()
         itemTouchHelper?.attachToRecyclerView(null)
         itemTouchHelper = null

@@ -429,6 +429,25 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
             message ?: app.getString(R.string.operation_failed)))
     }
 
+    /**
+     * 간편 사건 추가 — 역법 시드 계산과 insert를 모두 viewModelScope에서 수행해 뷰가 죽어도 유실되지 않게 한다.
+     * (뷰 스코프 코루틴에서 시드 쿼리를 await하다 회전/탭이탈로 취소되면 insert가 누락되던 문제 수정.)
+     */
+    fun quickAddEvent(year: Int, description: String, novelId: Long?, universeId: Long?) = viewModelScope.launch {
+        val calendar = if (universeId != null) {
+            getEventsByUniverseList(universeId).map { it.calendarType }.filter { it.isNotBlank() }
+                .groupingBy { it }.eachCount().maxByOrNull { it.value }?.key ?: ""
+        } else ""
+        val event = TimelineEvent(
+            year = year,
+            description = description,
+            isTemporary = true,
+            universeId = universeId,
+            calendarType = calendar
+        )
+        insertEvent(event, emptyList(), listOfNotNull(novelId))
+    }
+
     fun insertEvent(
         event: TimelineEvent,
         characterIds: List<Long>,
