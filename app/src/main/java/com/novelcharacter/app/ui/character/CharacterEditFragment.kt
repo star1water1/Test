@@ -1269,29 +1269,9 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
     }
 
     private fun decodeSampledBitmap(path: String, reqWidth: Int, reqHeight: Int): android.graphics.Bitmap? {
-        return try {
-            val file = java.io.File(path)
-            val dir = appDir ?: return null
-            if (!file.canonicalPath.startsWith(dir.canonicalPath + java.io.File.separator)) {
-                return null // Reject paths outside app directory
-            }
-            val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            BitmapFactory.decodeFile(path, options)
-            val (height, width) = options.outHeight to options.outWidth
-            var inSampleSize = 1
-            if (height > reqHeight || width > reqWidth) {
-                val halfHeight = height / 2
-                val halfWidth = width / 2
-                while (inSampleSize < 1024 && halfHeight / inSampleSize >= reqHeight && halfWidth / inSampleSize >= reqWidth) {
-                    inSampleSize *= 2
-                }
-            }
-            options.inSampleSize = inSampleSize
-            options.inJustDecodeBounds = false
-            BitmapFactory.decodeFile(path, options)
-        } catch (e: Exception) {
-            null
-        }
+        // 공용 유틸 위임 — filesDir 경로 가드 + 총 픽셀 상한(파노라마 OOM 방지, P2-6). 정상 이미지 화질 보존.
+        val dir = appDir ?: return null
+        return com.novelcharacter.app.util.CharacterImageLoader.decodeThumbnail(path, dir, reqWidth)
     }
 
     private var isSaving = false

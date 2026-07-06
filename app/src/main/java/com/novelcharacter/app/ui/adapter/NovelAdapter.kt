@@ -273,32 +273,9 @@ class NovelAdapter(
     }
 
     private fun decodeSampledBitmap(context: Context, path: String, reqWidth: Int, reqHeight: Int): Bitmap? {
-        return try {
-            val file = File(path)
-            val appDir = context.filesDir
-            if (!file.canonicalPath.startsWith(appDir.canonicalPath + File.separator)) return null
-            if (!file.exists()) return null
-            val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            BitmapFactory.decodeFile(path, options)
-            options.inSampleSize = calculateInSampleSize(options, reqWidth, reqHeight)
-            options.inJustDecodeBounds = false
-            BitmapFactory.decodeFile(path, options)
-        } catch (_: Exception) {
-            null
-        }
-    }
-
-    private fun calculateInSampleSize(options: BitmapFactory.Options, reqWidth: Int, reqHeight: Int): Int {
-        val (height, width) = options.outHeight to options.outWidth
-        var inSampleSize = 1
-        if (height > reqHeight || width > reqWidth) {
-            val halfHeight = height / 2
-            val halfWidth = width / 2
-            while (inSampleSize < 1024 && halfHeight / inSampleSize >= reqHeight && halfWidth / inSampleSize >= reqWidth) {
-                inSampleSize *= 2
-            }
-        }
-        return inSampleSize
+        // 공용 유틸 위임 — filesDir 경로 가드 + 총 픽셀 상한(파노라마/세로 스크롤 OOM 방지, P2-6).
+        // 정상 이미지는 기존과 동일한 다운샘플 결과(앱 표준 알고리즘)라 화질 보존.
+        return com.novelcharacter.app.util.CharacterImageLoader.decodeThumbnail(path, context.filesDir, reqWidth)
     }
 
     private fun parseImagePaths(json: String): List<String> {

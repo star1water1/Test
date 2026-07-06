@@ -1283,20 +1283,10 @@ class UniverseListFragment : Fragment() {
                 if (position < pendingImagePaths.size) {
                     val path = pendingImagePaths[position]
                     viewLifecycleOwner.lifecycleScope.launch {
+                        // 공용 유틸 위임(P2-6) — filesDir 경로 가드(기존엔 exists만) + 총 픽셀 상한 + 밀도 절단 버그 교정.
+                        val reqPx = (64 * imageView.context.resources.displayMetrics.density).toInt().coerceAtLeast(1)
                         val bitmap = withContext(Dispatchers.IO) {
-                            try {
-                                val file = java.io.File(path)
-                                if (!file.exists()) return@withContext null
-                                val options = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                                android.graphics.BitmapFactory.decodeFile(path, options)
-                                val size = 64 * imageView.context.resources.displayMetrics.density.toInt()
-                                var sample = 1
-                                val h = options.outHeight / 2; val w = options.outWidth / 2
-                                while (h / sample >= size && w / sample >= size) sample *= 2
-                                options.inSampleSize = sample
-                                options.inJustDecodeBounds = false
-                                android.graphics.BitmapFactory.decodeFile(path, options)
-                            } catch (_: Exception) { null }
+                            com.novelcharacter.app.util.CharacterImageLoader.decodeThumbnail(path, imageView.context.filesDir, reqPx)
                         }
                         if (bitmap != null && isAdded) imageView.setImageBitmap(bitmap)
                     }
