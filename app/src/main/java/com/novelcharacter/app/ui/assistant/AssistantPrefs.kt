@@ -24,13 +24,18 @@ class AssistantPrefs(context: Context) {
         sp.edit().putBoolean(catKey(category), enabled).apply()
     }
 
-    /** 숨김 상태인지 — 숨긴 뒤 상황이 악화(resurfaceValue 증가)하지 않았다면 계속 숨긴다. */
+    /**
+     * 숨김 상태인지. 기본은 "숨긴 뒤 상황이 악화(resurfaceValue 증가)하지 않았다면 계속 숨긴다".
+     * [AssistantInsight.resurfaceExact]면 시그니처가 **정확히 같을 때만** 숨긴다 —
+     * 정합성 오류의 대상 집합이 바뀌면(새 오류 포함) 반드시 재노출되도록(P1-C).
+     */
     fun isDismissed(insight: AssistantInsight): Boolean {
         if (!insight.dismissible) return false
         val key = dismissKey(insight.id)
         if (!sp.contains(key)) return false
         val dismissedAt = sp.getInt(key, Int.MAX_VALUE)
-        return insight.resurfaceValue <= dismissedAt
+        return if (insight.resurfaceExact) insight.resurfaceValue == dismissedAt
+        else insight.resurfaceValue <= dismissedAt
     }
 
     fun dismiss(insight: AssistantInsight) {

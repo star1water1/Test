@@ -13,15 +13,19 @@ import kotlinx.coroutines.launch
  * 나이 불일치 / 작품 미배정 교정 흐름 — **카드 기본버튼(N==1)과 '전체 보기' 시트 행이 동일하게 재사용**한다.
  * 모두 그 화면 안에서 완결하고, [onDone]은 성공(또는 이미 해결)에 호출된다(카드→refresh, 시트→행 제거).
  *
- * `lifecycleScope`(프래그먼트 수준)를 쓰므로 뷰가 잠깐 재생성돼도 DB 쓰기가 끊기지 않는다.
+ * `lifecycleScope`(프래그먼트 수준)는 회전/이탈 시 취소될 수 있으나, 실제 DB 쓰기는
+ * `CharacterViewModel.resolveAgeLinkage`가 **단일 트랜잭션**으로 수행하므로 중간 취소 시 롤백된다
+ * (부분 적용으로 캐스트가 어긋나지 않음 — 변수 제어).
  */
 fun Fragment.runAgeFix(cvm: CharacterViewModel, characterId: Long, onDone: () -> Unit) {
     lifecycleScope.launch {
         val conflict = cvm.detectAgeLinkageConflictForCharacter(characterId)
         if (!isAdded) return@launch
         if (conflict == null) {
-            // 스냅샷이 낡아 이미 해결된 경우 — 억지로 고치지 않고 알린 뒤 정리.
-            notifySuccess(getString(R.string.assistant_age_resolved))
+            // 캐릭터 삭제("없음")와 이미 해결됨을 구분(변수 제어·runAssignNovel과 일관).
+            val gone = cvm.getCharacterByIdSuspend(characterId) == null
+            if (gone) notifyError(getString(R.string.assistant_character_gone))
+            else notifySuccess(getString(R.string.assistant_age_resolved))
             onDone()
             return@launch
         }
@@ -29,7 +33,15 @@ fun Fragment.runAgeFix(cvm: CharacterViewModel, characterId: Long, onDone: () ->
         if (!isAdded) return@launch
         showAgeResolutionDialog(name, conflict) { choice ->
             lifecycleScope.launch {
-                cvm.resolveAgeLinkage(characterId, conflict, choice)
+                // 적용 직전 라이브 재검출 — 중복 탭으로 다이얼로그가 겹쳐도 낡은 conflict로 이중 적용되지 않게(P2-12).
+                val live = cvm.detectAgeLinkageConflictForCharacter(characterId)
+                if (!isAdded) return@launch
+                if (live == null) {
+                    notifySuccess(getString(R.string.assistant_age_resolved))
+                    onDone()
+                    return@launch
+                }
+                cvm.resolveAgeLinkage(characterId, live, choice)
                 if (!isAdded) return@launch
                 notifySuccess(getString(R.string.assistant_age_fixed))
                 onDone()

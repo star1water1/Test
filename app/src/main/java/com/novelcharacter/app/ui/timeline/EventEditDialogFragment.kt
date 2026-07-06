@@ -93,6 +93,7 @@ class EventEditDialogFragment : DialogFragment() {
     private var calendarUserEdited = false
     private var suppressCalendarWatcher = false
     private var seedJob: kotlinx.coroutines.Job? = null
+    private var fieldSectionJob: kotlinx.coroutines.Job? = null
 
     private fun requireProvider(): DataProvider =
         (parentFragment as? Host ?: activity as? Host)?.eventDialogDataProvider()
@@ -453,9 +454,13 @@ class EventEditDialogFragment : DialogFragment() {
             return
         }
 
-        lifecycleScope.launch {
-            val fields = requireProvider().getEventFieldsForUniverse(universeId)
+        // 작품을 빠르게 토글해도 이전 세계관 fetch가 늦게 도착해 덮어쓰지 않게 이전 작업 취소 + await 후 재확인(P2-2).
+        val target = universeId
+        fieldSectionJob?.cancel()
+        fieldSectionJob = lifecycleScope.launch {
+            val fields = requireProvider().getEventFieldsForUniverse(target)
             if (_binding == null) return@launch
+            if (novels.firstOrNull { it.id in selectedNovelIds }?.universeId != target) return@launch
             eventFields = fields
                 .filter { FieldType.fromName(it.type) != FieldType.CALCULATED }
                 .sortedBy { it.displayOrder }

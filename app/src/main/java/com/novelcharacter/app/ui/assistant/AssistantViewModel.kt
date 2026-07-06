@@ -49,7 +49,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
             _loading.value = true
-            val (visible, hidden) = withContext(Dispatchers.Default) {
+            val result = withContext(Dispatchers.Default) {
                 loadMutex.withLock {
                     val snapshot = statsProvider.loadSnapshot()
                     val enabled = prefs.enabledCategories()
@@ -57,12 +57,14 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
                     val hidden = all.filter { prefs.isDismissed(it) }.associate { it.id to it.title }
                     // 편향 카드 상한은 숨김 반영 '후'에 적용 — 숨긴 카드가 슬롯을 먹지 않고 다음 카드가 승격된다.
                     val visible = capBiasCards(all.filterNot { prefs.isDismissed(it) }, prefs.biasMaxCards())
-                    visible to hidden
+                    // 배지는 숨김과 무관하게 **실제로 존재하는** 정합성 오류 수 — 카드를 숨겨도 오류가 사라진 척하지 않는다(P2-7).
+                    val errorTotal = all.count { it.category.isError }
+                    Triple(visible, hidden, errorTotal)
                 }
             }
-            hiddenTitles = hidden
-            _insights.value = visible
-            _errorCount.value = visible.count { it.category.isError }
+            hiddenTitles = result.second
+            _insights.value = result.first
+            _errorCount.value = result.third
             _loading.value = false
         }
     }
@@ -85,7 +87,8 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         hiddenTitles = hiddenTitles + (insight.id to insight.title)
         val remaining = _insights.value.orEmpty().filterNot { it.id == insight.id }
         _insights.value = remaining
-        _errorCount.value = remaining.count { it.category.isError }
+        // 배지(_errorCount)는 갱신하지 않는다 — 카드를 숨겨도 실제 정합성 오류는 그대로 존재하므로
+        // 배지가 0으로 떨어져 "깨끗한 척"하면 안 된다(P2-7). 실제 수는 다음 refresh에서 재산출된다.
     }
 
     /** 방금 숨긴 카드를 되돌린다(실행취소). */

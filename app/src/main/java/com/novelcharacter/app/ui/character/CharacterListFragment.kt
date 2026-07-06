@@ -89,9 +89,12 @@ class CharacterListFragment : Fragment() {
 
         requireActivity().onBackPressedDispatcher.addCallback(viewLifecycleOwner, batchBackCallback)
 
-        // 회전 후 배치 편집 모드 복원
+        // 회전 후 모드 복원 — 배치/비교는 상호배타라 else-if. 비교 선택도 함께 복원(P2-14).
         if (savedInstanceState?.getBoolean("isBatchEditMode") == true) {
             enterBatchEditMode()
+        } else if (savedInstanceState?.getBoolean("isCompareMode") == true) {
+            savedInstanceState.getLongArray("selectedForCompare")?.let { selectedForCompare.addAll(it.toList()) }
+            enterCompareMode()
         }
 
         if (novelId != -1L) {
@@ -267,14 +270,8 @@ class CharacterListFragment : Fragment() {
         binding.btnCompare.setOnClickListener {
             if (!isCompareMode) {
                 // Enter compare mode
-                isCompareMode = true
-                batchBackCallback.isEnabled = true
                 selectedForCompare.clear()
-                adapter.setSelectionMode(true)
-                binding.btnCompare.text = getString(R.string.compare_mode_label)
-                binding.btnCancelCompare.visibility = View.VISIBLE
-                setFilterSortBarVisible(false)
-                updateBirthdayBannerVisibility(false)
+                enterCompareMode()
                 Toast.makeText(requireContext(), R.string.compare_select_hint, Toast.LENGTH_SHORT).show()
             } else {
                 // Execute comparison
@@ -292,6 +289,18 @@ class CharacterListFragment : Fragment() {
         binding.btnCancelCompare.setOnClickListener {
             exitCompareMode()
         }
+    }
+
+    /** 비교 모드 진입/복원 공용. 선택 초기화는 호출부가 담당(진입은 초기화, 회전 복원은 선택 유지). */
+    private fun enterCompareMode() {
+        isCompareMode = true
+        batchBackCallback.isEnabled = true
+        adapter.setSelectionMode(true)
+        adapter.setSelectedIds(selectedForCompare)
+        binding.btnCancelCompare.visibility = View.VISIBLE
+        setFilterSortBarVisible(false)
+        updateBirthdayBannerVisibility(false)
+        updateCompareButtonText()
     }
 
     private fun exitCompareMode() {
@@ -560,6 +569,9 @@ class CharacterListFragment : Fragment() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putBoolean("isBatchEditMode", isBatchEditMode)
+        // 비교 모드·선택도 회전에 보존(P2-14) — 배치와 동일하게, 조용한 선택 유실 방지.
+        outState.putBoolean("isCompareMode", isCompareMode)
+        outState.putLongArray("selectedForCompare", selectedForCompare.toLongArray())
     }
 
     private var lastListEmpty = false
