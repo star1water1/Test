@@ -1776,6 +1776,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             ?: requiredCol(cols, "사건 설명", sheet.sheetName, result) ?: return
         val novelColIndex = cols["관련 작품"] ?: 5
         val charColIndex = cols["관련 캐릭터"] ?: 6
+        val charCodeColIndex = cols["관련캐릭터코드"] ?: -1
         val novelCodeColIndex = cols["관련작품코드"] ?: -1
         val displayOrderColIndex = cols["정렬순서"] ?: -1
         val isTemporaryColIndex = cols["임시배치"] ?: -1
@@ -1922,16 +1923,27 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     }
                 }
 
+                // 관련 캐릭터 해석 — **코드 우선**(동명이인 오결합 방지, P1-I), 코드 없는 항목은 이름 매칭.
+                // 코드로 이미 잡힌 캐릭터와 동명인 이름 항목은 중복 추가하지 않는다(코드가 권위).
+                val charCodeStr = if (charCodeColIndex >= 0) getCellString(row, charCodeColIndex) else ""
                 val characterNames = getCellString(row, charColIndex)
-                if (characterNames.isNotBlank()) {
-                    val names = splitCsv(characterNames)
-                    val resolvedCharacters = names.mapNotNull { charName ->
-                        val found = findCharacterByName(charName, novelIds.firstOrNull())
-                        if (found == null) {
-                            result.warnings.add("사건 행 $i: 연결 캐릭터 '${charName}'을(를) 찾을 수 없음")
+                if (charCodeStr.isNotBlank() || characterNames.isNotBlank()) {
+                    val resolved = LinkedHashMap<Long, com.novelcharacter.app.data.model.Character>()
+                    if (charCodeStr.isNotBlank()) {
+                        for (code in splitCsv(charCodeStr)) {
+                            db.characterDao().getCharacterByCode(code)?.let { resolved[it.id] = it }
                         }
-                        found
                     }
+                    if (characterNames.isNotBlank()) {
+                        val coveredNames = resolved.values.mapTo(HashSet()) { it.name }
+                        for (charName in splitCsv(characterNames)) {
+                            if (charName in coveredNames) continue  // 코드로 이미 해석된 동명 항목
+                            val found = findCharacterByName(charName, novelIds.firstOrNull())
+                            if (found != null) resolved[found.id] = found
+                            else result.warnings.add("사건 행 $i: 연결 캐릭터 '${charName}'을(를) 찾을 수 없음")
+                        }
+                    }
+                    val resolvedCharacters = resolved.values.toList()
                     if (resolvedCharacters.isNotEmpty()) {
                         db.timelineDao().deleteCrossRefsByEvent(eventId)
                         for (character in resolvedCharacters) {
@@ -2931,7 +2943,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
                 val description = if (descColIndex >= 0) getCellString(row, descColIndex) else ""
                 val intensity = if (intensityColIndex >= 0) parseNumber(getCellString(row, intensityColIndex))?.toInt()?.coerceIn(1, 10) ?: 5 else 5
-                val isBidirectional = if (bidirectionalColIndex >= 0) getCellString(row, bidirectionalColIndex).trim().uppercase() != "N" else true
+                // 다른 관계 시트와 동일하게 parseBoolean 사용(P2-10) — 예전 `!= "N"`은 FALSE/0/false 같은
+                // falsey 값을 true로 뒤집었다. 열이 없으면 기본 양방향(true).
+                val isBidirectional = if (bidirectionalColIndex >= 0) parseBoolean(getCellString(row, bidirectionalColIndex)) else true
                 val displayOrder = if (orderColIndex >= 0) parseNumber(getCellString(row, orderColIndex))?.toInt() ?: 0 else 0
                 val createdAt = if (createdAtColIndex >= 0) parseNumber(getCellString(row, createdAtColIndex))?.toLong() ?: System.currentTimeMillis() else System.currentTimeMillis()
 

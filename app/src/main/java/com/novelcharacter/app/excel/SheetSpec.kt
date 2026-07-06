@@ -196,6 +196,8 @@ fun timelineSpec(novelTitles: List<String>, eventFieldHeaders: List<String> = em
         ColumnSpec("관련 작품", dropdownOptions = novelTitles.takeIf { it.isNotEmpty() }, width = 6000),
         ColumnSpec("관련 캐릭터", width = 10000),
         ColumnSpec("관련작품코드", readOnly = true, width = 4000),
+        // 관련 캐릭터를 코드로도 싣는다 — 동명이인 오결합 방지(P1-I). 가져오기는 코드 우선, 없으면 이름 매칭.
+        ColumnSpec("관련캐릭터코드", readOnly = true, width = 4000),
         ColumnSpec("정렬순서", width = 3000),
         ColumnSpec("임시배치", dropdownOptions = listOf("Y", "N"), width = 3000),
         ColumnSpec("코드", readOnly = true, width = 4000),
