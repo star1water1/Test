@@ -830,21 +830,24 @@ class ExcelExporter(context: Context) {
             val novels = novelIds.mapNotNull { novelMap[it] }
             row.createCell(6).setCellValue(novels.joinToString(", ") { it.title })
 
-            val characterNames = (eventCharIdMap[event.id] ?: emptyList()).mapNotNull { charMap[it]?.name }
+            val eventCharIds = eventCharIdMap[event.id] ?: emptyList()
+            val characterNames = eventCharIds.mapNotNull { charMap[it]?.name }
             row.createCell(7).setCellValue(characterNames.joinToString(", "))
 
             // 관련작품코드 (readOnly)
             row.createCell(8).setCellValue(novels.mapNotNull { it.code }.joinToString(", "))
-            row.createCell(9).setCellValue(event.displayOrder.toDouble())
-            row.createCell(10).setCellValue(if (event.isTemporary) "Y" else "N")
+            // 관련캐릭터코드 (readOnly) — 동명이인 오결합 방지(P1-I). 가져오기 시 코드 우선 매칭.
+            row.createCell(9).setCellValue(eventCharIds.mapNotNull { charMap[it]?.code }.joinToString(", "))
+            row.createCell(10).setCellValue(event.displayOrder.toDouble())
+            row.createCell(11).setCellValue(if (event.isTemporary) "Y" else "N")
             // 코드 (readOnly) — 왕복 안정 식별자: 설명·연도를 외부에서 편집해도 같은 사건으로 인식
-            row.createCell(11).setCellValue(event.code ?: "")
-            row.createCell(12).setCellValue(event.createdAt.toDouble())
+            row.createCell(12).setCellValue(event.code ?: "")
+            row.createCell(13).setCellValue(event.createdAt.toDouble())
 
             // 사건 커스텀 필드 값 (B-10)
             val fieldValues = eventFieldValuesByEvent[event.id]?.associateBy { it.fieldDefinitionId } ?: emptyMap()
             eventFieldColumns.forEachIndexed { fi, (fieldDef, _) ->
-                fieldValues[fieldDef.id]?.let { row.createCell(13 + fi).setTextSafe(it.value) }
+                fieldValues[fieldDef.id]?.let { row.createCell(14 + fi).setTextSafe(it.value) }
             }
         }
 
