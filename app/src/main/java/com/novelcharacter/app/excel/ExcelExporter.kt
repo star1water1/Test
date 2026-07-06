@@ -1025,6 +1025,8 @@ class ExcelExporter(context: Context) {
             // 사용캐릭터코드 (readOnly)
             row.createCell(6).setCellValue(usedByChar?.code ?: "")
             row.createCell(7).setCellValue(entry.createdAt.toDouble())
+            // 코드 (readOnly) — 이름 은행 항목 자체의 왕복 안정 식별자 (F3-D)
+            row.createCell(8).setCellValue(entry.code)
         }
 
         applySpecFormatting(sheet, spec, allNames.size)

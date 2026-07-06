@@ -130,6 +130,15 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private var truncatedFieldCount = 0
     private val truncatedDetails = mutableListOf<String>()
 
+    // F3-A: 엑셀 세계관 이동을 편집화면과 동일한 P0 로직으로 처리하기 위한 리포지토리 (지연 생성)
+    private val characterRepository by lazy {
+        CharacterRepository(
+            db, db.characterDao(), db.characterFieldValueDao(),
+            db.characterStateChangeDao(), db.characterTagDao(),
+            db.characterRelationshipDao(), db.nameBankDao()
+        )
+    }
+
     // 임포트 후 시맨틱 동기화 대상 (characterId → universeId)
     private val pendingSyncCharacters = mutableMapOf<Long, Long>()
 
@@ -1654,7 +1663,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val novelColumnsPresent = novelColIndex >= 0 || novelCodeColIndex >= 0
                 val novelId: Long? = (if (novelCode.isNotBlank()) db.novelDao().getNovelByCode(novelCode)?.id else null)
                     ?: if (novelTitle.isNotBlank()) {
-                        if (universe != null) resolveNovelId(novelTitle, universe.id) else resolveNovelId(novelTitle)
+                        resolveNovelId(novelTitle, universe?.id, result, "캐릭터 행 $i")
                     } else null
 
                 // 열이 없으면(colIndex<0) null → 아래에서 기존 값 유지. 열이 있으면 셀 값(빈칸="" = 비움, 의도 존중) — F1-A.
@@ -1758,6 +1767,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     result.newCharacters++
                 }
 
+                // F3-A: 엑셀에서 작품이 바뀌어 세계관이 이동했는지 감지 (existingChar.novelId=이동 전, novelId=이동 후).
+                // 이동이면 아래 필드 기록 후 편집화면과 동일한 P0 로직으로 재매핑·정리한다.
+                val movedToUniverseId: Long? = if (existingChar != null && novelColumnsPresent && novelId != existingChar.novelId) {
+                    val oldU = existingChar.novelId?.let { db.novelDao().getNovelById(it)?.universeId }
+                    val newU = novelId?.let { db.novelDao().getNovelById(it)?.universeId }
+                    if (oldU != null && newU != null && oldU != newU) newU else null
+                } else null
+
                 // matched ID 추적 (deleteNotInExcel용)
                 if (universe != null) {
                     matchedCharacterIds.getOrPut(universe.id) { mutableSetOf() }.add(charId)
@@ -1825,9 +1842,24 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         result.clearedFields++
                     }
                 }
-                // 시맨틱 역할 필드가 임포트되었으면 동기화 대상에 추가
-                if (hasSemanticField && universe != null) {
-                    pendingSyncCharacters[charId] = universe.id
+                // 시맨틱 역할 필드가 임포트되었으면 동기화 대상에 추가 (이동 시엔 새 세계관 기준)
+                if (hasSemanticField) {
+                    val syncUniverseId = movedToUniverseId ?: universe?.id
+                    if (syncUniverseId != null) pendingSyncCharacters[charId] = syncUniverseId
+                }
+
+                // F3-A: 세계관 이동이면 편집화면과 동일한 P0 로직으로 필드값 재매핑·타 세계관 세력 소속 정리·스냅샷.
+                // 필드 기록 이후 호출해 방금 쓴 값도 새 세계관 필드로 key 기준 재매핑되게 한다(유실은 휴지통 스냅샷).
+                if (movedToUniverseId != null) {
+                    db.characterDao().getCharacterById(charId)?.let { moved ->
+                        val counts = characterRepository.migrateCharacterToUniverse(moved, movedToUniverseId)
+                        when {
+                            counts.hasRemoval -> result.warnings.add(
+                                "캐릭터 행 $i: '$name' 세계관 이동 감지 — 대응 없는 필드값 ${counts.removedValues}개·타 세계관 세력소속 ${counts.removedMemberships}개 정리(휴지통에 스냅샷 보관), ${counts.remappedValues}개 재매핑")
+                            counts.remappedValues > 0 -> result.warnings.add(
+                                "캐릭터 행 $i: '$name' 세계관 이동 감지 — 필드값 ${counts.remappedValues}개를 새 세계관 필드로 재매핑")
+                        }
+                    }
                 }
             } catch (e: Exception) {
                 result.skippedRows++
@@ -2031,9 +2063,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         val coveredNames = resolved.values.mapTo(HashSet()) { it.name }
                         for (charName in splitCsv(characterNames)) {
                             if (charName in coveredNames) continue  // 코드로 이미 해석된 동명 항목
-                            val found = findCharacterByName(charName, novelIds.firstOrNull())
-                            if (found != null) resolved[found.id] = found
-                            else result.warnings.add("사건 행 $i: 연결 캐릭터 '${charName}'을(를) 찾을 수 없음")
+                            // F3-B: 동명이인 안전 — LIMIT 1로 아무나 고르지 않고, 모호하면 경고 후 스킵
+                            when (val r = resolveCharByNameNovel(charName, novelIds.firstOrNull())) {
+                                is CharLookupResult.Found -> resolved[r.character.id] = r.character
+                                is CharLookupResult.Ambiguous -> result.warnings.add("사건 행 $i: 연결 캐릭터 '$charName' 동명이인 ${r.count}명 — 관련캐릭터코드 열로 지정하세요")
+                                CharLookupResult.NotFound -> result.warnings.add("사건 행 $i: 연결 캐릭터 '${charName}'을(를) 찾을 수 없음")
+                            }
                         }
                     }
                     val resolvedCharacters = resolved.values.toList()
@@ -2492,6 +2527,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val usedByColIndex = cols["사용 캐릭터"] ?: 5
         val charCodeColIndex = cols["사용캐릭터코드"] ?: -1
         val createdAtColIndex = cols["생성일"] ?: -1
+        val codeColIndex = cols["코드"] ?: -1  // F3-D: 이름 은행 항목 자체 코드
 
         val existingNamesMap = db.nameBankDao().getAllNamesList()
             .associateBy { "${it.name}\u0000${it.gender}" }
@@ -2511,18 +2547,29 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val usedByCharCode = if (charCodeColIndex >= 0) getCellString(row, charCodeColIndex) else ""
                 val createdAt = if (createdAtColIndex >= 0) parseNumber(getCellString(row, createdAtColIndex))?.toLong() ?: System.currentTimeMillis() else System.currentTimeMillis()
 
-                val usedByCharacterId = if (usedByCharCode.isNotBlank()) {
+                val usedByCharacterId: Long? = (if (usedByCharCode.isNotBlank()) {
                     db.characterDao().getCharacterByCode(usedByCharCode)?.id
-                } else null
-                    ?: if (usedByCharName.isNotBlank()) findCharacterByName(usedByCharName, null)?.id else null
+                } else null)
+                    ?: when (val r = resolveCharByNameNovel(usedByCharName, null)) {  // F3-B: 동명이인 안전
+                        is CharLookupResult.Found -> r.character.id
+                        is CharLookupResult.Ambiguous -> {
+                            result.warnings.add("이름 은행 행 $i: 사용 캐릭터 '$usedByCharName' 동명이인 ${r.count}명 — 사용캐릭터코드 열로 지정하세요")
+                            null
+                        }
+                        CharLookupResult.NotFound -> null
+                    }
 
                 val effectiveIsUsed = isUsed && usedByCharacterId != null
 
                 val mapKey = "${name}\u0000${gender}"
-                val existing = existingNamesMap[mapKey]
+                val entryCode = if (codeColIndex >= 0) getCellString(row, codeColIndex) else ""
+                // F3-D: 코드 우선 매칭(이름/성별을 편집해도 같은 항목 인식) → 자연키(이름+성별) 폴백
+                val existing = (if (entryCode.isNotBlank()) db.nameBankDao().getByCode(entryCode) else null)
+                    ?: existingNamesMap[mapKey]
 
                 if (existing != null) {
                     db.nameBankDao().update(existing.copy(
+                        name = name, gender = gender,  // 코드 매칭 시 이름/성별 편집 반영 (code는 불변 유지 — 정체성)
                         origin = origin, notes = notes,
                         isUsed = effectiveIsUsed, usedByCharacterId = usedByCharacterId,
                         createdAt = if (createdAtColIndex >= 0) createdAt else existing.createdAt
@@ -2530,10 +2577,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     matchedNameBankIds.add(existing.id)
                     result.updatedNameBank++
                 } else {
+                    // 파일의 코드를 보존해 백업/기기이전 후에도 왕복 정체성 유지 (없으면 자동 생성)
+                    val newCode = if (entryCode.isNotBlank()) entryCode else generateEntityCode()
                     val newEntry = NameBankEntry(
                         name = name, gender = gender, origin = origin, notes = notes,
                         isUsed = effectiveIsUsed, usedByCharacterId = usedByCharacterId,
-                        createdAt = createdAt
+                        createdAt = createdAt, code = newCode
                     )
                     val newId = db.nameBankDao().insert(newEntry)
                     matchedNameBankIds.add(newId)
@@ -3192,20 +3241,40 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         return map
     }
 
-    private suspend fun resolveNovelId(novelTitle: String, universeId: Long? = null): Long? {
+    /**
+     * 제목으로 작품 id를 해석한다. F3-C: 지정 세계관에 없으면 (1) 타 세계관의 동일 제목 작품을 재사용하고
+     * 경고(유령 작품 중복 생성 방지), (2) 어디에도 없으면 새로 생성하되 그 사실을 경고(변수 제어 — 말없는 유령 생성 금지).
+     * result/rowLabel이 null이면(구경로 호환) 경고 없이 기존 동작.
+     */
+    private suspend fun resolveNovelId(
+        novelTitle: String,
+        universeId: Long? = null,
+        result: ImportResult? = null,
+        rowLabel: String? = null
+    ): Long? {
         if (novelTitle.isBlank()) return null
         val cacheKey = novelTitle to universeId
         novelIdCache[cacheKey]?.let { return it }
-        val existing = if (universeId != null) {
+        // 1. 지정 세계관(또는 무소속)에서 조회
+        val inScope = if (universeId != null) {
             db.novelDao().getNovelByTitleAndUniverse(novelTitle, universeId)
         } else {
             db.novelDao().getNovelByTitleNoUniverse(novelTitle)
         }
-        if (existing != null) {
-            novelIdCache[cacheKey] = existing.id
-            return existing.id
+        if (inScope != null) {
+            novelIdCache[cacheKey] = inScope.id
+            return inScope.id
         }
+        // 2. F3-C: 생성 전 타 세계관에서 동일 제목 조회 — 있으면 유령 중복 생성 대신 재사용 + 경고
+        val elsewhere = db.novelDao().getNovelsByTitleList(novelTitle).firstOrNull()
+        if (elsewhere != null) {
+            result?.warnings?.add("${rowLabel ?: "작품"}: '$novelTitle'이(가) 지정 세계관에 없어 다른 세계관의 동일 제목 작품에 연결했습니다 — 세계관 지정을 확인하세요")
+            novelIdCache[cacheKey] = elsewhere.id
+            return elsewhere.id
+        }
+        // 3. 어디에도 없으면 새로 생성 + 경고 (말없는 유령 작품 생성 금지)
         val newId = db.novelDao().insert(Novel(title = novelTitle, universeId = universeId, code = generateEntityCode()))
+        result?.warnings?.add("${rowLabel ?: "작품"}: 작품 '$novelTitle'을(를) 찾지 못해 새로 생성했습니다 — 오타·세계관 지정을 확인하세요")
         novelIdCache[cacheKey] = newId
         return newId
     }
@@ -3236,6 +3305,25 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             matches.isEmpty() -> CharLookupResult.NotFound
             matches.size == 1 -> CharLookupResult.Found(matches[0])
             else -> CharLookupResult.Ambiguous(matches.size)
+        }
+    }
+
+    /**
+     * F3-B: 이름 기반 캐릭터 조회(동명이인 안전). 여러 명이면 preferredNovelId로 좁히고,
+     * 그래도 모호하면 Ambiguous 반환(호출부가 경고 후 스킵). findCharacterByName(LIMIT 1)의
+     * "조용히 아무나 선택" 문제를 대체한다 — 연표 참가자·이름은행 사용캐릭터처럼 코드 폴백이 없는 경로용.
+     */
+    private suspend fun resolveCharByNameNovel(name: String, preferredNovelId: Long?): CharLookupResult {
+        if (name.isBlank()) return CharLookupResult.NotFound
+        val matches = db.characterDao().getAllCharactersByName(name)
+        return when {
+            matches.isEmpty() -> CharLookupResult.NotFound
+            matches.size == 1 -> CharLookupResult.Found(matches[0])
+            else -> {
+                val narrowed = preferredNovelId?.let { nid -> matches.filter { it.novelId == nid } } ?: emptyList()
+                if (narrowed.size == 1) CharLookupResult.Found(narrowed[0])
+                else CharLookupResult.Ambiguous(matches.size)
+            }
         }
     }
 

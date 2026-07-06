@@ -374,6 +374,20 @@ class CharacterRepository(
         return UniverseMoveCounts(remapped, removedValues, orphanMemberships, if (willLose) 1 else 0)
     }
 
+    /**
+     * 엑셀 가져오기 등 외부 경로에서 한 캐릭터를 [newUniverseId] 세계관으로 이관한다.
+     * 편집화면의 세계관 이동과 동일한 P0 로직(같은 key 재매핑·타 세계관 세력 소속 제거·유실 시 스냅샷)을
+     * 재사용해 정합을 보장한다. novelId 갱신은 호출부 책임(호출 전/후 무관 — 이 메서드는 필드값·소속만 정리).
+     */
+    suspend fun migrateCharacterToUniverse(character: Character, newUniverseId: Long): UniverseMoveCounts {
+        return db.withTransaction {
+            val trash = TrashRepository(db)
+            val allDefsById = db.fieldDefinitionDao().getAllFieldsList().associateBy { it.id }
+            val newDefByKey = db.fieldDefinitionDao().getFieldsByUniverseList(newUniverseId).associateBy { it.key }
+            migrateCharacterFieldsToUniverse(character, newUniverseId, allDefsById, newDefByKey, trash)
+        }
+    }
+
     /** 세계관 이동 시 유실될 값·세력 소속 수를 미리 센다(편집화면 확인 다이얼로그·고지용, 파괴 없음). */
     suspend fun countCrossUniverseLoss(characterId: Long, newUniverseId: Long): UniverseMoveCounts {
         val old = characterFieldValueDao.getValuesByCharacterList(characterId)

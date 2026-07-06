@@ -43,6 +43,10 @@ interface NovelDao {
     @Query("SELECT * FROM novels WHERE title = :title AND universeId IS NULL LIMIT 1")
     suspend fun getNovelByTitleNoUniverse(title: String): Novel?
 
+    /** 세계관 무관 동일 제목 조회 (엑셀 가져오기: 유령 작품 중복 생성 전 타 세계관 재사용 판단용) */
+    @Query("SELECT * FROM novels WHERE title = :title")
+    suspend fun getNovelsByTitleList(title: String): List<Novel>
+
     @Query("SELECT * FROM novels WHERE code = :code LIMIT 1")
     suspend fun getNovelByCode(code: String): Novel?
 

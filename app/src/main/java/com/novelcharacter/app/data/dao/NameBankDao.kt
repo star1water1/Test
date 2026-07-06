@@ -21,6 +21,10 @@ interface NameBankDao {
     @Query("SELECT * FROM name_bank WHERE name LIKE '%' || :query || '%' ESCAPE '\\' OR notes LIKE '%' || :query || '%' ESCAPE '\\' ORDER BY createdAt DESC")
     fun searchNames(query: String): LiveData<List<NameBankEntry>>
 
+    /** 엑셀 가져오기 왕복 매칭용 코드 조회 (F3-D) */
+    @Query("SELECT * FROM name_bank WHERE code = :code LIMIT 1")
+    suspend fun getByCode(code: String): NameBankEntry?
+
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(entry: NameBankEntry): Long
 
