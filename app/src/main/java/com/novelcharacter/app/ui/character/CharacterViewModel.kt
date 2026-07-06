@@ -765,19 +765,23 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
      * [applyStandardYearChange](작품 전체 재계산). 직접 sync를 손대지 않아 편집 경로와 로직이 일치한다.
      */
     suspend fun resolveAgeLinkage(characterId: Long, conflict: AgeLinkageConflict, choice: AgeResolution) {
-        when (choice) {
-            AgeResolution.BIRTH_YEAR -> {
-                val values = characterRepository.getValuesByCharacterList(characterId).toMutableList()
-                upsertFieldValueInList(values, characterId, conflict.birthYearFieldId, conflict.suggestedBirthYear.toString())
-                saveAllFieldValues(characterId, values)
-            }
-            AgeResolution.AGE -> {
-                val values = characterRepository.getValuesByCharacterList(characterId).toMutableList()
-                upsertFieldValueInList(values, characterId, conflict.ageFieldId, conflict.expectedAge.toString())
-                saveAllFieldValues(characterId, values)
-            }
-            AgeResolution.STANDARD_YEAR -> {
-                applyStandardYearChange(conflict.novelId, conflict.currentStdYear, conflict.suggestedStdYear)
+        // 단일 트랜잭션 — 필드 저장/시맨틱 동기화, 기준연도 변경 시 작품 전체 재계산이 원자적으로 커밋된다.
+        // 어시스턴트 교정이 프래그먼트 스코프에서 실행돼 중간 취소돼도 부분 적용으로 캐스트가 어긋나지 않게(P1-B).
+        app.database.withTransaction {
+            when (choice) {
+                AgeResolution.BIRTH_YEAR -> {
+                    val values = characterRepository.getValuesByCharacterList(characterId).toMutableList()
+                    upsertFieldValueInList(values, characterId, conflict.birthYearFieldId, conflict.suggestedBirthYear.toString())
+                    saveAllFieldValues(characterId, values)
+                }
+                AgeResolution.AGE -> {
+                    val values = characterRepository.getValuesByCharacterList(characterId).toMutableList()
+                    upsertFieldValueInList(values, characterId, conflict.ageFieldId, conflict.expectedAge.toString())
+                    saveAllFieldValues(characterId, values)
+                }
+                AgeResolution.STANDARD_YEAR -> {
+                    applyStandardYearChange(conflict.novelId, conflict.currentStdYear, conflict.suggestedStdYear)
+                }
             }
         }
     }

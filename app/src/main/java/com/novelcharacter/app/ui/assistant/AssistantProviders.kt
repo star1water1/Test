@@ -36,7 +36,8 @@ private fun aggregateCard(
     singlePrimary: InsightAction,
     singleExtraSecondary: List<InsightAction> = emptyList(),
     alwaysSecondary: List<InsightAction> = emptyList(),
-    resurfaceValue: Int = affected.size
+    resurfaceValue: Int = affected.size,
+    resurfaceExact: Boolean = false
 ): AssistantInsight {
     val many = affected.size > 1
     val primary = if (many) {
@@ -45,10 +46,14 @@ private fun aggregateCard(
     val secondaries = (if (many) emptyList() else singleExtraSecondary) + alwaysSecondary
     return AssistantInsight(
         id = id, category = category, severity = severity, title = title, detail = detail,
-        count = affected.size, resurfaceValue = resurfaceValue,
+        count = affected.size, resurfaceValue = resurfaceValue, resurfaceExact = resurfaceExact,
         primaryAction = primary, secondaryActions = secondaries, affected = affected
     )
 }
+
+/** 정합성 카드의 재노출 시그니처 — 대상 캐릭터 집합이 바뀌면(새 오류 포함) 값이 달라져 반드시 재노출된다(P1-C). */
+private fun affectedSignature(affected: List<AffectedRow>): Int =
+    affected.map { it.characterId }.sorted().hashCode()
 
 /**
  * 정합성 문제(오류) provider — 진짜 모순을 진지한 톤으로, 명료한 설명과 교정 경로와 함께 제시한다.
@@ -100,7 +105,8 @@ class ConsistencyProvider : InsightProvider {
                         InsightAction.FixKind.AgeLinkage(first.characterId),
                         res.getString(R.string.assistant_action_fix)
                     ),
-                    singleExtraSecondary = listOf(openCharacter(res, first.characterId))
+                    singleExtraSecondary = listOf(openCharacter(res, first.characterId)),
+                    resurfaceValue = affectedSignature(affected), resurfaceExact = true
                 )
             )
         }
@@ -130,7 +136,8 @@ class ConsistencyProvider : InsightProvider {
                     singlePrimary = InsightAction.Navigate(
                         R.id.characterDetailFragment, first.characterId,
                         res.getString(R.string.assistant_action_check)
-                    )
+                    ),
+                    resurfaceValue = affectedSignature(affected), resurfaceExact = true
                 )
             )
         }

@@ -276,6 +276,7 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
 
         setupImageButton()
         setupSaveButton()
+        registerDuplicateResultListener() // 회전 안전(P1-A): 결과 리스너를 onViewCreated에서 1회 등록
         setupEventButton()
         setupChangeTracking()
 
@@ -1314,30 +1315,7 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
                 return@setOnClickListener
             }
 
-            val novelPosition = binding.spinnerNovel.selectedItemPosition
-            val selectedNovelId = if (novelPosition > 0 && novelPosition - 1 < novels.size) novels[novelPosition - 1].id else null
-
-            val memo = binding.editMemo.text.toString()
-
-            val firstName = binding.editFirstName.text.toString().trim()
-            val lastName = binding.editLastName.text.toString().trim()
-            val anotherName = binding.editAnotherName.text.toString().trim()
-
-            val character = Character(
-                id = if (characterId != -1L) characterId else 0,
-                name = name,
-                firstName = firstName,
-                lastName = lastName,
-                anotherName = anotherName,
-                novelId = selectedNovelId,
-                imagePaths = gson.toJson(imagePaths),
-                createdAt = existingCharacter?.createdAt ?: System.currentTimeMillis(),
-                updatedAt = System.currentTimeMillis(),
-                memo = memo,
-                code = existingCharacter?.code ?: generateEntityCode(),
-                displayOrder = existingCharacter?.displayOrder ?: 0,
-                isPinned = existingCharacter?.isPinned ?: false
-            )
+            val character = buildCharacterFromForm()
 
             isSaving = true
             binding.btnSave.isEnabled = false
@@ -1356,7 +1334,7 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
 
                         val isEdit = characterId != -1L
                         if (!isAdded) { resetSavingState(); return@launch }
-                        showDuplicateDialog(candidates, isEdit, character)
+                        showDuplicateDialog(candidates, isEdit)
                     } else {
                         performSave(character, isUpdate = characterId != -1L, targetCharacterId = characterId)
                     }
@@ -1372,10 +1350,40 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
 
     private fun showDuplicateDialog(
         candidates: List<DuplicateCandidate>,
-        isEditMode: Boolean,
-        character: Character
+        isEditMode: Boolean
     ) {
-        // Fragment Result API로 결과 수신 (회전에도 안전)
+        // 결과 리스너는 onViewCreated에서 1회 등록(회전 안전, P1-A). 여기선 다이얼로그만 띄운다.
+        val dialog = DuplicateCharacterDialog.newInstance(candidates, isEditMode)
+        dialog.show(childFragmentManager, "duplicate_character")
+    }
+
+    /** 폼 입력으로 Character를 조립한다. 중복 다이얼로그 결과가 회전 후 도착해도 최신 폼에서 재구성하기 위해 공용화. */
+    private fun buildCharacterFromForm(): Character {
+        val novelPosition = binding.spinnerNovel.selectedItemPosition
+        val selectedNovelId = if (novelPosition > 0 && novelPosition - 1 < novels.size) novels[novelPosition - 1].id else null
+        return Character(
+            id = if (characterId != -1L) characterId else 0,
+            name = binding.editName.text.toString().trim(),
+            firstName = binding.editFirstName.text.toString().trim(),
+            lastName = binding.editLastName.text.toString().trim(),
+            anotherName = binding.editAnotherName.text.toString().trim(),
+            novelId = selectedNovelId,
+            imagePaths = gson.toJson(imagePaths),
+            createdAt = existingCharacter?.createdAt ?: System.currentTimeMillis(),
+            updatedAt = System.currentTimeMillis(),
+            memo = binding.editMemo.text.toString(),
+            code = existingCharacter?.code ?: generateEntityCode(),
+            displayOrder = existingCharacter?.displayOrder ?: 0,
+            isPinned = existingCharacter?.isPinned ?: false
+        )
+    }
+
+    /**
+     * 중복 캐릭터 다이얼로그 결과 리스너 — **onViewCreated에서 1회 등록**(회전 안전, P1-A).
+     * 예전엔 `showDuplicateDialog` 안에서 지연 등록해, 회전으로 재생성되면 재등록되지 않아 결과가
+     * 유실되고 캐릭터가 조용히 저장되지 않았다(변수 제어 위반). 이제 폼에서 character를 재구성해 처리한다.
+     */
+    private fun registerDuplicateResultListener() {
         childFragmentManager.setFragmentResultListener(
             DuplicateCharacterDialog.RESULT_KEY,
             viewLifecycleOwner
@@ -1384,6 +1392,7 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
                 ?: DuplicateCharacterDialog.Resolution.CANCEL.name
             val resolution = DuplicateCharacterDialog.Resolution.valueOf(resolutionName)
             val selectedCharId = bundle.getLong(DuplicateCharacterDialog.RESULT_SELECTED_CHARACTER_ID, -1L)
+            val character = buildCharacterFromForm()
 
             when (resolution) {
                 DuplicateCharacterDialog.Resolution.CANCEL -> {
@@ -1437,9 +1446,6 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
                 }
             }
         }
-
-        val dialog = DuplicateCharacterDialog.newInstance(candidates, isEditMode)
-        dialog.show(childFragmentManager, "duplicate_character")
     }
 
     private suspend fun performSave(character: Character, isUpdate: Boolean, targetCharacterId: Long) {

@@ -23,10 +23,15 @@ data class AssistantInsight(
     /** 이 카드가 대표하는 항목 수(예: 관련 캐릭터 N명). 0이면 개수 배지 없음. */
     val count: Int = 0,
     /**
-     * 재노출 판정값. 숨긴 시점보다 이 값이 커지면(상황 악화) 다시 나타난다.
-     * 기본은 [count]. 편향 카드처럼 개수가 없는 경우 provider가 심각도 등으로 대체한다.
+     * 재노출 판정값. 기본(=[resurfaceExact] false)은 "숨긴 시점보다 이 값이 커지면(상황 악화) 다시 나타난다"
+     * — 편향처럼 심각도/개수가 단조 증가하는 카드용. 기본값은 [count].
      */
     val resurfaceValue: Int = count,
+    /**
+     * true면 [resurfaceValue]를 **시그니처**로 취급 — 숨긴 시점과 값이 **정확히 같을 때만** 계속 숨긴다.
+     * 정합성 오류처럼 "대상 집합이 조금이라도 바뀌면(새 오류 발생 포함) 반드시 다시 알려야" 하는 카드에 쓴다(P1-C).
+     */
+    val resurfaceExact: Boolean = false,
     /** 카드의 대표 행동(눈에 띄는 버튼). null이면 기본 버튼 없음. */
     val primaryAction: InsightAction? = null,
     /** ⋮ 오버플로에 들어가는 부가 행동들. '숨기기'는 별도로 뷰가 항상 덧붙인다. */
