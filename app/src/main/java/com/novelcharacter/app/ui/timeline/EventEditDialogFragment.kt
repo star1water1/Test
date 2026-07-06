@@ -88,6 +88,11 @@ class EventEditDialogFragment : DialogFragment() {
     private val eventFieldInputMap = mutableMapOf<Long, Any>()  // fieldId -> EditText/Spinner
     private var pendingEventFieldValues: MutableMap<String, String>? = null
 
+    // 역법 시드(R3): 신규 사건이면 스코프 세계관 최빈 역법을 시드하되, 편집·회전 복원·사용자 직접 입력은 존중.
+    private var isRecreated = false
+    private var calendarUserEdited = false
+    private var suppressCalendarWatcher = false
+
     private fun requireProvider(): DataProvider =
         (parentFragment as? Host ?: activity as? Host)?.eventDialogDataProvider()
             ?: throw IllegalStateException(
@@ -114,6 +119,15 @@ class EventEditDialogFragment : DialogFragment() {
         // 다대다 작품 선택 — 구 단일 스피너는 사용 안 함
         binding.spinnerNovel.visibility = View.GONE
 
+        // 역법 필드를 사용자가 직접 건드렸는지 추적 — 자동 시드가 사용자 입력을 덮어쓰지 않게(무단 확정 금지).
+        binding.editCalendarType.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                if (!suppressCalendarWatcher) calendarUserEdited = true
+            }
+            override fun afterTextChanged(s: android.text.Editable?) {}
+        })
+
         // 체크 선택 복원 (뷰 ID가 없는 동적 체크박스는 자동 복원 대상이 아님)
         savedInstanceState?.getLongArray(STATE_CHAR_IDS)?.let {
             selectedCharIds.addAll(it.toList())
@@ -127,7 +141,7 @@ class EventEditDialogFragment : DialogFragment() {
             }
             pendingEventFieldValues = restored
         }
-        val isRecreated = savedInstanceState != null
+        isRecreated = savedInstanceState != null
 
         val alertDialog = AlertDialog.Builder(requireContext())
             .setTitle(if (editingEvent == null) R.string.add_event else R.string.edit_event)
@@ -176,9 +190,49 @@ class EventEditDialogFragment : DialogFragment() {
             setupNovelCheckboxes()
             setupCharacterCheckboxes()
             rebuildEventFieldSection()
+            maybeSeedCalendarType()   // 스코프(선택/필터 작품) 알면 최빈 역법 시드
         }
 
         return alertDialog
+    }
+
+    /**
+     * 신규 사건이면 스코프 세계관의 기존 사건에서 **최빈 역법**을 시드하고 자동완성 후보를 채운다.
+     * 편집·회전 복원·사용자 직접 입력이면 건드리지 않는다(무단 확정 금지). 스코프 없으면 공란(천개력 아님).
+     */
+    private fun maybeSeedCalendarType() {
+        if (_binding == null || isRecreated || editingEvent != null || calendarUserEdited) return
+        val universeId = novels.firstOrNull { it.id in selectedNovelIds }?.universeId
+        if (universeId == null) {
+            setCalendarSuggestions(emptyList())
+            return
+        }
+        lifecycleScope.launch {
+            // 세계관 전체 사건 기준(작품 하나에 사건이 없어도 세계관 관례를 잡도록).
+            val events = requireProvider().getEventsInScope(emptyList(), universeId)
+            if (_binding == null || isRecreated || editingEvent != null || calendarUserEdited) return@launch
+            val ranked = events.map { it.calendarType }.filter { it.isNotBlank() }
+                .groupingBy { it }.eachCount()
+                .entries.sortedByDescending { it.value }.map { it.key }
+            setCalendarSuggestions(ranked)
+            setCalendarProgrammatically(ranked.firstOrNull() ?: "")
+        }
+    }
+
+    private fun setCalendarSuggestions(types: List<String>) {
+        if (_binding == null) return
+        binding.editCalendarType.setAdapter(
+            ArrayAdapter(requireContext(), android.R.layout.simple_dropdown_item_1line, types)
+        )
+    }
+
+    /** 역법 필드를 프로그램적으로 설정(watcher 억제 → calendarUserEdited 오탐 방지). */
+    private fun setCalendarProgrammatically(value: String) {
+        if (_binding == null) return
+        suppressCalendarWatcher = true
+        binding.editCalendarType.setText(value)
+        binding.editCalendarType.dismissDropDown()
+        suppressCalendarWatcher = false
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -207,7 +261,8 @@ class EventEditDialogFragment : DialogFragment() {
         binding.editYear.setText(event.year.toString())
         binding.editMonth.setText(event.month?.toString() ?: "")
         binding.editDay.setText(event.day?.toString() ?: "")
-        binding.editCalendarType.setText(event.calendarType)
+        // 편집: 기존 값 설정은 '사용자 편집'이 아니므로 watcher 억제.
+        setCalendarProgrammatically(event.calendarType)
         binding.editDescription.setText(event.description)
         val typeIndex = eventTypes.indexOfFirst { (key, _) -> key == event.eventType }
         if (typeIndex >= 0) binding.spinnerEventType.setSelection(typeIndex)
@@ -516,9 +571,10 @@ class EventEditDialogFragment : DialogFragment() {
                 checkBox.setOnCheckedChangeListener { _, isChecked ->
                     if (isChecked) selectedNovelIds.add(novel.id)
                     else selectedNovelIds.remove(novel.id)
-                    // 작품 선택 변경 시 캐릭터 정렬 + 사건 필드(세계관 기준) 갱신
+                    // 작품 선택 변경 시 캐릭터 정렬 + 사건 필드(세계관 기준) 갱신 + 역법 재시드
                     setupCharacterCheckboxes()
                     rebuildEventFieldSection()
+                    maybeSeedCalendarType()
                 }
             }
 

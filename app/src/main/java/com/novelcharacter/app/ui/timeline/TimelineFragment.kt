@@ -72,14 +72,24 @@ class TimelineFragment : Fragment(), EventEditDialogFragment.Host {
             val currentNovel = viewModel.filterNovelId.value?.let { nid ->
                 cachedNovels.find { it.id == nid }
             }
-            val quickEvent = TimelineEvent(
-                year = year,
-                description = desc,
-                isTemporary = true,
-                universeId = currentNovel?.universeId
-            )
-            viewModel.insertEvent(quickEvent, emptyList(), listOfNotNull(currentNovel?.id))
-            Toast.makeText(requireContext(), R.string.quick_event_added, Toast.LENGTH_SHORT).show()
+            val universeId = currentNovel?.universeId
+            // 역법도 스코프 세계관 최빈값으로 시드(없으면 공란). 하드코딩 '천개력' 금지.
+            viewLifecycleOwner.lifecycleScope.launch {
+                val seededCalendar = if (universeId != null) {
+                    viewModel.getEventsByUniverseList(universeId)
+                        .map { it.calendarType }.filter { it.isNotBlank() }
+                        .groupingBy { it }.eachCount().maxByOrNull { it.value }?.key ?: ""
+                } else ""
+                val quickEvent = TimelineEvent(
+                    year = year,
+                    description = desc,
+                    isTemporary = true,
+                    universeId = universeId,
+                    calendarType = seededCalendar
+                )
+                viewModel.insertEvent(quickEvent, emptyList(), listOfNotNull(currentNovel?.id))
+                if (isAdded) Toast.makeText(requireContext(), R.string.quick_event_added, Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
@@ -607,7 +617,9 @@ class TimelineFragment : Fragment(), EventEditDialogFragment.Host {
         }
 
     private fun showEditEventDialog(event: TimelineEvent?) {
-        EventEditDialogFragment.show(childFragmentManager, event = event)
+        // 신규 사건이면 현재 필터 작품을 미리 선택 → 세계관 즉시 확정으로 역법 시드가 곧바로 동작(+작품 자동 연결).
+        val preNovels = if (event == null) listOfNotNull(viewModel.filterNovelId.value) else emptyList()
+        EventEditDialogFragment.show(childFragmentManager, event = event, preSelectedNovelIds = preNovels)
     }
 
     /** 간편 사건 추가: 연도 + 한줄 설명만으로 임시 사건 생성 */

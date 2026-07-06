@@ -69,12 +69,14 @@
             android:layout_marginBottom="12dp"
             android:hint="@string/event_calendar_type">
 
-            <com.google.android.material.textfield.TextInputEditText
+            <!-- 역법: 하드코딩 기본값 제거. 신규 사건이면 코드가 스코프 세계관의 최빈 역법을 시드하고
+                 기존 역법을 자동완성 후보로 제시한다(스코프 없으면 공란). -->
+            <com.google.android.material.textfield.MaterialAutoCompleteTextView
                 android:id="@+id/editCalendarType"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:inputType="text"
-                android:text="@string/default_calendar_type" />
+                android:completionThreshold="1" />
 
         </com.google.android.material.textfield.TextInputLayout>
 
