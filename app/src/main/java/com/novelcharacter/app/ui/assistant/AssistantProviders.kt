@@ -2,6 +2,7 @@ package com.novelcharacter.app.ui.assistant
 
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.CharacterStateChange
+import com.novelcharacter.app.ui.stats.PatternInsight
 import com.novelcharacter.app.ui.stats.PatternSeverity
 import com.novelcharacter.app.ui.stats.PatternType
 import com.novelcharacter.app.util.BirthdayHelper
@@ -253,39 +254,77 @@ class HealthProvider : InsightProvider {
 }
 
 /**
- * 편향·패턴 인사이트 provider — 기존 패턴 감지 엔진 결과를 카드로. (드릴다운은 PR4에서 affected 채움.)
+ * 편향·패턴 인사이트 provider — "어쩌라고" 해결(실질화):
+ * ① 편중/이상치 카드는 **해당 값 캐릭터를 '전체 보기'로 드릴다운**(통계탭이 못 하는 차별점).
+ *    다세계관 병합 id 전체를 순회해 과소집계 없이 뽑는다.
+ * ② **규모 제어**: 최소 모집단 미만 필드 카드 제외(소표본 노이즈), 심각도순 카드 상한 — 데이터가
+ *    많아질수록 카드가 쏟아지던 문제를 막는다. 임계값은 사용자 설정([AssistantPrefs]).
  */
 class BiasProvider : InsightProvider {
     override val category = InsightCategory.BIAS
 
     override fun provide(ctx: InsightContext): List<AssistantInsight> {
         val res = ctx.context
-        return ctx.patterns.map { p ->
-            val severity = when {
-                p.type == PatternType.BALANCE -> InsightSeverity.BIAS_INFO
-                p.severity == PatternSeverity.HIGH -> InsightSeverity.BIAS_HIGH
-                p.severity == PatternSeverity.MEDIUM -> InsightSeverity.BIAS_MEDIUM
-                else -> InsightSeverity.BIAS_LOW
-            }
-            val detail = if (p.suggestion.isBlank()) p.description
-                else "${p.description}\n\n${p.suggestion}"
-            val primary = p.fieldDefId?.let {
-                InsightAction.Navigate(
-                    destId = R.id.statsFieldInsightFragment,
-                    label = res.getString(R.string.assistant_bias_action)
+        val prefs = AssistantPrefs(res)
+        val minPop = prefs.biasMinPopulation()
+        val maxCards = prefs.biasMaxCards().coerceAtLeast(1)
+
+        return ctx.patterns
+            // 필드 편향/이상치 카드는 스코프 모집단이 최소치 미만이면 제외(소표본 편중은 노이즈).
+            .filterNot { it.mergedFieldDefIds.isNotEmpty() && it.population in 1 until minPop }
+            .map { it to severityOf(it) }
+            .sortedByDescending { it.second }
+            .take(maxCards)
+            .map { (p, severity) -> buildCard(res, ctx, p, severity) }
+    }
+
+    private fun severityOf(p: PatternInsight): Int = when {
+        p.type == PatternType.BALANCE -> InsightSeverity.BIAS_INFO
+        p.severity == PatternSeverity.HIGH -> InsightSeverity.BIAS_HIGH
+        p.severity == PatternSeverity.MEDIUM -> InsightSeverity.BIAS_MEDIUM
+        else -> InsightSeverity.BIAS_LOW
+    }
+
+    private fun buildCard(res: android.content.Context, ctx: InsightContext, p: PatternInsight, severity: Int): AssistantInsight {
+        val id = "bias_${p.type.name}_${p.fieldDefId ?: p.description.hashCode()}"
+        val detail = if (p.suggestion.isBlank()) p.description else "${p.description}\n\n${p.suggestion}"
+
+        // 드릴다운(편중/이상치): 해당 값 캐릭터를 펼쳐 각자 열어볼 수 있게 → 카드가 실제로 쓸모 있어진다.
+        if (p.drilldownValues.isNotEmpty() && p.mergedFieldDefIds.isNotEmpty()) {
+            val chars = ctx.statsProvider.getCharactersByFieldKeyValues(
+                ctx.snapshot, p.mergedFieldDefIds, p.drilldownValues.toSet(), p.drilldownExclude
+            )
+            if (chars.isNotEmpty()) {
+                val updatedById = ctx.snapshot.characters.associate { it.id to it.updatedAt }
+                val affected = chars.map {
+                    AffectedRow(
+                        characterId = it.characterId,
+                        name = it.characterName,
+                        subtitle = it.fieldValue.ifBlank { null },
+                        imagePath = it.imageUri,
+                        updatedAt = updatedById[it.characterId]
+                    )
+                }
+                return aggregateCard(
+                    res, id, category, severity, p.title, detail, affected,
+                    singlePrimary = openCharacter(res, affected.first().characterId),
+                    resurfaceValue = severity
                 )
             }
-            AssistantInsight(
-                id = "bias_${p.type.name}_${p.fieldDefId ?: p.description.hashCode()}",
-                category = category,
-                severity = severity,
-                title = p.title,
-                detail = detail,
-                count = 0,
-                resurfaceValue = severity,
-                primaryAction = primary
+        }
+
+        // 폴백: 값별 캐릭터가 없거나(예: 100% 단일값) 필드 패턴이 아니면 필드 인사이트로 이동.
+        val primary = p.fieldDefId?.let {
+            InsightAction.Navigate(
+                destId = R.id.statsFieldInsightFragment,
+                label = res.getString(R.string.assistant_bias_action)
             )
         }
+        return AssistantInsight(
+            id = id, category = category, severity = severity,
+            title = p.title, detail = detail, count = 0,
+            resurfaceValue = severity, primaryAction = primary
+        )
     }
 }
 

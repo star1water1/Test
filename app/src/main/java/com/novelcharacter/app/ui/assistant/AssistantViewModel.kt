@@ -94,4 +94,13 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         prefs.setCategoryEnabled(category, enabled)
         refresh()
     }
+
+    // ── 편향 카드 규모 설정 ──
+    fun biasMinPopulation() = prefs.biasMinPopulation()
+    fun biasMaxCards() = prefs.biasMaxCards()
+    fun setBiasSettings(minPopulation: Int, maxCards: Int) {
+        prefs.setBiasMinPopulation(minPopulation)
+        prefs.setBiasMaxCards(maxCards)
+        refresh()
+    }
 }

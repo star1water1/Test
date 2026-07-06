@@ -43,6 +43,21 @@ class AssistantPrefs(context: Context) {
         sp.edit().remove(dismissKey(id)).remove(legacyTitleKey(id)).apply()
     }
 
+    // ── 편향 카드 규모 제어(사용자 설정) ──
+    // 데이터가 많아질수록 편향 카드가 쏟아지던 문제를, 사용자가 직접 임계값으로 가린다(자율성 우선).
+
+    /** 편향/이상치 카드를 낼 최소 모집단(필드 값 총수). 미만이면 소표본 노이즈로 보고 숨긴다. */
+    fun biasMinPopulation(): Int = sp.getInt(KEY_BIAS_MIN_POP, DEFAULT_BIAS_MIN_POP)
+    fun setBiasMinPopulation(value: Int) {
+        sp.edit().putInt(KEY_BIAS_MIN_POP, value.coerceIn(1, 1000)).apply()
+    }
+
+    /** 한 번에 보여줄 편향 카드 최대 수(심각도 상위). */
+    fun biasMaxCards(): Int = sp.getInt(KEY_BIAS_MAX_CARDS, DEFAULT_BIAS_MAX_CARDS)
+    fun setBiasMaxCards(value: Int) {
+        sp.edit().putInt(KEY_BIAS_MAX_CARDS, value.coerceIn(1, 50)).apply()
+    }
+
     private fun catKey(category: InsightCategory) = "cat_${category.name}"
     private fun dismissKey(id: String) = "$DISMISS_PREFIX$id"
     private fun legacyTitleKey(id: String) = "dtitle_$id"
@@ -50,5 +65,9 @@ class AssistantPrefs(context: Context) {
     companion object {
         private const val PREFS_NAME = "assistant_prefs"
         private const val DISMISS_PREFIX = "dismiss_"
+        private const val KEY_BIAS_MIN_POP = "bias_min_population"
+        private const val KEY_BIAS_MAX_CARDS = "bias_max_cards"
+        const val DEFAULT_BIAS_MIN_POP = 8
+        const val DEFAULT_BIAS_MAX_CARDS = 5
     }
 }

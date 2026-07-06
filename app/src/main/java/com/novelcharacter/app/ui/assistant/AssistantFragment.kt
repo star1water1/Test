@@ -144,11 +144,13 @@ class AssistantFragment : Fragment() {
         PopupMenu(requireContext(), anchor).apply {
             menu.add(0, MENU_REFRESH, 0, R.string.assistant_refresh)
             menu.add(0, MENU_CATEGORIES, 1, R.string.assistant_categories)
-            menu.add(0, MENU_RESTORE, 2, R.string.assistant_restore_hidden)
+            menu.add(0, MENU_BIAS_SETTINGS, 2, R.string.assistant_bias_settings)
+            menu.add(0, MENU_RESTORE, 3, R.string.assistant_restore_hidden)
             setOnMenuItemClickListener { item ->
                 when (item.itemId) {
                     MENU_REFRESH -> { viewModel.refresh(); true }
                     MENU_CATEGORIES -> { showCategoryDialog(); true }
+                    MENU_BIAS_SETTINGS -> { showBiasSettingsDialog(); true }
                     MENU_RESTORE -> { showRestoreDialog(); true }
                     else -> false
                 }
@@ -167,6 +169,44 @@ class AssistantFragment : Fragment() {
                 viewModel.setCategoryEnabled(categories[which], isChecked)
             }
             .setPositiveButton(android.R.string.ok, null)
+            .show()
+    }
+
+    /** 편향 카드 규모 설정 — 최소 모집단·최대 카드 수를 사용자가 직접 조절(자율성). */
+    private fun showBiasSettingsDialog() {
+        val ctx = requireContext()
+        val density = resources.displayMetrics.density
+        val pad = (20 * density).toInt()
+
+        val minLabel = android.widget.TextView(ctx).apply {
+            setText(R.string.assistant_bias_min_population); textSize = 13f
+        }
+        val minInput = android.widget.EditText(ctx).apply {
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            setText(viewModel.biasMinPopulation().toString())
+        }
+        val maxLabel = android.widget.TextView(ctx).apply {
+            setText(R.string.assistant_bias_max_cards); textSize = 13f
+            setPadding(0, (12 * density).toInt(), 0, 0)
+        }
+        val maxInput = android.widget.EditText(ctx).apply {
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            setText(viewModel.biasMaxCards().toString())
+        }
+        val container = android.widget.LinearLayout(ctx).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(pad, pad / 2, pad, 0)
+            addView(minLabel); addView(minInput); addView(maxLabel); addView(maxInput)
+        }
+        AlertDialog.Builder(ctx)
+            .setTitle(R.string.assistant_bias_settings)
+            .setView(container)
+            .setPositiveButton(R.string.save) { _, _ ->
+                val minPop = minInput.text.toString().toIntOrNull() ?: viewModel.biasMinPopulation()
+                val maxCards = maxInput.text.toString().toIntOrNull() ?: viewModel.biasMaxCards()
+                viewModel.setBiasSettings(minPop, maxCards)
+            }
+            .setNegativeButton(R.string.cancel, null)
             .show()
     }
 
@@ -195,6 +235,7 @@ class AssistantFragment : Fragment() {
         private const val MENU_REFRESH = 1
         private const val MENU_CATEGORIES = 2
         private const val MENU_RESTORE = 3
+        private const val MENU_BIAS_SETTINGS = 4
         // 카드 오버플로에서 '숨기기'가 부가 액션 인덱스와 겹치지 않도록 큰 값 사용.
         private const val MENU_DISMISS = 10001
     }

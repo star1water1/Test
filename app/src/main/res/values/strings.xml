@@ -1618,6 +1618,10 @@
 
     <!-- 편향·패턴 인사이트 -->
     <string name="assistant_bias_action">필드 인사이트 열기</string>
+    <!-- 편향 카드 규모 설정 -->
+    <string name="assistant_bias_settings">편향 카드 설정</string>
+    <string name="assistant_bias_min_population">편향/이상치를 낼 최소 인원(필드 값 수)</string>
+    <string name="assistant_bias_max_cards">한 번에 보여줄 편향 카드 수(심각도 상위)</string>
 
     <!-- 넛지 -->
     <string name="assistant_nudge_birthday_title">임박한 생일 %1$d명</string>
