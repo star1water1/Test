@@ -71,6 +71,40 @@ class ExcelExporter(context: Context) {
     }
 
     /**
+     * 워크북에 선택된 데이터 시트를 모두 채운다.
+     *
+     * 공유·저장 내보내기(exportAll)와 자동 백업(AutoBackupWorker)이 공유하는 **단일 내보내기 소스**.
+     * 두 경로가 별도 export 로직을 두면 포맷이 드리프트(자동 백업이 세력관계·사건코드·커스텀필드 등을
+     * 누락)하여 복원 시 데이터가 유실되므로, 반드시 이 메서드 하나만을 통해 시트를 생성한다.
+     *
+     * 호출 전 truncatedCellCount를 초기화하고, styles를 워크북에 바인딩한다.
+     * @return 32,767자(XLSX 셀 규격) 초과로 잘린 셀 수
+     */
+    suspend fun populateWorkbook(workbook: XSSFWorkbook, options: ExportOptions = ExportOptions()): Int {
+        truncatedCellCount = 0
+        styles = ExcelStyles(workbook)
+        val usedSheetNames = mutableSetOf<String>()
+
+        exportInstructions(workbook, usedSheetNames)
+        if (options.universes) exportUniverses(workbook, usedSheetNames)
+        if (options.novels) exportNovels(workbook, usedSheetNames)
+        if (options.fieldDefinitions) exportFieldDefinitions(workbook, usedSheetNames)
+        if (options.characters) exportCharacters(workbook, usedSheetNames)
+        if (options.timeline) exportTimeline(workbook, usedSheetNames)
+        if (options.stateChanges) exportStateChanges(workbook, usedSheetNames)
+        if (options.relationships) exportRelationships(workbook, usedSheetNames)
+        if (options.relationshipChanges) exportRelationshipChanges(workbook, usedSheetNames)
+        if (options.nameBank) exportNameBank(workbook, usedSheetNames)
+        if (options.factions) exportFactions(workbook, usedSheetNames)
+        if (options.factionMemberships) exportFactionMemberships(workbook, usedSheetNames)
+        if (options.factionRelationships) exportFactionRelationships(workbook, usedSheetNames)
+        if (options.presetTemplates) exportUserPresetTemplates(workbook, usedSheetNames)
+        if (options.searchPresets) exportSearchPresets(workbook, usedSheetNames)
+        if (options.appSettings) exportAppSettings(workbook, usedSheetNames)
+        return truncatedCellCount
+    }
+
+    /**
      * @param options 내보내기에 포함할 항목 선택
      * @param onFileReady if non-null, called with the temp file instead of opening a share sheet.
      *                    The caller is responsible for launching SAF to let the user pick a save location.
@@ -83,27 +117,8 @@ class ExcelExporter(context: Context) {
             }
             var workbook: XSSFWorkbook? = null
             try {
-                truncatedCellCount = 0
                 workbook = XSSFWorkbook()
-                styles = ExcelStyles(workbook)
-                val usedSheetNames = mutableSetOf<String>()
-
-                exportInstructions(workbook, usedSheetNames)
-                if (options.universes) exportUniverses(workbook, usedSheetNames)
-                if (options.novels) exportNovels(workbook, usedSheetNames)
-                if (options.fieldDefinitions) exportFieldDefinitions(workbook, usedSheetNames)
-                if (options.characters) exportCharacters(workbook, usedSheetNames)
-                if (options.timeline) exportTimeline(workbook, usedSheetNames)
-                if (options.stateChanges) exportStateChanges(workbook, usedSheetNames)
-                if (options.relationships) exportRelationships(workbook, usedSheetNames)
-                if (options.relationshipChanges) exportRelationshipChanges(workbook, usedSheetNames)
-                if (options.nameBank) exportNameBank(workbook, usedSheetNames)
-                if (options.factions) exportFactions(workbook, usedSheetNames)
-                if (options.factionMemberships) exportFactionMemberships(workbook, usedSheetNames)
-                if (options.factionRelationships) exportFactionRelationships(workbook, usedSheetNames)
-                if (options.presetTemplates) exportUserPresetTemplates(workbook, usedSheetNames)
-                if (options.searchPresets) exportSearchPresets(workbook, usedSheetNames)
-                if (options.appSettings) exportAppSettings(workbook, usedSheetNames)
+                populateWorkbook(workbook, options)
 
                 // 내보내기 요약(시트/행 건수) — 사용 안내 시트는 데이터가 아니므로 제외
                 var exportedSheets = 0
