@@ -1,7 +1,6 @@
 package com.novelcharacter.app.ui.character
 
 import android.app.Dialog
-import android.graphics.BitmapFactory
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -18,8 +17,6 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.Character
-import com.novelcharacter.app.util.GsonTypes
-import java.io.File
 
 data class DuplicateCandidate(
     val character: Character,
@@ -192,23 +189,14 @@ class DuplicateCharacterDialog : DialogFragment() {
                 holder.tvMemo.text = if (memo.length > 50) memo.substring(0, 50) + "…" else memo
             }
 
-            val imagePaths = try {
-                Gson().fromJson<List<String>>(character.imagePaths, GsonTypes.STRING_LIST) ?: emptyList()
-            } catch (e: Exception) { emptyList() }
-
-            if (imagePaths.isNotEmpty() && File(imagePaths[0]).exists()) {
-                try {
-                    val options = BitmapFactory.Options().apply { inSampleSize = 4 }
-                    val bitmap = BitmapFactory.decodeFile(imagePaths[0], options)
-                    if (bitmap != null) {
-                        holder.ivThumbnail.setImageBitmap(bitmap)
-                        holder.ivThumbnail.visibility = View.VISIBLE
-                    } else {
-                        holder.ivThumbnail.visibility = View.GONE
-                    }
-                } catch (e: Exception) {
-                    holder.ivThumbnail.visibility = View.GONE
-                }
+            // 공용 유틸: 바운즈 없는 고정 샘플(=4) 대신 요청 크기 다운샘플 + filesDir 경로가드.
+            val firstPath = com.novelcharacter.app.util.CharacterImageLoader.firstImagePath(character.imagePaths)
+            val bitmap = firstPath?.let {
+                com.novelcharacter.app.util.CharacterImageLoader.decodeThumbnail(it, holder.itemView.context.filesDir, 128)
+            }
+            if (bitmap != null) {
+                holder.ivThumbnail.setImageBitmap(bitmap)
+                holder.ivThumbnail.visibility = View.VISIBLE
             } else {
                 holder.ivThumbnail.visibility = View.GONE
             }

@@ -30,7 +30,9 @@ object CharacterImageLoader {
     }
 
     /**
-     * filesDir 하위 파일만 허용(경로 우회 방지)하고 [reqPx] 근처로 다운샘플해 디코드한다.
+     * filesDir 하위 파일만 허용(경로 우회 방지)하고 [reqPx] 기준으로 다운샘플해 디코드한다.
+     * 알고리즘은 앱 표준(Android 공식) `calculateInSampleSize`와 동일 — 디코드 결과가 요청 크기 **이상**을
+     * 유지하는 가장 큰 샘플(과다 축소로 인한 흐림 없음). 기존 사이트를 이 유틸로 통합해도 화질이 보존된다.
      * **IO 디스패처에서 호출**할 것(디스크·디코드).
      */
     fun decodeThumbnail(path: String, filesDir: File, reqPx: Int = 128): Bitmap? {
@@ -39,9 +41,15 @@ object CharacterImageLoader {
         if (!file.exists()) return null
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(path, bounds)
-        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        val h = bounds.outHeight
+        val w = bounds.outWidth
+        if (w <= 0 || h <= 0) return null
         var sample = 1
-        while (bounds.outWidth / sample > reqPx || bounds.outHeight / sample > reqPx) sample *= 2
+        if (h > reqPx || w > reqPx) {
+            val halfH = h / 2
+            val halfW = w / 2
+            while (sample < 1024 && halfH / sample >= reqPx && halfW / sample >= reqPx) sample *= 2
+        }
         val opts = BitmapFactory.Options().apply { inSampleSize = sample }
         return runCatching { BitmapFactory.decodeFile(path, opts) }.getOrNull()
     }
