@@ -92,6 +92,7 @@ class EventEditDialogFragment : DialogFragment() {
     private var isRecreated = false
     private var calendarUserEdited = false
     private var suppressCalendarWatcher = false
+    private var seedJob: kotlinx.coroutines.Job? = null
 
     private fun requireProvider(): DataProvider =
         (parentFragment as? Host ?: activity as? Host)?.eventDialogDataProvider()
@@ -201,21 +202,29 @@ class EventEditDialogFragment : DialogFragment() {
      * 편집·회전 복원·사용자 직접 입력이면 건드리지 않는다(무단 확정 금지). 스코프 없으면 공란(천개력 아님).
      */
     private fun maybeSeedCalendarType() {
-        if (_binding == null || isRecreated || editingEvent != null || calendarUserEdited) return
+        if (_binding == null) return
         val universeId = novels.firstOrNull { it.id in selectedNovelIds }?.universeId
+        // 값 시드는 신규 사건 & 회전 복원 아님 & 사용자 미편집일 때만. 자동완성 후보는 편집 시에도 채운다.
+        val canSeed = !isRecreated && editingEvent == null && !calendarUserEdited
         if (universeId == null) {
             setCalendarSuggestions(emptyList())
+            if (canSeed) setCalendarProgrammatically("")  // 스코프 없으면 공란(천개력 아님)
             return
         }
-        lifecycleScope.launch {
-            // 세계관 전체 사건 기준(작품 하나에 사건이 없어도 세계관 관례를 잡도록).
-            val events = requireProvider().getEventsInScope(emptyList(), universeId)
-            if (_binding == null || isRecreated || editingEvent != null || calendarUserEdited) return@launch
+        // 작품을 빠르게 토글해도 이전 세계관 결과가 늦게 덮어쓰지 않게 이전 시드 취소 + await 후 재확인.
+        seedJob?.cancel()
+        val target = universeId
+        seedJob = lifecycleScope.launch {
+            val events = requireProvider().getEventsInScope(emptyList(), target)
+            if (_binding == null) return@launch
+            if (novels.firstOrNull { it.id in selectedNovelIds }?.universeId != target) return@launch
             val ranked = events.map { it.calendarType }.filter { it.isNotBlank() }
                 .groupingBy { it }.eachCount()
                 .entries.sortedByDescending { it.value }.map { it.key }
-            setCalendarSuggestions(ranked)
-            setCalendarProgrammatically(ranked.firstOrNull() ?: "")
+            setCalendarSuggestions(ranked)   // 편집·신규 모두 자동완성 제공
+            if (!isRecreated && editingEvent == null && !calendarUserEdited) {
+                setCalendarProgrammatically(ranked.firstOrNull() ?: "")
+            }
         }
     }
 

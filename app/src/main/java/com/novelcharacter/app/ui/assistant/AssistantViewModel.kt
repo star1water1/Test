@@ -55,7 +55,8 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
                     val enabled = prefs.enabledCategories()
                     val all = engine.run(snapshot, statsProvider, enabled)
                     val hidden = all.filter { prefs.isDismissed(it) }.associate { it.id to it.title }
-                    val visible = all.filterNot { prefs.isDismissed(it) }
+                    // 편향 카드 상한은 숨김 반영 '후'에 적용 — 숨긴 카드가 슬롯을 먹지 않고 다음 카드가 승격된다.
+                    val visible = capBiasCards(all.filterNot { prefs.isDismissed(it) }, prefs.biasMaxCards())
                     visible to hidden
                 }
             }
@@ -63,6 +64,18 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
             _insights.value = visible
             _errorCount.value = visible.count { it.category.isError }
             _loading.value = false
+        }
+    }
+
+    /** 편향 카드 상한 — 심각도순(엔진이 정렬) 목록에서 BIAS 상위 [maxBias]장만 남기고 나머지 카테고리는 유지. */
+    private fun capBiasCards(list: List<AssistantInsight>, maxBias: Int): List<AssistantInsight> {
+        if (maxBias <= 0) return list.filterNot { it.category == InsightCategory.BIAS }
+        var biasCount = 0
+        return list.filter {
+            if (it.category == InsightCategory.BIAS) {
+                biasCount++
+                biasCount <= maxBias
+            } else true
         }
     }
 

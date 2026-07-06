@@ -35,24 +35,29 @@ object CharacterImageLoader {
      * 유지하는 가장 큰 샘플(과다 축소로 인한 흐림 없음). 기존 사이트를 이 유틸로 통합해도 화질이 보존된다.
      * **IO 디스패처에서 호출**할 것(디스크·디코드).
      */
-    fun decodeThumbnail(path: String, filesDir: File, reqPx: Int = 128): Bitmap? {
+    fun decodeThumbnail(path: String, filesDir: File, reqPx: Int = 128): Bitmap? = runCatching {
         val file = File(path)
-        if (!file.canonicalPath.startsWith(filesDir.canonicalPath + File.separator)) return null
-        if (!file.exists()) return null
+        // canonicalPath는 IOException을 던질 수 있으므로 전체를 runCatching으로 감싼다(메인스레드 크래시 방지).
+        if (!file.canonicalPath.startsWith(filesDir.canonicalPath + File.separator)) return@runCatching null
+        if (!file.exists()) return@runCatching null
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(path, bounds)
         val h = bounds.outHeight
         val w = bounds.outWidth
-        if (w <= 0 || h <= 0) return null
+        if (w <= 0 || h <= 0) return@runCatching null
         var sample = 1
         if (h > reqPx || w > reqPx) {
             val halfH = h / 2
             val halfW = w / 2
             while (sample < 1024 && halfH / sample >= reqPx && halfW / sample >= reqPx) sample *= 2
         }
+        // 극단적 종횡비(파노라마·세로 스크롤)에선 표준 알고리즘이 짧은 변 기준이라 긴 변이 그대로 남아 OOM.
+        // 총 픽셀 예산(약 4M ≈ 16MB@ARGB_8888)을 넘으면 추가 다운샘플로 상한을 둔다.
+        val maxPixels = 4_000_000L
+        while (sample < 1024 && (w.toLong() / sample) * (h.toLong() / sample) > maxPixels) sample *= 2
         val opts = BitmapFactory.Options().apply { inSampleSize = sample }
-        return runCatching { BitmapFactory.decodeFile(path, opts) }.getOrNull()
-    }
+        BitmapFactory.decodeFile(path, opts)
+    }.getOrNull()
 }
 
 /**

@@ -72,24 +72,10 @@ class TimelineFragment : Fragment(), EventEditDialogFragment.Host {
             val currentNovel = viewModel.filterNovelId.value?.let { nid ->
                 cachedNovels.find { it.id == nid }
             }
-            val universeId = currentNovel?.universeId
-            // 역법도 스코프 세계관 최빈값으로 시드(없으면 공란). 하드코딩 '천개력' 금지.
-            viewLifecycleOwner.lifecycleScope.launch {
-                val seededCalendar = if (universeId != null) {
-                    viewModel.getEventsByUniverseList(universeId)
-                        .map { it.calendarType }.filter { it.isNotBlank() }
-                        .groupingBy { it }.eachCount().maxByOrNull { it.value }?.key ?: ""
-                } else ""
-                val quickEvent = TimelineEvent(
-                    year = year,
-                    description = desc,
-                    isTemporary = true,
-                    universeId = universeId,
-                    calendarType = seededCalendar
-                )
-                viewModel.insertEvent(quickEvent, emptyList(), listOfNotNull(currentNovel?.id))
-                if (isAdded) Toast.makeText(requireContext(), R.string.quick_event_added, Toast.LENGTH_SHORT).show()
-            }
+            // 시드 계산+insert는 viewModelScope에서 durable하게(뷰 스코프 코루틴이 회전/이탈로 취소돼
+            // 사건이 유실되던 문제 수정). 역법은 스코프 세계관 최빈값 시드(없으면 공란).
+            viewModel.quickAddEvent(year, desc, currentNovel?.id, currentNovel?.universeId)
+            Toast.makeText(requireContext(), R.string.quick_event_added, Toast.LENGTH_SHORT).show()
         }
     }
 

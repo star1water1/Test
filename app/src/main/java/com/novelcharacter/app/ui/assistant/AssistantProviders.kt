@@ -265,17 +265,12 @@ class BiasProvider : InsightProvider {
 
     override fun provide(ctx: InsightContext): List<AssistantInsight> {
         val res = ctx.context
-        val prefs = AssistantPrefs(res)
-        val minPop = prefs.biasMinPopulation()
-        val maxCards = prefs.biasMaxCards().coerceAtLeast(1)
-
+        val minPop = AssistantPrefs(res).biasMinPopulation()
+        // 필드 편향/이상치/균형 카드는 스코프 모집단이 최소치 미만이면 제외(소표본 노이즈).
+        // 카드 수 상한은 '숨김 반영 후'에 적용해야 숨긴 카드가 슬롯을 먹지 않으므로 ViewModel에서 처리한다.
         return ctx.patterns
-            // 필드 편향/이상치 카드는 스코프 모집단이 최소치 미만이면 제외(소표본 편중은 노이즈).
             .filterNot { it.mergedFieldDefIds.isNotEmpty() && it.population in 1 until minPop }
-            .map { it to severityOf(it) }
-            .sortedByDescending { it.second }
-            .take(maxCards)
-            .map { (p, severity) -> buildCard(res, ctx, p, severity) }
+            .map { p -> buildCard(res, ctx, p, severityOf(p)) }
     }
 
     private fun severityOf(p: PatternInsight): Int = when {
@@ -300,7 +295,9 @@ class BiasProvider : InsightProvider {
                     AffectedRow(
                         characterId = it.characterId,
                         name = it.characterName,
-                        subtitle = it.fieldValue.ifBlank { null },
+                        // 편중(단일 값 포함)은 모든 행이 같은 값이라 서브타이틀 생략(중복 노이즈). 이상치는 값별로 달라 표시.
+                        subtitle = if (p.drilldownValues.size == 1 && !p.drilldownExclude) null
+                        else it.fieldValue.ifBlank { null },
                         imagePath = it.imageUri,
                         updatedAt = updatedById[it.characterId]
                     )
