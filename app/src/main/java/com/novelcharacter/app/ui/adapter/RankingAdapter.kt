@@ -1,6 +1,5 @@
 package com.novelcharacter.app.ui.adapter
 
-import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.util.LruCache
@@ -21,9 +20,13 @@ class RankingAdapter(
     private var items: List<RankingEntry> = emptyList()
     private val gson = Gson()
     private val imagePathsType = object : TypeToken<List<String>>() {}.type
-    private val imageCache = LruCache<String, android.graphics.Bitmap>(
+    // KB 단위 상한(≈10MB) — sizeOf 오버라이드로 실제 비트맵 KB를 센다(P1-G: 없으면 '엔트리 수'로 세어
+    // ~수백MB까지 부풀던 단위 불일치 버그). 형제 어댑터와 동일한 메모리 예산.
+    private val imageCache = object : LruCache<String, android.graphics.Bitmap>(
         ((Runtime.getRuntime().maxMemory() / 1024) / 16).toInt().coerceIn(512, 10240)
-    )
+    ) {
+        override fun sizeOf(key: String, value: android.graphics.Bitmap): Int = value.byteCount / 1024
+    }
     private var scope: CoroutineScope? = null
 
     fun submitList(newItems: List<RankingEntry>) {
@@ -109,16 +112,9 @@ class RankingAdapter(
 
             val currentId = entry.characterId
             scope?.launch {
+                // 공용 유틸 위임 — filesDir 경로 가드(P1-G: 없던 것) + 총 픽셀 상한(파노라마 OOM 방지) 획득.
                 val bitmap = withContext(Dispatchers.IO) {
-                    try {
-                        val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                        BitmapFactory.decodeFile(path, options)
-                        options.inSampleSize = calculateInSampleSize(options, 112, 112)
-                        options.inJustDecodeBounds = false
-                        BitmapFactory.decodeFile(path, options)
-                    } catch (e: Exception) {
-                        null
-                    }
+                    com.novelcharacter.app.util.CharacterImageLoader.decodeThumbnail(path, binding.root.context.filesDir, 112)
                 }
                 if (bitmap != null && bindingAdapterPosition != RecyclerView.NO_POSITION) {
                     val item = items.getOrNull(bindingAdapterPosition)
@@ -128,21 +124,6 @@ class RankingAdapter(
                     }
                 }
             }
-        }
-
-        private fun calculateInSampleSize(
-            options: BitmapFactory.Options, reqWidth: Int, reqHeight: Int
-        ): Int {
-            val (height, width) = options.outHeight to options.outWidth
-            var inSampleSize = 1
-            if (height > reqHeight || width > reqWidth) {
-                val halfHeight = height / 2
-                val halfWidth = width / 2
-                while (inSampleSize < 1024 && halfHeight / inSampleSize >= reqHeight && halfWidth / inSampleSize >= reqWidth) {
-                    inSampleSize *= 2
-                }
-            }
-            return inSampleSize
         }
 
         private fun getRankColor(rank: Int): Int = when (rank) {

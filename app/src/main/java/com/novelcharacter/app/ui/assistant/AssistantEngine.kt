@@ -1,6 +1,7 @@
 package com.novelcharacter.app.ui.assistant
 
 import android.content.Context
+import com.novelcharacter.app.data.model.CharacterFieldValue
 import com.novelcharacter.app.ui.stats.DataHealthStats
 import com.novelcharacter.app.ui.stats.PatternInsight
 import com.novelcharacter.app.ui.stats.StatsDataProvider
@@ -29,7 +30,9 @@ data class InsightContext(
     val consistency: ConsistencyChecker.Result,
     val patterns: List<PatternInsight>,
     /** 분포·필드값 해석 등 추가 계산이 필요한 provider(편향 드릴다운 등)를 위한 재사용 진입점. */
-    val statsProvider: StatsDataProvider
+    val statsProvider: StatsDataProvider,
+    /** fieldDefinitionId → 값 목록. 편향 드릴다운이 카드마다 전체 테이블을 스캔하지 않도록 한 번만 그룹화(P1-D). */
+    val valuesByDefId: Map<Long, List<CharacterFieldValue>>
 )
 
 /** 카드 정렬용 심각도. 정합성 오류가 항상 최상단에 오도록 배치한다. */
@@ -74,7 +77,8 @@ class AssistantEngine(
             dataHealth = statsProvider.computeDataHealth(snapshot),
             consistency = ConsistencyChecker.check(snapshot),
             patterns = statsProvider.detectPatterns(snapshot),
-            statsProvider = statsProvider
+            statsProvider = statsProvider,
+            valuesByDefId = snapshot.fieldValues.groupBy { it.fieldDefinitionId }
         )
         return providers
             .filter { it.category in enabledCategories }
