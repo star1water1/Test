@@ -1719,4 +1719,28 @@
     <string name="image_manager_deleted">이미지 삭제 · %1$s 확보</string>
     <string name="image_manager_delete_failed">이미지를 삭제하지 못했습니다</string>
     <string name="image_manager_empty">이미지가 없습니다</string>
+    <!-- 이미지 관리 탭 — 다중선택 일괄(PR-3a) -->
+    <string name="image_manager_select">선택</string>
+    <string name="image_manager_select_cancel">선택 취소</string>
+    <string name="image_manager_select_all">전체선택</string>
+    <string name="image_manager_selected_count">%1$d개 선택</string>
+    <string name="image_manager_selected_mark">✓</string>
+    <string name="image_manager_select_none">선택된 이미지가 없습니다.</string>
+    <string name="image_manager_delete_selected_confirm">선택한 이미지 %1$d개를 삭제할까요? 참조본은 사용 중인 항목에서도 함께 제거됩니다.</string>
+    <string name="image_manager_bulk_deleted">이미지 %1$d개 삭제 · %2$s 확보</string>
+    <string name="image_manager_bulk_delete_failed">일부 이미지를 삭제하지 못했습니다 (%1$d개 실패)</string>
+    <!-- 이미지 관리 탭 — 기존 이미지 재압축(PR-3a) -->
+    <string name="image_manager_recompress">재압축</string>
+    <string name="image_manager_recompress_confirm_title">이미지 재압축</string>
+    <string name="image_manager_recompress_confirm">%1$d개 재압축 · %2$s → %3$s (%4$s 절감)\n\n재압축은 화질을 낮춰 용량을 줄입니다. 원본은 삭제되며 되돌릴 수 없습니다.</string>
+    <string name="image_manager_recompress_none">재압축할 대상이 없습니다.</string>
+    <string name="image_manager_recompress_done">이미지 %1$d개 재압축 · %2$s 확보</string>
+    <string name="image_manager_recompress_done_skipped">이미지 %1$d개 재압축 · %2$s 확보 (%3$d개 제외)</string>
+    <string name="image_manager_recompress_skip_summary">%1$d개 제외 (%2$s)</string>
+    <string name="image_manager_skip_not_referenced">미참조</string>
+    <string name="image_manager_skip_too_small">이미 작음</string>
+    <string name="image_manager_skip_too_large">너무 큼</string>
+    <string name="image_manager_skip_corrupt">손상/미지원</string>
+    <string name="image_manager_skip_no_benefit">효과 없음</string>
+    <string name="image_manager_skip_error">오류</string>
 </resources>
