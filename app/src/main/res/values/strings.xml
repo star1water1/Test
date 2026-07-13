@@ -1673,4 +1673,18 @@
     <string name="assistant_undo">실행취소</string>
     <string name="assistant_restore_hidden">숨긴 항목 복원</string>
     <string name="assistant_no_hidden">숨긴 항목이 없습니다</string>
+
+    <!-- 이미지 압축 설정 -->
+    <string name="image_settings_title">이미지 압축 설정</string>
+    <string name="image_settings_enable">불러오기 시 자동 압축</string>
+    <string name="image_settings_enable_desc">앞으로 불러올 이미지를 자동으로 압축해 앱 용량을 줄입니다. 꺼두면 원본을 그대로 저장합니다.</string>
+    <string name="image_settings_quality_format">품질 %1$d%%</string>
+    <string name="image_settings_cap_dimension">최대 해상도 제한</string>
+    <string name="image_settings_cap_dimension_desc">긴 변을 상한 이하로 줄입니다 (용량 절감의 핵심).</string>
+    <string name="image_settings_max_edge_format">최대 긴변 %1$dpx</string>
+    <string name="image_settings_skip_below">일정 용량 이하 압축 안 함</string>
+    <string name="image_settings_skip_below_desc">작은 파일은 원본 그대로 저장합니다.</string>
+    <string name="image_settings_skip_format">%1$s 미만은 원본 유지</string>
+    <string name="settings_image_compress_title">이미지 압축</string>
+    <string name="settings_image_compress_desc">불러오는 이미지의 자동 압축(용량 ↔ 화질)을 설정합니다.</string>
 </resources>

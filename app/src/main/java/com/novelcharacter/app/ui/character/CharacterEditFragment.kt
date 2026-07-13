@@ -81,7 +81,7 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
     private val imagePickerLauncher = registerForActivityResult(
         ActivityResultContracts.GetMultipleContents()
     ) { uris: List<Uri> ->
-        uris.forEach { uri -> saveImageToInternalStorage(uri) }
+        if (uris.isNotEmpty()) saveImagesToInternalStorage(uris)
     }
 
     override fun onCreateView(
@@ -1123,50 +1123,32 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
             LinearLayoutManager(requireContext(), LinearLayoutManager.HORIZONTAL, false)
     }
 
-    private fun saveImageToInternalStorage(uri: Uri) {
-        val context = context?.applicationContext ?: return
+    /**
+     * 픽한 이미지들을 내부 저장소에 저장한다. 공용 [ImageImportHelper]로 라우팅하여
+     * 압축 설정(용량↔화질)을 적용한다. 압축 설정은 배치당 1회만 로드한다.
+     */
+    private fun saveImagesToInternalStorage(uris: List<Uri>) {
+        val ctx = context?.applicationContext ?: return
         viewLifecycleOwner.lifecycleScope.launch {
-            try {
-                val filePath = withContext(kotlinx.coroutines.Dispatchers.IO) {
-                    val inputStream = context.contentResolver.openInputStream(uri) ?: return@withContext null
-                    val maxSize = 20L * 1024 * 1024 // 20MB
-                    val fileName = "char_${UUID.randomUUID()}.jpg"
-                    val file = File(context.filesDir, fileName)
-                    var totalBytes = 0L
-                    var exceededLimit = false
-                    inputStream.use { input ->
-                        FileOutputStream(file).use { output ->
-                            val buffer = ByteArray(8192)
-                            var bytesRead: Int
-                            while (input.read(buffer).also { bytesRead = it } != -1) {
-                                totalBytes += bytesRead
-                                if (totalBytes > maxSize) {
-                                    exceededLimit = true
-                                    break
-                                }
-                                output.write(buffer, 0, bytesRead)
-                            }
-                        }
-                    }
-                    if (exceededLimit) {
-                        file.delete()
-                        return@withContext null
-                    }
-                    file.absolutePath
+            val settings = com.novelcharacter.app.util.ImageSettingsStore(ctx).getSettings()
+            var anyFailed = false
+            for (uri in uris) {
+                val filePath = try {
+                    com.novelcharacter.app.util.ImageImportHelper.importImage(ctx, uri, "char", settings)
+                } catch (e: Exception) {
+                    null
                 }
                 if (_binding == null) return@launch
                 if (filePath != null) {
                     imagePaths.add(filePath)
                     updateImageList()
                 } else {
-                    val ctx = context ?: return@launch
-                    Toast.makeText(ctx, R.string.image_save_failed, Toast.LENGTH_SHORT).show()
+                    anyFailed = true
                 }
-            } catch (e: Exception) {
-                if (isAdded) {
-                    val ctx = context ?: return@launch
-                    Toast.makeText(ctx, R.string.image_save_failed, Toast.LENGTH_SHORT).show()
-                }
+            }
+            if (anyFailed && isAdded) {
+                val c = context ?: return@launch
+                Toast.makeText(c, R.string.image_save_failed, Toast.LENGTH_SHORT).show()
             }
         }
     }
