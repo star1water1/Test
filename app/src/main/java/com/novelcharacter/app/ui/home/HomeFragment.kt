@@ -12,6 +12,7 @@ import com.novelcharacter.app.R
 import com.novelcharacter.app.databinding.FragmentHomeBinding
 import com.novelcharacter.app.ui.assistant.AssistantFragment
 import com.novelcharacter.app.ui.assistant.AssistantViewModel
+import com.novelcharacter.app.ui.image.ImageManagerFragment
 import com.novelcharacter.app.ui.namebank.NameBankFragment
 import com.novelcharacter.app.ui.timeline.TimelineFragment
 import com.novelcharacter.app.ui.universe.UniverseListFragment
@@ -29,7 +30,8 @@ class HomeFragment : Fragment() {
             getString(R.string.tab_universes),
             getString(R.string.tab_timeline),
             getString(R.string.tab_name_bank),
-            getString(R.string.assistant_tab)
+            getString(R.string.assistant_tab),
+            getString(R.string.tab_images)
         )
     }
 
@@ -93,7 +95,7 @@ class HomeFragment : Fragment() {
     }
 
     private inner class HomePagerAdapter(fragment: Fragment) : FragmentStateAdapter(fragment) {
-        override fun getItemCount(): Int = 4
+        override fun getItemCount(): Int = 5
 
         override fun createFragment(position: Int): Fragment {
             return when (position) {
@@ -101,6 +103,7 @@ class HomeFragment : Fragment() {
                 1 -> TimelineFragment()
                 2 -> NameBankFragment()
                 3 -> AssistantFragment()
+                4 -> ImageManagerFragment()
                 else -> throw IllegalStateException("Invalid position $position")
             }
         }

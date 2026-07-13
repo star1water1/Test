@@ -1687,4 +1687,36 @@
     <string name="image_settings_skip_format">%1$s 미만은 원본 유지</string>
     <string name="settings_image_compress_title">이미지 압축</string>
     <string name="settings_image_compress_desc">불러오는 이미지의 자동 압축(용량 ↔ 화질)을 설정합니다.</string>
+
+    <!-- 이미지 관리 탭 -->
+    <string name="tab_images">이미지</string>
+    <string name="image_manager_thumb_desc">이미지 미리보기</string>
+    <string name="image_manager_sort">정렬</string>
+    <string name="image_manager_options">옵션</string>
+    <string name="image_manager_summary">총 %1$d개 · %2$s (참조 %3$d · 고아 %4$d)</string>
+    <string name="image_manager_filter_all">전체</string>
+    <string name="image_manager_filter_character">캐릭터</string>
+    <string name="image_manager_filter_novel">작품</string>
+    <string name="image_manager_filter_universe">세계관</string>
+    <string name="image_manager_filter_orphan">고아</string>
+    <string name="image_manager_status_orphan">고아</string>
+    <string name="image_manager_status_trash">휴지통</string>
+    <string name="image_manager_type_character">캐릭터</string>
+    <string name="image_manager_type_novel">작품</string>
+    <string name="image_manager_type_universe">세계관</string>
+    <string name="image_manager_owner_orphan">미참조 (고아)</string>
+    <string name="image_manager_owner_trash">휴지통 보류</string>
+    <string name="image_manager_owner_more">%1$s 외 %2$d곳</string>
+    <string name="image_manager_sort_size">크기순</string>
+    <string name="image_manager_sort_name">이름순</string>
+    <string name="image_manager_sort_date">날짜순</string>
+    <string name="image_manager_clean_orphans">고아 이미지 정리</string>
+    <string name="image_manager_refresh">새로고침</string>
+    <string name="image_manager_view_full">전체화면 보기</string>
+    <string name="image_manager_delete_title">이미지 삭제</string>
+    <string name="image_manager_delete_referenced_confirm">이 이미지는 %1$d곳에서 사용 중입니다. 삭제하면 해당 항목에서도 함께 제거됩니다. 계속할까요?</string>
+    <string name="image_manager_delete_orphan_confirm">이 이미지 파일을 삭제할까요?</string>
+    <string name="image_manager_deleted">이미지 삭제 · %1$s 확보</string>
+    <string name="image_manager_delete_failed">이미지를 삭제하지 못했습니다</string>
+    <string name="image_manager_empty">이미지가 없습니다</string>
 </resources>
