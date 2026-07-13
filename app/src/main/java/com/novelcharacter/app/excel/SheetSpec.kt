@@ -86,9 +86,20 @@ val RESERVED_SHEET_NAMES = setOf(
     appSettingsSpec().sheetName
 )
 
-/** Split a comma-separated string into a trimmed, non-blank list. */
+/**
+ * 전각 ASCII(U+FF01–FF5E)를 반각으로 정규화한다. 엑셀에 CJK 입력기로 넣은 전각 쉼표(，)·
+ * 전각 영숫자(Ｙ／１ 등)를 관대하게 수용하기 위한 공용 유틸 (F4). CJK 문자(예/참 등)는 그대로 둔다.
+ */
+fun toHalfWidth(value: String): String {
+    if (value.none { it.code in 0xFF01..0xFF5E }) return value
+    return buildString(value.length) {
+        for (c in value) append(if (c.code in 0xFF01..0xFF5E) (c.code - 0xFEE0).toChar() else c)
+    }
+}
+
+/** Split a comma-separated string into a trimmed, non-blank list. 전각 쉼표(，)도 관대 수용 (F4). */
 fun splitCsv(value: String): List<String> =
-    value.split(",").map { it.trim() }.filter { it.isNotBlank() }
+    toHalfWidth(value).split(",").map { it.trim() }.filter { it.isNotBlank() }
 
 /**
  * XLSX 셀 텍스트 규격 한도. 내보내기 절단과 가져오기 저장 한도가 반드시 같은 값을 참조해야

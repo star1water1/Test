@@ -563,8 +563,8 @@ class ExcelExporter(context: Context) {
             row.createCell(5).setCellValue(universe.borderWidthDp.toDouble())
             row.createCell(6).setTextSafe(universe.imagePaths)
             row.createCell(7).setCellValue(universe.imageMode)
-            row.createCell(8).setCellValue(universe.customRelationshipTypes)
-            row.createCell(9).setCellValue(universe.customRelationshipColors)
+            row.createCell(8).setTextSafe(universe.customRelationshipTypes)
+            row.createCell(9).setTextSafe(universe.customRelationshipColors)
             universe.imageCharacterId?.let { id -> charCodeMap[id]?.let { row.createCell(10).setCellValue(it) } }
             universe.imageNovelId?.let { id -> novelCodeMap[id]?.let { row.createCell(11).setCellValue(it) } }
             row.createCell(12).setCellValue(universe.createdAt.toDouble())

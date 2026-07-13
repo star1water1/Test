@@ -1537,6 +1537,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     continue
                 }
                 val config = getCellString(row, configColIndex).ifBlank { "{}" }
+                // F4: 설정(JSON)이 손상(절단·구문 오류)됐으면 조용히 넘기지 않고 경고 (필드 동작 무력화 방지)
+                if (config != "{}" && !isValidJson(config)) {
+                    result.warnings.add("필드 정의 행 $i: 필드 '$name'의 설정(JSON)이 올바른 형식이 아닙니다(절단·오타 가능) — 그대로 저장되나 해당 기능이 동작하지 않을 수 있습니다")
+                }
                 val groupName = getCellString(row, groupColIndex).ifBlank { "기본 정보" }
                 val displayOrder: Int? = if (orderColIndex >= 0) {
                     val raw = getCellString(row, orderColIndex)
@@ -1645,7 +1649,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val name = getCellString(row, nameColIndex)
                 if (name.isBlank()) continue
 
-                val code = if (codeColIndex >= 0) getCellString(row, codeColIndex) else ""
+                val code = getCellCode(row, codeColIndex, "캐릭터 행 $i", result)  // F4: 숫자 코드 방어
                 val novelCode = if (novelCodeColIndex >= 0) getCellString(row, novelCodeColIndex) else ""
                 val novelTitle = if (novelColIndex >= 0) getCellString(row, novelColIndex) else ""
 
@@ -1808,6 +1812,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 // 동적 필드 값 가져오기 (빈 셀 = 기존 값 삭제)
                 var hasSemanticField = false
                 for ((colIndex, field) in columnFieldMap) {
+                    // F4: CALCULATED는 다른 필드로부터 실시간 산출되는 파생값 — 저장하지 않는다(읽기 전용).
+                    // 내보내기 시 계산 결과를 표시하지만 가져오기 때 저장하면 stale 중복 데이터가 된다.
+                    if (field.type == "CALCULATED") continue
                     val isDateField = SemanticRole.fromConfig(field.config) == SemanticRole.BIRTH_DATE
                     val value = getCellString(row, colIndex, dateHint = isDateField)
                     // 필드 타입 검증 (F1-B): 거부하지 않고 저장하되 경고 (수용·교정 원칙 — 통계 누락을 인지시킴)
@@ -1940,7 +1947,16 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val month = parseMonthWithWarn(row, monthColIndex, "연표 행 $i", result)
                 val day = parseDayWithWarn(row, dayColIndex, month, "연표 행 $i", result)
                 val calendarType = getCellString(row, calendarColIndex).ifBlank { "천개력" }
-                val eventType = if (eventTypeColIndex >= 0) labelToEventType(getCellString(row, eventTypeColIndex)) else TimelineEvent.TYPE_NONE
+                val eventType = if (eventTypeColIndex >= 0) {
+                    val eventTypeLabel = getCellString(row, eventTypeColIndex)
+                    val mapped = labelToEventType(eventTypeLabel)
+                    // F4: 인식 못한 사건 유형(오타)은 조용히 '일반'으로 떨어뜨리지 않고 경고
+                    if (eventTypeLabel.isNotBlank() && mapped == TimelineEvent.TYPE_NONE &&
+                        eventTypeLabel.trim() !in setOf("일반", "general", "normal")) {
+                        result.warnings.add("연표 행 $i: 사건 유형 '$eventTypeLabel'을(를) 인식할 수 없어 '일반'으로 처리 — 탄생/사망/일반 중 선택")
+                    }
+                    mapped
+                } else TimelineEvent.TYPE_NONE
                 val novelTitle = getCellString(row, novelColIndex)
                 val novelCode = if (novelCodeColIndex >= 0) getCellString(row, novelCodeColIndex) else ""
                 val displayOrder: Int? = if (displayOrderColIndex >= 0) {
@@ -2562,7 +2578,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val effectiveIsUsed = isUsed && usedByCharacterId != null
 
                 val mapKey = "${name}\u0000${gender}"
-                val entryCode = if (codeColIndex >= 0) getCellString(row, codeColIndex) else ""
+                val entryCode = getCellCode(row, codeColIndex, "이름 은행 행 $i", result)  // F4: 숫자 코드 방어
                 // F3-D: 코드 우선 매칭(이름/성별을 편집해도 같은 항목 인식) → 자연키(이름+성별) 폴백
                 val existing = (if (entryCode.isNotBlank()) db.nameBankDao().getByCode(entryCode) else null)
                     ?: existingNamesMap[mapKey]
@@ -3340,10 +3356,40 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
      * Tolerant boolean parsing (Sprint C): Y/N, TRUE/FALSE, 1/0, yes/no
      */
     private fun parseBoolean(value: String): Boolean {
-        return when (value.trim().uppercase()) {
-            "Y", "YES", "TRUE", "1", "O", "예" -> true
+        // F4: 전각(Ｙ／１／Ｔ 등)→반각 정규화 후 판정 + T/F 단문자·참/아니오 수용 (관대한 가져오기)
+        return when (toHalfWidth(value.trim()).uppercase()) {
+            "Y", "YES", "TRUE", "T", "1", "O", "예", "참" -> true
             else -> false
         }
+    }
+
+    /**
+     * F4: 코드 셀 방어 읽기. 코드는 항상 텍스트여야 하나, 외부 편집 중 엑셀이 숫자로 자동 변환하면
+     * 정밀도 손실·지수표기로 매칭이 조용히 어긋난다. 숫자 셀이면 경고하고 문자열로 읽는다(변수 제어).
+     */
+    private fun getCellCode(row: Row, cellIndex: Int, rowLabel: String, result: ImportResult): String {
+        if (cellIndex < 0) return ""
+        val cell = row.getCell(cellIndex) ?: return ""
+        if (cell.cellType == CellType.NUMERIC) {
+            result.warnings.add("$rowLabel: 코드가 숫자 형식으로 저장되어 있습니다 — 코드 열은 수정하지 마세요(정밀도 손실로 매칭이 어긋날 수 있습니다)")
+        }
+        return getCellString(row, cellIndex)
+    }
+
+    /**
+     * F4: JSON 문자열이 파싱 가능한지 검증한다 (내보내기 32,767자 절단·외부 편집 구문 오류 감지용).
+     * 빈 문자열은 유효로 본다. object/array만 최상위로 허용.
+     */
+    private fun isValidJson(value: String): Boolean {
+        val t = value.trim()
+        if (t.isEmpty()) return true
+        return try {
+            when (t.first()) {
+                '{' -> { org.json.JSONObject(t); true }
+                '[' -> { org.json.JSONArray(t); true }
+                else -> false
+            }
+        } catch (_: Exception) { false }
     }
 
     /** 월에 맞는 유효한 일수인지 검증 (월이 null이면 1..31 범위만 체크) */
