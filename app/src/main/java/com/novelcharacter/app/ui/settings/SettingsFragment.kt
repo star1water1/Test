@@ -143,6 +143,10 @@ class SettingsFragment : Fragment() {
             findNavController().navigate(R.id.storageFragment)
         }
 
+        binding.imageCompressRow.setOnClickListener {
+            com.novelcharacter.app.ui.image.ImageSettingsDialog.show(this)
+        }
+
         binding.operationHistoryRow.setOnClickListener {
             findNavController().navigate(R.id.operationHistoryFragment)
         }

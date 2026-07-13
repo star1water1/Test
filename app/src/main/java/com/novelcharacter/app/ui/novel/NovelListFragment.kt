@@ -48,41 +48,18 @@ class NovelListFragment : Fragment() {
         ActivityResultContracts.GetMultipleContents()
     ) { uris: List<Uri> ->
         if (uris.isEmpty()) return@registerForActivityResult
-        val ctx = context ?: return@registerForActivityResult
+        val ctx = context?.applicationContext ?: return@registerForActivityResult
         viewLifecycleOwner.lifecycleScope.launch {
+            // 공용 유틸로 라우팅 — 압축 설정(용량↔화질) 적용. 설정은 배치당 1회 로드.
+            val settings = com.novelcharacter.app.util.ImageSettingsStore(ctx).getSettings()
             for (uri in uris) {
-                try {
-                    val savedPath = withContext(Dispatchers.IO) {
-                        val inputStream = ctx.contentResolver.openInputStream(uri) ?: return@withContext null
-                        val maxSize = 20L * 1024 * 1024 // 20MB
-                        val fileName = "novel_${java.util.UUID.randomUUID()}.jpg"
-                        val file = java.io.File(ctx.filesDir, fileName)
-                        var totalBytes = 0L
-                        var exceededLimit = false
-                        inputStream.use { input ->
-                            file.outputStream().use { out ->
-                                val buffer = ByteArray(8192)
-                                var bytesRead: Int
-                                while (input.read(buffer).also { bytesRead = it } != -1) {
-                                    totalBytes += bytesRead
-                                    if (totalBytes > maxSize) { exceededLimit = true; break }
-                                    out.write(buffer, 0, bytesRead)
-                                }
-                            }
-                        }
-                        if (exceededLimit) { file.delete(); return@withContext null }
-                        val canonical = file.canonicalPath
-                        if (!canonical.startsWith(ctx.filesDir.canonicalPath + java.io.File.separator)) {
-                            file.delete()
-                            return@withContext null
-                        }
-                        canonical
-                    }
-                    if (savedPath != null) {
-                        pendingImagePaths.add(savedPath)
-                    }
+                val savedPath = try {
+                    com.novelcharacter.app.util.ImageImportHelper.importImage(ctx, uri, "novel", settings)
                 } catch (e: Exception) {
-                    // 개별 실패는 건너뜀
+                    null
+                }
+                if (savedPath != null) {
+                    pendingImagePaths.add(savedPath)
                 }
             }
             if (isAdded) {
