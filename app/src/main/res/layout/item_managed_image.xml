@@ -53,6 +53,36 @@
             android:textColor="#FFFFFF"
             android:background="#CC000000"
             tools:text="1.2 MB" />
+
+        <!-- 선택 모드 스크림 — 선택된 셀 위에 반투명 강조를 덧씌운다 -->
+        <View
+            android:id="@+id/selectionScrim"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="#553F51B5"
+            android:visibility="gone"
+            tools:visibility="visible" />
+
+        <!-- 선택 체크 표식 -->
+        <TextView
+            android:id="@+id/selectionCheck"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top|end"
+            android:layout_margin="4dp"
+            android:minWidth="22dp"
+            android:gravity="center"
+            android:paddingStart="6dp"
+            android:paddingEnd="6dp"
+            android:paddingTop="1dp"
+            android:paddingBottom="1dp"
+            android:text="@string/image_manager_selected_mark"
+            android:textStyle="bold"
+            android:textSize="13sp"
+            android:textColor="#FFFFFF"
+            android:background="#CC3F51B5"
+            android:visibility="gone"
+            tools:visibility="visible" />
     </FrameLayout>
 
     <TextView

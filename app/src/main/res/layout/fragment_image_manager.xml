@@ -26,6 +26,13 @@
             android:textColor="?attr/colorOnSurface" />
 
         <com.google.android.material.button.MaterialButton
+            android:id="@+id/selectButton"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/image_manager_select" />
+
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/sortButton"
             style="@style/Widget.Material3.Button.TextButton"
             android:layout_width="wrap_content"
@@ -134,4 +141,51 @@
             android:textColor="?attr/colorOnSurfaceVariant"
             android:visibility="gone" />
     </FrameLayout>
+
+    <!-- 선택 모드 하단 액션 바 — 선택 모드에서만 노출 -->
+    <LinearLayout
+        android:id="@+id/selectionBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="?attr/colorSurfaceVariant"
+        android:paddingStart="16dp"
+        android:paddingEnd="8dp"
+        android:visibility="gone"
+        tools:visibility="visible">
+
+        <TextView
+            android:id="@+id/selectionCountText"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textSize="13sp"
+            android:textColor="?attr/colorOnSurface"
+            tools:text="3개 선택" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/selectAllButton"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:minWidth="0dp"
+            android:text="@string/image_manager_select_all" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/recompressSelectedButton"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:minWidth="0dp"
+            android:text="@string/image_manager_recompress" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/deleteSelectedButton"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:minWidth="0dp"
+            android:text="@string/delete" />
+    </LinearLayout>
 </LinearLayout>

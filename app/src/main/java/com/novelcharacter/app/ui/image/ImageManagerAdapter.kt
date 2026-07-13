@@ -16,11 +16,25 @@ import kotlinx.coroutines.Job
 /**
  * 이미지 관리 그리드 어댑터. 셀마다 썸네일·크기·소유자·상태 배지를 보여준다.
  * 썸네일 디코드는 공용 [loadCharacterThumbnail](재활용-안전)을 쓰고, 반환 Job을 onViewRecycled에서 취소한다.
+ *
+ * 선택 모드에서는 셀 위에 선택 스크림·체크 표식을 덧씌우고, 탭이 상세 열기가 아니라 선택 토글로 동작한다.
  */
 class ImageManagerAdapter(
     private val scope: CoroutineScope,
-    private val onClick: (ImageManagerViewModel.ManagedImage) -> Unit
+    private val onClick: (ImageManagerViewModel.ManagedImage) -> Unit,
+    private val onToggleSelect: (ImageManagerViewModel.ManagedImage) -> Unit,
+    private val onLongPress: (ImageManagerViewModel.ManagedImage) -> Unit
 ) : ListAdapter<ImageManagerViewModel.ManagedImage, ImageManagerAdapter.VH>(DIFF) {
+
+    private var selectionMode = false
+    private var selectedPaths: Set<String> = emptySet()
+
+    /** 선택 모드/선택 집합 갱신 — 오버레이 다시 그리기. */
+    fun setSelectionState(mode: Boolean, selected: Set<String>) {
+        selectionMode = mode
+        selectedPaths = selected
+        notifyDataSetChanged()
+    }
 
     companion object {
         private val DIFF = object : DiffUtil.ItemCallback<ImageManagerViewModel.ManagedImage>() {
@@ -38,7 +52,9 @@ class ImageManagerAdapter(
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
         val binding = ItemManagedImageBinding.inflate(LayoutInflater.from(parent.context), parent, false)
-        return VH(binding, scope, onClick, ::getItem)
+        return VH(binding, scope, onClick, onToggleSelect, onLongPress, ::getItem,
+            selectionModeProvider = { selectionMode },
+            selectedProvider = { selectedPaths })
     }
 
     override fun onBindViewHolder(holder: VH, position: Int) = holder.bind(getItem(position))
@@ -51,7 +67,11 @@ class ImageManagerAdapter(
         private val binding: ItemManagedImageBinding,
         private val scope: CoroutineScope,
         private val onClick: (ImageManagerViewModel.ManagedImage) -> Unit,
-        private val itemAt: (Int) -> ImageManagerViewModel.ManagedImage
+        private val onToggleSelect: (ImageManagerViewModel.ManagedImage) -> Unit,
+        private val onLongPress: (ImageManagerViewModel.ManagedImage) -> Unit,
+        private val itemAt: (Int) -> ImageManagerViewModel.ManagedImage,
+        private val selectionModeProvider: () -> Boolean,
+        private val selectedProvider: () -> Set<String>
     ) : RecyclerView.ViewHolder(binding.root) {
 
         private var thumbJob: Job? = null
@@ -59,7 +79,17 @@ class ImageManagerAdapter(
         init {
             binding.itemRoot.setOnClickListener {
                 val pos = bindingAdapterPosition
-                if (pos != RecyclerView.NO_POSITION) onClick(itemAt(pos))
+                if (pos == RecyclerView.NO_POSITION) return@setOnClickListener
+                val item = itemAt(pos)
+                if (selectionModeProvider()) onToggleSelect(item) else onClick(item)
+            }
+            binding.itemRoot.setOnLongClickListener {
+                val pos = bindingAdapterPosition
+                if (pos == RecyclerView.NO_POSITION) return@setOnLongClickListener false
+                if (!selectionModeProvider()) {
+                    onLongPress(itemAt(pos))
+                    true
+                } else false
             }
         }
 
@@ -80,6 +110,11 @@ class ImageManagerAdapter(
             }
 
             binding.ownerText.text = ownerLabel(ctx, item)
+
+            // 선택 오버레이
+            val selected = selectionModeProvider() && selectedProvider().contains(item.path)
+            binding.selectionScrim.visibility = if (selected) View.VISIBLE else View.GONE
+            binding.selectionCheck.visibility = if (selected) View.VISIBLE else View.GONE
 
             thumbJob?.cancel()
             thumbJob = binding.thumbnail.loadCharacterThumbnail(

@@ -12,9 +12,12 @@ import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.GridLayoutManager
+import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.gson.Gson
 import com.novelcharacter.app.R
+import com.novelcharacter.app.databinding.BottomSheetImageDetailBinding
 import com.novelcharacter.app.databinding.FragmentImageManagerBinding
+import com.novelcharacter.app.util.ImageImportHelper
 import com.novelcharacter.app.util.OpResult
 import com.novelcharacter.app.util.StorageAnalyzer
 import com.novelcharacter.app.util.navigateSafe
@@ -22,7 +25,9 @@ import com.novelcharacter.app.util.reportAndNotify
 
 /**
  * 이미지 관리 탭 — 앱 내 모든 이미지(캐릭터·작품·세계관)를 그리드로 조회/필터/정렬하고,
- * 전체화면 보기·삭제(고아 + 참조본 안전삭제)·고아 일괄 정리·용량 요약을 제공한다.
+ * 상세·전체화면 보기·삭제(고아 + 참조본 안전삭제)·고아 일괄 정리·용량 요약을 제공한다.
+ *
+ * PR-3a: 다중선택 일괄(삭제/재압축) + 기존 이미지 재압축(정확한 전/후 크기 미리보기 + 스킵 사유 고지 + 확인).
  */
 class ImageManagerFragment : Fragment() {
 
@@ -38,6 +43,10 @@ class ImageManagerFragment : Fragment() {
     private var filter = Filter.ALL
     private var sort = Sort.SIZE
 
+    private var selectionMode = false
+    private val selectedPaths = LinkedHashSet<String>()
+    private var currentList: List<ImageManagerViewModel.ManagedImage> = emptyList()
+
     private lateinit var adapter: ImageManagerAdapter
 
     override fun onCreateView(
@@ -50,7 +59,12 @@ class ImageManagerFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        adapter = ImageManagerAdapter(viewLifecycleOwner.lifecycleScope) { showDetail(it) }
+        adapter = ImageManagerAdapter(
+            viewLifecycleOwner.lifecycleScope,
+            onClick = { showDetail(it) },
+            onToggleSelect = { toggleSelect(it) },
+            onLongPress = { enterSelection(it) }
+        )
         binding.recyclerView.layoutManager = GridLayoutManager(requireContext(), 3)
         binding.recyclerView.adapter = adapter
 
@@ -67,6 +81,10 @@ class ImageManagerFragment : Fragment() {
 
         binding.sortButton.setOnClickListener { showSortMenu() }
         binding.optionsButton.setOnClickListener { showOptionsMenu() }
+        binding.selectButton.setOnClickListener { if (selectionMode) exitSelection() else enterSelection(null) }
+        binding.selectAllButton.setOnClickListener { selectAll() }
+        binding.recompressSelectedButton.setOnClickListener { recompressSelected() }
+        binding.deleteSelectedButton.setOnClickListener { deleteSelected() }
 
         viewModel.loading.observe(viewLifecycleOwner) {
             binding.progressBar.visibility = if (it) View.VISIBLE else View.GONE
@@ -79,6 +97,7 @@ class ImageManagerFragment : Fragment() {
         }
         viewModel.images.observe(viewLifecycleOwner) { applyView() }
 
+        updateSelectionUi()
         viewModel.load()
     }
 
@@ -105,10 +124,60 @@ class ImageManagerFragment : Fragment() {
             Sort.NAME -> filtered.sortedBy { it.path.substringAfterLast('/') }
             Sort.DATE -> filtered.sortedByDescending { it.lastModified }
         }
+        currentList = sorted
+        // 사라진 이미지가 선택에 남아 있지 않게 정리
+        val livePaths = all.mapTo(HashSet()) { it.path }
+        if (selectedPaths.retainAll(livePaths)) updateSelectionUi()
         adapter.submitList(sorted)
         val empty = sorted.isEmpty() && viewModel.loading.value != true
         binding.emptyText.visibility = if (empty) View.VISIBLE else View.GONE
     }
+
+    // ---------- 선택 모드 ----------
+
+    private fun enterSelection(initial: ImageManagerViewModel.ManagedImage?) {
+        selectionMode = true
+        if (initial != null) selectedPaths.add(initial.path)
+        updateSelectionUi()
+    }
+
+    private fun exitSelection() {
+        selectionMode = false
+        selectedPaths.clear()
+        updateSelectionUi()
+    }
+
+    private fun toggleSelect(item: ImageManagerViewModel.ManagedImage) {
+        if (!selectedPaths.add(item.path)) selectedPaths.remove(item.path)
+        updateSelectionUi()
+    }
+
+    private fun selectAll() {
+        val allSelected = currentList.isNotEmpty() && selectedPaths.containsAll(currentList.map { it.path })
+        if (allSelected) {
+            currentList.forEach { selectedPaths.remove(it.path) }
+        } else {
+            currentList.forEach { selectedPaths.add(it.path) }
+        }
+        updateSelectionUi()
+    }
+
+    private fun updateSelectionUi() {
+        binding.selectionBar.visibility = if (selectionMode) View.VISIBLE else View.GONE
+        binding.selectButton.text = getString(
+            if (selectionMode) R.string.image_manager_select_cancel else R.string.image_manager_select
+        )
+        binding.selectionCountText.text = getString(R.string.image_manager_selected_count, selectedPaths.size)
+        adapter.setSelectionState(selectionMode, selectedPaths.toSet())
+    }
+
+    /** 선택된 경로에 해당하는 현재 이미지 항목들. */
+    private fun selectedItems(): List<ImageManagerViewModel.ManagedImage> {
+        val all = viewModel.images.value ?: return emptyList()
+        return all.filter { selectedPaths.contains(it.path) }
+    }
+
+    // ---------- 정렬/옵션 ----------
 
     private fun showSortMenu() {
         val popup = PopupMenu(requireContext(), binding.sortButton)
@@ -139,22 +208,32 @@ class ImageManagerFragment : Fragment() {
         popup.show()
     }
 
+    // ---------- 상세(바텀시트) ----------
+
     private fun showDetail(item: ImageManagerViewModel.ManagedImage) {
         val ctx = context ?: return
-        val ownerText = if (item.owners.isEmpty()) {
+        val sheetBinding = BottomSheetImageDetailBinding.inflate(layoutInflater)
+        val dialog = BottomSheetDialog(ctx)
+        dialog.setContentView(sheetBinding.root)
+
+        sheetBinding.detailSizeText.text = StorageAnalyzer.formatBytes(item.sizeBytes)
+        sheetBinding.detailOwnerText.text = if (item.owners.isEmpty()) {
             if (item.status == ImageManagerViewModel.Status.TRASH_HELD) {
                 getString(R.string.image_manager_owner_trash)
             } else getString(R.string.image_manager_owner_orphan)
         } else {
             item.owners.joinToString("\n") { "${typeLabel(it.type)} · ${it.name}" }
         }
-        AlertDialog.Builder(ctx)
-            .setTitle(StorageAnalyzer.formatBytes(item.sizeBytes))
-            .setMessage(ownerText)
-            .setNeutralButton(R.string.image_manager_view_full) { _, _ -> openFullScreen(item) }
-            .setNegativeButton(R.string.delete) { _, _ -> confirmDelete(item) }
-            .setPositiveButton(R.string.close, null)
-            .show()
+
+        // 재압축은 참조본에만 의미가 있음(고아/휴지통은 스킵됨) → 참조본에서만 노출
+        sheetBinding.detailRecompressButton.visibility =
+            if (item.status == ImageManagerViewModel.Status.REFERENCED) View.VISIBLE else View.GONE
+
+        sheetBinding.detailFullScreenButton.setOnClickListener { dialog.dismiss(); openFullScreen(item) }
+        sheetBinding.detailRecompressButton.setOnClickListener { dialog.dismiss(); startRecompress(listOf(item)) }
+        sheetBinding.detailDeleteButton.setOnClickListener { dialog.dismiss(); confirmDelete(item) }
+        sheetBinding.detailCloseButton.setOnClickListener { dialog.dismiss() }
+        dialog.show()
     }
 
     private fun openFullScreen(item: ImageManagerViewModel.ManagedImage) {
@@ -164,6 +243,8 @@ class ImageManagerFragment : Fragment() {
             bundleOf("imagePaths" to json, "startPosition" to 0)
         )
     }
+
+    // ---------- 삭제(개별/일괄) ----------
 
     private fun confirmDelete(item: ImageManagerViewModel.ManagedImage) {
         val ctx = context ?: return
@@ -193,6 +274,132 @@ class ImageManagerFragment : Fragment() {
             .setNegativeButton(R.string.cancel, null)
             .show()
     }
+
+    private fun deleteSelected() {
+        val ctx = context ?: return
+        val items = selectedItems()
+        if (items.isEmpty()) {
+            reportAndNotify(OpResult.failure(OpResult.CAT_MAINTENANCE, getString(R.string.image_manager_select_none)))
+            return
+        }
+        AlertDialog.Builder(ctx)
+            .setTitle(R.string.image_manager_delete_title)
+            .setMessage(getString(R.string.image_manager_delete_selected_confirm, items.size))
+            .setPositiveButton(R.string.delete) { _, _ ->
+                viewModel.deleteImages(items) { result ->
+                    if (!isAdded) return@deleteImages
+                    exitSelection()
+                    if (result.failed > 0) {
+                        reportAndNotify(OpResult.failure(
+                            OpResult.CAT_MAINTENANCE,
+                            getString(R.string.image_manager_bulk_delete_failed, result.failed)
+                        ))
+                    } else {
+                        reportAndNotify(OpResult.success(
+                            OpResult.CAT_MAINTENANCE,
+                            getString(R.string.image_manager_bulk_deleted, result.deleted, StorageAnalyzer.formatBytes(result.freed))
+                        ))
+                    }
+                }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    // ---------- 재압축(개별/일괄) ----------
+
+    private fun recompressSelected() {
+        val items = selectedItems()
+        if (items.isEmpty()) {
+            reportAndNotify(OpResult.failure(OpResult.CAT_MAINTENANCE, getString(R.string.image_manager_select_none)))
+            return
+        }
+        startRecompress(items)
+    }
+
+    /** 대상들을 준비(임시 재인코드)한 뒤, 정확한 전/후 크기·스킵 사유를 담은 확인 다이얼로그를 띄운다. */
+    private fun startRecompress(items: List<ImageManagerViewModel.ManagedImage>) {
+        viewModel.prepareRecompress(items) { preview ->
+            if (!isAdded) { viewModel.discardRecompress(); return@prepareRecompress }
+            showRecompressConfirm(preview)
+        }
+    }
+
+    private fun showRecompressConfirm(preview: ImageManagerViewModel.RecompressPreview) {
+        val ctx = context ?: run { viewModel.discardRecompress(); return }
+        val skipSummary = skipSummary(preview.skips)
+
+        if (preview.plans.isEmpty()) {
+            val msg = buildString {
+                append(getString(R.string.image_manager_recompress_none))
+                if (skipSummary != null) append("\n").append(skipSummary)
+            }
+            AlertDialog.Builder(ctx)
+                .setTitle(R.string.image_manager_recompress_confirm_title)
+                .setMessage(msg)
+                .setPositiveButton(R.string.confirm) { _, _ -> viewModel.discardRecompress() }
+                .setOnCancelListener { viewModel.discardRecompress() }
+                .show()
+            return
+        }
+
+        val msg = buildString {
+            append(getString(
+                R.string.image_manager_recompress_confirm,
+                preview.plans.size,
+                StorageAnalyzer.formatBytes(preview.totalBefore),
+                StorageAnalyzer.formatBytes(preview.totalAfter),
+                StorageAnalyzer.formatBytes(preview.savings)
+            ))
+            if (skipSummary != null) append("\n\n").append(skipSummary)
+        }
+        AlertDialog.Builder(ctx)
+            .setTitle(R.string.image_manager_recompress_confirm_title)
+            .setMessage(msg)
+            .setPositiveButton(R.string.image_manager_recompress) { _, _ ->
+                viewModel.commitRecompress { result ->
+                    if (!isAdded) return@commitRecompress
+                    exitSelection()
+                    val text = if (result.skipped > 0) {
+                        getString(
+                            R.string.image_manager_recompress_done_skipped,
+                            result.recompressed, StorageAnalyzer.formatBytes(result.freed), result.skipped
+                        )
+                    } else {
+                        getString(
+                            R.string.image_manager_recompress_done,
+                            result.recompressed, StorageAnalyzer.formatBytes(result.freed)
+                        )
+                    }
+                    reportAndNotify(OpResult.success(OpResult.CAT_MAINTENANCE, text))
+                }
+            }
+            .setNegativeButton(R.string.cancel) { _, _ -> viewModel.discardRecompress() }
+            .setOnCancelListener { viewModel.discardRecompress() }
+            .show()
+    }
+
+    /** 스킵 내역을 사유별 개수로 요약. 없으면 null. */
+    private fun skipSummary(skips: List<ImageManagerViewModel.RecompressSkip>): String? {
+        if (skips.isEmpty()) return null
+        val parts = skips.groupingBy { it.reason }.eachCount()
+            .entries.sortedByDescending { it.value }
+            .map { "${skipReasonLabel(it.key)} ${it.value}" }
+        return getString(R.string.image_manager_recompress_skip_summary, skips.size, parts.joinToString(" · "))
+    }
+
+    private fun skipReasonLabel(reason: ImageImportHelper.SkipReason): String = getString(
+        when (reason) {
+            ImageImportHelper.SkipReason.NOT_REFERENCED -> R.string.image_manager_skip_not_referenced
+            ImageImportHelper.SkipReason.TOO_SMALL -> R.string.image_manager_skip_too_small
+            ImageImportHelper.SkipReason.TOO_LARGE -> R.string.image_manager_skip_too_large
+            ImageImportHelper.SkipReason.CORRUPT -> R.string.image_manager_skip_corrupt
+            ImageImportHelper.SkipReason.NO_BENEFIT -> R.string.image_manager_skip_no_benefit
+            ImageImportHelper.SkipReason.ERROR -> R.string.image_manager_skip_error
+        }
+    )
+
+    // ---------- 고아 정리 ----------
 
     private fun confirmCleanOrphans() {
         val ctx = context ?: return
