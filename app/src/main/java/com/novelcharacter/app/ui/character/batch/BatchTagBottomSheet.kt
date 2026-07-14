@@ -34,7 +34,7 @@ class BatchTagBottomSheet : BottomSheetDialogFragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        val count = batchViewModel.selectedCount.value ?: 0
+        val count = batchViewModel.selectedCount
 
         if (isRemoveMode) {
             binding.titleText.text = getString(R.string.batch_tag_remove_title)
@@ -125,7 +125,7 @@ class BatchTagBottomSheet : BottomSheetDialogFragment() {
                         setOnCheckedChangeListener { _, isChecked ->
                             if (isChecked) selectedTagsForRemoval.add(tag)
                             else selectedTagsForRemoval.remove(tag)
-                            updateConfirmButton(batchViewModel.selectedCount.value ?: 0)
+                            updateConfirmButton(batchViewModel.selectedCount)
                         }
                     }
                     binding.tagChipGroup.addView(chip)

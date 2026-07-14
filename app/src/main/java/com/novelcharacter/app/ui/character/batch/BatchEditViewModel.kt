@@ -49,7 +49,10 @@ class BatchEditViewModel(application: Application) : AndroidViewModel(applicatio
     private val _selectedIds = MutableLiveData<Set<Long>>(emptySet())
     val selectedIds: LiveData<Set<Long>> = _selectedIds
 
-    val selectedCount: LiveData<Int> = _selectedIds.map { it.size }
+    // 현재 선택 수. 이전에는 `_selectedIds.map { it.size }`(파생 LiveData)였는데 아무도 observe하지
+    // 않아 비활성 LiveData의 .value가 영구 null → 이를 `.value ?: 0`으로 읽던 모든 곳이 항상 0을 봤고,
+    // '작업' 버튼의 `count > 0` 가드에 막혀 일괄 작업 전체가 먹통이었다. 항상 현재값을 주는 프로퍼티로 교체.
+    val selectedCount: Int get() = _selectedIds.value?.size ?: 0
 
     private val _operationResult = MutableLiveData<BatchOperationResult?>()
     val operationResult: LiveData<BatchOperationResult?> = _operationResult
@@ -159,13 +162,17 @@ class BatchEditViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun setFieldValue(fieldDefId: Long, value: String) = launchBatchOp("setFieldValue") { ids ->
-        characterRepository.batchSetFieldValue(ids, fieldDefId, value)
+        val fieldDef = app.database.fieldDefinitionDao().getFieldById(fieldDefId)
+        // 필드는 특정 세계관 소유 — 그 세계관 캐릭터에만 적용한다(시트가 약속한 "해당 세계관 캐릭터에만").
+        // 타 세계관 캐릭터에 찍으면 그 캐릭터 편집기/통계엔 안 잡히는 고아 필드값이 생긴다.
+        val scoped = if (fieldDef != null) idsInUniverse(ids, fieldDef.universeId) else ids
+        if (scoped.isEmpty()) return@launchBatchOp BatchCounts(0)
+        characterRepository.batchSetFieldValue(scoped, fieldDefId, value)
 
         // 시맨틱 필드 동기화 (나이/출생연도/사망연도/생존여부 변경 시)
         var syncFailures = 0
-        val fieldDef = app.database.fieldDefinitionDao().getFieldById(fieldDefId)
         if (fieldDef != null && SemanticRole.fromConfig(fieldDef.config) != null) {
-            for (charId in ids) {
+            for (charId in scoped) {
                 try {
                     val universeId = getUniverseIdForCharacter(charId) ?: continue
                     val allValues = characterRepository.getValuesByCharacterList(charId)
@@ -176,17 +183,19 @@ class BatchEditViewModel(application: Application) : AndroidViewModel(applicatio
                 }
             }
         }
-        BatchCounts(ids.size, syncFailures)
+        BatchCounts(scoped.size, syncFailures)
     }
 
     fun clearFieldValue(fieldDefId: Long) = launchBatchOp("clearFieldValue") { ids ->
-        characterRepository.batchClearFieldValue(ids, fieldDefId)
+        val fieldDef = app.database.fieldDefinitionDao().getFieldById(fieldDefId)
+        val scoped = if (fieldDef != null) idsInUniverse(ids, fieldDef.universeId) else ids
+        if (scoped.isEmpty()) return@launchBatchOp BatchCounts(0)
+        characterRepository.batchClearFieldValue(scoped, fieldDefId)
 
         // 시맨틱 필드 동기화 (출생연도/사망연도 등 초기화 시 나이 등 재계산)
         var syncFailures = 0
-        val fieldDef = app.database.fieldDefinitionDao().getFieldById(fieldDefId)
         if (fieldDef != null && SemanticRole.fromConfig(fieldDef.config) != null) {
-            for (charId in ids) {
+            for (charId in scoped) {
                 try {
                     val universeId = getUniverseIdForCharacter(charId) ?: continue
                     val allValues = characterRepository.getValuesByCharacterList(charId)
@@ -197,7 +206,7 @@ class BatchEditViewModel(application: Application) : AndroidViewModel(applicatio
                 }
             }
         }
-        BatchCounts(ids.size, syncFailures)
+        BatchCounts(scoped.size, syncFailures)
     }
 
     fun appendMemo(text: String, prepend: Boolean) = launchBatchOp("appendMemo") { ids ->
@@ -223,7 +232,9 @@ class BatchEditViewModel(application: Application) : AndroidViewModel(applicatio
             _isProcessing.value = true
             try {
                 val counts = block(ids)
-                _operationResult.value = BatchOperationResult.Success(opName, counts.affected, counts.syncFailures)
+                // counts.move를 반드시 전달 — 누락하면 작품 변경(세계관 이동) 시 제거된 필드값·세력 소속이
+                // 기본값(0)으로 덮여 CharacterListFragment의 이동-제거 경고가 영원히 안 뜨고, 유실이 조용히 삼켜진다(변수 제어).
+                _operationResult.value = BatchOperationResult.Success(opName, counts.affected, counts.syncFailures, counts.move)
             } catch (e: Exception) {
                 Log.e(TAG, "Batch operation '$opName' failed", e)
                 _operationResult.value = BatchOperationResult.Error(
@@ -240,6 +251,20 @@ class BatchEditViewModel(application: Application) : AndroidViewModel(applicatio
         val novelId = character.novelId ?: return null
         val novel = novelRepository.getNovelById(novelId) ?: return null
         return novel.universeId
+    }
+
+    /** [ids] 중 [universeId] 세계관에 속한 캐릭터 id만 (청크 조회 — getUniverseIdsForSelection과 동일 패턴). */
+    private suspend fun idsInUniverse(ids: List<Long>, universeId: Long): List<Long> {
+        val result = mutableListOf<Long>()
+        for (chunk in ids.chunked(900)) {
+            val characters = app.database.characterDao().getCharactersByIds(chunk)
+            for (char in characters) {
+                val novelId = char.novelId ?: continue
+                val novel = novelRepository.getNovelById(novelId) ?: continue
+                if (novel.universeId == universeId) result.add(char.id)
+            }
+        }
+        return result
     }
 
     companion object {

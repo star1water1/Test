@@ -155,6 +155,10 @@ class CharacterAdapter(
 
         private var loadJob: Job? = null
 
+        // 카드의 기본 배경 ColorStateList — 선택 해제 시 이 값으로 되돌린다. 이전 코드는 root.setBackgroundColor(0)로
+        // MaterialCardView의 모양 배경(둥근 모서리·엘리베이션)을 투명 ColorDrawable로 덮어 카드 모양을 망가뜨렸다.
+        private val defaultCardColor = binding.root.cardBackgroundColor
+
         fun cancelLoad() {
             loadJob?.cancel()
             loadJob = null
@@ -189,27 +193,36 @@ class CharacterAdapter(
                     false
                 }
                 // Reorder mode: slight visual change, disable normal interactions
+                binding.selectionCheck.visibility = View.GONE
                 binding.root.alpha = 0.9f
-                binding.root.setBackgroundColor(0)
+                binding.root.setCardBackgroundColor(defaultCardColor)
                 binding.root.setOnClickListener(null)
                 binding.root.setOnLongClickListener(null)
                 binding.root.isClickable = false
                 binding.root.isLongClickable = false
             } else {
                 binding.dragHandle.setOnTouchListener(null)
-                // Selection indicator
-                if (isSelectionMode && selectedIds.contains(character.id)) {
-                    binding.root.alpha = 1.0f
-                    binding.root.setBackgroundColor(binding.root.context.getColor(R.color.primary_light))
-                } else if (isSelectionMode && isMaxReached) {
-                    binding.root.alpha = 0.3f
-                    binding.root.setBackgroundColor(0)
-                } else if (isSelectionMode) {
-                    binding.root.alpha = 0.5f
-                    binding.root.setBackgroundColor(0)
-                } else {
-                    binding.root.alpha = 1.0f
-                    binding.root.setBackgroundColor(0)
+                // Selection indicator — 선택 카드엔 카드 배경 틴트 + 체크 배지, 미선택은 딤(alpha)만.
+                // setCardBackgroundColor를 써야 카드 모양이 유지된다(setBackgroundColor는 모양 배경을 덮음).
+                val selected = isSelectionMode && selectedIds.contains(character.id)
+                binding.selectionCheck.visibility = if (selected) View.VISIBLE else View.GONE
+                when {
+                    selected -> {
+                        binding.root.alpha = 1.0f
+                        binding.root.setCardBackgroundColor(binding.root.context.getColor(R.color.primary_light))
+                    }
+                    isSelectionMode && isMaxReached -> {
+                        binding.root.alpha = 0.3f
+                        binding.root.setCardBackgroundColor(defaultCardColor)
+                    }
+                    isSelectionMode -> {
+                        binding.root.alpha = 0.5f
+                        binding.root.setCardBackgroundColor(defaultCardColor)
+                    }
+                    else -> {
+                        binding.root.alpha = 1.0f
+                        binding.root.setCardBackgroundColor(defaultCardColor)
+                    }
                 }
 
                 binding.root.setOnClickListener { onClick(character) }

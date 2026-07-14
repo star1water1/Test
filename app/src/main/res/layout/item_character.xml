@@ -62,6 +62,26 @@
                 android:contentDescription="@string/more_options"
                 android:importantForAccessibility="yes" />
 
+            <!-- 일괄선택/비교 모드에서 선택된 카드에 표시하는 체크 배지 (틴트만으론 이미지에 가려 식별이 어려움) -->
+            <TextView
+                android:id="@+id/selectionCheck"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="top|start"
+                android:layout_margin="6dp"
+                android:minWidth="24dp"
+                android:gravity="center"
+                android:paddingStart="6dp"
+                android:paddingEnd="6dp"
+                android:paddingTop="1dp"
+                android:paddingBottom="1dp"
+                android:text="@string/image_manager_selected_mark"
+                android:textStyle="bold"
+                android:textSize="14sp"
+                android:textColor="#FFFFFF"
+                android:background="#CC3F51B5"
+                android:visibility="gone" />
+
         </FrameLayout>
 
         <TextView

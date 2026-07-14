@@ -203,7 +203,10 @@ class CharacterListFragment : Fragment() {
         binding.toolbar.setOnMenuItemClickListener { item ->
             when (item.itemId) {
                 R.id.action_reorder -> {
+                    // 재정렬은 일괄편집·비교와 상호배타 — 두 모드 모두 먼저 종료해야 chrome(검색·필터바·비교바)이
+                    // 엉키지 않는다. 기존엔 배치만 종료하고 비교는 안 해서 두 모드가 겹치는 손상 상태가 났다.
                     if (isBatchEditMode) exitBatchEditMode()
+                    if (isCompareMode) exitCompareMode()
                     toggleReorderMode()
                     true
                 }
@@ -269,7 +272,8 @@ class CharacterListFragment : Fragment() {
     private fun setupCompareButton() {
         binding.btnCompare.setOnClickListener {
             if (!isCompareMode) {
-                // Enter compare mode
+                // Enter compare mode — 재정렬 모드와 상호배타(방어적)
+                if (adapter.isReorderMode()) toggleReorderMode()
                 selectedForCompare.clear()
                 enterCompareMode()
                 Toast.makeText(requireContext(), R.string.compare_select_hint, Toast.LENGTH_SHORT).show()
@@ -296,6 +300,9 @@ class CharacterListFragment : Fragment() {
         isCompareMode = true
         batchBackCallback.isEnabled = true
         adapter.setSelectionMode(true)
+        // 회전 복원 시에도 '최대 선택' 딤 상태를 재구성(진입 시엔 선택 0이라 무해). 누락 시 회전 후 3명 선택
+        // 상태의 딤이 사라져 있었다.
+        adapter.setMaxReached(selectedForCompare.size >= 3)
         adapter.setSelectedIds(selectedForCompare)
         binding.btnCancelCompare.visibility = View.VISIBLE
         setFilterSortBarVisible(false)
@@ -382,7 +389,7 @@ class CharacterListFragment : Fragment() {
             popup.show()
         }
         binding.btnBatchAction.setOnClickListener {
-            val count = batchViewModel.selectedCount.value ?: 0
+            val count = batchViewModel.selectedCount
             if (count > 0) {
                 val sheet = BatchOperationBottomSheet.newInstance(count)
                 sheet.show(childFragmentManager, BatchOperationBottomSheet.TAG)
@@ -490,7 +497,7 @@ class CharacterListFragment : Fragment() {
 
         batchViewModel.isProcessing.observe(viewLifecycleOwner) { processing ->
             if (isBatchEditMode) {
-                binding.btnBatchAction.isEnabled = !processing && (batchViewModel.selectedCount.value ?: 0) > 0
+                binding.btnBatchAction.isEnabled = !processing && batchViewModel.selectedCount > 0
             }
         }
 

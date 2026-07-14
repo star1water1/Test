@@ -44,7 +44,7 @@ class BatchFieldValueBottomSheet : BottomSheetDialogFragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        val count = batchViewModel.selectedCount.value ?: 0
+        val count = batchViewModel.selectedCount
 
         binding.titleText.text = if (isClearMode) {
             getString(R.string.batch_field_title_clear)
@@ -122,7 +122,7 @@ class BatchFieldValueBottomSheet : BottomSheetDialogFragment() {
 
     private fun setupValueInput(field: FieldDefinition?) {
         if (field == null) return
-        val count = batchViewModel.selectedCount.value ?: 0
+        val count = batchViewModel.selectedCount
 
         if (isClearMode) {
             binding.valueInputLayout.visibility = View.GONE

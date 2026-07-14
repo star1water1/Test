@@ -25,7 +25,7 @@ class BatchMemoBottomSheet : BottomSheetDialogFragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        val count = batchViewModel.selectedCount.value ?: 0
+        val count = batchViewModel.selectedCount
         binding.btnConfirm.text = getString(R.string.batch_memo_confirm, count)
 
         binding.btnConfirm.setOnClickListener {
