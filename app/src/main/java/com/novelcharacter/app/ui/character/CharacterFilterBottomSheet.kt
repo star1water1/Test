@@ -12,6 +12,7 @@ import com.google.android.material.chip.Chip
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.FieldFilter
+import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.databinding.BottomSheetCharacterFilterBinding
 import kotlinx.coroutines.launch
@@ -24,11 +25,15 @@ import kotlinx.coroutines.launch
 class CharacterFilterBottomSheet : BottomSheetDialogFragment() {
 
     var currentTags: Set<String> = emptySet()
+    var currentNovelIds: Set<Long> = emptySet()
+    /** 작품 필터 섹션 노출 여부 — 전역 목록에서만 의미(단일 작품 스코프면 중복이라 숨김). */
+    var showNovelSection: Boolean = true
     var loadAllTags: (suspend () -> List<String>)? = null
+    var loadNovels: (suspend () -> List<Novel>)? = null
     var loadUniverses: (suspend () -> List<Universe>)? = null
     var loadFields: (suspend (Long) -> List<FieldDefinition>)? = null
     var loadFieldValues: (suspend (Long) -> List<String>)? = null
-    var onApply: ((tags: Set<String>, fieldFilter: FieldFilter?) -> Unit)? = null
+    var onApply: ((tags: Set<String>, novelIds: Set<Long>, fieldFilter: FieldFilter?) -> Unit)? = null
 
     private var _binding: BottomSheetCharacterFilterBinding? = null
     private val binding get() = _binding!!
@@ -46,9 +51,37 @@ class CharacterFilterBottomSheet : BottomSheetDialogFragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        if (showNovelSection) {
+            setupNovels()
+        } else {
+            binding.novelSection.visibility = View.GONE
+        }
         setupTags()
         setupUniverseSpinner()
         binding.btnApplyFilter.setOnClickListener { apply() }
+    }
+
+    private fun setupNovels() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val novels = loadNovels?.invoke() ?: emptyList()
+            if (!isAdded || _binding == null) return@launch
+            val ctx = context ?: return@launch
+            if (novels.isEmpty()) {
+                binding.noNovelsText.visibility = View.VISIBLE
+                return@launch
+            }
+            binding.noNovelsText.visibility = View.GONE
+            for (novel in novels) {
+                val chip = Chip(ctx).apply {
+                    text = novel.title
+                    tag = novel.id  // 칩 → 작품 id 매핑
+                    isCheckable = true
+                    isChecked = novel.id in currentNovelIds
+                    textSize = 13f
+                }
+                binding.novelChipGroup.addView(chip)
+            }
+        }
     }
 
     private fun setupTags() {
@@ -148,6 +181,16 @@ class CharacterFilterBottomSheet : BottomSheetDialogFragment() {
     }
 
     private fun apply() {
+        // 작품: 체크된 칩의 tag(작품 id) 수집. 섹션이 숨겨졌으면 기존 선택 유지.
+        val selectedNovelIds = if (showNovelSection) {
+            val ids = mutableSetOf<Long>()
+            for (i in 0 until binding.novelChipGroup.childCount) {
+                (binding.novelChipGroup.getChildAt(i) as? Chip)?.let {
+                    if (it.isChecked) (it.tag as? Long)?.let { id -> ids.add(id) }
+                }
+            }
+            ids
+        } else currentNovelIds
         // 태그: 시트의 선택 상태를 통째로 반영
         val selectedTags = mutableSetOf<String>()
         for (i in 0 until binding.tagChipGroup.childCount) {
@@ -164,7 +207,7 @@ class CharacterFilterBottomSheet : BottomSheetDialogFragment() {
             FieldFilter(field.id, field.name, selectedValues, matchMode)
         } else null
 
-        onApply?.invoke(selectedTags, filter)
+        onApply?.invoke(selectedTags, selectedNovelIds, filter)
         dismiss()
     }
 
