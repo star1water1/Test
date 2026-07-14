@@ -18,6 +18,8 @@ class NovelRepository(
 
     suspend fun getAllNovelsList(): List<Novel> = novelDao.getAllNovelsList()
     suspend fun getNovelById(id: Long): Novel? = novelDao.getNovelById(id)
+    /** 여러 작품 일괄 조회 (호출부에서 900개 단위 청크 권장 — SQLite 999-변수 상한). */
+    suspend fun getNovelsByIds(ids: List<Long>): List<Novel> = novelDao.getNovelsByIds(ids)
     suspend fun insertNovel(novel: Novel): Long {
         return db.withTransaction {
             val next = if (novel.universeId != null) {

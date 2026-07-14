@@ -15,6 +15,7 @@ import com.novelcharacter.app.data.model.FieldFilter
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.databinding.BottomSheetCharacterFilterBinding
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 /**
@@ -41,6 +42,10 @@ class CharacterFilterBottomSheet : BottomSheetDialogFragment() {
     private var universes: List<Universe> = emptyList()
     private var fields: List<FieldDefinition> = emptyList()
     private var fieldValues: List<String> = emptyList()
+    // 세계관/필드 스피너를 빠르게 바꿀 때 이전 로드가 나중에 끝나 새 결과를 덮어써(stale) 엉뚱한 필터가
+    // 저장되는 것을 막기 위한 취소 핸들. BatchStateChangeBottomSheet의 fieldLoadJob 패턴과 동일.
+    private var fieldLoadJob: Job? = null
+    private var valueLoadJob: Job? = null
     // 작품 칩 비동기 로드 완료 여부 — 로드 전 '적용' 시 childCount=0을 빈 선택으로 오인해 기존 필터를 지우지 않도록.
     private var novelsLoaded = false
 
@@ -135,7 +140,10 @@ class CharacterFilterBottomSheet : BottomSheetDialogFragment() {
     }
 
     private fun loadFieldsForUniverse(universeId: Long) {
-        viewLifecycleOwner.lifecycleScope.launch {
+        // 이전 필드 로드와, 그에 딸린 값 로드까지 취소 — 새 세계관 결과 위에 옛 값이 얹히지 않게.
+        fieldLoadJob?.cancel()
+        valueLoadJob?.cancel()
+        fieldLoadJob = viewLifecycleOwner.lifecycleScope.launch {
             fields = loadFields?.invoke(universeId) ?: emptyList()
             if (!isAdded || _binding == null) return@launch
             val ctx = context ?: return@launch
@@ -161,7 +169,8 @@ class CharacterFilterBottomSheet : BottomSheetDialogFragment() {
     }
 
     private fun loadValuesForField(fieldDefId: Long) {
-        viewLifecycleOwner.lifecycleScope.launch {
+        valueLoadJob?.cancel()
+        valueLoadJob = viewLifecycleOwner.lifecycleScope.launch {
             fieldValues = loadFieldValues?.invoke(fieldDefId) ?: emptyList()
             if (!isAdded || _binding == null) return@launch
             val ctx = context ?: return@launch

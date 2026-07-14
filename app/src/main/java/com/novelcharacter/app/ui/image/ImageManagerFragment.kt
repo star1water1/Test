@@ -287,7 +287,9 @@ class ImageManagerFragment : Fragment() {
             .setMessage(getString(R.string.image_manager_delete_selected_confirm, items.size))
             .setPositiveButton(R.string.delete) { _, _ ->
                 viewModel.deleteImages(items) { result ->
-                    if (!isAdded) return@deleteImages
+                    // isAdded는 onDestroyView 후에도 true라 회전/백스택 중 콜백이 파괴된 뷰에 닿는다 →
+                    // _binding까지 확인해야 exitSelection()의 binding!! NPE를 막는다(ViewModel이 프래그먼트 스코프라 코루틴 생존).
+                    if (!isAdded || _binding == null) return@deleteImages
                     exitSelection()
                     if (result.failed > 0) {
                         reportAndNotify(OpResult.failure(
@@ -358,7 +360,8 @@ class ImageManagerFragment : Fragment() {
             .setMessage(msg)
             .setPositiveButton(R.string.image_manager_recompress) { _, _ ->
                 viewModel.commitRecompress { result ->
-                    if (!isAdded) return@commitRecompress
+                    // onDestroyView 후에도 isAdded==true인 창(회전/백스택)에서 파괴된 뷰 접근 방지 — _binding까지 확인.
+                    if (!isAdded || _binding == null) return@commitRecompress
                     exitSelection()
                     val base = if (result.skipped > 0) {
                         getString(

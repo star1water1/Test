@@ -1383,7 +1383,7 @@
     <string name="batch_op_state_change">상태변화 일괄 기록</string>
     <string name="batch_op_result_state_change">상태변화 기록</string>
     <string name="batch_state_change_title">상태변화 일괄 기록</string>
-    <string name="batch_success_with_skipped">%1$d명 %2$s (중복 %3$d건 제외)</string>
+    <string name="batch_success_with_skipped">%1$d명 %2$s (기존 기록 %3$d건 제외)</string>
 
     <!-- 저장 공간 분석/최적화 -->
     <string name="storage_title">저장 공간</string>
@@ -1547,7 +1547,7 @@
     <string name="result_batch_summary">일괄 %1$s %2$d건</string>
     <string name="result_batch_sync_warning">일부 캐릭터 동기화 실패 %1$d건 — 나이/생존 등 재계산이 누락됐을 수 있습니다</string>
     <string name="batch_success_with_warning">%1$d개 캐릭터 %2$s (동기화 실패 %3$d건)</string>
-    <string name="batch_success_append_skipped">%1$s · 중복 %2$d건 제외</string>
+    <string name="batch_success_append_skipped">%1$s · 기존 기록 %2$d건 제외</string>
     <string name="result_excel_exported">엑셀 내보내기 완료 — 시트 %1$d개 · %2$d행</string>
     <string name="result_excel_export_failed">엑셀 내보내기 실패</string>
     <string name="result_excel_saved">엑셀 파일 저장 완료</string>
