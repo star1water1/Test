@@ -235,27 +235,36 @@ class BatchEditViewModel(application: Application) : AndroidViewModel(applicatio
     ) = launchBatchOp("addStateChange") { ids ->
         val targets = if (fieldUniverseId != null) idsInUniverse(ids, fieldUniverseId) else ids
         val dao = app.database.characterStateChangeDao()
+        // __birth/__death는 개별 경로처럼 birth_year/death_year·나이·생존 필드로 역동기화해야
+        // 연표·필드값·통계가 어긋나지 않는다(연결성·변수 제어). 개별 경로: insertStateChange→syncStateChangeToField.
+        val isSemantic = fieldKey == CharacterStateChange.KEY_BIRTH || fieldKey == CharacterStateChange.KEY_DEATH
         var inserted = 0
         var skipped = 0
+        var syncFailures = 0
         for (charId in targets) {
-            if (dao.getChangeByNaturalKey(charId, year, fieldKey, newValue) != null) {
+            // 중복 판정에 month/day 포함 — 연도만 같고 시점이 다른 별개 기록은 허용(개별 경로와의 불일치·조용한 스킵 완화).
+            if (dao.getChangeByExactKey(charId, year, month, day, fieldKey, newValue) != null) {
                 skipped++
                 continue
             }
-            dao.insert(
-                CharacterStateChange(
-                    characterId = charId,
-                    year = year,
-                    month = month,
-                    day = day,
-                    fieldKey = fieldKey,
-                    newValue = newValue,
-                    description = description
-                )
+            val change = CharacterStateChange(
+                characterId = charId, year = year, month = month, day = day,
+                fieldKey = fieldKey, newValue = newValue, description = description
             )
+            dao.insert(change)
             inserted++
+            if (isSemantic) {
+                try {
+                    getUniverseIdForCharacter(charId)?.let { universeId ->
+                        semanticSyncHelper.syncStateChangeToField(charId, universeId, change)
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to sync semantic field after batch state change for character $charId", e)
+                    syncFailures++
+                }
+            }
         }
-        BatchCounts(affected = inserted, skipped = skipped)
+        BatchCounts(affected = inserted, syncFailures = syncFailures, skipped = skipped)
     }
 
     fun deleteSelected() = launchBatchOp("delete") { ids ->

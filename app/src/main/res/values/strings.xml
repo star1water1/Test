@@ -400,7 +400,7 @@
     <string name="import_xlsx_too_large">엑셀 데이터 시트가 너무 큽니다 (데이터 시트 최대 128MB)</string>
     <string name="import_too_many_images">백업에 포함된 이미지가 너무 많습니다 (최대 50,000장)</string>
     <string name="import_images_too_large">백업 이미지 총 용량이 너무 큽니다 (최대 8GB)</string>
-    <string name="import_oom">기기 메모리가 부족해 이 백업을 한 번에 가져오지 못했습니다. 이미지를 제외한 백업으로 다시 시도하거나, 작품을 나눠서 가져와 주세요.</string>
+    <string name="import_oom">기기 메모리가 부족해 데이터를 한 번에 처리하지 못했습니다. 데이터(캐릭터·필드·사건 등)가 매우 많은 경우이니, 작품(세계관)을 나눠 내보낸 뒤 부분씩 가져와 주세요. (이미지 용량은 이 한계와 무관합니다.)</string>
     <string name="relationship_title_format">%1$s (%2$s)</string>
     <string name="relationship_already_exists">이미 해당 캐릭터와 관계가 존재합니다</string>
     <string name="edit_relationship">관계 편집</string>
@@ -1547,6 +1547,7 @@
     <string name="result_batch_summary">일괄 %1$s %2$d건</string>
     <string name="result_batch_sync_warning">일부 캐릭터 동기화 실패 %1$d건 — 나이/생존 등 재계산이 누락됐을 수 있습니다</string>
     <string name="batch_success_with_warning">%1$d개 캐릭터 %2$s (동기화 실패 %3$d건)</string>
+    <string name="batch_success_append_skipped">%1$s · 중복 %2$d건 제외</string>
     <string name="result_excel_exported">엑셀 내보내기 완료 — 시트 %1$d개 · %2$d행</string>
     <string name="result_excel_export_failed">엑셀 내보내기 실패</string>
     <string name="result_excel_saved">엑셀 파일 저장 완료</string>
@@ -1745,6 +1746,7 @@
     <string name="image_manager_recompress_done">이미지 %1$d개 재압축 · %2$s 확보</string>
     <string name="image_manager_recompress_done_skipped">이미지 %1$d개 재압축 · %2$s 확보 (%3$d개 제외)</string>
     <string name="image_manager_recompress_skip_summary">%1$d개 제외 (%2$s)</string>
+    <string name="image_manager_recompress_failed_suffix">%1$d개 실패</string>
     <string name="image_manager_skip_not_referenced">미참조</string>
     <string name="image_manager_skip_too_small">이미 작음</string>
     <string name="image_manager_skip_too_large">너무 큼</string>

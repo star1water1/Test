@@ -48,6 +48,10 @@ class BatchStateChangeBottomSheet : BottomSheetDialogFragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
+        // 특수키(출생/사망/생존)는 세계관 필드 로드와 무관하므로 즉시 선반영 — 세계관 조회가 느려도 바로 선택 가능.
+        // 세계관 필드가 로드되면 buildFieldOptions가 특수키+필드로 다시 채운다.
+        buildFieldOptions(null)
+
         viewLifecycleOwner.lifecycleScope.launch {
             val universeIds = batchViewModel.getUniverseIdsForSelection()
             if (_binding == null) return@launch
