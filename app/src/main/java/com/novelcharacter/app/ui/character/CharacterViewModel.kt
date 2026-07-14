@@ -180,7 +180,7 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
             val base = baseCharacters.value ?: emptyList()
             val filters = _fieldFilters.value ?: emptyList()
             val tags = _tagFilters.value ?: emptySet()
-            val novelIds = _novelFilters.value ?: emptySet()
+            val novelIds = effectiveNovelFilters()
             val sort = _sortSpec.value ?: CharacterSort()
             val result = withContext(Dispatchers.Default) {
                 applyFiltersAndSort(base, filters, tags, novelIds, sort)
@@ -238,6 +238,18 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         prefs.edit().putString("novel_filters_json", gson.toJson(novels.toList())).apply()
     }
 
+    /**
+     * 실제 적용되는 작품 필터. 작품 필터는 설계상 **전역 목록 전용** 차원이므로, 이미 한 작품에 스코프된
+     * 화면(_currentNovelId != -1)에선 무시한다. 이 가드가 없으면 전역에서 [A]로 필터한 상태로 작품 B 화면에
+     * 들어갔을 때 `B in [A]`=false로 목록이 통째로 비고, 스코프 화면은 작품 섹션을 숨겨 필터를 끌 수도 없다.
+     * 프리셋 적용 경로도 _novelFilters를 거쳐 recompute로 흐르므로 이 한 곳에서 함께 차단된다.
+     */
+    private fun effectiveNovelFilters(): Set<Long> {
+        val scope = _currentNovelId.value
+        val scoped = scope != null && scope != -1L
+        return if (scoped) emptySet() else (_novelFilters.value ?: emptySet())
+    }
+
     fun clearAllFilters() {
         setFieldFilters(emptyList())
         setTagFilters(emptySet())
@@ -246,7 +258,7 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun hasActiveFilters(): Boolean =
         !_fieldFilters.value.isNullOrEmpty() || !_tagFilters.value.isNullOrEmpty() ||
-            !_novelFilters.value.isNullOrEmpty()
+            effectiveNovelFilters().isNotEmpty()
 
     // ===== 필터/정렬 적용 (백그라운드) =====
 

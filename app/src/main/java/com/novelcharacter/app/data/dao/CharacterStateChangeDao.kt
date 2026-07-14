@@ -42,6 +42,13 @@ interface CharacterStateChangeDao {
     @Query("SELECT * FROM character_state_changes WHERE characterId = :characterId AND year = :year AND fieldKey = :fieldKey AND newValue = :newValue LIMIT 1")
     suspend fun getChangeByNaturalKey(characterId: Long, year: Int, fieldKey: String, newValue: String): CharacterStateChange?
 
+    /**
+     * 시점(month/day)까지 포함한 정밀 중복 판정 — 일괄 상태변화에서 '연도만 같고 시점이 다른 별개 기록'이
+     * 자연키 4개 판정에 조용히 스킵되는 것을 막는다. `IS`는 NULL-안전 비교(NULL IS NULL = true).
+     */
+    @Query("SELECT * FROM character_state_changes WHERE characterId = :characterId AND year = :year AND month IS :month AND day IS :day AND fieldKey = :fieldKey AND newValue = :newValue LIMIT 1")
+    suspend fun getChangeByExactKey(characterId: Long, year: Int, month: Int?, day: Int?, fieldKey: String, newValue: String): CharacterStateChange?
+
     /** 엑셀 왕복 안정 식별자 매칭 — 코드 우선, 자연키는 구버전 파일 폴백 */
     @Query("SELECT * FROM character_state_changes WHERE code = :code LIMIT 1")
     suspend fun getChangeByCode(code: String): CharacterStateChange?

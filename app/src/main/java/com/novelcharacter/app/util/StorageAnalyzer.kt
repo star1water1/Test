@@ -70,6 +70,8 @@ object StorageAnalyzer {
         for (f in rootFiles) {
             val canonical = runCatching { f.canonicalPath }.getOrDefault(f.absolutePath)
             when {
+                // 재압축 임시 산출물은 커밋 전 과도기 파일 — 고아(orphan)로 오분류하지 않는다(관리 탭 통계와 일치).
+                f.name.contains(ImageImportHelper.RECOMPRESS_TEMP_MARKER) -> { otherBytes += f.length(); otherCount++ }
                 isImageFile(f.name) -> when {
                     canonical in referencedPaths -> { refBytes += f.length(); refCount++ }
                     canonical in trashHeldPaths -> { trashBytes += f.length(); trashCount++ }

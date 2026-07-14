@@ -41,6 +41,8 @@ class CharacterFilterBottomSheet : BottomSheetDialogFragment() {
     private var universes: List<Universe> = emptyList()
     private var fields: List<FieldDefinition> = emptyList()
     private var fieldValues: List<String> = emptyList()
+    // 작품 칩 비동기 로드 완료 여부 — 로드 전 '적용' 시 childCount=0을 빈 선택으로 오인해 기존 필터를 지우지 않도록.
+    private var novelsLoaded = false
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
@@ -66,6 +68,7 @@ class CharacterFilterBottomSheet : BottomSheetDialogFragment() {
             val novels = loadNovels?.invoke() ?: emptyList()
             if (!isAdded || _binding == null) return@launch
             val ctx = context ?: return@launch
+            novelsLoaded = true  // 로드 완료(빈 목록 포함) — 이후 apply()는 칩 상태를 신뢰할 수 있음
             if (novels.isEmpty()) {
                 binding.noNovelsText.visibility = View.VISIBLE
                 return@launch
@@ -182,7 +185,7 @@ class CharacterFilterBottomSheet : BottomSheetDialogFragment() {
 
     private fun apply() {
         // 작품: 체크된 칩의 tag(작품 id) 수집. 섹션이 숨겨졌으면 기존 선택 유지.
-        val selectedNovelIds = if (showNovelSection) {
+        val selectedNovelIds = if (showNovelSection && novelsLoaded) {
             val ids = mutableSetOf<Long>()
             for (i in 0 until binding.novelChipGroup.childCount) {
                 (binding.novelChipGroup.getChildAt(i) as? Chip)?.let {
@@ -190,7 +193,7 @@ class CharacterFilterBottomSheet : BottomSheetDialogFragment() {
                 }
             }
             ids
-        } else currentNovelIds
+        } else currentNovelIds  // 섹션 숨김이거나 아직 로드 전 — 기존 선택 유지(소실 방지)
         // 태그: 시트의 선택 상태를 통째로 반영
         val selectedTags = mutableSetOf<String>()
         for (i in 0 until binding.tagChipGroup.childCount) {

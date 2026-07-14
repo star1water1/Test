@@ -73,8 +73,8 @@ class ImageManagerViewModel(application: Application) : AndroidViewModel(applica
         val savings: Long get() = (totalBefore - totalAfter).coerceAtLeast(0L)
     }
 
-    /** 재압축 커밋 결과. */
-    data class RecompressResult(val recompressed: Int, val freed: Long, val skipped: Int)
+    /** 재압축 커밋 결과. failed = 준비됐으나 커밋(개명·경로교체)에 실패해 반영 못 한 건수(조용한 증발 방지). */
+    data class RecompressResult(val recompressed: Int, val freed: Long, val skipped: Int, val failed: Int = 0)
 
     /** 일괄 삭제 결과. */
     data class BulkDeleteResult(val deleted: Int, val freed: Long, val failed: Int)
@@ -293,7 +293,12 @@ class ImageManagerViewModel(application: Application) : AndroidViewModel(applica
             return
         }
         viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) { commitInternal(preview) }
+            // 백스톱: 어떤 예외에도 크래시 대신 '전량 실패'로 통보하고 목록을 재로딩한다(변수 제어).
+            val result = try {
+                withContext(Dispatchers.IO) { commitInternal(preview) }
+            } catch (e: Exception) {
+                RecompressResult(0, 0L, preview.skips.size, preview.plans.size)
+            }
             load()
             onDone(result)
         }
@@ -320,23 +325,29 @@ class ImageManagerViewModel(application: Application) : AndroidViewModel(applica
             committed.add(Triple(plan, finalFile.absolutePath, oldCanon))
         }
 
-        // 2단계: 소유 엔티티 경로 교체(트랜잭션 — 예외 시 롤백, 원본은 아직 살아 있음).
-        db.withTransaction {
-            for ((plan, finalPath, oldCanon) in committed) {
-                for (owner in plan.item.owners) {
-                    when (owner.type) {
-                        OwnerType.CHARACTER -> db.characterDao().getCharacterById(owner.id)?.let { e ->
-                            db.characterDao().update(e.copy(imagePaths = replacePath(e.imagePaths, plan.item.path, oldCanon, finalPath)))
-                        }
-                        OwnerType.NOVEL -> db.novelDao().getNovelById(owner.id)?.let { e ->
-                            db.novelDao().update(e.copy(imagePaths = replacePath(e.imagePaths, plan.item.path, oldCanon, finalPath)))
-                        }
-                        OwnerType.UNIVERSE -> db.universeDao().getUniverseById(owner.id)?.let { e ->
-                            db.universeDao().update(e.copy(imagePaths = replacePath(e.imagePaths, plan.item.path, oldCanon, finalPath)))
+        // 2단계: 소유 엔티티 경로 교체(트랜잭션). 실패 시 개명한 정식 파일은 아직 미참조이므로 롤백 삭제하고
+        // (원본은 그대로 살아 있음) 전량 실패로 통보 — 크래시·조용한 증발 방지(변수 제어).
+        try {
+            db.withTransaction {
+                for ((plan, finalPath, oldCanon) in committed) {
+                    for (owner in plan.item.owners) {
+                        when (owner.type) {
+                            OwnerType.CHARACTER -> db.characterDao().getCharacterById(owner.id)?.let { e ->
+                                db.characterDao().update(e.copy(imagePaths = replacePath(e.imagePaths, plan.item.path, oldCanon, finalPath)))
+                            }
+                            OwnerType.NOVEL -> db.novelDao().getNovelById(owner.id)?.let { e ->
+                                db.novelDao().update(e.copy(imagePaths = replacePath(e.imagePaths, plan.item.path, oldCanon, finalPath)))
+                            }
+                            OwnerType.UNIVERSE -> db.universeDao().getUniverseById(owner.id)?.let { e ->
+                                db.universeDao().update(e.copy(imagePaths = replacePath(e.imagePaths, plan.item.path, oldCanon, finalPath)))
+                            }
                         }
                     }
                 }
             }
+        } catch (e: Exception) {
+            committed.forEach { runCatching { File(it.second).delete() } }  // 미참조 개명본 롤백 삭제
+            return RecompressResult(0, 0L, preview.skips.size, preview.plans.size)
         }
 
         // 3단계: 원본 삭제(교체 완료분). freed = 원본 − 재압축본(음수 방지).
@@ -349,7 +360,9 @@ class ImageManagerViewModel(application: Application) : AndroidViewModel(applica
                 freed += (origLen - newLen).coerceAtLeast(0L)
             }
         }
-        return RecompressResult(committed.size, freed, preview.skips.size)
+        // 준비됐으나 커밋 못 한 건(개명·이동 실패 등) = 계획 − 반영. 조용히 증발하지 않도록 집계·통보.
+        val failed = preview.plans.size - committed.size
+        return RecompressResult(committed.size, freed, preview.skips.size, failed)
     }
 
     /** filesDir의 재압축 임시 파일(표식 포함)을 모두 삭제. */

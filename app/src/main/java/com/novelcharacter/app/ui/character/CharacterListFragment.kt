@@ -509,10 +509,14 @@ class CharacterListFragment : Fragment() {
                     val opLabel = getOperationLabel(result.operation)
                     // 시맨틱 동기화 부분 실패는 조용히 넘기지 않고 경고로 승격 (변수 제어)
                     if (result.syncFailures > 0) {
-                        val message = getString(
+                        val warn = getString(
                             R.string.batch_success_with_warning,
                             result.affectedCount, opLabel, result.syncFailures
                         )
+                        // 동기화 실패와 중복 스킵이 동시에 날 수 있음(일괄 상태변화) — 스킵도 함께 고지.
+                        val message = if (result.skipped > 0) {
+                            getString(R.string.batch_success_append_skipped, warn, result.skipped)
+                        } else warn
                         Snackbar.make(binding.root, message, Snackbar.LENGTH_LONG).show()
                         logOperation(OpResult.failure(
                             OpResult.CAT_BATCH,
@@ -714,7 +718,9 @@ class CharacterListFragment : Fragment() {
         if (_binding == null) return
         binding.filterChipGroup.removeAllViews()
         val ctx = context ?: return
-        for (id in viewModel.novelFilters.value ?: emptySet()) {
+        // 작품 필터는 전역 목록(novelId==-1)에서만 적용/표시(스코프 화면에선 무력화되므로 칩도 숨김).
+        val novelFilterIds = if (novelId == -1L) (viewModel.novelFilters.value ?: emptySet()) else emptySet()
+        for (id in novelFilterIds) {
             val title = novelTitles[id] ?: continue  // 아직 로드 전이거나 삭제된 작품 — 관측 후 재렌더/정리됨
             binding.filterChipGroup.addView(Chip(ctx).apply {
                 text = getString(R.string.filter_chip_novel_format, title)

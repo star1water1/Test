@@ -360,7 +360,7 @@ class ImageManagerFragment : Fragment() {
                 viewModel.commitRecompress { result ->
                     if (!isAdded) return@commitRecompress
                     exitSelection()
-                    val text = if (result.skipped > 0) {
+                    val base = if (result.skipped > 0) {
                         getString(
                             R.string.image_manager_recompress_done_skipped,
                             result.recompressed, StorageAnalyzer.formatBytes(result.freed), result.skipped
@@ -371,7 +371,16 @@ class ImageManagerFragment : Fragment() {
                             result.recompressed, StorageAnalyzer.formatBytes(result.freed)
                         )
                     }
-                    reportAndNotify(OpResult.success(OpResult.CAT_MAINTENANCE, text))
+                    // 커밋 실패분이 있으면 조용히 넘기지 않고 함께 고지(변수 제어). 전량 실패면 실패로 통보.
+                    val text = if (result.failed > 0) {
+                        base + " " + getString(R.string.image_manager_recompress_failed_suffix, result.failed)
+                    } else base
+                    val op = if (result.failed > 0 && result.recompressed == 0) {
+                        OpResult.failure(OpResult.CAT_MAINTENANCE, text)
+                    } else {
+                        OpResult.success(OpResult.CAT_MAINTENANCE, text)
+                    }
+                    reportAndNotify(op)
                 }
             }
             .setNegativeButton(R.string.cancel) { _, _ -> viewModel.discardRecompress() }
