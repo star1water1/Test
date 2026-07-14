@@ -12,14 +12,34 @@ android {
         applicationId = "com.novelcharacter.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        // versionCode는 CI 빌드 번호로 단조 증가(로컬 빌드는 1). 안정 서명키와 함께
+        // 덮어쓰기 업데이트가 깨지지 않도록 매 릴리스마다 반드시 올라가야 한다.
+        versionCode = 1 + (System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 0)
+        versionName = "1.1"
+    }
+
+    // 고정 서명키 — 모든 빌드(디버그 포함)가 항상 같은 인증서로 서명되어야
+    // 안드로이드가 기존 설치본 위에 덮어쓰기 업데이트를 허용한다. 키가 빌드마다
+    // 달라지면(러너별 자동 생성 debug.keystore) "기존 패키지와 충돌"이 발생한다.
+    // 개인 사이드로드 앱이라 키/비밀번호를 저장소에 커밋한다(스토어 배포 시 재고 필요).
+    signingConfigs {
+        create("shared") {
+            storeFile = file("signing/novelcharacter-release.jks")
+            storePassword = "novelcharacter"
+            keyAlias = "novelcharacter"
+            keyPassword = "novelcharacter"
+        }
     }
 
     buildTypes {
+        debug {
+            // CI가 디버그 APK를 만들므로 디버그도 고정 키로 서명(핵심).
+            signingConfig = signingConfigs.getByName("shared")
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = false
+            signingConfig = signingConfigs.getByName("shared")
             proguardFiles(
                 getDefaultProguardFile("proguard-android.txt"),
                 "proguard-rules.pro"

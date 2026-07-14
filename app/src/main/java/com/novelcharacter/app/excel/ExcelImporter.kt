@@ -346,7 +346,9 @@ class ExcelImporter(context: Context) {
 
         try {
             org.apache.poi.openxml4j.util.ZipSecureFile.setMinInflateRatio(0.01)
-            org.apache.poi.openxml4j.util.ZipSecureFile.setMaxEntrySize(50L * 1024 * 1024)
+            // 압축비(setMinInflateRatio)로 zip-bomb를 막고, 엔트리 크기 상한은 POI 허용 최댓값까지 열어
+            // 대형 백업의 압축 해제된 시트 XML이 상한에 걸려 거부되지 않게 한다.
+            org.apache.poi.openxml4j.util.ZipSecureFile.setMaxEntrySize(POI_MAX_ENTRY_SIZE)
 
             workbook = xlsxFile.inputStream().use { WorkbookFactory.create(it) }
 
@@ -471,6 +473,16 @@ class ExcelImporter(context: Context) {
             withContext(Dispatchers.Main) {
                 dismissDialogSafely(progressDialog)
                 Toast.makeText(appContext, com.novelcharacter.app.R.string.import_failed_retry, Toast.LENGTH_LONG).show()
+            }
+        } catch (oom: OutOfMemoryError) {
+            // data.xlsx가 이 기기 메모리로 한 번에 파싱하기엔 너무 큼 — Error는 위 Exception catch로 안 잡히므로
+            // 여기서 명시적으로 받아 조용한 크래시 대신 원인과 대안을 안내한다(변수 제어).
+            try { workbook?.close() } catch (_: Exception) {}
+            workbook = null
+            android.util.Log.e("ExcelImporter", "Import out of memory", oom)
+            withContext(Dispatchers.Main) {
+                dismissDialogSafely(progressDialog)
+                Toast.makeText(appContext, com.novelcharacter.app.R.string.import_oom, Toast.LENGTH_LONG).show()
             }
         } finally {
             try { workbook?.close() } catch (e: Exception) { android.util.Log.w("ExcelImporter", "Failed to close workbook", e) }
@@ -1105,10 +1117,16 @@ class ExcelImporter(context: Context) {
     }
 
     companion object {
-        private const val MAX_IMPORT_FILE_SIZE = 50L * 1024 * 1024 // xlsx(데이터 시트) 파싱 상한 — POI 메모리 보호
-        private const val MAX_EXTERNAL_FILE_SIZE = 512L * 1024 * 1024 // 외부 파일(URI) 전체 상한 — 이미지 포함 ZIP 왕복 보장
-        private const val MAX_IMAGE_ENTRY_COUNT = 2000 // ZIP 이미지 엔트리 개수 상한
-        private const val MAX_IMAGE_TOTAL_SIZE = 1024L * 1024 * 1024 // ZIP 이미지 총 해제 용량 상한 (1GB)
-        private const val MAX_IMAGE_MAP_SIZE = 10L * 1024 * 1024 // image_map.json 상한
+        // 왕복 무결성: 앱이 내보낸 백업은 크기와 무관하게 그 앱으로 다시 복원되어야 한다.
+        // 상한은 '메모리 바운드'(POI가 통째로 메모리에 올리는 data.xlsx)와 '디스크/개수 바운드'
+        // (스트리밍 추출되는 이미지·전체 ZIP)를 구분해 잡는다 — 후자는 넉넉히, 전자는 largeHeap과
+        // OOM 안내를 곁들여 보수적으로.
+        private const val MAX_IMPORT_FILE_SIZE = 128L * 1024 * 1024 // data.xlsx 파싱 상한(POI 인메모리 — largeHeap 병행)
+        private const val MAX_EXTERNAL_FILE_SIZE = 4L * 1024 * 1024 * 1024 // 외부/전체 파일 상한(스트리밍 복사 — 디스크 바운드, 4GB)
+        private const val MAX_IMAGE_ENTRY_COUNT = 50000 // ZIP 이미지 엔트리 개수 상한
+        private const val MAX_IMAGE_TOTAL_SIZE = 8L * 1024 * 1024 * 1024 // ZIP 이미지 총 해제 용량 상한 (8GB)
+        private const val MAX_IMAGE_MAP_SIZE = 64L * 1024 * 1024 // image_map.json 상한
+        // POI ZipSecureFile.setMaxEntrySize 허용 최댓값(0xFFFFFFFF ≈ 4GB−1). 이를 초과하면 IllegalArgumentException.
+        private const val POI_MAX_ENTRY_SIZE = 4L * 1024 * 1024 * 1024 - 1
     }
 }

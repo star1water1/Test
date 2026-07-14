@@ -396,10 +396,11 @@
     <string name="delete_impact_images">· 이미지 %1$d장 (휴지통 정리 시 파일 삭제)</string>
     <string name="delete_trash_notice">삭제 후 30일간 휴지통(설정 &gt; 데이터 관리 &gt; 휴지통)에서 복원할 수 있습니다.\n휴지통은 최대 30개까지 보관되며, 초과 시 오래된 항목부터 영구 삭제됩니다.</string>
     <string name="delete_impact_universe">작품 %1$d개는 세계관 연결이 해제되고(작품·캐릭터는 유지), 필드 정의 %2$d개와 이 세계관 캐릭터들의 필드값 %3$d건·상태변화 이력이 영구 삭제됩니다.</string>
-    <string name="import_file_too_large">파일 크기가 너무 큽니다 (최대 512MB)</string>
-    <string name="import_xlsx_too_large">엑셀 데이터가 너무 큽니다 (데이터 시트 최대 50MB)</string>
-    <string name="import_too_many_images">백업에 포함된 이미지가 너무 많습니다 (최대 2,000장)</string>
-    <string name="import_images_too_large">백업 이미지 총 용량이 너무 큽니다 (최대 1GB)</string>
+    <string name="import_file_too_large">파일이 너무 커서 이 기기에서 처리할 수 없습니다 (최대 4GB)</string>
+    <string name="import_xlsx_too_large">엑셀 데이터 시트가 너무 큽니다 (데이터 시트 최대 128MB)</string>
+    <string name="import_too_many_images">백업에 포함된 이미지가 너무 많습니다 (최대 50,000장)</string>
+    <string name="import_images_too_large">백업 이미지 총 용량이 너무 큽니다 (최대 8GB)</string>
+    <string name="import_oom">기기 메모리가 부족해 이 백업을 한 번에 가져오지 못했습니다. 이미지를 제외한 백업으로 다시 시도하거나, 작품을 나눠서 가져와 주세요.</string>
     <string name="relationship_title_format">%1$s (%2$s)</string>
     <string name="relationship_already_exists">이미 해당 캐릭터와 관계가 존재합니다</string>
     <string name="edit_relationship">관계 편집</string>
