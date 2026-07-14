@@ -1,5 +1,6 @@
 package com.novelcharacter.app.data.model
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -30,6 +31,16 @@ data class CharacterListPreset(
     val sortAscending: Boolean = true,
     /** BODY_SIZE 필드 정렬 시 파트 인덱스 */
     val bodySizePartIndex: Int? = null,
+    /**
+     * 작품 필터 차원으로 선택한 작품 id 목록 (JSON 배열). 위의 "작품 스코프 저장 안 함"은 **내비게이션**
+     * 스코프(어느 작품 화면에서 보는가) 얘기이고, 이건 전역 목록에서 작품으로 거르는 **필터** 차원이라 별개다.
+     * 삭제된 작품 id는 적용 시 조용히 무해(매칭 없음)하고 칩에서도 자연 배제된다.
+     */
+    // defaultValue는 Room이 SQL에 **그대로** 박으므로 문자열 리터럴은 직접 따옴표로 감싸야 한다.
+    // "[]"(따옴표 없음)로 두면 기대 스키마가 DEFAULT [] 가 되어 마이그레이션의 DEFAULT '[]' 와 불일치 →
+    // v38→v39 업그레이드 시 검증 실패로 크래시(빈 문자열 default는 비교가 생략돼 우연히 통과했을 뿐, 일반화 불가).
+    @ColumnInfo(defaultValue = "'[]'")
+    val novelIdsJson: String = "[]",
     val isDefault: Boolean = false,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()

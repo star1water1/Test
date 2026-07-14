@@ -152,12 +152,16 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     val fieldFilters: LiveData<List<FieldFilter>> = _fieldFilters
     private val _tagFilters = MutableLiveData(loadSavedTagFilters())
     val tagFilters: LiveData<Set<String>> = _tagFilters
+    // 작품 필터 차원 — 전역 목록에서 작품(novelId)으로 거른다. 내비게이션 스코프(_currentNovelId)와 별개.
+    private val _novelFilters = MutableLiveData(loadSavedNovelFilters())
+    val novelFilters: LiveData<Set<Long>> = _novelFilters
 
     private val listTrigger = MediatorLiveData<Unit>().apply {
         addSource(baseCharacters) { value = Unit }
         addSource(_sortSpec) { value = Unit }
         addSource(_fieldFilters) { value = Unit }
         addSource(_tagFilters) { value = Unit }
+        addSource(_novelFilters) { value = Unit }
     }
 
     private var computeJob: Job? = null
@@ -176,9 +180,10 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
             val base = baseCharacters.value ?: emptyList()
             val filters = _fieldFilters.value ?: emptyList()
             val tags = _tagFilters.value ?: emptySet()
+            val novelIds = _novelFilters.value ?: emptySet()
             val sort = _sortSpec.value ?: CharacterSort()
             val result = withContext(Dispatchers.Default) {
-                applyFiltersAndSort(base, filters, tags, sort)
+                applyFiltersAndSort(base, filters, tags, novelIds, sort)
             }
             _searchResults.value = result
         }
@@ -228,13 +233,20 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         prefs.edit().putString("tag_filters_json", gson.toJson(tags.toList())).apply()
     }
 
+    fun setNovelFilters(novels: Set<Long>) {
+        _novelFilters.value = novels
+        prefs.edit().putString("novel_filters_json", gson.toJson(novels.toList())).apply()
+    }
+
     fun clearAllFilters() {
         setFieldFilters(emptyList())
         setTagFilters(emptySet())
+        setNovelFilters(emptySet())
     }
 
     fun hasActiveFilters(): Boolean =
-        !_fieldFilters.value.isNullOrEmpty() || !_tagFilters.value.isNullOrEmpty()
+        !_fieldFilters.value.isNullOrEmpty() || !_tagFilters.value.isNullOrEmpty() ||
+            !_novelFilters.value.isNullOrEmpty()
 
     // ===== 필터/정렬 적용 (백그라운드) =====
 
@@ -242,9 +254,14 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         base: List<Character>,
         filters: List<FieldFilter>,
         tags: Set<String>,
+        novelIds: Set<Long>,
         sort: CharacterSort
     ): List<Character> {
         var chars = base
+        if (novelIds.isNotEmpty()) {
+            // 작품 필터(OR) — 선택 작품 중 하나에 속한 캐릭터. 전역 목록에서만 유의미하며 삭제된 id는 무해.
+            chars = chars.filter { it.novelId in novelIds }
+        }
         if (filters.isNotEmpty()) {
             val ids = FieldFilterHelper.applyFieldFilters(app.database.characterFieldValueDao(), filters)
             chars = chars.filter { it.id in ids }
@@ -446,6 +463,7 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
             (gson.fromJson(preset.tagsJson, Array<String>::class.java) ?: arrayOf()).toSet()
         } catch (_: Exception) { emptySet() }
         setTagFilters(tags)
+        setNovelFilters(parseNovelIds(preset.novelIdsJson))
         setFieldFilters(FieldFilterHelper.filtersFromJson(preset.fieldFiltersJson))
         setSortSpec(CharacterSort(preset.sortKind, preset.sortFieldKey, preset.sortAscending, preset.bodySizePartIndex))
     }
@@ -495,6 +513,7 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         return CharacterListPreset(
             name = name,
             tagsJson = gson.toJson((_tagFilters.value ?: emptySet()).toList()),
+            novelIdsJson = gson.toJson((_novelFilters.value ?: emptySet()).toList()),
             fieldFiltersJson = FieldFilterHelper.filtersToJson(_fieldFilters.value ?: emptyList()),
             sortKind = sort.kind,
             sortFieldKey = sort.fieldKey,
@@ -531,6 +550,16 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         val json = prefs.getString("tag_filters_json", null) ?: return emptySet()
         return try {
             (gson.fromJson(json, Array<String>::class.java) ?: arrayOf()).toSet()
+        } catch (_: Exception) { emptySet() }
+    }
+
+    private fun loadSavedNovelFilters(): Set<Long> = parseNovelIds(prefs.getString("novel_filters_json", null))
+
+    /** JSON 배열 문자열 → 작품 id 집합. 손상/누락 시 빈 집합. */
+    private fun parseNovelIds(json: String?): Set<Long> {
+        if (json.isNullOrBlank()) return emptySet()
+        return try {
+            (gson.fromJson(json, LongArray::class.java) ?: LongArray(0)).toSet()
         } catch (_: Exception) { emptySet() }
     }
 

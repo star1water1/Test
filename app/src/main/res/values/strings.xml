@@ -1575,6 +1575,9 @@
     <string name="sort_label_recent">최근</string>
     <string name="filter_title">필터</string>
     <string name="filter_tags_section">태그</string>
+    <string name="filter_novels_section">작품</string>
+    <string name="filter_no_novels">작품이 없습니다</string>
+    <string name="filter_chip_novel_format">작품: %1$s</string>
     <string name="filter_field_section">필드 값 필터</string>
     <string name="filter_no_tags">등록된 태그가 없습니다</string>
     <string name="filter_chip_field_format">%1$s: %2$s</string>

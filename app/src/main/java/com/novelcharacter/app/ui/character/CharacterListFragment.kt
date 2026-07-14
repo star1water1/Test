@@ -590,6 +590,9 @@ class CharacterListFragment : Fragment() {
 
     private var lastListEmpty = false
 
+    /** 작품 id → 제목 캐시 (활성 작품 필터 칩 라벨용). allNovels 관측 시 갱신. */
+    private var novelTitles: Map<Long, String> = emptyMap()
+
     private fun observeData() {
         viewModel.searchResults.observe(viewLifecycleOwner) { characters ->
             // 리스트 갱신마다 이미지 인덱스를 초기화하지 않는다(P2-1). 매 emission(핀·필터·정렬·검색)마다
@@ -604,6 +607,18 @@ class CharacterListFragment : Fragment() {
         viewModel.sortSpec.observe(viewLifecycleOwner) { updateSortChip(it) }
         viewModel.fieldFilters.observe(viewLifecycleOwner) { renderFilterChips(); updateEmptyState() }
         viewModel.tagFilters.observe(viewLifecycleOwner) { renderFilterChips(); updateEmptyState() }
+        viewModel.novelFilters.observe(viewLifecycleOwner) { renderFilterChips(); updateEmptyState() }
+        // 작품 id→제목 해석용 + 삭제된 작품 id를 저장 필터에서 정리(스틱 빈 목록 방지).
+        viewModel.allNovels.observe(viewLifecycleOwner) { novels ->
+            novelTitles = novels.associate { it.id to it.title }
+            val active = viewModel.novelFilters.value ?: emptySet()
+            if (novels.isNotEmpty() && active.isNotEmpty()) {
+                val existing = novels.mapTo(HashSet()) { it.id }
+                val pruned = active.filter { it in existing }.toSet()
+                if (pruned.size != active.size) viewModel.setNovelFilters(pruned)
+            }
+            renderFilterChips()
+        }
         viewModel.presets.observe(viewLifecycleOwner) { renderPresetChips(it ?: emptyList()) }
 
         // 데이터 처리 결과 알림 (캐릭터 삭제 등 즉시 통보 + 작업 이력 기록)
@@ -653,12 +668,17 @@ class CharacterListFragment : Fragment() {
     private fun openFilterSheet() {
         val sheet = CharacterFilterBottomSheet()
         sheet.currentTags = viewModel.tagFilters.value ?: emptySet()
+        sheet.currentNovelIds = viewModel.novelFilters.value ?: emptySet()
+        // 작품 필터는 전역 목록에서만 의미(이미 한 작품에 스코프된 화면에선 중복이라 숨김).
+        sheet.showNovelSection = (novelId == -1L)
         sheet.loadAllTags = { viewModel.getAllDistinctTags() }
+        sheet.loadNovels = { viewModel.getAllNovelsList() }
         sheet.loadUniverses = { viewModel.getScopedUniverses() }
         sheet.loadFields = { uid -> viewModel.getFilterableFields(uid) }
         sheet.loadFieldValues = { fid -> viewModel.getFieldValues(fid) }
-        sheet.onApply = { tags, filter ->
+        sheet.onApply = { tags, novelIds, filter ->
             viewModel.setTagFilters(tags)
+            viewModel.setNovelFilters(novelIds)
             if (filter != null) viewModel.addFieldFilter(filter)
         }
         sheet.show(childFragmentManager, CharacterFilterBottomSheet.TAG)
@@ -694,6 +714,16 @@ class CharacterListFragment : Fragment() {
         if (_binding == null) return
         binding.filterChipGroup.removeAllViews()
         val ctx = context ?: return
+        for (id in viewModel.novelFilters.value ?: emptySet()) {
+            val title = novelTitles[id] ?: continue  // 아직 로드 전이거나 삭제된 작품 — 관측 후 재렌더/정리됨
+            binding.filterChipGroup.addView(Chip(ctx).apply {
+                text = getString(R.string.filter_chip_novel_format, title)
+                isCloseIconVisible = true
+                setOnCloseIconClickListener {
+                    viewModel.setNovelFilters((viewModel.novelFilters.value ?: emptySet()) - id)
+                }
+            })
+        }
         for (tag in viewModel.tagFilters.value ?: emptySet()) {
             binding.filterChipGroup.addView(Chip(ctx).apply {
                 text = getString(R.string.filter_chip_tag_format, tag)
