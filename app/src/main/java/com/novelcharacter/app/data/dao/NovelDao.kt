@@ -16,6 +16,10 @@ interface NovelDao {
     @Query("SELECT * FROM novels WHERE id = :id")
     suspend fun getNovelById(id: Long): Novel?
 
+    /** 여러 작품을 한 번에 조회 (배치 세계관 해소 시 캐릭터별 getNovelById N+1 제거용). 999-변수 상한은 호출부에서 청크 처리. */
+    @Query("SELECT * FROM novels WHERE id IN (:ids)")
+    suspend fun getNovelsByIds(ids: List<Long>): List<Novel>
+
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(novel: Novel): Long
 

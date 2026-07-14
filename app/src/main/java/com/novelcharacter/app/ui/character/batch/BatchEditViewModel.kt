@@ -3,6 +3,7 @@ package com.novelcharacter.app.ui.character.batch
 import android.app.Application
 import android.util.Log
 import androidx.lifecycle.*
+import androidx.room.withTransaction
 import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.data.model.CharacterFieldValue
 import com.novelcharacter.app.data.model.CharacterStateChange
@@ -111,16 +112,7 @@ class BatchEditViewModel(application: Application) : AndroidViewModel(applicatio
     /** 선택 캐릭터들이 속한 세계관 ID 목록 (중복 제거) */
     suspend fun getUniverseIdsForSelection(): List<Long> {
         val ids = _selectedIds.value?.toList() ?: return emptyList()
-        val universeIds = mutableSetOf<Long>()
-        for (chunk in ids.chunked(900)) {
-            val characters = app.database.characterDao().getCharactersByIds(chunk)
-            for (char in characters) {
-                val novelId = char.novelId ?: continue
-                val novel = novelRepository.getNovelById(novelId) ?: continue
-                novel.universeId?.let { universeIds.add(it) }
-            }
-        }
-        return universeIds.toList()
+        return resolveCharUniverse(ids).values.filterNotNull().distinct()
     }
 
     // ===== 배치 작업 =====
@@ -139,15 +131,19 @@ class BatchEditViewModel(application: Application) : AndroidViewModel(applicatio
             val newNovel = novelRepository.getNovelById(newNovelId)
             val newUniverseId = newNovel?.universeId
             if (newUniverseId != null && newNovel?.standardYear != null) {
-                for (charId in ids) {
-                    try {
-                        if (stdYearSyncHelper.isLinked(charId)) {
-                            val values = characterRepository.getValuesByCharacterList(charId)
-                            semanticSyncHelper.syncFieldToStateChange(charId, newUniverseId, values)
+                // 값 일괄 로드 + 단일 트랜잭션 — setField/addStateChange와 동일하게 N+1·개별 커밋 제거(받쳐주는 확장성).
+                val valuesByChar = characterRepository.getValuesForCharacters(ids).groupBy { it.characterId }
+                app.database.withTransaction {
+                    for (charId in ids) {
+                        try {
+                            if (stdYearSyncHelper.isLinked(charId)) {
+                                val values = valuesByChar[charId] ?: emptyList()
+                                semanticSyncHelper.syncFieldToStateChange(charId, newUniverseId, values)
+                            }
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Failed to sync semantic fields for character $charId after novel change", e)
+                            syncFailures++
                         }
-                    } catch (e: Exception) {
-                        Log.w(TAG, "Failed to sync semantic fields for character $charId after novel change", e)
-                        syncFailures++
                     }
                 }
             }
@@ -167,19 +163,49 @@ class BatchEditViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun setFieldValue(fieldDefId: Long, value: String) = launchBatchOp("setFieldValue") { ids ->
         val fieldDef = app.database.fieldDefinitionDao().getFieldById(fieldDefId)
+        // 세계관 일괄 해소 — 스코프와 시맨틱싱크에 재사용(캐릭터별 getNovelById/getUniverseIdForCharacter N+1 제거).
+        val universeByChar = resolveCharUniverse(ids)
         // 필드는 특정 세계관 소유 — 그 세계관 캐릭터에만 적용한다(시트가 약속한 "해당 세계관 캐릭터에만").
         // 타 세계관 캐릭터에 찍으면 그 캐릭터 편집기/통계엔 안 잡히는 고아 필드값이 생긴다.
-        val scoped = if (fieldDef != null) idsInUniverse(ids, fieldDef.universeId) else ids
+        val scoped = if (fieldDef != null) ids.filter { universeByChar[it] == fieldDef.universeId } else ids
         if (scoped.isEmpty()) return@launchBatchOp BatchCounts(0)
         characterRepository.batchSetFieldValue(scoped, fieldDefId, value)
 
         // 시맨틱 필드 동기화 (나이/출생연도/사망연도/생존여부 변경 시)
+        val syncFailures = syncSemanticFields(fieldDef, scoped, universeByChar)
+        BatchCounts(scoped.size, syncFailures)
+    }
+
+    fun clearFieldValue(fieldDefId: Long) = launchBatchOp("clearFieldValue") { ids ->
+        val fieldDef = app.database.fieldDefinitionDao().getFieldById(fieldDefId)
+        val universeByChar = resolveCharUniverse(ids)
+        val scoped = if (fieldDef != null) ids.filter { universeByChar[it] == fieldDef.universeId } else ids
+        if (scoped.isEmpty()) return@launchBatchOp BatchCounts(0)
+        characterRepository.batchClearFieldValue(scoped, fieldDefId)
+
+        // 시맨틱 필드 동기화 (출생연도/사망연도 등 초기화 시 나이 등 재계산)
+        val syncFailures = syncSemanticFields(fieldDef, scoped, universeByChar)
+        BatchCounts(scoped.size, syncFailures)
+    }
+
+    /**
+     * 시맨틱 필드(나이/출생/사망/생존) 일괄 변경 후 상태변화 재동기화.
+     * 값은 한 번에 로드(getValuesForCharacters)하고, 모든 싱크를 단일 트랜잭션으로 묶어
+     * 캐릭터별 N+1 읽기 + 개별 커밋(fsync)을 제거한다(받쳐주는 확장성). @return 동기화 실패 캐릭터 수.
+     */
+    private suspend fun syncSemanticFields(
+        fieldDef: FieldDefinition?,
+        scoped: List<Long>,
+        universeByChar: Map<Long, Long?>
+    ): Int {
+        if (fieldDef == null || SemanticRole.fromConfig(fieldDef.config) == null) return 0
+        val valuesByChar = characterRepository.getValuesForCharacters(scoped).groupBy { it.characterId }
         var syncFailures = 0
-        if (fieldDef != null && SemanticRole.fromConfig(fieldDef.config) != null) {
+        app.database.withTransaction {
             for (charId in scoped) {
                 try {
-                    val universeId = getUniverseIdForCharacter(charId) ?: continue
-                    val allValues = characterRepository.getValuesByCharacterList(charId)
+                    val universeId = universeByChar[charId] ?: continue
+                    val allValues = valuesByChar[charId] ?: emptyList()
                     semanticSyncHelper.syncFieldToStateChange(charId, universeId, allValues)
                 } catch (e: Exception) {
                     Log.w(TAG, "Failed to sync semantic field for character $charId", e)
@@ -187,30 +213,7 @@ class BatchEditViewModel(application: Application) : AndroidViewModel(applicatio
                 }
             }
         }
-        BatchCounts(scoped.size, syncFailures)
-    }
-
-    fun clearFieldValue(fieldDefId: Long) = launchBatchOp("clearFieldValue") { ids ->
-        val fieldDef = app.database.fieldDefinitionDao().getFieldById(fieldDefId)
-        val scoped = if (fieldDef != null) idsInUniverse(ids, fieldDef.universeId) else ids
-        if (scoped.isEmpty()) return@launchBatchOp BatchCounts(0)
-        characterRepository.batchClearFieldValue(scoped, fieldDefId)
-
-        // 시맨틱 필드 동기화 (출생연도/사망연도 등 초기화 시 나이 등 재계산)
-        var syncFailures = 0
-        if (fieldDef != null && SemanticRole.fromConfig(fieldDef.config) != null) {
-            for (charId in scoped) {
-                try {
-                    val universeId = getUniverseIdForCharacter(charId) ?: continue
-                    val allValues = characterRepository.getValuesByCharacterList(charId)
-                    semanticSyncHelper.syncFieldToStateChange(charId, universeId, allValues)
-                } catch (e: Exception) {
-                    Log.w(TAG, "Failed to sync semantic field for character $charId after clear", e)
-                    syncFailures++
-                }
-            }
-        }
-        BatchCounts(scoped.size, syncFailures)
+        return syncFailures
     }
 
     fun appendMemo(text: String, prepend: Boolean) = launchBatchOp("appendMemo") { ids ->
@@ -221,8 +224,10 @@ class BatchEditViewModel(application: Application) : AndroidViewModel(applicatio
     /**
      * 선택 캐릭터들에 동일한 상태변화(시점 + 필드 + 새 값)를 한 번에 기록한다.
      * - 커스텀 필드([fieldUniverseId] != null)면 그 세계관 캐릭터에만 적용(타 세계관엔 없는 필드라 무의미).
-     * - 특수키(__birth/__death/__alive 등, [fieldUniverseId] == null)는 선택 전체에 적용.
-     * - 이미 같은 자연키(캐릭터+연도+필드키+값)가 있으면 중복 생성하지 않고 스킵으로 집계해 통보한다(변수 제어).
+     * - 특수키(__birth/__death/__alive, [fieldUniverseId] == null)는 선택 전체에 적용.
+     * - 중복 처리(변수 제어): 단일키(출생/사망/생존)는 이미 기록이 있으면 값과 무관하게 스킵(기존 값을 조용히
+     *   덮어쓰지 않음). 커스텀 필드는 시점별 다중 이력을 허용하므로 정밀 자연키(연·월·일·값) 완전 일치만 스킵.
+     *   스킵 건수는 집계해 통보한다.
      */
     fun addStateChange(
         year: Int,
@@ -233,34 +238,53 @@ class BatchEditViewModel(application: Application) : AndroidViewModel(applicatio
         description: String,
         fieldUniverseId: Long?
     ) = launchBatchOp("addStateChange") { ids ->
-        val targets = if (fieldUniverseId != null) idsInUniverse(ids, fieldUniverseId) else ids
+        // 세계관을 한 번에 해소(캐릭터별 getNovelById N+1 제거) → 스코프·시맨틱싱크 양쪽에 재사용.
+        val universeByChar = resolveCharUniverse(ids)
+        val targets = if (fieldUniverseId != null) ids.filter { universeByChar[it] == fieldUniverseId } else ids
+        if (targets.isEmpty()) return@launchBatchOp BatchCounts(0)
         val dao = app.database.characterStateChangeDao()
+        // 단일키(__birth/__death/__alive)는 캐릭터당 1행 불변식을 가진다. 이를 무시하고 blind-insert하면
+        // 같은 캐릭터에 두 번째 __birth가 생겨 필드값(새 값)↔연표/나이(ORDER BY year ASC로 옛 값)가 어긋난다.
+        val isSingular = fieldKey == CharacterStateChange.KEY_BIRTH ||
+            fieldKey == CharacterStateChange.KEY_DEATH ||
+            fieldKey == CharacterStateChange.KEY_ALIVE
         // __birth/__death는 개별 경로처럼 birth_year/death_year·나이·생존 필드로 역동기화해야
         // 연표·필드값·통계가 어긋나지 않는다(연결성·변수 제어). 개별 경로: insertStateChange→syncStateChangeToField.
         val isSemantic = fieldKey == CharacterStateChange.KEY_BIRTH || fieldKey == CharacterStateChange.KEY_DEATH
         var inserted = 0
         var skipped = 0
         var syncFailures = 0
-        for (charId in targets) {
-            // 중복 판정에 month/day 포함 — 연도만 같고 시점이 다른 별개 기록은 허용(개별 경로와의 불일치·조용한 스킵 완화).
-            if (dao.getChangeByExactKey(charId, year, month, day, fieldKey, newValue) != null) {
-                skipped++
-                continue
-            }
-            val change = CharacterStateChange(
-                characterId = charId, year = year, month = month, day = day,
-                fieldKey = fieldKey, newValue = newValue, description = description
-            )
-            dao.insert(change)
-            inserted++
-            if (isSemantic) {
-                try {
-                    getUniverseIdForCharacter(charId)?.let { universeId ->
-                        semanticSyncHelper.syncStateChangeToField(charId, universeId, change)
+        // 단일 트랜잭션 — 500명이면 개별 커밋 500회(fsync)를 1회로. 규모에서 깨지지 않게(받쳐주는 확장성).
+        app.database.withTransaction {
+            for (charId in targets) {
+                val alreadyPresent = if (isSingular) {
+                    // 단일키는 값과 무관하게 이미 기록이 있으면 건너뛴다. 덮어쓰면 사용자가 개별 설정한
+                    // 기존 출생/사망/생존을 일괄 조작이 조용히 바꾸게 되어 변수 제어를 위반한다 →
+                    // 대신 스킵으로 집계·고지하고, 바로잡을 경로(개별 편집)를 남긴다.
+                    dao.getChangesByField(charId, fieldKey).isNotEmpty()
+                } else {
+                    // 커스텀 필드는 시점별 다중 이력을 허용 — 정밀 자연키(연·월·일·값) 완전 일치만 중복 스킵.
+                    dao.getChangeByExactKey(charId, year, month, day, fieldKey, newValue) != null
+                }
+                if (alreadyPresent) {
+                    skipped++
+                    continue
+                }
+                val change = CharacterStateChange(
+                    characterId = charId, year = year, month = month, day = day,
+                    fieldKey = fieldKey, newValue = newValue, description = description
+                )
+                dao.insert(change)
+                inserted++
+                if (isSemantic) {
+                    try {
+                        universeByChar[charId]?.let { universeId ->
+                            semanticSyncHelper.syncStateChangeToField(charId, universeId, change)
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to sync semantic field after batch state change for character $charId", e)
+                        syncFailures++
                     }
-                } catch (e: Exception) {
-                    Log.w(TAG, "Failed to sync semantic field after batch state change for character $charId", e)
-                    syncFailures++
                 }
             }
         }
@@ -299,24 +323,27 @@ class BatchEditViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
-    private suspend fun getUniverseIdForCharacter(characterId: Long): Long? {
-        val character = characterRepository.getCharacterById(characterId) ?: return null
-        val novelId = character.novelId ?: return null
-        val novel = novelRepository.getNovelById(novelId) ?: return null
-        return novel.universeId
-    }
-
-    /** [ids] 중 [universeId] 세계관에 속한 캐릭터 id만 (청크 조회 — getUniverseIdsForSelection과 동일 패턴). */
-    private suspend fun idsInUniverse(ids: List<Long>, universeId: Long): List<Long> {
-        val result = mutableListOf<Long>()
+    /**
+     * [ids] 각 캐릭터 → 소속 세계관 id 맵 (없으면 null). 캐릭터·작품을 각각 청크 배치 조회해
+     * 캐릭터별 getNovelById N+1을 제거한다(500명이 몇 개 작품에 몰려도 작품 조회는 distinct 1회씩).
+     * 스코프 판정(필드 세계관)과 시맨틱 싱크(캐릭터별 세계관) 양쪽에서 재사용한다.
+     */
+    private suspend fun resolveCharUniverse(ids: List<Long>): Map<Long, Long?> {
+        if (ids.isEmpty()) return emptyMap()
+        val charToNovel = HashMap<Long, Long?>(ids.size)
+        val novelIds = HashSet<Long>()
         for (chunk in ids.chunked(900)) {
-            val characters = app.database.characterDao().getCharactersByIds(chunk)
-            for (char in characters) {
-                val novelId = char.novelId ?: continue
-                val novel = novelRepository.getNovelById(novelId) ?: continue
-                if (novel.universeId == universeId) result.add(char.id)
+            for (char in app.database.characterDao().getCharactersByIds(chunk)) {
+                charToNovel[char.id] = char.novelId
+                char.novelId?.let { novelIds.add(it) }
             }
         }
+        val novelUniverse = HashMap<Long, Long?>(novelIds.size)
+        for (chunk in novelIds.toList().chunked(900)) {
+            for (novel in novelRepository.getNovelsByIds(chunk)) novelUniverse[novel.id] = novel.universeId
+        }
+        val result = HashMap<Long, Long?>(charToNovel.size)
+        for ((charId, novelId) in charToNovel) result[charId] = novelId?.let { novelUniverse[it] }
         return result
     }
 

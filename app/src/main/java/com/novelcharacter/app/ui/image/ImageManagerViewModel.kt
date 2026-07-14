@@ -80,7 +80,12 @@ class ImageManagerViewModel(application: Application) : AndroidViewModel(applica
     data class BulkDeleteResult(val deleted: Int, val freed: Long, val failed: Int)
 
     // 사용자 확인을 기다리는 재압축 미리보기(임시 파일 보유). 커밋/취소 시 소비.
-    private var pendingPreview: RecompressPreview? = null
+    // @Volatile: buildItems()는 IO 스레드에서 이 값을 읽고 prepare/commit은 메인에서 쓰므로 가시성 보장.
+    @Volatile private var pendingPreview: RecompressPreview? = null
+
+    // 미리보기 준비 중(임시 파일 생성 중) 플래그. pendingPreview는 buildPreview가 끝난 뒤에야 세팅되므로,
+    // 그 사이 창에서 동시 load()의 sweep가 준비 중 임시 파일을 지워 재압축이 조용히 무효화되는 것을 막는다.
+    @Volatile private var preparingRecompress = false
 
     private val _images = MutableLiveData<List<ManagedImage>>(emptyList())
     val images: LiveData<List<ManagedImage>> = _images
@@ -104,8 +109,9 @@ class ImageManagerViewModel(application: Application) : AndroidViewModel(applica
     private suspend fun buildItems(): Pair<List<ManagedImage>, Summary> {
         val filesDir = getApplication<Application>().filesDir
 
-        // 중단된 재압축 미리보기의 잔여 임시 파일 청소(활성 미리보기가 없을 때만 — 대기 중인 커밋 보호).
-        if (pendingPreview == null) sweepRecompressTempFiles()
+        // 중단된 재압축 미리보기의 잔여 임시 파일 청소(활성 미리보기가 없고, 준비 중도 아닐 때만 —
+        // 대기 중인 커밋과 '준비 중 생성되는 임시 파일'을 모두 보호. 준비 창 sweep는 재압축 무효화 버그였다).
+        if (pendingPreview == null && !preparingRecompress) sweepRecompressTempFiles()
 
         // 소유자 역맵: canonical 경로 → 참조하는 엔티티 목록(같은 이미지를 여러 곳이 쓸 수 있음)
         val ownerMap = HashMap<String, MutableList<Owner>>()
@@ -237,11 +243,19 @@ class ImageManagerViewModel(application: Application) : AndroidViewModel(applica
      */
     fun prepareRecompress(items: List<ManagedImage>, onReady: (RecompressPreview) -> Unit) {
         _loading.value = true
+        // pendingPreview가 세팅되기 전 창을 보호(동시 load()의 sweep가 준비 중 임시 파일을 지우지 않도록).
+        preparingRecompress = true
         viewModelScope.launch {
-            val preview = withContext(Dispatchers.IO) { buildPreview(items) }
-            pendingPreview = preview
-            _loading.value = false
-            onReady(preview)
+            try {
+                val preview = withContext(Dispatchers.IO) { buildPreview(items) }
+                pendingPreview = preview
+                onReady(preview)
+            } finally {
+                // 성공/실패 모두 스피너 해제 — buildPreview 예외 시 로딩이 멈춰 걸리던 문제 방지(변수 제어).
+                // pendingPreview 세팅 이후이므로 sweep 게이트는 여전히 보호됨(pendingPreview != null).
+                _loading.value = false
+                preparingRecompress = false
+            }
         }
     }
 
