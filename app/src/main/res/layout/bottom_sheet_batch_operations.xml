@@ -128,6 +128,18 @@
         android:drawableStart="@android:drawable/ic_menu_my_calendar"
         android:drawablePadding="16dp" />
 
+    <TextView
+        android:id="@+id/opStateChange"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="20dp"
+        android:text="@string/batch_op_state_change"
+        android:textSize="15sp"
+        android:background="?attr/selectableItemBackground"
+        android:drawableStart="@android:drawable/ic_menu_recent_history"
+        android:drawablePadding="16dp" />
+
     <View
         android:layout_width="match_parent"
         android:layout_height="1dp"

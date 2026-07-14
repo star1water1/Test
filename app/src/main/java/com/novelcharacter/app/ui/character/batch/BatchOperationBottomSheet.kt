@@ -72,6 +72,11 @@ class BatchOperationBottomSheet : BottomSheetDialogFragment() {
             BatchMemoBottomSheet.newInstance().show(fm, BatchMemoBottomSheet.TAG)
         }
 
+        binding.opStateChange.setOnClickListener {
+            dismiss()
+            BatchStateChangeBottomSheet.newInstance().show(fm, BatchStateChangeBottomSheet.TAG)
+        }
+
         binding.opDelete.setOnClickListener {
             showDeleteConfirmation(count)
         }

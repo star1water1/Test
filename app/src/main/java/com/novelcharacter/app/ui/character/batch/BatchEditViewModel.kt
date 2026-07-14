@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.lifecycle.*
 import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.data.model.CharacterFieldValue
+import com.novelcharacter.app.data.model.CharacterStateChange
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.SemanticRole
@@ -23,16 +24,19 @@ sealed class BatchOperationResult {
         val operation: String,
         val affectedCount: Int,
         val syncFailures: Int = 0,
-        val move: UniverseMoveCounts = UniverseMoveCounts()
+        val move: UniverseMoveCounts = UniverseMoveCounts(),
+        // 자연키 중복 등으로 건너뛴 건수(예: 일괄 상태변화에서 이미 같은 기록이 있는 캐릭터). 조용한 스킵을 고지하기 위함.
+        val skipped: Int = 0
     ) : BatchOperationResult()
     data class Error(val message: String) : BatchOperationResult()
 }
 
-/** 배치 작업 내부 집계 결과 (반영 건수 + 동기화 실패 건수 + 세계관 이동 집계) */
+/** 배치 작업 내부 집계 결과 (반영 건수 + 동기화 실패 건수 + 세계관 이동 집계 + 스킵 건수) */
 private data class BatchCounts(
     val affected: Int,
     val syncFailures: Int = 0,
-    val move: UniverseMoveCounts = UniverseMoveCounts()
+    val move: UniverseMoveCounts = UniverseMoveCounts(),
+    val skipped: Int = 0
 )
 
 class BatchEditViewModel(application: Application) : AndroidViewModel(application) {
@@ -214,6 +218,46 @@ class BatchEditViewModel(application: Application) : AndroidViewModel(applicatio
         BatchCounts(ids.size)
     }
 
+    /**
+     * 선택 캐릭터들에 동일한 상태변화(시점 + 필드 + 새 값)를 한 번에 기록한다.
+     * - 커스텀 필드([fieldUniverseId] != null)면 그 세계관 캐릭터에만 적용(타 세계관엔 없는 필드라 무의미).
+     * - 특수키(__birth/__death/__alive 등, [fieldUniverseId] == null)는 선택 전체에 적용.
+     * - 이미 같은 자연키(캐릭터+연도+필드키+값)가 있으면 중복 생성하지 않고 스킵으로 집계해 통보한다(변수 제어).
+     */
+    fun addStateChange(
+        year: Int,
+        month: Int?,
+        day: Int?,
+        fieldKey: String,
+        newValue: String,
+        description: String,
+        fieldUniverseId: Long?
+    ) = launchBatchOp("addStateChange") { ids ->
+        val targets = if (fieldUniverseId != null) idsInUniverse(ids, fieldUniverseId) else ids
+        val dao = app.database.characterStateChangeDao()
+        var inserted = 0
+        var skipped = 0
+        for (charId in targets) {
+            if (dao.getChangeByNaturalKey(charId, year, fieldKey, newValue) != null) {
+                skipped++
+                continue
+            }
+            dao.insert(
+                CharacterStateChange(
+                    characterId = charId,
+                    year = year,
+                    month = month,
+                    day = day,
+                    fieldKey = fieldKey,
+                    newValue = newValue,
+                    description = description
+                )
+            )
+            inserted++
+        }
+        BatchCounts(affected = inserted, skipped = skipped)
+    }
+
     fun deleteSelected() = launchBatchOp("delete") { ids ->
         characterRepository.batchDelete(ids)
         val count = ids.size
@@ -234,7 +278,7 @@ class BatchEditViewModel(application: Application) : AndroidViewModel(applicatio
                 val counts = block(ids)
                 // counts.move를 반드시 전달 — 누락하면 작품 변경(세계관 이동) 시 제거된 필드값·세력 소속이
                 // 기본값(0)으로 덮여 CharacterListFragment의 이동-제거 경고가 영원히 안 뜨고, 유실이 조용히 삼켜진다(변수 제어).
-                _operationResult.value = BatchOperationResult.Success(opName, counts.affected, counts.syncFailures, counts.move)
+                _operationResult.value = BatchOperationResult.Success(opName, counts.affected, counts.syncFailures, counts.move, counts.skipped)
             } catch (e: Exception) {
                 Log.e(TAG, "Batch operation '$opName' failed", e)
                 _operationResult.value = BatchOperationResult.Error(

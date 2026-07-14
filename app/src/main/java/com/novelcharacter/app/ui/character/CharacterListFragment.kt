@@ -535,8 +535,14 @@ class CharacterListFragment : Fragment() {
                     } else {
                         val remapNote = if (result.move.remappedValues > 0)
                             getString(R.string.result_batch_move_remapped, result.move.remappedValues) else null
-                        val message = getString(R.string.batch_success_format, result.affectedCount, opLabel)
-                        Snackbar.make(binding.root, message, Snackbar.LENGTH_SHORT).show()
+                        // 자연키 중복 등으로 건너뛴 건이 있으면 조용히 넘기지 않고 함께 고지(변수 제어) — 일괄 상태변화 등.
+                        val message = if (result.skipped > 0) {
+                            getString(R.string.batch_success_with_skipped, result.affectedCount, opLabel, result.skipped)
+                        } else {
+                            getString(R.string.batch_success_format, result.affectedCount, opLabel)
+                        }
+                        val len = if (result.skipped > 0) Snackbar.LENGTH_LONG else Snackbar.LENGTH_SHORT
+                        Snackbar.make(binding.root, message, len).show()
                         logOperation(OpResult.success(
                             OpResult.CAT_BATCH,
                             getString(R.string.result_batch_summary, opLabel, result.affectedCount),
@@ -569,6 +575,7 @@ class CharacterListFragment : Fragment() {
         "setFieldValue" -> getString(R.string.batch_op_result_set_field)
         "clearFieldValue" -> getString(R.string.batch_op_result_clear_field)
         "appendMemo" -> getString(R.string.batch_op_result_append_memo)
+        "addStateChange" -> getString(R.string.batch_op_result_state_change)
         "delete" -> getString(R.string.batch_op_result_delete)
         else -> operation
     }
