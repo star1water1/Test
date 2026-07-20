@@ -9,9 +9,12 @@ import com.novelcharacter.app.data.model.FieldFilter
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.SearchPreset
 import com.novelcharacter.app.data.model.TimelineEvent
+import androidx.room.InvalidationTracker
+import com.novelcharacter.app.util.EpochMemo
 import com.novelcharacter.app.util.Event
 import com.novelcharacter.app.util.FieldFilterHelper
 import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicInteger
 
 sealed class SearchResultItem {
     data class SectionHeader(val title: String) : SearchResultItem()
@@ -43,10 +46,32 @@ class GlobalSearchViewModel(application: Application) : AndroidViewModel(applica
 
     private val db = app.database
 
+    // 필드 필터 재조회 캐시 무효화 — character_field_values 변경을 관측(오프메인)해 에폭만 bump.
+    // 결과 재발화는 기존과 동일하게 다음 트리거(검색어/정렬/필터 변경) 때 일어난다: 그때 에폭이 올라 있으면
+    // 메모가 미스되어 최신값으로 재조회하므로, 편집 후 stale한 id셋을 재사용하지 않는다(정확성 필수 옵저버).
+    private val fieldValueEpoch = AtomicInteger(0)
+    // field_definitions 삭제는 FK 캐스케이드로 character_field_values를 지우지만 recursive_triggers=OFF라
+    // 자식 트리거가 안 울린다 → 필드 정의 변경도 관측해 stale한 필터 id셋 재사용을 막는다.
+    private val fieldValueObserver =
+        object : InvalidationTracker.Observer("character_field_values", "field_definitions") {
+            override fun onInvalidated(tables: Set<String>) { fieldValueEpoch.incrementAndGet() }
+        }
+    // (필터, character_field_values 에폭) 캐시 — 검색어/정렬만 바뀌면 필드값 재조회 없음(캐릭터 탭과 동일 결함 해소).
+    private val fieldFilterMemo = EpochMemo<List<FieldFilter>, Set<Long>> { filters ->
+        FieldFilterHelper.applyFieldFilters(db.characterFieldValueDao(), filters)
+    }
+
     init {
+        db.invalidationTracker.addObserver(fieldValueObserver)
         viewModelScope.launch {
             searchPresetRepository.ensureDefaultPresets()
         }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        // InvalidationTracker는 옵저버를 강한 참조로 보관하고 AppDatabase는 프로세스 싱글턴 → 반드시 해제(누수 방지).
+        db.invalidationTracker.removeObserver(fieldValueObserver)
     }
 
     private data class SearchTriggerData(val query: String, val sort: String, val filters: List<FieldFilter>)
@@ -181,7 +206,8 @@ class GlobalSearchViewModel(application: Application) : AndroidViewModel(applica
 
             if (filters.isNotEmpty()) {
                 viewModelScope.launch {
-                    filteredCharIds = FieldFilterHelper.applyFieldFilters(db.characterFieldValueDao(), filters)
+                    // (필터, 에폭) 캐시 — query/sort만 바뀐 재실행에선 character_field_values 재조회를 건너뛴다.
+                    filteredCharIds = fieldFilterMemo.get(filters, fieldValueEpoch.get())
                     filterReady = true
                     // addSource 콜백이 이미 실행되어 데이터가 채워졌을 수 있으므로 combine 호출
                     combine()

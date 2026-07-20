@@ -6,9 +6,11 @@ import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.R
 import com.novelcharacter.app.util.OpResult
 import com.novelcharacter.app.util.reportResult
+import com.novelcharacter.app.util.EpochMemo
 import com.novelcharacter.app.util.FieldFilterHelper
 import com.novelcharacter.app.util.FieldValueSorter
 import com.novelcharacter.app.util.FormulaEvaluator
+import com.novelcharacter.app.util.SortComparators
 import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.CharacterFieldValue
 import com.novelcharacter.app.data.model.CharacterListPreset
@@ -18,6 +20,8 @@ import com.google.gson.Gson
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import com.novelcharacter.app.data.model.CharacterRelationship
 import com.novelcharacter.app.data.model.CharacterRelationshipChange
@@ -35,8 +39,10 @@ import com.novelcharacter.app.ui.timeline.EventEditDialogFragment.ShiftDirection
 import com.novelcharacter.app.util.SemanticFieldSyncHelper
 import com.novelcharacter.app.util.StandardYearSyncHelper
 import android.util.Log
+import androidx.room.InvalidationTracker
 import androidx.room.withTransaction
 import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicInteger
 
 /** 캐릭터 목록 정렬 사양. [kind]는 CharacterListPreset.SORT_* 상수. */
 data class CharacterSort(
@@ -156,12 +162,58 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     private val _novelFilters = MutableLiveData(loadSavedNovelFilters())
     val novelFilters: LiveData<Set<Long>> = _novelFilters
 
+    // ===== 재계산 캐시 무효화 (Room 테이블 변경 관측) =====
+    // baseCharacters는 characters 테이블 LiveData만 관측하므로 필드값/태그/필드정의 편집을 감지하지 못한다
+    // (예: saveAllFieldValues는 characters 로우를 건드리지 않음). 아래 에폭은 해당 테이블 변경을 관측해
+    //  (1) 메모 캐시가 stale해지는 것을 막고 (2) 편집이 목록에 즉시 반영되도록 recompute를 재트리거한다.
+    //  characters 변경/삭제·핀·재정렬은 baseCharacters가 이미 커버하므로 여기서 관측하지 않는다.
+    private val fieldValueEpoch = AtomicInteger(0)  // character_field_values
+    private val tagEpoch = AtomicInteger(0)         // character_tags
+    private val structEpoch = AtomicInteger(0)      // field_definitions / novels / universes (필드정의·작품→세계관 귀속)
+
+    /** 테이블 변경을 메인 스레드로 옮겨 recompute를 재트리거하는 토큰(onInvalidated가 오프메인이므로 postValue). */
+    private val _tableInvalidation = MutableLiveData<Unit>()
+
+    private val invalidationObserver = object : InvalidationTracker.Observer(
+        "character_field_values", "character_tags", "field_definitions", "novels", "universes"
+    ) {
+        // Room 쿼리 실행자(오프메인)에서 호출된다. 에폭 bump는 원자적이라 즉시 안전, 재계산은 postValue로 메인 위임.
+        override fun onInvalidated(tables: Set<String>) {
+            val fieldDefChanged = "field_definitions" in tables
+            // field_definitions 삭제는 FK 캐스케이드로 character_field_values를 지우지만 recursive_triggers=OFF라
+            // 자식 테이블 무효화 트리거가 안 울린다 → 필드필터·정렬키 캐시가 stale되지 않게 fieldValueEpoch도 함께 올린다.
+            if ("character_field_values" in tables || fieldDefChanged) fieldValueEpoch.incrementAndGet()
+            if ("character_tags" in tables) tagEpoch.incrementAndGet()
+            if (fieldDefChanged || "novels" in tables || "universes" in tables) structEpoch.incrementAndGet()
+            _tableInvalidation.postValue(Unit)  // listTrigger → recompute()의 120ms 디바운스가 버스트를 흡수
+        }
+    }
+
+    init {
+        app.database.invalidationTracker.addObserver(invalidationObserver)
+    }
+
+    // 필드 필터 → 매칭 캐릭터 id 집합. (필터 리스트, character_field_values 에폭) 동일 시 재조회 없이 재사용.
+    private val fieldFilterMemo = EpochMemo<List<FieldFilter>, Set<Long>> { filters ->
+        FieldFilterHelper.applyFieldFilters(app.database.characterFieldValueDao(), filters)
+    }
+    // 태그 필터 → 매칭 캐릭터 id 집합(OR). 타깃 쿼리 사용(전체 스캔 제거). (태그 집합, character_tags 에폭) 키.
+    private val tagFilterMemo = EpochMemo<Set<String>, Set<Long>> { tags ->
+        val result = HashSet<Long>()
+        // 900개씩 청크 — SQLite IN(...) 변수 상한(999) 방어(batchRemoveTags와 동일 정책).
+        for (chunk in tags.toList().chunked(900)) {
+            result.addAll(app.database.characterTagDao().getCharacterIdsByTags(chunk))
+        }
+        result
+    }
+
     private val listTrigger = MediatorLiveData<Unit>().apply {
         addSource(baseCharacters) { value = Unit }
         addSource(_sortSpec) { value = Unit }
         addSource(_fieldFilters) { value = Unit }
         addSource(_tagFilters) { value = Unit }
         addSource(_novelFilters) { value = Unit }
+        addSource(_tableInvalidation) { value = Unit }  // DB 필드값/태그/필드정의 변경 → 재계산
     }
 
     private var computeJob: Job? = null
@@ -187,6 +239,13 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
             }
             _searchResults.value = result
         }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        // InvalidationTracker는 옵저버를 강한 참조로 보관하고 AppDatabase는 프로세스 싱글턴 → 반드시 해제(누수 방지).
+        app.database.invalidationTracker.removeObserver(invalidationObserver)
+        computeJob?.cancel()
     }
 
     fun setNovelFilter(novelId: Long?) {
@@ -262,29 +321,36 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
 
     // ===== 필터/정렬 적용 (백그라운드) =====
 
+    // 메모 캐시(fieldFilterMemo·tagFilterMemo·fieldSortCache)는 공유 가변 상태다. recompute는 이전 job을
+    // 취소 후 새 job을 띄우는데(cancel-then-relaunch), 취소된 job이 정지점에서 아직 안 풀린 사이 새 job이
+    // 같은 캐시(HashMap)를 건드리면 Dispatchers.Default(멀티스레드)에서 경쟁이 생긴다. 이 Mutex로 캐시 접근을
+    // 직렬화한다. (락 보유 중 취소되면 다음 정지점에서 CancellationException → withLock이 락 해제, 데드락 없음.)
+    private val cacheMutex = Mutex()
+
     private suspend fun applyFiltersAndSort(
         base: List<Character>,
         filters: List<FieldFilter>,
         tags: Set<String>,
         novelIds: Set<Long>,
         sort: CharacterSort
-    ): List<Character> {
+    ): List<Character> = cacheMutex.withLock {
         var chars = base
         if (novelIds.isNotEmpty()) {
             // 작품 필터(OR) — 선택 작품 중 하나에 속한 캐릭터. 전역 목록에서만 유의미하며 삭제된 id는 무해.
             chars = chars.filter { it.novelId in novelIds }
         }
         if (filters.isNotEmpty()) {
-            val ids = FieldFilterHelper.applyFieldFilters(app.database.characterFieldValueDao(), filters)
+            // 필드 필터 id셋: (필터, character_field_values 에폭) 캐시 — 검색어/정렬만 바뀌면 재조회 없음.
+            // stale 잔여 id(삭제 캐릭터 등)는 살아있는 base와의 교집합으로 무해.
+            val ids = fieldFilterMemo.get(filters, fieldValueEpoch.get())
             chars = chars.filter { it.id in ids }
         }
         if (tags.isNotEmpty()) {
-            // 태그 필터: 선택 태그 중 하나라도 가진 캐릭터(OR)
-            val taggedIds = app.database.characterTagDao().getAllTagsList()
-                .filter { it.tag in tags }.map { it.characterId }.toSet()
+            // 태그 필터(OR): (태그, character_tags 에폭) 캐시 + 타깃 쿼리(전체 스캔 제거).
+            val taggedIds = tagFilterMemo.get(tags, tagEpoch.get())
             chars = chars.filter { it.id in taggedIds }
         }
-        return sortCharacters(chars, sort)
+        sortCharacters(chars, sort)
     }
 
     private suspend fun sortCharacters(chars: List<Character>, sort: CharacterSort): List<Character> {
@@ -311,47 +377,93 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         ascending: Boolean, selector: (Character) -> R
     ): List<Character> = if (ascending) sortedBy(selector) else sortedByDescending(selector)
 
-    /** 커스텀 필드값 정렬. 값 없음/파싱불가는 방향과 무관하게 최후순. */
+    /**
+     * 커스텀 필드값 정렬. 값 없음/파싱불가는 방향과 무관하게 최후순.
+     *
+     * 정렬키(DB 조회 + CALCULATED 수식 평가)는 per-id로 [fieldSortCache]에 증분 저장한다. 정체성 키
+     * =(fieldKey, partIndex, 작품 스코프, character_field_values 에폭, structEpoch)가 같으면 방향 반전·
+     * 검색어·필터 변경에서 키를 재사용(재조회·재평가 0). 후보 중 캐시에 없는 **살아있는 id**는 그 자리에서
+     * 계산해 채우므로(도메인 완전성), 검색 해제·필터 제거·스코프 확대·복원으로 보이는 집합이 커져도 새 id가
+     * null 키로 최후순에 처박히지 않는다.
+     */
     private suspend fun sortByField(
         chars: List<Character>, fieldKey: String?, ascending: Boolean, partIndex: Int?
     ): List<Character> {
         if (fieldKey == null || chars.isEmpty()) return chars
-        val fieldDefs = getCharacterFieldsForKey(fieldKey)
-        if (fieldDefs.isEmpty()) return chars
 
-        val useNumeric = fieldDefs.values.any { FieldValueSorter.isNumericSortType(it.type) }
-        if (useNumeric) {
+        val scopeSig = _currentNovelId.value ?: -1L
+        val fvE = fieldValueEpoch.get()
+        val stE = structEpoch.get()
+
+        var cache = fieldSortCache
+        if (cache == null || cache.fieldKey != fieldKey || cache.partIndex != partIndex ||
+            cache.scopeSig != scopeSig || cache.fvEpoch != fvE || cache.structEpoch != stE
+        ) {
+            val fieldDefs = getCharacterFieldsForKey(fieldKey)
+            if (fieldDefs.isEmpty()) { fieldSortCache = null; return chars }  // 정렬 필드 없음 → base 순서 유지
+            val useNumeric = fieldDefs.values.any { FieldValueSorter.isNumericSortType(it.type) }
             val allCalc = fieldDefs.values.all { it.type == "CALCULATED" }
-            val keyMap: Map<Long, Double?> =
-                if (allCalc) computeCalculatedValues(chars, fieldKey)
-                else computeStoredNumeric(chars, fieldDefs, partIndex)
-            return chars.sortedWith(nullsLastComparator(ascending) { keyMap[it.id] })
-        } else {
-            val stored = characterRepository.getValuesForCharacters(chars.map { it.id })
-                .filter { it.fieldDefinitionId in fieldDefs.keys }
-                .associateBy { it.characterId }
-            val keyMap: Map<Long, String?> = chars.associate { c ->
-                val fv = stored[c.id]
-                val ownerFd = fv?.let { fieldDefs[it.fieldDefinitionId] }
-                c.id to (if (fv != null && ownerFd != null) FieldValueSorter.textValue(ownerFd, fv.value) else null)
-            }
-            return chars.sortedWith(nullsLastComparator(ascending) { keyMap[it.id] })
+            cache = FieldSortKeyCache(fieldKey, partIndex, scopeSig, fvE, stE, useNumeric, allCalc, fieldDefs)
+            fieldSortCache = cache
         }
+
+        // 캐시에 없는 후보 id만 계산(증분). 값 없음은 null로 명시 저장하고 computed에 등록 → 재계산 방지·null 구분.
+        // allCalc 키는 c.novelId→세계관→수식에 의존한다. 필드값을 안 건드리는 작품 변경(미배정/무세계관 작품으로의
+        // 일괄 이동)은 fvEpoch를 올리지 않으므로, 캐시 계산 시점과 novelId가 달라진 id도 재계산 대상에 포함한다.
+        val missing = chars.filter { c ->
+            c.id !in cache.computed || (cache.allCalc && cache.novelIdAtCompute[c.id] != c.novelId)
+        }
+        if (missing.isNotEmpty()) {
+            if (cache.useNumeric) {
+                val km: Map<Long, Double?> =
+                    if (cache.allCalc) computeCalculatedValues(missing, fieldKey)
+                    else computeStoredNumeric(missing, cache.fieldDefs, partIndex)
+                for (c in missing) {
+                    cache.numeric[c.id] = km[c.id]
+                    if (cache.allCalc) cache.novelIdAtCompute[c.id] = c.novelId
+                    cache.computed.add(c.id)
+                }
+            } else {
+                val stored = characterRepository.getValuesForCharacters(missing.map { it.id })
+                    .filter { it.fieldDefinitionId in cache.fieldDefs.keys }
+                    .associateBy { it.characterId }
+                for (c in missing) {
+                    val fv = stored[c.id]
+                    val ownerFd = fv?.let { cache.fieldDefs[it.fieldDefinitionId] }
+                    cache.text[c.id] =
+                        if (fv != null && ownerFd != null) FieldValueSorter.textValue(ownerFd, fv.value) else null
+                    cache.computed.add(c.id)
+                }
+            }
+        }
+
+        return if (cache.useNumeric) chars.sortedWith(nullsLastComparator(ascending) { cache.numeric[it.id] })
+        else chars.sortedWith(nullsLastComparator(ascending) { cache.text[it.id] })
     }
 
-    /** 값 있는 항목은 방향대로, null(값 없음)은 항상 뒤로. 동값은 이름 오름차순으로 안정화. */
+    /** 필드 정렬키 증분 캐시. 정체성(fieldKey/partIndex/scope/fv·struct 에폭)이 바뀌면 통째로 교체된다. */
+    private class FieldSortKeyCache(
+        val fieldKey: String,
+        val partIndex: Int?,
+        val scopeSig: Long,
+        val fvEpoch: Int,
+        val structEpoch: Int,
+        val useNumeric: Boolean,
+        val allCalc: Boolean,
+        val fieldDefs: Map<Long, FieldDefinition>
+    ) {
+        val numeric = HashMap<Long, Double?>()
+        val text = HashMap<Long, String?>()
+        val computed = HashSet<Long>()
+        /** allCalc 전용 — 각 id의 키를 계산할 때 쓴 novelId. 이후 novelId가 바뀌면 그 id만 재계산한다. */
+        val novelIdAtCompute = HashMap<Long, Long?>()
+    }
+    private var fieldSortCache: FieldSortKeyCache? = null
+
+    /** 값 있는 항목은 방향대로, null(값 없음)은 항상 뒤로. 동값은 이름 오름차순 안정화. (SortComparators 위임 — 테스트 가능) */
     private fun <R : Comparable<R>> nullsLastComparator(
         ascending: Boolean, selector: (Character) -> R?
-    ): Comparator<Character> = Comparator { a, b ->
-        val va = selector(a); val vb = selector(b)
-        val primary = when {
-            va == null && vb == null -> 0
-            va == null -> 1
-            vb == null -> -1
-            else -> if (ascending) va.compareTo(vb) else vb.compareTo(va)
-        }
-        if (primary != 0) primary else a.name.lowercase().compareTo(b.name.lowercase())
-    }
+    ): Comparator<Character> = SortComparators.nullsLast(ascending, { it.name.lowercase() }, selector)
 
     private suspend fun computeStoredNumeric(
         chars: List<Character>, fieldDefs: Map<Long, FieldDefinition>, partIndex: Int?

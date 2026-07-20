@@ -45,6 +45,10 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
+      # 단위 테스트 (순수 JVM — 필터/정렬 메모 무효화 회귀 가드). 로컬 SDK 부재로 CI가 유일 검증.
+      - name: Run unit tests
+        run: ./gradlew testDebugUnitTest --no-daemon
+
       # Debug 빌드
       - name: Build Debug APK
         if: github.event.inputs.build_type != 'release'
