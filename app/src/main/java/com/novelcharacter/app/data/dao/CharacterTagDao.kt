@@ -18,6 +18,10 @@ interface CharacterTagDao {
     @Query("SELECT DISTINCT tag FROM character_tags ORDER BY tag ASC")
     suspend fun getAllDistinctTags(): List<String>
 
+    /** 주어진 태그 중 하나라도 가진 캐릭터 id(OR). 태그 필터 전용 — getAllTagsList 전체 스캔 대체. */
+    @Query("SELECT DISTINCT characterId FROM character_tags WHERE tag IN (:tags)")
+    suspend fun getCharacterIdsByTags(tags: List<String>): List<Long>
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insert(tag: CharacterTag): Long
 

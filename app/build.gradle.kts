@@ -133,4 +133,7 @@ dependencies {
     // MPAndroidChart (성장 곡선 시각화)
     implementation("com.github.PhilJay:MPAndroidChart:v3.1.0")
 
+    // ===== 단위 테스트 (순수 JVM — SDK/에뮬레이터/Robolectric 불필요) =====
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
 }
