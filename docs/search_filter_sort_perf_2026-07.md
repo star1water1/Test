@@ -56,7 +56,8 @@
 
 기존 `GlobalSearchViewModel.searchResults`는 `(query, sort, filters)` 결합 키의 `switchMap`이라, **정렬 모드나 필터만 바꿔도** 3개의 Room LIKE 검색(캐릭터·사건·작품 전체 스캔)을 통째로 헐고 재발급했다(행 집합은 그대로인데도). 캐릭터 탭과 동일한 원리로 분리:
 
-- `rawResults = _searchQuery.switchMap { … }` — Room 검색은 **query에만** 의존(=query 변경 시에만 재발급). `switchMap`이 이전 내부 mediator의 소스를 자동 비활성화하므로 기존의 수동 소스 정리(`previous*`)를 제거.
+- `rawResults = baseKey.switchMap { … }` — Room 검색은 **query에 의존**(=query 변경 시에만 재발급). `switchMap`이 이전 내부 mediator의 소스를 자동 비활성화하므로 기존의 수동 소스 정리(`previous*`)를 제거.
+- **유휴 부하 제거** — base 키는 `(query, loadAllForFilter)`이고 `loadAllForFilter`는 **blank query에서 필터가 활성일 때만** true다. 따라서 blank+무필터 기본 상태에서는 `allCharacters`를 아예 구독하지 않아 전체 캐릭터 테이블 로드가 없다(대형 라이브러리에서 빈 힌트를 그리려고 전체를 읽지 않음 — 개발 의도 #1). active query에서 필터 토글은 키를 바꾸지 않으므로 base 재조회도 없다(재조회는 query 변경 또는 blank 상태의 필터 활성 전이에서만).
 - `resultsTrigger`(rawResults·sort·filters·필드값무효화) → `rebuild()` — 정렬/필터 변경은 base 재조회 없이 **인메모리 재랭킹**만. 필드필터 id셋은 기존 `EpochMemo`로 재조회 최소화, 순수 `buildItems()`로 랭킹·섹션 구성. 필터 계산을 먼저 await하므로 미완성 결과가 노출되지 않는다(기존 `filterReady` 게이팅 대체).
 - 보너스: `_fieldValueInvalidation`로 필드값/정의 편집 시 결과를 즉시 재발화(캐릭터 탭과 일관).
 

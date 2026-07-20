@@ -79,19 +79,37 @@ class GlobalSearchViewModel(application: Application) : AndroidViewModel(applica
         db.invalidationTracker.removeObserver(fieldValueObserver)
     }
 
-    // ── base 조회: 검색어(query)에만 의존. 정렬/필터 변경은 여기서 재조회를 유발하지 않는다. ──
+    // ── base 조회: 검색어(query)에 의존. blank query에서는 "필터 활성 여부"에만 추가로 의존한다. ──
     private data class RawResults(
         val chars: List<Character>,
         val events: List<TimelineEvent>,
         val novels: List<Novel>
     )
 
-    // query가 바뀔 때만 Room LIKE 검색을 재발급(캐릭터·사건·작품). switchMap이 이전 내부 소스를 자동 비활성화하므로
-    // 수동 소스 정리가 필요 없다. blank query면 캐릭터는 전체(필터 대상), 사건/작품은 빈 목록.
-    private val rawResults: LiveData<RawResults> = _searchQuery.switchMap { q ->
-        val query = q ?: ""
+    // blank query일 때만 필터 활성이 base에 영향을 준다(전체 캐릭터를 불러와 걸러야 하므로).
+    // query가 있으면 loadAllForFilter는 항상 false → active query에서 필터 토글은 키를 바꾸지 않아 base 재조회가 없다.
+    private data class BaseKey(val query: String, val loadAllForFilter: Boolean)
+
+    private val baseKey = MediatorLiveData<BaseKey>().apply {
+        val update = {
+            val query = _searchQuery.value ?: ""
+            val next = BaseKey(query, query.isBlank() && !_fieldFilters.value.isNullOrEmpty())
+            if (value != next) value = next  // 중복 방출 억제(같은 키면 switchMap 재실행 없음)
+        }
+        addSource(_searchQuery) { update() }
+        addSource(_fieldFilters) { update() }
+    }
+
+    // query(또는 blank일 때 필터 활성 전이)가 바뀔 때만 Room 검색을 재발급. switchMap이 이전 내부 소스를 자동
+    // 비활성화하므로 수동 정리 불필요. blank+무필터면 빈 소스(전체 캐릭터 로드 안 함), blank+필터면 전체(필터 대상).
+    private val rawResults: LiveData<RawResults> = baseKey.switchMap { key ->
+        val query = key.query
         val mediator = MediatorLiveData<RawResults>()
-        val charSrc = if (query.isNotBlank()) characterRepository.searchCharacters(query) else characterRepository.allCharacters
+        val charSrc: LiveData<List<Character>> = when {
+            query.isNotBlank() -> characterRepository.searchCharacters(query)
+            key.loadAllForFilter -> characterRepository.allCharacters
+            else -> MutableLiveData<List<Character>>(emptyList())
+        }
         val eventSrc = if (query.isNotBlank()) timelineRepository.searchEvents(query) else MutableLiveData(emptyList())
         val novelSrc = if (query.isNotBlank()) novelRepository.searchNovels(query) else MutableLiveData(emptyList())
         var chars: List<Character> = emptyList()
