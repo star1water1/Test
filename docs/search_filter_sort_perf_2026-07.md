@@ -50,7 +50,15 @@
 
 ## GlobalSearch 파리티
 
-`GlobalSearchViewModel`도 동일한 **필드필터 재조회** 결함을 가진다(switchMap이 query/sort/filter 결합 키라 키 입력마다 `applyFieldFilters` 재실행). CALCULATED·태그 정렬이 없어 정렬키 메모는 불필요. → 필드필터만 `EpochMemo`(`fieldValueEpoch` 관측)로 메모, `onCleared`에서 옵저버 해제. 규칙은 계속 `FieldFilterHelper`에 공유하고 **캐시 상태만 VM별**로 보유(스테이트리스 object에 뮤터블 캐시를 넣지 않음 — 스레드 안전·바운딩·수명 문제 회피).
+`GlobalSearchViewModel`도 동일한 **필드필터 재조회** 결함을 가졌다. CALCULATED·태그 정렬이 없어 정렬키 메모는 불필요 → 필드필터만 `EpochMemo`(`fieldValueEpoch` + `field_definitions` 관측)로 메모, `onCleared`에서 옵저버 해제. 규칙은 계속 `FieldFilterHelper`에 공유하고 **캐시 상태만 VM별**로 보유(스테이트리스 object에 뮤터블 캐시를 넣지 않음 — 스레드 안전·바운딩·수명 문제 회피).
+
+### 후속 — base 재조회 분리 (구조 개선)
+
+기존 `GlobalSearchViewModel.searchResults`는 `(query, sort, filters)` 결합 키의 `switchMap`이라, **정렬 모드나 필터만 바꿔도** 3개의 Room LIKE 검색(캐릭터·사건·작품 전체 스캔)을 통째로 헐고 재발급했다(행 집합은 그대로인데도). 캐릭터 탭과 동일한 원리로 분리:
+
+- `rawResults = _searchQuery.switchMap { … }` — Room 검색은 **query에만** 의존(=query 변경 시에만 재발급). `switchMap`이 이전 내부 mediator의 소스를 자동 비활성화하므로 기존의 수동 소스 정리(`previous*`)를 제거.
+- `resultsTrigger`(rawResults·sort·filters·필드값무효화) → `rebuild()` — 정렬/필터 변경은 base 재조회 없이 **인메모리 재랭킹**만. 필드필터 id셋은 기존 `EpochMemo`로 재조회 최소화, 순수 `buildItems()`로 랭킹·섹션 구성. 필터 계산을 먼저 await하므로 미완성 결과가 노출되지 않는다(기존 `filterReady` 게이팅 대체).
+- 보너스: `_fieldValueInvalidation`로 필드값/정의 편집 시 결과를 즉시 재발화(캐릭터 탭과 일관).
 
 ## 재사용·테스트 (순수 JVM)
 
