@@ -125,9 +125,10 @@ class ImageManagerFragment : Fragment() {
             Sort.DATE -> filtered.sortedByDescending { it.lastModified }
         }
         currentList = sorted
-        // 사라진 이미지가 선택에 남아 있지 않게 정리
-        val livePaths = all.mapTo(HashSet()) { it.path }
-        if (selectedPaths.retainAll(livePaths)) updateSelectionUi()
+        // 선택은 현재 뷰(필터·정렬 적용) 기준으로 유지 — 필터 전환 시 화면 밖(안 보이는) 선택은 자동 해제한다.
+        // 일괄 삭제/재압축이 사용자가 보지 않는 항목에 작용하지 않도록(변수 제어). 삭제로 사라진 항목도 함께 정리됨.
+        val visiblePaths = sorted.mapTo(HashSet()) { it.path }
+        if (selectedPaths.retainAll(visiblePaths)) updateSelectionUi()
         adapter.submitList(sorted)
         val empty = sorted.isEmpty() && viewModel.loading.value != true
         binding.emptyText.visibility = if (empty) View.VISIBLE else View.GONE
@@ -171,10 +172,9 @@ class ImageManagerFragment : Fragment() {
         adapter.setSelectionState(selectionMode, selectedPaths.toSet())
     }
 
-    /** 선택된 경로에 해당하는 현재 이미지 항목들. */
+    /** 선택된 경로에 해당하는 **현재 뷰(currentList)**의 이미지 항목들 — 일괄 작업은 화면에 보이는 대상에만 작용. */
     private fun selectedItems(): List<ImageManagerViewModel.ManagedImage> {
-        val all = viewModel.images.value ?: return emptyList()
-        return all.filter { selectedPaths.contains(it.path) }
+        return currentList.filter { selectedPaths.contains(it.path) }
     }
 
     // ---------- 정렬/옵션 ----------

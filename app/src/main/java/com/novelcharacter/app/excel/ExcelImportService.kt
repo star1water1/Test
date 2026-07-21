@@ -1887,9 +1887,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
         val cols = resolveHeaderColumns(headerRow)
         val yearColIndex = cols["연도"] ?: 0
-        val monthColIndex = cols["월"] ?: 1
-        val dayColIndex = cols["일"] ?: 2
-        val calendarColIndex = cols["역법"] ?: 3
+        // 선택 속성 열: 위치 폴백을 쓰면 열 삭제 시 이웃 열을 오독하므로 -1(=없음). 열 없음이면 UPDATE에서 기존값 유지.
+        val monthColIndex = cols["월"] ?: -1
+        val dayColIndex = cols["일"] ?: -1
+        val calendarColIndex = cols["역법"] ?: -1
         val eventTypeColIndex = cols["사건 유형"] ?: -1
         // 필수 컬럼: 위치 폴백을 쓰면 컬럼 삭제 시 이웃 컬럼 데이터가 사건 설명으로 오기록되므로 검증 후 스킵
         val descColIndex = cols["사건 설명"]
@@ -1995,7 +1996,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     db.timelineDao().update(existingEvent.copy(
                         // 코드 매칭 시 연도·설명은 편집 가능한 값 (자연키 매칭 시엔 동일값이라 무해)
                         year = year, description = description,
-                        month = month, day = day, calendarType = calendarType,
+                        // 열 없음(colIndex<0) = 기존값 유지, 열 있음+빈칸 = 삭제/무값 (외부 편집에서 열 삭제 시 무음 손실 방지)
+                        month = if (monthColIndex >= 0) month else existingEvent.month,
+                        day = if (dayColIndex >= 0) day else existingEvent.day,
+                        calendarType = if (calendarColIndex >= 0) calendarType else existingEvent.calendarType,
                         eventType = if (eventTypeColIndex >= 0) eventType else existingEvent.eventType,
                         universeId = effectiveUniverseId,
                         displayOrder = displayOrder ?: existingEvent.displayOrder,
@@ -2221,7 +2225,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     db.characterStateChangeDao().update(existing.copy(
                         // 코드 매칭 시 자연키 구성 요소도 편집 가능한 값 (자연키 매칭 시엔 동일값이라 무해)
                         characterId = character.id, year = year, fieldKey = fieldKey, newValue = newValue,
-                        month = month, day = day, description = description,
+                        // 열 없음 = 기존값 유지 (열 삭제로 인한 무음 손실 방지)
+                        month = if (monthColIndex >= 0) month else existing.month,
+                        day = if (dayColIndex >= 0) day else existing.day,
+                        description = if (descColIndex >= 0) description else existing.description,
                         createdAt = if (createdAtColIndex >= 0) createdAt else existing.createdAt,
                         code = existing.code ?: fileCode.takeIf { it.isNotBlank() } ?: generateEntityCode()
                     ))
@@ -2354,7 +2361,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     }
                     entitySeen[existing.id] = i
                     db.characterRelationshipDao().update(existing.copy(
-                        description = description,
+                        description = if (descColIndex >= 0) description else existing.description,
                         intensity = if (intensityColIndex >= 0) intensity else existing.intensity,
                         isBidirectional = if (bidirectionalColIndex >= 0) isBidirectional else existing.isBidirectional,
                         displayOrder = displayOrder ?: existing.displayOrder,
@@ -2397,10 +2404,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val yearColIndex = requiredCol(cols, "연도", sheet.sheetName, result) ?: return
         val monthColIndex = cols["월"] ?: -1
         val dayColIndex = cols["일"] ?: -1
-        val relTypeColIndex = cols["관계 유형"] ?: 5
-        val descColIndex = cols["설명"] ?: 6
-        val intensityColIndex = cols["강도"] ?: 7
-        val bidirectionalColIndex = cols["양방향"] ?: 8
+        // 선택 속성 열: 위치 폴백 제거(-1) — 열 삭제 시 이웃 열 오독·무음 손실 방지. 열 없음이면 UPDATE에서 기존값 유지.
+        val relTypeColIndex = cols["관계 유형"] ?: -1
+        val descColIndex = cols["설명"] ?: -1
+        val intensityColIndex = cols["강도"] ?: -1
+        val bidirectionalColIndex = cols["양방향"] ?: -1
         val eventIdColIndex = cols["연결사건ID"] ?: -1
         val eventCodeColIndex = cols["연결사건코드"] ?: -1
         val codeColIndex = cols["코드"] ?: -1
@@ -2497,9 +2505,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 if (existing != null) {
                     db.characterRelationshipChangeDao().update(existing.copy(
                         // 코드 매칭 시 자연키 구성 요소도 편집 가능한 값 (자연키 매칭 시엔 동일값이라 무해)
-                        relationshipId = relationship.id, year = year, month = month, day = day,
-                        relationshipType = relationshipType, description = description,
-                        intensity = intensity, isBidirectional = isBidirectional,
+                        // 열 없음 = 기존값 유지 (열 삭제로 인한 무음 손실 방지)
+                        relationshipId = relationship.id, year = year,
+                        month = if (monthColIndex >= 0) month else existing.month,
+                        day = if (dayColIndex >= 0) day else existing.day,
+                        relationshipType = if (relTypeColIndex >= 0) relationshipType else existing.relationshipType,
+                        description = if (descColIndex >= 0) description else existing.description,
+                        intensity = if (intensityColIndex >= 0) intensity else existing.intensity,
+                        isBidirectional = if (bidirectionalColIndex >= 0) isBidirectional else existing.isBidirectional,
                         eventId = if (eventColumnPresent) eventId else existing.eventId,
                         createdAt = if (createdAtColIndex >= 0) createdAt else existing.createdAt,
                         code = existing.code ?: fileCode.takeIf { it.isNotBlank() } ?: generateEntityCode()
