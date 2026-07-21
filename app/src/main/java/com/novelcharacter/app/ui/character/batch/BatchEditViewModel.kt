@@ -10,9 +10,9 @@ import com.novelcharacter.app.data.model.CharacterStateChange
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.SemanticRole
+import com.novelcharacter.app.data.repository.CharacterRepository
 import com.novelcharacter.app.data.repository.UniverseMoveCounts
 import com.novelcharacter.app.util.SemanticFieldSyncHelper
-import com.novelcharacter.app.util.StandardYearSyncHelper
 import kotlinx.coroutines.launch
 
 sealed class BatchOperationResult {
@@ -47,7 +47,6 @@ class BatchEditViewModel(application: Application) : AndroidViewModel(applicatio
     private val novelRepository = app.novelRepository
     private val universeRepository = app.universeRepository
     private val semanticSyncHelper = SemanticFieldSyncHelper(characterRepository, universeRepository, novelRepository)
-    private val stdYearSyncHelper = StandardYearSyncHelper(characterRepository, universeRepository)
 
     // ===== 선택 상태 =====
 
@@ -125,21 +124,23 @@ class BatchEditViewModel(application: Application) : AndroidViewModel(applicatio
     fun changeNovel(newNovelId: Long?) = launchBatchOp("changeNovel") { ids ->
         val move = characterRepository.batchChangeNovel(ids, newNovelId)
 
-        // 시맨틱 필드 재동기화 (standardYear가 달라질 수 있으므로)
+        // 시맨틱 필드 재동기화: 이동 후 필드값↔상태변화(__birth/__death/__alive) 일관성 유지.
+        // standardYear·연동(isLinked) 의존 연산(AGE·birthYear→age)은 syncFieldToStateChange가
+        // 역할별로 내부 self-gate하므로, 여기서 standardYear·isLinked로 미리 거르면 그 두 게이트와
+        // 무관한 birth/death/alive/birth_date 재동기화까지 함께 누락된다(setFieldValue 경로와 불일치).
+        // 따라서 대상 세계관만 확인하고 역할별 판단은 헬퍼에 위임한다(setField/clearField 경로와 동일).
         var syncFailures = 0
         if (newNovelId != null) {
             val newNovel = novelRepository.getNovelById(newNovelId)
             val newUniverseId = newNovel?.universeId
-            if (newUniverseId != null && newNovel?.standardYear != null) {
+            if (newUniverseId != null) {
                 // 값 일괄 로드 + 단일 트랜잭션 — setField/addStateChange와 동일하게 N+1·개별 커밋 제거(받쳐주는 확장성).
                 val valuesByChar = characterRepository.getValuesForCharacters(ids).groupBy { it.characterId }
                 app.database.withTransaction {
                     for (charId in ids) {
                         try {
-                            if (stdYearSyncHelper.isLinked(charId)) {
-                                val values = valuesByChar[charId] ?: emptyList()
-                                semanticSyncHelper.syncFieldToStateChange(charId, newUniverseId, values)
-                            }
+                            val values = valuesByChar[charId] ?: emptyList()
+                            semanticSyncHelper.syncFieldToStateChange(charId, newUniverseId, values)
                         } catch (e: Exception) {
                             Log.w(TAG, "Failed to sync semantic fields for character $charId after novel change", e)
                             syncFailures++
@@ -292,6 +293,15 @@ class BatchEditViewModel(application: Application) : AndroidViewModel(applicatio
             }
         }
         BatchCounts(affected = inserted, syncFailures = syncFailures, skipped = skipped + outOfScope)
+    }
+
+    /**
+     * 현재 선택에 대한 일괄 삭제 연쇄 영향 요약(관계·상태변화·세력소속·사건연계).
+     * 삭제 확인 다이얼로그가 범위를 사전 고지하는 데 쓴다(조작 마찰 최소화 + 변수 제어).
+     */
+    suspend fun getDeleteImpact(): CharacterRepository.DeleteImpact {
+        val ids = _selectedIds.value?.toList() ?: emptyList()
+        return characterRepository.getBatchDeleteImpact(ids)
     }
 
     fun deleteSelected() = launchBatchOp("delete") { ids ->

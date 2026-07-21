@@ -61,4 +61,11 @@ interface CharacterRelationshipDao {
 
     @Query("SELECT id FROM character_relationships")
     suspend fun getAllRelationshipIds(): List<Long>
+
+    /**
+     * 일괄 삭제 영향 요약용 — 선택 캐릭터가 한쪽 끝이라도 포함된 관계 id.
+     * 두 끝이 서로 다른 청크에 나뉘어도 같은 id가 반환되므로, 호출측에서 Set으로 교차청크 중복을 제거한다.
+     */
+    @Query("SELECT id FROM character_relationships WHERE characterId1 IN (:ids) OR characterId2 IN (:ids)")
+    suspend fun getRelationshipIdsForCharacters(ids: List<Long>): List<Long>
 }
