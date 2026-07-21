@@ -507,51 +507,39 @@ class CharacterListFragment : Fragment() {
             when (result) {
                 is BatchOperationResult.Success -> {
                     val opLabel = getOperationLabel(result.operation)
-                    // 시맨틱 동기화 부분 실패는 조용히 넘기지 않고 경고로 승격 (변수 제어)
+                    // 여러 고지가 동시에 날 수 있다(예: 작품 이동에서 필드 제거 + 동기화 실패, 필드값 일괄에서 제외).
+                    // 상호배타 분기 대신 해당되는 모든 경고를 합쳐 고지한다 — 어떤 유실·제외도 다른 경고에 가려지지 않게(변수 제어).
+                    val parts = mutableListOf(getString(R.string.batch_success_format, result.affectedCount, opLabel))
+                    if (result.move.hasRemoval) {
+                        parts.add(getString(R.string.batch_note_moved_removed, result.move.removedValues, result.move.removedMemberships))
+                    }
                     if (result.syncFailures > 0) {
-                        val warn = getString(
-                            R.string.batch_success_with_warning,
-                            result.affectedCount, opLabel, result.syncFailures
-                        )
-                        // 동기화 실패와 중복 스킵이 동시에 날 수 있음(일괄 상태변화) — 스킵도 함께 고지.
-                        val message = if (result.skipped > 0) {
-                            getString(R.string.batch_success_append_skipped, warn, result.skipped)
-                        } else warn
-                        Snackbar.make(binding.root, message, Snackbar.LENGTH_LONG).show()
-                        logOperation(OpResult.failure(
-                            OpResult.CAT_BATCH,
-                            getString(R.string.result_batch_summary, opLabel, result.affectedCount),
-                            getString(R.string.result_batch_sync_warning, result.syncFailures)
-                        ))
-                    } else if (result.move.hasRemoval) {
-                        // 세계관 이동으로 대응 없는 필드값·세력 소속이 제거된 경우 — 유실을 고지(변수 제어).
-                        // 같은 이름 필드는 이관되고, 제거분은 휴지통에 백업되어 복원 가능함을 알린다.
-                        val message = getString(
-                            R.string.batch_move_removed_warning,
-                            result.affectedCount, result.move.removedValues, result.move.removedMemberships
-                        )
-                        Snackbar.make(binding.root, message, Snackbar.LENGTH_LONG).show()
-                        logOperation(OpResult.success(
-                            OpResult.CAT_BATCH,
-                            getString(R.string.result_batch_summary, opLabel, result.affectedCount),
-                            getString(R.string.result_batch_move_detail, result.move.remappedValues, result.move.removedValues, result.move.removedMemberships)
-                        ))
+                        parts.add(getString(R.string.batch_note_sync_failed, result.syncFailures))
+                    }
+                    if (result.skipped > 0) {
+                        parts.add(getString(R.string.batch_note_skipped, result.skipped))
+                    }
+                    val hasNotice = result.move.hasRemoval || result.syncFailures > 0 || result.skipped > 0
+                    Snackbar.make(
+                        binding.root, parts.joinToString(" · "),
+                        if (hasNotice) Snackbar.LENGTH_LONG else Snackbar.LENGTH_SHORT
+                    ).show()
+
+                    // 작업 이력 로그도 동일하게 합산 — 동기화 실패가 있으면 실패(주의)로, 그 외 제거/제외는 성공으로 기록.
+                    val detailParts = mutableListOf<String>()
+                    if (result.move.hasRemoval) {
+                        detailParts.add(getString(R.string.result_batch_move_detail, result.move.remappedValues, result.move.removedValues, result.move.removedMemberships))
+                    } else if (result.move.remappedValues > 0) {
+                        detailParts.add(getString(R.string.result_batch_move_remapped, result.move.remappedValues))
+                    }
+                    if (result.syncFailures > 0) detailParts.add(getString(R.string.result_batch_sync_warning, result.syncFailures))
+                    if (result.skipped > 0) detailParts.add(getString(R.string.batch_note_skipped, result.skipped))
+                    val summary = getString(R.string.result_batch_summary, opLabel, result.affectedCount)
+                    val detail = detailParts.joinToString(" / ").ifBlank { null }
+                    if (result.syncFailures > 0) {
+                        logOperation(OpResult.failure(OpResult.CAT_BATCH, summary, detail))
                     } else {
-                        val remapNote = if (result.move.remappedValues > 0)
-                            getString(R.string.result_batch_move_remapped, result.move.remappedValues) else null
-                        // 자연키 중복 등으로 건너뛴 건이 있으면 조용히 넘기지 않고 함께 고지(변수 제어) — 일괄 상태변화 등.
-                        val message = if (result.skipped > 0) {
-                            getString(R.string.batch_success_with_skipped, result.affectedCount, opLabel, result.skipped)
-                        } else {
-                            getString(R.string.batch_success_format, result.affectedCount, opLabel)
-                        }
-                        val len = if (result.skipped > 0) Snackbar.LENGTH_LONG else Snackbar.LENGTH_SHORT
-                        Snackbar.make(binding.root, message, len).show()
-                        logOperation(OpResult.success(
-                            OpResult.CAT_BATCH,
-                            getString(R.string.result_batch_summary, opLabel, result.affectedCount),
-                            remapNote
-                        ))
+                        logOperation(OpResult.success(OpResult.CAT_BATCH, summary, detail))
                     }
 
                     // 배치 작업 후 리스트 강제 갱신 (한 번만)
