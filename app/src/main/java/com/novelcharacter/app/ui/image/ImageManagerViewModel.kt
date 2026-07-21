@@ -178,21 +178,28 @@ class ImageManagerViewModel(application: Application) : AndroidViewModel(applica
     private suspend fun deleteInternal(item: ManagedImage): Long? = try {
         val file = File(item.path)
         val canon = runCatching { file.canonicalPath }.getOrNull() ?: item.path
-        for (owner in item.owners) {
-            when (owner.type) {
-                OwnerType.CHARACTER -> db.characterDao().getCharacterById(owner.id)?.let { c ->
-                    db.characterDao().update(c.copy(imagePaths = removePath(c.imagePaths, item.path, canon)))
-                }
-                OwnerType.NOVEL -> db.novelDao().getNovelById(owner.id)?.let { n ->
-                    db.novelDao().update(n.copy(imagePaths = removePath(n.imagePaths, item.path, canon)))
-                }
-                OwnerType.UNIVERSE -> db.universeDao().getUniverseById(owner.id)?.let { u ->
-                    db.universeDao().update(u.copy(imagePaths = removePath(u.imagePaths, item.path, canon)))
+        val existed = file.exists()
+        val size = if (existed) file.length() else 0L
+        // 원자성: 소유 엔티티 imagePaths 제거를 단일 트랜잭션으로 묶고, 파일 삭제를 그 안에서 마지막에 시도한다.
+        // 파일 삭제 실패 시 예외를 던져 링크 제거를 롤백 → 파일·링크가 함께 보존된다(캐릭터가 이미지를 조용히 잃지 않음).
+        // 파일이 이미 없는(고아) 경우엔 링크만 정리한다.
+        db.withTransaction {
+            for (owner in item.owners) {
+                when (owner.type) {
+                    OwnerType.CHARACTER -> db.characterDao().getCharacterById(owner.id)?.let { c ->
+                        db.characterDao().update(c.copy(imagePaths = removePath(c.imagePaths, item.path, canon)))
+                    }
+                    OwnerType.NOVEL -> db.novelDao().getNovelById(owner.id)?.let { n ->
+                        db.novelDao().update(n.copy(imagePaths = removePath(n.imagePaths, item.path, canon)))
+                    }
+                    OwnerType.UNIVERSE -> db.universeDao().getUniverseById(owner.id)?.let { u ->
+                        db.universeDao().update(u.copy(imagePaths = removePath(u.imagePaths, item.path, canon)))
+                    }
                 }
             }
+            if (existed && !file.delete()) throw java.io.IOException("파일 삭제 실패: ${item.path}")
         }
-        val size = file.length()
-        if (file.delete()) size else null
+        size
     } catch (e: Exception) {
         null
     }
