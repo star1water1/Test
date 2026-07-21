@@ -83,6 +83,22 @@ class ImageManagerViewModel(application: Application) : AndroidViewModel(applica
     // @Volatile: buildItems()는 IO 스레드에서 이 값을 읽고 prepare/commit은 메인에서 쓰므로 가시성 보장.
     @Volatile private var pendingPreview: RecompressPreview? = null
 
+    // ===== 재압축 되돌리기 — 재압축 시 원본을 영구 삭제하지 않고 백업 디렉터리로 옮겨 스낵바 "실행취소"로 복원 가능하게 함 =====
+    private data class RecompressUndoEntry(
+        val originalPath: String,   // 재압축 전 원본 경로(복원 목적지)
+        val backupPath: String,     // recompress_backup/ 로 옮긴 백업 파일
+        val finalPath: String,      // 재압축 산출물(복원 시 삭제)
+        val owners: List<Owner>
+    )
+    @Volatile private var pendingUndo: List<RecompressUndoEntry>? = null
+    private val recompressBackupDirName = "recompress_backup"
+    private val backupRetentionMs = 7L * 24 * 60 * 60 * 1000  // 7일
+
+    fun hasRecompressUndo(): Boolean = !pendingUndo.isNullOrEmpty()
+
+    private fun recompressBackupDir(): File =
+        File(getApplication<Application>().filesDir, recompressBackupDirName).apply { if (!exists()) mkdirs() }
+
     // 미리보기 준비 중(임시 파일 생성 중) 플래그. pendingPreview는 buildPreview가 끝난 뒤에야 세팅되므로,
     // 그 사이 창에서 동시 load()의 sweep가 준비 중 임시 파일을 지워 재압축이 조용히 무효화되는 것을 막는다.
     @Volatile private var preparingRecompress = false
@@ -99,7 +115,10 @@ class ImageManagerViewModel(application: Application) : AndroidViewModel(applica
     fun load() {
         _loading.value = true
         viewModelScope.launch {
-            val (items, summary) = withContext(Dispatchers.IO) { buildItems() }
+            val (items, summary) = withContext(Dispatchers.IO) {
+                sweepOldRecompressBackups()  // 오래된 재압축 백업 정리(수명 관리)
+                buildItems()
+            }
             _images.value = items
             _summary.value = summary
             _loading.value = false
@@ -326,6 +345,10 @@ class ImageManagerViewModel(application: Application) : AndroidViewModel(applica
     }
 
     private suspend fun commitInternal(preview: RecompressPreview): RecompressResult {
+        // 직전 되돌리기 창은 지났으므로 이전 백업을 정리하고(무한 누적 방지), 오래된 백업(7일)도 함께 쓸어낸다.
+        pendingUndo?.forEach { runCatching { File(it.backupPath).delete() } }
+        pendingUndo = null
+        sweepOldRecompressBackups()
         val filesDir = getApplication<Application>().filesDir
 
         // 1단계: 임시 파일 → 정식 이름 개명(파일 시스템). 사라졌거나 실패한 건은 스킵.
@@ -371,19 +394,85 @@ class ImageManagerViewModel(application: Application) : AndroidViewModel(applica
             return RecompressResult(0, 0L, preview.skips.size, preview.plans.size)
         }
 
-        // 3단계: 원본 삭제(교체 완료분). freed = 원본 − 재압축본(음수 방지).
+        // 3단계: 원본을 영구 삭제하지 않고 백업 디렉터리로 옮긴다(되돌리기용). freed = 원본 − 재압축본(백업 정리 후 실제 확보).
+        val backupDir = recompressBackupDir()
+        val undo = ArrayList<RecompressUndoEntry>()
         var freed = 0L
         for ((plan, finalPath, _) in committed) {
             val orig = File(plan.item.path)
             val origLen = orig.length()
-            if (orig.delete()) {
-                val newLen = File(finalPath).length()
+            val newLen = File(finalPath).length()
+            val backup = File(backupDir, "${UUID.randomUUID()}_${orig.name}")
+            val backedUp = orig.renameTo(backup) || runCatching {
+                backup.writeBytes(orig.readBytes()); orig.delete(); true
+            }.getOrDefault(false)
+            if (backedUp) {
+                runCatching { backup.setLastModified(System.currentTimeMillis()) }  // 수명은 백업 생성 시점 기준
+                undo.add(RecompressUndoEntry(plan.item.path, backup.absolutePath, finalPath, plan.item.owners))
+                freed += (origLen - newLen).coerceAtLeast(0L)
+            } else if (orig.delete()) {
+                // 백업 이동 실패 → 공간 확보 우선으로 원본 삭제(이 건만 되돌리기 불가). 커밋 자체는 유효.
                 freed += (origLen - newLen).coerceAtLeast(0L)
             }
         }
+        pendingUndo = undo.ifEmpty { null }
         // 준비됐으나 커밋 못 한 건(개명·이동 실패 등) = 계획 − 반영. 조용히 증발하지 않도록 집계·통보.
         val failed = preview.plans.size - committed.size
         return RecompressResult(committed.size, freed, preview.skips.size, failed)
+    }
+
+    /** 방금 재압축한 원본을 복원한다: 백업 → 원위치, DB 경로를 재압축본 → 원본으로 되돌리고(트랜잭션) 재압축본 삭제. */
+    fun undoLastRecompress(onDone: (Boolean) -> Unit) {
+        val entries = pendingUndo
+        if (entries.isNullOrEmpty()) { onDone(false); return }
+        viewModelScope.launch {
+            val ok = withContext(Dispatchers.IO) { restoreRecompress(entries) }
+            pendingUndo = null
+            load()
+            onDone(ok)
+        }
+    }
+
+    private suspend fun restoreRecompress(entries: List<RecompressUndoEntry>): Boolean {
+        var allOk = true
+        for (e in entries) {
+            val backup = File(e.backupPath)
+            val original = File(e.originalPath)
+            // 1) 백업 → 원위치 복원
+            val restored = backup.exists() && (backup.renameTo(original) || runCatching {
+                original.writeBytes(backup.readBytes()); backup.delete(); true
+            }.getOrDefault(false))
+            if (!restored) { allOk = false; continue }
+            // 2) DB 경로를 재압축본 → 원본으로 되돌림(트랜잭션) 후 3) 재압축 산출물 삭제
+            val finalCanon = runCatching { File(e.finalPath).canonicalPath }.getOrNull() ?: e.finalPath
+            runCatching {
+                db.withTransaction {
+                    for (owner in e.owners) {
+                        when (owner.type) {
+                            OwnerType.CHARACTER -> db.characterDao().getCharacterById(owner.id)?.let { c ->
+                                db.characterDao().update(c.copy(imagePaths = replacePath(c.imagePaths, e.finalPath, finalCanon, e.originalPath)))
+                            }
+                            OwnerType.NOVEL -> db.novelDao().getNovelById(owner.id)?.let { n ->
+                                db.novelDao().update(n.copy(imagePaths = replacePath(n.imagePaths, e.finalPath, finalCanon, e.originalPath)))
+                            }
+                            OwnerType.UNIVERSE -> db.universeDao().getUniverseById(owner.id)?.let { u ->
+                                db.universeDao().update(u.copy(imagePaths = replacePath(u.imagePaths, e.finalPath, finalCanon, e.originalPath)))
+                            }
+                        }
+                    }
+                }
+                File(e.finalPath).delete()
+            }.onFailure { allOk = false }
+        }
+        return allOk
+    }
+
+    /** 7일 지난 재압축 백업 정리 — subdir라 고아 정리 대상이 아니므로 여기서 수명 관리(무한 누적 방지). */
+    private fun sweepOldRecompressBackups() {
+        val dir = File(getApplication<Application>().filesDir, recompressBackupDirName)
+        if (!dir.exists()) return
+        val cutoff = System.currentTimeMillis() - backupRetentionMs
+        dir.listFiles()?.forEach { f -> if (f.isFile && f.lastModified() < cutoff) runCatching { f.delete() } }
     }
 
     /** filesDir의 재압축 임시 파일(표식 포함)을 모두 삭제. */
