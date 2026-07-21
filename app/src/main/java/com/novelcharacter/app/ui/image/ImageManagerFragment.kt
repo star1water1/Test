@@ -41,6 +41,27 @@ class ImageManagerFragment : Fragment() {
     private val viewModel: ImageManagerViewModel by viewModels()
     private val gson = Gson()
 
+    // 탭 직접 임포트 — 시스템 픽커 다중 선택 → img_ 라이브러리(미배정) 편입
+    private val imagePickerLauncher = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.GetMultipleContents()
+    ) { uris ->
+        if (uris.isNullOrEmpty()) return@registerForActivityResult
+        viewModel.importImages(uris) { result ->
+            if (!isAdded || _binding == null) return@importImages
+            if (result.failed > 0) {
+                reportAndNotify(OpResult.failure(
+                    OpResult.CAT_MAINTENANCE,
+                    getString(R.string.image_manager_import_failed, result.imported, result.failed)
+                ))
+            } else {
+                reportAndNotify(OpResult.success(
+                    OpResult.CAT_MAINTENANCE,
+                    getString(R.string.image_manager_imported, result.imported)
+                ))
+            }
+        }
+    }
+
     private enum class Filter { ALL, CHARACTER, NOVEL, UNIVERSE, ORPHAN }
     private enum class Sort { SIZE, NAME, DATE }
 
@@ -83,6 +104,7 @@ class ImageManagerFragment : Fragment() {
             applyView()
         }
 
+        binding.importButton.setOnClickListener { imagePickerLauncher.launch("image/*") }
         binding.sortButton.setOnClickListener { showSortMenu() }
         binding.optionsButton.setOnClickListener { showOptionsMenu() }
         binding.selectButton.setOnClickListener { if (selectionMode) exitSelection() else enterSelection(null) }
@@ -96,7 +118,7 @@ class ImageManagerFragment : Fragment() {
         viewModel.summary.observe(viewLifecycleOwner) { s ->
             binding.summaryText.text = getString(
                 R.string.image_manager_summary,
-                s.totalCount, StorageAnalyzer.formatBytes(s.totalBytes), s.referencedCount, s.orphanCount
+                s.totalCount, StorageAnalyzer.formatBytes(s.totalBytes), s.referencedCount, s.unassignedCount, s.orphanCount
             )
         }
         viewModel.images.observe(viewLifecycleOwner) { applyView() }
@@ -222,16 +244,54 @@ class ImageManagerFragment : Fragment() {
 
         sheetBinding.detailSizeText.text = StorageAnalyzer.formatBytes(item.sizeBytes)
         sheetBinding.detailOwnerText.text = if (item.owners.isEmpty()) {
-            if (item.status == ImageManagerViewModel.Status.TRASH_HELD) {
-                getString(R.string.image_manager_owner_trash)
-            } else getString(R.string.image_manager_owner_orphan)
+            when (item.status) {
+                ImageManagerViewModel.Status.TRASH_HELD -> getString(R.string.image_manager_owner_trash)
+                ImageManagerViewModel.Status.UNASSIGNED -> getString(R.string.image_manager_owner_unassigned)
+                else -> getString(R.string.image_manager_owner_orphan)
+            }
         } else {
             item.owners.joinToString("\n") { "${typeLabel(it.type)} · ${it.name}" }
         }
 
-        // 재압축은 참조본에만 의미가 있음(고아/휴지통은 스킵됨) → 참조본에서만 노출
+        // 태그 칩(라이브러리 이미지) — 태그 편집은 어떤 이미지든 가능(편집 시 라이브러리로 입양).
+        val tags = item.meta?.tags.orEmpty()
+        sheetBinding.detailTagChipGroup.removeAllViews()
+        if (tags.isNotEmpty()) {
+            sheetBinding.detailTagChipGroup.visibility = View.VISIBLE
+            for (tag in tags) {
+                sheetBinding.detailTagChipGroup.addView(
+                    com.google.android.material.chip.Chip(ctx).apply {
+                        text = tag
+                        isClickable = false
+                        isCheckable = false
+                        textSize = 12f
+                    }
+                )
+            }
+        } else {
+            sheetBinding.detailTagChipGroup.visibility = View.GONE
+        }
+        sheetBinding.detailTagEditButton.setOnClickListener {
+            dialog.dismiss()
+            val sheet = ImageTagEditBottomSheet()
+            sheet.currentTags = tags
+            sheet.loadSuggestions = { viewModel.getTagSuggestions() }
+            sheet.onSave = { newTags ->
+                viewModel.replaceTags(item.path, newTags) {
+                    if (!isAdded || _binding == null) return@replaceTags
+                    reportAndNotify(OpResult.success(
+                        OpResult.CAT_MAINTENANCE,
+                        getString(R.string.image_tag_edit_done, newTags.size)
+                    ))
+                }
+            }
+            sheet.show(childFragmentManager, ImageTagEditBottomSheet.TAG)
+        }
+
+        // 재압축: 참조본 + 라이브러리 미배정 모두 사용자 자산 → 노출. 고아/휴지통만 숨김.
         sheetBinding.detailRecompressButton.visibility =
-            if (item.status == ImageManagerViewModel.Status.REFERENCED) View.VISIBLE else View.GONE
+            if (item.status == ImageManagerViewModel.Status.REFERENCED ||
+                item.status == ImageManagerViewModel.Status.UNASSIGNED) View.VISIBLE else View.GONE
 
         sheetBinding.detailFullScreenButton.setOnClickListener { dialog.dismiss(); openFullScreen(item) }
         sheetBinding.detailRecompressButton.setOnClickListener { dialog.dismiss(); startRecompress(listOf(item)) }

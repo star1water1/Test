@@ -26,6 +26,13 @@
             android:textColor="?attr/colorOnSurface" />
 
         <com.google.android.material.button.MaterialButton
+            android:id="@+id/importButton"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/image_manager_import" />
+
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/selectButton"
             style="@style/Widget.Material3.Button.TextButton"
             android:layout_width="wrap_content"

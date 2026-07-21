@@ -21,6 +21,7 @@ object ImageSettingsDialog {
         val store = ImageSettingsStore(ctx.applicationContext)
         fragment.viewLifecycleOwner.lifecycleScope.launch {
             val current = store.getSettings()
+            val currentPolicy = store.getEditorRemovePolicy()
             val binding = DialogImageSettingsBinding.inflate(fragment.layoutInflater)
 
             // 로컬 편집 상태 (저장 버튼에서만 반영)
@@ -82,6 +83,12 @@ object ImageSettingsDialog {
                     .show()
             }
 
+            // 편집창 이미지 제거 정책(라이브러리 기능) — 기본: 라이브러리만 보존
+            when (currentPolicy) {
+                ImageSettingsStore.EditorRemovePolicy.ALWAYS_ADOPT -> binding.policyAlwaysAdopt.isChecked = true
+                ImageSettingsStore.EditorRemovePolicy.LIBRARY_ONLY -> binding.policyLibraryOnly.isChecked = true
+            }
+
             AlertDialog.Builder(ctx)
                 .setTitle(R.string.image_settings_title)
                 .setView(binding.root)
@@ -93,6 +100,10 @@ object ImageSettingsDialog {
                         store.setMaxLongEdgePx(maxEdge)
                         store.setSkipBelowEnabled(binding.skipSwitch.isChecked)
                         store.setSkipBelowBytes(skipBytes)
+                        store.setEditorRemovePolicy(
+                            if (binding.policyAlwaysAdopt.isChecked) ImageSettingsStore.EditorRemovePolicy.ALWAYS_ADOPT
+                            else ImageSettingsStore.EditorRemovePolicy.LIBRARY_ONLY
+                        )
                         onSaved?.invoke()
                     }
                 }

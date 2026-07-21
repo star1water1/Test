@@ -17,8 +17,8 @@ import java.io.File
  */
 object StorageAnalyzer {
 
-    /** filesDir 루트에 저장되는 이미지 파일 접두 규칙 (char_/universe_/novel_ + UUID) */
-    private val IMAGE_PREFIXES = listOf("char_", "universe_", "novel_")
+    /** filesDir 루트에 저장되는 이미지 파일 접두 규칙 (char_/universe_/novel_/img_ + UUID). img_는 이미지 탭 직접 임포트. */
+    private val IMAGE_PREFIXES = listOf("char_", "universe_", "novel_", "img_")
     private val IMAGE_EXTENSIONS = listOf(".jpg", ".jpeg", ".png", ".webp")
 
     private const val BACKUP_DIR = "backups"
@@ -33,7 +33,8 @@ object StorageAnalyzer {
 
     data class StorageReport(
         val referencedImages: Category,   // DB가 참조하는 이미지
-        val orphanImages: Category,       // 디스크에 있으나 DB·휴지통 어디서도 참조 안 함
+        val libraryImages: Category,      // 라이브러리(image_meta) 관리 중인 미배정 이미지
+        val orphanImages: Category,       // 디스크에 있으나 DB·휴지통·라이브러리 어디서도 참조 안 함
         val trashHeldImages: Category,    // 휴지통 스냅샷이 복원용으로 보류 중인 이미지
         val autoBackups: Category,        // filesDir/backups/*.enc
         val exportCache: Category,        // cacheDir/exports (재생성 가능)
@@ -42,7 +43,7 @@ object StorageAnalyzer {
         val other: Category,              // 위에 안 잡힌 filesDir 기타
     ) {
         val totalBytes: Long
-            get() = referencedImages.bytes + orphanImages.bytes + trashHeldImages.bytes +
+            get() = referencedImages.bytes + libraryImages.bytes + orphanImages.bytes + trashHeldImages.bytes +
                 autoBackups.bytes + exportCache.bytes + database.bytes + logs.bytes + other.bytes
     }
 
@@ -57,11 +58,16 @@ object StorageAnalyzer {
             .mapNotNull { runCatching { File(it).canonicalPath }.getOrNull() }
             .toSet()
         val trashHeldPaths = collectTrashHeldPaths(db, gson)  // suspend — DB 접근
+        // 라이브러리(image_meta) 경로 — 미배정 이미지를 고아로 오분류하지 않기 위한 분류 집합
+        val libraryPaths = runCatching { db.imageMetaDao().getAllPaths() }.getOrDefault(emptyList())
+            .mapNotNull { runCatching { File(it).canonicalPath }.getOrNull() }
+            .toSet()
 
         // filesDir 루트 파일 순회 (하위 디렉토리는 별도 계산)
         val rootFiles = filesDir.listFiles()?.filter { it.isFile } ?: emptyList()
 
         var refBytes = 0L; var refCount = 0
+        var libBytes = 0L; var libCount = 0
         var orphanBytes = 0L; var orphanCount = 0
         var trashBytes = 0L; var trashCount = 0
         var logBytes = 0L; var logCount = 0
@@ -75,6 +81,7 @@ object StorageAnalyzer {
                 isImageFile(f.name) -> when {
                     canonical in referencedPaths -> { refBytes += f.length(); refCount++ }
                     canonical in trashHeldPaths -> { trashBytes += f.length(); trashCount++ }
+                    canonical in libraryPaths -> { libBytes += f.length(); libCount++ }
                     else -> { orphanBytes += f.length(); orphanCount++ }
                 }
                 f.name == "error_log.txt" || f.name == "crash_log.txt" -> { logBytes += f.length(); logCount++ }
@@ -108,6 +115,7 @@ object StorageAnalyzer {
 
         StorageReport(
             referencedImages = Category("referenced", refBytes, refCount),
+            libraryImages = Category("library", libBytes, libCount),
             orphanImages = Category("orphan", orphanBytes, orphanCount),
             trashHeldImages = Category("trash", trashBytes, trashCount),
             autoBackups = Category("backup", backupBytes, backupFiles.size),

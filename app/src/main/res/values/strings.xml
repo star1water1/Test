@@ -1399,6 +1399,7 @@
     <string name="storage_file_count">%d개</string>
 
     <string name="storage_cat_referenced">이미지 (사용 중)</string>
+    <string name="storage_cat_library">라이브러리 이미지 (미배정)</string>
     <string name="storage_cat_backups">자동 백업</string>
     <string name="storage_cat_export_cache">내보내기 캐시</string>
     <string name="storage_cat_orphan">고아 이미지 (미참조)</string>
@@ -1712,12 +1713,28 @@
     <string name="image_manager_thumb_desc">이미지 미리보기</string>
     <string name="image_manager_sort">정렬</string>
     <string name="image_manager_options">옵션</string>
-    <string name="image_manager_summary">총 %1$d개 · %2$s (참조 %3$d · 고아 %4$d)</string>
+    <string name="image_manager_summary">총 %1$d개 · %2$s (참조 %3$d · 미배정 %4$d · 고아 %5$d)</string>
     <string name="image_manager_filter_all">전체</string>
     <string name="image_manager_filter_character">캐릭터</string>
     <string name="image_manager_filter_novel">작품</string>
     <string name="image_manager_filter_universe">세계관</string>
     <string name="image_manager_filter_orphan">고아</string>
+    <string name="image_manager_filter_unassigned">미배정</string>
+    <string name="image_manager_import">불러오기</string>
+    <string name="image_manager_imported">이미지 %1$d장을 라이브러리(미배정)로 불러왔습니다</string>
+    <string name="image_manager_import_failed">이미지 %1$d장 불러옴 · %2$d장 실패</string>
+    <string name="image_manager_status_unassigned">미배정</string>
+    <string name="image_manager_owner_unassigned">라이브러리 (미배정)</string>
+    <string name="image_tag_edit_action">태그 편집</string>
+    <string name="image_tag_edit_title">이미지 태그</string>
+    <string name="image_tag_edit_hint">태그 (콤마로 구분)</string>
+    <string name="image_tag_suggestions_label">기존 태그 (탭하여 추가)</string>
+    <string name="image_tag_edit_done">태그 %1$d개를 저장했습니다</string>
+    <string name="image_link_badge">링크</string>
+    <string name="image_settings_remove_policy_title">편집창에서 이미지 제거 시</string>
+    <string name="image_settings_remove_policy_desc">캐릭터 편집창에서 이미지를 빼고 저장할 때 파일 처리 방식입니다. 다른 곳에서 함께 쓰는 파일은 어느 정책에서도 지워지지 않습니다.</string>
+    <string name="image_settings_remove_policy_library_only">라이브러리만 보존 (기본) — 라이브러리 이미지는 미배정으로 복귀, 그 외는 삭제</string>
+    <string name="image_settings_remove_policy_always_adopt">항상 미배정 복귀 — 삭제하지 않고 라이브러리로 이동 (삭제는 이미지 탭에서)</string>
     <string name="image_manager_status_orphan">고아</string>
     <string name="image_manager_status_trash">휴지통</string>
     <string name="image_manager_type_character">캐릭터</string>

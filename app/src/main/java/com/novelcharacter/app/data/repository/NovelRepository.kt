@@ -42,13 +42,15 @@ class NovelRepository(
             novelDao.delete(novel)
         }
 
-        // DB 트랜잭션 성공 후 디스크에서 이미지 파일 삭제
-        for (file in imageFiles) {
-            try {
-                if (file.exists()) file.delete()
-            } catch (e: Exception) {
-                Log.w("NovelRepository", "Failed to delete image: ${file.absolutePath}", e)
-            }
+        // DB 트랜잭션 성공 후 디스크에서 이미지 파일 삭제 — 단, 다른 엔티티가 공유 중이거나
+        // 라이브러리(image_meta)·휴지통이 보유한 파일은 지우지 않는다(경로 공유 배정 하 무음 파괴 방지).
+        // Context 없는 저장소 계층이라 드래프트 보호는 생략된다(가드 문서 참조).
+        try {
+            com.novelcharacter.app.util.ImageOwnershipGuard.deleteIfUnprotected(
+                db, null, imageFiles.map { it.absolutePath }
+            )
+        } catch (e: Exception) {
+            Log.w("NovelRepository", "Guarded image cleanup failed", e)
         }
     }
 

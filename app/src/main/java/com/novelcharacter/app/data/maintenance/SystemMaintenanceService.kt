@@ -234,7 +234,13 @@ class SystemMaintenanceService(
         val trashHeld = trashStatus.paths
         // (1) 드래프트 이미지 포함
         val draftHeld = com.novelcharacter.app.util.CharacterDraftPrefs.collectAllDraftImagePaths(context)
-        val keep = referenced + trashHeld + draftHeld
+        // (1b) 라이브러리(image_meta) 이미지 — 미배정이어도 사용자 자산이므로 절대 정리 대상이 아니다.
+        //      조회 실패 시엔 보호 집합이 불완전하므로 (2)와 동일하게 삭제를 중단한다(fail-safe).
+        val metaHeld = runCatching { db.imageMetaDao().getAllPaths() }.getOrNull()
+            ?.mapNotNull { runCatching { java.io.File(it).canonicalPath }.getOrNull() }
+            ?.toSet()
+            ?: return OrphanCleanupResult(aborted = true)
+        val keep = referenced + trashHeld + draftHeld + metaHeld
 
         val rootFiles = filesDir.listFiles { f -> f.isFile } ?: return OrphanCleanupResult()
         val now = System.currentTimeMillis()

@@ -73,6 +73,7 @@ class StorageFragment : Fragment() {
 
         val rows = listOf(
             Row(R.string.storage_cat_referenced, Color.parseColor("#5C6BC0"), report.referencedImages),
+            Row(R.string.storage_cat_library, Color.parseColor("#66BB6A"), report.libraryImages),
             Row(R.string.storage_cat_backups, Color.parseColor("#EF5350"), report.autoBackups),
             Row(R.string.storage_cat_export_cache, Color.parseColor("#FF7043"), report.exportCache),
             Row(R.string.storage_cat_orphan, Color.parseColor("#FFA726"), report.orphanImages),

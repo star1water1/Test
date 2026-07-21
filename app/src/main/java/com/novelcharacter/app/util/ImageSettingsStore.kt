@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.first
 
@@ -47,6 +48,29 @@ class ImageSettingsStore(private val context: Context) {
 
         /** "일정 이하 압축 안 함" 임계값 선택지(바이트) */
         val SKIP_BELOW_CHOICES = listOf(256L * 1024, 512L * 1024, 1024L * 1024, 2048L * 1024)
+
+        private val KEY_EDITOR_REMOVE_POLICY = stringPreferencesKey("editor_remove_policy")
+    }
+
+    /**
+     * 캐릭터 편집창에서 이미지를 제거하고 저장할 때의 파일 처리 정책.
+     * - [LIBRARY_ONLY](기본): 라이브러리(image_meta) 이미지는 파일을 남겨 미배정으로 복귀,
+     *   편집창에서 직접 골라 넣은 일반 이미지는 기존대로 삭제(공유 참조는 가드가 보호).
+     * - [ALWAYS_ADOPT]: 어떤 이미지든 제거 시 파일을 지우지 않고 라이브러리(미배정)로 입양.
+     *   삭제는 이미지 탭에서만 이뤄진다(실수 복구 용이, 용량은 수동 관리).
+     */
+    enum class EditorRemovePolicy { LIBRARY_ONLY, ALWAYS_ADOPT }
+
+    suspend fun getEditorRemovePolicy(): EditorRemovePolicy {
+        val prefs = context.imageSettingsDataStore.data.first()
+        return when (prefs[KEY_EDITOR_REMOVE_POLICY]) {
+            EditorRemovePolicy.ALWAYS_ADOPT.name -> EditorRemovePolicy.ALWAYS_ADOPT
+            else -> EditorRemovePolicy.LIBRARY_ONLY
+        }
+    }
+
+    suspend fun setEditorRemovePolicy(policy: EditorRemovePolicy) {
+        context.imageSettingsDataStore.edit { it[KEY_EDITOR_REMOVE_POLICY] = policy.name }
     }
 
     data class ImageSettings(
