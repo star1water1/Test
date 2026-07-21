@@ -55,15 +55,15 @@ object ExcelCellValue {
         }
     }
 
-    /** NUMERIC 값 정규화: 날짜면 formatDate, 아니면 정수는 소수점 없이, 그 외 toString. NaN/Inf는 "". */
+    /** NUMERIC 값 정규화: NaN/Inf는 "", 날짜면 formatDate, 정수는 소수점 없이, 그 외 toString. */
     private fun normalizeNumeric(p: Primitives, dateHint: Boolean): String {
-        if (isLikelyDate(p, dateHint)) return formatDate(p)
         val value = p.numericValue
-        return when {
-            value.isNaN() || value.isInfinite() -> ""
-            value == value.toLong().toDouble() -> value.toLong().toString()
-            else -> value.toString()
-        }
+        // NaN/Infinity는 유효 값이 아니므로 날짜/숫자 해석 이전에 ""로 확정한다.
+        // 유한값(실제 셀 100%)에는 무영향 — 날짜 판정 흐름 불변. FORMULA 숫자결과가 NaN/Inf이면서
+        // 날짜서식인 극단 케이스에서도 쓰레기 문자열 대신 ""를 내어 무결성을 지킨다(구 formatDateCell 대체).
+        if (value.isNaN() || value.isInfinite()) return ""
+        if (isLikelyDate(p, dateHint)) return formatDate(p)
+        return if (value == value.toLong().toDouble()) value.toLong().toString() else value.toString()
     }
 
     /**
