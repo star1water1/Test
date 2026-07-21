@@ -1394,7 +1394,7 @@
     <string name="storage_title">저장 공간</string>
     <string name="settings_storage_desc">앱 용량을 분류별로 확인하고 불필요한 파일을 정리합니다</string>
     <string name="storage_total_label">전체 사용량</string>
-    <string name="storage_total_hint">아래는 앱 내부 저장소의 분류별 용량입니다. 자동 백업과 내보내기 캐시가 용량의 큰 부분을 차지할 수 있습니다.</string>
+    <string name="storage_total_hint">아래는 앱이 관리하는 파일(이미지·백업·캐시·DB) 기준의 분류별 용량입니다. 시스템 설정의 앱 용량(앱 코드·OS 캐시 등 포함)과는 다를 수 있습니다. 자동 백업과 내보내기 캐시가 용량의 큰 부분을 차지할 수 있습니다.</string>
     <string name="storage_cleanup_section">정리</string>
     <string name="storage_file_count">%d개</string>
 
@@ -1589,6 +1589,7 @@
     <string name="filter_no_novels">작품이 없습니다</string>
     <string name="filter_chip_novel_format">작품: %1$s</string>
     <string name="filter_field_section">필드 값 필터</string>
+    <string name="filter_field_hint">필드 필터는 선택한 세계관의 필드에만 적용됩니다. 계산(CALCULATED) 필드는 저장된 값이 없어 목록에 나타나지 않습니다.</string>
     <string name="filter_no_tags">등록된 태그가 없습니다</string>
     <string name="filter_chip_field_format">%1$s: %2$s</string>
     <string name="filter_chip_tag_format">#%1$s</string>

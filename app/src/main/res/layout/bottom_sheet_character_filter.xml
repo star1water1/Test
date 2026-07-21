@@ -84,6 +84,16 @@
             android:paddingTop="16dp"
             android:paddingBottom="4dp" />
 
+        <!-- 발견성 힌트: 필드 필터가 선택 세계관의 필드에만 적용됨(교차세계관 오해 방지) + 계산 필드 제외 안내 -->
+        <TextView
+            android:id="@+id/fieldFilterHint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/filter_field_hint"
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp"
+            android:paddingBottom="6dp" />
+
         <Spinner
             android:id="@+id/spinnerUniverse"
             android:layout_width="match_parent"
