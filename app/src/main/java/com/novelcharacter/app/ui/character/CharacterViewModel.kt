@@ -1208,6 +1208,57 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    // ===== 편집창 추천 이미지 (G3) =====
+
+    /** 추천 후보 묶음: 미배정 라이브러리 이미지 + 링크 확장용 전체 메타. */
+    data class RecommendationData(
+        val candidates: List<com.novelcharacter.app.util.ImageRecommendationHelper.Candidate>,
+        val metas: List<com.novelcharacter.app.util.ImageLinkResolver.Meta>
+    )
+
+    /**
+     * 추천 후보 1회 페치(D9): 전 엔티티(캐릭터·작품·세계관)의 imagePaths 소유 집합을 1회 구성한 뒤,
+     * 소유자 0이면서 파일이 존재하는 라이브러리(meta) 이미지에 태그를 조인해 돌려준다.
+     * 이후 태그 변경·attach 시 재매칭은 인메모리로만 수행한다(호출부 계약 — 오픈 동기 비용 0).
+     */
+    suspend fun getRecommendationCandidates(): RecommendationData = withContext(kotlinx.coroutines.Dispatchers.IO) {
+        try {
+            fun canonical(p: String): String =
+                try { java.io.File(p).canonicalPath } catch (_: Exception) { p }
+
+            val gson = com.google.gson.Gson()
+            val owned = HashSet<String>()
+            fun collect(json: String) {
+                if (json.isBlank() || json == "[]") return
+                val parsed = try { gson.fromJson(json, Array<String>::class.java) } catch (_: Exception) { null }
+                parsed?.forEach { owned.add(canonical(it)) }
+            }
+            for (c in db.characterDao().getAllCharactersList()) collect(c.imagePaths)
+            for (n in db.novelDao().getAllNovelsList()) collect(n.imagePaths)
+            for (u in db.universeDao().getAllUniversesList()) collect(u.imagePaths)
+
+            val metas = db.imageMetaDao().getAllList()
+            val tagsByImage = db.imageTagDao().getAllList().groupBy({ it.imageId }, { it.tag })
+            val candidates = metas.mapNotNull { meta ->
+                if (canonical(meta.path) in owned) return@mapNotNull null
+                if (!java.io.File(meta.path).exists()) return@mapNotNull null
+                com.novelcharacter.app.util.ImageRecommendationHelper.Candidate(
+                    path = meta.path,
+                    tags = tagsByImage[meta.id]?.toSet() ?: emptySet(),
+                    linkGroupId = meta.linkGroupId,
+                    importedAt = meta.importedAt
+                )
+            }
+            RecommendationData(
+                candidates = candidates,
+                metas = metas.map { com.novelcharacter.app.util.ImageLinkResolver.Meta(it.path, it.linkGroupId) }
+            )
+        } catch (e: Exception) {
+            Log.e("CharacterViewModel", "Failed to load recommendation candidates", e)
+            RecommendationData(emptyList(), emptyList())
+        }
+    }
+
     // ===== Event CRUD (캐릭터 화면에서 사건 생성용) =====
     private val db = app.database
 

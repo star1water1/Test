@@ -114,6 +114,8 @@ data class ImportResult(
     var deletedFactionMemberships: Int = 0,
     var deletedFactionRelationships: Int = 0,
     var restoredSettings: Int = 0,
+    var newImageMeta: Int = 0,
+    var updatedImageMeta: Int = 0,
     var skippedRows: Int = 0,
     val errors: MutableList<String> = mutableListOf(),
     var nameBasedMappings: Int = 0,
@@ -263,6 +265,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         alias("탈퇴후관계유형", "departed_relation_type", "departedrelationtype")
         alias("탈퇴후강도", "departed_intensity", "departedintensity")
         alias("세력코드", "faction_code", "factioncode")
+        // 이미지 시트 (G3)
+        alias("파일명", "filename", "file_name", "파일 명")
+        alias("링크그룹", "link_group", "linkgroup", "링크 그룹")
     }
 
     /** 가져올 이미지의 경로 재매핑: {원본경로 → 새경로} */
@@ -352,6 +357,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 if (effectiveOptions.nameBank) db.nameBankDao().deleteAll()
                 if (effectiveOptions.presetTemplates) db.userPresetTemplateDao().deleteAll()
                 if (effectiveOptions.searchPresets) db.searchPresetDao().deleteAll()
+                // 이미지 태그는 image_meta FK CASCADE로 함께 삭제 — 파일은 지우지 않는다(백업 재가져오기로 보호 복원)
+                if (effectiveOptions.imageMeta) db.imageMetaDao().deleteAll()
             }
 
             // Matched ID 추적 초기화 (deleteNotInExcel 옵션용)
@@ -398,6 +405,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             if (effectiveOptions.presetTemplates) importUserPresetTemplates(workbook, result, onProgress, totalRows)
             if (effectiveOptions.searchPresets) importSearchPresets(workbook, result, onProgress, totalRows)
             if (effectiveOptions.appSettings) importAppSettings(workbook, result)
+            if (effectiveOptions.imageMeta) importImageMeta(workbook, result, onProgress, totalRows)
 
             // Phase 5: 엑셀에 없는 항목 삭제 (MERGE + deleteOptions)
             if (strategy == ImportStrategy.MERGE && effectiveOptions.deleteOptions.hasAny) {
@@ -465,8 +473,49 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         if (options.factionRelationships) categories.add(analyzeFactionRelationships(workbook, onProgress, totalRows))
         if (options.presetTemplates) categories.add(analyzePresetTemplates(workbook, onProgress, totalRows))
         if (options.searchPresets) categories.add(analyzeSearchPresets(workbook, onProgress, totalRows))
+        if (options.imageMeta) categories.add(analyzeImageMeta(workbook, onProgress, totalRows))
 
         return RestoreAnalysis(categories, characterConflicts)
+    }
+
+    private suspend fun analyzeImageMeta(workbook: Workbook, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
+        val spec = imageMetaSpec()
+        val label = "이미지 태그·링크"
+        val existingTotal = db.imageMetaDao().getAllList().size
+        val sheet = workbook.getSheet(spec.sheetName)
+        if (sheet == null || sheet.lastRowNum < 1) return CategoryAnalysis("imageMeta", label, 0, 0, 0, 0, existingTotal)
+        val headerRow = sheet.getRow(0) ?: return CategoryAnalysis("imageMeta", label, 0, 0, 0, 0, existingTotal)
+        if (!isValidHeader(headerRow, spec.firstColumnHeader)) return CategoryAnalysis("imageMeta", label, 0, 0, 0, 0, existingTotal)
+
+        val cols = resolveHeaderColumns(headerRow)
+        val fileColIndex = cols["파일명"] ?: 0
+        val tagColIndex = cols["태그"] ?: 1
+        val groupColIndex = cols["링크그룹"] ?: 2
+
+        val remapByBasename = HashMap<String, String>()
+        for ((origPath, newPath) in imagePathRemap) {
+            remapByBasename[java.io.File(origPath).name] = newPath
+        }
+        val filesDir = appContext?.filesDir
+
+        var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0
+        for (i in 1..sheet.lastRowNum) {
+            val row = sheet.getRow(i) ?: continue
+            val fileName = getCellString(row, fileColIndex)
+            if (fileName.isBlank()) continue
+            inBackup++
+            val path = remapByBasename[fileName]
+                ?: filesDir?.let { dir -> java.io.File(dir, fileName).takeIf { it.exists() }?.absolutePath }
+                ?: continue  // 파일 미해석 행은 new/update에 계상하지 않음 (가져오기에서 스킵 경고)
+            val existing = db.imageMetaDao().getByPath(path)
+            if (existing == null) { newCount++; continue }
+            val existingTags = db.imageTagDao().getTagsByImageList(existing.id).map { it.tag }.toSet()
+            val sheetTags = splitCsv(getCellString(row, tagColIndex)).toSet()
+            val sheetGroup = getCellString(row, groupColIndex).trim().ifBlank { null }
+            if (existingTags != sheetTags || existing.linkGroupId != sheetGroup) updateCount++ else unchangedCount++
+        }
+        reportProgress(onProgress, "이미지 분석", sheet.lastRowNum, totalRows)
+        return CategoryAnalysis("imageMeta", label, inBackup, newCount, updateCount, unchangedCount, existingTotal)
     }
 
     private suspend fun analyzeUniverses(workbook: Workbook, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
@@ -3204,15 +3253,123 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         reportProgress(onProgress, "세력 관계", sheet.lastRowNum, totalRows)
     }
 
+    // ── 이미지 라이브러리 메타 (G3) ──
+
+    /**
+     * "이미지" 시트(파일명/태그/링크그룹)를 라이브러리 메타로 복원한다.
+     *
+     * 경로 해석(파일명 기반 — 절대경로는 기기 간 이식성 없음):
+     * ① zip 복원 리맵([imagePathRemap]의 원경로 basename 매칭) → 새 경로
+     * ② 로컬 filesDir에 같은 파일명이 존재 → 그 경로 (xlsx 단독 왕복)
+     * ③ 둘 다 아니면 스킵 계수 + 요약 경고 (무음 유실 금지)
+     *
+     * 링크그룹은 내보낸 토큰을 그대로 보존해 재가져오기가 멱등이다. 단, 해석된 멤버와
+     * 기존 DB 멤버의 합이 2장 미만이면 설정하지 않는다(잔존 singleton 배지 방지).
+     */
+    private suspend fun importImageMeta(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
+        val spec = imageMetaSpec()
+        val sheet = workbook.getSheet(spec.sheetName) ?: return
+        val headerRow = sheet.getRow(0) ?: return
+        // 3중 방어 ③: 예약명이라도 실제 이미지 형식인지 헤더로 검증 — 레거시 백업의
+        // 세계관 "이미지" 캐릭터 시트(첫 헤더 "이름")를 이미지 메타로 오파싱하지 않는다.
+        if (!isValidHeader(headerRow, spec.firstColumnHeader)) {
+            result.warnings.add("'${spec.sheetName}' 시트의 첫 헤더가 '${spec.firstColumnHeader}'이(가) 아니어서 이미지 태그·링크 가져오기를 건너뛰었습니다")
+            return
+        }
+
+        val cols = resolveHeaderColumns(headerRow)
+        val fileColIndex = cols["파일명"] ?: 0
+        val tagColIndex = cols["태그"] ?: 1
+        val groupColIndex = cols["링크그룹"] ?: 2
+
+        // zip 리맵 키(원 절대경로)의 basename → 복원된 새 경로
+        val remapByBasename = HashMap<String, String>()
+        for ((origPath, newPath) in imagePathRemap) {
+            remapByBasename[java.io.File(origPath).name] = newPath
+        }
+        val filesDir = appContext?.filesDir
+
+        val now = System.currentTimeMillis()
+        var skippedMissing = 0
+        val groupMembers = mutableMapOf<String, MutableList<Long>>()
+
+        for (i in 1..sheet.lastRowNum) {
+            try {
+                val row = sheet.getRow(i) ?: continue
+                val fileName = getCellString(row, fileColIndex)
+                if (fileName.isBlank()) continue
+
+                val path = remapByBasename[fileName]
+                    ?: filesDir?.let { dir ->
+                        java.io.File(dir, fileName).takeIf { it.exists() }?.absolutePath
+                    }
+                if (path == null) {
+                    skippedMissing++
+                    continue
+                }
+
+                val existing = db.imageMetaDao().getByPath(path)
+                val imageId = existing?.id ?: db.imageMetaDao().adopt(path, now)
+                if (existing != null) result.updatedImageMeta++ else result.newImageMeta++
+
+                val tags = splitCsv(getCellString(row, tagColIndex))
+                db.imageTagDao().replaceAllForImage(
+                    imageId,
+                    tags.map { com.novelcharacter.app.data.model.ImageTag(imageId = imageId, tag = it) }
+                )
+
+                val groupToken = getCellString(row, groupColIndex).trim()
+                if (groupToken.isNotBlank()) {
+                    groupMembers.getOrPut(groupToken) { mutableListOf() }.add(imageId)
+                }
+            } catch (e: Exception) {
+                result.skippedRows++
+                result.errors.add("이미지 행 $i: ${e.message}")
+            }
+        }
+
+        for ((token, ids) in groupMembers) {
+            val existingIds = db.imageMetaDao().getByGroup(token).map { it.id }
+            if ((ids + existingIds).toSet().size >= 2) {
+                db.imageMetaDao().setGroup(ids, token)
+            }
+        }
+
+        if (skippedMissing > 0) {
+            result.warnings.add("이미지 ${skippedMissing}건: 파일을 찾을 수 없어 태그·링크 복원을 건너뛰었습니다 (이미지 포함 ZIP 백업으로 가져오면 함께 복원됩니다)")
+        }
+        reportProgress(onProgress, "이미지", sheet.lastRowNum, totalRows)
+    }
+
     // ── 유틸리티 메서드 ──
 
     private fun findSheetForUniverse(workbook: Workbook, universeName: String, reservedNames: Set<String>): Sheet? {
-        workbook.getSheet(universeName)?.let { return it }
+        // 3중 방어 ②: 세계관 이름이 예약 시트명("이미지" 등)과 겹치면 정확-일치 결과가 데이터 시트일 수
+        // 있다. 예약명 충돌 시에는 헤더 피크로 레거시 캐릭터 시트(예약 시트 도입 전 백업)만 구제한다.
+        // 신규 내보내기는 캐릭터 시트가 "(2)" 접미사로 sanitize되므로 아래 접미사 루프가 찾는다.
+        fun looksLikeCharacterSheet(sheet: Sheet): Boolean {
+            val header = sheet.getRow(0) ?: return false
+            val first = getCellString(header, 0)
+            if (first != "이름") return false
+            // "이름"으로 시작하는 다른 예약 시트(이름 은행·세계관·세력 등)와 구분 — 캐릭터 고유 헤더 확인
+            val distinctive = listOf("이미지경로", "이명", "작품", "작품코드", "고정")
+            val lastCol = header.lastCellNum.toInt()
+            for (col in 1 until lastCol) {
+                if (getCellString(header, col) in distinctive) return true
+            }
+            return false
+        }
+
+        workbook.getSheet(universeName)?.let {
+            if (universeName !in reservedNames || looksLikeCharacterSheet(it)) return it
+        }
         val sanitized = universeName
             .replace(Regex("[\\[\\]*/\\\\?:]"), "")
             .take(31)
         if (sanitized != universeName) {
-            workbook.getSheet(sanitized)?.let { return it }
+            workbook.getSheet(sanitized)?.let {
+                if (sanitized !in reservedNames || looksLikeCharacterSheet(it)) return it
+            }
         }
         for (idx in 0 until workbook.numberOfSheets) {
             val sheetName = workbook.getSheetName(idx)

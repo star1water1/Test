@@ -303,7 +303,13 @@ class ExcelImporter(context: Context) {
         for ((originalPath, zipRelPath) in originalMap) {
             val extractedFile = File(extractDir, zipRelPath)
             if (!extractedFile.exists()) continue
-            val newFileName = "char_${UUID.randomUUID()}.jpg"
+            // 원 파일명의 프리픽스·확장자 보존 — 복원 후에도 앱관리 이미지 분류(img_=라이브러리 임포트 등)와
+            // 파일 형식 표기가 유지된다 ("char_" 고정 하드코딩이던 것을 교정, G3)
+            val origName = File(originalPath).name
+            val prefix = com.novelcharacter.app.util.StorageAnalyzer.IMAGE_PREFIXES
+                .firstOrNull { origName.startsWith(it) } ?: "char_"
+            val ext = origName.substringAfterLast('.', "").ifBlank { "jpg" }
+            val newFileName = "$prefix${UUID.randomUUID()}.$ext"
             val newPath = File(appDir, newFileName).absolutePath
             remap[originalPath] = newPath
         }
@@ -998,6 +1004,8 @@ class ExcelImporter(context: Context) {
         if (spTotal > 0) parts.add(r.getString(com.novelcharacter.app.R.string.import_result_search_presets, spTotal))
         val frTotal = result.newFactionRelationships + result.updatedFactionRelationships
         if (frTotal > 0) parts.add("세력 관계 ${frTotal}건")
+        val imTotal = result.newImageMeta + result.updatedImageMeta
+        if (imTotal > 0) parts.add("이미지 태그·링크 ${imTotal}건")
         if (result.restoredSettings > 0) parts.add(r.getString(com.novelcharacter.app.R.string.import_result_settings, result.restoredSettings))
         if (result.skippedRows > 0)
             parts.add(r.getString(com.novelcharacter.app.R.string.import_result_skipped, result.skippedRows))

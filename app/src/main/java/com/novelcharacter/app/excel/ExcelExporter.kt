@@ -89,6 +89,9 @@ class ExcelExporter(context: Context) {
         if (options.universes) exportUniverses(workbook, usedSheetNames)
         if (options.novels) exportNovels(workbook, usedSheetNames)
         if (options.fieldDefinitions) exportFieldDefinitions(workbook, usedSheetNames)
+        // 이미지 시트는 반드시 캐릭터 시트보다 먼저 — 세계관 이름이 "이미지"여도 예약 시트가
+        // 원명을 선점하고 캐릭터 시트는 sanitize("(2)")되어 가져오기에서 충돌하지 않는다.
+        if (options.imageMeta) exportImageMeta(workbook, usedSheetNames)
         if (options.characters) exportCharacters(workbook, usedSheetNames)
         if (options.timeline) exportTimeline(workbook, usedSheetNames)
         if (options.stateChanges) exportStateChanges(workbook, usedSheetNames)
@@ -997,6 +1000,32 @@ class ExcelExporter(context: Context) {
         }
 
         applySpecFormatting(sheet, spec, allChanges.size)
+    }
+
+    // ── 이미지 라이브러리 메타 (G3) ──
+
+    /**
+     * 라이브러리 관리 이미지(meta 행)의 태그·링크 그룹을 시트로 기록한다.
+     * 파일명은 basename만 — 절대경로는 기기 간 이식성이 없다(가져오기에서 zip 리맵/로컬 존재로 해석).
+     */
+    private suspend fun exportImageMeta(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
+        val metas = db.imageMetaDao().getAllList()
+        if (metas.isEmpty()) return
+        val tagsByImage = db.imageTagDao().getAllList().groupBy({ it.imageId }, { it.tag })
+
+        val spec = imageMetaSpec()
+        val sheetName = sanitizeSheetName(spec.sheetName, usedSheetNames)
+        val sheet = workbook.createSheet(sheetName)
+        writeHeaderRow(sheet, spec)
+
+        metas.forEachIndexed { i, meta ->
+            val row = sheet.createRow(i + 1)
+            row.createCell(0).setTextSafe(java.io.File(meta.path).name)
+            row.createCell(1).setTextSafe(tagsByImage[meta.id]?.joinToString(", ") ?: "")
+            row.createCell(2).setTextSafe(meta.linkGroupId ?: "")
+        }
+
+        applySpecFormatting(sheet, spec, metas.size)
     }
 
     // ── 이름 은행 ──
