@@ -3481,41 +3481,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private fun getCellString(row: Row, cellIndex: Int, maxLength: Int = MAX_FIELD_LENGTH, dateHint: Boolean = false): String {
         if (cellIndex < 0) return ""
         val cell = row.getCell(cellIndex) ?: return ""
-        val raw = when (cell.cellType) {
-            CellType.STRING -> cell.stringCellValue?.trim() ?: ""
-            CellType.NUMERIC -> {
-                if (isCellLikelyDate(cell, dateHint)) {
-                    formatDateCell(cell)
-                } else {
-                    val value = cell.numericCellValue
-                    when {
-                        value.isNaN() || value.isInfinite() -> ""
-                        value == value.toLong().toDouble() -> value.toLong().toString()
-                        else -> value.toString()
-                    }
-                }
-            }
-            CellType.BOOLEAN -> if (cell.booleanCellValue) "Y" else "N"
-            CellType.FORMULA -> {
-                try {
-                    cell.stringCellValue?.trim() ?: ""
-                } catch (e: Exception) {
-                    try {
-                        val value = cell.numericCellValue
-                        if (value.isNaN() || value.isInfinite()) "" else {
-                            if (isCellLikelyDate(cell, dateHint)) {
-                                formatDateCell(cell)
-                            } else if (value == value.toLong().toDouble()) {
-                                value.toLong().toString()
-                            } else {
-                                value.toString()
-                            }
-                        }
-                    } catch (_: Exception) { "" }
-                }
-            }
-            else -> ""
-        }
+        // 값 정규화는 ExcelCellValue(단일 소스)에 위임 — 스트리밍 경로와 동일 로직을 태워 값 왜곡을 구조적으로 차단.
+        val raw = ExcelCellValue.normalize(ExcelCellValue.fromCell(cell), dateHint)
         if (raw.length > maxLength) {
             truncatedFieldCount++
             val sheetName = row.sheet?.sheetName ?: "?"
@@ -3525,53 +3492,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         return raw
     }
 
-    /**
-     * 셀이 날짜인지 판정. 3단계 감지:
-     * 1. POI 기본 감지 (내장 포맷 ID + 포맷 문자열 패턴)
-     * 2. 로케일별 포맷 추가 감지 (CJK 날짜 문자, m+d 조합 등)
-     * 3. dateHint가 true이면 (생일 등 날짜 필드) 값 범위 기반 적극 감지
-     */
-    private fun isCellLikelyDate(cell: Cell, dateHint: Boolean = false): Boolean {
-        if (org.apache.poi.ss.usermodel.DateUtil.isCellDateFormatted(cell)) return true
-        val fmt: String = try { cell.cellStyle?.dataFormatString } catch (_: Exception) { null }
-            ?: return false
-        if (fmt == "@") return false // 텍스트 포맷 — 날짜 아님
-        val lower = fmt.lowercase(java.util.Locale.ROOT)
-        // 포맷 문자열 기반 감지 (General 제외)
-        if (fmt != "General") {
-            if ((lower.contains("y") && (lower.contains("d") || lower.contains("m"))) ||
-                (lower.contains("d") && lower.contains("m") && !lower.contains("h") && !lower.contains("s")) ||
-                lower.contains("년") || lower.contains("월") || lower.contains("일")) {
-                return true
-            }
-        }
-        // dateHint: 날짜 필드라고 알려진 경우, 유효한 엑셀 날짜 시리얼 넘버 범위이면 날짜로 판정
-        if (dateHint) {
-            val value = cell.numericCellValue
-            return value > 0 && value < 2958466 && value == kotlin.math.floor(value)
-        }
-        return false
-    }
-
-    /** 날짜로 판정된 NUMERIC 셀을 MM-DD 또는 YYYY-MM-DD 문자열로 변환 */
-    private fun formatDateCell(cell: Cell): String {
-        return try {
-            val date = cell.dateCellValue
-            val cal = java.util.Calendar.getInstance().apply { time = date }
-            val year = cal.get(java.util.Calendar.YEAR)
-            val month = cal.get(java.util.Calendar.MONTH) + 1
-            val day = cal.get(java.util.Calendar.DAY_OF_MONTH)
-            // 1900/1904 기준 연도(엑셀 기본)면 월-일만 반환, 아니면 연-월-일
-            if (year == 1900 || year == 1904) {
-                "%02d-%02d".format(month, day)
-            } else {
-                "%d-%02d-%02d".format(year, month, day)
-            }
-        } catch (_: Exception) {
-            val value = cell.numericCellValue
-            if (value == value.toLong().toDouble()) value.toLong().toString() else value.toString()
-        }
-    }
+    // 날짜 감지·포맷·숫자 정규화는 ExcelCellValue(단일 소스)로 이관됨(로직 비분기).
+    // 기존 isCellLikelyDate/formatDateCell는 getCellString이 위임하면서 제거되었다.
 
     /**
      * 임포트 후 시맨틱 필드 동기화.
