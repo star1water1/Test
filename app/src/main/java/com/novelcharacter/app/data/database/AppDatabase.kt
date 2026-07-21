@@ -40,6 +40,10 @@ import com.novelcharacter.app.data.dao.OperationLogDao
 import com.novelcharacter.app.data.model.OperationLog
 import com.novelcharacter.app.data.dao.CharacterListPresetDao
 import com.novelcharacter.app.data.model.CharacterListPreset
+import com.novelcharacter.app.data.dao.ImageMetaDao
+import com.novelcharacter.app.data.dao.ImageTagDao
+import com.novelcharacter.app.data.model.ImageMeta
+import com.novelcharacter.app.data.model.ImageTag
 import com.novelcharacter.app.data.model.generateEntityCode
 import com.novelcharacter.app.data.model.RecentActivity
 import com.novelcharacter.app.data.model.UserPresetTemplate
@@ -82,9 +86,11 @@ import com.novelcharacter.app.data.model.Universe
         TrashSnapshot::class,
         EventFieldValue::class,
         OperationLog::class,
-        CharacterListPreset::class
+        CharacterListPreset::class,
+        ImageMeta::class,
+        ImageTag::class
     ],
-    version = 39,
+    version = 40,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -109,6 +115,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun eventFieldValueDao(): EventFieldValueDao
     abstract fun operationLogDao(): OperationLogDao
     abstract fun characterListPresetDao(): CharacterListPresetDao
+    abstract fun imageMetaDao(): ImageMetaDao
+    abstract fun imageTagDao(): ImageTagDao
 
     companion object {
         private const val TAG = "AppDatabase"
@@ -1584,6 +1592,35 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_39_40 = object : Migration(39, 40) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "Migrating database from version 39 to 40 — image_meta/image_tags (이미지 라이브러리)")
+                // image_meta 먼저(image_tags가 FK 참조)
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `image_meta` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `path` TEXT NOT NULL,
+                        `linkGroupId` TEXT,
+                        `importedAt` INTEGER NOT NULL
+                    )
+                """)
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_image_meta_path` ON `image_meta`(`path`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_image_meta_linkGroupId` ON `image_meta`(`linkGroupId`)")
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `image_tags` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `imageId` INTEGER NOT NULL,
+                        `tag` TEXT NOT NULL,
+                        FOREIGN KEY(`imageId`) REFERENCES `image_meta`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                """)
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_image_tags_imageId` ON `image_tags`(`imageId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_image_tags_tag` ON `image_tags`(`tag`)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_image_tags_imageId_tag` ON `image_tags`(`imageId`, `tag`)")
+                Log.i(TAG, "Migration from version 39 to 40 completed successfully")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -1591,7 +1628,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "novel_character_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40)
                     .addCallback(SeedCallback(context.applicationContext))
                     .build()
                     .also { INSTANCE = it }

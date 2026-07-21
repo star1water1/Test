@@ -177,5 +177,40 @@
                 android:textColor="@color/primary"
                 tools:text="512 KB 미만 원본 유지" />
         </LinearLayout>
+
+        <!-- 편집창 이미지 제거 정책 — 압축 스위치와 무관하게 항상 노출 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="@string/image_settings_remove_policy_title"
+            android:textSize="15sp"
+            android:textStyle="bold"
+            android:textColor="?attr/colorOnSurface" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/image_settings_remove_policy_desc"
+            android:textSize="12sp"
+            android:textColor="?attr/colorOnSurfaceVariant" />
+
+        <RadioGroup
+            android:id="@+id/removePolicyGroup"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+            <RadioButton
+                android:id="@+id/policyLibraryOnly"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/image_settings_remove_policy_library_only" />
+
+            <RadioButton
+                android:id="@+id/policyAlwaysAdopt"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/image_settings_remove_policy_always_adopt" />
+        </RadioGroup>
     </LinearLayout>
 </ScrollView>

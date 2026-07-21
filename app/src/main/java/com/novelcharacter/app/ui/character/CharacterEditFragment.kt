@@ -1234,20 +1234,28 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
 
     private var appDir: java.io.File? = null
 
-    /** 이전 이미지 목록과 현재 목록을 비교하여 제거된 파일을 디스크에서 삭제 */
-    private fun cleanupRemovedImages(oldPathsJson: String?, currentPaths: List<String>) {
+    /**
+     * 이전 이미지 목록과 현재 목록을 비교하여 제거된 파일을 정리한다.
+     * 정책(이미지 설정): LIBRARY_ONLY(기본) = 공유·라이브러리·휴지통 보호 파일은 남기고 나머지만 삭제,
+     * ALWAYS_ADOPT = 삭제 대신 라이브러리(미배정)로 입양(삭제는 이미지 탭에서만).
+     */
+    private suspend fun cleanupRemovedImages(oldPathsJson: String?, currentPaths: List<String>) {
         val oldPaths: List<String> = try {
             gson.fromJson(oldPathsJson ?: "[]", com.novelcharacter.app.util.GsonTypes.STRING_LIST) ?: emptyList()
         } catch (_: Exception) { emptyList() }
         val currentSet = currentPaths.toSet()
-        for (path in oldPaths) {
-            if (path !in currentSet) {
-                try {
-                    val file = java.io.File(path)
-                    if (file.exists()) file.delete()
-                } catch (_: Exception) { /* best effort */ }
+        val removed = oldPaths.filter { it !in currentSet }
+        if (removed.isEmpty()) return
+        val appCtx = context?.applicationContext ?: return
+        val db = (activity?.application as? com.novelcharacter.app.NovelCharacterApp)?.database ?: return
+        try {
+            when (com.novelcharacter.app.util.ImageSettingsStore(appCtx).getEditorRemovePolicy()) {
+                com.novelcharacter.app.util.ImageSettingsStore.EditorRemovePolicy.LIBRARY_ONLY ->
+                    com.novelcharacter.app.util.ImageOwnershipGuard.deleteIfUnprotected(db, appCtx, removed)
+                com.novelcharacter.app.util.ImageSettingsStore.EditorRemovePolicy.ALWAYS_ADOPT ->
+                    com.novelcharacter.app.util.ImageOwnershipGuard.adoptOrphans(db, appCtx, removed)
             }
-        }
+        } catch (_: Exception) { /* 보존이 삭제보다 안전 — 실패 시 파일 유지 */ }
     }
 
     private fun decodeSampledBitmap(path: String, reqWidth: Int, reqHeight: Int): android.graphics.Bitmap? {

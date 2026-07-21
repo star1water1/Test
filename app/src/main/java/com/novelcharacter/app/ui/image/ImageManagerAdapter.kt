@@ -111,16 +111,29 @@ class ImageManagerAdapter(
             when (item.status) {
                 ImageManagerViewModel.Status.ORPHAN -> {
                     binding.statusBadge.visibility = View.VISIBLE
+                    binding.statusBadge.setBackgroundColor(0xCC000000.toInt())
                     binding.statusBadge.text = ctx.getString(R.string.image_manager_status_orphan)
                 }
                 ImageManagerViewModel.Status.TRASH_HELD -> {
                     binding.statusBadge.visibility = View.VISIBLE
+                    binding.statusBadge.setBackgroundColor(0xCC000000.toInt())
                     binding.statusBadge.text = ctx.getString(R.string.image_manager_status_trash)
+                }
+                ImageManagerViewModel.Status.UNASSIGNED -> {
+                    binding.statusBadge.visibility = View.VISIBLE
+                    binding.statusBadge.setBackgroundColor(0xCC2E7D32.toInt())  // 초록 계열 — 고아(회색)와 구분
+                    binding.statusBadge.text = ctx.getString(R.string.image_manager_status_unassigned)
                 }
                 ImageManagerViewModel.Status.REFERENCED -> binding.statusBadge.visibility = View.GONE
             }
 
+            binding.linkBadge.visibility =
+                if (item.meta?.linkGroupId != null) View.VISIBLE else View.GONE
+
             binding.ownerText.text = ownerLabel(ctx, item)
+            // 태그 줄은 항상 1줄 유지(빈 값 포함) — 그리드 행 높이 균일화(레이아웃 주석 참조).
+            val tags = item.meta?.tags.orEmpty()
+            binding.tagText.text = if (tags.isEmpty()) "" else tags.joinToString(" · ") { "#$it" }
 
             // 선택 오버레이
             bindSelection(item)
@@ -145,10 +158,10 @@ class ImageManagerAdapter(
 
         private fun ownerLabel(ctx: android.content.Context, item: ImageManagerViewModel.ManagedImage): String {
             if (item.owners.isEmpty()) {
-                return if (item.status == ImageManagerViewModel.Status.TRASH_HELD) {
-                    ctx.getString(R.string.image_manager_owner_trash)
-                } else {
-                    ctx.getString(R.string.image_manager_owner_orphan)
+                return when (item.status) {
+                    ImageManagerViewModel.Status.TRASH_HELD -> ctx.getString(R.string.image_manager_owner_trash)
+                    ImageManagerViewModel.Status.UNASSIGNED -> ctx.getString(R.string.image_manager_owner_unassigned)
+                    else -> ctx.getString(R.string.image_manager_owner_orphan)
                 }
             }
             val first = item.owners.first()

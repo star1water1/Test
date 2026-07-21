@@ -201,13 +201,19 @@ class TrashRepository(private val db: AppDatabase) {
         )
     }
 
-    /** 영구 삭제 — 보류 중이던 이미지 파일도 함께 지운다 */
+    /**
+     * 영구 삭제 — 보류 중이던 이미지 파일도 함께 지운다.
+     * 단, 라이브러리(image_meta)·다른 스냅샷·살아있는 엔티티가 여전히 쓰는 파일은 남긴다
+     * (경로 공유 하 무음 파괴 방지). pruneIfNeeded의 자동 purge에도 동일하게 적용된다.
+     */
     suspend fun purgeSnapshot(snapshot: TrashSnapshot) {
-        parseImagePaths(snapshot.imagePaths).forEach { path ->
-            try {
-                File(path).delete()
-            } catch (_: Exception) {
-            }
+        try {
+            com.novelcharacter.app.util.ImageOwnershipGuard.deleteIfUnprotected(
+                db, null, parseImagePaths(snapshot.imagePaths),
+                excludeTrashSnapshotId = snapshot.id
+            )
+        } catch (_: Exception) {
+            // 가드 실패 시 파일은 남긴다(삭제보다 보존이 안전) — 스냅샷 행 삭제는 계속 진행.
         }
         trashDao.deleteById(snapshot.id)
     }

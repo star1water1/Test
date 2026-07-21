@@ -54,6 +54,24 @@
             android:background="#CC000000"
             tools:text="1.2 MB" />
 
+        <!-- 링크 그룹 표식 — 같은 캐릭터 묶음으로 링크된 이미지 -->
+        <TextView
+            android:id="@+id/linkBadge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom|start"
+            android:layout_margin="4dp"
+            android:paddingStart="6dp"
+            android:paddingEnd="6dp"
+            android:paddingTop="1dp"
+            android:paddingBottom="1dp"
+            android:textSize="10sp"
+            android:textColor="#FFFFFF"
+            android:background="#CC1565C0"
+            android:text="@string/image_link_badge"
+            android:visibility="gone"
+            tools:visibility="visible" />
+
         <!-- 선택 모드 스크림 — 선택된 셀 위에 반투명 강조를 덧씌운다 -->
         <View
             android:id="@+id/selectionScrim"
@@ -95,4 +113,15 @@
         android:textColor="?attr/colorOnSurfaceVariant"
         android:layout_marginTop="2dp"
         tools:text="캐릭터 · 홍길동" />
+
+    <!-- 태그 줄 — 항상 1줄 고정(빈 태그도 공백 유지)해 그리드 행 높이가 들쭉하지 않게 한다 -->
+    <TextView
+        android:id="@+id/tagText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:lines="1"
+        android:ellipsize="end"
+        android:textSize="10sp"
+        android:textColor="?attr/colorOnSurfaceVariant"
+        tools:text="#여성 · #흑발" />
 </LinearLayout>
