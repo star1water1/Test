@@ -555,18 +555,18 @@ class ExcelExporter(context: Context) {
 
         universes.forEachIndexed { index, universe ->
             val row = sheet.createRow(index + 1)
-            row.createCell(0).setCellValue(universe.name)
+            row.createCell(0).setTextSafe(universe.name)
             row.createCell(1).setTextSafe(universe.description)
-            row.createCell(2).setCellValue(universe.code)
+            row.createCell(2).setTextSafe(universe.code)
             row.createCell(3).setCellValue(universe.displayOrder.toDouble())
-            row.createCell(4).setCellValue(universe.borderColor)
+            row.createCell(4).setTextSafe(universe.borderColor)
             row.createCell(5).setCellValue(universe.borderWidthDp.toDouble())
             row.createCell(6).setTextSafe(universe.imagePaths)
-            row.createCell(7).setCellValue(universe.imageMode)
+            row.createCell(7).setTextSafe(universe.imageMode)
             row.createCell(8).setTextSafe(universe.customRelationshipTypes)
             row.createCell(9).setTextSafe(universe.customRelationshipColors)
-            universe.imageCharacterId?.let { id -> charCodeMap[id]?.let { row.createCell(10).setCellValue(it) } }
-            universe.imageNovelId?.let { id -> novelCodeMap[id]?.let { row.createCell(11).setCellValue(it) } }
+            universe.imageCharacterId?.let { id -> charCodeMap[id]?.let { row.createCell(10).setTextSafe(it) } }
+            universe.imageNovelId?.let { id -> novelCodeMap[id]?.let { row.createCell(11).setTextSafe(it) } }
             row.createCell(12).setCellValue(universe.createdAt.toDouble())
         }
 
@@ -589,20 +589,20 @@ class ExcelExporter(context: Context) {
 
         novels.forEachIndexed { index, novel ->
             val row = sheet.createRow(index + 1)
-            row.createCell(0).setCellValue(novel.title)
+            row.createCell(0).setTextSafe(novel.title)
             row.createCell(1).setTextSafe(novel.description)
             val universe = novel.universeId?.let { universeMap[it] }
-            row.createCell(2).setCellValue(universe?.name ?: "")
-            row.createCell(3).setCellValue(novel.code)
-            row.createCell(4).setCellValue(universe?.code ?: "")
+            row.createCell(2).setTextSafe(universe?.name ?: "")
+            row.createCell(3).setTextSafe(novel.code)
+            row.createCell(4).setTextSafe(universe?.code ?: "")
             row.createCell(5).setCellValue(novel.displayOrder.toDouble())
-            row.createCell(6).setCellValue(novel.borderColor)
+            row.createCell(6).setTextSafe(novel.borderColor)
             row.createCell(7).setCellValue(novel.borderWidthDp.toDouble())
             row.createCell(8).setTextSafe(novel.imagePaths)
-            row.createCell(9).setCellValue(novel.imageMode)
-            novel.imageCharacterId?.let { id -> charCodeMap[id]?.let { row.createCell(10).setCellValue(it) } }
-            row.createCell(11).setCellValue(if (novel.inheritUniverseBorder) "Y" else "N")
-            row.createCell(12).setCellValue(if (novel.isPinned) "Y" else "N")
+            row.createCell(9).setTextSafe(novel.imageMode)
+            novel.imageCharacterId?.let { id -> charCodeMap[id]?.let { row.createCell(10).setTextSafe(it) } }
+            row.createCell(11).setTextSafe(if (novel.inheritUniverseBorder) "Y" else "N")
+            row.createCell(12).setTextSafe(if (novel.isPinned) "Y" else "N")
             novel.standardYear?.let { row.createCell(13).setCellValue(it.toDouble()) }
             row.createCell(14).setCellValue(novel.createdAt.toDouble())
         }
@@ -630,15 +630,15 @@ class ExcelExporter(context: Context) {
         allFields.forEachIndexed { index, (universeId, field) ->
             val universe = universeMap[universeId]
             val row = sheet.createRow(index + 1)
-            row.createCell(0).setCellValue(universe?.name ?: "")
-            row.createCell(1).setCellValue(field.key)
-            row.createCell(2).setCellValue(field.name)
-            row.createCell(3).setCellValue(field.type)
+            row.createCell(0).setTextSafe(universe?.name ?: "")
+            row.createCell(1).setTextSafe(field.key)
+            row.createCell(2).setTextSafe(field.name)
+            row.createCell(3).setTextSafe(field.type)
             row.createCell(4).setTextSafe(field.config)
-            row.createCell(5).setCellValue(field.groupName)
+            row.createCell(5).setTextSafe(field.groupName)
             row.createCell(6).setCellValue(field.displayOrder.toDouble())
-            row.createCell(7).setCellValue(if (field.isRequired) "Y" else "N")
-            row.createCell(8).setCellValue(universe?.code ?: "")
+            row.createCell(7).setTextSafe(if (field.isRequired) "Y" else "N")
+            row.createCell(8).setTextSafe(universe?.code ?: "")
         }
 
         applySpecFormatting(sheet, spec, allFields.size)
@@ -717,13 +717,13 @@ class ExcelExporter(context: Context) {
             var col = 0
 
             // 이름
-            row.createCell(col++).setCellValue(character.name)
+            row.createCell(col++).setTextSafe(character.name)
 
             // 성
-            row.createCell(col++).setCellValue(character.lastName)
+            row.createCell(col++).setTextSafe(character.lastName)
 
             // 이름(First)
-            row.createCell(col++).setCellValue(character.firstName)
+            row.createCell(col++).setTextSafe(character.firstName)
 
             // 이명
             row.createCell(col++).setTextSafe(character.anotherName)
@@ -765,26 +765,26 @@ class ExcelExporter(context: Context) {
             row.createCell(col++).setTextSafe(character.imagePaths)
 
             // 작품
-            row.createCell(col++).setCellValue(novel?.title ?: "")
+            row.createCell(col++).setTextSafe(novel?.title ?: "")
 
             // 메모
             row.createCell(col++).setTextSafe(character.memo)
 
             // 태그
             val tags = allTags[character.id] ?: emptyList()
-            row.createCell(col++).setCellValue(tags.joinToString(", ") { it.tag })
+            row.createCell(col++).setTextSafe(tags.joinToString(", ") { it.tag })
 
             // 코드 (readOnly)
-            row.createCell(col++).setCellValue(character.code)
+            row.createCell(col++).setTextSafe(character.code)
 
             // 작품코드 (readOnly)
-            row.createCell(col++).setCellValue(novel?.code ?: "")
+            row.createCell(col++).setTextSafe(novel?.code ?: "")
 
             // 정렬순서
             row.createCell(col++).setCellValue(character.displayOrder.toDouble())
 
             // 고정
-            row.createCell(col++).setCellValue(if (character.isPinned) "Y" else "N")
+            row.createCell(col++).setTextSafe(if (character.isPinned) "Y" else "N")
 
             // 생성일
             row.createCell(col).setCellValue(character.createdAt.toDouble())
@@ -837,26 +837,26 @@ class ExcelExporter(context: Context) {
             row.createCell(0).setCellValue(event.year.toDouble())
             event.month?.let { row.createCell(1).setCellValue(it.toDouble()) }
             event.day?.let { row.createCell(2).setCellValue(it.toDouble()) }
-            row.createCell(3).setCellValue(event.calendarType)
-            row.createCell(4).setCellValue(eventTypeToLabel(event.eventType))
+            row.createCell(3).setTextSafe(event.calendarType)
+            row.createCell(4).setTextSafe(eventTypeToLabel(event.eventType))
             row.createCell(5).setTextSafe(event.description)
 
             val novelIds = eventNovelIdMap[event.id] ?: emptyList()
             val novels = novelIds.mapNotNull { novelMap[it] }
-            row.createCell(6).setCellValue(novels.joinToString(", ") { it.title })
+            row.createCell(6).setTextSafe(novels.joinToString(", ") { it.title })
 
             val eventCharIds = eventCharIdMap[event.id] ?: emptyList()
             val characterNames = eventCharIds.mapNotNull { charMap[it]?.name }
-            row.createCell(7).setCellValue(characterNames.joinToString(", "))
+            row.createCell(7).setTextSafe(characterNames.joinToString(", "))
 
             // 관련작품코드 (readOnly)
-            row.createCell(8).setCellValue(novels.mapNotNull { it.code }.joinToString(", "))
+            row.createCell(8).setTextSafe(novels.mapNotNull { it.code }.joinToString(", "))
             // 관련캐릭터코드 (readOnly) — 동명이인 오결합 방지(P1-I). 가져오기 시 코드 우선 매칭.
-            row.createCell(9).setCellValue(eventCharIds.mapNotNull { charMap[it]?.code }.joinToString(", "))
+            row.createCell(9).setTextSafe(eventCharIds.mapNotNull { charMap[it]?.code }.joinToString(", "))
             row.createCell(10).setCellValue(event.displayOrder.toDouble())
-            row.createCell(11).setCellValue(if (event.isTemporary) "Y" else "N")
+            row.createCell(11).setTextSafe(if (event.isTemporary) "Y" else "N")
             // 코드 (readOnly) — 왕복 안정 식별자: 설명·연도를 외부에서 편집해도 같은 사건으로 인식
-            row.createCell(12).setCellValue(event.code ?: "")
+            row.createCell(12).setTextSafe(event.code ?: "")
             row.createCell(13).setCellValue(event.createdAt.toDouble())
 
             // 사건 커스텀 필드 값 (B-10)
@@ -898,18 +898,18 @@ class ExcelExporter(context: Context) {
 
         allChanges.forEachIndexed { index, (character, novelTitle, change) ->
             val row = sheet.createRow(index + 1)
-            row.createCell(0).setCellValue(character.name)
-            row.createCell(1).setCellValue(novelTitle)
+            row.createCell(0).setTextSafe(character.name)
+            row.createCell(1).setTextSafe(novelTitle)
             row.createCell(2).setCellValue(change.year.toDouble())
             change.month?.let { row.createCell(3).setCellValue(it.toDouble()) }
             change.day?.let { row.createCell(4).setCellValue(it.toDouble()) }
-            row.createCell(5).setCellValue(change.fieldKey)
+            row.createCell(5).setTextSafe(change.fieldKey)
             row.createCell(6).setTextSafe(change.newValue)
             row.createCell(7).setTextSafe(change.description)
             // 캐릭터코드 (readOnly)
-            row.createCell(8).setCellValue(character.code)
+            row.createCell(8).setTextSafe(character.code)
             // 코드 (readOnly) — 왕복 안정 식별자: 값·연도를 외부에서 편집해도 같은 이력으로 인식
-            row.createCell(9).setCellValue(change.code ?: "")
+            row.createCell(9).setTextSafe(change.code ?: "")
             row.createCell(10).setCellValue(change.createdAt.toDouble())
         }
 
@@ -939,17 +939,17 @@ class ExcelExporter(context: Context) {
             val row = sheet.createRow(i + 1)
             val char1 = charMap[rel.characterId1]
             val char2 = charMap[rel.characterId2]
-            row.createCell(0).setCellValue(char1?.name ?: "")
-            row.createCell(1).setCellValue(char2?.name ?: "")
-            row.createCell(2).setCellValue(rel.relationshipType)
+            row.createCell(0).setTextSafe(char1?.name ?: "")
+            row.createCell(1).setTextSafe(char2?.name ?: "")
+            row.createCell(2).setTextSafe(rel.relationshipType)
             row.createCell(3).setTextSafe(rel.description)
             row.createCell(4).setCellValue(rel.intensity.toDouble())
-            row.createCell(5).setCellValue(if (rel.isBidirectional) "Y" else "N")
+            row.createCell(5).setTextSafe(if (rel.isBidirectional) "Y" else "N")
             row.createCell(6).setCellValue(rel.displayOrder.toDouble())
             // 코드 (readOnly)
-            row.createCell(7).setCellValue(char1?.code ?: "")
-            row.createCell(8).setCellValue(char2?.code ?: "")
-            row.createCell(9).setCellValue(rel.factionId?.let { factionMap[it]?.name } ?: "")
+            row.createCell(7).setTextSafe(char1?.code ?: "")
+            row.createCell(8).setTextSafe(char2?.code ?: "")
+            row.createCell(9).setTextSafe(rel.factionId?.let { factionMap[it]?.name } ?: "")
             row.createCell(10).setCellValue(rel.createdAt.toDouble())
         }
 
@@ -979,20 +979,20 @@ class ExcelExporter(context: Context) {
             val char1 = charMap[rel.characterId1]
             val char2 = charMap[rel.characterId2]
             val row = sheet.createRow(i + 1)
-            row.createCell(0).setCellValue(char1?.name ?: "")
-            row.createCell(1).setCellValue(char2?.name ?: "")
+            row.createCell(0).setTextSafe(char1?.name ?: "")
+            row.createCell(1).setTextSafe(char2?.name ?: "")
             row.createCell(2).setCellValue(rc.year.toDouble())
             rc.month?.let { row.createCell(3).setCellValue(it.toDouble()) }
             rc.day?.let { row.createCell(4).setCellValue(it.toDouble()) }
-            row.createCell(5).setCellValue(rc.relationshipType)
+            row.createCell(5).setTextSafe(rc.relationshipType)
             row.createCell(6).setTextSafe(rc.description)
             row.createCell(7).setCellValue(rc.intensity.toDouble())
-            row.createCell(8).setCellValue(if (rc.isBidirectional) "Y" else "N")
-            rc.eventId?.let { eid -> eventCodeById[eid]?.let { row.createCell(9).setCellValue(it) } }
+            row.createCell(8).setTextSafe(if (rc.isBidirectional) "Y" else "N")
+            rc.eventId?.let { eid -> eventCodeById[eid]?.let { row.createCell(9).setTextSafe(it) } }
             // 코드 (readOnly) — 왕복 안정 식별자
-            row.createCell(10).setCellValue(rc.code ?: "")
-            row.createCell(11).setCellValue(char1?.code ?: "")
-            row.createCell(12).setCellValue(char2?.code ?: "")
+            row.createCell(10).setTextSafe(rc.code ?: "")
+            row.createCell(11).setTextSafe(char1?.code ?: "")
+            row.createCell(12).setTextSafe(char2?.code ?: "")
             row.createCell(13).setCellValue(rc.createdAt.toDouble())
         }
 
@@ -1016,17 +1016,17 @@ class ExcelExporter(context: Context) {
         allNames.forEachIndexed { i, entry ->
             val row = sheet.createRow(i + 1)
             val usedByChar = entry.usedByCharacterId?.let { charMap[it] }
-            row.createCell(0).setCellValue(entry.name)
-            row.createCell(1).setCellValue(entry.gender)
-            row.createCell(2).setCellValue(entry.origin)
+            row.createCell(0).setTextSafe(entry.name)
+            row.createCell(1).setTextSafe(entry.gender)
+            row.createCell(2).setTextSafe(entry.origin)
             row.createCell(3).setTextSafe(entry.notes)
-            row.createCell(4).setCellValue(if (entry.isUsed) "Y" else "N")
-            row.createCell(5).setCellValue(usedByChar?.name ?: "")
+            row.createCell(4).setTextSafe(if (entry.isUsed) "Y" else "N")
+            row.createCell(5).setTextSafe(usedByChar?.name ?: "")
             // 사용캐릭터코드 (readOnly)
-            row.createCell(6).setCellValue(usedByChar?.code ?: "")
+            row.createCell(6).setTextSafe(usedByChar?.code ?: "")
             row.createCell(7).setCellValue(entry.createdAt.toDouble())
             // 코드 (readOnly) — 이름 은행 항목 자체의 왕복 안정 식별자 (F3-D)
-            row.createCell(8).setCellValue(entry.code)
+            row.createCell(8).setTextSafe(entry.code)
         }
 
         applySpecFormatting(sheet, spec, allNames.size)
@@ -1049,14 +1049,14 @@ class ExcelExporter(context: Context) {
         allFactions.forEachIndexed { i, faction ->
             val row = sheet.createRow(i + 1)
             val universe = universeMap[faction.universeId]
-            row.createCell(0).setCellValue(faction.name)
-            row.createCell(1).setCellValue(universe?.name ?: "")
-            row.createCell(2).setCellValue(universe?.code ?: "")
+            row.createCell(0).setTextSafe(faction.name)
+            row.createCell(1).setTextSafe(universe?.name ?: "")
+            row.createCell(2).setTextSafe(universe?.code ?: "")
             row.createCell(3).setTextSafe(faction.description)
-            row.createCell(4).setCellValue(faction.color)
-            row.createCell(5).setCellValue(faction.autoRelationType)
+            row.createCell(4).setTextSafe(faction.color)
+            row.createCell(5).setTextSafe(faction.autoRelationType)
             row.createCell(6).setCellValue(faction.autoRelationIntensity.toDouble())
-            row.createCell(7).setCellValue(faction.code)
+            row.createCell(7).setTextSafe(faction.code)
             row.createCell(8).setCellValue(faction.displayOrder.toDouble())
             row.createCell(9).setCellValue(faction.createdAt.toDouble())
         }
@@ -1084,8 +1084,8 @@ class ExcelExporter(context: Context) {
             val row = sheet.createRow(i + 1)
             val faction = factionMap[membership.factionId]
             val character = charMap[membership.characterId]
-            row.createCell(0).setCellValue(faction?.name ?: "")
-            row.createCell(1).setCellValue(character?.name ?: "")
+            row.createCell(0).setTextSafe(faction?.name ?: "")
+            row.createCell(1).setTextSafe(character?.name ?: "")
             membership.joinYear?.let { row.createCell(2).setCellValue(it.toDouble()) }
             membership.leaveYear?.let { row.createCell(3).setCellValue(it.toDouble()) }
             val leaveTypeLabel = when (membership.leaveType) {
@@ -1093,12 +1093,12 @@ class ExcelExporter(context: Context) {
                 "departed" -> "설정상탈퇴"
                 else -> ""
             }
-            row.createCell(4).setCellValue(leaveTypeLabel)
-            row.createCell(5).setCellValue(membership.departedRelationType ?: "")
+            row.createCell(4).setTextSafe(leaveTypeLabel)
+            row.createCell(5).setTextSafe(membership.departedRelationType ?: "")
             membership.departedIntensity?.let { row.createCell(6).setCellValue(it.toDouble()) }
             // readOnly codes
-            row.createCell(7).setCellValue(faction?.code ?: "")
-            row.createCell(8).setCellValue(character?.code ?: "")
+            row.createCell(7).setTextSafe(faction?.code ?: "")
+            row.createCell(8).setTextSafe(character?.code ?: "")
             row.createCell(9).setCellValue(membership.createdAt.toDouble())
         }
 
@@ -1125,15 +1125,15 @@ class ExcelExporter(context: Context) {
             val row = sheet.createRow(i + 1)
             val faction1 = factionMap[rel.factionId1]
             val faction2 = factionMap[rel.factionId2]
-            row.createCell(0).setCellValue(faction1?.name ?: "")
-            row.createCell(1).setCellValue(faction2?.name ?: "")
-            row.createCell(2).setCellValue(rel.relationType)
+            row.createCell(0).setTextSafe(faction1?.name ?: "")
+            row.createCell(1).setTextSafe(faction2?.name ?: "")
+            row.createCell(2).setTextSafe(rel.relationType)
             row.createCell(3).setTextSafe(rel.description)
             row.createCell(4).setCellValue(rel.intensity.toDouble())
-            row.createCell(5).setCellValue(if (rel.isBidirectional) "Y" else "N")
+            row.createCell(5).setTextSafe(if (rel.isBidirectional) "Y" else "N")
             row.createCell(6).setCellValue(rel.displayOrder.toDouble())
-            row.createCell(7).setCellValue(faction1?.code ?: "")
-            row.createCell(8).setCellValue(faction2?.code ?: "")
+            row.createCell(7).setTextSafe(faction1?.code ?: "")
+            row.createCell(8).setTextSafe(faction2?.code ?: "")
             row.createCell(9).setCellValue(rel.createdAt.toDouble())
         }
 
@@ -1163,10 +1163,10 @@ class ExcelExporter(context: Context) {
 
         templates.forEachIndexed { i, t ->
             val row = sheet.createRow(i + 1)
-            row.createCell(0).setCellValue(t.name)
+            row.createCell(0).setTextSafe(t.name)
             row.createCell(1).setTextSafe(t.description)
             row.createCell(2).setTextSafe(t.fieldsJson)
-            row.createCell(3).setCellValue(if (t.isBuiltIn) "Y" else "N")
+            row.createCell(3).setTextSafe(if (t.isBuiltIn) "Y" else "N")
             row.createCell(4).setCellValue(t.createdAt.toDouble())
             row.createCell(5).setCellValue(t.updatedAt.toDouble())
         }
@@ -1187,11 +1187,11 @@ class ExcelExporter(context: Context) {
 
         presets.forEachIndexed { i, p ->
             val row = sheet.createRow(i + 1)
-            row.createCell(0).setCellValue(p.name)
-            row.createCell(1).setCellValue(p.query)
+            row.createCell(0).setTextSafe(p.name)
+            row.createCell(1).setTextSafe(p.query)
             row.createCell(2).setTextSafe(p.filtersJson)
-            row.createCell(3).setCellValue(p.sortMode)
-            row.createCell(4).setCellValue(if (p.isDefault) "Y" else "N")
+            row.createCell(3).setTextSafe(p.sortMode)
+            row.createCell(4).setTextSafe(if (p.isDefault) "Y" else "N")
             row.createCell(5).setCellValue(p.createdAt.toDouble())
             row.createCell(6).setCellValue(p.updatedAt.toDouble())
         }
@@ -1209,7 +1209,7 @@ class ExcelExporter(context: Context) {
 
         val themeMode = ThemeHelper.getSavedTheme(appContext)
         val row = sheet.createRow(1)
-        row.createCell(0).setCellValue("theme_mode")
+        row.createCell(0).setTextSafe("theme_mode")
         row.createCell(1).setCellValue(themeMode.toDouble())
 
         applySpecFormatting(sheet, spec, 1)

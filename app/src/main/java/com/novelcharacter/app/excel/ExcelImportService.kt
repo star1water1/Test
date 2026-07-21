@@ -1212,7 +1212,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
                 // F1-A: 열 없음 → null(기존 유지). 열 있음 → 셀 값(빈칸=규칙 가에 따라 비움 의도 존중).
                 val descriptionFromExcel: String? = if (cols.containsKey("설명")) getCellString(row, descColIndex) else null
-                val code = if (codeColIndex >= 0) getCellString(row, codeColIndex) else ""
+                val code = getCellCode(row, codeColIndex, "세계관 행 $i", result)
                 val displayOrder: Long? = if (orderColIndex >= 0) {
                     val raw = getCellString(row, orderColIndex)
                     if (raw.isBlank()) null else parseNumber(raw)?.toLong()
@@ -1223,8 +1223,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val imageModeFromExcel: String? = if (imageModeColIndex >= 0) getCellString(row, imageModeColIndex).ifBlank { "none" } else null
                 val customRelTypes = if (customRelTypesColIndex >= 0) getCellString(row, customRelTypesColIndex) else ""
                 val customRelColors = if (customRelColorsColIndex >= 0) getCellString(row, customRelColorsColIndex) else ""
-                val imageCharCode = if (imageCharCodeColIndex >= 0) getCellString(row, imageCharCodeColIndex).ifBlank { null } else null
-                val imageNovelCode = if (imageNovelCodeColIndex >= 0) getCellString(row, imageNovelCodeColIndex).ifBlank { null } else null
+                val imageCharCode = getCellCode(row, imageCharCodeColIndex, "세계관 행 $i", result).ifBlank { null }
+                val imageNovelCode = getCellCode(row, imageNovelCodeColIndex, "세계관 행 $i", result).ifBlank { null }
                 val createdAt = if (createdAtColIndex >= 0) parseNumber(getCellString(row, createdAtColIndex))?.toLong() ?: System.currentTimeMillis() else System.currentTimeMillis()
 
                 // Duplicate code detection within file (last-write-wins)
@@ -1361,8 +1361,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 // F1-A: 열 없음 → null(기존 유지). 열 있음 → 셀 값(빈칸=규칙 가에 따라 비움 의도 존중).
                 val descriptionFromExcel: String? = if (cols.containsKey("설명")) getCellString(row, descColIndex) else null
                 val universeName = getCellString(row, universeNameColIndex)
-                val code = if (codeColIndex >= 0) getCellString(row, codeColIndex) else ""
-                val universeCode = if (universeCodeColIndex >= 0) getCellString(row, universeCodeColIndex) else ""
+                val code = getCellCode(row, codeColIndex, "작품 행 $i", result)
+                val universeCode = getCellCode(row, universeCodeColIndex, "작품 행 $i", result)
                 val displayOrder: Long? = if (orderColIndex >= 0) {
                     val raw = getCellString(row, orderColIndex)
                     if (raw.isBlank()) null else parseNumber(raw)?.toLong()
@@ -1371,7 +1371,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val borderWidthFromExcel: Float? = if (borderWidthColIndex >= 0) (parseNumber(getCellString(row, borderWidthColIndex))?.toFloat() ?: 1.5f) else null
                 val novelImagePathsFromExcel: String? = if (novelImagePathColIndex >= 0) remapImagePaths(getCellString(row, novelImagePathColIndex).ifBlank { "[]" }) else null
                 val novelImageModeFromExcel: String? = if (novelImageModeColIndex >= 0) getCellString(row, novelImageModeColIndex).ifBlank { "none" } else null
-                val novelImageCharCode = if (imageCharCodeColIndex >= 0) getCellString(row, imageCharCodeColIndex).ifBlank { null } else null
+                val novelImageCharCode = getCellCode(row, imageCharCodeColIndex, "작품 행 $i", result).ifBlank { null }
                 val novelIsPinned = if (novelPinnedColIndex >= 0) parseBoolean(getCellString(row, novelPinnedColIndex)) else false
                 val standardYear = if (standardYearColIndex >= 0) parseNumber(getCellString(row, standardYearColIndex))?.toInt() else null
                 val createdAt = if (createdAtColIndex >= 0) parseNumber(getCellString(row, createdAtColIndex))?.toLong() ?: System.currentTimeMillis() else System.currentTimeMillis()
@@ -1512,7 +1512,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val universeName = getCellString(row, universeNameColIndex)
                 if (universeName.isBlank()) continue
 
-                val universeCode = if (universeCodeColIndex >= 0) getCellString(row, universeCodeColIndex) else ""
+                val universeCode = getCellCode(row, universeCodeColIndex, "필드 행 $i", result)
                 val universe = (if (universeCode.isNotBlank()) {
                     db.universeDao().getUniverseByCode(universeCode)
                 } else null)
@@ -1653,7 +1653,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 if (name.isBlank()) continue
 
                 val code = getCellCode(row, codeColIndex, "캐릭터 행 $i", result)  // F4: 숫자 코드 방어
-                val novelCode = if (novelCodeColIndex >= 0) getCellString(row, novelCodeColIndex) else ""
+                val novelCode = getCellCode(row, novelCodeColIndex, "캐릭터 행 $i", result)
                 val novelTitle = if (novelColIndex >= 0) getCellString(row, novelColIndex) else ""
 
                 // Duplicate code detection
@@ -1968,7 +1968,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     mapped
                 } else TimelineEvent.TYPE_NONE
                 val novelTitle = getCellString(row, novelColIndex)
-                val novelCode = if (novelCodeColIndex >= 0) getCellString(row, novelCodeColIndex) else ""
+                val novelCode = getCellCode(row, novelCodeColIndex, "연표 행 $i", result)
                 val displayOrder: Int? = if (displayOrderColIndex >= 0) {
                     val raw = getCellString(row, displayOrderColIndex)
                     if (raw.isBlank()) null else parseNumber(raw)?.toInt()
@@ -1989,7 +1989,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val novelIds = resolvedNovels.map { it.id }
                 val universeId = resolvedNovels.firstOrNull()?.universeId
 
-                val fileCode = if (codeColIndex >= 0) getCellString(row, codeColIndex) else ""
+                val fileCode = getCellCode(row, codeColIndex, "연표 행 $i", result)
                 if (fileCode.isNotBlank() && !eventCodesSeen.add(fileCode)) {
                     result.warnings.add("연표 행 $i: 코드 '${fileCode}'가 파일 내에서 중복되어 같은 사건을 덮어씁니다")
                 }
@@ -2079,7 +2079,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
                 // 관련 캐릭터 해석 — **코드 우선**(동명이인 오결합 방지, P1-I), 코드 없는 항목은 이름 매칭.
                 // 코드로 이미 잡힌 캐릭터와 동명인 이름 항목은 중복 추가하지 않는다(코드가 권위).
-                val charCodeStr = if (charCodeColIndex >= 0) getCellString(row, charCodeColIndex) else ""
+                val charCodeStr = getCellCode(row, charCodeColIndex, "연표 행 $i", result)
                 val characterNames = getCellString(row, charColIndex)
                 if (charCodeStr.isNotBlank() || characterNames.isNotBlank()) {
                     val resolved = LinkedHashMap<Long, com.novelcharacter.app.data.model.Character>()
@@ -2193,7 +2193,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     continue
                 }
                 val description = getCellString(row, descColIndex)
-                val charCode = if (charCodeColIndex >= 0) getCellString(row, charCodeColIndex) else ""
+                val charCode = getCellCode(row, charCodeColIndex, "상태변화 행 $i", result)
                 val createdAt = if (createdAtColIndex >= 0) parseNumber(getCellString(row, createdAtColIndex))?.toLong() ?: System.currentTimeMillis() else System.currentTimeMillis()
 
                 // Resolve character: code-first, then strict name lookup (동명이인 모호성 감지)
@@ -2222,7 +2222,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     }
                 }
 
-                val fileCode = if (codeColIndex >= 0) getCellString(row, codeColIndex) else ""
+                val fileCode = getCellCode(row, codeColIndex, "상태변화 행 $i", result)
                 if (fileCode.isNotBlank() && !changeCodesSeen.add(fileCode)) {
                     result.warnings.add("상태변화 행 $i: 코드 '${fileCode}'가 파일 내에서 중복되어 같은 이력을 덮어씁니다")
                 }
@@ -2316,8 +2316,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     val raw = getCellString(row, displayOrderColIndex)
                     if (raw.isBlank()) null else parseNumber(raw)?.toInt()
                 } else null
-                val char1Code = if (char1CodeColIndex >= 0) getCellString(row, char1CodeColIndex) else ""
-                val char2Code = if (char2CodeColIndex >= 0) getCellString(row, char2CodeColIndex) else ""
+                val char1Code = getCellCode(row, char1CodeColIndex, "관계 행 $i", result)
+                val char2Code = getCellCode(row, char2CodeColIndex, "관계 행 $i", result)
                 val createdAt = if (createdAtColIndex >= 0) parseNumber(getCellString(row, createdAtColIndex))?.toLong() ?: System.currentTimeMillis() else System.currentTimeMillis()
                 val factionName = if (factionColIndex >= 0) getCellString(row, factionColIndex) else ""
                 val factionId = if (factionName.isNotBlank()) allFactions.find { it.name == factionName }?.id else null
@@ -2369,6 +2369,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         result.warnings.add("관계 행 $i: 행 $prevRow 과 같은 항목을 다시 덮어씀")
                     }
                     entitySeen[existing.id] = i
+                    // 빈칸=삭제 집계(변수 제어): 열이 있고 값이 비었는데 기존값이 있으면 초기화로 계수(세력 패턴과 일치)
+                    if (descColIndex >= 0 && description == "" && existing.description.isNotBlank()) result.clearedFields++
                     db.characterRelationshipDao().update(existing.copy(
                         description = if (descColIndex >= 0) description else existing.description,
                         intensity = if (intensityColIndex >= 0) intensity else existing.intensity,
@@ -2448,7 +2450,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val isBidirectional = parseBoolean(getCellString(row, bidirectionalColIndex))
                 // 연결 사건 해석: 코드 우선 (id는 복원/기기 이전 시 변하므로 구버전 폴백 전용)
                 val eventColumnPresent = eventCodeColIndex >= 0 || eventIdColIndex >= 0
-                val eventCode = if (eventCodeColIndex >= 0) getCellString(row, eventCodeColIndex) else ""
+                val eventCode = getCellCode(row, eventCodeColIndex, "관계변화 행 $i", result)
                 val eventId: Long? = when {
                     eventCode.isNotBlank() -> {
                         val found = db.timelineDao().getEventByCode(eventCode)?.id
@@ -2462,8 +2464,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 }
                 val createdAt = if (createdAtColIndex >= 0) parseNumber(getCellString(row, createdAtColIndex))?.toLong() ?: System.currentTimeMillis() else System.currentTimeMillis()
 
-                val char1Code = if (char1CodeColIndex >= 0) getCellString(row, char1CodeColIndex) else ""
-                val char2Code = if (char2CodeColIndex >= 0) getCellString(row, char2CodeColIndex) else ""
+                val char1Code = getCellCode(row, char1CodeColIndex, "관계변화 행 $i", result)
+                val char2Code = getCellCode(row, char2CodeColIndex, "관계변화 행 $i", result)
 
                 val char1 = when (val r = findCharacterStrict(char1Name, char1Code)) {
                     is CharLookupResult.Found -> r.character
@@ -2504,7 +2506,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     continue
                 }
 
-                val fileCode = if (codeColIndex >= 0) getCellString(row, codeColIndex) else ""
+                val fileCode = getCellCode(row, codeColIndex, "관계변화 행 $i", result)
                 if (fileCode.isNotBlank() && !changeCodesSeen.add(fileCode)) {
                     result.warnings.add("관계변화 행 $i: 코드 '${fileCode}'가 파일 내에서 중복되어 같은 이력을 덮어씁니다")
                 }
@@ -2512,6 +2514,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val existing = (if (fileCode.isNotBlank()) db.characterRelationshipChangeDao().getChangeByCode(fileCode) else null)
                     ?: db.characterRelationshipChangeDao().getChangeByNaturalKey(relationship.id, year, month, day)
                 if (existing != null) {
+                    // 빈칸=삭제 집계(변수 제어): 열이 있고 값이 비었는데 기존값이 있으면 초기화로 계수
+                    if (descColIndex >= 0 && description == "" && existing.description.isNotBlank()) result.clearedFields++
                     db.characterRelationshipChangeDao().update(existing.copy(
                         // 코드 매칭 시 자연키 구성 요소도 편집 가능한 값 (자연키 매칭 시엔 동일값이라 무해)
                         // 열 없음 = 기존값 유지 (열 삭제로 인한 무음 손실 방지)
@@ -2582,7 +2586,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val notes = getCellString(row, notesColIndex)
                 val isUsed = parseBoolean(getCellString(row, usedColIndex))
                 val usedByCharName = getCellString(row, usedByColIndex)
-                val usedByCharCode = if (charCodeColIndex >= 0) getCellString(row, charCodeColIndex) else ""
+                val usedByCharCode = getCellCode(row, charCodeColIndex, "이름 은행 행 $i", result)
                 val createdAt = if (createdAtColIndex >= 0) parseNumber(getCellString(row, createdAtColIndex))?.toLong() ?: System.currentTimeMillis() else System.currentTimeMillis()
 
                 val usedByCharacterId: Long? = (if (usedByCharCode.isNotBlank()) {
@@ -2814,7 +2818,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 if (name.isBlank()) continue
 
                 val universeName = if (universeNameColIndex >= 0) getCellString(row, universeNameColIndex) else ""
-                val universeCode = if (universeCodeColIndex >= 0) getCellString(row, universeCodeColIndex) else ""
+                val universeCode = getCellCode(row, universeCodeColIndex, "세력 행 $i", result)
                 // F1-A: 열 없음 → null(기존 유지). 열 있음 → 셀 값(빈칸=규칙 가에 따라 비움 의도 존중).
                 val descriptionFromExcel: String? = if (descColIndex >= 0) getCellString(row, descColIndex) else null
                 val colorFromExcel: String? = if (colorColIndex >= 0) getCellString(row, colorColIndex).ifBlank { "#2196F3" } else null
@@ -2825,7 +2829,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     continue
                 }
                 val autoRelationIntensity = parseIntensityWithWarn(row, autoRelIntensityColIndex, 5, "세력 행 $i", result) ?: 5
-                val code = if (codeColIndex >= 0) getCellString(row, codeColIndex) else ""
+                val code = getCellCode(row, codeColIndex, "세력 행 $i", result)
                 val displayOrder: Int? = if (orderColIndex >= 0) {
                     val raw = getCellString(row, orderColIndex)
                     if (raw.isBlank()) null else parseNumber(raw)?.toInt()
@@ -2965,8 +2969,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val charName = getCellString(row, charNameColIndex)
                 if (charName.isBlank()) continue
 
-                val factionCode = if (factionCodeColIndex >= 0) getCellString(row, factionCodeColIndex) else ""
-                val charCode = if (charCodeColIndex >= 0) getCellString(row, charCodeColIndex) else ""
+                val factionCode = getCellCode(row, factionCodeColIndex, "세력 가입 행 $i", result)
+                val charCode = getCellCode(row, charCodeColIndex, "세력 가입 행 $i", result)
 
                 // Resolve faction
                 val faction: Faction? = if (factionCode.isNotBlank()) {
@@ -3128,8 +3132,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     continue
                 }
 
-                val f1Code = if (faction1CodeColIndex >= 0) getCellString(row, faction1CodeColIndex) else ""
-                val f2Code = if (faction2CodeColIndex >= 0) getCellString(row, faction2CodeColIndex) else ""
+                val f1Code = getCellCode(row, faction1CodeColIndex, "세력 관계 행 $i", result)
+                val f2Code = getCellCode(row, faction2CodeColIndex, "세력 관계 행 $i", result)
                 val faction1 = resolveFaction(f1Name, f1Code)
                 if (faction1 == null) {
                     result.skippedRows++
@@ -3161,11 +3165,13 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     ?: existingByKey[Triple(faction2.id, faction1.id, relType)]
 
                 if (existing != null) {
+                    // 열 없음 = 기존값 유지(무음 손실 방지), 빈칸=삭제 집계 — 캐릭터 관계 시트와 동일 의미론
+                    if (descColIndex >= 0 && description == "" && existing.description.isNotBlank()) result.clearedFields++
                     db.factionRelationshipDao().update(existing.copy(
-                        description = description,
-                        intensity = intensity,
-                        isBidirectional = isBidirectional,
-                        displayOrder = displayOrder
+                        description = if (descColIndex >= 0) description else existing.description,
+                        intensity = if (intensityColIndex >= 0) intensity else existing.intensity,
+                        isBidirectional = if (bidirectionalColIndex >= 0) isBidirectional else existing.isBidirectional,
+                        displayOrder = if (orderColIndex >= 0) displayOrder else existing.displayOrder
                     ))
                     matchedFactionRelationshipIds.add(existing.id)
                     result.updatedFactionRelationships++
