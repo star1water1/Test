@@ -168,24 +168,26 @@ class BatchEditViewModel(application: Application) : AndroidViewModel(applicatio
         // 필드는 특정 세계관 소유 — 그 세계관 캐릭터에만 적용한다(시트가 약속한 "해당 세계관 캐릭터에만").
         // 타 세계관 캐릭터에 찍으면 그 캐릭터 편집기/통계엔 안 잡히는 고아 필드값이 생긴다.
         val scoped = if (fieldDef != null) ids.filter { universeByChar[it] == fieldDef.universeId } else ids
-        if (scoped.isEmpty()) return@launchBatchOp BatchCounts(0)
+        val skipped = ids.size - scoped.size  // 다른 세계관/미배정으로 제외된 수 — 조용히 넘기지 않고 집계·고지(변수 제어)
+        if (scoped.isEmpty()) return@launchBatchOp BatchCounts(0, skipped = skipped)
         characterRepository.batchSetFieldValue(scoped, fieldDefId, value)
 
         // 시맨틱 필드 동기화 (나이/출생연도/사망연도/생존여부 변경 시)
         val syncFailures = syncSemanticFields(fieldDef, scoped, universeByChar)
-        BatchCounts(scoped.size, syncFailures)
+        BatchCounts(scoped.size, syncFailures, skipped = skipped)
     }
 
     fun clearFieldValue(fieldDefId: Long) = launchBatchOp("clearFieldValue") { ids ->
         val fieldDef = app.database.fieldDefinitionDao().getFieldById(fieldDefId)
         val universeByChar = resolveCharUniverse(ids)
         val scoped = if (fieldDef != null) ids.filter { universeByChar[it] == fieldDef.universeId } else ids
-        if (scoped.isEmpty()) return@launchBatchOp BatchCounts(0)
+        val skipped = ids.size - scoped.size  // 다른 세계관/미배정으로 제외된 수 — 집계·고지(변수 제어)
+        if (scoped.isEmpty()) return@launchBatchOp BatchCounts(0, skipped = skipped)
         characterRepository.batchClearFieldValue(scoped, fieldDefId)
 
         // 시맨틱 필드 동기화 (출생연도/사망연도 등 초기화 시 나이 등 재계산)
         val syncFailures = syncSemanticFields(fieldDef, scoped, universeByChar)
-        BatchCounts(scoped.size, syncFailures)
+        BatchCounts(scoped.size, syncFailures, skipped = skipped)
     }
 
     /**
@@ -241,7 +243,8 @@ class BatchEditViewModel(application: Application) : AndroidViewModel(applicatio
         // 세계관을 한 번에 해소(캐릭터별 getNovelById N+1 제거) → 스코프·시맨틱싱크 양쪽에 재사용.
         val universeByChar = resolveCharUniverse(ids)
         val targets = if (fieldUniverseId != null) ids.filter { universeByChar[it] == fieldUniverseId } else ids
-        if (targets.isEmpty()) return@launchBatchOp BatchCounts(0)
+        val outOfScope = ids.size - targets.size  // 다른 세계관/미배정으로 제외된 수 — 자연키 중복 스킵과 함께 집계
+        if (targets.isEmpty()) return@launchBatchOp BatchCounts(0, skipped = outOfScope)
         val dao = app.database.characterStateChangeDao()
         // 단일키(__birth/__death/__alive)는 캐릭터당 1행 불변식을 가진다. 이를 무시하고 blind-insert하면
         // 같은 캐릭터에 두 번째 __birth가 생겨 필드값(새 값)↔연표/나이(ORDER BY year ASC로 옛 값)가 어긋난다.
@@ -288,7 +291,7 @@ class BatchEditViewModel(application: Application) : AndroidViewModel(applicatio
                 }
             }
         }
-        BatchCounts(affected = inserted, syncFailures = syncFailures, skipped = skipped)
+        BatchCounts(affected = inserted, syncFailures = syncFailures, skipped = skipped + outOfScope)
     }
 
     fun deleteSelected() = launchBatchOp("delete") { ids ->

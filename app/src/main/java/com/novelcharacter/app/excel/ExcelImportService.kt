@@ -1278,6 +1278,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         existing.imagePaths.isNotBlank() && existing.imagePaths != "[]") {
                         result.clearedFields++
                     }
+                    // 설명 빈칸으로 기존 값이 지워지는 경우도 요약 집계(변수 제어)
+                    if (descriptionFromExcel == "" && existing.description.isNotBlank()) result.clearedFields++
                     db.universeDao().update(existing.copy(
                         name = name,
                         description = descriptionFromExcel ?: existing.description,
@@ -1436,6 +1438,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         existing.imagePaths.isNotBlank() && existing.imagePaths != "[]") {
                         result.clearedFields++
                     }
+                    if (descriptionFromExcel == "" && existing.description.isNotBlank()) result.clearedFields++
                     db.novelDao().update(existing.copy(
                         title = title,
                         description = descriptionFromExcel ?: existing.description,
@@ -1740,6 +1743,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val charId: Long
                 if (existingChar != null) {
                     charId = existingChar.id
+                    // 빈칸으로 기존 텍스트가 지워지는 경우 요약("지워진 값 N건")에 집계 — 조용한 per-cell 삭제 방지(변수 제어).
+                    // (열 없음이면 xFromExcel==null → 유지되어 카운트 안 됨. 열 있음+빈칸("")+기존값 있음일 때만 삭제로 집계.)
+                    if (firstNameFromExcel == "" && existingChar.firstName.isNotBlank()) result.clearedFields++
+                    if (lastNameFromExcel == "" && existingChar.lastName.isNotBlank()) result.clearedFields++
+                    if (anotherNameFromExcel == "" && existingChar.anotherName.isNotBlank()) result.clearedFields++
+                    if (memoFromExcel == "" && existingChar.memo.isNotBlank()) result.clearedFields++
                     db.characterDao().update(existingChar.copy(
                         name = name,
                         firstName = firstNameFromExcel ?: existingChar.firstName,
@@ -2884,6 +2893,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         result.warnings.add("세력 행 $i: 행 $prevRow 과 같은 항목('$name')을 다시 덮어씀")
                     }
                     entitySeen[existing.id] = i
+                    if (descriptionFromExcel == "" && existing.description.isNotBlank()) result.clearedFields++
                     db.factionDao().update(existing.copy(
                         name = name,
                         universeId = universeId,
