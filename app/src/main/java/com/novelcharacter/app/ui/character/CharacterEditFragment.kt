@@ -275,6 +275,7 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         binding.toolbar.title = if (characterId == -1L) getString(R.string.add_character) else getString(R.string.edit_character)
 
         setupImageButton()
+        setupRecommendations()
         setupSaveButton()
         registerDuplicateResultListener() // 회전 안전(P1-A): 결과 리스너를 onViewCreated에서 1회 등록
         setupEventButton()
@@ -1123,6 +1124,87 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
             LinearLayoutManager(requireContext(), LinearLayoutManager.HORIZONTAL, false)
     }
 
+    // ===== 추천 이미지 스트립 (G3) =====
+
+    private var recCandidates: List<com.novelcharacter.app.util.ImageRecommendationHelper.Candidate> = emptyList()
+    private var recMetas: List<com.novelcharacter.app.util.ImageLinkResolver.Meta> = emptyList()
+    private var recFetched = false
+    private var recMatchJob: kotlinx.coroutines.Job? = null
+    private var recommendedAdapter: RecommendedImageAdapter? = null
+
+    /**
+     * 태그 매칭 추천(D9): 후보는 에디터 오픈당 **1회만** 비동기 페치하고,
+     * 이후 태그 입력(400ms 디바운스)·첨부·삭제 시에는 인메모리 재매칭만 수행한다.
+     */
+    private fun setupRecommendations() {
+        binding.recommendationRecyclerView.layoutManager =
+            LinearLayoutManager(requireContext(), LinearLayoutManager.HORIZONTAL, false)
+        recommendedAdapter = RecommendedImageAdapter(viewLifecycleOwner.lifecycleScope) { rec ->
+            attachRecommendedImage(rec)
+        }
+        binding.recommendationRecyclerView.adapter = recommendedAdapter
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            val data = viewModel.getRecommendationCandidates()
+            if (_binding == null) return@launch
+            recCandidates = data.candidates
+            recMetas = data.metas
+            recFetched = true
+            refreshRecommendations()
+        }
+
+        binding.editTags.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: android.text.Editable?) {
+                recMatchJob?.cancel()
+                recMatchJob = viewLifecycleOwner.lifecycleScope.launch {
+                    kotlinx.coroutines.delay(400)
+                    refreshRecommendations()
+                }
+            }
+        })
+    }
+
+    private fun canonicalOrSelf(path: String): String =
+        try { java.io.File(path).canonicalPath } catch (_: Exception) { path }
+
+    private fun refreshRecommendations() {
+        if (!recFetched || _binding == null) return
+        val tags = binding.editTags.text.toString()
+            .split(",").map { it.trim() }.filter { it.isNotBlank() }
+        val excluded = HashSet<String>()
+        for (p in imagePaths) {
+            excluded.add(p)
+            excluded.add(canonicalOrSelf(p))
+        }
+        val recs = com.novelcharacter.app.util.ImageRecommendationHelper.recommend(tags, recCandidates, excluded)
+        binding.recommendationSection.visibility = if (recs.isEmpty()) View.GONE else View.VISIBLE
+        recommendedAdapter?.submitList(recs)
+    }
+
+    /**
+     * 추천 탭 = 첨부. 링크 그룹은 전원 함께 첨부(D5 — 사용자 명시 요구).
+     * DB 쓰기는 저장 시점의 imagePaths 반영으로 일원화 — 편집 취소 시 무해(라이브러리 meta가 파일 보호).
+     */
+    private fun attachRecommendedImage(rec: com.novelcharacter.app.util.ImageRecommendationHelper.Recommendation) {
+        val expansion = com.novelcharacter.app.util.ImageLinkResolver.expand(listOf(rec.candidate.path), recMetas)
+        val currentCanon = imagePaths.mapTo(HashSet()) { canonicalOrSelf(it) }
+        val toAdd = expansion.allPaths.filter { canonicalOrSelf(it) !in currentCanon }
+        if (toAdd.isEmpty()) return
+        imagePaths.addAll(toAdd)
+        updateImageList()
+        val linkedExtra = toAdd.size - 1
+        if (linkedExtra > 0 && isAdded) {
+            Toast.makeText(
+                requireContext(),
+                getString(R.string.image_recommend_attached_with_link, linkedExtra),
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+        refreshRecommendations()
+    }
+
     /**
      * 픽한 이미지들을 내부 저장소에 저장한다. 공용 [ImageImportHelper]로 라우팅하여
      * 압축 설정(용량↔화질)을 적용한다. 압축 설정은 배치당 1회만 로드한다.
@@ -1215,6 +1297,7 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
                                         imagePaths.removeAt(currentPos)
                                         imageAdapter?.notifyItemRemoved(currentPos)
                                         imageAdapter?.notifyItemRangeChanged(currentPos, imagePaths.size - currentPos)
+                                        refreshRecommendations()
                                     }
                                 }
                                 .setNegativeButton(R.string.cancel, null)
@@ -1968,8 +2051,11 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
 
     override fun onDestroyView() {
         binding.imageRecyclerView.adapter = null
+        binding.recommendationRecyclerView.adapter = null
+        recMatchJob?.cancel()
         super.onDestroyView()
         imageAdapter = null
+        recommendedAdapter = null
         _binding = null
     }
 }

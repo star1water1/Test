@@ -74,6 +74,31 @@
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="16dp" />
 
+            <!-- 태그 매칭 추천 이미지 스트립 (미배정 라이브러리 이미지, 태그 일치 시 노출) -->
+            <LinearLayout
+                android:id="@+id/recommendationSection"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:layout_marginBottom="16dp"
+                android:visibility="gone">
+
+                <TextView
+                    android:id="@+id/recommendationTitle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="4dp"
+                    android:text="@string/image_recommend_title"
+                    android:textSize="12sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/text_secondary" />
+
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/recommendationRecyclerView"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content" />
+            </LinearLayout>
+
             <!-- Character name input -->
             <com.google.android.material.textfield.TextInputLayout
                 android:layout_width="match_parent"

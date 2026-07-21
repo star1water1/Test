@@ -36,8 +36,13 @@ object ImageZipHelper {
         val gson = Gson()
         val appDir = appContext.filesDir
 
-        // 모든 이미지 경로 수집
-        val imagePathSet = collectAllImagePaths(db, gson)
+        // 모든 이미지 경로 수집 — 엔티티 참조 + 라이브러리(meta) 미배정 이미지.
+        // meta 합류는 이 함수 내부에서만 한다: collectAllImagePaths 자체의 의미(엔티티 참조 집합)는
+        // StorageAnalyzer·고아 정리 소비처가 의존하므로 바꾸지 않는다.
+        val imagePathSet = buildSet {
+            addAll(collectAllImagePaths(db, gson))
+            addAll(runCatching { db.imageMetaDao().getAllPaths() }.getOrDefault(emptyList()))
+        }
 
         // 실제 존재하는 이미지가 있는지 확인
         val existingImages = imagePathSet.filter { path ->

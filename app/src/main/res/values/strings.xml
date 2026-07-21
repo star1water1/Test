@@ -1766,6 +1766,8 @@
     <string name="image_tag_suggestions_label">기존 태그 (탭하여 추가)</string>
     <string name="image_tag_edit_done">태그 %1$d개를 저장했습니다</string>
     <string name="image_link_badge">링크</string>
+    <string name="image_recommend_title">추천 이미지 — 태그 일치 (탭하여 첨부)</string>
+    <string name="image_recommend_attached_with_link">링크된 이미지 %1$d장이 함께 첨부되었습니다</string>
     <string name="image_settings_remove_policy_title">편집창에서 이미지 제거 시</string>
     <string name="image_settings_remove_policy_desc">캐릭터 편집창에서 이미지를 빼고 저장할 때 파일 처리 방식입니다. 다른 곳에서 함께 쓰는 파일은 어느 정책에서도 지워지지 않습니다.</string>
     <string name="image_settings_remove_policy_library_only">라이브러리만 보존 (기본) — 라이브러리 이미지는 미배정으로 복귀, 그 외는 삭제</string>

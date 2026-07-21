@@ -32,15 +32,18 @@ data class ExportOptions(
     val presetTemplates: Boolean = true,
     val searchPresets: Boolean = true,
     val appSettings: Boolean = true,
+    /** 이미지 라이브러리 메타(태그·링크 그룹) 시트 — 기본 true라 자동 백업(ExportOptions())에도 포함된다 */
+    val imageMeta: Boolean = true,
     val images: Boolean = false,
     /** MERGE 모드에서 엑셀에 없는 항목을 카테고리별로 삭제할지 여부 */
     val deleteOptions: DeleteOptions = DeleteOptions()
 ) {
+    // images는 반드시 마지막 유지 — ExcelImporter 옵션 다이얼로그가 checked[size-1]=hasImages로 참조한다
     fun toBooleanArray() = booleanArrayOf(
         universes, novels, characters, fieldDefinitions,
         timeline, stateChanges, relationships, relationshipChanges,
         nameBank, factions, factionMemberships, factionRelationships,
-        presetTemplates, searchPresets, appSettings, images
+        presetTemplates, searchPresets, appSettings, imageMeta, images
     )
 
     companion object {
@@ -53,10 +56,11 @@ data class ExportOptions(
             "사건 연표", "상태 변화", "관계", "관계 변화",
             "이름 은행", "세력", "세력 소속", "세력 관계",
             "필드 템플릿", "검색 프리셋", "앱 설정",
+            "이미지 태그·링크",
             "이미지 (파일 크기 증가)"
         )
 
-        private const val FIELD_COUNT = 16
+        private const val FIELD_COUNT = 17
 
         fun fromBooleanArray(arr: BooleanArray): ExportOptions {
             require(arr.size >= FIELD_COUNT) {
@@ -78,7 +82,8 @@ data class ExportOptions(
                 presetTemplates = arr[12],
                 searchPresets = arr[13],
                 appSettings = arr[14],
-                images = arr[15]
+                imageMeta = arr[15],
+                images = arr[16]
             )
         }
     }

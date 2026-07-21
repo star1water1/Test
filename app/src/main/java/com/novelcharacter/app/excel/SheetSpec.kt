@@ -83,7 +83,8 @@ val RESERVED_SHEET_NAMES = setOf(
     factionRelationshipSpec().sheetName,
     userPresetTemplateSpec().sheetName,
     searchPresetSpec().sheetName,
-    appSettingsSpec().sheetName
+    appSettingsSpec().sheetName,
+    imageMetaSpec().sheetName
 )
 
 /**
@@ -369,5 +370,20 @@ fun appSettingsSpec() = SheetSpec(
     columns = listOf(
         ColumnSpec("설정키", required = true, width = 8000),
         ColumnSpec("설정값", width = 10000)
+    )
+)
+
+/**
+ * 이미지 라이브러리 메타(태그·링크 그룹) 시트 (G3).
+ * 파일명은 basename만 기록한다 — 절대경로는 기기 간 이식성이 없으므로, 가져오기에서
+ * zip 리맵(원경로 basename 매칭) 또는 로컬 filesDir 존재 확인으로 해석한다.
+ * 링크그룹 토큰은 내보낸 값을 그대로 보존해 재가져오기가 멱등이 되게 한다.
+ */
+fun imageMetaSpec() = SheetSpec(
+    sheetName = "이미지",
+    columns = listOf(
+        ColumnSpec("파일명", required = true, readOnly = true, width = 10000),
+        ColumnSpec("태그", width = 10000),
+        ColumnSpec("링크그룹", readOnly = true, width = 9000)
     )
 )
