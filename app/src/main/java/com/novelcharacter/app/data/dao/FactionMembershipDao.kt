@@ -64,6 +64,10 @@ interface FactionMembershipDao {
     """)
     suspend fun countMembershipsNotInUniverse(characterId: Long, universeId: Long): Int
 
+    /** 일괄 삭제 영향 요약용 — 선택 캐릭터의 세력 소속 수. */
+    @Query("SELECT COUNT(*) FROM faction_memberships WHERE characterId IN (:ids)")
+    suspend fun countByCharacterIds(ids: List<Long>): Int
+
     @Query("DELETE FROM faction_memberships")
     suspend fun deleteAll()
 

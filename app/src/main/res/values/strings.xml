@@ -1336,6 +1336,11 @@
     <string name="batch_enter_hint">캐릭터를 탭하여 선택하세요</string>
     <string name="batch_delete_confirm_title">일괄 삭제 확인</string>
     <string name="batch_delete_confirm_message">%d명의 캐릭터를 삭제하시겠습니까?\n삭제 후 30일간 휴지통에서 복원할 수 있습니다. (보관 한도 30개 — 초과분은 오래된 항목부터 영구 삭제)</string>
+    <string name="batch_delete_impact_summary">이 캐릭터들과 연결된 %s도 함께 정리됩니다.\n(휴지통 복원 시 대부분 되돌아오지만, 상대 캐릭터·사건이 함께 삭제된 항목은 복원되지 않을 수 있습니다.)</string>
+    <string name="batch_delete_impact_relationships">관계 %d개</string>
+    <string name="batch_delete_impact_state_changes">상태 변화 %d건</string>
+    <string name="batch_delete_impact_memberships">세력 소속 %d건</string>
+    <string name="batch_delete_impact_events">사건 연계 %d건</string>
     <string name="batch_tag_add_title">태그 일괄 추가</string>
     <string name="batch_tag_remove_title">태그 일괄 삭제</string>
     <string name="batch_tag_input_hint">태그 입력 (콤마로 구분)</string>

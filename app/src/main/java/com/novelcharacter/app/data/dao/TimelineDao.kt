@@ -181,6 +181,10 @@ interface TimelineDao {
     """)
     suspend fun getCharacterCountForEvent(eventId: Long): Int
 
+    /** 일괄 삭제 영향 요약용 — 선택 캐릭터의 사건 연계(사건-캐릭터 교차) 수. */
+    @Query("SELECT COUNT(*) FROM timeline_character_cross_ref WHERE characterId IN (:ids)")
+    suspend fun countEventLinksForCharacters(ids: List<Long>): Int
+
     @Query("DELETE FROM timeline_events")
     suspend fun deleteAllEvents()
 

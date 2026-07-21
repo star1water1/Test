@@ -539,6 +539,39 @@ class CharacterRepository(
         trash.pruneIfNeeded()
     }
 
+    /**
+     * 일괄 삭제 시 함께 정리(FK CASCADE)될 연관 데이터 요약.
+     * 캐릭터는 휴지통 스냅샷으로 복원되지만, 사용자가 삭제 범위를 확인 후 결정할 수 있도록
+     * 관계·상태변화·세력소속·사건연계 규모를 사전 고지한다(조작 마찰 최소화 + 변수 제어).
+     */
+    data class DeleteImpact(
+        val characters: Int,
+        val relationships: Int,
+        val stateChanges: Int,
+        val factionMemberships: Int,
+        val eventLinks: Int
+    ) {
+        /** 캐릭터 외 함께 정리될 연관 데이터가 있는지 — 요약 문구 노출 여부 판단용. */
+        val hasLinkedData: Boolean
+            get() = relationships > 0 || stateChanges > 0 || factionMemberships > 0 || eventLinks > 0
+    }
+
+    /** 일괄 삭제 전 연쇄 영향 규모를 집계한다. IN 절 변수 한도를 피하려 CHUNK_SIZE로 나눠 합산한다(받쳐주는 확장성). */
+    suspend fun getBatchDeleteImpact(ids: List<Long>): DeleteImpact {
+        if (ids.isEmpty()) return DeleteImpact(0, 0, 0, 0, 0)
+        val relIds = mutableSetOf<Long>()  // 관계는 두 끝이 서로 다른 청크에 나뉠 수 있어 id Set으로 교차청크 중복 제거
+        var stateChanges = 0
+        var memberships = 0
+        var eventLinks = 0
+        for (chunk in ids.chunked(CHUNK_SIZE)) {
+            relIds.addAll(characterRelationshipDao.getRelationshipIdsForCharacters(chunk))
+            stateChanges += characterStateChangeDao.countByCharacterIds(chunk)
+            memberships += db.factionMembershipDao().countByCharacterIds(chunk)
+            eventLinks += db.timelineDao().countEventLinksForCharacters(chunk)
+        }
+        return DeleteImpact(ids.size, relIds.size, stateChanges, memberships, eventLinks)
+    }
+
     /** 선택 캐릭터의 고유 태그 목록 (일괄 삭제 UI용) */
     suspend fun getDistinctTagsForCharacters(ids: List<Long>): List<String> {
         val allTags = mutableSetOf<String>()
