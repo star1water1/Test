@@ -22,6 +22,10 @@ import com.novelcharacter.app.util.OpResult
 import com.novelcharacter.app.util.StorageAnalyzer
 import com.novelcharacter.app.util.navigateSafe
 import com.novelcharacter.app.util.reportAndNotify
+import com.novelcharacter.app.util.logOperation
+import com.novelcharacter.app.util.notifyWithAction
+import com.novelcharacter.app.util.notifySuccess
+import com.novelcharacter.app.util.notifyError
 
 /**
  * 이미지 관리 탭 — 앱 내 모든 이미지(캐릭터·작품·세계관)를 그리드로 조회/필터/정렬하고,
@@ -383,7 +387,19 @@ class ImageManagerFragment : Fragment() {
                     } else {
                         OpResult.success(OpResult.CAT_MAINTENANCE, text)
                     }
-                    reportAndNotify(op)
+                    // 재압축 성공분이 있으면 "실행취소"(원본 복원) 액션 스낵바 제공 — 되돌리기 안전장치(변수 제어).
+                    if (result.recompressed > 0 && viewModel.hasRecompressUndo()) {
+                        logOperation(op)  // 이력엔 남기고 알림은 액션 스낵바로 대체
+                        notifyWithAction(text, getString(R.string.image_manager_recompress_undo)) {
+                            viewModel.undoLastRecompress { ok ->
+                                if (!isAdded || _binding == null) return@undoLastRecompress
+                                if (ok) notifySuccess(getString(R.string.image_manager_recompress_undo_done))
+                                else notifyError(getString(R.string.image_manager_recompress_undo_failed))
+                            }
+                        }
+                    } else {
+                        reportAndNotify(op)
+                    }
                 }
             }
             .setNegativeButton(R.string.cancel) { _, _ -> viewModel.discardRecompress() }

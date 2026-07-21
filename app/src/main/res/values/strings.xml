@@ -1751,6 +1751,9 @@
     <string name="image_manager_recompress_done_skipped">이미지 %1$d개 재압축 · %2$s 확보 (%3$d개 제외)</string>
     <string name="image_manager_recompress_skip_summary">%1$d개 제외 (%2$s)</string>
     <string name="image_manager_recompress_failed_suffix">%1$d개 실패</string>
+    <string name="image_manager_recompress_undo">실행취소</string>
+    <string name="image_manager_recompress_undo_done">원본을 복원했어요</string>
+    <string name="image_manager_recompress_undo_failed">일부 원본을 복원하지 못했어요</string>
     <string name="image_manager_skip_not_referenced">미참조</string>
     <string name="image_manager_skip_too_small">이미 작음</string>
     <string name="image_manager_skip_too_large">너무 큼</string>
