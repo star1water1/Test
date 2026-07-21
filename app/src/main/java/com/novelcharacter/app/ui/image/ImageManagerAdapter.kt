@@ -29,14 +29,16 @@ class ImageManagerAdapter(
     private var selectionMode = false
     private var selectedPaths: Set<String> = emptySet()
 
-    /** 선택 모드/선택 집합 갱신 — 오버레이 다시 그리기. */
+    /** 선택 모드/선택 집합 갱신 — 오버레이만 부분 갱신(payload)해 썸네일 재디코드를 피한다(선택 토글 잔렉 제거). */
     fun setSelectionState(mode: Boolean, selected: Set<String>) {
         selectionMode = mode
         selectedPaths = selected
-        notifyDataSetChanged()
+        notifyItemRangeChanged(0, itemCount, SELECTION_PAYLOAD)
     }
 
     companion object {
+        private const val SELECTION_PAYLOAD = "selection"
+
         private val DIFF = object : DiffUtil.ItemCallback<ImageManagerViewModel.ManagedImage>() {
             override fun areItemsTheSame(
                 a: ImageManagerViewModel.ManagedImage,
@@ -58,6 +60,15 @@ class ImageManagerAdapter(
     }
 
     override fun onBindViewHolder(holder: VH, position: Int) = holder.bind(getItem(position))
+
+    override fun onBindViewHolder(holder: VH, position: Int, payloads: MutableList<Any>) {
+        // 선택 payload면 오버레이만 갱신(썸네일 재디코드 생략). 그 외(전체 갱신·diff)는 정규 bind.
+        if (payloads.contains(SELECTION_PAYLOAD)) {
+            holder.bindSelection(getItem(position))
+        } else {
+            onBindViewHolder(holder, position)
+        }
+    }
 
     override fun onViewRecycled(holder: VH) {
         holder.recycle()
@@ -112,15 +123,20 @@ class ImageManagerAdapter(
             binding.ownerText.text = ownerLabel(ctx, item)
 
             // 선택 오버레이
-            val selected = selectionModeProvider() && selectedProvider().contains(item.path)
-            binding.selectionScrim.visibility = if (selected) View.VISIBLE else View.GONE
-            binding.selectionCheck.visibility = if (selected) View.VISIBLE else View.GONE
+            bindSelection(item)
 
             thumbJob?.cancel()
             thumbJob = binding.thumbnail.loadCharacterThumbnail(
                 item.path, scope, reqPx = 256,
                 isValid = { bindingAdapterPosition != RecyclerView.NO_POSITION }
             )
+        }
+
+        /** 선택 오버레이(스크림·체크)만 갱신 — 썸네일 재디코드 없이 payload 부분 갱신에 사용. */
+        fun bindSelection(item: ImageManagerViewModel.ManagedImage) {
+            val selected = selectionModeProvider() && selectedProvider().contains(item.path)
+            binding.selectionScrim.visibility = if (selected) View.VISIBLE else View.GONE
+            binding.selectionCheck.visibility = if (selected) View.VISIBLE else View.GONE
         }
 
         fun recycle() {
