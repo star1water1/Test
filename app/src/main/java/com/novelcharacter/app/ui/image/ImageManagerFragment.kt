@@ -26,6 +26,7 @@ import com.novelcharacter.app.util.logOperation
 import com.novelcharacter.app.util.notifyWithAction
 import com.novelcharacter.app.util.notifySuccess
 import com.novelcharacter.app.util.notifyError
+import kotlinx.coroutines.launch
 
 /**
  * 이미지 관리 탭 — 앱 내 모든 이미지(캐릭터·작품·세계관)를 그리드로 조회/필터/정렬하고,
@@ -62,15 +63,10 @@ class ImageManagerFragment : Fragment() {
         }
     }
 
-    private enum class Filter { ALL, CHARACTER, NOVEL, UNIVERSE, ORPHAN }
-    private enum class Sort { SIZE, NAME, DATE }
-
-    private var filter = Filter.ALL
-    private var sort = Sort.SIZE
-
     private var selectionMode = false
     private val selectedPaths = LinkedHashSet<String>()
     private var currentList: List<ImageManagerViewModel.ManagedImage> = emptyList()
+    private var searchJob: kotlinx.coroutines.Job? = null
 
     private lateinit var adapter: ImageManagerAdapter
 
@@ -93,24 +89,44 @@ class ImageManagerFragment : Fragment() {
         binding.recyclerView.layoutManager = GridLayoutManager(requireContext(), 3)
         binding.recyclerView.adapter = adapter
 
+        // 상태 복원(D10: SavedStateHandle 영속) — 리스너 등록 전에 UI를 현재 criteria로 맞춘다.
+        restoreFilterUi()
+
         binding.filterChips.setOnCheckedStateChangeListener { _, checkedIds ->
-            filter = when (checkedIds.firstOrNull()) {
-                R.id.chipCharacter -> Filter.CHARACTER
-                R.id.chipNovel -> Filter.NOVEL
-                R.id.chipUniverse -> Filter.UNIVERSE
-                R.id.chipOrphan -> Filter.ORPHAN
-                else -> Filter.ALL
+            val base = when (checkedIds.firstOrNull()) {
+                R.id.chipCharacter -> com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.CHARACTER
+                R.id.chipNovel -> com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.NOVEL
+                R.id.chipUniverse -> com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.UNIVERSE
+                R.id.chipUnassigned -> com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.UNASSIGNED
+                R.id.chipOrphan -> com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.ORPHAN
+                R.id.chipTrash -> com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.TRASH
+                else -> com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.ALL
             }
+            viewModel.criteria = viewModel.criteria.copy(base = base)
             applyView()
         }
 
+        // 검색 — 300ms 디바운스(캐릭터 목록 검색 패턴)
+        binding.searchEdit.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {
+                searchJob?.cancel()
+                searchJob = viewLifecycleOwner.lifecycleScope.launch {
+                    kotlinx.coroutines.delay(300)
+                    viewModel.criteria = viewModel.criteria.copy(query = s?.toString() ?: "")
+                    applyView()
+                }
+            }
+            override fun afterTextChanged(s: android.text.Editable?) {}
+        })
+
+        binding.tagFilterButton.setOnClickListener { openTagFilterSheet() }
         binding.importButton.setOnClickListener { imagePickerLauncher.launch("image/*") }
         binding.sortButton.setOnClickListener { showSortMenu() }
         binding.optionsButton.setOnClickListener { showOptionsMenu() }
         binding.selectButton.setOnClickListener { if (selectionMode) exitSelection() else enterSelection(null) }
         binding.selectAllButton.setOnClickListener { selectAll() }
-        binding.recompressSelectedButton.setOnClickListener { recompressSelected() }
-        binding.deleteSelectedButton.setOnClickListener { deleteSelected() }
+        binding.actionsButton.setOnClickListener { openBatchOperations() }
 
         viewModel.loading.observe(viewLifecycleOwner) {
             binding.progressBar.visibility = if (it) View.VISIBLE else View.GONE
@@ -133,22 +149,68 @@ class ImageManagerFragment : Fragment() {
         viewModel.load()
     }
 
-    /** 현재 필터·정렬을 적용해 어댑터에 반영. */
+    /** 상태 복원 — 칩·검색어·태그필터 버튼 라벨을 VM criteria(SavedStateHandle)에 맞춘다. */
+    private fun restoreFilterUi() {
+        val c = viewModel.criteria
+        val chipId = when (c.base) {
+            com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.CHARACTER -> R.id.chipCharacter
+            com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.NOVEL -> R.id.chipNovel
+            com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.UNIVERSE -> R.id.chipUniverse
+            com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.UNASSIGNED -> R.id.chipUnassigned
+            com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.ORPHAN -> R.id.chipOrphan
+            com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.TRASH -> R.id.chipTrash
+            com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.ALL -> R.id.chipAll
+        }
+        binding.filterChips.check(chipId)
+        if (c.query.isNotBlank()) binding.searchEdit.setText(c.query)
+        updateTagFilterLabel()
+    }
+
+    private fun updateTagFilterLabel() {
+        val n = viewModel.criteria.tags.size
+        binding.tagFilterButton.text =
+            if (n == 0) getString(R.string.image_manager_tag_filter)
+            else getString(R.string.image_manager_tag_filter_count, n)
+    }
+
+    private fun openTagFilterSheet() {
+        val sheet = ImageTagFilterBottomSheet()
+        sheet.currentTags = viewModel.criteria.tags
+        sheet.loadAllTags = { viewModel.getAllImageTags() }
+        sheet.onApply = { tags ->
+            viewModel.criteria = viewModel.criteria.copy(tags = tags)
+            if (_binding != null) { updateTagFilterLabel(); applyView() }
+        }
+        sheet.show(childFragmentManager, ImageTagFilterBottomSheet.TAG)
+    }
+
+    /** 현재 필터·검색·정렬을 적용해 어댑터에 반영(매칭은 ImageFilterHelper 단일 소스). */
     private fun applyView() {
         val all = viewModel.images.value ?: emptyList()
-        val filtered = all.filter { item ->
-            when (filter) {
-                Filter.ALL -> true
-                Filter.CHARACTER -> item.owners.any { it.type == ImageManagerViewModel.OwnerType.CHARACTER }
-                Filter.NOVEL -> item.owners.any { it.type == ImageManagerViewModel.OwnerType.NOVEL }
-                Filter.UNIVERSE -> item.owners.any { it.type == ImageManagerViewModel.OwnerType.UNIVERSE }
-                Filter.ORPHAN -> item.status == ImageManagerViewModel.Status.ORPHAN
-            }
+        val filtered = com.novelcharacter.app.util.ImageFilterHelper.apply(all, viewModel.criteria) { item ->
+            com.novelcharacter.app.util.ImageFilterHelper.Facts(
+                fileName = item.path.substringAfterLast('/'),
+                ownerNames = item.owners.map { it.name },
+                tags = item.meta?.tags ?: emptyList(),
+                ownerKinds = item.owners.mapTo(HashSet()) {
+                    when (it.type) {
+                        ImageManagerViewModel.OwnerType.CHARACTER -> com.novelcharacter.app.util.ImageFilterHelper.OwnerKind.CHARACTER
+                        ImageManagerViewModel.OwnerType.NOVEL -> com.novelcharacter.app.util.ImageFilterHelper.OwnerKind.NOVEL
+                        ImageManagerViewModel.OwnerType.UNIVERSE -> com.novelcharacter.app.util.ImageFilterHelper.OwnerKind.UNIVERSE
+                    }
+                },
+                status = when (item.status) {
+                    ImageManagerViewModel.Status.REFERENCED -> com.novelcharacter.app.util.ImageFilterHelper.StatusKind.REFERENCED
+                    ImageManagerViewModel.Status.ORPHAN -> com.novelcharacter.app.util.ImageFilterHelper.StatusKind.ORPHAN
+                    ImageManagerViewModel.Status.TRASH_HELD -> com.novelcharacter.app.util.ImageFilterHelper.StatusKind.TRASH
+                    ImageManagerViewModel.Status.UNASSIGNED -> com.novelcharacter.app.util.ImageFilterHelper.StatusKind.UNASSIGNED
+                }
+            )
         }
-        val sorted = when (sort) {
-            Sort.SIZE -> filtered.sortedByDescending { it.sizeBytes }
-            Sort.NAME -> filtered.sortedBy { it.path.substringAfterLast('/') }
-            Sort.DATE -> filtered.sortedByDescending { it.lastModified }
+        val sorted = when (viewModel.sort) {
+            ImageManagerViewModel.Sort.SIZE -> filtered.sortedByDescending { it.sizeBytes }
+            ImageManagerViewModel.Sort.NAME -> filtered.sortedBy { it.path.substringAfterLast('/') }
+            ImageManagerViewModel.Sort.DATE -> filtered.sortedByDescending { it.lastModified }
         }
         currentList = sorted
         // 선택은 현재 뷰(필터·정렬 적용) 기준으로 유지 — 필터 전환 시 화면 밖(안 보이는) 선택은 자동 해제한다.
@@ -211,7 +273,11 @@ class ImageManagerFragment : Fragment() {
         popup.menu.add(0, 1, 1, R.string.image_manager_sort_name)
         popup.menu.add(0, 2, 2, R.string.image_manager_sort_date)
         popup.setOnMenuItemClickListener { mi ->
-            sort = when (mi.itemId) { 0 -> Sort.SIZE; 1 -> Sort.NAME; else -> Sort.DATE }
+            viewModel.sort = when (mi.itemId) {
+                0 -> ImageManagerViewModel.Sort.SIZE
+                1 -> ImageManagerViewModel.Sort.NAME
+                else -> ImageManagerViewModel.Sort.DATE
+            }
             applyView()
             true
         }
@@ -288,6 +354,31 @@ class ImageManagerFragment : Fragment() {
             sheet.show(childFragmentManager, ImageTagEditBottomSheet.TAG)
         }
 
+        // 링크 그룹 정보 + 해제 — 링크된 이미지에만 노출. N = 현재 목록에서 같은 그룹 수.
+        val groupId = item.meta?.linkGroupId
+        if (groupId != null) {
+            val groupSize = (viewModel.images.value ?: emptyList()).count { it.meta?.linkGroupId == groupId }
+            sheetBinding.detailLinkInfoText.visibility = View.VISIBLE
+            sheetBinding.detailLinkInfoText.text = getString(R.string.image_link_group_info, groupSize)
+            sheetBinding.detailUnlinkButton.visibility = View.VISIBLE
+            sheetBinding.detailUnlinkButton.setOnClickListener { dialog.dismiss(); runUnlink(listOf(item.path)) }
+        } else {
+            sheetBinding.detailLinkInfoText.visibility = View.GONE
+            sheetBinding.detailUnlinkButton.visibility = View.GONE
+        }
+
+        // 배정(항상) / 배정 해제(소유자 있을 때: 1명=확인, 복수=소유자 multi-choice)
+        sheetBinding.detailAssignButton.setOnClickListener { dialog.dismiss(); startAssignFlow(listOf(item.path)) }
+        sheetBinding.detailUnassignButton.visibility = if (item.owners.isEmpty()) View.GONE else View.VISIBLE
+        sheetBinding.detailUnassignButton.setOnClickListener {
+            dialog.dismiss()
+            if (item.owners.size == 1) {
+                confirmSingleUnassign(item)
+            } else {
+                pickOwnersAndUnassign(item)
+            }
+        }
+
         // 재압축: 참조본 + 라이브러리 미배정 모두 사용자 자산 → 노출. 고아/휴지통만 숨김.
         sheetBinding.detailRecompressButton.visibility =
             if (item.status == ImageManagerViewModel.Status.REFERENCED ||
@@ -298,6 +389,31 @@ class ImageManagerFragment : Fragment() {
         sheetBinding.detailDeleteButton.setOnClickListener { dialog.dismiss(); confirmDelete(item) }
         sheetBinding.detailCloseButton.setOnClickListener { dialog.dismiss() }
         dialog.show()
+    }
+
+    private fun confirmSingleUnassign(item: ImageManagerViewModel.ManagedImage) {
+        val ctx = context ?: return
+        AlertDialog.Builder(ctx)
+            .setTitle(R.string.image_unassign_action)
+            .setMessage(getString(R.string.image_unassign_confirm, 1))
+            .setPositiveButton(R.string.confirm) { _, _ -> runUnassign(listOf(item.path), null) }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun pickOwnersAndUnassign(item: ImageManagerViewModel.ManagedImage) {
+        val ctx = context ?: return
+        val labels = item.owners.map { "${typeLabel(it.type)} · ${it.name}" }.toTypedArray()
+        val checked = BooleanArray(item.owners.size) { true }
+        AlertDialog.Builder(ctx)
+            .setTitle(R.string.image_unassign_pick_owners)
+            .setMultiChoiceItems(labels, checked) { _, which, isChecked -> checked[which] = isChecked }
+            .setPositiveButton(R.string.confirm) { _, _ ->
+                val chosen = item.owners.filterIndexed { i, _ -> checked[i] }
+                if (chosen.isNotEmpty()) runUnassign(listOf(item.path), chosen)
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
     }
 
     private fun openFullScreen(item: ImageManagerViewModel.ManagedImage) {
@@ -486,6 +602,163 @@ class ImageManagerFragment : Fragment() {
             ImageImportHelper.SkipReason.ERROR -> R.string.image_manager_skip_error
         }
     )
+
+    // ---------- 일괄 작업(작업 시트) + 배정/해제/링크 플로우 ----------
+
+    private fun openBatchOperations() {
+        val items = selectedItems()
+        if (items.isEmpty()) {
+            reportAndNotify(OpResult.failure(OpResult.CAT_MAINTENANCE, getString(R.string.image_manager_select_none)))
+            return
+        }
+        val sheet = ImageBatchOperationBottomSheet.newInstance(items.size)
+        sheet.onAction = { action ->
+            when (action) {
+                ImageBatchOperationBottomSheet.Action.ASSIGN -> startAssignFlow(items.map { it.path })
+                ImageBatchOperationBottomSheet.Action.TAG_ADD -> openBatchTagSheet(items.map { it.path }, remove = false)
+                ImageBatchOperationBottomSheet.Action.TAG_REMOVE -> openBatchTagSheet(items.map { it.path }, remove = true)
+                ImageBatchOperationBottomSheet.Action.LINK -> startLinkFlow(items.map { it.path })
+                ImageBatchOperationBottomSheet.Action.UNLINK -> runUnlink(items.map { it.path })
+                ImageBatchOperationBottomSheet.Action.UNASSIGN -> confirmBatchUnassign(items.map { it.path })
+                ImageBatchOperationBottomSheet.Action.RECOMPRESS -> recompressSelected()
+                ImageBatchOperationBottomSheet.Action.DELETE -> deleteSelected()
+            }
+        }
+        sheet.show(childFragmentManager, ImageBatchOperationBottomSheet.TAG)
+    }
+
+    /** 배정 플로우: 대상 피커 → 링크 그룹 확장 확인(선택 밖 추가분 있으면) → 배정 → 종합 고지. */
+    private fun startAssignFlow(paths: List<String>) {
+        val picker = EntityPickerBottomSheet()
+        picker.loadTargets = { type -> viewModel.getAssignTargets(type) }
+        picker.onPicked = { type, row ->
+            val expansion = viewModel.expandWithLinkedGroups(paths)
+            if (expansion.addedByLink.isNotEmpty()) {
+                val ctx = context
+                if (ctx != null) {
+                    AlertDialog.Builder(ctx)
+                        .setTitle(R.string.image_assign_action)
+                        .setMessage(getString(
+                            R.string.image_assign_link_confirm,
+                            paths.size, expansion.addedByLink.size, expansion.allPaths.size, row.title
+                        ))
+                        .setPositiveButton(R.string.confirm) { _, _ -> doAssign(paths, type, row) }
+                        .setNegativeButton(R.string.cancel, null)
+                        .show()
+                }
+            } else {
+                doAssign(paths, type, row)
+            }
+        }
+        picker.show(childFragmentManager, EntityPickerBottomSheet.TAG)
+    }
+
+    private fun doAssign(paths: List<String>, type: ImageManagerViewModel.OwnerType, row: ImageManagerViewModel.PickRow) {
+        viewModel.assignToTarget(paths, type, row.id) { result ->
+            if (!isAdded || _binding == null) return@assignToTarget
+            if (result.failed) {
+                reportAndNotify(OpResult.failure(OpResult.CAT_MAINTENANCE, getString(R.string.image_assign_failed)))
+                return@assignToTarget
+            }
+            exitSelection()
+            val parts = mutableListOf(getString(R.string.image_assign_done, row.title, result.assigned))
+            if (result.viaLink > 0) parts.add(getString(R.string.image_assign_note_link, result.viaLink))
+            if (result.alreadyOwned > 0) parts.add(getString(R.string.image_assign_note_already, result.alreadyOwned))
+            if (result.modeChanged) parts.add(getString(R.string.image_assign_note_mode))
+            reportAndNotify(OpResult.success(OpResult.CAT_MAINTENANCE, parts.joinToString(" · ")))
+        }
+    }
+
+    private fun confirmBatchUnassign(paths: List<String>) {
+        val ctx = context ?: return
+        AlertDialog.Builder(ctx)
+            .setTitle(R.string.image_unassign_action)
+            .setMessage(getString(R.string.image_unassign_confirm, paths.size))
+            .setPositiveButton(R.string.confirm) { _, _ -> runUnassign(paths, null) }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun runUnassign(paths: List<String>, owners: List<ImageManagerViewModel.Owner>?) {
+        viewModel.unassign(paths, owners) { result ->
+            if (!isAdded || _binding == null) return@unassign
+            if (result.failed) {
+                reportAndNotify(OpResult.failure(OpResult.CAT_MAINTENANCE, getString(R.string.image_unassign_failed)))
+                return@unassign
+            }
+            exitSelection()
+            val parts = mutableListOf(getString(R.string.image_unassign_done, result.cleared))
+            if (result.adopted > 0) parts.add(getString(R.string.image_unassign_note_adopted, result.adopted))
+            reportAndNotify(OpResult.success(OpResult.CAT_MAINTENANCE, parts.joinToString(" · ")))
+        }
+    }
+
+    private fun startLinkFlow(paths: List<String>) {
+        if (paths.size < 2) {
+            reportAndNotify(OpResult.failure(OpResult.CAT_MAINTENANCE, getString(R.string.image_link_need_two)))
+            return
+        }
+        viewModel.linkImages(paths, confirmMerge = false) { outcome -> handleLinkOutcome(paths, outcome) }
+    }
+
+    private fun handleLinkOutcome(paths: List<String>, outcome: ImageManagerViewModel.LinkOutcome) {
+        if (!isAdded || _binding == null) return
+        when (outcome) {
+            is ImageManagerViewModel.LinkOutcome.NeedsMerge -> {
+                val ctx = context ?: return
+                AlertDialog.Builder(ctx)
+                    .setTitle(R.string.image_link_action)
+                    .setMessage(getString(R.string.image_link_merge_confirm, outcome.groups))
+                    .setPositiveButton(R.string.confirm) { _, _ ->
+                        viewModel.linkImages(paths, confirmMerge = true) { o -> handleLinkOutcome(paths, o) }
+                    }
+                    .setNegativeButton(R.string.cancel, null)
+                    .show()
+            }
+            is ImageManagerViewModel.LinkOutcome.Done -> {
+                exitSelection()
+                val msg = if (outcome.merged) getString(R.string.image_link_merged_done, outcome.linked)
+                else getString(R.string.image_link_done, outcome.linked)
+                reportAndNotify(OpResult.success(OpResult.CAT_MAINTENANCE, msg))
+            }
+            ImageManagerViewModel.LinkOutcome.Failed ->
+                reportAndNotify(OpResult.failure(OpResult.CAT_MAINTENANCE, getString(R.string.image_link_failed)))
+        }
+    }
+
+    private fun runUnlink(paths: List<String>) {
+        viewModel.unlinkImages(paths) { count ->
+            if (!isAdded || _binding == null) return@unlinkImages
+            exitSelection()
+            reportAndNotify(OpResult.success(OpResult.CAT_MAINTENANCE, getString(R.string.image_unlink_done, count)))
+        }
+    }
+
+    private fun openBatchTagSheet(paths: List<String>, remove: Boolean) {
+        val sheet = ImageBatchTagBottomSheet()
+        sheet.isRemoveMode = remove
+        sheet.loadChips = if (remove) {
+            { viewModel.getDistinctTagsForPaths(paths) }
+        } else {
+            { viewModel.getTagSuggestions() }
+        }
+        sheet.onConfirm = { tags ->
+            if (remove) {
+                viewModel.removeTagsFromImages(paths, tags) { count ->
+                    if (!isAdded || _binding == null) return@removeTagsFromImages
+                    exitSelection()
+                    reportAndNotify(OpResult.success(OpResult.CAT_MAINTENANCE, getString(R.string.image_batch_tag_done, count)))
+                }
+            } else {
+                viewModel.addTagsToImages(paths, tags) { count ->
+                    if (!isAdded || _binding == null) return@addTagsToImages
+                    exitSelection()
+                    reportAndNotify(OpResult.success(OpResult.CAT_MAINTENANCE, getString(R.string.image_batch_tag_done, count)))
+                }
+            }
+        }
+        sheet.show(childFragmentManager, ImageBatchTagBottomSheet.TAG)
+    }
 
     // ---------- 고아 정리 ----------
 

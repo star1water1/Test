@@ -112,13 +112,63 @@
                 android:text="@string/image_manager_filter_universe" />
 
             <com.google.android.material.chip.Chip
+                android:id="@+id/chipUnassigned"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/image_manager_filter_unassigned" />
+
+            <com.google.android.material.chip.Chip
                 android:id="@+id/chipOrphan"
                 style="@style/Widget.Material3.Chip.Filter"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/image_manager_filter_orphan" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipTrash"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/image_manager_filter_trash" />
         </com.google.android.material.chip.ChipGroup>
     </HorizontalScrollView>
+
+    <!-- 검색 + 태그 필터 줄 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="16dp"
+        android:paddingEnd="8dp">
+
+        <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/searchLayout"
+            style="@style/Widget.Material3.TextInputLayout.OutlinedBox.Dense"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:hint="@string/image_manager_search_hint">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/searchEdit"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="text"
+                android:maxLines="1"
+                android:imeOptions="actionSearch"
+                android:textSize="14sp" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/tagFilterButton"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:minWidth="0dp"
+            android:text="@string/image_manager_tag_filter" />
+    </LinearLayout>
 
     <FrameLayout
         android:layout_width="match_parent"
@@ -180,19 +230,11 @@
             android:text="@string/image_manager_select_all" />
 
         <com.google.android.material.button.MaterialButton
-            android:id="@+id/recompressSelectedButton"
-            style="@style/Widget.Material3.Button.TextButton"
+            android:id="@+id/actionsButton"
+            style="@style/Widget.Material3.Button"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:minWidth="0dp"
-            android:text="@string/image_manager_recompress" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/deleteSelectedButton"
-            style="@style/Widget.Material3.Button.TextButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:minWidth="0dp"
-            android:text="@string/delete" />
+            android:text="@string/image_manager_actions" />
     </LinearLayout>
 </LinearLayout>

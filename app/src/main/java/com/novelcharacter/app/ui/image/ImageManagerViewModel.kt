@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import androidx.room.withTransaction
 import com.google.gson.Gson
@@ -11,7 +12,9 @@ import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.data.database.AppDatabase
 import com.novelcharacter.app.data.maintenance.SystemMaintenanceService
 import com.novelcharacter.app.util.GsonTypes
+import com.novelcharacter.app.util.ImageFilterHelper
 import com.novelcharacter.app.util.ImageImportHelper
+import com.novelcharacter.app.util.ImageLinkResolver
 import com.novelcharacter.app.util.ImageSettingsStore
 import com.novelcharacter.app.util.StorageAnalyzer
 import kotlinx.coroutines.Dispatchers
@@ -25,11 +28,38 @@ import java.util.UUID
  * 각 파일이 어느 엔티티(캐릭터/작품/세계관)에서 참조되는지·고아인지·휴지통 보류인지 분류한다.
  * 참조 집합 조립은 [ImageZipHelper]/[StorageAnalyzer]의 기존 규칙(접두·확장자·canonical)을 재사용한다.
  */
-class ImageManagerViewModel(application: Application) : AndroidViewModel(application) {
+class ImageManagerViewModel(
+    application: Application,
+    private val savedState: SavedStateHandle
+) : AndroidViewModel(application) {
 
     private val app = application as NovelCharacterApp
     private val db: AppDatabase = app.database
     private val gson = Gson()
+
+    enum class Sort { SIZE, NAME, DATE }
+
+    /**
+     * 필터/검색/정렬 상태 — SavedStateHandle 영속. ViewPager가 원거리 탭의 프래그먼트(와 이 VM)를
+     * 파기해도 FragmentStateAdapter의 상태 저장을 타고 복원된다(탭 전환 시 필터 리셋 방지, D10).
+     */
+    var criteria: ImageFilterHelper.Criteria
+        get() = ImageFilterHelper.Criteria(
+            base = runCatching {
+                ImageFilterHelper.BaseFilter.valueOf(savedState["filter_base"] ?: ImageFilterHelper.BaseFilter.ALL.name)
+            }.getOrDefault(ImageFilterHelper.BaseFilter.ALL),
+            tags = savedState.get<ArrayList<String>>("filter_tags")?.toSet() ?: emptySet(),
+            query = savedState["filter_query"] ?: ""
+        )
+        set(value) {
+            savedState["filter_base"] = value.base.name
+            savedState["filter_tags"] = ArrayList(value.tags)
+            savedState["filter_query"] = value.query
+        }
+
+    var sort: Sort
+        get() = runCatching { Sort.valueOf(savedState["sort"] ?: Sort.SIZE.name) }.getOrDefault(Sort.SIZE)
+        set(value) { savedState["sort"] = value.name }
 
     enum class OwnerType { CHARACTER, NOVEL, UNIVERSE }
     data class Owner(val type: OwnerType, val name: String, val id: Long)
@@ -570,6 +600,279 @@ class ImageManagerViewModel(application: Application) : AndroidViewModel(applica
         val imageTags = runCatching { db.imageTagDao().getAllDistinctTags() }.getOrDefault(emptyList())
         val charTags = runCatching { db.characterTagDao().getAllDistinctTags() }.getOrDefault(emptyList())
         (imageTags + charTags).distinct().sorted()
+    }
+
+    /** 태그 필터 시트용 — 이미지 태그 distinct 목록. */
+    suspend fun getAllImageTags(): List<String> = withContext(Dispatchers.IO) {
+        runCatching { db.imageTagDao().getAllDistinctTags() }.getOrDefault(emptyList())
+    }
+
+    /** 선택 경로들의 distinct 태그(일괄 태그 제거 시트용) — 현재 목록의 meta id 기준. */
+    suspend fun getDistinctTagsForPaths(paths: Collection<String>): List<String> = withContext(Dispatchers.IO) {
+        val ids = metaIdsForPaths(paths)
+        if (ids.isEmpty()) emptyList()
+        else runCatching { db.imageTagDao().getDistinctTagsForImages(ids) }.getOrDefault(emptyList())
+    }
+
+    // ===== 배정 / 해제 / 링크 (G2) =====
+
+    data class AssignResult(
+        val assigned: Int, val alreadyOwned: Int, val viaLink: Int,
+        val modeChanged: Boolean, val failed: Boolean = false
+    )
+    data class UnassignResult(val cleared: Int, val adopted: Int, val failed: Boolean = false)
+    sealed class LinkOutcome {
+        data class Done(val linked: Int, val merged: Boolean) : LinkOutcome()
+        data class NeedsMerge(val groups: Int) : LinkOutcome()
+        object Failed : LinkOutcome()
+    }
+    /** 배정 대상 목록 행(피커 표시용). */
+    data class PickRow(val id: Long, val title: String, val subtitle: String)
+
+    /** 현재 목록 기준 링크 meta(경로↔그룹) — 확장·계획 판정의 입력. */
+    private fun currentMetas(): List<ImageLinkResolver.Meta> =
+        (_images.value ?: emptyList()).mapNotNull { item ->
+            item.meta?.let { ImageLinkResolver.Meta(item.path, it.linkGroupId) }
+        }
+
+    private fun currentItemsByPath(): Map<String, ManagedImage> =
+        (_images.value ?: emptyList()).associateBy { it.path }
+
+    private fun metaIdsForPaths(paths: Collection<String>): List<Long> {
+        val byPath = currentItemsByPath()
+        return paths.mapNotNull { byPath[it]?.meta?.imageId }
+    }
+
+    /** 선택을 링크 그룹 전체로 확장(사전 확인 다이얼로그용 — D5: 조용한 확대 금지). */
+    fun expandWithLinkedGroups(paths: Collection<String>): ImageLinkResolver.Expansion =
+        ImageLinkResolver.expand(paths, currentMetas())
+
+    /** 배정 대상 목록 — 캐릭터(부제=작품명)/작품(부제=세계관명)/세계관. */
+    suspend fun getAssignTargets(type: OwnerType): List<PickRow> = withContext(Dispatchers.IO) {
+        when (type) {
+            OwnerType.CHARACTER -> {
+                val novels = db.novelDao().getAllNovelsList().associateBy({ it.id }, { it.title })
+                db.characterDao().getAllCharactersList().sortedBy { it.name }
+                    .map { PickRow(it.id, it.name, it.novelId?.let { n -> novels[n] } ?: "") }
+            }
+            OwnerType.NOVEL -> {
+                val unis = db.universeDao().getAllUniversesList().associateBy({ it.id }, { it.name })
+                db.novelDao().getAllNovelsList().sortedBy { it.title }
+                    .map { PickRow(it.id, it.title, it.universeId?.let { u -> unis[u] } ?: "") }
+            }
+            OwnerType.UNIVERSE ->
+                db.universeDao().getAllUniversesList().sortedBy { it.name }
+                    .map { PickRow(it.id, it.name, "") }
+        }
+    }
+
+    /**
+     * 배정 = 경로 공유(D6): 링크 그룹 확장(D5) 후 대상 엔티티 imagePaths에 append(중복 canonical 스킵).
+     * 작품/세계관은 imageMode==none이고 **기존 이미지가 0장이던 경우에만** custom으로 자동 전환+고지
+     * (사용자가 의도적으로 none 설정한 카드는 존중).
+     */
+    fun assignToTarget(paths: List<String>, type: OwnerType, targetId: Long, onDone: (AssignResult) -> Unit) {
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                try {
+                    val expansion = expandWithLinkedGroups(paths)
+                    var assigned = 0
+                    var already = 0
+                    var modeChanged = false
+                    db.withTransaction {
+                        when (type) {
+                            OwnerType.CHARACTER -> {
+                                val c = requireNotNull(db.characterDao().getCharacterById(targetId))
+                                val (json, added, skipped) = appendPaths(c.imagePaths, expansion.allPaths)
+                                db.characterDao().update(c.copy(imagePaths = json))
+                                assigned = added; already = skipped
+                            }
+                            OwnerType.NOVEL -> {
+                                val n = requireNotNull(db.novelDao().getNovelById(targetId))
+                                val wasEmpty = parsePaths(n.imagePaths).isEmpty()
+                                val (json, added, skipped) = appendPaths(n.imagePaths, expansion.allPaths)
+                                var updated = n.copy(imagePaths = json)
+                                if (n.imageMode == com.novelcharacter.app.data.model.Novel.IMAGE_MODE_NONE && wasEmpty && added > 0) {
+                                    updated = updated.copy(imageMode = com.novelcharacter.app.data.model.Novel.IMAGE_MODE_CUSTOM)
+                                    modeChanged = true
+                                }
+                                db.novelDao().update(updated)
+                                assigned = added; already = skipped
+                            }
+                            OwnerType.UNIVERSE -> {
+                                val u = requireNotNull(db.universeDao().getUniverseById(targetId))
+                                val wasEmpty = parsePaths(u.imagePaths).isEmpty()
+                                val (json, added, skipped) = appendPaths(u.imagePaths, expansion.allPaths)
+                                var updated = u.copy(imagePaths = json)
+                                if (u.imageMode == com.novelcharacter.app.data.model.Universe.IMAGE_MODE_NONE && wasEmpty && added > 0) {
+                                    updated = updated.copy(imageMode = com.novelcharacter.app.data.model.Universe.IMAGE_MODE_CUSTOM)
+                                    modeChanged = true
+                                }
+                                db.universeDao().update(updated)
+                                assigned = added; already = skipped
+                            }
+                        }
+                    }
+                    AssignResult(assigned, already, expansion.addedByLink.size, modeChanged)
+                } catch (e: Exception) {
+                    AssignResult(0, 0, 0, false, failed = true)
+                }
+            }
+            load()
+            onDone(result)
+        }
+    }
+
+    /** imagePaths JSON에 경로들을 append(중복 canonical 스킵). @return (새 JSON, 추가 수, 스킵 수) */
+    private fun appendPaths(json: String, adds: Collection<String>): Triple<String, Int, Int> {
+        val current = parsePaths(json)
+        val canonSet = current.mapTo(HashSet()) { runCatching { File(it).canonicalPath }.getOrNull() ?: it }
+        val result = current.toMutableList()
+        var added = 0
+        var skipped = 0
+        for (p in adds) {
+            val c = runCatching { File(p).canonicalPath }.getOrNull() ?: p
+            if (c in canonSet) { skipped++ } else { result.add(p); canonSet.add(c); added++ }
+        }
+        return Triple(gson.toJson(result), added, skipped)
+    }
+
+    /**
+     * 배정 해제 — 지정 소유자([ownerFilter], null=전체)에게서 경로를 제거한다(파일 유지).
+     * 소유자 0이 된 비-라이브러리 경로는 자동 입양(미배정 복귀) — 명시적 비삭제 행위가
+     * 이후 고아 정리에 지워질 고아를 만들지 않게 한다(변수 제어).
+     */
+    fun unassign(paths: List<String>, ownerFilter: List<Owner>?, onDone: (UnassignResult) -> Unit) {
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                try {
+                    val byPath = currentItemsByPath()
+                    var cleared = 0
+                    var adopted = 0
+                    db.withTransaction {
+                        for (path in paths) {
+                            val item = byPath[path] ?: continue
+                            val targets = ownerFilter?.filter { it in item.owners } ?: item.owners
+                            if (targets.isEmpty()) continue
+                            val canon = runCatching { File(path).canonicalPath }.getOrNull() ?: path
+                            for (owner in targets) {
+                                when (owner.type) {
+                                    OwnerType.CHARACTER -> db.characterDao().getCharacterById(owner.id)?.let { c ->
+                                        db.characterDao().update(c.copy(imagePaths = removePath(c.imagePaths, path, canon)))
+                                    }
+                                    OwnerType.NOVEL -> db.novelDao().getNovelById(owner.id)?.let { n ->
+                                        db.novelDao().update(n.copy(imagePaths = removePath(n.imagePaths, path, canon)))
+                                    }
+                                    OwnerType.UNIVERSE -> db.universeDao().getUniverseById(owner.id)?.let { u ->
+                                        db.universeDao().update(u.copy(imagePaths = removePath(u.imagePaths, path, canon)))
+                                    }
+                                }
+                            }
+                            cleared++
+                            val remaining = item.owners - targets.toSet()
+                            if (remaining.isEmpty() && item.meta == null && File(path).exists()) {
+                                db.imageMetaDao().adopt(path, System.currentTimeMillis())
+                                adopted++
+                            }
+                        }
+                    }
+                    UnassignResult(cleared, adopted)
+                } catch (e: Exception) {
+                    UnassignResult(0, 0, failed = true)
+                }
+            }
+            load()
+            onDone(result)
+        }
+    }
+
+    /**
+     * 링크 생성(D5): ≥2장, 전원 라이브러리 입양. 기존 그룹 1개에 걸치면 그 그룹으로 흡수,
+     * 2개 이상 걸치면 [LinkOutcome.NeedsMerge]를 돌려 확인 후 [confirmMerge]=true로 재호출.
+     */
+    fun linkImages(paths: List<String>, confirmMerge: Boolean, onDone: (LinkOutcome) -> Unit) {
+        viewModelScope.launch {
+            val outcome = withContext(Dispatchers.IO) {
+                try {
+                    val plan = ImageLinkResolver.planLink(paths, currentMetas())
+                    if (plan.needsMergeConfirm && !confirmMerge) {
+                        LinkOutcome.NeedsMerge(plan.groupsInvolved.size)
+                    } else {
+                        db.withTransaction {
+                            val now = System.currentTimeMillis()
+                            val ids = paths.map { db.imageMetaDao().adopt(it, now) }.toMutableSet()
+                            for (g in plan.groupsInvolved) {
+                                db.imageMetaDao().getByGroup(g).forEach { ids.add(it.id) }
+                            }
+                            val groupId = plan.groupsInvolved.firstOrNull() ?: UUID.randomUUID().toString()
+                            db.imageMetaDao().setGroup(ids.toList(), groupId)
+                        }
+                        LinkOutcome.Done(paths.size, plan.needsMergeConfirm)
+                    }
+                } catch (e: Exception) {
+                    LinkOutcome.Failed
+                }
+            }
+            if (outcome !is LinkOutcome.NeedsMerge) load()
+            onDone(outcome)
+        }
+    }
+
+    /** 링크 해제 — 대상 경로들의 그룹을 지우고, 1장만 남은 그룹은 자동 정리. @return 해제 수 */
+    fun unlinkImages(paths: List<String>, onDone: (Int) -> Unit) {
+        viewModelScope.launch {
+            val count = withContext(Dispatchers.IO) {
+                try {
+                    val byPath = currentItemsByPath()
+                    val targets = paths.mapNotNull { p ->
+                        byPath[p]?.meta?.let { m -> if (m.linkGroupId != null) m.imageId to m.linkGroupId else null }
+                    }
+                    if (targets.isEmpty()) 0
+                    else db.withTransaction {
+                        db.imageMetaDao().setGroup(targets.map { it.first }, null)
+                        targets.mapTo(HashSet()) { it.second }.forEach { db.imageMetaDao().clearGroupIfSingleton(it) }
+                        targets.size
+                    }
+                } catch (e: Exception) { 0 }
+            }
+            load()
+            onDone(count)
+        }
+    }
+
+    /** 일괄 태그 추가 — 전원 입양 후 태그 삽입(중복 IGNORE). @return 반영 이미지 수 */
+    fun addTagsToImages(paths: List<String>, tags: List<String>, onDone: (Int) -> Unit) {
+        viewModelScope.launch {
+            val count = withContext(Dispatchers.IO) {
+                try {
+                    db.withTransaction {
+                        val now = System.currentTimeMillis()
+                        for (p in paths) {
+                            val id = db.imageMetaDao().adopt(p, now)
+                            db.imageTagDao().insertAll(tags.map { com.novelcharacter.app.data.model.ImageTag(imageId = id, tag = it) })
+                        }
+                    }
+                    paths.size
+                } catch (e: Exception) { 0 }
+            }
+            load()
+            onDone(count)
+        }
+    }
+
+    /** 일괄 태그 제거 — 라이브러리 이미지들에서 지정 태그 제거. @return 대상 이미지 수 */
+    fun removeTagsFromImages(paths: List<String>, tags: List<String>, onDone: (Int) -> Unit) {
+        viewModelScope.launch {
+            val count = withContext(Dispatchers.IO) {
+                try {
+                    val ids = metaIdsForPaths(paths)
+                    if (ids.isNotEmpty()) db.imageTagDao().deleteTagsFromImages(ids, tags)
+                    ids.size
+                } catch (e: Exception) { 0 }
+            }
+            load()
+            onDone(count)
+        }
     }
 
     /** 7일 지난 재압축 백업 정리 — subdir라 고아 정리 대상이 아니므로 여기서 수명 관리(무한 누적 방지). */
