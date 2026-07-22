@@ -52,6 +52,11 @@ class CharacterListFragment : Fragment() {
     // Batch edit mode
     private var isBatchEditMode = false
 
+    // 탐색 origin 목적지 id — 하단 캐릭터 탭에서는 호스트(CharacterHomeFragment)에 내장되어
+    // 현재 목적지가 characterHomeFragment이고, 작품 목록에서 진입하면 characterListFragment다.
+    private val navOriginId: Int
+        get() = if (parentFragment is CharacterHomeFragment) R.id.characterHomeFragment else R.id.characterListFragment
+
     // 배치/비교 모드에서 뒤로가기 = 화면 이탈이 아니라 모드 종료(선택 해제). 롱프레스 진입이 잦아진 만큼
     // 뒤로가기로 취소하려다 화면을 뜨며 선택을 흘리는 걸 막는다. isEnabled는 모드 전환 시 토글.
     private val batchBackCallback = object : OnBackPressedCallback(false) {
@@ -113,13 +118,13 @@ class CharacterListFragment : Fragment() {
                     else -> {
                         viewModel.recordRecentActivity(character.id, character.name)
                         val bundle = Bundle().apply { putLong("characterId", character.id) }
-                        findNavController().navigateSafe(R.id.characterListFragment, R.id.characterDetailFragment, bundle)
+                        findNavController().navigateSafe(navOriginId, R.id.characterDetailFragment, bundle)
                     }
                 }
             },
             onEditClick = { character ->
                 val bundle = Bundle().apply { putLong("characterId", character.id) }
-                findNavController().navigateSafe(R.id.characterListFragment, R.id.characterEditFragment, bundle)
+                findNavController().navigateSafe(navOriginId, R.id.characterEditFragment, bundle)
             },
             onDeleteClick = { character ->
                 // 연쇄 삭제 범위 사전 고지 + 휴지통 복원 안내 (B-7 이후 삭제는 30일 스냅샷 보관 — 고지를 실제 동작과 일치시킨다)
@@ -286,7 +291,7 @@ class CharacterListFragment : Fragment() {
                 val idsStr = selectedForCompare.joinToString(",")
                 val bundle = Bundle().apply { putString("characterIds", idsStr) }
                 exitCompareMode()
-                findNavController().navigateSafe(R.id.characterListFragment, R.id.characterCompareFragment, bundle)
+                findNavController().navigateSafe(navOriginId, R.id.characterCompareFragment, bundle)
             }
         }
 
@@ -354,7 +359,7 @@ class CharacterListFragment : Fragment() {
                 putLong("characterId", -1L)
                 putLong("novelId", novelId)
             }
-            findNavController().navigateSafe(R.id.characterListFragment, R.id.characterEditFragment, bundle)
+            findNavController().navigateSafe(navOriginId, R.id.characterEditFragment, bundle)
         }
     }
 
@@ -407,7 +412,7 @@ class CharacterListFragment : Fragment() {
             onClick = { item ->
                 viewModel.recordRecentActivity(item.character.id, item.character.name)
                 val bundle = Bundle().apply { putLong("characterId", item.character.id) }
-                findNavController().navigateSafe(R.id.characterListFragment, R.id.characterDetailFragment, bundle)
+                findNavController().navigateSafe(navOriginId, R.id.characterDetailFragment, bundle)
             }
         )
         birthdayBannerAdapter = adapter

@@ -77,10 +77,10 @@ class MainActivity : AppCompatActivity() {
             .findFragmentById(R.id.nav_host_fragment) as? NavHostFragment ?: return
         val navController = navHostFragment.navController
 
-        // 하단 바 5탭: 홈, 캐릭터, 관계도, 통계, 설정 (보충은 설정에서 진입하는 하위 화면)
+        // 하단 바 5탭: 홈, 캐릭터, 관계도, 통계, 설정 (보충은 캐릭터 탭의 내부 탭)
         val topLevelIds = setOf(
             R.id.homeFragment,
-            R.id.characterListFragment,
+            R.id.characterHomeFragment,
             R.id.relationshipGraphFragment,
             R.id.statsMainFragment,
             R.id.settingsFragment

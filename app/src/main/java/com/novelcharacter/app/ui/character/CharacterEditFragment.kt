@@ -695,7 +695,7 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         val nextIndex = supplementIndex + 1
         if (nextIndex >= supplementIds.size) {
             Toast.makeText(requireContext(), R.string.supplement_queue_done, Toast.LENGTH_SHORT).show()
-            findNavController().popBackStack(R.id.supplementFragment, false)
+            findNavController().popBackStack(R.id.characterHomeFragment, false)
             return
         }
         val issueLabelsArray = arguments?.getStringArray("supplementIssueLabelsArray")
@@ -710,7 +710,7 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
             }
         }
         val navOptions = androidx.navigation.NavOptions.Builder()
-            .setPopUpTo(R.id.supplementFragment, inclusive = false)
+            .setPopUpTo(R.id.characterHomeFragment, inclusive = false)
             .build()
         findNavController().navigate(R.id.characterEditFragment, bundle, navOptions)
     }

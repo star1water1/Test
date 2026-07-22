@@ -7,7 +7,7 @@
         android:title="@string/tab_home" />
 
     <item
-        android:id="@+id/characterListFragment"
+        android:id="@+id/characterHomeFragment"
         android:icon="@drawable/ic_character_placeholder"
         android:title="@string/tab_characters" />
 
