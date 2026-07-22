@@ -1194,6 +1194,9 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         if (toAdd.isEmpty()) return
         imagePaths.addAll(toAdd)
         updateImageList()
+        // 첨부는 미저장 변경 — 없으면 뒤로가기가 확인 없이 이탈하고 드래프트도 안 남는다(무음 유실)
+        hasUnsavedChanges = true
+        updateSaveButtonState()
         val linkedExtra = toAdd.size - 1
         if (linkedExtra > 0 && isAdded) {
             Toast.makeText(
@@ -1224,6 +1227,8 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
                 if (filePath != null) {
                     imagePaths.add(filePath)
                     updateImageList()
+                    hasUnsavedChanges = true
+                    updateSaveButtonState()
                 } else {
                     anyFailed = true
                 }
@@ -1297,6 +1302,8 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
                                         imagePaths.removeAt(currentPos)
                                         imageAdapter?.notifyItemRemoved(currentPos)
                                         imageAdapter?.notifyItemRangeChanged(currentPos, imagePaths.size - currentPos)
+                                        hasUnsavedChanges = true
+                                        updateSaveButtonState()
                                         refreshRecommendations()
                                     }
                                 }
