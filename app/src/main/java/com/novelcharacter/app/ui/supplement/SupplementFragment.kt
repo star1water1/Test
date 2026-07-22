@@ -16,6 +16,7 @@ import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.databinding.FragmentSupplementBinding
+import com.novelcharacter.app.ui.character.CharacterHomeFragment
 
 /**
  * 편집 중 이탈 가드 — 랜덤 보충 탭이 인라인 편집 중일 때 탭 전환·필터 변경 등
@@ -80,6 +81,8 @@ class SupplementFragment : Fragment() {
     /** 랜덤 탭 편집 모드 진입/이탈 시 좌우 스와이프 잠금 (실수로 탭이 넘어가는 것 방지) */
     fun setSwipeLocked(locked: Boolean) {
         _binding?.viewPager?.isUserInputEnabled = !locked
+        // 캐릭터 탭 호스트의 외부 페이저도 함께 잠근다 — 스와이프로 목록 탭에 넘어가는 실수 방지
+        (parentFragment as? CharacterHomeFragment)?.setSwipeLocked(locked)
     }
 
     /** 세계관·작품 필터 해제 — 랜덤 탭의 빈 상태 교정 경로(변수 제어)에서 호출 */

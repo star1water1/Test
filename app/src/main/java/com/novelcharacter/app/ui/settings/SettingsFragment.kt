@@ -118,10 +118,6 @@ class SettingsFragment : Fragment() {
             showThemeDialog()
         }
 
-        binding.supplementRow.setOnClickListener {
-            findNavController().navigate(R.id.supplementFragment)
-        }
-
         // Data management
         binding.exportRow.setOnClickListener {
             exportToExcel()

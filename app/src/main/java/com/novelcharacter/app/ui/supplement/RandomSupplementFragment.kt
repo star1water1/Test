@@ -175,7 +175,7 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
         imageStrip = CharacterImageStripController(
             fragment = this,
             recyclerViewGetter = { _binding?.imageRecyclerView },
-            navOriginDestId = R.id.supplementFragment,
+            navOriginDestId = R.id.characterHomeFragment,
             onChanged = { markDirty() }
         )
 
@@ -301,7 +301,7 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
         binding.btnGoDetail.setOnClickListener {
             val id = displayedCharacter?.id ?: return@setOnClickListener
             val bundle = Bundle().apply { putLong("characterId", id) }
-            findNavController().navigateSafe(R.id.supplementFragment, R.id.characterDetailFragment, bundle)
+            findNavController().navigateSafe(R.id.characterHomeFragment, R.id.characterDetailFragment, bundle)
         }
 
         binding.btnClearFilter.setOnClickListener {
@@ -526,7 +526,7 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
                         putString("imagePaths", imagePathsJson)
                         putInt("startPosition", position)
                     }
-                    findNavController().navigateSafe(R.id.supplementFragment, R.id.imageViewerFragment, bundle)
+                    findNavController().navigateSafe(R.id.characterHomeFragment, R.id.imageViewerFragment, bundle)
                 }
                 val boundPosition = position
                 val job = viewLifecycleOwner.lifecycleScope.launch {

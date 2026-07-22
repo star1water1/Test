@@ -72,6 +72,13 @@
             android:defaultValue="-1L" />
     </fragment>
 
+    <!-- 캐릭터 탭 호스트 (내부 탭: 목록 + 보충) -->
+    <fragment
+        android:id="@+id/characterHomeFragment"
+        android:name="com.novelcharacter.app.ui.character.CharacterHomeFragment"
+        android:label="@string/tab_characters"
+        tools:layout="@layout/fragment_character_home" />
+
     <fragment
         android:id="@+id/characterListFragment"
         android:name="com.novelcharacter.app.ui.character.CharacterListFragment"
@@ -318,17 +325,5 @@
         android:name="com.novelcharacter.app.ui.graph.RelationshipGraphFragment"
         android:label="@string/tab_relationship_graph"
         tools:layout="@layout/fragment_relationship_graph" />
-
-    <!-- 보충 탭 -->
-    <fragment
-        android:id="@+id/supplementFragment"
-        android:name="com.novelcharacter.app.ui.supplement.SupplementFragment"
-        android:label="@string/tab_supplement"
-        tools:layout="@layout/fragment_supplement">
-
-        <action
-            android:id="@+id/action_supplement_to_edit"
-            app:destination="@id/characterEditFragment" />
-    </fragment>
 
 </navigation>
