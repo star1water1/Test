@@ -53,6 +53,13 @@ class SupplementViewModel(application: Application) : AndroidViewModel(applicati
     private var allTargets: List<SupplementTarget> = emptyList()
     private var allCharacters: List<Character> = emptyList()
 
+    // 전체 캐릭터 감사 결과 — 이슈가 없는 캐릭터도 포함 (랜덤 탭의 완성도 배지·미흡 우선 뽑기용)
+    private var allAudits: List<SupplementTarget> = emptyList()
+
+    // 랜덤 탭 뽑기 풀 — 세계관/작품 필터만 적용 (이슈 필터·정렬은 완성도 검사 탭 전용)
+    private val _randomPool = MutableLiveData<List<Character>>(emptyList())
+    val randomPool: LiveData<List<Character>> = _randomPool
+
     enum class SortMode { ISSUES_DESC, NAME_ASC, COMPLETION_ASC }
 
     fun loadData(criteria: SupplementCriteria) {
@@ -84,7 +91,7 @@ class SupplementViewModel(application: Application) : AndroidViewModel(applicati
                 val membershipCharIds = allMemberships.map { it.characterId }.toSet()
                 val factionsByUniverse = allFactions.groupBy { it.universeId }
 
-                val targets = mutableListOf<SupplementTarget>()
+                val audits = mutableListOf<SupplementTarget>()
 
                 for (char in characters) {
                     val issues = mutableListOf<SupplementIssue>()
@@ -167,12 +174,12 @@ class SupplementViewModel(application: Application) : AndroidViewModel(applicati
                         }
                     }
 
-                    if (issues.isNotEmpty()) {
-                        targets.add(SupplementTarget(char, issues, fieldCompletion))
-                    }
+                    // 이슈가 없어도 감사 결과를 보관 — 랜덤 탭이 완성도 배지를 표시할 수 있도록
+                    audits.add(SupplementTarget(char, issues, fieldCompletion))
                 }
 
-                allTargets = targets
+                allAudits = audits
+                allTargets = audits.filter { it.issues.isNotEmpty() }
                 allCharacters = characters
 
                 withContext(Dispatchers.Main) {
@@ -270,9 +277,28 @@ class SupplementViewModel(application: Application) : AndroidViewModel(applicati
         }
 
         _targets.value = filtered
+
+        // 랜덤 탭 뽑기 풀 갱신 — 세계관/작품 필터만 적용
+        var pool = allCharacters.toList()
+        if (uId != null) {
+            val novelIds = _novelList.value
+                ?.filter { it.universeId == uId }
+                ?.map { it.id }
+                ?.toSet() ?: emptySet()
+            pool = pool.filter { it.novelId in novelIds }
+        }
+        if (nId != null) {
+            pool = pool.filter { it.novelId == nId }
+        }
+        _randomPool.value = pool
+    }
+
+    /** 특정 캐릭터의 감사 결과 (이슈 없는 완성 캐릭터 포함) — 랜덤 탭 배지·미흡 칩용 */
+    fun getAuditForCharacter(characterId: Long): SupplementTarget? {
+        return allAudits.find { it.character.id == characterId }
     }
 
     fun getIssuesForCharacter(characterId: Long): List<SupplementIssue> {
-        return allTargets.find { it.character.id == characterId }?.issues ?: emptyList()
+        return getAuditForCharacter(characterId)?.issues ?: emptyList()
     }
 }

@@ -1295,6 +1295,12 @@
     <string name="supplement_banner_issues">미흡 항목: %s</string>
     <string name="supplement_progress_format">%1$d/%2$d</string>
 
+    <!-- 보충 화면 내부 탭 / 공유 필터 -->
+    <string name="supplement_tab_random">랜덤 보충</string>
+    <string name="supplement_tab_audit">완성도 검사</string>
+    <string name="supplement_filter_all_universes">전체 세계관</string>
+    <string name="supplement_filter_all_novels">전체 작품</string>
+
     <!-- 캐릭터 중복 감지 -->
     <string name="duplicate_character_title">동일한 이름의 캐릭터가 존재합니다</string>
     <string name="duplicate_character_message">\'%1$s\' 이름을 가진 캐릭터가 이미 %2$d명 존재합니다.</string>
