@@ -43,14 +43,14 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="@string/settings_theme"
-                        android:textSize="16sp"
+                        android:textAppearance="@style/TextAppearance.App.Title"
                         android:textColor="?attr/colorOnSurface" />
 
                     <TextView
                         android:id="@+id/themeValue"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:textSize="13sp"
+                        android:textAppearance="@style/TextAppearance.App.BodySmall"
                         android:textColor="?attr/colorOnSurfaceVariant"
                         android:layout_marginTop="2dp" />
 
@@ -69,7 +69,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/backup_status_title"
-                android:textSize="13sp"
+                android:textAppearance="@style/TextAppearance.App.BodySmall"
                 android:textColor="@color/primary"
                 android:textStyle="bold"
                 android:paddingStart="16dp"
@@ -81,7 +81,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:padding="16dp"
-                android:textSize="13sp"
+                android:textAppearance="@style/TextAppearance.App.BodySmall"
                 android:textColor="?attr/colorOnSurfaceVariant" />
 
             <!-- Auto backup options -->
@@ -104,14 +104,14 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="@string/backup_options"
-                        android:textSize="16sp"
+                        android:textAppearance="@style/TextAppearance.App.Title"
                         android:textColor="?attr/colorOnSurface" />
 
                     <TextView
                         android:id="@+id/backupOptionsValue"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:textSize="13sp"
+                        android:textAppearance="@style/TextAppearance.App.BodySmall"
                         android:textColor="?attr/colorOnSurfaceVariant"
                         android:layout_marginTop="2dp" />
 
@@ -132,7 +132,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/settings_backup"
-                    android:textSize="16sp"
+                    android:textAppearance="@style/TextAppearance.App.Title"
                     android:textColor="?attr/colorOnSurface" />
 
             </LinearLayout>
@@ -148,7 +148,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/settings_data"
-                android:textSize="13sp"
+                android:textAppearance="@style/TextAppearance.App.BodySmall"
                 android:textColor="@color/primary"
                 android:textStyle="bold"
                 android:paddingStart="16dp"
@@ -168,7 +168,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/settings_export"
-                    android:textSize="16sp"
+                    android:textAppearance="@style/TextAppearance.App.Title"
                     android:textColor="?attr/colorOnSurface" />
 
             </LinearLayout>
@@ -186,7 +186,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/share_world_package"
-                    android:textSize="16sp"
+                    android:textAppearance="@style/TextAppearance.App.Title"
                     android:textColor="?attr/colorOnSurface" />
 
             </LinearLayout>
@@ -204,7 +204,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/settings_import"
-                    android:textSize="16sp"
+                    android:textAppearance="@style/TextAppearance.App.Title"
                     android:textColor="?attr/colorOnSurface" />
 
             </LinearLayout>
@@ -222,14 +222,14 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/trash_title"
-                    android:textSize="16sp"
+                    android:textAppearance="@style/TextAppearance.App.Title"
                     android:textColor="?attr/colorOnSurface" />
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/settings_trash_desc"
-                    android:textSize="13sp"
+                    android:textAppearance="@style/TextAppearance.App.BodySmall"
                     android:textColor="?attr/colorOnSurfaceVariant"
                     android:layout_marginTop="2dp" />
 
@@ -248,14 +248,14 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/storage_title"
-                    android:textSize="16sp"
+                    android:textAppearance="@style/TextAppearance.App.Title"
                     android:textColor="?attr/colorOnSurface" />
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/settings_storage_desc"
-                    android:textSize="13sp"
+                    android:textAppearance="@style/TextAppearance.App.BodySmall"
                     android:textColor="?attr/colorOnSurfaceVariant"
                     android:layout_marginTop="2dp" />
 
@@ -274,14 +274,14 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/settings_image_compress_title"
-                    android:textSize="16sp"
+                    android:textAppearance="@style/TextAppearance.App.Title"
                     android:textColor="?attr/colorOnSurface" />
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/settings_image_compress_desc"
-                    android:textSize="13sp"
+                    android:textAppearance="@style/TextAppearance.App.BodySmall"
                     android:textColor="?attr/colorOnSurfaceVariant"
                     android:layout_marginTop="2dp" />
 
@@ -300,14 +300,14 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/operation_history_title"
-                    android:textSize="16sp"
+                    android:textAppearance="@style/TextAppearance.App.Title"
                     android:textColor="?attr/colorOnSurface" />
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/settings_operation_history_desc"
-                    android:textSize="13sp"
+                    android:textAppearance="@style/TextAppearance.App.BodySmall"
                     android:textColor="?attr/colorOnSurfaceVariant"
                     android:layout_marginTop="2dp" />
 
@@ -324,7 +324,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/settings_maintenance"
-                android:textSize="13sp"
+                android:textAppearance="@style/TextAppearance.App.BodySmall"
                 android:textColor="@color/primary"
                 android:textStyle="bold"
                 android:paddingStart="16dp"
@@ -344,7 +344,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/maintenance_check_integrity"
-                    android:textSize="16sp"
+                    android:textAppearance="@style/TextAppearance.App.Title"
                     android:textColor="?attr/colorOnSurface" />
 
             </LinearLayout>
@@ -362,7 +362,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/maintenance_reindex"
-                    android:textSize="16sp"
+                    android:textAppearance="@style/TextAppearance.App.Title"
                     android:textColor="?attr/colorOnSurface" />
 
             </LinearLayout>
@@ -380,14 +380,14 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/maintenance_clean_orphan"
-                    android:textSize="16sp"
+                    android:textAppearance="@style/TextAppearance.App.Title"
                     android:textColor="?attr/colorOnSurface" />
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/maintenance_clean_orphan_desc"
-                    android:textSize="13sp"
+                    android:textAppearance="@style/TextAppearance.App.BodySmall"
                     android:textColor="?attr/colorOnSurfaceVariant"
                     android:layout_marginTop="2dp" />
 
@@ -406,7 +406,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/maintenance_check_images"
-                    android:textSize="16sp"
+                    android:textAppearance="@style/TextAppearance.App.Title"
                     android:textColor="?attr/colorOnSurface" />
 
             </LinearLayout>
@@ -417,7 +417,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:padding="16dp"
-                android:textSize="13sp"
+                android:textAppearance="@style/TextAppearance.App.BodySmall"
                 android:textColor="?attr/colorOnSurfaceVariant"
                 android:visibility="gone" />
 
@@ -432,7 +432,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/settings_error_log"
-                android:textSize="13sp"
+                android:textAppearance="@style/TextAppearance.App.BodySmall"
                 android:textColor="@color/primary"
                 android:textStyle="bold"
                 android:paddingStart="16dp"
@@ -446,7 +446,7 @@
                 android:paddingStart="16dp"
                 android:paddingEnd="16dp"
                 android:paddingBottom="4dp"
-                android:textSize="13sp"
+                android:textAppearance="@style/TextAppearance.App.BodySmall"
                 android:textColor="?attr/colorOnSurfaceVariant" />
 
             <LinearLayout
@@ -461,14 +461,14 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/settings_view_error_log"
-                    android:textSize="16sp"
+                    android:textAppearance="@style/TextAppearance.App.Title"
                     android:textColor="?attr/colorOnSurface" />
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/settings_view_error_log_desc"
-                    android:textSize="13sp"
+                    android:textAppearance="@style/TextAppearance.App.BodySmall"
                     android:textColor="?attr/colorOnSurfaceVariant"
                     android:layout_marginTop="2dp" />
 
@@ -493,14 +493,14 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/settings_reset_app"
-                    android:textSize="16sp"
+                    android:textAppearance="@style/TextAppearance.App.Title"
                     android:textColor="#FF5722" />
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/settings_reset_app_desc"
-                    android:textSize="13sp"
+                    android:textAppearance="@style/TextAppearance.App.BodySmall"
                     android:textColor="?attr/colorOnSurfaceVariant"
                     android:layout_marginTop="2dp" />
 
@@ -523,14 +523,14 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/settings_about"
-                    android:textSize="16sp"
+                    android:textAppearance="@style/TextAppearance.App.Title"
                     android:textColor="?attr/colorOnSurface" />
 
                 <TextView
                     android:id="@+id/versionText"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:textSize="13sp"
+                    android:textAppearance="@style/TextAppearance.App.BodySmall"
                     android:textColor="?attr/colorOnSurfaceVariant"
                     android:layout_marginTop="2dp" />
 

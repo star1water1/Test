@@ -17,7 +17,7 @@
             android:id="@+id/yearText"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:textSize="13sp"
+            android:textAppearance="@style/TextAppearance.App.BodySmall"
             android:textStyle="bold"
             android:textColor="@color/primary"
             android:gravity="center" />
@@ -26,7 +26,7 @@
             android:id="@+id/calendarTypeText"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:textSize="12sp"
+            android:textAppearance="@style/TextAppearance.App.Caption"
             android:textColor="@color/text_secondary" />
 
     </LinearLayout>
@@ -88,7 +88,7 @@
                 android:id="@+id/descriptionText"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:textSize="13sp"
+                android:textAppearance="@style/TextAppearance.App.BodySmall"
                 android:textColor="@color/on_surface" />
 
             <TextView
@@ -96,7 +96,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="4dp"
-                android:textSize="11sp"
+                android:textAppearance="@style/TextAppearance.App.LabelSmall"
                 android:textColor="@color/text_secondary"
                 android:visibility="gone" />
 

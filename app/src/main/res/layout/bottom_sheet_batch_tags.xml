@@ -19,8 +19,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:paddingBottom="12dp"
-        android:textSize="18sp"
-        android:textStyle="bold" />
+        android:textAppearance="@style/TextAppearance.App.TitleLarge" />
 
     <com.google.android.material.textfield.TextInputLayout
         android:id="@+id/tagInputLayout"
@@ -42,7 +41,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="@string/batch_tag_existing"
-        android:textSize="13sp"
+        android:textAppearance="@style/TextAppearance.App.BodySmall"
         android:textColor="@color/text_secondary"
         android:paddingBottom="4dp" />
 
@@ -57,7 +56,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="@string/batch_tag_no_tags"
-        android:textSize="13sp"
+        android:textAppearance="@style/TextAppearance.App.BodySmall"
         android:textColor="@color/text_secondary"
         android:visibility="gone"
         android:layout_marginBottom="12dp" />

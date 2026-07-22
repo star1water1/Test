@@ -67,7 +67,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/label_field_type"
-                android:textSize="12sp"
+                android:textAppearance="@style/TextAppearance.App.Caption"
                 android:textColor="@color/text_secondary" />
 
             <Spinner
@@ -109,7 +109,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/label_display_format"
-                    android:textSize="12sp"
+                    android:textAppearance="@style/TextAppearance.App.Caption"
                     android:textColor="@color/text_secondary" />
 
                 <Spinner
@@ -132,7 +132,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/label_select_options"
-                    android:textSize="12sp"
+                    android:textAppearance="@style/TextAppearance.App.Caption"
                     android:textColor="@color/text_secondary" />
 
                 <com.google.android.material.textfield.TextInputLayout
@@ -160,26 +160,25 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/label_grade_mapping"
-                    android:textSize="14sp"
-                    android:textStyle="bold"
+                    android:textAppearance="@style/TextAppearance.App.BodyStrong"
                     android:textColor="@color/primary"
                     android:layout_marginBottom="8dp" />
 
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginBottom="4dp">
-                    <TextView android:layout_width="40dp" android:layout_height="wrap_content" android:text="C:" android:textSize="14sp" />
-                    <com.google.android.material.textfield.TextInputEditText android:id="@+id/editGradeC" android:layout_width="80dp" android:layout_height="40dp" android:inputType="numberDecimal|numberSigned" android:text="0.5" android:textSize="14sp" />
+                    <TextView android:layout_width="40dp" android:layout_height="wrap_content" android:text="C:" android:textAppearance="@style/TextAppearance.App.Body" />
+                    <com.google.android.material.textfield.TextInputEditText android:id="@+id/editGradeC" android:layout_width="80dp" android:layout_height="40dp" android:inputType="numberDecimal|numberSigned" android:text="0.5" android:textAppearance="@style/TextAppearance.App.Body" />
                 </LinearLayout>
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginBottom="4dp">
-                    <TextView android:layout_width="40dp" android:layout_height="wrap_content" android:text="B:" android:textSize="14sp" />
-                    <com.google.android.material.textfield.TextInputEditText android:id="@+id/editGradeB" android:layout_width="80dp" android:layout_height="40dp" android:inputType="numberDecimal|numberSigned" android:text="1" android:textSize="14sp" />
+                    <TextView android:layout_width="40dp" android:layout_height="wrap_content" android:text="B:" android:textAppearance="@style/TextAppearance.App.Body" />
+                    <com.google.android.material.textfield.TextInputEditText android:id="@+id/editGradeB" android:layout_width="80dp" android:layout_height="40dp" android:inputType="numberDecimal|numberSigned" android:text="1" android:textAppearance="@style/TextAppearance.App.Body" />
                 </LinearLayout>
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginBottom="4dp">
-                    <TextView android:layout_width="40dp" android:layout_height="wrap_content" android:text="A:" android:textSize="14sp" />
-                    <com.google.android.material.textfield.TextInputEditText android:id="@+id/editGradeA" android:layout_width="80dp" android:layout_height="40dp" android:inputType="numberDecimal|numberSigned" android:text="2" android:textSize="14sp" />
+                    <TextView android:layout_width="40dp" android:layout_height="wrap_content" android:text="A:" android:textAppearance="@style/TextAppearance.App.Body" />
+                    <com.google.android.material.textfield.TextInputEditText android:id="@+id/editGradeA" android:layout_width="80dp" android:layout_height="40dp" android:inputType="numberDecimal|numberSigned" android:text="2" android:textAppearance="@style/TextAppearance.App.Body" />
                 </LinearLayout>
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginBottom="4dp">
-                    <TextView android:layout_width="40dp" android:layout_height="wrap_content" android:text="S:" android:textSize="14sp" />
-                    <com.google.android.material.textfield.TextInputEditText android:id="@+id/editGradeS" android:layout_width="80dp" android:layout_height="40dp" android:inputType="numberDecimal|numberSigned" android:text="3" android:textSize="14sp" />
+                    <TextView android:layout_width="40dp" android:layout_height="wrap_content" android:text="S:" android:textAppearance="@style/TextAppearance.App.Body" />
+                    <com.google.android.material.textfield.TextInputEditText android:id="@+id/editGradeS" android:layout_width="80dp" android:layout_height="40dp" android:inputType="numberDecimal|numberSigned" android:text="3" android:textAppearance="@style/TextAppearance.App.Body" />
                 </LinearLayout>
 
                 <com.google.android.material.switchmaterial.SwitchMaterial
@@ -203,7 +202,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/label_formula"
-                    android:textSize="12sp"
+                    android:textAppearance="@style/TextAppearance.App.Caption"
                     android:textColor="@color/text_secondary" />
 
                 <com.google.android.material.textfield.TextInputLayout
@@ -225,7 +224,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="4dp"
                     android:text="@string/text_formula_help"
-                    android:textSize="11sp"
+                    android:textAppearance="@style/TextAppearance.App.LabelSmall"
                     android:textColor="@color/text_secondary" />
 
             </LinearLayout>
@@ -345,7 +344,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="@string/random_decimal_places"
-                            android:textSize="14sp"
+                            android:textAppearance="@style/TextAppearance.App.Body"
                             android:layout_marginEnd="8dp" />
 
                         <Spinner
@@ -373,8 +372,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/label_semantic_role"
-                    android:textSize="14sp"
-                    android:textStyle="bold"
+                    android:textAppearance="@style/TextAppearance.App.BodyStrong"
                     android:textColor="@color/primary"
                     android:layout_marginBottom="4dp" />
 
@@ -388,7 +386,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="4dp"
-                    android:textSize="12sp"
+                    android:textAppearance="@style/TextAppearance.App.Caption"
                     android:textColor="@color/text_secondary"
                     android:visibility="gone" />
 
@@ -409,8 +407,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/body_analysis_settings_title"
-                    android:textSize="14sp"
-                    android:textStyle="bold"
+                    android:textAppearance="@style/TextAppearance.App.BodyStrong"
                     android:textColor="@color/primary"
                     android:layout_marginBottom="8dp" />
 
@@ -419,7 +416,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/body_cup_mapping_title"
-                    android:textSize="12sp"
+                    android:textAppearance="@style/TextAppearance.App.Caption"
                     android:textColor="@color/text_secondary"
                     android:layout_marginBottom="4dp" />
 
@@ -455,7 +452,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/body_type_preset_title"
-                    android:textSize="12sp"
+                    android:textAppearance="@style/TextAppearance.App.Caption"
                     android:textColor="@color/text_secondary"
                     android:layout_marginTop="8dp"
                     android:layout_marginBottom="4dp" />
@@ -478,7 +475,7 @@
                         android:layout_height="wrap_content"
                         android:inputType="textMultiLine"
                         android:minLines="3"
-                        android:textSize="11sp"
+                        android:textAppearance="@style/TextAppearance.App.LabelSmall"
                         android:fontFamily="monospace" />
                 </com.google.android.material.textfield.TextInputLayout>
 
@@ -487,7 +484,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/body_insight_toggle_title"
-                    android:textSize="12sp"
+                    android:textAppearance="@style/TextAppearance.App.Caption"
                     android:textColor="@color/text_secondary"
                     android:layout_marginTop="12dp"
                     android:layout_marginBottom="4dp" />
@@ -515,8 +512,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/label_structured_input"
-                    android:textSize="14sp"
-                    android:textStyle="bold"
+                    android:textAppearance="@style/TextAppearance.App.BodyStrong"
                     android:textColor="@color/primary"
                     android:layout_marginBottom="4dp" />
 
@@ -597,7 +593,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/label_value_labels"
-                    android:textSize="12sp"
+                    android:textAppearance="@style/TextAppearance.App.Caption"
                     android:textColor="@color/text_secondary"
                     android:layout_marginTop="8dp" />
 
@@ -620,7 +616,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/label_value_categories"
-                    android:textSize="12sp"
+                    android:textAppearance="@style/TextAppearance.App.Caption"
                     android:textColor="@color/text_secondary"
                     android:layout_marginTop="8dp" />
 
@@ -628,7 +624,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/label_value_categories_desc"
-                    android:textSize="11sp"
+                    android:textAppearance="@style/TextAppearance.App.LabelSmall"
                     android:textColor="@color/text_secondary"
                     android:layout_marginBottom="4dp" />
 
@@ -651,7 +647,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/label_stats_group_by"
-                    android:textSize="12sp"
+                    android:textAppearance="@style/TextAppearance.App.Caption"
                     android:textColor="@color/text_secondary"
                     android:layout_marginTop="8dp" />
 
@@ -673,7 +669,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="@string/label_binning"
-                        android:textSize="12sp"
+                        android:textAppearance="@style/TextAppearance.App.Caption"
                         android:textColor="@color/text_secondary" />
 
                     <Spinner

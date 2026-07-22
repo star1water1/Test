@@ -24,8 +24,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:paddingBottom="8dp"
-            android:textSize="18sp"
-            android:textStyle="bold"
+            android:textAppearance="@style/TextAppearance.App.TitleLarge"
             tools:text="선택한 이미지 3장" />
 
         <com.google.android.material.button.MaterialButton

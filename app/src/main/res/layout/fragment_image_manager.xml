@@ -21,8 +21,7 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:text="@string/tab_images"
-            android:textSize="20sp"
-            android:textStyle="bold"
+            android:textAppearance="@style/TextAppearance.App.Headline"
             android:textColor="?attr/colorOnSurface" />
 
         <com.google.android.material.button.MaterialButton
@@ -62,7 +61,7 @@
         android:paddingStart="16dp"
         android:paddingEnd="16dp"
         android:paddingBottom="4dp"
-        android:textSize="13sp"
+        android:textAppearance="@style/TextAppearance.App.BodySmall"
         android:textColor="?attr/colorOnSurfaceVariant"
         tools:text="총 42개 · 12.3 MB (참조 38 · 고아 4)" />
 
@@ -158,7 +157,7 @@
                 android:inputType="text"
                 android:maxLines="1"
                 android:imeOptions="actionSearch"
-                android:textSize="14sp" />
+                android:textAppearance="@style/TextAppearance.App.Body" />
         </com.google.android.material.textfield.TextInputLayout>
 
         <com.google.android.material.button.MaterialButton
@@ -217,7 +216,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:textSize="13sp"
+            android:textAppearance="@style/TextAppearance.App.BodySmall"
             android:textColor="?attr/colorOnSurface"
             tools:text="3개 선택" />
 
@@ -231,7 +230,7 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/actionsButton"
-            style="@style/Widget.Material3.Button"
+            style="@style/Widget.App.Button"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:minWidth="0dp"

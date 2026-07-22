@@ -30,7 +30,7 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnZoomOut"
-            style="@style/Widget.Material3.Button.TonalButton"
+            style="@style/Widget.App.Button.Tonal"
             android:layout_width="48dp"
             android:layout_height="48dp"
             android:insetTop="0dp"
@@ -48,13 +48,12 @@
             android:layout_weight="1"
             android:gravity="center"
             android:text="@string/zoom_level_1"
-            android:textSize="14sp"
-            android:textStyle="bold"
+            android:textAppearance="@style/TextAppearance.App.BodyStrong"
             android:textColor="@color/primary" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnZoomIn"
-            style="@style/Widget.Material3.Button.TonalButton"
+            style="@style/Widget.App.Button.Tonal"
             android:layout_width="48dp"
             android:layout_height="48dp"
             android:insetTop="0dp"
@@ -113,7 +112,6 @@
             android:insetBottom="0dp"
             android:paddingHorizontal="8dp"
             android:text="@string/prev_event_short"
-            android:textSize="12sp"
             android:enabled="false"
             app:icon="@android:drawable/ic_media_previous"
             app:iconSize="14dp"
@@ -123,7 +121,7 @@
             android:id="@+id/minYearLabel"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:textSize="12sp"
+            android:textAppearance="@style/TextAppearance.App.Caption"
             android:textColor="@color/text_secondary" />
 
         <TextView
@@ -132,7 +130,7 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:gravity="center"
-            android:textSize="12sp"
+            android:textAppearance="@style/TextAppearance.App.Caption"
             android:textColor="@color/primary"
             android:textStyle="bold" />
 
@@ -140,7 +138,7 @@
             android:id="@+id/maxYearLabel"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:textSize="12sp"
+            android:textAppearance="@style/TextAppearance.App.Caption"
             android:textColor="@color/text_secondary" />
 
         <com.google.android.material.button.MaterialButton
@@ -153,7 +151,6 @@
             android:insetBottom="0dp"
             android:paddingHorizontal="8dp"
             android:text="@string/next_event_short"
-            android:textSize="12sp"
             android:enabled="false"
             app:icon="@android:drawable/ic_media_next"
             app:iconGravity="end"
@@ -247,15 +244,14 @@
             android:layout_height="wrap_content"
             android:text="@string/no_events"
             android:textColor="@color/text_secondary"
-            android:textSize="16sp"
-            android:textStyle="bold" />
+            android:textAppearance="@style/TextAppearance.App.Title" />
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/empty_event_hint"
             android:textColor="@color/text_secondary"
-            android:textSize="13sp"
+            android:textAppearance="@style/TextAppearance.App.BodySmall"
             android:layout_marginTop="4dp" />
 
     </LinearLayout>

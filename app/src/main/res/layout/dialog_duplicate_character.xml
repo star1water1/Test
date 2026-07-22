@@ -9,7 +9,7 @@
         android:id="@+id/tvMessage"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:textSize="14sp"
+        android:textAppearance="@style/TextAppearance.App.Body"
         android:layout_marginBottom="12dp" />
 
     <androidx.recyclerview.widget.RecyclerView
@@ -24,7 +24,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="@string/duplicate_select_target"
-        android:textSize="12sp"
+        android:textAppearance="@style/TextAppearance.App.Caption"
         android:textColor="?android:attr/textColorSecondary"
         android:visibility="gone" />
 

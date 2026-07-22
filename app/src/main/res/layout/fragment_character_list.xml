@@ -45,11 +45,10 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnCompare"
-            style="@style/Widget.Material3.Button.TonalButton"
+            style="@style/Widget.App.Button.Tonal"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/compare_button"
-            android:textSize="12sp"
             android:minWidth="56dp" />
 
         <com.google.android.material.button.MaterialButton
@@ -58,7 +57,6 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/cancel_button"
-            android:textSize="12sp"
             android:visibility="gone" />
 
     </LinearLayout>
@@ -78,11 +76,10 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnSort"
-            style="@style/Widget.Material3.Button.TonalButton"
+            style="@style/Widget.App.Button.Tonal"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/sort_button"
-            android:textSize="12sp"
             android:minWidth="56dp"
             android:minHeight="36dp"
             android:insetTop="0dp"
@@ -104,7 +101,6 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/filter_button"
-            android:textSize="12sp"
             android:minWidth="48dp"
             android:minHeight="36dp"
             android:insetTop="0dp"
@@ -172,8 +168,7 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:text="@string/batch_selected_count_zero"
-            android:textSize="14sp"
-            android:textStyle="bold"
+            android:textAppearance="@style/TextAppearance.App.BodyStrong"
             android:paddingStart="4dp" />
 
         <ImageButton
@@ -189,11 +184,10 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnBatchAction"
-            style="@style/Widget.Material3.Button"
+            style="@style/Widget.App.Button"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/batch_action"
-            android:textSize="12sp"
             android:minWidth="56dp"
             android:minHeight="36dp"
             android:insetTop="0dp"
@@ -229,7 +223,7 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:text="@string/birthday_banner_title"
-                android:textSize="13sp"
+                android:textAppearance="@style/TextAppearance.App.BodySmall"
                 android:textStyle="bold" />
 
             <ImageButton
@@ -280,8 +274,7 @@
             android:layout_height="wrap_content"
             android:text="@string/no_characters"
             android:textColor="@color/text_secondary"
-            android:textSize="16sp"
-            android:textStyle="bold" />
+            android:textAppearance="@style/TextAppearance.App.Title" />
 
         <TextView
             android:id="@+id/emptyHint"
@@ -289,12 +282,12 @@
             android:layout_height="wrap_content"
             android:text="@string/empty_character_hint"
             android:textColor="@color/text_secondary"
-            android:textSize="13sp"
+            android:textAppearance="@style/TextAppearance.App.BodySmall"
             android:layout_marginTop="4dp" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnClearFilters"
-            style="@style/Widget.Material3.Button.TonalButton"
+            style="@style/Widget.App.Button.Tonal"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"

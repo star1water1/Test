@@ -19,8 +19,7 @@
             android:id="@+id/sheetTitle"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textSize="17sp"
-            android:textStyle="bold"
+            android:textAppearance="@style/TextAppearance.App.TitleLarge"
             android:textColor="?attr/colorOnSurface"
             tools:text="나이·출생연도 불일치 12명" />
 
@@ -36,7 +35,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:textSize="13sp"
+                android:textAppearance="@style/TextAppearance.App.BodySmall"
                 android:textColor="?attr/colorOnSurfaceVariant"
                 tools:text="남은 12명" />
 
@@ -51,7 +50,6 @@
                 android:paddingHorizontal="8dp"
                 android:insetTop="0dp"
                 android:insetBottom="0dp"
-                android:textSize="13sp"
                 tools:text="기본 순서" />
 
         </LinearLayout>

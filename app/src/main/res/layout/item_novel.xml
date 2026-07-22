@@ -47,8 +47,7 @@
                 android:id="@+id/novelTitle"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:textSize="18sp"
-                android:textStyle="bold"
+                android:textAppearance="@style/TextAppearance.App.TitleLarge"
                 android:textColor="@color/on_surface" />
 
             <TextView
@@ -57,7 +56,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="4dp"
                 android:textColor="@color/text_secondary"
-                android:textSize="14sp"
+                android:textAppearance="@style/TextAppearance.App.Body"
                 android:maxLines="2"
                 android:ellipsize="end" />
 

@@ -20,8 +20,7 @@
         android:layout_height="wrap_content"
         android:paddingBottom="8dp"
         android:text="@string/image_assign_target_title"
-        android:textSize="18sp"
-        android:textStyle="bold" />
+        android:textAppearance="@style/TextAppearance.App.TitleLarge" />
 
     <RadioGroup
         android:id="@+id/typeGroup"
@@ -64,7 +63,7 @@
             android:layout_height="wrap_content"
             android:inputType="text"
             android:maxLines="1"
-            android:textSize="14sp" />
+            android:textAppearance="@style/TextAppearance.App.Body" />
     </com.google.android.material.textfield.TextInputLayout>
 
     <androidx.recyclerview.widget.RecyclerView
@@ -80,7 +79,7 @@
         android:gravity="center"
         android:padding="24dp"
         android:text="@string/entity_picker_empty"
-        android:textSize="14sp"
+        android:textAppearance="@style/TextAppearance.App.Body"
         android:textColor="@color/text_secondary"
         android:visibility="gone" />
 

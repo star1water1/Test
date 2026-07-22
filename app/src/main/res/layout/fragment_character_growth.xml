@@ -44,7 +44,7 @@
         android:background="@color/surface"
         android:elevation="4dp"
         android:padding="8dp"
-        android:textSize="13sp"
+        android:textAppearance="@style/TextAppearance.App.BodySmall"
         android:textStyle="bold"
         android:textColor="@color/primary"
         android:visibility="gone"
@@ -80,14 +80,14 @@
             android:layout_height="wrap_content"
             android:text="@string/growth_no_data"
             android:textColor="@color/text_secondary"
-            android:textSize="14sp" />
+            android:textAppearance="@style/TextAppearance.App.Body" />
 
     </LinearLayout>
 
     <!-- Compare button -->
     <com.google.android.material.button.MaterialButton
         android:id="@+id/btnAddCompare"
-        style="@style/Widget.Material3.Button.TonalButton"
+        style="@style/Widget.App.Button.Tonal"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_margin="12dp"

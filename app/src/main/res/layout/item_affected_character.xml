@@ -29,7 +29,7 @@
             android:id="@+id/nameText"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textSize="15sp"
+            android:textAppearance="@style/TextAppearance.App.Subtitle"
             android:textColor="?attr/colorOnSurface"
             android:maxLines="1"
             android:ellipsize="end"
@@ -40,7 +40,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="2dp"
-            android:textSize="12sp"
+            android:textAppearance="@style/TextAppearance.App.Caption"
             android:textColor="?attr/colorOnSurfaceVariant"
             android:visibility="gone"
             tools:text="나이 25 · 출생 1470"
@@ -59,7 +59,6 @@
         android:paddingHorizontal="8dp"
         android:insetTop="0dp"
         android:insetBottom="0dp"
-        android:textSize="13sp"
         android:visibility="gone"
         tools:text="고치기"
         tools:visibility="visible" />
@@ -69,7 +68,7 @@
         android:layout_height="wrap_content"
         android:layout_marginStart="4dp"
         android:text="›"
-        android:textSize="20sp"
+        android:textAppearance="@style/TextAppearance.App.Headline"
         android:textColor="?attr/colorOnSurfaceVariant"
         android:importantForAccessibility="no" />
 

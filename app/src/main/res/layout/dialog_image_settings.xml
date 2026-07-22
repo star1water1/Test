@@ -27,15 +27,14 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/image_settings_enable"
-                    android:textSize="16sp"
-                    android:textStyle="bold"
+                    android:textAppearance="@style/TextAppearance.App.Title"
                     android:textColor="?attr/colorOnSurface" />
 
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="@string/image_settings_enable_desc"
-                    android:textSize="13sp"
+                    android:textAppearance="@style/TextAppearance.App.BodySmall"
                     android:textColor="?attr/colorOnSurfaceVariant"
                     android:layout_marginTop="2dp" />
             </LinearLayout>
@@ -60,7 +59,7 @@
                 android:id="@+id/qualityLabel"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:textSize="14sp"
+                android:textAppearance="@style/TextAppearance.App.Body"
                 android:textColor="?attr/colorOnSurface"
                 android:layout_marginTop="16dp"
                 tools:text="품질 85%" />
@@ -98,14 +97,14 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="@string/image_settings_cap_dimension"
-                        android:textSize="15sp"
+                        android:textAppearance="@style/TextAppearance.App.Subtitle"
                         android:textColor="?attr/colorOnSurface" />
 
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:text="@string/image_settings_cap_dimension_desc"
-                        android:textSize="12sp"
+                        android:textAppearance="@style/TextAppearance.App.Caption"
                         android:textColor="?attr/colorOnSurfaceVariant" />
                 </LinearLayout>
 
@@ -121,7 +120,7 @@
                 android:layout_height="wrap_content"
                 android:padding="12dp"
                 android:background="?attr/selectableItemBackground"
-                android:textSize="14sp"
+                android:textAppearance="@style/TextAppearance.App.Body"
                 android:textColor="@color/primary"
                 tools:text="최대 긴변 2048px" />
 
@@ -150,14 +149,14 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="@string/image_settings_skip_below"
-                        android:textSize="15sp"
+                        android:textAppearance="@style/TextAppearance.App.Subtitle"
                         android:textColor="?attr/colorOnSurface" />
 
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:text="@string/image_settings_skip_below_desc"
-                        android:textSize="12sp"
+                        android:textAppearance="@style/TextAppearance.App.Caption"
                         android:textColor="?attr/colorOnSurfaceVariant" />
                 </LinearLayout>
 
@@ -173,7 +172,7 @@
                 android:layout_height="wrap_content"
                 android:padding="12dp"
                 android:background="?attr/selectableItemBackground"
-                android:textSize="14sp"
+                android:textAppearance="@style/TextAppearance.App.Body"
                 android:textColor="@color/primary"
                 tools:text="512 KB 미만 원본 유지" />
         </LinearLayout>
@@ -184,15 +183,14 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
             android:text="@string/image_settings_remove_policy_title"
-            android:textSize="15sp"
-            android:textStyle="bold"
+            android:textAppearance="@style/TextAppearance.App.Subtitle"
             android:textColor="?attr/colorOnSurface" />
 
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="@string/image_settings_remove_policy_desc"
-            android:textSize="12sp"
+            android:textAppearance="@style/TextAppearance.App.Caption"
             android:textColor="?attr/colorOnSurfaceVariant" />
 
         <RadioGroup

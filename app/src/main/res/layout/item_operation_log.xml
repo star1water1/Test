@@ -27,7 +27,7 @@
             android:id="@+id/summaryText"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textSize="15sp"
+            android:textAppearance="@style/TextAppearance.App.Subtitle"
             android:textColor="?attr/colorOnSurface"
             tools:text="세계관 '아르카나' 저장됨" />
 
@@ -36,7 +36,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="2dp"
-            android:textSize="12sp"
+            android:textAppearance="@style/TextAppearance.App.Caption"
             android:textColor="?attr/colorOnSurfaceVariant"
             tools:text="세계관 · 방금 전" />
 
@@ -48,7 +48,7 @@
         android:layout_height="wrap_content"
         android:layout_marginStart="8dp"
         android:text="›"
-        android:textSize="20sp"
+        android:textAppearance="@style/TextAppearance.App.Headline"
         android:textColor="?attr/colorOnSurfaceVariant"
         android:visibility="gone" />
 

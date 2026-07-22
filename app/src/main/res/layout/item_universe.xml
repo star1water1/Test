@@ -52,8 +52,7 @@
                     android:id="@+id/universeName"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:textSize="18sp"
-                    android:textStyle="bold"
+                    android:textAppearance="@style/TextAppearance.App.TitleLarge"
                     android:textColor="@color/on_surface" />
 
                 <TextView
@@ -62,7 +61,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="3dp"
                     android:textColor="@color/text_secondary"
-                    android:textSize="13sp"
+                    android:textAppearance="@style/TextAppearance.App.BodySmall"
                     android:maxLines="2"
                     android:ellipsize="end" />
 
@@ -100,7 +99,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:textColor="@color/primary"
-                android:textSize="12sp"
+                android:textAppearance="@style/TextAppearance.App.Caption"
                 android:textStyle="bold"
                 android:paddingStart="8dp"
                 android:paddingEnd="8dp"
@@ -114,7 +113,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:textColor="@color/text_secondary"
-                android:textSize="12sp"
+                android:textAppearance="@style/TextAppearance.App.Caption"
                 android:paddingStart="8dp"
                 android:paddingEnd="8dp"
                 android:paddingTop="3dp"

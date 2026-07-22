@@ -98,7 +98,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/faction_display_mode_label"
-                android:textSize="12sp"
+                android:textAppearance="@style/TextAppearance.App.Caption"
                 android:textColor="@color/text_secondary"
                 android:paddingEnd="6dp" />
 
@@ -120,7 +120,7 @@
         android:background="@color/graph_summary_bg"
         android:padding="8dp"
         android:textColor="@color/graph_summary_text"
-        android:textSize="12sp"
+        android:textAppearance="@style/TextAppearance.App.Caption"
         android:visibility="gone"
         android:gravity="center" />
 
@@ -144,7 +144,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/graph_time_view"
-                android:textSize="12sp" />
+                android:textAppearance="@style/TextAppearance.App.Caption" />
 
             <TextView
                 android:id="@+id/yearLabel"
@@ -152,8 +152,7 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:gravity="end"
-                android:textSize="14sp"
-                android:textStyle="bold"
+                android:textAppearance="@style/TextAppearance.App.BodyStrong"
                 android:textColor="@color/primary" />
 
         </LinearLayout>
@@ -185,7 +184,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:textSize="12sp"
+            android:textAppearance="@style/TextAppearance.App.Caption"
             android:textColor="@color/text_secondary" />
 
         <TextView
@@ -193,7 +192,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:textSize="12sp"
+            android:textAppearance="@style/TextAppearance.App.Caption"
             android:textColor="@color/text_secondary"
             android:gravity="end" />
 
@@ -234,7 +233,7 @@
                 android:layout_height="wrap_content"
                 android:text="@string/graph_no_relationships"
                 android:textColor="@color/text_secondary"
-                android:textSize="14sp"
+                android:textAppearance="@style/TextAppearance.App.Body"
                 android:gravity="center" />
 
         </LinearLayout>
@@ -246,7 +245,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="@string/graph_tap_hint"
-        android:textSize="12sp"
+        android:textAppearance="@style/TextAppearance.App.Caption"
         android:textColor="@color/text_secondary"
         android:gravity="center"
         android:padding="6dp"

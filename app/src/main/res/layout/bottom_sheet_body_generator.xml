@@ -22,8 +22,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/body_generator_title"
-            android:textSize="18sp"
-            android:textStyle="bold"
+            android:textAppearance="@style/TextAppearance.App.TitleLarge"
             android:textColor="?attr/colorOnSurface"
             android:layout_marginBottom="16dp" />
 
@@ -32,8 +31,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/body_gen_height"
-            android:textSize="14sp"
-            android:textStyle="bold"
+            android:textAppearance="@style/TextAppearance.App.BodyStrong"
             android:layout_marginBottom="4dp" />
 
         <HorizontalScrollView
@@ -55,8 +53,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/body_gen_body_type"
-            android:textSize="14sp"
-            android:textStyle="bold"
+            android:textAppearance="@style/TextAppearance.App.BodyStrong"
             android:layout_marginBottom="4dp" />
 
         <HorizontalScrollView
@@ -88,7 +85,7 @@
                 android:layout_weight="1"
                 android:layout_height="wrap_content"
                 android:text="@string/body_gen_independent"
-                android:textSize="13sp"
+                android:textAppearance="@style/TextAppearance.App.BodySmall"
                 android:textColor="@color/primary" />
 
             <com.google.android.material.switchmaterial.SwitchMaterial
@@ -110,7 +107,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/body_gen_bust_size"
-                android:textSize="12sp"
+                android:textAppearance="@style/TextAppearance.App.Caption"
                 android:layout_marginBottom="2dp" />
 
             <HorizontalScrollView
@@ -131,7 +128,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/body_gen_hip_size"
-                android:textSize="12sp"
+                android:textAppearance="@style/TextAppearance.App.Caption"
                 android:layout_marginBottom="2dp" />
 
             <HorizontalScrollView
@@ -161,7 +158,7 @@
                     android:layout_weight="1"
                     android:layout_height="wrap_content"
                     android:text="@string/body_gen_cup_mode"
-                    android:textSize="12sp"
+                    android:textAppearance="@style/TextAppearance.App.Caption"
                     android:textColor="@color/primary" />
 
                 <com.google.android.material.switchmaterial.SwitchMaterial
@@ -200,8 +197,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/body_gen_relative"
-            android:textSize="14sp"
-            android:textStyle="bold"
+            android:textAppearance="@style/TextAppearance.App.BodyStrong"
             android:layout_marginBottom="4dp" />
 
         <Spinner
@@ -222,7 +218,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/body_gen_height_adjust"
-                android:textSize="12sp"
+                android:textAppearance="@style/TextAppearance.App.Caption"
                 android:layout_marginBottom="2dp" />
 
             <HorizontalScrollView
@@ -243,7 +239,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/body_gen_volume_adjust"
-                android:textSize="12sp"
+                android:textAppearance="@style/TextAppearance.App.Caption"
                 android:layout_marginBottom="2dp" />
 
             <HorizontalScrollView
@@ -266,7 +262,7 @@
             android:id="@+id/distributionText"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textSize="12sp"
+            android:textAppearance="@style/TextAppearance.App.Caption"
             android:textColor="?attr/colorOnSurfaceVariant"
             android:layout_marginBottom="12dp"
             android:visibility="gone" />
@@ -293,15 +289,14 @@
                 android:id="@+id/previewMeasurements"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:textSize="16sp"
-                android:textStyle="bold"
+                android:textAppearance="@style/TextAppearance.App.Title"
                 android:textColor="?attr/colorOnSurface" />
 
             <TextView
                 android:id="@+id/previewTags"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:textSize="14sp"
+                android:textAppearance="@style/TextAppearance.App.Body"
                 android:textColor="@color/primary"
                 android:layout_marginTop="4dp" />
 
@@ -309,7 +304,7 @@
                 android:id="@+id/previewDetails"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:textSize="13sp"
+                android:textAppearance="@style/TextAppearance.App.BodySmall"
                 android:textColor="?attr/colorOnSurfaceVariant"
                 android:layout_marginTop="4dp" />
 
@@ -317,7 +312,7 @@
                 android:id="@+id/previewSilhouette"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:textSize="13sp"
+                android:textAppearance="@style/TextAppearance.App.BodySmall"
                 android:textColor="?attr/colorOnSurfaceVariant"
                 android:textStyle="italic"
                 android:layout_marginTop="4dp" />
@@ -335,7 +330,7 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnRegenerate"
-                style="@style/Widget.Material3.Button.OutlinedButton"
+                style="@style/Widget.App.Button.Outlined"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"

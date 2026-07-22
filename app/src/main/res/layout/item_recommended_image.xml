@@ -27,7 +27,7 @@
             android:background="@color/primary"
             android:text="@string/image_link_badge"
             android:textColor="@color/on_primary"
-            android:textSize="9sp"
+            android:textSize="@dimen/text_badge"
             android:visibility="gone" />
     </FrameLayout>
 
@@ -37,7 +37,7 @@
         android:layout_height="wrap_content"
         android:maxLines="1"
         android:ellipsize="end"
-        android:textSize="10sp"
+        android:textSize="@dimen/text_badge"
         android:textColor="@color/text_secondary" />
 
 </LinearLayout>

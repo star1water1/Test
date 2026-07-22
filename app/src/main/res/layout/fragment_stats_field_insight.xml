@@ -45,7 +45,7 @@
             <!-- 교차 분석 버튼 -->
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnCrossAnalysis"
-                style="@style/Widget.Material3.Button.TonalButton"
+                style="@style/Widget.App.Button.Tonal"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="@dimen/stats_margin_md"

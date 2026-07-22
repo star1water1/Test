@@ -43,8 +43,7 @@
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:text="@string/time_view"
-                    android:textSize="14sp"
-                    android:textStyle="bold"
+                    android:textAppearance="@style/TextAppearance.App.BodyStrong"
                     android:textColor="@color/primary" />
 
                 <ImageView
@@ -89,8 +88,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginStart="12dp"
-                        android:textSize="16sp"
-                        android:textStyle="bold"
+                        android:textAppearance="@style/TextAppearance.App.Title"
                         android:textColor="@color/primary"
                         android:minWidth="56dp"
                         android:gravity="center" />
@@ -109,7 +107,7 @@
                         android:id="@+id/minYearLabel"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:textSize="12sp"
+                        android:textAppearance="@style/TextAppearance.App.Caption"
                         android:textColor="@color/text_secondary" />
 
                     <View
@@ -121,7 +119,7 @@
                         android:id="@+id/maxYearLabel"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:textSize="12sp"
+                        android:textAppearance="@style/TextAppearance.App.Caption"
                         android:textColor="@color/text_secondary" />
 
                 </LinearLayout>
@@ -138,7 +136,6 @@
                 android:layout_marginEnd="8dp"
                 android:layout_marginBottom="4dp"
                 android:text="@string/reset_time_view"
-                android:textSize="12sp"
                 android:visibility="gone" />
 
         </LinearLayout>
@@ -170,8 +167,7 @@
                     android:id="@+id/detailName"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:textSize="22sp"
-                    android:textStyle="bold"
+                    android:textAppearance="@style/TextAppearance.App.Headline"
                     android:textColor="@color/on_surface" />
 
                 <!-- First Name / Last Name subtitle -->
@@ -180,7 +176,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="2dp"
-                    android:textSize="14sp"
+                    android:textAppearance="@style/TextAppearance.App.Body"
                     android:textColor="@color/text_secondary"
                     android:visibility="gone" />
 
@@ -207,7 +203,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:textColor="@color/primary"
-                    android:textSize="13sp"
+                    android:textAppearance="@style/TextAppearance.App.BodySmall"
                     android:visibility="gone" />
 
                 <!-- Time view indicator (visible when slider is active) -->
@@ -220,7 +216,7 @@
                     android:paddingHorizontal="12dp"
                     android:background="@color/primary_light"
                     android:textColor="@color/primary_dark"
-                    android:textSize="13sp"
+                    android:textAppearance="@style/TextAppearance.App.BodySmall"
                     android:textStyle="bold"
                     android:gravity="center"
                     android:visibility="gone" />
@@ -259,8 +255,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="@string/memo"
-                            android:textSize="16sp"
-                            android:textStyle="bold"
+                            android:textAppearance="@style/TextAppearance.App.Title"
                             android:textColor="@color/primary"
                             android:layout_marginBottom="8dp" />
 
@@ -268,7 +263,7 @@
                             android:id="@+id/detailMemo"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:textSize="14sp" />
+                            android:textAppearance="@style/TextAppearance.App.Body" />
 
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
@@ -290,8 +285,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="@string/faction_belonging"
-                            android:textSize="16sp"
-                            android:textStyle="bold"
+                            android:textAppearance="@style/TextAppearance.App.Title"
                             android:textColor="@color/primary"
                             android:layout_marginBottom="8dp" />
 
@@ -305,7 +299,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:text="@string/faction_belonging_empty"
-                            android:textSize="13sp"
+                            android:textAppearance="@style/TextAppearance.App.BodySmall"
                             android:textColor="@color/text_secondary"
                             android:gravity="center"
                             android:paddingVertical="16dp"
@@ -338,8 +332,7 @@
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"
                                 android:text="@string/relationship_label"
-                                android:textSize="16sp"
-                                android:textStyle="bold"
+                                android:textAppearance="@style/TextAppearance.App.Title"
                                 android:textColor="@color/primary" />
 
                             <ImageView
@@ -358,7 +351,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:text="@string/empty_relationship_hint"
-                            android:textSize="13sp"
+                            android:textAppearance="@style/TextAppearance.App.BodySmall"
                             android:textColor="@color/text_secondary"
                             android:gravity="center"
                             android:paddingVertical="16dp"
@@ -398,17 +391,15 @@
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"
                                 android:text="@string/related_events"
-                                android:textSize="16sp"
-                                android:textStyle="bold"
+                                android:textAppearance="@style/TextAppearance.App.Title"
                                 android:textColor="@color/primary" />
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/btnAddEvent"
-                                style="@style/Widget.Material3.Button.TonalButton"
+                                style="@style/Widget.App.Button.Tonal"
                                 android:layout_width="wrap_content"
                                 android:layout_height="36dp"
                                 android:text="@string/add_event"
-                                android:textSize="12sp"
                                 android:minWidth="0dp"
                                 android:paddingStart="12dp"
                                 android:paddingEnd="12dp" />
@@ -441,8 +432,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="@string/character_stats_label"
-                            android:textSize="16sp"
-                            android:textStyle="bold"
+                            android:textAppearance="@style/TextAppearance.App.Title"
                             android:textColor="@color/primary"
                             android:layout_marginBottom="8dp" />
 
@@ -479,8 +469,7 @@
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"
                                 android:text="@string/state_changes"
-                                android:textSize="16sp"
-                                android:textStyle="bold"
+                                android:textAppearance="@style/TextAppearance.App.Title"
                                 android:textColor="@color/primary" />
 
                             <ImageView
@@ -499,7 +488,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:text="@string/empty_state_change_hint"
-                            android:textSize="13sp"
+                            android:textAppearance="@style/TextAppearance.App.BodySmall"
                             android:textColor="@color/text_secondary"
                             android:gravity="center"
                             android:paddingVertical="16dp"

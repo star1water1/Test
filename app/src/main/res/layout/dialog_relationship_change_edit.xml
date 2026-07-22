@@ -31,7 +31,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/relationship_type"
-            android:textSize="12sp"
+            android:textAppearance="@style/TextAppearance.App.Caption"
             android:textColor="@color/text_secondary" />
 
         <Spinner
@@ -60,7 +60,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/relationship_intensity"
-            android:textSize="12sp"
+            android:textAppearance="@style/TextAppearance.App.Caption"
             android:textColor="@color/text_secondary" />
 
         <LinearLayout
@@ -84,7 +84,7 @@
                 android:layout_width="32dp"
                 android:layout_height="wrap_content"
                 android:text="5"
-                android:textSize="14sp"
+                android:textAppearance="@style/TextAppearance.App.Body"
                 android:textColor="?attr/colorOnSurface"
                 android:gravity="center" />
 
@@ -104,7 +104,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/rel_change_linked_event"
-            android:textSize="12sp"
+            android:textAppearance="@style/TextAppearance.App.Caption"
             android:textColor="@color/text_secondary" />
 
         <Spinner
