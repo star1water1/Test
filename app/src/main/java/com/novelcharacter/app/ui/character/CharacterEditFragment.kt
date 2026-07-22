@@ -60,7 +60,8 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
     private var presetNovelId: Long = -1L
     private var existingCharacter: Character? = null
     private var novels: List<Novel> = emptyList()
-    private val imagePaths = mutableListOf<String>()
+    // 이미지 스트립(경로 목록·썸네일·가져오기) — 공용 컨트롤러에 위임
+    private lateinit var imageStrip: CharacterImageStripController
     private var restoredFromSavedState = false
 
     // 동적 필드 관리 — 폼 구성/값 적재/수집/검증은 공용 빌더에 위임
@@ -81,7 +82,7 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
     private val imagePickerLauncher = registerForActivityResult(
         ActivityResultContracts.GetMultipleContents()
     ) { uris: List<Uri> ->
-        if (uris.isNotEmpty()) saveImagesToInternalStorage(uris)
+        if (uris.isNotEmpty()) imageStrip.importUris(uris)
     }
 
     override fun onCreateView(
@@ -93,7 +94,7 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
-        outState.putStringArrayList("imagePaths", ArrayList(imagePaths))
+        outState.putStringArrayList("imagePaths", ArrayList(imageStrip.paths))
 
         // 동적 필드 입력값 보존
         val fieldValues = Bundle()
@@ -126,7 +127,7 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
             tags = binding.editTags.text.toString(),
             memo = binding.editMemo.text.toString(),
             novelId = selectedNovelId,
-            imagePaths = imagePaths.toList(),
+            imagePaths = imageStrip.paths.toList(),
             fieldValues = fieldValues,
             savedAt = System.currentTimeMillis()
         )
@@ -167,18 +168,11 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         binding.editMemo.setText(draft.memo)
 
         // 이미지 경로: 내부 저장소 경로만 수용 (회전 복원과 동일한 검증)
-        val dir = appDir
-        if (draft.imagePaths.isNotEmpty() && dir != null) {
-            val validated = draft.imagePaths.filter { path ->
-                try {
-                    File(path).canonicalPath.startsWith(dir.canonicalPath + File.separator)
-                } catch (_: Exception) {
-                    false
-                }
-            }
-            imagePaths.clear()
-            imagePaths.addAll(validated)
-            updateImageList()
+        if (draft.imagePaths.isNotEmpty()) {
+            val validated = CharacterImageStripController.validateInternalPaths(
+                draft.imagePaths, context?.filesDir
+            )
+            imageStrip.setPaths(validated)
         }
 
         // 동적 필드: 회전 복원과 동일한 지연 소비 메커니즘(pendingFieldValues) 재사용
@@ -212,7 +206,14 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         supplementIndex = arguments?.getInt("supplementIndex", 0) ?: 0
         supplementIds = arguments?.getLongArray("supplementIds") ?: longArrayOf()
         supplementIssueLabels = arguments?.getString("supplementIssueLabels")
-        appDir = requireContext().filesDir
+
+        imageStrip = CharacterImageStripController(
+            fragment = this,
+            recyclerViewGetter = { _binding?.imageRecyclerView },
+            navOriginDestId = R.id.characterEditFragment,
+            onChanged = { hasUnsavedChanges = true; updateSaveButtonState() },
+            onRemoved = { refreshRecommendations() }
+        )
 
         formBuilder = DynamicFieldFormBuilder(
             containerGetter = { binding.dynamicFormContainer },
@@ -256,18 +257,10 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
 
         // Restore imagePaths from saved state (rotation), filtering invalid paths
         savedInstanceState?.getStringArrayList("imagePaths")?.let { saved ->
-            val dir = appDir
-            val validated = if (dir != null) {
-                saved.filter { path ->
-                    try {
-                        java.io.File(path).canonicalPath.startsWith(dir.canonicalPath + java.io.File.separator)
-                    } catch (_: Exception) { false }
-                }
-            } else {
-                emptyList()
-            }
-            imagePaths.clear()
-            imagePaths.addAll(validated)
+            val validated = CharacterImageStripController.validateInternalPaths(
+                saved, context?.filesDir
+            )
+            imageStrip.setPaths(validated)
             restoredFromSavedState = true
         }
         pendingFieldValues = savedInstanceState?.getBundle("fieldValues")
@@ -291,8 +284,8 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         setupChangeTracking()
 
         // Show restored images if any (from rotation)
-        if (imagePaths.isNotEmpty()) {
-            updateImageList()
+        if (imageStrip.paths.isNotEmpty()) {
+            imageStrip.refresh()
         }
 
         viewLifecycleOwner.lifecycleScope.launch {
@@ -396,10 +389,10 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
             } catch (e: Exception) {
                 emptyList()
             }
-            imagePaths.clear()
-            imagePaths.addAll(paths)
+            imageStrip.setPaths(paths)
+        } else {
+            imageStrip.refresh()
         }
-        updateImageList()
 
         // 메모
         binding.editMemo.setText(character.memo)
@@ -410,8 +403,7 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
             imagePickerLauncher.launch("image/*")
         }
 
-        binding.imageRecyclerView.layoutManager =
-            LinearLayoutManager(requireContext(), LinearLayoutManager.HORIZONTAL, false)
+        imageStrip.attach()
     }
 
     // ===== 추천 이미지 스트립 (G3) =====
@@ -464,7 +456,7 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         val tags = binding.editTags.text.toString()
             .split(",").map { it.trim() }.filter { it.isNotBlank() }
         val excluded = HashSet<String>()
-        for (p in imagePaths) {
+        for (p in imageStrip.paths) {
             excluded.add(p)
             excluded.add(canonicalOrSelf(p))
         }
@@ -479,14 +471,11 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
      */
     private fun attachRecommendedImage(rec: com.novelcharacter.app.util.ImageRecommendationHelper.Recommendation) {
         val expansion = com.novelcharacter.app.util.ImageLinkResolver.expand(listOf(rec.candidate.path), recMetas)
-        val currentCanon = imagePaths.mapTo(HashSet()) { canonicalOrSelf(it) }
+        val currentCanon = imageStrip.paths.mapTo(HashSet()) { canonicalOrSelf(it) }
         val toAdd = expansion.allPaths.filter { canonicalOrSelf(it) !in currentCanon }
         if (toAdd.isEmpty()) return
-        imagePaths.addAll(toAdd)
-        updateImageList()
-        // 첨부는 미저장 변경 — 없으면 뒤로가기가 확인 없이 이탈하고 드래프트도 안 남는다(무음 유실)
-        hasUnsavedChanges = true
-        updateSaveButtonState()
+        // 첨부는 미저장 변경 — addPaths가 더티 훅(onChanged)을 호출해 무음 유실을 막는다
+        imageStrip.addPaths(toAdd)
         val linkedExtra = toAdd.size - 1
         if (linkedExtra > 0 && isAdded) {
             Toast.makeText(
@@ -496,128 +485,6 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
             ).show()
         }
         refreshRecommendations()
-    }
-
-    /**
-     * 픽한 이미지들을 내부 저장소에 저장한다. 공용 [ImageImportHelper]로 라우팅하여
-     * 압축 설정(용량↔화질)을 적용한다. 압축 설정은 배치당 1회만 로드한다.
-     */
-    private fun saveImagesToInternalStorage(uris: List<Uri>) {
-        val ctx = context?.applicationContext ?: return
-        viewLifecycleOwner.lifecycleScope.launch {
-            val settings = com.novelcharacter.app.util.ImageSettingsStore(ctx).getSettings()
-            var anyFailed = false
-            for (uri in uris) {
-                val filePath = try {
-                    com.novelcharacter.app.util.ImageImportHelper.importImage(ctx, uri, "char", settings)
-                } catch (e: Exception) {
-                    null
-                }
-                if (_binding == null) return@launch
-                if (filePath != null) {
-                    imagePaths.add(filePath)
-                    updateImageList()
-                    hasUnsavedChanges = true
-                    updateSaveButtonState()
-                } else {
-                    anyFailed = true
-                }
-            }
-            if (anyFailed && isAdded) {
-                val c = context ?: return@launch
-                Toast.makeText(c, R.string.image_save_failed, Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
-
-    private var imageAdapter: RecyclerView.Adapter<RecyclerView.ViewHolder>? = null
-
-    private fun updateImageList() {
-        if (imageAdapter == null) {
-            imageAdapter = object : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
-                override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
-                    val d = parent.context.resources.displayMetrics.density
-                    val sizePx = (80 * d).toInt()
-                    val imageView = ImageView(parent.context).apply {
-                        layoutParams = RecyclerView.LayoutParams(sizePx, sizePx).apply {
-                            marginEnd = (4 * d).toInt()
-                        }
-                        scaleType = ImageView.ScaleType.CENTER_CROP
-                    }
-                    return object : RecyclerView.ViewHolder(imageView) {}
-                }
-
-                override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
-                    val imageView = holder.itemView as ImageView
-                    // 이전 로드 작업 취소 + 이미지 초기화
-                    (imageView.getTag(R.id.image_load_job) as? kotlinx.coroutines.Job)?.cancel()
-                    imageView.setTag(R.id.image_load_job, null)
-                    imageView.setImageResource(R.drawable.ic_character_placeholder)
-                    if (position < imagePaths.size) {
-                        val path = imagePaths[position]
-                        val boundPosition = position
-                        val job = viewLifecycleOwner.lifecycleScope.launch {
-                            val targetSize = (80 * holder.itemView.context.resources.displayMetrics.density).toInt()
-                            val bitmap = withContext(Dispatchers.IO) {
-                                decodeSampledBitmap(path, targetSize, targetSize)
-                            }
-                            if (bitmap != null && holder.bindingAdapterPosition == boundPosition && isAdded) {
-                                imageView.setImageBitmap(bitmap)
-                            }
-                        }
-                        imageView.setTag(R.id.image_load_job, job)
-                    }
-                    // 탭 → 이미지 뷰어에서 확대
-                    imageView.setOnClickListener {
-                        if (!isAdded) return@setOnClickListener
-                        val adapterPosition = holder.bindingAdapterPosition
-                        if (adapterPosition >= 0 && adapterPosition < imagePaths.size) {
-                            val bundle = Bundle().apply {
-                                putString("imagePaths", gson.toJson(imagePaths))
-                                putInt("startPosition", adapterPosition)
-                            }
-                            findNavController().navigateSafe(R.id.characterEditFragment, R.id.imageViewerFragment, bundle)
-                        }
-                    }
-                    // 롱프레스 → 삭제
-                    imageView.setOnLongClickListener {
-                        val adapterPosition = holder.bindingAdapterPosition
-                        if (adapterPosition >= 0 && adapterPosition < imagePaths.size) {
-                            AlertDialog.Builder(requireContext())
-                                .setTitle(R.string.delete)
-                                .setMessage(R.string.image_delete_confirm)
-                                .setPositiveButton(R.string.delete) { _, _ ->
-                                    val currentPos = holder.bindingAdapterPosition
-                                    if (currentPos >= 0 && currentPos < imagePaths.size) {
-                                        imagePaths.removeAt(currentPos)
-                                        imageAdapter?.notifyItemRemoved(currentPos)
-                                        imageAdapter?.notifyItemRangeChanged(currentPos, imagePaths.size - currentPos)
-                                        hasUnsavedChanges = true
-                                        updateSaveButtonState()
-                                        refreshRecommendations()
-                                    }
-                                }
-                                .setNegativeButton(R.string.cancel, null)
-                                .show()
-                        }
-                        true
-                    }
-                }
-
-                override fun getItemCount() = imagePaths.size
-            }
-            binding.imageRecyclerView.adapter = imageAdapter
-        } else {
-            imageAdapter?.notifyDataSetChanged()
-        }
-    }
-
-    private var appDir: java.io.File? = null
-
-    private fun decodeSampledBitmap(path: String, reqWidth: Int, reqHeight: Int): android.graphics.Bitmap? {
-        // 공용 유틸 위임 — filesDir 경로 가드 + 총 픽셀 상한(파노라마 OOM 방지, P2-6). 정상 이미지 화질 보존.
-        val dir = appDir ?: return null
-        return com.novelcharacter.app.util.CharacterImageLoader.decodeThumbnail(path, dir, reqWidth)
     }
 
     private fun setupSaveButton() {
@@ -638,7 +505,7 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
             tags = binding.editTags.text.toString(),
             memo = binding.editMemo.text.toString(),
             novelId = selectedNovelId,
-            imagePaths = imagePaths.toList()
+            imagePaths = imageStrip.paths.toList()
         )
     }
 
@@ -797,11 +664,10 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
     }
 
     override fun onDestroyView() {
-        binding.imageRecyclerView.adapter = null
+        imageStrip.detach()
         binding.recommendationRecyclerView.adapter = null
         recMatchJob?.cancel()
         super.onDestroyView()
-        imageAdapter = null
         recommendedAdapter = null
         _binding = null
     }
