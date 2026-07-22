@@ -106,7 +106,7 @@ class UniverseListFragment : Fragment() {
             onClick = { universe ->
                 viewModel.recordRecentActivity(RecentActivity.TYPE_UNIVERSE, universe.id, universe.name)
                 val bundle = Bundle().apply { putLong("universeId", universe.id) }
-                findNavController().navigateSafe(R.id.homeFragment, R.id.novelListFragment, bundle)
+                findNavController().navigateSafe(R.id.universeListFragment, R.id.novelListFragment, bundle)
             },
             onEditClick = { universe ->
                 showUniverseEditDialog(universe)
@@ -132,11 +132,11 @@ class UniverseListFragment : Fragment() {
             },
             onFieldManageClick = { universe ->
                 val bundle = Bundle().apply { putLong("universeId", universe.id) }
-                findNavController().navigateSafe(R.id.homeFragment, R.id.fieldManageFragment, bundle)
+                findNavController().navigateSafe(R.id.universeListFragment, R.id.fieldManageFragment, bundle)
             },
             onFactionManageClick = { universe ->
                 val bundle = Bundle().apply { putLong("universeId", universe.id) }
-                findNavController().navigateSafe(R.id.homeFragment, R.id.factionManageFragment, bundle)
+                findNavController().navigateSafe(R.id.universeListFragment, R.id.factionManageFragment, bundle)
             }
         )
         binding.universeRecyclerView.layoutManager = LinearLayoutManager(requireContext())
@@ -697,15 +697,15 @@ class UniverseListFragment : Fragment() {
         when (item.entityType) {
             RecentActivity.TYPE_UNIVERSE -> {
                 val bundle = Bundle().apply { putLong("universeId", item.entityId) }
-                findNavController().navigateSafe(R.id.homeFragment, R.id.novelListFragment, bundle)
+                findNavController().navigateSafe(R.id.universeListFragment, R.id.novelListFragment, bundle)
             }
             RecentActivity.TYPE_NOVEL -> {
                 val bundle = Bundle().apply { putLong("novelId", item.entityId) }
-                findNavController().navigateSafe(R.id.homeFragment, R.id.characterListFragment, bundle)
+                findNavController().navigateSafe(R.id.universeListFragment, R.id.characterListFragment, bundle)
             }
             RecentActivity.TYPE_CHARACTER -> {
                 val bundle = Bundle().apply { putLong("characterId", item.entityId) }
-                findNavController().navigateSafe(R.id.homeFragment, R.id.characterDetailFragment, bundle)
+                findNavController().navigateSafe(R.id.universeListFragment, R.id.characterDetailFragment, bundle)
             }
         }
     }

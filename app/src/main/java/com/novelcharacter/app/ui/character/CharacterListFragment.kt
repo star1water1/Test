@@ -53,10 +53,11 @@ class CharacterListFragment : Fragment() {
     // Batch edit mode
     private var isBatchEditMode = false
 
-    // 탐색 origin 목적지 id — 하단 캐릭터 탭에서는 호스트(CharacterHomeFragment)에 내장되어
-    // 현재 목적지가 characterHomeFragment이고, 작품 목록에서 진입하면 characterListFragment다.
+    // 탐색 origin 목적지 id — 하단 캐릭터 탭 루트는 characterTabFragment(novelId=-1),
+    // 작품 목록·검색에서 novelId를 들고 푸시되면 characterListFragment다.
+    // (모든 푸시 경로가 실제 novelId를 전달하므로 -1은 탭 루트에서만 나타난다)
     private val navOriginId: Int
-        get() = if (parentFragment is CharacterHomeFragment) R.id.characterHomeFragment else R.id.characterListFragment
+        get() = if (novelId == -1L) R.id.characterTabFragment else R.id.characterListFragment
 
     // 배치/비교 모드에서 뒤로가기 = 화면 이탈이 아니라 모드 종료(선택 해제). 롱프레스 진입이 잦아진 만큼
     // 뒤로가기로 취소하려다 화면을 뜨며 선택을 흘리는 걸 막는다. isEnabled는 모드 전환 시 토글.
@@ -206,8 +207,14 @@ class CharacterListFragment : Fragment() {
 
     private fun setupToolbarMenu() {
         binding.toolbar.inflateMenu(R.menu.character_menu)
+        // 보충은 전역 캐릭터 탭의 도구 — 작품 스코프로 푸시된 목록에서는 숨긴다
+        binding.toolbar.menu.findItem(R.id.action_supplement)?.isVisible = (novelId == -1L)
         binding.toolbar.setOnMenuItemClickListener { item ->
             when (item.itemId) {
+                R.id.action_supplement -> {
+                    findNavController().navigateSafe(navOriginId, R.id.supplementFragment)
+                    true
+                }
                 R.id.action_reorder -> {
                     // 재정렬은 일괄편집·비교와 상호배타 — 두 모드 모두 먼저 종료해야 chrome(검색·필터바·비교바)이
                     // 엉키지 않는다. 기존엔 배치만 종료하고 비교는 안 해서 두 모드가 겹치는 손상 상태가 났다.

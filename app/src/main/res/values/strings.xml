@@ -887,6 +887,14 @@
     <string name="widget_add_character">+ 캐릭터</string>
 
     <!-- Birthday Banner -->
+    <!-- 홈 대시보드 / 분석 허브 -->
+    <string name="back">뒤로</string>
+    <string name="tab_analysis">분석</string>
+    <string name="dashboard_shortcuts">바로가기</string>
+    <string name="dashboard_tools">도구</string>
+    <string name="dashboard_assistant_alert">데이터 정합성 오류 %d건</string>
+    <string name="dashboard_assistant_alert_action">어시스턴트에서 확인</string>
+
     <string name="birthday_banner_title">🎂 다가오는 생일</string>
     <string name="birthday_banner_title_count">🎂 다가오는 생일 (%d명)</string>
     <string name="birthday_today">오늘! 🎂</string>

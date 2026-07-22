@@ -43,6 +43,11 @@ class NameBankFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        // 푸시 목적지(대시보드·어시스턴트 진입) — 업 버튼은 디스패처 경유
+        binding.toolbar.setNavigationIcon(R.drawable.ic_arrow_back)
+        binding.toolbar.setNavigationOnClickListener {
+            requireActivity().onBackPressedDispatcher.onBackPressed()
+        }
         setupRecyclerView()
         setupSearch()
         setupFilter()

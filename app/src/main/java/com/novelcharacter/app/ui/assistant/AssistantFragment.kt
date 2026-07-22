@@ -88,7 +88,7 @@ class AssistantFragment : Fragment() {
         when (action) {
             is InsightAction.Navigate -> {
                 val args = action.characterId?.let { bundleOf("characterId" to it) }
-                findNavController().navigateSafe(R.id.homeFragment, action.destId, args)
+                findNavController().navigateSafe(R.id.analysisFragment, action.destId, args)
             }
             is InsightAction.Fix -> handleFix(action.kind)
             is InsightAction.ShowAffected -> openAffectedSheet(insight)

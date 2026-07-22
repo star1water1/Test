@@ -61,10 +61,10 @@ class GlobalSearchFragment : Fragment() {
                 findNavController().navigateSafe(R.id.globalSearchFragment, R.id.characterDetailFragment, bundle)
             },
             onEventClick = { event ->
-                // 연표 탭으로 이동하여 해당 연도 표시
+                // 연표로 직행하여 해당 연도 표시 — center_year는 TimelineFragment.onResume이 소비
                 val prefs = requireContext().getSharedPreferences("timeline_ui_state", android.content.Context.MODE_PRIVATE)
                 prefs.edit().putInt("center_year", event.year).putBoolean("pending_navigate", true).commit()
-                findNavController().navigateSafe(R.id.globalSearchFragment, R.id.homeFragment)
+                findNavController().navigateSafe(R.id.globalSearchFragment, R.id.timelineFragment)
             },
             onNovelClick = { novel ->
                 val bundle = Bundle().apply { putLong("novelId", novel.id) }

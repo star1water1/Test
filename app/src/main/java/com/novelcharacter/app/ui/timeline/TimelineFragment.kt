@@ -55,6 +55,12 @@ class TimelineFragment : Fragment(), EventEditDialogFragment.Host {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
+        // 푸시 목적지(대시보드·검색·딥링크 진입) — 업 버튼은 디스패처 경유로 뒤로가기와 동일 동작
+        binding.toolbar.setNavigationIcon(R.drawable.ic_arrow_back)
+        binding.toolbar.setNavigationOnClickListener {
+            requireActivity().onBackPressedDispatcher.onBackPressed()
+        }
+
         setupRecyclerView()
         setupPinchZoom()
         setupZoomControls()

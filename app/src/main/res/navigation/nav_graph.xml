@@ -5,12 +5,12 @@
     android:id="@+id/nav_graph"
     app:startDestination="@id/homeFragment">
 
-    <!-- Home (세계관 + 연표 + 이름은행) -->
+    <!-- 홈 대시보드 (시작 화면) -->
     <fragment
         android:id="@+id/homeFragment"
-        android:name="com.novelcharacter.app.ui.home.HomeFragment"
+        android:name="com.novelcharacter.app.ui.home.HomeDashboardFragment"
         android:label="@string/tab_home"
-        tools:layout="@layout/fragment_home" />
+        tools:layout="@layout/fragment_home_dashboard" />
 
     <!-- 세계관 내부 네비게이션 (홈 내부에서 진입) -->
     <fragment
@@ -72,12 +72,32 @@
             android:defaultValue="-1L" />
     </fragment>
 
-    <!-- 캐릭터 탭 호스트 (내부 탭: 목록 + 보충) -->
+    <!-- 캐릭터 탭 루트 (전역 목록 — novelId=-1) -->
     <fragment
-        android:id="@+id/characterHomeFragment"
-        android:name="com.novelcharacter.app.ui.character.CharacterHomeFragment"
+        android:id="@+id/characterTabFragment"
+        android:name="com.novelcharacter.app.ui.character.CharacterListFragment"
         android:label="@string/tab_characters"
-        tools:layout="@layout/fragment_character_home" />
+        tools:layout="@layout/fragment_character_list">
+
+        <argument
+            android:name="novelId"
+            app:argType="long"
+            android:defaultValue="-1L" />
+    </fragment>
+
+    <!-- 보충 (캐릭터 툴바에서 진입) -->
+    <fragment
+        android:id="@+id/supplementFragment"
+        android:name="com.novelcharacter.app.ui.supplement.SupplementFragment"
+        android:label="@string/tab_supplement"
+        tools:layout="@layout/fragment_supplement" />
+
+    <!-- 이미지 관리 (홈 대시보드에서 진입) -->
+    <fragment
+        android:id="@+id/imageManagerFragment"
+        android:name="com.novelcharacter.app.ui.image.ImageManagerFragment"
+        android:label="@string/tab_images"
+        tools:layout="@layout/fragment_image_manager" />
 
     <fragment
         android:id="@+id/characterListFragment"
@@ -219,40 +239,17 @@
         android:label="@string/operation_history_title"
         tools:layout="@layout/fragment_operation_history" />
 
-    <!-- Statistics -->
+    <!-- 분석 허브 (통계·관계도·어시스턴트 내부 탭) -->
     <fragment
-        android:id="@+id/statsMainFragment"
-        android:name="com.novelcharacter.app.ui.stats.StatsMainFragment"
-        android:label="@string/tab_statistics"
-        tools:layout="@layout/fragment_stats_main">
+        android:id="@+id/analysisFragment"
+        android:name="com.novelcharacter.app.ui.analysis.AnalysisHomeFragment"
+        android:label="@string/tab_analysis"
+        tools:layout="@layout/fragment_analysis_home">
 
-        <action
-            android:id="@+id/action_stats_to_character_detail"
-            app:destination="@id/statsCharacterDetailFragment" />
-        <action
-            android:id="@+id/action_stats_to_event_detail"
-            app:destination="@id/statsEventDetailFragment" />
-        <action
-            android:id="@+id/action_stats_to_relationship_detail"
-            app:destination="@id/statsRelationshipDetailFragment" />
-        <action
-            android:id="@+id/action_stats_to_namebank_detail"
-            app:destination="@id/statsNameBankDetailFragment" />
-        <action
-            android:id="@+id/action_stats_to_health_detail"
-            app:destination="@id/statsDataHealthDetailFragment" />
-        <action
-            android:id="@+id/action_stats_to_field_analysis_detail"
-            app:destination="@id/statsFieldAnalysisDetailFragment" />
-        <action
-            android:id="@+id/action_stats_to_field_insight"
-            app:destination="@id/statsFieldInsightFragment" />
-        <action
-            android:id="@+id/action_stats_to_data_overview"
-            app:destination="@id/statsDataOverviewFragment" />
-        <action
-            android:id="@+id/action_stats_to_cross_novel"
-            app:destination="@id/statsCrossNovelFragment" />
+        <argument
+            android:name="startTab"
+            app:argType="integer"
+            android:defaultValue="-1" />
     </fragment>
 
     <fragment
@@ -319,11 +316,5 @@
             android:name="characterId"
             app:argType="long" />
     </fragment>
-
-    <fragment
-        android:id="@+id/relationshipGraphFragment"
-        android:name="com.novelcharacter.app.ui.graph.RelationshipGraphFragment"
-        android:label="@string/tab_relationship_graph"
-        tools:layout="@layout/fragment_relationship_graph" />
 
 </navigation>

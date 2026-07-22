@@ -626,7 +626,7 @@ class StatsMainFragment : Fragment() {
                 card.isFocusable = true
                 card.setOnClickListener {
                     findNavController().navigateSafe(
-                        R.id.statsMainFragment, R.id.statsFieldInsightFragment, null
+                        R.id.analysisFragment, R.id.statsFieldInsightFragment, null
                     )
                 }
             }
@@ -668,7 +668,7 @@ class StatsMainFragment : Fragment() {
                 layoutParams = lp
                 setOnClickListener {
                     findNavController().navigateSafe(
-                        R.id.statsMainFragment, R.id.statsFieldInsightFragment, null
+                        R.id.analysisFragment, R.id.statsFieldInsightFragment, null
                     )
                 }
             }
@@ -740,59 +740,59 @@ class StatsMainFragment : Fragment() {
         // 신규 네비게이션 카드
         binding.cardFieldInsight.setOnClickListener {
             findNavController().navigateSafe(
-                R.id.statsMainFragment, R.id.statsFieldInsightFragment, null
+                R.id.analysisFragment, R.id.statsFieldInsightFragment, null
             )
         }
         binding.cardRelationNetwork.setOnClickListener {
             findNavController().navigateSafe(
-                R.id.statsMainFragment, R.id.statsRelationshipDetailFragment, null
+                R.id.analysisFragment, R.id.statsRelationshipDetailFragment, null
             )
         }
         binding.cardDataOverview.setOnClickListener {
             findNavController().navigateSafe(
-                R.id.statsMainFragment, R.id.statsDataOverviewFragment, null
+                R.id.analysisFragment, R.id.statsDataOverviewFragment, null
             )
         }
         binding.cardCrossNovel.setOnClickListener {
             findNavController().navigateSafe(
-                R.id.statsMainFragment, R.id.statsCrossNovelFragment, null
+                R.id.analysisFragment, R.id.statsCrossNovelFragment, null
             )
         }
         binding.btnInsightMore.setOnClickListener {
             findNavController().navigateSafe(
-                R.id.statsMainFragment, R.id.statsFieldInsightFragment, null
+                R.id.analysisFragment, R.id.statsFieldInsightFragment, null
             )
         }
 
         // 레거시 카드
         binding.cardCharacters.setOnClickListener {
             findNavController().navigateSafe(
-                R.id.statsMainFragment, R.id.statsCharacterDetailFragment, null
+                R.id.analysisFragment, R.id.statsCharacterDetailFragment, null
             )
         }
         binding.cardEvents.setOnClickListener {
             findNavController().navigateSafe(
-                R.id.statsMainFragment, R.id.statsEventDetailFragment, null
+                R.id.analysisFragment, R.id.statsEventDetailFragment, null
             )
         }
         binding.cardRelationships.setOnClickListener {
             findNavController().navigateSafe(
-                R.id.statsMainFragment, R.id.statsRelationshipDetailFragment, null
+                R.id.analysisFragment, R.id.statsRelationshipDetailFragment, null
             )
         }
         binding.cardFieldAnalysis.setOnClickListener {
             findNavController().navigateSafe(
-                R.id.statsMainFragment, R.id.statsFieldAnalysisDetailFragment, null
+                R.id.analysisFragment, R.id.statsFieldAnalysisDetailFragment, null
             )
         }
         binding.cardNameBank.setOnClickListener {
             findNavController().navigateSafe(
-                R.id.statsMainFragment, R.id.statsNameBankDetailFragment, null
+                R.id.analysisFragment, R.id.statsNameBankDetailFragment, null
             )
         }
         binding.cardDataHealth.setOnClickListener {
             findNavController().navigateSafe(
-                R.id.statsMainFragment, R.id.statsDataHealthDetailFragment, null
+                R.id.analysisFragment, R.id.statsDataHealthDetailFragment, null
             )
         }
     }

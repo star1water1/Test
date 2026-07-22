@@ -6,15 +6,6 @@
     android:layout_height="match_parent"
     android:background="@color/background">
 
-    <com.google.android.material.appbar.MaterialToolbar
-        android:id="@+id/toolbar"
-        android:layout_width="0dp"
-        android:layout_height="?attr/actionBarSize"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent"
-        app:title="@string/tab_statistics" />
-
     <com.google.android.material.tabs.TabLayout
         android:id="@+id/statsTabLayout"
         android:layout_width="0dp"
@@ -22,7 +13,7 @@
         app:tabIndicatorHeight="3dp"
         app:tabMode="fixed"
         app:tabGravity="fill"
-        app:layout_constraintTop_toBottomOf="@id/toolbar"
+        app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 

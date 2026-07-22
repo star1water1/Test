@@ -66,7 +66,7 @@ class AuditSupplementFragment : Fragment() {
             val bundle = Bundle().apply {
                 putLong("characterId", target.character.id)
             }
-            findNavController().navigateSafe(R.id.characterHomeFragment, R.id.characterEditFragment, bundle)
+            findNavController().navigateSafe(R.id.supplementFragment, R.id.characterEditFragment, bundle)
         }
         binding.recyclerView.layoutManager = LinearLayoutManager(requireContext())
         binding.recyclerView.adapter = adapter
@@ -205,7 +205,7 @@ class AuditSupplementFragment : Fragment() {
             putString("supplementIssueLabels", issueLabelsArray.getOrNull(0) ?: "")
         }
 
-        findNavController().navigateSafe(R.id.characterHomeFragment, R.id.characterEditFragment, bundle)
+        findNavController().navigateSafe(R.id.supplementFragment, R.id.characterEditFragment, bundle)
     }
 
     private fun showSettingsDialog() {

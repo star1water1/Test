@@ -81,6 +81,11 @@ class ImageManagerFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
+        // 푸시 목적지(대시보드 진입) — 선택 모드 종료 등 기존 뒤로가기 콜백을 존중하도록 디스패처 경유
+        binding.btnBack.setOnClickListener {
+            requireActivity().onBackPressedDispatcher.onBackPressed()
+        }
+
         adapter = ImageManagerAdapter(
             viewLifecycleOwner.lifecycleScope,
             onClick = { showDetail(it) },
