@@ -303,6 +303,14 @@ class ExcelImporter(context: Context) {
         for ((originalPath, zipRelPath) in originalMap) {
             val extractedFile = File(extractDir, zipRelPath)
             if (!extractedFile.exists()) continue
+            // 같은 기기 재복원 멱등화: 원경로 파일이 이미 있으면 자기 자신으로 매핑한다
+            // (파일명이 UUID라 경로 일치 = 같은 파일). 새 UUID 발급 시 복원마다 파일·meta가
+            // 복제되고 링크 그룹이 기존 멤버 합산으로 팽창하던 문제 차단. restoreImages는
+            // destFile.exists()로 복사를 건너뛴다.
+            if (runCatching { File(originalPath).exists() }.getOrDefault(false)) {
+                remap[originalPath] = originalPath
+                continue
+            }
             // 원 파일명의 프리픽스·확장자 보존 — 복원 후에도 앱관리 이미지 분류(img_=라이브러리 임포트 등)와
             // 파일 형식 표기가 유지된다 ("char_" 고정 하드코딩이던 것을 교정, G3)
             val origName = File(originalPath).name

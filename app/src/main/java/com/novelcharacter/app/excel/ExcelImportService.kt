@@ -357,8 +357,18 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 if (effectiveOptions.nameBank) db.nameBankDao().deleteAll()
                 if (effectiveOptions.presetTemplates) db.userPresetTemplateDao().deleteAll()
                 if (effectiveOptions.searchPresets) db.searchPresetDao().deleteAll()
-                // 이미지 태그는 image_meta FK CASCADE로 함께 삭제 — 파일은 지우지 않는다(백업 재가져오기로 보호 복원)
-                if (effectiveOptions.imageMeta) db.imageMetaDao().deleteAll()
+                // 이미지 태그는 image_meta FK CASCADE로 함께 삭제 — 파일은 지우지 않는다(백업 재가져오기로 보호 복원).
+                // 단, 백업에 유효한 "이미지" 시트가 있을 때만: meta는 미배정 이미지의 유일한 삭제 보호막이라
+                // 구버전(시트 없는) 백업에서 삭제만 하고 복원하지 못하면 이후 고아 정리가 파일까지 지운다.
+                if (effectiveOptions.imageMeta) {
+                    val imgSpec = imageMetaSpec()
+                    val imgHeader = workbook.getSheet(imgSpec.sheetName)?.getRow(0)
+                    if (imgHeader != null && isValidHeader(imgHeader, imgSpec.firstColumnHeader)) {
+                        db.imageMetaDao().deleteAll()
+                    } else {
+                        result.warnings.add("백업에 '${imgSpec.sheetName}' 시트가 없어 기존 이미지 태그·링크를 삭제하지 않고 유지했습니다 (덮어쓰기 제외)")
+                    }
+                }
             }
 
             // Matched ID 추적 초기화 (deleteNotInExcel 옵션용)
@@ -415,6 +425,19 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             // Phase 6: 시맨틱 필드 동기화 (출생/사망연도 ↔ 상태변화 ↔ 생존여부)
             if (pendingSyncCharacters.isNotEmpty()) {
                 runPostImportSemanticSync()
+            }
+        }
+
+        // zip 복원 파일 중 이번 가져오기에서 어떤 엔티티에도 연결되지 않고 meta도 없는 파일은
+        // 라이브러리(미배정)로 입양한다 — "이미지"만 체크하고 "이미지 태그·링크"를 끈 복원에서
+        // 라이브러리 파일이 어느 UI에도 보이지 않는 고아(이후 정리에 삭제됨)로 남지 않게(변수 제어).
+        // adoptOrphans는 참조·meta·휴지통 보호 중인 경로를 스킵하므로 정상 복원분은 건드리지 않는다.
+        if (imagePathRemap.isNotEmpty()) {
+            val adopted = runCatching {
+                com.novelcharacter.app.util.ImageOwnershipGuard.adoptOrphans(db, appContext, imagePathRemap.values)
+            }.getOrDefault(0)
+            if (adopted > 0) {
+                result.warnings.add("복원 이미지 ${adopted}장이 어디에도 연결되지 않아 라이브러리(미배정)로 편입했습니다")
             }
         }
 
@@ -3268,7 +3291,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
      */
     private suspend fun importImageMeta(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = imageMetaSpec()
-        val sheet = workbook.getSheet(spec.sheetName) ?: return
+        // 시트 부재는 타 카테고리와 같은 관례로 경고를 남긴다(G3 이전 백업 — 조용한 스킵 금지)
+        val sheet = findSheet(workbook, spec.sheetName, result) ?: return
         val headerRow = sheet.getRow(0) ?: return
         // 3중 방어 ③: 예약명이라도 실제 이미지 형식인지 헤더로 검증 — 레거시 백업의
         // 세계관 "이미지" 캐릭터 시트(첫 헤더 "이름")를 이미지 메타로 오파싱하지 않는다.
@@ -3351,8 +3375,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val header = sheet.getRow(0) ?: return false
             val first = getCellString(header, 0)
             if (first != "이름") return false
-            // "이름"으로 시작하는 다른 예약 시트(이름 은행·세계관·세력 등)와 구분 — 캐릭터 고유 헤더 확인
-            val distinctive = listOf("이미지경로", "이명", "작품", "작품코드", "고정")
+            // "이름"으로 시작하는 다른 예약 시트(이름 은행·세계관·세력 등)와 구분 — 캐릭터 고유 헤더 확인.
+            // "이미지경로"는 세계관 시트에도 있어 제외(세계관 이름이 "세계관"일 때 목록 시트 오인 차단),
+            // 아래 4개는 세계관/이름 은행/세력 시트 어디에도 없는 캐릭터 전용 헤더다.
+            val distinctive = listOf("이명", "작품", "작품코드", "고정")
             val lastCol = header.lastCellNum.toInt()
             for (col in 1 until lastCol) {
                 if (getCellString(header, col) in distinctive) return true

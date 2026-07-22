@@ -1237,11 +1237,12 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
             for (n in db.novelDao().getAllNovelsList()) collect(n.imagePaths)
             for (u in db.universeDao().getAllUniversesList()) collect(u.imagePaths)
 
-            val metas = db.imageMetaDao().getAllList()
+            // 존재 필터를 확장용 metas에도 적용 — 링크 그룹에 소실 파일이 있어도
+            // 첨부 확장이 죽은 경로를 캐릭터에 끌어들이지 않는다
+            val existingMetas = db.imageMetaDao().getAllList().filter { java.io.File(it.path).exists() }
             val tagsByImage = db.imageTagDao().getAllList().groupBy({ it.imageId }, { it.tag })
-            val candidates = metas.mapNotNull { meta ->
+            val candidates = existingMetas.mapNotNull { meta ->
                 if (canonical(meta.path) in owned) return@mapNotNull null
-                if (!java.io.File(meta.path).exists()) return@mapNotNull null
                 com.novelcharacter.app.util.ImageRecommendationHelper.Candidate(
                     path = meta.path,
                     tags = tagsByImage[meta.id]?.toSet() ?: emptySet(),
@@ -1251,7 +1252,7 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
             }
             RecommendationData(
                 candidates = candidates,
-                metas = metas.map { com.novelcharacter.app.util.ImageLinkResolver.Meta(it.path, it.linkGroupId) }
+                metas = existingMetas.map { com.novelcharacter.app.util.ImageLinkResolver.Meta(it.path, it.linkGroupId) }
             )
         } catch (e: Exception) {
             Log.e("CharacterViewModel", "Failed to load recommendation candidates", e)
