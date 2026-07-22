@@ -1,5 +1,6 @@
 package com.novelcharacter.app.ui.stats
 
+import com.novelcharacter.app.ui.theme.ChartTheme
 import android.graphics.Color
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.graphics.Typeface
@@ -38,7 +39,6 @@ import com.github.mikephil.charting.formatter.PercentFormatter
 import com.github.mikephil.charting.formatter.ValueFormatter
 import com.github.mikephil.charting.highlight.Highlight
 import com.github.mikephil.charting.listener.OnChartValueSelectedListener
-import com.github.mikephil.charting.utils.ColorTemplate
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.FieldStatsConfig
 import com.novelcharacter.app.databinding.FragmentStatsFieldInsightBinding
@@ -744,16 +744,8 @@ class StatsFieldInsightFragment : Fragment() {
         }
     }
 
-    private fun chartColors(): List<Int> {
-        val ctx = requireContext()
-        return listOf(
-            ContextCompat.getColor(ctx, R.color.primary),
-            ContextCompat.getColor(ctx, R.color.accent),
-            ContextCompat.getColor(ctx, R.color.search_type_novel),
-            ContextCompat.getColor(ctx, R.color.primary_light),
-            ContextCompat.getColor(ctx, R.color.primary_dark)
-        ) + ColorTemplate.MATERIAL_COLORS.toList()
-    }
+    private fun chartColors(): List<Int> =
+        ChartTheme.palette(requireContext())
 
     // ===== 인라인 분석 설정 =====
 

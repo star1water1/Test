@@ -1,5 +1,6 @@
 package com.novelcharacter.app.ui.stats
 
+import com.novelcharacter.app.ui.theme.ChartTheme
 import android.graphics.Color
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.core.graphics.ColorUtils
@@ -21,7 +22,6 @@ import com.github.mikephil.charting.data.PieData
 import com.github.mikephil.charting.data.PieDataSet
 import com.github.mikephil.charting.data.PieEntry
 import com.github.mikephil.charting.formatter.PercentFormatter
-import com.github.mikephil.charting.utils.ColorTemplate
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.novelcharacter.app.R
 import com.novelcharacter.app.databinding.FragmentStatsMainBinding
@@ -778,16 +778,8 @@ class StatsMainFragment : Fragment() {
         }
     }
 
-    private fun chartColors(): List<Int> {
-        val ctx = requireContext()
-        return listOf(
-            ContextCompat.getColor(ctx, R.color.primary),
-            ContextCompat.getColor(ctx, R.color.accent),
-            ContextCompat.getColor(ctx, R.color.search_type_novel),
-            ContextCompat.getColor(ctx, R.color.primary_light),
-            ContextCompat.getColor(ctx, R.color.primary_dark)
-        ) + ColorTemplate.MATERIAL_COLORS.toList()
-    }
+    private fun chartColors(): List<Int> =
+        ChartTheme.palette(requireContext())
 
     override fun onDestroyView() {
         super.onDestroyView()

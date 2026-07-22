@@ -100,4 +100,15 @@
     <color name="overlay_selection">#CC8891E8</color>
     <color name="overlay_selection_weak">#558891E8</color>
     <color name="overlay_link_badge">#CC4FB7FF</color>
+
+    <!-- 관계 그래프 — 관계 유형별 기본 색 -->
+    <color name="graph_rel_lover">#F06292</color>
+    <color name="graph_rel_enemy">#EF5350</color>
+    <color name="graph_rel_rival">#FF7043</color>
+    <color name="graph_rel_ally">#42A5F5</color>
+    <color name="graph_rel_friend">#66BB6A</color>
+    <color name="graph_rel_parent_child">#AB47BC</color>
+    <color name="graph_rel_sibling">#FFA726</color>
+    <color name="graph_rel_mentor">#26C6DA</color>
+    <color name="graph_rel_other">#9E9E9E</color>
 </resources>
