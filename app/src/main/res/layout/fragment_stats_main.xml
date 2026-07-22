@@ -10,21 +10,15 @@
         android:id="@+id/toolbar"
         android:layout_width="0dp"
         android:layout_height="?attr/actionBarSize"
-        android:background="@color/primary"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent"
-        app:title="@string/tab_statistics"
-        app:titleTextColor="@color/on_primary" />
+        app:title="@string/tab_statistics" />
 
     <com.google.android.material.tabs.TabLayout
         android:id="@+id/statsTabLayout"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:background="@color/primary"
-        app:tabTextColor="@color/on_primary"
-        app:tabSelectedTextColor="@color/on_primary"
-        app:tabIndicatorColor="@color/on_primary"
         app:tabIndicatorHeight="3dp"
         app:tabMode="fixed"
         app:tabGravity="fill"
@@ -867,7 +861,8 @@
                         android:src="@android:drawable/arrow_down_float"
                         android:background="?attr/selectableItemBackgroundBorderless"
                         android:contentDescription="@string/stats_ranking_sort_toggle"
-                        android:scaleType="centerInside" />
+                        android:scaleType="centerInside"
+            app:tint="?attr/colorOnSurfaceVariant" />
                 </LinearLayout>
 
                 <LinearLayout

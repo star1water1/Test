@@ -1,6 +1,7 @@
 package com.novelcharacter.app.ui.supplement
 
 import android.graphics.drawable.GradientDrawable
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
@@ -633,7 +634,7 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
     /** 미저장 확인 다이얼로그 — 저장 후 닫기 / 버리기 / 계속 편집 */
     private fun showUnsavedDialog(afterExit: (() -> Unit)?) {
         val ctx = context ?: return
-        AlertDialog.Builder(ctx)
+        MaterialAlertDialogBuilder(ctx)
             .setTitle(R.string.random_unsaved_title)
             .setMessage(R.string.random_unsaved_message)
             .setPositiveButton(R.string.random_unsaved_save) { _, _ ->
@@ -886,7 +887,7 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
         val draft = CharacterDraftPrefs.load(ctx, characterId) ?: return
         val timeStr = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault())
             .format(java.util.Date(draft.savedAt))
-        AlertDialog.Builder(ctx)
+        MaterialAlertDialogBuilder(ctx)
             .setTitle(R.string.draft_restore_title)
             .setMessage(getString(R.string.draft_restore_message, timeStr))
             .setPositiveButton(R.string.draft_restore_apply) { _, _ -> applyDraft(draft) }
@@ -944,7 +945,7 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
     private fun showRandomSettingsDialog() {
         val ctx = context ?: return
         val dialogView = LayoutInflater.from(ctx).inflate(R.layout.dialog_random_settings, null)
-        val dialog = AlertDialog.Builder(ctx)
+        val dialog = MaterialAlertDialogBuilder(ctx)
             .setTitle(R.string.random_settings_title)
             .setView(dialogView)
             .setCancelable(true)

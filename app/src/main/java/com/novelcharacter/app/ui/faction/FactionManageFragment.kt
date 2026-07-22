@@ -1,6 +1,7 @@
 package com.novelcharacter.app.ui.faction
 
 import android.graphics.Color
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.view.LayoutInflater
@@ -250,7 +251,7 @@ class FactionManageFragment : Fragment() {
         }
 
         val title = if (faction == null) R.string.faction_add else R.string.faction_edit
-        AlertDialog.Builder(requireContext())
+        MaterialAlertDialogBuilder(requireContext())
             .setTitle(title)
             .setView(dialogView)
             .setPositiveButton(R.string.save) { _, _ ->
@@ -299,7 +300,7 @@ class FactionManageFragment : Fragment() {
             getString(R.string.faction_relationships),
             getString(R.string.delete)
         )
-        AlertDialog.Builder(requireContext())
+        MaterialAlertDialogBuilder(requireContext())
             .setTitle(faction.name)
             .setItems(items) { _, which ->
                 when (which) {
@@ -336,7 +337,7 @@ class FactionManageFragment : Fragment() {
                 getString(R.string.faction_relationship_item_format, directed, rel.relationType, rel.intensity)
             }
 
-            val builder = AlertDialog.Builder(requireContext())
+            val builder = MaterialAlertDialogBuilder(requireContext())
                 .setTitle("${getString(R.string.faction_relationships)} — ${faction.name}")
             if (labels.isEmpty()) {
                 builder.setMessage(R.string.faction_relationship_empty)
@@ -359,12 +360,12 @@ class FactionManageFragment : Fragment() {
         nameById: Map<Long, String>
     ) {
         val otherId = if (relationship.factionId1 == faction.id) relationship.factionId2 else relationship.factionId1
-        AlertDialog.Builder(requireContext())
+        MaterialAlertDialogBuilder(requireContext())
             .setTitle(relationship.relationType)
             .setItems(arrayOf(getString(R.string.edit), getString(R.string.delete))) { _, which ->
                 when (which) {
                     0 -> showFactionRelationshipEditDialog(faction, relationship, nameById[otherId])
-                    1 -> AlertDialog.Builder(requireContext())
+                    1 -> MaterialAlertDialogBuilder(requireContext())
                         .setMessage(R.string.faction_relationship_delete_confirm)
                         .setPositiveButton(R.string.delete) { _, _ ->
                             viewLifecycleOwner.lifecycleScope.launch {
@@ -462,7 +463,7 @@ class FactionManageFragment : Fragment() {
                 "${getString(R.string.faction_relationship_edit)} — ${otherName ?: ""}"
             }
 
-            AlertDialog.Builder(ctx)
+            MaterialAlertDialogBuilder(ctx)
                 .setTitle(title)
                 .setView(container)
                 .setPositiveButton(R.string.save) { _, _ ->
@@ -520,7 +521,7 @@ class FactionManageFragment : Fragment() {
             getString(R.string.faction_delete_keep_relations)
         )
         var selectedIndex = 0
-        AlertDialog.Builder(requireContext())
+        MaterialAlertDialogBuilder(requireContext())
             .setTitle(getString(R.string.faction_delete_title, faction.name))
             .setSingleChoiceItems(items, 0) { _, which -> selectedIndex = which }
             .setPositiveButton(R.string.delete) { _, _ ->
@@ -557,7 +558,7 @@ class FactionManageFragment : Fragment() {
         memberRecyclerView.adapter = memberAdapter
         container.addView(memberRecyclerView)
 
-        val dialog = AlertDialog.Builder(ctx)
+        val dialog = MaterialAlertDialogBuilder(ctx)
             .setTitle("${faction.name} — ${getString(R.string.faction_members)}")
             .setView(container)
             .setPositiveButton(R.string.faction_member_add) { _, _ ->
@@ -589,12 +590,12 @@ class FactionManageFragment : Fragment() {
             getString(R.string.faction_member_remove),
             getString(R.string.faction_member_depart)
         )
-        AlertDialog.Builder(requireContext())
+        MaterialAlertDialogBuilder(requireContext())
             .setTitle(item.characterName)
             .setItems(options) { _, which ->
                 when (which) {
                     0 -> {
-                        AlertDialog.Builder(requireContext())
+                        MaterialAlertDialogBuilder(requireContext())
                             .setTitle(R.string.faction_member_remove)
                             .setMessage(getString(R.string.faction_member_remove_confirm, item.characterName, faction.name))
                             .setPositiveButton(R.string.delete) { _, _ ->
@@ -644,7 +645,7 @@ class FactionManageFragment : Fragment() {
         }
         container.addView(sliderIntensity)
 
-        AlertDialog.Builder(ctx)
+        MaterialAlertDialogBuilder(ctx)
             .setTitle(getString(R.string.faction_member_depart))
             .setView(container)
             .setPositiveButton(R.string.save) { _, _ ->
@@ -752,7 +753,7 @@ class FactionManageFragment : Fragment() {
                 }
             })
 
-            AlertDialog.Builder(ctx)
+            MaterialAlertDialogBuilder(ctx)
                 .setTitle(R.string.faction_member_add)
                 .setView(container)
                 .setPositiveButton(R.string.confirm) { _, _ ->

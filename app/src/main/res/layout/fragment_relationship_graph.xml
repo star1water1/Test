@@ -11,10 +11,8 @@
         android:id="@+id/toolbar"
         android:layout_width="match_parent"
         android:layout_height="?attr/actionBarSize"
-        android:background="@color/primary"
         app:navigationIcon="?attr/homeAsUpIndicator"
-        app:title="@string/relationship_graph_beta"
-        app:titleTextColor="@color/on_primary" />
+        app:title="@string/relationship_graph_beta" />
 
     <!-- Universe / Novel filter -->
     <LinearLayout

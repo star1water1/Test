@@ -10,12 +10,10 @@
         android:id="@+id/toolbar"
         android:layout_width="0dp"
         android:layout_height="?attr/actionBarSize"
-        android:background="@color/primary"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent"
-        app:title="@string/tab_characters"
-        app:titleTextColor="@color/on_primary" />
+        app:title="@string/tab_characters" />
 
     <LinearLayout
         android:id="@+id/compareLayout"
@@ -56,7 +54,7 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnCancelCompare"
-            style="@style/Widget.Material3.Button.TextButton"
+            style="@style/Widget.App.Button.Outlined"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/cancel_button"
@@ -97,11 +95,12 @@
             android:background="?attr/selectableItemBackgroundBorderless"
             android:src="@android:drawable/arrow_down_float"
             android:scaleType="centerInside"
-            android:contentDescription="@string/sort_direction" />
+            android:contentDescription="@string/sort_direction"
+            app:tint="?attr/colorOnSurfaceVariant" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnFilter"
-            style="@style/Widget.Material3.Button.TextButton"
+            style="@style/Widget.App.Button.Tonal"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/filter_button"
@@ -164,7 +163,8 @@
             android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="@string/close"
             android:src="@android:drawable/ic_menu_close_clear_cancel"
-            android:scaleType="centerInside" />
+            android:scaleType="centerInside"
+            app:tint="?attr/colorOnSurfaceVariant" />
 
         <TextView
             android:id="@+id/batchSelectedCount"
@@ -184,7 +184,8 @@
             android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="@string/more_options"
             android:src="@drawable/ic_more_vert"
-            android:scaleType="centerInside" />
+            android:scaleType="centerInside"
+            app:tint="?attr/colorOnSurfaceVariant" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnBatchAction"
@@ -238,7 +239,8 @@
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:src="@android:drawable/arrow_up_float"
                 android:scaleType="centerInside"
-                android:contentDescription="@string/birthday_banner_title" />
+                android:contentDescription="@string/birthday_banner_title"
+            app:tint="?attr/colorOnSurfaceVariant" />
 
         </LinearLayout>
 

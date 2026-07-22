@@ -43,7 +43,7 @@
     <!-- 하단 액션 버튼 -->
     <com.google.android.material.button.MaterialButton
         android:id="@+id/btnSaveAsPreset"
-        style="@style/Widget.Material3.Button.TextButton"
+        style="@style/Widget.App.Button.Tonal"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginStart="16dp"
@@ -57,7 +57,7 @@
 
     <com.google.android.material.button.MaterialButton
         android:id="@+id/btnRestoreBuiltIn"
-        style="@style/Widget.Material3.Button.TextButton"
+        style="@style/Widget.App.Button.Outlined"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginStart="16dp"

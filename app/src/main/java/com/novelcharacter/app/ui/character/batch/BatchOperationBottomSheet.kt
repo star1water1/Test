@@ -1,6 +1,7 @@
 package com.novelcharacter.app.ui.character.batch
 
 import android.os.Bundle
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -91,7 +92,7 @@ class BatchOperationBottomSheet : BottomSheetDialogFragment() {
             val impact = batchViewModel.getDeleteImpact()
             val ctx = context ?: return@launch
             if (!isAdded) return@launch
-            AlertDialog.Builder(ctx)
+            MaterialAlertDialogBuilder(ctx)
                 .setTitle(R.string.batch_delete_confirm_title)
                 .setMessage(buildDeleteMessage(count, impact))
                 .setPositiveButton(R.string.delete) { _, _ ->

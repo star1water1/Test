@@ -1,7 +1,8 @@
 package com.novelcharacter.app.excel
 
 import android.app.Activity
-import android.app.AlertDialog
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import androidx.appcompat.app.AlertDialog
 import android.content.Context
 import android.net.Uri
 import android.view.Gravity
@@ -390,7 +391,7 @@ class ExcelImporter(context: Context) {
                         layout.addView(textView)
                         progressText = textView
 
-                        progressDialog = AlertDialog.Builder(act)
+                        progressDialog = MaterialAlertDialogBuilder(act)
                             .setTitle(appContext.getString(com.novelcharacter.app.R.string.restore_preview_title))
                             .setView(layout)
                             .setCancelable(false)
@@ -452,7 +453,7 @@ class ExcelImporter(context: Context) {
                         layout.addView(textView)
                         progressText = textView
 
-                        progressDialog = AlertDialog.Builder(act)
+                        progressDialog = MaterialAlertDialogBuilder(act)
                             .setTitle(appContext.getString(com.novelcharacter.app.R.string.import_progress_title))
                             .setView(layout)
                             .setCancelable(false)
@@ -694,7 +695,7 @@ class ExcelImporter(context: Context) {
                     deleteContainer.visibility = if (showDelete) android.view.View.VISIBLE else android.view.View.GONE
                 }
 
-                AlertDialog.Builder(act)
+                MaterialAlertDialogBuilder(act)
                     .setTitle(com.novelcharacter.app.R.string.restore_preview_title)
                     .setView(scrollView)
                     .setPositiveButton(com.novelcharacter.app.R.string.restore_action) { _, _ ->
@@ -891,7 +892,7 @@ class ExcelImporter(context: Context) {
                     conflictUIs.add(ConflictUI(conflict, radioGroup, skipRadio.id, updateRadios, cleanupCheckboxes))
                 }
 
-                AlertDialog.Builder(act)
+                MaterialAlertDialogBuilder(act)
                     .setTitle(com.novelcharacter.app.R.string.import_conflict_title)
                     .setView(scrollView)
                     .setPositiveButton(com.novelcharacter.app.R.string.import_conflict_confirm) { _, _ ->
@@ -946,7 +947,7 @@ class ExcelImporter(context: Context) {
 
                 val checkedArray = checked.toBooleanArray()
 
-                AlertDialog.Builder(activity)
+                MaterialAlertDialogBuilder(activity)
                     .setTitle(com.novelcharacter.app.R.string.import_options_title)
                     .setMultiChoiceItems(labels.toTypedArray(), checkedArray) { _, which, isChecked ->
                         checkedArray[which] = isChecked
@@ -1062,7 +1063,7 @@ class ExcelImporter(context: Context) {
         }
 
         val hasDetails = result.errors.isNotEmpty() || result.warnings.isNotEmpty()
-        val builder = AlertDialog.Builder(act)
+        val builder = MaterialAlertDialogBuilder(act)
             .setTitle(appContext.getString(com.novelcharacter.app.R.string.import_result_title))
             .setMessage(summaryMessage)
 
@@ -1114,7 +1115,7 @@ class ExcelImporter(context: Context) {
         }
         scrollView.addView(textView)
 
-        AlertDialog.Builder(act)
+        MaterialAlertDialogBuilder(act)
             .setTitle(appContext.getString(com.novelcharacter.app.R.string.import_result_details))
             .setView(scrollView)
             .setPositiveButton(appContext.getString(com.novelcharacter.app.R.string.confirm), null)

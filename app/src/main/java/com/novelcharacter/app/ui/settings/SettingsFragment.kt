@@ -329,7 +329,7 @@ class SettingsFragment : Fragment() {
                 com.novelcharacter.app.util.OnboardingPrefs.markShown(ctx, com.novelcharacter.app.util.OnboardingPrefs.KEY_BACKUP_IMAGE_NOTICE_SHOWN)
                 return@launch
             }
-            AlertDialog.Builder(ctx)
+            MaterialAlertDialogBuilder(ctx)
                 .setTitle(R.string.backup_image_notice_title)
                 .setMessage(R.string.backup_image_notice_message)
                 .setPositiveButton(android.R.string.ok, null)
@@ -363,7 +363,7 @@ class SettingsFragment : Fragment() {
         val current = ThemeHelper.getSavedTheme(requireContext())
 
         val ctx = requireContext()
-        AlertDialog.Builder(ctx)
+        MaterialAlertDialogBuilder(ctx)
             .setTitle(R.string.settings_theme)
             .setSingleChoiceItems(options, current) { dialog, which ->
                 dialog.dismiss()
@@ -391,7 +391,7 @@ class SettingsFragment : Fragment() {
                 }
 
                 val names = universes.map { it.name }.toTypedArray()
-                AlertDialog.Builder(requireContext())
+                MaterialAlertDialogBuilder(requireContext())
                     .setTitle(R.string.share_world_package)
                     .setItems(names) { _, which ->
                         val universe = universes[which]
@@ -438,7 +438,7 @@ class SettingsFragment : Fragment() {
         val labels = com.novelcharacter.app.excel.ExportOptions.LABELS
         val checked = com.novelcharacter.app.excel.ExportOptions.ALL.toBooleanArray()
 
-        AlertDialog.Builder(requireContext())
+        MaterialAlertDialogBuilder(requireContext())
             .setTitle(R.string.export_options_title)
             .setMultiChoiceItems(labels, checked) { _, which, isChecked ->
                 checked[which] = isChecked
@@ -454,7 +454,7 @@ class SettingsFragment : Fragment() {
 
     private fun showExportModeDialog(options: com.novelcharacter.app.excel.ExportOptions) {
         if (!isAdded) return
-        AlertDialog.Builder(requireContext())
+        MaterialAlertDialogBuilder(requireContext())
             .setTitle(R.string.export_mode_title)
             .setItems(arrayOf(getString(R.string.export_mode_share), getString(R.string.export_mode_save))) { _, which ->
                 exporter?.cancel()
@@ -505,7 +505,7 @@ class SettingsFragment : Fragment() {
                 getString(if (settings.includeImages) R.string.backup_option_images_on else R.string.backup_option_images_off)
             )
             val maxLabel = getString(R.string.backup_option_choose_max, settings.maxBackups)
-            AlertDialog.Builder(requireContext())
+            MaterialAlertDialogBuilder(requireContext())
                 .setTitle(R.string.backup_options)
                 .setItems(arrayOf(imagesLabel, maxLabel)) { _, which ->
                     when (which) {
@@ -526,7 +526,7 @@ class SettingsFragment : Fragment() {
         val choices = BackupSettingsStore.MAX_BACKUPS_CHOICES
         val labels = choices.map { getString(R.string.backup_max_item, it) }.toTypedArray()
         val checked = choices.indexOf(current).coerceAtLeast(0)
-        AlertDialog.Builder(requireContext())
+        MaterialAlertDialogBuilder(requireContext())
             .setTitle(R.string.backup_option_max_title)
             .setSingleChoiceItems(labels, checked) { dialog, which ->
                 viewLifecycleOwner.lifecycleScope.launch {
@@ -545,7 +545,7 @@ class SettingsFragment : Fragment() {
         if (!BackupEncryptor.isKeyAvailable()) {
             // 기기 키가 없어도 암호(패스프레이즈)로 만든 이식 가능 백업은 복원할 수 있으므로
             // 외부 파일 복원 경로는 열어둔다
-            AlertDialog.Builder(requireContext())
+            MaterialAlertDialogBuilder(requireContext())
                 .setTitle(R.string.backup_restore_title)
                 .setMessage(getString(R.string.backup_restore_key_missing) + "\n\n" + getString(R.string.backup_restore_portable_still_ok))
                 .setPositiveButton(R.string.backup_restore_from_external) { _, _ ->
@@ -561,7 +561,7 @@ class SettingsFragment : Fragment() {
             getString(R.string.backup_restore_from_internal),
             getString(R.string.backup_restore_from_external)
         )
-        AlertDialog.Builder(requireContext())
+        MaterialAlertDialogBuilder(requireContext())
             .setTitle(R.string.backup_restore_title)
             .setItems(options) { _, which ->
                 when (which) {
@@ -588,7 +588,7 @@ class SettingsFragment : Fragment() {
         }
 
         // 형식 선택: 이식 가능(암호 설정, 다른 기기 복원 가능) / 기기 전용(현재 기기에서만 복원)
-        AlertDialog.Builder(requireContext())
+        MaterialAlertDialogBuilder(requireContext())
             .setTitle(R.string.backup_export_format_title)
             .setItems(
                 arrayOf(
@@ -610,7 +610,7 @@ class SettingsFragment : Fragment() {
     /** 기기 전용 내보내기 — 기기 종속 암호화 고지 후 원본 .enc를 그대로 복사 */
     private fun confirmDeviceOnlyExport(latestBackup: File) {
         if (!isAdded) return
-        AlertDialog.Builder(requireContext())
+        MaterialAlertDialogBuilder(requireContext())
             .setTitle(R.string.backup_device_bound_title)
             .setMessage(R.string.backup_device_bound_message)
             .setPositiveButton(R.string.backup_export_continue) { _, _ ->
@@ -650,7 +650,7 @@ class SettingsFragment : Fragment() {
         container.addView(editPass)
         container.addView(editConfirm)
 
-        val dialog = AlertDialog.Builder(ctx)
+        val dialog = MaterialAlertDialogBuilder(ctx)
             .setTitle(R.string.backup_passphrase_set_title)
             .setMessage(R.string.backup_passphrase_message)
             .setView(container)
@@ -700,7 +700,7 @@ class SettingsFragment : Fragment() {
         }
         container.addView(editPass)
 
-        val dialog = AlertDialog.Builder(ctx)
+        val dialog = MaterialAlertDialogBuilder(ctx)
             .setTitle(R.string.backup_passphrase_enter_title)
             .setView(container)
             .setPositiveButton(R.string.confirm, null)
@@ -756,7 +756,7 @@ class SettingsFragment : Fragment() {
                     Toast.makeText(ctx, getString(R.string.backup_export_failed, e.message), Toast.LENGTH_LONG).show()
                 }
             } finally {
-                passphrase.fill(' ')
+                passphrase.fill('\u0000')
             }
         }
     }
@@ -781,7 +781,7 @@ class SettingsFragment : Fragment() {
             "$date  (${sizeMb}MB)"
         }.toTypedArray()
 
-        AlertDialog.Builder(requireContext())
+        MaterialAlertDialogBuilder(requireContext())
             .setTitle(R.string.backup_restore_select)
             .setItems(labels) { _, which ->
                 confirmAndRestore(backupFiles[which])
@@ -795,7 +795,7 @@ class SettingsFragment : Fragment() {
         val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
         val label = dateFormat.format(Date(encFile.lastModified()))
 
-        AlertDialog.Builder(requireContext())
+        MaterialAlertDialogBuilder(requireContext())
             .setTitle(R.string.backup_restore_confirm_title)
             .setMessage(getString(R.string.backup_restore_confirm_message, label))
             .setPositiveButton(R.string.confirm) { _, _ ->

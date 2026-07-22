@@ -1,6 +1,7 @@
 package com.novelcharacter.app.ui.character
 
 import android.content.Context
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.view.LayoutInflater
 import android.view.View
 import android.widget.ArrayAdapter
@@ -94,7 +95,7 @@ class StateChangeHelper(
         val title = if (existingChange != null) getString(R.string.edit_state_change)
         else getString(R.string.add_state_change)
 
-        AlertDialog.Builder(context)
+        MaterialAlertDialogBuilder(context)
             .setTitle(title)
             .setView(dialogBinding.root)
             .setPositiveButton(getString(R.string.save)) { _, _ ->
@@ -157,7 +158,7 @@ class StateChangeHelper(
 
     private fun showEditDeleteDialog(change: CharacterStateChange) {
         val context = try { contextGetter() } catch (_: Exception) { return }
-        AlertDialog.Builder(context)
+        MaterialAlertDialogBuilder(context)
             .setTitle(getString(R.string.edit_or_delete))
             .setMessage("${change.fieldKey} → ${change.newValue}")
             .setPositiveButton(R.string.edit) { _, _ ->

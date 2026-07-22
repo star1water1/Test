@@ -1,6 +1,7 @@
 package com.novelcharacter.app.ui.image
 
 import android.os.Bundle
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -393,7 +394,7 @@ class ImageManagerFragment : Fragment() {
 
     private fun confirmSingleUnassign(item: ImageManagerViewModel.ManagedImage) {
         val ctx = context ?: return
-        AlertDialog.Builder(ctx)
+        MaterialAlertDialogBuilder(ctx)
             .setTitle(R.string.image_unassign_action)
             .setMessage(getString(R.string.image_unassign_confirm, 1))
             .setPositiveButton(R.string.confirm) { _, _ -> runUnassign(listOf(item.path), null) }
@@ -405,7 +406,7 @@ class ImageManagerFragment : Fragment() {
         val ctx = context ?: return
         val labels = item.owners.map { "${typeLabel(it.type)} · ${it.name}" }.toTypedArray()
         val checked = BooleanArray(item.owners.size) { true }
-        AlertDialog.Builder(ctx)
+        MaterialAlertDialogBuilder(ctx)
             .setTitle(R.string.image_unassign_pick_owners)
             .setMultiChoiceItems(labels, checked) { _, which, isChecked -> checked[which] = isChecked }
             .setPositiveButton(R.string.confirm) { _, _ ->
@@ -433,7 +434,7 @@ class ImageManagerFragment : Fragment() {
         } else {
             getString(R.string.image_manager_delete_orphan_confirm)
         }
-        AlertDialog.Builder(ctx)
+        MaterialAlertDialogBuilder(ctx)
             .setTitle(R.string.image_manager_delete_title)
             .setMessage(msg)
             .setPositiveButton(R.string.delete) { _, _ ->
@@ -462,7 +463,7 @@ class ImageManagerFragment : Fragment() {
             reportAndNotify(OpResult.failure(OpResult.CAT_MAINTENANCE, getString(R.string.image_manager_select_none)))
             return
         }
-        AlertDialog.Builder(ctx)
+        MaterialAlertDialogBuilder(ctx)
             .setTitle(R.string.image_manager_delete_title)
             .setMessage(getString(R.string.image_manager_delete_selected_confirm, items.size))
             .setPositiveButton(R.string.delete) { _, _ ->
@@ -516,7 +517,7 @@ class ImageManagerFragment : Fragment() {
                 append(getString(R.string.image_manager_recompress_none))
                 if (skipSummary != null) append("\n").append(skipSummary)
             }
-            AlertDialog.Builder(ctx)
+            MaterialAlertDialogBuilder(ctx)
                 .setTitle(R.string.image_manager_recompress_confirm_title)
                 .setMessage(msg)
                 .setPositiveButton(R.string.confirm) { _, _ -> viewModel.discardRecompress() }
@@ -535,7 +536,7 @@ class ImageManagerFragment : Fragment() {
             ))
             if (skipSummary != null) append("\n\n").append(skipSummary)
         }
-        AlertDialog.Builder(ctx)
+        MaterialAlertDialogBuilder(ctx)
             .setTitle(R.string.image_manager_recompress_confirm_title)
             .setMessage(msg)
             .setPositiveButton(R.string.image_manager_recompress) { _, _ ->
@@ -636,7 +637,7 @@ class ImageManagerFragment : Fragment() {
             if (expansion.addedByLink.isNotEmpty()) {
                 val ctx = context
                 if (ctx != null) {
-                    AlertDialog.Builder(ctx)
+                    MaterialAlertDialogBuilder(ctx)
                         .setTitle(R.string.image_assign_action)
                         .setMessage(getString(
                             R.string.image_assign_link_confirm,
@@ -671,7 +672,7 @@ class ImageManagerFragment : Fragment() {
 
     private fun confirmBatchUnassign(paths: List<String>) {
         val ctx = context ?: return
-        AlertDialog.Builder(ctx)
+        MaterialAlertDialogBuilder(ctx)
             .setTitle(R.string.image_unassign_action)
             .setMessage(getString(R.string.image_unassign_confirm, paths.size))
             .setPositiveButton(R.string.confirm) { _, _ -> runUnassign(paths, null) }
@@ -706,7 +707,7 @@ class ImageManagerFragment : Fragment() {
         when (outcome) {
             is ImageManagerViewModel.LinkOutcome.NeedsMerge -> {
                 val ctx = context ?: return
-                AlertDialog.Builder(ctx)
+                MaterialAlertDialogBuilder(ctx)
                     .setTitle(R.string.image_link_action)
                     .setMessage(getString(R.string.image_link_merge_confirm, outcome.groups))
                     .setPositiveButton(R.string.confirm) { _, _ ->
@@ -764,7 +765,7 @@ class ImageManagerFragment : Fragment() {
 
     private fun confirmCleanOrphans() {
         val ctx = context ?: return
-        AlertDialog.Builder(ctx)
+        MaterialAlertDialogBuilder(ctx)
             .setTitle(R.string.image_manager_clean_orphans)
             .setMessage(R.string.storage_clean_orphan_confirm)
             .setPositiveButton(R.string.storage_clean_run) { _, _ ->

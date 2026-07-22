@@ -1,6 +1,7 @@
 package com.novelcharacter.app.util
 
 import android.content.Context
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.view.View
@@ -140,7 +141,7 @@ object ColorPickerHelper {
             isFillViewport = true
         }
 
-        AlertDialog.Builder(ctx)
+        MaterialAlertDialogBuilder(ctx)
             .setTitle(R.string.color_picker_full_spectrum)
             .setView(scrollView)
             .setPositiveButton(R.string.confirm) { _, _ ->

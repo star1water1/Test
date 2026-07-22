@@ -43,7 +43,7 @@
             <!-- 정렬(비파괴): 보는 순서만 바꾼다. 캐릭터 목록 순서(displayOrder)엔 영향 없음. -->
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnSheetSort"
-                style="@style/Widget.Material3.Button.TextButton"
+                style="@style/Widget.App.Button.Outlined"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:minWidth="0dp"

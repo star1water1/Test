@@ -1,6 +1,7 @@
 package com.novelcharacter.app.ui.graph
 
 import android.os.Bundle
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -899,7 +900,7 @@ class RelationshipGraphFragment : Fragment() {
         val options = mutableListOf(getString(R.string.graph_context_view_detail))
         relLabels.forEach { options.add(it) }
 
-        androidx.appcompat.app.AlertDialog.Builder(ctx)
+        MaterialAlertDialogBuilder(ctx)
             .setTitle(charName)
             .setItems(options.toTypedArray()) { _, which ->
                 if (which == 0) {

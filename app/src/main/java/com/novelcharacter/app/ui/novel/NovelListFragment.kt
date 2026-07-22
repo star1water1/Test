@@ -1,6 +1,7 @@
 package com.novelcharacter.app.ui.novel
 
 import android.graphics.Color
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
@@ -101,7 +102,7 @@ class NovelListFragment : Fragment() {
         observeData()
 
         if (universeId != -1L) {
-            binding.toolbar.setNavigationIcon(androidx.appcompat.R.drawable.abc_ic_ab_back_material)
+            binding.toolbar.setNavigationIcon(R.drawable.ic_arrow_back)
             binding.toolbar.setNavigationOnClickListener { findNavController().popBackStack() }
         }
     }
@@ -118,7 +119,7 @@ class NovelListFragment : Fragment() {
                 showNovelEditDialog(novel)
             },
             onDeleteClick = { novel ->
-                androidx.appcompat.app.AlertDialog.Builder(requireContext())
+                MaterialAlertDialogBuilder(requireContext())
                     .setMessage(R.string.confirm_delete)
                     .setPositiveButton(R.string.yes) { _, _ ->
                         viewModel.deleteNovel(novel)
@@ -349,7 +350,7 @@ class NovelListFragment : Fragment() {
                     return@launch
                 }
                 val charNames = chars.map { it.name }.toTypedArray()
-                AlertDialog.Builder(ctx)
+                MaterialAlertDialogBuilder(ctx)
                     .setTitle(R.string.image_select_character)
                     .setItems(charNames) { _, which ->
                         selectedImageCharId = chars[which].id
@@ -375,7 +376,7 @@ class NovelListFragment : Fragment() {
             override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
         }
 
-        AlertDialog.Builder(ctx)
+        MaterialAlertDialogBuilder(ctx)
             .setTitle(if (novel == null) R.string.add_novel else R.string.edit_novel)
             .setView(dialogBinding.root)
             .setPositiveButton(R.string.save) { _, _ ->
@@ -456,7 +457,7 @@ class NovelListFragment : Fragment() {
                 imageView.setOnLongClickListener {
                     val pos = holder.bindingAdapterPosition
                     if (pos >= 0 && pos < pendingImagePaths.size) {
-                        AlertDialog.Builder(requireContext())
+                        MaterialAlertDialogBuilder(requireContext())
                             .setTitle(R.string.delete)
                             .setMessage(R.string.image_delete_confirm)
                             .setPositiveButton(R.string.delete) { _, _ ->
@@ -521,7 +522,7 @@ class NovelListFragment : Fragment() {
         val labels = com.novelcharacter.app.excel.ExportOptions.LABELS
         val checked = com.novelcharacter.app.excel.ExportOptions.ALL.toBooleanArray()
 
-        androidx.appcompat.app.AlertDialog.Builder(requireContext())
+        MaterialAlertDialogBuilder(requireContext())
             .setTitle(R.string.export_options_title)
             .setMultiChoiceItems(labels, checked) { _, which, isChecked ->
                 checked[which] = isChecked
@@ -536,7 +537,7 @@ class NovelListFragment : Fragment() {
 
     private fun showExportModeDialog(options: com.novelcharacter.app.excel.ExportOptions) {
         if (!isAdded) return
-        androidx.appcompat.app.AlertDialog.Builder(requireContext())
+        MaterialAlertDialogBuilder(requireContext())
             .setTitle(R.string.export_mode_title)
             .setItems(arrayOf(getString(R.string.export_mode_share), getString(R.string.export_mode_save))) { _, which ->
                 exporter?.cancel()

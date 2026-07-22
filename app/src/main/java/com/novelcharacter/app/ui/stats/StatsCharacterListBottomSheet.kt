@@ -1,6 +1,7 @@
 package com.novelcharacter.app.ui.stats
 
 import android.net.Uri
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.os.Bundle
 import android.view.Gravity
 import android.view.LayoutInflater
@@ -77,7 +78,7 @@ class StatsCharacterListBottomSheet : BottomSheetDialogFragment() {
             if (fieldDefs.isEmpty()) return@setOnClickListener
 
             val names = fieldDefs.map { it.name }.toTypedArray()
-            AlertDialog.Builder(requireContext())
+            MaterialAlertDialogBuilder(requireContext())
                 .setTitle(R.string.stats_subgroup_select_field)
                 .setItems(names) { _, which ->
                     val targetField = fieldDefs[which]

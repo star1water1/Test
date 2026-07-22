@@ -100,7 +100,7 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnRandomSettings"
-                        style="@style/Widget.Material3.Button.TextButton"
+                        style="@style/Widget.App.Button.Tonal"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:minWidth="0dp"

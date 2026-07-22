@@ -1,6 +1,7 @@
 package com.novelcharacter.app.ui.character
 
 import android.content.Intent
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.graphics.Bitmap
 import android.os.Bundle
 import android.print.PrintAttributes
@@ -816,7 +817,7 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
         )
         val themeValues = CardTheme.entries.toTypedArray()
 
-        AlertDialog.Builder(requireContext())
+        MaterialAlertDialogBuilder(requireContext())
             .setTitle(R.string.share_card_theme)
             .setItems(themes) { _, which ->
                 val selectedTheme = themeValues[which]

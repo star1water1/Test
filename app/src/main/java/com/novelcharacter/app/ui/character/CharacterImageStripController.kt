@@ -1,6 +1,7 @@
 package com.novelcharacter.app.ui.character
 
 import android.net.Uri
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.os.Bundle
 import android.widget.ImageView
 import android.widget.Toast
@@ -175,7 +176,7 @@ class CharacterImageStripController(
                     imageView.setOnLongClickListener {
                         val adapterPosition = holder.bindingAdapterPosition
                         if (adapterPosition >= 0 && adapterPosition < imagePaths.size) {
-                            AlertDialog.Builder(fragment.requireContext())
+                            MaterialAlertDialogBuilder(fragment.requireContext())
                                 .setTitle(R.string.delete)
                                 .setMessage(R.string.image_delete_confirm)
                                 .setPositiveButton(R.string.delete) { _, _ ->

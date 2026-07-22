@@ -1,6 +1,7 @@
 package com.novelcharacter.app.ui.character
 
 import android.content.Context
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.os.Bundle
 import android.text.InputType
 import android.view.View
@@ -107,7 +108,7 @@ class DynamicFieldFormBuilder(
         val ctx = contextGetter() ?: return
         val seasons = com.novelcharacter.app.util.FieldRandomGenerator.Season.entries
         val labels = seasons.map { it.label }.toTypedArray()
-        androidx.appcompat.app.AlertDialog.Builder(ctx)
+        MaterialAlertDialogBuilder(ctx)
             .setTitle(R.string.random_birthday_season)
             .setItems(labels) { _, which ->
                 val date = com.novelcharacter.app.util.FieldRandomGenerator.generateBirthday(seasons[which])

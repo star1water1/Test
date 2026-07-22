@@ -1,6 +1,7 @@
 package com.novelcharacter.app.ui.character
 
 import android.os.Bundle
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.LayoutInflater
@@ -103,7 +104,7 @@ class CharacterListFragment : Fragment() {
         }
 
         if (novelId != -1L) {
-            binding.toolbar.setNavigationIcon(androidx.appcompat.R.drawable.abc_ic_ab_back_material)
+            binding.toolbar.setNavigationIcon(R.drawable.ic_arrow_back)
             binding.toolbar.setNavigationOnClickListener { findNavController().popBackStack() }
         }
     }
@@ -144,8 +145,8 @@ class CharacterListFragment : Fragment() {
                             getString(R.string.delete_impact_header) + "\n" + details.joinToString("\n") +
                             "\n\n" + getString(R.string.delete_trash_notice)
                     }
-                    androidx.appcompat.app.AlertDialog.Builder(requireContext())
-                        .setIcon(android.R.drawable.ic_dialog_alert)
+                    MaterialAlertDialogBuilder(requireContext())
+                        .setIcon(R.drawable.ic_warning)
                         .setTitle(R.string.delete_warning_title)
                         .setMessage(message)
                         .setPositiveButton(R.string.yes) { _, _ ->
@@ -686,7 +687,7 @@ class CharacterListFragment : Fragment() {
         val isManual = sort.kind == CharacterListPreset.SORT_MANUAL
         binding.btnSortDir.visibility = if (isManual) View.INVISIBLE else View.VISIBLE
         binding.btnSortDir.setImageResource(
-            if (sort.ascending) android.R.drawable.arrow_up_float else android.R.drawable.arrow_down_float
+            if (sort.ascending) R.drawable.ic_arrow_up else R.drawable.ic_arrow_down
         )
         val staticLabel = when (sort.kind) {
             CharacterListPreset.SORT_NAME -> getString(R.string.sort_label_name)
@@ -763,7 +764,7 @@ class CharacterListFragment : Fragment() {
         val input = android.widget.EditText(ctx).apply { hint = getString(R.string.character_preset_name_hint) }
         val pad = (20 * resources.displayMetrics.density).toInt()
         val container = android.widget.FrameLayout(ctx).apply { setPadding(pad, pad / 2, pad, 0); addView(input) }
-        androidx.appcompat.app.AlertDialog.Builder(ctx)
+        MaterialAlertDialogBuilder(ctx)
             .setTitle(R.string.character_preset_save)
             .setView(container)
             .setPositiveButton(R.string.save) { _, _ ->
@@ -782,14 +783,14 @@ class CharacterListFragment : Fragment() {
             getString(R.string.character_preset_save),   // 현재 상태로 갱신
             getString(R.string.delete)
         )
-        androidx.appcompat.app.AlertDialog.Builder(ctx)
+        MaterialAlertDialogBuilder(ctx)
             .setTitle(preset.name)
             .setItems(options) { _, which ->
                 when (which) {
                     0 -> viewModel.applyPreset(preset)
                     1 -> showRenamePresetDialog(preset)
                     2 -> viewModel.overwritePreset(preset)
-                    3 -> androidx.appcompat.app.AlertDialog.Builder(ctx)
+                    3 -> MaterialAlertDialogBuilder(ctx)
                         .setTitle(R.string.delete)
                         .setMessage(preset.name)
                         .setPositiveButton(R.string.delete) { _, _ -> viewModel.deletePreset(preset.id, preset.name) }
@@ -808,7 +809,7 @@ class CharacterListFragment : Fragment() {
         }
         val pad = (20 * resources.displayMetrics.density).toInt()
         val container = android.widget.FrameLayout(ctx).apply { setPadding(pad, pad / 2, pad, 0); addView(input) }
-        androidx.appcompat.app.AlertDialog.Builder(ctx)
+        MaterialAlertDialogBuilder(ctx)
             .setTitle(R.string.preset_edit_name)
             .setView(container)
             .setPositiveButton(R.string.save) { _, _ ->

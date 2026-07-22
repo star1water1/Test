@@ -55,7 +55,7 @@
     <!-- 하위 그룹 분석 버튼 -->
     <com.google.android.material.button.MaterialButton
         android:id="@+id/btnSubgroupAnalysis"
-        style="@style/Widget.Material3.Button.TextButton"
+        style="@style/Widget.App.Button.Tonal"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginStart="16dp"

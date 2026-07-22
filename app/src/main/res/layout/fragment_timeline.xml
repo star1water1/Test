@@ -10,12 +10,10 @@
         android:id="@+id/toolbar"
         android:layout_width="0dp"
         android:layout_height="?attr/actionBarSize"
-        android:background="@color/primary"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent"
-        app:title="@string/tab_timeline"
-        app:titleTextColor="@color/on_primary" />
+        app:title="@string/tab_timeline" />
 
     <!-- Zoom controls -->
     <LinearLayout
@@ -107,7 +105,7 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnPrevEvent"
-            style="@style/Widget.Material3.Button.TextButton"
+            style="@style/Widget.App.Button.Outlined"
             android:layout_width="wrap_content"
             android:layout_height="36dp"
             android:minWidth="0dp"
@@ -147,7 +145,7 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnNextEvent"
-            style="@style/Widget.Material3.Button.TextButton"
+            style="@style/Widget.App.Button.Outlined"
             android:layout_width="wrap_content"
             android:layout_height="36dp"
             android:minWidth="0dp"

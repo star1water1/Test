@@ -1,6 +1,7 @@
 package com.novelcharacter.app.ui.stats
 
 import android.graphics.Color
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.core.graphics.ColorUtils
 import android.os.Bundle
 import android.view.LayoutInflater
@@ -144,8 +145,8 @@ class StatsMainFragment : Fragment() {
         binding.rankingSortToggle.setOnClickListener {
             currentAscending = !currentAscending
             binding.rankingSortToggle.setImageResource(
-                if (currentAscending) android.R.drawable.arrow_up_float
-                else android.R.drawable.arrow_down_float
+                if (currentAscending) R.drawable.ic_arrow_up
+                else R.drawable.ic_arrow_down
             )
             if (selectedFieldIndex >= 0) executeRanking()
         }
@@ -526,7 +527,7 @@ class StatsMainFragment : Fragment() {
         val labels = allTypes.map { it.label }
         val checked = allTypes.map { it in enabledSet }.toBooleanArray()
 
-        android.app.AlertDialog.Builder(ctx)
+        MaterialAlertDialogBuilder(ctx)
             .setTitle(getString(R.string.stats_pattern_settings))
             .setMultiChoiceItems(labels.toTypedArray(), checked) { _, which, isChecked ->
                 if (isChecked) enabledSet.add(allTypes[which])

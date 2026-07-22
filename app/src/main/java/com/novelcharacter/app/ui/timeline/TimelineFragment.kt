@@ -1,6 +1,7 @@
 package com.novelcharacter.app.ui.timeline
 
 import android.os.Bundle
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.LayoutInflater
@@ -91,7 +92,7 @@ class TimelineFragment : Fragment(), EventEditDialogFragment.Host {
                     getString(R.string.set_as_standard_year)
                 )
                 val title = "${getString(R.string.event_year_format, event.year)} — ${event.description.take(50)}"
-                AlertDialog.Builder(requireContext())
+                MaterialAlertDialogBuilder(requireContext())
                     .setTitle(title)
                     .setItems(items.toTypedArray()) { _, which ->
                         when (which) {
@@ -544,7 +545,7 @@ class TimelineFragment : Fragment(), EventEditDialogFragment.Host {
             } else {
                 // 복수 작품 → 선택 다이얼로그
                 val names = novels.map { it.title }.toTypedArray()
-                AlertDialog.Builder(requireContext())
+                MaterialAlertDialogBuilder(requireContext())
                     .setTitle(R.string.standard_year_select_novel)
                     .setItems(names) { _, which ->
                         confirmSetStandardYear(novels[which], event.year)
@@ -559,7 +560,7 @@ class TimelineFragment : Fragment(), EventEditDialogFragment.Host {
             Toast.makeText(requireContext(), getString(R.string.standard_year_already_set, year), Toast.LENGTH_SHORT).show()
             return
         }
-        AlertDialog.Builder(requireContext())
+        MaterialAlertDialogBuilder(requireContext())
             .setTitle(R.string.set_as_standard_year)
             .setMessage(getString(R.string.standard_year_confirm, novel.title, year))
             .setPositiveButton(android.R.string.ok) { _, _ ->

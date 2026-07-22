@@ -1,6 +1,7 @@
 package com.novelcharacter.app.ui.universe
 
 import android.graphics.Color
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
@@ -120,7 +121,7 @@ class UniverseListFragment : Fragment() {
                             R.string.delete_impact_universe,
                             impact.novels, impact.fieldDefinitions, impact.fieldValues
                         )
-                    AlertDialog.Builder(requireContext())
+                    MaterialAlertDialogBuilder(requireContext())
                         .setMessage(message)
                         .setPositiveButton(R.string.yes) { _, _ ->
                             viewModel.deleteUniverse(universe)
@@ -290,14 +291,14 @@ class UniverseListFragment : Fragment() {
             getString(R.string.preset_edit_fields),
             getString(R.string.delete)
         )
-        AlertDialog.Builder(requireContext())
+        MaterialAlertDialogBuilder(requireContext())
             .setTitle(preset.name)
             .setItems(options) { _, which ->
                 when (which) {
                     0 -> showEditPresetNameDialog(preset)
                     1 -> showPresetFieldEditDialog(preset)
                     2 -> {
-                        AlertDialog.Builder(requireContext())
+                        MaterialAlertDialogBuilder(requireContext())
                             .setTitle(R.string.delete_warning_title)
                             .setMessage(getString(R.string.confirm_delete_preset, preset.name))
                             .setPositiveButton(R.string.yes) { _, _ ->
@@ -330,7 +331,7 @@ class UniverseListFragment : Fragment() {
         layout.addView(nameEdit)
         layout.addView(descEdit)
 
-        AlertDialog.Builder(ctx)
+        MaterialAlertDialogBuilder(ctx)
             .setTitle(R.string.preset_edit_name)
             .setView(layout)
             .setPositiveButton(R.string.save) { _, _ ->
@@ -382,7 +383,7 @@ class UniverseListFragment : Fragment() {
                 if (index > 0) {
                     val btnUp = android.widget.ImageButton(ctx).apply {
                         layoutParams = LinearLayout.LayoutParams((32 * density).toInt(), (32 * density).toInt())
-                        setImageResource(android.R.drawable.arrow_up_float)
+                        setImageResource(R.drawable.ic_arrow_up)
                         setBackgroundResource(android.R.color.transparent)
                         contentDescription = getString(R.string.move_up)
                         setOnClickListener {
@@ -403,7 +404,7 @@ class UniverseListFragment : Fragment() {
                 if (index < fields.size - 1) {
                     val btnDown = android.widget.ImageButton(ctx).apply {
                         layoutParams = LinearLayout.LayoutParams((32 * density).toInt(), (32 * density).toInt())
-                        setImageResource(android.R.drawable.arrow_down_float)
+                        setImageResource(R.drawable.ic_arrow_down)
                         setBackgroundResource(android.R.color.transparent)
                         contentDescription = getString(R.string.move_down)
                         setOnClickListener {
@@ -444,7 +445,7 @@ class UniverseListFragment : Fragment() {
                 // Edit button
                 val btnEdit = android.widget.ImageButton(ctx).apply {
                     layoutParams = LinearLayout.LayoutParams((36 * density).toInt(), (36 * density).toInt())
-                    setImageResource(android.R.drawable.ic_menu_edit)
+                    setImageResource(R.drawable.ic_edit)
                     setBackgroundResource(android.R.color.transparent)
                     contentDescription = getString(R.string.edit)
                     setOnClickListener {
@@ -467,11 +468,11 @@ class UniverseListFragment : Fragment() {
                 // Delete button
                 val btnDelete = android.widget.ImageButton(ctx).apply {
                     layoutParams = LinearLayout.LayoutParams((36 * density).toInt(), (36 * density).toInt())
-                    setImageResource(android.R.drawable.ic_delete)
+                    setImageResource(R.drawable.ic_delete)
                     setBackgroundResource(android.R.color.transparent)
                     contentDescription = getString(R.string.delete)
                     setOnClickListener {
-                        AlertDialog.Builder(ctx)
+                        MaterialAlertDialogBuilder(ctx)
                             .setTitle(R.string.delete_warning_title)
                             .setMessage(getString(R.string.preset_field_delete_confirm, field.name))
                             .setPositiveButton(R.string.yes) { _, _ ->
@@ -525,7 +526,7 @@ class UniverseListFragment : Fragment() {
             isFillViewport = true
         }
 
-        AlertDialog.Builder(ctx)
+        MaterialAlertDialogBuilder(ctx)
             .setTitle(getString(R.string.preset_edit_fields) + " - " + preset.name)
             .setView(scrollView)
             .setPositiveButton(R.string.save) { _, _ ->
@@ -547,7 +548,7 @@ class UniverseListFragment : Fragment() {
             return
         }
         val names = universes.map { it.name }.toTypedArray()
-        AlertDialog.Builder(requireContext())
+        MaterialAlertDialogBuilder(requireContext())
             .setTitle(R.string.preset_select_source)
             .setItems(names) { _, which ->
                 val universe = universes[which]
@@ -575,7 +576,7 @@ class UniverseListFragment : Fragment() {
         layout.addView(nameEdit)
         layout.addView(descEdit)
 
-        AlertDialog.Builder(ctx)
+        MaterialAlertDialogBuilder(ctx)
             .setTitle(R.string.preset_save_title)
             .setView(layout)
             .setPositiveButton(R.string.save) { _, _ ->
@@ -865,7 +866,7 @@ class UniverseListFragment : Fragment() {
             val options = colorNames.toMutableList()
             options.add(getString(R.string.color_picker_full_spectrum))
 
-            AlertDialog.Builder(ctx)
+            MaterialAlertDialogBuilder(ctx)
                 .setTitle(getString(R.string.relationship_color_pick_title, typeName))
                 .setItems(options.toTypedArray()) { _, which ->
                     if (which < presetColors.size) {
@@ -1048,7 +1049,7 @@ class UniverseListFragment : Fragment() {
                     return@getCharactersWithImageForUniverse
                 }
                 val names = chars.map { it.second }.toTypedArray()
-                AlertDialog.Builder(ctx)
+                MaterialAlertDialogBuilder(ctx)
                     .setTitle(R.string.image_select_character)
                     .setItems(names) { _, which ->
                         selectedCharacterId = chars[which].first
@@ -1093,7 +1094,7 @@ class UniverseListFragment : Fragment() {
                     return@getNovelsWithImageForUniverse
                 }
                 val names = novels.map { it.second }.toTypedArray()
-                AlertDialog.Builder(ctx)
+                MaterialAlertDialogBuilder(ctx)
                     .setTitle(R.string.image_select_novel)
                     .setItems(names) { _, which ->
                         selectedNovelId = novels[which].first
@@ -1122,7 +1123,7 @@ class UniverseListFragment : Fragment() {
             isFillViewport = true
         }
 
-        AlertDialog.Builder(ctx)
+        MaterialAlertDialogBuilder(ctx)
             .setTitle(if (universe == null) R.string.add_universe else R.string.edit_universe)
             .setView(scrollView)
             .setPositiveButton(R.string.save) { _, _ ->
@@ -1201,7 +1202,7 @@ class UniverseListFragment : Fragment() {
         val labels = com.novelcharacter.app.excel.ExportOptions.LABELS
         val checked = com.novelcharacter.app.excel.ExportOptions.ALL.toBooleanArray()
 
-        androidx.appcompat.app.AlertDialog.Builder(requireContext())
+        MaterialAlertDialogBuilder(requireContext())
             .setTitle(R.string.export_options_title)
             .setMultiChoiceItems(labels, checked) { _, which, isChecked ->
                 checked[which] = isChecked
@@ -1216,7 +1217,7 @@ class UniverseListFragment : Fragment() {
 
     private fun showExportModeDialog(options: com.novelcharacter.app.excel.ExportOptions) {
         if (!isAdded) return
-        androidx.appcompat.app.AlertDialog.Builder(requireContext())
+        MaterialAlertDialogBuilder(requireContext())
             .setTitle(R.string.export_mode_title)
             .setItems(arrayOf(getString(R.string.export_mode_share), getString(R.string.export_mode_save))) { _, which ->
                 exporter?.cancel()
@@ -1271,7 +1272,7 @@ class UniverseListFragment : Fragment() {
                 imageView.setOnLongClickListener {
                     val pos = holder.bindingAdapterPosition
                     if (pos >= 0 && pos < pendingImagePaths.size) {
-                        AlertDialog.Builder(requireContext())
+                        MaterialAlertDialogBuilder(requireContext())
                             .setTitle(R.string.delete)
                             .setMessage(R.string.image_delete_confirm)
                             .setPositiveButton(R.string.delete) { _, _ ->

@@ -1,6 +1,7 @@
 package com.novelcharacter.app.ui.field
 
 import android.app.Dialog
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.os.Bundle
 import android.view.View
 import android.view.ViewGroup
@@ -126,7 +127,7 @@ class FieldEditDialog : DialogFragment() {
         setupBodyAnalysisSection(binding)
         populateFields(binding)
 
-        val dialog = AlertDialog.Builder(requireContext())
+        val dialog = MaterialAlertDialogBuilder(requireContext())
             .setTitle(if (existingField == null) R.string.add_field else R.string.edit_field)
             .setView(binding.root)
             .setPositiveButton(R.string.save, null)
@@ -456,7 +457,7 @@ class FieldEditDialog : DialogFragment() {
 
         val btnRemove = ImageButton(ctx).apply {
             layoutParams = LinearLayout.LayoutParams((36 * density).toInt(), (36 * density).toInt())
-            setImageResource(android.R.drawable.ic_delete)
+            setImageResource(R.drawable.ic_delete)
             setBackgroundResource(android.R.color.transparent)
             contentDescription = ctx.getString(R.string.delete)
             setOnClickListener {
@@ -503,7 +504,7 @@ class FieldEditDialog : DialogFragment() {
 
         val btnRemove = ImageButton(ctx).apply {
             layoutParams = LinearLayout.LayoutParams((36 * density).toInt(), (36 * density).toInt())
-            setImageResource(android.R.drawable.ic_delete)
+            setImageResource(R.drawable.ic_delete)
             setBackgroundResource(android.R.color.transparent)
             setOnClickListener {
                 container.removeView(row)
@@ -537,7 +538,7 @@ class FieldEditDialog : DialogFragment() {
 
         val btnRemove = ImageButton(ctx).apply {
             layoutParams = LinearLayout.LayoutParams((36 * density).toInt(), (36 * density).toInt())
-            setImageResource(android.R.drawable.ic_delete)
+            setImageResource(R.drawable.ic_delete)
             setBackgroundResource(android.R.color.transparent)
             setOnClickListener {
                 container.removeView(row)
@@ -583,7 +584,7 @@ class FieldEditDialog : DialogFragment() {
 
         val btnRemove = ImageButton(ctx).apply {
             layoutParams = LinearLayout.LayoutParams((36 * density).toInt(), (36 * density).toInt())
-            setImageResource(android.R.drawable.ic_delete)
+            setImageResource(R.drawable.ic_delete)
             setBackgroundResource(android.R.color.transparent)
             setOnClickListener {
                 container.removeView(row)
@@ -635,7 +636,7 @@ class FieldEditDialog : DialogFragment() {
 
         val btnRemove = ImageButton(ctx).apply {
             layoutParams = LinearLayout.LayoutParams((36 * density).toInt(), (36 * density).toInt())
-            setImageResource(android.R.drawable.ic_delete)
+            setImageResource(R.drawable.ic_delete)
             setBackgroundResource(android.R.color.transparent)
             setOnClickListener {
                 container.removeView(row)
@@ -865,7 +866,7 @@ class FieldEditDialog : DialogFragment() {
 
         val btnRemove = ImageButton(ctx).apply {
             layoutParams = LinearLayout.LayoutParams((36 * density).toInt(), (36 * density).toInt())
-            setImageResource(android.R.drawable.ic_delete)
+            setImageResource(R.drawable.ic_delete)
             setBackgroundResource(android.R.color.transparent)
             setOnClickListener {
                 container.removeView(row)
@@ -1204,7 +1205,7 @@ class FieldEditDialog : DialogFragment() {
         if (selectedType == FieldType.CALCULATED) {
             val problems = validateFormula(binding.editFormula.text.toString().trim(), key)
             if (problems.isNotEmpty()) {
-                AlertDialog.Builder(requireContext())
+                MaterialAlertDialogBuilder(requireContext())
                     .setTitle(R.string.formula_warn_title)
                     .setMessage(getString(R.string.formula_warn_message, problems.joinToString("\n· ", prefix = "· ")))
                     .setPositiveButton(R.string.formula_warn_save_anyway) { _, _ ->
@@ -1284,7 +1285,7 @@ class FieldEditDialog : DialogFragment() {
                 }
 
                 val ctx = context ?: return@launch
-                AlertDialog.Builder(ctx)
+                MaterialAlertDialogBuilder(ctx)
                     .setTitle(getString(R.string.field_type_change_title))
                     .setMessage(getString(R.string.field_type_change_message,
                         oldType, newType, nonEmptyValues.size, compatible, incompatible))

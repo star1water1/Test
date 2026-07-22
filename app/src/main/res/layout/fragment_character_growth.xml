@@ -10,13 +10,11 @@
         android:id="@+id/toolbar"
         android:layout_width="0dp"
         android:layout_height="?attr/actionBarSize"
-        android:background="@color/primary"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent"
         app:navigationIcon="?attr/homeAsUpIndicator"
-        app:title="@string/growth_chart"
-        app:titleTextColor="@color/on_primary" />
+        app:title="@string/growth_chart" />
 
     <!-- Field selection chips -->
     <HorizontalScrollView

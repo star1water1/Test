@@ -1,6 +1,7 @@
 package com.novelcharacter.app.ui.growth
 
 import android.graphics.Color
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -189,7 +190,7 @@ class CharacterGrowthFragment : Fragment() {
                 val ctx = context ?: return@launch
 
                 val names = allChars.map { it.name }.toTypedArray()
-                androidx.appcompat.app.AlertDialog.Builder(ctx)
+                MaterialAlertDialogBuilder(ctx)
                     .setTitle(R.string.growth_add_compare)
                     .setItems(names) { _, which ->
                         compareCharacterIds.add(allChars[which].id)

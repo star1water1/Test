@@ -1,6 +1,7 @@
 package com.novelcharacter.app.ui.assistant
 
 import android.graphics.Color
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -163,7 +164,7 @@ class AssistantFragment : Fragment() {
         val categories = InsightCategory.values()
         val labels = categories.map { getString(categoryLabelRes(it)) }.toTypedArray()
         val checked = categories.map { viewModel.isCategoryEnabled(it) }.toBooleanArray()
-        AlertDialog.Builder(requireContext())
+        MaterialAlertDialogBuilder(requireContext())
             .setTitle(R.string.assistant_categories)
             .setMultiChoiceItems(labels, checked) { _, which, isChecked ->
                 viewModel.setCategoryEnabled(categories[which], isChecked)
@@ -198,7 +199,7 @@ class AssistantFragment : Fragment() {
             setPadding(pad, pad / 2, pad, 0)
             addView(minLabel); addView(minInput); addView(maxLabel); addView(maxInput)
         }
-        AlertDialog.Builder(ctx)
+        MaterialAlertDialogBuilder(ctx)
             .setTitle(R.string.assistant_bias_settings)
             .setView(container)
             .setPositiveButton(R.string.save) { _, _ ->
@@ -218,7 +219,7 @@ class AssistantFragment : Fragment() {
         }
         val ids = titles.keys.toList()
         val labels = ids.map { titles[it] ?: "" }.toTypedArray<CharSequence>()
-        AlertDialog.Builder(requireContext())
+        MaterialAlertDialogBuilder(requireContext())
             .setTitle(R.string.assistant_restore_hidden)
             .setItems(labels) { _, which -> viewModel.restore(ids[which]) }
             .setNegativeButton(R.string.cancel, null)

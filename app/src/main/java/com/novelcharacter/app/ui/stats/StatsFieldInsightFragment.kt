@@ -1,6 +1,7 @@
 package com.novelcharacter.app.ui.stats
 
 import android.graphics.Color
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.graphics.Typeface
 import android.os.Bundle
 import android.view.Gravity
@@ -605,7 +606,7 @@ class StatsFieldInsightFragment : Fragment() {
         filterAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         spinnerFilter.adapter = filterAdapter
 
-        AlertDialog.Builder(requireContext())
+        MaterialAlertDialogBuilder(requireContext())
             .setTitle(R.string.stats_cross_analysis)
             .setView(dialogView)
             .setPositiveButton(R.string.stats_cross_run) { _, _ ->
@@ -825,7 +826,7 @@ class StatsFieldInsightFragment : Fragment() {
         }
         container.addView(spinnerLimit)
 
-        AlertDialog.Builder(ctx)
+        MaterialAlertDialogBuilder(ctx)
             .setTitle(R.string.stats_inline_config_title)
             .setView(container)
             .setPositiveButton(R.string.stats_inline_save) { _, _ ->

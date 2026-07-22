@@ -1,6 +1,7 @@
 package com.novelcharacter.app.ui.trash
 
 import android.os.Bundle
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -73,7 +74,7 @@ class TrashFragment : Fragment() {
     }
 
     private fun confirmRestore(snapshot: TrashSnapshot) {
-        AlertDialog.Builder(requireContext())
+        MaterialAlertDialogBuilder(requireContext())
             .setTitle(R.string.trash_restore)
             .setMessage(getString(R.string.trash_restore_confirm, snapshot.entityName))
             .setPositiveButton(R.string.confirm) { _, _ -> restore(snapshot) }
@@ -108,7 +109,7 @@ class TrashFragment : Fragment() {
                     if (result.skippedRelationships > 0) details.add(getString(R.string.trash_skip_relationships, result.skippedRelationships))
                     if (result.skippedMemberships > 0) details.add(getString(R.string.trash_skip_memberships, result.skippedMemberships))
                     if (result.skippedEvents > 0) details.add(getString(R.string.trash_skip_events, result.skippedEvents))
-                    AlertDialog.Builder(requireContext())
+                    MaterialAlertDialogBuilder(requireContext())
                         .setTitle(R.string.trash_restore_partial_title)
                         .setMessage(getString(R.string.trash_restore_partial, details.joinToString("\n")))
                         .setPositiveButton(R.string.confirm, null)
@@ -125,7 +126,7 @@ class TrashFragment : Fragment() {
     }
 
     private fun confirmPurge(snapshot: TrashSnapshot) {
-        AlertDialog.Builder(requireContext())
+        MaterialAlertDialogBuilder(requireContext())
             .setTitle(R.string.trash_delete_forever)
             .setMessage(getString(R.string.trash_purge_confirm, snapshot.entityName))
             .setPositiveButton(R.string.delete) { _, _ ->
@@ -145,7 +146,7 @@ class TrashFragment : Fragment() {
     }
 
     private fun confirmEmptyTrash() {
-        AlertDialog.Builder(requireContext())
+        MaterialAlertDialogBuilder(requireContext())
             .setTitle(R.string.trash_empty_all)
             .setMessage(R.string.trash_empty_confirm)
             .setPositiveButton(R.string.delete) { _, _ ->

@@ -11,10 +11,8 @@
         android:id="@+id/toolbar"
         android:layout_width="match_parent"
         android:layout_height="?attr/actionBarSize"
-        android:background="@color/primary"
         app:navigationIcon="?attr/homeAsUpIndicator"
-        app:title="@string/global_search"
-        app:titleTextColor="@color/on_primary" />
+        app:title="@string/global_search" />
 
     <com.google.android.material.textfield.TextInputLayout
         android:layout_width="match_parent"
@@ -101,7 +99,7 @@
     <!-- Quick add filter button (shown when no filters active) -->
     <com.google.android.material.button.MaterialButton
         android:id="@+id/btnAddFilterCompact"
-        style="@style/Widget.Material3.Button.TextButton"
+        style="@style/Widget.App.Button.Tonal"
         android:layout_width="wrap_content"
         android:layout_height="32dp"
         android:layout_marginStart="8dp"

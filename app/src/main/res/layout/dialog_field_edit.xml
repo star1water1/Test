@@ -436,14 +436,14 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnAddCupMapping"
-                        style="@style/Widget.Material3.Button.TextButton"
+                        style="@style/Widget.App.Button.Tonal"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="@string/label_add_analysis" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnRestoreCupDefaults"
-                        style="@style/Widget.Material3.Button.TextButton"
+                        style="@style/Widget.App.Button.Outlined"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="@string/body_restore_defaults" />
@@ -551,7 +551,7 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnAddStructuredPart"
-                    style="@style/Widget.Material3.Button.TextButton"
+                    style="@style/Widget.App.Button.Tonal"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/label_add_part"
@@ -587,7 +587,7 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnAddAnalysis"
-                    style="@style/Widget.Material3.Button.TextButton"
+                    style="@style/Widget.App.Button.Tonal"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/label_add_analysis" />
@@ -610,7 +610,7 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnAddValueLabel"
-                    style="@style/Widget.Material3.Button.TextButton"
+                    style="@style/Widget.App.Button.Tonal"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/label_add_value_label" />
@@ -641,7 +641,7 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnAddValueCategory"
-                    style="@style/Widget.Material3.Button.TextButton"
+                    style="@style/Widget.App.Button.Tonal"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/label_add_category_mapping" />
@@ -691,7 +691,7 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnAddBinRange"
-                        style="@style/Widget.Material3.Button.TextButton"
+                        style="@style/Widget.App.Button.Tonal"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="@string/label_add_bin_range"
