@@ -73,6 +73,17 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
     // 저장 완료/명시적 폐기 후 onPause의 드래프트 재기록 차단 (B-6)
     private var suppressDraftSave = false
 
+    // 초기 적재(작품 목록·기존 캐릭터·동적 필드값) 완료 전 저장 차단 — 미적재 상태의 저장이
+    // 빈 스냅샷으로 태그·필드값·작품 배정을 지우는(무음 유실) 것을 방지.
+    // 신규 캐릭터는 지울 데이터가 없어 즉시 연다.
+    private var saveGateOpen = false
+    private var initialLoadsDone = false
+    // 마지막으로 동적 폼 구성+값 적재가 끝난 스피너 위치 — 현재 선택과 일치할 때만 게이트를 연다
+    private var lastHydratedNovelPos = -1
+    // DB 필드값 적재(loadFieldValues) 중 프로그램적 setText가 더티를 세우지 않도록
+    // (기존 캐릭터를 열기만 해도 미저장 상태가 되던 가짜 양성 차단)
+    private var suppressFieldDirty = false
+
     // 보충 모드
     private var supplementMode = false
     private var supplementIndex = 0
@@ -222,7 +233,12 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
             isAlive = { _binding != null && isAdded },
             fragmentManagerGetter = { if (isAdded) childFragmentManager else null },
             viewModel = viewModel,
-            onFieldChanged = { hasUnsavedChanges = true; updateSaveButtonState() }
+            onFieldChanged = {
+                if (!suppressFieldDirty) {
+                    hasUnsavedChanges = true
+                    updateSaveButtonState()
+                }
+            }
         )
 
         saveCoordinator = CharacterSaveCoordinator(
@@ -288,16 +304,39 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
             imageStrip.refresh()
         }
 
+        // 기존 캐릭터는 초기 적재 완료까지 저장 차단 (maybeOpenSaveGate가 다시 연다)
+        if (characterId != -1L) {
+            if (supplementMode) binding.btnSaveAndNext.isEnabled = false
+            else binding.btnSave.isEnabled = false
+        } else {
+            saveGateOpen = true
+        }
+
         viewLifecycleOwner.lifecycleScope.launch {
             loadNovels()
             if (characterId != -1L) {
                 loadExistingCharacter()
+                if (_binding == null) return@launch
+                initialLoadsDone = true
+                maybeOpenSaveGate()
             }
             // 회전 재생성(savedInstanceState 보유)이 아니면 영구 드래프트 복원 제안 (B-6)
             if (savedInstanceState == null) {
                 maybeOfferDraftRestore()
             }
         }
+    }
+
+    /**
+     * 초기 적재가 끝나고, 동적 폼이 현재 선택된 작품 기준으로 구성·적재 완료된 순간 저장을 연다.
+     * 스피너 콜백 코루틴과 초기 적재 코루틴 중 무엇이 먼저 끝나도 동작한다(양방향 래치).
+     */
+    private fun maybeOpenSaveGate() {
+        if (saveGateOpen || !initialLoadsDone) return
+        val b = _binding ?: return
+        if (lastHydratedNovelPos != b.spinnerNovel.selectedItemPosition) return
+        saveGateOpen = true
+        if (supplementMode) b.btnSaveAndNext.isEnabled = true else b.btnSave.isEnabled = true
     }
 
     private suspend fun loadNovels() {
@@ -340,9 +379,22 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
                     } else if (saved == null) {
                         val existing = existingCharacter
                         if (existing != null) {
-                            formBuilder.loadFieldValues(existing.id)
+                            // 초기 하이드레이션의 DB 값 적재는 사용자 변경이 아니다 — 워처의
+                            // 가짜 미저장(캐릭터를 열기만 해도 더티) 차단. 게이트가 열린 뒤의
+                            // 재적재(사용자 작품 변경)는 억제하지 않아 기존 더티 보호를 유지한다.
+                            // (회전/드래프트 복원 경로도 복원값이 곧 미저장 입력이므로 억제 없음)
+                            val initialHydration = !saveGateOpen
+                            if (initialHydration) suppressFieldDirty = true
+                            try {
+                                formBuilder.loadFieldValues(existing.id)
+                            } finally {
+                                if (initialHydration) suppressFieldDirty = false
+                            }
                         }
                     }
+
+                    lastHydratedNovelPos = position
+                    maybeOpenSaveGate()
                 }
             }
 

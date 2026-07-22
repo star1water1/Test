@@ -72,6 +72,8 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
     private var suppressModeChipEvents = false
     private var suppressDirtyTracking = true
     private var novelSpinnerInitialized = false
+    // 편집 폼 태그 비동기 적재 완료 여부 — 스피너 도달과 함께 하이드레이션 완료 조건
+    private var editTagsLoaded = false
     // 편집 진입 시 프로그램적으로 선택할 스피너 위치 — 초기 콜백(중간 0 포함)을 사용자 변경과 구분
     private var expectedInitialNovelPos = -1
 
@@ -210,7 +212,7 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
 
                 override fun onSavingChanged(saving: Boolean) {
                     val b = _binding ?: return
-                    b.btnSaveInline.isEnabled = !saving
+                    b.btnSaveInline.isEnabled = !saving && isEditFormHydrated()
                     b.btnReroll.isEnabled = !saving
                     b.switchEditMode.isEnabled = !saving && displayedCharacter != null
                     if (saving) {
@@ -239,6 +241,12 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
                         pendingAfterSave = null
                         after?.invoke()
                     }
+                }
+
+                override fun onSaveAborted() {
+                    // 이탈 가드가 걸어둔 예약 동작 해제 — 남겨두면 사용자가 저장을 취소하고
+                    // 계속 편집하다 나중에 저장했을 때 이전 이탈 동작(리롤·탭 전환 등)이 실행된다
+                    pendingAfterSave = null
                 }
             }
         )
@@ -584,6 +592,23 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
         hasUnsavedChanges = true
     }
 
+    private fun isEditFormHydrated(): Boolean = novelSpinnerInitialized && editTagsLoaded
+
+    /**
+     * 편집 폼 초기 적재(작품 스피너 목표 도달 + 태그 로드)가 **모두** 끝났을 때만
+     * 더티 추적과 저장 버튼을 연다 — 태그·필드값이 적재되기 전의 저장이 스냅샷의
+     * 빈 값으로 기존 데이터를 지우는(무음 유실) 것을 차단한다.
+     */
+    private fun maybeFinishEditHydration() {
+        // 하이드레이션 중 편집을 이탈했으면 무시 — exitEditMode가 억제를 복구한 상태를 유지한다
+        if (editorState != EditorState.EDIT) return
+        if (!isEditFormHydrated()) return
+        suppressDirtyTracking = false
+        if (!saveCoordinator.isSaving) {
+            _binding?.btnSaveInline?.isEnabled = true
+        }
+    }
+
     override fun isBlocking(): Boolean = editorState == EditorState.EDIT && hasUnsavedChanges
 
     override fun requestLeave(onProceed: () -> Unit) {
@@ -671,8 +696,12 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
         suppressDraftSave = false
         suppressDirtyTracking = true
         novelSpinnerInitialized = false
+        // 회전 복원은 태그가 View 상태로 자동 복원되므로 즉시 완료, 새 진입은 비동기 로드 대기
+        editTagsLoaded = restoreState != null
         hasUnsavedChanges = restoreState?.getBoolean("randomDirty", false) ?: false
         updateModeUi()
+        // 초기 적재 완료 전 저장 차단 — maybeFinishEditHydration이 다시 연다
+        binding.btnSaveInline.isEnabled = false
 
         if (restoreState != null) {
             // 회전 복원 — 기본 필드는 View 상태로 자동 복원되므로 덮어쓰지 않는다
@@ -710,13 +739,14 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
         }
         imageStrip.setPaths(paths)
 
-        // 태그 비동기 로드
+        // 태그 비동기 로드 — 하이드레이션 완료 전에는 suppressDirtyTracking이 유지되므로
+        // 프로그램적 setText가 더티를 세우지 않는다
         viewLifecycleOwner.lifecycleScope.launch {
             val tags = characterViewModel.getTagsByCharacterList(character.id)
             if (_binding == null || displayedCharacter?.id != character.id) return@launch
-            suppressDirtyTracking = true
             binding.editTags.setText(tags.joinToString(", ") { it.tag })
-            if (novelSpinnerInitialized) suppressDirtyTracking = false
+            editTagsLoaded = true
+            maybeFinishEditHydration()
         }
     }
 
@@ -769,7 +799,7 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
                         // — 목표 도달 전의 중간(0) 콜백은 사용자 변경이 아니다
                         if (position == expectedInitialNovelPos) {
                             novelSpinnerInitialized = true
-                            suppressDirtyTracking = false
+                            maybeFinishEditHydration()
                         }
                     } else {
                         // 사용자가 작품을 변경 — 미저장 변경

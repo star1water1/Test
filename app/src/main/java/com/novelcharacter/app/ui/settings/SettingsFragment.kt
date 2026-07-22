@@ -1103,7 +1103,9 @@ class SettingsFragment : Fragment() {
                     listOf(
                         "image_index_prefs", "timeline_ui_state", "stats_prefs",
                         "supplement_criteria", "supplement_ui_state", "search_filters", "namebank_prefs",
-                        "graph_prefs", "universe_list_state", "app_migrations"
+                        "graph_prefs", "universe_list_state", "app_migrations",
+                        // 편집 드래프트 — 초기화 후 재사용된 캐릭터 id에 이전 드래프트가 되살아나지 않도록
+                        "character_edit_drafts"
                     ).forEach { name ->
                         ctx.getSharedPreferences(name, android.content.Context.MODE_PRIVATE)
                             .edit().clear().apply()

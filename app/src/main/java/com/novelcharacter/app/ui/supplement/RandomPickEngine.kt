@@ -75,6 +75,14 @@ class RandomPickEngine(private val random: Random = Random.Default) {
         val ids = entries.keys
         bag.retainAll(ids)
 
+        // 폴백 사이클(미흡 부재로 전체 풀 순회) 중 새 미흡 캐릭터가 나타나면 가방을 비워
+        // 다음 뽑기부터 미흡 우선으로 복귀한다 — 미흡 해소 시 스킵(isEligible)과 대칭
+        if (mode == PickMode.INCOMPLETE_FIRST && bagIsFallback && newEntries.any { it.isIncomplete }) {
+            bag.clear()
+            bagIsFallback = false
+            bagExhaustedByDraw = false
+        }
+
         // 히스토리 정리 — 현재 위치를 최대한 보존하고, 현재가 삭제됐으면 직전 생존 항목으로 물러난다
         val survivedCurrent = current() != null && current() in ids
         var newIndex = -1

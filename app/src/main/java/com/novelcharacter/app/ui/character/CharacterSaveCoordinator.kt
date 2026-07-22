@@ -56,6 +56,12 @@ class CharacterSaveCoordinator(
         fun onSavingChanged(saving: Boolean)
         /** 저장 성공 후처리 — 드래프트 제거, 화면 전환/갱신 등 */
         fun onSaved(savedCharacterId: Long)
+        /**
+         * 시작된 저장 체인이 저장 없이 중단됨 — 중간 다이얼로그(중복 이름·나이 연동·교차 세계관)
+         * 취소, 오류 등. 호스트가 저장 완료에 걸어둔 예약 동작(이탈 후속 처리 등)을 해제해야
+         * 다음 저장 성공 시 스테일 동작이 실행되지 않는다.
+         */
+        fun onSaveAborted() {}
     }
 
     private val gson = Gson()
@@ -66,6 +72,12 @@ class CharacterSaveCoordinator(
     private fun resetSavingState() {
         isSaving = false
         host.onSavingChanged(false)
+    }
+
+    /** 저장 체인이 저장 없이 끝나는 모든 지점(취소·오류)에서 호출 — 성공 경로는 resetSavingState + onSaved */
+    private fun abortSave() {
+        resetSavingState()
+        host.onSaveAborted()
     }
 
     /** 폼 스냅샷으로 Character를 조립한다. 중복 다이얼로그 결과가 회전 후 도착해도 최신 폼에서 재구성하기 위해 공용화. */
@@ -134,7 +146,7 @@ class CharacterSaveCoordinator(
                         }
 
                         val isEdit = characterId != -1L
-                        if (!fragment.isAdded) { resetSavingState(); return@launch }
+                        if (!fragment.isAdded) { abortSave(); return@launch }
                         showDuplicateDialog(candidates, isEdit)
                     } else {
                         performSave(character, isUpdate = characterId != -1L, targetCharacterId = characterId)
@@ -144,7 +156,7 @@ class CharacterSaveCoordinator(
                 }
             } catch (e: Exception) {
                 showSaveFailed()
-                resetSavingState()
+                abortSave()
             }
         }
         return true
@@ -185,7 +197,7 @@ class CharacterSaveCoordinator(
 
             when (resolution) {
                 DuplicateCharacterDialog.Resolution.CANCEL -> {
-                    resetSavingState()
+                    abortSave()
                 }
                 DuplicateCharacterDialog.Resolution.CREATE_NEW -> {
                     fragment.viewLifecycleOwner.lifecycleScope.launch {
@@ -193,16 +205,16 @@ class CharacterSaveCoordinator(
                             performSave(character, isUpdate = false, targetCharacterId = -1L)
                         } catch (e: Exception) {
                             showSaveFailed()
-                            resetSavingState()
+                            abortSave()
                         }
                     }
                 }
                 DuplicateCharacterDialog.Resolution.UPDATE_EXISTING -> {
-                    if (selectedCharId == -1L) { resetSavingState(); return@setFragmentResultListener }
+                    if (selectedCharId == -1L) { abortSave(); return@setFragmentResultListener }
                     fragment.viewLifecycleOwner.lifecycleScope.launch {
                         try {
                             val target = viewModel.getCharacterByIdSuspend(selectedCharId)
-                            if (target == null) { resetSavingState(); return@launch }
+                            if (target == null) { abortSave(); return@launch }
                             val updatedChar = character.copy(
                                 id = target.id,
                                 code = target.code,
@@ -213,7 +225,7 @@ class CharacterSaveCoordinator(
                             performSave(updatedChar, isUpdate = true, targetCharacterId = target.id)
                         } catch (e: Exception) {
                             showSaveFailed()
-                            resetSavingState()
+                            abortSave()
                         }
                     }
                 }
@@ -223,7 +235,7 @@ class CharacterSaveCoordinator(
                             performSave(character, isUpdate = true, targetCharacterId = characterId)
                         } catch (e: Exception) {
                             showSaveFailed()
-                            resetSavingState()
+                            abortSave()
                         }
                     }
                 }
@@ -276,11 +288,11 @@ class CharacterSaveCoordinator(
                                     executeSave(character, isUpdate, targetCharacterId, fieldValues, crossUniverseConfirmed = true)
                                 } catch (e: Exception) {
                                     showSaveFailed()
-                                    resetSavingState()
+                                    abortSave()
                                 }
                             }
                         },
-                        onCancel = { resetSavingState() })
+                        onCancel = { abortSave() })
                     return
                 }
             }
@@ -312,7 +324,7 @@ class CharacterSaveCoordinator(
         targetCharacterId: Long,
         originalFieldValues: List<CharacterFieldValue>
     ) {
-        val ctx = fragment.context ?: run { resetSavingState(); return }
+        val ctx = fragment.context ?: run { abortSave(); return }
         val options = arrayOf(
             ctx.getString(R.string.age_linkage_option_adjust_birth,
                 conflict.suggestedBirthYear, conflict.inputAge),
@@ -372,15 +384,15 @@ class CharacterSaveCoordinator(
                         executeSave(character, isUpdate, targetCharacterId, fieldValues)
                     } catch (e: Exception) {
                         showSaveFailed()
-                        resetSavingState()
+                        abortSave()
                     }
                 }
             }
             .setNegativeButton(R.string.cancel) { _, _ ->
-                resetSavingState()
+                abortSave()
             }
             .setOnCancelListener {
-                resetSavingState()
+                abortSave()
             }
             .show()
     }
