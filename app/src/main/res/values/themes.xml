@@ -1,24 +1,64 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.NovelCharacter" parent="Theme.Material3.DayNight.NoActionBar">
+    <!-- 모든 토큰은 Base에 정의 — values-night는 Theme.NovelCharacter만 재정의해
+         야간 전용 항목(windowLightStatusBar)을 덮는다. 색 값 자체는 colors.xml의
+         values-night 미러가 뒤집는다. -->
+    <style name="Base.Theme.NovelCharacter" parent="Theme.Material3.DayNight.NoActionBar">
+        <!-- ===== M3 색 역할 전체 매핑 ===== -->
         <item name="colorPrimary">@color/primary</item>
         <item name="colorOnPrimary">@color/on_primary</item>
-        <item name="colorPrimaryContainer">@color/primary_light</item>
-        <item name="colorOnPrimaryContainer">@color/primary_dark</item>
-        <item name="colorSecondary">@color/accent</item>
+        <item name="colorPrimaryContainer">@color/primary_container</item>
+        <item name="colorOnPrimaryContainer">@color/on_primary_container</item>
+        <!-- colorSecondary는 인디고 계열 유지 — appcompat colorAccent(ProgressBar·Switch)가
+             이 토큰을 경유하므로 누락 시 M3 기본 보라가 누출된다 -->
+        <item name="colorSecondary">@color/primary</item>
         <item name="colorOnSecondary">@color/on_primary</item>
+        <item name="colorSecondaryContainer">@color/secondary_container</item>
+        <item name="colorOnSecondaryContainer">@color/on_secondary_container</item>
+        <item name="colorTertiary">@color/tertiary</item>
+        <item name="colorOnTertiary">@color/on_primary</item>
+        <item name="colorError">@color/error</item>
+        <item name="colorOnError">@color/on_error</item>
+        <item name="colorErrorContainer">@color/error_container</item>
+        <item name="colorOnErrorContainer">@color/on_error_container</item>
         <item name="colorSurface">@color/surface</item>
         <item name="colorOnSurface">@color/on_surface</item>
+        <item name="colorSurfaceVariant">@color/surface_container</item>
         <item name="colorOnSurfaceVariant">@color/text_secondary</item>
-        <item name="android:statusBarColor">@color/primary_dark</item>
-        <item name="toolbarStyle">@style/Widget.NovelCharacter.Toolbar</item>
+        <item name="colorOutline">@color/outline</item>
+        <item name="colorOutlineVariant">@color/outline_variant</item>
+        <item name="colorSurfaceContainerLowest">@color/surface</item>
+        <item name="colorSurfaceContainerLow">@color/surface_container_low</item>
+        <item name="colorSurfaceContainer">@color/surface_container</item>
+        <item name="colorSurfaceContainerHigh">@color/surface_container_high</item>
+        <item name="colorSurfaceContainerHighest">@color/surface_container_high</item>
+        <item name="android:colorBackground">@color/background</item>
+
+        <!-- ===== 시스템 바 (pre-Android15 폴백 — 15+는 MainActivity 인셋 처리가 담당) ===== -->
+        <item name="android:statusBarColor">@color/background</item>
+
+        <!-- ===== 컴포넌트 기본 스타일 ===== -->
+        <item name="toolbarStyle">@style/Widget.App.Toolbar</item>
+        <item name="materialButtonStyle">@style/Widget.App.Button</item>
+        <item name="materialButtonOutlinedStyle">@style/Widget.App.Button.Outlined</item>
+        <item name="borderlessButtonStyle">@style/Widget.App.Button.Text</item>
+        <item name="materialCardViewStyle">@style/Widget.App.Card</item>
+        <item name="chipStyle">@style/Widget.App.Chip</item>
+        <item name="tabStyle">@style/Widget.App.TabLayout</item>
+        <item name="bottomNavigationStyle">@style/Widget.App.BottomNavigation</item>
+        <item name="floatingActionButtonStyle">@style/Widget.App.Fab</item>
+        <item name="extendedFloatingActionButtonStyle">@style/Widget.App.ExtendedFab</item>
+        <item name="textInputStyle">@style/Widget.App.TextInput</item>
+        <item name="bottomSheetDialogTheme">@style/ThemeOverlay.App.BottomSheetDialog</item>
+        <item name="materialAlertDialogTheme">@style/ThemeOverlay.App.Dialog</item>
     </style>
 
-    <style name="Widget.NovelCharacter.Toolbar" parent="Widget.Material3.Toolbar">
-        <item name="android:background">@color/primary</item>
-        <item name="titleTextColor">@color/on_primary</item>
-        <item name="navigationIconTint">@color/on_primary</item>
+    <style name="Theme.NovelCharacter" parent="Base.Theme.NovelCharacter">
+        <item name="android:windowLightStatusBar">true</item>
     </style>
+
+    <!-- 레거시 별칭 — 툴바 참조 호환용, 실제 스타일은 Widget.App.Toolbar -->
+    <style name="Widget.NovelCharacter.Toolbar" parent="Widget.App.Toolbar" />
 
     <style name="RoundedImageShape" parent="">
         <item name="cornerFamily">rounded</item>

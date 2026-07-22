@@ -1,0 +1,272 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 디자인 시스템: 타이포 스케일 + 컴포넌트 스타일.
+     - 텍스트: 레이아웃에서 textSize/textStyle 대신 TextAppearance.App.* 사용
+     - 버튼: 채움(주 액션)/Tonal(보조)/Outlined(중립·취소)/Text(다이얼로그·링크 전용)/Danger
+     - 카드: 외곽선 평면(그림자 0) — 그림자는 FAB·시트·다이얼로그만 -->
+<resources>
+
+    <!-- ============ 타이포 스케일 ============ -->
+    <!-- 굵기: fontFamily=sans-serif-medium (API 26 호환; textFontWeight는 28+라 금지) -->
+    <style name="TextAppearance.App.LabelSmall" parent="TextAppearance.Material3.LabelSmall">
+        <item name="android:textSize">@dimen/text_label_sm</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:textColor">?attr/colorOnSurfaceVariant</item>
+        <item name="android:letterSpacing">0</item>
+    </style>
+
+    <style name="TextAppearance.App.Caption" parent="TextAppearance.Material3.BodySmall">
+        <item name="android:textSize">@dimen/text_caption</item>
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:textColor">?attr/colorOnSurfaceVariant</item>
+        <item name="android:letterSpacing">0</item>
+    </style>
+
+    <style name="TextAppearance.App.BodySmall" parent="TextAppearance.Material3.BodySmall">
+        <item name="android:textSize">@dimen/text_body_sm</item>
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:textColor">?attr/colorOnSurface</item>
+        <item name="android:letterSpacing">0</item>
+    </style>
+
+    <style name="TextAppearance.App.Body" parent="TextAppearance.Material3.BodyMedium">
+        <item name="android:textSize">@dimen/text_body</item>
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:textColor">?attr/colorOnSurface</item>
+        <item name="android:letterSpacing">0</item>
+    </style>
+
+    <style name="TextAppearance.App.BodyStrong" parent="TextAppearance.App.Body">
+        <item name="android:fontFamily">sans-serif-medium</item>
+    </style>
+
+    <style name="TextAppearance.App.Subtitle" parent="TextAppearance.Material3.TitleSmall">
+        <item name="android:textSize">@dimen/text_subtitle</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:textColor">?attr/colorOnSurface</item>
+        <item name="android:letterSpacing">0</item>
+    </style>
+
+    <style name="TextAppearance.App.Title" parent="TextAppearance.Material3.TitleMedium">
+        <item name="android:textSize">@dimen/text_title</item>
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">?attr/colorOnSurface</item>
+        <item name="android:letterSpacing">0</item>
+    </style>
+
+    <style name="TextAppearance.App.TitleLarge" parent="TextAppearance.Material3.TitleLarge">
+        <item name="android:textSize">@dimen/text_title_lg</item>
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">?attr/colorOnSurface</item>
+        <item name="android:letterSpacing">0</item>
+    </style>
+
+    <style name="TextAppearance.App.Headline" parent="TextAppearance.Material3.HeadlineSmall">
+        <item name="android:textSize">@dimen/text_headline</item>
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">?attr/colorOnSurface</item>
+        <item name="android:letterSpacing">0</item>
+    </style>
+
+    <style name="TextAppearance.App.Display" parent="TextAppearance.Material3.HeadlineMedium">
+        <item name="android:textSize">@dimen/text_display</item>
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">?attr/colorOnSurface</item>
+        <item name="android:letterSpacing">0</item>
+    </style>
+
+    <style name="TextAppearance.App.Button" parent="TextAppearance.Material3.LabelLarge">
+        <item name="android:textSize">@dimen/text_body</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:letterSpacing">0</item>
+    </style>
+
+    <!-- ============ 툴바 ============ -->
+    <!-- 투명 배경 + 표면색 제목 — 색칠된 앱바 제거의 핵심 -->
+    <style name="Widget.App.Toolbar" parent="Widget.Material3.Toolbar">
+        <item name="android:background">@android:color/transparent</item>
+        <item name="titleTextAppearance">@style/TextAppearance.App.TitleLarge</item>
+        <item name="titleTextColor">?attr/colorOnSurface</item>
+        <item name="navigationIconTint">?attr/colorOnSurfaceVariant</item>
+    </style>
+
+    <!-- ============ 카드 ============ -->
+    <style name="Widget.App.Card" parent="Widget.Material3.CardView.Outlined">
+        <item name="cardCornerRadius">@dimen/card_corner_radius</item>
+        <item name="cardElevation">0dp</item>
+        <item name="strokeWidth">@dimen/card_stroke_width</item>
+        <item name="strokeColor">?attr/colorOutlineVariant</item>
+        <item name="cardBackgroundColor">@color/card_background</item>
+    </style>
+
+    <!-- 토널 카드 — 통계 타일·하이라이트용 (채움, 스트로크 없음) -->
+    <style name="Widget.App.Card.Tonal">
+        <item name="cardBackgroundColor">?attr/colorSurfaceContainer</item>
+        <item name="strokeWidth">0dp</item>
+    </style>
+
+    <!-- ============ 버튼 ============ -->
+    <!-- 주 액션: 채움 인디고. 화면당 하나가 원칙 -->
+    <style name="Widget.App.Button" parent="Widget.Material3.Button">
+        <item name="android:letterSpacing">0</item>
+        <item name="cornerRadius">@dimen/button_corner</item>
+        <item name="android:textAppearance">@style/TextAppearance.App.Button</item>
+    </style>
+
+    <!-- 보조 액션: 소프트 인디고 토널 -->
+    <style name="Widget.App.Button.Tonal" parent="Widget.Material3.Button.TonalButton">
+        <item name="android:letterSpacing">0</item>
+        <item name="cornerRadius">@dimen/button_corner</item>
+        <item name="android:textAppearance">@style/TextAppearance.App.Button</item>
+    </style>
+
+    <!-- 중립·취소: 외곽선 -->
+    <style name="Widget.App.Button.Outlined" parent="Widget.Material3.Button.OutlinedButton">
+        <item name="android:letterSpacing">0</item>
+        <item name="cornerRadius">@dimen/button_corner</item>
+        <item name="android:textAppearance">@style/TextAppearance.App.Button</item>
+        <item name="android:textColor">@color/button_outlined_text</item>
+        <item name="iconTint">@color/button_outlined_text</item>
+        <item name="strokeColor">@color/button_outlined_stroke</item>
+    </style>
+
+    <!-- 텍스트 버튼: 다이얼로그 액션 슬롯·인라인 "더 보기" 링크 전용 -->
+    <style name="Widget.App.Button.Text" parent="Widget.Material3.Button.TextButton">
+        <item name="android:letterSpacing">0</item>
+        <item name="cornerRadius">@dimen/button_corner</item>
+        <item name="android:textAppearance">@style/TextAppearance.App.Button</item>
+    </style>
+
+    <!-- 파괴적 액션 -->
+    <style name="Widget.App.Button.Danger">
+        <item name="backgroundTint">@color/button_danger_bg</item>
+        <item name="android:textColor">?attr/colorOnError</item>
+        <item name="iconTint">?attr/colorOnError</item>
+    </style>
+
+    <style name="Widget.App.Button.Outlined.Danger">
+        <item name="android:textColor">?attr/colorError</item>
+        <item name="iconTint">?attr/colorError</item>
+        <item name="strokeColor">?attr/colorError</item>
+    </style>
+
+    <!-- 아이콘 버튼 (경계 없는 허용 패턴 — 40dp 타깃 + 리플) -->
+    <style name="Widget.App.IconButton" parent="Widget.Material3.Button.IconButton">
+        <item name="iconTint">?attr/colorOnSurfaceVariant</item>
+        <item name="android:minWidth">40dp</item>
+        <item name="android:minHeight">40dp</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+    </style>
+
+    <!-- ============ 칩 ============ -->
+    <!-- 기본(Assist 계열 — 체크 불가, 프로그래매틱 Chip(context) 38곳의 기존 동작 보존) -->
+    <style name="Widget.App.Chip" parent="Widget.Material3.Chip.Assist">
+        <item name="shapeAppearance">@style/ShapeAppearance.App.Chip</item>
+        <item name="chipStrokeColor">?attr/colorOutlineVariant</item>
+        <item name="android:textColor">?attr/colorOnSurface</item>
+    </style>
+
+    <!-- 필터 칩 (체크 시 secondaryContainer 소프트 인디고) — XML에서 명시 사용 -->
+    <style name="Widget.App.Chip.Filter" parent="Widget.Material3.Chip.Filter">
+        <item name="shapeAppearance">@style/ShapeAppearance.App.Chip</item>
+        <item name="chipStrokeColor">?attr/colorOutlineVariant</item>
+    </style>
+
+    <!-- 제거형(활성 필터) 칩 -->
+    <style name="Widget.App.Chip.Input" parent="Widget.Material3.Chip.Input">
+        <item name="shapeAppearance">@style/ShapeAppearance.App.Chip</item>
+        <item name="chipStrokeColor">?attr/colorOutlineVariant</item>
+    </style>
+
+    <!-- ============ 탭 ============ -->
+    <style name="Widget.App.TabLayout" parent="Widget.Material3.TabLayout">
+        <item name="android:background">@android:color/transparent</item>
+        <item name="tabIndicatorColor">?attr/colorPrimary</item>
+        <item name="tabIndicatorFullWidth">false</item>
+        <item name="tabIndicator">@drawable/tab_indicator_rounded</item>
+        <item name="tabSelectedTextColor">?attr/colorOnSurface</item>
+        <item name="tabTextColor">?attr/colorOnSurfaceVariant</item>
+    </style>
+
+    <!-- ============ 하단 내비게이션 ============ -->
+    <style name="Widget.App.BottomNavigation" parent="Widget.Material3.BottomNavigationView">
+        <item name="android:background">?attr/colorSurface</item>
+        <item name="labelVisibilityMode">labeled</item>
+        <item name="android:elevation">3dp</item>
+    </style>
+
+    <!-- ============ FAB ============ -->
+    <!-- M3 기본(primaryContainer)보다 강한 채움 인디고 — 주 액션 가시성 -->
+    <style name="Widget.App.Fab" parent="Widget.Material3.FloatingActionButton.Primary">
+        <item name="backgroundTint">?attr/colorPrimary</item>
+        <item name="tint">?attr/colorOnPrimary</item>
+        <item name="shapeAppearanceOverlay">@style/ShapeAppearance.App.Fab</item>
+    </style>
+
+    <style name="Widget.App.ExtendedFab" parent="Widget.Material3.ExtendedFloatingActionButton.Primary">
+        <item name="backgroundTint">?attr/colorPrimary</item>
+        <item name="android:textColor">?attr/colorOnPrimary</item>
+        <item name="iconTint">?attr/colorOnPrimary</item>
+        <item name="shapeAppearanceOverlay">@style/ShapeAppearance.App.Fab</item>
+    </style>
+
+    <!-- ============ 텍스트 입력 ============ -->
+    <style name="Widget.App.TextInput" parent="Widget.Material3.TextInputLayout.OutlinedBox">
+        <item name="boxCornerRadiusTopStart">@dimen/button_corner</item>
+        <item name="boxCornerRadiusTopEnd">@dimen/button_corner</item>
+        <item name="boxCornerRadiusBottomStart">@dimen/button_corner</item>
+        <item name="boxCornerRadiusBottomEnd">@dimen/button_corner</item>
+        <item name="boxStrokeColor">?attr/colorPrimary</item>
+    </style>
+
+    <!-- 목록 내 검색용 조밀 변형 -->
+    <style name="Widget.App.TextInput.Dense" parent="Widget.Material3.TextInputLayout.OutlinedBox.Dense">
+        <item name="boxCornerRadiusTopStart">@dimen/button_corner</item>
+        <item name="boxCornerRadiusTopEnd">@dimen/button_corner</item>
+        <item name="boxCornerRadiusBottomStart">@dimen/button_corner</item>
+        <item name="boxCornerRadiusBottomEnd">@dimen/button_corner</item>
+    </style>
+
+    <!-- ============ 바텀시트 ============ -->
+    <style name="ThemeOverlay.App.BottomSheetDialog" parent="ThemeOverlay.Material3.BottomSheetDialog">
+        <item name="bottomSheetStyle">@style/Widget.App.BottomSheet</item>
+    </style>
+
+    <style name="Widget.App.BottomSheet" parent="Widget.Material3.BottomSheet.Modal">
+        <item name="shapeAppearanceOverlay">@style/ShapeAppearance.App.BottomSheet</item>
+        <item name="backgroundTint">@color/sheet_background</item>
+    </style>
+
+    <!-- ============ 다이얼로그 ============ -->
+    <style name="ThemeOverlay.App.Dialog" parent="ThemeOverlay.Material3.MaterialAlertDialog">
+        <item name="shapeAppearance">@style/ShapeAppearance.App.Dialog</item>
+    </style>
+
+    <!-- ============ 셰이프 ============ -->
+    <style name="ShapeAppearance.App.Chip" parent="ShapeAppearance.Material3.Corner.Small">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">@dimen/corner_sm</item>
+    </style>
+
+    <style name="ShapeAppearance.App.Fab" parent="">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">@dimen/corner_lg</item>
+    </style>
+
+    <style name="ShapeAppearance.App.BottomSheet" parent="">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSizeTopLeft">@dimen/corner_sheet</item>
+        <item name="cornerSizeTopRight">@dimen/corner_sheet</item>
+        <item name="cornerSizeBottomLeft">0dp</item>
+        <item name="cornerSizeBottomRight">0dp</item>
+    </style>
+
+    <style name="ShapeAppearance.App.Dialog" parent="">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">@dimen/corner_sheet</item>
+    </style>
+</resources>
