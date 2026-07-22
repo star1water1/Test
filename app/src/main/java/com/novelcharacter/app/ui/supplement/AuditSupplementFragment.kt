@@ -268,9 +268,10 @@ class AuditSupplementFragment : Fragment() {
             thresholdSlider.value = defaults.fieldCompletionThreshold.toFloat()
         }
 
-        // 닫기
-        dialogView.findViewById<View>(R.id.btnClose).setOnClickListener {
-            // 저장
+        // 저장은 dismiss 리스너로 일원화 — 닫기 버튼·바깥 탭·뒤로가기 어느 경로로 닫아도
+        // 변경이 조용히 버려지지 않는다 (변수 제어: 무음 폐기 금지)
+        dialog.setOnDismissListener {
+            val ctx = context ?: return@setOnDismissListener
             criteria = SupplementCriteria(
                 checkImages = switchImage.isChecked,
                 checkMemo = switchMemo.isChecked,
@@ -283,13 +284,16 @@ class AuditSupplementFragment : Fragment() {
                 checkEvents = switchEvents.isChecked,
                 checkFactions = switchFactions.isChecked
             )
-            SupplementCriteria.save(requireContext(), criteria)
+            SupplementCriteria.save(ctx, criteria)
 
             // 필터 칩 재생성 및 데이터 리로드
-            setupFilterChips()
-            viewModel.loadData(criteria)
-            dialog.dismiss()
+            if (_binding != null && isAdded) {
+                setupFilterChips()
+                viewModel.loadData(criteria)
+            }
         }
+
+        dialogView.findViewById<View>(R.id.btnClose).setOnClickListener { dialog.dismiss() }
 
         dialog.show()
     }
