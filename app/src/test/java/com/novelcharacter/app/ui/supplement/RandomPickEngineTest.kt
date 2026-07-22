@@ -184,6 +184,29 @@ class RandomPickEngineTest {
     }
 
     @Test
+    fun `폴백 사이클 중 미흡 캐릭터가 생기면 다음 뽑기부터 미흡을 우선한다`() {
+        val e = engine()
+        e.setMode(PickMode.INCOMPLETE_FIRST)
+        e.updatePool(entries(1, 2, 3, 4, 5)) // 전원 완성 → 폴백 사이클 시작
+        e.next()
+        assertTrue(e.lastDrawFellBackToFullPool)
+
+        // 외부 편집 등으로 2번이 미흡해짐 — 풀 갱신 후에는 폴백 가방을 버리고 미흡을 우선한다
+        val updated = listOf(
+            Entry(1, 10, isIncomplete = false),
+            Entry(2, 20, isIncomplete = true),
+            Entry(3, 30, isIncomplete = false),
+            Entry(4, 40, isIncomplete = false),
+            Entry(5, 50, isIncomplete = false)
+        )
+        e.updatePool(updated)
+        repeat(3) {
+            assertEquals(2L, e.next())
+            assertFalse(e.lastDrawFellBackToFullPool)
+        }
+    }
+
+    @Test
     fun `가방에 있던 캐릭터가 미흡 해소되면 건너뛴다`() {
         val e = engine()
         val pool = listOf(

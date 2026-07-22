@@ -240,6 +240,12 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
                         after?.invoke()
                     }
                 }
+
+                override fun onSaveAborted() {
+                    // 이탈 가드가 걸어둔 예약 동작 해제 — 남겨두면 사용자가 저장을 취소하고
+                    // 계속 편집하다 나중에 저장했을 때 이전 이탈 동작(리롤·탭 전환 등)이 실행된다
+                    pendingAfterSave = null
+                }
             }
         )
     }

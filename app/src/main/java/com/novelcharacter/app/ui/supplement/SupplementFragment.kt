@@ -2,6 +2,7 @@ package com.novelcharacter.app.ui.supplement
 
 import android.os.Bundle
 import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.AdapterView
@@ -9,6 +10,7 @@ import android.widget.ArrayAdapter
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.viewpager2.adapter.FragmentStateAdapter
+import com.google.android.material.tabs.TabLayout
 import com.google.android.material.tabs.TabLayoutMediator
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.Novel
@@ -48,6 +50,9 @@ class SupplementFragment : Fragment() {
 
     /** 랜덤 탭이 인라인 편집 중일 때 등록하는 이탈 가드 (onDestroyView에서 해제) */
     var editGuard: RandomEditGuard? = null
+
+    // 가드를 통과해 확정된 탭 위치 — 가드 우회 선택(접근성 클릭 등)의 사후 복귀 기준
+    private var committedTabPos = 0
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
@@ -96,24 +101,49 @@ class SupplementFragment : Fragment() {
             tab.text = titles[position]
         }.attach()
 
-        interceptTabClicks()
+        committedTabPos = binding.viewPager.currentItem
+        setupTabGuard()
     }
 
-    /** 탭 클릭을 가로채 편집 중이면 이탈 가드를 거친다 */
-    private fun interceptTabClicks() {
+    /**
+     * 탭 전환을 편집 이탈 가드에 태운다. 클릭 리스너 교체로는 막을 수 없다 —
+     * TabView.performClick()은 커스텀 리스너 실행 후에도 무조건 tab.select()를 호출하므로,
+     * 터치 단계에서 제스처를 소비해 선택 자체를 차단하고 가드 통과 시에만 전환한다.
+     */
+    @android.annotation.SuppressLint("ClickableViewAccessibility")
+    private fun setupTabGuard() {
         for (i in 0 until binding.tabLayout.tabCount) {
             val tabView = binding.tabLayout.getTabAt(i)?.view ?: continue
-            tabView.setOnClickListener {
-                val b = _binding ?: return@setOnClickListener
-                if (b.viewPager.currentItem == i) return@setOnClickListener
+            tabView.setOnTouchListener { _, event ->
+                val b = _binding ?: return@setOnTouchListener false
                 val guard = editGuard
-                if (guard != null && guard.isBlocking()) {
-                    guard.requestLeave { _binding?.viewPager?.setCurrentItem(i, true) }
-                } else {
-                    b.viewPager.setCurrentItem(i, true)
+                if (guard == null || !guard.isBlocking() || b.viewPager.currentItem == i) {
+                    return@setOnTouchListener false
                 }
+                if (event.actionMasked == MotionEvent.ACTION_UP) {
+                    guard.requestLeave { _binding?.viewPager?.setCurrentItem(i, true) }
+                }
+                true
             }
         }
+        // 터치를 거치지 않는 선택(접근성 클릭 등)은 사후 복귀로 방어 —
+        // 확정 탭으로 되돌린 뒤 가드 통과 시에만 목표 탭으로 이동한다
+        binding.tabLayout.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
+            override fun onTabSelected(tab: TabLayout.Tab) {
+                val target = tab.position
+                val guard = editGuard
+                if (guard != null && guard.isBlocking() && target != committedTabPos) {
+                    val b = _binding ?: return
+                    b.tabLayout.getTabAt(committedTabPos)?.select()
+                    guard.requestLeave { _binding?.viewPager?.setCurrentItem(target, true) }
+                } else {
+                    committedTabPos = target
+                }
+            }
+
+            override fun onTabUnselected(tab: TabLayout.Tab) {}
+            override fun onTabReselected(tab: TabLayout.Tab) {}
+        })
     }
 
     private fun observeViewModel() {
