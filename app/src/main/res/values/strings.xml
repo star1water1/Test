@@ -1301,6 +1301,33 @@
     <string name="supplement_filter_all_universes">전체 세계관</string>
     <string name="supplement_filter_all_novels">전체 작품</string>
 
+    <!-- 랜덤 보충 탭 -->
+    <string name="random_reroll">다시 뽑기</string>
+    <string name="random_prev_pick">이전 뽑기</string>
+    <string name="random_next_pick">다음 뽑기</string>
+    <string name="random_edit_mode">편집 모드</string>
+    <string name="random_mode_label">뽑기 방식</string>
+    <string name="random_mode_pure">순수 랜덤</string>
+    <string name="random_mode_incomplete">미흡 우선</string>
+    <string name="random_mode_least_recent">오래 안 본 순</string>
+    <string name="random_mode_incomplete_empty">미흡한 캐릭터가 없어 전체에서 뽑습니다.</string>
+    <string name="random_cycle_complete">모든 캐릭터를 한 바퀴 돌았습니다. 다시 섞습니다.</string>
+    <string name="random_no_characters_filtered">현재 필터에 해당하는 캐릭터가 없습니다.</string>
+    <string name="random_clear_filter">필터 해제</string>
+    <string name="random_settings_title">랜덤 보충 설정</string>
+    <string name="random_auto_save">편집 종료 시 자동 저장</string>
+    <string name="random_auto_save_desc">편집 모드를 끌 때 확인 없이 자동으로 저장합니다.</string>
+    <string name="random_unsaved_title">저장되지 않은 변경</string>
+    <string name="random_unsaved_message">편집 중인 내용이 저장되지 않았습니다. 어떻게 할까요?</string>
+    <string name="random_unsaved_save">저장 후 닫기</string>
+    <string name="random_unsaved_discard">버리기</string>
+    <string name="random_unsaved_keep">계속 편집</string>
+    <string name="random_go_detail">상세 화면으로</string>
+    <string name="random_badge_complete">완성</string>
+    <string name="random_missing_label">미흡 항목</string>
+    <string name="random_pick_outside_filter">저장한 캐릭터가 현재 필터 범위를 벗어났습니다.</string>
+    <string name="random_character_deleted">표시 중이던 캐릭터가 삭제되어 새로 뽑았습니다.</string>
+
     <!-- 캐릭터 중복 감지 -->
     <string name="duplicate_character_title">동일한 이름의 캐릭터가 존재합니다</string>
     <string name="duplicate_character_message">\'%1$s\' 이름을 가진 캐릭터가 이미 %2$d명 존재합니다.</string>

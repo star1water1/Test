@@ -60,6 +60,71 @@ class SupplementViewModel(application: Application) : AndroidViewModel(applicati
     private val _randomPool = MutableLiveData<List<Character>>(emptyList())
     val randomPool: LiveData<List<Character>> = _randomPool
 
+    // ===== 랜덤 뽑기 엔진 (ViewModel 보유 — 회전 생존, 프로세스 종료 시 소멸은 의도된 결정) =====
+
+    /** 랜덤 카드의 단발성 알림 종류 */
+    enum class RandomNotice { CYCLE_COMPLETE, FELL_BACK_TO_FULL_POOL, PICK_OUTSIDE_FILTER, CURRENT_DELETED }
+
+    private val pickEngine = RandomPickEngine()
+
+    var randomMode: RandomPickEngine.PickMode = try {
+        RandomPickEngine.PickMode.valueOf(
+            prefs.getString("random_mode", null) ?: RandomPickEngine.PickMode.PURE_RANDOM.name
+        )
+    } catch (_: Exception) { RandomPickEngine.PickMode.PURE_RANDOM }
+        private set
+
+    init {
+        pickEngine.setMode(randomMode)
+    }
+
+    /** 현재 뽑힌 캐릭터 — null이면 풀 공백 */
+    private val _currentPick = MutableLiveData<Character?>(null)
+    val currentPick: LiveData<Character?> = _currentPick
+
+    /** 단발성 알림 — 소비 후 [clearRandomNotice] 호출 */
+    private val _randomNotice = MutableLiveData<RandomNotice?>(null)
+    val randomNotice: LiveData<RandomNotice?> = _randomNotice
+
+    fun clearRandomNotice() {
+        if (_randomNotice.value != null) _randomNotice.value = null
+    }
+
+    fun setRandomMode(mode: RandomPickEngine.PickMode) {
+        if (randomMode == mode) return
+        randomMode = mode
+        prefs.edit().putString("random_mode", mode.name).apply()
+        pickEngine.setMode(mode)
+    }
+
+    val canRandomGoBack: Boolean get() = pickEngine.canGoBack
+    val canRandomGoForward: Boolean get() = pickEngine.canGoForward
+
+    /** 다시 뽑기 — 엔진 신호(한 바퀴/폴백)를 알림으로 발행 */
+    fun rerollRandom() {
+        val id = pickEngine.next()
+        if (id == null) {
+            _currentPick.value = null
+            return
+        }
+        if (pickEngine.lastDrawCompletedCycle) {
+            _randomNotice.value = RandomNotice.CYCLE_COMPLETE
+        } else if (pickEngine.lastDrawFellBackToFullPool) {
+            _randomNotice.value = RandomNotice.FELL_BACK_TO_FULL_POOL
+        }
+        _currentPick.value = allCharacters.find { it.id == id }
+    }
+
+    fun randomPickBack() {
+        val id = pickEngine.goBack() ?: return
+        _currentPick.value = allCharacters.find { it.id == id }
+    }
+
+    fun randomPickForward() {
+        val id = pickEngine.goForward() ?: return
+        _currentPick.value = allCharacters.find { it.id == id }
+    }
+
     enum class SortMode { ISSUES_DESC, NAME_ASC, COMPLETION_ASC }
 
     fun loadData(criteria: SupplementCriteria) {
@@ -291,6 +356,47 @@ class SupplementViewModel(application: Application) : AndroidViewModel(applicati
             pool = pool.filter { it.novelId == nId }
         }
         _randomPool.value = pool
+        syncPickEngine(pool)
+    }
+
+    /** 뽑기 엔진에 새 풀을 반영하고 현재 뽑기의 생존/이탈/삭제를 처리한다 */
+    private fun syncPickEngine(pool: List<Character>) {
+        val incompleteIds = allAudits.asSequence()
+            .filter { it.issues.isNotEmpty() }
+            .map { it.character.id }
+            .toSet()
+        val entries = pool.map {
+            RandomPickEngine.Entry(id = it.id, updatedAt = it.updatedAt, isIncomplete = it.id in incompleteIds)
+        }
+
+        val prevPick = _currentPick.value
+        // 갱신 전에 엔진이 이 뽑기를 들고 있었는지 — '이번에' 이탈/삭제된 것인지 판별 (알림 중복 방지)
+        val hadInEngine = prevPick != null && pickEngine.current() == prevPick.id
+        val result = pickEngine.updatePool(entries)
+
+        when {
+            pool.isEmpty() -> _currentPick.value = null
+            result.currentSurvived -> {
+                // 저장 등으로 데이터가 바뀌었을 수 있으니 새 객체로 갱신
+                val id = pickEngine.current()
+                _currentPick.value = pool.find { it.id == id }
+            }
+            prevPick == null -> {
+                // 최초 진입 — 자동으로 첫 캐릭터를 뽑는다 (알림 없음)
+                rerollRandom()
+                clearRandomNotice()
+            }
+            allCharacters.any { it.id == prevPick.id } -> {
+                // 캐릭터는 살아있지만 현재 필터 범위를 벗어남 — 표시는 유지하고 알린다 (무단 점프 금지)
+                _currentPick.value = allCharacters.find { it.id == prevPick.id }
+                if (hadInEngine) _randomNotice.value = RandomNotice.PICK_OUTSIDE_FILTER
+            }
+            else -> {
+                // 표시 중이던 캐릭터가 삭제됨 — 새로 뽑고 알린다
+                rerollRandom()
+                if (hadInEngine) _randomNotice.value = RandomNotice.CURRENT_DELETED
+            }
+        }
     }
 
     /** 특정 캐릭터의 감사 결과 (이슈 없는 완성 캐릭터 포함) — 랜덤 탭 배지·미흡 칩용 */

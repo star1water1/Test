@@ -77,6 +77,12 @@ class SupplementFragment : Fragment() {
         _binding?.viewPager?.isUserInputEnabled = !locked
     }
 
+    /** 세계관·작품 필터 해제 — 랜덤 탭의 빈 상태 교정 경로(변수 제어)에서 호출 */
+    fun clearFilters() {
+        viewModel.setNovelFilter(null)
+        applyUniverseSelection(0, universes)
+    }
+
     private fun setupPager() {
         binding.viewPager.adapter = SupplementPagerAdapter(this)
         // 두 탭을 모두 살려둔다 — 랜덤 탭의 편집 상태가 탭 전환으로 파괴되지 않도록

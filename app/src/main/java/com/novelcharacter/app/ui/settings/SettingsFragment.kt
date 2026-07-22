@@ -1102,7 +1102,7 @@ class SettingsFragment : Fragment() {
                 withContext(Dispatchers.IO) {
                     listOf(
                         "image_index_prefs", "timeline_ui_state", "stats_prefs",
-                        "supplement_criteria", "search_filters", "namebank_prefs",
+                        "supplement_criteria", "supplement_ui_state", "search_filters", "namebank_prefs",
                         "graph_prefs", "universe_list_state", "app_migrations"
                     ).forEach { name ->
                         ctx.getSharedPreferences(name, android.content.Context.MODE_PRIVATE)
