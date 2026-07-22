@@ -36,8 +36,9 @@
             android:insetTop="0dp"
             android:insetBottom="0dp"
             android:padding="0dp"
-            android:text="-"
-            android:textSize="18sp"
+            app:icon="@drawable/ic_remove"
+            app:iconGravity="textStart"
+            app:iconPadding="0dp"
             android:contentDescription="@string/zoom_out"
             app:cornerRadius="20dp" />
 
@@ -59,8 +60,9 @@
             android:insetTop="0dp"
             android:insetBottom="0dp"
             android:padding="0dp"
-            android:text="+"
-            android:textSize="18sp"
+            app:icon="@drawable/ic_add"
+            app:iconGravity="textStart"
+            app:iconPadding="0dp"
             android:contentDescription="@string/zoom_in"
             app:cornerRadius="20dp" />
 
@@ -113,7 +115,7 @@
             android:paddingHorizontal="8dp"
             android:text="@string/prev_event_short"
             android:enabled="false"
-            app:icon="@android:drawable/ic_media_previous"
+            app:icon="@drawable/ic_chevron_left"
             app:iconSize="14dp"
             app:iconPadding="2dp" />
 
@@ -152,7 +154,7 @@
             android:paddingHorizontal="8dp"
             android:text="@string/next_event_short"
             android:enabled="false"
-            app:icon="@android:drawable/ic_media_next"
+            app:icon="@drawable/ic_chevron_right"
             app:iconGravity="end"
             app:iconSize="14dp"
             app:iconPadding="2dp" />
@@ -212,7 +214,7 @@
             android:layout_height="48dp"
             android:layout_marginStart="4dp"
             android:padding="12dp"
-            android:src="@android:drawable/ic_menu_close_clear_cancel"
+            android:src="@drawable/ic_close"
             android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="@string/clear_filter"
             android:visibility="gone" />
@@ -273,7 +275,7 @@
         android:layout_height="wrap_content"
         android:layout_margin="16dp"
         android:contentDescription="@string/add_event"
-        android:src="@android:drawable/ic_input_add"
+        android:src="@drawable/ic_add"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 

@@ -67,7 +67,7 @@
             android:paddingBottom="1dp"
             android:textSize="@dimen/text_badge"
             android:textColor="#FFFFFF"
-            android:background="#CC1565C0"
+            android:background="@color/overlay_link_badge"
             android:text="@string/image_link_badge"
             android:visibility="gone"
             tools:visibility="visible" />
@@ -77,7 +77,7 @@
             android:id="@+id/selectionScrim"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:background="#553F51B5"
+            android:background="@color/overlay_selection_weak"
             android:visibility="gone"
             tools:visibility="visible" />
 
@@ -98,7 +98,7 @@
             android:textStyle="bold"
             android:textAppearance="@style/TextAppearance.App.BodySmall"
             android:textColor="#FFFFFF"
-            android:background="#CC3F51B5"
+            android:background="@color/overlay_selection"
             android:visibility="gone"
             tools:visibility="visible" />
     </FrameLayout>

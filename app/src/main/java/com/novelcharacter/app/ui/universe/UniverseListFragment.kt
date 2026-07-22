@@ -185,6 +185,11 @@ class UniverseListFragment : Fragment() {
     private fun setupToolbarMenu() {
         binding.toolbar.setOnMenuItemClickListener { item ->
             when (item.itemId) {
+                R.id.action_global_search -> {
+                    // 죽은 아이콘 수정 — 랜딩 화면에서 검색 아이콘이 무반응이던 문제
+                    findNavController().navigateSafe(R.id.universeListFragment, R.id.globalSearchFragment)
+                    true
+                }
                 R.id.action_export -> {
                     exportToExcel()
                     true

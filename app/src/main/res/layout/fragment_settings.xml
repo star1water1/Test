@@ -143,11 +143,11 @@
                 android:background="?attr/colorOnSurfaceVariant"
                 android:alpha="0.2" />
 
-            <!-- Section: Data Management -->
+            <!-- Section: 데이터 (엑셀·월드패키지) -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/settings_data"
+                android:text="@string/settings_section_data"
                 android:textAppearance="@style/TextAppearance.App.BodySmall"
                 android:textColor="@color/primary"
                 android:textStyle="bold"
@@ -208,6 +208,18 @@
                     android:textColor="?attr/colorOnSurface" />
 
             </LinearLayout>
+
+            <!-- Section: 데이터 관리 (휴지통·저장소·압축·이력 + 점검) -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/settings_data"
+                android:textAppearance="@style/TextAppearance.App.BodySmall"
+                android:textColor="@color/primary"
+                android:textStyle="bold"
+                android:paddingStart="16dp"
+                android:paddingTop="20dp"
+                android:paddingBottom="4dp" />
 
             <!-- Trash (B-7) -->
             <LinearLayout
@@ -319,17 +331,6 @@
                 android:background="?attr/colorOnSurfaceVariant"
                 android:alpha="0.2" />
 
-            <!-- Section: System Maintenance -->
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/settings_maintenance"
-                android:textAppearance="@style/TextAppearance.App.BodySmall"
-                android:textColor="@color/primary"
-                android:textStyle="bold"
-                android:paddingStart="16dp"
-                android:paddingTop="20dp"
-                android:paddingBottom="4dp" />
 
             <!-- Integrity Check -->
             <LinearLayout
@@ -427,11 +428,11 @@
                 android:background="?attr/colorOnSurfaceVariant"
                 android:alpha="0.2" />
 
-            <!-- Error Log Section -->
+            <!-- Section: 앱 (오류 로그·초기화·정보) -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/settings_error_log"
+                android:text="@string/settings_section_app"
                 android:textAppearance="@style/TextAppearance.App.BodySmall"
                 android:textColor="@color/primary"
                 android:textStyle="bold"
@@ -494,7 +495,7 @@
                     android:layout_height="wrap_content"
                     android:text="@string/settings_reset_app"
                     android:textAppearance="@style/TextAppearance.App.Title"
-                    android:textColor="#FF5722" />
+                    android:textColor="?attr/colorError" />
 
                 <TextView
                     android:layout_width="wrap_content"

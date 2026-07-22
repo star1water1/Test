@@ -14,7 +14,7 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent"
         app:title="@string/tab_universes"
-        app:menu="@menu/main_menu" />
+        app:menu="@menu/menu_universe_list" />
 
     <!-- Recent Activities Section -->
     <LinearLayout
@@ -81,7 +81,7 @@
         android:layout_height="wrap_content"
         android:layout_margin="16dp"
         android:contentDescription="@string/add_universe"
-        android:src="@android:drawable/ic_input_add"
+        android:src="@drawable/ic_add"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 

@@ -98,4 +98,6 @@
 
     <!-- 이미지 위 선택 오버레이 -->
     <color name="overlay_selection">#CC8891E8</color>
+    <color name="overlay_selection_weak">#558891E8</color>
+    <color name="overlay_link_badge">#CC4FB7FF</color>
 </resources>

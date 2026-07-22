@@ -40,7 +40,7 @@
         android:text="@string/batch_op_change_novel"
         android:textAppearance="@style/TextAppearance.App.Subtitle"
         android:background="?attr/selectableItemBackground"
-        android:drawableStart="@android:drawable/ic_menu_edit"
+        android:drawableStart="@drawable/ic_edit"
         android:drawablePadding="16dp" />
 
     <TextView
@@ -52,7 +52,7 @@
         android:text="@string/batch_op_add_tags"
         android:textAppearance="@style/TextAppearance.App.Subtitle"
         android:background="?attr/selectableItemBackground"
-        android:drawableStart="@android:drawable/ic_menu_add"
+        android:drawableStart="@drawable/ic_add"
         android:drawablePadding="16dp" />
 
     <TextView
@@ -64,7 +64,7 @@
         android:text="@string/batch_op_remove_tags"
         android:textAppearance="@style/TextAppearance.App.Subtitle"
         android:background="?attr/selectableItemBackground"
-        android:drawableStart="@android:drawable/ic_menu_close_clear_cancel"
+        android:drawableStart="@drawable/ic_close"
         android:drawablePadding="16dp" />
 
     <TextView
@@ -76,7 +76,7 @@
         android:text="@string/batch_op_set_field"
         android:textAppearance="@style/TextAppearance.App.Subtitle"
         android:background="?attr/selectableItemBackground"
-        android:drawableStart="@android:drawable/ic_menu_manage"
+        android:drawableStart="@drawable/ic_tune"
         android:drawablePadding="16dp" />
 
     <TextView
@@ -88,7 +88,7 @@
         android:text="@string/batch_op_clear_field"
         android:textAppearance="@style/TextAppearance.App.Subtitle"
         android:background="?attr/selectableItemBackground"
-        android:drawableStart="@android:drawable/ic_menu_revert"
+        android:drawableStart="@drawable/ic_undo"
         android:drawablePadding="16dp" />
 
     <TextView
@@ -100,7 +100,7 @@
         android:text="@string/batch_op_pin"
         android:textAppearance="@style/TextAppearance.App.Subtitle"
         android:background="?attr/selectableItemBackground"
-        android:drawableStart="@android:drawable/btn_star_big_on"
+        android:drawableStart="@drawable/ic_star"
         android:drawablePadding="16dp" />
 
     <TextView
@@ -112,7 +112,7 @@
         android:text="@string/batch_op_unpin"
         android:textAppearance="@style/TextAppearance.App.Subtitle"
         android:background="?attr/selectableItemBackground"
-        android:drawableStart="@android:drawable/btn_star_big_off"
+        android:drawableStart="@drawable/ic_star_outline"
         android:drawablePadding="16dp" />
 
     <TextView
@@ -124,7 +124,7 @@
         android:text="@string/batch_op_append_memo"
         android:textAppearance="@style/TextAppearance.App.Subtitle"
         android:background="?attr/selectableItemBackground"
-        android:drawableStart="@android:drawable/ic_menu_my_calendar"
+        android:drawableStart="@drawable/ic_calendar"
         android:drawablePadding="16dp" />
 
     <TextView
@@ -136,7 +136,7 @@
         android:text="@string/batch_op_state_change"
         android:textAppearance="@style/TextAppearance.App.Subtitle"
         android:background="?attr/selectableItemBackground"
-        android:drawableStart="@android:drawable/ic_menu_recent_history"
+        android:drawableStart="@drawable/ic_history"
         android:drawablePadding="16dp" />
 
     <View
@@ -157,7 +157,7 @@
         android:textAppearance="@style/TextAppearance.App.Subtitle"
         android:textColor="@android:color/holo_red_dark"
         android:background="?attr/selectableItemBackground"
-        android:drawableStart="@android:drawable/ic_menu_delete"
+        android:drawableStart="@drawable/ic_delete"
         android:drawablePadding="16dp" />
 
 </LinearLayout>

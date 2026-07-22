@@ -101,4 +101,6 @@
 
     <!-- 이미지 위 선택 오버레이 -->
     <color name="overlay_selection">#CC5E6AD2</color>
+    <color name="overlay_selection_weak">#555E6AD2</color>
+    <color name="overlay_link_badge">#CC0588C7</color>
 </resources>

@@ -887,6 +887,10 @@
     <string name="widget_add_character">+ 캐릭터</string>
 
     <!-- Birthday Banner -->
+    <!-- 설정 섹션 재그룹 -->
+    <string name="settings_section_data">데이터</string>
+    <string name="settings_section_app">앱</string>
+
     <!-- 통합 목록 컨트롤 -->
     <string name="character_controls_title">정렬·필터</string>
     <string name="controls_button">정렬·필터</string>

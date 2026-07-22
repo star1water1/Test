@@ -215,7 +215,7 @@
             <ImageView
                 android:layout_width="64dp"
                 android:layout_height="64dp"
-                android:src="@android:drawable/ic_menu_mapmode"
+                android:src="@drawable/ic_relationship_graph"
                 android:alpha="0.3"
                 android:layout_marginBottom="12dp"
                 android:contentDescription="@string/relationship_graph" />

@@ -60,6 +60,17 @@ class TimelineFragment : Fragment(), EventEditDialogFragment.Host {
         binding.toolbar.setNavigationOnClickListener {
             requireActivity().onBackPressedDispatcher.onBackPressed()
         }
+        // 순서 편집을 가시적 메뉴로 통일 (FAB 길게 누르기는 액셀러레이터로 존치)
+        binding.toolbar.inflateMenu(R.menu.menu_timeline)
+        binding.toolbar.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                R.id.action_reorder -> {
+                    toggleReorderMode()
+                    true
+                }
+                else -> false
+            }
+        }
 
         setupRecyclerView()
         setupPinchZoom()

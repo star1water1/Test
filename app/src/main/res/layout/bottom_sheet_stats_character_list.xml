@@ -62,7 +62,7 @@
         android:layout_marginTop="8dp"
         android:text="@string/stats_subgroup_analysis"
         android:textColor="@color/primary"
-        app:icon="@android:drawable/ic_menu_sort_by_size"
+        app:icon="@drawable/ic_sort"
         app:iconGravity="textStart"
         app:iconTint="@color/primary" />
 

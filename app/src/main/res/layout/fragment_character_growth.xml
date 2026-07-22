@@ -92,7 +92,7 @@
         android:layout_height="wrap_content"
         android:layout_margin="12dp"
         android:text="@string/growth_add_compare"
-        app:icon="@android:drawable/ic_input_add"
+        app:icon="@drawable/ic_add"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent" />
 

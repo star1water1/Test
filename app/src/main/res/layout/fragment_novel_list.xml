@@ -14,7 +14,7 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent"
         app:title="@string/tab_novels"
-        app:menu="@menu/main_menu" />
+        app:menu="@menu/menu_novel_list" />
 
     <TextView
         android:id="@+id/emptyText"
@@ -46,7 +46,7 @@
         android:layout_height="wrap_content"
         android:layout_margin="16dp"
         android:contentDescription="@string/add_novel"
-        android:src="@android:drawable/ic_input_add"
+        android:src="@drawable/ic_add"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 

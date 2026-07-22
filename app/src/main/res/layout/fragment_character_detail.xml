@@ -50,7 +50,7 @@
                     android:id="@+id/timeSliderToggleIcon"
                     android:layout_width="24dp"
                     android:layout_height="24dp"
-                    android:src="@android:drawable/arrow_down_float"
+                    android:src="@drawable/ic_arrow_down"
                     android:contentDescription="@string/toggle_time_slider" />
 
             </LinearLayout>
@@ -340,7 +340,7 @@
                                 android:layout_width="48dp"
                                 android:layout_height="48dp"
                                 android:padding="12dp"
-                                android:src="@android:drawable/ic_input_add"
+                                android:src="@drawable/ic_add"
                                 android:background="?attr/selectableItemBackgroundBorderless"
                                 android:contentDescription="@string/add_relationship" />
 
@@ -477,7 +477,7 @@
                                 android:layout_width="48dp"
                                 android:layout_height="48dp"
                                 android:padding="12dp"
-                                android:src="@android:drawable/ic_input_add"
+                                android:src="@drawable/ic_add"
                                 android:background="?attr/selectableItemBackgroundBorderless"
                                 android:contentDescription="@string/add_state_change" />
 
@@ -515,7 +515,7 @@
         android:layout_height="wrap_content"
         android:layout_gravity="bottom|end"
         android:layout_margin="16dp"
-        android:src="@android:drawable/ic_menu_edit"
+        android:src="@drawable/ic_edit"
         android:contentDescription="@string/edit_button_desc" />
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

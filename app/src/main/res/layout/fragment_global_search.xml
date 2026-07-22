@@ -53,7 +53,7 @@
                 android:layout_height="36dp"
                 android:layout_marginEnd="6dp"
                 android:text="@string/search_preset_save"
-                app:icon="@android:drawable/ic_menu_save"
+                app:icon="@drawable/ic_save"
                 app:iconSize="14dp"
                 app:cornerRadius="18dp" />
 
@@ -86,7 +86,7 @@
                 android:layout_height="32dp"
                 android:layout_marginEnd="6dp"
                 android:text="@string/search_add_filter"
-                app:icon="@android:drawable/ic_menu_add"
+                app:icon="@drawable/ic_add"
                 app:iconSize="14dp"
                 app:cornerRadius="16dp" />
 
@@ -102,7 +102,7 @@
         android:layout_height="32dp"
         android:layout_marginStart="8dp"
         android:text="@string/search_add_filter"
-        app:icon="@android:drawable/ic_menu_add"
+        app:icon="@drawable/ic_add"
         app:iconSize="14dp" />
 
     <LinearLayout
@@ -118,7 +118,7 @@
             android:id="@+id/emptyIcon"
             android:layout_width="48dp"
             android:layout_height="48dp"
-            android:src="@android:drawable/ic_menu_search"
+            android:src="@drawable/ic_search"
             android:alpha="0.3"
             android:layout_marginBottom="12dp"
             android:contentDescription="@string/search" />
