@@ -887,6 +887,15 @@
     <string name="widget_add_character">+ 캐릭터</string>
 
     <!-- Birthday Banner -->
+    <!-- 통합 목록 컨트롤 -->
+    <string name="character_controls_title">정렬·필터</string>
+    <string name="controls_button">정렬·필터</string>
+    <string name="controls_button_count">정렬·필터 · %d</string>
+    <string name="controls_presets_section">프리셋</string>
+    <string name="character_preset_save_current">현재 상태를 프리셋으로 저장</string>
+    <string name="sort_dir_asc">오름차순</string>
+    <string name="sort_dir_desc">내림차순</string>
+
     <!-- 홈 대시보드 / 분석 허브 -->
     <string name="back">뒤로</string>
     <string name="tab_analysis">분석</string>
