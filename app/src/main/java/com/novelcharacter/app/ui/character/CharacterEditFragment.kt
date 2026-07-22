@@ -60,13 +60,14 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
     private var presetNovelId: Long = -1L
     private var existingCharacter: Character? = null
     private var novels: List<Novel> = emptyList()
-    private val imagePaths = mutableListOf<String>()
+    // 이미지 스트립(경로 목록·썸네일·가져오기) — 공용 컨트롤러에 위임
+    private lateinit var imageStrip: CharacterImageStripController
     private var restoredFromSavedState = false
 
-    // 동적 필드 관리
-    private var fieldDefinitions: List<FieldDefinition> = emptyList()
-    private val fieldInputMap = mutableMapOf<Long, Any>() // fieldDefinitionId -> input widget
-    private var currentUniverseId: Long? = null
+    // 동적 필드 관리 — 폼 구성/값 적재/수집/검증은 공용 빌더에 위임
+    private lateinit var formBuilder: DynamicFieldFormBuilder
+    // 저장 체인(검증→중복→연동 충돌→교차 세계관→DB) — 공용 코디네이터에 위임
+    private lateinit var saveCoordinator: CharacterSaveCoordinator
     private var hasUnsavedChanges = false
     private var pendingFieldValues: Bundle? = null
     // 저장 완료/명시적 폐기 후 onPause의 드래프트 재기록 차단 (B-6)
@@ -81,7 +82,7 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
     private val imagePickerLauncher = registerForActivityResult(
         ActivityResultContracts.GetMultipleContents()
     ) { uris: List<Uri> ->
-        if (uris.isNotEmpty()) saveImagesToInternalStorage(uris)
+        if (uris.isNotEmpty()) imageStrip.importUris(uris)
     }
 
     override fun onCreateView(
@@ -93,33 +94,12 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
-        outState.putStringArrayList("imagePaths", ArrayList(imagePaths))
+        outState.putStringArrayList("imagePaths", ArrayList(imageStrip.paths))
 
         // 동적 필드 입력값 보존
         val fieldValues = Bundle()
-        for (field in fieldDefinitions) {
-            val widget = fieldInputMap[field.id] ?: continue
-            val fieldType = FieldType.fromName(field.type)
-            if (fieldType == FieldType.CALCULATED) continue
-            fieldValues.putString(field.id.toString(), widgetStateString(widget))
-        }
+        if (::formBuilder.isInitialized) formBuilder.saveStateTo(fieldValues)
         outState.putBundle("fieldValues", fieldValues)
-    }
-
-    /** 입력 위젯의 현재 값 직렬화 — 회전 Bundle과 영구 드래프트가 같은 포맷을 공유한다 */
-    private fun widgetStateString(widget: Any): String = when (widget) {
-        is MaterialAutoCompleteTextView -> widget.text.toString()
-        is TextInputEditText -> widget.text.toString()
-        is Spinner -> widget.selectedItemPosition.toString()
-        is LinearLayout -> {
-            val parts = mutableListOf<String>()
-            for (i in 0 until widget.childCount) {
-                val partLayout = widget.getChildAt(i) as? TextInputLayout
-                parts.add(partLayout?.editText?.text?.toString() ?: "")
-            }
-            parts.joinToString("\u001F")
-        }
-        else -> ""
     }
 
     /**
@@ -138,12 +118,7 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         val novelPosition = binding.spinnerNovel.selectedItemPosition
         val selectedNovelId =
             if (novelPosition > 0 && novelPosition - 1 < novels.size) novels[novelPosition - 1].id else -1L
-        val fieldValues = mutableMapOf<String, String>()
-        for (field in fieldDefinitions) {
-            val widget = fieldInputMap[field.id] ?: continue
-            if (FieldType.fromName(field.type) == FieldType.CALCULATED) continue
-            fieldValues[field.id.toString()] = widgetStateString(widget)
-        }
+        val fieldValues = formBuilder.widgetStateStrings()
         return CharacterDraftPrefs.Draft(
             name = binding.editName.text.toString(),
             firstName = binding.editFirstName.text.toString(),
@@ -152,7 +127,7 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
             tags = binding.editTags.text.toString(),
             memo = binding.editMemo.text.toString(),
             novelId = selectedNovelId,
-            imagePaths = imagePaths.toList(),
+            imagePaths = imageStrip.paths.toList(),
             fieldValues = fieldValues,
             savedAt = System.currentTimeMillis()
         )
@@ -193,18 +168,11 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         binding.editMemo.setText(draft.memo)
 
         // 이미지 경로: 내부 저장소 경로만 수용 (회전 복원과 동일한 검증)
-        val dir = appDir
-        if (draft.imagePaths.isNotEmpty() && dir != null) {
-            val validated = draft.imagePaths.filter { path ->
-                try {
-                    File(path).canonicalPath.startsWith(dir.canonicalPath + File.separator)
-                } catch (_: Exception) {
-                    false
-                }
-            }
-            imagePaths.clear()
-            imagePaths.addAll(validated)
-            updateImageList()
+        if (draft.imagePaths.isNotEmpty()) {
+            val validated = CharacterImageStripController.validateInternalPaths(
+                draft.imagePaths, context?.filesDir
+            )
+            imageStrip.setPaths(validated)
         }
 
         // 동적 필드: 회전 복원과 동일한 지연 소비 메커니즘(pendingFieldValues) 재사용
@@ -214,9 +182,9 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
                 val bundle = Bundle()
                 draft.fieldValues.forEach { (k, v) -> bundle.putString(k, v) }
                 val targetPos = index + 1
-                if (binding.spinnerNovel.selectedItemPosition == targetPos && fieldDefinitions.isNotEmpty()) {
+                if (binding.spinnerNovel.selectedItemPosition == targetPos && formBuilder.fieldDefinitions.isNotEmpty()) {
                     // 해당 작품 기준으로 폼이 이미 빌드됨 — 즉시 적용
-                    restoreFieldValues(bundle)
+                    formBuilder.restoreFieldValues(bundle)
                 } else {
                     // 스피너 콜백의 buildDynamicForm 이후 소비되도록 보관
                     pendingFieldValues = bundle
@@ -238,7 +206,50 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         supplementIndex = arguments?.getInt("supplementIndex", 0) ?: 0
         supplementIds = arguments?.getLongArray("supplementIds") ?: longArrayOf()
         supplementIssueLabels = arguments?.getString("supplementIssueLabels")
-        appDir = requireContext().filesDir
+
+        imageStrip = CharacterImageStripController(
+            fragment = this,
+            recyclerViewGetter = { _binding?.imageRecyclerView },
+            navOriginDestId = R.id.characterEditFragment,
+            onChanged = { hasUnsavedChanges = true; updateSaveButtonState() },
+            onRemoved = { refreshRecommendations() }
+        )
+
+        formBuilder = DynamicFieldFormBuilder(
+            containerGetter = { binding.dynamicFormContainer },
+            contextGetter = { context },
+            scopeGetter = { viewLifecycleOwner.lifecycleScope },
+            isAlive = { _binding != null && isAdded },
+            fragmentManagerGetter = { if (isAdded) childFragmentManager else null },
+            viewModel = viewModel,
+            onFieldChanged = { hasUnsavedChanges = true; updateSaveButtonState() }
+        )
+
+        saveCoordinator = CharacterSaveCoordinator(
+            fragment = this,
+            viewModel = viewModel,
+            // 순차 보충 모드는 기존 동작 유지: 중복 이름 검사 생략
+            checkDuplicates = !supplementMode,
+            host = object : CharacterSaveCoordinator.Host {
+                override fun snapshot() = formSnapshot()
+                override fun collectFieldValues(characterId: Long) = formBuilder.collectFieldValues(characterId)
+                override fun validateRequiredFields() = formBuilder.validateRequiredFields()
+                override fun editingCharacterId() = characterId
+                override fun existingCharacter() = existingCharacter
+                override fun onSavingChanged(saving: Boolean) {
+                    if (_binding == null) return
+                    if (supplementMode) binding.btnSaveAndNext.isEnabled = !saving
+                    else binding.btnSave.isEnabled = !saving
+                }
+                override fun onSaved(savedCharacterId: Long) {
+                    clearDraft()
+                    if (!isAdded || view == null) return
+                    if (supplementMode) navigateToNextSupplement()
+                    else findNavController().popBackStack()
+                }
+            }
+        )
+        saveCoordinator.registerResultListeners() // 회전 안전(P1-A): 결과 리스너를 onViewCreated에서 1회 등록
 
         if (supplementMode) {
             setupSupplementMode()
@@ -246,18 +257,10 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
 
         // Restore imagePaths from saved state (rotation), filtering invalid paths
         savedInstanceState?.getStringArrayList("imagePaths")?.let { saved ->
-            val dir = appDir
-            val validated = if (dir != null) {
-                saved.filter { path ->
-                    try {
-                        java.io.File(path).canonicalPath.startsWith(dir.canonicalPath + java.io.File.separator)
-                    } catch (_: Exception) { false }
-                }
-            } else {
-                emptyList()
-            }
-            imagePaths.clear()
-            imagePaths.addAll(validated)
+            val validated = CharacterImageStripController.validateInternalPaths(
+                saved, context?.filesDir
+            )
+            imageStrip.setPaths(validated)
             restoredFromSavedState = true
         }
         pendingFieldValues = savedInstanceState?.getBundle("fieldValues")
@@ -277,13 +280,12 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         setupImageButton()
         setupRecommendations()
         setupSaveButton()
-        registerDuplicateResultListener() // 회전 안전(P1-A): 결과 리스너를 onViewCreated에서 1회 등록
         setupEventButton()
         setupChangeTracking()
 
         // Show restored images if any (from rotation)
-        if (imagePaths.isNotEmpty()) {
-            updateImageList()
+        if (imageStrip.paths.isNotEmpty()) {
+            imageStrip.refresh()
         }
 
         viewLifecycleOwner.lifecycleScope.launch {
@@ -316,29 +318,29 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
                     if (position > 0) {
                         val novel = novels[position - 1]
                         val universeId = novel.universeId
-                        currentUniverseId = universeId
+                        formBuilder.currentUniverseId = universeId
                         if (universeId != null) {
-                            fieldDefinitions = viewModel.getFieldsByUniverseList(universeId)
+                            formBuilder.fieldDefinitions = viewModel.getFieldsByUniverseList(universeId)
                         } else {
-                            fieldDefinitions = emptyList()
+                            formBuilder.fieldDefinitions = emptyList()
                         }
                     } else {
-                        fieldDefinitions = emptyList()
+                        formBuilder.fieldDefinitions = emptyList()
                     }
                     if (_binding == null) return@launch
-                    buildDynamicForm()
+                    formBuilder.buildForm()
 
                     // 회전 복원된 필드값이 있으면 우선 적용, 없으면 DB에서 로드.
                     // 스피너 초기(position 0) 콜백은 폼이 비어 있으므로 복원값을 소비하지 않고 보존한다
                     // (여기서 소거하면 이후 실제 작품 선택 콜백이 DB 값으로 덮어써 회전 직전 입력이 유실됨)
                     val saved = pendingFieldValues
-                    if (saved != null && fieldDefinitions.isNotEmpty()) {
-                        restoreFieldValues(saved)
+                    if (saved != null && formBuilder.fieldDefinitions.isNotEmpty()) {
+                        formBuilder.restoreFieldValues(saved)
                         pendingFieldValues = null
                     } else if (saved == null) {
                         val existing = existingCharacter
                         if (existing != null) {
-                            loadFieldValues(existing.id)
+                            formBuilder.loadFieldValues(existing.id)
                         }
                     }
                 }
@@ -387,732 +389,13 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
             } catch (e: Exception) {
                 emptyList()
             }
-            imagePaths.clear()
-            imagePaths.addAll(paths)
+            imageStrip.setPaths(paths)
+        } else {
+            imageStrip.refresh()
         }
-        updateImageList()
 
         // 메모
         binding.editMemo.setText(character.memo)
-    }
-
-    // ===== 🎲 랜덤 값 생성 =====
-
-    private fun createDiceButton(context: android.content.Context, density: Float, action: () -> Unit): com.google.android.material.button.MaterialButton {
-        return com.google.android.material.button.MaterialButton(
-            context, null, com.google.android.material.R.attr.materialButtonOutlinedStyle
-        ).apply {
-            text = "🎲"; textSize = 14f; minWidth = 0; minimumWidth = 0
-            setPadding((8 * density).toInt(), 0, (8 * density).toInt(), 0)
-            layoutParams = android.widget.LinearLayout.LayoutParams(
-                android.view.ViewGroup.LayoutParams.WRAP_CONTENT, android.view.ViewGroup.LayoutParams.WRAP_CONTENT
-            )
-            setOnClickListener { action() }
-        }
-    }
-
-    private fun showBirthdaySeasonDialog(field: com.novelcharacter.app.data.model.FieldDefinition) {
-        val seasons = com.novelcharacter.app.util.FieldRandomGenerator.Season.entries
-        val labels = seasons.map { it.label }.toTypedArray()
-        androidx.appcompat.app.AlertDialog.Builder(requireContext())
-            .setTitle(R.string.random_birthday_season)
-            .setItems(labels) { _, which ->
-                val date = com.novelcharacter.app.util.FieldRandomGenerator.generateBirthday(seasons[which])
-                applyRandomValue(field, date)
-            }
-            .show()
-    }
-
-    private fun applyRandomForField(field: com.novelcharacter.app.data.model.FieldDefinition, type: FieldType) {
-        val config = com.novelcharacter.app.data.model.RandomConfig.fromConfig(field.config)
-        val value: String? = when (type) {
-            FieldType.NUMBER -> com.novelcharacter.app.util.FieldRandomGenerator.generateNumber(
-                config.min ?: 0.0, config.max ?: 100.0, config.decimalPlaces
-            )
-            FieldType.SELECT -> {
-                val options = try {
-                    val json = org.json.JSONObject(field.config)
-                    val arr = json.optJSONArray("options")
-                    if (arr != null) (0 until arr.length()).map { arr.getString(it) }.filter { it.isNotBlank() }
-                    else emptyList()
-                } catch (_: Exception) { emptyList() }
-                com.novelcharacter.app.util.FieldRandomGenerator.generateSelect(options)
-            }
-            FieldType.GRADE -> {
-                // parseGradeOptions()를 사용하여 allowNegative 포함 전체 등급 목록 획득
-                val grades = parseGradeOptions(field.config)
-                com.novelcharacter.app.util.FieldRandomGenerator.generateGrade(grades)
-            }
-            else -> return
-        }
-        if (value == null) {
-            android.widget.Toast.makeText(requireContext(), R.string.random_no_options, android.widget.Toast.LENGTH_SHORT).show()
-            return
-        }
-        applyRandomValue(field, value)
-    }
-
-    private fun applyRandomValue(field: com.novelcharacter.app.data.model.FieldDefinition, value: String) {
-        val widget = fieldInputMap[field.id]
-        when (widget) {
-            is android.widget.EditText -> widget.setText(value)
-            is android.widget.LinearLayout -> {
-                // 구조화 입력: "MM-DD" 등을 parts로 분리
-                val parts = value.split("-")
-                for (i in 0 until minOf(widget.childCount, parts.size)) {
-                    val child = widget.getChildAt(i)
-                    if (child is com.google.android.material.textfield.TextInputLayout) {
-                        child.editText?.setText(parts.getOrNull(i) ?: "")
-                    }
-                }
-            }
-            is android.widget.Spinner -> {
-                val idx = (0 until widget.count).firstOrNull {
-                    widget.getItemAtPosition(it).toString() == value
-                } ?: return
-                widget.setSelection(idx)
-            }
-        }
-        hasUnsavedChanges = true
-        updateSaveButtonState()
-        android.widget.Toast.makeText(requireContext(), getString(R.string.random_applied, value), android.widget.Toast.LENGTH_SHORT).show()
-    }
-
-    private fun showBodyGenerator(bodySizeField: com.novelcharacter.app.data.model.FieldDefinition) {
-        val sheet = BodyGeneratorBottomSheet()
-        sheet.analysisConfig = com.novelcharacter.app.data.model.BodyAnalysisConfig.fromConfig(bodySizeField.config)
-        // TODO: 같은 작품의 캐릭터 목록을 제공하여 상대 생성/분포 활성화
-        sheet.onApply = { body ->
-            // BWH 필드에 값 채우기
-            val bwhView = fieldInputMap[bodySizeField.id]
-            if (bwhView is android.widget.LinearLayout) {
-                val parts = body.bwhString.split("-")
-                for (i in 0 until minOf(bwhView.childCount, parts.size)) {
-                    val child = bwhView.getChildAt(i)
-                    if (child is com.google.android.material.textfield.TextInputLayout) {
-                        child.editText?.setText(parts[i])
-                    }
-                }
-            } else if (bwhView is android.widget.EditText) {
-                bwhView.setText(body.bwhString)
-            }
-            // 키 필드 채우기
-            for ((id, view) in fieldInputMap) {
-                val fd = fieldDefinitions.find { it.id == id } ?: continue
-                val role = com.novelcharacter.app.data.model.SemanticRole.fromConfig(fd.config)
-                if (role == com.novelcharacter.app.data.model.SemanticRole.HEIGHT) {
-                    val editText = when (view) {
-                        is android.widget.EditText -> view
-                        is com.google.android.material.textfield.TextInputLayout -> view.editText
-                        else -> null
-                    }
-                    editText?.setText(body.height.toInt().toString())
-                } else if (role == com.novelcharacter.app.data.model.SemanticRole.WEIGHT) {
-                    val editText = when (view) {
-                        is android.widget.EditText -> view
-                        is com.google.android.material.textfield.TextInputLayout -> view.editText
-                        else -> null
-                    }
-                    editText?.setText(body.weight.toInt().toString())
-                }
-            }
-        }
-        sheet.show(childFragmentManager, "body_generator")
-    }
-
-    private suspend fun loadFieldValues(characterId: Long) {
-        val values = viewModel.getValuesByCharacterList(characterId)
-        val valueMap = values.associateBy { it.fieldDefinitionId }
-
-        for (field in fieldDefinitions) {
-            val savedValue = valueMap[field.id]?.value ?: ""
-            val widget = fieldInputMap[field.id] ?: continue
-
-            when (widget) {
-                is MaterialAutoCompleteTextView -> widget.setText(savedValue, false)
-                is TextInputEditText -> widget.setText(savedValue)
-                is LinearLayout -> {
-                    // 구조화 입력: 저장된 값을 파트별로 분리하여 채움
-                    val config = widget.tag as? StructuredInputConfig
-                    if (config != null && savedValue.isNotEmpty()) {
-                        val parts = config.splitValue(savedValue)
-                        for (i in 0 until minOf(widget.childCount, parts.size)) {
-                            val partLayout = widget.getChildAt(i) as? TextInputLayout
-                            partLayout?.editText?.setText(parts[i].second)
-                        }
-                    }
-                }
-                is Spinner -> {
-                    val fieldType = FieldType.fromName(field.type)
-                    if (fieldType == FieldType.SELECT) {
-                        val options = parseSelectOptions(field.config)
-                        val optionWithBlank = mutableListOf(getString(R.string.no_selection))
-                        optionWithBlank.addAll(options)
-                        val idx = optionWithBlank.indexOf(savedValue)
-                        if (idx >= 0) {
-                            widget.setSelection(idx)
-                        } else if (savedValue.isNotBlank()) {
-                            // 고아 값: 현재 옵션에 없지만 저장된 값을 스피너에 추가하여 보존
-                            optionWithBlank.add(savedValue)
-                            val ctx = context ?: continue
-                            widget.adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item, optionWithBlank).also {
-                                it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-                            }
-                            widget.setSelection(optionWithBlank.size - 1)
-                        }
-                    } else if (fieldType == FieldType.GRADE) {
-                        val grades = parseGradeOptions(field.config)
-                        val gradeWithBlank = mutableListOf(getString(R.string.no_grade_selected))
-                        gradeWithBlank.addAll(grades)
-                        val idx = gradeWithBlank.indexOf(savedValue)
-                        if (idx >= 0) {
-                            widget.setSelection(idx)
-                        } else if (savedValue.isNotBlank()) {
-                            gradeWithBlank.add(savedValue)
-                            val ctx = context ?: continue
-                            widget.adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item, gradeWithBlank).also {
-                                it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-                            }
-                            widget.setSelection(gradeWithBlank.size - 1)
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private fun restoreFieldValues(saved: Bundle) {
-        for (field in fieldDefinitions) {
-            val widget = fieldInputMap[field.id] ?: continue
-            val fieldType = FieldType.fromName(field.type)
-            if (fieldType == FieldType.CALCULATED) continue
-            val value = saved.getString(field.id.toString()) ?: continue
-
-            when (widget) {
-                is MaterialAutoCompleteTextView -> widget.setText(value, false)
-                is TextInputEditText -> widget.setText(value)
-                is Spinner -> {
-                    val pos = value.toIntOrNull() ?: 0
-                    if (pos in 0 until widget.adapter.count) widget.setSelection(pos)
-                }
-                is LinearLayout -> {
-                    val parts = value.split("\u001F")
-                    for (i in 0 until minOf(widget.childCount, parts.size)) {
-                        val partLayout = widget.getChildAt(i) as? TextInputLayout
-                        partLayout?.editText?.setText(parts[i])
-                    }
-                }
-            }
-        }
-    }
-
-    private fun buildDynamicForm() {
-        if (_binding == null || !isAdded) return
-        binding.dynamicFormContainer.removeAllViews()
-        fieldInputMap.clear()
-
-        val context = context ?: return
-        val density = resources.displayMetrics.density
-
-        // 자동완성 대상 수집 (필드마다 개별 쿼리 대신 루프 종료 후 1회 배치 조회)
-        val autoCompleteTargets = mutableListOf<Triple<Long, DisplayFormat?, MaterialAutoCompleteTextView>>()
-
-        for (field in fieldDefinitions.sortedBy { it.displayOrder }) {
-            val fieldType = FieldType.fromName(field.type)
-
-            when (fieldType) {
-                FieldType.TEXT, FieldType.BODY_SIZE -> {
-                    var structuredConfig = StructuredInputConfig.fromConfig(field.config)
-                    // BODY_SIZE 타입인데 structuredInput 설정이 없으면 기본 B-W-H 구조화 입력 자동 적용
-                    if (fieldType == FieldType.BODY_SIZE && !structuredConfig.enabled) {
-                        structuredConfig = StructuredInputConfig(
-                            enabled = true,
-                            separator = "-",
-                            parts = listOf(
-                                StructuredInputConfig.Part("B", "cm", "number"),
-                                StructuredInputConfig.Part("W", "cm", "number"),
-                                StructuredInputConfig.Part("H", "cm", "number")
-                            )
-                        )
-                    }
-                    // BIRTH_DATE semanticRole인데 structuredInput이 없으면 월/일 구조화 입력 자동 적용
-                    if (!structuredConfig.enabled && SemanticRole.fromConfig(field.config) == SemanticRole.BIRTH_DATE) {
-                        structuredConfig = StructuredInputConfig(
-                            enabled = true,
-                            separator = "-",
-                            parts = listOf(
-                                StructuredInputConfig.Part("월", "", "number"),
-                                StructuredInputConfig.Part("일", "", "number")
-                            )
-                        )
-                    }
-                    if (structuredConfig.enabled && structuredConfig.parts.isNotEmpty()) {
-                        // 구조화 입력: 파트별 개별 입력 필드
-                        val labelRow = LinearLayout(context).apply {
-                            orientation = LinearLayout.HORIZONTAL
-                            layoutParams = ViewGroup.MarginLayoutParams(
-                                ViewGroup.LayoutParams.MATCH_PARENT,
-                                ViewGroup.LayoutParams.WRAP_CONTENT
-                            ).apply { topMargin = (4 * density).toInt() }
-                        }
-                        val label = TextView(context).apply {
-                            text = field.name
-                            textSize = 14f
-                            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-                        }
-                        labelRow.addView(label)
-                        // 🎲 생성 버튼
-                        val diceAction: (() -> Unit)? = when {
-                            fieldType == FieldType.BODY_SIZE -> {{ showBodyGenerator(field) }}
-                            SemanticRole.fromConfig(field.config) == SemanticRole.BIRTH_DATE -> {{ showBirthdaySeasonDialog(field) }}
-                            com.novelcharacter.app.data.model.RandomConfig.fromConfig(field.config).enabled -> {{ applyRandomForField(field, fieldType) }}
-                            else -> null
-                        }
-                        if (diceAction != null) {
-                            val genBtn = createDiceButton(context, density, diceAction)
-                            labelRow.addView(genBtn)
-                        }
-                        binding.dynamicFormContainer.addView(labelRow)
-
-                        val partsContainer = LinearLayout(context).apply {
-                            orientation = LinearLayout.HORIZONTAL
-                            layoutParams = ViewGroup.MarginLayoutParams(
-                                ViewGroup.LayoutParams.MATCH_PARENT,
-                                ViewGroup.LayoutParams.WRAP_CONTENT
-                            ).apply {
-                                bottomMargin = (8 * density).toInt()
-                            }
-                            tag = structuredConfig // 나중에 값 수집 시 사용
-                        }
-                        for (part in structuredConfig.parts) {
-                            val partLayout = TextInputLayout(context).apply {
-                                layoutParams = LinearLayout.LayoutParams(
-                                    0,
-                                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                                    1f
-                                ).apply {
-                                    marginEnd = (4 * density).toInt()
-                                }
-                                hint = if (part.suffix.isNotEmpty()) "${part.label} (${part.suffix})" else part.label
-                            }
-                            val partEdit = TextInputEditText(context).apply {
-                                layoutParams = LinearLayout.LayoutParams(
-                                    LinearLayout.LayoutParams.MATCH_PARENT,
-                                    LinearLayout.LayoutParams.WRAP_CONTENT
-                                )
-                                if (part.inputType == "number") {
-                                    inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
-                                }
-                            }
-                            partLayout.addView(partEdit)
-                            partsContainer.addView(partLayout)
-                        }
-                        binding.dynamicFormContainer.addView(partsContainer)
-                        fieldInputMap[field.id] = partsContainer
-                    } else {
-                        // 일반 텍스트 입력
-                        val format = DisplayFormat.fromConfig(field.config)
-                        val inputLayout = TextInputLayout(context).apply {
-                            layoutParams = ViewGroup.MarginLayoutParams(
-                                ViewGroup.LayoutParams.MATCH_PARENT,
-                                ViewGroup.LayoutParams.WRAP_CONTENT
-                            ).apply {
-                                bottomMargin = (8 * density).toInt()
-                            }
-                            hint = field.name
-                            if (format == DisplayFormat.COMMA_LIST || format == DisplayFormat.BULLET_LIST) {
-                                helperText = getString(R.string.hint_comma_list_helper)
-                                isHelperTextEnabled = true
-                            } else if (format == DisplayFormat.MULTILINE) {
-                                helperText = getString(R.string.hint_multiline_helper)
-                                isHelperTextEnabled = true
-                            }
-                        }
-                        val editText = MaterialAutoCompleteTextView(context).apply {
-                            layoutParams = LinearLayout.LayoutParams(
-                                LinearLayout.LayoutParams.MATCH_PARENT,
-                                LinearLayout.LayoutParams.WRAP_CONTENT
-                            )
-                            if (format == DisplayFormat.MULTILINE) {
-                                inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
-                                minLines = 2
-                            }
-                            threshold = 1 // 1글자부터 자동완성 제안
-                        }
-                        inputLayout.addView(editText)
-                        // 비구조화 필드에 🎲 버튼 추가 판정
-                        val unstructuredDiceAction: (() -> Unit)? = when {
-                            fieldType == FieldType.BODY_SIZE -> {{ showBodyGenerator(field) }}
-                            SemanticRole.fromConfig(field.config) == SemanticRole.BIRTH_DATE -> {{ showBirthdaySeasonDialog(field) }}
-                            com.novelcharacter.app.data.model.RandomConfig.fromConfig(field.config).enabled -> {{ applyRandomForField(field, fieldType) }}
-                            else -> null
-                        }
-                        if (unstructuredDiceAction != null) {
-                            val row = LinearLayout(context).apply {
-                                orientation = LinearLayout.HORIZONTAL
-                                layoutParams = ViewGroup.MarginLayoutParams(
-                                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-                                ).apply { bottomMargin = (8 * density).toInt() }
-                            }
-                            inputLayout.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-                            row.addView(inputLayout)
-                            val genBtn = createDiceButton(context, density, unstructuredDiceAction).apply {
-                                layoutParams = (layoutParams as LinearLayout.LayoutParams).apply {
-                                    topMargin = (8 * density).toInt()
-                                }
-                            }
-                            row.addView(genBtn)
-                            binding.dynamicFormContainer.addView(row)
-                        } else {
-                            binding.dynamicFormContainer.addView(inputLayout)
-                        }
-                        fieldInputMap[field.id] = editText
-
-                        // 자동완성 데이터는 루프 종료 후 배치 조회로 채움
-                        autoCompleteTargets.add(Triple(field.id, format, editText))
-                    }
-                }
-
-                FieldType.NUMBER -> {
-                    val inputLayout = TextInputLayout(context).apply {
-                        layoutParams = ViewGroup.MarginLayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT,
-                            ViewGroup.LayoutParams.WRAP_CONTENT
-                        ).apply {
-                            bottomMargin = (8 * density).toInt()
-                        }
-                        hint = field.name
-                    }
-                    val editText = TextInputEditText(context).apply {
-                        layoutParams = LinearLayout.LayoutParams(
-                            LinearLayout.LayoutParams.MATCH_PARENT,
-                            LinearLayout.LayoutParams.WRAP_CONTENT
-                        )
-                        inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
-                    }
-                    inputLayout.addView(editText)
-                    if (com.novelcharacter.app.data.model.RandomConfig.fromConfig(field.config).enabled) {
-                        val row = LinearLayout(context).apply {
-                            orientation = LinearLayout.HORIZONTAL
-                            layoutParams = ViewGroup.MarginLayoutParams(
-                                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-                            ).apply { bottomMargin = (8 * density).toInt() }
-                        }
-                        inputLayout.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-                        row.addView(inputLayout)
-                        row.addView(createDiceButton(context, density) { applyRandomForField(field, fieldType) })
-                        binding.dynamicFormContainer.addView(row)
-                    } else {
-                        binding.dynamicFormContainer.addView(inputLayout)
-                    }
-                    fieldInputMap[field.id] = editText
-                }
-
-                FieldType.SELECT -> {
-                    val labelRow = LinearLayout(context).apply {
-                        orientation = LinearLayout.HORIZONTAL
-                        gravity = android.view.Gravity.CENTER_VERTICAL
-                        layoutParams = ViewGroup.MarginLayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-                        ).apply { topMargin = (4 * density).toInt() }
-                    }
-                    val label = TextView(context).apply {
-                        text = field.name
-                        textSize = 14f
-                        layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-                    }
-                    labelRow.addView(label)
-                    if (com.novelcharacter.app.data.model.RandomConfig.fromConfig(field.config).enabled) {
-                        labelRow.addView(createDiceButton(context, density) { applyRandomForField(field, fieldType) })
-                    }
-                    binding.dynamicFormContainer.addView(labelRow)
-
-                    val options = parseSelectOptions(field.config)
-                    val optionsWithBlank = mutableListOf(getString(R.string.no_selection))
-                    optionsWithBlank.addAll(options)
-
-                    val spinner = Spinner(context).apply {
-                        layoutParams = ViewGroup.MarginLayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT,
-                            ViewGroup.LayoutParams.WRAP_CONTENT
-                        ).apply {
-                            bottomMargin = (8 * density).toInt()
-                        }
-                        adapter = ArrayAdapter(
-                            context,
-                            android.R.layout.simple_spinner_item,
-                            optionsWithBlank
-                        ).also {
-                            it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-                        }
-                    }
-                    binding.dynamicFormContainer.addView(spinner)
-                    fieldInputMap[field.id] = spinner
-                }
-
-                FieldType.GRADE -> {
-                    val gradeLabelRow = LinearLayout(context).apply {
-                        orientation = LinearLayout.HORIZONTAL
-                        gravity = android.view.Gravity.CENTER_VERTICAL
-                        layoutParams = ViewGroup.MarginLayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-                        ).apply { topMargin = (4 * density).toInt() }
-                    }
-                    val label = TextView(context).apply {
-                        text = field.name
-                        textSize = 14f
-                        layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-                    }
-                    gradeLabelRow.addView(label)
-                    if (com.novelcharacter.app.data.model.RandomConfig.fromConfig(field.config).enabled) {
-                        gradeLabelRow.addView(createDiceButton(context, density) { applyRandomForField(field, fieldType) })
-                    }
-                    binding.dynamicFormContainer.addView(gradeLabelRow)
-
-                    val grades = parseGradeOptions(field.config)
-                    val gradesWithBlank = mutableListOf(getString(R.string.no_grade_selected))
-                    gradesWithBlank.addAll(grades)
-
-                    val spinner = Spinner(context).apply {
-                        layoutParams = ViewGroup.MarginLayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT,
-                            ViewGroup.LayoutParams.WRAP_CONTENT
-                        ).apply {
-                            bottomMargin = (8 * density).toInt()
-                        }
-                        adapter = ArrayAdapter(
-                            context,
-                            android.R.layout.simple_spinner_item,
-                            gradesWithBlank
-                        ).also {
-                            it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-                        }
-                    }
-                    binding.dynamicFormContainer.addView(spinner)
-                    fieldInputMap[field.id] = spinner
-                }
-
-                FieldType.MULTI_TEXT -> {
-                    val inputLayout = TextInputLayout(context).apply {
-                        layoutParams = ViewGroup.MarginLayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT,
-                            ViewGroup.LayoutParams.WRAP_CONTENT
-                        ).apply {
-                            bottomMargin = (8 * density).toInt()
-                        }
-                        hint = getString(R.string.hint_multi_text_format, field.name)
-                    }
-                    val editText = MaterialAutoCompleteTextView(context).apply {
-                        layoutParams = LinearLayout.LayoutParams(
-                            LinearLayout.LayoutParams.MATCH_PARENT,
-                            LinearLayout.LayoutParams.WRAP_CONTENT
-                        )
-                        threshold = 1
-                    }
-                    inputLayout.addView(editText)
-                    binding.dynamicFormContainer.addView(inputLayout)
-                    fieldInputMap[field.id] = editText
-
-                    // 자동완성: 기존 값의 개별 항목을 제안
-                    val uId = currentUniverseId
-                    if (uId != null) {
-                        viewLifecycleOwner.lifecycleScope.launch {
-                            val existingValues = viewModel.getFieldValuesForUniverse(uId, field.id)
-                            val suggestions = existingValues
-                                .flatMap { it.split(",").map { v -> v.trim() } }
-                                .filter { it.isNotBlank() }.distinct().sorted()
-                            if (suggestions.isNotEmpty() && _binding != null) {
-                                editText.setAdapter(ArrayAdapter(
-                                    requireContext(),
-                                    android.R.layout.simple_dropdown_item_1line,
-                                    suggestions
-                                ))
-                            }
-                        }
-                    }
-                }
-
-                FieldType.CALCULATED -> {
-                    val textView = TextView(context).apply {
-                        text = getString(R.string.auto_calculated, field.name)
-                        textSize = 14f
-                        isEnabled = false
-                        layoutParams = ViewGroup.MarginLayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT,
-                            ViewGroup.LayoutParams.WRAP_CONTENT
-                        ).apply {
-                            bottomMargin = (8 * density).toInt()
-                            topMargin = (4 * density).toInt()
-                        }
-                    }
-                    binding.dynamicFormContainer.addView(textView)
-                    fieldInputMap[field.id] = textView
-                }
-
-                null -> {
-                    // 알 수 없는 필드 타입 - 기본 텍스트 입력
-                    val inputLayout = TextInputLayout(context).apply {
-                        layoutParams = ViewGroup.MarginLayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT,
-                            ViewGroup.LayoutParams.WRAP_CONTENT
-                        ).apply {
-                            bottomMargin = (8 * density).toInt()
-                        }
-                        hint = field.name
-                    }
-                    val editText = TextInputEditText(context).apply {
-                        layoutParams = LinearLayout.LayoutParams(
-                            LinearLayout.LayoutParams.MATCH_PARENT,
-                            LinearLayout.LayoutParams.WRAP_CONTENT
-                        )
-                    }
-                    inputLayout.addView(editText)
-                    binding.dynamicFormContainer.addView(inputLayout)
-                    fieldInputMap[field.id] = editText
-                }
-            }
-        }
-
-        // 자동완성 데이터 배치 로드: 필드마다 개별 쿼리(M회) 대신 세계관 전체 값을 1회 조회 후 필드별 분배
-        val uId = currentUniverseId
-        if (uId != null && autoCompleteTargets.isNotEmpty()) {
-            viewLifecycleOwner.lifecycleScope.launch {
-                val valuesByField = viewModel.getAllFieldValuesForUniverse(uId)
-                    .groupBy { it.fieldDefinitionId }
-                if (_binding == null) return@launch
-                for ((fieldId, format, editText) in autoCompleteTargets) {
-                    val existingValues = valuesByField[fieldId].orEmpty().map { it.value }
-                    val suggestions = if (format == DisplayFormat.COMMA_LIST || format == DisplayFormat.BULLET_LIST) {
-                        existingValues.flatMap { it.split(",").map { v -> v.trim() } }
-                            .filter { it.isNotBlank() }.distinct().sorted()
-                    } else {
-                        existingValues.filter { it.isNotBlank() }.distinct().sorted()
-                    }
-                    if (suggestions.isNotEmpty()) {
-                        editText.setAdapter(ArrayAdapter(
-                            requireContext(),
-                            android.R.layout.simple_dropdown_item_1line,
-                            suggestions
-                        ))
-                    }
-                }
-            }
-        }
-
-        // 동적 필드에 변경 추적 리스너 추가
-        attachDynamicFieldChangeTracking()
-    }
-
-    private fun attachDynamicFieldChangeTracking() {
-        val watcher = object : android.text.TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
-                hasUnsavedChanges = true
-                updateSaveButtonState()
-            }
-            override fun afterTextChanged(s: android.text.Editable?) {}
-        }
-        for ((_, widget) in fieldInputMap) {
-            when (widget) {
-                is TextInputEditText -> widget.addTextChangedListener(watcher)
-                is MaterialAutoCompleteTextView -> widget.addTextChangedListener(watcher)
-                is Spinner -> widget.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-                    private var initialized = false
-                    override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                        if (initialized) { hasUnsavedChanges = true; updateSaveButtonState() }
-                        initialized = true
-                    }
-                    override fun onNothingSelected(parent: AdapterView<*>?) {}
-                }
-                is LinearLayout -> {
-                    for (i in 0 until widget.childCount) {
-                        val partLayout = widget.getChildAt(i) as? TextInputLayout
-                        partLayout?.editText?.addTextChangedListener(watcher)
-                    }
-                }
-            }
-        }
-    }
-
-    private fun parseSelectOptions(configJson: String): List<String> =
-        com.novelcharacter.app.util.FieldOptionParser.parseSelectOptions(configJson)
-
-    private fun parseGradeOptions(configJson: String): List<String> =
-        com.novelcharacter.app.util.FieldOptionParser.parseGradeOptions(configJson)
-
-    private fun validateRequiredFields(): String? {
-        for (field in fieldDefinitions) {
-            if (!field.isRequired) continue
-            val fieldType = FieldType.fromName(field.type)
-            if (fieldType == FieldType.CALCULATED) continue
-            val widget = fieldInputMap[field.id] ?: continue
-            val isEmpty = when (widget) {
-                is MaterialAutoCompleteTextView -> widget.text.isNullOrBlank()
-                is TextInputEditText -> widget.text.isNullOrBlank()
-                is Spinner -> widget.selectedItemPosition <= 0
-                is LinearLayout -> {
-                    // 구조화 입력: 모든 파트가 비어있으면 isEmpty
-                    (0 until widget.childCount).all { i ->
-                        val partLayout = widget.getChildAt(i) as? TextInputLayout
-                        partLayout?.editText?.text.isNullOrBlank()
-                    }
-                }
-                else -> true
-            }
-            if (isEmpty) return field.name
-        }
-        return null
-    }
-
-    private fun collectFieldValues(characterId: Long): List<CharacterFieldValue> {
-        val values = mutableListOf<CharacterFieldValue>()
-
-        for (field in fieldDefinitions) {
-            val widget = fieldInputMap[field.id] ?: continue
-            val fieldType = FieldType.fromName(field.type)
-
-            // CALCULATED 필드는 저장하지 않음
-            if (fieldType == FieldType.CALCULATED) continue
-
-            val value: String = when (widget) {
-                is MaterialAutoCompleteTextView -> widget.text.toString().trim()
-                is TextInputEditText -> widget.text.toString().trim()
-                is Spinner -> {
-                    if (widget.selectedItemPosition > 0) {
-                        widget.selectedItem.toString()
-                    } else {
-                        ""
-                    }
-                }
-                is LinearLayout -> {
-                    // 구조화 입력: 파트별 값을 separator로 합침
-                    val config = widget.tag as? StructuredInputConfig
-                    if (config != null) {
-                        val partValues = mutableListOf<String>()
-                        for (i in 0 until widget.childCount) {
-                            val partLayout = widget.getChildAt(i) as? TextInputLayout
-                            val partEdit = partLayout?.editText
-                            partValues.add(partEdit?.text?.toString()?.trim() ?: "")
-                        }
-                        if (partValues.any { it.isNotEmpty() }) {
-                            config.joinValues(partValues)
-                        } else ""
-                    } else ""
-                }
-                else -> ""
-            }
-
-            if (value.isNotEmpty()) {
-                values.add(
-                    CharacterFieldValue(
-                        characterId = characterId,
-                        fieldDefinitionId = field.id,
-                        value = value
-                    )
-                )
-            }
-        }
-        return values
     }
 
     private fun setupImageButton() {
@@ -1120,8 +403,7 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
             imagePickerLauncher.launch("image/*")
         }
 
-        binding.imageRecyclerView.layoutManager =
-            LinearLayoutManager(requireContext(), LinearLayoutManager.HORIZONTAL, false)
+        imageStrip.attach()
     }
 
     // ===== 추천 이미지 스트립 (G3) =====
@@ -1174,7 +456,7 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         val tags = binding.editTags.text.toString()
             .split(",").map { it.trim() }.filter { it.isNotBlank() }
         val excluded = HashSet<String>()
-        for (p in imagePaths) {
+        for (p in imageStrip.paths) {
             excluded.add(p)
             excluded.add(canonicalOrSelf(p))
         }
@@ -1189,14 +471,11 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
      */
     private fun attachRecommendedImage(rec: com.novelcharacter.app.util.ImageRecommendationHelper.Recommendation) {
         val expansion = com.novelcharacter.app.util.ImageLinkResolver.expand(listOf(rec.candidate.path), recMetas)
-        val currentCanon = imagePaths.mapTo(HashSet()) { canonicalOrSelf(it) }
+        val currentCanon = imageStrip.paths.mapTo(HashSet()) { canonicalOrSelf(it) }
         val toAdd = expansion.allPaths.filter { canonicalOrSelf(it) !in currentCanon }
         if (toAdd.isEmpty()) return
-        imagePaths.addAll(toAdd)
-        updateImageList()
-        // 첨부는 미저장 변경 — 없으면 뒤로가기가 확인 없이 이탈하고 드래프트도 안 남는다(무음 유실)
-        hasUnsavedChanges = true
-        updateSaveButtonState()
+        // 첨부는 미저장 변경 — addPaths가 더티 훅(onChanged)을 호출해 무음 유실을 막는다
+        imageStrip.addPaths(toAdd)
         val linkedExtra = toAdd.size - 1
         if (linkedExtra > 0 && isAdded) {
             Toast.makeText(
@@ -1208,462 +487,26 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         refreshRecommendations()
     }
 
-    /**
-     * 픽한 이미지들을 내부 저장소에 저장한다. 공용 [ImageImportHelper]로 라우팅하여
-     * 압축 설정(용량↔화질)을 적용한다. 압축 설정은 배치당 1회만 로드한다.
-     */
-    private fun saveImagesToInternalStorage(uris: List<Uri>) {
-        val ctx = context?.applicationContext ?: return
-        viewLifecycleOwner.lifecycleScope.launch {
-            val settings = com.novelcharacter.app.util.ImageSettingsStore(ctx).getSettings()
-            var anyFailed = false
-            for (uri in uris) {
-                val filePath = try {
-                    com.novelcharacter.app.util.ImageImportHelper.importImage(ctx, uri, "char", settings)
-                } catch (e: Exception) {
-                    null
-                }
-                if (_binding == null) return@launch
-                if (filePath != null) {
-                    imagePaths.add(filePath)
-                    updateImageList()
-                    hasUnsavedChanges = true
-                    updateSaveButtonState()
-                } else {
-                    anyFailed = true
-                }
-            }
-            if (anyFailed && isAdded) {
-                val c = context ?: return@launch
-                Toast.makeText(c, R.string.image_save_failed, Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
-
-    private var imageAdapter: RecyclerView.Adapter<RecyclerView.ViewHolder>? = null
-
-    private fun updateImageList() {
-        if (imageAdapter == null) {
-            imageAdapter = object : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
-                override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
-                    val d = parent.context.resources.displayMetrics.density
-                    val sizePx = (80 * d).toInt()
-                    val imageView = ImageView(parent.context).apply {
-                        layoutParams = RecyclerView.LayoutParams(sizePx, sizePx).apply {
-                            marginEnd = (4 * d).toInt()
-                        }
-                        scaleType = ImageView.ScaleType.CENTER_CROP
-                    }
-                    return object : RecyclerView.ViewHolder(imageView) {}
-                }
-
-                override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
-                    val imageView = holder.itemView as ImageView
-                    // 이전 로드 작업 취소 + 이미지 초기화
-                    (imageView.getTag(R.id.image_load_job) as? kotlinx.coroutines.Job)?.cancel()
-                    imageView.setTag(R.id.image_load_job, null)
-                    imageView.setImageResource(R.drawable.ic_character_placeholder)
-                    if (position < imagePaths.size) {
-                        val path = imagePaths[position]
-                        val boundPosition = position
-                        val job = viewLifecycleOwner.lifecycleScope.launch {
-                            val targetSize = (80 * holder.itemView.context.resources.displayMetrics.density).toInt()
-                            val bitmap = withContext(Dispatchers.IO) {
-                                decodeSampledBitmap(path, targetSize, targetSize)
-                            }
-                            if (bitmap != null && holder.bindingAdapterPosition == boundPosition && isAdded) {
-                                imageView.setImageBitmap(bitmap)
-                            }
-                        }
-                        imageView.setTag(R.id.image_load_job, job)
-                    }
-                    // 탭 → 이미지 뷰어에서 확대
-                    imageView.setOnClickListener {
-                        if (!isAdded) return@setOnClickListener
-                        val adapterPosition = holder.bindingAdapterPosition
-                        if (adapterPosition >= 0 && adapterPosition < imagePaths.size) {
-                            val bundle = Bundle().apply {
-                                putString("imagePaths", gson.toJson(imagePaths))
-                                putInt("startPosition", adapterPosition)
-                            }
-                            findNavController().navigateSafe(R.id.characterEditFragment, R.id.imageViewerFragment, bundle)
-                        }
-                    }
-                    // 롱프레스 → 삭제
-                    imageView.setOnLongClickListener {
-                        val adapterPosition = holder.bindingAdapterPosition
-                        if (adapterPosition >= 0 && adapterPosition < imagePaths.size) {
-                            AlertDialog.Builder(requireContext())
-                                .setTitle(R.string.delete)
-                                .setMessage(R.string.image_delete_confirm)
-                                .setPositiveButton(R.string.delete) { _, _ ->
-                                    val currentPos = holder.bindingAdapterPosition
-                                    if (currentPos >= 0 && currentPos < imagePaths.size) {
-                                        imagePaths.removeAt(currentPos)
-                                        imageAdapter?.notifyItemRemoved(currentPos)
-                                        imageAdapter?.notifyItemRangeChanged(currentPos, imagePaths.size - currentPos)
-                                        hasUnsavedChanges = true
-                                        updateSaveButtonState()
-                                        refreshRecommendations()
-                                    }
-                                }
-                                .setNegativeButton(R.string.cancel, null)
-                                .show()
-                        }
-                        true
-                    }
-                }
-
-                override fun getItemCount() = imagePaths.size
-            }
-            binding.imageRecyclerView.adapter = imageAdapter
-        } else {
-            imageAdapter?.notifyDataSetChanged()
-        }
-    }
-
-    private var appDir: java.io.File? = null
-
-    /**
-     * 이전 이미지 목록과 현재 목록을 비교하여 제거된 파일을 정리한다.
-     * 정책(이미지 설정): LIBRARY_ONLY(기본) = 공유·라이브러리·휴지통 보호 파일은 남기고 나머지만 삭제,
-     * ALWAYS_ADOPT = 삭제 대신 라이브러리(미배정)로 입양(삭제는 이미지 탭에서만).
-     */
-    private suspend fun cleanupRemovedImages(oldPathsJson: String?, currentPaths: List<String>) {
-        val oldPaths: List<String> = try {
-            gson.fromJson(oldPathsJson ?: "[]", com.novelcharacter.app.util.GsonTypes.STRING_LIST) ?: emptyList()
-        } catch (_: Exception) { emptyList() }
-        val currentSet = currentPaths.toSet()
-        val removed = oldPaths.filter { it !in currentSet }
-        if (removed.isEmpty()) return
-        val appCtx = context?.applicationContext ?: return
-        val db = (activity?.application as? com.novelcharacter.app.NovelCharacterApp)?.database ?: return
-        try {
-            when (com.novelcharacter.app.util.ImageSettingsStore(appCtx).getEditorRemovePolicy()) {
-                com.novelcharacter.app.util.ImageSettingsStore.EditorRemovePolicy.LIBRARY_ONLY ->
-                    com.novelcharacter.app.util.ImageOwnershipGuard.deleteIfUnprotected(db, appCtx, removed)
-                com.novelcharacter.app.util.ImageSettingsStore.EditorRemovePolicy.ALWAYS_ADOPT ->
-                    com.novelcharacter.app.util.ImageOwnershipGuard.adoptOrphans(db, appCtx, removed)
-            }
-        } catch (_: Exception) { /* 보존이 삭제보다 안전 — 실패 시 파일 유지 */ }
-    }
-
-    private fun decodeSampledBitmap(path: String, reqWidth: Int, reqHeight: Int): android.graphics.Bitmap? {
-        // 공용 유틸 위임 — filesDir 경로 가드 + 총 픽셀 상한(파노라마 OOM 방지, P2-6). 정상 이미지 화질 보존.
-        val dir = appDir ?: return null
-        return com.novelcharacter.app.util.CharacterImageLoader.decodeThumbnail(path, dir, reqWidth)
-    }
-
-    private var isSaving = false
-
     private fun setupSaveButton() {
         binding.btnSave.setOnClickListener {
-            if (isSaving) return@setOnClickListener
-            val name = binding.editName.text.toString().trim()
-            if (name.isEmpty()) {
-                Toast.makeText(requireContext(), R.string.enter_name, Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
-            if (name.length > 100) {
-                Toast.makeText(requireContext(), R.string.name_too_long, Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
-
-            val missingRequired = validateRequiredFields()
-            if (missingRequired != null) {
-                Toast.makeText(requireContext(), getString(R.string.required_field_empty, missingRequired), Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
-
-            val character = buildCharacterFromForm()
-
-            isSaving = true
-            binding.btnSave.isEnabled = false
-            viewLifecycleOwner.lifecycleScope.launch {
-                try {
-                    // 중복 이름 체크
-                    val duplicates = viewModel.getAllCharactersByName(name)
-                        .filter { it.id != characterId } // 자기 자신 제외 (수정 시)
-
-                    if (duplicates.isNotEmpty()) {
-                        // 중복 후보 목록 구성 (작품명 포함)
-                        val candidates = duplicates.map { dup ->
-                            val novelTitle = dup.novelId?.let { viewModel.getNovelById(it)?.title }
-                            DuplicateCandidate(dup, novelTitle)
-                        }
-
-                        val isEdit = characterId != -1L
-                        if (!isAdded) { resetSavingState(); return@launch }
-                        showDuplicateDialog(candidates, isEdit)
-                    } else {
-                        performSave(character, isUpdate = characterId != -1L, targetCharacterId = characterId)
-                    }
-                } catch (e: Exception) {
-                    if (isAdded && _binding != null) {
-                        Toast.makeText(requireContext(), R.string.save_failed, Toast.LENGTH_SHORT).show()
-                    }
-                    resetSavingState()
-                }
-            }
+            saveCoordinator.requestSave()
         }
     }
 
-    private fun showDuplicateDialog(
-        candidates: List<DuplicateCandidate>,
-        isEditMode: Boolean
-    ) {
-        // 결과 리스너는 onViewCreated에서 1회 등록(회전 안전, P1-A). 여기선 다이얼로그만 띄운다.
-        val dialog = DuplicateCharacterDialog.newInstance(candidates, isEditMode)
-        dialog.show(childFragmentManager, "duplicate_character")
-    }
-
-    /** 폼 입력으로 Character를 조립한다. 중복 다이얼로그 결과가 회전 후 도착해도 최신 폼에서 재구성하기 위해 공용화. */
-    private fun buildCharacterFromForm(): Character {
+    /** 저장 시점의 폼 입력 스냅샷 — 코디네이터가 최신 폼 기준으로 Character를 조립할 때 사용 */
+    private fun formSnapshot(): CharacterSaveCoordinator.FormSnapshot {
         val novelPosition = binding.spinnerNovel.selectedItemPosition
         val selectedNovelId = if (novelPosition > 0 && novelPosition - 1 < novels.size) novels[novelPosition - 1].id else null
-        return Character(
-            id = if (characterId != -1L) characterId else 0,
-            name = binding.editName.text.toString().trim(),
-            firstName = binding.editFirstName.text.toString().trim(),
-            lastName = binding.editLastName.text.toString().trim(),
-            anotherName = binding.editAnotherName.text.toString().trim(),
-            novelId = selectedNovelId,
-            imagePaths = gson.toJson(imagePaths),
-            createdAt = existingCharacter?.createdAt ?: System.currentTimeMillis(),
-            updatedAt = System.currentTimeMillis(),
+        return CharacterSaveCoordinator.FormSnapshot(
+            name = binding.editName.text.toString(),
+            firstName = binding.editFirstName.text.toString(),
+            lastName = binding.editLastName.text.toString(),
+            anotherName = binding.editAnotherName.text.toString(),
+            tags = binding.editTags.text.toString(),
             memo = binding.editMemo.text.toString(),
-            code = existingCharacter?.code ?: generateEntityCode(),
-            displayOrder = existingCharacter?.displayOrder ?: 0,
-            isPinned = existingCharacter?.isPinned ?: false
+            novelId = selectedNovelId,
+            imagePaths = imageStrip.paths.toList()
         )
-    }
-
-    /**
-     * 중복 캐릭터 다이얼로그 결과 리스너 — **onViewCreated에서 1회 등록**(회전 안전, P1-A).
-     * 예전엔 `showDuplicateDialog` 안에서 지연 등록해, 회전으로 재생성되면 재등록되지 않아 결과가
-     * 유실되고 캐릭터가 조용히 저장되지 않았다(변수 제어 위반). 이제 폼에서 character를 재구성해 처리한다.
-     */
-    private fun registerDuplicateResultListener() {
-        childFragmentManager.setFragmentResultListener(
-            DuplicateCharacterDialog.RESULT_KEY,
-            viewLifecycleOwner
-        ) { _, bundle ->
-            val resolutionName = bundle.getString(DuplicateCharacterDialog.RESULT_RESOLUTION)
-                ?: DuplicateCharacterDialog.Resolution.CANCEL.name
-            val resolution = DuplicateCharacterDialog.Resolution.valueOf(resolutionName)
-            val selectedCharId = bundle.getLong(DuplicateCharacterDialog.RESULT_SELECTED_CHARACTER_ID, -1L)
-            val character = buildCharacterFromForm()
-
-            when (resolution) {
-                DuplicateCharacterDialog.Resolution.CANCEL -> {
-                    resetSavingState()
-                }
-                DuplicateCharacterDialog.Resolution.CREATE_NEW -> {
-                    viewLifecycleOwner.lifecycleScope.launch {
-                        try {
-                            performSave(character, isUpdate = false, targetCharacterId = -1L)
-                        } catch (e: Exception) {
-                            if (isAdded && _binding != null) {
-                                Toast.makeText(requireContext(), R.string.save_failed, Toast.LENGTH_SHORT).show()
-                            }
-                            resetSavingState()
-                        }
-                    }
-                }
-                DuplicateCharacterDialog.Resolution.UPDATE_EXISTING -> {
-                    if (selectedCharId == -1L) { resetSavingState(); return@setFragmentResultListener }
-                    viewLifecycleOwner.lifecycleScope.launch {
-                        try {
-                            val target = viewModel.getCharacterByIdSuspend(selectedCharId)
-                            if (target == null) { resetSavingState(); return@launch }
-                            val updatedChar = character.copy(
-                                id = target.id,
-                                code = target.code,
-                                createdAt = target.createdAt,
-                                displayOrder = target.displayOrder,
-                                isPinned = target.isPinned
-                            )
-                            performSave(updatedChar, isUpdate = true, targetCharacterId = target.id)
-                        } catch (e: Exception) {
-                            if (isAdded && _binding != null) {
-                                Toast.makeText(requireContext(), R.string.save_failed, Toast.LENGTH_SHORT).show()
-                            }
-                            resetSavingState()
-                        }
-                    }
-                }
-                DuplicateCharacterDialog.Resolution.SAVE_ANYWAY -> {
-                    viewLifecycleOwner.lifecycleScope.launch {
-                        try {
-                            performSave(character, isUpdate = true, targetCharacterId = characterId)
-                        } catch (e: Exception) {
-                            if (isAdded && _binding != null) {
-                                Toast.makeText(requireContext(), R.string.save_failed, Toast.LENGTH_SHORT).show()
-                            }
-                            resetSavingState()
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private suspend fun performSave(character: Character, isUpdate: Boolean, targetCharacterId: Long) {
-        // 저장 전 나이-출생연도 불일치 감지 (삽입 전에 체크하여 고아 레코드 방지)
-        val tempCharId = if (isUpdate) targetCharacterId else -1L
-        val tempFieldValues = collectFieldValues(tempCharId)
-        val conflict = viewModel.detectAgeLinkageConflict(
-            novelId = character.novelId,
-            characterId = tempCharId,
-            fieldValues = tempFieldValues
-        )
-        if (conflict != null && isAdded && view != null) {
-            showAgeLinkageConflictDialog(conflict, character, isUpdate, targetCharacterId, tempFieldValues)
-            return
-        }
-
-        executeSave(character, isUpdate, targetCharacterId, tempFieldValues)
-    }
-
-    /**
-     * 실제 저장 실행 (불일치 감지 후 또는 해결 후 호출)
-     * @param resolvedFieldValues 불일치 해결 후 수정된 필드값 목록 (null이면 다시 수집)
-     */
-    private suspend fun executeSave(
-        character: Character,
-        isUpdate: Boolean,
-        targetCharacterId: Long,
-        resolvedFieldValues: List<CharacterFieldValue>? = null,
-        crossUniverseConfirmed: Boolean = false
-    ) {
-        val savedCharId: Long
-        if (isUpdate && targetCharacterId != -1L) {
-            val fieldValues = resolvedFieldValues?.map { it.copy(characterId = targetCharacterId) }
-                ?: collectFieldValues(targetCharacterId)
-            // 다른 세계관으로 이동하는 저장이면 유실 고지·이관 처리(변수 제어: 조용한 필드값 유실 방지)
-            val crossUniv = crossUniverseTargetId(character)
-            if (crossUniv != null && !crossUniverseConfirmed) {
-                val loss = viewModel.countCrossUniverseLoss(targetCharacterId, crossUniv)
-                if (loss.hasRemoval) {
-                    showCrossUniverseMoveDialog(loss,
-                        onConfirm = {
-                            viewLifecycleOwner.lifecycleScope.launch {
-                                executeSave(character, isUpdate, targetCharacterId, fieldValues, crossUniverseConfirmed = true)
-                            }
-                        },
-                        onCancel = { resetSavingState() })
-                    return
-                }
-            }
-            applyCharacterUpdate(character, fieldValues, crossUniv)
-            savedCharId = targetCharacterId
-            cleanupRemovedImages(existingCharacter?.imagePaths, imagePaths)
-        } else {
-            val newId = viewModel.insertCharacterSuspend(character)
-            val fieldValues = resolvedFieldValues?.map { it.copy(characterId = newId) }
-                ?: collectFieldValues(newId)
-            viewModel.saveAllFieldValues(newId, fieldValues)
-            savedCharId = newId
-        }
-
-        val tagText = binding.editTags.text.toString()
-        val tagList = tagText.split(",").map { it.trim() }.filter { it.isNotBlank() }
-        viewModel.replaceAllTagsSuspend(savedCharId, tagList.map { CharacterTag(characterId = savedCharId, tag = it) })
-
-        resetSavingState()
-        clearDraft()
-        if (isAdded && view != null) {
-            Toast.makeText(requireContext(), R.string.saved_successfully, Toast.LENGTH_SHORT).show()
-            findNavController().popBackStack()
-        }
-    }
-
-    private fun showAgeLinkageConflictDialog(
-        conflict: CharacterViewModel.AgeLinkageConflict,
-        character: Character,
-        isUpdate: Boolean,
-        targetCharacterId: Long,
-        originalFieldValues: List<CharacterFieldValue>
-    ) {
-        val options = arrayOf(
-            getString(R.string.age_linkage_option_adjust_birth,
-                conflict.suggestedBirthYear, conflict.inputAge),
-            getString(R.string.age_linkage_option_adjust_age,
-                conflict.expectedAge, conflict.inputBirthYear),
-            if (conflict.affectedCharacterCount > 0)
-                getString(R.string.age_linkage_option_adjust_std_year_with_warn,
-                    conflict.suggestedStdYear, conflict.inputAge, conflict.inputBirthYear,
-                    conflict.affectedCharacterCount)
-            else
-                getString(R.string.age_linkage_option_adjust_std_year,
-                    conflict.suggestedStdYear, conflict.inputAge, conflict.inputBirthYear)
-        )
-
-        var selected = 0
-        AlertDialog.Builder(requireContext())
-            .setTitle(R.string.age_linkage_conflict_title)
-            .setMessage(getString(R.string.age_linkage_conflict_message,
-                conflict.currentStdYear, conflict.inputAge, conflict.inputBirthYear, conflict.expectedAge))
-            .setSingleChoiceItems(options, 0) { _, which -> selected = which }
-            .setPositiveButton(R.string.apply) { _, _ ->
-                viewLifecycleOwner.lifecycleScope.launch {
-                    try {
-                        val fieldValues = originalFieldValues.toMutableList()
-
-                        when (selected) {
-                            0 -> {
-                                // 출생연도 변경 (나이 유지)
-                                val idx = fieldValues.indexOfFirst { it.fieldDefinitionId == conflict.birthYearFieldId }
-                                val newVal = CharacterFieldValue(
-                                    characterId = 0, // executeSave에서 재설정됨
-                                    fieldDefinitionId = conflict.birthYearFieldId,
-                                    value = conflict.suggestedBirthYear.toString()
-                                )
-                                if (idx >= 0) fieldValues[idx] = newVal else fieldValues.add(newVal)
-                            }
-                            1 -> {
-                                // 나이 변경 (출생연도 유지)
-                                val idx = fieldValues.indexOfFirst { it.fieldDefinitionId == conflict.ageFieldId }
-                                val newVal = CharacterFieldValue(
-                                    characterId = 0,
-                                    fieldDefinitionId = conflict.ageFieldId,
-                                    value = conflict.expectedAge.toString()
-                                )
-                                if (idx >= 0) fieldValues[idx] = newVal else fieldValues.add(newVal)
-                            }
-                            2 -> {
-                                // 기준연도 변경 (둘 다 유지) + 다른 캐릭터 일괄 재계산
-                                viewModel.applyStandardYearChange(
-                                    conflict.novelId,
-                                    conflict.currentStdYear,
-                                    conflict.suggestedStdYear
-                                )
-                            }
-                        }
-
-                        executeSave(character, isUpdate, targetCharacterId, fieldValues)
-                    } catch (e: Exception) {
-                        if (isAdded && _binding != null) {
-                            Toast.makeText(requireContext(), R.string.save_failed, Toast.LENGTH_SHORT).show()
-                        }
-                        resetSavingState()
-                    }
-                }
-            }
-            .setNegativeButton(R.string.cancel) { _, _ ->
-                resetSavingState()
-            }
-            .setOnCancelListener {
-                resetSavingState()
-            }
-            .show()
-    }
-
-    private fun resetSavingState() {
-        isSaving = false
-        if (_binding != null) {
-            binding.btnSave.isEnabled = true
-        }
     }
 
     private fun setupEventButton() {
@@ -1782,9 +625,9 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         binding.btnAddEvent.visibility = View.GONE
         binding.supplementButtonLayout.visibility = View.VISIBLE
 
-        // 저장 & 다음
+        // 저장 & 다음 — 공용 코디네이터 사용 (중복 검사 생략은 checkDuplicates=false로 유지)
         binding.btnSaveAndNext.setOnClickListener {
-            performSupplementSave()
+            saveCoordinator.requestSave()
         }
 
         // 건너뛰기
@@ -1794,242 +637,6 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
 
         // 툴바 제목 변경
         binding.toolbar.title = getString(R.string.supplement_title)
-    }
-
-    private fun performSupplementSave() {
-        if (isSaving) return
-        val name = binding.editName.text.toString().trim()
-        if (name.isEmpty()) {
-            Toast.makeText(requireContext(), R.string.enter_name, Toast.LENGTH_SHORT).show()
-            return
-        }
-        if (name.length > 100) {
-            Toast.makeText(requireContext(), R.string.name_too_long, Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        val missingRequired = validateRequiredFields()
-        if (missingRequired != null) {
-            Toast.makeText(requireContext(), getString(R.string.required_field_empty, missingRequired), Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        val novelPosition = binding.spinnerNovel.selectedItemPosition
-        val selectedNovelId = if (novelPosition > 0 && novelPosition - 1 < novels.size) novels[novelPosition - 1].id else null
-
-        val memo = binding.editMemo.text.toString()
-        val firstName = binding.editFirstName.text.toString().trim()
-        val lastName = binding.editLastName.text.toString().trim()
-        val anotherName = binding.editAnotherName.text.toString().trim()
-
-        val character = Character(
-            id = if (characterId != -1L) characterId else 0,
-            name = name,
-            firstName = firstName,
-            lastName = lastName,
-            anotherName = anotherName,
-            novelId = selectedNovelId,
-            imagePaths = gson.toJson(imagePaths),
-            createdAt = existingCharacter?.createdAt ?: System.currentTimeMillis(),
-            updatedAt = System.currentTimeMillis(),
-            memo = memo,
-            code = existingCharacter?.code ?: generateEntityCode(),
-            displayOrder = existingCharacter?.displayOrder ?: 0,
-            isPinned = existingCharacter?.isPinned ?: false
-        )
-
-        isSaving = true
-        binding.btnSaveAndNext.isEnabled = false
-        viewLifecycleOwner.lifecycleScope.launch {
-            try {
-                val isUpdate = characterId != -1L
-                val tempCharId = if (isUpdate) characterId else -1L
-                val tempFieldValues = collectFieldValues(tempCharId)
-
-                // 나이-출생연도 불일치 감지
-                val conflict = viewModel.detectAgeLinkageConflict(
-                    novelId = character.novelId,
-                    characterId = tempCharId,
-                    fieldValues = tempFieldValues
-                )
-                if (conflict != null && isAdded && view != null) {
-                    showSupplementAgeLinkageConflictDialog(conflict, character, isUpdate, tempFieldValues)
-                    return@launch
-                }
-
-                executeSupplementSave(character, isUpdate, tempFieldValues)
-            } catch (e: Exception) {
-                if (isAdded && _binding != null) {
-                    Toast.makeText(requireContext(), R.string.save_failed, Toast.LENGTH_SHORT).show()
-                }
-                resetSupplementSavingState()
-            }
-        }
-    }
-
-    private suspend fun executeSupplementSave(
-        character: Character,
-        isUpdate: Boolean,
-        resolvedFieldValues: List<CharacterFieldValue>,
-        crossUniverseConfirmed: Boolean = false
-    ) {
-        val savedCharId: Long
-        if (isUpdate && characterId != -1L) {
-            val fieldValues = resolvedFieldValues.map { it.copy(characterId = characterId) }
-            val crossUniv = crossUniverseTargetId(character)
-            if (crossUniv != null && !crossUniverseConfirmed) {
-                val loss = viewModel.countCrossUniverseLoss(characterId, crossUniv)
-                if (loss.hasRemoval) {
-                    showCrossUniverseMoveDialog(loss,
-                        onConfirm = {
-                            viewLifecycleOwner.lifecycleScope.launch {
-                                executeSupplementSave(character, isUpdate, resolvedFieldValues, crossUniverseConfirmed = true)
-                            }
-                        },
-                        onCancel = { resetSupplementSavingState() })
-                    return
-                }
-            }
-            applyCharacterUpdate(character, fieldValues, crossUniv)
-            savedCharId = characterId
-            cleanupRemovedImages(existingCharacter?.imagePaths, imagePaths)
-        } else {
-            val newId = viewModel.insertCharacterSuspend(character)
-            val fieldValues = resolvedFieldValues.map { it.copy(characterId = newId) }
-            viewModel.saveAllFieldValues(newId, fieldValues)
-            savedCharId = newId
-        }
-
-        val tagText = binding.editTags.text.toString()
-        val tagList = tagText.split(",").map { it.trim() }.filter { it.isNotBlank() }
-        viewModel.replaceAllTagsSuspend(savedCharId, tagList.map { CharacterTag(characterId = savedCharId, tag = it) })
-
-        resetSupplementSavingState()
-        clearDraft()
-        if (isAdded && view != null) {
-            Toast.makeText(requireContext(), R.string.saved_successfully, Toast.LENGTH_SHORT).show()
-            navigateToNextSupplement()
-        }
-    }
-
-    /** 다른 세계관으로 이동하는 저장이면 새 세계관 id, 아니면 null(기존·새 세계관 모두 있고 서로 다를 때). */
-    private suspend fun crossUniverseTargetId(character: Character): Long? {
-        val old = viewModel.universeIdForNovel(existingCharacter?.novelId)
-        val new = viewModel.universeIdForNovel(character.novelId)
-        return if (old != null && new != null && old != new) new else null
-    }
-
-    /** 세계관 이동 여부에 따라 이관 저장(같은 이름 필드 유지·유실 시 스냅샷) 또는 일반 저장을 선택한다. */
-    private suspend fun applyCharacterUpdate(
-        character: Character,
-        values: List<CharacterFieldValue>,
-        crossUniverseId: Long?
-    ) {
-        if (crossUniverseId != null) viewModel.updateCharacterAcrossUniverse(character, values, crossUniverseId)
-        else viewModel.updateCharacterWithFields(character, values)
-    }
-
-    /** 세계관 이동 시 유실(제거) 고지 다이얼로그 — 같은 이름 필드 이관·제거분 휴지통 백업(복원 가능) 안내. */
-    private fun showCrossUniverseMoveDialog(
-        loss: com.novelcharacter.app.data.repository.UniverseMoveCounts,
-        onConfirm: () -> Unit,
-        onCancel: () -> Unit
-    ) {
-        if (!isAdded || view == null) { onCancel(); return }
-        AlertDialog.Builder(requireContext())
-            .setTitle(R.string.cross_universe_move_title)
-            .setMessage(getString(
-                R.string.cross_universe_move_message,
-                loss.removedValues, loss.removedMemberships, loss.remappedValues
-            ))
-            .setPositiveButton(R.string.cross_universe_move_confirm) { _, _ -> onConfirm() }
-            .setNegativeButton(R.string.cancel) { _, _ -> onCancel() }
-            .setOnCancelListener { onCancel() }
-            .show()
-    }
-
-    private fun resetSupplementSavingState() {
-        isSaving = false
-        if (_binding != null) {
-            binding.btnSaveAndNext.isEnabled = true
-        }
-    }
-
-    private fun showSupplementAgeLinkageConflictDialog(
-        conflict: CharacterViewModel.AgeLinkageConflict,
-        character: Character,
-        isUpdate: Boolean,
-        originalFieldValues: List<CharacterFieldValue>
-    ) {
-        val options = arrayOf(
-            getString(R.string.age_linkage_option_adjust_birth,
-                conflict.suggestedBirthYear, conflict.inputAge),
-            getString(R.string.age_linkage_option_adjust_age,
-                conflict.expectedAge, conflict.inputBirthYear),
-            if (conflict.affectedCharacterCount > 0)
-                getString(R.string.age_linkage_option_adjust_std_year_with_warn,
-                    conflict.suggestedStdYear, conflict.inputAge, conflict.inputBirthYear,
-                    conflict.affectedCharacterCount)
-            else
-                getString(R.string.age_linkage_option_adjust_std_year,
-                    conflict.suggestedStdYear, conflict.inputAge, conflict.inputBirthYear)
-        )
-
-        var selected = 0
-        AlertDialog.Builder(requireContext())
-            .setTitle(R.string.age_linkage_conflict_title)
-            .setMessage(getString(R.string.age_linkage_conflict_message,
-                conflict.currentStdYear, conflict.inputAge, conflict.inputBirthYear, conflict.expectedAge))
-            .setSingleChoiceItems(options, 0) { _, which -> selected = which }
-            .setPositiveButton(R.string.apply) { _, _ ->
-                viewLifecycleOwner.lifecycleScope.launch {
-                    try {
-                        val fieldValues = originalFieldValues.toMutableList()
-
-                        when (selected) {
-                            0 -> {
-                                val idx = fieldValues.indexOfFirst { it.fieldDefinitionId == conflict.birthYearFieldId }
-                                val newVal = CharacterFieldValue(
-                                    characterId = 0,
-                                    fieldDefinitionId = conflict.birthYearFieldId,
-                                    value = conflict.suggestedBirthYear.toString()
-                                )
-                                if (idx >= 0) fieldValues[idx] = newVal else fieldValues.add(newVal)
-                            }
-                            1 -> {
-                                val idx = fieldValues.indexOfFirst { it.fieldDefinitionId == conflict.ageFieldId }
-                                val newVal = CharacterFieldValue(
-                                    characterId = 0,
-                                    fieldDefinitionId = conflict.ageFieldId,
-                                    value = conflict.expectedAge.toString()
-                                )
-                                if (idx >= 0) fieldValues[idx] = newVal else fieldValues.add(newVal)
-                            }
-                            2 -> {
-                                viewModel.applyStandardYearChange(
-                                    conflict.novelId,
-                                    conflict.currentStdYear,
-                                    conflict.suggestedStdYear
-                                )
-                            }
-                        }
-
-                        executeSupplementSave(character, isUpdate, fieldValues)
-                    } catch (e: Exception) {
-                        if (isAdded && _binding != null) {
-                            Toast.makeText(requireContext(), R.string.save_failed, Toast.LENGTH_SHORT).show()
-                        }
-                        resetSupplementSavingState()
-                    }
-                }
-            }
-            .setNegativeButton(R.string.cancel) { _, _ ->
-                resetSupplementSavingState()
-            }
-            .setOnCancelListener {
-                resetSupplementSavingState()
-            }
-            .show()
     }
 
     private fun navigateToNextSupplement() {
@@ -2057,11 +664,10 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
     }
 
     override fun onDestroyView() {
-        binding.imageRecyclerView.adapter = null
+        imageStrip.detach()
         binding.recommendationRecyclerView.adapter = null
         recMatchJob?.cancel()
         super.onDestroyView()
-        imageAdapter = null
         recommendedAdapter = null
         _binding = null
     }

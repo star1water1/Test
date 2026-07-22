@@ -1,46 +1,53 @@
 package com.novelcharacter.app.ui.supplement
 
-import android.graphics.BitmapFactory
-import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
-import androidx.appcompat.app.AlertDialog
-import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
-import androidx.navigation.NavOptions
-import androidx.navigation.fragment.findNavController
-import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
-import com.google.android.material.chip.Chip
-import com.google.android.material.slider.Slider
-import com.google.android.material.materialswitch.MaterialSwitch
+import androidx.viewpager2.adapter.FragmentStateAdapter
+import com.google.android.material.tabs.TabLayoutMediator
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.databinding.FragmentSupplementBinding
-import com.novelcharacter.app.databinding.ItemSupplementCharacterBinding
-import com.novelcharacter.app.util.navigateSafe
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.launch
 
+/**
+ * 편집 중 이탈 가드 — 랜덤 보충 탭이 인라인 편집 중일 때 탭 전환·필터 변경 등
+ * 화면 상태를 바꾸는 조작을 가로채 미저장 변경 확인을 거치게 한다 (변수 제어: 무음 유실 방지).
+ */
+interface RandomEditGuard {
+    /** 현재 이탈을 막아야 하는 상태인가 (편집 모드 + 미저장 변경) */
+    fun isBlocking(): Boolean
+
+    /** 이탈 확인 절차(저장/버리기/계속 편집)를 거친 뒤, 진행이 허용되면 [onProceed]를 호출한다 */
+    fun requestLeave(onProceed: () -> Unit)
+}
+
+/**
+ * 보충 화면 호스트 — 상단 공유 필터(세계관/작품 스피너) + 내부 탭 2개(랜덤 보충 / 완성도 검사).
+ * 기존 완성도 검사 본문은 AuditSupplementFragment로, 신규 랜덤 카드는 RandomSupplementFragment로 분리.
+ */
 class SupplementFragment : Fragment() {
 
     private var _binding: FragmentSupplementBinding? = null
     private val binding get() = _binding!!
     private val viewModel: SupplementViewModel by viewModels()
 
-    private var adapter: SupplementAdapter? = null
     private var criteria: SupplementCriteria = SupplementCriteria()
 
     // 스피너 상태 관리
     private var universes: List<Universe> = emptyList()
     private var filteredNovels: List<Novel> = emptyList()
     private var suppressSpinnerEvents = false
+    private var lastUniversePos = 0
+    private var lastNovelPos = 0
+
+    /** 랜덤 탭이 인라인 편집 중일 때 등록하는 이탈 가드 (onDestroyView에서 해제) */
+    var editGuard: RandomEditGuard? = null
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
@@ -54,10 +61,7 @@ class SupplementFragment : Fragment() {
 
         criteria = SupplementCriteria.load(requireContext())
 
-        setupRecyclerView()
-        setupFilterChips()
-        setupSortChips()
-        setupButtons()
+        setupPager()
         observeViewModel()
     }
 
@@ -68,100 +72,51 @@ class SupplementFragment : Fragment() {
         viewModel.loadData(criteria)
     }
 
-    private fun setupRecyclerView() {
-        adapter = SupplementAdapter { target ->
-            // 개별 캐릭터 클릭 → 편집 화면으로 이동
-            val bundle = Bundle().apply {
-                putLong("characterId", target.character.id)
-            }
-            findNavController().navigateSafe(R.id.supplementFragment, R.id.characterEditFragment, bundle)
-        }
-        binding.recyclerView.layoutManager = LinearLayoutManager(requireContext())
-        binding.recyclerView.adapter = adapter
+    /** 랜덤 탭 편집 모드 진입/이탈 시 좌우 스와이프 잠금 (실수로 탭이 넘어가는 것 방지) */
+    fun setSwipeLocked(locked: Boolean) {
+        _binding?.viewPager?.isUserInputEnabled = !locked
     }
 
-    private fun setupFilterChips() {
-        val chipGroup = binding.issueFilterChipGroup
-        chipGroup.removeAllViews()
-
-        // "전체" 칩
-        val allChip = createFilterChip(getString(R.string.supplement_filter_all), null)
-        allChip.isChecked = true
-        chipGroup.addView(allChip)
-
-        // 각 이슈 타입 칩 (활성화된 기준만)
-        val issueChips = mutableListOf<Pair<SupplementIssue, String>>()
-        if (criteria.checkImages) issueChips.add(SupplementIssue.NO_IMAGE to getString(R.string.supplement_check_image))
-        if (criteria.checkMemo) issueChips.add(SupplementIssue.NO_MEMO to getString(R.string.supplement_check_memo))
-        if (criteria.checkAliases) issueChips.add(SupplementIssue.NO_ALIASES to getString(R.string.supplement_check_aliases))
-        if (criteria.checkNovel) issueChips.add(SupplementIssue.NO_NOVEL to getString(R.string.supplement_check_novel))
-        if (criteria.checkTags) issueChips.add(SupplementIssue.NO_TAGS to getString(R.string.supplement_check_tags))
-        if (criteria.checkCustomFields) issueChips.add(SupplementIssue.INCOMPLETE_FIELDS to getString(R.string.supplement_check_fields))
-        if (criteria.checkRelationships) issueChips.add(SupplementIssue.NO_RELATIONSHIPS to getString(R.string.supplement_check_relationships))
-        if (criteria.checkEvents) issueChips.add(SupplementIssue.NO_EVENTS to getString(R.string.supplement_check_events))
-        if (criteria.checkFactions) issueChips.add(SupplementIssue.NO_FACTIONS to getString(R.string.supplement_check_factions))
-
-        for ((issue, label) in issueChips) {
-            chipGroup.addView(createFilterChip(label, issue))
-        }
+    /** 세계관·작품 필터 해제 — 랜덤 탭의 빈 상태 교정 경로(변수 제어)에서 호출 */
+    fun clearFilters() {
+        viewModel.setNovelFilter(null)
+        applyUniverseSelection(0, universes)
     }
 
-    private fun createFilterChip(text: String, issue: SupplementIssue?): Chip {
-        return Chip(requireContext()).apply {
-            this.text = text
-            isCheckable = true
-            setOnCheckedChangeListener { _, isChecked ->
-                if (isChecked) {
-                    viewModel.setIssueFilter(issue)
-                }
-            }
-        }
-    }
+    private fun setupPager() {
+        binding.viewPager.adapter = SupplementPagerAdapter(this)
+        // 두 탭을 모두 살려둔다 — 랜덤 탭의 편집 상태가 탭 전환으로 파괴되지 않도록
+        binding.viewPager.offscreenPageLimit = 1
 
-    private fun setupSortChips() {
-        val sortGroup = binding.sortChipGroup
-        sortGroup.removeAllViews()
-
-        val sortOptions = listOf(
-            SupplementViewModel.SortMode.ISSUES_DESC to getString(R.string.supplement_sort_issues),
-            SupplementViewModel.SortMode.NAME_ASC to getString(R.string.supplement_sort_name),
-            SupplementViewModel.SortMode.COMPLETION_ASC to getString(R.string.supplement_sort_completion)
+        val titles = listOf(
+            getString(R.string.supplement_tab_random),
+            getString(R.string.supplement_tab_audit)
         )
+        TabLayoutMediator(binding.tabLayout, binding.viewPager) { tab, position ->
+            tab.text = titles[position]
+        }.attach()
 
-        for ((mode, label) in sortOptions) {
-            val chip = Chip(requireContext()).apply {
-                text = label
-                isCheckable = true
-                isChecked = mode == viewModel.sortMode
-                setOnCheckedChangeListener { _, isChecked ->
-                    if (isChecked) {
-                        viewModel.setSortMode(mode)
-                    }
-                }
-            }
-            sortGroup.addView(chip)
-        }
+        interceptTabClicks()
     }
 
-    private fun setupButtons() {
-        binding.btnSettings.setOnClickListener { showSettingsDialog() }
-        binding.btnStartSupplement.setOnClickListener { startSupplement() }
+    /** 탭 클릭을 가로채 편집 중이면 이탈 가드를 거친다 */
+    private fun interceptTabClicks() {
+        for (i in 0 until binding.tabLayout.tabCount) {
+            val tabView = binding.tabLayout.getTabAt(i)?.view ?: continue
+            tabView.setOnClickListener {
+                val b = _binding ?: return@setOnClickListener
+                if (b.viewPager.currentItem == i) return@setOnClickListener
+                val guard = editGuard
+                if (guard != null && guard.isBlocking()) {
+                    guard.requestLeave { _binding?.viewPager?.setCurrentItem(i, true) }
+                } else {
+                    b.viewPager.setCurrentItem(i, true)
+                }
+            }
+        }
     }
 
     private fun observeViewModel() {
-        viewModel.isLoading.observe(viewLifecycleOwner) { loading ->
-            binding.loadingProgress.visibility = if (loading) View.VISIBLE else View.GONE
-        }
-
-        viewModel.targets.observe(viewLifecycleOwner) { targets ->
-            adapter?.submitList(targets)
-            updateUI(targets)
-        }
-
-        viewModel.totalCount.observe(viewLifecycleOwner) { total ->
-            updateUI(viewModel.targets.value ?: emptyList())
-        }
-
         viewModel.universeList.observe(viewLifecycleOwner) { univs ->
             universes = univs
             setupUniverseSpinner(univs)
@@ -176,7 +131,7 @@ class SupplementFragment : Fragment() {
     }
 
     private fun setupUniverseSpinner(univs: List<Universe>) {
-        val items = mutableListOf("전체 세계관")
+        val items = mutableListOf(getString(R.string.supplement_filter_all_universes))
         items.addAll(univs.map { it.name })
 
         val spinnerAdapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, items)
@@ -192,6 +147,7 @@ class SupplementFragment : Fragment() {
             if (idx >= 0) idx + 1 else 0
         } else 0
         binding.spinnerUniverse.setSelection(restoredPos)
+        lastUniversePos = restoredPos
         suppressSpinnerEvents = false
 
         // 작품 스피너는 novelList 옵저버에서 복원됨 (이 시점에 novelList 미로드)
@@ -199,23 +155,43 @@ class SupplementFragment : Fragment() {
         binding.spinnerUniverse.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
                 if (suppressSpinnerEvents) return
-                val selectedUniverse = if (position == 0) null else univs[position - 1]
-                viewModel.setUniverseFilter(selectedUniverse?.id)
-
-                // 작품 스피너 갱신
-                filteredNovels = if (selectedUniverse != null) {
-                    viewModel.getNovelsForUniverse(selectedUniverse.id)
-                } else {
-                    viewModel.novelList.value ?: emptyList()
+                val guard = editGuard
+                if (guard != null && guard.isBlocking() && position != lastUniversePos) {
+                    // 편집 중 — 선택을 되돌리고 가드 통과 시 다시 적용
+                    suppressSpinnerEvents = true
+                    binding.spinnerUniverse.setSelection(lastUniversePos)
+                    suppressSpinnerEvents = false
+                    guard.requestLeave { applyUniverseSelection(position, univs) }
+                    return
                 }
-                setupNovelSpinner(filteredNovels)
+                applyUniverseSelection(position, univs)
             }
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
     }
 
+    private fun applyUniverseSelection(position: Int, univs: List<Universe>) {
+        val b = _binding ?: return
+        lastUniversePos = position
+        if (b.spinnerUniverse.selectedItemPosition != position) {
+            suppressSpinnerEvents = true
+            b.spinnerUniverse.setSelection(position)
+            suppressSpinnerEvents = false
+        }
+        val selectedUniverse = if (position == 0) null else univs[position - 1]
+        viewModel.setUniverseFilter(selectedUniverse?.id)
+
+        // 작품 스피너 갱신
+        filteredNovels = if (selectedUniverse != null) {
+            viewModel.getNovelsForUniverse(selectedUniverse.id)
+        } else {
+            viewModel.novelList.value ?: emptyList()
+        }
+        setupNovelSpinner(filteredNovels)
+    }
+
     private fun setupNovelSpinner(novels: List<Novel>) {
-        val items = mutableListOf("전체 작품")
+        val items = mutableListOf(getString(R.string.supplement_filter_all_novels))
         items.addAll(novels.map { it.title })
 
         val spinnerAdapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, items)
@@ -231,156 +207,36 @@ class SupplementFragment : Fragment() {
             if (idx >= 0) idx + 1 else 0
         } else 0
         binding.spinnerNovel.setSelection(restoredNovelPos)
+        lastNovelPos = restoredNovelPos
         suppressSpinnerEvents = false
 
         binding.spinnerNovel.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
                 if (suppressSpinnerEvents) return
-                val selectedNovel = if (position == 0) null else novels[position - 1]
-                viewModel.setNovelFilter(selectedNovel?.id)
+                val guard = editGuard
+                if (guard != null && guard.isBlocking() && position != lastNovelPos) {
+                    suppressSpinnerEvents = true
+                    binding.spinnerNovel.setSelection(lastNovelPos)
+                    suppressSpinnerEvents = false
+                    guard.requestLeave { applyNovelSelection(position, novels) }
+                    return
+                }
+                applyNovelSelection(position, novels)
             }
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
     }
 
-    private fun updateUI(targets: List<SupplementTarget>) {
-        val total = viewModel.totalCount.value ?: 0
-        val targetCount = targets.size
-        val completedCount = total - targetCount
-        val completionRate = if (total > 0) completedCount * 100 / total else 100
-
-        if (total == 0) {
-            binding.contentLayout.visibility = View.GONE
-            binding.emptyText.visibility = View.VISIBLE
-            binding.emptyText.text = getString(R.string.supplement_no_characters)
-            return
+    private fun applyNovelSelection(position: Int, novels: List<Novel>) {
+        val b = _binding ?: return
+        lastNovelPos = position
+        if (b.spinnerNovel.selectedItemPosition != position) {
+            suppressSpinnerEvents = true
+            b.spinnerNovel.setSelection(position)
+            suppressSpinnerEvents = false
         }
-
-        binding.contentLayout.visibility = View.VISIBLE
-        binding.emptyText.visibility = View.GONE
-
-        binding.targetCountText.text = targetCount.toString()
-        binding.totalCountText.text = total.toString()
-        binding.completionRateText.text = getString(R.string.supplement_completion_format, completionRate, completedCount, total)
-        binding.completionProgressBar.progress = completionRate
-
-        if (targetCount == 0) {
-            binding.startDescText.text = getString(R.string.supplement_all_complete)
-            binding.btnStartSupplement.isEnabled = false
-            binding.listHeaderText.text = getString(R.string.supplement_no_targets)
-        } else {
-            binding.startDescText.text = getString(R.string.supplement_start_desc, targetCount)
-            binding.btnStartSupplement.isEnabled = true
-            binding.listHeaderText.text = getString(R.string.supplement_target_count) + " ($targetCount)"
-        }
-    }
-
-    private fun startSupplement() {
-        val targets = viewModel.targets.value ?: return
-        if (targets.isEmpty()) return
-
-        val ids = targets.map { it.character.id }.toLongArray()
-        // 각 캐릭터별 이슈 라벨을 직렬화하여 전달
-        val issueLabelsArray = targets.map { t ->
-            t.issues.joinToString(", ") { it.label }
-        }.toTypedArray()
-        val bundle = Bundle().apply {
-            putLong("characterId", ids[0])
-            putBoolean("supplementMode", true)
-            putInt("supplementIndex", 0)
-            putLongArray("supplementIds", ids)
-            putStringArray("supplementIssueLabelsArray", issueLabelsArray)
-            putString("supplementIssueLabels", issueLabelsArray.getOrNull(0) ?: "")
-        }
-
-        findNavController().navigateSafe(R.id.supplementFragment, R.id.characterEditFragment, bundle)
-    }
-
-    private fun showSettingsDialog() {
-        val dialogView = LayoutInflater.from(requireContext())
-            .inflate(R.layout.dialog_supplement_settings, null)
-
-        val dialog = AlertDialog.Builder(requireContext())
-            .setTitle(getString(R.string.supplement_settings_title))
-            .setView(dialogView)
-            .setCancelable(true)
-            .create()
-
-        // 스위치 바인딩
-        val switchImage = dialogView.findViewById<MaterialSwitch>(R.id.switchImage)
-        val switchMemo = dialogView.findViewById<MaterialSwitch>(R.id.switchMemo)
-        val switchAliases = dialogView.findViewById<MaterialSwitch>(R.id.switchAliases)
-        val switchNovel = dialogView.findViewById<MaterialSwitch>(R.id.switchNovel)
-        val switchTags = dialogView.findViewById<MaterialSwitch>(R.id.switchTags)
-        val switchFields = dialogView.findViewById<MaterialSwitch>(R.id.switchFields)
-        val switchRelationships = dialogView.findViewById<MaterialSwitch>(R.id.switchRelationships)
-        val switchEvents = dialogView.findViewById<MaterialSwitch>(R.id.switchEvents)
-        val switchFactions = dialogView.findViewById<MaterialSwitch>(R.id.switchFactions)
-        val thresholdSlider = dialogView.findViewById<Slider>(R.id.thresholdSlider)
-        val thresholdLayout = dialogView.findViewById<View>(R.id.thresholdLayout)
-        val thresholdLabel = dialogView.findViewById<android.widget.TextView>(R.id.thresholdLabel)
-
-        // 현재 값 설정
-        switchImage.isChecked = criteria.checkImages
-        switchMemo.isChecked = criteria.checkMemo
-        switchAliases.isChecked = criteria.checkAliases
-        switchNovel.isChecked = criteria.checkNovel
-        switchTags.isChecked = criteria.checkTags
-        switchFields.isChecked = criteria.checkCustomFields
-        switchRelationships.isChecked = criteria.checkRelationships
-        switchEvents.isChecked = criteria.checkEvents
-        switchFactions.isChecked = criteria.checkFactions
-        thresholdSlider.value = criteria.fieldCompletionThreshold.toFloat()
-        thresholdLayout.visibility = if (criteria.checkCustomFields) View.VISIBLE else View.GONE
-        thresholdLabel.text = getString(R.string.supplement_field_threshold_format, criteria.fieldCompletionThreshold)
-
-        // 슬라이더 연동
-        switchFields.setOnCheckedChangeListener { _, isChecked ->
-            thresholdLayout.visibility = if (isChecked) View.VISIBLE else View.GONE
-        }
-        thresholdSlider.addOnChangeListener { _, value, _ ->
-            thresholdLabel.text = getString(R.string.supplement_field_threshold_format, value.toInt())
-        }
-
-        // 기본값 초기화
-        dialogView.findViewById<View>(R.id.btnResetDefaults).setOnClickListener {
-            val defaults = SupplementCriteria()
-            switchImage.isChecked = defaults.checkImages
-            switchMemo.isChecked = defaults.checkMemo
-            switchAliases.isChecked = defaults.checkAliases
-            switchNovel.isChecked = defaults.checkNovel
-            switchTags.isChecked = defaults.checkTags
-            switchFields.isChecked = defaults.checkCustomFields
-            switchRelationships.isChecked = defaults.checkRelationships
-            switchEvents.isChecked = defaults.checkEvents
-            switchFactions.isChecked = defaults.checkFactions
-            thresholdSlider.value = defaults.fieldCompletionThreshold.toFloat()
-        }
-
-        // 닫기
-        dialogView.findViewById<View>(R.id.btnClose).setOnClickListener {
-            // 저장
-            criteria = SupplementCriteria(
-                checkImages = switchImage.isChecked,
-                checkMemo = switchMemo.isChecked,
-                checkAliases = switchAliases.isChecked,
-                checkNovel = switchNovel.isChecked,
-                checkTags = switchTags.isChecked,
-                checkCustomFields = switchFields.isChecked,
-                fieldCompletionThreshold = thresholdSlider.value.toInt(),
-                checkRelationships = switchRelationships.isChecked,
-                checkEvents = switchEvents.isChecked,
-                checkFactions = switchFactions.isChecked
-            )
-            SupplementCriteria.save(requireContext(), criteria)
-
-            // 필터 칩 재생성 및 데이터 리로드
-            setupFilterChips()
-            viewModel.loadData(criteria)
-            dialog.dismiss()
-        }
-
-        dialog.show()
+        val selectedNovel = if (position == 0) null else novels[position - 1]
+        viewModel.setNovelFilter(selectedNovel?.id)
     }
 
     override fun onDestroyView() {
@@ -388,113 +244,11 @@ class SupplementFragment : Fragment() {
         _binding = null
     }
 
-    // ========== 내부 어댑터 ==========
-
-    private class SupplementAdapter(
-        private val onClick: (SupplementTarget) -> Unit
-    ) : RecyclerView.Adapter<SupplementAdapter.ViewHolder>() {
-
-        private var items: List<SupplementTarget> = emptyList()
-        private val gson = com.google.gson.Gson()
-        private val imagePathsType = object : com.google.gson.reflect.TypeToken<List<String>>() {}.type
-        private var scope: kotlinx.coroutines.CoroutineScope? = null
-
-        fun submitList(list: List<SupplementTarget>) {
-            items = list
-            notifyDataSetChanged()
-        }
-
-        override fun onAttachedToRecyclerView(recyclerView: RecyclerView) {
-            super.onAttachedToRecyclerView(recyclerView)
-            scope?.cancel()
-            scope = kotlinx.coroutines.CoroutineScope(
-                kotlinx.coroutines.Dispatchers.Main + kotlinx.coroutines.SupervisorJob()
-            )
-        }
-
-        override fun onDetachedFromRecyclerView(recyclerView: RecyclerView) {
-            super.onDetachedFromRecyclerView(recyclerView)
-            scope?.cancel()
-            scope = null
-        }
-
-        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
-            val binding = ItemSupplementCharacterBinding.inflate(
-                LayoutInflater.from(parent.context), parent, false
-            )
-            return ViewHolder(binding)
-        }
-
-        override fun onBindViewHolder(holder: ViewHolder, position: Int) {
-            holder.bind(items[position], position + 1)
-        }
-
-        override fun getItemCount() = items.size
-
-        inner class ViewHolder(
-            private val binding: ItemSupplementCharacterBinding
-        ) : RecyclerView.ViewHolder(binding.root) {
-
-            fun bind(target: SupplementTarget, index: Int) {
-                binding.indexText.text = index.toString()
-                binding.characterName.text = target.character.displayName
-
-                // 미흡 항목 요약
-                val issueLabels = target.issues.joinToString(", ") { it.label }
-                binding.issueText.text = itemView.context.getString(R.string.supplement_issue_summary, issueLabels)
-
-                // 이미지 — IO 스레드에서 비동기 디코딩
-                val imagePaths = try {
-                    gson.fromJson<List<String>>(target.character.imagePaths, imagePathsType) ?: emptyList()
-                } catch (_: Exception) { emptyList() }
-
-                binding.characterImage.setImageResource(R.drawable.ic_character_placeholder)
-                if (imagePaths.isNotEmpty()) {
-                    val path = imagePaths[0]
-                    val appDir = itemView.context.filesDir
-                    val charId = target.character.id
-                    scope?.launch {
-                        val targetSize = (48 * itemView.context.resources.displayMetrics.density).toInt().coerceAtLeast(1)
-                        // 공용 유틸 위임 — filesDir 경로 가드 + 총 픽셀 상한(파노라마 OOM 방지, P2-6).
-                        val bitmap = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                            com.novelcharacter.app.util.CharacterImageLoader.decodeThumbnail(path, appDir, targetSize)
-                        }
-                        // ViewHolder가 재활용되었을 수 있으므로 검증
-                        if (bitmap != null && bindingAdapterPosition != RecyclerView.NO_POSITION) {
-                            val item = items.getOrNull(bindingAdapterPosition)
-                            if (item?.character?.id == charId) {
-                                binding.characterImage.setImageBitmap(bitmap)
-                            }
-                        }
-                    }
-                }
-
-                // 완성률 배지
-                val ctx = itemView.context
-                if (target.fieldCompletion >= 0) {
-                    val pct = target.fieldCompletion.toInt()
-                    binding.completionBadge.text = "${pct}%"
-                    val color = when {
-                        pct < 30 -> ContextCompat.getColor(ctx, R.color.supplement_badge_high)
-                        pct < 70 -> ContextCompat.getColor(ctx, R.color.supplement_badge_mid)
-                        else -> ContextCompat.getColor(ctx, R.color.supplement_badge_low)
-                    }
-                    val bg = GradientDrawable().apply {
-                        shape = GradientDrawable.OVAL
-                        setColor(color)
-                    }
-                    binding.completionBadge.background = bg
-                } else {
-                    binding.completionBadge.text = ctx.getString(R.string.supplement_field_na)
-                    val bg = GradientDrawable().apply {
-                        shape = GradientDrawable.OVAL
-                        setColor(ContextCompat.getColor(ctx, R.color.text_secondary))
-                    }
-                    binding.completionBadge.background = bg
-                }
-
-                itemView.setOnClickListener { onClick(target) }
-            }
+    private inner class SupplementPagerAdapter(fragment: Fragment) : FragmentStateAdapter(fragment) {
+        override fun getItemCount(): Int = 2
+        override fun createFragment(position: Int): Fragment = when (position) {
+            0 -> RandomSupplementFragment()
+            else -> AuditSupplementFragment()
         }
     }
 }
