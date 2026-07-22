@@ -242,8 +242,9 @@
     </style>
 
     <!-- ============ 다이얼로그 ============ -->
+    <!-- M3 다이얼로그 셰이프는 CornerExtraLarge 토큰을 읽는다 — 이 토큰을 20dp로 오버라이드 -->
     <style name="ThemeOverlay.App.Dialog" parent="ThemeOverlay.Material3.MaterialAlertDialog">
-        <item name="shapeAppearance">@style/ShapeAppearance.App.Dialog</item>
+        <item name="shapeAppearanceCornerExtraLarge">@style/ShapeAppearance.App.Dialog</item>
     </style>
 
     <!-- ============ 셰이프 ============ -->
