@@ -449,8 +449,12 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
                 val values = characterViewModel.getValuesByCharacterList(character.id)
                 if (_binding == null || displayedCharacter?.id != character.id) return@launch
                 fieldRenderer.displayDynamicFields(fields, values)
+                // 필드가 없으면 컨테이너를 접어 패널 하단의 빈 상단 마진을 없앤다
+                binding.dynamicFieldsContainer.visibility =
+                    if (binding.dynamicFieldsContainer.childCount > 0) View.VISIBLE else View.GONE
             } else {
                 binding.dynamicFieldsContainer.removeAllViews()
+                binding.dynamicFieldsContainer.visibility = View.GONE
             }
         }
     }

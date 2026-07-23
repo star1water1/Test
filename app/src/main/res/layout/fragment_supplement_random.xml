@@ -167,7 +167,10 @@
                 android:visibility="gone" />
         </LinearLayout>
 
-        <!-- 미리보기 컨테이너 (편집 OFF) -->
+        <!-- 미리보기 컨테이너 (편집 OFF)
+             한 캐릭터의 정보가 흩어진 카드가 아니라 하나의 정체성으로 읽히도록,
+             전체를 외곽선 있는 단일 '캐릭터 패널'로 묶는다(사용자 요청: 카드를 묶는 라인).
+             이름은 크게·액센트 라인으로 앵커, 내부는 구분선(hairline)으로 섹션을 나눈다. -->
         <LinearLayout
             android:id="@+id/previewContainer"
             android:layout_width="match_parent"
@@ -179,13 +182,16 @@
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="@dimen/stats_margin_md"
                 app:cardCornerRadius="@dimen/stats_card_corner_radius"
-                app:cardElevation="@dimen/stats_card_elevation">
+                app:cardElevation="@dimen/stats_card_elevation"
+                app:strokeColor="?attr/colorOutline"
+                app:strokeWidth="@dimen/supplement_panel_stroke_width">
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:padding="@dimen/stats_padding_card">
+                    android:paddingHorizontal="@dimen/stats_margin_md"
+                    android:paddingVertical="@dimen/stats_padding_card">
 
                     <androidx.viewpager2.widget.ViewPager2
                         android:id="@+id/imageViewPager"
@@ -194,6 +200,7 @@
                         android:layout_marginBottom="@dimen/stats_margin_md"
                         android:visibility="gone" />
 
+                    <!-- 정체성 헤더: 이름(강조) + 완성도 배지 -->
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
@@ -206,7 +213,7 @@
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
                             android:textColor="@color/on_surface"
-                            android:textSize="@dimen/stats_text_heading"
+                            android:textSize="@dimen/stats_text_number_md"
                             android:textStyle="bold" />
 
                         <TextView
@@ -223,10 +230,18 @@
                             android:visibility="gone" />
                     </LinearLayout>
 
+                    <!-- 이름 액센트 라인 — 정체성 앵커 -->
+                    <View
+                        android:layout_width="@dimen/supplement_name_accent_width"
+                        android:layout_height="@dimen/supplement_name_accent_height"
+                        android:layout_marginTop="@dimen/stats_margin_xs"
+                        android:background="?attr/colorPrimary" />
+
                     <TextView
                         android:id="@+id/previewFullName"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/stats_margin_xs"
                         android:textColor="@color/text_secondary"
                         android:textSize="@dimen/stats_text_body_sm"
                         android:visibility="gone" />
@@ -235,6 +250,7 @@
                         android:id="@+id/aliasChipGroup"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/stats_margin_xs"
                         android:visibility="gone" />
 
                     <TextView
@@ -270,47 +286,48 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:visibility="gone" />
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
 
-            <com.google.android.material.card.MaterialCardView
-                android:id="@+id/memoCard"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="@dimen/stats_margin_md"
-                android:visibility="gone"
-                app:cardCornerRadius="@dimen/stats_card_corner_radius"
-                app:cardElevation="@dimen/stats_card_elevation">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:padding="@dimen/stats_padding_card">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/memo"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="@dimen/stats_text_body_sm"
-                        android:layout_marginBottom="@dimen/stats_margin_xs" />
-
-                    <TextView
-                        android:id="@+id/previewMemo"
+                    <!-- 메모 섹션 (id=memoCard 유지 — 가시성 토글 대상) -->
+                    <LinearLayout
+                        android:id="@+id/memoCard"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:textColor="@color/on_surface"
-                        android:textSize="@dimen/stats_text_body" />
+                        android:orientation="vertical"
+                        android:visibility="gone">
+
+                        <!-- 섹션 구분 hairline — 정체성과 메모를 한 패널 안에서 나눈다 -->
+                        <View
+                            android:layout_width="match_parent"
+                            android:layout_height="@dimen/card_stroke_width"
+                            android:layout_marginTop="@dimen/stats_margin_md"
+                            android:layout_marginBottom="@dimen/stats_margin_md"
+                            android:background="?attr/colorOutlineVariant" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/memo"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="@dimen/stats_text_body_sm"
+                            android:layout_marginBottom="@dimen/stats_margin_xs" />
+
+                        <TextView
+                            android:id="@+id/previewMemo"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:textColor="@color/on_surface"
+                            android:textSize="@dimen/stats_text_body" />
+                    </LinearLayout>
+
+                    <!-- 커스텀 필드 (DynamicFieldRenderer 렌더 대상) — 같은 패널 안에 포함 -->
+                    <LinearLayout
+                        android:id="@+id/dynamicFieldsContainer"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/stats_margin_md"
+                        android:orientation="vertical" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
-
-            <!-- 커스텀 필드 (DynamicFieldRenderer 렌더 대상) -->
-            <LinearLayout
-                android:id="@+id/dynamicFieldsContainer"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnGoDetail"

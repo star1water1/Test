@@ -51,6 +51,10 @@
     <dimen name="stats_margin_lg">16dp</dimen>
     <dimen name="stats_padding_content">12dp</dimen>
     <dimen name="stats_padding_card">16dp</dimen>
+    <!-- 보충 캐릭터 패널: 흩어진 카드를 하나로 묶는 외곽선 + 이름 강조 액센트 -->
+    <dimen name="supplement_panel_stroke_width">1.5dp</dimen>
+    <dimen name="supplement_name_accent_height">3dp</dimen>
+    <dimen name="supplement_name_accent_width">32dp</dimen>
 
     <!-- Chart -->
     <dimen name="stats_chart_height">300dp</dimen>
