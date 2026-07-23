@@ -25,6 +25,7 @@ import com.novelcharacter.app.data.model.BirthdayCharacterItem
 import com.novelcharacter.app.data.model.CharacterStateChange
 import com.novelcharacter.app.data.model.RecentActivity
 import com.novelcharacter.app.databinding.FragmentHomeDashboardBinding
+import com.novelcharacter.app.excel.ExcelTransferController
 import com.novelcharacter.app.ui.adapter.BirthdayBannerAdapter
 import com.novelcharacter.app.ui.assistant.AssistantViewModel
 import com.novelcharacter.app.util.BirthdayHelper
@@ -84,6 +85,20 @@ class HomeDashboardFragment : Fragment() {
 
     private var birthdayAdapter: BirthdayBannerAdapter? = null
     private var recentAdapter: RecentActivityAdapter? = null
+
+    private lateinit var excel: ExcelTransferController
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        // 런처 등록 순서 보존을 위해 onCreate에서 생성 (컨트롤러 KDoc 참조)
+        excel = ExcelTransferController(this)
+        excel.restoreState(savedInstanceState)
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        excel.saveState(outState)
+    }
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
@@ -188,6 +203,17 @@ class HomeDashboardFragment : Fragment() {
         }
         binding.cardImages.setOnClickListener {
             findNavController().navigateSafe(R.id.homeFragment, R.id.imageManagerFragment)
+        }
+        binding.cardExcel.setOnClickListener {
+            MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.dashboard_tool_excel)
+                .setItems(
+                    arrayOf(getString(R.string.settings_export), getString(R.string.settings_import))
+                ) { _, which ->
+                    if (which == 0) excel.showExportDialog() else excel.showImportDialog()
+                }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
         }
     }
 

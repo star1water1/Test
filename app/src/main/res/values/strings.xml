@@ -905,6 +905,7 @@
     <string name="tab_analysis">분석</string>
     <string name="dashboard_shortcuts">바로가기</string>
     <string name="dashboard_tools">도구</string>
+    <string name="dashboard_tool_excel">엑셀 내보내기·가져오기</string>
     <string name="dashboard_assistant_alert">데이터 정합성 오류 %d건</string>
     <string name="dashboard_assistant_alert_action">어시스턴트에서 확인</string>
 

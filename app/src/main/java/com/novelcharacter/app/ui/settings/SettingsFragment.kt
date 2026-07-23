@@ -39,13 +39,7 @@ class SettingsFragment : Fragment() {
     private var _binding: FragmentSettingsBinding? = null
     private val binding get() = _binding!!
 
-    private var importerInitialized = false
-    private val importer by lazy {
-        importerInitialized = true
-        com.novelcharacter.app.excel.ExcelImporter(requireContext().applicationContext)
-    }
-    private var exporter: com.novelcharacter.app.excel.ExcelExporter? = null
-    private var pendingExportFile: java.io.File? = null
+    private lateinit var excel: com.novelcharacter.app.excel.ExcelTransferController
     private var pendingBackupExportFile: File? = null
 
     private val restoreFileLauncher = registerForActivityResult(
@@ -81,20 +75,11 @@ class SettingsFragment : Fragment() {
         }
     }
 
-    private var pendingExportOptions: com.novelcharacter.app.excel.ExportOptions? = null
-
-    private val saveFileLauncher = registerForActivityResult(
-        ActivityResultContracts.CreateDocument("*/*")
-    ) { uri ->
-        if (!isAdded) return@registerForActivityResult
-        val file = pendingExportFile
-        if (uri != null && file != null) {
-            if (exporter == null) {
-                exporter = com.novelcharacter.app.excel.ExcelExporter(requireContext().applicationContext)
-            }
-            exporter?.writeToUri(uri, file)
-        }
-        pendingExportFile = null
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        // 런처 등록 순서 보존을 위해 onCreate에서 생성 (컨트롤러 KDoc 참조)
+        excel = com.novelcharacter.app.excel.ExcelTransferController(this)
+        excel.restoreState(savedInstanceState)
     }
 
     override fun onCreateView(
@@ -107,11 +92,6 @@ class SettingsFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        savedInstanceState?.getString("pendingExportFilePath")?.let {
-            pendingExportFile = java.io.File(it)
-        }
-        importer.registerLauncher(this)
-
         updateThemeLabel()
 
         binding.themeRow.setOnClickListener {
@@ -120,7 +100,7 @@ class SettingsFragment : Fragment() {
 
         // Data management
         binding.exportRow.setOnClickListener {
-            exportToExcel()
+            excel.showExportDialog()
         }
 
         binding.worldPackageRow.setOnClickListener {
@@ -128,7 +108,7 @@ class SettingsFragment : Fragment() {
         }
 
         binding.importRow.setOnClickListener {
-            importFromExcel()
+            excel.showImportDialog()
         }
 
         binding.trashRow.setOnClickListener {
@@ -340,9 +320,7 @@ class SettingsFragment : Fragment() {
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
-        pendingExportFile?.absolutePath?.let {
-            outState.putString("pendingExportFilePath", it)
-        }
+        excel.saveState(outState)
     }
 
     private fun updateThemeLabel() {
@@ -426,56 +404,6 @@ class SettingsFragment : Fragment() {
                 if (isAdded) Toast.makeText(requireContext(), e.message, Toast.LENGTH_SHORT).show()
             }
         }
-    }
-
-    private fun exportToExcel() {
-        if (!isAdded) return
-        showExportOptionsDialog()
-    }
-
-    private fun showExportOptionsDialog() {
-        if (!isAdded) return
-        val labels = com.novelcharacter.app.excel.ExportOptions.LABELS
-        val checked = com.novelcharacter.app.excel.ExportOptions.ALL.toBooleanArray()
-
-        MaterialAlertDialogBuilder(requireContext())
-            .setTitle(R.string.export_options_title)
-            .setMultiChoiceItems(labels, checked) { _, which, isChecked ->
-                checked[which] = isChecked
-            }
-            .setPositiveButton(R.string.confirm) { _, _ ->
-                val options = com.novelcharacter.app.excel.ExportOptions.fromBooleanArray(checked)
-                pendingExportOptions = options
-                showExportModeDialog(options)
-            }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
-    }
-
-    private fun showExportModeDialog(options: com.novelcharacter.app.excel.ExportOptions) {
-        if (!isAdded) return
-        MaterialAlertDialogBuilder(requireContext())
-            .setTitle(R.string.export_mode_title)
-            .setItems(arrayOf(getString(R.string.export_mode_share), getString(R.string.export_mode_save))) { _, which ->
-                exporter?.cancel()
-                exporter = com.novelcharacter.app.excel.ExcelExporter(requireContext().applicationContext)
-                when (which) {
-                    0 -> exporter?.exportAll(options)
-                    1 -> exporter?.exportAll(options) { file, fileName ->
-                        if (isAdded) {
-                            pendingExportFile = file
-                            saveFileLauncher.launch(fileName)
-                        }
-                    }
-                }
-            }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
-    }
-
-    private fun importFromExcel() {
-        if (!isAdded) return
-        importer.showImportDialog(this)
     }
 
     // ── 백업/복원 ──
@@ -876,7 +804,7 @@ class SettingsFragment : Fragment() {
                 // tempXlsx 삭제를 여기서 하지 않음:
                 // importFromLocalFile()이 별도 코루틴을 실행하여 비동기로 파일을 읽으므로
                 // 즉시 삭제하면 경쟁 조건 발생. cacheDir 파일은 시스템이 관리.
-                importer.importFromLocalFile(tempXlsx!!)
+                excel.importFromLocalFile(tempXlsx!!)
 
             } catch (e: Exception) {
                 AppLogger.error("Settings", "백업 복원 실패", e)
@@ -920,7 +848,7 @@ class SettingsFragment : Fragment() {
 
                 progressDialog.dismiss()
                 // tempXlsx 삭제를 여기서 하지 않음 — importFromLocalFile()이 비동기로 읽음
-                importer.importFromLocalFile(tempXlsx)
+                excel.importFromLocalFile(tempXlsx)
             } catch (e: javax.crypto.AEADBadTagException) {
                 // 잘못된 암호 — 재입력 기회 제공
                 if (progressDialog.isShowing) progressDialog.dismiss()
@@ -1146,12 +1074,4 @@ class SettingsFragment : Fragment() {
         _binding = null
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
-        exporter?.cancel()
-        exporter = null
-        if (importerInitialized) {
-            importer.cleanup()
-        }
-    }
 }

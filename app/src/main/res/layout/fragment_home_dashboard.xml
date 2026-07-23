@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 홈 정보 위계(docs/design_intent_2026-07.md 규칙 1):
+     ① 복구 필요 오류 → ② 이어서 할 작업(최근) → ③ 시점 민감 정보(생일)
+     → ④ 생성 진입(바로가기) → ⑤ 저빈도 도구. 섹션은 자기완결 블록 — 순서 변경은 블록 스왑만으로 가능. -->
 <LinearLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -26,7 +29,7 @@
             android:paddingHorizontal="@dimen/spacing_lg"
             android:paddingBottom="@dimen/spacing_xl">
 
-            <!-- 어시스턴트 정합성 오류 알림 (오류 있을 때만 표시) -->
+            <!-- ① 어시스턴트 정합성 오류 알림 (오류 있을 때만 표시) -->
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/assistantAlertCard"
                 android:layout_width="match_parent"
@@ -83,77 +86,7 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- 바로가기 -->
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/spacing_lg"
-                android:text="@string/dashboard_shortcuts"
-                android:textAppearance="@style/TextAppearance.App.Title" />
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/spacing_sm"
-                android:orientation="horizontal">
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnQuickAddCharacter"
-                    style="@style/Widget.App.Button.Tonal"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="@string/add_character"
-                    app:icon="@drawable/ic_add" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnQuickAddEvent"
-                    style="@style/Widget.App.Button.Tonal"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginStart="@dimen/spacing_sm"
-                    android:text="@string/add_event"
-                    app:icon="@drawable/ic_calendar" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnQuickSearch"
-                    style="@style/Widget.App.Button.Tonal"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginStart="@dimen/spacing_sm"
-                    android:text="@string/search"
-                    app:icon="@drawable/ic_search" />
-            </LinearLayout>
-
-            <!-- 다가오는 생일 (있을 때만 표시) -->
-            <LinearLayout
-                android:id="@+id/birthdaySection"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:visibility="gone">
-
-                <TextView
-                    android:id="@+id/birthdayTitle"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/spacing_xl"
-                    android:text="@string/birthday_banner_title"
-                    android:textAppearance="@style/TextAppearance.App.Title" />
-
-                <androidx.recyclerview.widget.RecyclerView
-                    android:id="@+id/birthdayRecyclerView"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/spacing_sm"
-                    android:clipToPadding="false"
-                    android:orientation="horizontal"
-                    app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager" />
-            </LinearLayout>
-
-            <!-- 최근 활동 (있을 때만 표시) -->
+            <!-- ② 최근 활동 (있을 때만 표시) -->
             <LinearLayout
                 android:id="@+id/recentSection"
                 android:layout_width="match_parent"
@@ -164,7 +97,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/spacing_xl"
+                    android:layout_marginTop="@dimen/spacing_lg"
                     android:text="@string/recent_activities"
                     android:textAppearance="@style/TextAppearance.App.Title" />
 
@@ -178,130 +111,258 @@
                     app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager" />
             </LinearLayout>
 
-            <!-- 도구 -->
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/spacing_xl"
-                android:text="@string/dashboard_tools"
-                android:textAppearance="@style/TextAppearance.App.Title" />
-
-            <com.google.android.material.card.MaterialCardView
-                android:id="@+id/cardTimeline"
+            <!-- ③ 다가오는 생일 (있을 때만 표시) -->
+            <LinearLayout
+                android:id="@+id/birthdaySection"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/spacing_sm"
-                android:clickable="true"
-                android:focusable="true">
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <TextView
+                    android:id="@+id/birthdayTitle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/spacing_lg"
+                    android:text="@string/birthday_banner_title"
+                    android:textAppearance="@style/TextAppearance.App.Title" />
+
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/birthdayRecyclerView"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/spacing_sm"
+                    android:clipToPadding="false"
+                    android:orientation="horizontal"
+                    app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager" />
+            </LinearLayout>
+
+            <!-- ④ 바로가기 -->
+            <LinearLayout
+                android:id="@+id/shortcutsSection"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/spacing_lg"
+                    android:text="@string/dashboard_shortcuts"
+                    android:textAppearance="@style/TextAppearance.App.Title" />
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:padding="@dimen/card_padding">
+                    android:layout_marginTop="@dimen/spacing_sm"
+                    android:orientation="horizontal">
 
-                    <ImageView
-                        android:layout_width="@dimen/icon_md"
-                        android:layout_height="@dimen/icon_md"
-                        android:src="@drawable/ic_timeline"
-                        app:tint="?attr/colorPrimary"
-                        android:importantForAccessibility="no" />
-
-                    <TextView
+                    <!-- 규칙 2: 채움 버튼은 화면당 1개 — 홈의 핵심 생성 행위 '캐릭터 추가'에 부여 -->
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnQuickAddCharacter"
+                        style="@style/Widget.App.Button"
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:layout_marginStart="@dimen/spacing_md"
-                        android:text="@string/tab_timeline"
-                        android:textAppearance="@style/TextAppearance.App.Subtitle" />
+                        android:text="@string/add_character"
+                        app:icon="@drawable/ic_add" />
 
-                    <ImageView
-                        android:layout_width="@dimen/icon_md"
-                        android:layout_height="@dimen/icon_md"
-                        android:src="@drawable/ic_chevron_right"
-                        app:tint="?attr/colorOnSurfaceVariant"
-                        android:importantForAccessibility="no" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnQuickAddEvent"
+                        style="@style/Widget.App.Button.Tonal"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="@dimen/spacing_sm"
+                        android:text="@string/add_event"
+                        app:icon="@drawable/ic_calendar" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnQuickSearch"
+                        style="@style/Widget.App.Button.Tonal"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="@dimen/spacing_sm"
+                        android:text="@string/search"
+                        app:icon="@drawable/ic_search" />
                 </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
+            </LinearLayout>
 
-            <com.google.android.material.card.MaterialCardView
-                android:id="@+id/cardNameBank"
+            <!-- ⑤ 도구 — 이동 타일은 Widget.App.Card.Tonal(규칙 2) -->
+            <LinearLayout
+                android:id="@+id/toolsSection"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/spacing_sm"
-                android:clickable="true"
-                android:focusable="true">
+                android:orientation="vertical">
 
-                <LinearLayout
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/spacing_lg"
+                    android:text="@string/dashboard_tools"
+                    android:textAppearance="@style/TextAppearance.App.Title" />
+
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/cardTimeline"
+                    style="@style/Widget.App.Card.Tonal"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:padding="@dimen/card_padding">
+                    android:layout_marginTop="@dimen/spacing_sm"
+                    android:clickable="true"
+                    android:focusable="true">
 
-                    <ImageView
-                        android:layout_width="@dimen/icon_md"
-                        android:layout_height="@dimen/icon_md"
-                        android:src="@drawable/ic_name_bank"
-                        app:tint="?attr/colorPrimary"
-                        android:importantForAccessibility="no" />
-
-                    <TextView
-                        android:layout_width="0dp"
+                    <LinearLayout
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:layout_marginStart="@dimen/spacing_md"
-                        android:text="@string/tab_name_bank"
-                        android:textAppearance="@style/TextAppearance.App.Subtitle" />
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:padding="@dimen/card_padding">
 
-                    <ImageView
-                        android:layout_width="@dimen/icon_md"
-                        android:layout_height="@dimen/icon_md"
-                        android:src="@drawable/ic_chevron_right"
-                        app:tint="?attr/colorOnSurfaceVariant"
-                        android:importantForAccessibility="no" />
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
+                        <ImageView
+                            android:layout_width="@dimen/icon_md"
+                            android:layout_height="@dimen/icon_md"
+                            android:src="@drawable/ic_timeline"
+                            app:tint="?attr/colorPrimary"
+                            android:importantForAccessibility="no" />
 
-            <com.google.android.material.card.MaterialCardView
-                android:id="@+id/cardImages"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/spacing_sm"
-                android:clickable="true"
-                android:focusable="true">
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginStart="@dimen/spacing_md"
+                            android:text="@string/tab_timeline"
+                            android:textAppearance="@style/TextAppearance.App.Subtitle" />
 
-                <LinearLayout
+                        <ImageView
+                            android:layout_width="@dimen/icon_md"
+                            android:layout_height="@dimen/icon_md"
+                            android:src="@drawable/ic_chevron_right"
+                            app:tint="?attr/colorOnSurfaceVariant"
+                            android:importantForAccessibility="no" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/cardNameBank"
+                    style="@style/Widget.App.Card.Tonal"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:padding="@dimen/card_padding">
+                    android:layout_marginTop="@dimen/spacing_sm"
+                    android:clickable="true"
+                    android:focusable="true">
 
-                    <ImageView
-                        android:layout_width="@dimen/icon_md"
-                        android:layout_height="@dimen/icon_md"
-                        android:src="@drawable/ic_image"
-                        app:tint="?attr/colorPrimary"
-                        android:importantForAccessibility="no" />
-
-                    <TextView
-                        android:layout_width="0dp"
+                    <LinearLayout
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:layout_marginStart="@dimen/spacing_md"
-                        android:text="@string/tab_images"
-                        android:textAppearance="@style/TextAppearance.App.Subtitle" />
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:padding="@dimen/card_padding">
 
-                    <ImageView
-                        android:layout_width="@dimen/icon_md"
-                        android:layout_height="@dimen/icon_md"
-                        android:src="@drawable/ic_chevron_right"
-                        app:tint="?attr/colorOnSurfaceVariant"
-                        android:importantForAccessibility="no" />
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
+                        <ImageView
+                            android:layout_width="@dimen/icon_md"
+                            android:layout_height="@dimen/icon_md"
+                            android:src="@drawable/ic_name_bank"
+                            app:tint="?attr/colorPrimary"
+                            android:importantForAccessibility="no" />
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginStart="@dimen/spacing_md"
+                            android:text="@string/tab_name_bank"
+                            android:textAppearance="@style/TextAppearance.App.Subtitle" />
+
+                        <ImageView
+                            android:layout_width="@dimen/icon_md"
+                            android:layout_height="@dimen/icon_md"
+                            android:src="@drawable/ic_chevron_right"
+                            app:tint="?attr/colorOnSurfaceVariant"
+                            android:importantForAccessibility="no" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/cardImages"
+                    style="@style/Widget.App.Card.Tonal"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/spacing_sm"
+                    android:clickable="true"
+                    android:focusable="true">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:padding="@dimen/card_padding">
+
+                        <ImageView
+                            android:layout_width="@dimen/icon_md"
+                            android:layout_height="@dimen/icon_md"
+                            android:src="@drawable/ic_image"
+                            app:tint="?attr/colorPrimary"
+                            android:importantForAccessibility="no" />
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginStart="@dimen/spacing_md"
+                            android:text="@string/tab_images"
+                            android:textAppearance="@style/TextAppearance.App.Subtitle" />
+
+                        <ImageView
+                            android:layout_width="@dimen/icon_md"
+                            android:layout_height="@dimen/icon_md"
+                            android:src="@drawable/ic_chevron_right"
+                            app:tint="?attr/colorOnSurfaceVariant"
+                            android:importantForAccessibility="no" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/cardExcel"
+                    style="@style/Widget.App.Card.Tonal"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/spacing_sm"
+                    android:clickable="true"
+                    android:focusable="true">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:padding="@dimen/card_padding">
+
+                        <ImageView
+                            android:layout_width="@dimen/icon_md"
+                            android:layout_height="@dimen/icon_md"
+                            android:src="@drawable/ic_import_export"
+                            app:tint="?attr/colorPrimary"
+                            android:importantForAccessibility="no" />
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginStart="@dimen/spacing_md"
+                            android:text="@string/dashboard_tool_excel"
+                            android:textAppearance="@style/TextAppearance.App.Subtitle" />
+
+                        <ImageView
+                            android:layout_width="@dimen/icon_md"
+                            android:layout_height="@dimen/icon_md"
+                            android:src="@drawable/ic_chevron_right"
+                            app:tint="?attr/colorOnSurfaceVariant"
+                            android:importantForAccessibility="no" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+            </LinearLayout>
 
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>
