@@ -42,12 +42,45 @@ class SupplementViewModel(application: Application) : AndroidViewModel(applicati
         private set
     var selectedNovelId: Long? = if (prefs.contains("novel_id")) prefs.getLong("novel_id", -1L) else null
         private set
-    var issueFilter: SupplementIssue? = null
+    var issueFilter: SupplementIssue? = try {
+        prefs.getString("issue_filter", null)?.let { SupplementIssue.valueOf(it) }
+    } catch (_: Exception) { null }
         private set
     var sortMode: SortMode = try {
         SortMode.valueOf(prefs.getString("sort_mode", null) ?: SortMode.ISSUES_DESC.name)
     } catch (_: Exception) { SortMode.ISSUES_DESC }
         private set
+
+    // ===== UI 배치 상태 (정렬·필터·접힘·탭 위치는 작업 컨텍스트 — 재방문 시 복원) =====
+
+    /** 마지막으로 확정된 내부 탭 위치 (0=랜덤 보충, 1=완성도 검사) */
+    var lastTabPosition: Int = prefs.getInt("last_tab", 0).coerceIn(0, 1)
+        private set
+
+    fun setLastTab(pos: Int) {
+        val coerced = pos.coerceIn(0, 1)
+        if (lastTabPosition == coerced) return
+        lastTabPosition = coerced
+        prefs.edit().putInt("last_tab", coerced).apply()
+    }
+
+    /** 호스트 필터 카드 접힘 — 기본 접힘: 캐릭터 정보가 화면의 주인공 */
+    var isFilterCollapsed: Boolean = prefs.getBoolean("filter_collapsed", true)
+        private set
+
+    fun setFilterCollapsed(collapsed: Boolean) {
+        isFilterCollapsed = collapsed
+        prefs.edit().putBoolean("filter_collapsed", collapsed).apply()
+    }
+
+    /** 랜덤 탭 뽑기 옵션(방식 칩·설정) 접힘 — 기본 접힘: 핵심 루프(뽑기·편집)는 상시 노출 */
+    var isRandomControlsCollapsed: Boolean = prefs.getBoolean("random_controls_collapsed", true)
+        private set
+
+    fun setRandomControlsCollapsed(collapsed: Boolean) {
+        isRandomControlsCollapsed = collapsed
+        prefs.edit().putBoolean("random_controls_collapsed", collapsed).apply()
+    }
 
     // 전체 데이터 (필터 전)
     private var allTargets: List<SupplementTarget> = emptyList()
@@ -288,6 +321,9 @@ class SupplementViewModel(application: Application) : AndroidViewModel(applicati
 
     fun setIssueFilter(issue: SupplementIssue?) {
         issueFilter = issue
+        prefs.edit().apply {
+            if (issue != null) putString("issue_filter", issue.name) else remove("issue_filter")
+        }.apply()
         applyFilters()
     }
 

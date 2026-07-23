@@ -305,13 +305,21 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
     private val _rankableFields = MutableLiveData<List<RankableField>>()
     val rankableFields: LiveData<List<RankableField>> = _rankableFields
 
+    private var rankableFieldsJob: Job? = null
+
     fun loadRankableFields(universeId: Long?) {
-        viewModelScope.launch {
+        // 이전 로드 취소 — 세계관 전환/복원 시 여러 로드가 겹쳐 마지막 것이 아닌 결과가
+        // 스피너를 덮어쓰는 경쟁을 막는다(마지막 요청만 확정).
+        rankableFieldsJob?.cancel()
+        rankableFieldsJob = viewModelScope.launch {
             try {
                 val snapshot = ensureSnapshot()
-                _rankableFields.value = withContext(Dispatchers.IO) {
+                val fields = withContext(Dispatchers.IO) {
                     provider.getRankableFields(snapshot, universeId)
                 }
+                _rankableFields.value = fields
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _error.value = e.message
             }

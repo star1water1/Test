@@ -254,6 +254,15 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
     }
 
     private fun setupControls() {
+        // 뽑기 옵션(방식 칩·설정) 접기 — 기본 접힘·영속. 핵심 루프(뽑기·편집 스위치)는 상시 노출.
+        // 접기는 데이터 상태를 바꾸지 않으므로 편집 가드와 무관하다.
+        applyControlsCollapsed(supplementViewModel.isRandomControlsCollapsed)
+        binding.btnToggleControls.setOnClickListener {
+            val next = !supplementViewModel.isRandomControlsCollapsed
+            supplementViewModel.setRandomControlsCollapsed(next)
+            applyControlsCollapsed(next)
+        }
+
         syncModeChips()
         binding.modeChipGroup.setOnCheckedStateChangeListener { _, checkedIds ->
             if (suppressModeChipEvents) return@setOnCheckedStateChangeListener
@@ -323,6 +332,12 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
         binding.editAnotherName.addTextChangedListener(watcher)
         binding.editTags.addTextChangedListener(watcher)
         binding.editMemo.addTextChangedListener(watcher)
+    }
+
+    private fun applyControlsCollapsed(collapsed: Boolean) {
+        val b = _binding ?: return
+        b.controlDetail.visibility = if (collapsed) View.GONE else View.VISIBLE
+        b.btnToggleControls.rotation = if (collapsed) 180f else 0f
     }
 
     private fun observeViewModel() {

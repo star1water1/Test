@@ -15,7 +15,9 @@
         app:layout_constraintTop_toTopOf="parent"
         app:title="@string/supplement_title" />
 
-    <!-- 공유 필터 헤더: 세계관/작품 스피너 — 두 내부 탭이 함께 사용 -->
+    <!-- 공유 필터 헤더: 세계관/작품 스피너 — 두 내부 탭이 함께 사용.
+         기본 접힘 + 한 줄 요약 — 컨트롤이 아니라 캐릭터 정보가 화면의 주인공이 되도록.
+         요약이 현재 조건을 항상 보여주므로 '열어봐야 아는 상태'가 되지 않는다(원칙 04). -->
     <com.google.android.material.card.MaterialCardView
         android:id="@+id/filterHeaderCard"
         android:layout_width="0dp"
@@ -32,50 +34,89 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:paddingStart="@dimen/stats_padding_card"
-            android:paddingEnd="@dimen/stats_padding_card"
-            android:paddingTop="@dimen/stats_margin_sm"
-            android:paddingBottom="@dimen/stats_margin_sm">
+            android:orientation="vertical">
 
             <LinearLayout
-                android:layout_width="0dp"
+                android:id="@+id/filterHeaderRow"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical"
-                android:layout_marginEnd="@dimen/stats_margin_sm">
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:clickable="true"
+                android:focusable="true"
+                android:background="?attr/selectableItemBackground"
+                android:paddingStart="@dimen/stats_padding_card"
+                android:paddingEnd="@dimen/stats_padding_card"
+                android:paddingTop="@dimen/stats_margin_sm"
+                android:paddingBottom="@dimen/stats_margin_sm">
 
                 <TextView
-                    android:layout_width="wrap_content"
+                    android:id="@+id/filterSummaryText"
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:text="@string/tab_universes"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="@dimen/stats_text_body_sm" />
+                    android:layout_weight="1"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:textAppearance="@style/TextAppearance.App.BodySmall" />
 
-                <Spinner
-                    android:id="@+id/spinnerUniverse"
-                    android:layout_width="match_parent"
-                    android:layout_height="@dimen/touch_target_min" />
+                <ImageButton
+                    android:id="@+id/btnToggleFilter"
+                    android:layout_width="32dp"
+                    android:layout_height="32dp"
+                    android:src="@drawable/ic_expand_less"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="@string/supplement_filter_toggle"
+                    app:tint="?attr/colorOnSurfaceVariant" />
             </LinearLayout>
 
             <LinearLayout
-                android:layout_width="0dp"
+                android:id="@+id/filterContent"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical"
-                android:layout_marginStart="@dimen/stats_margin_sm">
+                android:orientation="horizontal"
+                android:paddingStart="@dimen/stats_padding_card"
+                android:paddingEnd="@dimen/stats_padding_card"
+                android:paddingBottom="@dimen/stats_margin_sm">
 
-                <TextView
-                    android:layout_width="wrap_content"
+                <LinearLayout
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:text="@string/tab_novels"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="@dimen/stats_text_body_sm" />
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:layout_marginEnd="@dimen/stats_margin_sm">
 
-                <Spinner
-                    android:id="@+id/spinnerNovel"
-                    android:layout_width="match_parent"
-                    android:layout_height="@dimen/touch_target_min" />
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/tab_universes"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="@dimen/stats_text_body_sm" />
+
+                    <Spinner
+                        android:id="@+id/spinnerUniverse"
+                        android:layout_width="match_parent"
+                        android:layout_height="@dimen/touch_target_min" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:layout_marginStart="@dimen/stats_margin_sm">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/tab_novels"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="@dimen/stats_text_body_sm" />
+
+                    <Spinner
+                        android:id="@+id/spinnerNovel"
+                        android:layout_width="match_parent"
+                        android:layout_height="@dimen/touch_target_min" />
+                </LinearLayout>
             </LinearLayout>
         </LinearLayout>
     </com.google.android.material.card.MaterialCardView>

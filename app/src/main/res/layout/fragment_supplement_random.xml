@@ -12,7 +12,10 @@
         android:orientation="vertical"
         android:padding="@dimen/stats_padding_content">
 
-        <!-- 컨트롤 카드: 뽑기 방식 + 이전/다시 뽑기/다음 + 설정 + 편집 모드 -->
+        <!-- 컨트롤 카드 — 정보 우선 재구성:
+             핵심 루프(◀·다시 뽑기·▶ + 편집 스위치)는 접힘과 무관하게 상시 1탭,
+             저빈도 옵션(뽑기 방식 칩·설정)만 controlDetail로 접는다(기본 접힘·영속).
+             편집 스위치는 '편집 중' 상태를 알리는 유일한 상시 표지라 접지 않는다(원칙 04). -->
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -26,50 +29,12 @@
                 android:orientation="vertical"
                 android:padding="@dimen/stats_padding_card">
 
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/random_mode_label"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="@dimen/stats_text_body_sm"
-                    android:layout_marginBottom="@dimen/stats_margin_xs" />
-
-                <com.google.android.material.chip.ChipGroup
-                    android:id="@+id/modeChipGroup"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    app:singleSelection="true"
-                    app:selectionRequired="true"
-                    android:layout_marginBottom="@dimen/stats_margin_sm">
-
-                    <com.google.android.material.chip.Chip
-                        android:id="@+id/chipModePure"
-                        style="@style/Widget.Material3.Chip.Filter"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/random_mode_pure" />
-
-                    <com.google.android.material.chip.Chip
-                        android:id="@+id/chipModeIncomplete"
-                        style="@style/Widget.Material3.Chip.Filter"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/random_mode_incomplete" />
-
-                    <com.google.android.material.chip.Chip
-                        android:id="@+id/chipModeLeastRecent"
-                        style="@style/Widget.Material3.Chip.Filter"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/random_mode_least_recent" />
-                </com.google.android.material.chip.ChipGroup>
-
                 <LinearLayout
+                    android:id="@+id/pickActionRow"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:layout_marginBottom="@dimen/stats_margin_sm">
+                    android:gravity="center_vertical">
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnPickBack"
@@ -98,23 +63,77 @@
                         android:contentDescription="@string/random_next_pick"
                         android:layout_marginStart="@dimen/stats_margin_sm" />
 
+                    <ImageButton
+                        android:id="@+id/btnToggleControls"
+                        android:layout_width="32dp"
+                        android:layout_height="32dp"
+                        android:src="@drawable/ic_expand_less"
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        android:contentDescription="@string/random_controls_toggle"
+                        android:layout_marginStart="@dimen/stats_margin_xs"
+                        app:tint="?attr/colorOnSurfaceVariant" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/controlDetail"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/random_mode_label"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="@dimen/stats_text_body_sm"
+                        android:layout_marginTop="@dimen/stats_margin_sm"
+                        android:layout_marginBottom="@dimen/stats_margin_xs" />
+
+                    <com.google.android.material.chip.ChipGroup
+                        android:id="@+id/modeChipGroup"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        app:singleSelection="true"
+                        app:selectionRequired="true"
+                        android:layout_marginBottom="@dimen/stats_margin_sm">
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chipModePure"
+                            style="@style/Widget.Material3.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/random_mode_pure" />
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chipModeIncomplete"
+                            style="@style/Widget.Material3.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/random_mode_incomplete" />
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chipModeLeastRecent"
+                            style="@style/Widget.Material3.Chip.Filter"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/random_mode_least_recent" />
+                    </com.google.android.material.chip.ChipGroup>
+
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnRandomSettings"
                         style="@style/Widget.App.Button.Tonal"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:minWidth="0dp"
+                        android:text="@string/random_settings_button"
                         app:icon="@drawable/ic_settings"
-                        app:iconGravity="textStart"
-                        app:iconPadding="0dp"
-                        android:contentDescription="@string/random_settings_title"
-                        android:layout_marginStart="@dimen/stats_margin_xs" />
+                        android:contentDescription="@string/random_settings_title" />
                 </LinearLayout>
 
                 <com.google.android.material.materialswitch.MaterialSwitch
                     android:id="@+id/switchEditMode"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/stats_margin_sm"
                     android:text="@string/random_edit_mode" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>

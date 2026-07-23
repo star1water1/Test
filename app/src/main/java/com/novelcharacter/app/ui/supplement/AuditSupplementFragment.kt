@@ -76,11 +76,6 @@ class AuditSupplementFragment : Fragment() {
         val chipGroup = binding.issueFilterChipGroup
         chipGroup.removeAllViews()
 
-        // "전체" 칩
-        val allChip = createFilterChip(getString(R.string.supplement_filter_all), null)
-        allChip.isChecked = true
-        chipGroup.addView(allChip)
-
         // 각 이슈 타입 칩 (활성화된 기준만)
         val issueChips = mutableListOf<Pair<SupplementIssue, String>>()
         if (criteria.checkImages) issueChips.add(SupplementIssue.NO_IMAGE to getString(R.string.supplement_check_image))
@@ -93,8 +88,22 @@ class AuditSupplementFragment : Fragment() {
         if (criteria.checkEvents) issueChips.add(SupplementIssue.NO_EVENTS to getString(R.string.supplement_check_events))
         if (criteria.checkFactions) issueChips.add(SupplementIssue.NO_FACTIONS to getString(R.string.supplement_check_factions))
 
+        // 복원된 필터가 기준 설정에서 꺼진 이슈면 해제 — 보이는 컨트롤 없는 무음 필터가
+        // 목록을 조용히 줄이는 것을 막는다(변수 제어). 기준 다이얼로그 dismiss 후 재호출 경로도 커버.
+        val restored = viewModel.issueFilter
+        if (restored != null && issueChips.none { it.first == restored }) {
+            viewModel.setIssueFilter(null)
+        }
+
+        // "전체" 칩 — 저장된 필터가 없을 때만 선택 (singleSelection 그룹)
+        val allChip = createFilterChip(getString(R.string.supplement_filter_all), null)
+        allChip.isChecked = viewModel.issueFilter == null
+        chipGroup.addView(allChip)
+
         for ((issue, label) in issueChips) {
-            chipGroup.addView(createFilterChip(label, issue))
+            val chip = createFilterChip(label, issue)
+            chip.isChecked = issue == viewModel.issueFilter
+            chipGroup.addView(chip)
         }
     }
 

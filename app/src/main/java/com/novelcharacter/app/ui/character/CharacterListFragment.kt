@@ -208,7 +208,19 @@ class CharacterListFragment : Fragment() {
     private fun setupToolbarMenu() {
         binding.toolbar.inflateMenu(R.menu.character_menu)
         // 보충은 전역 캐릭터 탭의 도구 — 작품 스코프로 푸시된 목록에서는 숨긴다
-        binding.toolbar.menu.findItem(R.id.action_supplement)?.isVisible = (novelId == -1L)
+        val supplementItem = binding.toolbar.menu.findItem(R.id.action_supplement)
+        supplementItem?.isVisible = (novelId == -1L)
+        // actionLayout(아이콘+라벨 버튼)은 메뉴 클릭 콜백을 타지 않으므로 직접 배선.
+        // 게이팅도 뷰에 함께 적용 — isVisible=false가 actionView를 남기는 기기 변형 방어.
+        supplementItem?.actionView?.let { actionView ->
+            actionView.visibility = if (novelId == -1L) View.VISIBLE else View.GONE
+            androidx.appcompat.widget.TooltipCompat.setTooltipText(
+                actionView, getString(R.string.supplement_title)
+            )
+            actionView.setOnClickListener {
+                findNavController().navigateSafe(navOriginId, R.id.supplementFragment)
+            }
+        }
         binding.toolbar.setOnMenuItemClickListener { item ->
             when (item.itemId) {
                 R.id.action_supplement -> {

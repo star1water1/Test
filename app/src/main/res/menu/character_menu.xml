@@ -2,11 +2,13 @@
 <menu xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
     <!-- 보충은 탭 루트(novelId=-1)에서만 노출 — 코드에서 가시성 게이팅.
-         always 고정: overflow로 밀리면 진입이 숨은 2탭으로 회귀한다 -->
+         always 고정: overflow로 밀리면 진입이 숨은 2탭으로 회귀한다.
+         actionLayout: 아이콘+텍스트 라벨 버튼 (icon/title은 접근성·폴백용으로 유지) -->
     <item
         android:id="@+id/action_supplement"
         android:icon="@drawable/ic_supplement"
         android:title="@string/tab_supplement"
+        app:actionLayout="@layout/action_supplement"
         app:showAsAction="always" />
     <item
         android:id="@+id/action_batch_edit"
