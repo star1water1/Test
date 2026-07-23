@@ -3,10 +3,12 @@ package com.novelcharacter.app.ui.character
 import android.content.Context
 import android.content.res.Resources
 import android.graphics.Typeface
+import android.view.View
+import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
-import androidx.cardview.widget.CardView
+import com.google.android.material.card.MaterialCardView
 import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
 import com.novelcharacter.app.R
@@ -39,6 +41,15 @@ class DynamicFieldRenderer(
 
     /** 외부에서 주입하는 순위 데이터 (체형 분석 인사이트용) */
     var bodyRankingInfo: RankingInfo? = null
+
+    /**
+     * 섹션 표현 방식.
+     * - CARD: 디자인 시스템 카드(Widget.App.Card — 외곽선·flat)로 독립 표시. 상세 화면 등 페이지 배경 위.
+     * - FLAT: 테두리 없는 섹션 + 상단 hairline 구분선. 이미 외곽선 있는 패널 안(보충 캐릭터 패널)에서
+     *   이중 테두리를 피하고 한 패널의 섹션으로 읽히게 한다.
+     */
+    enum class SectionStyle { CARD, FLAT }
+    var sectionStyle: SectionStyle = SectionStyle.CARD
 
     fun displayDynamicFields(
         fields: List<FieldDefinition>,
@@ -495,22 +506,46 @@ class DynamicFieldRenderer(
         }
     }
 
-    private fun createCard(context: Context, density: Float): CardView {
-        return CardView(context).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                bottomMargin = (8 * density).toInt()
+    /**
+     * 섹션 루트를 생성한다(반환된 ViewGroup에 호출부가 cardContent를 addView).
+     * CARD: MaterialCardView — 앱 테마 materialCardViewStyle(Widget.App.Card)를 상속해
+     *       디자인 시스템 카드(외곽선·flat·radius 12)로 표시.
+     * FLAT: 테두리 없는 LinearLayout + 상단 hairline 구분선(패널 내부 섹션용).
+     */
+    private fun createCard(context: Context, density: Float): ViewGroup {
+        return when (sectionStyle) {
+            SectionStyle.CARD -> MaterialCardView(context).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    bottomMargin = (8 * density).toInt()
+                }
+                setContentPadding(
+                    (16 * density).toInt(),
+                    (12 * density).toInt(),
+                    (16 * density).toInt(),
+                    (12 * density).toInt()
+                )
             }
-            radius = 8 * density
-            cardElevation = 2 * density
-            setContentPadding(
-                (16 * density).toInt(),
-                (12 * density).toInt(),
-                (16 * density).toInt(),
-                (12 * density).toInt()
-            )
+            SectionStyle.FLAT -> LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+                // 상단 구분 hairline — 한 패널 안에서 섹션을 나눈다(이중 테두리 방지)
+                addView(View(context).apply {
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        maxOf(1, (1 * density).toInt())
+                    ).apply {
+                        topMargin = (12 * density).toInt()
+                        bottomMargin = (12 * density).toInt()
+                    }
+                    setBackgroundColor(context.getColor(R.color.outline_variant))
+                })
+            }
         }
     }
 

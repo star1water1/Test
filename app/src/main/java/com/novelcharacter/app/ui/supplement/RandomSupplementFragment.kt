@@ -172,6 +172,8 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
             getString = { resId -> getString(resId) },
             getStringWithArg = { resId, arg -> getString(resId, arg) }
         )
+        // 캐릭터 패널 내부라 이중 테두리를 피하고 섹션(구분선)으로 표시
+        fieldRenderer.sectionStyle = DynamicFieldRenderer.SectionStyle.FLAT
 
         imageStrip = CharacterImageStripController(
             fragment = this,
@@ -449,8 +451,12 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
                 val values = characterViewModel.getValuesByCharacterList(character.id)
                 if (_binding == null || displayedCharacter?.id != character.id) return@launch
                 fieldRenderer.displayDynamicFields(fields, values)
+                // 필드가 없으면 컨테이너를 접어 패널 하단의 빈 상단 마진을 없앤다
+                binding.dynamicFieldsContainer.visibility =
+                    if (binding.dynamicFieldsContainer.childCount > 0) View.VISIBLE else View.GONE
             } else {
                 binding.dynamicFieldsContainer.removeAllViews()
+                binding.dynamicFieldsContainer.visibility = View.GONE
             }
         }
     }
