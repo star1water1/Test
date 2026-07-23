@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 보충 진입 툴바 액션 뷰 — 아이콘 단독 액션은 무엇인지 읽히지 않아(내보내기로 오독)
+     아이콘+텍스트 라벨 버튼으로 노출한다. 클릭 배선은 CharacterListFragment.setupToolbarMenu(). -->
+<com.google.android.material.button.MaterialButton
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    style="@style/Widget.App.Button.Tonal"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:minHeight="40dp"
+    android:insetTop="4dp"
+    android:insetBottom="4dp"
+    android:paddingStart="12dp"
+    android:paddingEnd="12dp"
+    android:layout_marginEnd="@dimen/spacing_sm"
+    android:text="@string/tab_supplement"
+    android:contentDescription="@string/supplement_title"
+    app:icon="@drawable/ic_supplement"
+    app:iconSize="18dp" />
