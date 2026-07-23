@@ -10,10 +10,8 @@
         android:id="@+id/toolbar"
         android:layout_width="match_parent"
         android:layout_height="?attr/actionBarSize"
-        android:background="@color/primary"
         app:navigationIcon="?attr/homeAsUpIndicator"
-        app:title="@string/edit_character"
-        app:titleTextColor="@color/on_primary" />
+        app:title="@string/edit_character" />
 
     <androidx.core.widget.NestedScrollView
         android:layout_width="match_parent"
@@ -42,15 +40,14 @@
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:textColor="@color/on_primary"
-                    android:textSize="12sp" />
+                    android:textAppearance="@style/TextAppearance.App.Caption" />
 
                 <TextView
                     android:id="@+id/supplementProgressText"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:textColor="@color/on_primary"
-                    android:textStyle="bold"
-                    android:textSize="14sp" />
+                    android:textAppearance="@style/TextAppearance.App.BodyStrong" />
             </LinearLayout>
 
             <LinearLayout
@@ -65,7 +62,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="@string/add_image"
-                style="@style/Widget.Material3.Button.OutlinedButton" />
+                style="@style/Widget.App.Button.Outlined" />
 
             <!-- Image preview list -->
             <androidx.recyclerview.widget.RecyclerView
@@ -89,7 +86,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="4dp"
                     android:text="@string/image_recommend_title"
-                    android:textSize="12sp"
+                    android:textAppearance="@style/TextAppearance.App.Caption"
                     android:textStyle="bold"
                     android:textColor="@color/text_secondary" />
 
@@ -190,7 +187,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/select_novel"
-                android:textSize="12sp"
+                android:textAppearance="@style/TextAppearance.App.Caption"
                 android:textColor="@color/text_secondary" />
 
             <Spinner
@@ -226,7 +223,7 @@
             <!-- 사건 추가 버튼 -->
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnAddEvent"
-                style="@style/Widget.Material3.Button.TonalButton"
+                style="@style/Widget.App.Button.Tonal"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
@@ -259,7 +256,7 @@
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnSkip"
-                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    style="@style/Widget.App.Button.Outlined"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"

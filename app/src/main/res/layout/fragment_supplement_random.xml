@@ -73,7 +73,7 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnPickBack"
-                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        style="@style/Widget.App.Button.Outlined"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:minWidth="0dp"
@@ -90,7 +90,7 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnPickForward"
-                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        style="@style/Widget.App.Button.Outlined"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:minWidth="0dp"
@@ -100,12 +100,13 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnRandomSettings"
-                        style="@style/Widget.Material3.Button.TextButton"
+                        style="@style/Widget.App.Button.Tonal"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:minWidth="0dp"
-                        android:text="⚙"
-                        android:textSize="18sp"
+                        app:icon="@drawable/ic_settings"
+                        app:iconGravity="textStart"
+                        app:iconPadding="0dp"
                         android:contentDescription="@string/random_settings_title"
                         android:layout_marginStart="@dimen/stats_margin_xs" />
                 </LinearLayout>
@@ -140,7 +141,7 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnClearFilter"
-                style="@style/Widget.Material3.Button.OutlinedButton"
+                style="@style/Widget.App.Button.Outlined"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/random_clear_filter"
@@ -294,7 +295,7 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnGoDetail"
-                style="@style/Widget.Material3.Button.OutlinedButton"
+                style="@style/Widget.App.Button.Outlined"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="@string/random_go_detail"
@@ -311,7 +312,7 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnAddImage"
-                style="@style/Widget.Material3.Button.OutlinedButton"
+                style="@style/Widget.App.Button.Outlined"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/add_image" />

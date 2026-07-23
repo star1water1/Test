@@ -6,31 +6,36 @@
     android:layout_height="match_parent"
     android:background="@color/background">
 
-    <com.google.android.material.appbar.MaterialToolbar
-        android:id="@+id/toolbar"
-        android:layout_width="0dp"
-        android:layout_height="?attr/actionBarSize"
-        android:background="@color/primary"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent"
-        app:title="@string/tab_statistics"
-        app:titleTextColor="@color/on_primary" />
-
-    <com.google.android.material.tabs.TabLayout
-        android:id="@+id/statsTabLayout"
+    <!-- 개요/랭킹 전환 — 분석 호스트의 TabLayout과 탭 2줄 적층을 피해 세그먼트 컨트롤 사용 -->
+    <com.google.android.material.button.MaterialButtonToggleGroup
+        android:id="@+id/statsSegmentGroup"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:background="@color/primary"
-        app:tabTextColor="@color/on_primary"
-        app:tabSelectedTextColor="@color/on_primary"
-        app:tabIndicatorColor="@color/on_primary"
-        app:tabIndicatorHeight="3dp"
-        app:tabMode="fixed"
-        app:tabGravity="fill"
-        app:layout_constraintTop_toBottomOf="@id/toolbar"
+        android:layout_marginHorizontal="@dimen/stats_margin_lg"
+        android:layout_marginTop="@dimen/stats_margin_sm"
+        app:checkedButton="@id/btnTabOverview"
+        app:selectionRequired="true"
+        app:singleSelection="true"
+        app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent" />
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnTabOverview"
+            style="@style/Widget.App.Button.Outlined"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/stats_tab_overview" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnTabRanking"
+            style="@style/Widget.App.Button.Outlined"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/stats_tab_ranking" />
+    </com.google.android.material.button.MaterialButtonToggleGroup>
 
     <ProgressBar
         android:id="@+id/loadingProgress"
@@ -40,7 +45,7 @@
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/statsTabLayout" />
+        app:layout_constraintTop_toBottomOf="@id/statsSegmentGroup" />
 
     <androidx.core.widget.NestedScrollView
         android:id="@+id/contentLayout"
@@ -50,7 +55,7 @@
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/statsTabLayout">
+        app:layout_constraintTop_toBottomOf="@id/statsSegmentGroup">
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -363,7 +368,7 @@
                             android:id="@+id/patternSettingsButton"
                             android:layout_width="32dp"
                             android:layout_height="32dp"
-                            android:src="@android:drawable/ic_menu_manage"
+                            android:src="@drawable/ic_tune"
                             android:background="?attr/selectableItemBackgroundBorderless"
                             android:contentDescription="@string/stats_pattern_settings"
                             android:scaleType="centerInside"
@@ -605,38 +610,6 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- 관계 분석 카드 -->
-            <com.google.android.material.card.MaterialCardView
-                android:id="@+id/cardRelationships"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="@dimen/stats_margin_sm"
-                app:cardCornerRadius="@dimen/stats_card_corner_radius"
-                app:cardElevation="@dimen/stats_card_elevation"
-                android:clickable="true"
-                android:focusable="true"
-                android:foreground="?attr/selectableItemBackground">
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:padding="@dimen/stats_padding_card"
-                    android:orientation="vertical">
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/stats_relationships"
-                        android:textSize="@dimen/stats_text_subtitle"
-                        android:textStyle="bold"
-                        android:textColor="@color/on_surface" />
-                    <TextView
-                        android:id="@+id/relPreview"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:textSize="@dimen/stats_text_body_sm"
-                        android:textColor="@color/text_secondary"
-                        android:layout_marginTop="@dimen/stats_margin_xs" />
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
 
             <!-- 커스텀 필드 분석 카드 (신규) -->
             <com.google.android.material.card.MaterialCardView
@@ -780,7 +753,7 @@
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/statsTabLayout">
+        app:layout_constraintTop_toBottomOf="@id/statsSegmentGroup">
 
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/rankingFilterCard"
@@ -864,10 +837,11 @@
                         android:layout_width="36dp"
                         android:layout_height="36dp"
                         android:layout_marginStart="8dp"
-                        android:src="@android:drawable/arrow_down_float"
+                        android:src="@drawable/ic_arrow_down"
                         android:background="?attr/selectableItemBackgroundBorderless"
                         android:contentDescription="@string/stats_ranking_sort_toggle"
-                        android:scaleType="centerInside" />
+                        android:scaleType="centerInside"
+            app:tint="?attr/colorOnSurfaceVariant" />
                 </LinearLayout>
 
                 <LinearLayout

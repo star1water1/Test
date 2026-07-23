@@ -1,6 +1,7 @@
 package com.novelcharacter.app.ui.settings
 
 import android.graphics.Color
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.os.Bundle
 import android.text.format.DateUtils
 import android.view.LayoutInflater
@@ -63,7 +64,7 @@ class OperationHistoryFragment : Fragment() {
         val ctx = context ?: return
         val detail = log.detail
         if (detail.isNullOrBlank()) return
-        AlertDialog.Builder(ctx)
+        MaterialAlertDialogBuilder(ctx)
             .setTitle(log.summary)
             .setMessage(detail)
             .setPositiveButton(android.R.string.ok, null)
@@ -72,7 +73,7 @@ class OperationHistoryFragment : Fragment() {
 
     private fun confirmClear() {
         val ctx = context ?: return
-        AlertDialog.Builder(ctx)
+        MaterialAlertDialogBuilder(ctx)
             .setTitle(R.string.operation_history_clear)
             .setMessage(R.string.operation_history_clear_confirm)
             .setPositiveButton(R.string.operation_history_clear) { _, _ ->

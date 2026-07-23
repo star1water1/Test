@@ -33,8 +33,7 @@
             android:id="@+id/tvName"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:textSize="14sp"
-            android:textStyle="bold"
+            android:textAppearance="@style/TextAppearance.App.BodyStrong"
             android:maxLines="1"
             android:ellipsize="end" />
 
@@ -42,7 +41,7 @@
             android:id="@+id/tvNovel"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:textSize="12sp"
+            android:textAppearance="@style/TextAppearance.App.Caption"
             android:textColor="?android:attr/textColorSecondary"
             android:maxLines="1"
             android:ellipsize="end" />
@@ -51,7 +50,7 @@
             android:id="@+id/tvMemo"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:textSize="11sp"
+            android:textAppearance="@style/TextAppearance.App.LabelSmall"
             android:textColor="?android:attr/textColorTertiary"
             android:maxLines="1"
             android:ellipsize="end" />

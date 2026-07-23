@@ -1,6 +1,7 @@
 package com.novelcharacter.app.ui.assistant
 
 import androidx.appcompat.app.AlertDialog
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import com.novelcharacter.app.R
@@ -77,7 +78,7 @@ private fun Fragment.showAgeResolutionDialog(
         getString(R.string.assistant_age_dialog_title, conflict.currentStdYear)
     }
     var selected = 0
-    AlertDialog.Builder(requireContext())
+    MaterialAlertDialogBuilder(requireContext())
         .setTitle(title)
         .setSingleChoiceItems(options, 0) { _, which -> selected = which }
         .setPositiveButton(R.string.apply) { _, _ ->
@@ -103,7 +104,7 @@ fun Fragment.runAssignNovel(cvm: CharacterViewModel, characterId: Long, characte
             return@launch
         }
         val titles = novels.map { it.title }.toTypedArray<CharSequence>()
-        AlertDialog.Builder(requireContext())
+        MaterialAlertDialogBuilder(requireContext())
             .setTitle(getString(R.string.assistant_assign_novel_title, characterName))
             .setItems(titles) { _, which ->
                 val novel = novels[which]

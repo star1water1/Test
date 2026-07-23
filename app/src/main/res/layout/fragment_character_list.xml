@@ -10,12 +10,10 @@
         android:id="@+id/toolbar"
         android:layout_width="0dp"
         android:layout_height="?attr/actionBarSize"
-        android:background="@color/primary"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent"
-        app:title="@string/tab_characters"
-        app:titleTextColor="@color/on_primary" />
+        app:title="@string/tab_characters" />
 
     <LinearLayout
         android:id="@+id/compareLayout"
@@ -31,11 +29,13 @@
 
         <com.google.android.material.textfield.TextInputLayout
             android:id="@+id/searchLayout"
+            style="@style/Widget.App.TextInput.Dense"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:layout_marginEnd="4dp"
-            android:hint="@string/search">
+            android:hint="@string/search"
+            app:startIconDrawable="@drawable/ic_search">
 
             <com.google.android.material.textfield.TextInputEditText
                 android:id="@+id/searchEdit"
@@ -46,26 +46,34 @@
         </com.google.android.material.textfield.TextInputLayout>
 
         <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnListControls"
+            style="@style/Widget.App.Button.Tonal"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="4dp"
+            android:text="@string/controls_button"
+            app:icon="@drawable/ic_tune" />
+
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/btnCompare"
-            style="@style/Widget.Material3.Button.TonalButton"
+            style="@style/Widget.App.Button.Outlined"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/compare_button"
-            android:textSize="12sp"
-            android:minWidth="56dp" />
+            android:minWidth="56dp"
+            app:icon="@drawable/ic_compare" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnCancelCompare"
-            style="@style/Widget.Material3.Button.TextButton"
+            style="@style/Widget.App.Button.Outlined"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/cancel_button"
-            android:textSize="12sp"
             android:visibility="gone" />
 
     </LinearLayout>
 
-    <!-- 필터 / 정렬 바 -->
+    <!-- 활성 상태 칩 행: 프리셋(1탭 적용 보존) + 정렬 상태 + 활성 필터 -->
     <LinearLayout
         android:id="@+id/filterSortBar"
         android:layout_width="0dp"
@@ -77,39 +85,6 @@
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/compareLayout">
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnSort"
-            style="@style/Widget.Material3.Button.TonalButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/sort_button"
-            android:textSize="12sp"
-            android:minWidth="56dp"
-            android:minHeight="36dp"
-            android:insetTop="0dp"
-            android:insetBottom="0dp" />
-
-        <ImageButton
-            android:id="@+id/btnSortDir"
-            android:layout_width="34dp"
-            android:layout_height="34dp"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:src="@android:drawable/arrow_down_float"
-            android:scaleType="centerInside"
-            android:contentDescription="@string/sort_direction" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnFilter"
-            style="@style/Widget.Material3.Button.TextButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/filter_button"
-            android:textSize="12sp"
-            android:minWidth="48dp"
-            android:minHeight="36dp"
-            android:insetTop="0dp"
-            android:insetBottom="0dp" />
 
         <HorizontalScrollView
             android:layout_width="0dp"
@@ -130,10 +105,18 @@
                     app:singleLine="true"
                     app:chipSpacingHorizontal="4dp" />
 
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/sortChip"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="4dp"
+                    android:visibility="gone" />
+
                 <com.google.android.material.chip.ChipGroup
                     android:id="@+id/filterChipGroup"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:layout_marginStart="4dp"
                     app:singleLine="true"
                     app:chipSpacingHorizontal="4dp" />
 
@@ -163,8 +146,9 @@
             android:layout_height="36dp"
             android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="@string/close"
-            android:src="@android:drawable/ic_menu_close_clear_cancel"
-            android:scaleType="centerInside" />
+            android:src="@drawable/ic_close"
+            android:scaleType="centerInside"
+            app:tint="?attr/colorOnSurfaceVariant" />
 
         <TextView
             android:id="@+id/batchSelectedCount"
@@ -172,8 +156,7 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:text="@string/batch_selected_count_zero"
-            android:textSize="14sp"
-            android:textStyle="bold"
+            android:textAppearance="@style/TextAppearance.App.BodyStrong"
             android:paddingStart="4dp" />
 
         <ImageButton
@@ -184,15 +167,15 @@
             android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="@string/more_options"
             android:src="@drawable/ic_more_vert"
-            android:scaleType="centerInside" />
+            android:scaleType="centerInside"
+            app:tint="?attr/colorOnSurfaceVariant" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnBatchAction"
-            style="@style/Widget.Material3.Button"
+            style="@style/Widget.App.Button"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/batch_action"
-            android:textSize="12sp"
             android:minWidth="56dp"
             android:minHeight="36dp"
             android:insetTop="0dp"
@@ -228,7 +211,7 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:text="@string/birthday_banner_title"
-                android:textSize="13sp"
+                android:textAppearance="@style/TextAppearance.App.BodySmall"
                 android:textStyle="bold" />
 
             <ImageButton
@@ -236,9 +219,10 @@
                 android:layout_width="32dp"
                 android:layout_height="32dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
-                android:src="@android:drawable/arrow_up_float"
+                android:src="@drawable/ic_expand_less"
                 android:scaleType="centerInside"
-                android:contentDescription="@string/birthday_banner_title" />
+                android:contentDescription="@string/birthday_banner_title"
+            app:tint="?attr/colorOnSurfaceVariant" />
 
         </LinearLayout>
 
@@ -278,8 +262,7 @@
             android:layout_height="wrap_content"
             android:text="@string/no_characters"
             android:textColor="@color/text_secondary"
-            android:textSize="16sp"
-            android:textStyle="bold" />
+            android:textAppearance="@style/TextAppearance.App.Title" />
 
         <TextView
             android:id="@+id/emptyHint"
@@ -287,12 +270,12 @@
             android:layout_height="wrap_content"
             android:text="@string/empty_character_hint"
             android:textColor="@color/text_secondary"
-            android:textSize="13sp"
+            android:textAppearance="@style/TextAppearance.App.BodySmall"
             android:layout_marginTop="4dp" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnClearFilters"
-            style="@style/Widget.Material3.Button.TonalButton"
+            style="@style/Widget.App.Button.Tonal"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
@@ -318,7 +301,7 @@
         android:layout_height="wrap_content"
         android:layout_margin="16dp"
         android:contentDescription="@string/add_character"
-        android:src="@android:drawable/ic_input_add"
+        android:src="@drawable/ic_add"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 

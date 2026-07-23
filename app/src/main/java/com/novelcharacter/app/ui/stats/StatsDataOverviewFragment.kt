@@ -1,5 +1,6 @@
 package com.novelcharacter.app.ui.stats
 
+import com.novelcharacter.app.ui.theme.ChartTheme
 import android.graphics.Color
 import android.os.Bundle
 import android.view.LayoutInflater
@@ -25,7 +26,6 @@ import com.github.mikephil.charting.data.PieEntry
 import com.github.mikephil.charting.formatter.IndexAxisValueFormatter
 import com.github.mikephil.charting.formatter.PercentFormatter
 import com.github.mikephil.charting.formatter.ValueFormatter
-import com.github.mikephil.charting.utils.ColorTemplate
 import com.novelcharacter.app.R
 import com.novelcharacter.app.databinding.FragmentStatsDataOverviewBinding
 
@@ -292,16 +292,8 @@ class StatsDataOverviewFragment : Fragment() {
         }
     }
 
-    private fun chartColors(): List<Int> {
-        val ctx = requireContext()
-        return listOf(
-            ContextCompat.getColor(ctx, R.color.primary),
-            ContextCompat.getColor(ctx, R.color.accent),
-            ContextCompat.getColor(ctx, R.color.search_type_novel),
-            ContextCompat.getColor(ctx, R.color.primary_light),
-            ContextCompat.getColor(ctx, R.color.primary_dark)
-        ) + ColorTemplate.MATERIAL_COLORS.toList()
-    }
+    private fun chartColors(): List<Int> =
+        ChartTheme.palette(requireContext())
 
     override fun onDestroyView() {
         _binding?.chartYearDensity?.clear()

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- API 27+: 내비게이션 바도 표면색 + 라이트 아이콘 (pre-15 폴백) -->
+    <style name="Theme.NovelCharacter" parent="Base.Theme.NovelCharacter">
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:navigationBarColor">@color/surface</item>
+        <item name="android:windowLightNavigationBar">true</item>
+    </style>
+</resources>

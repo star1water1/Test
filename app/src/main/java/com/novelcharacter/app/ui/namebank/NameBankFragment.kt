@@ -1,6 +1,7 @@
 package com.novelcharacter.app.ui.namebank
 
 import android.os.Bundle
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.LayoutInflater
@@ -42,6 +43,11 @@ class NameBankFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        // 푸시 목적지(대시보드·어시스턴트 진입) — 업 버튼은 디스패처 경유
+        binding.toolbar.setNavigationIcon(R.drawable.ic_arrow_back)
+        binding.toolbar.setNavigationOnClickListener {
+            requireActivity().onBackPressedDispatcher.onBackPressed()
+        }
         setupRecyclerView()
         setupSearch()
         setupFilter()
@@ -126,7 +132,7 @@ class NameBankFragment : Fragment() {
         }
 
         // 검증 실패 시 다이얼로그를 닫지 않는다 (입력 유실 방지)
-        val dialog = AlertDialog.Builder(context)
+        val dialog = MaterialAlertDialogBuilder(context)
             .setTitle(if (existing != null) getString(R.string.edit_name_title) else getString(R.string.add_name_title))
             .setView(layout)
             .setPositiveButton(getString(R.string.save), null)
@@ -166,13 +172,13 @@ class NameBankFragment : Fragment() {
             options.add(markAvailableStr)
         }
 
-        AlertDialog.Builder(requireContext())
+        MaterialAlertDialogBuilder(requireContext())
             .setTitle(entry.name)
             .setItems(options.toTypedArray()) { _, which ->
                 when (options[which]) {
                     editStr -> showEditDialog(entry)
                     deleteStr -> {
-                        AlertDialog.Builder(requireContext())
+                        MaterialAlertDialogBuilder(requireContext())
                             .setMessage(getString(R.string.confirm_delete_name, entry.name))
                             .setPositiveButton(R.string.yes) { _, _ -> viewModel.delete(entry) }
                             .setNegativeButton(R.string.no, null)

@@ -18,8 +18,7 @@
             android:id="@+id/detailSizeText"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textSize="18sp"
-            android:textStyle="bold"
+            android:textAppearance="@style/TextAppearance.App.TitleLarge"
             android:textColor="?attr/colorOnSurface"
             tools:text="1.2 MB" />
 
@@ -28,7 +27,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="6dp"
-            android:textSize="14sp"
+            android:textAppearance="@style/TextAppearance.App.Body"
             android:textColor="?attr/colorOnSurfaceVariant"
             tools:text="캐릭터 · 홍길동\n작품 · 어떤 소설" />
 
@@ -47,14 +46,14 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="6dp"
-            android:textSize="13sp"
+            android:textAppearance="@style/TextAppearance.App.BodySmall"
             android:textColor="?attr/colorPrimary"
             android:visibility="gone"
             tools:text="링크 그룹 · 3장" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/detailTagEditButton"
-            style="@style/Widget.Material3.Button.TextButton"
+            style="@style/Widget.App.Button.Outlined"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
@@ -63,7 +62,7 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/detailAssignButton"
-            style="@style/Widget.Material3.Button.TextButton"
+            style="@style/Widget.App.Button.Outlined"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:gravity="start|center_vertical"
@@ -71,7 +70,7 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/detailUnassignButton"
-            style="@style/Widget.Material3.Button.TextButton"
+            style="@style/Widget.App.Button.Outlined"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:gravity="start|center_vertical"
@@ -79,7 +78,7 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/detailUnlinkButton"
-            style="@style/Widget.Material3.Button.TextButton"
+            style="@style/Widget.App.Button.Outlined"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:gravity="start|center_vertical"
@@ -87,7 +86,7 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/detailFullScreenButton"
-            style="@style/Widget.Material3.Button.TextButton"
+            style="@style/Widget.App.Button.Outlined"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:gravity="start|center_vertical"
@@ -95,7 +94,7 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/detailRecompressButton"
-            style="@style/Widget.Material3.Button.TextButton"
+            style="@style/Widget.App.Button.Outlined"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:gravity="start|center_vertical"
@@ -103,7 +102,7 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/detailDeleteButton"
-            style="@style/Widget.Material3.Button.TextButton"
+            style="@style/Widget.App.Button.Outlined.Danger"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:gravity="start|center_vertical"
@@ -111,7 +110,7 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/detailCloseButton"
-            style="@style/Widget.Material3.Button.TextButton"
+            style="@style/Widget.App.Button.Outlined"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:gravity="start|center_vertical"

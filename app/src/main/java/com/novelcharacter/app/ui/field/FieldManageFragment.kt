@@ -1,6 +1,7 @@
 package com.novelcharacter.app.ui.field
 
 import android.os.Bundle
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -186,7 +187,7 @@ class FieldManageFragment : Fragment() {
     }
 
     private fun showDeleteDialog(field: FieldDefinition) {
-        AlertDialog.Builder(requireContext())
+        MaterialAlertDialogBuilder(requireContext())
             .setTitle(field.name)
             .setMessage("[${field.groupName}] ${field.type}")
             .setPositiveButton(R.string.edit) { _, _ ->
@@ -208,7 +209,7 @@ class FieldManageFragment : Fragment() {
             }
             val names = refs.joinToString("\n") { "  • ${it.name}" }
             if (!isAdded) return@launch
-            AlertDialog.Builder(requireContext())
+            MaterialAlertDialogBuilder(requireContext())
                 .setTitle(R.string.delete_field_warning_title)
                 .setMessage(getString(R.string.delete_field_warning_message, field.name, names))
                 .setPositiveButton(R.string.delete) { _, _ -> viewModel.deleteField(field) }
@@ -280,7 +281,7 @@ class FieldManageFragment : Fragment() {
                 }
             }
 
-            val dialog = AlertDialog.Builder(ctx)
+            val dialog = MaterialAlertDialogBuilder(ctx)
                 .setTitle(R.string.import_select_universe)
                 .setView(container)
                 .setPositiveButton(R.string.import_action) { _, _ ->

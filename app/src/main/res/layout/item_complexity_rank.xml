@@ -5,8 +5,6 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:layout_marginBottom="8dp"
-    app:cardCornerRadius="12dp"
-    app:cardElevation="1dp"
     app:strokeWidth="0dp">
 
     <LinearLayout
@@ -22,8 +20,7 @@
             android:layout_width="32dp"
             android:layout_height="32dp"
             android:gravity="center"
-            android:textSize="14sp"
-            android:textStyle="bold"
+            android:textAppearance="@style/TextAppearance.App.BodyStrong"
             android:textColor="@color/on_primary"
             android:background="@drawable/bg_rank_circle" />
 
@@ -47,8 +44,7 @@
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:textSize="15sp"
-                    android:textStyle="bold"
+                    android:textAppearance="@style/TextAppearance.App.Subtitle"
                     android:textColor="@color/on_surface"
                     android:maxLines="1"
                     android:ellipsize="end" />
@@ -57,7 +53,7 @@
                     android:id="@+id/specializationLabel"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:textSize="11sp"
+                    android:textAppearance="@style/TextAppearance.App.LabelSmall"
                     android:textColor="@color/text_secondary"
                     android:layout_marginStart="6dp"
                     android:visibility="gone" />
@@ -76,7 +72,7 @@
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:textSize="11sp"
+                    android:textAppearance="@style/TextAppearance.App.LabelSmall"
                     android:textColor="@color/text_secondary"
                     android:drawablePadding="3dp"
                     android:gravity="center_vertical" />
@@ -86,7 +82,7 @@
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:textSize="11sp"
+                    android:textAppearance="@style/TextAppearance.App.LabelSmall"
                     android:textColor="@color/text_secondary"
                     android:drawablePadding="3dp"
                     android:gravity="center_vertical" />
@@ -96,7 +92,7 @@
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:textSize="11sp"
+                    android:textAppearance="@style/TextAppearance.App.LabelSmall"
                     android:textColor="@color/text_secondary"
                     android:drawablePadding="3dp"
                     android:gravity="center_vertical" />
@@ -106,7 +102,7 @@
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:textSize="11sp"
+                    android:textAppearance="@style/TextAppearance.App.LabelSmall"
                     android:textColor="@color/text_secondary"
                     android:drawablePadding="3dp"
                     android:gravity="center_vertical" />
@@ -124,7 +120,7 @@
             android:paddingEnd="10dp"
             android:paddingTop="4dp"
             android:paddingBottom="4dp"
-            android:textSize="13sp"
+            android:textAppearance="@style/TextAppearance.App.BodySmall"
             android:textStyle="bold"
             android:textColor="@color/on_primary"
             android:background="@drawable/bg_score_badge" />

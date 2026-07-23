@@ -40,7 +40,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/storage_total_label"
-                android:textSize="13sp"
+                android:textAppearance="@style/TextAppearance.App.BodySmall"
                 android:textColor="@color/primary"
                 android:textStyle="bold" />
 
@@ -48,8 +48,7 @@
                 android:id="@+id/totalSizeText"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:textSize="28sp"
-                android:textStyle="bold"
+                android:textAppearance="@style/TextAppearance.App.Display"
                 android:textColor="?attr/colorOnSurface"
                 android:layout_marginTop="2dp"
                 tools:text="2.83 GB" />
@@ -59,7 +58,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="@string/storage_total_hint"
-                android:textSize="12sp"
+                android:textAppearance="@style/TextAppearance.App.Caption"
                 android:textColor="?attr/colorOnSurfaceVariant"
                 android:layout_marginTop="4dp" />
 
@@ -84,7 +83,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/storage_cleanup_section"
-                android:textSize="13sp"
+                android:textAppearance="@style/TextAppearance.App.BodySmall"
                 android:textColor="@color/primary"
                 android:textStyle="bold"
                 android:layout_marginBottom="4dp" />
@@ -101,14 +100,14 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/storage_clean_orphan_images"
-                    android:textSize="16sp"
+                    android:textAppearance="@style/TextAppearance.App.Title"
                     android:textColor="?attr/colorOnSurface" />
 
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="@string/storage_clean_orphan_desc"
-                    android:textSize="13sp"
+                    android:textAppearance="@style/TextAppearance.App.BodySmall"
                     android:textColor="?attr/colorOnSurfaceVariant"
                     android:layout_marginTop="2dp" />
             </LinearLayout>
@@ -125,14 +124,14 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/storage_clear_export_cache"
-                    android:textSize="16sp"
+                    android:textAppearance="@style/TextAppearance.App.Title"
                     android:textColor="?attr/colorOnSurface" />
 
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="@string/storage_clear_export_cache_desc"
-                    android:textSize="13sp"
+                    android:textAppearance="@style/TextAppearance.App.BodySmall"
                     android:textColor="?attr/colorOnSurfaceVariant"
                     android:layout_marginTop="2dp" />
             </LinearLayout>
@@ -149,14 +148,14 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/storage_manage_backup"
-                    android:textSize="16sp"
+                    android:textAppearance="@style/TextAppearance.App.Title"
                     android:textColor="?attr/colorOnSurface" />
 
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="@string/storage_manage_backup_desc"
-                    android:textSize="13sp"
+                    android:textAppearance="@style/TextAppearance.App.BodySmall"
                     android:textColor="?attr/colorOnSurfaceVariant"
                     android:layout_marginTop="2dp" />
             </LinearLayout>
@@ -165,7 +164,7 @@
                 android:id="@+id/resultText"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:textSize="13sp"
+                android:textAppearance="@style/TextAppearance.App.BodySmall"
                 android:textColor="@color/primary"
                 android:layout_marginTop="12dp"
                 android:padding="4dp"

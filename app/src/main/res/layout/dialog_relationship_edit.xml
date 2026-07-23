@@ -17,7 +17,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/target_character"
-            android:textSize="12sp"
+            android:textAppearance="@style/TextAppearance.App.Caption"
             android:textColor="@color/text_secondary" />
 
         <!-- 편집 모드: 대상 캐릭터 이름 표시 (읽기 전용) -->
@@ -26,7 +26,7 @@
             android:layout_width="match_parent"
             android:layout_height="48dp"
             android:gravity="center_vertical"
-            android:textSize="16sp"
+            android:textAppearance="@style/TextAppearance.App.Title"
             android:textColor="?attr/colorOnSurface"
             android:visibility="gone" />
 
@@ -52,7 +52,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/relationship_type"
-            android:textSize="12sp"
+            android:textAppearance="@style/TextAppearance.App.Caption"
             android:textColor="@color/text_secondary" />
 
         <Spinner
@@ -80,7 +80,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/relationship_intensity"
-            android:textSize="12sp"
+            android:textAppearance="@style/TextAppearance.App.Caption"
             android:textColor="@color/text_secondary" />
 
         <LinearLayout
@@ -104,7 +104,7 @@
                 android:layout_width="32dp"
                 android:layout_height="wrap_content"
                 android:text="5"
-                android:textSize="14sp"
+                android:textAppearance="@style/TextAppearance.App.Body"
                 android:textColor="?attr/colorOnSurface"
                 android:gravity="center" />
 

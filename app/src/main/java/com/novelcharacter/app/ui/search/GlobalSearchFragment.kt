@@ -1,6 +1,7 @@
 package com.novelcharacter.app.ui.search
 
 import android.os.Bundle
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.LayoutInflater
@@ -60,10 +61,10 @@ class GlobalSearchFragment : Fragment() {
                 findNavController().navigateSafe(R.id.globalSearchFragment, R.id.characterDetailFragment, bundle)
             },
             onEventClick = { event ->
-                // 연표 탭으로 이동하여 해당 연도 표시
+                // 연표로 직행하여 해당 연도 표시 — center_year는 TimelineFragment.onResume이 소비
                 val prefs = requireContext().getSharedPreferences("timeline_ui_state", android.content.Context.MODE_PRIVATE)
                 prefs.edit().putInt("center_year", event.year).putBoolean("pending_navigate", true).commit()
-                findNavController().navigateSafe(R.id.globalSearchFragment, R.id.homeFragment)
+                findNavController().navigateSafe(R.id.globalSearchFragment, R.id.timelineFragment)
             },
             onNovelClick = { novel ->
                 val bundle = Bundle().apply { putLong("novelId", novel.id) }
@@ -161,7 +162,7 @@ class GlobalSearchFragment : Fragment() {
                 setPadding(48, 32, 48, 16)
             }
 
-            AlertDialog.Builder(ctx)
+            MaterialAlertDialogBuilder(ctx)
                 .setTitle(R.string.search_preset_save_title)
                 .setView(editText)
                 .setPositiveButton(R.string.save) { _, _ ->
@@ -185,7 +186,7 @@ class GlobalSearchFragment : Fragment() {
             arrayOf(getString(R.string.search_preset_apply), getString(R.string.edit), getString(R.string.delete))
         }
 
-        AlertDialog.Builder(requireContext())
+        MaterialAlertDialogBuilder(requireContext())
             .setTitle(preset.name)
             .setItems(options) { _, which ->
                 when (which) {
@@ -211,7 +212,7 @@ class GlobalSearchFragment : Fragment() {
             setPadding(48, 32, 48, 16)
         }
 
-        AlertDialog.Builder(ctx)
+        MaterialAlertDialogBuilder(ctx)
             .setTitle(R.string.search_preset_edit_title)
             .setView(editText)
             .setPositiveButton(R.string.save) { _, _ ->
@@ -232,7 +233,7 @@ class GlobalSearchFragment : Fragment() {
 
     private fun showDeletePresetConfirm(preset: SearchPreset) {
         val ctx = context ?: return
-        AlertDialog.Builder(ctx)
+        MaterialAlertDialogBuilder(ctx)
             .setTitle(R.string.delete_warning_title)
             .setMessage(getString(R.string.confirm_delete_search_preset, preset.name))
             .setPositiveButton(R.string.delete) { _, _ ->

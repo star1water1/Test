@@ -1,0 +1,307 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 통합 목록 컨트롤 시트 — 프리셋 / 정렬(기준+방향) / 필터를 한 표면에.
+     기존 CharacterSortBottomSheet + CharacterFilterBottomSheet의 id를 승계한다. -->
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/spacing_lg"
+        android:layout_marginTop="@dimen/spacing_lg"
+        android:text="@string/character_controls_title"
+        android:textAppearance="@style/TextAppearance.App.TitleLarge" />
+
+    <androidx.core.widget.NestedScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="false">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingHorizontal="@dimen/spacing_lg"
+            android:paddingBottom="@dimen/spacing_sm">
+
+            <!-- ===== 프리셋 (최상단 = 최속 경로) ===== -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_md"
+                android:text="@string/controls_presets_section"
+                android:textAppearance="@style/TextAppearance.App.Subtitle" />
+
+            <com.google.android.material.chip.ChipGroup
+                android:id="@+id/presetChipGroupSheet"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_xs"
+                app:chipSpacingHorizontal="@dimen/spacing_xs" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnSavePreset"
+                style="@style/Widget.App.Button.Tonal"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_xs"
+                android:text="@string/character_preset_save_current"
+                app:icon="@drawable/ic_add" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginTop="@dimen/spacing_lg"
+                android:background="?attr/colorOutlineVariant" />
+
+            <!-- ===== 정렬 (기준 + 방향) ===== -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_md"
+                android:text="@string/sort_title"
+                android:textAppearance="@style/TextAppearance.App.Subtitle" />
+
+            <RadioGroup
+                android:id="@+id/sortKindGroup"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <RadioButton
+                    android:id="@+id/rbManual"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/sort_manual" />
+
+                <RadioButton
+                    android:id="@+id/rbName"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/sort_by_name" />
+
+                <RadioButton
+                    android:id="@+id/rbCreated"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/sort_by_created" />
+
+                <RadioButton
+                    android:id="@+id/rbRecent"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/sort_by_recent" />
+
+                <RadioButton
+                    android:id="@+id/rbField"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/sort_by_field" />
+            </RadioGroup>
+
+            <TextView
+                android:id="@+id/sortFieldLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_xs"
+                android:text="@string/sort_field_hint"
+                android:textAppearance="@style/TextAppearance.App.Caption"
+                android:visibility="gone" />
+
+            <Spinner
+                android:id="@+id/spinnerSortField"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/bg_spinner"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/sortBodyPartLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_xs"
+                android:text="@string/sort_body_part_hint"
+                android:textAppearance="@style/TextAppearance.App.Caption"
+                android:visibility="gone" />
+
+            <Spinner
+                android:id="@+id/spinnerBodyPart"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/bg_spinner"
+                android:visibility="gone" />
+
+            <!-- 방향 — 기준 바로 옆에서 함께 선택 (수동 정렬 시 숨김) -->
+            <com.google.android.material.button.MaterialButtonToggleGroup
+                android:id="@+id/dirToggleGroup"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_sm"
+                app:selectionRequired="true"
+                app:singleSelection="true">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnDirAsc"
+                    style="@style/Widget.App.Button.Outlined"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/sort_dir_asc"
+                    app:icon="@drawable/ic_arrow_up" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnDirDesc"
+                    style="@style/Widget.App.Button.Outlined"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/sort_dir_desc"
+                    app:icon="@drawable/ic_arrow_down" />
+            </com.google.android.material.button.MaterialButtonToggleGroup>
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginTop="@dimen/spacing_lg"
+                android:background="?attr/colorOutlineVariant" />
+
+            <!-- ===== 필터 ===== -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_md"
+                android:text="@string/filter_title"
+                android:textAppearance="@style/TextAppearance.App.Subtitle" />
+
+            <!-- 작품 (전역 목록에서만 표시) -->
+            <LinearLayout
+                android:id="@+id/novelSection"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/spacing_sm"
+                    android:text="@string/filter_novels_section"
+                    android:textAppearance="@style/TextAppearance.App.Caption" />
+
+                <com.google.android.material.chip.ChipGroup
+                    android:id="@+id/novelChipGroup"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:chipSpacingHorizontal="@dimen/spacing_xs" />
+
+                <TextView
+                    android:id="@+id/noNovelsText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/filter_no_novels"
+                    android:textAppearance="@style/TextAppearance.App.Caption"
+                    android:visibility="gone" />
+            </LinearLayout>
+
+            <!-- 태그 -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_sm"
+                android:text="@string/filter_tags_section"
+                android:textAppearance="@style/TextAppearance.App.Caption" />
+
+            <com.google.android.material.chip.ChipGroup
+                android:id="@+id/tagChipGroup"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:chipSpacingHorizontal="@dimen/spacing_xs" />
+
+            <TextView
+                android:id="@+id/noTagsText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/filter_no_tags"
+                android:textAppearance="@style/TextAppearance.App.Caption"
+                android:visibility="gone" />
+
+            <!-- 필드 값 (세계관 → 필드 → 값) -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_sm"
+                android:text="@string/filter_field_section"
+                android:textAppearance="@style/TextAppearance.App.Caption" />
+
+            <Spinner
+                android:id="@+id/spinnerUniverse"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_xs"
+                android:background="@drawable/bg_spinner" />
+
+            <Spinner
+                android:id="@+id/spinnerField"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_xs"
+                android:background="@drawable/bg_spinner" />
+
+            <com.google.android.material.chip.ChipGroup
+                android:id="@+id/valueChipGroup"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_xs"
+                app:chipSpacingHorizontal="@dimen/spacing_xs" />
+
+            <TextView
+                android:id="@+id/emptyValuesText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/search_filter_no_values"
+                android:textAppearance="@style/TextAppearance.App.Caption"
+                android:visibility="gone" />
+
+            <RadioGroup
+                android:id="@+id/matchModeGroup"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+
+                <RadioButton
+                    android:id="@+id/radioExact"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:checked="true"
+                    android:text="@string/search_filter_exact" />
+
+                <RadioButton
+                    android:id="@+id/radioContains"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="@dimen/spacing_lg"
+                    android:text="@string/search_filter_contains" />
+            </RadioGroup>
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnClearAllFilters"
+                style="@style/Widget.App.Button.Outlined"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/spacing_sm"
+                android:text="@string/filter_clear" />
+
+        </LinearLayout>
+    </androidx.core.widget.NestedScrollView>
+
+    <!-- 고정 적용 버튼 -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnApply"
+        style="@style/Widget.App.Button"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_margin="@dimen/spacing_lg"
+        android:text="@string/apply" />
+
+</LinearLayout>

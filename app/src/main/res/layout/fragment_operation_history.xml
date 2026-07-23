@@ -32,7 +32,7 @@
             android:layout_height="wrap_content"
             android:layout_gravity="center"
             android:text="@string/operation_history_empty"
-            android:textSize="15sp"
+            android:textAppearance="@style/TextAppearance.App.Subtitle"
             android:textColor="?attr/colorOnSurfaceVariant"
             android:visibility="gone" />
 

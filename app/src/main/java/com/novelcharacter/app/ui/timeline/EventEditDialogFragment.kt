@@ -1,6 +1,7 @@
 package com.novelcharacter.app.ui.timeline
 
 import android.app.Dialog
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.os.Bundle
 import android.view.View
 import android.view.ViewGroup
@@ -145,7 +146,7 @@ class EventEditDialogFragment : DialogFragment() {
         }
         isRecreated = savedInstanceState != null
 
-        val alertDialog = AlertDialog.Builder(requireContext())
+        val alertDialog = MaterialAlertDialogBuilder(requireContext())
             .setTitle(if (editingEvent == null) R.string.add_event else R.string.edit_event)
             .setView(binding.root)
             .setPositiveButton(R.string.save, null)
@@ -420,7 +421,7 @@ class EventEditDialogFragment : DialogFragment() {
 
         withContext(Dispatchers.Main) {
             val ctx = context ?: return@withContext
-            AlertDialog.Builder(ctx)
+            MaterialAlertDialogBuilder(ctx)
                 .setTitle(R.string.shift_events_title)
                 .setItems(items.toTypedArray()) { _, which ->
                     actions.getOrNull(which)?.invoke()

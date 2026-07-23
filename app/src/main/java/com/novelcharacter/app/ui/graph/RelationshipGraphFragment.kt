@@ -1,6 +1,7 @@
 package com.novelcharacter.app.ui.graph
 
 import android.os.Bundle
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -257,11 +258,9 @@ class RelationshipGraphFragment : Fragment() {
         // SharedPreferences에서 상태 복원
         restoreState()
 
-        binding.toolbar.setNavigationOnClickListener { findNavController().popBackStack() }
-
         binding.graphView.setOnNodeClickListener { characterId ->
             val bundle = Bundle().apply { putLong("characterId", characterId) }
-            findNavController().navigateSafe(R.id.relationshipGraphFragment, R.id.characterDetailFragment, bundle)
+            findNavController().navigateSafe(R.id.analysisFragment, R.id.characterDetailFragment, bundle)
         }
 
         binding.graphView.setOnNodeLongClickListener { characterId ->
@@ -899,17 +898,17 @@ class RelationshipGraphFragment : Fragment() {
         val options = mutableListOf(getString(R.string.graph_context_view_detail))
         relLabels.forEach { options.add(it) }
 
-        androidx.appcompat.app.AlertDialog.Builder(ctx)
+        MaterialAlertDialogBuilder(ctx)
             .setTitle(charName)
             .setItems(options.toTypedArray()) { _, which ->
                 if (which == 0) {
                     val bundle = Bundle().apply { putLong("characterId", characterId) }
-                    findNavController().navigateSafe(R.id.relationshipGraphFragment, R.id.characterDetailFragment, bundle)
+                    findNavController().navigateSafe(R.id.analysisFragment, R.id.characterDetailFragment, bundle)
                 } else {
                     val rel = charRels[which - 1]
                     val otherId = if (rel.characterId1 == characterId) rel.characterId2 else rel.characterId1
                     val bundle = Bundle().apply { putLong("characterId", otherId) }
-                    findNavController().navigateSafe(R.id.relationshipGraphFragment, R.id.characterDetailFragment, bundle)
+                    findNavController().navigateSafe(R.id.analysisFragment, R.id.characterDetailFragment, bundle)
                 }
             }
             .setNegativeButton(R.string.cancel, null)

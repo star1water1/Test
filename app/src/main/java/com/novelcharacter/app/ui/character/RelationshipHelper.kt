@@ -1,6 +1,7 @@
 package com.novelcharacter.app.ui.character
 
 import android.content.Context
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.os.Bundle
 import android.view.LayoutInflater
 import java.util.Collections
@@ -205,7 +206,7 @@ class RelationshipHelper(
                 override fun afterTextChanged(s: android.text.Editable?) {}
             })
 
-            AlertDialog.Builder(context)
+            MaterialAlertDialogBuilder(context)
                 .setTitle(getString(R.string.add_relationship))
                 .setView(dialogView)
                 .setPositiveButton(getString(R.string.save)) { _, _ ->
@@ -263,7 +264,7 @@ class RelationshipHelper(
             getString(R.string.relationship_changes_title),
             getString(R.string.relationship_options_delete)
         )
-        AlertDialog.Builder(context)
+        MaterialAlertDialogBuilder(context)
             .setTitle(getFormattedString(R.string.relationship_title_format, arrayOf(item.otherCharacterName, item.relationshipType)))
             .setItems(options) { _, which ->
                 when (which) {
@@ -313,7 +314,7 @@ class RelationshipHelper(
                 textIntensityValue.text = value.toInt().toString()
             }
 
-            AlertDialog.Builder(context)
+            MaterialAlertDialogBuilder(context)
                 .setTitle(getString(R.string.edit_relationship))
                 .setView(dialogView)
                 .setPositiveButton(getString(R.string.save)) { _, _ ->
@@ -343,7 +344,7 @@ class RelationshipHelper(
 
             if (changes.isEmpty()) {
                 // 변화 없으면 바로 추가 다이얼로그
-                AlertDialog.Builder(context)
+                MaterialAlertDialogBuilder(context)
                     .setTitle(getString(R.string.relationship_changes_title))
                     .setMessage(getString(R.string.no_relationship_changes))
                     .setPositiveButton(getString(R.string.add_relationship_change)) { _, _ ->
@@ -360,7 +361,7 @@ class RelationshipHelper(
                 "${change.year}년: ${change.relationshipType} (강도 ${change.intensity})$eventInfo"
             }.toTypedArray()
 
-            AlertDialog.Builder(context)
+            MaterialAlertDialogBuilder(context)
                 .setTitle(getString(R.string.relationship_changes_title))
                 .setItems(changeLabels) { _, which ->
                     showEditRelationshipChangeDialog(changes.sortedBy { it.year }[which])
@@ -404,7 +405,7 @@ class RelationshipHelper(
 
             slider.addOnChangeListener { _, value, _ -> textValue.text = value.toInt().toString() }
 
-            AlertDialog.Builder(context)
+            MaterialAlertDialogBuilder(context)
                 .setTitle(getString(R.string.add_relationship_change))
                 .setView(dialogView)
                 .setPositiveButton(getString(R.string.save)) { _, _ ->
@@ -478,7 +479,7 @@ class RelationshipHelper(
 
             slider.addOnChangeListener { _, value, _ -> textValue.text = value.toInt().toString() }
 
-            AlertDialog.Builder(context)
+            MaterialAlertDialogBuilder(context)
                 .setTitle(getString(R.string.edit_relationship_change))
                 .setView(dialogView)
                 .setPositiveButton(getString(R.string.save)) { _, _ ->
@@ -512,8 +513,8 @@ class RelationshipHelper(
 
     private fun confirmDeleteRelationship(item: RelationshipDisplayItem) {
         val context = try { contextGetter() } catch (_: Exception) { return }
-        AlertDialog.Builder(context)
-            .setIcon(android.R.drawable.ic_dialog_alert)
+        MaterialAlertDialogBuilder(context)
+            .setIcon(R.drawable.ic_warning)
             .setTitle(getFormattedString(R.string.relationship_title_format, arrayOf(item.otherCharacterName, item.relationshipType)))
             .setMessage(getString(R.string.confirm_delete_relationship))
             .setPositiveButton(getString(R.string.delete)) { _, _ ->

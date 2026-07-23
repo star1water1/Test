@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- API 31+: 시스템 스플래시 배경을 앱 배경색으로 테마 (라이브러리 불필요) -->
+    <style name="Theme.NovelCharacter" parent="Base.Theme.NovelCharacter">
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:navigationBarColor">@color/surface</item>
+        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:windowSplashScreenBackground">@color/background</item>
+    </style>
+</resources>

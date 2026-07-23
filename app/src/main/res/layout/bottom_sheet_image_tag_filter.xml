@@ -20,8 +20,7 @@
         android:layout_height="wrap_content"
         android:paddingBottom="8dp"
         android:text="@string/image_tag_filter_title"
-        android:textSize="18sp"
-        android:textStyle="bold" />
+        android:textAppearance="@style/TextAppearance.App.TitleLarge" />
 
     <com.google.android.material.chip.ChipGroup
         android:id="@+id/tagChipGroup"
@@ -34,7 +33,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="@string/image_tag_filter_empty"
-        android:textSize="13sp"
+        android:textAppearance="@style/TextAppearance.App.BodySmall"
         android:textColor="@color/text_secondary"
         android:visibility="gone"
         android:layout_marginBottom="12dp" />
@@ -46,7 +45,7 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnReset"
-            style="@style/Widget.Material3.Button.TextButton"
+            style="@style/Widget.App.Button.Outlined"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/image_tag_filter_reset" />

@@ -1,6 +1,8 @@
 package com.novelcharacter.app.ui.stats
 
+import com.novelcharacter.app.ui.theme.ChartTheme
 import android.graphics.Color
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.core.graphics.ColorUtils
 import android.os.Bundle
 import android.view.LayoutInflater
@@ -20,9 +22,7 @@ import com.github.mikephil.charting.data.PieData
 import com.github.mikephil.charting.data.PieDataSet
 import com.github.mikephil.charting.data.PieEntry
 import com.github.mikephil.charting.formatter.PercentFormatter
-import com.github.mikephil.charting.utils.ColorTemplate
 import androidx.recyclerview.widget.LinearLayoutManager
-import com.google.android.material.tabs.TabLayout
 import com.novelcharacter.app.R
 import com.novelcharacter.app.databinding.FragmentStatsMainBinding
 import com.novelcharacter.app.ui.adapter.RankingAdapter
@@ -60,23 +60,18 @@ class StatsMainFragment : Fragment() {
     }
 
     private fun setupTabs() {
-        val tabLayout = binding.statsTabLayout
-        tabLayout.addTab(tabLayout.newTab().setText(R.string.stats_tab_overview))
-        tabLayout.addTab(tabLayout.newTab().setText(R.string.stats_tab_ranking))
-
-        tabLayout.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
-            override fun onTabSelected(tab: TabLayout.Tab?) {
-                updateTabVisibility()
-                if (tab?.position == 1 && !rankingInitialized) {
-                    initRankingUI()
-                }
+        // 개요/랭킹은 세그먼트 컨트롤로 전환 — 분석 호스트 TabLayout과의 탭 2줄 적층 방지.
+        // 선택 상태는 뷰 상태 저장으로 회전·재생성 시 복원된다.
+        binding.statsSegmentGroup.addOnButtonCheckedListener { _, checkedId, isChecked ->
+            if (!isChecked) return@addOnButtonCheckedListener
+            updateTabVisibility()
+            if (checkedId == binding.btnTabRanking.id && !rankingInitialized) {
+                initRankingUI()
             }
-            override fun onTabUnselected(tab: TabLayout.Tab?) {}
-            override fun onTabReselected(tab: TabLayout.Tab?) {}
-        })
+        }
 
-        // Fragment 재생성 시 탭 위치가 0이 아닐 수 있으므로 현재 상태 반영
-        if (tabLayout.selectedTabPosition == 1) {
+        // Fragment 재생성 시 선택이 랭킹일 수 있으므로 현재 상태 반영
+        if (binding.statsSegmentGroup.checkedButtonId == binding.btnTabRanking.id) {
             updateTabVisibility()
             if (!rankingInitialized) initRankingUI()
         }
@@ -85,7 +80,7 @@ class StatsMainFragment : Fragment() {
     /** 현재 탭 선택 + 로딩 상태에 따라 visibility를 일원적으로 관리 */
     private fun updateTabVisibility() {
         val isLoading = viewModel.loading.value == true
-        val isOverviewTab = binding.statsTabLayout.selectedTabPosition == 0
+        val isOverviewTab = binding.statsSegmentGroup.checkedButtonId != binding.btnTabRanking.id
         binding.contentLayout.visibility = if (!isLoading && isOverviewTab) View.VISIBLE else View.GONE
         binding.rankingLayout.visibility = if (!isLoading && !isOverviewTab) View.VISIBLE else View.GONE
     }
@@ -144,8 +139,8 @@ class StatsMainFragment : Fragment() {
         binding.rankingSortToggle.setOnClickListener {
             currentAscending = !currentAscending
             binding.rankingSortToggle.setImageResource(
-                if (currentAscending) android.R.drawable.arrow_up_float
-                else android.R.drawable.arrow_down_float
+                if (currentAscending) R.drawable.ic_arrow_up
+                else R.drawable.ic_arrow_down
             )
             if (selectedFieldIndex >= 0) executeRanking()
         }
@@ -436,14 +431,6 @@ class StatsMainFragment : Fragment() {
             }
         }
 
-        viewModel.relationshipStats.observe(viewLifecycleOwner) { relStats ->
-            binding.relPreview.text = buildString {
-                append(getString(R.string.stats_rel_type_preview, relStats.typeDistribution.size))
-                append(getString(R.string.stats_isolated_preview, relStats.isolatedCharacters.size))
-                append(" | ${getString(R.string.stats_network_density, relStats.networkDensity * 100)}")
-            }
-        }
-
         viewModel.nameBankStats.observe(viewLifecycleOwner) { nameStats ->
             binding.namePreview.text = buildString {
                 append(getString(R.string.stats_usage_rate_preview, nameStats.usageRate, nameStats.usedNames, nameStats.totalNames))
@@ -526,7 +513,7 @@ class StatsMainFragment : Fragment() {
         val labels = allTypes.map { it.label }
         val checked = allTypes.map { it in enabledSet }.toBooleanArray()
 
-        android.app.AlertDialog.Builder(ctx)
+        MaterialAlertDialogBuilder(ctx)
             .setTitle(getString(R.string.stats_pattern_settings))
             .setMultiChoiceItems(labels.toTypedArray(), checked) { _, which, isChecked ->
                 if (isChecked) enabledSet.add(allTypes[which])
@@ -625,7 +612,7 @@ class StatsMainFragment : Fragment() {
                 card.isFocusable = true
                 card.setOnClickListener {
                     findNavController().navigateSafe(
-                        R.id.statsMainFragment, R.id.statsFieldInsightFragment, null
+                        R.id.analysisFragment, R.id.statsFieldInsightFragment, null
                     )
                 }
             }
@@ -667,7 +654,7 @@ class StatsMainFragment : Fragment() {
                 layoutParams = lp
                 setOnClickListener {
                     findNavController().navigateSafe(
-                        R.id.statsMainFragment, R.id.statsFieldInsightFragment, null
+                        R.id.analysisFragment, R.id.statsFieldInsightFragment, null
                     )
                 }
             }
@@ -739,73 +726,60 @@ class StatsMainFragment : Fragment() {
         // 신규 네비게이션 카드
         binding.cardFieldInsight.setOnClickListener {
             findNavController().navigateSafe(
-                R.id.statsMainFragment, R.id.statsFieldInsightFragment, null
+                R.id.analysisFragment, R.id.statsFieldInsightFragment, null
             )
         }
         binding.cardRelationNetwork.setOnClickListener {
             findNavController().navigateSafe(
-                R.id.statsMainFragment, R.id.statsRelationshipDetailFragment, null
+                R.id.analysisFragment, R.id.statsRelationshipDetailFragment, null
             )
         }
         binding.cardDataOverview.setOnClickListener {
             findNavController().navigateSafe(
-                R.id.statsMainFragment, R.id.statsDataOverviewFragment, null
+                R.id.analysisFragment, R.id.statsDataOverviewFragment, null
             )
         }
         binding.cardCrossNovel.setOnClickListener {
             findNavController().navigateSafe(
-                R.id.statsMainFragment, R.id.statsCrossNovelFragment, null
+                R.id.analysisFragment, R.id.statsCrossNovelFragment, null
             )
         }
         binding.btnInsightMore.setOnClickListener {
             findNavController().navigateSafe(
-                R.id.statsMainFragment, R.id.statsFieldInsightFragment, null
+                R.id.analysisFragment, R.id.statsFieldInsightFragment, null
             )
         }
 
         // 레거시 카드
         binding.cardCharacters.setOnClickListener {
             findNavController().navigateSafe(
-                R.id.statsMainFragment, R.id.statsCharacterDetailFragment, null
+                R.id.analysisFragment, R.id.statsCharacterDetailFragment, null
             )
         }
         binding.cardEvents.setOnClickListener {
             findNavController().navigateSafe(
-                R.id.statsMainFragment, R.id.statsEventDetailFragment, null
-            )
-        }
-        binding.cardRelationships.setOnClickListener {
-            findNavController().navigateSafe(
-                R.id.statsMainFragment, R.id.statsRelationshipDetailFragment, null
+                R.id.analysisFragment, R.id.statsEventDetailFragment, null
             )
         }
         binding.cardFieldAnalysis.setOnClickListener {
             findNavController().navigateSafe(
-                R.id.statsMainFragment, R.id.statsFieldAnalysisDetailFragment, null
+                R.id.analysisFragment, R.id.statsFieldAnalysisDetailFragment, null
             )
         }
         binding.cardNameBank.setOnClickListener {
             findNavController().navigateSafe(
-                R.id.statsMainFragment, R.id.statsNameBankDetailFragment, null
+                R.id.analysisFragment, R.id.statsNameBankDetailFragment, null
             )
         }
         binding.cardDataHealth.setOnClickListener {
             findNavController().navigateSafe(
-                R.id.statsMainFragment, R.id.statsDataHealthDetailFragment, null
+                R.id.analysisFragment, R.id.statsDataHealthDetailFragment, null
             )
         }
     }
 
-    private fun chartColors(): List<Int> {
-        val ctx = requireContext()
-        return listOf(
-            ContextCompat.getColor(ctx, R.color.primary),
-            ContextCompat.getColor(ctx, R.color.accent),
-            ContextCompat.getColor(ctx, R.color.search_type_novel),
-            ContextCompat.getColor(ctx, R.color.primary_light),
-            ContextCompat.getColor(ctx, R.color.primary_dark)
-        ) + ColorTemplate.MATERIAL_COLORS.toList()
-    }
+    private fun chartColors(): List<Int> =
+        ChartTheme.palette(requireContext())
 
     override fun onDestroyView() {
         super.onDestroyView()

@@ -4,9 +4,7 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_margin="4dp"
-    app:cardCornerRadius="12dp"
-    app:cardElevation="2dp">
+    android:layout_margin="4dp">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -39,7 +37,7 @@
                 android:paddingBottom="1dp"
                 android:background="@drawable/bg_image_count_badge"
                 android:textColor="@android:color/white"
-                android:textSize="10sp"
+                android:textSize="@dimen/text_badge"
                 android:visibility="gone" />
 
             <ImageView
@@ -76,10 +74,9 @@
                 android:paddingTop="1dp"
                 android:paddingBottom="1dp"
                 android:text="@string/image_manager_selected_mark"
-                android:textStyle="bold"
-                android:textSize="14sp"
+                android:textAppearance="@style/TextAppearance.App.BodyStrong"
                 android:textColor="#FFFFFF"
-                android:background="#CC3F51B5"
+                android:background="@color/overlay_selection"
                 android:visibility="gone" />
 
         </FrameLayout>
@@ -91,8 +88,7 @@
             android:paddingStart="8dp"
             android:paddingEnd="8dp"
             android:paddingTop="4dp"
-            android:textSize="14sp"
-            android:textStyle="bold"
+            android:textAppearance="@style/TextAppearance.App.BodyStrong"
             android:textColor="@color/on_surface"
             android:maxLines="1"
             android:ellipsize="end" />
@@ -104,7 +100,7 @@
             android:paddingStart="8dp"
             android:paddingEnd="8dp"
             android:paddingBottom="6dp"
-            android:textSize="12sp"
+            android:textAppearance="@style/TextAppearance.App.Caption"
             android:textColor="@color/text_secondary"
             android:maxLines="1"
             android:ellipsize="end"

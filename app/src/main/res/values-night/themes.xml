@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 색 값은 values-night/colors.xml 미러가 뒤집는다 — 여기는 야간 전용 플래그만 -->
+    <style name="Theme.NovelCharacter" parent="Base.Theme.NovelCharacter">
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

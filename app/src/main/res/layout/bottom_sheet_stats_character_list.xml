@@ -22,8 +22,7 @@
         android:id="@+id/titleText"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:textSize="18sp"
-        android:textStyle="bold"
+        android:textAppearance="@style/TextAppearance.App.TitleLarge"
         android:textColor="@color/on_surface"
         android:paddingStart="20dp"
         android:paddingEnd="20dp"
@@ -35,7 +34,7 @@
         android:id="@+id/countText"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:textSize="13sp"
+        android:textAppearance="@style/TextAppearance.App.BodySmall"
         android:textColor="@color/text_secondary"
         android:paddingStart="20dp"
         android:paddingEnd="20dp"
@@ -55,7 +54,7 @@
     <!-- 하위 그룹 분석 버튼 -->
     <com.google.android.material.button.MaterialButton
         android:id="@+id/btnSubgroupAnalysis"
-        style="@style/Widget.Material3.Button.TextButton"
+        style="@style/Widget.App.Button.Tonal"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginStart="16dp"
@@ -63,7 +62,7 @@
         android:layout_marginTop="8dp"
         android:text="@string/stats_subgroup_analysis"
         android:textColor="@color/primary"
-        app:icon="@android:drawable/ic_menu_sort_by_size"
+        app:icon="@drawable/ic_sort"
         app:iconGravity="textStart"
         app:iconTint="@color/primary" />
 

@@ -26,15 +26,14 @@
             android:layout_height="wrap_content"
             android:paddingBottom="8dp"
             android:text="@string/batch_state_change_title"
-            android:textSize="18sp"
-            android:textStyle="bold" />
+            android:textAppearance="@style/TextAppearance.App.TitleLarge" />
 
         <TextView
             android:id="@+id/multiUniverseInfo"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="@string/batch_field_multi_universe_info"
-            android:textSize="12sp"
+            android:textAppearance="@style/TextAppearance.App.Caption"
             android:textColor="@android:color/holo_orange_dark"
             android:visibility="gone"
             android:paddingBottom="8dp" />
@@ -44,7 +43,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="@string/batch_field_select_universe"
-            android:textSize="13sp"
+            android:textAppearance="@style/TextAppearance.App.BodySmall"
             android:textColor="@color/text_secondary"
             android:paddingBottom="4dp" />
 
@@ -58,7 +57,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="@string/label_change_field"
-            android:textSize="13sp"
+            android:textAppearance="@style/TextAppearance.App.BodySmall"
             android:textColor="@color/text_secondary"
             android:paddingBottom="4dp" />
 

@@ -1,6 +1,7 @@
 package com.novelcharacter.app.util
 
 import android.widget.Toast
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
 import com.google.android.material.snackbar.Snackbar
@@ -75,7 +76,7 @@ private fun Fragment.showResultSnackbar(message: String, duration: Int, detail: 
     if (!detail.isNullOrBlank()) {
         snackbar.setAction(R.string.result_detail_action) {
             val ctx = context ?: return@setAction
-            AlertDialog.Builder(ctx)
+            MaterialAlertDialogBuilder(ctx)
                 .setMessage(detail)
                 .setPositiveButton(android.R.string.ok, null)
                 .show()

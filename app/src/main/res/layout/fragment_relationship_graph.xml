@@ -7,15 +7,6 @@
     android:orientation="vertical"
     android:background="@color/background">
 
-    <com.google.android.material.appbar.MaterialToolbar
-        android:id="@+id/toolbar"
-        android:layout_width="match_parent"
-        android:layout_height="?attr/actionBarSize"
-        android:background="@color/primary"
-        app:navigationIcon="?attr/homeAsUpIndicator"
-        app:title="@string/relationship_graph_beta"
-        app:titleTextColor="@color/on_primary" />
-
     <!-- Universe / Novel filter -->
     <LinearLayout
         android:id="@+id/filterSpinnerLayout"
@@ -100,7 +91,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/faction_display_mode_label"
-                android:textSize="12sp"
+                android:textAppearance="@style/TextAppearance.App.Caption"
                 android:textColor="@color/text_secondary"
                 android:paddingEnd="6dp" />
 
@@ -122,7 +113,7 @@
         android:background="@color/graph_summary_bg"
         android:padding="8dp"
         android:textColor="@color/graph_summary_text"
-        android:textSize="12sp"
+        android:textAppearance="@style/TextAppearance.App.Caption"
         android:visibility="gone"
         android:gravity="center" />
 
@@ -146,7 +137,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/graph_time_view"
-                android:textSize="12sp" />
+                android:textAppearance="@style/TextAppearance.App.Caption" />
 
             <TextView
                 android:id="@+id/yearLabel"
@@ -154,8 +145,7 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:gravity="end"
-                android:textSize="14sp"
-                android:textStyle="bold"
+                android:textAppearance="@style/TextAppearance.App.BodyStrong"
                 android:textColor="@color/primary" />
 
         </LinearLayout>
@@ -187,7 +177,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:textSize="12sp"
+            android:textAppearance="@style/TextAppearance.App.Caption"
             android:textColor="@color/text_secondary" />
 
         <TextView
@@ -195,7 +185,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:textSize="12sp"
+            android:textAppearance="@style/TextAppearance.App.Caption"
             android:textColor="@color/text_secondary"
             android:gravity="end" />
 
@@ -225,7 +215,7 @@
             <ImageView
                 android:layout_width="64dp"
                 android:layout_height="64dp"
-                android:src="@android:drawable/ic_menu_mapmode"
+                android:src="@drawable/ic_relationship_graph"
                 android:alpha="0.3"
                 android:layout_marginBottom="12dp"
                 android:contentDescription="@string/relationship_graph" />
@@ -236,7 +226,7 @@
                 android:layout_height="wrap_content"
                 android:text="@string/graph_no_relationships"
                 android:textColor="@color/text_secondary"
-                android:textSize="14sp"
+                android:textAppearance="@style/TextAppearance.App.Body"
                 android:gravity="center" />
 
         </LinearLayout>
@@ -248,7 +238,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="@string/graph_tap_hint"
-        android:textSize="12sp"
+        android:textAppearance="@style/TextAppearance.App.Caption"
         android:textColor="@color/text_secondary"
         android:gravity="center"
         android:padding="6dp"

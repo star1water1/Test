@@ -31,7 +31,7 @@
             android:paddingEnd="6dp"
             android:paddingTop="2dp"
             android:paddingBottom="2dp"
-            android:textSize="11sp"
+            android:textAppearance="@style/TextAppearance.App.LabelSmall"
             android:textColor="#FFFFFF"
             android:background="#CC000000"
             android:visibility="gone"
@@ -49,7 +49,7 @@
             android:paddingEnd="6dp"
             android:paddingTop="1dp"
             android:paddingBottom="1dp"
-            android:textSize="11sp"
+            android:textAppearance="@style/TextAppearance.App.LabelSmall"
             android:textColor="#FFFFFF"
             android:background="#CC000000"
             tools:text="1.2 MB" />
@@ -65,9 +65,9 @@
             android:paddingEnd="6dp"
             android:paddingTop="1dp"
             android:paddingBottom="1dp"
-            android:textSize="10sp"
+            android:textSize="@dimen/text_badge"
             android:textColor="#FFFFFF"
-            android:background="#CC1565C0"
+            android:background="@color/overlay_link_badge"
             android:text="@string/image_link_badge"
             android:visibility="gone"
             tools:visibility="visible" />
@@ -77,7 +77,7 @@
             android:id="@+id/selectionScrim"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:background="#553F51B5"
+            android:background="@color/overlay_selection_weak"
             android:visibility="gone"
             tools:visibility="visible" />
 
@@ -96,9 +96,9 @@
             android:paddingBottom="1dp"
             android:text="@string/image_manager_selected_mark"
             android:textStyle="bold"
-            android:textSize="13sp"
+            android:textAppearance="@style/TextAppearance.App.BodySmall"
             android:textColor="#FFFFFF"
-            android:background="#CC3F51B5"
+            android:background="@color/overlay_selection"
             android:visibility="gone"
             tools:visibility="visible" />
     </FrameLayout>
@@ -109,7 +109,7 @@
         android:layout_height="wrap_content"
         android:maxLines="1"
         android:ellipsize="end"
-        android:textSize="11sp"
+        android:textAppearance="@style/TextAppearance.App.LabelSmall"
         android:textColor="?attr/colorOnSurfaceVariant"
         android:layout_marginTop="2dp"
         tools:text="캐릭터 · 홍길동" />
@@ -121,7 +121,7 @@
         android:layout_height="wrap_content"
         android:lines="1"
         android:ellipsize="end"
-        android:textSize="10sp"
+        android:textSize="@dimen/text_badge"
         android:textColor="?attr/colorOnSurfaceVariant"
         tools:text="#여성 · #흑발" />
 </LinearLayout>

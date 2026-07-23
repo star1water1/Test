@@ -1,6 +1,7 @@
 package com.novelcharacter.app.ui.character
 
 import android.widget.Toast
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
@@ -340,7 +341,7 @@ class CharacterSaveCoordinator(
         )
 
         var selected = 0
-        AlertDialog.Builder(ctx)
+        MaterialAlertDialogBuilder(ctx)
             .setTitle(R.string.age_linkage_conflict_title)
             .setMessage(ctx.getString(R.string.age_linkage_conflict_message,
                 conflict.currentStdYear, conflict.inputAge, conflict.inputBirthYear, conflict.expectedAge))
@@ -421,7 +422,7 @@ class CharacterSaveCoordinator(
         onCancel: () -> Unit
     ) {
         if (!fragment.isAdded || fragment.view == null) { onCancel(); return }
-        AlertDialog.Builder(fragment.requireContext())
+        MaterialAlertDialogBuilder(fragment.requireContext())
             .setTitle(R.string.cross_universe_move_title)
             .setMessage(fragment.getString(
                 R.string.cross_universe_move_message,

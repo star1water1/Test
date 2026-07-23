@@ -10,11 +10,32 @@
     <!-- Touch targets -->
     <dimen name="touch_target_min">48dp</dimen>
 
-    <!-- Card -->
-    <dimen name="card_elevation">2dp</dimen>
+    <!-- Card (외곽선 평면 카드 — 그림자 0, 1dp 스트로크) -->
+    <dimen name="card_elevation">0dp</dimen>
     <dimen name="card_corner_radius">12dp</dimen>
+    <dimen name="card_stroke_width">1dp</dimen>
     <dimen name="card_margin">4dp</dimen>
     <dimen name="card_padding">16dp</dimen>
+
+    <!-- Shape scale -->
+    <dimen name="corner_sm">8dp</dimen>
+    <dimen name="corner_md">12dp</dimen>
+    <dimen name="corner_lg">16dp</dimen>
+    <dimen name="corner_sheet">20dp</dimen>
+    <dimen name="button_corner">10dp</dimen>
+
+    <!-- ===== Type scale (TextAppearance.App.*) ===== -->
+    <dimen name="text_label_sm">11sp</dimen>
+    <dimen name="text_caption">12sp</dimen>
+    <dimen name="text_body_sm">13sp</dimen>
+    <dimen name="text_body">14sp</dimen>
+    <dimen name="text_subtitle">15sp</dimen>
+    <dimen name="text_title">16sp</dimen>
+    <dimen name="text_title_lg">18sp</dimen>
+    <dimen name="text_headline">20sp</dimen>
+    <dimen name="text_display">24sp</dimen>
+    <!-- 이미지 오버레이 배지 전용 (타이포 스케일 예외) -->
+    <dimen name="text_badge">10sp</dimen>
 
     <!-- Icon sizes -->
     <dimen name="icon_sm">16dp</dimen>
@@ -22,7 +43,7 @@
     <dimen name="icon_lg">32dp</dimen>
 
     <!-- ===== Stats Margins & Padding ===== -->
-    <dimen name="stats_card_elevation">2dp</dimen>
+    <dimen name="stats_card_elevation">0dp</dimen>
     <dimen name="stats_card_corner_radius">12dp</dimen>
     <dimen name="stats_margin_xs">4dp</dimen>
     <dimen name="stats_margin_sm">8dp</dimen>

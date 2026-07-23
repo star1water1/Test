@@ -1,6 +1,7 @@
 package com.novelcharacter.app.ui.settings
 
 import android.graphics.Color
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.os.Bundle
 import android.view.Gravity
 import android.view.LayoutInflater
@@ -151,7 +152,7 @@ class StorageFragment : Fragment() {
 
     private fun confirmCleanOrphans() {
         val ctx = context ?: return
-        AlertDialog.Builder(ctx)
+        MaterialAlertDialogBuilder(ctx)
             .setTitle(R.string.storage_clean_orphan_images)
             .setMessage(R.string.storage_clean_orphan_confirm)
             .setPositiveButton(R.string.storage_clean_run) { _, _ -> runCleanOrphans() }
@@ -183,7 +184,7 @@ class StorageFragment : Fragment() {
 
     private fun confirmClearCache() {
         val ctx = context ?: return
-        AlertDialog.Builder(ctx)
+        MaterialAlertDialogBuilder(ctx)
             .setTitle(R.string.storage_clear_export_cache)
             .setMessage(R.string.storage_clear_cache_confirm)
             .setPositiveButton(R.string.storage_clean_run) { _, _ -> runClearCache() }

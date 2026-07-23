@@ -10,12 +10,10 @@
         android:id="@+id/toolbar"
         android:layout_width="0dp"
         android:layout_height="?attr/actionBarSize"
-        android:background="@color/primary"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent"
-        app:title="@string/tab_name_bank"
-        app:titleTextColor="@color/on_primary" />
+        app:title="@string/tab_name_bank" />
 
     <LinearLayout
         android:id="@+id/filterLayout"
@@ -61,7 +59,7 @@
         android:layout_height="wrap_content"
         android:text="@string/name_bank_empty_hint"
         android:textColor="@color/text_secondary"
-        android:textSize="16sp"
+        android:textAppearance="@style/TextAppearance.App.Title"
         android:visibility="gone"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
@@ -85,7 +83,7 @@
         android:layout_height="wrap_content"
         android:layout_margin="16dp"
         android:contentDescription="@string/add_name_title"
-        android:src="@android:drawable/ic_input_add"
+        android:src="@drawable/ic_add"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 

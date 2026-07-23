@@ -1,6 +1,7 @@
 package com.novelcharacter.app.ui.image
 
 import android.view.View
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
@@ -59,7 +60,7 @@ object ImageSettingsDialog {
                 val choices = ImageSettingsStore.MAX_LONG_EDGE_CHOICES
                 val labels = choices.map { ctx.getString(R.string.image_settings_max_edge_format, it) }.toTypedArray()
                 val checked = choices.indexOf(maxEdge).coerceAtLeast(0)
-                AlertDialog.Builder(ctx)
+                MaterialAlertDialogBuilder(ctx)
                     .setTitle(R.string.image_settings_cap_dimension)
                     .setSingleChoiceItems(labels, checked) { d, w -> maxEdge = choices[w]; refreshMaxEdgeLabel(); d.dismiss() }
                     .setNegativeButton(R.string.cancel, null)
@@ -76,7 +77,7 @@ object ImageSettingsDialog {
                     ctx.getString(R.string.image_settings_skip_format, StorageAnalyzer.formatBytes(it))
                 }.toTypedArray()
                 val checked = choices.indexOf(skipBytes).coerceAtLeast(0)
-                AlertDialog.Builder(ctx)
+                MaterialAlertDialogBuilder(ctx)
                     .setTitle(R.string.image_settings_skip_below)
                     .setSingleChoiceItems(labels, checked) { d, w -> skipBytes = choices[w]; refreshSkipLabel(); d.dismiss() }
                     .setNegativeButton(R.string.cancel, null)
@@ -89,7 +90,7 @@ object ImageSettingsDialog {
                 ImageSettingsStore.EditorRemovePolicy.LIBRARY_ONLY -> binding.policyLibraryOnly.isChecked = true
             }
 
-            AlertDialog.Builder(ctx)
+            MaterialAlertDialogBuilder(ctx)
                 .setTitle(R.string.image_settings_title)
                 .setView(binding.root)
                 .setPositiveButton(R.string.save) { _, _ ->

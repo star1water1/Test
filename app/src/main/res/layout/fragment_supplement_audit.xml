@@ -181,7 +181,7 @@
                     <!-- 보충 기준 설정 버튼 -->
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnSettings"
-                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        style="@style/Widget.App.Button.Outlined"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:text="@string/supplement_settings_title" />

@@ -10,12 +10,10 @@
         android:id="@+id/toolbar"
         android:layout_width="0dp"
         android:layout_height="?attr/actionBarSize"
-        android:background="@color/primary"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent"
-        app:title="@string/supplement_title"
-        app:titleTextColor="@color/on_primary" />
+        app:title="@string/supplement_title" />
 
     <!-- 공유 필터 헤더: 세계관/작품 스피너 — 두 내부 탭이 함께 사용 -->
     <com.google.android.material.card.MaterialCardView

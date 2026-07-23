@@ -1,6 +1,7 @@
 package com.novelcharacter.app.ui.character
 
 import android.os.Bundle
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.LayoutInflater
@@ -52,10 +53,11 @@ class CharacterListFragment : Fragment() {
     // Batch edit mode
     private var isBatchEditMode = false
 
-    // 탐색 origin 목적지 id — 하단 캐릭터 탭에서는 호스트(CharacterHomeFragment)에 내장되어
-    // 현재 목적지가 characterHomeFragment이고, 작품 목록에서 진입하면 characterListFragment다.
+    // 탐색 origin 목적지 id — 하단 캐릭터 탭 루트는 characterTabFragment(novelId=-1),
+    // 작품 목록·검색에서 novelId를 들고 푸시되면 characterListFragment다.
+    // (모든 푸시 경로가 실제 novelId를 전달하므로 -1은 탭 루트에서만 나타난다)
     private val navOriginId: Int
-        get() = if (parentFragment is CharacterHomeFragment) R.id.characterHomeFragment else R.id.characterListFragment
+        get() = if (novelId == -1L) R.id.characterTabFragment else R.id.characterListFragment
 
     // 배치/비교 모드에서 뒤로가기 = 화면 이탈이 아니라 모드 종료(선택 해제). 롱프레스 진입이 잦아진 만큼
     // 뒤로가기로 취소하려다 화면을 뜨며 선택을 흘리는 걸 막는다. isEnabled는 모드 전환 시 토글.
@@ -103,7 +105,7 @@ class CharacterListFragment : Fragment() {
         }
 
         if (novelId != -1L) {
-            binding.toolbar.setNavigationIcon(androidx.appcompat.R.drawable.abc_ic_ab_back_material)
+            binding.toolbar.setNavigationIcon(R.drawable.ic_arrow_back)
             binding.toolbar.setNavigationOnClickListener { findNavController().popBackStack() }
         }
     }
@@ -144,8 +146,8 @@ class CharacterListFragment : Fragment() {
                             getString(R.string.delete_impact_header) + "\n" + details.joinToString("\n") +
                             "\n\n" + getString(R.string.delete_trash_notice)
                     }
-                    androidx.appcompat.app.AlertDialog.Builder(requireContext())
-                        .setIcon(android.R.drawable.ic_dialog_alert)
+                    MaterialAlertDialogBuilder(requireContext())
+                        .setIcon(R.drawable.ic_warning)
                         .setTitle(R.string.delete_warning_title)
                         .setMessage(message)
                         .setPositiveButton(R.string.yes) { _, _ ->
@@ -205,8 +207,14 @@ class CharacterListFragment : Fragment() {
 
     private fun setupToolbarMenu() {
         binding.toolbar.inflateMenu(R.menu.character_menu)
+        // 보충은 전역 캐릭터 탭의 도구 — 작품 스코프로 푸시된 목록에서는 숨긴다
+        binding.toolbar.menu.findItem(R.id.action_supplement)?.isVisible = (novelId == -1L)
         binding.toolbar.setOnMenuItemClickListener { item ->
             when (item.itemId) {
+                R.id.action_supplement -> {
+                    findNavController().navigateSafe(navOriginId, R.id.supplementFragment)
+                    true
+                }
                 R.id.action_reorder -> {
                     // 재정렬은 일괄편집·비교와 상호배타 — 두 모드 모두 먼저 종료해야 chrome(검색·필터바·비교바)이
                     // 엉키지 않는다. 기존엔 배치만 종료하고 비교는 안 해서 두 모드가 겹치는 손상 상태가 났다.
@@ -640,30 +648,18 @@ class CharacterListFragment : Fragment() {
         }
     }
 
-    // ===== 필터 / 정렬 UI =====
+    // ===== 통합 목록 컨트롤 (정렬·필터·프리셋) =====
 
     private fun setupFilterSort() {
-        binding.btnSort.setOnClickListener { openSortSheet() }
-        binding.btnSortDir.setOnClickListener {
-            val cur = viewModel.sortSpec.value ?: CharacterSort()
-            // 기본(수동) 정렬은 방향 개념이 없어 기준 선택 시트를 연다
-            if (cur.kind == CharacterListPreset.SORT_MANUAL) openSortSheet()
-            else viewModel.setSortSpec(cur.copy(ascending = !cur.ascending))
-        }
-        binding.btnFilter.setOnClickListener { openFilterSheet() }
+        binding.btnListControls.setOnClickListener { openControlsSheet() }
         binding.btnClearFilters.setOnClickListener { viewModel.clearAllFilters() }
     }
 
-    private fun openSortSheet() {
-        val sheet = CharacterSortBottomSheet()
+    /** 정렬·필터·프리셋을 한 시트에서 — 기존 두 시트의 콜백 합집합, ViewModel 무수정. */
+    private fun openControlsSheet() {
+        val sheet = CharacterListControlsBottomSheet()
         sheet.currentSort = viewModel.sortSpec.value ?: CharacterSort()
         sheet.loadSortableFields = { viewModel.getSortableFields() }
-        sheet.onSortSelected = { viewModel.setSortSpec(it) }
-        sheet.show(childFragmentManager, CharacterSortBottomSheet.TAG)
-    }
-
-    private fun openFilterSheet() {
-        val sheet = CharacterFilterBottomSheet()
         sheet.currentTags = viewModel.tagFilters.value ?: emptySet()
         sheet.currentNovelIds = viewModel.novelFilters.value ?: emptySet()
         // 작품 필터는 전역 목록에서만 의미(이미 한 작품에 스코프된 화면에선 중복이라 숨김).
@@ -673,43 +669,67 @@ class CharacterListFragment : Fragment() {
         sheet.loadUniverses = { viewModel.getScopedUniverses() }
         sheet.loadFields = { uid -> viewModel.getFilterableFields(uid) }
         sheet.loadFieldValues = { fid -> viewModel.getFieldValues(fid) }
-        sheet.onApply = { tags, novelIds, filter ->
+        sheet.onApplyAll = { sort, tags, novelIds, filter ->
+            viewModel.setSortSpec(sort)
             viewModel.setTagFilters(tags)
             viewModel.setNovelFilters(novelIds)
             if (filter != null) viewModel.addFieldFilter(filter)
         }
-        sheet.show(childFragmentManager, CharacterFilterBottomSheet.TAG)
+        sheet.onClearAllFilters = { viewModel.clearAllFilters() }
+        sheet.presetsLive = viewModel.presets
+        sheet.onApplyPreset = { viewModel.applyPreset(it) }
+        sheet.onPresetLongPress = { showPresetOptionsDialog(it) }
+        sheet.onSavePreset = { showSavePresetDialog() }
+        sheet.show(childFragmentManager, CharacterListControlsBottomSheet.TAG)
     }
 
+    /** 정렬 상태 칩: "이름 ↑" — 탭=방향 반전(기존 방향 버튼 승계), 수동 정렬은 숨김. */
     private fun updateSortChip(sort: CharacterSort) {
         if (_binding == null) return
         val isManual = sort.kind == CharacterListPreset.SORT_MANUAL
-        binding.btnSortDir.visibility = if (isManual) View.INVISIBLE else View.VISIBLE
-        binding.btnSortDir.setImageResource(
-            if (sort.ascending) android.R.drawable.arrow_up_float else android.R.drawable.arrow_down_float
-        )
+        binding.sortChip.visibility = if (isManual) View.GONE else View.VISIBLE
+        binding.sortChip.setOnClickListener {
+            val cur = viewModel.sortSpec.value ?: CharacterSort()
+            if (cur.kind != CharacterListPreset.SORT_MANUAL) {
+                viewModel.setSortSpec(cur.copy(ascending = !cur.ascending))
+            }
+        }
+        updateControlsButtonLabel()
+        if (isManual) return
+        val arrow = if (sort.ascending) "↑" else "↓"
         val staticLabel = when (sort.kind) {
             CharacterListPreset.SORT_NAME -> getString(R.string.sort_label_name)
             CharacterListPreset.SORT_CREATED -> getString(R.string.sort_label_created)
             CharacterListPreset.SORT_RECENT -> getString(R.string.sort_label_recent)
-            CharacterListPreset.SORT_FIELD -> null  // 필드명은 비동기 조회
-            else -> getString(R.string.sort_label_manual)
+            else -> null  // 필드 정렬: 필드명은 비동기 조회
         }
         if (staticLabel != null) {
-            binding.btnSort.text = getString(R.string.sort_chip_format, staticLabel)
+            binding.sortChip.text = "$staticLabel $arrow"
         } else {
-            // 필드 정렬: 표시 이름을 조회
             viewLifecycleOwner.lifecycleScope.launch {
                 val name = viewModel.getSortableFields().firstOrNull { it.key == sort.fieldKey }?.name
                     ?: sort.fieldKey ?: getString(R.string.sort_label_manual)
-                if (_binding != null) binding.btnSort.text = getString(R.string.sort_chip_format, name)
+                if (_binding != null) binding.sortChip.text = "$name $arrow"
             }
         }
+    }
+
+    /** 컨트롤 버튼 라벨에 활성 상태 수 표기: "정렬·필터 · N" (필터 수 + 비수동 정렬 1). */
+    private fun updateControlsButtonLabel() {
+        if (_binding == null) return
+        val filterCount = (if (novelId == -1L) (viewModel.novelFilters.value?.size ?: 0) else 0) +
+            (viewModel.tagFilters.value?.size ?: 0) +
+            (viewModel.fieldFilters.value?.size ?: 0)
+        val sortActive = (viewModel.sortSpec.value?.kind ?: CharacterListPreset.SORT_MANUAL) != CharacterListPreset.SORT_MANUAL
+        val n = filterCount + if (sortActive) 1 else 0
+        binding.btnListControls.text =
+            if (n > 0) getString(R.string.controls_button_count, n) else getString(R.string.controls_button)
     }
 
     private fun renderFilterChips() {
         if (_binding == null) return
         binding.filterChipGroup.removeAllViews()
+        updateControlsButtonLabel()
         val ctx = context ?: return
         // 작품 필터는 전역 목록(novelId==-1)에서만 적용/표시(스코프 화면에선 무력화되므로 칩도 숨김).
         val novelFilterIds = if (novelId == -1L) (viewModel.novelFilters.value ?: emptySet()) else emptySet()
@@ -763,7 +783,7 @@ class CharacterListFragment : Fragment() {
         val input = android.widget.EditText(ctx).apply { hint = getString(R.string.character_preset_name_hint) }
         val pad = (20 * resources.displayMetrics.density).toInt()
         val container = android.widget.FrameLayout(ctx).apply { setPadding(pad, pad / 2, pad, 0); addView(input) }
-        androidx.appcompat.app.AlertDialog.Builder(ctx)
+        MaterialAlertDialogBuilder(ctx)
             .setTitle(R.string.character_preset_save)
             .setView(container)
             .setPositiveButton(R.string.save) { _, _ ->
@@ -782,14 +802,14 @@ class CharacterListFragment : Fragment() {
             getString(R.string.character_preset_save),   // 현재 상태로 갱신
             getString(R.string.delete)
         )
-        androidx.appcompat.app.AlertDialog.Builder(ctx)
+        MaterialAlertDialogBuilder(ctx)
             .setTitle(preset.name)
             .setItems(options) { _, which ->
                 when (which) {
                     0 -> viewModel.applyPreset(preset)
                     1 -> showRenamePresetDialog(preset)
                     2 -> viewModel.overwritePreset(preset)
-                    3 -> androidx.appcompat.app.AlertDialog.Builder(ctx)
+                    3 -> MaterialAlertDialogBuilder(ctx)
                         .setTitle(R.string.delete)
                         .setMessage(preset.name)
                         .setPositiveButton(R.string.delete) { _, _ -> viewModel.deletePreset(preset.id, preset.name) }
@@ -808,7 +828,7 @@ class CharacterListFragment : Fragment() {
         }
         val pad = (20 * resources.displayMetrics.density).toInt()
         val container = android.widget.FrameLayout(ctx).apply { setPadding(pad, pad / 2, pad, 0); addView(input) }
-        androidx.appcompat.app.AlertDialog.Builder(ctx)
+        MaterialAlertDialogBuilder(ctx)
             .setTitle(R.string.preset_edit_name)
             .setView(container)
             .setPositiveButton(R.string.save) { _, _ ->

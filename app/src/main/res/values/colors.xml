@@ -1,65 +1,117 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 쿨그레이 뉴트럴 + 모던 인디고(#5E6AD2) 팔레트.
+     규칙: 기존 리소스명은 절대 변경하지 않는다(값만 교체) — Kotlin의 getColor 호출부가
+     이름으로 참조하므로 이름 변경은 조용한 구값 잔류를 낳는다.
+     values-night/colors.xml은 이 파일의 완전 미러여야 한다(다크 감사 = set-diff). -->
 <resources>
-    <color name="primary">#5C6BC0</color>
-    <color name="primary_dark">#3949AB</color>
-    <color name="primary_light">#7986CB</color>
-    <color name="accent">#FF7043</color>
-    <color name="background">#FAFAFA</color>
+    <!-- ===== 크롬 / 뉴트럴 ===== -->
+    <color name="background">#F7F8FA</color>
     <color name="surface">#FFFFFF</color>
-    <color name="on_primary">#FFFFFF</color>
-    <color name="on_surface">#212121</color>
-    <color name="text_secondary">#757575</color>
+    <color name="surface_container_low">#F2F4F7</color>
+    <color name="surface_container">#ECEEF2</color>
+    <color name="surface_container_high">#E4E7EC</color>
+    <color name="on_surface">#191C20</color>
+    <color name="text_secondary">#5B6472</color>
+    <color name="text_tertiary">#8B93A1</color>
+    <color name="outline">#C9CFD9</color>
+    <color name="outline_variant">#E4E7EC</color>
+    <color name="item_background_light">#F2F4F7</color>
+    <color name="card_background">#FFFFFF</color>
+    <color name="sheet_background">#FFFFFF</color>
 
-    <!-- 전투력 등급 색상 -->
-    <color name="rank_ex">#FFD700</color>
-    <color name="rank_s_plus">#FF4500</color>
-    <color name="rank_s">#FF6347</color>
-    <color name="rank_a_plus">#FF8C00</color>
-    <color name="rank_a">#FFA500</color>
-    <color name="rank_a_minus">#FFB347</color>
+    <!-- ===== 인디고 포인트 ===== -->
+    <color name="primary">#5E6AD2</color>
+    <color name="on_primary">#FFFFFF</color>
+    <color name="primary_container">#E4E7FB</color>
+    <color name="on_primary_container">#2F3676</color>
+    <color name="primary_dark">#4854B8</color>
+    <color name="primary_light">#8F97E3</color>
+    <color name="secondary_container">#E7E9F8</color>
+    <color name="on_secondary_container">#333A66</color>
+    <color name="tertiary">#7A5EA6</color>
+    <color name="error">#D14343</color>
+    <color name="on_error">#FFFFFF</color>
+    <color name="error_container">#F9E3E3</color>
+    <color name="on_error_container">#6C2323</color>
+
+    <!-- ===== 데이터 색 (테마 토큰 아님 — 차트·배지·상태 표시 전용) ===== -->
+    <!-- accent는 크롬에서 제거되고 데이터 오렌지로만 쓰인다 -->
+    <color name="accent">#E8853D</color>
+
+    <!-- 전투력 등급 색상 (색조 유지, 뉴트럴 바탕 대비 재조정) -->
+    <color name="rank_ex">#E6B800</color>
+    <color name="rank_s_plus">#E8432E</color>
+    <color name="rank_s">#F0563C</color>
+    <color name="rank_a_plus">#E87E00</color>
+    <color name="rank_a">#EE9500</color>
+    <color name="rank_a_minus">#EFA83F</color>
     <color name="rank_b_plus">#4169E1</color>
     <color name="rank_b">#6495ED</color>
     <color name="rank_b_minus">#5C9BD5</color>
-    <color name="rank_c_plus">#32CD32</color>
-    <color name="rank_c">#4CAF50</color>
-    <color name="rank_c_minus">#66BB6A</color>
-    <color name="rank_d">#757575</color>
+    <color name="rank_c_plus">#2FB344</color>
+    <color name="rank_c">#34A853</color>
+    <color name="rank_c_minus">#58B767</color>
+    <color name="rank_d">#8B93A1</color>
 
     <!-- 생존 상태 색상 -->
-    <color name="alive_color">#4CAF50</color>
-    <color name="dead_color">#F44336</color>
-    <color name="unknown_color">#9E9E9E</color>
+    <color name="alive_color">#34A853</color>
+    <color name="dead_color">#DC3D43</color>
+    <color name="unknown_color">#8B93A1</color>
 
     <!-- 타임라인 -->
-    <color name="timeline_line">#BDBDBD</color>
-    <color name="timeline_dot">#5C6BC0</color>
+    <color name="timeline_line">#C9CFD9</color>
+    <color name="timeline_dot">#5E6AD2</color>
 
     <!-- 검색 결과 타입 색상 -->
-    <color name="search_type_character">#5C6BC0</color>
-    <color name="search_type_event">#FF7043</color>
-    <color name="search_type_novel">#26A69A</color>
+    <color name="search_type_character">#5E6AD2</color>
+    <color name="search_type_event">#E8853D</color>
+    <color name="search_type_novel">#12A594</color>
 
     <!-- 빈 상태 색상 -->
-    <color name="empty_state_icon">#BDBDBD</color>
-    <color name="delete_warning">#F44336</color>
+    <color name="empty_state_icon">#C9CFD9</color>
+    <color name="delete_warning">#D14343</color>
 
     <!-- UI element colors -->
-    <color name="used_indicator_bg">#E0E0E0</color>
-    <color name="used_indicator_text">#555555</color>
-    <color name="item_background_light">#F5F5F5</color>
+    <color name="used_indicator_bg">#ECEEF2</color>
+    <color name="used_indicator_text">#5B6472</color>
 
-    <!-- 관계 그래프 (라이트모드: 밝은 배경 대비 강화) -->
-    <color name="graph_node_fill">#5C6BC0</color>
-    <color name="graph_node_stroke">#3949AB</color>
-    <color name="graph_edge">#757575</color>
-    <color name="graph_node_text">#212121</color>
-    <color name="graph_edge_label">#424242</color>
-    <color name="graph_summary_bg">#FFFDE7</color>
-    <color name="graph_summary_text">#E65100</color>
+    <!-- 관계 그래프 -->
+    <color name="graph_node_fill">#5E6AD2</color>
+    <color name="graph_node_stroke">#4854B8</color>
+    <color name="graph_edge">#8B93A1</color>
+    <color name="graph_node_text">#191C20</color>
+    <color name="graph_edge_label">#5B6472</color>
+    <color name="graph_summary_bg">#FFF6E5</color>
+    <color name="graph_summary_text">#9A5B00</color>
 
     <!-- 보충 탭 -->
-    <color name="outline">#E0E0E0</color>
-    <color name="supplement_badge_high">#F44336</color>
-    <color name="supplement_badge_mid">#FF9800</color>
-    <color name="supplement_badge_low">#4CAF50</color>
+    <color name="supplement_badge_high">#DC3D43</color>
+    <color name="supplement_badge_mid">#E8853D</color>
+    <color name="supplement_badge_low">#34A853</color>
+
+    <!-- 차트 범주 팔레트 (ChartTheme 전용) -->
+    <color name="chart_1">#5E6AD2</color>
+    <color name="chart_2">#E8853D</color>
+    <color name="chart_3">#12A594</color>
+    <color name="chart_4">#D6409F</color>
+    <color name="chart_5">#8E4EC6</color>
+    <color name="chart_6">#34A853</color>
+    <color name="chart_7">#E5A50A</color>
+    <color name="chart_8">#0588C7</color>
+
+    <!-- 이미지 위 선택 오버레이 -->
+    <color name="overlay_selection">#CC5E6AD2</color>
+    <color name="overlay_selection_weak">#555E6AD2</color>
+    <color name="overlay_link_badge">#CC0588C7</color>
+
+    <!-- 관계 그래프 — 관계 유형별 기본 색 (사용자 커스텀이 덮어씀) -->
+    <color name="graph_rel_lover">#C2185B</color>
+    <color name="graph_rel_enemy">#D32F2F</color>
+    <color name="graph_rel_rival">#E64A19</color>
+    <color name="graph_rel_ally">#1565C0</color>
+    <color name="graph_rel_friend">#2E7D32</color>
+    <color name="graph_rel_parent_child">#7B1FA2</color>
+    <color name="graph_rel_sibling">#E65100</color>
+    <color name="graph_rel_mentor">#00838F</color>
+    <color name="graph_rel_other">#616161</color>
 </resources>

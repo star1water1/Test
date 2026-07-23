@@ -11,10 +11,8 @@
         android:id="@+id/toolbar"
         android:layout_width="match_parent"
         android:layout_height="?attr/actionBarSize"
-        android:background="@color/primary"
         app:navigationIcon="?attr/homeAsUpIndicator"
-        app:title="@string/global_search"
-        app:titleTextColor="@color/on_primary" />
+        app:title="@string/global_search" />
 
     <com.google.android.material.textfield.TextInputLayout
         android:layout_width="match_parent"
@@ -50,13 +48,12 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnSavePreset"
-                style="@style/Widget.Material3.Button.OutlinedButton"
+                style="@style/Widget.App.Button.Outlined"
                 android:layout_width="wrap_content"
                 android:layout_height="36dp"
                 android:layout_marginEnd="6dp"
                 android:text="@string/search_preset_save"
-                android:textSize="12sp"
-                app:icon="@android:drawable/ic_menu_save"
+                app:icon="@drawable/ic_save"
                 app:iconSize="14dp"
                 app:cornerRadius="18dp" />
 
@@ -84,13 +81,12 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnAddFilter"
-                style="@style/Widget.Material3.Button.TonalButton"
+                style="@style/Widget.App.Button.Tonal"
                 android:layout_width="wrap_content"
                 android:layout_height="32dp"
                 android:layout_marginEnd="6dp"
                 android:text="@string/search_add_filter"
-                android:textSize="11sp"
-                app:icon="@android:drawable/ic_menu_add"
+                app:icon="@drawable/ic_add"
                 app:iconSize="14dp"
                 app:cornerRadius="16dp" />
 
@@ -101,13 +97,12 @@
     <!-- Quick add filter button (shown when no filters active) -->
     <com.google.android.material.button.MaterialButton
         android:id="@+id/btnAddFilterCompact"
-        style="@style/Widget.Material3.Button.TextButton"
+        style="@style/Widget.App.Button.Tonal"
         android:layout_width="wrap_content"
         android:layout_height="32dp"
         android:layout_marginStart="8dp"
         android:text="@string/search_add_filter"
-        android:textSize="11sp"
-        app:icon="@android:drawable/ic_menu_add"
+        app:icon="@drawable/ic_add"
         app:iconSize="14dp" />
 
     <LinearLayout
@@ -123,7 +118,7 @@
             android:id="@+id/emptyIcon"
             android:layout_width="48dp"
             android:layout_height="48dp"
-            android:src="@android:drawable/ic_menu_search"
+            android:src="@drawable/ic_search"
             android:alpha="0.3"
             android:layout_marginBottom="12dp"
             android:contentDescription="@string/search" />
@@ -134,7 +129,7 @@
             android:layout_height="wrap_content"
             android:text="@string/search_empty_hint"
             android:textColor="@color/text_secondary"
-            android:textSize="14sp"
+            android:textAppearance="@style/TextAppearance.App.Body"
             android:gravity="center" />
 
     </LinearLayout>

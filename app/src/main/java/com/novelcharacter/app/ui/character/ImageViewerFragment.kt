@@ -55,7 +55,7 @@ class ImageViewerFragment : Fragment() {
         // Close button
         val density = resources.displayMetrics.density
         val closeBtn = ImageView(requireContext()).apply {
-            setImageResource(android.R.drawable.ic_menu_close_clear_cancel)
+            setImageResource(R.drawable.ic_close)
             val pad = (12 * density).toInt()
             setPadding(pad, pad, pad, pad)
             setColorFilter(android.graphics.Color.WHITE)

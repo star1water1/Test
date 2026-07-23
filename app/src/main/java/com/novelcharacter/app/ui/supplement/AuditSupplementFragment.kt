@@ -1,6 +1,7 @@
 package com.novelcharacter.app.ui.supplement
 
 import android.graphics.drawable.GradientDrawable
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.os.Bundle
 import android.util.Log
 import android.view.LayoutInflater
@@ -65,7 +66,7 @@ class AuditSupplementFragment : Fragment() {
             val bundle = Bundle().apply {
                 putLong("characterId", target.character.id)
             }
-            findNavController().navigateSafe(R.id.characterHomeFragment, R.id.characterEditFragment, bundle)
+            findNavController().navigateSafe(R.id.supplementFragment, R.id.characterEditFragment, bundle)
         }
         binding.recyclerView.layoutManager = LinearLayoutManager(requireContext())
         binding.recyclerView.adapter = adapter
@@ -204,14 +205,14 @@ class AuditSupplementFragment : Fragment() {
             putString("supplementIssueLabels", issueLabelsArray.getOrNull(0) ?: "")
         }
 
-        findNavController().navigateSafe(R.id.characterHomeFragment, R.id.characterEditFragment, bundle)
+        findNavController().navigateSafe(R.id.supplementFragment, R.id.characterEditFragment, bundle)
     }
 
     private fun showSettingsDialog() {
         val dialogView = LayoutInflater.from(requireContext())
             .inflate(R.layout.dialog_supplement_settings, null)
 
-        val dialog = AlertDialog.Builder(requireContext())
+        val dialog = MaterialAlertDialogBuilder(requireContext())
             .setTitle(getString(R.string.supplement_settings_title))
             .setView(dialogView)
             .setCancelable(true)

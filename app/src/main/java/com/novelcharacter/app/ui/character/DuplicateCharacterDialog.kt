@@ -1,6 +1,7 @@
 package com.novelcharacter.app.ui.character
 
 import android.app.Dialog
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -111,7 +112,7 @@ class DuplicateCharacterDialog : DialogFragment() {
             adapter.setSelected(initialSelection)
         }
 
-        val builder = AlertDialog.Builder(requireContext())
+        val builder = MaterialAlertDialogBuilder(requireContext())
             .setTitle(R.string.duplicate_character_title)
             .setView(view)
             .setNegativeButton(R.string.duplicate_action_cancel) { _, _ ->

@@ -1,6 +1,7 @@
 package com.novelcharacter.app.ui.timeline
 
 import android.app.Dialog
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.os.Bundle
 import androidx.appcompat.app.AlertDialog
 import androidx.core.os.bundleOf
@@ -20,7 +21,7 @@ class QuickAddEventDialogFragment : DialogFragment() {
         val year = requireArguments().getInt(ARG_YEAR)
         val binding = DialogQuickAddEventBinding.inflate(layoutInflater)
 
-        return AlertDialog.Builder(requireContext())
+        return MaterialAlertDialogBuilder(requireContext())
             .setTitle(getString(R.string.quick_add_event_title, year))
             .setView(binding.root)
             .setPositiveButton(R.string.save) { _, _ ->

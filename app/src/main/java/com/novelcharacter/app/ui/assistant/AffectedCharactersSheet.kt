@@ -151,7 +151,7 @@ class AffectedCharactersSheet : BottomSheetDialogFragment() {
         // 부모(AssistantFragment)의 NavController로 이동 후 시트 닫기 — 회전 안전.
         val nav = requireParentFragment().findNavController()
         dismiss()
-        nav.navigateSafe(R.id.homeFragment, R.id.characterDetailFragment, bundleOf("characterId" to characterId))
+        nav.navigateSafe(R.id.analysisFragment, R.id.characterDetailFragment, bundleOf("characterId" to characterId))
     }
 
     private fun fixRow(row: AffectedRow) {

@@ -85,7 +85,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/event_type_label"
-            android:textSize="12sp"
+            android:textAppearance="@style/TextAppearance.App.Caption"
             android:textColor="@color/text_secondary" />
 
         <Spinner
@@ -114,8 +114,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/select_novel"
-            android:textSize="14sp"
-            android:textStyle="bold"
+            android:textAppearance="@style/TextAppearance.App.BodyStrong"
             android:textColor="@color/primary"
             android:layout_marginBottom="8dp" />
 
@@ -138,8 +137,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/related_characters"
-            android:textSize="14sp"
-            android:textStyle="bold"
+            android:textAppearance="@style/TextAppearance.App.BodyStrong"
             android:textColor="@color/primary"
             android:layout_marginBottom="8dp" />
 
@@ -158,8 +156,7 @@
             android:layout_marginBottom="8dp"
             android:text="@string/event_custom_fields"
             android:textColor="@color/primary"
-            android:textSize="14sp"
-            android:textStyle="bold"
+            android:textAppearance="@style/TextAppearance.App.BodyStrong"
             android:visibility="gone" />
 
         <LinearLayout

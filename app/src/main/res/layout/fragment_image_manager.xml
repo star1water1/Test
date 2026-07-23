@@ -12,43 +12,52 @@
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:paddingStart="16dp"
+        android:paddingStart="4dp"
         android:paddingEnd="8dp"
         android:paddingTop="8dp">
+
+        <ImageButton
+            android:id="@+id/btnBack"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:src="@drawable/ic_arrow_back"
+            android:contentDescription="@string/back"
+            app:tint="?attr/colorOnSurfaceVariant" />
 
         <TextView
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
+            android:layout_marginStart="@dimen/spacing_sm"
             android:text="@string/tab_images"
-            android:textSize="20sp"
-            android:textStyle="bold"
+            android:textAppearance="@style/TextAppearance.App.Headline"
             android:textColor="?attr/colorOnSurface" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/importButton"
-            style="@style/Widget.Material3.Button.TextButton"
+            style="@style/Widget.App.Button.Tonal"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/image_manager_import" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/selectButton"
-            style="@style/Widget.Material3.Button.TextButton"
+            style="@style/Widget.App.Button.Outlined"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/image_manager_select" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/sortButton"
-            style="@style/Widget.Material3.Button.TextButton"
+            style="@style/Widget.App.Button.Outlined"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/image_manager_sort" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/optionsButton"
-            style="@style/Widget.Material3.Button.TextButton"
+            style="@style/Widget.App.Button.Outlined"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/image_manager_options" />
@@ -62,7 +71,7 @@
         android:paddingStart="16dp"
         android:paddingEnd="16dp"
         android:paddingBottom="4dp"
-        android:textSize="13sp"
+        android:textAppearance="@style/TextAppearance.App.BodySmall"
         android:textColor="?attr/colorOnSurfaceVariant"
         tools:text="총 42개 · 12.3 MB (참조 38 · 고아 4)" />
 
@@ -158,12 +167,12 @@
                 android:inputType="text"
                 android:maxLines="1"
                 android:imeOptions="actionSearch"
-                android:textSize="14sp" />
+                android:textAppearance="@style/TextAppearance.App.Body" />
         </com.google.android.material.textfield.TextInputLayout>
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/tagFilterButton"
-            style="@style/Widget.Material3.Button.TextButton"
+            style="@style/Widget.App.Button.Outlined"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:minWidth="0dp"
@@ -217,13 +226,13 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:textSize="13sp"
+            android:textAppearance="@style/TextAppearance.App.BodySmall"
             android:textColor="?attr/colorOnSurface"
             tools:text="3개 선택" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/selectAllButton"
-            style="@style/Widget.Material3.Button.TextButton"
+            style="@style/Widget.App.Button.Outlined"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:minWidth="0dp"
@@ -231,7 +240,7 @@
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/actionsButton"
-            style="@style/Widget.Material3.Button"
+            style="@style/Widget.App.Button"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:minWidth="0dp"

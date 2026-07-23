@@ -3,23 +3,23 @@
 
     <item
         android:id="@+id/homeFragment"
-        android:icon="@drawable/ic_universe"
+        android:icon="@drawable/ic_home"
         android:title="@string/tab_home" />
 
     <item
-        android:id="@+id/characterHomeFragment"
-        android:icon="@drawable/ic_character_placeholder"
+        android:id="@+id/universeListFragment"
+        android:icon="@drawable/ic_universe"
+        android:title="@string/tab_universes" />
+
+    <item
+        android:id="@+id/characterTabFragment"
+        android:icon="@drawable/ic_person"
         android:title="@string/tab_characters" />
 
     <item
-        android:id="@+id/relationshipGraphFragment"
-        android:icon="@drawable/ic_relationship_graph"
-        android:title="@string/tab_relationship_graph" />
-
-    <item
-        android:id="@+id/statsMainFragment"
-        android:icon="@drawable/ic_stats"
-        android:title="@string/tab_statistics" />
+        android:id="@+id/analysisFragment"
+        android:icon="@drawable/ic_insights"
+        android:title="@string/tab_analysis" />
 
     <item
         android:id="@+id/settingsFragment"

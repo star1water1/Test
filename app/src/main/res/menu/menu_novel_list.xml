@@ -1,10 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- action_preset 없음 — 이 화면은 프리셋 핸들러가 없어 죽은 항목이었다 -->
 <menu xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
 
     <item
         android:id="@+id/action_global_search"
-        android:icon="@android:drawable/ic_menu_search"
+        android:icon="@drawable/ic_search"
         android:title="@string/global_search"
         app:showAsAction="ifRoom" />
 
@@ -16,11 +17,6 @@
     <item
         android:id="@+id/action_import"
         android:title="@string/import_excel"
-        app:showAsAction="never" />
-
-    <item
-        android:id="@+id/action_preset"
-        android:title="@string/load_preset"
         app:showAsAction="never" />
 
     <item

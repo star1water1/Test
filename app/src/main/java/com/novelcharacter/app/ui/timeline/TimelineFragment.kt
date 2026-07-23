@@ -1,6 +1,7 @@
 package com.novelcharacter.app.ui.timeline
 
 import android.os.Bundle
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.LayoutInflater
@@ -54,6 +55,23 @@ class TimelineFragment : Fragment(), EventEditDialogFragment.Host {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
+        // 푸시 목적지(대시보드·검색·딥링크 진입) — 업 버튼은 디스패처 경유로 뒤로가기와 동일 동작
+        binding.toolbar.setNavigationIcon(R.drawable.ic_arrow_back)
+        binding.toolbar.setNavigationOnClickListener {
+            requireActivity().onBackPressedDispatcher.onBackPressed()
+        }
+        // 순서 편집을 가시적 메뉴로 통일 (FAB 길게 누르기는 액셀러레이터로 존치)
+        binding.toolbar.inflateMenu(R.menu.menu_timeline)
+        binding.toolbar.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                R.id.action_reorder -> {
+                    toggleReorderMode()
+                    true
+                }
+                else -> false
+            }
+        }
+
         setupRecyclerView()
         setupPinchZoom()
         setupZoomControls()
@@ -91,7 +109,7 @@ class TimelineFragment : Fragment(), EventEditDialogFragment.Host {
                     getString(R.string.set_as_standard_year)
                 )
                 val title = "${getString(R.string.event_year_format, event.year)} — ${event.description.take(50)}"
-                AlertDialog.Builder(requireContext())
+                MaterialAlertDialogBuilder(requireContext())
                     .setTitle(title)
                     .setItems(items.toTypedArray()) { _, which ->
                         when (which) {
@@ -544,7 +562,7 @@ class TimelineFragment : Fragment(), EventEditDialogFragment.Host {
             } else {
                 // 복수 작품 → 선택 다이얼로그
                 val names = novels.map { it.title }.toTypedArray()
-                AlertDialog.Builder(requireContext())
+                MaterialAlertDialogBuilder(requireContext())
                     .setTitle(R.string.standard_year_select_novel)
                     .setItems(names) { _, which ->
                         confirmSetStandardYear(novels[which], event.year)
@@ -559,7 +577,7 @@ class TimelineFragment : Fragment(), EventEditDialogFragment.Host {
             Toast.makeText(requireContext(), getString(R.string.standard_year_already_set, year), Toast.LENGTH_SHORT).show()
             return
         }
-        AlertDialog.Builder(requireContext())
+        MaterialAlertDialogBuilder(requireContext())
             .setTitle(R.string.set_as_standard_year)
             .setMessage(getString(R.string.standard_year_confirm, novel.title, year))
             .setPositiveButton(android.R.string.ok) { _, _ ->

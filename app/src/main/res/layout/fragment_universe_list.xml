@@ -10,13 +10,11 @@
         android:id="@+id/toolbar"
         android:layout_width="0dp"
         android:layout_height="?attr/actionBarSize"
-        android:background="@color/primary"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent"
         app:title="@string/tab_universes"
-        app:titleTextColor="@color/on_primary"
-        app:menu="@menu/main_menu" />
+        app:menu="@menu/menu_universe_list" />
 
     <!-- Recent Activities Section -->
     <LinearLayout
@@ -37,7 +35,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/recent_activities"
-            android:textSize="13sp"
+            android:textAppearance="@style/TextAppearance.App.BodySmall"
             android:textColor="?attr/colorPrimary"
             android:textStyle="bold"
             android:paddingStart="4dp"
@@ -58,7 +56,7 @@
         android:layout_height="wrap_content"
         android:text="@string/empty_universe_hint"
         android:textColor="@color/text_secondary"
-        android:textSize="16sp"
+        android:textAppearance="@style/TextAppearance.App.Title"
         android:visibility="gone"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
@@ -83,7 +81,7 @@
         android:layout_height="wrap_content"
         android:layout_margin="16dp"
         android:contentDescription="@string/add_universe"
-        android:src="@android:drawable/ic_input_add"
+        android:src="@drawable/ic_add"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 

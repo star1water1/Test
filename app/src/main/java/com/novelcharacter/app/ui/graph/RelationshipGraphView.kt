@@ -135,37 +135,22 @@ class RelationshipGraphView @JvmOverloads constructor(
     // 세력 배경 경로
     private val factionHullPath = Path()
 
+    // 관계 타입별 기본 색 — 리소스 유래(라이트/다크는 리소스 한정자가 자동 반영).
+    // 사용자 커스텀(setRelationshipColors)이 이 위에 오버레이된다.
+    private val defaultRelationshipColors: Map<String, Int> = mapOf(
+        "연인" to ContextCompat.getColor(context, R.color.graph_rel_lover),
+        "적" to ContextCompat.getColor(context, R.color.graph_rel_enemy),
+        "라이벌" to ContextCompat.getColor(context, R.color.graph_rel_rival),
+        "동료" to ContextCompat.getColor(context, R.color.graph_rel_ally),
+        "친구" to ContextCompat.getColor(context, R.color.graph_rel_friend),
+        "부모-자식" to ContextCompat.getColor(context, R.color.graph_rel_parent_child),
+        "형제자매" to ContextCompat.getColor(context, R.color.graph_rel_sibling),
+        "멘토-제자" to ContextCompat.getColor(context, R.color.graph_rel_mentor),
+        "기타" to ContextCompat.getColor(context, R.color.graph_rel_other)
+    )
+
     // 관계 타입별 색상 (외부에서 커스터마이즈 가능)
-    private var relationshipColors: Map<String, Int> = if (isDarkMode) DEFAULT_COLORS_DARK else DEFAULT_COLORS_LIGHT
-
-    companion object {
-        val DEFAULT_COLORS_DARK = mapOf(
-            "연인" to Color.parseColor("#F06292"),
-            "적" to Color.parseColor("#EF5350"),
-            "라이벌" to Color.parseColor("#FF7043"),
-            "동료" to Color.parseColor("#42A5F5"),
-            "친구" to Color.parseColor("#66BB6A"),
-            "부모-자식" to Color.parseColor("#AB47BC"),
-            "형제자매" to Color.parseColor("#FFA726"),
-            "멘토-제자" to Color.parseColor("#26C6DA"),
-            "기타" to Color.parseColor("#9E9E9E")
-        )
-
-        val DEFAULT_COLORS_LIGHT = mapOf(
-            "연인" to Color.parseColor("#C2185B"),
-            "적" to Color.parseColor("#D32F2F"),
-            "라이벌" to Color.parseColor("#E64A19"),
-            "동료" to Color.parseColor("#1565C0"),
-            "친구" to Color.parseColor("#2E7D32"),
-            "부모-자식" to Color.parseColor("#7B1FA2"),
-            "형제자매" to Color.parseColor("#E65100"),
-            "멘토-제자" to Color.parseColor("#00838F"),
-            "기타" to Color.parseColor("#616161")
-        )
-
-        // 하위 호환용
-        val DEFAULT_COLORS = DEFAULT_COLORS_DARK
-    }
+    private var relationshipColors: Map<String, Int> = defaultRelationshipColors
 
     /**
      * 외부에서 관계 유형별 색상 맵을 설정한다.
@@ -181,8 +166,7 @@ class RelationshipGraphView @JvmOverloads constructor(
             }
         }
         // 기본 색상에 커스텀 색상을 오버레이
-        val base = if (isDarkMode) DEFAULT_COLORS_DARK else DEFAULT_COLORS_LIGHT
-        relationshipColors = base + parsed
+        relationshipColors = defaultRelationshipColors + parsed
         invalidate()
     }
 

@@ -1,6 +1,7 @@
 package com.novelcharacter.app.ui.character
 
 import android.graphics.BitmapFactory
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.net.Uri
 import android.os.Bundle
 import android.text.InputType
@@ -157,7 +158,7 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         val draft = CharacterDraftPrefs.load(ctx, characterId) ?: return
         val timeStr = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault())
             .format(java.util.Date(draft.savedAt))
-        AlertDialog.Builder(ctx)
+        MaterialAlertDialogBuilder(ctx)
             .setTitle(R.string.draft_restore_title)
             .setMessage(getString(R.string.draft_restore_message, timeStr))
             .setPositiveButton(R.string.draft_restore_apply) { _, _ -> applyDraft(draft) }
@@ -613,7 +614,7 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
     private fun handleBackPress() {
         if (hasUnsavedChanges) {
             val ctx = context ?: return
-            androidx.appcompat.app.AlertDialog.Builder(ctx)
+            MaterialAlertDialogBuilder(ctx)
                 .setTitle(R.string.unsaved_changes_title)
                 .setMessage(R.string.unsaved_changes_message)
                 .setPositiveButton(R.string.discard) { _, _ ->
@@ -695,7 +696,7 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         val nextIndex = supplementIndex + 1
         if (nextIndex >= supplementIds.size) {
             Toast.makeText(requireContext(), R.string.supplement_queue_done, Toast.LENGTH_SHORT).show()
-            findNavController().popBackStack(R.id.characterHomeFragment, false)
+            findNavController().popBackStack(R.id.supplementFragment, false)
             return
         }
         val issueLabelsArray = arguments?.getStringArray("supplementIssueLabelsArray")
@@ -710,7 +711,7 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
             }
         }
         val navOptions = androidx.navigation.NavOptions.Builder()
-            .setPopUpTo(R.id.characterHomeFragment, inclusive = false)
+            .setPopUpTo(R.id.supplementFragment, inclusive = false)
             .build()
         findNavController().navigate(R.id.characterEditFragment, bundle, navOptions)
     }
