@@ -23,6 +23,8 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
     private val app = application as NovelCharacterApp
     private val universeRepository = app.universeRepository
     private val userPresetDao = app.database.userPresetTemplateDao()
+    // 관리 대상 세그먼트(캐릭터/사건 필드)를 재방문 시 복원 — 다른 목록 표면과 동일 규칙
+    private val prefs = application.getSharedPreferences("field_manage_ui_state", android.content.Context.MODE_PRIVATE)
 
     private val _universeId = MutableLiveData<Long>()
     val universeId: LiveData<Long> = _universeId
@@ -32,8 +34,10 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
     val result: LiveData<OpResult?> = _result
     fun clearResult() { _result.value = null }
 
-    // 관리 대상 (B-10): 캐릭터 필드 / 사건 필드 전환
-    private val _entityType = MutableLiveData(FieldDefinition.ENTITY_CHARACTER)
+    // 관리 대상 (B-10): 캐릭터 필드 / 사건 필드 전환 — 저장된 세그먼트에서 복원
+    private val _entityType = MutableLiveData(
+        prefs.getString("entity_type", FieldDefinition.ENTITY_CHARACTER) ?: FieldDefinition.ENTITY_CHARACTER
+    )
     val entityType: LiveData<String> = _entityType
 
     private val _fieldsTrigger = MediatorLiveData<Unit>().apply {
@@ -55,7 +59,10 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setEntityType(type: String) {
-        if (_entityType.value != type) _entityType.value = type
+        if (_entityType.value != type) {
+            _entityType.value = type
+            prefs.edit().putString("entity_type", type).apply()
+        }
     }
 
     fun currentEntityType(): String = _entityType.value ?: FieldDefinition.ENTITY_CHARACTER

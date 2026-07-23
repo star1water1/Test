@@ -283,6 +283,29 @@ class RelationshipGraphFragment : Fragment() {
         isTimeViewEnabled = prefs.getBoolean("time_view_enabled", false)
         currentUniverseId = if (prefs.contains("universe_id")) prefs.getLong("universe_id", -1L) else null
         currentNovelId = if (prefs.contains("novel_id")) prefs.getLong("novel_id", -1L) else null
+        // 관계 유형·세력 필터 복원 — 세계관/작품 필터와 동일하게 재방문 시 유지
+        selectedRelTypes = loadStringSet("rel_types_json").toMutableSet()
+        selectedFactions = loadLongSet("faction_ids_json").toMutableSet()
+    }
+
+    private val filterGson by lazy { com.google.gson.Gson() }
+    private val stringListType by lazy { object : com.google.gson.reflect.TypeToken<List<String?>>() {}.type }
+    private val longListType by lazy { object : com.google.gson.reflect.TypeToken<List<Long?>>() {}.type }
+
+    private fun loadStringSet(key: String): Set<String> = runCatching {
+        filterGson.fromJson<List<String?>>(prefs.getString(key, null) ?: "[]", stringListType)
+    }.getOrNull()?.filterNotNull()?.toSet() ?: emptySet()
+
+    private fun loadLongSet(key: String): Set<Long> = runCatching {
+        filterGson.fromJson<List<Long?>>(prefs.getString(key, null) ?: "[]", longListType)
+    }.getOrNull()?.filterNotNull()?.toSet() ?: emptySet()
+
+    private fun persistRelTypes() {
+        prefs.edit().putString("rel_types_json", filterGson.toJson(selectedRelTypes.toList())).apply()
+    }
+
+    private fun persistFactions() {
+        prefs.edit().putString("faction_ids_json", filterGson.toJson(selectedFactions.toList())).apply()
     }
 
     private fun observeUniversesAndNovels() {
@@ -364,9 +387,9 @@ class RelationshipGraphFragment : Fragment() {
         binding.factionFilterScrollView.visibility = View.VISIBLE
         binding.factionDisplayModeScrollView.visibility = View.VISIBLE
 
-        // 무효 선택 제거 (세계관 전환 등으로 세력 목록이 변경된 경우)
+        // 무효 선택 제거 (세계관 전환 등으로 세력 목록이 변경된 경우) — 정리 결과도 영속
         val validFactionIds = factions.map { it.id }.toSet()
-        selectedFactions.retainAll(validFactionIds)
+        if (selectedFactions.retainAll(validFactionIds)) persistFactions()
 
         // "All factions" chip
         val allChip = Chip(requireContext()).apply {
@@ -401,6 +424,7 @@ class RelationshipGraphFragment : Fragment() {
                     // 개별 칩 상태 동기화 (전체 재생성 없이)
                     isChecked = faction.id in selectedFactions
                     allChip.isChecked = selectedFactions.isEmpty()
+                    persistFactions()
                     refreshGraph()
                 }
             }
@@ -413,6 +437,7 @@ class RelationshipGraphFragment : Fragment() {
             selectedFactions.clear()
             allChip.isChecked = true
             factionChips.forEach { it.isChecked = false }
+            persistFactions()
             refreshGraph()
         }
     }
@@ -449,6 +474,7 @@ class RelationshipGraphFragment : Fragment() {
                     prefs.edit().apply {
                         if (newUniverseId != null) putLong("universe_id", newUniverseId) else remove("universe_id")
                         remove("novel_id")
+                        putString("faction_ids_json", filterGson.toJson(emptyList<Long>()))
                     }.apply()
                     updateNovelSpinner()
                     setupFactionChips()
@@ -622,8 +648,8 @@ class RelationshipGraphFragment : Fragment() {
         chipGroup.removeAllViews()
 
         val types = relationships.map { it.relationshipType }.distinct().sorted()
-        // 무효 선택 제거 (관계 데이터 변경으로 타입이 사라진 경우)
-        selectedRelTypes.retainAll(types.toSet())
+        // 무효 선택 제거 (관계 데이터 변경으로 타입이 사라진 경우) — 정리 결과도 영속
+        if (selectedRelTypes.retainAll(types.toSet())) persistRelTypes()
 
         val allChip = Chip(requireContext()).apply {
             text = getString(R.string.graph_filter_all)
@@ -647,6 +673,7 @@ class RelationshipGraphFragment : Fragment() {
                     // 개별 칩 상태 동기화 (전체 재생성 없이)
                     isChecked = type in selectedRelTypes
                     allChip.isChecked = selectedRelTypes.isEmpty()
+                    persistRelTypes()
                     refreshGraph()
                 }
             }
@@ -659,6 +686,7 @@ class RelationshipGraphFragment : Fragment() {
             selectedRelTypes.clear()
             allChip.isChecked = true
             typeChips.forEach { it.isChecked = false }
+            persistRelTypes()
             refreshGraph()
         }
     }

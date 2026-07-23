@@ -44,6 +44,18 @@ class StatsMainFragment : Fragment() {
     private var selectedFieldIndex = -1
     private var selectedBodySizePartIndex = 0
 
+    // 랭킹 탭 정렬·필터 상태 영속(stats_prefs) — 개요 탭 필터만 저장되고 랭킹은 전부 휘발되던 갭 해소.
+    // 필드는 인덱스가 아니라 안정 키(fieldDef.key)로 저장·복원한다(필드 목록이 세계관별로 달라지므로).
+    private val rankingPrefs by lazy {
+        requireContext().getSharedPreferences("stats_prefs", android.content.Context.MODE_PRIVATE)
+    }
+    private data class RankingRestore(
+        val universeId: Long?, val novelId: Long?, val fieldKey: String?, val bodyPart: Int
+    )
+    private var pendingRankingRestore: RankingRestore? = null
+    // 필드 복원 후 BODY_SIZE 파트 스피너가 준비되면 소비되는 잔여 복원값
+    private var pendingBodyPartRestore: Int? = null
+
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
     ): View {
@@ -89,6 +101,18 @@ class StatsMainFragment : Fragment() {
         rankingInitialized = true
         val ctx = context ?: return
 
+        // 저장된 랭킹 정렬·필터 복원 — 스피너 설정 전에 필드에 실어두고, 비동기 스피너 준비 시점에 반영
+        currentAscending = rankingPrefs.getBoolean("ranking_ascending", false)
+        pendingRankingRestore = RankingRestore(
+            universeId = if (rankingPrefs.contains("ranking_universe_id")) rankingPrefs.getLong("ranking_universe_id", -1L) else null,
+            novelId = if (rankingPrefs.contains("ranking_novel_id")) rankingPrefs.getLong("ranking_novel_id", -1L) else null,
+            fieldKey = rankingPrefs.getString("ranking_field_key", null),
+            bodyPart = rankingPrefs.getInt("ranking_body_part", 0)
+        )
+        binding.rankingSortToggle.setImageResource(
+            if (currentAscending) R.drawable.ic_arrow_up else R.drawable.ic_arrow_down
+        )
+
         // RecyclerView
         rankingAdapter = RankingAdapter()
         binding.rankingRecyclerView.layoutManager = LinearLayoutManager(ctx)
@@ -98,6 +122,7 @@ class StatsMainFragment : Fragment() {
         binding.rankingBodySizeSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(p: AdapterView<*>?, v: View?, partPos: Int, partId: Long) {
                 selectedBodySizePartIndex = partPos
+                rankingPrefs.edit().putInt("ranking_body_part", partPos).apply()
                 if (selectedFieldIndex >= 0) executeRanking()
             }
             override fun onNothingSelected(p: AdapterView<*>?) {}
@@ -109,6 +134,7 @@ class StatsMainFragment : Fragment() {
                 if (suppressFieldSpinnerCallback) return
                 if (pos == 0) {
                     selectedFieldIndex = -1
+                    rankingPrefs.edit().remove("ranking_field_key").apply()
                     binding.rankingBodySizeRow.visibility = View.GONE
                     binding.rankingEmpty.visibility = View.VISIBLE
                     binding.rankingRecyclerView.visibility = View.GONE
@@ -117,6 +143,7 @@ class StatsMainFragment : Fragment() {
                 }
                 selectedFieldIndex = pos - 1
                 val field = currentRankableFields.getOrNull(selectedFieldIndex) ?: return
+                rankingPrefs.edit().putString("ranking_field_key", field.fieldDef.key).apply()
 
                 // BODY_SIZE일 때만 파트 스피너 표시 (adapter만 교체, 리스너는 재등록하지 않음)
                 if (field.fieldDef.type == "BODY_SIZE" && field.bodySizeParts != null) {
@@ -124,10 +151,18 @@ class StatsMainFragment : Fragment() {
                     val partAdapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item, field.bodySizeParts)
                     partAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
                     binding.rankingBodySizeSpinner.adapter = partAdapter
+                    // 저장된 파트 복원 — 파트 스피너 준비 직후 1회 소비. 범위 밖이면 기본(0) 유지.
+                    pendingBodyPartRestore?.let { savedPart ->
+                        pendingBodyPartRestore = null
+                        if (savedPart in field.bodySizeParts.indices) {
+                            binding.rankingBodySizeSpinner.setSelection(savedPart)
+                        }
+                    }
                     // adapter 변경 시 onItemSelected(pos=0) 자동 발생 → 거기서 executeRanking() 호출됨
                     return
                 } else {
                     binding.rankingBodySizeRow.visibility = View.GONE
+                    pendingBodyPartRestore = null  // 비-BODY_SIZE 필드면 파트 복원 폐기
                 }
 
                 executeRanking()
@@ -138,6 +173,7 @@ class StatsMainFragment : Fragment() {
         // 정렬 토글
         binding.rankingSortToggle.setOnClickListener {
             currentAscending = !currentAscending
+            rankingPrefs.edit().putBoolean("ranking_ascending", currentAscending).apply()
             binding.rankingSortToggle.setImageResource(
                 if (currentAscending) R.drawable.ic_arrow_up
                 else R.drawable.ic_arrow_down
@@ -148,10 +184,12 @@ class StatsMainFragment : Fragment() {
         // 순위 결과 옵저버
         setupRankingObservers()
 
-        // 초기 로딩: cachedSnapshot이 있으면 즉시, 없으면 loading 완료 후 자동 세팅
+        // 초기 로딩: cachedSnapshot이 있으면 즉시, 없으면 loading 완료 후 자동 세팅.
+        // setupRankingUniverseSpinner가 저장된 세계관 선택을 복원하면 selectedUniverseId가 그 값이 되므로
+        // 뒤이은 필드 로드도 복원된 스코프로 맞춘다(취소 가능 로드라 마지막 것이 확정).
         if (viewModel.getUniverseList().isNotEmpty()) {
             setupRankingUniverseSpinner()
-            viewModel.loadRankableFields(null)
+            viewModel.loadRankableFields(selectedUniverseId)
         }
     }
 
@@ -165,6 +203,20 @@ class StatsMainFragment : Fragment() {
             populateFieldSpinner(fields)
             _binding?.rankingFieldSpinner?.post {
                 suppressFieldSpinnerCallback = false
+                // 저장된 필드 복원 — 복원된 세계관 스코프의 필드 목록이 도착했을 때만 시도.
+                // (loadRankableFields는 취소 가능하므로 마지막 로드 = 복원 세계관 스코프)
+                val restore = pendingRankingRestore
+                if (restore != null && selectedUniverseId == restore.universeId) {
+                    if (restore.fieldKey != null) {
+                        val idx = currentRankableFields.indexOfFirst { it.fieldDef.key == restore.fieldKey }
+                        if (idx >= 0) {
+                            pendingBodyPartRestore = restore.bodyPart  // BODY_SIZE 파트 스피너 준비 후 소비
+                            binding.rankingFieldSpinner.setSelection(idx + 1)
+                        }
+                        // 저장된 필드가 현재 목록에 없으면 조용히 미선택 유지
+                    }
+                    pendingRankingRestore = null  // 복원 1회로 종료 — 이후 데이터 변경 재발화 시 재복원 방지
+                }
             }
         }
 
@@ -208,12 +260,22 @@ class StatsMainFragment : Fragment() {
                     setupRankingNovelSpinner(uid)
                     binding.rankingNovelRow.visibility = View.VISIBLE
                 }
+                rankingPrefs.edit().apply {
+                    if (selectedUniverseId != null) putLong("ranking_universe_id", selectedUniverseId!!) else remove("ranking_universe_id")
+                }.apply()
                 viewModel.loadRankableFields(selectedUniverseId)
                 selectedFieldIndex = -1
             }
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
         binding.rankingUniverseSpinner.adapter = adapter
+
+        // 저장된 세계관 필터 복원 — setSelection이 위 리스너를 재발화해 올바른 필드 목록을 로드한다.
+        // 삭제된 세계관이면 위치를 못 찾아 전체(0) 유지.
+        pendingRankingRestore?.universeId?.let { savedUid ->
+            val idx = universes.indexOfFirst { it.first == savedUid }
+            if (idx >= 0) binding.rankingUniverseSpinner.setSelection(idx + 1)
+        }
     }
 
     private fun setupRankingNovelSpinner(universeId: Long) {
@@ -228,11 +290,20 @@ class StatsMainFragment : Fragment() {
         binding.rankingNovelSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, v: View?, pos: Int, id: Long) {
                 selectedNovelIdForRanking = if (pos == 0) null else novels.getOrNull(pos - 1)?.first
+                rankingPrefs.edit().apply {
+                    if (selectedNovelIdForRanking != null) putLong("ranking_novel_id", selectedNovelIdForRanking!!) else remove("ranking_novel_id")
+                }.apply()
                 if (selectedFieldIndex >= 0) executeRanking()
             }
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
         binding.rankingNovelSpinner.adapter = adapter
+
+        // 저장된 작품 필터 복원 (삭제된 작품이면 전체 유지)
+        pendingRankingRestore?.novelId?.let { savedNid ->
+            val idx = novels.indexOfFirst { it.first == savedNid }
+            if (idx >= 0) binding.rankingNovelSpinner.setSelection(idx + 1)
+        }
     }
 
     private fun populateFieldSpinner(fields: List<RankableField>) {
@@ -290,7 +361,7 @@ class StatsMainFragment : Fragment() {
                 // 세계관 스피너가 아직 세팅 안 된 경우 (최초 진입)
                 if (binding.rankingUniverseSpinner.adapter == null) {
                     setupRankingUniverseSpinner()
-                    viewModel.loadRankableFields(null)
+                    viewModel.loadRankableFields(selectedUniverseId)
                 }
                 // onResume 후 데이터 갱신: 스피너 선택은 보존하고 필드 목록만 재로딩
                 else if (rankingNeedsRefresh) {

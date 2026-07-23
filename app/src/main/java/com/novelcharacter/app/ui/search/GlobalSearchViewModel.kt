@@ -38,7 +38,11 @@ class GlobalSearchViewModel(application: Application) : AndroidViewModel(applica
 
     private val _searchQuery = MutableLiveData("")
     private val _sortMode = MutableLiveData(prefs.getString("sort_mode", SearchPreset.SORT_RELEVANCE) ?: SearchPreset.SORT_RELEVANCE)
-    private val _fieldFilters = MutableLiveData<List<FieldFilter>>(emptyList())
+    // 필드 필터도 영속 — 정렬만 저장되고 필터는 콜드 스타트에 조용히 사라지던 비대칭 해소
+    // (캐릭터 목록과 동일하게 field_filters_json으로 저장). 검색어(_searchQuery)만 세션 한정.
+    private val _fieldFilters = MutableLiveData(
+        FieldFilterHelper.filtersFromJson(prefs.getString("field_filters_json", "{}") ?: "{}")
+    )
 
     val presets: LiveData<List<SearchPreset>> = searchPresetRepository.allPresets
     val sortMode: LiveData<String> = _sortMode
@@ -250,23 +254,32 @@ class GlobalSearchViewModel(application: Application) : AndroidViewModel(applica
         current.removeAll { it.fieldId == filter.fieldId }
         current.add(filter)
         _fieldFilters.value = current
+        persistFieldFilters(current)
     }
 
     fun removeFieldFilter(fieldId: Long) {
         val current = _fieldFilters.value?.toMutableList() ?: mutableListOf()
         current.removeAll { it.fieldId == fieldId }
         _fieldFilters.value = current
+        persistFieldFilters(current)
     }
 
     fun clearFieldFilters() {
         _fieldFilters.value = emptyList()
+        persistFieldFilters(emptyList())
     }
 
     fun getFiltersJson(): String =
         FieldFilterHelper.filtersToJson(_fieldFilters.value ?: emptyList())
 
     fun applyFiltersFromJson(json: String) {
-        _fieldFilters.value = FieldFilterHelper.filtersFromJson(json)
+        val filters = FieldFilterHelper.filtersFromJson(json)
+        _fieldFilters.value = filters
+        persistFieldFilters(filters)
+    }
+
+    private fun persistFieldFilters(filters: List<FieldFilter>) {
+        prefs.edit().putString("field_filters_json", FieldFilterHelper.filtersToJson(filters)).apply()
     }
 
     /** 특정 필드의 유니크 값 목록 조회 (필터 UI용) */

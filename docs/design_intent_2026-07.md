@@ -64,6 +64,9 @@ CLAUDE.md의 5대 원칙(특히 원칙 02 실질적 기능성, 원칙 04 조작 
   조용히 줄이는 것을 막는다(변수 제어).
 - 복원값 위생: 삭제된 엔티티를 가리키는 복원값은 해제한다. 보이는 컨트롤이 없는 필터
   (예: 기준 설정에서 꺼진 이슈의 저장된 필터)는 유지하지 않는다 — 무음 필터 금지.
+  필드는 인덱스가 아니라 안정 키로 저장·복원한다(목록이 스코프별로 달라지므로).
+- **전수 원칙:** 정렬·필터·세그먼트 컨트롤이 있는 화면은 예외 없이 이 규칙을 따른다.
+  아래 표가 전 화면 현황이며, 새 컨트롤은 여기에 등재한다. (2026-07 전수 조사 기준.)
 - 설정→앱 초기화는 아래 표의 모든 파일을 지운다(테마 제외).
 
 | prefs 파일 | 화면 | 저장 항목 |
@@ -72,9 +75,17 @@ CLAUDE.md의 5대 원칙(특히 원칙 02 실질적 기능성, 원칙 04 조작 
 | `analysis_ui_state` | 분석 허브 | last_tab |
 | `supplement_ui_state` | 보충 | universe_id, novel_id, sort_mode, random_mode, last_tab, issue_filter, filter_collapsed, random_controls_collapsed |
 | `image_manager_ui_state` | 이미지 관리 | filter_base, filter_tags(JSON), sort |
-| `search_ui_state` | 통합 검색 | sort_mode (+필드 필터) |
-| `timeline_ui_state` | 연표 | zoom_level, center_year 등 |
-| `graph_ui_state` / `stats_prefs` / `namebank_ui_state` | 관계도/통계/이름은행 | 각 화면 상태 |
+| `search_ui_state` | 통합 검색 | sort_mode, field_filters_json |
+| `timeline_ui_state` | 연표 | filter_novel_id, filter_character_id, zoom_level, center_year |
+| `graph_ui_state` | 관계도 | universe_id, novel_id, rel_types_json, faction_ids_json, 표시 토글 |
+| `stats_prefs` | 통계 | selected_novel_id, pattern_insights_enabled_types, ranking_ascending/universe_id/novel_id/field_key/body_part |
+| `namebank_ui_state` | 이름 은행 | show_only_available |
+| `assistant_prefs` | 어시스턴트 | 카테고리 on/off 필터 |
+| `supplement_criteria` | 보충 완성도 검사 | 검사 기준 토글 |
+| `field_manage_ui_state` | 필드 관리 | entity_type(캐릭터/사건 세그먼트) |
+
+**검색어(query)는 위 어디에도 저장하지 않는다** — 세션 한정(캐릭터 목록·통합 검색·
+연표·이름 은행은 VM 필드, 이미지 관리는 SavedStateHandle). 재방문 시 빈 검색어로 시작한다.
 
 ## 규칙 4 — 보충탭 정보 우선
 

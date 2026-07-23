@@ -1031,7 +1031,8 @@ class SettingsFragment : Fragment() {
                         "image_index_prefs", "timeline_ui_state", "stats_prefs",
                         "supplement_criteria", "supplement_ui_state", "search_ui_state",
                         "namebank_ui_state", "graph_ui_state", "character_list_ui",
-                        "analysis_ui_state", "image_manager_ui_state", "app_migrations",
+                        "analysis_ui_state", "image_manager_ui_state", "field_manage_ui_state",
+                        "assistant_prefs", "app_migrations",
                         // 편집 드래프트 — 초기화 후 재사용된 캐릭터 id에 이전 드래프트가 되살아나지 않도록
                         "character_edit_drafts"
                     ).forEach { name ->
