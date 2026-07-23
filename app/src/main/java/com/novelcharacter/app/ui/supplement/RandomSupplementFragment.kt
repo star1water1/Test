@@ -172,6 +172,8 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
             getString = { resId -> getString(resId) },
             getStringWithArg = { resId, arg -> getString(resId, arg) }
         )
+        // 캐릭터 패널 내부라 이중 테두리를 피하고 섹션(구분선)으로 표시
+        fieldRenderer.sectionStyle = DynamicFieldRenderer.SectionStyle.FLAT
 
         imageStrip = CharacterImageStripController(
             fragment = this,

@@ -319,12 +319,12 @@
                             android:textSize="@dimen/stats_text_body" />
                     </LinearLayout>
 
-                    <!-- 커스텀 필드 (DynamicFieldRenderer 렌더 대상) — 같은 패널 안에 포함 -->
+                    <!-- 커스텀 필드 (DynamicFieldRenderer 렌더 대상) — 같은 패널 안에 포함.
+                         FLAT 모드: 각 섹션이 상단 hairline 구분선으로 간격을 만드므로 별도 상단 마진 불필요 -->
                     <LinearLayout
                         android:id="@+id/dynamicFieldsContainer"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/stats_margin_md"
                         android:orientation="vertical" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
