@@ -73,8 +73,39 @@ class SupplementFragment : Fragment() {
             requireActivity().onBackPressedDispatcher.onBackPressed()
         }
 
-        setupPager()
+        setupFilterCollapse()
+        setupPager(savedInstanceState)
         observeViewModel()
+    }
+
+    /** 필터 카드 접기/펼치기 — 접힘 상태 영속(재방문 시 복원), 접힌 동안은 한 줄 요약이 조건을 대신 보여준다 */
+    private fun setupFilterCollapse() {
+        applyFilterCollapsed(viewModel.isFilterCollapsed)
+        updateFilterSummary()
+        val toggle = View.OnClickListener {
+            val next = !viewModel.isFilterCollapsed
+            viewModel.setFilterCollapsed(next)
+            applyFilterCollapsed(next)
+        }
+        binding.filterHeaderRow.setOnClickListener(toggle)
+        binding.btnToggleFilter.setOnClickListener(toggle)
+    }
+
+    private fun applyFilterCollapsed(collapsed: Boolean) {
+        val b = _binding ?: return
+        b.filterContent.visibility = if (collapsed) View.GONE else View.VISIBLE
+        b.btnToggleFilter.rotation = if (collapsed) 180f else 0f
+    }
+
+    /** 접힌 헤더의 한 줄 요약 — 스피너 선택이 바뀌는 모든 경로(복원 포함)에서 갱신된다 */
+    private fun updateFilterSummary() {
+        val b = _binding ?: return
+        val universeText = (b.spinnerUniverse.selectedItem as? String)
+            ?: getString(R.string.supplement_filter_all_universes)
+        val novelText = (b.spinnerNovel.selectedItem as? String)
+            ?: getString(R.string.supplement_filter_all_novels)
+        b.filterSummaryText.text =
+            getString(R.string.supplement_filter_summary, universeText, novelText)
     }
 
     override fun onResume() {
@@ -95,7 +126,7 @@ class SupplementFragment : Fragment() {
         applyUniverseSelection(0, universes)
     }
 
-    private fun setupPager() {
+    private fun setupPager(savedInstanceState: Bundle?) {
         binding.viewPager.adapter = SupplementPagerAdapter(this)
         // 두 탭을 모두 살려둔다 — 랜덤 탭의 편집 상태가 탭 전환으로 파괴되지 않도록
         binding.viewPager.offscreenPageLimit = 1
@@ -107,6 +138,13 @@ class SupplementFragment : Fragment() {
         TabLayoutMediator(binding.tabLayout, binding.viewPager) { tab, position ->
             tab.text = titles[position]
         }.attach()
+
+        // 마지막 탭 복원 — 콜드 스타트에서만. 이 시점엔 자식 프래그먼트가 아직 생성 전이라
+        // editGuard == null — 우회할 편집 상태 자체가 없어 가드에 안전하다.
+        // 회전(savedInstanceState != null) 시에는 ViewPager2 자체 복원에 맡긴다(충돌 방지).
+        if (savedInstanceState == null) {
+            binding.viewPager.setCurrentItem(viewModel.lastTabPosition, false)
+        }
 
         committedTabPos = binding.viewPager.currentItem
         setupTabGuard()
@@ -144,7 +182,9 @@ class SupplementFragment : Fragment() {
                     b.tabLayout.getTabAt(committedTabPos)?.select()
                     guard.requestLeave { _binding?.viewPager?.setCurrentItem(target, true) }
                 } else {
+                    // 가드를 통과해 확정된 탭만 저장 — 가드의 사후 복귀(select)는 같은 값 재저장이라 무해
                     committedTabPos = target
+                    viewModel.setLastTab(target)
                 }
             }
 
@@ -186,6 +226,7 @@ class SupplementFragment : Fragment() {
         binding.spinnerUniverse.setSelection(restoredPos)
         lastUniversePos = restoredPos
         suppressSpinnerEvents = false
+        updateFilterSummary()
 
         // 작품 스피너는 novelList 옵저버에서 복원됨 (이 시점에 novelList 미로드)
 
@@ -246,6 +287,7 @@ class SupplementFragment : Fragment() {
         binding.spinnerNovel.setSelection(restoredNovelPos)
         lastNovelPos = restoredNovelPos
         suppressSpinnerEvents = false
+        updateFilterSummary()
 
         binding.spinnerNovel.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
@@ -274,6 +316,7 @@ class SupplementFragment : Fragment() {
         }
         val selectedNovel = if (position == 0) null else novels[position - 1]
         viewModel.setNovelFilter(selectedNovel?.id)
+        updateFilterSummary()
     }
 
     override fun onDestroyView() {

@@ -1322,6 +1322,8 @@
     <string name="supplement_tab_audit">완성도 검사</string>
     <string name="supplement_filter_all_universes">전체 세계관</string>
     <string name="supplement_filter_all_novels">전체 작품</string>
+    <string name="supplement_filter_summary">%1$s · %2$s</string>
+    <string name="supplement_filter_toggle">필터 펼치기/접기</string>
 
     <!-- 랜덤 보충 탭 -->
     <string name="random_reroll">다시 뽑기</string>
@@ -1337,6 +1339,8 @@
     <string name="random_no_characters_filtered">현재 필터에 해당하는 캐릭터가 없습니다.</string>
     <string name="random_clear_filter">필터 해제</string>
     <string name="random_settings_title">랜덤 보충 설정</string>
+    <string name="random_settings_button">뽑기 설정</string>
+    <string name="random_controls_toggle">뽑기 옵션 펼치기/접기</string>
     <string name="random_auto_save">편집 종료 시 자동 저장</string>
     <string name="random_auto_save_desc">편집 모드를 끌 때 확인 없이 자동으로 저장합니다.</string>
     <string name="random_unsaved_title">저장되지 않은 변경</string>
