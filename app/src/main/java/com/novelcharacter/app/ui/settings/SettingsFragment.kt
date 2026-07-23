@@ -1022,12 +1022,16 @@ class SettingsFragment : Fragment() {
                     db.recentActivityDao().deleteAll()
                 }
 
-                // SharedPreferences 초기화 (테마 제외)
+                // SharedPreferences 초기화 (테마 제외) — 초기화가 UI 상태 찌꺼기를 남기지 않게
+                // 실제 사용 중인 prefs 파일명과 일치시켜 유지한다(과거 죽은 이름 4개 교정:
+                // search_filters→search_ui_state, namebank_prefs→namebank_ui_state,
+                // graph_prefs→graph_ui_state, universe_list_state→character_list_ui)
                 withContext(Dispatchers.IO) {
                     listOf(
                         "image_index_prefs", "timeline_ui_state", "stats_prefs",
-                        "supplement_criteria", "supplement_ui_state", "search_filters", "namebank_prefs",
-                        "graph_prefs", "universe_list_state", "app_migrations",
+                        "supplement_criteria", "supplement_ui_state", "search_ui_state",
+                        "namebank_ui_state", "graph_ui_state", "character_list_ui",
+                        "analysis_ui_state", "image_manager_ui_state", "app_migrations",
                         // 편집 드래프트 — 초기화 후 재사용된 캐릭터 id에 이전 드래프트가 되살아나지 않도록
                         "character_edit_drafts"
                     ).forEach { name ->

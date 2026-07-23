@@ -37,11 +37,39 @@ class ImageManagerViewModel(
     private val db: AppDatabase = app.database
     private val gson = Gson()
 
+    // 기본 필터·태그·정렬은 세션을 넘는 작업 컨텍스트 — SharedPreferences로 영속(재방문 시 복원).
+    // 검색어는 일회성 조회라 세션(SavedStateHandle) 한정 — 낡은 검색어가 재방문 시
+    // 이미지를 조용히 숨기지 않게 한다(변수 제어).
+    private val prefs = application.getSharedPreferences(
+        "image_manager_ui_state", android.content.Context.MODE_PRIVATE
+    )
+
     enum class Sort { SIZE, NAME, DATE }
+
+    init {
+        // 콜드 스타트 시딩 — SavedStateHandle이 이미 살아있으면(회전/저메모리 복원) 그쪽이 우선
+        if (!savedState.contains("filter_base")) {
+            savedState["filter_base"] =
+                prefs.getString("filter_base", null) ?: ImageFilterHelper.BaseFilter.ALL.name
+        }
+        if (!savedState.contains("filter_tags")) {
+            savedState["filter_tags"] = ArrayList(loadPersistedTags())
+        }
+        if (!savedState.contains("sort")) {
+            savedState["sort"] = prefs.getString("sort", null) ?: Sort.SIZE.name
+        }
+    }
+
+    private fun loadPersistedTags(): List<String> = runCatching {
+        gson.fromJson<List<String?>>(
+            prefs.getString("filter_tags", null) ?: "[]", GsonTypes.STRING_LIST
+        )
+    }.getOrNull()?.filterNotNull() ?: emptyList()
 
     /**
      * 필터/검색/정렬 상태 — SavedStateHandle 영속. ViewPager가 원거리 탭의 프래그먼트(와 이 VM)를
      * 파기해도 FragmentStateAdapter의 상태 저장을 타고 복원된다(탭 전환 시 필터 리셋 방지, D10).
+     * 기본 필터·태그·정렬은 prefs에도 기록해 콜드 스타트를 넘는다(위 주석 참조).
      */
     var criteria: ImageFilterHelper.Criteria
         get() = ImageFilterHelper.Criteria(
@@ -55,11 +83,18 @@ class ImageManagerViewModel(
             savedState["filter_base"] = value.base.name
             savedState["filter_tags"] = ArrayList(value.tags)
             savedState["filter_query"] = value.query
+            prefs.edit()
+                .putString("filter_base", value.base.name)
+                .putString("filter_tags", gson.toJson(ArrayList(value.tags)))
+                .apply()
         }
 
     var sort: Sort
         get() = runCatching { Sort.valueOf(savedState["sort"] ?: Sort.SIZE.name) }.getOrDefault(Sort.SIZE)
-        set(value) { savedState["sort"] = value.name }
+        set(value) {
+            savedState["sort"] = value.name
+            prefs.edit().putString("sort", value.name).apply()
+        }
 
     enum class OwnerType { CHARACTER, NOVEL, UNIVERSE }
     data class Owner(val type: OwnerType, val name: String, val id: Long)
