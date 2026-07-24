@@ -64,6 +64,30 @@ class AiService(context: Context) {
         return keyStore.hasKey(active.id)
     }
 
+    /**
+     * 프로바이더가 지금 실제로 제공하는 모델 목록을 조회한다. 설정 화면의 '모델 선택'이
+     * 앱에 박제된 하드코딩 추천값 대신 살아있는 목록을 보여주는 데 쓰인다(변수 제어 —
+     * 낡은 모델명 추천 방지). 실패하면 호출측이 정적 추천값으로 폴백한다.
+     */
+    suspend fun listModels(config: AiProviderConfig, apiKey: String): AiModelListResult =
+        withContext(Dispatchers.IO) {
+            val spec = AiProtocolCodec.buildModelListRequest(config, apiKey)
+            when (val raw = executeHttp(spec)) {
+                is RawResponse.NetworkError -> AiModelListResult.Failure(raw.failure)
+                is RawResponse.Http -> if (raw.code in 200..299) {
+                    val models = AiProtocolCodec.parseModelList(config.protocol, raw.body.orEmpty())
+                    if (models.isEmpty()) {
+                        AiModelListResult.Failure(AiResult.Failure(AiErrorKind.EMPTY_RESPONSE))
+                    } else {
+                        AiModelListResult.Success(models)
+                    }
+                } else {
+                    AppLogger.error(TAG, "모델 목록 조회 실패 HTTP ${raw.code} (${config.protocol.name})", null)
+                    AiModelListResult.Failure(AiProtocolCodec.parseError(raw.code, raw.body))
+                }
+            }
+        }
+
     private suspend fun execute(
         config: AiProviderConfig, apiKey: String, request: AiRequest
     ): AiResult = withContext(Dispatchers.IO) {
@@ -82,36 +106,46 @@ class AiService(context: Context) {
 
     private fun call(
         spec: AiProtocolCodec.HttpSpec, protocol: AiProtocol, requestedModel: String
-    ): AiResult {
+    ): AiResult = when (val raw = executeHttp(spec)) {
+        is RawResponse.NetworkError -> raw.failure
+        is RawResponse.Http -> if (raw.code in 200..299) {
+            AiProtocolCodec.parseSuccess(protocol, raw.body.orEmpty(), requestedModel)
+        } else {
+            // 키·본문은 절대 로그에 남기지 않는다 — 상태 코드만.
+            AppLogger.error(TAG, "AI 호출 실패 HTTP ${raw.code} (${protocol.name})", null)
+            AiProtocolCodec.parseError(raw.code, raw.body)
+        }
+    }
+
+    /** 완료·모델목록 두 호출 경로가 공유하는 HTTP 실행 + 예외 분류. */
+    private sealed class RawResponse {
+        data class Http(val code: Int, val body: String?) : RawResponse()
+        data class NetworkError(val failure: AiResult.Failure) : RawResponse()
+    }
+
+    private fun executeHttp(spec: AiProtocolCodec.HttpSpec): RawResponse {
         val httpRequest = Request.Builder()
             .url(spec.url)
-            .post(spec.bodyJson.toRequestBody(JSON_MEDIA_TYPE))
             .apply { spec.headers.forEach { (k, v) -> header(k, v) } }
+            .let { if (spec.method == "GET") it.get() else it.post(spec.bodyJson.toRequestBody(JSON_MEDIA_TYPE)) }
             .build()
         return try {
             client.newCall(httpRequest).execute().use { response ->
-                val body = response.body?.string()
-                if (response.isSuccessful) {
-                    AiProtocolCodec.parseSuccess(protocol, body.orEmpty(), requestedModel)
-                } else {
-                    // 키·본문은 절대 로그에 남기지 않는다 — 상태 코드만.
-                    AppLogger.error(TAG, "AI 호출 실패 HTTP ${response.code} (${protocol.name})", null)
-                    AiProtocolCodec.parseError(response.code, body)
-                }
+                RawResponse.Http(response.code, response.body?.string())
             }
         } catch (e: SocketTimeoutException) {
-            AiResult.Failure(AiErrorKind.TIMEOUT, detail = e.message)
+            RawResponse.NetworkError(AiResult.Failure(AiErrorKind.TIMEOUT, detail = e.message))
         } catch (e: InterruptedIOException) {
-            AiResult.Failure(AiErrorKind.TIMEOUT, detail = e.message)
+            RawResponse.NetworkError(AiResult.Failure(AiErrorKind.TIMEOUT, detail = e.message))
         } catch (e: UnknownHostException) {
-            AiResult.Failure(AiErrorKind.NETWORK, detail = e.message)
+            RawResponse.NetworkError(AiResult.Failure(AiErrorKind.NETWORK, detail = e.message))
         } catch (e: SSLException) {
-            AiResult.Failure(AiErrorKind.NETWORK, detail = e.message)
+            RawResponse.NetworkError(AiResult.Failure(AiErrorKind.NETWORK, detail = e.message))
         } catch (e: IOException) {
-            AiResult.Failure(AiErrorKind.NETWORK, detail = e.message)
+            RawResponse.NetworkError(AiResult.Failure(AiErrorKind.NETWORK, detail = e.message))
         } catch (e: Exception) {
             AppLogger.error(TAG, "AI 호출 중 예기치 못한 오류", e)
-            AiResult.Failure(AiErrorKind.UNKNOWN, detail = e.message)
+            RawResponse.NetworkError(AiResult.Failure(AiErrorKind.UNKNOWN, detail = e.message))
         }
     }
 

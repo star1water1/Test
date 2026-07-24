@@ -10,22 +10,27 @@ import android.widget.PopupMenu
 import android.widget.Toast
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
+import androidx.core.widget.doOnTextChanged
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.textfield.TextInputEditText
 import com.novelcharacter.app.R
 import com.novelcharacter.app.ai.AiErrorMessages
 import com.novelcharacter.app.ai.AiKeyStore
+import com.novelcharacter.app.ai.AiModelListResult
 import com.novelcharacter.app.ai.AiPreset
 import com.novelcharacter.app.ai.AiPresets
 import com.novelcharacter.app.ai.AiProviderConfig
 import com.novelcharacter.app.ai.AiProviderStore
 import com.novelcharacter.app.ai.AiResult
 import com.novelcharacter.app.ai.AiService
+import com.novelcharacter.app.databinding.DialogAiModelPickerBinding
 import com.novelcharacter.app.databinding.DialogAiProviderEditBinding
 import com.novelcharacter.app.databinding.FragmentAiSettingsBinding
+import com.novelcharacter.app.databinding.ItemAiModelBinding
 import com.novelcharacter.app.databinding.ItemAiProviderBinding
 import com.novelcharacter.app.util.AppLogger
 import com.novelcharacter.app.util.setValidatedPositiveButton
@@ -143,18 +148,20 @@ class AiSettingsFragment : Fragment() {
             }
         }
 
-        // 추천 모델 — 탭 한 번으로 채우는 이중 경로(러프 선택 → 필드에서 정밀 수정).
-        val suggestions = preset?.suggestedModels.orEmpty()
-        dialogBinding.suggestModelButton.visibility =
-            if (suggestions.isEmpty()) View.GONE else View.VISIBLE
+        // 모델 선택 — 키가 있으면 서버에 실시간으로 물어보고, 없거나 실패하면 정적
+        // 추천값으로 폴백한다(러프 선택 → 필드에서 정밀 수정, 이중 경로 원칙 04).
+        // 프리셋 추천값이 없는 커스텀 서버에서도 실시간 조회는 그대로 유용하므로 항상 노출.
         dialogBinding.suggestModelButton.setOnClickListener {
-            MaterialAlertDialogBuilder(ctx)
-                .setTitle(R.string.ai_edit_suggest_models)
-                .setItems(suggestions.toTypedArray()) { _, which ->
-                    dialogBinding.modelInput.setText(suggestions[which])
-                }
-                .setNegativeButton(R.string.cancel, null)
-                .show()
+            val baseUrl = dialogBinding.baseUrlInput.text?.toString()?.trim()?.trimEnd('/').orEmpty()
+            val uri = runCatching { Uri.parse(baseUrl) }.getOrNull()
+            if (baseUrl.isEmpty() || uri?.scheme != "https" || uri.host.isNullOrBlank()) {
+                Toast.makeText(ctx, R.string.ai_edit_error_https, Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            val candidate = config.copy(baseUrl = baseUrl)
+            val enteredKey = dialogBinding.apiKeyInput.text?.toString()?.trim()
+                .takeUnless { it.isNullOrEmpty() } ?: keyStore.getKey(config.id).orEmpty()
+            showModelPicker(candidate, enteredKey, preset, dialogBinding.modelInput)
         }
 
         // 연결 테스트 — 저장 전에 현재 입력값 그대로 검증한다.
@@ -200,6 +207,106 @@ class AiSettingsFragment : Fragment() {
         }
         dialog.setOnDismissListener { testJob?.cancel() }
         dialog.show()
+    }
+
+    // ── 모델 선택(실시간 조회 + 검색 + 정적 추천값 폴백) ────────────────────────
+
+    /**
+     * 키가 있으면 [candidate] 서버에 실제 물어봐 지금 쓸 수 있는 모델 목록을 보여준다.
+     * 키가 없거나 조회에 실패하면 조용히 정적 추천값으로 폴백하되, 왜 폴백했는지는
+     * 안내문으로 투명하게 알린다(변수 제어 — 조용한 실패 금지). 목록은 검색으로
+     * 걸러낼 수 있어 항목이 많은 프로바이더(OpenRouter 등)에서도 받쳐준다.
+     */
+    private fun showModelPicker(
+        candidate: AiProviderConfig,
+        enteredKey: String,
+        preset: AiPreset?,
+        modelInputTarget: TextInputEditText
+    ) {
+        val ctx = requireContext()
+        val pickerBinding = DialogAiModelPickerBinding.inflate(layoutInflater)
+        var allModels: List<String> = emptyList()
+        var fetchJob: Job? = null
+
+        val dialog = MaterialAlertDialogBuilder(ctx)
+            .setTitle(R.string.ai_edit_suggest_models)
+            .setView(pickerBinding.root)
+            .setNegativeButton(R.string.cancel, null)
+            .create()
+        dialog.setOnDismissListener { fetchJob?.cancel() }
+
+        val adapter = ModelPickerAdapter { modelId ->
+            modelInputTarget.setText(modelId)
+            dialog.dismiss()
+        }
+        pickerBinding.modelList.layoutManager = LinearLayoutManager(ctx)
+        pickerBinding.modelList.adapter = adapter
+
+        fun applyFilter(query: String) {
+            val filtered = if (query.isBlank()) allModels
+            else allModels.filter { it.contains(query, ignoreCase = true) }
+            adapter.submit(filtered)
+            pickerBinding.emptyText.visibility = if (filtered.isEmpty()) View.VISIBLE else View.GONE
+        }
+        pickerBinding.searchInput.doOnTextChanged { text, _, _, _ -> applyFilter(text?.toString().orEmpty()) }
+
+        fun showFallback(note: String) {
+            allModels = preset?.suggestedModels.orEmpty()
+            pickerBinding.noteText.visibility = View.VISIBLE
+            pickerBinding.noteText.text = note
+            applyFilter(pickerBinding.searchInput.text?.toString().orEmpty())
+        }
+
+        if (enteredKey.isBlank()) {
+            // 키가 없으면 인증이 필요한 조회를 시도해 봐야 실패만 하므로 바로 폴백.
+            showFallback(getString(R.string.ai_model_picker_need_key))
+        } else {
+            pickerBinding.progress.visibility = View.VISIBLE
+            fetchJob = viewLifecycleOwner.lifecycleScope.launch {
+                val result = aiService.listModels(candidate, enteredKey)
+                if (!pickerBinding.root.isAttachedToWindow) return@launch
+                pickerBinding.progress.visibility = View.GONE
+                when (result) {
+                    is AiModelListResult.Success -> {
+                        allModels = result.models
+                        applyFilter(pickerBinding.searchInput.text?.toString().orEmpty())
+                    }
+                    is AiModelListResult.Failure ->
+                        showFallback(
+                            getString(
+                                R.string.ai_model_picker_fetch_failed,
+                                AiErrorMessages.of(ctx, result.failure)
+                            )
+                        )
+                }
+            }
+        }
+        dialog.show()
+    }
+
+    private class ModelPickerAdapter(
+        private val onSelect: (String) -> Unit
+    ) : RecyclerView.Adapter<ModelPickerAdapter.VH>() {
+
+        private var items: List<String> = emptyList()
+
+        fun submit(models: List<String>) {
+            items = models
+            notifyDataSetChanged() // 목록이 필터 때마다 통째로 갈리므로 diff가 오히려 과함
+        }
+
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH =
+            VH(ItemAiModelBinding.inflate(LayoutInflater.from(parent.context), parent, false))
+
+        override fun getItemCount(): Int = items.size
+
+        override fun onBindViewHolder(holder: VH, position: Int) {
+            val model = items[position]
+            holder.binding.root.text = model
+            holder.binding.root.setOnClickListener { onSelect(model) }
+        }
+
+        class VH(val binding: ItemAiModelBinding) : RecyclerView.ViewHolder(binding.root)
     }
 
     /** 입력 필드 → 설정 객체. 검증 실패 시 해당 필드에 오류를 표시하고 null(다이얼로그 유지). */

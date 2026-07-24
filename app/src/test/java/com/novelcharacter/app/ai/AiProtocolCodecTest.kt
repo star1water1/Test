@@ -264,4 +264,82 @@ class AiProtocolCodecTest {
         assertNull(AiProtocolCodec.parseError(500, null).detail)
         assertNull(AiProtocolCodec.parseError(500, "").detail)
     }
+
+    // ── 모델 목록 조회 요청 조립 ──────────────────────────────────────────────
+
+    @Test
+    fun `anthropic 모델목록 요청은 GET이며 인증 헤더를 갖춘다`() {
+        val spec = AiProtocolCodec.buildModelListRequest(
+            config(AiProtocol.ANTHROPIC, "https://api.anthropic.com"), "sk-ant-x"
+        )
+        assertEquals("GET", spec.method)
+        assertEquals("https://api.anthropic.com/v1/models?limit=1000", spec.url)
+        assertEquals("sk-ant-x", spec.headers["x-api-key"])
+        assertEquals(AiProtocolCodec.HEADER_ANTHROPIC_VERSION, spec.headers["anthropic-version"])
+    }
+
+    @Test
+    fun `openai 호환 모델목록 요청은 v1 경로 중복 없이 잇는다`() {
+        val withV1 = AiProtocolCodec.buildModelListRequest(
+            config(AiProtocol.OPENAI_COMPAT, "https://openrouter.ai/api/v1"), "k"
+        )
+        assertEquals("https://openrouter.ai/api/v1/models", withV1.url)
+        assertEquals("GET", withV1.method)
+        assertEquals("Bearer k", withV1.headers["Authorization"])
+
+        val withoutV1 = AiProtocolCodec.buildModelListRequest(
+            config(AiProtocol.OPENAI_COMPAT, "https://api.example.com"), "k"
+        )
+        assertEquals("https://api.example.com/v1/models", withoutV1.url)
+    }
+
+    @Test
+    fun `gemini 모델목록 요청은 v1beta 경로와 키 헤더를 갖춘다`() {
+        val spec = AiProtocolCodec.buildModelListRequest(
+            config(AiProtocol.GEMINI, "https://generativelanguage.googleapis.com"), "AIza-x"
+        )
+        assertEquals("GET", spec.method)
+        assertEquals(
+            "https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000", spec.url
+        )
+        assertEquals("AIza-x", spec.headers["x-goog-api-key"])
+    }
+
+    // ── 모델 목록 응답 해석 ──────────────────────────────────────────────────
+
+    @Test
+    fun `anthropic 모델목록은 순서를 보존한다`() {
+        val body = """
+            {"data":[{"id":"claude-opus-4-8"},{"id":"claude-sonnet-5"},{"id":"claude-haiku-4-5"}]}
+        """.trimIndent()
+        val models = AiProtocolCodec.parseModelList(AiProtocol.ANTHROPIC, body)
+        assertEquals(listOf("claude-opus-4-8", "claude-sonnet-5", "claude-haiku-4-5"), models)
+    }
+
+    @Test
+    fun `openai 호환 모델목록은 알파벳 정렬한다`() {
+        val body = """{"object":"list","data":[{"id":"zeta"},{"id":"alpha"},{"id":"beta"}]}"""
+        val models = AiProtocolCodec.parseModelList(AiProtocol.OPENAI_COMPAT, body)
+        assertEquals(listOf("alpha", "beta", "zeta"), models)
+    }
+
+    @Test
+    fun `gemini 모델목록은 generateContent 지원 모델만, models 접두사를 제거해 정렬한다`() {
+        val body = """
+            {"models":[
+              {"name":"models/gemini-2.5-flash","supportedGenerationMethods":["generateContent"]},
+              {"name":"models/embedding-001","supportedGenerationMethods":["embedContent"]},
+              {"name":"models/gemini-2.5-pro","supportedGenerationMethods":["generateContent","countTokens"]}
+            ]}
+        """.trimIndent()
+        val models = AiProtocolCodec.parseModelList(AiProtocol.GEMINI, body)
+        assertEquals(listOf("gemini-2.5-flash", "gemini-2.5-pro"), models)
+    }
+
+    @Test
+    fun `모델목록 응답이 깨져 있으면 빈 목록을 돌려준다(예외 없음)`() {
+        assertTrue(AiProtocolCodec.parseModelList(AiProtocol.ANTHROPIC, "not json").isEmpty())
+        assertTrue(AiProtocolCodec.parseModelList(AiProtocol.OPENAI_COMPAT, "{}").isEmpty())
+        assertTrue(AiProtocolCodec.parseModelList(AiProtocol.GEMINI, "{}").isEmpty())
+    }
 }

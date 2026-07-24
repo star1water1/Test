@@ -115,3 +115,14 @@ enum class AiErrorKind {
 
     UNKNOWN
 }
+
+/**
+ * 프로바이더의 실시간 모델 목록 조회 결과. 설정 화면의 '모델 선택'이 앱에 박제된 하드코딩
+ * 추천값 대신, 지금 그 서버가 실제로 제공하는 모델을 보여줄 수 있게 한다(변수 제어 —
+ * 낡은 모델명을 추천하지 않음). 실패해도 앱이 막히지 않도록 호출측은 정적 추천값으로
+ * 폴백한다.
+ */
+sealed class AiModelListResult {
+    data class Success(val models: List<String>) : AiModelListResult()
+    data class Failure(val failure: AiResult.Failure) : AiModelListResult()
+}

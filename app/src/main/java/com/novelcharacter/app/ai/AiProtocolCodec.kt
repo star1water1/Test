@@ -14,11 +14,12 @@ object AiProtocolCodec {
 
     const val HEADER_ANTHROPIC_VERSION = "2023-06-01"
 
-    /** HTTP 요청 명세 — 실행기(OkHttp)로 넘기는 중간 표현. */
+    /** HTTP 요청 명세 — 실행기(OkHttp)로 넘기는 중간 표현. GET은 bodyJson을 무시한다. */
     data class HttpSpec(
         val url: String,
         val headers: Map<String, String>,
-        val bodyJson: String
+        val bodyJson: String,
+        val method: String = "POST"
     )
 
     // ── 요청 조립 ──────────────────────────────────────────────────────────────
@@ -37,6 +38,39 @@ object AiProtocolCodec {
     fun buildOpenAiRetryWithMaxCompletionTokens(
         config: AiProviderConfig, apiKey: String, request: AiRequest
     ): HttpSpec = buildOpenAiCompat(config, apiKey, request, useMaxCompletionTokens = true)
+
+    /**
+     * 프로바이더가 지금 실제로 제공하는 모델 목록 조회(GET). 설정 화면의 '모델 선택'이
+     * 앱에 박제된 하드코딩 추천값 대신 살아있는 목록을 보여주는 데 쓰인다(변수 제어).
+     *
+     * 페이지네이션은 구현하지 않는다 — 세 프로토콜 모두 한 페이지 상한을 넉넉히 잡으면
+     * (1000) 현존하는 카탈로그 전체가 한 번에 들어온다. 그 이상 응답하는 프로바이더가
+     * 나오면 그때 커서 기반 페이지네이션을 추가한다.
+     */
+    fun buildModelListRequest(config: AiProviderConfig, apiKey: String): HttpSpec =
+        when (config.protocol) {
+            AiProtocol.ANTHROPIC -> HttpSpec(
+                url = joinUrl(config.baseUrl, "/v1/models?limit=1000"),
+                headers = mapOf(
+                    "x-api-key" to apiKey,
+                    "anthropic-version" to HEADER_ANTHROPIC_VERSION
+                ),
+                bodyJson = "",
+                method = "GET"
+            )
+            AiProtocol.OPENAI_COMPAT -> HttpSpec(
+                url = openAiPath(config.baseUrl, "/models"),
+                headers = mapOf("Authorization" to "Bearer $apiKey"),
+                bodyJson = "",
+                method = "GET"
+            )
+            AiProtocol.GEMINI -> HttpSpec(
+                url = joinUrl(config.baseUrl, "/v1beta/models?pageSize=1000"),
+                headers = mapOf("x-goog-api-key" to apiKey),
+                bodyJson = "",
+                method = "GET"
+            )
+        }
 
     fun isMaxTokensParamError(httpCode: Int, errorBody: String?): Boolean =
         httpCode == 400 && errorBody != null && errorBody.contains("max_completion_tokens")
@@ -83,15 +117,20 @@ object AiProtocolCodec {
                 }
             })
         }
-        // base가 이미 /v1(또는 유사 버전 경로)로 끝나면 그대로 잇고, 아니면 /v1을 보충한다 —
-        // 사용자가 어느 형태로 입력해도 동작(유연한 수용, 변수 제어).
-        val base = config.baseUrl.trimEnd('/')
-        val path = if (base.endsWith("/v1")) "/chat/completions" else "/v1/chat/completions"
         return HttpSpec(
-            url = base + path,
+            url = openAiPath(config.baseUrl, "/chat/completions"),
             headers = mapOf("Authorization" to "Bearer $apiKey"),
             bodyJson = body.toString()
         )
+    }
+
+    /**
+     * OpenAI 호환 base 위에 경로를 잇는다. base가 이미 /v1(또는 유사 버전 경로)로 끝나면
+     * 그대로 잇고, 아니면 /v1을 보충한다 — 사용자가 어느 형태로 입력해도 동작(유연한 수용).
+     */
+    private fun openAiPath(baseUrl: String, suffix: String): String {
+        val base = baseUrl.trimEnd('/')
+        return if (base.endsWith("/v1")) base + suffix else "$base/v1$suffix"
     }
 
     private fun buildGemini(config: AiProviderConfig, apiKey: String, request: AiRequest): HttpSpec {
@@ -201,6 +240,43 @@ object AiProtocolCodec {
             inputTokens = usage?.get("promptTokenCount")?.takeIf { it.isJsonPrimitive }?.asInt,
             outputTokens = usage?.get("candidatesTokenCount")?.takeIf { it.isJsonPrimitive }?.asInt
         )
+    }
+
+    /**
+     * 모델 목록 응답 → id 문자열 목록. 해석 실패나 예상 밖 형태는 예외를 던지지 않고
+     * 빈 목록으로 돌아온다 — 호출측(AiService)이 빈 목록을 EMPTY_RESPONSE로 승격해
+     * 정적 추천값 폴백을 트리거한다.
+     */
+    fun parseModelList(protocol: AiProtocol, body: String): List<String> = try {
+        val root = JsonParser.parseString(body).asJsonObject
+        when (protocol) {
+            // Anthropic은 최신순으로 내려주므로 정렬하지 않고 그대로 보존한다.
+            AiProtocol.ANTHROPIC -> root.getAsJsonArray("data")
+                ?.filterIsInstance<JsonObject>()
+                ?.mapNotNull { it.get("id")?.takeIf { v -> v.isJsonPrimitive }?.asString }
+                .orEmpty()
+
+            AiProtocol.OPENAI_COMPAT -> root.getAsJsonArray("data")
+                ?.filterIsInstance<JsonObject>()
+                ?.mapNotNull { it.get("id")?.takeIf { v -> v.isJsonPrimitive }?.asString }
+                ?.sorted()
+                .orEmpty()
+
+            // generateContent를 지원하지 않는 모델(임베딩 전용 등)은 채팅 용도가 아니므로 제외.
+            AiProtocol.GEMINI -> root.getAsJsonArray("models")
+                ?.filterIsInstance<JsonObject>()
+                ?.filter { m ->
+                    m.getAsJsonArray("supportedGenerationMethods")
+                        ?.any { it.isJsonPrimitive && it.asString == "generateContent" } == true
+                }
+                ?.mapNotNull { m ->
+                    m.get("name")?.takeIf { v -> v.isJsonPrimitive }?.asString?.removePrefix("models/")
+                }
+                ?.sorted()
+                .orEmpty()
+        }
+    } catch (_: Exception) {
+        emptyList()
     }
 
     // ── 오류 해석 ──────────────────────────────────────────────────────────────
