@@ -112,14 +112,22 @@ class ExcelExporter(context: Context) {
 
     /**
      * @param options 내보내기에 포함할 항목 선택
+     * @param onFinished if non-null, 성공/실패와 무관하게 작업 종료 시 Main에서 호출 —
+     *                   호출측 진행 다이얼로그 해제용. 지정 시 시작 Toast는 생략된다(중복 안내 방지).
      * @param onFileReady if non-null, called with the temp file instead of opening a share sheet.
      *                    The caller is responsible for launching SAF to let the user pick a save location.
      */
-    fun exportAll(options: ExportOptions = ExportOptions(), onFileReady: ((File, String) -> Unit)? = null) {
+    fun exportAll(
+        options: ExportOptions = ExportOptions(),
+        onFinished: (() -> Unit)? = null,
+        onFileReady: ((File, String) -> Unit)? = null
+    ) {
         if (!isExporting.compareAndSet(false, true)) return
         ensureActiveScope().launch {
-            withContext(Dispatchers.Main) {
-                Toast.makeText(appContext, appContext.getString(R.string.export_preparing), Toast.LENGTH_SHORT).show()
+            if (onFinished == null) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(appContext, appContext.getString(R.string.export_preparing), Toast.LENGTH_SHORT).show()
+                }
             }
             var workbook: XSSFWorkbook? = null
             try {
@@ -189,6 +197,10 @@ class ExcelExporter(context: Context) {
             } finally {
                 try { workbook?.close() } catch (e: Exception) { android.util.Log.w("ExcelExporter", "Failed to close workbook", e) }
                 isExporting.set(false)
+                if (onFinished != null) {
+                    // 스코프 취소(화면 이탈) 중에도 다이얼로그 해제는 보장한다
+                    withContext(kotlinx.coroutines.NonCancellable + Dispatchers.Main) { onFinished() }
+                }
             }
         }
     }

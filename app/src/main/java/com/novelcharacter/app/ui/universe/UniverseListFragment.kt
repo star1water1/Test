@@ -112,14 +112,15 @@ class UniverseListFragment : Fragment() {
                 showUniverseEditDialog(universe)
             },
             onDeleteClick = { universe ->
-                // 연쇄 삭제 범위(작품 연결 해제, 필드 정의·필드값 삭제)를 집계해 사전 고지
+                // 계단식 삭제 범위(작품·캐릭터·사건·필드)를 집계해 사전 고지 — 말없는 유실 방지(변수 제어)
                 viewLifecycleOwner.lifecycleScope.launch {
                     val impact = viewModel.getUniverseDeleteImpact(universe.id)
                     if (!isAdded) return@launch
                     val message = getString(R.string.confirm_delete_universe, universe.name) + "\n\n" +
                         getString(
                             R.string.delete_impact_universe,
-                            impact.novels, impact.fieldDefinitions, impact.fieldValues
+                            impact.novels, impact.characters, impact.events,
+                            impact.fieldDefinitions, impact.fieldValues
                         )
                     MaterialAlertDialogBuilder(requireContext())
                         .setMessage(message)

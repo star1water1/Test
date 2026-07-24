@@ -1,6 +1,9 @@
 package com.novelcharacter.app.ui.image
 
+import android.content.res.ColorStateList
+import android.graphics.Color
 import android.os.Bundle
+import com.google.android.material.color.MaterialColors
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import android.view.LayoutInflater
 import android.view.View
@@ -172,11 +175,34 @@ class ImageManagerFragment : Fragment() {
         updateTagFilterLabel()
     }
 
+    /**
+     * 태그 필터 버튼 상태 갱신 — 라벨 개수뿐 아니라 체크 아이콘·강조색·배경까지 함께 바꿔
+     * 필터가 적용 중인지 버튼만 보고도 판단할 수 있게 한다(토글 시각화).
+     */
     private fun updateTagFilterLabel() {
         val n = viewModel.criteria.tags.size
-        binding.tagFilterButton.text =
-            if (n == 0) getString(R.string.image_manager_tag_filter)
+        val active = n > 0
+        val button = binding.tagFilterButton
+        button.text =
+            if (!active) getString(R.string.image_manager_tag_filter)
             else getString(R.string.image_manager_tag_filter_count, n)
+        if (active) {
+            button.setIconResource(R.drawable.ic_check)
+            val primary = MaterialColors.getColor(button, com.google.android.material.R.attr.colorPrimary)
+            button.setTextColor(primary)
+            button.iconTint = ColorStateList.valueOf(primary)
+            button.strokeColor = ColorStateList.valueOf(primary)
+            button.backgroundTintList = ColorStateList.valueOf(
+                MaterialColors.getColor(button, com.google.android.material.R.attr.colorSecondaryContainer)
+            )
+        } else {
+            button.icon = null
+            val ctx = requireContext()
+            button.setTextColor(androidx.core.content.ContextCompat.getColorStateList(ctx, R.color.button_outlined_text))
+            button.iconTint = androidx.core.content.ContextCompat.getColorStateList(ctx, R.color.button_outlined_text)
+            button.strokeColor = androidx.core.content.ContextCompat.getColorStateList(ctx, R.color.button_outlined_stroke)
+            button.backgroundTintList = ColorStateList.valueOf(Color.TRANSPARENT)
+        }
     }
 
     private fun openTagFilterSheet() {

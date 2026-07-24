@@ -547,20 +547,7 @@ class CharacterRepository(
 
         // 2-5. 단일 트랜잭션으로 DB 정리 (삭제 전 캐릭터별 휴지통 스냅샷 보관)
         db.withTransaction {
-            for (chunk in ids.chunked(CHUNK_SIZE)) {
-                val characters = characterDao.getCharactersByIds(chunk)
-                for (character in characters) {
-                    trash.snapshotCharacter(
-                        character,
-                        parseImagePaths(character.imagePaths).map { it.absolutePath }
-                    )
-                }
-                nameBankDao.resetUsageByCharacterIds(chunk)
-                recentActivityDao.deleteByEntityIds(RecentActivity.TYPE_CHARACTER, chunk)
-                db.novelDao().clearImageCharacterRefs(chunk)
-                db.universeDao().clearImageCharacterRefs(chunk)
-                characterDao.deleteByIds(chunk) // FK CASCADE가 나머지 정리
-            }
+            deleteCharactersCascade(db, trash, ids)
         }
 
         // 이미지 파일은 스냅샷과 함께 유지 — 휴지통 정리 시점에 삭제 (B-7)
@@ -607,5 +594,40 @@ class CharacterRepository(
             allTags.addAll(characterTagDao.getDistinctTagsForCharacters(chunk))
         }
         return allTags.sorted()
+    }
+
+    companion object {
+        /** IN 절 999 변수 한도 회피용 청크 크기 (계단식 삭제 공용) */
+        private const val CASCADE_CHUNK_SIZE = 900
+
+        /**
+         * 캐릭터 일괄 삭제 공통 본체 — 삭제 전 캐릭터별 휴지통 스냅샷을 남기고
+         * nameBank 사용·최근활동·작품/세계관 이미지 참조를 정리한 뒤 삭제한다(FK CASCADE가 나머지 정리).
+         * 작품/세계관 계단식 삭제(NovelRepository/UniverseRepository)에서도 재사용한다.
+         *
+         * 반드시 db.withTransaction 안에서 호출해야 하며, 커밋 후 trash.pruneIfNeeded() 호출은
+         * 호출측 책임이다(트랜잭션 롤백 시 스냅샷 이미지 파일이 지워지는 것 방지).
+         */
+        suspend fun deleteCharactersCascade(db: AppDatabase, trash: TrashRepository, ids: List<Long>) {
+            if (ids.isEmpty()) return
+            for (chunk in ids.chunked(CASCADE_CHUNK_SIZE)) {
+                val characters = db.characterDao().getCharactersByIds(chunk)
+                for (character in characters) {
+                    trash.snapshotCharacter(character, parseImagePathStrings(character.imagePaths))
+                }
+                db.nameBankDao().resetUsageByCharacterIds(chunk)
+                db.recentActivityDao().deleteByEntityIds(RecentActivity.TYPE_CHARACTER, chunk)
+                db.novelDao().clearImageCharacterRefs(chunk)
+                db.universeDao().clearImageCharacterRefs(chunk)
+                db.characterDao().deleteByIds(chunk) // FK CASCADE가 나머지 정리
+            }
+        }
+
+        private fun parseImagePathStrings(imagePathsJson: String): List<String> = try {
+            val raw: List<String?>? = Gson().fromJson(imagePathsJson, GsonTypes.STRING_LIST)
+            raw?.filterNotNull() ?: emptyList()
+        } catch (_: Exception) {
+            emptyList()
+        }
     }
 }

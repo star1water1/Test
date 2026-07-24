@@ -81,6 +81,10 @@ class NovelViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** 삭제 확인 다이얼로그용 — 함께 삭제될 소속 캐릭터 수 집계(계단식 삭제 사전 고지) */
+    suspend fun getNovelDeleteImpact(novelId: Long): Int =
+        characterRepository.getCharactersByNovelList(novelId).size
+
     fun deleteNovel(novel: Novel) = viewModelScope.launch {
         try {
             novelRepository.deleteNovel(novel)

@@ -7,6 +7,7 @@ import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.novelcharacter.app.R
+import com.novelcharacter.app.util.dismissSafely
 import java.io.File
 
 /**
@@ -79,9 +80,15 @@ class ExcelTransferController(private val fragment: Fragment) {
             ) { _, which ->
                 exporter?.cancel()
                 exporter = ExcelExporter(fragment.requireContext().applicationContext)
+                // 워크북 생성이 오래 걸릴 수 있어 Toast 대신 진행 다이얼로그로 표시(변수 제어)
+                val progress = com.novelcharacter.app.util.createProgressDialog(
+                    fragment.requireContext(), R.string.excel_export_in_progress
+                )
+                progress.show()
+                val dismissProgress: () -> Unit = { progress.dismissSafely() }
                 when (which) {
-                    0 -> exporter?.exportAll(options)
-                    1 -> exporter?.exportAll(options) { file, fileName ->
+                    0 -> exporter?.exportAll(options, onFinished = dismissProgress)
+                    1 -> exporter?.exportAll(options, onFinished = dismissProgress) { file, fileName ->
                         if (fragment.isAdded) {
                             pendingExportFile = file
                             saveFileLauncher.launch(fileName)

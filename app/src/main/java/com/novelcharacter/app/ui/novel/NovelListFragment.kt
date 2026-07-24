@@ -119,13 +119,25 @@ class NovelListFragment : Fragment() {
                 showNovelEditDialog(novel)
             },
             onDeleteClick = { novel ->
-                MaterialAlertDialogBuilder(requireContext())
-                    .setMessage(R.string.confirm_delete)
-                    .setPositiveButton(R.string.yes) { _, _ ->
-                        viewModel.deleteNovel(novel)
+                // 계단식 삭제 범위(소속 캐릭터)를 집계해 사전 고지 — 말없는 유실 방지(변수 제어)
+                viewLifecycleOwner.lifecycleScope.launch {
+                    val characterCount = viewModel.getNovelDeleteImpact(novel.id)
+                    if (!isAdded) return@launch
+                    val message = buildString {
+                        append(getString(R.string.confirm_delete_novel, novel.title))
+                        if (characterCount > 0) {
+                            append("\n\n")
+                            append(getString(R.string.delete_impact_novel, characterCount))
+                        }
                     }
-                    .setNegativeButton(R.string.no, null)
-                    .show()
+                    MaterialAlertDialogBuilder(requireContext())
+                        .setMessage(message)
+                        .setPositiveButton(R.string.yes) { _, _ ->
+                            viewModel.deleteNovel(novel)
+                        }
+                        .setNegativeButton(R.string.no, null)
+                        .show()
+                }
             },
             onPinClick = { novel ->
                 viewModel.togglePin(novel)
