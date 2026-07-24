@@ -64,6 +64,49 @@
                 android:background="?attr/colorOnSurfaceVariant"
                 android:alpha="0.2" />
 
+            <!-- Section: AI 연동 (BYOK 프로바이더 관리) -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/settings_ai_section"
+                android:textAppearance="@style/TextAppearance.App.BodySmall"
+                android:textColor="@color/primary"
+                android:textStyle="bold"
+                android:paddingStart="16dp"
+                android:paddingTop="20dp"
+                android:paddingBottom="4dp" />
+
+            <LinearLayout
+                android:id="@+id/aiSettingsRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp"
+                android:background="?attr/selectableItemBackground">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/ai_settings_title"
+                    android:textAppearance="@style/TextAppearance.App.Title"
+                    android:textColor="?attr/colorOnSurface" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/settings_ai_desc"
+                    android:textAppearance="@style/TextAppearance.App.BodySmall"
+                    android:textColor="?attr/colorOnSurfaceVariant"
+                    android:layout_marginTop="2dp" />
+
+            </LinearLayout>
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:background="?attr/colorOnSurfaceVariant"
+                android:alpha="0.2" />
+
             <!-- Section: Backup Status -->
             <TextView
                 android:layout_width="wrap_content"

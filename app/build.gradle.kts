@@ -115,6 +115,9 @@ dependencies {
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 
+    // OkHttp (AI API 호출 — BYOK 프로바이더 공통 HTTP 계층)
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
     // Gson (이미지 경로 JSON 처리)
     implementation("com.google.code.gson:gson:2.11.0")
 

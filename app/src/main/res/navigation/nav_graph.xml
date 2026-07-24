@@ -239,6 +239,12 @@
         android:label="@string/operation_history_title"
         tools:layout="@layout/fragment_operation_history" />
 
+    <fragment
+        android:id="@+id/aiSettingsFragment"
+        android:name="com.novelcharacter.app.ui.settings.AiSettingsFragment"
+        android:label="@string/ai_settings_title"
+        tools:layout="@layout/fragment_ai_settings" />
+
     <!-- 분석 허브 (통계·관계도·어시스턴트 내부 탭) -->
     <fragment
         android:id="@+id/analysisFragment"
