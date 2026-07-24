@@ -605,7 +605,6 @@ class EventEditDialogFragment : DialogFragment() {
             }
         }
     }
-    }
 
     private fun eventFieldWidgetValue(widget: Any): String = when (widget) {
         is android.widget.EditText -> widget.text.toString().trim()
