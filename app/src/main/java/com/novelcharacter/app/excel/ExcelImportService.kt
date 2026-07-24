@@ -463,6 +463,18 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             result.warnings.add("${truncatedFieldCount}개 필드값이 ${MAX_FIELD_LENGTH}자 제한으로 잘렸습니다. ($detail)")
         }
 
+        // 값 라이브러리 수확 — 임포트 트랜잭션 커밋 '후' 전체 재수확 + 재계산 (검토 A6/A7).
+        // 임포트는 여러 세계관을 건드릴 수 있어 전체 대상이며, 도중에 프로세스가 죽으면
+        // harvest_pending 플래그로 다음 앱 시작 시 재시도된다 (수확은 INSERT OR IGNORE 멱등).
+        val migrationPrefs = appContext?.getSharedPreferences("app_migrations", android.content.Context.MODE_PRIVATE)
+        migrationPrefs?.edit()?.putBoolean("field_library_harvest_pending", true)?.apply()
+        val fieldLibrary = com.novelcharacter.app.data.repository.FieldValueLibraryRepository(db)
+        fieldLibrary.harvestAll()
+        for (fd in db.fieldDefinitionDao().getAllFieldsAllTypes()) {
+            fieldLibrary.recountUsage(fd.id)
+        }
+        migrationPrefs?.edit()?.putBoolean("field_library_harvest_pending", false)?.apply()
+
         return result
     }
 

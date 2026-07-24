@@ -455,14 +455,17 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
         eventFieldValues: List<com.novelcharacter.app.data.model.EventFieldValue>? = null
     ) = viewModelScope.launch {
         try {
-            db.withTransaction {
+            val newEventId = db.withTransaction {
                 val eventId = timelineRepository.insertEvent(event)
                 timelineRepository.updateEventCharacters(eventId, characterIds)
                 timelineRepository.updateEventNovels(eventId, novelIds)
                 if (eventFieldValues != null) {
                     db.eventFieldValueDao().replaceAllByEvent(eventId, eventFieldValues.map { it.copy(eventId = eventId) })
                 }
+                eventId
             }
+            // 커밋 후 값 라이브러리 수확 (실패 무해)
+            if (eventFieldValues != null) app.fieldValueLibraryRepository.harvestForEvent(newEventId)
             // novelEventIds 캐시 갱신
             _filterNovelId.value?.let { nid ->
                 _novelEventIds.value = timelineRepository.getEventIdsByNovel(nid).toSet()
@@ -493,6 +496,7 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
                     db.eventFieldValueDao().replaceAllByEvent(event.id, eventFieldValues.map { it.copy(eventId = event.id) })
                 }
             }
+            if (eventFieldValues != null) app.fieldValueLibraryRepository.harvestForEvent(event.id)
             // novelEventIds 캐시 갱신
             _filterNovelId.value?.let { nid ->
                 _novelEventIds.value = timelineRepository.getEventIdsByNovel(nid).toSet()
@@ -565,6 +569,7 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
                     }
                 }
             }
+            if (eventFieldValues != null) app.fieldValueLibraryRepository.harvestForEvent(event.id)
             // novelEventIds 캐시 갱신
             _filterNovelId.value?.let { nid ->
                 _novelEventIds.value = timelineRepository.getEventIdsByNovel(nid).toSet()

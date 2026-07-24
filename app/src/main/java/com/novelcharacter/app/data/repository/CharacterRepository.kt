@@ -71,11 +71,16 @@ class CharacterRepository(
     }
     suspend fun updateCharacter(character: Character) = characterDao.update(character)
 
+    // 값 라이브러리 수확 — insert-only·runCatching 내장이라 저장 실패로 이어지지 않는다.
+    // 각 쓰기 메서드의 withTransaction 블록 '뒤'에서 호출해 커밋 후 수확한다.
+    private val fieldLibrary by lazy { FieldValueLibraryRepository(db) }
+
     suspend fun updateCharacterWithFields(character: Character, values: List<CharacterFieldValue>) {
         db.withTransaction {
             characterDao.update(character)
             characterFieldValueDao.replaceAllByCharacter(character.id, values)
         }
+        fieldLibrary.harvestForCharacter(character.id)
     }
 
     suspend fun deleteCharacter(character: Character) {
@@ -139,6 +144,9 @@ class CharacterRepository(
 
     suspend fun saveAllFieldValues(characterId: Long, values: List<CharacterFieldValue>) {
         characterFieldValueDao.replaceAllByCharacter(characterId, values)
+        // resolveAgeLinkage처럼 상위 트랜잭션 안에서 불릴 수 있다 — 수확은 캐릭터 1명 분량의
+        // 소규모 작업이고 내부 runCatching이라 상위 저장을 실패시키지 않는다.
+        fieldLibrary.harvestForCharacter(characterId)
     }
 
     /** 같은 작품 내 모든 캐릭터의 특정 필드 값 (백분위 계산용) */
@@ -182,14 +190,24 @@ class CharacterRepository(
     suspend fun getChangeById(id: Long): CharacterStateChange? =
         characterStateChangeDao.getChangeById(id)
 
-    suspend fun insertStateChange(change: CharacterStateChange): Long =
-        characterStateChangeDao.insert(change)
+    suspend fun insertStateChange(change: CharacterStateChange): Long {
+        val id = characterStateChangeDao.insert(change)
+        // 이력에만 존재하는 값도 라이브러리가 보게 한다 (검토 A2, 시스템 키는 내부에서 스킵)
+        fieldLibrary.harvestStateChange(change.characterId, change.fieldKey, change.newValue)
+        return id
+    }
 
-    suspend fun insertAllStateChanges(changes: List<CharacterStateChange>) =
+    suspend fun insertAllStateChanges(changes: List<CharacterStateChange>) {
         characterStateChangeDao.insertAll(changes)
+        for (change in changes) {
+            fieldLibrary.harvestStateChange(change.characterId, change.fieldKey, change.newValue)
+        }
+    }
 
-    suspend fun updateStateChange(change: CharacterStateChange) =
+    suspend fun updateStateChange(change: CharacterStateChange) {
         characterStateChangeDao.update(change)
+        fieldLibrary.harvestStateChange(change.characterId, change.fieldKey, change.newValue)
+    }
 
     suspend fun deleteStateChange(change: CharacterStateChange) =
         characterStateChangeDao.delete(change)
@@ -335,6 +353,9 @@ class CharacterRepository(
                 characterDao.updateNovelIdForIds(chunk, newNovelId, now)
             }
         }
+        // 세계관이 바뀐 이동이면 대상 세계관 라이브러리에 재매핑 값 수확 (검토 A6)
+        newNovelId?.let { db.novelDao().getNovelById(it)?.universeId }
+            ?.let { fieldLibrary.harvestUniverses(setOf(it)) }
         return agg
     }
 
@@ -380,12 +401,15 @@ class CharacterRepository(
      * 재사용해 정합을 보장한다. novelId 갱신은 호출부 책임(호출 전/후 무관 — 이 메서드는 필드값·소속만 정리).
      */
     suspend fun migrateCharacterToUniverse(character: Character, newUniverseId: Long): UniverseMoveCounts {
-        return db.withTransaction {
+        val counts = db.withTransaction {
             val trash = TrashRepository(db)
             val allDefsById = db.fieldDefinitionDao().getAllFieldsList().associateBy { it.id }
             val newDefByKey = db.fieldDefinitionDao().getFieldsByUniverseList(newUniverseId).associateBy { it.key }
             migrateCharacterFieldsToUniverse(character, newUniverseId, allDefsById, newDefByKey, trash)
         }
+        // 재매핑된 값이 새 세계관 필드의 라이브러리에 등재되도록 수확
+        fieldLibrary.harvestForCharacter(character.id)
+        return counts
     }
 
     /** 세계관 이동 시 유실될 값·세력 소속 수를 미리 센다(편집화면 확인 다이얼로그·고지용, 파괴 없음). */
@@ -443,6 +467,9 @@ class CharacterRepository(
             characterFieldValueDao.replaceAllByCharacter(character.id, formNonBlank + gapFills.values)
             if (orphanMemberships > 0) db.factionMembershipDao().deleteMembershipsNotInUniverse(character.id, newUniverseId)
             UniverseMoveCounts(remapped, removed, orphanMemberships, if (willLose) 1 else 0)
+        }.also {
+            // 세계관 간 이동 저장도 폼 값 저장 경로 — 새 세계관 필드로 수확 (검토 A6)
+            fieldLibrary.harvestForCharacter(character.id)
         }
     }
 
@@ -478,6 +505,7 @@ class CharacterRepository(
                 )
             }
         }
+        fieldLibrary.harvestField(fieldDefId)
     }
 
     suspend fun batchClearFieldValue(ids: List<Long>, fieldDefId: Long) {

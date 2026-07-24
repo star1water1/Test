@@ -87,6 +87,7 @@ class TrashRepository(private val db: AppDatabase) {
         var skippedMemberships = 0
         var skippedEvents = 0
         var novelCleared = false
+        var restoredCharacterId = -1L
 
         db.withTransaction {
             // 작품이 그 사이 삭제됐으면 미배정으로 복원
@@ -107,6 +108,7 @@ class TrashRepository(private val db: AppDatabase) {
             } else {
                 db.characterDao().insert(character.copy(id = 0))
             }
+            restoredCharacterId = targetId
 
             // 필드값 — 필드 정의가 남아 있는 것만
             val validFieldValues = data.fieldValues.filter {
@@ -190,6 +192,11 @@ class TrashRepository(private val db: AppDatabase) {
 
         // 복원 완료 — 스냅샷 제거 (이미지 파일은 복원된 캐릭터가 소유)
         trashDao.deleteById(snapshotId)
+
+        // 복원도 필드값 쓰기 경로 — 라이브러리에서 정리된 뒤 복원된 값이 다시 보이게 수확 (검토 A6)
+        if (restoredCharacterId != -1L) {
+            FieldValueLibraryRepository(db).harvestForCharacter(restoredCharacterId)
+        }
 
         return RestoreResult(
             restoredName = data.character.name,

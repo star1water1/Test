@@ -1270,14 +1270,16 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         eventFieldValues: List<com.novelcharacter.app.data.model.EventFieldValue>? = null
     ) = viewModelScope.launch {
         try {
-            db.withTransaction {
+            val newEventId = db.withTransaction {
                 val eventId = timelineRepository.insertEvent(event)
                 timelineRepository.updateEventCharacters(eventId, characterIds)
                 timelineRepository.updateEventNovels(eventId, novelIds)
                 if (eventFieldValues != null) {
                     db.eventFieldValueDao().replaceAllByEvent(eventId, eventFieldValues.map { it.copy(eventId = eventId) })
                 }
+                eventId
             }
+            if (eventFieldValues != null) app.fieldValueLibraryRepository.harvestForEvent(newEventId)
             syncEventTypeToStateChanges(event, characterIds)
         } catch (e: Exception) {
             Log.e("CharacterViewModel", "Failed to insert event", e)
@@ -1299,6 +1301,7 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
                     db.eventFieldValueDao().replaceAllByEvent(event.id, eventFieldValues.map { it.copy(eventId = event.id) })
                 }
             }
+            if (eventFieldValues != null) app.fieldValueLibraryRepository.harvestForEvent(event.id)
             syncEventTypeToStateChanges(event, characterIds)
         } catch (e: Exception) {
             Log.e("CharacterViewModel", "Failed to update event", e)
@@ -1357,6 +1360,7 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
                     }
                 }
             }
+            if (eventFieldValues != null) app.fieldValueLibraryRepository.harvestForEvent(event.id)
             syncEventTypeToStateChanges(event, characterIds)
         } catch (e: Exception) {
             Log.e("CharacterViewModel", "Failed to shift events", e)
