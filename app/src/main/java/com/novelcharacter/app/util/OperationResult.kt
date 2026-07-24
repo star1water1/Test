@@ -35,6 +35,7 @@ data class OpResult(
         const val CAT_TRASH = "trash"
         const val CAT_MAINTENANCE = "maintenance"
         const val CAT_BATCH = "batch"
+        const val CAT_FIELD_LIBRARY = "field_library"
 
         fun success(category: String, summary: String, detail: String? = null) =
             OpResult(category, summary, success = true, detail = detail)

@@ -2,6 +2,7 @@ package com.novelcharacter.app.ui.stats
 
 import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.data.model.*
+import com.novelcharacter.app.util.FieldValueTokenizer
 import com.novelcharacter.app.util.FormulaEvaluator
 
 /**
@@ -1224,30 +1225,8 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
         rawValue: String,
         statsConfig: FieldStatsConfig
     ): List<String> {
-        val format = DisplayFormat.fromConfig(fd.config)
-
-        // Step 1: 값 분리
-        val splitValues = when {
-            fd.type == "BODY_SIZE" || StructuredInputConfig.fromConfig(fd.config).enabled -> {
-                // 구조화 입력: config의 파트 라벨로 개별 분석
-                val structuredConfig = StructuredInputConfig.fromConfig(fd.config)
-                if (structuredConfig.enabled && structuredConfig.parts.isNotEmpty()) {
-                    structuredConfig.labeledParts(rawValue)
-                } else {
-                    // 구조화 설정 없는 BODY_SIZE — separator로 분리 (파트별 값만 반환)
-                    val separator = try {
-                        org.json.JSONObject(fd.config).optString("separator", "-")
-                    } catch (_: Exception) { "-" }
-                    val parts = rawValue.split(separator).map { it.trim() }.filter { it.isNotEmpty() }
-                    if (parts.size >= 2) parts else listOf(rawValue.trim())
-                }
-            }
-            format == DisplayFormat.COMMA_LIST || format == DisplayFormat.BULLET_LIST ->
-                rawValue.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-            fd.type == "MULTI_TEXT" ->
-                rawValue.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-            else -> listOf(rawValue.trim())
-        }
+        // Step 1: 값 분리 (토큰화 단일 소스 — 라이브러리 수확·검색과 규칙 공유)
+        val splitValues = FieldValueTokenizer.splitForStats(fd, rawValue)
 
         // Step 2: 값 라벨 매핑 적용
         val labeled = splitValues.map { statsConfig.applyLabel(it) }
@@ -1386,10 +1365,9 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
 
     /** 한 캐릭터가 여러 값을 가질 수 있는 필드인가 (교차분석 해석 고지용) */
     private fun isMultiValueField(fd: FieldDefinition): Boolean {
-        if (fd.type == "MULTI_TEXT" || fd.type == "BODY_SIZE") return true
+        if (fd.type == "BODY_SIZE") return true
         if (StructuredInputConfig.fromConfig(fd.config).enabled) return true
-        val format = DisplayFormat.fromConfig(fd.config)
-        return format == DisplayFormat.COMMA_LIST || format == DisplayFormat.BULLET_LIST
+        return FieldValueTokenizer.isMultiToken(fd)
     }
 
     // ===== 데이터 현황 (신규 - 기존 여러 compute 통합) =====

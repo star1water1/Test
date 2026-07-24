@@ -139,4 +139,6 @@ dependencies {
     // ===== 단위 테스트 (순수 JVM — SDK/에뮬레이터/Robolectric 불필요) =====
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
+    // android.jar의 org.json 스텁 대체 — config 파싱 모델(FieldStatsConfig 등)·토크나이저 테스트용
+    testImplementation("org.json:json:20240303")
 }
