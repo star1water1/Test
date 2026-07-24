@@ -116,6 +116,8 @@ data class ImportResult(
     var restoredSettings: Int = 0,
     var newImageMeta: Int = 0,
     var updatedImageMeta: Int = 0,
+    var newFieldValueEntries: Int = 0,
+    var updatedFieldValueEntries: Int = 0,
     var skippedRows: Int = 0,
     val errors: MutableList<String> = mutableListOf(),
     var nameBasedMappings: Int = 0,
@@ -127,6 +129,9 @@ data class ImportResult(
 )
 
 class ExcelImportService(private val db: AppDatabase, private val appContext: android.content.Context? = null) {
+
+    /** 캐릭터 행 임포트 중 별칭 표기 감지용 필드별 해석기 캐시 — 행마다 쿼리하지 않는다 (검토 A7) */
+    private val importAliasResolvers = HashMap<Long, com.novelcharacter.app.util.FieldValueResolver>()
 
     private val novelIdCache = mutableMapOf<Pair<String, Long?>, Long?>()
     private var truncatedFieldCount = 0
@@ -309,6 +314,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val result = ImportResult()
         novelIdCache.clear()
         pendingSyncCharacters.clear()
+        importAliasResolvers.clear()
         processedRowsSoFar = 0
         truncatedFieldCount = 0
         truncatedDetails.clear()
@@ -391,7 +397,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             if (effectiveOptions.novels) importNovels(workbook, result, onProgress, totalRows)
             // Novel 임포트 완료 (또는 기존 DB 유지) → Universe의 imageNovelId 코드 해석
             applyDeferredUniverseNovelRefs()
-            if (effectiveOptions.fieldDefinitions) importFieldDefinitions(workbook, result, onProgress, totalRows)
+            if (effectiveOptions.fieldDefinitions) {
+                importFieldDefinitions(workbook, result, onProgress, totalRows)
+                importFieldValueLibrary(workbook, result, onProgress, totalRows)
+            }
 
             // Phase 2: Entity data (characters)
             if (effectiveOptions.characters) {
@@ -469,6 +478,18 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val migrationPrefs = appContext?.getSharedPreferences("app_migrations", android.content.Context.MODE_PRIVATE)
         migrationPrefs?.edit()?.putBoolean("field_library_harvest_pending", true)?.apply()
         val fieldLibrary = com.novelcharacter.app.data.repository.FieldValueLibraryRepository(db)
+        // 구버전 파일의 설정(JSON)에 남아 있는 valueLabels/valueCategories → 라이브러리로 이관
+        // (조용한 이중 소스 방지 — 시드와 같은 병합 규칙이라 큐레이션을 덮어쓰지 않는다)
+        var legacyMigrated = 0
+        for (fd in db.fieldDefinitionDao().getAllFieldsAllTypes()) {
+            val stats = com.novelcharacter.app.data.model.FieldStatsConfig.fromConfig(fd.config)
+            if (stats.valueLabels.isNotEmpty() || stats.valueCategories.isNotEmpty()) {
+                legacyMigrated += runCatching { fieldLibrary.seedFromStatsConfig(fd) }.getOrDefault(0)
+            }
+        }
+        if (legacyMigrated > 0) {
+            result.warnings.add("구버전 필드 설정의 값 라벨·카테고리 ${legacyMigrated}건을 필드 데이터 라이브러리로 이관했습니다")
+        }
         fieldLibrary.harvestAll()
         for (fd in db.fieldDefinitionDao().getAllFieldsAllTypes()) {
             fieldLibrary.recountUsage(fd.id)
@@ -492,7 +513,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
         if (options.universes) categories.add(analyzeUniverses(workbook, onProgress, totalRows))
         if (options.novels) categories.add(analyzeNovels(workbook, onProgress, totalRows))
-        if (options.fieldDefinitions) categories.add(analyzeFieldDefinitions(workbook, onProgress, totalRows))
+        if (options.fieldDefinitions) {
+            categories.add(analyzeFieldDefinitions(workbook, onProgress, totalRows))
+            categories.add(analyzeFieldValueLibrary(workbook, onProgress, totalRows))
+        }
         if (options.characters) {
             val charResult = analyzeCharacters(workbook, onProgress, totalRows)
             categories.add(charResult.category)
@@ -511,6 +535,33 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         if (options.imageMeta) categories.add(analyzeImageMeta(workbook, onProgress, totalRows))
 
         return RestoreAnalysis(categories, characterConflicts)
+    }
+
+    private suspend fun analyzeFieldValueLibrary(workbook: Workbook, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
+        val spec = fieldValueLibrarySpec()
+        val label = "필드 데이터"
+        val existingEntries = db.fieldValueEntryDao().getAllList()
+        val existingTotal = existingEntries.size
+        val sheet = workbook.getSheet(spec.sheetName)
+        if (sheet == null || sheet.lastRowNum < 1) return CategoryAnalysis("fieldValueLibrary", label, 0, 0, 0, 0, existingTotal)
+        val headerRow = sheet.getRow(0) ?: return CategoryAnalysis("fieldValueLibrary", label, 0, 0, 0, 0, existingTotal)
+        if (!isValidHeader(headerRow, spec.firstColumnHeader)) return CategoryAnalysis("fieldValueLibrary", label, 0, 0, 0, 0, existingTotal)
+
+        val cols = resolveHeaderColumns(headerRow)
+        val valueCol = cols["값"] ?: 4
+        val codeCol = cols["코드"] ?: -1
+        val byCode = existingEntries.filter { it.code.isNotBlank() }.associateBy { it.code }
+
+        var inBackup = 0; var newCount = 0; var matchedCount = 0
+        for (i in 1..sheet.lastRowNum) {
+            val row = sheet.getRow(i) ?: continue
+            if (getCellString(row, valueCol).isBlank()) continue
+            inBackup++
+            val code = if (codeCol >= 0) getCellString(row, codeCol) else ""
+            if (code.isNotBlank() && byCode.containsKey(code)) matchedCount++ else newCount++
+        }
+        reportProgress(onProgress, label, sheet.lastRowNum, totalRows)
+        return CategoryAnalysis("fieldValueLibrary", label, inBackup, newCount, matchedCount, 0, existingTotal)
     }
 
     private suspend fun analyzeImageMeta(workbook: Workbook, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
@@ -1667,6 +1718,116 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         reportProgress(onProgress, "필드 정의", sheet.lastRowNum, totalRows)
     }
 
+    // ── 필드 데이터 라이브러리 가져오기 (필드 정의 직후 — 필드가 먼저 존재해야 함) ──
+
+    private suspend fun importFieldValueLibrary(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
+        val spec = fieldValueLibrarySpec()
+        val sheet = findSheet(workbook, spec.sheetName, result) ?: return
+        val headerRow = sheet.getRow(0) ?: return
+        if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
+
+        val cols = resolveHeaderColumns(headerRow)
+        val universeCol = cols["세계관"] ?: 0
+        val keyCol = cols["필드키"] ?: 1
+        val entityCol = cols["대상"] ?: -1
+        val valueCol = cols["값"] ?: 4
+        val labelCol = cols["표시라벨"] ?: -1
+        val aliasCol = cols["별칭(콤마구분)"] ?: cols["별칭"] ?: -1
+        val categoryCol = cols["카테고리"] ?: -1
+        val descCol = cols["설명"] ?: -1
+        val hiddenCol = cols["숨김"] ?: -1
+        val codeCol = cols["코드"] ?: -1
+
+        // 배치 로드: 행마다 쿼리하지 않는다 (검토 A7 — 대용량 파일 성능)
+        val universesByName = db.universeDao().getAllUniversesList().associateBy { it.name }
+        val entriesByField = HashMap<Long, MutableList<com.novelcharacter.app.data.model.FieldValueEntry>>()
+        for (e in db.fieldValueEntryDao().getAllList()) {
+            entriesByField.getOrPut(e.fieldDefinitionId) { mutableListOf() }.add(e)
+        }
+        val fieldCache = HashMap<Triple<Long, String, String>, FieldDefinition?>()
+
+        for (i in 1..sheet.lastRowNum) {
+            try {
+                val row = sheet.getRow(i) ?: continue
+                val universeName = getCellString(row, universeCol)
+                val fieldKey = getCellString(row, keyCol)
+                val value = getCellString(row, valueCol)
+                if (universeName.isBlank() && fieldKey.isBlank() && value.isBlank()) continue
+
+                val universe = universesByName[universeName]
+                if (universe == null) {
+                    result.skippedRows++
+                    result.warnings.add("필드 데이터 행 $i: 세계관 '$universeName'을(를) 찾을 수 없음")
+                    continue
+                }
+                val imported = FieldValueSheetMapper.ImportedRow(
+                    universeName = universeName,
+                    fieldKey = fieldKey,
+                    entityLabel = if (entityCol >= 0) getCellString(row, entityCol) else null,
+                    value = value,
+                    displayLabel = if (labelCol >= 0) getCellString(row, labelCol) else null,
+                    aliasesCsv = if (aliasCol >= 0) getCellString(row, aliasCol) else null,
+                    category = if (categoryCol >= 0) getCellString(row, categoryCol) else null,
+                    description = if (descCol >= 0) getCellString(row, descCol) else null,
+                    hiddenFlag = if (hiddenCol >= 0) getCellString(row, hiddenCol) else null,
+                    code = if (codeCol >= 0) getCellString(row, codeCol) else null
+                )
+                val fd = fieldCache.getOrPut(Triple(universe.id, fieldKey, imported.entityType)) {
+                    db.fieldDefinitionDao().getFieldByKey(universe.id, fieldKey, imported.entityType)
+                }
+                if (fd == null) {
+                    result.skippedRows++
+                    result.warnings.add("필드 데이터 행 $i: 필드 키 '$fieldKey'(${imported.entityLabel ?: "캐릭터"})을(를) 세계관 '$universeName'에서 찾을 수 없음")
+                    continue
+                }
+
+                val siblings = entriesByField.getOrPut(fd.id) { mutableListOf() }
+                // 매칭: 코드 우선 → (필드, 값)
+                val byCode = imported.code?.trim().orEmpty()
+                    .takeIf { it.isNotEmpty() }?.let { code -> siblings.find { it.code == code } }
+                val existing = byCode ?: siblings.find { it.value == imported.trimmedValue }
+
+                var candidate = FieldValueSheetMapper.applyRow(existing, fd.id, imported)
+                if (candidate == null) {
+                    result.skippedRows++
+                    result.warnings.add("필드 데이터 행 $i: 값이 비어 있어 건너뜀")
+                    continue
+                }
+                // 값 이름이 다른 엔트리와 충돌(코드 매칭으로 이름이 바뀐 경우) — 거부 대신 그 행만 스킵
+                val valueTaken = siblings.any { it.id != candidate!!.id && it.value == candidate!!.value }
+                if (valueTaken) {
+                    result.skippedRows++
+                    result.warnings.add("필드 데이터 행 $i: 값 '${candidate.value}'이(가) 이미 존재해 건너뜀")
+                    continue
+                }
+                // 별칭 충돌은 해당 별칭만 제외 + 경고 (관대 수용)
+                val conflicts = FieldValueSheetMapper.conflictingAliases(candidate, siblings)
+                if (conflicts.isNotEmpty()) {
+                    result.warnings.add("필드 데이터 행 $i: 별칭 ${conflicts.joinToString(", ")}이(가) 다른 값과 충돌해 제외됨")
+                    candidate = candidate.copy(
+                        aliasesJson = com.novelcharacter.app.data.model.FieldValueEntry.aliasesToJson(
+                            candidate.aliases().filter { it !in conflicts })
+                    )
+                }
+
+                if (existing != null) {
+                    db.fieldValueEntryDao().update(candidate)
+                    siblings.removeAll { it.id == candidate.id }
+                    siblings.add(candidate)
+                    result.updatedFieldValueEntries++
+                } else {
+                    val newId = db.fieldValueEntryDao().insert(candidate)
+                    siblings.add(candidate.copy(id = newId))
+                    result.newFieldValueEntries++
+                }
+            } catch (e: Exception) {
+                result.skippedRows++
+                result.errors.add("필드 데이터 행 $i: ${e.message}")
+            }
+        }
+        reportProgress(onProgress, "필드 데이터", sheet.lastRowNum, totalRows)
+    }
+
     // ── 세계관별 캐릭터 시트 가져오기 ──
 
     private suspend fun importCharacterSheets(workbook: Workbook, result: ImportResult, resolvedConflicts: Map<String, CharacterConflict>, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
@@ -1922,6 +2083,18 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                             "BODY_SIZE" -> if (!value.any { it.isDigit() }) {
                                 result.warnings.add("캐릭터 행 $i: 신체 사이즈 필드 '${field.name}'의 값 '$value'에 숫자가 없어 통계에 반영되지 않을 수 있습니다")
                             }
+                        }
+                    }
+                    // 별칭 표기 감지 — F1-B 원문 저장 원칙 유지(무편집 왕복 불변), 치환하지 않고 고지만 한다.
+                    // 정규화는 인앱 라이브러리(병합·AI 정리)가 확인 후 수행하는 교정 경로.
+                    if (value.isNotBlank() && com.novelcharacter.app.util.FieldValueTokenizer.supportsLibrary(field)) {
+                        val resolver = importAliasResolvers.getOrPut(field.id) {
+                            com.novelcharacter.app.util.FieldValueResolver(db.fieldValueEntryDao().getByField(field.id))
+                        }
+                        val aliasTokens = com.novelcharacter.app.util.FieldValueTokenizer.tokenize(field, value)
+                            .filter { resolver.canonical(it) != it }
+                        if (aliasTokens.isNotEmpty()) {
+                            result.warnings.add("캐릭터 행 $i: '${field.name}' 값 ${aliasTokens.joinToString(", ") { "'$it'" }}은(는) 라이브러리 별칭 표기입니다 — 원문대로 저장됨, 라이브러리에서 정규화 가능")
                         }
                     }
                     val existingValue = db.characterFieldValueDao().getValue(charId, field.id)

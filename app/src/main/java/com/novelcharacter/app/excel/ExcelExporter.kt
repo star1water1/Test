@@ -88,7 +88,10 @@ class ExcelExporter(context: Context) {
         exportInstructions(workbook, usedSheetNames)
         if (options.universes) exportUniverses(workbook, usedSheetNames)
         if (options.novels) exportNovels(workbook, usedSheetNames)
-        if (options.fieldDefinitions) exportFieldDefinitions(workbook, usedSheetNames)
+        if (options.fieldDefinitions) {
+            exportFieldDefinitions(workbook, usedSheetNames)
+            exportFieldValueLibrary(workbook, usedSheetNames)
+        }
         // 이미지 시트는 반드시 캐릭터 시트보다 먼저 — 세계관 이름이 "이미지"여도 예약 시트가
         // 원명을 선점하고 캐릭터 시트는 sanitize("(2)")되어 가져오기에서 충돌하지 않는다.
         if (options.imageMeta) exportImageMeta(workbook, usedSheetNames)
@@ -645,6 +648,42 @@ class ExcelExporter(context: Context) {
         }
 
         applySpecFormatting(sheet, spec, allFields.size)
+    }
+
+    // ── 필드 데이터 라이브러리 (값 카탈로그 — 별칭·라벨·카테고리 왕복) ──
+
+    private suspend fun exportFieldValueLibrary(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
+        val universes = db.universeDao().getAllUniversesList()
+        val universeMap = universes.associateBy { it.id }
+        val fieldsById = db.fieldDefinitionDao().getAllFieldsAllTypes().associateBy { it.id }
+        val entries = db.fieldValueEntryDao().getAllList()
+        if (entries.isEmpty()) return
+
+        val spec = fieldValueLibrarySpec(universes.map { it.name })
+        val sheetName = sanitizeSheetName(spec.sheetName, usedSheetNames)
+        val sheet = workbook.createSheet(sheetName)
+        writeHeaderRow(sheet, spec)
+
+        var rowIndex = 1
+        for (entry in entries) {
+            val fd = fieldsById[entry.fieldDefinitionId] ?: continue
+            val universe = universeMap[fd.universeId]
+            val row = sheet.createRow(rowIndex++)
+            row.createCell(0).setTextSafe(universe?.name ?: "")
+            row.createCell(1).setTextSafe(fd.key)
+            row.createCell(2).setTextSafe(fd.name)
+            row.createCell(3).setTextSafe(FieldValueSheetMapper.entityLabel(fd.entityType))
+            row.createCell(4).setTextSafe(entry.value)
+            row.createCell(5).setTextSafe(entry.displayLabel)
+            row.createCell(6).setTextSafe(FieldValueSheetMapper.aliasesToCsv(entry))
+            row.createCell(7).setTextSafe(entry.category)
+            row.createCell(8).setTextSafe(entry.description)
+            row.createCell(9).setTextSafe(if (entry.isHidden) "Y" else "N")
+            row.createCell(10).setCellValue(entry.usageCount.toDouble())
+            row.createCell(11).setTextSafe(entry.code)
+        }
+
+        applySpecFormatting(sheet, spec, rowIndex - 1)
     }
 
     // ── 캐릭터 (세계관별 + 미분류 통합) ──
