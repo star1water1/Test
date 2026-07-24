@@ -126,10 +126,19 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
 
     /** 엑셀 임포트 후 — 임포트가 건드린 세계관들 일괄 수확. null이면 전체(백필 시드). */
     suspend fun harvestUniverses(universeIds: Set<Long>?) = safely("harvestUniverses") {
+        harvestUniversesOrThrow(universeIds)
+    }
+
+    /**
+     * 백필·임포트 재시도 플래그 관리자용 throwing 변형 — 실패가 조용히 삼켜지면
+     * seeded/harvest_pending 플래그가 잘못 기록되어 재시도 계약이 깨진다 (검토 후속).
+     * 훅 경로는 [harvestUniverses]의 안전 래퍼를 그대로 쓴다.
+     */
+    suspend fun harvestUniversesOrThrow(universeIds: Set<Long>?) {
         val defs = fieldDao.getAllFieldsAllTypes()
             .filter { FieldValueTokenizer.supportsLibrary(it) }
             .filter { universeIds == null || it.universeId in universeIds }
-        if (defs.isEmpty()) return@safely
+        if (defs.isEmpty()) return
         val defsById = defs.associateBy { it.id }
         val tokensByField = HashMap<Long, MutableSet<String>>()
 
@@ -158,6 +167,9 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
 
     suspend fun harvestAll() = harvestUniverses(null)
 
+    /** 백필/임포트용 throwing 변형 — 플래그 기록 전에 실패를 표면화한다 */
+    suspend fun harvestAllOrThrow() = harvestUniversesOrThrow(null)
+
     private suspend fun insertNewTokens(tokensByField: Map<Long, Set<String>>) {
         val fieldIds = tokensByField.filterValues { it.isNotEmpty() }.keys
         if (fieldIds.isEmpty()) return
@@ -182,9 +194,14 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
 
     /** 필드의 usageCount를 실제 값 기준으로 재계산. 변한 행만 UPDATE — 무변화면 0건 쓰기. */
     suspend fun recountUsage(fieldDefId: Long) = safely("recountUsage") {
-        val fd = fieldDao.getFieldById(fieldDefId) ?: return@safely
+        recountUsageOrThrow(fieldDefId)
+    }
+
+    /** 백필/임포트용 throwing 변형 */
+    suspend fun recountUsageOrThrow(fieldDefId: Long) {
+        val fd = fieldDao.getFieldById(fieldDefId) ?: return
         val entries = entryDao.getByField(fieldDefId)
-        if (entries.isEmpty()) return@safely
+        if (entries.isEmpty()) return
         val resolver = FieldValueResolver(entries)
         val counts = HashMap<String, Int>()
         val countTokens = { raw: String ->
@@ -385,13 +402,15 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
         }
         val matchTokens = setOf(entry.value) + entry.aliases()
         return db.withTransaction {
-            // 파괴 전 스냅샷 — CharacterRepository.deleteCharacter 선례
+            // 파괴 전 스냅샷 — CharacterRepository.deleteCharacter 선례 (IN 절 999 제한 청크)
             val affected = collectAffectedCharacterIds(fd, matchTokens)
             val trash = TrashRepository(db)
             var snapshotted = 0
-            for (character in db.characterDao().getCharactersByIds(affected)) {
-                trash.snapshotCharacter(character, parseImagePathList(character.imagePaths))
-                snapshotted++
+            for (chunk in affected.chunked(CHUNK_SIZE)) {
+                for (character in db.characterDao().getCharactersByIds(chunk)) {
+                    trash.snapshotCharacter(character, parseImagePathList(character.imagePaths))
+                    snapshotted++
+                }
             }
             val propagation = rewriteTokens(fd, matchTokens, replacement = null)
             entryDao.delete(entry)
@@ -455,19 +474,22 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
      * @return 이관된 (신규 + 병합) 엔트리 수
      */
     suspend fun seedFromStatsConfig(fd: FieldDefinition): Int {
-        val stats = FieldStatsConfig.fromConfig(fd.config)
-        if (stats.valueLabels.isEmpty() && stats.valueCategories.isEmpty()) return 0
         if (!FieldValueTokenizer.supportsLibrary(fd)) {
             // 미지원 타입(NUMBER 등)의 라벨/카테고리는 통계 폴백 경로가 계속 쓰므로 건드리지 않는다
             return 0
         }
         return db.withTransaction {
-            // 라벨의 값(라벨 문자열) 집합 — 구 카테고리는 라벨 키공간으로 조회되던 동작 보존 (A3)
-            val labelValues = stats.valueLabels.values.toSet()
+            // 스냅샷이 아니라 트랜잭션 안에서 최신 행을 다시 읽는다 — 백그라운드 백필이
+            // 동시 편집된 필드를 stale 스냅샷으로 되돌리지 않게 (last-writer-wins 방지)
+            val fresh = fieldDao.getFieldById(fd.id) ?: return@withTransaction 0
+            val stats = FieldStatsConfig.fromConfig(fresh.config)
+            if (stats.valueLabels.isEmpty() && stats.valueCategories.isEmpty()) return@withTransaction 0
+
+            // 라벨 키공간 카테고리도 엔트리로 시드한다: 저장 데이터가 라벨 문자열 그대로일 수 있고
+            // (구 통계는 그 경우도 그룹핑했음), 해석기의 라벨 체인이 이 엔트리를 통해 동작한다
             val rawKeys = LinkedHashSet<String>().apply {
                 addAll(stats.valueLabels.keys)
-                // 카테고리 키 중 다른 값의 라벨인 것은 독립 엔트리로 만들지 않는다
-                addAll(stats.valueCategories.keys.filter { it !in labelValues })
+                addAll(stats.valueCategories.keys)
             }.map { it.trim() }.filter { it.isNotEmpty() }
 
             val existing = entryDao.getByField(fd.id).associateBy { it.value }.toMutableMap()
@@ -503,12 +525,12 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
                     }
                 }
             }
-            // 엔트리가 라벨을 확보한 뒤에야 config에서 두 맵을 제거 (같은 트랜잭션)
+            // 엔트리가 라벨을 확보한 뒤에야 config에서 두 맵을 제거 (같은 트랜잭션, 최신 행 기준)
             val stripped = FieldStatsConfig.applyToConfig(
-                fd.config,
+                fresh.config,
                 stats.copy(valueLabels = emptyMap(), valueCategories = emptyMap())
             )
-            fieldDao.update(fd.copy(config = stripped))
+            fieldDao.update(fresh.copy(config = stripped))
             migrated
         }
     }
@@ -579,7 +601,7 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
                 if (joined != row.value) {
                     charValueDao.update(row.copy(value = joined))
                     charRows++
-                    if (mapped == tokens) whitespaceOnly++
+                    if (FieldValueTokenizer.join(tokens) != row.value) whitespaceOnly++
                 }
             }
         }
@@ -594,7 +616,7 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
                 if (joined != row.value) {
                     eventValueDao.update(row.copy(value = joined))
                     eventRows++
-                    if (mapped == tokens) whitespaceOnly++
+                    if (FieldValueTokenizer.join(tokens) != row.value) whitespaceOnly++
                 }
             }
         }
@@ -612,7 +634,7 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
                     if (joined != change.newValue) {
                         stateChangeDao.update(change.copy(newValue = joined))
                         stateRows++
-                        if (mapped == tokens) whitespaceOnly++
+                        if (FieldValueTokenizer.join(tokens) != change.newValue) whitespaceOnly++
                     }
                 }
             }

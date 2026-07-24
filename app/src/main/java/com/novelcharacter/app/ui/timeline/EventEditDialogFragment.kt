@@ -348,7 +348,8 @@ class EventEditDialogFragment : DialogFragment() {
         guardRestrictedEventValues(eventFieldValues) {
         if (event == null) {
             provider.insertEvent(newEvent, selectedCharIds.toList(), novelIdsList, eventFieldValues)
-            dismiss()
+            // 가드 경유로 비동기 실행됨 — 상태 저장 후 도착해도 크래시하지 않게 (수정 경로와 동일)
+            dismissAllowingStateLoss()
         } else {
             val delta = newEvent.year - event.year
             lifecycleScope.launch {

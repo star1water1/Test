@@ -180,6 +180,18 @@ class FieldFilterHelperTest {
     }
 
     @Test
+    fun exact_legacyWholeStringFilterValue_onMultiTokenField_matchesPerToken() = runTest {
+        // 구버전 프리셋은 다중값 원문("서울, 부산")을 필터 값으로 통째 저장했다 —
+        // 토큰 분해로 두 토큰 중 하나라도 가진 행이 매칭되어야 한다 (0건 무음 회귀 방지)
+        val multi = fd(10, type = "MULTI_TEXT")
+        val dao = FakeValueDao(rows = listOf(
+            row(1, 10, "서울, 대전"), row(2, 10, "부산"), row(3, 10, "광주")
+        ))
+        val filter = FieldFilter(10L, "거주지", listOf("서울, 부산"), "exact")
+        assertEquals(setOf(1L, 2L), apply(dao, listOf(filter), fields = mapOf(10L to multi)))
+    }
+
+    @Test
     fun exact_aliasExpansion_matchesAliasFormRows() = runTest {
         // canonical 칩 "서울" 하나로 별칭 저장값 "서울시"까지 매칭, 별칭을 필터 값으로 넣어도 동작
         val entry = FieldValueEntry(

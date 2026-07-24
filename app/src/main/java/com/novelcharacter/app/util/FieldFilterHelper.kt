@@ -44,7 +44,10 @@ object FieldFilterHelper {
                 val fd = fieldDefinitionDao.getFieldById(filter.fieldId)
                 val resolver = FieldValueResolver(entryDao.getByField(filter.fieldId))
                 val targets = filter.values
-                    .map { resolver.canonical(it) }              // trim + 별칭→canonical (구버전 저장 필터 수용)
+                    // 구버전 프리셋은 다중값 원문("서울, 부산")을 통째로 저장했다 — 토큰 단위로 분해해
+                    // 새 토큰 매칭에서도 계속 동작하게 한다 (필터 내 값 간 OR 규칙과 합치)
+                    .flatMap { v -> fd?.let { FieldValueTokenizer.tokenize(it, v) } ?: listOf(v.trim()) }
+                    .map { resolver.canonical(it) }              // trim + 별칭→canonical
                     .flatMap { resolver.expandForFilter(it) }    // canonical + 별칭 전체
                     .toSet()
                 if (targets.isEmpty()) continue

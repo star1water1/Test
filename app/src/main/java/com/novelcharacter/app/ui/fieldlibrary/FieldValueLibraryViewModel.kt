@@ -80,11 +80,18 @@ class FieldValueLibraryViewModel(application: Application) : AndroidViewModel(ap
     /** 화면 진입 시 usageCount 최신화 (diff-only — 무변화면 무효화도 없음) */
     fun refreshUsage(fieldDefId: Long) = viewModelScopeLaunch { repo.recountUsage(fieldDefId) }
 
-    fun addValue(fd: FieldDefinition, value: String, onDuplicate: (String) -> Unit) = viewModelScopeLaunch {
+    fun addValue(
+        fd: FieldDefinition,
+        value: String,
+        onAdded: () -> Unit = {},
+        onDuplicate: (String) -> Unit
+    ) = viewModelScopeLaunch {
         when (val r = repo.addEntry(fd.id, value)) {
-            is FieldValueLibraryRepository.AddResult.Added ->
+            is FieldValueLibraryRepository.AddResult.Added -> {
                 reportResult(_result, OpResult.success(OpResult.CAT_FIELD_LIBRARY,
                     app.getString(R.string.field_library_added, r.entry.value)))
+                onAdded()
+            }
             is FieldValueLibraryRepository.AddResult.Duplicate -> onDuplicate(
                 if (r.asAlias) app.getString(R.string.field_library_duplicate_alias, r.conflictWith.value)
                 else app.getString(R.string.field_library_duplicate_value, r.conflictWith.value)
@@ -93,11 +100,17 @@ class FieldValueLibraryViewModel(application: Application) : AndroidViewModel(ap
         }
     }
 
-    fun saveEntry(entry: FieldValueEntry, onAliasConflict: (String) -> Unit) = viewModelScopeLaunch {
+    fun saveEntry(
+        entry: FieldValueEntry,
+        onSaved: () -> Unit = {},
+        onAliasConflict: (String) -> Unit
+    ) = viewModelScopeLaunch {
         when (val r = repo.updateEntry(entry)) {
-            FieldValueLibraryRepository.UpdateResult.Updated ->
+            FieldValueLibraryRepository.UpdateResult.Updated -> {
                 reportResult(_result, OpResult.success(OpResult.CAT_FIELD_LIBRARY,
                     app.getString(R.string.field_library_saved)))
+                onSaved()
+            }
             is FieldValueLibraryRepository.UpdateResult.AliasConflict -> onAliasConflict(
                 app.getString(R.string.field_library_alias_conflict, r.alias, r.conflictWith.value)
             )
@@ -170,10 +183,19 @@ class FieldValueLibraryViewModel(application: Application) : AndroidViewModel(ap
         onSaved(updated)
     }
 
-    /** AI 정리 적용 완료 통보 (AiOrganizeSheet에서 호출) */
-    fun notifyAiApplied(mergeCount: Int, categoryCount: Int) {
-        reportResult(_result, OpResult.success(OpResult.CAT_FIELD_LIBRARY,
-            app.getString(R.string.field_library_ai_applied, mergeCount, categoryCount)))
+    /** AI 정리 적용 완료 통보 (AiOrganizeSheet에서 호출) — 연쇄 제안 스킵 건수도 표면화 */
+    fun notifyAiApplied(mergeCount: Int, categoryCount: Int, skippedCount: Int = 0) {
+        val summary = app.getString(R.string.field_library_ai_applied, mergeCount, categoryCount)
+        val detail = if (skippedCount > 0)
+            app.getString(R.string.field_library_ai_apply_skipped, skippedCount) else null
+        reportResult(_result, OpResult.success(OpResult.CAT_FIELD_LIBRARY, summary, detail))
+    }
+
+    /** AI 정리 적용 중 실패 통보 — 부분 적용 상황을 알린다 */
+    fun notifyAiApplyFailed(mergeCount: Int, categoryCount: Int, message: String?) {
+        reportResult(_result, OpResult.failure(OpResult.CAT_FIELD_LIBRARY,
+            app.getString(R.string.field_library_ai_apply_failed, mergeCount, categoryCount),
+            message))
     }
 
     private fun viewModelScopeLaunch(block: suspend () -> Unit) = viewModelScope.launch {

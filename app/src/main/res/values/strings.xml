@@ -2028,6 +2028,7 @@
     <string name="field_library_initial_values_hint">값 사전 등록 (콤마 구분, 선택)</string>
     <string name="field_library_summary_edit">라이브러리 값 %1$d개 — 표시 라벨·별칭·카테고리는 라이브러리에서 관리합니다</string>
     <string name="field_library_summary_create">저장 후 값이 자동 수집됩니다. 미리 등록할 값은 아래에 입력하세요.</string>
+    <string name="field_library_summary_preset">값 데이터는 세계관에 적용된 실제 필드에서 관리됩니다.</string>
 
     <!-- 필드 데이터 라이브러리 — AI 정리 -->
     <string name="field_library_ai_not_configured">AI 프로바이더가 설정되어 있지 않습니다. 설정 → AI 연동에서 본인 API 키를 등록하세요.</string>
@@ -2046,6 +2047,8 @@
     <string name="field_library_ai_apply_merges">병합 %1$d건을 적용합니다.</string>
     <string name="field_library_ai_apply_categories">카테고리 %1$d건을 적용합니다.</string>
     <string name="field_library_ai_applied">AI 정리 적용 완료 — 병합 %1$d건 · 카테고리 %2$d건</string>
+    <string name="field_library_ai_apply_skipped">선행 병합과 겹쳐 건너뛴 제안 %1$d건 — 필요하면 AI 정리를 다시 실행하세요</string>
+    <string name="field_library_ai_apply_failed">AI 정리 적용 중 오류 — 병합 %1$d건 · 카테고리 %2$d건까지 적용됨</string>
 
     <!-- restricted 입력 모드 위반 안내 -->
     <string name="field_library_restricted_violation_title">허용되지 않은 값</string>

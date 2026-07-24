@@ -490,11 +490,19 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         if (legacyMigrated > 0) {
             result.warnings.add("구버전 필드 설정의 값 라벨·카테고리 ${legacyMigrated}건을 필드 데이터 라이브러리로 이관했습니다")
         }
-        fieldLibrary.harvestAll()
-        for (fd in db.fieldDefinitionDao().getAllFieldsAllTypes()) {
-            fieldLibrary.recountUsage(fd.id)
+        // throwing 변형 + runCatching: 성공 시에만 pending 해제 — 실패하면 플래그가 남아
+        // 다음 앱 시작 시 재수확된다 (임포트 결과 자체는 이미 커밋됨)
+        val harvested = runCatching {
+            fieldLibrary.harvestAllOrThrow()
+            for (fd in db.fieldDefinitionDao().getAllFieldsAllTypes()) {
+                fieldLibrary.recountUsageOrThrow(fd.id)
+            }
+        }.isSuccess
+        if (harvested) {
+            migrationPrefs?.edit()?.putBoolean("field_library_harvest_pending", false)?.apply()
+        } else {
+            result.warnings.add("필드 데이터 라이브러리 수확이 지연되었습니다 — 다음 앱 시작 시 자동 재시도됩니다")
         }
-        migrationPrefs?.edit()?.putBoolean("field_library_harvest_pending", false)?.apply()
 
         return result
     }
@@ -548,17 +556,36 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         if (!isValidHeader(headerRow, spec.firstColumnHeader)) return CategoryAnalysis("fieldValueLibrary", label, 0, 0, 0, 0, existingTotal)
 
         val cols = resolveHeaderColumns(headerRow)
+        val universeCol = cols["세계관"] ?: 0
+        val keyCol = cols["필드키"] ?: 1
+        val entityCol = cols["대상"] ?: -1
         val valueCol = cols["값"] ?: 4
         val codeCol = cols["코드"] ?: -1
         val byCode = existingEntries.filter { it.code.isNotBlank() }.associateBy { it.code }
+        // 코드 없는 수기 행도 실제 임포트와 같은 (세계관,필드키,대상,값) 기준으로 갱신 예측 (프리뷰 정확성)
+        val fieldsById = db.fieldDefinitionDao().getAllFieldsAllTypes().associateBy { it.id }
+        val universeNamesById = db.universeDao().getAllUniversesList().associate { it.id to it.name }
+        val byNaturalKey = existingEntries.mapNotNull { e ->
+            val fd = fieldsById[e.fieldDefinitionId] ?: return@mapNotNull null
+            val universeName = universeNamesById[fd.universeId] ?: return@mapNotNull null
+            Triple(universeName, fd.key, fd.entityType) to e.value
+        }.toHashSet()
 
         var inBackup = 0; var newCount = 0; var matchedCount = 0
         for (i in 1..sheet.lastRowNum) {
             val row = sheet.getRow(i) ?: continue
-            if (getCellString(row, valueCol).isBlank()) continue
+            val value = getCellString(row, valueCol)
+            if (value.isBlank()) continue
             inBackup++
             val code = if (codeCol >= 0) getCellString(row, codeCol) else ""
-            if (code.isNotBlank() && byCode.containsKey(code)) matchedCount++ else newCount++
+            val entityType = FieldValueSheetMapper.entityTypeOf(
+                if (entityCol >= 0) getCellString(row, entityCol) else null)
+            val naturalKey = Triple(getCellString(row, universeCol), getCellString(row, keyCol), entityType) to value.trim()
+            if ((code.isNotBlank() && byCode.containsKey(code)) || naturalKey in byNaturalKey) {
+                matchedCount++
+            } else {
+                newCount++
+            }
         }
         reportProgress(onProgress, label, sheet.lastRowNum, totalRows)
         return CategoryAnalysis("fieldValueLibrary", label, inBackup, newCount, matchedCount, 0, existingTotal)
@@ -1793,6 +1820,15 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     result.warnings.add("필드 데이터 행 $i: 값이 비어 있어 건너뜀")
                     continue
                 }
+                // 시트에서 값 이름이 바뀐 경우(코드 매칭): 인앱 이름변경과 달리 데이터 전파가 없으므로
+                // 구 값을 별칭으로 보존해 재수확 시 중복 엔트리로 갈라지지 않게 한다 + 고지
+                if (existing != null && existing.value != candidate.value) {
+                    candidate = candidate.copy(
+                        aliasesJson = com.novelcharacter.app.data.model.FieldValueEntry.aliasesToJson(
+                            candidate.aliases() + existing.value)
+                    )
+                    result.warnings.add("필드 데이터 행 $i: 값 '${existing.value}' → '${candidate.value}' 이름 변경 감지 — 구 값을 별칭으로 보존 (캐릭터 값 일괄 변경은 인앱 라이브러리의 이름 변경 사용)")
+                }
                 // 값 이름이 다른 엔트리와 충돌(코드 매칭으로 이름이 바뀐 경우) — 거부 대신 그 행만 스킵
                 val valueTaken = siblings.any { it.id != candidate!!.id && it.value == candidate!!.value }
                 if (valueTaken) {
@@ -1816,6 +1852,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     siblings.add(candidate)
                     result.updatedFieldValueEntries++
                 } else {
+                    // 코드 전역 유니크: 다른 필드의 엔트리가 이미 소유한 코드면 재발급 (관대 수용)
+                    val codeOwner = db.fieldValueEntryDao().getByCode(candidate.code)
+                    if (codeOwner != null) {
+                        candidate = candidate.copy(code = generateEntityCode())
+                        result.newCodesGenerated++
+                    }
                     val newId = db.fieldValueEntryDao().insert(candidate)
                     siblings.add(candidate.copy(id = newId))
                     result.newFieldValueEntries++

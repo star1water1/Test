@@ -50,6 +50,7 @@ class FieldValueListFragment : Fragment() {
     private var sortMode = SORT_USAGE
     private var selectionMode = false
     private val selectedIds = linkedSetOf<Long>()
+    private var backCallback: androidx.activity.OnBackPressedCallback? = null
 
     private val prefs by lazy {
         requireContext().getSharedPreferences("field_library_ui_state", Context.MODE_PRIVATE)
@@ -71,6 +72,13 @@ class FieldValueListFragment : Fragment() {
             if (selectionMode) exitSelectionMode()
             else requireActivity().onBackPressedDispatcher.onBackPressed()
         }
+        // 시스템 뒤로가기도 선택 모드를 먼저 해제 — 선택 중 화면 이탈로 선택이 유실되지 않게
+        backCallback = object : androidx.activity.OnBackPressedCallback(false) {
+            override fun handleOnBackPressed() {
+                exitSelectionMode()
+            }
+        }
+        requireActivity().onBackPressedDispatcher.addCallback(viewLifecycleOwner, backCallback!!)
         binding.toolbar.inflateMenu(R.menu.menu_field_value_list)
         binding.toolbar.setOnMenuItemClickListener { onMenuItem(it.itemId) }
 
@@ -257,10 +265,15 @@ class FieldValueListFragment : Fragment() {
         dialog.setValidatedPositiveButton {
             val value = input.text.toString().trim()
             if (value.isEmpty()) return@setValidatedPositiveButton false
-            viewModel.addValue(fd, value) { message ->
-                input.error = message
-            }
-            true
+            // 비동기 검증: 중복이면 다이얼로그를 유지한 채 오류 표시, 성공 시에만 닫는다
+            viewModel.addValue(fd, value,
+                onAdded = { if (dialog.isShowing) dialog.dismiss() },
+                onDuplicate = { message ->
+                    if (dialog.isShowing) input.error = message
+                    else notifyResult(com.novelcharacter.app.util.OpResult.failure(
+                        com.novelcharacter.app.util.OpResult.CAT_FIELD_LIBRARY, message))
+                })
+            false
         }
         dialog.show()
     }
@@ -271,6 +284,7 @@ class FieldValueListFragment : Fragment() {
         selectionMode = true
         selectedIds.clear()
         selectedIds.add(initial.id)
+        backCallback?.isEnabled = true
         binding.toolbar.menu.findItem(R.id.action_merge_selected)?.isVisible = true
         binding.toolbar.title = getString(R.string.field_library_select_mode_hint)
         adapter.notifyDataSetChanged()
@@ -279,6 +293,7 @@ class FieldValueListFragment : Fragment() {
     private fun exitSelectionMode() {
         selectionMode = false
         selectedIds.clear()
+        backCallback?.isEnabled = false
         binding.toolbar.menu.findItem(R.id.action_merge_selected)?.isVisible = false
         binding.toolbar.title = field?.name ?: ""
         adapter.notifyDataSetChanged()
@@ -364,8 +379,17 @@ class FieldValueListFragment : Fragment() {
                 aliasesJson = FieldValueEntry.aliasesToJson(aliases),
                 isHidden = sb.switchHidden.isChecked
             )
-            viewModel.saveEntry(updated) { message -> sb.editAliases.error = message }
-            sheet.dismiss()
+            // 별칭 충돌은 시트를 유지한 채 입력 필드에 표시 — 편집 내용이 조용히 유실되지 않게 한다
+            viewModel.saveEntry(updated,
+                onSaved = { if (sheet.isShowing) sheet.dismiss() },
+                onAliasConflict = { message ->
+                    if (sheet.isShowing) {
+                        sb.editAliases.error = message
+                    } else {
+                        notifyResult(com.novelcharacter.app.util.OpResult.failure(
+                            com.novelcharacter.app.util.OpResult.CAT_FIELD_LIBRARY, message))
+                    }
+                })
         }
         sb.btnRename.setOnClickListener {
             sheet.dismiss()

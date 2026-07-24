@@ -127,9 +127,10 @@ class NovelCharacterApp : Application() {
                     }
                     android.util.Log.i("NovelCharacterApp", "Field library seed: $migrated entries migrated from valueLabels/valueCategories")
                 }
-                repo.harvestAll()
+                // throwing 변형 사용 — 실패가 삼켜진 채 플래그가 기록되면 재시도 계약이 깨진다
+                repo.harvestAllOrThrow()
                 for (fd in database.fieldDefinitionDao().getAllFieldsAllTypes()) {
-                    repo.recountUsage(fd.id)
+                    repo.recountUsageOrThrow(fd.id)
                 }
                 prefs.edit()
                     .putBoolean("field_library_seeded", true)

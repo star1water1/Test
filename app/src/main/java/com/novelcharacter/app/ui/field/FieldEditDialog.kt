@@ -470,7 +470,8 @@ class FieldEditDialog : DialogFragment() {
         ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
 
         val existing = existingField
-        if (existing != null) {
+        // id == 0L: 프리셋/템플릿 편집기 경로 — DB에 없는 필드라 라이브러리 드릴다운 대상이 아니다
+        if (existing != null && existing.id != 0L) {
             binding.btnOpenFieldLibrary.visibility =
                 if (com.novelcharacter.app.util.FieldValueTokenizer.supportsLibrary(existing)) View.VISIBLE else View.GONE
             binding.initialValuesLayout.visibility = View.GONE
@@ -494,6 +495,11 @@ class FieldEditDialog : DialogFragment() {
                         getString(R.string.field_library_summary_edit, count)
                 }
             }
+        } else if (existing != null) {
+            // 프리셋/템플릿 필드(id=0) — 라이브러리는 실제 DB 필드에만 존재하므로 섹션 최소화
+            binding.fieldLibrarySummary.text = getString(R.string.field_library_summary_preset)
+            binding.initialValuesLayout.visibility = View.GONE
+            binding.btnOpenFieldLibrary.visibility = View.GONE
         } else {
             binding.fieldLibrarySummary.text = getString(R.string.field_library_summary_create)
             binding.initialValuesLayout.visibility = View.VISIBLE

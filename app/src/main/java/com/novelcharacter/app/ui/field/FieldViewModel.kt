@@ -70,9 +70,12 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
     fun insertField(field: FieldDefinition, initialValues: String = "") = viewModelScope.launch {
         try {
             val newId = universeRepository.insertField(field)
-            // 생성 다이얼로그의 값 사전 등록분 (콤마 구분) — restricted 모드도 한 번에 완결
+            // 생성 다이얼로그의 값 사전 등록분 (콤마 구분) — restricted 모드도 한 번에 완결.
+            // 라이브러리 미지원 타입(NUMBER 등)은 등재해도 어디에도 표시되지 않으므로 스킵.
             val staged = initialValues.split(",").map { it.trim() }.filter { it.isNotEmpty() }.distinct()
-            if (staged.isNotEmpty()) {
+            if (staged.isNotEmpty() &&
+                com.novelcharacter.app.util.FieldValueTokenizer.supportsLibrary(field)
+            ) {
                 val fieldLibrary = app.fieldValueLibraryRepository
                 for (value in staged) {
                     fieldLibrary.addEntry(newId, value)

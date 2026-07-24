@@ -248,26 +248,45 @@ object AiOrganizeSheet {
         categories: List<FieldLibraryAiOrganizer.CategorySuggestion>
     ) {
         fragment.viewLifecycleOwner.lifecycleScope.launch {
-            val byValue = entries.associateBy { it.value }.toMutableMap()
-            for (m in merges) {
-                val target = byValue[m.canonical] ?: continue
-                val sourceIds = m.variants.mapNotNull { byValue[it]?.id }
-                if (sourceIds.isEmpty()) continue
-                viewModel.repo.mergeValues(fd, target.id, sourceIds)
-                m.variants.forEach { byValue.remove(it) }
+            var appliedMerges = 0
+            var appliedCategories = 0
+            var skipped = 0
+            try {
+                val byValue = entries.associateBy { it.value }.toMutableMap()
+                for (m in merges) {
+                    // 선행 병합이 canonical을 소모한 연쇄 제안은 건너뛰되 건수로 표면화 (조용히 버리지 않음)
+                    val target = byValue[m.canonical]
+                    val sourceIds = m.variants.mapNotNull { byValue[it]?.id }
+                    if (target == null || sourceIds.isEmpty()) {
+                        skipped++
+                        continue
+                    }
+                    viewModel.repo.mergeValues(fd, target.id, sourceIds)
+                    m.variants.forEach { byValue.remove(it) }
+                    appliedMerges++
+                }
+                // 카테고리는 병합 반영 후 최신 엔트리 기준으로 적용 (source=AI 마킹)
+                val fresh = viewModel.repo.entriesForField(fd.id).associateBy { it.value }
+                for (c in categories) {
+                    val entry = fresh[c.value]
+                    if (entry == null) {
+                        skipped++
+                        continue
+                    }
+                    if (entry.category == c.category) continue
+                    viewModel.repo.updateEntry(entry.copy(
+                        category = c.category,
+                        source = FieldValueEntry.SOURCE_AI
+                    ))
+                    appliedCategories++
+                }
+                viewModel.repo.recountUsage(fd.id)
+                viewModel.notifyAiApplied(appliedMerges, appliedCategories, skipped)
+            } catch (e: Exception) {
+                // 부분 적용 중 실패 — 이미 적용된 건수와 함께 실패를 알린다 (앱 크래시 금지)
+                android.util.Log.e("AiOrganizeSheet", "apply failed", e)
+                viewModel.notifyAiApplyFailed(appliedMerges, appliedCategories, e.message)
             }
-            // 카테고리는 병합 반영 후 최신 엔트리 기준으로 적용 (source=AI 마킹)
-            val fresh = viewModel.repo.entriesForField(fd.id).associateBy { it.value }
-            for (c in categories) {
-                val entry = fresh[c.value] ?: continue
-                if (entry.category == c.category) continue
-                viewModel.repo.updateEntry(entry.copy(
-                    category = c.category,
-                    source = FieldValueEntry.SOURCE_AI
-                ))
-            }
-            viewModel.repo.recountUsage(fd.id)
-            viewModel.notifyAiApplied(merges.size, categories.size)
         }
     }
 }
