@@ -69,7 +69,9 @@ class FieldManageFragment : Fragment() {
             val json = bundle.getString(FieldEditDialog.RESULT_FIELD_JSON) ?: return@setFragmentResultListener
             val savedField = Gson().fromJson(json, FieldDefinition::class.java)
             if (savedField.id == 0L) {
-                viewModel.insertField(savedField)
+                // 생성 다이얼로그에서 사전 등록한 값들을 저장 직후 라이브러리에 등재
+                val initialValues = bundle.getString(FieldEditDialog.RESULT_INITIAL_VALUES).orEmpty()
+                viewModel.insertField(savedField, initialValues)
             } else {
                 viewModel.updateField(savedField)
             }
@@ -87,6 +89,13 @@ class FieldManageFragment : Fragment() {
                     showImportFieldsDialog()
                     true
                 }
+                R.id.action_field_library -> {
+                    findNavController().navigate(
+                        R.id.fieldLibraryHomeFragment,
+                        androidx.core.os.bundleOf("universeId" to universeId)
+                    )
+                    true
+                }
                 else -> false
             }
         }
@@ -101,7 +110,7 @@ class FieldManageFragment : Fragment() {
                 showFieldEditDialog(field)
             },
             onLongClick = { field ->
-                showDeleteDialog(field)
+                showFieldOptionsDialog(field)
             }
         )
         binding.fieldRecyclerView.layoutManager = LinearLayoutManager(requireContext())
@@ -184,6 +193,35 @@ class FieldManageFragment : Fragment() {
     private fun showFieldEditDialog(field: FieldDefinition?) {
         val dialog = FieldEditDialog.newInstance(universeId, field, viewModel.currentEntityType())
         dialog.show(childFragmentManager, "FieldEditDialog")
+    }
+
+    /** 길게 누름 — 필드별 옵션: 데이터 라이브러리 드릴다운 / 삭제 (미지원 타입은 사유 비활성) */
+    private fun showFieldOptionsDialog(field: FieldDefinition) {
+        val supported = com.novelcharacter.app.util.FieldValueTokenizer.supportsLibrary(field)
+        val options = mutableListOf(getString(R.string.field_library_title), getString(R.string.delete))
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(field.name)
+            .setItems(options.toTypedArray()) { _, which ->
+                when (which) {
+                    0 -> {
+                        if (supported) {
+                            findNavController().navigate(
+                                R.id.fieldValueListFragment,
+                                androidx.core.os.bundleOf("fieldDefinitionId" to field.id)
+                            )
+                        } else {
+                            val reason = when (field.type) {
+                                "CALCULATED" -> getString(R.string.field_library_unsupported_calculated)
+                                "NUMBER" -> getString(R.string.field_library_unsupported_number)
+                                else -> getString(R.string.field_library_unsupported_structured)
+                            }
+                            android.widget.Toast.makeText(requireContext(), reason, android.widget.Toast.LENGTH_LONG).show()
+                        }
+                    }
+                    1 -> showDeleteDialog(field)
+                }
+            }
+            .show()
     }
 
     private fun showDeleteDialog(field: FieldDefinition) {

@@ -175,14 +175,17 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     private val _tableInvalidation = MutableLiveData<Unit>()
 
     private val invalidationObserver = object : InvalidationTracker.Observer(
-        "character_field_values", "character_tags", "field_definitions", "novels", "universes"
+        "character_field_values", "character_tags", "field_definitions", "novels", "universes",
+        "field_value_entries"
     ) {
         // Room 쿼리 실행자(오프메인)에서 호출된다. 에폭 bump는 원자적이라 즉시 안전, 재계산은 postValue로 메인 위임.
         override fun onInvalidated(tables: Set<String>) {
             val fieldDefChanged = "field_definitions" in tables
             // field_definitions 삭제는 FK 캐스케이드로 character_field_values를 지우지만 recursive_triggers=OFF라
             // 자식 테이블 무효화 트리거가 안 울린다 → 필드필터·정렬키 캐시가 stale되지 않게 fieldValueEpoch도 함께 올린다.
-            if ("character_field_values" in tables || fieldDefChanged) fieldValueEpoch.incrementAndGet()
+            // field_value_entries: 별칭 추가/병합은 값 테이블 변경 없이 exact 필터 결과를 바꾼다 (검토 A15).
+            if ("character_field_values" in tables || fieldDefChanged ||
+                "field_value_entries" in tables) fieldValueEpoch.incrementAndGet()
             if ("character_tags" in tables) tagEpoch.incrementAndGet()
             if (fieldDefChanged || "novels" in tables || "universes" in tables) structEpoch.incrementAndGet()
             _tableInvalidation.postValue(Unit)  // listTrigger → recompute()의 120ms 디바운스가 버스트를 흡수
@@ -195,7 +198,9 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
 
     // 필드 필터 → 매칭 캐릭터 id 집합. (필터 리스트, character_field_values 에폭) 동일 시 재조회 없이 재사용.
     private val fieldFilterMemo = EpochMemo<List<FieldFilter>, Set<Long>> { filters ->
-        FieldFilterHelper.applyFieldFilters(app.database.characterFieldValueDao(), filters)
+        FieldFilterHelper.applyFieldFilters(
+            app.database.characterFieldValueDao(), app.database.fieldDefinitionDao(),
+            app.database.fieldValueEntryDao(), filters)
     }
     // 태그 필터 → 매칭 캐릭터 id 집합(OR). 타깃 쿼리 사용(전체 스캔 제거). (태그 집합, character_tags 에폭) 키.
     private val tagFilterMemo = EpochMemo<Set<String>, Set<Long>> { tags ->
@@ -558,10 +563,20 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     suspend fun getFilterableFields(universeId: Long): List<FieldDefinition> =
         universeRepository.getFieldsByUniverseList(universeId).filter { it.type != "CALCULATED" }
 
-    /** 필터 UI용 특정 필드의 유니크 값 목록. */
-    suspend fun getFieldValues(fieldDefId: Long): List<String> =
-        app.database.characterFieldValueDao().getValuesByFieldDef(fieldDefId)
-            .filter { it.value.isNotBlank() }.map { it.value }.distinct().sorted()
+    /** 필터 UI용 특정 필드의 유니크 값 목록 — 토큰화·trim·별칭 접기 (GlobalSearch와 동일 규칙, 검토 A16). */
+    suspend fun getFieldValues(fieldDefId: Long): List<String> {
+        val fd = app.database.fieldDefinitionDao().getFieldById(fieldDefId)
+        val rows = app.database.characterFieldValueDao().getValuesByFieldDef(fieldDefId)
+        if (fd == null) {
+            return rows.filter { it.value.isNotBlank() }.map { it.value.trim() }.distinct().sorted()
+        }
+        val resolver = com.novelcharacter.app.util.FieldValueResolver(
+            app.database.fieldValueEntryDao().getByField(fieldDefId))
+        return rows.flatMap { com.novelcharacter.app.util.FieldValueTokenizer.tokenize(fd, it.value) }
+            .map { resolver.canonical(it) }
+            .distinct()
+            .sorted()
+    }
 
     // ===== 프리셋 =====
 
@@ -771,6 +786,44 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     /** 세계관 전체 필드값 일괄 조회 (자동완성 배치 로드용) */
     suspend fun getAllFieldValuesForUniverse(universeId: Long): List<CharacterFieldValue> =
         characterRepository.getAllFieldValuesForUniverse(universeId)
+
+    /** restricted 입력 모드 위반 검출 — (필드, 위반 토큰) 목록 (검토 A8: 코디네이터 공통 가드용) */
+    suspend fun findRestrictedViolations(
+        values: List<CharacterFieldValue>
+    ): List<Pair<FieldDefinition, List<String>>> {
+        val result = mutableListOf<Pair<FieldDefinition, List<String>>>()
+        for (v in values) {
+            if (v.value.isBlank()) continue
+            val fd = app.database.fieldDefinitionDao().getFieldById(v.fieldDefinitionId) ?: continue
+            if (!com.novelcharacter.app.util.FieldValueTokenizer.supportsLibrary(fd)) continue
+            if (!com.novelcharacter.app.data.model.FieldValueLibraryConfig.fromConfig(fd.config).isRestricted) continue
+            val entries = app.database.fieldValueEntryDao().getByField(fd.id)
+            val violations = com.novelcharacter.app.data.repository.FieldValueLibraryRepository
+                .validateRestricted(fd, v.value, entries)
+            if (violations.isNotEmpty()) result.add(fd to violations)
+        }
+        return result
+    }
+
+    /** restricted 위반 토큰을 라이브러리에 수동 등재 — '추가하고 저장' 교정 경로 */
+    suspend fun addRestrictedValuesToLibrary(violations: List<Pair<FieldDefinition, List<String>>>) {
+        for ((fd, tokens) in violations) {
+            for (token in tokens) {
+                app.fieldValueLibraryRepository.addEntry(fd.id, token)
+            }
+        }
+    }
+
+    /** restricted 필드의 허용 값 미리보기 (다이얼로그 안내용) */
+    suspend fun allowedValuesPreview(fieldDefId: Long, limit: Int = 10): List<String> =
+        app.database.fieldValueEntryDao().getByField(fieldDefId).map { it.value }.take(limit)
+
+    /** 값 라이브러리 제안 배치 조회 — 필드별 비숨김 엔트리 (usageCount 내림차순) */
+    suspend fun getLibrarySuggestionsForUniverse(
+        universeId: Long,
+        entityType: String = com.novelcharacter.app.data.model.FieldDefinition.ENTITY_CHARACTER
+    ): Map<Long, List<com.novelcharacter.app.data.model.FieldValueEntry>> =
+        app.fieldValueLibraryRepository.suggestionsForUniverse(universeId, entityType)
 
     suspend fun saveAllFieldValues(characterId: Long, values: List<CharacterFieldValue>) {
         characterRepository.saveAllFieldValues(characterId, values)
@@ -1270,14 +1323,16 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         eventFieldValues: List<com.novelcharacter.app.data.model.EventFieldValue>? = null
     ) = viewModelScope.launch {
         try {
-            db.withTransaction {
+            val newEventId = db.withTransaction {
                 val eventId = timelineRepository.insertEvent(event)
                 timelineRepository.updateEventCharacters(eventId, characterIds)
                 timelineRepository.updateEventNovels(eventId, novelIds)
                 if (eventFieldValues != null) {
                     db.eventFieldValueDao().replaceAllByEvent(eventId, eventFieldValues.map { it.copy(eventId = eventId) })
                 }
+                eventId
             }
+            if (eventFieldValues != null) app.fieldValueLibraryRepository.harvestForEvent(newEventId)
             syncEventTypeToStateChanges(event, characterIds)
         } catch (e: Exception) {
             Log.e("CharacterViewModel", "Failed to insert event", e)
@@ -1299,6 +1354,7 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
                     db.eventFieldValueDao().replaceAllByEvent(event.id, eventFieldValues.map { it.copy(eventId = event.id) })
                 }
             }
+            if (eventFieldValues != null) app.fieldValueLibraryRepository.harvestForEvent(event.id)
             syncEventTypeToStateChanges(event, characterIds)
         } catch (e: Exception) {
             Log.e("CharacterViewModel", "Failed to update event", e)
@@ -1357,6 +1413,7 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
                     }
                 }
             }
+            if (eventFieldValues != null) app.fieldValueLibraryRepository.harvestForEvent(event.id)
             syncEventTypeToStateChanges(event, characterIds)
         } catch (e: Exception) {
             Log.e("CharacterViewModel", "Failed to shift events", e)

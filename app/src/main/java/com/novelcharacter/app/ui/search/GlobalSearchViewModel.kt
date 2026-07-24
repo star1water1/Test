@@ -59,15 +59,17 @@ class GlobalSearchViewModel(application: Application) : AndroidViewModel(applica
     private val fieldValueEpoch = AtomicInteger(0)
     private val _fieldValueInvalidation = MutableLiveData<Unit>()
     private val fieldValueObserver =
-        object : InvalidationTracker.Observer("character_field_values", "field_definitions") {
+        object : InvalidationTracker.Observer("character_field_values", "field_definitions", "field_value_entries") {
             override fun onInvalidated(tables: Set<String>) {
                 fieldValueEpoch.incrementAndGet()
                 _fieldValueInvalidation.postValue(Unit)  // 오프메인 → postValue
             }
         }
     // (필터, 에폭) 캐시 — 검색어/정렬만 바뀌면 필드값 재조회 없음(캐릭터 탭과 동일 결함 해소).
+    // field_value_entries도 관측: 별칭 추가/병합은 값 테이블을 안 건드려도 exact 매칭 결과를 바꾼다.
     private val fieldFilterMemo = EpochMemo<List<FieldFilter>, Set<Long>> { filters ->
-        FieldFilterHelper.applyFieldFilters(db.characterFieldValueDao(), filters)
+        FieldFilterHelper.applyFieldFilters(
+            db.characterFieldValueDao(), db.fieldDefinitionDao(), db.fieldValueEntryDao(), filters)
     }
 
     init {
@@ -282,11 +284,20 @@ class GlobalSearchViewModel(application: Application) : AndroidViewModel(applica
         prefs.edit().putString("field_filters_json", FieldFilterHelper.filtersToJson(filters)).apply()
     }
 
-    /** 특정 필드의 유니크 값 목록 조회 (필터 UI용) */
+    /** 특정 필드의 유니크 값 목록 조회 (필터 UI용).
+     *  라이브러리 규칙으로 토큰화·trim·별칭 접기 — "서울"/"서울 "이 별개 칩이 되지 않고,
+     *  콤마 다중값은 토큰 단위 칩이 되며, 별칭은 canonical 칩 하나로 접힌다 (검토 A16).
+     *  저장값 기준이라 라이브러리에서 정리된 값도 사용 중이면 반드시 칩으로 남는다 (원칙 04). */
     suspend fun getFieldValues(fieldDefId: Long): List<String> {
-        return db.characterFieldValueDao().getValuesByFieldDef(fieldDefId)
-            .filter { it.value.isNotBlank() }
-            .map { it.value }
+        val fd = db.fieldDefinitionDao().getFieldById(fieldDefId)
+        val rows = db.characterFieldValueDao().getValuesByFieldDef(fieldDefId)
+        if (fd == null) {
+            return rows.filter { it.value.isNotBlank() }.map { it.value.trim() }.distinct().sorted()
+        }
+        val resolver = com.novelcharacter.app.util.FieldValueResolver(
+            db.fieldValueEntryDao().getByField(fieldDefId))
+        return rows.flatMap { com.novelcharacter.app.util.FieldValueTokenizer.tokenize(fd, it.value) }
+            .map { resolver.canonical(it) }
             .distinct()
             .sorted()
     }

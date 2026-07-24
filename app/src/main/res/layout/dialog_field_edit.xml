@@ -588,59 +588,59 @@
                     android:layout_height="wrap_content"
                     android:text="@string/label_add_analysis" />
 
-                <!-- 값 라벨 매핑 -->
+                <!-- 값 데이터 라이브러리 — 표시 라벨·별칭·카테고리는 라이브러리에서 관리 -->
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="@string/label_value_labels"
-                    android:textAppearance="@style/TextAppearance.App.Caption"
-                    android:textColor="@color/text_secondary"
-                    android:layout_marginTop="8dp" />
-
-                <LinearLayout
-                    android:id="@+id/valueLabelContainer"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:layout_marginTop="4dp" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnAddValueLabel"
-                    style="@style/Widget.App.Button.Tonal"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/label_add_value_label" />
-
-                <!-- 값 카테고리 매핑 -->
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/label_value_categories"
+                    android:text="@string/field_library_title"
                     android:textAppearance="@style/TextAppearance.App.Caption"
                     android:textColor="@color/text_secondary"
                     android:layout_marginTop="8dp" />
 
                 <TextView
+                    android:id="@+id/fieldLibrarySummary"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="@string/label_value_categories_desc"
                     android:textAppearance="@style/TextAppearance.App.LabelSmall"
-                    android:textColor="@color/text_secondary"
-                    android:layout_marginBottom="4dp" />
-
-                <LinearLayout
-                    android:id="@+id/valueCategoryContainer"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:layout_marginTop="4dp" />
+                    android:textColor="@color/text_secondary" />
 
                 <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnAddValueCategory"
+                    android:id="@+id/btnOpenFieldLibrary"
                     style="@style/Widget.App.Button.Tonal"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="@string/label_add_category_mapping" />
+                    android:visibility="gone"
+                    android:text="@string/field_library_open" />
+
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/initialValuesLayout"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:visibility="gone"
+                    android:hint="@string/field_library_initial_values_hint">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/editInitialValues"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="text" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <!-- 입력 모드 -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/field_library_menu_input_mode"
+                    android:textAppearance="@style/TextAppearance.App.Caption"
+                    android:textColor="@color/text_secondary"
+                    android:layout_marginTop="8dp" />
+
+                <Spinner
+                    android:id="@+id/spinnerInputMode"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp" />
 
                 <!-- 통계 그룹핑 기준 -->
                 <TextView

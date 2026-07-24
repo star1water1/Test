@@ -612,25 +612,8 @@ class DynamicFieldFormBuilder(
                     inputLayout.addView(editText)
                     container.addView(inputLayout)
                     fieldInputMap[field.id] = editText
-
-                    // 자동완성: 기존 값의 개별 항목을 제안
-                    val uId = currentUniverseId
-                    if (uId != null) {
-                        scopeGetter().launch {
-                            val existingValues = viewModel.getFieldValuesForUniverse(uId, field.id)
-                            val suggestions = existingValues
-                                .flatMap { it.split(",").map { v -> v.trim() } }
-                                .filter { it.isNotBlank() }.distinct().sorted()
-                            if (suggestions.isNotEmpty() && isAlive()) {
-                                val ctx = contextGetter() ?: return@launch
-                                editText.setAdapter(ArrayAdapter(
-                                    ctx,
-                                    android.R.layout.simple_dropdown_item_1line,
-                                    suggestions
-                                ))
-                            }
-                        }
-                    }
+                    // 자동완성은 폼 구성 후 배치 로드에서 일괄 장착 (라이브러리 제안 + 폴백)
+                    autoCompleteTargets.add(Triple(field.id, DisplayFormat.fromConfig(field.config), editText))
                 }
 
                 FieldType.CALCULATED -> {
@@ -674,17 +657,35 @@ class DynamicFieldFormBuilder(
             }
         }
 
-        // 자동완성 데이터 배치 로드: 필드마다 개별 쿼리(M회) 대신 세계관 전체 값을 1회 조회 후 필드별 분배
+        // 자동완성 데이터 배치 로드: 라이브러리 제안(정규값·별칭 매칭, usageCount 순) 우선.
+        // 엔트리가 없는 필드(시드 전·신규)는 기존 distinct 경로로 폴백해 제안이 끊기지 않는다.
         val uId = currentUniverseId
         if (uId != null && autoCompleteTargets.isNotEmpty()) {
+            val defsById = fieldDefinitions.associateBy { it.id }
             scopeGetter().launch {
+                val libraryByField = viewModel.getLibrarySuggestionsForUniverse(uId)
                 val valuesByField = viewModel.getAllFieldValuesForUniverse(uId)
                     .groupBy { it.fieldDefinitionId }
                 if (!isAlive()) return@launch
                 val ctx = contextGetter() ?: return@launch
                 for ((fieldId, format, editText) in autoCompleteTargets) {
+                    // 자유 입력 모드: 제안 끔 (필드별 자율성)
+                    val libConfig = defsById[fieldId]?.let {
+                        com.novelcharacter.app.data.model.FieldValueLibraryConfig.fromConfig(it.config)
+                    }
+                    if (libConfig?.isSuggestEnabled == false) continue
+
+                    val entries = libraryByField[fieldId].orEmpty()
+                    if (entries.isNotEmpty()) {
+                        editText.setAdapter(
+                            com.novelcharacter.app.ui.fieldlibrary.LibrarySuggestionAdapter(ctx, entries)
+                        )
+                        continue
+                    }
                     val existingValues = valuesByField[fieldId].orEmpty().map { it.value }
-                    val suggestions = if (format == DisplayFormat.COMMA_LIST || format == DisplayFormat.BULLET_LIST) {
+                    val suggestions = if (format == DisplayFormat.COMMA_LIST || format == DisplayFormat.BULLET_LIST ||
+                        defsById[fieldId]?.type == FieldType.MULTI_TEXT.name
+                    ) {
                         existingValues.flatMap { it.split(",").map { v -> v.trim() } }
                             .filter { it.isNotBlank() }.distinct().sorted()
                     } else {

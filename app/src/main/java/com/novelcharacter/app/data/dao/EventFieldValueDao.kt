@@ -16,8 +16,18 @@ interface EventFieldValueDao {
     @Query("SELECT * FROM event_field_values")
     suspend fun getAllValuesList(): List<EventFieldValue>
 
+    /** 필드별 전체 값 (값 라이브러리 usageCount 재계산·전파용) */
+    @Query("SELECT * FROM event_field_values WHERE fieldDefinitionId = :fieldDefId")
+    suspend fun getValuesByFieldDef(fieldDefId: Long): List<EventFieldValue>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(values: List<EventFieldValue>)
+
+    @androidx.room.Update
+    suspend fun update(value: EventFieldValue)
+
+    @androidx.room.Delete
+    suspend fun delete(value: EventFieldValue)
 
     @Query("DELETE FROM event_field_values WHERE eventId = :eventId")
     suspend fun deleteAllByEvent(eventId: Long)

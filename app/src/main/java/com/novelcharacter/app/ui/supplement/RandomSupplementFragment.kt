@@ -450,6 +450,13 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
                 val fields = characterViewModel.getFieldsByUniverseList(universeId)
                 val values = characterViewModel.getValuesByCharacterList(character.id)
                 if (_binding == null || displayedCharacter?.id != character.id) return@launch
+                // 값 라이브러리 표시 라벨 — 통계·칩과 표기 일치 (검토 A12)
+                fieldRenderer.valueResolvers = runCatching {
+                    (requireActivity().application as com.novelcharacter.app.NovelCharacterApp)
+                        .fieldValueLibraryRepository.resolversForFields(fields.map { it.id })
+                }.getOrDefault(emptyMap())
+                // 위 suspend 조회 중 뷰가 파괴됐을 수 있다 — binding 재확인 (NPE 방지)
+                if (_binding == null || displayedCharacter?.id != character.id) return@launch
                 fieldRenderer.displayDynamicFields(fields, values)
                 // 필드가 없으면 컨테이너를 접어 패널 하단의 빈 상단 마진을 없앤다
                 binding.dynamicFieldsContainer.visibility =

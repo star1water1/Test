@@ -87,13 +87,46 @@ class BatchFieldValueBottomSheet : BottomSheetDialogFragment() {
             val field = selectedField ?: return@setOnClickListener
             if (isClearMode) {
                 batchViewModel.clearFieldValue(field.id)
-            } else {
-                val value = getInputValue()
-                if (value.isNotBlank()) {
-                    batchViewModel.setFieldValue(field.id, value)
-                }
+                dismiss()
+                return@setOnClickListener
             }
-            dismiss()
+            val value = getInputValue()
+            if (value.isBlank()) {
+                dismiss()
+                return@setOnClickListener
+            }
+            confirmWithRestrictedGuard(field, value)
+        }
+    }
+
+    /** restricted 필드는 적용 전 검증 — 차단 대신 사유 + 교정 경로 (추가하고 적용 / 입력 수정) */
+    private fun confirmWithRestrictedGuard(field: FieldDefinition, value: String) {
+        val app = requireActivity().application as com.novelcharacter.app.NovelCharacterApp
+        viewLifecycleOwner.lifecycleScope.launch {
+            val isRestricted = com.novelcharacter.app.util.FieldValueTokenizer.supportsLibrary(field) &&
+                com.novelcharacter.app.data.model.FieldValueLibraryConfig.fromConfig(field.config).isRestricted
+            val violations = if (isRestricted) {
+                com.novelcharacter.app.data.repository.FieldValueLibraryRepository.validateRestricted(
+                    field, value, app.fieldValueLibraryRepository.entriesForField(field.id))
+            } else emptyList()
+            if (violations.isEmpty()) {
+                batchViewModel.setFieldValue(field.id, value)
+                dismiss()
+                return@launch
+            }
+            com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.field_library_restricted_violation_title)
+                .setMessage(getString(R.string.field_library_restricted_violation_line,
+                    field.name, violations.joinToString(", ")))
+                .setPositiveButton(R.string.field_library_restricted_add_and_save) { _, _ ->
+                    viewLifecycleOwner.lifecycleScope.launch {
+                        violations.forEach { app.fieldValueLibraryRepository.addEntry(field.id, it) }
+                        batchViewModel.setFieldValue(field.id, value)
+                        dismiss()
+                    }
+                }
+                .setNegativeButton(R.string.field_library_restricted_edit_input, null)
+                .show()
         }
     }
 
@@ -165,9 +198,27 @@ class BatchFieldValueBottomSheet : BottomSheetDialogFragment() {
                 binding.valueInput.inputType = InputType.TYPE_CLASS_TEXT
                 binding.valueInputLayout.hint = field.name
                 binding.btnConfirm.isEnabled = true
+                attachLibrarySuggestions(field)
             }
         }
         binding.btnConfirm.text = getString(R.string.batch_field_set_confirm, count, field.name)
+    }
+
+    /** 값 라이브러리 제안 장착 — 일괄 편집 TEXT 입력의 자동완성 공백 해소 (검토 §5.5) */
+    private fun attachLibrarySuggestions(field: FieldDefinition) {
+        binding.valueInput.setAdapter(null)
+        if (!com.novelcharacter.app.util.FieldValueTokenizer.supportsLibrary(field)) return
+        if (!com.novelcharacter.app.data.model.FieldValueLibraryConfig.fromConfig(field.config).isSuggestEnabled) return
+        viewLifecycleOwner.lifecycleScope.launch {
+            val entries = (requireActivity().application as com.novelcharacter.app.NovelCharacterApp)
+                .fieldValueLibraryRepository.entriesForField(field.id)
+            if (_binding == null || selectedField?.id != field.id) return@launch
+            if (entries.isNotEmpty()) {
+                binding.valueInput.threshold = 1
+                binding.valueInput.setAdapter(
+                    com.novelcharacter.app.ui.fieldlibrary.LibrarySuggestionAdapter(requireContext(), entries))
+            }
+        }
     }
 
     private fun getInputValue(): String {

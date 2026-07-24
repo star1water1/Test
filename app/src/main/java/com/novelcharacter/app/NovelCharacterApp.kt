@@ -18,6 +18,7 @@ import com.novelcharacter.app.data.repository.CharacterListPresetRepository
 import com.novelcharacter.app.data.repository.FactionRepository
 import com.novelcharacter.app.data.repository.TrashRepository
 import com.novelcharacter.app.data.repository.OperationLogRepository
+import com.novelcharacter.app.data.repository.FieldValueLibraryRepository
 import com.novelcharacter.app.backup.AutoBackupWorker
 import com.novelcharacter.app.backup.BackupEncryptor
 import com.novelcharacter.app.backup.BackupStatusStore
@@ -60,6 +61,7 @@ class NovelCharacterApp : Application() {
     val factionRepository by lazy { FactionRepository(database) }
     val trashRepository by lazy { TrashRepository(database) }
     val operationLogRepository by lazy { OperationLogRepository(database) }
+    val fieldValueLibraryRepository by lazy { FieldValueLibraryRepository(database) }
     val recentActivityDao by lazy { database.recentActivityDao() }
     val backupStatusStore by lazy { BackupStatusStore(this) }
 
@@ -95,6 +97,50 @@ class NovelCharacterApp : Application() {
         }
         // 생존여부↔사망연도 연동 데이터 마이그레이션 (1회)
         migrateAliveSyncIfNeeded()
+        // 필드 데이터 라이브러리 백필 시드 (1회) + 중단된 임포트 후 수확 재시도
+        seedFieldValueLibraryIfNeeded()
+    }
+
+    /**
+     * 필드 데이터 라이브러리 초기 백필:
+     * 1) 구 FieldStatsConfig.valueLabels/valueCategories → 엔트리 이관 (필드 단위 트랜잭션,
+     *    빈 칸만 채우는 병합 — 수확 훅과 경합해도 라벨이 유실되지 않는다)
+     * 2) 기존 캐릭터·사건 값 + 상태변화 이력 전체 수확
+     * 3) 전 필드 usageCount 재계산 (diff-only)
+     * 성공해야만 플래그를 세워, 중단 시 다음 실행에 재시도된다 (멱등: 이관은 병합 UPDATE,
+     * 수확은 INSERT OR IGNORE). 별도로 harvest_pending 플래그는 엑셀 임포트가 커밋 후
+     * 수확 전에 죽었을 때의 재시도 신호다.
+     */
+    private fun seedFieldValueLibraryIfNeeded() {
+        val prefs = getSharedPreferences("app_migrations", MODE_PRIVATE)
+        val seeded = prefs.getBoolean("field_library_seeded", false)
+        val harvestPending = prefs.getBoolean("field_library_harvest_pending", false)
+        if (seeded && !harvestPending) return
+
+        appScope.launch(Dispatchers.IO) {
+            try {
+                val repo = fieldValueLibraryRepository
+                if (!seeded) {
+                    var migrated = 0
+                    for (fd in database.fieldDefinitionDao().getAllFieldsAllTypes()) {
+                        migrated += repo.seedFromStatsConfig(fd)
+                    }
+                    android.util.Log.i("NovelCharacterApp", "Field library seed: $migrated entries migrated from valueLabels/valueCategories")
+                }
+                // throwing 변형 사용 — 실패가 삼켜진 채 플래그가 기록되면 재시도 계약이 깨진다
+                repo.harvestAllOrThrow()
+                for (fd in database.fieldDefinitionDao().getAllFieldsAllTypes()) {
+                    repo.recountUsageOrThrow(fd.id)
+                }
+                prefs.edit()
+                    .putBoolean("field_library_seeded", true)
+                    .putBoolean("field_library_harvest_pending", false)
+                    .apply()
+                android.util.Log.i("NovelCharacterApp", "Field library seed/harvest completed")
+            } catch (e: Exception) {
+                android.util.Log.e("NovelCharacterApp", "Field library seed failed — will retry on next launch", e)
+            }
+        }
     }
 
     private fun migrateAliveSyncIfNeeded() {

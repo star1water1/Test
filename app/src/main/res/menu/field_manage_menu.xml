@@ -7,4 +7,9 @@
         android:title="@string/import_fields_from_other"
         app:showAsAction="never" />
 
+    <item
+        android:id="@+id/action_field_library"
+        android:title="@string/field_library_title"
+        app:showAsAction="never" />
+
 </menu>

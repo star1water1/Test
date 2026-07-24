@@ -84,7 +84,8 @@ val RESERVED_SHEET_NAMES = setOf(
     userPresetTemplateSpec().sheetName,
     searchPresetSpec().sheetName,
     appSettingsSpec().sheetName,
-    imageMetaSpec().sheetName
+    imageMetaSpec().sheetName,
+    fieldValueLibrarySpec().sheetName
 )
 
 /**
@@ -162,6 +163,25 @@ fun fieldDefinitionSpec(universeNames: List<String>) = SheetSpec(
         ColumnSpec("순서", width = 3000),
         ColumnSpec("필수여부", dropdownOptions = listOf("Y", "N"), width = 4000),
         ColumnSpec("세계관코드", readOnly = true, width = 4000)
+    )
+)
+
+/** 필드 데이터 라이브러리 — 값 카탈로그 왕복 (별칭·표시라벨·카테고리·설명이 외부 편집 가능) */
+fun fieldValueLibrarySpec(universeNames: List<String> = emptyList()) = SheetSpec(
+    sheetName = "필드 데이터",
+    columns = listOf(
+        ColumnSpec("세계관", required = true, dropdownOptions = universeNames.takeIf { it.isNotEmpty() }, width = 5000),
+        ColumnSpec("필드키", required = true, width = 5000),
+        ColumnSpec("필드명", readOnly = true, width = 5000),
+        ColumnSpec("대상", dropdownOptions = listOf("캐릭터", "사건"), width = 3500),
+        ColumnSpec("값", required = true, width = 6000),
+        ColumnSpec("표시라벨", width = 5000),
+        ColumnSpec("별칭(콤마구분)", width = 8000),
+        ColumnSpec("카테고리", width = 5000),
+        ColumnSpec("설명", width = 8000),
+        ColumnSpec("숨김", dropdownOptions = listOf("Y", "N"), width = 3000),
+        ColumnSpec("사용횟수", readOnly = true, width = 3500),
+        ColumnSpec("코드", readOnly = true, width = 4000)
     )
 )
 

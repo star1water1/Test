@@ -47,6 +47,10 @@ interface FieldDefinitionDao {
     @Query("SELECT * FROM field_definitions WHERE entityType = :entityType ORDER BY universeId ASC, displayOrder ASC")
     suspend fun getAllFieldsList(entityType: String = FieldDefinition.ENTITY_CHARACTER): List<FieldDefinition>
 
+    /** 캐릭터·사건 구분 없이 전체 필드 (값 라이브러리 수확/시드용) */
+    @Query("SELECT * FROM field_definitions ORDER BY universeId ASC, entityType ASC, displayOrder ASC")
+    suspend fun getAllFieldsAllTypes(): List<FieldDefinition>
+
     @Query("DELETE FROM field_definitions WHERE universeId = :universeId")
     suspend fun deleteAllByUniverse(universeId: Long)
 

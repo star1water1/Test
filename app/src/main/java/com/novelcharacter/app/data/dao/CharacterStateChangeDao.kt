@@ -69,6 +69,16 @@ interface CharacterStateChangeDao {
     """)
     suspend fun migrateFieldKeyForUniverse(universeId: Long, oldKey: String, newKey: String): Int
 
+    /** 값 라이브러리 rename/merge 전파용 — 해당 세계관 캐릭터들의 특정 필드 이력.
+     *  newValue 치환은 SQL이 아니라 토크나이저(다중값 콤마 결합)로 행 단위 처리한다. */
+    @Query("""
+        SELECT * FROM character_state_changes
+        WHERE fieldKey = :fieldKey AND characterId IN (
+            SELECT c.id FROM characters c JOIN novels n ON c.novelId = n.id WHERE n.universeId = :universeId
+        )
+    """)
+    suspend fun getChangesByFieldKeyForUniverse(universeId: Long, fieldKey: String): List<CharacterStateChange>
+
     @Query("SELECT * FROM character_state_changes WHERE fieldKey = :fieldKey AND month = :month AND day = :day")
     suspend fun getChangesByFieldAndDate(fieldKey: String, month: Int, day: Int): List<CharacterStateChange>
 

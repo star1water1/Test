@@ -1015,6 +1015,8 @@ class ExcelImporter(context: Context) {
         if (frTotal > 0) parts.add("세력 관계 ${frTotal}건")
         val imTotal = result.newImageMeta + result.updatedImageMeta
         if (imTotal > 0) parts.add("이미지 태그·링크 ${imTotal}건")
+        val fvTotal = result.newFieldValueEntries + result.updatedFieldValueEntries
+        if (fvTotal > 0) parts.add("필드 데이터 ${fvTotal}건")
         if (result.restoredSettings > 0) parts.add(r.getString(com.novelcharacter.app.R.string.import_result_settings, result.restoredSettings))
         if (result.skippedRows > 0)
             parts.add(r.getString(com.novelcharacter.app.R.string.import_result_skipped, result.skippedRows))

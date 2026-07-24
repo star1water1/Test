@@ -51,6 +51,16 @@ class DynamicFieldRenderer(
     enum class SectionStyle { CARD, FLAT }
     var sectionStyle: SectionStyle = SectionStyle.CARD
 
+    /**
+     * 값 라이브러리 해석기 (fieldDefinitionId → resolver) — 호스트가 렌더 전에 주입.
+     * 표시 라벨이 통계·칩·자동완성과 카드에서 동일하게 읽히도록 한다 (검토 A12).
+     * 미주입/엔트리 없음이면 원시값 그대로 (폴백).
+     */
+    var valueResolvers: Map<Long, com.novelcharacter.app.util.FieldValueResolver> = emptyMap()
+
+    private fun displayToken(field: FieldDefinition, token: String): String =
+        valueResolvers[field.id]?.display(token) ?: token
+
     fun displayDynamicFields(
         fields: List<FieldDefinition>,
         values: List<CharacterFieldValue>,
@@ -120,7 +130,7 @@ class DynamicFieldRenderer(
                         }
                         for (item in items) {
                             chipGroup.addView(Chip(context).apply {
-                                text = item
+                                text = displayToken(field, item)
                                 isClickable = false
                                 isCheckable = false
                             })
@@ -128,7 +138,7 @@ class DynamicFieldRenderer(
                         cardContent.addView(chipGroup)
                     } else {
                         // BULLET_LIST
-                        val bulletText = items.joinToString("\n") { "• $it" }
+                        val bulletText = items.joinToString("\n") { "• ${displayToken(field, it)}" }
                         val bulletView = TextView(context).apply {
                             text = bulletText
                             textSize = 14f
@@ -186,7 +196,9 @@ class DynamicFieldRenderer(
                         }
                         percentileSuffix = "" // CALCULATED은 위에서 통합 완료
                     } else {
-                        displayValue = "${field.name}: ${fieldValue.ifEmpty { "-" }}"
+                        displayValue = "${field.name}: ${
+                            if (fieldValue.isEmpty()) "-" else displayToken(field, fieldValue.trim())
+                        }"
                         // 백분위 표기 추가 (NUMBER, GRADE 등)
                         percentileSuffix = percentileData[field.id]?.let { info ->
                             val parts = mutableListOf<String>()
