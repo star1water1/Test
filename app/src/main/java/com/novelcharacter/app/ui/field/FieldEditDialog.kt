@@ -41,6 +41,9 @@ class FieldEditDialog : DialogFragment() {
 
     /** 저장 콜백. false를 반환하면 저장이 거부된 것으로 간주하고 다이얼로그를 닫지 않는다. */
     private var onSave: ((FieldDefinition) -> Boolean)? = null
+
+    /** 생성 모드에서 입력된 값 사전 등록분 (콤마 구분) — 결과 번들로 전달 */
+    private var stagedInitialValues: String = ""
     private var universeId: Long = 0
     private var existingField: FieldDefinition? = null
 
@@ -57,27 +60,12 @@ class FieldEditDialog : DialogFragment() {
     private val analysisRows = mutableListOf<AnalysisRow>()
 
     // 동적 값 라벨 관리
-    private data class ValueLabelRow(
-        val container: View,
-        val editKey: EditText,
-        val editValue: EditText
-    )
-    private val valueLabelRows = mutableListOf<ValueLabelRow>()
-
     // 동적 구간 관리
     private data class BinRangeRow(
         val container: View,
         val editRange: EditText
     )
     private val binRangeRows = mutableListOf<BinRangeRow>()
-
-    // 동적 카테고리 매핑 관리
-    private data class ValueCategoryRow(
-        val container: View,
-        val editKey: EditText,
-        val editCategory: EditText
-    )
-    private val valueCategoryRows = mutableListOf<ValueCategoryRow>()
 
     // 구조화 입력 파트 관리
     private data class StructuredPartRow(
@@ -350,9 +338,6 @@ class FieldEditDialog : DialogFragment() {
             val visibility = if (isChecked) View.VISIBLE else View.GONE
             binding.analysisListContainer.visibility = visibility
             binding.btnAddAnalysis.visibility = visibility
-            binding.valueLabelContainer.visibility = visibility
-            binding.btnAddValueLabel.visibility = visibility
-            // valueLabelContainer 위의 라벨 TextView도 토글
         }
 
         // 분석 추가 버튼
@@ -360,10 +345,8 @@ class FieldEditDialog : DialogFragment() {
             addAnalysisRow(binding.analysisListContainer, density)
         }
 
-        // 값 라벨 추가 버튼
-        binding.btnAddValueLabel.setOnClickListener {
-            addValueLabelRow(binding.valueLabelContainer, density)
-        }
+        // 값 데이터 라이브러리 섹션 — 표시 라벨·별칭·카테고리 편집은 라이브러리로 이관됨
+        setupFieldLibrarySection(binding)
 
         // 구간 모드 스피너
         val binModes = listOf(getString(R.string.label_binning_auto), getString(R.string.label_binning_custom))
@@ -386,11 +369,6 @@ class FieldEditDialog : DialogFragment() {
 
         // 기본 분석 1개 추가
         addAnalysisRow(binding.analysisListContainer, density)
-
-        // 카테고리 매핑 추가 버튼
-        binding.btnAddValueCategory.setOnClickListener {
-            addValueCategoryRow(binding.valueCategoryContainer, density)
-        }
 
         // statsGroupBy 스피너
         val groupByLabels = listOf(
@@ -474,50 +452,59 @@ class FieldEditDialog : DialogFragment() {
         analysisRows.add(AnalysisRow(row, spinnerType, spinnerChart, editLimit))
     }
 
-    private fun addValueLabelRow(container: LinearLayout, density: Float) {
-        val ctx = requireContext()
-        val row = LinearLayout(ctx).apply {
-            orientation = LinearLayout.HORIZONTAL
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = (4 * density).toInt() }
-        }
+    /**
+     * 값 데이터 라이브러리 섹션 (검토 A11):
+     * - 편집 모드: 라이브러리 값 수 요약 + [열기] (표시 라벨·별칭·카테고리는 라이브러리가 단일 소스)
+     * - 생성 모드: 값 사전 등록 입력 (콤마 구분) — 저장 시 라이브러리에 등재되어
+     *   restricted 모드도 다이얼로그 한 번으로 완결된다 (원칙 04)
+     * - 입력 모드 스피너: 제안(기본)/자유/제한 — config "valueLibrary"에 저장
+     */
+    private fun setupFieldLibrarySection(binding: DialogFieldEditBinding) {
+        val modeLabels = listOf(
+            getString(R.string.field_library_input_mode_suggest),
+            getString(R.string.field_library_input_mode_free),
+            getString(R.string.field_library_input_mode_restricted)
+        )
+        binding.spinnerInputMode.adapter = ArrayAdapter(
+            requireContext(), android.R.layout.simple_spinner_item, modeLabels
+        ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
 
-        val editKey = EditText(ctx).apply {
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-            hint = getString(R.string.hint_value_label_key)
-            textSize = 13f
-        }
-
-        val arrow = TextView(ctx).apply {
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-            text = " → "
-            textSize = 14f
-        }
-
-        val editValue = EditText(ctx).apply {
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-            hint = getString(R.string.hint_value_label_value)
-            textSize = 13f
-        }
-
-        val btnRemove = ImageButton(ctx).apply {
-            layoutParams = LinearLayout.LayoutParams((36 * density).toInt(), (36 * density).toInt())
-            setImageResource(R.drawable.ic_delete)
-            setBackgroundResource(android.R.color.transparent)
-            setOnClickListener {
-                container.removeView(row)
-                valueLabelRows.removeAll { it.container == row }
+        val existing = existingField
+        if (existing != null) {
+            binding.btnOpenFieldLibrary.visibility =
+                if (com.novelcharacter.app.util.FieldValueTokenizer.supportsLibrary(existing)) View.VISIBLE else View.GONE
+            binding.initialValuesLayout.visibility = View.GONE
+            binding.btnOpenFieldLibrary.setOnClickListener {
+                val nav = runCatching {
+                    androidx.navigation.fragment.NavHostFragment.findNavController(requireParentFragment())
+                }.getOrNull()
+                dismissAllowingStateLoss()
+                nav?.navigate(
+                    R.id.fieldValueListFragment,
+                    bundleOf("fieldDefinitionId" to existing.id)
+                )
             }
+            lifecycleScope.launch {
+                val count = runCatching {
+                    (requireActivity().application as com.novelcharacter.app.NovelCharacterApp)
+                        .database.fieldValueEntryDao().getByField(existing.id).size
+                }.getOrDefault(0)
+                if (isAdded) {
+                    binding.fieldLibrarySummary.text =
+                        getString(R.string.field_library_summary_edit, count)
+                }
+            }
+        } else {
+            binding.fieldLibrarySummary.text = getString(R.string.field_library_summary_create)
+            binding.initialValuesLayout.visibility = View.VISIBLE
+            binding.btnOpenFieldLibrary.visibility = View.GONE
         }
 
-        row.addView(editKey)
-        row.addView(arrow)
-        row.addView(editValue)
-        row.addView(btnRemove)
-        container.addView(row)
-        valueLabelRows.add(ValueLabelRow(row, editKey, editValue))
+        val mode = com.novelcharacter.app.data.model.FieldValueLibraryConfig
+            .fromConfig(existing?.config ?: "{}").inputMode
+        binding.spinnerInputMode.setSelection(
+            com.novelcharacter.app.data.model.FieldValueLibraryConfig.MODES.indexOf(mode).coerceAtLeast(0)
+        )
     }
 
     private fun addBinRangeRow(container: LinearLayout, density: Float) {
@@ -550,54 +537,6 @@ class FieldEditDialog : DialogFragment() {
         row.addView(btnRemove)
         container.addView(row)
         binRangeRows.add(BinRangeRow(row, editRange))
-    }
-
-    private fun addValueCategoryRow(container: LinearLayout, density: Float, key: String = "", category: String = "") {
-        val ctx = requireContext()
-        val row = LinearLayout(ctx).apply {
-            orientation = LinearLayout.HORIZONTAL
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = (4 * density).toInt() }
-        }
-
-        val editKey = EditText(ctx).apply {
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-            hint = getString(R.string.hint_category_value)
-            textSize = 13f
-            if (key.isNotEmpty()) setText(key)
-        }
-
-        val arrow = TextView(ctx).apply {
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-            text = " → "
-            textSize = 14f
-        }
-
-        val editCategory = EditText(ctx).apply {
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-            hint = getString(R.string.hint_category_name)
-            textSize = 13f
-            if (category.isNotEmpty()) setText(category)
-        }
-
-        val btnRemove = ImageButton(ctx).apply {
-            layoutParams = LinearLayout.LayoutParams((36 * density).toInt(), (36 * density).toInt())
-            setImageResource(R.drawable.ic_delete)
-            setBackgroundResource(android.R.color.transparent)
-            setOnClickListener {
-                container.removeView(row)
-                valueCategoryRows.removeAll { it.container == row }
-            }
-        }
-
-        row.addView(editKey)
-        row.addView(arrow)
-        row.addView(editCategory)
-        row.addView(btnRemove)
-        container.addView(row)
-        valueCategoryRows.add(ValueCategoryRow(row, editKey, editCategory))
     }
 
     private fun addStructuredPartRow(container: LinearLayout, density: Float,
@@ -1071,13 +1010,7 @@ class FieldEditDialog : DialogFragment() {
             row.editLimit.setText(entry.limit.toString())
         }
 
-        // 값 라벨 복원
-        for ((key, value) in statsConfig.valueLabels) {
-            addValueLabelRow(binding.valueLabelContainer, density)
-            val row = valueLabelRows.last()
-            row.editKey.setText(key)
-            row.editValue.setText(value)
-        }
+        // 값 라벨·카테고리는 값 데이터 라이브러리로 이관됨 (setupFieldLibrarySection이 요약 표시)
 
         // 구간 설정 복원
         val binning = statsConfig.binning
@@ -1089,11 +1022,6 @@ class FieldEditDialog : DialogFragment() {
                     binRangeRows.last().editRange.setText(range)
                 }
             }
-        }
-
-        // 카테고리 매핑 복원
-        for ((k, v) in statsConfig.valueCategories) {
-            addValueCategoryRow(binding.valueCategoryContainer, density, k, v)
         }
 
         // statsGroupBy 복원
@@ -1200,6 +1128,11 @@ class FieldEditDialog : DialogFragment() {
                     ?: FieldDefinition.ENTITY_CHARACTER
             )
         }
+
+        // 생성 모드의 값 사전 등록분 — 필드 저장 후 FieldManageFragment가 라이브러리에 등재
+        stagedInitialValues = if (existingField == null) {
+            binding.editInitialValues.text.toString()
+        } else ""
 
         // 수식 검증 — 차단하지 않고 경고 (아직 만들지 않은 필드를 나중에 만드는 작업 순서 존중)
         if (selectedType == FieldType.CALCULATED) {
@@ -1358,7 +1291,10 @@ class FieldEditDialog : DialogFragment() {
             listener(field)
         } else {
             if (isAdded) {
-                setFragmentResult(RESULT_KEY, bundleOf(RESULT_FIELD_JSON to Gson().toJson(field)))
+                setFragmentResult(RESULT_KEY, bundleOf(
+                    RESULT_FIELD_JSON to Gson().toJson(field),
+                    RESULT_INITIAL_VALUES to stagedInitialValues
+                ))
             }
             true
         }
@@ -1489,9 +1425,10 @@ class FieldEditDialog : DialogFragment() {
                 val withRandom = if (type in listOf(FieldType.NUMBER, FieldType.SELECT, FieldType.GRADE)) {
                     com.novelcharacter.app.data.model.RandomConfig.applyToConfig(withStats, collectRandomConfig(binding, type))
                 } else withStats
-                return if (type == FieldType.BODY_SIZE) {
+                val withBody = if (type == FieldType.BODY_SIZE) {
                     BodyAnalysisConfig.applyToConfig(withRandom, collectBodyAnalysisConfig(binding))
                 } else withRandom
+                return applyInputModeConfig(binding, withBody)
             }
         }
 
@@ -1513,9 +1450,19 @@ class FieldEditDialog : DialogFragment() {
         val withRandom = if (type == FieldType.NUMBER || type == FieldType.SELECT || type == FieldType.GRADE) {
             com.novelcharacter.app.data.model.RandomConfig.applyToConfig(withStats, collectRandomConfig(binding, type))
         } else withStats
-        return if (type == FieldType.BODY_SIZE) {
+        val withBody = if (type == FieldType.BODY_SIZE) {
             BodyAnalysisConfig.applyToConfig(withRandom, collectBodyAnalysisConfig(binding))
         } else withRandom
+        return applyInputModeConfig(binding, withBody)
+    }
+
+    /** 입력 모드(제안/자유/제한)를 config "valueLibrary"에 기록 */
+    private fun applyInputModeConfig(binding: DialogFieldEditBinding, configJson: String): String {
+        val modes = com.novelcharacter.app.data.model.FieldValueLibraryConfig.MODES
+        val mode = modes.getOrElse(binding.spinnerInputMode.selectedItemPosition) { modes[0] }
+        return com.novelcharacter.app.data.model.FieldValueLibraryConfig.applyToConfig(
+            configJson, com.novelcharacter.app.data.model.FieldValueLibraryConfig(mode)
+        )
     }
 
     private fun collectStatsConfig(binding: DialogFieldEditBinding, type: FieldType): FieldStatsConfig {
@@ -1532,15 +1479,6 @@ class FieldEditDialog : DialogFragment() {
             )
         }.ifEmpty { listOf(FieldStatsConfig.AnalysisEntry()) }
 
-        val valueLabels = mutableMapOf<String, String>()
-        for (row in valueLabelRows) {
-            val k = row.editKey.text.toString().trim()
-            val v = row.editValue.text.toString().trim()
-            if (k.isNotEmpty() && v.isNotEmpty()) {
-                valueLabels[k] = v
-            }
-        }
-
         val binning = if (type == FieldType.NUMBER) {
             val mode = if (binding.spinnerBinningMode.selectedItemPosition == 1) "custom" else "auto"
             val ranges = if (mode == "custom") {
@@ -1554,27 +1492,21 @@ class FieldEditDialog : DialogFragment() {
             } else null
         } else null
 
-        val valueCategories = mutableMapOf<String, String>()
-        for (row in valueCategoryRows) {
-            val k = row.editKey.text.toString().trim()
-            val v = row.editCategory.text.toString().trim()
-            if (k.isNotEmpty() && v.isNotEmpty()) {
-                valueCategories[k] = v
-            }
-        }
-
         val statsGroupBy = when (binding.spinnerStatsGroupBy.selectedItemPosition) {
             1 -> "category"
             2 -> "both"
             else -> "value"
         }
 
-        return FieldStatsConfig(enabled, analyses, binning, valueLabels, valueCategories, statsGroupBy)
+        // valueLabels/valueCategories는 값 데이터 라이브러리가 단일 소스 — config에는 더 이상 쓰지 않는다.
+        // (구버전 엑셀의 config는 임포트 시 라이브러리로 자동 이관됨)
+        return FieldStatsConfig(enabled, analyses, binning, emptyMap(), emptyMap(), statsGroupBy)
     }
 
     companion object {
         const val RESULT_KEY = "field_edit_result"
         const val RESULT_FIELD_JSON = "field_json"
+        const val RESULT_INITIAL_VALUES = "initial_values"
         private const val ARG_UNIVERSE_ID = "universeId"
         private const val ARG_FIELD_JSON = "fieldJson"
         private const val ARG_ENTITY_TYPE = "entityType"

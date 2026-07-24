@@ -16,7 +16,9 @@ import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
+import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
+import kotlinx.coroutines.launch
 import com.github.mikephil.charting.charts.PieChart
 import com.github.mikephil.charting.data.PieData
 import com.github.mikephil.charting.data.PieDataSet
@@ -69,6 +71,21 @@ class StatsMainFragment : Fragment() {
         setupObservers()
         setupClickListeners()
         viewModel.loadAllStats()
+        loadFieldLibraryPreview()
+    }
+
+    private fun loadFieldLibraryPreview() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val app = requireActivity().application as com.novelcharacter.app.NovelCharacterApp
+            val counts = runCatching { app.fieldValueLibraryRepository.entryCounts() }.getOrNull() ?: return@launch
+            if (_binding == null) return@launch
+            val fieldCount = counts.size
+            val valueCount = counts.values.sumOf { it.entryCount }
+            val uncategorized = counts.values.sumOf { it.uncategorizedCount }
+            binding.fieldLibraryPreview.text =
+                getString(R.string.field_library_field_summary, valueCount, uncategorized,
+                    counts.values.sumOf { it.unusedCount }) + " | 필드 ${fieldCount}개"
+        }
     }
 
     private fun setupTabs() {
@@ -840,6 +857,11 @@ class StatsMainFragment : Fragment() {
         binding.cardNameBank.setOnClickListener {
             findNavController().navigateSafe(
                 R.id.analysisFragment, R.id.statsNameBankDetailFragment, null
+            )
+        }
+        binding.cardFieldLibrary.setOnClickListener {
+            findNavController().navigateSafe(
+                R.id.analysisFragment, R.id.fieldLibraryHomeFragment, null
             )
         }
         binding.cardDataHealth.setOnClickListener {

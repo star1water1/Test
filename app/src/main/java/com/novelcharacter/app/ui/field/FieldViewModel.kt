@@ -67,9 +67,17 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
 
     fun currentEntityType(): String = _entityType.value ?: FieldDefinition.ENTITY_CHARACTER
 
-    fun insertField(field: FieldDefinition) = viewModelScope.launch {
+    fun insertField(field: FieldDefinition, initialValues: String = "") = viewModelScope.launch {
         try {
-            universeRepository.insertField(field)
+            val newId = universeRepository.insertField(field)
+            // 생성 다이얼로그의 값 사전 등록분 (콤마 구분) — restricted 모드도 한 번에 완결
+            val staged = initialValues.split(",").map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+            if (staged.isNotEmpty()) {
+                val fieldLibrary = app.fieldValueLibraryRepository
+                for (value in staged) {
+                    fieldLibrary.addEntry(newId, value)
+                }
+            }
             reportResult(_result, OpResult.success(OpResult.CAT_FIELD,
                 app.getString(R.string.result_field_added, field.name)))
         } catch (e: android.database.sqlite.SQLiteConstraintException) {

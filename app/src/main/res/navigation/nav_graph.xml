@@ -61,6 +61,29 @@
     </fragment>
 
     <fragment
+        android:id="@+id/fieldLibraryHomeFragment"
+        android:name="com.novelcharacter.app.ui.fieldlibrary.FieldLibraryHomeFragment"
+        android:label="필드 데이터 라이브러리"
+        tools:layout="@layout/fragment_field_library_home">
+
+        <argument
+            android:name="universeId"
+            app:argType="long"
+            android:defaultValue="-1L" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/fieldValueListFragment"
+        android:name="com.novelcharacter.app.ui.fieldlibrary.FieldValueListFragment"
+        android:label="필드 데이터"
+        tools:layout="@layout/fragment_field_value_list">
+
+        <argument
+            android:name="fieldDefinitionId"
+            app:argType="long" />
+    </fragment>
+
+    <fragment
         android:id="@+id/factionManageFragment"
         android:name="com.novelcharacter.app.ui.faction.FactionManageFragment"
         android:label="세력 관리"

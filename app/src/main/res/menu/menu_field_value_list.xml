@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <item
+        android:id="@+id/action_merge_selected"
+        android:title="@string/field_library_menu_merge"
+        android:visible="false"
+        app:showAsAction="always" />
+
+    <item
+        android:id="@+id/action_ai_organize"
+        android:title="@string/field_library_menu_ai"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/action_sort"
+        android:title="@string/field_library_menu_sort"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/action_input_mode"
+        android:title="@string/field_library_menu_input_mode"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/action_prune_unused"
+        android:title="@string/field_library_menu_prune"
+        app:showAsAction="never" />
+</menu>
