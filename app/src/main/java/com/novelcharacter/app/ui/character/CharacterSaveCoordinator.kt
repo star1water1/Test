@@ -258,6 +258,14 @@ class CharacterSaveCoordinator(
             return
         }
 
+        // restricted 입력 모드 검증 — 코디네이터 레벨이라 캐릭터 편집·보충 화면이 함께 커버된다 (검토 A8).
+        // 차단 대신 사유 + 교정 경로 제공 (변수 제어): 추가하고 저장 / 입력 수정.
+        val restrictedViolations = viewModel.findRestrictedViolations(tempFieldValues)
+        if (restrictedViolations.isNotEmpty() && fragment.isAdded && fragment.view != null) {
+            showRestrictedViolationDialog(restrictedViolations, character, isUpdate, targetCharacterId)
+            return
+        }
+
         executeSave(character, isUpdate, targetCharacterId, tempFieldValues)
     }
 
@@ -316,6 +324,47 @@ class CharacterSaveCoordinator(
             Toast.makeText(fragment.requireContext(), R.string.saved_successfully, Toast.LENGTH_SHORT).show()
         }
         host.onSaved(savedCharId)
+    }
+
+    /** restricted 위반 안내 — 사유(위반 토큰)와 허용 값 미리보기 + 두 가지 교정 경로 */
+    private fun showRestrictedViolationDialog(
+        violations: List<Pair<com.novelcharacter.app.data.model.FieldDefinition, List<String>>>,
+        character: Character,
+        isUpdate: Boolean,
+        targetCharacterId: Long
+    ) {
+        val ctx = fragment.context ?: run { abortSave(); return }
+        fragment.viewLifecycleOwner.lifecycleScope.launch {
+            val message = buildString {
+                for ((fd, tokens) in violations) {
+                    val allowed = viewModel.allowedValuesPreview(fd.id)
+                    append(ctx.getString(R.string.field_library_restricted_violation_line,
+                        fd.name, tokens.joinToString(", ")))
+                    append("\n")
+                    append(ctx.getString(R.string.field_library_restricted_allowed_preview,
+                        if (allowed.isEmpty()) "-" else allowed.joinToString(", ")))
+                    append("\n\n")
+                }
+                append(ctx.getString(R.string.field_library_restricted_violation_paths))
+            }
+            MaterialAlertDialogBuilder(ctx)
+                .setTitle(R.string.field_library_restricted_violation_title)
+                .setMessage(message.trim())
+                .setPositiveButton(R.string.field_library_restricted_add_and_save) { _, _ ->
+                    fragment.viewLifecycleOwner.lifecycleScope.launch {
+                        try {
+                            viewModel.addRestrictedValuesToLibrary(violations)
+                            performSave(character, isUpdate, targetCharacterId)
+                        } catch (e: Exception) {
+                            showSaveFailed()
+                            abortSave()
+                        }
+                    }
+                }
+                .setNegativeButton(R.string.field_library_restricted_edit_input) { _, _ -> abortSave() }
+                .setOnCancelListener { abortSave() }
+                .show()
+        }
     }
 
     private fun showAgeLinkageConflictDialog(

@@ -383,6 +383,12 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
                 // 체형 분석 순위 데이터 계산
                 fieldRenderer.bodyRankingInfo = computeBodyRanking(fields, values, character, novel)
 
+                // 값 라이브러리 표시 라벨 — 통계·칩과 카드 표기 일치 (검토 A12)
+                fieldRenderer.valueResolvers = runCatching {
+                    (requireActivity().application as com.novelcharacter.app.NovelCharacterApp)
+                        .fieldValueLibraryRepository.resolversForFields(fields.map { it.id })
+                }.getOrDefault(emptyMap())
+
                 if (_binding == null) return@launch
                 val sliderYear = timeSliderHelper.currentSliderYear
                 if (timeSliderHelper.isTimeViewActive && sliderYear != null) {

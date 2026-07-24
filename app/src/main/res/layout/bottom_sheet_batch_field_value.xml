@@ -66,7 +66,7 @@
         android:layout_marginBottom="8dp"
         android:visibility="gone">
 
-        <com.google.android.material.textfield.TextInputEditText
+        <com.google.android.material.textfield.MaterialAutoCompleteTextView
             android:id="@+id/valueInput"
             android:layout_width="match_parent"
             android:layout_height="wrap_content" />

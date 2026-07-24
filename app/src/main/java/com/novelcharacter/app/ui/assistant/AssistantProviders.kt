@@ -438,3 +438,62 @@ class NudgeProvider : InsightProvider {
         private const val STALE_THRESHOLD_MS = 90L * 24 * 60 * 60 * 1000 // 90일
     }
 }
+
+/**
+ * 값 라이브러리 품질 — 규칙으로 잡히는 근접 중복 표기(대소문자·공백 변형)를 발견해
+ * 라이브러리 정리(병합·AI 정리)로 안내한다. 토크나이저가 의도적으로 자동 병합하지 않는
+ * 변형들을 사용자가 '일일이 확인하지 않아도' 알 수 있게 하는 발견 표면 (원칙 04).
+ * 스냅샷 데이터만 사용 — 추가 쿼리 없음.
+ */
+class LibraryQualityProvider : InsightProvider {
+    override val category = InsightCategory.HEALTH
+
+    override fun provide(ctx: InsightContext): List<AssistantInsight> {
+        val res = ctx.context
+        val s = ctx.snapshot
+        val out = mutableListOf<AssistantInsight>()
+
+        val aliasFold = s.valueEntries.groupBy { it.fieldDefinitionId }
+            .mapValues { (_, entries) -> com.novelcharacter.app.util.FieldValueResolver(entries) }
+
+        for (fd in s.fieldDefinitions + s.eventFieldDefinitions) {
+            if (!com.novelcharacter.app.util.FieldValueTokenizer.supportsLibrary(fd)) continue
+            val rawValues = if (fd.entityType == com.novelcharacter.app.data.model.FieldDefinition.ENTITY_EVENT) {
+                s.eventFieldValues.filter { it.fieldDefinitionId == fd.id }.map { it.value }
+            } else {
+                ctx.valuesByDefId[fd.id].orEmpty().map { it.value }
+            }
+            if (rawValues.isEmpty()) continue
+            val resolver = aliasFold[fd.id]
+            val canonicals = rawValues
+                .flatMap { com.novelcharacter.app.util.FieldValueTokenizer.tokenize(fd, it) }
+                .map { resolver?.canonical(it) ?: it }
+                .distinct()
+            if (canonicals.size < 2) continue
+
+            // 근접 중복: 소문자화 + 내부 공백 제거가 같은데 표기가 다른 canonical 묶음
+            val collisions = canonicals
+                .groupBy { it.lowercase().replace(Regex("\\s+"), "") }
+                .values.filter { it.size > 1 }
+            if (collisions.isEmpty()) continue
+
+            val example = collisions.first().joinToString(" / ")
+            out.add(
+                AssistantInsight(
+                    id = "library_quality_${fd.id}",
+                    category = InsightCategory.HEALTH,
+                    severity = InsightSeverity.HEALTH_DUP_TAGS,
+                    title = res.getString(R.string.assistant_library_quality_title, fd.name),
+                    detail = res.getString(
+                        R.string.assistant_library_quality_detail, collisions.size, example),
+                    count = collisions.size,
+                    primaryAction = InsightAction.Navigate(
+                        destId = R.id.fieldLibraryHomeFragment,
+                        label = res.getString(R.string.assistant_library_quality_action)
+                    )
+                )
+            )
+        }
+        return out
+    }
+}

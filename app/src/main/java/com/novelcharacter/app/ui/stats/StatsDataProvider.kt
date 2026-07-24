@@ -27,7 +27,9 @@ data class StatsSnapshot(
     val eventNovelCrossRefs: List<TimelineEventNovelCrossRef> = emptyList(),
     // 사건 커스텀 필드 (B-10) — "모든 필드가 통계에서 분석 가능해야 한다"(원칙 02)
     val eventFieldDefinitions: List<FieldDefinition> = emptyList(),
-    val eventFieldValues: List<EventFieldValue> = emptyList()
+    val eventFieldValues: List<EventFieldValue> = emptyList(),
+    // 값 데이터 라이브러리 — 별칭 접기·표시 라벨·카테고리의 단일 소스 (구 valueLabels/valueCategories 대체)
+    val valueEntries: List<com.novelcharacter.app.data.model.FieldValueEntry> = emptyList()
 )
 
 // ===== 요약 통계 =====
@@ -430,9 +432,18 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
             factionMemberships = app.factionRepository.getAllMembershipsList(),
             eventNovelCrossRefs = db.timelineDao().getAllEventNovelCrossRefs(),
             eventFieldDefinitions = db.fieldDefinitionDao().getAllFieldsList(FieldDefinition.ENTITY_EVENT),
-            eventFieldValues = db.eventFieldValueDao().getAllValuesList()
-        )
+            eventFieldValues = db.eventFieldValueDao().getAllValuesList(),
+            valueEntries = db.fieldValueEntryDao().getAllList()
+        ).also { snapshot ->
+            // 필드별 해석기 준비 — getFieldValues가 라벨·카테고리·별칭 접기에 사용
+            resolversByFieldId = snapshot.valueEntries
+                .groupBy { it.fieldDefinitionId }
+                .mapValues { (_, entries) -> com.novelcharacter.app.util.FieldValueResolver(entries) }
+        }
     }
+
+    /** 값 라이브러리 해석기 (loadSnapshot에서 채움). 엔트리 없는 필드는 구 config 맵 폴백. */
+    private var resolversByFieldId: Map<Long, com.novelcharacter.app.util.FieldValueResolver> = emptyMap()
 
     /** 스냅샷을 특정 작품으로 필터링 */
     fun filterByNovel(s: StatsSnapshot, novelId: Long): StatsSnapshot {
@@ -1228,13 +1239,17 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
         // Step 1: 값 분리 (토큰화 단일 소스 — 라이브러리 수확·검색과 규칙 공유)
         val splitValues = FieldValueTokenizer.splitForStats(fd, rawValue)
 
-        // Step 2: 값 라벨 매핑 적용
-        val labeled = splitValues.map { statsConfig.applyLabel(it) }
-
-        // Step 2.5: 카테고리 매핑 적용 (statsGroupBy 설정에 따라)
-        val categorized = if (statsConfig.valueCategories.isNotEmpty()) {
-            labeled.flatMap { statsConfig.resolveStatsKeys(it) }
-        } else labeled
+        // Step 2/2.5: 라벨·카테고리 해석 — 값 라이브러리(별칭 접기 포함)가 단일 소스.
+        // 엔트리가 없는 필드(시드 전·구버전)는 기존 config 맵 경로로 폴백해 통계가 왜곡되지 않는다.
+        val resolver = resolversByFieldId[fd.id]
+        val categorized = if (resolver != null && !resolver.isEmpty) {
+            splitValues.flatMap { resolver.statsKeys(it, statsConfig.statsGroupBy) }
+        } else {
+            val labeled = splitValues.map { statsConfig.applyLabel(it) }
+            if (statsConfig.valueCategories.isNotEmpty()) {
+                labeled.flatMap { statsConfig.resolveStatsKeys(it) }
+            } else labeled
+        }
 
         // Step 3: NUMBER + binning
         if (fd.type == "NUMBER" && statsConfig.binning != null && statsConfig.binning.mode == "custom") {

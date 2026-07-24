@@ -345,6 +345,7 @@ class EventEditDialogFragment : DialogFragment() {
         val provider = requireProvider()
 
         val eventFieldValues = collectEventFieldValues()
+        guardRestrictedEventValues(eventFieldValues) {
         if (event == null) {
             provider.insertEvent(newEvent, selectedCharIds.toList(), novelIdsList, eventFieldValues)
             dismiss()
@@ -367,6 +368,49 @@ class EventEditDialogFragment : DialogFragment() {
                     dismissAllowingStateLoss()
                 }
             }
+        }
+        }
+    }
+
+    /** restricted 사건 필드 검증 — 위반 없으면 즉시 진행, 위반 시 사유 + 교정 경로 (검토 A8) */
+    private fun guardRestrictedEventValues(values: List<EventFieldValue>, onProceed: () -> Unit) {
+        val app = activity?.application as? com.novelcharacter.app.NovelCharacterApp
+        if (app == null) {
+            onProceed()
+            return
+        }
+        lifecycleScope.launch {
+            val fieldsById = eventFields.associateBy { it.id }
+            val violations = mutableListOf<Pair<FieldDefinition, List<String>>>()
+            for (v in values) {
+                val fd = fieldsById[v.fieldDefinitionId] ?: continue
+                if (!com.novelcharacter.app.util.FieldValueTokenizer.supportsLibrary(fd)) continue
+                if (!com.novelcharacter.app.data.model.FieldValueLibraryConfig.fromConfig(fd.config).isRestricted) continue
+                val entries = app.fieldValueLibraryRepository.entriesForField(fd.id)
+                val bad = com.novelcharacter.app.data.repository.FieldValueLibraryRepository
+                    .validateRestricted(fd, v.value, entries)
+                if (bad.isNotEmpty()) violations.add(fd to bad)
+            }
+            if (violations.isEmpty()) {
+                onProceed()
+                return@launch
+            }
+            val message = violations.joinToString("\n") { (fd, tokens) ->
+                getString(R.string.field_library_restricted_violation_line, fd.name, tokens.joinToString(", "))
+            } + "\n\n" + getString(R.string.field_library_restricted_violation_paths)
+            com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.field_library_restricted_violation_title)
+                .setMessage(message)
+                .setPositiveButton(R.string.field_library_restricted_add_and_save) { _, _ ->
+                    lifecycleScope.launch {
+                        for ((fd, tokens) in violations) {
+                            tokens.forEach { app.fieldValueLibraryRepository.addEntry(fd.id, it) }
+                        }
+                        onProceed()
+                    }
+                }
+                .setNegativeButton(R.string.field_library_restricted_edit_input, null)
+                .show()
         }
     }
 
@@ -515,9 +559,12 @@ class EventEditDialogFragment : DialogFragment() {
                     eventFieldInputMap[field.id] = spinner
                 }
                 else -> {
-                    val editText = android.widget.EditText(ctx).apply {
+                    // MaterialAutoCompleteTextView(EditText 하위) — 라이브러리 제안 장착 지점 (검토 A9:
+                    // 사건 값도 수확만 하고 제안하지 않는 비대칭 제거)
+                    val editText = com.google.android.material.textfield.MaterialAutoCompleteTextView(ctx).apply {
                         hint = field.name
                         setText(saved)
+                        threshold = 1
                         if (FieldType.fromName(field.type) == FieldType.NUMBER) {
                             inputType = android.text.InputType.TYPE_CLASS_NUMBER or
                                 android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL or
@@ -532,6 +579,32 @@ class EventEditDialogFragment : DialogFragment() {
                 }
             }
         }
+        attachEventFieldSuggestions()
+    }
+
+    /** 사건 필드 자동완성 — 라이브러리 제안 (1쿼리 배치, 빈 필드는 제안 없음) */
+    private fun attachEventFieldSuggestions() {
+        val universeId = eventFields.firstOrNull()?.universeId ?: return
+        val app = activity?.application as? com.novelcharacter.app.NovelCharacterApp ?: return
+        lifecycleScope.launch {
+            val suggestions = runCatching {
+                app.fieldValueLibraryRepository.suggestionsForUniverse(
+                    universeId, com.novelcharacter.app.data.model.FieldDefinition.ENTITY_EVENT)
+            }.getOrDefault(emptyMap())
+            if (!isAdded) return@launch
+            for (field in eventFields) {
+                val widget = eventFieldInputMap[field.id]
+                    as? com.google.android.material.textfield.MaterialAutoCompleteTextView ?: continue
+                if (!com.novelcharacter.app.data.model.FieldValueLibraryConfig
+                        .fromConfig(field.config).isSuggestEnabled) continue
+                val entries = suggestions[field.id].orEmpty()
+                if (entries.isNotEmpty()) {
+                    widget.setAdapter(com.novelcharacter.app.ui.fieldlibrary.LibrarySuggestionAdapter(
+                        requireContext(), entries))
+                }
+            }
+        }
+    }
     }
 
     private fun eventFieldWidgetValue(widget: Any): String = when (widget) {

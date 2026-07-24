@@ -91,7 +91,8 @@ class AssistantEngine(
             ConsistencyProvider(),
             HealthProvider(),
             BiasProvider(),
-            NudgeProvider()
+            NudgeProvider(),
+            LibraryQualityProvider()
         )
     }
 }
