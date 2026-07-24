@@ -3,6 +3,8 @@ package com.novelcharacter.app.ui.settings
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.text.SpannableString
+import android.text.method.LinkMovementMethod
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -10,10 +12,14 @@ import android.widget.PopupMenu
 import android.widget.Toast
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
+import androidx.core.text.util.LinkifyCompat
+import androidx.core.util.PatternsCompat
+import androidx.core.view.children
 import androidx.core.widget.doOnTextChanged
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.google.android.material.chip.Chip
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textfield.TextInputEditText
@@ -126,6 +132,36 @@ class AiSettingsFragment : Fragment() {
         dialogBinding.modelInput.setText(config.model)
         dialogBinding.baseUrlInput.setText(config.baseUrl)
 
+        // 추천 모델 칩 — 직접 타이핑 없이 원탭으로 선택(러프 입력), 세부 수정은 필드에서(원칙 04).
+        // 현재 입력값과 일치하는 칩은 체크 상태로 표시해 무엇이 선택됐는지 한눈에 보인다.
+        val suggestedModels = preset?.suggestedModels.orEmpty()
+        if (suggestedModels.isNotEmpty()) {
+            fun syncModelChips(current: String?) {
+                dialogBinding.modelChipGroup.children.forEach { view ->
+                    (view as? Chip)?.isChecked = view.text?.toString() == current
+                }
+            }
+            dialogBinding.suggestedModelsLabel.visibility = View.VISIBLE
+            dialogBinding.modelChipScroll.visibility = View.VISIBLE
+            suggestedModels.forEach { model ->
+                dialogBinding.modelChipGroup.addView(
+                    Chip(ctx).apply {
+                        text = model
+                        isCheckable = true
+                        setOnClickListener {
+                            dialogBinding.modelInput.setText(model)
+                            dialogBinding.modelInput.setSelection(model.length)
+                            syncModelChips(model) // 같은 칩 재탭 시 체크 해제되는 것 방지
+                        }
+                    }
+                )
+            }
+            syncModelChips(config.model)
+            dialogBinding.modelInput.doOnTextChanged { text, _, _, _ ->
+                syncModelChips(text?.toString()?.trim())
+            }
+        }
+
         // 편집 시 기존 키는 그대로 유지 — 빈칸이면 변경 없음(입력 유실 방지 안내를 헬퍼로).
         val existingHint = if (!isNew) keyStore.keyHint(config.id) else null
         if (existingHint != null) {
@@ -134,19 +170,22 @@ class AiSettingsFragment : Fragment() {
         }
 
         // 발급 가이드 — 프리셋이 있으면 해당 안내, 없으면(과거 데이터 등) 공통 안내.
-        dialogBinding.guideText.text =
-            getString(preset?.guideRes ?: R.string.ai_guide_custom)
+        // 본문 속 주소(console.anthropic.com 등)도 눌러서 바로 열리게 링크화한다(원칙 04).
+        val guideSpannable = SpannableString(getString(preset?.guideRes ?: R.string.ai_guide_custom))
+        LinkifyCompat.addLinks(guideSpannable, PatternsCompat.AUTOLINK_WEB_URL, "https://")
+        dialogBinding.guideText.text = guideSpannable
+        dialogBinding.guideText.movementMethod = LinkMovementMethod.getInstance()
+
         val consoleUrl = preset?.consoleUrl.orEmpty()
         dialogBinding.openConsoleButton.visibility =
             if (consoleUrl.isBlank()) View.GONE else View.VISIBLE
-        dialogBinding.openConsoleButton.setOnClickListener {
-            try {
-                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(consoleUrl)))
-            } catch (e: Exception) {
-                AppLogger.error(TAG, "콘솔 페이지 열기 실패", e)
-                Toast.makeText(ctx, R.string.ai_edit_open_console_failed, Toast.LENGTH_SHORT).show()
-            }
-        }
+        dialogBinding.openConsoleButton.setOnClickListener { openUrl(consoleUrl) }
+
+        // 최신 모델명 문서 — "문서에서 확인하세요" 안내를 실제 이동 경로로 뒷받침한다.
+        val modelDocsUrl = preset?.modelDocsUrl.orEmpty()
+        dialogBinding.openModelDocsButton.visibility =
+            if (modelDocsUrl.isBlank()) View.GONE else View.VISIBLE
+        dialogBinding.openModelDocsButton.setOnClickListener { openUrl(modelDocsUrl) }
 
         // 모델 선택 — 키가 있으면 서버에 실시간으로 물어보고, 없거나 실패하면 정적
         // 추천값으로 폴백한다(러프 선택 → 필드에서 정밀 수정, 이중 경로 원칙 04).
@@ -334,6 +373,16 @@ class AiSettingsFragment : Fragment() {
         }
         if (!valid) return null
         return base.copy(displayName = name, model = model, baseUrl = baseUrl)
+    }
+
+    /** 외부 링크 열기 — 브라우저가 없으면 조용히 죽지 않고 안내한다(변수 제어). */
+    private fun openUrl(url: String) {
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+        } catch (e: Exception) {
+            AppLogger.error(TAG, "링크 열기 실패: $url", e)
+            Toast.makeText(requireContext(), R.string.ai_edit_open_console_failed, Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun showTestResult(b: DialogAiProviderEditBinding, success: Boolean, message: String) {

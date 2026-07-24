@@ -21,6 +21,8 @@ data class AiPreset(
     val suggestedModels: List<String>,
     /** API 키 발급 콘솔 URL — 가이드의 '발급 페이지 열기'가 연다. */
     val consoleUrl: String,
+    /** 최신 모델명 확인 문서 URL — 가이드의 '모델 문서 보기'가 연다. */
+    val modelDocsUrl: String = "",
     /** 단계별 발급 안내 문자열 리소스. */
     @StringRes val guideRes: Int,
     /** 무료 티어 존재 여부 — 목록에서 배지로 표시해 진입 장벽을 낮춘다. */
@@ -42,6 +44,7 @@ object AiPresets {
                 "claude-opus-4-8", "claude-sonnet-5", "claude-sonnet-4-6", "claude-haiku-4-5"
             ),
             consoleUrl = "https://console.anthropic.com/settings/keys",
+            modelDocsUrl = "https://platform.claude.com/docs/en/about-claude/models/overview",
             guideRes = R.string.ai_guide_anthropic
         ),
         AiPreset(
@@ -52,6 +55,7 @@ object AiPresets {
             defaultModel = "gpt-5.1",
             suggestedModels = listOf("gpt-5.1", "gpt-5-mini", "gpt-4.1-mini"),
             consoleUrl = "https://platform.openai.com/api-keys",
+            modelDocsUrl = "https://platform.openai.com/docs/models",
             guideRes = R.string.ai_guide_openai
         ),
         AiPreset(
@@ -62,6 +66,7 @@ object AiPresets {
             defaultModel = "gemini-2.5-flash",
             suggestedModels = listOf("gemini-3-pro-preview", "gemini-2.5-pro", "gemini-2.5-flash"),
             consoleUrl = "https://aistudio.google.com/apikey",
+            modelDocsUrl = "https://ai.google.dev/gemini-api/docs/models",
             guideRes = R.string.ai_guide_gemini,
             hasFreeTier = true
         ),
@@ -75,6 +80,7 @@ object AiPresets {
                 "anthropic/claude-sonnet-4.5", "openai/gpt-5.1", "google/gemini-2.5-flash"
             ),
             consoleUrl = "https://openrouter.ai/settings/keys",
+            modelDocsUrl = "https://openrouter.ai/models",
             guideRes = R.string.ai_guide_openrouter
         ),
         AiPreset(
@@ -85,6 +91,7 @@ object AiPresets {
             defaultModel = "llama-3.3-70b-versatile",
             suggestedModels = listOf("llama-3.3-70b-versatile", "llama-3.1-8b-instant"),
             consoleUrl = "https://console.groq.com/keys",
+            modelDocsUrl = "https://console.groq.com/docs/models",
             guideRes = R.string.ai_guide_groq,
             hasFreeTier = true
         ),
@@ -96,6 +103,7 @@ object AiPresets {
             defaultModel = "deepseek-chat",
             suggestedModels = listOf("deepseek-chat", "deepseek-reasoner"),
             consoleUrl = "https://platform.deepseek.com/api_keys",
+            modelDocsUrl = "https://api-docs.deepseek.com/quick_start/pricing",
             guideRes = R.string.ai_guide_deepseek
         ),
         AiPreset(

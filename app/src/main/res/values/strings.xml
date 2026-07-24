@@ -1909,7 +1909,9 @@
     <string name="ai_edit_key_keep_helper">등록된 키 %s 유지 — 변경할 때만 입력하세요</string>
     <string name="ai_edit_guide_title">API 키 발급 방법</string>
     <string name="ai_edit_open_console">발급 페이지 열기</string>
+    <string name="ai_edit_open_model_docs">모델 문서 보기</string>
     <string name="ai_edit_open_console_failed">브라우저를 열 수 없습니다</string>
+    <string name="ai_edit_suggested_models_label">추천 모델 — 눌러서 바로 선택</string>
     <string name="ai_edit_test_connection">연결 테스트</string>
     <string name="ai_edit_security_note">🔒 키는 기기에만 암호화 저장되며 백업·엑셀 내보내기에 포함되지 않습니다.</string>
     <string name="ai_edit_error_required">필수 입력입니다</string>
