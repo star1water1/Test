@@ -83,6 +83,7 @@ val RESERVED_SHEET_NAMES = setOf(
     factionRelationshipSpec().sheetName,
     userPresetTemplateSpec().sheetName,
     searchPresetSpec().sheetName,
+    characterListPresetSpec().sheetName,
     appSettingsSpec().sheetName,
     imageMetaSpec().sheetName,
     fieldValueLibrarySpec().sheetName
@@ -162,7 +163,10 @@ fun fieldDefinitionSpec(universeNames: List<String>) = SheetSpec(
         ColumnSpec("그룹", width = 5000),
         ColumnSpec("순서", width = 3000),
         ColumnSpec("필수여부", dropdownOptions = listOf("Y", "N"), width = 4000),
-        ColumnSpec("세계관코드", readOnly = true, width = 4000)
+        ColumnSpec("세계관코드", readOnly = true, width = 4000),
+        // 캐릭터/사건 필드 구분 — 이 열이 없던 구버전 파일은 캐릭터로 간주(관대 수용).
+        // 사건 필드 정의도 왕복되어야 신규 기기 복원 시 사건 필드값이 유실되지 않는다.
+        ColumnSpec("대상", dropdownOptions = listOf("캐릭터", "사건"), width = 3500)
     )
 )
 
@@ -216,7 +220,11 @@ fun characterSpec(fields: List<FieldDefinition>, novelTitles: List<String>) = Sh
     }
 )
 
-fun timelineSpec(novelTitles: List<String>, eventFieldHeaders: List<String> = emptyList()) = SheetSpec(
+fun timelineSpec(
+    novelTitles: List<String>,
+    eventFieldHeaders: List<String> = emptyList(),
+    universeNames: List<String> = emptyList()
+) = SheetSpec(
     sheetName = "사건 연표",
     columns = listOf(
         ColumnSpec("연도", required = true, width = 3000),
@@ -233,7 +241,11 @@ fun timelineSpec(novelTitles: List<String>, eventFieldHeaders: List<String> = em
         ColumnSpec("정렬순서", width = 3000),
         ColumnSpec("임시배치", dropdownOptions = listOf("Y", "N"), width = 3000),
         ColumnSpec("코드", readOnly = true, width = 4000),
-        ColumnSpec("생성일", readOnly = true, width = 5000)
+        ColumnSpec("생성일", readOnly = true, width = 5000),
+        // 사건의 세계관 소속 — 작품 미연결 사건도 신규 기기 복원 시 세계관을 잃지 않게 한다.
+        // 이 열이 없던 구버전 파일은 기존처럼 관련 작품의 세계관에서 유도한다(하위 호환).
+        ColumnSpec("세계관", dropdownOptions = universeNames.takeIf { it.isNotEmpty() }, width = 6000),
+        ColumnSpec("세계관코드", readOnly = true, width = 4000)
     ) + eventFieldHeaders.map { ColumnSpec(it, width = 6000) }  // 사건 커스텀 필드 (B-10)
 )
 
@@ -316,6 +328,27 @@ fun userPresetTemplateSpec() = SheetSpec(
         ColumnSpec("설명", width = 15000),
         ColumnSpec("설정(JSON)", width = 15000),
         ColumnSpec("기본제공", dropdownOptions = listOf("Y", "N"), width = 4000),
+        ColumnSpec("생성일", readOnly = true, width = 6000),
+        ColumnSpec("수정일", readOnly = true, width = 6000)
+    )
+)
+
+/**
+ * 캐릭터 목록 프리셋(필터+정렬 조합) 왕복 — 이름이 유니크 키.
+ * 작품 필터는 DB id가 기기마다 달라지므로 **작품코드 콤마 목록**으로 왕복한다(이식성).
+ */
+fun characterListPresetSpec() = SheetSpec(
+    sheetName = "목록 프리셋",
+    columns = listOf(
+        ColumnSpec("이름", required = true, width = 8000),
+        ColumnSpec("태그(JSON)", width = 10000),
+        ColumnSpec("필드필터(JSON)", width = 15000),
+        ColumnSpec("정렬종류", dropdownOptions = listOf("manual", "name", "created", "recent", "field"), width = 4000),
+        ColumnSpec("정렬필드키", width = 5000),
+        ColumnSpec("정렬오름차순", dropdownOptions = listOf("Y", "N"), width = 4000),
+        ColumnSpec("신체파트번호", width = 4000),
+        ColumnSpec("작품코드목록", width = 10000),
+        ColumnSpec("기본값", dropdownOptions = listOf("Y", "N"), width = 4000),
         ColumnSpec("생성일", readOnly = true, width = 6000),
         ColumnSpec("수정일", readOnly = true, width = 6000)
     )

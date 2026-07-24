@@ -1011,6 +1011,8 @@ class ExcelImporter(context: Context) {
         if (ptTotal > 0) parts.add(r.getString(com.novelcharacter.app.R.string.import_result_preset_templates, ptTotal))
         val spTotal = result.newSearchPresets + result.updatedSearchPresets
         if (spTotal > 0) parts.add(r.getString(com.novelcharacter.app.R.string.import_result_search_presets, spTotal))
+        val lpTotal = result.newListPresets + result.updatedListPresets
+        if (lpTotal > 0) parts.add("목록 프리셋 ${lpTotal}건")
         val frTotal = result.newFactionRelationships + result.updatedFactionRelationships
         if (frTotal > 0) parts.add("세력 관계 ${frTotal}건")
         val imTotal = result.newImageMeta + result.updatedImageMeta

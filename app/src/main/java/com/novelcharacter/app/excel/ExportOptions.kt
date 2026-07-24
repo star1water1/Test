@@ -31,6 +31,8 @@ data class ExportOptions(
     val factionRelationships: Boolean = true,
     val presetTemplates: Boolean = true,
     val searchPresets: Boolean = true,
+    /** 캐릭터 목록 프리셋(필터+정렬 조합) — 작품 필터는 작품코드로 왕복 */
+    val characterListPresets: Boolean = true,
     val appSettings: Boolean = true,
     /** 이미지 라이브러리 메타(태그·링크 그룹) 시트 — 기본 true라 자동 백업(ExportOptions())에도 포함된다 */
     val imageMeta: Boolean = true,
@@ -43,7 +45,7 @@ data class ExportOptions(
         universes, novels, characters, fieldDefinitions,
         timeline, stateChanges, relationships, relationshipChanges,
         nameBank, factions, factionMemberships, factionRelationships,
-        presetTemplates, searchPresets, appSettings, imageMeta, images
+        presetTemplates, searchPresets, characterListPresets, appSettings, imageMeta, images
     )
 
     companion object {
@@ -55,12 +57,12 @@ data class ExportOptions(
             "세계관", "작품", "캐릭터", "필드 정의",
             "사건 연표", "상태 변화", "관계", "관계 변화",
             "이름 은행", "세력", "세력 소속", "세력 관계",
-            "필드 템플릿", "검색 프리셋", "앱 설정",
+            "필드 템플릿", "검색 프리셋", "목록 프리셋", "앱 설정",
             "이미지 태그·링크",
             "이미지 (파일 크기 증가)"
         )
 
-        private const val FIELD_COUNT = 17
+        private const val FIELD_COUNT = 18
 
         fun fromBooleanArray(arr: BooleanArray): ExportOptions {
             require(arr.size >= FIELD_COUNT) {
@@ -81,9 +83,10 @@ data class ExportOptions(
                 factionRelationships = arr[11],
                 presetTemplates = arr[12],
                 searchPresets = arr[13],
-                appSettings = arr[14],
-                imageMeta = arr[15],
-                images = arr[16]
+                characterListPresets = arr[14],
+                appSettings = arr[15],
+                imageMeta = arr[16],
+                images = arr[17]
             )
         }
     }

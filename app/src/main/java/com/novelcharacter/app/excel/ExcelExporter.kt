@@ -106,6 +106,7 @@ class ExcelExporter(context: Context) {
         if (options.factionRelationships) exportFactionRelationships(workbook, usedSheetNames)
         if (options.presetTemplates) exportUserPresetTemplates(workbook, usedSheetNames)
         if (options.searchPresets) exportSearchPresets(workbook, usedSheetNames)
+        if (options.characterListPresets) exportCharacterListPresets(workbook, usedSheetNames)
         if (options.appSettings) exportAppSettings(workbook, usedSheetNames)
         return truncatedCellCount
     }
@@ -473,9 +474,10 @@ class ExcelExporter(context: Context) {
             GuideLine("시트별 안내", styles.guideSection, ""),
             GuideLine("", styles.guideBody, "• 세계관: 코드로 기존 데이터 매칭. 코드 없을 시 이름으로 매칭"),
             GuideLine("", styles.guideBody, "• 작품: 코드로 매칭. 코드 없을 시 제목+세계관으로 매칭"),
-            GuideLine("", styles.guideBody, "• 필드 정의: 세계관+필드키로 매칭. 타입은 드롭다운에서 선택"),
+            GuideLine("", styles.guideBody, "• 필드 정의: 세계관+필드키+대상으로 매칭. 타입은 드롭다운에서 선택. 대상=사건이면 사건 필드"),
             GuideLine("", styles.guideBody, "• 캐릭터 시트 (세계관 이름): 코드로 매칭. 코드 없을 시 이름+작품으로 매칭"),
-            GuideLine("", styles.guideBody, "• 사건 연표: 코드로 매칭 (코드 없을 시 연도+설명). 관련 캐릭터는 쉼표로 구분"),
+            GuideLine("", styles.guideBody, "• 사건 연표: 코드로 매칭 (코드 없을 시 연도+설명). 관련 캐릭터는 쉼표로 구분. 세계관 열이 소속 기준"),
+            GuideLine("", styles.guideBody, "• 목록 프리셋: 이름으로 매칭. 작품코드목록은 작품 시트의 코드 값을 쉼표로 나열"),
             GuideLine("", styles.guideBody, "• 캐릭터 관계: 관계 유형은 드롭다운에서 선택"),
             GuideLine("", styles.guideBody, "• 이름 은행: 이름+성별로 매칭. 사용여부는 Y/N"),
             GuideLine("", styles.guideBody, ""),
@@ -635,7 +637,10 @@ class ExcelExporter(context: Context) {
         val universeMap = universes.associateBy { it.id }
         val allFields = mutableListOf<Pair<Long, FieldDefinition>>()
         for (universe in universes) {
-            val fields = db.fieldDefinitionDao().getFieldsByUniverseList(universe.id)
+            // 캐릭터 필드 + 사건 필드(B-10) 모두 왕복 — 사건 필드 정의가 파일에 없으면
+            // 신규 기기 복원 시 사건 필드값이 통째로 유실된다(대상 열로 구분).
+            val fields = db.fieldDefinitionDao().getFieldsByUniverseList(universe.id) +
+                db.fieldDefinitionDao().getFieldsByUniverseList(universe.id, FieldDefinition.ENTITY_EVENT)
             fields.forEach { allFields.add(universe.id to it) }
         }
         if (allFields.isEmpty()) return
@@ -657,6 +662,7 @@ class ExcelExporter(context: Context) {
             row.createCell(6).setCellValue(field.displayOrder.toDouble())
             row.createCell(7).setTextSafe(if (field.isRequired) "Y" else "N")
             row.createCell(8).setTextSafe(universe?.code ?: "")
+            row.createCell(9).setTextSafe(FieldValueSheetMapper.entityLabel(field.entityType))
         }
 
         applySpecFormatting(sheet, spec, allFields.size)
@@ -870,7 +876,11 @@ class ExcelExporter(context: Context) {
             f to header
         }
 
-        val spec = timelineSpec(novels.map { it.title }, eventFieldColumns.map { it.second })
+        val spec = timelineSpec(
+            novels.map { it.title },
+            eventFieldColumns.map { it.second },
+            universesById.values.map { it.name }
+        )
         val sheetName = sanitizeSheetName(spec.sheetName, usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
         writeHeaderRow(sheet, spec)
@@ -913,10 +923,15 @@ class ExcelExporter(context: Context) {
             row.createCell(12).setTextSafe(event.code ?: "")
             row.createCell(13).setCellValue(event.createdAt.toDouble())
 
+            // 세계관 소속 — 작품 미연결 사건도 신규 기기 복원 시 세계관을 잃지 않게 명시 기록
+            val eventUniverse = event.universeId?.let { universesById[it] }
+            row.createCell(14).setTextSafe(eventUniverse?.name ?: "")
+            row.createCell(15).setTextSafe(eventUniverse?.code ?: "")
+
             // 사건 커스텀 필드 값 (B-10)
             val fieldValues = eventFieldValuesByEvent[event.id]?.associateBy { it.fieldDefinitionId } ?: emptyMap()
             eventFieldColumns.forEachIndexed { fi, (fieldDef, _) ->
-                fieldValues[fieldDef.id]?.let { row.createCell(14 + fi).setTextSafe(it.value) }
+                fieldValues[fieldDef.id]?.let { row.createCell(16 + fi).setTextSafe(it.value) }
             }
         }
 
@@ -1281,18 +1296,80 @@ class ExcelExporter(context: Context) {
 
     // ── 앱 설정 ──
 
+    /**
+     * 캐릭터 목록 프리셋 왕복 — 이름이 유니크 키.
+     * novelIdsJson(DB id 배열)은 기기 간 이식성이 없으므로 작품코드 콤마 목록으로 변환해 기록한다.
+     */
+    private suspend fun exportCharacterListPresets(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
+        val presets = db.characterListPresetDao().getAllPresetsList()
+        if (presets.isEmpty()) return
+
+        val novelCodeById = db.novelDao().getAllNovelsList().associate { it.id to it.code }
+        val spec = characterListPresetSpec()
+        val sheetName = sanitizeSheetName(spec.sheetName, usedSheetNames)
+        val sheet = workbook.createSheet(sheetName)
+        writeHeaderRow(sheet, spec)
+
+        presets.forEachIndexed { index, preset ->
+            val novelCodes = try {
+                val arr = org.json.JSONArray(preset.novelIdsJson)
+                (0 until arr.length()).mapNotNull { novelCodeById[arr.getLong(it)] }
+            } catch (_: Exception) {
+                emptyList()
+            }
+            val row = sheet.createRow(index + 1)
+            row.createCell(0).setTextSafe(preset.name)
+            row.createCell(1).setTextSafe(preset.tagsJson)
+            row.createCell(2).setTextSafe(preset.fieldFiltersJson)
+            row.createCell(3).setTextSafe(preset.sortKind)
+            row.createCell(4).setTextSafe(preset.sortFieldKey ?: "")
+            row.createCell(5).setTextSafe(if (preset.sortAscending) "Y" else "N")
+            preset.bodySizePartIndex?.let { row.createCell(6).setCellValue(it.toDouble()) }
+            row.createCell(7).setTextSafe(novelCodes.joinToString(", "))
+            row.createCell(8).setTextSafe(if (preset.isDefault) "Y" else "N")
+            row.createCell(9).setCellValue(preset.createdAt.toDouble())
+            row.createCell(10).setCellValue(preset.updatedAt.toDouble())
+        }
+
+        applySpecFormatting(sheet, spec, presets.size)
+    }
+
     private suspend fun exportAppSettings(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
         val spec = appSettingsSpec()
         val sheetName = sanitizeSheetName(spec.sheetName, usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
         writeHeaderRow(sheet, spec)
 
-        val themeMode = ThemeHelper.getSavedTheme(appContext)
-        val row = sheet.createRow(1)
-        row.createCell(0).setTextSafe("theme_mode")
-        row.createCell(1).setCellValue(themeMode.toDouble())
+        // 사용자 설정 왕복 — 새 기기 복원 시 설정을 다시 맞추지 않아도 되게 한다.
+        // key/value 구조라 항목 추가는 가져오기(when 분기)와 짝으로 확장한다.
+        val backupSettings = com.novelcharacter.app.backup.BackupSettingsStore(appContext).getSettings()
+        val imageSettings = com.novelcharacter.app.util.ImageSettingsStore(appContext).getSettings()
+        val editorRemovePolicy = com.novelcharacter.app.util.ImageSettingsStore(appContext).getEditorRemovePolicy()
 
-        applySpecFormatting(sheet, spec, 1)
+        var rowIndex = 1
+        fun writeTextRow(key: String, value: String) {
+            val row = sheet.createRow(rowIndex++)
+            row.createCell(0).setTextSafe(key)
+            row.createCell(1).setTextSafe(value)
+        }
+        fun writeNumberRow(key: String, value: Double) {
+            val row = sheet.createRow(rowIndex++)
+            row.createCell(0).setTextSafe(key)
+            row.createCell(1).setCellValue(value)
+        }
+
+        writeNumberRow("theme_mode", ThemeHelper.getSavedTheme(appContext).toDouble())
+        writeTextRow("backup_include_images", if (backupSettings.includeImages) "Y" else "N")
+        writeNumberRow("backup_max_backups", backupSettings.maxBackups.toDouble())
+        writeTextRow("image_compress_enabled", if (imageSettings.enabled) "Y" else "N")
+        writeNumberRow("image_quality_percent", imageSettings.qualityPercent.toDouble())
+        writeTextRow("image_cap_dimension", if (imageSettings.capDimension) "Y" else "N")
+        writeNumberRow("image_max_long_edge_px", imageSettings.maxLongEdgePx.toDouble())
+        writeTextRow("image_skip_below_enabled", if (imageSettings.skipBelowEnabled) "Y" else "N")
+        writeNumberRow("image_skip_below_bytes", imageSettings.skipBelowBytes.toDouble())
+        writeTextRow("image_editor_remove_policy", editorRemovePolicy.name)
+
+        applySpecFormatting(sheet, spec, rowIndex - 1)
     }
 
     private fun eventTypeToLabel(eventType: String): String = when (eventType) {
