@@ -112,6 +112,7 @@ class FieldFilterHelperTest {
         override suspend fun update(entry: FieldValueEntry) = unused()
         override suspend fun updateAll(entries: List<FieldValueEntry>) = unused()
         override suspend fun delete(entry: FieldValueEntry) = unused()
+        override suspend fun deleteAll() = unused()
         override suspend fun pruneUncuratedUnused(fieldDefId: Long): Int = unused()
         override suspend fun countUncuratedUnused(fieldDefId: Long): Int = unused()
 

@@ -14,9 +14,13 @@
 #   poi-5.2.5.jar, poi-ooxml-5.2.5.jar, poi-ooxml-lite-5.2.5.jar, commons-collections4-4.4.jar,
 #   commons-io-2.15.0.jar, commons-compress-1.25.0.jar, xmlbeans-5.2.0.jar, log4j-api-2.21.1.jar
 #
-# 또한 androidx.room 어노테이션 스텁을 $JARS_DIR/out-room 에 컴파일해 두어야 한다
-# (@Entity/@ForeignKey/@Index/@PrimaryKey/@ColumnInfo/@Ignore 를 선언만 한 파일이면 충분하다.
-#  어노테이션은 매핑 로직 실행에 영향을 주지 않는다).
+# 또한 androidx 스텁을 $JARS_DIR/out-room 에 컴파일해 두어야 한다:
+#  - androidx.room: @Entity/@ForeignKey/@Index/@PrimaryKey/@ColumnInfo/@Ignore/@Dao/@Query/
+#    @Insert/@Update/@Delete/@Transaction/@Upsert/@Embedded/@Relation, object OnConflictStrategy
+#  - androidx.lifecycle: open class LiveData<T>, MutableLiveData<T>
+# 선언만 있으면 충분하다(어노테이션·LiveData 는 로직 실행에 영향을 주지 않는다).
+# DAO 인터페이스를 포함해야 테스트의 Fake 구현체가 실제로 검증된다 —
+# DAO 에 메서드를 추가하고 Fake 를 갱신하지 않는 실수가 CI 전에 잡힌다.
 set -u
 SP="${JARS_DIR:-/tmp/claude-0/-home-user-Test/6a87d14f-0af6-505a-8734-77051e12d059/scratchpad}"
 REPO="${REPO:-$(cd "$(dirname "$0")/.." && pwd)}"
@@ -57,6 +61,13 @@ $MAIN/excel/SheetSpec.kt
 $MAIN/excel/ExcelCellValue.kt
 $MAIN/util/FieldValueTokenizer.kt
 $MAIN/util/FieldValueResolver.kt
+$MAIN/data/model/CharacterFieldValue.kt
+$MAIN/data/model/FieldFilter.kt
+$MAIN/data/repository/QueryUtils.kt
+$MAIN/data/dao/CharacterFieldValueDao.kt
+$MAIN/data/dao/FieldDefinitionDao.kt
+$MAIN/data/dao/FieldValueEntryDao.kt
+$MAIN/util/FieldFilterHelper.kt
 "
 TESTS="
 $TEST/excel/FieldValueSheetMapperTest.kt
@@ -68,6 +79,7 @@ $TEST/util/FieldValueTokenizerTest.kt
 $TEST/util/SortComparatorsTest.kt
 $TEST/util/EpochMemoTest.kt
 $TEST/ai/AiJsonExtractorTest.kt
+$TEST/util/FieldFilterHelperTest.kt
 "
 # 선택 소스: 존재하고 순수 JVM이면 추가
 for extra in "$MAIN/util/SortComparators.kt" "$MAIN/util/EpochMemo.kt" "$MAIN/ai/AiJsonExtractor.kt"; do
