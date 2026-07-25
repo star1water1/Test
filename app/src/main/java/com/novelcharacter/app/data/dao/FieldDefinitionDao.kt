@@ -20,6 +20,14 @@ interface FieldDefinitionDao {
     @Query("SELECT * FROM field_definitions WHERE id = :id")
     suspend fun getFieldById(id: Long): FieldDefinition?
 
+    /**
+     * id 목록으로 조회 — 세계관/entityType을 가리지 않는다.
+     * 미분류(작품 미배정) 캐릭터가 보관 중인 필드값처럼 **현재 세계관 밖 정의를 가리키는**
+     * 값을 화면에 드러낼 때 쓴다 (N2 — 존재를 알 수 없는 데이터를 남기지 않는다).
+     */
+    @Query("SELECT * FROM field_definitions WHERE id IN (:ids) ORDER BY universeId ASC, displayOrder ASC")
+    suspend fun getFieldsByIds(ids: List<Long>): List<FieldDefinition>
+
     @Query("SELECT * FROM field_definitions WHERE universeId = :universeId AND `key` = :key AND entityType = :entityType")
     suspend fun getFieldByKey(universeId: Long, key: String, entityType: String = FieldDefinition.ENTITY_CHARACTER): FieldDefinition?
 

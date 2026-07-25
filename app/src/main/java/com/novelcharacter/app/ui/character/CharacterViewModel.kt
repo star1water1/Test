@@ -769,6 +769,10 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     suspend fun getFieldsByUniverseList(universeId: Long): List<FieldDefinition> =
         universeRepository.getFieldsByUniverseList(universeId)
 
+    /** 세계관 밖 정의를 가리키는 보관 값을 화면에 드러내기 위한 조회 (N2) */
+    suspend fun getFieldsByIds(ids: List<Long>): List<FieldDefinition> =
+        universeRepository.getFieldsByIds(ids)
+
     // ===== CharacterFieldValue =====
     suspend fun getValuesByCharacterList(characterId: Long): List<CharacterFieldValue> =
         characterRepository.getValuesByCharacterList(characterId)
@@ -833,12 +837,20 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
-    suspend fun updateCharacterWithFields(character: Character, values: List<CharacterFieldValue>) {
-        characterRepository.updateCharacterWithFields(character, values)
+    /** @return 폼이 커버하지 않아 보존된 필드값 개수 (N2 — 호출부가 고지에 쓴다) */
+    suspend fun updateCharacterWithFields(
+        character: Character,
+        values: List<CharacterFieldValue>,
+        coveredFieldDefinitionIds: Set<Long>? = null
+    ): Int {
+        val preserved = characterRepository.updateCharacterWithFields(
+            character, values, coveredFieldDefinitionIds
+        )
         val universeId = getUniverseIdForCharacter(character.id)
         if (universeId != null) {
             semanticSyncHelper.syncFieldToStateChange(character.id, universeId, values)
         }
+        return preserved
     }
 
     private suspend fun getUniverseIdForCharacter(characterId: Long): Long? {

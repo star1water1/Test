@@ -2,6 +2,7 @@ package com.novelcharacter.app.ui.character
 
 import android.widget.Toast
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.snackbar.Snackbar
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
@@ -49,6 +50,13 @@ class CharacterSaveCoordinator(
         /** 현재 폼 입력의 스냅샷 (중복 다이얼로그 결과가 회전 후 도착해도 최신 폼 기준으로 재구성) */
         fun snapshot(): FormSnapshot
         fun collectFieldValues(characterId: Long): List<CharacterFieldValue>
+
+        /**
+         * 폼이 실제로 렌더한 필드 정의 id 집합 — 저장 시 **폼의 권한 범위**가 된다 (N2).
+         * 이 집합 밖의 기존 값은 폼이 판단할 근거가 없으므로 저장이 건드리지 않는다.
+         * ([collectFieldValues]가 빈 목록을 돌려주는 것과 "값이 없다"는 서로 다른 상태다)
+         */
+        fun coveredFieldDefinitionIds(): Set<Long>
         fun validateRequiredFields(): String?
         /** 편집 중인 캐릭터 id (-1L = 신규) */
         fun editingCharacterId(): Long
@@ -447,21 +455,54 @@ class CharacterSaveCoordinator(
             .show()
     }
 
-    /** 다른 세계관으로 이동하는 저장이면 새 세계관 id, 아니면 null(기존·새 세계관 모두 있고 서로 다를 때). */
+    /**
+     * 세계관 안으로 들어가는 저장이면 새 세계관 id, 아니면 null.
+     *
+     * 종전 판정은 `old != null && new != null && old != new`라 **(미분류 → 세계관)** 이동을
+     * "세계관 이동이 아님"으로 흘려보냈다. 그 경로는 이관(같은 key 재매핑)도 고지도 없이
+     * 기존 값을 폼 값으로 통째로 대체했다 — 일괄 편집은 같은 조작에서 재매핑 + 휴지통
+     * 백업 + 사후 고지를 한다. 이제 **새 세계관이 있고 기존과 다르면** 이동으로 본다.
+     *
+     * 반대 방향(세계관 → 미분류)은 이동이 아니라 '이탈'이므로 여기서 null을 돌려주고,
+     * 저장 경로가 폼 커버 밖 값을 보존한다(일괄 편집의 `newUniverseId == null` 가드와 동형).
+     */
     private suspend fun crossUniverseTargetId(character: Character): Long? {
         val old = viewModel.universeIdForNovel(host.existingCharacter()?.novelId)
-        val new = viewModel.universeIdForNovel(character.novelId)
-        return if (old != null && new != null && old != new) new else null
+        val new = viewModel.universeIdForNovel(character.novelId) ?: return null
+        return if (old != new) new else null
     }
 
-    /** 세계관 이동 여부에 따라 이관 저장(같은 이름 필드 유지·유실 시 스냅샷) 또는 일반 저장을 선택한다. */
+    /**
+     * 세계관 이동 여부에 따라 이관 저장(같은 이름 필드 유지·유실 시 스냅샷) 또는 일반 저장을 선택한다.
+     *
+     * 일반 저장에는 **폼이 실제로 렌더한 필드 정의 집합**을 함께 넘긴다. 폼의 권한을 그
+     * 집합까지로 한정해야 작품을 '없음'으로 바꾼 저장이 필드값을 전량 삭제하지 않는다(N2).
+     */
     private suspend fun applyCharacterUpdate(
         character: Character,
         values: List<CharacterFieldValue>,
         crossUniverseId: Long?
     ) {
-        if (crossUniverseId != null) viewModel.updateCharacterAcrossUniverse(character, values, crossUniverseId)
-        else viewModel.updateCharacterWithFields(character, values)
+        if (crossUniverseId != null) {
+            viewModel.updateCharacterAcrossUniverse(character, values, crossUniverseId)
+        } else {
+            val preserved = viewModel.updateCharacterWithFields(
+                character, values, host.coveredFieldDefinitionIds()
+            )
+            if (preserved > 0) notifyPreservedFieldValues(preserved)
+        }
+    }
+
+    /**
+     * 화면에 보이지 않지만 지우지 않고 남긴 필드값을 알린다.
+     *
+     * 유실은 막았으니 이제 '일일이 확인하지 않으면 존재를 알 수 없는 데이터'가 되지 않게
+     * 해야 한다(원칙 04). 작품을 다시 배정하면 되살아난다는 교정 경로까지 함께 알린다.
+     */
+    private fun notifyPreservedFieldValues(count: Int) {
+        if (!fragment.isAdded) return
+        val view = fragment.view ?: return
+        Snackbar.make(view, fragment.getString(R.string.field_values_preserved, count), Snackbar.LENGTH_LONG).show()
     }
 
     /** 세계관 이동 시 유실(제거) 고지 다이얼로그 — 같은 이름 필드 이관·제거분 휴지통 백업(복원 가능) 안내. */

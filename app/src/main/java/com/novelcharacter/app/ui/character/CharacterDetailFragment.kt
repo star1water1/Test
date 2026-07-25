@@ -398,9 +398,23 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
                     fieldRenderer.displayDynamicFields(fields, values, percentileData, calculatedResults)
                 }
             } else {
-                timeSliderHelper.cachedFields = emptyList()
-                timeSliderHelper.cachedValues = emptyList()
+                // 작품 미배정(미분류) 캐릭터도 필드값을 **보관**한다 — 저장 경로가 더 이상 지우지
+                // 않기 때문이다(N2). 여기서 아무것도 그리지 않으면 그 값은 '일일이 확인하지 않으면
+                // 존재를 알 수 없는 데이터'가 된다(원칙 04 위반). 그래서 값이 가리키는 정의를
+                // 세계관을 가리지 않고 직접 찾아 그대로 보여 준다.
+                val values = viewModel.getValuesByCharacterList(character.id)
+                if (_binding == null) return@launch
+                val orphanFields = viewModel.getFieldsByIds(values.map { it.fieldDefinitionId }.distinct())
+                if (_binding == null) return@launch
+                timeSliderHelper.cachedFields = orphanFields
+                timeSliderHelper.cachedValues = values
                 binding.dynamicFieldsContainer.removeAllViews()
+                if (orphanFields.isNotEmpty()) {
+                    // 백분위·CALCULATED는 세계관 스코프가 있어야 성립하므로 계산하지 않는다.
+                    fieldRenderer.valueResolvers = emptyMap()
+                    fieldRenderer.bodyRankingInfo = null
+                    fieldRenderer.displayDynamicFields(orphanFields, values)
+                }
             }
         }
 

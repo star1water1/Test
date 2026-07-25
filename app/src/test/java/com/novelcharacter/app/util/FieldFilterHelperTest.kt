@@ -76,6 +76,7 @@ class FieldFilterHelperTest {
 
     private class FakeFieldDao(val fields: Map<Long, FieldDefinition> = emptyMap()) : FieldDefinitionDao {
         override suspend fun getFieldById(id: Long): FieldDefinition? = fields[id]
+        override suspend fun getFieldsByIds(ids: List<Long>): List<FieldDefinition> = ids.mapNotNull { fields[it] }
 
         override fun getFieldsByUniverse(universeId: Long, entityType: String): LiveData<List<FieldDefinition>> = unused()
         override suspend fun getFieldsByUniverseList(universeId: Long, entityType: String): List<FieldDefinition> = unused()

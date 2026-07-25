@@ -98,6 +98,10 @@ class UniverseRepository(
     suspend fun getFieldsByUniverseList(universeId: Long): List<FieldDefinition> =
         fieldDefinitionDao.getFieldsByUniverseList(universeId)
 
+    /** 세계관·entityType을 가리지 않는 id 조회 — 보관 중인(세계관 밖) 필드값 표시용 (N2) */
+    suspend fun getFieldsByIds(ids: List<Long>): List<FieldDefinition> =
+        if (ids.isEmpty()) emptyList() else fieldDefinitionDao.getFieldsByIds(ids)
+
     // 사건 필드 (B-10) — entityType = "event"
     fun getEventFieldsByUniverse(universeId: Long): LiveData<List<FieldDefinition>> =
         fieldDefinitionDao.getFieldsByUniverse(universeId, FieldDefinition.ENTITY_EVENT)

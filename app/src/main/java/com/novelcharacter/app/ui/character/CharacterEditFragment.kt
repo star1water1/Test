@@ -250,6 +250,7 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
             host = object : CharacterSaveCoordinator.Host {
                 override fun snapshot() = formSnapshot()
                 override fun collectFieldValues(characterId: Long) = formBuilder.collectFieldValues(characterId)
+                override fun coveredFieldDefinitionIds() = formBuilder.coveredFieldDefinitionIds()
                 override fun validateRequiredFields() = formBuilder.validateRequiredFields()
                 override fun editingCharacterId() = characterId
                 override fun existingCharacter() = existingCharacter

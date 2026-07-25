@@ -56,11 +56,25 @@ class BatchNovelChangeBottomSheet : BottomSheetDialogFragment() {
                     binding.btnConfirm.text = getString(R.string.batch_novel_confirm, count, novelTitle)
                     binding.btnConfirm.isEnabled = true
 
-                    // 다른 세계관으로 이동 시 경고 표시
+                    // 상태에 맞는 안내를 고른다. 종전에는 '작품 미지정'을 골라도 "새 세계관에 없는
+                    // 필드값이 제거됩니다"를 띄웠는데, batchChangeNovel은 newUniverseId가 null이면
+                    // 이관 블록 자체를 건너뛰어 **아무것도 제거하지 않는다** — 사실과 다른 경고였다
+                    // (규약: 사실과 다른 경고는 무음보다 나쁘다).
                     val selectedUniverseId = if (position > 0) novels[position - 1].universeId else null
-                    val isDifferentUniverse = currentUniverseIds.isNotEmpty() &&
-                        (selectedUniverseId == null || selectedUniverseId !in currentUniverseIds)
-                    binding.warningText.visibility = if (isDifferentUniverse) View.VISIBLE else View.GONE
+                    val movesIntoOtherUniverse = currentUniverseIds.isNotEmpty() &&
+                        selectedUniverseId != null && selectedUniverseId !in currentUniverseIds
+                    val leavesUniverse = currentUniverseIds.isNotEmpty() && selectedUniverseId == null
+                    when {
+                        movesIntoOtherUniverse -> {
+                            binding.warningText.setText(R.string.batch_novel_universe_warning)
+                            binding.warningText.visibility = View.VISIBLE
+                        }
+                        leavesUniverse -> {
+                            binding.warningText.setText(R.string.batch_novel_unassign_notice)
+                            binding.warningText.visibility = View.VISIBLE
+                        }
+                        else -> binding.warningText.visibility = View.GONE
+                    }
                 }
                 override fun onNothingSelected(parent: AdapterView<*>?) {}
             }

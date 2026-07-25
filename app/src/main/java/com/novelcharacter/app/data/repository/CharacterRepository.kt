@@ -75,12 +75,36 @@ class CharacterRepository(
     // 각 쓰기 메서드의 withTransaction 블록 '뒤'에서 호출해 커밋 후 수확한다.
     private val fieldLibrary by lazy { FieldValueLibraryRepository(db) }
 
-    suspend fun updateCharacterWithFields(character: Character, values: List<CharacterFieldValue>) {
+    /**
+     * 편집 폼의 저장 (N2).
+     *
+     * @param coveredFieldDefinitionIds 폼이 실제로 렌더한 필드 정의 id 집합.
+     *   **폼의 권한은 딱 이 집합까지다.** 커버 밖의 기존 값은 폼이 판단할 근거가 없으므로
+     *   그대로 둔다 — 종전에는 폼이 넘긴 목록으로 통째로 대체해서, 작품을 '없음'으로 바꾸면
+     *   (폼이 필드를 0개 렌더) 필드값이 전량 무음 삭제됐다. 같은 조작의 일괄 편집 경로
+     *   (`batchChangeNovel`의 `newUniverseId == null` 가드)는 반대로 전량 보존한다.
+     *   null이면 폼이 값 목록 전체를 책임진다는 뜻(레거시 호출부 보호).
+     * @return 폼 밖이라 보존된 값의 개수 — 호출부가 "화면에 없지만 남아 있다"를 알린다.
+     */
+    suspend fun updateCharacterWithFields(
+        character: Character,
+        values: List<CharacterFieldValue>,
+        coveredFieldDefinitionIds: Set<Long>? = null
+    ): Int {
+        var preserved = 0
         db.withTransaction {
             characterDao.update(character)
-            characterFieldValueDao.replaceAllByCharacter(character.id, values)
+            val finalValues = if (coveredFieldDefinitionIds == null) {
+                values
+            } else {
+                val existing = characterFieldValueDao.getValuesByCharacterList(character.id)
+                preserved = CharacterFieldValueMerge.preservedCount(values, coveredFieldDefinitionIds, existing)
+                CharacterFieldValueMerge.merge(values, coveredFieldDefinitionIds, existing)
+            }
+            characterFieldValueDao.replaceAllByCharacter(character.id, finalValues)
         }
         fieldLibrary.harvestForCharacter(character.id)
+        return preserved
     }
 
     suspend fun deleteCharacter(character: Character) {
@@ -338,7 +362,7 @@ class CharacterRepository(
             val newUniverseId = newNovelId?.let { db.novelDao().getNovelById(it)?.universeId }
             if (newUniverseId != null) {
                 val trash = TrashRepository(db)
-                val allDefsById = db.fieldDefinitionDao().getAllFieldsList().associateBy { it.id }
+                val allDefsById: Map<Long, FieldDefinition> = db.fieldDefinitionDao().getAllFieldsAllTypes().associateBy { it.id }
                 val newDefByKey = db.fieldDefinitionDao().getFieldsByUniverseList(newUniverseId).associateBy { it.key }
                 for (chunk in ids.chunked(CHUNK_SIZE)) {
                     for (character in characterDao.getCharactersByIds(chunk)) {
@@ -376,7 +400,15 @@ class CharacterRepository(
         var remapped = 0
         var removedValues = 0
         for (v in oldValues) {
-            val key = allDefsById[v.fieldDefinitionId]?.key
+            val def = allDefsById[v.fieldDefinitionId]
+            // 캐릭터 필드가 아닌 정의(사건 필드 등)를 가리키는 값은 세계관 이동의 대상이 아니다 —
+            // 재매핑도 제거도 하지 않고 그대로 둔다. 캐릭터 필드 목록으로는 대응을 찾을 수 없어
+            // 종전에는 '대응 필드 없음'으로 분류되어 제거됐다.
+            if (def != null && def.entityType != FieldDefinition.ENTITY_CHARACTER) {
+                if (usedDefIds.add(v.fieldDefinitionId)) finalValues.add(v)
+                continue
+            }
+            val key = def?.key
             val newDef = key?.let { newDefByKey[it] }
             when {
                 newDef == null -> removedValues++                          // 새 세계관에 대응 필드 없음
@@ -403,7 +435,7 @@ class CharacterRepository(
     suspend fun migrateCharacterToUniverse(character: Character, newUniverseId: Long): UniverseMoveCounts {
         val counts = db.withTransaction {
             val trash = TrashRepository(db)
-            val allDefsById = db.fieldDefinitionDao().getAllFieldsList().associateBy { it.id }
+            val allDefsById: Map<Long, FieldDefinition> = db.fieldDefinitionDao().getAllFieldsAllTypes().associateBy { it.id }
             val newDefByKey = db.fieldDefinitionDao().getFieldsByUniverseList(newUniverseId).associateBy { it.key }
             migrateCharacterFieldsToUniverse(character, newUniverseId, allDefsById, newDefByKey, trash)
         }
@@ -415,12 +447,16 @@ class CharacterRepository(
     /** 세계관 이동 시 유실될 값·세력 소속 수를 미리 센다(편집화면 확인 다이얼로그·고지용, 파괴 없음). */
     suspend fun countCrossUniverseLoss(characterId: Long, newUniverseId: Long): UniverseMoveCounts {
         val old = characterFieldValueDao.getValuesByCharacterList(characterId)
-        val allDefsById = db.fieldDefinitionDao().getAllFieldsList().associateBy { it.id }
+        val allDefsById: Map<Long, FieldDefinition> = db.fieldDefinitionDao().getAllFieldsAllTypes().associateBy { it.id }
         val newKeys = db.fieldDefinitionDao().getFieldsByUniverseList(newUniverseId).map { it.key }.toSet()
         var removed = 0
         var remappable = 0
         for (v in old) {
-            val key = allDefsById[v.fieldDefinitionId]?.key
+            val def = allDefsById[v.fieldDefinitionId]
+            // 캐릭터 필드가 아닌 정의를 가리키는 값은 이동 대상이 아니다 — 세지 않는다
+            // (이 집계가 확인 다이얼로그의 '제거됩니다' 문구를 만든다: 사실과 달라선 안 된다)
+            if (def != null && def.entityType != FieldDefinition.ENTITY_CHARACTER) continue
+            val key = def?.key
             if (key == null || key !in newKeys) removed++ else remappable++
         }
         val memberships = db.factionMembershipDao().countMembershipsNotInUniverse(characterId, newUniverseId)
@@ -438,7 +474,7 @@ class CharacterRepository(
         newUniverseId: Long
     ): UniverseMoveCounts {
         return db.withTransaction {
-            val allDefsById = db.fieldDefinitionDao().getAllFieldsList().associateBy { it.id }
+            val allDefsById: Map<Long, FieldDefinition> = db.fieldDefinitionDao().getAllFieldsAllTypes().associateBy { it.id }
             val newDefByKey = db.fieldDefinitionDao().getFieldsByUniverseList(newUniverseId).associateBy { it.key }
             val old = characterFieldValueDao.getValuesByCharacterList(character.id)
             val formNonBlank = formValues.filter { it.value.isNotBlank() }
@@ -449,7 +485,14 @@ class CharacterRepository(
             var removed = 0
             for (v in old) {
                 if (v.value.isBlank()) continue
-                val key = allDefsById[v.fieldDefinitionId]?.key
+                val def = allDefsById[v.fieldDefinitionId]
+                // 캐릭터 필드가 아닌 정의(사건 필드 등)는 세계관 이동의 대상이 아니다 —
+                // 재매핑도 제거도 하지 않고 그대로 보존한다(폼도 이 값을 렌더하지 않는다).
+                if (def != null && def.entityType != FieldDefinition.ENTITY_CHARACTER) {
+                    if (v.fieldDefinitionId !in formDefIds) gapFills.getOrPut(v.fieldDefinitionId) { v }
+                    continue
+                }
+                val key = def?.key
                 val newDef = key?.let { newDefByKey[it] }
                 if (newDef == null) { removed++; continue }        // 대응 필드 없음 → 제거
                 if (newDef.id in formDefIds) continue              // 사용자가 새 값 입력 → 폼 우선
