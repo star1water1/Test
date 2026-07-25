@@ -27,6 +27,14 @@ interface FactionMembershipDao {
     @Query("SELECT * FROM faction_memberships WHERE factionId = :factionId AND characterId = :characterId AND leaveType IS NULL LIMIT 1")
     suspend fun getActiveMembership(factionId: Long, characterId: Long): FactionMembership?
 
+    /**
+     * 한 (세력, 캐릭터) 쌍의 **모든** 소속 이력 — 엑셀 가져오기의 계층 매칭용.
+     * getActiveMembership은 leaveType IS NULL만 보므로 탈퇴 이력을 영원히 매칭하지 못해
+     * 재가져오기마다 중복 행이 쌓인다(왕복 비멱등). 가져오기는 이 쿼리로 후보 전체를 본다.
+     */
+    @Query("SELECT * FROM faction_memberships WHERE factionId = :factionId AND characterId = :characterId ORDER BY createdAt ASC, id ASC")
+    suspend fun getAllMembershipsForPair(factionId: Long, characterId: Long): List<FactionMembership>
+
     @Query("SELECT * FROM faction_memberships WHERE id = :id")
     suspend fun getById(id: Long): FactionMembership?
 

@@ -866,15 +866,11 @@ class ExcelExporter(context: Context) {
             com.novelcharacter.app.data.model.FieldDefinition.ENTITY_EVENT
         )
         val universesById = db.universeDao().getAllUniversesList().associateBy { it.id }
-        val fieldNameCounts = eventFields.groupingBy { it.name }.eachCount()
-        val eventFieldColumns = eventFields.map { f ->
-            val header = if ((fieldNameCounts[f.name] ?: 0) > 1) {
-                "필드:${f.name}(${universesById[f.universeId]?.name ?: f.universeId})"
-            } else {
-                "필드:${f.name}"
-            }
-            f to header
-        }
+        // 헤더 규칙은 EventFieldHeaders 단일 소스 — 가져오기가 같은 규칙의 역함수로 정확히 되짚는다
+        val eventFieldColumns = EventFieldHeaders.headersFor(
+            eventFields,
+            universesById.mapValues { (_, u) -> u.name }
+        )
 
         val spec = timelineSpec(
             novels.map { it.title },
@@ -1064,6 +1060,8 @@ class ExcelExporter(context: Context) {
             row.createCell(11).setTextSafe(char1?.code ?: "")
             row.createCell(12).setTextSafe(char2?.code ?: "")
             row.createCell(13).setCellValue(rc.createdAt.toDouble())
+            // 부모 관계의 유형 — 같은 쌍에 관계가 여러 개일 때 이력이 어느 관계 소속인지 식별한다
+            row.createCell(14).setTextSafe(rel.relationshipType)
         }
 
         applySpecFormatting(sheet, spec, allChanges.size)

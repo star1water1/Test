@@ -94,4 +94,8 @@ interface CharacterDao {
 
     @Query("SELECT c.id FROM characters c INNER JOIN novels n ON c.novelId = n.id WHERE n.universeId = :universeId")
     suspend fun getCharacterIdsByUniverse(universeId: Long): List<Long>
+
+    /** 작품 미지정(미분류) 캐릭터 id — 엑셀 '미분류 캐릭터' 시트의 삭제 대상 산출용 */
+    @Query("SELECT id FROM characters WHERE novelId IS NULL")
+    suspend fun getUnclassifiedCharacterIds(): List<Long>
 }

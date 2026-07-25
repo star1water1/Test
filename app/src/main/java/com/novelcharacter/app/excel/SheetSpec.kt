@@ -303,7 +303,11 @@ fun relationshipChangeSpec() = SheetSpec(
         ColumnSpec("코드", readOnly = true, width = 4000),
         ColumnSpec("캐릭터1코드", readOnly = true, width = 4000),
         ColumnSpec("캐릭터2코드", readOnly = true, width = 4000),
-        ColumnSpec("생성일", readOnly = true, width = 5000)
+        ColumnSpec("생성일", readOnly = true, width = 5000),
+        // 이 이력이 붙은 **부모 관계**의 유형. 위 '관계 유형'(변화 시점의 유형)과 다른 값이다.
+        // 같은 두 캐릭터 사이에 유형이 다른 관계가 여러 개일 수 있어(유니크 키가 쌍+유형),
+        // 이 열이 없으면 이력이 어느 관계의 것인지 파일만으로 알 수 없다.
+        ColumnSpec("부모관계유형", readOnly = true, width = 5000)
     )
 )
 
