@@ -173,6 +173,15 @@ fun assignSheetName(name: String, usedNames: MutableSet<String>, ownerOf: String
 }
 
 /**
+ * 캐릭터 시트 전용 헤더 — 시트 이름이 겹칠 때 정체를 가르는 지문.
+ *
+ * '이미지경로'는 세계관 시트에도 있어 제외한다. 아래 4개는 어떤 예약 데이터 시트에도 없으므로
+ * 첫 열이 '이름'으로 같아도 캐릭터 시트를 구분해 낸다. **여기에 항목을 더하거나 예약 spec에
+ * 같은 헤더를 새로 넣으면 정상 시트가 거부된다** — `SheetNameAssignmentTest`가 그 충돌을 막는다.
+ */
+val CHARACTER_SHEET_FINGERPRINT = listOf("이명", "작품", "작품코드", "고정")
+
+/**
  * 헤더 행이 [spec]의 시트인가 — **첫 열 하나로는 판별할 수 없다.**
  *
  * 세계관·이름 은행·세력·필드 템플릿·검색 프리셋·목록 프리셋의 첫 열은 전부 '이름'이라

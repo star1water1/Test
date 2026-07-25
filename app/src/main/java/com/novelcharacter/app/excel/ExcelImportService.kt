@@ -1609,7 +1609,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private fun looksLikeCharacterSheet(sheet: Sheet): Boolean {
         val header = sheet.getRow(0) ?: return false
         if (getCellString(header, 0) != "이름") return false
-        val distinctive = listOf("이명", "작품", "작품코드", "고정")
+        val distinctive = CHARACTER_SHEET_FINGERPRINT
         val lastCol = header.lastCellNum.toInt()
         for (col in 1 until lastCol) {
             if (getCellString(header, col) in distinctive) return true

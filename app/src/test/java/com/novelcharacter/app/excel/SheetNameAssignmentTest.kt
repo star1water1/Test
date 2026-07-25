@@ -156,6 +156,39 @@ class SheetNameAssignmentTest {
     }
 
     @Test
+    fun `캐릭터 시트 지문이 어떤 예약 데이터 시트와도 겹치지 않는다`() {
+        // '예약 데이터 시트는 결코 캐릭터 시트가 아니다'라는 판정(looksLikeCharacterSheet)의 전제.
+        // 지문 헤더가 예약 spec에 하나라도 들어가면 그 **정상 시트가 거부되어** 카테고리 전체가
+        // 가져오기에서 빠진다 — 지문을 늘리거나 spec에 열을 추가할 때 이 테스트가 막는다.
+        val reserved = listOf(
+            universeSpec(), novelSpec(emptyList()), fieldDefinitionSpec(emptyList()),
+            timelineSpec(emptyList()), stateChangeSpec(), relationshipSpec(), relationshipChangeSpec(),
+            nameBankSpec(), factionSpec(), factionMembershipSpec(), factionRelationshipSpec(),
+            userPresetTemplateSpec(), searchPresetSpec(), characterListPresetSpec(),
+            appSettingsSpec(), imageMetaSpec(), fieldValueLibrarySpec(), characterFieldValueSpec()
+        )
+        for (spec in reserved) {
+            val headers = spec.columns.map { it.header }
+            if (headers.firstOrNull() != "이름") continue   // 첫 열이 다르면 애초에 구분된다
+            val collision = headers.drop(1).filter { it in CHARACTER_SHEET_FINGERPRINT }
+            assertTrue(
+                "'${spec.sheetName}' spec이 캐릭터 지문과 겹쳐 정상 시트가 거부된다: $collision",
+                collision.isEmpty()
+            )
+        }
+    }
+
+    @Test
+    fun `캐릭터 시트는 지문으로 스스로를 증명한다`() {
+        val headers = characterSpec(emptyList(), emptyList()).columns.map { it.header }
+        assertEquals("이름", headers.first())
+        assertTrue(
+            "캐릭터 시트가 지문을 하나도 갖지 않으면 예약 시트와 구분되지 않는다",
+            headers.drop(1).any { it in CHARACTER_SHEET_FINGERPRINT }
+        )
+    }
+
+    @Test
     fun `진짜 그 시트의 헤더는 인정한다`() {
         for (spec in listOf(factionSpec(), nameBankSpec(), universeSpec(), searchPresetSpec())) {
             assertTrue(spec.sheetName, headersMatchSpec(spec.columns.map { it.header }, spec))
