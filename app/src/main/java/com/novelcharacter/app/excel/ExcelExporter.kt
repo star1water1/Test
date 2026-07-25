@@ -478,7 +478,7 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "• 캐릭터 시트 (세계관 이름): 코드로 매칭. 코드 없을 시 이름+작품으로 매칭"),
             GuideLine("", styles.guideBody, "• 사건 연표: 코드로 매칭 (코드 없을 시 연도+설명). 관련 캐릭터는 쉼표로 구분. 세계관 열이 소속 기준"),
             GuideLine("", styles.guideBody, "• 목록 프리셋: 이름으로 매칭. 작품코드목록은 작품 시트의 코드 값을 쉼표로 나열"),
-            GuideLine("", styles.guideBody, "• 캐릭터 관계: 관계 유형은 드롭다운에서 선택"),
+            GuideLine("", styles.guideBody, "• 캐릭터 관계: 관계 유형은 드롭다운에서 선택. 세력·세력코드 열은 세력 자동 관계의 소속 표시"),
             GuideLine("", styles.guideBody, "• 이름 은행: 이름+성별로 매칭. 사용여부는 Y/N"),
             GuideLine("", styles.guideBody, ""),
             GuideLine("필드 정의 — 타입별 설정 가이드", styles.guideSection, ""),
@@ -1019,7 +1019,8 @@ class ExcelExporter(context: Context) {
             row.createCell(7).setTextSafe(char1?.code ?: "")
             row.createCell(8).setTextSafe(char2?.code ?: "")
             row.createCell(9).setTextSafe(rel.factionId?.let { factionMap[it]?.name } ?: "")
-            row.createCell(10).setCellValue(rel.createdAt.toDouble())
+            row.createCell(10).setTextSafe(rel.factionId?.let { factionMap[it]?.code } ?: "")
+            row.createCell(11).setCellValue(rel.createdAt.toDouble())
         }
 
         applySpecFormatting(sheet, spec, allRelationships.size)
@@ -1280,11 +1281,12 @@ class ExcelExporter(context: Context) {
         val sheet = workbook.createSheet(sheetName)
         writeHeaderRow(sheet, spec)
 
+        val filterStableKeys = fieldFilterStableKeys()
         presets.forEachIndexed { i, p ->
             val row = sheet.createRow(i + 1)
             row.createCell(0).setTextSafe(p.name)
             row.createCell(1).setTextSafe(p.query)
-            row.createCell(2).setTextSafe(p.filtersJson)
+            row.createCell(2).setTextSafe(PortableFieldFilters.augment(p.filtersJson, filterStableKeys))
             row.createCell(3).setTextSafe(p.sortMode)
             row.createCell(4).setTextSafe(if (p.isDefault) "Y" else "N")
             row.createCell(5).setCellValue(p.createdAt.toDouble())
@@ -1292,6 +1294,18 @@ class ExcelExporter(context: Context) {
         }
 
         applySpecFormatting(sheet, spec, presets.size)
+    }
+
+    /**
+     * 프리셋 필드 필터의 fieldId → (세계관코드, 필드키) 안정 식별자 맵.
+     * fieldId는 기기 이전·덮어쓰기 복원에서 재발급되므로 이 맵으로 왕복 이식성을 확보한다
+     * (필터 대상은 캐릭터 필드 — 검색·목록 프리셋 공통).
+     */
+    private suspend fun fieldFilterStableKeys(): Map<Long, PortableFieldFilters.StableKey> {
+        val codeByUniverseId = db.universeDao().getAllUniversesList().associate { it.id to it.code }
+        return db.fieldDefinitionDao().getAllFieldsList().associate {
+            it.id to PortableFieldFilters.StableKey(codeByUniverseId[it.universeId] ?: "", it.key)
+        }
     }
 
     // ── 앱 설정 ──
@@ -1310,6 +1324,7 @@ class ExcelExporter(context: Context) {
         val sheet = workbook.createSheet(sheetName)
         writeHeaderRow(sheet, spec)
 
+        val filterStableKeys = fieldFilterStableKeys()
         presets.forEachIndexed { index, preset ->
             val novelCodes = try {
                 val arr = org.json.JSONArray(preset.novelIdsJson)
@@ -1320,7 +1335,7 @@ class ExcelExporter(context: Context) {
             val row = sheet.createRow(index + 1)
             row.createCell(0).setTextSafe(preset.name)
             row.createCell(1).setTextSafe(preset.tagsJson)
-            row.createCell(2).setTextSafe(preset.fieldFiltersJson)
+            row.createCell(2).setTextSafe(PortableFieldFilters.augment(preset.fieldFiltersJson, filterStableKeys))
             row.createCell(3).setTextSafe(preset.sortKind)
             row.createCell(4).setTextSafe(preset.sortFieldKey ?: "")
             row.createCell(5).setTextSafe(if (preset.sortAscending) "Y" else "N")

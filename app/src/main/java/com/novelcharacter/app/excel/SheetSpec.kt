@@ -279,6 +279,8 @@ fun relationshipSpec(customTypes: List<String> = emptyList()) = SheetSpec(
         ColumnSpec("캐릭터1코드", readOnly = true, width = 4000),
         ColumnSpec("캐릭터2코드", readOnly = true, width = 4000),
         ColumnSpec("세력", readOnly = true, width = 5000),
+        // 세력 자동 관계의 소속을 코드로도 싣는다 — 이름 충돌·기기 이전에도 연결이 유지되게(코드 우선 해석)
+        ColumnSpec("세력코드", readOnly = true, width = 4000),
         ColumnSpec("생성일", readOnly = true, width = 5000)
     )
 )

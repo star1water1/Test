@@ -41,6 +41,10 @@ interface FieldValueEntryDao {
     @Query("SELECT * FROM field_value_entries")
     suspend fun getAllList(): List<FieldValueEntry>
 
+    /** 엑셀 덮어쓰기 복원 전용 — 백업에 '필드 데이터' 시트가 있을 때만 호출된다 */
+    @Query("DELETE FROM field_value_entries")
+    suspend fun deleteAll()
+
     /** 라이브러리 홈 요약 — 값 자체는 로드하지 않는다 */
     @Query(
         """SELECT fieldDefinitionId,

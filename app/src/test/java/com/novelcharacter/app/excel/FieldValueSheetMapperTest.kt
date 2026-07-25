@@ -95,6 +95,42 @@ class FieldValueSheetMapperTest {
     }
 
     @Test
+    fun absentColumns_keepExistingAttributes() {
+        // F1-A: 세계관·필드키·값만 남긴 축약 시트(선택 열 없음 = null) 왕복에서
+        // 별칭·라벨·카테고리·설명·숨김이 지워지지 않아야 한다
+        val entry = FieldValueEntry(
+            id = 5, fieldDefinitionId = 1, value = "서울", displayLabel = "서울특별시",
+            aliasesJson = FieldValueEntry.aliasesToJson(listOf("서울시")),
+            category = "수도권", description = "설명", isHidden = true, code = "abc123"
+        )
+        val reimported = FieldValueSheetMapper.applyRow(entry, 1, row(entry.value))!!
+        assertEquals(entry.displayLabel, reimported.displayLabel)
+        assertEquals(entry.aliases(), reimported.aliases())
+        assertEquals(entry.category, reimported.category)
+        assertEquals(entry.description, reimported.description)
+        assertEquals(entry.isHidden, reimported.isHidden)
+    }
+
+    @Test
+    fun blankCells_clearExistingAttributes() {
+        // F1-A 규칙 가: 열이 있고 빈칸이면 비움 의도 존중 (숨김 빈칸은 해제로 해석)
+        val entry = FieldValueEntry(
+            id = 5, fieldDefinitionId = 1, value = "서울", displayLabel = "서울특별시",
+            aliasesJson = FieldValueEntry.aliasesToJson(listOf("서울시")),
+            category = "수도권", description = "설명", isHidden = true
+        )
+        val reimported = FieldValueSheetMapper.applyRow(
+            entry, 1,
+            row(entry.value, label = "", aliases = "", category = "", description = "", hidden = "")
+        )!!
+        assertEquals("", reimported.displayLabel)
+        assertTrue(reimported.aliases().isEmpty())
+        assertEquals("", reimported.category)
+        assertEquals("", reimported.description)
+        assertFalse(reimported.isHidden)
+    }
+
+    @Test
     fun aliasEqualToValue_removed() {
         val created = FieldValueSheetMapper.applyRow(null, 1, row("서울", aliases = "서울, 서울시"))!!
         assertEquals(listOf("서울시"), created.aliases())

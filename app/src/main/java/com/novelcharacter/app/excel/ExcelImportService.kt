@@ -162,6 +162,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private val matchedFactionIds = mutableSetOf<Long>()
     private val matchedFactionMembershipIds = mutableSetOf<Long>()
     private val matchedFactionRelationshipIds = mutableSetOf<Long>()
+    // OVERWRITE에서 백업과 매칭된 필드 정의 id — 사전 deleteAll 대신 잔여분만 정리하기 위한 추적
+    private val matchedFieldDefinitionIds = mutableSetOf<Long>()
 
     // Phase 1에서 FK 참조를 deferred 처리 (코드 기반 해석)
     private val deferredUniverseImageCharCodes = mutableMapOf<Long, String>()  // universeId → charCode
@@ -369,7 +371,20 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     db.timelineDao().deleteAllEvents()
                 }
                 if (effectiveOptions.characters) db.characterDao().deleteAll()
-                if (effectiveOptions.fieldDefinitions) db.fieldDefinitionDao().deleteAll()
+                // 필드 정의는 여기서 deleteAll 하지 않는다 — 캐릭터·사건 필드값과 값 라이브러리가
+                // FK CASCADE로 전멸하는데, 정의 재삽입 시 id가 재발급되어 재가져오기로도 복구되지 않는다.
+                // 대신 가져오기 후 백업에 없는 정의만 정리한다(pruneUnmatchedFieldDefinitions) —
+                // 매칭된 정의는 id가 보존되어 종속 데이터가 살아남고, 덮어쓰기 의미(백업에 없는 정의 제거)도 유지된다.
+                // 값 라이브러리(필드 데이터)는 백업에 시트가 있을 때만 삭제 후 재구성한다(이미지 태그와 동일 보호).
+                if (effectiveOptions.fieldDefinitions) {
+                    val fvSpec = fieldValueLibrarySpec()
+                    val fvHeader = workbook.getSheet(fvSpec.sheetName)?.getRow(0)
+                    if (fvHeader != null && isValidHeader(fvHeader, fvSpec.firstColumnHeader)) {
+                        db.fieldValueEntryDao().deleteAll()
+                    } else {
+                        result.warnings.add("백업에 '${fvSpec.sheetName}' 시트가 없어 기존 필드 데이터 라이브러리를 삭제하지 않고 유지했습니다 (덮어쓰기 제외)")
+                    }
+                }
                 if (effectiveOptions.novels) db.novelDao().deleteAll()
                 if (effectiveOptions.universes) db.universeDao().deleteAll()
                 if (effectiveOptions.nameBank) db.nameBankDao().deleteAll()
@@ -400,6 +415,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             matchedFactionIds.clear()
             matchedFactionMembershipIds.clear()
             matchedFactionRelationshipIds.clear()
+            matchedFieldDefinitionIds.clear()
 
             // Phase 1: Schema definitions (universes, novels, field definitions)
             // imageCharacterId/imageNovelId는 null로 deferred 처리 (FK 안전)
@@ -412,6 +428,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             applyDeferredUniverseNovelRefs()
             if (effectiveOptions.fieldDefinitions) {
                 importFieldDefinitions(workbook, result, onProgress, totalRows)
+                // OVERWRITE: 사전 deleteAll 대신 매칭 후 잔여 정의만 정리 — 매칭된 정의는 id가 보존되어
+                // 캐릭터·사건 필드값과 값 라이브러리가 FK CASCADE로 전멸하지 않는다 (위 삭제 블록 주석 참조)
+                if (strategy == ImportStrategy.OVERWRITE) pruneUnmatchedFieldDefinitions(workbook, result)
                 importFieldValueLibrary(workbook, result, onProgress, totalRows)
             }
 
@@ -426,12 +445,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             // Phase 3: Relationships and references
             if (effectiveOptions.timeline) importTimeline(workbook, result, onProgress, totalRows)
             if (effectiveOptions.stateChanges) importStateChanges(workbook, result, onProgress, totalRows)
-            if (effectiveOptions.relationships) importRelationships(workbook, result, onProgress, totalRows)
-            if (effectiveOptions.relationshipChanges) importRelationshipChanges(workbook, result, onProgress, totalRows)
-            if (effectiveOptions.nameBank) importNameBank(workbook, result, onProgress, totalRows)
+            // 세력을 관계보다 먼저 가져온다 — 관계 시트의 세력(자동 관계) 연결이
+            // 신규 기기 복원(빈 DB)에서도 해석되게 한다 (뒤에 두면 factionId가 전부 유실돼 수동 관계로 강등)
             if (effectiveOptions.factions) importFactions(workbook, result, onProgress, totalRows)
             if (effectiveOptions.factionMemberships) importFactionMemberships(workbook, result, onProgress, totalRows)
             if (effectiveOptions.factionRelationships) importFactionRelationships(workbook, result, onProgress, totalRows)
+            if (effectiveOptions.relationships) importRelationships(workbook, result, onProgress, totalRows)
+            if (effectiveOptions.relationshipChanges) importRelationshipChanges(workbook, result, onProgress, totalRows)
+            if (effectiveOptions.nameBank) importNameBank(workbook, result, onProgress, totalRows)
 
             // Phase 4: User settings and presets
             if (effectiveOptions.presetTemplates) importUserPresetTemplates(workbook, result, onProgress, totalRows)
@@ -865,12 +886,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val headerRow = sheet.getRow(0) ?: return CategoryAnalysis("timeline", "사건 연표", 0, 0, 0, 0, existingTotal)
         val cols = resolveHeaderColumns(headerRow)
         val yearColIndex = cols["연도"] ?: 0
-        val descColIndex = cols["사건 설명"] ?: 4
-        val novelColIndex = cols["관련 작품"] ?: 5
-        val novelCodeColIndex = cols["관련작품코드"] ?: -1
+        // 실제 임포트와 동일한 설명 열 해석 — 스펙 위치는 5 (4로 폴백하면 사건 유형 열을 설명으로 오독)
+        val descColIndex = cols["사건 설명"]
+            ?: cols.entries.firstOrNull { it.key.contains("설명") }?.value
+            ?: 5
         val codeColIndex = cols["코드"] ?: -1
 
-        val allNovels = db.novelDao().getAllNovelsList()
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0
 
         for (i in 1..sheet.lastRowNum) {
@@ -879,11 +900,6 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val description = getCellString(row, descColIndex)
             if (description.isBlank()) continue
             inBackup++
-
-            val novelCode = if (novelCodeColIndex >= 0) getCellString(row, novelCodeColIndex) else ""
-            val novelTitle = getCellString(row, novelColIndex)
-            val novelId = (if (novelCode.isNotBlank()) db.novelDao().getNovelByCode(novelCode)?.id else null)
-                ?: if (novelTitle.isNotBlank()) allNovels.find { it.title == novelTitle }?.id else null
 
             // 실제 임포트와 동일한 매칭: 코드 우선 → 자연키 폴백
             val fileCode = if (codeColIndex >= 0) getCellString(row, codeColIndex) else ""
@@ -1259,6 +1275,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val filtersColIndex = cols["필터(JSON)"] ?: 2
 
         val existingByName = existingPresets.associateBy { it.name }
+        val (filterIdByKey, existingFieldIds) = loadFieldFilterResolution()
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0
 
         for (i in 1..sheet.lastRowNum) {
@@ -1270,7 +1287,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val existing = existingByName[name]
             if (existing == null) { newCount++; continue }
             val query = getCellString(row, queryColIndex)
-            val filtersJson = getCellString(row, filtersColIndex).ifBlank { "{}" }
+            // 실제 임포트와 동일하게 안정 식별자를 fieldId로 재해석한 뒤 비교 (왕복 보조 속성 탓에 전부 '변경'으로 집계되지 않게)
+            val filtersJson = PortableFieldFilters.resolve(
+                getCellString(row, filtersColIndex).ifBlank { "{}" }, filterIdByKey, existingFieldIds).json
             if (existing.query != query || existing.filtersJson != filtersJson) updateCount++ else unchangedCount++
         }
         reportProgress(onProgress, "검색 프리셋 분석", sheet.lastRowNum, totalRows)
@@ -1293,6 +1312,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val filtersColIndex = cols["필드필터(JSON)"] ?: -1
 
         val existingByName = existingPresets.associateBy { it.name }
+        val (filterIdByKey, existingFieldIds) = loadFieldFilterResolution()
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0
 
         for (i in 1..sheet.lastRowNum) {
@@ -1304,7 +1324,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val existing = existingByName[name]
             if (existing == null) { newCount++; continue }
             val tagsJson = if (tagsColIndex >= 0) getCellString(row, tagsColIndex).ifBlank { "[]" } else existing.tagsJson
-            val filtersJson = if (filtersColIndex >= 0) getCellString(row, filtersColIndex).ifBlank { "{}" } else existing.fieldFiltersJson
+            // 실제 임포트와 동일하게 안정 식별자를 fieldId로 재해석한 뒤 비교 (왕복 보조 속성 탓에 전부 '변경'으로 집계되지 않게)
+            val filtersJson = if (filtersColIndex >= 0) PortableFieldFilters.resolve(
+                getCellString(row, filtersColIndex).ifBlank { "{}" }, filterIdByKey, existingFieldIds).json
+            else existing.fieldFiltersJson
             if (existing.tagsJson != tagsJson || existing.fieldFiltersJson != filtersJson) updateCount++ else unchangedCount++
         }
         reportProgress(onProgress, "목록 프리셋 분석", sheet.lastRowNum, totalRows)
@@ -1602,11 +1625,15 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     codesSeen[code] = i
                 }
 
-                // Resolve universe: code-first, then name
-                val universeId = if (universeCode.isNotBlank()) {
-                    db.universeDao().getUniverseByCode(universeCode)?.id
-                } else null
-                    ?: if (universeName.isNotBlank()) db.universeDao().getUniverseByName(universeName)?.id else null
+                // Resolve universe: code-first, then name.
+                // 괄호 필수 — 괄호 없이 쓰면 엘비스가 else 가지(null)에만 붙어 코드 미해석 시 이름 폴백이 죽는다.
+                val universeColumnPresent = cols.containsKey("세계관") || universeCodeColIndex >= 0
+                val universeRefProvided = universeCode.isNotBlank() || universeName.isNotBlank()
+                val universeId = (if (universeCode.isNotBlank()) db.universeDao().getUniverseByCode(universeCode)?.id else null)
+                    ?: (if (universeName.isNotBlank()) db.universeDao().getUniverseByName(universeName)?.id else null)
+                if (universeRefProvided && universeId == null) {
+                    result.warnings.add("작품 행 $i: 세계관 '${universeName.ifBlank { universeCode }}'을(를) 찾을 수 없음 — 기존 작품은 소속 유지, 새 작품은 세계관 미지정으로 생성")
+                }
 
                 // Code-first matching (Sprint A) + F1-C: 미지 코드 → 자연키 폴백 + 경고
                 val existing: Novel?
@@ -1659,7 +1686,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     db.novelDao().update(existing.copy(
                         title = title,
                         description = descriptionFromExcel ?: existing.description,
-                        universeId = universeId,
+                        // F1-A: 열 없음 = 기존 소속 유지. 참조가 있는데 미해석이면 무음 분리 대신 기존 유지(위 경고와 짝).
+                        universeId = when {
+                            !universeColumnPresent -> existing.universeId
+                            universeRefProvided && universeId == null -> existing.universeId
+                            else -> universeId
+                        },
                         displayOrder = displayOrder ?: existing.displayOrder,
                         borderColor = borderColorFromExcel ?: existing.borderColor,
                         borderWidthDp = borderWidthFromExcel ?: existing.borderWidthDp,
@@ -1690,9 +1722,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     if (novelImageCharCode != null) deferredNovelImageCharCodes[newId] = novelImageCharCode
                     entitySeen[newId] = i
                     result.newNovels++
-                    if (universeId == null && (universeName.isNotBlank() || universeCode.isNotBlank())) {
-                        result.warnings.add("작품 행 $i: 세계관 '${universeName}'을(를) 찾을 수 없어 세계관 미지정 상태로 생성됨")
-                    }
+                    // 세계관 미해석 경고는 위(해석 지점)에서 신규/기존 공통으로 1회 보고한다
                 }
             } catch (e: Exception) {
                 result.skippedRows++
@@ -1787,6 +1817,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         name = name, type = type, config = config,
                         groupName = groupName, displayOrder = displayOrder ?: existing.displayOrder, isRequired = isRequired
                     ))
+                    matchedFieldDefinitionIds.add(existing.id)
                     result.updatedFields++
                 } else {
                     val newId = db.fieldDefinitionDao().insert(FieldDefinition(
@@ -1795,6 +1826,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         isRequired = isRequired, entityType = entityType
                     ))
                     entitySeen[newId] = i
+                    matchedFieldDefinitionIds.add(newId)
                     result.newFields++
                 }
             } catch (e: Exception) {
@@ -1803,6 +1835,28 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             }
         }
         reportProgress(onProgress, "필드 정의", sheet.lastRowNum, totalRows)
+    }
+
+    /**
+     * OVERWRITE 전략에서 백업에 없는 필드 정의만 삭제한다.
+     *
+     * 사전 deleteAll은 캐릭터·사건 필드값과 값 라이브러리를 FK CASCADE로 전멸시키고,
+     * 정의 재삽입 시 id가 재발급되어 어떤 재가져오기로도 복구되지 않는다. 매칭 후 잔여분만
+     * 정리하면 매칭된 정의의 종속 데이터가 보존되면서 덮어쓰기 의미(백업에 없는 정의 제거)는 유지된다.
+     * 백업에 '필드 정의' 시트 자체가 없으면 아무것도 삭제하지 않는다(이미지 태그와 동일 보호).
+     */
+    private suspend fun pruneUnmatchedFieldDefinitions(workbook: Workbook, result: ImportResult) {
+        val spec = fieldDefinitionSpec(emptyList())
+        val header = workbook.getSheet(spec.sheetName)?.getRow(0)
+        if (header == null || !isValidHeader(header, spec.firstColumnHeader)) {
+            result.warnings.add("백업에 '${spec.sheetName}' 시트가 없어 기존 필드 정의를 삭제하지 않고 유지했습니다 (덮어쓰기 제외)")
+            return
+        }
+        val stale = db.fieldDefinitionDao().getAllFieldsAllTypes().filter { it.id !in matchedFieldDefinitionIds }
+        for (field in stale) db.fieldDefinitionDao().delete(field)
+        if (stale.isNotEmpty()) {
+            result.warnings.add("덮어쓰기: 백업에 없는 필드 정의 ${stale.size}개를 관련 필드값과 함께 삭제했습니다")
+        }
     }
 
     // ── 필드 데이터 라이브러리 가져오기 (필드 정의 직후 — 필드가 먼저 존재해야 함) ──
@@ -2264,8 +2318,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val descColIndex = cols["사건 설명"]
             ?: cols.entries.firstOrNull { it.key.contains("설명") }?.value
             ?: requiredCol(cols, "사건 설명", sheet.sheetName, result) ?: return
-        val novelColIndex = cols["관련 작품"] ?: 5
-        val charColIndex = cols["관련 캐릭터"] ?: 6
+        // 선택 연결 열: 위치 폴백 금지(스펙상 5·6은 사건 설명·관련 작품이라 폴백이 이웃 열을 오독) — 열 없음(-1)이면 기존 연결 유지
+        val novelColIndex = cols["관련 작품"] ?: -1
+        val charColIndex = cols["관련 캐릭터"] ?: -1
         val charCodeColIndex = cols["관련캐릭터코드"] ?: -1
         // F1-A: 참가자 열이 실제로 헤더에 존재하는지 (위치 폴백만으로는 "빈칸=삭제" 규칙을 적용하지 않음 — 구버전 파일 오삭제 방지)
         val participantColumnPresent = cols.containsKey("관련 캐릭터") || charCodeColIndex >= 0
@@ -2683,9 +2738,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val char1CodeColIndex = cols["캐릭터1코드"] ?: -1
         val char2CodeColIndex = cols["캐릭터2코드"] ?: -1
         val factionColIndex = cols["세력"] ?: -1
+        val factionCodeColIndex = cols["세력코드"] ?: -1
         val createdAtColIndex = cols["생성일"] ?: -1
 
-        val allFactions = if (factionColIndex >= 0) db.factionDao().getAllFactionsList() else emptyList()
+        val allFactions = if (factionColIndex >= 0 || factionCodeColIndex >= 0) db.factionDao().getAllFactionsList() else emptyList()
+        val factionsByCode = allFactions.associateBy { it.code }
         val entitySeen = mutableMapOf<Long, Int>()
 
         for (i in 1..sheet.lastRowNum) {
@@ -2712,8 +2769,15 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val char1Code = getCellCode(row, char1CodeColIndex, "관계 행 $i", result)
                 val char2Code = getCellCode(row, char2CodeColIndex, "관계 행 $i", result)
                 val createdAt = if (createdAtColIndex >= 0) parseNumber(getCellString(row, createdAtColIndex))?.toLong() ?: System.currentTimeMillis() else System.currentTimeMillis()
+                // 세력(자동 관계) 해석: 코드 우선 → 이름. 미해석은 무음 null 대신 경고 + 기존값 유지(변수 제어).
                 val factionName = if (factionColIndex >= 0) getCellString(row, factionColIndex) else ""
-                val factionId = if (factionName.isNotBlank()) allFactions.find { it.name == factionName }?.id else null
+                val factionCode = getCellCode(row, factionCodeColIndex, "관계 행 $i", result)
+                val factionRefProvided = factionName.isNotBlank() || factionCode.isNotBlank()
+                val factionId = (if (factionCode.isNotBlank()) factionsByCode[factionCode]?.id else null)
+                    ?: (if (factionName.isNotBlank()) allFactions.find { it.name == factionName }?.id else null)
+                if (factionRefProvided && factionId == null) {
+                    result.warnings.add("관계 행 $i: 세력 '${factionName.ifBlank { factionCode }}'을(를) 찾을 수 없음 — 기존 관계는 세력 연결 유지, 새 관계는 수동 관계로 생성 ('세력' 시트를 함께 가져오세요)")
+                }
 
                 val char1 = when (val r = findCharacterStrict(char1Name, char1Code)) {
                     is CharLookupResult.Found -> r.character
@@ -2769,7 +2833,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         intensity = if (intensityColIndex >= 0) intensity else existing.intensity,
                         isBidirectional = if (bidirectionalColIndex >= 0) isBidirectional else existing.isBidirectional,
                         displayOrder = displayOrder ?: existing.displayOrder,
-                        factionId = if (factionColIndex >= 0 && factionName.isNotBlank()) factionId else existing.factionId,
+                        // 해석 성공 시에만 교체 — 열 없음·빈칸·미해석 참조는 기존 연결 유지
+                        factionId = factionId ?: existing.factionId,
                         createdAt = if (createdAtColIndex >= 0) createdAt else existing.createdAt
                     ))
                     matchedRelationshipIds.add(existing.id)
@@ -2840,7 +2905,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val relationshipType = getCellString(row, relTypeColIndex)
                 val description = getCellString(row, descColIndex)
                 val intensity = parseIntensityWithWarn(row, intensityColIndex, 5, "관계 변화 행 $i", result) ?: 5
-                val isBidirectional = parseBoolean(getCellString(row, bidirectionalColIndex))
+                // 열 없음 → 엔티티 기본값(양방향 true) — 관계·세력 관계 시트와 동일 규칙 (빈칸→false 오독으로 기본값 뒤집힘 방지)
+                val isBidirectional = if (bidirectionalColIndex >= 0) parseBoolean(getCellString(row, bidirectionalColIndex)) else true
                 // 연결 사건 해석: 코드 우선 (id는 복원/기기 이전 시 변하므로 구버전 폴백 전용)
                 val eventColumnPresent = eventCodeColIndex >= 0 || eventIdColIndex >= 0
                 val eventCode = getCellCode(row, eventCodeColIndex, "관계변화 행 $i", result)
@@ -2852,7 +2918,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         }
                         found
                     }
-                    eventIdColIndex >= 0 -> parseNumber(getCellString(row, eventIdColIndex))?.toLong()
+                    eventIdColIndex >= 0 -> {
+                        // 구버전 id 폴백도 실존 검증 — 복원 후 재발급된 id가 엉뚱한 사건을 가리키거나 FK 오류로 행이 죽는 것 방지
+                        val rawId = parseNumber(getCellString(row, eventIdColIndex))?.toLong()
+                        if (rawId != null && db.timelineDao().getEventById(rawId) == null) {
+                            result.warnings.add("관계변화 행 $i: 연결사건ID '${rawId}'에 해당하는 사건이 없어 연결을 비웁니다 — 최신 백업의 연결사건코드 열을 사용하세요")
+                            null
+                        } else rawId
+                    }
                     else -> null
                 }
                 val createdAt = if (createdAtColIndex >= 0) parseNumber(getCellString(row, createdAtColIndex))?.toLong() ?: System.currentTimeMillis() else System.currentTimeMillis()
@@ -3090,6 +3163,16 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     // ── 검색 프리셋 가져오기 ──
 
+    /** 프리셋 필드 필터 해석 맵: (세계관코드, 필드키) → fieldId + 현존 fieldId 집합 (필터 대상은 캐릭터 필드) */
+    private suspend fun loadFieldFilterResolution(): Pair<Map<PortableFieldFilters.StableKey, Long>, Set<Long>> {
+        val codeByUniverseId = db.universeDao().getAllUniversesList().associate { it.id to it.code }
+        val characterFields = db.fieldDefinitionDao().getAllFieldsList()
+        val byKey = characterFields.associate {
+            PortableFieldFilters.StableKey(codeByUniverseId[it.universeId] ?: "", it.key) to it.id
+        }
+        return byKey to characterFields.mapTo(HashSet()) { it.id }
+    }
+
     private suspend fun importSearchPresets(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = searchPresetSpec()
         val sheet = findSheet(workbook, spec.sheetName, result) ?: return
@@ -3107,6 +3190,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
         val existingPresets = db.searchPresetDao().getAllPresetsList()
         val existingByName = existingPresets.associateBy { it.name }.toMutableMap()
+        val (filterIdByKey, existingFieldIds) = loadFieldFilterResolution()
 
         for (i in 1..sheet.lastRowNum) {
             try {
@@ -3115,7 +3199,13 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 if (name.isBlank()) continue
 
                 val query = getCellString(row, queryColIndex)
-                val filtersJson = getCellString(row, filtersColIndex).ifBlank { "{}" }
+                // 필드 필터의 fieldId를 안정 식별자(세계관코드+필드키)로 재해석 — 기기 이전·복원 후에도 필터가 살아있게
+                val filtersResolved = PortableFieldFilters.resolve(
+                    getCellString(row, filtersColIndex).ifBlank { "{}" }, filterIdByKey, existingFieldIds)
+                for (droppedField in filtersResolved.droppedNames) {
+                    result.warnings.add("검색 프리셋 행 $i ('$name'): 필드 '${droppedField}'을(를) 찾을 수 없어 필터에서 제외했습니다")
+                }
+                val filtersJson = filtersResolved.json
                 val sortMode = getCellString(row, sortModeColIndex).ifBlank { SearchPreset.SORT_RELEVANCE }
                 val isDefault = parseBoolean(getCellString(row, isDefaultColIndex))
                 val createdAt = if (createdAtColIndex >= 0) parseNumber(getCellString(row, createdAtColIndex))?.toLong() ?: System.currentTimeMillis() else System.currentTimeMillis()
@@ -3179,6 +3269,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         )
         val existingByName = db.characterListPresetDao().getAllPresetsList()
             .associateBy { it.name }.toMutableMap()
+        val (filterIdByKey, existingFieldIds) = loadFieldFilterResolution()
 
         for (i in 1..sheet.lastRowNum) {
             try {
@@ -3208,11 +3299,20 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     }
                 }
                 val tagsJson = if (tagsColIndex >= 0) getCellString(row, tagsColIndex).ifBlank { "[]" } else null
-                val fieldFiltersJson = if (filtersColIndex >= 0) getCellString(row, filtersColIndex).ifBlank { "{}" } else null
+                // 필드 필터의 fieldId를 안정 식별자(세계관코드+필드키)로 재해석 — 기기 이전·복원 후에도 필터가 살아있게
+                val fieldFiltersJson = if (filtersColIndex >= 0) {
+                    val resolved = PortableFieldFilters.resolve(
+                        getCellString(row, filtersColIndex).ifBlank { "{}" }, filterIdByKey, existingFieldIds)
+                    for (droppedField in resolved.droppedNames) {
+                        result.warnings.add("목록 프리셋 행 $i ('$name'): 필드 '${droppedField}'을(를) 찾을 수 없어 필터에서 제외했습니다")
+                    }
+                    resolved.json
+                } else null
                 val sortFieldKey = if (sortFieldKeyColIndex >= 0) getCellString(row, sortFieldKeyColIndex).ifBlank { null } else null
-                val sortAscending = if (sortAscColIndex >= 0) parseBoolean(getCellString(row, sortAscColIndex)) else null
+                // 빈칸 = null(기존값 유지/기본값) — parseBoolean은 빈칸을 false로 읽어 기존 true를 뒤집는다
+                val sortAscending = if (sortAscColIndex >= 0) parseBooleanOrNull(getCellString(row, sortAscColIndex)) else null
                 val bodySizePartIndex = if (bodyPartColIndex >= 0) parseNumber(getCellString(row, bodyPartColIndex))?.toInt() else null
-                val isDefault = if (isDefaultColIndex >= 0) parseBoolean(getCellString(row, isDefaultColIndex)) else null
+                val isDefault = if (isDefaultColIndex >= 0) parseBooleanOrNull(getCellString(row, isDefaultColIndex)) else null
                 val createdAt = if (createdAtColIndex >= 0) parseNumber(getCellString(row, createdAtColIndex))?.toLong() else null
                 val updatedAt = if (updatedAtColIndex >= 0) parseNumber(getCellString(row, updatedAtColIndex))?.toLong() else null
 
@@ -4061,6 +4161,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             else -> false
         }
     }
+
+    /** F1-A 보조: 빈칸은 null(기존값 유지/기본값)로 구분하는 불리언 파서 — Y/N 열의 빈칸이 false로 오독되지 않게 한다. */
+    private fun parseBooleanOrNull(value: String): Boolean? =
+        if (value.isBlank()) null else parseBoolean(value)
 
     /**
      * F4: 코드 셀 방어 읽기. 코드는 항상 텍스트여야 하나, 외부 편집 중 엑셀이 숫자로 자동 변환하면

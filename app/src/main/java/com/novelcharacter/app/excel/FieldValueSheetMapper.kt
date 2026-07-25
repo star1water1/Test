@@ -63,6 +63,10 @@ object FieldValueSheetMapper {
      * 임포트 병합: 기존 엔트리가 있으면 시트 내용으로 갱신(외부 편집이 최신),
      * 없으면 신규 생성(source=IMPORT). 코드가 유효하면 보존해 다음 왕복의 매칭 기준이 된다.
      * 반환 null = 값이 비어 매핑 불가 (호출측이 경고 리포트).
+     *
+     * F1-A: 선택 속성의 null은 "열 없음"(축약 시트) → 기존값 유지, 빈 문자열은
+     * "열 있음 + 빈칸" → 비움 의도 존중. 구분하지 않으면 세계관·필드키·값만 남긴
+     * 축약 시트 왕복에서 별칭·카테고리·설명·숨김이 통째로 지워진다.
      */
     fun applyRow(existing: FieldValueEntry?, fieldDefId: Long, row: ImportedRow): FieldValueEntry? {
         val value = row.trimmedValue
@@ -71,11 +75,11 @@ object FieldValueSheetMapper {
         return if (existing != null) {
             existing.copy(
                 value = value,
-                displayLabel = row.displayLabel.orEmpty().trim(),
-                aliasesJson = FieldValueEntry.aliasesToJson(aliases),
-                category = row.category.orEmpty().trim(),
-                description = row.description.orEmpty().trim(),
-                isHidden = parseHidden(row.hiddenFlag),
+                displayLabel = row.displayLabel?.trim() ?: existing.displayLabel,
+                aliasesJson = if (row.aliasesCsv != null) FieldValueEntry.aliasesToJson(aliases) else existing.aliasesJson,
+                category = row.category?.trim() ?: existing.category,
+                description = row.description?.trim() ?: existing.description,
+                isHidden = if (row.hiddenFlag != null) parseHidden(row.hiddenFlag) else existing.isHidden,
                 updatedAt = System.currentTimeMillis()
             )
         } else {
