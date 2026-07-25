@@ -492,6 +492,9 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, ""),
             GuideLine("시트별 안내", styles.guideSection, ""),
             GuideLine("", styles.guideBody, "• 세계관: 코드로 기존 데이터 매칭. 코드 없을 시 이름으로 매칭"),
+            GuideLine("", styles.guideBody, "  '커스텀관계유형'은 JSON 배열([\"연인\",\"라이벌\"]), '커스텀관계색상'은 JSON 객체({\"연인\":\"#E91E63\"})입니다."),
+            GuideLine("", styles.guideBody, "  쉼표 구분(연인, 라이벌 / 연인=#E91E63)으로 적어도 해석하지만 경고가 표시됩니다."),
+            GuideLine("", styles.guideBody, "  비우면 기본 관계 유형·색상으로 돌아갑니다. 해석할 수 없으면 적용하지 않고 기존 설정을 유지합니다."),
             GuideLine("", styles.guideBody, "• 작품: 코드로 매칭. 코드 없을 시 제목+세계관으로 매칭"),
             GuideLine("", styles.guideBody, "• 필드 정의: 세계관+필드키+대상으로 매칭. 타입은 드롭다운에서 선택. 대상=사건이면 사건 필드"),
             GuideLine("", styles.guideBody, "• 캐릭터 시트 (세계관 이름): 코드로 매칭. 코드 없을 시 이름+작품으로 매칭"),
@@ -738,8 +741,9 @@ class ExcelExporter(context: Context) {
             row.createCell(7).setTextSafe(entry.category)
             row.createCell(8).setTextSafe(entry.description)
             row.createCell(9).setTextSafe(if (entry.isHidden) "Y" else "N")
-            row.createCell(10).setCellValue(entry.usageCount.toDouble())
-            row.createCell(11).setTextSafe(entry.code)
+            row.createCell(10).setTextSafe(entry.source)
+            row.createCell(11).setCellValue(entry.usageCount.toDouble())
+            row.createCell(12).setTextSafe(entry.code)
         }
 
         applySpecFormatting(sheet, spec, rowIndex - 1)

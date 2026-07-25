@@ -125,6 +125,26 @@ fun splitCsv(value: String): List<String> =
     toHalfWidth(value).split(",").map { it.trim() }.filter { it.isNotBlank() }
 
 /**
+ * '커스텀관계유형' 셀이 JSON 배열이 아닐 때의 관대 해석 — 앱 공통 복수값 규약(쉼표 구분)을 그대로 쓴다.
+ * JSON 파싱이 이미 실패한 값에만 적용되므로 유효 입력의 동작을 바꾸지 않는다.
+ */
+fun parseRelTypeTokens(raw: String): List<String> =
+    splitCsv(raw).map { it.trim().trim('"') }.filter { it.isNotBlank() }.distinct()
+
+/**
+ * '커스텀관계색상' 셀이 JSON 객체가 아닐 때의 관대 해석 — '유형=#색상' 또는 '유형:#색상'을
+ * 쉼표로 나열한 형태를 수용한다. 중괄호를 빠뜨린 JSON 조각도 따옴표를 벗겨 같은 규칙으로 걸린다.
+ */
+fun parseRelColorTokens(raw: String): List<Pair<String, String>> =
+    splitCsv(raw).mapNotNull { token ->
+        val sep = token.indexOfFirst { it == '=' || it == ':' }
+        if (sep <= 0) return@mapNotNull null
+        val k = token.substring(0, sep).trim().trim('"').trim('{').trim()
+        val v = token.substring(sep + 1).trim().trim('"').trim('}').trim().trim('"')
+        if (k.isBlank() || v.isBlank()) null else k to v
+    }.distinctBy { it.first }
+
+/**
  * 드롭다운(허용값) 열의 관대한 값 해석 (순수 함수 — 단위 테스트 대상).
  *
  * 표기 차이(앞뒤 공백·대소문자·전각 영숫자)만 흡수하고 **뜻이 다른 값은 해석하지 않는다**.
@@ -241,6 +261,10 @@ fun fieldValueLibrarySpec(universeNames: List<String> = emptyList()) = SheetSpec
         ColumnSpec("카테고리", width = 5000),
         ColumnSpec("설명", width = 8000),
         ColumnSpec("숨김", dropdownOptions = listOf("Y", "N"), width = 3000),
+        // 출처: AUTO(수확)·MANUAL(직접/큐레이션)·IMPORT(엑셀)·AI(AI 정리).
+        // 복원이 이 값을 재현하지 못하면 '미사용 자동수집 정리'(source='AUTO' 필터)가 영구히 0건이 된다.
+        // readOnly로 두지 않는 이유: 특정 값을 MANUAL로 올려 정리 대상에서 빼는 것은 실사용 가치가 있다.
+        ColumnSpec("출처", dropdownOptions = listOf("AUTO", "MANUAL", "IMPORT", "AI"), width = 3500),
         ColumnSpec("사용횟수", readOnly = true, width = 3500),
         ColumnSpec("코드", readOnly = true, width = 4000)
     )

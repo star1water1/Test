@@ -67,6 +67,38 @@ class SheetValueConventionsTest {
         assertNull(matchDropdownValue("", allowed))
     }
 
+    // ── 세계관 커스텀 관계 유형·색상: JSON이 아닌 입력의 관대 해석 ──
+
+    @Test
+    fun parseRelTypeTokens_acceptsCommaSeparated() {
+        assertEquals(listOf("연인", "라이벌"), parseRelTypeTokens("연인, 라이벌"))
+        assertEquals(listOf("연인", "라이벌"), parseRelTypeTokens("\"연인\", \"라이벌\""))
+        assertEquals(listOf("연인"), parseRelTypeTokens("연인, 연인"))   // 중복 제거
+        assertTrue(parseRelTypeTokens("   ").isEmpty())
+    }
+
+    @Test
+    fun parseRelColorTokens_acceptsEqualsAndColonForms() {
+        assertEquals(listOf("연인" to "#E91E63"), parseRelColorTokens("연인=#E91E63"))
+        assertEquals(listOf("연인" to "#E91E63"), parseRelColorTokens("연인:#E91E63"))
+        assertEquals(
+            listOf("연인" to "#E91E63", "라이벌" to "#3F51B5"),
+            parseRelColorTokens("연인=#E91E63, 라이벌=#3F51B5")
+        )
+    }
+
+    @Test
+    fun parseRelColorTokens_recoversBracelessJsonFragment() {
+        assertEquals(listOf("연인" to "#E91E63"), parseRelColorTokens("\"연인\":\"#E91E63\""))
+    }
+
+    @Test
+    fun parseRelColorTokens_rejectsUnparseable() {
+        assertTrue(parseRelColorTokens("연인").isEmpty())        // 구분자 없음
+        assertTrue(parseRelColorTokens("=#E91E63").isEmpty())    // 키 없음
+        assertTrue(parseRelColorTokens("연인=").isEmpty())        // 값 없음
+    }
+
     @Test
     fun searchPresetSortModes_areTheSingleSourceForDropdownAndValidation() {
         // 내보내기 드롭다운과 가져오기 검증이 같은 상수를 봐야 드리프트하지 않는다

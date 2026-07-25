@@ -441,7 +441,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             if (effectiveOptions.searchPresets) importSearchPresets(workbook, result, onProgress, totalRows)
             // 목록 프리셋은 작품코드를 해석하므로 작품 임포트(Phase 1) 이후에 처리
             if (effectiveOptions.characterListPresets) importCharacterListPresets(workbook, result, onProgress, totalRows)
-            if (effectiveOptions.appSettings) importAppSettings(workbook, result)
+            // 앱 설정은 DataStore/SharedPreferences에 쓰므로 DB 트랜잭션이 되돌리지 못한다 →
+            // 커밋 이후 블록으로 뺐다(아래 참조). 여기에 두면 롤백 시 "실패했다고 알리면서 설정만 바뀐"
+            // 부분 커밋이 된다.
             if (effectiveOptions.imageMeta) importImageMeta(workbook, result, onProgress, totalRows)
 
             // Phase 5: 엑셀에 없는 항목 삭제 (MERGE + deleteOptions)
@@ -452,6 +454,18 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             // Phase 6: 시맨틱 필드 동기화 (출생/사망연도 ↔ 상태변화 ↔ 생존여부)
             if (pendingSyncCharacters.isNotEmpty()) {
                 runPostImportSemanticSync()
+            }
+        }
+
+        // 앱 설정(테마·백업·이미지 압축)은 DB 트랜잭션이 되돌릴 수 없는 저장소(DataStore/SharedPreferences)에
+        // 쓴다. 그래서 커밋이 확정된 뒤에만 적용한다 — 가져오기가 실패하거나 취소되면 설정도 손대지 않은
+        // 상태로 남는다. 여기서 실패해도 DB는 이미 커밋됐으므로 전체를 실패로 되돌리지 않고 경고 + 교정 안내를 낸다.
+        if (effectiveOptions.appSettings) {
+            runCatching { importAppSettings(workbook, result) }.onFailure { e ->
+                result.warnings.add(
+                    "앱 설정 복원에 실패했습니다 — 데이터 자체는 정상 복원되었습니다. " +
+                    "설정 화면에서 테마·백업·이미지 압축 항목을 직접 확인해 주세요 (${e.message})"
+                )
             }
         }
 
@@ -1545,8 +1559,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val borderWidthFromExcel: Float? = if (borderWidthColIndex >= 0) (parseNumber(getCellString(row, borderWidthColIndex))?.toFloat() ?: 1.5f) else null
                 val imagePathsFromExcel: String? = if (imagePathColIndex >= 0) remapImagePaths(getCellString(row, imagePathColIndex).ifBlank { "[]" }) else null
                 val imageModeFromExcel: String? = if (imageModeColIndex >= 0) getCellString(row, imageModeColIndex).ifBlank { "none" } else null
-                val customRelTypes = if (customRelTypesColIndex >= 0) getCellString(row, customRelTypesColIndex) else ""
-                val customRelColors = if (customRelColorsColIndex >= 0) getCellString(row, customRelColorsColIndex) else ""
+                // 두 열은 JSON이다. 소비처가 파싱 실패를 무음으로 삼키고 기본값으로 돌아가므로 여기서 검증한다.
+                // null = 열 없음 또는 해석 불가 → 기존 값 유지.
+                val customRelTypes: String? = if (customRelTypesColIndex >= 0)
+                    normalizeRelTypesCell(getCellString(row, customRelTypesColIndex), "세계관 행 $i", name, result) else null
+                val customRelColors: String? = if (customRelColorsColIndex >= 0)
+                    normalizeRelColorsCell(getCellString(row, customRelColorsColIndex), "세계관 행 $i", name, result) else null
                 val imageCharCode = getCellCode(row, imageCharCodeColIndex, "세계관 행 $i", result).ifBlank { null }
                 val imageNovelCode = getCellCode(row, imageNovelCodeColIndex, "세계관 행 $i", result).ifBlank { null }
                 val createdAt = if (createdAtColIndex >= 0) parseNumber(getCellString(row, createdAtColIndex))?.toLong() ?: System.currentTimeMillis() else System.currentTimeMillis()
@@ -1614,8 +1632,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         borderWidthDp = borderWidthFromExcel ?: existing.borderWidthDp,
                         imagePaths = imagePathsFromExcel ?: existing.imagePaths,
                         imageMode = imageModeFromExcel ?: existing.imageMode,
-                        customRelationshipTypes = if (customRelTypesColIndex >= 0) customRelTypes else existing.customRelationshipTypes,
-                        customRelationshipColors = if (customRelColorsColIndex >= 0) customRelColors else existing.customRelationshipColors,
+                        customRelationshipTypes = customRelTypes ?: existing.customRelationshipTypes,
+                        customRelationshipColors = customRelColors ?: existing.customRelationshipColors,
                         // imageCharacterId/imageNovelId: deferred (Phase 2 후 코드 기반 해석)
                         imageCharacterId = if (imageCharCodeColIndex >= 0) null else existing.imageCharacterId,
                         imageNovelId = if (imageNovelCodeColIndex >= 0) null else existing.imageNovelId,
@@ -1631,8 +1649,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         name = name, description = descriptionFromExcel ?: "", code = newCode,
                         displayOrder = displayOrder ?: i.toLong(), borderColor = borderColorFromExcel ?: "", borderWidthDp = borderWidthFromExcel ?: 1.5f,
                         imagePaths = imagePathsFromExcel ?: "[]", imageMode = imageModeFromExcel ?: "none",
-                        customRelationshipTypes = customRelTypes,
-                        customRelationshipColors = customRelColors,
+                        customRelationshipTypes = customRelTypes ?: "",
+                        customRelationshipColors = customRelColors ?: "",
                         imageCharacterId = null, // deferred
                         imageNovelId = null,     // deferred
                         createdAt = createdAt
@@ -1979,6 +1997,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val descCol = cols["설명"] ?: -1
         val hiddenCol = cols["숨김"] ?: -1
         val codeCol = cols["코드"] ?: -1
+        val sourceCol = cols["출처"] ?: -1
 
         // 배치 로드: 행마다 쿼리하지 않는다 (검토 A7 — 대용량 파일 성능)
         val universesByName = db.universeDao().getAllUniversesList().associateBy { it.name }
@@ -2012,7 +2031,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     category = if (categoryCol >= 0) getCellString(row, categoryCol) else null,
                     description = if (descCol >= 0) getCellString(row, descCol) else null,
                     hiddenFlag = if (hiddenCol >= 0) getCellString(row, hiddenCol) else null,
-                    code = if (codeCol >= 0) getCellString(row, codeCol) else null
+                    code = if (codeCol >= 0) getCellString(row, codeCol) else null,
+                    sourceFlag = if (sourceCol >= 0) getCellString(row, sourceCol) else null
                 )
                 val fd = fieldCache.getOrPut(Triple(universe.id, fieldKey, imported.entityType)) {
                     db.fieldDefinitionDao().getFieldByKey(universe.id, fieldKey, imported.entityType)
@@ -2021,6 +2041,15 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     result.skippedRows++
                     result.warnings.add("필드 데이터 행 $i: 필드 키 '$fieldKey'(${imported.entityLabel ?: "캐릭터"})을(를) 세계관 '$universeName'에서 찾을 수 없음")
                     continue
+                }
+
+                // 출처 오타는 조용히 수용하지도, 기존 값을 파괴하지도 않는다 — 고지 + 교정 경로 안내
+                val sourceCell = FieldValueSheetMapper.parseSourceCell(imported.sourceFlag)
+                if (sourceCell is FieldValueSheetMapper.SourceCell.Unknown) {
+                    result.warnings.add(
+                        "필드 데이터 행 $i: 출처 '${sourceCell.raw}'을(를) 인식할 수 없습니다 — " +
+                        "AUTO·MANUAL·IMPORT·AI 중 하나를 입력하세요(인식 전까지 기존 출처를 유지합니다)"
+                    )
                 }
 
                 val siblings = entriesByField.getOrPut(fd.id) { mutableListOf() }
@@ -4852,16 +4881,66 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
      * F4: JSON 문자열이 파싱 가능한지 검증한다 (내보내기 32,767자 절단·외부 편집 구문 오류 감지용).
      * 빈 문자열은 유효로 본다. object/array만 최상위로 허용.
      */
-    private fun isValidJson(value: String): Boolean {
+    private fun isValidJson(value: String, requireTop: Char? = null): Boolean {
         val t = value.trim()
         if (t.isEmpty()) return true
+        val top = t.first()
+        // 배열을 기대하는 열에 객체가 들어와도 소비처는 예외를 삼키고 기본값으로 돌아간다 —
+        // "파싱은 되지만 소비처가 못 읽는" 값을 유효로 판정하면 구멍이 남는다.
+        if (requireTop != null && top != requireTop) return false
         return try {
-            when (t.first()) {
+            when (top) {
                 '{' -> { org.json.JSONObject(t); true }
                 '[' -> { org.json.JSONArray(t); true }
                 else -> false
             }
         } catch (_: Exception) { false }
+    }
+
+    /**
+     * 세계관 '커스텀관계유형' 셀 정규화.
+     * 소비처(Universe.getRelationshipTypes)가 파싱 실패를 무음으로 삼키고 기본 유형으로 돌아가므로
+     * 가져오기가 형식을 확인해 해석하거나 경고한다. 검증은 소비처와 같은 org.json 파서를 쓴다.
+     *
+     * @return null = 이 셀로는 설정을 복원할 수 없음 → 기존 값 유지
+     *         (해석 불가 입력이 유효 설정을 파괴하지 않게 — 덮어쓰기 대원칙)
+     */
+    private fun normalizeRelTypesCell(raw: String, rowLabel: String, universeName: String, result: ImportResult): String? {
+        if (raw.isBlank()) return ""                      // F1-A: 열 있음 + 빈칸 = 비움 의도 존중
+        if (isValidJson(raw, '[')) return raw
+        val tokens = parseRelTypeTokens(raw)
+        if (tokens.isNotEmpty()) {
+            result.warnings.add(
+                "$rowLabel: 세계관 '$universeName'의 커스텀관계유형이 JSON 배열 형식이 아니어서 쉼표 구분으로 해석했습니다(${tokens.size}개: ${tokens.joinToString("/")}) — 정확한 형식은 [\"연인\",\"라이벌\"] 입니다"
+            )
+            return org.json.JSONArray(tokens).toString()
+        }
+        result.warnings.add(
+            "$rowLabel: 세계관 '$universeName'의 커스텀관계유형 '${raw.take(40)}'을(를) 해석할 수 없어 적용하지 않고 기존 설정을 유지했습니다 — 형식은 [\"연인\",\"라이벌\"] 또는 쉼표 구분(연인, 라이벌)입니다. 비우면 기본 유형으로 돌아갑니다"
+        )
+        return null
+    }
+
+    /**
+     * 세계관 '커스텀관계색상' 셀 정규화. 규칙은 [normalizeRelTypesCell]과 동형이며
+     * 소비처는 Universe.getRelationshipColorMap이다.
+     */
+    private fun normalizeRelColorsCell(raw: String, rowLabel: String, universeName: String, result: ImportResult): String? {
+        if (raw.isBlank()) return ""
+        if (isValidJson(raw, '{')) return raw
+        val pairs = parseRelColorTokens(raw)
+        if (pairs.isNotEmpty()) {
+            val obj = org.json.JSONObject()
+            pairs.forEach { (k, v) -> obj.put(k, v) }
+            result.warnings.add(
+                "$rowLabel: 세계관 '$universeName'의 커스텀관계색상이 JSON 객체 형식이 아니어서 '유형=색상' 목록으로 해석했습니다(${pairs.size}개) — 정확한 형식은 {\"연인\":\"#E91E63\"} 입니다"
+            )
+            return obj.toString()
+        }
+        result.warnings.add(
+            "$rowLabel: 세계관 '$universeName'의 커스텀관계색상 '${raw.take(40)}'을(를) 해석할 수 없어 적용하지 않고 기존 설정을 유지했습니다 — 형식은 {\"연인\":\"#E91E63\"} 또는 '연인=#E91E63' 쉼표 나열입니다. 비우면 기본 색상으로 돌아갑니다"
+        )
+        return null
     }
 
     /** 월에 맞는 유효한 일수인지 검증 (월이 null이면 1..31 범위만 체크) */
