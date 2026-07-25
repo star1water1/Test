@@ -193,126 +193,6 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private val deferredUniverseImageNovelCodes = mutableMapOf<Long, String>() // universeId → novelCode
     private val deferredNovelImageCharCodes = mutableMapOf<Long, String>()     // novelId → charCode
 
-    // ── Header alias map for tolerant import (Sprint C) ──
-
-    private val headerAliases: Map<String, String> = buildMap {
-        fun alias(canonical: String, vararg aliases: String) {
-            put(canonical.normalizeHeader(), canonical)
-            for (a in aliases) {
-                val key = a.normalizeHeader()
-                // Only add if not already claimed by another canonical
-                if (key !in this) put(key, canonical)
-            }
-        }
-        // Core identifiers (order matters: first registration wins)
-        alias("이름", "name", "캐릭터명")
-        alias("설명", "description", "desc")
-        alias("코드", "code")
-        alias("정렬순서", "sort_order", "display_order", "displayorder")
-        alias("제목", "title", "작품제목")
-        alias("세계관", "universe")
-        alias("세계관코드", "universe_code")
-        alias("이명", "another_name", "별칭", "alias")
-        alias("성", "last_name", "lastName", "family_name")
-        alias("이름(First)", "first_name", "firstName", "given_name")
-        alias("이미지경로", "image_path", "이미지 경로", "image_file", "imagepath", "imagepaths")
-        alias("이미지모드", "image_mode", "이미지 모드")
-        alias("이미지캐릭터코드", "이미지캐릭터ID", "image_character_id", "image_character_code", "이미지 캐릭터 ID")
-        alias("이미지작품코드", "이미지작품ID", "image_novel_id", "image_novel_code", "이미지 작품 ID")
-        alias("작품", "novel")
-        alias("메모", "memo", "비고", "note", "notes")
-        alias("태그", "tags", "tag")
-        alias("작품코드", "novel_code")
-        // Field definition (unique aliases only)
-        alias("필드키", "field_key")
-        alias("필드명", "field_name")
-        alias("타입", "type", "field_type")
-        alias("설정(JSON)", "config", "configuration")
-        alias("그룹", "group", "그룹명", "group_name")
-        alias("순서", "order")
-        alias("필수여부", "required", "is_required")
-        alias("대상", "entity_type", "대상엔티티", "entity")
-        // Timeline (unique aliases only)
-        alias("연도", "year")
-        alias("월", "month")
-        alias("일", "day")
-        alias("역법", "calendar", "calendar_type")
-        alias("사건 유형", "event_type", "사건유형")
-        alias("사건 설명", "event_description", "사건설명")
-        alias("관련 작품", "related_novel", "관련작품")
-        alias("관련 캐릭터", "related_characters", "관련캐릭터")
-        alias("관련작품코드", "related_novel_code")
-        // State change
-        alias("캐릭터", "character", "character_name")
-        alias("새 값", "new_value", "새값")
-        alias("캐릭터코드", "character_code")
-        // Relationship
-        alias("캐릭터1", "character1")
-        alias("캐릭터2", "character2")
-        alias("관계 유형", "relationship_type", "관계유형")
-        alias("캐릭터1코드", "character1_code")
-        alias("캐릭터2코드", "character2_code")
-        // 관계 변화 — 연결 사건 참조 (코드 우선, ID는 구버전 파일 폴백)
-        alias("연결사건코드", "linked_event_code", "event_code")
-        alias("연결사건ID", "linked_event_id")
-        // 관계 변화 — 부모 관계 식별자 (변화 시점 유형인 '관계 유형'과 구분되는 별개 열)
-        alias("부모관계유형", "parent_relationship_type", "부모 관계 유형", "parentrelationshiptype")
-        // Relationship extra
-        alias("강도", "intensity")
-        alias("양방향", "bidirectional", "is_bidirectional")
-        alias("표시순서", "display_order_rel")
-        // Universe custom relationship
-        alias("커스텀관계유형", "custom_relationship_types", "커스텀 관계 유형")
-        alias("커스텀관계색상", "custom_relationship_colors", "커스텀 관계 색상")
-        // Novel extra
-        alias("표준연도", "standard_year", "표준 연도")
-        // Timeline extra
-        alias("임시배치", "is_temporary", "임시 배치", "temporary")
-        // Name bank
-        alias("성별", "gender", "sex")
-        alias("출처", "origin", "문화권")
-        alias("사용여부", "is_used")
-        alias("사용 캐릭터", "used_by", "사용캐릭터")
-        alias("사용캐릭터코드", "used_character_code")
-        // Border color (Sprint D)
-        alias("테두리색", "border_color", "bordercolor")
-        alias("테두리두께", "border_width", "borderwidth")
-        // User preset template
-        alias("기본제공", "is_built_in", "builtin")
-        alias("생성일", "created_at", "createdat")
-        alias("수정일", "updated_at", "updatedat")
-        // Search preset
-        alias("검색어", "query", "search_query")
-        alias("필터(JSON)", "filters", "filter_json")
-        alias("정렬모드", "sort_mode", "sortmode")
-        alias("기본값", "is_default", "default")
-        // 캐릭터 목록 프리셋
-        alias("태그(JSON)", "tags_json", "tagsjson")
-        alias("필드필터(JSON)", "field_filters_json", "fieldfiltersjson")
-        alias("정렬종류", "sort_kind", "sortkind")
-        alias("정렬필드키", "sort_field_key", "sortfieldkey")
-        alias("정렬오름차순", "sort_ascending", "오름차순", "ascending")
-        alias("신체파트번호", "body_size_part_index", "신체파트", "bodypartindex")
-        alias("작품코드목록", "novel_codes", "작품 코드 목록", "novelcodes")
-        // App settings
-        alias("설정키", "setting_key", "key")
-        alias("설정값", "setting_value", "value")
-        // Faction
-        alias("색상", "color", "faction_color")
-        alias("자동관계유형", "auto_relation_type", "autorelationtype")
-        alias("자동관계강도", "auto_relation_intensity", "autorelationintensity")
-        // Faction membership
-        alias("세력", "faction", "faction_name")
-        alias("가입연도", "join_year", "joinyear")
-        alias("탈퇴연도", "leave_year", "leaveyear")
-        alias("탈퇴유형", "leave_type", "leavetype")
-        alias("탈퇴후관계유형", "departed_relation_type", "departedrelationtype")
-        alias("탈퇴후강도", "departed_intensity", "departedintensity")
-        alias("세력코드", "faction_code", "factioncode")
-        // 이미지 시트 (G3)
-        alias("파일명", "filename", "file_name", "파일 명")
-        alias("링크그룹", "link_group", "linkgroup", "링크 그룹")
-    }
 
     /** 가져올 이미지의 경로 재매핑: {원본경로 → 새경로} */
     var imagePathRemap: Map<String, String> = emptyMap()
@@ -453,7 +333,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             if (effectiveOptions.universes) importUniverses(workbook, result, onProgress, totalRows)
             if (effectiveOptions.novels) importNovels(workbook, result, onProgress, totalRows)
             // Novel 임포트 완료 (또는 기존 DB 유지) → Universe의 imageNovelId 코드 해석
-            applyDeferredUniverseNovelRefs()
+            applyDeferredUniverseNovelRefs(result)
             if (effectiveOptions.fieldDefinitions) {
                 importFieldDefinitions(workbook, result, onProgress, totalRows)
                 // OVERWRITE: 사전 deleteAll 대신 매칭 후 잔여 정의만 정리 — 매칭된 정의는 id가 보존되어
@@ -468,7 +348,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 importUnclassifiedCharacters(workbook, result, resolvedConflicts, onProgress, totalRows)
             }
             // Character 임포트 완료 → imageCharacterId 코드 해석 가능
-            applyDeferredCharacterRefs()
+            applyDeferredCharacterRefs(result)
 
             // Phase 3: Relationships and references
             if (effectiveOptions.timeline) importTimeline(workbook, result, onProgress, totalRows)
@@ -857,7 +737,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private data class SheetAnalysis(val first: Int, val second: Int, val third: Int, val fourth: List<CharacterConflict>, val fifth: Int = 0)
 
     private suspend fun analyzeCharacterSheet(sheet: Sheet, headerRow: Row, sheetLabel: String): SheetAnalysis {
-        val cols = resolveHeaderColumns(headerRow)
+        // 실제 임포트와 동일한 고정 열 우선 해석 — 미리보기 건수가 임포트 결과와 어긋나지 않게 한다
+        val cols = resolveHeaderColumns(headerRow, reservedHeaders = CHARACTER_FIXED_HEADERS)
         val nameColIndex = cols["이름"] ?: 0
         val codeColIndex = cols["코드"] ?: -1
         val memoColIndex = cols["메모"] ?: -1
@@ -1387,20 +1268,46 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     // ── Tolerant header matching (Sprint C) ──
 
     /**
-     * Build a column index map by resolving header names through aliases.
-     * Returns Map<canonical_header_name, column_index>.
+     * 헤더 행 → {표준 헤더명 → 열 인덱스}.
+     *
+     * [reservedHeaders]가 주어지면 **정확 일치 열을 먼저 예약**한 뒤 나머지에만 별칭 해석을 적용한다.
+     * 캐릭터 시트에서 커스텀 필드명이 고정 열(또는 그 별칭)과 겹칠 때 필드 열이 고정 슬롯을
+     * 빼앗아 값이 뒤바뀌는 것을 막는다. [report]/[sheetLabel]을 주면 같은 표준명으로 접힌
+     * 중복 헤더를 무음 폐기하지 않고 경고한다(변수 제어).
      */
-    private fun resolveHeaderColumns(headerRow: Row): Map<String, Int> {
+    private fun resolveHeaderColumns(
+        headerRow: Row,
+        report: ImportResult? = null,
+        sheetLabel: String? = null,
+        reservedHeaders: Set<String> = emptySet()
+    ): Map<String, Int> {
         val result = mutableMapOf<String, Int>()
         val lastCol = headerRow.lastCellNum.toInt()
+        val raws = arrayOfNulls<String>(lastCol)
         for (col in 0 until lastCol) {
             val cell = headerRow.getCell(col) ?: continue
             val rawHeader = try { cell.stringCellValue?.trim() ?: "" } catch (_: Exception) { "" }
             if (rawHeader.isBlank()) continue
-            val normalized = rawHeader.normalizeHeader()
-            val canonical = headerAliases[normalized] ?: rawHeader
+            raws[col] = rawHeader
+        }
+        // 1패스: 예약 헤더와 문자 그대로 일치하는 열 (별칭 확장 없음)
+        if (reservedHeaders.isNotEmpty()) {
+            for (col in 0 until lastCol) {
+                val raw = raws[col] ?: continue
+                if (raw in reservedHeaders && raw !in result) result[raw] = col
+            }
+        }
+        // 2패스: 나머지 열에 별칭 해석 적용 (이미 확정된 표준명은 덮어쓰지 않음)
+        for (col in 0 until lastCol) {
+            val raw = raws[col] ?: continue
+            val canonical = ExcelHeaderAliases.map[raw.normalizeHeader()] ?: raw
             if (canonical !in result) {
                 result[canonical] = col
+            } else if (result[canonical] != col && report != null) {
+                val prevRaw = raws[result[canonical]!!] ?: canonical
+                report.warnings.add(
+                    "${sheetLabel ?: headerRow.sheet?.sheetName ?: "시트"}: 헤더 '$prevRaw'와(과) '$raw'이(가) 같은 열 '$canonical'로 해석되어 뒤쪽 열을 무시했습니다 — 커스텀 필드명이 고정 열 이름과 겹치지 않는지 확인하세요"
+                )
             }
         }
         return result
@@ -1414,7 +1321,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val firstCell = getCellString(headerRow, 0)
         if (firstCell.isBlank()) return false
         val normalized = firstCell.normalizeHeader()
-        val canonical = headerAliases[normalized] ?: firstCell
+        val canonical = ExcelHeaderAliases.map[normalized] ?: firstCell
         return canonical == expectedFirstHeader || firstCell == expectedFirstHeader
     }
 
@@ -2063,7 +1970,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         onProgress: (ImportProgress) -> Unit,
         totalRows: Int
     ) {
-        val cols = resolveHeaderColumns(headerRow)
+        // 캐릭터 시트는 고정 열 **정확 일치**를 별칭 해석보다 우선한다 —
+        // 커스텀 필드명이 '메모'(또는 별칭인 '비고')여도 고정 '메모' 열을 빼앗지 못하게 한다.
+        val cols = resolveHeaderColumns(headerRow, result, sheetLabel, CHARACTER_FIXED_HEADERS)
         val nameColIndex = cols["이름"] ?: 0
         val anotherNameColIndex = cols["이명"] ?: -1
         val lastNameColIndex = cols["성"] ?: -1
@@ -2714,17 +2623,25 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         }
                         found
                     }
-                    else -> when (val resolved = findCharacterStrict(charName, charCode)) {
-                        is CharLookupResult.Found -> resolved.character
-                        is CharLookupResult.Ambiguous -> {
-                            result.skippedRows++
-                            result.errors.add("상태변화 행 $i: '${charName}' 이름의 캐릭터가 ${resolved.count}명 존재합니다. 코드 컬럼으로 구분하세요.")
-                            continue
-                        }
-                        is CharLookupResult.NotFound -> {
-                            result.skippedRows++
-                            result.errors.add("상태변화 행 $i: 캐릭터 '${charName}'을(를) 찾을 수 없음")
-                            continue
+                    // 시트의 '작품' 열을 동명이인 해소 힌트로 쓴다 — 내보내면서 실어놓고 쓰지 않으면
+                    // 코드 열이 없는 구버전 파일에서 해소 가능한 행이 불필요하게 거부된다.
+                    else -> {
+                        val hintNovelId = if (novelColIndex >= 0) {
+                            val t = getCellString(row, novelColIndex)
+                            if (t.isBlank()) null else allNovels.find { it.title == t }?.id
+                        } else null
+                        when (val resolved = resolveCharByNameNovel(charName, hintNovelId)) {
+                            is CharLookupResult.Found -> resolved.character
+                            is CharLookupResult.Ambiguous -> {
+                                result.skippedRows++
+                                result.errors.add("상태변화 행 $i: '${charName}' 이름의 캐릭터가 ${resolved.count}명 존재합니다. '작품' 열이나 캐릭터코드 열로 구분하세요.")
+                                continue
+                            }
+                            is CharLookupResult.NotFound -> {
+                                result.skippedRows++
+                                result.errors.add("상태변화 행 $i: 캐릭터 '${charName}'을(를) 찾을 수 없음")
+                                continue
+                            }
                         }
                     }
                 }
@@ -3155,7 +3072,13 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         CharLookupResult.NotFound -> null
                     }
 
-                val effectiveIsUsed = isUsed && usedByCharacterId != null
+                // 참조가 적혀 있는데 해석에 실패하면 '사용여부'까지 조용히 false로 뒤집힌다 —
+                // 사용 표시는 보존하고 연결만 비운 뒤 고지한다(무음 상태 변경 금지).
+                val usedRefProvided = usedByCharCode.isNotBlank() || usedByCharName.isNotBlank()
+                if (isUsed && usedRefProvided && usedByCharacterId == null) {
+                    result.warnings.add("이름 은행 행 $i: 사용 캐릭터 '${usedByCharName.ifBlank { usedByCharCode }}'을(를) 찾을 수 없어 연결 없이 '사용 중'으로 남겨둡니다")
+                }
+                val effectiveIsUsed = isUsed
 
                 val mapKey = "${name}\u0000${gender}"
                 val entryCode = getCellCode(row, codeColIndex, "이름 은행 행 $i", result)  // F4: 숫자 코드 방어
@@ -4122,14 +4045,31 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val trimmedHeader = headerName.trim()
                 .removeSuffix(" (쉼표 구분)")
 
-            // 1차: name 완전 일치
-            var field = fields.find { it.name == trimmedHeader }
-            // 2차: name 대소문자 무시
-            if (field == null) field = fields.find { it.name.equals(trimmedHeader, ignoreCase = true) }
-            // 3차: key 완전 일치 (사용자가 key를 헤더로 사용한 경우)
+            // 매칭 규약(안정 식별자 우선 → 자연키 폴백):
+            // 0차: "이름(필드키)" 병기 헤더 — 내보내기가 충돌·동명 시 붙인다
+            var field: FieldDefinition? = null
+            val keyed = Regex("""^(.+)\((.+)\)$""").find(trimmedHeader)
+            if (keyed != null) {
+                val k = keyed.groupValues[2].trim()
+                field = fields.find { it.key == k } ?: fields.find { it.key.equals(k, ignoreCase = true) }
+            }
+            // 1차: key 완전 일치 (사용자가 key를 헤더로 사용한 경우)
             if (field == null) field = fields.find { it.key == trimmedHeader }
-            // 4차: key 대소문자 무시
             if (field == null) field = fields.find { it.key.equals(trimmedHeader, ignoreCase = true) }
+            // 2차: name 일치 — **후보가 유일할 때만**. 동명 필드가 둘이면 근거 없이 고르지 않는다.
+            if (field == null) {
+                val byName = fields.filter { it.name == trimmedHeader }
+                    .ifEmpty { fields.filter { it.name.equals(trimmedHeader, ignoreCase = true) } }
+                when {
+                    byName.size == 1 -> field = byName.first()
+                    byName.size > 1 -> {
+                        result.warnings.add(
+                            "$sheetLabel: 열 '$trimmedHeader'과(와) 이름이 같은 필드가 ${byName.size}개 있어 어느 필드인지 확정할 수 없습니다 — 헤더를 '이름(필드키)' 형식으로 바꾸거나 앱에서 필드명을 구분해 주세요"
+                        )
+                        continue
+                    }
+                }
+            }
 
             if (field != null) {
                 map[col] = field
@@ -4158,6 +4098,20 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             } else {
                 // 미분류 캐릭터 시트: 세계관 없어 자동 생성 불가 → 경고만
                 result.warnings.add("$sheetLabel: 컬럼 '$trimmedHeader'에 대한 필드 정의를 찾을 수 없어 무시됨")
+            }
+        }
+        // 단사(injective) 보장: 한 필드에 2개 이상의 열이 붙으면 뒤 열을 버린다.
+        // (동명 헤더가 든 기존 파일 보호 — 두 열이 같은 필드에 쓰이면 앞 열 값이 뒤 열 값으로 조용히 덮인다)
+        val byField = map.entries.groupBy { it.value.id }
+        for ((_, entries) in byField) {
+            if (entries.size <= 1) continue
+            val keep = entries.minByOrNull { it.key }!!
+            for (e in entries) {
+                if (e.key == keep.key) continue
+                map.remove(e.key)
+                result.errors.add(
+                    "$sheetLabel: 열 ${e.key + 1}과(와) 열 ${keep.key + 1}이(가) 같은 필드 '${e.value.name}'에 대응해 열 ${e.key + 1}을(를) 무시했습니다 — 중복 헤더를 정리해 주세요"
+                )
             }
         }
         return map
@@ -4382,26 +4336,40 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
      */
     // ── Deferred FK 해석 (코드 기반) ──
 
-    private suspend fun applyDeferredUniverseNovelRefs() {
+    // 미해석 코드는 조용히 버리지 않는다 — Phase 1에서 참조를 이미 null로 지운 뒤라
+    // 여기서 무음 continue하면 기존 대표 이미지 설정이 경고 없이 사라진다(변수 제어).
+    private suspend fun applyDeferredUniverseNovelRefs(result: ImportResult) {
         for ((universeId, novelCode) in deferredUniverseImageNovelCodes) {
-            val novelId = db.novelDao().getNovelByCode(novelCode)?.id ?: continue
             val universe = db.universeDao().getUniverseById(universeId) ?: continue
+            val novelId = db.novelDao().getNovelByCode(novelCode)?.id
+            if (novelId == null) {
+                result.warnings.add("세계관 '${universe.name}': 이미지 작품코드 '$novelCode'에 해당하는 작품이 없어 대표 이미지 연동이 해제되었습니다")
+                continue
+            }
             db.universeDao().update(universe.copy(imageNovelId = novelId))
         }
         deferredUniverseImageNovelCodes.clear()
     }
 
-    private suspend fun applyDeferredCharacterRefs() {
+    private suspend fun applyDeferredCharacterRefs(result: ImportResult) {
         for ((novelId, charCode) in deferredNovelImageCharCodes) {
-            val charId = db.characterDao().getCharacterByCode(charCode)?.id ?: continue
             val novel = db.novelDao().getNovelById(novelId) ?: continue
+            val charId = db.characterDao().getCharacterByCode(charCode)?.id
+            if (charId == null) {
+                result.warnings.add("작품 '${novel.title}': 이미지 캐릭터코드 '$charCode'에 해당하는 캐릭터가 없어 대표 이미지 연동이 해제되었습니다")
+                continue
+            }
             db.novelDao().update(novel.copy(imageCharacterId = charId))
         }
         deferredNovelImageCharCodes.clear()
 
         for ((universeId, charCode) in deferredUniverseImageCharCodes) {
-            val charId = db.characterDao().getCharacterByCode(charCode)?.id ?: continue
             val universe = db.universeDao().getUniverseById(universeId) ?: continue
+            val charId = db.characterDao().getCharacterByCode(charCode)?.id
+            if (charId == null) {
+                result.warnings.add("세계관 '${universe.name}': 이미지 캐릭터코드 '$charCode'에 해당하는 캐릭터가 없어 대표 이미지 연동이 해제되었습니다")
+                continue
+            }
             db.universeDao().update(universe.copy(imageCharacterId = charId))
         }
         deferredUniverseImageCharCodes.clear()
@@ -4559,9 +4527,3 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     }
 }
 
-/**
- * Normalize header string for alias matching:
- * lowercase, remove spaces/underscores/special chars
- */
-private fun String.normalizeHeader(): String =
-    this.trim().lowercase().replace(Regex("[\\s_\\-()（）]"), "")

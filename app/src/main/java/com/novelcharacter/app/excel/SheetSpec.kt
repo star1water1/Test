@@ -56,8 +56,26 @@ data class SheetSpec(
     }
 }
 
-/** Fixed (non-dynamic-field) column headers in character sheets. */
-val CHARACTER_FIXED_HEADERS = setOf("이름", "성", "이름(First)", "이명", "이미지경로", "작품", "메모", "태그", "코드", "작품코드", "정렬순서", "고정")
+/**
+ * 캐릭터 시트의 고정(커스텀 필드가 아닌) 열 헤더 — characterSpec과 가져오기 해석이 공유하는 단일 소스.
+ * 커스텀 필드명이 이 목록과 겹치면 열 정체가 흔들리므로 내보내기가 필드키를 병기한다.
+ */
+val CHARACTER_FIXED_HEADERS = setOf(
+    "이름", "성", "이름(First)", "이명", "이미지경로", "작품", "메모", "태그",
+    "코드", "작품코드", "정렬순서", "고정", "생성일"
+)
+
+/**
+ * 커스텀 필드 헤더가 고정 열과 충돌하는지 — 가져오기와 **같은 별칭 규칙**으로 판정한다.
+ * ('비고'는 별칭상 '메모'로 접히므로 이름이 달라도 충돌이다)
+ */
+fun collidesWithFixedHeader(fieldName: String): Boolean =
+    ExcelHeaderAliases.canonical(fieldName) in CHARACTER_FIXED_HEADERS ||
+        fieldName in CHARACTER_FIXED_HEADERS
+
+/** 커스텀 필드 열 헤더에 병기하는 안정 식별자 형식 — 가져오기가 이 키로 열을 확정한다 */
+fun characterFieldHeader(fieldName: String, fieldKey: String, disambiguate: Boolean): String =
+    if (disambiguate) "$fieldName($fieldKey)" else fieldName
 
 /** Default border color presets for color picker UI. */
 val BORDER_COLOR_PRESETS = listOf(
@@ -196,7 +214,9 @@ fun characterSpec(fields: List<FieldDefinition>, novelTitles: List<String>) = Sh
         add(ColumnSpec("성", width = 4000))
         add(ColumnSpec("이름(First)", width = 4000))
         add(ColumnSpec("이명", width = 6000))
-        // Dynamic field columns
+        // Dynamic field columns — 고정 열과 겹치거나 동명 필드가 둘 이상이면 필드키를 병기해
+        // 열 정체를 확정한다(병기하지 않으면 가져오기가 first-wins로 값을 뒤바꾼다).
+        val fieldNameCounts = fields.groupingBy { it.name }.eachCount()
         for (field in fields) {
             val options = if (field.type == "SELECT") {
                 try {
@@ -205,7 +225,9 @@ fun characterSpec(fields: List<FieldDefinition>, novelTitles: List<String>) = Sh
                     if (arr != null) (0 until arr.length()).map { arr.getString(it) } else null
                 } catch (_: Exception) { null }
             } else null
-            val headerName = if (field.type == "MULTI_TEXT") "${field.name} (쉼표 구분)" else field.name
+            val disambiguate = collidesWithFixedHeader(field.name) || (fieldNameCounts[field.name] ?: 0) > 1
+            val core = characterFieldHeader(field.name, field.key, disambiguate)
+            val headerName = if (field.type == "MULTI_TEXT") "$core (쉼표 구분)" else core
             add(ColumnSpec(headerName, required = field.isRequired, dropdownOptions = options))
         }
         add(ColumnSpec("이미지경로", readOnly = true, width = 4000))
