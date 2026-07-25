@@ -32,6 +32,7 @@ class AutoBackupWorker(
         return try {
             Log.i(TAG, "Starting auto backup...")
             val workbook = XSSFWorkbook()
+            val imageReport: com.novelcharacter.app.excel.ImageZipReport
             try {
                 // 공유·저장 내보내기와 동일한 단일 소스(ExcelExporter)를 재사용한다.
                 // 별도 export 로직을 두면 포맷이 드리프트(세력관계 시트·사건 코드·커스텀 필드·
@@ -40,7 +41,7 @@ class AutoBackupWorker(
                 ExcelExporter(appContext).populateWorkbook(workbook, ExportOptions())
 
                 // Write workbook to bytes, encrypt, and save to internal storage
-                saveEncryptedBackup(workbook, settings.includeImages)
+                imageReport = saveEncryptedBackup(workbook, settings.includeImages)
             } finally {
                 try { workbook.close() } catch (e: Exception) { Log.w(TAG, "Failed to close workbook", e) }
             }
@@ -52,11 +53,22 @@ class AutoBackupWorker(
                 Log.w(TAG, "Backup rotation failed, will retry next time", e)
             }
 
-            statusStore.recordSuccess()
+            // 이미지가 빠진 백업을 완전한 백업으로 오인하지 않도록 상태·이력 양쪽에 남긴다.
+            // (백그라운드라 Toast가 불가능하고 매 회차 시스템 알림은 소음이 되므로,
+            //  설정 화면의 백업 상태 + 작업 이력으로 노출한다)
+            val imageWarning = if (imageReport.hasLoss) {
+                appContext.getString(
+                    com.novelcharacter.app.R.string.backup_images_incomplete,
+                    imageReport.referencedCount, imageReport.includedCount, imageReport.excludedCount
+                )
+            } else null
+            statusStore.recordSuccess(imageWarning)
             Log.i(TAG, "Auto backup completed successfully")
             logResult(com.novelcharacter.app.util.OpResult.success(
                 com.novelcharacter.app.util.OpResult.CAT_BACKUP,
                 appContext.getString(com.novelcharacter.app.R.string.backup_result_auto_success)
+                    + (imageWarning?.let { " — $it" } ?: ""),
+                imageWarning
             ))
             Result.success()
         } catch (e: Exception) {
@@ -85,7 +97,10 @@ class AutoBackupWorker(
         } catch (_: Exception) { /* 이력 기록 실패는 무시 */ }
     }
 
-    private suspend fun saveEncryptedBackup(workbook: XSSFWorkbook, includeImages: Boolean) {
+    private suspend fun saveEncryptedBackup(
+        workbook: XSSFWorkbook,
+        includeImages: Boolean
+    ): com.novelcharacter.app.excel.ImageZipReport {
         val backupDir = File(appContext.filesDir, BACKUP_DIR_NAME)
         if (!backupDir.exists()) {
             backupDir.mkdirs()
@@ -104,18 +119,21 @@ class AutoBackupWorker(
             }
 
             // 2. 이미지 포함 ZIP 래핑 (설정으로 제외 가능 — 용량 절약)
-            val hasImages = if (includeImages) {
+            val report = if (includeImages) {
                 val db = AppDatabase.getDatabase(appContext)
                 com.novelcharacter.app.excel.ImageZipHelper.wrapWithImages(
                     tempXlsx, tempZip, db, appContext
                 )
             } else {
-                false
+                com.novelcharacter.app.excel.ImageZipReport.NOT_REQUESTED
             }
 
-            // 3. 암호화 (이미지가 있으면 ZIP, 없으면 XLSX)
-            val sourceFile = if (hasImages) tempZip else tempXlsx
+            // 3. 암호화 (이미지가 담겼으면 ZIP, 아니면 XLSX)
+            val sourceFile = if (report.created) tempZip else tempXlsx
             BackupEncryptor.encryptFile(sourceFile, backupFile)
+            Log.i(TAG, "Encrypted backup saved (includeImages=$includeImages, " +
+                "images=${report.includedCount}/${report.referencedCount}): ${backupFile.absolutePath}")
+            return report
         } catch (e: Exception) {
             backupFile.delete()
             throw e
@@ -123,8 +141,6 @@ class AutoBackupWorker(
             tempXlsx.delete()
             tempZip.delete()
         }
-
-        Log.i(TAG, "Encrypted backup saved (includeImages=$includeImages): ${backupFile.absolutePath}")
     }
 
     private fun rotateBackups(maxBackups: Int) {

@@ -36,11 +36,37 @@ object FieldValueSheetMapper {
             .filter { it.isNotEmpty() }
             .distinct()
 
+    /**
+     * 불리언 판정은 [parseSheetBoolean](SheetSpec.kt) 단일 소스에 위임한다 — 시트마다 다른
+     * 토큰 집합을 두면 같은 Y/N 열이 시트에 따라 다르게 읽힌다. '숨김'만 이 시트 고유 토큰이다.
+     */
     fun parseHidden(flag: String?): Boolean =
-        when (flag?.trim()?.lowercase()) {
-            "y", "yes", "true", "예", "숨김", "1" -> true
-            else -> false
+        flag != null && (parseSheetBoolean(flag) || flag.trim() == "숨김")
+
+    /**
+     * 출처 셀 3상태 — F1-A와 오타 교정을 구분한다.
+     * 열 없음(Absent) / 열 있음+빈칸(Blank) / 인식 값(Known) / 인식 불가(Unknown).
+     * Blank를 "기존 유지"로 두면 시트별 규칙 분기가 다시 생기므로, 열 있음+빈칸은
+     * 엔티티 기본값(AUTO)으로 비운다(불리언 열 규약과 동형).
+     */
+    sealed class SourceCell {
+        object Absent : SourceCell()
+        object Blank : SourceCell()
+        data class Known(val value: String) : SourceCell()
+        data class Unknown(val raw: String) : SourceCell()
+    }
+
+    fun parseSourceCell(raw: String?): SourceCell = when {
+        raw == null -> SourceCell.Absent
+        raw.isBlank() -> SourceCell.Blank
+        else -> when (toHalfWidth(raw).trim().lowercase()) {
+            "auto", "자동", "수확", "자동수집" -> SourceCell.Known(FieldValueEntry.SOURCE_AUTO)
+            "manual", "수동", "직접", "직접등록", "큐레이션" -> SourceCell.Known(FieldValueEntry.SOURCE_MANUAL)
+            "import", "가져오기", "엑셀" -> SourceCell.Known(FieldValueEntry.SOURCE_IMPORT)
+            "ai", "에이아이", "ai정리" -> SourceCell.Known(FieldValueEntry.SOURCE_AI)
+            else -> SourceCell.Unknown(raw.trim())
         }
+    }
 
     /** 시트에서 읽은 한 행의 값 필드들 */
     data class ImportedRow(
@@ -53,7 +79,8 @@ object FieldValueSheetMapper {
         val category: String?,
         val description: String?,
         val hiddenFlag: String?,
-        val code: String?
+        val code: String?,
+        val sourceFlag: String? = null
     ) {
         val entityType: String get() = entityTypeOf(entityLabel)
         val trimmedValue: String get() = value.trim()
@@ -72,6 +99,7 @@ object FieldValueSheetMapper {
         val value = row.trimmedValue
         if (value.isEmpty()) return null
         val aliases = csvToAliases(row.aliasesCsv).filter { it != value }
+        val sourceCell = parseSourceCell(row.sourceFlag)
         return if (existing != null) {
             existing.copy(
                 value = value,
@@ -80,6 +108,12 @@ object FieldValueSheetMapper {
                 category = row.category?.trim() ?: existing.category,
                 description = row.description?.trim() ?: existing.description,
                 isHidden = if (row.hiddenFlag != null) parseHidden(row.hiddenFlag) else existing.isHidden,
+                // 열 없음·오타 → 기존 유지 / 빈칸 → 엔티티 기본값 / 인식 값 → 그 값
+                source = when (sourceCell) {
+                    is SourceCell.Known -> sourceCell.value
+                    SourceCell.Blank -> FieldValueEntry.SOURCE_AUTO
+                    else -> existing.source
+                },
                 updatedAt = System.currentTimeMillis()
             )
         } else {
@@ -91,7 +125,8 @@ object FieldValueSheetMapper {
                 category = row.category.orEmpty().trim(),
                 description = row.description.orEmpty().trim(),
                 isHidden = parseHidden(row.hiddenFlag),
-                source = FieldValueEntry.SOURCE_IMPORT
+                // 구버전 파일(열 없음)·오타·빈칸은 정보가 없으므로 IMPORT 유지 — 기존 계약 불변
+                source = (sourceCell as? SourceCell.Known)?.value ?: FieldValueEntry.SOURCE_IMPORT
             )
             val code = row.code?.trim().orEmpty()
             if (code.isNotEmpty()) entry.copy(code = code) else entry

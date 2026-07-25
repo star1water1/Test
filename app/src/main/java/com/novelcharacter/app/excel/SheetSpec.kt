@@ -1,6 +1,7 @@
 package com.novelcharacter.app.excel
 
 import com.novelcharacter.app.data.model.FieldDefinition
+import com.novelcharacter.app.data.model.SearchPreset
 import com.novelcharacter.app.data.model.Universe
 import org.apache.poi.ss.usermodel.Row
 
@@ -104,7 +105,8 @@ val RESERVED_SHEET_NAMES = setOf(
     characterListPresetSpec().sheetName,
     appSettingsSpec().sheetName,
     imageMetaSpec().sheetName,
-    fieldValueLibrarySpec().sheetName
+    fieldValueLibrarySpec().sheetName,
+    characterFieldValueSpec().sheetName
 )
 
 /**
@@ -121,6 +123,63 @@ fun toHalfWidth(value: String): String {
 /** Split a comma-separated string into a trimmed, non-blank list. 전각 쉼표(，)도 관대 수용 (F4). */
 fun splitCsv(value: String): List<String> =
     toHalfWidth(value).split(",").map { it.trim() }.filter { it.isNotBlank() }
+
+/**
+ * '커스텀관계유형' 셀이 JSON 배열이 아닐 때의 관대 해석 — 앱 공통 복수값 규약(쉼표 구분)을 그대로 쓴다.
+ * JSON 파싱이 이미 실패한 값에만 적용되므로 유효 입력의 동작을 바꾸지 않는다.
+ */
+fun parseRelTypeTokens(raw: String): List<String> =
+    splitCsv(raw).map { it.trim().trim('"') }.filter { it.isNotBlank() }.distinct()
+
+/**
+ * '커스텀관계색상' 셀이 JSON 객체가 아닐 때의 관대 해석 — '유형=#색상' 또는 '유형:#색상'을
+ * 쉼표로 나열한 형태를 수용한다. 중괄호를 빠뜨린 JSON 조각도 따옴표를 벗겨 같은 규칙으로 걸린다.
+ */
+fun parseRelColorTokens(raw: String): List<Pair<String, String>> =
+    splitCsv(raw).mapNotNull { token ->
+        val sep = token.indexOfFirst { it == '=' || it == ':' }
+        if (sep <= 0) return@mapNotNull null
+        val k = token.substring(0, sep).trim().trim('"').trim('{').trim()
+        val v = token.substring(sep + 1).trim().trim('"').trim('}').trim().trim('"')
+        if (k.isBlank() || v.isBlank()) null else k to v
+    }.distinctBy { it.first }
+
+/**
+ * 드롭다운(허용값) 열의 관대한 값 해석 (순수 함수 — 단위 테스트 대상).
+ *
+ * 표기 차이(앞뒤 공백·대소문자·전각 영숫자)만 흡수하고 **뜻이 다른 값은 해석하지 않는다**.
+ * 반환값은 항상 [allowed]의 표준 표기라 저장값이 파일 표기에 오염되지 않는다.
+ * 해석 실패는 null — 호출측이 경고 + 교정 경로를 안내한다(무음 폐기·무음 수용 모두 금지).
+ * 빈 문자열은 '미지정'이므로 호출 전에 걸러야 한다.
+ */
+fun matchDropdownValue(raw: String, allowed: Collection<String>): String? {
+    val normalized = toHalfWidth(raw).trim().lowercase()
+    if (normalized.isEmpty()) return null
+    return allowed.firstOrNull { toHalfWidth(it).trim().lowercase() == normalized }
+}
+
+/**
+ * 엑셀 불리언 열 파싱의 **단일 소스** (순수 함수 — 단위 테스트 대상).
+ * Y/N·TRUE/FALSE·1/0·yes/no·T/F·예/참을 수용하고 전각 입력(Ｙ／１ 등)을 정규화한다.
+ * **빈칸은 false다** — "열 있음 + 빈칸 = 비움 의도"(F1-A).
+ */
+fun parseSheetBoolean(value: String): Boolean =
+    when (toHalfWidth(value.trim()).uppercase()) {
+        "Y", "YES", "TRUE", "T", "1", "O", "예", "참" -> true
+        else -> false
+    }
+
+/**
+ * F1-A 불리언 열 규약의 단일 소스.
+ *
+ * @return null = **열 자체가 없음** → 호출측은 `?: existing.x`(갱신) / `?: 엔티티기본값`(신규).
+ *         비-null = 열이 있음 → 빈칸을 포함한 셀 값의 해석 결과.
+ *
+ * 빈칸을 null로 돌려주는 변형을 만들지 말 것 — 그 순간 '비움 의도'가 사라져
+ * 같은 이름의 드롭다운 열이 시트에 따라 반대로 동작한다.
+ */
+fun sheetBooleanOrKeep(columnPresent: Boolean, cellText: String): Boolean? =
+    if (!columnPresent) null else parseSheetBoolean(cellText)
 
 /**
  * XLSX 셀 텍스트 규격 한도. 내보내기 절단과 가져오기 저장 한도가 반드시 같은 값을 참조해야
@@ -202,8 +261,37 @@ fun fieldValueLibrarySpec(universeNames: List<String> = emptyList()) = SheetSpec
         ColumnSpec("카테고리", width = 5000),
         ColumnSpec("설명", width = 8000),
         ColumnSpec("숨김", dropdownOptions = listOf("Y", "N"), width = 3000),
+        // 출처: AUTO(수확)·MANUAL(직접/큐레이션)·IMPORT(엑셀)·AI(AI 정리).
+        // 복원이 이 값을 재현하지 못하면 '미사용 자동수집 정리'(source='AUTO' 필터)가 영구히 0건이 된다.
+        // readOnly로 두지 않는 이유: 특정 값을 MANUAL로 올려 정리 대상에서 빼는 것은 실사용 가치가 있다.
+        ColumnSpec("출처", dropdownOptions = listOf("AUTO", "MANUAL", "IMPORT", "AI"), width = 3500),
         ColumnSpec("사용횟수", readOnly = true, width = 3500),
         ColumnSpec("코드", readOnly = true, width = 4000)
+    )
+)
+
+/**
+ * 캐릭터 필드값 오버플로 — 캐릭터 시트가 **열로 표현할 수 없는** 필드값을 담는다.
+ *
+ * 캐릭터 시트는 그 시트의 세계관에 속한 필드만 열로 만든다. 따라서 (가) 미분류 캐릭터(세계관이
+ * 없어 필드 열 자체가 없다), (나) 자기 세계관 소속이 아닌 필드 정의를 참조하는 잔여 값은
+ * 캐릭터 시트로는 왕복할 수 없어 그대로 두면 무음 유실된다. 이 시트가 그 전부를 담는다.
+ *
+ * 정체성은 '필드 정의'·'필드 데이터' 시트와 **같은 (세계관, 필드키, 대상) 삼중키**를 쓴다 —
+ * 새 헤더 문법을 만들면 내보내기/가져오기가 반드시 드리프트한다.
+ * 첫 열이 "이름"이 아니어야 `findSheetForUniverse`가 이 시트를 캐릭터 시트로 오인하지 않는다.
+ */
+fun characterFieldValueSpec(universeNames: List<String> = emptyList()) = SheetSpec(
+    sheetName = "캐릭터 필드값",
+    columns = listOf(
+        ColumnSpec("캐릭터코드", required = true, readOnly = true, width = 4000),
+        ColumnSpec("캐릭터이름", readOnly = true, width = 6000),
+        ColumnSpec("세계관", required = true, dropdownOptions = universeNames.takeIf { it.isNotEmpty() }, width = 5000),
+        ColumnSpec("세계관코드", readOnly = true, width = 4000),
+        ColumnSpec("필드키", required = true, width = 5000),
+        ColumnSpec("필드명", readOnly = true, width = 5000),
+        ColumnSpec("대상", readOnly = true, dropdownOptions = listOf("캐릭터", "사건"), width = 3500),
+        ColumnSpec("값", width = 8000)
     )
 )
 
@@ -288,7 +376,10 @@ fun stateChangeSpec() = SheetSpec(
     )
 )
 
-fun relationshipSpec(customTypes: List<String> = emptyList()) = SheetSpec(
+fun relationshipSpec(
+    customTypes: List<String> = emptyList(),
+    factionNames: List<String> = emptyList()
+) = SheetSpec(
     sheetName = "캐릭터 관계",
     columns = listOf(
         ColumnSpec("캐릭터1", required = true, width = 6000),
@@ -300,7 +391,9 @@ fun relationshipSpec(customTypes: List<String> = emptyList()) = SheetSpec(
         ColumnSpec("표시순서", width = 3000),
         ColumnSpec("캐릭터1코드", readOnly = true, width = 4000),
         ColumnSpec("캐릭터2코드", readOnly = true, width = 4000),
-        ColumnSpec("세력", readOnly = true, width = 5000),
+        // 편집 가능한 참조 열 — 비우면 자동 관계가 수동 관계로 풀린다('세력 소속' 시트의 '세력'과 동형).
+        // 참조의 '유무'는 이 열이, '대상'은 아래 '세력코드'가 정한다(refColumnIntent).
+        ColumnSpec("세력", dropdownOptions = factionNames.takeIf { it.isNotEmpty() }, width = 5000),
         // 세력 자동 관계의 소속을 코드로도 싣는다 — 이름 충돌·기기 이전에도 연결이 유지되게(코드 우선 해석)
         ColumnSpec("세력코드", readOnly = true, width = 4000),
         ColumnSpec("생성일", readOnly = true, width = 5000),
@@ -393,7 +486,8 @@ fun searchPresetSpec() = SheetSpec(
         ColumnSpec("이름", required = true, width = 8000),
         ColumnSpec("검색어", width = 10000),
         ColumnSpec("필터(JSON)", width = 15000),
-        ColumnSpec("정렬모드", dropdownOptions = listOf("relevance", "name", "tag", "recent"), width = 5000),
+        // 드롭다운 목록과 가져오기 유효값 검증이 같은 상수를 본다 — 규칙을 양쪽에 두면 드리프트한다
+        ColumnSpec("정렬모드", dropdownOptions = SearchPreset.SORT_MODES, width = 5000),
         ColumnSpec("기본값", dropdownOptions = listOf("Y", "N"), width = 4000),
         ColumnSpec("생성일", readOnly = true, width = 6000),
         ColumnSpec("수정일", readOnly = true, width = 6000)

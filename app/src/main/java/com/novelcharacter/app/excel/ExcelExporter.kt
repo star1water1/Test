@@ -15,6 +15,7 @@ import com.novelcharacter.app.data.model.CharacterStateChange
 import com.novelcharacter.app.data.model.CharacterTag
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.Novel
+import com.novelcharacter.app.data.model.SearchPreset
 import com.novelcharacter.app.data.model.TimelineEvent
 import com.novelcharacter.app.util.OpResult
 import com.novelcharacter.app.util.ThemeHelper
@@ -151,15 +152,18 @@ class ExcelExporter(context: Context) {
 
                 val file: File
                 val fileName: String
+                var imageReport = ImageZipReport.NOT_REQUESTED
                 if (options.images) {
                     val zipFileName = "NovelCharacter_$timestamp.zip"
-                    val zipFile = wrapWithImages(xlsxFile, zipFileName)
+                    val wrapped = wrapWithImages(xlsxFile, zipFileName)
+                    imageReport = wrapped.second
+                    val zipFile: File? = wrapped.first
                     if (zipFile != null) {
                         file = zipFile
                         fileName = zipFileName
                         xlsxFile.delete()
                     } else {
-                        // 이미지가 없으면 XLSX 그대로 사용
+                        // 담을 이미지가 없으면 XLSX 그대로 사용 — 제외 사유는 아래에서 반드시 통보한다
                         file = xlsxFile
                         fileName = xlsxFileName
                     }
@@ -168,7 +172,11 @@ class ExcelExporter(context: Context) {
                     fileName = xlsxFileName
                 }
 
-                val exportSummary = appContext.getString(R.string.result_excel_exported, exportedSheets, exportedRows)
+                val imageNotice = buildImageNotice(imageReport)
+                val imageDetail = buildImageDetail(imageReport)
+                // 이력 한 줄만 봐도 백업이 불완전함을 알 수 있게 요약에 누락 건수를 붙인다
+                val exportSummary = appContext.getString(R.string.result_excel_exported, exportedSheets, exportedRows) +
+                    if (imageReport.hasLoss) appContext.getString(R.string.export_images_summary_suffix, imageReport.excludedCount) else ""
                 withContext(Dispatchers.Main) {
                     if (truncatedCellCount > 0) {
                         Toast.makeText(
@@ -183,11 +191,19 @@ class ExcelExporter(context: Context) {
                     } else {
                         // 공유 모드: 공유 시트가 열리기 전 요약 통보
                         Toast.makeText(appContext, exportSummary, Toast.LENGTH_SHORT).show()
-                        shareFile(file, isZip = options.images)
+                        // 확장자는 실제 산출물에서 파생 — 이미지 0장이면 .xlsx인데 zip MIME로 공유되던 오류 제거
+                        shareFile(file, isZip = fileName.endsWith(".zip", ignoreCase = true))
+                    }
+                    // 이미지 고지는 마지막에 — 공유 시트/SAF가 뜬 뒤에도 화면 위에 남아 읽히게 한다
+                    if (imageNotice != null) {
+                        Toast.makeText(appContext, imageNotice, Toast.LENGTH_LONG).show()
                     }
                 }
                 logExportResult(OpResult.success(OpResult.CAT_EXCEL, exportSummary,
-                    if (truncatedCellCount > 0) appContext.getString(R.string.export_cells_truncated, truncatedCellCount) else null))
+                    listOfNotNull(
+                        if (truncatedCellCount > 0) appContext.getString(R.string.export_cells_truncated, truncatedCellCount) else null,
+                        imageDetail
+                    ).joinToString("\n").ifBlank { null }))
             } catch (e: Exception) {
                 android.util.Log.e("ExcelExporter", "Export failed", e)
                 withContext(Dispatchers.Main) {
@@ -456,7 +472,7 @@ class ExcelExporter(context: Context) {
             GuideLine("색상 안내", styles.guideSection, ""),
             GuideLine("", styles.guideBody, "■ 파란 헤더 = 편집 가능한 일반 컬럼"),
             GuideLine("", styles.guideBody, "■ 빨간 헤더 = 필수 입력 컬럼 (비워두면 해당 행 무시됨)"),
-            GuideLine("", styles.guideBody, "■ 회색 헤더/셀 = 수정 불가 (앱 내부 데이터, 수정해도 무시됨)"),
+            GuideLine("", styles.guideBody, "■ 회색 헤더/셀 = 앱이 채우는 열 (그대로 두세요 — 예외는 아래 '코드 컬럼 안내')"),
             GuideLine("", styles.guideBody, ""),
             GuideLine("길이 제한", styles.guideSection, ""),
             GuideLine("", styles.guideBody, "• 셀당 최대 32,767자(엑셀 규격) — 초과분은 내보내기 시 잘려 기록됩니다."),
@@ -468,22 +484,35 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "• 새 행을 추가할 때는 코드를 비워두세요. 자동으로 생성됩니다."),
             GuideLine("", styles.guideBody, "• 코드가 없으면 이름 기반으로 매칭되지만, 경고가 표시됩니다."),
             GuideLine("", styles.guideBody, "• 참조 코드(작품코드, 세계관코드 등)도 동일한 규칙을 따릅니다."),
+            GuideLine("", styles.guideBody, "• 단, 참조 코드 열은 이름이 겹칠 때 직접 채워 대상을 확정할 수 있습니다 (코드가 이름보다 우선)."),
+            GuideLine("", styles.guideBody, "  예) 세계관이 다른 동명 세력이 둘 이상이면 '세력 소속'·'세력 관계' 시트의 세력코드 열에"),
+            GuideLine("", styles.guideBody, "  '세력' 시트의 코드 값을 붙여넣으세요. (그 행 자신의 '코드' 열은 여전히 수정하지 마세요 — 행의 정체성입니다)"),
             GuideLine("", styles.guideBody, "• 사건 연표/상태변화/관계 변화 시트에도 코드 열이 있습니다. 지우지 마세요 —"),
             GuideLine("", styles.guideBody, "  설명·연도·값을 편집해도 같은 항목으로 인식하는 기준입니다. (구버전 파일도 계속 가져올 수 있습니다)"),
             GuideLine("", styles.guideBody, ""),
             GuideLine("시트별 안내", styles.guideSection, ""),
             GuideLine("", styles.guideBody, "• 세계관: 코드로 기존 데이터 매칭. 코드 없을 시 이름으로 매칭"),
+            GuideLine("", styles.guideBody, "  '커스텀관계유형'은 JSON 배열([\"연인\",\"라이벌\"]), '커스텀관계색상'은 JSON 객체({\"연인\":\"#E91E63\"})입니다."),
+            GuideLine("", styles.guideBody, "  쉼표 구분(연인, 라이벌 / 연인=#E91E63)으로 적어도 해석하지만 경고가 표시됩니다."),
+            GuideLine("", styles.guideBody, "  비우면 기본 관계 유형·색상으로 돌아갑니다. 해석할 수 없으면 적용하지 않고 기존 설정을 유지합니다."),
             GuideLine("", styles.guideBody, "• 작품: 코드로 매칭. 코드 없을 시 제목+세계관으로 매칭"),
             GuideLine("", styles.guideBody, "• 필드 정의: 세계관+필드키+대상으로 매칭. 타입은 드롭다운에서 선택. 대상=사건이면 사건 필드"),
             GuideLine("", styles.guideBody, "• 캐릭터 시트 (세계관 이름): 코드로 매칭. 코드 없을 시 이름+작품으로 매칭"),
             GuideLine("", styles.guideBody, "• 사건 연표: 코드로 매칭 (코드 없을 시 연도+설명). 관련 캐릭터는 쉼표로 구분. 세계관 열이 소속 기준"),
+            GuideLine("", styles.guideBody, "• 필드 템플릿: '생성일'로 매칭합니다 — 이름이 같은 템플릿이 여럿 있을 수 있어 지우지 마세요"),
+            GuideLine("", styles.guideBody, "  (생성일이 남아 있으면 이름만 바꿔도 같은 템플릿으로 인식합니다)"),
+            GuideLine("", styles.guideBody, "• 검색 프리셋: 이름으로 매칭. 정렬모드는 ${SearchPreset.SORT_MODES.joinToString("/")} 만 인식하며,"),
+            GuideLine("", styles.guideBody, "  그 외 값은 경고 후 ${SearchPreset.SORT_RELEVANCE}로 처리됩니다. '기본값' Y는 앱 기본 제공 프리셋(수정·삭제 불가)을 뜻합니다"),
             GuideLine("", styles.guideBody, "• 목록 프리셋: 이름으로 매칭. 작품코드목록은 작품 시트의 코드 값을 쉼표로 나열"),
-            GuideLine("", styles.guideBody, "• 캐릭터 관계: 관계 유형은 드롭다운에서 선택. 세력·세력코드 열은 세력 자동 관계의 소속 표시"),
+            GuideLine("", styles.guideBody, "• 캐릭터 관계: 관계 유형은 드롭다운에서 선택. '세력' 열은 편집 가능합니다 — 비우면 자동 관계가 수동 관계로 풀리고,"),
+            GuideLine("", styles.guideBody, "  채우면 그 세력의 자동 관계가 되어 세력 삭제·멤버 탈퇴 시 함께 삭제될 수 있습니다 (대상은 '세력코드'가 우선)"),
             GuideLine("", styles.guideBody, "  관계의 '코드' 열을 지우지 마세요 — 코드가 있으면 관계 유형을 고쳐도 같은 관계로 인식합니다"),
             GuideLine("", styles.guideBody, "  (코드를 비우고 유형만 바꾸면 새 관계가 생기고 기존 관계가 그대로 남습니다)"),
             GuideLine("", styles.guideBody, "• 관계 변화: '관계코드'가 이 이력이 붙은 관계를 가리킵니다 ('부모관계유형'은 코드 없는 구버전 파일용 폴백,"),
             GuideLine("", styles.guideBody, "  같은 행의 '관계 유형'은 그 시점의 유형이라 서로 다른 값입니다)"),
             GuideLine("", styles.guideBody, "• 세력 소속: 같은 세력·캐릭터의 이력이 여러 건일 수 있어 '생성일'로 구분합니다 — 지우지 마세요"),
+            GuideLine("", styles.guideBody, "• 세력 이름은 세계관마다 겹칠 수 있습니다. 코드 우선, 코드가 없으면 캐릭터(세력 관계는 상대 세력)의"),
+            GuideLine("", styles.guideBody, "  세계관으로 좁혀 찾고, 그래도 동명이 남으면 그 행은 건너뛰고 세력코드 열을 채우라고 안내합니다"),
             GuideLine("", styles.guideBody, "• 이름 은행: 이름+성별로 매칭. 사용여부는 Y/N"),
             GuideLine("", styles.guideBody, ""),
             GuideLine("필드 정의 — 타입별 설정 가이드", styles.guideSection, ""),
@@ -526,6 +555,14 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "• 헤더 이름을 바꾸면 그 열은 인식되지 않으며, 가져오기 결과에 '인식하지 못한 열'로 보고됩니다."),
             GuideLine("", styles.guideBody, "• 열을 통째로 지우면 해당 항목은 기존 값이 유지되고, 열은 두되 칸을 비우면 값이 지워집니다."),
             GuideLine("", styles.guideBody, "• 가져오기 결과에서 경고/오류 내역을 확인할 수 있습니다."),
+            GuideLine("", styles.guideBody, ""),
+            GuideLine("'캐릭터 필드값' 시트", styles.guideSection, ""),
+            GuideLine("", styles.guideBody, "• 캐릭터 시트는 그 시트 세계관의 필드만 열로 만듭니다. 미분류 캐릭터의 필드값이나"),
+            GuideLine("", styles.guideBody, "  다른 세계관 필드를 가리키는 잔여 값은 이 시트가 **유일한 보관처**입니다."),
+            GuideLine("", styles.guideBody, "• 정체성은 캐릭터코드 + 세계관 + 필드키입니다 — 이 열들을 수정하면 값이 다른 곳에 붙습니다."),
+            GuideLine("", styles.guideBody, "• '값' 칸을 비우면 그 값이 삭제됩니다. 행을 지워도 값은 지워지지 않습니다(업서트 전용)."),
+            GuideLine("", styles.guideBody, "• 같은 항목이 캐릭터 시트에도 있으면 캐릭터 시트가 우선하며 이 시트의 행은 무시됩니다."),
+            GuideLine("", styles.guideBody, "• 캐릭터를 다시 작품에 배정하면 값이 캐릭터 시트로 옮겨가 이 시트에서 사라집니다(정상)."),
             GuideLine("", styles.guideBody, ""),
             GuideLine("테두리 색상", styles.guideSection, ""),
             GuideLine("", styles.guideBody, "• 세계관/작품 시트에서 테두리색(HEX), 테두리두께를 설정할 수 있습니다."),
@@ -704,8 +741,9 @@ class ExcelExporter(context: Context) {
             row.createCell(7).setTextSafe(entry.category)
             row.createCell(8).setTextSafe(entry.description)
             row.createCell(9).setTextSafe(if (entry.isHidden) "Y" else "N")
-            row.createCell(10).setCellValue(entry.usageCount.toDouble())
-            row.createCell(11).setTextSafe(entry.code)
+            row.createCell(10).setTextSafe(entry.source)
+            row.createCell(11).setCellValue(entry.usageCount.toDouble())
+            row.createCell(12).setTextSafe(entry.code)
         }
 
         applySpecFormatting(sheet, spec, rowIndex - 1)
@@ -723,6 +761,15 @@ class ExcelExporter(context: Context) {
         val allFieldValuesMap = db.characterFieldValueDao().getAllValuesList().groupBy { it.characterId }
         val allTagsMap = db.characterTagDao().getAllTagsList().groupBy { it.characterId }
 
+        // 캐릭터별로 '그 캐릭터의 시트가 열로 담은 필드 id' — 오버플로 판정의 단일 소스.
+        // 내보내기 로직이 직접 채우므로 두 곳이 드리프트할 수 없다.
+        val coveredFieldIds = HashMap<Long, Set<Long>>()
+
+        // 예약 시트는 캐릭터 시트보다 먼저 이름을 선점한다(이미지 시트와 동일 규약).
+        // 세계관 이름이 "캐릭터 필드값"이어도 오버플로 시트가 원명을 지키고, 그 캐릭터 시트는
+        // "(2)"로 sanitize되어 findSheetForUniverse의 접미사 루프가 구제한다.
+        val overflowSheetName = sanitizeSheetName(characterFieldValueSpec().sheetName, usedSheetNames)
+
         for (universe in universes) {
             val fields = db.fieldDefinitionDao().getFieldsByUniverseList(universe.id)
             val universeNovels = novels.filter { it.universeId == universe.id }
@@ -738,13 +785,17 @@ class ExcelExporter(context: Context) {
                 char.id to (allTagsMap[char.id] ?: emptyList())
             }
 
+            val covered = fields.mapTo(HashSet()) { it.id }
+            universeChars.forEach { coveredFieldIds[it.id] = covered }
+
             exportCharacterSheet(
                 workbook, usedSheetNames, universe.name,
                 universeChars, fields, novelMap, fieldValues, tags
             )
         }
 
-        // 미분류 캐릭터
+        // 미분류 캐릭터 — 세계관이 없어 필드 열을 만들 수 없다.
+        // 그 필드값은 아래 '캐릭터 필드값' 시트가 (세계관, 필드키)로 담는다(무음 유실 차단).
         val unassignedChars = allCharacters.filter { char ->
             val novel = novelMap[char.novelId]
             novel?.universeId == null
@@ -753,11 +804,60 @@ class ExcelExporter(context: Context) {
             val tags = unassignedChars.associate { char ->
                 char.id to (allTagsMap[char.id] ?: emptyList())
             }
+            unassignedChars.forEach { coveredFieldIds[it.id] = emptySet() }
             exportCharacterSheet(
                 workbook, usedSheetNames, "미분류 캐릭터",
                 unassignedChars, emptyList(), novelMap, emptyMap(), tags
             )
         }
+
+        exportCharacterFieldValueOverflow(
+            workbook, overflowSheetName, allCharacters, allFieldValuesMap, coveredFieldIds
+        )
+    }
+
+    /**
+     * 캐릭터 시트가 열로 담지 못한 필드값 전부 — 미분류 캐릭터 + 타 세계관 잔여값.
+     * 이 시트가 없으면 해당 값은 내보내기에서 무음 폐기되고, 덮어쓰기 복원 시 CASCADE로 영구 소멸한다.
+     */
+    private suspend fun exportCharacterFieldValueOverflow(
+        workbook: XSSFWorkbook,
+        sheetName: String,
+        characters: List<Character>,
+        allFieldValuesMap: Map<Long, List<CharacterFieldValue>>,
+        coveredFieldIds: Map<Long, Set<Long>>
+    ) {
+        val universes = db.universeDao().getAllUniversesList()
+        val universeMap = universes.associateBy { it.id }
+        val fieldsById = db.fieldDefinitionDao().getAllFieldsAllTypes().associateBy { it.id }
+
+        // 정렬을 (캐릭터 displayOrder, 필드 displayOrder, 필드키)로 고정 — 무편집 왕복 멱등성의 근거
+        val rows = characters.sortedWith(compareBy({ it.displayOrder }, { it.id }))
+            .flatMap { ch ->
+                CharacterFieldValueOverflow
+                    .select(allFieldValuesMap[ch.id].orEmpty(), coveredFieldIds[ch.id] ?: emptySet(), fieldsById)
+                    .sortedWith(compareBy({ it.second.displayOrder }, { it.second.key }))
+                    .map { (value, fd) -> Triple(ch, fd, value.value) }
+            }
+        if (rows.isEmpty()) return  // 다른 시트와 동일 — 빈 시트는 만들지 않는다
+
+        val spec = characterFieldValueSpec(universes.map { it.name })
+        val sheet = workbook.createSheet(sheetName)
+        writeHeaderRow(sheet, spec)
+
+        rows.forEachIndexed { index, (ch, fd, value) ->
+            val universe = universeMap[fd.universeId]
+            val row = sheet.createRow(index + 1)
+            row.createCell(0).setTextSafe(ch.code)
+            row.createCell(1).setTextSafe(ch.name)
+            row.createCell(2).setTextSafe(universe?.name ?: "")
+            row.createCell(3).setTextSafe(universe?.code ?: "")
+            row.createCell(4).setTextSafe(fd.key)
+            row.createCell(5).setTextSafe(fd.name)
+            row.createCell(6).setTextSafe(FieldValueSheetMapper.entityLabel(fd.entityType))
+            row.createCell(7).setTextSafe(value)
+        }
+        applySpecFormatting(sheet, spec, rows.size)
     }
 
     private fun exportCharacterSheet(
@@ -1002,7 +1102,8 @@ class ExcelExporter(context: Context) {
 
         val allUniverses = db.universeDao().getAllUniversesList()
         val allCustomTypes = allUniverses.flatMap { it.getRelationshipTypes() }
-        val spec = relationshipSpec(allCustomTypes)
+        // 동명 세력은 드롭다운에서 구분되지 않으므로 접는다 — 대상 확정은 '세력코드' 열이 한다
+        val spec = relationshipSpec(allCustomTypes, allFactions.map { it.name }.distinct())
         val sheetName = sanitizeSheetName(spec.sheetName, usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
         writeHeaderRow(sheet, spec)
@@ -1245,12 +1346,40 @@ class ExcelExporter(context: Context) {
 
     // ── ZIP + 이미지 래핑 ──
 
-    private suspend fun wrapWithImages(xlsxFile: File, zipFileName: String): File? {
+    /** @return (사용할 ZIP 파일 또는 null, 이미지 포함 결과 집계) */
+    private suspend fun wrapWithImages(xlsxFile: File, zipFileName: String): Pair<File?, ImageZipReport> {
         val exportsDir = File(appContext.cacheDir, "exports")
         exportsDir.mkdirs()
         val zipFile = File(exportsDir, zipFileName)
-        val hasImages = ImageZipHelper.wrapWithImages(xlsxFile, zipFile, db, appContext)
-        return if (hasImages) zipFile else null
+        val report = ImageZipHelper.wrapWithImages(xlsxFile, zipFile, db, appContext)
+        return (if (report.created) zipFile else null) to report
+    }
+
+    /**
+     * 이미지 포함 결과 고지 한 줄. 사실만 말한다 — 제외가 0건이면 손실 문구를 쓰지 않는다.
+     * (사실과 다른 경고는 무음보다 나쁘다)
+     */
+    private fun buildImageNotice(r: ImageZipReport): String? = when {
+        !r.requested -> null
+        r.hasLoss && r.includedCount == 0 ->
+            appContext.getString(R.string.export_images_none_included, r.referencedCount)
+        r.hasLoss ->
+            appContext.getString(R.string.export_images_incomplete, r.referencedCount, r.includedCount, r.excludedCount)
+        // 요청했으나 앱에 이미지 자체가 없는 경우 — 손실이 아니라 확장자(.xlsx)에 대한 설명
+        r.referencedCount == 0 -> appContext.getString(R.string.export_images_none)
+        else -> null
+    }
+
+    /** 작업 이력 '상세'에 실을 제외 내역 + 교정 경로 안내. 손실이 없으면 null. */
+    private fun buildImageDetail(r: ImageZipReport): String? {
+        if (!r.hasLoss) return null
+        val lines = mutableListOf<String>()
+        if (r.missingCount > 0) lines.add(appContext.getString(R.string.export_images_detail_missing, r.missingCount))
+        if (r.outsideAppDirCount > 0) lines.add(appContext.getString(R.string.export_images_detail_outside, r.outsideAppDirCount))
+        if (r.failedCount > 0) lines.add(appContext.getString(R.string.export_images_detail_failed, r.failedCount))
+        if (r.sampleNames.isNotEmpty()) lines.add(appContext.getString(R.string.export_images_detail_samples, r.sampleNames.joinToString(", ")))
+        lines.add(appContext.getString(R.string.export_images_detail_guide))
+        return lines.joinToString("\n")
     }
 
     // ── 필드 템플릿 ──
@@ -1304,14 +1433,22 @@ class ExcelExporter(context: Context) {
     }
 
     /**
-     * 프리셋 필드 필터의 fieldId → (세계관코드, 필드키) 안정 식별자 맵.
-     * fieldId는 기기 이전·덮어쓰기 복원에서 재발급되므로 이 맵으로 왕복 이식성을 확보한다
+     * 프리셋 필드 필터의 fieldId → 이 기기의 필드 정보(세계관코드·필드키·현재 필드명) 맵.
+     * fieldId는 기기 이전·덮어쓰기 복원에서 재발급되므로 이 맵으로 왕복 이식성을 확보한다.
+     * 필드명도 함께 갱신해 인앱 이름 변경 후에도 파일의 표시명이 자연키 폴백의 진실을 담게 한다
      * (필터 대상은 캐릭터 필드 — 검색·목록 프리셋 공통).
      */
-    private suspend fun fieldFilterStableKeys(): Map<Long, PortableFieldFilters.StableKey> {
-        val codeByUniverseId = db.universeDao().getAllUniversesList().associate { it.id to it.code }
-        return db.fieldDefinitionDao().getAllFieldsList().associate {
-            it.id to PortableFieldFilters.StableKey(codeByUniverseId[it.universeId] ?: "", it.key)
+    private suspend fun fieldFilterStableKeys(): Map<Long, PortableFieldFilters.DeviceField> {
+        val universeById = db.universeDao().getAllUniversesList().associateBy { it.id }
+        return db.fieldDefinitionDao().getAllFieldsList().associate { f ->
+            val u = universeById[f.universeId]
+            f.id to PortableFieldFilters.DeviceField(
+                id = f.id,
+                universeCode = u?.code ?: "",
+                universeName = u?.name ?: "",
+                key = f.key,
+                name = f.name
+            )
         }
     }
 

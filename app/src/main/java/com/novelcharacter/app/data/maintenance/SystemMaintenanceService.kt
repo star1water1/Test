@@ -177,23 +177,28 @@ class SystemMaintenanceService(
         var orphanCount = 0
         val gson = Gson()
         val appDir = context.filesDir
+        val appDirCanonical = runCatching { appDir.canonicalPath }.getOrNull() ?: appDir.absolutePath
 
-        val characters = db.characterDao().getAllCharactersList()
-        for (character in characters) {
+        fun scan(label: String, imagePathsJson: String) {
             val paths: List<String> = try {
-                val raw: List<String?>? = gson.fromJson(character.imagePaths, com.novelcharacter.app.util.GsonTypes.STRING_LIST)
+                val raw: List<String?>? = gson.fromJson(imagePathsJson, com.novelcharacter.app.util.GsonTypes.STRING_LIST)
                 raw?.filterNotNull() ?: emptyList()
             } catch (e: Exception) {
                 emptyList()
             }
-            for (path in paths) {
-                val file = java.io.File(path)
-                if (!file.exists() || !file.canonicalPath.startsWith(appDir.canonicalPath + java.io.File.separator)) {
-                    orphanCount++
-                    details.add("${character.name}: $path")
-                }
+            val broken = com.novelcharacter.app.excel.ImagePathClassifier
+                .classify(paths, appDirCanonical).broken
+            for (p in broken) {
+                orphanCount++
+                details.add("$label: $p")
             }
         }
+
+        // 내보내기 ZIP 래핑과 **같은 판정**(ImagePathClassifier)·**같은 수집 대상**을 쓴다.
+        // 판정이나 대상이 갈리면 "내보내기는 N장 누락이라는데 점검은 0건"이 되어 안내가 거짓이 된다.
+        for (c in db.characterDao().getAllCharactersList()) scan(c.name, c.imagePaths)
+        for (u in db.universeDao().getAllUniversesList()) scan(u.name, u.imagePaths)
+        for (n in db.novelDao().getAllNovelsList()) scan(n.title, n.imagePaths)
 
         return IntegrityResult(orphanImages = orphanCount, details = details)
     }
