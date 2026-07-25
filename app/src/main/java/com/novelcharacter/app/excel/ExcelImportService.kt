@@ -878,7 +878,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val newValueColIndex = cols["새 값"] ?: 6
         val charCodeColIndex = cols["캐릭터코드"] ?: -1
         val codeColIndex = cols["코드"] ?: -1
-        val novelColIndex = cols["작품"] ?: 1
+        // 위치 폴백 금지 — 열을 지운 파일에서 '연도' 열을 작품 제목으로 읽어(제목이 숫자면 실제로 매칭된다)
+        // 동명이인을 엉뚱한 작품 기준으로 무근거 선택한다. 열 없음이면 힌트 없이 엄격 해석한다.
+        val novelColIndex = cols["작품"] ?: -1
 
         val allNovels = db.novelDao().getAllNovelsList()
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0
@@ -2666,7 +2668,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         reportUnknownColumns(headerRow, spec, result)
         val cols = resolveHeaderColumns(headerRow)
         val charNameColIndex = cols["캐릭터"] ?: 0
-        val novelColIndex = cols["작품"] ?: 1
+        // 위치 폴백 금지 — 열을 지운 파일에서 '연도' 열을 작품 제목으로 읽어(제목이 숫자면 실제로 매칭된다)
+        // 동명이인을 엉뚱한 작품 기준으로 무근거 선택한다. 열 없음이면 힌트 없이 엄격 해석한다.
+        val novelColIndex = cols["작품"] ?: -1
         // 필수 컬럼: 위치 폴백을 쓰면 컬럼 삭제 시 이웃 컬럼 데이터가 그대로 기록되므로 검증 후 스킵
         val yearColIndex = requiredCol(cols, "연도", sheet.sheetName, result) ?: return
         val monthColIndex = cols["월"] ?: -1
