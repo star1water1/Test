@@ -56,8 +56,26 @@ data class SheetSpec(
     }
 }
 
-/** Fixed (non-dynamic-field) column headers in character sheets. */
-val CHARACTER_FIXED_HEADERS = setOf("이름", "성", "이름(First)", "이명", "이미지경로", "작품", "메모", "태그", "코드", "작품코드", "정렬순서", "고정")
+/**
+ * 캐릭터 시트의 고정(커스텀 필드가 아닌) 열 헤더 — characterSpec과 가져오기 해석이 공유하는 단일 소스.
+ * 커스텀 필드명이 이 목록과 겹치면 열 정체가 흔들리므로 내보내기가 필드키를 병기한다.
+ */
+val CHARACTER_FIXED_HEADERS = setOf(
+    "이름", "성", "이름(First)", "이명", "이미지경로", "작품", "메모", "태그",
+    "코드", "작품코드", "정렬순서", "고정", "생성일"
+)
+
+/**
+ * 커스텀 필드 헤더가 고정 열과 충돌하는지 — 가져오기와 **같은 별칭 규칙**으로 판정한다.
+ * ('비고'는 별칭상 '메모'로 접히므로 이름이 달라도 충돌이다)
+ */
+fun collidesWithFixedHeader(fieldName: String): Boolean =
+    ExcelHeaderAliases.canonical(fieldName) in CHARACTER_FIXED_HEADERS ||
+        fieldName in CHARACTER_FIXED_HEADERS
+
+/** 커스텀 필드 열 헤더에 병기하는 안정 식별자 형식 — 가져오기가 이 키로 열을 확정한다 */
+fun characterFieldHeader(fieldName: String, fieldKey: String, disambiguate: Boolean): String =
+    if (disambiguate) "$fieldName($fieldKey)" else fieldName
 
 /** Default border color presets for color picker UI. */
 val BORDER_COLOR_PRESETS = listOf(
@@ -83,6 +101,7 @@ val RESERVED_SHEET_NAMES = setOf(
     factionRelationshipSpec().sheetName,
     userPresetTemplateSpec().sheetName,
     searchPresetSpec().sheetName,
+    characterListPresetSpec().sheetName,
     appSettingsSpec().sheetName,
     imageMetaSpec().sheetName,
     fieldValueLibrarySpec().sheetName
@@ -162,7 +181,10 @@ fun fieldDefinitionSpec(universeNames: List<String>) = SheetSpec(
         ColumnSpec("그룹", width = 5000),
         ColumnSpec("순서", width = 3000),
         ColumnSpec("필수여부", dropdownOptions = listOf("Y", "N"), width = 4000),
-        ColumnSpec("세계관코드", readOnly = true, width = 4000)
+        ColumnSpec("세계관코드", readOnly = true, width = 4000),
+        // 캐릭터/사건 필드 구분 — 이 열이 없던 구버전 파일은 캐릭터로 간주(관대 수용).
+        // 사건 필드 정의도 왕복되어야 신규 기기 복원 시 사건 필드값이 유실되지 않는다.
+        ColumnSpec("대상", dropdownOptions = listOf("캐릭터", "사건"), width = 3500)
     )
 )
 
@@ -192,7 +214,9 @@ fun characterSpec(fields: List<FieldDefinition>, novelTitles: List<String>) = Sh
         add(ColumnSpec("성", width = 4000))
         add(ColumnSpec("이름(First)", width = 4000))
         add(ColumnSpec("이명", width = 6000))
-        // Dynamic field columns
+        // Dynamic field columns — 고정 열과 겹치거나 동명 필드가 둘 이상이면 필드키를 병기해
+        // 열 정체를 확정한다(병기하지 않으면 가져오기가 first-wins로 값을 뒤바꾼다).
+        val fieldNameCounts = fields.groupingBy { it.name }.eachCount()
         for (field in fields) {
             val options = if (field.type == "SELECT") {
                 try {
@@ -201,7 +225,9 @@ fun characterSpec(fields: List<FieldDefinition>, novelTitles: List<String>) = Sh
                     if (arr != null) (0 until arr.length()).map { arr.getString(it) } else null
                 } catch (_: Exception) { null }
             } else null
-            val headerName = if (field.type == "MULTI_TEXT") "${field.name} (쉼표 구분)" else field.name
+            val disambiguate = collidesWithFixedHeader(field.name) || (fieldNameCounts[field.name] ?: 0) > 1
+            val core = characterFieldHeader(field.name, field.key, disambiguate)
+            val headerName = if (field.type == "MULTI_TEXT") "$core (쉼표 구분)" else core
             add(ColumnSpec(headerName, required = field.isRequired, dropdownOptions = options))
         }
         add(ColumnSpec("이미지경로", readOnly = true, width = 4000))
@@ -216,7 +242,11 @@ fun characterSpec(fields: List<FieldDefinition>, novelTitles: List<String>) = Sh
     }
 )
 
-fun timelineSpec(novelTitles: List<String>, eventFieldHeaders: List<String> = emptyList()) = SheetSpec(
+fun timelineSpec(
+    novelTitles: List<String>,
+    eventFieldHeaders: List<String> = emptyList(),
+    universeNames: List<String> = emptyList()
+) = SheetSpec(
     sheetName = "사건 연표",
     columns = listOf(
         ColumnSpec("연도", required = true, width = 3000),
@@ -233,7 +263,11 @@ fun timelineSpec(novelTitles: List<String>, eventFieldHeaders: List<String> = em
         ColumnSpec("정렬순서", width = 3000),
         ColumnSpec("임시배치", dropdownOptions = listOf("Y", "N"), width = 3000),
         ColumnSpec("코드", readOnly = true, width = 4000),
-        ColumnSpec("생성일", readOnly = true, width = 5000)
+        ColumnSpec("생성일", readOnly = true, width = 5000),
+        // 사건의 세계관 소속 — 작품 미연결 사건도 신규 기기 복원 시 세계관을 잃지 않게 한다.
+        // 이 열이 없던 구버전 파일은 기존처럼 관련 작품의 세계관에서 유도한다(하위 호환).
+        ColumnSpec("세계관", dropdownOptions = universeNames.takeIf { it.isNotEmpty() }, width = 6000),
+        ColumnSpec("세계관코드", readOnly = true, width = 4000)
     ) + eventFieldHeaders.map { ColumnSpec(it, width = 6000) }  // 사건 커스텀 필드 (B-10)
 )
 
@@ -267,7 +301,12 @@ fun relationshipSpec(customTypes: List<String> = emptyList()) = SheetSpec(
         ColumnSpec("캐릭터1코드", readOnly = true, width = 4000),
         ColumnSpec("캐릭터2코드", readOnly = true, width = 4000),
         ColumnSpec("세력", readOnly = true, width = 5000),
-        ColumnSpec("생성일", readOnly = true, width = 5000)
+        // 세력 자동 관계의 소속을 코드로도 싣는다 — 이름 충돌·기기 이전에도 연결이 유지되게(코드 우선 해석)
+        ColumnSpec("세력코드", readOnly = true, width = 4000),
+        ColumnSpec("생성일", readOnly = true, width = 5000),
+        // 관계 자체의 안정 식별자 — 이 열이 있으면 '관계 유형'을 고쳐도 같은 관계로 인식한다
+        // (자연키가 캐릭터1+캐릭터2+유형이라 코드 없이는 rename과 신규를 구별할 수 없다)
+        ColumnSpec("코드", readOnly = true, width = 4000)
     )
 )
 
@@ -289,7 +328,13 @@ fun relationshipChangeSpec() = SheetSpec(
         ColumnSpec("코드", readOnly = true, width = 4000),
         ColumnSpec("캐릭터1코드", readOnly = true, width = 4000),
         ColumnSpec("캐릭터2코드", readOnly = true, width = 4000),
-        ColumnSpec("생성일", readOnly = true, width = 5000)
+        ColumnSpec("생성일", readOnly = true, width = 5000),
+        // 이 이력이 붙은 **부모 관계**의 유형. 위 '관계 유형'(변화 시점의 유형)과 다른 값이다.
+        // 같은 두 캐릭터 사이에 유형이 다른 관계가 여러 개일 수 있어(유니크 키가 쌍+유형),
+        // 이 열이 없으면 이력이 어느 관계의 것인지 파일만으로 알 수 없다.
+        ColumnSpec("부모관계유형", readOnly = true, width = 5000),
+        // 부모 관계의 안정 식별자 — 유형까지 편집된 파일에서도 이력이 정확히 따라간다(코드 우선)
+        ColumnSpec("관계코드", readOnly = true, width = 4000)
     )
 )
 
@@ -316,6 +361,27 @@ fun userPresetTemplateSpec() = SheetSpec(
         ColumnSpec("설명", width = 15000),
         ColumnSpec("설정(JSON)", width = 15000),
         ColumnSpec("기본제공", dropdownOptions = listOf("Y", "N"), width = 4000),
+        ColumnSpec("생성일", readOnly = true, width = 6000),
+        ColumnSpec("수정일", readOnly = true, width = 6000)
+    )
+)
+
+/**
+ * 캐릭터 목록 프리셋(필터+정렬 조합) 왕복 — 이름이 유니크 키.
+ * 작품 필터는 DB id가 기기마다 달라지므로 **작품코드 콤마 목록**으로 왕복한다(이식성).
+ */
+fun characterListPresetSpec() = SheetSpec(
+    sheetName = "목록 프리셋",
+    columns = listOf(
+        ColumnSpec("이름", required = true, width = 8000),
+        ColumnSpec("태그(JSON)", width = 10000),
+        ColumnSpec("필드필터(JSON)", width = 15000),
+        ColumnSpec("정렬종류", dropdownOptions = listOf("manual", "name", "created", "recent", "field"), width = 4000),
+        ColumnSpec("정렬필드키", width = 5000),
+        ColumnSpec("정렬오름차순", dropdownOptions = listOf("Y", "N"), width = 4000),
+        ColumnSpec("신체파트번호", width = 4000),
+        ColumnSpec("작품코드목록", width = 10000),
+        ColumnSpec("기본값", dropdownOptions = listOf("Y", "N"), width = 4000),
         ColumnSpec("생성일", readOnly = true, width = 6000),
         ColumnSpec("수정일", readOnly = true, width = 6000)
     )

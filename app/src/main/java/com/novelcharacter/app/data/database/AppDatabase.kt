@@ -93,7 +93,7 @@ import com.novelcharacter.app.data.model.Universe
         ImageTag::class,
         FieldValueEntry::class
     ],
-    version = 41,
+    version = 42,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -1656,6 +1656,44 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_41_42 = object : Migration(41, 42) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "Migrating database from version 41 to 42 — character_relationships 안정 식별자(code)")
+
+                // 관계의 자연키는 (캐릭터1, 캐릭터2, 관계 유형)이라 엑셀에서 유형을 고치면 rename인지
+                // 신규인지 구별할 수 없었다(구 관계가 이력을 쥔 채 남아 중복 간선 발생).
+                // 사건·상태변화·관계변화에 code를 부여한 MIGRATION_34_35와 **동일한 절차**를 따른다:
+                // 컬럼 추가 → 전 행 백필 → 유니크 인덱스 (백필이 먼저라 유니크 충돌 불가).
+                // nullable TEXT로 두는 이유: DEFAULT 절 없는 ALTER TABLE ADD COLUMN 결과가
+                // 엔티티(code: String?, @ColumnInfo 미사용)의 기대 스키마와 정확히 일치한다.
+                // 컬럼 존재 여부를 먼저 확인한다 — 중간 빌드를 거친 기기에서 이미 컬럼이 있으면
+                // ALTER TABLE이 "duplicate column name"으로 실패해 시작 시마다 크래시가 반복된다.
+                // (파괴적 폴백을 쓰지 않으므로 실패는 데이터 유실이 아니라 기동 불가로 나타난다)
+                val hasCode = db.query("PRAGMA table_info(`character_relationships`)").use { c ->
+                    val nameIdx = c.getColumnIndex("name")
+                    var found = false
+                    while (c.moveToNext()) {
+                        if (c.getString(nameIdx) == "code") { found = true; break }
+                    }
+                    found
+                }
+                if (!hasCode) {
+                    db.execSQL("ALTER TABLE `character_relationships` ADD COLUMN `code` TEXT")
+                }
+                val cursor = db.query("SELECT id FROM `character_relationships` WHERE code IS NULL")
+                while (cursor.moveToNext()) {
+                    db.execSQL(
+                        "UPDATE `character_relationships` SET code = ? WHERE id = ?",
+                        arrayOf(generateEntityCode(), cursor.getLong(0))
+                    )
+                }
+                cursor.close()
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_character_relationships_code` ON `character_relationships`(`code`)")
+
+                Log.i(TAG, "Migration from version 41 to 42 completed successfully")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -1663,7 +1701,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "novel_character_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42)
                     .addCallback(SeedCallback(context.applicationContext))
                     .build()
                     .also { INSTANCE = it }

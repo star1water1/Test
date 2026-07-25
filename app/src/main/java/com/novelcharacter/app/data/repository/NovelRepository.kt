@@ -31,16 +31,29 @@ class NovelRepository(
         }
     }
     suspend fun updateNovel(novel: Novel) = novelDao.update(novel)
+
+    /**
+     * 작품 삭제 — 소속 캐릭터까지 계단식으로 함께 삭제한다.
+     * 캐릭터는 삭제 전 개별 휴지통 스냅샷을 남겨 복원 가능하게 한다(변수 제어 — 말없는 유실 방지).
+     */
     suspend fun deleteNovel(novel: Novel) {
+        val trash = TrashRepository(db)
         // 이미지 파일 경로를 트랜잭션 전에 파싱 (DB 삭제 후에는 접근 불가)
         val imageFiles = parseImagePaths(novel.imagePaths)
 
         db.withTransaction {
+            // 소속 캐릭터 계단식 삭제 (휴지통 스냅샷 후 삭제 — 태그/필드값/관계 등은 FK CASCADE)
+            val characterIds = db.characterDao().getCharactersByNovelList(novel.id).map { it.id }
+            CharacterRepository.deleteCharactersCascade(db, trash, characterIds)
+
             recentActivityDao.deleteByEntity(RecentActivity.TYPE_NOVEL, novel.id)
             // 이 작품을 이미지로 참조하는 세계관의 댕글링 참조 정리
             db.universeDao().clearImageNovelRef(novel.id)
             novelDao.delete(novel)
         }
+
+        // 캐릭터 이미지 파일은 휴지통 스냅샷이 살아 있는 동안 유지 — 정리 시점에 함께 삭제
+        trash.pruneIfNeeded()
 
         // DB 트랜잭션 성공 후 디스크에서 이미지 파일 삭제 — 단, 다른 엔티티가 공유 중이거나
         // 라이브러리(image_meta)·휴지통이 보유한 파일은 지우지 않는다(경로 공유 배정 하 무음 파괴 방지).

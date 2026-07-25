@@ -28,6 +28,7 @@ import java.util.Locale
 import com.novelcharacter.app.databinding.FragmentSettingsBinding
 import com.novelcharacter.app.util.AppLogger
 import com.novelcharacter.app.util.ThemeHelper
+import com.novelcharacter.app.util.dismissSafely
 import com.novelcharacter.app.util.setValidatedPositiveButton
 import androidx.room.withTransaction
 import kotlinx.coroutines.Dispatchers
@@ -55,6 +56,9 @@ class SettingsFragment : Fragment() {
         if (!isAdded || uri == null) return@registerForActivityResult
         val file = pendingBackupExportFile ?: return@registerForActivityResult
         val ctx = requireContext().applicationContext
+        // 대용량 백업 복사도 진행 표시 — 조용한 실패와 구분(변수 제어)
+        val progress = createProgressDialog(R.string.backup_export_saving)
+        progress.show()
         viewLifecycleOwner.lifecycleScope.launch {
             try {
                 withContext(Dispatchers.IO) {
@@ -70,8 +74,10 @@ class SettingsFragment : Fragment() {
                 if (_binding != null) {
                     Toast.makeText(ctx, getString(R.string.backup_export_failed, e.message), Toast.LENGTH_LONG).show()
                 }
+            } finally {
+                progress.dismissSafely()
+                pendingBackupExportFile = null
             }
-            pendingBackupExportFile = null
         }
     }
 
@@ -377,9 +383,11 @@ class SettingsFragment : Fragment() {
                     .setTitle(R.string.share_world_package)
                     .setItems(names) { _, which ->
                         val universe = universes[which]
+                        // Toast 대신 진행 다이얼로그 — 대형 세계관에서도 진행 중임이 분명하게 보이도록
+                        val progress = createProgressDialog(R.string.world_package_exporting)
+                        progress.show()
                         viewLifecycleOwner.lifecycleScope.launch {
                             try {
-                                Toast.makeText(requireContext(), R.string.export_preparing, Toast.LENGTH_SHORT).show()
                                 val exporter = WorldPackageExporter(requireContext())
                                 val config = WorldPackageExporter.ExportConfig(universeId = universe.id)
                                 val file = withContext(Dispatchers.IO) { exporter.export(config) }
@@ -400,6 +408,8 @@ class SettingsFragment : Fragment() {
                                 if (isAdded) {
                                     Toast.makeText(requireContext(), e.message, Toast.LENGTH_LONG).show()
                                 }
+                            } finally {
+                                progress.dismissSafely()
                             }
                         }
                     }
@@ -771,19 +781,9 @@ class SettingsFragment : Fragment() {
         }
     }
 
-    /** 불확정 진행 표시 다이얼로그 (복호화/재암호화 등 IO 작업용) */
-    private fun createProgressDialog(messageRes: Int): AlertDialog {
-        val ctx = requireContext()
-        return MaterialAlertDialogBuilder(ctx)
-            .setMessage(getString(messageRes))
-            .setCancelable(false)
-            .setView(android.widget.ProgressBar(ctx).apply {
-                isIndeterminate = true
-                val pad = (24 * resources.displayMetrics.density).toInt()
-                setPadding(pad, pad, pad, pad)
-            })
-            .create()
-    }
+    /** 불확정 진행 표시 다이얼로그 (복호화/재암호화 등 IO 작업용) — 공용 유틸 위임 */
+    private fun createProgressDialog(messageRes: Int): AlertDialog =
+        com.novelcharacter.app.util.createProgressDialog(requireContext(), messageRes)
 
     private fun restoreFromEncryptedFile(encFile: File) {
         if (!isAdded) return
@@ -1004,6 +1004,9 @@ class SettingsFragment : Fragment() {
         val app = ctx.applicationContext as NovelCharacterApp
         val db = app.database
 
+        // 대량 DB·파일 삭제 — 완료까지 진행 표시로 조용한 실패와 구분(변수 제어)
+        val progress = createProgressDialog(R.string.reset_in_progress)
+        progress.show()
         viewLifecycleOwner.lifecycleScope.launch {
             try {
                 // DB 초기화 (트랜잭션 내 FK CASCADE 안전 순서)
@@ -1074,6 +1077,8 @@ class SettingsFragment : Fragment() {
                 if (_binding != null) {
                     Toast.makeText(ctx, "초기화 실패: ${e.message}", Toast.LENGTH_LONG).show()
                 }
+            } finally {
+                progress.dismissSafely()
             }
         }
     }

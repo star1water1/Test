@@ -20,6 +20,7 @@ import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
+import com.novelcharacter.app.util.dismissSafely
 import com.novelcharacter.app.util.navigateSafe
 import com.novelcharacter.app.util.notifyResult
 import com.novelcharacter.app.util.logOperation
@@ -885,6 +886,11 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
         val character = cachedCharacter ?: return
         val app = requireActivity().application as NovelCharacterApp
 
+        // HTML 생성이 오래 걸릴 수 있어 진행 표시 — 조용한 실패와 구분(변수 제어)
+        val progress = com.novelcharacter.app.util.createProgressDialog(
+            requireContext(), R.string.pdf_generating
+        )
+        progress.show()
         viewLifecycleOwner.lifecycleScope.launch {
             try {
                 val novelId = character.novelId ?: run {
@@ -924,6 +930,8 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
                 if (isAdded) Toast.makeText(requireContext(), e.message, Toast.LENGTH_SHORT).show()
                 logOperation(OpResult.failure(OpResult.CAT_SHARE,
                     getString(R.string.result_pdf_share_failed), e.message))
+            } finally {
+                progress.dismissSafely()
             }
         }
     }

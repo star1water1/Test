@@ -32,6 +32,7 @@ import com.novelcharacter.app.databinding.FragmentUniverseListBinding
 import androidx.recyclerview.widget.ItemTouchHelper
 import com.novelcharacter.app.ui.adapter.UniverseAdapter
 import com.novelcharacter.app.util.PresetTemplates
+import com.novelcharacter.app.util.dismissSafely
 import com.novelcharacter.app.util.navigateSafe
 import com.novelcharacter.app.util.notifyResult
 
@@ -112,14 +113,15 @@ class UniverseListFragment : Fragment() {
                 showUniverseEditDialog(universe)
             },
             onDeleteClick = { universe ->
-                // 연쇄 삭제 범위(작품 연결 해제, 필드 정의·필드값 삭제)를 집계해 사전 고지
+                // 계단식 삭제 범위(작품·캐릭터·사건·필드)를 집계해 사전 고지 — 말없는 유실 방지(변수 제어)
                 viewLifecycleOwner.lifecycleScope.launch {
                     val impact = viewModel.getUniverseDeleteImpact(universe.id)
                     if (!isAdded) return@launch
                     val message = getString(R.string.confirm_delete_universe, universe.name) + "\n\n" +
                         getString(
                             R.string.delete_impact_universe,
-                            impact.novels, impact.fieldDefinitions, impact.fieldValues
+                            impact.novels, impact.characters, impact.events,
+                            impact.fieldDefinitions, impact.fieldValues
                         )
                     MaterialAlertDialogBuilder(requireContext())
                         .setMessage(message)
@@ -1227,9 +1229,15 @@ class UniverseListFragment : Fragment() {
             .setItems(arrayOf(getString(R.string.export_mode_share), getString(R.string.export_mode_save))) { _, which ->
                 exporter?.cancel()
                 exporter = com.novelcharacter.app.excel.ExcelExporter(requireContext().applicationContext)
+                // 워크북 생성이 오래 걸릴 수 있어 진행 다이얼로그 표시 (ExcelTransferController와 동일 패턴)
+                val progress = com.novelcharacter.app.util.createProgressDialog(
+                    requireContext(), R.string.excel_export_in_progress
+                )
+                progress.show()
+                val dismissProgress: () -> Unit = { progress.dismissSafely() }
                 when (which) {
-                    0 -> exporter?.exportAll(options)
-                    1 -> exporter?.exportAll(options) { file, fileName ->
+                    0 -> exporter?.exportAll(options, onFinished = dismissProgress)
+                    1 -> exporter?.exportAll(options, onFinished = dismissProgress) { file, fileName ->
                         if (isAdded) {
                             pendingExportFile = file
                             saveFileLauncher.launch(fileName)

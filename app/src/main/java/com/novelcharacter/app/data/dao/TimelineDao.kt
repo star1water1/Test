@@ -114,6 +114,13 @@ interface TimelineDao {
     @Query("SELECT * FROM timeline_events WHERE universeId = :universeId ORDER BY year ASC, month ASC, day ASC, displayOrder ASC")
     suspend fun getEventsByUniverseList(universeId: Long): List<TimelineEvent>
 
+    /** 세계관 계단식 삭제용 — 사건-캐릭터/작품 연결·사건 필드값은 FK CASCADE로 함께 정리된다. */
+    @Query("DELETE FROM timeline_events WHERE universeId = :universeId")
+    suspend fun deleteAllByUniverse(universeId: Long)
+
+    @Query("SELECT COUNT(*) FROM timeline_events WHERE universeId = :universeId")
+    suspend fun countByUniverse(universeId: Long): Int
+
     @Query("SELECT * FROM timeline_events WHERE year = :year AND (:month IS NULL OR month = :month) AND (:day IS NULL OR day = :day) ORDER BY year ASC, month ASC, day ASC, displayOrder ASC")
     fun getEventsByYearMonthDay(year: Int, month: Int?, day: Int?): LiveData<List<TimelineEvent>>
 
