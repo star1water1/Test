@@ -168,8 +168,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     // 임포트 후 시맨틱 동기화 대상 (characterId → universeId)
     private val pendingSyncCharacters = mutableMapOf<Long, Long>()
 
-    // 트랜잭션 안에서 휴지통 스냅샷을 남겼는지 — 정리(pruneIfNeeded)는 커밋 이후에 수행한다
-    private var trashPruneNeeded = false
+    // 트랜잭션 안에서 휴지통 스냅샷을 남긴 저장소 — 정리(pruneIfNeeded)는 커밋 이후에 수행한다.
+    // 인스턴스를 그대로 들고 있어야 한다: 정리는 "이 작업이 방금 만든 스냅샷"을 보호하는데,
+    // 새 인스턴스로 정리하면 그 보호 목록이 비어 방금 만든 백업을 스스로 태운다.
+    private var trashForPrune: com.novelcharacter.app.data.repository.TrashRepository? = null
 
     // 세력 자동 관계 생성 대기열 (factionId → characterId). 관계 시트 처리 후에 소비한다.
     private val pendingAutoRelationMemberships = mutableListOf<Pair<Long, Long>>()
@@ -256,7 +258,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         processedRowsSoFar = 0
         truncatedFieldCount = 0
         truncatedDetails.clear()
-        trashPruneNeeded = false
+        trashForPrune = null
 
         val totalRows = countTotalRows(workbook)
 
@@ -471,8 +473,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         }
 
         // 휴지통 정리는 커밋 이후 — 트랜잭션 안에서 하면 스냅샷과 정리가 한 단위로 묶여 롤백 시 함께 사라진다
-        if (trashPruneNeeded) {
-            runCatching { com.novelcharacter.app.data.repository.TrashRepository(db).pruneIfNeeded() }
+        val trashToPrune = trashForPrune
+        if (trashToPrune != null) {
+            runCatching { trashToPrune.pruneIfNeeded() }
+            trashForPrune = null
         }
 
         // zip 복원 파일 중 이번 가져오기에서 어떤 엔티티에도 연결되지 않고 meta도 없는 파일은
@@ -5097,7 +5101,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 // 인앱 삭제와 동일 경로 — 휴지통 스냅샷을 남겨 되돌릴 수 있게 한다(무통보 영구 삭제 금지).
                 val trash = com.novelcharacter.app.data.repository.TrashRepository(db)
                 CharacterRepository.deleteCharactersCascade(db, trash, doomed)
-                trashPruneNeeded = true
+                trashForPrune = trash
                 result.deletedCharacters += doomed.size
                 result.warnings.add("엑셀에 없는 캐릭터 ${doomed.size}명을 삭제했습니다 — 휴지통에서 복구할 수 있습니다")
             }

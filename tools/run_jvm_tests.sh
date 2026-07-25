@@ -70,6 +70,15 @@ $MAIN/excel/CharacterFieldValueOverflow.kt
 $MAIN/util/FieldValueTokenizer.kt
 $MAIN/util/FieldValueResolver.kt
 $MAIN/data/model/CharacterFieldValue.kt
+$MAIN/data/model/CharacterStateChange.kt
+$MAIN/data/model/CharacterTag.kt
+$MAIN/data/model/CharacterRelationship.kt
+$MAIN/data/model/TimelineEvent.kt
+$MAIN/data/model/CharacterRelationshipChange.kt
+$MAIN/data/model/FactionMembership.kt
+$MAIN/data/model/CharacterSnapshot.kt
+$MAIN/data/model/SnapshotRefs.kt
+$MAIN/data/repository/SnapshotRefResolver.kt
 $MAIN/data/model/FieldFilter.kt
 $MAIN/data/repository/QueryUtils.kt
 $MAIN/data/dao/CharacterFieldValueDao.kt
@@ -93,6 +102,8 @@ $TEST/util/SortComparatorsTest.kt
 $TEST/util/EpochMemoTest.kt
 $TEST/ai/AiJsonExtractorTest.kt
 $TEST/util/FieldFilterHelperTest.kt
+$TEST/data/SnapshotRefResolverTest.kt
+$TEST/data/CharacterSnapshotPayloadTest.kt
 "
 # 선택 소스: 존재하고 순수 JVM이면 추가
 for extra in "$MAIN/util/SortComparators.kt" "$MAIN/util/EpochMemo.kt" "$MAIN/ai/AiJsonExtractor.kt"; do
