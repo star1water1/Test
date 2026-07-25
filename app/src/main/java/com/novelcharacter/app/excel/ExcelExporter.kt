@@ -1375,14 +1375,22 @@ class ExcelExporter(context: Context) {
     }
 
     /**
-     * 프리셋 필드 필터의 fieldId → (세계관코드, 필드키) 안정 식별자 맵.
-     * fieldId는 기기 이전·덮어쓰기 복원에서 재발급되므로 이 맵으로 왕복 이식성을 확보한다
+     * 프리셋 필드 필터의 fieldId → 이 기기의 필드 정보(세계관코드·필드키·현재 필드명) 맵.
+     * fieldId는 기기 이전·덮어쓰기 복원에서 재발급되므로 이 맵으로 왕복 이식성을 확보한다.
+     * 필드명도 함께 갱신해 인앱 이름 변경 후에도 파일의 표시명이 자연키 폴백의 진실을 담게 한다
      * (필터 대상은 캐릭터 필드 — 검색·목록 프리셋 공통).
      */
-    private suspend fun fieldFilterStableKeys(): Map<Long, PortableFieldFilters.StableKey> {
-        val codeByUniverseId = db.universeDao().getAllUniversesList().associate { it.id to it.code }
-        return db.fieldDefinitionDao().getAllFieldsList().associate {
-            it.id to PortableFieldFilters.StableKey(codeByUniverseId[it.universeId] ?: "", it.key)
+    private suspend fun fieldFilterStableKeys(): Map<Long, PortableFieldFilters.DeviceField> {
+        val universeById = db.universeDao().getAllUniversesList().associateBy { it.id }
+        return db.fieldDefinitionDao().getAllFieldsList().associate { f ->
+            val u = universeById[f.universeId]
+            f.id to PortableFieldFilters.DeviceField(
+                id = f.id,
+                universeCode = u?.code ?: "",
+                universeName = u?.name ?: "",
+                key = f.key,
+                name = f.name
+            )
         }
     }
 

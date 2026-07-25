@@ -202,6 +202,13 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private val deferredUniverseImageNovelCodes = mutableMapOf<Long, String>() // universeId → novelCode
     private val deferredNovelImageCharCodes = mutableMapOf<Long, String>()     // novelId → charCode
 
+    // 세계관을 '이름'으로 매칭했을 때의 파일코드 → 기기코드 별칭.
+    // 프리셋 필드 필터처럼 세계관 이름 열 없이 코드만 실려 오는 참조가 그 이름 매칭 결정을 따라가게 한다.
+    // deferred 맵과 동형으로 시트 처리 순서에 의존하지 않게 서비스 수준에 쌓고, 실행 시작 시 비운다.
+    // 수집 출처는 세계관 시트(정체성 소유)로 한정한다 — 작품·세력·연표의 '세계관' 열은 단순 참조라
+    // 오타 한 줄이 필터를 엉뚱한 세계관으로 돌릴 수 있다.
+    private val universeCodeAliases = UniverseCodeAliases()
+
 
     /** 가져올 이미지의 경로 재매핑: {원본경로 → 새경로} */
     var imagePathRemap: Map<String, String> = emptyMap()
@@ -388,6 +395,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             deferredUniverseImageCharCodes.clear()
             deferredUniverseImageNovelCodes.clear()
             deferredNovelImageCharCodes.clear()
+            universeCodeAliases.clear()
             if (effectiveOptions.universes) importUniverses(workbook, result, onProgress, totalRows)
             if (effectiveOptions.novels) importNovels(workbook, result, onProgress, totalRows)
             // Novel 임포트 완료 (또는 기존 DB 유지) → Universe의 imageNovelId 코드 해석
@@ -1283,7 +1291,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val filtersColIndex = cols["필터(JSON)"] ?: -1
 
         val existingByName = existingPresets.associateBy { it.name }
-        val (filterIdByKey, existingFieldIds) = loadFieldFilterResolution()
+        val filterIndex = fieldFilterIndex()
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0
 
         for (i in 1..sheet.lastRowNum) {
@@ -1298,7 +1306,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val query = if (queryColIndex >= 0) getCellString(row, queryColIndex) else existing.query
             // 실제 임포트와 동일하게 안정 식별자를 fieldId로 재해석한 뒤 비교 (왕복 보조 속성 탓에 전부 '변경'으로 집계되지 않게)
             val filtersJson = if (filtersColIndex >= 0) PortableFieldFilters.resolve(
-                getCellString(row, filtersColIndex).ifBlank { "{}" }, filterIdByKey, existingFieldIds).json
+                getCellString(row, filtersColIndex).ifBlank { "{}" }, filterIndex).json
             else existing.filtersJson
             if (existing.query != query || existing.filtersJson != filtersJson) updateCount++ else unchangedCount++
         }
@@ -1322,7 +1330,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val filtersColIndex = cols["필드필터(JSON)"] ?: -1
 
         val existingByName = existingPresets.associateBy { it.name }
-        val (filterIdByKey, existingFieldIds) = loadFieldFilterResolution()
+        val filterIndex = fieldFilterIndex()
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0
 
         for (i in 1..sheet.lastRowNum) {
@@ -1336,7 +1344,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val tagsJson = if (tagsColIndex >= 0) getCellString(row, tagsColIndex).ifBlank { "[]" } else existing.tagsJson
             // 실제 임포트와 동일하게 안정 식별자를 fieldId로 재해석한 뒤 비교 (왕복 보조 속성 탓에 전부 '변경'으로 집계되지 않게)
             val filtersJson = if (filtersColIndex >= 0) PortableFieldFilters.resolve(
-                getCellString(row, filtersColIndex).ifBlank { "{}" }, filterIdByKey, existingFieldIds).json
+                getCellString(row, filtersColIndex).ifBlank { "{}" }, filterIndex).json
             else existing.fieldFiltersJson
             if (existing.tagsJson != tagsJson || existing.fieldFiltersJson != filtersJson) updateCount++ else unchangedCount++
         }
@@ -1559,6 +1567,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                             existing = byName
                             matchedByName = true
                             result.nameBasedMappings++
+                            // 세계관 이름 열이 없는 참조(프리셋 필드 필터의 universeCode)가 이 결정을 따라가게 한다
+                            universeCodeAliases.note(code, byName.code)
                             result.warnings.add("세계관 행 $i: 코드 '$code'를 찾지 못해 이름 '$name'으로 매칭함 — 의도한 새 세계관이면 코드를 비우세요")
                         } else {
                             existing = null
@@ -3574,14 +3584,24 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     // ── 검색 프리셋 가져오기 ──
 
-    /** 프리셋 필드 필터 해석 맵: (세계관코드, 필드키) → fieldId + 현존 fieldId 집합 (필터 대상은 캐릭터 필드) */
-    private suspend fun loadFieldFilterResolution(): Pair<Map<PortableFieldFilters.StableKey, Long>, Set<Long>> {
-        val codeByUniverseId = db.universeDao().getAllUniversesList().associate { it.id to it.code }
-        val characterFields = db.fieldDefinitionDao().getAllFieldsList()
-        val byKey = characterFields.associate {
-            PortableFieldFilters.StableKey(codeByUniverseId[it.universeId] ?: "", it.key) to it.id
+    /**
+     * 프리셋 필드 필터 해석 색인 (필터 대상은 캐릭터 필드).
+     * 안정 식별자(세계관코드+필드키) → 세계관코드 별칭 → 필드명 자연키 순으로 해석한다.
+     * 별칭 스냅샷을 넘겨, 이후 시트 처리가 맵을 바꿔도 진행 중인 해석이 흔들리지 않게 한다.
+     */
+    private suspend fun fieldFilterIndex(): PortableFieldFilters.Index {
+        val universeById = db.universeDao().getAllUniversesList().associateBy { it.id }
+        val fields = db.fieldDefinitionDao().getAllFieldsList().map { f ->
+            val u = universeById[f.universeId]
+            PortableFieldFilters.DeviceField(
+                id = f.id,
+                universeCode = u?.code ?: "",
+                universeName = u?.name ?: "",
+                key = f.key,
+                name = f.name
+            )
         }
-        return byKey to characterFields.mapTo(HashSet()) { it.id }
+        return PortableFieldFilters.Index(fields, universeCodeAliases.snapshot())
     }
 
     private suspend fun importSearchPresets(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
@@ -3606,7 +3626,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
         val existingPresets = db.searchPresetDao().getAllPresetsList()
         val existingByName = existingPresets.associateBy { it.name }.toMutableMap()
-        val (filterIdByKey, existingFieldIds) = loadFieldFilterResolution()
+        val filterIndex = fieldFilterIndex()
 
         for (i in 1..sheet.lastRowNum) {
             try {
@@ -3619,10 +3639,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 // 필드 필터의 fieldId를 안정 식별자(세계관코드+필드키)로 재해석 — 기기 이전·복원 후에도 필터가 살아있게
                 val filtersJson = if (filtersColIndex >= 0) {
                     val filtersResolved = PortableFieldFilters.resolve(
-                        getCellString(row, filtersColIndex).ifBlank { "{}" }, filterIdByKey, existingFieldIds)
-                    for (droppedField in filtersResolved.droppedNames) {
-                        result.warnings.add("검색 프리셋 행 $i ('$name'): 필드 '${droppedField}'을(를) 찾을 수 없어 필터에서 제외했습니다")
+                        getCellString(row, filtersColIndex).ifBlank { "{}" }, filterIndex)
+                    for (w in filtersResolved.warnings) {
+                        result.warnings.add("검색 프리셋 행 $i ('$name'): $w")
                     }
+                    result.nameBasedMappings += filtersResolved.nameBasedCount
                     filtersResolved.json
                 } else null
                 // 인식할 수 없는 정렬모드를 조용히 저장하면 적용 시 relevance로 동작해 사용자가 틀린 줄 모른다.
@@ -3707,7 +3728,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         )
         val existingByName = db.characterListPresetDao().getAllPresetsList()
             .associateBy { it.name }.toMutableMap()
-        val (filterIdByKey, existingFieldIds) = loadFieldFilterResolution()
+        val filterIndex = fieldFilterIndex()
 
         for (i in 1..sheet.lastRowNum) {
             try {
@@ -3740,10 +3761,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 // 필드 필터의 fieldId를 안정 식별자(세계관코드+필드키)로 재해석 — 기기 이전·복원 후에도 필터가 살아있게
                 val fieldFiltersJson = if (filtersColIndex >= 0) {
                     val resolved = PortableFieldFilters.resolve(
-                        getCellString(row, filtersColIndex).ifBlank { "{}" }, filterIdByKey, existingFieldIds)
-                    for (droppedField in resolved.droppedNames) {
-                        result.warnings.add("목록 프리셋 행 $i ('$name'): 필드 '${droppedField}'을(를) 찾을 수 없어 필터에서 제외했습니다")
+                        getCellString(row, filtersColIndex).ifBlank { "{}" }, filterIndex)
+                    for (w in resolved.warnings) {
+                        result.warnings.add("목록 프리셋 행 $i ('$name'): $w")
                     }
+                    result.nameBasedMappings += resolved.nameBasedCount
                     resolved.json
                 } else null
                 val sortFieldKey = if (sortFieldKeyColIndex >= 0) getCellString(row, sortFieldKeyColIndex).ifBlank { null } else null
