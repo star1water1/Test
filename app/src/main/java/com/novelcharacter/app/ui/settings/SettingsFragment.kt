@@ -274,6 +274,10 @@ class SettingsFragment : Fragment() {
                 getString(R.string.backup_never)
             }
             sb.appendLine(getString(R.string.backup_last_success, successText))
+            // 성공한 백업이라도 이미지가 빠졌으면 반드시 보인다 — '완전한 백업'으로 오인 방지
+            if (status.lastImageWarning.isNotBlank()) {
+                sb.appendLine(status.lastImageWarning)
+            }
 
             if (status.lastFailureAt > 0) {
                 val failText = dateFormat.format(Date(status.lastFailureAt))

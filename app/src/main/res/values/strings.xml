@@ -306,6 +306,16 @@
     <string name="export_validation_error_message">목록에서 선택하세요: %1$s</string>
     <string name="export_validation_prompt_title">선택</string>
     <string name="export_cells_truncated">셀 %1$d개가 엑셀 한도(32,767자)를 넘어 잘려 기록되었습니다</string>
+    <!-- 이미지 포함 내보내기 결과 고지 — 이미지가 빠진 백업을 완전한 백업으로 오인하지 않게 한다 -->
+    <string name="export_images_incomplete">이미지 %1$d장 중 %2$d장만 담겼습니다 — %3$d장 누락. 이 파일만으로는 누락분을 복원할 수 없습니다</string>
+    <string name="export_images_none_included">참조된 이미지 %1$d장을 하나도 담지 못했습니다 — 이 파일에는 이미지가 없습니다</string>
+    <string name="export_images_none">앱에 저장된 이미지가 없어 엑셀 파일(.xlsx)만 내보냈습니다</string>
+    <string name="export_images_summary_suffix"> · 이미지 %1$d장 누락</string>
+    <string name="export_images_detail_missing">· 파일을 찾을 수 없는 참조: %1$d건</string>
+    <string name="export_images_detail_outside">· 앱 내부 저장소 밖을 가리켜 제외: %1$d건</string>
+    <string name="export_images_detail_failed">· 읽기·압축 실패: %1$d건</string>
+    <string name="export_images_detail_samples">· 예: %1$s</string>
+    <string name="export_images_detail_guide">설정 &gt; 시스템 점검 &gt; \'이미지 경로 점검\'에서 어떤 항목의 이미지가 끊겼는지 확인할 수 있습니다.</string>
     <string name="backup_device_bound_title">이 기기 전용 백업</string>
     <string name="backup_device_bound_message">이 백업 파일(.enc)은 암호화되어 이 기기에서만 복원할 수 있습니다.\n\n다른 기기로 데이터를 옮기려면 \'이식 가능 백업\'(암호 설정) 또는 \'엑셀로 내보내기\'를 사용하세요.</string>
     <string name="backup_export_continue">계속 내보내기</string>
@@ -1035,6 +1045,7 @@
     <string name="backup_failed_notification_text">자동 백업이 완료되지 못했습니다. 탭하여 확인하세요.</string>
     <string name="backup_failed_notification_detail">자동 백업이 실패했습니다: %1$s\n설정 &gt; 백업에서 상태를 확인하거나 수동 백업을 시도하세요.</string>
     <string name="backup_result_auto_success">자동 백업 완료</string>
+    <string name="backup_images_incomplete">⚠ 이미지 %1$d장 중 %2$d장만 백업됨 — %3$d장 누락</string>
     <string name="backup_result_auto_failed">자동 백업 실패</string>
 
     <!-- Field Edit Dialog - Tabs -->

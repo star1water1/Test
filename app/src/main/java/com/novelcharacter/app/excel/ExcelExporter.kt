@@ -152,15 +152,18 @@ class ExcelExporter(context: Context) {
 
                 val file: File
                 val fileName: String
+                var imageReport = ImageZipReport.NOT_REQUESTED
                 if (options.images) {
                     val zipFileName = "NovelCharacter_$timestamp.zip"
-                    val zipFile = wrapWithImages(xlsxFile, zipFileName)
+                    val wrapped = wrapWithImages(xlsxFile, zipFileName)
+                    imageReport = wrapped.second
+                    val zipFile: File? = wrapped.first
                     if (zipFile != null) {
                         file = zipFile
                         fileName = zipFileName
                         xlsxFile.delete()
                     } else {
-                        // 이미지가 없으면 XLSX 그대로 사용
+                        // 담을 이미지가 없으면 XLSX 그대로 사용 — 제외 사유는 아래에서 반드시 통보한다
                         file = xlsxFile
                         fileName = xlsxFileName
                     }
@@ -169,7 +172,11 @@ class ExcelExporter(context: Context) {
                     fileName = xlsxFileName
                 }
 
-                val exportSummary = appContext.getString(R.string.result_excel_exported, exportedSheets, exportedRows)
+                val imageNotice = buildImageNotice(imageReport)
+                val imageDetail = buildImageDetail(imageReport)
+                // 이력 한 줄만 봐도 백업이 불완전함을 알 수 있게 요약에 누락 건수를 붙인다
+                val exportSummary = appContext.getString(R.string.result_excel_exported, exportedSheets, exportedRows) +
+                    if (imageReport.hasLoss) appContext.getString(R.string.export_images_summary_suffix, imageReport.excludedCount) else ""
                 withContext(Dispatchers.Main) {
                     if (truncatedCellCount > 0) {
                         Toast.makeText(
@@ -184,11 +191,19 @@ class ExcelExporter(context: Context) {
                     } else {
                         // 공유 모드: 공유 시트가 열리기 전 요약 통보
                         Toast.makeText(appContext, exportSummary, Toast.LENGTH_SHORT).show()
-                        shareFile(file, isZip = options.images)
+                        // 확장자는 실제 산출물에서 파생 — 이미지 0장이면 .xlsx인데 zip MIME로 공유되던 오류 제거
+                        shareFile(file, isZip = fileName.endsWith(".zip", ignoreCase = true))
+                    }
+                    // 이미지 고지는 마지막에 — 공유 시트/SAF가 뜬 뒤에도 화면 위에 남아 읽히게 한다
+                    if (imageNotice != null) {
+                        Toast.makeText(appContext, imageNotice, Toast.LENGTH_LONG).show()
                     }
                 }
                 logExportResult(OpResult.success(OpResult.CAT_EXCEL, exportSummary,
-                    if (truncatedCellCount > 0) appContext.getString(R.string.export_cells_truncated, truncatedCellCount) else null))
+                    listOfNotNull(
+                        if (truncatedCellCount > 0) appContext.getString(R.string.export_cells_truncated, truncatedCellCount) else null,
+                        imageDetail
+                    ).joinToString("\n").ifBlank { null }))
             } catch (e: Exception) {
                 android.util.Log.e("ExcelExporter", "Export failed", e)
                 withContext(Dispatchers.Main) {
@@ -1323,12 +1338,40 @@ class ExcelExporter(context: Context) {
 
     // ── ZIP + 이미지 래핑 ──
 
-    private suspend fun wrapWithImages(xlsxFile: File, zipFileName: String): File? {
+    /** @return (사용할 ZIP 파일 또는 null, 이미지 포함 결과 집계) */
+    private suspend fun wrapWithImages(xlsxFile: File, zipFileName: String): Pair<File?, ImageZipReport> {
         val exportsDir = File(appContext.cacheDir, "exports")
         exportsDir.mkdirs()
         val zipFile = File(exportsDir, zipFileName)
-        val hasImages = ImageZipHelper.wrapWithImages(xlsxFile, zipFile, db, appContext)
-        return if (hasImages) zipFile else null
+        val report = ImageZipHelper.wrapWithImages(xlsxFile, zipFile, db, appContext)
+        return (if (report.created) zipFile else null) to report
+    }
+
+    /**
+     * 이미지 포함 결과 고지 한 줄. 사실만 말한다 — 제외가 0건이면 손실 문구를 쓰지 않는다.
+     * (사실과 다른 경고는 무음보다 나쁘다)
+     */
+    private fun buildImageNotice(r: ImageZipReport): String? = when {
+        !r.requested -> null
+        r.hasLoss && r.includedCount == 0 ->
+            appContext.getString(R.string.export_images_none_included, r.referencedCount)
+        r.hasLoss ->
+            appContext.getString(R.string.export_images_incomplete, r.referencedCount, r.includedCount, r.excludedCount)
+        // 요청했으나 앱에 이미지 자체가 없는 경우 — 손실이 아니라 확장자(.xlsx)에 대한 설명
+        r.referencedCount == 0 -> appContext.getString(R.string.export_images_none)
+        else -> null
+    }
+
+    /** 작업 이력 '상세'에 실을 제외 내역 + 교정 경로 안내. 손실이 없으면 null. */
+    private fun buildImageDetail(r: ImageZipReport): String? {
+        if (!r.hasLoss) return null
+        val lines = mutableListOf<String>()
+        if (r.missingCount > 0) lines.add(appContext.getString(R.string.export_images_detail_missing, r.missingCount))
+        if (r.outsideAppDirCount > 0) lines.add(appContext.getString(R.string.export_images_detail_outside, r.outsideAppDirCount))
+        if (r.failedCount > 0) lines.add(appContext.getString(R.string.export_images_detail_failed, r.failedCount))
+        if (r.sampleNames.isNotEmpty()) lines.add(appContext.getString(R.string.export_images_detail_samples, r.sampleNames.joinToString(", ")))
+        lines.add(appContext.getString(R.string.export_images_detail_guide))
+        return lines.joinToString("\n")
     }
 
     // ── 필드 템플릿 ──

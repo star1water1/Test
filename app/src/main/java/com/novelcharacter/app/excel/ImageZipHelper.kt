@@ -25,14 +25,16 @@ object ImageZipHelper {
      * - images/ (이미지 파일들)
      * - image_map.json (원본경로 → ZIP 상대경로 매핑)
      *
-     * @return true면 ZIP이 생성됨. false면 이미지가 없어 래핑하지 않음.
+     * @return 래핑 결과 집계([ImageZipReport]). created=false면 담을 이미지가 없어 래핑하지 않은 것이며,
+     *         이때도 참조·제외 건수는 채워져 호출부가 사용자에게 사실대로 알릴 수 있다
+     *         (이미지가 빠진 백업을 완전한 백업으로 오인하는 것을 막는다).
      */
     suspend fun wrapWithImages(
         xlsxFile: File,
         outputZipFile: File,
         db: AppDatabase,
         appContext: Context
-    ): Boolean {
+    ): ImageZipReport {
         val gson = Gson()
         val appDir = appContext.filesDir
 
@@ -44,18 +46,29 @@ object ImageZipHelper {
             addAll(runCatching { db.imageMetaDao().getAllPaths() }.getOrDefault(emptyList()))
         }
 
-        // 실제 존재하는 이미지가 있는지 확인
-        val existingImages = imagePathSet.filter { path ->
-            val file = File(path)
-            file.exists() && try {
-                file.canonicalPath.startsWith(appDir.canonicalPath + File.separator)
-            } catch (_: Exception) { false }
-        }
+        // 담을 수 있는 것 / 파일 없음 / 앱 저장소 밖 — 판정은 ImagePathClassifier 단일 소스
+        val appDirCanonical = runCatching { appDir.canonicalPath }.getOrNull() ?: appDir.absolutePath
+        val classified = ImagePathClassifier.classify(imagePathSet, appDirCanonical)
+        val existingImages = classified.includable
 
-        if (existingImages.isEmpty()) return false
+        if (existingImages.isEmpty()) {
+            // ZIP을 만들지 않아도 "무엇이 왜 빠졌는지"는 반드시 보고한다 — 무음 유실 금지
+            return ImageZipReport(
+                requested = true,
+                created = false,
+                referencedCount = imagePathSet.size,
+                includedCount = 0,
+                missingCount = classified.missing.size,
+                outsideAppDirCount = classified.outsideAppDir.size,
+                failedCount = 0,
+                sampleNames = ImagePathClassifier.sampleNames(classified.broken)
+            )
+        }
 
         // ZIP 생성
         val imageMap = mutableMapOf<String, String>()
+        // use 블록 밖에 둬야 반환 시점에 읽을 수 있다
+        val failedPaths = mutableListOf<String>()
 
         ZipOutputStream(FileOutputStream(outputZipFile)).use { zip ->
             // data.xlsx 추가
@@ -65,7 +78,6 @@ object ImageZipHelper {
 
             // 이미지 추가 (파일명 충돌 방지)
             val usedNames = mutableSetOf<String>()
-            var failedCount = 0
             for (path in existingImages) {
                 val imageFile = File(path)
                 var name = imageFile.name
@@ -83,13 +95,13 @@ object ImageZipHelper {
                     zip.closeEntry()
                     imageMap[path] = zipPath
                 } catch (e: Exception) {
-                    failedCount++
+                    failedPaths.add(path)
                     try { zip.closeEntry() } catch (_: Exception) { }
                     Log.w(TAG, "Failed to add image to ZIP: $path", e)
                 }
             }
-            if (failedCount > 0) {
-                Log.w(TAG, "$failedCount of ${existingImages.size} images failed to add to ZIP")
+            if (failedPaths.isNotEmpty()) {
+                Log.w(TAG, "${failedPaths.size} of ${existingImages.size} images failed to add to ZIP")
             }
 
             // image_map.json 추가
@@ -98,7 +110,17 @@ object ImageZipHelper {
             zip.closeEntry()
         }
 
-        return true
+        return ImageZipReport(
+            requested = true,
+            created = true,
+            referencedCount = imagePathSet.size,
+            includedCount = imageMap.size,
+            missingCount = classified.missing.size,
+            outsideAppDirCount = classified.outsideAppDir.size,
+            failedCount = failedPaths.size,
+            // 표본은 "끊어진 참조 + 압축 실패"를 함께 — 사용자가 어느 파일인지 짚을 수 있게 한다
+            sampleNames = ImagePathClassifier.sampleNames(classified.broken + failedPaths)
+        )
     }
 
     /**

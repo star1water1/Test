@@ -4492,46 +4492,49 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         reportUnknownColumns(headerRow, spec, result)
         val cols = resolveHeaderColumns(headerRow)
         val fileColIndex = cols["파일명"] ?: 0
-        val tagColIndex = cols["태그"] ?: 1
-        val groupColIndex = cols["링크그룹"] ?: 2
+        // 위치 폴백 금지 — 열을 지우면 이웃 열을 오독한다
+        val tagColIndex = cols["태그"] ?: -1
+        val groupColIndex = cols["링크그룹"] ?: -1
 
-        // zip 리맵 키(원 절대경로)의 basename → 복원된 새 경로
-        val remapByBasename = HashMap<String, String>()
-        for ((origPath, newPath) in imagePathRemap) {
-            remapByBasename[java.io.File(origPath).name] = newPath
-        }
+        // zip 리맵 키(원 절대경로)의 basename → 복원된 새 경로. basename 충돌은 무음 last-wins 대신 고지한다.
+        val remap = ImageMetaRowResolver.buildRemapByBasename(imagePathRemap)
+        remap.warnings.forEach { result.warnings.add(it) }
         val filesDir = appContext?.filesDir
 
+        // 같은 이미지를 가리키는 행이 둘 이상이면 뒤 행이 앞 행의 태그를 통째로 지운다 —
+        // 다른 시트의 코드 중복과 같은 규약(마지막 행 우선 + 고지)으로 접는다.
+        val sheetRows = (1..sheet.lastRowNum).mapNotNull { i ->
+            val row = sheet.getRow(i) ?: return@mapNotNull null
+            val fileName = getCellString(row, fileColIndex)
+            if (fileName.isBlank()) null else i to fileName
+        }
+        val plan = ImageMetaRowResolver.plan(sheetRows, remap.byBasename) { fileName ->
+            filesDir?.let { dir -> java.io.File(dir, fileName).takeIf { it.exists() }?.absolutePath }
+        }
+        plan.warnings.forEach { result.warnings.add(it) }
+
         val now = System.currentTimeMillis()
-        var skippedMissing = 0
+        val skippedMissing = plan.unresolved.size
         val groupMembers = mutableMapOf<String, MutableList<Long>>()
 
-        for (i in 1..sheet.lastRowNum) {
+        for ((i, _, path) in plan.rows) {
             try {
                 val row = sheet.getRow(i) ?: continue
-                val fileName = getCellString(row, fileColIndex)
-                if (fileName.isBlank()) continue
-
-                val path = remapByBasename[fileName]
-                    ?: filesDir?.let { dir ->
-                        java.io.File(dir, fileName).takeIf { it.exists() }?.absolutePath
-                    }
-                if (path == null) {
-                    skippedMissing++
-                    continue
-                }
 
                 val existing = db.imageMetaDao().getByPath(path)
                 val imageId = existing?.id ?: db.imageMetaDao().adopt(path, now)
                 if (existing != null) result.updatedImageMeta++ else result.newImageMeta++
 
-                val tags = splitCsv(getCellString(row, tagColIndex))
-                db.imageTagDao().replaceAllForImage(
-                    imageId,
-                    tags.map { com.novelcharacter.app.data.model.ImageTag(imageId = imageId, tag = it) }
-                )
+                // F1-A: '태그' 열이 없으면 기존 태그 유지. 열이 있고 빈칸이면 비움 의도로 존중.
+                if (tagColIndex >= 0) {
+                    val tags = splitCsv(getCellString(row, tagColIndex))
+                    db.imageTagDao().replaceAllForImage(
+                        imageId,
+                        tags.map { com.novelcharacter.app.data.model.ImageTag(imageId = imageId, tag = it) }
+                    )
+                }
 
-                val groupToken = getCellString(row, groupColIndex).trim()
+                val groupToken = if (groupColIndex >= 0) getCellString(row, groupColIndex).trim() else ""
                 if (groupToken.isNotBlank()) {
                     groupMembers.getOrPut(groupToken) { mutableListOf() }.add(imageId)
                 }

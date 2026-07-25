@@ -60,6 +60,8 @@ $MAIN/excel/PortableFieldFilters.kt
 $MAIN/excel/PresetTemplateMatcher.kt
 $MAIN/excel/FactionRefResolver.kt
 $MAIN/excel/ExcelRefColumns.kt
+$MAIN/excel/ImageZipReport.kt
+$MAIN/excel/ImageMetaRowResolver.kt
 $MAIN/excel/EventFieldHeaders.kt
 $MAIN/excel/ExcelHeaderAliases.kt
 $MAIN/excel/SheetSpec.kt
@@ -84,6 +86,7 @@ $TEST/excel/CharacterFieldValueOverflowTest.kt
 $TEST/excel/PresetTemplateMatcherTest.kt
 $TEST/excel/SheetValueConventionsTest.kt
 $TEST/excel/FactionRefResolverTest.kt
+$TEST/excel/ImageBackupIntegrityTest.kt
 $TEST/excel/ExcelCellValueTest.kt
 $TEST/util/FieldValueTokenizerTest.kt
 $TEST/util/SortComparatorsTest.kt
