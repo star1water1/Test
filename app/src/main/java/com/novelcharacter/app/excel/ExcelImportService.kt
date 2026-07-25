@@ -199,6 +199,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     // 캐릭터 시트로 이미 소비된 시트명 — 같은 시트를 세계관용·미분류용으로 두 번 돌지 않게 한다.
     private val consumedCharacterSheetNames = mutableSetOf<String>()
 
+    // 세계관 이름이 '미분류 캐릭터'와 겹치는가 — 두 캐릭터 시트가 같은 이름을 다투는 상태.
+    private var unclassifiedNameCollidesWithUniverse = false
+
     // 예약 시트로 실제로 읽은 시트명 — '인식되지 않아 무시되었습니다' 경고에서 제외한다.
     // (읽지 않은 시트까지 억제하면 무음 유실이 된다)
     private val consumedSheetNames = mutableSetOf<String>()
@@ -403,6 +406,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             unclassifiedSheetImported = false
             consumedCharacterSheetNames.clear()
             consumedSheetNames.clear()
+            unclassifiedNameCollidesWithUniverse = false
             importedCharFieldPairs.clear()
             universeMovedCharacterIds.clear()
             matchedEventIds.clear()
@@ -1574,16 +1578,43 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
      */
     private fun resolveSpecSheet(workbook: Workbook, spec: SheetSpec): Sheet? {
         val exact = workbook.getSheet(spec.sheetName)
-        if (exact != null && exact.getRow(0)?.let { isValidHeader(it, spec.firstColumnHeader) } == true) {
+        // 예약 데이터 시트는 **결코 캐릭터 시트가 아니다.** 첫 열이 '이름'인 spec 6개
+        // (세계관·이름 은행·세력·필드 템플릿·검색 프리셋·목록 프리셋)는 isValidHeader만으로는
+        // 같은 이름의 세계관 캐릭터 시트와 구분되지 않는다. 레거시 백업(캐릭터 시트가 평명을
+        // 차지한 파일)에서 이 판정이 그 캐릭터 시트를 데이터 시트로 넘겨줬고, 같은 판정을 쓰는
+        // 4-6 삭제 가드까지 통과시켜 **원본을 먼저 지우고 한 건도 복원하지 못했다.**
+        if (exact != null &&
+            exact.getRow(0)?.let { isValidHeader(it, spec.firstColumnHeader) } == true &&
+            !looksLikeCharacterSheet(exact)
+        ) {
             return exact
         }
         for (idx in 0 until workbook.numberOfSheets) {
             val name = workbook.getSheetName(idx)
             if (!isSuffixedVariantOf(name, spec.sheetName)) continue
             val candidate = workbook.getSheetAt(idx)
+            if (looksLikeCharacterSheet(candidate)) continue
             if (matchesSpecHeader(candidate, spec)) return candidate
         }
         return null
+    }
+
+    /**
+     * 캐릭터 시트의 지문 — 첫 열이 '이름'이고 캐릭터 전용 헤더가 하나라도 있는가.
+     *
+     * '이미지경로'는 세계관 시트에도 있어 제외하고, 아래 4개는 세계관/이름 은행/세력/프리셋
+     * 어디에도 없는 캐릭터 전용 헤더다. 시트 이름이 겹칠 때 정체를 가르는 단일 판정이므로
+     * 세계관 시트 조회와 예약 시트 조회가 **같은 함수**를 봐야 한다.
+     */
+    private fun looksLikeCharacterSheet(sheet: Sheet): Boolean {
+        val header = sheet.getRow(0) ?: return false
+        if (getCellString(header, 0) != "이름") return false
+        val distinctive = listOf("이명", "작품", "작품코드", "고정")
+        val lastCol = header.lastCellNum.toInt()
+        for (col in 1 until lastCol) {
+            if (getCellString(header, col) in distinctive) return true
+        }
+        return false
     }
 
     private fun findSheet(workbook: Workbook, spec: SheetSpec, result: ImportResult): Sheet? {
@@ -2219,6 +2250,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val universes = db.universeDao().getAllUniversesList()
         val reservedNames = RESERVED_SHEET_NAMES
 
+        if (universes.any { sanitizeSheetNameBase(it.name) == UNCLASSIFIED_SHEET_NAME }) {
+            unclassifiedNameCollidesWithUniverse = true
+        }
         for (universe in universes) {
             val sheet = findSheetForUniverse(workbook, universe.name, reservedNames) ?: continue
             val headerRow = sheet.getRow(0) ?: continue
@@ -2240,6 +2274,17 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val headerRow = sheet.getRow(0) ?: return
         if (!checkHeaderOrReport(sheet, headerRow, "이름", result)) return
         consumedCharacterSheetNames.add(sheet.sheetName)
+        // 세계관 이름이 '미분류 캐릭터'인 백업은 두 캐릭터 시트가 같은 이름을 다투는데, 둘 다
+        // 캐릭터 시트라 헤더로 구분할 수 없다. 신규 형식(예약명은 미분류 시트가 갖는다)으로
+        // 해석하되, 구버전 백업이면 반대일 수 있으므로 **모호함을 선언한다**(규약 4-3:
+        // 좁혀지지 않으면 조용히 고르지 않는다). 사용자는 엑셀에서 시트 이름을 바꿔 교정할 수 있다.
+        if (unclassifiedNameCollidesWithUniverse) {
+            result.warnings.add(
+                "'$UNCLASSIFIED_SHEET_NAME'이라는 이름의 세계관이 있어 시트 두 개가 같은 이름을 다툽니다 — " +
+                "'${sheet.sheetName}' 시트를 미분류 캐릭터로 읽었습니다. 구버전 백업이라 반대로 저장돼 있었다면 " +
+                "엑셀에서 두 시트의 이름을 서로 바꾼 뒤 다시 가져오세요"
+            )
+        }
 
         unclassifiedSheetImported = true
         importCharacterRows(sheet, headerRow, null, emptyList(), result, resolvedConflicts, UNCLASSIFIED_SHEET_NAME, onProgress, totalRows)
@@ -2261,14 +2306,22 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val universeIdByCharId = db.characterDao().getAllCharactersList()
             .associate { it.id to it.novelId?.let { nid -> universeIdByNovelId[nid] } }
 
+        // 판정은 **내보내기가 실제로 오버플로 시트에 담는 규칙과 같아야 한다.**
+        // 종전에는 여기만 `fd.universeId != ownUniverseId`라는 다른 식을 써서, 자기 세계관의
+        // **사건(entityType=event) 필드 정의**를 가리키는 값이 갈렸다 — 그 값은 캐릭터 시트가
+        // 열로 담지 못해 오버플로 시트에만 있는데, 이 가드는 '복원 가능'으로 세어
+        // 구버전 백업 덮어쓰기에서 무경고로 소멸시켰다. 단일 소스(CharacterFieldValueOverflow)를 쓴다.
+        val charFieldIdsByUniverse: Map<Long, Set<Long>> = fieldsById.values
+            .filter { it.entityType == FieldDefinition.ENTITY_CHARACTER }
+            .groupBy { it.universeId }
+            .mapValues { (_, list) -> list.mapTo(HashSet()) { it.id } }
+
         var characters = 0
         var values = 0
         for ((charId, charValues) in allValues.groupBy { it.characterId }) {
             val ownUniverseId = universeIdByCharId[charId]
-            val n = charValues.count { v ->
-                val fd = fieldsById[v.fieldDefinitionId]
-                fd != null && fd.type != "CALCULATED" && v.value.isNotBlank() && fd.universeId != ownUniverseId
-            }
+            val covered = ownUniverseId?.let { charFieldIdsByUniverse[it] } ?: emptySet()
+            val n = CharacterFieldValueOverflow.select(charValues, covered, fieldsById).size
             if (n > 0) { characters++; values += n }
         }
         return UnrestorableFieldValues(characters, values)
@@ -2283,8 +2336,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
      */
     private suspend fun importCharacterFieldValues(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = characterFieldValueSpec()
-        // F1-A: 시트가 없으면 기존 값 유지 (구버전 백업 호환)
-        val sheet = workbook.getSheet(spec.sheetName) ?: return
+        // F1-A: 시트가 없으면 기존 값 유지 (구버전 백업 호환) — 없는 것이 정상이라 경고하지 않는다.
+        // **삭제 가드(canRestore)와 같은 해석**을 써야 한다. 가드만 접미사 변형을 수용하면
+        // '복원 가능'이라 판정한 시트를 정작 판독기가 못 읽어 캐릭터가 통째로 사라진다.
+        val sheet = resolveSpecSheet(workbook, spec) ?: return
+        consumedSheetNames.add(sheet.sheetName)
         val headerRow = sheet.getRow(0) ?: return
         if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
 
@@ -4704,22 +4760,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     private fun findSheetForUniverse(workbook: Workbook, universeName: String, reservedNames: Set<String>): Sheet? {
         // 3중 방어 ②: 세계관 이름이 예약 시트명("이미지" 등)과 겹치면 정확-일치 결과가 데이터 시트일 수
-        // 있다. 예약명 충돌 시에는 헤더 피크로 레거시 캐릭터 시트(예약 시트 도입 전 백업)만 구제한다.
+        // 있다. 예약명 충돌 시에는 헤더 피크(looksLikeCharacterSheet — 예약 시트 조회와 **같은 판정**)로
+        // 레거시 캐릭터 시트(예약 시트 도입 전 백업)만 구제한다.
         // 신규 내보내기는 캐릭터 시트가 "(2)" 접미사로 sanitize되므로 아래 접미사 루프가 찾는다.
-        fun looksLikeCharacterSheet(sheet: Sheet): Boolean {
-            val header = sheet.getRow(0) ?: return false
-            val first = getCellString(header, 0)
-            if (first != "이름") return false
-            // "이름"으로 시작하는 다른 예약 시트(이름 은행·세계관·세력 등)와 구분 — 캐릭터 고유 헤더 확인.
-            // "이미지경로"는 세계관 시트에도 있어 제외(세계관 이름이 "세계관"일 때 목록 시트 오인 차단),
-            // 아래 4개는 세계관/이름 은행/세력 시트 어디에도 없는 캐릭터 전용 헤더다.
-            val distinctive = listOf("이명", "작품", "작품코드", "고정")
-            val lastCol = header.lastCellNum.toInt()
-            for (col in 1 until lastCol) {
-                if (getCellString(header, col) in distinctive) return true
-            }
-            return false
-        }
 
         // 시트명 정규화는 내보내기와 같은 함수를 쓴다(따로 두면 반드시 드리프트한다).
         val sanitized = sanitizeSheetNameBase(universeName)
