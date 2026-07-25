@@ -221,17 +221,6 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         return imagePathRemap[path] ?: path
     }
 
-    /** imagePaths JSON 배열 → 경로 목록. 레거시 단일 경로 문자열도 관대 수용한다. */
-    private fun parseImagePathList(imagePathsJson: String): List<String> {
-        if (imagePathsJson.isBlank() || imagePathsJson == "[]") return emptyList()
-        return try {
-            com.google.gson.Gson().fromJson(imagePathsJson, Array<String>::class.java)
-                ?.filterNotNull()?.filter { it.isNotBlank() } ?: emptyList()
-        } catch (_: Exception) {
-            listOf(imagePathsJson)
-        }
-    }
-
     /** imagePaths JSON 배열 내 모든 경로를 재매핑. 레거시 단일 경로도 JSON 배열로 변환. */
     private fun remapImagePaths(imagePathsJson: String): String {
         if (imagePathsJson.isBlank() || imagePathsJson == "[]") return "[]"
@@ -335,15 +324,27 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     db.timelineDao().deleteAllEvents()
                 }
                 if (effectiveOptions.characters) {
-                    if (charactersRestorable) {
-                        // 캐릭터 시트는 그 시트 세계관의 필드만 열로 담는다. 미분류 캐릭터·타 세계관 잔여
-                        // 필드값은 '캐릭터 필드값' 시트로만 복원되므로, 그 시트가 없는 백업(구버전 파일)이면
-                        // deleteAll의 FK CASCADE로 영구 소멸한다. 삭제 전 휴지통 스냅샷을 남기고 건수를 고지한다.
-                        if (!canRestore(characterFieldValueSpec())) {
-                            snapshotUnrestorableFieldValues(result)
-                        }
-                        db.characterDao().deleteAll()
-                    } else result.warnings.add("백업에 캐릭터 시트가 없어 기존 캐릭터를 삭제하지 않고 유지했습니다 (덮어쓰기 제외)")
+                    // 캐릭터 시트는 그 시트 세계관의 필드만 열로 담는다. 미분류 캐릭터·타 세계관 잔여
+                    // 필드값은 '캐릭터 필드값' 시트로만 복원되므로, 그 시트가 없는 백업(구버전 파일)이면
+                    // deleteAll의 FK CASCADE로 영구 소멸한다.
+                    // 대원칙 그대로 — 백업이 복원할 수 없는 것은 지우지 않는다. shouldDelete와 같은 판정이다.
+                    // (휴지통 스냅샷으로 때우지 않는다: 스냅샷은 fieldDefinitionId를 담는데 세계관을 함께
+                    //  덮어쓰면 그 id가 재발급되어 복원해도 필드값이 하나도 살아나지 않는다.)
+                    val unrestorable =
+                        if (charactersRestorable && !canRestore(characterFieldValueSpec())) countUnrestorableFieldValues()
+                        else null
+                    when {
+                        !charactersRestorable ->
+                            result.warnings.add("백업에 캐릭터 시트가 없어 기존 캐릭터를 삭제하지 않고 유지했습니다 (덮어쓰기 제외)")
+                        unrestorable != null && unrestorable.values > 0 ->
+                            result.warnings.add(
+                                "백업에 '캐릭터 필드값' 시트가 없어 캐릭터 ${unrestorable.characters}명의 필드값 ${unrestorable.values}건을 " +
+                                "되돌릴 수 없으므로 기존 캐릭터를 삭제하지 않고 유지했습니다 (덮어쓰기 제외) — " +
+                                "이 값들은 미분류 캐릭터이거나 다른 세계관 필드를 가리켜 캐릭터 시트로는 복원되지 않습니다. " +
+                                "완전한 덮어쓰기를 원하면 지금 데이터를 최신 형식으로 한 번 내보낸 뒤 다시 시도하세요"
+                            )
+                        else -> db.characterDao().deleteAll()
+                    }
                 }
                 // 값 라이브러리(필드 데이터)는 시트가 있을 때만 비우고 재구성한다.
                 if (shouldDelete(effectiveOptions.fieldDefinitions, fieldValueLibrarySpec())) {
@@ -554,6 +555,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val categories = mutableListOf<CategoryAnalysis>()
         var characterConflicts = emptyList<CharacterConflict>()
         processedRowsSoFar = 0
+        // 분석은 세계관을 실제로 가져오지 않아 별칭을 쌓지 않는다. 비우지 않으면 직전 가져오기의
+        // 별칭이 남아 이 파일과 무관한 세계관으로 프리셋 필터를 해석한다(같은 인스턴스 재사용).
+        universeCodeAliases.clear()
         val totalRows = countTotalRows(workbook)
 
         if (options.universes) categories.add(analyzeUniverses(workbook, onProgress, totalRows))
@@ -2043,20 +2047,24 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     continue
                 }
 
-                // 출처 오타는 조용히 수용하지도, 기존 값을 파괴하지도 않는다 — 고지 + 교정 경로 안내
                 val sourceCell = FieldValueSheetMapper.parseSourceCell(imported.sourceFlag)
-                if (sourceCell is FieldValueSheetMapper.SourceCell.Unknown) {
-                    result.warnings.add(
-                        "필드 데이터 행 $i: 출처 '${sourceCell.raw}'을(를) 인식할 수 없습니다 — " +
-                        "AUTO·MANUAL·IMPORT·AI 중 하나를 입력하세요(인식 전까지 기존 출처를 유지합니다)"
-                    )
-                }
 
                 val siblings = entriesByField.getOrPut(fd.id) { mutableListOf() }
                 // 매칭: 코드 우선 → (필드, 값)
                 val byCode = imported.code?.trim().orEmpty()
                     .takeIf { it.isNotEmpty() }?.let { code -> siblings.find { it.code == code } }
                 val existing = byCode ?: siblings.find { it.value == imported.trimmedValue }
+
+                // 출처 오타는 조용히 수용하지도, 기존 값을 파괴하지도 않는다 — 고지 + 교정 경로 안내.
+                // 실제 저장될 값이 갱신/신규에 따라 다르므로 매칭 이후에 판정한다(사실과 다른 경고 금지).
+                if (sourceCell is FieldValueSheetMapper.SourceCell.Unknown) {
+                    val outcome = if (existing != null) "기존 출처(${existing.source})를 유지했습니다"
+                    else "새 값이라 참고할 기존 출처가 없어 ${com.novelcharacter.app.data.model.FieldValueEntry.SOURCE_IMPORT}로 등록했습니다"
+                    result.warnings.add(
+                        "필드 데이터 행 $i: 출처 '${sourceCell.raw}'을(를) 인식할 수 없어 $outcome — " +
+                        "AUTO·MANUAL·IMPORT·AI 중 하나로 고쳐 다시 가져오면 반영됩니다"
+                    )
+                }
 
                 var candidate = FieldValueSheetMapper.applyRow(existing, fd.id, imported)
                 if (candidate == null) {
@@ -2143,39 +2151,33 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         importCharacterRows(sheet, headerRow, null, emptyList(), result, resolvedConflicts, UNCLASSIFIED_SHEET_NAME, onProgress, totalRows)
     }
 
+    /** [countUnrestorableFieldValues] 결과 — 캐릭터 시트로는 복원할 수 없는 필드값의 규모. */
+    private data class UnrestorableFieldValues(val characters: Int, val values: Int)
+
     /**
-     * 덮어쓰기 삭제 전 안전망 — '캐릭터 필드값' 시트가 없는 백업으로 덮어쓸 때, 그 시트로만
-     * 복원 가능한 필드값(캐릭터 시트의 열로 표현되지 않는 값)을 가진 캐릭터를 휴지통에 스냅샷한다.
+     * 캐릭터 시트가 열로 표현할 수 없는 필드값(미분류 캐릭터 + 타 세계관 잔여값)의 규모를 센다.
+     * 덮어쓰기 삭제 전 "이 백업으로 되돌릴 수 있는가"를 판정하는 데만 쓴다 — 쓰기는 하지 않는다.
      * 삭제 직전 대형 트랜잭션 안에서 도는 코드이므로 전량 배치 로드로 N+1을 피한다.
      */
-    private suspend fun snapshotUnrestorableFieldValues(result: ImportResult) {
+    private suspend fun countUnrestorableFieldValues(): UnrestorableFieldValues {
         val allValues = db.characterFieldValueDao().getAllValuesList()
-        if (allValues.isEmpty()) return
+        if (allValues.isEmpty()) return UnrestorableFieldValues(0, 0)
         val fieldsById = db.fieldDefinitionDao().getAllFieldsAllTypes().associateBy { it.id }
         val universeIdByNovelId = db.novelDao().getAllNovelsList().associate { it.id to it.universeId }
-        val characters = db.characterDao().getAllCharactersList()
-        val valuesByChar = allValues.groupBy { it.characterId }
+        val universeIdByCharId = db.characterDao().getAllCharactersList()
+            .associate { it.id to it.novelId?.let { nid -> universeIdByNovelId[nid] } }
 
-        val atRisk = characters.mapNotNull { ch ->
-            val ownUniverseId = ch.novelId?.let { universeIdByNovelId[it] }
-            val unrestorable = valuesByChar[ch.id].orEmpty().count { v ->
+        var characters = 0
+        var values = 0
+        for ((charId, charValues) in allValues.groupBy { it.characterId }) {
+            val ownUniverseId = universeIdByCharId[charId]
+            val n = charValues.count { v ->
                 val fd = fieldsById[v.fieldDefinitionId]
                 fd != null && fd.type != "CALCULATED" && v.value.isNotBlank() && fd.universeId != ownUniverseId
             }
-            if (unrestorable > 0) ch to unrestorable else null
+            if (n > 0) { characters++; values += n }
         }
-        if (atRisk.isEmpty()) return
-
-        val trash = com.novelcharacter.app.data.repository.TrashRepository(db)
-        for ((ch, _) in atRisk) {
-            runCatching { trash.snapshotCharacter(ch, parseImagePathList(ch.imagePaths)) }
-        }
-        trashPruneNeeded = true
-        result.warnings.add(
-            "덮어쓰기: 백업에 '캐릭터 필드값' 시트가 없어 캐릭터 ${atRisk.size}명의 필드값 " +
-            "${atRisk.sumOf { it.second }}건은 복원되지 않습니다 — 삭제 전 휴지통에 스냅샷을 남겼습니다" +
-            "(휴지통 보관 한도를 넘으면 오래된 항목부터 정리되므로 먼저 확인하세요)"
-        )
+        return UnrestorableFieldValues(characters, values)
     }
 
     // ── 캐릭터 필드값 오버플로 가져오기 ──
@@ -3498,7 +3500,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val notesColIndex = cols["메모"] ?: 3
         // 위치 폴백 금지 — 열을 지우면 '사용 캐릭터'를 사용여부로 오독한다
         val usedColIndex = cols["사용여부"] ?: -1
-        val usedByColIndex = cols["사용 캐릭터"] ?: 5
+        // 위치 폴백 금지 — 열을 지우면 이웃 열(생성일/코드)을 이름으로 오독한다
+        val usedByColIndex = cols["사용 캐릭터"] ?: -1
         val charCodeColIndex = cols["사용캐릭터코드"] ?: -1
         val createdAtColIndex = cols["생성일"] ?: -1
         val codeColIndex = cols["코드"] ?: -1  // F3-D: 이름 은행 항목 자체 코드
@@ -3517,27 +3520,23 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val origin = getCellString(row, originColIndex)
                 val notes = getCellString(row, notesColIndex)
                 val usedFlag = sheetBooleanOrKeep(usedColIndex >= 0, getCellString(row, usedColIndex))
-                val usedByCharName = getCellString(row, usedByColIndex)
+                val usedByCharName = if (usedByColIndex >= 0) getCellString(row, usedByColIndex) else ""
                 val usedByCharCode = getCellCode(row, charCodeColIndex, "이름 은행 행 $i", result)
                 val createdAt = if (createdAtColIndex >= 0) parseNumber(getCellString(row, createdAtColIndex))?.toLong() ?: System.currentTimeMillis() else System.currentTimeMillis()
 
-                val usedByCharacterId: Long? = (if (usedByCharCode.isNotBlank()) {
-                    db.characterDao().getCharacterByCode(usedByCharCode)?.id
-                } else null)
-                    ?: when (val r = resolveCharByNameNovel(usedByCharName, null)) {  // F3-B: 동명이인 안전
-                        is CharLookupResult.Found -> r.character.id
-                        is CharLookupResult.Ambiguous -> {
-                            result.warnings.add("이름 은행 행 $i: 사용 캐릭터 '$usedByCharName' 동명이인 ${r.count}명 — 사용캐릭터코드 열로 지정하세요")
-                            null
+                // 사용 캐릭터는 편집 가능한 '사용 캐릭터' + readOnly '사용캐릭터코드'의 참조 열 쌍이다
+                // (관계 시트의 '세력'/'세력코드'와 동형): 유무는 이름 열이, 대상은 코드가 정한다.
+                val usedIntent = refColumnIntent(usedByColIndex >= 0, charCodeColIndex >= 0, usedByCharName, usedByCharCode)
+                val resolvedUsedById: Long? = if (usedIntent != RefIntent.LOOKUP) null else {
+                    (if (usedByCharCode.isNotBlank()) db.characterDao().getCharacterByCode(usedByCharCode)?.id else null)
+                        ?: when (val r = resolveCharByNameNovel(usedByCharName, null)) {  // F3-B: 동명이인 안전
+                            is CharLookupResult.Found -> r.character.id
+                            is CharLookupResult.Ambiguous -> {
+                                result.warnings.add("이름 은행 행 $i: 사용 캐릭터 '$usedByCharName' 동명이인 ${r.count}명 — 사용캐릭터코드 열로 지정하세요")
+                                null
+                            }
+                            CharLookupResult.NotFound -> null
                         }
-                        CharLookupResult.NotFound -> null
-                    }
-
-                // 참조가 적혀 있는데 해석에 실패하면 '사용여부'까지 조용히 false로 뒤집힌다 —
-                // 사용 표시는 보존하고 연결만 비운 뒤 고지한다(무음 상태 변경 금지).
-                val usedRefProvided = usedByCharCode.isNotBlank() || usedByCharName.isNotBlank()
-                if (usedFlag == true && usedRefProvided && usedByCharacterId == null) {
-                    result.warnings.add("이름 은행 행 $i: 사용 캐릭터 '${usedByCharName.ifBlank { usedByCharCode }}'을(를) 찾을 수 없어 연결 없이 '사용 중'으로 남겨둡니다")
                 }
 
                 val mapKey = "${name}\u0000${gender}"
@@ -3545,6 +3544,22 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 // F3-D: 코드 우선 매칭(이름/성별을 편집해도 같은 항목 인식) → 자연키(이름+성별) 폴백
                 val existing = (if (entryCode.isNotBlank()) db.nameBankDao().getByCode(entryCode) else null)
                     ?: existingNamesMap[mapKey]
+
+                // 참조 열 쌍 규약: 열 없음 → 기존 연결 유지(F1-A) / 이름 칸 빈칸 → 명시적 해제 / 값 있음 → 해석 결과
+                val effectiveUsed = usedFlag ?: existing?.isUsed ?: false
+                val usedByCharacterId: Long? = when (usedIntent) {
+                    RefIntent.KEEP -> existing?.usedByCharacterId
+                    RefIntent.CLEAR -> null
+                    RefIntent.LOOKUP -> resolvedUsedById
+                }
+                // 참조를 조회했는데 해석에 실패하면 연결이 조용히 끊긴다 —
+                // 사용 표시는 보존하고 연결만 비운 뒤 고지한다(무음 상태 변경 금지).
+                if (effectiveUsed && usedIntent == RefIntent.LOOKUP && usedByCharacterId == null) {
+                    result.warnings.add(
+                        "이름 은행 행 $i: 사용 캐릭터 '${usedByCharName.ifBlank { usedByCharCode }}'을(를) 찾을 수 없어 " +
+                        "연결 없이 '사용 중'으로 남겨둡니다 — '사용캐릭터코드' 열로 지정하거나 '사용 캐릭터' 칸을 비워 해제하세요"
+                    )
+                }
 
                 if (existing != null) {
                     db.nameBankDao().update(existing.copy(

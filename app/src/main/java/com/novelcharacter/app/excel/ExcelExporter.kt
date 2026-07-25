@@ -765,6 +765,11 @@ class ExcelExporter(context: Context) {
         // 내보내기 로직이 직접 채우므로 두 곳이 드리프트할 수 없다.
         val coveredFieldIds = HashMap<Long, Set<Long>>()
 
+        // 예약 시트는 캐릭터 시트보다 먼저 이름을 선점한다(이미지 시트와 동일 규약).
+        // 세계관 이름이 "캐릭터 필드값"이어도 오버플로 시트가 원명을 지키고, 그 캐릭터 시트는
+        // "(2)"로 sanitize되어 findSheetForUniverse의 접미사 루프가 구제한다.
+        val overflowSheetName = sanitizeSheetName(characterFieldValueSpec().sheetName, usedSheetNames)
+
         for (universe in universes) {
             val fields = db.fieldDefinitionDao().getFieldsByUniverseList(universe.id)
             val universeNovels = novels.filter { it.universeId == universe.id }
@@ -807,7 +812,7 @@ class ExcelExporter(context: Context) {
         }
 
         exportCharacterFieldValueOverflow(
-            workbook, usedSheetNames, allCharacters, allFieldValuesMap, coveredFieldIds
+            workbook, overflowSheetName, allCharacters, allFieldValuesMap, coveredFieldIds
         )
     }
 
@@ -817,7 +822,7 @@ class ExcelExporter(context: Context) {
      */
     private suspend fun exportCharacterFieldValueOverflow(
         workbook: XSSFWorkbook,
-        usedSheetNames: MutableSet<String>,
+        sheetName: String,
         characters: List<Character>,
         allFieldValuesMap: Map<Long, List<CharacterFieldValue>>,
         coveredFieldIds: Map<Long, Set<Long>>
@@ -837,7 +842,6 @@ class ExcelExporter(context: Context) {
         if (rows.isEmpty()) return  // 다른 시트와 동일 — 빈 시트는 만들지 않는다
 
         val spec = characterFieldValueSpec(universes.map { it.name })
-        val sheetName = sanitizeSheetName(spec.sheetName, usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
         writeHeaderRow(sheet, spec)
 
