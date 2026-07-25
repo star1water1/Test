@@ -1930,7 +1930,8 @@
     <string name="world_package_exporting">월드 패키지 생성 중…</string>
     <string name="excel_export_in_progress">엑셀 파일 생성 중…</string>
     <string name="pdf_generating">PDF 생성 중…</string>
-    <string name="reset_in_progress">초기화 진행 중…</string>
+    <!-- reset_in_progress는 초기화 섹션에 이미 정의되어 있어 여기서 다시 선언하지 않는다 -->
+
 
     <!-- 연결 테스트 -->
     <string name="ai_test_running">연결 테스트 중…</string>
