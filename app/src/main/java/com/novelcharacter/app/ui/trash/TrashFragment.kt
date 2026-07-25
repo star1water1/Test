@@ -101,6 +101,7 @@ class TrashFragment : Fragment() {
             val details = buildSkipDetails(
                 novelCleared = preview.novelCleared,
                 fieldValues = preview.skippedFieldValues,
+                mergedFieldValues = preview.mergedFieldValues,
                 relationships = preview.skippedRelationships,
                 relationshipChanges = preview.skippedRelationshipChanges,
                 memberships = preview.skippedMemberships,
@@ -109,11 +110,13 @@ class TrashFragment : Fragment() {
                 changeEvents = preview.clearedChangeEvents
             )
             val message = StringBuilder(
-                getString(
-                    R.string.trash_restore_preview,
-                    snapshot.entityName,
-                    details.ifEmpty { "-" }
-                )
+                if (details.isEmpty()) {
+                    // 유실은 없고 다른 이유(편집 백업·구버전 payload)로만 확인이 필요한 경우 —
+                    // 없는 유실을 있는 것처럼 적지 않는다.
+                    getString(R.string.trash_restore_confirm, snapshot.entityName)
+                } else {
+                    getString(R.string.trash_restore_preview, snapshot.entityName, details)
+                }
             )
             if (preview.duplicatesLivingCharacter) {
                 message.append(getString(R.string.trash_restore_duplicate_warning))
@@ -124,7 +127,9 @@ class TrashFragment : Fragment() {
             MaterialAlertDialogBuilder(requireContext())
                 .setTitle(R.string.trash_restore_preview_title)
                 .setMessage(message.toString())
-                .setPositiveButton(R.string.trash_restore) { _, _ -> restore(snapshot, warned = true) }
+                .setPositiveButton(R.string.trash_restore) { _, _ ->
+                    restore(snapshot, warned = true, previewLossTotal = preview.lossTotal)
+                }
                 .setNegativeButton(R.string.cancel, null)
                 .show()
         }
@@ -134,19 +139,25 @@ class TrashFragment : Fragment() {
     private fun buildSkipDetails(
         novelCleared: Boolean,
         fieldValues: Int,
+        mergedFieldValues: Int,
         relationships: Int,
         relationshipChanges: Int,
         memberships: Int,
         events: Int,
         relFactions: Int,
-        changeEvents: Int
+        changeEvents: Int,
+        duplicateRelationshipChanges: Int = 0
     ): String {
         val details = mutableListOf<String>()
         if (novelCleared) details.add(getString(R.string.trash_skip_novel))
         if (fieldValues > 0) details.add(getString(R.string.trash_skip_fields, fieldValues))
+        if (mergedFieldValues > 0) details.add(getString(R.string.trash_skip_merged_fields, mergedFieldValues))
         if (relationships > 0) details.add(getString(R.string.trash_skip_relationships, relationships))
         if (relationshipChanges > 0) {
             details.add(getString(R.string.trash_skip_relationship_changes, relationshipChanges))
+        }
+        if (duplicateRelationshipChanges > 0) {
+            details.add(getString(R.string.trash_skip_dup_relationship_changes, duplicateRelationshipChanges))
         }
         if (memberships > 0) details.add(getString(R.string.trash_skip_memberships, memberships))
         if (events > 0) details.add(getString(R.string.trash_skip_events, events))
@@ -157,11 +168,11 @@ class TrashFragment : Fragment() {
 
     /**
      * @param warned 복원 전 확인 다이얼로그에서 유실 항목을 이미 고지하고 동의를 받았는가.
-     *   받았다면 같은 내용을 사후에 반복하지 않고, 미리보기가 예고하지 못한 결과만 알린다.
-     *   (미리보기 이후 DB가 바뀌어 실제 유실이 더 커졌을 수 있으므로, 고지 없이 진행한
-     *    경우에는 사후에라도 반드시 알린다 — 무음 유실 금지)
+     * @param previewLossTotal 그때 고지한 유실 규모. **실제 유실이 이보다 커지면 사후에도 알린다** —
+     *   미리보기는 예측이고 결과가 사실이다. 중복 관계에 매달려 합쳐지지 못한 이력처럼
+     *   써 보기 전에는 알 수 없는 유실이 여기서 드러난다(무음 유실 금지).
      */
-    private fun restore(snapshot: TrashSnapshot, warned: Boolean) {
+    private fun restore(snapshot: TrashSnapshot, warned: Boolean, previewLossTotal: Int = 0) {
         viewLifecycleOwner.lifecycleScope.launch {
             try {
                 val result = trashRepository.restoreCharacter(snapshot.id)
@@ -184,22 +195,23 @@ class TrashFragment : Fragment() {
                 // 확인 다이얼로그에서 고지하고 동의를 받았으므로 같은 내용을 두 번 띄우지 않는다.
                 // 코드 재연결·중복 관계는 실제로 써 보기 전에는 알 수 없는 결과다.
                 val notes = mutableListOf<String>()
-                if (!warned && result.hasSkipped) {
-                    notes.add(
-                        getString(
-                            R.string.trash_restore_partial,
-                            buildSkipDetails(
-                                novelCleared = result.novelCleared,
-                                fieldValues = result.skippedFieldValues,
-                                relationships = result.skippedRelationships,
-                                relationshipChanges = result.skippedRelationshipChanges,
-                                memberships = result.skippedMemberships,
-                                events = result.skippedEvents,
-                                relFactions = result.clearedRelationshipFactions,
-                                changeEvents = result.clearedChangeEvents
-                            )
-                        )
+                // 고지 없이 진행했거나, 실제 유실이 예고보다 커졌으면 사실대로 알린다.
+                if (result.hasSkipped && (!warned || result.lossTotal > previewLossTotal)) {
+                    val details = buildSkipDetails(
+                        novelCleared = result.novelCleared,
+                        fieldValues = result.skippedFieldValues,
+                        mergedFieldValues = result.mergedFieldValues,
+                        relationships = result.skippedRelationships,
+                        relationshipChanges = result.skippedRelationshipChanges,
+                        duplicateRelationshipChanges = result.duplicateRelationshipChanges,
+                        memberships = result.skippedMemberships,
+                        events = result.skippedEvents,
+                        relFactions = result.clearedRelationshipFactions,
+                        changeEvents = result.clearedChangeEvents
                     )
+                    if (details.isNotEmpty()) {
+                        notes.add(getString(R.string.trash_restore_partial, details))
+                    }
                 }
                 if (result.relinkedByCode > 0) {
                     notes.add(getString(R.string.trash_restore_relinked, result.relinkedByCode))

@@ -98,9 +98,15 @@ class UniverseRepository(
     suspend fun getFieldsByUniverseList(universeId: Long): List<FieldDefinition> =
         fieldDefinitionDao.getFieldsByUniverseList(universeId)
 
-    /** 세계관·entityType을 가리지 않는 id 조회 — 보관 중인(세계관 밖) 필드값 표시용 (N2) */
-    suspend fun getFieldsByIds(ids: List<Long>): List<FieldDefinition> =
-        if (ids.isEmpty()) emptyList() else fieldDefinitionDao.getFieldsByIds(ids)
+    /**
+     * 세계관·entityType을 가리지 않는 id 조회 — 보관 중인(세계관 밖) 필드값 표시용 (N2).
+     * IN 절 변수 한도(API 31 미만 999)를 넘지 않도록 청크로 나눈다 — 저장소 공통 관례.
+     */
+    suspend fun getFieldsByIds(ids: List<Long>): List<FieldDefinition> {
+        if (ids.isEmpty()) return emptyList()
+        if (ids.size <= IN_CLAUSE_CHUNK) return fieldDefinitionDao.getFieldsByIds(ids)
+        return ids.chunked(IN_CLAUSE_CHUNK).flatMap { fieldDefinitionDao.getFieldsByIds(it) }
+    }
 
     // 사건 필드 (B-10) — entityType = "event"
     fun getEventFieldsByUniverse(universeId: Long): LiveData<List<FieldDefinition>> =
@@ -163,5 +169,10 @@ class UniverseRepository(
     suspend fun getFieldCountsByUniverses(universeIds: List<Long>): Map<Long, Int> {
         if (universeIds.isEmpty()) return emptyMap()
         return fieldDefinitionDao.getFieldCountsByUniverses(universeIds).associate { it.universeId to it.cnt }
+    }
+
+    private companion object {
+        /** IN 절 변수 한도 회피용 청크 크기 (저장소 공통 관례와 동일) */
+        const val IN_CLAUSE_CHUNK = 900
     }
 }

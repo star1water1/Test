@@ -162,11 +162,31 @@ fun assignSheetName(name: String, usedNames: MutableSet<String>, ownerOf: String
     var counter = 2
     while (taken(result)) {
         val suffix = "($counter)"
-        result = base.take(31 - suffix.length).trimEnd('\'') + suffix
+        // 접미사를 붙이므로 마지막 글자는 항상 ')'다 — 여기서 아포스트로피를 더 다듬으면
+        // 이름이 한 글자 더 짧아져 `isSuffixedVariantOf`가 원명의 변형으로 알아보지 못하고,
+        // 가져오기가 밀려난 시트를 영영 못 찾는다.
+        result = base.take(31 - suffix.length) + suffix
         counter++
     }
     usedNames.add(result)
     return result
+}
+
+/**
+ * 헤더 행이 [spec]의 시트인가 — **첫 열 하나로는 판별할 수 없다.**
+ *
+ * 세계관·이름 은행·세력·필드 템플릿·검색 프리셋·목록 프리셋의 첫 열은 전부 '이름'이라
+ * 캐릭터 시트와 구분되지 않는다. 이름이 아니라 헤더가 시트의 정체를 정한다는 규약(R-7)을
+ * 지키려면 앞쪽 열들이 **자리까지** 맞아야 한다 — 내보내기가 spec 순서대로 쓰므로
+ * 진짜 그 시트라면 반드시 일치하고, 남의 시트는 두 번째 열에서 갈린다.
+ */
+fun headersMatchSpec(headers: List<String>, spec: SheetSpec): Boolean {
+    val probe = minOf(3, spec.columns.size)
+    if (headers.size < probe) return false
+    for (col in 0 until probe) {
+        if (headers[col].trim() != spec.columns[col].header) return false
+    }
+    return true
 }
 
 /**

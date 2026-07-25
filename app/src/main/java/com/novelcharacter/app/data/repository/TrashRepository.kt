@@ -47,9 +47,16 @@ class TrashRepository(private val db: AppDatabase) {
      */
     private val createdSnapshotIds = mutableSetOf<Long>()
 
-    // 스냅샷 생성 시 반복 조회되는 코드 — 인스턴스 수명 동안 캐시한다(일괄 삭제 N+1 완화).
+    // 스냅샷 생성 시 반복 조회되는 코드 — 인스턴스 수명 동안 캐시한다.
+    //
+    // 계단식 삭제는 캐릭터마다 snapshotCharacter를 부르는데, 관계 상대·세력·사건은 캐릭터
+    // 사이에서 대량으로 겹친다(같은 세력 100명, 같은 사건에 20명). 캐시가 없으면 이 조회가
+    // 삭제 트랜잭션 안에서 캐릭터 수 × 참조 수만큼 반복된다 — '받쳐주는 확장성' 기준 미달.
     private val universeCodeCache = HashMap<Long, String?>()
     private val fieldDefRefCache = HashMap<Long, FieldDefRef?>()
+    private val characterCodeCache = HashMap<Long, String?>()
+    private val factionCodeCache = HashMap<Long, String?>()
+    private val eventCodeCache = HashMap<Long, String?>()
 
     val allSnapshots: LiveData<List<TrashSnapshot>> = trashDao.getAll()
 
@@ -57,9 +64,13 @@ class TrashRepository(private val db: AppDatabase) {
     data class RestoreResult(
         val restoredName: String,
         val skippedFieldValues: Int = 0,
+        /** 해석은 됐으나 같은 필드 정의로 수렴해 접힌 값 — 정의는 살아 있으므로 사유가 다르다 */
+        val mergedFieldValues: Int = 0,
         val skippedRelationships: Int = 0,
         /** 같은 관계가 이미 있어 중복 생성하지 않은 건수 — 유실이 아니므로 별도 칸이다 */
         val duplicateRelationships: Int = 0,
+        /** 위 중복 관계에 매달려 합쳐지지 못한 이력 — 사유가 '관계를 못 찾음'과 달라 칸을 나눈다 */
+        val duplicateRelationshipChanges: Int = 0,
         val skippedRelationshipChanges: Int = 0,
         val skippedMemberships: Int = 0,
         val skippedEvents: Int = 0,
@@ -72,10 +83,17 @@ class TrashRepository(private val db: AppDatabase) {
         val relinkedByCode: Int = 0
     ) {
         val hasSkipped: Boolean
-            get() = skippedFieldValues > 0 || skippedRelationships > 0 ||
-                skippedRelationshipChanges > 0 || skippedMemberships > 0 ||
-                skippedEvents > 0 || clearedRelationshipFactions > 0 ||
-                clearedChangeEvents > 0 || novelCleared
+            get() = lossTotal > 0
+
+        /**
+         * 유실 규모의 합 — 미리보기가 예고한 값과 비교해 **실제가 더 커졌는지** 판정하는 데 쓴다.
+         * 미리보기는 예측이고 결과가 사실이므로, 커졌다면 사후에라도 반드시 알려야 한다.
+         */
+        val lossTotal: Int
+            get() = skippedFieldValues + mergedFieldValues + skippedRelationships +
+                skippedRelationshipChanges + duplicateRelationshipChanges + skippedMemberships +
+                skippedEvents + clearedRelationshipFactions + clearedChangeEvents +
+                (if (novelCleared) 1 else 0)
     }
 
     /**
@@ -89,6 +107,7 @@ class TrashRepository(private val db: AppDatabase) {
     data class RestorePreview(
         val characterName: String,
         val skippedFieldValues: Int = 0,
+        val mergedFieldValues: Int = 0,
         val skippedRelationships: Int = 0,
         val skippedRelationshipChanges: Int = 0,
         val skippedMemberships: Int = 0,
@@ -107,13 +126,20 @@ class TrashRepository(private val db: AppDatabase) {
         val legacyPayload: Boolean = false
     ) {
         val hasSkipped: Boolean
-            get() = skippedFieldValues > 0 || skippedRelationships > 0 ||
-                skippedRelationshipChanges > 0 || skippedMemberships > 0 ||
-                skippedEvents > 0 || clearedRelationshipFactions > 0 ||
-                clearedChangeEvents > 0 || novelCleared
+            get() = lossTotal > 0
 
+        /** [RestoreResult.lossTotal]과 같은 척도 — 예측과 사실을 비교하기 위해 형태를 맞춘다. */
+        val lossTotal: Int
+            get() = skippedFieldValues + mergedFieldValues + skippedRelationships +
+                skippedRelationshipChanges + skippedMemberships + skippedEvents +
+                clearedRelationshipFactions + clearedChangeEvents + (if (novelCleared) 1 else 0)
+
+        /**
+         * 구버전 payload는 유실이 없어도 알린다 — 안정 식별자가 없어 id 단독으로 판단하므로
+         * 오배정 위험이 가장 큰 복원인데, 종전에는 그 사실이 사용자에게 전혀 도달하지 않았다.
+         */
         val needsConfirmation: Boolean
-            get() = hasSkipped || duplicatesLivingCharacter
+            get() = hasSkipped || duplicatesLivingCharacter || legacyPayload
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -176,27 +202,27 @@ class TrashRepository(private val db: AppDatabase) {
             .flatMap { listOf(it.characterId1, it.characterId2) }
             .filter { it != character.id }
             .distinct()
+        // 캐시에 없는 것만 한 번에 조회한다 — 계단식 삭제에서 상대 캐릭터는 크게 겹친다.
+        val uncachedOthers = otherIds.filter { it !in characterCodeCache }
+        if (uncachedOthers.isNotEmpty()) {
+            val fetched = db.characterDao().getCharactersByIds(uncachedOthers).associateBy { it.id }
+            for (id in uncachedOthers) characterCodeCache[id] = fetched[id]?.code
+        }
         for (id in otherIds) {
-            db.characterDao().getCharacterById(id)?.code
-                ?.takeIf { it.isNotBlank() }
-                ?.let { characterCodes[id.toString()] = it }
+            characterCodeCache[id]?.takeIf { it.isNotBlank() }?.let { characterCodes[id.toString()] = it }
         }
 
         val factionCodes = HashMap<String, String>()
         val factionIds = (relationships.mapNotNull { it.factionId } + factionMemberships.map { it.factionId })
             .distinct()
         for (id in factionIds) {
-            db.factionDao().getById(id)?.code
-                ?.takeIf { it.isNotBlank() }
-                ?.let { factionCodes[id.toString()] = it }
+            factionCode(id)?.let { factionCodes[id.toString()] = it }
         }
 
         val eventCodes = HashMap<String, String>()
         val allEventIds = (eventIds + relationshipChanges.mapNotNull { it.eventId }).distinct()
         for (id in allEventIds) {
-            db.timelineDao().getEventById(id)?.code
-                ?.takeIf { it.isNotBlank() }
-                ?.let { eventCodes[id.toString()] = it }
+            eventCode(id)?.let { eventCodes[id.toString()] = it }
         }
 
         return SnapshotRefs(
@@ -214,6 +240,20 @@ class TrashRepository(private val db: AppDatabase) {
         universeCodeCache.getOrPut(universeId) {
             db.universeDao().getUniverseById(universeId)?.code?.takeIf { it.isNotBlank() }
         }
+
+    private suspend fun factionCode(factionId: Long): String? {
+        if (factionCodeCache.containsKey(factionId)) return factionCodeCache[factionId]
+        val code = db.factionDao().getById(factionId)?.code?.takeIf { it.isNotBlank() }
+        factionCodeCache[factionId] = code
+        return code
+    }
+
+    private suspend fun eventCode(eventId: Long): String? {
+        if (eventCodeCache.containsKey(eventId)) return eventCodeCache[eventId]
+        val code = db.timelineDao().getEventById(eventId)?.code?.takeIf { it.isNotBlank() }
+        eventCodeCache[eventId] = code
+        return code
+    }
 
     private suspend fun fieldDefRef(fieldDefinitionId: Long): FieldDefRef? {
         if (fieldDefRefCache.containsKey(fieldDefinitionId)) return fieldDefRefCache[fieldDefinitionId]
@@ -238,6 +278,8 @@ class TrashRepository(private val db: AppDatabase) {
         /** 해석된 fieldDefinitionId로 치환된 필드값 */
         val fieldValues: List<CharacterFieldValue>,
         val skippedFieldValues: Int,
+        /** 해석은 성공했으나 같은 정의로 수렴해 접힌 값 — 유실이지만 사유가 다르다 */
+        val mergedFieldValues: Int,
         val relationships: List<PlannedRelationship>,
         val skippedRelationships: Int,
         /** 관계가 통째로 생략되면서 함께 버려진 관계 변화 이력 */
@@ -276,6 +318,7 @@ class TrashRepository(private val db: AppDatabase) {
         return RestorePreview(
             characterName = plan.data.character.name,
             skippedFieldValues = plan.skippedFieldValues,
+            mergedFieldValues = plan.mergedFieldValues,
             skippedRelationships = plan.skippedRelationships,
             skippedRelationshipChanges = plan.skippedRelationshipChanges,
             skippedMemberships = plan.skippedMemberships,
@@ -341,17 +384,28 @@ class TrashRepository(private val db: AppDatabase) {
             var duplicateChanges = 0
             for (planned in plan.relationships) {
                 val rel = planned.relationship
+                // code 충돌 시 재발급 — 상태변화·관계변화 복원과 동일 규칙.
+                // character_relationships에는 code 유니크 인덱스가 있고 insert가 IGNORE라,
+                // 옛 code를 그대로 넣으면 '편집 직전 백업' 복원(원본 관계가 살아 있다)에서
+                // 관계가 통째로 무음 유실된다. 그러면 -1의 의미도 '중복'이 아니게 되어
+                // 아래 집계가 사실과 달라진다.
+                val safeCode = rel.code
+                    ?.takeIf { c -> db.characterRelationshipDao().getByCode(c) == null }
+                    ?: generateEntityCode()
                 val remapped = rel.copy(
                     id = 0,
+                    code = safeCode,
                     characterId1 = if (planned.selfIsFirst) targetId else rel.characterId1,
                     characterId2 = if (planned.selfIsSecond) targetId else rel.characterId2
                 )
                 val newRelId = db.characterRelationshipDao().insert(remapped)
                 if (newRelId == -1L) {
-                    // 동일 (상대, 유형) 관계가 이미 존재 — 중복 생성하지 않는다.
-                    // 상대 캐릭터를 먼저 복원했을 때 정상적으로 일어나는 일이므로 '참조 소실'과
-                    // 구분해 집계한다(같은 칸에 넣으면 사실과 다른 경고가 된다).
+                    // code를 재발급했으므로 남은 충돌 원인은 (상대, 유형) 유니크뿐 —
+                    // 같은 관계가 이미 존재한다. 상대 캐릭터를 먼저 복원했을 때 정상적으로
+                    // 일어나는 일이므로 '참조 소실'과 구분해 집계한다.
                     duplicateRelationships++
+                    // 그 관계에 매달린 이력은 붙일 자리가 없어 합쳐지지 않는다. 유실은 유실이지만
+                    // 사유가 '관계를 못 찾음'과 다르므로 칸을 나눈다(같은 칸에 넣으면 거짓 사유가 된다).
                     duplicateChanges += planned.changes.size
                     continue
                 }
@@ -378,9 +432,11 @@ class TrashRepository(private val db: AppDatabase) {
             result = RestoreResult(
                 restoredName = data.character.name,
                 skippedFieldValues = plan.skippedFieldValues,
+                mergedFieldValues = plan.mergedFieldValues,
                 skippedRelationships = plan.skippedRelationships,
                 duplicateRelationships = duplicateRelationships,
-                skippedRelationshipChanges = plan.skippedRelationshipChanges + duplicateChanges,
+                skippedRelationshipChanges = plan.skippedRelationshipChanges,
+                duplicateRelationshipChanges = duplicateChanges,
                 skippedMemberships = plan.skippedMemberships,
                 skippedEvents = plan.skippedEvents,
                 clearedRelationshipFactions = plan.clearedRelationshipFactions,
@@ -458,6 +514,7 @@ class TrashRepository(private val db: AppDatabase) {
         val resolvedFieldValues = ArrayList<CharacterFieldValue>(data.fieldValues.size)
         val usedFieldDefIds = HashSet<Long>()
         var skippedFieldValues = 0
+        var mergedFieldValues = 0
         for (v in data.fieldValues) {
             val res = SnapshotRefResolver.resolveFieldDef(
                 v.fieldDefinitionId,
@@ -467,10 +524,15 @@ class TrashRepository(private val db: AppDatabase) {
             )
             note(res)
             val newId = res.id
-            // (characterId, fieldDefinitionId) 유니크 — 서로 다른 옛 id가 같은 정의로 수렴하면
-            // insertAll(ABORT)이 복원 전체를 실패시키므로 중복은 여기서 걸러 집계한다.
-            if (newId == null || !usedFieldDefIds.add(newId)) {
+            if (newId == null) {
                 skippedFieldValues++
+                continue
+            }
+            // (characterId, fieldDefinitionId) 유니크 — 서로 다른 옛 id가 같은 정의로 수렴하면
+            // insertAll(ABORT)이 복원 전체를 실패시키므로 여기서 접는다. 정의는 멀쩡히 살아
+            // 있으므로 '찾을 수 없음'과 같은 칸에 넣지 않는다(그러면 거짓 사유가 된다).
+            if (!usedFieldDefIds.add(newId)) {
+                mergedFieldValues++
                 continue
             }
             resolvedFieldValues.add(v.copy(fieldDefinitionId = newId))
@@ -584,6 +646,10 @@ class TrashRepository(private val db: AppDatabase) {
         }
 
         val plannedMemberships = ArrayList<FactionMembership>(data.factionMemberships.size)
+        // faction_memberships에는 유니크 제약이 없다(재가입 이력 보존). 서로 다른 옛 세력 id가
+        // 같은 세력으로 수렴하면 실패가 아니라 **조용한 중복 행**이 되므로 여기서 접는다.
+        // 접는 키는 임포터가 쓰는 자연키와 같다(ExcelImportService의 세력 소속 매칭 사다리).
+        val seenMemberships = HashSet<List<Any?>>()
         var skippedMemberships = 0
         for (m in data.factionMemberships) {
             val res = resolveFaction(m.factionId)
@@ -593,6 +659,7 @@ class TrashRepository(private val db: AppDatabase) {
                 skippedMemberships++
                 continue
             }
+            if (!seenMemberships.add(listOf(newId, m.joinYear, m.leaveYear, m.leaveType))) continue
             plannedMemberships.add(m.copy(factionId = newId))
         }
 
@@ -618,6 +685,7 @@ class TrashRepository(private val db: AppDatabase) {
             novelCleared = novelCleared,
             fieldValues = resolvedFieldValues,
             skippedFieldValues = skippedFieldValues,
+            mergedFieldValues = mergedFieldValues,
             relationships = plannedRelationships,
             skippedRelationships = skippedRelationships,
             skippedRelationshipChanges = skippedRelationshipChanges,

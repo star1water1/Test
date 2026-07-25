@@ -773,12 +773,14 @@ class DynamicFieldFormBuilder(
      * [collectFieldValues]가 빈 목록을 돌려주는 데는 두 가지 이유가 있다: 값이 전부 비었거나,
      * **애초에 렌더할 필드가 없거나**(작품 미선택 → `fieldDefinitions`가 비어 있음).
      * 저장 경로가 이 둘을 구분하지 못해 후자에서 기존 값을 전량 삭제했다.
-     * CALCULATED는 저장 대상이 아니므로 커버 집합에서도 제외한다.
+     *
+     * CALCULATED도 **포함한다.** 폼이 렌더하되 값을 수집하지 않는 필드이므로 폼의 권한
+     * 안이며, 타입 변경 등으로 CALCULATED 정의를 가리키는 잔여 행이 DB에 남아 있으면
+     * 저장 시 정리돼야 한다. 제외하면 그 행이 편집 화면으로는 영원히 지워지지 않고
+     * "작품을 다시 배정하면 그대로 보입니다"라는 사실과 다른 고지가 매번 반복된다.
      */
     fun coveredFieldDefinitionIds(): Set<Long> =
-        fieldDefinitions
-            .filter { FieldType.fromName(it.type) != FieldType.CALCULATED }
-            .mapTo(HashSet()) { it.id }
+        fieldDefinitions.mapTo(HashSet()) { it.id }
 
     /** 폼 위젯에서 저장할 필드값 목록을 수집한다 (CALCULATED 제외, 빈 값 제거) */
     fun collectFieldValues(characterId: Long): List<CharacterFieldValue> {

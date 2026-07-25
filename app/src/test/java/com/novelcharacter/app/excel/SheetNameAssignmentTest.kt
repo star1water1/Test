@@ -135,6 +135,55 @@ class SheetNameAssignmentTest {
         }
     }
 
+    // ── 되찾기 판정의 회귀 방어 (자기 재공격이 잡은 결함) ──
+
+    @Test
+    fun `첫 열이 이름인 spec들은 캐릭터 시트와 헤더로 구분돼야 한다`() {
+        // 세력이 0건이라 '세력' 시트가 없고, 같은 이름의 세계관 캐릭터 시트가 '세력(2)'로
+        // 밀려 있는 상황. 첫 열('이름')만 보는 판정은 캐릭터 시트를 세력 시트로 넘겨준다.
+        val characterHeaders = characterSpec(emptyList(), emptyList()).columns.map { it.header }
+        val ambiguous = listOf(
+            universeSpec(), nameBankSpec(), factionSpec(),
+            userPresetTemplateSpec(), searchPresetSpec(), characterListPresetSpec()
+        )
+        for (spec in ambiguous) {
+            assertEquals("이 테스트의 전제: 첫 열이 캐릭터와 같다", "이름", spec.firstColumnHeader)
+            assertFalse(
+                "'${spec.sheetName}' spec이 캐릭터 시트 헤더를 자기 것으로 인정한다",
+                headersMatchSpec(characterHeaders, spec)
+            )
+        }
+    }
+
+    @Test
+    fun `진짜 그 시트의 헤더는 인정한다`() {
+        for (spec in listOf(factionSpec(), nameBankSpec(), universeSpec(), searchPresetSpec())) {
+            assertTrue(spec.sheetName, headersMatchSpec(spec.columns.map { it.header }, spec))
+        }
+    }
+
+    @Test
+    fun `헤더가 spec보다 짧으면 그 시트로 인정하지 않는다`() {
+        val spec = factionSpec()
+        assertFalse(headersMatchSpec(listOf("이름"), spec))
+        assertFalse(headersMatchSpec(emptyList(), spec))
+    }
+
+    @Test
+    fun `접미사 이름은 원명보다 짧아지지 않는다 — 되찾기 판정이 깨지지 않게`() {
+        // 아포스트로피를 한 번 더 다듬으면 이름이 1자 짧아져 isSuffixedVariantOf가
+        // 원명의 변형으로 알아보지 못하고, 가져오기가 밀려난 시트를 영영 못 찾는다.
+        val base = "가".repeat(27) + "'" + "나".repeat(3)
+        assertEquals(31, base.length)
+        assertEquals(base, sanitizeSheetNameBase(base))
+        val used = mutableSetOf<String>()
+        val first = assignSheetName(base, used)
+        val second = assignSheetName(base, used)
+        assertEquals(base, first)
+        assertEquals(31, second.length)
+        assertTrue("밀려난 시트를 되찾을 수 있어야 한다", isSuffixedVariantOf(second, base))
+    }
+
     @Test
     fun `예약명 집합에 새 시트를 넣는 것만으로 보호된다`() {
         // RESERVED_SHEET_NAMES가 단일 소스라는 계약 — 내보내기가 이 집합을 직접 본다.

@@ -2,7 +2,6 @@ package com.novelcharacter.app.ui.character
 
 import android.widget.Toast
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import com.google.android.material.snackbar.Snackbar
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
@@ -294,7 +293,7 @@ class CharacterSaveCoordinator(
             val fieldValues = resolvedFieldValues?.map { it.copy(characterId = targetCharacterId) }
                 ?: host.collectFieldValues(targetCharacterId)
             // 다른 세계관으로 이동하는 저장이면 유실 고지·이관 처리(변수 제어: 조용한 필드값 유실 방지)
-            val crossUniv = crossUniverseTargetId(character)
+            val crossUniv = crossUniverseTargetId(character, targetCharacterId)
             if (crossUniv != null && !crossUniverseConfirmed) {
                 val loss = viewModel.countCrossUniverseLoss(targetCharacterId, crossUniv)
                 if (loss.hasRemoval) {
@@ -465,9 +464,18 @@ class CharacterSaveCoordinator(
      *
      * 반대 방향(세계관 → 미분류)은 이동이 아니라 '이탈'이므로 여기서 null을 돌려주고,
      * 저장 경로가 폼 커버 밖 값을 보존한다(일괄 편집의 `newUniverseId == null` 가드와 동형).
+     *
+     * '기존 세계관'은 **저장 대상**([targetCharacterId])의 것을 본다. 중복 이름 다이얼로그에서
+     * '기존에 덮어쓰기'를 고르면 저장 대상이 편집 중인 캐릭터가 아니라 다른 캐릭터가 되는데,
+     * 편집 중인 쪽을 기준으로 판정하면 이동이 아닌 저장을 이동으로 오판한다.
      */
-    private suspend fun crossUniverseTargetId(character: Character): Long? {
-        val old = viewModel.universeIdForNovel(host.existingCharacter()?.novelId)
+    private suspend fun crossUniverseTargetId(character: Character, targetCharacterId: Long): Long? {
+        val existingNovelId = if (targetCharacterId != -1L) {
+            viewModel.getCharacterByIdSuspend(targetCharacterId)?.novelId
+        } else {
+            host.existingCharacter()?.novelId
+        }
+        val old = viewModel.universeIdForNovel(existingNovelId)
         val new = viewModel.universeIdForNovel(character.novelId) ?: return null
         return if (old != new) new else null
     }
@@ -500,9 +508,10 @@ class CharacterSaveCoordinator(
      * 해야 한다(원칙 04). 작품을 다시 배정하면 되살아난다는 교정 경로까지 함께 알린다.
      */
     private fun notifyPreservedFieldValues(count: Int) {
-        if (!fragment.isAdded) return
-        val view = fragment.view ?: return
-        Snackbar.make(view, fragment.getString(R.string.field_values_preserved, count), Snackbar.LENGTH_LONG).show()
+        val ctx = fragment.context?.applicationContext ?: return
+        // Snackbar가 아니라 Toast인 이유: 저장이 끝나면 host.onSaved가 곧바로 popBackStack해
+        // 프래그먼트 뷰가 사라진다. 뷰에 붙는 고지는 사용자에게 도달하지 못한다.
+        Toast.makeText(ctx, ctx.getString(R.string.field_values_preserved, count), Toast.LENGTH_LONG).show()
     }
 
     /** 세계관 이동 시 유실(제거) 고지 다이얼로그 — 같은 이름 필드 이관·제거분 휴지통 백업(복원 가능) 안내. */

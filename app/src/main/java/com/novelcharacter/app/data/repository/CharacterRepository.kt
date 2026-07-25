@@ -432,12 +432,21 @@ class CharacterRepository(
      * 편집화면의 세계관 이동과 동일한 P0 로직(같은 key 재매핑·타 세계관 세력 소속 제거·유실 시 스냅샷)을
      * 재사용해 정합을 보장한다. novelId 갱신은 호출부 책임(호출 전/후 무관 — 이 메서드는 필드값·소속만 정리).
      */
-    suspend fun migrateCharacterToUniverse(character: Character, newUniverseId: Long): UniverseMoveCounts {
+    /**
+     * @param trash 스냅샷을 남길 저장소. **한 작업 안에서는 같은 인스턴스를 넘길 것** —
+     *   보관 한도 정리는 "그 인스턴스가 만든 스냅샷"을 보호하므로, 캐릭터마다 새 인스턴스를
+     *   쓰면 같은 작업의 정리가 방금 만든 백업을 그대로 태운다(엑셀 임포트가 정확히 그 경로였다).
+     */
+    suspend fun migrateCharacterToUniverse(
+        character: Character,
+        newUniverseId: Long,
+        trash: TrashRepository? = null
+    ): UniverseMoveCounts {
         val counts = db.withTransaction {
-            val trash = TrashRepository(db)
+            val trashRepo = trash ?: TrashRepository(db)
             val allDefsById: Map<Long, FieldDefinition> = db.fieldDefinitionDao().getAllFieldsAllTypes().associateBy { it.id }
             val newDefByKey = db.fieldDefinitionDao().getFieldsByUniverseList(newUniverseId).associateBy { it.key }
-            migrateCharacterFieldsToUniverse(character, newUniverseId, allDefsById, newDefByKey, trash)
+            migrateCharacterFieldsToUniverse(character, newUniverseId, allDefsById, newDefByKey, trashRepo)
         }
         // 재매핑된 값이 새 세계관 필드의 라이브러리에 등재되도록 수확
         fieldLibrary.harvestForCharacter(character.id)
