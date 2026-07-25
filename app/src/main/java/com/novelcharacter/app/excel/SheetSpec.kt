@@ -85,13 +85,19 @@ val BORDER_COLOR_PRESETS = listOf(
     "#EC407A", "#7E57C2", "#29B6F6", "#D4E157"
 )
 
+/** 사용 안내 시트명 — 내보내기·가져오기 공용 상수 */
+const val GUIDE_SHEET_NAME = "사용 안내"
+
+/** 세계관에 속하지 않은 캐릭터를 모으는 시트명 — 내보내기·가져오기 공용 상수 */
+const val UNCLASSIFIED_SHEET_NAME = "미분류 캐릭터"
+
 /** All reserved (non-universe) sheet names used by the app. */
 val RESERVED_SHEET_NAMES = setOf(
-    "사용 안내",
+    GUIDE_SHEET_NAME,
     universeSpec().sheetName,
     novelSpec(emptyList()).sheetName,
     fieldDefinitionSpec(emptyList()).sheetName,
-    "미분류 캐릭터",
+    UNCLASSIFIED_SHEET_NAME,
     timelineSpec(emptyList()).sheetName,
     stateChangeSpec().sheetName,
     relationshipSpec().sheetName,
@@ -108,6 +114,71 @@ val RESERVED_SHEET_NAMES = setOf(
     fieldValueLibrarySpec().sheetName,
     characterFieldValueSpec().sheetName
 )
+
+/**
+ * 엑셀 시트명 정규화 — **내보내기·가져오기 단일 소스**.
+ *
+ * POI(5.2.5)의 실제 제약을 반영한다:
+ * - 금칙문자 `[ ] * / \ ? :` 제거, 31자 제한
+ * - 앞뒤 아포트로피 금지 (`createSheet`가 `IllegalArgumentException`으로 죽는다)
+ * - 전부 제거되어 빈 이름이 되면 `Sheet`
+ *
+ * 가져오기 쪽이 이 함수를 쓰지 않고 같은 정규식을 따로 갖고 있으면 반드시 드리프트한다
+ * (7장 규약: 헤더 규칙·유효값을 양쪽에 따로 두지 않는다).
+ */
+fun sanitizeSheetNameBase(name: String): String {
+    val cleaned = name.replace(Regex("[\\[\\]*/\\\\?:]"), "").take(31).trim('\'')
+    return if (cleaned.isBlank()) "Sheet" else cleaned
+}
+
+/**
+ * 워크북 안에서 유일한 시트명을 배정한다 — 4-5 규약을 '호출 순서'가 아니라 '규칙'으로 만든다.
+ *
+ * 종전에는 예약 시트가 캐릭터 시트보다 **앞줄에서 생성되는지**에 따라 이름을 지켜냈다.
+ * 그래서 예약 시트 20개 중 실제로 보호되는 것은 7개뿐이었고, 그중 6개도 "옵션 ON + 데이터
+ * 있음"일 때만이었다. 세계관 이름이 '세력'이면 세력 시트가, '이름 은행'이면 이름 은행 시트가
+ * 이름을 빼앗겨 가져오기에서 통째로 무시됐다 — 첫 열 헤더가 '이름'인 spec들은 캐릭터 시트를
+ * 그대로 통과시키기까지 해서, 4-6 삭제 가드(`canRestore`)도 함께 무력화됐다.
+ *
+ * 이제 **예약명은 그 소유자만 가질 수 있다.** 세계관 캐릭터 시트는 [ownerOf] 없이 부르므로
+ * 어떤 예약명도 차지하지 못하고 `(2)` 접미사로 밀려나며, 가져오기의 접미사 루프가 구제한다.
+ * 호출 순서·옵션·데이터 유무와 무관하게 성립한다.
+ *
+ * POI의 중복 판정이 **대소문자 무시**라는 점도 반영한다 — `myworld` 다음 `MyWorld`는
+ * 대소문자를 구분하는 집합으로는 못 걸러 `createSheet`가 예외로 죽는다.
+ *
+ * @param ownerOf 이 시트가 소유권을 주장하는 예약명(예약 시트 자신). 세계관 시트는 null.
+ */
+fun assignSheetName(name: String, usedNames: MutableSet<String>, ownerOf: String? = null): String {
+    val base = sanitizeSheetNameBase(name)
+
+    fun taken(candidate: String): Boolean {
+        if (usedNames.any { it.equals(candidate, ignoreCase = true) }) return true
+        val reserved = RESERVED_SHEET_NAMES.any { it.equals(candidate, ignoreCase = true) }
+        return reserved && !candidate.equals(ownerOf, ignoreCase = true)
+    }
+
+    var result = base
+    var counter = 2
+    while (taken(result)) {
+        val suffix = "($counter)"
+        result = base.take(31 - suffix.length).trimEnd('\'') + suffix
+        counter++
+    }
+    usedNames.add(result)
+    return result
+}
+
+/**
+ * 시트명이 [base]의 접미사 변형(`이름(2)`)인가 — 가져오기가 밀려난 시트를 되찾는 판정.
+ * 31자 절단으로 접미사 앞이 잘린 경우까지 받아들인다.
+ */
+fun isSuffixedVariantOf(sheetName: String, base: String): Boolean {
+    if (sheetName == base) return false
+    val stripped = sheetName.replace(Regex("\\(\\d+\\)$"), "")
+    if (stripped == sheetName) return false   // 접미사가 없다
+    return stripped == base || (base.startsWith(stripped) && sheetName.length >= 31)
+}
 
 /**
  * 전각 ASCII(U+FF01–FF5E)를 반각으로 정규화한다. 엑셀에 CJK 입력기로 넣은 전각 쉼표(，)·

@@ -441,29 +441,15 @@ class ExcelExporter(context: Context) {
         appContext.startActivity(chooserIntent)
     }
 
-    private fun sanitizeSheetName(name: String, usedNames: MutableSet<String>): String {
-        var sanitized = name
-            .replace(Regex("[\\[\\]*/\\\\?:]"), "")
-            .take(31)
-        if (sanitized.isBlank()) sanitized = "Sheet"
-
-        var result = sanitized
-        var counter = 2
-        while (result in usedNames) {
-            val suffix = "($counter)"
-            result = sanitized.take(31 - suffix.length) + suffix
-            counter++
-        }
-        usedNames.add(result)
-        return result
-    }
+    // 시트명 배정은 SheetSpec.assignSheetName이 단일 소스다 — 예약명은 소유자만 가질 수 있고,
+    // 세계관 캐릭터 시트는 ownerOf 없이 부르므로 어떤 예약명도 차지하지 못한다(4-5 규약).
 
     // ── 사용 안내 시트 ──
 
     private data class GuideLine(val section: String, val style: XSSFCellStyle, val text: String)
 
     private fun exportInstructions(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
-        val sheetName = sanitizeSheetName("사용 안내", usedSheetNames)
+        val sheetName = assignSheetName(GUIDE_SHEET_NAME, usedSheetNames, ownerOf = GUIDE_SHEET_NAME)
         val sheet = workbook.createSheet(sheetName)
 
         val lines = listOf(
@@ -613,7 +599,7 @@ class ExcelExporter(context: Context) {
         val novelCodeMap = db.novelDao().getAllNovelsList().associate { it.id to it.code }
 
         val spec = universeSpec()
-        val sheetName = sanitizeSheetName(spec.sheetName, usedSheetNames)
+        val sheetName = assignSheetName(spec.sheetName, usedSheetNames, ownerOf = spec.sheetName)
         val sheet = workbook.createSheet(sheetName)
         writeHeaderRow(sheet, spec)
 
@@ -647,7 +633,7 @@ class ExcelExporter(context: Context) {
         val universeMap = universes.associateBy { it.id }
         val charCodeMap = db.characterDao().getAllCharactersList().associate { it.id to it.code }
         val spec = novelSpec(universes.map { it.name })
-        val sheetName = sanitizeSheetName(spec.sheetName, usedSheetNames)
+        val sheetName = assignSheetName(spec.sheetName, usedSheetNames, ownerOf = spec.sheetName)
         val sheet = workbook.createSheet(sheetName)
         writeHeaderRow(sheet, spec)
 
@@ -690,7 +676,7 @@ class ExcelExporter(context: Context) {
         if (allFields.isEmpty()) return
 
         val spec = fieldDefinitionSpec(universes.map { it.name })
-        val sheetName = sanitizeSheetName(spec.sheetName, usedSheetNames)
+        val sheetName = assignSheetName(spec.sheetName, usedSheetNames, ownerOf = spec.sheetName)
         val sheet = workbook.createSheet(sheetName)
         writeHeaderRow(sheet, spec)
 
@@ -722,7 +708,7 @@ class ExcelExporter(context: Context) {
         if (entries.isEmpty()) return
 
         val spec = fieldValueLibrarySpec(universes.map { it.name })
-        val sheetName = sanitizeSheetName(spec.sheetName, usedSheetNames)
+        val sheetName = assignSheetName(spec.sheetName, usedSheetNames, ownerOf = spec.sheetName)
         val sheet = workbook.createSheet(sheetName)
         writeHeaderRow(sheet, spec)
 
@@ -765,10 +751,10 @@ class ExcelExporter(context: Context) {
         // 내보내기 로직이 직접 채우므로 두 곳이 드리프트할 수 없다.
         val coveredFieldIds = HashMap<Long, Set<Long>>()
 
-        // 예약 시트는 캐릭터 시트보다 먼저 이름을 선점한다(이미지 시트와 동일 규약).
-        // 세계관 이름이 "캐릭터 필드값"이어도 오버플로 시트가 원명을 지키고, 그 캐릭터 시트는
-        // "(2)"로 sanitize되어 findSheetForUniverse의 접미사 루프가 구제한다.
-        val overflowSheetName = sanitizeSheetName(characterFieldValueSpec().sheetName, usedSheetNames)
+        // 오버플로 시트명은 실제 생성보다 먼저 확보한다(행이 없으면 시트를 만들지 않으므로).
+        // 예약명 보호 자체는 assignSheetName의 ownerOf 규칙이 하므로 순서에 의존하지 않는다.
+        val overflowSpecName = characterFieldValueSpec().sheetName
+        val overflowSheetName = assignSheetName(overflowSpecName, usedSheetNames, ownerOf = overflowSpecName)
 
         for (universe in universes) {
             val fields = db.fieldDefinitionDao().getFieldsByUniverseList(universe.id)
@@ -806,8 +792,9 @@ class ExcelExporter(context: Context) {
             }
             unassignedChars.forEach { coveredFieldIds[it.id] = emptySet() }
             exportCharacterSheet(
-                workbook, usedSheetNames, "미분류 캐릭터",
-                unassignedChars, emptyList(), novelMap, emptyMap(), tags
+                workbook, usedSheetNames, UNCLASSIFIED_SHEET_NAME,
+                unassignedChars, emptyList(), novelMap, emptyMap(), tags,
+                sheetOwnerOf = UNCLASSIFIED_SHEET_NAME
             )
         }
 
@@ -868,11 +855,16 @@ class ExcelExporter(context: Context) {
         fields: List<FieldDefinition>,
         novelMap: Map<Long, Novel>,
         allFieldValues: Map<Long, List<CharacterFieldValue>>,
-        allTags: Map<Long, List<CharacterTag>>
+        allTags: Map<Long, List<CharacterTag>>,
+        /**
+         * 이 시트가 소유권을 주장하는 예약명. '미분류 캐릭터' 시트만 값을 갖고,
+         * 세계관 캐릭터 시트는 null이라 어떤 예약명도 차지할 수 없다(4-5 규약).
+         */
+        sheetOwnerOf: String? = null
     ) {
         val novelTitles = novelMap.values.map { it.title }.distinct()
         val spec = characterSpec(fields, novelTitles)
-        val sheetName = sanitizeSheetName(sheetLabel, usedSheetNames)
+        val sheetName = assignSheetName(sheetLabel, usedSheetNames, ownerOf = sheetOwnerOf)
         val sheet = workbook.createSheet(sheetName)
         writeHeaderRow(sheet, spec)
 
@@ -984,7 +976,7 @@ class ExcelExporter(context: Context) {
             eventFieldColumns.map { it.second },
             universesById.values.map { it.name }
         )
-        val sheetName = sanitizeSheetName(spec.sheetName, usedSheetNames)
+        val sheetName = assignSheetName(spec.sheetName, usedSheetNames, ownerOf = spec.sheetName)
         val sheet = workbook.createSheet(sheetName)
         writeHeaderRow(sheet, spec)
 
@@ -1064,7 +1056,7 @@ class ExcelExporter(context: Context) {
         if (allChanges.isEmpty()) return
 
         val spec = stateChangeSpec()
-        val sheetName = sanitizeSheetName(spec.sheetName, usedSheetNames)
+        val sheetName = assignSheetName(spec.sheetName, usedSheetNames, ownerOf = spec.sheetName)
         val sheet = workbook.createSheet(sheetName)
         writeHeaderRow(sheet, spec)
 
@@ -1104,7 +1096,7 @@ class ExcelExporter(context: Context) {
         val allCustomTypes = allUniverses.flatMap { it.getRelationshipTypes() }
         // 동명 세력은 드롭다운에서 구분되지 않으므로 접는다 — 대상 확정은 '세력코드' 열이 한다
         val spec = relationshipSpec(allCustomTypes, allFactions.map { it.name }.distinct())
-        val sheetName = sanitizeSheetName(spec.sheetName, usedSheetNames)
+        val sheetName = assignSheetName(spec.sheetName, usedSheetNames, ownerOf = spec.sheetName)
         val sheet = workbook.createSheet(sheetName)
         writeHeaderRow(sheet, spec)
 
@@ -1145,7 +1137,7 @@ class ExcelExporter(context: Context) {
         val eventCodeById = db.timelineDao().getAllEventsList().associate { it.id to it.code }
 
         val spec = relationshipChangeSpec()
-        val sheetName = sanitizeSheetName(spec.sheetName, usedSheetNames)
+        val sheetName = assignSheetName(spec.sheetName, usedSheetNames, ownerOf = spec.sheetName)
         val sheet = workbook.createSheet(sheetName)
         writeHeaderRow(sheet, spec)
 
@@ -1189,7 +1181,7 @@ class ExcelExporter(context: Context) {
         val tagsByImage = db.imageTagDao().getAllList().groupBy({ it.imageId }, { it.tag })
 
         val spec = imageMetaSpec()
-        val sheetName = sanitizeSheetName(spec.sheetName, usedSheetNames)
+        val sheetName = assignSheetName(spec.sheetName, usedSheetNames, ownerOf = spec.sheetName)
         val sheet = workbook.createSheet(sheetName)
         writeHeaderRow(sheet, spec)
 
@@ -1213,7 +1205,7 @@ class ExcelExporter(context: Context) {
         val charMap = allCharacters.associateBy { it.id }
 
         val spec = nameBankSpec()
-        val sheetName = sanitizeSheetName(spec.sheetName, usedSheetNames)
+        val sheetName = assignSheetName(spec.sheetName, usedSheetNames, ownerOf = spec.sheetName)
         val sheet = workbook.createSheet(sheetName)
         writeHeaderRow(sheet, spec)
 
@@ -1246,7 +1238,7 @@ class ExcelExporter(context: Context) {
         val universeMap = universes.associateBy { it.id }
 
         val spec = factionSpec(universes.map { it.name })
-        val sheetName = sanitizeSheetName(spec.sheetName, usedSheetNames)
+        val sheetName = assignSheetName(spec.sheetName, usedSheetNames, ownerOf = spec.sheetName)
         val sheet = workbook.createSheet(sheetName)
         writeHeaderRow(sheet, spec)
 
@@ -1280,7 +1272,7 @@ class ExcelExporter(context: Context) {
         val charMap = allCharacters.associateBy { it.id }
 
         val spec = factionMembershipSpec(allFactions.map { it.name })
-        val sheetName = sanitizeSheetName(spec.sheetName, usedSheetNames)
+        val sheetName = assignSheetName(spec.sheetName, usedSheetNames, ownerOf = spec.sheetName)
         val sheet = workbook.createSheet(sheetName)
         writeHeaderRow(sheet, spec)
 
@@ -1321,7 +1313,7 @@ class ExcelExporter(context: Context) {
             .flatMap { it.getRelationshipTypes() }.distinct()
 
         val spec = factionRelationshipSpec(allFactions.map { it.name }, customTypes)
-        val sheetName = sanitizeSheetName(spec.sheetName, usedSheetNames)
+        val sheetName = assignSheetName(spec.sheetName, usedSheetNames, ownerOf = spec.sheetName)
         val sheet = workbook.createSheet(sheetName)
         writeHeaderRow(sheet, spec)
 
@@ -1389,7 +1381,7 @@ class ExcelExporter(context: Context) {
         if (templates.isEmpty()) return
 
         val spec = userPresetTemplateSpec()
-        val sheetName = sanitizeSheetName(spec.sheetName, usedSheetNames)
+        val sheetName = assignSheetName(spec.sheetName, usedSheetNames, ownerOf = spec.sheetName)
         val sheet = workbook.createSheet(sheetName)
         writeHeaderRow(sheet, spec)
 
@@ -1413,7 +1405,7 @@ class ExcelExporter(context: Context) {
         if (presets.isEmpty()) return
 
         val spec = searchPresetSpec()
-        val sheetName = sanitizeSheetName(spec.sheetName, usedSheetNames)
+        val sheetName = assignSheetName(spec.sheetName, usedSheetNames, ownerOf = spec.sheetName)
         val sheet = workbook.createSheet(sheetName)
         writeHeaderRow(sheet, spec)
 
@@ -1464,7 +1456,7 @@ class ExcelExporter(context: Context) {
 
         val novelCodeById = db.novelDao().getAllNovelsList().associate { it.id to it.code }
         val spec = characterListPresetSpec()
-        val sheetName = sanitizeSheetName(spec.sheetName, usedSheetNames)
+        val sheetName = assignSheetName(spec.sheetName, usedSheetNames, ownerOf = spec.sheetName)
         val sheet = workbook.createSheet(sheetName)
         writeHeaderRow(sheet, spec)
 
@@ -1495,7 +1487,7 @@ class ExcelExporter(context: Context) {
 
     private suspend fun exportAppSettings(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
         val spec = appSettingsSpec()
-        val sheetName = sanitizeSheetName(spec.sheetName, usedSheetNames)
+        val sheetName = assignSheetName(spec.sheetName, usedSheetNames, ownerOf = spec.sheetName)
         val sheet = workbook.createSheet(sheetName)
         writeHeaderRow(sheet, spec)
 

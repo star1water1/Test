@@ -867,7 +867,7 @@ class ExcelImporter(context: Context) {
                         val existingUniverseName = existing.novelId?.let { novelUniverseNameCache[it] }
                         if (existingUniverseName != null
                             && existingUniverseName != importingSheetName
-                            && importingSheetName != ExcelImportService.UNCLASSIFIED_SHEET_NAME) {
+                            && importingSheetName != UNCLASSIFIED_SHEET_NAME) {
                             val cleanupCb = CheckBox(act).apply {
                                 text = appContext.getString(com.novelcharacter.app.R.string.import_conflict_cleanup_fields,
                                     existingUniverseName)

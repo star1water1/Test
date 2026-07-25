@@ -184,6 +184,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     // 실제로 헤더 검증을 통과해 처리한 캐릭터 시트의 세계관 — 삭제 범위를 이 세계관들로 한정한다
     private val importedCharacterSheetUniverseIds = mutableSetOf<Long>()
     private var unclassifiedSheetImported = false
+
+    // 캐릭터 시트로 이미 소비된 시트명 — 같은 시트를 세계관용·미분류용으로 두 번 돌지 않게 한다.
+    private val consumedCharacterSheetNames = mutableSetOf<String>()
     // 캐릭터 시트가 열로 이미 처리한 (캐릭터, 필드) 쌍 — '캐릭터 필드값' 시트와 다투지 않게 한다.
     // 초기화를 빠뜨리면 연속 가져오기에서 이전 실행의 쌍이 남아 정상 행을 무시한다(무음 유실).
     private val importedCharFieldPairs = mutableSetOf<Pair<Long, Long>>()
@@ -312,7 +315,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val charactersRestorable = db.universeDao().getAllUniversesList().any { u ->
                     findSheetForUniverse(workbook, u.name, RESERVED_SHEET_NAMES)?.getRow(0)
                         ?.let { isValidHeader(it, "이름") } == true
-                } || workbook.getSheet(UNCLASSIFIED_SHEET_NAME)?.getRow(0)
+                } || findUnclassifiedSheet(workbook)?.getRow(0)
                     ?.let { isValidHeader(it, "이름") } == true
 
                 if (shouldDelete(effectiveOptions.relationshipChanges, relationshipChangeSpec())) db.characterRelationshipChangeDao().deleteAll()
@@ -383,6 +386,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             matchedCharacterIds.clear()
             importedCharacterSheetUniverseIds.clear()
             unclassifiedSheetImported = false
+            consumedCharacterSheetNames.clear()
             importedCharFieldPairs.clear()
             universeMovedCharacterIds.clear()
             matchedEventIds.clear()
@@ -500,9 +504,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         }
         for (idx in 0 until workbook.numberOfSheets) {
             val name = workbook.getSheetName(idx)
-            if (name !in recognizedSheets) {
-                result.warnings.add("시트 '$name'은(는) 인식되지 않아 무시되었습니다 — 캐릭터 시트라면 이름이 세계관 이름과 일치해야 합니다")
-            }
+            if (name in recognizedSheets) continue
+            // 예약명이 세계관에 밀려 '이름(2)'로 저장된 시트는 findSheet가 되찾아 실제로 읽는다 —
+            // 읽은 시트를 '무시했다'고 알리면 사실과 다른 경고가 된다.
+            if (RESERVED_SHEET_NAMES.any { isSuffixedVariantOf(name, it) }) continue
+            result.warnings.add("시트 '$name'은(는) 인식되지 않아 무시되었습니다 — 캐릭터 시트라면 이름이 세계관 이름과 일치해야 합니다")
         }
 
         if (truncatedFieldCount > 0) {
@@ -803,10 +809,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 세계관별 캐릭터 시트 분석
         val universes = db.universeDao().getAllUniversesList()
         val reservedNames = RESERVED_SHEET_NAMES
+        // 미리보기도 본 임포트와 같은 배정을 봐야 한다 — 같은 시트를 두 번 세면 건수가 부풀고
+        // 충돌 항목이 중복된다(conflictKey가 "$sheetLabel:$i"라 양쪽이 같은 키를 만든다).
+        val analyzedSheetNames = mutableSetOf<String>()
         for (universe in universes) {
             val sheet = findSheetForUniverse(workbook, universe.name, reservedNames) ?: continue
             val headerRow = sheet.getRow(0) ?: continue
             if (!isValidHeader(headerRow, "이름")) continue
+            analyzedSheetNames.add(sheet.sheetName)
             val result = analyzeCharacterSheet(sheet, headerRow, universe.name)
             inBackup += result.first; newCount += result.second; updateCount += result.third
             unchangedCount += (result.first - result.second - result.third - result.fifth)
@@ -814,7 +824,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         }
 
         // 미분류 캐릭터 분석
-        val unclSheet = workbook.getSheet(UNCLASSIFIED_SHEET_NAME)
+        val unclSheet = findUnclassifiedSheet(workbook, analyzedSheetNames)
         if (unclSheet != null) {
             val headerRow = unclSheet.getRow(0)
             if (headerRow != null && isValidHeader(headerRow, "이름")) {
@@ -1514,19 +1524,46 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     /**
      * 시트를 찾고, 못 찾으면 경고를 남기고 null 반환.
      */
-    private fun findSheet(workbook: Workbook, sheetName: String, result: ImportResult): Sheet? {
-        val sheet = workbook.getSheet(sheetName)
-        if (sheet == null) {
-            result.warnings.add("'$sheetName' 시트를 찾을 수 없어 해당 데이터를 건너뛰었습니다.")
+    /**
+     * 예약 시트 조회 — 이름을 빼앗긴 레거시 백업까지 되찾는다.
+     *
+     * 규칙 도입 전 내보내기는 세계관 캐릭터 시트를 먼저 만들었기 때문에, 세계관 이름이
+     * '세력'·'이름 은행'·'필드 템플릿'처럼 예약명과 같으면 **진짜 예약 시트가 `이름(2)`로
+     * 밀려났다**. 정확 일치만 보던 종전 구현은 그 캐릭터 시트를 잡아 헤더 오류로 건너뛰고,
+     * 밀려난 진짜 데이터는 아무도 읽지 않았다(무음 유실).
+     *
+     * 정확 일치의 **헤더가 spec과 맞을 때만** 그것을 쓰고, 아니면 헤더가 맞는 접미사 변형을
+     * 찾는다 — 이름이 아니라 헤더가 시트의 정체를 정한다.
+     */
+    private fun findSheet(workbook: Workbook, spec: SheetSpec, result: ImportResult): Sheet? {
+        val exact = workbook.getSheet(spec.sheetName)
+        if (exact != null && exact.getRow(0)?.let { isValidHeader(it, spec.firstColumnHeader) } == true) {
+            return exact
         }
-        return sheet
+        for (idx in 0 until workbook.numberOfSheets) {
+            val name = workbook.getSheetName(idx)
+            if (!isSuffixedVariantOf(name, spec.sheetName)) continue
+            val candidate = workbook.getSheetAt(idx)
+            if (candidate.getRow(0)?.let { isValidHeader(it, spec.firstColumnHeader) } == true) {
+                result.warnings.add(
+                    "'${spec.sheetName}' 시트가 같은 이름의 세계관에 밀려 '$name'으로 저장되어 있어 그 시트를 읽었습니다"
+                )
+                return candidate
+            }
+        }
+        if (exact == null) {
+            result.warnings.add("'${spec.sheetName}' 시트를 찾을 수 없어 해당 데이터를 건너뛰었습니다.")
+        }
+        // 헤더가 맞지 않는 정확-일치 시트는 그대로 돌려준다 — 헤더 검증·경고는 호출부가 한다
+        // (구버전 헤더·사용자 편집 파일을 관대하게 수용하던 기존 경로를 유지).
+        return exact
     }
 
     // ── 세계관 가져오기 ──
 
     private suspend fun importUniverses(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = universeSpec()
-        val sheet = findSheet(workbook, spec.sheetName, result) ?: return
+        val sheet = findSheet(workbook, spec, result) ?: return
         val headerRow = sheet.getRow(0) ?: return
         if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
 
@@ -1680,7 +1717,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     private suspend fun importNovels(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = novelSpec(emptyList())
-        val sheet = findSheet(workbook, spec.sheetName, result) ?: return
+        val sheet = findSheet(workbook, spec, result) ?: return
         val headerRow = sheet.getRow(0) ?: return
         if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
 
@@ -1851,7 +1888,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     private suspend fun importFieldDefinitions(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = fieldDefinitionSpec(emptyList())
-        val sheet = findSheet(workbook, spec.sheetName, result) ?: return
+        val sheet = findSheet(workbook, spec, result) ?: return
         val headerRow = sheet.getRow(0) ?: return
         if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
 
@@ -1989,7 +2026,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     private suspend fun importFieldValueLibrary(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = fieldValueLibrarySpec()
-        val sheet = findSheet(workbook, spec.sheetName, result) ?: return
+        val sheet = findSheet(workbook, spec, result) ?: return
         val headerRow = sheet.getRow(0) ?: return
         if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
 
@@ -2140,6 +2177,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val fields = db.fieldDefinitionDao().getFieldsByUniverseList(universe.id)
             // 헤더 검증을 통과해 실제로 처리한 세계관만 삭제 범위에 넣는다 (시트 없는 세계관은 건드리지 않음)
             importedCharacterSheetUniverseIds.add(universe.id)
+            // 같은 시트를 미분류 경로가 또 돌지 않게 소비 목록에 넣는다 (상호배제)
+            consumedCharacterSheetNames.add(sheet.sheetName)
             importCharacterRows(sheet, headerRow, universe, fields, result, resolvedConflicts, universe.name, onProgress, totalRows)
         }
     }
@@ -2147,9 +2186,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     // ── 미분류 캐릭터 가져오기 ──
 
     private suspend fun importUnclassifiedCharacters(workbook: Workbook, result: ImportResult, resolvedConflicts: Map<String, CharacterConflict>, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
-        val sheet = workbook.getSheet(UNCLASSIFIED_SHEET_NAME) ?: return
+        val sheet = findUnclassifiedSheet(workbook, consumedCharacterSheetNames) ?: return
         val headerRow = sheet.getRow(0) ?: return
         if (!checkHeaderOrReport(sheet, headerRow, "이름", result)) return
+        consumedCharacterSheetNames.add(sheet.sheetName)
 
         unclassifiedSheetImported = true
         importCharacterRows(sheet, headerRow, null, emptyList(), result, resolvedConflicts, UNCLASSIFIED_SHEET_NAME, onProgress, totalRows)
@@ -2616,7 +2656,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     private suspend fun importTimeline(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = timelineSpec(emptyList())
-        val sheet = findSheet(workbook, spec.sheetName, result) ?: return
+        val sheet = findSheet(workbook, spec, result) ?: return
         val headerRow = sheet.getRow(0) ?: return
         if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
 
@@ -2928,7 +2968,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     private suspend fun importStateChanges(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = stateChangeSpec()
-        val sheet = findSheet(workbook, spec.sheetName, result) ?: return
+        val sheet = findSheet(workbook, spec, result) ?: return
         val headerRow = sheet.getRow(0) ?: return
         if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
 
@@ -3067,7 +3107,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     private suspend fun importRelationships(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = relationshipSpec()
-        val sheet = findSheet(workbook, spec.sheetName, result) ?: return
+        val sheet = findSheet(workbook, spec, result) ?: return
         val headerRow = sheet.getRow(0) ?: return
         if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
 
@@ -3291,7 +3331,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     // ── 관계 변화 가져오기 ──
 
     private suspend fun importRelationshipChanges(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
-        val sheet = findSheet(workbook, "관계 변화", result) ?: return
+        val sheet = findSheet(workbook, relationshipChangeSpec(), result) ?: return
         val headerRow = sheet.getRow(0) ?: return
         if (!checkHeaderOrReport(sheet, headerRow, "캐릭터1", result)) return
 
@@ -3492,7 +3532,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     private suspend fun importNameBank(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = nameBankSpec()
-        val sheet = findSheet(workbook, spec.sheetName, result) ?: return
+        val sheet = findSheet(workbook, spec, result) ?: return
         val headerRow = sheet.getRow(0) ?: return
         if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
 
@@ -3599,7 +3639,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     private suspend fun importUserPresetTemplates(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = userPresetTemplateSpec()
-        val sheet = findSheet(workbook, spec.sheetName, result) ?: return
+        val sheet = findSheet(workbook, spec, result) ?: return
         val headerRow = sheet.getRow(0) ?: return
         if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
 
@@ -3709,7 +3749,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     private suspend fun importSearchPresets(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = searchPresetSpec()
-        val sheet = findSheet(workbook, spec.sheetName, result) ?: return
+        val sheet = findSheet(workbook, spec, result) ?: return
         val headerRow = sheet.getRow(0) ?: return
         if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
 
@@ -3806,7 +3846,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
      */
     private suspend fun importCharacterListPresets(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = characterListPresetSpec()
-        val sheet = findSheet(workbook, spec.sheetName, result) ?: return
+        val sheet = findSheet(workbook, spec, result) ?: return
         val headerRow = sheet.getRow(0) ?: return
         if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
 
@@ -3929,7 +3969,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     private suspend fun importAppSettings(workbook: Workbook, result: ImportResult) {
         val spec = appSettingsSpec()
-        val sheet = findSheet(workbook, spec.sheetName, result) ?: return
+        val sheet = findSheet(workbook, spec, result) ?: return
         val headerRow = sheet.getRow(0) ?: return
         if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
 
@@ -4016,7 +4056,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     private suspend fun importFactions(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = factionSpec()
-        val sheet = findSheet(workbook, spec.sheetName, result) ?: return
+        val sheet = findSheet(workbook, spec, result) ?: return
         val headerRow = sheet.getRow(0) ?: return
         if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
 
@@ -4165,7 +4205,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     private suspend fun importFactionMemberships(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = factionMembershipSpec()
-        val sheet = findSheet(workbook, spec.sheetName, result) ?: return
+        val sheet = findSheet(workbook, spec, result) ?: return
         val headerRow = sheet.getRow(0) ?: return
         if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
 
@@ -4373,7 +4413,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     private suspend fun importFactionRelationships(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = factionRelationshipSpec()
-        val sheet = findSheet(workbook, spec.sheetName, result) ?: return
+        val sheet = findSheet(workbook, spec, result) ?: return
         val headerRow = sheet.getRow(0) ?: return
         if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
 
@@ -4528,7 +4568,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private suspend fun importImageMeta(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = imageMetaSpec()
         // 시트 부재는 타 카테고리와 같은 관례로 경고를 남긴다(G3 이전 백업 — 조용한 스킵 금지)
-        val sheet = findSheet(workbook, spec.sheetName, result) ?: return
+        val sheet = findSheet(workbook, spec, result) ?: return
         val headerRow = sheet.getRow(0) ?: return
         // 3중 방어 ③: 예약명이라도 실제 이미지 형식인지 헤더로 검증 — 레거시 백업의
         // 세계관 "이미지" 캐릭터 시트(첫 헤더 "이름")를 이미지 메타로 오파싱하지 않는다.
@@ -4626,24 +4666,57 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             return false
         }
 
-        workbook.getSheet(universeName)?.let {
-            if (universeName !in reservedNames || looksLikeCharacterSheet(it)) return it
+        // 시트명 정규화는 내보내기와 같은 함수를 쓴다(따로 두면 반드시 드리프트한다).
+        val sanitized = sanitizeSheetNameBase(universeName)
+        val isReserved = universeName in reservedNames || sanitized in reservedNames
+
+        fun findSuffixed(): Sheet? {
+            for (idx in 0 until workbook.numberOfSheets) {
+                val sheetName = workbook.getSheetName(idx)
+                if (sheetName in reservedNames) continue
+                if (isSuffixedVariantOf(sheetName, sanitized)) return workbook.getSheetAt(idx)
+            }
+            return null
         }
-        val sanitized = universeName
-            .replace(Regex("[\\[\\]*/\\\\?:]"), "")
-            .take(31)
+
+        // 세계관 이름이 예약명과 겹치면 **신규 내보내기는 반드시 캐릭터 시트를 "(2)"로 민다**
+        // (assignSheetName의 ownerOf 규칙). 그러므로 접미사 후보를 먼저 본다 — 정확 일치를
+        // 먼저 보면 같은 이름의 예약 시트(예: 진짜 '미분류 캐릭터' 시트)를 가로챈다.
+        if (isReserved) {
+            findSuffixed()?.let { return it }
+        }
+
+        workbook.getSheet(universeName)?.let {
+            // 레거시 백업(규칙 도입 전): 세계관이 예약명을 차지한 파일은 헤더 피크로만 구제한다.
+            if (!isReserved || looksLikeCharacterSheet(it)) return it
+        }
         if (sanitized != universeName) {
             workbook.getSheet(sanitized)?.let {
-                if (sanitized !in reservedNames || looksLikeCharacterSheet(it)) return it
+                if (!isReserved || looksLikeCharacterSheet(it)) return it
             }
         }
+        findSuffixed()?.let { return it }
+        return null
+    }
+
+    /**
+     * '미분류 캐릭터' 시트 조회 — 세계관 시트와 **상호배제**한다.
+     *
+     * 종전에는 세 곳(본 임포트·분석·덮어쓰기 가드)이 각자 `workbook.getSheet(정확 일치)`를
+     * 불렀다. 세계관 이름이 '미분류 캐릭터'인 백업에서는 그 세계관 시트가 평명을 차지해
+     * **같은 시트가 세계관용으로 한 번, 미분류용으로 또 한 번** 처리됐고(미리보기 건수 부풀림 +
+     * 중복 충돌 항목), 진짜 미분류 시트는 어느 경로도 읽지 않아 무음 유실이 됐다.
+     *
+     * @param consumedSheetNames 세계관 캐릭터 시트로 이미 소비된 시트명 — 여기서는 잡지 않는다.
+     */
+    private fun findUnclassifiedSheet(workbook: Workbook, consumedSheetNames: Set<String> = emptySet()): Sheet? {
+        val exact = workbook.getSheet(UNCLASSIFIED_SHEET_NAME)
+        if (exact != null && exact.sheetName !in consumedSheetNames) return exact
+        // 세계관이 평명을 가져간 레거시 백업 — 밀려난 접미사 시트가 진짜 미분류 시트다.
         for (idx in 0 until workbook.numberOfSheets) {
-            val sheetName = workbook.getSheetName(idx)
-            if (sheetName in reservedNames) continue
-            val baseName = sheetName.replace(Regex("\\(\\d+\\)$"), "")
-            if (baseName == sanitized || (sanitized.startsWith(baseName) && sheetName.length >= 31)) {
-                return workbook.getSheetAt(idx)
-            }
+            val name = workbook.getSheetName(idx)
+            if (name in consumedSheetNames) continue
+            if (isSuffixedVariantOf(name, UNCLASSIFIED_SHEET_NAME)) return workbook.getSheetAt(idx)
         }
         return null
     }
@@ -5228,8 +5301,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 가져오기 저장 한도 = 내보내기 절단 한도 (SheetSpec 단일 소스).
         // 값이 어긋나면 순수 왕복만으로 데이터가 잘리므로 별도 값을 두지 않는다.
         private const val MAX_FIELD_LENGTH = EXCEL_CELL_TEXT_LIMIT
-        private const val GUIDE_SHEET_NAME = "사용 안내"
-        internal const val UNCLASSIFIED_SHEET_NAME = "미분류 캐릭터"
+        // 시트명 상수는 SheetSpec.kt가 단일 소스다 (내보내기도 같은 상수를 본다).
     }
 }
 

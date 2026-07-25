@@ -106,6 +106,7 @@ $TEST/util/FieldFilterHelperTest.kt
 $TEST/data/SnapshotRefResolverTest.kt
 $TEST/data/CharacterSnapshotPayloadTest.kt
 $TEST/data/CharacterFieldValueMergeTest.kt
+$TEST/excel/SheetNameAssignmentTest.kt
 "
 # 선택 소스: 존재하고 순수 JVM이면 추가
 for extra in "$MAIN/util/SortComparators.kt" "$MAIN/util/EpochMemo.kt" "$MAIN/ai/AiJsonExtractor.kt"; do
