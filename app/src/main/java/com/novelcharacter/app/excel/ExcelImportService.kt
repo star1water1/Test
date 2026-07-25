@@ -897,6 +897,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val descColIndex = cols["설명"] ?: 3
         val char1CodeColIndex = cols["캐릭터1코드"] ?: -1
         val char2CodeColIndex = cols["캐릭터2코드"] ?: -1
+        val relCodeColIndex = cols["코드"] ?: -1
 
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0
         for (i in 1..sheet.lastRowNum) {
@@ -907,6 +908,20 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val relationshipType = getCellString(row, typeColIndex)
             if (relationshipType.isBlank()) continue
             inBackup++
+
+            // 실제 임포트와 동일한 코드 우선 매칭 — 유형을 편집한 행이 미리보기에서만 '신규'로 잡히지 않게
+            if (relCodeColIndex >= 0) {
+                val rc = getCellString(row, relCodeColIndex)
+                if (rc.isNotBlank()) {
+                    val byCode = db.characterRelationshipDao().getByCode(rc)
+                    if (byCode != null) {
+                        val desc = if (descColIndex >= 0) getCellString(row, descColIndex) else byCode.description
+                        if (byCode.relationshipType != relationshipType || byCode.description != desc) updateCount++
+                        else unchangedCount++
+                        continue
+                    }
+                }
+            }
 
             val char1Code = if (char1CodeColIndex >= 0) getCellString(row, char1CodeColIndex) else ""
             val char2Code = if (char2CodeColIndex >= 0) getCellString(row, char2CodeColIndex) else ""
@@ -2755,6 +2770,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val factionColIndex = cols["세력"] ?: -1
         val factionCodeColIndex = cols["세력코드"] ?: -1
         val createdAtColIndex = cols["생성일"] ?: -1
+        // 관계 자체의 안정 식별자 — 있으면 '관계 유형'을 고쳐도 같은 관계로 인식한다
+        val relCodeColIndex = cols["코드"] ?: -1
 
         val allFactions = if (factionColIndex >= 0 || factionCodeColIndex >= 0) db.factionDao().getAllFactionsList() else emptyList()
         val factionsByCode = allFactions.associateBy { it.code }
@@ -2833,7 +2850,17 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     (rel.characterId1 == char1.id && rel.characterId2 == char2.id) ||
                     (rel.characterId1 == char2.id && rel.characterId2 == char1.id)
                 }
-                val existing = pairRels.find { it.relationshipType == relationshipType }
+                // 매칭 규약: 코드(안정 식별자) 우선 → 자연키(쌍+유형) 폴백.
+                // 코드로 잡히면 '관계 유형' 편집이 rename으로 인식되어 관계가 분열하지 않는다.
+                val relCode = getCellCode(row, relCodeColIndex, "관계 행 $i", result)
+                val byCode = if (relCode.isNotBlank()) db.characterRelationshipDao().getByCode(relCode) else null
+                if (relCode.isNotBlank() && byCode == null) {
+                    result.warnings.add("관계 행 $i: 코드 '$relCode'를 찾지 못해 캐릭터·유형으로 매칭합니다 — 의도한 새 관계면 코드를 비우세요")
+                }
+                val existing = byCode ?: pairRels.find { it.relationshipType == relationshipType }
+                if (byCode != null && byCode.relationshipType != relationshipType) {
+                    result.warnings.add("관계 행 $i: '${char1Name}'–'${char2Name}' 관계 유형을 '${byCode.relationshipType}' → '$relationshipType'(으)로 변경했습니다 (코드로 같은 관계 인식)")
+                }
 
                 if (existing != null) {
                     val prevRow = entitySeen[existing.id]
@@ -2844,22 +2871,26 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     // 빈칸=삭제 집계(변수 제어): 열이 있고 값이 비었는데 기존값이 있으면 초기화로 계수(세력 패턴과 일치)
                     if (descColIndex >= 0 && description == "" && existing.description.isNotBlank()) result.clearedFields++
                     db.characterRelationshipDao().update(existing.copy(
+                        // 코드 매칭 시 유형은 편집 가능한 값 (자연키 매칭 시엔 동일값이라 무해)
+                        relationshipType = relationshipType,
                         description = if (descColIndex >= 0) description else existing.description,
                         intensity = if (intensityColIndex >= 0) intensity else existing.intensity,
                         isBidirectional = if (bidirectionalColIndex >= 0) isBidirectional else existing.isBidirectional,
                         displayOrder = displayOrder ?: existing.displayOrder,
                         // 해석 성공 시에만 교체 — 열 없음·빈칸·미해석 참조는 기존 연결 유지
                         factionId = factionId ?: existing.factionId,
-                        createdAt = if (createdAtColIndex >= 0) createdAt else existing.createdAt
+                        createdAt = if (createdAtColIndex >= 0) createdAt else existing.createdAt,
+                        // 코드 없는 기존 행은 점진 백필 (기존 코드는 절대 덮어쓰지 않음 — 외부 참조 보호)
+                        code = existing.code ?: relCode.takeIf { it.isNotBlank() } ?: generateEntityCode()
                     ))
                     matchedRelationshipIds.add(existing.id)
                     result.updatedRelationships++
                 } else {
-                    // 관계는 (쌍 + 유형)이 정체성이므로 시트에서 '관계 유형'을 고치면 rename이 아니라
-                    // 새 관계 생성이 된다(구 관계는 이력·설명을 가진 채 남는다). 판별할 근거가 파일에
-                    // 없으므로 추측하지 않고, 같은 쌍에 시트에 없는 기존 관계가 남았다는 사실을 고지한다.
+                    // 코드 열이 없는 구버전 파일에서는 '관계 유형' 편집이 rename인지 신규인지 알 수 없다.
+                    // 추측하지 않고, 같은 쌍에 시트에 없는 기존 관계가 남았다는 사실을 고지한다.
+                    // (코드 열이 있는 최신 파일은 위 코드 매칭에서 rename으로 정확히 처리된다)
                     val leftovers = pairRels.filter { it.id !in matchedRelationshipIds }
-                    if (leftovers.isNotEmpty()) {
+                    if (relCodeColIndex < 0 && leftovers.isNotEmpty()) {
                         result.warnings.add(
                             "관계 행 $i: '${char1Name}'–'${char2Name}'에 '${relationshipType}' 관계를 새로 만들었습니다 — 같은 쌍의 기존 관계(${leftovers.joinToString("/") { it.relationshipType }})가 그대로 남아 있습니다. 관계 유형을 고쳐 쓴 것이라면 앱에서 남은 관계를 정리하세요"
                         )
@@ -2869,7 +2900,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         relationshipType = relationshipType, description = description,
                         intensity = intensity, isBidirectional = isBidirectional,
                         displayOrder = displayOrder ?: i, factionId = factionId,
-                        createdAt = createdAt
+                        createdAt = createdAt,
+                        // 파일의 코드를 보존해 기기 이전 후에도 왕복 정체성 유지 (없으면 자동 생성)
+                        code = relCode.takeIf { it.isNotBlank() } ?: generateEntityCode()
                     ))
                     matchedRelationshipIds.add(newId)
                     entitySeen[newId] = i
@@ -2909,8 +2942,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val char1CodeColIndex = cols["캐릭터1코드"] ?: -1
         val char2CodeColIndex = cols["캐릭터2코드"] ?: -1
         val createdAtColIndex = cols["생성일"] ?: -1
-        // 부모 관계 식별자 — 없으면 구버전 파일이므로 쌍 기반 폴백(모호하면 경고)
+        // 부모 관계 식별자 — 코드 우선, 없으면 유형, 둘 다 없으면 쌍 기반 폴백(모호하면 경고)
         val parentTypeColIndex = cols["부모관계유형"] ?: -1
+        val parentCodeColIndex = cols["관계코드"] ?: -1
         val changeCodesSeen = mutableSetOf<String>()
 
         for (i in 1..sheet.lastRowNum) {
@@ -3002,7 +3036,17 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     continue
                 }
                 val parentType = if (parentTypeColIndex >= 0) getCellString(row, parentTypeColIndex) else ""
+                val parentCode = getCellCode(row, parentCodeColIndex, "관계변화 행 $i", result)
+                val byParentCode = if (parentCode.isNotBlank()) {
+                    pairRelationships.find { it.code == parentCode }
+                        ?: db.characterRelationshipDao().getByCode(parentCode)?.takeIf { rel ->
+                            (rel.characterId1 == char1.id && rel.characterId2 == char2.id) ||
+                            (rel.characterId1 == char2.id && rel.characterId2 == char1.id)
+                        }
+                } else null
                 val relationship = when {
+                    // 코드가 최우선 — 부모 관계의 유형이 편집돼도 이력이 정확히 따라간다
+                    byParentCode != null -> byParentCode
                     parentType.isNotBlank() -> {
                         val exact = pairRelationships.filter { it.relationshipType == parentType }
                         when {

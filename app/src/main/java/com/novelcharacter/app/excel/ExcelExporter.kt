@@ -479,8 +479,10 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "• 사건 연표: 코드로 매칭 (코드 없을 시 연도+설명). 관련 캐릭터는 쉼표로 구분. 세계관 열이 소속 기준"),
             GuideLine("", styles.guideBody, "• 목록 프리셋: 이름으로 매칭. 작품코드목록은 작품 시트의 코드 값을 쉼표로 나열"),
             GuideLine("", styles.guideBody, "• 캐릭터 관계: 관계 유형은 드롭다운에서 선택. 세력·세력코드 열은 세력 자동 관계의 소속 표시"),
-            GuideLine("", styles.guideBody, "  관계는 '캐릭터1+캐릭터2+관계 유형'이 정체성입니다 — 관계 유형을 고치면 새 관계가 생기고 기존 관계는 남습니다"),
-            GuideLine("", styles.guideBody, "• 관계 변화: '부모관계유형'은 이 이력이 붙은 관계를 가리킵니다 (같은 행의 '관계 유형'은 그 시점의 유형)"),
+            GuideLine("", styles.guideBody, "  관계의 '코드' 열을 지우지 마세요 — 코드가 있으면 관계 유형을 고쳐도 같은 관계로 인식합니다"),
+            GuideLine("", styles.guideBody, "  (코드를 비우고 유형만 바꾸면 새 관계가 생기고 기존 관계가 그대로 남습니다)"),
+            GuideLine("", styles.guideBody, "• 관계 변화: '관계코드'가 이 이력이 붙은 관계를 가리킵니다 ('부모관계유형'은 코드 없는 구버전 파일용 폴백,"),
+            GuideLine("", styles.guideBody, "  같은 행의 '관계 유형'은 그 시점의 유형이라 서로 다른 값입니다)"),
             GuideLine("", styles.guideBody, "• 세력 소속: 같은 세력·캐릭터의 이력이 여러 건일 수 있어 '생성일'로 구분합니다 — 지우지 마세요"),
             GuideLine("", styles.guideBody, "• 이름 은행: 이름+성별로 매칭. 사용여부는 Y/N"),
             GuideLine("", styles.guideBody, ""),
@@ -1022,6 +1024,7 @@ class ExcelExporter(context: Context) {
             row.createCell(9).setTextSafe(rel.factionId?.let { factionMap[it]?.name } ?: "")
             row.createCell(10).setTextSafe(rel.factionId?.let { factionMap[it]?.code } ?: "")
             row.createCell(11).setCellValue(rel.createdAt.toDouble())
+            row.createCell(12).setTextSafe(rel.code ?: "")
         }
 
         applySpecFormatting(sheet, spec, allRelationships.size)
@@ -1065,8 +1068,9 @@ class ExcelExporter(context: Context) {
             row.createCell(11).setTextSafe(char1?.code ?: "")
             row.createCell(12).setTextSafe(char2?.code ?: "")
             row.createCell(13).setCellValue(rc.createdAt.toDouble())
-            // 부모 관계의 유형 — 같은 쌍에 관계가 여러 개일 때 이력이 어느 관계 소속인지 식별한다
+            // 부모 관계 식별 — 코드가 있으면 유형을 고쳐도 정확히 따라간다(유형은 코드 없는 구파일용 폴백)
             row.createCell(14).setTextSafe(rel.relationshipType)
+            row.createCell(15).setTextSafe(rel.code ?: "")
         }
 
         applySpecFormatting(sheet, spec, allChanges.size)

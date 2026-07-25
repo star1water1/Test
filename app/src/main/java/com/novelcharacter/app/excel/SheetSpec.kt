@@ -303,7 +303,10 @@ fun relationshipSpec(customTypes: List<String> = emptyList()) = SheetSpec(
         ColumnSpec("세력", readOnly = true, width = 5000),
         // 세력 자동 관계의 소속을 코드로도 싣는다 — 이름 충돌·기기 이전에도 연결이 유지되게(코드 우선 해석)
         ColumnSpec("세력코드", readOnly = true, width = 4000),
-        ColumnSpec("생성일", readOnly = true, width = 5000)
+        ColumnSpec("생성일", readOnly = true, width = 5000),
+        // 관계 자체의 안정 식별자 — 이 열이 있으면 '관계 유형'을 고쳐도 같은 관계로 인식한다
+        // (자연키가 캐릭터1+캐릭터2+유형이라 코드 없이는 rename과 신규를 구별할 수 없다)
+        ColumnSpec("코드", readOnly = true, width = 4000)
     )
 )
 
@@ -329,7 +332,9 @@ fun relationshipChangeSpec() = SheetSpec(
         // 이 이력이 붙은 **부모 관계**의 유형. 위 '관계 유형'(변화 시점의 유형)과 다른 값이다.
         // 같은 두 캐릭터 사이에 유형이 다른 관계가 여러 개일 수 있어(유니크 키가 쌍+유형),
         // 이 열이 없으면 이력이 어느 관계의 것인지 파일만으로 알 수 없다.
-        ColumnSpec("부모관계유형", readOnly = true, width = 5000)
+        ColumnSpec("부모관계유형", readOnly = true, width = 5000),
+        // 부모 관계의 안정 식별자 — 유형까지 편집된 파일에서도 이력이 정확히 따라간다(코드 우선)
+        ColumnSpec("관계코드", readOnly = true, width = 4000)
     )
 )
 

@@ -12,6 +12,10 @@ interface CharacterRelationshipDao {
     @Query("SELECT * FROM character_relationships WHERE characterId1 = :characterId OR characterId2 = :characterId ORDER BY displayOrder ASC, createdAt DESC")
     suspend fun getRelationshipsForCharacterList(characterId: Long): List<CharacterRelationship>
 
+    /** 안정 식별자 조회 — 엑셀 왕복에서 '관계 유형'이 편집돼도 같은 관계로 인식하기 위한 기준 */
+    @Query("SELECT * FROM character_relationships WHERE code = :code LIMIT 1")
+    suspend fun getByCode(code: String): CharacterRelationship?
+
     @Update
     suspend fun updateAll(relationships: List<CharacterRelationship>)
 
