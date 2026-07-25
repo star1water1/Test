@@ -169,6 +169,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     // 트랜잭션 안에서 휴지통 스냅샷을 남겼는지 — 정리(pruneIfNeeded)는 커밋 이후에 수행한다
     private var trashPruneNeeded = false
 
+    // 세력 자동 관계 생성 대기열 (factionId → characterId). 관계 시트 처리 후에 소비한다.
+    private val pendingAutoRelationMemberships = mutableListOf<Pair<Long, Long>>()
+
     // "엑셀에 없는 항목 삭제" 옵션용 — 임포트 중 매칭된 entity ID 추적
     // 엑셀이 인지한 캐릭터 전역 보호집합 — 세계관별로 나누지 않는다.
     // 시트의 세계관과 캐릭터의 실제 세계관은 다를 수 있고(엑셀 편집으로 작품 이동),
@@ -248,13 +251,18 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 // 세계관 삭제 → 필드 정의, 세력 CASCADE 삭제 → 재가져오기 필수
                 fieldDefinitions = options.fieldDefinitions || options.universes,
                 factions = options.factions || options.universes,
-                // 세력 삭제 → 세력 소속·세력 관계 CASCADE 삭제 → 재가져오기 필수
-                factionMemberships = options.factionMemberships || options.factions || options.universes,
+                // 세력 삭제 → 세력 소속·세력 관계 CASCADE 삭제 → 재가져오기 필수.
+                // 캐릭터 삭제도 세력 소속을 CASCADE로 지운다(characterId FK).
+                factionMemberships = options.factionMemberships || options.factions ||
+                    options.universes || options.characters,
                 factionRelationships = options.factionRelationships || options.factions || options.universes,
                 // 캐릭터 삭제 → 관계, 상태변화 CASCADE 삭제 → 재가져오기 필수
                 relationships = options.relationships || options.characters,
                 relationshipChanges = options.relationshipChanges || options.characters || options.relationships,
-                stateChanges = options.stateChanges || options.characters
+                stateChanges = options.stateChanges || options.characters,
+                // 캐릭터 삭제 → 사건-캐릭터 연결(crossref)도 CASCADE 삭제된다.
+                // 사건 자체는 남고 참가자 연결만 사라지므로 연표를 재가져오지 않으면 복구되지 않는다.
+                timeline = options.timeline || options.characters
             )
         } else {
             options
@@ -266,49 +274,72 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             // 덮어쓰기 전략: 선택된 카테고리의 기존 데이터를 먼저 삭제
             // CASCADE 안전 순서: 종속 데이터 → 상위 엔티티
             if (strategy == ImportStrategy.OVERWRITE) {
-                if (effectiveOptions.relationshipChanges) db.characterRelationshipChangeDao().deleteAll()
-                if (effectiveOptions.relationships) db.characterRelationshipDao().deleteAll()
-                if (effectiveOptions.factionMemberships) db.factionMembershipDao().deleteAll()
-                if (effectiveOptions.factionRelationships) db.factionRelationshipDao().deleteAll()
-                if (effectiveOptions.factions) db.factionDao().deleteAll()
-                if (effectiveOptions.stateChanges) db.characterStateChangeDao().deleteAll()
-                if (effectiveOptions.timeline) {
+                // 덮어쓰기의 대원칙: **백업이 복원할 수 없는 것은 지우지 않는다.**
+                // 시트가 없는 카테고리를 지우면 되돌릴 방법이 전혀 없으므로(휴지통도 거치지 않는다)
+                // 모든 삭제를 "백업에 유효한 시트가 있는가"로 가드하고, 건너뛴 경우 사용자에게 알린다.
+                fun canRestore(spec: SheetSpec): Boolean {
+                    val header = workbook.getSheet(spec.sheetName)?.getRow(0) ?: return false
+                    return isValidHeader(header, spec.firstColumnHeader)
+                }
+                /** 선택됐고 백업으로 복원 가능할 때만 true. 복원 불가면 삭제를 건너뛰고 사용자에게 알린다. */
+                fun shouldDelete(enabled: Boolean, spec: SheetSpec): Boolean {
+                    if (!enabled) return false
+                    if (!canRestore(spec)) {
+                        result.warnings.add("백업에 '${spec.sheetName}' 시트가 없어 기존 데이터를 삭제하지 않고 유지했습니다 (덮어쓰기 제외)")
+                        return false
+                    }
+                    return true
+                }
+                // 캐릭터는 세계관별 시트 + 미분류 시트로 나뉘므로 별도 판정
+                val charactersRestorable = db.universeDao().getAllUniversesList().any { u ->
+                    findSheetForUniverse(workbook, u.name, RESERVED_SHEET_NAMES)?.getRow(0)
+                        ?.let { isValidHeader(it, "이름") } == true
+                } || workbook.getSheet(UNCLASSIFIED_SHEET_NAME)?.getRow(0)
+                    ?.let { isValidHeader(it, "이름") } == true
+
+                if (shouldDelete(effectiveOptions.relationshipChanges, relationshipChangeSpec())) db.characterRelationshipChangeDao().deleteAll()
+                if (shouldDelete(effectiveOptions.relationships, relationshipSpec())) db.characterRelationshipDao().deleteAll()
+                if (shouldDelete(effectiveOptions.factionMemberships, factionMembershipSpec())) db.factionMembershipDao().deleteAll()
+                if (shouldDelete(effectiveOptions.factionRelationships, factionRelationshipSpec())) db.factionRelationshipDao().deleteAll()
+                if (shouldDelete(effectiveOptions.factions, factionSpec())) db.factionDao().deleteAll()
+                if (shouldDelete(effectiveOptions.stateChanges, stateChangeSpec())) db.characterStateChangeDao().deleteAll()
+                if (shouldDelete(effectiveOptions.timeline, timelineSpec(emptyList()))) {
                     db.timelineDao().deleteAllCrossRefs()
                     db.timelineDao().deleteAllEvents()
                 }
-                if (effectiveOptions.characters) db.characterDao().deleteAll()
-                // 필드 정의는 여기서 deleteAll 하지 않는다 — 캐릭터·사건 필드값과 값 라이브러리가
-                // FK CASCADE로 전멸하는데, 정의 재삽입 시 id가 재발급되어 재가져오기로도 복구되지 않는다.
-                // 대신 가져오기 후 백업에 없는 정의만 정리한다(pruneUnmatchedFieldDefinitions) —
-                // 매칭된 정의는 id가 보존되어 종속 데이터가 살아남고, 덮어쓰기 의미(백업에 없는 정의 제거)도 유지된다.
-                // 값 라이브러리(필드 데이터)는 백업에 시트가 있을 때만 삭제 후 재구성한다(이미지 태그와 동일 보호).
-                if (effectiveOptions.fieldDefinitions) {
-                    val fvSpec = fieldValueLibrarySpec()
-                    val fvHeader = workbook.getSheet(fvSpec.sheetName)?.getRow(0)
-                    if (fvHeader != null && isValidHeader(fvHeader, fvSpec.firstColumnHeader)) {
-                        db.fieldValueEntryDao().deleteAll()
-                    } else {
-                        result.warnings.add("백업에 '${fvSpec.sheetName}' 시트가 없어 기존 필드 데이터 라이브러리를 삭제하지 않고 유지했습니다 (덮어쓰기 제외)")
+                if (effectiveOptions.characters) {
+                    if (charactersRestorable) db.characterDao().deleteAll()
+                    else result.warnings.add("백업에 캐릭터 시트가 없어 기존 캐릭터를 삭제하지 않고 유지했습니다 (덮어쓰기 제외)")
+                }
+                // 값 라이브러리(필드 데이터)는 시트가 있을 때만 비우고 재구성한다.
+                if (shouldDelete(effectiveOptions.fieldDefinitions, fieldValueLibrarySpec())) {
+                    db.fieldValueEntryDao().deleteAll()
+                }
+                if (shouldDelete(effectiveOptions.novels, novelSpec(emptyList()))) db.novelDao().deleteAll()
+                // 세계관 삭제는 FK CASCADE로 필드 정의 → 캐릭터·사건 필드값·값 라이브러리까지 연쇄 삭제한다.
+                // 따라서 '세계관' 시트만이 아니라 '필드 정의' 시트도 있어야 복원 가능하다.
+                // (이 연쇄 때문에 pruneUnmatchedFieldDefinitions의 id 보존은 세계관을 함께 덮어쓸 때 성립하지 않는다)
+                if (effectiveOptions.universes) {
+                    val uSpec = universeSpec()
+                    val fdSpec = fieldDefinitionSpec(emptyList())
+                    when {
+                        !canRestore(uSpec) ->
+                            result.warnings.add("백업에 '${uSpec.sheetName}' 시트가 없어 기존 세계관을 삭제하지 않고 유지했습니다 (덮어쓰기 제외)")
+                        !canRestore(fdSpec) ->
+                            result.warnings.add("백업에 '${fdSpec.sheetName}' 시트가 없어 세계관을 삭제하지 않았습니다 — 세계관을 지우면 모든 필드 정의와 캐릭터·사건 필드값이 함께 사라지는데 복원할 수 없습니다")
+                        else -> {
+                            db.universeDao().deleteAll()
+                            result.warnings.add("덮어쓰기: 세계관을 삭제하면서 필드 정의와 모든 필드값이 함께 삭제되었습니다 — 백업의 '필드 정의'·'필드 데이터'·캐릭터 시트로 재구성됩니다")
+                        }
                     }
                 }
-                if (effectiveOptions.novels) db.novelDao().deleteAll()
-                if (effectiveOptions.universes) db.universeDao().deleteAll()
-                if (effectiveOptions.nameBank) db.nameBankDao().deleteAll()
-                if (effectiveOptions.presetTemplates) db.userPresetTemplateDao().deleteAll()
-                if (effectiveOptions.searchPresets) db.searchPresetDao().deleteAll()
-                if (effectiveOptions.characterListPresets) db.characterListPresetDao().deleteAll()
+                if (shouldDelete(effectiveOptions.nameBank, nameBankSpec())) db.nameBankDao().deleteAll()
+                if (shouldDelete(effectiveOptions.presetTemplates, userPresetTemplateSpec())) db.userPresetTemplateDao().deleteAll()
+                if (shouldDelete(effectiveOptions.searchPresets, searchPresetSpec())) db.searchPresetDao().deleteAll()
+                if (shouldDelete(effectiveOptions.characterListPresets, characterListPresetSpec())) db.characterListPresetDao().deleteAll()
                 // 이미지 태그는 image_meta FK CASCADE로 함께 삭제 — 파일은 지우지 않는다(백업 재가져오기로 보호 복원).
-                // 단, 백업에 유효한 "이미지" 시트가 있을 때만: meta는 미배정 이미지의 유일한 삭제 보호막이라
-                // 구버전(시트 없는) 백업에서 삭제만 하고 복원하지 못하면 이후 고아 정리가 파일까지 지운다.
-                if (effectiveOptions.imageMeta) {
-                    val imgSpec = imageMetaSpec()
-                    val imgHeader = workbook.getSheet(imgSpec.sheetName)?.getRow(0)
-                    if (imgHeader != null && isValidHeader(imgHeader, imgSpec.firstColumnHeader)) {
-                        db.imageMetaDao().deleteAll()
-                    } else {
-                        result.warnings.add("백업에 '${imgSpec.sheetName}' 시트가 없어 기존 이미지 태그·링크를 삭제하지 않고 유지했습니다 (덮어쓰기 제외)")
-                    }
-                }
+                // meta는 미배정 이미지의 유일한 삭제 보호막이라 복원하지 못하면 이후 고아 정리가 파일까지 지운다.
+                if (shouldDelete(effectiveOptions.imageMeta, imageMetaSpec())) db.imageMetaDao().deleteAll()
             }
 
             // Matched ID 추적 초기화 (deleteNotInExcel 옵션용)
@@ -324,6 +355,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             matchedFactionMembershipIds.clear()
             matchedFactionRelationshipIds.clear()
             matchedFieldDefinitionIds.clear()
+            pendingAutoRelationMemberships.clear()
 
             // Phase 1: Schema definitions (universes, novels, field definitions)
             // imageCharacterId/imageNovelId는 null로 deferred 처리 (FK 안전)
@@ -359,6 +391,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             if (effectiveOptions.factionMemberships) importFactionMemberships(workbook, result, onProgress, totalRows)
             if (effectiveOptions.factionRelationships) importFactionRelationships(workbook, result, onProgress, totalRows)
             if (effectiveOptions.relationships) importRelationships(workbook, result, onProgress, totalRows)
+            // 관계 시트가 권위 — 시트가 기술하지 않은 co-member 쌍만 자동 관계로 채운다
+            drainPendingAutoRelations(result)
             if (effectiveOptions.relationshipChanges) importRelationshipChanges(workbook, result, onProgress, totalRows)
             if (effectiveOptions.nameBank) importNameBank(workbook, result, onProgress, totalRows)
 
@@ -625,7 +659,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val titleColIndex = cols[spec.firstColumnHeader] ?: cols["제목"] ?: 0
         val descColIndex = cols["설명"] ?: 1
         val codeColIndex = cols["코드"] ?: -1
-        val universeNameColIndex = cols["세계관"] ?: 2
+        // 실제 임포트와 동일하게 위치 폴백 제거 (미리보기가 이웃 열을 세계관명으로 오독하지 않게)
+        val universeNameColIndex = cols["세계관"] ?: -1
 
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0
         for (i in 1..sheet.lastRowNum) {
@@ -1563,7 +1598,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val cols = resolveHeaderColumns(headerRow)
         val titleColIndex = cols[spec.firstColumnHeader] ?: cols["제목"] ?: 0
         val descColIndex = cols["설명"] ?: 1
-        val universeNameColIndex = cols["세계관"] ?: 2
+        // 위치 폴백 금지 — 열을 지우거나 개명한 파일에서 이웃 열('설명' 등)을 세계관명으로 오독하고,
+        // 미해석 경고가 행마다 거짓으로 쏟아진다. 열 없음(-1)이면 F1-A대로 기존 소속을 유지한다.
+        val universeNameColIndex = cols["세계관"] ?: -1
         val codeColIndex = cols["코드"] ?: -1
         val universeCodeColIndex = cols["세계관코드"] ?: -1
         val orderColIndex = cols["정렬순서"] ?: -1
@@ -1841,10 +1878,18 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             result.warnings.add("백업에 '${spec.sheetName}' 시트가 없어 기존 필드 정의를 삭제하지 않고 유지했습니다 (덮어쓰기 제외)")
             return
         }
+        // 시트는 있는데 한 건도 매칭되지 않았다면 정상적인 "전부 삭제"가 아니라 행 단위 실패다
+        // (세계관 미해석·타입 오류 등). 이때 정리를 강행하면 행 오류가 전 필드값 소멸로 증폭된다.
+        if (matchedFieldDefinitionIds.isEmpty()) {
+            result.warnings.add("덮어쓰기: '${spec.sheetName}' 시트에서 처리된 필드 정의가 하나도 없어 기존 필드 정의를 삭제하지 않았습니다 — 위의 행 오류를 먼저 확인하세요")
+            return
+        }
         val stale = db.fieldDefinitionDao().getAllFieldsAllTypes().filter { it.id !in matchedFieldDefinitionIds }
         for (field in stale) db.fieldDefinitionDao().delete(field)
         if (stale.isNotEmpty()) {
-            result.warnings.add("덮어쓰기: 백업에 없는 필드 정의 ${stale.size}개를 관련 필드값과 함께 삭제했습니다")
+            val names = stale.take(5).joinToString(", ") { it.name }
+            val more = if (stale.size > 5) " 외 ${stale.size - 5}개" else ""
+            result.warnings.add("덮어쓰기: 백업에 없는 필드 정의 ${stale.size}개($names$more)를 관련 필드값과 함께 삭제했습니다 — 의도한 것이 아니면 삭제 전 백업으로 되돌리세요")
         }
     }
 
@@ -2776,6 +2821,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val allFactions = if (factionColIndex >= 0 || factionCodeColIndex >= 0) db.factionDao().getAllFactionsList() else emptyList()
         val factionsByCode = allFactions.associateBy { it.code }
         val entitySeen = mutableMapOf<Long, Int>()
+        // 코드 열이 없는 구버전 파일에서만: 새 관계를 만든 쌍 → (행번호, 표시명). 루프 종료 후 잔여 관계를 1회 집계한다.
+        val touchedPairs = mutableMapOf<Set<Long>, Pair<Int, String>>()
 
         for (i in 1..sheet.lastRowNum) {
             try {
@@ -2886,15 +2933,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     matchedRelationshipIds.add(existing.id)
                     result.updatedRelationships++
                 } else {
-                    // 코드 열이 없는 구버전 파일에서는 '관계 유형' 편집이 rename인지 신규인지 알 수 없다.
-                    // 추측하지 않고, 같은 쌍에 시트에 없는 기존 관계가 남았다는 사실을 고지한다.
-                    // (코드 열이 있는 최신 파일은 위 코드 매칭에서 rename으로 정확히 처리된다)
-                    val leftovers = pairRels.filter { it.id !in matchedRelationshipIds }
-                    if (relCodeColIndex < 0 && leftovers.isNotEmpty()) {
-                        result.warnings.add(
-                            "관계 행 $i: '${char1Name}'–'${char2Name}'에 '${relationshipType}' 관계를 새로 만들었습니다 — 같은 쌍의 기존 관계(${leftovers.joinToString("/") { it.relationshipType }})가 그대로 남아 있습니다. 관계 유형을 고쳐 쓴 것이라면 앱에서 남은 관계를 정리하세요"
-                        )
-                    }
+                    // 잔여 관계 고지는 행마다 하지 않는다 — 같은 쌍의 다른 행이 아직 처리되지 않았을 뿐인데
+                    // "정리하세요"라고 안내하면 사용자가 멀쩡한 데이터를 지운다. 루프 종료 후 1회 집계한다.
+                    if (relCodeColIndex < 0) touchedPairs.putIfAbsent(setOf(char1.id, char2.id), i to "${char1Name}–${char2Name}")
                     val newId = db.characterRelationshipDao().insert(CharacterRelationship(
                         characterId1 = char1.id, characterId2 = char2.id,
                         relationshipType = relationshipType, description = description,
@@ -2911,6 +2952,19 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             } catch (e: Exception) {
                 result.skippedRows++
                 result.errors.add("관계 행 $i: ${e.message}")
+            }
+        }
+        // 구버전 파일(코드 열 없음): 시트가 기술하지 않은 기존 관계가 남았는지 쌍 단위로 1회 고지한다.
+        // 행 순서와 무관하게 판정되므로 "같은 쌍의 다른 행"을 잔여로 오인하지 않는다.
+        for ((pair, info) in touchedPairs) {
+            val (rowNo, label) = info
+            val anyId = pair.firstOrNull() ?: continue
+            val leftovers = db.characterRelationshipDao().getRelationshipsForCharacterList(anyId)
+                .filter { setOf(it.characterId1, it.characterId2) == pair && it.id !in matchedRelationshipIds }
+            if (leftovers.isNotEmpty()) {
+                result.warnings.add(
+                    "관계(행 $rowNo 부근): '$label'에 시트에 없는 기존 관계(${leftovers.joinToString("/") { it.relationshipType }})가 남아 있습니다 — 관계 유형을 고쳐 쓴 것이라면 앱에서 정리하세요"
+                )
             }
         }
         reportProgress(onProgress, "관계", sheet.lastRowNum, totalRows)
@@ -3830,36 +3884,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         createdAt = createdAt
                     ))
 
-                    // If this is an active membership (no leaveType), trigger auto-relationships
+                    // 활성 소속이면 세력 자동 관계 생성 대상 — 단, **여기서 만들지 않고 큐에 넣는다**.
+                    // 세력을 관계 시트보다 먼저 가져오므로(세력코드 해석에 필요), 여기서 생성하면
+                    // 백업의 관계 시트를 읽기도 전에 관계가 생겨 ① 수동 관계가 세력 관계로 오염되고
+                    // ② 캐릭터1/2 순서가 (min,max)로 정규화돼 단방향 방향이 뒤집히며
+                    // ③ 세력의 자동관계유형이 바뀐 경우 관계가 중복 증식한다.
+                    // 관계 시트가 권위이므로 시트 처리가 끝난 뒤에 남은 쌍만 채운다.
                     if (leaveType == null && membershipId > 0) {
-                        val activeMembers = db.factionMembershipDao().getActiveMembershipsByFaction(faction.id)
-                        val otherCharIds = activeMembers
-                            .filter { it.characterId != character.id }
-                            .map { it.characterId }
-
-                        if (otherCharIds.isNotEmpty()) {
-                            val existingRels = db.characterRelationshipDao().getAllRelationships()
-                                .filter { it.factionId == faction.id }
-                            val existingPairs = existingRels.map { setOf(it.characterId1, it.characterId2) }.toSet()
-
-                            val newRelationships = otherCharIds.mapNotNull { otherCharId ->
-                                val pair = setOf(character.id, otherCharId)
-                                if (pair in existingPairs) return@mapNotNull null
-                                val (c1, c2) = if (character.id < otherCharId)
-                                    character.id to otherCharId else otherCharId to character.id
-                                CharacterRelationship(
-                                    characterId1 = c1,
-                                    characterId2 = c2,
-                                    relationshipType = faction.autoRelationType,
-                                    intensity = faction.autoRelationIntensity,
-                                    isBidirectional = true,
-                                    factionId = faction.id
-                                )
-                            }
-                            if (newRelationships.isNotEmpty()) {
-                                db.characterRelationshipDao().insertAll(newRelationships)
-                            }
-                        }
+                        pendingAutoRelationMemberships.add(faction.id to character.id)
                     }
 
                     matchedFactionMembershipIds.add(membershipId)
@@ -3871,6 +3903,55 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             }
         }
         reportProgress(onProgress, "세력 소속", sheet.lastRowNum, totalRows)
+    }
+
+    /**
+     * 세력 자동 관계 생성 — 관계 시트 처리가 끝난 뒤에 호출한다.
+     *
+     * 백업 파일의 '캐릭터 관계' 시트가 관계 그래프의 권위다. 따라서 시트가 이미 기술한 쌍은
+     * 유형이 무엇이든 건드리지 않고, 시트에 없는 co-member 쌍만 채운다. 이렇게 해야
+     * 무편집 왕복이 멱등이고(자동관계유형이 바뀌어도 중복 증식 없음), 인앱에서 지운 자동 관계가
+     * 복원 때 되살아나지 않으며, 수동 관계가 세력 관계로 승격되지 않는다.
+     */
+    private suspend fun drainPendingAutoRelations(result: ImportResult) {
+        if (pendingAutoRelationMemberships.isEmpty()) return
+        val byFaction = pendingAutoRelationMemberships.groupBy({ it.first }, { it.second })
+        var created = 0
+        for ((factionId, characterIds) in byFaction) {
+            val faction = db.factionDao().getById(factionId) ?: continue
+            val activeMemberIds = db.factionMembershipDao().getActiveMembershipsByFaction(factionId)
+                .map { it.characterId }
+            val newRelationships = mutableListOf<CharacterRelationship>()
+            val plannedPairs = mutableSetOf<Set<Long>>()
+            for (characterId in characterIds.distinct()) {
+                for (otherId in activeMemberIds) {
+                    if (otherId == characterId) continue
+                    val pair = setOf(characterId, otherId)
+                    if (!plannedPairs.add(pair)) continue
+                    val pairRels = db.characterRelationshipDao().getRelationshipsForCharacterList(characterId)
+                        .filter { setOf(it.characterId1, it.characterId2) == pair }
+                    // 이 세력의 자동 관계가 이미 있거나, 이번 가져오기의 관계 시트가 그 쌍을 기술했으면 건너뛴다
+                    if (pairRels.any { it.factionId == factionId || it.id in matchedRelationshipIds }) continue
+                    val (c1, c2) = if (characterId < otherId) characterId to otherId else otherId to characterId
+                    newRelationships.add(CharacterRelationship(
+                        characterId1 = c1,
+                        characterId2 = c2,
+                        relationshipType = faction.autoRelationType,
+                        intensity = faction.autoRelationIntensity,
+                        isBidirectional = true,
+                        factionId = factionId
+                    ))
+                }
+            }
+            if (newRelationships.isNotEmpty()) {
+                db.characterRelationshipDao().insertAll(newRelationships)
+                created += newRelationships.size
+            }
+        }
+        pendingAutoRelationMemberships.clear()
+        if (created > 0) {
+            result.warnings.add("세력 소속에 따라 자동 관계 ${created}건을 생성했습니다 (백업의 관계 시트가 기술한 쌍은 그대로 유지)")
+        }
     }
 
     // ── 세력 관계 (B-3) ──
