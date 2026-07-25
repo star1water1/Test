@@ -59,6 +59,7 @@ $MAIN/excel/EventFieldHeaders.kt
 $MAIN/excel/ExcelHeaderAliases.kt
 $MAIN/excel/SheetSpec.kt
 $MAIN/excel/ExcelCellValue.kt
+$MAIN/excel/CharacterFieldValueOverflow.kt
 $MAIN/util/FieldValueTokenizer.kt
 $MAIN/util/FieldValueResolver.kt
 $MAIN/data/model/CharacterFieldValue.kt
@@ -74,6 +75,7 @@ $TEST/excel/FieldValueSheetMapperTest.kt
 $TEST/excel/PortableFieldFiltersTest.kt
 $TEST/excel/EventFieldHeadersTest.kt
 $TEST/excel/CharacterHeaderIdentityTest.kt
+$TEST/excel/CharacterFieldValueOverflowTest.kt
 $TEST/excel/ExcelCellValueTest.kt
 $TEST/util/FieldValueTokenizerTest.kt
 $TEST/util/SortComparatorsTest.kt

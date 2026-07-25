@@ -527,6 +527,14 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "• 열을 통째로 지우면 해당 항목은 기존 값이 유지되고, 열은 두되 칸을 비우면 값이 지워집니다."),
             GuideLine("", styles.guideBody, "• 가져오기 결과에서 경고/오류 내역을 확인할 수 있습니다."),
             GuideLine("", styles.guideBody, ""),
+            GuideLine("'캐릭터 필드값' 시트", styles.guideSection, ""),
+            GuideLine("", styles.guideBody, "• 캐릭터 시트는 그 시트 세계관의 필드만 열로 만듭니다. 미분류 캐릭터의 필드값이나"),
+            GuideLine("", styles.guideBody, "  다른 세계관 필드를 가리키는 잔여 값은 이 시트가 **유일한 보관처**입니다."),
+            GuideLine("", styles.guideBody, "• 정체성은 캐릭터코드 + 세계관 + 필드키입니다 — 이 열들을 수정하면 값이 다른 곳에 붙습니다."),
+            GuideLine("", styles.guideBody, "• '값' 칸을 비우면 그 값이 삭제됩니다. 행을 지워도 값은 지워지지 않습니다(업서트 전용)."),
+            GuideLine("", styles.guideBody, "• 같은 항목이 캐릭터 시트에도 있으면 캐릭터 시트가 우선하며 이 시트의 행은 무시됩니다."),
+            GuideLine("", styles.guideBody, "• 캐릭터를 다시 작품에 배정하면 값이 캐릭터 시트로 옮겨가 이 시트에서 사라집니다(정상)."),
+            GuideLine("", styles.guideBody, ""),
             GuideLine("테두리 색상", styles.guideSection, ""),
             GuideLine("", styles.guideBody, "• 세계관/작품 시트에서 테두리색(HEX), 테두리두께를 설정할 수 있습니다."),
             GuideLine("", styles.guideBody, "• 작품의 테두리를 비워두면 세계관 색상을 상속합니다."),
@@ -723,6 +731,10 @@ class ExcelExporter(context: Context) {
         val allFieldValuesMap = db.characterFieldValueDao().getAllValuesList().groupBy { it.characterId }
         val allTagsMap = db.characterTagDao().getAllTagsList().groupBy { it.characterId }
 
+        // 캐릭터별로 '그 캐릭터의 시트가 열로 담은 필드 id' — 오버플로 판정의 단일 소스.
+        // 내보내기 로직이 직접 채우므로 두 곳이 드리프트할 수 없다.
+        val coveredFieldIds = HashMap<Long, Set<Long>>()
+
         for (universe in universes) {
             val fields = db.fieldDefinitionDao().getFieldsByUniverseList(universe.id)
             val universeNovels = novels.filter { it.universeId == universe.id }
@@ -738,13 +750,17 @@ class ExcelExporter(context: Context) {
                 char.id to (allTagsMap[char.id] ?: emptyList())
             }
 
+            val covered = fields.mapTo(HashSet()) { it.id }
+            universeChars.forEach { coveredFieldIds[it.id] = covered }
+
             exportCharacterSheet(
                 workbook, usedSheetNames, universe.name,
                 universeChars, fields, novelMap, fieldValues, tags
             )
         }
 
-        // 미분류 캐릭터
+        // 미분류 캐릭터 — 세계관이 없어 필드 열을 만들 수 없다.
+        // 그 필드값은 아래 '캐릭터 필드값' 시트가 (세계관, 필드키)로 담는다(무음 유실 차단).
         val unassignedChars = allCharacters.filter { char ->
             val novel = novelMap[char.novelId]
             novel?.universeId == null
@@ -753,11 +769,61 @@ class ExcelExporter(context: Context) {
             val tags = unassignedChars.associate { char ->
                 char.id to (allTagsMap[char.id] ?: emptyList())
             }
+            unassignedChars.forEach { coveredFieldIds[it.id] = emptySet() }
             exportCharacterSheet(
                 workbook, usedSheetNames, "미분류 캐릭터",
                 unassignedChars, emptyList(), novelMap, emptyMap(), tags
             )
         }
+
+        exportCharacterFieldValueOverflow(
+            workbook, usedSheetNames, allCharacters, allFieldValuesMap, coveredFieldIds
+        )
+    }
+
+    /**
+     * 캐릭터 시트가 열로 담지 못한 필드값 전부 — 미분류 캐릭터 + 타 세계관 잔여값.
+     * 이 시트가 없으면 해당 값은 내보내기에서 무음 폐기되고, 덮어쓰기 복원 시 CASCADE로 영구 소멸한다.
+     */
+    private suspend fun exportCharacterFieldValueOverflow(
+        workbook: XSSFWorkbook,
+        usedSheetNames: MutableSet<String>,
+        characters: List<Character>,
+        allFieldValuesMap: Map<Long, List<CharacterFieldValue>>,
+        coveredFieldIds: Map<Long, Set<Long>>
+    ) {
+        val universes = db.universeDao().getAllUniversesList()
+        val universeMap = universes.associateBy { it.id }
+        val fieldsById = db.fieldDefinitionDao().getAllFieldsAllTypes().associateBy { it.id }
+
+        // 정렬을 (캐릭터 displayOrder, 필드 displayOrder, 필드키)로 고정 — 무편집 왕복 멱등성의 근거
+        val rows = characters.sortedWith(compareBy({ it.displayOrder }, { it.id }))
+            .flatMap { ch ->
+                CharacterFieldValueOverflow
+                    .select(allFieldValuesMap[ch.id].orEmpty(), coveredFieldIds[ch.id] ?: emptySet(), fieldsById)
+                    .sortedWith(compareBy({ it.second.displayOrder }, { it.second.key }))
+                    .map { (value, fd) -> Triple(ch, fd, value.value) }
+            }
+        if (rows.isEmpty()) return  // 다른 시트와 동일 — 빈 시트는 만들지 않는다
+
+        val spec = characterFieldValueSpec(universes.map { it.name })
+        val sheetName = sanitizeSheetName(spec.sheetName, usedSheetNames)
+        val sheet = workbook.createSheet(sheetName)
+        writeHeaderRow(sheet, spec)
+
+        rows.forEachIndexed { index, (ch, fd, value) ->
+            val universe = universeMap[fd.universeId]
+            val row = sheet.createRow(index + 1)
+            row.createCell(0).setTextSafe(ch.code)
+            row.createCell(1).setTextSafe(ch.name)
+            row.createCell(2).setTextSafe(universe?.name ?: "")
+            row.createCell(3).setTextSafe(universe?.code ?: "")
+            row.createCell(4).setTextSafe(fd.key)
+            row.createCell(5).setTextSafe(fd.name)
+            row.createCell(6).setTextSafe(FieldValueSheetMapper.entityLabel(fd.entityType))
+            row.createCell(7).setTextSafe(value)
+        }
+        applySpecFormatting(sheet, spec, rows.size)
     }
 
     private fun exportCharacterSheet(

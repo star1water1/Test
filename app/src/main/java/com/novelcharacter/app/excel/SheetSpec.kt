@@ -104,7 +104,8 @@ val RESERVED_SHEET_NAMES = setOf(
     characterListPresetSpec().sheetName,
     appSettingsSpec().sheetName,
     imageMetaSpec().sheetName,
-    fieldValueLibrarySpec().sheetName
+    fieldValueLibrarySpec().sheetName,
+    characterFieldValueSpec().sheetName
 )
 
 /**
@@ -204,6 +205,31 @@ fun fieldValueLibrarySpec(universeNames: List<String> = emptyList()) = SheetSpec
         ColumnSpec("숨김", dropdownOptions = listOf("Y", "N"), width = 3000),
         ColumnSpec("사용횟수", readOnly = true, width = 3500),
         ColumnSpec("코드", readOnly = true, width = 4000)
+    )
+)
+
+/**
+ * 캐릭터 필드값 오버플로 — 캐릭터 시트가 **열로 표현할 수 없는** 필드값을 담는다.
+ *
+ * 캐릭터 시트는 그 시트의 세계관에 속한 필드만 열로 만든다. 따라서 (가) 미분류 캐릭터(세계관이
+ * 없어 필드 열 자체가 없다), (나) 자기 세계관 소속이 아닌 필드 정의를 참조하는 잔여 값은
+ * 캐릭터 시트로는 왕복할 수 없어 그대로 두면 무음 유실된다. 이 시트가 그 전부를 담는다.
+ *
+ * 정체성은 '필드 정의'·'필드 데이터' 시트와 **같은 (세계관, 필드키, 대상) 삼중키**를 쓴다 —
+ * 새 헤더 문법을 만들면 내보내기/가져오기가 반드시 드리프트한다.
+ * 첫 열이 "이름"이 아니어야 `findSheetForUniverse`가 이 시트를 캐릭터 시트로 오인하지 않는다.
+ */
+fun characterFieldValueSpec(universeNames: List<String> = emptyList()) = SheetSpec(
+    sheetName = "캐릭터 필드값",
+    columns = listOf(
+        ColumnSpec("캐릭터코드", required = true, readOnly = true, width = 4000),
+        ColumnSpec("캐릭터이름", readOnly = true, width = 6000),
+        ColumnSpec("세계관", required = true, dropdownOptions = universeNames.takeIf { it.isNotEmpty() }, width = 5000),
+        ColumnSpec("세계관코드", readOnly = true, width = 4000),
+        ColumnSpec("필드키", required = true, width = 5000),
+        ColumnSpec("필드명", readOnly = true, width = 5000),
+        ColumnSpec("대상", readOnly = true, dropdownOptions = listOf("캐릭터", "사건"), width = 3500),
+        ColumnSpec("값", width = 8000)
     )
 )
 
