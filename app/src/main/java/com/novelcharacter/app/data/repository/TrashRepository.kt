@@ -801,10 +801,13 @@ class TrashRepository(private val db: AppDatabase) {
         expired.filter { it.id !in createdSnapshotIds }.forEach { purgeSnapshot(it) }
         val overflow = trashDao.count() - TrashSnapshot.MAX_ITEMS
         if (overflow > 0) {
-            trashDao.getOldest(overflow + createdSnapshotIds.size)
-                .filter { it.id !in createdSnapshotIds }
-                .take(overflow)
-                .forEach { purgeSnapshot(it) }
+            val candidates = trashDao.getOldest(
+                TrashPruneSelector.fetchLimit(overflow, createdSnapshotIds.size)
+            )
+            val doomed = TrashPruneSelector
+                .selectOverflow(candidates.map { it.id }, createdSnapshotIds, overflow)
+                .toSet()
+            candidates.filter { it.id in doomed }.forEach { purgeSnapshot(it) }
         }
     }
 
