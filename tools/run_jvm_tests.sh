@@ -53,10 +53,13 @@ $MAIN/data/model/FieldDefinition.kt
 $MAIN/data/model/FieldValueEntry.kt
 $MAIN/data/model/DisplayFormat.kt
 $MAIN/data/model/SearchPreset.kt
+$MAIN/data/model/Faction.kt
 $MAIN/data/model/StructuredInputConfig.kt
 $MAIN/excel/FieldValueSheetMapper.kt
 $MAIN/excel/PortableFieldFilters.kt
 $MAIN/excel/PresetTemplateMatcher.kt
+$MAIN/excel/FactionRefResolver.kt
+$MAIN/excel/ExcelRefColumns.kt
 $MAIN/excel/EventFieldHeaders.kt
 $MAIN/excel/ExcelHeaderAliases.kt
 $MAIN/excel/SheetSpec.kt
@@ -80,6 +83,7 @@ $TEST/excel/CharacterHeaderIdentityTest.kt
 $TEST/excel/CharacterFieldValueOverflowTest.kt
 $TEST/excel/PresetTemplateMatcherTest.kt
 $TEST/excel/SheetValueConventionsTest.kt
+$TEST/excel/FactionRefResolverTest.kt
 $TEST/excel/ExcelCellValueTest.kt
 $TEST/util/FieldValueTokenizerTest.kt
 $TEST/util/SortComparatorsTest.kt

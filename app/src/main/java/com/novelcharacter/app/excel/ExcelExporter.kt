@@ -457,7 +457,7 @@ class ExcelExporter(context: Context) {
             GuideLine("색상 안내", styles.guideSection, ""),
             GuideLine("", styles.guideBody, "■ 파란 헤더 = 편집 가능한 일반 컬럼"),
             GuideLine("", styles.guideBody, "■ 빨간 헤더 = 필수 입력 컬럼 (비워두면 해당 행 무시됨)"),
-            GuideLine("", styles.guideBody, "■ 회색 헤더/셀 = 수정 불가 (앱 내부 데이터, 수정해도 무시됨)"),
+            GuideLine("", styles.guideBody, "■ 회색 헤더/셀 = 앱이 채우는 열 (그대로 두세요 — 예외는 아래 '코드 컬럼 안내')"),
             GuideLine("", styles.guideBody, ""),
             GuideLine("길이 제한", styles.guideSection, ""),
             GuideLine("", styles.guideBody, "• 셀당 최대 32,767자(엑셀 규격) — 초과분은 내보내기 시 잘려 기록됩니다."),
@@ -469,6 +469,9 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "• 새 행을 추가할 때는 코드를 비워두세요. 자동으로 생성됩니다."),
             GuideLine("", styles.guideBody, "• 코드가 없으면 이름 기반으로 매칭되지만, 경고가 표시됩니다."),
             GuideLine("", styles.guideBody, "• 참조 코드(작품코드, 세계관코드 등)도 동일한 규칙을 따릅니다."),
+            GuideLine("", styles.guideBody, "• 단, 참조 코드 열은 이름이 겹칠 때 직접 채워 대상을 확정할 수 있습니다 (코드가 이름보다 우선)."),
+            GuideLine("", styles.guideBody, "  예) 세계관이 다른 동명 세력이 둘 이상이면 '세력 소속'·'세력 관계' 시트의 세력코드 열에"),
+            GuideLine("", styles.guideBody, "  '세력' 시트의 코드 값을 붙여넣으세요. (그 행 자신의 '코드' 열은 여전히 수정하지 마세요 — 행의 정체성입니다)"),
             GuideLine("", styles.guideBody, "• 사건 연표/상태변화/관계 변화 시트에도 코드 열이 있습니다. 지우지 마세요 —"),
             GuideLine("", styles.guideBody, "  설명·연도·값을 편집해도 같은 항목으로 인식하는 기준입니다. (구버전 파일도 계속 가져올 수 있습니다)"),
             GuideLine("", styles.guideBody, ""),
@@ -483,12 +486,15 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "• 검색 프리셋: 이름으로 매칭. 정렬모드는 ${SearchPreset.SORT_MODES.joinToString("/")} 만 인식하며,"),
             GuideLine("", styles.guideBody, "  그 외 값은 경고 후 ${SearchPreset.SORT_RELEVANCE}로 처리됩니다. '기본값' Y는 앱 기본 제공 프리셋(수정·삭제 불가)을 뜻합니다"),
             GuideLine("", styles.guideBody, "• 목록 프리셋: 이름으로 매칭. 작품코드목록은 작품 시트의 코드 값을 쉼표로 나열"),
-            GuideLine("", styles.guideBody, "• 캐릭터 관계: 관계 유형은 드롭다운에서 선택. 세력·세력코드 열은 세력 자동 관계의 소속 표시"),
+            GuideLine("", styles.guideBody, "• 캐릭터 관계: 관계 유형은 드롭다운에서 선택. '세력' 열은 편집 가능합니다 — 비우면 자동 관계가 수동 관계로 풀리고,"),
+            GuideLine("", styles.guideBody, "  채우면 그 세력의 자동 관계가 되어 세력 삭제·멤버 탈퇴 시 함께 삭제될 수 있습니다 (대상은 '세력코드'가 우선)"),
             GuideLine("", styles.guideBody, "  관계의 '코드' 열을 지우지 마세요 — 코드가 있으면 관계 유형을 고쳐도 같은 관계로 인식합니다"),
             GuideLine("", styles.guideBody, "  (코드를 비우고 유형만 바꾸면 새 관계가 생기고 기존 관계가 그대로 남습니다)"),
             GuideLine("", styles.guideBody, "• 관계 변화: '관계코드'가 이 이력이 붙은 관계를 가리킵니다 ('부모관계유형'은 코드 없는 구버전 파일용 폴백,"),
             GuideLine("", styles.guideBody, "  같은 행의 '관계 유형'은 그 시점의 유형이라 서로 다른 값입니다)"),
             GuideLine("", styles.guideBody, "• 세력 소속: 같은 세력·캐릭터의 이력이 여러 건일 수 있어 '생성일'로 구분합니다 — 지우지 마세요"),
+            GuideLine("", styles.guideBody, "• 세력 이름은 세계관마다 겹칠 수 있습니다. 코드 우선, 코드가 없으면 캐릭터(세력 관계는 상대 세력)의"),
+            GuideLine("", styles.guideBody, "  세계관으로 좁혀 찾고, 그래도 동명이 남으면 그 행은 건너뛰고 세력코드 열을 채우라고 안내합니다"),
             GuideLine("", styles.guideBody, "• 이름 은행: 이름+성별로 매칭. 사용여부는 Y/N"),
             GuideLine("", styles.guideBody, ""),
             GuideLine("필드 정의 — 타입별 설정 가이드", styles.guideSection, ""),
@@ -1073,7 +1079,8 @@ class ExcelExporter(context: Context) {
 
         val allUniverses = db.universeDao().getAllUniversesList()
         val allCustomTypes = allUniverses.flatMap { it.getRelationshipTypes() }
-        val spec = relationshipSpec(allCustomTypes)
+        // 동명 세력은 드롭다운에서 구분되지 않으므로 접는다 — 대상 확정은 '세력코드' 열이 한다
+        val spec = relationshipSpec(allCustomTypes, allFactions.map { it.name }.distinct())
         val sheetName = sanitizeSheetName(spec.sheetName, usedSheetNames)
         val sheet = workbook.createSheet(sheetName)
         writeHeaderRow(sheet, spec)

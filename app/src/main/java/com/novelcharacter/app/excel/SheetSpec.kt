@@ -352,7 +352,10 @@ fun stateChangeSpec() = SheetSpec(
     )
 )
 
-fun relationshipSpec(customTypes: List<String> = emptyList()) = SheetSpec(
+fun relationshipSpec(
+    customTypes: List<String> = emptyList(),
+    factionNames: List<String> = emptyList()
+) = SheetSpec(
     sheetName = "캐릭터 관계",
     columns = listOf(
         ColumnSpec("캐릭터1", required = true, width = 6000),
@@ -364,7 +367,9 @@ fun relationshipSpec(customTypes: List<String> = emptyList()) = SheetSpec(
         ColumnSpec("표시순서", width = 3000),
         ColumnSpec("캐릭터1코드", readOnly = true, width = 4000),
         ColumnSpec("캐릭터2코드", readOnly = true, width = 4000),
-        ColumnSpec("세력", readOnly = true, width = 5000),
+        // 편집 가능한 참조 열 — 비우면 자동 관계가 수동 관계로 풀린다('세력 소속' 시트의 '세력'과 동형).
+        // 참조의 '유무'는 이 열이, '대상'은 아래 '세력코드'가 정한다(refColumnIntent).
+        ColumnSpec("세력", dropdownOptions = factionNames.takeIf { it.isNotEmpty() }, width = 5000),
         // 세력 자동 관계의 소속을 코드로도 싣는다 — 이름 충돌·기기 이전에도 연결이 유지되게(코드 우선 해석)
         ColumnSpec("세력코드", readOnly = true, width = 4000),
         ColumnSpec("생성일", readOnly = true, width = 5000),

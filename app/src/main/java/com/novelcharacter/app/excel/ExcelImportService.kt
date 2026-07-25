@@ -151,6 +151,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private val importAliasResolvers = HashMap<Long, com.novelcharacter.app.util.FieldValueResolver>()
 
     private val novelIdCache = mutableMapOf<Pair<String, Long?>, Long?>()
+    // 캐릭터의 세계관(작품→세계관) 캐시 — 세력 참조의 동명 해소 힌트용. 행마다 쿼리하지 않는다.
+    private val novelUniverseCache = mutableMapOf<Long, Long?>()
     private var truncatedFieldCount = 0
     private val truncatedDetails = mutableListOf<String>()
 
@@ -259,6 +261,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     ): ImportResult {
         val result = ImportResult()
         novelIdCache.clear()
+        novelUniverseCache.clear()
         pendingSyncCharacters.clear()
         importAliasResolvers.clear()
         processedRowsSoFar = 0
@@ -1159,6 +1162,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
         if (charNameColIndex < 0) return CategoryAnalysis("factionMemberships", "세력 소속", 0, 0, 0, 0, existingTotal)
 
+        // 루프 밖에서 1회 — 행마다 전체 세력을 다시 읽지 않는다
+        val factionIndex = FactionIndex(db.factionDao().getAllFactionsList())
         var inBackup = 0; var newCount = 0; var unchangedCount = 0
         for (i in 1..sheet.lastRowNum) {
             val row = sheet.getRow(i) ?: continue
@@ -1173,12 +1178,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val leaveTypeRaw = if (leaveTypeColIndex >= 0) getCellString(row, leaveTypeColIndex) else ""
             val leaveType = when (leaveTypeRaw.trim()) { "순수제거", "removed" -> "removed"; "설정상탈퇴", "departed" -> "departed"; else -> null }
 
-            val faction = (if (factionCode.isNotBlank()) db.factionDao().getByCode(factionCode) else null)
-                ?: db.factionDao().getAllFactionsList().find { it.name == factionName }
-            if (faction == null) { continue }
+            // 캐릭터를 먼저 — 세력의 동명 해소 힌트가 된다(실제 임포트와 같은 순서)
             val character = (if (charCode.isNotBlank()) db.characterDao().getCharacterByCode(charCode) else null)
                 ?: db.characterDao().getCharacterByName(charName)
             if (character == null) { continue }
+            // NotFound·Ambiguous 모두 기존 null 분기와 동일하게 처리해 계수 의미를 보존한다
+            val faction = (factionIndex.resolve(factionName, factionCode, universeIdOfCharacter(character))
+                as? FactionLookupResult.Found)?.faction
+            if (faction == null) { continue }
 
             val existingMembership = db.factionMembershipDao().getActiveMembership(faction.id, character.id)
             if (existingMembership != null && leaveType == null) unchangedCount++ else newCount++
@@ -1203,7 +1210,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val faction2CodeColIndex = cols["세력2코드"] ?: -1
         if (faction2ColIndex < 0 || typeColIndex < 0) return CategoryAnalysis("factionRelationships", "세력 관계", 0, 0, 0, 0, existingTotal)
 
-        val allFactions = db.factionDao().getAllFactionsList()
+        val factionIndex = FactionIndex(db.factionDao().getAllFactionsList())
         val existingKeys = existingRels.flatMap {
             listOf(Triple(it.factionId1, it.factionId2, it.relationType), Triple(it.factionId2, it.factionId1, it.relationType))
         }.toSet()
@@ -1221,10 +1228,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
             val f1Code = if (faction1CodeColIndex >= 0) getCellString(row, faction1CodeColIndex) else ""
             val f2Code = if (faction2CodeColIndex >= 0) getCellString(row, faction2CodeColIndex) else ""
-            val f1 = (if (f1Code.isNotBlank()) allFactions.find { it.code == f1Code } else null)
-                ?: allFactions.find { it.name == f1Name }
-            val f2 = (if (f2Code.isNotBlank()) allFactions.find { it.code == f2Code } else null)
-                ?: allFactions.find { it.name == f2Name }
+            // 실제 임포트와 같은 해석 — 상대 세력을 힌트로 동명을 좁힌다.
+            // Ambiguous는 기존 null 분기와 동일하게 처리해 계수 의미를 보존한다.
+            val (pr1, pr2) = resolveFactionPair(factionIndex, f1Name, f1Code, f2Name, f2Code)
+            val f1 = (pr1 as? FactionLookupResult.Found)?.faction
+            val f2 = (pr2 as? FactionLookupResult.Found)?.faction
             if (f1 == null || f2 == null) { newCount++; continue }
             if (Triple(f1.id, f2.id, relType) in existingKeys) updateCount++ else newCount++
         }
@@ -3046,8 +3054,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 관계 자체의 안정 식별자 — 있으면 '관계 유형'을 고쳐도 같은 관계로 인식한다
         val relCodeColIndex = cols["코드"] ?: -1
 
-        val allFactions = if (factionColIndex >= 0 || factionCodeColIndex >= 0) db.factionDao().getAllFactionsList() else emptyList()
-        val factionsByCode = allFactions.associateBy { it.code }
+        // 세력 참조 해석은 FactionIndex(단일 소스)로 — 전 세계관 first-match 금지
+        val factionRefUsed = factionColIndex >= 0 || factionCodeColIndex >= 0
+        val factionIndex = FactionIndex(if (factionRefUsed) db.factionDao().getAllFactionsList() else emptyList())
+        val universeNames = if (factionRefUsed) db.universeDao().getAllUniversesList().associate { it.id to it.name } else emptyMap()
+        // 수동 관계 → 세력 자동 관계로 승격된 행. 루프 종료 후 1회 고지한다(행마다 경고하면 잡음).
+        val factionAttachedRows = mutableListOf<Int>()
         val entitySeen = mutableMapOf<Long, Int>()
         // 코드 열이 없는 구버전 파일에서만: 새 관계를 만든 쌍 → (행번호, 표시명). 루프 종료 후 잔여 관계를 1회 집계한다.
         val touchedPairs = mutableMapOf<Set<Long>, Pair<Int, String>>()
@@ -3076,16 +3088,6 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val char1Code = getCellCode(row, char1CodeColIndex, "관계 행 $i", result)
                 val char2Code = getCellCode(row, char2CodeColIndex, "관계 행 $i", result)
                 val createdAt = if (createdAtColIndex >= 0) parseNumber(getCellString(row, createdAtColIndex))?.toLong() ?: System.currentTimeMillis() else System.currentTimeMillis()
-                // 세력(자동 관계) 해석: 코드 우선 → 이름. 미해석은 무음 null 대신 경고 + 기존값 유지(변수 제어).
-                val factionName = if (factionColIndex >= 0) getCellString(row, factionColIndex) else ""
-                val factionCode = getCellCode(row, factionCodeColIndex, "관계 행 $i", result)
-                val factionRefProvided = factionName.isNotBlank() || factionCode.isNotBlank()
-                val factionId = (if (factionCode.isNotBlank()) factionsByCode[factionCode]?.id else null)
-                    ?: (if (factionName.isNotBlank()) allFactions.find { it.name == factionName }?.id else null)
-                if (factionRefProvided && factionId == null) {
-                    result.warnings.add("관계 행 $i: 세력 '${factionName.ifBlank { factionCode }}'을(를) 찾을 수 없음 — 기존 관계는 세력 연결 유지, 새 관계는 수동 관계로 생성 ('세력' 시트를 함께 가져오세요)")
-                }
-
                 val char1 = when (val r = findCharacterStrict(char1Name, char1Code)) {
                     is CharLookupResult.Found -> r.character
                     is CharLookupResult.Ambiguous -> {
@@ -3120,6 +3122,40 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     continue
                 }
 
+                // 세력(자동 관계) 참조 해석 — 참조 열 쌍 규약(refColumnIntent):
+                //  · 유무는 편집 가능한 '세력' 열이 결정(열 있음 + 빈칸 = 해제, 회색 '세력코드' 셀은 읽지 않음)
+                //  · 대상은 코드 우선 → 이름 폴백. 동명 세력은 캐릭터의 세계관으로 좁힌다.
+                // ※ 캐릭터 해석 뒤에 둔다 — 타이브레이커에 캐릭터의 세계관이 필요하다.
+                val factionName = if (factionColIndex >= 0) getCellString(row, factionColIndex) else ""
+                val factionCode = getCellCode(row, factionCodeColIndex, "관계 행 $i", result)
+                var factionIntent = refColumnIntent(factionColIndex >= 0, factionCodeColIndex >= 0, factionName, factionCode)
+                var resolvedFaction: Faction? = null
+                if (factionIntent == RefIntent.LOOKUP) {
+                    val hintUniverseId = universeIdOfCharacter(char1) ?: universeIdOfCharacter(char2)
+                    val unresolvedTail = " — 기존 관계는 세력 연결 유지, 새 관계는 수동 관계로 생성"
+                    when (val fr = factionIndex.resolve(factionName, factionCode, hintUniverseId)) {
+                        is FactionLookupResult.Found -> {
+                            warnFactionCodeFallback("관계 행 $i", factionCode, fr, factionName, result)
+                            warnFactionUniverseMismatch("관계 행 $i", fr.faction, hintUniverseId, "캐릭터 '${char1.name}'", universeNames, result)
+                            // 이름과 코드가 서로 다른 세력을 가리키면 코드를 따르고 교정 경로를 안내한다
+                            if (fr.matchedByCode && factionName.isNotBlank() && fr.faction.name != factionName) {
+                                result.warnings.add("관계 행 $i: '세력'('$factionName')과 '세력코드'가 가리키는 세력('${fr.faction.name}')이 달라 코드를 따랐습니다 — 다른 세력으로 바꾸려면 '세력코드' 칸도 함께 비우세요")
+                            }
+                            resolvedFaction = fr.faction
+                        }
+                        is FactionLookupResult.Ambiguous -> {
+                            // 모호를 '찾을 수 없음'으로 보고하면 사실과 다른 경고가 된다 — 사유를 정확히 밝힌다
+                            result.warnings.add(factionAmbiguityMessage("관계 행 $i", factionName, fr, "세력코드", universeNames::get) + unresolvedTail)
+                            factionIntent = RefIntent.KEEP
+                        }
+                        FactionLookupResult.NotFound -> {
+                            result.warnings.add("관계 행 $i: 세력 '${factionName.ifBlank { factionCode }}'을(를) 찾을 수 없음$unresolvedTail ('세력' 시트를 함께 가져오세요)")
+                            factionIntent = RefIntent.KEEP
+                        }
+                    }
+                }
+                val factionId = resolvedFaction?.id
+
                 val existingRels = db.characterRelationshipDao().getRelationshipsForCharacterList(char1.id)
                 val pairRels = existingRels.filter { rel ->
                     (rel.characterId1 == char1.id && rel.characterId2 == char2.id) ||
@@ -3145,6 +3181,15 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     entitySeen[existing.id] = i
                     // 빈칸=삭제 집계(변수 제어): 열이 있고 값이 비었는데 기존값이 있으면 초기화로 계수(세력 패턴과 일치)
                     if (descColIndex >= 0 && description == "" && existing.description.isNotBlank()) result.clearedFields++
+                    // 참조 열 쌍 규약: 열 없음·미해석 → 기존 유지 / 빈칸 → 해제 / 해석 성공 → 교체.
+                    // 설정만 받고 해제는 무시하던 비대칭을 없앤다(사용자가 명시적으로 비운 셀을 무음 폐기 금지).
+                    val effectiveFactionId = when (factionIntent) {
+                        RefIntent.KEEP -> existing.factionId
+                        RefIntent.CLEAR -> null
+                        RefIntent.LOOKUP -> factionId
+                    }
+                    if (existing.factionId != null && effectiveFactionId == null) result.clearedFields++
+                    if (existing.factionId == null && effectiveFactionId != null) factionAttachedRows.add(i)
                     db.characterRelationshipDao().update(existing.copy(
                         // 코드 매칭 시 유형은 편집 가능한 값 (자연키 매칭 시엔 동일값이라 무해)
                         relationshipType = relationshipType,
@@ -3152,8 +3197,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         intensity = if (intensityColIndex >= 0) intensity else existing.intensity,
                         isBidirectional = if (bidirectionalColIndex >= 0) isBidirectional else existing.isBidirectional,
                         displayOrder = displayOrder ?: existing.displayOrder,
-                        // 해석 성공 시에만 교체 — 열 없음·빈칸·미해석 참조는 기존 연결 유지
-                        factionId = factionId ?: existing.factionId,
+                        factionId = effectiveFactionId,
                         createdAt = if (createdAtColIndex >= 0) createdAt else existing.createdAt,
                         // 코드 없는 기존 행은 점진 백필 (기존 코드는 절대 덮어쓰지 않음 — 외부 참조 보호)
                         code = existing.code ?: relCode.takeIf { it.isNotBlank() } ?: generateEntityCode()
@@ -3194,6 +3238,17 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     "관계(행 $rowNo 부근): '$label'에 시트에 없는 기존 관계(${leftovers.joinToString("/") { it.relationshipType }})가 남아 있습니다 — 관계 유형을 고쳐 쓴 것이라면 앱에서 정리하세요"
                 )
             }
+        }
+        // 세력 연결 부여는 관계의 수명을 바꾼다(세력 삭제·멤버 탈퇴 시 함께 삭제) — 1회 집계해 알린다.
+        // 무편집 왕복에서는 factionId가 이미 같아 계수되지 않으므로 거짓 경고가 나가지 않는다.
+        if (factionAttachedRows.isNotEmpty()) {
+            val sample = factionAttachedRows.take(5).joinToString(", ")
+            val more = if (factionAttachedRows.size > 5) " 외" else ""
+            result.warnings.add(
+                "관계 ${factionAttachedRows.size}건에 '세력' 열로 세력 연결을 부여했습니다(행 $sample$more) — " +
+                "세력 연결이 있는 관계는 자동 관계로 취급되어 그 세력을 삭제하거나 멤버가 탈퇴할 때 함께 삭제될 수 있습니다. " +
+                "수동 관계로 되돌리려면 '세력' 칸을 비우세요"
+            )
         }
         reportProgress(onProgress, "관계", sheet.lastRowNum, totalRows)
     }
@@ -4084,6 +4139,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             return
         }
 
+        // 행마다 전체 세력을 다시 읽지 않는다(대형 파일 대비) + 세력 참조 해석 단일 소스
+        val factionIndex = FactionIndex(db.factionDao().getAllFactionsList())
+        val universeNames = db.universeDao().getAllUniversesList().associate { it.id to it.name }
+
         for (i in 1..sheet.lastRowNum) {
             try {
                 val row = sheet.getRow(i) ?: continue
@@ -4095,21 +4154,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val factionCode = getCellCode(row, factionCodeColIndex, "세력 가입 행 $i", result)
                 val charCode = getCellCode(row, charCodeColIndex, "세력 가입 행 $i", result)
 
-                // Resolve faction
-                val faction: Faction? = if (factionCode.isNotBlank()) {
-                    db.factionDao().getByCode(factionCode)
-                } else {
-                    // Try all universes to find faction by name
-                    val allFactions = db.factionDao().getAllFactionsList()
-                    allFactions.find { it.name == factionName }
-                }
-                if (faction == null) {
-                    result.skippedRows++
-                    result.errors.add("세력 소속 행 $i: 세력 '$factionName'을(를) 찾을 수 없음")
-                    continue
-                }
-
                 // Resolve character (동명이인 모호성 감지 포함)
+                // ※ 세력보다 먼저 해석한다 — 동명 세력을 캐릭터의 세계관으로 좁혀야 하기 때문
                 val character: com.novelcharacter.app.data.model.Character = when (val r = findCharacterStrict(charName, charCode)) {
                     is CharLookupResult.Found -> r.character
                     is CharLookupResult.Ambiguous -> {
@@ -4120,6 +4166,28 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     is CharLookupResult.NotFound -> {
                         result.skippedRows++
                         result.errors.add("세력 소속 행 $i: 캐릭터 '$charName'을(를) 찾을 수 없음")
+                        continue
+                    }
+                }
+
+                // Resolve faction — 코드 우선 → 이름. 동명 세력은 캐릭터의 세계관으로 좁힌다.
+                // 전 세계관 first-match 는 B 캐릭터를 A 세력에 무경고로 소속시키고 그 소속으로
+                // 자동 관계까지 만들어 오염을 번지게 한다.
+                val hintUniverseId = universeIdOfCharacter(character)
+                val faction: Faction = when (val fr = factionIndex.resolve(factionName, factionCode, hintUniverseId)) {
+                    is FactionLookupResult.Found -> {
+                        warnFactionCodeFallback("세력 소속 행 $i", factionCode, fr, factionName, result)
+                        warnFactionUniverseMismatch("세력 소속 행 $i", fr.faction, hintUniverseId, "캐릭터 '${character.name}'", universeNames, result)
+                        fr.faction
+                    }
+                    is FactionLookupResult.Ambiguous -> {
+                        result.skippedRows++
+                        result.errors.add(factionAmbiguityMessage("세력 소속 행 $i", factionName, fr, "세력코드", universeNames::get))
+                        continue
+                    }
+                    FactionLookupResult.NotFound -> {
+                        result.skippedRows++
+                        result.errors.add("세력 소속 행 $i: 세력 '${factionName.ifBlank { factionCode }}'을(를) 찾을 수 없음")
                         continue
                     }
                 }
@@ -4279,14 +4347,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             return
         }
 
-        val allFactions = db.factionDao().getAllFactionsList()
+        val factionIndex = FactionIndex(db.factionDao().getAllFactionsList())
+        val universeNames = db.universeDao().getAllUniversesList().associate { it.id to it.name }
         val existingByKey = db.factionRelationshipDao().getAllRelationshipsList()
             .associateBy { Triple(it.factionId1, it.factionId2, it.relationType) }
             .toMutableMap()
-
-        fun resolveFaction(name: String, code: String): Faction? =
-            (if (code.isNotBlank()) allFactions.find { it.code == code } else null)
-                ?: allFactions.find { it.name == name }
 
         for (i in 1..sheet.lastRowNum) {
             try {
@@ -4304,17 +4369,42 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
                 val f1Code = getCellCode(row, faction1CodeColIndex, "세력 관계 행 $i", result)
                 val f2Code = getCellCode(row, faction2CodeColIndex, "세력 관계 행 $i", result)
-                val faction1 = resolveFaction(f1Name, f1Code)
-                if (faction1 == null) {
-                    result.skippedRows++
-                    result.errors.add("세력 관계 행 $i: 세력 '$f1Name'을(를) 찾을 수 없음")
-                    continue
+                // 이 시트에는 세계관 열이 없다 — 한쪽이 확정되면 그 세계관을 상대편 동명 해소의 힌트로 쓴다
+                // (인앱 세력 관계는 같은 세계관 안에서만 만들어진다)
+                val (r1, r2) = resolveFactionPair(factionIndex, f1Name, f1Code, f2Name, f2Code)
+                val faction1 = when (r1) {
+                    is FactionLookupResult.Found -> {
+                        warnFactionCodeFallback("세력 관계 행 $i", f1Code, r1, f1Name, result); r1.faction
+                    }
+                    is FactionLookupResult.Ambiguous -> {
+                        result.skippedRows++
+                        result.errors.add(factionAmbiguityMessage("세력 관계 행 $i", f1Name, r1, "세력1코드", universeNames::get))
+                        continue
+                    }
+                    FactionLookupResult.NotFound -> {
+                        result.skippedRows++
+                        result.errors.add("세력 관계 행 $i: 세력 '${f1Name.ifBlank { f1Code }}'을(를) 찾을 수 없음")
+                        continue
+                    }
                 }
-                val faction2 = resolveFaction(f2Name, f2Code)
-                if (faction2 == null) {
-                    result.skippedRows++
-                    result.errors.add("세력 관계 행 $i: 세력 '$f2Name'을(를) 찾을 수 없음")
-                    continue
+                val faction2 = when (r2) {
+                    is FactionLookupResult.Found -> {
+                        warnFactionCodeFallback("세력 관계 행 $i", f2Code, r2, f2Name, result); r2.faction
+                    }
+                    is FactionLookupResult.Ambiguous -> {
+                        result.skippedRows++
+                        result.errors.add(factionAmbiguityMessage("세력 관계 행 $i", f2Name, r2, "세력2코드", universeNames::get))
+                        continue
+                    }
+                    FactionLookupResult.NotFound -> {
+                        result.skippedRows++
+                        result.errors.add("세력 관계 행 $i: 세력 '${f2Name.ifBlank { f2Code }}'을(를) 찾을 수 없음")
+                        continue
+                    }
+                }
+                if (faction1.universeId != faction2.universeId) {
+                    // 앱은 같은 세계관 안에서만 세력 관계를 만든다 — 그대로 저장하되 조용히 넘기지 않는다
+                    result.warnings.add("세력 관계 행 $i: '${faction1.name}'(${universeNames[faction1.universeId] ?: "?"})과(와) '${faction2.name}'(${universeNames[faction2.universeId] ?: "?"})은 서로 다른 세계관의 세력입니다 — '세력1코드'·'세력2코드' 열로 확정하세요")
                 }
                 if (faction1.id == faction2.id) {
                     result.skippedRows++
@@ -4683,6 +4773,45 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 else CharLookupResult.Ambiguous(matches.size)
             }
         }
+    }
+
+    /**
+     * 캐릭터가 속한 세계관 id (작품→세계관). 미분류 캐릭터(작품 없음)는 null.
+     * 세력 참조가 동명일 때의 타이브레이커로만 쓰인다 — null 이어도 해석을 포기하지 않는다.
+     */
+    private suspend fun universeIdOfCharacter(character: Character): Long? {
+        val novelId = character.novelId ?: return null
+        if (novelUniverseCache.containsKey(novelId)) return novelUniverseCache[novelId]
+        val uid = db.novelDao().getNovelById(novelId)?.universeId
+        novelUniverseCache[novelId] = uid
+        return uid
+    }
+
+    /** 세력코드가 적혀 있는데 못 찾아 이름으로 폴백한 경우 고지 (importFactions 와 같은 규약) */
+    private fun warnFactionCodeFallback(
+        rowLabel: String, code: String, r: FactionLookupResult.Found, name: String, result: ImportResult
+    ) {
+        if (code.isNotBlank() && !r.matchedByCode) {
+            result.nameBasedMappings++
+            result.warnings.add("$rowLabel: 세력코드 '$code'를 찾지 못해 이름 '$name'으로 매칭했습니다 — '세력' 시트를 함께 가져왔는지 확인하세요")
+        }
+    }
+
+    /**
+     * 해석된 세력이 대상(캐릭터)의 세계관과 다르면 고지한다.
+     * 앱은 교차 세계관 소속을 무효로 취급하며(deleteMembershipsNotInUniverse), 세계관 이동 시
+     * 조용히 삭제한다 — 무음으로 만들지 않고 알린다. 행은 버리지 않는다(조작 마찰 최소화).
+     */
+    private fun warnFactionUniverseMismatch(
+        rowLabel: String, faction: Faction, hintUniverseId: Long?, subject: String,
+        universeNames: Map<Long, String>, result: ImportResult
+    ) {
+        if (hintUniverseId == null || faction.universeId == hintUniverseId) return
+        result.warnings.add(
+            "$rowLabel: 세력 '${faction.name}'(세계관 ${universeNames[faction.universeId] ?: "?"})이 " +
+            "$subject(세계관 ${universeNames[hintUniverseId] ?: "?"})와(과) 다른 세계관입니다 — " +
+            "그대로 저장하지만 세계관 이동 시 이 소속은 제거됩니다. '세력코드' 열로 확정하세요"
+        )
     }
 
     /**
