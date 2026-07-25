@@ -1232,12 +1232,19 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         if (sheet == null || sheet.lastRowNum < 1) return CategoryAnalysis("presetTemplates", "필드 템플릿", 0, 0, 0, 0, existingTotal)
 
         val headerRow = sheet.getRow(0) ?: return CategoryAnalysis("presetTemplates", "필드 템플릿", 0, 0, 0, 0, existingTotal)
+        if (!isValidHeader(headerRow, spec.firstColumnHeader)) return CategoryAnalysis("presetTemplates", "필드 템플릿", 0, 0, 0, 0, existingTotal)
         val cols = resolveHeaderColumns(headerRow)
         val nameColIndex = cols["이름"] ?: 0
-        val descColIndex = cols["설명"] ?: 1
-        val fieldsJsonColIndex = cols["설정(JSON)"] ?: 2
+        val descColIndex = cols["설명"] ?: -1
+        val fieldsJsonColIndex = cols["설정(JSON)"] ?: -1
+        val createdAtColIndex = cols["생성일"] ?: -1
 
-        val existingByName = existingTemplates.associateBy { it.name }
+        // 미리보기도 실제 임포트와 같은 매칭기를 태운다 — 이름 맵으로 세면 동명 템플릿이 접혀
+        // 실제로는 N건이 갱신되는데 1건으로 보고된다(사실과 다른 미리보기).
+        val matcher = PresetTemplateMatcher(
+            existingTemplates.map { PresetTemplateMatcher.Candidate(it.id, it.name, it.createdAt) }
+        )
+        val byId = existingTemplates.associateBy { it.id }
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0
 
         for (i in 1..sheet.lastRowNum) {
@@ -1246,11 +1253,15 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             if (name.isBlank()) continue
             inBackup++
 
-            val existing = existingByName[name]
+            val createdAt = if (createdAtColIndex >= 0) parseNumber(getCellString(row, createdAtColIndex))?.toLong() else null
+            val match = matcher.claim(name, createdAt, i)
+            if (match !is PresetTemplateMatcher.Match.Matched) { newCount++; continue }
+            val existing = byId[match.id]
             if (existing == null) { newCount++; continue }
-            val description = getCellString(row, descColIndex)
-            val fieldsJson = getCellString(row, fieldsJsonColIndex).ifBlank { "[]" }
-            if (existing.description != description || existing.fieldsJson != fieldsJson) updateCount++ else unchangedCount++
+            // 열이 없으면 임포트가 기존값을 유지하므로 비교도 기존값으로 (F1-A)
+            val description = if (descColIndex >= 0) getCellString(row, descColIndex) else existing.description
+            val fieldsJson = if (fieldsJsonColIndex >= 0) getCellString(row, fieldsJsonColIndex).ifBlank { "[]" } else existing.fieldsJson
+            if (existing.name != name || existing.description != description || existing.fieldsJson != fieldsJson) updateCount++ else unchangedCount++
         }
         reportProgress(onProgress, "필드 템플릿 분석", sheet.lastRowNum, totalRows)
         return CategoryAnalysis("presetTemplates", "필드 템플릿", inBackup, newCount, updateCount, unchangedCount, existingTotal)
@@ -1264,10 +1275,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         if (sheet == null || sheet.lastRowNum < 1) return CategoryAnalysis("searchPresets", "검색 프리셋", 0, 0, 0, 0, existingTotal)
 
         val headerRow = sheet.getRow(0) ?: return CategoryAnalysis("searchPresets", "검색 프리셋", 0, 0, 0, 0, existingTotal)
+        // 목록 프리셋 분석과 동형 — 헤더가 어긋난 시트를 억지로 읽어 사실과 다른 미리보기를 내지 않는다
+        if (!isValidHeader(headerRow, spec.firstColumnHeader)) return CategoryAnalysis("searchPresets", "검색 프리셋", 0, 0, 0, 0, existingTotal)
         val cols = resolveHeaderColumns(headerRow)
         val nameColIndex = cols["이름"] ?: 0
-        val queryColIndex = cols["검색어"] ?: 1
-        val filtersColIndex = cols["필터(JSON)"] ?: 2
+        val queryColIndex = cols["검색어"] ?: -1
+        val filtersColIndex = cols["필터(JSON)"] ?: -1
 
         val existingByName = existingPresets.associateBy { it.name }
         val (filterIdByKey, existingFieldIds) = loadFieldFilterResolution()
@@ -1281,10 +1294,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
             val existing = existingByName[name]
             if (existing == null) { newCount++; continue }
-            val query = getCellString(row, queryColIndex)
+            // 열이 없으면 임포트가 기존값을 유지하므로 비교도 기존값으로 — '변경 없음'이 사실이다(F1-A)
+            val query = if (queryColIndex >= 0) getCellString(row, queryColIndex) else existing.query
             // 실제 임포트와 동일하게 안정 식별자를 fieldId로 재해석한 뒤 비교 (왕복 보조 속성 탓에 전부 '변경'으로 집계되지 않게)
-            val filtersJson = PortableFieldFilters.resolve(
+            val filtersJson = if (filtersColIndex >= 0) PortableFieldFilters.resolve(
                 getCellString(row, filtersColIndex).ifBlank { "{}" }, filterIdByKey, existingFieldIds).json
+            else existing.filtersJson
             if (existing.query != query || existing.filtersJson != filtersJson) updateCount++ else unchangedCount++
         }
         reportProgress(onProgress, "검색 프리셋 분석", sheet.lastRowNum, totalRows)
@@ -1805,7 +1820,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val configColIndex = cols["설정(JSON)"] ?: 4
         val groupColIndex = cols["그룹"] ?: 5
         val orderColIndex = cols["순서"] ?: -1
-        val requiredColIndex = cols["필수여부"] ?: 7
+        // 위치 폴백 금지 — 열을 지우면 '세계관코드'를 필수여부로 오독한다
+        val requiredColIndex = cols["필수여부"] ?: -1
         val universeCodeColIndex = cols["세계관코드"] ?: -1
         // 대상(캐릭터/사건) — 열이 없는 구버전 파일은 캐릭터로 간주 (관대 수용)
         val entityTypeColIndex = cols["대상"] ?: -1
@@ -1855,7 +1871,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     val raw = getCellString(row, orderColIndex)
                     if (raw.isBlank()) null else parseNumber(raw)?.toInt()
                 } else null
-                val isRequired = parseBoolean(getCellString(row, requiredColIndex))
+                val isRequired = sheetBooleanOrKeep(requiredColIndex >= 0, getCellString(row, requiredColIndex))
                 val entityType = FieldValueSheetMapper.entityTypeOf(
                     if (entityTypeColIndex >= 0) getCellString(row, entityTypeColIndex) else null
                 )
@@ -1872,7 +1888,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     }
                     db.fieldDefinitionDao().update(existing.copy(
                         name = name, type = type, config = config,
-                        groupName = groupName, displayOrder = displayOrder ?: existing.displayOrder, isRequired = isRequired
+                        groupName = groupName, displayOrder = displayOrder ?: existing.displayOrder,
+                        isRequired = isRequired ?: existing.isRequired
                     ))
                     matchedFieldDefinitionIds.add(existing.id)
                     result.updatedFields++
@@ -1880,7 +1897,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     val newId = db.fieldDefinitionDao().insert(FieldDefinition(
                         universeId = universe.id, key = key, name = name, type = type,
                         config = config, groupName = groupName, displayOrder = displayOrder ?: i,
-                        isRequired = isRequired, entityType = entityType
+                        isRequired = isRequired ?: false, entityType = entityType
                     ))
                     entitySeen[newId] = i
                     matchedFieldDefinitionIds.add(newId)
@@ -3385,7 +3402,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val genderColIndex = cols["성별"] ?: 1
         val originColIndex = cols["출처"] ?: 2
         val notesColIndex = cols["메모"] ?: 3
-        val usedColIndex = cols["사용여부"] ?: 4
+        // 위치 폴백 금지 — 열을 지우면 '사용 캐릭터'를 사용여부로 오독한다
+        val usedColIndex = cols["사용여부"] ?: -1
         val usedByColIndex = cols["사용 캐릭터"] ?: 5
         val charCodeColIndex = cols["사용캐릭터코드"] ?: -1
         val createdAtColIndex = cols["생성일"] ?: -1
@@ -3404,7 +3422,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val gender = getCellString(row, genderColIndex)
                 val origin = getCellString(row, originColIndex)
                 val notes = getCellString(row, notesColIndex)
-                val isUsed = parseBoolean(getCellString(row, usedColIndex))
+                val usedFlag = sheetBooleanOrKeep(usedColIndex >= 0, getCellString(row, usedColIndex))
                 val usedByCharName = getCellString(row, usedByColIndex)
                 val usedByCharCode = getCellCode(row, charCodeColIndex, "이름 은행 행 $i", result)
                 val createdAt = if (createdAtColIndex >= 0) parseNumber(getCellString(row, createdAtColIndex))?.toLong() ?: System.currentTimeMillis() else System.currentTimeMillis()
@@ -3424,10 +3442,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 // 참조가 적혀 있는데 해석에 실패하면 '사용여부'까지 조용히 false로 뒤집힌다 —
                 // 사용 표시는 보존하고 연결만 비운 뒤 고지한다(무음 상태 변경 금지).
                 val usedRefProvided = usedByCharCode.isNotBlank() || usedByCharName.isNotBlank()
-                if (isUsed && usedRefProvided && usedByCharacterId == null) {
+                if (usedFlag == true && usedRefProvided && usedByCharacterId == null) {
                     result.warnings.add("이름 은행 행 $i: 사용 캐릭터 '${usedByCharName.ifBlank { usedByCharCode }}'을(를) 찾을 수 없어 연결 없이 '사용 중'으로 남겨둡니다")
                 }
-                val effectiveIsUsed = isUsed
 
                 val mapKey = "${name}\u0000${gender}"
                 val entryCode = getCellCode(row, codeColIndex, "이름 은행 행 $i", result)  // F4: 숫자 코드 방어
@@ -3439,7 +3456,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     db.nameBankDao().update(existing.copy(
                         name = name, gender = gender,  // 코드 매칭 시 이름/성별 편집 반영 (code는 불변 유지 — 정체성)
                         origin = origin, notes = notes,
-                        isUsed = effectiveIsUsed, usedByCharacterId = usedByCharacterId,
+                        isUsed = usedFlag ?: existing.isUsed, usedByCharacterId = usedByCharacterId,
                         createdAt = if (createdAtColIndex >= 0) createdAt else existing.createdAt
                     ))
                     matchedNameBankIds.add(existing.id)
@@ -3449,7 +3466,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     val newCode = if (entryCode.isNotBlank()) entryCode else generateEntityCode()
                     val newEntry = NameBankEntry(
                         name = name, gender = gender, origin = origin, notes = notes,
-                        isUsed = effectiveIsUsed, usedByCharacterId = usedByCharacterId,
+                        isUsed = usedFlag ?: false, usedByCharacterId = usedByCharacterId,
                         createdAt = createdAt, code = newCode
                     )
                     val newId = db.nameBankDao().insert(newEntry)
@@ -3475,15 +3492,22 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
         reportUnknownColumns(headerRow, spec, result)
         val cols = resolveHeaderColumns(headerRow)
+        // 첫 열('이름')은 checkHeaderOrReport가 보장하므로 0 폴백이 성립한다.
+        // 나머지는 위치 폴백 금지 — 열을 지우면 이웃 열을 오독한다.
         val nameColIndex = cols["이름"] ?: 0
-        val descColIndex = cols["설명"] ?: 1
-        val fieldsJsonColIndex = cols["설정(JSON)"] ?: 2
-        val builtInColIndex = cols["기본제공"] ?: 3
+        val descColIndex = cols["설명"] ?: -1
+        val fieldsJsonColIndex = cols["설정(JSON)"] ?: -1
+        val builtInColIndex = cols["기본제공"] ?: -1
         val createdAtColIndex = cols["생성일"] ?: -1
         val updatedAtColIndex = cols["수정일"] ?: -1
 
-        val existingTemplates = db.userPresetTemplateDao().getAllTemplatesList()
-        val existingByName = existingTemplates.associateBy { it.name }.toMutableMap()
+        // 동명 템플릿은 DB가 허용한다(name 유니크 인덱스 없음) — 이름 맵으로 접으면 편집이 유실된다.
+        // 생성일을 안정 식별자로 쓰는 claim 기반 매칭기로 대체한다.
+        // (검색·목록 프리셋은 name 유니크 인덱스가 정체성을 보장하므로 대상이 아니다)
+        val matcher = PresetTemplateMatcher(
+            db.userPresetTemplateDao().getAllTemplatesList()
+                .map { PresetTemplateMatcher.Candidate(it.id, it.name, it.createdAt) }
+        )
 
         for (i in 1..sheet.lastRowNum) {
             try {
@@ -3491,28 +3515,54 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val name = getCellString(row, nameColIndex)
                 if (name.isBlank()) continue
 
-                val description = getCellString(row, descColIndex)
-                val fieldsJson = getCellString(row, fieldsJsonColIndex).ifBlank { "[]" }
-                val isBuiltIn = parseBoolean(getCellString(row, builtInColIndex))
-                val createdAt = if (createdAtColIndex >= 0) parseNumber(getCellString(row, createdAtColIndex))?.toLong() ?: System.currentTimeMillis() else System.currentTimeMillis()
+                // F1-A: 열이 없으면 null(기존 값 유지), 열이 있고 빈칸이면 비움 의도로 존중
+                val description: String? = if (descColIndex >= 0) getCellString(row, descColIndex) else null
+                val fieldsJson: String? = if (fieldsJsonColIndex >= 0) getCellString(row, fieldsJsonColIndex).ifBlank { "[]" } else null
+                val isBuiltIn = sheetBooleanOrKeep(builtInColIndex >= 0, getCellString(row, builtInColIndex))
+
+                val createdAtRaw = if (createdAtColIndex >= 0) getCellString(row, createdAtColIndex) else ""
+                val createdAt: Long? = parseNumber(createdAtRaw)?.toLong()
+                if (createdAtRaw.isNotBlank() && createdAt == null) {
+                    result.warnings.add("필드 템플릿 행 $i: 생성일 '$createdAtRaw'을(를) 숫자로 읽을 수 없어 이름으로 매칭합니다 — '생성일' 열은 수정하지 마세요")
+                }
                 val updatedAt = if (updatedAtColIndex >= 0) parseNumber(getCellString(row, updatedAtColIndex))?.toLong() ?: System.currentTimeMillis() else System.currentTimeMillis()
 
-                val existing = existingByName[name]
-                if (existing != null) {
-                    db.userPresetTemplateDao().update(existing.copy(
-                        description = description, fieldsJson = fieldsJson,
-                        isBuiltIn = isBuiltIn, updatedAt = updatedAt
-                    ))
-                    result.updatedPresetTemplates++
-                } else {
-                    val newTemplate = UserPresetTemplate(
-                        name = name, description = description,
-                        fieldsJson = fieldsJson, isBuiltIn = isBuiltIn,
-                        createdAt = createdAt, updatedAt = updatedAt
-                    )
-                    val newId = db.userPresetTemplateDao().insert(newTemplate)
-                    existingByName[name] = newTemplate.copy(id = newId)
-                    result.newPresetTemplates++
+                when (val match = matcher.claim(name, createdAt, i)) {
+                    is PresetTemplateMatcher.Match.Matched -> {
+                        match.warnings.forEach { result.warnings.add("필드 템플릿 행 $i: $it") }
+                        if (match.nameBased) result.nameBasedMappings++
+                        val existing = db.userPresetTemplateDao().getTemplateById(match.id)
+                        if (existing == null) {
+                            // 이론상 도달 불가(같은 트랜잭션 안) — 무음 스킵 금지 차원의 방어
+                            result.skippedRows++
+                            result.errors.add("필드 템플릿 행 $i: 템플릿(id=${match.id})을 다시 읽지 못해 건너뛰었습니다")
+                        } else {
+                            // createdAt은 이 시트의 정체성이라 파일 값으로 덮지 않는다(코드 열과 동일 취급)
+                            db.userPresetTemplateDao().update(existing.copy(
+                                name = name,                                   // 생성일 매칭이면 rename 반영
+                                description = description ?: existing.description,
+                                fieldsJson = fieldsJson ?: existing.fieldsJson,
+                                isBuiltIn = isBuiltIn ?: existing.isBuiltIn,
+                                updatedAt = updatedAt
+                            ))
+                            result.updatedPresetTemplates++
+                        }
+                    }
+                    is PresetTemplateMatcher.Match.New -> {
+                        match.warnings.forEach { result.warnings.add("필드 템플릿 행 $i: $it") }
+                        // 신규는 엔티티 기본값 (갱신=F1-A, 신규=기본값 분리 규약)
+                        val newTemplate = UserPresetTemplate(
+                            name = name,
+                            description = description ?: "",
+                            fieldsJson = fieldsJson ?: "[]",
+                            isBuiltIn = isBuiltIn ?: false,
+                            createdAt = createdAt ?: System.currentTimeMillis(),
+                            updatedAt = updatedAt
+                        )
+                        val newId = db.userPresetTemplateDao().insert(newTemplate)
+                        matcher.register(newId, newTemplate.name, newTemplate.createdAt, i)
+                        result.newPresetTemplates++
+                    }
                 }
             } catch (e: Exception) {
                 result.skippedRows++
@@ -3542,13 +3592,17 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
         reportUnknownColumns(headerRow, spec, result)
         val cols = resolveHeaderColumns(headerRow)
+        // 첫 열만 checkHeaderOrReport가 보증한다. 선택 열의 위치 폴백은 열 삭제 시 이웃을 오독한다.
         val nameColIndex = cols["이름"] ?: 0
-        val queryColIndex = cols["검색어"] ?: 1
-        val filtersColIndex = cols["필터(JSON)"] ?: 2
-        val sortModeColIndex = cols["정렬모드"] ?: 3
-        val isDefaultColIndex = cols["기본값"] ?: 4
+        val queryColIndex = cols["검색어"] ?: -1
+        val filtersColIndex = cols["필터(JSON)"] ?: -1
+        val sortModeColIndex = cols["정렬모드"] ?: -1
+        val isDefaultColIndex = cols["기본값"] ?: -1
         val createdAtColIndex = cols["생성일"] ?: -1
         val updatedAtColIndex = cols["수정일"] ?: -1
+
+        // 목록 프리셋 validSortKinds와 동형 — 유효값의 단일 소스는 엔티티 companion
+        val validSortModes = SearchPreset.SORT_MODES
 
         val existingPresets = db.searchPresetDao().getAllPresetsList()
         val existingByName = existingPresets.associateBy { it.name }.toMutableMap()
@@ -3560,32 +3614,53 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val name = getCellString(row, nameColIndex)
                 if (name.isBlank()) continue
 
-                val query = getCellString(row, queryColIndex)
+                // 열 없음 = null = 기존값 유지(F1-A). 열 있음+빈칸 = 비움 의도.
+                val query = if (queryColIndex >= 0) getCellString(row, queryColIndex) else null
                 // 필드 필터의 fieldId를 안정 식별자(세계관코드+필드키)로 재해석 — 기기 이전·복원 후에도 필터가 살아있게
-                val filtersResolved = PortableFieldFilters.resolve(
-                    getCellString(row, filtersColIndex).ifBlank { "{}" }, filterIdByKey, existingFieldIds)
-                for (droppedField in filtersResolved.droppedNames) {
-                    result.warnings.add("검색 프리셋 행 $i ('$name'): 필드 '${droppedField}'을(를) 찾을 수 없어 필터에서 제외했습니다")
+                val filtersJson = if (filtersColIndex >= 0) {
+                    val filtersResolved = PortableFieldFilters.resolve(
+                        getCellString(row, filtersColIndex).ifBlank { "{}" }, filterIdByKey, existingFieldIds)
+                    for (droppedField in filtersResolved.droppedNames) {
+                        result.warnings.add("검색 프리셋 행 $i ('$name'): 필드 '${droppedField}'을(를) 찾을 수 없어 필터에서 제외했습니다")
+                    }
+                    filtersResolved.json
+                } else null
+                // 인식할 수 없는 정렬모드를 조용히 저장하면 적용 시 relevance로 동작해 사용자가 틀린 줄 모른다.
+                // 목록 프리셋의 정렬종류 검증과 동형으로 경고 + 교정 경로를 안내한다.
+                val sortModeRaw = if (sortModeColIndex >= 0) getCellString(row, sortModeColIndex).trim() else ""
+                val sortMode: String? = when {
+                    sortModeRaw.isBlank() -> null
+                    else -> matchDropdownValue(sortModeRaw, validSortModes) ?: run {
+                        result.warnings.add(
+                            "검색 프리셋 행 $i ('$name'): 정렬모드 '$sortModeRaw'을(를) 인식할 수 없어 " +
+                            "기본(${SearchPreset.SORT_RELEVANCE})으로 처리합니다 — ${validSortModes.joinToString("/")} 중 하나로 입력하세요"
+                        )
+                        SearchPreset.SORT_RELEVANCE
+                    }
                 }
-                val filtersJson = filtersResolved.json
-                val sortMode = getCellString(row, sortModeColIndex).ifBlank { SearchPreset.SORT_RELEVANCE }
-                val isDefault = parseBoolean(getCellString(row, isDefaultColIndex))
-                val createdAt = if (createdAtColIndex >= 0) parseNumber(getCellString(row, createdAtColIndex))?.toLong() ?: System.currentTimeMillis() else System.currentTimeMillis()
-                val updatedAt = if (updatedAtColIndex >= 0) parseNumber(getCellString(row, updatedAtColIndex))?.toLong() ?: System.currentTimeMillis() else System.currentTimeMillis()
+                val isDefault = if (isDefaultColIndex >= 0) parseBoolean(getCellString(row, isDefaultColIndex)) else null
+                val createdAt = if (createdAtColIndex >= 0) parseNumber(getCellString(row, createdAtColIndex))?.toLong() else null
+                val updatedAt = if (updatedAtColIndex >= 0) parseNumber(getCellString(row, updatedAtColIndex))?.toLong() else null
 
                 val existing = existingByName[name]
                 if (existing != null) {
                     db.searchPresetDao().update(existing.copy(
-                        query = query, filtersJson = filtersJson,
-                        sortMode = sortMode, isDefault = isDefault,
-                        updatedAt = updatedAt
+                        query = query ?: existing.query,
+                        filtersJson = filtersJson ?: existing.filtersJson,
+                        sortMode = sortMode ?: existing.sortMode,
+                        isDefault = isDefault ?: existing.isDefault,
+                        updatedAt = updatedAt ?: System.currentTimeMillis()
                     ))
                     result.updatedSearchPresets++
                 } else {
                     val newPreset = SearchPreset(
-                        name = name, query = query, filtersJson = filtersJson,
-                        sortMode = sortMode, isDefault = isDefault,
-                        createdAt = createdAt, updatedAt = updatedAt
+                        name = name,
+                        query = query ?: "",
+                        filtersJson = filtersJson ?: "{}",
+                        sortMode = sortMode ?: SearchPreset.SORT_RELEVANCE,
+                        isDefault = isDefault ?: false,
+                        createdAt = createdAt ?: System.currentTimeMillis(),
+                        updatedAt = updatedAt ?: System.currentTimeMillis()
                     )
                     val newId = db.searchPresetDao().insert(newPreset)
                     existingByName[name] = newPreset.copy(id = newId)
@@ -3672,10 +3747,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     resolved.json
                 } else null
                 val sortFieldKey = if (sortFieldKeyColIndex >= 0) getCellString(row, sortFieldKeyColIndex).ifBlank { null } else null
-                // 빈칸 = null(기존값 유지/기본값) — parseBoolean은 빈칸을 false로 읽어 기존 true를 뒤집는다
-                val sortAscending = if (sortAscColIndex >= 0) parseBooleanOrNull(getCellString(row, sortAscColIndex)) else null
+                // 불리언 열 규약(전 시트 공통): null은 '열 없음'(기존값 유지)만을 뜻한다.
+                // 열이 있으면 빈칸도 해석 대상 — 빈칸 = N = 비움 의도(F1-A). 그래야 '기본값'을 비워 해제할 수 있다.
+                val sortAscending = sheetBooleanOrKeep(sortAscColIndex >= 0, getCellString(row, sortAscColIndex))
                 val bodySizePartIndex = if (bodyPartColIndex >= 0) parseNumber(getCellString(row, bodyPartColIndex))?.toInt() else null
-                val isDefault = if (isDefaultColIndex >= 0) parseBooleanOrNull(getCellString(row, isDefaultColIndex)) else null
+                val isDefault = sheetBooleanOrKeep(isDefaultColIndex >= 0, getCellString(row, isDefaultColIndex))
                 val createdAt = if (createdAtColIndex >= 0) parseNumber(getCellString(row, createdAtColIndex))?.toLong() else null
                 val updatedAt = if (updatedAtColIndex >= 0) parseNumber(getCellString(row, updatedAtColIndex))?.toLong() else null
 
@@ -4597,19 +4673,13 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     }
 
     /**
-     * Tolerant boolean parsing (Sprint C): Y/N, TRUE/FALSE, 1/0, yes/no
+     * 관대한 불리언 파싱 — 판정 규칙의 단일 소스는 [parseSheetBoolean](SheetSpec.kt)이다.
+     *
+     * **빈칸은 false(비움 의도)다.** 불리언 열에서 "열 없음"을 표현하려면 파서가 아니라 호출부에서
+     * `sheetBooleanOrKeep(colIndex >= 0, cell)` 형태로 구분한다 — 빈칸을 null로 접는 변형을 만들면
+     * 같은 이름의 드롭다운 열이 시트에 따라 반대로 동작한다(F1-A 단일 규약).
      */
-    private fun parseBoolean(value: String): Boolean {
-        // F4: 전각(Ｙ／１／Ｔ 등)→반각 정규화 후 판정 + T/F 단문자·참/아니오 수용 (관대한 가져오기)
-        return when (toHalfWidth(value.trim()).uppercase()) {
-            "Y", "YES", "TRUE", "T", "1", "O", "예", "참" -> true
-            else -> false
-        }
-    }
-
-    /** F1-A 보조: 빈칸은 null(기존값 유지/기본값)로 구분하는 불리언 파서 — Y/N 열의 빈칸이 false로 오독되지 않게 한다. */
-    private fun parseBooleanOrNull(value: String): Boolean? =
-        if (value.isBlank()) null else parseBoolean(value)
+    private fun parseBoolean(value: String): Boolean = parseSheetBoolean(value)
 
     /**
      * F4: 코드 셀 방어 읽기. 코드는 항상 텍스트여야 하나, 외부 편집 중 엑셀이 숫자로 자동 변환하면

@@ -36,11 +36,12 @@ object FieldValueSheetMapper {
             .filter { it.isNotEmpty() }
             .distinct()
 
+    /**
+     * 불리언 판정은 [parseSheetBoolean](SheetSpec.kt) 단일 소스에 위임한다 — 시트마다 다른
+     * 토큰 집합을 두면 같은 Y/N 열이 시트에 따라 다르게 읽힌다. '숨김'만 이 시트 고유 토큰이다.
+     */
     fun parseHidden(flag: String?): Boolean =
-        when (flag?.trim()?.lowercase()) {
-            "y", "yes", "true", "예", "숨김", "1" -> true
-            else -> false
-        }
+        flag != null && (parseSheetBoolean(flag) || flag.trim() == "숨김")
 
     /** 시트에서 읽은 한 행의 값 필드들 */
     data class ImportedRow(

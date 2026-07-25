@@ -15,6 +15,7 @@ import com.novelcharacter.app.data.model.CharacterStateChange
 import com.novelcharacter.app.data.model.CharacterTag
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.Novel
+import com.novelcharacter.app.data.model.SearchPreset
 import com.novelcharacter.app.data.model.TimelineEvent
 import com.novelcharacter.app.util.OpResult
 import com.novelcharacter.app.util.ThemeHelper
@@ -477,6 +478,10 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "• 필드 정의: 세계관+필드키+대상으로 매칭. 타입은 드롭다운에서 선택. 대상=사건이면 사건 필드"),
             GuideLine("", styles.guideBody, "• 캐릭터 시트 (세계관 이름): 코드로 매칭. 코드 없을 시 이름+작품으로 매칭"),
             GuideLine("", styles.guideBody, "• 사건 연표: 코드로 매칭 (코드 없을 시 연도+설명). 관련 캐릭터는 쉼표로 구분. 세계관 열이 소속 기준"),
+            GuideLine("", styles.guideBody, "• 필드 템플릿: '생성일'로 매칭합니다 — 이름이 같은 템플릿이 여럿 있을 수 있어 지우지 마세요"),
+            GuideLine("", styles.guideBody, "  (생성일이 남아 있으면 이름만 바꿔도 같은 템플릿으로 인식합니다)"),
+            GuideLine("", styles.guideBody, "• 검색 프리셋: 이름으로 매칭. 정렬모드는 ${SearchPreset.SORT_MODES.joinToString("/")} 만 인식하며,"),
+            GuideLine("", styles.guideBody, "  그 외 값은 경고 후 ${SearchPreset.SORT_RELEVANCE}로 처리됩니다. '기본값' Y는 앱 기본 제공 프리셋(수정·삭제 불가)을 뜻합니다"),
             GuideLine("", styles.guideBody, "• 목록 프리셋: 이름으로 매칭. 작품코드목록은 작품 시트의 코드 값을 쉼표로 나열"),
             GuideLine("", styles.guideBody, "• 캐릭터 관계: 관계 유형은 드롭다운에서 선택. 세력·세력코드 열은 세력 자동 관계의 소속 표시"),
             GuideLine("", styles.guideBody, "  관계의 '코드' 열을 지우지 마세요 — 코드가 있으면 관계 유형을 고쳐도 같은 관계로 인식합니다"),

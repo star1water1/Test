@@ -1,6 +1,7 @@
 package com.novelcharacter.app.excel
 
 import com.novelcharacter.app.data.model.FieldDefinition
+import com.novelcharacter.app.data.model.SearchPreset
 import com.novelcharacter.app.data.model.Universe
 import org.apache.poi.ss.usermodel.Row
 
@@ -122,6 +123,43 @@ fun toHalfWidth(value: String): String {
 /** Split a comma-separated string into a trimmed, non-blank list. 전각 쉼표(，)도 관대 수용 (F4). */
 fun splitCsv(value: String): List<String> =
     toHalfWidth(value).split(",").map { it.trim() }.filter { it.isNotBlank() }
+
+/**
+ * 드롭다운(허용값) 열의 관대한 값 해석 (순수 함수 — 단위 테스트 대상).
+ *
+ * 표기 차이(앞뒤 공백·대소문자·전각 영숫자)만 흡수하고 **뜻이 다른 값은 해석하지 않는다**.
+ * 반환값은 항상 [allowed]의 표준 표기라 저장값이 파일 표기에 오염되지 않는다.
+ * 해석 실패는 null — 호출측이 경고 + 교정 경로를 안내한다(무음 폐기·무음 수용 모두 금지).
+ * 빈 문자열은 '미지정'이므로 호출 전에 걸러야 한다.
+ */
+fun matchDropdownValue(raw: String, allowed: Collection<String>): String? {
+    val normalized = toHalfWidth(raw).trim().lowercase()
+    if (normalized.isEmpty()) return null
+    return allowed.firstOrNull { toHalfWidth(it).trim().lowercase() == normalized }
+}
+
+/**
+ * 엑셀 불리언 열 파싱의 **단일 소스** (순수 함수 — 단위 테스트 대상).
+ * Y/N·TRUE/FALSE·1/0·yes/no·T/F·예/참을 수용하고 전각 입력(Ｙ／１ 등)을 정규화한다.
+ * **빈칸은 false다** — "열 있음 + 빈칸 = 비움 의도"(F1-A).
+ */
+fun parseSheetBoolean(value: String): Boolean =
+    when (toHalfWidth(value.trim()).uppercase()) {
+        "Y", "YES", "TRUE", "T", "1", "O", "예", "참" -> true
+        else -> false
+    }
+
+/**
+ * F1-A 불리언 열 규약의 단일 소스.
+ *
+ * @return null = **열 자체가 없음** → 호출측은 `?: existing.x`(갱신) / `?: 엔티티기본값`(신규).
+ *         비-null = 열이 있음 → 빈칸을 포함한 셀 값의 해석 결과.
+ *
+ * 빈칸을 null로 돌려주는 변형을 만들지 말 것 — 그 순간 '비움 의도'가 사라져
+ * 같은 이름의 드롭다운 열이 시트에 따라 반대로 동작한다.
+ */
+fun sheetBooleanOrKeep(columnPresent: Boolean, cellText: String): Boolean? =
+    if (!columnPresent) null else parseSheetBoolean(cellText)
 
 /**
  * XLSX 셀 텍스트 규격 한도. 내보내기 절단과 가져오기 저장 한도가 반드시 같은 값을 참조해야
@@ -419,7 +457,8 @@ fun searchPresetSpec() = SheetSpec(
         ColumnSpec("이름", required = true, width = 8000),
         ColumnSpec("검색어", width = 10000),
         ColumnSpec("필터(JSON)", width = 15000),
-        ColumnSpec("정렬모드", dropdownOptions = listOf("relevance", "name", "tag", "recent"), width = 5000),
+        // 드롭다운 목록과 가져오기 유효값 검증이 같은 상수를 본다 — 규칙을 양쪽에 두면 드리프트한다
+        ColumnSpec("정렬모드", dropdownOptions = SearchPreset.SORT_MODES, width = 5000),
         ColumnSpec("기본값", dropdownOptions = listOf("Y", "N"), width = 4000),
         ColumnSpec("생성일", readOnly = true, width = 6000),
         ColumnSpec("수정일", readOnly = true, width = 6000)
