@@ -111,6 +111,7 @@ class FieldFilterHelperTest {
         override suspend fun countByField(): List<FieldEntryCount> = unused()
         override suspend fun getByFieldAndValue(fieldDefId: Long, value: String): FieldValueEntry? = unused()
         override suspend fun getByCode(code: String): FieldValueEntry? = unused()
+        override suspend fun getByCodes(codes: List<String>): List<FieldValueEntry> = unused()
         override suspend fun insertAllIgnore(entries: List<FieldValueEntry>): List<Long> = unused()
         override suspend fun insert(entry: FieldValueEntry): Long = unused()
         override suspend fun update(entry: FieldValueEntry) = unused()

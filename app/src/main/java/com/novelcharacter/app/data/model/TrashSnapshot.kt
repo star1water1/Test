@@ -45,13 +45,25 @@ data class TrashSnapshot(
      * (=[restorePriority]가 가장 낮은 항목)의 타입·이름과 개수로 온전히 만들 수 있다.
      * 문구를 컬럼에 굳혀 두면 strings.xml과 어긋나고, 저장소 계층이 사용자 문구를 갖게 된다.
      */
-    val operationId: String? = null
+    val operationId: String? = null,
+    /**
+     * 이 작업이 **삭제**인가 **파괴적 편집 직전 백업**인가 ([KIND_DELETE]/[KIND_EDIT_BACKUP]).
+     *
+     * 둘을 구분하지 않으면 편집 백업 묶음이 "…삭제 · 항목 12개" 머리글과 '전체 복원' 버튼을
+     * 달고 나타난다. 그 캐릭터들은 지워진 적이 없으므로 복원은 되돌리기가 아니라 **복제**이고,
+     * 안내 문구도 거짓이 된다. 구버전 행은 null이며 그때는 종전대로 삭제로 본다
+     * (실제로 v43 이전에는 편집 백업도 개별 행이라 묶음이 만들어지지 않았다).
+     */
+    val operationKind: String? = null
 ) {
     /**
      * 정리·복원이 묶음으로 다루는 키. operationId가 없는 구버전 행은 자기 자신만의 작업이 된다.
      * **SQL 쪽 표현(`COALESCE(operationId, 'row:' || id)`)과 반드시 같은 문자열이어야 한다.**
      */
     val operationKey: String get() = operationId ?: legacyOperationKey(id)
+
+    /** 편집 직전 백업 묶음인가 — 묶음 머리글·전체 복원을 내주면 안 되는 종류다. */
+    val isEditBackup: Boolean get() = operationKind == KIND_EDIT_BACKUP
 
     companion object {
         const val TYPE_CHARACTER = "character"
@@ -60,8 +72,17 @@ data class TrashSnapshot(
         const val TYPE_FACTION = "faction"
         const val TYPE_EVENT = "event"
 
-        /** 구버전(작업 식별자 없는) 행의 작업 키. SQL의 `'row:' || id`와 같은 형식이다. */
-        fun legacyOperationKey(id: Long): String = "row:$id"
+        /** 삭제 백업 — 복원 = 부활. */
+        const val KIND_DELETE = "delete"
+
+        /** 파괴적 편집 직전 백업 — 원본이 살아 있으므로 복원 = 복제(B-2). */
+        const val KIND_EDIT_BACKUP = "edit_backup"
+
+        /** 구버전 행 작업 키의 접두사. SQL의 `'row:' || id`와 같은 형식이다. */
+        const val LEGACY_KEY_PREFIX = "row:"
+
+        /** 구버전(작업 식별자 없는) 행의 작업 키. */
+        fun legacyOperationKey(id: Long): String = LEGACY_KEY_PREFIX + id
 
         /**
          * 휴지통 최대 보관 **작업** 수 — 초과 시 오래된 작업부터 통째로 영구 삭제.

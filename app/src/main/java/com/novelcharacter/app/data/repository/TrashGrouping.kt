@@ -27,8 +27,23 @@ object TrashGrouping {
     ) {
         val root: TrashSnapshotSummary get() = items.first()
         val size: Int get() = items.size
-        /** 항목이 하나뿐인 묶음은 머리글이 같은 내용을 두 줄로 반복하게 되므로 만들지 않는다. */
-        val needsHeader: Boolean get() = items.size > 1
+
+        /**
+         * 파괴적 편집 직전 백업 묶음인가 (B-2). 이 묶음의 원본은 **살아 있다**.
+         * 하나라도 편집 백업이면 묶음 전체를 그렇게 다룬다 — 섞이는 경로는 없지만,
+         * 섞였을 때 안전한 쪽(복제 위험을 알리는 쪽)으로 기운다.
+         */
+        val isEditBackup: Boolean get() = items.any { it.isEditBackup }
+
+        /**
+         * 묶음 머리글(= '전체 복원'·'묶음 영구 삭제')을 내줄 것인가.
+         *
+         * 항목이 하나면 같은 내용을 두 줄로 반복하게 되므로 만들지 않는다.
+         * **편집 직전 백업도 만들지 않는다** — 지워진 적 없는 항목에 "이 삭제로 지워진 N개를
+         * 복원할까요?"라고 물으면 거짓이고, 누르면 원클릭으로 N개가 복제된다.
+         * 개별 행은 그대로 남아 항목마다 '편집 직전 백업' 경고를 거쳐 복원할 수 있다.
+         */
+        val needsHeader: Boolean get() = items.size > 1 && !isEditBackup
     }
 
     private val ITEM_ORDER = compareBy<TrashSnapshotSummary>(

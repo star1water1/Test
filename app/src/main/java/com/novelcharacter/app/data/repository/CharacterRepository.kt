@@ -360,7 +360,8 @@ class CharacterRepository(
         var agg = UniverseMoveCounts()
         // 정리는 커밋 이후에 한 번 — 종전에는 스냅샷만 남기고 정리를 부르지 않아 다음 삭제 작업까지
         // 한도를 넘긴 채 쌓였다 (B-15). 인스턴스를 공유해야 이 작업의 백업이 보호된다 (R-3).
-        val trash = TrashRepository(db)
+        // **편집 직전 백업**이다 — 캐릭터는 지워지지 않으므로 복원은 되돌리기가 아니라 복제다(B-2).
+        val trash = TrashRepository(db, TrashSnapshot.KIND_EDIT_BACKUP)
         db.withTransaction {
             val newUniverseId = newNovelId?.let { db.novelDao().getNovelById(it)?.universeId }
             if (newUniverseId != null) {
@@ -446,8 +447,8 @@ class CharacterRepository(
         trash: TrashRepository? = null
     ): UniverseMoveCounts {
         // 호출부가 인스턴스를 넘겼다면 정리도 그쪽 책임이다(작업 범위를 그쪽이 안다).
-        // 여기서 만든 경우에만 커밋 후 정리한다 (B-15).
-        val ownedTrash = if (trash == null) TrashRepository(db) else null
+        // 여기서 만든 경우에만 커밋 후 정리한다 (B-15). 편집 직전 백업이다(B-2).
+        val ownedTrash = if (trash == null) TrashRepository(db, TrashSnapshot.KIND_EDIT_BACKUP) else null
         val counts = db.withTransaction {
             val trashRepo = trash ?: ownedTrash!!
             val allDefsById: Map<Long, FieldDefinition> = db.fieldDefinitionDao().getAllFieldsAllTypes().associateBy { it.id }
@@ -490,7 +491,8 @@ class CharacterRepository(
         newUniverseId: Long
     ): UniverseMoveCounts {
         // 정리는 커밋 이후에 — 종전에는 스냅샷만 남기고 pruneIfNeeded를 부르지 않았다 (B-15).
-        val trash = TrashRepository(db)
+        // 편집 직전 백업이다 — 캐릭터는 지워지지 않는다(B-2).
+        val trash = TrashRepository(db, TrashSnapshot.KIND_EDIT_BACKUP)
         return db.withTransaction {
             val allDefsById: Map<Long, FieldDefinition> = db.fieldDefinitionDao().getAllFieldsAllTypes().associateBy { it.id }
             val newDefByKey = db.fieldDefinitionDao().getFieldsByUniverseList(newUniverseId).associateBy { it.key }

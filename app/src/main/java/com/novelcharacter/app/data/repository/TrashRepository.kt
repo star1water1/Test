@@ -5,6 +5,7 @@ import androidx.room.withTransaction
 import com.google.gson.Gson
 import com.novelcharacter.app.data.database.AppDatabase
 import com.novelcharacter.app.data.dao.TrashSnapshotImages
+import com.novelcharacter.app.data.dao.operationLookup
 import com.novelcharacter.app.data.dao.TrashSnapshotSummary
 import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.CharacterFieldValue
@@ -61,7 +62,18 @@ import java.io.File
  * 정리도 복원도 **작업 단위**로 한다(B-14). 인스턴스 하나가 곧 작업 하나이므로
  * **한 삭제는 반드시 하나의 인스턴스를 공유해야 한다**(R-3).
  */
-class TrashRepository(private val db: AppDatabase) {
+class TrashRepository(
+    private val db: AppDatabase,
+    /**
+     * 이 인스턴스가 만드는 스냅샷이 **삭제 백업**인지 **파괴적 편집 직전 백업**인지 (B-2).
+     *
+     * 편집 백업은 원본이 살아 있으므로 복원이 되돌리기가 아니라 복제다. 묶음 머리글과
+     * '전체 복원'을 내주면 "이 삭제로 지워진 12개 항목을 복원할까요?"라는 **거짓 안내**와
+     * 원클릭 복제가 된다 — 종전에는 행마다 독립이라 묶이지 않았던 것이 작업 단위 보관(B-14)
+     * 때문에 묶이게 됐다. 종류를 함께 적어 UI가 구분하게 한다.
+     */
+    private val operationKind: String = TrashSnapshot.KIND_DELETE
+) {
 
     private val trashDao = db.trashSnapshotDao()
     private val gson = Gson()
@@ -234,7 +246,13 @@ class TrashRepository(private val db: AppDatabase) {
         val charValues = ArrayList<CharacterFieldValue>()
         val eventValues = ArrayList<EventFieldValue>()
         for (chunk in fieldDefIds.chunked(IN_CLAUSE_CHUNK)) {
-            entries.addAll(db.fieldValueEntryDao().getForFields(chunk))
+            // **큐레이션된 엔트리만 담는다.** 자동 수확(AUTO, 손대지 않은) 엔트리는 실제
+            // 필드값에서 다시 만들어지므로(harvestUniverses) 담아 봐야 같은 것을 두 벌 갖는
+            // 것이고, 수만 건이면 payload 한 행이 CursorWindow 한도(2MB)를 넘겨 **그 백업을
+            // 영영 읽을 수 없게** 만든다 — 복원 가능하다고 안내한 뒤에.
+            // 사용자가 손댄 것(표시 라벨·별칭·카테고리·설명·숨김·MANUAL/AI/IMPORT 출처)만이
+            // 다시 만들 수 없는 데이터다.
+            db.fieldValueEntryDao().getForFields(chunk).filterTo(entries) { it.isCurated() }
             charValues.addAll(
                 db.characterFieldValueDao().getOrphanValuesForUniverseFields(chunk, universe.id)
             )
@@ -459,7 +477,8 @@ class TrashRepository(private val db: AppDatabase) {
                 entityName = entityName,
                 payload = gson.toJson(payload),
                 imagePaths = gson.toJson(imagePaths),
-                operationId = operationId
+                operationId = operationId,
+                operationKind = operationKind
             )
         )
         createdAny = true
@@ -654,6 +673,18 @@ class TrashRepository(private val db: AppDatabase) {
         // 복원 완료 — 스냅샷 제거 (이미지 파일은 복원된 엔티티가 소유)
         trashDao.deleteById(snapshotId)
 
+        // 세계관을 되살렸으면 자동 수확분 라이브러리를 다시 만든다 — 스냅샷은 큐레이션된
+        // 엔트리만 담으므로, 나머지는 실제 필드값에서 재생성되어야 원래 상태가 된다.
+        if (snap.entityType == TrashSnapshot.TYPE_UNIVERSE) {
+            runCatching {
+                val code = parse(snap, UniverseSnapshot::class.java)?.universe?.code
+                val restoredUniverseId = code?.let { db.universeDao().getUniverseByCode(it)?.id }
+                if (restoredUniverseId != null) {
+                    FieldValueLibraryRepository(db).harvestUniverses(setOf(restoredUniverseId))
+                }
+            }
+        }
+
         // 대표 이미지 연동은 대상이 아직 복원되지 않았을 수 있어 마지막에 해석한다.
         deferred?.let { link ->
             val lost = resolveDeferredImageLinks(listOf(link), null)
@@ -678,7 +709,8 @@ class TrashRepository(private val db: AppDatabase) {
      * 나머지는 되살아나고, 실패한 항목의 스냅샷은 그대로 남는다.
      */
     suspend fun restoreOperation(opKey: String): OperationRestoreResult = withContext(Dispatchers.IO) {
-        val items = trashDao.getByOperation(opKey)
+        val (opId, legacyId) = operationLookup(opKey)
+        val items = trashDao.getByOperation(opId, legacyId)
             .sortedWith(compareBy({ TrashSnapshot.restorePriority(it.entityType) }, { it.id }))
         if (items.isEmpty()) return@withContext OperationRestoreResult()
 
@@ -703,8 +735,16 @@ class TrashRepository(private val db: AppDatabase) {
 
         // 값 라이브러리 수확은 묶음이 끝난 뒤 세계관 단위로 한 번 — 캐릭터마다 부르면
         // 전 필드 정의와 라이브러리를 매번 다시 읽어 항목 수의 제곱이 된다.
-        if (harvestTargets.isNotEmpty()) {
-            runCatching { harvestRestoredCharacters(harvestTargets) }
+        // 복원된 세계관도 대상이다 — 스냅샷은 큐레이션된 라이브러리 엔트리만 담으므로
+        // 자동 수확분은 여기서 실제 필드값으로부터 다시 만들어진다.
+        val restoredUniverseIds = items
+            .filter { it.entityType == TrashSnapshot.TYPE_UNIVERSE }
+            .mapNotNull { item ->
+                parse(item, UniverseSnapshot::class.java)?.universe?.code
+                    ?.let { session.lookup(TrashSnapshot.TYPE_UNIVERSE, it) }
+            }.toSet()
+        if (harvestTargets.isNotEmpty() || restoredUniverseIds.isNotEmpty()) {
+            runCatching { harvestRestoredCharacters(harvestTargets, restoredUniverseIds) }
         }
 
         val lostImageLinks = resolveDeferredImageLinks(deferredLinks, session)
@@ -726,7 +766,8 @@ class TrashRepository(private val db: AppDatabase) {
      * 세계관 삭제에서는 UI 스레드에서 돌 경우 확인 다이얼로그가 뜨기 전에 화면이 멈춘다.
      */
     suspend fun previewOperation(opKey: String): List<RestorePreview> = withContext(Dispatchers.IO) {
-        val items = trashDao.getByOperation(opKey)
+        val (opId, legacyId) = operationLookup(opKey)
+        val items = trashDao.getByOperation(opId, legacyId)
             .sortedWith(compareBy({ TrashSnapshot.restorePriority(it.entityType) }, { it.id }))
         val codes = collectOperationCodes(items)
         items.mapNotNull { previewRestore(it.id, codes.pending, codes.peers) }
@@ -822,9 +863,9 @@ class TrashRepository(private val db: AppDatabase) {
      * 복원된 캐릭터들의 값 라이브러리 수확 — **세계관 단위로 묶어** 한 번씩만 부른다.
      * (`harvestForCharacter`를 캐릭터마다 부르면 전 필드 정의·라이브러리를 매번 다시 읽는다)
      */
-    private suspend fun harvestRestoredCharacters(characterIds: List<Long>) {
+    private suspend fun harvestRestoredCharacters(characterIds: List<Long>, extraUniverseIds: Set<Long>) {
         val library = FieldValueLibraryRepository(db)
-        val universeIds = HashSet<Long>()
+        val universeIds = HashSet<Long>(extraUniverseIds)
         for (chunk in characterIds.distinct().chunked(IN_CLAUSE_CHUNK)) {
             for (character in db.characterDao().getCharactersByIds(chunk)) {
                 val universeId = character.novelId?.let { db.novelDao().getNovelById(it)?.universeId }
@@ -1416,15 +1457,20 @@ class TrashRepository(private val db: AppDatabase) {
 
         var skippedEntries = 0
         val entries = ArrayList<FieldValueEntry>(plan.fieldValueEntries.size)
+        // 코드 충돌 확인은 **한 번에** — 엔트리마다 단건 질의하면 복원이 엔트리 수만큼 왕복한다.
+        val takenCodes = HashSet<String>()
+        val candidateCodes = plan.fieldValueEntries.map { it.code }.filter { it.isNotBlank() }.distinct()
+        for (chunk in candidateCodes.chunked(IN_CLAUSE_CHUNK)) {
+            db.fieldValueEntryDao().getByCodes(chunk).forEach { takenCodes.add(it.code) }
+        }
         for (entry in plan.fieldValueEntries) {
             val newDefId = newDefIdByOld[entry.fieldDefinitionId]
             if (newDefId == null) {
                 skippedEntries++
                 continue
             }
-            val safeCode = entry.code.takeIf { c ->
-                c.isNotBlank() && db.fieldValueEntryDao().getByCode(c) == null
-            } ?: generateEntityCode()
+            val safeCode = entry.code.takeIf { it.isNotBlank() && takenCodes.add(it) }
+                ?: generateEntityCode()
             entries.add(entry.copy(id = 0, fieldDefinitionId = newDefId, code = safeCode))
         }
         if (entries.isNotEmpty()) {
@@ -1432,10 +1478,19 @@ class TrashRepository(private val db: AppDatabase) {
         }
 
         var orphanLost = plan.losses.orphanFieldValues
+        // 새로 만든 필드 정의라 기존 값이 있을 수 없다 — 그래도 확인은 하되, 캐릭터 단위로
+        // **한 번에** 읽는다(값마다 단건 질의하면 고아 값 수만큼 왕복한다).
+        val existingByChar = HashMap<Long, Set<Long>>()
+        for (chunk in plan.orphanCharacterValues.map { it.first }.distinct().chunked(IN_CLAUSE_CHUNK)) {
+            for (v in db.characterFieldValueDao().getValuesForCharacters(chunk)) {
+                existingByChar[v.characterId] =
+                    existingByChar.getOrElse(v.characterId) { emptySet() } + v.fieldDefinitionId
+            }
+        }
         val orphanCharRows = ArrayList<CharacterFieldValue>(plan.orphanCharacterValues.size)
         for ((charId, oldDefId, value) in plan.orphanCharacterValues) {
             val newDefId = newDefIdByOld[oldDefId]
-            if (newDefId == null || db.characterFieldValueDao().getValue(charId, newDefId) != null) {
+            if (newDefId == null || newDefId in existingByChar.getOrElse(charId) { emptySet() }) {
                 orphanLost++
                 continue
             }
@@ -2320,7 +2375,8 @@ class TrashRepository(private val db: AppDatabase) {
 
     /** 작업 하나를 통째로 영구 삭제한다. @return 지운 항목 수 */
     suspend fun purgeOperation(opKey: String): Int = withContext(Dispatchers.IO) {
-        val items = trashDao.getImagesByOperation(opKey)
+        val (opId, legacyId) = operationLookup(opKey)
+        val items = trashDao.getImagesByOperation(opId, legacyId)
         purgeAll(items)
         items.size
     }
@@ -2404,6 +2460,18 @@ class TrashRepository(private val db: AppDatabase) {
     }
 
     private fun Long?.asList(): List<Long> = if (this == null) emptyList() else listOf(this)
+
+    /**
+     * 사용자가 손댄 값 라이브러리 엔트리인가 — 자동 수확분은 실제 필드값에서 다시 만들어지므로
+     * 스냅샷이 담을 이유가 없다(담으면 payload만 부풀어 백업을 읽을 수 없게 된다).
+     */
+    private fun FieldValueEntry.isCurated(): Boolean =
+        source != FieldValueEntry.SOURCE_AUTO ||
+            displayLabel.isNotBlank() ||
+            category.isNotBlank() ||
+            description.isNotBlank() ||
+            isHidden ||
+            aliases().isNotEmpty()
 
     private companion object {
         /** IN 절 변수 한도 회피용 청크 크기 (저장소 공통 관례와 동일) */

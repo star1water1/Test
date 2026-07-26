@@ -1,6 +1,7 @@
 package com.novelcharacter.app.data
 
 import com.novelcharacter.app.data.dao.TrashSnapshotSummary
+import com.novelcharacter.app.data.dao.operationLookup
 import com.novelcharacter.app.data.model.TrashSnapshot
 import com.novelcharacter.app.data.repository.TrashGrouping
 import org.junit.Assert.assertEquals
@@ -124,6 +125,71 @@ class TrashGroupingTest {
     @Test
     fun `빈 목록은 빈 결과다`() {
         assertTrue(TrashGrouping.group(emptyList()).isEmpty())
+    }
+
+    // ── 편집 직전 백업 (B-2) ─────────────────────────────────────────────
+
+    private fun editBackup(name: String, opId: String, id: Long = nextId++) = TrashSnapshotSummary(
+        id = id, entityType = TrashSnapshot.TYPE_CHARACTER, entityName = name,
+        deletedAt = 1000L, operationId = opId,
+        operationKind = TrashSnapshot.KIND_EDIT_BACKUP
+    )
+
+    @Test
+    fun `편집 직전 백업 묶음에는 머리글을 내주지 않는다`() {
+        // 필드값 라이브러리 항목 삭제 하나가 캐릭터 12명을 백업한다 — 그 캐릭터들은 **지워지지
+        // 않았다.** 머리글을 내주면 "이 삭제로 지워진 12개 항목을 복원할까요?"라는 거짓 안내와
+        // 원클릭 복제가 된다. 개별 행은 그대로 남아 항목마다 경고를 거친다.
+        val items = (1..12).map { editBackup("캐릭터$it", "op1") }
+        val group = TrashGrouping.group(items).single()
+        assertEquals(12, group.size)
+        assertTrue("편집 백업으로 인식돼야 한다", group.isEditBackup)
+        assertFalse("머리글을 내주면 원클릭 복제가 된다", group.needsHeader)
+    }
+
+    @Test
+    fun `삭제 묶음은 머리글을 내준다`() {
+        val items = listOf(
+            snap(TrashSnapshot.TYPE_UNIVERSE, "아스테리아", "op1"),
+            snap(TrashSnapshot.TYPE_CHARACTER, "가온", "op1")
+        )
+        val group = TrashGrouping.group(items).single()
+        assertFalse(group.isEditBackup)
+        assertTrue(group.needsHeader)
+    }
+
+    @Test
+    fun `종류가 섞이면 안전한 쪽으로 기운다`() {
+        // 섞이는 경로는 없지만, 섞였을 때 복제 위험을 알리는 쪽을 택한다.
+        val items = listOf(
+            snap(TrashSnapshot.TYPE_CHARACTER, "지워진 캐릭터", "op1"),
+            editBackup("살아 있는 캐릭터", "op1")
+        )
+        val group = TrashGrouping.group(items).single()
+        assertTrue(group.isEditBackup)
+        assertFalse(group.needsHeader)
+    }
+
+    @Test
+    fun `구버전 행은 종류가 없어도 삭제로 읽힌다`() {
+        // v43 이전에는 편집 백업도 개별 행이라 묶이지 않았다 — null이 곧 '삭제'다.
+        val legacy = snap(TrashSnapshot.TYPE_CHARACTER, "가온", null)
+        assertFalse(TrashGrouping.group(listOf(legacy)).single().isEditBackup)
+    }
+
+    // ── 작업 키 ↔ sargable 조회 인자 왕복 ────────────────────────────────
+
+    @Test
+    fun `작업 키를 조회 인자로 되쪼갠 결과가 원래 키와 짝이 맞는다`() {
+        // SQL은 `COALESCE(operationId,'row:'||id)`를 인덱스로 탈 수 없어 열 비교로 쪼갠다.
+        // 쪼갠 결과가 원래 키와 어긋나면 정리·복원이 엉뚱한 행을 잡는다.
+        assertEquals("OP-1" to -1L, operationLookup("OP-1"))
+        assertEquals(null to 7L, operationLookup("row:7"))
+        // 'row:'로 시작하지만 숫자가 아니면 구버전 키가 아니다 — 작업 id로 다뤄야 한다.
+        assertEquals("row:abc" to -1L, operationLookup("row:abc"))
+        // 왕복: 구버전 행의 키를 되쪼개면 그 행의 id가 나온다.
+        val legacy = snap(TrashSnapshot.TYPE_CHARACTER, "가온", null, id = 42)
+        assertEquals(null to 42L, operationLookup(legacy.operationKey))
     }
 
     @Test

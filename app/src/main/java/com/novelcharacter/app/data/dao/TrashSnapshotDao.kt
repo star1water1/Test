@@ -25,7 +25,7 @@ interface TrashSnapshotDao {
 
     /** 목록 표시용 — **payload를 읽지 않는다.** */
     @Query(
-        """SELECT id, entityType, entityName, deletedAt, operationId FROM trash_snapshots
+        """SELECT id, entityType, entityName, deletedAt, operationId, operationKind FROM trash_snapshots
            ORDER BY deletedAt DESC, id DESC"""
     )
     fun getAllSummaries(): LiveData<List<TrashSnapshotSummary>>
@@ -53,12 +53,21 @@ interface TrashSnapshotDao {
     suspend fun getOperationsOldestFirst(): List<TrashOperationSummary>
 
     /** 작업에 속한 스냅샷 전부 (일괄 복원용 — payload가 필요하다) */
+    /**
+     * @param opId 작업 id (구버전 행이면 null), @param legacyId 구버전 행의 id (아니면 -1).
+     *
+     * `COALESCE(operationId, 'row:'||id) = :key` 형태로 쓰면 **인덱스를 탈 수 없다**(비-sargable).
+     * 행 수 상한이 '작업 30건'으로 바뀌어 테이블이 수만 행이 될 수 있으므로,
+     * 삭제마다 도는 정리가 매번 전 테이블을 훑지 않도록 열 비교로 쪼갠다.
+     * 호출부는 [operationLookup]으로 두 인자를 만든다.
+     */
     @Query(
         """SELECT * FROM trash_snapshots
-           WHERE COALESCE(operationId, 'row:' || id) = :opKey
+           WHERE (:opId IS NOT NULL AND operationId = :opId)
+              OR (:opId IS NULL AND operationId IS NULL AND id = :legacyId)
            ORDER BY deletedAt ASC, id ASC"""
     )
-    suspend fun getByOperation(opKey: String): List<TrashSnapshot>
+    suspend fun getByOperation(opId: String?, legacyId: Long): List<TrashSnapshot>
 
     // ── 정리용 투영 (payload 제외) ───────────────────────────────────────────
 
@@ -67,9 +76,10 @@ interface TrashSnapshotDao {
 
     @Query(
         """SELECT id, imagePaths FROM trash_snapshots
-           WHERE COALESCE(operationId, 'row:' || id) = :opKey"""
+           WHERE (:opId IS NOT NULL AND operationId = :opId)
+              OR (:opId IS NULL AND operationId IS NULL AND id = :legacyId)"""
     )
-    suspend fun getImagesByOperation(opKey: String): List<TrashSnapshotImages>
+    suspend fun getImagesByOperation(opId: String?, legacyId: Long): List<TrashSnapshotImages>
 
     /** 보류 이미지 경로 전체 — 보호 집합 계산·저장소 리포트용. payload를 읽지 않는다. */
     @Query("SELECT id, imagePaths FROM trash_snapshots WHERE imagePaths != '' AND imagePaths != '[]'")
@@ -105,10 +115,26 @@ data class TrashSnapshotSummary(
     val entityType: String,
     val entityName: String,
     val deletedAt: Long,
-    val operationId: String?
+    val operationId: String?,
+    val operationKind: String? = null
 ) {
     /** [TrashSnapshot.operationKey]와 **같은 규칙**이어야 한다. */
     val operationKey: String get() = operationId ?: TrashSnapshot.legacyOperationKey(id)
+
+    val isEditBackup: Boolean get() = operationKind == TrashSnapshot.KIND_EDIT_BACKUP
+}
+
+/**
+ * 작업 키를 sargable 한 두 인자로 쪼갠다.
+ * `"row:<id>"`면 (null, id), 아니면 (opKey, -1). SQL 쪽 표현과 짝을 이룬다.
+ */
+fun operationLookup(opKey: String): Pair<String?, Long> {
+    val legacyId = opKey.removePrefix(TrashSnapshot.LEGACY_KEY_PREFIX).toLongOrNull()
+    return if (opKey.startsWith(TrashSnapshot.LEGACY_KEY_PREFIX) && legacyId != null) {
+        null to legacyId
+    } else {
+        opKey to -1L
+    }
 }
 
 /** 이미지 정리에 필요한 최소 열 — payload를 뺀 투영. */

@@ -61,6 +61,10 @@ interface FieldValueEntryDao {
     @Query("SELECT * FROM field_value_entries WHERE code = :code")
     suspend fun getByCode(code: String): FieldValueEntry?
 
+    /** 코드 일괄 조회 (휴지통 복원의 code 충돌 확인용 — B-1). 900개 단위로 청크할 것. */
+    @Query("SELECT * FROM field_value_entries WHERE code IN (:codes)")
+    suspend fun getByCodes(codes: List<String>): List<FieldValueEntry>
+
     /** 수확용 — 이미 있는 (필드, 값)은 무시. 반환값의 -1이 충돌 행. */
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertAllIgnore(entries: List<FieldValueEntry>): List<Long>

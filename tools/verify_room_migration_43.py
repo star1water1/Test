@@ -87,12 +87,12 @@ def build_v42(con, rows):
     con.commit()
 
 
-def run_migration(con, stmts, table="trash_snapshots", guarded_col="operationId"):
+def run_migration(con, stmts, table="trash_snapshots"):
     """Kotlin의 execSQL + 컬럼 존재 가드를 파이썬으로 그대로 재현."""
     have = {r[1] for r in con.execute(f"PRAGMA table_info(`{table}`)")}
     for sql in stmts:
-        if "ADD COLUMN" in sql and guarded_col in sql and guarded_col in have:
-            continue  # Kotlin의 hasOperationId 가드 재현
+        if "ADD COLUMN" in sql and any(c in sql for c in have):
+            continue  # Kotlin의 hasOperationId/hasOperationKind 가드 재현
         con.execute(sql)
     con.commit()
 
@@ -126,6 +126,7 @@ def main():
     stmts = extract_sql(block)
     check(len(stmts) >= 2, f"execSQL 문장 {len(stmts)}개 추출 (ADD COLUMN + CREATE INDEX)")
     check(any("ADD COLUMN" in s and "operationId" in s for s in stmts), "operationId 컬럼 추가문 존재")
+    check(any("ADD COLUMN" in s and "operationKind" in s for s in stmts), "operationKind 컬럼 추가문 존재")
     check(any("index_trash_snapshots_operationId" in s for s in stmts), "Room 명명 규약대로 인덱스 생성문 존재")
     check(all("DROP TABLE" not in s and "DELETE FROM" not in s for s in stmts),
           "파괴적 문장(DROP/DELETE) 없음")
@@ -133,17 +134,25 @@ def main():
     check("NOT NULL" not in add_col, "ADD COLUMN에 NOT NULL 없음 (엔티티가 String?)")
     check("DEFAULT" not in add_col, "ADD COLUMN에 DEFAULT 없음 (@ColumnInfo(defaultValue) 미사용)")
     check("hasOperationId" in block and "PRAGMA table_info" in block,
-          "컬럼 존재 가드가 있음 (중간 빌드를 거친 기기의 크래시 루프 방지)")
+          "operationId에 컬럼 존재 가드가 있음 (중간 빌드를 거친 기기의 크래시 루프 방지)")
+    check("hasOperationKind" in block, "operationKind에도 컬럼 존재 가드가 있음")
+    kind_col = next(s for s in stmts if "ADD COLUMN" in s and "operationKind" in s)
+    check("NOT NULL" not in kind_col and "DEFAULT" not in kind_col,
+          "operationKind도 NOT NULL/DEFAULT 없음 (엔티티가 String?)")
     check("version = 43" in src, "@Database(version = 43)로 상향됨")
     check("MIGRATION_42_43)" in src or "MIGRATION_42_43," in src, "addMigrations에 등록됨")
 
     print("\n[2] 엔티티 선언이 마이그레이션 결과와 같은 형태인가")
     check("val operationId: String? = null" in ent, "엔티티가 nullable operationId 선언")
+    check("val operationKind: String? = null" in ent, "엔티티가 nullable operationKind 선언")
     check('Index("operationId")' in ent, "엔티티에 operationId 인덱스 선언")
     check("val operationKey: String get() = operationId ?: legacyOperationKey(id)" in ent,
           "Kotlin 쪽 작업 키가 operationId 폴백 형태")
-    check('fun legacyOperationKey(id: Long): String = "row:$id"' in ent,
+    check('const val LEGACY_KEY_PREFIX = "row:"' in ent
+          and "fun legacyOperationKey(id: Long): String = LEGACY_KEY_PREFIX + id" in ent,
           "구버전 행의 작업 키가 'row:<id>' 형식")
+    check("operationLookup" in dao and 'removePrefix(TrashSnapshot.LEGACY_KEY_PREFIX)' in dao,
+          "sargable 조회가 같은 접두사로 키를 되쪼갠다 (SQL 표현과 왕복 일치)")
     check("COALESCE(operationId, 'row:' || id)" in dao,
           "DAO의 SQL 표현이 Kotlin 폴백과 같은 형식")
 
@@ -157,14 +166,21 @@ def main():
     after = list(con.execute(
         "SELECT id, entityType, entityName, payload, imagePaths, deletedAt FROM trash_snapshots ORDER BY id"))
     ops = [r[0] for r in con.execute("SELECT operationId FROM trash_snapshots ORDER BY id")]
+    kinds = [r[0] for r in con.execute("SELECT operationKind FROM trash_snapshots ORDER BY id")]
 
     check(before == after, "기존 열 데이터가 한 글자도 변하지 않음")
     check(all(o is None for o in ops),
           "기존 행의 operationId는 NULL로 남는다 (백필하지 않는다 — NULL이 이미 '독립 작업'이라는 올바른 의미다)")
+    check(all(k is None for k in kinds),
+          "기존 행의 operationKind도 NULL — v43 이전에는 편집 백업도 개별 행이라 묶이지 않았다")
 
     print("\n[4] 마이그레이션 후 스키마가 Room 기대와 일치하는가")
     cols, idx, fks = schema_of(con, "trash_snapshots")
     check("operationId" in cols, "operationId 열 존재")
+    check("operationKind" in cols, "operationKind 열 존재")
+    check(cols["operationKind"]["type"] == "TEXT" and cols["operationKind"]["notnull"] == 0
+          and cols["operationKind"]["default"] is None,
+          "operationKind: TEXT / notNull=false / DEFAULT 없음")
     check(cols["operationId"]["type"] == "TEXT", f"타입 affinity=TEXT (실제 {cols['operationId']['type']})")
     check(cols["operationId"]["notnull"] == 0, "notNull=false (엔티티 String? 와 일치)")
     check(cols["operationId"]["default"] is None, "DEFAULT 없음 (엔티티와 일치)")
@@ -198,6 +214,17 @@ def main():
     by_op = list(con.execute(
         "SELECT id FROM trash_snapshots WHERE COALESCE(operationId, 'row:' || id) = 'OP-1' ORDER BY deletedAt ASC, id ASC"))
     check([r[0] for r in by_op] == [10, 11], "작업으로 행 조회가 정확")
+
+    print("\n[6-b] 작업 조회가 인덱스를 타는가 (COALESCE 식은 sargable하지 않다)")
+    plan_expr = " ".join(r[3] for r in con.execute(
+        "EXPLAIN QUERY PLAN SELECT * FROM trash_snapshots WHERE COALESCE(operationId,'row:'||id) = 'OP-1'"))
+    plan_col = " ".join(r[3] for r in con.execute(
+        "EXPLAIN QUERY PLAN SELECT * FROM trash_snapshots "
+        "WHERE ('OP-1' IS NOT NULL AND operationId = 'OP-1') "
+        "   OR ('OP-1' IS NULL AND operationId IS NULL AND id = -1)"))
+    check("SCAN" in plan_expr, f"COALESCE 식은 전 테이블 스캔이다 (근거: {plan_expr})")
+    check("index_trash_snapshots_operationId" in plan_col,
+          f"열 비교 형태는 인덱스를 탄다 (실제: {plan_col})")
 
     print("\n[7] 빈 테이블·재실행 안전성")
     con2 = sqlite3.connect(":memory:")

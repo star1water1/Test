@@ -1722,6 +1722,20 @@ abstract class AppDatabase : RoomDatabase() {
                 if (!hasOperationId) {
                     db.execSQL("ALTER TABLE `trash_snapshots` ADD COLUMN `operationId` TEXT")
                 }
+                // 작업의 종류(삭제/편집 직전 백업) — 구버전 행은 null이고 그때는 삭제로 읽는다.
+                // v43 이전에는 편집 백업도 행마다 독립이라 묶음 자체가 만들어지지 않았으므로
+                // null이 이미 올바른 의미다(백필 불필요).
+                val hasOperationKind = db.query("PRAGMA table_info(`trash_snapshots`)").use { c ->
+                    val nameIdx = c.getColumnIndex("name")
+                    var found = false
+                    while (c.moveToNext()) {
+                        if (c.getString(nameIdx) == "operationKind") { found = true; break }
+                    }
+                    found
+                }
+                if (!hasOperationKind) {
+                    db.execSQL("ALTER TABLE `trash_snapshots` ADD COLUMN `operationKind` TEXT")
+                }
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_trash_snapshots_operationId` ON `trash_snapshots`(`operationId`)")
 
                 Log.i(TAG, "Migration from version 42 to 43 completed successfully")

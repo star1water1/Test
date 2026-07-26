@@ -403,7 +403,8 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
         val matchTokens = setOf(entry.value) + entry.aliases()
         // 정리는 커밋 이후에 — 종전에는 스냅샷만 남기고 pruneIfNeeded를 부르지 않아
         // 다음 삭제 작업까지 한도를 넘긴 채 쌓였다 (B-15).
-        val trash = TrashRepository(db)
+        // **편집 직전 백업**이다 — 캐릭터는 지워지지 않고 필드값만 고쳐 쓰인다(B-2).
+        val trash = TrashRepository(db, com.novelcharacter.app.data.model.TrashSnapshot.KIND_EDIT_BACKUP)
         val report = db.withTransaction {
             // 파괴 전 스냅샷 — CharacterRepository.deleteCharacter 선례 (IN 절 999 제한 청크)
             val affected = collectAffectedCharacterIds(fd, matchTokens)

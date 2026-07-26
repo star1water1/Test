@@ -578,7 +578,10 @@ class TrashFragment : Fragment() {
                         )
                     )
                 }
-                group.items.forEach { rows.add(TrashRow.Item(it, group.size - 1)) }
+                // 편집 백업은 항목끼리 의존하지 않으므로 '형제를 못 쓰게 만든다'는 경고가
+                // 해당하지 않는다 — 머리글이 없는 묶음에는 형제 수를 세지 않는다.
+                val siblings = if (group.needsHeader) group.size - 1 else 0
+                group.items.forEach { rows.add(TrashRow.Item(it, siblings)) }
             }
             return rows
         }
