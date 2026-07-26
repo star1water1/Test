@@ -342,7 +342,10 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         var chars = base
         if (novelIds.isNotEmpty()) {
             // 작품 필터(OR) — 선택 작품 중 하나에 속한 캐릭터. 전역 목록에서만 유의미하며 삭제된 id는 무해.
-            chars = chars.filter { it.novelId in novelIds }
+            // NO_NOVEL_ID sentinel은 "작품 미배정"(novelId null) 캐릭터를 선택한다.
+            chars = chars.filter {
+                com.novelcharacter.app.util.UnassignedFilter.matchesNovel(it.novelId, novelIds)
+            }
         }
         if (filters.isNotEmpty()) {
             // 필드 필터 id셋: (필터, character_field_values 에폭) 캐시 — 검색어/정렬만 바뀌면 재조회 없음.
