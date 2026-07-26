@@ -186,7 +186,7 @@
     <string name="dialog_edit_universe">세계관 편집</string>
     <string name="confirm_delete_universe">\" %s\" 세계관을 삭제하시겠습니까?\n하위 작품·캐릭터·사건·세력·필드 정의가 모두 함께 삭제됩니다.</string>
     <string name="confirm_delete_novel">\" %s\" 작품을 삭제하시겠습니까?</string>
-    <string name="delete_impact_novel">소속 캐릭터 %1$d명이 함께 삭제됩니다.\n삭제된 캐릭터는 휴지통(30일, 최대 30개 보관 — 초과 시 오래된 항목부터 영구 삭제)에서 복원할 수 있습니다.</string>
+    <string name="delete_impact_novel">소속 캐릭터 %1$d명이 함께 삭제됩니다.\n삭제된 캐릭터는 휴지통(30일, 최대 30개 보관)에서 복원할 수 있습니다. 이 삭제가 한도를 넘겨도 그 자리에서 지워지지는 않지만, 이후 다른 삭제로 오래된 항목부터 정리될 수 있습니다.</string>
     <string name="menu_edit">편집</string>
     <string name="menu_delete">삭제</string>
     <string name="month_valid_range">월은 1~12 사이로 입력하세요</string>
@@ -339,7 +339,7 @@
     <string name="trash_title">휴지통</string>
     <string name="settings_trash_desc">삭제된 캐릭터를 보관·복원합니다</string>
     <string name="trash_empty_hint">휴지통이 비어 있습니다</string>
-    <string name="trash_retention_caption">삭제된 캐릭터는 연관 데이터(필드값·관계·사건 연결 등)와 함께 최대 30개, 30일까지 보관됩니다.</string>
+    <string name="trash_retention_caption">삭제된 캐릭터는 연관 데이터(필드값·관계·사건 연결 등)와 함께 최대 30개, 30일까지 보관됩니다. 한 번의 삭제가 한도를 넘겨 만든 백업은 그 삭제 중에는 지워지지 않지만, 이후 다른 삭제로 정리될 수 있으니 필요하면 먼저 복원하세요.</string>
     <string name="trash_type_character">캐릭터</string>
     <string name="trash_item_meta">%1$s · 삭제 %2$s</string>
     <string name="trash_restore">복원</string>
@@ -351,12 +351,26 @@
     <string name="trash_restored">\'%1$s\' 복원 완료</string>
     <string name="trash_restore_failed">복원에 실패했습니다</string>
     <string name="trash_restore_partial_title">일부 항목 복원 제외</string>
-    <string name="trash_restore_partial">다음 연관 데이터는 참조 대상이 삭제되어 복원에서 제외되었습니다:\n%1$s</string>
-    <string name="trash_skip_novel">- 소속 작품이 삭제되어 미배정으로 복원됨</string>
-    <string name="trash_skip_fields">- 필드값 %1$d개 (필드 정의 삭제됨)</string>
-    <string name="trash_skip_relationships">- 관계 %1$d개 (상대 캐릭터 삭제 또는 중복)</string>
-    <string name="trash_skip_memberships">- 세력 소속 %1$d개 (세력 삭제됨)</string>
-    <string name="trash_skip_events">- 사건 연결 %1$d개 (사건 삭제됨)</string>
+    <string name="trash_restore_partial">다음 연관 데이터는 참조 대상을 찾을 수 없어 복원에서 제외되었습니다:\n%1$s</string>
+    <string name="trash_skip_novel">- 소속 작품을 찾을 수 없어 미배정으로 복원됩니다</string>
+    <string name="trash_skip_fields">- 필드값 %1$d개 (필드 정의를 찾을 수 없음)</string>
+    <string name="trash_skip_relationships">- 관계 %1$d개 (상대 캐릭터를 찾을 수 없음)</string>
+    <string name="trash_skip_relationship_changes">- 관계 변화 이력 %1$d개 (매달린 관계가 복원되지 않음)</string>
+    <string name="trash_skip_dup_relationship_changes">- 관계 변화 이력 %1$d개 (같은 관계가 이미 있어 이력은 합치지 않음)</string>
+    <string name="trash_skip_merged_fields">- 필드값 %1$d개 (같은 필드로 합쳐져 하나만 남음)</string>
+    <string name="trash_skip_memberships">- 세력 소속 %1$d개 (세력을 찾을 수 없음)</string>
+    <string name="trash_skip_events">- 사건 연결 %1$d개 (사건을 찾을 수 없음)</string>
+    <string name="trash_skip_rel_factions">- 관계 %1$d개의 \'세력\' 지정 (세력을 찾을 수 없음)</string>
+    <string name="trash_skip_change_events">- 관계 변화 %1$d개의 사건 연결 (사건을 찾을 수 없음)</string>
+    <!-- 복원 전 미리보기 — 복원은 성공 시 스냅샷을 소각하므로, 되살릴 수 없는 부분을 먼저 알리고
+         취소하면 휴지통 항목이 그대로 남아 교정 후 재시도할 수 있게 한다 (검증→알림→교정 경로). -->
+    <string name="trash_restore_preview_title">복원 전 확인</string>
+    <string name="trash_restore_preview">\'%1$s\'을(를) 복원합니다.\n\n되살릴 수 없는 부분:\n%2$s\n\n지금 복원하면 이 부분은 영구히 사라집니다. 취소하면 휴지통 항목이 그대로 남으니, 세계관·작품·필드 정의를 먼저 되살린 뒤 다시 복원할 수 있습니다.</string>
+    <string name="trash_restore_duplicate_warning">\n※ 이 항목은 삭제 백업이 아니라 편집 직전 백업입니다. 원본 캐릭터가 아직 있으므로 복원하면 되돌리기가 아니라 같은 이름의 캐릭터가 하나 더 생깁니다.</string>
+    <string name="trash_restore_legacy_note">\n※ 구버전 백업이라 안정 식별자가 없어 일부 참조는 id로만 판단했습니다.</string>
+    <string name="trash_restore_note_title">복원 결과</string>
+    <string name="trash_restore_relinked">참조 %1$d건은 id가 바뀌었지만 코드로 다시 연결했습니다</string>
+    <string name="trash_restore_duplicate_rel">관계 %1$d개는 같은 관계가 이미 있어 새로 만들지 않았습니다</string>
     <!-- 세력 간 관계 (B-3) -->
     <string name="faction_relationships">세력 간 관계</string>
     <string name="faction_relationship_add">관계 추가</string>
@@ -406,8 +420,8 @@
     <string name="delete_impact_state_changes">· 상태변화 이력 %1$d건</string>
     <string name="delete_impact_memberships">· 세력 소속 %1$d건</string>
     <string name="delete_impact_images">· 이미지 %1$d장 (휴지통 정리 시 파일 삭제)</string>
-    <string name="delete_trash_notice">삭제 후 30일간 휴지통(설정 &gt; 데이터 관리 &gt; 휴지통)에서 복원할 수 있습니다.\n휴지통은 최대 30개까지 보관되며, 초과 시 오래된 항목부터 영구 삭제됩니다.</string>
-    <string name="delete_impact_universe">함께 삭제: 작품 %1$d개 · 캐릭터 %2$d명 · 사건 %3$d건 · 필드 정의 %4$d개 · 필드값 %5$d건 (세력 포함)\n\n캐릭터는 휴지통(30일, 최대 30개 보관 — 초과 시 오래된 항목부터 영구 삭제)에서 복원할 수 있지만, 작품·사건·세력·필드는 즉시 영구 삭제됩니다.</string>
+    <string name="delete_trash_notice">삭제 후 30일간 휴지통(설정 &gt; 데이터 관리 &gt; 휴지통)에서 복원할 수 있습니다.\n휴지통은 최대 30개까지 보관되며, 초과 시 오래된 항목부터 영구 삭제됩니다. 단, 한 번의 삭제로 만들어진 백업은 그 삭제 중에는 지워지지 않습니다.</string>
+    <string name="delete_impact_universe">함께 삭제: 작품 %1$d개 · 캐릭터 %2$d명 · 사건 %3$d건 · 필드 정의 %4$d개 · 필드값 %5$d건 (세력 포함)\n\n캐릭터는 휴지통(30일, 최대 30개 보관)에서 복원할 수 있습니다 — 이 삭제가 한도를 넘겨도 그 자리에서 지워지지는 않지만, 이후 다른 삭제로 오래된 항목부터 정리될 수 있으니 되살릴 것이 있으면 먼저 복원하세요. 작품·사건·세력·필드는 즉시 영구 삭제됩니다.</string>
     <string name="import_file_too_large">파일이 너무 커서 이 기기에서 처리할 수 없습니다 (최대 4GB)</string>
     <string name="import_xlsx_too_large">엑셀 데이터 시트가 너무 큽니다 (데이터 시트 최대 128MB)</string>
     <string name="import_too_many_images">백업에 포함된 이미지가 너무 많습니다 (최대 50,000장)</string>
@@ -1429,6 +1443,10 @@
     <string name="batch_novel_none">작품 미지정</string>
     <string name="batch_novel_confirm">%1$d명을 \'%2$s\'(으)로 이동</string>
     <string name="batch_novel_universe_warning">다른 세계관으로 옮기면 같은 이름의 필드값은 그대로 이관되고, 새 세계관에 없는 필드값·세력 소속만 제거됩니다. 제거분은 휴지통에 백업되어 복원할 수 있습니다.</string>
+    <!-- '작품 미지정'은 아무것도 제거하지 않는다 — 제거를 예고하면 사실과 다른 경고가 된다. -->
+    <string name="batch_novel_unassign_notice">작품을 미지정으로 두면 필드값은 지워지지 않고 그대로 보관됩니다. 다시 작품에 배정하면 값이 그대로 보입니다.</string>
+    <!-- 편집 화면 저장 시, 폼이 렌더하지 않아 보존된 값 고지 (원칙 04: 존재를 알 수 없는 데이터 금지) -->
+    <string name="field_values_preserved">화면에 없는 필드값 %1$d개는 지우지 않고 보관했습니다 — 작품을 다시 배정하면 그대로 보입니다</string>
     <string name="batch_move_removed_warning">%1$d명 이동 — 새 세계관에 없는 필드값 %2$d개·세력 %3$d개는 휴지통에 백업 후 제거했어요(복원 가능). 같은 이름 필드는 이관됨.</string>
     <string name="result_batch_move_detail">필드 %1$d개 이관 · %2$d개 제거 · 세력 %3$d개 제거(휴지통 백업)</string>
     <string name="result_batch_move_remapped">필드 %1$d개 이관</string>

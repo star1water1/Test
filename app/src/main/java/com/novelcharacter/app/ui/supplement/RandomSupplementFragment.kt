@@ -138,9 +138,13 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
             if (::imageStrip.isInitialized) {
                 outState.putStringArrayList("imagePaths", ArrayList(imageStrip.paths))
             }
+            // 폼이 실제로 적재된 상태였는지도 남긴다 — 적재 전에 회전하면 빈 Bundle이 저장되는데,
+            // 복원 쪽이 그것을 "값이 없다"로 읽으면 DB 적재를 건너뛰어 필드값이 전량 삭제된다.
             val fieldValues = Bundle()
+            val hydrated = ::formBuilder.isInitialized && formBuilder.fieldDefinitions.isNotEmpty()
             if (::formBuilder.isInitialized) formBuilder.saveStateTo(fieldValues)
             outState.putBundle("fieldValues", fieldValues)
+            outState.putBoolean(STATE_FIELDS_HYDRATED, hydrated)
         }
     }
 
@@ -209,6 +213,7 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
                 )
 
                 override fun collectFieldValues(characterId: Long) = formBuilder.collectFieldValues(characterId)
+                override fun coveredFieldDefinitionIds() = formBuilder.coveredFieldDefinitionIds()
                 override fun validateRequiredFields() = formBuilder.validateRequiredFields()
                 override fun editingCharacterId() = displayedCharacter?.id ?: -1L
                 override fun existingCharacter() = displayedCharacter
@@ -738,7 +743,11 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
                 val validated = CharacterImageStripController.validateInternalPaths(saved, context?.filesDir)
                 imageStrip.setPaths(validated)
             }
-            pendingFieldValues = restoreState.getBundle("fieldValues")
+            pendingFieldValues = if (restoreState.getBoolean(STATE_FIELDS_HYDRATED)) {
+                restoreState.getBundle("fieldValues")
+            } else {
+                null
+            }
             val spinnerPos = restoreState.getInt("novelSpinnerPos", -1)
             viewLifecycleOwner.lifecycleScope.launch {
                 loadNovelsForEdit(character, presetSpinnerPos = spinnerPos)
@@ -986,5 +995,10 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
         }
         dialogView.findViewById<View>(R.id.btnClose).setOnClickListener { dialog.dismiss() }
         dialog.show()
+    }
+
+    private companion object {
+        /** 회전 저장 시점에 동적 폼이 적재돼 있었는가 — 빈 Bundle의 의미를 가르는 표시 */
+        const val STATE_FIELDS_HYDRATED = "fieldsHydrated"
     }
 }

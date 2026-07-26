@@ -108,10 +108,14 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         super.onSaveInstanceState(outState)
         outState.putStringArrayList("imagePaths", ArrayList(imageStrip.paths))
 
-        // 동적 필드 입력값 보존
+        // 동적 필드 입력값 보존.
+        // 폼이 실제로 적재된 상태였는지도 함께 남긴다 — 적재 전에 회전하면 빈 Bundle이 저장되는데,
+        // 복원 쪽이 그것을 "값이 없다"로 읽으면 DB 적재를 건너뛰어 필드값이 전량 삭제된다.
         val fieldValues = Bundle()
+        val hydrated = ::formBuilder.isInitialized && formBuilder.fieldDefinitions.isNotEmpty()
         if (::formBuilder.isInitialized) formBuilder.saveStateTo(fieldValues)
         outState.putBundle("fieldValues", fieldValues)
+        outState.putBoolean(STATE_FIELDS_HYDRATED, hydrated)
     }
 
     /**
@@ -250,6 +254,7 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
             host = object : CharacterSaveCoordinator.Host {
                 override fun snapshot() = formSnapshot()
                 override fun collectFieldValues(characterId: Long) = formBuilder.collectFieldValues(characterId)
+                override fun coveredFieldDefinitionIds() = formBuilder.coveredFieldDefinitionIds()
                 override fun validateRequiredFields() = formBuilder.validateRequiredFields()
                 override fun editingCharacterId() = characterId
                 override fun existingCharacter() = existingCharacter
@@ -280,7 +285,14 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
             imageStrip.setPaths(validated)
             restoredFromSavedState = true
         }
-        pendingFieldValues = savedInstanceState?.getBundle("fieldValues")
+        // 회전 시점에 동적 폼이 아직 적재되지 않았다면 그때 저장된 빈 Bundle은 "값이 없다"가
+        // 아니라 "아직 모른다"다. 그걸 복원값으로 소비하면 DB 적재 경로를 건너뛰어 폼이 빈 채로
+        // 남고, 저장이 폼 커버 범위의 필드값을 전량 삭제한다 (N2와 같은 무음 유실의 다른 문).
+        pendingFieldValues = if (savedInstanceState?.getBoolean(STATE_FIELDS_HYDRATED) == true) {
+            savedInstanceState.getBundle("fieldValues")
+        } else {
+            null
+        }
 
         binding.toolbar.setNavigationOnClickListener { handleBackPress() }
 
@@ -723,5 +735,10 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         super.onDestroyView()
         recommendedAdapter = null
         _binding = null
+    }
+
+    private companion object {
+        /** 회전 저장 시점에 동적 폼이 적재돼 있었는가 — 빈 Bundle의 의미를 가르는 표시 */
+        const val STATE_FIELDS_HYDRATED = "fieldsHydrated"
     }
 }
