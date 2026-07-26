@@ -131,6 +131,13 @@ interface TimelineDao {
     @Query("SELECT * FROM timeline_events WHERE code = :code LIMIT 1")
     suspend fun getEventByCode(code: String): TimelineEvent?
 
+    /** 휴지통 복원의 참조 재해석용 일괄 조회 (B-1). 호출부에서 900개 단위로 청크할 것. */
+    @Query("SELECT * FROM timeline_events WHERE id IN (:ids)")
+    suspend fun getEventsByIds(ids: List<Long>): List<TimelineEvent>
+
+    @Query("SELECT * FROM timeline_events WHERE code IN (:codes)")
+    suspend fun getEventsByCodes(codes: List<String>): List<TimelineEvent>
+
     // Timeline filtering
     @Transaction
     @Query("""

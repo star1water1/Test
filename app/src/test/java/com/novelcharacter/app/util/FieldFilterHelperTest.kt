@@ -70,6 +70,7 @@ class FieldFilterHelperTest {
         override suspend fun countValuesByUniverse(universeId: Long): Int = unused()
         override suspend fun deleteFieldValueForCharacters(characterIds: List<Long>, fieldDefId: Long) = unused()
         override suspend fun upsert(value: CharacterFieldValue): Long = unused()
+        override suspend fun getValuesByFieldDefs(fieldDefIds: List<Long>): List<CharacterFieldValue> = unused()
 
         private fun unused(): Nothing = throw UnsupportedOperationException("not used in test")
     }
@@ -77,6 +78,7 @@ class FieldFilterHelperTest {
     private class FakeFieldDao(val fields: Map<Long, FieldDefinition> = emptyMap()) : FieldDefinitionDao {
         override suspend fun getFieldById(id: Long): FieldDefinition? = fields[id]
         override suspend fun getFieldsByIds(ids: List<Long>): List<FieldDefinition> = ids.mapNotNull { fields[it] }
+        override suspend fun getFieldsByUniverseAllTypes(universeId: Long): List<FieldDefinition> = unused()
 
         override fun getFieldsByUniverse(universeId: Long, entityType: String): LiveData<List<FieldDefinition>> = unused()
         override suspend fun getFieldsByUniverseList(universeId: Long, entityType: String): List<FieldDefinition> = unused()

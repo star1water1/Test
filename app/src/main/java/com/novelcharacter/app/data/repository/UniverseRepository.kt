@@ -30,21 +30,52 @@ class UniverseRepository(
     suspend fun updateUniverse(universe: Universe) = universeDao.update(universe)
 
     /**
-     * 세계관 삭제 — 하위 작품·캐릭터·사건까지 계단식으로 함께 삭제한다.
-     * (세력·필드 정의·필드값·사건 연결은 FK CASCADE로 정리)
-     * 캐릭터는 삭제 전 개별 휴지통 스냅샷을 남겨 복원 가능하게 한다(변수 제어 — 말없는 유실 방지).
+     * 세계관 삭제 — 하위 작품·캐릭터·사건·세력까지 계단식으로 함께 삭제한다.
+     *
+     * **삭제되는 모든 엔티티가 휴지통 스냅샷을 남긴다 (B-1).** 종전에는 캐릭터만 복원
+     * 가능했고 세계관·작품·사건·세력·필드 정의는 즉시 영구 소멸했다.
+     * 스냅샷들은 하나의 삭제 작업(`operationId`)으로 묶여 통째로 보관·복원되며
+     * (B-14 — 반쪽만 남는 백업은 복원이 아니라 유실이다), 복원은
+     * 세계관 → 작품 → 세력 → 사건 → 캐릭터 순서라 참조가 코드로 다시 이어진다(R-1).
+     *
+     * 스냅샷 수집은 **어떤 삭제보다 먼저** 끝내야 한다 — 1단계가 캐릭터를 지우고 나면
+     * 세력 소속·사건 연결을 더 이상 읽을 수 없다.
      */
     suspend fun deleteUniverse(universe: Universe) {
         val trash = TrashRepository(db)
         // 이미지 파일 경로를 트랜잭션 전에 파싱 (DB 삭제 후에는 접근 불가)
         // 하위 작품의 이미지도 함께 정리 대상 — 트랜잭션 전에 수집한다.
+        // (스냅샷이 같은 경로를 보유하므로 ImageOwnershipGuard가 실제로는 보존한다 —
+        //  가드 호출은 스냅샷 생성이 실패한 경우의 안전망으로 남긴다)
         val novels = novelDao.getNovelsByUniverseList(universe.id)
         val imageFiles = parseImagePaths(universe.imagePaths) +
             novels.flatMap { parseImagePaths(it.imagePaths) }
 
         db.withTransaction {
+            // 0. 스냅샷 — 삭제 전에 전부 수집한다.
+            //    같은 작업이 함께 지우는 대상 집합을 먼저 확정해야 링크를 어느 쪽이 담을지
+            //    결정할 수 있다(양쪽이 담으면 복원이 중복되고 거짓 경고가 뜬다).
+            val characters = db.characterDao().getCharactersByUniverseList(universe.id)
+            val characterIds = characters.map { it.id }
+            val doomedCharacterIds = characterIds.toSet()
+            val events = db.timelineDao().getEventsByUniverseList(universe.id)
+            val doomedEventIds = events.map { it.id }.toSet()
+            val factions = db.factionDao().getFactionsByUniverseList(universe.id)
+            val doomedFactionIds = factions.map { it.id }.toSet()
+
+            trash.snapshotUniverse(universe, doomedCharacterIds, doomedEventIds)
+            for (novel in novels) trash.snapshotNovel(novel, doomedEventIds)
+            for (faction in factions) {
+                // 세력은 세계관 FK CASCADE로 죽는다 — 자동 관계는 삭제되지 않고
+                // factionId만 null이 되므로(SET_NULL) '유지' 쪽과 같은 형태다.
+                trash.snapshotFaction(
+                    faction, deleteRelationships = false,
+                    doomedCharacterIds = doomedCharacterIds, doomedFactionIds = doomedFactionIds
+                )
+            }
+            for (event in events) trash.snapshotEvent(event, doomedCharacterIds)
+
             // 1. 하위 캐릭터 계단식 삭제 (휴지통 스냅샷 후 삭제 — 태그/필드값/관계 등은 FK CASCADE)
-            val characterIds = db.characterDao().getCharactersByUniverseList(universe.id).map { it.id }
             CharacterRepository.deleteCharactersCascade(db, trash, characterIds)
 
             // 2. 하위 작품 삭제 (다른 세계관의 imageNovelId 참조는 FK SET_NULL이 정리)

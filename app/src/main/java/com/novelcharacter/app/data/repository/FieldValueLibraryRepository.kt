@@ -401,10 +401,12 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
             return PropagationReport()
         }
         val matchTokens = setOf(entry.value) + entry.aliases()
-        return db.withTransaction {
+        // 정리는 커밋 이후에 — 종전에는 스냅샷만 남기고 pruneIfNeeded를 부르지 않아
+        // 다음 삭제 작업까지 한도를 넘긴 채 쌓였다 (B-15).
+        val trash = TrashRepository(db)
+        val report = db.withTransaction {
             // 파괴 전 스냅샷 — CharacterRepository.deleteCharacter 선례 (IN 절 999 제한 청크)
             val affected = collectAffectedCharacterIds(fd, matchTokens)
-            val trash = TrashRepository(db)
             var snapshotted = 0
             for (chunk in affected.chunked(CHUNK_SIZE)) {
                 for (character in db.characterDao().getCharactersByIds(chunk)) {
@@ -416,6 +418,8 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
             entryDao.delete(entry)
             propagation.copy(snapshottedCharacters = snapshotted)
         }
+        trash.pruneIfNeeded()
+        return report
     }
 
     /** 전파 없이 영향 규모만 산출 — 확인 다이얼로그·AI 정리 드라이런용 */

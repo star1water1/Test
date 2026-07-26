@@ -5303,14 +5303,25 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             }
         }
 
-        // 사건 연표
+        // 사건 연표 — 인앱 삭제와 동일 경로로 휴지통 스냅샷을 남긴다 (B-1).
+        // 종전에는 사건 필드값·참가 캐릭터/작품 연결·관계변화의 사건 연결이 무통보 영구 삭제였다.
         if (del.timeline && matchedEventIds.isNotEmpty()) {
+            val trash = trashForImport()
             val allIds = db.timelineDao().getAllEventIds()
-            for (id in allIds) {
-                if (id !in matchedEventIds) {
-                    try { db.timelineDao().deleteById(id); result.deletedEvents++ }
-                    catch (_: Exception) { }
+            val doomed = allIds.filter { it !in matchedEventIds }
+            for (chunk in doomed.chunked(IN_CLAUSE_CHUNK)) {
+                for (event in db.timelineDao().getEventsByIds(chunk)) {
+                    try {
+                        trash.snapshotEvent(event)
+                        db.timelineDao().deleteById(event.id)
+                        result.deletedEvents++
+                    } catch (e: Exception) {
+                        result.warnings.add("사건 '${event.description}' 삭제에 실패해 건너뛰었습니다: ${e.message}")
+                    }
                 }
+            }
+            if (result.deletedEvents > 0) {
+                result.warnings.add("엑셀에 없는 사건 ${result.deletedEvents}건을 삭제했습니다 — 휴지통에서 복구할 수 있습니다")
             }
         }
 
@@ -5369,14 +5380,30 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             }
         }
 
-        // 세력
+        // 세력 — 인앱 삭제와 동일 경로로 휴지통 스냅샷을 남긴다 (B-1).
+        // 종전에는 세력 소속·세력 간 관계가 무통보 영구 삭제였고, 자동 관계의 '세력' 지정도
+        // SET_NULL로 조용히 끊겼다.
         if (del.factions && matchedFactionIds.isNotEmpty()) {
+            val trash = trashForImport()
             val allIds = db.factionDao().getAllFactionIds()
-            for (id in allIds) {
-                if (id !in matchedFactionIds) {
-                    try { db.factionDao().deleteById(id); result.deletedFactions++ }
-                    catch (_: Exception) { }
+            val doomed = allIds.filter { it !in matchedFactionIds }
+            val doomedSet = doomed.toSet()
+            for (chunk in doomed.chunked(IN_CLAUSE_CHUNK)) {
+                for (faction in db.factionDao().getByIds(chunk)) {
+                    try {
+                        // 세력만 지우므로 관계는 살아남고 factionId만 null이 된다(SET_NULL).
+                        trash.snapshotFaction(
+                            faction, deleteRelationships = false, doomedFactionIds = doomedSet
+                        )
+                        db.factionDao().deleteById(faction.id)
+                        result.deletedFactions++
+                    } catch (e: Exception) {
+                        result.warnings.add("세력 '${faction.name}' 삭제에 실패해 건너뛰었습니다: ${e.message}")
+                    }
                 }
+            }
+            if (result.deletedFactions > 0) {
+                result.warnings.add("엑셀에 없는 세력 ${result.deletedFactions}개를 삭제했습니다 — 휴지통에서 복구할 수 있습니다")
             }
         }
 
@@ -5425,6 +5452,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 값이 어긋나면 순수 왕복만으로 데이터가 잘리므로 별도 값을 두지 않는다.
         private const val MAX_FIELD_LENGTH = EXCEL_CELL_TEXT_LIMIT
         // 시트명 상수는 SheetSpec.kt가 단일 소스다 (내보내기도 같은 상수를 본다).
+
+        /** IN 절 변수 한도 회피용 청크 크기 (저장소 공통 관례와 동일) */
+        private const val IN_CLAUSE_CHUNK = 900
     }
 }
 

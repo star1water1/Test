@@ -358,10 +358,12 @@ class CharacterRepository(
     suspend fun batchChangeNovel(ids: List<Long>, newNovelId: Long?): UniverseMoveCounts {
         val now = System.currentTimeMillis()
         var agg = UniverseMoveCounts()
+        // 정리는 커밋 이후에 한 번 — 종전에는 스냅샷만 남기고 정리를 부르지 않아 다음 삭제 작업까지
+        // 한도를 넘긴 채 쌓였다 (B-15). 인스턴스를 공유해야 이 작업의 백업이 보호된다 (R-3).
+        val trash = TrashRepository(db)
         db.withTransaction {
             val newUniverseId = newNovelId?.let { db.novelDao().getNovelById(it)?.universeId }
             if (newUniverseId != null) {
-                val trash = TrashRepository(db)
                 val allDefsById: Map<Long, FieldDefinition> = db.fieldDefinitionDao().getAllFieldsAllTypes().associateBy { it.id }
                 val newDefByKey = db.fieldDefinitionDao().getFieldsByUniverseList(newUniverseId).associateBy { it.key }
                 for (chunk in ids.chunked(CHUNK_SIZE)) {
@@ -377,6 +379,7 @@ class CharacterRepository(
                 characterDao.updateNovelIdForIds(chunk, newNovelId, now)
             }
         }
+        trash.pruneIfNeeded()
         // 세계관이 바뀐 이동이면 대상 세계관 라이브러리에 재매핑 값 수확 (검토 A6)
         newNovelId?.let { db.novelDao().getNovelById(it)?.universeId }
             ?.let { fieldLibrary.harvestUniverses(setOf(it)) }
@@ -442,12 +445,16 @@ class CharacterRepository(
         newUniverseId: Long,
         trash: TrashRepository? = null
     ): UniverseMoveCounts {
+        // 호출부가 인스턴스를 넘겼다면 정리도 그쪽 책임이다(작업 범위를 그쪽이 안다).
+        // 여기서 만든 경우에만 커밋 후 정리한다 (B-15).
+        val ownedTrash = if (trash == null) TrashRepository(db) else null
         val counts = db.withTransaction {
-            val trashRepo = trash ?: TrashRepository(db)
+            val trashRepo = trash ?: ownedTrash!!
             val allDefsById: Map<Long, FieldDefinition> = db.fieldDefinitionDao().getAllFieldsAllTypes().associateBy { it.id }
             val newDefByKey = db.fieldDefinitionDao().getFieldsByUniverseList(newUniverseId).associateBy { it.key }
             migrateCharacterFieldsToUniverse(character, newUniverseId, allDefsById, newDefByKey, trashRepo)
         }
+        ownedTrash?.pruneIfNeeded()
         // 재매핑된 값이 새 세계관 필드의 라이브러리에 등재되도록 수확
         fieldLibrary.harvestForCharacter(character.id)
         return counts
@@ -482,6 +489,8 @@ class CharacterRepository(
         formValues: List<CharacterFieldValue>,
         newUniverseId: Long
     ): UniverseMoveCounts {
+        // 정리는 커밋 이후에 — 종전에는 스냅샷만 남기고 pruneIfNeeded를 부르지 않았다 (B-15).
+        val trash = TrashRepository(db)
         return db.withTransaction {
             val allDefsById: Map<Long, FieldDefinition> = db.fieldDefinitionDao().getAllFieldsAllTypes().associateBy { it.id }
             val newDefByKey = db.fieldDefinitionDao().getFieldsByUniverseList(newUniverseId).associateBy { it.key }
@@ -513,13 +522,14 @@ class CharacterRepository(
             val willLose = removed > 0 || orphanMemberships > 0
             if (willLose) {
                 val persisted = characterDao.getCharacterById(character.id) ?: character
-                TrashRepository(db).snapshotCharacter(persisted, parseImagePaths(persisted.imagePaths).map { it.absolutePath })
+                trash.snapshotCharacter(persisted, parseImagePaths(persisted.imagePaths).map { it.absolutePath })
             }
             characterDao.update(character)
             characterFieldValueDao.replaceAllByCharacter(character.id, formNonBlank + gapFills.values)
             if (orphanMemberships > 0) db.factionMembershipDao().deleteMembershipsNotInUniverse(character.id, newUniverseId)
             UniverseMoveCounts(remapped, removed, orphanMemberships, if (willLose) 1 else 0)
         }.also {
+            trash.pruneIfNeeded()
             // 세계관 간 이동 저장도 폼 값 저장 경로 — 새 세계관 필드로 수확 (검토 A6)
             fieldLibrary.harvestForCharacter(character.id)
         }

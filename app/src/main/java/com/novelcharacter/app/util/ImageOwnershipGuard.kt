@@ -37,28 +37,28 @@ object ImageOwnershipGuard {
     /**
      * 현재 보호 집합을 수집한다.
      * @param context null이면 드래프트 보호는 생략된다(Context 없는 저장소 계층 — 문서화된 트레이드오프).
-     * @param excludeTrashSnapshotId 이 스냅샷 자신의 보류분은 보호에서 제외(purge 대상이므로).
+     * @param excludeTrashSnapshotIds 이 스냅샷들 자신의 보류분은 보호에서 제외(purge 대상이므로).
      *        다른 스냅샷의 보류분은 계속 보호된다.
      */
     suspend fun collectProtectedPaths(
         db: AppDatabase,
         context: Context?,
-        excludeTrashSnapshotId: Long? = null
+        excludeTrashSnapshotIds: Set<Long> = emptySet()
     ): Set<String> {
         val gson = Gson()
         val entityPaths = ImageZipHelper.collectAllImagePaths(db, gson)
         val metaPaths = runCatching { db.imageMetaDao().getAllPaths() }.getOrDefault(emptyList())
         val draftPaths = context?.let { CharacterDraftPrefs.collectAllDraftImagePaths(it) } ?: emptySet()
-        val trashPaths = collectTrashPaths(db, gson, excludeTrashSnapshotId)
+        val trashPaths = collectTrashPaths(db, gson, excludeTrashSnapshotIds)
         return computeProtected(entityPaths, metaPaths, draftPaths, trashPaths)
     }
 
-    private suspend fun collectTrashPaths(db: AppDatabase, gson: Gson, excludeId: Long?): Set<String> {
-        if (excludeId == null) return StorageAnalyzer.collectTrashHeldPaths(db, gson)
+    private suspend fun collectTrashPaths(db: AppDatabase, gson: Gson, excludeIds: Set<Long>): Set<String> {
+        if (excludeIds.isEmpty()) return StorageAnalyzer.collectTrashHeldPaths(db, gson)
         val result = mutableSetOf<String>()
         val snapshots = runCatching { db.trashSnapshotDao().getAllList() }.getOrDefault(emptyList())
         for (snap in snapshots) {
-            if (snap.id == excludeId) continue
+            if (snap.id in excludeIds) continue
             val json = snap.imagePaths
             if (json.isBlank() || json == "[]") continue
             val paths = runCatching {
@@ -78,9 +78,31 @@ object ImageOwnershipGuard {
         context: Context?,
         candidates: Collection<String>,
         excludeTrashSnapshotId: Long? = null
+    ): Int = deleteIfUnprotectedBatch(
+        db, context, candidates,
+        excludeTrashSnapshotIds = if (excludeTrashSnapshotId == null) emptySet() else setOf(excludeTrashSnapshotId)
+    )
+
+    /**
+     * 여러 스냅샷을 한 번에 정리할 때 쓰는 형태 — **보호 집합을 한 번만 계산한다.**
+     *
+     * 스냅샷마다 [collectProtectedPaths]를 부르면 그때마다 전 엔티티·전 스냅샷을 훑으므로
+     * 항목 수의 제곱이 된다. 휴지통이 캐릭터 전용일 때는 최대 30행이라 견뎠지만, 세계관 삭제
+     * 하나가 수백 항목을 만드는 지금은 '휴지통 비우기'가 그대로 멈춘다 — 받쳐주는 확장성 기준.
+     */
+    suspend fun deleteIfUnprotectedBatch(
+        db: AppDatabase,
+        context: Context?,
+        candidates: Collection<String>,
+        excludeTrashSnapshotIds: Set<Long>
     ): Int {
         if (candidates.isEmpty()) return 0
-        val protectedSet = collectProtectedPaths(db, context, excludeTrashSnapshotId)
+        val protectedSet = collectProtectedPaths(db, context, excludeTrashSnapshotIds)
+        return deleteUnprotectedIn(candidates, protectedSet)
+    }
+
+    /** 이미 계산해 둔 보호 집합으로 삭제한다 — 반복 호출에서 재계산을 피하기 위한 형태. */
+    fun deleteUnprotectedIn(candidates: Collection<String>, protectedSet: Set<String>): Int {
         var deleted = 0
         for (p in candidates) {
             val canon = runCatching { File(p).canonicalPath }.getOrNull() ?: p

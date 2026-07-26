@@ -51,14 +51,21 @@ class FactionRepository(private val db: AppDatabase) {
     /**
      * 세력 삭제. deleteRelationships=true이면 자동 관계도 함께 삭제.
      * false이면 관계의 factionId가 null로 전환 (FK SET_NULL).
+     *
+     * **삭제 전 휴지통 스냅샷을 남긴다 (B-1).** 종전에는 세력 소속·세력 간 관계·자동 관계가
+     * 전부 즉시 영구 소멸했고, '관계 유지' 쪽을 골라도 '이 세력의 자동 관계'라는 지정이
+     * 조용히 사라졌다(SET_NULL). 두 경우는 복원 방법이 달라 스냅샷이 구분해 담는다.
      */
     suspend fun deleteFaction(faction: Faction, deleteRelationships: Boolean = true) {
+        val trash = TrashRepository(db)
         db.withTransaction {
+            trash.snapshotFaction(faction, deleteRelationships)
             if (deleteRelationships) {
                 relationshipDao.deleteAllByFaction(faction.id)
             }
             factionDao.delete(faction)
         }
+        trash.pruneIfNeeded()
     }
 
     suspend fun updateFactionDisplayOrders(factions: List<Faction>) =

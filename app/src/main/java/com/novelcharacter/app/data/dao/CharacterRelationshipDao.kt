@@ -49,6 +49,18 @@ interface CharacterRelationshipDao {
     @Query("DELETE FROM character_relationships WHERE factionId = :factionId")
     suspend fun deleteAllByFaction(factionId: Long)
 
+    /** 세력의 자동 관계 전부 (휴지통 세력 스냅샷용 — B-1). 삭제 전에 담아 둔다. */
+    @Query("SELECT * FROM character_relationships WHERE factionId = :factionId")
+    suspend fun getByFactionList(factionId: Long): List<CharacterRelationship>
+
+    /**
+     * id로 일괄 조회 (휴지통 사건 스냅샷용 — B-1).
+     * 사건에 매달린 관계 변화 이력의 양 끝 캐릭터를 확인해, 그 캐릭터도 함께 지워지는지 가른다.
+     * 호출부에서 900개 단위로 청크할 것 (SQLite 999-변수 상한).
+     */
+    @Query("SELECT * FROM character_relationships WHERE id IN (:ids)")
+    suspend fun getByIds(ids: List<Long>): List<CharacterRelationship>
+
     /** 특정 세력의 자동 관계 중 지정 캐릭터가 포함된 것 조회 */
     @Query("""
         SELECT * FROM character_relationships

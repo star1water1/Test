@@ -67,6 +67,13 @@ interface CharacterFieldValueDao {
     @Query("SELECT * FROM character_field_values WHERE fieldDefinitionId = :fieldDefId")
     suspend fun getValuesByFieldDef(fieldDefId: Long): List<CharacterFieldValue>
 
+    /**
+     * 여러 필드 정의의 값 일괄 조회 (휴지통 세계관 스냅샷용 — B-1).
+     * 호출부에서 900개 단위로 청크할 것 (SQLite 999-변수 상한).
+     */
+    @Query("SELECT * FROM character_field_values WHERE fieldDefinitionId IN (:fieldDefIds)")
+    suspend fun getValuesByFieldDefs(fieldDefIds: List<Long>): List<CharacterFieldValue>
+
     /** 여러 캐릭터의 전체 필드값 일괄 조회 (백분위 배치 계산용 — 캐릭터당 개별 쿼리 N+1 방지) */
     @Query("SELECT * FROM character_field_values WHERE characterId IN (:characterIds)")
     suspend fun getValuesForCharacters(characterIds: List<Long>): List<CharacterFieldValue>

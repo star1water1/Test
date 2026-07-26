@@ -46,7 +46,7 @@ class NovelCharacterApp : Application() {
             database.nameBankDao()
         )
     }
-    val timelineRepository by lazy { TimelineRepository(database.timelineDao()) }
+    val timelineRepository by lazy { TimelineRepository(database) }
     val universeRepository by lazy {
         UniverseRepository(
             database,

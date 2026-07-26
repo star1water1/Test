@@ -25,6 +25,14 @@ interface CharacterRelationshipChangeDao {
     @Query("SELECT * FROM character_relationship_changes WHERE code = :code LIMIT 1")
     suspend fun getChangeByCode(code: String): CharacterRelationshipChange?
 
+    /**
+     * 특정 사건에 연결된 관계 변화 이력 (휴지통 사건 스냅샷용 — B-1).
+     * 사건이 지워지면 이 연결은 FK SET_NULL로 **조용히** 끊긴다 — 이력 자체는 살아남으므로
+     * 어떤 캐릭터 스냅샷도 그 손실을 담지 못한다. 사건 스냅샷이 code로 담아 되붙인다.
+     */
+    @Query("SELECT * FROM character_relationship_changes WHERE eventId = :eventId")
+    suspend fun getChangesByEventList(eventId: Long): List<CharacterRelationshipChange>
+
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(change: CharacterRelationshipChange): Long
 

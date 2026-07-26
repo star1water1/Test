@@ -59,6 +59,14 @@ interface FieldDefinitionDao {
     @Query("SELECT * FROM field_definitions ORDER BY universeId ASC, entityType ASC, displayOrder ASC")
     suspend fun getAllFieldsAllTypes(): List<FieldDefinition>
 
+    /**
+     * 한 세계관의 필드를 entityType 구분 없이 전부 (휴지통 세계관 스냅샷용 — B-1).
+     * 세계관 삭제는 FK CASCADE로 **모든** entityType의 정의를 함께 지우므로,
+     * 캐릭터 필드만 담은 스냅샷은 사건 필드를 조용히 잃는다.
+     */
+    @Query("SELECT * FROM field_definitions WHERE universeId = :universeId ORDER BY entityType ASC, displayOrder ASC")
+    suspend fun getFieldsByUniverseAllTypes(universeId: Long): List<FieldDefinition>
+
     @Query("DELETE FROM field_definitions WHERE universeId = :universeId")
     suspend fun deleteAllByUniverse(universeId: Long)
 

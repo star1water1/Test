@@ -20,6 +20,17 @@ interface EventFieldValueDao {
     @Query("SELECT * FROM event_field_values WHERE fieldDefinitionId = :fieldDefId")
     suspend fun getValuesByFieldDef(fieldDefId: Long): List<EventFieldValue>
 
+    /**
+     * 여러 필드 정의의 값 일괄 조회 (휴지통 세계관 스냅샷용 — B-1).
+     * 호출부에서 900개 단위로 청크할 것 (SQLite 999-변수 상한).
+     */
+    @Query("SELECT * FROM event_field_values WHERE fieldDefinitionId IN (:fieldDefIds)")
+    suspend fun getValuesByFieldDefs(fieldDefIds: List<Long>): List<EventFieldValue>
+
+    /** 사건 하나의 필드값 중 특정 정의의 값 (휴지통 복원 충돌 확인용) */
+    @Query("SELECT * FROM event_field_values WHERE eventId = :eventId AND fieldDefinitionId = :fieldDefId")
+    suspend fun getValue(eventId: Long, fieldDefId: Long): EventFieldValue?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(values: List<EventFieldValue>)
 

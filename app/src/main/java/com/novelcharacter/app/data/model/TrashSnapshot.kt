@@ -5,7 +5,7 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 
 /**
- * 휴지통 스냅샷 (B-7).
+ * 휴지통 스냅샷 (B-7 → B-1).
  *
  * 삭제 시점에 엔티티와 그 연관 데이터 전체를 JSON으로 직렬화해 보관한다.
  * FK가 없는 독립 테이블이므로 원본 삭제(CASCADE)와 무관하게 살아남고,
@@ -13,27 +13,84 @@ import androidx.room.PrimaryKey
  *
  * 이미지 파일은 스냅샷이 살아 있는 동안 디스크에 유지되며,
  * 스냅샷 영구 삭제/정리 시점에 함께 삭제된다.
+ *
+ * ## 작업 단위 (B-1 / B-14)
+ * 한 번의 삭제가 만드는 스냅샷은 하나가 아니다 — 세계관 하나를 지우면 캐릭터 수백 개,
+ * 세력·사건·작품 스냅샷이 **함께** 생긴다. 이것을 개별 항목으로 다루면 보관 한도가
+ * 그 묶음을 중간에서 잘라 "세계관은 되살아나는데 캐릭터 71명은 없는" 반쪽 백업이 된다.
+ * 그래서 [operationId]로 묶고 **정리도 복원도 작업 단위**로 한다. 한도 [MAX_OPERATIONS]는
+ * 항목 수가 아니라 **작업 수**의 상한이며, 한 작업은 통째로 남거나 통째로 사라진다.
+ *
+ * 구버전 행은 operationId가 null이다 — 그때는 행 하나가 곧 하나의 작업이며(`row:<id>`),
+ * 종전과 동일하게 동작한다.
  */
 @Entity(
     tableName = "trash_snapshots",
-    indices = [Index("deletedAt")]
+    indices = [Index("deletedAt"), Index("operationId")]
 )
 data class TrashSnapshot(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
-    val entityType: String,          // 현재 "character"만 사용 — 확장 대비 문자열
+    /** [TYPE_CHARACTER] 등 — 어떤 엔티티의 스냅샷인가 */
+    val entityType: String,
     val entityName: String,          // 목록 표시용 이름
     val payload: String,             // 엔티티+연관 데이터 JSON (CharacterSnapshot 등)
     val imagePaths: String = "[]",   // 보류 중인 이미지 파일 경로 JSON 배열
-    val deletedAt: Long = System.currentTimeMillis()
+    val deletedAt: Long = System.currentTimeMillis(),
+    /**
+     * 이 스냅샷을 만든 **삭제 작업**의 식별자. 같은 삭제가 만든 스냅샷은 같은 값을 갖는다.
+     * 구버전 행은 null이며 그때는 행 하나가 곧 하나의 작업이다([operationKey]).
+     *
+     * 표시용 이름을 함께 저장하지 않는 이유: 그룹 머리글은 **묶음의 뿌리 항목**
+     * (=[restorePriority]가 가장 낮은 항목)의 타입·이름과 개수로 온전히 만들 수 있다.
+     * 문구를 컬럼에 굳혀 두면 strings.xml과 어긋나고, 저장소 계층이 사용자 문구를 갖게 된다.
+     */
+    val operationId: String? = null
 ) {
+    /**
+     * 정리·복원이 묶음으로 다루는 키. operationId가 없는 구버전 행은 자기 자신만의 작업이 된다.
+     * **SQL 쪽 표현(`COALESCE(operationId, 'row:' || id)`)과 반드시 같은 문자열이어야 한다.**
+     */
+    val operationKey: String get() = operationId ?: legacyOperationKey(id)
+
     companion object {
         const val TYPE_CHARACTER = "character"
+        const val TYPE_UNIVERSE = "universe"
+        const val TYPE_NOVEL = "novel"
+        const val TYPE_FACTION = "faction"
+        const val TYPE_EVENT = "event"
 
-        /** 휴지통 최대 보관 개수 — 초과 시 오래된 것부터 영구 삭제 */
-        const val MAX_ITEMS = 30
+        /** 구버전(작업 식별자 없는) 행의 작업 키. SQL의 `'row:' || id`와 같은 형식이다. */
+        fun legacyOperationKey(id: Long): String = "row:$id"
+
+        /**
+         * 휴지통 최대 보관 **작업** 수 — 초과 시 오래된 작업부터 통째로 영구 삭제.
+         *
+         * 항목 수가 아니라 작업 수인 이유는 B-14다. 항목 상한이면 캐릭터 100명짜리 세계관을
+         * 지운 직후 아무 캐릭터나 하나 더 지우는 것만으로 그 백업이 71건 소각됐다.
+         */
+        const val MAX_OPERATIONS = 30
 
         /** 보관 기한 (30일) — 초과 시 자동 영구 삭제 */
         const val RETENTION_MS = 30L * 24 * 60 * 60 * 1000
+
+        /**
+         * 복원 순서 — **낮을수록 먼저**. 하위 엔티티는 상위가 살아 있어야 붙을 자리가 있다.
+         *
+         * 세계관 → 작품 → 세력 → 사건 → 캐릭터. 세력은 세계관 없이 존재할 수 없고(NOT NULL),
+         * 캐릭터는 작품·세력·사건 전부를 참조하므로 마지막이다. 이 순서를 지키면 한 작업을
+         * 통째로 복원할 때 참조가 코드로 다시 이어진다(R-1).
+         *
+         * entityType에서 파생한다 — 컬럼으로 저장하면 타입과 어긋날 수 있고, 어긋나면
+         * 복원 순서가 조용히 틀어져 참조가 유실된다.
+         */
+        fun restorePriority(entityType: String): Int = when (entityType) {
+            TYPE_UNIVERSE -> 0
+            TYPE_NOVEL -> 1
+            TYPE_FACTION -> 2
+            TYPE_EVENT -> 3
+            TYPE_CHARACTER -> 4
+            else -> 5
+        }
     }
 }
