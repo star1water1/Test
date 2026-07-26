@@ -270,6 +270,24 @@ data class NumericSummaryData(
 )
 
 // ===== 교차 분석 (신규) =====
+
+/**
+ * 교차분석의 집계 단위(축). 셀 값이 "무엇의 개수"인지를 정한다 (B-4).
+ *
+ * 캐릭터 축과 사건 축은 **한 표에 섞이지 않는다** — 섞으면 셀의 의미가 무너지기 때문이다.
+ * 축이 다른 필드를 함께 고른 경우는 조용히 버리지 않고 [CrossAxisResolution.Mismatch]로 고지한다.
+ */
+enum class CrossAxis { CHARACTER, EVENT }
+
+/** 고른 필드들이 어느 축에 속하는지의 판정 결과 — 실패도 이유를 담아 돌려준다 (변수 제어). */
+sealed class CrossAxisResolution {
+    data class Resolved(val axis: CrossAxis) : CrossAxisResolution()
+    /** 캐릭터 필드와 사건 필드를 함께 고름 — 어느 쪽 필드가 걸렸는지 이름으로 고지한다. */
+    data class Mismatch(val characterFieldName: String, val eventFieldName: String) : CrossAxisResolution()
+    /** 현재 스냅샷(작품 필터 포함)에 없는 필드 id — 필터를 바꾼 뒤 옛 선택으로 실행한 경우 등. */
+    object UnknownField : CrossAxisResolution()
+}
+
 data class CrossAnalysisResult(
     val field1Name: String,
     val field2Name: String,
@@ -278,8 +296,15 @@ data class CrossAnalysisResult(
     val crossTable: Map<String, Map<String, Int>>,
     val totalCount: Int,
     val filteredCount: Int,
-    /** 다중값 필드 포함 여부 — true면 한 캐릭터가 여러 칸에 집계될 수 있음을 UI가 고지한다 */
-    val multiValue: Boolean = false
+    /** 다중값 필드 포함 여부 — true면 한 캐릭터/사건이 여러 칸에 집계될 수 있음을 UI가 고지한다 */
+    val multiValue: Boolean = false,
+    /** 셀 값의 단위 — CHARACTER면 캐릭터 수, EVENT면 사건 수 */
+    val axis: CrossAxis = CrossAxis.CHARACTER,
+    /**
+     * 표에 합산된 세계관 수. 인사이트 목록이 같은 (key, type) 필드를 세계관 통합으로 보여주므로
+     * 교차분석도 같은 범위를 집계한다 — 2 이상이면 UI가 통합 집계임을 고지한다.
+     */
+    val mergedUniverseCount: Int = 1
 )
 
 // ===== 작품별 비교 분석 (신규 - 원칙 05) =====
@@ -411,9 +436,13 @@ data class RankableField(
     val mergedFieldDefIds: List<Long> = listOf(fieldDef.id)
 )
 
-class StatsDataProvider(private val app: NovelCharacterApp) {
+/**
+ * 앱 인스턴스는 [loadSnapshot]만 필요로 한다 — 나머지 compute* 함수는 스냅샷만 보는 순수 계산이다.
+ * 그래서 생성자에서 앱을 받지 않는다: Android 런타임 없이도 집계 규칙을 실제로 실행해 검증할 수 있다.
+ */
+class StatsDataProvider {
 
-    suspend fun loadSnapshot(): StatsSnapshot {
+    suspend fun loadSnapshot(app: NovelCharacterApp): StatsSnapshot {
         val db = app.database
         return StatsSnapshot(
             characters = app.characterRepository.getAllCharactersList(),
@@ -1311,6 +1340,47 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
     }
 
     // ===== 교차 분석 (신규) =====
+
+    /**
+     * 고른 필드 id들이 어느 축(캐릭터/사건)에 속하는지 판정한다 (B-4).
+     *
+     * 축이 섞이면 셀 값이 "캐릭터 수"인지 "사건 수"인지 정할 수 없으므로 계산하지 않고
+     * [CrossAxisResolution.Mismatch]로 돌려준다 — 호출부가 사용자에게 알리기 위해서다.
+     * 필터 필드도 같은 축이어야 한다(다른 축 필터는 대상 집합을 좁힐 수 없다).
+     */
+    fun resolveCrossAxis(
+        s: StatsSnapshot,
+        field1Id: Long,
+        field2Id: Long,
+        filterFieldId: Long? = null
+    ): CrossAxisResolution {
+        val charById = s.fieldDefinitions.associateBy { it.id }
+        val eventById = s.eventFieldDefinitions.associateBy { it.id }
+
+        val picked = mutableListOf<Pair<CrossAxis, FieldDefinition>>()
+        for (id in listOfNotNull(field1Id, field2Id, filterFieldId)) {
+            val charFd = charById[id]
+            val eventFd = eventById[id]
+            when {
+                charFd != null -> picked.add(CrossAxis.CHARACTER to charFd)
+                eventFd != null -> picked.add(CrossAxis.EVENT to eventFd)
+                else -> return CrossAxisResolution.UnknownField
+            }
+        }
+        val axes = picked.map { it.first }.toSet()
+        if (axes.size > 1) {
+            return CrossAxisResolution.Mismatch(
+                characterFieldName = picked.first { it.first == CrossAxis.CHARACTER }.second.name,
+                eventFieldName = picked.first { it.first == CrossAxis.EVENT }.second.name
+            )
+        }
+        return CrossAxisResolution.Resolved(axes.firstOrNull() ?: CrossAxis.CHARACTER)
+    }
+
+    /**
+     * 캐릭터 축 교차분석 — 셀 값은 그 (값1, 값2) 조합을 가진 **캐릭터 수**.
+     * 사건 축은 [computeEventCrossAnalysis]가 따로 계산한다(한 표에 섞으면 셀의 의미가 무너진다).
+     */
     fun computeCrossAnalysis(
         s: StatsSnapshot,
         field1Id: Long,
@@ -1318,42 +1388,136 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
         filterFieldId: Long?,
         filterValue: String?
     ): CrossAnalysisResult? {
-        val field1 = s.fieldDefinitions.find { it.id == field1Id } ?: return null
-        val field2 = s.fieldDefinitions.find { it.id == field2Id } ?: return null
-        val filterField = if (filterFieldId != null) s.fieldDefinitions.find { it.id == filterFieldId } else null
+        val group1 = crossFieldGroup(s.fieldDefinitions, field1Id) ?: return null
+        val group2 = crossFieldGroup(s.fieldDefinitions, field2Id) ?: return null
+        val filterGroup = if (filterFieldId != null) {
+            crossFieldGroup(s.fieldDefinitions, filterFieldId) ?: return null
+        } else null
 
-        val valuesByChar = s.fieldValues.groupBy { it.characterId }
-        val config1 = FieldStatsConfig.fromConfig(field1.config)
-        val config2 = FieldStatsConfig.fromConfig(field2.config)
+        val universeIds = (group1.defs.values + group2.defs.values).map { it.universeId }.toSet()
 
-        // 필터 적용: 대상 캐릭터 ID 세트 구하기
-        val targetCharIds = if (filterField != null && filterValue != null) {
-            val filterConfig = FieldStatsConfig.fromConfig(filterField.config)
-            s.fieldValues.filter { it.fieldDefinitionId == filterField.id }
-                .filter { fv ->
-                    val vals = getFieldValues(filterField, fv.value, filterConfig)
-                    filterValue in vals
-                }
-                .map { it.characterId }
-                .toSet()
+        return buildCrossAnalysis(
+            axis = CrossAxis.CHARACTER,
+            group1 = group1,
+            group2 = group2,
+            filterGroup = filterGroup,
+            filterValue = filterValue,
+            rowsByEntity = s.fieldValues.groupBy({ it.characterId }, { it.fieldDefinitionId to it.value }),
+            populationIds = s.characters.map { it.id }.toSet(),
+            mergedUniverseCount = universeIds.size
+        )
+    }
+
+    /**
+     * 사건 축 교차분석 (B-4) — 셀 값은 그 (값1, 값2) 조합을 가진 **사건 수**.
+     *
+     * 캐릭터 축과 함수를 나눈 이유: `computeCrossAnalysis`의 모수·셀 단위는 캐릭터이고
+     * 여기서는 사건이다. 한 표에 섞으면 셀이 무엇의 개수인지 말할 수 없게 된다.
+     */
+    fun computeEventCrossAnalysis(
+        s: StatsSnapshot,
+        field1Id: Long,
+        field2Id: Long,
+        filterFieldId: Long?,
+        filterValue: String?
+    ): CrossAnalysisResult? {
+        val group1 = crossFieldGroup(s.eventFieldDefinitions, field1Id) ?: return null
+        val group2 = crossFieldGroup(s.eventFieldDefinitions, field2Id) ?: return null
+        val filterGroup = if (filterFieldId != null) {
+            crossFieldGroup(s.eventFieldDefinitions, filterFieldId) ?: return null
+        } else null
+
+        val universeIds = (group1.defs.values + group2.defs.values).map { it.universeId }.toSet()
+
+        // 저장된 값 + CALCULATED 계산값. 계산 필드는 저장 행이 없으므로 여기서 합치지 않으면
+        // 인사이트 목록에는 보이는 필드가 교차분석에서만 빈 표로 나온다.
+        val storedRows = s.eventFieldValues.groupBy({ it.eventId }, { it.fieldDefinitionId to it.value })
+        val rowsByEvent = mergeCalculatedRows(storedRows, computeAllEventCalculatedValues(s))
+
+        return buildCrossAnalysis(
+            axis = CrossAxis.EVENT,
+            group1 = group1,
+            group2 = group2,
+            filterGroup = filterGroup,
+            filterValue = filterValue,
+            rowsByEntity = rowsByEvent,
+            populationIds = s.events.map { it.id }.toSet(),
+            mergedUniverseCount = universeIds.size
+        )
+    }
+
+    /**
+     * 필드 하나가 속한 **(key, type) 그룹 전체**를 돌려준다 (id → 정의).
+     *
+     * 인사이트 목록이 같은 key·type 필드를 세계관 통합으로 한 장에 보여주고(Pre-Analysis Merge)
+     * 그 목록에서 필드를 고르므로, 교차분석이 대표 id 하나만 집계하면 사용자가 본 것보다
+     * 조용히 좁은 결과가 나온다. 그래서 같은 범위를 집계한다.
+     */
+    private fun crossFieldGroup(defs: List<FieldDefinition>, fieldId: Long): CrossFieldGroup? {
+        val picked = defs.find { it.id == fieldId } ?: return null
+        return CrossFieldGroup(defs.filter { it.key == picked.key && it.type == picked.type }.associateBy { it.id })
+    }
+
+    /**
+     * 교차분석 한 축이 집계하는 필드 묶음. 통계 설정(JSON)을 **묶음당 한 번만** 파싱해 둔다 —
+     * 엔티티 루프 안에서 파싱하면 캐릭터/사건 수에 비례해 JSON 파싱이 반복된다.
+     */
+    private class CrossFieldGroup(val defs: Map<Long, FieldDefinition>) {
+        val configs: Map<Long, FieldStatsConfig> =
+            defs.mapValues { (_, fd) -> FieldStatsConfig.fromConfig(fd.config) }
+        val primary: FieldDefinition get() = defs.values.first()
+    }
+
+    /** CALCULATED 계산값(엔티티 → 필드 → 값)을 저장된 값 행 목록에 합친다. */
+    private fun mergeCalculatedRows(
+        stored: Map<Long, List<Pair<Long, String>>>,
+        calculated: Map<Long, Map<Long, String>>
+    ): Map<Long, List<Pair<Long, String>>> {
+        if (calculated.isEmpty()) return stored
+        val merged = stored.toMutableMap()
+        for ((entityId, byField) in calculated) {
+            merged[entityId] = (merged[entityId] ?: emptyList()) + byField.map { it.key to it.value }
+        }
+        return merged
+    }
+
+    /**
+     * 교차표 조립 — 축(캐릭터/사건)에 무관한 공통 계산.
+     *
+     * 셀 값은 해당 (값1, 값2) 조합을 가진 **엔티티 수**다. 엔티티당 중복 값 쌍은 distinct로
+     * 1회만 집계한다. 다중값 필드로 한 엔티티가 서로 다른 여러 칸에 기여하는 것은 다중값의
+     * 본질이므로 유지하고, multiValue 플래그로 UI가 해석 기준을 고지한다.
+     *
+     * [populationIds]에는 **축 전체**를 준다. 필드가 속한 세계관으로 좁히면, 작품이 없는(미분류)
+     * 캐릭터나 세계관이 지워진(universeId=null) 사건이 값을 가진 채로 표에서 조용히 빠진다 —
+     * 둘 다 실제로 존재하는 상태다. 모수가 다소 넓은 것이 값의 누락보다 낫다.
+     */
+    private fun buildCrossAnalysis(
+        axis: CrossAxis,
+        group1: CrossFieldGroup,
+        group2: CrossFieldGroup,
+        filterGroup: CrossFieldGroup?,
+        filterValue: String?,
+        rowsByEntity: Map<Long, List<Pair<Long, String>>>,
+        populationIds: Set<Long>,
+        mergedUniverseCount: Int
+    ): CrossAnalysisResult {
+        // 필터 적용: 대상 엔티티 ID 세트 구하기
+        val targetIds = if (filterGroup != null && filterValue != null) {
+            rowsByEntity.filter { (_, rows) -> filterValue in groupValues(filterGroup, rows) }.keys
         } else {
-            s.characters.map { it.id }.toSet()
+            populationIds
         }
 
-        // 교차표 구성 — 셀 값의 의미: 해당 (값1, 값2) 조합을 가진 "캐릭터 수".
-        // 캐릭터당 중복 값 쌍은 distinct로 1회만 집계한다 (같은 조합 중복 기여 방지).
-        // 다중값 필드로 한 캐릭터가 서로 다른 여러 칸에 기여하는 것은 다중값의 본질이므로 유지하고,
-        // multiValue 플래그로 UI가 해석 기준을 고지한다.
         val crossTable = mutableMapOf<String, MutableMap<String, Int>>()
         var filteredCount = 0
 
-        for (charId in targetCharIds) {
-            val charValues = valuesByChar[charId] ?: continue
-            val val1Raw = charValues.find { it.fieldDefinitionId == field1Id }?.value ?: continue
-            val val2Raw = charValues.find { it.fieldDefinitionId == field2Id }?.value ?: continue
-
-            val values1 = getFieldValues(field1, val1Raw, config1).distinct()
-            val values2 = getFieldValues(field2, val2Raw, config2).distinct()
+        for (entityId in targetIds) {
+            val rows = rowsByEntity[entityId] ?: continue
+            val values1 = groupValues(group1, rows)
+            if (values1.isEmpty()) continue
+            val values2 = groupValues(group2, rows)
+            if (values2.isEmpty()) continue
 
             for (v1 in values1) {
                 for (v2 in values2) {
@@ -1364,18 +1528,38 @@ class StatsDataProvider(private val app: NovelCharacterApp) {
             filteredCount++
         }
 
-        val multiValue = isMultiValueField(field1) || isMultiValueField(field2)
+        val multiValue = group1.defs.values.any { isMultiValueField(it) } ||
+            group2.defs.values.any { isMultiValueField(it) }
 
         return CrossAnalysisResult(
-            field1Name = field1.name,
-            field2Name = field2.name,
-            filterFieldName = filterField?.name,
+            field1Name = group1.primary.name,
+            field2Name = group2.primary.name,
+            filterFieldName = filterGroup?.primary?.name,
             filterValue = filterValue,
             crossTable = crossTable,
-            totalCount = s.characters.size,
+            totalCount = populationIds.size,
             filteredCount = filteredCount,
-            multiValue = multiValue
+            multiValue = multiValue,
+            axis = axis,
+            mergedUniverseCount = mergedUniverseCount
         )
+    }
+
+    /**
+     * 한 엔티티의 값 행 중 [group]에 속한 것들을 통계 키로 변환한다.
+     * 값마다 **그 값을 소유한 필드 정의**의 설정으로 해석한다 — 세계관마다 라벨·구간이 다를 수 있다.
+     */
+    private fun groupValues(
+        group: CrossFieldGroup,
+        rows: List<Pair<Long, String>>
+    ): List<String> {
+        val out = mutableListOf<String>()
+        for ((fieldDefId, raw) in rows) {
+            val fd = group.defs[fieldDefId] ?: continue
+            if (raw.isBlank()) continue
+            out.addAll(getFieldValues(fd, raw, group.configs.getValue(fieldDefId)))
+        }
+        return out.distinct()
     }
 
     /** 한 캐릭터가 여러 값을 가질 수 있는 필드인가 (교차분석 해석 고지용) */

@@ -593,6 +593,37 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
         db.fieldDefinitionDao().getFieldsByUniverseList(universeId, com.novelcharacter.app.data.model.FieldDefinition.ENTITY_EVENT)
     suspend fun getEventFieldValuesForEvent(eventId: Long) =
         db.eventFieldValueDao().getValuesByEventList(eventId)
+    /**
+     * 연표 카드에 얹을 사건 필드값 요약 (B-5).
+     *
+     * 목록에 실제로 그려지는 사건만 조회한다 — 사건 전량 조회는 세계관이 커질수록
+     * 화면과 무관하게 비용이 늘어난다. SQLite 999-변수 상한 때문에 900개씩 청크한다.
+     */
+    suspend fun getEventFieldSummaries(
+        eventIds: List<Long>
+    ): Map<Long, com.novelcharacter.app.util.CardFieldSummary.Summary> {
+        if (eventIds.isEmpty()) return emptyMap()
+        return try {
+            val defs = db.fieldDefinitionDao()
+                .getAllFieldsList(com.novelcharacter.app.data.model.FieldDefinition.ENTITY_EVENT)
+            if (defs.isEmpty()) return emptyMap()
+
+            val distinctIds = eventIds.distinct()
+            val values = distinctIds.chunked(900).flatMap { chunk ->
+                db.eventFieldValueDao().getValuesByEvents(chunk)
+            }
+            com.novelcharacter.app.util.CardFieldSummary.build(
+                defs = defs,
+                rowsByEntity = values.groupBy({ it.eventId }, { it.fieldDefinitionId to it.value }),
+                entityIds = distinctIds
+            )
+        } catch (e: Exception) {
+            // 카드 부가 정보다 — 실패해도 연표 자체는 그려야 한다. 다만 조용히 삼키지는 않는다.
+            Log.e("TimelineViewModel", "Failed to load event field summaries", e)
+            emptyMap()
+        }
+    }
+
     suspend fun getEventsByNovelList(novelId: Long) = timelineRepository.getEventsByNovelList(novelId)
     suspend fun getEventsByUniverseList(universeId: Long) = timelineRepository.getEventsByUniverseList(universeId)
     suspend fun getAllEventsList() = timelineRepository.getAllEventsList()

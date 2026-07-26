@@ -10,6 +10,7 @@ import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.TimelineEvent
 import com.novelcharacter.app.R
 import com.novelcharacter.app.databinding.ItemTimelineBinding
+import com.novelcharacter.app.util.CardFieldSummary
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -19,7 +20,15 @@ import kotlinx.coroutines.launch
  * Can be either an individual event or a grouped summary header.
  */
 sealed class TimelineDisplayItem {
-    data class EventItem(val event: TimelineEvent) : TimelineDisplayItem()
+    /**
+     * @param fieldSummary 카드에 얹을 사건 커스텀 필드값 (B-5). 표시 데이터를 항목에 담는 이유는
+     *   DiffUtil 때문이다 — 어댑터 바깥 맵으로 두면 값이 바뀌어도 항목이 같아 보여
+     *   목록 전체를 강제로 다시 그려야 한다.
+     */
+    data class EventItem(
+        val event: TimelineEvent,
+        val fieldSummary: CardFieldSummary.Summary = CardFieldSummary.empty()
+    ) : TimelineDisplayItem()
     data class GroupHeader(
         val label: String,
         val eventCount: Int,
@@ -61,6 +70,21 @@ class TimelineAdapter(
             }
         }
 
+    /**
+     * 사건 ID → 카드에 얹을 필드값 요약 (B-5, 외부에서 설정).
+     * 항목에 실어 보내므로 DiffUtil이 바뀐 카드만 다시 그린다.
+     */
+    var fieldSummaries: Map<Long, CardFieldSummary.Summary> = emptyMap()
+        set(value) {
+            if (field == value) return
+            field = value
+            // 재정렬 중에는 목록을 다시 만들지 않는다. reprocessEvents는 rawEvents 순서로 되돌리는데,
+            // getReorderedEvents가 읽는 것은 사용자가 끌어 옮긴 currentList다 —
+            // 비동기로 도착한 요약이 여기서 끼어들면 드래그한 순서가 통째로 사라진다.
+            // 재정렬을 끝내면 순서 저장 → 목록 재방출로 이어져 요약이 다시 실린다.
+            if (!isReorderMode) reprocessEvents()
+        }
+
     private var rawEvents: List<TimelineEvent> = emptyList()
 
     /**
@@ -96,14 +120,18 @@ class TimelineAdapter(
             .mapIndexed { index, item -> item.event.copy(displayOrder = index) }
     }
 
+    private fun eventItem(event: TimelineEvent) = TimelineDisplayItem.EventItem(
+        event, fieldSummaries[event.id] ?: CardFieldSummary.empty()
+    )
+
     private fun reprocessEvents() {
         val displayItems = when (zoomLevel) {
             1 -> groupEvents(rawEvents, 1000)  // Group by 1000-year intervals
             2 -> groupEvents(rawEvents, 100)    // Group by 100-year intervals
             3 -> groupEvents(rawEvents, 10)     // Group by 10-year intervals
-            4 -> rawEvents.map { TimelineDisplayItem.EventItem(it) }  // Individual events
-            5 -> rawEvents.map { TimelineDisplayItem.EventItem(it) }  // Individual events with month/day
-            else -> rawEvents.map { TimelineDisplayItem.EventItem(it) }
+            4 -> rawEvents.map { eventItem(it) }  // Individual events
+            5 -> rawEvents.map { eventItem(it) }  // Individual events with month/day
+            else -> rawEvents.map { eventItem(it) }
         }
         submitList(displayItems)
     }
@@ -187,13 +215,13 @@ class TimelineAdapter(
             // Cancel any ongoing coroutine from previous bind
             loadJob?.cancel()
             when (item) {
-                is TimelineDisplayItem.EventItem -> bindEvent(item.event)
+                is TimelineDisplayItem.EventItem -> bindEvent(item.event, item.fieldSummary)
                 is TimelineDisplayItem.GroupHeader -> bindGroup(item)
             }
         }
 
         @android.annotation.SuppressLint("ClickableViewAccessibility")
-        private fun bindEvent(event: TimelineEvent) {
+        private fun bindEvent(event: TimelineEvent, fieldSummary: CardFieldSummary.Summary) {
             loadJob?.cancel()
             boundEventId = event.id
             binding.yearText.text = formatEventDate(event)
@@ -218,6 +246,25 @@ class TimelineAdapter(
             }
             // 간편 사건 시각적 구분: 반투명 배경
             binding.root.alpha = if (event.isTemporary) 0.7f else 1.0f
+
+            // 사건 커스텀 필드값 (B-5). 상한을 넘어 잘린 줄은 개수로 존재를 알린다.
+            if (fieldSummary.isEmpty) {
+                binding.eventFieldsText.visibility = android.view.View.GONE
+                binding.eventFieldsMoreText.visibility = android.view.View.GONE
+            } else {
+                binding.eventFieldsText.text = fieldSummary.lines.joinToString("\n") {
+                    binding.root.context.getString(R.string.event_field_line_format, it.label, it.value)
+                }
+                binding.eventFieldsText.visibility = android.view.View.VISIBLE
+                if (fieldSummary.hiddenCount > 0) {
+                    binding.eventFieldsMoreText.text = binding.root.context.getString(
+                        R.string.event_field_more_format, fieldSummary.hiddenCount
+                    )
+                    binding.eventFieldsMoreText.visibility = android.view.View.VISIBLE
+                } else {
+                    binding.eventFieldsMoreText.visibility = android.view.View.GONE
+                }
+            }
 
             // 연결 작품명 표시
             val novelNames = novelNamesMap[event.id]
@@ -256,6 +303,9 @@ class TimelineAdapter(
         private fun bindGroup(group: TimelineDisplayItem.GroupHeader) {
             binding.dragHandle.visibility = android.view.View.GONE
             binding.novelNamesText.visibility = android.view.View.GONE
+            // 묶음 머리글은 사건 하나가 아니므로 필드값을 얹지 않는다 (재활용된 뷰의 잔상 제거).
+            binding.eventFieldsText.visibility = android.view.View.GONE
+            binding.eventFieldsMoreText.visibility = android.view.View.GONE
             binding.yearText.text = group.label
             binding.calendarTypeText.text = ""
             binding.descriptionText.text = binding.root.context.getString(R.string.event_count_format, group.eventCount)

@@ -16,6 +16,14 @@ interface EventFieldValueDao {
     @Query("SELECT * FROM event_field_values")
     suspend fun getAllValuesList(): List<EventFieldValue>
 
+    /**
+     * 여러 사건의 필드값 일괄 조회 (연표 카드 표시 — B-5).
+     * 호출부에서 900개 단위로 청크할 것 (SQLite 999-변수 상한).
+     * 전량 조회(`getAllValuesList`)를 쓰면 화면에 보이는 사건 수와 무관하게 테이블 전체를 읽는다.
+     */
+    @Query("SELECT * FROM event_field_values WHERE eventId IN (:eventIds)")
+    suspend fun getValuesByEvents(eventIds: List<Long>): List<EventFieldValue>
+
     /** 필드별 전체 값 (값 라이브러리 usageCount 재계산·전파용) */
     @Query("SELECT * FROM event_field_values WHERE fieldDefinitionId = :fieldDefId")
     suspend fun getValuesByFieldDef(fieldDefId: Long): List<EventFieldValue>

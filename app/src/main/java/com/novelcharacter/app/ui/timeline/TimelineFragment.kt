@@ -343,6 +343,22 @@ class TimelineFragment : Fragment(), EventEditDialogFragment.Host {
         }
     }
 
+    /** 목록에 그려지는 사건의 필드값 요약만 조회한다 (B-5). */
+    private var fieldSummaryJob: Job? = null
+
+    private fun loadEventFieldSummaries(events: List<TimelineEvent>) {
+        // 앞선 조회는 이미 낡았다 — 취소하지 않으면 늦게 끝난 쪽이 최신 결과를 덮는다.
+        fieldSummaryJob?.cancel()
+        if (events.isEmpty()) {
+            adapter.fieldSummaries = emptyMap()
+            return
+        }
+        fieldSummaryJob = viewLifecycleOwner.lifecycleScope.launch {
+            val summaries = viewModel.getEventFieldSummaries(events.map { it.id })
+            adapter.fieldSummaries = summaries
+        }
+    }
+
     /** 값을 valueFrom 기준 stepSize 배수로 정렬 (Slider 제약 충족) */
     private fun alignToStep(value: Float, valueFrom: Float, stepSize: Float): Float {
         if (stepSize <= 0f) return value
@@ -379,6 +395,8 @@ class TimelineFragment : Fragment(), EventEditDialogFragment.Host {
             binding.timelineRecyclerView.visibility = if (isEmpty) View.GONE else View.VISIBLE
             // 캐시된 작품명 적용 (DB 재조회 없음)
             adapter.novelNamesMap = cachedNovelNamesMap
+            // 카드에 얹을 사건 필드값 — 화면에 실린 사건만 조회
+            loadEventFieldSummaries(events)
             // 이동 후 해당 연도의 사건으로 스크롤 (네비게이션으로 인한 변경일 때만)
             if (pendingScrollToYear) {
                 pendingScrollToYear = false

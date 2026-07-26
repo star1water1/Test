@@ -72,7 +72,10 @@ class StatsFieldInsightFragment : Fragment() {
 
         viewModel.error.observe(viewLifecycleOwner) { error ->
             if (error != null) {
-                Toast.makeText(context ?: return@observe, R.string.stats_load_error, Toast.LENGTH_SHORT).show()
+                // 교차분석 실패 사유(축 불일치·필드 없음)는 구체적인 문구로 온다 — 그대로 보여준다.
+                val ctx = context ?: return@observe
+                val message = error.takeIf { it.isNotBlank() } ?: getString(R.string.stats_load_error)
+                Toast.makeText(ctx, message, Toast.LENGTH_LONG).show()
             }
         }
 
@@ -572,48 +575,92 @@ class StatsFieldInsightFragment : Fragment() {
 
     // ===== 교차 분석 다이얼로그 =====
 
+    /**
+     * 교차분석 다이얼로그 (B-4).
+     *
+     * 집계 축(캐릭터/사건)을 먼저 고르고, 세 스피너는 **그 축의 필드만** 싣는다.
+     * 축이 다른 필드를 섞으면 셀이 무엇의 개수인지 말할 수 없으므로 아예 고를 수 없게 한다
+     * (계산 쪽에도 같은 판정이 남아 있어, 어떤 경로로 들어와도 조용히 실패하지 않는다).
+     */
     private fun showCrossAnalysisDialog() {
         if (!isAdded) return
         val insights = viewModel.fieldInsights.value ?: return
-        if (insights.size < 2) {
-            Toast.makeText(requireContext(), R.string.stats_cross_need_two_fields, Toast.LENGTH_SHORT).show()
+
+        val byAxis = insights.groupBy {
+            it.fieldDefinition.entityType == com.novelcharacter.app.data.model.FieldDefinition.ENTITY_EVENT
+        }
+        // 축별로 2개 이상인 축만 후보다 — 축 안에서 두 필드를 골라야 표가 만들어진다.
+        val axisOptions = mutableListOf<Pair<String, List<FieldInsightResult>>>()
+        byAxis[false]?.takeIf { it.size >= 2 }
+            ?.let { axisOptions.add(getString(R.string.stats_cross_axis_character) to it) }
+        byAxis[true]?.takeIf { it.size >= 2 }
+            ?.let { axisOptions.add(getString(R.string.stats_cross_axis_event) to it) }
+
+        if (axisOptions.isEmpty()) {
+            Toast.makeText(requireContext(), R.string.stats_cross_need_two_fields, Toast.LENGTH_LONG).show()
             return
         }
 
-        val fieldNames = insights.map { "[${it.fieldDefinition.groupName}] ${it.fieldDefinition.name}" }.toTypedArray()
-        val fieldIds = insights.map { it.fieldDefinition.id }
-
-        var field1Index = 0
-        var field2Index = if (insights.size > 1) 1 else 0
-
         val dialogView = LayoutInflater.from(requireContext()).inflate(R.layout.dialog_cross_analysis, null)
-        val spinner1 = dialogView.findViewById<android.widget.Spinner>(R.id.spinnerField1)
-        val spinner2 = dialogView.findViewById<android.widget.Spinner>(R.id.spinnerField2)
-        val spinnerFilter = dialogView.findViewById<android.widget.Spinner>(R.id.spinnerFilterField)
+        val spinnerAxis = dialogView.findViewById<Spinner>(R.id.spinnerAxis)
+        val axisLabel = dialogView.findViewById<TextView>(R.id.axisLabel)
+        val spinner1 = dialogView.findViewById<Spinner>(R.id.spinnerField1)
+        val spinner2 = dialogView.findViewById<Spinner>(R.id.spinnerField2)
+        val spinnerFilter = dialogView.findViewById<Spinner>(R.id.spinnerFilterField)
         val editFilterValue = dialogView.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.editFilterValue)
-        val filterLayout = dialogView.findViewById<View>(R.id.filterLayout)
 
-        val adapter = android.widget.ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, fieldNames)
-        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-        spinner1.adapter = adapter
-        spinner2.adapter = adapter
-        spinner1.setSelection(field1Index)
-        spinner2.setSelection(field2Index)
+        // 축이 하나뿐이면 고를 것이 없으므로 선택기를 숨긴다 (조작 마찰 최소화).
+        val singleAxis = axisOptions.size == 1
+        spinnerAxis.visibility = if (singleAxis) View.GONE else View.VISIBLE
+        axisLabel.visibility = if (singleAxis) View.GONE else View.VISIBLE
 
-        // 필터 필드 (선택 사항)
-        val filterNames = arrayOf(getString(R.string.stats_cross_filter_none)) + fieldNames
-        val filterAdapter = android.widget.ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, filterNames)
-        filterAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-        spinnerFilter.adapter = filterAdapter
+        spinnerAxis.adapter = ArrayAdapter(
+            requireContext(), android.R.layout.simple_spinner_item, axisOptions.map { it.first }
+        ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+
+        // 현재 축의 필드 id — 실행 시 스피너 위치를 id로 옮기는 데 쓴다.
+        var currentFieldIds: List<Long> = emptyList()
+
+        fun applyAxis(axisIndex: Int) {
+            val fields = axisOptions[axisIndex].second
+            currentFieldIds = fields.map { it.fieldDefinition.id }
+            val fieldNames = fields.map { insight ->
+                val uni = insight.universeName.takeIf { it.isNotEmpty() }?.let { "$it · " } ?: ""
+                "$uni[${insight.fieldDefinition.groupName}] ${insight.fieldDefinition.name}"
+            }
+            val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, fieldNames)
+                .also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+            spinner1.adapter = adapter
+            spinner2.adapter = adapter
+            spinner1.setSelection(0)
+            spinner2.setSelection(if (fieldNames.size > 1) 1 else 0)
+
+            // 필터 필드도 같은 축에서만 고른다 (다른 축 필터는 대상 집합을 좁힐 수 없다).
+            val filterNames = listOf(getString(R.string.stats_cross_filter_none)) + fieldNames
+            spinnerFilter.adapter = ArrayAdapter(
+                requireContext(), android.R.layout.simple_spinner_item, filterNames
+            ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+            spinnerFilter.setSelection(0)
+        }
+
+        applyAxis(0)
+        spinnerAxis.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
+                applyAxis(position)
+            }
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
+        }
 
         MaterialAlertDialogBuilder(requireContext())
             .setTitle(R.string.stats_cross_analysis)
             .setView(dialogView)
             .setPositiveButton(R.string.stats_cross_run) { _, _ ->
-                val f1 = fieldIds[spinner1.selectedItemPosition]
-                val f2 = fieldIds[spinner2.selectedItemPosition]
+                val ids = currentFieldIds
+                if (ids.size < 2) return@setPositiveButton
+                val f1 = ids[spinner1.selectedItemPosition.coerceIn(0, ids.size - 1)]
+                val f2 = ids[spinner2.selectedItemPosition.coerceIn(0, ids.size - 1)]
                 val filterPos = spinnerFilter.selectedItemPosition
-                val filterFieldId = if (filterPos > 0) fieldIds[filterPos - 1] else null
+                val filterFieldId = if (filterPos in 1..ids.size) ids[filterPos - 1] else null
                 val filterValue = editFilterValue.text?.toString()?.takeIf { it.isNotBlank() }
                 viewModel.loadCrossAnalysis(f1, f2, filterFieldId, filterValue)
             }
@@ -626,15 +673,30 @@ class StatsFieldInsightFragment : Fragment() {
     private fun showCrossAnalysisResult(result: CrossAnalysisResult) {
         if (!isAdded) return
         binding.cardCrossAnalysis.visibility = View.VISIBLE
-        binding.crossAnalysisTitle.text = getString(R.string.stats_cross_title, result.field1Name, result.field2Name)
+        val isEventAxis = result.axis == CrossAxis.EVENT
+        val axisPrefix = if (isEventAxis) getString(R.string.stats_event_field_prefix) + " · " else ""
+        binding.crossAnalysisTitle.text =
+            axisPrefix + getString(R.string.stats_cross_title, result.field1Name, result.field2Name)
 
-        // 필터 정보 + 다중값 해석 기준 고지 (셀 값 = 조합을 가진 캐릭터 수, 다중값 필드는 여러 칸 기여 가능)
+        // 셀 단위·필터·다중값·세계관 통합 여부 고지 — 표를 읽는 기준을 화면에서 알 수 있어야 한다.
         val captions = mutableListOf<String>()
+        captions.add(
+            getString(
+                if (isEventAxis) R.string.stats_cross_cell_unit_event else R.string.stats_cross_cell_unit_character
+            )
+        )
         if (result.filterFieldName != null && result.filterValue != null) {
-            captions.add(getString(R.string.stats_cross_filter_info, result.filterFieldName, result.filterValue, result.filteredCount, result.totalCount))
+            val filterRes =
+                if (isEventAxis) R.string.stats_cross_filter_info_events else R.string.stats_cross_filter_info
+            captions.add(getString(filterRes, result.filterFieldName, result.filterValue, result.filteredCount, result.totalCount))
+        }
+        if (result.mergedUniverseCount > 1) {
+            captions.add(getString(R.string.stats_cross_merged_universes, result.mergedUniverseCount))
         }
         if (result.multiValue) {
-            captions.add(getString(R.string.stats_cross_multi_value_note))
+            val multiRes =
+                if (isEventAxis) R.string.stats_cross_multi_value_note_events else R.string.stats_cross_multi_value_note
+            captions.add(getString(multiRes))
         }
         if (captions.isNotEmpty()) {
             binding.crossAnalysisFilter.visibility = View.VISIBLE

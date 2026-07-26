@@ -113,6 +113,7 @@ class FieldEditDialog : DialogFragment() {
         setupRandomSection(binding)
         setupStructuredInputSection(binding)
         setupBodyAnalysisSection(binding)
+        setupCardDisplaySection(binding)
         populateFields(binding)
 
         val dialog = MaterialAlertDialogBuilder(requireContext())
@@ -328,6 +329,27 @@ class FieldEditDialog : DialogFragment() {
             FieldType.SELECT, FieldType.GRADE -> com.novelcharacter.app.data.model.RandomConfig(enabled = true)
             else -> com.novelcharacter.app.data.model.RandomConfig()
         }
+    }
+
+    /** 이 다이얼로그가 편집 중인 필드가 붙는 대상 (character / event) */
+    private fun currentEntityType(): String =
+        existingField?.entityType
+            ?: arguments?.getString(ARG_ENTITY_TYPE)
+            ?: FieldDefinition.ENTITY_CHARACTER
+
+    /**
+     * 목록 카드 표시 설정 (B-5).
+     * 지금 이 설정을 읽는 카드는 연표 사건 카드뿐이라 사건 필드에만 노출한다 —
+     * 캐릭터 목록 카드가 같은 설정을 쓰게 되면 조건만 넓히면 된다(설정 자체는 필드 종류를 가리지 않는다).
+     */
+    private fun setupCardDisplaySection(binding: DialogFieldEditBinding) {
+        val isEventField = currentEntityType() == FieldDefinition.ENTITY_EVENT
+        binding.cardDisplayLayout.visibility = if (isEventField) View.VISIBLE else View.GONE
+        // 상한은 상수가 단일 소스다 — 문구에 숫자를 박아 두면 상한을 옮길 때 안내가 거짓이 된다.
+        binding.textCardDisplayDesc.text = getString(
+            R.string.label_card_display_desc,
+            com.novelcharacter.app.data.model.CardDisplayConfig.MAX_ON_CARD
+        )
     }
 
     private fun setupStatsSection(binding: DialogFieldEditBinding) {
@@ -997,6 +1019,10 @@ class FieldEditDialog : DialogFragment() {
         binding.spinnerDecimalPlaces.setSelection(randomConfig.decimalPlaces.coerceIn(0, 2))
         updateRandomNumberOptionsVisibility(binding)
 
+        // 목록 카드 표시 (B-5)
+        binding.switchCardDisplay.isChecked =
+            com.novelcharacter.app.data.model.CardDisplayConfig.fromConfig(field.config).show
+
         // Stats config
         val statsConfig = FieldStatsConfig.fromConfig(field.config)
         binding.switchStatsEnabled.isChecked = statsConfig.enabled
@@ -1434,7 +1460,7 @@ class FieldEditDialog : DialogFragment() {
                 val withBody = if (type == FieldType.BODY_SIZE) {
                     BodyAnalysisConfig.applyToConfig(withRandom, collectBodyAnalysisConfig(binding))
                 } else withRandom
-                return applyInputModeConfig(binding, withBody)
+                return applyCardDisplayConfig(binding, applyInputModeConfig(binding, withBody))
             }
         }
 
@@ -1459,7 +1485,19 @@ class FieldEditDialog : DialogFragment() {
         val withBody = if (type == FieldType.BODY_SIZE) {
             BodyAnalysisConfig.applyToConfig(withRandom, collectBodyAnalysisConfig(binding))
         } else withRandom
-        return applyInputModeConfig(binding, withBody)
+        return applyCardDisplayConfig(binding, applyInputModeConfig(binding, withBody))
+    }
+
+    /**
+     * 목록 카드 표시 여부를 config "cardDisplay"에 기록 (B-5).
+     * 스위치를 노출하지 않는 캐릭터 필드는 기본값(표시)이 그대로 들어가고,
+     * `applyToConfig`가 기본값일 때 키를 남기지 않으므로 config가 부풀지 않는다.
+     */
+    private fun applyCardDisplayConfig(binding: DialogFieldEditBinding, configJson: String): String {
+        return com.novelcharacter.app.data.model.CardDisplayConfig.applyToConfig(
+            configJson,
+            com.novelcharacter.app.data.model.CardDisplayConfig(binding.switchCardDisplay.isChecked)
+        )
     }
 
     /** 입력 모드(제안/자유/제한)를 config "valueLibrary"에 기록 */

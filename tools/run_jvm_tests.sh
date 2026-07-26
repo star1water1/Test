@@ -26,6 +26,7 @@ SP="${JARS_DIR:-/tmp/claude-0/-home-user-Test/6a87d14f-0af6-505a-8734-77051e12d0
 REPO="${REPO:-$(cd "$(dirname "$0")/.." && pwd)}"
 MAIN=$REPO/app/src/main/java/com/novelcharacter/app
 TEST=$REPO/app/src/test/java/com/novelcharacter/app
+STUBS=$REPO/tools/jvm-stubs
 OUT=$SP/out-tests
 rm -rf "$OUT"; mkdir -p "$OUT"
 
@@ -97,6 +98,21 @@ $MAIN/data/dao/CharacterFieldValueDao.kt
 $MAIN/data/dao/FieldDefinitionDao.kt
 $MAIN/data/dao/FieldValueEntryDao.kt
 $MAIN/util/FieldFilterHelper.kt
+$MAIN/data/model/FieldStatsConfig.kt
+$MAIN/data/model/FieldType.kt
+$MAIN/data/model/NameBankEntry.kt
+$MAIN/data/model/TimelineCharacterCrossRef.kt
+$MAIN/data/model/TimelineEventNovelCrossRef.kt
+$MAIN/data/model/BodyAnalysisConfig.kt
+$MAIN/data/model/CardDisplayConfig.kt
+$MAIN/util/CardFieldSummary.kt
+$MAIN/util/GsonTypes.kt
+$MAIN/util/FieldOptionParser.kt
+$MAIN/util/FormulaEvaluator.kt
+$MAIN/util/GradeValueResolver.kt
+$MAIN/ui/stats/StatsDataProvider.kt
+$STUBS/StatsHarnessStubs.kt
+$STUBS/AndroidLogStub.kt
 "
 TESTS="
 $TEST/excel/FieldValueSheetMapperTest.kt
@@ -125,6 +141,8 @@ $TEST/data/EntitySnapshotPayloadTest.kt
 $TEST/data/RestoreLossCountsTest.kt
 $TEST/data/RestoreTallyTest.kt
 $TEST/ai/AiModelSuggestionsTest.kt
+$TEST/stats/StatsCrossAnalysisTest.kt
+$TEST/util/CardFieldSummaryTest.kt
 "
 # 선택 소스: 존재하고 순수 JVM이면 추가
 for extra in "$MAIN/util/SortComparators.kt" "$MAIN/util/EpochMemo.kt" "$MAIN/ai/AiJsonExtractor.kt"; do

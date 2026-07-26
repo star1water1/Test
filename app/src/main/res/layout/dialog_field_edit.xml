@@ -555,6 +555,34 @@
 
             </LinearLayout>
 
+            <!-- 목록 카드 표시 (B-5) — 사건 필드는 연표 카드에 값이 얹힌다 -->
+            <LinearLayout
+                android:id="@+id/cardDisplayLayout"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:layout_marginTop="8dp"
+                android:padding="12dp"
+                android:background="@drawable/bg_count_badge">
+
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/switchCardDisplay"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/label_card_display"
+                    android:checked="true" />
+
+                <!-- 문구의 개수는 코드에서 CardDisplayConfig.MAX_ON_CARD로 채운다 (상한 단일 소스) -->
+                <TextView
+                    android:id="@+id/textCardDisplayDesc"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:textAppearance="@style/TextAppearance.App.Caption"
+                    android:textColor="@color/text_secondary" />
+
+            </LinearLayout>
+
             <!-- 통계 설정 (CALCULATED 제외 모든 타입) -->
             <LinearLayout
                 android:id="@+id/statsSettingsLayout"
