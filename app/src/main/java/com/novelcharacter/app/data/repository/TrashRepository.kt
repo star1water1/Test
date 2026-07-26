@@ -27,6 +27,7 @@ import com.novelcharacter.app.data.model.FieldValueEntry
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.NovelSnapshot
 import com.novelcharacter.app.data.model.SnapshotRefs
+import com.novelcharacter.app.data.model.StateChangeSnapshot
 import com.novelcharacter.app.data.model.TimelineCharacterCrossRef
 import com.novelcharacter.app.data.model.TimelineEvent
 import com.novelcharacter.app.data.model.TimelineEventNovelCrossRef
@@ -126,7 +127,10 @@ class TrashRepository(
     /** 복원 자체가 불가능한 사유. null이 아니면 진행해도 되살아나지 않으므로 막는다. */
     enum class RestoreBlocker {
         /** 세력은 세계관 없이 존재할 수 없다(NOT NULL) — 세계관을 먼저 복원해야 한다. */
-        MISSING_UNIVERSE
+        MISSING_UNIVERSE,
+
+        /** 상태변화 이력은 캐릭터 없이 존재할 수 없다(FK) — 캐릭터를 먼저 복원해야 한다. */
+        MISSING_CHARACTER
     }
 
     /**
@@ -541,6 +545,31 @@ class TrashRepository(
         insertSnapshot(TrashSnapshot.TYPE_EVENT, event.description, snapshot, emptyList())
     }
 
+    /**
+     * 상태변화 이력 스냅샷 — 삭제 트랜잭션 안에서, 삭제 전에 호출할 것.
+     *
+     * **이력만 개별로 지우는 경로 전용이다.** 캐릭터 삭제는 [snapshotCharacter]가, 출생·사망
+     * 사건 삭제는 [snapshotEvent]가 이미 이력을 담으므로 그 경로에서 이것을 함께 부르면
+     * 같은 이력이 두 벌 남아 복원이 중복되고 거짓 경고가 뜬다(스냅샷은 겹치지 않고 이어붙는다).
+     */
+    suspend fun snapshotStateChange(change: CharacterStateChange) {
+        val characterCodes = HashMap<String, String>()
+        collectCharacterCodes(listOf(change.characterId), characterCodes)
+        val snapshot = StateChangeSnapshot(
+            change = change,
+            characterCode = characterCodes[change.characterId.toString()],
+            refs = EntityRefs(characters = characterCodes)
+        )
+        // 목록 이름은 이력의 내용 그대로 — 삭제 직전 다이얼로그가 보여 준 문구와 같은 형태라
+        // 사용자가 휴지통에서 "방금 지운 그것"을 알아볼 수 있다.
+        insertSnapshot(
+            TrashSnapshot.TYPE_STATE_CHANGE,
+            "${change.fieldKey} → ${change.newValue}",
+            snapshot,
+            emptyList()
+        )
+    }
+
     private suspend fun insertSnapshot(
         entityType: String,
         entityName: String,
@@ -682,6 +711,7 @@ class TrashRepository(
             TrashSnapshot.TYPE_FACTION ->
                 factionPlan(snap, pendingCodes, pendingPeerCodes = peerCodes.factions)?.toPreview()
             TrashSnapshot.TYPE_EVENT -> eventPlan(snap, pendingCodes)?.toPreview()
+            TrashSnapshot.TYPE_STATE_CHANGE -> stateChangePlan(snap, pendingCodes)?.toPreview()
             else -> null
         }
     }
@@ -745,6 +775,11 @@ class TrashRepository(
                 TrashSnapshot.TYPE_EVENT -> {
                     val plan = eventPlan(snap) ?: return@withTransaction
                     result = applyEvent(plan, null)
+                }
+                TrashSnapshot.TYPE_STATE_CHANGE -> {
+                    val plan = stateChangePlan(snap) ?: return@withTransaction
+                    if (plan.blocker != null) return@withTransaction
+                    result = applyStateChange(plan)
                 }
                 else -> return@withTransaction
             }
@@ -932,6 +967,11 @@ class TrashRepository(
                     val plan = eventPlan(item, session = session) ?: return@withTransaction
                     result = applyEvent(plan, session)
                 }
+                TrashSnapshot.TYPE_STATE_CHANGE -> {
+                    val plan = stateChangePlan(item, session = session) ?: return@withTransaction
+                    if (plan.blocker != null) return@withTransaction
+                    result = applyStateChange(plan)
+                }
                 else -> return@withTransaction
             }
         }
@@ -1029,7 +1069,7 @@ class TrashRepository(
         val eventIds: List<Long>,
         val losses: RestoreLossCounts,
         val relinkedByCode: Int,
-        /** [Tally.PENDING_ID] 자리표시자가 섞인 계획 — 미리보기 전용이며 쓰기에 쓰면 안 된다. */
+        /** [RestoreTally.PENDING_ID] 자리표시자가 섞인 계획 — 미리보기 전용이며 쓰기에 쓰면 안 된다. */
         val previewOnly: Boolean,
         val legacyPayload: Boolean,
         val duplicatesLivingCharacter: Boolean
@@ -1074,7 +1114,7 @@ class TrashRepository(
         if (data.character == null) return null   // Gson은 손상된 payload에 null을 주입할 수 있다
 
         val refs = data.refs
-        val tally = Tally(legacy = refs == null, pendingCodes = pendingCodes)
+        val tally = RestoreTally(legacy = refs == null, pendingCodes = pendingCodes)
 
         // ── 작품 ──
         val novelIndex = buildIndex(
@@ -1111,14 +1151,15 @@ class TrashRepository(
         var skippedFieldValues = 0
         var mergedFieldValues = 0
         for (v in data.fieldValues) {
-            val res = tally.note(
+            val fieldRef = fieldRefs[v.fieldDefinitionId.toString()]
+            val res = tally.noteFieldDef(
                 SnapshotRefResolver.resolveFieldDef(
                     v.fieldDefinitionId,
-                    fieldRefs[v.fieldDefinitionId.toString()],
+                    fieldRef,
                     fieldIndex.naturalById,
                     fieldIndex.idByNatural
                 ),
-                null
+                fieldRef
             )
             val newId = res.id
             if (newId == null) {
@@ -1128,7 +1169,9 @@ class TrashRepository(
             // (characterId, fieldDefinitionId) 유니크 — 서로 다른 옛 id가 같은 정의로 수렴하면
             // insertAll(ABORT)이 복원 전체를 실패시키므로 여기서 접는다. 정의는 멀쩡히 살아
             // 있으므로 '찾을 수 없음'과 같은 칸에 넣지 않는다(그러면 거짓 사유가 된다).
-            if (!usedFieldDefIds.add(newId)) {
+            // 보류 자리표시자(PENDING_ID)는 서로 다른 정의가 전부 같은 0이라 수렴처럼 보인다 —
+            // 여기서 세면 거짓 경고의 칸만 '못 찾음'에서 '합쳐짐'으로 옮겨 갈 뿐이다.
+            if (newId != RestoreTally.PENDING_ID && !usedFieldDefIds.add(newId)) {
                 mergedFieldValues++
                 continue
             }
@@ -1398,7 +1441,7 @@ class TrashRepository(
         val imageNovelCode: String?,
         val losses: RestoreLossCounts,
         val relinkedByCode: Int,
-        /** [Tally.PENDING_ID] 자리표시자가 섞인 계획 — 미리보기 전용이며 쓰기에 쓰면 안 된다. */
+        /** [RestoreTally.PENDING_ID] 자리표시자가 섞인 계획 — 미리보기 전용이며 쓰기에 쓰면 안 된다. */
         val previewOnly: Boolean,
         val legacyPayload: Boolean,
         val duplicatesLivingEntity: Boolean
@@ -1423,7 +1466,7 @@ class TrashRepository(
         if (data.universe == null) return null
 
         val refs = data.refs
-        val tally = Tally(legacy = refs == null, pendingCodes = pendingCodes)
+        val tally = RestoreTally(legacy = refs == null, pendingCodes = pendingCodes)
 
         // 값 라이브러리·고아 필드값은 이제 이어붙임 행(TYPE_UNIVERSE_DATA)이 담는다 —
         // 한 행에 몰아넣으면 payload가 CursorWindow 한도를 넘겨 백업을 읽을 수 없게 된다.
@@ -1536,7 +1579,7 @@ class TrashRepository(
     ): UniverseDataPlan? {
         val data = parse(snap, UniverseDataSnapshot::class.java) ?: return null
         val refs = data.refs
-        val tally = Tally(legacy = refs == null, pendingCodes = pendingCodes)
+        val tally = RestoreTally(legacy = refs == null, pendingCodes = pendingCodes)
 
         val uCode = data.universeCode ?: refs?.universeCode
         val universeExists = uCode != null &&
@@ -1555,12 +1598,15 @@ class TrashRepository(
             session = session
         )
 
-        fun resolveDef(oldId: Long): Long? = tally.note(
-            SnapshotRefResolver.resolveFieldDef(
-                oldId, fieldRefs[oldId.toString()], fieldIndex.naturalById, fieldIndex.idByNatural
-            ),
-            null
-        ).id
+        fun resolveDef(oldId: Long): Long? {
+            val ref = fieldRefs[oldId.toString()]
+            return tally.noteFieldDef(
+                SnapshotRefResolver.resolveFieldDef(
+                    oldId, ref, fieldIndex.naturalById, fieldIndex.idByNatural
+                ),
+                ref
+            ).id
+        }
 
         var lostEntries = 0
         val plannedEntries = ArrayList<Pair<Long, FieldValueEntry>>(entries.size)
@@ -1591,7 +1637,8 @@ class TrashRepository(
                 orphanLost++
                 continue
             }
-            if (!seenChars.add(owner to defId)) {
+            // 보류 자리표시자끼리는 전부 (0, 0)이라 수렴처럼 보인다 — 세지 않는다(위 주석과 같은 사유).
+            if (isResolved(owner, defId) && !seenChars.add(owner to defId)) {
                 merged++
                 continue
             }
@@ -1613,7 +1660,7 @@ class TrashRepository(
                 orphanLost++
                 continue
             }
-            if (!seenEvents.add(owner to defId)) {
+            if (isResolved(owner, defId) && !seenEvents.add(owner to defId)) {
                 merged++
                 continue
             }
@@ -1687,7 +1734,9 @@ class TrashRepository(
             entityType = TrashSnapshot.TYPE_UNIVERSE_DATA,
             restoredName = plan.data.universeCode.orEmpty(),
             losses = plan.losses.copy(
-                fieldValueEntries = skippedEntries,
+                // 계획 단계의 유실(필드 정의를 못 찾은 엔트리)에 **더한다.** 종전에는 덮어써서
+                // 그만큼이 결과에서 조용히 사라졌다 — orphanFieldValues 쪽과 같은 규칙이어야 한다.
+                fieldValueEntries = plan.losses.fieldValueEntries + skippedEntries,
                 orphanFieldValues = orphanLost
             ),
             relinkedByCode = plan.relinkedByCode
@@ -1705,7 +1754,7 @@ class TrashRepository(
         val imageCharacterCode: String?,
         val losses: RestoreLossCounts,
         val relinkedByCode: Int,
-        /** [Tally.PENDING_ID] 자리표시자가 섞인 계획 — 미리보기 전용이며 쓰기에 쓰면 안 된다. */
+        /** [RestoreTally.PENDING_ID] 자리표시자가 섞인 계획 — 미리보기 전용이며 쓰기에 쓰면 안 된다. */
         val previewOnly: Boolean,
         val legacyPayload: Boolean,
         val duplicatesLivingEntity: Boolean
@@ -1730,7 +1779,7 @@ class TrashRepository(
         if (data.novel == null) return null
 
         val refs = data.refs
-        val tally = Tally(legacy = refs == null, pendingCodes = pendingCodes)
+        val tally = RestoreTally(legacy = refs == null, pendingCodes = pendingCodes)
 
         val universe = resolveUniverse(data.novel.universeId, refs?.universeCode, tally, session)
         val linked = data.linkedEventIds.orEmpty()
@@ -1813,7 +1862,7 @@ class TrashRepository(
         val detachedCodes: List<String>,
         val losses: RestoreLossCounts,
         val relinkedByCode: Int,
-        /** [Tally.PENDING_ID] 자리표시자가 섞인 계획 — 미리보기 전용이며 쓰기에 쓰면 안 된다. */
+        /** [RestoreTally.PENDING_ID] 자리표시자가 섞인 계획 — 미리보기 전용이며 쓰기에 쓰면 안 된다. */
         val previewOnly: Boolean,
         val legacyPayload: Boolean,
         val duplicatesLivingEntity: Boolean,
@@ -1841,7 +1890,7 @@ class TrashRepository(
         if (data.faction == null) return null
 
         val refs = data.refs
-        val tally = Tally(legacy = refs == null, pendingCodes = pendingCodes)
+        val tally = RestoreTally(legacy = refs == null, pendingCodes = pendingCodes)
         val universe = resolveUniverse(data.faction.universeId, refs?.universeCode, tally, session)
 
         val memberships = data.memberships.orEmpty()
@@ -2073,7 +2122,7 @@ class TrashRepository(
         val stateChanges: List<CharacterStateChange>,
         val losses: RestoreLossCounts,
         val relinkedByCode: Int,
-        /** [Tally.PENDING_ID] 자리표시자가 섞인 계획 — 미리보기 전용이며 쓰기에 쓰면 안 된다. */
+        /** [RestoreTally.PENDING_ID] 자리표시자가 섞인 계획 — 미리보기 전용이며 쓰기에 쓰면 안 된다. */
         val previewOnly: Boolean,
         val legacyPayload: Boolean,
         val duplicatesLivingEntity: Boolean
@@ -2098,7 +2147,7 @@ class TrashRepository(
         if (data.event == null) return null
 
         val refs = data.refs
-        val tally = Tally(legacy = refs == null, pendingCodes = pendingCodes)
+        val tally = RestoreTally(legacy = refs == null, pendingCodes = pendingCodes)
         val universe = resolveUniverse(data.event.universeId, refs?.universeCode, tally, session)
 
         val values = data.fieldValues.orEmpty()
@@ -2113,19 +2162,20 @@ class TrashRepository(
         var lostValues = 0
         var mergedValues = 0
         for (v in values) {
-            val res = tally.note(
+            val fieldRef = fieldRefs[v.fieldDefinitionId.toString()]
+            val res = tally.noteFieldDef(
                 SnapshotRefResolver.resolveFieldDef(
-                    v.fieldDefinitionId, fieldRefs[v.fieldDefinitionId.toString()],
+                    v.fieldDefinitionId, fieldRef,
                     fieldIndex.naturalById, fieldIndex.idByNatural
                 ),
-                null
+                fieldRef
             )
             val newId = res.id
             if (newId == null) {
                 lostValues++
                 continue
             }
-            if (!usedDefIds.add(newId)) {
+            if (newId != RestoreTally.PENDING_ID && !usedDefIds.add(newId)) {
                 mergedValues++
                 continue
             }
@@ -2286,53 +2336,129 @@ class TrashRepository(
     }
 
     // ──────────────────────────────────────────────────────────────────────
+    // 복원 — 상태변화 이력
+    // ──────────────────────────────────────────────────────────────────────
+
+    private data class StateChangePlan(
+        val data: StateChangeSnapshot,
+        /** 해석된 주인 캐릭터 id. blocker가 있으면 null이다. */
+        val characterId: Long?,
+        val relinkedByCode: Int,
+        val legacyPayload: Boolean,
+        val previewOnly: Boolean,
+        val duplicatesLivingEntity: Boolean,
+        val blocker: RestoreBlocker?
+    ) {
+        fun toPreview() = RestorePreview(
+            entityType = TrashSnapshot.TYPE_STATE_CHANGE,
+            entityName = "${data.change.fieldKey} → ${data.change.newValue}",
+            relinkedByCode = relinkedByCode,
+            duplicatesLivingEntity = duplicatesLivingEntity,
+            legacyPayload = legacyPayload,
+            blocker = blocker
+        )
+    }
+
+    private suspend fun stateChangePlan(
+        snap: TrashSnapshot,
+        pendingCodes: Set<String> = emptySet(),
+        session: RestoreSession? = null
+    ): StateChangePlan? {
+        val data = parse(snap, StateChangeSnapshot::class.java) ?: return null
+        @Suppress("SENSELESS_COMPARISON")
+        if (data.change == null) return null
+
+        val refs = data.refs
+        val tally = RestoreTally(legacy = refs == null, pendingCodes = pendingCodes)
+        val code = data.characterCode ?: refs?.characters?.get(data.change.characterId.toString())
+        val index = characterIndex(
+            listOf(data.change.characterId), listOfNotNull(code), session
+        )
+        val res = tally.note(
+            SnapshotRefResolver.resolveByCode(
+                data.change.characterId, code, index.codeById, index.idByCode, index.liveIds
+            ),
+            code
+        )
+
+        // 같은 code의 이력이 아직 살아 있으면 이 스냅샷은 삭제 백업이 아니다(그 사이 다시
+        // 만들어졌거나 편집 직전 백업이다) — 복원하면 되돌리기가 아니라 사본이 하나 더 생긴다.
+        //
+        // 특수키(`__birth`·`__death`·`__alive`)는 code가 달라도 마찬가지다. 캐릭터당 하나를
+        // 전제로 읽히므로(`SemanticFieldSyncHelper.findStateChange`는 첫 건을 쓴다) 지운 뒤
+        // 생년 필드를 고치면 앱이 **새 code로** 하나를 다시 만들어 둔다. code만 보면 "없다"고
+        // 판단해 조용히 두 번째 줄을 만들고, 그때부터 어느 쪽이 진짜인지 알 수 없게 된다.
+        val dao = db.characterStateChangeDao()
+        val sameCodeLives = data.change.code?.takeIf { it.isNotBlank() }
+            ?.let { dao.getChangeByCode(it) != null } ?: false
+        val sameSlotLives = data.change.fieldKey in SINGLETON_STATE_KEYS &&
+            res.id != null && res.id != RestoreTally.PENDING_ID &&
+            dao.getChangesByField(res.id!!, data.change.fieldKey).isNotEmpty()
+        val livingSame = sameCodeLives || sameSlotLives
+
+        return StateChangePlan(
+            data = data,
+            characterId = res.id,
+            relinkedByCode = tally.relinked,
+            legacyPayload = tally.legacyGuess,
+            previewOnly = tally.previewOnly,
+            duplicatesLivingEntity = livingSame,
+            // 이력은 캐릭터 없이 존재할 수 없다(FK). 아무 캐릭터에나 붙이면 남의 기록이 되므로
+            // 되살리지 않고 스냅샷을 남긴다 — 캐릭터를 먼저 복원한 뒤 다시 시도할 수 있다(R-4).
+            blocker = if (res.id == null) RestoreBlocker.MISSING_CHARACTER else null
+        )
+    }
+
+    private suspend fun applyStateChange(plan: StateChangePlan): RestoreResult {
+        check(!plan.previewOnly) { "미리보기 전용 계획으로 복원을 시도했다" }
+        check(plan.blocker == null) { "복원할 수 없는 상태변화 계획이 적용 단계까지 왔다" }
+        val characterId = requireNotNull(plan.characterId)
+        val source = plan.data.change
+
+        // code는 유니크 — 그 사이 같은 code가 다시 쓰이고 있으면 재발급한다(복원이 실패하는
+        // 것보다 코드를 새로 받는 편이 낫다. 되살아나는 내용은 같다).
+        val safeCode = source.code
+            ?.takeIf { it.isNotBlank() && db.characterStateChangeDao().getChangeByCode(it) == null }
+            ?: generateEntityCode()
+        db.characterStateChangeDao().insertAll(
+            listOf(source.copy(id = 0, characterId = characterId, code = safeCode))
+        )
+
+        // 복원도 값 쓰기 경로다 — 삽입 경로(insertStateChange)가 수확하는 것을 여기서 빠뜨리면
+        // 되살린 값이 값 라이브러리에서만 사라진 채로 남는다. 특수키(__birth 등)는 이 함수가
+        // 스스로 걸러 낸다.
+        FieldValueLibraryRepository(db)
+            .harvestStateChange(characterId, source.fieldKey, source.newValue)
+
+        return RestoreResult(
+            entityType = TrashSnapshot.TYPE_STATE_CHANGE,
+            restoredName = "${source.fieldKey} → ${source.newValue}",
+            relinkedByCode = plan.relinkedByCode,
+            // 파생 필드값(생년·나이·생존 여부)은 되돌리지 않는다 — 사건 복원과 같은 규약이다.
+            // 되살린 것이 출생·사망 이력이면 그 사실을 함께 알린다.
+            restoredSemanticStateChanges = if (
+                source.fieldKey == CharacterStateChange.KEY_BIRTH ||
+                source.fieldKey == CharacterStateChange.KEY_DEATH
+            ) 1 else 0
+        )
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
     // 해석 보조
     // ──────────────────────────────────────────────────────────────────────
 
+
     /**
-     * 해석 집계 — 코드로 다시 찾은 건수와 '근거가 id뿐인 해석'이 있었는지를 모은다.
-     *
-     * [pendingCodes]는 같은 작업으로 **함께 복원될 예정**인 코드다. 지금 DB에 없어도 복원
-     * 순서상 그때는 존재하므로 유실로 세지 않는다 — 이것이 없으면 작업 전체 미리보기가
-     * "세력을 되살릴 수 없다"처럼 사실과 다른 경고를 낸다.
+     * 두 참조가 모두 **실제** id인가 — 미리보기의 보류 자리표시자([RestoreTally.PENDING_ID])는
+     * 서로 다른 대상이 전부 같은 0으로 보이므로 중복(수렴) 판정에서 빼야 한다.
      */
-    private class Tally(legacy: Boolean, private val pendingCodes: Set<String>) {
-        var relinked = 0
-            private set
-        var legacyGuess = legacy
-            private set
-
-        /**
-         * 이 해석에 [PENDING_ID] 자리표시자가 섞였는가 — 섞였다면 그 계획은 **미리보기 전용**이며
-         * 실제 쓰기에 쓰면 존재하지 않는 id(0)를 참조로 박는다. 계획이 이 값을 들고 다니고
-         * apply 쪽이 거부한다(주석으로만 약속하면 언젠가 깨진다).
-         */
-        var previewOnly = false
-            private set
-
-        fun note(res: SnapshotRefResolver.Resolution, code: String?): SnapshotRefResolver.Resolution {
-            if (res.origin == SnapshotRefResolver.Origin.CODE) relinked++
-            if (res.isLegacyGuess) legacyGuess = true
-            if (!res.found && code != null && code in pendingCodes) {
-                // 같은 작업이 곧 되살릴 대상이다. id는 아직 모르므로 **미리보기에서만** 의미가 있고,
-                // 실제 복원은 순서 덕분에 진짜 id를 얻는다. 0은 "유실 아님"의 표식이다.
-                previewOnly = true
-                return SnapshotRefResolver.Resolution(PENDING_ID, SnapshotRefResolver.Origin.CODE)
-            }
-            return res
-        }
-
-        companion object {
-            /** 미리보기 전용 — "곧 존재하게 될 대상"의 자리표시자. 실제 쓰기에는 도달하지 않는다. */
-            const val PENDING_ID = 0L
-        }
-    }
+    private fun isResolved(vararg ids: Long): Boolean = ids.none { it == RestoreTally.PENDING_ID }
 
     /** 세계관 해석 결과 — id가 null이면 못 찾은 것이고 [cleared]는 '있었는데 못 찾음'이다. */
     private data class UniverseResolution(val id: Long?, val cleared: Boolean)
 
     private suspend fun resolveUniverse(
-        oldId: Long?, code: String?, tally: Tally, session: RestoreSession?
+        oldId: Long?, code: String?, tally: RestoreTally, session: RestoreSession?
     ): UniverseResolution {
         if (oldId == null) return UniverseResolution(null, false)
         val index = buildIndex(
@@ -2648,5 +2774,17 @@ class TrashRepository(
          * 넉넉히 낮춰 잡는다. 예산을 넘기면 다음 행으로 넘어간다(유실 없음).
          */
         const val PAYLOAD_BUDGET_CHARS = 400_000
+
+        /**
+         * 캐릭터당 **하나만** 있는 것으로 읽히는 상태변화 키.
+         *
+         * 일반 필드의 이력은 여러 줄이 정상이다(그것이 '상태변화'다). 이 셋만은 시맨틱 동기화가
+         * 첫 건을 진실로 쓰므로, 복원이 두 번째 줄을 만들면 어느 쪽이 진짜인지 알 수 없게 된다.
+         */
+        val SINGLETON_STATE_KEYS = setOf(
+            CharacterStateChange.KEY_BIRTH,
+            CharacterStateChange.KEY_DEATH,
+            CharacterStateChange.KEY_ALIVE
+        )
     }
 }

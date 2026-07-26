@@ -331,7 +331,10 @@ class SemanticFieldSyncHelper(
     private suspend fun deleteStateChangeByKey(characterId: Long, fieldKey: String) {
         val existing = findStateChange(characterId, fieldKey)
         if (existing != null) {
-            characterRepository.deleteStateChange(existing)
+            // 파생 정리는 휴지통 스냅샷을 남기지 않는다 — 이 이력을 지우게 만든 원인(출생·사망
+            // 사건 삭제, 필드값 변경)의 스냅샷이 이미 담고 있다. 여기서 또 담으면 같은 이력이
+            // 두 벌 남아 복원이 중복되고, 휴지통에는 사용자가 지운 적 없는 항목이 쌓인다.
+            characterRepository.deleteStateChange(existing, snapshot = false)
         }
     }
 

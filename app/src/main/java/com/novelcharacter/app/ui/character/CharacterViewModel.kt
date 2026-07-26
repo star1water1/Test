@@ -1471,6 +1471,67 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    /**
+     * 사건 삭제 — 캐릭터 화면에서도 연표 탭과 **같은 경로**로 지운다.
+     *
+     * 종전에는 사건을 지우려면 반드시 연표 탭으로 가야 했다(원칙 04 — 조작 마찰).
+     * 저장소가 휴지통 스냅샷을 남기고, 출생·사망 사건이면 캐릭터 쪽 상태변화 정리를
+     * **스냅샷 뒤·삭제 앞에 같은 트랜잭션 안에서** 실행한다(TimelineViewModel과 동일 규약).
+     * 순서가 바뀌면 스냅샷이 이미 지워진 이력을 담지 못해 사건만 되살아난다.
+     */
+    fun deleteEvent(event: TimelineEvent) = viewModelScope.launch {
+        try {
+            timelineRepository.deleteEvent(event) {
+                if (event.eventType == TimelineEvent.TYPE_BIRTH ||
+                    event.eventType == TimelineEvent.TYPE_DEATH
+                ) {
+                    cleanupStateChangesForDeletedEvent(event)
+                }
+            }
+            reportResult(_result, OpResult.success(OpResult.CAT_EVENT,
+                app.getString(R.string.result_event_deleted)))
+        } catch (e: Exception) {
+            Log.e("CharacterViewModel", "Failed to delete event", e)
+            reportResult(_result, OpResult.failure(OpResult.CAT_EVENT,
+                app.getString(R.string.result_event_delete_failed), e.message))
+        }
+    }
+
+    /** 출생/사망 사건 삭제 전, 연결된 캐릭터의 상태변화 + 파생 필드값 정리 (TimelineViewModel과 동일). */
+    private suspend fun cleanupStateChangesForDeletedEvent(event: TimelineEvent) {
+        for (charId in timelineRepository.getCharacterIdsForEvent(event.id)) {
+            try {
+                val character = characterRepository.getCharacterById(charId) ?: continue
+                val novel = character.novelId?.let { novelRepository.getNovelById(it) } ?: continue
+                val universeId = novel.universeId ?: continue
+                when (event.eventType) {
+                    TimelineEvent.TYPE_BIRTH -> semanticSyncHelper.onBirthEventDeleted(charId, universeId)
+                    TimelineEvent.TYPE_DEATH -> semanticSyncHelper.onDeathEventDeleted(charId, universeId)
+                }
+            } catch (e: Exception) {
+                Log.w("CharacterViewModel", "Failed to cleanup state changes for character $charId", e)
+            }
+        }
+    }
+
+    /**
+     * 이 캐릭터와 사건의 **연결만** 끊는다 — 사건 자체는 남는다.
+     *
+     * 사건은 여러 캐릭터가 공유하므로 캐릭터 화면의 '삭제'가 곧 전역 삭제가 되면
+     * 다른 캐릭터의 연표에서도 사라진다. 둘을 다른 동작으로 갈라 둔다.
+     */
+    fun unlinkEventFromCharacter(eventId: Long, characterId: Long) = viewModelScope.launch {
+        try {
+            timelineRepository.unlinkCharacterFromEvent(eventId, characterId)
+            reportResult(_result, OpResult.success(OpResult.CAT_EVENT,
+                app.getString(R.string.result_event_unlinked)))
+        } catch (e: Exception) {
+            Log.e("CharacterViewModel", "Failed to unlink event", e)
+            reportResult(_result, OpResult.failure(OpResult.CAT_EVENT,
+                app.getString(R.string.result_event_unlink_failed), e.message))
+        }
+    }
+
     suspend fun getCharacterIdsForEvent(eventId: Long): List<Long> =
         timelineRepository.getCharacterIdsForEvent(eventId)
 }

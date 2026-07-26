@@ -16,7 +16,9 @@ import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.NovelSnapshot
 import com.novelcharacter.app.data.model.SnapshotRefs
+import com.novelcharacter.app.data.model.StateChangeSnapshot
 import com.novelcharacter.app.data.model.TimelineEvent
+import com.novelcharacter.app.data.model.TrashSnapshot
 import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.data.model.UniverseDataSnapshot
 import com.novelcharacter.app.data.model.UniverseSnapshot
@@ -272,6 +274,50 @@ class EntitySnapshotPayloadTest {
         val old = gson.fromJson(older, EventSnapshot::class.java)
         assertNull(old.linkedStateChanges)
         assertEquals(emptyList<CharacterStateChange>(), old.linkedStateChanges.orEmpty())
+    }
+
+    @Test
+    fun `상태변화 스냅샷은 주인 캐릭터 코드를 담고 구버전 키 없음에도 견딘다`() {
+        // 이력만 개별로 지우는 경로의 백업이다. 주인은 **코드로** 다시 찾는다 —
+        // id 단독으로 붙이면 남의 캐릭터에 남의 출생 기록을 심는다(오배정은 생략보다 나쁘다).
+        val original = StateChangeSnapshot(
+            change = CharacterStateChange(
+                id = 5, characterId = 88, year = 1200,
+                fieldKey = CharacterStateChange.KEY_BIRTH, newValue = "1200", code = "CHG-B"
+            ),
+            characterCode = "CHR-9",
+            refs = EntityRefs(characters = mapOf("88" to "CHR-9"))
+        )
+        val restored = gson.fromJson(gson.toJson(original), StateChangeSnapshot::class.java)
+        assertEquals(88L, restored.change.characterId)
+        assertEquals(CharacterStateChange.KEY_BIRTH, restored.change.fieldKey)
+        assertEquals("CHR-9", restored.characterCode)
+        assertEquals("CHR-9", restored.refs!!.characters!!["88"])
+
+        // 코드·refs가 없는 payload도 역직렬화는 되어야 한다 — 그때는 복원이 막히고
+        // 스냅샷이 휴지통에 남는다(R-2 + R-4). 여기서 터지면 목록조차 못 연다.
+        val bare = """{"change": {"id": 5, "characterId": 88, "year": 1200,
+                       "fieldKey": "__birth", "newValue": "1200", "description": "",
+                       "createdAt": 0}}"""
+        val old = gson.fromJson(bare, StateChangeSnapshot::class.java)
+        assertNull(old.characterCode)
+        assertNull(old.refs)
+        assertNull(old.change.code)
+        assertEquals(emptyMap<String, String>(), old.refs?.characters.orEmpty())
+    }
+
+    @Test
+    fun `상태변화는 캐릭터보다 나중에 복원된다`() {
+        // 이력은 캐릭터에 FK로 매달린다 — 순서가 뒤집히면 붙을 자리가 없어 통째로 막힌다.
+        assertTrue(
+            TrashSnapshot.restorePriority(TrashSnapshot.TYPE_STATE_CHANGE) >
+                TrashSnapshot.restorePriority(TrashSnapshot.TYPE_CHARACTER)
+        )
+        // 알 수 없는 타입(미래의 신규 타입)은 여전히 맨 뒤다 — 아는 타입보다 먼저 오면 안 된다.
+        assertTrue(
+            TrashSnapshot.restorePriority("unknown_future_type") >
+                TrashSnapshot.restorePriority(TrashSnapshot.TYPE_STATE_CHANGE)
+        )
     }
 
     @Test

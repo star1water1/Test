@@ -233,8 +233,30 @@ class CharacterRepository(
         fieldLibrary.harvestStateChange(change.characterId, change.fieldKey, change.newValue)
     }
 
-    suspend fun deleteStateChange(change: CharacterStateChange) =
-        characterStateChangeDao.delete(change)
+    /**
+     * 상태변화 이력 삭제 — 삭제 전 휴지통 스냅샷을 남긴다.
+     *
+     * 종전에는 이 경로만 휴지통을 거치지 않아, 캐릭터·사건 삭제는 되돌릴 수 있는데
+     * 이력 한 줄을 잘못 지우면 영영 사라졌다("지운 것은 되돌릴 수 있다"는 약속의 구멍).
+     * 스냅샷과 삭제를 한 트랜잭션으로 묶는다 — 삭제만 커밋되면 그 자체가 무통보 유실이다.
+     *
+     * @param snapshot false면 스냅샷 없이 지운다. **파생 정리 경로 전용**이다
+     *   ([com.novelcharacter.app.util.SemanticFieldSyncHelper]) — 출생·사망 사건 삭제가
+     *   함께 지우는 이력은 사건 스냅샷이 이미 담으므로, 여기서 또 담으면 같은 이력이 두 벌
+     *   남아 복원이 중복되고 거짓 경고가 뜬다(스냅샷은 겹치지 않고 이어붙는다).
+     */
+    suspend fun deleteStateChange(change: CharacterStateChange, snapshot: Boolean = true) {
+        if (!snapshot) {
+            characterStateChangeDao.delete(change)
+            return
+        }
+        val trash = TrashRepository(db)
+        db.withTransaction {
+            trash.snapshotStateChange(change)
+            characterStateChangeDao.delete(change)
+        }
+        trash.pruneIfNeeded()
+    }
 
     suspend fun deleteAllStateChangesByCharacter(characterId: Long) =
         characterStateChangeDao.deleteAllByCharacter(characterId)

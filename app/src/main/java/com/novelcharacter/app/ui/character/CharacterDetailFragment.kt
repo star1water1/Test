@@ -181,8 +181,8 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
 
     private fun observeEvents() {
         val timelineAdapter = TimelineAdapter(
-            onClick = { /* 연표 클릭 시 */ },
-            onLongClick = { /* 연표 롱클릭 시 */ },
+            onClick = { event -> showEventEditDialog(event) },
+            onLongClick = { event -> showEventActions(event) },
             coroutineScope = viewLifecycleOwner.lifecycleScope,
             loadCharactersForEvent = { eventId -> viewModel.getCharactersForEvent(eventId) }
         )
@@ -200,6 +200,61 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
                 preSelectedCharacterIds = setOf(characterId),
                 preSelectedNovelIds = listOfNotNull(cachedCharacter?.novelId)
             )
+        }
+    }
+
+    private fun showEventEditDialog(event: com.novelcharacter.app.data.model.TimelineEvent) {
+        com.novelcharacter.app.ui.timeline.EventEditDialogFragment.show(childFragmentManager, event)
+    }
+
+    /**
+     * 사건 롱프레스 동작 — 편집 / 이 캐릭터에서 연결 해제 / 삭제.
+     *
+     * 종전에는 캐릭터 화면의 사건 목록이 아무 반응도 하지 않아 사건을 고치거나 지우려면
+     * 반드시 연표 탭으로 가야 했다(원칙 04). '연결 해제'를 '삭제'와 따로 두는 이유는
+     * 사건이 여러 캐릭터의 공유물이기 때문이다 — 여기서 지우면 다른 캐릭터의 연표에서도
+     * 사라지므로, 그 사실을 확인 다이얼로그로 먼저 말한다(원칙: 무통보 파괴 금지).
+     */
+    private fun showEventActions(event: com.novelcharacter.app.data.model.TimelineEvent) {
+        val items = arrayOf(
+            getString(R.string.edit),
+            getString(R.string.event_unlink_from_character),
+            getString(R.string.delete)
+        )
+        val title = "${getString(R.string.event_year_format, event.year)} — ${event.description.take(50)}"
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(title)
+            .setItems(items) { _, which ->
+                when (which) {
+                    0 -> showEventEditDialog(event)
+                    1 -> viewModel.unlinkEventFromCharacter(event.id, characterId)
+                    2 -> confirmDeleteEvent(event)
+                }
+            }
+            .show()
+    }
+
+    private fun confirmDeleteEvent(event: com.novelcharacter.app.data.model.TimelineEvent) {
+        viewLifecycleOwner.lifecycleScope.launch {
+            // 이 사건에 몇 명이 걸려 있는지 먼저 센다 — "나만의 사건"인지 "공유 사건"인지에 따라
+            // 삭제의 파급이 다르고, 그 차이를 모르면 동의라고 할 수 없다.
+            val others = try {
+                viewModel.getCharacterIdsForEvent(event.id).count { it != characterId }
+            } catch (_: Exception) {
+                0
+            }
+            if (!isAdded) return@launch
+            val message = if (others > 0) {
+                getString(R.string.event_delete_shared_confirm, event.description, others)
+            } else {
+                getString(R.string.event_delete_confirm, event.description)
+            }
+            MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.delete)
+                .setMessage(message)
+                .setPositiveButton(R.string.delete) { _, _ -> viewModel.deleteEvent(event) }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
         }
     }
 
