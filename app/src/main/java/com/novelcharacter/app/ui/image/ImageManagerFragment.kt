@@ -73,6 +73,10 @@ class ImageManagerFragment : Fragment() {
     private var searchJob: kotlinx.coroutines.Job? = null
 
     private lateinit var adapter: ImageManagerAdapter
+    // 갤러리뷰 모드 — 그리드와 같은 목록을 페이저로 소비
+    private lateinit var galleryAdapter: GalleryPagerAdapter
+    private var galleryBackCallback: androidx.activity.OnBackPressedCallback? = null
+    private var galleryPageCallback: androidx.viewpager2.widget.ViewPager2.OnPageChangeCallback? = null
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
@@ -97,6 +101,30 @@ class ImageManagerFragment : Fragment() {
         )
         binding.recyclerView.layoutManager = GridLayoutManager(requireContext(), 3)
         binding.recyclerView.adapter = adapter
+
+        galleryAdapter = GalleryPagerAdapter(viewLifecycleOwner.lifecycleScope)
+        binding.galleryPager.adapter = galleryAdapter
+        galleryPageCallback = object : androidx.viewpager2.widget.ViewPager2.OnPageChangeCallback() {
+            override fun onPageSelected(position: Int) {
+                viewModel.galleryPosition = position
+                updateGalleryOverlay()
+            }
+        }
+        binding.galleryPager.registerOnPageChangeCallback(galleryPageCallback!!)
+        binding.viewModeButton.setOnClickListener { toggleViewMode() }
+        binding.galleryDetailButton.setOnClickListener {
+            currentList.getOrNull(binding.galleryPager.currentItem)?.let { showDetail(it) }
+        }
+        binding.galleryTagButton.setOnClickListener {
+            currentList.getOrNull(binding.galleryPager.currentItem)?.let { openTagEdit(it) }
+        }
+        // 갤러리 모드의 뒤로가기는 화면 이탈이 아니라 그리드 복귀
+        galleryBackCallback = object : androidx.activity.OnBackPressedCallback(false) {
+            override fun handleOnBackPressed() {
+                switchToGrid()
+            }
+        }
+        requireActivity().onBackPressedDispatcher.addCallback(viewLifecycleOwner, galleryBackCallback!!)
 
         // 상태 복원(D10: SavedStateHandle 영속) — 리스너 등록 전에 UI를 현재 criteria로 맞춘다.
         restoreFilterUi()
@@ -173,6 +201,88 @@ class ImageManagerFragment : Fragment() {
         binding.filterChips.check(chipId)
         if (c.query.isNotBlank()) binding.searchEdit.setText(c.query)
         updateTagFilterLabel()
+        applyViewMode()
+    }
+
+    // ---------- 갤러리뷰 모드 ----------
+
+    private fun applyViewMode() {
+        val gallery = viewModel.viewMode == ImageManagerViewModel.ViewMode.GALLERY
+        binding.recyclerView.visibility = if (gallery) View.GONE else View.VISIBLE
+        binding.galleryPager.visibility = if (gallery) View.VISIBLE else View.GONE
+        binding.galleryOverlay.visibility = if (gallery) View.VISIBLE else View.GONE
+        binding.viewModeButton.text = getString(
+            if (gallery) R.string.image_manager_view_grid else R.string.image_manager_view_gallery
+        )
+        galleryBackCallback?.isEnabled = gallery
+        if (gallery) updateGalleryOverlay()
+    }
+
+    private fun toggleViewMode() {
+        if (viewModel.viewMode == ImageManagerViewModel.ViewMode.GALLERY) switchToGrid() else switchToGallery()
+    }
+
+    private fun switchToGallery() {
+        // 선택 모드는 그리드 전용 — 집합 조작과 한 장 보기는 목적이 상충 (오조작 방지)
+        if (selectionMode) exitSelection()
+        val gridPos = (binding.recyclerView.layoutManager as? GridLayoutManager)
+            ?.findFirstVisibleItemPosition()
+            ?.takeIf { it != androidx.recyclerview.widget.RecyclerView.NO_POSITION }
+        viewModel.viewMode = ImageManagerViewModel.ViewMode.GALLERY
+        if (gridPos != null) viewModel.galleryPosition = gridPos
+        applyViewMode()
+        syncGalleryPager()
+    }
+
+    private fun switchToGrid() {
+        val pos = binding.galleryPager.currentItem
+        viewModel.viewMode = ImageManagerViewModel.ViewMode.GRID
+        applyViewMode()
+        if (pos in currentList.indices) binding.recyclerView.scrollToPosition(pos)
+    }
+
+    /** 페이저 위치를 목록 상태와 동기화 — 삭제·필터로 항목이 줄어도 안전(클램프) */
+    private fun syncGalleryPager() {
+        if (_binding == null || viewModel.viewMode != ImageManagerViewModel.ViewMode.GALLERY) return
+        val size = galleryAdapter.currentList.size
+        if (size == 0) {
+            updateGalleryOverlay()
+            return
+        }
+        val target = viewModel.galleryPosition.coerceIn(0, size - 1)
+        if (binding.galleryPager.currentItem != target) {
+            binding.galleryPager.setCurrentItem(target, false)
+        }
+        updateGalleryOverlay()
+    }
+
+    /** 하단 오버레이 갱신 — 현재 페이지의 인덱스·파일명·소유자·태그 (편집 진입 버튼 포함) */
+    private fun updateGalleryOverlay() {
+        if (_binding == null || viewModel.viewMode != ImageManagerViewModel.ViewMode.GALLERY) return
+        val item = currentList.getOrNull(binding.galleryPager.currentItem)
+        if (item == null) {
+            binding.galleryIndexText.text = ""
+            binding.galleryOwnerText.text = ""
+            binding.galleryTagText.visibility = View.GONE
+            binding.galleryDetailButton.isEnabled = false
+            binding.galleryTagButton.isEnabled = false
+            return
+        }
+        binding.galleryDetailButton.isEnabled = true
+        binding.galleryTagButton.isEnabled = true
+        binding.galleryIndexText.text = getString(
+            R.string.image_manager_gallery_index,
+            binding.galleryPager.currentItem + 1, currentList.size, item.path.substringAfterLast('/')
+        )
+        binding.galleryOwnerText.text = ownerLabel(item)
+        val tags = item.meta?.tags.orEmpty()
+        if (tags.isEmpty()) {
+            binding.galleryTagText.visibility = View.GONE
+        } else {
+            binding.galleryTagText.visibility = View.VISIBLE
+            binding.galleryTagText.text =
+                getString(R.string.image_manager_gallery_tags, tags.joinToString(" · "))
+        }
     }
 
     /**
@@ -250,6 +360,10 @@ class ImageManagerFragment : Fragment() {
         val visiblePaths = sorted.mapTo(HashSet()) { it.path }
         if (selectedPaths.retainAll(visiblePaths)) updateSelectionUi()
         adapter.submitList(sorted)
+        // 갤러리 페이저는 같은 목록을 소비 — 커밋 후 위치 클램프(삭제·필터로 항목이 줄어도 안전)
+        galleryAdapter.submitList(sorted) {
+            syncGalleryPager()
+        }
         val empty = sorted.isEmpty() && viewModel.loading.value != true
         binding.emptyText.visibility = if (empty) View.VISIBLE else View.GONE
     }
@@ -257,6 +371,8 @@ class ImageManagerFragment : Fragment() {
     // ---------- 선택 모드 ----------
 
     private fun enterSelection(initial: ImageManagerViewModel.ManagedImage?) {
+        // 선택 모드는 그리드 전용 — 갤러리에서 진입하면 그리드로 복귀 후 시작
+        if (viewModel.viewMode == ImageManagerViewModel.ViewMode.GALLERY) switchToGrid()
         selectionMode = true
         if (initial != null) selectedPaths.add(initial.path)
         updateSelectionUi()
@@ -341,15 +457,7 @@ class ImageManagerFragment : Fragment() {
         dialog.setContentView(sheetBinding.root)
 
         sheetBinding.detailSizeText.text = StorageAnalyzer.formatBytes(item.sizeBytes)
-        sheetBinding.detailOwnerText.text = if (item.owners.isEmpty()) {
-            when (item.status) {
-                ImageManagerViewModel.Status.TRASH_HELD -> getString(R.string.image_manager_owner_trash)
-                ImageManagerViewModel.Status.UNASSIGNED -> getString(R.string.image_manager_owner_unassigned)
-                else -> getString(R.string.image_manager_owner_orphan)
-            }
-        } else {
-            item.owners.joinToString("\n") { "${typeLabel(it.type)} · ${it.name}" }
-        }
+        sheetBinding.detailOwnerText.text = ownerLabel(item)
 
         // 태그 칩(라이브러리 이미지) — 태그 편집은 어떤 이미지든 가능(편집 시 라이브러리로 입양).
         val tags = item.meta?.tags.orEmpty()
@@ -371,19 +479,7 @@ class ImageManagerFragment : Fragment() {
         }
         sheetBinding.detailTagEditButton.setOnClickListener {
             dialog.dismiss()
-            val sheet = ImageTagEditBottomSheet()
-            sheet.currentTags = tags
-            sheet.loadSuggestions = { viewModel.getTagSuggestions() }
-            sheet.onSave = { newTags ->
-                viewModel.replaceTags(item.path, newTags) {
-                    if (!isAdded || _binding == null) return@replaceTags
-                    reportAndNotify(OpResult.success(
-                        OpResult.CAT_MAINTENANCE,
-                        getString(R.string.image_tag_edit_done, newTags.size)
-                    ))
-                }
-            }
-            sheet.show(childFragmentManager, ImageTagEditBottomSheet.TAG)
+            openTagEdit(item)
         }
 
         // 링크 그룹 정보 + 해제 — 링크된 이미지에만 노출. N = 현재 목록에서 같은 그룹 수.
@@ -824,7 +920,39 @@ class ImageManagerFragment : Fragment() {
         ImageManagerViewModel.OwnerType.UNIVERSE -> getString(R.string.image_manager_type_universe)
     }
 
+    /** 소유자/상태 문구 — 상세 시트와 갤러리 오버레이가 공용 */
+    private fun ownerLabel(item: ImageManagerViewModel.ManagedImage): String =
+        if (item.owners.isEmpty()) {
+            when (item.status) {
+                ImageManagerViewModel.Status.TRASH_HELD -> getString(R.string.image_manager_owner_trash)
+                ImageManagerViewModel.Status.UNASSIGNED -> getString(R.string.image_manager_owner_unassigned)
+                else -> getString(R.string.image_manager_owner_orphan)
+            }
+        } else {
+            item.owners.joinToString("\n") { "${typeLabel(it.type)} · ${it.name}" }
+        }
+
+    /** 태그 편집 시트 — 상세 시트와 갤러리 오버레이('태그 편집' 1탭 단축)가 공용 */
+    private fun openTagEdit(item: ImageManagerViewModel.ManagedImage) {
+        val sheet = ImageTagEditBottomSheet()
+        sheet.currentTags = item.meta?.tags.orEmpty()
+        sheet.loadSuggestions = { viewModel.getTagSuggestions() }
+        sheet.onSave = { newTags ->
+            viewModel.replaceTags(item.path, newTags) {
+                if (!isAdded || _binding == null) return@replaceTags
+                reportAndNotify(OpResult.success(
+                    OpResult.CAT_MAINTENANCE,
+                    getString(R.string.image_tag_edit_done, newTags.size)
+                ))
+            }
+        }
+        sheet.show(childFragmentManager, ImageTagEditBottomSheet.TAG)
+    }
+
     override fun onDestroyView() {
+        galleryPageCallback?.let { binding.galleryPager.unregisterOnPageChangeCallback(it) }
+        galleryPageCallback = null
+        binding.galleryPager.adapter = null
         binding.recyclerView.adapter = null
         super.onDestroyView()
         _binding = null

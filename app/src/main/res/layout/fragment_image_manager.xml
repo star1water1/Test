@@ -177,6 +177,15 @@
             android:layout_height="wrap_content"
             android:minWidth="0dp"
             android:text="@string/image_manager_tag_filter" />
+
+        <!-- 그리드 ↔ 갤러리 보기 전환 (라벨은 전환 '대상' 모드) -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/viewModeButton"
+            style="@style/Widget.App.Button.Outlined"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:minWidth="0dp"
+            android:text="@string/image_manager_view_gallery" />
     </LinearLayout>
 
     <FrameLayout
@@ -190,6 +199,80 @@
             android:layout_height="match_parent"
             android:padding="5dp"
             android:clipToPadding="false" />
+
+        <!-- 갤러리뷰 모드 — 그리드와 같은 목록을 한 장씩 스와이프 (편집은 하단 오버레이) -->
+        <androidx.viewpager2.widget.ViewPager2
+            android:id="@+id/galleryPager"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone" />
+
+        <LinearLayout
+            android:id="@+id/galleryOverlay"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom"
+            android:orientation="vertical"
+            android:background="?attr/colorSurface"
+            android:paddingHorizontal="16dp"
+            android:paddingVertical="8dp"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/galleryIndexText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:maxLines="1"
+                android:ellipsize="middle"
+                android:textAppearance="@style/TextAppearance.App.BodySmall"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                tools:text="3 / 42 · img_abc.jpg" />
+
+            <TextView
+                android:id="@+id/galleryOwnerText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:maxLines="2"
+                android:ellipsize="end"
+                android:textAppearance="@style/TextAppearance.App.BodySmall"
+                android:textColor="?attr/colorOnSurface"
+                tools:text="캐릭터 · 한서린" />
+
+            <TextView
+                android:id="@+id/galleryTagText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:textAppearance="@style/TextAppearance.App.BodySmall"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                android:visibility="gone"
+                tools:text="태그: 은발 · 갑옷" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:paddingTop="4dp">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/galleryDetailButton"
+                    style="@style/Widget.App.Button.Tonal"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="8dp"
+                    android:text="@string/image_manager_gallery_detail" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/galleryTagButton"
+                    style="@style/Widget.App.Button.Outlined"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/image_manager_gallery_tag" />
+            </LinearLayout>
+        </LinearLayout>
 
         <ProgressBar
             android:id="@+id/progressBar"
