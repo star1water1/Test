@@ -446,7 +446,15 @@ class CharacterRepository(
         val orphanMemberships = db.factionMembershipDao().countMembershipsNotInUniverse(character.id, newUniverseId)
         val willLose = removedValues > 0 || orphanMemberships > 0
         if (willLose) {
-            trash.snapshotCharacter(character, parseImagePaths(character.imagePaths).map { it.absolutePath })
+            // 원본은 살아 있다 — **편집 직전 백업**이다. 종류를 인스턴스에 맡기면 엑셀 임포트가
+            // 넘겨준 삭제용 인스턴스 때문에 'delete'로 각인되어, 복원이 되돌리기가 아니라
+            // 복제가 된다(B-2). 파괴 범위도 함께 적어 되돌리기가 그만큼만 교체하게 한다.
+            trash.snapshotCharacter(
+                character,
+                parseImagePaths(character.imagePaths).map { it.absolutePath },
+                kind = TrashSnapshot.KIND_EDIT_BACKUP,
+                revertScope = RestoreModes.SCOPE_UNIVERSE_MOVE
+            )
         }
         characterFieldValueDao.replaceAllByCharacter(character.id, finalValues)
         if (orphanMemberships > 0) db.factionMembershipDao().deleteMembershipsNotInUniverse(character.id, newUniverseId)
@@ -546,7 +554,13 @@ class CharacterRepository(
             val willLose = removed > 0 || orphanMemberships > 0
             if (willLose) {
                 val persisted = characterDao.getCharacterById(character.id) ?: character
-                trash.snapshotCharacter(persisted, parseImagePaths(persisted.imagePaths).map { it.absolutePath })
+                // 편집 직전 백업 — 이 경로는 캐릭터 행까지 덮어쓰므로 되돌리기 범위에 포함한다.
+                trash.snapshotCharacter(
+                    persisted,
+                    parseImagePaths(persisted.imagePaths).map { it.absolutePath },
+                    kind = TrashSnapshot.KIND_EDIT_BACKUP,
+                    revertScope = RestoreModes.SCOPE_UNIVERSE_MOVE_WITH_ROW
+                )
             }
             characterDao.update(character)
             characterFieldValueDao.replaceAllByCharacter(character.id, formNonBlank + gapFills.values)

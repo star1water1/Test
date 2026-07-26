@@ -16,6 +16,7 @@ import com.novelcharacter.app.R
 import com.novelcharacter.app.data.dao.TrashSnapshotSummary
 import com.novelcharacter.app.data.model.TrashSnapshot
 import com.novelcharacter.app.data.repository.RestoreLossCounts
+import com.novelcharacter.app.data.repository.RestoreModes
 import com.novelcharacter.app.data.repository.TrashGrouping
 import com.novelcharacter.app.data.repository.TrashRepository
 import com.novelcharacter.app.databinding.FragmentTrashBinding
@@ -137,6 +138,11 @@ class TrashFragment : Fragment() {
             if (preview.duplicatesLivingEntity) {
                 message.append(getString(R.string.trash_restore_duplicate_warning))
             }
+            if (preview.revertsInPlace) {
+                message.append(
+                    getString(R.string.trash_restore_revert_warning, revertScopeLines(preview.revertScope))
+                )
+            }
             if (preview.legacyPayload) {
                 message.append(getString(R.string.trash_restore_legacy_note))
             }
@@ -144,7 +150,10 @@ class TrashFragment : Fragment() {
                 .setTitle(R.string.trash_restore_preview_title)
                 .setMessage(message.toString())
                 .setPositiveButton(R.string.trash_restore) { _, _ ->
-                    restore(snapshot, warned = true, predicted = preview.losses)
+                    restore(
+                        snapshot, warned = true, predicted = preview.losses,
+                        consentedRevert = preview.revertsInPlace
+                    )
                 }
                 .setNegativeButton(R.string.cancel, null)
                 .show()
@@ -154,6 +163,28 @@ class TrashFragment : Fragment() {
     private fun blockerMessage(blocker: TrashRepository.RestoreBlocker): String = when (blocker) {
         TrashRepository.RestoreBlocker.MISSING_UNIVERSE -> getString(R.string.trash_restore_blocked_universe)
         TrashRepository.RestoreBlocker.MISSING_CHARACTER -> getString(R.string.trash_restore_blocked_character)
+        TrashRepository.RestoreBlocker.ALREADY_EXISTS -> getString(R.string.trash_restore_blocked_exists)
+    }
+
+    /**
+     * 되돌리기가 덮어쓸 갈래를 사람이 읽는 목록으로 — 무엇이 덮이는지 **세어서** 알려야
+     * 동의가 성립한다(R-4). 범위는 그 편집이 실제로 파괴한 것까지다.
+     */
+    private fun revertScopeLines(scope: Set<String>): String {
+        val lines = mutableListOf<String>()
+        if (RestoreModes.SCOPE_CHARACTER_ROW in scope) {
+            lines.add(getString(R.string.trash_revert_scope_character_row))
+        }
+        if (RestoreModes.SCOPE_FIELD_VALUES in scope) {
+            lines.add(getString(R.string.trash_revert_scope_field_values))
+        }
+        if (RestoreModes.SCOPE_MEMBERSHIPS in scope) {
+            lines.add(getString(R.string.trash_revert_scope_memberships))
+        }
+        if (RestoreModes.SCOPE_STATE_CHANGES in scope) {
+            lines.add(getString(R.string.trash_revert_scope_state_changes))
+        }
+        return lines.joinToString("\n")
     }
 
     /**
@@ -208,6 +239,9 @@ class TrashFragment : Fragment() {
         if (losses.stateChanges > 0) {
             details.add(getString(R.string.trash_skip_state_changes, losses.stateChanges))
         }
+        if (losses.nameBankLinks > 0) {
+            details.add(getString(R.string.trash_skip_name_bank, losses.nameBankLinks))
+        }
         return details.joinToString("\n")
     }
 
@@ -220,11 +254,16 @@ class TrashFragment : Fragment() {
     private fun restore(
         snapshot: TrashSnapshotSummary,
         warned: Boolean,
-        predicted: RestoreLossCounts = RestoreLossCounts()
+        predicted: RestoreLossCounts = RestoreLossCounts(),
+        /**
+         * 되돌리기(살아 있는 대상 덮어쓰기)에 동의했는가 — 동의 없이는 덮어쓰지 않는다.
+         * 미리보기 이후 원본이 되살아나 판정이 뒤집혀도 사용자가 동의한 범위를 넘지 않는다.
+         */
+        consentedRevert: Boolean = false
     ) {
         viewLifecycleOwner.lifecycleScope.launch {
             try {
-                val result = trashRepository.restoreSnapshot(snapshot.id)
+                val result = trashRepository.restoreSnapshot(snapshot.id, consentedRevert)
                 if (!isAdded) return@launch
                 if (result == null) {
                     Toast.makeText(requireContext(), R.string.trash_restore_failed, Toast.LENGTH_SHORT).show()
@@ -232,14 +271,15 @@ class TrashFragment : Fragment() {
                         getString(R.string.result_trash_restore_failed)))
                     return@launch
                 }
-                Toast.makeText(
-                    requireContext(),
-                    getString(R.string.trash_restored, result.restoredName),
-                    Toast.LENGTH_SHORT
-                ).show()
+                // 실제로 한 일을 말한다 — 동의 시점의 예고가 아니라 결과가 사실이다.
+                val doneMessage = if (result.revertedInPlace) {
+                    getString(R.string.trash_reverted, result.restoredName)
+                } else {
+                    getString(R.string.trash_restored, result.restoredName)
+                }
+                Toast.makeText(requireContext(), doneMessage, Toast.LENGTH_SHORT).show()
                 // 즉시 알림은 위 Toast/부분복원 다이얼로그가 담당 — 이력만 추가
-                logOperation(OpResult.success(OpResult.CAT_TRASH,
-                    getString(R.string.trash_restored, result.restoredName)))
+                logOperation(OpResult.success(OpResult.CAT_TRASH, doneMessage))
                 showRestoreNotes(
                     result.losses, result.relinkedByCode, result.duplicateRelationships,
                     warned, predicted, semanticStateChanges = result.restoredSemanticStateChanges

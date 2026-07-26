@@ -161,15 +161,50 @@ class TrashGroupingTest {
     }
 
     @Test
-    fun `종류가 섞이면 안전한 쪽으로 기운다`() {
-        // 섞이는 경로는 없지만, 섞였을 때 복제 위험을 알리는 쪽을 택한다.
+    fun `한 작업에 종류가 섞이면 묶음을 가른다`() {
+        // **섞이는 경로는 실재한다**: 엑셀 임포트 한 번이 세계관 이동(편집 백업)과 '엑셀에
+        // 없는 항목 삭제'를 함께 만들고, R-3/R-9 때문에 둘은 같은 인스턴스·operationId를 쓴다.
+        // 종전처럼 묶음 전체를 편집 백업으로 보면 그 임포트가 진짜로 지운 항목들이 머리글과
+        // '전체 복원'을 잃는다. 반대로 한 머리글 아래 두면 지워진 적 없는 항목에 '전체 복원'을
+        // 내주게 되어 원클릭 복제가 된다 — 그래서 합치지도 섞지도 않고 가른다.
         val items = listOf(
             snap(TrashSnapshot.TYPE_CHARACTER, "지워진 캐릭터", "op1"),
-            editBackup("살아 있는 캐릭터", "op1")
+            snap(TrashSnapshot.TYPE_CHARACTER, "함께 지워진 캐릭터", "op1"),
+            editBackup("살아 있는 캐릭터", "op1"),
+            editBackup("살아 있는 캐릭터2", "op1")
         )
-        val group = TrashGrouping.group(items).single()
-        assertTrue(group.isEditBackup)
-        assertFalse(group.needsHeader)
+        val groups = TrashGrouping.group(items)
+        assertEquals(2, groups.size)
+
+        val deleted = groups.single { !it.isEditBackup }
+        assertEquals(2, deleted.size)
+        // 진짜 삭제분은 머리글과 '전체 복원'을 그대로 갖는다.
+        assertTrue(deleted.needsHeader)
+        assertTrue(deleted.items.none { it.isEditBackup })
+
+        val edits = groups.single { it.isEditBackup }
+        assertEquals(2, edits.size)
+        // 편집 백업은 지워진 적이 없다 — 머리글도 '전체 복원'도 내주지 않는다.
+        assertFalse(edits.needsHeader)
+        assertTrue(edits.items.all { it.isEditBackup })
+
+        // 두 묶음은 같은 작업에서 왔다 — 정리(prune)의 단위는 여전히 작업 하나다(R-9).
+        assertEquals(setOf("op1"), groups.map { it.opKey }.toSet())
+    }
+
+    @Test
+    fun `섞인 작업에서도 묶음 순서가 흔들리지 않는다`() {
+        // 같은 작업·같은 시각의 두 묶음은 opKey가 같아 종류로 갈라야 순서가 결정된다.
+        // 관찰 갱신마다 순서가 바뀌면 사용자가 누르려던 버튼이 다른 묶음의 것으로 바뀐다.
+        val items = listOf(
+            snap(TrashSnapshot.TYPE_CHARACTER, "지워진 1", "op1"),
+            snap(TrashSnapshot.TYPE_CHARACTER, "지워진 2", "op1"),
+            editBackup("편집 1", "op1"),
+            editBackup("편집 2", "op1")
+        )
+        val first = TrashGrouping.group(items).map { it.isEditBackup }
+        val second = TrashGrouping.group(items.reversed()).map { it.isEditBackup }
+        assertEquals(first, second)
     }
 
     @Test

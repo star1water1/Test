@@ -130,7 +130,17 @@ class TrashRepository(
         MISSING_UNIVERSE,
 
         /** 상태변화 이력은 캐릭터 없이 존재할 수 없다(FK) — 캐릭터를 먼저 복원해야 한다. */
-        MISSING_CHARACTER
+        MISSING_CHARACTER,
+
+        /**
+         * 같은 이력이 이미 살아 있다 — 되살리면 사본이 하나 더 생긴다 (B-21).
+         *
+         * **덮어쓰지 않는다**: 그 사이 사용자가 다시 만든 값을 백업 없이 파괴하게 되고, 복원은
+         * 성공 시 스냅샷을 소각하므로 어느 쪽으로도 되돌릴 수 없다(사건 복원이 쓰는 규약과 같다).
+         * **스냅샷도 태우지 않는다** — 살아 있는 값과 백업의 값이 다를 수 있으므로, 남겨 두어야
+         * 사용자가 내용을 확인하고 직접 고를 수 있다(R-4).
+         */
+        ALREADY_EXISTS
     }
 
     /**
@@ -155,7 +165,16 @@ class TrashRepository(
         val duplicatesLivingEntity: Boolean = false,
         /** 구버전 payload라 안정 식별자가 없어 id 단독으로 판단한 참조가 있다 */
         val legacyPayload: Boolean = false,
-        val blocker: RestoreBlocker? = null
+        val blocker: RestoreBlocker? = null,
+        /**
+         * 이 복원은 되살리기가 아니라 **살아 있는 대상에 덮어쓰는 되돌리기**다 (B-21).
+         *
+         * 앱에서 유일하게 '복원'이 살아 있는 데이터를 파괴하는 경우이므로 반드시 동의를 받는다.
+         * 덮이는 값은 실행 직전에 편집 백업으로 한 번 더 스냅샷하므로 되돌릴 수 있다(R-4).
+         */
+        val revertsInPlace: Boolean = false,
+        /** 되돌리기가 교체할 갈래 ([RestoreModes]의 SCOPE_*) — 문구가 무엇이 덮이는지 말한다. */
+        val revertScope: Set<String> = emptySet()
     ) {
         val hasSkipped: Boolean get() = losses.any
 
@@ -164,7 +183,8 @@ class TrashRepository(
          * 오배정 위험이 가장 큰 복원인데, 종전에는 그 사실이 사용자에게 전혀 도달하지 않았다.
          */
         val needsConfirmation: Boolean
-            get() = hasSkipped || duplicatesLivingEntity || legacyPayload || blocker != null
+            get() = hasSkipped || duplicatesLivingEntity || legacyPayload ||
+                blocker != null || revertsInPlace
     }
 
     /** 복원 결과 — 어떤 연관 데이터가 참조 소실로 생략됐는지 사용자에게 알리기 위한 집계 */
@@ -183,7 +203,18 @@ class TrashRepository(
          * 유실이 아니라 **부분 복원 고지**다 — 이력은 돌아왔지만 파생 필드값(생년·나이·생존
          * 여부)은 그 사이 사용자가 고쳤을 수 있어 되돌리지 않았다는 사실을 함께 알려야 한다.
          */
-        val restoredSemanticStateChanges: Int = 0
+        val restoredSemanticStateChanges: Int = 0,
+        /**
+         * 되살린 것이 아니라 **살아 있는 대상을 되돌렸다** (B-21).
+         *
+         * 미리보기 이후 원본이 사라져 부활로 내려갔을 수 있으므로, 결과 문구는 동의 시점의
+         * 예고가 아니라 이 값을 보고 말해야 한다.
+         */
+        val revertedInPlace: Boolean = false,
+        /** 되돌리기가 **보충한** 세력 소속 수 (이미 있던 것은 건드리지 않았다). */
+        val revertedMemberships: Int = 0,
+        /** 되돌리기가 **보충한** 상태변화 이력 수 (같은 이력이 있으면 건너뛴다). */
+        val revertedStateChanges: Int = 0
     ) {
         val hasSkipped: Boolean get() = losses.any
     }
@@ -207,8 +238,22 @@ class TrashRepository(
     /**
      * 캐릭터+연관 데이터를 스냅샷으로 보관한다.
      * 반드시 삭제 트랜잭션 내에서, 실제 삭제 전에 호출할 것.
+     *
+     * @param kind 이 **호출**이 남기는 것이 삭제 백업인가 편집 직전 백업인가.
+     *   인스턴스 기본값([operationKind])에 맡기지 말 것 — 한 작업이 하나의 인스턴스를 공유해야
+     *   한다는 R-3/R-9 때문에 **삭제와 편집 백업이 같은 인스턴스를 쓰는 경로가 실재한다**
+     *   (엑셀 임포트: 세계관 이동 편집 백업과 '엑셀에 없는 항목 삭제'가 같은 인스턴스다).
+     *   종류는 인스턴스가 아니라 이 호출이 아는 사실이므로 호출부가 정한다.
+     * @param revertScope 편집 백업일 때, 그 편집이 실제로 파괴하는 갈래([RestoreModes]의 SCOPE_*).
+     *   되돌리기의 교체 범위가 되므로 **파괴하지 않는 것을 넣지 말 것** — 넣는 만큼 그대로
+     *   새로운 파괴 경로가 된다.
      */
-    suspend fun snapshotCharacter(character: Character, imagePaths: List<String>) {
+    suspend fun snapshotCharacter(
+        character: Character,
+        imagePaths: List<String>,
+        kind: String = operationKind,
+        revertScope: List<String>? = null
+    ) {
         val relationships = db.characterRelationshipDao().getRelationshipsForCharacterList(character.id)
         val relationshipChanges = relationships.flatMap { rel ->
             db.characterRelationshipChangeDao().getChangesForRelationshipList(rel.id)
@@ -226,9 +271,14 @@ class TrashRepository(
             relationshipChanges = relationshipChanges,
             factionMemberships = factionMemberships,
             eventIds = eventIds,
-            refs = buildRefs(character, fieldValues, relationships, relationshipChanges, factionMemberships, eventIds)
+            refs = buildRefs(character, fieldValues, relationships, relationshipChanges, factionMemberships, eventIds),
+            // 사용 표시가 풀리기 **전에** 읽어야 한다 — 삭제 경로는 스냅샷 뒤에
+            // resetUsageByCharacter를 부르므로 이 시점에는 아직 링크가 살아 있다 (B-3).
+            nameBankCodes = db.nameBankDao().getEntriesUsedByCharacter(character.id)
+                .map { it.code }.filter { it.isNotBlank() },
+            revertScope = revertScope?.takeIf { kind == TrashSnapshot.KIND_EDIT_BACKUP }
         )
-        insertSnapshot(TrashSnapshot.TYPE_CHARACTER, character.name, snapshot, imagePaths)
+        insertSnapshot(TrashSnapshot.TYPE_CHARACTER, character.name, snapshot, imagePaths, kind)
     }
 
     /**
@@ -574,7 +624,8 @@ class TrashRepository(
         entityType: String,
         entityName: String,
         payload: Any,
-        imagePaths: List<String>
+        imagePaths: List<String>,
+        kind: String = operationKind
     ) {
         trashDao.insert(
             TrashSnapshot(
@@ -583,7 +634,7 @@ class TrashRepository(
                 payload = gson.toJson(payload),
                 imagePaths = gson.toJson(imagePaths),
                 operationId = operationId,
-                operationKind = operationKind
+                operationKind = kind
             )
         )
         createdAny = true
@@ -735,7 +786,10 @@ class TrashRepository(
      * 되살릴 수 없는 사유([RestorePreview.blocker])가 있으면 **아무것도 하지 않고 null**을 돌려준다 —
      * 스냅샷이 남아야 사용자가 상위 엔티티를 먼저 복원한 뒤 다시 시도할 수 있다(R-4).
      */
-    suspend fun restoreSnapshot(snapshotId: Long): RestoreResult? = withContext(Dispatchers.IO) {
+    suspend fun restoreSnapshot(
+        snapshotId: Long,
+        consentedRevert: Boolean = false
+    ): RestoreResult? = withContext(Dispatchers.IO) {
         val snap = trashDao.getById(snapshotId) ?: return@withContext null
         var result: RestoreResult? = null
         var deferred: DeferredImageLink? = null
@@ -746,7 +800,7 @@ class TrashRepository(
             when (snap.entityType) {
                 TrashSnapshot.TYPE_CHARACTER -> {
                     val plan = characterPlan(snap) ?: return@withTransaction
-                    val applied = applyCharacter(plan, null)
+                    val applied = applyCharacter(plan, null, consentedRevert)
                     result = applied.first
                     restoredCharacterId = applied.second
                 }
@@ -825,9 +879,13 @@ class TrashRepository(
      * 먼저 생기고, 참조는 코드로 다시 이어진다(R-1). 항목별 트랜잭션이라 하나가 실패해도
      * 나머지는 되살아나고, 실패한 항목의 스냅샷은 그대로 남는다.
      */
-    suspend fun restoreOperation(opKey: String): OperationRestoreResult = withContext(Dispatchers.IO) {
+    suspend fun restoreOperation(
+        opKey: String,
+        editBackup: Boolean = false
+    ): OperationRestoreResult = withContext(Dispatchers.IO) {
         val (opId, legacyId) = operationLookup(opKey)
         val items = trashDao.getByOperation(opId, legacyId)
+            .filter { it.isEditBackup == editBackup }
             .sortedWith(compareBy({ TrashSnapshot.restorePriority(it.entityType) }, { it.id }))
         if (items.isEmpty()) return@withContext OperationRestoreResult()
 
@@ -882,9 +940,13 @@ class TrashRepository(
      * **IO로 넘긴다.** 항목마다 payload를 두 번 파싱하므로(코드 수집 + 계획 수립) 수백 항목짜리
      * 세계관 삭제에서는 UI 스레드에서 돌 경우 확인 다이얼로그가 뜨기 전에 화면이 멈춘다.
      */
-    suspend fun previewOperation(opKey: String): List<RestorePreview> = withContext(Dispatchers.IO) {
+    suspend fun previewOperation(
+        opKey: String,
+        editBackup: Boolean = false
+    ): List<RestorePreview> = withContext(Dispatchers.IO) {
         val (opId, legacyId) = operationLookup(opKey)
         val items = trashDao.getByOperation(opId, legacyId)
+            .filter { it.isEditBackup == editBackup }
             .sortedWith(compareBy({ TrashSnapshot.restorePriority(it.entityType) }, { it.id }))
         val codes = collectOperationCodes(items)
         items.mapNotNull { previewRestore(it.id, codes.pending, codes.peers) }
@@ -1072,7 +1134,13 @@ class TrashRepository(
         /** [RestoreTally.PENDING_ID] 자리표시자가 섞인 계획 — 미리보기 전용이며 쓰기에 쓰면 안 된다. */
         val previewOnly: Boolean,
         val legacyPayload: Boolean,
-        val duplicatesLivingCharacter: Boolean
+        val duplicatesLivingCharacter: Boolean,
+        /** 이 복원이 무슨 일을 하는가 (B-2/B-21). */
+        val mode: CharacterRestoreMode = CharacterRestoreMode.REVIVE,
+        /** [CharacterRestoreMode.REVERT]일 때 덮어쓸 살아 있는 캐릭터 — **code로만** 찾은 것이다. */
+        val revertTargetId: Long? = null,
+        /** 되돌리기가 교체할 갈래 ([RestoreModes]의 SCOPE_*). 되돌리기가 아니면 비어 있다. */
+        val revertScope: Set<String> = emptySet()
     ) {
         fun toPreview() = RestorePreview(
             entityType = TrashSnapshot.TYPE_CHARACTER,
@@ -1080,7 +1148,9 @@ class TrashRepository(
             losses = losses,
             relinkedByCode = relinkedByCode,
             duplicatesLivingEntity = duplicatesLivingCharacter,
-            legacyPayload = legacyPayload
+            legacyPayload = legacyPayload,
+            revertsInPlace = mode == CharacterRestoreMode.REVERT,
+            revertScope = revertScope
         )
     }
 
@@ -1297,11 +1367,35 @@ class TrashRepository(
             if (newId == null) skippedEvents++ else plannedEvents.add(newId)
         }
 
-        // 같은 코드의 캐릭터가 아직 살아 있으면 이 스냅샷은 '편집 직전 백업'이며,
-        // 복원은 되돌리기가 아니라 복제가 된다 — 사실대로 미리 알린다.
-        val livingSame = data.character.code.takeIf { it.isNotBlank() }
-            ?.let { db.characterDao().getCharacterByCode(it) != null }
+        // 같은 코드의 캐릭터가 아직 살아 있는가 — **되돌리기 대상 판정은 code 단독으로만** 한다.
+        // 아래 id 폴백은 '사본이 생긴다'는 고지 판정에만 쓴다: 옛 id는 재발급되어 남의 캐릭터가
+        // 물려받았을 수 있으므로(R-1) 그것을 덮어쓰기 대상으로 삼으면 오배정이 된다.
+        val livingByCode = data.character.code.takeIf { it.isNotBlank() }
+            ?.let { db.characterDao().getCharacterByCode(it) }
+        val livingSame = livingByCode?.let { true }
             ?: (db.characterDao().getCharacterById(data.character.id) != null)
+
+        val mode = RestoreModes.characterRestoreMode(
+            operationKind = snap.operationKind,
+            livingSameCode = livingByCode != null
+        )
+        val revertScope = if (mode == CharacterRestoreMode.REVERT) {
+            RestoreModes.revertScopeOf(data.revertScope)
+        } else emptySet()
+
+        // 이름 은행 사용 링크 (B-3). **복제 복원에서는 세지 않는다** — 원본이 살아서 링크를
+        // 쥐고 있는 것이 정상이고, 그것을 유실로 고지하면 규모에 비례하는 유령 유실이 된다(R-11 교훈).
+        var lostNameBankLinks = 0
+        if (mode != CharacterRestoreMode.REVIVE_AS_COPY) {
+            for (code in data.nameBankCodes.orEmpty()) {
+                val entry = db.nameBankDao().getByCode(code)
+                if (entry == null || (entry.usedByCharacterId != null &&
+                        entry.usedByCharacterId != livingByCode?.id)
+                ) {
+                    lostNameBankLinks++
+                }
+            }
+        }
 
         return CharacterPlan(
             data = data,
@@ -1319,19 +1413,67 @@ class TrashRepository(
                 events = skippedEvents,
                 relationshipFactions = clearedRelationshipFactions,
                 changeEvents = clearedChangeEvents,
-                novelCleared = novelCleared
+                novelCleared = novelCleared,
+                nameBankLinks = lostNameBankLinks
             ),
             relinkedByCode = tally.relinked,
             legacyPayload = tally.legacyGuess,
             previewOnly = tally.previewOnly,
-            duplicatesLivingCharacter = livingSame
+            // 되돌리기는 사본을 만들지 않는다 — 복제 경고를 함께 띄우면 서로 반대되는 두 안내가 된다.
+            duplicatesLivingCharacter = livingSame && mode != CharacterRestoreMode.REVERT,
+            mode = mode,
+            revertTargetId = livingByCode?.id?.takeIf { mode == CharacterRestoreMode.REVERT },
+            revertScope = revertScope
         )
     }
 
-    /** @return (결과, 복원된 캐릭터 id) */
-    private suspend fun applyCharacter(plan: CharacterPlan, session: RestoreSession?): Pair<RestoreResult, Long> {
+    /**
+     * 이름 은행 링크를 되붙인다 (B-3). 되살리기·되돌리기 **양쪽 분기에서** 부른다.
+     *
+     * **code 단독으로만 찾는다.** 임포터는 `getByCode(...) ?: 이름+성별`의 2단 사다리를 쓰지만
+     * 그것은 사용자가 손으로 쓴 시트의 행을 맞추는 일이고, 이쪽은 소유 링크를 되붙이는 일이다.
+     * 이름이 같은 다른 엔트리에 붙이면 남의 이름을 이 캐릭터가 쓰는 것으로 표시해 버린다 —
+     * R-1이 말하는 그대로 **오배정은 생략보다 나쁘다.** 못 찾으면 세어서 고지한다.
+     *
+     * 남이 쓰고 있는 엔트리는 **빼앗지 않는다.** 링크를 끊으면 그 캐릭터의 이름이 이름 은행에서
+     * 미사용으로 바뀌어, 같은 이름이 다시 배정될 수 있다.
+     *
+     * @return 되붙이지 못한 링크 수
+     */
+    private suspend fun relinkNameBank(codes: List<String>, targetId: Long): Int {
+        var lost = 0
+        for (code in codes) {
+            val entry = db.nameBankDao().getByCode(code)
+            when {
+                entry == null -> lost++
+                entry.usedByCharacterId == targetId -> Unit   // 이미 맞다
+                entry.usedByCharacterId != null -> lost++     // 남이 쓰는 중 — 빼앗지 않는다
+                else -> db.nameBankDao().markAsUsed(entry.id, targetId)
+            }
+        }
+        return lost
+    }
+
+    /**
+     * @param consentedRevert 사용자가 **되돌리기(덮어쓰기)에 동의**했는가.
+     *
+     *   미리보기는 트랜잭션 밖에서, 적용은 새 트랜잭션 안에서 계획을 다시 세운다. 그 사이에
+     *   원본이 되살아나면 판정이 부활에서 되돌리기로 **뒤집힌다** — 사용자는 "복원"에 동의했을
+     *   뿐인데 살아 있는 캐릭터가 통째로 덮어써진다. 동의가 없으면 덮어쓰지 않고 사본을
+     *   만든다(종전 동작): 동의한 범위 안이고 파괴가 없다.
+     *
+     * @return (결과, 복원된 캐릭터 id)
+     */
+    private suspend fun applyCharacter(
+        plan: CharacterPlan,
+        session: RestoreSession?,
+        consentedRevert: Boolean = false
+    ): Pair<RestoreResult, Long> {
         // 미리보기 전용 계획은 아직 존재하지 않는 대상을 0번 id로 가리킨다 — 쓰면 오배정이다.
         check(!plan.previewOnly) { "미리보기 전용 계획으로 복원을 시도했다" }
+        if (plan.mode == CharacterRestoreMode.REVERT && consentedRevert) {
+            return applyCharacterRevert(plan, session)
+        }
         val data = plan.data
         var character = data.character.copy(novelId = plan.novelId)
         // 코드 충돌 시 재발급 (code unique)
@@ -1419,14 +1561,133 @@ class TrashRepository(
             db.timelineDao().insertCrossRef(TimelineCharacterCrossRef(eventId, targetId))
         }
 
+        // 이름 은행 사용 표시 되붙이기 (B-3) — 캐릭터 행이 생긴 뒤라야 FK가 성립한다.
+        // 사본을 만든 복원(REVIVE_AS_COPY, 동의 없는 REVERT 폴백)은 되붙이지도 세지도 않는다 —
+        // 원본이 링크를 쥐고 있는 것이 정상인데 세면 유령 유실이 되고, 미리보기(0건)와 어긋나
+        // '예상 밖 유실' 경고까지 울린다.
+        val lostNameBankLinks = if (RestoreModes.revivalRelinksNameBank(plan.mode)) {
+            relinkNameBank(data.nameBankCodes.orEmpty(), targetId)
+        } else 0
+
         val result = RestoreResult(
             entityType = TrashSnapshot.TYPE_CHARACTER,
             restoredName = data.character.name,
-            losses = plan.losses.copy(duplicateRelationshipChanges = duplicateChanges),
+            losses = plan.losses.copy(
+                duplicateRelationshipChanges = duplicateChanges,
+                nameBankLinks = lostNameBankLinks
+            ),
             relinkedByCode = plan.relinkedByCode,
             duplicateRelationships = duplicateRelationships
         )
         return result to targetId
+    }
+
+    /**
+     * **되돌리기** — 살아 있는 캐릭터를 편집 직전 상태로 돌린다 (B-2/B-21).
+     *
+     * 부활과 갈라 두는 이유는 하는 일이 정반대이기 때문이다: 부활은 없는 것을 만들고, 되돌리기는
+     * 있는 것을 고친다. 종전에는 둘 다 insert라 지워진 적 없는 캐릭터가 하나 더 생겼다.
+     *
+     * 지키는 것 셋:
+     * - **교체 범위는 그 편집이 파괴한 갈래까지다**([CharacterSnapshot.revertScope]). 관계·관계
+     *   이력·사건 연결은 어떤 편집 백업 경로도 파괴하지 않으므로 **읽지도 쓰지도 않는다** —
+     *   통째로 갈아 끼우면 백업 이후 사용자가 만든 관계를 무통보로 지운다.
+     * - **덮기 전에 지금 상태를 한 번 더 백업한다.** 복원은 성공 시 스냅샷을 소각하므로, 남기지
+     *   않으면 되돌리기가 잘못됐을 때 어느 쪽으로도 갈 수 없다(R-4).
+     * - **대상은 code로만 정해졌다**(`revertTargetId`). id 폴백으로 고른 대상을 덮어쓰면
+     *   재발급된 옛 id의 남의 캐릭터를 파괴한다(R-1).
+     */
+    private suspend fun applyCharacterRevert(
+        plan: CharacterPlan,
+        session: RestoreSession?
+    ): Pair<RestoreResult, Long> {
+        val data = plan.data
+        val targetId = plan.revertTargetId
+        val living = targetId?.let { db.characterDao().getCharacterById(it) }
+        // 계획 수립과 이 쓰기 사이에 원본이 사라졌다면 되돌릴 대상이 없다 — 되살리기로 내려간다.
+        if (living == null) {
+            return applyCharacter(
+                plan.copy(mode = CharacterRestoreMode.REVIVE, revertTargetId = null, revertScope = emptySet()),
+                session,
+                consentedRevert = false
+            )
+        }
+        val scope = plan.revertScope
+
+        // 덮기 직전 백업 — 이 스냅샷이 되돌리기의 취소 경로다.
+        // 지금 이미지 경로를 함께 담는다: 캐릭터 행을 되돌리면 imagePaths도 옛 것으로 바뀌어
+        // 현재 파일이 참조를 잃으므로, 담아 두어야 ImageOwnershipGuard가 보호한다.
+        snapshotCharacter(
+            living,
+            parseImagePathStrings(living.imagePaths),
+            kind = TrashSnapshot.KIND_EDIT_BACKUP,
+            revertScope = scope.toList()
+        )
+
+        if (RestoreModes.SCOPE_CHARACTER_ROW in scope) {
+            // id와 code는 **살아 있는 행의 것**을 유지한다 — payload의 code를 쓰면 유니크 충돌과
+            // 재발급이 얽혀 '복원이 실패하거나 code가 바뀌는' 새 경로가 생긴다.
+            db.characterDao().update(
+                data.character.copy(id = living.id, code = living.code, novelId = plan.novelId)
+            )
+        }
+
+        if (RestoreModes.SCOPE_FIELD_VALUES in scope) {
+            // 스냅샷은 그 시점 캐릭터의 필드값 **전량**을 담으므로 전체 교체가 곧 되돌리기다
+            // (R-5의 '커버 집합'이 여기서는 캐릭터 전체다). 해석하지 못한 값은 복원되지 않고
+            // losses.fieldValues로 이미 집계돼 동의 문구에 실린다.
+            db.characterFieldValueDao().replaceAllByCharacter(
+                living.id,
+                plan.fieldValues.map { it.copy(id = 0, characterId = living.id) }
+            )
+        }
+
+        // 아래 둘은 **보충만** 한다. 편집 경로가 '지운' 것을 되돌리는 일이므로, 지금 있는 것을
+        // 먼저 비우면 백업 이후 사용자가 더한 것까지 사라진다.
+        var restoredMemberships = 0
+        if (RestoreModes.SCOPE_MEMBERSHIPS in scope) {
+            val existing = db.factionMembershipDao().getMembershipsByCharacterList(living.id)
+                .map { it.factionId }.toHashSet()
+            for (membership in plan.memberships) {
+                if (!existing.add(membership.factionId)) continue
+                db.factionMembershipDao().insert(membership.copy(id = 0, characterId = living.id))
+                restoredMemberships++
+            }
+        }
+
+        var restoredStateChanges = 0
+        if (RestoreModes.SCOPE_STATE_CHANGES in scope) {
+            for (change in data.stateChanges) {
+                // 같은 이력이 이미 있으면 그 사이 사용자가 다시 만든 것이다 — 덮어쓰지 않는다
+                // (applyEvent와 같은 규약).
+                val dao = db.characterStateChangeDao()
+                val sameCode = change.code?.takeIf { it.isNotBlank() }
+                    ?.let { dao.getChangeByCode(it) != null } ?: false
+                if (sameCode) continue
+                if (change.fieldKey in SINGLETON_STATE_KEYS &&
+                    dao.getChangesByField(living.id, change.fieldKey).isNotEmpty()
+                ) continue
+                val safeCode = change.code?.takeIf { c -> dao.getChangeByCode(c) == null }
+                    ?: generateEntityCode()
+                dao.insertAll(listOf(change.copy(id = 0, characterId = living.id, code = safeCode)))
+                restoredStateChanges++
+            }
+        }
+
+        val lostNameBankLinks = relinkNameBank(data.nameBankCodes.orEmpty(), living.id)
+
+        session?.record(TrashSnapshot.TYPE_CHARACTER, data.character.code, living.id)
+
+        val result = RestoreResult(
+            entityType = TrashSnapshot.TYPE_CHARACTER,
+            restoredName = data.character.name,
+            losses = plan.losses.copy(nameBankLinks = lostNameBankLinks),
+            relinkedByCode = plan.relinkedByCode,
+            revertedInPlace = true,
+            revertedMemberships = restoredMemberships,
+            revertedStateChanges = restoredStateChanges
+        )
+        return result to living.id
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -2389,12 +2650,16 @@ class TrashRepository(
         // 생년 필드를 고치면 앱이 **새 code로** 하나를 다시 만들어 둔다. code만 보면 "없다"고
         // 판단해 조용히 두 번째 줄을 만들고, 그때부터 어느 쪽이 진짜인지 알 수 없게 된다.
         val dao = db.characterStateChangeDao()
+        val ownerId = res.id?.takeIf { it != RestoreTally.PENDING_ID }
+        // **주인 캐릭터까지 대조한다.** `getChangeByCode`는 전역 조회라 code가 일치하는 행이
+        // 남의 캐릭터 것일 수 있는데, 그것을 "이미 있다"로 세면 이 캐릭터의 이력이 조용히
+        // 복원되지 않는다(반대로 덮어쓰기로 처리하면 남의 이력을 파괴한다).
         val sameCodeLives = data.change.code?.takeIf { it.isNotBlank() }
-            ?.let { dao.getChangeByCode(it) != null } ?: false
+            ?.let { c -> dao.getChangeByCode(c)?.characterId == ownerId && ownerId != null } ?: false
         val sameSlotLives = data.change.fieldKey in SINGLETON_STATE_KEYS &&
-            res.id != null && res.id != RestoreTally.PENDING_ID &&
-            dao.getChangesByField(res.id!!, data.change.fieldKey).isNotEmpty()
-        val livingSame = sameCodeLives || sameSlotLives
+            ownerId != null &&
+            dao.getChangesByField(ownerId, data.change.fieldKey).isNotEmpty()
+        val mode = RestoreModes.stateChangeRestoreMode(sameCodeLives, sameSlotLives)
 
         return StateChangePlan(
             data = data,
@@ -2402,10 +2667,15 @@ class TrashRepository(
             relinkedByCode = tally.relinked,
             legacyPayload = tally.legacyGuess,
             previewOnly = tally.previewOnly,
-            duplicatesLivingEntity = livingSame,
+            // 이제 복제를 만들지 않고 막으므로 '사본이 생긴다'는 경고는 사실이 아니다.
+            duplicatesLivingEntity = false,
             // 이력은 캐릭터 없이 존재할 수 없다(FK). 아무 캐릭터에나 붙이면 남의 기록이 되므로
             // 되살리지 않고 스냅샷을 남긴다 — 캐릭터를 먼저 복원한 뒤 다시 시도할 수 있다(R-4).
-            blocker = if (res.id == null) RestoreBlocker.MISSING_CHARACTER else null
+            blocker = when {
+                res.id == null -> RestoreBlocker.MISSING_CHARACTER
+                mode == StateChangeRestoreMode.SKIP_EXISTING -> RestoreBlocker.ALREADY_EXISTS
+                else -> null
+            }
         )
     }
 
@@ -2663,9 +2933,9 @@ class TrashRepository(
     }
 
     /** 작업 하나를 통째로 영구 삭제한다. @return 지운 항목 수 */
-    suspend fun purgeOperation(opKey: String): Int = withContext(Dispatchers.IO) {
+    suspend fun purgeOperation(opKey: String, editBackup: Boolean = false): Int = withContext(Dispatchers.IO) {
         val (opId, legacyId) = operationLookup(opKey)
-        val items = trashDao.getImagesByOperation(opId, legacyId)
+        val items = trashDao.getImagesByOperation(opId, legacyId, editBackup)
         purgeAll(items)
         items.size
     }

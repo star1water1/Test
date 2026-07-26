@@ -4,6 +4,7 @@ import com.google.gson.Gson
 import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.CharacterFieldValue
 import com.novelcharacter.app.data.model.CharacterSnapshot
+import com.novelcharacter.app.data.repository.RestoreModes
 import com.novelcharacter.app.data.model.FieldDefRef
 import com.novelcharacter.app.data.model.SnapshotRefs
 import org.junit.Assert.assertEquals
@@ -47,6 +48,36 @@ class CharacterSnapshotPayloadTest {
         assertEquals(1, snap.fieldValues.size)
         assertEquals(12L, snap.fieldValues[0].fieldDefinitionId)
         assertEquals(listOf(41L, 42L), snap.eventIds)
+    }
+
+    @Test
+    fun `구버전 payload는 nameBankCodes와 revertScope가 null이다 — 읽는 쪽이 폴백해야 한다`() {
+        // R-2: Gson은 Kotlin 생성자 기본값을 실행하지 않고 Unsafe로 객체를 할당한다.
+        // 키가 없으면 선언이 non-null이어도 런타임에 null이 주입되므로 nullable로 선언하고
+        // 읽는 쪽이 .orEmpty()로 받아야 한다 — 아니면 기존 휴지통 항목 전량이 복원 불가가 된다.
+        val snap = gson.fromJson(legacyPayload, CharacterSnapshot::class.java)
+        assertNull("B-3 이전 payload에는 이 키가 없다", snap.nameBankCodes)
+        assertNull("B-21 이전 편집 백업에는 이 키가 없다", snap.revertScope)
+        // 구버전 편집 백업은 '모든 편집 경로가 공통으로 파괴하는 것'만 되돌린다.
+        assertEquals(
+            setOf(RestoreModes.SCOPE_FIELD_VALUES),
+            RestoreModes.revertScopeOf(snap.revertScope)
+        )
+    }
+
+    @Test
+    fun `신규 키는 왕복에서 보존된다`() {
+        val original = CharacterSnapshot(
+            character = gson.fromJson(legacyPayload, CharacterSnapshot::class.java).character,
+            nameBankCodes = listOf("NB-1", "NB-2"),
+            revertScope = RestoreModes.SCOPE_LIBRARY_ENTRY_DELETE
+        )
+        val round = gson.fromJson(gson.toJson(original), CharacterSnapshot::class.java)
+        assertEquals(listOf("NB-1", "NB-2"), round.nameBankCodes)
+        assertEquals(
+            setOf(RestoreModes.SCOPE_FIELD_VALUES, RestoreModes.SCOPE_STATE_CHANGES),
+            RestoreModes.revertScopeOf(round.revertScope)
+        )
     }
 
     @Test
