@@ -1,6 +1,8 @@
 package com.novelcharacter.app.data.repository
 
 import androidx.lifecycle.LiveData
+import androidx.room.withTransaction
+import com.novelcharacter.app.data.database.AppDatabase
 import com.novelcharacter.app.data.dao.TimelineDao
 import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.EventNovelName
@@ -9,7 +11,8 @@ import com.novelcharacter.app.data.model.TimelineEvent
 import com.novelcharacter.app.data.model.TimelineEventNovelCrossRef
 
 class TimelineRepository(
-    private val timelineDao: TimelineDao
+    private val db: AppDatabase,
+    private val timelineDao: TimelineDao = db.timelineDao()
 ) {
     val allEvents: LiveData<List<TimelineEvent>> = timelineDao.getAllEvents()
 
@@ -25,7 +28,32 @@ class TimelineRepository(
         timelineDao.searchEvents(sanitizeLikeQuery(query))
     suspend fun insertEvent(event: TimelineEvent): Long = timelineDao.insert(event)
     suspend fun updateEvent(event: TimelineEvent) = timelineDao.update(event)
-    suspend fun deleteEvent(event: TimelineEvent) = timelineDao.delete(event)
+    /**
+     * 사건 삭제 — 삭제 전 휴지통 스냅샷을 남긴다 (B-1).
+     *
+     * 사건이 죽으면 사건 필드값·참가 캐릭터 연결·작품 연결이 FK CASCADE로 죽고,
+     * **관계 변화 이력의 사건 연결은 SET_NULL로 조용히 끊긴다.** 종전에는 이 전부가
+     * 무통보 영구 삭제였다(연표 롱프레스에는 확인 다이얼로그조차 없다).
+     *
+     * 스냅샷과 삭제를 한 트랜잭션으로 묶는다 — 삭제만 커밋되고 스냅샷이 날아가면
+     * 그 자체가 무통보 유실이다. 정리(pruneIfNeeded)는 커밋 이후에 수행한다
+     * (롤백 시 스냅샷 이미지가 지워지는 것 방지 — 저장소 공통 관례).
+     *
+     * @param beforeDelete 사건 삭제에 딸린 **캐릭터 쪽 정리**(출생/사망 시맨틱 역동기화).
+     *   스냅샷 **뒤**, 삭제 **앞**에 같은 트랜잭션 안에서 실행된다. 순서가 중요하다 —
+     *   호출부가 먼저 정리해 버리면 스냅샷이 이미 지워진 이력을 담지 못해, 사건만 되살아나고
+     *   캐릭터의 출생·사망 기록은 영영 사라진다. 종전에는 이 정리와 삭제가 서로 다른
+     *   자동커밋 단위라 중간에 실패하면 반쪽만 적용됐다.
+     */
+    suspend fun deleteEvent(event: TimelineEvent, beforeDelete: suspend () -> Unit = {}) {
+        val trash = TrashRepository(db)
+        db.withTransaction {
+            trash.snapshotEvent(event)
+            beforeDelete()
+            timelineDao.delete(event)
+        }
+        trash.pruneIfNeeded()
+    }
     suspend fun insertAllEvents(events: List<TimelineEvent>) = timelineDao.insertAll(events)
     fun getEventsByUniverse(universeId: Long): LiveData<List<TimelineEvent>> =
         timelineDao.getEventsByUniverse(universeId)

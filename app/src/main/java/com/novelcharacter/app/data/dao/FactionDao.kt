@@ -44,4 +44,11 @@ interface FactionDao {
 
     @Query("DELETE FROM factions WHERE id = :id")
     suspend fun deleteById(id: Long)
+
+    /** 휴지통 복원의 참조 재해석용 일괄 조회 (B-1). 호출부에서 900개 단위로 청크할 것. */
+    @Query("SELECT * FROM factions WHERE id IN (:ids)")
+    suspend fun getByIds(ids: List<Long>): List<Faction>
+
+    @Query("SELECT * FROM factions WHERE code IN (:codes)")
+    suspend fun getByCodes(codes: List<String>): List<Faction>
 }

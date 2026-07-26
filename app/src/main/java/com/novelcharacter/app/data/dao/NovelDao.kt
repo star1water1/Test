@@ -54,6 +54,10 @@ interface NovelDao {
     @Query("SELECT * FROM novels WHERE code = :code LIMIT 1")
     suspend fun getNovelByCode(code: String): Novel?
 
+    /** 휴지통 복원의 참조 재해석용 일괄 조회 (B-1). 호출부에서 900개 단위로 청크할 것. */
+    @Query("SELECT * FROM novels WHERE code IN (:codes)")
+    suspend fun getNovelsByCodes(codes: List<String>): List<Novel>
+
     @Query("SELECT * FROM novels WHERE title LIKE '%' || :query || '%' ESCAPE '\\' OR description LIKE '%' || :query || '%' ESCAPE '\\'")
     fun searchNovels(query: String): LiveData<List<Novel>>
 

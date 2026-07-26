@@ -358,10 +358,13 @@ class CharacterRepository(
     suspend fun batchChangeNovel(ids: List<Long>, newNovelId: Long?): UniverseMoveCounts {
         val now = System.currentTimeMillis()
         var agg = UniverseMoveCounts()
+        // 정리는 커밋 이후에 한 번 — 종전에는 스냅샷만 남기고 정리를 부르지 않아 다음 삭제 작업까지
+        // 한도를 넘긴 채 쌓였다 (B-15). 인스턴스를 공유해야 이 작업의 백업이 보호된다 (R-3).
+        // **편집 직전 백업**이다 — 캐릭터는 지워지지 않으므로 복원은 되돌리기가 아니라 복제다(B-2).
+        val trash = TrashRepository(db, TrashSnapshot.KIND_EDIT_BACKUP)
         db.withTransaction {
             val newUniverseId = newNovelId?.let { db.novelDao().getNovelById(it)?.universeId }
             if (newUniverseId != null) {
-                val trash = TrashRepository(db)
                 val allDefsById: Map<Long, FieldDefinition> = db.fieldDefinitionDao().getAllFieldsAllTypes().associateBy { it.id }
                 val newDefByKey = db.fieldDefinitionDao().getFieldsByUniverseList(newUniverseId).associateBy { it.key }
                 for (chunk in ids.chunked(CHUNK_SIZE)) {
@@ -377,6 +380,7 @@ class CharacterRepository(
                 characterDao.updateNovelIdForIds(chunk, newNovelId, now)
             }
         }
+        trash.pruneIfNeeded()
         // 세계관이 바뀐 이동이면 대상 세계관 라이브러리에 재매핑 값 수확 (검토 A6)
         newNovelId?.let { db.novelDao().getNovelById(it)?.universeId }
             ?.let { fieldLibrary.harvestUniverses(setOf(it)) }
@@ -442,12 +446,16 @@ class CharacterRepository(
         newUniverseId: Long,
         trash: TrashRepository? = null
     ): UniverseMoveCounts {
+        // 호출부가 인스턴스를 넘겼다면 정리도 그쪽 책임이다(작업 범위를 그쪽이 안다).
+        // 여기서 만든 경우에만 커밋 후 정리한다 (B-15). 편집 직전 백업이다(B-2).
+        val ownedTrash = if (trash == null) TrashRepository(db, TrashSnapshot.KIND_EDIT_BACKUP) else null
         val counts = db.withTransaction {
-            val trashRepo = trash ?: TrashRepository(db)
+            val trashRepo = trash ?: ownedTrash!!
             val allDefsById: Map<Long, FieldDefinition> = db.fieldDefinitionDao().getAllFieldsAllTypes().associateBy { it.id }
             val newDefByKey = db.fieldDefinitionDao().getFieldsByUniverseList(newUniverseId).associateBy { it.key }
             migrateCharacterFieldsToUniverse(character, newUniverseId, allDefsById, newDefByKey, trashRepo)
         }
+        ownedTrash?.pruneIfNeeded()
         // 재매핑된 값이 새 세계관 필드의 라이브러리에 등재되도록 수확
         fieldLibrary.harvestForCharacter(character.id)
         return counts
@@ -482,6 +490,9 @@ class CharacterRepository(
         formValues: List<CharacterFieldValue>,
         newUniverseId: Long
     ): UniverseMoveCounts {
+        // 정리는 커밋 이후에 — 종전에는 스냅샷만 남기고 pruneIfNeeded를 부르지 않았다 (B-15).
+        // 편집 직전 백업이다 — 캐릭터는 지워지지 않는다(B-2).
+        val trash = TrashRepository(db, TrashSnapshot.KIND_EDIT_BACKUP)
         return db.withTransaction {
             val allDefsById: Map<Long, FieldDefinition> = db.fieldDefinitionDao().getAllFieldsAllTypes().associateBy { it.id }
             val newDefByKey = db.fieldDefinitionDao().getFieldsByUniverseList(newUniverseId).associateBy { it.key }
@@ -513,13 +524,14 @@ class CharacterRepository(
             val willLose = removed > 0 || orphanMemberships > 0
             if (willLose) {
                 val persisted = characterDao.getCharacterById(character.id) ?: character
-                TrashRepository(db).snapshotCharacter(persisted, parseImagePaths(persisted.imagePaths).map { it.absolutePath })
+                trash.snapshotCharacter(persisted, parseImagePaths(persisted.imagePaths).map { it.absolutePath })
             }
             characterDao.update(character)
             characterFieldValueDao.replaceAllByCharacter(character.id, formNonBlank + gapFills.values)
             if (orphanMemberships > 0) db.factionMembershipDao().deleteMembershipsNotInUniverse(character.id, newUniverseId)
             UniverseMoveCounts(remapped, removed, orphanMemberships, if (willLose) 1 else 0)
         }.also {
+            trash.pruneIfNeeded()
             // 세계관 간 이동 저장도 폼 값 저장 경로 — 새 세계관 필드로 수확 (검토 A6)
             fieldLibrary.harvestForCharacter(character.id)
         }
@@ -662,11 +674,17 @@ class CharacterRepository(
          */
         suspend fun deleteCharactersCascade(db: AppDatabase, trash: TrashRepository, ids: List<Long>) {
             if (ids.isEmpty()) return
+            // **전 청크를 먼저 스냅샷한 뒤에 삭제한다.** 청크마다 스냅샷→삭제를 반복하면,
+            // 앞 청크를 지울 때 FK CASCADE가 관계 행을 없애 버려 청크를 가로지르는 관계가
+            // 뒤 청크의 payload에서 사라진다 — 관계는 양쪽 스냅샷이 모두 담는다는 전제가
+            // 깨지고, 복원은 "상대가 같은 작업 안에 있으니 그쪽이 담았겠지"라며 조용히
+            // 건너뛴다(무통보 유실). 900명을 넘는 세계관에서만 나타나던 경로다.
             for (chunk in ids.chunked(CASCADE_CHUNK_SIZE)) {
-                val characters = db.characterDao().getCharactersByIds(chunk)
-                for (character in characters) {
+                for (character in db.characterDao().getCharactersByIds(chunk)) {
                     trash.snapshotCharacter(character, parseImagePathStrings(character.imagePaths))
                 }
+            }
+            for (chunk in ids.chunked(CASCADE_CHUNK_SIZE)) {
                 db.nameBankDao().resetUsageByCharacterIds(chunk)
                 db.recentActivityDao().deleteByEntityIds(RecentActivity.TYPE_CHARACTER, chunk)
                 db.novelDao().clearImageCharacterRefs(chunk)

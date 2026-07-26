@@ -93,7 +93,7 @@ import com.novelcharacter.app.data.model.Universe
         ImageTag::class,
         FieldValueEntry::class
     ],
-    version = 42,
+    version = 43,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -1694,6 +1694,54 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_42_43 = object : Migration(42, 43) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "Migrating database from version 42 to 43 — trash_snapshots 작업 단위(operationId)")
+
+                // 휴지통이 캐릭터 전용에서 세계관·작품·세력·사건까지 확대되면서(B-1) 한 번의 삭제가
+                // 만드는 스냅샷이 하나가 아니게 됐다. 묶음을 중간에서 자르면 "세계관은 되살아나는데
+                // 캐릭터 71명은 없는" 반쪽 백업이 되므로 정리·복원 단위를 작업으로 올린다(B-14).
+                //
+                // nullable TEXT로 두는 이유: DEFAULT 절 없는 ALTER TABLE ADD COLUMN 결과가
+                // 엔티티(operationId: String?, @ColumnInfo 미사용)의 기대 스키마와 정확히 일치한다.
+                // 구버전 행은 null로 남고, 그때는 행 하나가 곧 하나의 작업이다
+                // (`COALESCE(operationId, 'row:' || id)`) — 종전과 동일하게 동작한다.
+                // 백필하지 않는 이유가 이것이다: null이 이미 올바른 의미를 갖는다.
+                //
+                // 컬럼 존재 여부를 먼저 확인한다 — 중간 빌드를 거친 기기에서 이미 컬럼이 있으면
+                // ALTER TABLE이 "duplicate column name"으로 실패해 시작 시마다 크래시가 반복된다
+                // (MIGRATION_41_42와 동일 절차).
+                val hasOperationId = db.query("PRAGMA table_info(`trash_snapshots`)").use { c ->
+                    val nameIdx = c.getColumnIndex("name")
+                    var found = false
+                    while (c.moveToNext()) {
+                        if (c.getString(nameIdx) == "operationId") { found = true; break }
+                    }
+                    found
+                }
+                if (!hasOperationId) {
+                    db.execSQL("ALTER TABLE `trash_snapshots` ADD COLUMN `operationId` TEXT")
+                }
+                // 작업의 종류(삭제/편집 직전 백업) — 구버전 행은 null이고 그때는 삭제로 읽는다.
+                // v43 이전에는 편집 백업도 행마다 독립이라 묶음 자체가 만들어지지 않았으므로
+                // null이 이미 올바른 의미다(백필 불필요).
+                val hasOperationKind = db.query("PRAGMA table_info(`trash_snapshots`)").use { c ->
+                    val nameIdx = c.getColumnIndex("name")
+                    var found = false
+                    while (c.moveToNext()) {
+                        if (c.getString(nameIdx) == "operationKind") { found = true; break }
+                    }
+                    found
+                }
+                if (!hasOperationKind) {
+                    db.execSQL("ALTER TABLE `trash_snapshots` ADD COLUMN `operationKind` TEXT")
+                }
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_trash_snapshots_operationId` ON `trash_snapshots`(`operationId`)")
+
+                Log.i(TAG, "Migration from version 42 to 43 completed successfully")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -1701,7 +1749,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "novel_character_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43)
                     .addCallback(SeedCallback(context.applicationContext))
                     .build()
                     .also { INSTANCE = it }

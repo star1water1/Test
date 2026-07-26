@@ -98,4 +98,12 @@ interface CharacterDao {
     /** 작품 미지정(미분류) 캐릭터 id — 엑셀 '미분류 캐릭터' 시트의 삭제 대상 산출용 */
     @Query("SELECT id FROM characters WHERE novelId IS NULL")
     suspend fun getUnclassifiedCharacterIds(): List<Long>
+
+    /**
+     * 코드로 일괄 조회 (휴지통 복원의 참조 재해석용 — B-1).
+     * 단건 조회를 참조 수만큼 반복하면 세계관 복원처럼 참조가 수백 건인 경로가 무너진다.
+     * 호출부에서 900개 단위로 청크할 것 (SQLite 999-변수 상한).
+     */
+    @Query("SELECT * FROM characters WHERE code IN (:codes)")
+    suspend fun getCharactersByCodes(codes: List<String>): List<Character>
 }

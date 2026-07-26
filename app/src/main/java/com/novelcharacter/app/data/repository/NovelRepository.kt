@@ -34,7 +34,10 @@ class NovelRepository(
 
     /**
      * 작품 삭제 — 소속 캐릭터까지 계단식으로 함께 삭제한다.
-     * 캐릭터는 삭제 전 개별 휴지통 스냅샷을 남겨 복원 가능하게 한다(변수 제어 — 말없는 유실 방지).
+     *
+     * **작품 자신도 휴지통 스냅샷을 남긴다 (B-1).** 종전에는 캐릭터만 복원 가능했고
+     * 작품과 그 사건 연결은 즉시 영구 소멸했다. 작품과 캐릭터 스냅샷은 하나의 삭제 작업으로
+     * 묶여 통째로 보관·복원된다(B-14) — 작품이 먼저 복원되므로 캐릭터가 원래 작품에 다시 붙는다.
      */
     suspend fun deleteNovel(novel: Novel) {
         val trash = TrashRepository(db)
@@ -42,6 +45,10 @@ class NovelRepository(
         val imageFiles = parseImagePaths(novel.imagePaths)
 
         db.withTransaction {
+            // 작품 스냅샷은 캐릭터 삭제보다 먼저 — 사건 연결은 이 시점에만 읽을 수 있다.
+            // 사건은 함께 지워지지 않으므로(작품 삭제는 사건을 남긴다) doomed 집합은 비어 있다.
+            trash.snapshotNovel(novel, doomedEventIds = emptySet())
+
             // 소속 캐릭터 계단식 삭제 (휴지통 스냅샷 후 삭제 — 태그/필드값/관계 등은 FK CASCADE)
             val characterIds = db.characterDao().getCharactersByNovelList(novel.id).map { it.id }
             CharacterRepository.deleteCharactersCascade(db, trash, characterIds)

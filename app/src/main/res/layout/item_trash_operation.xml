@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  삭제 작업(그룹) 머리글 — 한 번의 삭제가 만든 스냅샷 묶음을 대표한다 (B-1/B-14).
+  세계관 하나를 지우면 캐릭터 수백 개 항목이 생기므로, 목록을 항목 단위로만 보여주면
+  "무엇을 지웠는지"가 사라진다. 머리글이 그 삭제 자체를 한 줄로 말하고
+  '전체 복원'이 순서(세계관→작품→세력→사건→캐릭터)대로 되살린다.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:paddingStart="12dp"
+    android:paddingEnd="8dp"
+    android:paddingTop="14dp"
+    android:paddingBottom="6dp">
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/opTitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="?attr/colorOnSurface"
+            android:textAppearance="@style/TextAppearance.App.Title" />
+
+        <TextView
+            android:id="@+id/opMeta"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:textColor="?attr/colorOnSurfaceVariant"
+            android:textAppearance="@style/TextAppearance.App.Caption" />
+
+    </LinearLayout>
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnRestoreAll"
+        style="@style/Widget.App.Button.Tonal"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:minWidth="0dp"
+        android:text="@string/trash_restore_operation" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnPurgeAll"
+        style="@style/Widget.App.Button.Outlined.Danger"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:minWidth="0dp"
+        android:text="@string/trash_delete_forever"
+        app:iconTint="?attr/colorError"
+        android:textColor="?attr/colorError" />
+
+</LinearLayout>

@@ -12,6 +12,14 @@ interface CharacterRelationshipChangeDao {
     @Query("SELECT * FROM character_relationship_changes WHERE relationshipId = :relationshipId ORDER BY year ASC, month ASC, day ASC")
     suspend fun getChangesForRelationshipList(relationshipId: Long): List<CharacterRelationshipChange>
 
+    /**
+     * 여러 관계의 변화 이력 일괄 조회 (휴지통 세력 스냅샷용 — B-1).
+     * 세력 하나에 100명이 소속되면 자동 관계가 약 5천 개다 — 관계마다 단건 조회하면
+     * 세력 삭제 트랜잭션이 그대로 멈춘다. 호출부에서 900개 단위로 청크할 것.
+     */
+    @Query("SELECT * FROM character_relationship_changes WHERE relationshipId IN (:relationshipIds) ORDER BY year ASC, month ASC, day ASC")
+    suspend fun getChangesForRelationships(relationshipIds: List<Long>): List<CharacterRelationshipChange>
+
     @Query("SELECT * FROM character_relationship_changes WHERE relationshipId = :relationshipId AND year <= :year ORDER BY year DESC, month DESC, day DESC LIMIT 1")
     suspend fun getChangeAtYear(relationshipId: Long, year: Int): CharacterRelationshipChange?
 
@@ -24,6 +32,14 @@ interface CharacterRelationshipChangeDao {
     /** 엑셀 왕복 안정 식별자 매칭 — 코드 우선, 자연키는 구버전 파일 폴백 */
     @Query("SELECT * FROM character_relationship_changes WHERE code = :code LIMIT 1")
     suspend fun getChangeByCode(code: String): CharacterRelationshipChange?
+
+    /**
+     * 특정 사건에 연결된 관계 변화 이력 (휴지통 사건 스냅샷용 — B-1).
+     * 사건이 지워지면 이 연결은 FK SET_NULL로 **조용히** 끊긴다 — 이력 자체는 살아남으므로
+     * 어떤 캐릭터 스냅샷도 그 손실을 담지 못한다. 사건 스냅샷이 code로 담아 되붙인다.
+     */
+    @Query("SELECT * FROM character_relationship_changes WHERE eventId = :eventId")
+    suspend fun getChangesByEventList(eventId: Long): List<CharacterRelationshipChange>
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(change: CharacterRelationshipChange): Long

@@ -70,6 +70,8 @@ class FieldFilterHelperTest {
         override suspend fun countValuesByUniverse(universeId: Long): Int = unused()
         override suspend fun deleteFieldValueForCharacters(characterIds: List<Long>, fieldDefId: Long) = unused()
         override suspend fun upsert(value: CharacterFieldValue): Long = unused()
+        override suspend fun getValuesByFieldDefs(fieldDefIds: List<Long>): List<CharacterFieldValue> = unused()
+        override suspend fun getOrphanValuesForUniverseFields(fieldDefIds: List<Long>, universeId: Long): List<CharacterFieldValue> = unused()
 
         private fun unused(): Nothing = throw UnsupportedOperationException("not used in test")
     }
@@ -77,6 +79,7 @@ class FieldFilterHelperTest {
     private class FakeFieldDao(val fields: Map<Long, FieldDefinition> = emptyMap()) : FieldDefinitionDao {
         override suspend fun getFieldById(id: Long): FieldDefinition? = fields[id]
         override suspend fun getFieldsByIds(ids: List<Long>): List<FieldDefinition> = ids.mapNotNull { fields[it] }
+        override suspend fun getFieldsByUniverseAllTypes(universeId: Long): List<FieldDefinition> = unused()
 
         override fun getFieldsByUniverse(universeId: Long, entityType: String): LiveData<List<FieldDefinition>> = unused()
         override suspend fun getFieldsByUniverseList(universeId: Long, entityType: String): List<FieldDefinition> = unused()
@@ -108,6 +111,7 @@ class FieldFilterHelperTest {
         override suspend fun countByField(): List<FieldEntryCount> = unused()
         override suspend fun getByFieldAndValue(fieldDefId: Long, value: String): FieldValueEntry? = unused()
         override suspend fun getByCode(code: String): FieldValueEntry? = unused()
+        override suspend fun getByCodes(codes: List<String>): List<FieldValueEntry> = unused()
         override suspend fun insertAllIgnore(entries: List<FieldValueEntry>): List<Long> = unused()
         override suspend fun insert(entry: FieldValueEntry): Long = unused()
         override suspend fun update(entry: FieldValueEntry) = unused()

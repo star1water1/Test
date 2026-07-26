@@ -650,11 +650,17 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
 
     fun deleteEvent(event: TimelineEvent) = viewModelScope.launch {
         try {
-            // 삭제 전에 연결된 캐릭터의 상태변화 정리 (삭제 후에는 cross-ref 소실)
-            if (event.eventType == TimelineEvent.TYPE_BIRTH || event.eventType == TimelineEvent.TYPE_DEATH) {
-                cleanupStateChangesForDeletedEvent(event)
+            // 상태변화 정리를 저장소에 **넘겨서** 실행한다 (B-1).
+            // 여기서 먼저 정리해 버리면 휴지통 스냅샷이 이미 지워진 출생·사망 이력을 담지 못해,
+            // 사건만 되살아나고 캐릭터의 기록은 영영 사라진다. 저장소가 스냅샷 뒤·삭제 앞에,
+            // 같은 트랜잭션 안에서 부른다(종전에는 서로 다른 자동커밋 단위였다).
+            timelineRepository.deleteEvent(event) {
+                if (event.eventType == TimelineEvent.TYPE_BIRTH ||
+                    event.eventType == TimelineEvent.TYPE_DEATH
+                ) {
+                    cleanupStateChangesForDeletedEvent(event)
+                }
             }
-            timelineRepository.deleteEvent(event)
             // novelEventIds 캐시 갱신
             _filterNovelId.value?.let { nid ->
                 _novelEventIds.value = timelineRepository.getEventIdsByNovel(nid).toSet()

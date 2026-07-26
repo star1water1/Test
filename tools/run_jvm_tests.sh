@@ -78,6 +78,12 @@ $MAIN/data/model/CharacterRelationshipChange.kt
 $MAIN/data/model/FactionMembership.kt
 $MAIN/data/model/CharacterSnapshot.kt
 $MAIN/data/model/SnapshotRefs.kt
+$MAIN/data/model/TrashSnapshot.kt
+$MAIN/data/model/EventFieldValue.kt
+$MAIN/data/model/FactionRelationship.kt
+$MAIN/data/model/EntitySnapshots.kt
+$MAIN/data/dao/TrashSnapshotDao.kt
+$MAIN/data/repository/TrashGrouping.kt
 $MAIN/data/repository/SnapshotRefResolver.kt
 $MAIN/data/repository/CharacterFieldValueMerge.kt
 $MAIN/data/repository/TrashPruneSelector.kt
@@ -111,6 +117,8 @@ $TEST/data/CharacterSnapshotPayloadTest.kt
 $TEST/data/CharacterFieldValueMergeTest.kt
 $TEST/excel/SheetNameAssignmentTest.kt
 $TEST/data/TrashPruneSelectorTest.kt
+$TEST/data/TrashGroupingTest.kt
+$TEST/data/EntitySnapshotPayloadTest.kt
 $TEST/data/RestoreLossCountsTest.kt
 $TEST/ai/AiModelSuggestionsTest.kt
 "
