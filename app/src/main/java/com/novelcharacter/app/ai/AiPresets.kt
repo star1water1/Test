@@ -10,6 +10,11 @@ import com.novelcharacter.app.R
  *
  * 모델명은 제공사들이 수시로 바꾸므로 '추천값'일 뿐이고 필드는 항상 자유 입력이다.
  * 가이드 문자열이 "최신 모델명은 제공사 문서를 확인"을 안내한다(변수 제어).
+ *
+ * **[suggestedModels]는 최신 목록의 출처가 아니다.** 키가 있으면 추천 칩과 모델 선택 모두
+ * 서버에 실시간으로 물어보고([AiModelSuggestions]), 이 목록은 (a) 키 입력 전·조회 실패 시의
+ * 폴백과 (b) 실시간 목록의 정렬 우선순위(사람이 고른 순서)로만 쓰인다. 그래서 이 목록이
+ * 조금 낡아도 사용자는 새 모델을 볼 수 있다 — 낡은 스냅샷이 최신 모델을 가리던 문제의 해법.
  */
 data class AiPreset(
     val id: String,
@@ -39,9 +44,9 @@ object AiPresets {
             displayName = "Anthropic Claude",
             protocol = AiProtocol.ANTHROPIC,
             baseUrl = "https://api.anthropic.com",
-            defaultModel = "claude-opus-4-8",
+            defaultModel = "claude-opus-5",
             suggestedModels = listOf(
-                "claude-opus-4-8", "claude-sonnet-5", "claude-sonnet-4-6", "claude-haiku-4-5"
+                "claude-opus-5", "claude-sonnet-5", "claude-fable-5", "claude-haiku-4-5"
             ),
             consoleUrl = "https://console.anthropic.com/settings/keys",
             modelDocsUrl = "https://platform.claude.com/docs/en/about-claude/models/overview",

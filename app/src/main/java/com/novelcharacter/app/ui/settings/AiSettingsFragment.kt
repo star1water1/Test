@@ -10,6 +10,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.PopupMenu
 import android.widget.Toast
+import androidx.annotation.StringRes
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.core.text.util.LinkifyCompat
@@ -27,6 +28,7 @@ import com.novelcharacter.app.R
 import com.novelcharacter.app.ai.AiErrorMessages
 import com.novelcharacter.app.ai.AiKeyStore
 import com.novelcharacter.app.ai.AiModelListResult
+import com.novelcharacter.app.ai.AiModelSuggestions
 import com.novelcharacter.app.ai.AiPreset
 import com.novelcharacter.app.ai.AiPresets
 import com.novelcharacter.app.ai.AiProviderConfig
@@ -41,6 +43,7 @@ import com.novelcharacter.app.databinding.ItemAiProviderBinding
 import com.novelcharacter.app.util.AppLogger
 import com.novelcharacter.app.util.setValidatedPositiveButton
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -134,16 +137,33 @@ class AiSettingsFragment : Fragment() {
 
         // 추천 모델 칩 — 직접 타이핑 없이 원탭으로 선택(러프 입력), 세부 수정은 필드에서(원칙 04).
         // 현재 입력값과 일치하는 칩은 체크 상태로 표시해 무엇이 선택됐는지 한눈에 보인다.
-        val suggestedModels = preset?.suggestedModels.orEmpty()
-        if (suggestedModels.isNotEmpty()) {
-            fun syncModelChips(current: String?) {
-                dialogBinding.modelChipGroup.children.forEach { view ->
-                    (view as? Chip)?.isChecked = view.text?.toString() == current
-                }
+        //
+        // 목록의 출처는 **키가 있으면 서버**다. 프리셋의 정적 추천값만 쓰던 종전 구현은 제공사가
+        // 새 모델을 내놓아도 앱이 모르는 구조라, 사용자에게는 "최신 모델을 추천하지 않는 앱"이었다.
+        // 이제 모델 선택 다이얼로그와 같은 실시간 조회를 칩에도 쓰고, 정적 목록은 폴백과
+        // 정렬 우선순위로만 남는다(AiModelSuggestions).
+        val curatedModels = preset?.suggestedModels.orEmpty()
+        var modelFetchJob: Job? = null
+        var keyDebounceJob: Job? = null
+        var lastFetchedSignature: String? = null
+
+        fun syncModelChips(current: String?) {
+            dialogBinding.modelChipGroup.children.forEach { view ->
+                (view as? Chip)?.isChecked = view.text?.toString() == current
             }
+        }
+
+        fun renderModelChips(models: List<String>, @StringRes labelRes: Int) {
+            dialogBinding.modelChipGroup.removeAllViews()
+            if (models.isEmpty()) {
+                dialogBinding.suggestedModelsLabel.visibility = View.GONE
+                dialogBinding.modelChipScroll.visibility = View.GONE
+                return
+            }
+            dialogBinding.suggestedModelsLabel.setText(labelRes)
             dialogBinding.suggestedModelsLabel.visibility = View.VISIBLE
             dialogBinding.modelChipScroll.visibility = View.VISIBLE
-            suggestedModels.forEach { model ->
+            models.forEach { model ->
                 dialogBinding.modelChipGroup.addView(
                     Chip(ctx).apply {
                         text = model
@@ -156,9 +176,53 @@ class AiSettingsFragment : Fragment() {
                     }
                 )
             }
-            syncModelChips(config.model)
-            dialogBinding.modelInput.doOnTextChanged { text, _, _, _ ->
-                syncModelChips(text?.toString()?.trim())
+            syncModelChips(dialogBinding.modelInput.text?.toString()?.trim())
+        }
+
+        /**
+         * 키·주소가 갖춰졌으면 서버 목록으로 칩을 갱신한다.
+         * 실패해도 조용히 정적 추천값을 유지한다 — 칩은 보조 수단이고, 사유가 필요한 사용자는
+         * '모델 찾기'가 오류를 그대로 보여준다(같은 실패를 두 곳에서 두 번 알리지 않는다).
+         */
+        fun refreshModelChips() {
+            val baseUrl = dialogBinding.baseUrlInput.text?.toString()?.trim()?.trimEnd('/').orEmpty()
+            val uri = runCatching { Uri.parse(baseUrl) }.getOrNull()
+            if (baseUrl.isEmpty() || uri?.scheme != "https" || uri.host.isNullOrBlank()) return
+            val key = dialogBinding.apiKeyInput.text?.toString()?.trim()
+                .takeUnless { it.isNullOrEmpty() } ?: keyStore.getKey(config.id).orEmpty()
+            if (key.length < MIN_KEY_LENGTH_FOR_LOOKUP) return
+            // 같은 (주소, 키)로는 다시 묻지 않는다 — 타이핑마다 API를 때리지 않기 위해서.
+            val signature = "$baseUrl $key"
+            if (signature == lastFetchedSignature) return
+            lastFetchedSignature = signature
+            modelFetchJob?.cancel()
+            modelFetchJob = viewLifecycleOwner.lifecycleScope.launch {
+                val result = aiService.listModels(config.copy(baseUrl = baseUrl), key)
+                if (!dialogBinding.root.isAttachedToWindow) return@launch
+                if (result is AiModelListResult.Success) {
+                    renderModelChips(
+                        AiModelSuggestions.rank(result.models, curatedModels),
+                        R.string.ai_edit_models_from_server_label
+                    )
+                } else {
+                    // 다음 키 수정 때 다시 시도할 수 있게 서명을 비운다.
+                    lastFetchedSignature = null
+                }
+            }
+        }
+
+        // 키 입력 전에도 원탭 선택이 가능하도록 정적 추천값을 먼저 그린다.
+        renderModelChips(curatedModels, R.string.ai_edit_suggested_models_label)
+        dialogBinding.modelInput.doOnTextChanged { text, _, _, _ ->
+            syncModelChips(text?.toString()?.trim())
+        }
+        // 저장된 키가 있는 편집 진입은 즉시, 새로 입력하는 경우는 타이핑이 멎은 뒤에 조회한다.
+        refreshModelChips()
+        dialogBinding.apiKeyInput.doOnTextChanged { _, _, _, _ ->
+            keyDebounceJob?.cancel()
+            keyDebounceJob = viewLifecycleOwner.lifecycleScope.launch {
+                delay(KEY_LOOKUP_DEBOUNCE_MS)
+                if (dialogBinding.root.isAttachedToWindow) refreshModelChips()
             }
         }
 
@@ -491,6 +555,12 @@ class AiSettingsFragment : Fragment() {
 
     companion object {
         private const val TAG = "AiSettings"
+
+        /** 이보다 짧은 입력은 키가 아직 다 안 들어온 것으로 보고 조회하지 않는다. */
+        private const val MIN_KEY_LENGTH_FOR_LOOKUP = 12
+
+        /** 키 타이핑이 멎은 뒤 조회하기까지의 대기 — 글자마다 API를 때리지 않기 위해서. */
+        private const val KEY_LOOKUP_DEBOUNCE_MS = 700L
         private const val MENU_EDIT = 1
         private const val MENU_TEST = 2
         private const val MENU_DELETE = 3
