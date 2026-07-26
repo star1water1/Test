@@ -87,6 +87,7 @@ $MAIN/data/repository/TrashGrouping.kt
 $MAIN/data/repository/SnapshotRefResolver.kt
 $MAIN/data/repository/CharacterFieldValueMerge.kt
 $MAIN/data/repository/TrashPruneSelector.kt
+$MAIN/data/repository/RestoreModes.kt
 $MAIN/data/repository/RestoreLossCounts.kt
 $MAIN/data/repository/RestoreTally.kt
 $MAIN/ai/AiModelSuggestions.kt
@@ -115,6 +116,7 @@ $TEST/ai/AiJsonExtractorTest.kt
 $TEST/util/FieldFilterHelperTest.kt
 $TEST/data/SnapshotRefResolverTest.kt
 $TEST/data/CharacterSnapshotPayloadTest.kt
+$TEST/data/RestoreModeTest.kt
 $TEST/data/CharacterFieldValueMergeTest.kt
 $TEST/excel/SheetNameAssignmentTest.kt
 $TEST/data/TrashPruneSelectorTest.kt

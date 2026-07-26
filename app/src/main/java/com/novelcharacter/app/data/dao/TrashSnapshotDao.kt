@@ -74,12 +74,25 @@ interface TrashSnapshotDao {
     @Query("SELECT id, imagePaths FROM trash_snapshots WHERE id = :id")
     suspend fun getImagesById(id: Long): TrashSnapshotImages?
 
+    /**
+     * 한 작업의 이미지 보류분 — **종류까지 맞는 행만**.
+     *
+     * 한 작업이 삭제와 편집 직전 백업을 함께 만드는 경로가 있으므로(엑셀 임포트), 종류를
+     * 거르지 않으면 삭제 묶음의 '영구 삭제'가 같은 임포트의 편집 백업까지 함께 태운다 —
+     * 사용자가 지운 적 없는 항목의 되돌리기 경로가 조용히 사라진다.
+     */
     @Query(
         """SELECT id, imagePaths FROM trash_snapshots
-           WHERE (:opId IS NOT NULL AND operationId = :opId)
-              OR (:opId IS NULL AND operationId IS NULL AND id = :legacyId)"""
+           WHERE ((:opId IS NOT NULL AND operationId = :opId)
+              OR (:opId IS NULL AND operationId IS NULL AND id = :legacyId))
+             AND (CASE WHEN :editBackup THEN operationKind = 'edit_backup'
+                       ELSE operationKind IS NULL OR operationKind != 'edit_backup' END)"""
     )
-    suspend fun getImagesByOperation(opId: String?, legacyId: Long): List<TrashSnapshotImages>
+    suspend fun getImagesByOperation(
+        opId: String?,
+        legacyId: Long,
+        editBackup: Boolean
+    ): List<TrashSnapshotImages>
 
     /** 보류 이미지 경로 전체 — 보호 집합 계산·저장소 리포트용. payload를 읽지 않는다. */
     @Query("SELECT id, imagePaths FROM trash_snapshots WHERE imagePaths != '' AND imagePaths != '[]'")

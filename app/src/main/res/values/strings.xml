@@ -403,7 +403,15 @@
          취소하면 휴지통 항목이 그대로 남아 교정 후 재시도할 수 있게 한다 (검증→알림→교정 경로). -->
     <string name="trash_restore_preview_title">복원 전 확인</string>
     <string name="trash_restore_preview">\'%1$s\'을(를) 복원합니다.\n\n되살릴 수 없는 부분:\n%2$s\n\n지금 복원하면 이 부분은 영구히 사라집니다. 취소하면 휴지통 항목이 그대로 남으니, 상위 항목(세계관·작품·필드 정의)을 먼저 되살린 뒤 다시 복원할 수 있습니다 — 같은 삭제로 만들어진 묶음이라면 \'전체 복원\'이 순서를 알아서 맞춥니다.</string>
-    <string name="trash_restore_duplicate_warning">\n※ 같은 항목이 아직 살아 있습니다(삭제 백업이 아니라 편집 직전 백업이거나, 그 사이 다시 만들어졌습니다). 복원하면 되돌리기가 아니라 같은 이름의 사본이 하나 더 생깁니다.</string>
+    <string name="trash_restore_duplicate_warning">\n※ 같은 항목이 아직 살아 있습니다(그 사이 다시 만들어졌거나 엑셀에서 다시 가져왔습니다). 복원하면 되돌리기가 아니라 같은 이름의 사본이 하나 더 생깁니다.</string>
+    <string name="trash_restore_revert_warning">\n※ 이 항목은 <b>편집 직전 백업</b>이고 원본이 살아 있습니다. 복원은 사본을 만드는 것이 아니라 <b>그 편집을 되돌리는 것</b>입니다 — 아래 데이터가 백업 시점 값으로 덮어써집니다.\n%1$s\n덮어쓰기 직전 상태는 휴지통에 한 번 더 백업되므로 되돌릴 수 있습니다.</string>
+    <string name="trash_revert_scope_character_row">· 캐릭터 정보(이름·메모 등)</string>
+    <string name="trash_revert_scope_field_values">· 필드값 전체</string>
+    <string name="trash_revert_scope_memberships">· 세력 소속(빠진 것만 보충)</string>
+    <string name="trash_revert_scope_state_changes">· 상태변화 이력(빠진 것만 보충)</string>
+    <string name="trash_reverted">\'%1$s\' 되돌리기 완료 — 편집 직전 상태로 복구했습니다</string>
+    <string name="trash_restore_blocked_exists">같은 이력이 이미 있어 복원하지 않았습니다. 그 사이 사용자가 다시 만든 것으로 보이며, 덮어쓰면 지금 값을 잃게 됩니다.\n휴지통 항목은 그대로 남습니다 — 지금 값과 비교한 뒤 필요하면 기존 이력을 지우고 다시 복원하세요.</string>
+    <string name="trash_skip_name_bank">- 이름 은행 사용 표시 %1$d개 (항목이 삭제됐거나 다른 캐릭터가 사용 중)</string>
     <string name="trash_restore_legacy_note">\n※ 구버전 백업이라 안정 식별자가 없어 일부 참조는 id로만 판단했습니다.</string>
     <string name="trash_restore_note_title">복원 결과</string>
     <string name="trash_restore_relinked">참조 %1$d건은 id가 바뀌었지만 코드로 다시 연결했습니다</string>

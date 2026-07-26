@@ -25,6 +25,15 @@ interface NameBankDao {
     @Query("SELECT * FROM name_bank WHERE code = :code LIMIT 1")
     suspend fun getByCode(code: String): NameBankEntry?
 
+    /**
+     * 이 캐릭터가 쓰고 있는 이름 은행 엔트리 (B-3, 휴지통 스냅샷용).
+     *
+     * **사용 표시를 푸는 `resetUsageByCharacter`보다 먼저** 불러야 한다 — 삭제 경로는
+     * 스냅샷을 남긴 뒤에 사용 표시를 풀므로 그 순서가 이미 지켜져 있다.
+     */
+    @Query("SELECT * FROM name_bank WHERE usedByCharacterId = :characterId")
+    suspend fun getEntriesUsedByCharacter(characterId: Long): List<NameBankEntry>
+
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(entry: NameBankEntry): Long
 

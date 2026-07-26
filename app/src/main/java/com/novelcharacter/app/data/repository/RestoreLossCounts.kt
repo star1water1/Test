@@ -51,6 +51,13 @@ data class RestoreLossCounts(
     val imageLinks: Int = 0,
     /** 출생/사망 사건과 함께 지워졌던 캐릭터 상태변화 이력 — 캐릭터를 찾을 수 없어 제외 */
     val stateChanges: Int = 0,
+    /**
+     * 되붙이지 못한 이름 은행 사용 표시 (B-3) — 엔트리가 삭제됐거나 다른 캐릭터가 쓰는 중.
+     *
+     * **복제 복원에서는 세지 않는다.** 원본이 살아서 링크를 쥐고 있는 것이 정상인데 그것을
+     * 유실로 고지하면 규모에 비례하는 거짓 경고가 된다(R-11에서 고친 유령 유실과 같은 부류).
+     */
+    val nameBankLinks: Int = 0,
     /** 세계관을 찾을 수 없어 '세계관 없음'으로 복원된다 (사건·작품) */
     val universeCleared: Boolean = false
 ) {
@@ -80,6 +87,7 @@ data class RestoreLossCounts(
             "changeLinks" to changeLinks,
             "imageLinks" to imageLinks,
             "stateChanges" to stateChanges,
+            "nameBankLinks" to nameBankLinks,
             "universeCleared" to if (universeCleared) 1 else 0
         )
 
@@ -124,6 +132,7 @@ data class RestoreLossCounts(
         changeLinks = changeLinks + other.changeLinks,
         imageLinks = imageLinks + other.imageLinks,
         stateChanges = stateChanges + other.stateChanges,
+        nameBankLinks = nameBankLinks + other.nameBankLinks,
         universeCleared = universeCleared || other.universeCleared
     )
 }

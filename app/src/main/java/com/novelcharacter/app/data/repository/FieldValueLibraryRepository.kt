@@ -411,7 +411,14 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
             var snapshotted = 0
             for (chunk in affected.chunked(CHUNK_SIZE)) {
                 for (character in db.characterDao().getCharactersByIds(chunk)) {
-                    trash.snapshotCharacter(character, parseImagePathList(character.imagePaths))
+                    // 이 경로가 파괴하는 것은 필드값과 상태변화뿐이다(rewriteTokens) —
+                    // 캐릭터 행·태그·세력 소속은 손대지 않으므로 되돌리기 범위에 넣지 않는다.
+                    trash.snapshotCharacter(
+                        character,
+                        parseImagePathList(character.imagePaths),
+                        kind = com.novelcharacter.app.data.model.TrashSnapshot.KIND_EDIT_BACKUP,
+                        revertScope = RestoreModes.SCOPE_LIBRARY_ENTRY_DELETE
+                    )
                     snapshotted++
                 }
             }
