@@ -47,7 +47,7 @@ class TrashFragment : Fragment() {
 
     private val adapter = TrashAdapter(
         onRestore = { confirmRestore(it) },
-        onPurge = { confirmPurge(it) },
+        onPurge = { item, siblings -> confirmPurge(item, siblings) },
         onRestoreOperation = { confirmRestoreOperation(it) },
         onPurgeOperation = { confirmPurgeOperation(it) }
     )
@@ -203,6 +203,9 @@ class TrashFragment : Fragment() {
         }
         if (losses.changeEvents > 0) details.add(getString(R.string.trash_skip_change_events, losses.changeEvents))
         if (losses.imageLinks > 0) details.add(getString(R.string.trash_skip_image_links, losses.imageLinks))
+        if (losses.stateChanges > 0) {
+            details.add(getString(R.string.trash_skip_state_changes, losses.stateChanges))
+        }
         return details.joinToString("\n")
     }
 
@@ -235,8 +238,10 @@ class TrashFragment : Fragment() {
                 // 즉시 알림은 위 Toast/부분복원 다이얼로그가 담당 — 이력만 추가
                 logOperation(OpResult.success(OpResult.CAT_TRASH,
                     getString(R.string.trash_restored, result.restoredName)))
-                showRestoreNotes(result.losses, result.relinkedByCode, result.duplicateRelationships,
-                    warned, predicted)
+                showRestoreNotes(
+                    result.losses, result.relinkedByCode, result.duplicateRelationships,
+                    warned, predicted, semanticStateChanges = result.restoredSemanticStateChanges
+                )
             } catch (e: Exception) {
                 if (isAdded) {
                     Toast.makeText(requireContext(), R.string.trash_restore_failed, Toast.LENGTH_SHORT).show()
@@ -258,10 +263,15 @@ class TrashFragment : Fragment() {
         duplicateRelationships: Int,
         warned: Boolean,
         predicted: RestoreLossCounts,
-        extraNote: String? = null
+        extraNote: String? = null,
+        semanticStateChanges: Int = 0
     ) {
         val notes = mutableListOf<String>()
         extraNote?.let { notes.add(it) }
+        // 이력은 되살렸지만 파생 필드값은 되돌리지 않았다 — 사실대로 알린다.
+        if (semanticStateChanges > 0) {
+            notes.add(getString(R.string.trash_restore_semantic_note, semanticStateChanges))
+        }
         // 고지 없이 진행했거나, 실제 유실이 예고보다 커졌으면 사실대로 알린다.
         if (losses.any && (!warned || losses.exceeds(predicted))) {
             val details = buildSkipDetails(losses)
@@ -298,18 +308,34 @@ class TrashFragment : Fragment() {
                 emptyList()
             }
             if (!isAdded) return@launch
-            val predicted = previews.fold(RestoreLossCounts()) { acc, p -> acc + p.losses }
+
+            // 막힌 항목(상위 엔티티가 없어 되살릴 수 없는 것)은 복원되지 않고 휴지통에 남는다.
+            // 그 사실을 **실행 전에** 말해야 한다(R-4). 그 항목들의 예상 유실은 실제로 일어나지
+            // 않으므로 예고 집계에서도 뺀다 — 넣으면 없는 유실을 예고하고, 사후 비교 기준까지
+            // 부풀어 진짜 예상 밖 유실을 덮는다.
+            val blocked = previews.filter { it.blocker != null }
+            val restorable = previews.filter { it.blocker == null }
+            val predicted = restorable.fold(RestoreLossCounts()) { acc, p -> acc + p.losses }
             val message = StringBuilder(
-                getString(R.string.trash_operation_restore_confirm, row.itemCount)
+                getString(R.string.trash_operation_restore_confirm, row.itemCount - blocked.size)
             )
+            if (blocked.isNotEmpty()) {
+                message.append("\n\n").append(
+                    getString(
+                        R.string.trash_operation_blocked,
+                        blocked.size,
+                        blocked.joinToString("\n") { "- ${it.entityName}" }
+                    )
+                )
+            }
             val details = buildSkipDetails(predicted)
             if (details.isNotEmpty()) {
                 message.append("\n\n").append(getString(R.string.trash_restore_partial, details))
             }
-            if (previews.any { it.legacyPayload }) {
+            if (restorable.any { it.legacyPayload }) {
                 message.append(getString(R.string.trash_restore_legacy_note))
             }
-            if (previews.any { it.duplicatesLivingEntity }) {
+            if (restorable.any { it.duplicatesLivingEntity }) {
                 message.append(getString(R.string.trash_restore_duplicate_warning))
             }
             MaterialAlertDialogBuilder(requireContext())
@@ -342,7 +368,8 @@ class TrashFragment : Fragment() {
                 )
                 showRestoreNotes(
                     result.losses, result.relinkedByCode, result.duplicateRelationships,
-                    warned = true, predicted = predicted, extraNote = failedNote
+                    warned = true, predicted = predicted, extraNote = failedNote,
+                    semanticStateChanges = result.restored.sumOf { it.restoredSemanticStateChanges }
                 )
             } catch (e: Exception) {
                 if (isAdded) {
@@ -374,10 +401,20 @@ class TrashFragment : Fragment() {
             .show()
     }
 
-    private fun confirmPurge(snapshot: TrashSnapshot) {
+    /**
+     * @param siblingCount 같은 삭제 작업에 남아 있는 다른 항목 수. 0이 아니면 **먼저 알린다** —
+     *   묶음의 뿌리(세계관 등)를 혼자 영구 삭제하면 남은 항목들이 붙을 자리를 잃어 복원이
+     *   막히거나 참조가 빠진 채 되살아난다. 그 사실을 말하지 않으면 '개별 영구 삭제'가
+     *   조용히 나머지를 못 쓰게 만든다(R-4).
+     */
+    private fun confirmPurge(snapshot: TrashSnapshot, siblingCount: Int = 0) {
+        val message = StringBuilder(getString(R.string.trash_purge_confirm, snapshot.entityName))
+        if (siblingCount > 0) {
+            message.append("\n\n").append(getString(R.string.trash_purge_sibling_warning, siblingCount))
+        }
         MaterialAlertDialogBuilder(requireContext())
             .setTitle(R.string.trash_delete_forever)
-            .setMessage(getString(R.string.trash_purge_confirm, snapshot.entityName))
+            .setMessage(message.toString())
             .setPositiveButton(R.string.delete) { _, _ ->
                 viewLifecycleOwner.lifecycleScope.launch {
                     try {
@@ -434,12 +471,13 @@ class TrashFragment : Fragment() {
             val deletedAt: Long
         ) : TrashRow()
 
-        data class Item(val snapshot: TrashSnapshot) : TrashRow()
+        /** @param siblingCount 같은 삭제 작업에 함께 있는 다른 항목 수 (개별 영구 삭제 고지용) */
+        data class Item(val snapshot: TrashSnapshot, val siblingCount: Int = 0) : TrashRow()
     }
 
     private class TrashAdapter(
         private val onRestore: (TrashSnapshot) -> Unit,
-        private val onPurge: (TrashSnapshot) -> Unit,
+        private val onPurge: (TrashSnapshot, Int) -> Unit,
         private val onRestoreOperation: (TrashRow.Operation) -> Unit,
         private val onPurgeOperation: (TrashRow.Operation) -> Unit
     ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
@@ -485,7 +523,7 @@ class TrashFragment : Fragment() {
                         dateFormat.format(Date(item.deletedAt))
                     )
                     b.btnRestore.setOnClickListener { onRestore(item) }
-                    b.btnPurge.setOnClickListener { onPurge(item) }
+                    b.btnPurge.setOnClickListener { onPurge(item, row.siblingCount) }
                 }
             }
         }
@@ -539,7 +577,7 @@ class TrashFragment : Fragment() {
                         )
                     )
                 }
-                group.items.forEach { rows.add(TrashRow.Item(it)) }
+                group.items.forEach { rows.add(TrashRow.Item(it, group.size - 1)) }
             }
             return rows
         }

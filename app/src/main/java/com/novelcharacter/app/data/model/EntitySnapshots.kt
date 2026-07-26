@@ -120,5 +120,15 @@ data class EventSnapshot(
     val novelIds: List<Long>? = null,
     /** eventId가 SET_NULL로 끊긴 관계 변화 이력의 code */
     val relationshipChangeCodes: List<String>? = null,
+    /**
+     * 출생/사망 사건 삭제가 **캐릭터 쪽에서** 함께 지우는 상태변화 이력(`__birth`/`__death`).
+     *
+     * 이 이력은 사건에 FK로 매달려 있지 않고 시맨틱 동기화의 역방향 처리가 지운다
+     * (`SemanticFieldSyncHelper.onBirthEventDeleted`). 사건 삭제만 되돌리면 캐릭터의 출생·사망
+     * 기록은 돌아오지 않는데, 그 상태로 "복구할 수 있습니다"라고 안내하면 사실과 다른 약속이 된다.
+     * 파생 필드값(생년·나이·생존 여부)은 담지 않는다 — 그 사이 사용자가 고쳤을 수 있어
+     * 되돌리면 덮어쓰기가 되므로, 되돌리지 않았다는 사실을 복원 결과로 알린다.
+     */
+    val linkedStateChanges: List<CharacterStateChange>? = null,
     val refs: EntityRefs? = null
 )

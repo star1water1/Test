@@ -49,6 +49,8 @@ data class RestoreLossCounts(
     val changeLinks: Int = 0,
     /** 대표 이미지 연동(세계관·작품 → 캐릭터/작품)이 대상을 못 찾아 해제된 건수 */
     val imageLinks: Int = 0,
+    /** 출생/사망 사건과 함께 지워졌던 캐릭터 상태변화 이력 — 캐릭터를 찾을 수 없어 제외 */
+    val stateChanges: Int = 0,
     /** 세계관을 찾을 수 없어 '세계관 없음'으로 복원된다 (사건·작품) */
     val universeCleared: Boolean = false
 ) {
@@ -77,6 +79,7 @@ data class RestoreLossCounts(
             "novelLinks" to novelLinks,
             "changeLinks" to changeLinks,
             "imageLinks" to imageLinks,
+            "stateChanges" to stateChanges,
             "universeCleared" to if (universeCleared) 1 else 0
         )
 
@@ -120,6 +123,7 @@ data class RestoreLossCounts(
         novelLinks = novelLinks + other.novelLinks,
         changeLinks = changeLinks + other.changeLinks,
         imageLinks = imageLinks + other.imageLinks,
+        stateChanges = stateChanges + other.stateChanges,
         universeCleared = universeCleared || other.universeCleared
     )
 }

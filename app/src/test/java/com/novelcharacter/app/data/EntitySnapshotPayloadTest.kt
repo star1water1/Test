@@ -3,6 +3,7 @@ package com.novelcharacter.app.data
 import com.google.gson.Gson
 import com.novelcharacter.app.data.model.CharacterFieldValue
 import com.novelcharacter.app.data.model.CharacterRelationship
+import com.novelcharacter.app.data.model.CharacterStateChange
 import com.novelcharacter.app.data.model.EntityRefs
 import com.novelcharacter.app.data.model.EventFieldValue
 import com.novelcharacter.app.data.model.EventSnapshot
@@ -215,6 +216,35 @@ class EntitySnapshotPayloadTest {
         assertTrue(restored.linkedEventIds!!.all { it is Long })
         assertEquals(listOf(41L, 42L), restored.linkedEventIds)
         assertEquals("EVT-2", restored.refs!!.events!!["42"])
+    }
+
+    @Test
+    fun `사건 스냅샷은 출생·사망 이력을 담고 구버전 payload에서는 null이다`() {
+        // 이 이력은 사건에 FK로 매달려 있지 않다 — 시맨틱 역동기화가 지우므로 사건만 되살리면
+        // 캐릭터의 출생 기록은 돌아오지 않는다. payload가 담아야 약속이 사실이 된다.
+        val original = EventSnapshot(
+            event = TimelineEvent(id = 41, year = 1200, description = "가온 탄생",
+                code = "EVT-1", eventType = TimelineEvent.TYPE_BIRTH),
+            characterIds = listOf(88L),
+            linkedStateChanges = listOf(
+                CharacterStateChange(id = 5, characterId = 88, year = 1200,
+                    fieldKey = CharacterStateChange.KEY_BIRTH, newValue = "1200", code = "CHG-B")
+            ),
+            refs = EntityRefs(characters = mapOf("88" to "CHR-9"))
+        )
+        val restored = gson.fromJson(gson.toJson(original), EventSnapshot::class.java)
+        assertEquals(1, restored.linkedStateChanges!!.size)
+        assertEquals(88L, restored.linkedStateChanges!![0].characterId)
+        assertEquals(CharacterStateChange.KEY_BIRTH, restored.linkedStateChanges!![0].fieldKey)
+        assertEquals("CHR-9", restored.refs!!.characters!!["88"])
+
+        // 이 필드가 없던 시절의 payload는 null이 주입된다 — 읽는 쪽이 폴백해야 한다 (R-2).
+        val older = """{"event": {"id": 41, "year": 1200, "description": "가온 탄생", "code": "EVT-1",
+                        "calendarType": "천개력", "eventType": "birth", "displayOrder": 0,
+                        "isTemporary": false, "createdAt": 0}, "characterIds": [88]}"""
+        val old = gson.fromJson(older, EventSnapshot::class.java)
+        assertNull(old.linkedStateChanges)
+        assertEquals(emptyList<CharacterStateChange>(), old.linkedStateChanges.orEmpty())
     }
 
     @Test

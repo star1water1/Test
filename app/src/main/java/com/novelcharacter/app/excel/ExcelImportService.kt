@@ -5387,14 +5387,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val trash = trashForImport()
             val allIds = db.factionDao().getAllFactionIds()
             val doomed = allIds.filter { it !in matchedFactionIds }
-            val doomedSet = doomed.toSet()
             for (chunk in doomed.chunked(IN_CLAUSE_CHUNK)) {
                 for (faction in db.factionDao().getByIds(chunk)) {
                     try {
                         // 세력만 지우므로 관계는 살아남고 factionId만 null이 된다(SET_NULL).
-                        trash.snapshotFaction(
-                            faction, deleteRelationships = false, doomedFactionIds = doomedSet
-                        )
+                        trash.snapshotFaction(faction, deleteRelationships = false)
                         db.factionDao().deleteById(faction.id)
                         result.deletedFactions++
                     } catch (e: Exception) {

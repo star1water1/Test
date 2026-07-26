@@ -38,11 +38,18 @@ class TimelineRepository(
      * 스냅샷과 삭제를 한 트랜잭션으로 묶는다 — 삭제만 커밋되고 스냅샷이 날아가면
      * 그 자체가 무통보 유실이다. 정리(pruneIfNeeded)는 커밋 이후에 수행한다
      * (롤백 시 스냅샷 이미지가 지워지는 것 방지 — 저장소 공통 관례).
+     *
+     * @param beforeDelete 사건 삭제에 딸린 **캐릭터 쪽 정리**(출생/사망 시맨틱 역동기화).
+     *   스냅샷 **뒤**, 삭제 **앞**에 같은 트랜잭션 안에서 실행된다. 순서가 중요하다 —
+     *   호출부가 먼저 정리해 버리면 스냅샷이 이미 지워진 이력을 담지 못해, 사건만 되살아나고
+     *   캐릭터의 출생·사망 기록은 영영 사라진다. 종전에는 이 정리와 삭제가 서로 다른
+     *   자동커밋 단위라 중간에 실패하면 반쪽만 적용됐다.
      */
-    suspend fun deleteEvent(event: TimelineEvent) {
+    suspend fun deleteEvent(event: TimelineEvent, beforeDelete: suspend () -> Unit = {}) {
         val trash = TrashRepository(db)
         db.withTransaction {
             trash.snapshotEvent(event)
+            beforeDelete()
             timelineDao.delete(event)
         }
         trash.pruneIfNeeded()

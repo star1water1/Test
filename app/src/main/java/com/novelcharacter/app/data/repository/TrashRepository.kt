@@ -9,6 +9,7 @@ import com.novelcharacter.app.data.model.CharacterFieldValue
 import com.novelcharacter.app.data.model.CharacterRelationship
 import com.novelcharacter.app.data.model.CharacterRelationshipChange
 import com.novelcharacter.app.data.model.CharacterSnapshot
+import com.novelcharacter.app.data.model.CharacterStateChange
 import com.novelcharacter.app.data.model.EntityRefs
 import com.novelcharacter.app.data.model.EventFieldValue
 import com.novelcharacter.app.data.model.EventSnapshot
@@ -31,6 +32,8 @@ import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.data.model.UniverseSnapshot
 import com.novelcharacter.app.data.model.generateEntityCode
 import com.novelcharacter.app.util.GsonTypes
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
@@ -147,7 +150,13 @@ class TrashRepository(private val db: AppDatabase) {
          * 같은 것이 이미 있어 새로 만들지 않은 관계 수 — 유실이 아니므로 [losses]와 칸을 나눈다.
          * (상대 캐릭터를 먼저 복원했을 때 정상적으로 일어나는 일이다)
          */
-        val duplicateRelationships: Int = 0
+        val duplicateRelationships: Int = 0,
+        /**
+         * 출생/사망 사건 복원이 되살린 캐릭터 상태변화 이력 수.
+         * 유실이 아니라 **부분 복원 고지**다 — 이력은 돌아왔지만 파생 필드값(생년·나이·생존
+         * 여부)은 그 사이 사용자가 고쳤을 수 있어 되돌리지 않았다는 사실을 함께 알려야 한다.
+         */
+        val restoredSemanticStateChanges: Int = 0
     ) {
         val hasSkipped: Boolean get() = losses.any
     }
@@ -292,24 +301,20 @@ class TrashRepository(private val db: AppDatabase) {
      *   `factionId`만 null이 되므로(FK SET_NULL) 되살릴 것은 '이 세력의 자동 관계'라는 지정뿐이다.
      *   세계관 계단식 삭제는 세력이 FK CASCADE로 죽으므로 이 경로도 false다.
      * @param doomedCharacterIds 같은 작업이 함께 삭제하는 캐릭터 — 그 소속·관계는 캐릭터 스냅샷이 담는다.
-     * @param doomedFactionIds 같은 작업이 함께 삭제하는 세력 — 세력 간 관계는 `factionId1` 쪽이 담는다.
      */
     suspend fun snapshotFaction(
         faction: Faction,
         deleteRelationships: Boolean,
-        doomedCharacterIds: Set<Long> = emptySet(),
-        doomedFactionIds: Set<Long> = emptySet()
+        doomedCharacterIds: Set<Long> = emptySet()
     ) {
         val memberships = db.factionMembershipDao().getMembershipsByFactionList(faction.id)
             .filter { it.characterId !in doomedCharacterIds }
 
-        // 세력 간 관계: 양쪽 다 이번에 지워지면 factionId1 쪽만 담는다(중복 복원 방지).
+        // 세력 간 관계는 **양쪽이 모두 담는다.** 한쪽만 담으면 그쪽이 먼저 복원될 때 상대가
+        // 아직 없어 관계가 유실된다 — 세력끼리는 복원 우선순위가 같아 순서를 보장할 수 없다.
+        // 양쪽이 담으면 나중에 복원되는 쪽이 실제로 만들고, 먼저 복원되는 쪽은 상대가 같은
+        // 작업 안에 있음을 알고 조용히 건너뛴다(factionPlan의 pendingPeerCodes).
         val factionRels = db.factionRelationshipDao().getRelationshipsForFactionList(faction.id)
-            .filter { rel ->
-                val selfIsFirst = rel.factionId1 == faction.id
-                val other = if (selfIsFirst) rel.factionId2 else rel.factionId1
-                selfIsFirst || other !in doomedFactionIds
-            }
 
         // 자동 캐릭터 관계: 한쪽이라도 이번에 지워지는 캐릭터면 그 캐릭터 스냅샷이 담는다.
         val autoRels = db.characterRelationshipDao().getByFactionList(faction.id)
@@ -385,8 +390,26 @@ class TrashRepository(private val db: AppDatabase) {
             }
         }
 
+        // 출생/사망 사건은 삭제 시 캐릭터의 `__birth`/`__death` 이력까지 함께 지운다
+        // (SemanticFieldSyncHelper의 역방향 처리 — FK가 아니라 코드가 지운다).
+        // 담지 않으면 사건만 되살아나고 캐릭터의 출생·사망 기록은 영영 사라진다.
+        val stateKey = when (event.eventType) {
+            TimelineEvent.TYPE_BIRTH -> CharacterStateChange.KEY_BIRTH
+            TimelineEvent.TYPE_DEATH -> CharacterStateChange.KEY_DEATH
+            else -> null
+        }
+        val linkedStateChanges = ArrayList<CharacterStateChange>()
+        if (stateKey != null) {
+            // 함께 지워지는 캐릭터의 이력은 그 캐릭터 스냅샷이 통째로 담으므로 제외한다.
+            for (charId in characterIds) {
+                linkedStateChanges.addAll(
+                    db.characterStateChangeDao().getChangesByField(charId, stateKey)
+                )
+            }
+        }
+
         val characterCodes = HashMap<String, String>()
-        collectCharacterCodes(characterIds, characterCodes)
+        collectCharacterCodes(characterIds + linkedStateChanges.map { it.characterId }, characterCodes)
         val novelCodes = HashMap<String, String>()
         for (id in novelIds) novelCode(id)?.let { novelCodes[id.toString()] = it }
         val fieldDefs = HashMap<String, FieldDefRef>()
@@ -400,6 +423,7 @@ class TrashRepository(private val db: AppDatabase) {
             characterIds = characterIds,
             novelIds = novelIds,
             relationshipChangeCodes = survivingChangeCodes,
+            linkedStateChanges = linkedStateChanges,
             refs = EntityRefs(
                 universeCode = event.universeId?.let { universeCode(it) },
                 characters = characterCodes,
@@ -535,16 +559,50 @@ class TrashRepository(private val db: AppDatabase) {
      *   복원 순서상 그때는 존재하므로 유실로 세지 않는다 — 넣지 않으면 작업 전체 복원 미리보기가
      *   "세력을 못 살린다"처럼 사실과 다른 경고를 낸다.
      */
-    suspend fun previewRestore(snapshotId: Long, pendingCodes: Set<String> = emptySet()): RestorePreview? {
-        val snap = trashDao.getById(snapshotId) ?: return null
-        return when (snap.entityType) {
-            TrashSnapshot.TYPE_CHARACTER -> characterPlan(snap, pendingCodes)?.toPreview()
+    suspend fun previewRestore(
+        snapshotId: Long,
+        pendingCodes: Set<String> = emptySet(),
+        peerCodes: PeerCodes = PeerCodes()
+    ): RestorePreview? = withContext(Dispatchers.IO) {
+        val snap = trashDao.getById(snapshotId) ?: return@withContext null
+        when (snap.entityType) {
+            TrashSnapshot.TYPE_CHARACTER ->
+                characterPlan(snap, pendingCodes, pendingPeerCodes = peerCodes.characters)?.toPreview()
             TrashSnapshot.TYPE_UNIVERSE -> universePlan(snap, pendingCodes)?.toPreview()
             TrashSnapshot.TYPE_NOVEL -> novelPlan(snap, pendingCodes)?.toPreview()
-            TrashSnapshot.TYPE_FACTION -> factionPlan(snap, pendingCodes)?.toPreview()
+            TrashSnapshot.TYPE_FACTION ->
+                factionPlan(snap, pendingCodes, pendingPeerCodes = peerCodes.factions)?.toPreview()
             TrashSnapshot.TYPE_EVENT -> eventPlan(snap, pendingCodes)?.toPreview()
             else -> null
         }
+    }
+
+    /**
+     * 같은 작업 안에 있는 **같은 복원 우선순위** 엔티티의 코드.
+     *
+     * 세력↔세력, 캐릭터↔캐릭터를 잇는 링크는 양쪽 스냅샷이 모두 담는다(우선순위가 같아
+     * 어느 쪽이 먼저 복원될지 정할 수 없기 때문이다). 먼저 복원되는 쪽이 상대를 못 찾는 것은
+     * 유실이 아니라 순서일 뿐이므로, 그 사실을 계획 단계에 알려 유령 유실을 막는다.
+     */
+    data class PeerCodes(
+        val characters: Set<String> = emptySet(),
+        val factions: Set<String> = emptySet()
+    )
+
+    private fun collectPeerCodes(items: List<TrashSnapshot>): PeerCodes {
+        val characters = HashSet<String>()
+        val factions = HashSet<String>()
+        for (item in items) {
+            when (item.entityType) {
+                TrashSnapshot.TYPE_CHARACTER ->
+                    parse(item, CharacterSnapshot::class.java)?.character?.code
+                        ?.takeIf { it.isNotBlank() }?.let { characters.add(it) }
+                TrashSnapshot.TYPE_FACTION ->
+                    parse(item, FactionSnapshot::class.java)?.faction?.code
+                        ?.takeIf { it.isNotBlank() }?.let { factions.add(it) }
+            }
+        }
+        return PeerCodes(characters, factions)
     }
 
     /**
@@ -552,8 +610,8 @@ class TrashRepository(private val db: AppDatabase) {
      * 되살릴 수 없는 사유([RestorePreview.blocker])가 있으면 **아무것도 하지 않고 null**을 돌려준다 —
      * 스냅샷이 남아야 사용자가 상위 엔티티를 먼저 복원한 뒤 다시 시도할 수 있다(R-4).
      */
-    suspend fun restoreSnapshot(snapshotId: Long): RestoreResult? {
-        val snap = trashDao.getById(snapshotId) ?: return null
+    suspend fun restoreSnapshot(snapshotId: Long): RestoreResult? = withContext(Dispatchers.IO) {
+        val snap = trashDao.getById(snapshotId) ?: return@withContext null
         var result: RestoreResult? = null
         var deferred: DeferredImageLink? = null
         var restoredCharacterId = -1L
@@ -563,43 +621,43 @@ class TrashRepository(private val db: AppDatabase) {
             when (snap.entityType) {
                 TrashSnapshot.TYPE_CHARACTER -> {
                     val plan = characterPlan(snap) ?: return@withTransaction
-                    val applied = applyCharacter(plan)
+                    val applied = applyCharacter(plan, null)
                     result = applied.first
                     restoredCharacterId = applied.second
                 }
                 TrashSnapshot.TYPE_UNIVERSE -> {
                     val plan = universePlan(snap) ?: return@withTransaction
-                    val applied = applyUniverse(plan)
+                    val applied = applyUniverse(plan, null)
                     result = applied.first
                     deferred = applied.second
                 }
                 TrashSnapshot.TYPE_NOVEL -> {
                     val plan = novelPlan(snap) ?: return@withTransaction
-                    val applied = applyNovel(plan)
+                    val applied = applyNovel(plan, null)
                     result = applied.first
                     deferred = applied.second
                 }
                 TrashSnapshot.TYPE_FACTION -> {
                     val plan = factionPlan(snap) ?: return@withTransaction
                     if (plan.blocker != null) return@withTransaction
-                    result = applyFaction(plan)
+                    result = applyFaction(plan, null)
                 }
                 TrashSnapshot.TYPE_EVENT -> {
                     val plan = eventPlan(snap) ?: return@withTransaction
-                    result = applyEvent(plan)
+                    result = applyEvent(plan, null)
                 }
                 else -> return@withTransaction
             }
         }
 
-        var restored = result ?: return null
+        var restored = result ?: return@withContext null
 
         // 복원 완료 — 스냅샷 제거 (이미지 파일은 복원된 엔티티가 소유)
         trashDao.deleteById(snapshotId)
 
         // 대표 이미지 연동은 대상이 아직 복원되지 않았을 수 있어 마지막에 해석한다.
         deferred?.let { link ->
-            val lost = resolveDeferredImageLinks(listOf(link))
+            val lost = resolveDeferredImageLinks(listOf(link), null)
             if (lost > 0) {
                 restored = restored.copy(losses = restored.losses.copy(imageLinks = lost))
             }
@@ -610,7 +668,7 @@ class TrashRepository(private val db: AppDatabase) {
             FieldValueLibraryRepository(db).harvestForCharacter(restoredCharacterId)
         }
 
-        return restored
+        restored
     }
 
     /**
@@ -620,25 +678,30 @@ class TrashRepository(private val db: AppDatabase) {
      * 먼저 생기고, 참조는 코드로 다시 이어진다(R-1). 항목별 트랜잭션이라 하나가 실패해도
      * 나머지는 되살아나고, 실패한 항목의 스냅샷은 그대로 남는다.
      */
-    suspend fun restoreOperation(opKey: String): OperationRestoreResult {
+    suspend fun restoreOperation(opKey: String): OperationRestoreResult = withContext(Dispatchers.IO) {
         val items = trashDao.getByOperation(opKey)
             .sortedWith(compareBy({ TrashSnapshot.restorePriority(it.entityType) }, { it.id }))
-        if (items.isEmpty()) return OperationRestoreResult()
+        if (items.isEmpty()) return@withContext OperationRestoreResult()
 
         val restored = ArrayList<RestoreResult>(items.size)
         val failed = ArrayList<String>()
         val deferredLinks = ArrayList<DeferredImageLink>()
+        // 이 작업이 code를 재발급한 대상을 뒤 항목이 찾을 수 있게 하나를 공유한다.
+        val session = RestoreSession()
+        // 같은 우선순위끼리 잇는 링크(세력↔세력, 캐릭터↔캐릭터)는 양쪽 스냅샷이 모두 담는다.
+        // 먼저 복원되는 쪽이 상대를 못 찾는 것은 유실이 아니므로 미리 알려 준다.
+        val peerCodes = collectPeerCodes(items)
 
         for (item in items) {
             val outcome = try {
-                restoreOne(item, deferredLinks)
+                restoreOne(item, deferredLinks, session, peerCodes)
             } catch (_: Exception) {
                 null
             }
             if (outcome == null) failed.add(item.entityName) else restored.add(outcome)
         }
 
-        val lostImageLinks = resolveDeferredImageLinks(deferredLinks)
+        val lostImageLinks = resolveDeferredImageLinks(deferredLinks, session)
         val withImages = if (lostImageLinks > 0 && restored.isNotEmpty()) {
             restored.toMutableList().also { list ->
                 val first = list[0]
@@ -647,15 +710,21 @@ class TrashRepository(private val db: AppDatabase) {
         } else {
             restored
         }
-        return OperationRestoreResult(withImages, failed)
+        OperationRestoreResult(withImages, failed)
     }
 
-    /** 작업 전체 미리보기 — 같은 작업이 되살릴 코드는 유실로 세지 않는다. */
-    suspend fun previewOperation(opKey: String): List<RestorePreview> {
+    /**
+     * 작업 전체 미리보기 — 같은 작업이 되살릴 코드는 유실로 세지 않는다.
+     *
+     * **IO로 넘긴다.** 항목마다 payload를 두 번 파싱하므로(코드 수집 + 계획 수립) 수백 항목짜리
+     * 세계관 삭제에서는 UI 스레드에서 돌 경우 확인 다이얼로그가 뜨기 전에 화면이 멈춘다.
+     */
+    suspend fun previewOperation(opKey: String): List<RestorePreview> = withContext(Dispatchers.IO) {
         val items = trashDao.getByOperation(opKey)
             .sortedWith(compareBy({ TrashSnapshot.restorePriority(it.entityType) }, { it.id }))
         val pending = collectPendingCodes(items)
-        return items.mapNotNull { previewRestore(it.id, pending) }
+        val peers = collectPeerCodes(items)
+        items.mapNotNull { previewRestore(it.id, pending, peers) }
     }
 
     /**
@@ -680,38 +749,42 @@ class TrashRepository(private val db: AppDatabase) {
 
     private suspend fun restoreOne(
         item: TrashSnapshot,
-        deferredLinks: MutableList<DeferredImageLink>
+        deferredLinks: MutableList<DeferredImageLink>,
+        session: RestoreSession,
+        peerCodes: PeerCodes = PeerCodes()
     ): RestoreResult? {
         var result: RestoreResult? = null
         var restoredCharacterId = -1L
         db.withTransaction {
             when (item.entityType) {
                 TrashSnapshot.TYPE_CHARACTER -> {
-                    val plan = characterPlan(item) ?: return@withTransaction
-                    val applied = applyCharacter(plan)
+                    val plan = characterPlan(item, session = session, pendingPeerCodes = peerCodes.characters)
+                        ?: return@withTransaction
+                    val applied = applyCharacter(plan, session)
                     result = applied.first
                     restoredCharacterId = applied.second
                 }
                 TrashSnapshot.TYPE_UNIVERSE -> {
-                    val plan = universePlan(item) ?: return@withTransaction
-                    val applied = applyUniverse(plan)
+                    val plan = universePlan(item, session = session) ?: return@withTransaction
+                    val applied = applyUniverse(plan, session)
                     result = applied.first
                     applied.second?.let { deferredLinks.add(it) }
                 }
                 TrashSnapshot.TYPE_NOVEL -> {
-                    val plan = novelPlan(item) ?: return@withTransaction
-                    val applied = applyNovel(plan)
+                    val plan = novelPlan(item, session = session) ?: return@withTransaction
+                    val applied = applyNovel(plan, session)
                     result = applied.first
                     applied.second?.let { deferredLinks.add(it) }
                 }
                 TrashSnapshot.TYPE_FACTION -> {
-                    val plan = factionPlan(item) ?: return@withTransaction
+                    val plan = factionPlan(item, session = session, pendingPeerCodes = peerCodes.factions)
+                        ?: return@withTransaction
                     if (plan.blocker != null) return@withTransaction
-                    result = applyFaction(plan)
+                    result = applyFaction(plan, session)
                 }
                 TrashSnapshot.TYPE_EVENT -> {
-                    val plan = eventPlan(item) ?: return@withTransaction
-                    result = applyEvent(plan)
+                    val plan = eventPlan(item, session = session) ?: return@withTransaction
+                    result = applyEvent(plan, session)
                 }
                 else -> return@withTransaction
             }
@@ -738,12 +811,16 @@ class TrashRepository(private val db: AppDatabase) {
         val novelCode: String?
     )
 
-    private suspend fun resolveDeferredImageLinks(links: List<DeferredImageLink>): Int {
+    private suspend fun resolveDeferredImageLinks(links: List<DeferredImageLink>, session: RestoreSession?): Int {
         if (links.isEmpty()) return 0
         var lost = 0
         for (link in links) {
-            val charId = link.characterCode?.let { db.characterDao().getCharacterByCode(it)?.id }
-            val novelId = link.novelCode?.let { db.novelDao().getNovelByCode(it)?.id }
+            val charId = link.characterCode?.let {
+                session?.lookup(TrashSnapshot.TYPE_CHARACTER, it) ?: db.characterDao().getCharacterByCode(it)?.id
+            }
+            val novelId = link.novelCode?.let {
+                session?.lookup(TrashSnapshot.TYPE_NOVEL, it) ?: db.novelDao().getNovelByCode(it)?.id
+            }
             if (link.characterCode != null && charId == null) lost++
             if (link.novelCode != null && novelId == null) lost++
             if (charId == null && novelId == null) continue
@@ -821,7 +898,12 @@ class TrashRepository(private val db: AppDatabase) {
      * 해석은 [SnapshotRefResolver]가, 조회는 여기가 담당한다 — 사다리 자체는 순수 로직이라
      * Android 없이 단위 테스트로 고정된다.
      */
-    private suspend fun characterPlan(snap: TrashSnapshot, pendingCodes: Set<String> = emptySet()): CharacterPlan? {
+    private suspend fun characterPlan(
+        snap: TrashSnapshot,
+        pendingCodes: Set<String> = emptySet(),
+        session: RestoreSession? = null,
+        pendingPeerCodes: Set<String> = emptySet()
+    ): CharacterPlan? {
         val data = parse(snap, CharacterSnapshot::class.java) ?: return null
         @Suppress("SENSELESS_COMPARISON")
         if (data.character == null) return null   // Gson은 손상된 payload에 null을 주입할 수 있다
@@ -836,7 +918,9 @@ class TrashRepository(private val db: AppDatabase) {
             fetchByIds = { db.novelDao().getNovelsByIds(it) },
             fetchByCodes = { db.novelDao().getNovelsByCodes(it) },
             idOf = { it.id },
-            codeOf = { it.code }
+            codeOf = { it.code },
+            entityType = TrashSnapshot.TYPE_NOVEL,
+            session = session
         )
         var novelCleared = false
         val novelId = data.character.novelId?.let { old ->
@@ -854,7 +938,8 @@ class TrashRepository(private val db: AppDatabase) {
         val fieldRefs = refs?.fieldDefs.orEmpty()
         val fieldIndex = buildFieldDefIndex(
             oldIds = data.fieldValues.map { it.fieldDefinitionId }.distinct(),
-            refs = fieldRefs.values
+            refs = fieldRefs.values,
+            session = session
         )
         val resolvedFieldValues = ArrayList<CharacterFieldValue>(data.fieldValues.size)
         val usedFieldDefIds = HashSet<Long>()
@@ -890,12 +975,12 @@ class TrashRepository(private val db: AppDatabase) {
             .flatMap { listOf(it.characterId1, it.characterId2) }
             .filter { it != data.character.id }
             .distinct()
-        val charIndex = characterIndex(otherIds, refs?.characters?.values.orEmpty())
+        val charIndex = characterIndex(otherIds, refs?.characters?.values.orEmpty(), session)
         val factionIds = (data.relationships.mapNotNull { it.factionId } +
             data.factionMemberships.map { it.factionId }).distinct()
-        val factionIndex = factionIndex(factionIds, refs?.factions?.values.orEmpty())
+        val factionIndex = factionIndex(factionIds, refs?.factions?.values.orEmpty(), session)
         val eventIdsAll = (data.eventIds + data.relationshipChanges.mapNotNull { it.eventId }).distinct()
-        val eventIndex = eventIndex(eventIdsAll, refs?.events?.values.orEmpty())
+        val eventIndex = eventIndex(eventIdsAll, refs?.events?.values.orEmpty(), session)
 
         fun resolveCharacter(oldId: Long) = tally.note(
             SnapshotRefResolver.resolveByCode(
@@ -943,6 +1028,11 @@ class TrashRepository(private val db: AppDatabase) {
                 val otherOld = if (selfIsFirst) rel.characterId2 else rel.characterId1
                 val res = resolveCharacter(otherOld)
                 if (res.id == null) {
+                    // 상대 캐릭터가 **같은 작업 안에** 있으면 유실이 아니다 — 관계는 양쪽
+                    // 스냅샷이 모두 담으므로 나중에 복원되는 쪽이 실제로 만든다.
+                    // 여기서 세면 먼저 복원되는 쪽마다 유령 유실이 쌓인다.
+                    val otherCode = refs?.characters?.get(otherOld.toString())
+                    if (otherCode != null && otherCode in pendingPeerCodes) continue
                     skippedRelationships++
                     // 관계가 사라지면 그 이력도 함께 사라진다 — 종전에는 집계조차 없었다.
                     skippedRelationshipChanges += changes.size
@@ -1031,7 +1121,7 @@ class TrashRepository(private val db: AppDatabase) {
     }
 
     /** @return (결과, 복원된 캐릭터 id) */
-    private suspend fun applyCharacter(plan: CharacterPlan): Pair<RestoreResult, Long> {
+    private suspend fun applyCharacter(plan: CharacterPlan, session: RestoreSession?): Pair<RestoreResult, Long> {
         // 미리보기 전용 계획은 아직 존재하지 않는 대상을 0번 id로 가리킨다 — 쓰면 오배정이다.
         check(!plan.previewOnly) { "미리보기 전용 계획으로 복원을 시도했다" }
         val data = plan.data
@@ -1048,6 +1138,10 @@ class TrashRepository(private val db: AppDatabase) {
         } else {
             db.characterDao().insert(character.copy(id = 0))
         }
+
+        // 같은 작업의 뒤 항목이 옛 코드로 이것을 찾을 수 있게 등록한다 — code가 재발급됐다면
+        // 등록하지 않을 경우 뒤 항목이 살아 있던 남의 엔티티에 붙는다(오배정).
+        session?.record(TrashSnapshot.TYPE_CHARACTER, data.character.code, targetId)
 
         db.characterFieldValueDao().insertAll(
             plan.fieldValues.map { it.copy(id = 0, characterId = targetId) }
@@ -1158,7 +1252,11 @@ class TrashRepository(private val db: AppDatabase) {
         )
     }
 
-    private suspend fun universePlan(snap: TrashSnapshot, pendingCodes: Set<String> = emptySet()): UniversePlan? {
+    private suspend fun universePlan(
+        snap: TrashSnapshot,
+        pendingCodes: Set<String> = emptySet(),
+        session: RestoreSession? = null
+    ): UniversePlan? {
         val data = parse(snap, UniverseSnapshot::class.java) ?: return null
         @Suppress("SENSELESS_COMPARISON")
         if (data.universe == null) return null
@@ -1171,9 +1269,9 @@ class TrashRepository(private val db: AppDatabase) {
 
         val charIndex = characterIndex(
             orphanChars.map { it.characterId } + data.universe.imageCharacterId.asList(),
-            refs?.characters?.values.orEmpty()
+            refs?.characters?.values.orEmpty(), session
         )
-        val evIndex = eventIndex(orphanEvents.map { it.eventId }, refs?.events?.values.orEmpty())
+        val evIndex = eventIndex(orphanEvents.map { it.eventId }, refs?.events?.values.orEmpty(), session)
 
         var orphanLost = 0
         // 같은 (캐릭터, 필드정의)로 수렴한 값은 유니크 제약에 걸리므로 접는다 — 유실이지만
@@ -1243,7 +1341,7 @@ class TrashRepository(private val db: AppDatabase) {
         )
     }
 
-    private suspend fun applyUniverse(plan: UniversePlan): Pair<RestoreResult, DeferredImageLink?> {
+    private suspend fun applyUniverse(plan: UniversePlan, session: RestoreSession?): Pair<RestoreResult, DeferredImageLink?> {
         // 미리보기 전용 계획은 아직 존재하지 않는 대상을 0번 id로 가리킨다 — 쓰면 오배정이다.
         check(!plan.previewOnly) { "미리보기 전용 계획으로 복원을 시도했다" }
         val source = plan.data.universe
@@ -1261,6 +1359,10 @@ class TrashRepository(private val db: AppDatabase) {
         } else {
             db.universeDao().insert(universe.copy(id = 0))
         }
+
+        // 같은 작업의 뒤 항목이 옛 코드로 이것을 찾을 수 있게 등록한다 — code가 재발급됐다면
+        // 등록하지 않을 경우 뒤 항목이 살아 있던 남의 엔티티에 붙는다(오배정).
+        session?.record(TrashSnapshot.TYPE_UNIVERSE, source.code, newUniverseId)
 
         // 필드 정의 — 새 세계관 아래라 자연키 충돌은 payload 안에서만 가능하다(같은 key 중복).
         var skippedDefs = 0
@@ -1363,7 +1465,11 @@ class TrashRepository(private val db: AppDatabase) {
         )
     }
 
-    private suspend fun novelPlan(snap: TrashSnapshot, pendingCodes: Set<String> = emptySet()): NovelPlan? {
+    private suspend fun novelPlan(
+        snap: TrashSnapshot,
+        pendingCodes: Set<String> = emptySet(),
+        session: RestoreSession? = null
+    ): NovelPlan? {
         val data = parse(snap, NovelSnapshot::class.java) ?: return null
         @Suppress("SENSELESS_COMPARISON")
         if (data.novel == null) return null
@@ -1371,9 +1477,9 @@ class TrashRepository(private val db: AppDatabase) {
         val refs = data.refs
         val tally = Tally(legacy = refs == null, pendingCodes = pendingCodes)
 
-        val universe = resolveUniverse(data.novel.universeId, refs?.universeCode, tally)
+        val universe = resolveUniverse(data.novel.universeId, refs?.universeCode, tally, session)
         val linked = data.linkedEventIds.orEmpty()
-        val evIndex = eventIndex(linked, refs?.events?.values.orEmpty())
+        val evIndex = eventIndex(linked, refs?.events?.values.orEmpty(), session)
         val plannedEvents = LinkedHashSet<Long>()
         var lostEvents = 0
         for (old in linked) {
@@ -1403,7 +1509,7 @@ class TrashRepository(private val db: AppDatabase) {
         )
     }
 
-    private suspend fun applyNovel(plan: NovelPlan): Pair<RestoreResult, DeferredImageLink?> {
+    private suspend fun applyNovel(plan: NovelPlan, session: RestoreSession?): Pair<RestoreResult, DeferredImageLink?> {
         // 미리보기 전용 계획은 아직 존재하지 않는 대상을 0번 id로 가리킨다 — 쓰면 오배정이다.
         check(!plan.previewOnly) { "미리보기 전용 계획으로 복원을 시도했다" }
         val source = plan.data.novel
@@ -1417,6 +1523,10 @@ class TrashRepository(private val db: AppDatabase) {
         } else {
             db.novelDao().insert(novel.copy(id = 0))
         }
+
+        // 같은 작업의 뒤 항목이 옛 코드로 이것을 찾을 수 있게 등록한다 — code가 재발급됐다면
+        // 등록하지 않을 경우 뒤 항목이 살아 있던 남의 엔티티에 붙는다(오배정).
+        session?.record(TrashSnapshot.TYPE_NOVEL, source.code, newId)
 
         for (eventId in plan.eventIds) {
             db.timelineDao().insertEventNovelCrossRef(TimelineEventNovelCrossRef(eventId, newId))
@@ -1465,14 +1575,19 @@ class TrashRepository(private val db: AppDatabase) {
         )
     }
 
-    private suspend fun factionPlan(snap: TrashSnapshot, pendingCodes: Set<String> = emptySet()): FactionPlan? {
+    private suspend fun factionPlan(
+        snap: TrashSnapshot,
+        pendingCodes: Set<String> = emptySet(),
+        session: RestoreSession? = null,
+        pendingPeerCodes: Set<String> = emptySet()
+    ): FactionPlan? {
         val data = parse(snap, FactionSnapshot::class.java) ?: return null
         @Suppress("SENSELESS_COMPARISON")
         if (data.faction == null) return null
 
         val refs = data.refs
         val tally = Tally(legacy = refs == null, pendingCodes = pendingCodes)
-        val universe = resolveUniverse(data.faction.universeId, refs?.universeCode, tally)
+        val universe = resolveUniverse(data.faction.universeId, refs?.universeCode, tally, session)
 
         val memberships = data.memberships.orEmpty()
         val factionRels = data.factionRelationships.orEmpty()
@@ -1482,11 +1597,11 @@ class TrashRepository(private val db: AppDatabase) {
 
         val charIndex = characterIndex(
             memberships.map { it.characterId } + autoRels.flatMap { listOf(it.characterId1, it.characterId2) },
-            refs?.characters?.values.orEmpty()
+            refs?.characters?.values.orEmpty(), session
         )
         val facIndex = factionIndex(
             factionRels.flatMap { listOf(it.factionId1, it.factionId2) }.filter { it != data.faction.id },
-            refs?.factions?.values.orEmpty()
+            refs?.factions?.values.orEmpty(), session
         )
 
         fun resolveChar(oldId: Long): Long? {
@@ -1529,6 +1644,9 @@ class TrashRepository(private val db: AppDatabase) {
                 code
             )
             if (res.id == null) {
+                // 상대 세력이 **같은 작업 안에** 있으면 유실이 아니다 — 그쪽 스냅샷도 이 관계를
+                // 담고 있고, 아직 복원되지 않았을 뿐이다. 여기서 세면 유령 유실이 된다.
+                if (code != null && code in pendingPeerCodes) continue
                 lostFactionRels++
                 continue
             }
@@ -1548,7 +1666,7 @@ class TrashRepository(private val db: AppDatabase) {
         }
 
         // 관계 변화의 사건 연결도 코드로 다시 찾는다 — 그러지 않으면 탈퇴 이력이 엉뚱한 사건에 붙는다.
-        val evIndex = eventIndex(autoChanges.mapNotNull { it.eventId }, refs?.events?.values.orEmpty())
+        val evIndex = eventIndex(autoChanges.mapNotNull { it.eventId }, refs?.events?.values.orEmpty(), session)
         var clearedChangeEvents = 0
         val changesByRel = HashMap<Long, MutableList<CharacterRelationshipChange>>()
         for (change in autoChanges) {
@@ -1598,7 +1716,7 @@ class TrashRepository(private val db: AppDatabase) {
         )
     }
 
-    private suspend fun applyFaction(plan: FactionPlan): RestoreResult {
+    private suspend fun applyFaction(plan: FactionPlan, session: RestoreSession?): RestoreResult {
         // 미리보기 전용 계획은 아직 존재하지 않는 대상을 0번 id로 가리킨다 — 쓰면 오배정이다.
         check(!plan.previewOnly) { "미리보기 전용 계획으로 복원을 시도했다" }
         val source = plan.data.faction
@@ -1612,6 +1730,10 @@ class TrashRepository(private val db: AppDatabase) {
         } else {
             db.factionDao().insert(faction.copy(id = 0))
         }
+
+        // 같은 작업의 뒤 항목이 옛 코드로 이것을 찾을 수 있게 등록한다 — code가 재발급됐다면
+        // 등록하지 않을 경우 뒤 항목이 살아 있던 남의 엔티티에 붙는다(오배정).
+        session?.record(TrashSnapshot.TYPE_FACTION, source.code, newId)
 
         for (m in plan.memberships) {
             db.factionMembershipDao().insert(m.copy(id = 0, factionId = newId))
@@ -1669,7 +1791,9 @@ class TrashRepository(private val db: AppDatabase) {
             restoredName = source.name,
             losses = plan.losses.copy(
                 detachedRelationships = lostDetached,
-                relationshipChanges = plan.losses.relationshipChanges + lostAutoChanges
+                // 관계가 이미 있어 이력을 합치지 못한 것은 '관계를 못 찾음'과 사유가 다르다 —
+                // 같은 칸에 넣으면 거짓 사유가 된다(applyCharacter와 동일한 구분).
+                duplicateRelationshipChanges = lostAutoChanges
             ),
             relinkedByCode = plan.relinkedByCode,
             duplicateRelationships = duplicates
@@ -1687,6 +1811,8 @@ class TrashRepository(private val db: AppDatabase) {
         val characterIds: List<Long>,
         val novelIds: List<Long>,
         val changeCodes: List<String>,
+        /** 해석된 characterId로 치환된 출생/사망 이력 */
+        val stateChanges: List<CharacterStateChange>,
         val losses: RestoreLossCounts,
         val relinkedByCode: Int,
         /** [Tally.PENDING_ID] 자리표시자가 섞인 계획 — 미리보기 전용이며 쓰기에 쓰면 안 된다. */
@@ -1704,20 +1830,25 @@ class TrashRepository(private val db: AppDatabase) {
         )
     }
 
-    private suspend fun eventPlan(snap: TrashSnapshot, pendingCodes: Set<String> = emptySet()): EventPlan? {
+    private suspend fun eventPlan(
+        snap: TrashSnapshot,
+        pendingCodes: Set<String> = emptySet(),
+        session: RestoreSession? = null
+    ): EventPlan? {
         val data = parse(snap, EventSnapshot::class.java) ?: return null
         @Suppress("SENSELESS_COMPARISON")
         if (data.event == null) return null
 
         val refs = data.refs
         val tally = Tally(legacy = refs == null, pendingCodes = pendingCodes)
-        val universe = resolveUniverse(data.event.universeId, refs?.universeCode, tally)
+        val universe = resolveUniverse(data.event.universeId, refs?.universeCode, tally, session)
 
         val values = data.fieldValues.orEmpty()
         val fieldRefs = refs?.fieldDefs.orEmpty()
         val fieldIndex = buildFieldDefIndex(
             oldIds = values.map { it.fieldDefinitionId }.distinct(),
-            refs = fieldRefs.values
+            refs = fieldRefs.values,
+            session = session
         )
         val plannedValues = ArrayList<EventFieldValue>(values.size)
         val usedDefIds = HashSet<Long>()
@@ -1744,7 +1875,7 @@ class TrashRepository(private val db: AppDatabase) {
         }
 
         val charIds = data.characterIds.orEmpty()
-        val charIndex = characterIndex(charIds, refs?.characters?.values.orEmpty())
+        val charIndex = characterIndex(charIds, refs?.characters?.values.orEmpty(), session)
         val plannedChars = LinkedHashSet<Long>()
         var lostChars = 0
         for (old in charIds) {
@@ -1765,7 +1896,9 @@ class TrashRepository(private val db: AppDatabase) {
             fetchByIds = { db.novelDao().getNovelsByIds(it) },
             fetchByCodes = { db.novelDao().getNovelsByCodes(it) },
             idOf = { it.id },
-            codeOf = { it.code }
+            codeOf = { it.code },
+            entityType = TrashSnapshot.TYPE_NOVEL,
+            session = session
         )
         val plannedNovels = LinkedHashSet<Long>()
         var lostNovels = 0
@@ -1780,6 +1913,29 @@ class TrashRepository(private val db: AppDatabase) {
             if (res.id == null) lostNovels++ else plannedNovels.add(res.id)
         }
 
+        // 출생/사망 이력의 주인 캐릭터도 코드로 다시 찾는다 — id 단독으로 붙이면
+        // 남의 캐릭터에 남의 출생 기록을 심는다(오배정).
+        val linkedChanges = data.linkedStateChanges.orEmpty()
+        val plannedStateChanges = ArrayList<CharacterStateChange>(linkedChanges.size)
+        var lostStateChanges = 0
+        if (linkedChanges.isNotEmpty()) {
+            val ownerIndex = characterIndex(
+                linkedChanges.map { it.characterId }, refs?.characters?.values.orEmpty(), session
+            )
+            for (change in linkedChanges) {
+                val code = refs?.characters?.get(change.characterId.toString())
+                val res = tally.note(
+                    SnapshotRefResolver.resolveByCode(
+                        change.characterId, code, ownerIndex.codeById, ownerIndex.idByCode, ownerIndex.liveIds
+                    ),
+                    code
+                )
+                val newCharId = res.id
+                if (newCharId == null) lostStateChanges++
+                else plannedStateChanges.add(change.copy(characterId = newCharId))
+            }
+        }
+
         val livingSame = data.event.code?.takeIf { it.isNotBlank() }
             ?.let { db.timelineDao().getEventByCode(it) != null } ?: false
 
@@ -1790,11 +1946,13 @@ class TrashRepository(private val db: AppDatabase) {
             characterIds = plannedChars.toList(),
             novelIds = plannedNovels.toList(),
             changeCodes = data.relationshipChangeCodes.orEmpty(),
+            stateChanges = plannedStateChanges,
             losses = RestoreLossCounts(
                 fieldValues = lostValues,
                 mergedFieldValues = mergedValues,
                 characterLinks = lostChars,
                 novelLinks = lostNovels,
+                stateChanges = lostStateChanges,
                 universeCleared = universe.cleared
             ),
             relinkedByCode = tally.relinked,
@@ -1804,7 +1962,7 @@ class TrashRepository(private val db: AppDatabase) {
         )
     }
 
-    private suspend fun applyEvent(plan: EventPlan): RestoreResult {
+    private suspend fun applyEvent(plan: EventPlan, session: RestoreSession?): RestoreResult {
         // 미리보기 전용 계획은 아직 존재하지 않는 대상을 0번 id로 가리킨다 — 쓰면 오배정이다.
         check(!plan.previewOnly) { "미리보기 전용 계획으로 복원을 시도했다" }
         val source = plan.data.event
@@ -1820,6 +1978,10 @@ class TrashRepository(private val db: AppDatabase) {
             db.timelineDao().insert(event.copy(id = 0))
         }
 
+        // 같은 작업의 뒤 항목이 옛 코드로 이것을 찾을 수 있게 등록한다 — code가 재발급됐다면
+        // 등록하지 않을 경우 뒤 항목이 살아 있던 남의 엔티티에 붙는다(오배정).
+        session?.record(TrashSnapshot.TYPE_EVENT, source.code, newId)
+
         if (plan.fieldValues.isNotEmpty()) {
             db.eventFieldValueDao().insertAll(plan.fieldValues.map { it.copy(id = 0, eventId = newId) })
         }
@@ -1828,6 +1990,19 @@ class TrashRepository(private val db: AppDatabase) {
         }
         for (novelId in plan.novelIds) {
             db.timelineDao().insertEventNovelCrossRef(TimelineEventNovelCrossRef(newId, novelId))
+        }
+
+        // 출생/사망 이력 되살리기 — 이미 같은 (캐릭터, 키) 이력이 있으면 그 사이 사용자가
+        // 다시 만든 것이므로 덮어쓰지 않는다.
+        var restoredStateChanges = 0
+        for (change in plan.stateChanges) {
+            val existing = db.characterStateChangeDao().getChangesByField(change.characterId, change.fieldKey)
+            if (existing.isNotEmpty()) continue
+            val safeCode = change.code
+                ?.takeIf { c -> db.characterStateChangeDao().getChangeByCode(c) == null }
+                ?: generateEntityCode()
+            db.characterStateChangeDao().insertAll(listOf(change.copy(id = 0, code = safeCode)))
+            restoredStateChanges++
         }
 
         // 사건이 지워질 때 SET_NULL로 끊긴 관계 변화 이력을 되붙인다.
@@ -1845,7 +2020,10 @@ class TrashRepository(private val db: AppDatabase) {
             entityType = TrashSnapshot.TYPE_EVENT,
             restoredName = source.description,
             losses = plan.losses.copy(changeLinks = lostChanges),
-            relinkedByCode = plan.relinkedByCode
+            relinkedByCode = plan.relinkedByCode,
+            // 파생 필드값(생년·나이·생존 여부)은 되돌리지 않는다 — 그 사이 사용자가 고쳤을 수
+            // 있어 덮어쓰기가 되기 때문이다. 되살린 이력이 있으면 그 사실을 알린다.
+            restoredSemanticStateChanges = restoredStateChanges
         )
     }
 
@@ -1895,7 +2073,9 @@ class TrashRepository(private val db: AppDatabase) {
     /** 세계관 해석 결과 — id가 null이면 못 찾은 것이고 [cleared]는 '있었는데 못 찾음'이다. */
     private data class UniverseResolution(val id: Long?, val cleared: Boolean)
 
-    private suspend fun resolveUniverse(oldId: Long?, code: String?, tally: Tally): UniverseResolution {
+    private suspend fun resolveUniverse(
+        oldId: Long?, code: String?, tally: Tally, session: RestoreSession?
+    ): UniverseResolution {
         if (oldId == null) return UniverseResolution(null, false)
         val index = buildIndex(
             oldIds = listOf(oldId),
@@ -1903,7 +2083,9 @@ class TrashRepository(private val db: AppDatabase) {
             fetchByIds = { ids -> ids.mapNotNull { db.universeDao().getUniverseById(it) } },
             fetchByCodes = { codes -> codes.mapNotNull { db.universeDao().getUniverseByCode(it) } },
             idOf = { it.id },
-            codeOf = { it.code }
+            codeOf = { it.code },
+            entityType = TrashSnapshot.TYPE_UNIVERSE,
+            session = session
         )
         val res = tally.note(
             SnapshotRefResolver.resolveByCode(oldId, code, index.codeById, index.idByCode, index.liveIds),
@@ -1912,32 +2094,72 @@ class TrashRepository(private val db: AppDatabase) {
         return UniverseResolution(res.id, !res.found)
     }
 
-    private suspend fun characterIndex(oldIds: Collection<Long>, codes: Collection<String>) = buildIndex(
+    private suspend fun characterIndex(
+        oldIds: Collection<Long>, codes: Collection<String>, session: RestoreSession?
+    ) = buildIndex(
         oldIds = oldIds,
         codes = codes,
         fetchByIds = { db.characterDao().getCharactersByIds(it) },
         fetchByCodes = { db.characterDao().getCharactersByCodes(it) },
         idOf = { it.id },
-        codeOf = { it.code }
+        codeOf = { it.code },
+        entityType = TrashSnapshot.TYPE_CHARACTER,
+        session = session
     )
 
-    private suspend fun factionIndex(oldIds: Collection<Long>, codes: Collection<String>) = buildIndex(
+    private suspend fun factionIndex(
+        oldIds: Collection<Long>, codes: Collection<String>, session: RestoreSession?
+    ) = buildIndex(
         oldIds = oldIds,
         codes = codes,
         fetchByIds = { db.factionDao().getByIds(it) },
         fetchByCodes = { db.factionDao().getByCodes(it) },
         idOf = { it.id },
-        codeOf = { it.code }
+        codeOf = { it.code },
+        entityType = TrashSnapshot.TYPE_FACTION,
+        session = session
     )
 
-    private suspend fun eventIndex(oldIds: Collection<Long>, codes: Collection<String>) = buildIndex(
+    private suspend fun eventIndex(
+        oldIds: Collection<Long>, codes: Collection<String>, session: RestoreSession?
+    ) = buildIndex(
         oldIds = oldIds,
         codes = codes,
         fetchByIds = { db.timelineDao().getEventsByIds(it) },
         fetchByCodes = { db.timelineDao().getEventsByCodes(it) },
         idOf = { it.id },
-        codeOf = { it.code }
+        codeOf = { it.code },
+        entityType = TrashSnapshot.TYPE_EVENT,
+        session = session
     )
+
+    /**
+     * 한 번의 '작업 전체 복원'이 공유하는 상태 — **코드 재발급 추적**.
+     *
+     * apply*는 같은 code가 이미 살아 있으면 유니크 제약을 피해 code를 재발급한다. 그런데
+     * 뒤이어 복원되는 하위 항목은 payload의 **옛 코드**로 조회하므로, 그대로 두면 방금 만든
+     * 사본이 아니라 **살아 있던 남의 엔티티**를 찾아 거기에 붙는다 — 정확히 R-1이 막으려는
+     * 오배정이다(엑셀 덮어쓰기로 같은 코드가 되살아난 뒤 휴지통을 복원하면 실제로 일어난다).
+     *
+     * 재발급하지 않은 경우에도 기록해 둔다 — 결과가 같으므로 분기를 만들 이유가 없다.
+     */
+    private class RestoreSession {
+        private val newIdByTypeAndCode = HashMap<String, Long>()
+
+        fun record(entityType: String, oldCode: String?, newId: Long) {
+            if (oldCode.isNullOrBlank()) return
+            newIdByTypeAndCode[key(entityType, oldCode)] = newId
+        }
+
+        fun lookup(entityType: String, code: String?): Long? {
+            if (code.isNullOrBlank()) return null
+            return newIdByTypeAndCode[key(entityType, code)]
+        }
+
+        // 타입을 키에 섞는다 — 코드는 사실상 전역 유일하지만, 종류가 다른 두 엔티티가
+        // 같은 문자열을 갖게 되는 날에도 서로를 덮지 않게 한다.
+        private fun key(entityType: String, code: String) = entityType + "\u0000" + code
+    }
 
     /** 해석에 필요한 최소 인덱스 — 스냅샷이 실제로 참조하는 id/코드만 조회한다. */
     private class RefIndex(
@@ -1958,7 +2180,9 @@ class TrashRepository(private val db: AppDatabase) {
         fetchByIds: suspend (List<Long>) -> List<T>,
         fetchByCodes: suspend (List<String>) -> List<T>,
         idOf: (T) -> Long,
-        codeOf: (T) -> String?
+        codeOf: (T) -> String?,
+        entityType: String? = null,
+        session: RestoreSession? = null
     ): RefIndex {
         val codeById = HashMap<Long, String>()
         val idByCode = HashMap<String, Long>()
@@ -1977,6 +2201,13 @@ class TrashRepository(private val db: AppDatabase) {
                 codeOf(row)?.takeIf { it.isNotBlank() }?.let { idByCode[it] = idOf(row) }
             }
         }
+        // 같은 작업이 방금 복원하며 code를 재발급한 대상이 있으면 **그쪽이 이긴다** —
+        // DB 조회는 옛 코드로 살아 있던 남의 엔티티를 찾아낼 수 있다(오배정).
+        if (entityType != null && session != null) {
+            for (code in distinctCodes) {
+                session.lookup(entityType, code)?.let { idByCode[code] = it }
+            }
+        }
         return RefIndex(codeById, idByCode, liveIds)
     }
 
@@ -1987,7 +2218,8 @@ class TrashRepository(private val db: AppDatabase) {
 
     private suspend fun buildFieldDefIndex(
         oldIds: Collection<Long>,
-        refs: Collection<FieldDefRef>
+        refs: Collection<FieldDefRef>,
+        session: RestoreSession?
     ): FieldDefIndex {
         val naturalById = HashMap<Long, FieldDefNaturalKey>()
         val idByNatural = HashMap<FieldDefNaturalKey, Long>()
@@ -2007,8 +2239,11 @@ class TrashRepository(private val db: AppDatabase) {
             val uCode = ref.universeCode?.takeIf { it.isNotBlank() } ?: continue
             val type = ref.entityType?.takeIf { it.isNotBlank() } ?: continue
             val key = ref.key?.takeIf { it.isNotBlank() } ?: continue
-            val universe = db.universeDao().getUniverseByCode(uCode) ?: continue
-            val fd = db.fieldDefinitionDao().getFieldByKey(universe.id, key, type) ?: continue
+            // 세계관도 같은 작업이 방금 복원하며 code를 재발급했을 수 있다 — 그쪽이 이긴다.
+            val universeId = session?.lookup(TrashSnapshot.TYPE_UNIVERSE, uCode)
+                ?: db.universeDao().getUniverseByCode(uCode)?.id
+                ?: continue
+            val fd = db.fieldDefinitionDao().getFieldByKey(universeId, key, type) ?: continue
             idByNatural[FieldDefNaturalKey(uCode, type, key)] = fd.id
         }
         return FieldDefIndex(naturalById, idByNatural)
@@ -2026,17 +2261,17 @@ class TrashRepository(private val db: AppDatabase) {
     suspend fun purgeSnapshot(snapshot: TrashSnapshot) = purgeAll(listOf(snapshot))
 
     /** 작업 하나를 통째로 영구 삭제한다. @return 지운 항목 수 */
-    suspend fun purgeOperation(opKey: String): Int {
+    suspend fun purgeOperation(opKey: String): Int = withContext(Dispatchers.IO) {
         val items = trashDao.getByOperation(opKey)
         purgeAll(items)
-        return items.size
+        items.size
     }
 
     /** 휴지통 비우기 — 영구 삭제한 스냅샷 개수를 반환한다(결과 통보용) */
-    suspend fun emptyTrash(): Int {
+    suspend fun emptyTrash(): Int = withContext(Dispatchers.IO) {
         val all = trashDao.getAllList()
         purgeAll(all)
-        return all.size
+        all.size
     }
 
     /**
