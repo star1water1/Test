@@ -2158,6 +2158,26 @@
     <string name="field_library_ai_apply_skipped">선행 병합과 겹쳐 건너뛴 제안 %1$d건 — 필요하면 AI 정리를 다시 실행하세요</string>
     <string name="field_library_ai_apply_failed">AI 정리 적용 중 오류 — 병합 %1$d건 · 카테고리 %2$d건까지 적용됨</string>
 
+    <!-- ✨ AI 필드 값 추천 (CharacterFieldAiSuggester / AiFieldSuggestSheet) -->
+    <string name="ai_field_suggest_entry">✨ AI 필드 추천</string>
+    <string name="ai_field_suggest_title">AI 필드 추천</string>
+    <string name="ai_field_cost_notice">필드 %1$d개를 1개 요청으로 추천받습니다.\n등록된 API 키로 호출되며 제공사 요금이 발생할 수 있습니다.</string>
+    <string name="ai_field_cost_notice_single">\'%1$s\' 필드 값을 1개 요청으로 추천받습니다.\n등록된 API 키로 호출되며 제공사 요금이 발생할 수 있습니다.</string>
+    <string name="ai_field_include_filled">이미 입력된 필드도 포함</string>
+    <string name="ai_field_no_empty_fields">추천할 빈 필드가 없습니다. \'이미 입력된 필드도 포함\'을 켜세요.</string>
+    <string name="ai_field_no_targets">추천할 수 있는 필드가 없습니다.</string>
+    <string name="ai_field_run">추천 받기</string>
+    <string name="ai_field_running">AI가 캐릭터 정보를 분석하는 중…</string>
+    <string name="ai_field_nothing">적용할 추천이 없습니다.</string>
+    <string name="ai_field_dropped">형식·옵션에 맞지 않는 추천 %1$d건은 제외했습니다</string>
+    <string name="ai_field_truncated_prefix">컨텍스트 일부 생략: %1$s</string>
+    <string name="ai_field_review_title">AI 추천 검토</string>
+    <string name="ai_field_overwrite_format">현재: %1$s → 추천: %2$s</string>
+    <string name="ai_field_reason_format">근거: %1$s</string>
+    <string name="ai_field_apply">선택 적용</string>
+    <string name="ai_field_single_apply">적용</string>
+    <string name="ai_field_applied">AI 추천 %1$d건 적용 — 저장을 눌러야 반영됩니다</string>
+
     <!-- restricted 입력 모드 위반 안내 -->
     <string name="field_library_restricted_violation_title">허용되지 않은 값</string>
     <string name="field_library_restricted_violation_line">\'%1$s\' 필드는 라이브러리 값만 허용합니다.\n입력한 값: %2$s</string>
