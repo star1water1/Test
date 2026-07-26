@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingHorizontal="20dp"
+    android:paddingBottom="16dp">
+
+    <View
+        android:layout_width="40dp"
+        android:layout_height="4dp"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginTop="8dp"
+        android:layout_marginBottom="12dp"
+        android:background="@color/text_secondary" />
+
+    <TextView
+        android:id="@+id/titleText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingBottom="12dp"
+        android:textAppearance="@style/TextAppearance.App.TitleLarge" />
+
+    <Spinner
+        android:id="@+id/novelSpinner"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="4dp" />
+
+    <!-- 작품 미지정 시 세계관 필드 미기록 고지 (R-4 사전 고지) -->
+    <TextView
+        android:id="@+id/noUniverseNotice"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/name_bank_bulk_no_universe_notice"
+        android:textAppearance="@style/TextAppearance.App.Caption"
+        android:textColor="@android:color/holo_orange_dark"
+        android:visibility="gone"
+        android:paddingBottom="8dp" />
+
+    <com.google.android.material.materialswitch.MaterialSwitch
+        android:id="@+id/switchMapGender"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:checked="true"
+        android:text="@string/name_bank_bulk_map_gender" />
+
+    <com.google.android.material.materialswitch.MaterialSwitch
+        android:id="@+id/switchIncludeNotes"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:checked="true"
+        android:text="@string/name_bank_bulk_include_notes" />
+
+    <!-- 중복 이름 처리 정책 -->
+    <TextView
+        android:id="@+id/collisionNotice"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:textAppearance="@style/TextAppearance.App.Caption"
+        android:textColor="@color/text_secondary"
+        android:visibility="gone" />
+
+    <RadioGroup
+        android:id="@+id/policyGroup"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <RadioButton
+            android:id="@+id/policyRegisterAll"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:checked="true"
+            android:text="@string/name_bank_bulk_policy_all" />
+
+        <RadioButton
+            android:id="@+id/policySkipDuplicates"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="16dp"
+            android:text="@string/name_bank_bulk_policy_skip" />
+    </RadioGroup>
+
+    <!-- 사용 표시 이동 고지 -->
+    <TextView
+        android:id="@+id/usedNotice"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textAppearance="@style/TextAppearance.App.Caption"
+        android:textColor="@color/text_secondary"
+        android:visibility="gone"
+        android:paddingBottom="4dp" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnConfirm"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp" />
+
+</LinearLayout>

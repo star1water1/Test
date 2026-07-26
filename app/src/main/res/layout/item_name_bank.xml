@@ -20,6 +20,16 @@
             android:orientation="horizontal"
             android:gravity="center_vertical">
 
+            <!-- 일괄 캐릭터 등록 선택 모드 체크 (탭은 카드 전체가 받는다) -->
+            <CheckBox
+                android:id="@+id/selectCheckBox"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="4dp"
+                android:clickable="false"
+                android:focusable="false"
+                android:visibility="gone" />
+
             <TextView
                 android:id="@+id/nameText"
                 android:layout_width="0dp"

@@ -2158,6 +2158,31 @@
     <string name="field_library_ai_apply_skipped">선행 병합과 겹쳐 건너뛴 제안 %1$d건 — 필요하면 AI 정리를 다시 실행하세요</string>
     <string name="field_library_ai_apply_failed">AI 정리 적용 중 오류 — 병합 %1$d건 · 카테고리 %2$d건까지 적용됨</string>
 
+    <!-- 이름은행 — 일괄 캐릭터 등록 -->
+    <string name="name_bank_select_mode">선택 모드</string>
+    <string name="name_bank_select_all">전체 선택</string>
+    <string name="name_bank_selected_count">%1$d개 선택</string>
+    <string name="name_bank_bulk_register">캐릭터로 등록</string>
+    <string name="name_bank_bulk_select_first">등록할 이름을 먼저 선택하세요.</string>
+    <string name="name_bank_bulk_title">이름 %1$d개를 캐릭터로 등록</string>
+    <string name="name_bank_bulk_confirm">%1$d명 등록</string>
+    <string name="name_bank_bulk_no_universe_notice">작품을 지정하지 않으면 세계관 필드(성별 등)는 기록되지 않습니다.</string>
+    <string name="name_bank_bulk_map_gender">성별을 성별 필드에 기록</string>
+    <string name="name_bank_bulk_include_notes">출처·메모를 캐릭터 메모로 기록</string>
+    <string name="name_bank_bulk_origin_prefix">출처: %1$s</string>
+    <string name="name_bank_bulk_policy_all">모두 등록</string>
+    <string name="name_bank_bulk_policy_skip">중복 이름 건너뛰기</string>
+    <string name="name_bank_bulk_collision_notice">기존 캐릭터와 이름 중복 %1$d건 · 선택 내 중복 %2$d건</string>
+    <string name="name_bank_bulk_used_notice">이미 사용 처리된 이름 %1$d개 — 등록하면 사용 표시가 새 캐릭터로 이동합니다</string>
+    <string name="name_bank_bulk_done">캐릭터 %1$d명 등록</string>
+    <string name="name_bank_bulk_done_skipped">" · 중복 건너뜀 %1$d건"</string>
+    <string name="name_bank_bulk_gender_skipped">" · 성별 미기록 %1$d건(옵션 불일치)"</string>
+    <string name="name_bank_bulk_gender_no_field">" · 성별 미기록(세계관에 성별 SELECT 필드 없음)"</string>
+    <string name="name_bank_bulk_blank_skipped">" · 빈 이름 제외 %1$d건"</string>
+    <string name="name_bank_bulk_none_created">등록할 이름이 없습니다 — 전부 중복으로 건너뛰었거나 선택이 비어 있습니다.</string>
+    <string name="name_bank_bulk_novel_missing">선택한 작품을 찾을 수 없습니다. 작품이 삭제되었는지 확인하세요.</string>
+    <string name="name_bank_bulk_failed">일괄 등록 실패 — 변경 사항이 적용되지 않았습니다.</string>
+
     <!-- ✨ AI 필드 값 추천 (CharacterFieldAiSuggester / AiFieldSuggestSheet) -->
     <string name="ai_field_suggest_entry">✨ AI 필드 추천</string>
     <string name="ai_field_suggest_title">AI 필드 추천</string>
