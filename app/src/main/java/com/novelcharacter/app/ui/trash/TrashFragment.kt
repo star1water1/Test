@@ -153,6 +153,7 @@ class TrashFragment : Fragment() {
 
     private fun blockerMessage(blocker: TrashRepository.RestoreBlocker): String = when (blocker) {
         TrashRepository.RestoreBlocker.MISSING_UNIVERSE -> getString(R.string.trash_restore_blocked_universe)
+        TrashRepository.RestoreBlocker.MISSING_CHARACTER -> getString(R.string.trash_restore_blocked_character)
     }
 
     /**
@@ -550,6 +551,7 @@ class TrashFragment : Fragment() {
             TrashSnapshot.TYPE_NOVEL -> context.getString(R.string.trash_type_novel)
             TrashSnapshot.TYPE_FACTION -> context.getString(R.string.trash_type_faction)
             TrashSnapshot.TYPE_EVENT -> context.getString(R.string.trash_type_event)
+            TrashSnapshot.TYPE_STATE_CHANGE -> context.getString(R.string.trash_type_state_change)
             else -> entityType
         }
 

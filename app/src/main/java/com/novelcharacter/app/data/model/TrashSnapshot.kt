@@ -78,6 +78,13 @@ data class TrashSnapshot(
         const val TYPE_FACTION = "faction"
         const val TYPE_EVENT = "event"
 
+        /**
+         * 상태변화 이력 한 줄. 캐릭터에 매달리므로 **캐릭터보다 나중에** 복원된다.
+         * (캐릭터 삭제·출생사망 사건 삭제로 함께 사라지는 이력은 각각 캐릭터·사건 스냅샷이
+         * 담는다 — 이 타입은 이력만 개별로 지운 경로 전용이다.)
+         */
+        const val TYPE_STATE_CHANGE = "state_change"
+
         /** 삭제 백업 — 복원 = 부활. */
         const val KIND_DELETE = "delete"
 
@@ -104,9 +111,10 @@ data class TrashSnapshot(
         /**
          * 복원 순서 — **낮을수록 먼저**. 하위 엔티티는 상위가 살아 있어야 붙을 자리가 있다.
          *
-         * 세계관 → 세계관 부가 데이터 → 작품 → 세력 → 사건 → 캐릭터.
+         * 세계관 → 세계관 부가 데이터 → 작품 → 세력 → 사건 → 캐릭터 → 상태변화.
      * 세력은 세계관 없이 존재할 수 없고(NOT NULL),
-         * 캐릭터는 작품·세력·사건 전부를 참조하므로 마지막이다. 이 순서를 지키면 한 작업을
+         * 캐릭터는 작품·세력·사건 전부를 참조하므로 그다음이며, 상태변화는 캐릭터에 매달리므로
+         * 맨 뒤다. 이 순서를 지키면 한 작업을
          * 통째로 복원할 때 참조가 코드로 다시 이어진다(R-1).
          *
          * entityType에서 파생한다 — 컬럼으로 저장하면 타입과 어긋날 수 있고, 어긋나면
@@ -120,7 +128,9 @@ data class TrashSnapshot(
             TYPE_FACTION -> 3
             TYPE_EVENT -> 4
             TYPE_CHARACTER -> 5
-            else -> 6
+            // 상태변화는 주인 캐릭터가 이미 살아 있어야 붙을 자리가 있다.
+            TYPE_STATE_CHANGE -> 6
+            else -> 7
         }
     }
 }

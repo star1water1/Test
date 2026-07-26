@@ -153,3 +153,22 @@ data class EventSnapshot(
     val linkedStateChanges: List<CharacterStateChange>? = null,
     val refs: EntityRefs? = null
 )
+
+/**
+ * 캐릭터 상태변화 이력 하나의 스냅샷.
+ *
+ * 상태변화는 캐릭터가 지워질 때는 [CharacterSnapshot]이 통째로 담고, 출생·사망 사건이
+ * 지워질 때는 [EventSnapshot.linkedStateChanges]가 담는다. 남아 있던 구멍은 **이력 자체를
+ * 하나씩 지우는 경로**(상세 화면의 상태변화 목록)였다 — 그 삭제만 휴지통을 거치지 않아
+ * "지운 것은 되돌릴 수 있다"는 약속에서 이 항목만 빠져 있었다.
+ *
+ * 담는 것은 이력 한 줄과 주인 캐릭터의 코드뿐이다. 파생 필드값(생년·나이·생존 여부)은
+ * 담지 않는다 — 사건 복원과 같은 규약이다. 그 사이 사용자가 값을 고쳤을 수 있어 되돌리면
+ * 덮어쓰기가 되므로, 되돌리지 않았다는 사실을 복원 결과로 알린다.
+ */
+data class StateChangeSnapshot(
+    val change: CharacterStateChange,
+    /** 이 이력이 매달린 캐릭터의 코드 — 없으면 붙일 자리를 찾을 수 없다(R-1). */
+    val characterCode: String? = null,
+    val refs: EntityRefs? = null
+)

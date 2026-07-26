@@ -290,6 +290,10 @@
 
     <!-- Remaining hardcoded strings -->
     <string name="event_year_format">%d년</string>
+    <!-- 캐릭터 화면에서의 사건 조작 — 사건은 여러 캐릭터의 공유물이라 '연결 해제'와 '삭제'를 가른다 -->
+    <string name="event_unlink_from_character">이 캐릭터에서 연결 해제</string>
+    <string name="event_delete_confirm">사건 \'%1$s\'을(를) 삭제할까요?\n휴지통에 보관되므로 되돌릴 수 있습니다.</string>
+    <string name="event_delete_shared_confirm">사건 \'%1$s\'을(를) 삭제할까요?\n이 사건에는 다른 캐릭터 %2$d명도 연결돼 있어 그쪽 연표에서도 사라집니다. 이 캐릭터에서만 떼어 내려면 \'이 캐릭터에서 연결 해제\'를 쓰세요.\n휴지통에 보관되므로 되돌릴 수 있습니다.</string>
     <string name="set_as_standard_year">표준연도로 설정</string>
     <string name="standard_year_no_novel">이 사건에 연결된 작품이 없습니다</string>
     <string name="standard_year_select_novel">표준연도를 설정할 작품 선택</string>
@@ -337,21 +341,22 @@
     <string name="backup_restore_portable_still_ok">단, 암호를 설정해 만든 \'이식 가능 백업\' 파일은 지금도 복원할 수 있습니다.</string>
     <!-- 휴지통 (B-7) -->
     <string name="trash_title">휴지통</string>
-    <string name="settings_trash_desc">삭제된 캐릭터·세계관·작품·세력·사건을 보관·복원합니다</string>
+    <string name="settings_trash_desc">삭제된 캐릭터·세계관·작품·세력·사건·상태변화를 보관·복원합니다</string>
     <string name="trash_empty_hint">휴지통이 비어 있습니다</string>
-    <string name="trash_retention_caption">삭제된 캐릭터·세계관·작품·세력·사건이 연관 데이터와 함께 보관됩니다. 보관 단위는 한 번의 삭제이며 최근 30건, 30일까지 유지됩니다 — 세계관 하나를 지워 수백 항목이 생겨도 그 묶음은 통째로 남거나 통째로 사라지므로 반쪽 백업이 되지 않습니다. 오래된 삭제부터 정리되니 되살릴 것이 있으면 먼저 복원하세요.</string>
+    <string name="trash_retention_caption">삭제된 캐릭터·세계관·작품·세력·사건·상태변화가 연관 데이터와 함께 보관됩니다. 보관 단위는 한 번의 삭제이며 최근 30건, 30일까지 유지됩니다 — 세계관 하나를 지워 수백 항목이 생겨도 그 묶음은 통째로 남거나 통째로 사라지므로 반쪽 백업이 되지 않습니다. 오래된 삭제부터 정리되니 되살릴 것이 있으면 먼저 복원하세요.</string>
     <string name="trash_type_character">캐릭터</string>
     <string name="trash_type_universe">세계관</string>
     <string name="trash_type_universe_data">세계관 부가 데이터</string>
     <string name="trash_type_novel">작품</string>
     <string name="trash_type_faction">세력</string>
     <string name="trash_type_event">사건</string>
+    <string name="trash_type_state_change">상태변화</string>
 
     <!-- 삭제 작업(그룹) — 한 번의 삭제가 만든 스냅샷 묶음 (B-1/B-14) -->
     <string name="trash_operation_title">%1$s \'%2$s\' 삭제</string>
     <string name="trash_operation_meta">항목 %1$d개 · %2$s</string>
     <string name="trash_restore_operation">전체 복원</string>
-    <string name="trash_operation_restore_confirm">이 삭제로 지워진 %1$d개 항목을 전부 복원할까요?\n세계관 → 작품 → 세력 → 사건 → 캐릭터 순서로 되살아나므로 서로의 참조도 다시 이어집니다.</string>
+    <string name="trash_operation_restore_confirm">이 삭제로 지워진 %1$d개 항목을 전부 복원할까요?\n세계관 → 작품 → 세력 → 사건 → 캐릭터 → 상태변화 순서로 되살아나므로 서로의 참조도 다시 이어집니다.</string>
     <string name="trash_operation_purge_confirm">이 삭제로 만들어진 %1$d개 항목을 모두 영구 삭제할까요? 되돌릴 수 없습니다.</string>
     <string name="trash_operation_restored">%1$d개 항목 복원 완료</string>
     <string name="trash_operation_failed">되살리지 못한 항목 %1$d개는 휴지통에 그대로 남았습니다:\n%2$s</string>
@@ -359,6 +364,7 @@
     <string name="trash_purge_sibling_warning">※ 이 항목은 같은 삭제로 만들어진 묶음의 일부입니다(나머지 %1$d개). 이것만 영구 삭제하면 나머지가 붙을 자리를 잃어 복원이 막히거나 참조가 빠진 채 되살아납니다. 묶음째 지우려면 머리글의 \'영구 삭제\'를 쓰세요.</string>
     <string name="trash_operation_purged">%1$d개 항목 영구 삭제됨</string>
     <string name="trash_restore_blocked_universe">이 세력이 속한 세계관이 없어 복원할 수 없습니다. 세력은 세계관 없이 존재할 수 없으므로 아무 세계관에나 붙이지 않습니다.\n같은 삭제로 만들어진 세계관 항목을 먼저 복원한 뒤(또는 \'전체 복원\'으로) 다시 시도하세요. 휴지통 항목은 그대로 남습니다.</string>
+    <string name="trash_restore_blocked_character">이 상태변화 이력의 캐릭터가 없어 복원할 수 없습니다. 이력은 캐릭터 없이 존재할 수 없으므로 아무 캐릭터에나 붙이지 않습니다.\n캐릭터를 먼저 복원한 뒤(또는 \'전체 복원\'으로) 다시 시도하세요. 휴지통 항목은 그대로 남습니다.</string>
     <string name="trash_restore_blocked_title">복원할 수 없음</string>
 
     <string name="trash_item_meta">%1$s · 삭제 %2$s</string>
@@ -402,7 +408,7 @@
     <string name="trash_restore_note_title">복원 결과</string>
     <string name="trash_restore_relinked">참조 %1$d건은 id가 바뀌었지만 코드로 다시 연결했습니다</string>
     <string name="trash_restore_duplicate_rel">관계 %1$d개는 같은 관계가 이미 있어 새로 만들지 않았습니다</string>
-    <string name="trash_restore_semantic_note">캐릭터의 출생·사망 이력 %1$d개도 함께 되살렸습니다. 다만 그 이력에서 파생되는 필드값(생년·나이·생존 여부)은 그 사이 직접 고쳤을 수 있어 덮어쓰지 않았으니, 캐릭터 화면에서 확인하세요.</string>
+    <string name="trash_restore_semantic_note">출생·사망 이력 %1$d개를 되살렸습니다. 다만 그 이력에서 파생되는 필드값(생년·나이·생존 여부)은 그 사이 직접 고쳤을 수 있어 덮어쓰지 않았으니, 캐릭터 화면에서 확인하세요.</string>
     <!-- 세력 간 관계 (B-3) -->
     <string name="faction_relationships">세력 간 관계</string>
     <string name="faction_relationship_add">관계 추가</string>
@@ -1644,7 +1650,7 @@
     <string name="result_relationship_change_delete_failed">관계 변화 삭제 실패</string>
     <string name="result_state_change_added">상태 변화 추가됨</string>
     <string name="result_state_change_updated">상태 변화 수정됨</string>
-    <string name="result_state_change_deleted">상태 변화 삭제됨</string>
+    <string name="result_state_change_deleted">상태 변화 삭제됨 · 휴지통에서 복원 가능</string>
     <string name="result_state_change_add_failed">상태 변화 추가 실패</string>
     <string name="result_state_change_update_failed">상태 변화 수정 실패</string>
     <string name="result_state_change_delete_failed">상태 변화 삭제 실패</string>
@@ -1655,6 +1661,9 @@
     <string name="result_event_added">사건 저장됨</string>
     <string name="result_event_updated">사건 수정됨</string>
     <string name="result_event_deleted">사건 삭제됨</string>
+    <string name="result_event_delete_failed">사건 삭제 실패</string>
+    <string name="result_event_unlinked">이 캐릭터에서 사건 연결 해제됨</string>
+    <string name="result_event_unlink_failed">사건 연결 해제 실패</string>
     <string name="result_event_stdyear_updated">표준연도가 %1$d(으)로 변경됨</string>
     <string name="result_name_added">이름 \"%1$s\" 추가됨</string>
     <string name="result_name_updated">이름 \"%1$s\" 수정됨</string>

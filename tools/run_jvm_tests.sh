@@ -88,6 +88,7 @@ $MAIN/data/repository/SnapshotRefResolver.kt
 $MAIN/data/repository/CharacterFieldValueMerge.kt
 $MAIN/data/repository/TrashPruneSelector.kt
 $MAIN/data/repository/RestoreLossCounts.kt
+$MAIN/data/repository/RestoreTally.kt
 $MAIN/ai/AiModelSuggestions.kt
 $MAIN/data/model/FieldFilter.kt
 $MAIN/data/repository/QueryUtils.kt
@@ -120,6 +121,7 @@ $TEST/data/TrashPruneSelectorTest.kt
 $TEST/data/TrashGroupingTest.kt
 $TEST/data/EntitySnapshotPayloadTest.kt
 $TEST/data/RestoreLossCountsTest.kt
+$TEST/data/RestoreTallyTest.kt
 $TEST/ai/AiModelSuggestionsTest.kt
 "
 # 선택 소스: 존재하고 순수 JVM이면 추가
