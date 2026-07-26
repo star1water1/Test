@@ -13,6 +13,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.R
+import com.novelcharacter.app.data.dao.TrashSnapshotSummary
 import com.novelcharacter.app.data.model.TrashSnapshot
 import com.novelcharacter.app.data.repository.RestoreLossCounts
 import com.novelcharacter.app.data.repository.TrashGrouping
@@ -93,7 +94,7 @@ class TrashFragment : Fragment() {
      * payload에만 남아 있던 원본이 그 순간 영구 소멸한다. 취소하면 스냅샷은 그대로 남으므로
      * 세계관·작품·필드 정의를 먼저 되살린 뒤 다시 복원할 수 있다(검증 → 알림 → 교정 경로).
      */
-    private fun confirmRestore(snapshot: TrashSnapshot) {
+    private fun confirmRestore(snapshot: TrashSnapshotSummary) {
         viewLifecycleOwner.lifecycleScope.launch {
             val preview = try {
                 trashRepository.previewRestore(snapshot.id)
@@ -216,7 +217,7 @@ class TrashFragment : Fragment() {
      *   예고분이 사라지고 다른 유실이 생긴 경우(총량은 줄었지만 동의한 적 없는 유실)를 놓친다.
      */
     private fun restore(
-        snapshot: TrashSnapshot,
+        snapshot: TrashSnapshotSummary,
         warned: Boolean,
         predicted: RestoreLossCounts = RestoreLossCounts()
     ) {
@@ -407,7 +408,7 @@ class TrashFragment : Fragment() {
      *   막히거나 참조가 빠진 채 되살아난다. 그 사실을 말하지 않으면 '개별 영구 삭제'가
      *   조용히 나머지를 못 쓰게 만든다(R-4).
      */
-    private fun confirmPurge(snapshot: TrashSnapshot, siblingCount: Int = 0) {
+    private fun confirmPurge(snapshot: TrashSnapshotSummary, siblingCount: Int = 0) {
         val message = StringBuilder(getString(R.string.trash_purge_confirm, snapshot.entityName))
         if (siblingCount > 0) {
             message.append("\n\n").append(getString(R.string.trash_purge_sibling_warning, siblingCount))
@@ -418,7 +419,7 @@ class TrashFragment : Fragment() {
             .setPositiveButton(R.string.delete) { _, _ ->
                 viewLifecycleOwner.lifecycleScope.launch {
                     try {
-                        trashRepository.purgeSnapshot(snapshot)
+                        trashRepository.purgeSnapshot(snapshot.id)
                         if (isAdded) reportAndNotify(OpResult.success(OpResult.CAT_TRASH,
                             getString(R.string.result_trash_purged, snapshot.entityName)))
                     } catch (e: Exception) {
@@ -472,12 +473,12 @@ class TrashFragment : Fragment() {
         ) : TrashRow()
 
         /** @param siblingCount 같은 삭제 작업에 함께 있는 다른 항목 수 (개별 영구 삭제 고지용) */
-        data class Item(val snapshot: TrashSnapshot, val siblingCount: Int = 0) : TrashRow()
+        data class Item(val snapshot: TrashSnapshotSummary, val siblingCount: Int = 0) : TrashRow()
     }
 
     private class TrashAdapter(
-        private val onRestore: (TrashSnapshot) -> Unit,
-        private val onPurge: (TrashSnapshot, Int) -> Unit,
+        private val onRestore: (TrashSnapshotSummary) -> Unit,
+        private val onPurge: (TrashSnapshotSummary, Int) -> Unit,
         private val onRestoreOperation: (TrashRow.Operation) -> Unit,
         private val onPurgeOperation: (TrashRow.Operation) -> Unit
     ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
@@ -558,7 +559,7 @@ class TrashFragment : Fragment() {
          * 실행 검증한다). 여기는 문구 조립만 한다 — 머리글은 묶음의 **뿌리 항목**
          * (= 그 삭제의 주어)에서 만들며, 문구를 DB 컬럼에 굳히지 않는 이유가 이것이다.
          */
-        fun buildRows(snapshots: List<TrashSnapshot>, context: android.content.Context): List<TrashRow> {
+        fun buildRows(snapshots: List<TrashSnapshotSummary>, context: android.content.Context): List<TrashRow> {
             val groups = TrashGrouping.group(snapshots)
             val rows = ArrayList<TrashRow>(snapshots.size + groups.size)
             for (group in groups) {

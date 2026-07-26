@@ -1,5 +1,6 @@
 package com.novelcharacter.app.data.repository
 
+import com.novelcharacter.app.data.dao.TrashSnapshotSummary
 import com.novelcharacter.app.data.model.TrashSnapshot
 
 /**
@@ -21,16 +22,16 @@ object TrashGrouping {
      */
     data class Group(
         val opKey: String,
-        val items: List<TrashSnapshot>,
+        val items: List<TrashSnapshotSummary>,
         val newestAt: Long
     ) {
-        val root: TrashSnapshot get() = items.first()
+        val root: TrashSnapshotSummary get() = items.first()
         val size: Int get() = items.size
         /** 항목이 하나뿐인 묶음은 머리글이 같은 내용을 두 줄로 반복하게 되므로 만들지 않는다. */
         val needsHeader: Boolean get() = items.size > 1
     }
 
-    private val ITEM_ORDER = compareBy<TrashSnapshot>(
+    private val ITEM_ORDER = compareBy<TrashSnapshotSummary>(
         { TrashSnapshot.restorePriority(it.entityType) },
         { it.id }
     )
@@ -39,7 +40,7 @@ object TrashGrouping {
      * 스냅샷을 작업별로 묶고 **최신 삭제부터** 돌려준다.
      * 구버전 행(operationId 없음)은 자기 자신만의 묶음이 되어 종전과 같은 평평한 목록이 된다.
      */
-    fun group(snapshots: List<TrashSnapshot>): List<Group> {
+    fun group(snapshots: List<TrashSnapshotSummary>): List<Group> {
         if (snapshots.isEmpty()) return emptyList()
         return snapshots.groupBy { it.operationKey }
             .map { (key, items) ->

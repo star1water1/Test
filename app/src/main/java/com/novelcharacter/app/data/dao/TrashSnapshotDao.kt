@@ -13,15 +13,22 @@ import com.novelcharacter.app.data.model.TrashSnapshot
  * `COALESCE(operationId, 'row:' || id)` — 구버전 행(operationId 없음)은 자기 자신만의 작업이
  * 되어 종전과 동일하게 동작한다. 이 식은 `TrashSnapshot.operationKey`와 **같은 문자열**을
  * 만들어야 한다(어긋나면 보호 목록이 빗나가 방금 만든 백업을 태운다 — R-3가 막으려는 바로 그것).
+ *
+ * ## payload를 함께 읽지 말 것
+ * 캐릭터 전용 시절에는 행이 최대 30개라 `SELECT *`가 안전했다. 이제 세계관 하나를 지우면
+ * 한 작업이 수백 행이고 한도는 **작업** 30건이라 테이블이 수만 행이 될 수 있다.
+ * payload는 캐릭터 하나당 수십 KB짜리 JSON이므로, 목록·정리처럼 payload가 필요 없는 경로는
+ * 반드시 아래 투영([TrashSnapshotSummary]/[TrashSnapshotImages])을 쓴다.
  */
 @Dao
 interface TrashSnapshotDao {
 
-    @Query("SELECT * FROM trash_snapshots ORDER BY deletedAt DESC, id DESC")
-    fun getAll(): LiveData<List<TrashSnapshot>>
-
-    @Query("SELECT * FROM trash_snapshots ORDER BY deletedAt DESC, id DESC")
-    suspend fun getAllList(): List<TrashSnapshot>
+    /** 목록 표시용 — **payload를 읽지 않는다.** */
+    @Query(
+        """SELECT id, entityType, entityName, deletedAt, operationId FROM trash_snapshots
+           ORDER BY deletedAt DESC, id DESC"""
+    )
+    fun getAllSummaries(): LiveData<List<TrashSnapshotSummary>>
 
     @Query("SELECT * FROM trash_snapshots WHERE id = :id")
     suspend fun getById(id: Long): TrashSnapshot?
@@ -45,7 +52,7 @@ interface TrashSnapshotDao {
     )
     suspend fun getOperationsOldestFirst(): List<TrashOperationSummary>
 
-    /** 작업에 속한 스냅샷 전부 (정리·일괄 복원용) */
+    /** 작업에 속한 스냅샷 전부 (일괄 복원용 — payload가 필요하다) */
     @Query(
         """SELECT * FROM trash_snapshots
            WHERE COALESCE(operationId, 'row:' || id) = :opKey
@@ -53,11 +60,30 @@ interface TrashSnapshotDao {
     )
     suspend fun getByOperation(opKey: String): List<TrashSnapshot>
 
+    // ── 정리용 투영 (payload 제외) ───────────────────────────────────────────
+
+    @Query("SELECT id, imagePaths FROM trash_snapshots WHERE id = :id")
+    suspend fun getImagesById(id: Long): TrashSnapshotImages?
+
+    @Query(
+        """SELECT id, imagePaths FROM trash_snapshots
+           WHERE COALESCE(operationId, 'row:' || id) = :opKey"""
+    )
+    suspend fun getImagesByOperation(opKey: String): List<TrashSnapshotImages>
+
+    /** 보류 이미지 경로 전체 — 보호 집합 계산·저장소 리포트용. payload를 읽지 않는다. */
+    @Query("SELECT id, imagePaths FROM trash_snapshots WHERE imagePaths != '' AND imagePaths != '[]'")
+    suspend fun getAllImages(): List<TrashSnapshotImages>
+
     @Insert
     suspend fun insert(snapshot: TrashSnapshot): Long
 
     @Query("DELETE FROM trash_snapshots WHERE id = :id")
     suspend fun deleteById(id: Long)
+
+    /** 호출부에서 900개 단위로 청크할 것 (SQLite 999-변수 상한). */
+    @Query("DELETE FROM trash_snapshots WHERE id IN (:ids)")
+    suspend fun deleteByIds(ids: List<Long>)
 
     @Query("DELETE FROM trash_snapshots")
     suspend fun deleteAll()
@@ -68,4 +94,25 @@ data class TrashOperationSummary(
     val opKey: String,
     val newestAt: Long,
     val itemCount: Int
+)
+
+/**
+ * 목록 표시에 필요한 최소 열 — payload를 뺀 투영.
+ * 휴지통 화면은 이름·타입·시각·묶음만 있으면 되고, payload는 복원할 때만 필요하다.
+ */
+data class TrashSnapshotSummary(
+    val id: Long,
+    val entityType: String,
+    val entityName: String,
+    val deletedAt: Long,
+    val operationId: String?
+) {
+    /** [TrashSnapshot.operationKey]와 **같은 규칙**이어야 한다. */
+    val operationKey: String get() = operationId ?: TrashSnapshot.legacyOperationKey(id)
+}
+
+/** 이미지 정리에 필요한 최소 열 — payload를 뺀 투영. */
+data class TrashSnapshotImages(
+    val id: Long,
+    val imagePaths: String
 )

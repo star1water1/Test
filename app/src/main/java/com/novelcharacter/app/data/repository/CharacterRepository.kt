@@ -672,11 +672,17 @@ class CharacterRepository(
          */
         suspend fun deleteCharactersCascade(db: AppDatabase, trash: TrashRepository, ids: List<Long>) {
             if (ids.isEmpty()) return
+            // **전 청크를 먼저 스냅샷한 뒤에 삭제한다.** 청크마다 스냅샷→삭제를 반복하면,
+            // 앞 청크를 지울 때 FK CASCADE가 관계 행을 없애 버려 청크를 가로지르는 관계가
+            // 뒤 청크의 payload에서 사라진다 — 관계는 양쪽 스냅샷이 모두 담는다는 전제가
+            // 깨지고, 복원은 "상대가 같은 작업 안에 있으니 그쪽이 담았겠지"라며 조용히
+            // 건너뛴다(무통보 유실). 900명을 넘는 세계관에서만 나타나던 경로다.
             for (chunk in ids.chunked(CASCADE_CHUNK_SIZE)) {
-                val characters = db.characterDao().getCharactersByIds(chunk)
-                for (character in characters) {
+                for (character in db.characterDao().getCharactersByIds(chunk)) {
                     trash.snapshotCharacter(character, parseImagePathStrings(character.imagePaths))
                 }
+            }
+            for (chunk in ids.chunked(CASCADE_CHUNK_SIZE)) {
                 db.nameBankDao().resetUsageByCharacterIds(chunk)
                 db.recentActivityDao().deleteByEntityIds(RecentActivity.TYPE_CHARACTER, chunk)
                 db.novelDao().clearImageCharacterRefs(chunk)

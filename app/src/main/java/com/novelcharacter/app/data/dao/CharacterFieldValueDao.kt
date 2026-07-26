@@ -74,6 +74,28 @@ interface CharacterFieldValueDao {
     @Query("SELECT * FROM character_field_values WHERE fieldDefinitionId IN (:fieldDefIds)")
     suspend fun getValuesByFieldDefs(fieldDefIds: List<Long>): List<CharacterFieldValue>
 
+    /**
+     * 이 세계관 필드를 가리키지만 **그 세계관에 속하지 않은** 캐릭터의 값 (휴지통 세계관 스냅샷 — B-1).
+     *
+     * 세계관 삭제는 소속 캐릭터를 함께 지우고 그 값은 캐릭터 스냅샷이 담으므로, 세계관
+     * 스냅샷이 담아야 하는 것은 **살아남는 캐릭터가 보관 중인 값**(미분류 캐릭터 — N2)뿐이다.
+     * 전량을 읽어 메모리에서 거르면 캐릭터 300명·필드 50개 세계관에서 1만 5천 행을 올려
+     * 거의 0행을 남긴다 — 제외를 서브쿼리로 내린다(IN 절 변수 한도도 함께 피한다).
+     */
+    @Query(
+        """SELECT * FROM character_field_values
+           WHERE fieldDefinitionId IN (:fieldDefIds)
+             AND characterId NOT IN (
+                 SELECT c.id FROM characters c
+                 INNER JOIN novels n ON c.novelId = n.id
+                 WHERE n.universeId = :universeId
+             )"""
+    )
+    suspend fun getOrphanValuesForUniverseFields(
+        fieldDefIds: List<Long>,
+        universeId: Long
+    ): List<CharacterFieldValue>
+
     /** 여러 캐릭터의 전체 필드값 일괄 조회 (백분위 배치 계산용 — 캐릭터당 개별 쿼리 N+1 방지) */
     @Query("SELECT * FROM character_field_values WHERE characterId IN (:characterIds)")
     suspend fun getValuesForCharacters(characterIds: List<Long>): List<CharacterFieldValue>

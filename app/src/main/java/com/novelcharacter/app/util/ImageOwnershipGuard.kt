@@ -56,7 +56,8 @@ object ImageOwnershipGuard {
     private suspend fun collectTrashPaths(db: AppDatabase, gson: Gson, excludeIds: Set<Long>): Set<String> {
         if (excludeIds.isEmpty()) return StorageAnalyzer.collectTrashHeldPaths(db, gson)
         val result = mutableSetOf<String>()
-        val snapshots = runCatching { db.trashSnapshotDao().getAllList() }.getOrDefault(emptyList())
+        // payload는 읽지 않는다 — 휴지통이 수만 행이 될 수 있고 필요한 것은 imagePaths뿐이다.
+        val snapshots = runCatching { db.trashSnapshotDao().getAllImages() }.getOrDefault(emptyList())
         for (snap in snapshots) {
             if (snap.id in excludeIds) continue
             val json = snap.imagePaths

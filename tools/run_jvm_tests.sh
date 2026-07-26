@@ -82,6 +82,7 @@ $MAIN/data/model/TrashSnapshot.kt
 $MAIN/data/model/EventFieldValue.kt
 $MAIN/data/model/FactionRelationship.kt
 $MAIN/data/model/EntitySnapshots.kt
+$MAIN/data/dao/TrashSnapshotDao.kt
 $MAIN/data/repository/TrashGrouping.kt
 $MAIN/data/repository/SnapshotRefResolver.kt
 $MAIN/data/repository/CharacterFieldValueMerge.kt

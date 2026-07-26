@@ -12,6 +12,14 @@ interface CharacterRelationshipChangeDao {
     @Query("SELECT * FROM character_relationship_changes WHERE relationshipId = :relationshipId ORDER BY year ASC, month ASC, day ASC")
     suspend fun getChangesForRelationshipList(relationshipId: Long): List<CharacterRelationshipChange>
 
+    /**
+     * 여러 관계의 변화 이력 일괄 조회 (휴지통 세력 스냅샷용 — B-1).
+     * 세력 하나에 100명이 소속되면 자동 관계가 약 5천 개다 — 관계마다 단건 조회하면
+     * 세력 삭제 트랜잭션이 그대로 멈춘다. 호출부에서 900개 단위로 청크할 것.
+     */
+    @Query("SELECT * FROM character_relationship_changes WHERE relationshipId IN (:relationshipIds) ORDER BY year ASC, month ASC, day ASC")
+    suspend fun getChangesForRelationships(relationshipIds: List<Long>): List<CharacterRelationshipChange>
+
     @Query("SELECT * FROM character_relationship_changes WHERE relationshipId = :relationshipId AND year <= :year ORDER BY year DESC, month DESC, day DESC LIMIT 1")
     suspend fun getChangeAtYear(relationshipId: Long, year: Int): CharacterRelationshipChange?
 

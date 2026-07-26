@@ -141,7 +141,8 @@ object StorageAnalyzer {
     ): ImageZipHelper.CollectResult {
         val result = mutableSetOf<String>()
         var anyFailed = false
-        val snapshots = runCatching { db.trashSnapshotDao().getAllList() }.getOrDefault(emptyList())
+        // payload는 읽지 않는다 — 휴지통 한도가 '작업 30건'이라 행 수는 수만이 될 수 있다.
+        val snapshots = runCatching { db.trashSnapshotDao().getAllImages() }.getOrDefault(emptyList())
         for (snap in snapshots) {
             val json = snap.imagePaths
             if (json.isBlank() || json == "[]") continue

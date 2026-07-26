@@ -1,5 +1,6 @@
 package com.novelcharacter.app.data
 
+import com.novelcharacter.app.data.dao.TrashSnapshotSummary
 import com.novelcharacter.app.data.model.TrashSnapshot
 import com.novelcharacter.app.data.repository.TrashGrouping
 import org.junit.Assert.assertEquals
@@ -23,9 +24,9 @@ class TrashGroupingTest {
         opId: String?,
         at: Long = 1000L,
         id: Long = nextId++
-    ) = TrashSnapshot(
+    ) = TrashSnapshotSummary(
         id = id, entityType = type, entityName = name,
-        payload = "{}", deletedAt = at, operationId = opId
+        deletedAt = at, operationId = opId
     )
 
     @Test

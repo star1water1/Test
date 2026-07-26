@@ -4,6 +4,8 @@ import androidx.lifecycle.LiveData
 import androidx.room.withTransaction
 import com.google.gson.Gson
 import com.novelcharacter.app.data.database.AppDatabase
+import com.novelcharacter.app.data.dao.TrashSnapshotImages
+import com.novelcharacter.app.data.dao.TrashSnapshotSummary
 import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.CharacterFieldValue
 import com.novelcharacter.app.data.model.CharacterRelationship
@@ -94,7 +96,15 @@ class TrashRepository(private val db: AppDatabase) {
     private val eventCodeCache = HashMap<Long, String?>()
     private val novelCodeCache = HashMap<Long, String?>()
 
-    val allSnapshots: LiveData<List<TrashSnapshot>> = trashDao.getAll()
+    /**
+     * 목록용 스트림 — **payload를 읽지 않는다.**
+     *
+     * 캐릭터 전용 시절에는 행이 최대 30개라 전체 조회가 안전했지만, 이제 한 작업이 수백 행이고
+     * 한도는 작업 30건이라 테이블이 수만 행이 될 수 있다. payload까지 읽으면 휴지통 화면을
+     * 여는 것만으로 수십 MB를 메모리에 올린다 — 한도를 작업 단위로 올리면서 사라진 상한을
+     * 여기서 다시 세운다('받쳐주는 확장성').
+     */
+    val allSnapshots: LiveData<List<TrashSnapshotSummary>> = trashDao.getAllSummaries()
 
     // ──────────────────────────────────────────────────────────────────────
     // 결과 / 미리보기 — 모든 엔티티 타입이 같은 형태를 쓴다
@@ -212,14 +222,11 @@ class TrashRepository(private val db: AppDatabase) {
      * 갖고 있던 이 세계관 필드의 값. 마지막 항목이 핵심이다 — 미분류 캐릭터가 보관 중인
      * 값(N2)은 어떤 캐릭터 스냅샷에도 담기지 않으면서 필드 정의 CASCADE로 함께 소멸한다.
      *
-     * @param doomedCharacterIds 같은 작업이 함께 삭제하는 캐릭터 (그 값은 캐릭터 스냅샷이 담는다)
-     * @param doomedEventIds 동상
+     * 함께 삭제되는 캐릭터·사건의 값은 각자의 스냅샷이 담으므로 여기서 제외한다 — 그 제외는
+     * **SQL 서브쿼리로** 한다. 전량을 읽어 메모리에서 거르면 캐릭터 300명·필드 50개 세계관에서
+     * 1만 5천 행을 올려 거의 0행을 남기게 되고, 그 작업이 삭제 트랜잭션 안에서 벌어진다.
      */
-    suspend fun snapshotUniverse(
-        universe: Universe,
-        doomedCharacterIds: Set<Long>,
-        doomedEventIds: Set<Long>
-    ) {
+    suspend fun snapshotUniverse(universe: Universe) {
         val fieldDefs = db.fieldDefinitionDao().getFieldsByUniverseAllTypes(universe.id)
         val fieldDefIds = fieldDefs.map { it.id }
 
@@ -228,10 +235,12 @@ class TrashRepository(private val db: AppDatabase) {
         val eventValues = ArrayList<EventFieldValue>()
         for (chunk in fieldDefIds.chunked(IN_CLAUSE_CHUNK)) {
             entries.addAll(db.fieldValueEntryDao().getForFields(chunk))
-            db.characterFieldValueDao().getValuesByFieldDefs(chunk)
-                .filterTo(charValues) { it.characterId !in doomedCharacterIds }
-            db.eventFieldValueDao().getValuesByFieldDefs(chunk)
-                .filterTo(eventValues) { it.eventId !in doomedEventIds }
+            charValues.addAll(
+                db.characterFieldValueDao().getOrphanValuesForUniverseFields(chunk, universe.id)
+            )
+            eventValues.addAll(
+                db.eventFieldValueDao().getOrphanValuesForUniverseFields(chunk, universe.id)
+            )
         }
 
         val characterCodes = HashMap<String, String>()
@@ -320,8 +329,12 @@ class TrashRepository(private val db: AppDatabase) {
         val autoRels = db.characterRelationshipDao().getByFactionList(faction.id)
             .filter { it.characterId1 !in doomedCharacterIds && it.characterId2 !in doomedCharacterIds }
 
-        val autoChanges = if (deleteRelationships) {
-            autoRels.flatMap { db.characterRelationshipChangeDao().getChangesForRelationshipList(it.id) }
+        // 관계마다 단건 조회하지 않는다 — 세력 하나에 100명이 소속되면 자동 관계가 약 5천 개라
+        // 삭제 트랜잭션이 그대로 멈춘다('받쳐주는 확장성').
+        val autoChanges = if (deleteRelationships && autoRels.isNotEmpty()) {
+            autoRels.map { it.id }.chunked(IN_CLAUSE_CHUNK).flatMap {
+                db.characterRelationshipChangeDao().getChangesForRelationships(it)
+            }
         } else {
             emptyList()
         }
@@ -589,21 +602,7 @@ class TrashRepository(private val db: AppDatabase) {
         val factions: Set<String> = emptySet()
     )
 
-    private fun collectPeerCodes(items: List<TrashSnapshot>): PeerCodes {
-        val characters = HashSet<String>()
-        val factions = HashSet<String>()
-        for (item in items) {
-            when (item.entityType) {
-                TrashSnapshot.TYPE_CHARACTER ->
-                    parse(item, CharacterSnapshot::class.java)?.character?.code
-                        ?.takeIf { it.isNotBlank() }?.let { characters.add(it) }
-                TrashSnapshot.TYPE_FACTION ->
-                    parse(item, FactionSnapshot::class.java)?.faction?.code
-                        ?.takeIf { it.isNotBlank() }?.let { factions.add(it) }
-            }
-        }
-        return PeerCodes(characters, factions)
-    }
+
 
     /**
      * 스냅샷 하나를 복원한다. 성공하면 스냅샷을 소각한다.
@@ -690,15 +689,22 @@ class TrashRepository(private val db: AppDatabase) {
         val session = RestoreSession()
         // 같은 우선순위끼리 잇는 링크(세력↔세력, 캐릭터↔캐릭터)는 양쪽 스냅샷이 모두 담는다.
         // 먼저 복원되는 쪽이 상대를 못 찾는 것은 유실이 아니므로 미리 알려 준다.
-        val peerCodes = collectPeerCodes(items)
+        val peerCodes = collectOperationCodes(items).peers
+        val harvestTargets = ArrayList<Long>()
 
         for (item in items) {
             val outcome = try {
-                restoreOne(item, deferredLinks, session, peerCodes)
+                restoreOne(item, deferredLinks, session, peerCodes, harvestTargets)
             } catch (_: Exception) {
                 null
             }
             if (outcome == null) failed.add(item.entityName) else restored.add(outcome)
+        }
+
+        // 값 라이브러리 수확은 묶음이 끝난 뒤 세계관 단위로 한 번 — 캐릭터마다 부르면
+        // 전 필드 정의와 라이브러리를 매번 다시 읽어 항목 수의 제곱이 된다.
+        if (harvestTargets.isNotEmpty()) {
+            runCatching { harvestRestoredCharacters(harvestTargets) }
         }
 
         val lostImageLinks = resolveDeferredImageLinks(deferredLinks, session)
@@ -722,36 +728,48 @@ class TrashRepository(private val db: AppDatabase) {
     suspend fun previewOperation(opKey: String): List<RestorePreview> = withContext(Dispatchers.IO) {
         val items = trashDao.getByOperation(opKey)
             .sortedWith(compareBy({ TrashSnapshot.restorePriority(it.entityType) }, { it.id }))
-        val pending = collectPendingCodes(items)
-        val peers = collectPeerCodes(items)
-        items.mapNotNull { previewRestore(it.id, pending, peers) }
+        val codes = collectOperationCodes(items)
+        items.mapNotNull { previewRestore(it.id, codes.pending, codes.peers) }
     }
 
     /**
-     * 이 작업이 복원하면 존재하게 될 엔티티 코드 전부.
-     * payload를 파싱해 얻는다 — 목록 행(entityName)만으로는 코드를 알 수 없다.
+     * 이 작업이 복원하면 존재하게 될 엔티티 코드 — 전체와, 같은 우선순위 동료끼리의 것.
+     *
+     * payload를 파싱해 얻는다(목록 행의 entityName만으로는 코드를 알 수 없다).
+     * **한 번만 파싱한다** — 종전에는 pending/peer 수집이 각각 전량을 훑어, 수백 항목짜리
+     * 세계관 삭제에서 같은 payload를 세 번 파싱했다.
      */
-    private fun collectPendingCodes(items: List<TrashSnapshot>): Set<String> {
-        val codes = HashSet<String>()
+    private data class OperationCodes(val pending: Set<String>, val peers: PeerCodes)
+
+    private fun collectOperationCodes(items: List<TrashSnapshot>): OperationCodes {
+        val pending = HashSet<String>()
+        val characters = HashSet<String>()
+        val factions = HashSet<String>()
         for (item in items) {
             val code = when (item.entityType) {
-                TrashSnapshot.TYPE_CHARACTER -> parse(item, CharacterSnapshot::class.java)?.character?.code
+                TrashSnapshot.TYPE_CHARACTER ->
+                    parse(item, CharacterSnapshot::class.java)?.character?.code
+                        ?.also { if (it.isNotBlank()) characters.add(it) }
                 TrashSnapshot.TYPE_UNIVERSE -> parse(item, UniverseSnapshot::class.java)?.universe?.code
                 TrashSnapshot.TYPE_NOVEL -> parse(item, NovelSnapshot::class.java)?.novel?.code
-                TrashSnapshot.TYPE_FACTION -> parse(item, FactionSnapshot::class.java)?.faction?.code
+                TrashSnapshot.TYPE_FACTION ->
+                    parse(item, FactionSnapshot::class.java)?.faction?.code
+                        ?.also { if (it.isNotBlank()) factions.add(it) }
                 TrashSnapshot.TYPE_EVENT -> parse(item, EventSnapshot::class.java)?.event?.code
                 else -> null
             }
-            code?.takeIf { it.isNotBlank() }?.let { codes.add(it) }
+            code?.takeIf { it.isNotBlank() }?.let { pending.add(it) }
         }
-        return codes
+        return OperationCodes(pending, PeerCodes(characters, factions))
     }
 
     private suspend fun restoreOne(
         item: TrashSnapshot,
         deferredLinks: MutableList<DeferredImageLink>,
         session: RestoreSession,
-        peerCodes: PeerCodes = PeerCodes()
+        peerCodes: PeerCodes = PeerCodes(),
+        /** null이 아니면 값 라이브러리 수확을 **미룬다** — 복원된 캐릭터 id를 여기 모은다. */
+        deferredHarvest: MutableList<Long>? = null
     ): RestoreResult? {
         var result: RestoreResult? = null
         var restoredCharacterId = -1L
@@ -792,9 +810,28 @@ class TrashRepository(private val db: AppDatabase) {
         val out = result ?: return null
         trashDao.deleteById(item.id)
         if (restoredCharacterId != -1L) {
-            FieldValueLibraryRepository(db).harvestForCharacter(restoredCharacterId)
+            // 캐릭터마다 수확하면 전 필드 정의·값 라이브러리를 매번 다시 읽어 묶음 크기의
+            // 제곱이 된다. 작업 전체 복원은 끝에 한 번만 수확한다.
+            if (deferredHarvest != null) deferredHarvest.add(restoredCharacterId)
+            else FieldValueLibraryRepository(db).harvestForCharacter(restoredCharacterId)
         }
         return out
+    }
+
+    /**
+     * 복원된 캐릭터들의 값 라이브러리 수확 — **세계관 단위로 묶어** 한 번씩만 부른다.
+     * (`harvestForCharacter`를 캐릭터마다 부르면 전 필드 정의·라이브러리를 매번 다시 읽는다)
+     */
+    private suspend fun harvestRestoredCharacters(characterIds: List<Long>) {
+        val library = FieldValueLibraryRepository(db)
+        val universeIds = HashSet<Long>()
+        for (chunk in characterIds.distinct().chunked(IN_CLAUSE_CHUNK)) {
+            for (character in db.characterDao().getCharactersByIds(chunk)) {
+                val universeId = character.novelId?.let { db.novelDao().getNovelById(it)?.universeId }
+                if (universeId != null) universeIds.add(universeId)
+            }
+        }
+        if (universeIds.isNotEmpty()) library.harvestUniverses(universeIds)
     }
 
     /**
@@ -1719,6 +1756,9 @@ class TrashRepository(private val db: AppDatabase) {
     private suspend fun applyFaction(plan: FactionPlan, session: RestoreSession?): RestoreResult {
         // 미리보기 전용 계획은 아직 존재하지 않는 대상을 0번 id로 가리킨다 — 쓰면 오배정이다.
         check(!plan.previewOnly) { "미리보기 전용 계획으로 복원을 시도했다" }
+        // 세력은 세계관 없이 존재할 수 없다. 호출부 둘 다 blocker를 보지만, 여기서도 막는다 —
+        // 놓치면 universeId = -1L인 유령 세력이 만들어진다(FK가 없는 경로로 새면 더 나쁘다).
+        check(plan.blocker == null) { "복원할 수 없는 세력 계획이 적용 단계까지 왔다: ${plan.blocker}" }
         val source = plan.data.faction
         var faction = source.copy(universeId = plan.universeId)
         if (db.factionDao().getByCode(faction.code) != null) {
@@ -2201,11 +2241,18 @@ class TrashRepository(private val db: AppDatabase) {
                 codeOf(row)?.takeIf { it.isNotBlank() }?.let { idByCode[it] = idOf(row) }
             }
         }
-        // 같은 작업이 방금 복원하며 code를 재발급한 대상이 있으면 **그쪽이 이긴다** —
-        // DB 조회는 옛 코드로 살아 있던 남의 엔티티를 찾아낼 수 있다(오배정).
+        // 같은 작업이 방금 복원하며 만든 사본이 있으면 **그쪽이 이긴다** — DB 조회는 옛 코드로
+        // 살아 있던 원본을 찾아낼 수 있고, 그러면 뒤 항목이 사본이 아니라 원본에 붙는다(오배정).
+        //
+        // idByCode에 넣는 것만으로는 부족하다: `resolveByCode`는 `codeById[oldId] == code`면
+        // idByCode를 **보지도 않고** 옛 id를 확정한다(ID_CONFIRMED). 원본이 옛 id에 그대로
+        // 살아 있는 '편집 직전 백업' 복원이 정확히 그 상황이라, 그 지름길을 함께 끊어야 한다.
         if (entityType != null && session != null) {
             for (code in distinctCodes) {
-                session.lookup(entityType, code)?.let { idByCode[code] = it }
+                val restoredId = session.lookup(entityType, code) ?: continue
+                idByCode[code] = restoredId
+                val stale = codeById.filterValues { it == code }.keys.filter { it != restoredId }
+                for (oldId in stale) codeById.remove(oldId)
             }
         }
         return RefIndex(codeById, idByCode, liveIds)
@@ -2228,21 +2275,29 @@ class TrashRepository(private val db: AppDatabase) {
         // 다시 만들어지면 같은 id에 다른 코드가 붙고, 캐시된 옛 코드로 해석하면 **오배정**이
         // 된다(오배정은 생략보다 나쁘다 — R-1). 복원 한 번의 지역 캐시만 쓴다.
         val localUniverseCodes = HashMap<Long, String?>()
-        for (id in oldIds.distinct()) {
-            val fd = db.fieldDefinitionDao().getFieldById(id) ?: continue
+        // id 조회는 일괄로 — 캐릭터마다 필드 수만큼 단건 질의하면 세계관 복원이 수만 번을 돈다.
+        val defsById = HashMap<Long, com.novelcharacter.app.data.model.FieldDefinition>()
+        for (chunk in oldIds.distinct().chunked(IN_CLAUSE_CHUNK)) {
+            for (fd in db.fieldDefinitionDao().getFieldsByIds(chunk)) defsById[fd.id] = fd
+        }
+        for ((id, fd) in defsById) {
             val uCode = localUniverseCodes.getOrPut(fd.universeId) {
                 db.universeDao().getUniverseById(fd.universeId)?.code?.takeIf { it.isNotBlank() }
             }
             naturalById[id] = FieldDefNaturalKey(uCode, fd.entityType, fd.key)
         }
+        // 세계관 코드 → id도 캐시한다. ref가 30개면 같은 세계관을 30번 조회하던 자리다.
+        val universeIdByCode = HashMap<String, Long?>()
         for (ref in refs) {
             val uCode = ref.universeCode?.takeIf { it.isNotBlank() } ?: continue
             val type = ref.entityType?.takeIf { it.isNotBlank() } ?: continue
             val key = ref.key?.takeIf { it.isNotBlank() } ?: continue
+            if (idByNatural.containsKey(FieldDefNaturalKey(uCode, type, key))) continue
             // 세계관도 같은 작업이 방금 복원하며 code를 재발급했을 수 있다 — 그쪽이 이긴다.
-            val universeId = session?.lookup(TrashSnapshot.TYPE_UNIVERSE, uCode)
-                ?: db.universeDao().getUniverseByCode(uCode)?.id
-                ?: continue
+            val universeId = universeIdByCode.getOrPut(uCode) {
+                session?.lookup(TrashSnapshot.TYPE_UNIVERSE, uCode)
+                    ?: db.universeDao().getUniverseByCode(uCode)?.id
+            } ?: continue
             val fd = db.fieldDefinitionDao().getFieldByKey(universeId, key, type) ?: continue
             idByNatural[FieldDefNaturalKey(uCode, type, key)] = fd.id
         }
@@ -2258,20 +2313,24 @@ class TrashRepository(private val db: AppDatabase) {
      * 단, 라이브러리(image_meta)·다른 스냅샷·살아있는 엔티티가 여전히 쓰는 파일은 남긴다
      * (경로 공유 하 무음 파괴 방지). pruneIfNeeded의 자동 purge에도 동일하게 적용된다.
      */
-    suspend fun purgeSnapshot(snapshot: TrashSnapshot) = purgeAll(listOf(snapshot))
+    suspend fun purgeSnapshot(snapshotId: Long): Unit = withContext(Dispatchers.IO) {
+        val item = trashDao.getImagesById(snapshotId) ?: return@withContext
+        purgeAll(listOf(item))
+    }
 
     /** 작업 하나를 통째로 영구 삭제한다. @return 지운 항목 수 */
     suspend fun purgeOperation(opKey: String): Int = withContext(Dispatchers.IO) {
-        val items = trashDao.getByOperation(opKey)
+        val items = trashDao.getImagesByOperation(opKey)
         purgeAll(items)
         items.size
     }
 
     /** 휴지통 비우기 — 영구 삭제한 스냅샷 개수를 반환한다(결과 통보용) */
     suspend fun emptyTrash(): Int = withContext(Dispatchers.IO) {
-        val all = trashDao.getAllList()
-        purgeAll(all)
-        all.size
+        val all = trashDao.getAllImages()
+        val total = trashDao.count()
+        purgeAll(all, deleteEverything = true)
+        total
     }
 
     /**
@@ -2284,8 +2343,8 @@ class TrashRepository(private val db: AppDatabase) {
      * 지울 스냅샷 **전부**를 보호에서 제외한 뒤 계산한다 — 하나씩 제외하면 함께 지우는
      * 형제 스냅샷이 서로를 보호해 파일이 영원히 남는다.
      */
-    private suspend fun purgeAll(snapshots: List<TrashSnapshot>) {
-        if (snapshots.isEmpty()) return
+    private suspend fun purgeAll(snapshots: List<TrashSnapshotImages>, deleteEverything: Boolean = false) {
+        if (snapshots.isEmpty() && !deleteEverything) return
         val candidates = snapshots.flatMap { parseImagePathStrings(it.imagePaths) }
         if (candidates.isNotEmpty()) {
             try {
@@ -2297,7 +2356,14 @@ class TrashRepository(private val db: AppDatabase) {
                 // 가드 실패 시 파일은 남긴다(삭제보다 보존이 안전) — 스냅샷 행 삭제는 계속 진행.
             }
         }
-        for (snapshot in snapshots) trashDao.deleteById(snapshot.id)
+        // 행 단위 자동커밋을 피한다 — 수만 행이면 커밋 수만 번이 된다.
+        if (deleteEverything) {
+            trashDao.deleteAll()
+        } else {
+            db.withTransaction {
+                snapshots.map { it.id }.chunked(IN_CLAUSE_CHUNK).forEach { trashDao.deleteByIds(it) }
+            }
+        }
     }
 
     /**

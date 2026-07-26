@@ -62,7 +62,7 @@ class UniverseRepository(
             val doomedEventIds = events.map { it.id }.toSet()
             val factions = db.factionDao().getFactionsByUniverseList(universe.id)
 
-            trash.snapshotUniverse(universe, doomedCharacterIds, doomedEventIds)
+            trash.snapshotUniverse(universe)
             for (novel in novels) trash.snapshotNovel(novel, doomedEventIds)
             for (faction in factions) {
                 // 세력은 세계관 FK CASCADE로 죽는다 — 자동 관계는 삭제되지 않고

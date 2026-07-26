@@ -71,6 +71,7 @@ class FieldFilterHelperTest {
         override suspend fun deleteFieldValueForCharacters(characterIds: List<Long>, fieldDefId: Long) = unused()
         override suspend fun upsert(value: CharacterFieldValue): Long = unused()
         override suspend fun getValuesByFieldDefs(fieldDefIds: List<Long>): List<CharacterFieldValue> = unused()
+        override suspend fun getOrphanValuesForUniverseFields(fieldDefIds: List<Long>, universeId: Long): List<CharacterFieldValue> = unused()
 
         private fun unused(): Nothing = throw UnsupportedOperationException("not used in test")
     }

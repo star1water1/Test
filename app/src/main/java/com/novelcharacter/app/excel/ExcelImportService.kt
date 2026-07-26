@@ -5387,16 +5387,24 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val trash = trashForImport()
             val allIds = db.factionDao().getAllFactionIds()
             val doomed = allIds.filter { it !in matchedFactionIds }
-            for (chunk in doomed.chunked(IN_CLAUSE_CHUNK)) {
-                for (faction in db.factionDao().getByIds(chunk)) {
-                    try {
-                        // 세력만 지우므로 관계는 살아남고 factionId만 null이 된다(SET_NULL).
-                        trash.snapshotFaction(faction, deleteRelationships = false)
-                        db.factionDao().deleteById(faction.id)
-                        result.deletedFactions++
-                    } catch (e: Exception) {
-                        result.warnings.add("세력 '${faction.name}' 삭제에 실패해 건너뛰었습니다: ${e.message}")
-                    }
+            // **전부 스냅샷한 뒤 전부 삭제한다.** 하나씩 스냅샷→삭제하면, 먼저 지운 세력의
+            // FK CASCADE가 세력 간 관계 행을 이미 없애 버려 두 번째 세력의 payload에는
+            // 그 관계가 담기지 않는다(faction_relationships에는 code가 없어 그 행이 유일본이다).
+            val doomedFactions = doomed.chunked(IN_CLAUSE_CHUNK).flatMap { db.factionDao().getByIds(it) }
+            for (faction in doomedFactions) {
+                try {
+                    // 세력만 지우므로 관계는 살아남고 factionId만 null이 된다(SET_NULL).
+                    trash.snapshotFaction(faction, deleteRelationships = false)
+                } catch (e: Exception) {
+                    result.warnings.add("세력 '${faction.name}' 백업에 실패해 삭제하지 않았습니다: ${e.message}")
+                }
+            }
+            for (faction in doomedFactions) {
+                try {
+                    db.factionDao().deleteById(faction.id)
+                    result.deletedFactions++
+                } catch (e: Exception) {
+                    result.warnings.add("세력 '${faction.name}' 삭제에 실패해 건너뛰었습니다: ${e.message}")
                 }
             }
             if (result.deletedFactions > 0) {
