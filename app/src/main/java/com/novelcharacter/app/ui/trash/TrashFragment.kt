@@ -128,7 +128,7 @@ class TrashFragment : Fragment() {
                 .setTitle(R.string.trash_restore_preview_title)
                 .setMessage(message.toString())
                 .setPositiveButton(R.string.trash_restore) { _, _ ->
-                    restore(snapshot, warned = true, previewLossTotal = preview.lossTotal)
+                    restore(snapshot, warned = true, predicted = preview.losses)
                 }
                 .setNegativeButton(R.string.cancel, null)
                 .show()
@@ -168,11 +168,16 @@ class TrashFragment : Fragment() {
 
     /**
      * @param warned 복원 전 확인 다이얼로그에서 유실 항목을 이미 고지하고 동의를 받았는가.
-     * @param previewLossTotal 그때 고지한 유실 규모. **실제 유실이 이보다 커지면 사후에도 알린다** —
-     *   미리보기는 예측이고 결과가 사실이다. 중복 관계에 매달려 합쳐지지 못한 이력처럼
-     *   써 보기 전에는 알 수 없는 유실이 여기서 드러난다(무음 유실 금지).
+     * @param predicted 그때 고지한 항목별 유실 규모. **어느 항목이라도 실제가 이보다 커지면
+     *   사후에도 알린다** — 미리보기는 예측이고 결과가 사실이다. 총량 하나로 비교하면
+     *   예고분이 사라지고 다른 유실이 생긴 경우(총량은 줄었지만 동의한 적 없는 유실)를 놓친다.
      */
-    private fun restore(snapshot: TrashSnapshot, warned: Boolean, previewLossTotal: Int = 0) {
+    private fun restore(
+        snapshot: TrashSnapshot,
+        warned: Boolean,
+        predicted: com.novelcharacter.app.data.repository.RestoreLossCounts =
+            com.novelcharacter.app.data.repository.RestoreLossCounts()
+    ) {
         viewLifecycleOwner.lifecycleScope.launch {
             try {
                 val result = trashRepository.restoreCharacter(snapshot.id)
@@ -196,7 +201,7 @@ class TrashFragment : Fragment() {
                 // 코드 재연결·중복 관계는 실제로 써 보기 전에는 알 수 없는 결과다.
                 val notes = mutableListOf<String>()
                 // 고지 없이 진행했거나, 실제 유실이 예고보다 커졌으면 사실대로 알린다.
-                if (result.hasSkipped && (!warned || result.lossTotal > previewLossTotal)) {
+                if (result.hasSkipped && (!warned || result.losses.exceeds(predicted))) {
                     val details = buildSkipDetails(
                         novelCleared = result.novelCleared,
                         fieldValues = result.skippedFieldValues,

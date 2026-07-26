@@ -82,18 +82,25 @@ class TrashRepository(private val db: AppDatabase) {
         /** id가 재발급됐지만 코드/자연키로 다시 찾아 되살린 참조 건수 (N1 수정의 실효) */
         val relinkedByCode: Int = 0
     ) {
-        val hasSkipped: Boolean
-            get() = lossTotal > 0
+        val hasSkipped: Boolean get() = losses.any
 
         /**
-         * 유실 규모의 합 — 미리보기가 예고한 값과 비교해 **실제가 더 커졌는지** 판정하는 데 쓴다.
-         * 미리보기는 예측이고 결과가 사실이므로, 커졌다면 사후에라도 반드시 알려야 한다.
+         * 항목별 유실 규모 — 미리보기가 예고한 값과 **항목별로** 비교해 실제가 커졌는지 본다.
+         * 총량 하나로 비교하면 구성이 바뀌는 경우(예고분은 사라지고 다른 유실이 생긴 경우)를 놓친다.
          */
-        val lossTotal: Int
-            get() = skippedFieldValues + mergedFieldValues + skippedRelationships +
-                skippedRelationshipChanges + duplicateRelationshipChanges + skippedMemberships +
-                skippedEvents + clearedRelationshipFactions + clearedChangeEvents +
-                (if (novelCleared) 1 else 0)
+        val losses: RestoreLossCounts
+            get() = RestoreLossCounts(
+                fieldValues = skippedFieldValues,
+                mergedFieldValues = mergedFieldValues,
+                relationships = skippedRelationships,
+                relationshipChanges = skippedRelationshipChanges,
+                duplicateRelationshipChanges = duplicateRelationshipChanges,
+                memberships = skippedMemberships,
+                events = skippedEvents,
+                relationshipFactions = clearedRelationshipFactions,
+                changeEvents = clearedChangeEvents,
+                novelCleared = novelCleared
+            )
     }
 
     /**
@@ -125,14 +132,24 @@ class TrashRepository(private val db: AppDatabase) {
         /** 구버전 payload라 안정 식별자가 없어 id 단독으로 판단한 참조가 있다 */
         val legacyPayload: Boolean = false
     ) {
-        val hasSkipped: Boolean
-            get() = lossTotal > 0
+        val hasSkipped: Boolean get() = losses.any
 
-        /** [RestoreResult.lossTotal]과 같은 척도 — 예측과 사실을 비교하기 위해 형태를 맞춘다. */
-        val lossTotal: Int
-            get() = skippedFieldValues + mergedFieldValues + skippedRelationships +
-                skippedRelationshipChanges + skippedMemberships + skippedEvents +
-                clearedRelationshipFactions + clearedChangeEvents + (if (novelCleared) 1 else 0)
+        /**
+         * [RestoreResult.losses]와 같은 형태 — 예측과 사실을 항목별로 비교하기 위해서다.
+         * 중복 관계에 매달린 이력은 써 보기 전에는 알 수 없으므로 예측에서는 언제나 0이다.
+         */
+        val losses: RestoreLossCounts
+            get() = RestoreLossCounts(
+                fieldValues = skippedFieldValues,
+                mergedFieldValues = mergedFieldValues,
+                relationships = skippedRelationships,
+                relationshipChanges = skippedRelationshipChanges,
+                memberships = skippedMemberships,
+                events = skippedEvents,
+                relationshipFactions = clearedRelationshipFactions,
+                changeEvents = clearedChangeEvents,
+                novelCleared = novelCleared
+            )
 
         /**
          * 구버전 payload는 유실이 없어도 알린다 — 안정 식별자가 없어 id 단독으로 판단하므로

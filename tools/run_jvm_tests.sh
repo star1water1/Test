@@ -81,6 +81,7 @@ $MAIN/data/model/SnapshotRefs.kt
 $MAIN/data/repository/SnapshotRefResolver.kt
 $MAIN/data/repository/CharacterFieldValueMerge.kt
 $MAIN/data/repository/TrashPruneSelector.kt
+$MAIN/data/repository/RestoreLossCounts.kt
 $MAIN/data/model/FieldFilter.kt
 $MAIN/data/repository/QueryUtils.kt
 $MAIN/data/dao/CharacterFieldValueDao.kt
@@ -109,6 +110,7 @@ $TEST/data/CharacterSnapshotPayloadTest.kt
 $TEST/data/CharacterFieldValueMergeTest.kt
 $TEST/excel/SheetNameAssignmentTest.kt
 $TEST/data/TrashPruneSelectorTest.kt
+$TEST/data/RestoreLossCountsTest.kt
 "
 # 선택 소스: 존재하고 순수 JVM이면 추가
 for extra in "$MAIN/util/SortComparators.kt" "$MAIN/util/EpochMemo.kt" "$MAIN/ai/AiJsonExtractor.kt"; do
