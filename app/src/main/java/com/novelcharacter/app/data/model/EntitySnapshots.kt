@@ -58,6 +58,27 @@ data class EntityRefs(
 data class UniverseSnapshot(
     val universe: Universe,
     val fieldDefinitions: List<FieldDefinition>? = null,
+    val refs: EntityRefs? = null
+)
+
+/**
+ * 세계관 스냅샷의 **크기가 자라는 부분**을 담는 이어붙임 행 ([UniverseDataSnapshot]).
+ *
+ * 값 라이브러리와 고아 필드값은 프로젝트 규모에 따라 무한히 자란다. 한 행에 몰아넣으면
+ * payload가 Android CursorWindow 한도(2MB)를 넘겨 **그 백업을 영영 읽지 못한다** —
+ * "휴지통에 보관됩니다"라고 안내한 뒤에 말이다. 4-6이 말하는 "복원할 수 없는 것"을
+ * 새로운 방식으로 만드는 셈이라, 크기 예산에 맞춰 여러 행으로 쪼갠다.
+ *
+ * 실제로 도달하는 경로가 있다: 캐릭터를 전부 '작품 미지정'으로 일괄 변경하면(3탭) 그
+ * 캐릭터들은 세계관 밖이 되지만 필드값은 세계관 필드를 그대로 가리켜, 세계관 삭제 시
+ * 프로젝트 전체의 필드값이 고아로 한 행에 실린다.
+ *
+ * 세계관 본체보다 **나중에** 복원되므로(restorePriority) 그때는 필드 정의가 이미 있고,
+ * 참조는 자연키·코드로 다시 찾는다(R-1).
+ */
+data class UniverseDataSnapshot(
+    /** 이 데이터가 속한 세계관의 코드 — 없으면 붙일 자리를 찾을 수 없다. */
+    val universeCode: String? = null,
     val fieldValueEntries: List<FieldValueEntry>? = null,
     /** 이 세계관 필드를 가리키지만 **삭제되지 않는** 캐릭터가 가진 값 */
     val orphanCharacterFieldValues: List<CharacterFieldValue>? = null,

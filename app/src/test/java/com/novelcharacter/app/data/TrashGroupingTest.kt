@@ -37,14 +37,16 @@ class TrashGroupingTest {
             snap(TrashSnapshot.TYPE_EVENT, "대전쟁", "op1"),
             snap(TrashSnapshot.TYPE_UNIVERSE, "아스테리아", "op1"),
             snap(TrashSnapshot.TYPE_FACTION, "은검단", "op1"),
+            snap(TrashSnapshot.TYPE_UNIVERSE_DATA, "아스테리아", "op1"),
             snap(TrashSnapshot.TYPE_NOVEL, "1부", "op1")
         )
         val group = TrashGrouping.group(items).single()
+        // 세계관 부가 데이터는 본체 **뒤**여야 한다 — 그때 필드 정의가 이미 만들어져 있다.
         assertEquals(
             listOf(
-                TrashSnapshot.TYPE_UNIVERSE, TrashSnapshot.TYPE_NOVEL,
-                TrashSnapshot.TYPE_FACTION, TrashSnapshot.TYPE_EVENT,
-                TrashSnapshot.TYPE_CHARACTER
+                TrashSnapshot.TYPE_UNIVERSE, TrashSnapshot.TYPE_UNIVERSE_DATA,
+                TrashSnapshot.TYPE_NOVEL, TrashSnapshot.TYPE_FACTION,
+                TrashSnapshot.TYPE_EVENT, TrashSnapshot.TYPE_CHARACTER
             ),
             group.items.map { it.entityType }
         )

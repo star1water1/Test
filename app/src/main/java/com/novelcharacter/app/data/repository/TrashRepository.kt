@@ -32,6 +32,7 @@ import com.novelcharacter.app.data.model.TimelineEvent
 import com.novelcharacter.app.data.model.TimelineEventNovelCrossRef
 import com.novelcharacter.app.data.model.TrashSnapshot
 import com.novelcharacter.app.data.model.Universe
+import com.novelcharacter.app.data.model.UniverseDataSnapshot
 import com.novelcharacter.app.data.model.UniverseSnapshot
 import com.novelcharacter.app.data.model.generateEntityCode
 import com.novelcharacter.app.util.GsonTypes
@@ -276,9 +277,6 @@ class TrashRepository(
         val snapshot = UniverseSnapshot(
             universe = universe,
             fieldDefinitions = fieldDefs,
-            fieldValueEntries = entries,
-            orphanCharacterFieldValues = charValues,
-            orphanEventFieldValues = eventValues,
             refs = EntityRefs(
                 characters = characterCodes,
                 events = eventCodes,
@@ -289,6 +287,84 @@ class TrashRepository(
             TrashSnapshot.TYPE_UNIVERSE, universe.name, snapshot,
             parseImagePathStrings(universe.imagePaths)
         )
+
+        // 크기가 자라는 부분은 **여러 행으로 쪼갠다.** 값 라이브러리와 고아 필드값은
+        // 프로젝트 규모에 비례하는데, 한 행이 CursorWindow 한도(2MB)를 넘으면 그 백업을
+        // 영영 읽지 못한다 — 복원 가능하다고 안내한 뒤에.
+        val fieldDefRefs = HashMap<String, FieldDefRef>()
+        for (fd in fieldDefs) {
+            fieldDefRefs[fd.id.toString()] =
+                FieldDefRef(universeCode = universe.code, entityType = fd.entityType, key = fd.key)
+        }
+        writeUniverseDataChunks(universe, entries, charValues, eventValues, fieldDefRefs, characterCodes, eventCodes)
+    }
+
+    /**
+     * 세계관 부가 데이터를 크기 예산([PAYLOAD_BUDGET_CHARS]) 단위로 잘라 저장한다.
+     *
+     * 참조는 전부 안정 식별자로 병기한다 — 이 행들은 세계관 본체보다 **나중에** 복원되므로
+     * 그때는 필드 정의가 새 id로 다시 만들어져 있고, 옛 id로는 아무것도 찾을 수 없다(R-1).
+     */
+    private suspend fun writeUniverseDataChunks(
+        universe: Universe,
+        entries: List<FieldValueEntry>,
+        charValues: List<CharacterFieldValue>,
+        eventValues: List<EventFieldValue>,
+        fieldDefRefs: Map<String, FieldDefRef>,
+        characterCodes: Map<String, String>,
+        eventCodes: Map<String, String>
+    ) {
+        if (entries.isEmpty() && charValues.isEmpty() && eventValues.isEmpty()) return
+
+        val pendingEntries = ArrayList<FieldValueEntry>()
+        val pendingChars = ArrayList<CharacterFieldValue>()
+        val pendingEvents = ArrayList<EventFieldValue>()
+        var budget = 0
+
+        suspend fun flush() {
+            if (pendingEntries.isEmpty() && pendingChars.isEmpty() && pendingEvents.isEmpty()) return
+            // 이 조각이 실제로 쓰는 참조만 담는다 — 조각마다 전체 맵을 복사하면 그 자체가 커진다.
+            val usedDefIds = (pendingEntries.map { it.fieldDefinitionId } +
+                pendingChars.map { it.fieldDefinitionId } +
+                pendingEvents.map { it.fieldDefinitionId }).distinct()
+            insertSnapshot(
+                TrashSnapshot.TYPE_UNIVERSE_DATA, universe.name,
+                UniverseDataSnapshot(
+                    universeCode = universe.code,
+                    fieldValueEntries = pendingEntries.toList(),
+                    orphanCharacterFieldValues = pendingChars.toList(),
+                    orphanEventFieldValues = pendingEvents.toList(),
+                    refs = EntityRefs(
+                        universeCode = universe.code,
+                        fieldDefs = usedDefIds.mapNotNull { id ->
+                            fieldDefRefs[id.toString()]?.let { id.toString() to it }
+                        }.toMap(),
+                        characters = pendingChars.mapNotNull { v ->
+                            characterCodes[v.characterId.toString()]?.let { v.characterId.toString() to it }
+                        }.toMap(),
+                        events = pendingEvents.mapNotNull { v ->
+                            eventCodes[v.eventId.toString()]?.let { v.eventId.toString() to it }
+                        }.toMap()
+                    )
+                ),
+                emptyList()
+            )
+            pendingEntries.clear(); pendingChars.clear(); pendingEvents.clear(); budget = 0
+        }
+
+        for (e in entries) {
+            pendingEntries.add(e); budget += gson.toJson(e).length
+            if (budget >= PAYLOAD_BUDGET_CHARS) flush()
+        }
+        for (v in charValues) {
+            pendingChars.add(v); budget += gson.toJson(v).length
+            if (budget >= PAYLOAD_BUDGET_CHARS) flush()
+        }
+        for (v in eventValues) {
+            pendingEvents.add(v); budget += gson.toJson(v).length
+            if (budget >= PAYLOAD_BUDGET_CHARS) flush()
+        }
+        flush()
     }
 
     /**
@@ -601,6 +677,7 @@ class TrashRepository(
             TrashSnapshot.TYPE_CHARACTER ->
                 characterPlan(snap, pendingCodes, pendingPeerCodes = peerCodes.characters)?.toPreview()
             TrashSnapshot.TYPE_UNIVERSE -> universePlan(snap, pendingCodes)?.toPreview()
+            TrashSnapshot.TYPE_UNIVERSE_DATA -> universeDataPlan(snap, pendingCodes)?.toPreview()
             TrashSnapshot.TYPE_NOVEL -> novelPlan(snap, pendingCodes)?.toPreview()
             TrashSnapshot.TYPE_FACTION ->
                 factionPlan(snap, pendingCodes, pendingPeerCodes = peerCodes.factions)?.toPreview()
@@ -648,6 +725,11 @@ class TrashRepository(
                     val applied = applyUniverse(plan, null)
                     result = applied.first
                     deferred = applied.second
+                }
+                TrashSnapshot.TYPE_UNIVERSE_DATA -> {
+                    val plan = universeDataPlan(snap) ?: return@withTransaction
+                    if (plan.blocker != null) return@withTransaction
+                    result = applyUniverseData(plan)
                 }
                 TrashSnapshot.TYPE_NOVEL -> {
                     val plan = novelPlan(snap) ?: return@withTransaction
@@ -828,6 +910,11 @@ class TrashRepository(
                     val applied = applyUniverse(plan, session)
                     result = applied.first
                     applied.second?.let { deferredLinks.add(it) }
+                }
+                TrashSnapshot.TYPE_UNIVERSE_DATA -> {
+                    val plan = universeDataPlan(item, session = session) ?: return@withTransaction
+                    if (plan.blocker != null) return@withTransaction
+                    result = applyUniverseData(plan)
                 }
                 TrashSnapshot.TYPE_NOVEL -> {
                     val plan = novelPlan(item, session = session) ?: return@withTransaction
@@ -1307,10 +1394,6 @@ class TrashRepository(
         val data: UniverseSnapshot,
         /** 옛 필드정의 id → payload의 정의 (복원 후 새 id로 치환하기 위한 원본) */
         val fieldDefinitions: List<FieldDefinition>,
-        val fieldValueEntries: List<FieldValueEntry>,
-        /** (해석된 characterId, 옛 fieldDefinitionId, 값) */
-        val orphanCharacterValues: List<Triple<Long, Long, CharacterFieldValue>>,
-        val orphanEventValues: List<Triple<Long, Long, EventFieldValue>>,
         val imageCharacterCode: String?,
         val imageNovelCode: String?,
         val losses: RestoreLossCounts,
@@ -1342,62 +1425,11 @@ class TrashRepository(
         val refs = data.refs
         val tally = Tally(legacy = refs == null, pendingCodes = pendingCodes)
 
-        val orphanChars = data.orphanCharacterFieldValues.orEmpty()
-        val orphanEvents = data.orphanEventFieldValues.orEmpty()
-
+        // 값 라이브러리·고아 필드값은 이제 이어붙임 행(TYPE_UNIVERSE_DATA)이 담는다 —
+        // 한 행에 몰아넣으면 payload가 CursorWindow 한도를 넘겨 백업을 읽을 수 없게 된다.
         val charIndex = characterIndex(
-            orphanChars.map { it.characterId } + data.universe.imageCharacterId.asList(),
-            refs?.characters?.values.orEmpty(), session
+            data.universe.imageCharacterId.asList(), refs?.characters?.values.orEmpty(), session
         )
-        val evIndex = eventIndex(orphanEvents.map { it.eventId }, refs?.events?.values.orEmpty(), session)
-
-        var orphanLost = 0
-        // 같은 (캐릭터, 필드정의)로 수렴한 값은 유니크 제약에 걸리므로 접는다 — 유실이지만
-        // 사유가 '대상을 못 찾음'과 다르므로 mergedFieldValues 칸에 넣는다.
-        var merged = 0
-        val seenCharPairs = HashSet<Pair<Long, Long>>()
-        val plannedChars = ArrayList<Triple<Long, Long, CharacterFieldValue>>(orphanChars.size)
-        for (v in orphanChars) {
-            val code = refs?.characters?.get(v.characterId.toString())
-            val res = tally.note(
-                SnapshotRefResolver.resolveByCode(
-                    v.characterId, code, charIndex.codeById, charIndex.idByCode, charIndex.liveIds
-                ),
-                code
-            )
-            val newCharId = res.id
-            if (newCharId == null) {
-                orphanLost++
-                continue
-            }
-            if (!seenCharPairs.add(newCharId to v.fieldDefinitionId)) {
-                merged++
-                continue
-            }
-            plannedChars.add(Triple(newCharId, v.fieldDefinitionId, v))
-        }
-
-        val seenEventPairs = HashSet<Pair<Long, Long>>()
-        val plannedEvents = ArrayList<Triple<Long, Long, EventFieldValue>>(orphanEvents.size)
-        for (v in orphanEvents) {
-            val code = refs?.events?.get(v.eventId.toString())
-            val res = tally.note(
-                SnapshotRefResolver.resolveByCode(
-                    v.eventId, code, evIndex.codeById, evIndex.idByCode, evIndex.liveIds
-                ),
-                code
-            )
-            val newEventId = res.id
-            if (newEventId == null) {
-                orphanLost++
-                continue
-            }
-            if (!seenEventPairs.add(newEventId to v.fieldDefinitionId)) {
-                merged++
-                continue
-            }
-            plannedEvents.add(Triple(newEventId, v.fieldDefinitionId, v))
-        }
 
         val livingSame = data.universe.code.takeIf { it.isNotBlank() }
             ?.let { db.universeDao().getUniverseByCode(it) != null } ?: false
@@ -1405,13 +1437,10 @@ class TrashRepository(
         return UniversePlan(
             data = data,
             fieldDefinitions = data.fieldDefinitions.orEmpty(),
-            fieldValueEntries = data.fieldValueEntries.orEmpty(),
-            orphanCharacterValues = plannedChars,
-            orphanEventValues = plannedEvents,
             imageCharacterCode = data.universe.imageCharacterId
                 ?.let { refs?.characters?.get(it.toString()) },
             imageNovelCode = data.universe.imageNovelId?.let { refs?.novels?.get(it.toString()) },
-            losses = RestoreLossCounts(orphanFieldValues = orphanLost, mergedFieldValues = merged),
+            losses = RestoreLossCounts(),
             relinkedByCode = tally.relinked,
             legacyPayload = tally.legacyGuess,
             previewOnly = tally.previewOnly,
@@ -1455,60 +1484,6 @@ class TrashRepository(
             newDefIdByOld[def.id] = newId
         }
 
-        var skippedEntries = 0
-        val entries = ArrayList<FieldValueEntry>(plan.fieldValueEntries.size)
-        // 코드 충돌 확인은 **한 번에** — 엔트리마다 단건 질의하면 복원이 엔트리 수만큼 왕복한다.
-        val takenCodes = HashSet<String>()
-        val candidateCodes = plan.fieldValueEntries.map { it.code }.filter { it.isNotBlank() }.distinct()
-        for (chunk in candidateCodes.chunked(IN_CLAUSE_CHUNK)) {
-            db.fieldValueEntryDao().getByCodes(chunk).forEach { takenCodes.add(it.code) }
-        }
-        for (entry in plan.fieldValueEntries) {
-            val newDefId = newDefIdByOld[entry.fieldDefinitionId]
-            if (newDefId == null) {
-                skippedEntries++
-                continue
-            }
-            val safeCode = entry.code.takeIf { it.isNotBlank() && takenCodes.add(it) }
-                ?: generateEntityCode()
-            entries.add(entry.copy(id = 0, fieldDefinitionId = newDefId, code = safeCode))
-        }
-        if (entries.isNotEmpty()) {
-            skippedEntries += db.fieldValueEntryDao().insertAllIgnore(entries).count { it == -1L }
-        }
-
-        var orphanLost = plan.losses.orphanFieldValues
-        // 새로 만든 필드 정의라 기존 값이 있을 수 없다 — 그래도 확인은 하되, 캐릭터 단위로
-        // **한 번에** 읽는다(값마다 단건 질의하면 고아 값 수만큼 왕복한다).
-        val existingByChar = HashMap<Long, Set<Long>>()
-        for (chunk in plan.orphanCharacterValues.map { it.first }.distinct().chunked(IN_CLAUSE_CHUNK)) {
-            for (v in db.characterFieldValueDao().getValuesForCharacters(chunk)) {
-                existingByChar[v.characterId] =
-                    existingByChar.getOrElse(v.characterId) { emptySet() } + v.fieldDefinitionId
-            }
-        }
-        val orphanCharRows = ArrayList<CharacterFieldValue>(plan.orphanCharacterValues.size)
-        for ((charId, oldDefId, value) in plan.orphanCharacterValues) {
-            val newDefId = newDefIdByOld[oldDefId]
-            if (newDefId == null || newDefId in existingByChar.getOrElse(charId) { emptySet() }) {
-                orphanLost++
-                continue
-            }
-            orphanCharRows.add(value.copy(id = 0, characterId = charId, fieldDefinitionId = newDefId))
-        }
-        if (orphanCharRows.isNotEmpty()) db.characterFieldValueDao().insertAll(orphanCharRows)
-        // 값마다 insertAll을 부르지 않고 모아서 한 번에 — 세계관 하나에 고아 값이 수천 건일 수 있다.
-        val orphanEventRows = ArrayList<EventFieldValue>(plan.orphanEventValues.size)
-        for ((eventId, oldDefId, value) in plan.orphanEventValues) {
-            val newDefId = newDefIdByOld[oldDefId]
-            if (newDefId == null || db.eventFieldValueDao().getValue(eventId, newDefId) != null) {
-                orphanLost++
-                continue
-            }
-            orphanEventRows.add(value.copy(id = 0, eventId = eventId, fieldDefinitionId = newDefId))
-        }
-        if (orphanEventRows.isNotEmpty()) db.eventFieldValueDao().insertAll(orphanEventRows)
-
         val deferred = if (plan.imageCharacterCode != null || plan.imageNovelCode != null) {
             DeferredImageLink(
                 TrashSnapshot.TYPE_UNIVERSE, newUniverseId,
@@ -1521,14 +1496,202 @@ class TrashRepository(
         val result = RestoreResult(
             entityType = TrashSnapshot.TYPE_UNIVERSE,
             restoredName = source.name,
+            losses = plan.losses.copy(fieldDefinitions = skippedDefs),
+            relinkedByCode = plan.relinkedByCode
+        )
+        return result to deferred
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // 복원 — 세계관 부가 데이터 (이어붙임 행)
+    // ──────────────────────────────────────────────────────────────────────
+
+    private data class UniverseDataPlan(
+        val data: UniverseDataSnapshot,
+        /** (해석된 필드정의 id, 엔트리) */
+        val entries: List<Pair<Long, FieldValueEntry>>,
+        /** (해석된 characterId, 해석된 필드정의 id, 값) */
+        val characterValues: List<Triple<Long, Long, CharacterFieldValue>>,
+        val eventValues: List<Triple<Long, Long, EventFieldValue>>,
+        val losses: RestoreLossCounts,
+        val relinkedByCode: Int,
+        val legacyPayload: Boolean,
+        val previewOnly: Boolean,
+        val blocker: RestoreBlocker?
+    ) {
+        fun toPreview() = RestorePreview(
+            entityType = TrashSnapshot.TYPE_UNIVERSE_DATA,
+            entityName = data.universeCode.orEmpty(),
+            losses = losses,
+            relinkedByCode = relinkedByCode,
+            legacyPayload = legacyPayload,
+            blocker = blocker
+        )
+    }
+
+    private suspend fun universeDataPlan(
+        snap: TrashSnapshot,
+        pendingCodes: Set<String> = emptySet(),
+        session: RestoreSession? = null
+    ): UniverseDataPlan? {
+        val data = parse(snap, UniverseDataSnapshot::class.java) ?: return null
+        val refs = data.refs
+        val tally = Tally(legacy = refs == null, pendingCodes = pendingCodes)
+
+        val uCode = data.universeCode ?: refs?.universeCode
+        val universeExists = uCode != null &&
+            (session?.lookup(TrashSnapshot.TYPE_UNIVERSE, uCode) != null ||
+                db.universeDao().getUniverseByCode(uCode) != null ||
+                uCode in pendingCodes)
+
+        val fieldRefs = refs?.fieldDefs.orEmpty()
+        val entries = data.fieldValueEntries.orEmpty()
+        val charValues = data.orphanCharacterFieldValues.orEmpty()
+        val eventValues = data.orphanEventFieldValues.orEmpty()
+        val fieldIndex = buildFieldDefIndex(
+            oldIds = (entries.map { it.fieldDefinitionId } + charValues.map { it.fieldDefinitionId } +
+                eventValues.map { it.fieldDefinitionId }).distinct(),
+            refs = fieldRefs.values,
+            session = session
+        )
+
+        fun resolveDef(oldId: Long): Long? = tally.note(
+            SnapshotRefResolver.resolveFieldDef(
+                oldId, fieldRefs[oldId.toString()], fieldIndex.naturalById, fieldIndex.idByNatural
+            ),
+            null
+        ).id
+
+        var lostEntries = 0
+        val plannedEntries = ArrayList<Pair<Long, FieldValueEntry>>(entries.size)
+        for (e in entries) {
+            val defId = resolveDef(e.fieldDefinitionId)
+            if (defId == null) lostEntries++ else plannedEntries.add(defId to e)
+        }
+
+        val charIndex = characterIndex(
+            charValues.map { it.characterId }, refs?.characters?.values.orEmpty(), session
+        )
+        val evIndex = eventIndex(eventValues.map { it.eventId }, refs?.events?.values.orEmpty(), session)
+
+        var orphanLost = 0
+        var merged = 0
+        val seenChars = HashSet<Pair<Long, Long>>()
+        val plannedChars = ArrayList<Triple<Long, Long, CharacterFieldValue>>(charValues.size)
+        for (v in charValues) {
+            val code = refs?.characters?.get(v.characterId.toString())
+            val owner = tally.note(
+                SnapshotRefResolver.resolveByCode(
+                    v.characterId, code, charIndex.codeById, charIndex.idByCode, charIndex.liveIds
+                ),
+                code
+            ).id
+            val defId = resolveDef(v.fieldDefinitionId)
+            if (owner == null || defId == null) {
+                orphanLost++
+                continue
+            }
+            if (!seenChars.add(owner to defId)) {
+                merged++
+                continue
+            }
+            plannedChars.add(Triple(owner, defId, v))
+        }
+
+        val seenEvents = HashSet<Pair<Long, Long>>()
+        val plannedEvents = ArrayList<Triple<Long, Long, EventFieldValue>>(eventValues.size)
+        for (v in eventValues) {
+            val code = refs?.events?.get(v.eventId.toString())
+            val owner = tally.note(
+                SnapshotRefResolver.resolveByCode(
+                    v.eventId, code, evIndex.codeById, evIndex.idByCode, evIndex.liveIds
+                ),
+                code
+            ).id
+            val defId = resolveDef(v.fieldDefinitionId)
+            if (owner == null || defId == null) {
+                orphanLost++
+                continue
+            }
+            if (!seenEvents.add(owner to defId)) {
+                merged++
+                continue
+            }
+            plannedEvents.add(Triple(owner, defId, v))
+        }
+
+        return UniverseDataPlan(
+            data = data,
+            entries = plannedEntries,
+            characterValues = plannedChars,
+            eventValues = plannedEvents,
+            losses = RestoreLossCounts(
+                fieldValueEntries = lostEntries,
+                orphanFieldValues = orphanLost,
+                mergedFieldValues = merged
+            ),
+            relinkedByCode = tally.relinked,
+            legacyPayload = tally.legacyGuess,
+            previewOnly = tally.previewOnly,
+            // 세계관이 없으면 필드 정의도 없어 붙을 자리가 없다 — 되살리지 않고 스냅샷을 남긴다(R-4).
+            blocker = if (!universeExists) RestoreBlocker.MISSING_UNIVERSE else null
+        )
+    }
+
+    private suspend fun applyUniverseData(plan: UniverseDataPlan): RestoreResult {
+        check(!plan.previewOnly) { "미리보기 전용 계획으로 복원을 시도했다" }
+        check(plan.blocker == null) { "복원할 수 없는 세계관 부가 데이터 계획이 적용 단계까지 왔다" }
+
+        var skippedEntries = 0
+        val takenCodes = HashSet<String>()
+        for (chunk in plan.entries.map { it.second.code }.filter { it.isNotBlank() }.distinct()
+            .chunked(IN_CLAUSE_CHUNK)) {
+            db.fieldValueEntryDao().getByCodes(chunk).forEach { takenCodes.add(it.code) }
+        }
+        val rows = plan.entries.map { (defId, entry) ->
+            val safeCode = entry.code.takeIf { it.isNotBlank() && takenCodes.add(it) } ?: generateEntityCode()
+            entry.copy(id = 0, fieldDefinitionId = defId, code = safeCode)
+        }
+        if (rows.isNotEmpty()) {
+            skippedEntries += db.fieldValueEntryDao().insertAllIgnore(rows).count { it == -1L }
+        }
+
+        var orphanLost = plan.losses.orphanFieldValues
+        val existingByChar = HashMap<Long, MutableSet<Long>>()
+        for (chunk in plan.characterValues.map { it.first }.distinct().chunked(IN_CLAUSE_CHUNK)) {
+            for (v in db.characterFieldValueDao().getValuesForCharacters(chunk)) {
+                existingByChar.getOrPut(v.characterId) { HashSet() }.add(v.fieldDefinitionId)
+            }
+        }
+        val charRows = ArrayList<CharacterFieldValue>(plan.characterValues.size)
+        for ((charId, defId, value) in plan.characterValues) {
+            if (defId in existingByChar.getOrElse(charId) { emptySet<Long>() }) {
+                orphanLost++
+                continue
+            }
+            charRows.add(value.copy(id = 0, characterId = charId, fieldDefinitionId = defId))
+        }
+        if (charRows.isNotEmpty()) db.characterFieldValueDao().insertAll(charRows)
+
+        val eventRows = ArrayList<EventFieldValue>(plan.eventValues.size)
+        for ((eventId, defId, value) in plan.eventValues) {
+            if (db.eventFieldValueDao().getValue(eventId, defId) != null) {
+                orphanLost++
+                continue
+            }
+            eventRows.add(value.copy(id = 0, eventId = eventId, fieldDefinitionId = defId))
+        }
+        if (eventRows.isNotEmpty()) db.eventFieldValueDao().insertAll(eventRows)
+
+        return RestoreResult(
+            entityType = TrashSnapshot.TYPE_UNIVERSE_DATA,
+            restoredName = plan.data.universeCode.orEmpty(),
             losses = plan.losses.copy(
-                fieldDefinitions = skippedDefs,
                 fieldValueEntries = skippedEntries,
                 orphanFieldValues = orphanLost
             ),
             relinkedByCode = plan.relinkedByCode
         )
-        return result to deferred
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -2476,5 +2639,14 @@ class TrashRepository(
     private companion object {
         /** IN 절 변수 한도 회피용 청크 크기 (저장소 공통 관례와 동일) */
         const val IN_CLAUSE_CHUNK = 900
+
+        /**
+         * payload 한 행의 크기 예산(문자 수).
+         *
+         * Android의 CursorWindow는 기본 2MB이고 **한 행이 그것을 넘으면 읽을 수 없다** —
+         * 백업이 통째로 사라지는 것과 같다. UTF-8·UTF-16 확장과 Gson 이스케이프를 감안해
+         * 넉넉히 낮춰 잡는다. 예산을 넘기면 다음 행으로 넘어간다(유실 없음).
+         */
+        const val PAYLOAD_BUDGET_CHARS = 400_000
     }
 }

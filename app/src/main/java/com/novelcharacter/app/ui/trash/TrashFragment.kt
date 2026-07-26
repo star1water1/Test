@@ -546,6 +546,7 @@ class TrashFragment : Fragment() {
         fun typeLabel(context: android.content.Context, entityType: String): String = when (entityType) {
             TrashSnapshot.TYPE_CHARACTER -> context.getString(R.string.trash_type_character)
             TrashSnapshot.TYPE_UNIVERSE -> context.getString(R.string.trash_type_universe)
+            TrashSnapshot.TYPE_UNIVERSE_DATA -> context.getString(R.string.trash_type_universe_data)
             TrashSnapshot.TYPE_NOVEL -> context.getString(R.string.trash_type_novel)
             TrashSnapshot.TYPE_FACTION -> context.getString(R.string.trash_type_faction)
             TrashSnapshot.TYPE_EVENT -> context.getString(R.string.trash_type_event)

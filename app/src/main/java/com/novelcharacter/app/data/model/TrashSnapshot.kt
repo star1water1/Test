@@ -68,6 +68,12 @@ data class TrashSnapshot(
     companion object {
         const val TYPE_CHARACTER = "character"
         const val TYPE_UNIVERSE = "universe"
+
+        /**
+         * 세계관 스냅샷의 이어붙임 행 — 값 라이브러리·고아 필드값처럼 **크기가 자라는** 부분.
+         * 한 행에 몰아넣으면 payload가 CursorWindow 한도를 넘겨 백업을 읽을 수 없게 된다.
+         */
+        const val TYPE_UNIVERSE_DATA = "universe_data"
         const val TYPE_NOVEL = "novel"
         const val TYPE_FACTION = "faction"
         const val TYPE_EVENT = "event"
@@ -98,7 +104,8 @@ data class TrashSnapshot(
         /**
          * 복원 순서 — **낮을수록 먼저**. 하위 엔티티는 상위가 살아 있어야 붙을 자리가 있다.
          *
-         * 세계관 → 작품 → 세력 → 사건 → 캐릭터. 세력은 세계관 없이 존재할 수 없고(NOT NULL),
+         * 세계관 → 세계관 부가 데이터 → 작품 → 세력 → 사건 → 캐릭터.
+     * 세력은 세계관 없이 존재할 수 없고(NOT NULL),
          * 캐릭터는 작품·세력·사건 전부를 참조하므로 마지막이다. 이 순서를 지키면 한 작업을
          * 통째로 복원할 때 참조가 코드로 다시 이어진다(R-1).
          *
@@ -107,11 +114,13 @@ data class TrashSnapshot(
          */
         fun restorePriority(entityType: String): Int = when (entityType) {
             TYPE_UNIVERSE -> 0
-            TYPE_NOVEL -> 1
-            TYPE_FACTION -> 2
-            TYPE_EVENT -> 3
-            TYPE_CHARACTER -> 4
-            else -> 5
+            // 세계관 본체가 필드 정의를 만든 **뒤에** 그 정의를 가리키는 값들이 붙는다.
+            TYPE_UNIVERSE_DATA -> 1
+            TYPE_NOVEL -> 2
+            TYPE_FACTION -> 3
+            TYPE_EVENT -> 4
+            TYPE_CHARACTER -> 5
+            else -> 6
         }
     }
 }

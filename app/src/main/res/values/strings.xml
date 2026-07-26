@@ -342,6 +342,7 @@
     <string name="trash_retention_caption">삭제된 캐릭터·세계관·작품·세력·사건이 연관 데이터와 함께 보관됩니다. 보관 단위는 한 번의 삭제이며 최근 30건, 30일까지 유지됩니다 — 세계관 하나를 지워 수백 항목이 생겨도 그 묶음은 통째로 남거나 통째로 사라지므로 반쪽 백업이 되지 않습니다. 오래된 삭제부터 정리되니 되살릴 것이 있으면 먼저 복원하세요.</string>
     <string name="trash_type_character">캐릭터</string>
     <string name="trash_type_universe">세계관</string>
+    <string name="trash_type_universe_data">세계관 부가 데이터</string>
     <string name="trash_type_novel">작품</string>
     <string name="trash_type_faction">세력</string>
     <string name="trash_type_event">사건</string>

@@ -18,6 +18,7 @@ import com.novelcharacter.app.data.model.NovelSnapshot
 import com.novelcharacter.app.data.model.SnapshotRefs
 import com.novelcharacter.app.data.model.TimelineEvent
 import com.novelcharacter.app.data.model.Universe
+import com.novelcharacter.app.data.model.UniverseDataSnapshot
 import com.novelcharacter.app.data.model.UniverseSnapshot
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -43,6 +44,43 @@ class EntitySnapshotPayloadTest {
     // ──────────────────────────────────────────────────────────────────────
 
     @Test
+    fun `세계관 부가 데이터는 이어붙임 행으로 분리돼 왕복한다`() {
+        // 값 라이브러리·고아 필드값은 규모에 따라 무한히 자란다 — 세계관 본체 payload에
+        // 몰아넣으면 한 행이 CursorWindow 한도(2MB)를 넘어 백업을 읽을 수 없게 된다.
+        val original = UniverseDataSnapshot(
+            universeCode = "UNI-1",
+            orphanCharacterFieldValues = listOf(
+                CharacterFieldValue(id = 1, characterId = 88, fieldDefinitionId = 12, value = "높음")
+            ),
+            orphanEventFieldValues = listOf(
+                EventFieldValue(id = 2, eventId = 41, fieldDefinitionId = 13, value = "3화")
+            ),
+            refs = EntityRefs(
+                universeCode = "UNI-1",
+                characters = mapOf("88" to "CHR-9"),
+                events = mapOf("41" to "EVT-1"),
+                fieldDefs = mapOf(
+                    "12" to FieldDefRef("UNI-1", "character", "mana"),
+                    "13" to FieldDefRef("UNI-1", "event", "chapter")
+                )
+            )
+        )
+        val restored = gson.fromJson(gson.toJson(original), UniverseDataSnapshot::class.java)
+        assertEquals("UNI-1", restored.universeCode)
+        assertEquals(88L, restored.orphanCharacterFieldValues!![0].characterId)
+        assertEquals(41L, restored.orphanEventFieldValues!![0].eventId)
+        // 옛 필드정의 id는 자연키로만 되찾을 수 있다 — 세계관이 새 id로 다시 만들어지기 때문이다.
+        assertEquals(FieldDefRef("UNI-1", "character", "mana"), restored.refs!!.fieldDefs!!["12"])
+
+        // 구버전(이 타입이 없던) payload는 전부 null — 읽는 쪽이 폴백해야 한다 (R-2).
+        val bare = gson.fromJson("""{"universeCode": "UNI-1"}""", UniverseDataSnapshot::class.java)
+        assertNull(bare.fieldValueEntries)
+        assertNull(bare.orphanCharacterFieldValues)
+        assertNull(bare.refs)
+        assertEquals(emptyList<CharacterFieldValue>(), bare.orphanCharacterFieldValues.orEmpty())
+    }
+
+    @Test
     fun `세계관 payload에 목록 키가 없으면 전부 null이고 읽는 쪽이 폴백한다`() {
         val json = """{"universe": {"id": 3, "name": "아스테리아", "code": "UNI-1",
                        "description": "", "createdAt": 0, "displayOrder": 0,
@@ -52,9 +90,6 @@ class EntitySnapshotPayloadTest {
         val snap = gson.fromJson(json, UniverseSnapshot::class.java)
         assertEquals("아스테리아", snap.universe.name)
         assertNull(snap.fieldDefinitions)
-        assertNull(snap.fieldValueEntries)
-        assertNull(snap.orphanCharacterFieldValues)
-        assertNull(snap.orphanEventFieldValues)
         assertNull(snap.refs)
         // 선언이 nullable이므로 컴파일 시점에 폴백이 강제된다 — 이것이 계약이다.
         assertEquals(emptyList<FieldDefinition>(), snap.fieldDefinitions.orEmpty())
@@ -123,31 +158,23 @@ class EntitySnapshotPayloadTest {
     // ──────────────────────────────────────────────────────────────────────
 
     @Test
-    fun `세계관 스냅샷은 왕복에서 필드 정의와 고아 필드값을 보존한다`() {
+    fun `세계관 스냅샷은 왕복에서 필드 정의를 보존한다`() {
+        // 본체는 크기가 유계인 것만 담는다 — 자라는 부분은 UniverseDataSnapshot이 나눠 담는다.
         val original = UniverseSnapshot(
             universe = Universe(id = 3, name = "아스테리아", code = "UNI-1", imageCharacterId = 9),
             fieldDefinitions = listOf(
                 FieldDefinition(id = 12, universeId = 3, key = "mana", name = "마나친화", type = "NUMBER")
             ),
-            orphanCharacterFieldValues = listOf(
-                CharacterFieldValue(id = 1, characterId = 88, fieldDefinitionId = 12, value = "높음")
-            ),
-            orphanEventFieldValues = listOf(
-                EventFieldValue(id = 2, eventId = 41, fieldDefinitionId = 12, value = "3화")
-            ),
             refs = EntityRefs(
-                characters = mapOf("88" to "CHR-9", "9" to "CHR-1"),
-                events = mapOf("41" to "EVT-1"),
+                characters = mapOf("9" to "CHR-1"),
                 novels = mapOf("7" to "NVL-1")
             )
         )
         val restored = gson.fromJson(gson.toJson(original), UniverseSnapshot::class.java)
         assertEquals("UNI-1", restored.universe.code)
         assertEquals(12L, restored.fieldDefinitions!![0].id)
-        assertEquals(88L, restored.orphanCharacterFieldValues!![0].characterId)
-        assertEquals(41L, restored.orphanEventFieldValues!![0].eventId)
         // Long id를 문자열 키로 담는 이유: Gson의 숫자 맵 키 처리에 기대지 않기 위해서다.
-        assertEquals("CHR-9", restored.refs!!.characters!!["88"])
+        assertEquals("CHR-1", restored.refs!!.characters!!["9"])
         assertEquals(SnapshotRefs.VERSION, restored.refs!!.version)
     }
 
