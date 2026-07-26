@@ -21,7 +21,7 @@ import kotlinx.coroutines.withContext
 class AssistantViewModel(application: Application) : AndroidViewModel(application) {
 
     private val app = application as NovelCharacterApp
-    private val statsProvider = StatsDataProvider(app)
+    private val statsProvider = StatsDataProvider()
     private val engine = AssistantEngine(app)
     private val prefs = AssistantPrefs(app)
 
@@ -51,7 +51,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
             _loading.value = true
             val result = withContext(Dispatchers.Default) {
                 loadMutex.withLock {
-                    val snapshot = statsProvider.loadSnapshot()
+                    val snapshot = statsProvider.loadSnapshot(app)
                     val enabled = prefs.enabledCategories()
                     val all = engine.run(snapshot, statsProvider, enabled)
                     val hidden = all.filter { prefs.isDismissed(it) }.associate { it.id to it.title }

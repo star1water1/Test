@@ -19,7 +19,7 @@ import kotlinx.coroutines.withContext
 class StatsViewModel(application: Application) : AndroidViewModel(application) {
 
     private val app = application as NovelCharacterApp
-    private val provider = StatsDataProvider(app)
+    private val provider = StatsDataProvider()
 
     @Volatile private var cachedSnapshot: StatsSnapshot? = null
     private val snapshotMutex = Mutex()
@@ -89,7 +89,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
         cachedSnapshot?.let { return it }
         return snapshotMutex.withLock {
             cachedSnapshot ?: withContext(Dispatchers.IO) {
-                provider.loadSnapshot()
+                provider.loadSnapshot(app)
             }.also { cachedSnapshot = it }
         }
     }
@@ -210,6 +210,13 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * 교차분석 실행 (B-4).
+     *
+     * 축(캐릭터/사건)을 먼저 판정해 해당 축의 계산 함수로 보낸다. 판정이 실패하면
+     * 조용히 넘어가지 않고 이유를 [error]로 알린다 — 예전에는 사건 필드를 고르면
+     * `computeCrossAnalysis`가 null을 돌려주고 화면에 아무 일도 일어나지 않았다.
+     */
     fun loadCrossAnalysis(field1Id: Long, field2Id: Long, filterFieldId: Long? = null, filterValue: String? = null) {
         _loading.value = true
         _error.value = null
@@ -217,8 +224,27 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val snapshot = ensureSnapshot()
                 val filtered = getFilteredSnapshot(snapshot)
-                _crossAnalysis.value = withContext(Dispatchers.IO) {
-                    provider.computeCrossAnalysis(filtered, field1Id, field2Id, filterFieldId, filterValue)
+                val outcome = withContext(Dispatchers.IO) {
+                    when (val axis = provider.resolveCrossAxis(filtered, field1Id, field2Id, filterFieldId)) {
+                        is CrossAxisResolution.Mismatch -> axis
+                        is CrossAxisResolution.UnknownField -> axis
+                        is CrossAxisResolution.Resolved -> when (axis.axis) {
+                            CrossAxis.CHARACTER ->
+                                provider.computeCrossAnalysis(filtered, field1Id, field2Id, filterFieldId, filterValue)
+                            CrossAxis.EVENT ->
+                                provider.computeEventCrossAnalysis(filtered, field1Id, field2Id, filterFieldId, filterValue)
+                        }
+                    }
+                }
+                when (outcome) {
+                    is CrossAnalysisResult -> _crossAnalysis.value = outcome
+                    is CrossAxisResolution.Mismatch -> _error.value = getApplication<Application>().getString(
+                        com.novelcharacter.app.R.string.stats_cross_axis_mismatch,
+                        outcome.characterFieldName, outcome.eventFieldName
+                    )
+                    // 축 판정은 통과했지만 계산이 필드를 찾지 못한 경우(null)도 같은 사유다.
+                    else -> _error.value = getApplication<Application>()
+                        .getString(com.novelcharacter.app.R.string.stats_cross_field_missing)
                 }
             } catch (e: Exception) {
                 _error.value = e.message

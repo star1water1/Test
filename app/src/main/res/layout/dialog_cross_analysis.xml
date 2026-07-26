@@ -11,6 +11,21 @@
         android:orientation="vertical"
         android:padding="24dp">
 
+        <!-- 집계 축 (B-4): 셀 값이 캐릭터 수인지 사건 수인지를 정한다. 축이 다른 필드는 한 표에 섞이지 않는다. -->
+        <TextView
+            android:id="@+id/axisLabel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/stats_cross_axis"
+            android:textAppearance="@style/TextAppearance.App.Caption"
+            android:textColor="@color/text_secondary" />
+
+        <Spinner
+            android:id="@+id/spinnerAxis"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginBottom="12dp" />
+
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"

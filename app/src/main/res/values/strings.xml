@@ -142,6 +142,9 @@
     <string name="hint_comma_list_helper">콤마(,)로 구분하여 여러 항목 입력</string>
     <string name="hint_multiline_helper">여러 줄로 입력 가능</string>
     <string name="label_stats_enabled">통계에 포함</string>
+    <!-- 목록 카드 표시 (B-5) -->
+    <string name="label_card_display">목록 카드에 값 표시</string>
+    <string name="label_card_display_desc">연표 목록에서 사건을 열지 않아도 이 필드의 값이 보입니다. 카드 한 장에는 최대 %d개까지 표시되고, 넘는 값은 개수로 알립니다.</string>
     <string name="label_add_analysis">+ 분석 추가</string>
     <string name="label_value_labels">값 라벨 매핑 (선택)</string>
     <string name="label_add_value_label">+ 라벨 추가</string>
@@ -284,6 +287,8 @@
 
     <!-- TimelineAdapter -->
     <string name="event_count_format">%d건의 사건</string>
+    <string name="event_field_line_format">%1$s: %2$s</string>
+    <string name="event_field_more_format">+%d개 더 (열어서 확인)</string>
 
     <!-- Misc -->
     <string name="arrow_separator" translatable="false"> → </string>
@@ -1061,11 +1066,22 @@
     <string name="stats_cross_filter_value_hint">필터 값 (예: 남성)</string>
     <string name="stats_cross_filter_none">없음</string>
     <string name="stats_cross_run">분석 실행</string>
-    <string name="stats_cross_need_two_fields">교차 분석에는 2개 이상의 통계 활성 필드가 필요합니다</string>
+    <string name="stats_cross_need_two_fields">교차 분석에는 같은 축(캐릭터 또는 사건)의 통계 활성 필드가 2개 이상 필요합니다</string>
     <string name="stats_cross_title">%1$s × %2$s</string>
     <string name="stats_cross_filter_info">필터: %1$s = %2$s (%3$d/%4$d명)</string>
-    <string name="stats_cross_multi_value_note">다중값 필드 포함: 한 캐릭터가 여러 칸에 집계될 수 있습니다 (셀 값 = 해당 조합을 가진 캐릭터 수)</string>
+    <string name="stats_cross_multi_value_note">다중값 필드 포함: 한 캐릭터가 여러 칸에 집계될 수 있습니다</string>
     <string name="stats_event_field_prefix">사건</string>
+    <!-- Stats: 교차 분석 축 (B-4) -->
+    <string name="stats_cross_axis">집계 축</string>
+    <string name="stats_cross_axis_character">캐릭터 필드</string>
+    <string name="stats_cross_axis_event">사건 필드</string>
+    <string name="stats_cross_cell_unit_character">셀 값 = 해당 조합을 가진 캐릭터 수</string>
+    <string name="stats_cross_cell_unit_event">셀 값 = 해당 조합을 가진 사건 수</string>
+    <string name="stats_cross_filter_info_events">필터: %1$s = %2$s (%3$d/%4$d건)</string>
+    <string name="stats_cross_multi_value_note_events">다중값 필드 포함: 한 사건이 여러 칸에 집계될 수 있습니다</string>
+    <string name="stats_cross_merged_universes">세계관 %d개의 같은 필드를 합산했습니다</string>
+    <string name="stats_cross_axis_mismatch">캐릭터 필드(%1$s)와 사건 필드(%2$s)는 한 표에 섞을 수 없습니다. 셀 값이 캐릭터 수인지 사건 수인지 정해지지 않기 때문입니다. 같은 축의 필드끼리 골라 주세요.</string>
+    <string name="stats_cross_field_missing">고른 필드를 현재 통계 범위에서 찾을 수 없습니다. 작품 필터를 확인한 뒤 다시 골라 주세요.</string>
 
     <!-- Stats: 데이터 현황 -->
     <string name="stats_data_overview_title">데이터 현황</string>
