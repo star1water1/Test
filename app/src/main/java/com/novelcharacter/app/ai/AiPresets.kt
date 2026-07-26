@@ -10,6 +10,11 @@ import com.novelcharacter.app.R
  *
  * 모델명은 제공사들이 수시로 바꾸므로 '추천값'일 뿐이고 필드는 항상 자유 입력이다.
  * 가이드 문자열이 "최신 모델명은 제공사 문서를 확인"을 안내한다(변수 제어).
+ *
+ * **[suggestedModels]는 최신 목록의 출처가 아니다.** 키가 있으면 추천 칩과 모델 선택 모두
+ * 서버에 실시간으로 물어보고([AiModelSuggestions]), 이 목록은 (a) 키 입력 전·조회 실패 시의
+ * 폴백과 (b) 실시간 목록의 정렬 우선순위(사람이 고른 순서)로만 쓰인다. 그래서 이 목록이
+ * 조금 낡아도 사용자는 새 모델을 볼 수 있다 — 낡은 스냅샷이 최신 모델을 가리던 문제의 해법.
  */
 data class AiPreset(
     val id: String,
@@ -39,9 +44,9 @@ object AiPresets {
             displayName = "Anthropic Claude",
             protocol = AiProtocol.ANTHROPIC,
             baseUrl = "https://api.anthropic.com",
-            defaultModel = "claude-opus-4-8",
+            defaultModel = "claude-opus-5",
             suggestedModels = listOf(
-                "claude-opus-4-8", "claude-sonnet-5", "claude-sonnet-4-6", "claude-haiku-4-5"
+                "claude-opus-5", "claude-sonnet-5", "claude-fable-5", "claude-haiku-4-5"
             ),
             consoleUrl = "https://console.anthropic.com/settings/keys",
             modelDocsUrl = "https://platform.claude.com/docs/en/about-claude/models/overview",
@@ -52,8 +57,9 @@ object AiPresets {
             displayName = "OpenAI (GPT)",
             protocol = AiProtocol.OPENAI_COMPAT,
             baseUrl = "https://api.openai.com/v1",
-            defaultModel = "gpt-5.1",
-            suggestedModels = listOf("gpt-5.1", "gpt-5-mini", "gpt-4.1-mini"),
+            // gpt-5.6은 sol(플래그십) 별칭. terra=균형, luna=고빈도·저비용.
+            defaultModel = "gpt-5.6",
+            suggestedModels = listOf("gpt-5.6", "gpt-5.6-terra", "gpt-5.6-luna"),
             consoleUrl = "https://platform.openai.com/api-keys",
             modelDocsUrl = "https://platform.openai.com/docs/models",
             guideRes = R.string.ai_guide_openai
@@ -63,8 +69,9 @@ object AiPresets {
             displayName = "Google Gemini",
             protocol = AiProtocol.GEMINI,
             baseUrl = "https://generativelanguage.googleapis.com",
-            defaultModel = "gemini-2.5-flash",
-            suggestedModels = listOf("gemini-3-pro-preview", "gemini-2.5-pro", "gemini-2.5-flash"),
+            // gemini-3-pro-preview는 2026-03 종료됨. Pro 계열은 아직 preview만 있다.
+            defaultModel = "gemini-3.6-flash",
+            suggestedModels = listOf("gemini-3.6-flash", "gemini-3.1-pro-preview", "gemini-3.5-flash"),
             consoleUrl = "https://aistudio.google.com/apikey",
             modelDocsUrl = "https://ai.google.dev/gemini-api/docs/models",
             guideRes = R.string.ai_guide_gemini,
@@ -75,9 +82,9 @@ object AiPresets {
             displayName = "OpenRouter",
             protocol = AiProtocol.OPENAI_COMPAT,
             baseUrl = "https://openrouter.ai/api/v1",
-            defaultModel = "anthropic/claude-sonnet-4.5",
+            defaultModel = "anthropic/claude-opus-5",
             suggestedModels = listOf(
-                "anthropic/claude-sonnet-4.5", "openai/gpt-5.1", "google/gemini-2.5-flash"
+                "anthropic/claude-opus-5", "openai/gpt-5.6", "google/gemini-3.6-flash"
             ),
             consoleUrl = "https://openrouter.ai/settings/keys",
             modelDocsUrl = "https://openrouter.ai/models",
@@ -88,8 +95,9 @@ object AiPresets {
             displayName = "Groq",
             protocol = AiProtocol.OPENAI_COMPAT,
             baseUrl = "https://api.groq.com/openai/v1",
-            defaultModel = "llama-3.3-70b-versatile",
-            suggestedModels = listOf("llama-3.3-70b-versatile", "llama-3.1-8b-instant"),
+            // llama-3.3-70b-versatile·llama-3.1-8b-instant는 2026-06 폐기 예고됨(무료·개발자 티어).
+            defaultModel = "openai/gpt-oss-120b",
+            suggestedModels = listOf("openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.6-27b"),
             consoleUrl = "https://console.groq.com/keys",
             modelDocsUrl = "https://console.groq.com/docs/models",
             guideRes = R.string.ai_guide_groq,
@@ -100,8 +108,9 @@ object AiPresets {
             displayName = "DeepSeek",
             protocol = AiProtocol.OPENAI_COMPAT,
             baseUrl = "https://api.deepseek.com/v1",
-            defaultModel = "deepseek-chat",
-            suggestedModels = listOf("deepseek-chat", "deepseek-reasoner"),
+            // deepseek-chat·deepseek-reasoner는 2026-07-24 폐기 완료 — 그대로 두면 호출이 실패한다.
+            defaultModel = "deepseek-v4-flash",
+            suggestedModels = listOf("deepseek-v4-flash", "deepseek-v4-pro"),
             consoleUrl = "https://platform.deepseek.com/api_keys",
             modelDocsUrl = "https://api-docs.deepseek.com/quick_start/pricing",
             guideRes = R.string.ai_guide_deepseek
