@@ -197,24 +197,30 @@ object AiProtocolCodec {
             text = text,
             model = root.get("model")?.takeIf { it.isJsonPrimitive }?.asString ?: requestedModel,
             inputTokens = usage?.get("input_tokens")?.takeIf { it.isJsonPrimitive }?.asInt,
-            outputTokens = usage?.get("output_tokens")?.takeIf { it.isJsonPrimitive }?.asInt
+            outputTokens = usage?.get("output_tokens")?.takeIf { it.isJsonPrimitive }?.asInt,
+            // 텍스트가 **있어도** 잘렸을 수 있다 — 이 신호를 빈 응답일 때만 읽던 것이 오진의 원인이었다.
+            truncated = root.get("stop_reason")?.takeIf { it.isJsonPrimitive }?.asString == "max_tokens"
         )
     }
 
     private fun parseOpenAiSuccess(root: JsonObject, requestedModel: String): AiResult {
-        val message = root.getAsJsonArray("choices")
+        val choice = root.getAsJsonArray("choices")
             ?.filterIsInstance<JsonObject>()
             ?.firstOrNull()
-            ?.getAsJsonObject("message")
+        val message = choice?.getAsJsonObject("message")
         val content = message?.get("content")
         val text = if (content != null && content.isJsonPrimitive) content.asString else ""
-        if (text.isBlank()) return AiResult.Failure(AiErrorKind.EMPTY_RESPONSE)
+        if (text.isBlank()) {
+            val finish = choice?.get("finish_reason")?.takeIf { it.isJsonPrimitive }?.asString
+            return AiResult.Failure(AiErrorKind.EMPTY_RESPONSE, detail = finish?.let { "finish_reason=$it" })
+        }
         val usage = root.getAsJsonObject("usage")
         return AiResult.Success(
             text = text,
             model = root.get("model")?.takeIf { it.isJsonPrimitive }?.asString ?: requestedModel,
             inputTokens = usage?.get("prompt_tokens")?.takeIf { it.isJsonPrimitive }?.asInt,
-            outputTokens = usage?.get("completion_tokens")?.takeIf { it.isJsonPrimitive }?.asInt
+            outputTokens = usage?.get("completion_tokens")?.takeIf { it.isJsonPrimitive }?.asInt,
+            truncated = choice?.get("finish_reason")?.takeIf { it.isJsonPrimitive }?.asString == "length"
         )
     }
 
@@ -238,7 +244,8 @@ object AiProtocolCodec {
             text = text,
             model = requestedModel,
             inputTokens = usage?.get("promptTokenCount")?.takeIf { it.isJsonPrimitive }?.asInt,
-            outputTokens = usage?.get("candidatesTokenCount")?.takeIf { it.isJsonPrimitive }?.asInt
+            outputTokens = usage?.get("candidatesTokenCount")?.takeIf { it.isJsonPrimitive }?.asInt,
+            truncated = candidate?.get("finishReason")?.takeIf { it.isJsonPrimitive }?.asString == "MAX_TOKENS"
         )
     }
 
@@ -247,19 +254,32 @@ object AiProtocolCodec {
      * 빈 목록으로 돌아온다 — 호출측(AiService)이 빈 목록을 EMPTY_RESPONSE로 승격해
      * 정적 추천값 폴백을 트리거한다.
      */
-    fun parseModelList(protocol: AiProtocol, body: String): List<String> = try {
+    fun parseModelList(protocol: AiProtocol, body: String): List<String> =
+        parseModelInfos(protocol, body).map { it.id }
+
+    /**
+     * 모델 목록 응답 → [AiModelInfo] 목록(id + 알려진 출력 상한).
+     *
+     * Gemini는 같은 응답에 `outputTokenLimit`을 실어 보내는데 종전 파서가 id만 뽑고 버렸다 —
+     * 모델별 상한을 **조회로 알 수 있는 유일한 프로토콜**이므로 되살린다.
+     * Anthropic·OpenAI 목록에는 상한이 없어 null이고, 그쪽은 상한 초과 오류에서 학습한다
+     * ([parseMaxTokensLimitFromError]).
+     */
+    fun parseModelInfos(protocol: AiProtocol, body: String): List<AiModelInfo> = try {
         val root = JsonParser.parseString(body).asJsonObject
         when (protocol) {
             // Anthropic은 최신순으로 내려주므로 정렬하지 않고 그대로 보존한다.
             AiProtocol.ANTHROPIC -> root.getAsJsonArray("data")
                 ?.filterIsInstance<JsonObject>()
                 ?.mapNotNull { it.get("id")?.takeIf { v -> v.isJsonPrimitive }?.asString }
+                ?.map { AiModelInfo(it) }
                 .orEmpty()
 
             AiProtocol.OPENAI_COMPAT -> root.getAsJsonArray("data")
                 ?.filterIsInstance<JsonObject>()
                 ?.mapNotNull { it.get("id")?.takeIf { v -> v.isJsonPrimitive }?.asString }
                 ?.sorted()
+                ?.map { AiModelInfo(it) }
                 .orEmpty()
 
             // generateContent를 지원하지 않는 모델(임베딩 전용 등)은 채팅 용도가 아니므로 제외.
@@ -270,14 +290,53 @@ object AiProtocolCodec {
                         ?.any { it.isJsonPrimitive && it.asString == "generateContent" } == true
                 }
                 ?.mapNotNull { m ->
-                    m.get("name")?.takeIf { v -> v.isJsonPrimitive }?.asString?.removePrefix("models/")
+                    val id = m.get("name")?.takeIf { v -> v.isJsonPrimitive }?.asString
+                        ?.removePrefix("models/") ?: return@mapNotNull null
+                    val limit = m.get("outputTokenLimit")?.takeIf { it.isJsonPrimitive }
+                        ?.runCatching { asInt }?.getOrNull()?.takeIf { it > 0 }
+                    AiModelInfo(id, limit)
                 }
-                ?.sorted()
+                ?.sortedBy { it.id }
                 .orEmpty()
         }
     } catch (_: Exception) {
         emptyList()
     }
+
+    /** 목록에서 [model]의 출력 상한을 찾는다. 못 찾거나 알려지지 않았으면 null(기존 탐지값 유지). */
+    fun detectedLimitFor(models: List<AiModelInfo>, model: String): Int? =
+        models.firstOrNull { it.id == model }?.outputTokenLimit
+
+    /**
+     * 상한 **초과** 오류에서 그 모델이 실제로 허용하는 값을 읽어낸다 — 오류가 정답을 알려주는
+     * 경우가 많다(예: Anthropic `max_tokens: 100000 > 8192, which is the maximum allowed
+     * number of output tokens for ...`, OpenAI `max_tokens is too large: ... supports at most 16384`).
+     *
+     * **정적 표를 두지 않는 이유가 이것이다** — 표는 새 모델이 나올 때마다 낡지만 오류는 늘 최신이다.
+     *
+     * 오판 방지(잘못된 상한을 학습하면 이후 모든 요청이 좁아진다):
+     * - [requested]보다 **작은** 값만 후보다. 초과 오류이므로 정답은 반드시 요청값보다 작다.
+     * - [AiTokenPolicy.FLOOR] 미만은 버린다.
+     * - 후보가 여럿이면 **가장 큰 것**을 고른다(모델 이름의 숫자 등 잡음은 대개 더 작거나 걸러진다).
+     * - 확신할 수 없으면 null — 그러면 재시도하지 않고 오류를 그대로 사용자에게 보고한다.
+     */
+    fun parseMaxTokensLimitFromError(body: String?, requested: Int): Int? {
+        val text = extractErrorMessage(body) ?: body ?: return null
+        val lower = text.lowercase()
+        // 상한 초과를 말하는 오류인지 먼저 확인 — 다른 400을 상한 문제로 오인하지 않는다.
+        val looksLikeLimit = listOf(
+            "maximum allowed", "at most", "too large", "must be less than",
+            "maximum number of output tokens", "exceeds"
+        ).any { it in lower }
+        if (!looksLikeLimit) return null
+        val candidates = NUMBER_RE.findAll(text)
+            .mapNotNull { it.value.toIntOrNull() }
+            .filter { it in AiTokenPolicy.FLOOR until requested }
+            .toList()
+        return candidates.maxOrNull()
+    }
+
+    private val NUMBER_RE = Regex("""\d{3,7}""")
 
     // ── 오류 해석 ──────────────────────────────────────────────────────────────
 

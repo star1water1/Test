@@ -184,6 +184,39 @@
             android:textAppearance="@style/TextAppearance.App.BodySmall"
             android:visibility="gone" />
 
+        <!-- 출력 토큰 상한 — Anthropic은 max_tokens가 필수라 '상한 없음'은 선택지가 아니다.
+             슬라이더의 최대값은 탐지된 모델 상한(있으면)이므로 자동 탐지와 수동 설정이 한 몸이다. -->
+        <TextView
+            android:id="@+id/maxTokensLabel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="@string/ai_edit_max_tokens"
+            android:textAppearance="@style/TextAppearance.App.BodyStrong" />
+
+        <TextView
+            android:id="@+id/maxTokensValue"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textAppearance="@style/TextAppearance.App.BodySmall"
+            android:textColor="?attr/colorPrimary" />
+
+        <com.google.android.material.slider.Slider
+            android:id="@+id/maxTokensSlider"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:stepSize="256"
+            android:valueFrom="256"
+            android:valueTo="8192" />
+
+        <TextView
+            android:id="@+id/maxTokensHint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/ai_edit_max_tokens_hint"
+            android:textAppearance="@style/TextAppearance.App.Caption"
+            android:textColor="?attr/colorOnSurfaceVariant" />
+
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

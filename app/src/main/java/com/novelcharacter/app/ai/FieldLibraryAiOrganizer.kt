@@ -51,11 +51,12 @@ class FieldLibraryAiOrganizer(private val aiService: AiService) {
         var inputTokens = 0
         var outputTokens = 0
 
+        val maxTokens = aiService.effectiveMaxTokens()
         for (chunk in chunks) {
             val request = AiRequest(
                 system = buildSystemPrompt(fd),
                 userText = buildUserPrompt(chunk),
-                maxTokens = 4096
+                maxTokens = maxTokens
             )
             when (val result = aiService.complete(request)) {
                 is AiResult.Success -> {
@@ -63,11 +64,16 @@ class FieldLibraryAiOrganizer(private val aiService: AiService) {
                     outputTokens += result.outputTokens ?: 0
                     val parsed = parseResponse(result.text, entries)
                     if (parsed == null) {
-                        failures.add("응답 형식을 해석할 수 없어 일부 구간을 건너뛰었습니다")
+                        // 잘린 것과 형식이 깨진 것은 원인도 교정 경로도 다르다 (CharacterFieldAiSuggester와 동일 규약).
+                        failures.add(
+                            if (result.truncated) TRUNCATED_MESSAGE
+                            else "응답 형식을 해석할 수 없어 일부 구간을 건너뛰었습니다"
+                        )
                     } else {
                         dropped += parsed.droppedCount
                         merges.addAll(parsed.merges)
                         categories.addAll(parsed.categories)
+                        if (result.truncated) failures.add(TRUNCATED_MESSAGE)
                     }
                 }
                 is AiResult.Failure -> {
@@ -99,6 +105,11 @@ class FieldLibraryAiOrganizer(private val aiService: AiService) {
         /** 요청당 값 상한 — 응답 토큰 한도(4096) 안에서 병합/분류 결과가 잘리지 않는 규모 */
         const val CHUNK_MAX_VALUES = 120
         const val CHUNK_MAX_CHARS = 6000
+
+        /** 출력 상한에 걸려 잘린 경우 — 원인과 교정 경로를 정확히 말한다(재시도는 같은 결과다). */
+        const val TRUNCATED_MESSAGE =
+            "AI 응답이 출력 상한에 걸려 잘려 일부 구간을 건너뛰었습니다 — " +
+                "설정 → AI 연동에서 출력 토큰 상한을 올리면 한 번에 더 많이 정리할 수 있습니다."
 
         private val TERMINAL_ERRORS = setOf(
             AiErrorKind.NO_PROVIDER, AiErrorKind.NO_KEY, AiErrorKind.INVALID_KEY,

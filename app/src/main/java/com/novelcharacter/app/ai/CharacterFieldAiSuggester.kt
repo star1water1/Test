@@ -91,14 +91,15 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
         var inputTokens = 0
         var outputTokens = 0
 
-        for (chunk in chunkTargets(targets)) {
+        val maxTokens = aiService.effectiveMaxTokens()
+        for (chunk in chunkTargets(targets, maxTokens)) {
             val prompt = buildUserPrompt(context, chunk)
             // 청크별 targetNames 차이로 문구가 다를 수 있어 완전 중복만 접는다 (고지 과다는 무해 방향)
             prompt.truncationNotes.forEach { if (it !in truncationNotes) truncationNotes.add(it) }
             val request = AiRequest(
                 system = buildSystemPrompt(),
                 userText = prompt.text,
-                maxTokens = 4096
+                maxTokens = maxTokens
             )
             when (val result = aiService.complete(request)) {
                 is AiResult.Success -> {
@@ -106,10 +107,15 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
                     outputTokens += result.outputTokens ?: 0
                     val parsed = parseResponse(result.text, chunk)
                     if (parsed == null) {
-                        failures.add(PARSE_FAILURE_MESSAGE)
+                        // 잘린 응답은 형식 오류가 아니다 — 원인과 교정 경로를 정확히 말해야 한다.
+                        // 종전에는 둘 다 "형식 오류 — 다시 시도해 주세요"로 떨어져, 재시도해도
+                        // 결정적으로 같은 결과가 나오는 길로 사용자를 보냈다.
+                        failures.add(if (result.truncated) truncatedMessage(chunk.size) else PARSE_FAILURE_MESSAGE)
                     } else {
                         suggestions.addAll(parsed.suggestions)
                         dropped += parsed.droppedCount
+                        // 형식은 살아남았어도 잘렸다면 일부 제안이 빠진 것이다 — 조용히 두지 않는다.
+                        if (result.truncated) failures.add(truncatedPartialMessage(chunk.size, parsed.suggestions.size))
                     }
                 }
                 is AiResult.Failure -> {
@@ -136,8 +142,20 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
         const val MAX_RELATIONSHIPS = 30
         const val MAX_FILLED_FIELDS = 60
 
-        /** 요청당 추천 대상 상한 — maxTokens 4096 대비 제안(key+value+근거 1문장) 여유 확보 */
-        const val MAX_TARGETS_PER_REQUEST = 15
+        /**
+         * 제안 1건(key + value + 근거 한 문장)의 출력 토큰 추정치.
+         * 종전 상수 `MAX_TARGETS_PER_REQUEST = 15`는 "maxTokens 4096 대비"라는 주석만 있고
+         * 상한이 바뀌면 근거를 잃었다. 이제 **상한에서 역산**하며, 4096 ÷ 270 = 15로
+         * 기존 동작과 정확히 일치한다(회귀 없음).
+         */
+        const val TOKENS_PER_SUGGESTION = 270
+
+        /** 한 요청에 담는 대상 수의 절대 상한 — 상한을 크게 잡아도 프롬프트가 무한정 길어지지 않게. */
+        const val HARD_MAX_TARGETS_PER_REQUEST = 60
+
+        /** 요청당 추천 대상 수 — 출력 상한에서 파생된다. */
+        fun targetsPerRequest(maxTokens: Int): Int =
+            AiTokenPolicy.itemsPerRequest(maxTokens, TOKENS_PER_SUGGESTION, HARD_MAX_TARGETS_PER_REQUEST)
 
         // 재시도해도 같은 결과인 실패 — 잔여 청크 중단 기준 (FieldLibraryAiOrganizer와 동일 집합)
         private val TERMINAL_ERRORS = setOf(
@@ -147,13 +165,31 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
 
         const val PARSE_FAILURE_MESSAGE = "응답 형식을 해석할 수 없습니다 — 다시 시도해 주세요"
 
+        /** 잘려서 아무것도 못 건진 경우 — '다시 시도'는 같은 결과를 부르므로 안내하지 않는다. */
+        fun truncatedMessage(targetCount: Int): String =
+            "AI 응답이 출력 상한에 걸려 잘렸습니다(대상 ${targetCount}개). " +
+                "한 번에 추천할 필드를 줄이거나, 설정 → AI 연동에서 출력 토큰 상한을 올려 주세요."
+
+        /** 잘렸지만 일부는 건진 경우 — 몇 개가 빠졌는지 수로 알린다(R-14). */
+        fun truncatedPartialMessage(targetCount: Int, received: Int): String =
+            "AI 응답이 출력 상한에 걸려 잘렸습니다 — 대상 ${targetCount}개 중 ${received}개만 받았습니다. " +
+                "한 번에 추천할 필드를 줄이거나, 설정 → AI 연동에서 출력 토큰 상한을 올려 주세요."
+
         /** 개수 기준 단일 분할 — 비용 고지의 요청 수 계산과 반드시 일치해야 한다 (사전 고지 정확성) */
-        fun chunkTargets(targets: List<FieldSpec>): List<List<FieldSpec>> =
-            targets.chunked(MAX_TARGETS_PER_REQUEST)
+        fun chunkTargets(
+            targets: List<FieldSpec>,
+            maxTokens: Int = AiTokenPolicy.DEFAULT_REQUEST
+        ): List<List<FieldSpec>> = targets.chunked(targetsPerRequest(maxTokens))
 
         /** [chunkTargets]와 같은 규칙의 요청 수 — 비용 고지용 */
-        fun requestCountFor(targetCount: Int): Int =
-            if (targetCount <= 0) 0 else (targetCount + MAX_TARGETS_PER_REQUEST - 1) / MAX_TARGETS_PER_REQUEST
+        fun requestCountFor(
+            targetCount: Int,
+            maxTokens: Int = AiTokenPolicy.DEFAULT_REQUEST
+        ): Int {
+            if (targetCount <= 0) return 0
+            val per = targetsPerRequest(maxTokens)
+            return (targetCount + per - 1) / per
+        }
 
         /**
          * FieldDefinition → 추천 대상 스펙. CALCULATED(파생값)·알 수 없는 타입은 null.

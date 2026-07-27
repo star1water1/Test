@@ -180,6 +180,7 @@ $TEST/excel/StreamingXlsxReaderTest.kt
 $TEST/ai/CharacterFieldAiSuggesterTest.kt
 $TEST/ai/FieldLibraryAiOrganizerTest.kt
 $TEST/ai/AiProtocolCodecTest.kt
+$TEST/ai/AiTokenPolicyTest.kt
 $TEST/share/WorldPackageFactionRelationshipsTest.kt
 $TEST/excel/MergedCellMapTest.kt
 $TEST/share/WorldPackageParserTest.kt
