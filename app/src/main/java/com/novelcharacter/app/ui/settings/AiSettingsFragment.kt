@@ -32,6 +32,8 @@ import com.novelcharacter.app.ai.AiModelListResult
 import com.novelcharacter.app.ai.AiModelSuggestions
 import com.novelcharacter.app.ai.AiPreset
 import com.novelcharacter.app.ai.AiPresets
+import com.novelcharacter.app.ai.AiPromptPolicy
+import com.novelcharacter.app.ai.AiPromptSettings
 import com.novelcharacter.app.ai.AiProtocolCodec
 import com.novelcharacter.app.ai.AiProviderConfig
 import com.novelcharacter.app.ai.AiProviderStore
@@ -87,8 +89,73 @@ class AiSettingsFragment : Fragment() {
         binding.providerList.adapter = adapter
         binding.addProviderButton.setOnClickListener { showPresetPicker() }
 
+        setupConsistencySliders()
         refreshList()
     }
+
+    /**
+     * AI 추천 일관성 — 프롬프트에 참고 자료를 얼마나 실을지.
+     *
+     * 저장 버튼을 두지 않는다: 슬라이더를 놓는 순간이 곧 확정이다(원칙 04 — 저장에 여러 단계 금지).
+     * 값 표시와 **토큰 비용 추정**을 함께 즉시 갱신해, 늘렸을 때 무엇을 지불하는지 슬라이더를
+     * 움직이는 자리에서 보이게 한다(무엇을 얻고 무엇을 내는지 모른 채 고르게 두지 않는다).
+     * 눈금·범위는 레이아웃이 아니라 [AiPromptPolicy]가 단일 소스다 — 저장값이 눈금 밖이면
+     * Material Slider가 예외로 죽는다.
+     */
+    private fun setupConsistencySliders() {
+        val settings = AiPromptSettings(requireContext())
+
+        binding.usageExamplesSlider.valueFrom = 0f
+        binding.usageExamplesSlider.valueTo = AiPromptPolicy.USAGE_EXAMPLES_MAX.toFloat()
+        binding.usageExamplesSlider.stepSize = AiPromptPolicy.USAGE_EXAMPLES_STEP.toFloat()
+        binding.usageExamplesSlider.value = settings.usageExampleCount.toFloat()
+        renderUsageExamples(settings.usageExampleCount)
+        binding.usageExamplesSlider.addOnChangeListener { _, value, fromUser ->
+            val count = AiPromptPolicy.clampUsageExamples(value.toInt())
+            renderUsageExamples(count)
+            if (fromUser) settings.usageExampleCount = count
+        }
+
+        binding.styleSamplesSlider.valueFrom = 0f
+        binding.styleSamplesSlider.valueTo = AiPromptPolicy.STYLE_SAMPLES_MAX.toFloat()
+        binding.styleSamplesSlider.stepSize = 1f
+        binding.styleSamplesSlider.value = settings.styleSampleCount.toFloat()
+        renderStyleSamples(settings.styleSampleCount)
+        binding.styleSamplesSlider.addOnChangeListener { _, value, fromUser ->
+            val count = AiPromptPolicy.clampStyleSamples(value.toInt())
+            renderStyleSamples(count)
+            if (fromUser) settings.styleSampleCount = count
+        }
+    }
+
+    private fun renderUsageExamples(count: Int) {
+        binding.usageExamplesValue.text = countLabel(count)
+        binding.usageExamplesCost.text = if (count == 0) {
+            getString(R.string.ai_settings_prompt_cost_none)
+        } else {
+            getString(
+                R.string.ai_settings_usage_examples_cost,
+                AiPromptPolicy.estimatedUsageTokensPerField(count)
+            )
+        }
+    }
+
+    private fun renderStyleSamples(count: Int) {
+        binding.styleSamplesValue.text = countLabel(count)
+        binding.styleSamplesCost.text = if (count == 0) {
+            getString(R.string.ai_settings_prompt_cost_none)
+        } else {
+            getString(
+                R.string.ai_settings_style_samples_cost,
+                AiPromptPolicy.estimatedStyleTokensPerRequest(count)
+            )
+        }
+    }
+
+    /** 0은 숫자가 아니라 상태다 — "0개"보다 "보내지 않음"이 무슨 일이 벌어지는지 말한다. */
+    private fun countLabel(count: Int): String =
+        if (count == 0) getString(R.string.ai_settings_prompt_off)
+        else getString(R.string.ai_settings_prompt_count, count)
 
     private fun refreshList() {
         val configs = providerStore.list()

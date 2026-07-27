@@ -309,8 +309,17 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
          * - 예시는 **숨김 제외**(숨김의 계약이 "입력 제안에서 제외"이고 AI 추천도 입력 제안이다)
          * - 접기 표는 **숨김 포함**(숨김 값도 저장 가능한 값이라 restricted 검증 집합과 같아야 한다)
          * - 별칭보다 canonical이 우선한다(다른 엔트리의 별칭이 이 값과 겹쳐도 자기 자신으로 접힌다)
+         *
+         * [exampleLimit]은 사용자 설정([AiPromptSettings.usageExampleCount])이다. **0이어도
+         * 접기 표는 그대로 만든다** — 설정이 줄이는 것은 프롬프트 적재량(토큰)이지, 별칭 교정과
+         * restricted 검증(정확성)이 아니다. 같은 이유로 restricted 필드는 허용 목록이 곧 계약이라
+         * 설정이 0이어도 기본 개수만큼은 싣는다(목록을 안 주고 목록 밖이라 드롭할 수는 없다).
          */
-        fun withLibraryUsage(spec: FieldSpec, entries: List<FieldValueEntry>): FieldSpec {
+        fun withLibraryUsage(
+            spec: FieldSpec,
+            entries: List<FieldValueEntry>,
+            exampleLimit: Int = MAX_USAGE_EXAMPLES
+        ): FieldSpec {
             if (!spec.libraryEligible || entries.isEmpty()) return spec
             val canonical = HashMap<String, String>(entries.size * 2)
             for (e in entries) {
@@ -321,9 +330,12 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
             }
             for (e in entries) canonical[e.value] = e.value  // canonical이 별칭을 이긴다
             val visible = entries.filterNot { it.isHidden }.filter { it.value.isNotBlank() }
+            val limit =
+                if (spec.restrictedToLibrary) exampleLimit.coerceAtLeast(MAX_USAGE_EXAMPLES) else exampleLimit
             return spec.copy(
                 usageExamples = selectUsageExamples(
                     visible,
+                    limit = limit,
                     maxValueChars = if (spec.restrictedToLibrary) Int.MAX_VALUE else MAX_USAGE_EXAMPLE_VALUE_CHARS
                 ),
                 usageTotal = visible.size,

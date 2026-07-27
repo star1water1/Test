@@ -487,6 +487,30 @@ class CharacterFieldAiSuggesterTest {
     }
 
     @Test
+    fun withLibraryUsage_예시_개수는_사용자_설정을_따르되_정확성은_끄지_못한다() {
+        val entries = listOf(
+            entry("검은 머리", 5, aliases = listOf("흑발")), entry("은발", 3), entry("금발", 1)
+        )
+        val few = CharacterFieldAiSuggester.withLibraryUsage(libSpec(), entries, exampleLimit = 1)
+        assertEquals(listOf("검은 머리"), few.usageExamples)
+
+        // 0 = "프롬프트에 싣지 마라"이지, "별칭 교정을 끄라"가 아니다 (토큰 절약 ≠ 정확성 포기)
+        val off = CharacterFieldAiSuggester.withLibraryUsage(libSpec(), entries, exampleLimit = 0)
+        assertTrue(off.usageExamples.isEmpty())
+        assertEquals("검은 머리", CharacterFieldAiSuggester.normalizeValue("흑발", off))
+    }
+
+    @Test
+    fun withLibraryUsage_restricted는_설정이_0이어도_허용_목록을_싣는다() {
+        // 목록을 안 주고 "목록 밖이라 드롭"할 수는 없다 — 허용 목록은 토큰 설정의 대상이 아니다.
+        val entries = listOf(entry("북부", 3), entry("남부", 1))
+        val off = CharacterFieldAiSuggester.withLibraryUsage(
+            libSpec(restricted = true), entries, exampleLimit = 0
+        )
+        assertEquals(listOf("북부", "남부"), off.usageExamples)
+    }
+
+    @Test
     fun withLibraryUsage_canonical이_남의_별칭을_이긴다() {
         val entries = listOf(entry("은발", aliases = listOf("백발")), entry("백발"))
         val enriched = CharacterFieldAiSuggester.withLibraryUsage(libSpec(), entries)

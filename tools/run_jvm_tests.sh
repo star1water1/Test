@@ -126,6 +126,7 @@ $MAIN/ai/FieldLibraryAiOrganizer.kt
 $MAIN/ai/AiModels.kt
 $MAIN/ai/AiProtocolCodec.kt
 $MAIN/ai/NarrativeFieldAiWriter.kt
+$MAIN/ai/AiPromptPolicy.kt
 $MAIN/data/model/NarrativeMode.kt
 $MAIN/util/ImageFilterHelper.kt
 $MAIN/util/ImageRecommendationHelper.kt
