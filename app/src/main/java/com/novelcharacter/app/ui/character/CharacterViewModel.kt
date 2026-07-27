@@ -905,6 +905,55 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         return true
     }
 
+    // ===== 서술형 필드 AI 작성 (NarrativeWriteSheet → 여기서 수행) =====
+    // 추천 경로와 같은 이유로 VM 스코프에서 실행한다 — 긴 글은 응답이 더 오래 걸려
+    // 회전으로 유료 응답이 폐기될 확률이 오히려 높다.
+
+    /** 서술형 작성 1회 실행분 — 결과 검토에 필요한 전부 */
+    data class AiNarrativeRun(
+        val fieldId: Long,
+        val fieldName: String,
+        val mode: com.novelcharacter.app.ai.NarrativeFieldAiWriter.Mode,
+        /** 실행 시점의 원문 — 이어쓰기 결과를 이어 붙이고, 원문과 나란히 보여주는 데 쓴다. */
+        val originalValue: String,
+        val outcome: com.novelcharacter.app.ai.NarrativeFieldAiWriter.WriteOutcome
+    )
+
+    val aiNarrativeRunning = MutableLiveData(false)
+    val aiNarrativeResult = MutableLiveData<AiNarrativeRun?>()
+    fun clearAiNarrativeResult() { aiNarrativeResult.value = null }
+
+    /**
+     * 서술형 작성 실행. 이미 실행 중이면 false — 호출측이 반드시 사용자에게 알린다.
+     * 결과 소비(clear)는 검토 다이얼로그의 액션 시점이라 검토 중 회전에도 결과가 생존한다.
+     */
+    fun runAiNarrative(
+        aiContext: com.novelcharacter.app.ai.CharacterFieldAiSuggester.CharacterAiContext,
+        fieldId: Long,
+        spec: com.novelcharacter.app.ai.NarrativeFieldAiWriter.FieldSpec,
+        mode: com.novelcharacter.app.ai.NarrativeFieldAiWriter.Mode,
+        length: com.novelcharacter.app.ai.NarrativeFieldAiWriter.Length,
+        variants: Int
+    ): Boolean {
+        if (aiNarrativeRunning.value == true) return false
+        aiNarrativeRunning.value = true
+        viewModelScope.launch {
+            try {
+                val writer = com.novelcharacter.app.ai.NarrativeFieldAiWriter(
+                    com.novelcharacter.app.ai.AiService(getApplication())
+                )
+                val outcome = writer.write(aiContext, spec, mode, length, variants) { failure ->
+                    com.novelcharacter.app.ai.AiErrorMessages.of(getApplication(), failure)
+                }
+                aiNarrativeResult.value =
+                    AiNarrativeRun(fieldId, spec.name, mode, spec.currentValue, outcome)
+            } finally {
+                aiNarrativeRunning.value = false
+            }
+        }
+        return true
+    }
+
     /** restricted 입력 모드 위반 검출 — (필드, 위반 토큰) 목록 (검토 A8: 코디네이터 공통 가드용) */
     suspend fun findRestrictedViolations(
         values: List<CharacterFieldValue>

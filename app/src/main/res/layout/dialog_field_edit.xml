@@ -119,6 +119,36 @@
 
             </LinearLayout>
 
+            <!-- 서술형 여부 (TEXT 타입일 때만 표시) — AI 작성 보조의 경로를 가른다 -->
+            <LinearLayout
+                android:id="@+id/narrativeModeLayout"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone"
+                android:layout_marginBottom="12dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/label_narrative_mode"
+                    android:textAppearance="@style/TextAppearance.App.Caption"
+                    android:textColor="@color/text_secondary" />
+
+                <Spinner
+                    android:id="@+id/spinnerNarrativeMode"
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/hint_narrative_mode"
+                    android:textAppearance="@style/TextAppearance.App.Caption"
+                    android:textColor="@color/text_secondary" />
+
+            </LinearLayout>
+
             <!-- SELECT 옵션 (SELECT 타입일 때만 표시) -->
             <LinearLayout
                 android:id="@+id/selectOptionsLayout"

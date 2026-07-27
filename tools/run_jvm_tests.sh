@@ -120,6 +120,8 @@ $MAIN/ai/CharacterFieldAiSuggester.kt
 $MAIN/ai/FieldLibraryAiOrganizer.kt
 $MAIN/ai/AiModels.kt
 $MAIN/ai/AiProtocolCodec.kt
+$MAIN/ai/NarrativeFieldAiWriter.kt
+$MAIN/data/model/NarrativeMode.kt
 $MAIN/util/ImageFilterHelper.kt
 $MAIN/util/ImageRecommendationHelper.kt
 $MAIN/util/ImageLinkResolver.kt
@@ -181,6 +183,7 @@ $TEST/ai/CharacterFieldAiSuggesterTest.kt
 $TEST/ai/FieldLibraryAiOrganizerTest.kt
 $TEST/ai/AiProtocolCodecTest.kt
 $TEST/ai/AiTokenPolicyTest.kt
+$TEST/ai/NarrativeFieldTest.kt
 $TEST/share/WorldPackageFactionRelationshipsTest.kt
 $TEST/excel/MergedCellMapTest.kt
 $TEST/share/WorldPackageParserTest.kt
