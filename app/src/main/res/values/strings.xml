@@ -2301,6 +2301,8 @@
     <string name="ai_field_running">AI가 캐릭터 정보를 분석하는 중…</string>
     <string name="ai_field_nothing">적용할 추천이 없습니다.</string>
     <string name="ai_field_dropped">형식·옵션에 맞지 않는 추천 %1$d건은 제외했습니다</string>
+    <string name="ai_field_unknown_keys">응답에 없는 필드 key %1$d개가 섞여 있어 제외했습니다</string>
+    <string name="ai_field_retry_missing">못 받은 %1$d개 필드만 다시 요청</string>
     <string name="ai_field_truncated_prefix">컨텍스트 일부 생략: %1$s</string>
     <string name="ai_field_review_title">AI 추천 검토</string>
     <string name="ai_field_overwrite_format">현재: %1$s → 추천: %2$s</string>

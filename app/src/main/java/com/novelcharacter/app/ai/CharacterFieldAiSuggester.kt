@@ -91,6 +91,55 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
         val reason: String
     )
 
+    /**
+     * 요청했는데 제안이 나오지 않은 대상 1건과 그 **사유**.
+     *
+     * 종전에는 결손이 `droppedCount`(모델이 값을 냈으나 검증에서 떨어진 수) 하나로만 잡혀,
+     * **모델이 응답에 아예 넣지 않은 필드**는 어디에도 집계되지 않았다. 그래서 필드 열몇 개를
+     * 요청하고 서너 개만 받아도 앱은 "정상"이라 말했고, 사용자는 원인이 모델의 임의 생략인지
+     * 검증 드롭인지 요청 실패인지 구별할 방법이 없었다 — 전형적인 조용한 실패다.
+     * 이제 [SuggestOutcome.suggestions] + [SuggestOutcome.missing] = 요청 대상 전체가 되어,
+     * 빠진 필드는 반드시 사유를 달고 표면화된다 (변수 제어).
+     */
+    data class MissingField(
+        val fieldKey: String,
+        val fieldName: String,
+        val cause: MissingCause,
+        /** 모델이 밝힌 사유(DECLINED)나 검증이 거부한 원문 값(INVALID·RESTRICTED 등) */
+        val detail: String = ""
+    ) {
+        fun describe(): String = buildString {
+            append(fieldName).append(" — ").append(cause.label)
+            if (detail.isNotBlank()) {
+                append(": ").append(detail.take(MAX_MISSING_DETAIL_CHARS).replace('\n', ' '))
+            }
+        }
+    }
+
+    /** [MissingField]의 사유 — 교정 경로가 서로 다르므로 하나로 뭉뚱그리지 않는다 */
+    enum class MissingCause(val label: String) {
+        /** 스키마상 내야 할 항목을 모델이 응답에 넣지 않음 (프롬프트 계약 위반) */
+        NOT_RETURNED("모델이 응답에 넣지 않음"),
+
+        /** 모델이 value를 비우고 사유를 밝힘 — 계약대로의 '추천 불가' 표기 */
+        DECLINED("모델이 추천 불가로 표시"),
+
+        INVALID("형식·옵션에 맞지 않아 제외"),
+        RESTRICTED("허용 목록 밖 값이라 제외"),
+        SAME_AS_CURRENT("현재 값과 같아 제외"),
+        DUPLICATE("같은 필드에 중복 제안이라 제외"),
+        TRUNCATED("응답이 출력 상한에 잘려 못 받음"),
+        UNREADABLE("응답 형식을 해석하지 못함"),
+        REQUEST_FAILED("요청이 실패함"),
+        NOT_REQUESTED("앞선 결정적 실패로 요청하지 않음")
+    }
+
+    /** 값 정규화 결과 — 실패 사유를 잃지 않기 위해 null 대신 사유를 들고 돌아온다 */
+    sealed class Normalized {
+        data class Ok(val value: String) : Normalized()
+        data class Rejected(val cause: MissingCause) : Normalized()
+    }
+
     data class SuggestOutcome(
         val suggestions: List<Suggestion>,
         /** 형식·옵션 불일치, 미지 key, 중복 등으로 제외된 제안 수 (조용히 버리지 않고 고지) */
@@ -100,8 +149,18 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
         /** 프롬프트 조립 시 절단된 컨텍스트 고지 (R-14) */
         val truncationNotes: List<String>,
         val inputTokens: Int,
-        val outputTokens: Int
-    )
+        val outputTokens: Int,
+        /**
+         * 요청 대상 중 제안이 나오지 않은 전부 — 사유와 함께. [suggestions]와 합치면 요청
+         * 대상 전체가 된다(결손 0 보장). 호출측은 이것을 반드시 사용자에게 보여야 한다.
+         */
+        val missing: List<MissingField> = emptyList(),
+        /** 응답에 섞여 온 목록 밖 key(환각) — 드롭 수에도 포함되지만 원인이 달라 따로 고지한다 */
+        val unknownKeys: List<String> = emptyList()
+    ) {
+        /** 요청 대상 수 — 받은 수와 나란히 고지하기 위한 파생값 */
+        val requestedCount: Int get() = suggestions.size + missing.size
+    }
 
     /**
      * 대상 필드를 [MAX_TARGETS_PER_REQUEST] 단위로 청킹해 순차 요청한다.
@@ -118,11 +177,14 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
         var dropped = 0
         val failures = mutableListOf<String>()
         val truncationNotes = mutableListOf<String>()
+        val missing = mutableListOf<MissingField>()
+        val unknownKeys = mutableListOf<String>()
         var inputTokens = 0
         var outputTokens = 0
 
         val maxTokens = aiService.effectiveMaxTokens()
-        for (chunk in chunkTargets(targets, maxTokens)) {
+        val chunks = chunkTargets(targets, maxTokens)
+        for ((chunkIndex, chunk) in chunks.withIndex()) {
             val prompt = buildUserPrompt(context, chunk)
             // 청크별 targetNames 차이로 문구가 다를 수 있어 완전 중복만 접는다 (고지 과다는 무해 방향)
             prompt.truncationNotes.forEach { if (it !in truncationNotes) truncationNotes.add(it) }
@@ -141,16 +203,41 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
                         // 종전에는 둘 다 "형식 오류 — 다시 시도해 주세요"로 떨어져, 재시도해도
                         // 결정적으로 같은 결과가 나오는 길로 사용자를 보냈다.
                         failures.add(if (result.truncated) truncatedMessage(chunk.size) else PARSE_FAILURE_MESSAGE)
+                        val cause =
+                            if (result.truncated) MissingCause.TRUNCATED else MissingCause.UNREADABLE
+                        chunk.forEach { missing.add(MissingField(it.key, it.name, cause)) }
                     } else {
                         suggestions.addAll(parsed.suggestions)
                         dropped += parsed.droppedCount
+                        unknownKeys.addAll(parsed.unknownKeys)
+                        // 잘린 응답에서 못 받은 항목은 '모델이 뺀 것'이 아니라 '상한에 잘린 것'이다 —
+                        // 사유를 바꿔 달아야 사용자가 상한을 올리는 올바른 교정으로 간다.
+                        missing.addAll(
+                            if (result.truncated) {
+                                parsed.missing.map {
+                                    if (it.cause == MissingCause.NOT_RETURNED) {
+                                        it.copy(cause = MissingCause.TRUNCATED)
+                                    } else it
+                                }
+                            } else parsed.missing
+                        )
                         // 형식은 살아남았어도 잘렸다면 일부 제안이 빠진 것이다 — 조용히 두지 않는다.
                         if (result.truncated) failures.add(truncatedPartialMessage(chunk.size, parsed.suggestions.size))
                     }
                 }
                 is AiResult.Failure -> {
                     failures.add(errorMessageOf(result))
-                    if (result.kind in TERMINAL_ERRORS) break
+                    chunk.forEach { missing.add(MissingField(it.key, it.name, MissingCause.REQUEST_FAILED)) }
+                    if (result.kind in TERMINAL_ERRORS) {
+                        // 잔여 청크는 요청조차 하지 않는다 — 그 사실도 결손으로 남긴다.
+                        // 종전에는 여기서 break만 하고 끝나, 뒤쪽 필드들이 흔적 없이 사라졌다.
+                        for (rest in chunks.drop(chunkIndex + 1)) {
+                            rest.forEach {
+                                missing.add(MissingField(it.key, it.name, MissingCause.NOT_REQUESTED))
+                            }
+                        }
+                        break
+                    }
                 }
             }
         }
@@ -160,7 +247,9 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
             failures = failures,
             truncationNotes = truncationNotes,
             inputTokens = inputTokens,
-            outputTokens = outputTokens
+            outputTokens = outputTokens,
+            missing = missing,
+            unknownKeys = unknownKeys.distinct()
         )
     }
 
@@ -211,6 +300,30 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
         )
 
         const val PARSE_FAILURE_MESSAGE = "응답 형식을 해석할 수 없습니다 — 다시 시도해 주세요"
+
+        /** 결손 사유에 덧붙이는 원문·모델 사유의 표시 상한 (다이얼로그 한 줄 분량) */
+        const val MAX_MISSING_DETAIL_CHARS = 60
+
+        /**
+         * 결손 고지에 한 번에 나열할 필드 수. 넘치면 "외 N개"로 접되 **총 수는 반드시 밝힌다**
+         * — 접는 것은 표시량이지 사실이 아니다.
+         */
+        const val MAX_MISSING_LINES = 12
+
+        /** "요청 N개 중 M개 수신" — 결손이 0이어도 수를 밝혀 사용자가 매번 세지 않게 한다 */
+        fun receivedSummary(requested: Int, received: Int): String =
+            "요청한 필드 ${requested}개 중 ${received}개를 받았습니다"
+
+        /**
+         * 결손 명세 — 사유별로 묶어 필드명을 나열한다. 사유가 곧 교정 경로라서(상한을 올려라 /
+         * 옵션을 손봐라 / 캐릭터 정보를 더 채워라) 필드명만 나열하는 것으로는 부족하다.
+         */
+        fun missingLines(missing: List<MissingField>): List<String> {
+            if (missing.isEmpty()) return emptyList()
+            val lines = missing.take(MAX_MISSING_LINES).map { "· " + it.describe() }
+            val rest = missing.size - lines.size
+            return if (rest > 0) lines + "· 외 ${rest}개" else lines
+        }
 
         /** 잘려서 아무것도 못 건진 경우 — '다시 시도'는 같은 결과를 부르므로 안내하지 않는다. */
         fun truncatedMessage(targetCount: Int): String =
@@ -422,21 +535,40 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
             return tokens.isNotEmpty() && tokens.all { it in spec.canonicalByVariant }
         }
 
+        /**
+         * 시스템 프롬프트.
+         *
+         * **전량 응답 계약**: 종전 규칙 "근거가 부족해 추천할 수 없는 필드는 응답에서 생략한다"는
+         * 모델에게 마음껏 빠뜨릴 재량을 준 지시였다. 캐릭터 한 명의 정보는 원래 성기므로 모델은
+         * 대부분의 필드를 '근거 부족'으로 판정했고, 필드 열몇 개를 요청해도 서너 개만 돌아왔다.
+         * 출력 토큰을 올리거나 좋은 모델을 써도 달라지지 않는다 — 상한이 아니라 지시가 원인이다.
+         *
+         * 그래서 계약을 뒤집는다: **요청한 key 전부에 항목을 하나씩** 내되, 정말 정할 수 없으면
+         * 생략이 아니라 빈 value + 사유로 표기하게 한다. 앱은 그 사유를 사용자에게 그대로
+         * 보여줄 수 있고(변수 제어), 추측성 제안은 검토 UI에서 사용자가 걸러 낸다 — 채택 여부를
+         * 가리는 것은 모델이 아니라 사용자다(자율성 우선).
+         */
         fun buildSystemPrompt(): String = """
             당신은 소설 캐릭터 설정 도우미다. 주어진 캐릭터 정보를 근거로 요청된 필드의 값을 추천하라.
             규칙:
             1. 반드시 아래 JSON 스키마로만 응답하고 다른 텍스트를 덧붙이지 마라:
             {"suggestions":[{"key":"필드키","value":"추천값","reason":"근거 한 문장"}]}
-            2. key는 [추천할 필드]에 제시된 key만 사용한다.
-            3. '옵션'이 제시된 필드는 그 옵션 중 하나만 쓴다. 옵션에 없는 값을 만들지 마라.
-            4. '형식' 지시가 있는 필드는 형식을 정확히 지킨다 (예: 생일 MM-DD → 03-15).
-            5. reason에는 캐릭터의 어떤 정보(태그·메모·다른 필드·이미지 태그·소속·관계)에서 추론했는지 한국어 한 문장으로 쓴다.
-            6. 근거가 부족해 추천할 수 없는 필드는 응답에서 생략한다.
-            7. '기존 사용값'이 제시된 필드는 그 값들이 이 작품에서 실제로 쓰이는 표기 기조다.
+            2. [추천할 필드]에 제시된 key **전부**에 대해 항목을 하나씩 낸다. 필드가 N개면 항목도 N개다.
+               임의로 빠뜨리지 마라 — 빠진 필드는 사용자에게 이유를 알 수 없는 결손으로 남는다.
+            3. key는 [추천할 필드]에 제시된 key만 사용한다. 목록에 없는 key를 만들지 마라.
+            4. 정보가 적다는 이유로 추천을 포기하지 마라. 캐릭터 정보와 모순되지 않고 아래 '기존 사용값'의
+               기조에 맞는다면 합리적으로 추정해 제시하고, reason에 무엇을 근거로 한 추정인지 밝힌다.
+               제안은 사용자가 검토해 취사선택하므로, 확신이 없다는 이유로 생략할 필요가 없다.
+            5. 그럼에도 정할 근거가 전혀 없는 필드는 **생략하지 말고** value를 빈 문자열("")로 두고
+               reason에 그 이유를 한국어 한 문장으로 적는다. 항목 자체는 반드시 포함한다.
+            6. '옵션'이 제시된 필드는 그 옵션 중 하나를 **그대로** 쓴다. 옵션에 없는 값을 만들지 마라.
+            7. '형식' 지시가 있는 필드는 형식을 정확히 지킨다 (예: 생일 MM-DD → 03-15).
+            8. reason에는 캐릭터의 어떤 정보(태그·메모·다른 필드·이미지 태그·소속·관계)에서 추론했는지 한국어 한 문장으로 쓴다.
+            9. '기존 사용값'이 제시된 필드는 그 값들이 이 작품에서 실제로 쓰이는 표기 기조다.
                같은 뜻이면 새 표기를 만들지 말고 기존 값을 그대로 쓴다.
                기존 값으로 표현할 수 없어 새 값이 필요할 때만 새로 만들되, 기존 값들의 표기 방식·
                상세도·길이를 따른다 (예: 기존이 '흑발, 은발'이면 '짙은 밤하늘빛 흑청색'은 안 된다).
-            8. '이 목록의 값만 허용'이 붙은 필드는 제시된 기존 사용값 중에서만 고른다.
+            10. '이 목록의 값만 허용'이 붙은 필드는 제시된 기존 사용값 중에서만 고른다.
         """.trimIndent()
 
         data class PromptBuild(val text: String, val truncationNotes: List<String>)
@@ -499,7 +631,9 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
                 if (longValues > 0) notes.add("긴 필드값 ${longValues}건을 ${MAX_VALUE_CHARS}자로 절단")
             }
 
-            sb.append("[추천할 필드]\n")
+            // 개수를 프롬프트에 못 박는다 — 목록만 주면 모델이 '고를 수 있는 만큼'으로 읽는다.
+            sb.append("[추천할 필드] 총 ").append(targets.size).append("개 — 아래 ")
+                .append(targets.size).append("개 전부에 대해 항목을 내라\n")
             for (t in targets) {
                 sb.append("- key: ").append(t.key)
                     .append(" / 이름: ").append(t.name)
@@ -533,37 +667,88 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
                 }
                 sb.append('\n')
             }
+            // 목록 끝에서 개수를 한 번 더 못 박는다 — 긴 목록일수록 앞머리 지시가 희석된다.
+            sb.append("위 ").append(targets.size).append("개 필드 각각에 항목을 하나씩, 총 ")
+                .append(targets.size).append("개 항목으로 응답하라. ")
+                .append("정할 근거가 없는 필드도 빼지 말고 value를 \"\"로 두고 reason에 이유를 적어라.\n")
             return PromptBuild(sb.toString(), notes)
         }
 
-        data class ParsedSuggestions(val suggestions: List<Suggestion>, val droppedCount: Int)
+        data class ParsedSuggestions(
+            val suggestions: List<Suggestion>,
+            val droppedCount: Int,
+            /** 이 청크의 대상 중 제안이 안 나온 전부 — [suggestions]와 합치면 대상 전체가 된다 */
+            val missing: List<MissingField> = emptyList(),
+            /** 대상 목록에 없는 key(환각) */
+            val unknownKeys: List<String> = emptyList()
+        )
 
         /**
          * 응답 파싱 + 실제 필드 정의 기준 검증 (AiService 미호출 — 단위 테스트 대상).
-         * 드롭 규칙: 미지 key, 같은 key 중복(첫 건만 채택), 빈 값, SELECT/GRADE 옵션 불일치,
+         * 드롭 규칙: 미지 key, 같은 key 중복(첫 건만 채택), SELECT/GRADE 옵션 불일치,
          * NUMBER 비수치(선행 숫자 추출 실패), 생일 형식·달력 위반, 현재 값과 동일한 제안.
+         *
+         * 빈 value는 드롭이 아니라 **모델이 밝힌 추천 불가**(DECLINED)로 분류한다 — 형식을 어긴
+         * 것이 아니라 계약대로 사유를 적어 낸 것이므로, 드롭 수에 섞으면 사유가 사라진다.
+         *
+         * 반환된 [ParsedSuggestions.missing]은 대상 중 제안이 안 나온 **전부**를 사유와 함께
+         * 담는다 — 모델이 응답에 아예 넣지 않은 필드(NOT_RETURNED)까지 포함한다.
          */
         fun parseResponse(text: String, targets: List<FieldSpec>): ParsedSuggestions? {
             val root = AiJsonExtractor.extractObject(text) ?: return null
-            val arr = root.optJSONArray("suggestions") ?: return ParsedSuggestions(emptyList(), 0)
+            val arr = root.optJSONArray("suggestions")
             val byKey = targets.associateBy { it.key }
             val seenKeys = mutableSetOf<String>()
+            val resolved = mutableSetOf<String>()
+            // 같은 key에 사유가 여러 번 붙으면 **첫 사유**를 남긴다(뒤의 중복 항목이 원인을 덮지 않게)
+            val causeByKey = LinkedHashMap<String, MissingField>()
+            val unknownKeys = mutableListOf<String>()
             var dropped = 0
             val out = mutableListOf<Suggestion>()
-            for (i in 0 until arr.length()) {
-                val obj = arr.optJSONObject(i) ?: continue
+
+            fun note(spec: FieldSpec, cause: MissingCause, detail: String) {
+                causeByKey.putIfAbsent(spec.key, MissingField(spec.key, spec.name, cause, detail))
+            }
+
+            for (i in 0 until (arr?.length() ?: 0)) {
+                val obj = arr?.optJSONObject(i) ?: continue
                 val key = obj.optString("key").trim()
                 val rawValue = obj.optString("value").trim()
                 val reason = obj.optString("reason").trim()
                 if (key.isEmpty() && rawValue.isEmpty()) continue
                 val spec = byKey[key]
-                if (spec == null || rawValue.isEmpty()) { dropped++; continue }
-                if (!seenKeys.add(key)) { dropped++; continue }
-                val value = normalizeValue(rawValue, spec)
-                if (value == null || value == spec.currentValue) { dropped++; continue }
-                out.add(Suggestion(key, value, reason))
+                if (spec == null) {
+                    dropped++
+                    if (key.isNotEmpty()) unknownKeys.add(key)
+                    continue
+                }
+                if (rawValue.isEmpty()) { note(spec, MissingCause.DECLINED, reason); continue }
+                if (!seenKeys.add(key)) {
+                    dropped++
+                    note(spec, MissingCause.DUPLICATE, rawValue)
+                    continue
+                }
+                when (val normalized = normalizeChecked(rawValue, spec)) {
+                    is Normalized.Ok ->
+                        if (normalized.value == spec.currentValue) {
+                            dropped++
+                            note(spec, MissingCause.SAME_AS_CURRENT, normalized.value)
+                        } else {
+                            out.add(Suggestion(key, normalized.value, reason))
+                            resolved.add(key)
+                        }
+                    is Normalized.Rejected -> {
+                        dropped++
+                        note(spec, normalized.cause, rawValue)
+                    }
+                }
             }
-            return ParsedSuggestions(out, dropped)
+            // 제안이 나온 필드는 결손이 아니다 — 뒤따른 중복 제안의 사유가 남아 있어도 지운다
+            resolved.forEach { causeByKey.remove(it) }
+            val missing = targets.filter { it.key !in resolved }.map {
+                causeByKey[it.key] ?: MissingField(it.key, it.name, MissingCause.NOT_RETURNED)
+            }
+            return ParsedSuggestions(out, dropped, missing, unknownKeys)
         }
 
         /**
@@ -573,18 +758,41 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
          * 별칭 '흑발'을 답한 경우, 접고 나서 옳은 옵션으로 통과시키는 편이 드롭보다 낫다.
          * 접은 뒤 restricted 허용 검증을 마지막에 적용한다(접힌 canonical 기준으로 판정).
          */
-        fun normalizeValue(raw: String, spec: FieldSpec): String? {
+        fun normalizeValue(raw: String, spec: FieldSpec): String? =
+            (normalizeChecked(raw, spec) as? Normalized.Ok)?.value
+
+        /** [normalizeValue]와 같은 판정이되 실패 사유를 들고 돌아온다 — 결손 고지의 근거 */
+        fun normalizeChecked(raw: String, spec: FieldSpec): Normalized {
             val folded = foldToLibrary(raw, spec)
             val typed = when {
                 spec.isBirthDate -> normalizeBirthDate(folded)
                 spec.type == FieldType.SELECT || spec.type == FieldType.GRADE ->
-                    spec.options.firstOrNull { it == folded }
+                    matchOption(folded, spec.options)
                 spec.type == FieldType.NUMBER -> normalizeNumber(folded)
                 spec.structuredPartCount != null -> normalizeStructured(folded, spec)
                 else -> folded
-            } ?: return null
-            return if (isAllowedByLibrary(typed, spec)) typed else null
+            } ?: return Normalized.Rejected(MissingCause.INVALID)
+            return if (isAllowedByLibrary(typed, spec)) Normalized.Ok(typed)
+            else Normalized.Rejected(MissingCause.RESTRICTED)
         }
+
+        /**
+         * SELECT/GRADE 옵션 매칭 — 정확 일치 우선, 실패하면 공백·대소문자를 무시한 일치까지 본다.
+         * '남 성'/'MALE' 같은 차이는 값이 틀린 것이 아니라 표기가 다른 것이라, 유료 응답을 통째로
+         * 버리기보다 옵션 원문으로 교정하는 편이 옳다(유연한 수용). 반환값은 **언제나 옵션 원문**이라
+         * 저장값이 옵션 목록 밖으로 새지 않는다.
+         */
+        fun matchOption(value: String, options: List<String>): String? {
+            options.firstOrNull { it == value }?.let { return it }
+            val normalized = normalizeForMatch(value)
+            if (normalized.isEmpty()) return null
+            return options.firstOrNull { normalizeForMatch(it) == normalized }
+        }
+
+        private fun normalizeForMatch(value: String): String =
+            value.trim().replace(WHITESPACE, "").lowercase(java.util.Locale.ROOT)
+
+        private val WHITESPACE = Regex("\\s+")
 
         /**
          * 구조화 입력 검증 — 파트 수만큼 구분자로 나뉘고 전 파트가 비어 있지 않아야 통과.

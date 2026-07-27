@@ -276,7 +276,9 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
             }
         }
         viewModel.aiSuggestResult.observe(viewLifecycleOwner) { run ->
-            if (run != null) AiFieldSuggestSheet.showResult(this, formBuilder, viewModel, run)
+            if (run != null) {
+                AiFieldSuggestSheet.showResult(this, formBuilder, viewModel, run) { buildAiContext() }
+            }
         }
         // 서술형 작성 — 진행 다이얼로그는 추천 경로와 공유한다(동시 실행은 VM이 막는다).
         viewModel.aiNarrativeRunning.observe(viewLifecycleOwner) { running ->

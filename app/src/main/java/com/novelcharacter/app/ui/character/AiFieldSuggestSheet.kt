@@ -1,5 +1,6 @@
 package com.novelcharacter.app.ui.character
 
+import android.widget.Button
 import android.widget.CheckBox
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -190,43 +191,87 @@ object AiFieldSuggestSheet {
         fragment: Fragment,
         formBuilder: DynamicFieldFormBuilder,
         viewModel: CharacterViewModel,
-        run: CharacterViewModel.AiSuggestRun
+        run: CharacterViewModel.AiSuggestRun,
+        contextLoader: suspend () -> CharacterFieldAiSuggester.CharacterAiContext
     ) {
         val context = fragment.requireContext()
         val outcome = run.outcome
         if (outcome.suggestions.isEmpty()) {
+            // 고지는 성공 경로와 **같은 조립기**를 쓴다 — 따로 적으면 한쪽에만 항목이 추가되는
+            // (그래서 빈 결과일 때만 사유가 안 보이는) 어긋남이 생긴다. 실패 문구도 여기 포함된다.
             val message = buildString {
                 append(fragment.getString(R.string.ai_field_nothing))
-                outcome.failures.forEach { append("\n· ").append(it) }
-                if (outcome.droppedCount > 0) {
-                    append("\n· ").append(fragment.getString(R.string.ai_field_dropped, outcome.droppedCount))
-                }
-                outcome.truncationNotes.forEach {
-                    append("\n· ").append(fragment.getString(R.string.ai_field_truncated_prefix, it))
-                }
+                buildNoticeLines(fragment, outcome).forEach { append("\n· ").append(it) }
             }
-            MaterialAlertDialogBuilder(context)
+            val builder = MaterialAlertDialogBuilder(context)
                 .setTitle(R.string.ai_field_suggest_title)
                 .setMessage(message)
                 .setPositiveButton(R.string.confirm) { _, _ -> viewModel.clearAiSuggestResult() }
                 .setOnCancelListener { viewModel.clearAiSuggestResult() }
-                .show()
+            retryableTargets(run).takeIf { it.isNotEmpty() }?.let { retry ->
+                builder.setNegativeButton(
+                    fragment.getString(R.string.ai_field_retry_missing, retry.size)
+                ) { _, _ ->
+                    viewModel.clearAiSuggestResult()
+                    runSuggest(fragment, viewModel, contextLoader, retry, singleMode = false)
+                }
+            }
+            builder.show()
             return
         }
 
         if (run.singleMode) {
             showSingleConfirm(fragment, formBuilder, viewModel, run)
         } else {
-            showReviewDialog(fragment, formBuilder, viewModel, run)
+            showReviewDialog(fragment, formBuilder, viewModel, run, contextLoader)
         }
     }
 
-    /** 공통 상단 고지 — 토큰 사용·드롭·절단·부분 실패 (변수 제어: 조용히 버린 것 없음) */
-    private fun buildNotices(
+    /**
+     * 다시 요청할 만한 대상 — 결손 중 **재요청으로 달라질 수 있는 것**만 고른다.
+     * 현재 값과 같아서 빠진 것(SAME_AS_CURRENT)이나 모델이 사유를 밝힌 것(DECLINED)까지
+     * 자동으로 다시 부르면 사용자가 같은 답에 두 번 과금된다.
+     */
+    private fun retryableTargets(
+        run: CharacterViewModel.AiSuggestRun
+    ): List<CharacterFieldAiSuggester.FieldSpec> {
+        val specByKey = run.targets.associateBy { it.key }
+        return run.outcome.missing
+            .filter { it.cause in RETRYABLE_CAUSES }
+            .mapNotNull { specByKey[it.fieldKey] }
+    }
+
+    private val RETRYABLE_CAUSES = setOf(
+        CharacterFieldAiSuggester.MissingCause.NOT_RETURNED,
+        CharacterFieldAiSuggester.MissingCause.TRUNCATED,
+        CharacterFieldAiSuggester.MissingCause.UNREADABLE,
+        CharacterFieldAiSuggester.MissingCause.REQUEST_FAILED,
+        CharacterFieldAiSuggester.MissingCause.NOT_REQUESTED,
+        CharacterFieldAiSuggester.MissingCause.INVALID,
+        CharacterFieldAiSuggester.MissingCause.DUPLICATE
+    )
+
+    /**
+     * 공통 상단 고지 — 수신 수·결손 명세·드롭·절단·부분 실패.
+     * 요청 수와 수신 수를 **항상** 밝힌다: 열몇 개를 요청하고 서너 개만 받았을 때 그 사실이
+     * 화면 어디에도 없으면 사용자는 앱이 제대로 동작한 줄 안다 (변수 제어 — 조용한 결손 금지).
+     */
+    private fun buildNoticeLines(
         fragment: Fragment,
         outcome: CharacterFieldAiSuggester.SuggestOutcome
-    ): String = buildList {
+    ): List<String> = buildList {
         add(fragment.getString(R.string.field_library_ai_token_usage, outcome.inputTokens, outcome.outputTokens))
+        if (outcome.requestedCount > 1) {
+            add(
+                CharacterFieldAiSuggester.receivedSummary(
+                    outcome.requestedCount, outcome.suggestions.size
+                )
+            )
+        }
+        addAll(CharacterFieldAiSuggester.missingLines(outcome.missing))
+        if (outcome.unknownKeys.isNotEmpty()) {
+            add(fragment.getString(R.string.ai_field_unknown_keys, outcome.unknownKeys.size))
+        }
         if (outcome.droppedCount > 0) {
             add(fragment.getString(R.string.ai_field_dropped, outcome.droppedCount))
         }
@@ -234,7 +279,12 @@ object AiFieldSuggestSheet {
             add(fragment.getString(R.string.ai_field_truncated_prefix, it))
         }
         addAll(outcome.failures)
-    }.joinToString("\n")
+    }
+
+    private fun buildNotices(
+        fragment: Fragment,
+        outcome: CharacterFieldAiSuggester.SuggestOutcome
+    ): String = buildNoticeLines(fragment, outcome).joinToString("\n")
 
     /** 필드 1개 모드: 체크리스트 대신 단일 확인 — 1건에 체크리스트는 조작 마찰만 추가 (원칙 04) */
     private fun showSingleConfirm(
@@ -275,7 +325,8 @@ object AiFieldSuggestSheet {
         fragment: Fragment,
         formBuilder: DynamicFieldFormBuilder,
         viewModel: CharacterViewModel,
-        run: CharacterViewModel.AiSuggestRun
+        run: CharacterViewModel.AiSuggestRun,
+        contextLoader: suspend () -> CharacterFieldAiSuggester.CharacterAiContext
     ) {
         val context = fragment.requireContext()
         val outcome = run.outcome
@@ -293,6 +344,21 @@ object AiFieldSuggestSheet {
             setTextColor(context.getColor(R.color.text_secondary))
             setPadding(0, pad / 2, 0, pad / 4)
         })
+
+        // 못 받은 필드를 다시 요청하는 경로 — 다이얼로그 버튼 3개가 이미 찼으므로 목록 안에 둔다.
+        // 결손을 알리기만 하고 교정 경로를 안 주면 사용자는 전체 추천을 처음부터 다시 돌려야 한다.
+        val retryTargets = retryableTargets(run)
+        var dialogRef: AlertDialog? = null
+        if (retryTargets.isNotEmpty()) {
+            list.addView(Button(context).apply {
+                text = fragment.getString(R.string.ai_field_retry_missing, retryTargets.size)
+                setOnClickListener {
+                    dialogRef?.dismiss()
+                    viewModel.clearAiSuggestResult()
+                    runSuggest(fragment, viewModel, contextLoader, retryTargets, singleMode = false)
+                }
+            })
+        }
 
         val checks = mutableListOf<Pair<CheckBox, CharacterFieldAiSuggester.Suggestion>>()
         for (s in outcome.suggestions) {
@@ -324,6 +390,7 @@ object AiFieldSuggestSheet {
             .setNeutralButton(R.string.field_library_ai_select_all, null)
             .setOnCancelListener { viewModel.clearAiSuggestResult() }
             .create()
+        dialogRef = dialog
 
         dialog.setOnShowListener {
             var allSelected = false
