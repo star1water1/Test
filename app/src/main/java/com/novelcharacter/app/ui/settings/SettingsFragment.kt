@@ -394,13 +394,24 @@ class SettingsFragment : Fragment() {
                             try {
                                 val exporter = WorldPackageExporter(requireContext())
                                 val config = WorldPackageExporter.ExportConfig(universeId = universe.id)
-                                val file = withContext(Dispatchers.IO) { exporter.export(config) }
+                                val result = withContext(Dispatchers.IO) { exporter.export(config) }
 
                                 if (!isAdded) return@launch
+                                if (result.droppedFactionRelationships > 0) {
+                                    // 세계관 밖 세력에 걸친 관계는 패키지에 실을 수 없다 — 무통보 유실 금지
+                                    Toast.makeText(
+                                        requireContext(),
+                                        getString(
+                                            R.string.world_package_dropped_faction_relationships,
+                                            result.droppedFactionRelationships
+                                        ),
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                }
                                 val uri = FileProvider.getUriForFile(
                                     requireContext(),
                                     "${requireContext().packageName}.fileprovider",
-                                    file
+                                    result.file
                                 )
                                 val shareIntent = Intent(Intent.ACTION_SEND).apply {
                                     type = "application/zip"

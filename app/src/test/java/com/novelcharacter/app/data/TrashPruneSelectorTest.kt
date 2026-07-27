@@ -105,4 +105,59 @@ class TrashPruneSelectorTest {
         assertTrue(TrashPruneSelector.selectExpired(ops, 1_000L, emptySet()).isEmpty())
         assertEquals(listOf("exact"), TrashPruneSelector.selectExpired(ops, 1_001L, emptySet()))
     }
+
+    // ── plan: (작업, 종류) 단위 정리 (S-4) ──
+
+    private fun editOp(key: String, at: Long, count: Int = 1) =
+        Operation(key, at, count, editBackup = true)
+
+    @Test
+    fun `편집 백업도 기한이 지나면 정리 대상이 된다 - 종류 플래그와 함께`() {
+        // 종전 결함: 순수 편집 백업 작업은 뽑혀도 purge(editBackup=false)가 0행을 지워
+        // 영원히 남았다 — plan은 종류를 함께 돌려줘 purge가 맞는 갈래를 지우게 한다.
+        val targets = TrashPruneSelector.plan(
+            listOf(editOp("edit1", 100L), op("del1", 100L)),
+            threshold = 200L, protectedKeys = emptySet(), maxOperationsPerKind = 30
+        )
+        assertEquals(
+            setOf(
+                TrashPruneSelector.PurgeTarget("del1", false),
+                TrashPruneSelector.PurgeTarget("edit1", true)
+            ),
+            targets.toSet()
+        )
+    }
+
+    @Test
+    fun `종류별 풀이 독립이다 - 편집 백업 폭주가 삭제 백업을 밀어내지 않는다`() {
+        val edits = (1..40).map { editOp("e$it", it.toLong()) }
+        val deletes = (1..5).map { op("d$it", it.toLong()) }
+        val targets = TrashPruneSelector.plan(
+            edits + deletes, threshold = 0L, protectedKeys = emptySet(), maxOperationsPerKind = 30
+        )
+        // 편집 풀만 10건 초과 — 삭제 백업은 5건뿐이라 하나도 지워지지 않는다
+        assertEquals(10, targets.count { it.editBackup })
+        assertEquals(0, targets.count { !it.editBackup })
+        assertEquals((1..10).map { "e$it" }.toSet(), targets.map { it.key }.toSet())
+    }
+
+    @Test
+    fun `혼합 작업은 갈래별로 독립 판정된다`() {
+        // 엑셀 임포트는 한 operationId에 삭제와 편집 백업을 함께 만든다(R-12).
+        // 삭제 갈래가 기한 초과여도 편집 갈래가 기한 안이면 편집 갈래는 남아야 한다.
+        val targets = TrashPruneSelector.plan(
+            listOf(op("import", 100L), editOp("import", 900L)),
+            threshold = 500L, protectedKeys = emptySet(), maxOperationsPerKind = 30
+        )
+        assertEquals(listOf(TrashPruneSelector.PurgeTarget("import", false)), targets)
+    }
+
+    @Test
+    fun `plan도 방금 만든 작업을 보호한다 - 양쪽 갈래 모두`() {
+        val targets = TrashPruneSelector.plan(
+            listOf(op("mine", 1L), editOp("mine", 1L), op("old", 2L)),
+            threshold = 10L, protectedKeys = setOf("mine"), maxOperationsPerKind = 30
+        )
+        assertEquals(listOf(TrashPruneSelector.PurgeTarget("old", false)), targets)
+    }
 }

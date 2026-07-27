@@ -96,4 +96,42 @@ class ExcelCellValueTest {
         // BLANK 셀(값 미설정)은 "" — fromCell/normalize가 else 분기로 처리.
         assertEquals("", normalize(cell { /* no value */ }))
     }
+
+    // ── B-7: 원문 보존 강화 — 선행 0·과학표기 ──
+
+    private fun zeroPadCell(value: Double, fmt: String = "000"): Cell = cell {
+        val style = wb.createCellStyle()
+        style.dataFormat = wb.createDataFormat().getFormat(fmt)
+        it.cellStyle = style
+        it.setCellValue(value)
+    }
+
+    @Test fun numeric_zeroPadFormatRestoresLeadingZeros() {
+        // 외부 편집기가 "007"을 숫자 7 + 서식 "000"으로 저장 — 표시 원문을 되살린다.
+        assertEquals("007", normalize(zeroPadCell(7.0)))
+    }
+
+    @Test fun numeric_zeroPadFormatNegative() {
+        // Excel 표시 규칙과 동일: 부호는 패딩 폭 밖 ("-007")
+        assertEquals("-007", normalize(zeroPadCell(-7.0)))
+    }
+
+    @Test fun numeric_zeroPadFormatWiderValueUnchanged() {
+        // 서식 폭보다 큰 수는 패딩 없음 — Excel 표시와 동일
+        assertEquals("1234", normalize(zeroPadCell(1234.0)))
+    }
+
+    @Test fun numeric_hugeIntegerPlainNotScientific() {
+        // Long 범위 밖 정수형 double — 과학표기("1.0E20") 금지, 평문 십진수
+        assertEquals("100000000000000000000", normalize(cell { it.setCellValue(1.0E20) }))
+    }
+
+    @Test fun numeric_largeDecimalPlainNotScientific() {
+        // 종전 toString은 "1.2300000000000005E12" — 왕복 시 다른 문자열이 됐다
+        assertEquals("1230000000000.5", normalize(cell { it.setCellValue(1230000000000.5) }))
+    }
+
+    @Test fun numeric_smallDecimalPlainNotScientific() {
+        assertEquals("0.0000001", normalize(cell { it.setCellValue(0.0000001) }))
+    }
 }

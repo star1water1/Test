@@ -10,8 +10,14 @@ import java.io.FileOutputStream
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
+/**
+ * schemaVersion 이력:
+ * - 1: 최초 형식
+ * - 2: faction_relationships.json 추가 (B-6 — 세력 간 관계, code 참조).
+ *   임포터는 v1 패키지에서 "세력 간 관계 없음"을 구버전 형식으로 안내할 수 있다.
+ */
 data class WorldPackageManifest(
-    val schemaVersion: Int = 1,
+    val schemaVersion: Int = 2,
     val appVersion: String = "1.0",
     val createdAt: Long = System.currentTimeMillis(),
     val universeName: String,
@@ -29,7 +35,16 @@ class WorldPackageExporter(private val context: Context) {
         val compressImages: Boolean = false
     )
 
-    suspend fun export(config: ExportConfig): File {
+    /**
+     * @property droppedFactionRelationships 내보내는 세계관 밖 세력에 걸쳐 있어 패키지에
+     *   싣지 못한 세력 간 관계 수. 0이 아니면 호출부가 반드시 고지할 것(무통보 유실 금지).
+     */
+    data class ExportResult(
+        val file: File,
+        val droppedFactionRelationships: Int
+    )
+
+    suspend fun export(config: ExportConfig): ExportResult {
         val app = context.applicationContext as NovelCharacterApp
         val db = app.database
 
@@ -76,6 +91,12 @@ class WorldPackageExporter(private val context: Context) {
         val factionIds = factions.map { it.id }.toSet()
         val factionMemberships = db.factionMembershipDao().getAllMembershipsList()
             .filter { it.factionId in factionIds }
+        // 세력 간 관계 (B-6) — 전량을 매퍼에 넘긴다: 양쪽 소속 판정(포함/한쪽 걸침/범위 밖)은
+        // 매퍼가 하고, 한쪽 걸침은 개수로 돌려받아 고지한다
+        val factionRelResult = WorldPackageFactionRelationships.toPortable(
+            factions,
+            db.factionRelationshipDao().getAllRelationshipsList()
+        )
 
         // Create ZIP
         val fileName = "${universe.name.replace(Regex("[^\\w가-힣]"), "_")}.ncworld"
@@ -106,6 +127,7 @@ class WorldPackageExporter(private val context: Context) {
                 writeJsonEntry(zip, "name_bank.json", nameBank)
                 writeJsonEntry(zip, "factions.json", factions)
                 writeJsonEntry(zip, "faction_memberships.json", factionMemberships)
+                writeJsonEntry(zip, "faction_relationships.json", factionRelResult.items)
 
                 // Images
                 if (config.includeImages) {
@@ -133,7 +155,7 @@ class WorldPackageExporter(private val context: Context) {
             throw e
         }
 
-        return outputFile
+        return ExportResult(outputFile, factionRelResult.droppedCount)
     }
 
     private fun <T> writeJsonEntry(zip: ZipOutputStream, name: String, data: T) {

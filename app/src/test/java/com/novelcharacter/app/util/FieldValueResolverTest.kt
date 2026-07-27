@@ -2,7 +2,7 @@ package com.novelcharacter.app.util
 
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.FieldValueEntry
-import com.novelcharacter.app.data.repository.FieldValueLibraryRepository
+import com.novelcharacter.app.data.repository.FieldValueRules
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -119,7 +119,7 @@ class FieldValueResolverTest {
         val entries = listOf(entry("서울", aliases = listOf("서울시")), entry("부산"))
         assertEquals(
             emptyList<String>(),
-            FieldValueLibraryRepository.validateRestricted(fd("TEXT"), " 서울시 ", entries)
+            FieldValueRules.validateRestricted(fd("TEXT"), " 서울시 ", entries)
         )
     }
 
@@ -129,12 +129,12 @@ class FieldValueResolverTest {
         val fdMulti = fd("MULTI_TEXT")
         assertEquals(
             listOf("한양"),
-            FieldValueLibraryRepository.validateRestricted(fdMulti, "서울, 한양", entries)
+            FieldValueRules.validateRestricted(fdMulti, "서울, 한양", entries)
         )
         // 빈 값은 위반 아님 (필수 여부는 isRequired의 몫)
         assertEquals(
             emptyList<String>(),
-            FieldValueLibraryRepository.validateRestricted(fdMulti, "  ", entries)
+            FieldValueRules.validateRestricted(fdMulti, "  ", entries)
         )
     }
 
@@ -144,9 +144,9 @@ class FieldValueResolverTest {
     fun conflictOf_detectsValueAndAliasCollisions() {
         val a = entry("서울", aliases = listOf("서울시"), id = 1)
         val b = entry("부산", id = 2)
-        assertEquals(a to false, FieldValueLibraryRepository.conflictOf(listOf(a, b), "서울", null))
-        assertEquals(a to true, FieldValueLibraryRepository.conflictOf(listOf(a, b), "서울시", null))
-        assertNull(FieldValueLibraryRepository.conflictOf(listOf(a, b), "대구", null))
-        assertNull(FieldValueLibraryRepository.conflictOf(listOf(a, b), "서울", 1L))
+        assertEquals(a to false, FieldValueRules.conflictOf(listOf(a, b), "서울", null))
+        assertEquals(a to true, FieldValueRules.conflictOf(listOf(a, b), "서울시", null))
+        assertNull(FieldValueRules.conflictOf(listOf(a, b), "대구", null))
+        assertNull(FieldValueRules.conflictOf(listOf(a, b), "서울", 1L))
     }
 }

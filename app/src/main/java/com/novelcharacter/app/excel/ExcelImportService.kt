@@ -155,6 +155,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private val novelUniverseCache = mutableMapOf<Long, Long?>()
     private var truncatedFieldCount = 0
     private val truncatedDetails = mutableListOf<String>()
+    // 병합 셀 해석 (B-7) — 시트별 병합 범위 캐시와 좌상단 값 적용 집계 (경고로 고지).
+    // 같은 셀이 두 번 읽혀도 한 번만 세도록 셀 좌표로 중복 제거한다 — 부풀린 개수는 거짓 고지다.
+    private val mergedCellMaps = HashMap<Sheet, MergedCellMap>()
+    private val mergedFilledCells = HashSet<String>()
+    private val mergedFilledBySheet = LinkedHashMap<String, Int>()
 
     // F3-A: 엑셀 세계관 이동을 편집화면과 동일한 P0 로직으로 처리하기 위한 리포지토리 (지연 생성)
     private val characterRepository by lazy {
@@ -279,6 +284,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         processedRowsSoFar = 0
         truncatedFieldCount = 0
         truncatedDetails.clear()
+        mergedCellMaps.clear()
+        mergedFilledCells.clear()
+        mergedFilledBySheet.clear()
         trashForPrune = null
 
         val totalRows = countTotalRows(workbook)
@@ -540,6 +548,15 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 truncatedDetails.take(5).joinToString(", ") + " 외 ${truncatedDetails.size - 5}건"
             }
             result.warnings.add("${truncatedFieldCount}개 필드값이 ${MAX_FIELD_LENGTH}자 제한으로 잘렸습니다. ($detail)")
+        }
+
+        if (mergedFilledCells.isNotEmpty()) {
+            // B-7: 조용한 보정 금지 — 무엇을 어떻게 해석했는지와 교정 경로를 함께 알린다
+            val detail = mergedFilledBySheet.entries.joinToString(", ") { "'${it.key}' ${it.value}건" }
+            result.warnings.add(
+                "병합 셀 ${mergedFilledCells.size}건을 병합 범위의 좌상단 값으로 해석했습니다 ($detail) — " +
+                    "의도한 값이 아니면 엑셀에서 병합을 해제하고 각 칸에 값을 채운 뒤 다시 가져오세요"
+            )
         }
 
         // 값 라이브러리 수확 — 임포트 트랜잭션 커밋 '후' 전체 재수확 + 재계산 (검토 A6/A7).
@@ -5219,9 +5236,16 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
      */
     private fun getCellString(row: Row, cellIndex: Int, maxLength: Int = MAX_FIELD_LENGTH, dateHint: Boolean = false): String {
         if (cellIndex < 0) return ""
-        val cell = row.getCell(cellIndex) ?: return ""
+        val cell = row.getCell(cellIndex)
         // 값 정규화는 ExcelCellValue(단일 소스)에 위임 — 스트리밍 경로와 동일 로직을 태워 값 왜곡을 구조적으로 차단.
-        val raw = ExcelCellValue.normalize(ExcelCellValue.fromCell(cell), dateHint)
+        var raw = if (cell != null) ExcelCellValue.normalize(ExcelCellValue.fromCell(cell), dateHint) else ""
+        if (raw.isEmpty()) {
+            // 병합 셀의 피복 칸(좌상단이 아닌 칸)은 파일에서 빈 셀/셀 없음으로 읽히지만,
+            // 스프레드시트 화면에서는 좌상단 값이 걸쳐 보였다. 빈칸으로 두면 덮어쓰기의
+            // '빈칸=삭제' 규약에 걸려 무통보 유실이 되므로 좌상단 값으로 해석하고
+            // 건수를 모아 경고로 고지한다 (B-7: 감지 → 경고 → 교정 안내).
+            mergedTopLeftValue(row, cellIndex, dateHint)?.let { raw = it }
+        }
         if (raw.length > maxLength) {
             truncatedFieldCount++
             val sheetName = row.sheet?.sheetName ?: "?"
@@ -5229,6 +5253,35 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             return raw.substring(0, maxLength)
         }
         return raw
+    }
+
+    /**
+     * (행, 열)이 병합 범위의 피복 칸이면 좌상단 값을 돌려주고 적용 건수를 센다 (B-7).
+     *
+     * 헤더 행(0행)은 제외한다 — 헤더를 채우면 같은 이름이 여러 열에 복제되어
+     * [resolveHeaderColumns]의 열 배정이 밀리고, 그것은 유실보다 나쁜 오배정이다.
+     * 좌상단 값이 그 자체로 빈 값이면 채울 것이 없으므로 null (집계하지 않음).
+     */
+    private fun mergedTopLeftValue(row: Row, cellIndex: Int, dateHint: Boolean): String? {
+        if (row.rowNum == 0) return null
+        val sheet = row.sheet ?: return null
+        val map = mergedCellMaps.getOrPut(sheet) {
+            MergedCellMap((0 until sheet.numMergedRegions).map { i ->
+                val r = sheet.getMergedRegion(i)
+                MergedCellMap.Region(r.firstRow, r.lastRow, r.firstColumn, r.lastColumn)
+            })
+        }
+        if (map.isEmpty || !map.isCoveredCell(row.rowNum, cellIndex)) return null
+        val tl = map.topLeftOf(row.rowNum, cellIndex) ?: return null
+        val tlCell = sheet.getRow(tl.row)?.getCell(tl.column) ?: return null
+        val value = ExcelCellValue.normalize(ExcelCellValue.fromCell(tlCell), dateHint)
+        if (value.isEmpty()) return null
+        val name = sheet.sheetName ?: "?"
+        // 구분자 ':'는 엑셀 시트명 금지 문자 — 시트명과 좌표가 섞여 다른 셀이 같은 키가 되지 않는다
+        if (mergedFilledCells.add("$name:${row.rowNum}:$cellIndex")) {
+            mergedFilledBySheet[name] = (mergedFilledBySheet[name] ?: 0) + 1
+        }
+        return value
     }
 
     // 날짜 감지·포맷·숫자 정규화는 ExcelCellValue(단일 소스)로 이관됨(로직 비분기).

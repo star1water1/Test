@@ -111,8 +111,25 @@ $MAIN/util/FieldOptionParser.kt
 $MAIN/util/FormulaEvaluator.kt
 $MAIN/util/GradeValueResolver.kt
 $MAIN/ui/stats/StatsDataProvider.kt
+$MAIN/util/UnassignedFilter.kt
+$MAIN/data/model/RandomConfig.kt
+$MAIN/data/model/SemanticRole.kt
+$MAIN/ai/CharacterFieldAiSuggester.kt
+$MAIN/ai/FieldLibraryAiOrganizer.kt
+$MAIN/ai/AiModels.kt
+$MAIN/ai/AiProtocolCodec.kt
+$MAIN/util/ImageFilterHelper.kt
+$MAIN/util/ImageRecommendationHelper.kt
+$MAIN/util/ImageLinkResolver.kt
+$MAIN/ui/supplement/RandomPickEngine.kt
+$MAIN/ui/namebank/BulkRegisterPlanner.kt
+$MAIN/excel/StreamingXlsxReader.kt
+$MAIN/excel/MergedCellMap.kt
+$MAIN/data/repository/FieldValueRules.kt
+$MAIN/share/WorldPackageFactionRelationships.kt
 $STUBS/StatsHarnessStubs.kt
 $STUBS/AndroidLogStub.kt
+$STUBS/AiServiceStub.kt
 "
 TESTS="
 $TEST/excel/FieldValueSheetMapperTest.kt
@@ -143,7 +160,22 @@ $TEST/data/RestoreTallyTest.kt
 $TEST/ai/AiModelSuggestionsTest.kt
 $TEST/stats/StatsCrossAnalysisTest.kt
 $TEST/util/CardFieldSummaryTest.kt
+$TEST/util/UnassignedFilterTest.kt
+$TEST/util/FieldValueResolverTest.kt
+$TEST/util/ImageFilterHelperTest.kt
+$TEST/util/ImageRecommendationHelperTest.kt
+$TEST/util/ImageLinkResolverTest.kt
+$TEST/ui/supplement/RandomPickEngineTest.kt
+$TEST/stats/StatsDataProviderUnassignedTest.kt
+$TEST/namebank/BulkRegisterPlannerTest.kt
+$TEST/excel/StreamingXlsxReaderTest.kt
+$TEST/ai/CharacterFieldAiSuggesterTest.kt
+$TEST/ai/FieldLibraryAiOrganizerTest.kt
+$TEST/ai/AiProtocolCodecTest.kt
+$TEST/share/WorldPackageFactionRelationshipsTest.kt
+$TEST/excel/MergedCellMapTest.kt
 "
+# 주의: AiPresetsConsistencyTest는 R을 참조하므로 여기서 돌릴 수 없다(파일 상단 KDoc 참조) — CI 전용.
 # 선택 소스: 존재하고 순수 JVM이면 추가
 for extra in "$MAIN/util/SortComparators.kt" "$MAIN/util/EpochMemo.kt" "$MAIN/ai/AiJsonExtractor.kt"; do
   [ -f "$extra" ] && SOURCES="$SOURCES $extra"
