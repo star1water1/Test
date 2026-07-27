@@ -52,6 +52,7 @@ $MAIN/data/model/Novel.kt
 $MAIN/data/model/Universe.kt
 $MAIN/data/model/FieldDefinition.kt
 $MAIN/data/model/FieldValueEntry.kt
+$MAIN/data/model/FieldValueLibraryConfig.kt
 $MAIN/data/model/DisplayFormat.kt
 $MAIN/data/model/SearchPreset.kt
 $MAIN/data/model/Faction.kt

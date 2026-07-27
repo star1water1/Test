@@ -894,7 +894,7 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
                 val suggester = com.novelcharacter.app.ai.CharacterFieldAiSuggester(
                     com.novelcharacter.app.ai.AiService(getApplication())
                 )
-                val outcome = suggester.suggest(aiContext, targets) { failure ->
+                val outcome = suggester.suggest(aiContext, withFieldUsage(targets)) { failure ->
                     com.novelcharacter.app.ai.AiErrorMessages.of(getApplication(), failure)
                 }
                 aiSuggestResult.value = AiSuggestRun(targets, singleMode, outcome)
@@ -903,6 +903,32 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
             }
         }
         return true
+    }
+
+    /**
+     * 대상 스펙에 값 라이브러리의 **기존 사용값**을 싣는다 — 모델이 이 작품의 표기 기조를
+     * 모른 채 어긋난 값을 만들어 내는 문제(일관성)의 교정 경로다.
+     *
+     * 캐릭터 전체를 훑지 않고 `field_value_entries`를 필드 단위로 1쿼리 배치 조회한다:
+     * 라이브러리가 이미 필드별 중복 없는 카탈로그이고 사용 빈도까지 들고 있어,
+     * 캐릭터 수백 명에서도 비용이 값 종수에만 비례한다(받쳐주는 확장성).
+     * 조회 실패는 추천 자체를 막지 않는다 — 용례 없이 종전대로 진행한다.
+     */
+    private suspend fun withFieldUsage(
+        targets: List<com.novelcharacter.app.ai.CharacterFieldAiSuggester.FieldSpec>
+    ): List<com.novelcharacter.app.ai.CharacterFieldAiSuggester.FieldSpec> {
+        val ids = targets.filter { it.libraryEligible && it.fieldId > 0 }.map { it.fieldId }
+        if (ids.isEmpty()) return targets
+        val byField = try {
+            app.fieldValueLibraryRepository.entriesForFields(ids)
+        } catch (e: Exception) {
+            Log.e("CharacterViewModel", "Failed to load field value library for AI suggest", e)
+            return targets
+        }
+        return targets.map { spec ->
+            val entries = byField[spec.fieldId] ?: return@map spec
+            com.novelcharacter.app.ai.CharacterFieldAiSuggester.withLibraryUsage(spec, entries)
+        }
     }
 
     // ===== 서술형 필드 AI 작성 (NarrativeWriteSheet → 여기서 수행) =====

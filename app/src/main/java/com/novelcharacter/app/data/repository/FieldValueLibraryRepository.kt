@@ -55,11 +55,18 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
     suspend fun resolverForField(fieldDefId: Long): FieldValueResolver =
         FieldValueResolver(entryDao.getByField(fieldDefId))
 
-    /** 필드 집합의 해석기 일괄 생성 (IN 청크) — 통계 스냅샷·엑셀 임포트용 */
-    suspend fun resolversForFields(fieldDefIds: Collection<Long>): Map<Long, FieldValueResolver> {
-        val entries = fieldDefIds.distinct().chunked(CHUNK_SIZE)
+    /**
+     * 필드 집합의 엔트리 일괄 조회 (IN 청크). 숨김·별칭까지 그대로 준다 —
+     * 용도별 필터링(예: AI 용례는 숨김 제외, restricted 검증은 숨김 포함)은 호출측이 판단한다.
+     */
+    suspend fun entriesForFields(fieldDefIds: Collection<Long>): Map<Long, List<FieldValueEntry>> =
+        fieldDefIds.distinct().chunked(CHUNK_SIZE)
             .flatMap { entryDao.getForFields(it) }
             .groupBy { it.fieldDefinitionId }
+
+    /** 필드 집합의 해석기 일괄 생성 (IN 청크) — 통계 스냅샷·엑셀 임포트용 */
+    suspend fun resolversForFields(fieldDefIds: Collection<Long>): Map<Long, FieldValueResolver> {
+        val entries = entriesForFields(fieldDefIds)
         return fieldDefIds.associateWith { FieldValueResolver(entries[it].orEmpty()) }
     }
 
