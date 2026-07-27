@@ -13,8 +13,9 @@ import java.util.Locale
  * 가져오기의 값 해석 로직(숫자 정수/소수, 날짜 감지·포맷, 불리언 Y/N, 문자열 trim)을
  * `Cell`에 의존하지 않는 순수 함수로 분리한다. DOM 경로([ExcelImportService.getCellString])와
  * 향후 SAX 스트리밍 경로가 **동일한 이 로직**을 태우게 하여, 두 경로 간 값 왜곡(변수 제어 위반)을
- * 구조적으로 차단한다(로직 비분기). 동작은 기존 getCellString과 1:1 동일하며, 순수 JVM 단위
- * 테스트로 그 동치를 강제한다.
+ * 구조적으로 차단한다(로직 비분기). 분리 시점 동작은 기존 getCellString과 1:1 동일했고,
+ * 이후 B-7이 원문 보존을 강화했다(0 패딩 서식 복원·과학표기 금지 — [normalizeNumeric] 참조).
+ * 순수 JVM 단위 테스트가 동작을 고정한다.
  */
 object ExcelCellValue {
 
@@ -55,7 +56,18 @@ object ExcelCellValue {
         }
     }
 
-    /** NUMERIC 값 정규화: NaN/Inf는 "", 날짜면 formatDate, 정수는 소수점 없이, 그 외 toString. */
+    /** "000" 류 순수 0 정수 서식 — 외부 편집기가 선행 0 값을 숫자+서식으로 바꿔 저장하는 형태 */
+    private val ZERO_PAD_FORMAT = Regex("0{2,}")
+
+    /**
+     * NUMERIC 값 정규화: NaN/Inf는 "", 날짜면 formatDate, 정수는 소수점 없이, 그 외 평문 십진수.
+     *
+     * 원문 보존 (B-7):
+     * - "000" 류 0 패딩 정수 서식이면 표시 폭만큼 0을 채운다 — 외부 편집기가 "007"을
+     *   숫자 7 + 서식 "000"으로 저장한 셀에서 표시 원문("007")을 되살린다.
+     * - 비정수·Long 범위 밖 값은 toString의 과학표기("1.0E20") 대신 평문 십진수로 낸다 —
+     *   과학표기는 재가져오기 시 다른 값 문자열이 되어 왕복 무결성을 깬다.
+     */
     private fun normalizeNumeric(p: Primitives, dateHint: Boolean): String {
         val value = p.numericValue
         // NaN/Infinity는 유효 값이 아니므로 날짜/숫자 해석 이전에 ""로 확정한다.
@@ -63,7 +75,17 @@ object ExcelCellValue {
         // 날짜서식인 극단 케이스에서도 쓰레기 문자열 대신 ""를 내어 무결성을 지킨다(구 formatDateCell 대체).
         if (value.isNaN() || value.isInfinite()) return ""
         if (isLikelyDate(p, dateHint)) return formatDate(p)
-        return if (value == value.toLong().toDouble()) value.toLong().toString() else value.toString()
+        if (value == value.toLong().toDouble()) {
+            val long = value.toLong()
+            val fmt = p.dataFormatString
+            if (fmt != null && ZERO_PAD_FORMAT.matches(fmt)) {
+                val digits = kotlin.math.abs(long).toString().padStart(fmt.length, '0')
+                return if (long < 0) "-$digits" else digits
+            }
+            return long.toString()
+        }
+        // BigDecimal.valueOf는 Double.toString 기준 최단 십진 표현을 쓰므로 이진 오차 자릿수가 붙지 않는다.
+        return java.math.BigDecimal.valueOf(value).stripTrailingZeros().toPlainString()
     }
 
     /**

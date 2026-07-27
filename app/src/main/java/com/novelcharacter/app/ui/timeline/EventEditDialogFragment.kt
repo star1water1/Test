@@ -23,6 +23,7 @@ import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.FieldType
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.TimelineEvent
+import com.novelcharacter.app.data.model.generateEntityCode
 import com.novelcharacter.app.databinding.DialogTimelineEditBinding
 import com.novelcharacter.app.util.FieldOptionParser
 import com.novelcharacter.app.util.isValidDay
@@ -339,6 +340,9 @@ class EventEditDialogFragment : DialogFragment() {
             universeId = universeId,
             displayOrder = event?.displayOrder ?: 0,  // 편집 시 기존 표시 순서 보존
             isTemporary = false,
+            // 편집은 정체성을 보존한다(R-1) — 명시하지 않으면 기본값이 code를 재발급해
+            // 내보낸 엑셀·휴지통 참조가 전부 무효가 된다. 구버전 무코드 행은 여기서 1회 부여.
+            code = event?.code ?: generateEntityCode(),
             createdAt = event?.createdAt ?: System.currentTimeMillis()
         )
         val novelIdsList = selectedNovelIds.toList()

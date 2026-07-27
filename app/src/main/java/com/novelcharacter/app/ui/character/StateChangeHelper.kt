@@ -12,6 +12,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.CharacterStateChange
 import com.novelcharacter.app.data.model.FieldDefinition
+import com.novelcharacter.app.data.model.generateEntityCode
 import com.novelcharacter.app.databinding.DialogStateChangeBinding
 import com.novelcharacter.app.databinding.FragmentCharacterDetailBinding
 import com.novelcharacter.app.ui.adapter.StateChangeAdapter
@@ -142,6 +143,9 @@ class StateChangeHelper(
                     fieldKey = fieldKey,
                     newValue = newValue,
                     description = description,
+                    // 편집은 정체성을 보존한다(R-1) — 명시하지 않으면 기본값이 code를 재발급해
+                    // 엑셀 재가져오기 중복·복원 중복 차단 오동작을 만든다. 구버전 무코드 행은 1회 부여.
+                    code = existingChange?.code ?: generateEntityCode(),
                     createdAt = existingChange?.createdAt ?: System.currentTimeMillis()
                 )
 

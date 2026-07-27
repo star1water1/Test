@@ -192,7 +192,7 @@ class AiSettingsFragment : Fragment() {
                 .takeUnless { it.isNullOrEmpty() } ?: keyStore.getKey(config.id).orEmpty()
             if (key.length < MIN_KEY_LENGTH_FOR_LOOKUP) return
             // 같은 (주소, 키)로는 다시 묻지 않는다 — 타이핑마다 API를 때리지 않기 위해서.
-            val signature = "$baseUrl $key"
+            val signature = "$baseUrl\u0000$key"
             if (signature == lastFetchedSignature) return
             lastFetchedSignature = signature
             modelFetchJob?.cancel()

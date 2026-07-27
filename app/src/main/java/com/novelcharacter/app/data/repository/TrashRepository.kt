@@ -2992,22 +2992,20 @@ class TrashRepository(
      * 다음 삭제 작업의 정리에서 자연히 소진된다.
      */
     suspend fun pruneIfNeeded() {
+        // (작업, 종류) 단위 계획(S-4) — purge가 종류까지 맞는 행만 지우므로 계획도 같은 축.
+        // 종류를 모르던 종전 구현은 순수 편집 백업 작업을 뽑고도 0행을 지워, 편집 백업이
+        // 기한·한도 어느 쪽으로도 정리되지 않고 무한 축적됐다(한도 계산까지 왜곡).
         val operations = trashDao.getOperationsOldestFirst().map {
-            TrashPruneSelector.Operation(it.opKey, it.newestAt, it.itemCount)
+            TrashPruneSelector.Operation(it.opKey, it.newestAt, it.itemCount, it.editBackup)
         }
         if (operations.isEmpty()) return
-        val protectedKeys = protectedOperationKeys
-
-        val expired = TrashPruneSelector.selectExpired(
-            operations, System.currentTimeMillis() - TrashSnapshot.RETENTION_MS, protectedKeys
-        ).toSet()
-        for (key in expired) purgeOperation(key)
-
-        val remaining = operations.filter { it.key !in expired }
-        val overflow = TrashPruneSelector.selectOverflow(
-            remaining, protectedKeys, TrashSnapshot.MAX_OPERATIONS
+        val targets = TrashPruneSelector.plan(
+            operations,
+            System.currentTimeMillis() - TrashSnapshot.RETENTION_MS,
+            protectedOperationKeys,
+            TrashSnapshot.MAX_OPERATIONS
         )
-        for (key in overflow) purgeOperation(key)
+        for (t in targets) purgeOperation(t.key, editBackup = t.editBackup)
     }
 
     private fun parseImagePathStrings(json: String): List<String> {

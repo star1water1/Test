@@ -552,34 +552,19 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
     companion object {
         const val CHUNK_SIZE = 900
 
-        /** RESTRICTED 모드 위반 토큰 — 순수 함수 (단위 테스트 대상) */
+        /** RESTRICTED 모드 위반 토큰 — 판정은 [FieldValueRules]에 있다(순수 JVM 실행 검증 대상). */
         fun validateRestricted(
             fd: FieldDefinition,
             raw: String,
             entries: List<FieldValueEntry>
-        ): List<String> {
-            if (raw.isBlank()) return emptyList()
-            val allowed = HashSet<String>()
-            for (e in entries) {
-                allowed.add(e.value)
-                allowed.addAll(e.aliases())
-            }
-            return FieldValueTokenizer.tokenize(fd, raw).filter { it !in allowed }
-        }
+        ): List<String> = FieldValueRules.validateRestricted(fd, raw, entries)
 
-        /** 값/별칭 충돌 검사 — (충돌 엔트리, 별칭과의 충돌 여부) */
+        /** 값/별칭 충돌 검사 — 판정은 [FieldValueRules]에 있다(순수 JVM 실행 검증 대상). */
         fun conflictOf(
             entries: List<FieldValueEntry>,
             token: String,
             excludeId: Long?
-        ): Pair<FieldValueEntry, Boolean>? {
-            for (e in entries) {
-                if (excludeId != null && e.id == excludeId) continue
-                if (e.value == token) return e to false
-                if (token in e.aliases()) return e to true
-            }
-            return null
-        }
+        ): Pair<FieldValueEntry, Boolean>? = FieldValueRules.conflictOf(entries, token, excludeId)
     }
 
     // ===== 내부 =====

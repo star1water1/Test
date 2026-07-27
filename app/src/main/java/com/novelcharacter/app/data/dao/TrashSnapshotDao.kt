@@ -37,17 +37,22 @@ interface TrashSnapshotDao {
     suspend fun count(): Int
 
     /**
-     * 작업 단위 요약 — **오래된 작업부터**. 정리 대상 선택이 이 목록 위에서 이뤄진다.
+     * (작업, 종류) 단위 요약 — **오래된 것부터**. 정리 대상 선택이 이 목록 위에서 이뤄진다.
      *
      * 작업의 시각은 그 작업이 만든 스냅샷 중 **가장 최근**(MAX)이다. MIN을 쓰면 오래 걸린
      * 대량 삭제가 만들어지자마자 기한 초과로 판정될 수 있다.
+     *
+     * **종류(editBackup)로 가르는 이유(S-4):** purge는 종류까지 맞는 행만 지우므로
+     * ([getImagesByOperation]) 종류를 모르는 요약으로 정리하면 순수 편집 백업 작업이
+     * "뽑히고도 0행 삭제"로 영원히 남는다 — 표시([TrashGrouping])와 같은 축이다.
      */
     @Query(
         """SELECT COALESCE(operationId, 'row:' || id) AS opKey,
+                  CASE WHEN operationKind = 'edit_backup' THEN 1 ELSE 0 END AS editBackup,
                   MAX(deletedAt) AS newestAt,
                   COUNT(*) AS itemCount
            FROM trash_snapshots
-           GROUP BY opKey
+           GROUP BY opKey, editBackup
            ORDER BY newestAt ASC, opKey ASC"""
     )
     suspend fun getOperationsOldestFirst(): List<TrashOperationSummary>
@@ -112,9 +117,10 @@ interface TrashSnapshotDao {
     suspend fun deleteAll()
 }
 
-/** 작업 단위 요약 행 — [TrashSnapshotDao.getOperationsOldestFirst] 결과. */
+/** (작업, 종류) 단위 요약 행 — [TrashSnapshotDao.getOperationsOldestFirst] 결과. */
 data class TrashOperationSummary(
     val opKey: String,
+    val editBackup: Boolean,
     val newestAt: Long,
     val itemCount: Int
 )

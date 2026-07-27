@@ -14,8 +14,48 @@ package com.novelcharacter.app.data.repository
  */
 object TrashPruneSelector {
 
-    /** 정리 후보 — 작업 하나. */
-    data class Operation(val key: String, val newestAt: Long, val itemCount: Int)
+    /**
+     * 정리 후보 — (작업, 종류) 하나.
+     * @param editBackup 편집 직전 백업 갈래인가 — purge가 종류까지 맞는 행만 지우므로(R-12)
+     *   정리 계획도 같은 축으로 세워야 한다. 종류를 모르면 순수 편집 백업 작업이
+     *   "뽑히고도 0행 삭제"로 영원히 남는다(S-4).
+     */
+    data class Operation(
+        val key: String,
+        val newestAt: Long,
+        val itemCount: Int,
+        val editBackup: Boolean = false
+    )
+
+    /** 정리 실행 대상 — [purge 시 editBackup 인자까지 함께 전달할 것]. */
+    data class PurgeTarget(val key: String, val editBackup: Boolean)
+
+    /**
+     * 기한·개수 정리 계획 — **종류별로 독립한 풀**.
+     *
+     * 삭제 백업과 편집 백업을 한 풀에 섞으면 어느 한쪽의 폭주가 다른 쪽의 복구 경로를
+     * 밀어낸다(편집 백업 300건이 사용자가 지운 것의 백업 30건을 전멸시키는 식).
+     * 표시([TrashGrouping])·영구 삭제(purgeOperation)와 같은 (작업, 종류) 축을 쓴다.
+     *
+     * @param maxOperationsPerKind 종류별 보관 한도 (작업 수)
+     */
+    fun plan(
+        operations: List<Operation>,
+        threshold: Long,
+        protectedKeys: Set<String>,
+        maxOperationsPerKind: Int
+    ): List<PurgeTarget> {
+        val out = mutableListOf<PurgeTarget>()
+        for (edit in listOf(false, true)) {
+            val ofKind = operations.filter { it.editBackup == edit }
+            if (ofKind.isEmpty()) continue
+            val expired = selectExpired(ofKind, threshold, protectedKeys).toSet()
+            out.addAll(expired.map { PurgeTarget(it, edit) })
+            val remaining = ofKind.filter { it.key !in expired }
+            out.addAll(selectOverflow(remaining, protectedKeys, maxOperationsPerKind).map { PurgeTarget(it, edit) })
+        }
+        return out
+    }
 
     /**
      * 기한 초과로 지울 작업.
