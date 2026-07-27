@@ -49,7 +49,11 @@ class CharacterFieldAiSuggesterTest {
     @Test
     fun systemPrompt_containsJsonSchema() {
         val prompt = CharacterFieldAiSuggester.buildSystemPrompt()
-        assertTrue(prompt.contains("""{"suggestions":[{"key":"필드키","value":"추천값","reason":"근거 한 문장"}]}"""))
+        assertTrue(
+            prompt.contains(
+                """{"suggestions":[{"key":"필드키","value":"추천값","reason":"근거 한 문장","confidence":"high|medium|low"}]}"""
+            )
+        )
     }
 
     @Test
@@ -746,6 +750,107 @@ class CharacterFieldAiSuggesterTest {
     fun option_뜻이_다른_값은_여전히_드롭된다() {
         assertNull(CharacterFieldAiSuggester.matchOption("무성", listOf("남", "여")))
         assertNull(CharacterFieldAiSuggester.matchOption("   ", listOf("남", "여")))
+    }
+
+    // ===== 근거 강도 (받아올 범위 설정) =====
+
+    private fun confidenceJson(vararg pairs: Pair<String, String>): String =
+        pairs.joinToString(",", """{"suggestions":[""", "]}") { (key, conf) ->
+            """{"key":"$key","value":"값$key","reason":"근거","confidence":"$conf"}"""
+        }
+
+    @Test
+    fun confidence_기본은_전부_받기다() {
+        val targets = listOf(spec("a"), spec("b"), spec("c"))
+        val parsed = CharacterFieldAiSuggester.parseResponse(
+            confidenceJson("a" to "high", "b" to "medium", "c" to "low"), targets
+        )!!
+        assertEquals(3, parsed.suggestions.size)
+        assertTrue(parsed.missing.isEmpty())
+        assertEquals(CharacterFieldAiSuggester.Confidence.LOW, parsed.suggestions[2].confidence)
+    }
+
+    @Test
+    fun confidence_하한을_두면_그_아래는_사유를_달고_제외된다() {
+        val targets = listOf(spec("a"), spec("b"), spec("c"))
+        val parsed = CharacterFieldAiSuggester.parseResponse(
+            confidenceJson("a" to "high", "b" to "medium", "c" to "low"),
+            targets,
+            CharacterFieldAiSuggester.Confidence.MEDIUM
+        )!!
+        assertEquals(2, parsed.suggestions.size)
+        assertEquals(1, parsed.missing.size)
+        assertEquals(CharacterFieldAiSuggester.MissingCause.BELOW_CONFIDENCE, parsed.missing[0].cause)
+        // 설정 때문에 빠졌다는 사실이 문구에 남아야 되돌릴 수 있다
+        assertTrue(parsed.missing[0].describe().contains("추측"))
+    }
+
+    @Test
+    fun confidence_미표기는_하한과_무관하게_통과한다() {
+        // 강도를 모른다는 이유로 유료 응답을 버리면 모델이 생략한 것과 결과가 같다
+        val targets = listOf(spec("a"))
+        val text = """{"suggestions":[{"key":"a","value":"값","reason":"근거"}]}"""
+        val parsed = CharacterFieldAiSuggester.parseResponse(
+            text, targets, CharacterFieldAiSuggester.Confidence.HIGH
+        )!!
+        assertEquals(1, parsed.suggestions.size)
+        assertNull(parsed.suggestions[0].confidence)
+    }
+
+    @Test
+    fun confidence_알_수_없는_표기는_등급을_지어내지_않는다() {
+        assertNull(CharacterFieldAiSuggester.Confidence.fromWire("아주높음"))
+        assertNull(CharacterFieldAiSuggester.Confidence.fromWire(""))
+        assertNull(CharacterFieldAiSuggester.Confidence.fromWire(null))
+        assertEquals(
+            CharacterFieldAiSuggester.Confidence.HIGH,
+            CharacterFieldAiSuggester.Confidence.fromWire(" HIGH ")
+        )
+    }
+
+    @Test
+    fun confidence_하한이_있을_때만_프롬프트에_지시가_붙는다() {
+        assertFalse(CharacterFieldAiSuggester.buildSystemPrompt(null).contains("근거 강도 '"))
+        val strict = CharacterFieldAiSuggester.buildSystemPrompt(
+            CharacterFieldAiSuggester.Confidence.HIGH
+        )
+        assertTrue(strict.contains("근거 강도 'high' 이상만"))
+        // 스키마에는 언제나 confidence가 있어야 검토 화면이 강도를 표시할 수 있다
+        assertTrue(CharacterFieldAiSuggester.buildSystemPrompt(null).contains(""""confidence""""))
+    }
+
+    // ===== 지시를 달아 다시 요청 (2차 질문) =====
+
+    @Test
+    fun 재요청_지시와_물린_값이_프롬프트에_실린다() {
+        val target = spec("mood", name = "분위기").copy(
+            userInstruction = "더 어둡게",
+            rejectedValues = listOf("차분함")
+        )
+        val text = CharacterFieldAiSuggester.buildUserPrompt(context(), listOf(target)).text
+        assertTrue(text.contains("사용자 지시: 더 어둡게"))
+        assertTrue(text.contains("이미 물린 값(다시 내지 말 것): 차분함"))
+        assertTrue(
+            "지시를 우선하라는 규칙이 시스템 프롬프트에 있어야 한다",
+            CharacterFieldAiSuggester.buildSystemPrompt().contains("'사용자 지시'가 붙은 필드")
+        )
+    }
+
+    @Test
+    fun 재요청_같은_값을_되풀이하면_사유를_달고_제외된다() {
+        val target = spec("mood", name = "분위기").copy(rejectedValues = listOf("차분함"))
+        val text = """{"suggestions":[{"key":"mood","value":"차분함","reason":"또 같은 값"}]}"""
+        val parsed = CharacterFieldAiSuggester.parseResponse(text, listOf(target))!!
+        assertTrue(parsed.suggestions.isEmpty())
+        assertEquals(CharacterFieldAiSuggester.MissingCause.REPEATED, parsed.missing[0].cause)
+    }
+
+    @Test
+    fun 재요청_다른_값이면_통과한다() {
+        val target = spec("mood").copy(rejectedValues = listOf("차분함"))
+        val text = """{"suggestions":[{"key":"mood","value":"음울함","reason":"지시 반영"}]}"""
+        val parsed = CharacterFieldAiSuggester.parseResponse(text, listOf(target))!!
+        assertEquals("음울함", parsed.suggestions[0].value)
     }
 
     // ===== 결손 고지 문구 =====

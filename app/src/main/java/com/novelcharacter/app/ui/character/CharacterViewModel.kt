@@ -885,7 +885,13 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     fun runAiSuggest(
         aiContext: com.novelcharacter.app.ai.CharacterFieldAiSuggester.CharacterAiContext,
         targets: List<com.novelcharacter.app.ai.CharacterFieldAiSuggester.FieldSpec>,
-        singleMode: Boolean
+        singleMode: Boolean,
+        /**
+         * 근거 강도 하한을 적용할지. **지시를 달아 다시 요청한 경우는 false** —
+         * 사용자가 이 필드를 콕 집어 다시 물은 것이므로, 설정이 그 답을 가로채면
+         * 돈만 내고 아무것도 못 받는다(자율성: 구체적 요청이 일반 설정을 이긴다).
+         */
+        applyConfidenceFilter: Boolean = true
     ): Boolean {
         if (aiSuggestRunning.value == true) return false
         aiSuggestRunning.value = true
@@ -894,7 +900,10 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
                 val suggester = com.novelcharacter.app.ai.CharacterFieldAiSuggester(
                     com.novelcharacter.app.ai.AiService(getApplication())
                 )
-                val outcome = suggester.suggest(aiContext, withFieldUsage(targets)) { failure ->
+                val floor = if (applyConfidenceFilter) {
+                    com.novelcharacter.app.ai.AiPromptSettings(getApplication()).minConfidence
+                } else null
+                val outcome = suggester.suggest(aiContext, withFieldUsage(targets), floor) { failure ->
                     com.novelcharacter.app.ai.AiErrorMessages.of(getApplication(), failure)
                 }
                 aiSuggestResult.value = AiSuggestRun(targets, singleMode, outcome)

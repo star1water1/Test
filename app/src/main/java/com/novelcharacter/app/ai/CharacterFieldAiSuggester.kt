@@ -82,14 +82,58 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
         /** 라이브러리에 등재된(숨김 제외) 값 종수 — "N종 중 M개" 고지용 */
         val usageTotal: Int = 0,
         /** 변형 표기(값·별칭) → canonical 접기 표. 숨김 엔트리도 포함(저장 검증과 동일 집합) */
-        val canonicalByVariant: Map<String, String> = emptyMap()
+        val canonicalByVariant: Map<String, String> = emptyMap(),
+        /**
+         * 다시 요청할 때 사용자가 덧붙인 지시("더 어둡게", "북부 출신 느낌으로").
+         * 첫 요청에는 없고, 검토 화면의 '보완' 경로에서만 채워진다.
+         */
+        val userInstruction: String? = null,
+        /**
+         * 사용자가 이미 물린 값 — 다시 요청할 때 같은 답을 되받지 않기 위해 프롬프트에 싣고,
+         * 그래도 되풀이하면 응답에서 드롭한다(REPEATED). 재요청이 같은 값을 주면 사용자는
+         * 돈만 내고 아무것도 못 얻는다.
+         */
+        val rejectedValues: List<String> = emptyList()
     )
 
     data class Suggestion(
         val fieldKey: String,
         val value: String,
-        val reason: String
+        val reason: String,
+        /** 모델이 스스로 매긴 근거 강도. **null은 '미표기'**이며 절대 걸러 내지 않는다 */
+        val confidence: Confidence? = null,
+        /** 검토 화면에서 사용자가 값을 손봤는가 — 표시·기본 선택 판단에 쓴다 */
+        val editedByUser: Boolean = false
     )
+
+    /**
+     * 제안의 근거 강도 — 모델이 항목마다 스스로 매긴다.
+     *
+     * 왜 두는가: 최종 채택은 어차피 사용자가 항목별로 체크해서 한다. 그러니 앱이 할 일은
+     * "약한 근거를 대신 버리는 것"이 아니라 **얼마나 기댈 만한지 함께 보여 주고, 어디까지
+     * 받을지 사용자가 정하게 하는 것**이다(자율성 우선). 기본값은 전부 받기다 —
+     * 넓게 받아 놓고 고르는 편이, 못 받은 것을 다시 요청하는 것보다 싸다.
+     *
+     * 미표기(null)는 걸러 내지 않는다: 강도를 모른다는 이유로 유료 응답을 버리면
+     * 모델이 필드를 이름만 바꿔 생략하는 것과 같은 결과가 된다.
+     */
+    enum class Confidence(val wire: String, val label: String, val rank: Int) {
+        HIGH("high", "확실", 3),
+        MEDIUM("medium", "추론", 2),
+        LOW("low", "추측", 1);
+
+        /** 이 강도가 [floor] 이상인가 — [floor]가 null이면 언제나 참(전부 수용) */
+        fun meets(floor: Confidence?): Boolean = floor == null || rank >= floor.rank
+
+        companion object {
+            /** 알 수 없는 표기는 null(미표기) — 임의로 등급을 지어내지 않는다 */
+            fun fromWire(raw: String?): Confidence? {
+                val v = raw?.trim().orEmpty()
+                if (v.isEmpty()) return null
+                return values().firstOrNull { it.wire.equals(v, ignoreCase = true) }
+            }
+        }
+    }
 
     /**
      * 요청했는데 제안이 나오지 않은 대상 1건과 그 **사유**.
@@ -131,7 +175,13 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
         TRUNCATED("응답이 출력 상한에 잘려 못 받음"),
         UNREADABLE("응답 형식을 해석하지 못함"),
         REQUEST_FAILED("요청이 실패함"),
-        NOT_REQUESTED("앞선 결정적 실패로 요청하지 않음")
+        NOT_REQUESTED("앞선 결정적 실패로 요청하지 않음"),
+
+        /** 사용자가 정한 근거 강도 기준에 못 미쳐 제외 — 설정을 낮추면 받을 수 있다 */
+        BELOW_CONFIDENCE("설정한 근거 강도에 못 미쳐 제외"),
+
+        /** 다시 요청하면서 사용자가 물린 값을 모델이 되풀이함 */
+        REPEATED("이미 물린 값을 되풀이해 제외")
     }
 
     /** 값 정규화 결과 — 실패 사유를 잃지 않기 위해 null 대신 사유를 들고 돌아온다 */
@@ -171,6 +221,8 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
     suspend fun suggest(
         context: CharacterAiContext,
         targets: List<FieldSpec>,
+        /** 받아올 최소 근거 강도 (사용자 설정). null이면 강도와 무관하게 전부 받는다 */
+        minConfidence: Confidence? = null,
         errorMessageOf: (AiResult.Failure) -> String
     ): SuggestOutcome {
         val suggestions = mutableListOf<Suggestion>()
@@ -189,7 +241,7 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
             // 청크별 targetNames 차이로 문구가 다를 수 있어 완전 중복만 접는다 (고지 과다는 무해 방향)
             prompt.truncationNotes.forEach { if (it !in truncationNotes) truncationNotes.add(it) }
             val request = AiRequest(
-                system = buildSystemPrompt(),
+                system = buildSystemPrompt(minConfidence),
                 userText = prompt.text,
                 maxTokens = maxTokens
             )
@@ -197,7 +249,7 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
                 is AiResult.Success -> {
                     inputTokens += result.inputTokens ?: 0
                     outputTokens += result.outputTokens ?: 0
-                    val parsed = parseResponse(result.text, chunk)
+                    val parsed = parseResponse(result.text, chunk, minConfidence)
                     if (parsed == null) {
                         // 잘린 응답은 형식 오류가 아니다 — 원인과 교정 경로를 정확히 말해야 한다.
                         // 종전에는 둘 다 "형식 오류 — 다시 시도해 주세요"로 떨어져, 재시도해도
@@ -548,11 +600,11 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
          * 보여줄 수 있고(변수 제어), 추측성 제안은 검토 UI에서 사용자가 걸러 낸다 — 채택 여부를
          * 가리는 것은 모델이 아니라 사용자다(자율성 우선).
          */
-        fun buildSystemPrompt(): String = """
+        fun buildSystemPrompt(minConfidence: Confidence? = null): String = """
             당신은 소설 캐릭터 설정 도우미다. 주어진 캐릭터 정보를 근거로 요청된 필드의 값을 추천하라.
             규칙:
             1. 반드시 아래 JSON 스키마로만 응답하고 다른 텍스트를 덧붙이지 마라:
-            {"suggestions":[{"key":"필드키","value":"추천값","reason":"근거 한 문장"}]}
+            {"suggestions":[{"key":"필드키","value":"추천값","reason":"근거 한 문장","confidence":"high|medium|low"}]}
             2. [추천할 필드]에 제시된 key **전부**에 대해 항목을 하나씩 낸다. 필드가 N개면 항목도 N개다.
                임의로 빠뜨리지 마라 — 빠진 필드는 사용자에게 이유를 알 수 없는 결손으로 남는다.
             3. key는 [추천할 필드]에 제시된 key만 사용한다. 목록에 없는 key를 만들지 마라.
@@ -569,7 +621,28 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
                기존 값으로 표현할 수 없어 새 값이 필요할 때만 새로 만들되, 기존 값들의 표기 방식·
                상세도·길이를 따른다 (예: 기존이 '흑발, 은발'이면 '짙은 밤하늘빛 흑청색'은 안 된다).
             10. '이 목록의 값만 허용'이 붙은 필드는 제시된 기존 사용값 중에서만 고른다.
-        """.trimIndent()
+            11. 항목마다 confidence를 정직하게 매긴다. 잘 보이려고 높여 적지 마라 — 사용자는 이 값으로
+                무엇을 검토 없이 받을지 정한다.
+                high: 캐릭터 정보에 직접적인 근거가 있다 (태그·메모·다른 필드가 그 값을 가리킨다)
+                medium: 주어진 정보에서 무리 없이 추론된다
+                low: 정보가 부족해 작품의 기존 기조나 일반적 통념에 기댄 추측이다
+            12. '사용자 지시'가 붙은 필드는 그 지시를 **최우선**으로 따른다 — 다른 근거와 어긋나면
+                지시 쪽을 택하고, reason에 지시를 어떻게 반영했는지 적는다.
+            13. '이미 물린 값'이 제시된 필드는 사용자가 그 값을 보고 다시 요청한 것이다.
+                같은 값이나 사실상 같은 값을 되풀이하지 말고 **다른 방향**의 값을 내라.
+        """.trimIndent() + confidenceFloorRule(minConfidence)
+
+        /**
+         * 근거 강도 하한 지시 — 설정이 '전부 받기'면 아예 붙이지 않는다.
+         *
+         * 프롬프트와 파싱 **양쪽**에서 거른다: 프롬프트만으로는 모델이 지킨다는 보장이 없고,
+         * 파싱만으로는 쓸모없어질 값을 만드느라 출력 토큰을 낭비한다.
+         */
+        private fun confidenceFloorRule(minConfidence: Confidence?): String =
+            if (minConfidence == null) "" else "\n" + """
+            14. 사용자는 근거 강도 '${minConfidence.wire}' 이상만 받기로 정했다. 그보다 낮은 추측은
+                값을 내지 말고 규칙 5대로 value를 ""로 두고 reason에 근거가 얕은 이유를 적어라.
+            """.trimIndent()
 
         data class PromptBuild(val text: String, val truncationNotes: List<String>)
 
@@ -657,6 +730,15 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
                     sb.append(": ").append(t.usageExamples.joinToString(", "))
                     if (t.restrictedToLibrary) sb.append(" (이 목록의 값만 허용)")
                 }
+                // 재요청 맥락 — 사용자가 무엇을 더 원하고 무엇을 물렸는지. 이 둘이 없으면
+                // 재요청은 첫 요청과 같은 프롬프트가 되어 같은 답을 되받는다(과금만 두 번).
+                t.userInstruction?.takeIf { it.isNotBlank() }?.let {
+                    sb.append(" / 사용자 지시: ").append(it.take(MAX_VALUE_CHARS))
+                }
+                if (t.rejectedValues.isNotEmpty()) {
+                    sb.append(" / 이미 물린 값(다시 내지 말 것): ")
+                        .append(t.rejectedValues.joinToString(", ") { it.take(MAX_VALUE_CHARS) })
+                }
                 // restricted 필드의 허용 목록을 다 싣지 못했으면 조용히 두지 않는다 —
                 // 목록 밖 제안은 드롭되므로 사용자가 결손을 알아야 한다 (R-14).
                 if (t.restrictedToLibrary && t.usageExamples.size < t.usageTotal) {
@@ -694,7 +776,11 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
          * 반환된 [ParsedSuggestions.missing]은 대상 중 제안이 안 나온 **전부**를 사유와 함께
          * 담는다 — 모델이 응답에 아예 넣지 않은 필드(NOT_RETURNED)까지 포함한다.
          */
-        fun parseResponse(text: String, targets: List<FieldSpec>): ParsedSuggestions? {
+        fun parseResponse(
+            text: String,
+            targets: List<FieldSpec>,
+            minConfidence: Confidence? = null
+        ): ParsedSuggestions? {
             val root = AiJsonExtractor.extractObject(text) ?: return null
             val arr = root.optJSONArray("suggestions")
             val byKey = targets.associateBy { it.key }
@@ -728,13 +814,24 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
                     note(spec, MissingCause.DUPLICATE, rawValue)
                     continue
                 }
+                val confidence = Confidence.fromWire(obj.optString("confidence"))
+                // 미표기(null)는 통과시킨다 — 강도를 모른다는 이유로 버리면 생략과 같은 결과다
+                if (confidence != null && !confidence.meets(minConfidence)) {
+                    dropped++
+                    note(spec, MissingCause.BELOW_CONFIDENCE, "${confidence.label}: $rawValue")
+                    continue
+                }
                 when (val normalized = normalizeChecked(rawValue, spec)) {
                     is Normalized.Ok ->
                         if (normalized.value == spec.currentValue) {
                             dropped++
                             note(spec, MissingCause.SAME_AS_CURRENT, normalized.value)
+                        } else if (spec.rejectedValues.any { it.trim() == normalized.value }) {
+                            // 사용자가 물린 값을 그대로 되돌려준 재요청 — 받아 봐야 또 물린다
+                            dropped++
+                            note(spec, MissingCause.REPEATED, normalized.value)
                         } else {
-                            out.add(Suggestion(key, normalized.value, reason))
+                            out.add(Suggestion(key, normalized.value, reason, confidence))
                             resolved.add(key)
                         }
                     is Normalized.Rejected -> {

@@ -1,12 +1,13 @@
 package com.novelcharacter.app.ui.character
 
-import android.widget.Button
 import android.widget.CheckBox
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
+import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
@@ -171,12 +172,13 @@ object AiFieldSuggestSheet {
         viewModel: CharacterViewModel,
         contextLoader: suspend () -> CharacterFieldAiSuggester.CharacterAiContext,
         targets: List<CharacterFieldAiSuggester.FieldSpec>,
-        singleMode: Boolean
+        singleMode: Boolean,
+        applyConfidenceFilter: Boolean = true
     ) {
         fragment.viewLifecycleOwner.lifecycleScope.launch {
             val aiContext = contextLoader()
             if (!fragment.isAdded) return@launch
-            if (!viewModel.runAiSuggest(aiContext, targets, singleMode)) {
+            if (!viewModel.runAiSuggest(aiContext, targets, singleMode, applyConfidenceFilter)) {
                 // 이미 실행 중 — 무통보로 삼키지 않는다
                 Toast.makeText(fragment.requireContext(), R.string.ai_field_running, Toast.LENGTH_SHORT).show()
             }
@@ -221,7 +223,7 @@ object AiFieldSuggestSheet {
         }
 
         if (run.singleMode) {
-            showSingleConfirm(fragment, formBuilder, viewModel, run)
+            showSingleConfirm(fragment, formBuilder, viewModel, run, contextLoader)
         } else {
             showReviewDialog(fragment, formBuilder, viewModel, run, contextLoader)
         }
@@ -291,7 +293,8 @@ object AiFieldSuggestSheet {
         fragment: Fragment,
         formBuilder: DynamicFieldFormBuilder,
         viewModel: CharacterViewModel,
-        run: CharacterViewModel.AiSuggestRun
+        run: CharacterViewModel.AiSuggestRun,
+        contextLoader: suspend () -> CharacterFieldAiSuggester.CharacterAiContext
     ) {
         val context = fragment.requireContext()
         val outcome = run.outcome
@@ -303,17 +306,33 @@ object AiFieldSuggestSheet {
             } else {
                 append(spec.name).append(": ").append(suggestion.value)
             }
+            suggestion.confidence?.let { append("  [").append(it.label).append(']') }
             if (suggestion.reason.isNotBlank()) {
                 append("\n\n").append(fragment.getString(R.string.ai_field_reason_format, suggestion.reason))
             }
             append("\n\n").append(buildNotices(fragment, outcome))
         }
+        // 1건 모드에도 보완 경로를 준다 — 여기서 '취소'뿐이면 아쉬운 제안을 살릴 방법이 없다.
+        // 체크박스가 없으므로 행 하나짜리 목록으로 같은 다이얼로그를 재사용한다.
+        val row = Row(CheckBox(context), spec, suggestion)
         MaterialAlertDialogBuilder(context)
             .setTitle(spec.name)
             .setMessage(message)
             .setPositiveButton(R.string.ai_field_single_apply) { _, _ ->
                 viewModel.clearAiSuggestResult()
-                applySelected(fragment, formBuilder, listOf(suggestion))
+                applySelected(fragment, formBuilder, listOf(row.suggestion))
+            }
+            .setNeutralButton(R.string.ai_field_refine) { d, _ ->
+                d.dismiss()
+                showRefineDialog(
+                    fragment, viewModel, contextLoader, formBuilder, row, listOf(row),
+                    dismissReview = {},
+                    // 1건 모드에는 돌아갈 목록이 없다 — 수정 확정이 곧 적용이다(단계를 늘리지 않는다)
+                    onEdited = { edited ->
+                        viewModel.clearAiSuggestResult()
+                        applySelected(fragment, formBuilder, listOf(edited.suggestion))
+                    }
+                )
             }
             .setNegativeButton(R.string.cancel) { _, _ -> viewModel.clearAiSuggestResult() }
             .setOnCancelListener { viewModel.clearAiSuggestResult() }
@@ -349,36 +368,51 @@ object AiFieldSuggestSheet {
         // 결손을 알리기만 하고 교정 경로를 안 주면 사용자는 전체 추천을 처음부터 다시 돌려야 한다.
         val retryTargets = retryableTargets(run)
         var dialogRef: AlertDialog? = null
+        val rows = mutableListOf<Row>()
         if (retryTargets.isNotEmpty()) {
-            list.addView(Button(context).apply {
-                text = fragment.getString(R.string.ai_field_retry_missing, retryTargets.size)
-                setOnClickListener {
+            list.addView(
+                outlinedButton(context, density, fragment.getString(R.string.ai_field_retry_missing, retryTargets.size)) {
+                    // 보완 재요청과 같은 규칙 — 재요청 전에 지금 고른 것을 폼에 적용해 지킨다
+                    val keep = rows.filter { it.cb.isChecked }.map { it.suggestion }
+                    if (keep.isNotEmpty()) applySelected(fragment, formBuilder, keep)
                     dialogRef?.dismiss()
                     viewModel.clearAiSuggestResult()
                     runSuggest(fragment, viewModel, contextLoader, retryTargets, singleMode = false)
                 }
-            })
+            )
         }
 
-        val checks = mutableListOf<Pair<CheckBox, CharacterFieldAiSuggester.Suggestion>>()
+        // 행마다 [체크박스][보완] — 보완은 값 직접 수정과 지시를 단 재요청을 함께 연다.
+        // 제안을 '받거나 버리거나' 둘뿐이면, 방향은 맞고 표현만 아쉬운 제안이 버려진다.
         for (s in outcome.suggestions) {
             val spec = specByKey[s.fieldKey] ?: continue
-            val overwrite = spec.currentValue.isNotBlank()
-            val cb = CheckBox(context).apply {
-                text = buildString {
-                    append(spec.name).append(": ")
-                    if (overwrite) {
-                        append(fragment.getString(R.string.ai_field_overwrite_format, spec.currentValue, s.value))
-                    } else {
-                        append(s.value)
+            val row = Row(cb = CheckBox(context), spec = spec, suggestion = s)
+            row.cb.layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+            // 빈 필드 채움은 비파괴 조작 — 기본 선택으로 마찰 최소화. 덮어쓰기와 '추측'은
+            // 명시적 선택으로 남긴다(전체선택 한 번에 근거 얕은 값이 딸려 들어가지 않게).
+            row.cb.isChecked = spec.currentValue.isBlank() &&
+                s.confidence != CharacterFieldAiSuggester.Confidence.LOW
+            renderRow(fragment, row)
+
+            val refine = outlinedButton(context, density, fragment.getString(R.string.ai_field_refine)) {
+                showRefineDialog(
+                    fragment, viewModel, contextLoader, formBuilder, row, rows,
+                    dismissReview = { dialogRef?.dismiss() },
+                    onEdited = { edited ->
+                        // 손수 고른 값은 곧 채택 의사다 — 체크를 켜 두어 한 번 더 누르게 하지 않는다
+                        edited.cb.isChecked = true
+                        renderRow(fragment, edited)
                     }
-                    if (s.reason.isNotBlank()) append("\n  (").append(s.reason).append(')')
-                }
-                // 빈 필드 채움은 비파괴 조작 — 기본 선택으로 마찰 최소화. 덮어쓰기만 명시적 선택.
-                isChecked = !overwrite
+                )
             }
-            list.addView(cb)
-            checks.add(cb to s)
+            list.addView(LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+                layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+                addView(row.cb)
+                addView(refine)
+            })
+            rows.add(row)
         }
 
         val scroll = ScrollView(context).apply { addView(list) }
@@ -396,15 +430,166 @@ object AiFieldSuggestSheet {
             var allSelected = false
             dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
                 allSelected = !allSelected
-                checks.forEach { it.first.isChecked = allSelected }
+                rows.forEach { it.cb.isChecked = allSelected }
             }
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                val selected = checks.filter { it.first.isChecked }.map { it.second }
+                val selected = rows.filter { it.cb.isChecked }.map { it.suggestion }
                 if (selected.isEmpty()) return@setOnClickListener
                 dialog.dismiss()
                 viewModel.clearAiSuggestResult()
                 applySelected(fragment, formBuilder, selected)
             }
+        }
+        dialog.show()
+    }
+
+    /** 검토 목록의 한 행 — 값이 수정될 수 있어 제안을 **가변**으로 들고 있는다 */
+    private class Row(
+        val cb: CheckBox,
+        val spec: CharacterFieldAiSuggester.FieldSpec,
+        var suggestion: CharacterFieldAiSuggester.Suggestion
+    )
+
+    private val MATCH = LinearLayout.LayoutParams.MATCH_PARENT
+    private val WRAP = LinearLayout.LayoutParams.WRAP_CONTENT
+
+    /** 목록 안에 두는 인라인 액션 버튼 — 폼의 🎲/✨ 버튼과 같은 외곽선 스타일로 통일한다 */
+    private fun outlinedButton(
+        context: android.content.Context,
+        density: Float,
+        label: String,
+        action: () -> Unit
+    ) = com.google.android.material.button.MaterialButton(
+        context, null, com.google.android.material.R.attr.materialButtonOutlinedStyle
+    ).apply {
+        text = label
+        textSize = 13f
+        minWidth = 0
+        minimumWidth = 0
+        setPadding((10 * density).toInt(), 0, (10 * density).toInt(), 0)
+        layoutParams = LinearLayout.LayoutParams(WRAP, WRAP)
+        setOnClickListener { action() }
+    }
+
+    /** 행 표시 갱신 — 값 수정 후에도 같은 규칙으로 다시 그리기 위해 한 곳에 둔다 */
+    private fun renderRow(fragment: Fragment, row: Row) {
+        val s = row.suggestion
+        row.cb.text = buildString {
+            append(row.spec.name).append(": ")
+            if (row.spec.currentValue.isNotBlank()) {
+                append(fragment.getString(R.string.ai_field_overwrite_format, row.spec.currentValue, s.value))
+            } else {
+                append(s.value)
+            }
+            // 근거 강도는 채택 판단의 핵심 정보다 — 값 옆에 붙여 스캔 한 번에 보이게 한다
+            s.confidence?.let { append("  [").append(it.label).append(']') }
+            if (s.editedByUser) append("  [").append(fragment.getString(R.string.ai_field_edited)).append(']')
+            if (s.reason.isNotBlank()) append("\n  (").append(s.reason).append(')')
+        }
+    }
+
+    /**
+     * 보완 다이얼로그 — 한 제안에 대해 **직접 수정**과 **지시를 단 재요청**을 함께 연다.
+     *
+     * 재요청은 화면을 갈아 끼우므로(결과가 단일 확인으로 돌아온다) 그 전에 **지금 체크된 제안을
+     * 폼에 먼저 적용**한다. 적용은 폼 위젯 기입일 뿐 저장이 아니라 되돌리기 쉽고, 그렇게 하지
+     * 않으면 한 필드를 보완하려다 나머지 선택을 통째로 잃는다 (원칙 04 — 마찰 최소화).
+     */
+    private fun showRefineDialog(
+        fragment: Fragment,
+        viewModel: CharacterViewModel,
+        contextLoader: suspend () -> CharacterFieldAiSuggester.CharacterAiContext,
+        formBuilder: DynamicFieldFormBuilder,
+        row: Row,
+        allRows: List<Row>,
+        dismissReview: () -> Unit,
+        /** 값 수정이 확정된 뒤 할 일 — 검토 목록은 다시 그리고, 1건 모드는 바로 적용한다 */
+        onEdited: (Row) -> Unit
+    ) {
+        val context = fragment.requireContext()
+        val density = context.resources.displayMetrics.density
+        val pad = (20 * density).toInt()
+
+        val valueInput = EditText(context).apply {
+            setText(row.suggestion.value)
+            hint = fragment.getString(R.string.ai_field_refine_value_hint)
+            setSingleLine(false)
+        }
+        val optionHint = TextView(context).apply {
+            textSize = 12f
+            setTextColor(context.getColor(R.color.text_secondary))
+            text = buildString {
+                row.spec.formatHint?.let { append(fragment.getString(R.string.ai_field_format_hint, it)) }
+                if (row.spec.options.isNotEmpty()) {
+                    if (isNotEmpty()) append('\n')
+                    append(fragment.getString(R.string.ai_field_options_hint, row.spec.options.joinToString(", ")))
+                }
+            }
+            isVisible = text.isNotEmpty()
+        }
+        val instruction = EditText(context).apply {
+            hint = fragment.getString(R.string.ai_field_refine_instruction_hint)
+            setSingleLine(false)
+        }
+        val panel = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(pad, pad / 2, pad, 0)
+            addView(valueInput)
+            addView(optionHint)
+            addView(instruction)
+        }
+
+        val dialog = MaterialAlertDialogBuilder(context)
+            .setTitle(row.spec.name)
+            .setView(panel)
+            .setPositiveButton(R.string.ai_field_refine_use_value, null)
+            .setNeutralButton(R.string.ai_field_refine_reask, null)
+            .setNegativeButton(R.string.cancel, null)
+            .create()
+
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val typed = valueInput.text?.toString().orEmpty().trim()
+                if (typed.isEmpty()) {
+                    valueInput.error = fragment.getString(R.string.ai_field_refine_value_required)
+                    return@setOnClickListener
+                }
+                // 사용자가 직접 넣은 값도 **저장 시와 같은 규칙**으로 검증한다. 통과 못 한 값을
+                // 폼에 넣으면 위젯이 조용히 무시하거나(Spinner) 저장 단계에서 튕긴다 —
+                // 그 실패를 지금, 고칠 수 있는 자리에서 알린다 (변수 제어).
+                when (val checked = CharacterFieldAiSuggester.normalizeChecked(typed, row.spec)) {
+                    is CharacterFieldAiSuggester.Normalized.Ok -> {
+                        row.suggestion = row.suggestion.copy(
+                            value = checked.value,
+                            reason = fragment.getString(R.string.ai_field_edited_reason),
+                            editedByUser = true
+                        )
+                        dialog.dismiss()
+                        onEdited(row)
+                    }
+                    is CharacterFieldAiSuggester.Normalized.Rejected ->
+                        valueInput.error = checked.cause.label
+                }
+            }
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+                val hint = instruction.text?.toString().orEmpty().trim()
+                dialog.dismiss()
+                // 선택분을 먼저 폼에 적용 — 재요청으로 검토 화면을 잃어도 고른 것은 남는다
+                val keep = allRows.filter { it.cb.isChecked && it !== row }.map { it.suggestion }
+                if (keep.isNotEmpty()) applySelected(fragment, formBuilder, keep)
+                dismissReview()
+                viewModel.clearAiSuggestResult()
+                val target = row.spec.copy(
+                    userInstruction = hint.ifEmpty { null },
+                    rejectedValues = row.spec.rejectedValues + row.suggestion.value
+                )
+                // 콕 집어 다시 묻는 요청이므로 근거 강도 하한을 적용하지 않는다
+                runSuggest(
+                    fragment, viewModel, contextLoader, listOf(target),
+                    singleMode = true, applyConfidenceFilter = false
+                )
+            }
+            dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener { dialog.dismiss() }
         }
         dialog.show()
     }
