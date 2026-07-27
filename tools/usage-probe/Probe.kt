@@ -698,6 +698,77 @@ fun main(args: Array<String>) {
             }
         }
 
+        // ───────── [P] 안정 식별자(코드) 정합성 — R-1의 전제 검사 ─────────
+        // R-1은 "코드가 대상을 정한다". 코드가 비었거나 겹치면 가져오기는 이름 매칭으로 떨어지고
+        // 동명이인에서 오배정이 난다. B-25(code 없는 사건)의 실제 규모도 여기서 나온다.
+        println("\n=== [P] 안정 식별자(코드) 정합성 ===")
+        run {
+            fun codeCheck(sheetName: String, col: String) {
+                val sh = sheetsByName[sheetName] ?: run { println("  %-14s 시트 없음".format(sheetName)); return }
+                var n = 0; var blank = 0
+                val seen = mutableMapOf<String, Int>()
+                forEachDataRow(sh) { _, get ->
+                    n++
+                    val c = get(col)
+                    if (c.isBlank()) blank++ else seen.inc(c)
+                }
+                val dup = seen.filterValues { it > 1 }
+                println("  %-14s %4d행 · 코드 빈칸 %d · 중복 %d%s".format(
+                    sheetName, n, blank, dup.size,
+                    if (dup.isEmpty()) "" else " ⚠ " + dup.entries.take(2).joinToString { "${it.key}×${it.value}" }))
+            }
+            listOf("세계관" to "코드", "작품" to "코드", "사건 연표" to "코드",
+                "캐릭터 상태변화" to "코드", "캐릭터 관계" to "코드", "이름 은행" to "코드",
+                "세력" to "코드", "필드 데이터" to "코드").forEach { (s, c) -> codeCheck(s, c) }
+            // 캐릭터 코드는 시트가 여럿이라 전체를 합쳐 본다
+            var chN = 0; var chBlank = 0
+            val chSeen = mutableMapOf<String, Int>()
+            val nameSeen = mutableMapOf<String, Int>()
+            for ((name, sh) in sheetsByName) {
+                val hs = headersOf(sh)
+                if (hs.firstOrNull() != "이름") continue
+                if (CHARACTER_SHEET_FINGERPRINT.any { it !in hs }) continue
+                forEachDataRow(sh) { _, get ->
+                    if (get("이름").isBlank()) return@forEachDataRow
+                    chN++
+                    val c = get("코드")
+                    if (c.isBlank()) chBlank++ else chSeen.inc(c)
+                    nameSeen.inc(get("이름"))
+                }
+            }
+            val chDup = chSeen.filterValues { it > 1 }
+            val nameDup = nameSeen.filterValues { it > 1 }
+            println("  %-14s %4d행 · 코드 빈칸 %d · 중복 %d".format("캐릭터(전 시트)", chN, chBlank, chDup.size))
+            println("  동명이인(같은 이름 2명 이상): ${nameDup.size}종 · 해당 캐릭터 ${nameDup.values.sum()}명" +
+                (if (nameDup.isEmpty()) "" else " ⚠ 코드가 없으면 가져오기가 오배정한다"))
+        }
+
+        // ───────── [Q] CALCULATED 수식 실태 (로드맵 5 / S-11 입력) ─────────
+        // 내보내기는 NaN·Inf를 mapNotNull로 떨어뜨려 **빈 셀**로 쓴다(ExcelExporter:906~911).
+        // 그래서 '수식이 깨졌다'와 '아직 입력 안 했다'가 파일에서 구별되지 않는다.
+        println("\n=== [Q] CALCULATED 수식 실태 ===")
+        run {
+            val calcDefs = fieldDefs.filter { it.second.type == "CALCULATED" }
+            if (calcDefs.isEmpty()) { println("  CALCULATED 필드 없음"); return@run }
+            val allKeysByUni = byUniverse.mapValues { (_, v) -> v.map { it.key }.toSet() }
+            for ((uni, fd) in calcDefs) {
+                val formula = try { JSONObject(fd.config).optString("formula", "") } catch (_: Exception) { "" }
+                // 수식이 참조하는 필드키 추출 — `field(키)` 가 유일한 참조 문법이다
+                // (FormulaEvaluator:127 `formula.startsWith("field(", i)`).
+                // 맨 식별자를 필드키로 읽으면 함수명·문법 토큰을 '없는 참조'로 오탐한다.
+                val refs = Regex("field\\(\\s*([^)]*?)\\s*\\)").findAll(formula)
+                    .map { it.groupValues[1].trim().trim('"', '\'') }.filter { it.isNotEmpty() }.toSet()
+                val known = allKeysByUni[uni].orEmpty()
+                val missing = refs.filter { it !in known }
+                val filled = values.count { it.fd.key == fd.key && it.universe == uni }
+                val population = values.map { it.universe }.count { it == uni }
+                    .let { _ -> characterNames.size }   // 대략적 모수 — 아래 시트별 수치로 보정
+                println("  필드 '${fd.name}'(${uni.let { "세계관" }}) · 수식 토큰 ${refs.size}개 · " +
+                    "정의에 없는 참조 ${missing.size}개${if (missing.isEmpty()) "" else " ⚠ $missing"}")
+                println("    값이 채워진 행: $filled  (빈칸 = '수식 오류'와 '입력 없음'이 구별되지 않는다)")
+            }
+        }
+
         // ───────── [L] 사건 · 관계 · 상태변화 (5-3 보조) ─────────
         println("\n=== [L] 사건 · 상태변화 · 관계 규모 ===")
         listOf("사건 연표", "캐릭터 상태변화", "캐릭터 관계", "관계 변화", "이름 은행",
