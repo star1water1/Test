@@ -4,6 +4,7 @@ import com.novelcharacter.app.ai.CharacterFieldAiSuggester.CharacterAiContext
 import com.novelcharacter.app.ai.CharacterFieldAiSuggester.FieldSpec
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.FieldType
+import com.novelcharacter.app.data.model.FieldValueEntry
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -376,5 +377,258 @@ class CharacterFieldAiSuggesterTest {
     fun fieldSpecOf_bodySize_defaultStructuredHint() {
         val spec = CharacterFieldAiSuggester.fieldSpecOf(fieldDef(FieldType.BODY_SIZE), "")!!
         assertTrue(spec.formatHint!!.contains("B-W-H"))
+    }
+
+    // ===== 기존 사용값(표기 기조) — 값 라이브러리 연동 =====
+
+    private fun entry(
+        value: String,
+        usage: Int = 0,
+        hidden: Boolean = false,
+        aliases: List<String> = emptyList()
+    ) = FieldValueEntry(
+        fieldDefinitionId = 1L,
+        value = value,
+        usageCount = usage,
+        isHidden = hidden,
+        aliasesJson = aliases.joinToString(",", "[", "]") { "\"$it\"" }
+    )
+
+    private fun libSpec(
+        key: String = "hair",
+        type: FieldType = FieldType.TEXT,
+        options: List<String> = emptyList(),
+        multiToken: Boolean = false,
+        restricted: Boolean = false
+    ) = spec(key, type = type, options = options).copy(
+        fieldId = 1L, libraryEligible = true, multiToken = multiToken, restrictedToLibrary = restricted
+    )
+
+    @Test
+    fun fieldSpecOf_라이브러리_연동_플래그가_필드_설정을_따른다() {
+        val text = CharacterFieldAiSuggester.fieldSpecOf(fieldDef(FieldType.TEXT), "")!!
+        assertTrue("TEXT 기본(suggest)은 카탈로그 대상", text.libraryEligible)
+        assertFalse(text.restrictedToLibrary)
+        assertFalse(text.multiToken)
+
+        val multi = CharacterFieldAiSuggester.fieldSpecOf(fieldDef(FieldType.MULTI_TEXT), "")!!
+        assertTrue(multi.libraryEligible)
+        assertTrue(multi.multiToken)
+
+        val restricted = CharacterFieldAiSuggester.fieldSpecOf(
+            fieldDef(FieldType.SELECT, """{"valueLibrary":{"inputMode":"restricted"}}"""), ""
+        )!!
+        assertTrue(restricted.restrictedToLibrary)
+
+        // free = "이 필드엔 기존 값을 들이대지 마라" — 용례도 접기도 하지 않는다 (자율성)
+        val free = CharacterFieldAiSuggester.fieldSpecOf(
+            fieldDef(FieldType.TEXT, """{"valueLibrary":{"inputMode":"free"}}"""), ""
+        )!!
+        assertFalse(free.libraryEligible)
+
+        // 라이브러리 비대상 타입은 연동하지 않는다 (판정은 FieldValueTokenizer 단일 소스)
+        assertFalse(CharacterFieldAiSuggester.fieldSpecOf(fieldDef(FieldType.NUMBER), "")!!.libraryEligible)
+        assertFalse(CharacterFieldAiSuggester.fieldSpecOf(fieldDef(FieldType.BODY_SIZE), "")!!.libraryEligible)
+    }
+
+    @Test
+    fun selectUsageExamples_상위빈도_더하기_균등샘플_결정적() {
+        val entries = (1..10).map { entry("v%02d".format(it), usage = 11 - it) }
+        val picked = CharacterFieldAiSuggester.selectUsageExamples(entries, limit = 6)
+        // 앞 4개(ceil(6*2/3))는 빈도 상위, 나머지 2개는 잔여 6개를 균등 간격으로 훑는다
+        assertEquals(listOf("v01", "v02", "v03", "v04", "v05", "v08"), picked)
+        // 같은 입력이면 항상 같은 결과 (난수 없음)
+        assertEquals(picked, CharacterFieldAiSuggester.selectUsageExamples(entries, limit = 6))
+    }
+
+    @Test
+    fun selectUsageExamples_빈도가_전부_0이면_가나다_앞쪽이_아니라_전체를_훑는다() {
+        val entries = (1..10).map { entry("v%02d".format(it)) }
+        val picked = CharacterFieldAiSuggester.selectUsageExamples(entries, limit = 5)
+        assertEquals(listOf("v01", "v03", "v05", "v07", "v09"), picked)
+    }
+
+    @Test
+    fun selectUsageExamples_상한_이하면_전량_중복은_제거() {
+        val entries = listOf(entry("흑발", 3), entry("은발", 1), entry("흑발", 3))
+        assertEquals(listOf("흑발", "은발"), CharacterFieldAiSuggester.selectUsageExamples(entries, limit = 12))
+    }
+
+    @Test
+    fun selectUsageExamples_산문_길이_값은_예시가_아니다() {
+        val prose = "가".repeat(CharacterFieldAiSuggester.MAX_USAGE_EXAMPLE_VALUE_CHARS + 1)
+        val picked = CharacterFieldAiSuggester.selectUsageExamples(listOf(entry(prose, 9), entry("흑발", 1)))
+        assertEquals(listOf("흑발"), picked)
+    }
+
+    @Test
+    fun selectUsageExamples_총_길이_상한을_넘지_않되_최소_1개는_남는다() {
+        val entries = (1..5).map { entry("값".repeat(10) + it, usage = 6 - it) }
+        val capped = CharacterFieldAiSuggester.selectUsageExamples(entries, limit = 5, maxTotalChars = 30)
+        assertEquals(2, capped.size)
+        val single = CharacterFieldAiSuggester.selectUsageExamples(entries, limit = 5, maxTotalChars = 1)
+        assertEquals(1, single.size)
+    }
+
+    @Test
+    fun withLibraryUsage_예시는_숨김_제외_접기표는_숨김_포함() {
+        val entries = listOf(
+            entry("검은 머리", usage = 5, aliases = listOf("흑발")),
+            entry("은발", usage = 2),
+            entry("폐기값", usage = 0, hidden = true)
+        )
+        val enriched = CharacterFieldAiSuggester.withLibraryUsage(libSpec(), entries)
+        assertEquals(listOf("검은 머리", "은발"), enriched.usageExamples)
+        assertEquals("숨김은 '입력 제안에서 제외'이므로 종수에서도 빠진다", 2, enriched.usageTotal)
+        // 접기표는 저장 시 검증 집합과 같아야 한다 — 숨김 값도 저장 가능한 값이다
+        assertEquals("검은 머리", enriched.canonicalByVariant["흑발"])
+        assertEquals("검은 머리", enriched.canonicalByVariant["검은 머리"])
+        assertTrue(enriched.canonicalByVariant.containsKey("폐기값"))
+    }
+
+    @Test
+    fun withLibraryUsage_예시_개수는_사용자_설정을_따르되_정확성은_끄지_못한다() {
+        val entries = listOf(
+            entry("검은 머리", 5, aliases = listOf("흑발")), entry("은발", 3), entry("금발", 1)
+        )
+        val few = CharacterFieldAiSuggester.withLibraryUsage(libSpec(), entries, exampleLimit = 1)
+        assertEquals(listOf("검은 머리"), few.usageExamples)
+
+        // 0 = "프롬프트에 싣지 마라"이지, "별칭 교정을 끄라"가 아니다 (토큰 절약 ≠ 정확성 포기)
+        val off = CharacterFieldAiSuggester.withLibraryUsage(libSpec(), entries, exampleLimit = 0)
+        assertTrue(off.usageExamples.isEmpty())
+        assertEquals("검은 머리", CharacterFieldAiSuggester.normalizeValue("흑발", off))
+    }
+
+    @Test
+    fun withLibraryUsage_restricted는_설정이_0이어도_허용_목록을_싣는다() {
+        // 목록을 안 주고 "목록 밖이라 드롭"할 수는 없다 — 허용 목록은 토큰 설정의 대상이 아니다.
+        val entries = listOf(entry("북부", 3), entry("남부", 1))
+        val off = CharacterFieldAiSuggester.withLibraryUsage(
+            libSpec(restricted = true), entries, exampleLimit = 0
+        )
+        assertEquals(listOf("북부", "남부"), off.usageExamples)
+    }
+
+    @Test
+    fun withLibraryUsage_canonical이_남의_별칭을_이긴다() {
+        val entries = listOf(entry("은발", aliases = listOf("백발")), entry("백발"))
+        val enriched = CharacterFieldAiSuggester.withLibraryUsage(libSpec(), entries)
+        assertEquals("백발", enriched.canonicalByVariant["백발"])
+    }
+
+    @Test
+    fun withLibraryUsage_비대상_필드는_손대지_않는다() {
+        val spec = spec("height", type = FieldType.NUMBER)  // libraryEligible = false
+        val enriched = CharacterFieldAiSuggester.withLibraryUsage(spec, listOf(entry("172", 3)))
+        assertEquals(spec, enriched)
+    }
+
+    @Test
+    fun userPrompt_기존_사용값이_실린다() {
+        val target = libSpec(key = "hair").copy(
+            name = "머리색", usageExamples = listOf("흑발", "은발", "금발"), usageTotal = 10
+        )
+        val build = CharacterFieldAiSuggester.buildUserPrompt(context(), listOf(target))
+        assertTrue(build.text.contains("기존 사용값(총 10종 중 3개 예시): 흑발, 은발, 금발"))
+        // 선별이 아니라 전량이면 "N종 중 M개" 군더더기를 붙이지 않는다
+        val whole = CharacterFieldAiSuggester.buildUserPrompt(
+            context(), listOf(target.copy(usageTotal = 3))
+        )
+        assertTrue(whole.text.contains("기존 사용값: 흑발, 은발, 금발"))
+        assertTrue(build.truncationNotes.isEmpty())
+    }
+
+    @Test
+    fun userPrompt_restricted는_허용_표시와_결손_고지를_함께_낸다() {
+        val target = libSpec(key = "region", restricted = true).copy(
+            name = "거주지", usageExamples = listOf("북부", "남부"), usageTotal = 9
+        )
+        val build = CharacterFieldAiSuggester.buildUserPrompt(context(), listOf(target))
+        assertTrue(build.text.contains("(이 목록의 값만 허용)"))
+        // 허용 목록을 다 못 실었으면 조용히 두지 않는다 — 목록 밖 제안은 드롭되므로 (R-14)
+        assertTrue(build.truncationNotes.any { it.contains("거주지") && it.contains("9종 중 2개") })
+    }
+
+    @Test
+    fun systemPrompt_표기_기조_규칙을_지시한다() {
+        val prompt = CharacterFieldAiSuggester.buildSystemPrompt()
+        assertTrue(prompt.contains("기존 사용값"))
+        assertTrue(prompt.contains("이 목록의 값만 허용"))
+    }
+
+    // ===== 응답 접기·허용 검증 =====
+
+    @Test
+    fun normalize_별칭_표기를_canonical로_교정한다() {
+        val enriched = CharacterFieldAiSuggester.withLibraryUsage(
+            libSpec(), listOf(entry("검은 머리", 3, aliases = listOf("흑발")))
+        )
+        assertEquals("검은 머리", CharacterFieldAiSuggester.normalizeValue("흑발", enriched))
+        // 미등록 표기는 손대지 않는다 (새 값 자체는 막지 않음)
+        assertEquals("주황머리", CharacterFieldAiSuggester.normalizeValue("주황머리", enriched))
+    }
+
+    @Test
+    fun normalize_SELECT는_접은_뒤_옵션과_대조한다() {
+        val enriched = CharacterFieldAiSuggester.withLibraryUsage(
+            libSpec(type = FieldType.SELECT, options = listOf("남", "여")),
+            listOf(entry("남", 4, aliases = listOf("남성")))
+        )
+        // 종전에는 옵션에 없는 '남성'이 그대로 드롭됐다 — 접고 나서 대조하면 살릴 수 있다
+        assertEquals("남", CharacterFieldAiSuggester.normalizeValue("남성", enriched))
+        assertNull(CharacterFieldAiSuggester.normalizeValue("무성", enriched))
+    }
+
+    @Test
+    fun normalize_복수값은_토큰_단위로_접고_중복을_없앤다() {
+        val enriched = CharacterFieldAiSuggester.withLibraryUsage(
+            libSpec(type = FieldType.MULTI_TEXT, multiToken = true),
+            listOf(entry("검술", 5, aliases = listOf("검", "도검술")))
+        )
+        assertEquals(
+            "검술, 마법",
+            CharacterFieldAiSuggester.normalizeValue("검, 도검술, 마법", enriched)
+        )
+    }
+
+    @Test
+    fun normalize_restricted는_목록_밖_값을_드롭한다() {
+        val enriched = CharacterFieldAiSuggester.withLibraryUsage(
+            libSpec(restricted = true), listOf(entry("북부", 3), entry("남부", 1))
+        )
+        assertEquals("북부", CharacterFieldAiSuggester.normalizeValue("북부", enriched))
+        assertNull("저장 시 가드와 같은 규칙", CharacterFieldAiSuggester.normalizeValue("동부", enriched))
+    }
+
+    @Test
+    fun normalize_restricted라도_라이브러리가_비면_제한하지_않는다() {
+        // 허용 목록을 준 적이 없는데 '목록 밖'이라고 드롭하면 유료 응답을 통째로 버리는 셈이다
+        val empty = CharacterFieldAiSuggester.withLibraryUsage(libSpec(restricted = true), emptyList())
+        assertEquals("동부", CharacterFieldAiSuggester.normalizeValue("동부", empty))
+    }
+
+    @Test
+    fun normalize_restricted_복수값은_모든_토큰이_허용목록에_있어야_한다() {
+        val enriched = CharacterFieldAiSuggester.withLibraryUsage(
+            libSpec(type = FieldType.MULTI_TEXT, multiToken = true, restricted = true),
+            listOf(entry("검술", 3), entry("마법", 2))
+        )
+        assertEquals("검술, 마법", CharacterFieldAiSuggester.normalizeValue("검술, 마법", enriched))
+        assertNull(CharacterFieldAiSuggester.normalizeValue("검술, 요리", enriched))
+    }
+
+    @Test
+    fun parse_접기로_현재값과_같아진_제안은_드롭된다() {
+        // '흑발' 제안이 canonical '검은 머리'로 접히면 현재 값과 동일 — 이미 있는 값을 다시 권하지 않는다
+        val enriched = CharacterFieldAiSuggester.withLibraryUsage(
+            libSpec().copy(currentValue = "검은 머리"),
+            listOf(entry("검은 머리", 3, aliases = listOf("흑발")))
+        )
+        val parsed = CharacterFieldAiSuggester.parseResponse(
+            """{"suggestions":[{"key":"hair","value":"흑발","reason":"태그"}]}""", listOf(enriched)
+        )!!
+        assertTrue(parsed.suggestions.isEmpty())
+        assertEquals(1, parsed.droppedCount)
     }
 }

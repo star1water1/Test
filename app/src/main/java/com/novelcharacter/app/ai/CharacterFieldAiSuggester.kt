@@ -2,9 +2,12 @@ package com.novelcharacter.app.ai
 
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.FieldType
+import com.novelcharacter.app.data.model.FieldValueEntry
+import com.novelcharacter.app.data.model.FieldValueLibraryConfig
 import com.novelcharacter.app.data.model.RandomConfig
 import com.novelcharacter.app.data.model.SemanticRole
 import com.novelcharacter.app.data.model.StructuredInputConfig
+import com.novelcharacter.app.util.FieldValueTokenizer
 
 /**
  * 캐릭터 필드 값 AI 추천 — 생일 포함 모든 편집 가능 필드의 값을 추천 이유와 함께 제안한다.
@@ -14,6 +17,15 @@ import com.novelcharacter.app.data.model.StructuredInputConfig
  * - AI 출력은 절대 자동 적용하지 않는다 — 검토 UI에서 사용자가 선택 적용(폼 위젯에만 기입).
  * - 검증(변수 제어): 형식·옵션에 맞지 않는 제안은 드롭하고 드롭 수를 보고한다.
  * - 컨텍스트 절단은 조용히 하지 않는다 — truncationNotes로 전부 표면화 (R-14).
+ *
+ * **표기 기조(일관성)**: 캐릭터 한 명의 정보만 주면 모델은 이 작품이 그 필드를 어떤 표기·
+ * 상세도로 써 왔는지 알 길이 없어, 기존 값들과 어긋난 표기("짙은 밤하늘빛 흑청색")를
+ * 만들어 낸다. 그래서 각 대상 필드마다 **값 라이브러리(field_value_entries)의 기존 값 예시**를
+ * 함께 싣는다 — 라이브러리는 이미 필드별로 중복 없이(UNIQUE) 정규화된 카탈로그이고
+ * 사용 빈도까지 들고 있어, 캐릭터 전체를 훑지 않고 1쿼리로 "이 작품의 기조"를 얻는다.
+ * 값 전량이 아니라 [selectUsageExamples]가 고른 소수만 실어 토큰을 통제한다.
+ * 응답 쪽도 같은 카탈로그로 접는다: 별칭 표기는 canonical로 교정하고(값 분열 방지),
+ * `inputMode=restricted` 필드는 저장 시 검증과 같은 규칙으로 목록 밖 값을 드롭한다.
  *
  * 프롬프트 조립·응답 파싱은 AiService 미호출 순수 함수로 분리되어 단위 테스트된다.
  */
@@ -52,7 +64,25 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
         val formatHint: String? = null,
         /** 구조화 입력 검증용 구분자·파트 수 — 폼이 구조화 위젯을 렌더하는 필드(TEXT/BODY_SIZE)에만 설정 */
         val structuredSeparator: String? = null,
-        val structuredPartCount: Int? = null
+        val structuredPartCount: Int? = null,
+        /** 값 라이브러리 조회 키. 0이면 라이브러리 연동 없음(순수 파싱 테스트 등) */
+        val fieldId: Long = 0L,
+        /**
+         * 이 필드가 값 라이브러리 카탈로그 대상이며 제안이 켜져 있는가.
+         * `inputMode=free`(제안 끔)는 사용자가 "이 필드엔 기존 값을 들이대지 마라"고 정한 것이므로
+         * 용례도 접기도 하지 않는다 — 자율성은 AI 경로에서도 같은 뜻이어야 한다.
+         */
+        val libraryEligible: Boolean = false,
+        /** 콤마 복수 토큰 필드인가 — 용례·별칭 접기·허용 검증을 토큰 단위로 수행 */
+        val multiToken: Boolean = false,
+        /** `inputMode=restricted` — 저장 시 검증과 같은 규칙을 추천에도 적용 */
+        val restrictedToLibrary: Boolean = false,
+        /** 프롬프트에 실을 기존 사용값 예시 (canonical, 중복 없음) — [withLibraryUsage]가 채운다 */
+        val usageExamples: List<String> = emptyList(),
+        /** 라이브러리에 등재된(숨김 제외) 값 종수 — "N종 중 M개" 고지용 */
+        val usageTotal: Int = 0,
+        /** 변형 표기(값·별칭) → canonical 접기 표. 숨김 엔트리도 포함(저장 검증과 동일 집합) */
+        val canonicalByVariant: Map<String, String> = emptyMap()
     )
 
     data class Suggestion(
@@ -141,6 +171,23 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
         const val MAX_TAGS = 50
         const val MAX_RELATIONSHIPS = 30
         const val MAX_FILLED_FIELDS = 60
+
+        // ===== 기존 사용값 예시 (표기 기조 전달) 상한 =====
+        // 필드 하나당 대략 (개수 × 값 길이) 토큰이 늘어난다. 12개 × 짧은 값이면 필드당 ~50토큰,
+        // 요청당 대상 15개 기준 ~750토큰 — 출력 토큰과 달리 한 번만 실리는 입력 비용이라
+        // 일관성 이득 대비 감당 가능한 크기다.
+        const val MAX_USAGE_EXAMPLES = 12
+
+        /**
+         * 예시 하나의 길이 상한. 이보다 긴 값은 '표기 기조'가 아니라 산문이다 —
+         * 서술형으로 쓰이는 TEXT 필드(성격·배경)는 라이브러리에 문단이 통째로 등재되므로
+         * 이 상한이 없으면 예시 한 줄이 프롬프트를 삼킨다.
+         * 단 `restricted` 필드는 목록 자체가 계약이라 이 상한을 적용하지 않는다.
+         */
+        const val MAX_USAGE_EXAMPLE_VALUE_CHARS = 40
+
+        /** 필드 하나의 예시 총 길이 상한 */
+        const val MAX_USAGE_EXAMPLE_TOTAL_CHARS = 240
 
         /**
          * 제안 1건(key + value + 근거 한 문장)의 출력 토큰 추정치.
@@ -234,6 +281,10 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
                         " 형식 (구분자 '" + structured.separator + "')"
                 else -> null
             }
+            // 값 라이브러리 연동 판정은 라이브러리 자신의 단일 소스를 그대로 쓴다 —
+            // 여기서 타입 목록을 다시 적으면 라이브러리 대상이 바뀔 때 AI 경로만 어긋난다.
+            val libraryConfig = FieldValueLibraryConfig.fromConfig(field.config)
+            val libraryEligible = FieldValueTokenizer.supportsLibrary(field) && libraryConfig.isSuggestEnabled
             return FieldSpec(
                 key = field.key,
                 name = field.name,
@@ -244,8 +295,131 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
                 currentValue = currentValue,
                 formatHint = formatHint,
                 structuredSeparator = if (structuredActive) structured.separator else null,
-                structuredPartCount = if (structuredActive) structured.parts.size else null
+                structuredPartCount = if (structuredActive) structured.parts.size else null,
+                fieldId = field.id,
+                libraryEligible = libraryEligible,
+                multiToken = FieldValueTokenizer.isMultiToken(field),
+                restrictedToLibrary = libraryEligible && libraryConfig.isRestricted
             )
+        }
+
+        /**
+         * 라이브러리 엔트리를 스펙에 싣는다 (순수 — DB 조회는 호출측 VM이 1쿼리로 배치 수행).
+         *
+         * - 예시는 **숨김 제외**(숨김의 계약이 "입력 제안에서 제외"이고 AI 추천도 입력 제안이다)
+         * - 접기 표는 **숨김 포함**(숨김 값도 저장 가능한 값이라 restricted 검증 집합과 같아야 한다)
+         * - 별칭보다 canonical이 우선한다(다른 엔트리의 별칭이 이 값과 겹쳐도 자기 자신으로 접힌다)
+         *
+         * [exampleLimit]은 사용자 설정([AiPromptSettings.usageExampleCount])이다. **0이어도
+         * 접기 표는 그대로 만든다** — 설정이 줄이는 것은 프롬프트 적재량(토큰)이지, 별칭 교정과
+         * restricted 검증(정확성)이 아니다. 같은 이유로 restricted 필드는 허용 목록이 곧 계약이라
+         * 설정이 0이어도 기본 개수만큼은 싣는다(목록을 안 주고 목록 밖이라 드롭할 수는 없다).
+         */
+        fun withLibraryUsage(
+            spec: FieldSpec,
+            entries: List<FieldValueEntry>,
+            exampleLimit: Int = MAX_USAGE_EXAMPLES
+        ): FieldSpec {
+            if (!spec.libraryEligible || entries.isEmpty()) return spec
+            val canonical = HashMap<String, String>(entries.size * 2)
+            for (e in entries) {
+                for (alias in e.aliases()) {
+                    val a = alias.trim()
+                    if (a.isNotEmpty()) canonical.putIfAbsent(a, e.value)
+                }
+            }
+            for (e in entries) canonical[e.value] = e.value  // canonical이 별칭을 이긴다
+            val visible = entries.filterNot { it.isHidden }.filter { it.value.isNotBlank() }
+            val limit =
+                if (spec.restrictedToLibrary) exampleLimit.coerceAtLeast(MAX_USAGE_EXAMPLES) else exampleLimit
+            return spec.copy(
+                usageExamples = selectUsageExamples(
+                    visible,
+                    limit = limit,
+                    maxValueChars = if (spec.restrictedToLibrary) Int.MAX_VALUE else MAX_USAGE_EXAMPLE_VALUE_CHARS
+                ),
+                usageTotal = visible.size,
+                canonicalByVariant = canonical
+            )
+        }
+
+        /**
+         * 예시 선별 — "중복 없이 몇 개"의 구체 규칙.
+         *
+         * 최다 사용값만 상위 N개 자르면 그 필드의 **폭**이 안 보여서, 모델이 1위 값만 되풀이하거나
+         * 반대로 롱테일의 표기 관례를 못 배운다. 그래서 앞 2/3은 빈도 상위(주류 기조),
+         * 나머지 1/3은 잔여 목록을 **균등 간격으로 훑어**(분포의 폭) 채운다.
+         * 난수를 쓰지 않으므로 같은 데이터면 항상 같은 예시가 나가고 단위 테스트가 가능하다.
+         *
+         * 정렬은 usageCount 내림차순 → 값 오름차순. usageCount는 최종 일관성 캐시라
+         * 라이브러리 화면에 한 번도 안 들어간 사용자는 **전부 0**일 수 있다. 그때 앞 2/3을
+         * 그대로 자르면 '가나다순 앞쪽'만 뽑히는 편향이 되므로, 전부 0이면 빈도 구간을 두지 않고
+         * 목록 전체를 균등 간격으로 훑는다 (여기서 재계산하지 않는 이유: 재계산은 필드마다
+         * 값 전량 스캔+쓰기라, 읽기 경로인 추천이 짊어질 비용이 아니다 — docs/field_value_library.md).
+         */
+        fun selectUsageExamples(
+            entries: List<FieldValueEntry>,
+            limit: Int = MAX_USAGE_EXAMPLES,
+            maxValueChars: Int = MAX_USAGE_EXAMPLE_VALUE_CHARS,
+            maxTotalChars: Int = MAX_USAGE_EXAMPLE_TOTAL_CHARS
+        ): List<String> {
+            if (limit <= 0) return emptyList()
+            val usable = entries.filter { it.value.isNotBlank() && it.value.length <= maxValueChars }
+            val sorted = usable.asSequence()
+                .sortedWith(compareByDescending<FieldValueEntry> { it.usageCount }.thenBy { it.value })
+                .map { it.value }
+                .distinct()
+                .toList()
+            val picked = if (sorted.size <= limit) {
+                sorted
+            } else {
+                // 빈도 정보가 전혀 없으면 상위 구간이라는 개념 자체가 성립하지 않는다 → 전량 균등 훑기
+                val headCount = if (usable.none { it.usageCount > 0 }) 0 else (limit * 2 + 2) / 3
+                val tailCount = limit - headCount
+                val rest = sorted.drop(headCount)
+                // rest.size > tailCount 이 보장되므로 간격 ≥ 1 — 같은 값이 두 번 뽑히지 않는다
+                val step = rest.size.toDouble() / tailCount
+                sorted.take(headCount) +
+                    (0 until tailCount).map { rest[(it * step).toInt().coerceAtMost(rest.lastIndex)] }
+            }
+            // 총 길이 상한 — 넘치는 뒤쪽(덜 대표적인 쪽)부터 자른다. 최소 1개는 남긴다.
+            val out = mutableListOf<String>()
+            var chars = 0
+            for (value in picked) {
+                if (out.isNotEmpty() && chars + value.length + 2 > maxTotalChars) break
+                out.add(value)
+                chars += value.length + 2
+            }
+            return out
+        }
+
+        /**
+         * 별칭 표기 → canonical 접기. 라이브러리가 "변형 표기 → 정규값"으로 정의한 매핑을
+         * 그대로 쓴다 — 모델이 '흑발'이라 답해도 이 작품의 정규값이 '검은 머리'면 그쪽으로 넣어야
+         * 통계·검색·restricted 검증이 갈라지지 않는다. 미등록 표기는 손대지 않는다(새 값 허용).
+         */
+        fun foldToLibrary(raw: String, spec: FieldSpec): String {
+            if (spec.canonicalByVariant.isEmpty()) return raw
+            if (!spec.multiToken) return spec.canonicalByVariant[raw.trim()] ?: raw
+            val tokens = raw.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+            if (tokens.isEmpty()) return raw
+            // 서로 다른 별칭이 같은 canonical로 접히면 중복이 생긴다 — 접은 뒤 중복 제거
+            return FieldValueTokenizer.join(tokens.map { spec.canonicalByVariant[it] ?: it }.distinct())
+        }
+
+        /**
+         * restricted 필드의 허용 검증 — 저장 시 가드(FieldValueRules.validateRestricted)와 같은 집합.
+         * 라이브러리가 **비어 있으면 제한하지 않는다**: 허용 목록을 준 적이 없는데 목록 밖이라고
+         * 드롭하면 유료 응답을 통째로 버리는 셈이고, 저장 가드도 그 경우 '추가하고 저장'을 연다.
+         */
+        fun isAllowedByLibrary(value: String, spec: FieldSpec): Boolean {
+            if (!spec.restrictedToLibrary || spec.canonicalByVariant.isEmpty()) return true
+            val tokens = if (spec.multiToken) {
+                value.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+            } else {
+                listOf(value.trim())
+            }
+            return tokens.isNotEmpty() && tokens.all { it in spec.canonicalByVariant }
         }
 
         fun buildSystemPrompt(): String = """
@@ -258,6 +432,11 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
             4. '형식' 지시가 있는 필드는 형식을 정확히 지킨다 (예: 생일 MM-DD → 03-15).
             5. reason에는 캐릭터의 어떤 정보(태그·메모·다른 필드·이미지 태그·소속·관계)에서 추론했는지 한국어 한 문장으로 쓴다.
             6. 근거가 부족해 추천할 수 없는 필드는 응답에서 생략한다.
+            7. '기존 사용값'이 제시된 필드는 그 값들이 이 작품에서 실제로 쓰이는 표기 기조다.
+               같은 뜻이면 새 표기를 만들지 말고 기존 값을 그대로 쓴다.
+               기존 값으로 표현할 수 없어 새 값이 필요할 때만 새로 만들되, 기존 값들의 표기 방식·
+               상세도·길이를 따른다 (예: 기존이 '흑발, 은발'이면 '짙은 밤하늘빛 흑청색'은 안 된다).
+            8. '이 목록의 값만 허용'이 붙은 필드는 제시된 기존 사용값 중에서만 고른다.
         """.trimIndent()
 
         data class PromptBuild(val text: String, val truncationNotes: List<String>)
@@ -333,6 +512,25 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
                 if (t.currentValue.isNotBlank()) {
                     sb.append(" / 현재 값: ").append(t.currentValue.take(MAX_VALUE_CHARS))
                 }
+                // 표기 기조 — 이 작품이 이 필드를 실제로 어떻게 써 왔는지. 전량이 아니라 선별분이므로
+                // 몇 종 중 몇 개인지 함께 적어 모델이 "이게 전부"라고 오해하지 않게 한다.
+                if (t.usageExamples.isNotEmpty()) {
+                    sb.append(" / 기존 사용값")
+                    if (t.usageExamples.size < t.usageTotal) {
+                        sb.append("(총 ").append(t.usageTotal).append("종 중 ")
+                            .append(t.usageExamples.size).append("개 예시)")
+                    }
+                    sb.append(": ").append(t.usageExamples.joinToString(", "))
+                    if (t.restrictedToLibrary) sb.append(" (이 목록의 값만 허용)")
+                }
+                // restricted 필드의 허용 목록을 다 싣지 못했으면 조용히 두지 않는다 —
+                // 목록 밖 제안은 드롭되므로 사용자가 결손을 알아야 한다 (R-14).
+                if (t.restrictedToLibrary && t.usageExamples.size < t.usageTotal) {
+                    notes.add(
+                        "'${t.name}'의 허용 값 ${t.usageTotal}종 중 ${t.usageExamples.size}개만 예시로 전달 " +
+                            "(목록 밖 제안은 제외됨)"
+                    )
+                }
                 sb.append('\n')
             }
             return PromptBuild(sb.toString(), notes)
@@ -368,14 +566,24 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
             return ParsedSuggestions(out, dropped)
         }
 
-        /** 타입별 값 정규화 — 통과 못 하면 null(드롭) */
-        fun normalizeValue(raw: String, spec: FieldSpec): String? = when {
-            spec.isBirthDate -> normalizeBirthDate(raw)
-            spec.type == FieldType.SELECT || spec.type == FieldType.GRADE ->
-                spec.options.firstOrNull { it == raw }
-            spec.type == FieldType.NUMBER -> normalizeNumber(raw)
-            spec.structuredPartCount != null -> normalizeStructured(raw, spec)
-            else -> raw
+        /**
+         * 타입별 값 정규화 — 통과 못 하면 null(드롭).
+         *
+         * 라이브러리 접기를 **타입 검증보다 먼저** 한다: SELECT 옵션 '검은 머리'에 대해 모델이
+         * 별칭 '흑발'을 답한 경우, 접고 나서 옳은 옵션으로 통과시키는 편이 드롭보다 낫다.
+         * 접은 뒤 restricted 허용 검증을 마지막에 적용한다(접힌 canonical 기준으로 판정).
+         */
+        fun normalizeValue(raw: String, spec: FieldSpec): String? {
+            val folded = foldToLibrary(raw, spec)
+            val typed = when {
+                spec.isBirthDate -> normalizeBirthDate(folded)
+                spec.type == FieldType.SELECT || spec.type == FieldType.GRADE ->
+                    spec.options.firstOrNull { it == folded }
+                spec.type == FieldType.NUMBER -> normalizeNumber(folded)
+                spec.structuredPartCount != null -> normalizeStructured(folded, spec)
+                else -> folded
+            } ?: return null
+            return if (isAllowedByLibrary(typed, spec)) typed else null
         }
 
         /**

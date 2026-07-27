@@ -252,7 +252,7 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
             // 경로 분기의 단일 소스는 필드 속성이다(사용자가 직접 정하고, 자동은 표시 형식으로 판단).
             // 서술형은 긴 글 전용 경로 — 짧은 값 추천기에 산문을 끼워 넣으면 둘 다 망가진다.
             if (com.novelcharacter.app.data.model.NarrativeMode.isNarrative(field)) {
-                NarrativeWriteSheet.show(this, field, formBuilder, viewModel) { buildAiContext() }
+                NarrativeWriteSheet.show(this, field, characterId, formBuilder, viewModel) { buildAiContext() }
             } else {
                 AiFieldSuggestSheet.showForField(this, field, formBuilder, viewModel) { buildAiContext() }
             }

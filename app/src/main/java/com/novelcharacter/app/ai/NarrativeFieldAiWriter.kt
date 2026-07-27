@@ -117,7 +117,13 @@ class NarrativeFieldAiWriter(private val aiService: AiService) {
         val name: String,
         val groupName: String,
         /** 현재 입력값. [Mode.requiresExisting] 모드는 이것이 비면 성립하지 않는다. */
-        val currentValue: String
+        val currentValue: String,
+        /**
+         * 같은 필드에 **다른 캐릭터가 이미 쓴 글**(문체 참고). [selectStyleSamples]가 고르고
+         * 호출측 VM이 DB에서 싣는다. 짧은 값 추천의 '기존 사용값'에 대응하는 서술형판이다 —
+         * 값 목록으로는 문체(어투·시점·문장 길이·상세도)를 전할 수 없기 때문에 글로 전한다.
+         */
+        val styleSamples: List<String> = emptyList()
     )
 
     data class ParsedDrafts(val drafts: List<Draft>, val droppedCount: Int)
@@ -133,6 +139,17 @@ class NarrativeFieldAiWriter(private val aiService: AiService) {
         /** 컨텍스트의 다른 필드 값 절단 상한(서술형 전용 — 짧은 값 경로보다 넉넉히). */
         const val MAX_CONTEXT_VALUE_CHARS = 800
 
+        // ===== 문체 참고 =====
+
+        /** 참고 1편의 길이 상한. 문체를 보이는 데 필요한 만큼만 — 전문을 실을 이유가 없다. */
+        const val STYLE_SAMPLE_CHARS = 600
+
+        /**
+         * 참고로 쓸 최소 길이. 이보다 짧은 값은 문체가 아니라 메모 조각이라
+         * "짧게 쓰는 게 이 작품의 기조"라는 잘못된 신호를 준다.
+         */
+        const val STYLE_SAMPLE_MIN_CHARS = 40
+
         const val PARSE_FAILURE_MESSAGE = "응답 형식을 해석할 수 없습니다 — 다시 시도해 주세요"
 
         const val TRUNCATED_EMPTY_MESSAGE =
@@ -142,6 +159,38 @@ class NarrativeFieldAiWriter(private val aiService: AiService) {
         const val TRUNCATED_PARTIAL_MESSAGE =
             "AI 응답이 출력 상한에 걸려 잘렸습니다 — 마지막 초안이 문장 중간에서 끊겼을 수 있습니다. " +
                 "분량을 줄이거나, 설정 → AI 연동에서 출력 토큰 상한을 올려 주세요."
+
+        /**
+         * 문체 참고 선별 — 같은 필드에 **다른 캐릭터가 쓴 글** 중에서 고른다 (순수, DB 비의존).
+         *
+         * 왜 중앙값 길이 기준인가: 문체 참고의 목적은 "이 작품이 이 필드를 어느 정도 밀도로
+         * 쓰는가"를 보이는 것이다. 가장 긴 글을 고르면 모델이 그만큼 쓰려 하고(과금·분량 폭주),
+         * 가장 짧은 글을 고르면 반대로 성의 없는 결과가 나온다. **길이 중앙값에 가장 가까운
+         * 글**이 그 필드의 습관을 가장 잘 대표한다. 동률은 값 문자열로 갈라 결정적으로 만든다
+         * (난수 없음 — 같은 데이터면 같은 참고가 나가고 단위 테스트가 된다).
+         *
+         * 너무 짧은 값은 애초에 후보에서 뺀다([STYLE_SAMPLE_MIN_CHARS]) — 메모 조각을 문체로
+         * 제시하면 "이 작품은 한 줄만 쓴다"는 거짓 신호가 된다.
+         */
+        fun selectStyleSamples(
+            values: List<String>,
+            limit: Int,
+            sampleChars: Int = STYLE_SAMPLE_CHARS
+        ): List<String> {
+            if (limit <= 0) return emptyList()
+            val pool = values.asSequence()
+                .map { it.trim() }
+                .filter { it.length >= STYLE_SAMPLE_MIN_CHARS }
+                .distinct()
+                .toList()
+            if (pool.isEmpty()) return emptyList()
+            val sortedLengths = pool.map { it.length }.sorted()
+            val median = sortedLengths[sortedLengths.size / 2]
+            return pool
+                .sortedWith(compareBy<String> { kotlin.math.abs(it.length - median) }.thenBy { it })
+                .take(limit)
+                .map { if (it.length > sampleChars) it.take(sampleChars) + "…" else it }
+        }
 
         fun fieldSpecOf(field: FieldDefinition, currentValue: String) = FieldSpec(
             key = field.key,
@@ -167,6 +216,8 @@ class NarrativeFieldAiWriter(private val aiService: AiService) {
             4. 주어진 캐릭터 정보와 모순되는 내용을 지어내지 마라. 정보가 없는 부분은
                단정하지 말고 여지를 남긴다.
             5. 원문이 주어진 경우 그 인물·설정·문체를 유지한다.
+            6. [문체 참고]가 주어지면 그 글들의 **어투·시점·문장 길이·상세도**를 따른다.
+               내용·설정·표현을 가져오지 말고 문체만 따른다. 참고에 나온 인물을 등장시키지 마라.
         """.trimIndent()
 
         fun buildUserPrompt(
@@ -215,6 +266,16 @@ class NarrativeFieldAiWriter(private val aiService: AiService) {
                     field.currentValue.take(MAX_EXISTING_CHARS)
                 } else field.currentValue
                 sb.append("\n[원문]\n").append(existing).append('\n')
+            }
+
+            // 문체 참고 — 짧은 값 추천의 '기존 사용값'에 대응하는 서술형판.
+            // [원문] 다음에 두어 "이 인물의 글 > 작품의 문체" 순으로 우선순위가 드러나게 한다.
+            if (field.styleSamples.isNotEmpty()) {
+                sb.append("\n[문체 참고] 같은 필드에 다른 인물이 쓴 글이다. ")
+                sb.append("어투·시점·문장 길이·상세도만 참고하고 내용은 가져오지 마라.\n")
+                field.styleSamples.forEachIndexed { i, sample ->
+                    sb.append(i + 1).append(") ").append(sample).append('\n')
+                }
             }
 
             sb.append("\n[지시]\n")

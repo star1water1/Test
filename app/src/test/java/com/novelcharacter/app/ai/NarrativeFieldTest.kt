@@ -244,6 +244,80 @@ class NarrativeFieldTest {
         assertEquals(1, r.droppedCount)
     }
 
+    // ===== 문체 참고 (표기 기조의 서술형판) =====
+
+    private fun prose(len: Int, mark: String) = mark + "가".repeat((len - mark.length).coerceAtLeast(0))
+
+    @Test
+    fun 문체_참고는_길이_중앙값에_가까운_글을_고른다() {
+        // 가장 긴 글을 고르면 모델이 그만큼 쓰려 하고, 가장 짧은 글을 고르면 성의 없는 결과가 된다.
+        val values = listOf(prose(60, "A"), prose(200, "B"), prose(210, "C"), prose(2000, "D"))
+        val picked = NarrativeFieldAiWriter.selectStyleSamples(values, limit = 2)
+        assertEquals(listOf(prose(210, "C"), prose(200, "B")), picked)
+        assertEquals("난수 없음 — 같은 데이터면 같은 참고", picked,
+            NarrativeFieldAiWriter.selectStyleSamples(values, limit = 2))
+    }
+
+    @Test
+    fun 문체_참고는_너무_짧은_값과_중복을_거른다() {
+        val values = listOf("한 줄 메모", "", prose(300, "A"), prose(300, "A"))
+        val picked = NarrativeFieldAiWriter.selectStyleSamples(values, limit = 3)
+        assertEquals("메모 조각을 문체로 제시하면 '이 작품은 한 줄만 쓴다'는 거짓 신호가 된다",
+            listOf(prose(300, "A")), picked)
+    }
+
+    @Test
+    fun 문체_참고는_상한까지만_싣고_0이면_아무것도_싣지_않는다() {
+        val long = prose(NarrativeFieldAiWriter.STYLE_SAMPLE_CHARS + 500, "A")
+        val picked = NarrativeFieldAiWriter.selectStyleSamples(listOf(long), limit = 1)
+        assertEquals(NarrativeFieldAiWriter.STYLE_SAMPLE_CHARS + 1, picked[0].length)  // +1 = 말줄임표
+        assertTrue(picked[0].endsWith("…"))
+        assertTrue(NarrativeFieldAiWriter.selectStyleSamples(listOf(long), limit = 0).isEmpty())
+    }
+
+    @Test
+    fun 문체_참고가_프롬프트에_실리고_내용_차용을_금지한다() {
+        val p = NarrativeFieldAiWriter.buildUserPrompt(
+            ctx(), spec.copy(styleSamples = listOf("다른 인물의 글")),
+            NarrativeFieldAiWriter.Mode.DRAFT, NarrativeFieldAiWriter.Length.MEDIUM, 2
+        )
+        assertTrue(p.text.contains("[문체 참고]"))
+        assertTrue(p.text.contains("1) 다른 인물의 글"))
+        assertTrue("문체만 따르라는 지시가 없으면 남의 설정을 베낀다", p.text.contains("내용은 가져오지 마라"))
+        assertTrue(NarrativeFieldAiWriter.buildSystemPrompt().contains("[문체 참고]"))
+
+        // 참고가 없으면 절 자체가 없다 — 빈 라벨로 토큰을 쓰지 않는다
+        val none = NarrativeFieldAiWriter.buildUserPrompt(
+            ctx(), spec, NarrativeFieldAiWriter.Mode.DRAFT, NarrativeFieldAiWriter.Length.MEDIUM, 2
+        )
+        assertFalse(none.text.contains("[문체 참고]"))
+    }
+
+    // ===== 프롬프트 적재량 설정 =====
+
+    @Test
+    fun 적재량_설정은_범위와_눈금_안으로_가둔다() {
+        // 눈금 밖 값이 저장되면 Material Slider가 예외로 죽는다 — 저장 전에 여기서 막는다.
+        assertEquals(0, AiPromptPolicy.clampUsageExamples(-5))
+        assertEquals(AiPromptPolicy.USAGE_EXAMPLES_MAX, AiPromptPolicy.clampUsageExamples(999))
+        assertEquals(0, AiPromptPolicy.clampUsageExamples(1) % AiPromptPolicy.USAGE_EXAMPLES_STEP)
+        assertEquals(0, AiPromptPolicy.clampUsageExamples(13) % AiPromptPolicy.USAGE_EXAMPLES_STEP)
+        assertEquals(0, AiPromptPolicy.clampStyleSamples(-1))
+        assertEquals(AiPromptPolicy.STYLE_SAMPLES_MAX, AiPromptPolicy.clampStyleSamples(9))
+    }
+
+    @Test
+    fun 적재량_기본값은_종전_동작과_같고_비용_추정은_0에서_0이다() {
+        assertEquals(
+            "설정을 열기 전 동작이 바뀌면 안 된다",
+            CharacterFieldAiSuggester.MAX_USAGE_EXAMPLES, AiPromptPolicy.USAGE_EXAMPLES_DEFAULT
+        )
+        assertEquals(0, AiPromptPolicy.estimatedUsageTokensPerField(0))
+        assertEquals(0, AiPromptPolicy.estimatedStyleTokensPerRequest(0))
+        assertTrue(AiPromptPolicy.estimatedUsageTokensPerField(12) > 0)
+        assertTrue(AiPromptPolicy.estimatedStyleTokensPerRequest(2) > 0)
+    }
+
     @Test
     fun 해석_불가는_빈_결과다() {
         assertTrue(NarrativeFieldAiWriter.parseResponse("그냥 말", 2).drafts.isEmpty())

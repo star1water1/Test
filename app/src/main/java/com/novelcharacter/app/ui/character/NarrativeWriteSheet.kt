@@ -26,6 +26,8 @@ object NarrativeWriteSheet {
     fun show(
         fragment: Fragment,
         field: FieldDefinition,
+        /** 문체 참고에서 자기 자신을 빼기 위한 캐릭터 id. 미저장(-1)이면 뺄 자기 값이 없다. */
+        characterId: Long,
         formBuilder: DynamicFieldFormBuilder,
         viewModel: CharacterViewModel,
         contextLoader: suspend () -> CharacterFieldAiSuggester.CharacterAiContext
@@ -40,14 +42,14 @@ object NarrativeWriteSheet {
 
         // 모드 선택 → 분량 선택 → 실행. 원문이 없으면 모드가 하나뿐이라 곧바로 분량으로 넘어간다.
         if (modes.size == 1) {
-            askLength(fragment, viewModel, contextLoader, field, spec, modes.first())
+            askLength(fragment, viewModel, contextLoader, field, characterId, spec, modes.first())
             return
         }
         val labels = modes.map { fragment.getString(modeLabel(it)) }.toTypedArray()
         MaterialAlertDialogBuilder(context)
             .setTitle(fragment.getString(R.string.ai_narrative_title, field.name))
             .setItems(labels) { _, which ->
-                askLength(fragment, viewModel, contextLoader, field, spec, modes[which])
+                askLength(fragment, viewModel, contextLoader, field, characterId, spec, modes[which])
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
@@ -58,6 +60,7 @@ object NarrativeWriteSheet {
         viewModel: CharacterViewModel,
         contextLoader: suspend () -> CharacterFieldAiSuggester.CharacterAiContext,
         field: FieldDefinition,
+        characterId: Long,
         spec: NarrativeFieldAiWriter.FieldSpec,
         mode: NarrativeFieldAiWriter.Mode
     ) {
@@ -71,7 +74,7 @@ object NarrativeWriteSheet {
                 fragment.getString(R.string.ai_narrative_cost_notice, NarrativeFieldAiWriter.DEFAULT_VARIANTS)
             )
             .setItems(labels) { _, which ->
-                run(fragment, viewModel, contextLoader, field, spec, mode, lengths[which])
+                run(fragment, viewModel, contextLoader, field, characterId, spec, mode, lengths[which])
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
@@ -82,6 +85,7 @@ object NarrativeWriteSheet {
         viewModel: CharacterViewModel,
         contextLoader: suspend () -> CharacterFieldAiSuggester.CharacterAiContext,
         field: FieldDefinition,
+        characterId: Long,
         spec: NarrativeFieldAiWriter.FieldSpec,
         mode: NarrativeFieldAiWriter.Mode,
         length: NarrativeFieldAiWriter.Length
@@ -92,7 +96,7 @@ object NarrativeWriteSheet {
             val aiContext = contextLoader()
             if (!fragment.isAdded) return@launch
             val started = viewModel.runAiNarrative(
-                aiContext, field.id, spec, mode, length, NarrativeFieldAiWriter.DEFAULT_VARIANTS
+                aiContext, field.id, characterId, spec, mode, length, NarrativeFieldAiWriter.DEFAULT_VARIANTS
             )
             if (!started) {
                 // 이미 실행 중 — 무통보로 삼키지 않는다
