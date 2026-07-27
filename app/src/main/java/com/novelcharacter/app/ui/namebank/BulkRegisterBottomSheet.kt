@@ -33,6 +33,11 @@ class BulkRegisterBottomSheet : BottomSheetDialogFragment() {
     private val binding get() = _binding!!
     private var selectedNovelId: Long? = null
 
+    // 매핑 불가 상태(작품 없음·세계관 미연결)가 스위치를 자동 OFF했다는 표시 —
+    // 매핑 가능 작품으로 복귀 시 기본 ON을 복원한다. 사용자가 활성 상태에서 수동 OFF한
+    // 경우에는 세워지지 않으므로 사용자의 명시적 선택은 덮어쓰지 않는다.
+    private var genderAutoDisabled = false
+
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
     ): View {
@@ -61,11 +66,23 @@ class BulkRegisterBottomSheet : BottomSheetDialogFragment() {
         binding.novelSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
                 selectedNovelId = if (position > 0) setup.novels[position - 1].id else null
-                val unassigned = position == 0
-                binding.noUniverseNotice.visibility = if (unassigned) View.VISIBLE else View.GONE
-                // 성별 필드는 세계관 스코프 — 작품 미지정이면 기록할 곳이 없다
-                binding.switchMapGender.isEnabled = !unassigned
-                if (unassigned) binding.switchMapGender.isChecked = false
+                // 성별 필드는 세계관 스코프 — 작품 미지정이거나 작품이 세계관에 연결되어
+                // 있지 않으면 기록할 곳이 없다 (둘 다 사전 고지 + 스위치 자동 OFF, R-4)
+                val mappable = position > 0 && setup.novels[position - 1].universeId != null
+                binding.noUniverseNotice.visibility = if (mappable) View.GONE else View.VISIBLE
+                if (!mappable) {
+                    if (binding.switchMapGender.isChecked) {
+                        genderAutoDisabled = true
+                        binding.switchMapGender.isChecked = false
+                    }
+                    binding.switchMapGender.isEnabled = false
+                } else {
+                    binding.switchMapGender.isEnabled = true
+                    if (genderAutoDisabled) {
+                        binding.switchMapGender.isChecked = true
+                        genderAutoDisabled = false
+                    }
+                }
             }
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
@@ -83,6 +100,8 @@ class BulkRegisterBottomSheet : BottomSheetDialogFragment() {
         }
 
         binding.btnConfirm.setOnClickListener {
+            // 연타 가드 — 이중 onConfirm은 이중 등록으로 직결된다 (bulkRegister는 NonCancellable)
+            binding.btnConfirm.isEnabled = false
             val policy = if (binding.policySkipDuplicates.isChecked) {
                 BulkRegisterPlanner.DuplicatePolicy.SKIP_DUPLICATES
             } else {

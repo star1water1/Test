@@ -34,9 +34,10 @@ class NameBankFragment : Fragment() {
     private val viewModel: NameBankViewModel by viewModels()
     private lateinit var adapter: NameBankAdapter
 
-    // 일괄 캐릭터 등록용 선택 모드 (FieldValueListFragment 선택 패턴)
-    private var selectionMode = false
-    private val selectedIds = linkedSetOf<Long>()
+    // 일괄 캐릭터 등록용 선택 모드 (FieldValueListFragment 선택 패턴).
+    // 선택 상태(selectionMode·selectedIds)는 회전 생존을 위해 ViewModel이 보관한다.
+    private val selectionMode get() = viewModel.selectionMode
+    private val selectedIds get() = viewModel.selectedIds
     private var backCallback: androidx.activity.OnBackPressedCallback? = null
     private var displayedEntries: List<NameBankEntry> = emptyList()
 
@@ -75,6 +76,8 @@ class NameBankFragment : Fragment() {
         setupSearch()
         setupFilter()
         setupFab()
+        // 회전 복원 — VM에 선택 모드가 살아 있으면 UI를 그 상태로 되돌린다
+        if (viewModel.selectionMode) restoreSelectionUi()
         observeData()
     }
 
@@ -91,9 +94,14 @@ class NameBankFragment : Fragment() {
     // ===== 선택 모드 / 일괄 캐릭터 등록 =====
 
     private fun enterSelectionMode(initial: NameBankEntry?) {
-        selectionMode = true
+        viewModel.selectionMode = true
         selectedIds.clear()
         initial?.let { selectedIds.add(it.id) }
+        restoreSelectionUi()
+    }
+
+    /** 선택 모드 UI 렌더 — 신규 진입과 회전 복원이 공용 (메뉴 inflate 이후에만 호출) */
+    private fun restoreSelectionUi() {
         backCallback?.isEnabled = true
         binding.toolbar.menu.findItem(R.id.action_bulk_register)?.isVisible = true
         binding.toolbar.menu.findItem(R.id.action_select_all)?.isVisible = true
@@ -103,7 +111,7 @@ class NameBankFragment : Fragment() {
     }
 
     private fun exitSelectionMode() {
-        selectionMode = false
+        viewModel.selectionMode = false
         selectedIds.clear()
         backCallback?.isEnabled = false
         binding.toolbar.menu.findItem(R.id.action_bulk_register)?.isVisible = false
@@ -120,14 +128,19 @@ class NameBankFragment : Fragment() {
     }
 
     private fun selectAllDisplayed() {
-        selectedIds.clear()
+        // 표시 중 항목을 추가한다(교체 아님) — 검색을 넘나드는 누적 선택과 일관
         displayedEntries.forEach { selectedIds.add(it.id) }
         updateSelectionTitle()
         adapter.setSelectionState(true, selectedIds.toSet())
     }
 
     private fun updateSelectionTitle() {
-        binding.toolbar.title = getString(R.string.name_bank_selected_count, selectedIds.size)
+        val hidden = selectedIds.count { id -> displayedEntries.none { it.id == id } }
+        binding.toolbar.title = if (hidden > 0) {
+            getString(R.string.name_bank_selected_count_hidden, selectedIds.size, hidden)
+        } else {
+            getString(R.string.name_bank_selected_count, selectedIds.size)
+        }
     }
 
     private fun openBulkRegisterSheet() {
@@ -141,6 +154,9 @@ class NameBankFragment : Fragment() {
             val novels = viewModel.getAllNovelsList()
             val existingNames = viewModel.getExistingCharacterNames()
             if (_binding == null || !isAdded) return@launch
+            // 백그라운드 전환 등으로 상태 저장 후면 show()가 IllegalStateException —
+            // 생략해도 선택은 VM에 생존하므로 재진입 1탭으로 재시도 가능
+            if (parentFragmentManager.isStateSaved) return@launch
             val (vsExisting, withinSelection) = BulkRegisterPlanner.countCollisions(entries, existingNames)
             val sheet = BulkRegisterBottomSheet()
             sheet.setup = BulkRegisterBottomSheet.Setup(
@@ -194,12 +210,20 @@ class NameBankFragment : Fragment() {
             displayedEntries = names
             adapter.submitList(names)
             binding.emptyText.visibility = if (names.isEmpty()) View.VISIBLE else View.GONE
-            // 필터·검색·삭제로 목록이 바뀌면 화면 밖 항목의 선택을 정리 (보이지 않는 선택 금지)
+            // 검색·필터를 넘나드는 누적 선택 허용 — 화면 밖 선택은 지우지 않고
+            // 타이틀에 "(화면 밖 N)"으로 상시 고지한다 (숨은 데이터 금지, 원칙 04)
             if (selectionMode) {
-                val visibleIds = names.mapTo(HashSet()) { it.id }
-                if (selectedIds.retainAll(visibleIds)) {
-                    updateSelectionTitle()
-                }
+                updateSelectionTitle()
+                adapter.setSelectionState(true, selectedIds.toSet())
+            }
+        }
+
+        // 삭제된 엔트리만 선택에서 정리 — 은행 전체 기준 (표시 필터와 무관)
+        viewModel.allEntries.observe(viewLifecycleOwner) { all ->
+            if (!selectionMode) return@observe
+            val existing = all.mapTo(HashSet()) { it.id }
+            if (selectedIds.retainAll(existing)) {
+                updateSelectionTitle()
                 adapter.setSelectionState(true, selectedIds.toSet())
             }
         }

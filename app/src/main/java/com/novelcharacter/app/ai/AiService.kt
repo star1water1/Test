@@ -2,12 +2,17 @@ package com.novelcharacter.app.ai
 
 import android.content.Context
 import com.novelcharacter.app.util.AppLogger
+import kotlin.coroutines.resume
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import okhttp3.Call
+import okhttp3.Callback
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
 import java.io.IOException
 import java.io.InterruptedIOException
 import java.net.SocketTimeoutException
@@ -104,7 +109,7 @@ class AiService(context: Context) {
         first
     }
 
-    private fun call(
+    private suspend fun call(
         spec: AiProtocolCodec.HttpSpec, protocol: AiProtocol, requestedModel: String
     ): AiResult = when (val raw = executeHttp(spec)) {
         is RawResponse.NetworkError -> raw.failure
@@ -123,27 +128,52 @@ class AiService(context: Context) {
         data class NetworkError(val failure: AiResult.Failure) : RawResponse()
     }
 
-    private fun executeHttp(spec: AiProtocolCodec.HttpSpec): RawResponse {
+    /**
+     * 취소 연동 HTTP 실행 — enqueue + suspendCancellableCoroutine.
+     * 호출 코루틴이 취소되면(화면 최종 이탈 등) OkHttp 콜을 즉시 cancel해
+     * 응답 대기(readTimeout 최대 180초) 동안 스레드를 붙들지 않는다.
+     */
+    private suspend fun executeHttp(spec: AiProtocolCodec.HttpSpec): RawResponse {
         val httpRequest = Request.Builder()
             .url(spec.url)
             .apply { spec.headers.forEach { (k, v) -> header(k, v) } }
             .let { if (spec.method == "GET") it.get() else it.post(spec.bodyJson.toRequestBody(JSON_MEDIA_TYPE)) }
             .build()
-        return try {
-            client.newCall(httpRequest).execute().use { response ->
-                RawResponse.Http(response.code, response.body?.string())
-            }
-        } catch (e: SocketTimeoutException) {
+        return suspendCancellableCoroutine { cont ->
+            val httpCall = client.newCall(httpRequest)
+            cont.invokeOnCancellation { httpCall.cancel() }
+            httpCall.enqueue(object : Callback {
+                override fun onResponse(call: Call, response: Response) {
+                    // 본문 스트리밍 중 타임아웃 등도 기존과 동일하게 분류한다 (TIMEOUT 유지)
+                    val raw = try {
+                        response.use { RawResponse.Http(it.code, it.body?.string()) }
+                    } catch (e: Exception) {
+                        classifyNetworkException(e)
+                    }
+                    if (cont.isActive) cont.resume(raw)
+                }
+
+                override fun onFailure(call: Call, e: IOException) {
+                    // 취소로 인한 실패는 resume 대상이 아니다 — isActive 가드가 무시한다
+                    if (cont.isActive) cont.resume(classifyNetworkException(e))
+                }
+            })
+        }
+    }
+
+    /** HTTP 예외 → 실패 분류 (executeHttp의 onResponse/onFailure 공용 — 분류 회귀 방지) */
+    private fun classifyNetworkException(e: Exception): RawResponse.NetworkError = when (e) {
+        is SocketTimeoutException ->
             RawResponse.NetworkError(AiResult.Failure(AiErrorKind.TIMEOUT, detail = e.message))
-        } catch (e: InterruptedIOException) {
+        is InterruptedIOException ->
             RawResponse.NetworkError(AiResult.Failure(AiErrorKind.TIMEOUT, detail = e.message))
-        } catch (e: UnknownHostException) {
+        is UnknownHostException ->
             RawResponse.NetworkError(AiResult.Failure(AiErrorKind.NETWORK, detail = e.message))
-        } catch (e: SSLException) {
+        is SSLException ->
             RawResponse.NetworkError(AiResult.Failure(AiErrorKind.NETWORK, detail = e.message))
-        } catch (e: IOException) {
+        is IOException ->
             RawResponse.NetworkError(AiResult.Failure(AiErrorKind.NETWORK, detail = e.message))
-        } catch (e: Exception) {
+        else -> {
             AppLogger.error(TAG, "AI 호출 중 예기치 못한 오류", e)
             RawResponse.NetworkError(AiResult.Failure(AiErrorKind.UNKNOWN, detail = e.message))
         }

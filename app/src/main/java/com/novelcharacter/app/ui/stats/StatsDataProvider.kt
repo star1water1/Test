@@ -29,7 +29,13 @@ data class StatsSnapshot(
     val eventFieldDefinitions: List<FieldDefinition> = emptyList(),
     val eventFieldValues: List<EventFieldValue> = emptyList(),
     // 값 데이터 라이브러리 — 별칭 접기·표시 라벨·카테고리의 단일 소스 (구 valueLabels/valueCategories 대체)
-    val valueEntries: List<com.novelcharacter.app.data.model.FieldValueEntry> = emptyList()
+    val valueEntries: List<com.novelcharacter.app.data.model.FieldValueEntry> = emptyList(),
+    /**
+     * "작품 미배정" 스코프 표시 — novels/universes가 비므로 캐릭터 모수·필드 완성도를
+     * novelId 경유 대신 스냅샷 자체(캐릭터 전체·보존 정의) 기준으로 계산해야 한다.
+     * [StatsDataProvider.filterByNovel]의 sentinel 분기만 true로 만든다.
+     */
+    val unassignedScope: Boolean = false
 )
 
 // ===== 요약 통계 =====
@@ -547,7 +553,8 @@ class StatsDataProvider {
             factionMemberships = emptyList(),
             eventNovelCrossRefs = emptyList(),
             eventFieldDefinitions = s.eventFieldDefinitions.filter { it.id in referencedEventDefIds },
-            eventFieldValues = filteredEventFieldValues
+            eventFieldValues = filteredEventFieldValues,
+            unassignedScope = true
         )
     }
 
@@ -1053,10 +1060,19 @@ class StatsDataProvider {
             .groupBy { it.universeId }
         val charFieldValuesByChar = s.fieldValues.groupBy { it.characterId }
 
+        // 미배정 스코프: novelId 경유가 불가 — 보존 정의(CALCULATED 제외) 대비 채움률로 판정
+        // (computeDataOverview의 incompleteCount와 같은 기준 — 개수·명단 일치)
+        val unassignedFields = if (s.unassignedScope) {
+            s.fieldDefinitions.filter { it.type != "CALCULATED" }
+        } else emptyList()
         val incomplete = s.characters.mapNotNull { char ->
-            val novelId = char.novelId ?: return@mapNotNull null
-            val novel = novelMap[novelId] ?: return@mapNotNull null
-            val fields = fieldDefByUniverse[novel.universeId] ?: return@mapNotNull null
+            val fields = if (s.unassignedScope) {
+                unassignedFields.ifEmpty { return@mapNotNull null }
+            } else {
+                val novelId = char.novelId ?: return@mapNotNull null
+                val novel = novelMap[novelId] ?: return@mapNotNull null
+                fieldDefByUniverse[novel.universeId] ?: return@mapNotNull null
+            }
             if (fields.isEmpty()) return@mapNotNull null
             val charValues = charFieldValuesByChar[char.id] ?: emptyList()
             val filled = charValues.count { it.value.isNotBlank() }
@@ -1161,10 +1177,12 @@ class StatsDataProvider {
             val rawValues = fds.flatMap { fd -> augmentedValuesByFieldDef[fd.id] ?: emptyList() }
                 .map { it.value }
 
-            // 관련 세계관 전체의 캐릭터 수
+            // 관련 세계관 전체의 캐릭터 수. 미배정 스코프는 novels가 비어 있으므로
+            // 스코프 캐릭터 전체가 모수 (novelId 경유 시 모수 0 → "채움 N / 전체 0" 모순 방지)
             val universeIds = fds.map { it.universeId }.toSet()
             val relevantNovelIds = s.novels.filter { it.universeId in universeIds }.map { it.id }.toSet()
-            val totalCount = s.characters.count { it.novelId in relevantNovelIds }
+            val totalCount = if (s.unassignedScope) s.characters.size
+                else s.characters.count { it.novelId in relevantNovelIds }
 
             val universeName = if (fds.size == 1) {
                 universeMap[primaryFd.universeId]?.name ?: ""
@@ -1617,12 +1635,20 @@ class StatsDataProvider {
         val charFieldValuesByChar = s.fieldValues.groupBy { it.characterId }
         val valuesByFieldDef = s.fieldValues.filter { it.value.isNotBlank() }.groupBy { it.fieldDefinitionId }
 
-        // 그룹별 필드 완성도
+        // 그룹별 필드 완성도. 미배정 스코프는 novelId 경유가 불가 — 스냅샷에 보존된
+        // 정의 전체(CALCULATED 제외)를 그 캐릭터의 필드셋으로 사용한다
+        val unassignedFieldSet = if (s.unassignedScope) {
+            s.fieldDefinitions.filter { it.type != "CALCULATED" }
+        } else emptyList()
         val groupCompletions = mutableMapOf<String, MutableList<Float>>()
         s.characters.forEach { char ->
-            val novelId = char.novelId ?: return@forEach
-            val novel = novelMap[novelId] ?: return@forEach
-            val fieldsForUniverse = fieldDefByUniverse[novel.universeId] ?: return@forEach
+            val fieldsForUniverse = if (s.unassignedScope) {
+                unassignedFieldSet.ifEmpty { return@forEach }
+            } else {
+                val novelId = char.novelId ?: return@forEach
+                val novel = novelMap[novelId] ?: return@forEach
+                fieldDefByUniverse[novel.universeId] ?: return@forEach
+            }
             val charValues = charFieldValuesByChar[char.id] ?: emptyList()
             val filledDefIds = charValues.filter { it.value.isNotBlank() }.map { it.fieldDefinitionId }.toSet()
 
@@ -1635,10 +1661,11 @@ class StatsDataProvider {
             if (rates.isEmpty()) 0f else rates.average().toFloat()
         }
 
-        // 개별 필드별 완성도 (CALCULATED 필드 제외)
+        // 개별 필드별 완성도 (CALCULATED 필드 제외). 미배정 스코프 모수 = 스코프 캐릭터 전체
         val fieldCompletionDetails = s.fieldDefinitions.filter { it.type != "CALCULATED" }.map { fd ->
             val universeNovels = s.novels.filter { it.universeId == fd.universeId }.map { it.id }.toSet()
-            val relevantChars = s.characters.filter { it.novelId in universeNovels }
+            val relevantChars = if (s.unassignedScope) s.characters
+                else s.characters.filter { it.novelId in universeNovels }
             val filled = valuesByFieldDef[fd.id]?.count { it.value.isNotBlank() } ?: 0
             val total = relevantChars.size
             val rate = if (total > 0) filled.toFloat() / total * 100f else 0f
@@ -1657,8 +1684,17 @@ class StatsDataProvider {
         // 건강도
         val noImageCount = s.characters.count { it.imagePaths.isBlank() || it.imagePaths == "[]" }
         val incompleteCount = s.characters.count { char ->
+            if (s.unassignedScope) {
+                // 미배정 스코프: '미배정 = 무조건 미완성' 판정은 스코프 전원을 미완성으로 만든다 —
+                // 보존 정의 대비 실제 채움률로 판정 (정의가 없으면 미완성 아님, 기존 관용구)
+                val fields = unassignedFieldSet
+                if (fields.isEmpty()) return@count false
+                val charValues = charFieldValuesByChar[char.id] ?: emptyList()
+                val filled = charValues.count { it.value.isNotBlank() }
+                return@count filled.toFloat() / fields.size < 0.5f
+            }
             val novelId = char.novelId
-            if (novelId == null) return@count true // 작품 미배정 = 미완성으로 간주
+            if (novelId == null) return@count true // 작품 미배정 = 미완성으로 간주 (전체 스코프)
             val novel = novelMap[novelId] ?: return@count true
             val fields = fieldDefByUniverse[novel.universeId] ?: return@count false
             if (fields.isEmpty()) return@count false
@@ -1820,9 +1856,10 @@ class StatsDataProvider {
         val fieldCompletionDetails = s.fieldDefinitions
             .filter { it.type != "CALCULATED" }
             .map { fd ->
-                // 이 필드가 속한 유니버스의 캐릭터들
+                // 이 필드가 속한 유니버스의 캐릭터들. 미배정 스코프 모수 = 스코프 캐릭터 전체
                 val universeNovels = s.novels.filter { it.universeId == fd.universeId }.map { it.id }.toSet()
-                val relevantChars = s.characters.filter { it.novelId in universeNovels }
+                val relevantChars = if (s.unassignedScope) s.characters
+                    else s.characters.filter { it.novelId in universeNovels }
                 val filled = valuesByFieldDef[fd.id]?.count { it.value.isNotBlank() } ?: 0
                 val total = relevantChars.size
                 val rate = if (total > 0) filled.toFloat() / total * 100f else 0f
@@ -2407,11 +2444,13 @@ class StatsDataProvider {
         val novelMap = s.novels.associateBy { it.id }
         val isNumeric = fd.type in listOf("NUMBER", "CALCULATED", "GRADE", "BODY_SIZE")
 
-        // 관련 세계관 ID 집합 (머지된 모든 필드의 세계관)
+        // 관련 세계관 ID 집합 (머지된 모든 필드의 세계관). 미배정 스코프 모수 = 스코프 캐릭터 전체
+        // (novelId 경유 시 모수 0 → noValueCount 음수 결함까지 함께 해소)
         val allFds = fieldDefIds.mapNotNull { id -> s.fieldDefinitions.find { it.id == id } }
         val relevantUniverseIds = allFds.map { it.universeId }.toSet()
         val relevantNovelIds = s.novels.filter { it.universeId in relevantUniverseIds }.map { it.id }.toSet()
-        val relevantCharCount = s.characters.count { it.novelId in relevantNovelIds }
+        val relevantCharCount = if (s.unassignedScope) s.characters.size
+            else s.characters.count { it.novelId in relevantNovelIds }
 
         data class CharValue(val charId: Long, val numericValue: Double, val displayValue: String)
 

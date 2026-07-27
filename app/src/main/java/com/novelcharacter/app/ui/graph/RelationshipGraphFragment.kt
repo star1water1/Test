@@ -756,6 +756,18 @@ class RelationshipGraphFragment : Fragment() {
     }
 
     /**
+     * 세력 선택 필터의 엣지 2차(흐림) 판정 — showGraph·refreshGraphEdgesOnly가 공용하는
+     * 단일 정의 (한쪽만 갱신되는 산탄 방지). "미소속" sentinel 선택 시에는
+     * 세력 무관(수동) 관계선이 1차로 보인다.
+     */
+    private fun isEdgeSecondary(rel: CharacterRelationship): Boolean =
+        selectedFactions.isNotEmpty() && !(
+            (rel.factionId != null && rel.factionId in selectedFactions) ||
+                (com.novelcharacter.app.util.UnassignedFilter.NO_FACTION_ID in selectedFactions &&
+                    rel.factionId == null)
+            )
+
+    /**
      * 엣지만 갱신 (슬라이더 드래그 시 빠른 반응). 노드 레이아웃은 유지.
      */
     private fun refreshGraphEdgesOnly() {
@@ -777,9 +789,7 @@ class RelationshipGraphFragment : Fragment() {
         val edges = filteredRelationships.mapNotNull { rel ->
             // 세력 관계 토글 OFF → 세력 자동 관계 엣지 숨김
             if (hideFactionEdges && rel.factionId != null) return@mapNotNull null
-            // 세력 선택 필터 secondary 마킹
-            val isEdgeSecondary = selectedFactions.isNotEmpty() &&
-                (rel.factionId == null || rel.factionId !in selectedFactions)
+            val isEdgeSecondary = isEdgeSecondary(rel)
 
             val resolved = viewModel.resolveRelationshipAtYear(rel, year, allChanges)
             GraphEdge(
@@ -905,13 +915,7 @@ class RelationshipGraphFragment : Fragment() {
         val allEdges = relationships.mapNotNull { rel ->
             // 세력 관계 토글 OFF → 세력 자동 관계 엣지 숨김
             if (hideFactionEdges && rel.factionId != null) return@mapNotNull null
-            // 세력 선택 필터 활성 시 → 선택된 세력 관계만 강조, 나머지 흐리게.
-            // "미소속" 선택 시에는 세력 무관(수동) 관계선이 1차로 보인다.
-            val isEdgeSecondary = selectedFactions.isNotEmpty() && !(
-                (rel.factionId != null && rel.factionId in selectedFactions) ||
-                    (com.novelcharacter.app.util.UnassignedFilter.NO_FACTION_ID in selectedFactions &&
-                        rel.factionId == null)
-                )
+            val isEdgeSecondary = isEdgeSecondary(rel)
             if (isTimeViewEnabled && currentYear != null) {
                 val resolved = viewModel.resolveRelationshipAtYear(rel, currentYear!!, allChanges)
                 GraphEdge(

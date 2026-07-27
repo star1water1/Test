@@ -31,7 +31,9 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
         /** 활성 소속 세력명 목록 */
         val factions: List<String>,
         /** "상대이름 – 관계유형" 요약 목록 */
-        val relationships: List<String>
+        val relationships: List<String>,
+        /** 조회에 실패해 프롬프트에서 빠진 섹션명 — 절단 고지와 같은 경로로 표면화 (변수 제어) */
+        val loadFailures: List<String> = emptyList()
     )
 
     /** 추천 대상 필드 스펙 — [fieldSpecOf]로 FieldDefinition에서 파생 */
@@ -47,7 +49,10 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
         /** 현재 입력값 — 덮어쓰기 제안 표시·동일값 제안 드롭 기준. 빈 필드는 "" */
         val currentValue: String,
         /** 구조화 입력·생일 등 형식 지시 문구 (프롬프트용) */
-        val formatHint: String? = null
+        val formatHint: String? = null,
+        /** 구조화 입력 검증용 구분자·파트 수 — 폼이 구조화 위젯을 렌더하는 필드(TEXT/BODY_SIZE)에만 설정 */
+        val structuredSeparator: String? = null,
+        val structuredPartCount: Int? = null
     )
 
     data class Suggestion(
@@ -68,49 +73,59 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
         val outputTokens: Int
     )
 
+    /**
+     * 대상 필드를 [MAX_TARGETS_PER_REQUEST] 단위로 청킹해 순차 요청한다.
+     * 필드 수십 개에서도 응답이 maxTokens에 절단되지 않고(받쳐주는 확장성),
+     * 파싱 실패·요청 실패는 해당 청크만 격리되어 성공분과 함께 반환된다.
+     * 키·프로바이더 등 결정적 실패는 잔여 청크를 중단한다 (FieldLibraryAiOrganizer 선례).
+     */
     suspend fun suggest(
         context: CharacterAiContext,
         targets: List<FieldSpec>,
         errorMessageOf: (AiResult.Failure) -> String
     ): SuggestOutcome {
-        val prompt = buildUserPrompt(context, targets)
-        val request = AiRequest(
-            system = buildSystemPrompt(),
-            userText = prompt.text,
-            maxTokens = 4096
-        )
-        return when (val result = aiService.complete(request)) {
-            is AiResult.Success -> {
-                val parsed = parseResponse(result.text, targets)
-                if (parsed == null) {
-                    SuggestOutcome(
-                        suggestions = emptyList(),
-                        droppedCount = 0,
-                        failures = listOf(PARSE_FAILURE_MESSAGE),
-                        truncationNotes = prompt.truncationNotes,
-                        inputTokens = result.inputTokens ?: 0,
-                        outputTokens = result.outputTokens ?: 0
-                    )
-                } else {
-                    SuggestOutcome(
-                        suggestions = parsed.suggestions,
-                        droppedCount = parsed.droppedCount,
-                        failures = emptyList(),
-                        truncationNotes = prompt.truncationNotes,
-                        inputTokens = result.inputTokens ?: 0,
-                        outputTokens = result.outputTokens ?: 0
-                    )
+        val suggestions = mutableListOf<Suggestion>()
+        var dropped = 0
+        val failures = mutableListOf<String>()
+        val truncationNotes = mutableListOf<String>()
+        var inputTokens = 0
+        var outputTokens = 0
+
+        for (chunk in chunkTargets(targets)) {
+            val prompt = buildUserPrompt(context, chunk)
+            // 청크별 targetNames 차이로 문구가 다를 수 있어 완전 중복만 접는다 (고지 과다는 무해 방향)
+            prompt.truncationNotes.forEach { if (it !in truncationNotes) truncationNotes.add(it) }
+            val request = AiRequest(
+                system = buildSystemPrompt(),
+                userText = prompt.text,
+                maxTokens = 4096
+            )
+            when (val result = aiService.complete(request)) {
+                is AiResult.Success -> {
+                    inputTokens += result.inputTokens ?: 0
+                    outputTokens += result.outputTokens ?: 0
+                    val parsed = parseResponse(result.text, chunk)
+                    if (parsed == null) {
+                        failures.add(PARSE_FAILURE_MESSAGE)
+                    } else {
+                        suggestions.addAll(parsed.suggestions)
+                        dropped += parsed.droppedCount
+                    }
+                }
+                is AiResult.Failure -> {
+                    failures.add(errorMessageOf(result))
+                    if (result.kind in TERMINAL_ERRORS) break
                 }
             }
-            is AiResult.Failure -> SuggestOutcome(
-                suggestions = emptyList(),
-                droppedCount = 0,
-                failures = listOf(errorMessageOf(result)),
-                truncationNotes = prompt.truncationNotes,
-                inputTokens = 0,
-                outputTokens = 0
-            )
         }
+        return SuggestOutcome(
+            suggestions = suggestions,
+            droppedCount = dropped,
+            failures = failures,
+            truncationNotes = truncationNotes,
+            inputTokens = inputTokens,
+            outputTokens = outputTokens
+        )
     }
 
     companion object {
@@ -121,7 +136,24 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
         const val MAX_RELATIONSHIPS = 30
         const val MAX_FILLED_FIELDS = 60
 
+        /** 요청당 추천 대상 상한 — maxTokens 4096 대비 제안(key+value+근거 1문장) 여유 확보 */
+        const val MAX_TARGETS_PER_REQUEST = 15
+
+        // 재시도해도 같은 결과인 실패 — 잔여 청크 중단 기준 (FieldLibraryAiOrganizer와 동일 집합)
+        private val TERMINAL_ERRORS = setOf(
+            AiErrorKind.NO_PROVIDER, AiErrorKind.NO_KEY, AiErrorKind.INVALID_KEY,
+            AiErrorKind.QUOTA_EXCEEDED, AiErrorKind.MODEL_NOT_FOUND
+        )
+
         const val PARSE_FAILURE_MESSAGE = "응답 형식을 해석할 수 없습니다 — 다시 시도해 주세요"
+
+        /** 개수 기준 단일 분할 — 비용 고지의 요청 수 계산과 반드시 일치해야 한다 (사전 고지 정확성) */
+        fun chunkTargets(targets: List<FieldSpec>): List<List<FieldSpec>> =
+            targets.chunked(MAX_TARGETS_PER_REQUEST)
+
+        /** [chunkTargets]와 같은 규칙의 요청 수 — 비용 고지용 */
+        fun requestCountFor(targetCount: Int): Int =
+            if (targetCount <= 0) 0 else (targetCount + MAX_TARGETS_PER_REQUEST - 1) / MAX_TARGETS_PER_REQUEST
 
         /**
          * FieldDefinition → 추천 대상 스펙. CALCULATED(파생값)·알 수 없는 타입은 null.
@@ -141,27 +173,30 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
             val numberRange = if (type == FieldType.NUMBER && random.min != null && random.max != null) {
                 random.min to random.max
             } else null
+            // 구조화 입력은 폼이 실제로 파트 위젯을 렌더하는 타입(TEXT/BODY_SIZE)에만 유효 —
+            // 그 외 타입(NUMBER 등)의 config 잔존 structuredInput은 힌트·검증 모두 무시한다
+            var structured = StructuredInputConfig.fromConfig(field.config)
+            if (type == FieldType.BODY_SIZE && !structured.enabled) {
+                structured = StructuredInputConfig(
+                    enabled = true,
+                    separator = "-",
+                    parts = listOf(
+                        StructuredInputConfig.Part("B", "cm", "number"),
+                        StructuredInputConfig.Part("W", "cm", "number"),
+                        StructuredInputConfig.Part("H", "cm", "number")
+                    )
+                )
+            }
+            val structuredActive = !isBirth && type != FieldType.MULTI_TEXT &&
+                (type == FieldType.TEXT || type == FieldType.BODY_SIZE) &&
+                structured.enabled && structured.parts.isNotEmpty()
             val formatHint: String? = when {
                 isBirth -> "MM-DD (월-일, 예: 03-15)"
                 type == FieldType.MULTI_TEXT -> "콤마로 구분한 복수 값 (예: 값1, 값2)"
-                else -> {
-                    var structured = StructuredInputConfig.fromConfig(field.config)
-                    if (type == FieldType.BODY_SIZE && !structured.enabled) {
-                        structured = StructuredInputConfig(
-                            enabled = true,
-                            separator = "-",
-                            parts = listOf(
-                                StructuredInputConfig.Part("B", "cm", "number"),
-                                StructuredInputConfig.Part("W", "cm", "number"),
-                                StructuredInputConfig.Part("H", "cm", "number")
-                            )
-                        )
-                    }
-                    if (structured.enabled && structured.parts.isNotEmpty()) {
-                        structured.parts.joinToString(structured.separator) { it.label } +
-                            " 형식 (구분자 '" + structured.separator + "')"
-                    } else null
-                }
+                structuredActive ->
+                    structured.parts.joinToString(structured.separator) { it.label } +
+                        " 형식 (구분자 '" + structured.separator + "')"
+                else -> null
             }
             return FieldSpec(
                 key = field.key,
@@ -171,7 +206,9 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
                 isBirthDate = isBirth,
                 numberRange = numberRange,
                 currentValue = currentValue,
-                formatHint = formatHint
+                formatHint = formatHint,
+                structuredSeparator = if (structuredActive) structured.separator else null,
+                structuredPartCount = if (structuredActive) structured.parts.size else null
             )
         }
 
@@ -191,6 +228,8 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
 
         fun buildUserPrompt(context: CharacterAiContext, targets: List<FieldSpec>): PromptBuild {
             val notes = mutableListOf<String>()
+            // 조회 실패로 빠진 섹션 — 절단과 같은 경로로 반드시 고지 (조용한 결손 금지, R-14)
+            context.loadFailures.forEach { notes.add("$it 정보를 불러오지 못함") }
 
             fun <T> capList(list: List<T>, max: Int, label: String): List<T> =
                 if (list.size > max) {
@@ -299,7 +338,21 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
             spec.type == FieldType.SELECT || spec.type == FieldType.GRADE ->
                 spec.options.firstOrNull { it == raw }
             spec.type == FieldType.NUMBER -> normalizeNumber(raw)
+            spec.structuredPartCount != null -> normalizeStructured(raw, spec)
             else -> raw
+        }
+
+        /**
+         * 구조화 입력 검증 — 파트 수만큼 구분자로 나뉘고 전 파트가 비어 있지 않아야 통과.
+         * 형식 위반 값이 첫 파트에 통째로 들어가 "값--" 꼴로 저장되는 것을 막는다 (KDoc 계약).
+         * 분리 규칙은 위젯 쪽(StructuredInputConfig.splitValue)과 동일: 빈 구분자 "-" 폴백, 파트 trim.
+         */
+        fun normalizeStructured(raw: String, spec: FieldSpec): String? {
+            val count = spec.structuredPartCount ?: return raw
+            val sep = (spec.structuredSeparator ?: "-").ifEmpty { "-" }
+            val parts = raw.trim().split(sep, limit = count).map { it.trim() }
+            if (parts.size != count || parts.any { it.isEmpty() }) return null
+            return parts.joinToString(sep)
         }
 
         /** "M-D" 관용 수용 + 달력 유효성(2/29 허용) 검증 후 "MM-DD" 정규화. 실패 시 null */

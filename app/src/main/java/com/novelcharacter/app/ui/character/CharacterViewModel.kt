@@ -796,8 +796,11 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
 
     // ===== AI 필드 추천 컨텍스트 (CharacterFieldAiSuggester) =====
 
-    /** 첨부 이미지 경로들의 라이브러리 태그 합집합 — 경로는 저장 규약대로 absolutePath 그대로 조회 */
-    suspend fun getImageTagsForPaths(paths: List<String>): List<String> =
+    /**
+     * 첨부 이미지 경로들의 라이브러리 태그 합집합 — 경로는 저장 규약대로 absolutePath 그대로 조회.
+     * 조회 실패는 null — '태그 없음'(빈 목록)과 구별해 호출측이 결손을 고지한다 (변수 제어).
+     */
+    suspend fun getImageTagsForPaths(paths: List<String>): List<String>? =
         withContext(kotlinx.coroutines.Dispatchers.IO) {
             try {
                 if (paths.isEmpty()) return@withContext emptyList()
@@ -810,12 +813,12 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
                     .distinct()
             } catch (e: Exception) {
                 Log.e("CharacterViewModel", "Failed to load image tags for AI context", e)
-                emptyList()
+                null
             }
         }
 
-    /** 활성(미탈퇴) 소속 세력명 목록 */
-    suspend fun getFactionNamesForCharacter(characterId: Long): List<String> =
+    /** 활성(미탈퇴) 소속 세력명 목록. 조회 실패는 null (빈 목록과 구별 — 결손 고지용) */
+    suspend fun getFactionNamesForCharacter(characterId: Long): List<String>? =
         withContext(kotlinx.coroutines.Dispatchers.IO) {
             try {
                 val activeFactionIds = db.factionMembershipDao().getMembershipsByCharacterList(characterId)
@@ -829,12 +832,12 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
                 activeFactionIds.mapNotNull { nameById[it] }
             } catch (e: Exception) {
                 Log.e("CharacterViewModel", "Failed to load factions for AI context", e)
-                emptyList()
+                null
             }
         }
 
-    /** "상대이름 – 관계유형" 요약 목록 */
-    suspend fun getRelationshipSummariesForCharacter(characterId: Long): List<String> =
+    /** "상대이름 – 관계유형" 요약 목록. 조회 실패는 null (빈 목록과 구별 — 결손 고지용) */
+    suspend fun getRelationshipSummariesForCharacter(characterId: Long): List<String>? =
         withContext(kotlinx.coroutines.Dispatchers.IO) {
             try {
                 val relationships = db.characterRelationshipDao().getRelationshipsForCharacterList(characterId)
@@ -852,9 +855,53 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
                 }
             } catch (e: Exception) {
                 Log.e("CharacterViewModel", "Failed to load relationships for AI context", e)
-                emptyList()
+                null
             }
         }
+
+    // ===== AI 필드 추천 실행 (AiFieldSuggestSheet → 여기서 수행) =====
+    // 실행을 VM 스코프에 두는 이유: 뷰 수명 스코프에서는 회전이 요청을 취소해
+    // 유료 응답이 폐기되고, 파괴된 액티비티의 진행 다이얼로그 dismiss가 크래시를 냈다.
+    // VM은 회전을 생존하므로 요청·결과가 화면 재생성을 넘어 전달된다.
+
+    /** AI 추천 1회 실행분 — 결과 표시(검토 다이얼로그)에 필요한 전부 */
+    data class AiSuggestRun(
+        val targets: List<com.novelcharacter.app.ai.CharacterFieldAiSuggester.FieldSpec>,
+        val singleMode: Boolean,
+        val outcome: com.novelcharacter.app.ai.CharacterFieldAiSuggester.SuggestOutcome
+    )
+
+    val aiSuggestRunning = MutableLiveData(false)
+    val aiSuggestResult = MutableLiveData<AiSuggestRun?>()
+    fun clearAiSuggestResult() { aiSuggestResult.value = null }
+
+    /**
+     * AI 필드 추천 실행. 이미 실행 중이면 false를 반환한다 — 호출측이 반드시 사용자에게
+     * 알릴 것(무통보 무시 금지). 결과는 [aiSuggestResult]로 전달되며, 소비(clear)는
+     * 결과 다이얼로그의 액션 시점에 하므로 검토 중 회전에도 결과가 생존한다.
+     */
+    fun runAiSuggest(
+        aiContext: com.novelcharacter.app.ai.CharacterFieldAiSuggester.CharacterAiContext,
+        targets: List<com.novelcharacter.app.ai.CharacterFieldAiSuggester.FieldSpec>,
+        singleMode: Boolean
+    ): Boolean {
+        if (aiSuggestRunning.value == true) return false
+        aiSuggestRunning.value = true
+        viewModelScope.launch {
+            try {
+                val suggester = com.novelcharacter.app.ai.CharacterFieldAiSuggester(
+                    com.novelcharacter.app.ai.AiService(getApplication())
+                )
+                val outcome = suggester.suggest(aiContext, targets) { failure ->
+                    com.novelcharacter.app.ai.AiErrorMessages.of(getApplication(), failure)
+                }
+                aiSuggestResult.value = AiSuggestRun(targets, singleMode, outcome)
+            } finally {
+                aiSuggestRunning.value = false
+            }
+        }
+        return true
+    }
 
     /** restricted 입력 모드 위반 검출 — (필드, 위반 토큰) 목록 (검토 A8: 코디네이터 공통 가드용) */
     suspend fun findRestrictedViolations(

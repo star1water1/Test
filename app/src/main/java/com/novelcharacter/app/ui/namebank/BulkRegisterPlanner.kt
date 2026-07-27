@@ -44,7 +44,11 @@ object BulkRegisterPlanner {
         val blankSkipped: Int
     )
 
-    /** (기존 캐릭터와 이름 충돌 건수, 선택 내부 중복 건수) — 실행 전 고지용 (R-4) */
+    /**
+     * (기존 캐릭터와 이름 충돌 건수, 선택 내부 중복 건수) — 실행 전 고지용 (R-4).
+     * 엔트리당 한쪽에만 집계한다(선택 내 후행 중복 우선) — 두 수치의 합이
+     * SKIP_DUPLICATES 정책의 실제 건너뜀 건수와 항상 일치한다 (고지·실행 정합).
+     */
     fun countCollisions(entries: List<NameBankEntry>, existingNames: Set<String>): Pair<Int, Int> {
         var vsExisting = 0
         var withinSelection = 0
@@ -52,8 +56,8 @@ object BulkRegisterPlanner {
         for (entry in entries) {
             val name = entry.name.trim()
             if (name.isEmpty()) continue
-            if (name in existingNames) vsExisting++
             if (!seen.add(name)) withinSelection++
+            else if (name in existingNames) vsExisting++
         }
         return vsExisting to withinSelection
     }

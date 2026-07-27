@@ -224,12 +224,9 @@ class CharacterListControlsBottomSheet : BottomSheetDialogFragment() {
             if (!isAdded || _binding == null) return@launch
             val ctx = context ?: return@launch
             novelsLoaded = true  // 로드 완료(빈 목록 포함) — 이후 apply()는 칩 상태를 신뢰할 수 있음
-            if (novels.isEmpty()) {
-                binding.noNovelsText.visibility = View.VISIBLE
-                return@launch
-            }
-            binding.noNovelsText.visibility = View.GONE
-            // "작품 미배정" — novelId 없는 캐릭터 선택 (sentinel, 수집부는 tag 기반이라 그대로 동작)
+            // "작품 미배정" — novelId 없는 캐릭터 선택 (sentinel, 수집부는 tag 기반이라 그대로 동작).
+            // 작품이 0개여도 항상 생성한다 — 없으면 저장된 sentinel 필터가 '적용' 시
+            // 빈 칩 수집으로 무음 소거된다 (변수 제어)
             val noneId = com.novelcharacter.app.util.UnassignedFilter.NO_NOVEL_ID
             binding.novelChipGroup.addView(Chip(ctx).apply {
                 text = getString(R.string.stats_no_novel_assigned)
@@ -237,6 +234,11 @@ class CharacterListControlsBottomSheet : BottomSheetDialogFragment() {
                 isCheckable = true
                 isChecked = noneId in currentNovelIds
             })
+            if (novels.isEmpty()) {
+                binding.noNovelsText.visibility = View.VISIBLE
+                return@launch
+            }
+            binding.noNovelsText.visibility = View.GONE
             for (novel in novels) {
                 val chip = Chip(ctx).apply {
                     text = novel.title

@@ -4,16 +4,17 @@ import android.widget.CheckBox
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.novelcharacter.app.R
-import com.novelcharacter.app.ai.AiErrorMessages
 import com.novelcharacter.app.ai.AiService
 import com.novelcharacter.app.ai.CharacterFieldAiSuggester
 import com.novelcharacter.app.data.model.FieldDefinition
+import com.novelcharacter.app.util.notifyError
 import com.novelcharacter.app.util.notifySuccess
 import kotlinx.coroutines.launch
 
@@ -23,6 +24,10 @@ import kotlinx.coroutines.launch
  * → 검토(필드 1개: 확인 다이얼로그 / 전체: 체크리스트 — 빈 필드 기본 선택, 덮어쓰기 기본 해제)
  * → 선택 적용(폼 위젯에만 기입 — 저장을 눌러야 영속화, __birth 동기화는 저장 체인이 수행).
  * AI 출력은 어떤 경우에도 자동 적용·DB 직접 기록되지 않는다.
+ *
+ * 실행 자체는 [CharacterViewModel.runAiSuggest](회전 생존)가 수행하고, 이 오브젝트는
+ * 진입 다이얼로그와 결과 표시([showResult] — 편집 화면의 aiSuggestResult 관측이 호출)만 담당한다.
+ * 결과 소비(clear)는 결과 다이얼로그의 액션 시점 — 검토 중 회전해도 유료 응답이 생존한다.
  */
 object AiFieldSuggestSheet {
 
@@ -31,11 +36,11 @@ object AiFieldSuggestSheet {
         fragment: Fragment,
         field: FieldDefinition,
         formBuilder: DynamicFieldFormBuilder,
+        viewModel: CharacterViewModel,
         contextLoader: suspend () -> CharacterFieldAiSuggester.CharacterAiContext
     ) {
         val context = fragment.requireContext()
-        val aiService = AiService(context)
-        if (!guardProvider(fragment, aiService)) return
+        if (!guardProvider(fragment)) return
 
         val currentValue = currentValuesByFieldId(formBuilder)[field.id] ?: ""
         val spec = CharacterFieldAiSuggester.fieldSpecOf(field, currentValue) ?: return
@@ -44,7 +49,7 @@ object AiFieldSuggestSheet {
             .setTitle(R.string.ai_field_suggest_title)
             .setMessage(fragment.getString(R.string.ai_field_cost_notice_single, field.name))
             .setPositiveButton(R.string.ai_field_run) { _, _ ->
-                runSuggest(fragment, formBuilder, contextLoader, listOf(spec), aiService, singleMode = true)
+                runSuggest(fragment, viewModel, contextLoader, listOf(spec), singleMode = true)
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
@@ -54,11 +59,11 @@ object AiFieldSuggestSheet {
     fun showForCharacter(
         fragment: Fragment,
         formBuilder: DynamicFieldFormBuilder,
+        viewModel: CharacterViewModel,
         contextLoader: suspend () -> CharacterFieldAiSuggester.CharacterAiContext
     ) {
         val context = fragment.requireContext()
-        val aiService = AiService(context)
-        if (!guardProvider(fragment, aiService)) return
+        if (!guardProvider(fragment)) return
 
         val currentValues = currentValuesByFieldId(formBuilder)
         val allSpecs = formBuilder.fieldDefinitions.mapNotNull { fd ->
@@ -100,7 +105,11 @@ object AiFieldSuggestSheet {
             message.text = if (count == 0) {
                 fragment.getString(R.string.ai_field_no_empty_fields)
             } else {
-                fragment.getString(R.string.ai_field_cost_notice, count)
+                // 요청 수는 청킹 규칙과 같은 계산 — 사전 고지 정확성 (R-4)
+                fragment.getString(
+                    R.string.ai_field_cost_notice,
+                    count, CharacterFieldAiSuggester.requestCountFor(count)
+                )
             }
         }
         refreshMessage()
@@ -122,7 +131,7 @@ object AiFieldSuggestSheet {
                 val targets = currentTargets()
                 if (targets.isEmpty()) return@setOnClickListener
                 dialog.dismiss()
-                runSuggest(fragment, formBuilder, contextLoader, targets, aiService, singleMode = false)
+                runSuggest(fragment, viewModel, contextLoader, targets, singleMode = false)
             }
         }
         dialog.show()
@@ -130,9 +139,9 @@ object AiFieldSuggestSheet {
 
     // ===== 공통 파이프라인 =====
 
-    private fun guardProvider(fragment: Fragment, aiService: AiService): Boolean {
-        if (aiService.hasUsableProvider()) return true
+    private fun guardProvider(fragment: Fragment): Boolean {
         val context = fragment.requireContext()
+        if (AiService(context).hasUsableProvider()) return true
         MaterialAlertDialogBuilder(context)
             .setTitle(R.string.ai_field_suggest_title)
             .setMessage(R.string.field_library_ai_not_configured)
@@ -148,54 +157,63 @@ object AiFieldSuggestSheet {
     private fun currentValuesByFieldId(formBuilder: DynamicFieldFormBuilder): Map<Long, String> =
         formBuilder.collectFieldValues(0L).associate { it.fieldDefinitionId to it.value }
 
+    /**
+     * 컨텍스트 조립(뷰 접근이라 뷰 수명 스코프 — 이 단계 취소는 과금 전이므로 무해) 후
+     * 실행은 VM에 위임한다. 진행 표시·결과 수신은 편집 화면의 관측자가 담당.
+     */
     private fun runSuggest(
         fragment: Fragment,
-        formBuilder: DynamicFieldFormBuilder,
+        viewModel: CharacterViewModel,
         contextLoader: suspend () -> CharacterFieldAiSuggester.CharacterAiContext,
         targets: List<CharacterFieldAiSuggester.FieldSpec>,
-        aiService: AiService,
         singleMode: Boolean
     ) {
-        val context = fragment.requireContext()
-        val progress = MaterialAlertDialogBuilder(context)
-            .setMessage(R.string.ai_field_running)
-            .setCancelable(false)
-            .show()
-
         fragment.viewLifecycleOwner.lifecycleScope.launch {
-            val suggester = CharacterFieldAiSuggester(aiService)
-            val outcome = try {
-                val aiContext = contextLoader()
-                suggester.suggest(aiContext, targets) { failure -> AiErrorMessages.of(context, failure) }
-            } finally {
-                progress.dismiss()
-            }
+            val aiContext = contextLoader()
             if (!fragment.isAdded) return@launch
+            if (!viewModel.runAiSuggest(aiContext, targets, singleMode)) {
+                // 이미 실행 중 — 무통보로 삼키지 않는다
+                Toast.makeText(fragment.requireContext(), R.string.ai_field_running, Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
 
-            if (outcome.suggestions.isEmpty()) {
-                val message = buildString {
-                    append(fragment.getString(R.string.ai_field_nothing))
-                    outcome.failures.forEach { append("\n· ").append(it) }
-                    if (outcome.droppedCount > 0) {
-                        append("\n· ").append(fragment.getString(R.string.ai_field_dropped, outcome.droppedCount))
-                    }
-                    outcome.truncationNotes.forEach {
-                        append("\n· ").append(fragment.getString(R.string.ai_field_truncated_prefix, it))
-                    }
+    /**
+     * 결과 표시 진입점 — 편집 화면의 aiSuggestResult 관측이 호출한다.
+     * 빈 결과(전량 실패·전량 드롭)도 반드시 고지한다 (변수 제어 — 무통보 소멸 금지).
+     */
+    fun showResult(
+        fragment: Fragment,
+        formBuilder: DynamicFieldFormBuilder,
+        viewModel: CharacterViewModel,
+        run: CharacterViewModel.AiSuggestRun
+    ) {
+        val context = fragment.requireContext()
+        val outcome = run.outcome
+        if (outcome.suggestions.isEmpty()) {
+            val message = buildString {
+                append(fragment.getString(R.string.ai_field_nothing))
+                outcome.failures.forEach { append("\n· ").append(it) }
+                if (outcome.droppedCount > 0) {
+                    append("\n· ").append(fragment.getString(R.string.ai_field_dropped, outcome.droppedCount))
                 }
-                MaterialAlertDialogBuilder(context)
-                    .setTitle(R.string.ai_field_suggest_title)
-                    .setMessage(message)
-                    .setPositiveButton(R.string.confirm, null)
-                    .show()
-                return@launch
+                outcome.truncationNotes.forEach {
+                    append("\n· ").append(fragment.getString(R.string.ai_field_truncated_prefix, it))
+                }
             }
+            MaterialAlertDialogBuilder(context)
+                .setTitle(R.string.ai_field_suggest_title)
+                .setMessage(message)
+                .setPositiveButton(R.string.confirm) { _, _ -> viewModel.clearAiSuggestResult() }
+                .setOnCancelListener { viewModel.clearAiSuggestResult() }
+                .show()
+            return
+        }
 
-            if (singleMode) {
-                showSingleConfirm(fragment, formBuilder, targets, outcome)
-            } else {
-                showReviewDialog(fragment, formBuilder, targets, outcome)
-            }
+        if (run.singleMode) {
+            showSingleConfirm(fragment, formBuilder, viewModel, run)
+        } else {
+            showReviewDialog(fragment, formBuilder, viewModel, run)
         }
     }
 
@@ -218,12 +236,13 @@ object AiFieldSuggestSheet {
     private fun showSingleConfirm(
         fragment: Fragment,
         formBuilder: DynamicFieldFormBuilder,
-        targets: List<CharacterFieldAiSuggester.FieldSpec>,
-        outcome: CharacterFieldAiSuggester.SuggestOutcome
+        viewModel: CharacterViewModel,
+        run: CharacterViewModel.AiSuggestRun
     ) {
         val context = fragment.requireContext()
+        val outcome = run.outcome
         val suggestion = outcome.suggestions.first()
-        val spec = targets.first()
+        val spec = run.targets.first()
         val message = buildString {
             if (spec.currentValue.isNotBlank()) {
                 append(fragment.getString(R.string.ai_field_overwrite_format, spec.currentValue, suggestion.value))
@@ -239,11 +258,11 @@ object AiFieldSuggestSheet {
             .setTitle(spec.name)
             .setMessage(message)
             .setPositiveButton(R.string.ai_field_single_apply) { _, _ ->
-                val field = formBuilder.fieldDefinitions.firstOrNull { it.key == suggestion.fieldKey }
-                    ?: return@setPositiveButton
-                formBuilder.applyRandomValue(field, suggestion.value, showToast = true)
+                viewModel.clearAiSuggestResult()
+                applySelected(fragment, formBuilder, listOf(suggestion))
             }
-            .setNegativeButton(R.string.cancel, null)
+            .setNegativeButton(R.string.cancel) { _, _ -> viewModel.clearAiSuggestResult() }
+            .setOnCancelListener { viewModel.clearAiSuggestResult() }
             .show()
     }
 
@@ -251,13 +270,14 @@ object AiFieldSuggestSheet {
     private fun showReviewDialog(
         fragment: Fragment,
         formBuilder: DynamicFieldFormBuilder,
-        targets: List<CharacterFieldAiSuggester.FieldSpec>,
-        outcome: CharacterFieldAiSuggester.SuggestOutcome
+        viewModel: CharacterViewModel,
+        run: CharacterViewModel.AiSuggestRun
     ) {
         val context = fragment.requireContext()
+        val outcome = run.outcome
         val density = context.resources.displayMetrics.density
         val pad = (16 * density).toInt()
-        val specByKey = targets.associateBy { it.key }
+        val specByKey = run.targets.associateBy { it.key }
 
         val list = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
@@ -296,8 +316,9 @@ object AiFieldSuggestSheet {
             .setTitle(R.string.ai_field_review_title)
             .setView(scroll)
             .setPositiveButton(R.string.ai_field_apply, null)
-            .setNegativeButton(R.string.cancel, null)
+            .setNegativeButton(R.string.cancel) { _, _ -> viewModel.clearAiSuggestResult() }
             .setNeutralButton(R.string.field_library_ai_select_all, null)
+            .setOnCancelListener { viewModel.clearAiSuggestResult() }
             .create()
 
         dialog.setOnShowListener {
@@ -310,6 +331,7 @@ object AiFieldSuggestSheet {
                 val selected = checks.filter { it.first.isChecked }.map { it.second }
                 if (selected.isEmpty()) return@setOnClickListener
                 dialog.dismiss()
+                viewModel.clearAiSuggestResult()
                 applySelected(fragment, formBuilder, selected)
             }
         }
@@ -330,6 +352,9 @@ object AiFieldSuggestSheet {
         }
         if (applied > 0) {
             fragment.notifySuccess(fragment.getString(R.string.ai_field_applied, applied))
+        } else {
+            // 회전 직후 폼 재구축 전 등 — 무통보 no-op 금지, 재시도 경로 안내 (변수 제어)
+            fragment.notifyError(fragment.getString(R.string.ai_field_apply_none))
         }
     }
 }
