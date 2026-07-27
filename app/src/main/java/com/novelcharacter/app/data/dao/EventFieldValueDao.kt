@@ -62,29 +62,33 @@ interface EventFieldValueDao {
     @androidx.room.Delete
     suspend fun delete(value: EventFieldValue)
 
-    @Query("DELETE FROM event_field_values WHERE eventId = :eventId")
-    suspend fun deleteAllByEvent(eventId: Long)
-
-    /** 사건의 필드값 전체 교체 — 빈 값은 저장하지 않는 호출부 규약과 함께 사용 */
-    @Transaction
-    suspend fun replaceAllByEvent(eventId: Long, values: List<EventFieldValue>) {
-        deleteAllByEvent(eventId)
-        if (values.isNotEmpty()) insertAll(values)
-    }
+    // replaceAllByEvent/deleteAllByEvent(사건 단위 전멸)는 S-6에서 제거했다 — 마지막 호출부였던
+    // 편집 저장이 replaceForFields(커버 범위 교체)로 옮겨 갔고, 남겨두면 "폼이 전체 진실"이라는
+    // 잘못된 가정의 재도입 지점이 된다. 사건 삭제 시 값 정리는 FK CASCADE가 맡는다.
 
     @Query("DELETE FROM event_field_values WHERE eventId = :eventId AND fieldDefinitionId IN (:fieldIds)")
     suspend fun deleteByEventAndFields(eventId: Long, fieldIds: List<Long>)
 
     /**
-     * 엑셀 가져오기 전용 — **시트에 실제로 존재한 필드 열만** 교체한다(F1-A 열 단위 적용).
-     * replaceAllByEvent는 사건 단위 전멸이라, 사용자가 필드 열 하나만 지운 시트를 가져오면
-     * 시트에 없던 다른 필드값까지 함께 사라진다.
+     * **커버 집합 범위의 필드값 교체** — 엑셀 가져오기(F1-A: 시트에 실제로 존재한 필드 열)와
+     * 사건 편집 저장(S-6: 폼이 실제로 렌더한 필드, `EventFieldValueMerge`)의 공용 경로.
+     * 사건 단위 전량 교체는 폼/시트가 모르는 필드값까지 지우므로 쓰지 않는다(S-6에서 제거).
+     *
+     * 계약: fieldIds 안의 기존 값은 삭제 후 values로 대체되고, fieldIds 밖의 기존 값은 보존된다.
+     * fieldIds 밖의 values는 REPLACE 삽입이 (eventId, fieldDefinitionId) 유니크 행을 덮어
+     * 역시 대체가 된다 — 순수 모델은 `EventFieldValueMerge.resultingValues`,
+     * 일치는 `EventFieldValueDaoReplaceTest`가 고정한다.
      */
     @Transaction
     suspend fun replaceForFields(eventId: Long, fieldIds: List<Long>, values: List<EventFieldValue>) {
-        if (fieldIds.isEmpty()) return
-        deleteByEventAndFields(eventId, fieldIds)
+        // SQLite 999-변수 상한 — 커버 필드 수가 커도 삭제가 깨지지 않게 나눠 지운다(받쳐주는 확장성)
+        fieldIds.chunked(SQLITE_VAR_CHUNK).forEach { deleteByEventAndFields(eventId, it) }
         if (values.isNotEmpty()) insertAll(values)
+    }
+
+    companion object {
+        /** IN(...) 절 변수 개수 상한(999) 아래의 안전 청크 크기 */
+        const val SQLITE_VAR_CHUNK = 900
     }
 
     @Query("DELETE FROM event_field_values")

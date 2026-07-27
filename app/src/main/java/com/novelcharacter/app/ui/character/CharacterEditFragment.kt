@@ -673,11 +673,11 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
             override suspend fun getNovelIdsForEvent(eventId: Long): List<Long> = viewModel.getNovelIdsForEvent(eventId)
             override suspend fun getEventFieldsForUniverse(universeId: Long) = viewModel.getEventFieldsForUniverse(universeId)
             override suspend fun getEventFieldValuesForEvent(eventId: Long) = viewModel.getEventFieldValuesForEvent(eventId)
-            override fun insertEvent(event: com.novelcharacter.app.data.model.TimelineEvent, characterIds: List<Long>, novelIds: List<Long>, eventFieldValues: List<com.novelcharacter.app.data.model.EventFieldValue>) {
-                viewModel.insertEvent(event, characterIds, novelIds, eventFieldValues)
+            override fun insertEvent(event: com.novelcharacter.app.data.model.TimelineEvent, characterIds: List<Long>, novelIds: List<Long>, fieldSubmission: com.novelcharacter.app.data.repository.EventFieldValueMerge.Submission) {
+                viewModel.insertEvent(event, characterIds, novelIds, fieldSubmission)
             }
-            override fun updateEvent(event: com.novelcharacter.app.data.model.TimelineEvent, characterIds: List<Long>, novelIds: List<Long>, eventFieldValues: List<com.novelcharacter.app.data.model.EventFieldValue>) {
-                viewModel.updateEvent(event, characterIds, novelIds, eventFieldValues)
+            override fun updateEvent(event: com.novelcharacter.app.data.model.TimelineEvent, characterIds: List<Long>, novelIds: List<Long>, fieldSubmission: com.novelcharacter.app.data.repository.EventFieldValueMerge.Submission) {
+                viewModel.updateEvent(event, characterIds, novelIds, fieldSubmission)
             }
             override suspend fun getEventsInScope(novelIds: List<Long>, universeId: Long?): List<com.novelcharacter.app.data.model.TimelineEvent> {
                 return when {
@@ -691,9 +691,9 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
                 event: com.novelcharacter.app.data.model.TimelineEvent, characterIds: List<Long>, novelIds: List<Long>,
                 shiftDirection: EventEditDialogFragment.ShiftDirection,
                 delta: Int, originalNovelIds: List<Long>, originalUniverseId: Long?,
-                eventFieldValues: List<com.novelcharacter.app.data.model.EventFieldValue>
+                fieldSubmission: com.novelcharacter.app.data.repository.EventFieldValueMerge.Submission
             ) {
-                viewModel.updateEventAndShiftOthers(event, characterIds, novelIds, shiftDirection, delta, originalNovelIds, originalUniverseId, eventFieldValues)
+                viewModel.updateEventAndShiftOthers(event, characterIds, novelIds, shiftDirection, delta, originalNovelIds, originalUniverseId, fieldSubmission)
             }
         }
 
