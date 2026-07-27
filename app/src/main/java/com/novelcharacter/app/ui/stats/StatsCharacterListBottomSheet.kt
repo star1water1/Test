@@ -9,6 +9,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.activityViewModels
@@ -16,20 +17,29 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.novelcharacter.app.R
-import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.databinding.BottomSheetStatsCharacterListBinding
 
+/**
+ * 차트 조각 드릴다운 시트 — **캐릭터/사건 두 축을 모두** 다룬다.
+ *
+ * 종전에는 캐릭터 전용이었고 사건 필드 카드도 이 시트로 흘러와 항상 0명짜리 빈 목록이 떴다(S-9).
+ * 또 대표 fieldDefId 하나만 받아 전체 세계관 보기에서 차트보다 적게 나왔다(S-7) — 이제
+ * 카드가 합산한 머지 id 전체를 받는다.
+ */
 class StatsCharacterListBottomSheet : BottomSheetDialogFragment() {
 
     private var _binding: BottomSheetStatsCharacterListBinding? = null
     private val binding get() = _binding!!
     private val viewModel: StatsViewModel by activityViewModels()
 
-    private var fieldDefId: Long = 0
+    private var fieldDefIds: List<Long> = emptyList()
     private var fieldName: String = ""
     private var selectedValue: String = ""
+    private var isEventAxis: Boolean = false
 
     var onCharacterClick: ((Long) -> Unit)? = null
+    /** 사건 행 탭 — 인자는 연표를 맞출 연도다(사건 상세 화면이 없어 전역 검색과 같은 규약을 쓴다). */
+    var onEventClick: ((Int) -> Unit)? = null
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
@@ -41,26 +51,56 @@ class StatsCharacterListBottomSheet : BottomSheetDialogFragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        fieldDefId = arguments?.getLong(ARG_FIELD_DEF_ID, 0) ?: 0
+        fieldDefIds = arguments?.getLongArray(ARG_FIELD_DEF_IDS)?.toList() ?: emptyList()
         fieldName = arguments?.getString(ARG_FIELD_NAME, "") ?: ""
         selectedValue = arguments?.getString(ARG_SELECTED_VALUE, "") ?: ""
+        isEventAxis = arguments?.getBoolean(ARG_IS_EVENT_AXIS, false) ?: false
 
         binding.titleText.text = getString(R.string.stats_chart_tap_title, fieldName, selectedValue)
+        binding.btnSubgroupAnalysis.setText(
+            if (isEventAxis) R.string.stats_subgroup_analysis_events
+            else R.string.stats_subgroup_analysis
+        )
 
         binding.characterRecyclerView.layoutManager = LinearLayoutManager(requireContext())
 
         setupObservers()
         setupSubgroupAnalysis()
 
-        viewModel.loadCharactersByFieldValue(fieldDefId, selectedValue)
+        if (isEventAxis) {
+            viewModel.loadEventsByFieldValue(fieldDefIds, selectedValue)
+        } else {
+            viewModel.loadCharactersByFieldValue(fieldDefIds, selectedValue)
+        }
     }
 
     private fun setupObservers() {
         viewModel.chartTapCharacters.observe(viewLifecycleOwner) { characters ->
-            if (characters == null) return@observe
+            if (isEventAxis || characters == null) return@observe
             binding.countText.text = getString(R.string.stats_chart_tap_count, characters.size)
-            binding.characterRecyclerView.adapter = CharacterListAdapter(characters) { charId ->
-                onCharacterClick?.invoke(charId)
+            binding.characterRecyclerView.adapter = RowAdapter(
+                characters.map { Row(it.characterId.toString(), it.characterName, it.fieldValue) }
+            ) { key ->
+                onCharacterClick?.invoke(key.toLong())
+                dismiss()
+            }
+        }
+
+        viewModel.chartTapEvents.observe(viewLifecycleOwner) { events ->
+            if (!isEventAxis || events == null) return@observe
+            binding.countText.text = getString(R.string.stats_chart_tap_count_events, events.size)
+            binding.characterRecyclerView.adapter = RowAdapter(
+                events.map {
+                    // 사건은 이름이 없으므로 설명이 제목이고, 부제에 날짜와 값을 함께 싣는다 —
+                    // 시트만 보고도 어떤 사건인지 알 수 있어야 한다(원칙 04).
+                    Row(
+                        it.year.toString(),
+                        it.description.ifBlank { it.formattedDate },
+                        getString(R.string.stats_event_row_value, it.formattedDate, it.fieldValue)
+                    )
+                }
+            ) { key ->
+                onEventClick?.invoke(key.toInt())
                 dismiss()
             }
         }
@@ -73,18 +113,41 @@ class StatsCharacterListBottomSheet : BottomSheetDialogFragment() {
 
     private fun setupSubgroupAnalysis() {
         binding.btnSubgroupAnalysis.setOnClickListener {
-            val fieldDefs = viewModel.getFieldDefinitions()
-                .filter { it.id != fieldDefId } // 현재 필드 제외
-            if (fieldDefs.isEmpty()) return@setOnClickListener
+            // 인사이트 카드와 같은 (key,type) 머지 축으로 고른다 — 머지하지 않으면 전체 세계관
+            // 보기에서 같은 필드가 중복 나열되고 한 세계관 값만 집계된다.
+            val currentIds = fieldDefIds.toSet()
+            val groups = viewModel.getMergedFieldGroups(isEventAxis)
+                // 현재 필드 제외 — 대표 id 하나가 아니라 **그룹 전체**를 걸러야 형제 세계관의
+                // 같은 필드가 다른 이름인 척 남지 않는다.
+                .filter { g -> g.mergedFieldDefIds.none { it in currentIds } }
+            if (groups.isEmpty()) {
+                // 버튼을 눌렀는데 아무 일도 일어나지 않으면 고장과 구분되지 않는다 — 사유를 알린다.
+                Toast.makeText(
+                    requireContext(), R.string.stats_subgroup_no_other_field, Toast.LENGTH_LONG
+                ).show()
+                return@setOnClickListener
+            }
 
-            val names = fieldDefs.map { it.name }.toTypedArray()
+            val names = groups.map { it.primary.name }.toTypedArray()
             MaterialAlertDialogBuilder(requireContext())
                 .setTitle(R.string.stats_subgroup_select_field)
                 .setItems(names) { _, which ->
-                    val targetField = fieldDefs[which]
-                    val charIds = viewModel.chartTapCharacters.value
-                        ?.map { it.characterId }?.toSet() ?: return@setItems
-                    viewModel.loadSubgroupAnalysis(charIds, targetField.id)
+                    val target = groups[which]
+                    // 모수가 아직 없으면(목록 로딩 미완·조회 실패) 고른 것을 조용히 삼키지 않는다 —
+                    // 다이얼로그만 닫히면 사용자는 선택이 먹힌 줄 안다.
+                    val ids: Set<Long>? = if (isEventAxis) {
+                        viewModel.chartTapEvents.value?.map { it.eventId }?.toSet()
+                    } else {
+                        viewModel.chartTapCharacters.value?.map { it.characterId }?.toSet()
+                    }
+                    if (ids == null) {
+                        Toast.makeText(
+                            requireContext(), R.string.stats_subgroup_list_not_ready, Toast.LENGTH_LONG
+                        ).show()
+                        return@setItems
+                    }
+                    if (isEventAxis) viewModel.loadEventSubgroupAnalysis(ids, target.mergedFieldDefIds)
+                    else viewModel.loadSubgroupAnalysis(ids, target.mergedFieldDefIds)
                 }
                 .show()
         }
@@ -99,7 +162,11 @@ class StatsCharacterListBottomSheet : BottomSheetDialogFragment() {
 
         // 타이틀
         val title = TextView(ctx).apply {
-            text = getString(R.string.stats_subgroup_result_title, analysis.targetFieldName, analysis.totalCount)
+            text = getString(
+                if (isEventAxis) R.string.stats_subgroup_result_title_events
+                else R.string.stats_subgroup_result_title,
+                analysis.targetFieldName, analysis.totalCount
+            )
             textSize = 14f
             setTextColor(ContextCompat.getColor(ctx, R.color.primary))
             setTypeface(null, android.graphics.Typeface.BOLD)
@@ -116,7 +183,11 @@ class StatsCharacterListBottomSheet : BottomSheetDialogFragment() {
         for ((value, count) in analysis.distribution) {
             val pct = if (totalValues > 0) count * 100f / totalValues else 0f
             val row = TextView(ctx).apply {
-                text = "$value: ${count}명 (${String.format("%.1f", pct)}%)"
+                text = getString(
+                    if (isEventAxis) R.string.stats_subgroup_row_events
+                    else R.string.stats_subgroup_row_characters,
+                    value, count, String.format("%.1f", pct)
+                )
                 textSize = 13f
                 setTextColor(ContextCompat.getColor(ctx, R.color.on_surface))
                 val lp = LinearLayout.LayoutParams(
@@ -126,6 +197,18 @@ class StatsCharacterListBottomSheet : BottomSheetDialogFragment() {
                 layoutParams = lp
             }
             container.addView(row)
+        }
+
+        // R-14: 잘라낸 것은 개수로 존재를 알린다 — 상한 숫자는 상수가 단일 소스다.
+        if (analysis.truncatedCount > 0) {
+            container.addView(TextView(ctx).apply {
+                text = getString(
+                    R.string.stats_subgroup_truncated,
+                    analysis.truncatedCount, SUBGROUP_DISTRIBUTION_LIMIT
+                )
+                textSize = 12f
+                setTextColor(ContextCompat.getColor(ctx, R.color.text_secondary))
+            })
         }
 
         if (analysis.distribution.isEmpty()) {
@@ -145,12 +228,15 @@ class StatsCharacterListBottomSheet : BottomSheetDialogFragment() {
         _binding = null
     }
 
-    // ===== 간단한 캐릭터 리스트 어댑터 =====
+    // ===== 두 줄 목록 행 (캐릭터/사건 공용) =====
 
-    private class CharacterListAdapter(
-        private val characters: List<FieldValueCharacter>,
-        private val onClick: (Long) -> Unit
-    ) : RecyclerView.Adapter<CharacterListAdapter.VH>() {
+    /** [key]는 탭 시 호출부에 넘길 식별자 — 캐릭터는 id, 사건은 연표를 맞출 연도다. */
+    private data class Row(val key: String, val title: String, val subtitle: String)
+
+    private class RowAdapter(
+        private val rows: List<Row>,
+        private val onClick: (String) -> Unit
+    ) : RecyclerView.Adapter<RowAdapter.VH>() {
 
         class VH(view: View) : RecyclerView.ViewHolder(view) {
             val nameText: TextView = view.findViewById(android.R.id.text1)
@@ -191,27 +277,38 @@ class StatsCharacterListBottomSheet : BottomSheetDialogFragment() {
         }
 
         override fun onBindViewHolder(holder: VH, position: Int) {
-            val item = characters[position]
-            holder.nameText.text = item.characterName
-            holder.valueText.text = item.fieldValue
-            holder.itemView.setOnClickListener { onClick(item.characterId) }
+            val item = rows[position]
+            holder.nameText.text = item.title
+            holder.valueText.text = item.subtitle
+            holder.itemView.setOnClickListener { onClick(item.key) }
         }
 
-        override fun getItemCount() = characters.size
+        override fun getItemCount() = rows.size
     }
 
     companion object {
         const val TAG = "StatsCharacterListBottomSheet"
-        private const val ARG_FIELD_DEF_ID = "fieldDefId"
+        private const val ARG_FIELD_DEF_IDS = "fieldDefIds"
         private const val ARG_FIELD_NAME = "fieldName"
         private const val ARG_SELECTED_VALUE = "selectedValue"
+        private const val ARG_IS_EVENT_AXIS = "isEventAxis"
 
-        fun newInstance(fieldDefId: Long, fieldName: String, selectedValue: String): StatsCharacterListBottomSheet {
+        /**
+         * [fieldDefIds]에는 인사이트 카드의 `mergedFieldDefIds`를 그대로 준다 — 첫 원소가
+         * 파싱 기준 def이므로 **순서를 보존**해야 차트와 같은 값 공간이 된다.
+         */
+        fun newInstance(
+            fieldDefIds: List<Long>,
+            fieldName: String,
+            selectedValue: String,
+            isEventAxis: Boolean
+        ): StatsCharacterListBottomSheet {
             return StatsCharacterListBottomSheet().apply {
                 arguments = Bundle().apply {
-                    putLong(ARG_FIELD_DEF_ID, fieldDefId)
+                    putLongArray(ARG_FIELD_DEF_IDS, fieldDefIds.toLongArray())
                     putString(ARG_FIELD_NAME, fieldName)
                     putString(ARG_SELECTED_VALUE, selectedValue)
+                    putBoolean(ARG_IS_EVENT_AXIS, isEventAxis)
                 }
             }
         }

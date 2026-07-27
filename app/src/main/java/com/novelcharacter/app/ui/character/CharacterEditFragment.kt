@@ -249,7 +249,13 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         )
         // ✨ AI 필드 추천 — 필드별(폼 인라인 버튼) + 전체(폼 상단 버튼) 이중 진입 (원칙 04)
         formBuilder.aiSuggestHandler = { field ->
-            AiFieldSuggestSheet.showForField(this, field, formBuilder, viewModel) { buildAiContext() }
+            // 경로 분기의 단일 소스는 필드 속성이다(사용자가 직접 정하고, 자동은 표시 형식으로 판단).
+            // 서술형은 긴 글 전용 경로 — 짧은 값 추천기에 산문을 끼워 넣으면 둘 다 망가진다.
+            if (com.novelcharacter.app.data.model.NarrativeMode.isNarrative(field)) {
+                NarrativeWriteSheet.show(this, field, formBuilder, viewModel) { buildAiContext() }
+            } else {
+                AiFieldSuggestSheet.showForField(this, field, formBuilder, viewModel) { buildAiContext() }
+            }
         }
         binding.btnAiSuggest.setOnClickListener {
             AiFieldSuggestSheet.showForCharacter(this, formBuilder, viewModel) { buildAiContext() }
@@ -271,6 +277,27 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         }
         viewModel.aiSuggestResult.observe(viewLifecycleOwner) { run ->
             if (run != null) AiFieldSuggestSheet.showResult(this, formBuilder, viewModel, run)
+        }
+        // 서술형 작성 — 진행 다이얼로그는 추천 경로와 공유한다(동시 실행은 VM이 막는다).
+        viewModel.aiNarrativeRunning.observe(viewLifecycleOwner) { running ->
+            if (running == true) {
+                if (aiProgressDialog == null) {
+                    aiProgressDialog = com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
+                        .setMessage(R.string.ai_field_running)
+                        .setCancelable(false)
+                        .show()
+                }
+            } else {
+                aiProgressDialog?.dismiss()
+                aiProgressDialog = null
+            }
+        }
+        viewModel.aiNarrativeResult.observe(viewLifecycleOwner) { run ->
+            if (run != null) {
+                NarrativeWriteSheet.showResult(this, formBuilder, viewModel, run) { id ->
+                    formBuilder.fieldDefinitions.firstOrNull { it.id == id }
+                }
+            }
         }
 
         saveCoordinator = CharacterSaveCoordinator(

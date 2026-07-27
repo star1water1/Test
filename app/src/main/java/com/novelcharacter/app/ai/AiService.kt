@@ -70,6 +70,14 @@ class AiService(context: Context) {
     }
 
     /**
+     * 활성 프로바이더에 실제로 적용될 출력 상한. 인앱 기능이 **청킹 크기와 비용 고지**를
+     * 이 값에서 파생시키도록 노출한다 — 상수로 박아 두면 사용자가 상한을 올려도 요청 수가
+     * 그대로여서 설정이 무의미해진다.
+     */
+    fun effectiveMaxTokens(): Int =
+        providerStore.active()?.let { AiTokenPolicy.effective(it) } ?: AiTokenPolicy.DEFAULT_REQUEST
+
+    /**
      * 프로바이더가 지금 실제로 제공하는 모델 목록을 조회한다. 설정 화면의 '모델 선택'이
      * 앱에 박제된 하드코딩 추천값 대신 살아있는 목록을 보여주는 데 쓰인다(변수 제어 —
      * 낡은 모델명 추천 방지). 실패하면 호출측이 정적 추천값으로 폴백한다.
@@ -80,7 +88,7 @@ class AiService(context: Context) {
             when (val raw = executeHttp(spec)) {
                 is RawResponse.NetworkError -> AiModelListResult.Failure(raw.failure)
                 is RawResponse.Http -> if (raw.code in 200..299) {
-                    val models = AiProtocolCodec.parseModelList(config.protocol, raw.body.orEmpty())
+                    val models = AiProtocolCodec.parseModelInfos(config.protocol, raw.body.orEmpty())
                     if (models.isEmpty()) {
                         AiModelListResult.Failure(AiResult.Failure(AiErrorKind.EMPTY_RESPONSE))
                     } else {
@@ -96,17 +104,49 @@ class AiService(context: Context) {
     private suspend fun execute(
         config: AiProviderConfig, apiKey: String, request: AiRequest
     ): AiResult = withContext(Dispatchers.IO) {
-        val spec = AiProtocolCodec.buildRequest(config, apiKey, request)
+        // 상한 셋의 **교집합**을 쓴다: 이 요청이 요구한 값 ∩ 사용자 설정 ∩ 탐지된 모델 상한.
+        // 요청값으로 정책을 덮어쓰지 않는 이유 — 그러면 `effectiveMaxTokens()`를 부르지 않은
+        // 호출부가 사용자의 슬라이더 설정(특히 **낮춰 둔** 비용 상한)을 조용히 무시한다.
+        // 이 저장소가 반복해서 겪은 "한 경로만 고쳐지고 나머지에 조용한 실패가 남는" 형태다.
+        val ceiling = AiTokenPolicy.effective(config)
+        val effective = minOf(request.maxTokens, ceiling).coerceAtLeast(AiTokenPolicy.FLOOR)
+        val bounded = if (effective == request.maxTokens) request else request.copy(maxTokens = effective)
+
+        val spec = AiProtocolCodec.buildRequest(config, apiKey, bounded)
         val first = call(spec, config.protocol, config.model)
-        // OpenAI 신형 모델의 max_tokens 거부 → max_completion_tokens 로 1회 자동 교정 재시도.
+        if (first !is AiResult.Failure) return@withContext first
+
+        // ① OpenAI 신형 모델의 max_tokens **파라미터 이름** 거부 → max_completion_tokens 로 1회 재시도.
         if (config.protocol == AiProtocol.OPENAI_COMPAT &&
-            first is AiResult.Failure &&
             AiProtocolCodec.isMaxTokensParamError(first.httpCode ?: 0, first.detail)
         ) {
-            val retry = AiProtocolCodec.buildOpenAiRetryWithMaxCompletionTokens(config, apiKey, request)
+            val retry = AiProtocolCodec.buildOpenAiRetryWithMaxCompletionTokens(config, apiKey, bounded)
             return@withContext call(retry, config.protocol, config.model)
         }
+
+        // ② 상한 **값** 초과 → 오류가 알려준 실제 상한으로 1회 재시도하고 그 값을 기억한다.
+        //    정적 표 없이 모델별 상한을 배우는 경로다(표는 새 모델마다 낡는다).
+        if (first.httpCode == 400) {
+            val learned = AiProtocolCodec.parseMaxTokensLimitFromError(first.detail, bounded.maxTokens)
+            if (learned != null) {
+                rememberDetectedLimit(config.id, learned)
+                val retrySpec = AiProtocolCodec.buildRequest(
+                    config, apiKey, bounded.copy(maxTokens = learned)
+                )
+                return@withContext call(retrySpec, config.protocol, config.model)
+            }
+        }
         first
+    }
+
+    /**
+     * 탐지한 모델 출력 상한을 설정에 기록한다(다음 요청부터 바로 맞는 값으로 나간다).
+     * 사용자가 슬라이더로 정한 값은 건드리지 않는다 — [AiTokenPolicy.effective]가 둘을 합성한다.
+     */
+    fun rememberDetectedLimit(configId: String, limit: Int) {
+        val current = providerStore.get(configId) ?: return
+        if (current.detectedOutputLimit == limit) return
+        providerStore.save(current.copy(detectedOutputLimit = limit))
     }
 
     private suspend fun call(

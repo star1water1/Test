@@ -27,14 +27,17 @@ import com.google.android.material.textfield.TextInputEditText
 import com.novelcharacter.app.R
 import com.novelcharacter.app.ai.AiErrorMessages
 import com.novelcharacter.app.ai.AiKeyStore
+import com.novelcharacter.app.ai.AiModelInfo
 import com.novelcharacter.app.ai.AiModelListResult
 import com.novelcharacter.app.ai.AiModelSuggestions
 import com.novelcharacter.app.ai.AiPreset
 import com.novelcharacter.app.ai.AiPresets
+import com.novelcharacter.app.ai.AiProtocolCodec
 import com.novelcharacter.app.ai.AiProviderConfig
 import com.novelcharacter.app.ai.AiProviderStore
 import com.novelcharacter.app.ai.AiResult
 import com.novelcharacter.app.ai.AiService
+import com.novelcharacter.app.ai.AiTokenPolicy
 import com.novelcharacter.app.databinding.DialogAiModelPickerBinding
 import com.novelcharacter.app.databinding.DialogAiProviderEditBinding
 import com.novelcharacter.app.databinding.FragmentAiSettingsBinding
@@ -135,6 +138,40 @@ class AiSettingsFragment : Fragment() {
         dialogBinding.modelInput.setText(config.model)
         dialogBinding.baseUrlInput.setText(config.baseUrl)
 
+        // ── 출력 토큰 상한 슬라이더 ──
+        // 상한을 아예 두지 않는 선택지는 없다(Anthropic은 max_tokens가 필수). 그래서 "둘 것인가"가
+        // 아니라 "무엇을 근거로 둘 것인가"의 문제이고, 슬라이더의 **최대값이 곧 탐지된 모델 상한**이라
+        // 자동 탐지와 수동 설정이 따로 놀지 않는다.
+        var detectedLimit: Int? = config.detectedOutputLimit
+
+        fun renderMaxTokens() {
+            val max = AiTokenPolicy.sliderMax(config.copy(detectedOutputLimit = detectedLimit))
+            dialogBinding.maxTokensSlider.valueFrom = AiTokenPolicy.FLOOR.toFloat()
+            dialogBinding.maxTokensSlider.valueTo = max.toFloat()
+            val current = AiTokenPolicy.snapToStep(
+                config.maxOutputTokens ?: AiTokenPolicy.DEFAULT_REQUEST, max
+            )
+            dialogBinding.maxTokensSlider.value = current.toFloat()
+            dialogBinding.maxTokensValue.text = detectedLimit?.let {
+                getString(R.string.ai_edit_max_tokens_value_detected, current, it)
+            } ?: getString(R.string.ai_edit_max_tokens_value, current)
+        }
+        renderMaxTokens()
+        dialogBinding.maxTokensSlider.addOnChangeListener { _, value, _ ->
+            val v = value.toInt()
+            dialogBinding.maxTokensValue.text = detectedLimit?.let {
+                getString(R.string.ai_edit_max_tokens_value_detected, v, it)
+            } ?: getString(R.string.ai_edit_max_tokens_value, v)
+        }
+
+        /** 모델 목록이 상한을 알려주면(Gemini) 슬라이더 범위를 그 자리에서 좁힌다. */
+        fun learnLimitFrom(models: List<AiModelInfo>, model: String) {
+            val found = AiProtocolCodec.detectedLimitFor(models, model) ?: return
+            if (found == detectedLimit) return
+            detectedLimit = found
+            renderMaxTokens()
+        }
+
         // 추천 모델 칩 — 직접 타이핑 없이 원탭으로 선택(러프 입력), 세부 수정은 필드에서(원칙 04).
         // 현재 입력값과 일치하는 칩은 체크 상태로 표시해 무엇이 선택됐는지 한눈에 보인다.
         //
@@ -200,8 +237,10 @@ class AiSettingsFragment : Fragment() {
                 val result = aiService.listModels(config.copy(baseUrl = baseUrl), key)
                 if (!dialogBinding.root.isAttachedToWindow) return@launch
                 if (result is AiModelListResult.Success) {
+                    // 목록이 출력 상한을 알려주는 프로토콜(Gemini)이면 여기서 배운다.
+                    learnLimitFrom(result.models, dialogBinding.modelInput.text?.toString()?.trim().orEmpty())
                     renderModelChips(
-                        AiModelSuggestions.rank(result.models, curatedModels),
+                        AiModelSuggestions.rank(result.ids, curatedModels),
                         R.string.ai_edit_models_from_server_label
                     )
                 } else {
@@ -269,7 +308,7 @@ class AiSettingsFragment : Fragment() {
 
         // 연결 테스트 — 저장 전에 현재 입력값 그대로 검증한다.
         dialogBinding.testButton.setOnClickListener {
-            val candidate = readConfig(dialogBinding, config) ?: return@setOnClickListener
+            val candidate = readConfig(dialogBinding, config, detectedLimit) ?: return@setOnClickListener
             val enteredKey = dialogBinding.apiKeyInput.text?.toString()?.trim().orEmpty()
             if (enteredKey.isEmpty() && !keyStore.hasKey(config.id)) {
                 showTestResult(dialogBinding, success = false, getString(R.string.ai_error_no_key))
@@ -301,7 +340,7 @@ class AiSettingsFragment : Fragment() {
             .setNegativeButton(R.string.cancel, null)
             .create()
         dialog.setValidatedPositiveButton {
-            val candidate = readConfig(dialogBinding, config) ?: return@setValidatedPositiveButton false
+            val candidate = readConfig(dialogBinding, config, detectedLimit) ?: return@setValidatedPositiveButton false
             providerStore.save(candidate)
             val enteredKey = dialogBinding.apiKeyInput.text?.toString()?.trim().orEmpty()
             if (enteredKey.isNotEmpty()) keyStore.putKey(candidate.id, enteredKey)
@@ -371,7 +410,7 @@ class AiSettingsFragment : Fragment() {
                 pickerBinding.progress.visibility = View.GONE
                 when (result) {
                     is AiModelListResult.Success -> {
-                        allModels = result.models
+                        allModels = result.ids
                         applyFilter(pickerBinding.searchInput.text?.toString().orEmpty())
                     }
                     is AiModelListResult.Failure ->
@@ -414,7 +453,7 @@ class AiSettingsFragment : Fragment() {
 
     /** 입력 필드 → 설정 객체. 검증 실패 시 해당 필드에 오류를 표시하고 null(다이얼로그 유지). */
     private fun readConfig(
-        b: DialogAiProviderEditBinding, base: AiProviderConfig
+        b: DialogAiProviderEditBinding, base: AiProviderConfig, detectedLimit: Int? = base.detectedOutputLimit
     ): AiProviderConfig? {
         val name = b.nameInput.text?.toString()?.trim().orEmpty()
         val model = b.modelInput.text?.toString()?.trim().orEmpty()
@@ -436,7 +475,13 @@ class AiSettingsFragment : Fragment() {
             b.baseUrlInputLayout.error = getString(R.string.ai_edit_error_https); valid = false
         }
         if (!valid) return null
-        return base.copy(displayName = name, model = model, baseUrl = baseUrl)
+        return base.copy(
+            displayName = name,
+            model = model,
+            baseUrl = baseUrl,
+            maxOutputTokens = b.maxTokensSlider.value.toInt(),
+            detectedOutputLimit = detectedLimit
+        )
     }
 
     /** 외부 링크 열기 — 브라우저가 없으면 조용히 죽지 않고 안내한다(변수 제어). */

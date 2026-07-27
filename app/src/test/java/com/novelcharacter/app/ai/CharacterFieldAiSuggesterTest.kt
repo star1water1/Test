@@ -282,7 +282,7 @@ class CharacterFieldAiSuggesterTest {
 
     @Test
     fun chunkTargets_splitsByCountOnly() {
-        val max = CharacterFieldAiSuggester.MAX_TARGETS_PER_REQUEST
+        val max = CharacterFieldAiSuggester.targetsPerRequest(AiTokenPolicy.DEFAULT_REQUEST)
         assertTrue(CharacterFieldAiSuggester.chunkTargets(emptyList()).isEmpty())
         val exactly = (1..max).map { spec("f$it") }
         assertEquals(1, CharacterFieldAiSuggester.chunkTargets(exactly).size)
@@ -295,14 +295,40 @@ class CharacterFieldAiSuggesterTest {
 
     @Test
     fun requestCountFor_matchesChunkTargets() {
-        val max = CharacterFieldAiSuggester.MAX_TARGETS_PER_REQUEST
-        for (count in listOf(0, 1, max - 1, max, max + 1, max * 3)) {
-            val targets = (1..count).map { spec("f$it") }
-            assertEquals(
-                CharacterFieldAiSuggester.chunkTargets(targets).size,
-                CharacterFieldAiSuggester.requestCountFor(count)
-            )
+        // 사전 고지와 실제 청킹이 어긋나면 "요청 N건" 안내가 거짓이 된다 — 상한을 바꿔도 일치해야 한다.
+        for (budget in listOf(1024, AiTokenPolicy.DEFAULT_REQUEST, 8192, 32768)) {
+            val max = CharacterFieldAiSuggester.targetsPerRequest(budget)
+            for (count in listOf(0, 1, max - 1, max, max + 1, max * 3)) {
+                val targets = (1..count).map { spec("f$it") }
+                assertEquals(
+                    "budget=$budget count=$count",
+                    CharacterFieldAiSuggester.chunkTargets(targets, budget).size,
+                    CharacterFieldAiSuggester.requestCountFor(count, budget)
+                )
+            }
         }
+    }
+
+    @Test
+    fun targetsPerRequest_기본값은_종전_상수_15와_같다() {
+        // 회귀 방지: 상한 파생으로 바꾸되 기본 동작(4096 → 15개)은 그대로여야 한다.
+        assertEquals(15, CharacterFieldAiSuggester.targetsPerRequest(AiTokenPolicy.DEFAULT_REQUEST))
+    }
+
+    @Test
+    fun targetsPerRequest_상한에_비례하고_경계에서_안전하다() {
+        val small = CharacterFieldAiSuggester.targetsPerRequest(AiTokenPolicy.FLOOR)
+        assertTrue("아주 작은 상한에서도 최소 1개는 보낸다", small >= 1)
+        val big = CharacterFieldAiSuggester.targetsPerRequest(1_000_000)
+        assertEquals(
+            "프롬프트 무한 확장 방지 — 절대 상한에서 멈춘다",
+            CharacterFieldAiSuggester.HARD_MAX_TARGETS_PER_REQUEST, big
+        )
+        assertTrue(
+            "상한이 크면 요청당 대상도 늘어난다",
+            CharacterFieldAiSuggester.targetsPerRequest(8192) >
+                CharacterFieldAiSuggester.targetsPerRequest(2048)
+        )
     }
 
     // ===== 컨텍스트 결손 고지 =====

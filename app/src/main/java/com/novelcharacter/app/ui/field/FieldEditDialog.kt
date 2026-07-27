@@ -25,6 +25,7 @@ import com.novelcharacter.app.data.model.BodyAnalysisConfig
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.FieldStatsConfig
 import com.novelcharacter.app.data.model.FieldType
+import com.novelcharacter.app.data.model.NarrativeMode
 import com.novelcharacter.app.data.model.SemanticRole
 import com.novelcharacter.app.data.model.StructuredInputConfig
 import com.novelcharacter.app.databinding.DialogFieldEditBinding
@@ -153,6 +154,12 @@ class FieldEditDialog : DialogFragment() {
         formatAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         binding.spinnerDisplayFormat.adapter = formatAdapter
 
+        // 서술형 여부 — AI 작성 보조가 값 추천 경로로 갈지 긴 글 경로로 갈지 가른다.
+        val narrativeAdapter = ArrayAdapter(
+            requireContext(), android.R.layout.simple_spinner_item, NarrativeMode.labels()
+        ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+        binding.spinnerNarrativeMode.adapter = narrativeAdapter
+
         // Percentile toggle
         binding.switchPercentileEnabled.setOnCheckedChangeListener { _, isChecked ->
             binding.percentileScopeLayout.visibility = if (isChecked) View.VISIBLE else View.GONE
@@ -169,6 +176,9 @@ class FieldEditDialog : DialogFragment() {
                     if (selectedType == FieldType.CALCULATED) View.VISIBLE else View.GONE
                 binding.displayFormatLayout.visibility =
                     if (selectedType == FieldType.TEXT || selectedType == FieldType.MULTI_TEXT) View.VISIBLE else View.GONE
+                // 서술형은 TEXT에서만 성립한다(SELECT는 옵션 계약, NUMBER·BODY_SIZE는 형식 계약).
+                binding.narrativeModeLayout.visibility =
+                    if (NarrativeMode.isEligibleType(selectedType.name)) View.VISIBLE else View.GONE
                 // 시스템 연동: CALCULATED 제외
                 binding.semanticRoleLayout.visibility =
                     if (selectedType != FieldType.CALCULATED) View.VISIBLE else View.GONE
@@ -986,6 +996,9 @@ class FieldEditDialog : DialogFragment() {
         val formatIndex = DisplayFormat.entries.indexOf(displayFormat)
         if (formatIndex >= 0) binding.spinnerDisplayFormat.setSelection(formatIndex)
 
+        val narrativeIndex = NarrativeMode.entries.indexOf(NarrativeMode.fromConfig(field.config))
+        if (narrativeIndex >= 0) binding.spinnerNarrativeMode.setSelection(narrativeIndex)
+
         // Semantic role
         val semanticRole = SemanticRole.fromConfig(field.config)
         if (semanticRole != null) {
@@ -1355,6 +1368,12 @@ class FieldEditDialog : DialogFragment() {
             if (selectedFormat != DisplayFormat.PLAIN) {
                 config["displayFormat"] = selectedFormat.key
             }
+        }
+
+        // 서술형 여부 (TEXT 전용). AUTO는 키를 쓰지 않는다 — 기본값과 명시적 자동을 구분할 이유가 없다.
+        if (NarrativeMode.isEligibleType(type.name)) {
+            val mode = NarrativeMode.entries[binding.spinnerNarrativeMode.selectedItemPosition]
+            if (mode != NarrativeMode.AUTO) config["narrativeMode"] = mode.key
         }
 
         when (type) {

@@ -425,16 +425,31 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
     private val _chartTapCharacters = MutableLiveData<List<FieldValueCharacter>?>()
     val chartTapCharacters: LiveData<List<FieldValueCharacter>?> = _chartTapCharacters
 
+    /** 사건 필드 카드의 드릴다운 결과 (S-9) — 캐릭터 목록과 단위가 달라 따로 싣는다. */
+    private val _chartTapEvents = MutableLiveData<List<FieldValueEvent>?>()
+    val chartTapEvents: LiveData<List<FieldValueEvent>?> = _chartTapEvents
+
     private val _subgroupAnalysis = MutableLiveData<SubgroupAnalysis?>()
     val subgroupAnalysis: LiveData<SubgroupAnalysis?> = _subgroupAnalysis
 
-    fun loadCharactersByFieldValue(fieldDefId: Long, value: String) {
+    /**
+     * [fieldDefIds]에는 인사이트 카드가 합산한 머지 id 전체를 준다 — 대표 id 하나만 주면
+     * 전체 세계관 보기에서 차트보다 적은 인원이 나온다(S-7).
+     * 필드 정의를 찾지 못하면 빈 목록으로 위장하지 않고 사유를 알린다(변수 제어: 검증→알림).
+     */
+    fun loadCharactersByFieldValue(fieldDefIds: List<Long>, value: String) {
         viewModelScope.launch {
             try {
                 val snapshot = ensureSnapshot()
                 val filtered = getFilteredSnapshot(snapshot)
-                _chartTapCharacters.value = withContext(Dispatchers.IO) {
-                    provider.getCharactersByFieldValue(filtered, fieldDefId, value)
+                val found = withContext(Dispatchers.IO) {
+                    provider.getCharactersByFieldValue(filtered, fieldDefIds, value)
+                }
+                if (found == null) {
+                    _error.value = getApplication<Application>()
+                        .getString(com.novelcharacter.app.R.string.stats_drilldown_field_missing)
+                } else {
+                    _chartTapCharacters.value = found
                 }
             } catch (e: Exception) {
                 _error.value = e.message
@@ -442,13 +457,61 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun loadSubgroupAnalysis(characterIds: Set<Long>, targetFieldDefId: Long) {
+    /** 사건 필드 카드 드릴다운 (S-9) — 캐릭터 경로와 대칭. */
+    fun loadEventsByFieldValue(fieldDefIds: List<Long>, value: String) {
         viewModelScope.launch {
             try {
                 val snapshot = ensureSnapshot()
                 val filtered = getFilteredSnapshot(snapshot)
-                _subgroupAnalysis.value = withContext(Dispatchers.IO) {
-                    provider.computeSubgroupAnalysis(filtered, characterIds, targetFieldDefId)
+                val found = withContext(Dispatchers.IO) {
+                    provider.getEventsByFieldValue(filtered, fieldDefIds, value)
+                }
+                if (found == null) {
+                    _error.value = getApplication<Application>()
+                        .getString(com.novelcharacter.app.R.string.stats_drilldown_field_missing)
+                } else {
+                    _chartTapEvents.value = found
+                }
+            } catch (e: Exception) {
+                _error.value = e.message
+            }
+        }
+    }
+
+    fun loadSubgroupAnalysis(characterIds: Set<Long>, targetFieldDefIds: List<Long>) {
+        viewModelScope.launch {
+            try {
+                val snapshot = ensureSnapshot()
+                val filtered = getFilteredSnapshot(snapshot)
+                val result = withContext(Dispatchers.IO) {
+                    provider.computeSubgroupAnalysis(filtered, characterIds, targetFieldDefIds)
+                }
+                if (result == null) {
+                    _error.value = getApplication<Application>()
+                        .getString(com.novelcharacter.app.R.string.stats_subgroup_field_missing)
+                } else {
+                    _subgroupAnalysis.value = result
+                }
+            } catch (e: Exception) {
+                _error.value = e.message
+            }
+        }
+    }
+
+    /** 사건 하위 그룹 분석 (S-9) — 셀 단위가 사건 수라 캐릭터판과 함수를 나눈다(R-13). */
+    fun loadEventSubgroupAnalysis(eventIds: Set<Long>, targetFieldDefIds: List<Long>) {
+        viewModelScope.launch {
+            try {
+                val snapshot = ensureSnapshot()
+                val filtered = getFilteredSnapshot(snapshot)
+                val result = withContext(Dispatchers.IO) {
+                    provider.computeEventSubgroupAnalysis(filtered, eventIds, targetFieldDefIds)
+                }
+                if (result == null) {
+                    _error.value = getApplication<Application>()
+                        .getString(com.novelcharacter.app.R.string.stats_subgroup_field_missing)
+                } else {
+                    _subgroupAnalysis.value = result
                 }
             } catch (e: Exception) {
                 _error.value = e.message
@@ -458,15 +521,22 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
 
     fun clearChartTapData() {
         _chartTapCharacters.value = null
+        _chartTapEvents.value = null
         _subgroupAnalysis.value = null
     }
 
-    /** 현재 스냅샷의 필드 정의 목록 반환 (하위 그룹 분석 필드 선택용) — 동기 getter라 필터를 인라인 수행. */
-    fun getFieldDefinitions(): List<FieldDefinition> {
+    /**
+     * 하위 그룹 분석 필드 선택용 목록 — 인사이트 카드와 **같은 (key,type) 머지 축**으로 묶어 돌려준다.
+     * 머지하지 않으면 전체 세계관 보기에서 같은 필드가 중복 나열되고, 고른 것이 한 세계관 값만
+     * 집계해 카드와 다른 답을 준다. 동기 getter라 필터를 인라인 수행한다.
+     */
+    fun getMergedFieldGroups(isEventAxis: Boolean): List<MergedFieldGroup> {
         val snapshot = cachedSnapshot ?: return emptyList()
         val novelId = _selectedNovelId.value
         val filtered = if (novelId != null) provider.filterByNovel(snapshot, novelId) else snapshot
-        return filtered.fieldDefinitions
+        return provider.getMergedFieldGroups(
+            if (isEventAxis) filtered.eventFieldDefinitions else filtered.fieldDefinitions
+        )
     }
 
     // ===== 인라인 분석 설정 업데이트 =====

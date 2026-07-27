@@ -100,6 +100,10 @@ object AiFieldSuggestSheet {
         fun currentTargets(): List<CharacterFieldAiSuggester.FieldSpec> =
             if (includeFilledCheck.isChecked) allSpecList else emptySpecs
 
+        // 청킹은 활성 프로바이더의 출력 상한에서 파생되므로, 고지도 **같은 값**으로 계산해야 한다.
+        // 상수로 계산하면 사용자가 상한을 올렸을 때 고지된 요청 수와 실제가 어긋난다.
+        val budget = AiService(context).effectiveMaxTokens()
+
         fun refreshMessage() {
             val count = currentTargets().size
             message.text = if (count == 0) {
@@ -108,7 +112,7 @@ object AiFieldSuggestSheet {
                 // 요청 수는 청킹 규칙과 같은 계산 — 사전 고지 정확성 (R-4)
                 fragment.getString(
                     R.string.ai_field_cost_notice,
-                    count, CharacterFieldAiSuggester.requestCountFor(count)
+                    count, CharacterFieldAiSuggester.requestCountFor(count, budget)
                 )
             }
         }

@@ -293,10 +293,13 @@ class BiasProvider : InsightProvider {
 
         // 드릴다운(편중/이상치): 해당 값 캐릭터를 펼쳐 각자 열어볼 수 있게 → 카드가 실제로 쓸모 있어진다.
         if (p.drilldownValues.isNotEmpty() && p.mergedFieldDefIds.isNotEmpty()) {
+            // null = 대상 필드 정의를 스냅샷에서 찾지 못함(R-17). 여기서는 mergedFieldDefIds가
+            // 같은 스냅샷의 detectPatterns에서 나오므로 정상 경로에선 발생하지 않는다 —
+            // 발생하면 드릴다운 없이 카드만 낸다(빈 목록과 같은 처리이되 의미는 구분해 둔다).
             val chars = ctx.statsProvider.getCharactersByFieldKeyValues(
                 ctx.snapshot, p.mergedFieldDefIds, p.drilldownValues.toSet(), p.drilldownExclude,
                 valuesByDefId = ctx.valuesByDefId
-            )
+            ).orEmpty()
             if (chars.isNotEmpty()) {
                 val updatedById = ctx.snapshot.characters.associate { it.id to it.updatedAt }
                 val affected = chars.map {

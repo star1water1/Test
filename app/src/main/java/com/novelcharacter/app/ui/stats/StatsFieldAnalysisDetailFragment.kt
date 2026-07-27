@@ -295,8 +295,19 @@ class StatsFieldAnalysisDetailFragment : Fragment() {
 
     // ===== 차트 탭 인터랙션 (개선 6) =====
 
+    /**
+     * 이 화면(레거시 필드 분석)의 분포는 **필드 정의 하나 단위**로 계산된다
+     * (`computeFieldAnalysis`가 세계관 통합 없이 def마다 카드를 만든다). 따라서 드릴다운도
+     * 그 def 하나가 맞다 — 인사이트 화면처럼 머지 id를 넘기면 차트보다 많은 인원이 나온다.
+     * 두 화면의 통합 여부는 별도 과제(S-14~S-18)다.
+     */
     private fun showCharacterListBottomSheet(fieldDefId: Long, fieldName: String, value: String) {
-        val sheet = StatsCharacterListBottomSheet.newInstance(fieldDefId, fieldName, value)
+        val sheet = StatsCharacterListBottomSheet.newInstance(
+            fieldDefIds = listOf(fieldDefId),
+            fieldName = fieldName,
+            selectedValue = value,
+            isEventAxis = false
+        )
         sheet.onCharacterClick = { characterId ->
             val bundle = Bundle().apply { putLong("characterId", characterId) }
             findNavController().navigateSafe(R.id.statsFieldAnalysisDetailFragment, R.id.characterDetailFragment, bundle)

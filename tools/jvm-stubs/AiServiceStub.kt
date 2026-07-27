@@ -13,4 +13,7 @@ package com.novelcharacter.app.ai
 class AiService {
     suspend fun complete(request: AiRequest, config: AiProviderConfig? = null): AiResult =
         throw UnsupportedOperationException("하네스 스텁 — 실제 호출 금지")
+
+    /** 청킹·비용 고지가 이 값에서 파생된다. 스텁은 정책 기본값을 그대로 돌려준다. */
+    fun effectiveMaxTokens(): Int = AiTokenPolicy.DEFAULT_REQUEST
 }
