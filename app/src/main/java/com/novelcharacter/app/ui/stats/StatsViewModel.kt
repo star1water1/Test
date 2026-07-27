@@ -678,9 +678,12 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
                 withContext(Dispatchers.IO) {
                     for (fd in targets) {
                         val own = FieldStatsConfig.fromConfig(fd.config)
-                        val json = FieldStatsConfig.applyToConfig(
-                            fd.config, own.copy(analyses = listOf(entry))
-                        )
+                        // **첫 항목만 교체하고 나머지는 남긴다.** 다이얼로그가 보여주고 편집한 것은
+                        // 첫 분석 항목 하나뿐인데 `listOf(entry)`로 덮으면, 형제 def에 따로 만들어 둔
+                        // 두 번째·세 번째 분석 항목이 차트 종류를 바꾼 것만으로 사라진다(무통보 유실).
+                        val merged = if (own.analyses.size <= 1) listOf(entry)
+                                     else listOf(entry) + own.analyses.drop(1)
+                        val json = FieldStatsConfig.applyToConfig(fd.config, own.copy(analyses = merged))
                         app.universeRepository.updateField(fd.copy(config = json))
                     }
                 }

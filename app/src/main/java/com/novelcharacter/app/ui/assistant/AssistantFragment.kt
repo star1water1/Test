@@ -69,6 +69,17 @@ class AssistantFragment : Fragment() {
         viewModel.insights.observe(viewLifecycleOwner) { list ->
             adapter.submitList(list)
             binding.emptyState.visibility = if (list.isEmpty()) View.VISIBLE else View.GONE
+            // 편향 카드는 통계 화면의 '인사이트 유형 설정'을 따른다. 그 설정으로 유형을 껐는데
+            // 빈 화면이 "눈에 띄는 편향이 없다"고만 말하면 **끈 것을 없는 것으로** 읽는다 —
+            // 사유와 되돌릴 위치를 함께 적는다(B-31이 통계 카드에서 없앤 함정과 같은 부류).
+            val offCount = com.novelcharacter.app.ui.stats.PatternType.values().size -
+                com.novelcharacter.app.ui.stats.PatternTypePrefs.enabled(requireContext()).size
+            binding.emptyTypesOffNote.visibility =
+                if (list.isEmpty() && offCount > 0) View.VISIBLE else View.GONE
+            if (list.isEmpty() && offCount > 0) {
+                binding.emptyTypesOffNote.text =
+                    getString(R.string.assistant_empty_types_off, offCount)
+            }
         }
         viewModel.loading.observe(viewLifecycleOwner) { loading ->
             binding.progressBar.visibility = if (loading) View.VISIBLE else View.GONE

@@ -63,6 +63,8 @@ class StatsFieldInsightFragment : Fragment() {
         binding.toolbar.setNavigationOnClickListener { findNavController().popBackStack() }
         binding.btnCrossAnalysis.setOnClickListener { showCrossAnalysisDialog() }
         setupObservers()
+        // 되살아난 드릴다운 시트에 콜백을 다시 붙인다(회전 뒤 목록은 멀쩡한데 탭만 죽는다).
+        rebindDrilldownSheet()
         viewModel.loadFieldInsights()
     }
 
@@ -235,7 +237,11 @@ class StatsFieldInsightFragment : Fragment() {
                 val data = result.distributionData ?: return wrapper
                 // 상한 적용은 여기 한 곳 — 잘린 나머지는 '기타' 조각으로 접어 존재를 알린다(R-14).
                 val view = ValueDistributions.view(data, result.entry.limit)
-                val slices = toSlices(view)
+                // '기타' 합계 조각은 **전체가 100%여야 하는 그림**(파이·도넛)에서만 정당하다.
+                // 막대에 끼우면 잘린 값들의 합이 최댓값을 차지해 값이 아닌 것이 1위로 보인다.
+                val isProportional = result.entry.chart == FieldStatsConfig.ChartType.PIE ||
+                    result.entry.chart == FieldStatsConfig.ChartType.DONUT
+                val slices = toSlices(view, includeOthers = isProportional)
                 val chart = createChartForDistribution(slices, result.entry.chart)
                 attachChartTapListener(chart, slices, insight)
                 wrapper.addView(chart)
@@ -310,18 +316,21 @@ class StatsFieldInsightFragment : Fragment() {
         }
     }
 
-    private fun showDrilldownBottomSheet(insight: FieldInsightResult, slice: ChartSlice) {
-        val isEvent = insight.fieldDefinition.entityType ==
-            com.novelcharacter.app.data.model.FieldDefinition.ENTITY_EVENT
-        val sheet = StatsCharacterListBottomSheet.newInstance(
-            fieldDefIds = insight.mergedFieldDefIds,
-            fieldName = insight.fieldDefinition.name,
-            selectedValue = slice.label,
-            isEventAxis = isEvent,
-            // 화면이 보여준 그 조각의 규칙을 그대로 넘긴다 — 접힌 '기타'도 목록을 볼 수 있다.
-            matchSpec = slice.spec,
-            sliceCount = slice.count
-        )
+    /**
+     * 회전·프로세스 재생성 뒤 되살아난 드릴다운 시트에 **콜백을 다시 붙인다**.
+     *
+     * 시트는 arguments에서 매치 스펙을 복원해 목록을 정상적으로 다시 채우지만, 행을 누를 때
+     * 부르는 람다는 인스턴스 필드라 새 인스턴스에서는 null이다 — 목록은 멀쩡한데 탭만 죽은
+     * 상태가 되고, 사용자에게는 고장과 구분되지 않는다(시트를 닫았다 다시 열어야 살아난다).
+     */
+    private fun rebindDrilldownSheet() {
+        val sheet = childFragmentManager
+            .findFragmentByTag(StatsCharacterListBottomSheet.TAG) as? StatsCharacterListBottomSheet
+            ?: return
+        bindDrilldownCallbacks(sheet)
+    }
+
+    private fun bindDrilldownCallbacks(sheet: StatsCharacterListBottomSheet) {
         sheet.onCharacterClick = { characterId ->
             val bundle = Bundle().apply { putLong("characterId", characterId) }
             findNavController().navigate(R.id.characterDetailFragment, bundle)
@@ -334,6 +343,21 @@ class StatsFieldInsightFragment : Fragment() {
             prefs.edit().putInt("center_year", year).putBoolean("pending_navigate", true).commit()
             findNavController().navigate(R.id.timelineFragment)
         }
+    }
+
+    private fun showDrilldownBottomSheet(insight: FieldInsightResult, slice: ChartSlice) {
+        val isEvent = insight.fieldDefinition.entityType ==
+            com.novelcharacter.app.data.model.FieldDefinition.ENTITY_EVENT
+        val sheet = StatsCharacterListBottomSheet.newInstance(
+            fieldDefIds = insight.mergedFieldDefIds,
+            fieldName = insight.fieldDefinition.name,
+            selectedValue = slice.label,
+            isEventAxis = isEvent,
+            // 화면이 보여준 그 조각의 규칙을 그대로 넘긴다 — 접힌 '기타'도 목록을 볼 수 있다.
+            matchSpec = slice.spec,
+            sliceCount = slice.count
+        )
+        bindDrilldownCallbacks(sheet)
         sheet.show(childFragmentManager, StatsCharacterListBottomSheet.TAG)
     }
 
@@ -1016,8 +1040,9 @@ class StatsFieldInsightFragment : Fragment() {
 
         // 형제들의 현재 설정이 서로 다르면 그 사실을 알린다 — 모르고 덮어쓰지 않도록.
         if (applyToGroup != null) {
+            // 첫 항목만 비교하면 "A는 분석 2개, B는 1개"인 차이를 못 잡는다 — 목록 전체를 본다.
             val siblingConfigs = viewModel.fieldDefsByIds(mergedIds)
-                .map { FieldStatsConfig.fromConfig(it.config).analyses.firstOrNull() }
+                .map { FieldStatsConfig.fromConfig(it.config).analyses }
             if (siblingConfigs.distinct().size > 1) {
                 container.addView(TextView(ctx).apply {
                     text = getString(R.string.stats_inline_group_differs)
@@ -1044,8 +1069,11 @@ class StatsFieldInsightFragment : Fragment() {
                     // 그룹 전체 — 각 def의 나머지 설정은 그대로 두고 분석 항목만 얹는다.
                     viewModel.updateMergedFieldAnalysis(mergedIds, newEntry)
                 } else {
-                    // 기존 설정의 나머지(binning, valueLabels 등)는 유지하고 analyses만 교체
-                    val newConfig = currentConfig.copy(analyses = listOf(newEntry))
+                    // 기존 설정의 나머지(binning, valueLabels 등)는 유지하고 **첫 분석 항목만** 교체한다.
+                    // 목록 전체를 덮으면 사용자가 따로 만들어 둔 두 번째 분석 항목이 조용히 사라진다.
+                    val keptAnalyses = if (currentConfig.analyses.size <= 1) listOf(newEntry)
+                                       else listOf(newEntry) + currentConfig.analyses.drop(1)
+                    val newConfig = currentConfig.copy(analyses = keptAnalyses)
                     viewModel.updateFieldStatsConfig(fieldDef, newConfig)
                 }
             }

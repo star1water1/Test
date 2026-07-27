@@ -1823,6 +1823,7 @@
     <string name="assistant_categories">표시할 항목</string>
     <string name="assistant_dismiss">숨기기</string>
     <string name="assistant_empty_title">지금은 손볼 게 없어요</string>
+    <string name="assistant_empty_types_off">※ 통계 화면의 \'인사이트 유형 설정\'에서 %d개 유형이 꺼져 있습니다. 편향 카드는 그 설정을 따르므로, 기대한 카드가 없으면 그쪽을 확인해 주세요.</string>
     <string name="assistant_empty_hint">정합성 문제나 눈에 띄는 편향이 발견되면 여기서 먼저 알려드릴게요.</string>
     <string name="assistant_cat_consistency">정합성 문제</string>
     <string name="assistant_cat_health">데이터 건강</string>

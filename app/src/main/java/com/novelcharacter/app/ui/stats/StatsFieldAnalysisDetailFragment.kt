@@ -52,6 +52,7 @@ class StatsFieldAnalysisDetailFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         binding.toolbar.setNavigationOnClickListener { findNavController().popBackStack() }
         setupObservers()
+        rebindDrilldownSheet()
         viewModel.loadFieldAnalysisStats()
     }
 
@@ -334,6 +335,25 @@ class StatsFieldAnalysisDetailFragment : Fragment() {
 
     // ===== 차트 탭 인터랙션 (개선 6) =====
 
+
+    /**
+     * 회전·프로세스 재생성 뒤 되살아난 시트에 콜백을 다시 붙인다 — 새 인스턴스의 람다는 null이라
+     * 목록은 정상인데 행을 눌러도 아무 일도 일어나지 않는다(고장과 구분되지 않는다).
+     */
+    private fun rebindDrilldownSheet() {
+        val sheet = childFragmentManager
+            .findFragmentByTag(StatsCharacterListBottomSheet.TAG) as? StatsCharacterListBottomSheet
+            ?: return
+        bindDrilldownCallbacks(sheet)
+    }
+
+    private fun bindDrilldownCallbacks(sheet: StatsCharacterListBottomSheet) {
+        sheet.onCharacterClick = { characterId ->
+            val bundle = Bundle().apply { putLong("characterId", characterId) }
+            findNavController().navigateSafe(R.id.statsFieldAnalysisDetailFragment, R.id.characterDetailFragment, bundle)
+        }
+    }
+
     /**
      * 이 화면(레거시 필드 분석)의 분포는 **필드 정의 하나 단위**로 계산된다
      * (`computeFieldAnalysis`가 세계관 통합 없이 def마다 카드를 만든다). 따라서 드릴다운도
@@ -359,10 +379,7 @@ class StatsFieldAnalysisDetailFragment : Fragment() {
             matchSpec = spec,
             sliceCount = sliceCount
         )
-        sheet.onCharacterClick = { characterId ->
-            val bundle = Bundle().apply { putLong("characterId", characterId) }
-            findNavController().navigateSafe(R.id.statsFieldAnalysisDetailFragment, R.id.characterDetailFragment, bundle)
-        }
+        bindDrilldownCallbacks(sheet)
         sheet.show(childFragmentManager, StatsCharacterListBottomSheet.TAG)
     }
 

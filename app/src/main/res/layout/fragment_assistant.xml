@@ -91,6 +91,18 @@
                 android:lineSpacingMultiplier="1.2"
                 android:textColor="?attr/colorOnSurfaceVariant" />
 
+            <!-- 인사이트 유형을 꺼 둔 상태에서 '없다'고 단언하지 않기 위한 사유 표시 -->
+            <TextView
+                android:id="@+id/emptyTypesOffNote"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:textAppearance="@style/TextAppearance.App.BodySmall"
+                android:gravity="center"
+                android:lineSpacingMultiplier="1.2"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                android:visibility="gone" />
+
         </LinearLayout>
 
     </FrameLayout>

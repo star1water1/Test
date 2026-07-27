@@ -1881,15 +1881,25 @@ class StatsDataProvider {
             val statsConfig = statsCache.of(fd)
             if (statsConfig.binning?.mode != "custom") continue
             val values = valuesByFieldDef[fd.id] ?: continue
-            val dist = ValueDistributions.of(
-                values.filter { it.value.isNotBlank() }
-                    .flatMap { fv -> getFieldValues(s, fd, fv.value, statsConfig) }
-            )
-            if (dist.isEmpty()) continue
+            val keys = values.filter { it.value.isNotBlank() }
+                .flatMap { fv -> getFieldValues(s, fd, fv.value, statsConfig) }
+            if (keys.isEmpty()) continue
+            // **구간 순서를 유지한다** — 건수 내림차순으로 재정렬하면 인접 구간이 흩어져
+            // 분포 모양을 읽을 수 없다(BODY_SIZE 자동 구간과 같은 규칙). 정의된 구간은
+            // 값이 0이어도 남긴다: 빈 구간도 '거기가 비었다'는 정보다.
+            val counted = keys.groupingBy { it }.eachCount()
+            val dist = linkedMapOf<String, Int>()
+            for (range in statsConfig.binning.parseRanges()) {
+                dist[range.label] = counted[range.label] ?: 0
+            }
+            counted[OUT_OF_RANGE_LABEL]?.let { dist[OUT_OF_RANGE_LABEL] = it }
+            // 구간 정의에 없는 키(라벨 변경 등 예외 상황)도 잃지 않는다.
+            for ((k, v) in counted) if (k !in dist) dist[k] = v
             fieldValueDists.add(
                 FieldValueDistribution(
                     fd.id, fd.name, fd.type, fd.groupName, dist,
-                    matchSpecs = dist.keys.associateWith { FieldValueMatchSpec.Values(it) }
+                    matchSpecs = dist.keys.associateWith { FieldValueMatchSpec.Values(it) },
+                    orderedByValue = true
                 )
             )
         }
