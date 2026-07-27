@@ -71,4 +71,53 @@ object WorldPackageFactionRelationships {
         )
         return Result(items, dropped)
     }
+
+    /**
+     * @property relationships 해석에 성공해 삽입할 관계 (factionId는 **이 기기의 새 id**)
+     * @property unresolvedCount 양끝 세력 중 하나라도 해석하지 못한 관계 수 —
+     *   호출부가 반드시 고지할 것(무통보 유실 금지).
+     */
+    data class FromPortableResult(
+        val relationships: List<FactionRelationship>,
+        val unresolvedCount: Int
+    )
+
+    /**
+     * 가져오기 방향 매퍼 (S-5) — [toPortable]의 역.
+     *
+     * **code가 정하고 이름은 보조 해석 입력**이다(R-1): code 조회가 실패했을 때만 이름을
+     * 보되, 그 이름이 패키지 안에서 유일할 때만 쓴다(중복 이름으로의 해석은 오배정이다).
+     *
+     * @param idByCode 패키지 세력의 **원 code** → 이 기기에 삽입된 새 id.
+     *   (가져오며 code가 재발급됐어도 키는 원 code여야 한다 — 관계 파일은 원 code를 갖고 있다)
+     * @param idByUniqueName 패키지 안에서 유일한 세력 이름 → 새 id. 중복 이름은 싣지 말 것.
+     */
+    fun fromPortable(
+        items: List<PortableFactionRelationship>,
+        idByCode: Map<String, Long>,
+        idByUniqueName: Map<String, Long>
+    ): FromPortableResult {
+        val resolved = mutableListOf<FactionRelationship>()
+        var unresolved = 0
+        for (item in items) {
+            val id1 = idByCode[item.factionCode1] ?: idByUniqueName[item.factionName1]
+            val id2 = idByCode[item.factionCode2] ?: idByUniqueName[item.factionName2]
+            if (id1 == null || id2 == null) {
+                unresolved++
+                continue
+            }
+            resolved.add(
+                FactionRelationship(
+                    factionId1 = id1,
+                    factionId2 = id2,
+                    relationType = item.relationType,
+                    description = item.description,
+                    intensity = item.intensity,
+                    isBidirectional = item.isBidirectional,
+                    displayOrder = item.displayOrder
+                )
+            )
+        }
+        return FromPortableResult(resolved, unresolved)
+    }
 }

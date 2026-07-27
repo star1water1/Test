@@ -99,19 +99,7 @@ class ExcelImporter(context: Context) {
     fun importFromLocalFile(file: File) {
         ensureActiveScope().launch {
             try {
-                if (isZipFile(file)) {
-                    // 이미지 포함 백업(ZIP)은 전체 크기 대신 해제 단계에서 엔트리별 상한을 검사한다
-                    // (전체 상한을 걸면 앱이 만든 대용량 백업이 스스로 복원 불가가 됨)
-                    importFromZip(file)
-                } else {
-                    if (file.length() > MAX_IMPORT_FILE_SIZE) {
-                        withContext(Dispatchers.Main) {
-                            Toast.makeText(appContext, com.novelcharacter.app.R.string.import_xlsx_too_large, Toast.LENGTH_LONG).show()
-                        }
-                        return@launch
-                    }
-                    importFromXlsx(file)
-                }
+                routeImport(file)
             } catch (e: Exception) {
                 android.util.Log.e("ExcelImporter", "Import failed", e)
                 withContext(Dispatchers.Main) {
@@ -147,17 +135,7 @@ class ExcelImporter(context: Context) {
                         return@launch
                     }
 
-                    if (isZipFile(tempFile)) {
-                        importFromZip(tempFile)
-                    } else {
-                        if (tempFile.length() > MAX_IMPORT_FILE_SIZE) {
-                            withContext(Dispatchers.Main) {
-                                Toast.makeText(appContext, com.novelcharacter.app.R.string.import_xlsx_too_large, Toast.LENGTH_LONG).show()
-                            }
-                            return@launch
-                        }
-                        importFromXlsx(tempFile)
-                    }
+                    routeImport(tempFile)
                 } finally {
                     tempFile.delete()
                 }
@@ -170,19 +148,312 @@ class ExcelImporter(context: Context) {
         }
     }
 
-    // ── ZIP 감지 ──
+    // ── 형식 판별 3분기 (S-5) ──
 
     /**
-     * 앱의 이미지 포함 ZIP 패키지인지 감지.
-     * .xlsx 파일도 내부적으로 ZIP 형식이므로 단순 매직바이트 검사로는 구분 불가.
-     * ZIP 내부에 data.xlsx 엔트리가 있는 경우에만 앱 ZIP 패키지로 판정.
+     * 판별([ImportFileFormat])에 따라 경로를 나눈다:
+     * - 앱 백업 ZIP(data.xlsx) → 기존 엑셀 ZIP 경로
+     * - 월드패키지(manifest.json) → [importWorldPackage] (종전에는 xlsx로 오판되어 일반 오류만 떴다)
+     * - 그 외 ZIP → 원인별 안내 (일반 "가져오기 실패" 금지)
+     * - ZIP 아님/평범한 xlsx → 기존 xlsx 경로 (구형 .xls는 POI가 판별)
      */
-    private fun isZipFile(file: File): Boolean {
-        return try {
-            ZipFile(file).use { zip ->
-                zip.getEntry("data.xlsx") != null
+    private suspend fun routeImport(file: File) {
+        when (ImportFileFormat.detect(file)) {
+            ImportFileKind.EXCEL_BACKUP_ZIP -> {
+                // 이미지 포함 백업(ZIP)은 전체 크기 대신 해제 단계에서 엔트리별 상한을 검사한다
+                // (전체 상한을 걸면 앱이 만든 대용량 백업이 스스로 복원 불가가 됨)
+                importFromZip(file)
             }
-        } catch (_: Exception) { false }
+            ImportFileKind.WORLD_PACKAGE -> importWorldPackage(file)
+            ImportFileKind.OTHER_ZIP -> withContext(Dispatchers.Main) {
+                Toast.makeText(appContext, com.novelcharacter.app.R.string.import_unsupported_zip, Toast.LENGTH_LONG).show()
+            }
+            ImportFileKind.PLAIN_XLSX, ImportFileKind.NOT_ZIP -> {
+                if (file.length() > MAX_IMPORT_FILE_SIZE) {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(appContext, com.novelcharacter.app.R.string.import_xlsx_too_large, Toast.LENGTH_LONG).show()
+                    }
+                    return
+                }
+                importFromXlsx(file)
+            }
+        }
+    }
+
+    // ── 월드패키지 가져오기 (S-5) ──
+
+    private val worldPackageImporter by lazy {
+        com.novelcharacter.app.share.WorldPackageImporter(appContext)
+    }
+
+    private suspend fun importWorldPackage(pkgFile: File) {
+        val extractDir = File(appContext.cacheDir, "world_import_${System.currentTimeMillis()}")
+        var progressDialog: AlertDialog? = null
+        try {
+            extractDir.mkdirs()
+            val read = worldPackageImporter.read(pkgFile, extractDir)
+            val contents = when (read) {
+                is com.novelcharacter.app.share.WorldPackageImporter.ReadResult.Ok -> read.contents
+                is com.novelcharacter.app.share.WorldPackageImporter.ReadResult.Failed -> {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(appContext, parseFailureMessage(read.parse), Toast.LENGTH_LONG).show()
+                    }
+                    return
+                }
+                com.novelcharacter.app.share.WorldPackageImporter.ReadResult.TooLarge -> {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(appContext, com.novelcharacter.app.R.string.world_package_too_large, Toast.LENGTH_LONG).show()
+                    }
+                    return
+                }
+                com.novelcharacter.app.share.WorldPackageImporter.ReadResult.ImagesTooLarge -> {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(appContext, com.novelcharacter.app.R.string.world_package_too_many_images, Toast.LENGTH_LONG).show()
+                    }
+                    return
+                }
+            }
+
+            // 충돌 3분기: 덮어쓰기 / 새로 생성 / 건너뛰기 (검증 → 알림 → 바로잡을 경로)
+            val conflict = worldPackageImporter.findConflict(contents.universe)
+            var overwriteTarget: com.novelcharacter.app.data.model.Universe? = null
+            val mode: com.novelcharacter.app.share.WorldPackageImporter.Mode
+            if (conflict == null) {
+                mode = com.novelcharacter.app.share.WorldPackageImporter.Mode.CLEAN
+            } else {
+                mode = showWorldConflictDialog(contents.universe.name, conflict) ?: return
+                if (mode == com.novelcharacter.app.share.WorldPackageImporter.Mode.OVERWRITE) {
+                    val target = conflict.target ?: return
+                    // 파괴적 동작은 실행 전에 결과를 알리고 취소 경로를 남긴다 (R-4)
+                    if (!confirmWorldOverwrite(target)) return
+                    overwriteTarget = target
+                }
+            }
+
+            withContext(Dispatchers.Main) {
+                val act = currentActivityRef?.get()
+                if (act != null && !act.isFinishing && !act.isDestroyed) {
+                    progressDialog = createWorldProgressDialog(act)
+                    progressDialog?.show()
+                }
+            }
+
+            val outcome = try {
+                worldPackageImporter.import(contents, mode, overwriteTarget, extractDir)
+            } catch (e: Exception) {
+                android.util.Log.e("ExcelImporter", "World package import failed", e)
+                withContext(Dispatchers.Main) {
+                    dismissDialogSafely(progressDialog)
+                    // 덮어쓰기 경로의 실패는 기존 세계관이 이미 휴지통으로 간 뒤다 —
+                    // 그 행방을 알리지 않으면 "실패했는데 세계관이 사라진" 것으로 보인다(R-4)
+                    val messageRes = if (mode == com.novelcharacter.app.share.WorldPackageImporter.Mode.OVERWRITE) {
+                        com.novelcharacter.app.R.string.world_package_import_failed_after_overwrite
+                    } else {
+                        com.novelcharacter.app.R.string.world_package_import_failed
+                    }
+                    Toast.makeText(appContext, messageRes, Toast.LENGTH_LONG).show()
+                }
+                return
+            }
+
+            withContext(Dispatchers.Main) {
+                dismissDialogSafely(progressDialog)
+                showWorldResultDialog(outcome)
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("ExcelImporter", "World package import failed", e)
+            withContext(Dispatchers.Main) {
+                dismissDialogSafely(progressDialog)
+                Toast.makeText(appContext, com.novelcharacter.app.R.string.world_package_import_failed, Toast.LENGTH_LONG).show()
+            }
+        } finally {
+            extractDir.deleteRecursively()
+        }
+    }
+
+    /** 형식 인식 실패의 원인별 메시지 — 일반 "가져오기 실패" 토스트 금지 (S-5). */
+    private fun parseFailureMessage(parse: com.novelcharacter.app.share.WorldPackageParseResult): String {
+        return when (parse) {
+            is com.novelcharacter.app.share.WorldPackageParseResult.UnsupportedVersion ->
+                appContext.getString(com.novelcharacter.app.R.string.world_package_unsupported_version, parse.found)
+            is com.novelcharacter.app.share.WorldPackageParseResult.MissingEntry ->
+                appContext.getString(com.novelcharacter.app.R.string.world_package_corrupted, parse.entryName)
+            is com.novelcharacter.app.share.WorldPackageParseResult.Malformed ->
+                appContext.getString(com.novelcharacter.app.R.string.world_package_corrupted, parse.entryName)
+            else -> appContext.getString(com.novelcharacter.app.R.string.world_package_not_a_package)
+        }
+    }
+
+    /** @return 선택된 모드, null이면 건너뛰기/취소 */
+    private suspend fun showWorldConflictDialog(
+        universeName: String,
+        conflict: com.novelcharacter.app.share.WorldPackageImporter.Conflict
+    ): com.novelcharacter.app.share.WorldPackageImporter.Mode? {
+        val activity = currentActivityRef?.get()
+        if (activity == null || activity.isFinishing || activity.isDestroyed) return null
+        return withContext(Dispatchers.Main) {
+            kotlinx.coroutines.suspendCancellableCoroutine { cont ->
+                val act = currentActivityRef?.get()
+                if (act == null || act.isFinishing || act.isDestroyed) {
+                    cont.resume(null, null)
+                    return@suspendCancellableCoroutine
+                }
+                var resumed = false
+                fun finish(mode: com.novelcharacter.app.share.WorldPackageImporter.Mode?) {
+                    if (!resumed) {
+                        resumed = true
+                        cont.resume(mode, null)
+                    }
+                }
+                val message = when {
+                    conflict.byCode -> appContext.getString(
+                        com.novelcharacter.app.R.string.world_package_conflict_code, universeName
+                    )
+                    conflict.target != null -> appContext.getString(
+                        com.novelcharacter.app.R.string.world_package_conflict_name, universeName
+                    )
+                    else -> appContext.getString(
+                        com.novelcharacter.app.R.string.world_package_conflict_name_multi,
+                        universeName, conflict.nameMatches
+                    )
+                }
+                val builder = MaterialAlertDialogBuilder(act)
+                    .setTitle(com.novelcharacter.app.R.string.share_world_conflict_title)
+                    .setMessage(message)
+                    .setNegativeButton(com.novelcharacter.app.R.string.share_world_conflict_skip) { _, _ -> finish(null) }
+                    .setOnCancelListener { finish(null) }
+                if (conflict.target != null) {
+                    builder.setPositiveButton(com.novelcharacter.app.R.string.share_world_conflict_overwrite) { _, _ ->
+                        finish(com.novelcharacter.app.share.WorldPackageImporter.Mode.OVERWRITE)
+                    }
+                    builder.setNeutralButton(com.novelcharacter.app.R.string.share_world_conflict_new) { _, _ ->
+                        finish(com.novelcharacter.app.share.WorldPackageImporter.Mode.AS_NEW)
+                    }
+                } else {
+                    // 동명 세계관이 여럿 — 덮어쓰기 대상이 모호하므로 그 선택지는 내리지 않는다
+                    builder.setPositiveButton(com.novelcharacter.app.R.string.share_world_conflict_new) { _, _ ->
+                        finish(com.novelcharacter.app.share.WorldPackageImporter.Mode.AS_NEW)
+                    }
+                }
+                builder.show()
+            }
+        }
+    }
+
+    private suspend fun confirmWorldOverwrite(target: com.novelcharacter.app.data.model.Universe): Boolean {
+        val characterCount = db.characterDao().getCharactersByUniverseList(target.id).size
+        val activity = currentActivityRef?.get()
+        if (activity == null || activity.isFinishing || activity.isDestroyed) return false
+        return withContext(Dispatchers.Main) {
+            kotlinx.coroutines.suspendCancellableCoroutine { cont ->
+                val act = currentActivityRef?.get()
+                if (act == null || act.isFinishing || act.isDestroyed) {
+                    cont.resume(false, null)
+                    return@suspendCancellableCoroutine
+                }
+                var resumed = false
+                fun finish(confirmed: Boolean) {
+                    if (!resumed) {
+                        resumed = true
+                        cont.resume(confirmed, null)
+                    }
+                }
+                MaterialAlertDialogBuilder(act)
+                    .setTitle(com.novelcharacter.app.R.string.share_world_conflict_overwrite)
+                    .setMessage(
+                        appContext.getString(
+                            com.novelcharacter.app.R.string.world_package_overwrite_confirm,
+                            target.name, characterCount
+                        )
+                    )
+                    .setPositiveButton(com.novelcharacter.app.R.string.confirm) { _, _ -> finish(true) }
+                    .setNegativeButton(com.novelcharacter.app.R.string.cancel) { _, _ -> finish(false) }
+                    .setOnCancelListener { finish(false) }
+                    .show()
+            }
+        }
+    }
+
+    private fun createWorldProgressDialog(act: Activity): AlertDialog {
+        val dp16 = (16 * act.resources.displayMetrics.density).toInt()
+        val dp8 = dp16 / 2
+        val layout = LinearLayout(act).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(dp16 * 2, dp16, dp16 * 2, dp16)
+        }
+        layout.addView(ProgressBar(act).apply { isIndeterminate = true })
+        layout.addView(TextView(act).apply {
+            text = appContext.getString(com.novelcharacter.app.R.string.world_package_importing)
+            gravity = Gravity.CENTER
+            setPadding(0, dp8, 0, 0)
+        })
+        return MaterialAlertDialogBuilder(act)
+            .setTitle(appContext.getString(com.novelcharacter.app.R.string.world_package_import_title))
+            .setView(layout)
+            .setCancelable(false)
+            .create()
+    }
+
+    private fun showWorldResultDialog(outcome: com.novelcharacter.app.share.WorldPackageImporter.Outcome) {
+        val parts = mutableListOf<String>()
+        if (outcome.novels > 0) parts.add("작품 ${outcome.novels}")
+        if (outcome.characters > 0) parts.add("캐릭터 ${outcome.characters}")
+        if (outcome.fieldDefinitions > 0) parts.add("필드 ${outcome.fieldDefinitions}")
+        if (outcome.fieldValues > 0) parts.add("필드값 ${outcome.fieldValues}")
+        if (outcome.events > 0) parts.add("사건 ${outcome.events}")
+        if (outcome.eventFieldValues > 0) parts.add("사건 필드값 ${outcome.eventFieldValues}")
+        if (outcome.tags > 0) parts.add("태그 ${outcome.tags}")
+        if (outcome.stateChanges > 0) parts.add("상태변화 ${outcome.stateChanges}")
+        if (outcome.relationships > 0) parts.add("관계 ${outcome.relationships}")
+        if (outcome.relationshipChanges > 0) parts.add("관계변화 ${outcome.relationshipChanges}")
+        if (outcome.factions > 0) parts.add("세력 ${outcome.factions}")
+        if (outcome.factionMemberships > 0) parts.add("세력 소속 ${outcome.factionMemberships}")
+        if (outcome.factionRelationships > 0) parts.add("세력 관계 ${outcome.factionRelationships}")
+        if (outcome.libraryEntries > 0) parts.add("값 라이브러리 ${outcome.libraryEntries}")
+        val nameBankTotal = outcome.nameBankNew + outcome.nameBankLinked
+        if (nameBankTotal > 0) parts.add("이름 은행 $nameBankTotal")
+        if (outcome.restoredImages > 0) parts.add("이미지 ${outcome.restoredImages}")
+
+        val summary = appContext.getString(
+            com.novelcharacter.app.R.string.world_package_import_done,
+            outcome.universeName,
+            if (parts.isEmpty()) appContext.getString(com.novelcharacter.app.R.string.import_result_empty)
+            else parts.joinToString(", ")
+        )
+        val act = currentActivityRef?.get()
+        if (act == null || act.isFinishing || act.isDestroyed) {
+            Toast.makeText(appContext, summary, Toast.LENGTH_LONG).show()
+            return
+        }
+        val message = if (outcome.warnings.isEmpty()) summary else "$summary\n\n⚠ ${outcome.warnings.size}건 안내"
+        val builder = MaterialAlertDialogBuilder(act)
+            .setTitle(appContext.getString(com.novelcharacter.app.R.string.world_package_import_title))
+            .setMessage(message)
+        if (outcome.warnings.isNotEmpty()) {
+            builder.setNeutralButton(appContext.getString(com.novelcharacter.app.R.string.import_result_details)) { _, _ ->
+                showWorldWarningsDialog(act, outcome.warnings)
+            }
+        }
+        builder.setPositiveButton(appContext.getString(com.novelcharacter.app.R.string.confirm), null)
+        builder.show()
+    }
+
+    private fun showWorldWarningsDialog(act: android.app.Activity, warnings: List<String>) {
+        if (act.isFinishing || act.isDestroyed) return
+        val scrollView = ScrollView(act)
+        val textView = TextView(act).apply {
+            text = warnings.joinToString("\n") { "• $it" }
+            val dp16 = (16 * act.resources.displayMetrics.density).toInt()
+            setPadding(dp16, dp16, dp16, dp16)
+            setTextIsSelectable(true)
+        }
+        scrollView.addView(textView)
+        MaterialAlertDialogBuilder(act)
+            .setTitle(appContext.getString(com.novelcharacter.app.R.string.import_result_details))
+            .setView(scrollView)
+            .setPositiveButton(appContext.getString(com.novelcharacter.app.R.string.confirm), null)
+            .show()
     }
 
     // ── ZIP에서 가져오기 ──
