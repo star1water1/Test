@@ -1416,9 +1416,15 @@ class StatsDataProvider {
         // Step 3: 수치형 + 사용자 구간. CALCULATED도 수치이므로 같은 규칙을 받는다 —
         // 타입 하나만 하드코딩해 두면 수식 필드에 구간을 설정한 사용자에게 그 설정이
         // 조용히 무시된다(원칙 01: 필드 타입이 늘어도 규칙은 한 곳).
+        //
+        // **어느 구간에도 안 드는 값은 버리지 않는다.** 종전에는 `mapNotNull`이 그런 값을 통째로
+        // 지워, 카드가 "채움 20"이라 해놓고 분포 합은 15인 상태를 아무 설명 없이 만들었다.
+        // 세계관마다 구간이 다른 필드를 합산할 때는 형제 세계관 값이 통째로 사라지기도 한다.
+        // 값이 있는데 안 보이는 것보다, 어디에도 안 든다는 사실을 보여 주는 편이 낫다(R-17).
         if (fd.type in BINNABLE_TYPES && statsConfig.binning?.mode == "custom") {
-            return categorized.mapNotNull { v ->
-                v.toFloatOrNull()?.let { statsConfig.applyBinning(it) }
+            return categorized.map { v ->
+                val numeric = v.toFloatOrNull()
+                numeric?.let { statsConfig.applyBinning(it) } ?: OUT_OF_RANGE_LABEL
             }
         }
 
@@ -1709,11 +1715,9 @@ class StatsDataProvider {
     }
 
     /**
-     * 한 엔티티의 값 행 중 [group]에 속한 것들을 통계 키로 변환한다.
-     * 값마다 **그 값을 소유한 필드 정의**의 설정으로 해석한다 — 세계관마다 라벨·구간이 다를 수 있다.
-     */
-    /**
-     * 그룹에 속한 행들을 **기준 def 하나의 설정**으로 파싱한다.
+     * 한 엔티티의 값 행 중 [group]에 속한 것들을 **기준 def 하나의 설정**으로 통계 키로 변환한다.
+     *
+     * (종전 계약은 "값마다 그 값을 소유한 def의 설정으로 해석한다"였다 — 아래 이유로 뒤집었다.)
      *
      * 값이 속한 def의 설정으로 각각 파싱하면, 세계관마다 값 라벨·카테고리가 다를 때 같은 저장값이
      * 서로 다른 칸으로 떨어진다 — 인사이트 카드는 그룹 전체를 기준 def로 파싱해 한 칸에 세는데
@@ -2889,7 +2893,12 @@ class StatsDataProvider {
             // 통일한다 — 인사이트 차트가 그룹 전체를 그렇게 파싱하므로 같은 값 공간이어야 한다(R-15).
             // 키는 (캐릭터, 필드정의) — 행 id는 테스트 더미에서 0으로 겹칠 수 있고,
             // 이 쌍은 DB에서도 유니크 인덱스다.
-            val refCfg = FieldStatsConfig.fromConfig(fd.config)
+            // **순위의 축은 값이다.** 통계 그룹핑을 '카테고리'/'둘 다'로 둔 필드에서 카드의 키 공간을
+            // 그대로 쓰면 frequencyMap에 값 빈도와 카테고리 빈도가 섞이고(R-13 위반), 대표 토큰이
+            // 거의 항상 카테고리가 되어 **캐릭터 순위가 카테고리 크기 순위로** 변한다
+            // (같은 카테고리의 캐릭터가 전부 같은 값·같은 등수로 붙는다).
+            // 카테고리 순위는 별개의 질문이므로 여기서 섞지 않는다 — 대신 값 축으로 통일한다.
+            val refCfg = FieldStatsConfig.fromConfig(fd.config).copy(statsGroupBy = "value")
             val tokensByValue: Map<Pair<Long, Long>, List<String>> = if (!isNumeric) {
                 // 빈 값은 인사이트 분포도 세지 않는다 — 키 공간을 정확히 맞춘다.
                 rawValues.filter { it.value.isNotBlank() }.associate {
@@ -3220,6 +3229,9 @@ class StatsDataProvider {
 
         /** 순위에서 값을 수치로 해석하는 타입(그 외는 빈도 모드). */
         private val NUMERIC_RANKING_TYPES = setOf("NUMBER", "CALCULATED", "GRADE", "BODY_SIZE")
+
+        /** 사용자 구간 어디에도 들지 않는 값의 표시 키 — 조용히 버리지 않는다(R-17). */
+        const val OUT_OF_RANGE_LABEL = "구간 밖"
 
         /** 계산값 캐시가 들고 있을 스냅샷 수 상한 — 넘으면 통째로 비운다(무한 축적 방지). */
         private const val MAX_CACHED_SNAPSHOTS = 4

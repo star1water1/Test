@@ -91,7 +91,13 @@ object NumericBinning {
     }
 
     private fun firstUniqueDecimals(bounds: List<Pair<Float, Float>>): Int {
-        for (decimals in 0..3) {
+        // 경계가 정수가 아니면 0자리로 쓰지 않는다. 0 방향 절삭이라 -1.5는 "-1", 0.5는 "0"이 되어
+        // **라벨이 실제 경계를 잘못 말하고**("0~0" 같은 뜻 모를 구간이 생긴다), 인접 구간이
+        // 사람 눈에 구분되지 않는다. 유일성만 보는 것으로는 부족하다.
+        val allIntegral = bounds.all { (lo, hi) ->
+            lo == lo.toInt().toFloat() && hi == hi.toInt().toFloat()
+        }
+        for (decimals in (if (allIntegral) 0 else 1)..3) {
             val labels = bounds.map { label(it.first, it.second, decimals) }
             if (labels.toSet().size == labels.size) return decimals
         }

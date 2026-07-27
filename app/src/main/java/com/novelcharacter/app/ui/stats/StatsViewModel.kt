@@ -143,27 +143,31 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
      * 드릴다운·하위 그룹 같은 짧은 조작마다 수식 전량이 다시 평가됐다.
      * 원본 스냅샷이 무효화되거나 필터가 바뀌면 함께 버린다.
      */
-    @Volatile private var cachedFiltered: StatsSnapshot? = null
-    @Volatile private var cachedFilteredKey: Pair<StatsSnapshot, Long?>? = null
+    // 키(원본 스냅샷 + 작품 id)와 값(필터본)을 **한 객체로** 게시한다. 따로 쓰면 서로 다른 작품을
+    // 동시에 요청한 두 코루틴의 기록이 교차해 "작품 A의 키 + 작품 B의 필터본"이 남고,
+    // 그다음부터 모든 화면이 남의 작품 데이터로 계산된다(예외도 고지도 없이).
+    private class FilteredCache(
+        val source: StatsSnapshot,
+        val novelId: Long,
+        val filtered: StatsSnapshot
+    )
+
+    @Volatile private var filteredCache: FilteredCache? = null
 
     private suspend fun getFilteredSnapshot(snapshot: StatsSnapshot): StatsSnapshot {
         val novelId = _selectedNovelId.value ?: return snapshot
-        cachedFilteredKey?.let { (keySnapshot, keyNovel) ->
-            if (keySnapshot === snapshot && keyNovel == novelId) {
-                cachedFiltered?.let { return it }
-            }
+        filteredCache?.let {
+            if (it.source === snapshot && it.novelId == novelId) return it.filtered
         }
         // 필터(약 16개 전체 리스트 순회)를 IO로 — 노벨 필터 활성 시 규모에 비례한 메인 스레드 잰크 방지(P2-5).
         val filtered = withContext(Dispatchers.IO) { provider.filterByNovel(snapshot, novelId) }
-        cachedFiltered = filtered
-        cachedFilteredKey = snapshot to novelId
+        filteredCache = FilteredCache(snapshot, novelId, filtered)
         return filtered
     }
 
     private fun invalidateSnapshots() {
         cachedSnapshot = null
-        cachedFiltered = null
-        cachedFilteredKey = null
+        filteredCache = null
     }
 
     @Volatile private var isRefreshing = false
@@ -604,6 +608,20 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
      * 머지하지 않으면 전체 세계관 보기에서 같은 필드가 중복 나열되고, 고른 것이 한 세계관 값만
      * 집계해 카드와 다른 답을 준다. 동기 getter라 필터를 인라인 수행한다.
      */
+    /**
+     * '통계에 포함'이 꺼져 목록에서 빠진 필드 그룹 수 — 화면이 **사실대로** 안내하기 위해 필요하다.
+     * "함께 볼 다른 필드가 없습니다"와 "있지만 통계에서 제외돼 있습니다"는 전혀 다른 사실이고,
+     * 후자는 되돌리는 경로(필드 편집의 토글)가 있다(R-17).
+     */
+    fun statsExcludedFieldGroupCount(isEventAxis: Boolean): Int {
+        val snapshot = cachedSnapshot ?: return 0
+        val novelId = _selectedNovelId.value
+        val filtered = if (novelId != null) provider.filterByNovel(snapshot, novelId) else snapshot
+        val defs = if (isEventAxis) filtered.eventFieldDefinitions else filtered.fieldDefinitions
+        val all = defs.groupBy { it.key to it.type }.size
+        return (all - provider.getMergedFieldGroups(defs).size).coerceAtLeast(0)
+    }
+
     fun getMergedFieldGroups(isEventAxis: Boolean): List<MergedFieldGroup> {
         val snapshot = cachedSnapshot ?: return emptyList()
         val novelId = _selectedNovelId.value

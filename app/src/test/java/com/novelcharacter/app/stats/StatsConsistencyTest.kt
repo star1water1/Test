@@ -182,6 +182,63 @@ class StatsConsistencyTest {
         assertTrue(ranking.entries.isEmpty())
     }
 
+    @Test
+    fun `순위 빈도는 카테고리가 아니라 값을 센다`() {
+        // 통계 그룹핑을 '둘 다'로 둔 필드에서 카드의 키 공간을 그대로 쓰면 frequencyMap에
+        // 값 빈도와 카테고리 빈도가 섞여 **캐릭터 순위가 카테고리 크기 순위로** 변한다.
+        val both = """{"stats":{"statsGroupBy":"both","valueCategories":{"청염":"불","흑염":"불","빙결":"얼음"}}}"""
+        val chars = listOf(
+            Character(id = 1, name = "가", novelId = 1),
+            Character(id = 2, name = "나", novelId = 1),
+            Character(id = 3, name = "다", novelId = 1)
+        )
+        val s = snapshot(
+            characters = chars,
+            fieldDefinitions = listOf(charField(10, "attr", "속성", type = "SELECT", config = both)),
+            fieldValues = listOf(
+                CharacterFieldValue(characterId = 1, fieldDefinitionId = 10, value = "청염"),
+                CharacterFieldValue(characterId = 2, fieldDefinitionId = 10, value = "흑염"),
+                CharacterFieldValue(characterId = 3, fieldDefinitionId = 10, value = "빙결")
+            )
+        )
+        val ranking = provider.computeRanking(s, listOf(10L))
+        assertEquals(3, ranking.entries.size)
+        assertTrue(
+            "표시값은 그 캐릭터가 실제로 가진 값이어야 한다(카테고리가 아니라)",
+            ranking.entries.none { it.displayValue.contains("불") || it.displayValue.contains("얼음") }
+        )
+        assertTrue("전원 1회 동률", ranking.entries.all { it.value == 1.0 })
+    }
+
+    @Test
+    fun `사용자 구간 밖의 값은 버리지 않고 구간 밖으로 보인다`() {
+        // 종전에는 어느 구간에도 안 드는 값이 통째로 사라져, 카드가 "채움 2"라 해놓고
+        // 분포 합은 1인 상태를 아무 설명 없이 만들었다.
+        val binned = """{"stats":{"binning":{"mode":"custom","ranges":["1~50:하급","50~100:상급"]}}}"""
+        val s = snapshot(
+            characters = listOf(
+                Character(id = 1, name = "가", novelId = 1),
+                Character(id = 2, name = "나", novelId = 1)
+            ),
+            fieldDefinitions = listOf(charField(10, "level", "레벨", type = "NUMBER", config = binned)),
+            fieldValues = listOf(
+                CharacterFieldValue(characterId = 1, fieldDefinitionId = 10, value = "10"),
+                CharacterFieldValue(characterId = 2, fieldDefinitionId = 10, value = "120")
+            )
+        )
+        val insight = provider.computeFieldInsights(s).first { it.fieldDefinition.key == "level" }
+        val dist = insight.analysisResults.firstNotNullOf { it.distributionData }
+        assertEquals(1, dist["하급"])
+        assertEquals(1, dist[StatsDataProvider.OUT_OF_RANGE_LABEL])
+        assertEquals("분포 합이 채움 수와 같아야 한다", insight.filledCount, dist.values.sum())
+
+        // 드릴다운도 그 값을 찾아낸다(보이기만 하고 못 여는 조각을 만들지 않는다)
+        val listed = provider.getCharactersByFieldValue(
+            s, insight.mergedFieldDefIds, StatsDataProvider.OUT_OF_RANGE_LABEL
+        )!!
+        assertEquals(1, listed.size)
+    }
+
     // ===== S-16: BODY_SIZE 구간 드릴다운 =====
 
     private fun bodySnapshot() = snapshot(

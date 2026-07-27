@@ -133,9 +133,15 @@ class StatsCharacterListBottomSheet : BottomSheetDialogFragment() {
                 .filter { g -> g.mergedFieldDefIds.none { it in currentIds } }
             if (groups.isEmpty()) {
                 // 버튼을 눌렀는데 아무 일도 일어나지 않으면 고장과 구분되지 않는다 — 사유를 알린다.
-                Toast.makeText(
-                    requireContext(), R.string.stats_subgroup_no_other_field, Toast.LENGTH_LONG
-                ).show()
+                // **사유는 사실이어야 한다**: 필드가 없는 것과, 있는데 '통계에 포함'이 꺼진 것은
+                // 다르다. 후자에게 "필드를 더 만들면"이라고 말하면 되돌리는 경로를 못 찾는다.
+                val excluded = viewModel.statsExcludedFieldGroupCount(isEventAxis)
+                val message = if (excluded > 0) {
+                    getString(R.string.stats_subgroup_all_excluded, excluded)
+                } else {
+                    getString(R.string.stats_subgroup_no_other_field)
+                }
+                Toast.makeText(requireContext(), message, Toast.LENGTH_LONG).show()
                 return@setOnClickListener
             }
 
