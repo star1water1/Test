@@ -244,7 +244,7 @@ class StatsFieldInsightFragment : Fragment() {
             FieldStatsConfig.StatsType.RANKING -> {
                 val data = result.distributionData ?: return wrapper
                 val view = ValueDistributions.view(data, result.entry.limit)
-                val slices = toSlices(view)
+                val slices = toSlices(view, includeOthers = false)
                 val chart = createRankingChart(slices)
                 attachChartTapListener(chart, slices, insight)
                 wrapper.addView(chart)
@@ -345,12 +345,22 @@ class StatsFieldInsightFragment : Fragment() {
      */
     private data class ChartSlice(val label: String, val count: Int, val spec: FieldValueMatchSpec)
 
-    /** 전량 분포 → 표시 조각 + 접힌 '기타' 한 조각. '기타'도 눌러서 목록을 볼 수 있다. */
-    private fun toSlices(view: ValueDistributions.View): List<ChartSlice> {
+    /**
+     * 전량 분포 → 표시 조각 + 접힌 '기타' 한 조각. '기타'도 눌러서 목록을 볼 수 있다.
+     *
+     * [includeOthers]를 끄는 곳은 **순위 차트**다. 파이·표는 전체가 100%가 돼야 하므로 '기타'
+     * 조각이 정당하지만, 순위 막대는 "어떤 값 하나가 가장 많은가"를 말하는 그림이라 잘린 값들의
+     * **합계 막대**가 끼면 그것이 1위처럼 보인다(값이 아닌 것이 순위 1위가 된다).
+     * 순위에서는 잘림을 막대가 아니라 아래 고지 문구가 알린다.
+     */
+    private fun toSlices(
+        view: ValueDistributions.View,
+        includeOthers: Boolean = true
+    ): List<ChartSlice> {
         val slices = view.shown.map {
             ChartSlice(it.label, it.count, FieldValueMatchSpec.Values(it.label))
         }
-        if (!view.hasHidden) return slices
+        if (!includeOthers || !view.hasHidden) return slices
         return slices + ChartSlice(
             getString(R.string.stats_distribution_others, view.hiddenKinds),
             view.hiddenCount,

@@ -137,7 +137,12 @@ class StatsFieldAnalysisDetailFragment : Fragment() {
             // 상한을 적용하되 잘린 나머지는 '기타' 조각으로 접어 존재를 알린다(S-17 · R-14).
             // 종전에는 상위 10종만 그리고 나머지를 통째로 버려, 파이의 백분율이 '상위 10종의 합'
             // 기준으로 부풀려졌고 몇 종이 빠졌는지 알 길이 없었다.
-            val view = ValueDistributions.view(dist.distribution, ValueDistributions.DEFAULT_DISPLAY_LIMIT)
+            // 구간 분포는 **순서 자체가 정보**다 — 건수순으로 재정렬하면 인접 구간이 흩어져
+            // '어디에 몰렸는가'를 읽을 수 없다.
+            val view = ValueDistributions.view(
+                dist.distribution, ValueDistributions.DEFAULT_DISPLAY_LIMIT,
+                preserveOrder = dist.orderedByValue
+            )
             // 조각마다 **드릴다운 규칙**을 함께 들고 다닌다 — 라벨이 값인 분포는 값 일치,
             // 구간 분포는 그 구간 스펙이다(S-16). 접힌 '기타'는 잘린 값 전부를 담는다
             // (구간 분포는 구간 수가 상한보다 작아 잘리지 않는다).

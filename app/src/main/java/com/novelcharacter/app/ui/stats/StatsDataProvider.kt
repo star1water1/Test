@@ -243,7 +243,12 @@ data class FieldValueDistribution(
      * (BODY_SIZE 파트별 자동 구간)는 그 구간을 담은 [FieldValueMatchSpec.NumericPartRange]다.
      * 라벨 문자열을 매칭 키로 재사용하면 후자는 어떤 입력에서도 0명이 된다.
      */
-    val matchSpecs: Map<String, FieldValueMatchSpec> = emptyMap()
+    val matchSpecs: Map<String, FieldValueMatchSpec> = emptyMap(),
+    /**
+     * 순서 자체가 정보인 분포인가(수치 구간). 표시 계층이 건수순으로 재정렬하면
+     * 인접 구간이 흩어져 '어디에 몰렸는가'를 읽을 수 없다.
+     */
+    val orderedByValue: Boolean = false
 )
 
 data class NumberFieldSummary(
@@ -445,7 +450,14 @@ data class SubgroupAnalysis(
     val distribution: Map<String, Int>,
     val totalCount: Int,
     /** 상한(SUBGROUP_DISTRIBUTION_LIMIT)에 걸려 표시되지 않은 값 종류 수 — 0보다 크면 UI가 고지한다(R-14). */
-    val truncatedCount: Int = 0
+    val truncatedCount: Int = 0,
+    /**
+     * 잘리기 **전** 전체 값 건수 — 비율의 분모다(R-19).
+     *
+     * 표시분의 합을 분모로 쓰면 잘린 종수만큼 각 값의 점유율이 부풀려진다. 편향을 발견하려는
+     * 화면에서 편향의 크기가 왜곡되는 것이 S-17이고, 이 화면은 그 화면에서 한 번 탭하면 온다.
+     */
+    val valueTotal: Int = 0
 )
 
 /** 하위 그룹 분석이 한 번에 보여주는 값 종류 상한 — 문구도 이 상수로 채운다(R-14). */
@@ -530,19 +542,26 @@ class StatsDataProvider {
      * 스냅샷은 불변이므로 동일성(===)이 캐시 키다. 필터본은 `copy`로 `valueEntries`를
      * 그대로 물려받으므로 원본과 같은 해석기를 얻는다.
      */
-    // 읽기는 값 하나를 파싱할 때마다(캐릭터 수 × 필드 수) 일어난다 — 잠금을 걸면 그 횟수만큼
-    // 건다. @Volatile 짝으로 게시 순서만 보장한다: **값을 먼저 쓰고 키를 나중에** 쓰며,
-    // 읽을 때는 키를 먼저 본다. 키가 보이면 값은 이미 게시된 것이다.
-    @Volatile private var resolverCacheKey: StatsSnapshot? = null
-    @Volatile private var resolverCacheValue: Map<Long, com.novelcharacter.app.util.FieldValueResolver> = emptyMap()
+    // 읽기는 **값 하나를 파싱할 때마다** 일어난다(캐릭터 수 × 필드 수). 그래서 둘을 지킨다:
+    //
+    // 1. **키는 스냅샷이 아니라 `valueEntries`다.** 필터본은 `copy`로 이 리스트를 그대로 물려받으므로
+    //    원본과 필터본이 같은 캐시를 쓴다. 스냅샷 동일성으로 잡으면 원본·필터본을 오가는 경로에서
+    //    (작품별 비교는 원본, 나머지는 필터본) 캐시가 매번 빗나가 **값마다 해석기 전량을 다시 만든다.**
+    // 2. **키와 값은 한 객체로 게시한다.** 둘을 따로 쓰면 서로 다른 입력의 두 스레드가 교차 기록해
+    //    "A의 키 + B의 값" 짝이 남는다(@Volatile은 각 필드의 가시성만 보장할 뿐 짝을 묶지 않는다).
+    private class ResolverCache(
+        val entries: List<com.novelcharacter.app.data.model.FieldValueEntry>,
+        val resolvers: Map<Long, com.novelcharacter.app.util.FieldValueResolver>
+    )
+
+    @Volatile private var resolverCache: ResolverCache? = null
 
     private fun resolversOf(s: StatsSnapshot): Map<Long, com.novelcharacter.app.util.FieldValueResolver> {
-        if (resolverCacheKey === s) return resolverCacheValue
+        resolverCache?.let { if (it.entries === s.valueEntries) return it.resolvers }
         val built = s.valueEntries
             .groupBy { it.fieldDefinitionId }
             .mapValues { (_, entries) -> com.novelcharacter.app.util.FieldValueResolver(entries) }
-        resolverCacheValue = built
-        resolverCacheKey = s
+        resolverCache = ResolverCache(s.valueEntries, built)
         return built
     }
 
@@ -1447,13 +1466,12 @@ class StatsDataProvider {
             if (range <= 0) {
                 mapOf(min.toString() to values.size)
             } else {
-                val binSize = range / 5f
-                val counts = mutableMapOf<String, Int>()
-                for (i in 0 until 5) {
-                    val binMin = min + i * binSize
-                    val binMax = if (i == 4) max else min + (i + 1) * binSize
-                    val label = "${binMin.toInt()}~${binMax.toInt()}"
-                    counts[label] = values.count { it >= binMin && (if (i == 4) it <= binMax else it < binMax) }
+                // 구간 생성은 단일 소스([NumericBinning])를 쓴다 — 자체 5등분은 정수 범위가
+                // 좁은 필드(자녀 수 0~2, 레벨 1~3)에서 라벨이 겹쳐 맵 키가 충돌했고,
+                // 앞 구간의 인원이 개수 고지도 없이 사라졌다.
+                val counts = linkedMapOf<String, Int>()
+                for (bin in NumericBinning.autoBins(values)) {
+                    counts[bin.label] = values.count { bin.contains(it) }
                 }
                 counts
             }
@@ -1701,16 +1719,26 @@ class StatsDataProvider {
      * 한 엔티티의 값 행 중 [group]에 속한 것들을 통계 키로 변환한다.
      * 값마다 **그 값을 소유한 필드 정의**의 설정으로 해석한다 — 세계관마다 라벨·구간이 다를 수 있다.
      */
+    /**
+     * 그룹에 속한 행들을 **기준 def 하나의 설정**으로 파싱한다.
+     *
+     * 값이 속한 def의 설정으로 각각 파싱하면, 세계관마다 값 라벨·카테고리가 다를 때 같은 저장값이
+     * 서로 다른 칸으로 떨어진다 — 인사이트 카드는 그룹 전체를 기준 def로 파싱해 한 칸에 세는데
+     * 교차표만 두 칸으로 갈리는 것이다. 카드가 약속한 값 공간이 그 카드에서 뻗는 경로의 값
+     * 공간이어야 한다(R-15). 기준 def는 그룹의 첫 원소 = 사용자가 고른 def다.
+     */
     private fun groupValues(
         s: StatsSnapshot,
         group: CrossFieldGroup,
         rows: List<Pair<Long, String>>
     ): List<String> {
+        val refFd = group.primary
+        val refCfg = group.configs.getValue(refFd.id)
         val out = mutableListOf<String>()
         for ((fieldDefId, raw) in rows) {
-            val fd = group.defs[fieldDefId] ?: continue
+            if (fieldDefId !in group.defs) continue
             if (raw.isBlank()) continue
-            out.addAll(getFieldValues(s, fd, raw, group.configs.getValue(fieldDefId)))
+            out.addAll(getFieldValues(s, refFd, raw, refCfg))
         }
         return out.distinct()
     }
@@ -1896,7 +1924,8 @@ class StatsDataProvider {
                 fieldValueDists.add(
                     FieldValueDistribution(
                         fd.id, "${fd.name} — $partLabel", fd.type, fd.groupName, dist,
-                        matchSpecs = specs
+                        matchSpecs = specs,
+                        orderedByValue = true
                     )
                 )
             }
@@ -2003,7 +2032,21 @@ class StatsDataProvider {
         val charsByNovel = s.characters.groupBy { it.novelId }
         val fieldDefMap = s.fieldDefinitions.associateBy { it.id }
         val statsCache = StatsFieldPolicy.ConfigCache()
-        val augmentedValuesByDef = augmentedCharacterValues(s)
+        // 캐릭터 → "필드명:값" 목록. 저장 값 + 계산값(R-16)을 통계 파싱 규칙으로 **한 번만** 풀어 두고,
+        // 작품별 집계는 이 버킷을 나눠 쓴다.
+        val parsedValuesByCharacter = HashMap<Long, MutableList<String>>()
+        for ((fieldDefId, values) in augmentedCharacterValues(s)) {
+            val fd = fieldDefMap[fieldDefId] ?: continue
+            if (!statsCache.isAnalyzable(fd)) continue
+            val cfg = statsCache.of(fd)
+            for (fv in values) {
+                if (fv.value.isBlank()) continue
+                val keys = getFieldValues(s, fd, fv.value, cfg)
+                if (keys.isEmpty()) continue
+                parsedValuesByCharacter.getOrPut(fv.characterId) { mutableListOf() }
+                    .addAll(keys.map { "${fd.name}:$it" })
+            }
+        }
         // 크로스레프 기반 사건-작품 매핑
         val eventIdsByNovel = s.eventNovelCrossRefs.groupBy({ it.novelId }, { it.eventId })
         val eventById = s.events.associateBy { it.id }
@@ -2032,18 +2075,11 @@ class StatsDataProvider {
                 .groupBy { "${it.specialization.icon} ${it.specialization.label}" }
                 .mapValues { it.value.size }
 
-            // 자주 쓰인 필드 값 TOP 5 (필드별로 구분하여 집계)
-            // 요약 화면의 TOP 5와 **같은 규칙**으로 센다 — 저장 값 + 계산값(R-16), 통계 파싱
-            // (콤마/구조화/라벨/카테고리), '통계에 포함' 필터. 종전에는 원문을 그대로 세어
-            // 콤마 목록 필드가 "검, 활"을 한 값으로 집계했고 수식 필드는 통째로 빠졌다.
-            val topValues = augmentedValuesByDef
-                .flatMap { (fieldDefId, values) ->
-                    val fd = fieldDefMap[fieldDefId] ?: return@flatMap emptyList<String>()
-                    if (!statsCache.isAnalyzable(fd)) return@flatMap emptyList<String>()
-                    val cfg = statsCache.of(fd)
-                    values.filter { it.characterId in charIds && it.value.isNotBlank() }
-                        .flatMap { fv -> getFieldValues(s, fd, fv.value, cfg).map { "${fd.name}:$it" } }
-                }
+            // 자주 쓰인 필드 값 TOP 5 — 요약 화면의 TOP 5와 **같은 규칙**으로 센다(저장 값 + 계산값,
+            // 통계 파싱, '통계에 포함' 필터). 파싱 결과는 작품 루프 **밖에서 한 번만** 만든다:
+            // 작품마다 전체 값 테이블을 다시 훑고 다시 파싱하면 작품 수에 비례해 같은 일을 반복한다.
+            val topValues = charIds
+                .flatMap { charId -> parsedValuesByCharacter[charId].orEmpty() }
                 .groupingBy { it }
                 .eachCount()
                 .entries
@@ -2141,14 +2177,18 @@ class StatsDataProvider {
             val allValues = rawValues.flatMap { getFieldValues(s, fd, it.value, statsConfig) }
             if (allValues.isEmpty()) continue
 
-            val dist = allValues.groupBy { it }.mapValues { it.value.size }
+            // 집계·정렬 규칙은 인사이트 분포와 같은 단일 소스를 쓴다 — 동수일 때 두 화면이
+            // 서로 다른 값을 '최다'로 지목하지 않게 한다.
+            val dist = ValueDistributions.of(allValues)
             val total = allValues.size
             val fieldName = fd.name
             // 게이트용 '모집단'은 값 개수(total)가 아니라 이 필드에 값을 가진 실제 캐릭터 수(다값 필드 보정).
             val peopleCount = rawValues.map { it.characterId }.distinct().size
 
             // 패턴 1: 편중 (단일 값 60%+)
-            val topEntry = dist.maxByOrNull { it.value }
+            // 이미 (건수 내림차순, 값 이름 오름차순)으로 정렬돼 있다 — maxByOrNull은 동수에서
+            // 첫 등장 순서를 따라 인사이트 차트의 1위와 다른 값을 지목할 수 있다.
+            val topEntry = dist.entries.firstOrNull()
             if (PatternType.DOMINANCE in enabledTypes && topEntry != null) {
                 val topPct = topEntry.value * 100f / total
                 if (topPct >= 60f) {
@@ -2287,9 +2327,9 @@ class StatsDataProvider {
                     val fvs = valuesByDefId[fd.id].orEmpty()
                     val statsConfig = statsCache.of(fd)
                     val values = fvs.flatMap { getFieldValues(s, fd, it.value, statsConfig) }
-                    val topVal = values.groupBy { it }.maxByOrNull { it.value.size }
+                    val topVal = ValueDistributions.of(values).entries.firstOrNull()
                     if (topVal != null && values.isNotEmpty()) {
-                        val pct = topVal.value.size * 100f / values.size
+                        val pct = topVal.value * 100f / values.size
                         if (pct >= 50f) {
                             novelPatterns.add(Pair(novel.title, "${topVal.key}(${String.format("%.0f", pct)}%)"))
                         }
@@ -2633,17 +2673,16 @@ class StatsDataProvider {
             }
         }
 
-        val counted = allValues.groupingBy { it }.eachCount()
-        val distribution = counted.entries.sortedByDescending { it.value }
-            .take(SUBGROUP_DISTRIBUTION_LIMIT)
-            .associate { it.key to it.value }
+        val counted = ValueDistributions.of(allValues)
+        val view = ValueDistributions.view(counted, SUBGROUP_DISTRIBUTION_LIMIT)
 
         return SubgroupAnalysis(
             targetFieldName = refDef.name,
-            distribution = distribution,
+            distribution = view.shownMap(),
             totalCount = characterIds.size,
             // R-14: 잘라냈으면 남은 개수로 존재를 알린다 — 상한은 이 상수가 단일 소스다.
-            truncatedCount = (counted.size - SUBGROUP_DISTRIBUTION_LIMIT).coerceAtLeast(0)
+            truncatedCount = view.hiddenKinds,
+            valueTotal = view.totalCount
         )
     }
 
@@ -2686,16 +2725,16 @@ class StatsDataProvider {
             }
         }
 
-        val counted = allValues.groupingBy { it }.eachCount()
-        val distribution = counted.entries.sortedByDescending { it.value }
-            .take(SUBGROUP_DISTRIBUTION_LIMIT)
-            .associate { it.key to it.value }
+        // 캐릭터 축과 **같은 처리**여야 한다(R-16의 짝 규칙) — 상한·비율 분모 모두.
+        val counted = ValueDistributions.of(allValues)
+        val view = ValueDistributions.view(counted, SUBGROUP_DISTRIBUTION_LIMIT)
 
         return SubgroupAnalysis(
             targetFieldName = refDef.name,
-            distribution = distribution,
+            distribution = view.shownMap(),
             totalCount = eventIds.size,
-            truncatedCount = (counted.size - SUBGROUP_DISTRIBUTION_LIMIT).coerceAtLeast(0)
+            truncatedCount = view.hiddenKinds,
+            valueTotal = view.totalCount
         )
     }
 
@@ -3032,12 +3071,11 @@ class StatsDataProvider {
      * 순위 경계를 바꾸므로 수치와 표시를 갈라 두되, **계산 자체는 이 함수 하나**다.
      */
     private fun computeAllCalculatedNumbers(s: StatsSnapshot): Map<Long, Map<Long, Double>> {
-        if (calcCacheKey === s) return calcCacheValue
-        val computed = evaluateAllCalculatedNumbers(s)
-        // 게시 순서: 값 → 키 (읽는 쪽은 키를 먼저 본다).
-        calcCacheValue = computed
-        calcCacheKey = s
-        return computed
+        // 한 칸짜리 캐시로는 부족하다 — 통계 로딩은 계산 4개를 동시에 띄우고, 그 사이 다른 화면이
+        // **다른 스냅샷**(작품별 비교는 원본)으로 들어온다. 스냅샷 동일성을 키로 하는 작은 맵을 쓰고,
+        // `computeIfAbsent`가 같은 스냅샷의 동시 요청을 하나로 묶는다(나머지는 결과를 기다린다).
+        if (calcCache.size > MAX_CACHED_SNAPSHOTS) calcCache.clear()
+        return calcCache.computeIfAbsent(IdentityKey(s)) { evaluateAllCalculatedNumbers(s) }
     }
 
     /**
@@ -3045,12 +3083,18 @@ class StatsDataProvider {
      *
      * 수식 평가는 캐릭터 수 × 수식 수에 비례하는데, 이제 인사이트·패턴·레거시 분석·요약·
      * 교차분석·드릴다운이 모두 계산값을 합치므로 같은 스냅샷에 대해 여러 번 불린다.
-     * 통계 로딩은 여러 계산을 `async`로 동시에 돌린다. 값은 불변 맵이고 같은 스냅샷이면 결과도
-     * 같으므로 **두 스레드가 동시에 계산해도 무해**하다 — 필요한 것은 잠금이 아니라 게시 순서다
-     * (`@Volatile` 값 먼저, 키 나중). 스냅샷은 불변이므로 동일성(===)이 곧 캐시 키다.
+     * 통계 로딩은 여러 계산을 `async`로 동시에 돌리고, 화면에 따라 **서로 다른 스냅샷**이
+     * 동시에 계산된다(작품별 비교는 원본, 나머지는 필터본). 그래서 한 칸짜리 캐시는 서로를 밀어내고
+     * 키/값을 따로 게시하면 짝이 어긋난다 — 스냅샷 동일성을 키로 하는 작은 동시 맵을 쓴다.
      */
-    @Volatile private var calcCacheKey: StatsSnapshot? = null
-    @Volatile private var calcCacheValue: Map<Long, Map<Long, Double>> = emptyMap()
+    /** 동일성(===)으로만 같은 키. 스냅샷은 불변이므로 같은 객체면 결과도 같다. */
+    private class IdentityKey(val target: Any) {
+        override fun hashCode(): Int = System.identityHashCode(target)
+        override fun equals(other: Any?): Boolean = other is IdentityKey && other.target === target
+    }
+
+    private val calcCache =
+        java.util.concurrent.ConcurrentHashMap<IdentityKey, Map<Long, Map<Long, Double>>>()
 
     private fun evaluateAllCalculatedNumbers(s: StatsSnapshot): Map<Long, Map<Long, Double>> {
         val calculatedFields = s.fieldDefinitions.filter { it.type == "CALCULATED" }
@@ -3178,6 +3222,9 @@ class StatsDataProvider {
 
         /** 순위에서 값을 수치로 해석하는 타입(그 외는 빈도 모드). */
         private val NUMERIC_RANKING_TYPES = setOf("NUMBER", "CALCULATED", "GRADE", "BODY_SIZE")
+
+        /** 계산값 캐시가 들고 있을 스냅샷 수 상한 — 넘으면 통째로 비운다(무한 축적 방지). */
+        private const val MAX_CACHED_SNAPSHOTS = 4
 
         /** 레거시 필드 분석 화면이 이산 분포를 그리는 타입. */
         private val DISCRETE_DISTRIBUTION_TYPES = setOf("SELECT", "GRADE", "MULTI_TEXT", "TEXT")

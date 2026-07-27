@@ -68,8 +68,21 @@ object ValueDistributions {
      * [limit]이 0 이하이면 상한이 없는 것으로 보고 전량을 표시한다 — 상한을 끄는 설정이
      * 조용히 "아무것도 안 보임"이 되지 않게 하기 위해서다.
      */
-    fun view(distribution: Map<String, Int>, limit: Int): View {
-        val ordered = sorted(distribution).entries.map { Slice(it.key, it.value) }
+    fun view(
+        distribution: Map<String, Int>,
+        limit: Int,
+        preserveOrder: Boolean = false
+    ): View {
+        // [preserveOrder]는 **순서 자체가 정보인 분포**를 위한 것이다 — 수치 구간 분포를 건수순으로
+        // 재정렬하면 인접 구간이 흩어져 '어디에 몰렸는가'를 읽을 수 없다.
+        // 정렬은 여기서 한 번만 한다(맵 사본을 만들지 않는다 — 이 함수는 카드마다 메인 스레드에서 돈다).
+        val ordered = if (preserveOrder) {
+            distribution.entries.map { Slice(it.key, it.value) }
+        } else {
+            distribution.entries
+                .sortedWith(compareByDescending<Map.Entry<String, Int>> { it.value }.thenBy { it.key })
+                .map { Slice(it.key, it.value) }
+        }
         val total = ordered.sumOf { it.count }
         if (limit <= 0 || ordered.size <= limit) {
             return View(ordered, emptyList(), 0, total)

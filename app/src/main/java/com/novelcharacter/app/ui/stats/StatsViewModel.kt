@@ -100,8 +100,16 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
         // 취소는 오류가 아니다. 작품 필터를 로딩 중에 바꾸면 statsJob이 취소되는데,
         // CancellationException도 Exception이라 이 catch에 걸려 **정상 조작이 오류 토스트를
         // 낳았다.** 코루틴 규약대로 되던져 취소가 전파되게 한다.
-        if (e is kotlinx.coroutines.CancellationException) throw e
-        val detail = e.message?.takeIf { it.isNotBlank() } ?: e.javaClass.simpleName
+        //
+        // **단, 원인이 딸린 취소는 취소가 아니다.** `loadAllStats`는 계산 10개를 `async`로 돌리는데
+        // 그중 하나가 터지면 부모 잡이 취소되고, 다른 `await`는 **원래 예외를 cause로 단**
+        // JobCancellationException을 던진다. 그것까지 되던지면 진짜 실패가 아무 고지 없이
+        // 사라져 화면이 백지로 남는다 — B-32가 없애려던 바로 그 상태다.
+        // 그래서 cause가 있으면 취소가 아니라 **그 원인을 보고**한다.
+        val cause = e.cause
+        if (e is kotlinx.coroutines.CancellationException && cause == null) throw e
+        val real = if (e is kotlinx.coroutines.CancellationException) cause else e
+        val detail = real?.message?.takeIf { it.isNotBlank() } ?: (real ?: e).javaClass.simpleName
         _error.value = getApplication<Application>()
             .getString(com.novelcharacter.app.R.string.stats_error_detail, detail)
     }
@@ -127,10 +135,35 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * 필터본 스냅샷 캐시 — **객체 동일성이 계산 캐시의 키**이기 때문에 필요하다.
+     *
+     * 종전에는 로더마다 `filterByNovel`을 새로 불러 매번 **다른 객체**를 만들었다. 그래서
+     * 계산기의 스냅샷 동일성 캐시(계산 필드 값 등)가 호출 간에 한 번도 적중하지 못하고,
+     * 드릴다운·하위 그룹 같은 짧은 조작마다 수식 전량이 다시 평가됐다.
+     * 원본 스냅샷이 무효화되거나 필터가 바뀌면 함께 버린다.
+     */
+    @Volatile private var cachedFiltered: StatsSnapshot? = null
+    @Volatile private var cachedFilteredKey: Pair<StatsSnapshot, Long?>? = null
+
     private suspend fun getFilteredSnapshot(snapshot: StatsSnapshot): StatsSnapshot {
         val novelId = _selectedNovelId.value ?: return snapshot
+        cachedFilteredKey?.let { (keySnapshot, keyNovel) ->
+            if (keySnapshot === snapshot && keyNovel == novelId) {
+                cachedFiltered?.let { return it }
+            }
+        }
         // 필터(약 16개 전체 리스트 순회)를 IO로 — 노벨 필터 활성 시 규모에 비례한 메인 스레드 잰크 방지(P2-5).
-        return withContext(Dispatchers.IO) { provider.filterByNovel(snapshot, novelId) }
+        val filtered = withContext(Dispatchers.IO) { provider.filterByNovel(snapshot, novelId) }
+        cachedFiltered = filtered
+        cachedFilteredKey = snapshot to novelId
+        return filtered
+    }
+
+    private fun invalidateSnapshots() {
+        cachedSnapshot = null
+        cachedFiltered = null
+        cachedFilteredKey = null
     }
 
     @Volatile private var isRefreshing = false
@@ -145,7 +178,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun refreshStats() {
-        cachedSnapshot = null
+        invalidateSnapshots()
         isRefreshing = true
         loadAllStats()
     }
@@ -591,7 +624,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
                     app.universeRepository.updateField(updatedField)
                 }
                 // 캐시 무효화 후 전체 통계 재로딩
-                cachedSnapshot = null
+                invalidateSnapshots()
                 isRefreshing = true
                 loadAllStats()
             } catch (e: Exception) {
@@ -633,7 +666,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
                         app.universeRepository.updateField(fd.copy(config = json))
                     }
                 }
-                cachedSnapshot = null
+                invalidateSnapshots()
                 isRefreshing = true
                 loadAllStats()
             } catch (e: Exception) {

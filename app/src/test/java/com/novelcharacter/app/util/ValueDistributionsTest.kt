@@ -70,6 +70,19 @@ class ValueDistributionsTest {
     }
 
     @Test
+    fun `순서가 정보인 분포는 재정렬하지 않는다`() {
+        // 수치 구간 분포를 건수순으로 재정렬하면 인접 구간이 흩어져 '어디에 몰렸는가'를 읽을 수 없다.
+        val bins = linkedMapOf("150~160" to 1, "160~170" to 1, "170~180" to 1, "180~190" to 0, "190~200" to 2)
+        val view = ValueDistributions.view(bins, 10, preserveOrder = true)
+        assertEquals(bins.keys.toList(), view.shown.map { it.label })
+        // 상한도 순서를 지킨 채 적용된다(앞에서부터 자른다)
+        val capped = ValueDistributions.view(bins, 3, preserveOrder = true)
+        assertEquals(listOf("150~160", "160~170", "170~180"), capped.shown.map { it.label })
+        assertEquals(2, capped.hiddenKinds)
+        assertEquals(2, capped.hiddenCount)
+    }
+
+    @Test
     fun `집계는 건수 내림차순이고 동수는 값 이름 오름차순이다`() {
         // 순서가 흔들리면 '상위 N개'가 실행마다 달라진다.
         val of = ValueDistributions.of(listOf("나", "가", "다", "가", "나", "다"))

@@ -53,6 +53,25 @@ class NumericBinningTest {
     }
 
     @Test
+    fun `소수 자리로도 못 가르면 순번을 붙여서라도 유일하게 만든다`() {
+        // 엑셀 왕복의 부동소수 잔차처럼 폭이 1e-4인 분포에서는 3자리로도 라벨이 겹친다.
+        // 겹친 라벨을 맵 키로 쓰면 그 구간의 인원이 개수 고지도 없이 사라진다.
+        val bins = NumericBinning.autoBins(listOf(170.0001f, 170.00015f, 170.0002f))
+        assertEquals(5, bins.size)
+        assertEquals("라벨은 어떤 경우에도 유일해야 한다", bins.size, bins.map { it.label }.toSet().size)
+    }
+
+    @Test
+    fun `좁은 정수 범위에서도 모든 값이 한 구간에 담긴다`() {
+        // 자체 5등분 + toInt() 라벨은 값 1,2,3에서 "1~1"이 두 번 나와 앞 구간을 덮어썼다.
+        val values = listOf(1f, 2f, 3f)
+        val bins = NumericBinning.autoBins(values)
+        val counts = bins.associate { b -> b.label to values.count { b.contains(it) } }
+        assertEquals(bins.size, counts.size)
+        assertEquals(values.size, counts.values.sum())
+    }
+
+    @Test
     fun `파트 값은 구분자로 쪼갠 그 자리의 수치다`() {
         assertEquals(170f, NumericBinning.partValue("170-60-80", "-", 0)!!, 0.001f)
         assertEquals(60f, NumericBinning.partValue("170-60-80", "-", 1)!!, 0.001f)

@@ -9,6 +9,7 @@ import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.ui.stats.PatternType
 import com.novelcharacter.app.ui.stats.StatsDataProvider
 import com.novelcharacter.app.ui.stats.StatsSnapshot
+import com.novelcharacter.app.ui.stats.SUBGROUP_DISTRIBUTION_LIMIT
 import com.novelcharacter.app.util.FieldValueMatchSpec
 import com.novelcharacter.app.util.NumericBinning
 import org.junit.Assert.assertEquals
@@ -413,6 +414,80 @@ class StatsConsistencyTest {
         val cross = provider.computeCrossAnalysis(s, 10L, 11L, null, null)!!
         assertEquals(cardCount, cross.crossTable["남"]?.get("검사"))
         assertEquals("합산하지 않았으면 합산했다고 말하지 않는다", 1, cross.mergedUniverseCount)
+    }
+
+    @Test
+    fun `교차분석은 카드와 같은 기준 def로 파싱한다`() {
+        // 값이 속한 def의 설정으로 각각 파싱하면, 세계관마다 값 라벨이 다를 때 같은 저장값이
+        // 서로 다른 칸으로 떨어진다 — 카드는 한 칸에 2명인데 교차표는 두 칸에 1명씩이 된다.
+        val labeled = """{"stats":{"valueLabels":{"남":"남성"}}}"""
+        val s = snapshot(
+            characters = listOf(
+                Character(id = 1, name = "가", novelId = 1),
+                Character(id = 2, name = "나", novelId = 2)
+            ),
+            novels = listOf(
+                Novel(id = 1, title = "A작품", universeId = uniA),
+                Novel(id = 2, title = "B작품", universeId = uniB)
+            ),
+            fieldDefinitions = listOf(
+                charField(10, "gender", "성별", type = "SELECT"),
+                charField(20, "gender", "성별", universeId = uniB, type = "SELECT", config = labeled),
+                charField(11, "job", "직업"),
+                charField(21, "job", "직업", universeId = uniB)
+            ),
+            fieldValues = listOf(
+                CharacterFieldValue(characterId = 1, fieldDefinitionId = 10, value = "남"),
+                CharacterFieldValue(characterId = 1, fieldDefinitionId = 11, value = "검사"),
+                CharacterFieldValue(characterId = 2, fieldDefinitionId = 20, value = "남"),
+                CharacterFieldValue(characterId = 2, fieldDefinitionId = 21, value = "검사")
+            )
+        )
+        val insight = provider.computeFieldInsights(s).first { it.fieldDefinition.key == "gender" }
+        val cardCount = insight.analysisResults.firstNotNullOf { it.distributionData }["남"]
+        assertEquals(2, cardCount)
+
+        val cross = provider.computeCrossAnalysis(s, 10L, 11L, null, null)!!
+        assertEquals(cardCount, cross.crossTable["남"]?.get("검사"))
+        assertNull("기준 def로 통일했으면 다른 라벨 칸이 생기지 않는다", cross.crossTable["남성"])
+    }
+
+    @Test
+    fun `하위 그룹 분석의 비율 분모는 잘리기 전 전체다`() {
+        // 표시분의 합을 분모로 쓰면 잘린 종수만큼 각 값의 점유율이 부풀려진다(S-17과 같은 결함).
+        val defs = mutableListOf(charField(10, "home", "거주지"))
+        val values = mutableListOf<CharacterFieldValue>()
+        // 값 20종: 1명씩 20명 — 상한(15)을 넘긴다
+        val chars = (1L..20L).map { Character(id = it, name = "c$it", novelId = 1) }
+        for (i in 1L..20L) {
+            values += CharacterFieldValue(characterId = i, fieldDefinitionId = 10, value = "도시$i")
+        }
+        val s = snapshot(characters = chars, fieldDefinitions = defs, fieldValues = values)
+        val analysis = provider.computeSubgroupAnalysis(s, chars.map { it.id }.toSet(), listOf(10L))!!
+        assertEquals(SUBGROUP_DISTRIBUTION_LIMIT, analysis.distribution.size)
+        assertEquals("분모는 전체 20건이어야 한다", 20, analysis.valueTotal)
+        assertEquals(5, analysis.truncatedCount)
+    }
+
+    @Test
+    fun `동수일 때 패턴이 지목하는 값과 카드의 1위가 같다`() {
+        // 집계 규칙이 갈리면 같은 데이터에 두 화면이 다른 값을 '최다'로 지목한다.
+        val s = snapshot(
+            characters = (1L..10L).map { Character(id = it, name = "c$it", novelId = 1) },
+            fieldDefinitions = listOf(charField(10, "gender", "성별", type = "SELECT")),
+            fieldValues = (1L..10L).map {
+                // 먼저 등장하는 값이 '여'가 되도록 배치한다(첫 등장 순서가 이기면 '여'가 top).
+                CharacterFieldValue(characterId = it, fieldDefinitionId = 10, value = if (it <= 5) "여" else "남")
+            }
+        )
+        val insight = provider.computeFieldInsights(s).first { it.fieldDefinition.key == "gender" }
+        val cardTop = insight.analysisResults.firstNotNullOf { it.distributionData }.keys.first()
+        assertEquals("동수는 값 이름 오름차순", "남", cardTop)
+
+        // 균형 패턴(모든 값 10~35%)은 안 잡히고 편중도 아니므로, 여기서는 집계 규칙만 확인한다.
+        val patterns = provider.detectPatterns(s)
+        val dominance = patterns.firstOrNull { it.type == PatternType.DOMINANCE }
+        assertNull("50:50은 편중이 아니다", dominance)
     }
 
     @Test

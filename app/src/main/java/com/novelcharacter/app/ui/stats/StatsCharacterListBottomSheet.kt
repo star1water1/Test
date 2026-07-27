@@ -182,8 +182,9 @@ class StatsCharacterListBottomSheet : BottomSheetDialogFragment() {
         }
         container.addView(title)
 
-        // 분포 표시
-        val totalValues = analysis.distribution.values.sum()
+        // 분포 표시 — 비율의 분모는 **잘리기 전 전체 합**이다(R-19). 표시분의 합을 분모로 쓰면
+        // 잘린 종수만큼 각 값의 점유율이 부풀려진다. 구버전 결과(valueTotal=0)는 표시분 합으로 폴백.
+        val totalValues = analysis.valueTotal.takeIf { it > 0 } ?: analysis.distribution.values.sum()
         for ((value, count) in analysis.distribution) {
             val pct = if (totalValues > 0) count * 100f / totalValues else 0f
             val row = TextView(ctx).apply {
