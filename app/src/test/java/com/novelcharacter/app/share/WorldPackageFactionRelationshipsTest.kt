@@ -110,4 +110,80 @@ class WorldPackageFactionRelationshipsTest {
         assertEquals("왕국", r.items[0].factionName1)
         assertEquals(0, r.droppedCount)
     }
+
+    // ── fromPortable (S-5 임포터 방향) ──
+
+    private fun portable(
+        code1: String, name1: String, code2: String, name2: String, type: String = "동맹"
+    ) = PortableFactionRelationship(
+        factionCode1 = code1, factionName1 = name1,
+        factionCode2 = code2, factionName2 = name2,
+        relationType = type, description = "d", intensity = 7,
+        isBidirectional = true, displayOrder = 3
+    )
+
+    @Test
+    fun `fromPortable - code가 새 id로 해석되고 속성이 보존된다`() {
+        val r = WorldPackageFactionRelationships.fromPortable(
+            listOf(portable("FC1", "왕국", "FC2", "제국")),
+            idByCode = mapOf("FC1" to 101L, "FC2" to 102L),
+            idByUniqueName = emptyMap()
+        )
+        assertEquals(0, r.unresolvedCount)
+        assertEquals(1, r.relationships.size)
+        val rel = r.relationships[0]
+        assertEquals(101L, rel.factionId1)
+        assertEquals(102L, rel.factionId2)
+        assertEquals("동맹", rel.relationType)
+        assertEquals(7, rel.intensity)
+        assertEquals(3, rel.displayOrder)
+    }
+
+    @Test
+    fun `fromPortable - code 실패 시 유일한 이름으로 폴백한다`() {
+        // 구버전(code 없는) 세력 — code는 빈 문자열로 실려 온다
+        val r = WorldPackageFactionRelationships.fromPortable(
+            listOf(portable("", "왕국", "FC2", "제국")),
+            idByCode = mapOf("FC2" to 102L),
+            idByUniqueName = mapOf("왕국" to 101L)
+        )
+        assertEquals(0, r.unresolvedCount)
+        assertEquals(101L, r.relationships[0].factionId1)
+    }
+
+    @Test
+    fun `fromPortable - code도 유일 이름도 없으면 버리되 개수로 센다`() {
+        // 중복 이름은 idByUniqueName에 실리지 않는다(오배정 방지) — 그 관계는 유실 고지 대상
+        val r = WorldPackageFactionRelationships.fromPortable(
+            listOf(
+                portable("", "중복이름", "FC2", "제국"),
+                portable("FC1", "왕국", "FC2", "제국")
+            ),
+            idByCode = mapOf("FC1" to 101L, "FC2" to 102L),
+            idByUniqueName = emptyMap()
+        )
+        assertEquals(1, r.unresolvedCount)
+        assertEquals(1, r.relationships.size)
+    }
+
+    @Test
+    fun `왕복 - toPortable 후 fromPortable이 같은 쌍을 복원한다`() {
+        val a = faction(1, "왕국")
+        val b = faction(2, "제국")
+        val exported = WorldPackageFactionRelationships.toPortable(
+            listOf(a, b), listOf(rel(1, 2, type = "적대", order = 5))
+        )
+        // 가져오는 기기에서 세력이 새 id(201, 202)로 삽입됐다고 가정
+        val imported = WorldPackageFactionRelationships.fromPortable(
+            exported.items,
+            idByCode = mapOf("FC1" to 201L, "FC2" to 202L),
+            idByUniqueName = emptyMap()
+        )
+        assertEquals(0, imported.unresolvedCount)
+        val rel = imported.relationships.single()
+        assertEquals(201L, rel.factionId1)
+        assertEquals(202L, rel.factionId2)
+        assertEquals("적대", rel.relationType)
+        assertEquals(5, rel.displayOrder)
+    }
 }

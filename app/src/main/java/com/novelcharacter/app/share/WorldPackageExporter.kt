@@ -10,19 +10,8 @@ import java.io.FileOutputStream
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
-/**
- * schemaVersion 이력:
- * - 1: 최초 형식
- * - 2: faction_relationships.json 추가 (B-6 — 세력 간 관계, code 참조).
- *   임포터는 v1 패키지에서 "세력 간 관계 없음"을 구버전 형식으로 안내할 수 있다.
- */
-data class WorldPackageManifest(
-    val schemaVersion: Int = 2,
-    val appVersion: String = "1.0",
-    val createdAt: Long = System.currentTimeMillis(),
-    val universeName: String,
-    val includesImages: Boolean
-)
+// WorldPackageManifest·엔트리 이름 상수·schemaVersion 이력은 WorldPackageContents.kt에 있다
+// (파서·임포터와 공유하는 순수 계층 — 순수 JVM 하네스가 실행 검증한다).
 
 class WorldPackageExporter(private val context: Context) {
 
@@ -62,7 +51,10 @@ class WorldPackageExporter(private val context: Context) {
         val characters = allCharacters.filter { it.novelId in novelIds }
         val characterIds = characters.map { it.id }.toSet()
 
-        val fieldDefinitions = app.universeRepository.getFieldsByUniverseList(config.universeId)
+        // v3: 사건 필드 정의까지 전 entityType을 싣는다 — 캐릭터 필드만 실으면
+        // 사건 필드·값·라이브러리가 통째로 유실된다(세계관 삭제 스냅샷과 같은 규칙)
+        val fieldDefinitions = db.fieldDefinitionDao().getFieldsByUniverseAllTypes(config.universeId)
+        val fieldDefinitionIds = fieldDefinitions.map { it.id }
         val fieldValues = db.characterFieldValueDao().getAllValuesList()
             .filter { it.characterId in characterIds }
         val stateChanges = db.characterStateChangeDao().getAllChangesList()
@@ -85,7 +77,17 @@ class WorldPackageExporter(private val context: Context) {
             .filter { cr -> events.any { it.id == cr.eventId } }
         val eventNovelCrossRefs = allEventNovelCrossRefs
             .filter { cr -> events.any { it.id == cr.eventId } }
+        val eventIds = events.map { it.id }.toSet()
+        // v3: 사건 필드값 — 내보내는 사건의 값만
+        val eventFieldValues = db.eventFieldValueDao().getAllValuesList()
+            .filter { it.eventId in eventIds }
+        // v3: 값 라이브러리 — 이 세계관 필드의 엔트리 전부(큐레이션 포함). IN 청크는 저장소 공통 관례.
+        val fieldValueEntries = fieldDefinitionIds.chunked(900)
+            .flatMap { db.fieldValueEntryDao().getForFields(it) }
+        // v3: 이름 은행은 내보내는 캐릭터가 사용 중인 이름만 — 전체 은행을 실으면 패키지 공유 시
+        // 무관한 전역 데이터가 수신자에게 넘어간다(범위 밖 데이터는 패키지의 것이 아니다)
         val nameBank = db.nameBankDao().getAllNamesList()
+            .filter { it.usedByCharacterId?.let(characterIds::contains) == true }
         val factions = db.factionDao().getAllFactionsList()
             .filter { it.universeId == config.universeId }
         val factionIds = factions.map { it.id }.toSet()
@@ -111,42 +113,36 @@ class WorldPackageExporter(private val context: Context) {
                     universeName = universe.name,
                     includesImages = config.includeImages
                 )
-                writeJsonEntry(zip, "manifest.json", manifest)
-                writeJsonEntry(zip, "universe.json", universe)
-                writeJsonEntry(zip, "field_definitions.json", fieldDefinitions)
-                writeJsonEntry(zip, "novels.json", novels)
-                writeJsonEntry(zip, "characters.json", characters)
-                writeJsonEntry(zip, "field_values.json", fieldValues)
-                writeJsonEntry(zip, "state_changes.json", stateChanges)
-                writeJsonEntry(zip, "tags.json", tags)
-                writeJsonEntry(zip, "relationships.json", relationships)
-                writeJsonEntry(zip, "relationship_changes.json", relChanges)
-                writeJsonEntry(zip, "timeline_events.json", events)
-                writeJsonEntry(zip, "timeline_cross_refs.json", crossRefs)
-                writeJsonEntry(zip, "timeline_event_novel_cross_refs.json", eventNovelCrossRefs)
-                writeJsonEntry(zip, "name_bank.json", nameBank)
-                writeJsonEntry(zip, "factions.json", factions)
-                writeJsonEntry(zip, "faction_memberships.json", factionMemberships)
-                writeJsonEntry(zip, "faction_relationships.json", factionRelResult.items)
+                writeJsonEntry(zip, WorldPackageEntries.MANIFEST, manifest)
+                writeJsonEntry(zip, WorldPackageEntries.UNIVERSE, universe)
+                writeJsonEntry(zip, WorldPackageEntries.FIELD_DEFINITIONS, fieldDefinitions)
+                writeJsonEntry(zip, WorldPackageEntries.NOVELS, novels)
+                writeJsonEntry(zip, WorldPackageEntries.CHARACTERS, characters)
+                writeJsonEntry(zip, WorldPackageEntries.FIELD_VALUES, fieldValues)
+                writeJsonEntry(zip, WorldPackageEntries.STATE_CHANGES, stateChanges)
+                writeJsonEntry(zip, WorldPackageEntries.TAGS, tags)
+                writeJsonEntry(zip, WorldPackageEntries.RELATIONSHIPS, relationships)
+                writeJsonEntry(zip, WorldPackageEntries.RELATIONSHIP_CHANGES, relChanges)
+                writeJsonEntry(zip, WorldPackageEntries.TIMELINE_EVENTS, events)
+                writeJsonEntry(zip, WorldPackageEntries.TIMELINE_CROSS_REFS, crossRefs)
+                writeJsonEntry(zip, WorldPackageEntries.TIMELINE_EVENT_NOVEL_CROSS_REFS, eventNovelCrossRefs)
+                writeJsonEntry(zip, WorldPackageEntries.NAME_BANK, nameBank)
+                writeJsonEntry(zip, WorldPackageEntries.FACTIONS, factions)
+                writeJsonEntry(zip, WorldPackageEntries.FACTION_MEMBERSHIPS, factionMemberships)
+                writeJsonEntry(zip, WorldPackageEntries.FACTION_RELATIONSHIPS, factionRelResult.items)
+                writeJsonEntry(zip, WorldPackageEntries.EVENT_FIELD_VALUES, eventFieldValues)
+                writeJsonEntry(zip, WorldPackageEntries.FIELD_VALUE_ENTRIES, fieldValueEntries)
 
                 // Images
                 if (config.includeImages) {
-                    val appDir = context.filesDir
                     for (char in characters) {
-                        if (char.imagePaths.isBlank() || char.imagePaths == "[]") continue
-                        try {
-                            val paths = gson.fromJson(char.imagePaths, Array<String>::class.java)
-                            paths?.forEachIndexed { index, path ->
-                                val imageFile = File(path)
-                                if (imageFile.exists() && imageFile.canonicalPath.startsWith(appDir.canonicalPath + File.separator)) {
-                                    zip.putNextEntry(ZipEntry("images/${char.id}_$index.jpg"))
-                                    imageFile.inputStream().use { it.copyTo(zip) }
-                                    zip.closeEntry()
-                                }
-                            }
-                        } catch (e: Exception) {
-                            Log.w("WorldPackageExporter", "Failed to add image for character ${char.id}", e)
-                        }
+                        writeImageEntries(zip, char.imagePaths, "images/${char.id}_")
+                    }
+                    // v3: 세계관·작품 직접 등록 이미지 — 엔트리 접두사는
+                    // WorldPackageImageEntries 규약(임포터와 공유)을 따른다
+                    writeImageEntries(zip, universe.imagePaths, "images/universe_")
+                    for (novel in novels) {
+                        writeImageEntries(zip, novel.imagePaths, "images/novel_${novel.id}_")
                     }
                 }
             }
@@ -162,5 +158,29 @@ class WorldPackageExporter(private val context: Context) {
         zip.putNextEntry(ZipEntry(name))
         zip.write(gson.toJson(data).toByteArray())
         zip.closeEntry()
+    }
+
+    /**
+     * imagePaths JSON 배열의 i번째 파일을 `{entryPrefix}{i}.jpg` 엔트리로 싣는다.
+     * 원본 파일이 없으면 그 인덱스만 건너뛴다(엔트리 결번) — 임포터는 결번을
+     * "유실된 이미지"로 세어 고지한다. 확장자 표기는 v1 형식과의 호환을 위해
+     * `.jpg`로 고정한다(내용 바이트는 원본 그대로 — 소비자는 내용으로 판별한다).
+     */
+    private fun writeImageEntries(zip: ZipOutputStream, imagePathsJson: String, entryPrefix: String) {
+        if (imagePathsJson.isBlank() || imagePathsJson == "[]") return
+        val appDir = context.filesDir
+        try {
+            val paths = gson.fromJson(imagePathsJson, Array<String>::class.java)
+            paths?.forEachIndexed { index, path ->
+                val imageFile = File(path)
+                if (imageFile.exists() && imageFile.canonicalPath.startsWith(appDir.canonicalPath + File.separator)) {
+                    zip.putNextEntry(ZipEntry("$entryPrefix$index.jpg"))
+                    imageFile.inputStream().use { it.copyTo(zip) }
+                    zip.closeEntry()
+                }
+            }
+        } catch (e: Exception) {
+            Log.w("WorldPackageExporter", "Failed to add images for $entryPrefix", e)
+        }
     }
 }
