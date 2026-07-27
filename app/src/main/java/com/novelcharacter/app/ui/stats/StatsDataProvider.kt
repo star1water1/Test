@@ -2779,7 +2779,9 @@ class StatsDataProvider {
         ascending: Boolean = false,
         bodySizePartIndex: Int? = null
     ): RankingResult {
-        val fieldDefId = fieldDefIds.first()
+        // 빈 목록으로 부르는 것은 "물은 것이 없음"이다 — 예외로 죽지 않는다.
+        val fieldDefId = fieldDefIds.firstOrNull()
+            ?: return RankingResult(emptyList(), "", "", ascending, 0, 0)
         val fd = s.fieldDefinitions.find { it.id == fieldDefId }
             ?: return RankingResult(emptyList(), "", "", ascending, 0, 0)
 
@@ -2872,7 +2874,10 @@ class StatsDataProvider {
                     "NUMBER" -> {
                         val v = fv.value.toDoubleOrNull()
                         if (v != null && v.isFinite()) {
-                            putValue(CharValue(char.id, v, formatStatsNumber(v)), ownerUniverseId)
+                            // 표시는 **저장 원문**이다(GRADE·BODY_SIZE와 같은 규칙). 다시 서식하면
+                            // 분포 차트가 보여주는 문자열("170.250")과 순위의 문자열이 갈린다.
+                            // 저장 행이 없는 CALCULATED만 서식이 필요하다.
+                            putValue(CharValue(char.id, v, fv.value.trim()), ownerUniverseId)
                         } else parseFailed++
                     }
                     "GRADE" -> {

@@ -159,6 +159,28 @@ class StatsConsistencyTest {
         assertEquals(distKey, ranking.entries.first().displayValue)
     }
 
+    @Test
+    fun `수치 필드의 순위 표시는 저장 원문이다`() {
+        // 저장 행이 있는 타입(NUMBER·GRADE·BODY_SIZE)은 분포 차트도 원문을 키로 쓴다.
+        // 순위만 다시 서식하면 같은 값이 두 화면에서 다른 문자열로 보인다.
+        val s = snapshot(
+            characters = listOf(Character(id = 1, name = "가", novelId = 1)),
+            fieldDefinitions = listOf(charField(10, "height", "키", type = "NUMBER")),
+            fieldValues = listOf(CharacterFieldValue(characterId = 1, fieldDefinitionId = 10, value = "170.250"))
+        )
+        val insight = provider.computeFieldInsights(s).first { it.fieldDefinition.key == "height" }
+        val distKey = insight.analysisResults.firstNotNullOf { it.distributionData }.keys.first()
+        val ranking = provider.computeRanking(s, listOf(10L))
+        assertEquals(distKey, ranking.entries.first().displayValue)
+    }
+
+    @Test
+    fun `빈 필드 목록으로 순위를 물으면 예외 대신 빈 결과다`() {
+        val s = calcSnapshot()
+        val ranking = provider.computeRanking(s, emptyList())
+        assertTrue(ranking.entries.isEmpty())
+    }
+
     // ===== S-16: BODY_SIZE 구간 드릴다운 =====
 
     private fun bodySnapshot() = snapshot(
