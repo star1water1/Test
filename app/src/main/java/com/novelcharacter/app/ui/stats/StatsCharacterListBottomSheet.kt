@@ -18,6 +18,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.novelcharacter.app.R
 import com.novelcharacter.app.databinding.BottomSheetStatsCharacterListBinding
+import com.novelcharacter.app.util.FieldValueMatchSpec
 
 /**
  * 차트 조각 드릴다운 시트 — **캐릭터/사건 두 축을 모두** 다룬다.
@@ -36,6 +37,10 @@ class StatsCharacterListBottomSheet : BottomSheetDialogFragment() {
     private var fieldName: String = ""
     private var selectedValue: String = ""
     private var isEventAxis: Boolean = false
+    /** 이 조각의 매칭 규칙 — 화면이 분포를 만든 그 규칙 그대로다(S-16). */
+    private var matchSpec: FieldValueMatchSpec = FieldValueMatchSpec.Values(emptySet())
+    /** 화면에 보인 조각의 **값 건수**. 목록의 대상 수와 다를 수 있어 그 차이를 고지하는 데 쓴다. */
+    private var sliceCount: Int = -1
 
     var onCharacterClick: ((Long) -> Unit)? = null
     /** 사건 행 탭 — 인자는 연표를 맞출 연도다(사건 상세 화면이 없어 전역 검색과 같은 규약을 쓴다). */
@@ -55,6 +60,8 @@ class StatsCharacterListBottomSheet : BottomSheetDialogFragment() {
         fieldName = arguments?.getString(ARG_FIELD_NAME, "") ?: ""
         selectedValue = arguments?.getString(ARG_SELECTED_VALUE, "") ?: ""
         isEventAxis = arguments?.getBoolean(ARG_IS_EVENT_AXIS, false) ?: false
+        matchSpec = readMatchSpec(arguments, selectedValue)
+        sliceCount = arguments?.getInt(ARG_SLICE_COUNT, -1) ?: -1
 
         binding.titleText.text = getString(R.string.stats_chart_tap_title, fieldName, selectedValue)
         binding.btnSubgroupAnalysis.setText(
@@ -68,16 +75,18 @@ class StatsCharacterListBottomSheet : BottomSheetDialogFragment() {
         setupSubgroupAnalysis()
 
         if (isEventAxis) {
-            viewModel.loadEventsByFieldValue(fieldDefIds, selectedValue)
+            viewModel.loadEventsByFieldValue(fieldDefIds, matchSpec)
         } else {
-            viewModel.loadCharactersByFieldValue(fieldDefIds, selectedValue)
+            viewModel.loadCharactersByFieldValue(fieldDefIds, matchSpec)
         }
     }
 
     private fun setupObservers() {
         viewModel.chartTapCharacters.observe(viewLifecycleOwner) { characters ->
             if (isEventAxis || characters == null) return@observe
-            binding.countText.text = getString(R.string.stats_chart_tap_count, characters.size)
+            binding.countText.text = countText(
+                getString(R.string.stats_chart_tap_count, characters.size), characters.size
+            )
             binding.characterRecyclerView.adapter = RowAdapter(
                 characters.map { Row(it.characterId.toString(), it.characterName, it.fieldValue) }
             ) { key ->
@@ -88,7 +97,9 @@ class StatsCharacterListBottomSheet : BottomSheetDialogFragment() {
 
         viewModel.chartTapEvents.observe(viewLifecycleOwner) { events ->
             if (!isEventAxis || events == null) return@observe
-            binding.countText.text = getString(R.string.stats_chart_tap_count_events, events.size)
+            binding.countText.text = countText(
+                getString(R.string.stats_chart_tap_count_events, events.size), events.size
+            )
             binding.characterRecyclerView.adapter = RowAdapter(
                 events.map {
                     // 사건은 이름이 없으므로 설명이 제목이고, 부제에 날짜와 값을 함께 싣는다 —
@@ -122,9 +133,15 @@ class StatsCharacterListBottomSheet : BottomSheetDialogFragment() {
                 .filter { g -> g.mergedFieldDefIds.none { it in currentIds } }
             if (groups.isEmpty()) {
                 // 버튼을 눌렀는데 아무 일도 일어나지 않으면 고장과 구분되지 않는다 — 사유를 알린다.
-                Toast.makeText(
-                    requireContext(), R.string.stats_subgroup_no_other_field, Toast.LENGTH_LONG
-                ).show()
+                // **사유는 사실이어야 한다**: 필드가 없는 것과, 있는데 '통계에 포함'이 꺼진 것은
+                // 다르다. 후자에게 "필드를 더 만들면"이라고 말하면 되돌리는 경로를 못 찾는다.
+                val excluded = viewModel.statsExcludedFieldGroupCount(isEventAxis)
+                val message = if (excluded > 0) {
+                    getString(R.string.stats_subgroup_all_excluded, excluded)
+                } else {
+                    getString(R.string.stats_subgroup_no_other_field)
+                }
+                Toast.makeText(requireContext(), message, Toast.LENGTH_LONG).show()
                 return@setOnClickListener
             }
 
@@ -153,6 +170,19 @@ class StatsCharacterListBottomSheet : BottomSheetDialogFragment() {
         }
     }
 
+    /**
+     * 목록 인원 문구 — 차트 조각의 **값 건수**와 목록의 **대상 수**가 다르면 그 차이를 설명한다.
+     *
+     * 다중값 필드에서는 한 대상이 조각에 여러 번 기여할 수 있고(접힌 '기타'는 잘린 값 여러 개를
+     * 한 대상이 함께 가질 수 있다), 세계관을 합친 카드에서는 한 대상이 형제 def로 두 번 매칭될
+     * 수 있다. 조각은 건수를 세고 목록은 대상을 센다 — 어느 쪽도 틀리지 않았으므로, 두 숫자가
+     * 어긋날 때 **왜 다른지**를 말한다(말하지 않으면 사용자는 어느 쪽이 맞는지 알 수 없다).
+     */
+    private fun countText(base: String, listedCount: Int): String =
+        if (sliceCount >= 0 && sliceCount != listedCount) {
+            base + " " + getString(R.string.stats_chart_tap_count_note, sliceCount)
+        } else base
+
     private fun showSubgroupResult(analysis: SubgroupAnalysis) {
         val container = binding.subgroupContainer
         container.removeAllViews()
@@ -178,8 +208,10 @@ class StatsCharacterListBottomSheet : BottomSheetDialogFragment() {
         }
         container.addView(title)
 
-        // 분포 표시
-        val totalValues = analysis.distribution.values.sum()
+        // 분모는 **이 그룹의 대상 수**다. 행 라벨이 '명/건'이고 제목이 'N명 기준'이므로,
+        // 값 건수를 분모로 쓰면 10명 전원이 가진 값이 33%로 표시되고 행의 합이 모집단을 넘는다.
+        // 다중값 필드에서는 비율의 합이 100%를 넘을 수 있다 — 그것이 다중값의 사실이다.
+        val totalValues = analysis.totalCount
         for ((value, count) in analysis.distribution) {
             val pct = if (totalValues > 0) count * 100f / totalValues else 0f
             val row = TextView(ctx).apply {
@@ -292,16 +324,29 @@ class StatsCharacterListBottomSheet : BottomSheetDialogFragment() {
         private const val ARG_FIELD_NAME = "fieldName"
         private const val ARG_SELECTED_VALUE = "selectedValue"
         private const val ARG_IS_EVENT_AXIS = "isEventAxis"
+        private const val ARG_MATCH_VALUES = "matchValues"
+        private const val ARG_MATCH_PART_INDEX = "matchPartIndex"
+        private const val ARG_MATCH_SEPARATOR = "matchSeparator"
+        private const val ARG_MATCH_MIN = "matchMin"
+        private const val ARG_MATCH_MAX = "matchMax"
+        private const val ARG_MATCH_INCLUSIVE_MAX = "matchInclusiveMax"
+        private const val ARG_SLICE_COUNT = "sliceCount"
 
         /**
          * [fieldDefIds]에는 인사이트 카드의 `mergedFieldDefIds`를 그대로 준다 — 첫 원소가
          * 파싱 기준 def이므로 **순서를 보존**해야 차트와 같은 값 공간이 된다.
+         *
+         * [matchSpec]은 **화면에 보인 그 조각의 규칙**이다(S-16·S-17). 라벨 문자열을 매칭 키로
+         * 재사용하면 라벨이 계산 결과인 조각(구간)은 어떤 입력에서도 0명이 되고, 접힌 '기타'
+         * 묶음은 아예 조회할 수 없다. [selectedValue]는 제목에만 쓴다.
          */
         fun newInstance(
             fieldDefIds: List<Long>,
             fieldName: String,
             selectedValue: String,
-            isEventAxis: Boolean
+            isEventAxis: Boolean,
+            matchSpec: FieldValueMatchSpec = FieldValueMatchSpec.Values(selectedValue),
+            sliceCount: Int = -1
         ): StatsCharacterListBottomSheet {
             return StatsCharacterListBottomSheet().apply {
                 arguments = Bundle().apply {
@@ -309,8 +354,45 @@ class StatsCharacterListBottomSheet : BottomSheetDialogFragment() {
                     putString(ARG_FIELD_NAME, fieldName)
                     putString(ARG_SELECTED_VALUE, selectedValue)
                     putBoolean(ARG_IS_EVENT_AXIS, isEventAxis)
+                    putMatchSpec(this, matchSpec)
+                    putInt(ARG_SLICE_COUNT, sliceCount)
                 }
             }
+        }
+
+        /** 스펙은 Bundle에 원시값으로 싣는다(Parcelable 도입 없이 프로세스 재생성에도 살아남게). */
+        private fun putMatchSpec(bundle: Bundle, spec: FieldValueMatchSpec) {
+            when (spec) {
+                is FieldValueMatchSpec.Values -> {
+                    bundle.putStringArray(ARG_MATCH_VALUES, spec.values.toTypedArray())
+                    bundle.putInt(ARG_MATCH_PART_INDEX, -1)
+                }
+                is FieldValueMatchSpec.NumericPartRange -> {
+                    bundle.putInt(ARG_MATCH_PART_INDEX, spec.partIndex)
+                    bundle.putString(ARG_MATCH_SEPARATOR, spec.separator)
+                    bundle.putFloat(ARG_MATCH_MIN, spec.min)
+                    bundle.putFloat(ARG_MATCH_MAX, spec.max)
+                    bundle.putBoolean(ARG_MATCH_INCLUSIVE_MAX, spec.inclusiveMax)
+                }
+            }
+        }
+
+        /** 구버전 인자(스펙 없이 값 하나)로 열린 시트도 그대로 동작한다. */
+        private fun readMatchSpec(bundle: Bundle?, fallbackValue: String): FieldValueMatchSpec {
+            if (bundle == null) return FieldValueMatchSpec.Values(fallbackValue)
+            val partIndex = bundle.getInt(ARG_MATCH_PART_INDEX, -1)
+            if (partIndex >= 0) {
+                return FieldValueMatchSpec.NumericPartRange(
+                    partIndex = partIndex,
+                    separator = bundle.getString(ARG_MATCH_SEPARATOR, "-"),
+                    min = bundle.getFloat(ARG_MATCH_MIN),
+                    max = bundle.getFloat(ARG_MATCH_MAX),
+                    inclusiveMax = bundle.getBoolean(ARG_MATCH_INCLUSIVE_MAX, false)
+                )
+            }
+            val values = bundle.getStringArray(ARG_MATCH_VALUES)
+            return if (values != null && values.isNotEmpty()) FieldValueMatchSpec.Values(values.toSet())
+            else FieldValueMatchSpec.Values(fallbackValue)
         }
     }
 }

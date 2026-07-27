@@ -28,6 +28,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import com.novelcharacter.app.R
 import com.novelcharacter.app.databinding.FragmentStatsMainBinding
 import com.novelcharacter.app.ui.adapter.RankingAdapter
+import com.novelcharacter.app.util.ValueDistributions
 import com.novelcharacter.app.util.navigateSafe
 
 class StatsMainFragment : Fragment() {
@@ -389,12 +390,8 @@ class StatsMainFragment : Fragment() {
             }
         }
 
-        viewModel.error.observe(viewLifecycleOwner) { error ->
-            if (error != null) {
-                val ctx = context ?: return@observe
-                Toast.makeText(ctx, R.string.stats_load_error, Toast.LENGTH_SHORT).show()
-            }
-        }
+        // 사유가 있으면 사유를, 없으면 통짜 문구를 — 어느 쪽이든 반드시 띄운다(B-32).
+        viewModel.error.observe(viewLifecycleOwner) { error -> showStatsError(viewModel, error) }
 
         // 작품 필터 스피너 — [전체, 작품 미배정, …작품들] (미배정은 sentinel, 위치 시프트 +2)
         viewModel.novelList.observe(viewLifecycleOwner) { novels ->
@@ -603,11 +600,9 @@ class StatsMainFragment : Fragment() {
     private fun showPatternSettingsDialog() {
         val ctx = context ?: return
         val allTypes = PatternType.values()
-        val prefs = ctx.getSharedPreferences("stats_prefs", 0)
-        val storedSet = prefs.getStringSet("pattern_insights_enabled_types", null)
-        val enabledSet = storedSet?.mapNotNull { name ->
-            try { PatternType.valueOf(name) } catch (_: Exception) { null }
-        }?.toMutableSet() ?: allTypes.toMutableSet()
+        // 저장·해석은 단일 소스([PatternTypePrefs])를 탄다 — 다이얼로그가 자기 파싱을 갖고 있으면
+        // 기본값 규칙이 갈린다.
+        val enabledSet = PatternTypePrefs.enabled(ctx).toMutableSet()
 
         val labels = allTypes.map { it.label }
         val checked = allTypes.map { it in enabledSet }.toBooleanArray()
@@ -630,13 +625,30 @@ class StatsMainFragment : Fragment() {
         val container = binding.patternInsightContainer
         container.removeAllViews()
 
-        if (patterns.isEmpty()) {
-            binding.cardPatternInsights.visibility = View.GONE
-            return
-        }
+        // 카드를 통째로 숨기면 **그 안에 있는 설정 버튼까지** 사라진다. 설정에서 모든 유형을
+        // 해제한 사용자는 카드가 사라지는 동시에 그것을 되돌릴 유일한 경로를 잃었다 —
+        // 안내도 없는 일방통행 함정이었다(B-31). 비어 있어도 카드는 남기고 **사유**를 적는다(R-17).
         binding.cardPatternInsights.visibility = View.VISIBLE
 
         val ctx = context ?: return
+
+        if (patterns.isEmpty()) {
+            container.addView(TextView(ctx).apply {
+                // 세 상태를 구분한다: 전부 꺼짐 / 일부 꺼짐 + 감지 없음 / 전부 켜짐 + 감지 없음.
+                // 일부만 끈 사용자에게 "데이터가 쌓이면 알려 드립니다"라고만 하면, 방금 자기가
+                // 끈 유형을 영원히 기다리게 된다.
+                val enabled = viewModel.enabledPatternTypes()
+                val offCount = PatternType.values().size - enabled.size
+                text = when {
+                    enabled.isEmpty() -> getString(R.string.stats_pattern_all_types_off)
+                    offCount > 0 -> getString(R.string.stats_pattern_none_detected_some_off, offCount)
+                    else -> getString(R.string.stats_pattern_none_detected)
+                }
+                textSize = 13f
+                setTextColor(ContextCompat.getColor(ctx, R.color.text_secondary))
+            })
+            return
+        }
         val marginSm = resources.getDimensionPixelSize(R.dimen.stats_margin_sm)
 
         patterns.forEach { pattern ->
@@ -784,8 +796,16 @@ class StatsMainFragment : Fragment() {
             val miniChart = PieChart(ctx).apply {
                 layoutParams = LinearLayout.LayoutParams(chartSize, chartSize)
             }
-            val entries = distData.entries.sortedByDescending { it.value }.take(5)
-                .map { PieEntry(it.value.toFloat(), it.key) }
+            // 미리보기도 '기타' 조각을 포함한다 — 조각 비율과 아래 TOP1 백분율의 분모가
+            // 어긋나면 그림과 숫자가 다른 말을 한다(R-14).
+            val previewView = ValueDistributions.view(distData, PREVIEW_SLICE_LIMIT)
+            val entries = previewView.shown.map { PieEntry(it.count.toFloat(), it.label) } +
+                if (previewView.hasHidden) {
+                    listOf(PieEntry(
+                        previewView.hiddenCount.toFloat(),
+                        getString(R.string.stats_distribution_others, previewView.hiddenKinds)
+                    ))
+                } else emptyList()
             val dataSet = PieDataSet(entries, "").apply {
                 colors = chartColors()
                 setDrawValues(false)
@@ -891,4 +911,10 @@ class StatsMainFragment : Fragment() {
         rankingInitialized = false
         _binding = null
     }
+
+    companion object {
+        /** 미리보기 카드의 미니 차트가 그리는 조각 수 상한 — 문구·조각이 같은 상수를 본다(R-14). */
+        private const val PREVIEW_SLICE_LIMIT = 5
+    }
+
 }

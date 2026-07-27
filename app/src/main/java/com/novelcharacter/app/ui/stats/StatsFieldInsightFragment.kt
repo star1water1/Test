@@ -42,6 +42,8 @@ import com.github.mikephil.charting.listener.OnChartValueSelectedListener
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.FieldStatsConfig
 import com.novelcharacter.app.databinding.FragmentStatsFieldInsightBinding
+import com.novelcharacter.app.util.FieldValueMatchSpec
+import com.novelcharacter.app.util.ValueDistributions
 
 class StatsFieldInsightFragment : Fragment() {
 
@@ -61,6 +63,8 @@ class StatsFieldInsightFragment : Fragment() {
         binding.toolbar.setNavigationOnClickListener { findNavController().popBackStack() }
         binding.btnCrossAnalysis.setOnClickListener { showCrossAnalysisDialog() }
         setupObservers()
+        // 되살아난 드릴다운 시트에 콜백을 다시 붙인다(회전 뒤 목록은 멀쩡한데 탭만 죽는다).
+        rebindDrilldownSheet()
         viewModel.loadFieldInsights()
     }
 
@@ -70,14 +74,8 @@ class StatsFieldInsightFragment : Fragment() {
             binding.contentLayout.visibility = if (isLoading) View.GONE else View.VISIBLE
         }
 
-        viewModel.error.observe(viewLifecycleOwner) { error ->
-            if (error != null) {
-                // 교차분석 실패 사유(축 불일치·필드 없음)는 구체적인 문구로 온다 — 그대로 보여준다.
-                val ctx = context ?: return@observe
-                val message = error.takeIf { it.isNotBlank() } ?: getString(R.string.stats_load_error)
-                Toast.makeText(ctx, message, Toast.LENGTH_LONG).show()
-            }
-        }
+        // 교차분석 실패 사유(축 불일치·필드 없음)는 구체적인 문구로 온다 — 그대로 보여준다(B-32).
+        viewModel.error.observe(viewLifecycleOwner) { error -> showStatsError(viewModel, error) }
 
         viewModel.fieldInsights.observe(viewLifecycleOwner) { insights ->
             populateInsights(insights)
@@ -177,7 +175,7 @@ class StatsFieldInsightFragment : Fragment() {
                 setBackgroundResource(android.R.color.transparent)
                 contentDescription = getString(R.string.stats_inline_config_title)
                 setOnClickListener {
-                    showAnalysisSettingsBottomSheet(insight.fieldDefinition, insight.statsConfig)
+                    showAnalysisSettingsBottomSheet(insight)
                 }
             }
             addView(settingsBtn)
@@ -237,17 +235,26 @@ class StatsFieldInsightFragment : Fragment() {
         when (result.entry.type) {
             FieldStatsConfig.StatsType.DISTRIBUTION -> {
                 val data = result.distributionData ?: return wrapper
-                val chart = createChartForDistribution(data, result.entry.chart, result.entry.limit)
-                attachChartTapListener(chart, data.entries.sortedByDescending { it.value }.take(result.entry.limit).map { it.key }, insight)
+                // 상한 적용은 여기 한 곳 — 잘린 나머지는 '기타' 조각으로 접어 존재를 알린다(R-14).
+                val view = ValueDistributions.view(data, result.entry.limit)
+                // '기타' 합계 조각은 **전체가 100%여야 하는 그림**(파이·도넛)에서만 정당하다.
+                // 막대에 끼우면 잘린 값들의 합이 최댓값을 차지해 값이 아닌 것이 1위로 보인다.
+                val isProportional = result.entry.chart == FieldStatsConfig.ChartType.PIE ||
+                    result.entry.chart == FieldStatsConfig.ChartType.DONUT
+                val slices = toSlices(view, includeOthers = isProportional)
+                val chart = createChartForDistribution(slices, result.entry.chart)
+                attachChartTapListener(chart, slices, insight)
                 wrapper.addView(chart)
-                wrapper.addView(createDistributionTable(data, result.entry.limit))
+                wrapper.addView(createDistributionTable(view, result.entry.limit))
             }
             FieldStatsConfig.StatsType.RANKING -> {
                 val data = result.distributionData ?: return wrapper
-                val sorted = data.entries.sortedByDescending { it.value }.take(result.entry.limit)
-                val chart = createRankingChart(sorted)
-                attachChartTapListener(chart, sorted.map { it.key }, insight)
+                val view = ValueDistributions.view(data, result.entry.limit)
+                val slices = toSlices(view, includeOthers = false)
+                val chart = createRankingChart(slices)
+                attachChartTapListener(chart, slices, insight)
                 wrapper.addView(chart)
+                if (view.hasHidden) wrapper.addView(createTruncationNote(view, result.entry.limit))
             }
             FieldStatsConfig.StatsType.NUMERIC -> {
                 val summary = result.numericSummary ?: return wrapper
@@ -272,15 +279,16 @@ class StatsFieldInsightFragment : Fragment() {
      * - 사건 필드 카드인지(entityType) 알아야 사건 목록으로 보낼 수 있다 — 종전에는 사건 카드도
      *   캐릭터 조회로 흘러가 항상 0명짜리 빈 시트가 떴다(S-9).
      */
-    private fun attachChartTapListener(chart: View, labels: List<String>, insight: FieldInsightResult) {
-        val open = { value: String -> showDrilldownBottomSheet(insight, value) }
+    private fun attachChartTapListener(chart: View, slices: List<ChartSlice>, insight: FieldInsightResult) {
+        val open = { slice: ChartSlice -> showDrilldownBottomSheet(insight, slice) }
+        val byLabel = slices.associateBy { it.label }
         when (chart) {
             is PieChart -> {
                 chart.setTouchEnabled(true)
                 chart.setOnChartValueSelectedListener(object : OnChartValueSelectedListener {
                     override fun onValueSelected(e: Entry?, h: Highlight?) {
                         val pieEntry = e as? PieEntry ?: return
-                        open(pieEntry.label)
+                        open(byLabel[pieEntry.label] ?: return)
                     }
                     override fun onNothingSelected() {}
                 })
@@ -290,7 +298,7 @@ class StatsFieldInsightFragment : Fragment() {
                 chart.setOnChartValueSelectedListener(object : OnChartValueSelectedListener {
                     override fun onValueSelected(e: Entry?, h: Highlight?) {
                         val index = h?.x?.toInt() ?: return
-                        open(labels.getOrNull(index) ?: return)
+                        open(slices.getOrNull(index) ?: return)
                     }
                     override fun onNothingSelected() {}
                 })
@@ -300,7 +308,7 @@ class StatsFieldInsightFragment : Fragment() {
                 chart.setOnChartValueSelectedListener(object : OnChartValueSelectedListener {
                     override fun onValueSelected(e: Entry?, h: Highlight?) {
                         val index = h?.x?.toInt() ?: return
-                        open(labels.getOrNull(index) ?: return)
+                        open(slices.getOrNull(index) ?: return)
                     }
                     override fun onNothingSelected() {}
                 })
@@ -308,15 +316,21 @@ class StatsFieldInsightFragment : Fragment() {
         }
     }
 
-    private fun showDrilldownBottomSheet(insight: FieldInsightResult, value: String) {
-        val isEvent = insight.fieldDefinition.entityType ==
-            com.novelcharacter.app.data.model.FieldDefinition.ENTITY_EVENT
-        val sheet = StatsCharacterListBottomSheet.newInstance(
-            fieldDefIds = insight.mergedFieldDefIds,
-            fieldName = insight.fieldDefinition.name,
-            selectedValue = value,
-            isEventAxis = isEvent
-        )
+    /**
+     * 회전·프로세스 재생성 뒤 되살아난 드릴다운 시트에 **콜백을 다시 붙인다**.
+     *
+     * 시트는 arguments에서 매치 스펙을 복원해 목록을 정상적으로 다시 채우지만, 행을 누를 때
+     * 부르는 람다는 인스턴스 필드라 새 인스턴스에서는 null이다 — 목록은 멀쩡한데 탭만 죽은
+     * 상태가 되고, 사용자에게는 고장과 구분되지 않는다(시트를 닫았다 다시 열어야 살아난다).
+     */
+    private fun rebindDrilldownSheet() {
+        val sheet = childFragmentManager
+            .findFragmentByTag(StatsCharacterListBottomSheet.TAG) as? StatsCharacterListBottomSheet
+            ?: return
+        bindDrilldownCallbacks(sheet)
+    }
+
+    private fun bindDrilldownCallbacks(sheet: StatsCharacterListBottomSheet) {
         sheet.onCharacterClick = { characterId ->
             val bundle = Bundle().apply { putLong("characterId", characterId) }
             findNavController().navigate(R.id.characterDetailFragment, bundle)
@@ -329,17 +343,77 @@ class StatsFieldInsightFragment : Fragment() {
             prefs.edit().putInt("center_year", year).putBoolean("pending_navigate", true).commit()
             findNavController().navigate(R.id.timelineFragment)
         }
+    }
+
+    private fun showDrilldownBottomSheet(insight: FieldInsightResult, slice: ChartSlice) {
+        val isEvent = insight.fieldDefinition.entityType ==
+            com.novelcharacter.app.data.model.FieldDefinition.ENTITY_EVENT
+        val sheet = StatsCharacterListBottomSheet.newInstance(
+            fieldDefIds = insight.mergedFieldDefIds,
+            fieldName = insight.fieldDefinition.name,
+            selectedValue = slice.label,
+            isEventAxis = isEvent,
+            // 화면이 보여준 그 조각의 규칙을 그대로 넘긴다 — 접힌 '기타'도 목록을 볼 수 있다.
+            matchSpec = slice.spec,
+            sliceCount = slice.count
+        )
+        bindDrilldownCallbacks(sheet)
         sheet.show(childFragmentManager, StatsCharacterListBottomSheet.TAG)
     }
 
     // ===== 차트 생성 =====
 
+    /**
+     * 화면에 그릴 조각 하나 — 라벨·건수와 함께 **드릴다운 규칙**을 들고 다닌다.
+     *
+     * 라벨을 매칭 키로 재사용하면 접힌 '기타'처럼 라벨이 값이 아닌 조각은 조회할 수 없다(S-16·S-17).
+     */
+    private data class ChartSlice(val label: String, val count: Int, val spec: FieldValueMatchSpec)
+
+    /**
+     * 전량 분포 → 표시 조각 + 접힌 '기타' 한 조각. '기타'도 눌러서 목록을 볼 수 있다.
+     *
+     * [includeOthers]를 끄는 곳은 **순위 차트**다. 파이·표는 전체가 100%가 돼야 하므로 '기타'
+     * 조각이 정당하지만, 순위 막대는 "어떤 값 하나가 가장 많은가"를 말하는 그림이라 잘린 값들의
+     * **합계 막대**가 끼면 그것이 1위처럼 보인다(값이 아닌 것이 순위 1위가 된다).
+     * 순위에서는 잘림을 막대가 아니라 아래 고지 문구가 알린다.
+     */
+    private fun toSlices(
+        view: ValueDistributions.View,
+        includeOthers: Boolean = true
+    ): List<ChartSlice> {
+        val slices = view.shown.map {
+            ChartSlice(it.label, it.count, FieldValueMatchSpec.Values(it.label))
+        }
+        if (!includeOthers || !view.hasHidden) return slices
+        return slices + ChartSlice(
+            getString(R.string.stats_distribution_others, view.hiddenKinds),
+            view.hiddenCount,
+            FieldValueMatchSpec.Values(view.hiddenLabels.toSet())
+        )
+    }
+
+    /** 잘림 고지 문구 — 상한 숫자는 상수가 아니라 그 필드의 설정값이 단일 소스다(R-14). */
+    private fun createTruncationNote(view: ValueDistributions.View, limit: Int): TextView =
+        TextView(requireContext()).apply {
+            text = getString(
+                R.string.stats_distribution_others_note,
+                limit, view.hiddenKinds, view.hiddenCount
+            )
+            textSize = resources.getDimension(R.dimen.stats_text_caption) / resources.displayMetrics.scaledDensity
+            setTextColor(ContextCompat.getColor(requireContext(), R.color.text_secondary))
+            val lp = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            lp.bottomMargin = resources.getDimensionPixelSize(R.dimen.stats_margin_sm)
+            layoutParams = lp
+        }
+
     private fun createChartForDistribution(
-        data: Map<String, Int>,
-        chartType: FieldStatsConfig.ChartType,
-        limit: Int
+        entries: List<ChartSlice>,
+        chartType: FieldStatsConfig.ChartType
     ): View {
-        val entries = data.entries.sortedByDescending { it.value }.take(limit)
         if (entries.isEmpty()) {
             return TextView(requireContext()).apply {
                 text = getString(R.string.stats_no_data)
@@ -363,7 +437,7 @@ class StatsFieldInsightFragment : Fragment() {
     }
 
     private fun createPieChart(
-        entries: List<Map.Entry<String, Int>>,
+        entries: List<ChartSlice>,
         isDonut: Boolean,
         chartHeight: Int
     ): PieChart {
@@ -372,7 +446,7 @@ class StatsFieldInsightFragment : Fragment() {
                 LinearLayout.LayoutParams.MATCH_PARENT, chartHeight
             ).apply { bottomMargin = resources.getDimensionPixelSize(R.dimen.stats_margin_sm) }
         }
-        val pieEntries = entries.map { PieEntry(it.value.toFloat(), it.key) }
+        val pieEntries = entries.map { PieEntry(it.count.toFloat(), it.label) }
         val captionSp = resources.getDimension(R.dimen.stats_text_caption) / resources.displayMetrics.scaledDensity
         val dataSet = PieDataSet(pieEntries, "").apply {
             colors = chartColors()
@@ -397,14 +471,14 @@ class StatsFieldInsightFragment : Fragment() {
         return chart
     }
 
-    private fun createBarChart(entries: List<Map.Entry<String, Int>>, chartHeight: Int): BarChart {
+    private fun createBarChart(entries: List<ChartSlice>, chartHeight: Int): BarChart {
         val chart = BarChart(requireContext()).apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, chartHeight
             ).apply { bottomMargin = resources.getDimensionPixelSize(R.dimen.stats_margin_sm) }
         }
-        val barEntries = entries.mapIndexed { i, e -> BarEntry(i.toFloat(), e.value.toFloat()) }
-        val labels = entries.map { it.key }
+        val barEntries = entries.mapIndexed { i, e -> BarEntry(i.toFloat(), e.count.toFloat()) }
+        val labels = entries.map { it.label }
         val dataSet = BarDataSet(barEntries, "").apply {
             colors = chartColors()
             valueTextColor = ContextCompat.getColor(requireContext(), R.color.on_surface)
@@ -429,7 +503,7 @@ class StatsFieldInsightFragment : Fragment() {
         return chart
     }
 
-    private fun createHorizontalBarChart(entries: List<Map.Entry<String, Int>>, chartHeight: Int): HorizontalBarChart {
+    private fun createHorizontalBarChart(entries: List<ChartSlice>, chartHeight: Int): HorizontalBarChart {
         val height = (entries.size * 40).coerceAtLeast(chartHeight / 2)
             .coerceAtMost(chartHeight)
         val chart = HorizontalBarChart(requireContext()).apply {
@@ -437,8 +511,8 @@ class StatsFieldInsightFragment : Fragment() {
                 LinearLayout.LayoutParams.MATCH_PARENT, height
             ).apply { bottomMargin = resources.getDimensionPixelSize(R.dimen.stats_margin_sm) }
         }
-        val barEntries = entries.mapIndexed { i, e -> BarEntry(i.toFloat(), e.value.toFloat()) }
-        val labels = entries.map { it.key }
+        val barEntries = entries.mapIndexed { i, e -> BarEntry(i.toFloat(), e.count.toFloat()) }
+        val labels = entries.map { it.label }
         val dataSet = BarDataSet(barEntries, "").apply {
             colors = chartColors()
             valueTextColor = ContextCompat.getColor(requireContext(), R.color.on_surface)
@@ -463,7 +537,7 @@ class StatsFieldInsightFragment : Fragment() {
         return chart
     }
 
-    private fun createRankingChart(entries: List<Map.Entry<String, Int>>): View {
+    private fun createRankingChart(entries: List<ChartSlice>): View {
         if (entries.isEmpty()) {
             return TextView(requireContext()).apply {
                 text = getString(R.string.stats_no_data)
@@ -512,9 +586,14 @@ class StatsFieldInsightFragment : Fragment() {
 
     // ===== 상세 테이블 =====
 
-    private fun createDistributionTable(data: Map<String, Int>, limit: Int): TableLayout {
-        val sorted = data.entries.sortedByDescending { it.value }.take(limit)
-        val total = data.values.sum().toFloat()
+    /**
+     * 값·건수·비율 표.
+     *
+     * **비율의 분모는 언제나 전체 합**이다(S-17). 종전에는 계산 계층이 상위 N개만 남기고 넘겨
+     * 분모가 '상위 N개의 합'이 되어 각 값의 점유율이 부풀려졌다 — 편향을 발견하려는 화면에서
+     * 편향의 정도 자체가 왜곡됐다. 잘린 나머지는 '기타' 행으로 함께 보여 존재를 알린다(R-14).
+     */
+    private fun createDistributionTable(view: ValueDistributions.View, limit: Int): TableLayout {
         val marginSm = resources.getDimensionPixelSize(R.dimen.stats_margin_sm)
         val textSizeSp = resources.getDimension(R.dimen.stats_text_body_sm) / resources.displayMetrics.scaledDensity
 
@@ -533,12 +612,21 @@ class StatsFieldInsightFragment : Fragment() {
         headerRow.addView(makeTableCell(getString(R.string.stats_table_ratio), textSizeSp, true))
         table.addView(headerRow)
 
-        sorted.forEach { (value, count) ->
-            val ratio = if (total > 0) count / total * 100 else 0f
+        view.shown.forEach { slice ->
             val row = TableRow(requireContext())
-            row.addView(makeTableCell(value, textSizeSp, false))
-            row.addView(makeTableCell(count.toString(), textSizeSp, false))
-            row.addView(makeTableCell(String.format("%.1f%%", ratio), textSizeSp, false))
+            row.addView(makeTableCell(slice.label, textSizeSp, false))
+            row.addView(makeTableCell(slice.count.toString(), textSizeSp, false))
+            row.addView(makeTableCell(String.format("%.1f%%", view.ratioOf(slice.count)), textSizeSp, false))
+            table.addView(row)
+        }
+
+        // 잘린 값 묶음 — 몇 종 몇 건인지 반드시 함께 보인다(R-14).
+        if (view.hasHidden) {
+            val row = TableRow(requireContext())
+            row.addView(makeTableCell(
+                getString(R.string.stats_distribution_others, view.hiddenKinds), textSizeSp, false))
+            row.addView(makeTableCell(view.hiddenCount.toString(), textSizeSp, false))
+            row.addView(makeTableCell(String.format("%.1f%%", view.hiddenRatio()), textSizeSp, false))
             table.addView(row)
         }
 
@@ -856,8 +944,18 @@ class StatsFieldInsightFragment : Fragment() {
 
     // ===== 인라인 분석 설정 =====
 
-    private fun showAnalysisSettingsBottomSheet(fieldDef: FieldDefinition, currentConfig: FieldStatsConfig) {
+    /**
+     * 카드의 톱니 — 분석 항목(종류·차트·표시 개수)을 바꾼다.
+     *
+     * 머지된 카드(세계관 여러 개를 한 장으로 합친 카드)에서는 **그룹 전체에 적용**이 기본이다.
+     * 대표 def 하나만 고치면 작품 필터를 바꿔 형제가 대표가 되는 순간 옛 설정이 되살아나
+     * "바꾼 것이 안 바뀐" 것으로 보인다(B-34). 다만 세계관마다 일부러 다르게 둘 자유도
+     * 남겨야 하므로(자율성 우선) 체크박스로 끌 수 있게 한다.
+     */
+    private fun showAnalysisSettingsBottomSheet(insight: FieldInsightResult) {
         if (!isAdded) return
+        val fieldDef = insight.fieldDefinition
+        val currentConfig = insight.statsConfig
         val ctx = requireContext()
         val density = resources.displayMetrics.density
         val pad = (16 * density).toInt()
@@ -925,6 +1023,35 @@ class StatsFieldInsightFragment : Fragment() {
         }
         container.addView(spinnerLimit)
 
+        // ── 머지된 카드: 적용 범위 ──
+        val mergedIds = insight.mergedFieldDefIds
+        val applyToGroup = if (mergedIds.size > 1) {
+            android.widget.CheckBox(ctx).apply {
+                // '다른' 세계관 필드 수 — 자기 자신을 빼야 사용자가 적용 범위를 정확히 읽는다.
+                text = getString(R.string.stats_inline_apply_group, mergedIds.size - 1)
+                isChecked = true
+                val lp = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+                lp.topMargin = (12 * density).toInt()
+                layoutParams = lp
+            }.also { container.addView(it) }
+        } else null
+
+        // 형제들의 현재 설정이 서로 다르면 그 사실을 알린다 — 모르고 덮어쓰지 않도록.
+        if (applyToGroup != null) {
+            // 첫 항목만 비교하면 "A는 분석 2개, B는 1개"인 차이를 못 잡는다 — 목록 전체를 본다.
+            val siblingConfigs = viewModel.fieldDefsByIds(mergedIds)
+                .map { FieldStatsConfig.fromConfig(it.config).analyses }
+            if (siblingConfigs.distinct().size > 1) {
+                container.addView(TextView(ctx).apply {
+                    text = getString(R.string.stats_inline_group_differs)
+                    textSize = 12f
+                    setTextColor(ContextCompat.getColor(ctx, R.color.text_secondary))
+                })
+            }
+        }
+
         MaterialAlertDialogBuilder(ctx)
             .setTitle(R.string.stats_inline_config_title)
             .setView(container)
@@ -938,9 +1065,17 @@ class StatsFieldInsightFragment : Fragment() {
                     chart = selectedChart,
                     limit = selectedLimit
                 )
-                // 기존 설정의 나머지(binning, valueLabels 등)는 유지하고 analyses만 교체
-                val newConfig = currentConfig.copy(analyses = listOf(newEntry))
-                viewModel.updateFieldStatsConfig(fieldDef, newConfig)
+                if (applyToGroup?.isChecked == true) {
+                    // 그룹 전체 — 각 def의 나머지 설정은 그대로 두고 분석 항목만 얹는다.
+                    viewModel.updateMergedFieldAnalysis(mergedIds, newEntry)
+                } else {
+                    // 기존 설정의 나머지(binning, valueLabels 등)는 유지하고 **첫 분석 항목만** 교체한다.
+                    // 목록 전체를 덮으면 사용자가 따로 만들어 둔 두 번째 분석 항목이 조용히 사라진다.
+                    val keptAnalyses = if (currentConfig.analyses.size <= 1) listOf(newEntry)
+                                       else listOf(newEntry) + currentConfig.analyses.drop(1)
+                    val newConfig = currentConfig.copy(analyses = keptAnalyses)
+                    viewModel.updateFieldStatsConfig(fieldDef, newConfig)
+                }
             }
             .setNegativeButton(R.string.cancel, null)
             .show()

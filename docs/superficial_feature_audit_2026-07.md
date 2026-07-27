@@ -134,27 +134,27 @@ QuickAdd·BatchEdit의 신규 생성)은 전수 확인 결과 정상이었다 �
 - **증상:** 초기화 후에도 (1) 설정>휴지통에 과거 삭제 항목이 그대로 남아 '복원' 가능해 보이고, 복원하면 이미지 파일은 이미 지워져 깨진 imagePaths를 단 캐릭터가 부활한다(거짓 예고+부분 파손). (2) 작업 이력 화면에 초기화 이전 기록 전부 잔존. (3) 캐릭터 탭 프리셋 칩이 초기화 후에도 그대로 남는다(검색 프리셋은 지워져 비대칭). '모든 데이터 삭제·되돌릴 수 없음' 약속과 셋 다 어긋난다.
 - **개혁안:** executeReset()의 db.withTransaction 블록(SettingsFragment.kt:1028-1045)에 db.trashSnapshotDao().deleteAll(), db.operationLogDao().clear(), db.characterListPresetDao().deleteAll()을 추가해 '모든 데이터 삭제' 약속과 DB 상태를 일치시킨다 — 스냅샷 행을 먼저 지우므로 1069-1071행의 파일 일괄 삭제는 규약(스냅샷 생존 중 파일 유지)과 더는 충돌하지 않는다. 방편식 패치 금지 원칙에 따라 세 개만 덧붙이지 말고 AppDatabase의 전체 DAO 목록을 리셋 삭제 목록과 대조 감사해 FK CASCADE로 비워지지 않는 독립 테이블(예: imageMeta 등)이 더 누락됐는지 확인하고, 누락 재발을 막기 위해 '리셋이 모든 테이블을 비운다'를 검증하는 JVM 테스트(테이블 목록 열거 대 삭제 호출 대조)를 추가한다. 확인 다이얼로그 문구(strings.xml:591)는 그대로 두되, 백업 보존 선택처럼 휴지통·작업 이력 보존을 의도적으로 허용하려면 명시적 체크박스로 사용자에게 알리고 선택하게 한다(변수 제어: 검증→알림→교정).
 
-### S-14. 패턴 인사이트가 '통계에 포함' 꺼진 필드도 분석한다 — 필드 통계 설정 무시
+### ~~S-14~~. 패턴 인사이트가 '통계에 포함' 꺼진 필드도 분석한다 — **처리 완료 (remaining_work 1-10장)**
 - **위치:** `app/src/main/java/com/novelcharacter/app/ui/stats/StatsDataProvider.kt:2005` · **분류:** 약속 불이행 · **심각도:** 중
 - **증상:** 사용자가 특정 필드(예: 민감한 메모성 필드)를 '통계에 포함' 해제해도 통계 메인의 패턴 인사이트에 '○○: △△ 편중' 카드가 계속 뜨고, 작품 간 편중 비교와 어시스턴트 인사이트에도 그 필드가 나온다. 설정 스위치가 약속한 동작(통계 제외)이 인사이트 목록에만 적용되고 패턴 감지에는 적용되지 않는다.
 - **개혁안:** detectPatterns의 필드 그룹화(StatsDataProvider.kt:2005)를 computeFieldInsights(1168-1169)와 동일하게 `s.fieldDefinitions.filter { FieldStatsConfig.fromConfig(it.config).enabled }` 이후 groupBy 하도록 고친다. 이 한 곳을 고치면 필드별 편중/균형/이상치 패턴(2007-2091)과 작품 간 필드 편중 비교(2154-2181), AssistantEngine 경유 호출까지 같은 함수라 일괄 해결되어 방편식 패치가 아닌 완결 수정이 된다. config 파싱이 def당 2회가 되지 않도록 computeSummary(665)의 statsConfigCache 패턴처럼 파싱 결과를 재사용하고, 화면 간 수치 일치 원칙(663행 주석)에 맞춰 기존 JVM 테스트에 '통계 제외 필드는 패턴 인사이트에 나타나지 않는다' 케이스를 추가해 회귀를 막는다.
 
-### S-15. 레거시 '필드 분석' 화면이 CALCULATED 필드를 통째로 누락하고 '통계에 포함' 설정도 무시한다
+### ~~S-15~~. 레거시 '필드 분석' 화면이 CALCULATED 필드를 통째로 누락하고 '통계에 포함' 설정도 무시한다 — **처리 완료 (remaining_work 1-10장)**
 - **위치:** `app/src/main/java/com/novelcharacter/app/ui/stats/StatsDataProvider.kt:1734` · **분류:** 껍데기 구현 · **심각도:** 중
 - **증상:** 필드 분석 상세 화면에서 수식 필드(CALCULATED)는 값이 계산돼 인사이트 화면·순위에는 나오는데 여기서만 아무 항목도 없이 조용히 빠진다. 반대로 통계 제외한 필드는 계속 표시된다. '모든 필드가 통계에서 분석 가능해야 한다'(원칙 02)와 사용자 설정 양쪽에 어긋난다.
 - **개혁안:** computeFieldAnalysis를 computeFieldInsights와 동일한 데이터 준비 규칙으로 통일한다: (a) computeAllCalculatedValues(s) 결과를 합성 CharacterFieldValue로 valuesByFieldDef에 합산(1151-1165행 방식 재사용을 공용 헬퍼로 추출), (b) 네 분기(이산 분포·BODY_SIZE 분포·NUMBER 요약·BODY_SIZE 요약) 진입 전에 FieldStatsConfig.fromConfig(fd.config).enabled 필터를 일괄 적용, (c) CALCULATED는 FieldStatsConfig.StatsType.forFieldType("CALCULATED")(분포+수치+순위)에 맞춰 NUMBER와 동일한 수치 요약 및 binning 기반 분포에 편입한다. 레거시·신규 두 경로가 같은 필드 적격성 판정을 공유하도록 헬퍼를 단일화해야 방편식 패치 금지 원칙에 부합하며, 향후 두 화면의 재분기(divergence)를 구조적으로 차단한다.
 
-### S-16. 레거시 필드 분석의 BODY_SIZE 분포 조각 탭이 항상 0명을 돌려준다 (구간 라벨 vs 파싱값 불일치)
+### ~~S-16~~. 레거시 필드 분석의 BODY_SIZE 분포 조각 탭이 항상 0명을 돌려준다 — **처리 완료 (remaining_work 1-10장)**
 - **위치:** `app/src/main/java/com/novelcharacter/app/ui/stats/StatsFieldAnalysisDetailFragment.kt:161` · **분류:** 조용한 실패 · **심각도:** 중
 - **증상:** 필드 분석 화면에서 신체 사이즈 분포(예: '키 — 파트1'의 '160~170' 조각)를 탭하면 캐릭터 목록 시트가 항상 '0명'으로 뜬다. 그 구간에 실제로 캐릭터가 있어도 마찬가지 — 탭 인터랙션이 존재하지만 어떤 입력에서도 결과를 내지 못한다.
 - **개혁안:** 문자열 라벨을 매칭 키로 재사용하는 대신, 분포 생성 시점의 구조 정보(partIdx, binMin, binMax, separator)를 FieldValueDistribution에 함께 담아 탭 시 그대로 전달하고, getCharactersByFieldValue에 타입드 매치 스펙(정확값 매치 vs 수치 범위+파트 인덱스 매치)을 추가한다. 범위 매치는 분포 계산과 동일한 파싱(separator split → partIdx → toFloatOrNull)과 동일한 경계 규칙(마지막 bin만 상한 포함)을 단일 소스로 공유해 분포 인원수와 드릴다운 인원수가 항상 일치하게 한다. NUMBER 커스텀 binning 라벨 매치와도 같은 스펙으로 통합해 문자열 우연 일치에 기대는 방편식 처리를 없애고, 매치 스펙이 없는 구버전 호출은 기존 정확값 경로로 동작을 보존한다.
 
-### S-17. 분포 비율(%)이 상위 N개 잘라낸 합 기준으로 계산돼 실제 점유율을 왜곡하고, 잘린 값의 존재 고지도 없다
+### ~~S-17~~. 분포 비율(%)이 상위 N개 잘라낸 합 기준으로 계산돼 실제 점유율을 왜곡한다 — **처리 완료 (remaining_work 1-10장)**
 - **위치:** `app/src/main/java/com/novelcharacter/app/ui/stats/StatsFieldInsightFragment.kt:497` · **분류:** 원칙 위반 · **심각도:** 중
 - **증상:** 고유값이 limit(기본 10)보다 많은 필드(거주지·태그성 TEXT 등)에서 각 값의 '비율' 열이 전체 대비가 아니라 상위 10개 합 대비로 부풀려 표시된다. 편향 발견이 목적인 화면에서 편향 정도 자체가 왜곡되고, 나머지 값들이 몇 건 잘렸는지 알 길이 없다.
 - **개혁안:** computeFieldDistribution은 전체 분포(또는 전체 합계·잘린 종수/건수 메타데이터 포함 결과 타입)를 반환하도록 바꾸고, 상한 적용은 표시 계층의 관심사로 옮긴다. UI에서는 분모를 전체 값 합으로 계산해 비율을 참값으로 표시하고, 상위 N행 아래에 "기타 N종 M건 (x.x%)" 집계 행을 추가하며 파이차트에도 동일한 '기타' 조각을 넣어 R-14(잘라낸 것은 개수로 알린다)를 충족한다. RANKING 경로도 같은 전체 분포에서 상위 N만 취하므로 함께 정리하되, limit 자체는 사용자 설정(자율성 우선)으로 유지한다. UI에서만 분모를 고치는 땜빵이 아니라 개수 정보 소실 지점(provider의 take)을 제거하는 것이 방편식 패치 금지 원칙에 부합한다.
 
-### S-18. 순위(빈도 모드)가 통계 파싱 규칙을 쓰지 않아 콤마 표시 형식 TEXT·별칭 접기 필드에서 무의미한 결과가 나온다
+### ~~S-18~~. 순위(빈도 모드)가 통계 파싱 규칙을 쓰지 않는다 — **처리 완료 (remaining_work 1-10장)**
 - **위치:** `app/src/main/java/com/novelcharacter/app/ui/stats/StatsDataProvider.kt:2517` · **분류:** 껍데기 구현 · **심각도:** 중
 - **증상:** 콤마 목록 표시 형식으로 설정한 TEXT 필드를 순위 필드로 고르면 '검, 활 (1회)'처럼 원문 전체가 한 값으로 집계돼 전원 1회 동률의 무의미한 순위가 나온다. 별칭 사전을 쓰는 필드는 인사이트 분포 차트와 순위 탭의 빈도 수치가 서로 다른데 아무 고지가 없다.
 - **개혁안:** computeRanking 빈도 모드에서 fd.type=="MULTI_TEXT" 하드코딩 분기(2518, 2566)를 제거하고, GRADE/BODY_SIZE가 이미 하듯 값 소유 필드(fieldDefMap[fv.fieldDefinitionId])를 기준으로 FieldValueTokenizer.tokenize(또는 splitForStats)로 분리해 frequencyMap 구축·매칭을 통일한다. 분리된 토큰은 resolversByFieldId의 FieldValueResolver(statsKeys 또는 canonical)로 접은 뒤 집계해 인사이트 분포와 동일한 키 공간에서 빈도를 계산한다 — 통계 파싱 단일 소스 계약 준수(방편식 재구현 금지). 검증→알림 원칙에 따라 COMMA_LIST TEXT·별칭 필드에 대해 인사이트 분포 카운트와 순위 빈도가 일치함을 확인하는 JVM 테스트를 추가하고, 토큰화로 인해 한 캐릭터가 복수 토큰을 갖는 경우의 대표값 표시 규칙(최다 빈도 토큰)을 MULTI_TEXT 기존 경로와 동일하게 적용한다.
@@ -183,7 +183,7 @@ QuickAdd·BatchEdit의 신규 생성)은 전수 확인 결과 정상이었다 �
 | ~~1~~ | ~~**사건 입력 보호**~~ | ~~S-6 (+S-12)~~ | **처리 완료** — `EventFieldValueMerge`(커버 집합) + `replaceForFields` 공용화 + universeId 보존 폴백 + 보존 Toast·이력 고지 + `setValidatedPositiveButton` 재조립. 상세·실기기 확인 절차는 remaining_work 1-7장·3-7장. 인접 발견: 통보-후-닫힘 입력 유실 잔여(B-28), CharacterViewModel 사건 CRUD 무통보 실패(B-29) 등재 |
 | ~~2~~ | ~~**월드패키지 완결**~~ | ~~S-5~~ | **처리 완료** — `WorldPackageImporter` 신설(manifest v1~v3 검증 → 전 엔트리 역직렬화 → 원자 트랜잭션 삽입 + old→new id 재배선 + code 충돌 재발급 고지), 충돌 3분기 다이얼로그(share_world_conflict_* 문자열 소생), `ImportFileFormat` ZIP 판별 3분기, 원인별 오류 메시지. 미검증 목록의 "추가 누락 데이터"는 **전부 실재로 확인**되어 내보내기 v3으로 완결(사건 필드 정의·값, 값 라이브러리, 세계관/작품 이미지 추가 + 전역 이름 은행 과포함 축소). 상세·실기기 확인 절차는 remaining_work 1-8장·3-8장 |
 | ~~3~~ | ~~**통계 조용한 실패 일소**~~ | ~~S-7·S-8·S-9·S-19~~ | **처리 완료** — ① `FieldInsightResult.mergedFieldDefIds` 신설로 드릴다운이 카드가 합산한 (key,type) 그룹 전체를 기준 def config로 조회(S-7), ② `computeCrossAnalysis`가 사건 축과 대칭으로 `mergeCalculatedRows(…, computeAllCalculatedValues)` 수행(S-8), ③ `getEventsByFieldValue`·`computeEventSubgroupAnalysis` 신설 + 시트를 엔티티 인지형으로 일반화, 사건 행 탭은 전역 검색과 같은 `center_year` 규약으로 연표 이동(S-9), ④ `computeSubgroupAnalysis`가 머지 id 목록을 받고 CALCULATED 계산값을 합산(S-19). 빈 결과 무통보 return은 전부 사유 고지로 교체(교차표 빈 표·드릴다운 필드 소실·하위 그룹 대상 없음). 신규 JVM 테스트 19건. 상세·실기기 확인 절차는 remaining_work 1-9장·3-9장 |
-| 4 | **통계 정합성** | S-14·S-15·S-16·S-17·S-18 (+**B-31·B-32·B-33**) | '통계에 포함' 설정을 패턴 인사이트·레거시 필드 분석에 일관 적용, 비율 모수를 전체 합으로 교정 + 잘림 개수 고지(R-14), 순위 빈도를 FieldValueTokenizer·별칭 접기 규칙으로 통일, BODY_SIZE 드릴다운 키 일치. 레거시 필드 분석 화면은 인사이트 화면과의 통합(한쪽 소거)도 검토할 것 — 같은 질문에 다른 답을 주는 화면 둘은 그 자체가 변수 제어 위반. **로드맵 3 세션이 확정한 인접 5건을 이 묶음에 편입**: B-31(패턴 설정 버튼이 카드 안에 있어 모든 유형을 끄면 되돌릴 수 없는 일방통행 함정 — 심각도 상), B-32(`e.message` null 예외를 전 관측자가 걸러 백지 화면 — 심각도 상), B-33(CALCULATED 미병합 잔여 4경로 + `computeRanking`의 분기 구현), B-34(머지 카드의 톱니가 대표 def에만 써서 '통계에 포함' 끄기가 안 먹는 것처럼 보임 — 심각도 상), B-35(`crossFieldGroup`만 enabled 필터가 없어 인사이트와 교차분석이 다른 수치 — S-14와 같은 질문). **착수 전 R-15·R-16·R-17을 읽을 것** |
+| ~~4~~ | ~~**통계 정합성**~~ | ~~S-14·S-15·S-16·S-17·S-18 (+B-31~B-35)~~ | **처리 완료** — ① `StatsFieldPolicy` 신설로 '통계에 포함'을 자동 집계 경로 7곳에 일관 적용(규칙: 자동 선택은 설정을 따르고 명시적 선택은 존중 — 규약 R-18), ② `ValueDistributions`로 분포 전량 반환 + 비율 분모 교정 + '기타 N종' 조각·행·드릴다운(R-19), ③ `NumericBinning`+`FieldValueMatchSpec`로 드릴다운을 라벨 대신 타입드 스펙으로(R-20), ④ `augmentedCharacterValues`·`formatStatsNumber`로 계산 필드 병합·서식 단일화(순위의 수식 재평가 분기 제거), ⑤ 순위 빈도를 `getFieldValues` 파싱으로 통일 + 별칭 접기(GRADE 포함) + 캐릭터당 1행 보장, ⑥ 해석기를 provider 가변 필드에서 스냅샷 파생으로(R-21 — 이것을 먼저 하지 않으면 별칭 케이스를 테스트로 고정할 수 없었다), ⑦ B-31 빈 상태 카드 유지·사유 표시(+어시스턴트가 유형 설정을 읽도록), B-32 오류 고지 일괄(취소 되던지기·sticky 소비). **레거시 필드 분석 화면은 통합하지 않았다** — 그 화면에만 있는 기능(필드 완성도·상태변화 수)이 있고 머지 축이 다르다(R-15). 규칙만 통일했다. 신규 JVM 테스트 44건. 상세·실기기 확인 절차는 remaining_work 1-10장·3-10장 |
 | 5 | **수식 오류 가시화** | S-11 | NaN을 "오류" 표식으로 표면화(미입력과 구분), 수식 편집기에 검증 피드백. FormulaEvaluator가 단일 소스이므로 표시 계층만 손대면 된다 |
 | 6 | **B-8 스트리밍 리더 배선** | S-10 | 기지 백로그 — excel_streaming_import 설계 문서의 '이중 경로 + per-row 비분기' 원칙대로. B-7의 MergedCellMap을 스트리밍 경로에도 붙일 것(mergeCells 요소) |
 | 7 | **초기화 완결** | S-13 | 전체 초기화에 휴지통(스냅샷+보류 이미지)·작업 이력·프리셋 포함, 삭제 범위를 초기화 확인 다이얼로그에 명시 |
@@ -280,3 +280,4 @@ QuickAdd·BatchEdit의 신규 생성)은 전수 확인 결과 정상이었다 �
 | v1.0 | 2026.07.27 | 최초 작성 — 즉시 수리 4건(S-1~S-4), 확정 15건(S-5~S-19) + 개혁안, 기각 3건(전부 세션 중 수리 교차확인), 미검증 57건, 개혁 우선순위 로드맵 |
 | v1.1 | 2026.07.27 | 개혁 로드맵 2 처리 완료 — S-5 소진(WorldPackageImporter + 내보내기 v3 완결), 미검증 목록의 월드패키지 누락 데이터 항목 실재 확인·처리 |
 | v1.2 | 2026.07.27 | 개혁 로드맵 3 처리 완료 — S-7·S-8·S-9·S-19 소진(통계 조용한 실패 일소). 공통 뿌리 둘(머지 축을 잃은 드릴다운 / 캐릭터 축의 CALCULATED 미병합)을 근본에서 수리하고 무통보 빈 결과를 사유 고지로 교체. 인접 확정 5건(B-31~B-35)을 로드맵 4에 편입 — 전부 코드 실독으로 확인 |
+| v1.3 | 2026.07.27 | 개혁 로드맵 4(통계 정합성) 처리 완료 — S-14~S-18 확정 해소, 인접 B-31~B-35 동시 처리, 신규 규약 R-18~R-22 |
