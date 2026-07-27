@@ -319,7 +319,8 @@ class StatsFieldInsightFragment : Fragment() {
             selectedValue = slice.label,
             isEventAxis = isEvent,
             // 화면이 보여준 그 조각의 규칙을 그대로 넘긴다 — 접힌 '기타'도 목록을 볼 수 있다.
-            matchSpec = slice.spec
+            matchSpec = slice.spec,
+            sliceCount = slice.count
         )
         sheet.onCharacterClick = { characterId ->
             val bundle = Bundle().apply { putLong("characterId", characterId) }
@@ -1002,7 +1003,8 @@ class StatsFieldInsightFragment : Fragment() {
         val mergedIds = insight.mergedFieldDefIds
         val applyToGroup = if (mergedIds.size > 1) {
             android.widget.CheckBox(ctx).apply {
-                text = getString(R.string.stats_inline_apply_group, mergedIds.size)
+                // '다른' 세계관 필드 수 — 자기 자신을 빼야 사용자가 적용 범위를 정확히 읽는다.
+                text = getString(R.string.stats_inline_apply_group, mergedIds.size - 1)
                 isChecked = true
                 val lp = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT

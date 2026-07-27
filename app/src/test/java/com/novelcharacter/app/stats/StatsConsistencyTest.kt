@@ -453,19 +453,35 @@ class StatsConsistencyTest {
     }
 
     @Test
-    fun `하위 그룹 분석의 비율 분모는 잘리기 전 전체다`() {
-        // 표시분의 합을 분모로 쓰면 잘린 종수만큼 각 값의 점유율이 부풀려진다(S-17과 같은 결함).
-        val defs = mutableListOf(charField(10, "home", "거주지"))
-        val values = mutableListOf<CharacterFieldValue>()
-        // 값 20종: 1명씩 20명 — 상한(15)을 넘긴다
+    fun `하위 그룹 분석은 값 건수가 아니라 대상 수를 센다`() {
+        // 행 라벨이 '명'이고 제목이 'N명 기준'이다. 값 건수를 세면 다중값 필드에서
+        // 10명 전원이 가진 값이 33%로 표시되고 행의 합이 모집단을 넘는다.
+        val chars = (1L..10L).map { Character(id = it, name = "c$it", novelId = 1) }
+        val s = snapshot(
+            characters = chars,
+            fieldDefinitions = listOf(charField(10, "trait", "특성", type = "MULTI_TEXT")),
+            fieldValues = chars.map {
+                CharacterFieldValue(characterId = it.id, fieldDefinitionId = 10, value = "용감, 성실, 과묵")
+            }
+        )
+        val analysis = provider.computeSubgroupAnalysis(s, chars.map { it.id }.toSet(), listOf(10L))!!
+        assertEquals(10, analysis.totalCount)
+        assertEquals("전원이 가진 값은 10명이다(30건이 아니다)", 10, analysis.distribution["용감"])
+        assertEquals(10, analysis.distribution["성실"])
+    }
+
+    @Test
+    fun `하위 그룹 분석은 상한을 넘긴 종수를 고지한다`() {
         val chars = (1L..20L).map { Character(id = it, name = "c$it", novelId = 1) }
-        for (i in 1L..20L) {
-            values += CharacterFieldValue(characterId = i, fieldDefinitionId = 10, value = "도시$i")
-        }
-        val s = snapshot(characters = chars, fieldDefinitions = defs, fieldValues = values)
+        val s = snapshot(
+            characters = chars,
+            fieldDefinitions = listOf(charField(10, "home", "거주지")),
+            fieldValues = chars.map {
+                CharacterFieldValue(characterId = it.id, fieldDefinitionId = 10, value = "도시${it.id}")
+            }
+        )
         val analysis = provider.computeSubgroupAnalysis(s, chars.map { it.id }.toSet(), listOf(10L))!!
         assertEquals(SUBGROUP_DISTRIBUTION_LIMIT, analysis.distribution.size)
-        assertEquals("분모는 전체 20건이어야 한다", 20, analysis.valueTotal)
         assertEquals(5, analysis.truncatedCount)
     }
 

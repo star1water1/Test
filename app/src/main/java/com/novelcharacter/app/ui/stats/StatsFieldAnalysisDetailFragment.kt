@@ -184,7 +184,7 @@ class StatsFieldAnalysisDetailFragment : Fragment() {
                         val pieEntry = e as? PieEntry ?: return
                         val slice = slices.find { it.first == pieEntry.label } ?: return
                         showCharacterListBottomSheet(
-                            dist.fieldDefId, dist.fieldName, slice.first, slice.third
+                            dist.fieldDefId, dist.fieldName, slice.first, slice.third, slice.second
                         )
                     }
                     override fun onNothingSelected() {}
@@ -348,14 +348,16 @@ class StatsFieldAnalysisDetailFragment : Fragment() {
         fieldDefId: Long,
         fieldName: String,
         value: String,
-        spec: FieldValueMatchSpec
+        spec: FieldValueMatchSpec,
+        sliceCount: Int
     ) {
         val sheet = StatsCharacterListBottomSheet.newInstance(
             fieldDefIds = listOf(fieldDefId),
             fieldName = fieldName,
             selectedValue = value,
             isEventAxis = false,
-            matchSpec = spec
+            matchSpec = spec,
+            sliceCount = sliceCount
         )
         sheet.onCharacterClick = { characterId ->
             val bundle = Bundle().apply { putLong("characterId", characterId) }

@@ -634,10 +634,15 @@ class StatsMainFragment : Fragment() {
 
         if (patterns.isEmpty()) {
             container.addView(TextView(ctx).apply {
-                text = if (viewModel.enabledPatternTypes().isEmpty()) {
-                    getString(R.string.stats_pattern_all_types_off)
-                } else {
-                    getString(R.string.stats_pattern_none_detected)
+                // 세 상태를 구분한다: 전부 꺼짐 / 일부 꺼짐 + 감지 없음 / 전부 켜짐 + 감지 없음.
+                // 일부만 끈 사용자에게 "데이터가 쌓이면 알려 드립니다"라고만 하면, 방금 자기가
+                // 끈 유형을 영원히 기다리게 된다.
+                val enabled = viewModel.enabledPatternTypes()
+                val offCount = PatternType.values().size - enabled.size
+                text = when {
+                    enabled.isEmpty() -> getString(R.string.stats_pattern_all_types_off)
+                    offCount > 0 -> getString(R.string.stats_pattern_none_detected_some_off, offCount)
+                    else -> getString(R.string.stats_pattern_none_detected)
                 }
                 textSize = 13f
                 setTextColor(ContextCompat.getColor(ctx, R.color.text_secondary))

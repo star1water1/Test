@@ -39,6 +39,8 @@ class StatsCharacterListBottomSheet : BottomSheetDialogFragment() {
     private var isEventAxis: Boolean = false
     /** 이 조각의 매칭 규칙 — 화면이 분포를 만든 그 규칙 그대로다(S-16). */
     private var matchSpec: FieldValueMatchSpec = FieldValueMatchSpec.Values(emptySet())
+    /** 화면에 보인 조각의 **값 건수**. 목록의 대상 수와 다를 수 있어 그 차이를 고지하는 데 쓴다. */
+    private var sliceCount: Int = -1
 
     var onCharacterClick: ((Long) -> Unit)? = null
     /** 사건 행 탭 — 인자는 연표를 맞출 연도다(사건 상세 화면이 없어 전역 검색과 같은 규약을 쓴다). */
@@ -59,6 +61,7 @@ class StatsCharacterListBottomSheet : BottomSheetDialogFragment() {
         selectedValue = arguments?.getString(ARG_SELECTED_VALUE, "") ?: ""
         isEventAxis = arguments?.getBoolean(ARG_IS_EVENT_AXIS, false) ?: false
         matchSpec = readMatchSpec(arguments, selectedValue)
+        sliceCount = arguments?.getInt(ARG_SLICE_COUNT, -1) ?: -1
 
         binding.titleText.text = getString(R.string.stats_chart_tap_title, fieldName, selectedValue)
         binding.btnSubgroupAnalysis.setText(
@@ -81,7 +84,9 @@ class StatsCharacterListBottomSheet : BottomSheetDialogFragment() {
     private fun setupObservers() {
         viewModel.chartTapCharacters.observe(viewLifecycleOwner) { characters ->
             if (isEventAxis || characters == null) return@observe
-            binding.countText.text = getString(R.string.stats_chart_tap_count, characters.size)
+            binding.countText.text = countText(
+                getString(R.string.stats_chart_tap_count, characters.size), characters.size
+            )
             binding.characterRecyclerView.adapter = RowAdapter(
                 characters.map { Row(it.characterId.toString(), it.characterName, it.fieldValue) }
             ) { key ->
@@ -92,7 +97,9 @@ class StatsCharacterListBottomSheet : BottomSheetDialogFragment() {
 
         viewModel.chartTapEvents.observe(viewLifecycleOwner) { events ->
             if (!isEventAxis || events == null) return@observe
-            binding.countText.text = getString(R.string.stats_chart_tap_count_events, events.size)
+            binding.countText.text = countText(
+                getString(R.string.stats_chart_tap_count_events, events.size), events.size
+            )
             binding.characterRecyclerView.adapter = RowAdapter(
                 events.map {
                     // 사건은 이름이 없으므로 설명이 제목이고, 부제에 날짜와 값을 함께 싣는다 —
@@ -157,6 +164,19 @@ class StatsCharacterListBottomSheet : BottomSheetDialogFragment() {
         }
     }
 
+    /**
+     * 목록 인원 문구 — 차트 조각의 **값 건수**와 목록의 **대상 수**가 다르면 그 차이를 설명한다.
+     *
+     * 다중값 필드에서는 한 대상이 조각에 여러 번 기여할 수 있고(접힌 '기타'는 잘린 값 여러 개를
+     * 한 대상이 함께 가질 수 있다), 세계관을 합친 카드에서는 한 대상이 형제 def로 두 번 매칭될
+     * 수 있다. 조각은 건수를 세고 목록은 대상을 센다 — 어느 쪽도 틀리지 않았으므로, 두 숫자가
+     * 어긋날 때 **왜 다른지**를 말한다(말하지 않으면 사용자는 어느 쪽이 맞는지 알 수 없다).
+     */
+    private fun countText(base: String, listedCount: Int): String =
+        if (sliceCount >= 0 && sliceCount != listedCount) {
+            base + " " + getString(R.string.stats_chart_tap_count_note, sliceCount)
+        } else base
+
     private fun showSubgroupResult(analysis: SubgroupAnalysis) {
         val container = binding.subgroupContainer
         container.removeAllViews()
@@ -182,9 +202,10 @@ class StatsCharacterListBottomSheet : BottomSheetDialogFragment() {
         }
         container.addView(title)
 
-        // 분포 표시 — 비율의 분모는 **잘리기 전 전체 합**이다(R-19). 표시분의 합을 분모로 쓰면
-        // 잘린 종수만큼 각 값의 점유율이 부풀려진다. 구버전 결과(valueTotal=0)는 표시분 합으로 폴백.
-        val totalValues = analysis.valueTotal.takeIf { it > 0 } ?: analysis.distribution.values.sum()
+        // 분모는 **이 그룹의 대상 수**다. 행 라벨이 '명/건'이고 제목이 'N명 기준'이므로,
+        // 값 건수를 분모로 쓰면 10명 전원이 가진 값이 33%로 표시되고 행의 합이 모집단을 넘는다.
+        // 다중값 필드에서는 비율의 합이 100%를 넘을 수 있다 — 그것이 다중값의 사실이다.
+        val totalValues = analysis.totalCount
         for ((value, count) in analysis.distribution) {
             val pct = if (totalValues > 0) count * 100f / totalValues else 0f
             val row = TextView(ctx).apply {
@@ -303,6 +324,7 @@ class StatsCharacterListBottomSheet : BottomSheetDialogFragment() {
         private const val ARG_MATCH_MIN = "matchMin"
         private const val ARG_MATCH_MAX = "matchMax"
         private const val ARG_MATCH_INCLUSIVE_MAX = "matchInclusiveMax"
+        private const val ARG_SLICE_COUNT = "sliceCount"
 
         /**
          * [fieldDefIds]에는 인사이트 카드의 `mergedFieldDefIds`를 그대로 준다 — 첫 원소가
@@ -317,7 +339,8 @@ class StatsCharacterListBottomSheet : BottomSheetDialogFragment() {
             fieldName: String,
             selectedValue: String,
             isEventAxis: Boolean,
-            matchSpec: FieldValueMatchSpec = FieldValueMatchSpec.Values(selectedValue)
+            matchSpec: FieldValueMatchSpec = FieldValueMatchSpec.Values(selectedValue),
+            sliceCount: Int = -1
         ): StatsCharacterListBottomSheet {
             return StatsCharacterListBottomSheet().apply {
                 arguments = Bundle().apply {
@@ -326,6 +349,7 @@ class StatsCharacterListBottomSheet : BottomSheetDialogFragment() {
                     putString(ARG_SELECTED_VALUE, selectedValue)
                     putBoolean(ARG_IS_EVENT_AXIS, isEventAxis)
                     putMatchSpec(this, matchSpec)
+                    putInt(ARG_SLICE_COUNT, sliceCount)
                 }
             }
         }

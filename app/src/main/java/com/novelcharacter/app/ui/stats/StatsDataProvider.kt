@@ -450,14 +450,7 @@ data class SubgroupAnalysis(
     val distribution: Map<String, Int>,
     val totalCount: Int,
     /** 상한(SUBGROUP_DISTRIBUTION_LIMIT)에 걸려 표시되지 않은 값 종류 수 — 0보다 크면 UI가 고지한다(R-14). */
-    val truncatedCount: Int = 0,
-    /**
-     * 잘리기 **전** 전체 값 건수 — 비율의 분모다(R-19).
-     *
-     * 표시분의 합을 분모로 쓰면 잘린 종수만큼 각 값의 점유율이 부풀려진다. 편향을 발견하려는
-     * 화면에서 편향의 크기가 왜곡되는 것이 S-17이고, 이 화면은 그 화면에서 한 번 탭하면 온다.
-     */
-    val valueTotal: Int = 0
+    val truncatedCount: Int = 0
 )
 
 /** 하위 그룹 분석이 한 번에 보여주는 값 종류 상한 — 문구도 이 상수로 채운다(R-14). */
@@ -2650,14 +2643,22 @@ class StatsDataProvider {
         val refDef = defById[targetFieldDefIds.first()] ?: defById.values.first()
         val refCfg = FieldStatsConfig.fromConfig(refDef.config)
 
-        val allValues = mutableListOf<String>()
+        // **대상 수**로 센다(값 건수가 아니다). 이 화면의 행 라벨은 '명'이고 제목은 'N명 기준'이라,
+        // 다중값 필드에서 값 건수를 세면 10명 전원이 가진 값이 33%로 표시되고 행의 합이 모집단을
+        // 넘는다. "이 그룹에서 이 값을 가진 대상이 몇인가"가 이 화면이 답하는 질문이다.
+        val holders = HashMap<String, MutableSet<Long>>()
+        fun record(entityId: Long, value: String) {
+            for (key in getFieldValues(s, refDef, value, refCfg)) {
+                holders.getOrPut(key) { HashSet() }.add(entityId)
+            }
+        }
 
         // 저장된 값
         for (fv in s.fieldValues) {
             if (fv.fieldDefinitionId !in idSet) continue
             if (fv.characterId !in characterIds) continue
             if (defById[fv.fieldDefinitionId]?.type == "CALCULATED") continue
-            allValues.addAll(getFieldValues(s, refDef, fv.value, refCfg))
+            record(fv.characterId, fv.value)
         }
 
         // CALCULATED 계산값 — 부분집합(characterIds)만 집계한다
@@ -2668,12 +2669,12 @@ class StatsDataProvider {
                 val fieldMap = calculated[charId] ?: continue
                 for (defId in calcDefIds) {
                     val v = fieldMap[defId] ?: continue
-                    allValues.addAll(getFieldValues(s, refDef, v, refCfg))
+                    record(charId, v)
                 }
             }
         }
 
-        val counted = ValueDistributions.of(allValues)
+        val counted = ValueDistributions.sorted(holders.mapValues { it.value.size })
         val view = ValueDistributions.view(counted, SUBGROUP_DISTRIBUTION_LIMIT)
 
         return SubgroupAnalysis(
@@ -2681,8 +2682,7 @@ class StatsDataProvider {
             distribution = view.shownMap(),
             totalCount = characterIds.size,
             // R-14: 잘라냈으면 남은 개수로 존재를 알린다 — 상한은 이 상수가 단일 소스다.
-            truncatedCount = view.hiddenKinds,
-            valueTotal = view.totalCount
+            truncatedCount = view.hiddenKinds
         )
     }
 
@@ -2705,12 +2705,19 @@ class StatsDataProvider {
         val refDef = defById[targetFieldDefIds.first()] ?: defById.values.first()
         val refCfg = FieldStatsConfig.fromConfig(refDef.config)
 
-        val allValues = mutableListOf<String>()
+        // 캐릭터 축과 **같은 처리**여야 한다(R-16의 짝 규칙) — 여기서도 값 건수가 아니라 대상 수다.
+        val holders = HashMap<String, MutableSet<Long>>()
+        fun record(entityId: Long, value: String) {
+            for (key in getFieldValues(s, refDef, value, refCfg)) {
+                holders.getOrPut(key) { HashSet() }.add(entityId)
+            }
+        }
+
         for (fv in s.eventFieldValues) {
             if (fv.fieldDefinitionId !in idSet) continue
             if (fv.eventId !in eventIds) continue
             if (defById[fv.fieldDefinitionId]?.type == "CALCULATED") continue
-            allValues.addAll(getFieldValues(s, refDef, fv.value, refCfg))
+            record(fv.eventId, fv.value)
         }
 
         val calcDefIds = defById.values.filter { it.type == "CALCULATED" }.map { it.id }
@@ -2720,35 +2727,26 @@ class StatsDataProvider {
                 val fieldMap = calculated[eventId] ?: continue
                 for (defId in calcDefIds) {
                     val v = fieldMap[defId] ?: continue
-                    allValues.addAll(getFieldValues(s, refDef, v, refCfg))
+                    record(eventId, v)
                 }
             }
         }
 
-        // 캐릭터 축과 **같은 처리**여야 한다(R-16의 짝 규칙) — 상한·비율 분모 모두.
-        val counted = ValueDistributions.of(allValues)
+        val counted = ValueDistributions.sorted(holders.mapValues { it.value.size })
         val view = ValueDistributions.view(counted, SUBGROUP_DISTRIBUTION_LIMIT)
 
         return SubgroupAnalysis(
             targetFieldName = refDef.name,
             distribution = view.shownMap(),
             totalCount = eventIds.size,
-            truncatedCount = view.hiddenKinds,
-            valueTotal = view.totalCount
+            truncatedCount = view.hiddenKinds
         )
     }
 
     /**
-     * '필드 하나 고르기' UI용 — 필드 정의를 인사이트 카드와 **같은 축((key,type) 머지)**으로 묶는다.
-     *
-     * 머지하지 않으면 전체 세계관 보기에서 같은 필드가 세계관 수만큼 중복으로 나열되고,
-     * 그중 하나를 고르면 그 세계관 값만 집계돼 카드와 다른 답이 나온다.
-     * [FieldStatsConfig] 활성 여부로 거르지 않는 것은 종전 동작 유지다 — 이 화면은 통계 비활성
-     * 필드도 부분집합 분석 대상으로 허용해 왔다(자율성 우선).
-     */
-    /**
-     * 하위 그룹 분석 등에서 사용자가 고를 필드 목록 — 인사이트 카드와 **같은 (key,type) 축**이고
-     * 같은 '통계에 포함' 필터를 쓴다.
+     * '필드 하나 고르기' UI용 — 필드 정의를 인사이트 카드와 **같은 축((key,type) 머지)**으로 묶고
+     * 같은 '통계에 포함' 필터를 쓴다. 머지하지 않으면 전체 세계관 보기에서 같은 필드가 세계관
+     * 수만큼 중복 나열되고, 그중 하나를 고르면 그 세계관 값만 집계돼 카드와 다른 답이 나온다.
      *
      * **종전 결정을 뒤집은 것이다.** 이 함수는 "통계 비활성 필드도 부분집합 분석 대상으로
      * 허용해 왔다(자율성 우선)"는 이유로 일부러 거르지 않았고, 형제 목록인 [getRankableFields]는
