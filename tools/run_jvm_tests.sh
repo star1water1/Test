@@ -166,6 +166,7 @@ $TEST/data/RestoreLossCountsTest.kt
 $TEST/data/RestoreTallyTest.kt
 $TEST/ai/AiModelSuggestionsTest.kt
 $TEST/stats/StatsCrossAnalysisTest.kt
+$TEST/stats/StatsDrilldownTest.kt
 $TEST/util/CardFieldSummaryTest.kt
 $TEST/util/UnassignedFilterTest.kt
 $TEST/util/FieldValueResolverTest.kt

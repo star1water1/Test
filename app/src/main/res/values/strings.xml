@@ -904,6 +904,21 @@
     <string name="stats_subgroup_analysis">이 그룹의 다른 필드 분포 보기</string>
     <string name="stats_subgroup_select_field">분석할 필드 선택</string>
     <string name="stats_subgroup_result_title">%s 분포 (%d명 기준)</string>
+    <!-- Stats: 사건 드릴다운 (S-9) -->
+    <string name="stats_chart_tap_count_events">%d건의 사건</string>
+    <string name="stats_subgroup_analysis_events">이 사건들의 다른 필드 분포 보기</string>
+    <string name="stats_subgroup_result_title_events">%s 분포 (%d건 기준)</string>
+    <string name="stats_event_row_value">%1$s · %2$s</string>
+    <!-- Stats: 드릴다운 실패 고지 (S-7·S-9 — 조용한 빈 목록 금지) -->
+    <string name="stats_drilldown_field_missing">이 값을 가진 대상을 조회할 필드 정의를 현재 통계 범위에서 찾을 수 없습니다. 작품 필터를 확인한 뒤 다시 시도해 주세요.</string>
+    <string name="stats_subgroup_field_missing">고른 필드를 현재 통계 범위에서 찾을 수 없습니다. 작품 필터를 확인한 뒤 다시 골라 주세요.</string>
+    <string name="stats_subgroup_truncated">값 %d종이 더 있습니다 (상위 %d종만 표시)</string>
+    <string name="stats_subgroup_events_unsupported">사건 목록에서는 캐릭터 필드 분포를 분석할 수 없습니다.</string>
+    <string name="stats_subgroup_row_characters">%1$s: %2$d명 (%3$s%%)</string>
+    <string name="stats_subgroup_row_events">%1$s: %2$d건 (%3$s%%)</string>
+    <string name="stats_subgroup_no_other_field">이 목록과 함께 볼 다른 필드가 없습니다. 필드를 더 만들면 분포를 비교할 수 있습니다.</string>
+    <string name="stats_subgroup_list_not_ready">목록을 아직 불러오는 중입니다. 잠시 후 다시 선택해 주세요.</string>
+    <string name="stats_cross_not_ready">통계를 아직 불러오는 중입니다. 잠시 후 다시 눌러 주세요.</string>
 
     <!-- Stats: 패턴 인사이트 (개선 3) -->
     <string name="stats_pattern_insights_title">패턴 인사이트</string>
@@ -1100,6 +1115,9 @@
     <string name="stats_cross_merged_universes">세계관 %d개의 같은 필드를 합산했습니다</string>
     <string name="stats_cross_axis_mismatch">캐릭터 필드(%1$s)와 사건 필드(%2$s)는 한 표에 섞을 수 없습니다. 셀 값이 캐릭터 수인지 사건 수인지 정해지지 않기 때문입니다. 같은 축의 필드끼리 골라 주세요.</string>
     <string name="stats_cross_field_missing">고른 필드를 현재 통계 범위에서 찾을 수 없습니다. 작품 필터를 확인한 뒤 다시 골라 주세요.</string>
+    <!-- 표가 비는 것은 실패가 아니라 결과일 수 있다 — 조용히 빈 카드를 두지 말고 사유를 밝힌다 (S-8) -->
+    <string name="stats_cross_empty_characters">조건에 맞는 캐릭터가 없어 표를 만들 수 없습니다. 두 필드 모두에 값이 있는 캐릭터가 필요하며, 필터를 걸었다면 필터 값도 확인해 주세요.</string>
+    <string name="stats_cross_empty_events">조건에 맞는 사건이 없어 표를 만들 수 없습니다. 두 필드 모두에 값이 있는 사건이 필요하며, 필터를 걸었다면 필터 값도 확인해 주세요.</string>
 
     <!-- Stats: 데이터 현황 -->
     <string name="stats_data_overview_title">데이터 현황</string>

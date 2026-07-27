@@ -234,14 +234,11 @@ class StatsFieldInsightFragment : Fragment() {
         }
         wrapper.addView(typeLabel)
 
-        val fieldDefId = insight.fieldDefinition.id
-        val fieldName = insight.fieldDefinition.name
-
         when (result.entry.type) {
             FieldStatsConfig.StatsType.DISTRIBUTION -> {
                 val data = result.distributionData ?: return wrapper
                 val chart = createChartForDistribution(data, result.entry.chart, result.entry.limit)
-                attachChartTapListener(chart, data.entries.sortedByDescending { it.value }.take(result.entry.limit).map { it.key }, fieldDefId, fieldName)
+                attachChartTapListener(chart, data.entries.sortedByDescending { it.value }.take(result.entry.limit).map { it.key }, insight)
                 wrapper.addView(chart)
                 wrapper.addView(createDistributionTable(data, result.entry.limit))
             }
@@ -249,7 +246,7 @@ class StatsFieldInsightFragment : Fragment() {
                 val data = result.distributionData ?: return wrapper
                 val sorted = data.entries.sortedByDescending { it.value }.take(result.entry.limit)
                 val chart = createRankingChart(sorted)
-                attachChartTapListener(chart, sorted.map { it.key }, fieldDefId, fieldName)
+                attachChartTapListener(chart, sorted.map { it.key }, insight)
                 wrapper.addView(chart)
             }
             FieldStatsConfig.StatsType.NUMERIC -> {
@@ -266,14 +263,24 @@ class StatsFieldInsightFragment : Fragment() {
 
     // ===== 차트 탭 인터랙션 (개선 6) =====
 
-    private fun attachChartTapListener(chart: View, labels: List<String>, fieldDefId: Long, fieldName: String) {
+    /**
+     * 차트 조각 탭 → 그 값을 가진 대상 목록.
+     *
+     * [insight]를 통째로 받는 이유가 둘이다:
+     * - 카드가 합산한 **머지 id 전체**([FieldInsightResult.mergedFieldDefIds])를 그대로 넘겨야
+     *   목록 인원이 조각 수치와 일치한다(S-7).
+     * - 사건 필드 카드인지(entityType) 알아야 사건 목록으로 보낼 수 있다 — 종전에는 사건 카드도
+     *   캐릭터 조회로 흘러가 항상 0명짜리 빈 시트가 떴다(S-9).
+     */
+    private fun attachChartTapListener(chart: View, labels: List<String>, insight: FieldInsightResult) {
+        val open = { value: String -> showDrilldownBottomSheet(insight, value) }
         when (chart) {
             is PieChart -> {
                 chart.setTouchEnabled(true)
                 chart.setOnChartValueSelectedListener(object : OnChartValueSelectedListener {
                     override fun onValueSelected(e: Entry?, h: Highlight?) {
                         val pieEntry = e as? PieEntry ?: return
-                        showCharacterListBottomSheet(fieldDefId, fieldName, pieEntry.label)
+                        open(pieEntry.label)
                     }
                     override fun onNothingSelected() {}
                 })
@@ -283,8 +290,7 @@ class StatsFieldInsightFragment : Fragment() {
                 chart.setOnChartValueSelectedListener(object : OnChartValueSelectedListener {
                     override fun onValueSelected(e: Entry?, h: Highlight?) {
                         val index = h?.x?.toInt() ?: return
-                        val label = labels.getOrNull(index) ?: return
-                        showCharacterListBottomSheet(fieldDefId, fieldName, label)
+                        open(labels.getOrNull(index) ?: return)
                     }
                     override fun onNothingSelected() {}
                 })
@@ -294,8 +300,7 @@ class StatsFieldInsightFragment : Fragment() {
                 chart.setOnChartValueSelectedListener(object : OnChartValueSelectedListener {
                     override fun onValueSelected(e: Entry?, h: Highlight?) {
                         val index = h?.x?.toInt() ?: return
-                        val label = labels.getOrNull(index) ?: return
-                        showCharacterListBottomSheet(fieldDefId, fieldName, label)
+                        open(labels.getOrNull(index) ?: return)
                     }
                     override fun onNothingSelected() {}
                 })
@@ -303,11 +308,26 @@ class StatsFieldInsightFragment : Fragment() {
         }
     }
 
-    private fun showCharacterListBottomSheet(fieldDefId: Long, fieldName: String, value: String) {
-        val sheet = StatsCharacterListBottomSheet.newInstance(fieldDefId, fieldName, value)
+    private fun showDrilldownBottomSheet(insight: FieldInsightResult, value: String) {
+        val isEvent = insight.fieldDefinition.entityType ==
+            com.novelcharacter.app.data.model.FieldDefinition.ENTITY_EVENT
+        val sheet = StatsCharacterListBottomSheet.newInstance(
+            fieldDefIds = insight.mergedFieldDefIds,
+            fieldName = insight.fieldDefinition.name,
+            selectedValue = value,
+            isEventAxis = isEvent
+        )
         sheet.onCharacterClick = { characterId ->
             val bundle = Bundle().apply { putLong("characterId", characterId) }
             findNavController().navigate(R.id.characterDetailFragment, bundle)
+        }
+        sheet.onEventClick = { year ->
+            // 사건 상세 화면은 없다 — 전역 검색과 **같은 규약**으로 연표를 그 연도에 맞춰 연다
+            // (center_year는 TimelineFragment.onResume이 소비한다).
+            val prefs = requireContext()
+                .getSharedPreferences("timeline_ui_state", android.content.Context.MODE_PRIVATE)
+            prefs.edit().putInt("center_year", year).putBoolean("pending_navigate", true).commit()
+            findNavController().navigate(R.id.timelineFragment)
         }
         sheet.show(childFragmentManager, StatsCharacterListBottomSheet.TAG)
     }
@@ -584,7 +604,11 @@ class StatsFieldInsightFragment : Fragment() {
      */
     private fun showCrossAnalysisDialog() {
         if (!isAdded) return
-        val insights = viewModel.fieldInsights.value ?: return
+        // 로딩 전에 눌러도 버튼은 눌린다 — 아무 일도 일어나지 않으면 고장과 구분되지 않는다.
+        val insights = viewModel.fieldInsights.value ?: run {
+            Toast.makeText(requireContext(), R.string.stats_cross_not_ready, Toast.LENGTH_SHORT).show()
+            return
+        }
 
         val byAxis = insights.groupBy {
             it.fieldDefinition.entityType == com.novelcharacter.app.data.model.FieldDefinition.ENTITY_EVENT
@@ -656,7 +680,13 @@ class StatsFieldInsightFragment : Fragment() {
             .setView(dialogView)
             .setPositiveButton(R.string.stats_cross_run) { _, _ ->
                 val ids = currentFieldIds
-                if (ids.size < 2) return@setPositiveButton
+                if (ids.size < 2) {
+                    // 고른 축·필드·필터값을 통보 없이 버리지 않는다(S-12와 같은 부류).
+                    Toast.makeText(
+                        requireContext(), R.string.stats_cross_need_two_fields, Toast.LENGTH_LONG
+                    ).show()
+                    return@setPositiveButton
+                }
                 val f1 = ids[spinner1.selectedItemPosition.coerceIn(0, ids.size - 1)]
                 val f2 = ids[spinner2.selectedItemPosition.coerceIn(0, ids.size - 1)]
                 val filterPos = spinnerFilter.selectedItemPosition
@@ -717,7 +747,22 @@ class StatsFieldInsightFragment : Fragment() {
         container.removeAllViews()
 
         val crossTable = result.crossTable
-        if (crossTable.isEmpty()) return
+        if (crossTable.isEmpty()) {
+            // 빈 표를 조용히 두면 "실행했는데 아무 일도 안 일어난" 화면이 된다 — 사유를 밝힌다
+            // (변수 제어: 검증→알림). 계산 필드 누락이라는 원인 자체는 provider에서 고쳤고(S-8),
+            // 이것은 진짜로 데이터가 없는 경우까지 덮는 방어선이다.
+            container.addView(TextView(requireContext()).apply {
+                text = getString(
+                    if (result.axis == CrossAxis.EVENT) R.string.stats_cross_empty_events
+                    else R.string.stats_cross_empty_characters
+                )
+                textSize = resources.getDimension(R.dimen.stats_text_chart_value) / resources.displayMetrics.scaledDensity
+                setTextColor(ContextCompat.getColor(requireContext(), R.color.text_secondary))
+                val pad = resources.getDimensionPixelSize(R.dimen.stats_margin_sm)
+                setPadding(pad, pad, pad, pad)
+            })
+            return
+        }
 
         // 모든 field2 값 수집
         val field2Values = crossTable.values.flatMap { it.keys }.distinct().sorted()

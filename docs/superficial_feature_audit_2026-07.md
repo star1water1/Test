@@ -99,17 +99,17 @@ QuickAdd·BatchEdit의 신규 생성)은 전수 확인 결과 정상이었다 �
 - **증상:** 작품이 삭제돼 연결이 끊긴(또는 다이얼로그에서 작품 체크를 해제한) 사건을 열어 설명만 고치고 저장하면, 채워 둔 회차·챕터 등 사건 필드값이 전부 소리 없이 사라진다. 필드 로딩이 끝나기 전에 빠르게 저장해도 동일하다.
 - **개혁안:** 캐릭터 경로의 R-5 커버 집합을 사건 경로에 그대로 이식한다: DataProvider.updateEvent/insertEvent/updateEventAndShiftOthers에 '폼이 실제 렌더한 필드 정의 id 집합'을 함께 넘기고, TimelineViewModel이 replaceAllByEvent 대신 커버 집합 기준 병합(기존 EventFieldValueDao.replaceForFields 재사용)으로 커버 밖 기존 값을 보존한다. 세계관 미해결(universeId==null)·필드 섹션 로딩 미완이면 커버 집합을 공집합으로 넘겨 전량 보존하고, 보존 건수가 0보다 크면 CharacterSaveCoordinator.notifyPreservedFieldValues와 동일한 "N개 필드값을 보관했습니다" 고지를 띄운다(검증→알림→교정). 추가로 rebuildEventFieldSection의 세계관 해석에 editingEvent?.universeId 폴백을 두어 작품 연결이 끊긴 사건도 기존 필드값을 화면에 드러내 편집할 수 있게 한다(존재를 알 수 없는 데이터 금지, 원칙 04).
 
-### S-7. 다세계관 통합 인사이트 카드의 차트 탭이 대표 필드 1개만 조회해 캐릭터 목록이 과소집계된다
+### ~~S-7~~. 다세계관 통합 인사이트 카드의 차트 탭이 대표 필드 1개만 조회해 캐릭터 목록이 과소집계된다 — **처리 완료 (remaining_work 1-9장)**
 - **위치:** `app/src/main/java/com/novelcharacter/app/ui/stats/StatsFieldInsightFragment.kt:237` · **분류:** 조용한 실패 · **심각도:** 상
 - **증상:** 전체 세계관 보기에서 '직업' 카드가 세계관 A+B 합산으로 '검사 15명'을 그리는데, 그 조각을 탭하면 첫 세계관 필드의 캐릭터(예: 7명)만 나열된다. 어긋난 수치에 대한 고지가 없고, 이 목록을 모수로 쓰는 하위 그룹 분석까지 연쇄로 과소집계된다.
 - **개혁안:** FieldInsightResult에 mergedFieldDefIds: List<Long>를 추가하고 computeFieldInsights/buildFieldInsight에서 fds.map{it.id}로 채운 뒤(단일 세계관도 원소 1개 리스트로 통일), StatsFieldInsightFragment의 탭 리스너와 StatsCharacterListBottomSheet 인자를 long[] 병합 id로 교체한다. 바텀시트는 getCharactersByFieldValue 대신 기존 getCharactersByFieldKeyValues(첫 def config로 파싱해 차트 값 공간과 일치)를 호출하는 ViewModel 경로를 신설해 차트 조각 수치와 목록 인원이 항상 일치하게 한다. 하위 그룹 분석의 현재 필드 제외(77행)도 병합 id 집합 기준으로 바꿔 형제 세계관 def가 대상에 섞이지 않게 하고, 만약 파싱 config 차이로 수치가 어긋날 수 있는 경우에는 목록 상단에 고지를 표시한다(변수 제어: 검증→알림→교정). 단일 id 경로를 남겨 특정 케이스만 때우는 방편식 분기는 두지 않는다.
 
-### S-8. 캐릭터 축 교차분석이 CALCULATED 필드 계산값을 합치지 않아 빈 표가 무통보로 나온다
+### ~~S-8~~. 캐릭터 축 교차분석이 CALCULATED 필드 계산값을 합치지 않아 빈 표가 무통보로 나온다 — **처리 완료 (remaining_work 1-9장)**
 - **위치:** `app/src/main/java/com/novelcharacter/app/ui/stats/StatsDataProvider.kt:1463` · **분류:** 조용한 실패 · **심각도:** 중
 - **증상:** 인사이트 목록에는 분포가 그려지는 CALCULATED 필드(예: 수식으로 계산한 '전투력')를 교차분석 축으로 고르고 실행하면 제목·캡션만 있는 빈 표가 나오고 아무 안내도 없다. B-4('사건 필드를 고르면 아무 일도 안 일어남')와 동일 부류의 잔존 구멍 — 사건 축만 고쳐지고 캐릭터 축의 CALCULATED는 남았다.
 - **개혁안:** 근본 원인을 사건 축과 대칭으로 수리한다: computeCrossAnalysis에서 storedRows = s.fieldValues.groupBy(...) 뒤 mergeCalculatedRows(storedRows, computeAllCalculatedValues(s))를 rowsByEntity로 사용해 CALCULATED 계산값이 축·필터 어디에 쓰여도 집계되게 한다(이미 있는 mergeCalculatedRows/computeAllCalculatedValues 재사용, 한 축만 고치는 방편식 패치 금지). 방어선으로 showCrossAnalysisResult/renderCrossTable의 빈 crossTable 무통보 return을 "조건에 맞는 데이터 없음" 고지로 바꿔 진짜 데이터가 없는 경우도 변수 제어(검증→알림) 원칙대로 사용자에게 알린다. JVM 테스트에 캐릭터 축 CALCULATED 필드(축1·축2·필터 각각) 교차분석 케이스를 추가해 회귀를 막는다.
 
-### S-9. 사건 필드 인사이트 차트를 탭하면 항상 빈 캐릭터 목록 시트가 뜬다 (사건 드릴다운 미구현인데 탭 리스너는 부착)
+### ~~S-9~~. 사건 필드 인사이트 차트를 탭하면 항상 빈 캐릭터 목록 시트가 뜬다 (사건 드릴다운 미구현인데 탭 리스너는 부착) — **처리 완료 (remaining_work 1-9장)**
 - **위치:** `app/src/main/java/com/novelcharacter/app/ui/stats/StatsFieldInsightFragment.kt:244` · **분류:** 조용한 실패 · **심각도:** 중
 - **증상:** 사건 커스텀 필드 카드(B-10으로 편입)의 파이/막대 조각을 탭하면 — 차트에는 사건 12건이라 그려져 있어도 — '필드명: 값' 시트가 열리고 0명·빈 목록이 나온다. 해당 값을 가진 사건을 보여주는 경로 자체가 없는데 탭 인터랙션은 살아 있어, 기능이 있는 것처럼 보이고 실제로는 아무것도 돌려주지 않는다.
 - **개혁안:** 사건 드릴다운을 캐릭터 드릴다운과 대칭으로 완결 구현한다(방편식 패치 금지 — 리스너만 떼는 땜빵 불가): StatsDataProvider에 s.eventFieldDefinitions/s.eventFieldValues(+computeAllEventCalculatedValues)를 조회하는 getEventsByFieldValue를 추가하고, 시트를 엔티티 인지형으로 일반화(또는 사건용 시트 신설)해 탭한 값을 가진 사건 목록을 보여주고 사건 상세로 내비게이트한다. attachChartTapListener에 insight.fieldDefinition.entityType을 전달해 경로를 분기하고, 사건 축에서는 하위 그룹 분석 버튼도 사건 필드 목록으로 채운다. 변수 제어 원칙에 따라 getCharactersByFieldValue의 `?: return emptyList()` 폴백도 제거한다 — 대상 필드 정의를 찾지 못하면 빈 목록으로 위장하지 말고 오류를 상위로 알려 사용자에게 표시한다.
@@ -159,7 +159,7 @@ QuickAdd·BatchEdit의 신규 생성)은 전수 확인 결과 정상이었다 �
 - **증상:** 콤마 목록 표시 형식으로 설정한 TEXT 필드를 순위 필드로 고르면 '검, 활 (1회)'처럼 원문 전체가 한 값으로 집계돼 전원 1회 동률의 무의미한 순위가 나온다. 별칭 사전을 쓰는 필드는 인사이트 분포 차트와 순위 탭의 빈도 수치가 서로 다른데 아무 고지가 없다.
 - **개혁안:** computeRanking 빈도 모드에서 fd.type=="MULTI_TEXT" 하드코딩 분기(2518, 2566)를 제거하고, GRADE/BODY_SIZE가 이미 하듯 값 소유 필드(fieldDefMap[fv.fieldDefinitionId])를 기준으로 FieldValueTokenizer.tokenize(또는 splitForStats)로 분리해 frequencyMap 구축·매칭을 통일한다. 분리된 토큰은 resolversByFieldId의 FieldValueResolver(statsKeys 또는 canonical)로 접은 뒤 집계해 인사이트 분포와 동일한 키 공간에서 빈도를 계산한다 — 통계 파싱 단일 소스 계약 준수(방편식 재구현 금지). 검증→알림 원칙에 따라 COMMA_LIST TEXT·별칭 필드에 대해 인사이트 분포 카운트와 순위 빈도가 일치함을 확인하는 JVM 테스트를 추가하고, 토큰화로 인해 한 캐릭터가 복수 토큰을 갖는 경우의 대표값 표시 규칙(최다 빈도 토큰)을 MULTI_TEXT 기존 경로와 동일하게 적용한다.
 
-### S-19. 하위 그룹 분석이 CALCULATED 필드를 대상으로 고를 수 있게 해놓고 항상 '데이터 없음'을 돌려준다
+### ~~S-19~~. 하위 그룹 분석이 CALCULATED 필드를 대상으로 고를 수 있게 해놓고 항상 '데이터 없음'을 돌려준다 — **처리 완료 (remaining_work 1-9장)**
 - **위치:** `app/src/main/java/com/novelcharacter/app/ui/stats/StatsDataProvider.kt:2366` · **분류:** 껍데기 구현 · **심각도:** 중
 - **증상:** 차트 탭 → '하위 그룹 분석'에서 수식 필드(예: 계산된 '나이대')를 고르면, 그 필드가 자기 카드에서는 분포를 그려주는데도 항상 '데이터 없음'이 뜬다. 목록에 고를 수 있게 나오는 것 자체가 동작을 약속하는데 어떤 경우에도 결과가 없다.
 - **개혁안:** computeSubgroupAnalysis를 두 갈래로 보강한다: 대상 def가 CALCULATED면 getCharactersByFieldValue(2242행)·편향 드릴다운(2321행)과 동일하게 computeAllCalculatedValues(s)에서 characterIds에 속한 캐릭터의 해당 필드 값을 가져와 getFieldValues로 파싱해 분포에 합산한다. 아울러 targetFieldDefId 하나가 아니라 getRankableFields(2404-2424행)처럼 (key,type) 머지된 def 목록을 받아 전체 세계관 스코프에서 같은 필드의 타 세계관 값도 집계하고, 파싱은 기준 def config로 통일한다(2306-2309행의 기존 관례). 선택 목록에서 CALCULATED를 숨기는 방식은 기능 간소화(원칙 03 위반)이므로 금지 — 목록이 약속하는 필드는 전부 실제로 분석되게 만든다. 값이 진짜로 없는 경우에만 '데이터 없음'이 뜨도록 하여 변수 제어(검증→알림) 원칙을 지킨다.
@@ -182,8 +182,8 @@ QuickAdd·BatchEdit의 신규 생성)은 전수 확인 결과 정상이었다 �
 |------|------|------|------|
 | ~~1~~ | ~~**사건 입력 보호**~~ | ~~S-6 (+S-12)~~ | **처리 완료** — `EventFieldValueMerge`(커버 집합) + `replaceForFields` 공용화 + universeId 보존 폴백 + 보존 Toast·이력 고지 + `setValidatedPositiveButton` 재조립. 상세·실기기 확인 절차는 remaining_work 1-7장·3-7장. 인접 발견: 통보-후-닫힘 입력 유실 잔여(B-28), CharacterViewModel 사건 CRUD 무통보 실패(B-29) 등재 |
 | ~~2~~ | ~~**월드패키지 완결**~~ | ~~S-5~~ | **처리 완료** — `WorldPackageImporter` 신설(manifest v1~v3 검증 → 전 엔트리 역직렬화 → 원자 트랜잭션 삽입 + old→new id 재배선 + code 충돌 재발급 고지), 충돌 3분기 다이얼로그(share_world_conflict_* 문자열 소생), `ImportFileFormat` ZIP 판별 3분기, 원인별 오류 메시지. 미검증 목록의 "추가 누락 데이터"는 **전부 실재로 확인**되어 내보내기 v3으로 완결(사건 필드 정의·값, 값 라이브러리, 세계관/작품 이미지 추가 + 전역 이름 은행 과포함 축소). 상세·실기기 확인 절차는 remaining_work 1-8장·3-8장 |
-| 3 | **통계 조용한 실패 일소** | S-7·S-8·S-9·S-19 | 공통 뿌리 둘: ① CALCULATED 값 병합이 사건 축에만 있다(S-8·S-19 — mergeCalculatedRows를 캐릭터 축·하위 그룹에도), ② 드릴다운이 단일 fieldDefId·캐릭터 전용이다(S-7·S-9 — (key,type) 그룹 전체 조회 + 엔티티 인지형 시트). 빈 결과 무통보 return을 전부 "데이터 없음" 고지로 교체 |
-| 4 | **통계 정합성** | S-14·S-15·S-16·S-17·S-18 | '통계에 포함' 설정을 패턴 인사이트·레거시 필드 분석에 일관 적용, 비율 모수를 전체 합으로 교정 + 잘림 개수 고지(R-14), 순위 빈도를 FieldValueTokenizer·별칭 접기 규칙으로 통일, BODY_SIZE 드릴다운 키 일치. 레거시 필드 분석 화면은 인사이트 화면과의 통합(한쪽 소거)도 검토할 것 — 같은 질문에 다른 답을 주는 화면 둘은 그 자체가 변수 제어 위반 |
+| ~~3~~ | ~~**통계 조용한 실패 일소**~~ | ~~S-7·S-8·S-9·S-19~~ | **처리 완료** — ① `FieldInsightResult.mergedFieldDefIds` 신설로 드릴다운이 카드가 합산한 (key,type) 그룹 전체를 기준 def config로 조회(S-7), ② `computeCrossAnalysis`가 사건 축과 대칭으로 `mergeCalculatedRows(…, computeAllCalculatedValues)` 수행(S-8), ③ `getEventsByFieldValue`·`computeEventSubgroupAnalysis` 신설 + 시트를 엔티티 인지형으로 일반화, 사건 행 탭은 전역 검색과 같은 `center_year` 규약으로 연표 이동(S-9), ④ `computeSubgroupAnalysis`가 머지 id 목록을 받고 CALCULATED 계산값을 합산(S-19). 빈 결과 무통보 return은 전부 사유 고지로 교체(교차표 빈 표·드릴다운 필드 소실·하위 그룹 대상 없음). 신규 JVM 테스트 19건. 상세·실기기 확인 절차는 remaining_work 1-9장·3-9장 |
+| 4 | **통계 정합성** | S-14·S-15·S-16·S-17·S-18 (+**B-31·B-32·B-33**) | '통계에 포함' 설정을 패턴 인사이트·레거시 필드 분석에 일관 적용, 비율 모수를 전체 합으로 교정 + 잘림 개수 고지(R-14), 순위 빈도를 FieldValueTokenizer·별칭 접기 규칙으로 통일, BODY_SIZE 드릴다운 키 일치. 레거시 필드 분석 화면은 인사이트 화면과의 통합(한쪽 소거)도 검토할 것 — 같은 질문에 다른 답을 주는 화면 둘은 그 자체가 변수 제어 위반. **로드맵 3 세션이 확정한 인접 5건을 이 묶음에 편입**: B-31(패턴 설정 버튼이 카드 안에 있어 모든 유형을 끄면 되돌릴 수 없는 일방통행 함정 — 심각도 상), B-32(`e.message` null 예외를 전 관측자가 걸러 백지 화면 — 심각도 상), B-33(CALCULATED 미병합 잔여 4경로 + `computeRanking`의 분기 구현), B-34(머지 카드의 톱니가 대표 def에만 써서 '통계에 포함' 끄기가 안 먹는 것처럼 보임 — 심각도 상), B-35(`crossFieldGroup`만 enabled 필터가 없어 인사이트와 교차분석이 다른 수치 — S-14와 같은 질문). **착수 전 R-15·R-16·R-17을 읽을 것** |
 | 5 | **수식 오류 가시화** | S-11 | NaN을 "오류" 표식으로 표면화(미입력과 구분), 수식 편집기에 검증 피드백. FormulaEvaluator가 단일 소스이므로 표시 계층만 손대면 된다 |
 | 6 | **B-8 스트리밍 리더 배선** | S-10 | 기지 백로그 — excel_streaming_import 설계 문서의 '이중 경로 + per-row 비분기' 원칙대로. B-7의 MergedCellMap을 스트리밍 경로에도 붙일 것(mergeCells 요소) |
 | 7 | **초기화 완결** | S-13 | 전체 초기화에 휴지통(스냅샷+보류 이미지)·작업 이력·프리셋 포함, 삭제 범위를 초기화 확인 다이얼로그에 명시 |
@@ -279,3 +279,4 @@ QuickAdd·BatchEdit의 신규 생성)은 전수 확인 결과 정상이었다 �
 |------|------|------|
 | v1.0 | 2026.07.27 | 최초 작성 — 즉시 수리 4건(S-1~S-4), 확정 15건(S-5~S-19) + 개혁안, 기각 3건(전부 세션 중 수리 교차확인), 미검증 57건, 개혁 우선순위 로드맵 |
 | v1.1 | 2026.07.27 | 개혁 로드맵 2 처리 완료 — S-5 소진(WorldPackageImporter + 내보내기 v3 완결), 미검증 목록의 월드패키지 누락 데이터 항목 실재 확인·처리 |
+| v1.2 | 2026.07.27 | 개혁 로드맵 3 처리 완료 — S-7·S-8·S-9·S-19 소진(통계 조용한 실패 일소). 공통 뿌리 둘(머지 축을 잃은 드릴다운 / 캐릭터 축의 CALCULATED 미병합)을 근본에서 수리하고 무통보 빈 결과를 사유 고지로 교체. 인접 확정 5건(B-31~B-35)을 로드맵 4에 편입 — 전부 코드 실독으로 확인 |

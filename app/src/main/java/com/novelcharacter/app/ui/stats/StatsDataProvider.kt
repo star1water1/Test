@@ -257,7 +257,16 @@ data class FieldInsightResult(
     val analysisResults: List<AnalysisResult>,
     val totalCount: Int,
     val filledCount: Int,
-    val universeName: String = ""
+    val universeName: String = "",
+    /**
+     * 이 카드가 **실제로 합산한** 필드 정의 id 전체 (Pre-Analysis Merge된 (key, type) 그룹).
+     *
+     * 차트는 그룹 전체를 [fieldDefinition](= 그룹의 기준 def) config로 파싱해 합산하므로,
+     * 드릴다운도 반드시 같은 집합·같은 기준 def로 조회해야 조각 수치와 목록 인원이 일치한다.
+     * 대표 id 하나만 넘기면 전체 세계관 보기에서 조용한 과소집계가 된다(S-7).
+     * 첫 원소는 항상 [fieldDefinition].id — 파싱 기준 def다.
+     */
+    val mergedFieldDefIds: List<Long> = listOf(fieldDefinition.id)
 )
 
 data class AnalysisResult(
@@ -408,10 +417,33 @@ data class FieldValueCharacter(
     val imageUri: String?
 )
 
+/** 사건 드릴다운 행 — [FieldValueCharacter]의 사건판 (S-9). */
+data class FieldValueEvent(
+    val eventId: Long,
+    val description: String,
+    val formattedDate: String,
+    val year: Int,
+    val fieldValue: String
+)
+
 data class SubgroupAnalysis(
     val targetFieldName: String,
     val distribution: Map<String, Int>,
-    val totalCount: Int
+    val totalCount: Int,
+    /** 상한(SUBGROUP_DISTRIBUTION_LIMIT)에 걸려 표시되지 않은 값 종류 수 — 0보다 크면 UI가 고지한다(R-14). */
+    val truncatedCount: Int = 0
+)
+
+/** 하위 그룹 분석이 한 번에 보여주는 값 종류 상한 — 문구도 이 상수로 채운다(R-14). */
+const val SUBGROUP_DISTRIBUTION_LIMIT = 15
+
+/**
+ * 인사이트 카드와 같은 축으로 묶인 필드 하나 — 화면에 보이는 이름은 [primary],
+ * 집계 대상은 [mergedFieldDefIds] 전체다.
+ */
+data class MergedFieldGroup(
+    val primary: FieldDefinition,
+    val mergedFieldDefIds: List<Long>
 )
 
 // ===== 순위 =====
@@ -1188,7 +1220,8 @@ class StatsDataProvider {
                 universeMap[primaryFd.universeId]?.name ?: ""
             } else ""
 
-            buildFieldInsight(primaryFd, statsConfig, rawValues, totalCount, universeName)
+            buildFieldInsight(primaryFd, statsConfig, rawValues, totalCount, universeName,
+                mergedFieldDefIds = fds.map { it.id })
         }
 
         // ── 사건 필드 인사이트 (B-10 후속): 캐릭터 필드와 동일 규칙으로 편입 (원칙 02) ──
@@ -1217,7 +1250,8 @@ class StatsDataProvider {
                 universeMap[primaryFd.universeId]?.name ?: ""
             } else ""
 
-            buildFieldInsight(primaryFd, statsConfig, rawValues, totalCount, universeName)
+            buildFieldInsight(primaryFd, statsConfig, rawValues, totalCount, universeName,
+                mergedFieldDefIds = fds.map { it.id })
         }
 
         return characterInsights + eventInsights
@@ -1229,7 +1263,8 @@ class StatsDataProvider {
         statsConfig: FieldStatsConfig,
         rawValues: List<String>,
         totalCount: Int,
-        universeName: String
+        universeName: String,
+        mergedFieldDefIds: List<Long>
     ): FieldInsightResult {
         val analysisResults = statsConfig.analyses.flatMap { entry ->
             when (entry.type) {
@@ -1250,7 +1285,7 @@ class StatsDataProvider {
             }
         }
         return FieldInsightResult(primaryFd, statsConfig, analysisResults, totalCount, rawValues.size,
-            universeName = universeName)
+            universeName = universeName, mergedFieldDefIds = mergedFieldDefIds)
     }
 
     /**
@@ -1454,13 +1489,20 @@ class StatsDataProvider {
 
         val universeIds = (group1.defs.values + group2.defs.values).map { it.universeId }.toSet()
 
+        // 저장된 값 + CALCULATED 계산값. 계산 필드는 저장 행이 없으므로 여기서 합치지 않으면
+        // 인사이트 목록에는 보이는 필드가 교차분석에서만 빈 표로 나온다 (S-8).
+        // 사건 축(computeEventCrossAnalysis)과 **같은 처리**여야 한다 — 한 축만 고치면
+        // 나머지 축에 같은 조용한 실패가 남는다.
+        val storedRows = s.fieldValues.groupBy({ it.characterId }, { it.fieldDefinitionId to it.value })
+        val rowsByCharacter = mergeCalculatedRows(storedRows, computeAllCalculatedValues(s))
+
         return buildCrossAnalysis(
             axis = CrossAxis.CHARACTER,
             group1 = group1,
             group2 = group2,
             filterGroup = filterGroup,
             filterValue = filterValue,
-            rowsByEntity = s.fieldValues.groupBy({ it.characterId }, { it.fieldDefinitionId to it.value }),
+            rowsByEntity = rowsByCharacter,
             populationIds = s.characters.map { it.id }.toSet(),
             mergedUniverseCount = universeIds.size
         )
@@ -2228,65 +2270,143 @@ class StatsDataProvider {
      * getFieldValues() 로직을 재활용하여 파싱된 값 기준으로 매칭.
      * CALCULATED 필드의 경우 FormulaEvaluator로 실시간 계산한 값으로 매칭.
      */
+    /**
+     * 차트 조각(값 하나)을 가진 캐릭터 목록 — **차트가 합산한 (key,type) 그룹 전체**를 조회한다.
+     *
+     * [fieldDefIds]에는 [FieldInsightResult.mergedFieldDefIds]를 그대로 준다. 대표 id 하나만
+     * 주면 전체 세계관 보기에서 차트는 A+B 합산인데 목록은 A만 나오는 조용한 과소집계가 된다(S-7).
+     * 파싱은 **첫 원소(기준 def)의 config**로 통일한다 — 차트도 그룹 전체를 기준 def로 파싱해
+     * 분포를 냈으므로, 다르게 파싱하면 조각 수치와 인원이 어긋난다.
+     *
+     * @return 대상 필드 정의를 하나도 찾지 못하면 **null** — 빈 목록으로 위장하지 않는다.
+     *   호출부가 "필드를 찾을 수 없음"을 사용자에게 고지한다(변수 제어: 검증→알림).
+     */
     fun getCharactersByFieldValue(
         s: StatsSnapshot,
-        fieldDefId: Long,
+        fieldDefIds: List<Long>,
         targetValue: String
-    ): List<FieldValueCharacter> {
-        val fd = s.fieldDefinitions.find { it.id == fieldDefId } ?: return emptyList()
-        val statsConfig = FieldStatsConfig.fromConfig(fd.config)
+    ): List<FieldValueCharacter>? {
+        if (fieldDefIds.isEmpty()) return null
+        val idSet = fieldDefIds.toSet()
+        val defById = s.fieldDefinitions.filter { it.id in idSet }.associateBy { it.id }
+        if (defById.isEmpty()) return null
+
+        // 기준 def = 차트가 파싱에 쓴 그 def(그룹의 primary). 값 공간을 차트와 일치시킨다.
+        val refDef = defById[fieldDefIds.first()] ?: defById.values.first()
+        val refCfg = FieldStatsConfig.fromConfig(refDef.config)
         val charMap = s.characters.associateBy { it.id }
 
-        val result = mutableListOf<FieldValueCharacter>()
+        // 캐릭터 한 명이 형제 def·다중값으로 여러 번 매칭돼도 목록에는 한 번만 — 차트 조각은
+        // 엔티티 수를 세므로 목록도 같은 단위여야 한다.
+        val result = LinkedHashMap<Long, FieldValueCharacter>()
+        fun record(charId: Long, shownValue: String) {
+            if (result.containsKey(charId)) return
+            val char = charMap[charId] ?: return
+            val images = try {
+                com.google.gson.Gson().fromJson(char.imagePaths, Array<String>::class.java)?.toList() ?: emptyList()
+            } catch (_: Exception) { emptyList() }
+            result[charId] = FieldValueCharacter(
+                characterId = char.id,
+                characterName = char.name,
+                fieldValue = shownValue,
+                imageUri = images.firstOrNull()
+            )
+        }
 
-        if (fd.type == "CALCULATED") {
-            // CALCULATED 필드: FormulaEvaluator로 계산한 값으로 매칭
-            val calculatedValues = computeAllCalculatedValues(s)
-            for ((charId, fieldMap) in calculatedValues) {
-                val computedValue = fieldMap[fieldDefId] ?: continue
-                val parsedValues = getFieldValues(fd, computedValue, statsConfig)
-                if (parsedValues.any { it == targetValue }) {
-                    val char = charMap[charId] ?: continue
-                    val images = try {
-                        com.google.gson.Gson().fromJson(char.imagePaths, Array<String>::class.java)?.toList() ?: emptyList()
-                    } catch (_: Exception) { emptyList() }
-                    result.add(
-                        FieldValueCharacter(
-                            characterId = char.id,
-                            characterName = char.name,
-                            fieldValue = computedValue,
-                            imageUri = images.firstOrNull()
-                        )
-                    )
-                }
-            }
-        } else {
-            val rawValues = s.fieldValues.filter { it.fieldDefinitionId == fieldDefId }
-            for (fv in rawValues) {
-                val parsedValues = getFieldValues(fd, fv.value, statsConfig)
-                if (parsedValues.any { it == targetValue }) {
-                    val char = charMap[fv.characterId] ?: continue
-                    val images = try {
-                        com.google.gson.Gson().fromJson(char.imagePaths, Array<String>::class.java)?.toList() ?: emptyList()
-                    } catch (_: Exception) { emptyList() }
-                    result.add(
-                        FieldValueCharacter(
-                            characterId = char.id,
-                            characterName = char.name,
-                            fieldValue = fv.value,
-                            imageUri = images.firstOrNull()
-                        )
-                    )
+        // 저장 값을 가진 def (CALCULATED는 저장 행이 없다)
+        if (defById.values.any { it.type != "CALCULATED" }) {
+            for (fv in s.fieldValues) {
+                if (fv.fieldDefinitionId !in idSet) continue
+                if (defById[fv.fieldDefinitionId]?.type == "CALCULATED") continue
+                if (getFieldValues(refDef, fv.value, refCfg).any { it == targetValue }) {
+                    record(fv.characterId, fv.value)
                 }
             }
         }
-        return result.sortedBy { it.characterName }
+
+        // CALCULATED def: FormulaEvaluator 계산값으로 매칭
+        val calcDefIds = defById.values.filter { it.type == "CALCULATED" }.map { it.id }
+        if (calcDefIds.isNotEmpty()) {
+            val calculatedValues = computeAllCalculatedValues(s)
+            for ((charId, fieldMap) in calculatedValues) {
+                for (defId in calcDefIds) {
+                    val computedValue = fieldMap[defId] ?: continue
+                    if (getFieldValues(refDef, computedValue, refCfg).any { it == targetValue }) {
+                        record(charId, computedValue)
+                    }
+                }
+            }
+        }
+        return result.values.sortedBy { it.characterName }
+    }
+
+    /**
+     * 차트 조각(값 하나)을 가진 **사건** 목록 — [getCharactersByFieldValue]의 사건판 (S-9).
+     *
+     * 사건 필드 인사이트 카드도 캐릭터 카드와 같은 목록에 그려지고 같은 탭 인터랙션을 갖는데,
+     * 조회 경로가 캐릭터 전용이라 사건 조각을 탭하면 항상 0명짜리 빈 시트가 떴다.
+     * 캐릭터 축과 **대칭으로** 구현한다 — 리스너만 떼는 간소화는 원칙 03 위반이다.
+     */
+    fun getEventsByFieldValue(
+        s: StatsSnapshot,
+        fieldDefIds: List<Long>,
+        targetValue: String
+    ): List<FieldValueEvent>? {
+        if (fieldDefIds.isEmpty()) return null
+        val idSet = fieldDefIds.toSet()
+        val defById = s.eventFieldDefinitions.filter { it.id in idSet }.associateBy { it.id }
+        if (defById.isEmpty()) return null
+
+        val refDef = defById[fieldDefIds.first()] ?: defById.values.first()
+        val refCfg = FieldStatsConfig.fromConfig(refDef.config)
+        val eventMap = s.events.associateBy { it.id }
+
+        val result = LinkedHashMap<Long, FieldValueEvent>()
+        fun record(eventId: Long, shownValue: String) {
+            if (result.containsKey(eventId)) return
+            val event = eventMap[eventId] ?: return
+            result[eventId] = FieldValueEvent(
+                eventId = event.id,
+                description = event.description,
+                formattedDate = event.getFormattedDate(),
+                year = event.year,
+                fieldValue = shownValue
+            )
+        }
+
+        if (defById.values.any { it.type != "CALCULATED" }) {
+            for (fv in s.eventFieldValues) {
+                if (fv.fieldDefinitionId !in idSet) continue
+                if (defById[fv.fieldDefinitionId]?.type == "CALCULATED") continue
+                if (getFieldValues(refDef, fv.value, refCfg).any { it == targetValue }) {
+                    record(fv.eventId, fv.value)
+                }
+            }
+        }
+
+        val calcDefIds = defById.values.filter { it.type == "CALCULATED" }.map { it.id }
+        if (calcDefIds.isNotEmpty()) {
+            val calculatedValues = computeAllEventCalculatedValues(s)
+            for ((eventId, fieldMap) in calculatedValues) {
+                for (defId in calcDefIds) {
+                    val computedValue = fieldMap[defId] ?: continue
+                    if (getFieldValues(refDef, computedValue, refCfg).any { it == targetValue }) {
+                        record(eventId, computedValue)
+                    }
+                }
+            }
+        }
+        return result.values.sortedWith(compareBy({ it.year }, { it.description }))
     }
 
     /**
      * (key,type)로 묶인 여러 fieldDefId 전체에 걸쳐, 주어진 [values] 중 하나라도 가진(또는 [exclude]면
      * 하나도 갖지 않은) 캐릭터를 반환한다. detectPatterns가 다세계관을 합산해 감지하므로, 드릴다운도
      * 단일 fieldDefId가 아니라 **병합 id 전체**를 순회해야 과소집계되지 않는다. getFieldValues 파싱 재사용.
+     *
+     * @return 형제 함수 [getCharactersByFieldValue]와 **같은 계약**이다 — 대상 필드 정의를 하나도
+     *   찾지 못하면 빈 목록으로 위장하지 않고 **null**을 돌려준다(R-17). 아무것도 묻지 않은 호출
+     *   (id·값이 빈 경우)은 그냥 빈 목록이다: 그것은 "못 찾음"이 아니라 "물은 것이 없음"이다.
      */
     fun getCharactersByFieldKeyValues(
         s: StatsSnapshot,
@@ -2294,11 +2414,11 @@ class StatsDataProvider {
         values: Set<String>,
         exclude: Boolean = false,
         valuesByDefId: Map<Long, List<CharacterFieldValue>>? = null
-    ): List<FieldValueCharacter> {
+    ): List<FieldValueCharacter>? {
         if (fieldDefIds.isEmpty() || values.isEmpty()) return emptyList()
         val idSet = fieldDefIds.toSet()
         val defById = s.fieldDefinitions.filter { it.id in idSet }.associateBy { it.id }
-        if (defById.isEmpty()) return emptyList()
+        if (defById.isEmpty()) return null
         val charMap = s.characters.associateBy { it.id }
         // 캐릭터별로 이 (key,type) 그룹에서 파싱된 값 집합을 모은다.
         val perChar = HashMap<Long, MutableSet<String>>()
@@ -2354,36 +2474,133 @@ class StatsDataProvider {
 
     /**
      * 캐릭터 ID 집합에 대해 다른 필드의 분포를 분석 (하위 그룹 분석).
+     *
+     * [targetFieldDefIds]에는 **(key,type)로 머지된 def 집합 전체**를 준다([getRankableFields]의
+     * `mergedFieldDefIds`와 같은 축). 대표 id 하나만 받으면 전체 세계관 스코프에서 형제 세계관의
+     * 같은 필드 값이 통째로 빠진다. 파싱은 첫 원소(기준 def)의 config로 통일한다 —
+     * 인사이트 차트와 같은 값 공간이어야 두 화면이 같은 답을 준다.
+     *
+     * **CALCULATED 필드는 저장 행이 없다.** 저장 값만 훑으면 자기 카드에서는 분포가 그려지는
+     * 수식 필드가 하위 그룹 분석에서만 항상 '데이터 없음'이 된다(S-19). 목록이 고를 수 있게
+     * 약속한 필드는 전부 실제로 분석돼야 하므로 계산값을 함께 합산한다 —
+     * 선택 목록에서 CALCULATED를 숨기는 것은 기능 간소화(원칙 03 위반)라 금지다.
+     *
+     * @return 대상 필드 정의를 하나도 찾지 못하면 **null**(호출부가 사유를 고지한다).
+     *   분포가 비어 있는 것은 "정말 값이 없다"는 뜻이며 그때만 '데이터 없음'이 표시된다.
      */
     fun computeSubgroupAnalysis(
         s: StatsSnapshot,
         characterIds: Set<Long>,
-        targetFieldDefId: Long
+        targetFieldDefIds: List<Long>
     ): SubgroupAnalysis? {
-        val fd = s.fieldDefinitions.find { it.id == targetFieldDefId } ?: return null
-        val statsConfig = FieldStatsConfig.fromConfig(fd.config)
+        if (targetFieldDefIds.isEmpty()) return null
+        val idSet = targetFieldDefIds.toSet()
+        val defById = s.fieldDefinitions.filter { it.id in idSet }.associateBy { it.id }
+        if (defById.isEmpty()) return null
 
-        val rawValues = s.fieldValues.filter {
-            it.fieldDefinitionId == targetFieldDefId && it.characterId in characterIds
-        }
+        val refDef = defById[targetFieldDefIds.first()] ?: defById.values.first()
+        val refCfg = FieldStatsConfig.fromConfig(refDef.config)
 
         val allValues = mutableListOf<String>()
-        for (fv in rawValues) {
-            allValues.addAll(getFieldValues(fd, fv.value, statsConfig))
+
+        // 저장된 값
+        for (fv in s.fieldValues) {
+            if (fv.fieldDefinitionId !in idSet) continue
+            if (fv.characterId !in characterIds) continue
+            if (defById[fv.fieldDefinitionId]?.type == "CALCULATED") continue
+            allValues.addAll(getFieldValues(refDef, fv.value, refCfg))
         }
 
-        val distribution = allValues.groupBy { it }
-            .mapValues { it.value.size }
-            .entries.sortedByDescending { it.value }
-            .take(15)
+        // CALCULATED 계산값 — 부분집합(characterIds)만 집계한다
+        val calcDefIds = defById.values.filter { it.type == "CALCULATED" }.map { it.id }
+        if (calcDefIds.isNotEmpty()) {
+            val calculated = computeAllCalculatedValues(s)
+            for (charId in characterIds) {
+                val fieldMap = calculated[charId] ?: continue
+                for (defId in calcDefIds) {
+                    val v = fieldMap[defId] ?: continue
+                    allValues.addAll(getFieldValues(refDef, v, refCfg))
+                }
+            }
+        }
+
+        val counted = allValues.groupingBy { it }.eachCount()
+        val distribution = counted.entries.sortedByDescending { it.value }
+            .take(SUBGROUP_DISTRIBUTION_LIMIT)
             .associate { it.key to it.value }
 
         return SubgroupAnalysis(
-            targetFieldName = fd.name,
+            targetFieldName = refDef.name,
             distribution = distribution,
-            totalCount = characterIds.size
+            totalCount = characterIds.size,
+            // R-14: 잘라냈으면 남은 개수로 존재를 알린다 — 상한은 이 상수가 단일 소스다.
+            truncatedCount = (counted.size - SUBGROUP_DISTRIBUTION_LIMIT).coerceAtLeast(0)
         )
     }
+
+    /**
+     * 사건 ID 집합에 대해 다른 **사건 필드**의 분포를 분석 — [computeSubgroupAnalysis]의 사건판.
+     *
+     * R-13대로 축마다 함수를 나눈다: 셀 단위가 캐릭터 수가 아니라 사건 수다. 사건 드릴다운에서
+     * 하위 그룹 버튼만 숨기는 것은 기능 간소화(원칙 03 위반)이므로 대칭으로 구현한다.
+     */
+    fun computeEventSubgroupAnalysis(
+        s: StatsSnapshot,
+        eventIds: Set<Long>,
+        targetFieldDefIds: List<Long>
+    ): SubgroupAnalysis? {
+        if (targetFieldDefIds.isEmpty()) return null
+        val idSet = targetFieldDefIds.toSet()
+        val defById = s.eventFieldDefinitions.filter { it.id in idSet }.associateBy { it.id }
+        if (defById.isEmpty()) return null
+
+        val refDef = defById[targetFieldDefIds.first()] ?: defById.values.first()
+        val refCfg = FieldStatsConfig.fromConfig(refDef.config)
+
+        val allValues = mutableListOf<String>()
+        for (fv in s.eventFieldValues) {
+            if (fv.fieldDefinitionId !in idSet) continue
+            if (fv.eventId !in eventIds) continue
+            if (defById[fv.fieldDefinitionId]?.type == "CALCULATED") continue
+            allValues.addAll(getFieldValues(refDef, fv.value, refCfg))
+        }
+
+        val calcDefIds = defById.values.filter { it.type == "CALCULATED" }.map { it.id }
+        if (calcDefIds.isNotEmpty()) {
+            val calculated = computeAllEventCalculatedValues(s)
+            for (eventId in eventIds) {
+                val fieldMap = calculated[eventId] ?: continue
+                for (defId in calcDefIds) {
+                    val v = fieldMap[defId] ?: continue
+                    allValues.addAll(getFieldValues(refDef, v, refCfg))
+                }
+            }
+        }
+
+        val counted = allValues.groupingBy { it }.eachCount()
+        val distribution = counted.entries.sortedByDescending { it.value }
+            .take(SUBGROUP_DISTRIBUTION_LIMIT)
+            .associate { it.key to it.value }
+
+        return SubgroupAnalysis(
+            targetFieldName = refDef.name,
+            distribution = distribution,
+            totalCount = eventIds.size,
+            truncatedCount = (counted.size - SUBGROUP_DISTRIBUTION_LIMIT).coerceAtLeast(0)
+        )
+    }
+
+    /**
+     * '필드 하나 고르기' UI용 — 필드 정의를 인사이트 카드와 **같은 축((key,type) 머지)**으로 묶는다.
+     *
+     * 머지하지 않으면 전체 세계관 보기에서 같은 필드가 세계관 수만큼 중복으로 나열되고,
+     * 그중 하나를 고르면 그 세계관 값만 집계돼 카드와 다른 답이 나온다.
+     * [FieldStatsConfig] 활성 여부로 거르지 않는 것은 종전 동작 유지다 — 이 화면은 통계 비활성
+     * 필드도 부분집합 분석 대상으로 허용해 왔다(자율성 우선).
+     */
+    fun getMergedFieldGroups(defs: List<FieldDefinition>): List<MergedFieldGroup> =
+        defs.groupBy { it.key to it.type }
+            .map { (_, fds) -> MergedFieldGroup(fds.first(), fds.map { it.id }) }
 
     // ===== 순위 계산 =====
 

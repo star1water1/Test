@@ -272,4 +272,65 @@ class StatsCrossAnalysisTest {
         assertEquals(3, r.totalCount)
         assertEquals(3, r.filteredCount)
     }
+
+    // ===== S-8: 캐릭터 축도 CALCULATED 계산값을 합산한다 =====
+
+    /**
+     * 힘(NUMBER) × 역할(TEXT)에 더해, 힘×2를 계산하는 CALCULATED 필드(12번)를 둔 스냅샷.
+     *  - 1: 힘 1 / 주역   - 2: 힘 1 / 주역   - 3: 힘 2 / 조역
+     * 계산 필드는 저장 행이 없으므로 합치지 않으면 축·필터 어디에 써도 빈 표가 된다.
+     */
+    private fun calcCharSnapshot() = StatsSnapshot(
+        characters = listOf(
+            Character(id = 1, name = "가", novelId = 1),
+            Character(id = 2, name = "나", novelId = 1),
+            Character(id = 3, name = "다", novelId = 1)
+        ),
+        novels = listOf(Novel(id = 1, title = "작품", universeId = uniA)),
+        universes = listOf(Universe(id = uniA, name = "A")),
+        events = emptyList(), relationships = emptyList(), relationshipChanges = emptyList(),
+        tags = emptyList(), nameBank = emptyList(), stateChanges = emptyList(),
+        fieldDefinitions = listOf(
+            FieldDefinition(id = 10, universeId = uniA, key = "power", name = "힘", type = "NUMBER",
+                entityType = FieldDefinition.ENTITY_CHARACTER),
+            charField(11, "role", "역할"),
+            FieldDefinition(
+                id = 12, universeId = uniA, key = "double_power", name = "힘x2", type = "CALCULATED",
+                config = """{"formula":"field('power') * 2"}""",
+                entityType = FieldDefinition.ENTITY_CHARACTER
+            )
+        ),
+        fieldValues = listOf(
+            CharacterFieldValue(characterId = 1, fieldDefinitionId = 10, value = "1"),
+            CharacterFieldValue(characterId = 1, fieldDefinitionId = 11, value = "주역"),
+            CharacterFieldValue(characterId = 2, fieldDefinitionId = 10, value = "1"),
+            CharacterFieldValue(characterId = 2, fieldDefinitionId = 11, value = "주역"),
+            CharacterFieldValue(characterId = 3, fieldDefinitionId = 10, value = "2"),
+            CharacterFieldValue(characterId = 3, fieldDefinitionId = 11, value = "조역")
+        ),
+        crossRefs = emptyList()
+    )
+
+    @Test
+    fun `CALCULATED 캐릭터 필드가 축1이 된다`() {
+        val r = provider.computeCrossAnalysis(calcCharSnapshot(), 12L, 11L, null, null)!!
+        assertEquals(2, r.crossTable["2"]?.get("주역"))   // 힘 1 × 2 = 2
+        assertEquals(1, r.crossTable["4"]?.get("조역"))   // 힘 2 × 2 = 4
+    }
+
+    @Test
+    fun `CALCULATED 캐릭터 필드가 축2가 된다`() {
+        val r = provider.computeCrossAnalysis(calcCharSnapshot(), 11L, 12L, null, null)!!
+        assertEquals(2, r.crossTable["주역"]?.get("2"))
+        assertEquals(1, r.crossTable["조역"]?.get("4"))
+    }
+
+    @Test
+    fun `CALCULATED 캐릭터 필드가 필터가 된다`() {
+        val r = provider.computeCrossAnalysis(calcCharSnapshot(), 10L, 11L, 12L, "2")!!
+        // 힘x2 = 2인 캐릭터는 1·2번뿐 — 필터가 실제로 좁혀야 한다
+        assertEquals(2, r.filteredCount)
+        assertEquals(2, r.crossTable["1"]?.get("주역"))
+        assertNull("필터 밖 캐릭터가 남으면 안 된다", r.crossTable["2"])
+    }
 }
