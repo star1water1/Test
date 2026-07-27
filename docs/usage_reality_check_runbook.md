@@ -258,12 +258,17 @@ fun main(args: Array<String>) {
 ```bash
 J=<JARS_DIR>                      # 2-1에서 쓴 그 경로
 CP=<run_jvm_tests.sh 33~38행과 동일하게 조립>
-java -cp $J/kotlin-compiler-embeddable-2.0.21.jar:$J/kotlin-stdlib-2.0.21.jar:$J/annotations-13.0.jar:$J/trove4j.jar \
+java -cp $J/kotlin-compiler-embeddable-2.0.21.jar:$J/kotlin-stdlib-2.0.21.jar:$J/annotations-13.0.jar:$J/kotlinx-coroutines-core-jvm.jar:$J/trove4j.jar \
   org.jetbrains.kotlin.cli.jvm.K2JVMCompiler -nowarn -no-stdlib \
   -cp "$J/out-tests:$CP" -d $J/out-probe tools/usage-probe/Probe.kt
 java -Dstdout.encoding=UTF-8 -cp "$J/out-probe:$J/out-tests:$CP" ProbeKt "<파일경로>"
 ```
 
+> ⚠️ **컴파일러 자신의 클래스패스에 `kotlinx-coroutines-core-jvm.jar`이 있어야 한다.**
+> 빠지면 `NoClassDefFoundError: kotlinx/coroutines/CoroutineScope`로 컴파일이 **시작조차 못 한다**
+> (kotlin-compiler-embeddable 2.0.21이 자기 부트스트랩에 쓴다). `run_jvm_tests.sh`의 `KOTLINC`
+> 정의에는 처음부터 들어 있었는데 v1.1의 이 레시피에만 빠져 있었다 — v1.2에서 맞췄다.
+>
 > ⚠️ **`-Dstdout.encoding=UTF-8`을 빼지 마라.** 이 환경은 LANG이 비어 있어(POSIX) 한글 출력이
 > 전부 `?`로 깨진다. 깨진 채로 2-4에 가면 정상 파일을 형식 이탈로 오판한다.
 
@@ -730,4 +735,5 @@ sqlite3 "$SCRATCH/probe.db" "SELECT COUNT(*) FROM <테이블>;"
 | 버전 | 날짜 | 변경 |
 |------|------|------|
 | v1.0 | 2026.07.27 | 최초 작성 — 로드맵 4 완료 후, 실사용 데이터 기반 대조 작업의 진행 방식 확정 |
+| v1.2 | 2026.07.27 | 1회차 실행이 잡은 레시피 결함 수리 — 2-3의 kotlinc 호출에 `kotlinx-coroutines-core-jvm.jar`이 빠져 있어 하네스 컴파일이 시작조차 못 했다(러너의 `KOTLINC`에는 있었다). 산출물 1호는 `docs/usage_reality_check_2026-07.md` |
 | v1.1 | 2026.07.27 | 감사·반박 검증 반영. **유출 경로 수리:** `.gitignore` 루트 앵커가 `data/*.xlsx`를 못 막는데 런북이 "이미 등재돼 있다"고 안심시키던 것 — 앵커 제거 + `git check-ignore` 기계 확인 + 전량 스테이징 금지로 교체. **오기 수리:** 시트명 3건(`캐릭터 상태변화`·`필드 템플릿`·`이미지`)·`캐릭터 관계` 누락·머리말 장 번호·`resolveSpecSheet`(private·SOURCES 부재). **판정 교정:** '빈 시트'는 관측 불가(앱이 안 만듦) → '시트 부재 3원인'으로, `앱 설정` 시트를 공짜 판별기로. **완화:** 원문 치환을 2층 규칙(A층 형식 토큰 보존 / B층 창작물 치환)으로 재정의, 기준선 게이트를 3층(실패 파급 기준)으로, 질문 상한을 총량→턴당으로. **구조:** 장 순서를 실행 순서로 재배치(우회 흔적을 환경보다 앞으로), 산출물 골격을 측정 전에 생성+장별 커밋, 규모 실측에 스케일 스윕 추가, 하네스를 `tools/usage-probe/`로 격리 |
