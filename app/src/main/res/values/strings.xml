@@ -2171,11 +2171,12 @@
     <string name="name_bank_select_mode">선택 모드</string>
     <string name="name_bank_select_all">전체 선택</string>
     <string name="name_bank_selected_count">%1$d개 선택</string>
+    <string name="name_bank_selected_count_hidden">%1$d개 선택 (화면 밖 %2$d)</string>
     <string name="name_bank_bulk_register">캐릭터로 등록</string>
     <string name="name_bank_bulk_select_first">등록할 이름을 먼저 선택하세요.</string>
     <string name="name_bank_bulk_title">이름 %1$d개를 캐릭터로 등록</string>
     <string name="name_bank_bulk_confirm">%1$d명 등록</string>
-    <string name="name_bank_bulk_no_universe_notice">작품을 지정하지 않으면 세계관 필드(성별 등)는 기록되지 않습니다.</string>
+    <string name="name_bank_bulk_no_universe_notice">작품을 지정하지 않거나 작품에 세계관이 연결되어 있지 않으면 세계관 필드(성별 등)는 기록되지 않습니다.</string>
     <string name="name_bank_bulk_map_gender">성별을 성별 필드에 기록</string>
     <string name="name_bank_bulk_include_notes">출처·메모를 캐릭터 메모로 기록</string>
     <string name="name_bank_bulk_origin_prefix">출처: %1$s</string>
@@ -2187,6 +2188,7 @@
     <string name="name_bank_bulk_done_skipped">" · 중복 건너뜀 %1$d건"</string>
     <string name="name_bank_bulk_gender_skipped">" · 성별 미기록 %1$d건(옵션 불일치)"</string>
     <string name="name_bank_bulk_gender_no_field">" · 성별 미기록(세계관에 성별 SELECT 필드 없음)"</string>
+    <string name="name_bank_bulk_used_moved">" · 사용 표시 이동 %1$d건"</string>
     <string name="name_bank_bulk_blank_skipped">" · 빈 이름 제외 %1$d건"</string>
     <string name="name_bank_bulk_none_created">등록할 이름이 없습니다 — 전부 중복으로 건너뛰었거나 선택이 비어 있습니다.</string>
     <string name="name_bank_bulk_novel_missing">선택한 작품을 찾을 수 없습니다. 작품이 삭제되었는지 확인하세요.</string>
@@ -2195,7 +2197,7 @@
     <!-- ✨ AI 필드 값 추천 (CharacterFieldAiSuggester / AiFieldSuggestSheet) -->
     <string name="ai_field_suggest_entry">✨ AI 필드 추천</string>
     <string name="ai_field_suggest_title">AI 필드 추천</string>
-    <string name="ai_field_cost_notice">필드 %1$d개를 1개 요청으로 추천받습니다.\n등록된 API 키로 호출되며 제공사 요금이 발생할 수 있습니다.</string>
+    <string name="ai_field_cost_notice">필드 %1$d개를 요청 %2$d건으로 추천받습니다.\n등록된 API 키로 호출되며 제공사 요금이 발생할 수 있습니다.</string>
     <string name="ai_field_cost_notice_single">\'%1$s\' 필드 값을 1개 요청으로 추천받습니다.\n등록된 API 키로 호출되며 제공사 요금이 발생할 수 있습니다.</string>
     <string name="ai_field_include_filled">이미 입력된 필드도 포함</string>
     <string name="ai_field_no_empty_fields">추천할 빈 필드가 없습니다. \'이미 입력된 필드도 포함\'을 켜세요.</string>
@@ -2211,6 +2213,7 @@
     <string name="ai_field_apply">선택 적용</string>
     <string name="ai_field_single_apply">적용</string>
     <string name="ai_field_applied">AI 추천 %1$d건 적용 — 저장을 눌러야 반영됩니다</string>
+    <string name="ai_field_apply_none">적용하지 못했습니다 — 폼이 아직 준비되지 않았습니다. 잠시 후 다시 시도하세요.</string>
 
     <!-- restricted 입력 모드 위반 안내 -->
     <string name="field_library_restricted_violation_title">허용되지 않은 값</string>

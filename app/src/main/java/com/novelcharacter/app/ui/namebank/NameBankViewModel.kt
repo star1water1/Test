@@ -10,7 +10,10 @@ import com.novelcharacter.app.util.OpResult
 import com.novelcharacter.app.util.reportResult
 import android.util.Log
 import androidx.room.withTransaction
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class NameBankViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -25,6 +28,13 @@ class NameBankViewModel(application: Application) : AndroidViewModel(application
 
     private val _searchQuery = MutableLiveData("")
     private val _showOnlyAvailable = MutableLiveData(prefs.getBoolean("show_only_available", false))
+
+    // 일괄 등록 선택 모드 상태 — VM 보관으로 회전 생존 (프로세스 재생성은 별도 과제)
+    var selectionMode = false
+    val selectedIds = linkedSetOf<Long>()
+
+    /** 은행 전체 목록 — 삭제된 엔트리의 선택 정리 기준 (표시 목록과 무관하게 전체 대비) */
+    val allEntries: LiveData<List<NameBankEntry>> = nameBankRepository.allNameBankEntries
 
     val displayedNames: LiveData<List<NameBankEntry>> = MediatorLiveData<List<NameBankEntry>>().apply {
         val allNames = nameBankRepository.allNameBankEntries
@@ -145,6 +155,8 @@ class NameBankViewModel(application: Application) : AndroidViewModel(application
      * 선택 엔트리를 일괄 캐릭터 등록.
      * 전 항목을 단일 트랜잭션으로 생성하고(부분 생성 잔재 방지) 사용 표시(isUsed+usedByCharacterId
      * 동시 설정)를 새 캐릭터로 옮긴다. 건너뜀·미기록은 결과 요약에 전부 집계한다 (R-11·R-14).
+     * 사용자가 확정한 쓰기 작업이므로 NonCancellable — 확정 직후 화면을 떠나 VM이 소멸해도
+     * 트랜잭션이 완주한다(중간 취소 시 전량 롤백이 무통보로 일어나는 유실 방지).
      */
     fun bulkRegister(
         ids: List<Long>,
@@ -153,12 +165,24 @@ class NameBankViewModel(application: Application) : AndroidViewModel(application
         includeOriginNotes: Boolean,
         policy: BulkRegisterPlanner.DuplicatePolicy
     ) = viewModelScope.launch {
+        withContext(NonCancellable) {
+            bulkRegisterInternal(ids, novelId, mapGender, includeOriginNotes, policy)
+        }
+    }
+
+    private suspend fun bulkRegisterInternal(
+        ids: List<Long>,
+        novelId: Long?,
+        mapGender: Boolean,
+        includeOriginNotes: Boolean,
+        policy: BulkRegisterPlanner.DuplicatePolicy
+    ) {
         try {
             val entries = nameBankRepository.getByIds(ids)
             if (entries.isEmpty()) {
                 reportResult(_result, OpResult.failure(OpResult.CAT_NAMEBANK,
                     app.getString(R.string.name_bank_bulk_none_created)))
-                return@launch
+                return
             }
 
             // 작품 → 세계관 해석. 작품이 사라졌으면 조용히 미지정으로 강등하지 않고 중단 (변수 제어)
@@ -168,7 +192,7 @@ class NameBankViewModel(application: Application) : AndroidViewModel(application
                 if (novel == null) {
                     reportResult(_result, OpResult.failure(OpResult.CAT_NAMEBANK,
                         app.getString(R.string.name_bank_bulk_novel_missing)))
-                    return@launch
+                    return
                 }
                 universeId = novel.universeId
             }
@@ -188,6 +212,11 @@ class NameBankViewModel(application: Application) : AndroidViewModel(application
                 } else {
                     genderFieldMissing = true
                 }
+            } else if (mapGender) {
+                // 작품 미지정 또는 세계관 미연결 작품 — 기록할 성별 필드 자체가 없다.
+                // 시트 게이트(매핑 불가 시 스위치 자동 OFF)가 막지 못하는 초기 콜백 전
+                // 확정 레이스의 최종 방어선: 무통보 소실 대신 결과 요약에 고지한다.
+                genderFieldMissing = true
             }
 
             val options = BulkRegisterPlanner.Options(
@@ -202,7 +231,7 @@ class NameBankViewModel(application: Application) : AndroidViewModel(application
             if (plan.toCreate.isEmpty()) {
                 reportResult(_result, OpResult.failure(OpResult.CAT_NAMEBANK,
                     app.getString(R.string.name_bank_bulk_none_created)))
-                return@launch
+                return
             }
 
             var created = 0
@@ -242,12 +271,17 @@ class NameBankViewModel(application: Application) : AndroidViewModel(application
                 if (genderFieldMissing) {
                     append(app.getString(R.string.name_bank_bulk_gender_no_field))
                 }
+                if (plan.alreadyUsedCount > 0) {
+                    append(app.getString(R.string.name_bank_bulk_used_moved, plan.alreadyUsedCount))
+                }
                 if (plan.blankSkipped > 0) {
                     append(app.getString(R.string.name_bank_bulk_blank_skipped, plan.blankSkipped))
                 }
             }
             reportResult(_result, OpResult.success(OpResult.CAT_NAMEBANK, summary,
                 createdNames.joinToString(", ")))
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e("NameBankViewModel", "Failed to bulk register characters", e)
             reportResult(_result, OpResult.failure(OpResult.CAT_NAMEBANK,

@@ -240,6 +240,83 @@ class CharacterFieldAiSuggesterTest {
         assertEquals("-3", CharacterFieldAiSuggester.normalizeNumber("-3"))
     }
 
+    // ===== 구조화 입력 검증 =====
+
+    @Test
+    fun structured_validFormat_kept() {
+        val spec = spec("body", type = FieldType.BODY_SIZE)
+            .copy(structuredSeparator = "-", structuredPartCount = 3)
+        assertEquals("88-60-90", CharacterFieldAiSuggester.normalizeValue("88-60-90", spec))
+    }
+
+    @Test
+    fun structured_formatViolation_dropped() {
+        // 구분자 없는 통짜 문자열 — 첫 파트에 통째로 들어가 "값--"로 저장되는 오염 차단
+        val spec = spec("body", type = FieldType.BODY_SIZE)
+            .copy(structuredSeparator = "-", structuredPartCount = 3)
+        assertNull(CharacterFieldAiSuggester.normalizeValue("가슴85 허리59 힙88", spec))
+        assertNull(CharacterFieldAiSuggester.normalizeValue("88-60", spec))
+        assertNull(CharacterFieldAiSuggester.normalizeValue("88--90", spec))
+    }
+
+    @Test
+    fun structured_numberFieldWithStructuredConfig_notValidated() {
+        // NUMBER는 폼이 구조화 위젯을 렌더하지 않으므로 config 잔존 구조화 설정을 무시해야 한다
+        val config = """{"structuredInput":{"enabled":true,"separator":"-","parts":[{"label":"a"},{"label":"b"}]}}"""
+        val spec = CharacterFieldAiSuggester.fieldSpecOf(fieldDef(FieldType.NUMBER, config), "")!!
+        assertNull(spec.structuredPartCount)
+        assertEquals("172", CharacterFieldAiSuggester.normalizeValue("172cm", spec))
+    }
+
+    @Test
+    fun structured_textFieldWithStructuredConfig_specDerived() {
+        val config = """{"structuredInput":{"enabled":true,"separator":"/","parts":[{"label":"a"},{"label":"b"}]}}"""
+        val spec = CharacterFieldAiSuggester.fieldSpecOf(fieldDef(FieldType.TEXT, config), "")!!
+        assertEquals("/", spec.structuredSeparator)
+        assertEquals(2, spec.structuredPartCount)
+        assertEquals("갑/을", CharacterFieldAiSuggester.normalizeValue("갑/을", spec))
+        assertNull(CharacterFieldAiSuggester.normalizeValue("갑을", spec))
+    }
+
+    // ===== 청킹 =====
+
+    @Test
+    fun chunkTargets_splitsByCountOnly() {
+        val max = CharacterFieldAiSuggester.MAX_TARGETS_PER_REQUEST
+        assertTrue(CharacterFieldAiSuggester.chunkTargets(emptyList()).isEmpty())
+        val exactly = (1..max).map { spec("f$it") }
+        assertEquals(1, CharacterFieldAiSuggester.chunkTargets(exactly).size)
+        val oneMore = (1..max + 1).map { spec("f$it") }
+        val chunks = CharacterFieldAiSuggester.chunkTargets(oneMore)
+        assertEquals(2, chunks.size)
+        assertEquals(max, chunks[0].size)
+        assertEquals(1, chunks[1].size)
+    }
+
+    @Test
+    fun requestCountFor_matchesChunkTargets() {
+        val max = CharacterFieldAiSuggester.MAX_TARGETS_PER_REQUEST
+        for (count in listOf(0, 1, max - 1, max, max + 1, max * 3)) {
+            val targets = (1..count).map { spec("f$it") }
+            assertEquals(
+                CharacterFieldAiSuggester.chunkTargets(targets).size,
+                CharacterFieldAiSuggester.requestCountFor(count)
+            )
+        }
+    }
+
+    // ===== 컨텍스트 결손 고지 =====
+
+    @Test
+    fun loadFailures_surfacedAsTruncationNotes() {
+        val build = CharacterFieldAiSuggester.buildUserPrompt(
+            context().copy(loadFailures = listOf("관계", "소속 세력")),
+            listOf(spec("mood"))
+        )
+        assertTrue(build.truncationNotes.any { it.contains("관계 정보를 불러오지 못함") })
+        assertTrue(build.truncationNotes.any { it.contains("소속 세력 정보를 불러오지 못함") })
+    }
+
     // ===== FieldSpec 파생 =====
 
     private fun fieldDef(type: FieldType, config: String = "{}", key: String = "f") = FieldDefinition(

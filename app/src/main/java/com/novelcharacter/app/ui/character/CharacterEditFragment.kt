@@ -67,6 +67,8 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
 
     // 동적 필드 관리 — 폼 구성/값 적재/수집/검증은 공용 빌더에 위임
     private lateinit var formBuilder: DynamicFieldFormBuilder
+    // ✨ AI 추천 진행 다이얼로그 — 실행 상태는 VM(aiSuggestRunning), 표시만 뷰 수명에 묶는다
+    private var aiProgressDialog: androidx.appcompat.app.AlertDialog? = null
     // 저장 체인(검증→중복→연동 충돌→교차 세계관→DB) — 공용 코디네이터에 위임
     private lateinit var saveCoordinator: CharacterSaveCoordinator
     private var hasUnsavedChanges = false
@@ -247,10 +249,28 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         )
         // ✨ AI 필드 추천 — 필드별(폼 인라인 버튼) + 전체(폼 상단 버튼) 이중 진입 (원칙 04)
         formBuilder.aiSuggestHandler = { field ->
-            AiFieldSuggestSheet.showForField(this, field, formBuilder) { buildAiContext() }
+            AiFieldSuggestSheet.showForField(this, field, formBuilder, viewModel) { buildAiContext() }
         }
         binding.btnAiSuggest.setOnClickListener {
-            AiFieldSuggestSheet.showForCharacter(this, formBuilder) { buildAiContext() }
+            AiFieldSuggestSheet.showForCharacter(this, formBuilder, viewModel) { buildAiContext() }
+        }
+        // AI 추천 실행 상태·결과 관측 — 실행은 VM(회전 생존)이 수행하므로 진행 다이얼로그와
+        // 결과 다이얼로그가 화면 재생성을 넘어 복원된다. 결과 소비(clear)는 다이얼로그 액션 시점.
+        viewModel.aiSuggestRunning.observe(viewLifecycleOwner) { running ->
+            if (running == true) {
+                if (aiProgressDialog == null) {
+                    aiProgressDialog = com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
+                        .setMessage(R.string.ai_field_running)
+                        .setCancelable(false)
+                        .show()
+                }
+            } else {
+                aiProgressDialog?.dismiss()
+                aiProgressDialog = null
+            }
+        }
+        viewModel.aiSuggestResult.observe(viewLifecycleOwner) { run ->
+            if (run != null) AiFieldSuggestSheet.showResult(this, formBuilder, viewModel, run)
         }
 
         saveCoordinator = CharacterSaveCoordinator(
@@ -589,19 +609,26 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
             .split(",").map { it.trim() }.filter { it.isNotEmpty() }
         val tags = binding.editTags.text.toString()
             .split(",").map { it.trim() }.filter { it.isNotEmpty() }
+        // 로더 실패(null)는 '없음'(빈 목록)과 구별해 결손 섹션으로 고지한다 (변수 제어)
         val imageTags = viewModel.getImageTagsForPaths(imageStrip.paths.toList())
         val factions = if (characterId != -1L) viewModel.getFactionNamesForCharacter(characterId) else emptyList()
         val relationships =
             if (characterId != -1L) viewModel.getRelationshipSummariesForCharacter(characterId) else emptyList()
+        val loadFailures = buildList {
+            if (imageTags == null) add("이미지 태그")
+            if (factions == null) add("소속 세력")
+            if (relationships == null) add("관계")
+        }
         return com.novelcharacter.app.ai.CharacterFieldAiSuggester.CharacterAiContext(
             name = name,
             aliases = aliases,
             tags = tags,
             memo = binding.editMemo.text.toString(),
             filledFields = filledFields,
-            imageTags = imageTags,
-            factions = factions,
-            relationships = relationships
+            imageTags = imageTags ?: emptyList(),
+            factions = factions ?: emptyList(),
+            relationships = relationships ?: emptyList(),
+            loadFailures = loadFailures
         )
     }
 
@@ -776,6 +803,10 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
     }
 
     override fun onDestroyView() {
+        // 회전 시 액티비티 파괴 전에 진행 다이얼로그를 닫는다 — 파괴된 윈도우 dismiss 크래시 방지.
+        // 재생성 뷰의 aiSuggestRunning 관측이 필요하면 다시 띄운다.
+        aiProgressDialog?.dismiss()
+        aiProgressDialog = null
         imageStrip.detach()
         binding.recommendationRecyclerView.adapter = null
         recMatchJob?.cancel()

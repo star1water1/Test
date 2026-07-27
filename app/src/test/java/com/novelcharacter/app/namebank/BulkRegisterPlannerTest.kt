@@ -153,6 +153,22 @@ class BulkRegisterPlannerTest {
     }
 
     @Test
+    fun countCollisions_overlapCountedOnce_sumMatchesSkipTotal() {
+        // 기존명과도 겹치고 선택 내에서도 반복되는 이름 — 엔트리당 한쪽에만 집계되어
+        // 두 수치의 합이 SKIP 정책의 실제 건너뜀 건수와 일치해야 한다 (고지·실행 정합)
+        val entries = listOf(entry("강도윤"), entry("강도윤"))
+        val (vsExisting, within) = BulkRegisterPlanner.countCollisions(entries, setOf("강도윤"))
+        assertEquals(1, vsExisting)
+        assertEquals(1, within)
+
+        val plan = BulkRegisterPlanner.plan(
+            entries, existingNames = setOf("강도윤"), options(policy = DuplicatePolicy.SKIP_DUPLICATES)
+        )
+        assertEquals(vsExisting + within, plan.skippedDuplicates)
+        assertTrue(plan.toCreate.isEmpty())
+    }
+
+    @Test
     fun trimmedNames_matchForDuplicates() {
         val plan = BulkRegisterPlanner.plan(
             listOf(entry(" 한서린 ")), existingNames = setOf("한서린"),

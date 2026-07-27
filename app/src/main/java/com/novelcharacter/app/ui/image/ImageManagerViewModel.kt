@@ -115,6 +115,14 @@ class ImageManagerViewModel(
         get() = savedState["gallery_pos"] ?: 0
         set(value) { savedState["gallery_pos"] = value }
 
+    /**
+     * 갤러리에서 보던 항목의 path — 정체성 추적용. 목록이 재정렬·필터·재압축으로 바뀌어도
+     * 같은 이미지를 계속 보여주기 위한 1차 기준이고, [galleryPosition]은 path 소실 시 폴백이다.
+     */
+    var galleryPath: String?
+        get() = savedState["gallery_path"]
+        set(value) { savedState["gallery_path"] = value }
+
     enum class OwnerType { CHARACTER, NOVEL, UNIVERSE }
     data class Owner(val type: OwnerType, val name: String, val id: Long)
     /** UNASSIGNED = 라이브러리(image_meta) 관리 중이나 아직 어떤 엔티티에도 배정되지 않은 이미지(고아 아님·보호됨). */
@@ -166,7 +174,11 @@ class ImageManagerViewModel(
     }
 
     /** 재압축 커밋 결과. failed = 준비됐으나 커밋(개명·경로교체)에 실패해 반영 못 한 건수(조용한 증발 방지). */
-    data class RecompressResult(val recompressed: Int, val freed: Long, val skipped: Int, val failed: Int = 0)
+    data class RecompressResult(
+        val recompressed: Int, val freed: Long, val skipped: Int, val failed: Int = 0,
+        /** 커밋된 건의 (원경로 → 새경로) — 갤러리 현재 항목 추적 등 경로 추종용. 실패 반환 경로는 빈 맵 */
+        val pathRemap: Map<String, String> = emptyMap()
+    )
 
     /** 일괄 삭제 결과. */
     data class BulkDeleteResult(val deleted: Int, val freed: Long, val failed: Int)
@@ -465,6 +477,9 @@ class ImageManagerViewModel(
             } catch (e: Exception) {
                 RecompressResult(0, 0L, preview.skips.size, preview.plans.size)
             }
+            // 갤러리에서 보던 이미지가 개명됐으면 추적 경로를 갱신 — load()의 목록 반영보다
+            // 반드시 선행해야 재정렬 후에도 같은 이미지가 유지된다
+            result.pathRemap[galleryPath]?.let { galleryPath = it }
             load()
             onDone(result)
         }
@@ -548,7 +563,8 @@ class ImageManagerViewModel(
         pendingUndo = undo.ifEmpty { null }
         // 준비됐으나 커밋 못 한 건(개명·이동 실패 등) = 계획 − 반영. 조용히 증발하지 않도록 집계·통보.
         val failed = preview.plans.size - committed.size
-        return RecompressResult(committed.size, freed, preview.skips.size, failed)
+        return RecompressResult(committed.size, freed, preview.skips.size, failed,
+            pathRemap = committed.associate { (plan, finalPath, _) -> plan.item.path to finalPath })
     }
 
     /** 방금 재압축한 원본을 복원한다: 백업 → 원위치, DB 경로를 재압축본 → 원본으로 되돌리고(트랜잭션) 재압축본 삭제. */

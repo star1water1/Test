@@ -214,10 +214,17 @@ class DynamicFieldFormBuilder(
         when (widget) {
             is android.widget.EditText -> widget.setText(value)
             is android.widget.LinearLayout -> {
-                // 구조화 입력: 필드 설정의 구분자 기준으로 파트 분리 (설정이 없으면 기존 "-" 분리)
+                // 구조화 입력: 필드 설정의 구분자 기준으로 파트 분리 (설정이 없으면 기존 "-" 분리).
+                // 생일 역할 필드만 예외 — 🎲(generateBirthday)·✨(normalizeBirthDate)가 넘기는 값은
+                // 항상 "MM-DD" 정규형이라, 커스텀 구분자 설정과 무관하게 "-"로 분리해야
+                // 월 칸에 "03-15"가 통째로 들어가는 오염이 없다.
                 val config = widget.tag as? StructuredInputConfig
-                val parts = if (config != null) config.splitValue(value).map { it.second }
-                else value.split("-")
+                val isBirth = SemanticRole.fromConfig(field.config) == SemanticRole.BIRTH_DATE
+                val parts = when {
+                    isBirth -> value.split("-")
+                    config != null -> config.splitValue(value).map { it.second }
+                    else -> value.split("-")
+                }
                 for (i in 0 until minOf(widget.childCount, parts.size)) {
                     val child = widget.getChildAt(i)
                     if (child is com.google.android.material.textfield.TextInputLayout) {

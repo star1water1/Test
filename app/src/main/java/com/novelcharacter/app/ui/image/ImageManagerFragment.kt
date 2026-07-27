@@ -103,10 +103,17 @@ class ImageManagerFragment : Fragment() {
         binding.recyclerView.adapter = adapter
 
         galleryAdapter = GalleryPagerAdapter(viewLifecycleOwner.lifecycleScope)
-        binding.galleryPager.adapter = galleryAdapter
+        // 어댑터는 갤러리 모드에서만 장착 — 그리드 모드에서 페이저가 고해상 비트맵을 붙들지 않게
+        // (GONE 뷰는 layout되지 않아 submitList(empty)로는 회수가 실행되지 않는다)
+        if (viewModel.viewMode == ImageManagerViewModel.ViewMode.GALLERY) {
+            binding.galleryPager.adapter = galleryAdapter
+        }
         galleryPageCallback = object : androidx.viewpager2.widget.ViewPager2.OnPageChangeCallback() {
             override fun onPageSelected(position: Int) {
                 viewModel.galleryPosition = position
+                // path 기록은 콜백 position의 좌표계인 어댑터 리스트 기준 —
+                // 프래그먼트 currentList는 diff 커밋 전일 수 있어 어긋난다
+                galleryAdapter.currentList.getOrNull(position)?.let { viewModel.galleryPath = it.path }
                 updateGalleryOverlay()
             }
         }
@@ -222,6 +229,11 @@ class ImageManagerFragment : Fragment() {
         if (viewModel.viewMode == ImageManagerViewModel.ViewMode.GALLERY) switchToGrid() else switchToGallery()
     }
 
+    /** 갤러리 어댑터 장착 — 그리드 모드에서 분리해 둔 것을 재부착 (setAdapter의 위치 리셋은 sync가 복원) */
+    private fun attachGalleryAdapter() {
+        if (binding.galleryPager.adapter == null) binding.galleryPager.adapter = galleryAdapter
+    }
+
     private fun switchToGallery() {
         // 선택 모드는 그리드 전용 — 집합 조작과 한 장 보기는 목적이 상충 (오조작 방지)
         if (selectionMode) exitSelection()
@@ -229,27 +241,44 @@ class ImageManagerFragment : Fragment() {
             ?.findFirstVisibleItemPosition()
             ?.takeIf { it != androidx.recyclerview.widget.RecyclerView.NO_POSITION }
         viewModel.viewMode = ImageManagerViewModel.ViewMode.GALLERY
-        if (gridPos != null) viewModel.galleryPosition = gridPos
+        if (gridPos != null) {
+            viewModel.galleryPosition = gridPos
+            viewModel.galleryPath = currentList.getOrNull(gridPos)?.path
+        }
+        attachGalleryAdapter()
         applyViewMode()
-        syncGalleryPager()
+        galleryAdapter.submitList(currentList) { syncGalleryPager() }
     }
 
     private fun switchToGrid() {
         val pos = binding.galleryPager.currentItem
+        // 어댑터 분리로 페이지 홀더를 즉시 재활용 — 디코드 Job 취소·비트맵 해제
+        // (onDestroyView와 동일 관용구. GONE 전환만으로는 layout이 없어 회수가 안 된다)
+        binding.galleryPager.adapter = null
         viewModel.viewMode = ImageManagerViewModel.ViewMode.GRID
         applyViewMode()
         if (pos in currentList.indices) binding.recyclerView.scrollToPosition(pos)
     }
 
-    /** 페이저 위치를 목록 상태와 동기화 — 삭제·필터로 항목이 줄어도 안전(클램프) */
+    /**
+     * 페이저 위치를 목록 상태와 동기화 — 보던 항목의 path를 우선 추적하고(필터·정렬·재압축에도
+     * 같은 이미지 유지), path가 목록에 없을 때만 인덱스 클램프로 폴백한다.
+     */
     private fun syncGalleryPager() {
         if (_binding == null || viewModel.viewMode != ImageManagerViewModel.ViewMode.GALLERY) return
-        val size = galleryAdapter.currentList.size
-        if (size == 0) {
+        val list = galleryAdapter.currentList
+        if (list.isEmpty()) {
+            // 빈 목록에서는 galleryPath를 지우지 않는다 — 프로세스 재생성 직후 sticky 빈
+            // 리스트가 먼저 도착해도 실 목록이 오면 path로 복원돼야 한다
             updateGalleryOverlay()
             return
         }
-        val target = viewModel.galleryPosition.coerceIn(0, size - 1)
+        val byPath = viewModel.galleryPath?.let { p -> list.indexOfFirst { it.path == p } } ?: -1
+        val target = if (byPath >= 0) byPath else viewModel.galleryPosition.coerceIn(0, list.size - 1)
+        if (byPath < 0) {
+            // 항목 소실(삭제 등) — 폴백 위치의 항목을 새 추적 대상으로
+            viewModel.galleryPath = list.getOrNull(target)?.path
+        }
         if (binding.galleryPager.currentItem != target) {
             binding.galleryPager.setCurrentItem(target, false)
         }
@@ -360,9 +389,13 @@ class ImageManagerFragment : Fragment() {
         val visiblePaths = sorted.mapTo(HashSet()) { it.path }
         if (selectedPaths.retainAll(visiblePaths)) updateSelectionUi()
         adapter.submitList(sorted)
-        // 갤러리 페이저는 같은 목록을 소비 — 커밋 후 위치 클램프(삭제·필터로 항목이 줄어도 안전)
-        galleryAdapter.submitList(sorted) {
-            syncGalleryPager()
+        // 갤러리 페이저는 같은 목록을 소비하되 갤러리 모드에서만 공급 — 그리드 모드의
+        // 이중 diff 비용 제거 + 분리된 어댑터에 헛공급 방지. 커밋 후 위치는 path 우선 동기화.
+        if (viewModel.viewMode == ImageManagerViewModel.ViewMode.GALLERY) {
+            attachGalleryAdapter()
+            galleryAdapter.submitList(sorted) {
+                syncGalleryPager()
+            }
         }
         val empty = sorted.isEmpty() && viewModel.loading.value != true
         binding.emptyText.visibility = if (empty) View.VISIBLE else View.GONE

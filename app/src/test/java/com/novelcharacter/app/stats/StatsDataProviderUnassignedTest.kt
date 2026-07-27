@@ -101,5 +101,79 @@ class StatsDataProviderUnassignedTest {
         val filtered = provider.filterByNovel(snapshot(), 10L)
         assertEquals(listOf(1L), filtered.characters.map { it.id })
         assertEquals(listOf(10L), filtered.novels.map { it.id })
+        assertEquals(false, filtered.unassignedScope)
+    }
+
+    // ===== 미배정 스코프 모수 (B-계열 후속: novels가 비어도 완성도·인사이트 모수가 0이면 안 된다) =====
+
+    /** 사건 필드까지 포함한 확장 픽스처 — 미배정 사건 2건 중 1건만 세계관 소속 */
+    private fun snapshotWithEventFields(): StatsSnapshot {
+        val base = snapshot()
+        return base.copy(
+            events = listOf(
+                TimelineEvent(id = 20L, year = 1, description = "배정 사건", universeId = 100L),
+                TimelineEvent(id = 21L, year = 2, description = "미배정 사건", universeId = 100L),
+                TimelineEvent(id = 22L, year = 3, description = "세계관 없는 미배정 사건", universeId = null)
+            ),
+            eventFieldDefinitions = listOf(
+                FieldDefinition(id = 50L, universeId = 100L, key = "evf", name = "사건 필드", type = "TEXT")
+            ),
+            eventFieldValues = listOf(
+                com.novelcharacter.app.data.model.EventFieldValue(
+                    eventId = 21L, fieldDefinitionId = 50L, value = "값"
+                )
+            )
+        )
+    }
+
+    @Test
+    fun unassignedScope_scopeMarkerSet() {
+        assertEquals(true, provider.filterByNovel(snapshot(), UnassignedFilter.NO_NOVEL_ID).unassignedScope)
+    }
+
+    @Test
+    fun unassignedScope_characterFieldInsightDenominatorIsScopeSize() {
+        val filtered = provider.filterByNovel(snapshot(), UnassignedFilter.NO_NOVEL_ID)
+        val insight = provider.computeFieldInsights(filtered).first { it.fieldDefinition.id == 40L }
+        // 모수 = 스코프 캐릭터 수(1) — novels가 비어 있다고 0이 되면 "채움 1 / 전체 0" 모순
+        assertEquals(1, insight.totalCount)
+        assertEquals(1, insight.filledCount)
+    }
+
+    @Test
+    fun unassignedScope_eventFieldInsightDenominatorStaysUniverseBased() {
+        // 사건은 자체 universeId를 유지하므로 모수는 세계관 기준이어야 한다 —
+        // 스코프 사건 전체(2)로 바꾸면 세계관 없는 사건까지 편입돼 채움률이 과소 표시된다
+        val filtered = provider.filterByNovel(snapshotWithEventFields(), UnassignedFilter.NO_NOVEL_ID)
+        assertEquals(listOf(21L, 22L), filtered.events.map { it.id })
+        val insight = provider.computeFieldInsights(filtered).first { it.fieldDefinition.id == 50L }
+        assertEquals(1, insight.totalCount)
+        assertEquals(1, insight.filledCount)
+    }
+
+    @Test
+    fun unassignedScope_incompleteCountUsesFillRate() {
+        // 미배정 캐릭터(2)는 보존 정의 1개 중 1개를 채움(100%) — '미배정 = 무조건 미완성'이면
+        // 스코프 전원이 미완성으로 집계되는 모순이 생긴다
+        val filtered = provider.filterByNovel(snapshot(), UnassignedFilter.NO_NOVEL_ID)
+        assertEquals(0, provider.computeDataOverview(filtered).healthWarnings.incompleteFieldCount)
+    }
+
+    @Test
+    fun unassignedScope_incompleteCountGuardsEmptyFieldSet() {
+        // 보존 값이 없어 스코프 정의가 0개면 미완성 판정 자체가 성립하지 않는다 (NaN 가드)
+        val noValues = snapshot().copy(
+            fieldValues = snapshot().fieldValues.filter { it.characterId != 2L }
+        )
+        val filtered = provider.filterByNovel(noValues, UnassignedFilter.NO_NOVEL_ID)
+        assertTrue(filtered.fieldDefinitions.isEmpty())
+        assertEquals(0, provider.computeDataOverview(filtered).healthWarnings.incompleteFieldCount)
+    }
+
+    @Test
+    fun fullScope_unassignedCharacterStillCountedIncomplete() {
+        // 회귀 고정: 필터 없는 전체 스코프에서는 기존 판정('작품 미배정 = 미완성') 불변
+        val overview = provider.computeDataOverview(snapshot())
+        assertEquals(1, overview.healthWarnings.incompleteFieldCount)
     }
 }
