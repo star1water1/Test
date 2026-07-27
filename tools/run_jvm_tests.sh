@@ -69,6 +69,10 @@ $MAIN/excel/SheetSpec.kt
 $MAIN/excel/ExcelCellValue.kt
 $MAIN/excel/CharacterFieldValueOverflow.kt
 $MAIN/util/FieldValueTokenizer.kt
+$MAIN/util/StatsFieldPolicy.kt
+$MAIN/util/ValueDistributions.kt
+$MAIN/util/NumericBinning.kt
+$MAIN/util/FieldValueMatchSpec.kt
 $MAIN/util/FieldValueResolver.kt
 $MAIN/data/model/CharacterFieldValue.kt
 $MAIN/data/model/CharacterStateChange.kt
@@ -169,6 +173,10 @@ $TEST/data/RestoreTallyTest.kt
 $TEST/ai/AiModelSuggestionsTest.kt
 $TEST/stats/StatsCrossAnalysisTest.kt
 $TEST/stats/StatsDrilldownTest.kt
+$TEST/stats/StatsConsistencyTest.kt
+$TEST/util/ValueDistributionsTest.kt
+$TEST/util/NumericBinningTest.kt
+$TEST/util/StatsFieldPolicyTest.kt
 $TEST/util/CardFieldSummaryTest.kt
 $TEST/util/UnassignedFilterTest.kt
 $TEST/util/FieldValueResolverTest.kt

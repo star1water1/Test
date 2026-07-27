@@ -32,6 +32,8 @@ import com.github.mikephil.charting.highlight.Highlight
 import com.github.mikephil.charting.listener.OnChartValueSelectedListener
 import com.novelcharacter.app.R
 import com.novelcharacter.app.databinding.FragmentStatsFieldAnalysisDetailBinding
+import com.novelcharacter.app.util.FieldValueMatchSpec
+import com.novelcharacter.app.util.ValueDistributions
 
 class StatsFieldAnalysisDetailFragment : Fragment() {
 
@@ -59,11 +61,8 @@ class StatsFieldAnalysisDetailFragment : Fragment() {
             binding.contentLayout.visibility = if (isLoading) View.GONE else View.VISIBLE
         }
 
-        viewModel.error.observe(viewLifecycleOwner) { error ->
-            if (error != null) {
-                Toast.makeText(context ?: return@observe, R.string.stats_load_error, Toast.LENGTH_SHORT).show()
-            }
-        }
+        // 사유가 있으면 사유를, 없으면 통짜 문구를 — 어느 쪽이든 반드시 띄운다(B-32).
+        viewModel.error.observe(viewLifecycleOwner) { error -> showStatsError(viewModel, error) }
 
         viewModel.fieldAnalysisStats.observe(viewLifecycleOwner) { stats ->
             populateFieldCompletionList(stats.fieldCompletionByField)
@@ -135,7 +134,27 @@ class StatsFieldAnalysisDetailFragment : Fragment() {
                     chartHeight
                 ).apply { bottomMargin = marginLg }
             }
-            val entries = dist.distribution.entries.take(10).map { PieEntry(it.value.toFloat(), it.key) }
+            // 상한을 적용하되 잘린 나머지는 '기타' 조각으로 접어 존재를 알린다(S-17 · R-14).
+            // 종전에는 상위 10종만 그리고 나머지를 통째로 버려, 파이의 백분율이 '상위 10종의 합'
+            // 기준으로 부풀려졌고 몇 종이 빠졌는지 알 길이 없었다.
+            val view = ValueDistributions.view(dist.distribution, ValueDistributions.DEFAULT_DISPLAY_LIMIT)
+            // 조각마다 **드릴다운 규칙**을 함께 들고 다닌다 — 라벨이 값인 분포는 값 일치,
+            // 구간 분포는 그 구간 스펙이다(S-16). 접힌 '기타'는 잘린 값 전부를 담는다
+            // (구간 분포는 구간 수가 상한보다 작아 잘리지 않는다).
+            val slices: List<Triple<String, Int, FieldValueMatchSpec>> =
+                view.shown.map { slice ->
+                    Triple(
+                        slice.label, slice.count,
+                        dist.matchSpecs[slice.label] ?: FieldValueMatchSpec.Values(slice.label)
+                    )
+                } + listOfNotNull(
+                    if (view.hasHidden) Triple(
+                        getString(R.string.stats_distribution_others, view.hiddenKinds),
+                        view.hiddenCount,
+                        FieldValueMatchSpec.Values(view.hiddenLabels.toSet())
+                    ) else null
+                )
+            val entries = slices.map { PieEntry(it.second.toFloat(), it.first) }
             val captionSize = resources.getDimension(R.dimen.stats_text_caption) / resources.displayMetrics.scaledDensity
             val dataSet = PieDataSet(entries, "").apply {
                 colors = chartColors()
@@ -158,7 +177,10 @@ class StatsFieldAnalysisDetailFragment : Fragment() {
                 setOnChartValueSelectedListener(object : OnChartValueSelectedListener {
                     override fun onValueSelected(e: Entry?, h: Highlight?) {
                         val pieEntry = e as? PieEntry ?: return
-                        showCharacterListBottomSheet(dist.fieldDefId, dist.fieldName, pieEntry.label)
+                        val slice = slices.find { it.first == pieEntry.label } ?: return
+                        showCharacterListBottomSheet(
+                            dist.fieldDefId, dist.fieldName, slice.first, slice.third
+                        )
                     }
                     override fun onNothingSelected() {}
                 })
@@ -166,6 +188,18 @@ class StatsFieldAnalysisDetailFragment : Fragment() {
                 invalidate()
             }
             container.addView(chart)
+
+            // 잘린 값이 있으면 개수를 명시한다 — 파이 조각만으로는 몇 종인지 읽기 어렵다(R-14).
+            if (view.hasHidden) {
+                container.addView(makeTextView(getString(
+                    R.string.stats_distribution_others_note,
+                    ValueDistributions.DEFAULT_DISPLAY_LIMIT, view.hiddenKinds, view.hiddenCount
+                )).apply {
+                    setTextColor(ContextCompat.getColor(requireContext(), R.color.text_secondary))
+                    val lp = layoutParams as LinearLayout.LayoutParams
+                    lp.bottomMargin = marginLg
+                })
+            }
         }
     }
 
@@ -299,14 +333,24 @@ class StatsFieldAnalysisDetailFragment : Fragment() {
      * 이 화면(레거시 필드 분석)의 분포는 **필드 정의 하나 단위**로 계산된다
      * (`computeFieldAnalysis`가 세계관 통합 없이 def마다 카드를 만든다). 따라서 드릴다운도
      * 그 def 하나가 맞다 — 인사이트 화면처럼 머지 id를 넘기면 차트보다 많은 인원이 나온다.
-     * 두 화면의 통합 여부는 별도 과제(S-14~S-18)다.
+     * *카드를 만든 함수가 무엇을 합쳤는지가 그 화면의 축이다*(R-15).
+     *
+     * [spec]은 분포를 만든 쪽이 실어 보낸 매칭 규칙이다. 종전에는 화면 라벨을 그대로 넘겼고,
+     * BODY_SIZE 파트별 구간 라벨("160~170")은 저장값("170-60-80")과 절대 같을 수 없어
+     * **어떤 입력에서도 0명**이 나왔다(S-16).
      */
-    private fun showCharacterListBottomSheet(fieldDefId: Long, fieldName: String, value: String) {
+    private fun showCharacterListBottomSheet(
+        fieldDefId: Long,
+        fieldName: String,
+        value: String,
+        spec: FieldValueMatchSpec
+    ) {
         val sheet = StatsCharacterListBottomSheet.newInstance(
             fieldDefIds = listOf(fieldDefId),
             fieldName = fieldName,
             selectedValue = value,
-            isEventAxis = false
+            isEventAxis = false,
+            matchSpec = spec
         )
         sheet.onCharacterClick = { characterId ->
             val bundle = Bundle().apply { putLong("characterId", characterId) }

@@ -76,7 +76,13 @@ class AssistantEngine(
             snapshot = snapshot,
             dataHealth = statsProvider.computeDataHealth(snapshot),
             consistency = ConsistencyChecker.check(snapshot),
-            patterns = statsProvider.detectPatterns(snapshot),
+            // 사용자가 통계에서 끈 인사이트 유형은 어시스턴트에도 뜨지 않는다.
+            // 종전에는 인자를 넘기지 않아 기본값(전 유형)으로 돌았고, '편중'을 꺼도 편향 카드가
+            // 그대로 떴다 — 한 설정을 두 화면이 다르게 해석하는 상태였다(B-31 인접).
+            patterns = statsProvider.detectPatterns(
+                snapshot,
+                com.novelcharacter.app.ui.stats.PatternTypePrefs.enabled(context)
+            ),
             statsProvider = statsProvider,
             valuesByDefId = snapshot.fieldValues.groupBy { it.fieldDefinitionId }
         )

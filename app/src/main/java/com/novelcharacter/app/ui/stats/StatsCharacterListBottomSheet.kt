@@ -18,6 +18,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.novelcharacter.app.R
 import com.novelcharacter.app.databinding.BottomSheetStatsCharacterListBinding
+import com.novelcharacter.app.util.FieldValueMatchSpec
 
 /**
  * 차트 조각 드릴다운 시트 — **캐릭터/사건 두 축을 모두** 다룬다.
@@ -36,6 +37,8 @@ class StatsCharacterListBottomSheet : BottomSheetDialogFragment() {
     private var fieldName: String = ""
     private var selectedValue: String = ""
     private var isEventAxis: Boolean = false
+    /** 이 조각의 매칭 규칙 — 화면이 분포를 만든 그 규칙 그대로다(S-16). */
+    private var matchSpec: FieldValueMatchSpec = FieldValueMatchSpec.Values(emptySet())
 
     var onCharacterClick: ((Long) -> Unit)? = null
     /** 사건 행 탭 — 인자는 연표를 맞출 연도다(사건 상세 화면이 없어 전역 검색과 같은 규약을 쓴다). */
@@ -55,6 +58,7 @@ class StatsCharacterListBottomSheet : BottomSheetDialogFragment() {
         fieldName = arguments?.getString(ARG_FIELD_NAME, "") ?: ""
         selectedValue = arguments?.getString(ARG_SELECTED_VALUE, "") ?: ""
         isEventAxis = arguments?.getBoolean(ARG_IS_EVENT_AXIS, false) ?: false
+        matchSpec = readMatchSpec(arguments, selectedValue)
 
         binding.titleText.text = getString(R.string.stats_chart_tap_title, fieldName, selectedValue)
         binding.btnSubgroupAnalysis.setText(
@@ -68,9 +72,9 @@ class StatsCharacterListBottomSheet : BottomSheetDialogFragment() {
         setupSubgroupAnalysis()
 
         if (isEventAxis) {
-            viewModel.loadEventsByFieldValue(fieldDefIds, selectedValue)
+            viewModel.loadEventsByFieldValue(fieldDefIds, matchSpec)
         } else {
-            viewModel.loadCharactersByFieldValue(fieldDefIds, selectedValue)
+            viewModel.loadCharactersByFieldValue(fieldDefIds, matchSpec)
         }
     }
 
@@ -292,16 +296,27 @@ class StatsCharacterListBottomSheet : BottomSheetDialogFragment() {
         private const val ARG_FIELD_NAME = "fieldName"
         private const val ARG_SELECTED_VALUE = "selectedValue"
         private const val ARG_IS_EVENT_AXIS = "isEventAxis"
+        private const val ARG_MATCH_VALUES = "matchValues"
+        private const val ARG_MATCH_PART_INDEX = "matchPartIndex"
+        private const val ARG_MATCH_SEPARATOR = "matchSeparator"
+        private const val ARG_MATCH_MIN = "matchMin"
+        private const val ARG_MATCH_MAX = "matchMax"
+        private const val ARG_MATCH_INCLUSIVE_MAX = "matchInclusiveMax"
 
         /**
          * [fieldDefIds]에는 인사이트 카드의 `mergedFieldDefIds`를 그대로 준다 — 첫 원소가
          * 파싱 기준 def이므로 **순서를 보존**해야 차트와 같은 값 공간이 된다.
+         *
+         * [matchSpec]은 **화면에 보인 그 조각의 규칙**이다(S-16·S-17). 라벨 문자열을 매칭 키로
+         * 재사용하면 라벨이 계산 결과인 조각(구간)은 어떤 입력에서도 0명이 되고, 접힌 '기타'
+         * 묶음은 아예 조회할 수 없다. [selectedValue]는 제목에만 쓴다.
          */
         fun newInstance(
             fieldDefIds: List<Long>,
             fieldName: String,
             selectedValue: String,
-            isEventAxis: Boolean
+            isEventAxis: Boolean,
+            matchSpec: FieldValueMatchSpec = FieldValueMatchSpec.Values(selectedValue)
         ): StatsCharacterListBottomSheet {
             return StatsCharacterListBottomSheet().apply {
                 arguments = Bundle().apply {
@@ -309,8 +324,44 @@ class StatsCharacterListBottomSheet : BottomSheetDialogFragment() {
                     putString(ARG_FIELD_NAME, fieldName)
                     putString(ARG_SELECTED_VALUE, selectedValue)
                     putBoolean(ARG_IS_EVENT_AXIS, isEventAxis)
+                    putMatchSpec(this, matchSpec)
                 }
             }
+        }
+
+        /** 스펙은 Bundle에 원시값으로 싣는다(Parcelable 도입 없이 프로세스 재생성에도 살아남게). */
+        private fun putMatchSpec(bundle: Bundle, spec: FieldValueMatchSpec) {
+            when (spec) {
+                is FieldValueMatchSpec.Values -> {
+                    bundle.putStringArray(ARG_MATCH_VALUES, spec.values.toTypedArray())
+                    bundle.putInt(ARG_MATCH_PART_INDEX, -1)
+                }
+                is FieldValueMatchSpec.NumericPartRange -> {
+                    bundle.putInt(ARG_MATCH_PART_INDEX, spec.partIndex)
+                    bundle.putString(ARG_MATCH_SEPARATOR, spec.separator)
+                    bundle.putFloat(ARG_MATCH_MIN, spec.min)
+                    bundle.putFloat(ARG_MATCH_MAX, spec.max)
+                    bundle.putBoolean(ARG_MATCH_INCLUSIVE_MAX, spec.inclusiveMax)
+                }
+            }
+        }
+
+        /** 구버전 인자(스펙 없이 값 하나)로 열린 시트도 그대로 동작한다. */
+        private fun readMatchSpec(bundle: Bundle?, fallbackValue: String): FieldValueMatchSpec {
+            if (bundle == null) return FieldValueMatchSpec.Values(fallbackValue)
+            val partIndex = bundle.getInt(ARG_MATCH_PART_INDEX, -1)
+            if (partIndex >= 0) {
+                return FieldValueMatchSpec.NumericPartRange(
+                    partIndex = partIndex,
+                    separator = bundle.getString(ARG_MATCH_SEPARATOR, "-"),
+                    min = bundle.getFloat(ARG_MATCH_MIN),
+                    max = bundle.getFloat(ARG_MATCH_MAX),
+                    inclusiveMax = bundle.getBoolean(ARG_MATCH_INCLUSIVE_MAX, false)
+                )
+            }
+            val values = bundle.getStringArray(ARG_MATCH_VALUES)
+            return if (values != null && values.isNotEmpty()) FieldValueMatchSpec.Values(values.toSet())
+            else FieldValueMatchSpec.Values(fallbackValue)
         }
     }
 }

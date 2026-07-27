@@ -53,11 +53,8 @@ class StatsCharacterDetailFragment : Fragment() {
             binding.contentLayout.visibility = if (isLoading) View.GONE else View.VISIBLE
         }
 
-        viewModel.error.observe(viewLifecycleOwner) { error ->
-            if (error != null) {
-                Toast.makeText(context ?: return@observe, R.string.stats_load_error, Toast.LENGTH_SHORT).show()
-            }
-        }
+        // 사유가 있으면 사유를, 없으면 통짜 문구를 — 어느 쪽이든 반드시 띄운다(B-32).
+        viewModel.error.observe(viewLifecycleOwner) { error -> showStatsError(viewModel, error) }
 
         viewModel.characterStats.observe(viewLifecycleOwner) { stats ->
             // 복잡도 순위
