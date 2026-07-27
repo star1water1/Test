@@ -81,6 +81,8 @@ $MAIN/data/model/CharacterSnapshot.kt
 $MAIN/data/model/SnapshotRefs.kt
 $MAIN/data/model/TrashSnapshot.kt
 $MAIN/data/model/EventFieldValue.kt
+$MAIN/data/dao/EventFieldValueDao.kt
+$MAIN/data/repository/EventFieldValueMerge.kt
 $MAIN/data/model/FactionRelationship.kt
 $MAIN/data/model/EntitySnapshots.kt
 $MAIN/data/dao/TrashSnapshotDao.kt
@@ -151,6 +153,8 @@ $TEST/data/SnapshotRefResolverTest.kt
 $TEST/data/CharacterSnapshotPayloadTest.kt
 $TEST/data/RestoreModeTest.kt
 $TEST/data/CharacterFieldValueMergeTest.kt
+$TEST/data/EventFieldValueMergeTest.kt
+$TEST/data/EventFieldValueDaoReplaceTest.kt
 $TEST/excel/SheetNameAssignmentTest.kt
 $TEST/data/TrashPruneSelectorTest.kt
 $TEST/data/TrashGroupingTest.kt

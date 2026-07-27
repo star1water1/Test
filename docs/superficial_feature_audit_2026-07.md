@@ -94,7 +94,7 @@ QuickAdd·BatchEdit의 신규 생성)은 전수 확인 결과 정상이었다 �
 - **증상:** 세계관 패키지를 공유받은 사용자가 그 파일을 열 방법이 전혀 없다. 설정의 가져오기에서 .ncworld를 고르면(파일 선택기가 application/zip을 허용하므로 선택은 됨) data.xlsx가 없어 xlsx로 오판 → POI 파싱 실패 → "가져오기에 실패했습니다" 일반 오류 토스트만 뜬다. '배포' 기능인데 수신 측이 없어 기능 전체가 구색이다.
 - **개혁안:** WorldPackageImporter를 신설해 manifest.json의 schemaVersion(1/2)을 검증하고 exporter가 쓰는 전체 엔트리(universe/fields/characters/…/faction_relationships)를 역직렬화·트랜잭션 삽입하도록 구현한다. 가져오기 진입부의 ZIP 판별을 3분기(data.xlsx 엔트리→엑셀 ZIP, manifest.json 엔트리→월드패키지, 그 외→xlsx 시도)로 확장해 기존 백업 복원 경로와 충돌 없이 라우팅한다. 이름/ID 충돌은 이미 존재하는 죽은 문자열(share_world_conflict_title/overwrite/skip/new)을 살려 덮어쓰기·건너뛰기·새로 생성 선택 다이얼로그로 처리하고(변수 제어: 검증→알림→교정), v1 패키지는 exporter KDoc대로 "세력 간 관계 없음"을 구버전 형식으로 안내한다. 형식 인식 실패 시에도 일반 토스트가 아니라 "지원하지 않는 패키지 형식/손상됨" 등 원인별 메시지를 제공해 무통보 실패를 없앤다.
 
-### S-6. 사건 편집 다이얼로그가 작품 미선택/작품 소실 시 사건 필드값 전체를 무통보 삭제한다 (N2의 사건판, R-5 미적용)
+### ~~S-6~~. 사건 편집 다이얼로그가 작품 미선택/작품 소실 시 사건 필드값 전체를 무통보 삭제한다 (N2의 사건판, R-5 미적용) — **처리 완료 (remaining_work 1-7장)**
 - **위치:** `app/src/main/java/com/novelcharacter/app/ui/timeline/EventEditDialogFragment.kt:493` · **분류:** 조용한 실패 · **심각도:** 상
 - **증상:** 작품이 삭제돼 연결이 끊긴(또는 다이얼로그에서 작품 체크를 해제한) 사건을 열어 설명만 고치고 저장하면, 채워 둔 회차·챕터 등 사건 필드값이 전부 소리 없이 사라진다. 필드 로딩이 끝나기 전에 빠르게 저장해도 동일하다.
 - **개혁안:** 캐릭터 경로의 R-5 커버 집합을 사건 경로에 그대로 이식한다: DataProvider.updateEvent/insertEvent/updateEventAndShiftOthers에 '폼이 실제 렌더한 필드 정의 id 집합'을 함께 넘기고, TimelineViewModel이 replaceAllByEvent 대신 커버 집합 기준 병합(기존 EventFieldValueDao.replaceForFields 재사용)으로 커버 밖 기존 값을 보존한다. 세계관 미해결(universeId==null)·필드 섹션 로딩 미완이면 커버 집합을 공집합으로 넘겨 전량 보존하고, 보존 건수가 0보다 크면 CharacterSaveCoordinator.notifyPreservedFieldValues와 동일한 "N개 필드값을 보관했습니다" 고지를 띄운다(검증→알림→교정). 추가로 rebuildEventFieldSection의 세계관 해석에 editingEvent?.universeId 폴백을 두어 작품 연결이 끊긴 사건도 기존 필드값을 화면에 드러내 편집할 수 있게 한다(존재를 알 수 없는 데이터 금지, 원칙 04).
@@ -124,7 +124,7 @@ QuickAdd·BatchEdit의 신규 생성)은 전수 확인 결과 정상이었다 �
 - **증상:** 수식에 자기참조/순환 참조나 오타(fied(...), 0나눗셈)를 넣고 저장하면 아무 경고 없이 저장되고, 캐릭터 상세에는 '필드명 (자동 계산)'만 값 없이 표시된다. 입력값이 아직 없어서 빈 것인지 수식이 깨진 것인지 사용자는 알 길이 없고, 엑셀 내보내기에서도 빈 셀이 되어 오류가 어디에서도 드러나지 않는다. B-4(교차분석 null 무시)와 같은 부류.
 - **개혁안:** 1) NaN/Infinite를 오류 신호로 소비자까지 관통시킨다: 계산 결과를 sealed 타입(성공값/오류사유)으로 반환하는 공용 헬퍼로 각 소비자의 중복 평가 코드를 통합하고, DynamicFieldRenderer·CharacterDetailFragment는 "필드명: 수식 오류 (자동 계산)"처럼 TimeStateResolver.FORMULA_ERROR_DISPLAY와 일관된 오류 표기를 렌더링한다(방편식 패치 금지 — 경로별 개별 땜빵 대신 단일 소스). 2) 엑셀/PDF 내보내기는 빈 셀 대신 오류 마커(예: "#수식오류")를 기록하거나 내보내기 완료 시 오류 필드 개수를 사용자에게 통지한다(엑셀 왕복 무결성). 3) FieldEditDialog.validateFormula에 자기참조·순환 참조 검사(currentKey 직접 참조 + CALCULATED 간 전이 참조)와 미지 함수명 검출을 추가해 저장 시점에 경고한다(검증→알림→교정, 기존 '그대로 저장' 선택지는 유지해 자율성 보존).
 
-### S-12. 관계 변화 추가·편집 다이얼로그 — 연도 미입력 시 저장 탭이 전체 입력을 무통보 폐기
+### ~~S-12~~. 관계 변화 추가·편집 다이얼로그 — 연도 미입력 시 저장 탭이 전체 입력을 무통보 폐기 — **처리 완료 (remaining_work 1-7장)**
 - **위치:** `app/src/main/java/com/novelcharacter/app/ui/character/RelationshipHelper.kt:413` · **분류:** 조용한 실패 · **심각도:** 중
 - **증상:** 관계 변화 추가에서 유형·설명·강도·사건 연결까지 채우고 연도만 비운 채 저장을 누르면 다이얼로그가 닫히고 아무 일도 일어나지 않는다. 입력 전체가 알림 없이 사라진다 — B-4 전례(고르면 조용히 아무 일도 안 일어남)와 같은 부류이며 CLAUDE.md 변수 제어(검증→알림→교정 경로) 직접 위반.
 - **개혁안:** Override the positive button's default auto-dismiss: build the dialog, call show(), then rebind dialog.getButton(BUTTON_POSITIVE).setOnClickListener. In that listener, validate the year; on failure set an inline error on the year field's TextInputLayout (e.g. "연도를 입력하세요") and keep the dialog open so the user can correct it (검증→알림→교정), clearing the error on text change; only on success run the existing insert/update logic and dismiss(). Apply the same complete fix to both showAddRelationshipChangeDialog (line 413) and showEditRelationshipChangeDialog (line 487) — patching only one would be a 방편식 패치.
@@ -180,7 +180,7 @@ QuickAdd·BatchEdit의 신규 생성)은 전수 확인 결과 정상이었다 �
 
 | 순위 | 묶음 | 대상 | 요지 |
 |------|------|------|------|
-| 1 | **사건 입력 보호** | S-6 (+S-12) | N2에서 캐릭터 쪽에 세운 R-5(폼의 권한은 렌더한 것까지)를 사건 편집에 그대로 적용 — 커버 집합 전달로 무통보 필드값 전멸 제거. 관계 변화 다이얼로그의 무통보 폐기도 같은 계열(검증→알림). 유실 계열이므로 최우선 |
+| ~~1~~ | ~~**사건 입력 보호**~~ | ~~S-6 (+S-12)~~ | **처리 완료** — `EventFieldValueMerge`(커버 집합) + `replaceForFields` 공용화 + universeId 보존 폴백 + 보존 Toast·이력 고지 + `setValidatedPositiveButton` 재조립. 상세·실기기 확인 절차는 remaining_work 1-7장·3-7장. 인접 발견: 통보-후-닫힘 입력 유실 잔여(B-28), CharacterViewModel 사건 CRUD 무통보 실패(B-29) 등재 |
 | 2 | **월드패키지 완결** | S-5 | WorldPackageImporter 신설(manifest 검증 → 전 엔트리 역직렬화 → 충돌 3분기 다이얼로그 — 이미 존재하는 죽은 문자열 share_world_conflict_* 활용). ZIP 판별 3분기(data.xlsx/manifest.json/기타). 미검증 목록의 "추가 누락 데이터"(사건 필드·값 라이브러리·이미지) 포함 여부를 착수 시 재확인해 내보내기 쪽도 함께 완결할 것 |
 | 3 | **통계 조용한 실패 일소** | S-7·S-8·S-9·S-19 | 공통 뿌리 둘: ① CALCULATED 값 병합이 사건 축에만 있다(S-8·S-19 — mergeCalculatedRows를 캐릭터 축·하위 그룹에도), ② 드릴다운이 단일 fieldDefId·캐릭터 전용이다(S-7·S-9 — (key,type) 그룹 전체 조회 + 엔티티 인지형 시트). 빈 결과 무통보 return을 전부 "데이터 없음" 고지로 교체 |
 | 4 | **통계 정합성** | S-14·S-15·S-16·S-17·S-18 | '통계에 포함' 설정을 패턴 인사이트·레거시 필드 분석에 일관 적용, 비율 모수를 전체 합으로 교정 + 잘림 개수 고지(R-14), 순위 빈도를 FieldValueTokenizer·별칭 접기 규칙으로 통일, BODY_SIZE 드릴다운 키 일치. 레거시 필드 분석 화면은 인사이트 화면과의 통합(한쪽 소거)도 검토할 것 — 같은 질문에 다른 답을 주는 화면 둘은 그 자체가 변수 제어 위반 |

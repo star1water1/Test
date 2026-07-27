@@ -24,6 +24,7 @@ import com.novelcharacter.app.data.model.FieldType
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.TimelineEvent
 import com.novelcharacter.app.data.model.generateEntityCode
+import com.novelcharacter.app.data.repository.EventFieldValueMerge
 import com.novelcharacter.app.databinding.DialogTimelineEditBinding
 import com.novelcharacter.app.util.FieldOptionParser
 import com.novelcharacter.app.util.isValidDay
@@ -53,8 +54,10 @@ class EventEditDialogFragment : DialogFragment() {
         suspend fun getNovelIdsForEvent(eventId: Long): List<Long>
         suspend fun getEventFieldsForUniverse(universeId: Long): List<FieldDefinition>
         suspend fun getEventFieldValuesForEvent(eventId: Long): List<EventFieldValue>
-        fun insertEvent(event: TimelineEvent, characterIds: List<Long>, novelIds: List<Long>, eventFieldValues: List<EventFieldValue>)
-        fun updateEvent(event: TimelineEvent, characterIds: List<Long>, novelIds: List<Long>, eventFieldValues: List<EventFieldValue>)
+        // 필드값은 값·커버 집합 한 벌([EventFieldValueMerge.Submission])로 전달한다(S-6) —
+        // 값만 넘기면 "폼이 전체 진실"이 되어 폼이 렌더하지 못한 기존 값이 전량 삭제된다.
+        fun insertEvent(event: TimelineEvent, characterIds: List<Long>, novelIds: List<Long>, fieldSubmission: EventFieldValueMerge.Submission)
+        fun updateEvent(event: TimelineEvent, characterIds: List<Long>, novelIds: List<Long>, fieldSubmission: EventFieldValueMerge.Submission)
         suspend fun getEventsInScope(novelIds: List<Long>, universeId: Long?): List<TimelineEvent>
         fun updateEventAndShiftOthers(
             event: TimelineEvent,
@@ -64,7 +67,7 @@ class EventEditDialogFragment : DialogFragment() {
             delta: Int,
             originalNovelIds: List<Long>,
             originalUniverseId: Long?,
-            eventFieldValues: List<EventFieldValue>
+            fieldSubmission: EventFieldValueMerge.Submission
         )
     }
 
@@ -89,6 +92,15 @@ class EventEditDialogFragment : DialogFragment() {
     private var eventFields: List<FieldDefinition> = emptyList()
     private val eventFieldInputMap = mutableMapOf<Long, Any>()  // fieldId -> EditText/Spinner
     private var pendingEventFieldValues: MutableMap<String, String>? = null
+
+    /**
+     * 폼의 커버 집합(S-6/R-5) — 필드 섹션 로딩이 **완료된 시점에 조회된 정의 전체**의 id.
+     * 렌더에서 걸러지는 CALCULATED도 포함한다(계산 필드 정의를 가리키는 잔여 저장 행이
+     * 저장 시 함께 정리되어 매번 반복되는 "보관했습니다" 거짓 고지를 막는다 — 캐릭터판과 동일).
+     * 세계관 미해결이면 공집합으로 되돌리고, 로딩 미완(초기·회전 직후·fetch 대기 중 재구성 전)에는
+     * 마지막으로 렌더된 상태가 곧 화면의 진실이므로 그대로 둔다.
+     */
+    private var coveredEventFieldIds: Set<Long> = emptySet()
 
     // 역법 시드(R3): 신규 사건이면 스코프 세계관 최빈 역법을 시드하되, 편집·회전 복원·사용자 직접 입력은 존중.
     private var isRecreated = false
@@ -324,11 +336,13 @@ class EventEditDialogFragment : DialogFragment() {
         val selectedTypeIndex = binding.spinnerEventType.selectedItemPosition
         val selectedEventType = eventTypes.getOrNull(selectedTypeIndex)?.first ?: TimelineEvent.TYPE_NONE
 
-        // 선택된 작품들에서 세계관 ID 결정 (첫 번째 작품 기준)
-        val selectedNovels = novels.filter { it.id in selectedNovelIds }
-        val universeId = selectedNovels.firstOrNull()?.universeId
-
+        // 선택된 작품들에서 세계관 ID 결정 (첫 번째 작품 기준).
+        // 작품이 없으면 기존 세계관을 유지한다(S-6) — 작품 연결이 끊긴 사건의 편집이
+        // 세계관 소속·필드값 가시성까지 조용히 지우지 않게. 사용자가 이 다이얼로그에서
+        // 지운 것은 작품 연결이지 세계관 소속이 아니다.
         val event = editingEvent
+        val selectedNovels = novels.filter { it.id in selectedNovelIds }
+        val universeId = selectedNovels.firstOrNull()?.universeId ?: event?.universeId
         val newEvent = TimelineEvent(
             id = event?.id ?: 0,
             year = year,
@@ -348,10 +362,14 @@ class EventEditDialogFragment : DialogFragment() {
         val novelIdsList = selectedNovelIds.toList()
         val provider = requireProvider()
 
-        val eventFieldValues = collectEventFieldValues()
-        guardRestrictedEventValues(eventFieldValues) {
+        // 값과 커버 집합은 같은 프레임에 스냅샷한다(S-6) — 커버는 지금 화면에 렌더된 폼의 권한이다.
+        val fieldSubmission = EventFieldValueMerge.Submission(
+            values = collectEventFieldValues(),
+            coveredFieldDefinitionIds = coveredEventFieldIds
+        )
+        guardRestrictedEventValues(fieldSubmission.values) {
         if (event == null) {
-            provider.insertEvent(newEvent, selectedCharIds.toList(), novelIdsList, eventFieldValues)
+            provider.insertEvent(newEvent, selectedCharIds.toList(), novelIdsList, fieldSubmission)
             // 가드 경유로 비동기 실행됨 — 상태 저장 후 도착해도 크래시하지 않게 (수정 경로와 동일)
             dismissAllowingStateLoss()
         } else {
@@ -366,10 +384,10 @@ class EventEditDialogFragment : DialogFragment() {
                         delta, event.year,
                         originalNovelIds = originalNovelIds,
                         originalUniverseId = event.universeId,
-                        eventFieldValues = eventFieldValues
+                        fieldSubmission = fieldSubmission
                     )
                 } else {
-                    provider.updateEvent(newEvent, selectedCharIds.toList(), novelIdsList, eventFieldValues)
+                    provider.updateEvent(newEvent, selectedCharIds.toList(), novelIdsList, fieldSubmission)
                     dismissAllowingStateLoss()
                 }
             }
@@ -433,7 +451,7 @@ class EventEditDialogFragment : DialogFragment() {
         oldYear: Int,
         originalNovelIds: List<Long>,
         originalUniverseId: Long?,
-        eventFieldValues: List<EventFieldValue>
+        fieldSubmission: EventFieldValueMerge.Submission
     ) {
         val scopeEvents = provider.getEventsInScope(originalNovelIds, originalUniverseId)
             .filter { it.id != newEvent.id }
@@ -444,7 +462,7 @@ class EventEditDialogFragment : DialogFragment() {
         val items = mutableListOf(getString(R.string.shift_this_only))
         val actions = mutableListOf<() -> Unit>()
         actions.add {
-            provider.updateEvent(newEvent, characterIds, novelIds, eventFieldValues)
+            provider.updateEvent(newEvent, characterIds, novelIds, fieldSubmission)
             dismissAllowingStateLoss()
         }
         if (afterCount > 0) {
@@ -452,7 +470,7 @@ class EventEditDialogFragment : DialogFragment() {
             actions.add {
                 provider.updateEventAndShiftOthers(
                     newEvent, characterIds, novelIds, ShiftDirection.AFTER, delta,
-                    originalNovelIds, originalUniverseId, eventFieldValues
+                    originalNovelIds, originalUniverseId, fieldSubmission
                 )
                 dismissAllowingStateLoss()
             }
@@ -462,7 +480,7 @@ class EventEditDialogFragment : DialogFragment() {
             actions.add {
                 provider.updateEventAndShiftOthers(
                     newEvent, characterIds, novelIds, ShiftDirection.BEFORE, delta,
-                    originalNovelIds, originalUniverseId, eventFieldValues
+                    originalNovelIds, originalUniverseId, fieldSubmission
                 )
                 dismissAllowingStateLoss()
             }
@@ -494,10 +512,15 @@ class EventEditDialogFragment : DialogFragment() {
             pendingEventFieldValues = preserved
         }
 
+        // 작품 미선택/연결 소실이어도 편집 중인 사건의 세계관으로 폴백한다(S-6, 원칙 04) —
+        // 작품이 끊긴 사건의 기존 필드값이 '일일이 확인하지 않으면 존재를 알 수 없는 데이터'가
+        // 되지 않게 화면에 드러내 편집할 수 있어야 한다.
         val universeId = novels.firstOrNull { it.id in selectedNovelIds }?.universeId
+            ?: editingEvent?.universeId
         if (universeId == null) {
             eventFields = emptyList()
             eventFieldInputMap.clear()
+            coveredEventFieldIds = emptySet()  // 렌더한 것이 없다 = 폼의 권한도 없다(전량 보존)
             binding.eventFieldContainer.removeAllViews()
             binding.eventFieldContainer.visibility = View.GONE
             binding.eventFieldSectionLabel.visibility = View.GONE
@@ -510,7 +533,11 @@ class EventEditDialogFragment : DialogFragment() {
         fieldSectionJob = lifecycleScope.launch {
             val fields = requireProvider().getEventFieldsForUniverse(target)
             if (_binding == null) return@launch
-            if (novels.firstOrNull { it.id in selectedNovelIds }?.universeId != target) return@launch
+            val current = novels.firstOrNull { it.id in selectedNovelIds }?.universeId
+                ?: editingEvent?.universeId
+            if (current != target) return@launch
+            // 커버는 조회된 정의 전체(CALCULATED 포함), 렌더는 입력 가능한 것만 — 필드 주석 참조.
+            coveredEventFieldIds = fields.mapTo(HashSet()) { it.id }
             eventFields = fields
                 .filter { FieldType.fromName(it.type) != FieldType.CALCULATED }
                 .sortedBy { it.displayOrder }
@@ -620,7 +647,7 @@ class EventEditDialogFragment : DialogFragment() {
         else -> ""
     }
 
-    /** 빈 값은 저장하지 않는다 — replaceAllByEvent가 전체 교체하므로 삭제와 동치 */
+    /** 빈 값은 저장하지 않는다 — 커버된 필드가 폼에 없으면 삭제(비움 의도)로 처리된다(S-6) */
     private fun collectEventFieldValues(): List<EventFieldValue> {
         val result = mutableListOf<EventFieldValue>()
         for (field in eventFields) {

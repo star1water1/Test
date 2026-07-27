@@ -11,9 +11,11 @@ import com.novelcharacter.app.data.model.TimelineEvent
 import android.util.Log
 import androidx.room.withTransaction
 import com.novelcharacter.app.data.model.CharacterStateChange
+import com.novelcharacter.app.data.repository.EventFieldValueMerge
 import com.novelcharacter.app.ui.timeline.EventEditDialogFragment.ShiftDirection
 import com.novelcharacter.app.util.OpResult
 import com.novelcharacter.app.util.reportResult
+import com.novelcharacter.app.util.toastAndLogResult
 import com.novelcharacter.app.util.SemanticFieldSyncHelper
 import com.novelcharacter.app.util.StandardYearSyncHelper
 import kotlinx.coroutines.Job
@@ -452,20 +454,21 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
         event: TimelineEvent,
         characterIds: List<Long>,
         novelIds: List<Long> = emptyList(),
-        eventFieldValues: List<com.novelcharacter.app.data.model.EventFieldValue>? = null
+        fieldSubmission: EventFieldValueMerge.Submission? = null
     ) = viewModelScope.launch {
         try {
             val newEventId = db.withTransaction {
                 val eventId = timelineRepository.insertEvent(event)
                 timelineRepository.updateEventCharacters(eventId, characterIds)
                 timelineRepository.updateEventNovels(eventId, novelIds)
-                if (eventFieldValues != null) {
-                    db.eventFieldValueDao().replaceAllByEvent(eventId, eventFieldValues.map { it.copy(eventId = eventId) })
+                if (fieldSubmission != null) {
+                    // 폼의 권한은 렌더한 필드까지(R-5/S-6) — 커버 밖 기존 값은 건드리지 않는다
+                    EventFieldValueMerge.saveWithinCover(db.eventFieldValueDao(), eventId, fieldSubmission)
                 }
                 eventId
             }
             // 커밋 후 값 라이브러리 수확 (실패 무해)
-            if (eventFieldValues != null) app.fieldValueLibraryRepository.harvestForEvent(newEventId)
+            if (fieldSubmission != null) app.fieldValueLibraryRepository.harvestForEvent(newEventId)
             // novelEventIds 캐시 갱신
             _filterNovelId.value?.let { nid ->
                 _novelEventIds.value = timelineRepository.getEventIdsByNovel(nid).toSet()
@@ -483,20 +486,24 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
         event: TimelineEvent,
         characterIds: List<Long>,
         novelIds: List<Long> = emptyList(),
-        eventFieldValues: List<com.novelcharacter.app.data.model.EventFieldValue>? = null
+        fieldSubmission: EventFieldValueMerge.Submission? = null
     ) = viewModelScope.launch {
         try {
             // 타입 변경 감지를 위해 기존 이벤트 조회
             val oldEvent = timelineRepository.getEventById(event.id)
+            var preservedFieldValues = 0
             db.withTransaction {
                 timelineRepository.updateEvent(event)
                 timelineRepository.updateEventCharacters(event.id, characterIds)
                 timelineRepository.updateEventNovels(event.id, novelIds)
-                if (eventFieldValues != null) {
-                    db.eventFieldValueDao().replaceAllByEvent(event.id, eventFieldValues.map { it.copy(eventId = event.id) })
+                if (fieldSubmission != null) {
+                    // 폼의 권한은 렌더한 필드까지(R-5/S-6) — 커버 밖 기존 값은 건드리지 않는다
+                    preservedFieldValues =
+                        EventFieldValueMerge.saveWithinCover(db.eventFieldValueDao(), event.id, fieldSubmission)
                 }
             }
-            if (eventFieldValues != null) app.fieldValueLibraryRepository.harvestForEvent(event.id)
+            if (fieldSubmission != null) app.fieldValueLibraryRepository.harvestForEvent(event.id)
+            notifyPreservedEventFieldValues(preservedFieldValues)
             // novelEventIds 캐시 갱신
             _filterNovelId.value?.let { nid ->
                 _novelEventIds.value = timelineRepository.getEventIdsByNovel(nid).toSet()
@@ -523,18 +530,21 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
         delta: Int,
         originalNovelIds: List<Long>,
         originalUniverseId: Long?,
-        eventFieldValues: List<com.novelcharacter.app.data.model.EventFieldValue>? = null
+        fieldSubmission: EventFieldValueMerge.Submission? = null
     ) = viewModelScope.launch {
         try {
             val oldYear = event.year - delta
             // 타입 변경 감지를 위해 기존 이벤트 조회
             val oldEvent = timelineRepository.getEventById(event.id)
+            var preservedFieldValues = 0
             db.withTransaction {
                 timelineRepository.updateEvent(event)
                 timelineRepository.updateEventCharacters(event.id, characterIds)
                 timelineRepository.updateEventNovels(event.id, novelIds)
-                if (eventFieldValues != null) {
-                    db.eventFieldValueDao().replaceAllByEvent(event.id, eventFieldValues.map { it.copy(eventId = event.id) })
+                if (fieldSubmission != null) {
+                    // 폼의 권한은 렌더한 필드까지(R-5/S-6) — 커버 밖 기존 값은 건드리지 않는다
+                    preservedFieldValues =
+                        EventFieldValueMerge.saveWithinCover(db.eventFieldValueDao(), event.id, fieldSubmission)
                 }
 
                 val scopeEvents = when {
@@ -569,7 +579,8 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
                     }
                 }
             }
-            if (eventFieldValues != null) app.fieldValueLibraryRepository.harvestForEvent(event.id)
+            if (fieldSubmission != null) app.fieldValueLibraryRepository.harvestForEvent(event.id)
+            notifyPreservedEventFieldValues(preservedFieldValues)
             // novelEventIds 캐시 갱신
             _filterNovelId.value?.let { nid ->
                 _novelEventIds.value = timelineRepository.getEventIdsByNovel(nid).toSet()
@@ -586,6 +597,16 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
             Log.e("TimelineViewModel", "Failed to shift events", e)
             showError(e.message)
         }
+    }
+
+    /**
+     * 커버 밖이라 지우지 않고 남긴 사건 필드값을 알린다(원칙 04 — 유실은 막았으니
+     * '존재를 알 수 없는 데이터'가 되지 않게). 다이얼로그는 이미 닫혔으므로 Toast 경로를 쓴다.
+     */
+    private fun notifyPreservedEventFieldValues(count: Int) {
+        if (count <= 0) return
+        toastAndLogResult(OpResult.success(OpResult.CAT_EVENT,
+            app.getString(R.string.event_field_values_preserved, count)))
     }
 
     suspend fun getNovelIdsForEvent(eventId: Long) = timelineRepository.getNovelIdsForEvent(eventId)

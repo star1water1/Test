@@ -21,6 +21,7 @@ import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import com.novelcharacter.app.R
 import com.novelcharacter.app.util.navigateSafe
+import com.novelcharacter.app.util.setValidatedPositiveButton
 import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.CharacterRelationship
 import com.novelcharacter.app.data.model.CharacterRelationshipChange
@@ -386,6 +387,7 @@ class RelationshipHelper(
             } else emptyList()
 
             val dialogView = LayoutInflater.from(context).inflate(R.layout.dialog_relationship_change_edit, null)
+            val layoutYear = dialogView.findViewById<TextInputLayout>(R.id.layoutChangeYear)
             val editYear = dialogView.findViewById<TextInputEditText>(R.id.editYear)
             val spinnerType = dialogView.findViewById<android.widget.Spinner>(R.id.spinnerChangeType)
             val editDesc = dialogView.findViewById<TextInputEditText>(R.id.editChangeDescription)
@@ -404,35 +406,63 @@ class RelationshipHelper(
                 .also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
 
             slider.addOnChangeListener { _, value, _ -> textValue.text = value.toInt().toString() }
+            clearErrorOnEdit(editYear, layoutYear)
 
-            MaterialAlertDialogBuilder(context)
+            // S-12: 연도 검증 실패가 입력 전체를 무통보 폐기하지 않게 — 자동 닫힘을 막고
+            // 인라인 오류로 교정 경로를 준다(검증→알림→교정). 성공 시에만 저장·닫힘.
+            val dialog = MaterialAlertDialogBuilder(context)
                 .setTitle(getString(R.string.add_relationship_change))
                 .setView(dialogView)
-                .setPositiveButton(getString(R.string.save)) { _, _ ->
-                    val yearText = editYear.text.toString().trim()
-                    val year = yearText.toIntOrNull() ?: return@setPositiveButton
-                    val type = typeNames[spinnerType.selectedItemPosition]
-                    val desc = editDesc.text.toString().trim()
-                    val intensity = slider.value.toInt()
-                    val bidirectional = checkBi.isChecked
-                    val eventIdx = spinnerEvent.selectedItemPosition
-                    val eventId = if (eventIdx > 0 && eventIdx <= events.size) events[eventIdx - 1].id else null
-
-                    viewModel.insertRelationshipChange(
-                        CharacterRelationshipChange(
-                            relationshipId = relationshipId,
-                            year = year,
-                            relationshipType = type,
-                            description = desc,
-                            intensity = intensity,
-                            isBidirectional = bidirectional,
-                            eventId = eventId
-                        )
-                    )
-                }
+                .setPositiveButton(getString(R.string.save), null)
                 .setNegativeButton(getString(R.string.cancel), null)
-                .show()
+                .create()
+            dialog.setValidatedPositiveButton {
+                val year = validateChangeYear(editYear, layoutYear) ?: return@setValidatedPositiveButton false
+                val type = typeNames[spinnerType.selectedItemPosition]
+                val desc = editDesc.text.toString().trim()
+                val intensity = slider.value.toInt()
+                val bidirectional = checkBi.isChecked
+                val eventIdx = spinnerEvent.selectedItemPosition
+                val eventId = if (eventIdx > 0 && eventIdx <= events.size) events[eventIdx - 1].id else null
+
+                viewModel.insertRelationshipChange(
+                    CharacterRelationshipChange(
+                        relationshipId = relationshipId,
+                        year = year,
+                        relationshipType = type,
+                        description = desc,
+                        intensity = intensity,
+                        isBidirectional = bidirectional,
+                        eventId = eventId
+                    )
+                )
+                true
+            }
+            dialog.show()
         }
+    }
+
+    /** 연도 파싱 — 실패 시 인라인 오류를 걸고 null(다이얼로그 유지, 입력 보존 — S-12). */
+    private fun validateChangeYear(editYear: TextInputEditText, layoutYear: TextInputLayout): Int? {
+        val yearText = editYear.text.toString().trim()
+        val year = yearText.toIntOrNull()
+        if (year == null) {
+            layoutYear.error = getString(
+                if (yearText.isEmpty()) R.string.year_required else R.string.enter_valid_year
+            )
+        }
+        return year
+    }
+
+    /** 사용자가 값을 고치기 시작하면 인라인 오류를 지운다(교정 피드백). */
+    private fun clearErrorOnEdit(editYear: TextInputEditText, layoutYear: TextInputLayout) {
+        editYear.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                layoutYear.error = null
+            }
+            override fun afterTextChanged(s: android.text.Editable?) {}
+        })
     }
 
     private fun showEditRelationshipChangeDialog(change: CharacterRelationshipChange) {
@@ -446,6 +476,7 @@ class RelationshipHelper(
             } else emptyList()
 
             val dialogView = LayoutInflater.from(context).inflate(R.layout.dialog_relationship_change_edit, null)
+            val layoutYear = dialogView.findViewById<TextInputLayout>(R.id.layoutChangeYear)
             val editYear = dialogView.findViewById<TextInputEditText>(R.id.editYear)
             val spinnerType = dialogView.findViewById<android.widget.Spinner>(R.id.spinnerChangeType)
             val editDesc = dialogView.findViewById<TextInputEditText>(R.id.editChangeDescription)
@@ -478,36 +509,40 @@ class RelationshipHelper(
             }
 
             slider.addOnChangeListener { _, value, _ -> textValue.text = value.toInt().toString() }
+            clearErrorOnEdit(editYear, layoutYear)
 
-            MaterialAlertDialogBuilder(context)
+            // S-12: 추가 다이얼로그와 같은 검증 구조 — 한쪽만 고치면 방편식 패치다.
+            val dialog = MaterialAlertDialogBuilder(context)
                 .setTitle(getString(R.string.edit_relationship_change))
                 .setView(dialogView)
-                .setPositiveButton(getString(R.string.save)) { _, _ ->
-                    val yearText = editYear.text.toString().trim()
-                    val year = yearText.toIntOrNull() ?: return@setPositiveButton
-                    val type = typeNames[spinnerType.selectedItemPosition]
-                    val desc = editDesc.text.toString().trim()
-                    val intensity = slider.value.toInt()
-                    val bidirectional = checkBi.isChecked
-                    val eventIdx = spinnerEvent.selectedItemPosition
-                    val eventId = if (eventIdx > 0 && eventIdx <= events.size) events[eventIdx - 1].id else null
-
-                    viewModel.updateRelationshipChange(
-                        change.copy(
-                            year = year,
-                            relationshipType = type,
-                            description = desc,
-                            intensity = intensity,
-                            isBidirectional = bidirectional,
-                            eventId = eventId
-                        )
-                    )
-                }
+                .setPositiveButton(getString(R.string.save), null)
                 .setNeutralButton(getString(R.string.delete)) { _, _ ->
                     viewModel.deleteRelationshipChange(change)
                 }
                 .setNegativeButton(getString(R.string.cancel), null)
-                .show()
+                .create()
+            dialog.setValidatedPositiveButton {
+                val year = validateChangeYear(editYear, layoutYear) ?: return@setValidatedPositiveButton false
+                val type = typeNames[spinnerType.selectedItemPosition]
+                val desc = editDesc.text.toString().trim()
+                val intensity = slider.value.toInt()
+                val bidirectional = checkBi.isChecked
+                val eventIdx = spinnerEvent.selectedItemPosition
+                val eventId = if (eventIdx > 0 && eventIdx <= events.size) events[eventIdx - 1].id else null
+
+                viewModel.updateRelationshipChange(
+                    change.copy(
+                        year = year,
+                        relationshipType = type,
+                        description = desc,
+                        intensity = intensity,
+                        isBidirectional = bidirectional,
+                        eventId = eventId
+                    )
+                )
+                true
+            }
+            dialog.show()
         }
     }
 
