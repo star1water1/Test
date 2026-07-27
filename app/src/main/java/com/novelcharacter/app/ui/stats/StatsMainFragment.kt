@@ -396,10 +396,14 @@ class StatsMainFragment : Fragment() {
             }
         }
 
-        // 작품 필터 스피너
+        // 작품 필터 스피너 — [전체, 작품 미배정, …작품들] (미배정은 sentinel, 위치 시프트 +2)
         viewModel.novelList.observe(viewLifecycleOwner) { novels ->
             val ctx = context ?: return@observe
-            val items = mutableListOf(getString(R.string.stats_filter_all))
+            val noneId = com.novelcharacter.app.util.UnassignedFilter.NO_NOVEL_ID
+            val items = mutableListOf(
+                getString(R.string.stats_filter_all),
+                getString(R.string.stats_no_novel_assigned)
+            )
             items.addAll(novels.map { it.second })
             val adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item, items)
             adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
@@ -407,7 +411,11 @@ class StatsMainFragment : Fragment() {
             // 리스너를 adapter/setSelection 전에 설정하여 콜백 누락 방지
             binding.spinnerNovelFilter.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
                 override fun onItemSelected(parent: AdapterView<*>?, v: View?, pos: Int, id: Long) {
-                    val novelId = if (pos == 0) null else novels[pos - 1].first
+                    val novelId = when (pos) {
+                        0 -> null
+                        1 -> noneId
+                        else -> novels[pos - 2].first
+                    }
                     if (viewModel.selectedNovelId.value != novelId) {
                         viewModel.setNovelFilter(novelId)
                     }
@@ -419,8 +427,11 @@ class StatsMainFragment : Fragment() {
 
             // ViewModel 상태에서 스피너 위치 복원 (Fragment 재생성 시)
             val currentNovelId = viewModel.selectedNovelId.value
-            val restoredPos = if (currentNovelId == null) 0
-                else novels.indexOfFirst { it.first == currentNovelId }.let { if (it >= 0) it + 1 else 0 }
+            val restoredPos = when (currentNovelId) {
+                null -> 0
+                noneId -> 1
+                else -> novels.indexOfFirst { it.first == currentNovelId }.let { if (it >= 0) it + 2 else 0 }
+            }
             binding.spinnerNovelFilter.setSelection(restoredPos, false)
         }
 

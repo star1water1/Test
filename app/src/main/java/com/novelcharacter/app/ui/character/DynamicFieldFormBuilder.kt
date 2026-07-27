@@ -47,6 +47,11 @@ class DynamicFieldFormBuilder(
 
     var fieldDefinitions: List<FieldDefinition> = emptyList()
     var currentUniverseId: Long? = null
+    /**
+     * 필드별 ✨ AI 추천 진입 훅 — 호스트가 설정하면 편집 가능 필드(CALCULATED·미지 타입 제외)에
+     * 🎲과 같은 문법의 ✨ 버튼이 붙는다. null이면 폼은 기존과 동일하게 렌더된다.
+     */
+    var aiSuggestHandler: ((FieldDefinition) -> Unit)? = null
     private val fieldInputMap = mutableMapOf<Long, Any>() // fieldDefinitionId -> input widget
 
     private fun getString(resId: Int): String = contextGetter()?.getString(resId) ?: ""
@@ -89,19 +94,68 @@ class DynamicFieldFormBuilder(
         return fieldValues
     }
 
-    // ===== 🎲 랜덤 값 생성 =====
+    // ===== 🎲 랜덤 값 생성 / ✨ AI 추천 — 인라인 액션 버튼 =====
 
-    private fun createDiceButton(context: Context, density: Float, action: () -> Unit): com.google.android.material.button.MaterialButton {
+    private fun createInlineActionButton(
+        context: Context,
+        density: Float,
+        label: String,
+        action: () -> Unit
+    ): com.google.android.material.button.MaterialButton {
         return com.google.android.material.button.MaterialButton(
             context, null, com.google.android.material.R.attr.materialButtonOutlinedStyle
         ).apply {
-            text = "🎲"; textSize = 14f; minWidth = 0; minimumWidth = 0
+            text = label; textSize = 14f; minWidth = 0; minimumWidth = 0
             setPadding((8 * density).toInt(), 0, (8 * density).toInt(), 0)
             layoutParams = android.widget.LinearLayout.LayoutParams(
                 android.view.ViewGroup.LayoutParams.WRAP_CONTENT, android.view.ViewGroup.LayoutParams.WRAP_CONTENT
             )
             setOnClickListener { action() }
         }
+    }
+
+    private fun createDiceButton(context: Context, density: Float, action: () -> Unit) =
+        createInlineActionButton(context, density, "🎲", action)
+
+    /** 필드가 ✨ AI 추천 대상이면 버튼 생성 — CALCULATED·미지 타입은 제외 */
+    private fun createAiButtonOrNull(
+        context: Context,
+        density: Float,
+        field: FieldDefinition
+    ): com.google.android.material.button.MaterialButton? {
+        val handler = aiSuggestHandler ?: return null
+        val type = FieldType.fromName(field.type) ?: return null
+        if (type == FieldType.CALCULATED) return null
+        return createInlineActionButton(context, density, "✨") { handler(field) }
+    }
+
+    /** 입력 레이아웃 + 인라인 버튼들을 한 행으로 배치. 버튼이 없으면 입력만 추가 (기존 렌더 유지) */
+    private fun addInputRow(
+        container: LinearLayout,
+        context: Context,
+        density: Float,
+        inputLayout: TextInputLayout,
+        buttons: List<com.google.android.material.button.MaterialButton>
+    ) {
+        if (buttons.isEmpty()) {
+            container.addView(inputLayout)
+            return
+        }
+        val row = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = ViewGroup.MarginLayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = (8 * density).toInt() }
+        }
+        inputLayout.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        row.addView(inputLayout)
+        for (button in buttons) {
+            button.layoutParams = (button.layoutParams as LinearLayout.LayoutParams).apply {
+                topMargin = (8 * density).toInt()
+            }
+            row.addView(button)
+        }
+        container.addView(row)
     }
 
     private fun showBirthdaySeasonDialog(field: com.novelcharacter.app.data.model.FieldDefinition) {
@@ -147,13 +201,23 @@ class DynamicFieldFormBuilder(
         applyRandomValue(field, value)
     }
 
-    private fun applyRandomValue(field: com.novelcharacter.app.data.model.FieldDefinition, value: String) {
+    /**
+     * 🎲 랜덤·✨ AI 추천 공용 값 주입 — 폼 위젯에만 기입하고 더티 플래그를 세운다 (DB 미접근).
+     * 영속화는 사용자가 저장을 눌러야 저장 체인(생일 __birth 동기화 포함)을 타고 이뤄진다.
+     */
+    fun applyRandomValue(
+        field: com.novelcharacter.app.data.model.FieldDefinition,
+        value: String,
+        showToast: Boolean = true
+    ) {
         val widget = fieldInputMap[field.id]
         when (widget) {
             is android.widget.EditText -> widget.setText(value)
             is android.widget.LinearLayout -> {
-                // 구조화 입력: "MM-DD" 등을 parts로 분리
-                val parts = value.split("-")
+                // 구조화 입력: 필드 설정의 구분자 기준으로 파트 분리 (설정이 없으면 기존 "-" 분리)
+                val config = widget.tag as? StructuredInputConfig
+                val parts = if (config != null) config.splitValue(value).map { it.second }
+                else value.split("-")
                 for (i in 0 until minOf(widget.childCount, parts.size)) {
                     val child = widget.getChildAt(i)
                     if (child is com.google.android.material.textfield.TextInputLayout) {
@@ -169,8 +233,30 @@ class DynamicFieldFormBuilder(
             }
         }
         onFieldChanged()
+        if (!showToast) return
         val ctx = contextGetter() ?: return
         android.widget.Toast.makeText(ctx, getString(R.string.random_applied, value), android.widget.Toast.LENGTH_SHORT).show()
+    }
+
+    /** 값이 비어 있는 편집 가능 필드 id 집합 — ✨ 전체 추천의 '빈 필드만' 대상 산출용 */
+    fun emptyEditableFieldIds(): Set<Long> {
+        val result = HashSet<Long>()
+        for (field in fieldDefinitions) {
+            val fieldType = FieldType.fromName(field.type) ?: continue
+            if (fieldType == FieldType.CALCULATED) continue
+            val widget = fieldInputMap[field.id] ?: continue
+            val isEmpty = when (widget) {
+                is MaterialAutoCompleteTextView -> widget.text.isNullOrBlank()
+                is TextInputEditText -> widget.text.isNullOrBlank()
+                is Spinner -> widget.selectedItemPosition <= 0
+                is LinearLayout -> (0 until widget.childCount).all { i ->
+                    (widget.getChildAt(i) as? TextInputLayout)?.editText?.text.isNullOrBlank()
+                }
+                else -> false
+            }
+            if (isEmpty) result.add(field.id)
+        }
+        return result
     }
 
     private fun showBodyGenerator(bodySizeField: com.novelcharacter.app.data.model.FieldDefinition) {
@@ -372,6 +458,7 @@ class DynamicFieldFormBuilder(
                             val genBtn = createDiceButton(context, density, diceAction)
                             labelRow.addView(genBtn)
                         }
+                        createAiButtonOrNull(context, density, field)?.let { labelRow.addView(it) }
                         container.addView(labelRow)
 
                         val partsContainer = LinearLayout(context).apply {
@@ -447,25 +534,11 @@ class DynamicFieldFormBuilder(
                             com.novelcharacter.app.data.model.RandomConfig.fromConfig(field.config).enabled -> {{ applyRandomForField(field, fieldType) }}
                             else -> null
                         }
-                        if (unstructuredDiceAction != null) {
-                            val row = LinearLayout(context).apply {
-                                orientation = LinearLayout.HORIZONTAL
-                                layoutParams = ViewGroup.MarginLayoutParams(
-                                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-                                ).apply { bottomMargin = (8 * density).toInt() }
-                            }
-                            inputLayout.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-                            row.addView(inputLayout)
-                            val genBtn = createDiceButton(context, density, unstructuredDiceAction).apply {
-                                layoutParams = (layoutParams as LinearLayout.LayoutParams).apply {
-                                    topMargin = (8 * density).toInt()
-                                }
-                            }
-                            row.addView(genBtn)
-                            container.addView(row)
-                        } else {
-                            container.addView(inputLayout)
+                        val textButtons = buildList {
+                            if (unstructuredDiceAction != null) add(createDiceButton(context, density, unstructuredDiceAction))
+                            createAiButtonOrNull(context, density, field)?.let { add(it) }
                         }
+                        addInputRow(container, context, density, inputLayout, textButtons)
                         fieldInputMap[field.id] = editText
 
                         // 자동완성 데이터는 루프 종료 후 배치 조회로 채움
@@ -491,20 +564,13 @@ class DynamicFieldFormBuilder(
                         inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
                     }
                     inputLayout.addView(editText)
-                    if (com.novelcharacter.app.data.model.RandomConfig.fromConfig(field.config).enabled) {
-                        val row = LinearLayout(context).apply {
-                            orientation = LinearLayout.HORIZONTAL
-                            layoutParams = ViewGroup.MarginLayoutParams(
-                                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-                            ).apply { bottomMargin = (8 * density).toInt() }
+                    val numberButtons = buildList {
+                        if (com.novelcharacter.app.data.model.RandomConfig.fromConfig(field.config).enabled) {
+                            add(createDiceButton(context, density) { applyRandomForField(field, fieldType) })
                         }
-                        inputLayout.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-                        row.addView(inputLayout)
-                        row.addView(createDiceButton(context, density) { applyRandomForField(field, fieldType) })
-                        container.addView(row)
-                    } else {
-                        container.addView(inputLayout)
+                        createAiButtonOrNull(context, density, field)?.let { add(it) }
                     }
+                    addInputRow(container, context, density, inputLayout, numberButtons)
                     fieldInputMap[field.id] = editText
                 }
 
@@ -525,6 +591,7 @@ class DynamicFieldFormBuilder(
                     if (com.novelcharacter.app.data.model.RandomConfig.fromConfig(field.config).enabled) {
                         labelRow.addView(createDiceButton(context, density) { applyRandomForField(field, fieldType) })
                     }
+                    createAiButtonOrNull(context, density, field)?.let { labelRow.addView(it) }
                     container.addView(labelRow)
 
                     val options = parseSelectOptions(field.config)
@@ -567,6 +634,7 @@ class DynamicFieldFormBuilder(
                     if (com.novelcharacter.app.data.model.RandomConfig.fromConfig(field.config).enabled) {
                         gradeLabelRow.addView(createDiceButton(context, density) { applyRandomForField(field, fieldType) })
                     }
+                    createAiButtonOrNull(context, density, field)?.let { gradeLabelRow.addView(it) }
                     container.addView(gradeLabelRow)
 
                     val grades = parseGradeOptions(field.config)
@@ -610,7 +678,8 @@ class DynamicFieldFormBuilder(
                         threshold = 1
                     }
                     inputLayout.addView(editText)
-                    container.addView(inputLayout)
+                    addInputRow(container, context, density, inputLayout,
+                        listOfNotNull(createAiButtonOrNull(context, density, field)))
                     fieldInputMap[field.id] = editText
                     // 자동완성은 폼 구성 후 배치 로드에서 일괄 장착 (라이브러리 제안 + 폴백)
                     autoCompleteTargets.add(Triple(field.id, DisplayFormat.fromConfig(field.config), editText))

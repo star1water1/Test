@@ -129,9 +129,13 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
                 // 작품 목록 설정
                 _novelList.value = snapshot.novels.map { it.id to it.title }
 
-                // 삭제된 소설 참조 정리: 복원된 ID가 현재 데이터에 없으면 필터 해제
+                // 삭제된 소설 참조 정리: 복원된 ID가 현재 데이터에 없으면 필터 해제.
+                // "작품 미배정" sentinel은 실제 작품이 아니므로 정리 대상에서 제외한다.
                 val currentNovelId = _selectedNovelId.value
-                if (currentNovelId != null && snapshot.novels.none { it.id == currentNovelId }) {
+                if (currentNovelId != null &&
+                    currentNovelId != com.novelcharacter.app.util.UnassignedFilter.NO_NOVEL_ID &&
+                    snapshot.novels.none { it.id == currentNovelId }
+                ) {
                     _selectedNovelId.value = null
                     statsPrefs.edit().remove("selected_novel_id").apply()
                 }

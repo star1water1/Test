@@ -630,7 +630,9 @@ class CharacterListFragment : Fragment() {
             novelTitles = novels.associate { it.id to it.title }
             val active = viewModel.novelFilters.value ?: emptySet()
             if (novels.isNotEmpty() && active.isNotEmpty()) {
+                // "작품 미배정" sentinel은 실제 작품이 아니므로 정리에서 보존
                 val existing = novels.mapTo(HashSet()) { it.id }
+                    .plus(com.novelcharacter.app.util.UnassignedFilter.NO_NOVEL_ID)
                 val pruned = active.filter { it in existing }.toSet()
                 if (pruned.size != active.size) viewModel.setNovelFilters(pruned)
             }
@@ -746,7 +748,12 @@ class CharacterListFragment : Fragment() {
         // 작품 필터는 전역 목록(novelId==-1)에서만 적용/표시(스코프 화면에선 무력화되므로 칩도 숨김).
         val novelFilterIds = if (novelId == -1L) (viewModel.novelFilters.value ?: emptySet()) else emptySet()
         for (id in novelFilterIds) {
-            val title = novelTitles[id] ?: continue  // 아직 로드 전이거나 삭제된 작품 — 관측 후 재렌더/정리됨
+            // "작품 미배정" sentinel은 novelTitles에 없으므로 라벨 분기 — ?: continue가 무음 드롭하지 않게
+            val title = if (id == com.novelcharacter.app.util.UnassignedFilter.NO_NOVEL_ID) {
+                getString(R.string.stats_no_novel_assigned)
+            } else {
+                novelTitles[id] ?: continue  // 아직 로드 전이거나 삭제된 작품 — 관측 후 재렌더/정리됨
+            }
             binding.filterChipGroup.addView(Chip(ctx).apply {
                 text = getString(R.string.filter_chip_novel_format, title)
                 isCloseIconVisible = true

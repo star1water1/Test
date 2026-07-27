@@ -16,6 +16,15 @@ class NameBankRepository(
     suspend fun getAllNameBankList(): List<NameBankEntry> =
         nameBankDao.getAllNamesList()
 
+    /** 선택 엔트리 일괄 조회 (IN 절 청크 분할, 입력 순서 보존) */
+    suspend fun getByIds(ids: List<Long>): List<NameBankEntry> {
+        if (ids.isEmpty()) return emptyList()
+        val byId = ids.chunked(900)
+            .flatMap { nameBankDao.getByIds(it) }
+            .associateBy { it.id }
+        return ids.mapNotNull { byId[it] }
+    }
+
     suspend fun insertNameBankEntry(entry: NameBankEntry): Long =
         nameBankDao.insert(entry)
 

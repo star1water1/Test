@@ -46,6 +46,8 @@ class ImageManagerViewModel(
 
     enum class Sort { SIZE, NAME, DATE }
 
+    enum class ViewMode { GRID, GALLERY }
+
     init {
         // 콜드 스타트 시딩 — SavedStateHandle이 이미 살아있으면(회전/저메모리 복원) 그쪽이 우선
         if (!savedState.contains("filter_base")) {
@@ -57,6 +59,9 @@ class ImageManagerViewModel(
         }
         if (!savedState.contains("sort")) {
             savedState["sort"] = prefs.getString("sort", null) ?: Sort.SIZE.name
+        }
+        if (!savedState.contains("view_mode")) {
+            savedState["view_mode"] = prefs.getString("view_mode", null) ?: ViewMode.GRID.name
         }
     }
 
@@ -95,6 +100,20 @@ class ImageManagerViewModel(
             savedState["sort"] = value.name
             prefs.edit().putString("sort", value.name).apply()
         }
+
+    /** 그리드 ↔ 갤러리(페이저) 보기 모드 — criteria/sort와 동일한 영속 관례 */
+    var viewMode: ViewMode
+        get() = runCatching { ViewMode.valueOf(savedState["view_mode"] ?: ViewMode.GRID.name) }
+            .getOrDefault(ViewMode.GRID)
+        set(value) {
+            savedState["view_mode"] = value.name
+            prefs.edit().putString("view_mode", value.name).apply()
+        }
+
+    /** 갤러리 페이지 위치 — 회전·프래그먼트 재생성 생존용(세션 한정, prefs 미기록) */
+    var galleryPosition: Int
+        get() = savedState["gallery_pos"] ?: 0
+        set(value) { savedState["gallery_pos"] = value }
 
     enum class OwnerType { CHARACTER, NOVEL, UNIVERSE }
     data class Owner(val type: OwnerType, val name: String, val id: Long)

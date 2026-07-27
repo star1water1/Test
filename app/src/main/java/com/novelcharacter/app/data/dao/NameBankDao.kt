@@ -34,6 +34,10 @@ interface NameBankDao {
     @Query("SELECT * FROM name_bank WHERE usedByCharacterId = :characterId")
     suspend fun getEntriesUsedByCharacter(characterId: Long): List<NameBankEntry>
 
+    /** 일괄 캐릭터 등록의 선택 엔트리 조회. 호출부에서 900개 단위로 청크할 것. */
+    @Query("SELECT * FROM name_bank WHERE id IN (:ids)")
+    suspend fun getByIds(ids: List<Long>): List<NameBankEntry>
+
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(entry: NameBankEntry): Long
 

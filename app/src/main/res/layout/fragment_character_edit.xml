@@ -196,6 +196,16 @@
                 android:layout_height="48dp"
                 android:layout_marginBottom="16dp" />
 
+            <!-- ✨ AI 필드 추천 — 세계관 필드가 렌더될 때만 노출 (recommendationSection과 같은 조건부 도우미) -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnAiSuggest"
+                style="@style/Widget.App.Button.Tonal"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                android:text="@string/ai_field_suggest_entry"
+                android:visibility="gone" />
+
             <!-- Dynamic form fields container (populated programmatically from FieldDefinition) -->
             <LinearLayout
                 android:id="@+id/dynamicFormContainer"

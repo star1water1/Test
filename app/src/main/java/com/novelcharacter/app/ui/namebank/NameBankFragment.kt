@@ -34,6 +34,12 @@ class NameBankFragment : Fragment() {
     private val viewModel: NameBankViewModel by viewModels()
     private lateinit var adapter: NameBankAdapter
 
+    // 일괄 캐릭터 등록용 선택 모드 (FieldValueListFragment 선택 패턴)
+    private var selectionMode = false
+    private val selectedIds = linkedSetOf<Long>()
+    private var backCallback: androidx.activity.OnBackPressedCallback? = null
+    private var displayedEntries: List<NameBankEntry> = emptyList()
+
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
     ): View {
@@ -46,7 +52,24 @@ class NameBankFragment : Fragment() {
         // 푸시 목적지(대시보드·어시스턴트 진입) — 업 버튼은 디스패처 경유
         binding.toolbar.setNavigationIcon(R.drawable.ic_arrow_back)
         binding.toolbar.setNavigationOnClickListener {
-            requireActivity().onBackPressedDispatcher.onBackPressed()
+            if (selectionMode) exitSelectionMode()
+            else requireActivity().onBackPressedDispatcher.onBackPressed()
+        }
+        // 시스템 뒤로가기도 선택 모드를 먼저 해제 — 선택 중 화면 이탈로 선택이 유실되지 않게
+        backCallback = object : androidx.activity.OnBackPressedCallback(false) {
+            override fun handleOnBackPressed() {
+                exitSelectionMode()
+            }
+        }
+        requireActivity().onBackPressedDispatcher.addCallback(viewLifecycleOwner, backCallback!!)
+        binding.toolbar.inflateMenu(R.menu.menu_name_bank)
+        binding.toolbar.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                R.id.action_select -> { enterSelectionMode(null); true }
+                R.id.action_select_all -> { selectAllDisplayed(); true }
+                R.id.action_bulk_register -> { openBulkRegisterSheet(); true }
+                else -> false
+            }
         }
         setupRecyclerView()
         setupSearch()
@@ -58,10 +81,81 @@ class NameBankFragment : Fragment() {
     private fun setupRecyclerView() {
         adapter = NameBankAdapter(
             onClick = { entry -> showEditDialog(entry) },
-            onLongClick = { entry -> showOptionsDialog(entry) }
+            onLongClick = { entry -> showOptionsDialog(entry) },
+            onToggleSelect = { entry -> toggleSelection(entry) }
         )
         binding.nameBankRecyclerView.layoutManager = LinearLayoutManager(requireContext())
         binding.nameBankRecyclerView.adapter = adapter
+    }
+
+    // ===== 선택 모드 / 일괄 캐릭터 등록 =====
+
+    private fun enterSelectionMode(initial: NameBankEntry?) {
+        selectionMode = true
+        selectedIds.clear()
+        initial?.let { selectedIds.add(it.id) }
+        backCallback?.isEnabled = true
+        binding.toolbar.menu.findItem(R.id.action_bulk_register)?.isVisible = true
+        binding.toolbar.menu.findItem(R.id.action_select_all)?.isVisible = true
+        binding.toolbar.menu.findItem(R.id.action_select)?.isVisible = false
+        updateSelectionTitle()
+        adapter.setSelectionState(true, selectedIds.toSet())
+    }
+
+    private fun exitSelectionMode() {
+        selectionMode = false
+        selectedIds.clear()
+        backCallback?.isEnabled = false
+        binding.toolbar.menu.findItem(R.id.action_bulk_register)?.isVisible = false
+        binding.toolbar.menu.findItem(R.id.action_select_all)?.isVisible = false
+        binding.toolbar.menu.findItem(R.id.action_select)?.isVisible = true
+        binding.toolbar.title = getString(R.string.tab_name_bank)
+        adapter.setSelectionState(false, emptySet())
+    }
+
+    private fun toggleSelection(entry: NameBankEntry) {
+        if (entry.id in selectedIds) selectedIds.remove(entry.id) else selectedIds.add(entry.id)
+        updateSelectionTitle()
+        adapter.setSelectionState(true, selectedIds.toSet())
+    }
+
+    private fun selectAllDisplayed() {
+        selectedIds.clear()
+        displayedEntries.forEach { selectedIds.add(it.id) }
+        updateSelectionTitle()
+        adapter.setSelectionState(true, selectedIds.toSet())
+    }
+
+    private fun updateSelectionTitle() {
+        binding.toolbar.title = getString(R.string.name_bank_selected_count, selectedIds.size)
+    }
+
+    private fun openBulkRegisterSheet() {
+        val ids = selectedIds.toList()
+        if (ids.isEmpty()) {
+            Toast.makeText(requireContext(), R.string.name_bank_bulk_select_first, Toast.LENGTH_SHORT).show()
+            return
+        }
+        viewLifecycleOwner.lifecycleScope.launch {
+            val entries = viewModel.getEntriesByIds(ids)
+            val novels = viewModel.getAllNovelsList()
+            val existingNames = viewModel.getExistingCharacterNames()
+            if (_binding == null || !isAdded) return@launch
+            val (vsExisting, withinSelection) = BulkRegisterPlanner.countCollisions(entries, existingNames)
+            val sheet = BulkRegisterBottomSheet()
+            sheet.setup = BulkRegisterBottomSheet.Setup(
+                count = entries.size,
+                novels = novels,
+                collisionsVsExisting = vsExisting,
+                collisionsWithinSelection = withinSelection,
+                usedCount = entries.count { it.isUsed }
+            )
+            sheet.onConfirm = { novelId, mapGender, includeOriginNotes, policy ->
+                viewModel.bulkRegister(ids, novelId, mapGender, includeOriginNotes, policy)
+                exitSelectionMode()
+            }
+            sheet.show(parentFragmentManager, BulkRegisterBottomSheet.TAG)
+        }
     }
 
     private var searchJob: Job? = null
@@ -97,8 +191,17 @@ class NameBankFragment : Fragment() {
 
     private fun observeData() {
         viewModel.displayedNames.observe(viewLifecycleOwner) { names ->
+            displayedEntries = names
             adapter.submitList(names)
             binding.emptyText.visibility = if (names.isEmpty()) View.VISIBLE else View.GONE
+            // 필터·검색·삭제로 목록이 바뀌면 화면 밖 항목의 선택을 정리 (보이지 않는 선택 금지)
+            if (selectionMode) {
+                val visibleIds = names.mapTo(HashSet()) { it.id }
+                if (selectedIds.retainAll(visibleIds)) {
+                    updateSelectionTitle()
+                }
+                adapter.setSelectionState(true, selectedIds.toSet())
+            }
         }
 
         // 데이터 처리 결과 알림 (이름 추가/수정/삭제·사용처리/해제 즉시 통보 + 작업 이력 기록)
@@ -167,10 +270,12 @@ class NameBankFragment : Fragment() {
         val editStr = getString(R.string.edit)
         val deleteStr = getString(R.string.delete)
         val markAvailableStr = getString(R.string.mark_as_available)
+        val selectModeStr = getString(R.string.name_bank_select_mode)
         val options = mutableListOf(editStr, deleteStr)
         if (entry.isUsed) {
             options.add(markAvailableStr)
         }
+        options.add(selectModeStr)
 
         MaterialAlertDialogBuilder(requireContext())
             .setTitle(entry.name)
@@ -185,6 +290,7 @@ class NameBankFragment : Fragment() {
                             .show()
                     }
                     markAvailableStr -> viewModel.markAsAvailable(entry.id)
+                    selectModeStr -> enterSelectionMode(entry)
                 }
             }
             .show()

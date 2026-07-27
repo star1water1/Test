@@ -229,6 +229,14 @@ class CharacterListControlsBottomSheet : BottomSheetDialogFragment() {
                 return@launch
             }
             binding.noNovelsText.visibility = View.GONE
+            // "작품 미배정" — novelId 없는 캐릭터 선택 (sentinel, 수집부는 tag 기반이라 그대로 동작)
+            val noneId = com.novelcharacter.app.util.UnassignedFilter.NO_NOVEL_ID
+            binding.novelChipGroup.addView(Chip(ctx).apply {
+                text = getString(R.string.stats_no_novel_assigned)
+                tag = noneId
+                isCheckable = true
+                isChecked = noneId in currentNovelIds
+            })
             for (novel in novels) {
                 val chip = Chip(ctx).apply {
                     text = novel.title

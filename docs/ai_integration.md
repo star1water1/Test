@@ -64,12 +64,21 @@
 4. **AI 출력은 항상 사용자가 확인·수정 후 확정**하는 UI로 만들 것(러프 생성 → 정밀 조정,
    원칙 04). 데이터에 바로 쓰지 않는다.
 
-구현된 기능: **필드 데이터 라이브러리 AI 정리** (`ai/FieldLibraryAiOrganizer` +
-`ui/fieldlibrary/AiOrganizeSheet`) — 유사값 병합·오탈자 교정·카테고리 제안. 첫 실데이터 AI
-기능으로서 공용 자산을 만들었다: `ai/AiJsonExtractor`(관대 JSON 추출), 청킹·환각 검증·부분 실패
-동반 반환 패턴, 체크리스트 검토→단일 통합 확인→선택 적용 UI 흐름 (docs/field_value_library.md).
+구현된 기능:
 
-후보 기능(계획): 필드 채우기 제안, 캐릭터 설명·서사 초안, 정합성 오류 자연어 해설·교정안,
+- **필드 데이터 라이브러리 AI 정리** (`ai/FieldLibraryAiOrganizer` +
+  `ui/fieldlibrary/AiOrganizeSheet`) — 유사값 병합·오탈자 교정·카테고리 제안. 첫 실데이터 AI
+  기능으로서 공용 자산을 만들었다: `ai/AiJsonExtractor`(관대 JSON 추출), 청킹·환각 검증·부분 실패
+  동반 반환 패턴, 체크리스트 검토→단일 통합 확인→선택 적용 UI 흐름 (docs/field_value_library.md).
+- **캐릭터 필드 값 추천** (`ai/CharacterFieldAiSuggester` + `ui/character/AiFieldSuggestSheet`) —
+  생일 포함 모든 편집 가능 필드의 값을 추천 이유와 함께 제안. 컨텍스트는 폼의 **라이브 입력값**
+  (이름·이명·태그·메모·입력된 필드) + 이미지 태그·소속 세력·관계이며, 절단은 truncationNotes로
+  전부 고지한다(R-14). 검증은 SELECT/GRADE 옵션 일치·생일 달력 유효성·숫자 파싱으로 환각을
+  드롭하고 드롭 수를 표면화. 진입은 폼 인라인 ✨ 버튼(필드별)과 폼 상단 버튼(전체, 빈 필드
+  기본·입력된 필드 포함 선택)의 이중 경로. 적용은 `DynamicFieldFormBuilder.applyRandomValue`로
+  **폼 위젯에만** 기입 — 영속화·`__birth` 동기화는 기존 저장 체인이 수행한다.
+
+후보 기능(계획): 캐릭터 설명·서사 초안, 정합성 오류 자연어 해설·교정안,
 이름은행 연동 이름 생성, 통계 내러티브, 인앱 작업 보조(상세 요구는 추후 확정).
 
 ## 한계·향후 과제

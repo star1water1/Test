@@ -387,8 +387,10 @@ class RelationshipGraphFragment : Fragment() {
         binding.factionFilterScrollView.visibility = View.VISIBLE
         binding.factionDisplayModeScrollView.visibility = View.VISIBLE
 
-        // 무효 선택 제거 (세계관 전환 등으로 세력 목록이 변경된 경우) — 정리 결과도 영속
-        val validFactionIds = factions.map { it.id }.toSet()
+        // 무효 선택 제거 (세계관 전환 등으로 세력 목록이 변경된 경우) — 정리 결과도 영속.
+        // "미소속" sentinel은 실제 세력이 아니므로 정리 대상에서 보존한다.
+        val validFactionIds = factions.mapTo(HashSet()) { it.id }
+            .plus(com.novelcharacter.app.util.UnassignedFilter.NO_FACTION_ID)
         if (selectedFactions.retainAll(validFactionIds)) persistFactions()
 
         // "All factions" chip
@@ -401,6 +403,27 @@ class RelationshipGraphFragment : Fragment() {
 
         // One chip per faction
         val factionChips = mutableListOf<Chip>()
+
+        // "미소속" 칩 — 어떤 세력에도 속하지 않은 캐릭터 선택 (세력 색 미적용, 기본 칩 스타일)
+        val noneId = com.novelcharacter.app.util.UnassignedFilter.NO_FACTION_ID
+        val noneChip = Chip(requireContext()).apply {
+            text = getString(R.string.graph_faction_filter_none)
+            isCheckable = true
+            isChecked = noneId in selectedFactions
+            setOnClickListener {
+                if (noneId in selectedFactions) {
+                    selectedFactions.remove(noneId)
+                } else {
+                    selectedFactions.add(noneId)
+                }
+                isChecked = noneId in selectedFactions
+                allChip.isChecked = selectedFactions.isEmpty()
+                persistFactions()
+                refreshGraph()
+            }
+        }
+        factionChips.add(noneChip)
+        chipGroup.addView(noneChip)
         for (faction in factions) {
             val factionColor = try {
                 Color.parseColor(faction.color)
@@ -848,12 +871,15 @@ class RelationshipGraphFragment : Fragment() {
     ) {
         val charFactionMap = viewModel.characterFactionMap.value ?: emptyMap()
 
-        // Determine faction-based secondary highlighting (멀티셀렉트: OR 조건)
+        // Determine faction-based secondary highlighting (멀티셀렉트: OR 조건).
+        // "미소속" sentinel은 charFactionMap 미등재(그래프가 표시하는 소속 없음)로 판정 —
+        // 시간뷰에서는 맵이 해당 시점 기준으로 재구성되므로 미소속 판정도 시점을 따라간다.
         val factionFilteredIds: Set<Long>? = if (selectedFactions.isNotEmpty()) {
-            charFactionMap.entries
-                .filter { (_, pairs) -> pairs.any { it.first in selectedFactions } }
-                .map { it.key }
-                .toSet()
+            characters.filter { char ->
+                com.novelcharacter.app.util.UnassignedFilter.matchesFaction(
+                    charFactionMap[char.id]?.map { it.first }, selectedFactions
+                )
+            }.mapTo(HashSet()) { it.id }
         } else null
 
         // 시간뷰 활성 시 해당 시점 사망 캐릭터 집합 (회색 + † 표시)
@@ -879,9 +905,13 @@ class RelationshipGraphFragment : Fragment() {
         val allEdges = relationships.mapNotNull { rel ->
             // 세력 관계 토글 OFF → 세력 자동 관계 엣지 숨김
             if (hideFactionEdges && rel.factionId != null) return@mapNotNull null
-            // 세력 선택 필터 활성 시 → 선택된 세력 관계만 강조, 나머지 흐리게
-            val isEdgeSecondary = selectedFactions.isNotEmpty() &&
-                (rel.factionId == null || rel.factionId !in selectedFactions)
+            // 세력 선택 필터 활성 시 → 선택된 세력 관계만 강조, 나머지 흐리게.
+            // "미소속" 선택 시에는 세력 무관(수동) 관계선이 1차로 보인다.
+            val isEdgeSecondary = selectedFactions.isNotEmpty() && !(
+                (rel.factionId != null && rel.factionId in selectedFactions) ||
+                    (com.novelcharacter.app.util.UnassignedFilter.NO_FACTION_ID in selectedFactions &&
+                        rel.factionId == null)
+                )
             if (isTimeViewEnabled && currentYear != null) {
                 val resolved = viewModel.resolveRelationshipAtYear(rel, currentYear!!, allChanges)
                 GraphEdge(

@@ -245,6 +245,13 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
                 }
             }
         )
+        // ✨ AI 필드 추천 — 필드별(폼 인라인 버튼) + 전체(폼 상단 버튼) 이중 진입 (원칙 04)
+        formBuilder.aiSuggestHandler = { field ->
+            AiFieldSuggestSheet.showForField(this, field, formBuilder) { buildAiContext() }
+        }
+        binding.btnAiSuggest.setOnClickListener {
+            AiFieldSuggestSheet.showForCharacter(this, formBuilder) { buildAiContext() }
+        }
 
         saveCoordinator = CharacterSaveCoordinator(
             fragment = this,
@@ -381,6 +388,9 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
                     }
                     if (_binding == null) return@launch
                     formBuilder.buildForm()
+                    // AI 추천은 세계관 필드가 대상 — 렌더된 필드가 있을 때만 진입 버튼 노출
+                    binding.btnAiSuggest.visibility =
+                        if (formBuilder.fieldDefinitions.isEmpty()) View.GONE else View.VISIBLE
 
                     // 회전 복원된 필드값이 있으면 우선 적용, 없으면 DB에서 로드.
                     // 스피너 초기(position 0) 콜백은 폼이 비어 있으므로 복원값을 소비하지 않고 보존한다
@@ -556,6 +566,43 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         binding.btnSave.setOnClickListener {
             saveCoordinator.requestSave()
         }
+    }
+
+    /**
+     * AI 추천 컨텍스트 조립 — 저장된 DB 상태가 아니라 **폼의 라이브 입력값**을 쓴다
+     * (미저장 편집 중에도 최신 정보 기준으로 추천). 소속·관계는 저장된 캐릭터에만 존재한다.
+     */
+    private suspend fun buildAiContext(): com.novelcharacter.app.ai.CharacterFieldAiSuggester.CharacterAiContext {
+        val valuesById = formBuilder.collectFieldValues(0L).associate { it.fieldDefinitionId to it.value }
+        val filledFields = formBuilder.fieldDefinitions.mapNotNull { fd ->
+            valuesById[fd.id]?.let { fd.name to it }
+        }
+        val firstName = binding.editFirstName.text.toString().trim()
+        val lastName = binding.editLastName.text.toString().trim()
+        // Character.displayName과 동일 규칙: 성/이름이 있으면 조합, 없으면 name
+        val name = if (firstName.isNotBlank() || lastName.isNotBlank()) {
+            listOf(lastName, firstName).filter { it.isNotBlank() }.joinToString(" ")
+        } else {
+            binding.editName.text.toString().trim()
+        }
+        val aliases = binding.editAnotherName.text.toString()
+            .split(",").map { it.trim() }.filter { it.isNotEmpty() }
+        val tags = binding.editTags.text.toString()
+            .split(",").map { it.trim() }.filter { it.isNotEmpty() }
+        val imageTags = viewModel.getImageTagsForPaths(imageStrip.paths.toList())
+        val factions = if (characterId != -1L) viewModel.getFactionNamesForCharacter(characterId) else emptyList()
+        val relationships =
+            if (characterId != -1L) viewModel.getRelationshipSummariesForCharacter(characterId) else emptyList()
+        return com.novelcharacter.app.ai.CharacterFieldAiSuggester.CharacterAiContext(
+            name = name,
+            aliases = aliases,
+            tags = tags,
+            memo = binding.editMemo.text.toString(),
+            filledFields = filledFields,
+            imageTags = imageTags,
+            factions = factions,
+            relationships = relationships
+        )
     }
 
     /** 저장 시점의 폼 입력 스냅샷 — 코디네이터가 최신 폼 기준으로 Character를 조립할 때 사용 */

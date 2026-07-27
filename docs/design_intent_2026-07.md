@@ -86,7 +86,7 @@ CLAUDE.md의 5대 원칙(특히 원칙 02 실질적 기능성, 원칙 04 조작 
 | `character_list_ui` | 캐릭터 목록 | sort_kind/field_key/ascending/body_part, field·tag·novel_filters_json, birthday_banner_collapsed |
 | `analysis_ui_state` | 분석 허브 | last_tab |
 | `supplement_ui_state` | 보충 | universe_id, novel_id, sort_mode, random_mode, last_tab, issue_filter, filter_collapsed, random_controls_collapsed |
-| `image_manager_ui_state` | 이미지 관리 | filter_base, filter_tags(JSON), sort |
+| `image_manager_ui_state` | 이미지 관리 | filter_base, filter_tags(JSON), sort, view_mode |
 | `search_ui_state` | 통합 검색 | sort_mode, field_filters_json |
 | `timeline_ui_state` | 연표 | filter_novel_id, filter_character_id, zoom_level, center_year |
 | `graph_ui_state` | 관계도 | universe_id, novel_id, rel_types_json, faction_ids_json, 표시 토글 |

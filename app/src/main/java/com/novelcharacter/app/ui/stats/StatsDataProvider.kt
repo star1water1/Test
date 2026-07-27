@@ -474,8 +474,11 @@ class StatsDataProvider {
     /** 값 라이브러리 해석기 (loadSnapshot에서 채움). 엔트리 없는 필드는 구 config 맵 폴백. */
     private var resolversByFieldId: Map<Long, com.novelcharacter.app.util.FieldValueResolver> = emptyMap()
 
-    /** 스냅샷을 특정 작품으로 필터링 */
+    /** 스냅샷을 특정 작품으로 필터링. [UnassignedFilter.NO_NOVEL_ID]는 "작품 미배정" 스코프 */
     fun filterByNovel(s: StatsSnapshot, novelId: Long): StatsSnapshot {
+        if (novelId == com.novelcharacter.app.util.UnassignedFilter.NO_NOVEL_ID) {
+            return filterByNovelUnassigned(s)
+        }
         val novel = s.novels.find { it.id == novelId } ?: return s
         val charIds = s.characters.filter { it.novelId == novelId }.map { it.id }.toSet()
         val eventIdsForNovel = s.eventNovelCrossRefs.filter { it.novelId == novelId }.map { it.eventId }.toSet()
@@ -508,6 +511,43 @@ class StatsDataProvider {
             eventNovelCrossRefs = s.eventNovelCrossRefs.filter { it.eventId in eventIds },
             eventFieldDefinitions = s.eventFieldDefinitions.filter { it.universeId == novel.universeId },
             eventFieldValues = s.eventFieldValues.filter { it.eventId in eventIdsForNovel }
+        )
+    }
+
+    /**
+     * "작품 미배정" 스코프 — novelId 없는 캐릭터와 어느 작품에도 배정되지 않은 사건.
+     * 세계관 스코프가 없으므로 novels/universes/factions는 비우되,
+     * **필드 정의는 미배정 캐릭터가 실제 보존 중인 값이 참조하는 정의를 포함**한다
+     * (원칙 02 — 미배정 캐릭터의 데이터도 통계에서 소외되지 않아야 함).
+     */
+    private fun filterByNovelUnassigned(s: StatsSnapshot): StatsSnapshot {
+        val charIds = s.characters.filter { it.novelId == null }.map { it.id }.toSet()
+        val assignedEventIds = s.eventNovelCrossRefs.map { it.eventId }.toSet()
+        val eventIds = s.events.filter { it.id !in assignedEventIds }.map { it.id }.toSet()
+        val filteredRelationships = s.relationships.filter { it.characterId1 in charIds || it.characterId2 in charIds }
+        val relIds = filteredRelationships.map { it.id }.toSet()
+        val filteredFieldValues = s.fieldValues.filter { it.characterId in charIds }
+        val referencedDefIds = filteredFieldValues.map { it.fieldDefinitionId }.toSet()
+        val filteredEventFieldValues = s.eventFieldValues.filter { it.eventId in eventIds }
+        val referencedEventDefIds = filteredEventFieldValues.map { it.fieldDefinitionId }.toSet()
+        return s.copy(
+            characters = s.characters.filter { it.novelId == null },
+            novels = emptyList(),
+            universes = emptyList(),
+            events = s.events.filter { it.id in eventIds },
+            relationships = filteredRelationships,
+            relationshipChanges = s.relationshipChanges.filter { it.relationshipId in relIds },
+            tags = s.tags.filter { it.characterId in charIds },
+            nameBank = s.nameBank.filter { it.usedByCharacterId != null && it.usedByCharacterId in charIds },
+            stateChanges = s.stateChanges.filter { it.characterId in charIds },
+            fieldDefinitions = s.fieldDefinitions.filter { it.id in referencedDefIds },
+            fieldValues = filteredFieldValues,
+            crossRefs = s.crossRefs.filter { it.characterId in charIds || it.eventId in eventIds },
+            factions = emptyList(),
+            factionMemberships = emptyList(),
+            eventNovelCrossRefs = emptyList(),
+            eventFieldDefinitions = s.eventFieldDefinitions.filter { it.id in referencedEventDefIds },
+            eventFieldValues = filteredEventFieldValues
         )
     }
 

@@ -342,7 +342,10 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         var chars = base
         if (novelIds.isNotEmpty()) {
             // 작품 필터(OR) — 선택 작품 중 하나에 속한 캐릭터. 전역 목록에서만 유의미하며 삭제된 id는 무해.
-            chars = chars.filter { it.novelId in novelIds }
+            // NO_NOVEL_ID sentinel은 "작품 미배정"(novelId null) 캐릭터를 선택한다.
+            chars = chars.filter {
+                com.novelcharacter.app.util.UnassignedFilter.matchesNovel(it.novelId, novelIds)
+            }
         }
         if (filters.isNotEmpty()) {
             // 필드 필터 id셋: (필터, character_field_values 에폭) 캐시 — 검색어/정렬만 바뀌면 재조회 없음.
@@ -790,6 +793,68 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     /** 세계관 전체 필드값 일괄 조회 (자동완성 배치 로드용) */
     suspend fun getAllFieldValuesForUniverse(universeId: Long): List<CharacterFieldValue> =
         characterRepository.getAllFieldValuesForUniverse(universeId)
+
+    // ===== AI 필드 추천 컨텍스트 (CharacterFieldAiSuggester) =====
+
+    /** 첨부 이미지 경로들의 라이브러리 태그 합집합 — 경로는 저장 규약대로 absolutePath 그대로 조회 */
+    suspend fun getImageTagsForPaths(paths: List<String>): List<String> =
+        withContext(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                if (paths.isEmpty()) return@withContext emptyList()
+                val metaIds = paths.chunked(900)
+                    .flatMap { db.imageMetaDao().getByPaths(it) }
+                    .map { it.id }
+                if (metaIds.isEmpty()) return@withContext emptyList()
+                metaIds.chunked(900)
+                    .flatMap { db.imageTagDao().getDistinctTagsForImages(it) }
+                    .distinct()
+            } catch (e: Exception) {
+                Log.e("CharacterViewModel", "Failed to load image tags for AI context", e)
+                emptyList()
+            }
+        }
+
+    /** 활성(미탈퇴) 소속 세력명 목록 */
+    suspend fun getFactionNamesForCharacter(characterId: Long): List<String> =
+        withContext(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val activeFactionIds = db.factionMembershipDao().getMembershipsByCharacterList(characterId)
+                    .filter { it.leaveType == null }
+                    .map { it.factionId }
+                    .distinct()
+                if (activeFactionIds.isEmpty()) return@withContext emptyList()
+                val nameById = activeFactionIds.chunked(900)
+                    .flatMap { db.factionDao().getByIds(it) }
+                    .associate { it.id to it.name }
+                activeFactionIds.mapNotNull { nameById[it] }
+            } catch (e: Exception) {
+                Log.e("CharacterViewModel", "Failed to load factions for AI context", e)
+                emptyList()
+            }
+        }
+
+    /** "상대이름 – 관계유형" 요약 목록 */
+    suspend fun getRelationshipSummariesForCharacter(characterId: Long): List<String> =
+        withContext(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val relationships = db.characterRelationshipDao().getRelationshipsForCharacterList(characterId)
+                if (relationships.isEmpty()) return@withContext emptyList()
+                val otherIds = relationships
+                    .map { if (it.characterId1 == characterId) it.characterId2 else it.characterId1 }
+                    .distinct()
+                val nameById = otherIds.chunked(900)
+                    .flatMap { db.characterDao().getCharactersByIds(it) }
+                    .associate { it.id to it.displayName }
+                relationships.mapNotNull { rel ->
+                    val otherId = if (rel.characterId1 == characterId) rel.characterId2 else rel.characterId1
+                    val otherName = nameById[otherId] ?: return@mapNotNull null
+                    "$otherName – ${rel.relationshipType}"
+                }
+            } catch (e: Exception) {
+                Log.e("CharacterViewModel", "Failed to load relationships for AI context", e)
+                emptyList()
+            }
+        }
 
     /** restricted 입력 모드 위반 검출 — (필드, 위반 토큰) 목록 (검토 A8: 코디네이터 공통 가드용) */
     suspend fun findRestrictedViolations(
