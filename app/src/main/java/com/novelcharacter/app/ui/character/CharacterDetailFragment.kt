@@ -507,14 +507,10 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
                 org.json.JSONObject(field.config).optString("formula", "")
             } catch (_: Exception) { "" }
             if (formula.isBlank()) continue
-            try {
-                val value = evaluator.evaluate(formula)
-                if (!value.isNaN() && !value.isInfinite()) {
-                    results[field.id] = if (value == value.toLong().toDouble()) {
-                        value.toLong().toString()
-                    } else "%.2f".format(value)
-                }
-            } catch (_: Exception) { }
+            // 평가 실패도 값으로 남긴다 — 종전에는 결과에서 빠져 칸이 비어 보였고,
+            // 사용자는 수식이 고장 났다는 것 자체를 알 수 없었다(U-9).
+            results[field.id] = com.novelcharacter.app.util.FormulaDisplay
+                .evaluateForDisplay(formula, evaluator::evaluate)
         }
         return results
     }

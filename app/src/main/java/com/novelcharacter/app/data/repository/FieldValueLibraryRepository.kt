@@ -15,6 +15,11 @@ import com.novelcharacter.app.data.model.TimelineEvent
 import com.novelcharacter.app.util.FieldValueResolver
 import com.novelcharacter.app.util.FieldValueTokenizer
 import com.novelcharacter.app.util.GsonTypes
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import org.json.JSONObject
 
 /**
@@ -45,8 +50,17 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
 
     fun entriesForFieldLive(fieldDefId: Long): LiveData<List<FieldValueEntry>> = entryDao.getByFieldLive(fieldDefId)
 
-    suspend fun entryCounts(): Map<Long, FieldEntryCount> =
-        entryDao.countByField().associateBy { it.fieldDefinitionId }
+    /**
+     * 필드별 엔트리 요약(총수·미분류·미사용).
+     *
+     * `unusedCount`는 `usageCount`에서 나오므로 **예약된 재집계를 먼저 기다린다** —
+     * 화면이 '미사용 N'을 말하기 전에 그 N이 맞아야 한다. 읽는 쪽마다 기다리게 하면
+     * 언젠가 빠뜨리는 곳이 생기므로(라이브러리 홈·통계 요약이 같은 소스다) 여기 한 곳에서 막는다.
+     */
+    suspend fun entryCounts(): Map<Long, FieldEntryCount> {
+        awaitPendingRecounts()
+        return entryDao.countByField().associateBy { it.fieldDefinitionId }
+    }
 
     /** 폼 자동완성용 — 세계관의 비숨김 엔트리를 필드별로 1쿼리 배치 로드 */
     suspend fun suggestionsForUniverse(universeId: Long, entityType: String): Map<Long, List<FieldValueEntry>> =
@@ -96,6 +110,7 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
             }
         }
         insertNewTokens(tokensByField)
+        scheduleRecount(recountTargetsForCharacter(universeId, defsById.values, tokensByField.keys))
     }
 
     /** 사건 저장 후 */
@@ -109,6 +124,14 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
                 .addAll(FieldValueTokenizer.tokenize(fd, v.value))
         }
         insertNewTokens(tokensByField)
+        // 캐릭터 쪽과 같은 이유로 사건 축도 세계관 전체 사건 필드를 대상으로 한다.
+        val targets = LinkedHashSet(tokensByField.keys)
+        db.timelineDao().getEventById(eventId)?.universeId?.let { uid ->
+            defsById.values
+                .filter { it.universeId == uid && it.entityType == FieldDefinition.ENTITY_EVENT }
+                .forEach { targets.add(it.id) }
+        }
+        scheduleRecount(targets)
     }
 
     /** 일괄 편집 등 필드 단위 쓰기 후 */
@@ -119,6 +142,7 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
         charValueDao.getValuesByFieldDef(fd.id).forEach { tokens.addAll(FieldValueTokenizer.tokenize(fd, it.value)) }
         eventValueDao.getValuesByFieldDef(fd.id).forEach { tokens.addAll(FieldValueTokenizer.tokenize(fd, it.value)) }
         insertNewTokens(mapOf(fd.id to tokens))
+        scheduleRecount(listOf(fd.id))
     }
 
     /** 상태변화 쓰기 후 — 지원 필드의 이력 값 수확 (시스템 키 스킵) */
@@ -129,6 +153,9 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
             val fd = fieldDao.getFieldByKey(universeId, fieldKey) ?: return@safely
             if (!FieldValueTokenizer.supportsLibrary(fd)) return@safely
             insertNewTokens(mapOf(fd.id to FieldValueTokenizer.tokenize(fd, newValue).toSet()))
+            // 상태변화 자체는 [recountUsageForFieldsOrThrow]의 계수 대상이 아니지만(현재 값만 센다),
+            // 상태변화 저장은 대개 현재 값 쓰기와 짝을 이루므로 같은 필드를 함께 예약해 둔다.
+            scheduleRecount(listOf(fd.id))
         }
 
     /** 엑셀 임포트 후 — 임포트가 건드린 세계관들 일괄 수확. null이면 전체(백필 시드). */
@@ -170,6 +197,9 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
                 .addAll(FieldValueTokenizer.tokenize(fd, change.newValue))
         }
         insertNewTokens(tokensByField)
+        // 수확 범위 **전체**를 예약한다(토큰이 새로 생긴 필드만이 아니다) — 임포트·복원은
+        // 기존 값을 지우거나 다른 기존 값으로 바꾸기도 하고, 그때도 집계는 달라진다.
+        scheduleRecount(defs.map { it.id })
     }
 
     suspend fun harvestAll() = harvestUniverses(null)
@@ -205,25 +235,116 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
     }
 
     /** 백필/임포트용 throwing 변형 */
-    suspend fun recountUsageOrThrow(fieldDefId: Long) {
-        val fd = fieldDao.getFieldById(fieldDefId) ?: return
-        val entries = entryDao.getByField(fieldDefId)
-        if (entries.isEmpty()) return
-        val resolver = FieldValueResolver(entries)
-        val counts = HashMap<String, Int>()
-        val countTokens = { raw: String ->
-            for (token in FieldValueTokenizer.tokenize(fd, raw)) {
-                val canonical = resolver.canonical(token)
-                counts[canonical] = (counts[canonical] ?: 0) + 1
+    suspend fun recountUsageOrThrow(fieldDefId: Long) = recountUsageForFieldsOrThrow(listOf(fieldDefId))
+
+    /**
+     * 여러 필드의 usageCount를 한 번에 재계산 — **집계 구현은 이것 하나**다.
+     *
+     * 필드마다 [recountUsageOrThrow]를 부르면 필드 수 × 4쿼리가 되므로, 엔트리·필드정의·값을
+     * IN 청크로 묶어 읽는다(36필드 세계관에서 144쿼리 → 4쿼리 남짓). 읽는 행 수 자체는 같으므로
+     * 이 배치는 쿼리 왕복만 줄인다 — 지연 문제는 [scheduleRecount]가 따로 맡는다.
+     */
+    suspend fun recountUsageForFieldsOrThrow(fieldDefIds: Collection<Long>) {
+        val ids = fieldDefIds.distinct()
+        if (ids.isEmpty()) return
+        val entriesByField = ids.chunked(CHUNK_SIZE)
+            .flatMap { entryDao.getForFields(it) }
+            .groupBy { it.fieldDefinitionId }
+        // 엔트리가 없는 필드는 셀 대상이 없다 — 값 조회에서도 빼 불필요한 스캔을 없앤다.
+        val targetIds = entriesByField.keys.toList()
+        if (targetIds.isEmpty()) return
+
+        val defsById = targetIds.chunked(CHUNK_SIZE)
+            .flatMap { fieldDao.getFieldsByIds(it) }
+            .associateBy { it.id }
+        val charValuesByField = targetIds.chunked(CHUNK_SIZE)
+            .flatMap { charValueDao.getValuesByFieldDefs(it) }
+            .groupBy { it.fieldDefinitionId }
+        val eventValuesByField = targetIds.chunked(CHUNK_SIZE)
+            .flatMap { eventValueDao.getValuesByFieldDefs(it) }
+            .groupBy { it.fieldDefinitionId }
+
+        val changed = mutableListOf<FieldValueEntry>()
+        for (fieldId in targetIds) {
+            val fd = defsById[fieldId] ?: continue
+            val entries = entriesByField[fieldId] ?: continue
+            val raw = charValuesByField[fieldId].orEmpty().map { it.value } +
+                eventValuesByField[fieldId].orEmpty().map { it.value }
+            changed.addAll(recountedEntries(fd, entries, raw))
+        }
+        if (changed.isNotEmpty()) changed.chunked(CHUNK_SIZE).forEach { entryDao.updateAll(it) }
+    }
+
+    // ===== 재집계 예약 (수확과 같은 축으로 묶는다) =====
+
+    /**
+     * 수확이 건드린 필드의 재집계를 **예약**한다.
+     *
+     * **왜 이 자리에 있나:** 종전에는 수확(캐릭터 저장마다)과 집계(앱 1회 백필·엑셀 임포트·
+     * 해당 필드의 라이브러리 화면 진입)가 **서로 다른 축**에서 돌았다. 그래서 저장으로 새로
+     * 들어온 값은 `usageCount = 0`인 채 남았고, 실측에서 482엔트리 중 318(66%)이 0인데
+     * 그 값이 전부 실제 데이터에 있는 상태가 됐다(U-0). 수확 뒤에 집계가 **반드시** 따라오게 해
+     * 축을 하나로 합친다.
+     *
+     * **왜 즉시 하지 않나:** 수확 훅은 상위 저장 트랜잭션 안에서 불릴 수 있고
+     * (`CharacterRepository.saveAllFieldValues`의 주석 참조), 재집계는 필드당 전량 스캔이라
+     * 큰 세계관·많은 캐릭터에서 쓰기 트랜잭션을 오래 붙든다.
+     * **미루되 건너뛰지 않는다** — 예약은 큐에 남아 반드시 실행되고, 조건부로 생략하지 않는다
+     * (조건부 집계가 곧 지금 고치는 결함이다). 지금 정확한 수치가 필요한 읽기 경로는
+     * [awaitPendingRecounts]로 큐가 빌 때까지 기다린다.
+     */
+    private fun scheduleRecount(fieldDefIds: Collection<Long>) {
+        if (fieldDefIds.isEmpty()) return
+        synchronized(pendingRecountFields) {
+            pendingRecountFields.addAll(fieldDefIds)
+            if (recountJob?.isActive == true) return
+            recountJob = recountScope.launch { drainRecountQueue() }
+        }
+    }
+
+    private suspend fun drainRecountQueue() {
+        while (true) {
+            val batch = synchronized(pendingRecountFields) {
+                if (pendingRecountFields.isEmpty()) {
+                    // 큐를 비운 것과 일꾼을 놓는 것을 **같은 잠금 안에서** 한다 —
+                    // 따로 하면 그 사이에 들어온 예약이 "일꾼이 살아 있다"고 오판돼 유실된다.
+                    recountJob = null
+                    return
+                }
+                val copy = pendingRecountFields.toList()
+                pendingRecountFields.clear()
+                copy
+            }
+            // **트랜잭션 안에서 센다** — 이 배치는 저장 훅이 예약한 것이고, 그 훅은 상위 저장
+            // 트랜잭션 **안에서** 불릴 수 있다(`CharacterRepository.saveAllFieldValues`).
+            // 트랜잭션 밖에서 그냥 읽으면 아직 커밋되지 않은 저장의 **이전 데이터**를 세어
+            // 옛 수치를 그대로 다시 써 넣고, 그 뒤 커밋이 일어나도 재집계를 다시 부르는 것이 없다
+            // — 고치려던 결함이 경합의 형태로 되살아난다.
+            // Room이 이 블록을 쓰기 트랜잭션 뒤로 직렬화해 주므로 커밋된 데이터만 센다.
+            //
+            // 불변식: [awaitPendingRecounts]를 **트랜잭션 안에서 부르지 않는다** — 부르면
+            // 그 트랜잭션이 자기 뒤에 줄 선 이 블록을 기다려 교착한다. 현재 호출부(라이브러리
+            // 화면 요약·정리 다이얼로그)는 모두 트랜잭션 밖의 UI 경로다.
+            safely("recountUsageForFields") {
+                db.withTransaction { recountUsageForFieldsOrThrow(batch) }
             }
         }
-        charValueDao.getValuesByFieldDef(fieldDefId).forEach { countTokens(it.value) }
-        eventValueDao.getValuesByFieldDef(fieldDefId).forEach { countTokens(it.value) }
-        val changed = entries.mapNotNull { e ->
-            val actual = counts[e.value] ?: 0
-            if (actual != e.usageCount) e.copy(usageCount = actual) else null
+    }
+
+    /**
+     * 예약된 재집계가 끝날 때까지 기다린다 — **수치를 읽기 전에** 부른다.
+     *
+     * 라이브러리 화면의 '미사용 N'이나 정리 대상 건수는 화면이 그 수를 말하기 전에 맞아야 한다.
+     * fire-and-forget 갱신에는 happens-before 간선이 없어 화면이 옛 수치를 먼저 보여 줄 수 있다.
+     */
+    suspend fun awaitPendingRecounts() {
+        while (true) {
+            val job: Job = synchronized(pendingRecountFields) {
+                if (pendingRecountFields.isEmpty() && recountJob == null) return
+                recountJob
+            } ?: return
+            job.join()
         }
-        if (changed.isNotEmpty()) entryDao.updateAll(changed)
     }
 
     // ===== 큐레이션 =====
@@ -558,6 +679,27 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
 
     companion object {
         const val CHUNK_SIZE = 900
+
+        // ── 재집계 대기열 (프로세스 전역) ──
+        // 이 리포지토리는 앱 싱글턴 말고도 여러 곳에서 직접 생성된다(휴지통 복원·월드팩 임포트).
+        // 큐를 인스턴스 필드에 두면 생성자마다 큐가 쪼개져 합치는 의미가 사라지고, 어떤 인스턴스의
+        // 예약은 아무도 비우지 않는 채로 남는다. DB가 하나이므로 큐도 하나다.
+        private val recountScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        private val pendingRecountFields = LinkedHashSet<Long>()
+        private var recountJob: Job? = null
+
+        /** 집계 산수·대상 판정은 [FieldValueRules]가 갖는다(순수 JVM 실행 검증 대상) — 여기서는 위임만 한다. */
+        fun recountedEntries(
+            fd: FieldDefinition,
+            entries: List<FieldValueEntry>,
+            rawValues: List<String>
+        ): List<FieldValueEntry> = FieldValueRules.recountedEntries(fd, entries, rawValues)
+
+        fun recountTargetsForCharacter(
+            universeId: Long?,
+            supportedDefs: Collection<FieldDefinition>,
+            touchedFieldIds: Set<Long>
+        ): Set<Long> = FieldValueRules.recountTargetsForCharacter(universeId, supportedDefs, touchedFieldIds)
 
         /** RESTRICTED 모드 위반 토큰 — 판정은 [FieldValueRules]에 있다(순수 JVM 실행 검증 대상). */
         fun validateRestricted(

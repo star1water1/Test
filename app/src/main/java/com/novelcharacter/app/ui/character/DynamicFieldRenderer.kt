@@ -586,16 +586,9 @@ class DynamicFieldRenderer(
                 org.json.JSONObject(field.config).optString("formula", "")
             } catch (_: Exception) { "" }
             if (formula.isBlank()) continue
-            try {
-                val value = evaluator.evaluate(formula)
-                if (!value.isNaN() && !value.isInfinite()) {
-                    results[field.id] = if (value == value.toLong().toDouble()) {
-                        value.toLong().toString()
-                    } else {
-                        "%.2f".format(value)
-                    }
-                }
-            } catch (_: Exception) { /* 평가 실패 시 기존 동작 유지 */ }
+            // 평가 실패도 값으로 남긴다 — 빈 칸은 '값 없음'과 구분되지 않아 고장이 묻힌다(U-9).
+            results[field.id] = com.novelcharacter.app.util.FormulaDisplay
+                .evaluateForDisplay(formula, evaluator::evaluate)
         }
         return results
     }
