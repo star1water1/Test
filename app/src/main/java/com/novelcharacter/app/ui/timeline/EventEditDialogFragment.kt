@@ -104,6 +104,8 @@ class EventEditDialogFragment : DialogFragment() {
 
     // 역법 시드(R3): 신규 사건이면 스코프 세계관 최빈 역법을 시드하되, 편집·회전 복원·사용자 직접 입력은 존중.
     private var isRecreated = false
+    /** 편집 사건의 초기값을 폼에 채운 적이 있는가 — 채우기 전 회전이면 재생성이라도 다시 채운다(재공격 F1) */
+    private var initialValuesFilled = false
     private var calendarUserEdited = false
     private var suppressCalendarWatcher = false
     private var seedJob: kotlinx.coroutines.Job? = null
@@ -158,6 +160,7 @@ class EventEditDialogFragment : DialogFragment() {
             pendingEventFieldValues = restored
         }
         isRecreated = savedInstanceState != null
+        initialValuesFilled = savedInstanceState?.getBoolean(STATE_INITIAL_FILLED) ?: false
 
         val alertDialog = MaterialAlertDialogBuilder(requireContext())
             .setTitle(if (editingEvent == null) R.string.add_event else R.string.edit_event)
@@ -190,12 +193,19 @@ class EventEditDialogFragment : DialogFragment() {
                 selectionsInitialized = true
             }
             if (_binding == null) return@launch
-            if (!isRecreated) {
-                editingEvent?.let { event ->
+            editingEvent?.let { event ->
+                // 회전이 최초 채움보다 먼저 오면 뷰 상태 복원은 빈 화면을 되살릴 뿐이다 —
+                // 채운 적이 없으면 재생성 인스턴스라도 다시 채운다(재공격 F1).
+                if (!isRecreated || !initialValuesFilled) {
                     fillInitialValues(event)
-                    // 기존 사건 필드값 → 폼 빌드 후 지연 적용
+                    initialValuesFilled = true
+                }
+                // 기존 사건 필드값 → 폼 빌드 후 지연 적용. 로드 조건은 재생성 여부가 아니라
+                // **보유 여부**다 — 값 fetch 전에 회전하면 pending이 비어 있고, 그대로 렌더하면
+                // '공란 폼 + 전체 커버'가 되어 저장이 커버된 값 전량을 삭제한다(재공격 F1).
+                if (pendingEventFieldValues == null) {
                     val values = provider.getEventFieldValuesForEvent(event.id)
-                    if (values.isNotEmpty() && pendingEventFieldValues == null) {
+                    if (values.isNotEmpty()) {
                         pendingEventFieldValues = values
                             .associate { it.fieldDefinitionId.toString() to it.value }
                             .toMutableMap()
@@ -218,7 +228,10 @@ class EventEditDialogFragment : DialogFragment() {
      */
     private fun maybeSeedCalendarType() {
         if (_binding == null) return
+        // 필드 섹션(rebuildEventFieldSection)과 같은 세계관 해석 — 작품 연결이 끊긴 편집 사건도
+        // 자동완성 후보를 받는다(한쪽만 폴백하면 같은 화면에서 한 기능만 세계관을 인지한다).
         val universeId = novels.firstOrNull { it.id in selectedNovelIds }?.universeId
+            ?: editingEvent?.universeId
         // 값 시드는 신규 사건 & 회전 복원 아님 & 사용자 미편집일 때만. 자동완성 후보는 편집 시에도 채운다.
         val canSeed = !isRecreated && editingEvent == null && !calendarUserEdited
         if (universeId == null) {
@@ -232,7 +245,9 @@ class EventEditDialogFragment : DialogFragment() {
         seedJob = lifecycleScope.launch {
             val events = requireProvider().getEventsInScope(emptyList(), target)
             if (_binding == null) return@launch
-            if (novels.firstOrNull { it.id in selectedNovelIds }?.universeId != target) return@launch
+            val current = novels.firstOrNull { it.id in selectedNovelIds }?.universeId
+                ?: editingEvent?.universeId
+            if (current != target) return@launch
             val ranked = events.map { it.calendarType }.filter { it.isNotBlank() }
                 .groupingBy { it }.eachCount()
                 .entries.sortedByDescending { it.value }.map { it.key }
@@ -261,6 +276,7 @@ class EventEditDialogFragment : DialogFragment() {
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)  // 다이얼로그 뷰 계층 상태(정적 입력) 저장
+        outState.putBoolean(STATE_INITIAL_FILLED, initialValuesFilled)
         if (selectionsInitialized) {
             outState.putLongArray(STATE_CHAR_IDS, selectedCharIds.toLongArray())
             outState.putLongArray(STATE_NOVEL_IDS, selectedNovelIds.toLongArray())
@@ -363,10 +379,7 @@ class EventEditDialogFragment : DialogFragment() {
         val provider = requireProvider()
 
         // 값과 커버 집합은 같은 프레임에 스냅샷한다(S-6) — 커버는 지금 화면에 렌더된 폼의 권한이다.
-        val fieldSubmission = EventFieldValueMerge.Submission(
-            values = collectEventFieldValues(),
-            coveredFieldDefinitionIds = coveredEventFieldIds
-        )
+        val fieldSubmission = buildFieldSubmission()
         guardRestrictedEventValues(fieldSubmission.values) {
         if (event == null) {
             provider.insertEvent(newEvent, selectedCharIds.toList(), novelIdsList, fieldSubmission)
@@ -500,7 +513,7 @@ class EventEditDialogFragment : DialogFragment() {
 
     // ── 사건 커스텀 필드 (B-10) ──
 
-    /** 선택된 작품의 세계관 기준으로 사건 필드 입력 섹션 재구성. 입력 중이던 값은 보존. */
+    /** 선택된 작품(없으면 편집 중인 사건)의 세계관 기준으로 사건 필드 입력 섹션 재구성. 입력 중이던 값은 보존. */
     private fun rebuildEventFieldSection() {
         if (_binding == null) return
         // 현재 입력값 보존
@@ -647,6 +660,34 @@ class EventEditDialogFragment : DialogFragment() {
         else -> ""
     }
 
+    /**
+     * 폼 제출 한 벌(S-6). 기본은 지금 렌더된 위젯이 진실이고 커버는 [coveredEventFieldIds]다.
+     * 필드 섹션 상태가 아직 없는데(커버·위젯 모두 공집합 — 회전 직후·로딩 미완 창)
+     * 마지막으로 렌더됐던 화면의 스냅샷([pendingEventFieldValues])이 있으면 그것이 폼의
+     * 진실이다(재공격 F3) — 버리면 회전 전 사용자의 편집이 무통보로 사라지고, 빈 제출로
+     * 전량 보존하면 "보관했습니다" 고지가 사용자의 최신 편집 대신 낡은 DB 값을 가리킨다.
+     * 그마저 없으면 빈 제출(커버 ∅ = 전량 보존)이다.
+     */
+    private fun buildFieldSubmission(): EventFieldValueMerge.Submission {
+        val pending = pendingEventFieldValues
+        if (coveredEventFieldIds.isEmpty() && eventFieldInputMap.isEmpty() && pending != null) {
+            val cover = mutableSetOf<Long>()
+            val values = mutableListOf<EventFieldValue>()
+            for ((key, raw) in pending) {
+                val fieldId = key.toLongOrNull() ?: continue
+                cover.add(fieldId)   // 스냅샷의 빈 값도 커버에는 남는다 — 화면에서 비운 의도 존중
+                val value = raw.trim()
+                if (value.isNotEmpty()) {
+                    values.add(EventFieldValue(
+                        eventId = editingEvent?.id ?: 0, fieldDefinitionId = fieldId, value = value
+                    ))
+                }
+            }
+            return EventFieldValueMerge.Submission(values, cover)
+        }
+        return EventFieldValueMerge.Submission(collectEventFieldValues(), coveredEventFieldIds)
+    }
+
     /** 빈 값은 저장하지 않는다 — 커버된 필드가 폼에 없으면 삭제(비움 의도)로 처리된다(S-6) */
     private fun collectEventFieldValues(): List<EventFieldValue> {
         val result = mutableListOf<EventFieldValue>()
@@ -741,6 +782,7 @@ class EventEditDialogFragment : DialogFragment() {
         private const val STATE_CHAR_IDS = "selectedCharIds"
         private const val STATE_NOVEL_IDS = "selectedNovelIds"
         private const val STATE_EVENT_FIELD_VALUES = "eventFieldValues"
+        private const val STATE_INITIAL_FILLED = "initialValuesFilled"
 
         /**
          * 다이얼로그 표시. 호스트 프래그먼트의 childFragmentManager로 띄워야

@@ -1484,8 +1484,9 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
                         EventFieldValueMerge.saveWithinCover(db.eventFieldValueDao(), event.id, fieldSubmission)
                 }
             }
-            if (fieldSubmission != null) app.fieldValueLibraryRepository.harvestForEvent(event.id)
+            // 고지는 커밋 직후, 수확보다 먼저 — 보존은 이미 사실이 됐으므로 수확 실패에 연좌되면 안 된다
             notifyPreservedEventFieldValues(preservedFieldValues)
+            if (fieldSubmission != null) app.fieldValueLibraryRepository.harvestForEvent(event.id)
             syncEventTypeToStateChanges(event, characterIds)
         } catch (e: Exception) {
             Log.e("CharacterViewModel", "Failed to update event", e)
@@ -1547,8 +1548,9 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
                     }
                 }
             }
-            if (fieldSubmission != null) app.fieldValueLibraryRepository.harvestForEvent(event.id)
+            // 고지는 커밋 직후, 수확보다 먼저 — 보존은 이미 사실이 됐으므로 수확 실패에 연좌되면 안 된다
             notifyPreservedEventFieldValues(preservedFieldValues)
+            if (fieldSubmission != null) app.fieldValueLibraryRepository.harvestForEvent(event.id)
             syncEventTypeToStateChanges(event, characterIds)
         } catch (e: Exception) {
             Log.e("CharacterViewModel", "Failed to shift events", e)

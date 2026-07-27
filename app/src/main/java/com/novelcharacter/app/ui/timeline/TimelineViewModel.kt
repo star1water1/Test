@@ -502,8 +502,9 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
                         EventFieldValueMerge.saveWithinCover(db.eventFieldValueDao(), event.id, fieldSubmission)
                 }
             }
-            if (fieldSubmission != null) app.fieldValueLibraryRepository.harvestForEvent(event.id)
+            // 고지는 커밋 직후, 수확보다 먼저 — 보존은 이미 사실이 됐으므로 수확 실패에 연좌되면 안 된다
             notifyPreservedEventFieldValues(preservedFieldValues)
+            if (fieldSubmission != null) app.fieldValueLibraryRepository.harvestForEvent(event.id)
             // novelEventIds 캐시 갱신
             _filterNovelId.value?.let { nid ->
                 _novelEventIds.value = timelineRepository.getEventIdsByNovel(nid).toSet()
@@ -579,8 +580,9 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
                     }
                 }
             }
-            if (fieldSubmission != null) app.fieldValueLibraryRepository.harvestForEvent(event.id)
+            // 고지는 커밋 직후, 수확보다 먼저 — 보존은 이미 사실이 됐으므로 수확 실패에 연좌되면 안 된다
             notifyPreservedEventFieldValues(preservedFieldValues)
+            if (fieldSubmission != null) app.fieldValueLibraryRepository.harvestForEvent(event.id)
             // novelEventIds 캐시 갱신
             _filterNovelId.value?.let { nid ->
                 _novelEventIds.value = timelineRepository.getEventIdsByNovel(nid).toSet()

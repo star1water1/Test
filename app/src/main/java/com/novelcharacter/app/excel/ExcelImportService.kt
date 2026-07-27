@@ -3014,6 +3014,17 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                             }
                             continue
                         }
+                        // 계산 필드는 수식으로 산출되는 파생값 — 캐릭터 시트(F4)와 대칭으로 저장하지 않는다.
+                        // resolvedFieldIds에도 넣지 않아 기존 행을 건드리지 않는다(잔여 행 정리는
+                        // 편집 저장의 커버 규칙이 맡는다 — EventFieldValueMerge).
+                        if (fieldDef.type == "CALCULATED") {
+                            if (getCellString(row, ci).isNotBlank() && droppedEventFieldHeaders.add(col.header)) {
+                                result.warnings.add(
+                                    "사건 시트의 '${col.header}' 열은 계산 필드라 저장하지 않습니다(다른 필드로부터 산출됨)"
+                                )
+                            }
+                            continue
+                        }
                         resolvedFieldIds.add(fieldDef.id)
                         val cellValue = getCellString(row, ci)
                         if (cellValue.isNotBlank()) {
