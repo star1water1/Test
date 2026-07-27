@@ -141,6 +141,12 @@ data class ImportResult(
     var autoRepairedValues: Int = 0,
     var newCodesGenerated: Int = 0,
     var clearedFields: Int = 0,
+    /**
+     * U-12b: 엑셀에서 행이 사라졌지만 삭제 옵션이 꺼져 있어 **그대로 남겨 둔** 항목 수.
+     * [DeleteOptions]가 전부 기본 false라 엑셀에서 행을 지워도 앱 데이터는 지워지지 않는다(안전한 기본값).
+     * 그 기본값을 바꾸지 않되, 기대 어긋남("엑셀에서 지웠는데 왜 남아 있지")을 요약에서 바로 해소한다.
+     */
+    var keptNotInExcel: Int = 0,
     val warnings: MutableList<String> = mutableListOf(),
     val pendingConflicts: MutableList<String> = mutableListOf()
 )
@@ -206,6 +212,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     // 세계관 이름이 '미분류 캐릭터'와 겹치는가 — 두 캐릭터 시트가 같은 이름을 다투는 상태.
     private var unclassifiedNameCollidesWithUniverse = false
+
+    /**
+     * U-3: 그 겹침이 **신규 형식으로 확정**됐는가 — 겹치는 세계관이 접미사 시트('… (2)')를
+     * 헤더 확인까지 거쳐 잡았다는 사실(= assignSheetName의 ownerOf 규칙대로 밀려난 배치)이다.
+     * 확정이면 배정이 모호하지 않으므로 경고를 **사실 고지로 낮춘다**.
+     * 이 값은 **문구만 가른다** — 어느 시트를 누가 갖는지의 판정은 findSheetForUniverse가 그대로 한다.
+     */
+    private var unclassifiedUniverseTookSuffixedSheet = false
 
     // 예약 시트로 실제로 읽은 시트명 — '인식되지 않아 무시되었습니다' 경고에서 제외한다.
     // (읽지 않은 시트까지 억제하면 무음 유실이 된다)
@@ -415,6 +429,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             consumedCharacterSheetNames.clear()
             consumedSheetNames.clear()
             unclassifiedNameCollidesWithUniverse = false
+            unclassifiedUniverseTookSuffixedSheet = false
             importedCharFieldPairs.clear()
             universeMovedCharacterIds.clear()
             matchedEventIds.clear()
@@ -482,8 +497,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             if (effectiveOptions.imageMeta) importImageMeta(workbook, result, onProgress, totalRows)
 
             // Phase 5: 엑셀에 없는 항목 삭제 (MERGE + deleteOptions)
-            if (strategy == ImportStrategy.MERGE && effectiveOptions.deleteOptions.hasAny) {
-                deleteUnmatchedEntities(effectiveOptions, result)
+            if (strategy == ImportStrategy.MERGE) {
+                if (effectiveOptions.deleteOptions.hasAny) {
+                    deleteUnmatchedEntities(effectiveOptions, result)
+                }
+                // U-12b: 꺼진 종류는 남겨 뒀다는 사실을 그 자리에서 고지한다(삭제 뒤 최종 상태 기준).
+                countKeptUnmatchedEntities(effectiveOptions, result)
             }
 
             // Phase 6: 시맨틱 필드 동기화 (출생/사망연도 ↔ 상태변화 ↔ 생존여부)
@@ -581,9 +600,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 다음 앱 시작 시 재수확된다 (임포트 결과 자체는 이미 커밋됨)
         val harvested = runCatching {
             fieldLibrary.harvestAllOrThrow()
-            for (fd in db.fieldDefinitionDao().getAllFieldsAllTypes()) {
-                fieldLibrary.recountUsageOrThrow(fd.id)
-            }
+            // 필드별 호출 대신 배치 — 집계 구현은 하나이고, 여기서는 왕복만 줄인다.
+            // 여기서 **동기로** 끝낸다: 성공해야 pending 플래그를 내릴 수 있으므로
+            // 예약(비동기)에 맡기면 "아직 안 끝난 일"을 끝났다고 기록하게 된다.
+            fieldLibrary.recountUsageForFieldsOrThrow(
+                db.fieldDefinitionDao().getAllFieldsAllTypes().map { it.id }
+            )
         }.isSuccess
         if (harvested) {
             migrationPrefs?.edit()?.putBoolean("field_library_harvest_pending", false)?.apply()
@@ -1757,7 +1779,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 if (existing != null) {
                     val prevRow = entitySeen[existing.id]
                     if (prevRow != null) {
-                        result.warnings.add("세계관 행 $i: 행 $prevRow 과 같은 항목('$name')을 다시 덮어씀")
+                        result.warnings.add("세계관 행 $i: 행 $prevRow 과 같은 항목('$name')을 다시 덮어씀 — 별개의 세계관으로 넣으려면 '코드' 칸을 비우고 이름을 다르게 한 뒤 다시 가져오세요")
                     }
                     entitySeen[existing.id] = i
                     // F1-A: 이미지 열이 있으나 비어 기존 이미지를 지우는 경우 요약 고지
@@ -1924,7 +1946,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 if (existing != null) {
                     val prevRow = entitySeen[existing.id]
                     if (prevRow != null) {
-                        result.warnings.add("작품 행 $i: 행 $prevRow 과 같은 항목('$title')을 다시 덮어씀")
+                        result.warnings.add("작품 행 $i: 행 $prevRow 과 같은 항목('$title')을 다시 덮어씀 — 별개의 작품으로 넣으려면 '코드' 칸을 비우고 제목을 다르게 한 뒤 다시 가져오세요")
                     }
                     entitySeen[existing.id] = i
                     // F1-A: 이미지 열이 있으나 비어 기존 이미지를 지우는 경우 요약 고지
@@ -2059,7 +2081,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 if (existing != null) {
                     val prevRow = entitySeen[existing.id]
                     if (prevRow != null) {
-                        result.warnings.add("필드 정의 행 $i: 행 $prevRow 과 같은 항목('$name')을 다시 덮어씀")
+                        result.warnings.add("필드 정의 행 $i: 행 $prevRow 과 같은 항목('$name')을 다시 덮어씀 — 별개의 필드로 넣으려면 '필드키'를 다르게 한 뒤 다시 가져오세요")
                     }
                     entitySeen[existing.id] = i
                     if (existing.type != type && type.isNotBlank()) {
@@ -2276,6 +2298,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             if (!checkHeaderOrReport(sheet, headerRow, "이름", result)) continue
 
             val fields = db.fieldDefinitionDao().getFieldsByUniverseList(universe.id)
+            // U-3: 겹치는 세계관이 **접미사 시트**를 잡았으면 신규 형식이 확정된 배치다
+            // (내보내기는 예약명을 미분류 시트에 주고 세계관 시트를 '(2)'로 민다).
+            // 판정은 findSheetForUniverse가 이미 끝냈고, 여기서는 그 결과를 읽어 문구만 가른다.
+            if (sanitizeSheetNameBase(universe.name) == UNCLASSIFIED_SHEET_NAME &&
+                isSuffixedVariantOf(sheet.sheetName, UNCLASSIFIED_SHEET_NAME)
+            ) {
+                unclassifiedUniverseTookSuffixedSheet = true
+            }
             // 헤더 검증을 통과해 실제로 처리한 세계관만 삭제 범위에 넣는다 (시트 없는 세계관은 건드리지 않음)
             importedCharacterSheetUniverseIds.add(universe.id)
             // 같은 시트를 미분류 경로가 또 돌지 않게 소비 목록에 넣는다 (상호배제)
@@ -2295,11 +2325,23 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 캐릭터 시트라 헤더로 구분할 수 없다. 신규 형식(예약명은 미분류 시트가 갖는다)으로
         // 해석하되, 구버전 백업이면 반대일 수 있으므로 **모호함을 선언한다**(규약 4-3:
         // 좁혀지지 않으면 조용히 고르지 않는다). 사용자는 엑셀에서 시트 이름을 바꿔 교정할 수 있다.
+        //
+        // U-3: 다만 **신규 형식이 확정된 배치**(겹치는 세계관이 '(2)' 접미사 시트를 헤더 확인까지
+        // 거쳐 잡았고, 미분류가 예약명 시트를 그대로 받은 경우)에서는 배정이 모호하지 않다.
+        // 그런데도 "두 시트의 이름을 서로 바꾸라"고 권하면 **권유대로 했을 때 오히려 틀어진다** —
+        // 맞게 배정된 것을 사용자가 손으로 뒤집게 만드는 거짓 교정 권유다. 사실 고지로 낮춘다.
         if (unclassifiedNameCollidesWithUniverse) {
+            val newFormatConfirmed = unclassifiedUniverseTookSuffixedSheet &&
+                sheet.sheetName == UNCLASSIFIED_SHEET_NAME
             result.warnings.add(
-                "'$UNCLASSIFIED_SHEET_NAME'이라는 이름의 세계관이 있어 시트 두 개가 같은 이름을 다툽니다 — " +
-                "'${sheet.sheetName}' 시트를 미분류 캐릭터로 읽었습니다. 구버전 백업이라 반대로 저장돼 있었다면 " +
-                "엑셀에서 두 시트의 이름을 서로 바꾼 뒤 다시 가져오세요"
+                if (newFormatConfirmed) {
+                    "'$UNCLASSIFIED_SHEET_NAME'이라는 이름의 세계관이 있어 시트 이름이 겹칩니다 — " +
+                    "'${sheet.sheetName}' 시트를 미분류 캐릭터로, 접미사가 붙은 시트를 그 세계관으로 읽었습니다(내보내기 규칙대로입니다)"
+                } else {
+                    "'$UNCLASSIFIED_SHEET_NAME'이라는 이름의 세계관이 있어 시트 두 개가 같은 이름을 다툽니다 — " +
+                    "'${sheet.sheetName}' 시트를 미분류 캐릭터로 읽었습니다. 구버전 백업이라 반대로 저장돼 있었다면 " +
+                    "엑셀에서 두 시트의 이름을 서로 바꾼 뒤 다시 가져오세요"
+                }
             )
         }
 
@@ -2497,6 +2539,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 캐릭터 시트는 고정 열 **정확 일치**를 별칭 해석보다 우선한다 —
         // 커스텀 필드명이 '메모'(또는 별칭인 '비고')여도 고정 '메모' 열을 빼앗지 못하게 한다.
         val cols = resolveHeaderColumns(headerRow, result, sheetLabel, CHARACTER_FIXED_HEADERS)
+        // U-10: 계산 필드 열에 값을 써 넣었지만 저장되지 않은 열 — 열 단위로 한 번만 알린다
+        // (행마다 내면 214행짜리 시트에서 같은 경고가 214번 쌓인다). 사건 시트의 형제 경고와 같은 방식.
+        val droppedCalculatedHeaders = mutableSetOf<String>()
         val nameColIndex = cols["이름"] ?: 0
         val anotherNameColIndex = cols["이명"] ?: -1
         val lastNameColIndex = cols["성"] ?: -1
@@ -2669,7 +2714,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
                 val prevRow = entitySeen[charId]
                 if (prevRow != null) {
-                    result.warnings.add("캐릭터 행 $i: 행 $prevRow 과 같은 항목('$name')을 다시 덮어씀")
+                    result.warnings.add("캐릭터 행 $i: 행 $prevRow 과 같은 항목('$name')을 다시 덮어씀 — 별개의 캐릭터로 넣으려면 '코드' 칸을 비우고 이름을 다르게 한 뒤 다시 가져오세요")
                 }
                 entitySeen[charId] = i
 
@@ -2697,7 +2742,20 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 for ((colIndex, field) in columnFieldMap) {
                     // F4: CALCULATED는 다른 필드로부터 실시간 산출되는 파생값 — 저장하지 않는다(읽기 전용).
                     // 내보내기 시 계산 결과를 표시하지만 가져오기 때 저장하면 stale 중복 데이터가 된다.
-                    if (field.type == "CALCULATED") continue
+                    if (field.type == "CALCULATED") {
+                        // U-10: 종전에는 **무통보 폐기**였다 — 엑셀에서 계산 열에 값을 적어 넣고
+                        // 가져와도 아무 말 없이 사라져, 사용자는 반영된 줄 안다.
+                        // 형제 경고(사건 시트·'캐릭터 필드값' 시트)와 같은 문구로 맞춘다.
+                        if (getCellString(row, colIndex).isNotBlank() &&
+                            droppedCalculatedHeaders.add(field.name)
+                        ) {
+                            result.warnings.add(
+                                "$sheetLabel 시트의 '${field.name}' 열은 계산 필드라 저장하지 않습니다(다른 필드로부터 산출됨) — " +
+                                "값을 직접 넣으려면 그 필드의 타입을 계산 필드에서 바꾸세요"
+                            )
+                        }
+                        continue
+                    }
                     // 이 (캐릭터, 필드)는 캐릭터 시트가 권위 — '캐릭터 필드값' 시트의 같은 항목은 무시된다
                     importedCharFieldPairs.add(charId to field.id)
                     val isDateField = SemanticRole.fromConfig(field.config) == SemanticRole.BIRTH_DATE
@@ -3390,7 +3448,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 if (existing != null) {
                     val prevRow = entitySeen[existing.id]
                     if (prevRow != null) {
-                        result.warnings.add("관계 행 $i: 행 $prevRow 과 같은 항목을 다시 덮어씀")
+                        result.warnings.add("관계 행 $i: 행 $prevRow 과 같은 항목을 다시 덮어씀 — 별개의 관계로 넣으려면 '코드' 칸을 비우고 '관계 유형'을 다르게 한 뒤 다시 가져오세요")
                     }
                     entitySeen[existing.id] = i
                     // 빈칸=삭제 집계(변수 제어): 열이 있고 값이 비었는데 기존값이 있으면 초기화로 계수(세력 패턴과 일치)
@@ -4298,7 +4356,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 if (existing != null) {
                     val prevRow = entitySeen[existing.id]
                     if (prevRow != null) {
-                        result.warnings.add("세력 행 $i: 행 $prevRow 과 같은 항목('$name')을 다시 덮어씀")
+                        result.warnings.add("세력 행 $i: 행 $prevRow 과 같은 항목('$name')을 다시 덮어씀 — 별개의 세력으로 넣으려면 '코드' 칸을 비우고 이름을 다르게 한 뒤 다시 가져오세요")
                     }
                     entitySeen[existing.id] = i
                     if (descriptionFromExcel == "" && existing.description.isNotBlank()) result.clearedFields++
@@ -5486,6 +5544,79 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 }
             }
         }
+    }
+
+    /**
+     * U-12b — 삭제 옵션이 꺼진 채 병합했을 때 **남겨 둔** 항목을 센다(지우지 않는다).
+     *
+     * [deleteUnmatchedEntities]와 **같은 후보 판정**을 쓴다. 두 곳이 다른 규칙을 쓰면
+     * "남은 것 없음"이라 말한 뒤 옵션을 켜면 뭔가 지워지는 모순이 생긴다.
+     * 시트를 실제로 처리한 종류만 센다 — 시트가 아예 없었으면 '엑셀에 없던 항목'이라는 말 자체가
+     * 성립하지 않고, 손대지 않은 데이터를 남았다고 세면 거짓 고지가 된다.
+     *
+     * 삭제(옵션 켜짐) **이후에** 부른다: 켜진 종류의 삭제가 연쇄로 지운 것까지 반영된 최종 상태를 센다.
+     */
+    private suspend fun countKeptUnmatchedEntities(options: ExportOptions, result: ImportResult) {
+        val del = options.deleteOptions
+        val parts = mutableListOf<String>()
+        fun note(count: Int, label: String) {
+            if (count > 0) {
+                result.keptNotInExcel += count
+                parts.add(label)
+            }
+        }
+
+        if (!del.characters) {
+            val candidates = LinkedHashSet<Long>()
+            for (universeId in importedCharacterSheetUniverseIds) {
+                candidates.addAll(db.characterDao().getCharacterIdsByUniverse(universeId))
+            }
+            if (unclassifiedSheetImported) {
+                candidates.addAll(db.characterDao().getUnclassifiedCharacterIds())
+            }
+            val n = candidates.count { it !in matchedCharacterIds }
+            note(n, "캐릭터 ${n}명")
+        }
+        if (!del.timeline && matchedEventIds.isNotEmpty()) {
+            val n = db.timelineDao().getAllEventIds().count { it !in matchedEventIds }
+            note(n, "사건 ${n}건")
+        }
+        if (!del.relationships && matchedRelationshipIds.isNotEmpty()) {
+            val n = db.characterRelationshipDao().getAllRelationshipIds().count { it !in matchedRelationshipIds }
+            note(n, "관계 ${n}건")
+        }
+        if (!del.relationshipChanges && matchedRelationshipChangeIds.isNotEmpty()) {
+            val n = db.characterRelationshipChangeDao().getAllChangeIds().count { it !in matchedRelationshipChangeIds }
+            note(n, "관계 변화 ${n}건")
+        }
+        if (!del.stateChanges && matchedStateChangeIds.isNotEmpty()) {
+            val n = db.characterStateChangeDao().getAllChangeIds().count { it !in matchedStateChangeIds }
+            note(n, "상태 변화 ${n}건")
+        }
+        if (!del.nameBank && matchedNameBankIds.isNotEmpty()) {
+            val n = db.nameBankDao().getAllEntryIds().count { it !in matchedNameBankIds }
+            note(n, "이름 은행 ${n}개")
+        }
+        if (!del.factions && matchedFactionIds.isNotEmpty()) {
+            val n = db.factionDao().getAllFactionIds().count { it !in matchedFactionIds }
+            note(n, "세력 ${n}개")
+        }
+        if (!del.factionMemberships && matchedFactionMembershipIds.isNotEmpty()) {
+            val n = db.factionMembershipDao().getAllMembershipIds().count { it !in matchedFactionMembershipIds }
+            note(n, "세력 소속 ${n}건")
+        }
+        if (!del.factionRelationships && matchedFactionRelationshipIds.isNotEmpty()) {
+            val n = db.factionRelationshipDao().getAllRelationshipIds().count { it !in matchedFactionRelationshipIds }
+            note(n, "세력 관계 ${n}건")
+        }
+
+        if (parts.isEmpty()) return
+        // 옵션을 켜라고 **권하지 않는다** — 기본값(안 지움)이 안전한 기본값이고, 여기서는
+        // 무슨 일이 있었는지와 어디서 정할 수 있는지만 말한다.
+        result.warnings.add(
+            "엑셀에 없던 항목 ${result.keptNotInExcel}개는 삭제하지 않고 그대로 두었습니다(${parts.joinToString(" · ")}) — " +
+            "가져오기의 기본 동작입니다. 삭제 여부는 가져오기 옵션의 '엑셀에 없는 항목 삭제'에서 정할 수 있습니다"
+        )
     }
 
     private suspend fun runPostImportSemanticSync() {

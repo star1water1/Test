@@ -116,6 +116,7 @@ $MAIN/util/CardFieldSummary.kt
 $MAIN/util/GsonTypes.kt
 $MAIN/util/FieldOptionParser.kt
 $MAIN/util/FormulaEvaluator.kt
+$MAIN/util/FormulaDisplay.kt
 $MAIN/util/GradeValueResolver.kt
 $MAIN/ui/stats/StatsDataProvider.kt
 $MAIN/util/UnassignedFilter.kt
@@ -156,6 +157,7 @@ $TEST/excel/FactionRefResolverTest.kt
 $TEST/excel/ImageBackupIntegrityTest.kt
 $TEST/excel/ExcelCellValueTest.kt
 $TEST/util/FieldValueTokenizerTest.kt
+$TEST/util/FormulaDisplayTest.kt
 $TEST/util/SortComparatorsTest.kt
 $TEST/util/EpochMemoTest.kt
 $TEST/ai/AiJsonExtractorTest.kt
@@ -172,6 +174,7 @@ $TEST/data/TrashGroupingTest.kt
 $TEST/data/EntitySnapshotPayloadTest.kt
 $TEST/data/RestoreLossCountsTest.kt
 $TEST/data/RestoreTallyTest.kt
+$TEST/data/FieldValueUsageRecountTest.kt
 $TEST/ai/AiModelSuggestionsTest.kt
 $TEST/stats/StatsCrossAnalysisTest.kt
 $TEST/stats/StatsDrilldownTest.kt

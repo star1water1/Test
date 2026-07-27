@@ -129,9 +129,11 @@ class NovelCharacterApp : Application() {
                 }
                 // throwing 변형 사용 — 실패가 삼켜진 채 플래그가 기록되면 재시도 계약이 깨진다
                 repo.harvestAllOrThrow()
-                for (fd in database.fieldDefinitionDao().getAllFieldsAllTypes()) {
-                    repo.recountUsageOrThrow(fd.id)
-                }
+                // 배치 재집계 — 필드별 호출과 결과는 같고 쿼리 왕복만 줄인다.
+                // 플래그를 세우기 전에 **끝나 있어야** 하므로 예약이 아니라 동기 호출이다.
+                repo.recountUsageForFieldsOrThrow(
+                    database.fieldDefinitionDao().getAllFieldsAllTypes().map { it.id }
+                )
                 prefs.edit()
                     .putBoolean("field_library_seeded", true)
                     .putBoolean("field_library_harvest_pending", false)

@@ -3061,12 +3061,15 @@ class StatsDataProvider {
      * 드릴다운 매칭)가 있으므로 서식도 한 곳에서만 정한다.
      */
     private fun formatStatsNumber(value: Double): String =
-        if (value == value.toLong().toDouble()) value.toLong().toString()
-        // **로케일 고정**: 이 문자열은 표시용이 아니라 값의 정체성이다 — 분포의 키가 되고,
-        // 드릴다운 매칭 키가 되고, 레거시 수치 요약에서 다시 toFloat로 파싱된다.
-        // 기본 로케일을 쓰면 소수점이 콤마인 환경에서 "12,34"가 되어 되파싱이 실패하고
-        // 그 캐릭터가 요약에서 조용히 사라진다.
-        else String.format(java.util.Locale.US, "%.2f", value)
+        // 서식 규칙은 [FormulaDisplay.format] 하나 — 로케일 고정 이유는 그쪽에 적었다.
+        // 종전에는 이 함수가 유일하게 로케일을 고정했지만 `private`이라 다른 다섯 곳이
+        // 기본 로케일 `"%.2f"`를 쓰고 있었다(U-9).
+        //
+        // **오류 표식은 여기서 쓰지 않는다.** 이 문자열은 표시용이 아니라 값의 정체성이다 —
+        // 분포의 키가 되고, 드릴다운 매칭 키가 되고, 레거시 수치 요약에서 다시 toFloat로
+        // 파싱된다. "오류"를 넣으면 그것이 분포 항목 하나로 잡히고 되파싱이 깨진다.
+        // 통계에서 NaN·Inf는 [computeAllCalculatedNumbers]가 애초에 제외한다.
+        com.novelcharacter.app.util.FormulaDisplay.format(value)
 
     /**
      * CALCULATED 필드의 값을 FormulaEvaluator로 일괄 계산.

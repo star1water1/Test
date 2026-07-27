@@ -8,8 +8,12 @@ class TimeStateResolver {
 
     companion object {
         private const val TAG = "TimeStateResolver"
-        /** 수식 평가 오류 시 표시할 문자열 (strings.xml의 formula_evaluation_error와 동기화) */
-        const val FORMULA_ERROR_DISPLAY = "오류"
+        /**
+         * 수식 평가 오류 시 표시할 문자열.
+         * 정의는 [FormulaDisplay]로 옮겼다 — 오류 표식과 서식은 한 곳에서만 정한다(U-9).
+         * 기존 호출부를 위해 이름은 남긴다.
+         */
+        const val FORMULA_ERROR_DISPLAY = FormulaDisplay.FORMULA_ERROR_DISPLAY
     }
 
     /**
@@ -91,18 +95,15 @@ class TimeStateResolver {
                     emptyMap()
                 }
                 val formula = config["formula"] as? String ?: continue
-                try {
-                    val value = evaluator.evaluate(formula)
-                    result[field.key] = if (value.isNaN() || value.isInfinite()) {
-                        FORMULA_ERROR_DISPLAY
-                    } else if (value == value.toLong().toDouble()) {
-                        value.toLong().toString()
-                    } else {
-                        "%.2f".format(value)
+                // 평가·서식·오류 표식은 [FormulaDisplay] 하나가 책임진다.
+                // 종전의 `"%.2f".format`은 기본 로케일이라 소수점이 콤마인 환경에서 값이 달라졌다.
+                result[field.key] = FormulaDisplay.evaluateForDisplay(formula) { f ->
+                    try {
+                        evaluator.evaluate(f)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Formula evaluation error for field '${field.key}', formula='$f'", e)
+                        Double.NaN
                     }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Formula evaluation error for field '${field.key}', formula='$formula'", e)
-                    result[field.key] = FORMULA_ERROR_DISPLAY
                 }
             }
         }

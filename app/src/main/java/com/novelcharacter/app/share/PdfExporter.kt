@@ -167,12 +167,10 @@ class PdfExporter(private val context: Context) {
                                     org.json.JSONObject(fd.config).optString("formula", "")
                                 } catch (_: Exception) { "" }
                                 if (formula.isBlank()) return@mapNotNull null
-                                try {
-                                    val value = evaluator.evaluate(formula)
-                                    if (value.isNaN() || value.isInfinite()) return@mapNotNull null
-                                    val formatted = if (value == value.toLong().toDouble()) value.toLong().toString() else "%.2f".format(value)
-                                    fd.id to formatted
-                                } catch (_: Exception) { null }
+                                // 화면·엑셀과 같은 표식을 쓴다 — PDF만 조용히 비면 인쇄본을 보고
+                                // 수식이 깨진 줄 모른다(U-9).
+                                fd.id to com.novelcharacter.app.util.FormulaDisplay
+                                    .evaluateForDisplay(formula, evaluator::evaluate)
                             }.toMap()
                         }
                     }

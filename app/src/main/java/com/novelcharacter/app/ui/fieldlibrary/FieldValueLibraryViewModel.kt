@@ -78,7 +78,12 @@ class FieldValueLibraryViewModel(application: Application) : AndroidViewModel(ap
     suspend fun getField(fieldDefId: Long): FieldDefinition? = db.fieldDefinitionDao().getFieldById(fieldDefId)
 
     /** 화면 진입 시 usageCount 최신화 (diff-only — 무변화면 무효화도 없음) */
-    fun refreshUsage(fieldDefId: Long) = viewModelScopeLaunch { repo.recountUsage(fieldDefId) }
+    fun refreshUsage(fieldDefId: Long) = viewModelScopeLaunch {
+        // 저장 훅이 예약해 둔 재집계를 먼저 소진한다 — 그러지 않으면 이 화면의 갱신이
+        // 뒤늦게 도착한 예약에 덮여 다시 옛 수치가 된다.
+        repo.awaitPendingRecounts()
+        repo.recountUsage(fieldDefId)
+    }
 
     fun addValue(
         fd: FieldDefinition,
@@ -160,13 +165,25 @@ class FieldValueLibraryViewModel(application: Application) : AndroidViewModel(ap
         reportResult(_result, OpResult.success(OpResult.CAT_FIELD_LIBRARY, summary))
     }
 
+    /**
+     * 미사용·미큐레이션 엔트리 정리 — **파괴적**이라 예약된 재집계를 반드시 먼저 소진한다.
+     * 재집계 전의 `usageCount`는 0으로 남아 있을 수 있고, 그 상태로 지우면 **실제로 쓰이는 값의
+     * 엔트리**가 사라진다(무음 유실). 기다리는 비용보다 잘못 지우는 비용이 크다.
+     */
     fun pruneUnused(fd: FieldDefinition) = viewModelScopeLaunch {
+        repo.awaitPendingRecounts()
+        repo.recountUsage(fd.id)
         val pruned = db.fieldValueEntryDao().pruneUncuratedUnused(fd.id)
         reportResult(_result, OpResult.success(OpResult.CAT_FIELD_LIBRARY,
             app.getString(R.string.field_library_prune_done, pruned)))
     }
 
-    suspend fun countPrunable(fd: FieldDefinition): Int = db.fieldValueEntryDao().countUncuratedUnused(fd.id)
+    /** 정리 대상 건수 — 사용자에게 숫자를 보이기 전에 그 숫자가 맞아야 한다(경합 제거). */
+    suspend fun countPrunable(fd: FieldDefinition): Int {
+        repo.awaitPendingRecounts()
+        repo.recountUsage(fd.id)
+        return db.fieldValueEntryDao().countUncuratedUnused(fd.id)
+    }
 
     suspend fun previewPropagation(fd: FieldDefinition, tokens: Set<String>) =
         repo.previewPropagation(fd, tokens)

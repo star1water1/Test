@@ -94,14 +94,10 @@ class CharacterCompareFragment : Fragment() {
                                     org.json.JSONObject(field.config).optString("formula", "")
                                 } catch (_: Exception) { "" }
                                 if (formula.isBlank()) continue
-                                try {
-                                    val result = evaluator.evaluate(formula)
-                                    if (!result.isNaN() && !result.isInfinite()) {
-                                        valueMap[field.key] = if (result == result.toLong().toDouble()) {
-                                            result.toLong().toString()
-                                        } else "%.2f".format(result)
-                                    }
-                                } catch (_: Exception) { /* 평가 실패 시 빈 값 유지 */ }
+                                // 비교표에서도 고장 난 수식은 오류로 보인다 — 빈 칸으로 두면
+                                // 비교 대상 캐릭터마다 왜 다른지 알 수 없다(U-9).
+                                valueMap[field.key] = com.novelcharacter.app.util.FormulaDisplay
+                                    .evaluateForDisplay(formula, evaluator::evaluate)
                             }
                         }
                         Triple(CompareEntry(char.name, novel?.title ?: novelUnassignedLabel, valueMap, tags), sortedFields, char)
