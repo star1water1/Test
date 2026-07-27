@@ -4,3 +4,14 @@ local.properties
 *.apk
 *.iml
 .idea/
+
+# 실사용 데이터 — 사용자의 창작물이므로 절대 커밋하지 않는다
+# (docs/usage_reality_check_runbook.md 1-2 참조)
+/*.xlsx
+/*.xlsm
+/*.ncworld
+/*.db
+/*.db-shm
+/*.db-wal
+/sample/
+/usage-data/
