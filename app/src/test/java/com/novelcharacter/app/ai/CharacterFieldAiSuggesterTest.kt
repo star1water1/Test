@@ -49,7 +49,11 @@ class CharacterFieldAiSuggesterTest {
     @Test
     fun systemPrompt_containsJsonSchema() {
         val prompt = CharacterFieldAiSuggester.buildSystemPrompt()
-        assertTrue(prompt.contains("""{"suggestions":[{"key":"필드키","value":"추천값","reason":"근거 한 문장"}]}"""))
+        assertTrue(
+            prompt.contains(
+                """{"suggestions":[{"key":"필드키","value":"추천값","reason":"근거 한 문장","confidence":"high|medium|low"}]}"""
+            )
+        )
     }
 
     @Test
@@ -630,5 +634,237 @@ class CharacterFieldAiSuggesterTest {
         )!!
         assertTrue(parsed.suggestions.isEmpty())
         assertEquals(1, parsed.droppedCount)
+    }
+
+    // ===== 결손 회계 (요청했는데 안 온 필드) =====
+
+    @Test
+    fun systemPrompt_전량응답을_요구하고_생략을_금지한다() {
+        val prompt = CharacterFieldAiSuggester.buildSystemPrompt()
+        assertTrue("전부에 대해 항목을 내라는 지시", prompt.contains("전부"))
+        assertTrue("생략 대신 빈 값+사유 표기", prompt.contains("""value를 빈 문자열("")로"""))
+        assertFalse("생략을 허용하는 종전 지시가 남아 있으면 안 된다", prompt.contains("응답에서 생략한다"))
+    }
+
+    @Test
+    fun userPrompt_대상_개수를_명시한다() {
+        val targets = listOf(spec("a"), spec("b"), spec("c"))
+        val text = CharacterFieldAiSuggester.buildUserPrompt(context(), targets).text
+        assertTrue(text.contains("총 3개"))
+        assertTrue(text.contains("총 3개 항목으로 응답하라"))
+    }
+
+    @Test
+    fun parse_응답에_없는_필드는_NOT_RETURNED로_집계된다() {
+        val targets = listOf(spec("mood", name = "분위기"), spec("hobby", name = "취미"))
+        val text = """{"suggestions":[{"key":"mood","value":"차분함","reason":"메모"}]}"""
+        val parsed = CharacterFieldAiSuggester.parseResponse(text, targets)!!
+        assertEquals(1, parsed.suggestions.size)
+        assertEquals(0, parsed.droppedCount)
+        assertEquals(1, parsed.missing.size)
+        assertEquals("hobby", parsed.missing[0].fieldKey)
+        assertEquals(CharacterFieldAiSuggester.MissingCause.NOT_RETURNED, parsed.missing[0].cause)
+    }
+
+    @Test
+    fun parse_제안과_결손을_합치면_요청_대상_전체다() {
+        val targets = listOf(
+            spec("mood"),
+            spec("gender", type = FieldType.SELECT, options = listOf("남", "여")),
+            spec("height", type = FieldType.NUMBER),
+            spec("hobby"),
+            spec("job", currentValue = "검사")
+        )
+        val text = """{"suggestions":[
+            {"key":"mood","value":"차분함","reason":"메모"},
+            {"key":"gender","value":"무성","reason":"옵션 밖"},
+            {"key":"height","value":"","reason":"신체 정보가 없음"},
+            {"key":"job","value":"검사","reason":"현재와 동일"}
+        ]}"""
+        val parsed = CharacterFieldAiSuggester.parseResponse(text, targets)!!
+        assertEquals(targets.size, parsed.suggestions.size + parsed.missing.size)
+        val causeByKey = parsed.missing.associate { it.fieldKey to it.cause }
+        assertEquals(CharacterFieldAiSuggester.MissingCause.INVALID, causeByKey["gender"])
+        assertEquals(CharacterFieldAiSuggester.MissingCause.DECLINED, causeByKey["height"])
+        assertEquals(CharacterFieldAiSuggester.MissingCause.NOT_RETURNED, causeByKey["hobby"])
+        assertEquals(CharacterFieldAiSuggester.MissingCause.SAME_AS_CURRENT, causeByKey["job"])
+    }
+
+    @Test
+    fun parse_빈값_사유표기는_드롭이_아니라_추천불가다() {
+        val targets = listOf(spec("mood", name = "분위기"))
+        val text = """{"suggestions":[{"key":"mood","value":"","reason":"메모에 단서가 없음"}]}"""
+        val parsed = CharacterFieldAiSuggester.parseResponse(text, targets)!!
+        assertEquals(0, parsed.droppedCount)
+        assertEquals(CharacterFieldAiSuggester.MissingCause.DECLINED, parsed.missing[0].cause)
+        assertEquals("메모에 단서가 없음", parsed.missing[0].detail)
+        assertTrue(parsed.missing[0].describe().contains("메모에 단서가 없음"))
+    }
+
+    @Test
+    fun parse_환각_key는_unknownKeys로도_고지된다() {
+        val targets = listOf(spec("mood"))
+        val text = """{"suggestions":[
+            {"key":"ghost","value":"여","reason":"환각"},
+            {"key":"mood","value":"차분함","reason":"메모"}
+        ]}"""
+        val parsed = CharacterFieldAiSuggester.parseResponse(text, targets)!!
+        assertEquals(listOf("ghost"), parsed.unknownKeys)
+        assertEquals(1, parsed.droppedCount)
+        assertTrue("실제 대상은 다 채워졌다", parsed.missing.isEmpty())
+    }
+
+    @Test
+    fun parse_suggestions_배열이_없으면_전량_결손이다() {
+        val targets = listOf(spec("mood"), spec("hobby"))
+        val parsed = CharacterFieldAiSuggester.parseResponse("{}", targets)!!
+        assertEquals(2, parsed.missing.size)
+        assertTrue(parsed.missing.all { it.cause == CharacterFieldAiSuggester.MissingCause.NOT_RETURNED })
+    }
+
+    @Test
+    fun parse_중복제안이_뒤에_와도_성공한_필드는_결손이_아니다() {
+        val targets = listOf(spec("mood"))
+        val text = """{"suggestions":[
+            {"key":"mood","value":"차분함","reason":"첫 건"},
+            {"key":"mood","value":"활발함","reason":"중복"}
+        ]}"""
+        val parsed = CharacterFieldAiSuggester.parseResponse(text, targets)!!
+        assertEquals(1, parsed.suggestions.size)
+        assertEquals(1, parsed.droppedCount)
+        assertTrue(parsed.missing.isEmpty())
+    }
+
+    // ===== 옵션 매칭 (표기 차이 교정) =====
+
+    @Test
+    fun option_공백_대소문자_차이는_옵션_원문으로_교정된다() {
+        val targets = listOf(spec("gender", type = FieldType.SELECT, options = listOf("남 성", "Female")))
+        val text = """{"suggestions":[{"key":"gender","value":"female","reason":"태그"}]}"""
+        val parsed = CharacterFieldAiSuggester.parseResponse(text, targets)!!
+        assertEquals("Female", parsed.suggestions[0].value)
+        assertEquals("남 성", CharacterFieldAiSuggester.matchOption("남성", listOf("남 성", "Female")))
+    }
+
+    @Test
+    fun option_뜻이_다른_값은_여전히_드롭된다() {
+        assertNull(CharacterFieldAiSuggester.matchOption("무성", listOf("남", "여")))
+        assertNull(CharacterFieldAiSuggester.matchOption("   ", listOf("남", "여")))
+    }
+
+    // ===== 근거 강도 (받아올 범위 설정) =====
+
+    private fun confidenceJson(vararg pairs: Pair<String, String>): String =
+        pairs.joinToString(",", """{"suggestions":[""", "]}") { (key, conf) ->
+            """{"key":"$key","value":"값$key","reason":"근거","confidence":"$conf"}"""
+        }
+
+    @Test
+    fun confidence_기본은_전부_받기다() {
+        val targets = listOf(spec("a"), spec("b"), spec("c"))
+        val parsed = CharacterFieldAiSuggester.parseResponse(
+            confidenceJson("a" to "high", "b" to "medium", "c" to "low"), targets
+        )!!
+        assertEquals(3, parsed.suggestions.size)
+        assertTrue(parsed.missing.isEmpty())
+        assertEquals(CharacterFieldAiSuggester.Confidence.LOW, parsed.suggestions[2].confidence)
+    }
+
+    @Test
+    fun confidence_하한을_두면_그_아래는_사유를_달고_제외된다() {
+        val targets = listOf(spec("a"), spec("b"), spec("c"))
+        val parsed = CharacterFieldAiSuggester.parseResponse(
+            confidenceJson("a" to "high", "b" to "medium", "c" to "low"),
+            targets,
+            CharacterFieldAiSuggester.Confidence.MEDIUM
+        )!!
+        assertEquals(2, parsed.suggestions.size)
+        assertEquals(1, parsed.missing.size)
+        assertEquals(CharacterFieldAiSuggester.MissingCause.BELOW_CONFIDENCE, parsed.missing[0].cause)
+        // 설정 때문에 빠졌다는 사실이 문구에 남아야 되돌릴 수 있다
+        assertTrue(parsed.missing[0].describe().contains("추측"))
+    }
+
+    @Test
+    fun confidence_미표기는_하한과_무관하게_통과한다() {
+        // 강도를 모른다는 이유로 유료 응답을 버리면 모델이 생략한 것과 결과가 같다
+        val targets = listOf(spec("a"))
+        val text = """{"suggestions":[{"key":"a","value":"값","reason":"근거"}]}"""
+        val parsed = CharacterFieldAiSuggester.parseResponse(
+            text, targets, CharacterFieldAiSuggester.Confidence.HIGH
+        )!!
+        assertEquals(1, parsed.suggestions.size)
+        assertNull(parsed.suggestions[0].confidence)
+    }
+
+    @Test
+    fun confidence_알_수_없는_표기는_등급을_지어내지_않는다() {
+        assertNull(CharacterFieldAiSuggester.Confidence.fromWire("아주높음"))
+        assertNull(CharacterFieldAiSuggester.Confidence.fromWire(""))
+        assertNull(CharacterFieldAiSuggester.Confidence.fromWire(null))
+        assertEquals(
+            CharacterFieldAiSuggester.Confidence.HIGH,
+            CharacterFieldAiSuggester.Confidence.fromWire(" HIGH ")
+        )
+    }
+
+    @Test
+    fun confidence_하한이_있을_때만_프롬프트에_지시가_붙는다() {
+        assertFalse(CharacterFieldAiSuggester.buildSystemPrompt(null).contains("근거 강도 '"))
+        val strict = CharacterFieldAiSuggester.buildSystemPrompt(
+            CharacterFieldAiSuggester.Confidence.HIGH
+        )
+        assertTrue(strict.contains("근거 강도 'high' 이상만"))
+        // 스키마에는 언제나 confidence가 있어야 검토 화면이 강도를 표시할 수 있다
+        assertTrue(CharacterFieldAiSuggester.buildSystemPrompt(null).contains(""""confidence""""))
+    }
+
+    // ===== 지시를 달아 다시 요청 (2차 질문) =====
+
+    @Test
+    fun 재요청_지시와_물린_값이_프롬프트에_실린다() {
+        val target = spec("mood", name = "분위기").copy(
+            userInstruction = "더 어둡게",
+            rejectedValues = listOf("차분함")
+        )
+        val text = CharacterFieldAiSuggester.buildUserPrompt(context(), listOf(target)).text
+        assertTrue(text.contains("사용자 지시: 더 어둡게"))
+        assertTrue(text.contains("이미 물린 값(다시 내지 말 것): 차분함"))
+        assertTrue(
+            "지시를 우선하라는 규칙이 시스템 프롬프트에 있어야 한다",
+            CharacterFieldAiSuggester.buildSystemPrompt().contains("'사용자 지시'가 붙은 필드")
+        )
+    }
+
+    @Test
+    fun 재요청_같은_값을_되풀이하면_사유를_달고_제외된다() {
+        val target = spec("mood", name = "분위기").copy(rejectedValues = listOf("차분함"))
+        val text = """{"suggestions":[{"key":"mood","value":"차분함","reason":"또 같은 값"}]}"""
+        val parsed = CharacterFieldAiSuggester.parseResponse(text, listOf(target))!!
+        assertTrue(parsed.suggestions.isEmpty())
+        assertEquals(CharacterFieldAiSuggester.MissingCause.REPEATED, parsed.missing[0].cause)
+    }
+
+    @Test
+    fun 재요청_다른_값이면_통과한다() {
+        val target = spec("mood").copy(rejectedValues = listOf("차분함"))
+        val text = """{"suggestions":[{"key":"mood","value":"음울함","reason":"지시 반영"}]}"""
+        val parsed = CharacterFieldAiSuggester.parseResponse(text, listOf(target))!!
+        assertEquals("음울함", parsed.suggestions[0].value)
+    }
+
+    // ===== 결손 고지 문구 =====
+
+    @Test
+    fun missingLines_상한을_넘으면_접되_총수를_밝힌다() {
+        val many = (1..CharacterFieldAiSuggester.MAX_MISSING_LINES + 3).map {
+            CharacterFieldAiSuggester.MissingField(
+                "k$it", "필드$it", CharacterFieldAiSuggester.MissingCause.NOT_RETURNED
+            )
+        }
+        val lines = CharacterFieldAiSuggester.missingLines(many)
+        assertEquals(CharacterFieldAiSuggester.MAX_MISSING_LINES + 1, lines.size)
+        assertTrue(lines.last().contains("외 3개"))
+        assertTrue(CharacterFieldAiSuggester.missingLines(emptyList()).isEmpty())
     }
 }

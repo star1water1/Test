@@ -40,6 +40,7 @@ import com.novelcharacter.app.ai.AiProviderStore
 import com.novelcharacter.app.ai.AiResult
 import com.novelcharacter.app.ai.AiService
 import com.novelcharacter.app.ai.AiTokenPolicy
+import com.novelcharacter.app.ai.CharacterFieldAiSuggester
 import com.novelcharacter.app.databinding.DialogAiModelPickerBinding
 import com.novelcharacter.app.databinding.DialogAiProviderEditBinding
 import com.novelcharacter.app.databinding.FragmentAiSettingsBinding
@@ -125,6 +126,23 @@ class AiSettingsFragment : Fragment() {
             val count = AiPromptPolicy.clampStyleSamples(value.toInt())
             renderStyleSamples(count)
             if (fromUser) settings.styleSampleCount = count
+        }
+
+        // 받아올 근거 강도 — 라디오를 고르는 순간이 곧 확정(저장 단계를 두지 않는다).
+        // 저장값 ↔ 버튼 매핑은 여기 한 곳뿐이라 선택지가 늘어도 어긋날 자리가 없다.
+        binding.confidenceGroup.check(
+            when (settings.minConfidence) {
+                CharacterFieldAiSuggester.Confidence.HIGH -> R.id.confidenceHigh
+                CharacterFieldAiSuggester.Confidence.MEDIUM -> R.id.confidenceMedium
+                else -> R.id.confidenceAll
+            }
+        )
+        binding.confidenceGroup.setOnCheckedChangeListener { _, checkedId ->
+            settings.minConfidence = when (checkedId) {
+                R.id.confidenceHigh -> CharacterFieldAiSuggester.Confidence.HIGH
+                R.id.confidenceMedium -> CharacterFieldAiSuggester.Confidence.MEDIUM
+                else -> null
+            }
         }
     }
 

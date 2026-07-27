@@ -34,10 +34,26 @@ class AiPromptSettings(context: Context) {
             sp.edit().putInt(KEY_STYLE_SAMPLES, AiPromptPolicy.clampStyleSamples(value)).apply()
         }
 
+    /**
+     * 받아올 추천의 **최소 근거 강도**. null이면 강도와 무관하게 전부 받는다(기본값).
+     *
+     * 프롬프트(모델이 애초에 안 만들게)와 파싱(그래도 오면 사유를 달아 제외)의 양쪽에 쓰인다.
+     * 제외된 것은 조용히 사라지지 않고 `MissingCause.BELOW_CONFIDENCE`로 고지되므로,
+     * 사용자는 "설정 때문에 빠졌다"는 사실과 되받는 방법을 함께 본다 (변수 제어).
+     */
+    var minConfidence: CharacterFieldAiSuggester.Confidence?
+        get() = AiPromptPolicy.confidenceFromWire(
+            sp.getString(KEY_MIN_CONFIDENCE, AiPromptPolicy.confidenceToWire(AiPromptPolicy.CONFIDENCE_DEFAULT))
+        )
+        set(value) {
+            sp.edit().putString(KEY_MIN_CONFIDENCE, AiPromptPolicy.confidenceToWire(value)).apply()
+        }
+
     companion object {
         /** 키를 담지 않는다 — 이 파일은 `ai_keys`·`ai_providers`와 달리 민감 정보가 없다. */
         const val PREFS_NAME = "ai_prompt_settings"
         private const val KEY_USAGE_EXAMPLES = "usageExampleCount"
         private const val KEY_STYLE_SAMPLES = "styleSampleCount"
+        private const val KEY_MIN_CONFIDENCE = "minConfidence"
     }
 }

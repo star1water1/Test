@@ -177,6 +177,11 @@ open class LiveData<T> {
     open var value: T? = null
     open fun postValue(v: T) { value = v }
     open fun observeForever(o: Any) {}
+
+    // observe 는 **함수 타입**으로 받아야 한다. Any 로 두면 관측 람다의 파라미터 타입이
+    // 추론되지 않아 람다 **본문 전체**가 오류 타입으로 무너지고, 차분 컴파일에서 관측자
+    // 안의 멀쩡한 코드가 새 오류로 잡힌다(실제로 겪은 오탐 — suspend 람다 전달이 거부됐다).
+    open fun observe(owner: Any, observer: (T) -> Unit) {}
 }
 
 open class MutableLiveData<T> : LiveData<T> {

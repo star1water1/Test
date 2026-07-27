@@ -227,4 +227,29 @@ class AiTokenPolicyTest {
         val body = """{"error":{"message":"you may specify at most 12 tools"}}"""
         assertNull(AiProtocolCodec.parseMaxTokensLimitFromError(body, 100000))
     }
+
+    // ===== 근거 강도 설정의 저장 표기 =====
+
+    @Test
+    fun 근거강도_저장표기_왕복() {
+        // SharedPreferences에 null을 담을 수 없어 빈 문자열이 '전부 받기'다 —
+        // 왕복이 깨지면 설정이 조용히 다른 값으로 바뀐다.
+        for (value in listOf(
+            null,
+            CharacterFieldAiSuggester.Confidence.LOW,
+            CharacterFieldAiSuggester.Confidence.MEDIUM,
+            CharacterFieldAiSuggester.Confidence.HIGH
+        )) {
+            assertEquals(value, AiPromptPolicy.confidenceFromWire(AiPromptPolicy.confidenceToWire(value)))
+        }
+        assertNull("기본값은 전부 받기", AiPromptPolicy.CONFIDENCE_DEFAULT)
+        assertNull("낡은/깨진 저장값은 전부 받기로 되돌아간다", AiPromptPolicy.confidenceFromWire("garbage"))
+    }
+
+    @Test
+    fun 근거강도_비교는_하한이_없으면_언제나_통과한다() {
+        assertTrue(CharacterFieldAiSuggester.Confidence.LOW.meets(null))
+        assertTrue(CharacterFieldAiSuggester.Confidence.HIGH.meets(CharacterFieldAiSuggester.Confidence.MEDIUM))
+        assertFalse(CharacterFieldAiSuggester.Confidence.LOW.meets(CharacterFieldAiSuggester.Confidence.MEDIUM))
+    }
 }
