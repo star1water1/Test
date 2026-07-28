@@ -127,7 +127,26 @@ class AiService(context: Context) {
             AiProtocolCodec.isMaxTokensParamError(first.httpCode ?: 0, first.detail)
         ) {
             val retry = AiProtocolCodec.buildOpenAiRetryWithMaxCompletionTokens(config, apiKey, request0)
-            return@withContext call(retry, config.protocol, config.model)
+            val second = call(retry, config.protocol, config.model)
+            // 추론 모델은 파라미터 이름과 temperature를 **둘 다** 거부한다 — 이름을 고친 재시도가
+            // temperature 거부로 떨어지면 여기서 ②를 이어 준다. 이 연쇄를 끊으면 창작도를 켠
+            // 사용자는 그 모델에서 영영 400만 받는다(한 번 성공하면 둘 다 기억되어 다음부터 1회 호출).
+            if (second is AiResult.Failure && request0.temperature != null &&
+                AiProtocolCodec.isTemperatureUnsupportedError(second.httpCode ?: 0, second.detail)
+            ) {
+                val third = call(
+                    AiProtocolCodec.buildOpenAiRetryWithMaxCompletionTokens(
+                        config, apiKey, request0.copy(temperature = null)
+                    ),
+                    config.protocol, config.model
+                )
+                if (third is AiResult.Success) {
+                    rememberTemperatureUnsupported(config.id)
+                    return@withContext third.copy(temperatureOmitted = true)
+                }
+                return@withContext third
+            }
+            return@withContext second
         }
 
         // ② 모델이 temperature 자체를 거부 → 빼고 1회 재시도, 성공하면 기억한다 (A-4).

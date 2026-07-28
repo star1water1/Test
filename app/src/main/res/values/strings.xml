@@ -2344,6 +2344,8 @@
     <string name="ai_result_return_apply">%1$s(으)로 돌아가 적용</string>
     <string name="ai_result_discard">버리기</string>
     <string name="ai_result_target_deleted">요청했던 캐릭터가 삭제되어 결과를 적용할 곳이 없습니다.</string>
+    <string name="ai_result_not_editing">AI 결과가 도착했는데 지금은 편집 모드가 아닙니다. 결과는 편집 폼에만 기입되므로, 돌아가서 검토할 수 있습니다.</string>
+    <string name="ai_result_return_review">편집으로 돌아가 검토</string>
     <string name="ai_supplement_scope_note">AI 추천이 메우는 것은 비어 있는 필드 값입니다 — 이미지·관계·작품 배정·사건·세력 미흡은 추천 대상이 아닙니다.</string>
 
     <!-- A-4 창작도 — 폭·랜덤성은 넓히되 필드 설명·옵션·형식·허용 목록은 항상 지킨다 -->

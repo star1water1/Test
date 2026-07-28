@@ -95,6 +95,7 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
     // AI 추천 (A-3) — 진행 다이얼로그 + 편집 하이드레이션 완료 후 결과 표시 예약
     private var aiProgressDialog: AlertDialog? = null
     private var pendingAiResultShow = false
+    private var pendingAiNarrativeShow = false
 
     private val imagePickerLauncher = registerForActivityResult(
         ActivityResultContracts.GetMultipleContents()
@@ -438,12 +439,41 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
             if (run != null) maybeShowAiResult(run)
         }
         characterViewModel.aiNarrativeResult.observe(viewLifecycleOwner) { run ->
-            if (run != null) {
+            if (run == null) return@observe
+            // 서술형도 같은 가드 — 편집 모드가 아닐 때 숨은 폼에 기입하면 재진입 시 폼이 DB에서
+            // 재구성되며 유료 응답이 조용히 사라진다. 뽑기는 실행 중 잠기므로 캐릭터는 그대로다.
+            if (editorState == EditorState.EDIT) {
                 com.novelcharacter.app.ui.character.NarrativeWriteSheet.showResult(
                     this, formBuilder, characterViewModel, run
                 ) { id -> formBuilder.fieldDefinitions.firstOrNull { it.id == id } }
+            } else {
+                offerReturnToEdit(
+                    onReturn = { pendingAiNarrativeShow = true },
+                    onDiscard = { characterViewModel.clearAiNarrativeResult() }
+                )
             }
         }
+    }
+
+    /**
+     * 결과가 도착했는데 편집 모드가 아닐 때 — [편집으로 돌아가 검토] / [버리기].
+     * 유료 응답을 조용히 버리지도, 숨은 폼에 기입해 재진입 시 증발시키지도 않는다.
+     */
+    private fun offerReturnToEdit(onReturn: () -> Unit, onDiscard: () -> Unit) {
+        val target = displayedCharacter
+        if (target == null) {
+            onDiscard()
+            return
+        }
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.ai_field_suggest_title)
+            .setMessage(R.string.ai_result_not_editing)
+            .setPositiveButton(R.string.ai_result_return_review) { _, _ ->
+                onReturn()
+                returnToAiTarget(target)
+            }
+            .setNegativeButton(R.string.ai_result_discard) { _, _ -> onDiscard() }
+            .show()
     }
 
     private fun updateAiProgress(show: Boolean) {
@@ -473,6 +503,14 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
             ) { buildAiContext() }
             return
         }
+        // 같은 캐릭터인데 편집 모드만 꺼진 경우 — "캐릭터가 다르다"는 거짓 문구를 쓰지 않는다
+        if (current != null && current.id == run.targetCharacterId) {
+            offerReturnToEdit(
+                onReturn = { pendingAiResultShow = true },
+                onDiscard = { characterViewModel.clearAiSuggestResult() }
+            )
+            return
+        }
         viewLifecycleOwner.lifecycleScope.launch {
             val target = characterViewModel.getCharacterByIdSuspend(run.targetCharacterId)
             if (_binding == null || !isAdded) return@launch
@@ -489,6 +527,7 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
                 .setTitle(R.string.ai_field_suggest_title)
                 .setMessage(getString(R.string.ai_result_character_mismatch, target.name))
                 .setPositiveButton(getString(R.string.ai_result_return_apply, target.name)) { _, _ ->
+                    pendingAiResultShow = true
                     returnToAiTarget(target)
                 }
                 .setNegativeButton(R.string.ai_result_discard) { _, _ ->
@@ -498,7 +537,10 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
         }
     }
 
-    /** 결과를 받은 캐릭터로 돌아가 편집 모드를 열고, 폼 적재가 끝나면 검토 다이얼로그를 띄운다 */
+    /**
+     * 결과를 받은 캐릭터로 돌아가 편집 모드를 연다 — 표시 예약 플래그(pendingAi*Show)는
+     * 호출측이 먼저 세운다. 폼 적재가 끝나면 maybeFinishEditHydration이 검토를 띄운다.
+     */
     private fun returnToAiTarget(target: Character) {
         val proceed = {
             if (editorState == EditorState.EDIT) exitEditMode()
@@ -508,7 +550,6 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
                 renderPreview(target)
                 binding.switchEditMode.isEnabled = !saveCoordinator.isSaving
             }
-            pendingAiResultShow = true
             binding.switchEditMode.isChecked = true
         }
         if (isBlocking()) requestLeave { proceed() } else proceed()
@@ -781,6 +822,14 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
                 com.novelcharacter.app.ui.character.AiFieldSuggestSheet.showResult(
                     this, formBuilder, characterViewModel, run
                 ) { buildAiContext() }
+            }
+        }
+        if (pendingAiNarrativeShow) {
+            pendingAiNarrativeShow = false
+            characterViewModel.aiNarrativeResult.value?.let { run ->
+                com.novelcharacter.app.ui.character.NarrativeWriteSheet.showResult(
+                    this, formBuilder, characterViewModel, run
+                ) { id -> formBuilder.fieldDefinitions.firstOrNull { it.id == id } }
             }
         }
     }
