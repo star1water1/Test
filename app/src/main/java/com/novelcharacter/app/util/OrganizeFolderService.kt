@@ -422,7 +422,7 @@ object OrganizeFolderService {
             }
         }
         if (unmovedFingerprints.isNotEmpty()) {
-            FolderRoundtripPrefs.addFingerprints(context, unmovedFingerprints)
+            FolderRoundtripPrefs.addUnmovedFingerprints(context, unmovedFingerprints)
         }
 
         ApplyResult(
@@ -664,7 +664,9 @@ object OrganizeFolderService {
                 )
             }
         }
-        if (fingerprints.isNotEmpty()) FolderRoundtripPrefs.addFingerprints(context, fingerprints)
+        // 내보내기 전용 장부에 넣는다 — 이동 실패 지문과 상한을 나눠 쓰면 대량 내보내기가
+        // 그쪽을 통째로 밀어내 중복 편입을 만든다(FolderRoundtripPrefs의 두 장부 주석 참조).
+        if (fingerprints.isNotEmpty()) FolderRoundtripPrefs.addExportFingerprints(context, fingerprints)
 
         ExportResult(exported, bytes, removed, removeFailed, failures, cancelled)
     }

@@ -23,22 +23,49 @@ object FolderRoundtripPrefs {
 
     private const val PREF_NAME = "folder_roundtrip_prefs"
     private const val KEY_FINGERPRINTS = "unmoved_fingerprints"
+    private const val KEY_EXPORT_FINGERPRINTS = "export_fingerprints"
     private const val KEY_RENAME_ALIASES = "rename_aliases"
 
     private fun prefs(context: Context): SharedPreferences =
         context.applicationContext.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
 
-    // ── 이동 실패 지문 ──
+    // ── 처리 완료 지문 ──
+    //
+    // 두 용도가 **키를 따로 쓴다.** 한 목록에 합치면 상한(2000)을 나눠 쓰게 되어, 사본을 대량
+    // 으로 내보내는 순간 이동 실패 지문이 통째로 밀려난다 — 그러면 `_처리됨/`으로 옮기지 못해
+    // 폴더에 남아 있던 원본이 다음 스캔에서 **새 파일로 다시 편입된다**(조용한 중복 편입 —
+    // 이 장부가 막으려던 바로 그 결과다). 상한을 얼마로 잡든 한 목록을 공유하는 한 사라지지
+    // 않는 문제라, 숫자가 아니라 **키를 가르는 것**이 해법이다.
+    //
+    // 둘의 성격도 다르다: 이동 실패 지문은 드물게 하나씩 쌓이고 유실되면 중복 편입을 낳지만,
+    // 내보내기 지문은 한 번에 수백 건이 쌓이고 유실돼도 배너 숫자만 커진다(그 사본들은 이미
+    // 제자리라 받아오기가 할 일을 찾지 못한다). 값싼 쪽이 비싼 쪽을 밀어내게 두면 안 된다.
 
-    fun fingerprints(context: Context): Set<String> =
-        FolderRoundtripLedger.decodeList(prefs(context).getString(KEY_FINGERPRINTS, null)).toSet()
+    /** 스캔이 건너뛸 지문 전체 — 두 장부의 합집합. */
+    fun fingerprints(context: Context): Set<String> {
+        val p = prefs(context)
+        val unmoved = FolderRoundtripLedger.decodeList(p.getString(KEY_FINGERPRINTS, null))
+        val exported = FolderRoundtripLedger.decodeList(p.getString(KEY_EXPORT_FINGERPRINTS, null))
+        return LinkedHashSet<String>(unmoved.size + exported.size).apply {
+            addAll(unmoved)
+            addAll(exported)
+        }
+    }
 
-    fun addFingerprints(context: Context, added: Collection<String>) {
+    /** `_처리됨/` 이동에 실패해 폴더에 남은 원본 — 유실되면 중복 편입이 된다. */
+    fun addUnmovedFingerprints(context: Context, added: Collection<String>) =
+        append(context, KEY_FINGERPRINTS, added)
+
+    /** 내보내기가 방금 쓴 사본 — 유실돼도 배너 숫자만 커진다(할 일 없는 파일로 잡힐 뿐). */
+    fun addExportFingerprints(context: Context, added: Collection<String>) =
+        append(context, KEY_EXPORT_FINGERPRINTS, added)
+
+    private fun append(context: Context, key: String, added: Collection<String>) {
         if (added.isEmpty()) return
         val p = prefs(context)
-        val current = FolderRoundtripLedger.decodeList(p.getString(KEY_FINGERPRINTS, null))
+        val current = FolderRoundtripLedger.decodeList(p.getString(key, null))
         val merged = FolderRoundtripLedger.appendBounded(current, added)
-        p.edit().putString(KEY_FINGERPRINTS, FolderRoundtripLedger.encodeList(merged)).apply()
+        p.edit().putString(key, FolderRoundtripLedger.encodeList(merged)).apply()
     }
 
     // ── 개명 별칭 ──
@@ -68,6 +95,9 @@ object FolderRoundtripPrefs {
      * 별칭은 폴더와 무관하므로 남긴다.
      */
     fun clearFolderScopedState(context: Context) {
-        prefs(context).edit().remove(KEY_FINGERPRINTS).apply()
+        prefs(context).edit()
+            .remove(KEY_FINGERPRINTS)
+            .remove(KEY_EXPORT_FINGERPRINTS)
+            .apply()
     }
 }
