@@ -668,6 +668,9 @@ fun imageMetaSpec() = SheetSpec(
     columns = listOf(
         ColumnSpec("파일명", required = true, readOnly = true, width = 10000),
         ColumnSpec("태그", width = 10000),
-        ColumnSpec("링크그룹", readOnly = true, width = 9000)
+        // 편집 가능(결정 D2) — 같은 문자열을 쓴 행끼리 한 묶음이 된다. 회색으로 두면 "앱이 채우는
+        // 열"로 읽혀 아무도 손대지 않는다. 여는 이상 규약도 태그 열과 같아야 한다:
+        // 열이 없으면 기존 유지, 열이 있고 빈칸이면 해제(설계 9장 C-3).
+        ColumnSpec("링크그룹", width = 9000)
     )
 )

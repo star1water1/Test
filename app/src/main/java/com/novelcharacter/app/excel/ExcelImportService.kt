@@ -4828,6 +4828,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val now = System.currentTimeMillis()
         val skippedMissing = plan.unresolved.size
         val groupMembers = mutableMapOf<String, MutableList<Long>>()
+        // 빈 칸 = 링크 해제(F1-A 규약 — 태그 열과 같다). 종전에는 빈 칸이 아무 일도 하지 않아
+        // "엑셀에서 링크를 지웠는데 그대로"였고 고지도 없었다(설계 9장 C-3).
+        val clearedGroupIds = mutableListOf<Long>()
+        val clearedGroupTokens = mutableSetOf<String>()
+        var clearedAutoLinks = 0
 
         for ((i, _, path) in plan.rows) {
             try {
@@ -4846,13 +4851,41 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     )
                 }
 
-                val groupToken = if (groupColIndex >= 0) getCellString(row, groupColIndex).trim() else ""
-                if (groupToken.isNotBlank()) {
-                    groupMembers.getOrPut(groupToken) { mutableListOf() }.add(imageId)
+                if (groupColIndex >= 0) {
+                    val groupToken = getCellString(row, groupColIndex).trim()
+                    if (groupToken.isNotBlank()) {
+                        groupMembers.getOrPut(groupToken) { mutableListOf() }.add(imageId)
+                    } else {
+                        val currentGroup = existing?.linkGroupId
+                        if (currentGroup != null) {
+                            clearedGroupIds.add(imageId)
+                            clearedGroupTokens.add(currentGroup)
+                            // 자동 링크는 재동기화가 도로 묶는다 — 해제가 조용히 되돌아가지
+                            // 않도록 그 수를 센다(인앱 '링크 해제'의 autoRelinkable과 같은 취지).
+                            if (com.novelcharacter.app.util.AutoLinkPlanner.isAutoToken(currentGroup)) {
+                                clearedAutoLinks++
+                            }
+                        }
+                    }
                 }
             } catch (e: Exception) {
                 result.skippedRows++
                 result.errors.add("이미지 행 $i: ${e.message}")
+            }
+        }
+
+        // 해제를 먼저 반영한다 — 같은 가져오기에서 A가 빠지고 B가 들어오는 경우, 해제를 뒤에
+        // 하면 방금 만든 묶음을 도로 지운다.
+        if (clearedGroupIds.isNotEmpty()) {
+            db.imageMetaDao().setGroup(clearedGroupIds, null)
+            // 1장만 남은 묶음의 잔존 표식은 오해를 부른다 — 인앱 해제와 같은 정리를 건다.
+            clearedGroupTokens.forEach { db.imageMetaDao().clearGroupIfSingleton(it) }
+            result.warnings.add("이미지 ${clearedGroupIds.size}건: '링크그룹' 칸이 비어 있어 링크를 해제했습니다")
+            if (clearedAutoLinks > 0) {
+                result.warnings.add(
+                    "그중 ${clearedAutoLinks}건은 캐릭터 자동 링크라, 그 캐릭터에 계속 등록되어 있으면 " +
+                        "다음 재동기화가 다시 묶습니다 (이미지 설정에서 자동 링크를 끌 수 있습니다)"
+                )
             }
         }
 
