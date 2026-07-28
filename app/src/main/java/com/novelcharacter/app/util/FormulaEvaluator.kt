@@ -93,80 +93,51 @@ class FormulaEvaluator(
         object Separator : Token()  // 콤마 (함수 인자 구분)
     }
 
+    /**
+     * 어휘 분석은 [FormulaLexer]가 한다 — 문법을 아는 곳은 거기 하나다.
+     * 여기서는 어휘를 계산 토큰으로 옮기고, 필드 참조·등급 합계만 이 자리에서 값으로 바꾼다
+     * (값 해석은 평가기의 몫이므로 렉서가 알 필요가 없다).
+     */
     private fun tokenize(formula: String): List<Token> {
         val tokens = mutableListOf<Token>()
+        val lexemes = FormulaLexer.lex(formula)
         var i = 0
-        while (i < formula.length && tokens.size < MAX_TOKENS) {
-            when {
-                formula[i].isWhitespace() -> i++
-                formula[i] in "+-*/" -> {
+        while (i < lexemes.size && tokens.size < MAX_TOKENS) {
+            when (val lexeme = lexemes[i]) {
+                is FormulaLexer.Lexeme.Op -> {
                     // Handle unary minus/plus: treat as sign if at start, after '(' or after another operator
-                    if ((formula[i] == '-' || formula[i] == '+') && (tokens.isEmpty() || tokens.last() is Token.LParen || tokens.last() is Token.Op || tokens.last() is Token.Separator)) {
+                    val signPosition = tokens.isEmpty() || tokens.last() is Token.LParen ||
+                        tokens.last() is Token.Op || tokens.last() is Token.Separator
+                    if ((lexeme.op == '-' || lexeme.op == '+') && signPosition) {
                         // Collapse a run of consecutive signs; negate only when the minus count is odd ("--3" == 3)
                         var minusCount = 0
-                        while (i < formula.length && (formula[i] == '-' || formula[i] == '+' || formula[i].isWhitespace())) {
-                            if (formula[i] == '-') minusCount++
-                            i++
+                        while (i < lexemes.size) {
+                            val sign = lexemes[i]
+                            if (sign is FormulaLexer.Lexeme.Op && (sign.op == '-' || sign.op == '+')) {
+                                if (sign.op == '-') minusCount++
+                                i++
+                            } else break
                         }
                         if (minusCount % 2 == 1) {
                             // High-precedence unary negation token so "5*-3" binds as 5*(-3), not (5*0)-3
                             tokens.add(Token.Op(UNARY_MINUS))
                         }
                     } else {
-                        tokens.add(Token.Op(formula[i]))
+                        tokens.add(Token.Op(lexeme.op))
                         i++
                     }
                 }
-                formula[i] == '(' -> { tokens.add(Token.LParen); i++ }
-                formula[i] == ')' -> { tokens.add(Token.RParen); i++ }
-                formula[i].isDigit() || (formula[i] == '.' && i + 1 < formula.length && formula[i + 1].isDigit()) -> {
-                    val start = i
-                    while (i < formula.length && (formula[i].isDigit() || formula[i] == '.')) i++
-                    tokens.add(Token.Num(formula.substring(start, i).toDoubleOrNull() ?: 0.0))
-                }
-                formula.startsWith("field(", i) -> {
-                    i += 6 // skip "field("
-                    // skip quote
-                    if (i < formula.length && (formula[i] == '\'' || formula[i] == '"')) i++
-                    val start = i
-                    while (i < formula.length && formula[i] != '\'' && formula[i] != '"' && formula[i] != ')') i++
-                    val key = formula.substring(start, i)
-                    // skip closing quote and paren
-                    if (i < formula.length && (formula[i] == '\'' || formula[i] == '"')) i++
-                    if (i < formula.length && formula[i] == ')') i++
-                    tokens.add(Token.Num(resolveField(key)))
-                }
-                formula.startsWith("sum_all_grades()", i) -> {
-                    tokens.add(Token.Num(sumAllGrades()))
-                    i += 16
-                }
-                formula.startsWith("abs(", i) -> {
-                    tokens.add(Token.Func("abs", 1))
-                    tokens.add(Token.LParen)
-                    i += 4
-                }
-                formula.startsWith("max(", i) -> {
-                    tokens.add(Token.Func("max", 2))
-                    tokens.add(Token.LParen)
-                    i += 4
-                }
-                formula.startsWith("min(", i) -> {
-                    tokens.add(Token.Func("min", 2))
-                    tokens.add(Token.LParen)
-                    i += 4
-                }
-                formula.startsWith("avg(", i) -> {
-                    tokens.add(Token.Func("avg", 2))
-                    tokens.add(Token.LParen)
-                    i += 4
-                }
-                formula[i] == ',' -> {
-                    // 콤마를 RParen + LParen으로 변환하여 인자 분리
-                    // 함수 내 콤마: 첫 인자를 스택에 남기고 다음 인자 시작
-                    tokens.add(Token.Separator)
-                    i++
-                }
-                else -> i++ // skip unknown
+                is FormulaLexer.Lexeme.Num -> { tokens.add(Token.Num(lexeme.value)); i++ }
+                is FormulaLexer.Lexeme.FieldRef -> { tokens.add(Token.Num(resolveField(lexeme.key))); i++ }
+                FormulaLexer.Lexeme.SumAllGrades -> { tokens.add(Token.Num(sumAllGrades())); i++ }
+                is FormulaLexer.Lexeme.Func -> { tokens.add(Token.Func(lexeme.name, lexeme.arity)); i++ }
+                FormulaLexer.Lexeme.LParen -> { tokens.add(Token.LParen); i++ }
+                FormulaLexer.Lexeme.RParen -> { tokens.add(Token.RParen); i++ }
+                // 콤마: 첫 인자를 스택에 남기고 다음 인자를 시작한다
+                FormulaLexer.Lexeme.Separator -> { tokens.add(Token.Separator); i++ }
+                // 알아보지 못한 구간은 계산에서 빠진다. 고지는 저장 시점에 FormulaValidator가 한다 —
+                // 여기서 막으면 이미 저장된 수식을 가진 사용자의 값이 통째로 사라진다.
+                is FormulaLexer.Lexeme.Unrecognized -> i++
             }
         }
         return tokens
@@ -276,7 +247,10 @@ class FormulaEvaluator(
                 else -> {}
             }
         }
-        return stack.lastOrNull() ?: Double.NaN
+        // 값이 둘 이상 남았다면 연산자가 빠진 것이다(예: "field(a) field(b)", "2 * pow(3,2)"에서
+        // pow가 버려진 뒤). 종전에는 **마지막 값을 그대로 돌려줘** 그럴듯한 오답이 됐고, NaN이
+        // 아니므로 화면의 '오류' 표시(U-9)도 닿지 않았다. 남은 값이 정확히 하나일 때만 결과다.
+        return if (stack.size == 1) stack.first() else Double.NaN
     }
 
     companion object {

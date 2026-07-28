@@ -141,7 +141,7 @@
     <string name="label_allow_negative">음수 허용 (±등급)</string>
     <string name="label_formula">계산 수식</string>
     <string name="hint_formula_example">예: field(\'aura\') + field(\'body\')</string>
-    <string name="text_formula_help">사용 가능: field(\'키\'), sum_all_grades(), abs(), max(a,b), min(a,b), +, -, *, /</string>
+    <string name="text_formula_help">사용 가능: field(\'키\'), sum_all_grades(), %1$s, +, -, *, /</string>
     <string name="label_required_field">필수 입력</string>
     <string name="label_display_format">표시 형식</string>
     <string name="label_narrative_mode">서술형 여부</string>
@@ -185,7 +185,13 @@
     <string name="formula_warn_title">수식 확인</string>
     <string name="formula_warn_message">수식에 문제가 있을 수 있습니다:\n%1$s\n\n그대로 저장하시겠습니까?</string>
     <string name="formula_warn_paren">괄호 짝이 맞지 않습니다</string>
-    <string name="formula_warn_missing_keys">존재하지 않는 필드 키: %1$s</string>
+    <string name="formula_warn_missing_keys">존재하지 않는 필드 키: %1$s (그 자리는 0으로 계산됩니다)</string>
+    <string name="formula_warn_self_ref">자기 자신(%1$s)을 참조합니다 — 값이 \'오류\'로 표시됩니다</string>
+    <string name="formula_warn_circular">수식이 서로 돌아옵니다: %1$s — 값이 \'오류\'로 표시됩니다</string>
+    <string name="formula_warn_padded_keys">필드 키 앞뒤의 공백까지 이름으로 읽습니다: %1$s (공백을 지워 주세요)</string>
+    <string name="formula_warn_unknown_function">없는 함수입니다: %1$s (쓸 수 있는 함수: %2$s)</string>
+    <string name="formula_warn_malformed_call">함수 표기가 어긋나 계산에서 빠집니다: %1$s (이름 바로 뒤에 여는 괄호를 붙이고, sum_all_grades는 괄호 안을 비웁니다)</string>
+    <string name="formula_warn_unrecognized">계산에서 빠지는 부분이 있습니다: %1$s</string>
     <string name="formula_warn_save_anyway">그대로 저장</string>
     <string name="formula_warn_fix">수정하기</string>
     <string name="save_unsaved">● 저장</string>

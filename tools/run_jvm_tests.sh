@@ -118,7 +118,9 @@ $MAIN/data/model/CardDisplayConfig.kt
 $MAIN/util/CardFieldSummary.kt
 $MAIN/util/GsonTypes.kt
 $MAIN/util/FieldOptionParser.kt
+$MAIN/util/FormulaLexer.kt
 $MAIN/util/FormulaEvaluator.kt
+$MAIN/util/FormulaValidator.kt
 $MAIN/util/FormulaDisplay.kt
 $MAIN/util/GradeValueResolver.kt
 $MAIN/ui/stats/StatsDataProvider.kt
@@ -167,6 +169,8 @@ $TEST/excel/ImageBackupIntegrityTest.kt
 $TEST/excel/ExcelCellValueTest.kt
 $TEST/util/FieldValueTokenizerTest.kt
 $TEST/util/FormulaDisplayTest.kt
+$TEST/util/FormulaEvaluatorTest.kt
+$TEST/util/FormulaValidatorTest.kt
 $TEST/util/SortComparatorsTest.kt
 $TEST/util/EpochMemoTest.kt
 $TEST/ai/AiJsonExtractorTest.kt
