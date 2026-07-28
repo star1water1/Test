@@ -219,7 +219,7 @@
     <string name="empty_event_hint">사건을 추가해보세요</string>
     <string name="empty_state_change_hint">상태 변화를 추가해보세요</string>
     <string name="empty_relationship_hint">관계를 추가해보세요</string>
-    <string name="compare_button_text">비교하기 (%d명)</string>
+    <string name="compare_selected_count">선택 %1$d/3</string>
     <string name="slider_min_year">최소: %d년</string>
     <string name="slider_max_year">최대: %d년</string>
     <string name="drag_handle_desc">순서 변경 드래그 핸들</string>
@@ -248,7 +248,6 @@
     <string name="name_label">이름</string>
     <string name="gender_label">성별</string>
     <string name="origin_label">출처/문화권</string>
-    <string name="compare_button">비교</string>
     <string name="cancel_button">취소</string>
 
     <!-- RelationshipHelper -->

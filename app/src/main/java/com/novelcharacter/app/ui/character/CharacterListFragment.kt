@@ -86,11 +86,11 @@ class CharacterListFragment : Fragment() {
         setupRecyclerView()
         setupSearch()
         setupFab()
-        setupCompareButton()
+        setupCompareBar()
         setupBatchEditBar()
         setupBirthdayBanner()
         setupFilterSort()
-        setupToolbarMenu()
+        setupOverflowMenu()
         observeData()
         observeBatchEdit()
 
@@ -104,9 +104,14 @@ class CharacterListFragment : Fragment() {
             enterCompareMode()
         }
 
+        // 툴바는 조건부다 (N-1 §7-2): 탭 루트에서는 하단 내비가 이미 "캐릭터"를 말하므로 감춰
+        // 상단을 2행(액션 행 + 칩 행)으로 줄이고, 작품별 목록으로 푸시되면 뒤로가기+작품명을 위해
+        // 살아 있어야 한다. 메뉴는 어느 상태에서도 갖지 않는다 — 호스트는 액션 행의 ⋮ 하나다.
         if (novelId != -1L) {
             binding.toolbar.setNavigationIcon(R.drawable.ic_arrow_back)
             binding.toolbar.setNavigationOnClickListener { findNavController().popBackStack() }
+        } else {
+            binding.toolbar.visibility = View.GONE
         }
     }
 
@@ -205,44 +210,56 @@ class CharacterListFragment : Fragment() {
         }
     }
 
-    private fun setupToolbarMenu() {
-        binding.toolbar.inflateMenu(R.menu.character_menu)
-        // 보충은 전역 캐릭터 탭의 도구 — 작품 스코프로 푸시된 목록에서는 숨긴다
-        val supplementItem = binding.toolbar.menu.findItem(R.id.action_supplement)
-        supplementItem?.isVisible = (novelId == -1L)
-        // actionLayout(아이콘+라벨 버튼)은 메뉴 클릭 콜백을 타지 않으므로 직접 배선.
-        // 게이팅도 뷰에 함께 적용 — isVisible=false가 actionView를 남기는 기기 변형 방어.
-        supplementItem?.actionView?.let { actionView ->
-            actionView.visibility = if (novelId == -1L) View.VISIBLE else View.GONE
-            androidx.appcompat.widget.TooltipCompat.setTooltipText(
-                actionView, getString(R.string.supplement_title)
-            )
-            actionView.setOnClickListener {
-                findNavController().navigateSafe(navOriginId, R.id.supplementFragment)
+    /**
+     * ⋮ 통합 메뉴 (N-1 §7-2) — 보충(탭 루트만)·비교·일괄 편집·순서 변경.
+     * 액션 행은 탭 루트·푸시 양쪽에서 보이므로 메뉴 호스트는 이 하나뿐이다 — 툴바에도 메뉴를
+     * 두면 보충의 "탭 루트에서만" 게이팅이 두 벌이 되고, 두 벌이 된 게이팅은 반드시 갈린다.
+     * 보충의 상시 진입점은 홈 도구 타일(N-2)이 맡는다 — 총 발견성은 옮기기 전보다 올라간다.
+     */
+    private fun setupOverflowMenu() {
+        binding.btnListOverflow.setOnClickListener { anchor ->
+            val popup = PopupMenu(requireContext(), anchor)
+            if (novelId == -1L) {
+                // 보충은 전역 캐릭터 탭의 도구 — 작품 스코프로 푸시된 목록에서는 항목 자체가 없다
+                popup.menu.add(0, MENU_SUPPLEMENT, 0, R.string.tab_supplement)
             }
-        }
-        binding.toolbar.setOnMenuItemClickListener { item ->
-            when (item.itemId) {
-                R.id.action_supplement -> {
-                    findNavController().navigateSafe(navOriginId, R.id.supplementFragment)
-                    true
+            popup.menu.add(0, MENU_COMPARE, 1, R.string.compare_mode_label)
+            popup.menu.add(0, MENU_BATCH_EDIT, 2, R.string.batch_edit_mode)
+            popup.menu.add(0, MENU_REORDER, 3, R.string.reorder_mode)
+            popup.setOnMenuItemClickListener { item ->
+                when (item.itemId) {
+                    MENU_SUPPLEMENT -> {
+                        findNavController().navigateSafe(navOriginId, R.id.supplementFragment)
+                        true
+                    }
+                    MENU_COMPARE -> {
+                        if (isBatchEditMode) exitBatchEditMode()
+                        if (adapter.isReorderMode()) toggleReorderMode()
+                        if (!isCompareMode) {
+                            selectedForCompare.clear()
+                            enterCompareMode()
+                            Toast.makeText(requireContext(), R.string.compare_select_hint, Toast.LENGTH_SHORT).show()
+                        }
+                        true
+                    }
+                    MENU_REORDER -> {
+                        // 재정렬은 일괄편집·비교와 상호배타 — 두 모드 모두 먼저 종료해야 chrome(검색·필터바·비교바)이
+                        // 엉키지 않는다. 기존엔 배치만 종료하고 비교는 안 해서 두 모드가 겹치는 손상 상태가 났다.
+                        if (isBatchEditMode) exitBatchEditMode()
+                        if (isCompareMode) exitCompareMode()
+                        toggleReorderMode()
+                        true
+                    }
+                    MENU_BATCH_EDIT -> {
+                        if (isCompareMode) exitCompareMode()
+                        if (adapter.isReorderMode()) toggleReorderMode()
+                        enterBatchEditMode()
+                        true
+                    }
+                    else -> false
                 }
-                R.id.action_reorder -> {
-                    // 재정렬은 일괄편집·비교와 상호배타 — 두 모드 모두 먼저 종료해야 chrome(검색·필터바·비교바)이
-                    // 엉키지 않는다. 기존엔 배치만 종료하고 비교는 안 해서 두 모드가 겹치는 손상 상태가 났다.
-                    if (isBatchEditMode) exitBatchEditMode()
-                    if (isCompareMode) exitCompareMode()
-                    toggleReorderMode()
-                    true
-                }
-                R.id.action_batch_edit -> {
-                    if (isCompareMode) exitCompareMode()
-                    if (adapter.isReorderMode()) toggleReorderMode()
-                    enterBatchEditMode()
-                    true
-                }
-                else -> false
             }
+            popup.show()
         }
     }
 
@@ -291,32 +308,21 @@ class CharacterListFragment : Fragment() {
         // Update max-reached first (no-op if unchanged), then setSelectedIds triggers single notify
         adapter.setMaxReached(selectedForCompare.size >= 3)
         adapter.setSelectedIds(selectedForCompare)
-        updateCompareButtonText()
+        updateCompareBarState()
     }
 
-    private fun setupCompareButton() {
-        binding.btnCompare.setOnClickListener {
-            if (!isCompareMode) {
-                // Enter compare mode — 재정렬 모드와 상호배타(방어적)
-                if (adapter.isReorderMode()) toggleReorderMode()
-                selectedForCompare.clear()
-                enterCompareMode()
-                Toast.makeText(requireContext(), R.string.compare_select_hint, Toast.LENGTH_SHORT).show()
-            } else {
-                // Execute comparison
-                if (selectedForCompare.size < 2) {
-                    Toast.makeText(requireContext(), R.string.compare_min_select, Toast.LENGTH_SHORT).show()
-                    return@setOnClickListener
-                }
-                val idsStr = selectedForCompare.joinToString(",")
-                val bundle = Bundle().apply { putString("characterIds", idsStr) }
-                exitCompareMode()
-                findNavController().navigateSafe(navOriginId, R.id.characterCompareFragment, bundle)
+    /** 비교 전용 바 (N-1 §7-4) — 일괄 편집 바와 같은 문법: 취소·선택 수·실행이 모드 중 상주한다. */
+    private fun setupCompareBar() {
+        binding.btnCompareClose.setOnClickListener { exitCompareMode() }
+        binding.btnCompareRun.setOnClickListener {
+            if (selectedForCompare.size < 2) {
+                Toast.makeText(requireContext(), R.string.compare_min_select, Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
             }
-        }
-
-        binding.btnCancelCompare.setOnClickListener {
+            val idsStr = selectedForCompare.joinToString(",")
+            val bundle = Bundle().apply { putString("characterIds", idsStr) }
             exitCompareMode()
+            findNavController().navigateSafe(navOriginId, R.id.characterCompareFragment, bundle)
         }
     }
 
@@ -329,10 +335,13 @@ class CharacterListFragment : Fragment() {
         // 상태의 딤이 사라져 있었다.
         adapter.setMaxReached(selectedForCompare.size >= 3)
         adapter.setSelectedIds(selectedForCompare)
-        binding.btnCancelCompare.visibility = View.VISIBLE
+        // 일괄 편집 모드와 같은 화면 문법 — 액션 행을 감추고 전용 바를 띄운다
+        binding.compareBar.visibility = View.VISIBLE
+        binding.actionRow.visibility = View.GONE
+        binding.fabAddCharacter.visibility = View.GONE
         setFilterSortBarVisible(false)
         updateBirthdayBannerVisibility(false)
-        updateCompareButtonText()
+        updateCompareBarState()
     }
 
     private fun exitCompareMode() {
@@ -340,18 +349,22 @@ class CharacterListFragment : Fragment() {
         batchBackCallback.isEnabled = false
         selectedForCompare.clear()
         adapter.resetState()  // batch reset: clears selection + mode in single notify
-        binding.btnCompare.text = getString(R.string.compare_button)
-        binding.btnCancelCompare.visibility = View.GONE
+        binding.compareBar.visibility = View.GONE
+        binding.actionRow.visibility = View.VISIBLE
+        binding.fabAddCharacter.visibility = View.VISIBLE
         setFilterSortBarVisible(true)
         updateBirthdayBannerVisibility(true)
     }
 
-    private fun updateCompareButtonText() {
-        if (selectedForCompare.isEmpty()) {
-            binding.btnCompare.text = getString(R.string.compare_mode_label)
+    /** 비교 바 상태 — 선택 수 표기(0이면 상시 안내) + 최소 2명부터 실행 활성. */
+    private fun updateCompareBarState() {
+        if (_binding == null) return
+        binding.compareSelectedCount.text = if (selectedForCompare.isEmpty()) {
+            getString(R.string.compare_select_hint)
         } else {
-            binding.btnCompare.text = getString(R.string.compare_button_text, selectedForCompare.size)
+            getString(R.string.compare_selected_count, selectedForCompare.size)
         }
+        binding.btnCompareRun.isEnabled = selectedForCompare.size >= 2
     }
 
     private var searchJob: kotlinx.coroutines.Job? = null
@@ -476,7 +489,7 @@ class CharacterListFragment : Fragment() {
         isBatchEditMode = true
         adapter.setSelectionMode(true)
         binding.batchEditBar.visibility = View.VISIBLE
-        binding.compareLayout.visibility = View.GONE
+        binding.actionRow.visibility = View.GONE
         binding.fabAddCharacter.visibility = View.GONE
         setFilterSortBarVisible(false)
         updateBirthdayBannerVisibility(false)
@@ -506,7 +519,7 @@ class CharacterListFragment : Fragment() {
         batchViewModel.deselectAll()
         adapter.resetState()
         binding.batchEditBar.visibility = View.GONE
-        binding.compareLayout.visibility = View.VISIBLE
+        binding.actionRow.visibility = View.VISIBLE
         binding.fabAddCharacter.visibility = View.VISIBLE
         setFilterSortBarVisible(true)
         updateBirthdayBannerVisibility(true)
@@ -628,6 +641,11 @@ class CharacterListFragment : Fragment() {
         // 작품 id→제목 해석용 + 삭제된 작품 id를 저장 필터에서 정리(스틱 빈 목록 방지).
         viewModel.allNovels.observe(viewLifecycleOwner) { novels ->
             novelTitles = novels.associate { it.id to it.title }
+            // 푸시 상태 툴바는 뒤로가기 + **작품명**을 보여준다 (N-1 §7-2) — 어느 작품의
+            // 목록인지 제목이 말하지 않으면 정적 "캐릭터"만 남아 스코프를 알 수 없다.
+            if (novelId != -1L) {
+                binding.toolbar.title = novelTitles[novelId] ?: getString(R.string.tab_characters)
+            }
             val active = viewModel.novelFilters.value ?: emptySet()
             if (novels.isNotEmpty() && active.isNotEmpty()) {
                 // "작품 미배정" sentinel은 실제 작품이 아니므로 정리에서 보존
@@ -906,5 +924,11 @@ class CharacterListFragment : Fragment() {
         private const val MENU_SELECT_ALL = 1
         private const val MENU_DESELECT_ALL = 2
         private const val MENU_FILTER_SELECT = 3
+
+        // 액션 행 ⋮ 통합 메뉴 항목 id (N-1)
+        private const val MENU_SUPPLEMENT = 11
+        private const val MENU_COMPARE = 12
+        private const val MENU_BATCH_EDIT = 13
+        private const val MENU_REORDER = 14
     }
 }
