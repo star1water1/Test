@@ -171,6 +171,7 @@ class ImageManagerFragment : Fragment() {
         binding.selectButton.setOnClickListener { if (selectionMode) exitSelection() else enterSelection(null) }
         binding.selectAllButton.setOnClickListener { selectAll() }
         binding.actionsButton.setOnClickListener { openBatchOperations() }
+        binding.organizeFolderBanner.setOnClickListener { startOrganizeFolderImport() }
 
         viewModel.loading.observe(viewLifecycleOwner) {
             binding.progressBar.visibility = if (it) View.VISIBLE else View.GONE
@@ -191,6 +192,7 @@ class ImageManagerFragment : Fragment() {
         super.onResume()
         // 편집화면에서 이미지를 추가/삭제하고 돌아왔을 수 있으니 갱신.
         viewModel.load()
+        refreshOrganizeFolderBanner()
     }
 
     /** 상태 복원 — 칩·검색어·태그필터 버튼 라벨을 VM criteria(SavedStateHandle)에 맞춘다. */
@@ -470,15 +472,234 @@ class ImageManagerFragment : Fragment() {
         popup.menu.add(0, 0, 0, R.string.settings_image_compress_title)
         popup.menu.add(0, 1, 1, R.string.image_manager_clean_orphans)
         popup.menu.add(0, 2, 2, R.string.image_manager_refresh)
+        popup.menu.add(0, 3, 3, R.string.organize_folder_import)
+        popup.menu.add(0, 4, 4, R.string.organize_folder_settings)
         popup.setOnMenuItemClickListener { mi ->
             when (mi.itemId) {
                 0 -> ImageSettingsDialog.show(this) { viewModel.load() }
                 1 -> confirmCleanOrphans()
-                else -> viewModel.load()
+                2 -> viewModel.load()
+                3 -> startOrganizeFolderImport()
+                else -> showOrganizeFolderSettings()
             }
             true
         }
         popup.show()
+    }
+
+    // ---------- 정리 폴더 왕복 ----------
+
+    /** 폴더 지정 후에 이어서 할 일 — 지정 플로우가 "받아오기를 누르다 온 것"인지 기억한다. */
+    private var pendingImportAfterPick = false
+
+    private val organizeFolderPicker = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        if (uri == null) { pendingImportAfterPick = false; return@registerForActivityResult }
+        // 앱이 재시작해도 폴더를 계속 읽고 쓸 수 있어야 한다(재지정 요구는 마찰이다).
+        runCatching {
+            requireContext().contentResolver.takePersistableUriPermission(
+                uri,
+                android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                    android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            )
+        }
+        viewModel.setOrganizeFolderUri(uri.toString()) {
+            if (!isAdded || _binding == null) return@setOrganizeFolderUri
+            notifySuccess(getString(R.string.organize_folder_set))
+            refreshOrganizeFolderBanner()
+            if (pendingImportAfterPick) {
+                pendingImportAfterPick = false
+                startOrganizeFolderImport()
+            }
+        }
+    }
+
+    private fun showOrganizeFolderSettings() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val current = viewModel.getOrganizeFolderUri()
+            if (!isAdded || _binding == null) return@launch
+            val message = if (current == null) {
+                getString(R.string.organize_folder_none)
+            } else {
+                getString(R.string.organize_folder_current, android.net.Uri.decode(current))
+            }
+            val builder = MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.organize_folder_settings)
+                .setMessage(getString(R.string.organize_folder_purpose) + "\n\n" + message)
+                .setPositiveButton(R.string.organize_folder_pick) { _, _ ->
+                    pendingImportAfterPick = false
+                    organizeFolderPicker.launch(null)
+                }
+                .setNegativeButton(R.string.close, null)
+            if (current != null) {
+                builder.setNeutralButton(R.string.organize_folder_clear) { _, _ ->
+                    viewModel.setOrganizeFolderUri(null) {
+                        if (!isAdded || _binding == null) return@setOrganizeFolderUri
+                        notifySuccess(getString(R.string.organize_folder_cleared))
+                        refreshOrganizeFolderBanner()
+                    }
+                }
+            }
+            builder.show()
+        }
+    }
+
+    /** 진입 감지 — 신규 후보가 있을 때만 배너를 보인다. 실패·지연은 조용히 생략(수동 메뉴가 있다). */
+    private fun refreshOrganizeFolderBanner() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val count = runCatching { viewModel.countOrganizeFolderCandidates() }.getOrDefault(0)
+            if (!isAdded || _binding == null) return@launch
+            binding.organizeFolderBanner.visibility = if (count > 0) View.VISIBLE else View.GONE
+            if (count > 0) {
+                binding.organizeFolderBanner.text = getString(R.string.organize_folder_banner, count)
+            }
+        }
+    }
+
+    private fun startOrganizeFolderImport() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            if (viewModel.getOrganizeFolderUri() == null) {
+                if (!isAdded) return@launch
+                // 폴더 미지정 — 지정 플로우로 안내하고, 지정이 끝나면 이어서 받아온다.
+                MaterialAlertDialogBuilder(requireContext())
+                    .setTitle(R.string.organize_folder_import)
+                    .setMessage(R.string.organize_folder_purpose)
+                    .setPositiveButton(R.string.organize_folder_pick) { _, _ ->
+                        pendingImportAfterPick = true
+                        organizeFolderPicker.launch(null)
+                    }
+                    .setNegativeButton(R.string.cancel, null)
+                    .show()
+                return@launch
+            }
+            viewModel.scanOrganizeFolder { outcome ->
+                if (!isAdded || _binding == null) return@scanOrganizeFolder
+                if (!outcome.accessible || outcome.bundle == null) {
+                    MaterialAlertDialogBuilder(requireContext())
+                        .setTitle(R.string.organize_folder_import)
+                        .setMessage(R.string.organize_folder_unavailable)
+                        .setPositiveButton(R.string.organize_folder_pick) { _, _ ->
+                            pendingImportAfterPick = true
+                            organizeFolderPicker.launch(null)
+                        }
+                        .setNegativeButton(R.string.close, null)
+                        .show()
+                    return@scanOrganizeFolder
+                }
+                confirmOrganizePlan(outcome.bundle)
+            }
+        }
+    }
+
+    /** 사전 확인 — 폴더 재배열은 대량 메타 변경이라 조용히 반영하지 않는다(조용한 확대 금지). */
+    private fun confirmOrganizePlan(
+        bundle: com.novelcharacter.app.util.OrganizeFolderService.PlanBundle
+    ) {
+        val plan = bundle.plan
+        if (bundle.isEmpty) {
+            MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.organize_folder_import)
+                .setMessage(R.string.organize_folder_nothing)
+                .setPositiveButton(R.string.confirm, null)
+                .show()
+            return
+        }
+        val lines = ArrayList<String>()
+        if (plan.imports.isNotEmpty()) lines.add(getString(R.string.organize_folder_summary_new, plan.imports.size))
+        if (plan.moves.isNotEmpty()) lines.add(getString(R.string.organize_folder_summary_move, plan.moves.size))
+        if (plan.detaches.isNotEmpty()) lines.add(getString(R.string.organize_folder_summary_detach, plan.detaches.size))
+        if (plan.linkSets.isNotEmpty()) lines.add(getString(R.string.organize_folder_summary_sets, plan.linkSets.size))
+        if (bundle.mergedGroups > 0) {
+            lines.add(getString(R.string.organize_folder_summary_merge, bundle.mergedGroups, bundle.mergedOutsiders))
+        }
+        if (plan.holds.isNotEmpty()) lines.add(getString(R.string.organize_folder_summary_hold, plan.holds.size))
+        if (plan.ambiguousFolders.isNotEmpty()) {
+            lines.add(getString(
+                R.string.organize_folder_summary_ambiguous,
+                plan.ambiguousFolders.joinToString(", ")
+            ))
+        }
+        if (plan.unknownTokenFiles > 0) {
+            lines.add(getString(R.string.organize_folder_summary_unknown_token, plan.unknownTokenFiles))
+        }
+        if (bundle.scan.skippedByFingerprint > 0) {
+            lines.add(getString(R.string.organize_folder_summary_already, bundle.scan.skippedByFingerprint))
+        }
+        if (bundle.scan.nonImageIgnored > 0 || plan.deeperIgnored > 0 || bundle.scan.unreadFolders > 0) {
+            lines.add(getString(
+                R.string.organize_folder_summary_ignored,
+                bundle.scan.nonImageIgnored, plan.deeperIgnored + bundle.scan.unreadFolders
+            ))
+        }
+
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.organize_folder_import)
+            .setMessage(lines.joinToString("\n"))
+            .setPositiveButton(R.string.organize_folder_apply) { _, _ -> runOrganizePlan(bundle) }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun runOrganizePlan(
+        bundle: com.novelcharacter.app.util.OrganizeFolderService.PlanBundle
+    ) {
+        val total = bundle.plan.actionCount
+        var cancelled = false
+        val progress = com.novelcharacter.app.ui.common.TaskProgressDialog.show(
+            requireContext(),
+            titleRes = R.string.organize_folder_import,
+            total = total,
+            stageRes = R.string.organize_folder_stage_apply,
+            onCancel = { cancelled = true }
+        )
+        viewModel.applyOrganizePlan(
+            bundle,
+            onProgress = { done, t -> progress.update(done, t) },
+            isCancelled = { cancelled }
+        ) { result ->
+            progress.dismiss()
+            if (!isAdded || _binding == null) return@applyOrganizePlan
+            refreshOrganizeFolderBanner()
+            showOrganizeResult(result)
+        }
+    }
+
+    private fun showOrganizeResult(
+        result: com.novelcharacter.app.util.OrganizeFolderService.ApplyResult
+    ) {
+        val lines = ArrayList<String>()
+        lines.add(getString(
+            R.string.organize_folder_result_main,
+            result.imported, result.moved, result.detached, result.linkedSets
+        ))
+        if (result.cancelled) lines.add(getString(R.string.organize_folder_result_cancelled))
+        if (result.heldNames.isNotEmpty()) {
+            lines.add(getString(
+                R.string.organize_folder_result_hold,
+                result.heldNames.size, result.heldNames.take(5).joinToString(", ")
+            ))
+        }
+        if (result.failed.isNotEmpty()) {
+            lines.add(getString(
+                R.string.organize_folder_result_failed,
+                result.failed.size, result.failed.take(5).joinToString(", ")
+            ))
+        }
+        if (result.unmovedOriginals > 0) {
+            lines.add(getString(R.string.organize_folder_result_unmoved, result.unmovedOriginals))
+        }
+        val opResult = if (result.failed.isEmpty()) {
+            OpResult.success(OpResult.CAT_MAINTENANCE, lines.first())
+        } else {
+            OpResult.failure(OpResult.CAT_MAINTENANCE, lines.first())
+        }
+        logOperation(opResult)
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.organize_folder_import)
+            .setMessage(lines.joinToString("\n"))
+            .setPositiveButton(R.string.confirm, null)
+            .show()
     }
 
     // ---------- 상세(바텀시트) ----------

@@ -480,6 +480,12 @@ class ImageManagerViewModel(
             // 갤러리에서 보던 이미지가 개명됐으면 추적 경로를 갱신 — load()의 목록 반영보다
             // 반드시 선행해야 재정렬 후에도 같은 이미지가 유지된다
             result.pathRemap[galleryPath]?.let { galleryPath = it }
+            // 재압축은 파일을 새 UUID로 개명한다 = 정리 폴더 토큰이 끊긴다. 별칭을 남겨
+            // 개명 전에 내보낸 사본이 돌아와도 같은 이미지로 인식되게 한다(설계 9장 C-1).
+            runCatching {
+                com.novelcharacter.app.util.FolderRoundtripPrefs
+                    .recordRenames(getApplication(), result.pathRemap)
+            }
             load()
             onDone(result)
         }
@@ -611,6 +617,10 @@ class ImageManagerViewModel(
                     if (finalCanon != e.finalPath) db.imageMetaDao().updatePath(finalCanon, e.originalPath)
                 }
                 File(e.finalPath).delete()
+                // 되돌리기도 개명이다(재압축본 → 원본) — 별칭을 남기지 않으면 재압축 뒤에
+                // 내보낸 사본의 토큰이 사라진 파일을 가리킨 채 끊긴다(C-1).
+                com.novelcharacter.app.util.FolderRoundtripPrefs
+                    .recordRenames(getApplication(), mapOf(e.finalPath to e.originalPath))
             }.onFailure { allOk = false }
         }
         return allOk
@@ -1008,6 +1018,94 @@ class ImageManagerViewModel(
             "char", "novel", "universe" -> base
             else -> "img"
         }
+    }
+
+    // ===== 정리 폴더 왕복 (받아오기) =====
+
+    /** 정리 폴더 나열·계획 결과. [accessible]=false면 권한 소실(폴더 삭제·권한 회수). */
+    data class FolderScanOutcome(
+        val bundle: com.novelcharacter.app.util.OrganizeFolderService.PlanBundle?,
+        val accessible: Boolean
+    )
+
+    suspend fun getOrganizeFolderUri(): String? =
+        ImageSettingsStore(getApplication()).getOrganizeFolderUri()
+
+    fun setOrganizeFolderUri(uri: String?, onDone: () -> Unit = {}) {
+        viewModelScope.launch {
+            ImageSettingsStore(getApplication()).setOrganizeFolderUri(uri)
+            // 폴더가 바뀌면 지문·진입 감지 캐시는 의미를 잃는다(별칭은 폴더와 무관해 남긴다).
+            withContext(Dispatchers.IO) {
+                com.novelcharacter.app.util.FolderRoundtripPrefs.clearFolderScopedState(getApplication())
+            }
+            onDone()
+        }
+    }
+
+    /**
+     * 정리 폴더를 나열해 계획까지 세운다. 실행은 [applyOrganizePlan]이 하며, 그 사이에
+     * 반드시 사용자 확인을 거친다(조용한 대량 반영 금지).
+     */
+    fun scanOrganizeFolder(onDone: (FolderScanOutcome) -> Unit) {
+        _loading.value = true
+        viewModelScope.launch {
+            val outcome = withContext(Dispatchers.IO) {
+                val uriString = ImageSettingsStore(getApplication()).getOrganizeFolderUri()
+                    ?: return@withContext FolderScanOutcome(null, accessible = false)
+                val uri = runCatching { android.net.Uri.parse(uriString) }.getOrNull()
+                    ?: return@withContext FolderScanOutcome(null, accessible = false)
+                val service = com.novelcharacter.app.util.OrganizeFolderService
+                val scan = service.scan(getApplication(), uri)
+                    ?: return@withContext FolderScanOutcome(null, accessible = false)
+                FolderScanOutcome(service.buildPlan(getApplication(), db, scan), accessible = true)
+            }
+            _loading.value = false
+            onDone(outcome)
+        }
+    }
+
+    /**
+     * 계획을 반영한다. 진행도는 [onProgress](메인 스레드)로 올라오고, [isCancelled]가 true가
+     * 되면 그 항목까지 반영하고 멈춘다.
+     */
+    fun applyOrganizePlan(
+        bundle: com.novelcharacter.app.util.OrganizeFolderService.PlanBundle,
+        onProgress: (Int, Int) -> Unit,
+        isCancelled: () -> Boolean,
+        onDone: (com.novelcharacter.app.util.OrganizeFolderService.ApplyResult) -> Unit
+    ) {
+        viewModelScope.launch {
+            val uriString = ImageSettingsStore(getApplication()).getOrganizeFolderUri()
+            val uri = uriString?.let { runCatching { android.net.Uri.parse(it) }.getOrNull() }
+            if (uri == null) {
+                onDone(com.novelcharacter.app.util.OrganizeFolderService.ApplyResult())
+                return@launch
+            }
+            val result = runCatching {
+                com.novelcharacter.app.util.OrganizeFolderService.applyPlan(
+                    getApplication(), db, uri, bundle,
+                    onProgress = { done, total -> withContext(Dispatchers.Main) { onProgress(done, total) } },
+                    isCancelled = isCancelled
+                )
+            }.getOrElse {
+                // 어떤 예외에도 크래시 대신 '반영 없음'으로 통보한다(변수 제어).
+                com.novelcharacter.app.util.OrganizeFolderService.ApplyResult()
+            }
+            load()
+            onDone(result)
+        }
+    }
+
+    /**
+     * 진입 감지 — 정리 폴더의 신규 후보 개수만 센다(D5). 폴더가 없거나 접근이 안 되면 0을
+     * 돌려주고 **조용히 생략한다**(수동 메뉴가 항상 있다 — 진입마다 실패를 알리면 소음이다).
+     */
+    suspend fun countOrganizeFolderCandidates(): Int = withContext(Dispatchers.IO) {
+        val uriString = ImageSettingsStore(getApplication()).getOrganizeFolderUri() ?: return@withContext 0
+        val uri = runCatching { android.net.Uri.parse(uriString) }.getOrNull() ?: return@withContext 0
+        val scan = com.novelcharacter.app.util.OrganizeFolderService.scan(getApplication(), uri)
+            ?: return@withContext 0
+        scan.files.size
     }
 
     /** imagePaths JSON에서 [oldPath]/[oldCanon]에 해당하는 항목을 [newPath]로 교체해 재직렬화. */

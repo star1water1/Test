@@ -549,6 +549,14 @@ class ExcelImporter(context: Context) {
             pendingImageFailures = 0
             if (options.images && hasImages) {
                 pendingImageFailures = restoreImages(imageMapJson, extractDir, imagePathRemap)
+                // 복원은 원 파일이 없을 때 새 UUID로 자리를 잡는다 = 정리 폴더 토큰이 끊긴다.
+                // 별칭을 남겨 다른 기기에서 내보낸 사본도 같은 이미지로 이어지게 한다(C-1).
+                runCatching {
+                    com.novelcharacter.app.util.FolderRoundtripPrefs.recordRenames(
+                        appContext,
+                        imagePathRemap.filter { (old, new) -> old != new }
+                    )
+                }
             }
 
             // xlsx 가져오기

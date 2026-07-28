@@ -51,8 +51,27 @@ class ImageSettingsStore(private val context: Context) {
 
         private val KEY_EDITOR_REMOVE_POLICY = stringPreferencesKey("editor_remove_policy")
         private val KEY_AUTO_LINK_BY_CHARACTER = booleanPreferencesKey("auto_link_by_character")
+        private val KEY_ORGANIZE_FOLDER_URI = stringPreferencesKey("organize_folder_uri")
 
         const val DEFAULT_AUTO_LINK_BY_CHARACTER = true
+    }
+
+    /**
+     * 정리 폴더(SAF 트리) URI. 지정하면 그 폴더의 이미지를 이미지 탭에서 받아올 수 있고,
+     * 정리용 내보내기의 대상 폴더가 된다.
+     *
+     * 권한이 사라져도(폴더 삭제·권한 회수) **자동으로 지우지 않는다** — 사용자가 상황을 보고
+     * 재지정할지 해제할지 정한다(조용한 설정 변경 금지).
+     */
+    suspend fun getOrganizeFolderUri(): String? {
+        val prefs = context.imageSettingsDataStore.data.first()
+        return prefs[KEY_ORGANIZE_FOLDER_URI]?.takeIf { it.isNotBlank() }
+    }
+
+    suspend fun setOrganizeFolderUri(uri: String?) {
+        context.imageSettingsDataStore.edit {
+            if (uri.isNullOrBlank()) it.remove(KEY_ORGANIZE_FOLDER_URI) else it[KEY_ORGANIZE_FOLDER_URI] = uri
+        }
     }
 
     /**

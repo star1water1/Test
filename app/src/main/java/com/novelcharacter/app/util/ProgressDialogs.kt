@@ -7,8 +7,13 @@ import androidx.appcompat.app.AlertDialog
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 
 /**
- * 공용 불확정 진행 다이얼로그 — 백업/내보내기/초기화 등 오래 걸리는 작업에서
- * "진행 중"인지 "조용히 실패"했는지 사용자가 판별할 수 있게 한다(변수 제어).
+ * 공용 **불확정** 진행 다이얼로그 — 끝을 모르는 로딩에서 "진행 중"인지 "조용히 실패"했는지
+ * 사용자가 판별할 수 있게 한다(변수 제어).
+ *
+ * **총량을 아는 순회 작업은 이것을 쓰지 않는다** — 규약 R-26에 따라
+ * [com.novelcharacter.app.ui.common.TaskProgressDialog](결정형 막대 + "N/M (p%)")를 쓴다.
+ * 총량을 모르는데 퍼센트를 붙이면 0→100 깜빡임이거나 90% 정지(거짓말)가 되기 때문이다.
+ * 여기는 조회형 로딩과, 총량을 셀 수 없는 단발 작업의 자리다.
  *
  * 호출측 규약:
  * - 작업 시작 직전에 show(), 완료/실패와 무관하게 finally에서 dismiss한다.

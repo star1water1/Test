@@ -2008,6 +2008,40 @@
     <string name="image_manager_sort_date">날짜순</string>
     <string name="image_manager_clean_orphans">고아 이미지 정리</string>
     <string name="image_manager_refresh">새로고침</string>
+
+    <!-- 정리 폴더 왕복(받아오기) -->
+    <string name="organize_folder_import">정리 폴더 받아오기</string>
+    <string name="organize_folder_settings">정리 폴더 설정</string>
+    <string name="organize_folder_purpose">폴더를 지정하면 그 폴더에 넣은 이미지를 이미지 탭에서 받아올 수 있고, 정리용 내보내기의 대상 폴더로 쓰입니다.</string>
+    <string name="organize_folder_pick">폴더 지정</string>
+    <string name="organize_folder_clear">지정 해제</string>
+    <string name="organize_folder_set">정리 폴더를 지정했습니다</string>
+    <string name="organize_folder_cleared">정리 폴더 지정을 해제했습니다</string>
+    <string name="organize_folder_none">지정된 폴더가 없습니다.</string>
+    <string name="organize_folder_current">현재 폴더: %s</string>
+    <string name="organize_folder_unavailable">정리 폴더에 접근할 수 없습니다. 폴더가 지워졌거나 접근 권한이 사라졌습니다 — 폴더를 다시 지정해 주세요. (지정은 그대로 두었습니다)</string>
+    <string name="organize_folder_banner">정리 폴더에 새 이미지 %d장</string>
+    <string name="organize_folder_nothing">정리 폴더에서 반영할 것을 찾지 못했습니다.</string>
+    <string name="organize_folder_apply">반영</string>
+    <string name="organize_folder_stage_apply">폴더의 이미지를 반영하는 중</string>
+    <string name="organize_folder_summary_new">새로 편입: %d장</string>
+    <string name="organize_folder_summary_move">배정 이동: %d장</string>
+    <string name="organize_folder_summary_detach">배정 해제: %d장</string>
+    <string name="organize_folder_summary_sets">링크 묶음: %d개</string>
+    <string name="organize_folder_summary_merge">기존 링크 %1$d개가 합쳐집니다 (폴더에 없던 이미지 %2$d장이 함께 묶입니다)</string>
+    <string name="organize_folder_summary_hold">보류: %d장 (판단할 수 없어 이번에는 반영하지 않습니다 — 파일은 폴더에 그대로 남습니다)</string>
+    <string name="organize_folder_summary_ambiguous">같은 이름의 캐릭터가 둘 이상이라 배정을 보류한 폴더: %s</string>
+    <string name="organize_folder_summary_unknown_token">앱에서 내보낸 사본으로 보이지만 원본을 찾지 못한 파일 %d장 — 새 이미지로 편입합니다</string>
+    <string name="organize_folder_summary_already">지난번에 이미 받아온 파일 %d장은 건너뜁니다</string>
+    <string name="organize_folder_summary_ignored">이미지가 아닌 파일 %1$d개, 정해진 위치 밖의 파일·폴더 %2$d개는 건드리지 않습니다</string>
+    <string name="organize_folder_result_main">새로 편입 %1$d장 · 배정 이동 %2$d장 · 배정 해제 %3$d장 · 링크 묶음 %4$d개</string>
+    <string name="organize_folder_result_cancelled">취소해서 여기까지만 반영했습니다</string>
+    <string name="organize_folder_result_hold">보류 %1$d장: %2$s</string>
+    <string name="organize_folder_result_failed">실패 %1$d장: %2$s</string>
+    <string name="organize_folder_result_unmoved">원본 %d장은 \'_처리됨\' 폴더로 옮기지 못했습니다 — 폴더에 그대로 있지만 다음 받아오기에서 다시 편입하지 않습니다</string>
+
+    <!-- 공용 진행도(R-26) -->
+    <string name="task_progress_count">%1$d / %2$d (%3$d%%)</string>
     <string name="image_manager_view_full">전체화면 보기</string>
     <string name="image_manager_delete_title">이미지 삭제</string>
     <string name="image_manager_delete_referenced_confirm">이 이미지는 %1$d곳에서 사용 중입니다. 삭제하면 해당 항목에서도 함께 제거됩니다. 계속하시겠습니까?</string>

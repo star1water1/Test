@@ -75,6 +75,19 @@
         android:textColor="?attr/colorOnSurfaceVariant"
         tools:text="총 42개 · 12.3 MB (참조 38 · 고아 4)" />
 
+    <!-- 정리 폴더 진입 감지 배너 — 폴더에 새 이미지가 있을 때만 보인다(D5) -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/organizeFolderBanner"
+        style="@style/Widget.Material3.Button.TonalButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        android:layout_marginBottom="4dp"
+        android:visibility="gone"
+        tools:visibility="visible"
+        tools:text="정리 폴더에 새 이미지 3장" />
+
     <!-- 필터 칩 -->
     <HorizontalScrollView
         android:layout_width="match_parent"
