@@ -377,6 +377,15 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
             imageStrip.refresh()
         }
 
+        // 저장 게이트는 뷰 수명 단위로 다시 잠근다. 게이트 3필드는 프래그먼트 필드라
+        // 뷰만 재생성되는 복귀(이미지 뷰어 등 전진 내비, 보충 체인 뒤로가기, 탭 전환)에도
+        // 살아남는데, 아래의 버튼 비활성화는 뷰마다 다시 실행된다. 지난 뷰에서 열린 래치가
+        // 남아 있으면 maybeOpenSaveGate가 첫 줄에서 반환해 버튼이 영영 다시 켜지지 않고,
+        // 재적재 더티 억제(initialHydration = !saveGateOpen)도 같은 래치를 보고 어긋난다.
+        saveGateOpen = false
+        initialLoadsDone = false
+        lastHydratedNovelPos = -1
+
         // 기존 캐릭터는 초기 적재 완료까지 저장 차단 (maybeOpenSaveGate가 다시 연다)
         if (characterId != -1L) {
             if (supplementMode) binding.btnSaveAndNext.isEnabled = false
