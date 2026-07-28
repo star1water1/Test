@@ -67,20 +67,26 @@ object AiFieldSuggestSheet {
         val context = fragment.requireContext()
         if (!guardProvider(fragment)) return
 
+        // 대상 규칙의 단일 소스 — 보충(랜덤) 탭도 같은 함수를 쓴다. 여기서 필터를 직접
+        // 조립하면 두 화면이 갈린다 (A-1: AI 꺼짐·서술형·계산 필드가 사유별로 제외된다).
         val currentValues = currentValuesByFieldId(formBuilder)
-        val allSpecs = formBuilder.fieldDefinitions.mapNotNull { fd ->
-            CharacterFieldAiSuggester.fieldSpecOf(fd, currentValues[fd.id] ?: "")?.let { fd.id to it }
-        }
-        if (allSpecs.isEmpty()) {
+        val bulk = CharacterFieldAiSuggester.bulkTargetsOf(formBuilder.fieldDefinitions, currentValues)
+        if (bulk.targets.isEmpty()) {
+            // 대상 0이어도 왜 0인지는 밝힌다 — 전부 꺼짐/서술형일 때 침묵하면 기능 고장으로 읽힌다
+            val message = buildString {
+                append(fragment.getString(R.string.ai_field_no_targets))
+                CharacterFieldAiSuggester.bulkExcludedDetailLines(bulk.excluded)
+                    .forEach { append("\n· ").append(it) }
+            }
             MaterialAlertDialogBuilder(context)
-                .setMessage(R.string.ai_field_no_targets)
+                .setMessage(message)
                 .setPositiveButton(R.string.confirm, null)
                 .show()
             return
         }
         val emptyIds = formBuilder.emptyEditableFieldIds()
-        val emptySpecs = allSpecs.filter { it.first in emptyIds }.map { it.second }
-        val allSpecList = allSpecs.map { it.second }
+        val emptySpecs = bulk.targets.filter { it.fieldId in emptyIds }.map { it.spec }
+        val allSpecList = bulk.targets.map { it.spec }
 
         // 비용 고지 + '이미 입력된 필드도 포함' 선택 (기본: 빈 필드만)
         val density = context.resources.displayMetrics.density
@@ -92,10 +98,40 @@ object AiFieldSuggestSheet {
             text = fragment.getString(R.string.ai_field_include_filled)
             isChecked = false
         }
+        // 제외 고지 — 사라진 것을 개수로 남긴다(R-14). 계산 필드 제외는 종전에도 있었지만
+        // 아무도 알려주지 않았다 — 이 줄이 그것도 함께 메운다.
+        val excludedSummary = CharacterFieldAiSuggester.bulkExcludedSummary(bulk.excluded)
+        val excludedText = TextView(context).apply {
+            textSize = 13f
+            setTextColor(context.getColor(R.color.text_secondary))
+            isVisible = excludedSummary != null
+            text = excludedSummary?.let { fragment.getString(R.string.ai_field_excluded_line, it) }
+        }
+        val excludedDetail = TextView(context).apply {
+            textSize = 12f
+            setTextColor(context.getColor(R.color.text_secondary))
+            isVisible = false
+            text = CharacterFieldAiSuggester.bulkExcludedDetailLines(bulk.excluded)
+                .joinToString("\n") { "· $it" }
+        }
+        val showExcludedLink = TextView(context).apply {
+            textSize = 13f
+            setTextColor(context.getColor(R.color.primary))
+            isVisible = excludedSummary != null
+            text = fragment.getString(R.string.ai_field_excluded_show)
+            setPadding(0, (4 * density).toInt(), 0, 0)
+            setOnClickListener {
+                excludedDetail.isVisible = true
+                isVisible = false
+            }
+        }
         val panel = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(pad, pad / 2, pad, 0)
             addView(message)
+            addView(excludedText)
+            addView(showExcludedLink)
+            addView(excludedDetail)
             addView(includeFilledCheck)
         }
 

@@ -117,7 +117,7 @@ class DynamicFieldFormBuilder(
     private fun createDiceButton(context: Context, density: Float, action: () -> Unit) =
         createInlineActionButton(context, density, "🎲", action)
 
-    /** 필드가 ✨ AI 추천 대상이면 버튼 생성 — CALCULATED·미지 타입은 제외 */
+    /** 필드가 ✨ AI 추천 대상이면 버튼 생성 — CALCULATED·미지 타입·AI 추천 꺼짐(A-1)은 제외 */
     private fun createAiButtonOrNull(
         context: Context,
         density: Float,
@@ -126,7 +126,25 @@ class DynamicFieldFormBuilder(
         val handler = aiSuggestHandler ?: return null
         val type = FieldType.fromName(field.type) ?: return null
         if (type == FieldType.CALCULATED) return null
+        // 토글 OFF의 의미는 "이 필드는 AI가 건드리지 않는다" — 버튼만 남기면 토글이 일괄
+        // 필터로 격하된다. 꺼짐 사유는 필드 관리 목록(스위치 조감)과 일괄 고지에서 보인다.
+        if (!com.novelcharacter.app.data.model.FieldAiPolicy.isSuggestEnabled(field.config)) return null
         return createInlineActionButton(context, density, "✨") { handler(field) }
+    }
+
+    /**
+     * 필드 설명(A-2)이 있으면 ⓘ 버튼 생성 — 🎲·✨과 같은 문법. 설명이 없는 필드에는
+     * 아이콘을 만들지 않는다(눌러도 빈 다이얼로그가 뜨는 버튼은 구색이다).
+     */
+    private fun createInfoButtonOrNull(
+        context: Context,
+        density: Float,
+        field: FieldDefinition
+    ): com.google.android.material.button.MaterialButton? {
+        if (com.novelcharacter.app.data.model.FieldDescription.fromConfig(field.config).isBlank()) return null
+        return createInlineActionButton(context, density, "ⓘ") {
+            com.novelcharacter.app.ui.common.HelpDialog.showFieldNote(context, field)
+        }
     }
 
     /** 입력 레이아웃 + 인라인 버튼들을 한 행으로 배치. 버튼이 없으면 입력만 추가 (기존 렌더 유지) */
@@ -466,6 +484,7 @@ class DynamicFieldFormBuilder(
                             labelRow.addView(genBtn)
                         }
                         createAiButtonOrNull(context, density, field)?.let { labelRow.addView(it) }
+                        createInfoButtonOrNull(context, density, field)?.let { labelRow.addView(it) }
                         container.addView(labelRow)
 
                         val partsContainer = LinearLayout(context).apply {
@@ -544,6 +563,7 @@ class DynamicFieldFormBuilder(
                         val textButtons = buildList {
                             if (unstructuredDiceAction != null) add(createDiceButton(context, density, unstructuredDiceAction))
                             createAiButtonOrNull(context, density, field)?.let { add(it) }
+                            createInfoButtonOrNull(context, density, field)?.let { add(it) }
                         }
                         addInputRow(container, context, density, inputLayout, textButtons)
                         fieldInputMap[field.id] = editText
@@ -576,6 +596,7 @@ class DynamicFieldFormBuilder(
                             add(createDiceButton(context, density) { applyRandomForField(field, fieldType) })
                         }
                         createAiButtonOrNull(context, density, field)?.let { add(it) }
+                        createInfoButtonOrNull(context, density, field)?.let { add(it) }
                     }
                     addInputRow(container, context, density, inputLayout, numberButtons)
                     fieldInputMap[field.id] = editText
@@ -599,6 +620,7 @@ class DynamicFieldFormBuilder(
                         labelRow.addView(createDiceButton(context, density) { applyRandomForField(field, fieldType) })
                     }
                     createAiButtonOrNull(context, density, field)?.let { labelRow.addView(it) }
+                    createInfoButtonOrNull(context, density, field)?.let { labelRow.addView(it) }
                     container.addView(labelRow)
 
                     val options = parseSelectOptions(field.config)
@@ -642,6 +664,7 @@ class DynamicFieldFormBuilder(
                         gradeLabelRow.addView(createDiceButton(context, density) { applyRandomForField(field, fieldType) })
                     }
                     createAiButtonOrNull(context, density, field)?.let { gradeLabelRow.addView(it) }
+                    createInfoButtonOrNull(context, density, field)?.let { gradeLabelRow.addView(it) }
                     container.addView(gradeLabelRow)
 
                     val grades = parseGradeOptions(field.config)
@@ -686,7 +709,10 @@ class DynamicFieldFormBuilder(
                     }
                     inputLayout.addView(editText)
                     addInputRow(container, context, density, inputLayout,
-                        listOfNotNull(createAiButtonOrNull(context, density, field)))
+                        listOfNotNull(
+                            createAiButtonOrNull(context, density, field),
+                            createInfoButtonOrNull(context, density, field)
+                        ))
                     fieldInputMap[field.id] = editText
                     // 자동완성은 폼 구성 후 배치 로드에서 일괄 장착 (라이브러리 제안 + 폴백)
                     autoCompleteTargets.add(Triple(field.id, DisplayFormat.fromConfig(field.config), editText))

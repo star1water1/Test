@@ -96,6 +96,53 @@
                 android:text="@string/label_required_field"
                 android:layout_marginBottom="12dp" />
 
+            <!-- 필드 설명 (A-2) — 사용자가 쓰는 "이 필드가 무엇인지". 카운터 상한은 코드에서
+                 FieldDescription.MAX_CHARS로 채운다 (상한 단일 소스) -->
+            <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/fieldDescriptionLayout"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="12dp"
+                android:hint="@string/hint_field_description"
+                app:counterEnabled="true"
+                app:helperText="@string/helper_field_description">
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/editFieldDescription"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:inputType="textMultiLine"
+                    android:minLines="1"
+                    android:maxLines="6"
+                    android:gravity="top" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <!-- AI (A-1) — 추천 대상 토글. 사건 필드에는 노출하지 않는다(R-24) -->
+            <LinearLayout
+                android:id="@+id/aiSectionLayout"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:layout_marginBottom="12dp"
+                android:padding="12dp"
+                android:background="@drawable/bg_count_badge">
+
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/switchAiSuggest"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/field_ai_suggest_label"
+                    android:checked="true" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="@string/field_ai_suggest_desc"
+                    android:textAppearance="@style/TextAppearance.App.Caption"
+                    android:textColor="@color/text_secondary" />
+
+            </LinearLayout>
+
             <!-- 표시 형식 (TEXT/MULTI_TEXT 타입일 때 표시) -->
             <LinearLayout
                 android:id="@+id/displayFormatLayout"

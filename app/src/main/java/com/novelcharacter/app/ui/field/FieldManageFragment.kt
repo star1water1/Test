@@ -111,6 +111,17 @@ class FieldManageFragment : Fragment() {
             },
             onLongClick = { field ->
                 showFieldOptionsDialog(field)
+            },
+            // A-1: 1탭 즉시 반영 — 재정렬과 같은 규칙(성공 무통보, 실패만 알림). 목록 재방출로
+            // 스위치 상태가 DB 값과 다시 맞춰지므로 실패해도 화면이 거짓 상태로 남지 않는다.
+            onAiToggle = { field, enabled ->
+                viewModel.updateFieldQuiet(
+                    field.copy(config = com.novelcharacter.app.data.model.FieldAiPolicy.applyToConfig(field.config, enabled))
+                )
+            },
+            // A-2: 필드 설명 — 폼의 ⓘ와 같은 다이얼로그
+            onInfoClick = { field ->
+                com.novelcharacter.app.ui.common.HelpDialog.showFieldNote(requireContext(), field)
             }
         )
         binding.fieldRecyclerView.layoutManager = LinearLayoutManager(requireContext())

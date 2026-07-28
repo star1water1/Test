@@ -119,6 +119,11 @@ class NarrativeFieldAiWriter(private val aiService: AiService) {
         /** 현재 입력값. [Mode.requiresExisting] 모드는 이것이 비면 성립하지 않는다. */
         val currentValue: String,
         /**
+         * 사용자가 쓴 필드 설명(A-2) — 세 AI 경로가 같은 설명을 봐야 같은 필드가 경로마다
+         * 다른 정의로 해석되지 않는다. 프롬프트 적재량 설정의 대상이 아니다(계약이지 힌트가 아니다).
+         */
+        val description: String = "",
+        /**
          * 같은 필드에 **다른 캐릭터가 이미 쓴 글**(문체 참고). [selectStyleSamples]가 고르고
          * 호출측 VM이 DB에서 싣는다. 짧은 값 추천의 '기존 사용값'에 대응하는 서술형판이다 —
          * 값 목록으로는 문체(어투·시점·문장 길이·상세도)를 전할 수 없기 때문에 글로 전한다.
@@ -196,7 +201,8 @@ class NarrativeFieldAiWriter(private val aiService: AiService) {
             key = field.key,
             name = field.name,
             groupName = field.groupName,
-            currentValue = currentValue
+            currentValue = currentValue,
+            description = com.novelcharacter.app.data.model.FieldDescription.fromConfig(field.config)
         )
 
         /** 이 필드·현재값에서 실제로 고를 수 있는 모드. 원문이 없으면 초안만 가능하다. */
@@ -218,6 +224,8 @@ class NarrativeFieldAiWriter(private val aiService: AiService) {
             5. 원문이 주어진 경우 그 인물·설정·문체를 유지한다.
             6. [문체 참고]가 주어지면 그 글들의 **어투·시점·문장 길이·상세도**를 따른다.
                내용·설정·표현을 가져오지 말고 문체만 따른다. 참고에 나온 인물을 등장시키지 마라.
+            7. 대상 필드에 '설명'이 붙어 있으면 그 설명이 이 작품에서 그 필드가 뜻하는 바의
+               정의이자 제약이다. 설명과 어긋나는 내용을 쓰지 마라.
         """.trimIndent()
 
         fun buildUserPrompt(
@@ -259,6 +267,17 @@ class NarrativeFieldAiWriter(private val aiService: AiService) {
 
             sb.append("\n[대상 필드]\n")
             sb.append("[").append(field.groupName).append("] ").append(field.name).append('\n')
+            // 필드 설명(A-2) — 값의 계약. 짧은 값 경로와 같은 프롬프트 상한을 쓴다.
+            if (field.description.isNotBlank()) {
+                val desc = field.description.trim()
+                val cap = CharacterFieldAiSuggester.MAX_DESCRIPTION_PROMPT_CHARS
+                if (desc.length > cap) {
+                    notes.add("'${field.name}' 필드 설명 ${cap}자 초과분 생략")
+                    sb.append("설명: ").append(desc.take(cap)).append("…\n")
+                } else {
+                    sb.append("설명: ").append(desc).append('\n')
+                }
+            }
 
             if (mode.requiresExisting) {
                 val existing = if (field.currentValue.length > MAX_EXISTING_CHARS) {
