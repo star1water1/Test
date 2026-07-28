@@ -33,12 +33,13 @@ import kotlinx.coroutines.launch
  */
 object AiFieldSuggestSheet {
 
-    /** 필드 1개 추천 — 폼의 ✨ 버튼 진입점 */
+    /** 필드 1개 추천 — 폼의 ✨ 버튼 진입점. [targetCharacterId]는 오적용 검출 축(A-3, 신규는 -1) */
     fun showForField(
         fragment: Fragment,
         field: FieldDefinition,
         formBuilder: DynamicFieldFormBuilder,
         viewModel: CharacterViewModel,
+        targetCharacterId: Long,
         contextLoader: suspend () -> CharacterFieldAiSuggester.CharacterAiContext
     ) {
         val context = fragment.requireContext()
@@ -51,17 +52,25 @@ object AiFieldSuggestSheet {
             .setTitle(R.string.ai_field_suggest_title)
             .setMessage(fragment.getString(R.string.ai_field_cost_notice_single, field.name))
             .setPositiveButton(R.string.ai_field_run) { _, _ ->
-                runSuggest(fragment, viewModel, contextLoader, listOf(spec), singleMode = true)
+                runSuggest(
+                    fragment, viewModel, contextLoader, listOf(spec),
+                    singleMode = true, targetCharacterId = targetCharacterId
+                )
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
     }
 
-    /** 전체 필드 추천 — 편집 화면의 'AI 필드 추천' 버튼 진입점 */
+    /**
+     * 전체 필드 추천 — 편집 화면·보충 탭의 'AI 필드 추천' 버튼 진입점.
+     * [extraNote]는 비용 고지에 덧붙일 맥락 한 줄(보충 플로우의 기대치 조정 등). null이면 없음.
+     */
     fun showForCharacter(
         fragment: Fragment,
         formBuilder: DynamicFieldFormBuilder,
         viewModel: CharacterViewModel,
+        targetCharacterId: Long,
+        extraNote: String? = null,
         contextLoader: suspend () -> CharacterFieldAiSuggester.CharacterAiContext
     ) {
         val context = fragment.requireContext()
@@ -132,6 +141,14 @@ object AiFieldSuggestSheet {
             addView(excludedText)
             addView(showExcludedLink)
             addView(excludedDetail)
+            if (extraNote != null) {
+                addView(TextView(context).apply {
+                    textSize = 12f
+                    setTextColor(context.getColor(R.color.text_secondary))
+                    text = extraNote
+                    setPadding(0, (4 * density).toInt(), 0, 0)
+                })
+            }
             addView(includeFilledCheck)
         }
 
@@ -173,7 +190,10 @@ object AiFieldSuggestSheet {
                 val targets = currentTargets()
                 if (targets.isEmpty()) return@setOnClickListener
                 dialog.dismiss()
-                runSuggest(fragment, viewModel, contextLoader, targets, singleMode = false)
+                runSuggest(
+                    fragment, viewModel, contextLoader, targets,
+                    singleMode = false, targetCharacterId = targetCharacterId
+                )
             }
         }
         dialog.show()
@@ -209,12 +229,16 @@ object AiFieldSuggestSheet {
         contextLoader: suspend () -> CharacterFieldAiSuggester.CharacterAiContext,
         targets: List<CharacterFieldAiSuggester.FieldSpec>,
         singleMode: Boolean,
-        applyConfidenceFilter: Boolean = true
+        applyConfidenceFilter: Boolean = true,
+        targetCharacterId: Long = -1L
     ) {
         fragment.viewLifecycleOwner.lifecycleScope.launch {
             val aiContext = contextLoader()
             if (!fragment.isAdded) return@launch
-            if (!viewModel.runAiSuggest(aiContext, targets, singleMode, applyConfidenceFilter)) {
+            if (!viewModel.runAiSuggest(
+                    aiContext, targets, singleMode, applyConfidenceFilter, targetCharacterId
+                )
+            ) {
                 // 이미 실행 중 — 무통보로 삼키지 않는다
                 Toast.makeText(fragment.requireContext(), R.string.ai_field_running, Toast.LENGTH_SHORT).show()
             }
@@ -251,7 +275,10 @@ object AiFieldSuggestSheet {
                     fragment.getString(R.string.ai_field_retry_missing, retry.size)
                 ) { _, _ ->
                     viewModel.clearAiSuggestResult()
-                    runSuggest(fragment, viewModel, contextLoader, retry, singleMode = false)
+                    runSuggest(
+                        fragment, viewModel, contextLoader, retry,
+                        singleMode = false, targetCharacterId = run.targetCharacterId
+                    )
                 }
             }
             builder.show()
@@ -362,6 +389,7 @@ object AiFieldSuggestSheet {
                 d.dismiss()
                 showRefineDialog(
                     fragment, viewModel, contextLoader, formBuilder, row, listOf(row),
+                    targetCharacterId = run.targetCharacterId,
                     dismissReview = {},
                     // 1건 모드에는 돌아갈 목록이 없다 — 수정 확정이 곧 적용이다(단계를 늘리지 않는다)
                     onEdited = { edited ->
@@ -413,7 +441,10 @@ object AiFieldSuggestSheet {
                     if (keep.isNotEmpty()) applySelected(fragment, formBuilder, keep)
                     dialogRef?.dismiss()
                     viewModel.clearAiSuggestResult()
-                    runSuggest(fragment, viewModel, contextLoader, retryTargets, singleMode = false)
+                    runSuggest(
+                        fragment, viewModel, contextLoader, retryTargets,
+                        singleMode = false, targetCharacterId = run.targetCharacterId
+                    )
                 }
             )
         }
@@ -433,6 +464,7 @@ object AiFieldSuggestSheet {
             val refine = outlinedButton(context, density, fragment.getString(R.string.ai_field_refine)) {
                 showRefineDialog(
                     fragment, viewModel, contextLoader, formBuilder, row, rows,
+                    targetCharacterId = run.targetCharacterId,
                     dismissReview = { dialogRef?.dismiss() },
                     onEdited = { edited ->
                         // 손수 고른 값은 곧 채택 의사다 — 체크를 켜 두어 한 번 더 누르게 하지 않는다
@@ -538,6 +570,7 @@ object AiFieldSuggestSheet {
         formBuilder: DynamicFieldFormBuilder,
         row: Row,
         allRows: List<Row>,
+        targetCharacterId: Long,
         dismissReview: () -> Unit,
         /** 값 수정이 확정된 뒤 할 일 — 검토 목록은 다시 그리고, 1건 모드는 바로 적용한다 */
         onEdited: (Row) -> Unit
@@ -622,7 +655,8 @@ object AiFieldSuggestSheet {
                 // 콕 집어 다시 묻는 요청이므로 근거 강도 하한을 적용하지 않는다
                 runSuggest(
                     fragment, viewModel, contextLoader, listOf(target),
-                    singleMode = true, applyConfidenceFilter = false
+                    singleMode = true, applyConfidenceFilter = false,
+                    targetCharacterId = targetCharacterId
                 )
             }
             dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener { dialog.dismiss() }

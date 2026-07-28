@@ -2326,7 +2326,8 @@
     <string name="ai_field_reason_format">근거: %1$s</string>
     <string name="ai_field_apply">선택 적용</string>
     <string name="ai_field_single_apply">적용</string>
-    <string name="ai_field_applied">AI 추천 %1$d건 적용 — 저장을 눌러야 반영됩니다</string>
+<!-- "저장을 눌러야"가 아니라 "저장 시" — 자동저장(보충 탭 옵트인) 상태에서도 거짓이 되지 않는 문구 (A-3 §5-5) -->
+    <string name="ai_field_applied">AI 추천 %1$d건을 폼에 적용했습니다 — 저장 시 반영됩니다</string>
     <string name="ai_field_apply_none">적용하지 못했습니다 — 폼이 아직 준비되지 않았습니다. 잠시 후 다시 시도하세요.</string>
 
     <!-- A-1 필드별 AI 추천 토글 / A-2 필드 설명 -->
@@ -2337,6 +2338,14 @@
     <string name="field_description_info_desc">필드 설명 보기</string>
     <string name="ai_field_excluded_line">제외: %1$s</string>
     <string name="ai_field_excluded_show">제외 목록 보기</string>
+
+    <!-- A-3 보충(랜덤) 탭 AI 추천 — 예방(뽑기 잠금)·검출(캐릭터 불일치) -->
+    <string name="ai_field_busy_pick_blocked">AI 추천을 받는 중입니다 — 완료 후 이동할 수 있습니다</string>
+    <string name="ai_result_character_mismatch">이 AI 추천은 \'%1$s\'에게 요청한 것인데, 지금 화면의 캐릭터가 다릅니다. 어떻게 할까요?</string>
+    <string name="ai_result_return_apply">%1$s(으)로 돌아가 적용</string>
+    <string name="ai_result_discard">버리기</string>
+    <string name="ai_result_target_deleted">요청했던 캐릭터가 삭제되어 결과를 적용할 곳이 없습니다.</string>
+    <string name="ai_supplement_scope_note">AI 추천이 메우는 것은 비어 있는 필드 값입니다 — 이미지·관계·작품 배정·사건·세력 미흡은 추천 대상이 아닙니다.</string>
 
     <!-- restricted 입력 모드 위반 안내 -->
     <string name="field_library_restricted_violation_title">허용되지 않은 값</string>

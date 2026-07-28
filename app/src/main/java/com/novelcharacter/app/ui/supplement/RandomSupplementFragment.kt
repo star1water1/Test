@@ -92,6 +92,10 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
     private lateinit var fieldRenderer: DynamicFieldRenderer
     private lateinit var backCallback: OnBackPressedCallback
 
+    // AI 추천 (A-3) — 진행 다이얼로그 + 편집 하이드레이션 완료 후 결과 표시 예약
+    private var aiProgressDialog: AlertDialog? = null
+    private var pendingAiResultShow = false
+
     private val imagePickerLauncher = registerForActivityResult(
         ActivityResultContracts.GetMultipleContents()
     ) { uris: List<Uri> ->
@@ -161,6 +165,8 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
         val host = parentFragment as? SupplementFragment
         if (host?.editGuard === this) host.editGuard = null
         if (::imageStrip.isInitialized) imageStrip.detach()
+        aiProgressDialog?.dismiss()
+        aiProgressDialog = null
         binding.imageViewPager.adapter = null
         super.onDestroyView()
         _binding = null
@@ -195,6 +201,20 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
             viewModel = characterViewModel,
             onFieldChanged = { markDirty() }
         )
+        // ✨ 필드별 AI 진입 (A-3) — 편집 화면과 같은 분기(서술형/짧은 값), 같은 컨텍스트 조립기.
+        // 핸들러를 설정하면 폼 빌더가 편집 가능 필드에 ✨을 자동으로 붙인다.
+        formBuilder.aiSuggestHandler = { field ->
+            val targetId = displayedCharacter?.id ?: -1L
+            if (com.novelcharacter.app.data.model.NarrativeMode.isNarrative(field)) {
+                com.novelcharacter.app.ui.character.NarrativeWriteSheet.show(
+                    this, field, targetId, formBuilder, characterViewModel
+                ) { buildAiContext() }
+            } else {
+                com.novelcharacter.app.ui.character.AiFieldSuggestSheet.showForField(
+                    this, field, formBuilder, characterViewModel, targetId
+                ) { buildAiContext() }
+            }
+        }
 
         saveCoordinator = CharacterSaveCoordinator(
             fragment = this,
@@ -279,6 +299,14 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
                 else -> RandomPickEngine.PickMode.PURE_RANDOM
             }
             if (newMode == supplementViewModel.randomMode) return@setOnCheckedStateChangeListener
+            // AI 실행 중에는 모드 변경도 막는다 (A-3 예방 — 뽑기 이동과 같은 축)
+            if (isAiBusy()) {
+                syncModeChips()
+                if (isAdded) {
+                    Toast.makeText(requireContext(), R.string.ai_field_busy_pick_blocked, Toast.LENGTH_SHORT).show()
+                }
+                return@setOnCheckedStateChangeListener
+            }
             if (isBlocking()) {
                 // 편집 중 — 칩을 되돌리고 가드 통과 후 적용
                 syncModeChips()
@@ -311,6 +339,17 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
         }
 
         binding.btnSaveInline.setOnClickListener { saveCoordinator.requestSave() }
+
+        // ✨ 전체 추천 (A-3) — 편집 화면의 btnAiSuggest와 같은 진입. 대상 산출 규칙도 같은
+        // 단일 소스(bulkTargetsOf)를 시트가 쓰므로 두 화면이 갈리지 않는다.
+        binding.btnAiSuggest.setOnClickListener {
+            val targetId = displayedCharacter?.id ?: return@setOnClickListener
+            com.novelcharacter.app.ui.character.AiFieldSuggestSheet.showForCharacter(
+                this, formBuilder, characterViewModel, targetId,
+                // 기대치 조정 — AI가 메울 수 있는 미흡은 필드 값뿐 (A-3 §5-1, 변수 제어)
+                extraNote = getString(R.string.ai_supplement_scope_note)
+            ) { buildAiContext() }
+        }
 
         binding.btnAddImage.setOnClickListener { imagePickerLauncher.launch("image/*") }
         imageStrip.attach()
@@ -382,6 +421,97 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
             if (isAdded) Toast.makeText(requireContext(), msgRes, Toast.LENGTH_SHORT).show()
             supplementViewModel.clearRandomNotice()
         }
+
+        observeAi()
+    }
+
+    // ===== AI 추천 관측 (A-3) — 실행은 VM(회전 생존), 표시 전에 캐릭터 일치를 검증한다 =====
+
+    private fun observeAi() {
+        characterViewModel.aiSuggestRunning.observe(viewLifecycleOwner) { running ->
+            updateAiProgress(running == true || characterViewModel.aiNarrativeRunning.value == true)
+        }
+        characterViewModel.aiNarrativeRunning.observe(viewLifecycleOwner) { running ->
+            updateAiProgress(running == true || characterViewModel.aiSuggestRunning.value == true)
+        }
+        characterViewModel.aiSuggestResult.observe(viewLifecycleOwner) { run ->
+            if (run != null) maybeShowAiResult(run)
+        }
+        characterViewModel.aiNarrativeResult.observe(viewLifecycleOwner) { run ->
+            if (run != null) {
+                com.novelcharacter.app.ui.character.NarrativeWriteSheet.showResult(
+                    this, formBuilder, characterViewModel, run
+                ) { id -> formBuilder.fieldDefinitions.firstOrNull { it.id == id } }
+            }
+        }
+    }
+
+    private fun updateAiProgress(show: Boolean) {
+        if (show) {
+            if (aiProgressDialog == null && isAdded) {
+                aiProgressDialog = MaterialAlertDialogBuilder(requireContext())
+                    .setMessage(R.string.ai_field_running)
+                    .setCancelable(false)
+                    .show()
+            }
+        } else {
+            aiProgressDialog?.dismiss()
+            aiProgressDialog = null
+        }
+    }
+
+    /**
+     * A-3 §5-4 검출 — 요청 도중 캐릭터가 바뀌었으면(회전·프로세스 재생성 등 예방이 닿지 않는
+     * 경로) 적용 대신 선택지를 준다. 유료 응답을 조용히 버리는 것도, 조용히 남의 캐릭터에
+     * 기입하는 것도 둘 다 금지다.
+     */
+    private fun maybeShowAiResult(run: CharacterViewModel.AiSuggestRun) {
+        val current = displayedCharacter
+        if (editorState == EditorState.EDIT && current != null && current.id == run.targetCharacterId) {
+            com.novelcharacter.app.ui.character.AiFieldSuggestSheet.showResult(
+                this, formBuilder, characterViewModel, run
+            ) { buildAiContext() }
+            return
+        }
+        viewLifecycleOwner.lifecycleScope.launch {
+            val target = characterViewModel.getCharacterByIdSuspend(run.targetCharacterId)
+            if (_binding == null || !isAdded) return@launch
+            if (target == null) {
+                MaterialAlertDialogBuilder(requireContext())
+                    .setTitle(R.string.ai_field_suggest_title)
+                    .setMessage(R.string.ai_result_target_deleted)
+                    .setPositiveButton(R.string.confirm) { _, _ -> characterViewModel.clearAiSuggestResult() }
+                    .setOnCancelListener { characterViewModel.clearAiSuggestResult() }
+                    .show()
+                return@launch
+            }
+            MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.ai_field_suggest_title)
+                .setMessage(getString(R.string.ai_result_character_mismatch, target.name))
+                .setPositiveButton(getString(R.string.ai_result_return_apply, target.name)) { _, _ ->
+                    returnToAiTarget(target)
+                }
+                .setNegativeButton(R.string.ai_result_discard) { _, _ ->
+                    characterViewModel.clearAiSuggestResult()
+                }
+                .show()
+        }
+    }
+
+    /** 결과를 받은 캐릭터로 돌아가 편집 모드를 열고, 폼 적재가 끝나면 검토 다이얼로그를 띄운다 */
+    private fun returnToAiTarget(target: Character) {
+        val proceed = {
+            if (editorState == EditorState.EDIT) exitEditMode()
+            // currentPick이 화면의 단일 소스 — 풀에 없으면(필터 밖·리로드 전) 직접 표시로 폴백
+            if (!supplementViewModel.showCharacterById(target.id)) {
+                displayedCharacter = target
+                renderPreview(target)
+                binding.switchEditMode.isEnabled = !saveCoordinator.isSaving
+            }
+            pendingAiResultShow = true
+            binding.switchEditMode.isChecked = true
+        }
+        if (isBlocking()) requestLeave { proceed() } else proceed()
     }
 
     // ===== 미리보기 =====
@@ -641,6 +771,18 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
         if (!saveCoordinator.isSaving) {
             _binding?.btnSaveInline?.isEnabled = true
         }
+        // "돌아가 적용" 경로 (A-3) — 폼 적재가 끝난 지금이 검토 다이얼로그를 열 수 있는 첫 시점.
+        // 적재 전에 열면 적용이 위젯을 찾지 못해 유료 응답이 no-op로 빠진다.
+        if (pendingAiResultShow) {
+            pendingAiResultShow = false
+            val run = characterViewModel.aiSuggestResult.value
+            val current = displayedCharacter
+            if (run != null && current != null && current.id == run.targetCharacterId) {
+                com.novelcharacter.app.ui.character.AiFieldSuggestSheet.showResult(
+                    this, formBuilder, characterViewModel, run
+                ) { buildAiContext() }
+            }
+        }
     }
 
     override fun isBlocking(): Boolean = editorState == EditorState.EDIT && hasUnsavedChanges
@@ -683,7 +825,19 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
             .show()
     }
 
+    /** AI 요청이 진행 중인가 — 뽑기 이동·모드 변경을 막는 예방 축 (A-3 §5-4 ①) */
+    private fun isAiBusy(): Boolean =
+        characterViewModel.aiSuggestRunning.value == true ||
+            characterViewModel.aiNarrativeRunning.value == true
+
     private fun guardedPickAction(action: () -> Unit) {
+        // A가 근거인 유료 추천이 B의 폼에 기입되는 오염을 원천 차단 — 조용히 삼키지 않고 사유를 띄운다
+        if (isAiBusy()) {
+            if (isAdded) {
+                Toast.makeText(requireContext(), R.string.ai_field_busy_pick_blocked, Toast.LENGTH_SHORT).show()
+            }
+            return
+        }
         if (editorState == EditorState.EDIT) {
             if (hasUnsavedChanges) {
                 requestLeave { action() }
@@ -820,6 +974,9 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
                     }
                     if (_binding == null) return@launch
                     formBuilder.buildForm()
+                    // AI 추천은 세계관 필드가 대상 — 편집 화면과 같은 노출 조건 (A-3)
+                    binding.btnAiSuggest.visibility =
+                        if (formBuilder.fieldDefinitions.isEmpty()) View.GONE else View.VISIBLE
 
                     val saved = pendingFieldValues
                     if (saved != null && formBuilder.fieldDefinitions.isNotEmpty()) {
@@ -976,6 +1133,26 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
         val position = b.spinnerNovel.selectedItemPosition
         return if (position > 0 && position - 1 < novels.size) novels[position - 1].id else null
     }
+
+    /**
+     * AI 추천 컨텍스트 조립 — [com.novelcharacter.app.ui.character.CharacterAiContextBuilder]가
+     * 단일 소스다(편집 화면과 공유). 이 탭의 편집 폼은 같은 의미의 위젯을 같은 id로 가진다.
+     */
+    private suspend fun buildAiContext(): com.novelcharacter.app.ai.CharacterFieldAiSuggester.CharacterAiContext =
+        com.novelcharacter.app.ui.character.CharacterAiContextBuilder.build(
+            object : com.novelcharacter.app.ui.character.CharacterAiContextBuilder.Host {
+                override fun rawName() = binding.editName.text.toString()
+                override fun firstName() = binding.editFirstName.text.toString()
+                override fun lastName() = binding.editLastName.text.toString()
+                override fun aliasesRaw() = binding.editAnotherName.text.toString()
+                override fun tagsRaw() = binding.editTags.text.toString()
+                override fun memo() = binding.editMemo.text.toString()
+                override fun imagePaths() = imageStrip.paths.toList()
+                override fun characterId() = displayedCharacter?.id ?: -1L
+                override fun formBuilder() = formBuilder
+            },
+            characterViewModel
+        )
 
     // ===== 설정 =====
 
