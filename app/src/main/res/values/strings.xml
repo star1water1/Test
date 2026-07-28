@@ -2032,13 +2032,38 @@
     <string name="organize_folder_summary_hold">보류: %d장 (판단할 수 없어 이번에는 반영하지 않습니다 — 파일은 폴더에 그대로 남습니다)</string>
     <string name="organize_folder_summary_ambiguous">같은 이름의 캐릭터가 둘 이상이라 배정을 보류한 폴더: %s</string>
     <string name="organize_folder_summary_unknown_token">앱에서 내보낸 사본으로 보이지만 원본을 찾지 못한 파일 %d장 — 새 이미지로 편입합니다</string>
-    <string name="organize_folder_summary_already">지난번에 이미 받아온 파일 %d장은 건너뜁니다</string>
+    <string name="organize_folder_summary_already">앱이 이미 처리한 파일 %d장은 건너뜁니다 (지난번 받아오기 또는 내보낸 사본)</string>
     <string name="organize_folder_summary_ignored">이미지가 아닌 파일 %1$d개, 정해진 위치 밖의 파일·폴더 %2$d개는 건드리지 않습니다</string>
     <string name="organize_folder_result_main">새로 편입 %1$d장 · 배정 이동 %2$d장 · 배정 해제 %3$d장 · 링크 묶음 %4$d개</string>
     <string name="organize_folder_result_cancelled">취소해서 여기까지만 반영했습니다</string>
     <string name="organize_folder_result_hold">보류 %1$d장: %2$s</string>
     <string name="organize_folder_result_failed">실패 %1$d장: %2$s</string>
     <string name="organize_folder_result_unmoved">원본 %d장은 \'_처리됨\' 폴더로 옮기지 못했습니다 — 폴더에 그대로 있지만 다음 받아오기에서 다시 편입하지 않습니다</string>
+
+    <!-- 정리 폴더 왕복(정리용 내보내기) -->
+    <string name="organize_folder_export">정리 폴더로 내보내기</string>
+    <string name="organize_folder_export_next">다음</string>
+    <string name="organize_folder_export_scope_all">전체 (캐릭터 배정 + 미배정)</string>
+    <string name="organize_folder_export_scope_assigned">캐릭터에 배정된 것만</string>
+    <string name="organize_folder_export_scope_unassigned">미배정만</string>
+    <string name="organize_folder_export_nothing">내보낼 이미지가 없습니다.</string>
+    <string name="organize_folder_export_summary_main">이미지 %1$d장 · %2$s</string>
+    <string name="organize_folder_export_summary_buckets">캐릭터 폴더 %1$d개 · 미배정 %2$d장 · 묶음 폴더 %3$d개 · 공유 %4$d장</string>
+    <string name="organize_folder_export_summary_replace">이전에 내보낸 사본 %d장은 새 사본으로 교체합니다</string>
+    <string name="organize_folder_export_summary_pending">그중 %d장은 폴더에서 자리를 옮겨 두고 아직 받아오지 않은 것입니다 — 지금 내보내면 그 배치가 현재 상태로 덮어써집니다. 받아오기를 먼저 하는 편이 안전합니다</string>
+    <string name="organize_folder_export_blocked_duplicate">같은 이름의 캐릭터가 둘 이상입니다 — \'%1$s\'의 이미지 %2$d장은 내보내지 않습니다 (이름을 구분하면 내보낼 수 있습니다)</string>
+    <string name="organize_folder_export_blocked_reserved">\'%1$s\'은 앱이 쓰는 폴더 이름입니다 — 이미지 %2$d장은 내보내지 않습니다 (이름을 바꾸면 내보낼 수 있습니다)</string>
+    <string name="organize_folder_export_blocked_unsafe">\'%1$s\'은 폴더 이름으로 쓸 수 없습니다 — 이미지 %2$d장은 내보내지 않습니다 (특수문자를 빼거나 이름을 줄이면 내보낼 수 있습니다)</string>
+    <string name="organize_folder_export_summary_legacy">파일 이름이 옛 방식이라 돌아올 때 자리를 알아볼 수 없는 이미지 %d장은 내보내지 않습니다</string>
+    <string name="organize_folder_export_summary_entity">세계관·작품에만 등록된 이미지 %d장은 이번 범위 밖입니다</string>
+    <string name="organize_folder_export_summary_missing">파일을 찾지 못한 이미지 %d장은 건너뜁니다</string>
+    <string name="organize_folder_export_copy_notice">내보내는 것은 사본입니다. 정리를 마친 뒤 폴더를 지워도 앱의 이미지는 그대로 남습니다.</string>
+    <string name="organize_folder_export_run">내보내기</string>
+    <string name="organize_folder_export_stage">사본을 내보내는 중</string>
+    <string name="organize_folder_export_result_main">이미지 %1$d장 · %2$s를 내보냈습니다</string>
+    <string name="organize_folder_export_result_removed">이전 사본 %d장을 새 사본으로 교체했습니다</string>
+    <string name="organize_folder_export_result_cancelled">취소해서 여기까지만 내보냈습니다</string>
+    <string name="organize_folder_export_result_remove_failed">이전 사본 %d장은 지우지 못했습니다 — 폴더에 남아 있으면 받아오기가 그 이미지를 보류합니다</string>
 
     <!-- 공용 진행도(R-26) -->
     <string name="task_progress_count">%1$d / %2$d (%3$d%%)</string>

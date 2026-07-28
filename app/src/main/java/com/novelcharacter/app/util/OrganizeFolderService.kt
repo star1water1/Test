@@ -103,10 +103,17 @@ object OrganizeFolderService {
      *
      * 깊이·예약 폴더 규칙은 [FolderRoundtripPlanner.shouldDescend]가 단일 소스다.
      */
-    suspend fun scan(context: Context, treeUri: Uri): ScanResult? = withContext(Dispatchers.IO) {
+    suspend fun scan(
+        context: Context,
+        treeUri: Uri,
+        applyFingerprints: Boolean = true
+    ): ScanResult? = withContext(Dispatchers.IO) {
         val rootId = runCatching { DocumentsContract.getTreeDocumentId(treeUri) }.getOrNull()
             ?: return@withContext null
-        val fingerprints = FolderRoundtripPrefs.fingerprints(context)
+        // 내보내기의 이전 사본 정리는 **지문으로 걸러진 파일까지** 봐야 한다 — 사본에는 지문이
+        // 찍혀 있어서, 거른 목록으로 정리를 계획하면 이전 사본을 못 보고 남겨 같은 이미지를
+        // 가리키는 파일이 폴더에 둘이 된다(받아오기가 그 이미지를 통째로 보류한다).
+        val fingerprints = if (applyFingerprints) FolderRoundtripPrefs.fingerprints(context) else emptySet()
 
         val files = ArrayList<ScannedFile>()
         var unreadFolders = 0
@@ -428,6 +435,238 @@ object OrganizeFolderService {
             unmovedOriginals = unmoved,
             cancelled = cancelled
         )
+    }
+
+    // ── 내보내기 (PR-2) ──
+
+    /**
+     * 내보내기 계획 + 그 계획을 설명하는 데 필요한 부수 정보(사전 확인 다이얼로그용).
+     *
+     * @param cleanup 지울 이전 사본. [FolderExportPlanner.Cleanup.rearrangedIds]는 **아직
+     *        받아오지 않은 사용자의 배치**라 확인 다이얼로그가 따로 고지한다.
+     */
+    data class ExportBundle(
+        val plan: FolderExportPlanner.Plan,
+        val cleanup: FolderExportPlanner.Cleanup = FolderExportPlanner.Cleanup(),
+        val scope: FolderExportPlanner.Scope = FolderExportPlanner.Scope.ALL
+    ) {
+        val isEmpty: Boolean get() = plan.isEmpty
+        /** 진행도 총량 — 지우는 것도 사용자를 기다리게 하는 일이다. */
+        val workCount: Int get() = plan.files.size + cleanup.staleIds.size
+    }
+
+    /** 내보내기 결과 — 모든 수치는 고지 대상이다. */
+    data class ExportResult(
+        val exported: Int = 0,
+        val bytes: Long = 0,
+        val removed: Int = 0,
+        val removeFailed: Int = 0,
+        val failed: List<String> = emptyList(),
+        val cancelled: Boolean = false
+    )
+
+    /**
+     * 현재 라이브러리 상태로 내보내기 계획을 세운다. 폴더에 접근할 수 없으면 null.
+     *
+     * 계획은 canonical 경로로 세운다(비교의 축) — 내보내기는 **읽기만** 하므로 받아오기와 달리
+     * 저장형으로 되돌릴 일이 없다(`File(canonical)`은 같은 파일을 연다).
+     */
+    suspend fun buildExportPlan(
+        context: Context,
+        db: AppDatabase,
+        treeUri: Uri,
+        scope: FolderExportPlanner.Scope
+    ): ExportBundle? = withContext(Dispatchers.IO) {
+        val existing = scan(context, treeUri, applyFingerprints = false) ?: return@withContext null
+        val gson = Gson()
+
+        val characters = db.characterDao().getAllCharactersList()
+        val ownersByPath = HashMap<String, MutableList<Long>>()
+        for (c in characters) {
+            for (stored in parsePaths(gson, c.imagePaths)) {
+                ownersByPath.getOrPut(canonical(stored)) { mutableListOf() }.add(c.id)
+            }
+        }
+
+        val metas = db.imageMetaDao().getAllList()
+        val groupByPath = HashMap<String, String?>(metas.size)
+        for (m in metas) groupByPath[canonical(m.path)] = m.linkGroupId
+
+        // 작품·세계관 전용 이미지는 v1 범위 밖이지만 **개수는 고지해야** 하므로 후보에 싣는다
+        // (캐릭터도 라이브러리도 쥐지 않은 것만 그 부류로 남는다).
+        val entityPaths = LinkedHashSet<String>()
+        for (json in db.novelDao().getAllNovelsList().map { it.imagePaths } +
+            db.universeDao().getAllUniversesList().map { it.imagePaths }) {
+            for (stored in parsePaths(gson, json)) entityPaths.add(canonical(stored))
+        }
+
+        val candidatePaths = LinkedHashSet<String>().apply {
+            addAll(ownersByPath.keys)
+            addAll(groupByPath.keys)
+            addAll(entityPaths)
+        }
+        val livePaths = candidatePaths.filterTo(LinkedHashSet()) { File(it).exists() }
+        val images = candidatePaths.map { path ->
+            FolderExportPlanner.ImageInput(
+                path = path,
+                sizeBytes = runCatching { File(path).length() }.getOrDefault(0L),
+                ownerCharacterIds = ownersByPath[path].orEmpty(),
+                linkGroupId = groupByPath[path],
+                inLibrary = path in groupByPath
+            )
+        }
+
+        val dictionary = FolderNameToken.buildDictionary(
+            livePaths,
+            FolderRoundtripPrefs.renameAliases(context).mapKeys { canonical(it.key) }
+                .mapValues { canonical(it.value) }
+        )
+        val plan = FolderExportPlanner.plan(
+            images = images,
+            characters = characters.map { FolderExportPlanner.CharacterInput(it.id, it.name) },
+            tokenByPath = dictionary.tokenByPath,
+            scope = scope,
+            existingPaths = livePaths
+        )
+        val cleanup = FolderExportPlanner.planCleanup(
+            existing.files.map {
+                FolderExportPlanner.ExistingCopy(it.documentId, it.folders, it.name)
+            },
+            plan.files,
+            dictionary.pathByToken
+        )
+        ExportBundle(plan, cleanup, scope)
+    }
+
+    /**
+     * 계획을 실행한다 — 이전 사본을 지우고, 사본을 새로 쓴다.
+     *
+     * **원본은 읽기만 한다.** 폴더의 파일은 전부 사본이므로 실패해도 앱 데이터는 그대로다.
+     * 파일 하나가 끝날 때마다 [onProgress]를 부르고, [isCancelled]가 true가 되면 그 파일까지
+     * 쓰고 멈춘다(반쪽 파일 없음).
+     *
+     * 마지막에 **쓴 사본의 지문을 남긴다** — 그러지 않으면 다음 진입 감지가 우리가 방금 쓴
+     * 사본을 "새 이미지"로 세어 거짓 배너를 띄우고, 받아오기도 할 일 없는 파일을 훑는다.
+     * 사본을 다른 폴더로 옮기면 상대경로가 바뀌어 지문이 어긋나므로 그때는 정상적으로 잡힌다.
+     */
+    suspend fun runExport(
+        context: Context,
+        treeUri: Uri,
+        bundle: ExportBundle,
+        onProgress: suspend (done: Int, total: Int) -> Unit,
+        isCancelled: () -> Boolean
+    ): ExportResult = withContext(Dispatchers.IO) {
+        val resolver = context.contentResolver
+        val rootId = runCatching { DocumentsContract.getTreeDocumentId(treeUri) }.getOrNull()
+            ?: return@withContext ExportResult()
+        val total = bundle.workCount
+        var done = 0
+        suspend fun step() {
+            done++
+            onProgress(done, total)
+        }
+
+        // ① 이전 사본 정리 — 남기면 같은 이미지를 가리키는 파일이 둘이 되어 받아오기가 보류한다.
+        var removed = 0
+        var removeFailed = 0
+        var cancelled = false
+        // 지우지 못한 사본의 이미지는 새로 쓰지 않는다(아래 ②) — 같은 이름이 부딪히면
+        // provider가 이름을 바꿔 달아 토큰이 깨지고, 그 사본이 다음 받아오기에서 **새 이미지로**
+        // 편입된다. 조용한 중복보다 "이번엔 내보내지 않았다"가 낫다.
+        val blockedSources = HashSet<String>()
+        for (documentId in bundle.cleanup.staleIds) {
+            if (isCancelled()) { cancelled = true; break }
+            val uri = runCatching {
+                DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId)
+            }.getOrNull()
+            val ok = uri != null &&
+                runCatching { DocumentsContract.deleteDocument(resolver, uri) }.getOrDefault(false)
+            if (ok) {
+                removed++
+            } else {
+                removeFailed++
+                bundle.cleanup.sourcePathById[documentId]?.let { blockedSources.add(it) }
+            }
+            step()
+        }
+
+        // ② 사본 쓰기. 폴더 문서 id는 한 번만 찾는다(폴더당 쿼리 1회).
+        val folderIds = HashMap<List<String>, String?>()
+        folderIds[emptyList()] = rootId
+        fun folderId(folders: List<String>): String? {
+            val walked = ArrayList<String>(folders.size)
+            var current: String? = rootId
+            for (name in folders) {
+                walked.add(name)
+                val key = ArrayList(walked)
+                current = if (folderIds.containsKey(key)) {
+                    folderIds[key]
+                } else {
+                    val made = current?.let { ensureDirectory(context, treeUri, it, name) }
+                    folderIds[key] = made
+                    made
+                }
+                if (current == null) return null
+            }
+            return current
+        }
+
+        var exported = 0
+        var bytes = 0L
+        val failures = ArrayList<String>()
+        val writtenFolders = LinkedHashSet<List<String>>()
+        val writtenTokens = HashSet<String>()
+
+        if (!cancelled) for (file in bundle.plan.files) {
+            if (isCancelled()) { cancelled = true; break }
+            if (file.sourcePath in blockedSources) {
+                failures.add(file.fileName)
+                step()
+                continue
+            }
+            val parentId = folderId(file.folders)
+            val parentUri = parentId?.let {
+                runCatching { DocumentsContract.buildDocumentUriUsingTree(treeUri, it) }.getOrNull()
+            }
+            val ok = parentUri != null && runCatching {
+                val created = DocumentsContract.createDocument(
+                    resolver, parentUri, mimeOf(file.fileName), file.fileName
+                ) ?: return@runCatching false
+                resolver.openOutputStream(created)?.use { output ->
+                    File(file.sourcePath).inputStream().use { input -> input.copyTo(output) }
+                    true
+                } ?: false
+            }.getOrDefault(false)
+            if (ok) {
+                exported++
+                bytes += file.sizeBytes
+                writtenFolders.add(file.folders)
+                writtenTokens.add(file.token)
+            } else {
+                failures.add(file.fileName)
+            }
+            step()
+        }
+
+        // ③ 쓴 사본의 지문 기록 — 이름은 provider가 정하므로(같은 이름이 있으면 바꿔 단다)
+        //    폴더를 한 번씩 다시 읽어 **실제로 놓인 파일**의 지문을 남긴다.
+        val fingerprints = ArrayList<String>()
+        for (folders in writtenFolders) {
+            val id = folderIds[folders] ?: continue
+            for (child in listChildren(context, treeUri, id).orEmpty()) {
+                if (child.isDirectory) continue
+                val token = FolderNameToken.tokenCandidateOf(child.name) ?: continue
+                if (token !in writtenTokens) continue
+                fingerprints.add(
+                    FolderRoundtripLedger.fingerprintOf(
+                        (folders + child.name).joinToString("/"), child.size, child.modifiedAt
+                    )
+                )
+            }
+        }
+        if (fingerprints.isNotEmpty()) FolderRoundtripPrefs.addFingerprints(context, fingerprints)
+
+        ExportResult(exported, bytes, removed, removeFailed, failures, cancelled)
     }
 
     // ── `_처리됨/` 이동 ──
