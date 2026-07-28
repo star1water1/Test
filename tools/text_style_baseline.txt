@@ -8,12 +8,10 @@ SPACING|strings.xml|assistant_health_no_novel_detail
 SPACING|strings.xml|assistant_nudge_unused_names_detail
 SPACING|strings.xml|empty_character_hint
 SPACING|strings.xml|empty_event_hint
-SPACING|strings.xml|empty_field_hint
 SPACING|strings.xml|empty_novel_hint
 SPACING|strings.xml|empty_relationship_hint
 SPACING|strings.xml|empty_state_change_hint
 SPACING|strings.xml|empty_universe_hint
-SPACING|strings.xml|field_name_key_required
 SPACING|strings.xml|field_required
 SPACING|strings.xml|image_save_novel_first
 SPACING|strings.xml|import_unsupported_zip
@@ -30,16 +28,6 @@ TERM|app/src/main/java/com/novelcharacter/app/excel/ExcelImportService.kt|"$rowL
 TERM|app/src/main/java/com/novelcharacter/app/excel/ExcelImportService.kt|"캐릭터 행 $i: '$name' 세계관 이동 감지 — 대응 없는 필드값 ${counts.removedValues}개·타 세계관 세력소속 ${counts.removedMemberships}개 정리(휴지통에 스냅샷 보관), ${counts.remappedValues}개 재매핑"
 TERM|app/src/main/java/com/novelcharacter/app/excel/ExcelImportService.kt|"캐릭터 행 $i: '$name' 세계관 이동 감지 — 필드값 ${counts.remappedValues}개를 새 세계관 필드로 재매핑"
 TERM|app/src/main/java/com/novelcharacter/app/excel/ExcelImportService.kt|"파싱은 되지만 소비처가 못 읽는"
-TERM|strings.xml|body_cup_mapping_title
-TERM|strings.xml|body_normalized_ratio_label
-TERM|strings.xml|field_library_unsupported_calculated
-TERM|strings.xml|field_library_unsupported_structured
-TERM|strings.xml|label_add_category_mapping
-TERM|strings.xml|label_grade_mapping
-TERM|strings.xml|label_stats_group_by
-TERM|strings.xml|label_value_categories
-TERM|strings.xml|label_value_categories_desc
-TERM|strings.xml|label_value_labels
 TERM|strings.xml|storage_clear_export_cache_desc
 TONE-YO|strings.xml|ai_guide_openai
 TONE-YO|strings.xml|assistant_age_fixed

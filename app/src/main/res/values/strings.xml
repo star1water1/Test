@@ -117,7 +117,7 @@
 
     <!-- Empty state hints -->
     <string name="empty_universe_hint">세계관을 추가해보세요</string>
-    <string name="empty_field_hint">필드를 추가해보세요</string>
+    <string name="empty_field_hint">필드를 추가해 보세요</string>
 
     <!-- Layout hardcoded strings -->
     <string name="hint_search_event">사건 검색</string>
@@ -132,7 +132,7 @@
     <string name="default_group_name">기본 정보</string>
     <string name="label_select_options">선택 옵션 (쉼표로 구분)</string>
     <string name="hint_select_example">예: 남,여,?</string>
-    <string name="label_grade_mapping">등급별 수치 매핑</string>
+    <string name="label_grade_mapping">등급 값 (통계용 숫자)</string>
     <string name="label_allow_negative">음수 허용 (±등급)</string>
     <string name="label_formula">계산 수식</string>
     <string name="hint_formula_example">예: field(\'aura\') + field(\'body\')</string>
@@ -148,7 +148,6 @@
     <string name="label_card_display">목록 카드에 값 표시</string>
     <string name="label_card_display_desc">연표 목록에서 사건을 열지 않아도 이 필드의 값이 보입니다. 카드 한 장에는 최대 %d개까지 표시되고, 넘는 값은 개수로 알립니다.</string>
     <string name="label_add_analysis">+ 분석 추가</string>
-    <string name="label_value_labels">값 라벨 매핑 (선택)</string>
     <string name="label_add_value_label">+ 라벨 추가</string>
     <string name="label_binning">구간 설정 (NUMBER 전용)</string>
     <string name="label_add_bin_range">+ 구간 추가</string>
@@ -524,7 +523,7 @@
     <string name="export_save_failed">파일 저장에 실패했습니다</string>
 
     <!-- Field validation -->
-    <string name="field_name_key_required">필드 이름과 키를 입력해주세요</string>
+    <string name="field_name_key_required">필드 이름과 키를 입력하세요</string>
     <string name="field_type_change_title">필드 타입 변경</string>
     <string name="field_type_change_message">타입을 %1$s에서 %2$s(으)로 변경합니다.\n\n기존 값 %3$d개 중:\n• 호환 가능: %4$d개\n• 호환 불가: %5$d개 (빈 값으로 초기화됩니다)</string>
     <string name="field_type_change_proceed">변경</string>
@@ -1182,22 +1181,19 @@
     <!-- Structured Input -->
     <string name="label_structured_input">구조화 입력</string>
     <string name="label_structured_input_enabled">구조화 입력 사용</string>
-    <string name="hint_separator">구분자 (기본: -)</string>
-    <string name="label_add_part">파트 추가</string>
+    <string name="hint_separator">칸 사이 문자 (기본: -)</string>
+    <string name="label_add_part">칸 추가</string>
     <string name="hint_part_label">파트명 (예: 키)</string>
     <string name="hint_part_suffix">단위 (예: cm)</string>
     <string name="label_input_text">텍스트</string>
     <string name="label_input_number">숫자</string>
 
     <!-- Value Categories -->
-    <string name="label_value_categories">값 → 카테고리 매핑</string>
-    <string name="label_value_categories_desc">입력값을 상위 카테고리로 그룹핑 (예: 청염 → 불)</string>
-    <string name="label_add_category_mapping">카테고리 매핑 추가</string>
     <string name="hint_category_value">입력값 (예: 청염)</string>
     <string name="hint_category_name">카테고리 (예: 불)</string>
 
     <!-- Stats Group By -->
-    <string name="label_stats_group_by">통계 그룹핑 기준</string>
+    <string name="label_stats_group_by">통계에서 묶는 기준</string>
     <string name="label_group_by_value">개별 값</string>
     <string name="label_group_by_category">카테고리</string>
     <string name="label_group_by_both">둘 다</string>
@@ -1265,8 +1261,8 @@
     <string name="standard_year_hint">작중 표준 년도 (선택)</string>
     <string name="standard_year_description">작중 현재 시점. 출생연도와 연동하여 나이를 자동 계산합니다.</string>
     <string name="std_year_link_label">표준 년도 연동</string>
-    <string name="linkage_rule_age_anchor">나이 기준 (표준 년도 변경 시 출생연도 재계산)</string>
-    <string name="linkage_rule_birth_anchor">출생연도 기준 (표준 년도 변경 시 나이 재계산)</string>
+    <string name="linkage_rule_age_anchor">나이 기준 (표준연도가 바뀌면 출생연도를 다시 계산)</string>
+    <string name="linkage_rule_birth_anchor">출생연도 기준 (표준연도가 바뀌면 나이를 다시 계산)</string>
     <string name="linkage_rule_label">연동 규칙</string>
 
     <!-- Age-BirthYear Linkage Conflict -->
@@ -1285,7 +1281,7 @@
     <string name="bmi_label">BMI</string>
     <string name="whr_label">WHR (허리-엉덩이 비율)</string>
     <string name="body_bwh_diff_label">측정값 분석</string>
-    <string name="body_normalized_ratio_label">정규화 비율</string>
+    <string name="body_normalized_ratio_label">보정 비율</string>
     <string name="body_height_relative_label">키 대비 비율</string>
     <string name="body_golden_ratio_label">골든 비율</string>
     <string name="body_ranking_label">작품 내 순위</string>
@@ -1329,10 +1325,10 @@
     <string name="body_gen_recommend">추천!</string>
 
     <string name="body_analysis_settings_title">체형 분석 설정</string>
-    <string name="body_cup_mapping_title">컵 사이즈 매핑</string>
+    <string name="body_cup_mapping_title">컵 사이즈 기준</string>
     <string name="body_type_preset_title">체형 분류 프리셋</string>
     <string name="body_type_custom_json_hint">체형 분류 규칙 (JSON)</string>
-    <string name="body_insight_toggle_title">표시할 인사이트</string>
+    <string name="body_insight_toggle_title">표시할 분석</string>
     <string name="body_restore_defaults">기본값 복원</string>
     <string name="body_preset_subculture">서브컬쳐 기본</string>
     <string name="body_preset_detailed">상세 분류</string>
@@ -2160,9 +2156,9 @@
     <string name="field_library_field_summary">값 %1$d · 미분류 %2$d · 미사용 %3$d</string>
     <string name="field_library_field_summary_empty">등록된 값 없음</string>
     <string name="field_library_unsupported_section">라이브러리 미지원 필드</string>
-    <string name="field_library_unsupported_calculated">계산 필드 — 다른 필드에서 파생되는 값이라 카탈로그 대상이 아닙니다</string>
+    <string name="field_library_unsupported_calculated">계산 필드는 다른 필드에서 자동으로 계산되는 값이라, 값 목록을 모으지 않습니다</string>
     <string name="field_library_unsupported_number">숫자 필드 — 연속값은 통계의 구간(binning) 분석이 담당합니다</string>
-    <string name="field_library_unsupported_structured">구조화 입력 필드 — 파트별 측정치는 값 카탈로그 대상이 아닙니다</string>
+    <string name="field_library_unsupported_structured">구조화 입력 필드는 칸별 측정치라 값 목록을 모으지 않습니다</string>
     <string name="field_library_menu_ai">AI 정리</string>
     <string name="field_library_menu_sort">정렬</string>
     <string name="field_library_menu_input_mode">입력 모드</string>
@@ -2369,6 +2365,46 @@
     <string name="field_library_restricted_violation_paths">입력한 값을 라이브러리에 추가하고 저장하거나, 입력을 수정할 수 있습니다.</string>
     <string name="field_library_restricted_add_and_save">추가하고 저장</string>
     <string name="field_library_restricted_edit_input">입력 수정</string>
+
+    <!-- ===== P3 인앱 도움말 + 텍스트 개혁 파일럿 (필드 편집) =====
+         본문 원문의 단일 소스는 docs/text_style_guide_2026-07.md 9장(승인분)이다.
+         목적문(purpose_*)은 설정 아래 상시 캡션, 도움말(help_*)은 ? 탭 시 다이얼로그. -->
+    <string name="help_icon_desc">도움말 보기</string>
+
+    <!-- 9-1 목적문 -->
+    <string name="purpose_percentile">켜면 캐릭터 상세에서 이 필드 값 옆에 \'상위 12%\'처럼 순위가 붙습니다. 비교 범위는 아래에서 고릅니다.</string>
+    <string name="purpose_random">켜면 입력 폼에 🎲 버튼이 생겨, 아래 범위 안에서 값을 무작위로 만들어 줍니다.</string>
+    <string name="purpose_semantic_role">이 필드의 값을 앱 기능(나이 계산·생일 알림·생존 여부 등)과 연결합니다.</string>
+    <string name="purpose_structured_input">한 필드를 여러 칸으로 나눠 입력합니다 (예: B-W-H). 칸은 아래에서 추가합니다.</string>
+    <string name="purpose_stats">켜면 통계 탭이 이 필드를 분석합니다. 어떤 분석을 보여줄지 아래에서 고릅니다.</string>
+    <string name="purpose_field_library">이 필드에 입력된 값들을 목록으로 모아, 자동완성·통계·AI 추천이 함께 씁니다.</string>
+    <string name="purpose_body_analysis">신체 사이즈 값으로 체형 분류·컵 사이즈 등을 자동 계산해 캐릭터 상세에 보여줍니다.</string>
+
+    <!-- 9-2 도움말 본문 H1~H12 -->
+    <string name="help_field_key_title">필드 키</string>
+    <string name="help_field_key_body">필드를 구분하는 영문 이름입니다. 엑셀의 열 이름과 계산 필드 수식 field(\'키\')에서 이 이름을 씁니다. 같은 세계관 안에서 겹칠 수 없습니다. 나중에 바꾸면 수식과 이력은 자동으로 따라 바뀝니다.</string>
+    <string name="help_display_format_title">표시 형식</string>
+    <string name="help_display_format_body">값을 어떻게 보여줄지 정합니다. \'기본\'은 한 줄, \'여러 줄\'은 긴 글 그대로, \'콤마 구분 목록\'은 쉼표로 나눈 값을 칩이나 글머리표로 하나씩 보여줍니다. 콤마 목록으로 두면 통계도 값을 하나씩 나눠 셉니다.</string>
+    <string name="help_narrative_mode_title">서술형 여부</string>
+    <string name="help_narrative_mode_body">이 필드가 긴 글인지 짧은 값인지 정합니다. 서술형이면 ✨ AI가 초안 쓰기·이어쓰기·다듬기를 돕고, 짧은 값이면 값 추천을 받습니다. \'자동\'은 표시 형식이 \'여러 줄\'일 때 서술형으로 봅니다.</string>
+    <string name="help_semantic_role_title">시스템 연동</string>
+    <string name="help_semantic_role_body">필드 값을 앱 기능과 연결합니다. 예를 들어 \'나이\'로 연동하면 표준연도(연표에서 정하는 \'작중 현재\' 연도)가 바뀔 때 나이나 출생연도가 자동으로 다시 계산되고, \'생일\'로 연동하면 생일 알림과 오늘의 캐릭터에 쓰입니다. 연동 규칙에서는 표준연도가 바뀔 때 나이와 출생연도 중 무엇을 기준으로 삼을지 고릅니다.</string>
+    <string name="help_structured_input_title">구조화 입력</string>
+    <string name="help_structured_input_body">한 필드를 여러 칸으로 나눠 받습니다. 예를 들어 신체 사이즈를 B·W·H 세 칸으로 나누면, 입력은 칸별로 하고 저장은 \'B-W-H\'처럼 한 값으로 합쳐집니다. 칸 사이를 잇는 문자(기본 \'-\')도 바꿀 수 있습니다.</string>
+    <string name="help_percentile_title">상위 % 표시</string>
+    <string name="help_percentile_body">숫자 필드에서 이 캐릭터가 어디쯤인지 보여줍니다. 예를 들어 키가 상위 12%라면 캐릭터 상세의 값 옆에 함께 표시됩니다. 비교 범위는 같은 작품 또는 같은 세계관 중에서 고릅니다.</string>
+    <string name="help_random_title">랜덤 생성</string>
+    <string name="help_random_body">입력 폼에 🎲 버튼을 더합니다. 숫자는 최솟값~최댓값 사이에서, 선택형·등급은 보기 중에서 무작위로 뽑습니다. 값을 정하기 어려울 때 초안으로 쓰고, 마음에 안 들면 다시 누르면 됩니다.</string>
+    <string name="help_stats_analysis_title">통계 분석</string>
+    <string name="help_stats_analysis_body">이 필드를 통계 탭에서 어떻게 분석할지 정합니다. \'값 분포\'는 어떤 값이 몇 %인지, \'수치 요약\'은 최소·최대·평균, \'값 순위\'는 많이 쓴 값 순서를 보여줍니다. 분석은 여러 개 더할 수 있고 차트 모양도 각각 고릅니다.</string>
+    <string name="help_stats_grouping_title">묶는 기준과 구간</string>
+    <string name="help_stats_grouping_body">값이 많을 때 통계를 읽기 쉽게 묶습니다. 값 라이브러리에서 값에 카테고리를 달아 두면 카테고리로 묶어 볼 수 있고, 숫자 필드는 구간(예: 150~160, 160~170)으로 나눠 셉니다. \'자동\'은 5등분, 직접 나눌 수도 있습니다.</string>
+    <string name="help_input_mode_title">입력 모드</string>
+    <string name="help_input_mode_body">이 필드에 값을 넣는 방식을 정합니다. \'제안\'(기본)은 자유롭게 쓰되 쓰던 값을 자동완성으로 보여주고, \'자유\'는 자동완성 없이 쓰고, \'제한\'은 값 목록에 있는 값만 저장할 수 있게 막습니다. 표기를 통일하고 싶은 필드(머리색 등)에 \'제한\'이 좋습니다.</string>
+    <string name="help_initial_values_title">값 사전 등록</string>
+    <string name="help_initial_values_body">필드를 만들면서 쓸 값들을 미리 넣어 둡니다. 쉼표로 구분해 적으면(예: 빨강, 파랑, 검정) 값 목록에 바로 등록되어 자동완성과 \'제한\' 모드에 즉시 쓰입니다.</string>
+    <string name="help_grade_values_title">등급 값</string>
+    <string name="help_grade_values_body">등급(C·B·A·S)에 숫자를 매겨 통계에서 평균·비교가 가능하게 합니다. 숫자는 등급 간 간격이라, S=3·A=2처럼 차이를 크게 두면 통계에서 등급 차이가 크게 반영됩니다.</string>
 
     <!-- 어시스턴트 — 라이브러리 품질 카드 -->
     <string name="assistant_library_quality_title">\'%1$s\' 필드에 유사 표기 값</string>

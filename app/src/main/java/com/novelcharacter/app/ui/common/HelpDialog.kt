@@ -1,6 +1,7 @@
 package com.novelcharacter.app.ui.common
 
 import android.content.Context
+import androidx.annotation.StringRes
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.FieldDefinition
@@ -11,11 +12,39 @@ import com.novelcharacter.app.data.model.FieldDescription
  *
  * 진입은 둘로 나뉜다 — **컴포넌트는 공유하되 출처가 다르므로 아이콘을 나눈다**:
  * - `ⓘ` → [showFieldNote]: **필드 설명** — 사용자가 쓴 글(`FieldDefinition.config`의
- *   `description`). P-A(A-2)가 만든다.
- * - `?` → `showHelp(fragment, helpKey)`: **앱 도움말** — 개발자 작성, `strings.xml`.
- *   P3가 `helpKey` 규약과 본문을 얹는다(본문 승인 게이트는 그대로 — 여기서는 껍데기만 만든다).
+ *   `description`). P-A(A-2)가 만들었다.
+ * - `?` → [showHelp]: **앱 도움말** — 개발자 작성, `strings.xml`의 `help_*`.
+ *   본문은 `docs/text_style_guide_2026-07.md` 9-2 초안의 승인분만 싣는다(P3 게이트).
  */
 object HelpDialog {
+
+    /**
+     * 도움말 주제(helpKey) — 문자열 키 대신 enum이라 리소스 누락이 컴파일에서 잡힌다.
+     * 새 주제는 본문 승인 후에만 등재한다(가이드 9-2가 원문의 단일 소스).
+     */
+    enum class Topic(@StringRes val titleRes: Int, @StringRes val bodyRes: Int) {
+        FIELD_KEY(R.string.help_field_key_title, R.string.help_field_key_body),
+        DISPLAY_FORMAT(R.string.help_display_format_title, R.string.help_display_format_body),
+        NARRATIVE_MODE(R.string.help_narrative_mode_title, R.string.help_narrative_mode_body),
+        SEMANTIC_ROLE(R.string.help_semantic_role_title, R.string.help_semantic_role_body),
+        STRUCTURED_INPUT(R.string.help_structured_input_title, R.string.help_structured_input_body),
+        PERCENTILE(R.string.help_percentile_title, R.string.help_percentile_body),
+        RANDOM_GENERATION(R.string.help_random_title, R.string.help_random_body),
+        STATS_ANALYSIS(R.string.help_stats_analysis_title, R.string.help_stats_analysis_body),
+        STATS_GROUPING(R.string.help_stats_grouping_title, R.string.help_stats_grouping_body),
+        INPUT_MODE(R.string.help_input_mode_title, R.string.help_input_mode_body),
+        INITIAL_VALUES(R.string.help_initial_values_title, R.string.help_initial_values_body),
+        GRADE_VALUES(R.string.help_grade_values_title, R.string.help_grade_values_body)
+    }
+
+    /** 앱 도움말 표시 — `?` 아이콘의 진입점. */
+    fun showHelp(context: Context, topic: Topic) {
+        MaterialAlertDialogBuilder(context)
+            .setTitle(topic.titleRes)
+            .setMessage(topic.bodyRes)
+            .setPositiveButton(R.string.confirm, null)
+            .show()
+    }
 
     /** 필드 설명 표시 — 설명이 없으면 아무것도 띄우지 않는다(호출측이 아이콘 자체를 감춘다). */
     fun showFieldNote(context: Context, field: FieldDefinition) {
