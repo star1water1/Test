@@ -37,6 +37,15 @@ object FolderNameToken {
     /** 라벨 절단 길이(문자 수). 한글 3바이트 기준으로 96바이트 + 번호·토큰·확장자 여유. */
     const val MAX_LABEL_LENGTH = 32
 
+    /**
+     * 캐릭터 폴더명 길이 상한(문자 수). 한글 3바이트 기준 192바이트로 255바이트 안에 든다.
+     *
+     * 라벨보다 후한 이유: 라벨은 **잘라도 되지만**(정체성은 토큰이 진다) 폴더명은 자르는 순간
+     * 받아오기의 정확 일치가 깨져 그 캐릭터로 되돌아오지 못한다. 그래서 폴더명은 자르지 않고,
+     * 상한을 넘는 이름은 [isFolderNameSafe]가 **거절**해 내보내기가 고지한다.
+     */
+    const val MAX_FOLDER_NAME_LENGTH = 64
+
     /** 라벨이 통째로 지워졌을 때 쓰는 대체 라벨(미배정 이미지의 기본 라벨이기도 하다). */
     const val FALLBACK_LABEL = "이미지"
 
@@ -104,6 +113,24 @@ object FolderNameToken {
         val trimmed = replaced.trim().trim('.').trim()
         val cut = trimmed.take(MAX_LABEL_LENGTH).trim().trim('.').trim()
         return cut.ifBlank { FALLBACK_LABEL }
+    }
+
+    /**
+     * 이 이름을 **고치지 않고 그대로** 폴더명으로 쓸 수 있는가 — 캐릭터 폴더의 왕복 가능 판정.
+     *
+     * 라벨과 규칙이 다른 이유는 [MAX_FOLDER_NAME_LENGTH]에 적었다: 폴더명은 받아오기가
+     * 캐릭터 이름과 **정확 일치**로 되돌리는 축이라, 정리하거나 자르면 그 폴더는 더 이상 그
+     * 캐릭터를 가리키지 않는다("기타 이름"으로 읽혀 엉뚱한 링크 묶음이 된다). 그래서 고쳐서
+     * 내보내는 대신, 고쳐야 하는 이름은 여기서 걸러 내보내기가 **개수와 이름을 고지**한다.
+     *
+     * 앞뒤 공백은 문제가 아니다 — 받아오기가 폴더명을 트림해 맞추므로 트림된 이름으로
+     * 폴더를 만들면 그대로 돌아온다.
+     */
+    fun isFolderNameSafe(name: String): Boolean {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty() || trimmed.length > MAX_FOLDER_NAME_LENGTH) return false
+        if (trimmed.startsWith('.') || trimmed.endsWith('.')) return false
+        return trimmed.none { it in FORBIDDEN_LABEL_CHARS || it.code < 0x20 || it.code == 0x7F }
     }
 
     /** 확장자 정리 — 앞 점 제거·소문자·비어 있으면 `jpg`. */

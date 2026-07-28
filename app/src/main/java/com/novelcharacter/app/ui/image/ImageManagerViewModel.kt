@@ -1108,6 +1108,71 @@ class ImageManagerViewModel(
         scan.files.size
     }
 
+    // ===== 정리 폴더 왕복 (내보내기) =====
+
+    /** 정리 폴더 내보내기 계획 결과. [accessible]=false면 권한 소실(폴더 삭제·권한 회수). */
+    data class FolderExportOutcome(
+        val bundle: com.novelcharacter.app.util.OrganizeFolderService.ExportBundle?,
+        val accessible: Boolean
+    )
+
+    /**
+     * 내보내기 계획을 세운다. 실행은 [runOrganizeExport]가 하며, 그 사이에 반드시 사용자
+     * 확인을 거친다 — 용량과 **이전 사본 정리**를 미리 보여야 한다(조용한 덮어쓰기 금지).
+     */
+    fun planOrganizeExport(
+        scope: com.novelcharacter.app.util.FolderExportPlanner.Scope,
+        onDone: (FolderExportOutcome) -> Unit
+    ) {
+        _loading.value = true
+        viewModelScope.launch {
+            val outcome = withContext(Dispatchers.IO) {
+                val uri = organizeFolderUri() ?: return@withContext FolderExportOutcome(null, false)
+                val bundle = com.novelcharacter.app.util.OrganizeFolderService
+                    .buildExportPlan(getApplication(), db, uri, scope)
+                    ?: return@withContext FolderExportOutcome(null, false)
+                FolderExportOutcome(bundle, accessible = true)
+            }
+            _loading.value = false
+            onDone(outcome)
+        }
+    }
+
+    /**
+     * 사본을 내보낸다. 진행도는 [onProgress](메인 스레드)로 올라오고, [isCancelled]가 true가
+     * 되면 그 파일까지 쓰고 멈춘다. 앱 원본은 읽기만 하므로 실패해도 데이터는 그대로다.
+     */
+    fun runOrganizeExport(
+        bundle: com.novelcharacter.app.util.OrganizeFolderService.ExportBundle,
+        onProgress: (Int, Int) -> Unit,
+        isCancelled: () -> Boolean,
+        onDone: (com.novelcharacter.app.util.OrganizeFolderService.ExportResult) -> Unit
+    ) {
+        viewModelScope.launch {
+            val uri = organizeFolderUri()
+            if (uri == null) {
+                onDone(com.novelcharacter.app.util.OrganizeFolderService.ExportResult())
+                return@launch
+            }
+            val result = runCatching {
+                com.novelcharacter.app.util.OrganizeFolderService.runExport(
+                    getApplication(), uri, bundle,
+                    onProgress = { done, total -> withContext(Dispatchers.Main) { onProgress(done, total) } },
+                    isCancelled = isCancelled
+                )
+            }.getOrElse {
+                // 어떤 예외에도 크래시 대신 '내보낸 것 없음'으로 통보한다(변수 제어).
+                com.novelcharacter.app.util.OrganizeFolderService.ExportResult()
+            }
+            onDone(result)
+        }
+    }
+
+    private suspend fun organizeFolderUri(): android.net.Uri? {
+        val raw = ImageSettingsStore(getApplication()).getOrganizeFolderUri() ?: return null
+        return runCatching { android.net.Uri.parse(raw) }.getOrNull()
+    }
+
     /** imagePaths JSON에서 [oldPath]/[oldCanon]에 해당하는 항목을 [newPath]로 교체해 재직렬화. */
     private fun replacePath(json: String, oldPath: String, oldCanon: String, newPath: String): String {
         val updated = parsePaths(json).map {

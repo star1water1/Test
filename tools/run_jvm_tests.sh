@@ -140,6 +140,7 @@ $MAIN/util/AutoLinkPlanner.kt
 $MAIN/util/FolderNameToken.kt
 $MAIN/util/FolderRoundtripPlanner.kt
 $MAIN/util/FolderRoundtripLedger.kt
+$MAIN/util/FolderExportPlanner.kt
 $MAIN/ui/supplement/RandomPickEngine.kt
 $MAIN/ui/namebank/BulkRegisterPlanner.kt
 $MAIN/excel/StreamingXlsxReader.kt
@@ -200,6 +201,7 @@ $TEST/util/AutoLinkPlannerTest.kt
 $TEST/util/FolderNameTokenTest.kt
 $TEST/util/FolderRoundtripPlannerTest.kt
 $TEST/util/FolderRoundtripLedgerTest.kt
+$TEST/util/FolderExportPlannerTest.kt
 $TEST/ui/supplement/RandomPickEngineTest.kt
 $TEST/stats/StatsDataProviderUnassignedTest.kt
 $TEST/namebank/BulkRegisterPlannerTest.kt
