@@ -25,6 +25,7 @@ import com.google.android.material.color.MaterialColors
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textfield.TextInputEditText
 import com.novelcharacter.app.R
+import com.novelcharacter.app.ai.AiCreativity
 import com.novelcharacter.app.ai.AiErrorMessages
 import com.novelcharacter.app.ai.AiKeyStore
 import com.novelcharacter.app.ai.AiModelInfo
@@ -91,7 +92,54 @@ class AiSettingsFragment : Fragment() {
         binding.addProviderButton.setOnClickListener { showPresetPicker() }
 
         setupConsistencySliders()
+        setupCreativityGroup()
         refreshList()
+    }
+
+    /**
+     * 창작도 (A-4) — 4택 라디오, 고르는 순간이 곧 확정(저장 단계 없음).
+     * 자유·실험은 근거 강도 하한과의 충돌 가드([CreativityChipRow.applyWithConflictGuard])를
+     * 거친다 — 칩 표면과 같은 규칙·같은 값이다. 프로토콜 상한 고지(§6-4)는 활성 프로바이더 기준.
+     */
+    private fun setupCreativityGroup() {
+        val settings = AiPromptSettings(requireContext())
+        val idOf = { c: AiCreativity ->
+            when (c) {
+                AiCreativity.PRECISE -> R.id.creativityPrecise
+                AiCreativity.BALANCED -> R.id.creativityBalanced
+                AiCreativity.FREE -> R.id.creativityFree
+                AiCreativity.BOLD -> R.id.creativityBold
+            }
+        }
+        var suppress = true
+        binding.creativityGroup.check(idOf(settings.creativity))
+        suppress = false
+        binding.creativityGroup.setOnCheckedChangeListener { _, checkedId ->
+            if (suppress) return@setOnCheckedChangeListener
+            val chosen = when (checkedId) {
+                R.id.creativityPrecise -> AiCreativity.PRECISE
+                R.id.creativityFree -> AiCreativity.FREE
+                R.id.creativityBold -> AiCreativity.BOLD
+                else -> AiCreativity.BALANCED
+            }
+            if (chosen == settings.creativity) return@setOnCheckedChangeListener
+            com.novelcharacter.app.ui.character.CreativityChipRow.applyWithConflictGuard(this, chosen) {
+                // 취소·적용 어느 쪽이든 라디오를 실제 저장값으로 되돌린다(화면이 거짓이 되지 않게)
+                if (_binding != null) {
+                    suppress = true
+                    binding.creativityGroup.check(idOf(settings.creativity))
+                    suppress = false
+                }
+            }
+        }
+        renderCreativityProtocolNote()
+    }
+
+    /** §6-4 — Anthropic처럼 상한 1.0인 프로토콜에서는 자유·실험 차이가 작다는 사실을 밝힌다. */
+    private fun renderCreativityProtocolNote() {
+        val protocol = providerStore.active()?.protocol
+        binding.creativityProtocolNote.visibility =
+            if (protocol != null && AiCreativity.narrowTopRange(protocol)) View.VISIBLE else View.GONE
     }
 
     /**
@@ -180,6 +228,8 @@ class AiSettingsFragment : Fragment() {
         adapter.submit(configs, providerStore.activeId())
         binding.emptyText.visibility = if (configs.isEmpty()) View.VISIBLE else View.GONE
         binding.providerList.visibility = if (configs.isEmpty()) View.GONE else View.VISIBLE
+        // 활성 프로바이더가 바뀌면 창작도 프로토콜 고지(§6-4)도 그 프로토콜 기준으로 갱신한다
+        renderCreativityProtocolNote()
     }
 
     // ── 추가: 프리셋 선택 ──────────────────────────────────────────────────────
@@ -577,7 +627,8 @@ class AiSettingsFragment : Fragment() {
             model = model,
             baseUrl = baseUrl,
             maxOutputTokens = b.maxTokensSlider.value.toInt(),
-            detectedOutputLimit = if (identityChanged) null else detectedLimit
+            detectedOutputLimit = if (identityChanged) null else detectedLimit,
+            temperatureUnsupported = if (identityChanged) null else base.temperatureUnsupported
         )
     }
 

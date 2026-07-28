@@ -149,6 +149,8 @@ object AiFieldSuggestSheet {
                     setPadding(0, (4 * density).toInt(), 0, 0)
                 })
             }
+            // 창작도 칩 (A-4 §6-8) — 실행 직전 1탭. 값은 설정과 같은 단일 소스다.
+            addView(CreativityChipRow.create(fragment))
             addView(includeFilledCheck)
         }
 
@@ -605,6 +607,8 @@ object AiFieldSuggestSheet {
             setPadding(pad, pad / 2, pad, 0)
             addView(valueInput)
             addView(optionHint)
+            // 창작도 칩 (A-4 §6-8) — 가장 값진 자리: "이 값은 뻔하다 → 올려서 다시"가 1탭이 된다
+            addView(CreativityChipRow.create(fragment))
             addView(instruction)
         }
 

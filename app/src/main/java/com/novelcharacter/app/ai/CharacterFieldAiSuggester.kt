@@ -261,6 +261,8 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
         targets: List<FieldSpec>,
         /** 받아올 최소 근거 강도 (사용자 설정). null이면 강도와 무관하게 전부 받는다 */
         minConfidence: Confidence? = null,
+        /** 창작도 (A-4) — 샘플링(temperature) + 지시 2층으로 적용된다. 기본은 무회귀(균형). */
+        creativity: AiCreativity = AiCreativity.DEFAULT,
         errorMessageOf: (AiResult.Failure) -> String
     ): SuggestOutcome {
         val suggestions = mutableListOf<Suggestion>()
@@ -273,20 +275,31 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
         var outputTokens = 0
 
         val maxTokens = aiService.effectiveMaxTokens()
+        val temperature = aiService.temperatureFor(creativity)
+        // 이 모델이 temperature를 거부한다고 이미 학습한 경우 — 창작도를 올렸는데 아무 변화가
+        // 없는 이유를 사용자가 알 수 있어야 한다 (§6-5 ④, 조용한 실패 금지)
+        if (creativity != AiCreativity.BALANCED && aiService.isTemperatureUnsupported()) {
+            failures.add(TEMPERATURE_UNSUPPORTED_NOTE)
+        }
         val chunks = chunkTargets(targets, maxTokens)
         for ((chunkIndex, chunk) in chunks.withIndex()) {
             val prompt = buildUserPrompt(context, chunk)
             // 청크별 targetNames 차이로 문구가 다를 수 있어 완전 중복만 접는다 (고지 과다는 무해 방향)
             prompt.truncationNotes.forEach { if (it !in truncationNotes) truncationNotes.add(it) }
             val request = AiRequest(
-                system = buildSystemPrompt(minConfidence),
+                system = buildSystemPrompt(minConfidence, creativity),
                 userText = prompt.text,
-                maxTokens = maxTokens
+                maxTokens = maxTokens,
+                temperature = temperature
             )
             when (val result = aiService.complete(request)) {
                 is AiResult.Success -> {
                     inputTokens += result.inputTokens ?: 0
                     outputTokens += result.outputTokens ?: 0
+                    // 이번 요청에서 temperature 거부를 학습해 빼고 재시도한 성공 — 같은 고지 한 줄
+                    if (result.temperatureOmitted && TEMPERATURE_UNSUPPORTED_NOTE !in failures) {
+                        failures.add(TEMPERATURE_UNSUPPORTED_NOTE)
+                    }
                     val parsed = parseResponse(result.text, chunk, minConfidence)
                     if (parsed == null) {
                         // 잘린 응답은 형식 오류가 아니다 — 원인과 교정 경로를 정확히 말해야 한다.
@@ -397,6 +410,10 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
         )
 
         const val PARSE_FAILURE_MESSAGE = "응답 형식을 해석할 수 없습니다 — 다시 시도해 주세요"
+
+        /** temperature 미지원 모델 고지 (A-4 §6-5 ④) — 빠뜨리면 창작도가 조용히 반쪽이 된다 */
+        const val TEMPERATURE_UNSUPPORTED_NOTE =
+            "이 모델은 창작도의 샘플링 조절을 지원하지 않아 지시 문구만 적용했습니다"
 
         /** 결손 사유에 덧붙이는 원문·모델 사유의 표시 상한 (다이얼로그 한 줄 분량) */
         const val MAX_MISSING_DETAIL_CHARS = 60
@@ -710,7 +727,10 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
          * 보여줄 수 있고(변수 제어), 추측성 제안은 검토 UI에서 사용자가 걸러 낸다 — 채택 여부를
          * 가리는 것은 모델이 아니라 사용자다(자율성 우선).
          */
-        fun buildSystemPrompt(minConfidence: Confidence? = null): String = """
+        fun buildSystemPrompt(
+            minConfidence: Confidence? = null,
+            creativity: AiCreativity = AiCreativity.DEFAULT
+        ): String = """
             당신은 소설 캐릭터 설정 도우미다. 주어진 캐릭터 정보를 근거로 요청된 필드의 값을 추천하라.
             규칙:
             1. 반드시 아래 JSON 스키마로만 응답하고 다른 텍스트를 덧붙이지 마라:
@@ -743,7 +763,7 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
             14. '설명'이 붙은 필드는 그 설명이 이 작품에서 그 필드가 뜻하는 바의 정의이자 제약이다.
                 설명과 어긋나는 값을 내지 마라. 설명이 옵션·형식과 충돌하면 옵션·형식을 따르고,
                 무엇이 충돌했는지 reason에 적어라.
-        """.trimIndent() + confidenceFloorRule(minConfidence)
+        """.trimIndent() + confidenceFloorRule(minConfidence) + creativity.promptRule()
 
         /**
          * 근거 강도 하한 지시 — 설정이 '전부 받기'면 아예 붙이지 않는다.

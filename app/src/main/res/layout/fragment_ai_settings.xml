@@ -213,6 +213,79 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
+            <!-- 창작도 (A-4) — 값의 후보 공간을 넓히되 계약(설명·옵션·형식·허용 목록)은 넓히지 않는다 -->
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="@dimen/stats_margin_md"
+                app:cardCornerRadius="@dimen/stats_card_corner_radius"
+                app:cardElevation="@dimen/stats_card_elevation">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/ai_creativity_label"
+                        android:textAppearance="@style/TextAppearance.App.BodyStrong" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="@string/ai_settings_creativity_hint"
+                        android:textAppearance="@style/TextAppearance.App.Caption"
+                        android:textColor="?attr/colorOnSurfaceVariant" />
+
+                    <RadioGroup
+                        android:id="@+id/creativityGroup"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:orientation="vertical">
+
+                        <com.google.android.material.radiobutton.MaterialRadioButton
+                            android:id="@+id/creativityPrecise"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/ai_creativity_precise_desc" />
+
+                        <com.google.android.material.radiobutton.MaterialRadioButton
+                            android:id="@+id/creativityBalanced"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/ai_creativity_balanced_desc" />
+
+                        <com.google.android.material.radiobutton.MaterialRadioButton
+                            android:id="@+id/creativityFree"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/ai_creativity_free_desc" />
+
+                        <com.google.android.material.radiobutton.MaterialRadioButton
+                            android:id="@+id/creativityBold"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/ai_creativity_bold_desc" />
+                    </RadioGroup>
+
+                    <!-- §6-4 — 프로토콜 상한 차이(자유·실험이 좁은 프로바이더)를 숨기지 않는다 -->
+                    <TextView
+                        android:id="@+id/creativityProtocolNote"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="@string/ai_creativity_narrow_range_note"
+                        android:textAppearance="@style/TextAppearance.App.Caption"
+                        android:textColor="?attr/colorPrimary"
+                        android:visibility="gone" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"

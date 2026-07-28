@@ -2347,6 +2347,20 @@
     <string name="ai_result_target_deleted">요청했던 캐릭터가 삭제되어 결과를 적용할 곳이 없습니다.</string>
     <string name="ai_supplement_scope_note">AI 추천이 메우는 것은 비어 있는 필드 값입니다 — 이미지·관계·작품 배정·사건·세력 미흡은 추천 대상이 아닙니다.</string>
 
+    <!-- A-4 창작도 — 폭·랜덤성은 넓히되 필드 설명·옵션·형식·허용 목록은 항상 지킨다 -->
+    <string name="ai_creativity_label">창작도</string>
+    <string name="ai_settings_creativity_hint">추천 값의 폭·의외성을 조절합니다. 어느 단계에서도 필드 설명·옵션·형식·\'목록 값만 허용\'은 그대로 지켜지며, 어긋난 값은 저장되지 않고 사유와 함께 제외됩니다.</string>
+    <string name="ai_creativity_precise_desc">정확 — 캐릭터 정보와 기존 사용값에서 직접 도출되는 값만</string>
+    <string name="ai_creativity_balanced_desc">균형 (기본) — 현행 그대로, 샘플링 조절 없음</string>
+    <string name="ai_creativity_free_desc">자유 — 기존 사용값 밖의 새 값 허용 (표기 방식은 따름)</string>
+    <string name="ai_creativity_bold_desc">실험 — 뻔한 답을 피하고 서로 다른 방향 시도</string>
+    <!-- §6-4: 프로토콜 상한 차이를 숨기지 않는다 -->
+    <string name="ai_creativity_narrow_range_note">현재 프로바이더는 온도 상한이 1.0이라 \'실험\'과 \'자유\'의 샘플링 차이가 작습니다. 차이는 지시 문구에서 납니다.</string>
+    <!-- §6-6: 근거 강도 하한과의 충돌 — 그 자리에서 경고 + 바로 바꾸는 링크 -->
+    <string name="ai_creativity_confidence_conflict">근거 강도 하한이 \'%1$s\'(으)로 설정돼 있어 창작도를 올려도 근거가 얕은 추천은 대부분 제외됩니다 — 요금만 들고 결과가 비어 있을 수 있습니다.</string>
+    <string name="ai_creativity_lower_floor">강도 하한 낮추기</string>
+    <string name="ai_creativity_apply_anyway">그대로 적용</string>
+
     <!-- restricted 입력 모드 위반 안내 -->
     <string name="field_library_restricted_violation_title">허용되지 않은 값</string>
     <string name="field_library_restricted_violation_line">\'%1$s\' 필드는 라이브러리 값만 허용합니다.\n입력한 값: %2$s</string>

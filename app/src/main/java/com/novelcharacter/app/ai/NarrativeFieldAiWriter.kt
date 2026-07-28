@@ -71,14 +71,20 @@ class NarrativeFieldAiWriter(private val aiService: AiService) {
         mode: Mode,
         length: Length,
         variants: Int = DEFAULT_VARIANTS,
+        /** 창작도 (A-4) — 창작 폭이 가장 크게 체감되는 자리. 기본은 무회귀(균형). */
+        creativity: AiCreativity = AiCreativity.DEFAULT,
         errorMessageOf: (AiResult.Failure) -> String
     ): WriteOutcome {
         val wanted = variants.coerceIn(1, MAX_VARIANTS)
         val prompt = buildUserPrompt(context, field, mode, length, wanted)
+        // 학습된 미지원 모델 — 샘플링 없이 지시만 적용된다는 사실을 고지한다 (§6-5 ④)
+        val temperatureNote =
+            creativity != AiCreativity.BALANCED && aiService.isTemperatureUnsupported()
         val request = AiRequest(
-            system = buildSystemPrompt(),
+            system = buildSystemPrompt(creativity),
             userText = prompt.text,
-            maxTokens = aiService.effectiveMaxTokens()
+            maxTokens = aiService.effectiveMaxTokens(),
+            temperature = aiService.temperatureFor(creativity)
         )
         return when (val result = aiService.complete(request)) {
             is AiResult.Success -> {
@@ -92,6 +98,9 @@ class NarrativeFieldAiWriter(private val aiService: AiService) {
                         } else if (result.truncated) {
                             add(TRUNCATED_PARTIAL_MESSAGE)
                         }
+                        if (temperatureNote || result.temperatureOmitted) {
+                            add(CharacterFieldAiSuggester.TEMPERATURE_UNSUPPORTED_NOTE)
+                        }
                     },
                     truncationNotes = prompt.truncationNotes,
                     truncated = result.truncated,
@@ -102,7 +111,10 @@ class NarrativeFieldAiWriter(private val aiService: AiService) {
             is AiResult.Failure -> WriteOutcome(
                 drafts = emptyList(),
                 droppedCount = 0,
-                failures = listOf(errorMessageOf(result)),
+                failures = buildList {
+                    add(errorMessageOf(result))
+                    if (temperatureNote) add(CharacterFieldAiSuggester.TEMPERATURE_UNSUPPORTED_NOTE)
+                },
                 truncationNotes = prompt.truncationNotes,
                 truncated = false,
                 inputTokens = 0,
@@ -210,7 +222,7 @@ class NarrativeFieldAiWriter(private val aiService: AiService) {
             if (currentValue.isBlank()) listOf(Mode.DRAFT)
             else Mode.entries.filter { it.requiresExisting }
 
-        fun buildSystemPrompt(): String = """
+        fun buildSystemPrompt(creativity: AiCreativity = AiCreativity.DEFAULT): String = """
             당신은 소설 캐릭터 설정을 함께 쓰는 작가 보조다. 주어진 캐릭터 정보와 지시에 따라
             지정된 필드에 들어갈 **한국어 산문**을 쓴다.
             규칙:
@@ -226,7 +238,7 @@ class NarrativeFieldAiWriter(private val aiService: AiService) {
                내용·설정·표현을 가져오지 말고 문체만 따른다. 참고에 나온 인물을 등장시키지 마라.
             7. 대상 필드에 '설명'이 붙어 있으면 그 설명이 이 작품에서 그 필드가 뜻하는 바의
                정의이자 제약이다. 설명과 어긋나는 내용을 쓰지 마라.
-        """.trimIndent()
+        """.trimIndent() + creativity.promptRule()
 
         fun buildUserPrompt(
             context: CharacterFieldAiSuggester.CharacterAiContext,

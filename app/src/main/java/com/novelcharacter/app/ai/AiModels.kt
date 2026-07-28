@@ -44,7 +44,14 @@ data class AiProviderConfig(
      * ② 상한 초과 400 오류가 본문에 적어 주는 경우(Anthropic·OpenAI)
      * 정적 표를 두지 않는 이유: 표는 새 모델이 나올 때마다 낡는다(AiPresets 모델 추천의 기존 한계).
      */
-    val detectedOutputLimit: Int? = null
+    val detectedOutputLimit: Int? = null,
+    /**
+     * 이 모델이 `temperature` 파라미터를 거부한다고 **학습**했는가 (A-4).
+     * 일부 OpenAI 호환 추론 모델이 400으로 거부한다 — 한 번 확인되면 다음부터 싣지 않고,
+     * 창작도는 지시 문구로만 적용된다(그 사실은 결과 고지 한 줄로 알린다 — 조용한 실패 금지).
+     * null = 모름(정상 가정). R-23에 따라 모델·주소가 바뀌면 함께 버린다.
+     */
+    val temperatureUnsupported: Boolean? = null
 ) {
     /**
      * R-23 — 오류·조회 응답에서 **학습한** 사실이 하나라도 있는가.
@@ -52,7 +59,7 @@ data class AiProviderConfig(
      * 전부 null로 되돌리고 사용자에게 고지한다(다음 요청이 다시 배운다 — 손실 없음).
      * 새 학습값이 생기면 반드시 여기에도 등재할 것 — 초기화 고지 판정의 단일 소스다.
      */
-    fun hasLearnedFacts(): Boolean = detectedOutputLimit != null
+    fun hasLearnedFacts(): Boolean = detectedOutputLimit != null || temperatureUnsupported != null
 }
 
 /**
@@ -140,10 +147,20 @@ data class AiMessage(val role: AiRole, val text: String)
 data class AiRequest(
     val system: String? = null,
     val messages: List<AiMessage>,
-    val maxTokens: Int = DEFAULT_MAX_TOKENS
+    val maxTokens: Int = DEFAULT_MAX_TOKENS,
+    /**
+     * 샘플링 온도 (A-4 창작도). **null이면 파라미터를 아예 싣지 않는다** — 프로바이더 기본값
+     * 그대로이며 종전 요청과 바이트 단위로 동일하다(회귀 없음). 값 산출은 [AiCreativity]
+     * (프로토콜별 상한 반영), 직렬화는 [AiProtocolCodec]이 전담한다.
+     */
+    val temperature: Double? = null
 ) {
-    constructor(system: String? = null, userText: String, maxTokens: Int = DEFAULT_MAX_TOKENS) :
-        this(system, listOf(AiMessage(AiRole.USER, userText)), maxTokens)
+    constructor(
+        system: String? = null,
+        userText: String,
+        maxTokens: Int = DEFAULT_MAX_TOKENS,
+        temperature: Double? = null
+    ) : this(system, listOf(AiMessage(AiRole.USER, userText)), maxTokens, temperature)
 
     companion object {
         const val DEFAULT_MAX_TOKENS = 2048
@@ -165,7 +182,13 @@ sealed class AiResult {
          * **오진**이 떴다(재시도해도 결정적으로 같은 결과). 호출측은 이 플래그를 보고
          * 원인과 교정 경로(대상 줄이기·상한 올리기)를 안내해야 한다.
          */
-        val truncated: Boolean = false
+        val truncated: Boolean = false,
+        /**
+         * 모델이 temperature를 거부해 **빼고 재시도**한 성공인가 (A-4).
+         * 이 사실을 고지하지 않으면 사용자는 창작도를 올렸는데 아무 변화가 없는 이유를
+         * 영영 모른다 — 호출측은 결과 고지에 한 줄을 남겨야 한다.
+         */
+        val temperatureOmitted: Boolean = false
     ) : AiResult()
 
     data class Failure(

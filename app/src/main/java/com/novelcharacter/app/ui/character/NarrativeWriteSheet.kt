@@ -65,19 +65,41 @@ object NarrativeWriteSheet {
         mode: NarrativeFieldAiWriter.Mode
     ) {
         val context = fragment.requireContext()
+        val density = context.resources.displayMetrics.density
+        val pad = (20 * density).toInt()
         val lengths = NarrativeFieldAiWriter.Length.entries
-        val labels = lengths.map { fragment.getString(lengthLabel(it), it.hint) }.toTypedArray()
-        MaterialAlertDialogBuilder(context)
+
+        // 항목 리스트 대신 패널 — 비용 고지 + 창작도 칩(A-4)을 분량 선택과 한 화면에 담는다.
+        val panel = android.widget.LinearLayout(context).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(pad, pad / 2, pad, 0)
+            addView(android.widget.TextView(context).apply {
+                textSize = 14f
+                text = fragment.getString(
+                    R.string.ai_narrative_cost_notice, NarrativeFieldAiWriter.DEFAULT_VARIANTS
+                )
+            })
+            addView(CreativityChipRow.create(fragment))
+        }
+        val dialog = MaterialAlertDialogBuilder(context)
             .setTitle(R.string.ai_narrative_length_title)
-            // 요청은 1건 — 후보 여러 개를 한 요청으로 받으므로 비용이 후보 수에 비례하지 않는다.
-            .setMessage(
-                fragment.getString(R.string.ai_narrative_cost_notice, NarrativeFieldAiWriter.DEFAULT_VARIANTS)
-            )
-            .setItems(labels) { _, which ->
-                run(fragment, viewModel, contextLoader, field, characterId, spec, mode, lengths[which])
-            }
+            .setView(panel)
             .setNegativeButton(R.string.cancel, null)
-            .show()
+            .create()
+        for (length in lengths) {
+            panel.addView(
+                com.google.android.material.button.MaterialButton(
+                    context, null, com.google.android.material.R.attr.materialButtonOutlinedStyle
+                ).apply {
+                    text = fragment.getString(lengthLabel(length), length.hint)
+                    setOnClickListener {
+                        dialog.dismiss()
+                        run(fragment, viewModel, contextLoader, field, characterId, spec, mode, length)
+                    }
+                }
+            )
+        }
+        dialog.show()
     }
 
     private fun run(

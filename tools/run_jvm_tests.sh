@@ -128,6 +128,7 @@ $MAIN/data/model/SemanticRole.kt
 $MAIN/ai/CharacterFieldAiSuggester.kt
 $MAIN/ai/FieldLibraryAiOrganizer.kt
 $MAIN/ai/AiModels.kt
+$MAIN/ai/AiCreativity.kt
 $MAIN/ai/AiProtocolCodec.kt
 $MAIN/ai/NarrativeFieldAiWriter.kt
 $MAIN/ai/AiPromptPolicy.kt
@@ -201,6 +202,7 @@ $TEST/data/FieldConfigPolicyTest.kt
 $TEST/excel/FieldConfigColumnsTest.kt
 $TEST/ai/FieldLibraryAiOrganizerTest.kt
 $TEST/ai/AiProtocolCodecTest.kt
+$TEST/ai/AiCreativityTest.kt
 $TEST/ai/AiTokenPolicyTest.kt
 $TEST/ai/NarrativeFieldTest.kt
 $TEST/share/WorldPackageFactionRelationshipsTest.kt

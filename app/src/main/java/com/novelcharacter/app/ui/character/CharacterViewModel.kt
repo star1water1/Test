@@ -909,10 +909,11 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
                 val suggester = com.novelcharacter.app.ai.CharacterFieldAiSuggester(
                     com.novelcharacter.app.ai.AiService(getApplication())
                 )
-                val floor = if (applyConfidenceFilter) {
-                    com.novelcharacter.app.ai.AiPromptSettings(getApplication()).minConfidence
-                } else null
-                val outcome = suggester.suggest(aiContext, withFieldUsage(targets), floor) { failure ->
+                val settings = com.novelcharacter.app.ai.AiPromptSettings(getApplication())
+                val floor = if (applyConfidenceFilter) settings.minConfidence else null
+                val outcome = suggester.suggest(
+                    aiContext, withFieldUsage(targets), floor, settings.creativity
+                ) { failure ->
                     com.novelcharacter.app.ai.AiErrorMessages.of(getApplication(), failure)
                 }
                 aiSuggestResult.value = AiSuggestRun(targets, singleMode, outcome, targetCharacterId)
@@ -991,7 +992,8 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
                     com.novelcharacter.app.ai.AiService(getApplication())
                 )
                 val enriched = withStyleSamples(spec, fieldId, characterId)
-                val outcome = writer.write(aiContext, enriched, mode, length, variants) { failure ->
+                val creativity = com.novelcharacter.app.ai.AiPromptSettings(getApplication()).creativity
+                val outcome = writer.write(aiContext, enriched, mode, length, variants, creativity) { failure ->
                     com.novelcharacter.app.ai.AiErrorMessages.of(getApplication(), failure)
                 }
                 aiNarrativeResult.value =

@@ -112,7 +112,13 @@ class AiService(context: Context) {
         val effective = minOf(request.maxTokens, ceiling).coerceAtLeast(AiTokenPolicy.FLOOR)
         val bounded = if (effective == request.maxTokens) request else request.copy(maxTokens = effective)
 
-        val spec = AiProtocolCodec.buildRequest(config, apiKey, bounded)
+        // 학습된 temperature 미지원 모델에는 애초에 싣지 않는다 (A-4 — 같은 400을 반복하지 않는다)
+        val request0 =
+            if (bounded.temperature != null && resolved(config).temperatureUnsupported == true) {
+                bounded.copy(temperature = null)
+            } else bounded
+
+        val spec = AiProtocolCodec.buildRequest(config, apiKey, request0)
         val first = call(spec, config.protocol, config.model)
         if (first !is AiResult.Failure) return@withContext first
 
@@ -120,24 +126,43 @@ class AiService(context: Context) {
         if (config.protocol == AiProtocol.OPENAI_COMPAT &&
             AiProtocolCodec.isMaxTokensParamError(first.httpCode ?: 0, first.detail)
         ) {
-            val retry = AiProtocolCodec.buildOpenAiRetryWithMaxCompletionTokens(config, apiKey, bounded)
+            val retry = AiProtocolCodec.buildOpenAiRetryWithMaxCompletionTokens(config, apiKey, request0)
             return@withContext call(retry, config.protocol, config.model)
         }
 
-        // ② 상한 **값** 초과 → 오류가 알려준 실제 상한으로 1회 재시도하고 그 값을 기억한다.
+        // ② 모델이 temperature 자체를 거부 → 빼고 1회 재시도, 성공하면 기억한다 (A-4).
+        //    max_tokens → max_completion_tokens 자동 재시도와 같은 형태의 유연한 교정이다.
+        //    기억은 R-23에 따라 모델·주소가 바뀌면 함께 버려진다.
+        if (request0.temperature != null &&
+            AiProtocolCodec.isTemperatureUnsupportedError(first.httpCode ?: 0, first.detail)
+        ) {
+            val retrySpec = AiProtocolCodec.buildRequest(config, apiKey, request0.copy(temperature = null))
+            val second = call(retrySpec, config.protocol, config.model)
+            if (second is AiResult.Success) {
+                rememberTemperatureUnsupported(config.id)
+                return@withContext second.copy(temperatureOmitted = true)
+            }
+            return@withContext second
+        }
+
+        // ③ 상한 **값** 초과 → 오류가 알려준 실제 상한으로 1회 재시도하고 그 값을 기억한다.
         //    정적 표 없이 모델별 상한을 배우는 경로다(표는 새 모델마다 낡는다).
         if (first.httpCode == 400) {
-            val learned = AiProtocolCodec.parseMaxTokensLimitFromError(first.detail, bounded.maxTokens)
+            val learned = AiProtocolCodec.parseMaxTokensLimitFromError(first.detail, request0.maxTokens)
             if (learned != null) {
                 rememberDetectedLimit(config.id, learned)
                 val retrySpec = AiProtocolCodec.buildRequest(
-                    config, apiKey, bounded.copy(maxTokens = learned)
+                    config, apiKey, request0.copy(maxTokens = learned)
                 )
                 return@withContext call(retrySpec, config.protocol, config.model)
             }
         }
         first
     }
+
+    /** 지정/활성 설정의 최신 저장본 — 학습값(temperatureUnsupported 등)은 저장소가 진실이다. */
+    private fun resolved(config: AiProviderConfig): AiProviderConfig =
+        providerStore.get(config.id) ?: config
 
     /**
      * 탐지한 모델 출력 상한을 설정에 기록한다(다음 요청부터 바로 맞는 값으로 나간다).
@@ -148,6 +173,28 @@ class AiService(context: Context) {
         if (current.detectedOutputLimit == limit) return
         providerStore.save(current.copy(detectedOutputLimit = limit))
     }
+
+    /** temperature 거부를 학습해 기록한다 — 다음 요청부터 싣지 않는다 (A-4, R-23 대상). */
+    fun rememberTemperatureUnsupported(configId: String) {
+        val current = providerStore.get(configId) ?: return
+        if (current.temperatureUnsupported == true) return
+        providerStore.save(current.copy(temperatureUnsupported = true))
+    }
+
+    /**
+     * 활성 프로바이더에 실을 창작도 샘플링 값 (A-4). null = 싣지 않는다:
+     * '균형'(프로바이더 기본값 유지)이거나, 이 모델이 temperature를 거부한다고 학습했거나,
+     * 활성 프로바이더가 없는 경우다. 프로토콜별 상한 반영은 [AiCreativity]가 전담한다.
+     */
+    fun temperatureFor(creativity: AiCreativity): Double? {
+        val active = providerStore.active() ?: return null
+        if (active.temperatureUnsupported == true) return null
+        return creativity.temperatureFor(active.protocol)
+    }
+
+    /** 활성 모델이 temperature를 거부한다고 학습했는가 — 창작도 결과 고지용 (A-4 §6-5 ④). */
+    fun isTemperatureUnsupported(): Boolean =
+        providerStore.active()?.temperatureUnsupported == true
 
     private suspend fun call(
         spec: AiProtocolCodec.HttpSpec, protocol: AiProtocol, requestedModel: String

@@ -49,11 +49,23 @@ class AiPromptSettings(context: Context) {
             sp.edit().putString(KEY_MIN_CONFIDENCE, AiPromptPolicy.confidenceToWire(value)).apply()
         }
 
+    /**
+     * 창작도 (A-4). **값은 하나다** — 설정 화면·비용 고지 칩·보완 재요청 칩·서술형 시트 칩
+     * 어디서 바꾸든 같은 값을 바꾼다. "이번 요청만"을 나누면 화면마다 다른 값이 살아 있어
+     * 지금 무엇으로 요청되는지 일일이 열어봐야 알 수 있다(원칙 04 위반).
+     */
+    var creativity: AiCreativity
+        get() = AiCreativity.fromWire(sp.getString(KEY_CREATIVITY, null))
+        set(value) {
+            sp.edit().putString(KEY_CREATIVITY, value.wire).apply()
+        }
+
     companion object {
         /** 키를 담지 않는다 — 이 파일은 `ai_keys`·`ai_providers`와 달리 민감 정보가 없다. */
         const val PREFS_NAME = "ai_prompt_settings"
         private const val KEY_USAGE_EXAMPLES = "usageExampleCount"
         private const val KEY_STYLE_SAMPLES = "styleSampleCount"
         private const val KEY_MIN_CONFIDENCE = "minConfidence"
+        private const val KEY_CREATIVITY = "creativity"
     }
 }
