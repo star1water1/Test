@@ -52,10 +52,14 @@
             </com.google.android.material.textfield.TextInputLayout>
 
             <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/fieldKeyLayout"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="12dp"
-                android:hint="@string/hint_field_key">
+                android:hint="@string/hint_field_key"
+                app:endIconMode="custom"
+                app:endIconDrawable="@drawable/ic_help"
+                app:endIconContentDescription="@string/help_icon_desc">
                 <com.google.android.material.textfield.TextInputEditText
                     android:id="@+id/editFieldKey"
                     android:layout_width="match_parent"
@@ -153,11 +157,15 @@
                 android:layout_marginBottom="12dp">
 
                 <TextView
+                    android:id="@+id/labelDisplayFormat"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/label_display_format"
                     android:textAppearance="@style/TextAppearance.App.Caption"
-                    android:textColor="@color/text_secondary" />
+                    android:textColor="@color/text_secondary"
+                    android:drawableEnd="@drawable/ic_help"
+                    android:drawablePadding="4dp"
+                    android:background="?attr/selectableItemBackground" />
 
                 <Spinner
                     android:id="@+id/spinnerDisplayFormat"
@@ -176,11 +184,15 @@
                 android:layout_marginBottom="12dp">
 
                 <TextView
+                    android:id="@+id/labelNarrativeMode"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/label_narrative_mode"
                     android:textAppearance="@style/TextAppearance.App.Caption"
-                    android:textColor="@color/text_secondary" />
+                    android:textColor="@color/text_secondary"
+                    android:drawableEnd="@drawable/ic_help"
+                    android:drawablePadding="4dp"
+                    android:background="?attr/selectableItemBackground" />
 
                 <Spinner
                     android:id="@+id/spinnerNarrativeMode"
@@ -234,11 +246,15 @@
                 android:layout_marginBottom="12dp">
 
                 <TextView
+                    android:id="@+id/labelGradeMapping"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/label_grade_mapping"
                     android:textAppearance="@style/TextAppearance.App.BodyStrong"
                     android:textColor="@color/primary"
+                    android:drawableEnd="@drawable/ic_help"
+                    android:drawablePadding="4dp"
+                    android:background="?attr/selectableItemBackground"
                     android:layout_marginBottom="8dp" />
 
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginBottom="4dp">
@@ -329,7 +345,19 @@
                     android:id="@+id/switchPercentileEnabled"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="@string/label_percentile_enabled"
+                    android:text="@string/label_percentile_enabled" />
+
+                <!-- 목적문 (R-25) — 켜면 무엇이 어디에 어떻게. ? 탭 시 상세 도움말 -->
+                <TextView
+                    android:id="@+id/captionPercentile"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/purpose_percentile"
+                    android:textAppearance="@style/TextAppearance.App.Caption"
+                    android:textColor="@color/text_secondary"
+                    android:drawableEnd="@drawable/ic_help"
+                    android:drawablePadding="4dp"
+                    android:background="?attr/selectableItemBackground"
                     android:layout_marginBottom="4dp" />
 
                 <LinearLayout
@@ -367,7 +395,18 @@
                     android:id="@+id/switchRandomEnabled"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="@string/random_enabled"
+                    android:text="@string/random_enabled" />
+
+                <TextView
+                    android:id="@+id/captionRandom"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/purpose_random"
+                    android:textAppearance="@style/TextAppearance.App.Caption"
+                    android:textColor="@color/text_secondary"
+                    android:drawableEnd="@drawable/ic_help"
+                    android:drawablePadding="4dp"
+                    android:background="?attr/selectableItemBackground"
                     android:layout_marginBottom="4dp" />
 
                 <LinearLayout
@@ -446,11 +485,22 @@
                 android:background="@drawable/bg_count_badge">
 
                 <TextView
+                    android:id="@+id/labelSemanticRole"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/label_semantic_role"
                     android:textAppearance="@style/TextAppearance.App.BodyStrong"
                     android:textColor="@color/primary"
+                    android:drawableEnd="@drawable/ic_help"
+                    android:drawablePadding="4dp"
+                    android:background="?attr/selectableItemBackground" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/purpose_semantic_role"
+                    android:textAppearance="@style/TextAppearance.App.Caption"
+                    android:textColor="@color/text_secondary"
                     android:layout_marginBottom="4dp" />
 
                 <Spinner
@@ -485,7 +535,14 @@
                     android:layout_height="wrap_content"
                     android:text="@string/body_analysis_settings_title"
                     android:textAppearance="@style/TextAppearance.App.BodyStrong"
-                    android:textColor="@color/primary"
+                    android:textColor="@color/primary" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/purpose_body_analysis"
+                    android:textAppearance="@style/TextAppearance.App.Caption"
+                    android:textColor="@color/text_secondary"
                     android:layout_marginBottom="8dp" />
 
                 <!-- 컵 사이즈 매핑 편집 -->
@@ -586,11 +643,22 @@
                 android:visibility="gone">
 
                 <TextView
+                    android:id="@+id/labelStructuredInput"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/label_structured_input"
                     android:textAppearance="@style/TextAppearance.App.BodyStrong"
                     android:textColor="@color/primary"
+                    android:drawableEnd="@drawable/ic_help"
+                    android:drawablePadding="4dp"
+                    android:background="?attr/selectableItemBackground" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/purpose_structured_input"
+                    android:textAppearance="@style/TextAppearance.App.Caption"
+                    android:textColor="@color/text_secondary"
                     android:layout_marginBottom="4dp" />
 
                 <com.google.android.material.switchmaterial.SwitchMaterial
@@ -678,6 +746,17 @@
                     android:text="@string/label_stats_enabled"
                     android:checked="true" />
 
+                <TextView
+                    android:id="@+id/captionStats"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/purpose_stats"
+                    android:textAppearance="@style/TextAppearance.App.Caption"
+                    android:textColor="@color/text_secondary"
+                    android:drawableEnd="@drawable/ic_help"
+                    android:drawablePadding="4dp"
+                    android:background="?attr/selectableItemBackground" />
+
                 <!-- 분석 목록 컨테이너 (동적으로 추가) -->
                 <LinearLayout
                     android:id="@+id/analysisListContainer"
@@ -703,6 +782,13 @@
                     android:layout_marginTop="8dp" />
 
                 <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/purpose_field_library"
+                    android:textAppearance="@style/TextAppearance.App.Caption"
+                    android:textColor="@color/text_secondary" />
+
+                <TextView
                     android:id="@+id/fieldLibrarySummary"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
@@ -723,7 +809,10 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="4dp"
                     android:visibility="gone"
-                    android:hint="@string/field_library_initial_values_hint">
+                    android:hint="@string/field_library_initial_values_hint"
+                    app:endIconMode="custom"
+                    app:endIconDrawable="@drawable/ic_help"
+                    app:endIconContentDescription="@string/help_icon_desc">
 
                     <com.google.android.material.textfield.TextInputEditText
                         android:id="@+id/editInitialValues"
@@ -734,11 +823,15 @@
 
                 <!-- 입력 모드 -->
                 <TextView
+                    android:id="@+id/labelInputMode"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/field_library_menu_input_mode"
                     android:textAppearance="@style/TextAppearance.App.Caption"
                     android:textColor="@color/text_secondary"
+                    android:drawableEnd="@drawable/ic_help"
+                    android:drawablePadding="4dp"
+                    android:background="?attr/selectableItemBackground"
                     android:layout_marginTop="8dp" />
 
                 <Spinner
@@ -747,13 +840,17 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="4dp" />
 
-                <!-- 통계 그룹핑 기준 -->
+                <!-- 통계에서 묶는 기준 -->
                 <TextView
+                    android:id="@+id/labelStatsGroupBy"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/label_stats_group_by"
                     android:textAppearance="@style/TextAppearance.App.Caption"
                     android:textColor="@color/text_secondary"
+                    android:drawableEnd="@drawable/ic_help"
+                    android:drawablePadding="4dp"
+                    android:background="?attr/selectableItemBackground"
                     android:layout_marginTop="8dp" />
 
                 <Spinner

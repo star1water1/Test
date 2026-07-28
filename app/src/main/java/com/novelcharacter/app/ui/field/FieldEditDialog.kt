@@ -116,6 +116,7 @@ class FieldEditDialog : DialogFragment() {
         setupBodyAnalysisSection(binding)
         setupCardDisplaySection(binding)
         setupAiAndDescriptionSection(binding)
+        setupHelpButtons(binding)
         populateFields(binding)
 
         val dialog = MaterialAlertDialogBuilder(requireContext())
@@ -361,6 +362,37 @@ class FieldEditDialog : DialogFragment() {
             R.string.label_card_display_desc,
             com.novelcharacter.app.data.model.CardDisplayConfig.MAX_ON_CARD
         )
+    }
+
+    /**
+     * `?` 앱 도움말 배선 (P3 파일럿 — U-8 첫 적용).
+     * 본문 원문의 단일 소스는 docs/text_style_guide_2026-07.md 9-2 승인분이고,
+     * 주제 키는 [com.novelcharacter.app.ui.common.HelpDialog.Topic] enum이라 리소스 누락이
+     * 컴파일에서 잡힌다. `ⓘ`(사용자가 쓴 필드 설명)와 아이콘·진입이 다르다.
+     */
+    private fun setupHelpButtons(binding: DialogFieldEditBinding) {
+        val ctx = requireContext()
+        val help = com.novelcharacter.app.ui.common.HelpDialog
+        binding.fieldKeyLayout.setEndIconOnClickListener {
+            help.showHelp(ctx, com.novelcharacter.app.ui.common.HelpDialog.Topic.FIELD_KEY)
+        }
+        binding.initialValuesLayout.setEndIconOnClickListener {
+            help.showHelp(ctx, com.novelcharacter.app.ui.common.HelpDialog.Topic.INITIAL_VALUES)
+        }
+        mapOf(
+            binding.labelDisplayFormat to com.novelcharacter.app.ui.common.HelpDialog.Topic.DISPLAY_FORMAT,
+            binding.labelNarrativeMode to com.novelcharacter.app.ui.common.HelpDialog.Topic.NARRATIVE_MODE,
+            binding.labelGradeMapping to com.novelcharacter.app.ui.common.HelpDialog.Topic.GRADE_VALUES,
+            binding.labelSemanticRole to com.novelcharacter.app.ui.common.HelpDialog.Topic.SEMANTIC_ROLE,
+            binding.labelStructuredInput to com.novelcharacter.app.ui.common.HelpDialog.Topic.STRUCTURED_INPUT,
+            binding.captionPercentile to com.novelcharacter.app.ui.common.HelpDialog.Topic.PERCENTILE,
+            binding.captionRandom to com.novelcharacter.app.ui.common.HelpDialog.Topic.RANDOM_GENERATION,
+            binding.captionStats to com.novelcharacter.app.ui.common.HelpDialog.Topic.STATS_ANALYSIS,
+            binding.labelStatsGroupBy to com.novelcharacter.app.ui.common.HelpDialog.Topic.STATS_GROUPING,
+            binding.labelInputMode to com.novelcharacter.app.ui.common.HelpDialog.Topic.INPUT_MODE
+        ).forEach { (view, topic) ->
+            view.setOnClickListener { help.showHelp(ctx, topic) }
+        }
     }
 
     /**
