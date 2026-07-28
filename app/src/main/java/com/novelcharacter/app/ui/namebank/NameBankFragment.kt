@@ -197,6 +197,33 @@ class NameBankFragment : Fragment() {
         binding.chipAvailableOnly.setOnCheckedChangeListener { _, isChecked ->
             viewModel.setShowOnlyAvailable(isChecked)
         }
+
+        // 정렬 — 필터(미사용만)·검색만 있고 정렬이 없던 짝 격차를 메운다
+        updateSortChip()
+        binding.chipSort.setOnClickListener { anchor ->
+            val modes = listOf(
+                NameBankViewModel.SORT_RECENT to R.string.sort_recent_added,
+                NameBankViewModel.SORT_NAME to R.string.sort_name
+            )
+            android.widget.PopupMenu(requireContext(), anchor).apply {
+                modes.forEachIndexed { i, pair -> menu.add(0, i, i, pair.second) }
+                setOnMenuItemClickListener { item ->
+                    viewModel.setSortMode(modes[item.itemId].first)
+                    updateSortChip()
+                    true
+                }
+                show()
+            }
+        }
+    }
+
+    private fun updateSortChip() {
+        val labelRes = if (viewModel.getSortMode() == NameBankViewModel.SORT_NAME) {
+            R.string.sort_name
+        } else {
+            R.string.sort_recent_added
+        }
+        binding.chipSort.text = getString(R.string.sort_chip_format, getString(labelRes))
     }
 
     private fun setupFab() {

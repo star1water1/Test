@@ -38,6 +38,12 @@ class FieldLibraryHomeFragment : Fragment() {
     private var entityType: String = FieldDefinition.ENTITY_CHARACTER
     private lateinit var adapter: FieldRowAdapter
 
+    /** 정렬 상태 — 기본은 필드 순서(종전 표시 순서 유지). 엔티티·세계관 필터만 있고 정렬이 없던 짝 격차. */
+    private var sortMode: String = SORT_DEFAULT
+
+    private val sortPrefs
+        get() = requireContext().getSharedPreferences("field_library_ui_state", android.content.Context.MODE_PRIVATE)
+
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
     ): View {
@@ -74,7 +80,37 @@ class FieldLibraryHomeFragment : Fragment() {
             reload()
         }
 
+        sortMode = sortPrefs.getString("sort_mode", SORT_DEFAULT) ?: SORT_DEFAULT
+        updateSortChip()
+        binding.chipSort.setOnClickListener { anchor ->
+            val modes = listOf(
+                SORT_DEFAULT to R.string.sort_default_order,
+                SORT_NAME to R.string.sort_name,
+                SORT_ENTRY_COUNT to R.string.sort_entry_count
+            )
+            android.widget.PopupMenu(requireContext(), anchor).apply {
+                modes.forEachIndexed { i, pair -> menu.add(0, i, i, pair.second) }
+                setOnMenuItemClickListener { item ->
+                    sortMode = modes[item.itemId].first
+                    sortPrefs.edit().putString("sort_mode", sortMode).apply()
+                    updateSortChip()
+                    reload()
+                    true
+                }
+                show()
+            }
+        }
+
         setupUniverseSpinner()
+    }
+
+    private fun updateSortChip() {
+        val labelRes = when (sortMode) {
+            SORT_NAME -> R.string.sort_name
+            SORT_ENTRY_COUNT -> R.string.sort_entry_count
+            else -> R.string.sort_default_order
+        }
+        binding.chipSort.text = getString(R.string.sort_chip_format, getString(labelRes))
     }
 
     override fun onResume() {
@@ -108,9 +144,18 @@ class FieldLibraryHomeFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             val rows = viewModel.loadFieldRows(selectedUniverseId, entityType)
             if (_binding == null) return@launch
-            // 지원 필드 먼저, 미지원 필드는 섹션 헤더 뒤에
-            val supported = rows.filter { it.supported }
-            val unsupported = rows.filter { !it.supported }
+            // 지원 필드 먼저, 미지원 필드는 섹션 헤더 뒤에. 정렬은 섹션 안에서만 적용한다
+            // (섹션 구분 자체가 1차 질서 — 기본은 종전 표시 순서 그대로).
+            val comparator: Comparator<FieldValueLibraryViewModel.FieldRow>? = when (sortMode) {
+                SORT_NAME -> compareBy { it.field.name.lowercase() }
+                SORT_ENTRY_COUNT -> compareByDescending<FieldValueLibraryViewModel.FieldRow> { it.entryCount }
+                    .thenBy { it.field.name.lowercase() }
+                else -> null
+            }
+            fun sorted(list: List<FieldValueLibraryViewModel.FieldRow>) =
+                if (comparator == null) list else list.sortedWith(comparator)
+            val supported = sorted(rows.filter { it.supported })
+            val unsupported = sorted(rows.filter { !it.supported })
             val items = buildList {
                 supported.forEach { add(ListItem.Row(it)) }
                 if (unsupported.isNotEmpty()) {
@@ -190,5 +235,12 @@ class FieldLibraryHomeFragment : Fragment() {
         }
 
         private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
+    }
+
+    companion object {
+        /** 기본 — 종전 표시 순서(필드 정의 순서)를 그대로 둔다. */
+        private const val SORT_DEFAULT = "default"
+        private const val SORT_NAME = "name"
+        private const val SORT_ENTRY_COUNT = "entry_count"
     }
 }

@@ -28,6 +28,7 @@ class NameBankViewModel(application: Application) : AndroidViewModel(application
 
     private val _searchQuery = MutableLiveData("")
     private val _showOnlyAvailable = MutableLiveData(prefs.getBoolean("show_only_available", false))
+    private val _sortMode = MutableLiveData(prefs.getString("sort_mode", SORT_RECENT) ?: SORT_RECENT)
 
     // 일괄 등록 선택 모드 상태 — VM 보관으로 회전 생존 (프로세스 재생성은 별도 과제)
     var selectionMode = false
@@ -48,7 +49,7 @@ class NameBankViewModel(application: Application) : AndroidViewModel(application
             val query = _searchQuery.value ?: ""
             val onlyAvailable = _showOnlyAvailable.value ?: false
             val currentList = if (onlyAvailable) latestAvailable else latestAll
-            value = if (query.isBlank()) {
+            val filtered = if (query.isBlank()) {
                 currentList
             } else {
                 currentList.filter {
@@ -57,12 +58,19 @@ class NameBankViewModel(application: Application) : AndroidViewModel(application
                     it.origin.contains(query, ignoreCase = true)
                 }
             }
+            // 등록 최신순은 DAO 기본 순서(createdAt DESC) 그대로 — 재정렬하지 않는다
+            value = if (_sortMode.value == SORT_NAME) {
+                filtered.sortedBy { it.name.lowercase() }
+            } else {
+                filtered
+            }
         }
 
         addSource(allNames) { latestAll = it; update() }
         addSource(availableNames) { latestAvailable = it; update() }
         addSource(_searchQuery) { update() }
         addSource(_showOnlyAvailable) { update() }
+        addSource(_sortMode) { update() }
     }
 
     fun setSearchQuery(query: String) {
@@ -75,6 +83,19 @@ class NameBankViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun isShowOnlyAvailable(): Boolean = _showOnlyAvailable.value ?: false
+
+    fun setSortMode(mode: String) {
+        _sortMode.value = mode
+        prefs.edit().putString("sort_mode", mode).apply()
+    }
+
+    fun getSortMode(): String = _sortMode.value ?: SORT_RECENT
+
+    companion object {
+        /** 등록 최신순(기본) — DAO의 createdAt DESC 순서를 그대로 쓴다. */
+        const val SORT_RECENT = "recent"
+        const val SORT_NAME = "name"
+    }
 
     fun insert(entry: NameBankEntry) = viewModelScope.launch {
         try {

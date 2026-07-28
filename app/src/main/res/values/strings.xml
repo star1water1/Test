@@ -45,6 +45,11 @@
     <string name="export_excel">엑셀 내보내기</string>
     <string name="import_excel">엑셀 가져오기</string>
     <string name="search">검색</string>
+    <!-- 공용 정렬 라벨 (필터·정렬 짝 맞춤 — sort_chip_format·sort_relevance·sort_name은 기존 키 재사용) -->
+    <string name="sort_recent_edited">최근 수정순</string>
+    <string name="sort_recent_added">등록 최신순</string>
+    <string name="sort_default_order">기본 순서</string>
+    <string name="sort_entry_count">값 많은 순</string>
     <string name="yes">예</string>
     <string name="no">아니오</string>
     <string name="confirm_delete">정말 삭제하시겠습니까?</string>
