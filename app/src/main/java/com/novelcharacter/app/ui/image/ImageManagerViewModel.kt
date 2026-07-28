@@ -691,6 +691,12 @@ class ImageManagerViewModel(
         val modeChanged: Boolean, val failed: Boolean = false
     )
     data class UnassignResult(val cleared: Int, val adopted: Int, val failed: Boolean = false)
+    /**
+     * 링크 해제 결과. [autoRelinkable] = 자동 링크(캐릭터 묶음)였고 그 캐릭터에 여전히 등록되어
+     * 있어, 자동 링크 설정이 켜진 동안 다음 재동기화(저장·배정 등)가 도로 묶을 이미지 수 —
+     * 해제가 조용히 되돌아가지 않도록 고지에 쓴다(변수 제어).
+     */
+    data class UnlinkResult(val cleared: Int, val autoRelinkable: Int)
     sealed class LinkOutcome {
         data class Done(val linked: Int, val merged: Boolean) : LinkOutcome()
         data class NeedsMerge(val groups: Int) : LinkOutcome()
@@ -783,6 +789,13 @@ class ImageManagerViewModel(
                             }
                         }
                     }
+                    // 캐릭터 배정 = 등록 변경 — 자동 링크를 재동기화해 새 식구를 묶는다(설정 켜짐 시)
+                    if (type == OwnerType.CHARACTER) {
+                        runCatching {
+                            com.novelcharacter.app.util.CharacterImageAutoLinker
+                                .resyncIfEnabled(getApplication(), db)
+                        }
+                    }
                     AssignResult(assigned, already, expansion.addedByLink.size, modeChanged)
                 } catch (e: Exception) {
                     AssignResult(0, 0, 0, false, failed = true)
@@ -843,8 +856,17 @@ class ImageManagerViewModel(
                             if (remaining.isEmpty() && item.meta == null && File(path).exists()) {
                                 db.imageMetaDao().adopt(path, System.currentTimeMillis())
                                 adopted++
+                            } else if (item.meta != null) {
+                                // 명시적 "파일은 남긴다" 행위 — 자동 입양 행이었더라도 사용자
+                                // 소유로 승격해, 링크 해제 후 자동 반납(→고아화)되지 않게 한다.
+                                db.imageMetaDao().promoteToUserByPaths(listOf(path, canon))
                             }
                         }
+                    }
+                    // 캐릭터에서 빠진 이미지의 자동 링크를 풀어 준다(설정 켜짐 시)
+                    runCatching {
+                        com.novelcharacter.app.util.CharacterImageAutoLinker
+                            .resyncIfEnabled(getApplication(), db)
                     }
                     UnassignResult(cleared, adopted)
                 } catch (e: Exception) {
@@ -888,25 +910,43 @@ class ImageManagerViewModel(
         }
     }
 
-    /** 링크 해제 — 대상 경로들의 그룹을 지우고, 1장만 남은 그룹은 자동 정리. @return 해제 수 */
-    fun unlinkImages(paths: List<String>, onDone: (Int) -> Unit) {
+    /**
+     * 링크 해제 — 대상 경로들의 그룹을 지우고, 1장만 남은 그룹은 자동 정리.
+     * 자동 링크(캐릭터 묶음)를 풀면서 그 캐릭터 등록이 그대로면 다음 재동기화가 도로 묶으므로,
+     * 그 수를 [UnlinkResult.autoRelinkable]로 세어 호출부가 고지한다(설정 꺼짐이면 0).
+     */
+    fun unlinkImages(paths: List<String>, onDone: (UnlinkResult) -> Unit) {
         viewModelScope.launch {
-            val count = withContext(Dispatchers.IO) {
+            val result = withContext(Dispatchers.IO) {
                 try {
                     val byPath = currentItemsByPath()
                     val targets = paths.mapNotNull { p ->
-                        byPath[p]?.meta?.let { m -> if (m.linkGroupId != null) m.imageId to m.linkGroupId else null }
+                        byPath[p]?.meta?.let { m -> if (m.linkGroupId != null) Triple(p, m.imageId, m.linkGroupId) else null }
                     }
-                    if (targets.isEmpty()) 0
-                    else db.withTransaction {
-                        db.imageMetaDao().setGroup(targets.map { it.first }, null)
-                        targets.mapTo(HashSet()) { it.second }.forEach { db.imageMetaDao().clearGroupIfSingleton(it) }
-                        targets.size
+                    if (targets.isEmpty()) UnlinkResult(0, 0)
+                    else {
+                        db.withTransaction {
+                            db.imageMetaDao().setGroup(targets.map { it.second }, null)
+                            targets.mapTo(HashSet()) { it.third }.forEach { db.imageMetaDao().clearGroupIfSingleton(it) }
+                        }
+                        UnlinkResult(targets.size, countAutoRelinkable(targets))
                     }
-                } catch (e: Exception) { 0 }
+                } catch (e: Exception) { UnlinkResult(0, 0) }
             }
             load()
-            onDone(count)
+            onDone(result)
+        }
+    }
+
+    /** 풀린 자동 링크 중 캐릭터 등록이 그대로라 재동기화가 도로 묶을 것들을 센다. */
+    private suspend fun countAutoRelinkable(targets: List<Triple<String, Long, String?>>): Int {
+        val autoTargets = targets.filter { com.novelcharacter.app.util.AutoLinkPlanner.isAutoToken(it.third) }
+        if (autoTargets.isEmpty()) return 0
+        if (!com.novelcharacter.app.util.ImageSettingsStore(getApplication()).getAutoLinkByCharacter()) return 0
+        val byPath = currentItemsByPath()
+        return autoTargets.count { (path, _, group) ->
+            val ownerId = com.novelcharacter.app.util.AutoLinkPlanner.characterIdOf(group) ?: return@count false
+            byPath[path]?.owners?.any { it.type == OwnerType.CHARACTER && it.id == ownerId } == true
         }
     }
 

@@ -543,6 +543,16 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             }
         }
 
+        // 캐릭터 자동 링크 재동기화 — 가져오기는 대량 등록 이벤트다. 새로 들어온 캐릭터의
+        // 이미지들을 지금 묶고, 시트가 실어 온 "char:<옛id>" 토큰(다른 기기·재발급 id)도 현재
+        // id 기준으로 치유한다. 커밋 이후 부가 단계라 실패해도 가져오기를 되돌리지 않는다
+        // (링크는 다음 저장·배정의 재동기화가 수렴시킨다).
+        if (effectiveOptions.characters || effectiveOptions.imageMeta) {
+            runCatching {
+                com.novelcharacter.app.util.CharacterImageAutoLinker.resyncIfEnabled(appContext, db)
+            }
+        }
+
         // 인식되지 않은 시트 경고 — 개명된 캐릭터 시트 등이 무통보로 무시되지 않도록 한다
         val recognizedSheets = mutableSetOf(GUIDE_SHEET_NAME, UNCLASSIFIED_SHEET_NAME)
         recognizedSheets.addAll(RESERVED_SHEET_NAMES)
@@ -4253,6 +4263,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         } else if (value.isNotBlank()) {
                             result.warnings.add("앱 설정 행 $i: image_editor_remove_policy 값 '$value'을(를) 인식할 수 없어 기존 설정을 유지합니다")
                         }
+                    }
+                    "image_auto_link_by_character" -> {
+                        com.novelcharacter.app.util.ImageSettingsStore(ctx).setAutoLinkByCharacter(parseBoolean(value))
+                        result.restoredSettings++
                     }
                     // 알 수 없는 키는 조용히 무시 — 상위 버전 파일을 하위 버전 앱에서 가져올 때 대비
                 }

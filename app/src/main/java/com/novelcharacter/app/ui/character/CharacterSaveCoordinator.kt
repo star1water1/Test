@@ -314,6 +314,9 @@ class CharacterSaveCoordinator(
             }
             applyCharacterUpdate(character, fieldValues, crossUniv)
             savedCharId = targetCharacterId
+            // 자동 링크 재동기화는 제거 파일 정리보다 먼저 — 빠진 이미지의 자동 링크가 풀리고
+            // 자동 입양 행이 반납된 뒤에 제거 정책이 봐야 "라이브러리 보존" 판정이 종전과 같다.
+            resyncAutoLink()
             cleanupRemovedImages(host.existingCharacter()?.imagePaths, snapshot.imagePaths)
         } else {
             val newId = viewModel.insertCharacterSuspend(character)
@@ -321,6 +324,7 @@ class CharacterSaveCoordinator(
                 ?: host.collectFieldValues(newId)
             viewModel.saveAllFieldValues(newId, fieldValues)
             savedCharId = newId
+            resyncAutoLink()
         }
 
         val tagList = snapshot.tags.split(",").map { it.trim() }.filter { it.isNotBlank() }
@@ -531,6 +535,19 @@ class CharacterSaveCoordinator(
             .setNegativeButton(R.string.cancel) { _, _ -> onCancel() }
             .setOnCancelListener { onCancel() }
             .show()
+    }
+
+    /**
+     * 캐릭터 자동 링크 재동기화 — 이번 저장으로 등록된 이미지는 함께 링크되고, 빠진 이미지는
+     * 링크가 풀린다(설정 기본 켜짐 — [com.novelcharacter.app.util.ImageSettingsStore]).
+     * 실패해도 저장을 되돌리지 않는다 — 링크는 다음 저장·배정의 전체 재동기화가 치유한다.
+     */
+    private suspend fun resyncAutoLink() {
+        val appCtx = fragment.context?.applicationContext ?: return
+        val db = (fragment.activity?.application as? com.novelcharacter.app.NovelCharacterApp)?.database ?: return
+        try {
+            com.novelcharacter.app.util.CharacterImageAutoLinker.resyncIfEnabled(appCtx, db)
+        } catch (_: Exception) { /* 저장이 우선 — 링크는 다음 재동기화가 수렴시킨다 */ }
     }
 
     /**

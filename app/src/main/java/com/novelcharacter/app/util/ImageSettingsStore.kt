@@ -50,6 +50,23 @@ class ImageSettingsStore(private val context: Context) {
         val SKIP_BELOW_CHOICES = listOf(256L * 1024, 512L * 1024, 1024L * 1024, 2048L * 1024)
 
         private val KEY_EDITOR_REMOVE_POLICY = stringPreferencesKey("editor_remove_policy")
+        private val KEY_AUTO_LINK_BY_CHARACTER = booleanPreferencesKey("auto_link_by_character")
+
+        const val DEFAULT_AUTO_LINK_BY_CHARACTER = true
+    }
+
+    /**
+     * 캐릭터 자동 링크(기본 켜짐): 한 캐릭터에 함께 등록된 이미지들을 이미지 탭의 링크
+     * 그룹("같은 캐릭터 묶음")으로 자동 유지하고, 캐릭터에서 빠지면 그 링크를 자동 해제한다.
+     * 꺼도 이미 만들어진 링크는 그대로 남는다(동결) — 정리는 이미지 탭의 링크 해제로 한다.
+     */
+    suspend fun getAutoLinkByCharacter(): Boolean {
+        val prefs = context.imageSettingsDataStore.data.first()
+        return prefs[KEY_AUTO_LINK_BY_CHARACTER] ?: DEFAULT_AUTO_LINK_BY_CHARACTER
+    }
+
+    suspend fun setAutoLinkByCharacter(enabled: Boolean) {
+        context.imageSettingsDataStore.edit { it[KEY_AUTO_LINK_BY_CHARACTER] = enabled }
     }
 
     /**

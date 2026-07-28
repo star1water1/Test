@@ -264,6 +264,7 @@ class TrashFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             try {
                 val result = trashRepository.restoreSnapshot(snapshot.id, consentedRevert)
+                resyncAutoLinkAfterRestore()
                 if (!isAdded) return@launch
                 if (result == null) {
                     Toast.makeText(requireContext(), R.string.trash_restore_failed, Toast.LENGTH_SHORT).show()
@@ -393,6 +394,7 @@ class TrashFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             try {
                 val result = trashRepository.restoreOperation(row.opKey)
+                resyncAutoLinkAfterRestore()
                 if (!isAdded) return@launch
                 Toast.makeText(
                     requireContext(),
@@ -421,6 +423,17 @@ class TrashFragment : Fragment() {
                     getString(R.string.result_trash_restore_failed), e.message))
             }
         }
+    }
+
+    /**
+     * 복원 직후 캐릭터 자동 링크 재동기화 — 복원은 등록 이벤트라, 되살아난 캐릭터의 이미지가
+     * 다음 저장을 기다리지 않고 지금 다시 묶이게 한다(id 재발급으로 낡은 토큰도 함께 치유).
+     * 실패해도 복원 결과를 되돌리지 않는다(다음 재동기화가 수렴시킨다).
+     */
+    private suspend fun resyncAutoLinkAfterRestore() {
+        val appCtx = context?.applicationContext ?: return
+        val db = (activity?.application as? com.novelcharacter.app.NovelCharacterApp)?.database ?: return
+        runCatching { com.novelcharacter.app.util.CharacterImageAutoLinker.resyncIfEnabled(appCtx, db) }
     }
 
     private fun confirmPurgeOperation(row: TrashRow.Operation) {
