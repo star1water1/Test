@@ -45,7 +45,15 @@ data class AiProviderConfig(
      * 정적 표를 두지 않는 이유: 표는 새 모델이 나올 때마다 낡는다(AiPresets 모델 추천의 기존 한계).
      */
     val detectedOutputLimit: Int? = null
-)
+) {
+    /**
+     * R-23 — 오류·조회 응답에서 **학습한** 사실이 하나라도 있는가.
+     * 학습값은 그 모델·주소에 한정된 사실이라, `model`·`baseUrl`이 바뀌면 같은 저장 시점에
+     * 전부 null로 되돌리고 사용자에게 고지한다(다음 요청이 다시 배운다 — 손실 없음).
+     * 새 학습값이 생기면 반드시 여기에도 등재할 것 — 초기화 고지 판정의 단일 소스다.
+     */
+    fun hasLearnedFacts(): Boolean = detectedOutputLimit != null
+}
 
 /**
  * 출력 토큰 상한 정책 — **순수 판정**(JVM 테스트 대상).

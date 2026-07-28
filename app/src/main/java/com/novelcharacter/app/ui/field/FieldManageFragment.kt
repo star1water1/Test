@@ -119,6 +119,10 @@ class FieldManageFragment : Fragment() {
         itemTouchHelper = ItemTouchHelper(object : ItemTouchHelper.SimpleCallback(
             ItemTouchHelper.UP or ItemTouchHelper.DOWN, 0
         ) {
+            // 드래그는 핸들 전용 — 롱프레스는 옵션 다이얼로그(onLongClick)와 경쟁하지 않는다.
+            // 세계관·작품·캐릭터·연표 목록과 같은 규약이며, 행에 스위치가 얹혀도 오조작이 없다.
+            override fun isLongPressDragEnabled(): Boolean = false
+
             override fun onMove(
                 recyclerView: RecyclerView,
                 viewHolder: RecyclerView.ViewHolder,
@@ -148,6 +152,7 @@ class FieldManageFragment : Fragment() {
             }
         })
         itemTouchHelper?.attachToRecyclerView(binding.fieldRecyclerView)
+        adapter.itemTouchHelper = itemTouchHelper
     }
 
     private fun setupFab() {
@@ -352,6 +357,7 @@ class FieldManageFragment : Fragment() {
     }
 
     override fun onDestroyView() {
+        adapter.itemTouchHelper = null
         itemTouchHelper?.attachToRecyclerView(null)
         itemTouchHelper = null
         binding.fieldRecyclerView.adapter = null

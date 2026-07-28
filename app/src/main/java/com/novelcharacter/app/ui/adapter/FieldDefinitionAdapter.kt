@@ -1,8 +1,10 @@
 package com.novelcharacter.app.ui.adapter
 
 import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.ViewGroup
 import androidx.recyclerview.widget.DiffUtil
+import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import android.view.View
@@ -15,6 +17,9 @@ class FieldDefinitionAdapter(
     private val onClick: (FieldDefinition) -> Unit,
     private val onLongClick: (FieldDefinition) -> Unit
 ) : ListAdapter<FieldDefinition, FieldDefinitionAdapter.FieldViewHolder>(FieldDiffCallback()) {
+
+    /** 드래그는 핸들 전용 — 세계관·작품·캐릭터·연표 목록과 같은 배선 (isLongPressDragEnabled=false 짝) */
+    var itemTouchHelper: ItemTouchHelper? = null
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): FieldViewHolder {
         val binding = ItemFieldDefinitionBinding.inflate(
@@ -48,6 +53,13 @@ class FieldDefinitionAdapter(
                 binding.fieldSemanticBadge.visibility = View.VISIBLE
             } else {
                 binding.fieldSemanticBadge.visibility = View.GONE
+            }
+
+            binding.dragHandle.setOnTouchListener { _, event ->
+                if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+                    itemTouchHelper?.startDrag(this)
+                }
+                false
             }
 
             binding.root.setOnClickListener { onClick(field) }

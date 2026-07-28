@@ -426,10 +426,17 @@ class AiSettingsFragment : Fragment() {
             .create()
         dialog.setValidatedPositiveButton {
             val candidate = readConfig(dialogBinding, config, detectedLimit) ?: return@setValidatedPositiveButton false
+            // R-23 고지 — 학습값이 실제로 있었고 모델·주소 변경으로 초기화됐을 때만.
+            // 조용히 바꾸지 않는다(변수 제어): 사용자는 상한이 왜 되돌아갔는지 볼 수 있어야 한다.
+            val learnedReset = config.hasLearnedFacts() &&
+                (candidate.model != config.model || candidate.baseUrl != config.baseUrl)
             providerStore.save(candidate)
             val enteredKey = dialogBinding.apiKeyInput.text?.toString()?.trim().orEmpty()
             if (enteredKey.isNotEmpty()) keyStore.putKey(candidate.id, enteredKey)
             refreshList()
+            if (learnedReset) {
+                Toast.makeText(ctx, R.string.ai_edit_learned_reset, Toast.LENGTH_LONG).show()
+            }
             true
         }
         dialog.setOnDismissListener { testJob?.cancel() }
@@ -560,12 +567,17 @@ class AiSettingsFragment : Fragment() {
             b.baseUrlInputLayout.error = getString(R.string.ai_edit_error_https); valid = false
         }
         if (!valid) return null
+        // R-23: 오류 응답·목록 조회에서 학습한 값은 **그 모델·주소에 한정된 사실**이다.
+        // 대상이 바뀌면 같은 저장 시점에 전부 버린다 — 남겨 두면 4k 모델에서 배운 상한이
+        // 128k 모델의 슬라이더와 요청값을 사용자가 원인을 볼 수 없는 채로 계속 깎는다.
+        // 첫 요청이 다시 배우므로 손실이 없고, 초기화 사실은 저장 시 한 줄로 고지한다.
+        val identityChanged = model != base.model || baseUrl != base.baseUrl
         return base.copy(
             displayName = name,
             model = model,
             baseUrl = baseUrl,
             maxOutputTokens = b.maxTokensSlider.value.toInt(),
-            detectedOutputLimit = detectedLimit
+            detectedOutputLimit = if (identityChanged) null else detectedLimit
         )
     }
 
