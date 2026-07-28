@@ -1504,6 +1504,7 @@ class ExcelExporter(context: Context) {
         val backupSettings = com.novelcharacter.app.backup.BackupSettingsStore(appContext).getSettings()
         val imageSettings = com.novelcharacter.app.util.ImageSettingsStore(appContext).getSettings()
         val editorRemovePolicy = com.novelcharacter.app.util.ImageSettingsStore(appContext).getEditorRemovePolicy()
+        val autoLinkByCharacter = com.novelcharacter.app.util.ImageSettingsStore(appContext).getAutoLinkByCharacter()
 
         var rowIndex = 1
         fun writeTextRow(key: String, value: String) {
@@ -1527,6 +1528,7 @@ class ExcelExporter(context: Context) {
         writeTextRow("image_skip_below_enabled", if (imageSettings.skipBelowEnabled) "Y" else "N")
         writeNumberRow("image_skip_below_bytes", imageSettings.skipBelowBytes.toDouble())
         writeTextRow("image_editor_remove_policy", editorRemovePolicy.name)
+        writeTextRow("image_auto_link_by_character", if (autoLinkByCharacter) "Y" else "N")
 
         applySpecFormatting(sheet, spec, rowIndex - 1)
     }

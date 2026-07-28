@@ -516,11 +516,19 @@ class ImageManagerFragment : Fragment() {
         }
 
         // 링크 그룹 정보 + 해제 — 링크된 이미지에만 노출. N = 현재 목록에서 같은 그룹 수.
+        // 캐릭터 자동 링크 그룹은 수동 링크와 구별해 표기한다(자동 관리 상태의 가시화 — 원칙 04).
         val groupId = item.meta?.linkGroupId
         if (groupId != null) {
             val groupSize = (viewModel.images.value ?: emptyList()).count { it.meta?.linkGroupId == groupId }
             sheetBinding.detailLinkInfoText.visibility = View.VISIBLE
-            sheetBinding.detailLinkInfoText.text = getString(R.string.image_link_group_info, groupSize)
+            sheetBinding.detailLinkInfoText.text = getString(
+                if (com.novelcharacter.app.util.AutoLinkPlanner.isAutoToken(groupId)) {
+                    R.string.image_link_group_info_auto
+                } else {
+                    R.string.image_link_group_info
+                },
+                groupSize
+            )
             sheetBinding.detailUnlinkButton.visibility = View.VISIBLE
             sheetBinding.detailUnlinkButton.setOnClickListener { dialog.dismiss(); runUnlink(listOf(item.path)) }
         } else {
@@ -888,10 +896,18 @@ class ImageManagerFragment : Fragment() {
     }
 
     private fun runUnlink(paths: List<String>) {
-        viewModel.unlinkImages(paths) { count ->
+        viewModel.unlinkImages(paths) { result ->
             if (!isAdded || _binding == null) return@unlinkImages
             exitSelection()
-            reportAndNotify(OpResult.success(OpResult.CAT_MAINTENANCE, getString(R.string.image_unlink_done, count)))
+            // 자동 링크 대상이면 해제가 다음 재동기화에 되돌아간다 — 조용한 원복 금지, 교정 경로 고지
+            val message = buildString {
+                append(getString(R.string.image_unlink_done, result.cleared))
+                if (result.autoRelinkable > 0) {
+                    append("\n")
+                    append(getString(R.string.image_unlink_auto_notice, result.autoRelinkable))
+                }
+            }
+            reportAndNotify(OpResult.success(OpResult.CAT_MAINTENANCE, message))
         }
     }
 

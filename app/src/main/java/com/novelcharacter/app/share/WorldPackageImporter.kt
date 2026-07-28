@@ -596,6 +596,10 @@ class WorldPackageImporter(context: Context) {
         // 값 라이브러리 수확 — 들여온 값이 새 세계관 필드의 라이브러리에 등재되도록 (실패 무해 규약)
         app.fieldValueLibraryRepository.harvestUniverses(setOf(importedUniverseId))
 
+        // 캐릭터 자동 링크 재동기화 — 패키지의 캐릭터·이미지 등록을 지금 묶는다(실패 무해 규약).
+        // 패키지는 링크 meta를 싣지 않으므로 이 호출이 들여온 캐릭터의 유일한 링크 생성 경로다.
+        runCatching { com.novelcharacter.app.util.CharacterImageAutoLinker.resyncIfEnabled(appContext, db) }
+
         app.operationLogRepository.logAsync(
             OpResult.success(
                 OpResult.CAT_SHARE,

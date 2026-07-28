@@ -23,6 +23,7 @@ object ImageSettingsDialog {
         fragment.viewLifecycleOwner.lifecycleScope.launch {
             val current = store.getSettings()
             val currentPolicy = store.getEditorRemovePolicy()
+            val currentAutoLink = store.getAutoLinkByCharacter()
             val binding = DialogImageSettingsBinding.inflate(fragment.layoutInflater)
 
             // 로컬 편집 상태 (저장 버튼에서만 반영)
@@ -90,6 +91,9 @@ object ImageSettingsDialog {
                 ImageSettingsStore.EditorRemovePolicy.LIBRARY_ONLY -> binding.policyLibraryOnly.isChecked = true
             }
 
+            // 캐릭터 자동 링크 — 기본 켜짐
+            binding.autoLinkSwitch.isChecked = currentAutoLink
+
             MaterialAlertDialogBuilder(ctx)
                 .setTitle(R.string.image_settings_title)
                 .setView(binding.root)
@@ -105,6 +109,27 @@ object ImageSettingsDialog {
                             if (binding.policyAlwaysAdopt.isChecked) ImageSettingsStore.EditorRemovePolicy.ALWAYS_ADOPT
                             else ImageSettingsStore.EditorRemovePolicy.LIBRARY_ONLY
                         )
+                        val autoLinkOn = binding.autoLinkSwitch.isChecked
+                        store.setAutoLinkByCharacter(autoLinkOn)
+                        // 끔 → 켬 전환은 즉시 전체 정리 — 캐릭터를 일일이 다시 저장하지 않아도
+                        // 지금 등록 상태대로 링크가 잡히게 한다(원칙 04). 결과는 그 자리에서 고지.
+                        if (autoLinkOn && !currentAutoLink) {
+                            val app = fragment.activity?.application as? com.novelcharacter.app.NovelCharacterApp
+                            if (app != null) {
+                                val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                    runCatching {
+                                        com.novelcharacter.app.util.CharacterImageAutoLinker.resync(app.database)
+                                    }.getOrNull()
+                                }
+                                if (result != null && result.hasChanges && fragment.isAdded) {
+                                    android.widget.Toast.makeText(
+                                        ctx.applicationContext,
+                                        ctx.getString(R.string.image_settings_auto_link_resynced, result.linked, result.released),
+                                        android.widget.Toast.LENGTH_LONG
+                                    ).show()
+                                }
+                            }
+                        }
                         onSaved?.invoke()
                     }
                 }

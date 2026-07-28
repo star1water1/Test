@@ -93,7 +93,7 @@ import com.novelcharacter.app.data.model.Universe
         ImageTag::class,
         FieldValueEntry::class
     ],
-    version = 43,
+    version = 44,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -1742,6 +1742,41 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_43_44 = object : Migration(43, 44) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "Migrating database from version 43 to 44 — image_meta 입양 주체(adoptSource)")
+
+                // 캐릭터 자동 링크(G4)는 링크 토큰을 얹기 위해 meta 행이 없는 이미지를 자동
+                // 입양한다. 그 행을 사용자 입양과 구별하지 못하면, 링크가 풀린 뒤에도 행이 남아
+                // 편집창 제거 정책(LIBRARY_ONLY)의 "라이브러리는 보존" 범위가 조용히 전체
+                // 이미지로 넓어진다 — 삭제를 고른 사용자의 설정이 무의미해진다. 그래서 자동
+                // 입양 행만 'auto'로 표시하고, 자동 링크가 풀리면 태그·링크 없는 자동 행은
+                // 반납(삭제)해 종전 정책 동작을 보존한다.
+                //
+                // nullable TEXT로 두는 이유: DEFAULT 절 없는 ALTER TABLE ADD COLUMN 결과가
+                // 엔티티(adoptSource: String?, @ColumnInfo 미사용)의 기대 스키마와 정확히
+                // 일치한다. 구버전 행은 null로 남고, null이 이미 올바른 의미다 — 기존 행은
+                // 전부 사용자 경로(임포트·태그·수동 링크·입양)가 만든 것이므로 보호 대상이다.
+                //
+                // 컬럼 존재 여부를 먼저 확인한다 — 중간 빌드를 거친 기기에서 이미 컬럼이 있으면
+                // ALTER TABLE이 "duplicate column name"으로 실패해 시작 시마다 크래시가 반복된다
+                // (MIGRATION_41_42와 동일 절차).
+                val hasAdoptSource = db.query("PRAGMA table_info(`image_meta`)").use { c ->
+                    val nameIdx = c.getColumnIndex("name")
+                    var found = false
+                    while (c.moveToNext()) {
+                        if (c.getString(nameIdx) == "adoptSource") { found = true; break }
+                    }
+                    found
+                }
+                if (!hasAdoptSource) {
+                    db.execSQL("ALTER TABLE `image_meta` ADD COLUMN `adoptSource` TEXT")
+                }
+
+                Log.i(TAG, "Migration from version 43 to 44 completed successfully")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -1749,7 +1784,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "novel_character_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44)
                     .addCallback(SeedCallback(context.applicationContext))
                     .build()
                     .also { INSTANCE = it }

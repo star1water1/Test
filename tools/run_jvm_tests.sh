@@ -136,6 +136,7 @@ $MAIN/data/model/NarrativeMode.kt
 $MAIN/util/ImageFilterHelper.kt
 $MAIN/util/ImageRecommendationHelper.kt
 $MAIN/util/ImageLinkResolver.kt
+$MAIN/util/AutoLinkPlanner.kt
 $MAIN/ui/supplement/RandomPickEngine.kt
 $MAIN/ui/namebank/BulkRegisterPlanner.kt
 $MAIN/excel/StreamingXlsxReader.kt
@@ -192,6 +193,7 @@ $TEST/util/FieldValueResolverTest.kt
 $TEST/util/ImageFilterHelperTest.kt
 $TEST/util/ImageRecommendationHelperTest.kt
 $TEST/util/ImageLinkResolverTest.kt
+$TEST/util/AutoLinkPlannerTest.kt
 $TEST/ui/supplement/RandomPickEngineTest.kt
 $TEST/stats/StatsDataProviderUnassignedTest.kt
 $TEST/namebank/BulkRegisterPlannerTest.kt

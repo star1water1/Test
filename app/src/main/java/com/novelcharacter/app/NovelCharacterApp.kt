@@ -99,6 +99,34 @@ class NovelCharacterApp : Application() {
         migrateAliveSyncIfNeeded()
         // 필드 데이터 라이브러리 백필 시드 (1회) + 중단된 임포트 후 수확 재시도
         seedFieldValueLibraryIfNeeded()
+        // 캐릭터 자동 링크 최초 정리 (1회)
+        seedCharacterAutoLinkIfNeeded()
+    }
+
+    /**
+     * 캐릭터 자동 링크(G4) 최초 백필: 업데이트 직후 기존 캐릭터들의 이미지가 저장을 기다리지
+     * 않고 바로 묶이도록 전체 재동기화를 1회 수행한다. 이후에는 저장·배정·가져오기 등 각
+     * 진입점이 유지한다. 성공해야만 플래그를 세워 중단 시 다음 실행에 재시도된다(멱등 —
+     * 재동기화는 몇 번을 돌려도 같은 상태로 수렴한다). 설정이 꺼져 있으면 하지 않되 플래그도
+     * 세우지 않아, 나중에 켜는 순간의 정리(설정 다이얼로그)와 어긋나지 않는다.
+     */
+    private fun seedCharacterAutoLinkIfNeeded() {
+        val prefs = getSharedPreferences("app_migrations", MODE_PRIVATE)
+        if (prefs.getBoolean("auto_link_seeded", false)) return
+
+        appScope.launch(Dispatchers.IO) {
+            try {
+                val result = com.novelcharacter.app.util.CharacterImageAutoLinker
+                    .resyncIfEnabled(this@NovelCharacterApp, database)
+                if (result != null) {
+                    prefs.edit().putBoolean("auto_link_seeded", true).apply()
+                    android.util.Log.i("NovelCharacterApp",
+                        "Character auto-link seed: ${result.linked} linked, ${result.released} released")
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("NovelCharacterApp", "Character auto-link seed failed — will retry on next launch", e)
+            }
+        }
     }
 
     /**
