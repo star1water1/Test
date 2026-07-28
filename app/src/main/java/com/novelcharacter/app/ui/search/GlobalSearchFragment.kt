@@ -252,6 +252,36 @@ class GlobalSearchFragment : Fragment() {
         viewModel.fieldFilters.observe(viewLifecycleOwner) { filters ->
             updateFilterChips(filters)
         }
+
+        // 정렬 노출 — 계산·저장·프리셋 연동은 이미 있었으나 화면 컨트롤이 없어
+        // 프리셋으로 실린 비기본 정렬을 되돌릴 길이 없었다 (필터·정렬 짝 규칙).
+        binding.btnSort.setOnClickListener { showSortMenu(it) }
+        viewModel.sortMode.observe(viewLifecycleOwner) { mode ->
+            binding.btnSort.text = getString(R.string.sort_chip_format, getString(sortModeLabelRes(mode)))
+        }
+    }
+
+    /** SORT_TAG는 캐릭터에서만 이름순과 동일 동작하는 반쪽 구현이라 메뉴에 싣지 않는다(라벨은 이름순으로 표시). */
+    private fun sortModeLabelRes(mode: String?): Int = when (mode) {
+        SearchPreset.SORT_NAME, SearchPreset.SORT_TAG -> R.string.sort_name
+        SearchPreset.SORT_RECENT -> R.string.sort_recent_edited
+        else -> R.string.sort_relevance
+    }
+
+    private fun showSortMenu(anchor: View) {
+        val modes = listOf(
+            SearchPreset.SORT_RELEVANCE to R.string.sort_relevance,
+            SearchPreset.SORT_NAME to R.string.sort_name,
+            SearchPreset.SORT_RECENT to R.string.sort_recent_edited
+        )
+        android.widget.PopupMenu(requireContext(), anchor).apply {
+            modes.forEachIndexed { i, pair -> menu.add(0, i, i, pair.second) }
+            setOnMenuItemClickListener { item ->
+                viewModel.setSortMode(modes[item.itemId].first)
+                true
+            }
+            show()
+        }
     }
 
     private fun updateFilterChips(filters: List<FieldFilter>) {

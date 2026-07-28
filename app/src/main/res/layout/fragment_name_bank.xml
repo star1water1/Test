@@ -51,6 +51,13 @@
             style="@style/Widget.Material3.Chip.Filter"
             android:checkable="true" />
 
+        <com.google.android.material.chip.Chip
+            android:id="@+id/chipSort"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            style="@style/Widget.Material3.Chip.Assist" />
+
     </LinearLayout>
 
     <TextView

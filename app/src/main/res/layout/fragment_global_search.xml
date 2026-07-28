@@ -94,16 +94,29 @@
 
     </HorizontalScrollView>
 
-    <!-- Quick add filter button (shown when no filters active) -->
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/btnAddFilterCompact"
-        style="@style/Widget.App.Button.Tonal"
-        android:layout_width="wrap_content"
-        android:layout_height="32dp"
-        android:layout_marginStart="8dp"
-        android:text="@string/search_add_filter"
-        app:icon="@drawable/ic_add"
-        app:iconSize="14dp" />
+    <!-- Quick add filter button (shown when no filters active) + sort (always visible) -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingStart="8dp">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnAddFilterCompact"
+            style="@style/Widget.App.Button.Tonal"
+            android:layout_width="wrap_content"
+            android:layout_height="32dp"
+            android:text="@string/search_add_filter"
+            app:icon="@drawable/ic_add"
+            app:iconSize="14dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnSort"
+            style="@style/Widget.App.Button.Tonal"
+            android:layout_width="wrap_content"
+            android:layout_height="32dp"
+            android:layout_marginStart="8dp" />
+    </LinearLayout>
 
     <LinearLayout
         android:id="@+id/emptyText"
