@@ -83,9 +83,9 @@
     <string name="toggle_time_slider">시점 슬라이더 토글</string>
     <string name="reset_time_view">원래 상태로</string>
     <string name="time_view_indicator">%d년 시점의 상태</string>
-    <string name="year_required">연도를 입력해주세요</string>
-    <string name="field_required">변경 필드를 선택해주세요</string>
-    <string name="value_required">새 값을 입력해주세요</string>
+    <string name="year_required">연도를 입력하세요</string>
+    <string name="field_required">변경 필드를 선택하세요</string>
+    <string name="value_required">새 값을 입력하세요</string>
     <string name="state_change_saved">상태 변화가 저장되었습니다</string>
     <string name="state_change_deleted">상태 변화가 삭제되었습니다</string>
     <string name="edit_or_delete">편집 또는 삭제</string>
@@ -116,7 +116,7 @@
     <string name="preset_tag_user">사용자</string>
 
     <!-- Empty state hints -->
-    <string name="empty_universe_hint">세계관을 추가해보세요</string>
+    <string name="empty_universe_hint">세계관을 추가해 보세요</string>
     <string name="empty_field_hint">필드를 추가해 보세요</string>
 
     <!-- Layout hardcoded strings -->
@@ -141,7 +141,7 @@
     <string name="label_display_format">표시 형식</string>
     <string name="label_narrative_mode">서술형 여부</string>
     <string name="hint_narrative_mode">서술형으로 두면 ✨ AI가 이 필드에 긴 글 초안을 쓰거나, 이미 쓴 글을 이어쓰기·다듬기 합니다. 자동은 표시 형식이 \'여러 줄\'일 때 서술형으로 봅니다.</string>
-    <string name="hint_comma_list_helper">콤마(,)로 구분하여 여러 항목 입력</string>
+    <string name="hint_comma_list_helper">콤마(,)로 구분해 여러 항목 입력</string>
     <string name="hint_multiline_helper">여러 줄로 입력 가능</string>
     <string name="label_stats_enabled">통계에 포함</string>
     <!-- 목록 카드 표시 (B-5) -->
@@ -178,7 +178,7 @@
     <string name="save_failed">저장에 실패했습니다</string>
     <string name="operation_failed">작업에 실패했습니다</string>
     <string name="formula_warn_title">수식 확인</string>
-    <string name="formula_warn_message">수식에 문제가 있을 수 있습니다:\n%1$s\n\n그대로 저장할까요?</string>
+    <string name="formula_warn_message">수식에 문제가 있을 수 있습니다:\n%1$s\n\n그대로 저장하시겠습니까?</string>
     <string name="formula_warn_paren">괄호 짝이 맞지 않습니다</string>
     <string name="formula_warn_missing_keys">존재하지 않는 필드 키: %1$s</string>
     <string name="formula_warn_save_anyway">그대로 저장</string>
@@ -213,11 +213,11 @@
     <string name="search_type_character">캐릭터</string>
     <string name="search_type_event">사건</string>
     <string name="search_type_novel">작품</string>
-    <string name="empty_character_hint">캐릭터를 추가해보세요</string>
-    <string name="empty_novel_hint">작품을 추가해보세요</string>
-    <string name="empty_event_hint">사건을 추가해보세요</string>
-    <string name="empty_state_change_hint">상태 변화를 추가해보세요</string>
-    <string name="empty_relationship_hint">관계를 추가해보세요</string>
+    <string name="empty_character_hint">캐릭터를 추가해 보세요</string>
+    <string name="empty_novel_hint">작품을 추가해 보세요</string>
+    <string name="empty_event_hint">사건을 추가해 보세요</string>
+    <string name="empty_state_change_hint">상태 변화를 추가해 보세요</string>
+    <string name="empty_relationship_hint">관계를 추가해 보세요</string>
     <string name="compare_selected_count">선택 %1$d/3</string>
     <string name="slider_min_year">최소: %d년</string>
     <string name="slider_max_year">최대: %d년</string>
@@ -239,7 +239,7 @@
     <string name="character_compare">캐릭터 비교</string>
     <string name="name_search_hint">이름 검색</string>
     <string name="show_available_only">미사용만</string>
-    <string name="name_bank_empty_hint">이름을 추가해보세요</string>
+    <string name="name_bank_empty_hint">이름을 추가해 보세요</string>
     <string name="relationship_label">관계</string>
     <string name="target_character">대상 캐릭터</string>
     <string name="relationship_type">관계 유형</string>
@@ -297,8 +297,8 @@
     <string name="event_year_format">%d년</string>
     <!-- 캐릭터 화면에서의 사건 조작 — 사건은 여러 캐릭터의 공유물이라 '연결 해제'와 '삭제'를 가른다 -->
     <string name="event_unlink_from_character">이 캐릭터에서 연결 해제</string>
-    <string name="event_delete_confirm">사건 \'%1$s\'을(를) 삭제할까요?\n휴지통에 보관되므로 되돌릴 수 있습니다.</string>
-    <string name="event_delete_shared_confirm">사건 \'%1$s\'을(를) 삭제할까요?\n이 사건에는 다른 캐릭터 %2$d명도 연결돼 있어 그쪽 연표에서도 사라집니다. 이 캐릭터에서만 떼어 내려면 \'이 캐릭터에서 연결 해제\'를 쓰세요.\n휴지통에 보관되므로 되돌릴 수 있습니다.</string>
+    <string name="event_delete_confirm">사건 \'%1$s\'을(를) 삭제하시겠습니까?\n휴지통에 보관되므로 되돌릴 수 있습니다.</string>
+    <string name="event_delete_shared_confirm">사건 \'%1$s\'을(를) 삭제하시겠습니까?\n이 사건에는 다른 캐릭터 %2$d명도 연결돼 있어 그쪽 연표에서도 사라집니다. 이 캐릭터에서만 떼어 내려면 \'이 캐릭터에서 연결 해제\'를 쓰세요.\n휴지통에 보관되므로 되돌릴 수 있습니다.</string>
     <string name="set_as_standard_year">표준연도로 설정</string>
     <string name="standard_year_no_novel">이 사건에 연결된 작품이 없습니다</string>
     <string name="standard_year_select_novel">표준연도를 설정할 작품 선택</string>
@@ -361,8 +361,8 @@
     <string name="trash_operation_title">%1$s \'%2$s\' 삭제</string>
     <string name="trash_operation_meta">항목 %1$d개 · %2$s</string>
     <string name="trash_restore_operation">전체 복원</string>
-    <string name="trash_operation_restore_confirm">이 삭제로 지워진 %1$d개 항목을 전부 복원할까요?\n세계관 → 작품 → 세력 → 사건 → 캐릭터 → 상태변화 순서로 되살아나므로 서로의 참조도 다시 이어집니다.</string>
-    <string name="trash_operation_purge_confirm">이 삭제로 만들어진 %1$d개 항목을 모두 영구 삭제할까요? 되돌릴 수 없습니다.</string>
+    <string name="trash_operation_restore_confirm">이 삭제로 지워진 %1$d개 항목을 전부 복원하시겠습니까?\n세계관 → 작품 → 세력 → 사건 → 캐릭터 → 상태변화 순서로 되살아나므로 서로의 참조도 다시 이어집니다.</string>
+    <string name="trash_operation_purge_confirm">이 삭제로 만들어진 %1$d개 항목을 모두 영구 삭제하시겠습니까? 되돌릴 수 없습니다.</string>
     <string name="trash_operation_restored">%1$d개 항목 복원 완료</string>
     <string name="trash_operation_failed">되살리지 못한 항목 %1$d개는 휴지통에 그대로 남았습니다:\n%2$s</string>
     <string name="trash_operation_blocked">다음 %1$d개 항목은 속할 상위 항목이 없어 이번에 복원되지 않고 휴지통에 그대로 남습니다:\n%2$s</string>
@@ -376,9 +376,9 @@
     <string name="trash_restore">복원</string>
     <string name="trash_delete_forever">영구 삭제</string>
     <string name="trash_empty_all">모두 비우기</string>
-    <string name="trash_restore_confirm">\'%1$s\'을(를) 복원할까요? 연관 데이터도 함께 복원됩니다.</string>
-    <string name="trash_purge_confirm">\'%1$s\'을(를) 영구 삭제할까요? 되돌릴 수 없습니다.</string>
-    <string name="trash_empty_confirm">휴지통의 모든 항목을 영구 삭제할까요? 되돌릴 수 없습니다.</string>
+    <string name="trash_restore_confirm">\'%1$s\'을(를) 복원하시겠습니까? 연관 데이터도 함께 복원됩니다.</string>
+    <string name="trash_purge_confirm">\'%1$s\'을(를) 영구 삭제하시겠습니까? 되돌릴 수 없습니다.</string>
+    <string name="trash_empty_confirm">휴지통의 모든 항목을 영구 삭제하시겠습니까? 되돌릴 수 없습니다.</string>
     <string name="trash_restored">\'%1$s\' 복원 완료</string>
     <string name="trash_restore_failed">복원에 실패했습니다</string>
     <string name="trash_restore_partial_title">일부 항목 복원 제외</string>
@@ -435,7 +435,7 @@
     <string name="faction_relationship_duplicate">같은 상대·유형의 관계가 이미 있습니다</string>
     <string name="faction_relationship_need_two">관계를 만들려면 같은 세계관에 세력이 2개 이상 필요합니다</string>
     <string name="faction_relationship_edit">관계 편집</string>
-    <string name="faction_relationship_delete_confirm">이 세력 간 관계를 삭제할까요?</string>
+    <string name="faction_relationship_delete_confirm">이 세력 간 관계를 삭제하시겠습니까?</string>
     <string name="faction_relationship_direction_to">→ %1$s</string>
     <string name="faction_relationship_direction_from">← %1$s</string>
     <string name="faction_relationship_direction_both">↔ %1$s</string>
@@ -448,12 +448,12 @@
     <string name="onboarding_welcome_title">시작하기</string>
     <string name="onboarding_welcome_message">이 앱은 다음 구조로 이루어져 있습니다:\n\n세계관 → 작품 → 캐릭터 → 사건\n\n① \'세계관\' 탭에서 세계관을 만들고\n② 세계관 안에 작품을, 작품 안에 캐릭터를 추가하세요\n③ \'연표\' 탭에서 사건을 배치하고 캐릭터와 연결할 수 있습니다\n\n필드(속성)는 세계관 단위로 자유롭게 정의할 수 있고, 모든 데이터는 엑셀로 내보내고 다시 들여올 수 있습니다.</string>
     <string name="onboarding_welcome_start">시작하기</string>
-    <string name="hint_timeline_longpress">힌트: ➕ 버튼을 길게 누르면 재정렬 모드, 하단 밀도 바의 연도를 길게 누르면 간편 사건 추가예요.</string>
-    <string name="hint_character_longpress_select">힌트: 캐릭터를 길게 누르면 여러 개를 선택해 일괄 편집할 수 있어요. (이미지는 상세 화면에서 크게 볼 수 있어요)</string>
+    <string name="hint_timeline_longpress">힌트: ➕ 버튼을 길게 누르면 재정렬 모드, 하단 밀도 바의 연도를 길게 누르면 간편 사건 추가입니다.</string>
+    <string name="hint_character_longpress_select">힌트: 캐릭터를 길게 누르면 여러 개를 선택해 일괄 편집할 수 있습니다. (이미지는 상세 화면에서 크게 볼 수 있습니다)</string>
     <string name="hint_dismiss">확인</string>
     <!-- 캐릭터 편집 드래프트 자동저장 (B-6) -->
     <string name="draft_restore_title">작성 중이던 초안</string>
-    <string name="draft_restore_message">%1$s에 자동 저장된 미저장 초안이 있습니다. 복원할까요?</string>
+    <string name="draft_restore_message">%1$s에 자동 저장된 미저장 초안이 있습니다. 복원하시겠습니까?</string>
     <string name="draft_restore_apply">복원</string>
     <string name="draft_restore_discard">삭제</string>
     <string name="draft_restore_later">나중에</string>
@@ -479,7 +479,7 @@
     <string name="import_images_too_large">백업 이미지 총 용량이 너무 큽니다 (최대 8GB)</string>
     <string name="import_oom">기기 메모리가 부족해 데이터를 한 번에 처리하지 못했습니다. 데이터(캐릭터·필드·사건 등)가 매우 많은 경우이니, 작품(세계관)을 나눠 내보낸 뒤 부분씩 가져와 주세요. (이미지 용량은 이 한계와 무관합니다.)</string>
     <string name="relationship_title_format">%1$s (%2$s)</string>
-    <string name="relationship_already_exists">이미 해당 캐릭터와 관계가 존재합니다</string>
+    <string name="relationship_already_exists">이 캐릭터와는 이미 관계가 있습니다</string>
     <string name="edit_relationship">관계 편집</string>
     <string name="relationship_intensity">관계 강도</string>
     <string name="relationship_bidirectional">양방향 관계</string>
@@ -536,13 +536,15 @@
     <!-- Another name -->
     <string name="another_name">이명</string>
     <string name="hint_another_name">이명 / 별칭</string>
-    <string name="hint_another_name_helper">콤마(,)로 구분하여 여러 개 입력 가능</string>
+    <string name="hint_another_name_helper">콤마(,)로 구분해 여러 개 입력 가능</string>
     <string name="hint_first_name">이름 (First Name)</string>
     <string name="hint_last_name">성 (Last Name)</string>
 
     <!-- Image viewer -->
     <string name="image_viewer">이미지 보기</string>
     <string name="image_mode_label">대표 이미지 설정</string>
+    <string name="image_mode_desc_universe">목록의 세계관 카드에 보일 이미지를 정합니다. 직접 등록하거나 캐릭터·작품 이미지와 연동할 수 있습니다.</string>
+    <string name="image_mode_desc_novel">목록의 작품 카드에 보일 이미지를 정합니다. 직접 등록하거나 캐릭터 이미지와 연동할 수 있습니다.</string>
     <string name="image_mode_none">없음</string>
     <string name="image_mode_custom">직접 등록</string>
     <string name="image_mode_random_character">캐릭터 이미지 랜덤</string>
@@ -568,13 +570,13 @@
     <string name="preset_fields_saved">프리셋 필드가 저장되었습니다</string>
     <string name="preset_field_name_required">필드 이름을 입력하세요</string>
     <string name="preset_field_key_required">필드 키를 입력하세요</string>
-    <string name="preset_field_key_duplicate">이미 같은 키가 존재합니다</string>
+    <string name="preset_field_key_duplicate">이미 같은 키가 있습니다</string>
     <string name="move_up">위로</string>
     <string name="move_down">아래로</string>
     <string name="image_no_characters_with_images">이미지가 있는 캐릭터가 없습니다</string>
     <string name="image_character_selected">%s 선택됨</string>
     <string name="image_change_character">캐릭터 변경</string>
-    <string name="image_save_novel_first">작품을 먼저 저장해주세요</string>
+    <string name="image_save_novel_first">작품을 먼저 저장한 후 이미지를 선택할 수 있습니다</string>
     <string name="image_index_format">%1$d / %2$d</string>
 
     <!-- Settings -->
@@ -658,6 +660,8 @@
 
     <!-- Border color customization (Sprint D) -->
     <string name="border_color_label">테두리 색상</string>
+    <string name="border_color_desc_universe">목록의 세계관 카드 테두리에 이 색이 입혀집니다 (비우면 테두리 없음)</string>
+    <string name="border_color_desc_novel">목록의 작품 카드 테두리에 이 색이 입혀집니다 (비우면 세계관 테두리 색을 따릅니다)</string>
     <string name="border_color_hex_hint">HEX 색상 (예: #5C6BC0)</string>
     <string name="border_color_reset">기본값으로 되돌리기</string>
     <string name="color_picker_full_spectrum">전체 색상 선택</string>
@@ -677,6 +681,7 @@
     <string name="char_stats_complexity">복잡도 점수: %.1f</string>
 
     <string name="relationship_types_label">관계 유형</string>
+    <string name="relationship_types_desc">캐릭터에 관계를 추가할 때 이 목록의 유형 중에서 고릅니다. 색은 관계 그래프에 표시됩니다.</string>
     <string name="relationship_types_hint">새 관계 유형 입력</string>
     <string name="relationship_types_reset">기본 유형으로 초기화</string>
     <string name="relationship_types_add">추가</string>
@@ -1062,7 +1067,7 @@
     <string name="world_package_conflict_code">같은 세계관 \'%1$s\'이(가) 이미 있습니다.\n\n· 덮어쓰기: 기존 세계관을 휴지통에 보관하고 패키지 내용으로 교체\n· 새로 생성: 별개의 세계관으로 추가\n· 건너뛰기: 가져오지 않음</string>
     <string name="world_package_conflict_name">같은 이름의 세계관 \'%1$s\'이(가) 이미 있습니다(다른 세계관일 수 있음).\n\n· 덮어쓰기: 그 세계관을 휴지통에 보관하고 교체\n· 새로 생성: 별개의 세계관으로 추가\n· 건너뛰기: 가져오지 않음</string>
     <string name="world_package_conflict_name_multi">\'%1$s\' 이름의 세계관이 %2$d개 있어 덮어쓰기 대상을 정할 수 없습니다. 새로 생성하거나 건너뛸 수 있습니다.</string>
-    <string name="world_package_overwrite_confirm">기존 세계관 \'%1$s\'(캐릭터 %2$d명)과 하위 작품·사건·세력을 휴지통에 보관하고 패키지 내용으로 교체합니다. 휴지통에서 복원할 수 있습니다. 계속할까요?</string>
+    <string name="world_package_overwrite_confirm">기존 세계관 \'%1$s\'(캐릭터 %2$d명)과 하위 작품·사건·세력을 휴지통에 보관하고 패키지 내용으로 교체합니다. 휴지통에서 복원할 수 있습니다. 계속하시겠습니까?</string>
     <string name="world_package_import_done">세계관 \'%1$s\' 가져오기 완료 — %2$s</string>
     <string name="world_package_legacy_v1">구버전 패키지(v1) — 세력 간 관계가 없는 형식입니다</string>
     <string name="world_package_legacy_v2">구버전 패키지(v%1$d) — 사건 필드값·값 라이브러리·세계관/작품 이미지가 없는 형식입니다</string>
@@ -1258,20 +1263,20 @@
     <string name="restore_action">복원</string>
 
     <!-- Feature: Standard Year -->
-    <string name="standard_year_hint">작중 표준 년도 (선택)</string>
-    <string name="standard_year_description">작중 현재 시점. 출생연도와 연동하여 나이를 자동 계산합니다.</string>
-    <string name="std_year_link_label">표준 년도 연동</string>
+    <string name="standard_year_hint">작중 표준연도 (선택)</string>
+    <string name="standard_year_description">작중 현재 시점입니다. 캐릭터 나이가 이 연도와 출생연도로 자동 계산됩니다.</string>
+    <string name="std_year_link_label">표준연도 연동</string>
     <string name="linkage_rule_age_anchor">나이 기준 (표준연도가 바뀌면 출생연도를 다시 계산)</string>
     <string name="linkage_rule_birth_anchor">출생연도 기준 (표준연도가 바뀌면 나이를 다시 계산)</string>
     <string name="linkage_rule_label">연동 규칙</string>
 
     <!-- Age-BirthYear Linkage Conflict -->
     <string name="age_linkage_conflict_title">나이-출생연도 불일치</string>
-    <string name="age_linkage_conflict_message">기준연도 %1$d 기준으로 나이(%2$d)와 출생연도(%3$d)가 맞지 않습니다.\n\n예상 나이: %4$d</string>
+    <string name="age_linkage_conflict_message">표준연도(연표에서 정하는 \'작중 현재\' 연도) %1$d 기준으로 나이(%2$d)와 출생연도(%3$d)가 맞지 않습니다.\n\n예상 나이: %4$d</string>
     <string name="age_linkage_option_adjust_birth">출생연도를 %1$d(으)로 변경 (나이 %2$d 유지)</string>
     <string name="age_linkage_option_adjust_age">나이를 %1$d(으)로 변경 (출생연도 %2$d 유지)</string>
-    <string name="age_linkage_option_adjust_std_year">기준연도를 %1$d(으)로 변경 (나이 %2$d, 출생연도 %3$d 유지)</string>
-    <string name="age_linkage_option_adjust_std_year_with_warn">기준연도를 %1$d(으)로 변경 (나이 %2$d, 출생연도 %3$d 유지)\n⚠ 이 작품의 다른 캐릭터 %4$d명에게도 영향</string>
+    <string name="age_linkage_option_adjust_std_year">표준연도를 %1$d(으)로 변경 (나이 %2$d, 출생연도 %3$d 유지)</string>
+    <string name="age_linkage_option_adjust_std_year_with_warn">표준연도를 %1$d(으)로 변경 (나이 %2$d, 출생연도 %3$d 유지)\n⚠ 이 작품의 다른 캐릭터 %4$d명에게도 영향</string>
     <string name="apply">적용</string>
 
     <!-- Feature: Body Analysis -->
@@ -1345,7 +1350,7 @@
     <string name="stats_inline_group_differs">※ 이 필드는 세계관마다 분석 설정이 서로 다릅니다. 전체 적용을 켜면 이 설정으로 통일됩니다.</string>
 
     <!-- Feature: Event from character screen -->
-    <string name="save_character_first">캐릭터를 먼저 저장해주세요</string>
+    <string name="save_character_first">캐릭터를 먼저 저장한 후 사건을 추가할 수 있습니다</string>
 
     <!-- Feature: Faction (세력) -->
     <string name="faction_manage">세력 관리</string>
@@ -1484,7 +1489,7 @@
     <string name="random_auto_save">편집 종료 시 자동 저장</string>
     <string name="random_auto_save_desc">편집 모드를 끌 때 확인 없이 자동으로 저장합니다.</string>
     <string name="random_unsaved_title">저장되지 않은 변경</string>
-    <string name="random_unsaved_message">편집 중인 내용이 저장되지 않았습니다. 어떻게 할까요?</string>
+    <string name="random_unsaved_message">편집 중인 내용이 저장되지 않았습니다. 어떻게 하시겠습니까?</string>
     <string name="random_unsaved_save">저장 후 닫기</string>
     <string name="random_unsaved_discard">버리기</string>
     <string name="random_unsaved_keep">계속 편집</string>
@@ -1495,8 +1500,8 @@
     <string name="random_character_deleted">표시 중이던 캐릭터가 삭제되어 새로 뽑았습니다.</string>
 
     <!-- 캐릭터 중복 감지 -->
-    <string name="duplicate_character_title">동일한 이름의 캐릭터가 존재합니다</string>
-    <string name="duplicate_character_message">\'%1$s\' 이름을 가진 캐릭터가 이미 %2$d명 존재합니다.</string>
+    <string name="duplicate_character_title">같은 이름의 캐릭터가 이미 있습니다</string>
+    <string name="duplicate_character_message">\'%1$s\' 이름의 캐릭터가 이미 %2$d명 있습니다.</string>
     <string name="duplicate_action_cancel">취소</string>
     <string name="duplicate_action_update">기존 캐릭터 업데이트</string>
     <string name="duplicate_action_create_new">동명이인으로 새로 생성</string>
@@ -1565,7 +1570,7 @@
     <string name="result_batch_move_detail">필드 %1$d개 이관 · %2$d개 제거 · 세력 %3$d개 제거(휴지통 백업)</string>
     <string name="result_batch_move_remapped">필드 %1$d개 이관</string>
     <string name="cross_universe_move_title">다른 세계관으로 이동</string>
-    <string name="cross_universe_move_message">이 캐릭터를 다른 세계관으로 옮기면 새 세계관에 없는 필드값 %1$d개·세력 소속 %2$d개가 제거됩니다. 같은 이름 필드 %3$d개는 그대로 이관됩니다.\n제거분은 휴지통에 백업되어 복원할 수 있습니다. 계속할까요?</string>
+    <string name="cross_universe_move_message">이 캐릭터를 다른 세계관으로 옮기면 새 세계관에 없는 필드값 %1$d개·세력 소속 %2$d개가 제거됩니다. 같은 이름 필드 %3$d개는 그대로 이관됩니다.\n제거분은 휴지통에 백업되어 복원할 수 있습니다. 계속하시겠습니까?</string>
     <string name="cross_universe_move_confirm">이동</string>
     <string name="batch_field_title_set">필드값 일괄 설정</string>
     <string name="batch_field_title_clear">필드값 일괄 삭제</string>
@@ -1614,14 +1619,14 @@
 
     <string name="storage_clean_orphan_images">고아 이미지 정리</string>
     <string name="storage_clean_orphan_desc">더 이상 어떤 캐릭터·세계관·작품에서도 쓰이지 않는 이미지 파일을 삭제합니다 (휴지통 복원 대상은 보존).</string>
-    <string name="storage_clean_orphan_confirm">사용 중이거나 휴지통에 보관된 이미지, 미저장 편집 중인 이미지는 건드리지 않고, 어디에서도 참조되지 않는 이미지 파일만 삭제합니다. 계속할까요?</string>
+    <string name="storage_clean_orphan_confirm">사용 중이거나 휴지통에 보관된 이미지, 미저장 편집 중인 이미지는 건드리지 않고, 어디에서도 참조되지 않는 이미지 파일만 삭제합니다. 계속하시겠습니까?</string>
     <string name="storage_clean_orphan_done">고아 이미지 %1$d개 삭제 (%2$s 확보)</string>
     <string name="storage_clean_orphan_skipped_recent">최근 편집·가져오기 중일 수 있는 파일 %1$d개는 안전을 위해 보호했습니다.</string>
     <string name="storage_clean_orphan_aborted">일부 데이터를 읽을 수 없어 안전을 위해 정리를 중단했습니다. 설정 &gt; 시스템 관리의 무결성 점검 후 다시 시도하세요.</string>
 
     <string name="storage_clear_export_cache">내보내기 캐시 비우기</string>
     <string name="storage_clear_export_cache_desc">엑셀/월드패키지/카드 내보내기의 임시 산출물을 삭제합니다. 원본 데이터·이미지에는 영향이 없으며 필요 시 다시 생성됩니다.</string>
-    <string name="storage_clear_cache_confirm">내보내기 임시 파일을 모두 삭제합니다. 원본 데이터에는 영향이 없습니다. 계속할까요?</string>
+    <string name="storage_clear_cache_confirm">내보내기 임시 파일을 모두 삭제합니다. 원본 데이터에는 영향이 없습니다. 계속하시겠습니까?</string>
     <string name="storage_clear_cache_done">내보내기 캐시 정리 완료 (%s 확보)</string>
 
     <string name="storage_manage_backup">자동 백업 관리</string>
@@ -1640,7 +1645,7 @@
     <string name="settings_operation_history_desc">최근 데이터 처리 결과를 시간순으로 확인합니다</string>
     <string name="operation_history_empty">아직 기록된 작업이 없습니다</string>
     <string name="operation_history_clear">이력 비우기</string>
-    <string name="operation_history_clear_confirm">작업 이력을 모두 지웁니다. 실제 데이터에는 영향이 없습니다. 계속할까요?</string>
+    <string name="operation_history_clear_confirm">작업 이력을 모두 지웁니다. 실제 데이터에는 영향이 없습니다. 계속하시겠습니까?</string>
     <string name="operation_history_cleared">작업 이력을 비웠습니다</string>
     <string name="operation_history_success">성공</string>
     <string name="operation_history_failure">실패</string>
@@ -1802,7 +1807,7 @@
     <string name="filter_chip_field_format">%1$s: %2$s</string>
     <string name="filter_chip_tag_format">#%1$s</string>
     <string name="empty_filtered_title">필터에 맞는 캐릭터가 없습니다</string>
-    <string name="empty_filtered_hint">필터를 조정하거나 아래에서 지워보세요</string>
+    <string name="empty_filtered_hint">필터를 조정하거나 아래에서 지워 보세요</string>
     <string name="character_preset_save">현재 필터·정렬을 프리셋으로 저장</string>
     <string name="character_preset_save_chip">+ 프리셋</string>
     <string name="character_preset_name_hint">프리셋 이름</string>
@@ -1878,7 +1883,7 @@
     <string name="assistant_action_open_character">캐릭터 열기</string>
     <string name="assistant_action_check">확인하기</string>
     <string name="assistant_action_assign_novel">작품 지정</string>
-    <string name="assistant_age_dialog_title">나이-출생연도 불일치 · 기준연도 %1$d년</string>
+    <string name="assistant_age_dialog_title">나이-출생연도 불일치 · 표준연도 %1$d년</string>
     <string name="assistant_age_resolved">이미 해결됐어요</string>
     <string name="assistant_age_fixed">나이·출생연도를 맞췄어요</string>
     <string name="assistant_assign_novel_title">%1$s을(를) 어느 작품에?</string>
@@ -1893,9 +1898,9 @@
     <string name="assistant_sort_name">이름순</string>
     <string name="assistant_sort_recent">최근 수정순</string>
     <string name="assistant_sort_created">생성순</string>
-    <string name="assistant_affected_age_subtitle">기준연도 %1$d · 나이 %2$d · 출생 %3$d → 예상 나이 %4$d</string>
+    <string name="assistant_affected_age_subtitle">표준연도 %1$d · 나이 %2$d · 출생 %3$d → 예상 나이 %4$d</string>
     <string name="assistant_affected_death_subtitle">출생 %1$d · 사망 %2$d</string>
-    <string name="assistant_age_dialog_title_named">%1$s — 나이·출생연도 불일치 (기준연도 %2$d년)</string>
+    <string name="assistant_age_dialog_title_named">%1$s — 나이·출생연도 불일치 (표준연도 %2$d년)</string>
     <string name="assistant_novel_assigned">%1$s을(를) \'%2$s\'에 배정했어요</string>
     <string name="assistant_dismissed">숨겼어요</string>
     <string name="assistant_undo">실행취소</string>
@@ -1938,14 +1943,14 @@
     <string name="image_assign_target_title">배정 대상 선택</string>
     <string name="entity_picker_search_hint">검색</string>
     <string name="entity_picker_empty">대상이 없습니다</string>
-    <string name="image_assign_link_confirm">선택 %1$d장에 링크된 %2$d장이 함께 포함되어 총 %3$d장을 \'%4$s\'에 배정합니다. 계속할까요?</string>
+    <string name="image_assign_link_confirm">선택 %1$d장에 링크된 %2$d장이 함께 포함되어 총 %3$d장을 \'%4$s\'에 배정합니다. 계속하시겠습니까?</string>
     <string name="image_assign_done">\'%1$s\'에 %2$d장 배정</string>
     <string name="image_assign_note_link">링크 %1$d장 함께 배정</string>
     <string name="image_assign_note_already">이미 있음 %1$d장 건너뜀</string>
     <string name="image_assign_note_mode">카드 이미지 모드를 \'직접 등록\'으로 전환</string>
     <string name="image_assign_failed">배정에 실패했습니다</string>
     <string name="image_unassign_action">배정 해제</string>
-    <string name="image_unassign_confirm">%1$d장을 소유자에게서 해제할까요? 파일은 삭제되지 않고 라이브러리(미배정)에 남습니다.</string>
+    <string name="image_unassign_confirm">%1$d장을 소유자에게서 해제하시겠습니까? 파일은 삭제되지 않고 라이브러리(미배정)에 남습니다.</string>
     <string name="image_unassign_pick_owners">해제할 소유자 선택</string>
     <string name="image_unassign_done">해제 %1$d장</string>
     <string name="image_unassign_note_adopted">미배정으로 이동 %1$d장</string>
@@ -1953,7 +1958,7 @@
     <string name="image_link_action">링크 (같은 캐릭터 묶음)</string>
     <string name="image_unlink_action">링크 해제</string>
     <string name="image_link_need_two">링크하려면 2장 이상 선택하세요</string>
-    <string name="image_link_merge_confirm">선택에 기존 링크 그룹 %1$d개가 걸쳐 있습니다. 하나의 그룹으로 병합할까요?</string>
+    <string name="image_link_merge_confirm">선택에 기존 링크 그룹 %1$d개가 걸쳐 있습니다. 하나의 그룹으로 병합하시겠습니까?</string>
     <string name="image_link_done">%1$d장을 링크했습니다 — 하나를 배정하면 함께 배정됩니다</string>
     <string name="image_link_merged_done">%1$d장을 링크했습니다 (그룹 병합됨)</string>
     <string name="image_link_failed">링크에 실패했습니다</string>
@@ -1995,8 +2000,8 @@
     <string name="image_manager_refresh">새로고침</string>
     <string name="image_manager_view_full">전체화면 보기</string>
     <string name="image_manager_delete_title">이미지 삭제</string>
-    <string name="image_manager_delete_referenced_confirm">이 이미지는 %1$d곳에서 사용 중입니다. 삭제하면 해당 항목에서도 함께 제거됩니다. 계속할까요?</string>
-    <string name="image_manager_delete_orphan_confirm">이 이미지 파일을 삭제할까요?</string>
+    <string name="image_manager_delete_referenced_confirm">이 이미지는 %1$d곳에서 사용 중입니다. 삭제하면 해당 항목에서도 함께 제거됩니다. 계속하시겠습니까?</string>
+    <string name="image_manager_delete_orphan_confirm">이 이미지 파일을 삭제하시겠습니까?</string>
     <string name="image_manager_deleted">이미지 삭제 · %1$s 확보</string>
     <string name="image_manager_delete_failed">이미지를 삭제하지 못했습니다</string>
     <string name="image_manager_empty">이미지가 없습니다</string>
@@ -2007,7 +2012,7 @@
     <string name="image_manager_selected_count">%1$d개 선택</string>
     <string name="image_manager_selected_mark">✓</string>
     <string name="image_manager_select_none">선택된 이미지가 없습니다.</string>
-    <string name="image_manager_delete_selected_confirm">선택한 이미지 %1$d개를 삭제할까요? 참조본은 사용 중인 항목에서도 함께 제거됩니다.</string>
+    <string name="image_manager_delete_selected_confirm">선택한 이미지 %1$d개를 삭제하시겠습니까? 참조본은 사용 중인 항목에서도 함께 제거됩니다.</string>
     <string name="image_manager_bulk_deleted">이미지 %1$d개 삭제 · %2$s 확보</string>
     <string name="image_manager_bulk_delete_failed">일부 이미지를 삭제하지 못했습니다 (%1$d개 실패)</string>
     <!-- 이미지 관리 탭 — 기존 이미지 재압축(PR-3a) -->
@@ -2057,7 +2062,7 @@
     <string name="ai_preset_free_badge">무료 티어</string>
     <string name="ai_key_status_registered">키 등록됨 (%s)</string>
     <string name="ai_key_status_missing">키 미등록 — 편집에서 등록하세요</string>
-    <string name="ai_delete_confirm">\'%s\' 프로바이더를 삭제할까요?\n저장된 API 키도 함께 삭제됩니다.</string>
+    <string name="ai_delete_confirm">\'%s\' 프로바이더를 삭제하시겠습니까?\n저장된 API 키도 함께 삭제됩니다.</string>
 
     <!-- 추가/편집 다이얼로그 -->
     <string name="ai_edit_title_new">프로바이더 추가</string>
@@ -2336,7 +2341,7 @@
 
     <!-- A-3 보충(랜덤) 탭 AI 추천 — 예방(뽑기 잠금)·검출(캐릭터 불일치) -->
     <string name="ai_field_busy_pick_blocked">AI 추천을 받는 중입니다 — 완료 후 이동할 수 있습니다</string>
-    <string name="ai_result_character_mismatch">이 AI 추천은 \'%1$s\'에게 요청한 것인데, 지금 화면의 캐릭터가 다릅니다. 어떻게 할까요?</string>
+    <string name="ai_result_character_mismatch">이 AI 추천은 \'%1$s\'에게 요청한 것인데, 지금 화면의 캐릭터가 다릅니다. 어떻게 하시겠습니까?</string>
     <string name="ai_result_return_apply">%1$s(으)로 돌아가 적용</string>
     <string name="ai_result_discard">버리기</string>
     <string name="ai_result_target_deleted">요청했던 캐릭터가 삭제되어 결과를 적용할 곳이 없습니다.</string>
