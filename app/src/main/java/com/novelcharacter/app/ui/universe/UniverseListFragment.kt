@@ -738,6 +738,13 @@ class UniverseListFragment : Fragment() {
             val dp8 = (8 * dp).toInt()
             setPadding(dp24, dp16, dp24, dp8)
         }
+        // 섹션 목적문 캡션 (R-25) — 라벨 아래 한 줄, dialog_novel_edit.xml의 캡션과 같은 모양
+        fun sectionCaption(resId: Int) = TextView(ctx).apply {
+            text = getString(resId)
+            setTextAppearance(R.style.TextAppearance_App_Caption)
+            setTextColor(ctx.getColor(R.color.text_secondary))
+            setPadding(0, 0, 0, (8 * dp).toInt())
+        }
         val nameEdit = EditText(ctx).apply {
             hint = getString(R.string.universe_name_hint)
             universe?.let { setText(it.name) }
@@ -752,9 +759,10 @@ class UniverseListFragment : Fragment() {
         // Border color picker section
         val colorLabel = TextView(ctx).apply {
             text = getString(R.string.border_color_label)
-            setPadding(0, (16 * dp).toInt(), 0, (8 * dp).toInt())
+            setPadding(0, (16 * dp).toInt(), 0, (2 * dp).toInt())
         }
         layout.addView(colorLabel)
+        layout.addView(sectionCaption(R.string.border_color_desc_universe))
 
         var selectedColor = universe?.borderColor ?: ""
 
@@ -853,9 +861,10 @@ class UniverseListFragment : Fragment() {
         // 관계 유형 편집 섹션
         val relTypeLabel = TextView(ctx).apply {
             text = getString(R.string.relationship_types_label)
-            setPadding(0, (16 * dp).toInt(), 0, (8 * dp).toInt())
+            setPadding(0, (16 * dp).toInt(), 0, (2 * dp).toInt())
         }
         layout.addView(relTypeLabel)
+        layout.addView(sectionCaption(R.string.relationship_types_desc))
 
         val currentTypes = (universe?.getRelationshipTypes() ?: Universe.DEFAULT_RELATIONSHIP_TYPES).toMutableList()
         val currentColors = (universe?.getRelationshipColorMap() ?: Universe.DEFAULT_RELATIONSHIP_COLORS).toMutableMap()
@@ -976,9 +985,10 @@ class UniverseListFragment : Fragment() {
         // 이미지 모드 선택
         val imageLabel = TextView(ctx).apply {
             text = getString(R.string.image_mode_label)
-            setPadding(0, (16 * dp).toInt(), 0, (8 * dp).toInt())
+            setPadding(0, (16 * dp).toInt(), 0, (2 * dp).toInt())
         }
         layout.addView(imageLabel)
+        layout.addView(sectionCaption(R.string.image_mode_desc_universe))
 
         val imageModes = arrayOf(
             getString(R.string.image_mode_none),

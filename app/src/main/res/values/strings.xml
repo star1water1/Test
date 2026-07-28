@@ -83,9 +83,9 @@
     <string name="toggle_time_slider">시점 슬라이더 토글</string>
     <string name="reset_time_view">원래 상태로</string>
     <string name="time_view_indicator">%d년 시점의 상태</string>
-    <string name="year_required">연도를 입력해주세요</string>
-    <string name="field_required">변경 필드를 선택해주세요</string>
-    <string name="value_required">새 값을 입력해주세요</string>
+    <string name="year_required">연도를 입력하세요</string>
+    <string name="field_required">변경 필드를 선택하세요</string>
+    <string name="value_required">새 값을 입력하세요</string>
     <string name="state_change_saved">상태 변화가 저장되었습니다</string>
     <string name="state_change_deleted">상태 변화가 삭제되었습니다</string>
     <string name="edit_or_delete">편집 또는 삭제</string>
@@ -116,7 +116,7 @@
     <string name="preset_tag_user">사용자</string>
 
     <!-- Empty state hints -->
-    <string name="empty_universe_hint">세계관을 추가해보세요</string>
+    <string name="empty_universe_hint">세계관을 추가해 보세요</string>
     <string name="empty_field_hint">필드를 추가해 보세요</string>
 
     <!-- Layout hardcoded strings -->
@@ -141,7 +141,7 @@
     <string name="label_display_format">표시 형식</string>
     <string name="label_narrative_mode">서술형 여부</string>
     <string name="hint_narrative_mode">서술형으로 두면 ✨ AI가 이 필드에 긴 글 초안을 쓰거나, 이미 쓴 글을 이어쓰기·다듬기 합니다. 자동은 표시 형식이 \'여러 줄\'일 때 서술형으로 봅니다.</string>
-    <string name="hint_comma_list_helper">콤마(,)로 구분하여 여러 항목 입력</string>
+    <string name="hint_comma_list_helper">콤마(,)로 구분해 여러 항목 입력</string>
     <string name="hint_multiline_helper">여러 줄로 입력 가능</string>
     <string name="label_stats_enabled">통계에 포함</string>
     <!-- 목록 카드 표시 (B-5) -->
@@ -213,11 +213,11 @@
     <string name="search_type_character">캐릭터</string>
     <string name="search_type_event">사건</string>
     <string name="search_type_novel">작품</string>
-    <string name="empty_character_hint">캐릭터를 추가해보세요</string>
-    <string name="empty_novel_hint">작품을 추가해보세요</string>
-    <string name="empty_event_hint">사건을 추가해보세요</string>
-    <string name="empty_state_change_hint">상태 변화를 추가해보세요</string>
-    <string name="empty_relationship_hint">관계를 추가해보세요</string>
+    <string name="empty_character_hint">캐릭터를 추가해 보세요</string>
+    <string name="empty_novel_hint">작품을 추가해 보세요</string>
+    <string name="empty_event_hint">사건을 추가해 보세요</string>
+    <string name="empty_state_change_hint">상태 변화를 추가해 보세요</string>
+    <string name="empty_relationship_hint">관계를 추가해 보세요</string>
     <string name="compare_selected_count">선택 %1$d/3</string>
     <string name="slider_min_year">최소: %d년</string>
     <string name="slider_max_year">최대: %d년</string>
@@ -239,7 +239,7 @@
     <string name="character_compare">캐릭터 비교</string>
     <string name="name_search_hint">이름 검색</string>
     <string name="show_available_only">미사용만</string>
-    <string name="name_bank_empty_hint">이름을 추가해보세요</string>
+    <string name="name_bank_empty_hint">이름을 추가해 보세요</string>
     <string name="relationship_label">관계</string>
     <string name="target_character">대상 캐릭터</string>
     <string name="relationship_type">관계 유형</string>
@@ -448,8 +448,8 @@
     <string name="onboarding_welcome_title">시작하기</string>
     <string name="onboarding_welcome_message">이 앱은 다음 구조로 이루어져 있습니다:\n\n세계관 → 작품 → 캐릭터 → 사건\n\n① \'세계관\' 탭에서 세계관을 만들고\n② 세계관 안에 작품을, 작품 안에 캐릭터를 추가하세요\n③ \'연표\' 탭에서 사건을 배치하고 캐릭터와 연결할 수 있습니다\n\n필드(속성)는 세계관 단위로 자유롭게 정의할 수 있고, 모든 데이터는 엑셀로 내보내고 다시 들여올 수 있습니다.</string>
     <string name="onboarding_welcome_start">시작하기</string>
-    <string name="hint_timeline_longpress">힌트: ➕ 버튼을 길게 누르면 재정렬 모드, 하단 밀도 바의 연도를 길게 누르면 간편 사건 추가예요.</string>
-    <string name="hint_character_longpress_select">힌트: 캐릭터를 길게 누르면 여러 개를 선택해 일괄 편집할 수 있어요. (이미지는 상세 화면에서 크게 볼 수 있어요)</string>
+    <string name="hint_timeline_longpress">힌트: ➕ 버튼을 길게 누르면 재정렬 모드, 하단 밀도 바의 연도를 길게 누르면 간편 사건 추가입니다.</string>
+    <string name="hint_character_longpress_select">힌트: 캐릭터를 길게 누르면 여러 개를 선택해 일괄 편집할 수 있습니다. (이미지는 상세 화면에서 크게 볼 수 있습니다)</string>
     <string name="hint_dismiss">확인</string>
     <!-- 캐릭터 편집 드래프트 자동저장 (B-6) -->
     <string name="draft_restore_title">작성 중이던 초안</string>
@@ -479,7 +479,7 @@
     <string name="import_images_too_large">백업 이미지 총 용량이 너무 큽니다 (최대 8GB)</string>
     <string name="import_oom">기기 메모리가 부족해 데이터를 한 번에 처리하지 못했습니다. 데이터(캐릭터·필드·사건 등)가 매우 많은 경우이니, 작품(세계관)을 나눠 내보낸 뒤 부분씩 가져와 주세요. (이미지 용량은 이 한계와 무관합니다.)</string>
     <string name="relationship_title_format">%1$s (%2$s)</string>
-    <string name="relationship_already_exists">이미 해당 캐릭터와 관계가 존재합니다</string>
+    <string name="relationship_already_exists">이 캐릭터와는 이미 관계가 있습니다</string>
     <string name="edit_relationship">관계 편집</string>
     <string name="relationship_intensity">관계 강도</string>
     <string name="relationship_bidirectional">양방향 관계</string>
@@ -536,13 +536,15 @@
     <!-- Another name -->
     <string name="another_name">이명</string>
     <string name="hint_another_name">이명 / 별칭</string>
-    <string name="hint_another_name_helper">콤마(,)로 구분하여 여러 개 입력 가능</string>
+    <string name="hint_another_name_helper">콤마(,)로 구분해 여러 개 입력 가능</string>
     <string name="hint_first_name">이름 (First Name)</string>
     <string name="hint_last_name">성 (Last Name)</string>
 
     <!-- Image viewer -->
     <string name="image_viewer">이미지 보기</string>
     <string name="image_mode_label">대표 이미지 설정</string>
+    <string name="image_mode_desc_universe">목록의 세계관 카드에 보일 이미지를 정합니다. 직접 등록하거나 캐릭터·작품 이미지와 연동할 수 있습니다.</string>
+    <string name="image_mode_desc_novel">목록의 작품 카드에 보일 이미지를 정합니다. 직접 등록하거나 캐릭터 이미지와 연동할 수 있습니다.</string>
     <string name="image_mode_none">없음</string>
     <string name="image_mode_custom">직접 등록</string>
     <string name="image_mode_random_character">캐릭터 이미지 랜덤</string>
@@ -568,13 +570,13 @@
     <string name="preset_fields_saved">프리셋 필드가 저장되었습니다</string>
     <string name="preset_field_name_required">필드 이름을 입력하세요</string>
     <string name="preset_field_key_required">필드 키를 입력하세요</string>
-    <string name="preset_field_key_duplicate">이미 같은 키가 존재합니다</string>
+    <string name="preset_field_key_duplicate">이미 같은 키가 있습니다</string>
     <string name="move_up">위로</string>
     <string name="move_down">아래로</string>
     <string name="image_no_characters_with_images">이미지가 있는 캐릭터가 없습니다</string>
     <string name="image_character_selected">%s 선택됨</string>
     <string name="image_change_character">캐릭터 변경</string>
-    <string name="image_save_novel_first">작품을 먼저 저장해주세요</string>
+    <string name="image_save_novel_first">작품을 먼저 저장한 후 이미지를 선택할 수 있습니다</string>
     <string name="image_index_format">%1$d / %2$d</string>
 
     <!-- Settings -->
@@ -658,6 +660,8 @@
 
     <!-- Border color customization (Sprint D) -->
     <string name="border_color_label">테두리 색상</string>
+    <string name="border_color_desc_universe">목록의 세계관 카드 테두리에 이 색이 입혀집니다 (비우면 테두리 없음)</string>
+    <string name="border_color_desc_novel">목록의 작품 카드 테두리에 이 색이 입혀집니다 (비우면 세계관 테두리 색을 따릅니다)</string>
     <string name="border_color_hex_hint">HEX 색상 (예: #5C6BC0)</string>
     <string name="border_color_reset">기본값으로 되돌리기</string>
     <string name="color_picker_full_spectrum">전체 색상 선택</string>
@@ -677,6 +681,7 @@
     <string name="char_stats_complexity">복잡도 점수: %.1f</string>
 
     <string name="relationship_types_label">관계 유형</string>
+    <string name="relationship_types_desc">캐릭터에 관계를 추가할 때 이 목록의 유형 중에서 고릅니다. 색은 관계 그래프에 표시됩니다.</string>
     <string name="relationship_types_hint">새 관계 유형 입력</string>
     <string name="relationship_types_reset">기본 유형으로 초기화</string>
     <string name="relationship_types_add">추가</string>
@@ -1258,20 +1263,20 @@
     <string name="restore_action">복원</string>
 
     <!-- Feature: Standard Year -->
-    <string name="standard_year_hint">작중 표준 년도 (선택)</string>
-    <string name="standard_year_description">작중 현재 시점. 출생연도와 연동하여 나이를 자동 계산합니다.</string>
-    <string name="std_year_link_label">표준 년도 연동</string>
+    <string name="standard_year_hint">작중 표준연도 (선택)</string>
+    <string name="standard_year_description">작중 현재 시점입니다. 캐릭터 나이가 이 연도와 출생연도로 자동 계산됩니다.</string>
+    <string name="std_year_link_label">표준연도 연동</string>
     <string name="linkage_rule_age_anchor">나이 기준 (표준연도가 바뀌면 출생연도를 다시 계산)</string>
     <string name="linkage_rule_birth_anchor">출생연도 기준 (표준연도가 바뀌면 나이를 다시 계산)</string>
     <string name="linkage_rule_label">연동 규칙</string>
 
     <!-- Age-BirthYear Linkage Conflict -->
     <string name="age_linkage_conflict_title">나이-출생연도 불일치</string>
-    <string name="age_linkage_conflict_message">기준연도 %1$d 기준으로 나이(%2$d)와 출생연도(%3$d)가 맞지 않습니다.\n\n예상 나이: %4$d</string>
+    <string name="age_linkage_conflict_message">표준연도(연표에서 정하는 \'작중 현재\' 연도) %1$d 기준으로 나이(%2$d)와 출생연도(%3$d)가 맞지 않습니다.\n\n예상 나이: %4$d</string>
     <string name="age_linkage_option_adjust_birth">출생연도를 %1$d(으)로 변경 (나이 %2$d 유지)</string>
     <string name="age_linkage_option_adjust_age">나이를 %1$d(으)로 변경 (출생연도 %2$d 유지)</string>
-    <string name="age_linkage_option_adjust_std_year">기준연도를 %1$d(으)로 변경 (나이 %2$d, 출생연도 %3$d 유지)</string>
-    <string name="age_linkage_option_adjust_std_year_with_warn">기준연도를 %1$d(으)로 변경 (나이 %2$d, 출생연도 %3$d 유지)\n⚠ 이 작품의 다른 캐릭터 %4$d명에게도 영향</string>
+    <string name="age_linkage_option_adjust_std_year">표준연도를 %1$d(으)로 변경 (나이 %2$d, 출생연도 %3$d 유지)</string>
+    <string name="age_linkage_option_adjust_std_year_with_warn">표준연도를 %1$d(으)로 변경 (나이 %2$d, 출생연도 %3$d 유지)\n⚠ 이 작품의 다른 캐릭터 %4$d명에게도 영향</string>
     <string name="apply">적용</string>
 
     <!-- Feature: Body Analysis -->
@@ -1345,7 +1350,7 @@
     <string name="stats_inline_group_differs">※ 이 필드는 세계관마다 분석 설정이 서로 다릅니다. 전체 적용을 켜면 이 설정으로 통일됩니다.</string>
 
     <!-- Feature: Event from character screen -->
-    <string name="save_character_first">캐릭터를 먼저 저장해주세요</string>
+    <string name="save_character_first">캐릭터를 먼저 저장한 후 사건을 추가할 수 있습니다</string>
 
     <!-- Feature: Faction (세력) -->
     <string name="faction_manage">세력 관리</string>
@@ -1495,8 +1500,8 @@
     <string name="random_character_deleted">표시 중이던 캐릭터가 삭제되어 새로 뽑았습니다.</string>
 
     <!-- 캐릭터 중복 감지 -->
-    <string name="duplicate_character_title">동일한 이름의 캐릭터가 존재합니다</string>
-    <string name="duplicate_character_message">\'%1$s\' 이름을 가진 캐릭터가 이미 %2$d명 존재합니다.</string>
+    <string name="duplicate_character_title">같은 이름의 캐릭터가 이미 있습니다</string>
+    <string name="duplicate_character_message">\'%1$s\' 이름의 캐릭터가 이미 %2$d명 있습니다.</string>
     <string name="duplicate_action_cancel">취소</string>
     <string name="duplicate_action_update">기존 캐릭터 업데이트</string>
     <string name="duplicate_action_create_new">동명이인으로 새로 생성</string>
@@ -1802,7 +1807,7 @@
     <string name="filter_chip_field_format">%1$s: %2$s</string>
     <string name="filter_chip_tag_format">#%1$s</string>
     <string name="empty_filtered_title">필터에 맞는 캐릭터가 없습니다</string>
-    <string name="empty_filtered_hint">필터를 조정하거나 아래에서 지워보세요</string>
+    <string name="empty_filtered_hint">필터를 조정하거나 아래에서 지워 보세요</string>
     <string name="character_preset_save">현재 필터·정렬을 프리셋으로 저장</string>
     <string name="character_preset_save_chip">+ 프리셋</string>
     <string name="character_preset_name_hint">프리셋 이름</string>
@@ -1878,7 +1883,7 @@
     <string name="assistant_action_open_character">캐릭터 열기</string>
     <string name="assistant_action_check">확인하기</string>
     <string name="assistant_action_assign_novel">작품 지정</string>
-    <string name="assistant_age_dialog_title">나이-출생연도 불일치 · 기준연도 %1$d년</string>
+    <string name="assistant_age_dialog_title">나이-출생연도 불일치 · 표준연도 %1$d년</string>
     <string name="assistant_age_resolved">이미 해결됐어요</string>
     <string name="assistant_age_fixed">나이·출생연도를 맞췄어요</string>
     <string name="assistant_assign_novel_title">%1$s을(를) 어느 작품에?</string>
@@ -1893,9 +1898,9 @@
     <string name="assistant_sort_name">이름순</string>
     <string name="assistant_sort_recent">최근 수정순</string>
     <string name="assistant_sort_created">생성순</string>
-    <string name="assistant_affected_age_subtitle">기준연도 %1$d · 나이 %2$d · 출생 %3$d → 예상 나이 %4$d</string>
+    <string name="assistant_affected_age_subtitle">표준연도 %1$d · 나이 %2$d · 출생 %3$d → 예상 나이 %4$d</string>
     <string name="assistant_affected_death_subtitle">출생 %1$d · 사망 %2$d</string>
-    <string name="assistant_age_dialog_title_named">%1$s — 나이·출생연도 불일치 (기준연도 %2$d년)</string>
+    <string name="assistant_age_dialog_title_named">%1$s — 나이·출생연도 불일치 (표준연도 %2$d년)</string>
     <string name="assistant_novel_assigned">%1$s을(를) \'%2$s\'에 배정했어요</string>
     <string name="assistant_dismissed">숨겼어요</string>
     <string name="assistant_undo">실행취소</string>
