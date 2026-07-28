@@ -203,6 +203,49 @@
                     android:text="@string/dashboard_tools"
                     android:textAppearance="@style/TextAppearance.App.Title" />
 
+                <!-- 보충 (N-2 §8-1) — 도구 중 첫 타일: 넷 중 유일하게 "지금 뭘 손봐야 하는가"에
+                     답하는 작업 진입. N-1이 캐릭터 탭 진입점을 ⋮로 옮기기 전의 대체 진입점이다
+                     (진입점을 덜 눈에 띄는 자리로 옮길 때는 더 눈에 띄는 자리가 먼저 생겨야 한다). -->
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/cardSupplement"
+                    style="@style/Widget.App.Card.Tonal"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/spacing_sm"
+                    android:clickable="true"
+                    android:focusable="true">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:padding="@dimen/card_padding">
+
+                        <ImageView
+                            android:layout_width="@dimen/icon_md"
+                            android:layout_height="@dimen/icon_md"
+                            android:src="@drawable/ic_supplement"
+                            app:tint="?attr/colorPrimary"
+                            android:importantForAccessibility="no" />
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginStart="@dimen/spacing_md"
+                            android:text="@string/tab_supplement"
+                            android:textAppearance="@style/TextAppearance.App.Subtitle" />
+
+                        <ImageView
+                            android:layout_width="@dimen/icon_md"
+                            android:layout_height="@dimen/icon_md"
+                            android:src="@drawable/ic_chevron_right"
+                            app:tint="?attr/colorOnSurfaceVariant"
+                            android:importantForAccessibility="no" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
                 <com.google.android.material.card.MaterialCardView
                     android:id="@+id/cardTimeline"
                     style="@style/Widget.App.Card.Tonal"
