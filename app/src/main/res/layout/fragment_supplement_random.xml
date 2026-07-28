@@ -449,6 +449,16 @@
                 android:layout_height="@dimen/touch_target_min"
                 android:layout_marginBottom="@dimen/stats_margin_sm" />
 
+            <!-- ✨ AI 필드 추천 (A-3) — 편집 화면과 같은 위치·문구. 세계관 필드가 렌더될 때만 노출 -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnAiSuggest"
+                style="@style/Widget.App.Button.Tonal"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="@dimen/stats_margin_sm"
+                android:text="@string/ai_field_suggest_entry"
+                android:visibility="gone" />
+
             <LinearLayout
                 android:id="@+id/dynamicFormContainer"
                 android:layout_width="match_parent"

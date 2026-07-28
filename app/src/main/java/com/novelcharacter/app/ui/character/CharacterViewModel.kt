@@ -870,7 +870,14 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
     data class AiSuggestRun(
         val targets: List<com.novelcharacter.app.ai.CharacterFieldAiSuggester.FieldSpec>,
         val singleMode: Boolean,
-        val outcome: com.novelcharacter.app.ai.CharacterFieldAiSuggester.SuggestOutcome
+        val outcome: com.novelcharacter.app.ai.CharacterFieldAiSuggester.SuggestOutcome,
+        /**
+         * 요청 시점의 대상 캐릭터 id (미저장 신규는 -1) — A-3 오적용 차단의 검출 축.
+         * 보충(랜덤) 탭은 요청 도중 캐릭터가 바뀔 수 있어, 결과 표시 전에 지금 화면의
+         * 캐릭터와 비교해 다르면 적용 대신 선택지(돌아가 적용/버리기)를 연다.
+         * 편집 화면은 캐릭터가 화면 수명 동안 고정이라 언제나 일치한다(동작 불변).
+         */
+        val targetCharacterId: Long = -1L
     )
 
     val aiSuggestRunning = MutableLiveData(false)
@@ -891,7 +898,9 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
          * 사용자가 이 필드를 콕 집어 다시 물은 것이므로, 설정이 그 답을 가로채면
          * 돈만 내고 아무것도 못 받는다(자율성: 구체적 요청이 일반 설정을 이긴다).
          */
-        applyConfidenceFilter: Boolean = true
+        applyConfidenceFilter: Boolean = true,
+        /** 요청 대상 캐릭터 id — [AiSuggestRun.targetCharacterId]로 그대로 실린다 */
+        targetCharacterId: Long = -1L
     ): Boolean {
         if (aiSuggestRunning.value == true) return false
         aiSuggestRunning.value = true
@@ -900,13 +909,14 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
                 val suggester = com.novelcharacter.app.ai.CharacterFieldAiSuggester(
                     com.novelcharacter.app.ai.AiService(getApplication())
                 )
-                val floor = if (applyConfidenceFilter) {
-                    com.novelcharacter.app.ai.AiPromptSettings(getApplication()).minConfidence
-                } else null
-                val outcome = suggester.suggest(aiContext, withFieldUsage(targets), floor) { failure ->
+                val settings = com.novelcharacter.app.ai.AiPromptSettings(getApplication())
+                val floor = if (applyConfidenceFilter) settings.minConfidence else null
+                val outcome = suggester.suggest(
+                    aiContext, withFieldUsage(targets), floor, settings.creativity
+                ) { failure ->
                     com.novelcharacter.app.ai.AiErrorMessages.of(getApplication(), failure)
                 }
-                aiSuggestResult.value = AiSuggestRun(targets, singleMode, outcome)
+                aiSuggestResult.value = AiSuggestRun(targets, singleMode, outcome, targetCharacterId)
             } finally {
                 aiSuggestRunning.value = false
             }
@@ -982,7 +992,8 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
                     com.novelcharacter.app.ai.AiService(getApplication())
                 )
                 val enriched = withStyleSamples(spec, fieldId, characterId)
-                val outcome = writer.write(aiContext, enriched, mode, length, variants) { failure ->
+                val creativity = com.novelcharacter.app.ai.AiPromptSettings(getApplication()).creativity
+                val outcome = writer.write(aiContext, enriched, mode, length, variants, creativity) { failure ->
                     com.novelcharacter.app.ai.AiErrorMessages.of(getApplication(), failure)
                 }
                 aiNarrativeResult.value =

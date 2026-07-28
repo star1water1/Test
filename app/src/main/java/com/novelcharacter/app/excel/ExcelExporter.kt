@@ -483,6 +483,8 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "  비우면 기본 관계 유형·색상으로 돌아갑니다. 해석할 수 없으면 적용하지 않고 기존 설정을 유지합니다."),
             GuideLine("", styles.guideBody, "• 작품: 코드로 매칭. 코드 없을 시 제목+세계관으로 매칭"),
             GuideLine("", styles.guideBody, "• 필드 정의: 세계관+필드키+대상으로 매칭. 타입은 드롭다운에서 선택. 대상=사건이면 사건 필드"),
+            GuideLine("", styles.guideBody, "  'AI추천'(Y/N)·'필드설명' 열을 채워 다시 가져오면 AI 추천 동작에 반영됩니다"),
+            GuideLine("", styles.guideBody, "  (AI추천 빈칸=켜짐, 필드설명 빈칸=설명 없음. 두 열을 지운 파일은 기존 설정을 유지합니다)"),
             GuideLine("", styles.guideBody, "• 캐릭터 시트 (세계관 이름): 코드로 매칭. 코드 없을 시 이름+작품으로 매칭"),
             GuideLine("", styles.guideBody, "• 사건 연표: 코드로 매칭 (코드 없을 시 연도+설명). 관련 캐릭터는 쉼표로 구분. 세계관 열이 소속 기준"),
             GuideLine("", styles.guideBody, "• 필드 템플릿: '생성일'로 매칭합니다 — 이름이 같은 템플릿이 여럿 있을 수 있어 지우지 마세요"),
@@ -687,12 +689,20 @@ class ExcelExporter(context: Context) {
             row.createCell(1).setTextSafe(field.key)
             row.createCell(2).setTextSafe(field.name)
             row.createCell(3).setTextSafe(field.type)
-            row.createCell(4).setTextSafe(field.config)
+            // AI추천·필드설명은 전용 열로만 나간다 — 같은 사실을 두 벌 두지 않는다.
+            // stripPortableKeys는 문자열 사본 변환이라 DB config(월드패키지의 원천)는 그대로다.
+            row.createCell(4).setTextSafe(FieldConfigColumns.stripPortableKeys(field.config))
             row.createCell(5).setTextSafe(field.groupName)
             row.createCell(6).setCellValue(field.displayOrder.toDouble())
             row.createCell(7).setTextSafe(if (field.isRequired) "Y" else "N")
-            row.createCell(8).setTextSafe(universe?.code ?: "")
-            row.createCell(9).setTextSafe(FieldValueSheetMapper.entityLabel(field.entityType))
+            row.createCell(8).setTextSafe(
+                if (com.novelcharacter.app.data.model.FieldAiPolicy.isSuggestEnabled(field.config)) "Y" else "N"
+            )
+            row.createCell(9).setTextSafe(
+                com.novelcharacter.app.data.model.FieldDescription.fromConfig(field.config)
+            )
+            row.createCell(10).setTextSafe(universe?.code ?: "")
+            row.createCell(11).setTextSafe(FieldValueSheetMapper.entityLabel(field.entityType))
         }
 
         applySpecFormatting(sheet, spec, allFields.size)

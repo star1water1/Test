@@ -122,6 +122,20 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * 목록 스위치 등 **1탭 설정 변경** 전용 — 재정렬과 같은 규칙: 성공 무통보, 실패만 알림(원칙 04).
+     * 키·이름이 바뀌지 않는 config 전용 갱신이므로 [updateField]의 키 이관 경로를 타지 않는다.
+     */
+    fun updateFieldQuiet(field: FieldDefinition) = viewModelScope.launch {
+        try {
+            universeRepository.updateField(field)
+        } catch (e: Exception) {
+            Log.e("FieldViewModel", "Failed to update field config", e)
+            reportResult(_result, OpResult.failure(OpResult.CAT_FIELD,
+                app.getString(R.string.result_field_update_failed), e.message))
+        }
+    }
+
     /** 키 변경 시 참조 수식과 상태변화 이력을 필드 저장과 함께 단일 트랜잭션으로 갱신한다. */
     private suspend fun migrateFieldKey(old: FieldDefinition, new: FieldDefinition): Pair<Int, Int> {
         var formulaCount = 0

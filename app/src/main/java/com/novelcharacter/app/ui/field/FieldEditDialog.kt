@@ -115,6 +115,7 @@ class FieldEditDialog : DialogFragment() {
         setupStructuredInputSection(binding)
         setupBodyAnalysisSection(binding)
         setupCardDisplaySection(binding)
+        setupAiAndDescriptionSection(binding)
         populateFields(binding)
 
         val dialog = MaterialAlertDialogBuilder(requireContext())
@@ -360,6 +361,21 @@ class FieldEditDialog : DialogFragment() {
             R.string.label_card_display_desc,
             com.novelcharacter.app.data.model.CardDisplayConfig.MAX_ON_CARD
         )
+    }
+
+    /**
+     * 필드 설명(A-2) + AI 추천 토글(A-1) 섹션.
+     * 사건 필드에는 AI 추천 경로 자체가 없어 토글을 노출하지 않는다(R-24) —
+     * 설명은 AI와 무관하게 인앱에서 값을 가지므로 사건 필드에도 노출한다.
+     */
+    private fun setupAiAndDescriptionSection(binding: DialogFieldEditBinding) {
+        binding.fieldDescriptionLayout.counterMaxLength =
+            com.novelcharacter.app.data.model.FieldDescription.MAX_CHARS
+        binding.editFieldDescription.filters = arrayOf(
+            android.text.InputFilter.LengthFilter(com.novelcharacter.app.data.model.FieldDescription.MAX_CHARS)
+        )
+        val isEventField = currentEntityType() == FieldDefinition.ENTITY_EVENT
+        binding.aiSectionLayout.visibility = if (isEventField) View.GONE else View.VISIBLE
     }
 
     private fun setupStatsSection(binding: DialogFieldEditBinding) {
@@ -961,6 +977,12 @@ class FieldEditDialog : DialogFragment() {
         binding.editFieldKey.setText(field.key)
         binding.editGroupName.setText(field.groupName)
         binding.switchRequired.isChecked = field.isRequired
+        // 필드 설명(A-2) + AI 추천 토글(A-1) — 목록 행 스위치와 같은 소스(config 키)
+        binding.editFieldDescription.setText(
+            com.novelcharacter.app.data.model.FieldDescription.fromConfig(field.config)
+        )
+        binding.switchAiSuggest.isChecked =
+            com.novelcharacter.app.data.model.FieldAiPolicy.isSuggestEnabled(field.config)
 
         // Set type spinner
         val types = FieldType.entries.toTypedArray()
@@ -1479,7 +1501,9 @@ class FieldEditDialog : DialogFragment() {
                 val withBody = if (type == FieldType.BODY_SIZE) {
                     BodyAnalysisConfig.applyToConfig(withRandom, collectBodyAnalysisConfig(binding))
                 } else withRandom
-                return applyCardDisplayConfig(binding, applyInputModeConfig(binding, withBody))
+                return applyAiAndDescriptionConfig(
+                    binding, applyCardDisplayConfig(binding, applyInputModeConfig(binding, withBody))
+                )
             }
         }
 
@@ -1504,7 +1528,22 @@ class FieldEditDialog : DialogFragment() {
         val withBody = if (type == FieldType.BODY_SIZE) {
             BodyAnalysisConfig.applyToConfig(withRandom, collectBodyAnalysisConfig(binding))
         } else withRandom
-        return applyCardDisplayConfig(binding, applyInputModeConfig(binding, withBody))
+        return applyAiAndDescriptionConfig(
+            binding, applyCardDisplayConfig(binding, applyInputModeConfig(binding, withBody))
+        )
+    }
+
+    /**
+     * 필드 설명(A-2)과 AI 추천 토글(A-1)을 config에 기록 — 두 buildConfig 출구가 공유한다.
+     * 사건 필드는 토글이 노출되지 않고 스위치 기본값(true)이 유지되므로 키가 남지 않는다(R-24).
+     */
+    private fun applyAiAndDescriptionConfig(binding: DialogFieldEditBinding, configJson: String): String {
+        val withDescription = com.novelcharacter.app.data.model.FieldDescription.applyToConfig(
+            configJson, binding.editFieldDescription.text?.toString().orEmpty()
+        )
+        return com.novelcharacter.app.data.model.FieldAiPolicy.applyToConfig(
+            withDescription, binding.switchAiSuggest.isChecked
+        )
     }
 
     /**

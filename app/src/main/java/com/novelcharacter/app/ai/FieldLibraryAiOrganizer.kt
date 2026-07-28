@@ -135,7 +135,14 @@ class FieldLibraryAiOrganizer(private val aiService: AiService) {
             return chunks
         }
 
-        fun buildSystemPrompt(fd: FieldDefinition): String = """
+        fun buildSystemPrompt(fd: FieldDefinition): String {
+            // 필드 설명(A-2) — 세 AI 경로가 같은 설명을 본다. 정리 요청은 필드 하나 전용이라
+            // 절단 없이 전문(저장 상한 1000자)을 싣는다 — 자르면 고지 채널 없이 조용한 결손이 된다.
+            val description = com.novelcharacter.app.data.model.FieldDescription.fromConfig(fd.config)
+            val descriptionBlock = if (description.isBlank()) "" else
+                "\n필드 설명(사용자 작성): $description" +
+                    "\n이 설명이 이 필드가 뜻하는 바의 정의다 — 병합·분류 판단의 근거로 삼아라."
+            return """
             당신은 소설 캐릭터 관리 앱의 데이터 정리 도우미다.
             필드 '${fd.name}'(타입 ${fd.type})의 값 목록에서 다음을 찾아라:
             1. merges: 같은 대상을 가리키는 변형 표기(오탈자, 띄어쓰기, 표기 차이)를 하나의 canonical로 병합.
@@ -144,7 +151,8 @@ class FieldLibraryAiOrganizer(private val aiService: AiService) {
             반드시 아래 JSON 스키마로만 응답하고 다른 텍스트를 덧붙이지 마라:
             {"merges":[{"canonical":"값","variants":["변형1","변형2"],"reason":"근거"}],"categories":[{"value":"값","category":"카테고리"}]}
             병합·분류할 것이 없으면 빈 배열을 반환한다. 목록에 없는 값을 만들어내지 마라.
-        """.trimIndent()
+            """.trimIndent() + descriptionBlock
+        }
 
         fun buildUserPrompt(chunk: List<FieldValueEntry>): String =
             chunk.joinToString("\n") { e ->

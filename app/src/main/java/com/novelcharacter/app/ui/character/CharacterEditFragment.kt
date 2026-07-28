@@ -254,11 +254,15 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
             if (com.novelcharacter.app.data.model.NarrativeMode.isNarrative(field)) {
                 NarrativeWriteSheet.show(this, field, characterId, formBuilder, viewModel) { buildAiContext() }
             } else {
-                AiFieldSuggestSheet.showForField(this, field, formBuilder, viewModel) { buildAiContext() }
+                AiFieldSuggestSheet.showForField(this, field, formBuilder, viewModel, characterId) { buildAiContext() }
             }
         }
         binding.btnAiSuggest.setOnClickListener {
-            AiFieldSuggestSheet.showForCharacter(this, formBuilder, viewModel) { buildAiContext() }
+            AiFieldSuggestSheet.showForCharacter(
+                this, formBuilder, viewModel, characterId,
+                // 보충 플로우에서는 기대치 조정 한 줄 — AI가 메울 수 있는 미흡은 필드 값뿐 (A-3 §5-1)
+                extraNote = if (supplementMode) getString(R.string.ai_supplement_scope_note) else null
+            ) { buildAiContext() }
         }
         // AI 추천 실행 상태·결과 관측 — 실행은 VM(회전 생존)이 수행하므로 진행 다이얼로그와
         // 결과 다이얼로그가 화면 재생성을 넘어 복원된다. 결과 소비(clear)는 다이얼로그 액션 시점.
@@ -618,48 +622,21 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
     }
 
     /**
-     * AI 추천 컨텍스트 조립 — 저장된 DB 상태가 아니라 **폼의 라이브 입력값**을 쓴다
-     * (미저장 편집 중에도 최신 정보 기준으로 추천). 소속·관계는 저장된 캐릭터에만 존재한다.
+     * AI 추천 컨텍스트 조립 — 규칙은 [CharacterAiContextBuilder]가 단일 소스다
+     * (보충 랜덤 탭 인라인 편집과 공유 — 복사하면 두 화면의 추천 근거가 갈린다).
      */
-    private suspend fun buildAiContext(): com.novelcharacter.app.ai.CharacterFieldAiSuggester.CharacterAiContext {
-        val valuesById = formBuilder.collectFieldValues(0L).associate { it.fieldDefinitionId to it.value }
-        val filledFields = formBuilder.fieldDefinitions.mapNotNull { fd ->
-            valuesById[fd.id]?.let { fd.name to it }
-        }
-        val firstName = binding.editFirstName.text.toString().trim()
-        val lastName = binding.editLastName.text.toString().trim()
-        // Character.displayName과 동일 규칙: 성/이름이 있으면 조합, 없으면 name
-        val name = if (firstName.isNotBlank() || lastName.isNotBlank()) {
-            listOf(lastName, firstName).filter { it.isNotBlank() }.joinToString(" ")
-        } else {
-            binding.editName.text.toString().trim()
-        }
-        val aliases = binding.editAnotherName.text.toString()
-            .split(",").map { it.trim() }.filter { it.isNotEmpty() }
-        val tags = binding.editTags.text.toString()
-            .split(",").map { it.trim() }.filter { it.isNotEmpty() }
-        // 로더 실패(null)는 '없음'(빈 목록)과 구별해 결손 섹션으로 고지한다 (변수 제어)
-        val imageTags = viewModel.getImageTagsForPaths(imageStrip.paths.toList())
-        val factions = if (characterId != -1L) viewModel.getFactionNamesForCharacter(characterId) else emptyList()
-        val relationships =
-            if (characterId != -1L) viewModel.getRelationshipSummariesForCharacter(characterId) else emptyList()
-        val loadFailures = buildList {
-            if (imageTags == null) add("이미지 태그")
-            if (factions == null) add("소속 세력")
-            if (relationships == null) add("관계")
-        }
-        return com.novelcharacter.app.ai.CharacterFieldAiSuggester.CharacterAiContext(
-            name = name,
-            aliases = aliases,
-            tags = tags,
-            memo = binding.editMemo.text.toString(),
-            filledFields = filledFields,
-            imageTags = imageTags ?: emptyList(),
-            factions = factions ?: emptyList(),
-            relationships = relationships ?: emptyList(),
-            loadFailures = loadFailures
-        )
-    }
+    private suspend fun buildAiContext(): com.novelcharacter.app.ai.CharacterFieldAiSuggester.CharacterAiContext =
+        CharacterAiContextBuilder.build(object : CharacterAiContextBuilder.Host {
+            override fun rawName() = binding.editName.text.toString()
+            override fun firstName() = binding.editFirstName.text.toString()
+            override fun lastName() = binding.editLastName.text.toString()
+            override fun aliasesRaw() = binding.editAnotherName.text.toString()
+            override fun tagsRaw() = binding.editTags.text.toString()
+            override fun memo() = binding.editMemo.text.toString()
+            override fun imagePaths() = imageStrip.paths.toList()
+            override fun characterId() = characterId
+            override fun formBuilder() = formBuilder
+        }, viewModel)
 
     /** 저장 시점의 폼 입력 스냅샷 — 코디네이터가 최신 폼 기준으로 Character를 조립할 때 사용 */
     private fun formSnapshot(): CharacterSaveCoordinator.FormSnapshot {

@@ -16,4 +16,10 @@ class AiService {
 
     /** 청킹·비용 고지가 이 값에서 파생된다. 스텁은 정책 기본값을 그대로 돌려준다. */
     fun effectiveMaxTokens(): Int = AiTokenPolicy.DEFAULT_REQUEST
+
+    /** 창작도 샘플링 (A-4). 스텁은 활성 프로바이더가 없는 상태와 동일하게 null(미전송). */
+    fun temperatureFor(creativity: AiCreativity): Double? = null
+
+    /** temperature 미지원 학습 여부 (A-4). 스텁은 학습된 것이 없는 상태. */
+    fun isTemperatureUnsupported(): Boolean = false
 }

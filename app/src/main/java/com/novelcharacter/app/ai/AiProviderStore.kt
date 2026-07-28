@@ -93,6 +93,7 @@ class AiProviderStore(context: Context) {
         // null은 키 자체를 쓰지 않는다 — "미설정(자동)"과 "0으로 설정"은 다른 상태다.
         c.maxOutputTokens?.let { addProperty("maxOutputTokens", it) }
         c.detectedOutputLimit?.let { addProperty("detectedOutputLimit", it) }
+        c.temperatureUnsupported?.let { addProperty("temperatureUnsupported", it) }
     }
 
     private fun fromJson(o: JsonObject): AiProviderConfig = AiProviderConfig(
@@ -104,9 +105,10 @@ class AiProviderStore(context: Context) {
         presetId = o.get("presetId")?.takeIf { it.isJsonPrimitive }?.asString,
         createdAt = o.get("createdAt")?.takeIf { it.isJsonPrimitive }?.asLong ?: 0L,
         updatedAt = o.get("updatedAt")?.takeIf { it.isJsonPrimitive }?.asLong ?: 0L,
-        // 구버전 설정에는 두 키가 없다 — 없으면 null(자동)이고 종전과 동일하게 동작한다.
+        // 구버전 설정에는 이 키들이 없다 — 없으면 null(자동)이고 종전과 동일하게 동작한다.
         maxOutputTokens = o.get("maxOutputTokens")?.takeIf { it.isJsonPrimitive }?.asInt,
-        detectedOutputLimit = o.get("detectedOutputLimit")?.takeIf { it.isJsonPrimitive }?.asInt
+        detectedOutputLimit = o.get("detectedOutputLimit")?.takeIf { it.isJsonPrimitive }?.asInt,
+        temperatureUnsupported = o.get("temperatureUnsupported")?.takeIf { it.isJsonPrimitive }?.asBoolean
     )
 
     companion object {

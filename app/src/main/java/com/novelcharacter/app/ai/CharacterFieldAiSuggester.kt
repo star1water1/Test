@@ -1,9 +1,12 @@
 package com.novelcharacter.app.ai
 
+import com.novelcharacter.app.data.model.FieldAiPolicy
 import com.novelcharacter.app.data.model.FieldDefinition
+import com.novelcharacter.app.data.model.FieldDescription
 import com.novelcharacter.app.data.model.FieldType
 import com.novelcharacter.app.data.model.FieldValueEntry
 import com.novelcharacter.app.data.model.FieldValueLibraryConfig
+import com.novelcharacter.app.data.model.NarrativeMode
 import com.novelcharacter.app.data.model.RandomConfig
 import com.novelcharacter.app.data.model.SemanticRole
 import com.novelcharacter.app.data.model.StructuredInputConfig
@@ -60,6 +63,12 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
         val numberRange: Pair<Double, Double>?,
         /** 현재 입력값 — 덮어쓰기 제안 표시·동일값 제안 드롭 기준. 빈 필드는 "" */
         val currentValue: String,
+        /**
+         * 사용자가 쓴 필드 설명([FieldDescription]) — 이 필드가 뜻하는 바의 정의이자 계약.
+         * 대상 필드의 프롬프트 줄에만 실린다(컨텍스트 필드에는 싣지 않는다 — 거기서는 값이 정보다).
+         * 프롬프트 적재량 설정과 무관하게 항상 실린다: 설정이 끄는 것은 토큰이지 정확성이 아니다.
+         */
+        val description: String = "",
         /** 구조화 입력·생일 등 형식 지시 문구 (프롬프트용) */
         val formatHint: String? = null,
         /** 구조화 입력 검증용 구분자·파트 수 — 폼이 구조화 위젯을 렌더하는 필드(TEXT/BODY_SIZE)에만 설정 */
@@ -184,6 +193,35 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
         REPEATED("이미 물린 값을 되풀이해 제외")
     }
 
+    /**
+     * 일괄 추천 대상에서 제외된 사유 — 교정 경로가 다르므로 하나로 뭉뚱그리지 않는다.
+     * [label]은 비용 고지의 "제외: … N개" 요약에 그대로 쓰인다.
+     */
+    enum class BulkExcludeCause(val label: String) {
+        /** CALCULATED(파생값)·알 수 없는 타입 — 지금도 제외되지만 종전에는 아무도 알려주지 않았다 */
+        UNSUPPORTED_TYPE("계산·미지원 타입"),
+
+        /** 사용자가 필드 관리에서 AI 추천을 끔(FieldAiPolicy) */
+        AI_DISABLED("AI 추천 꺼짐"),
+
+        /** 서술형 필드 — 짧은 값 경로가 아니라 필드별 ✨의 초안·이어쓰기로 작성한다 */
+        NARRATIVE_PATH("서술형")
+    }
+
+    /** 일괄 추천 대상 1건 — '빈 필드만' 필터가 폼 위젯 id를 쓰므로 fieldId를 함께 나른다 */
+    data class BulkTarget(val fieldId: Long, val spec: FieldSpec)
+
+    /**
+     * 일괄 추천 대상 산출 결과. 제외분은 버리지 않고 사유별 필드명으로 들고 나온다 —
+     * [targets] + [excluded]의 합은 언제나 입력 전체다(조용한 결손 금지).
+     */
+    data class BulkTargets(
+        val targets: List<BulkTarget>,
+        val excluded: Map<BulkExcludeCause, List<String>>
+    ) {
+        val excludedCount: Int get() = excluded.values.sumOf { it.size }
+    }
+
     /** 값 정규화 결과 — 실패 사유를 잃지 않기 위해 null 대신 사유를 들고 돌아온다 */
     sealed class Normalized {
         data class Ok(val value: String) : Normalized()
@@ -223,6 +261,8 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
         targets: List<FieldSpec>,
         /** 받아올 최소 근거 강도 (사용자 설정). null이면 강도와 무관하게 전부 받는다 */
         minConfidence: Confidence? = null,
+        /** 창작도 (A-4) — 샘플링(temperature) + 지시 2층으로 적용된다. 기본은 무회귀(균형). */
+        creativity: AiCreativity = AiCreativity.DEFAULT,
         errorMessageOf: (AiResult.Failure) -> String
     ): SuggestOutcome {
         val suggestions = mutableListOf<Suggestion>()
@@ -235,20 +275,31 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
         var outputTokens = 0
 
         val maxTokens = aiService.effectiveMaxTokens()
+        val temperature = aiService.temperatureFor(creativity)
+        // 이 모델이 temperature를 거부한다고 이미 학습한 경우 — 창작도를 올렸는데 아무 변화가
+        // 없는 이유를 사용자가 알 수 있어야 한다 (§6-5 ④, 조용한 실패 금지)
+        if (creativity != AiCreativity.BALANCED && aiService.isTemperatureUnsupported()) {
+            failures.add(TEMPERATURE_UNSUPPORTED_NOTE)
+        }
         val chunks = chunkTargets(targets, maxTokens)
         for ((chunkIndex, chunk) in chunks.withIndex()) {
             val prompt = buildUserPrompt(context, chunk)
             // 청크별 targetNames 차이로 문구가 다를 수 있어 완전 중복만 접는다 (고지 과다는 무해 방향)
             prompt.truncationNotes.forEach { if (it !in truncationNotes) truncationNotes.add(it) }
             val request = AiRequest(
-                system = buildSystemPrompt(minConfidence),
+                system = buildSystemPrompt(minConfidence, creativity),
                 userText = prompt.text,
-                maxTokens = maxTokens
+                maxTokens = maxTokens,
+                temperature = temperature
             )
             when (val result = aiService.complete(request)) {
                 is AiResult.Success -> {
                     inputTokens += result.inputTokens ?: 0
                     outputTokens += result.outputTokens ?: 0
+                    // 이번 요청에서 temperature 거부를 학습해 빼고 재시도한 성공 — 같은 고지 한 줄
+                    if (result.temperatureOmitted && TEMPERATURE_UNSUPPORTED_NOTE !in failures) {
+                        failures.add(TEMPERATURE_UNSUPPORTED_NOTE)
+                    }
                     val parsed = parseResponse(result.text, chunk, minConfidence)
                     if (parsed == null) {
                         // 잘린 응답은 형식 오류가 아니다 — 원인과 교정 경로를 정확히 말해야 한다.
@@ -313,6 +364,13 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
         const val MAX_RELATIONSHIPS = 30
         const val MAX_FILLED_FIELDS = 60
 
+        /**
+         * 필드 설명을 프롬프트에 싣는 길이 상한. 저장 상한([FieldDescription.MAX_CHARS] = 1000)과
+         * 다른 이유: 인앱 설명은 길어도 되지만 프롬프트에는 요청당 대상 수만큼 실린다
+         * (대략 15 × 300자 ≈ 2~3천 토큰). 초과분은 잘라 싣고 truncationNotes로 고지한다(R-14).
+         */
+        const val MAX_DESCRIPTION_PROMPT_CHARS = 300
+
         // ===== 기존 사용값 예시 (표기 기조 전달) 상한 =====
         // 필드 하나당 대략 (개수 × 값 길이) 토큰이 늘어난다. 12개 × 짧은 값이면 필드당 ~50토큰,
         // 요청당 대상 15개 기준 ~750토큰 — 출력 토큰과 달리 한 번만 실리는 입력 비용이라
@@ -352,6 +410,10 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
         )
 
         const val PARSE_FAILURE_MESSAGE = "응답 형식을 해석할 수 없습니다 — 다시 시도해 주세요"
+
+        /** temperature 미지원 모델 고지 (A-4 §6-5 ④) — 빠뜨리면 창작도가 조용히 반쪽이 된다 */
+        const val TEMPERATURE_UNSUPPORTED_NOTE =
+            "이 모델은 창작도의 샘플링 조절을 지원하지 않아 지시 문구만 적용했습니다"
 
         /** 결손 사유에 덧붙이는 원문·모델 사유의 표시 상한 (다이얼로그 한 줄 분량) */
         const val MAX_MISSING_DETAIL_CHARS = 60
@@ -402,6 +464,70 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
             val per = targetsPerRequest(maxTokens)
             return (targetCount + per - 1) / per
         }
+
+        /**
+         * **일괄 추천 대상 규칙의 단일 소스** — 편집 화면과 보충(랜덤) 탭이 같은 함수를 쓴다.
+         * 호출측이 직접 필터를 조립하면 두 화면이 반드시 갈린다.
+         *
+         * 서술형 제외는 기존 결함의 수리다: 종전 일괄 경로는 [NarrativeMode.isNarrative]를 보지
+         * 않아 성격·배경 같은 서술형 필드가 짧은 값 경로에 섞여 들어갔고, 모델은 "근거 한 문장"
+         * 형식에 맞춰 산문 자리에 한 줄짜리 값을 냈다(docs/ai_integration.md가 경로를 나눈 이유가
+         * 인라인 ✨에서만 지켜지고 일괄에서는 깨져 있었다).
+         *
+         * '빈 필드만'/'입력된 필드 포함' 선택은 이 함수의 일이 아니다 — 호출측이 [targets]에
+         * 폼 상태를 얹어 거른다(폼 위젯 접근은 순수 계층 밖).
+         */
+        fun bulkTargetsOf(
+            fields: List<FieldDefinition>,
+            currentValues: Map<Long, String>
+        ): BulkTargets {
+            val targets = mutableListOf<BulkTarget>()
+            val excluded = LinkedHashMap<BulkExcludeCause, MutableList<String>>()
+            fun exclude(cause: BulkExcludeCause, name: String) {
+                excluded.getOrPut(cause) { mutableListOf() }.add(name)
+            }
+            for (field in fields) {
+                val spec = fieldSpecOf(field, currentValues[field.id] ?: "")
+                when {
+                    spec == null -> exclude(BulkExcludeCause.UNSUPPORTED_TYPE, field.name)
+                    !FieldAiPolicy.isSuggestEnabled(field.config) ->
+                        exclude(BulkExcludeCause.AI_DISABLED, field.name)
+                    NarrativeMode.isNarrative(field) -> exclude(BulkExcludeCause.NARRATIVE_PATH, field.name)
+                    else -> targets.add(BulkTarget(field.id, spec))
+                }
+            }
+            return BulkTargets(targets, excluded)
+        }
+
+        /** 제외 요약 한 줄 — "AI 추천 꺼짐 3개 · 서술형 2개 · 계산·미지원 타입 1개". 제외가 없으면 null */
+        fun bulkExcludedSummary(excluded: Map<BulkExcludeCause, List<String>>): String? {
+            val parts = BulkExcludeCause.entries
+                .mapNotNull { cause ->
+                    excluded[cause]?.takeIf { it.isNotEmpty() }?.let { "${cause.label} ${it.size}개" }
+                }
+            return if (parts.isEmpty()) null else parts.joinToString(" · ")
+        }
+
+        /** 제외 명세에 사유당 나열할 필드명 상한 — 넘치면 "외 N개"로 접되 총 수는 밝힌다 */
+        const val MAX_EXCLUDED_NAMES_PER_CAUSE = 12
+
+        /**
+         * 제외 상세 — 사유별 필드명 나열. 서술형 줄에는 교정 경로(필드별 ✨)를 병기해
+         * 제외가 기능 부재로 읽히지 않게 한다(변수 제어).
+         */
+        fun bulkExcludedDetailLines(excluded: Map<BulkExcludeCause, List<String>>): List<String> =
+            BulkExcludeCause.entries.mapNotNull { cause ->
+                val names = excluded[cause]?.takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+                val shown = names.take(MAX_EXCLUDED_NAMES_PER_CAUSE)
+                buildString {
+                    append(cause.label).append(' ').append(names.size).append("개: ")
+                    append(shown.joinToString(", "))
+                    if (names.size > shown.size) append(" 외 ").append(names.size - shown.size).append('개')
+                    if (cause == BulkExcludeCause.NARRATIVE_PATH) {
+                        append(" — 필드별 ✨에서 초안·이어쓰기로 작성합니다")
+                    }
+                }
+            }
 
         /**
          * FieldDefinition → 추천 대상 스펙. CALCULATED(파생값)·알 수 없는 타입은 null.
@@ -458,6 +584,7 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
                 isBirthDate = isBirth,
                 numberRange = numberRange,
                 currentValue = currentValue,
+                description = FieldDescription.fromConfig(field.config),
                 formatHint = formatHint,
                 structuredSeparator = if (structuredActive) structured.separator else null,
                 structuredPartCount = if (structuredActive) structured.parts.size else null,
@@ -600,7 +727,10 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
          * 보여줄 수 있고(변수 제어), 추측성 제안은 검토 UI에서 사용자가 걸러 낸다 — 채택 여부를
          * 가리는 것은 모델이 아니라 사용자다(자율성 우선).
          */
-        fun buildSystemPrompt(minConfidence: Confidence? = null): String = """
+        fun buildSystemPrompt(
+            minConfidence: Confidence? = null,
+            creativity: AiCreativity = AiCreativity.DEFAULT
+        ): String = """
             당신은 소설 캐릭터 설정 도우미다. 주어진 캐릭터 정보를 근거로 요청된 필드의 값을 추천하라.
             규칙:
             1. 반드시 아래 JSON 스키마로만 응답하고 다른 텍스트를 덧붙이지 마라:
@@ -630,7 +760,10 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
                 지시 쪽을 택하고, reason에 지시를 어떻게 반영했는지 적는다.
             13. '이미 물린 값'이 제시된 필드는 사용자가 그 값을 보고 다시 요청한 것이다.
                 같은 값이나 사실상 같은 값을 되풀이하지 말고 **다른 방향**의 값을 내라.
-        """.trimIndent() + confidenceFloorRule(minConfidence)
+            14. '설명'이 붙은 필드는 그 설명이 이 작품에서 그 필드가 뜻하는 바의 정의이자 제약이다.
+                설명과 어긋나는 값을 내지 마라. 설명이 옵션·형식과 충돌하면 옵션·형식을 따르고,
+                무엇이 충돌했는지 reason에 적어라.
+        """.trimIndent() + confidenceFloorRule(minConfidence) + creativity.promptRule()
 
         /**
          * 근거 강도 하한 지시 — 설정이 '전부 받기'면 아예 붙이지 않는다.
@@ -640,7 +773,7 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
          */
         private fun confidenceFloorRule(minConfidence: Confidence?): String =
             if (minConfidence == null) "" else "\n" + """
-            14. 사용자는 근거 강도 '${minConfidence.wire}' 이상만 받기로 정했다. 그보다 낮은 추측은
+            15. 사용자는 근거 강도 '${minConfidence.wire}' 이상만 받기로 정했다. 그보다 낮은 추측은
                 값을 내지 말고 규칙 5대로 value를 ""로 두고 reason에 근거가 얕은 이유를 적어라.
             """.trimIndent()
 
@@ -716,6 +849,18 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
                     sb.append(" / 범위: ").append(formatNumber(min)).append('~').append(formatNumber(max))
                 }
                 t.formatHint?.let { sb.append(" / 형식: ").append(it) }
+                // 필드 설명 — 값의 계약(규칙 14). 대상 필드에만 싣는다: [입력된 필드]에서는 값이
+                // 정보이고, 설명은 "무엇을 만들지"의 지시라 대상에만 의미가 있다.
+                // 저장 상한(1000)과 프롬프트 상한(300)이 다른 이유: 요청마다 대상 수만큼 실리기 때문.
+                if (t.description.isNotBlank()) {
+                    val desc = t.description.trim()
+                    if (desc.length > MAX_DESCRIPTION_PROMPT_CHARS) {
+                        notes.add("'${t.name}' 필드 설명 ${MAX_DESCRIPTION_PROMPT_CHARS}자 초과분 생략")
+                        sb.append(" / 설명: ").append(desc.take(MAX_DESCRIPTION_PROMPT_CHARS)).append('…')
+                    } else {
+                        sb.append(" / 설명: ").append(desc)
+                    }
+                }
                 if (t.currentValue.isNotBlank()) {
                     sb.append(" / 현재 값: ").append(t.currentValue.take(MAX_VALUE_CHARS))
                 }

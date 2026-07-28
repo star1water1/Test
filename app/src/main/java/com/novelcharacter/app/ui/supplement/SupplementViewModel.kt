@@ -158,6 +158,16 @@ class SupplementViewModel(application: Application) : AndroidViewModel(applicati
         _currentPick.value = allCharacters.find { it.id == id }
     }
 
+    /**
+     * 특정 캐릭터를 현재 뽑기로 표시한다 (A-3 — "AI 결과를 받은 캐릭터로 돌아가 적용" 경로).
+     * currentPick이 화면의 단일 소스이므로 여기로만 바꾼다. 풀에 없으면(삭제·필터 밖) false.
+     */
+    fun showCharacterById(id: Long): Boolean {
+        val found = allCharacters.find { it.id == id } ?: return false
+        _currentPick.value = found
+        return true
+    }
+
     enum class SortMode { ISSUES_DESC, NAME_ASC, COMPLETION_ASC }
 
     fun loadData(criteria: SupplementCriteria) {

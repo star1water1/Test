@@ -75,10 +75,26 @@ object AiProtocolCodec {
     fun isMaxTokensParamError(httpCode: Int, errorBody: String?): Boolean =
         httpCode == 400 && errorBody != null && errorBody.contains("max_completion_tokens")
 
+    /**
+     * 모델이 temperature 파라미터를 거부한 400인가 (A-4) — 일부 OpenAI 호환 추론 모델의
+     * "Unsupported value: 'temperature' …" / "'temperature' is not supported …" 형태.
+     * 판정을 좁게 잡는다: 파라미터명과 거부 표현이 **함께** 있어야 참 — 무관한 400을
+     * 온도 문제로 오인하면 잘못된 학습값(temperatureUnsupported)이 계속 남는다.
+     */
+    fun isTemperatureUnsupportedError(httpCode: Int, errorBody: String?): Boolean {
+        if (httpCode != 400 || errorBody == null) return false
+        val lower = errorBody.lowercase()
+        if ("temperature" !in lower) return false
+        return listOf("unsupported", "not supported", "does not support", "not allowed")
+            .any { it in lower }
+    }
+
     private fun buildAnthropic(config: AiProviderConfig, apiKey: String, request: AiRequest): HttpSpec {
         val body = JsonObject().apply {
             addProperty("model", config.model)
             addProperty("max_tokens", request.maxTokens)
+            // null이면 키 자체를 싣지 않는다 — 프로바이더 기본값 유지 (A-4 창작도 '균형')
+            request.temperature?.let { addProperty("temperature", it) }
             request.system?.let { addProperty("system", it) }
             add("messages", JsonArray().apply {
                 request.messages.forEach { m ->
@@ -105,6 +121,7 @@ object AiProtocolCodec {
         val body = JsonObject().apply {
             addProperty("model", config.model)
             addProperty(if (useMaxCompletionTokens) "max_completion_tokens" else "max_tokens", request.maxTokens)
+            request.temperature?.let { addProperty("temperature", it) }
             add("messages", JsonArray().apply {
                 request.system?.let {
                     add(JsonObject().apply { addProperty("role", "system"); addProperty("content", it) })
@@ -154,6 +171,7 @@ object AiProtocolCodec {
             })
             add("generationConfig", JsonObject().apply {
                 addProperty("maxOutputTokens", request.maxTokens)
+                request.temperature?.let { addProperty("temperature", it) }
             })
         }
         return HttpSpec(

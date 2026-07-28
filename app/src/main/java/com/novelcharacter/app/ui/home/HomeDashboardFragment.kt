@@ -195,6 +195,11 @@ class HomeDashboardFragment : Fragment() {
     }
 
     private fun setupToolCards() {
+        // 보충 (N-2) — 전역 목적지라 인자 없이 id로 이동한다(imageManagerFragment와 동일).
+        // 세계관·작품 필터는 자기 prefs(supplement_ui_state)에서 복원되므로 넘길 인자가 없다.
+        binding.cardSupplement.setOnClickListener {
+            findNavController().navigateSafe(R.id.homeFragment, R.id.supplementFragment)
+        }
         binding.cardTimeline.setOnClickListener {
             findNavController().navigateSafe(R.id.homeFragment, R.id.timelineFragment)
         }

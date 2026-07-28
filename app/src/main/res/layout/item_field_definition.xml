@@ -84,6 +84,25 @@
 
         </LinearLayout>
 
+        <!-- 필드 설명(A-2) — 설명이 있는 필드에만 보인다 (빈 다이얼로그를 여는 버튼은 구색) -->
+        <ImageButton
+            android:id="@+id/btnFieldInfo"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:padding="8dp"
+            android:src="@drawable/ic_info"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:visibility="gone"
+            android:contentDescription="@string/field_description_info_desc" />
+
+        <!-- AI 추천 대상 토글(A-1) — 1탭 즉시 반영, 저장 버튼 없음. 사건 필드에는 노출하지 않는다(R-24) -->
+        <com.google.android.material.switchmaterial.SwitchMaterial
+            android:id="@+id/switchAiSuggest"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="4dp"
+            android:contentDescription="@string/field_ai_suggest_label" />
+
     </LinearLayout>
 
 </com.google.android.material.card.MaterialCardView>

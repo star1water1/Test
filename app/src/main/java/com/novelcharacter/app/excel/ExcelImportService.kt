@@ -2026,6 +2026,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val universeCodeColIndex = cols["세계관코드"] ?: -1
         // 대상(캐릭터/사건) — 열이 없는 구버전 파일은 캐릭터로 간주 (관대 수용)
         val entityTypeColIndex = cols["대상"] ?: -1
+        // config 파생 전용 열(A-1·A-2) — 열/JSON 키/기존값 3분기 병합 (FieldConfigColumns.merge)
+        val aiSuggestColIndex = cols[FieldConfigColumns.COLUMN_AI_SUGGEST] ?: -1
+        val descriptionColIndex = cols[FieldConfigColumns.COLUMN_DESCRIPTION] ?: -1
 
         val entitySeen = mutableMapOf<Long, Int>()
 
@@ -2078,6 +2081,16 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 )
 
                 val existing = db.fieldDefinitionDao().getFieldByKey(universe.id, key, entityType)
+                // AI추천·필드설명 병합 — 열이 있으면 셀이 값, 없으면 JSON 키 유지, 둘 다 없으면
+                // 기존 DB 값 보존(빠뜨리면 전용 열을 지운 파일에서 설명이 무통보 유실된다)
+                val mergedConfig = FieldConfigColumns.merge(
+                    sheetConfig = config,
+                    aiColumnPresent = aiSuggestColIndex >= 0,
+                    aiCellText = getCellString(row, aiSuggestColIndex),
+                    descriptionColumnPresent = descriptionColIndex >= 0,
+                    descriptionCellText = getCellString(row, descriptionColIndex),
+                    existingConfig = existing?.config
+                )
                 if (existing != null) {
                     val prevRow = entitySeen[existing.id]
                     if (prevRow != null) {
@@ -2088,7 +2101,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         result.warnings.add("필드 정의 행 $i: 필드 '$name'의 타입이 '${existing.type}'에서 '$type'(으)로 변경됨 — 기존 값 호환성을 확인하세요")
                     }
                     db.fieldDefinitionDao().update(existing.copy(
-                        name = name, type = type, config = config,
+                        name = name, type = type, config = mergedConfig,
                         groupName = groupName, displayOrder = displayOrder ?: existing.displayOrder,
                         isRequired = isRequired ?: existing.isRequired
                     ))
@@ -2097,7 +2110,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 } else {
                     val newId = db.fieldDefinitionDao().insert(FieldDefinition(
                         universeId = universe.id, key = key, name = name, type = type,
-                        config = config, groupName = groupName, displayOrder = displayOrder ?: i,
+                        config = mergedConfig, groupName = groupName, displayOrder = displayOrder ?: i,
                         isRequired = isRequired ?: false, entityType = entityType
                     ))
                     entitySeen[newId] = i
