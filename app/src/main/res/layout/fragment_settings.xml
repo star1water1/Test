@@ -342,6 +342,32 @@
 
             </LinearLayout>
 
+            <!-- organizeFolderHelpRow -->
+            <LinearLayout
+                android:id="@+id/organizeFolderHelpRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp"
+                android:background="?attr/selectableItemBackground">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/organize_folder_help"
+                    android:textAppearance="@style/TextAppearance.App.Title"
+                    android:textColor="?attr/colorOnSurface" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/settings_organize_help_caption"
+                    android:textAppearance="@style/TextAppearance.App.BodySmall"
+                    android:textColor="?attr/colorOnSurfaceVariant"
+                    android:paddingTop="2dp" />
+
+            </LinearLayout>
+
             <!-- Section: 데이터 관리 (휴지통·저장소·압축·이력 + 점검) -->
             <TextView
                 android:layout_width="wrap_content"
