@@ -52,20 +52,8 @@ class ExcelTransferController(private val fragment: Fragment) {
 
     /** 내보내기: 항목 선택 → 공유/파일 저장 선택 → 실행 */
     fun showExportDialog() {
-        if (!fragment.isAdded) return
-        val labels = ExportOptions.LABELS
-        val checked = ExportOptions.ALL.toBooleanArray()
-
-        MaterialAlertDialogBuilder(fragment.requireContext())
-            .setTitle(R.string.export_options_title)
-            .setMultiChoiceItems(labels, checked) { _, which, isChecked ->
-                checked[which] = isChecked
-            }
-            .setPositiveButton(R.string.confirm) { _, _ ->
-                showExportModeDialog(ExportOptions.fromBooleanArray(checked))
-            }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
+        // 항목 선택 창은 [ExportOptionsDialog]가 단일 소스다(종전에는 이 코드가 3곳에 복제돼 있었다).
+        ExportOptionsDialog.show(fragment) { showExportModeDialog(it) }
     }
 
     private fun showExportModeDialog(options: ExportOptions) {
