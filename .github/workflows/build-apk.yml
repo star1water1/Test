@@ -2,11 +2,24 @@ name: Build APK
 
 # 트리거: main/master 또는 모든 브랜치에 push 시 빌드
 # 수동 실행도 가능 (workflow_dispatch)
+#
+# paths-ignore: **.md 만 바뀐 변경은 빌드를 돌리지 않는다.
+#   이 빌드가 증명하는 것은 "코드가 실제로 컴파일되는가"이고(로컬 하네스는 Fragment·ViewModel을
+#   컴파일하지 않아 이것이 유일한 검증이다), 문서만 바뀐 diff에는 증명할 것이 없다.
+#   **`docs/**`가 아니라 `**.md`로 좁혔다** — docs/ 아래에 스크립트 같은 비문서 파일이 생기면
+#   그것은 검사를 받아야 한다.
+#   주의: 문서만 바뀐 PR에는 체크가 **하나도 달리지 않는다.** 나중에 브랜치 보호에서
+#   'build 통과'를 필수로 걸면 그런 PR이 영영 병합 불가가 되므로, 그때 required 대신
+#   'skipped 허용'으로 설정할 것.
 on:
   push:
     branches: [ main, master ]
+    paths-ignore:
+      - '**.md'
   pull_request:
     branches: [ main, master ]
+    paths-ignore:
+      - '**.md'
   workflow_dispatch:
     inputs:
       build_type:
