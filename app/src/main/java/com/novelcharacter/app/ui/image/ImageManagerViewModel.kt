@@ -54,6 +54,10 @@ class ImageManagerViewModel(
             savedState["filter_base"] =
                 prefs.getString("filter_base", null) ?: ImageFilterHelper.BaseFilter.ALL.name
         }
+        if (!savedState.contains("filter_link")) {
+            savedState["filter_link"] =
+                prefs.getString("filter_link", null) ?: ImageFilterHelper.LinkFilter.ANY.name
+        }
         if (!savedState.contains("filter_tags")) {
             savedState["filter_tags"] = ArrayList(loadPersistedTags())
         }
@@ -81,15 +85,20 @@ class ImageManagerViewModel(
             base = runCatching {
                 ImageFilterHelper.BaseFilter.valueOf(savedState["filter_base"] ?: ImageFilterHelper.BaseFilter.ALL.name)
             }.getOrDefault(ImageFilterHelper.BaseFilter.ALL),
+            link = runCatching {
+                ImageFilterHelper.LinkFilter.valueOf(savedState["filter_link"] ?: ImageFilterHelper.LinkFilter.ANY.name)
+            }.getOrDefault(ImageFilterHelper.LinkFilter.ANY),
             tags = savedState.get<ArrayList<String>>("filter_tags")?.toSet() ?: emptySet(),
             query = savedState["filter_query"] ?: ""
         )
         set(value) {
             savedState["filter_base"] = value.base.name
+            savedState["filter_link"] = value.link.name
             savedState["filter_tags"] = ArrayList(value.tags)
             savedState["filter_query"] = value.query
             prefs.edit()
                 .putString("filter_base", value.base.name)
+                .putString("filter_link", value.link.name)
                 .putString("filter_tags", gson.toJson(ArrayList(value.tags)))
                 .apply()
         }

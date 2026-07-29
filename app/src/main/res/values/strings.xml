@@ -1986,6 +1986,10 @@
     <string name="image_manager_filter_orphan">고아</string>
     <string name="image_manager_filter_unassigned">미배정</string>
     <string name="image_manager_filter_trash">휴지통</string>
+    <string name="image_manager_link_any">링크 전체</string>
+    <string name="image_manager_link_linked">링크됨</string>
+    <string name="image_manager_link_unlinked">링크 없음</string>
+    <string name="image_manager_link_auto">캐릭터 자동</string>
     <string name="image_manager_search_hint">파일명·소유자·태그 검색</string>
     <string name="image_manager_tag_filter">태그</string>
     <string name="image_manager_tag_filter_count">태그 %1$d</string>

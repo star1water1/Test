@@ -17,8 +17,9 @@ class ImageFilterHelperTest {
         name: String,
         owners: List<Pair<OwnerKind, String>> = emptyList(),
         tags: List<String> = emptyList(),
-        status: StatusKind = if (owners.isEmpty()) StatusKind.ORPHAN else StatusKind.REFERENCED
-    ) = Img(name, Facts(name, owners.map { it.second }, tags, owners.mapTo(HashSet()) { it.first }, status))
+        status: StatusKind = if (owners.isEmpty()) StatusKind.ORPHAN else StatusKind.REFERENCED,
+        linkGroupId: String? = null
+    ) = Img(name, Facts(name, owners.map { it.second }, tags, owners.mapTo(HashSet()) { it.first }, status, linkGroupId))
 
     private val charImg = img("char_a.jpg", listOf(OwnerKind.CHARACTER to "홍길동"), listOf("여성", "흑발"))
     private val novelImg = img("novel_b.jpg", listOf(OwnerKind.NOVEL to "어떤 소설"))
@@ -63,5 +64,52 @@ class ImageFilterHelperTest {
         )
         // 조합이 모순이면 빈 결과
         assertEquals(emptyList<String>(), apply(Criteria(base = BaseFilter.NOVEL, tags = setOf("여성"))))
+    }
+
+    // ── 링크 상태 축 (설계 image_folder_tag_ai 5-2) ──
+
+    private val manual = img("m.jpg", listOf(OwnerKind.CHARACTER to "가온"), linkGroupId = "uuid-1")
+    private val auto = img("a.jpg", listOf(OwnerKind.CHARACTER to "가온"), linkGroupId = "char:7")
+    private val loose = img("l.jpg", listOf(OwnerKind.CHARACTER to "가온"))
+    private val linkAll = listOf(manual, auto, loose)
+
+    private fun applyLink(c: Criteria) = ImageFilterHelper.apply(linkAll, c) { it.facts }.map { it.name }
+
+    @Test fun linkAny_isIdentity() {
+        assertEquals(listOf("m.jpg", "a.jpg", "l.jpg"), applyLink(Criteria()))
+    }
+
+    /** 자동 묶음도 '링크됨'에 든다 — 묶여 있는 것은 사실이다. */
+    @Test fun linkLinked_includesAutoGroups() {
+        assertEquals(listOf("m.jpg", "a.jpg"), applyLink(Criteria(link = ImageFilterHelper.LinkFilter.LINKED)))
+    }
+
+    @Test fun linkUnlinked_findsLooseImages() {
+        assertEquals(listOf("l.jpg"), applyLink(Criteria(link = ImageFilterHelper.LinkFilter.UNLINKED)))
+    }
+
+    /** 자동만 따로 볼 수 있어야 "내가 묶은 것"을 가려낼 수 있다. */
+    @Test fun linkAuto_matchesOnlyCharTokens() {
+        assertEquals(listOf("a.jpg"), applyLink(Criteria(link = ImageFilterHelper.LinkFilter.AUTO)))
+    }
+
+    /** 링크 축은 소유·상태 축과 **직교**한다 — 둘은 AND로 조합된다. */
+    @Test fun linkAxis_combinesWithBaseFilter() {
+        val mixed = listOf(
+            img("x.jpg", listOf(OwnerKind.CHARACTER to "가온")),
+            img("y.jpg", tags = listOf("t"), status = StatusKind.UNASSIGNED),
+            img("z.jpg", tags = listOf("t"), status = StatusKind.UNASSIGNED, linkGroupId = "uuid-9")
+        )
+        val out = ImageFilterHelper.apply(
+            mixed,
+            Criteria(base = BaseFilter.UNASSIGNED, link = ImageFilterHelper.LinkFilter.UNLINKED)
+        ) { it.facts }.map { it.name }
+        assertEquals(listOf("y.jpg"), out)
+    }
+
+    /** 링크 축만 걸어도 필터가 활성이어야 한다(항등 단축 경로에 걸리면 안 된다). */
+    @Test fun linkAxisAlone_marksCriteriaActive() {
+        assertEquals(true, Criteria(link = ImageFilterHelper.LinkFilter.UNLINKED).isActive)
+        assertEquals(false, Criteria().isActive)
     }
 }

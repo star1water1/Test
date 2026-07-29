@@ -150,6 +150,18 @@ class ImageManagerFragment : Fragment() {
             applyView()
         }
 
+        // 링크 상태는 소유·상태와 직교하는 별도 축이다 — 두 칩 그룹이 AND로 조합된다.
+        binding.linkFilterChips.setOnCheckedStateChangeListener { _, checkedIds ->
+            val link = when (checkedIds.firstOrNull()) {
+                R.id.chipLinked -> com.novelcharacter.app.util.ImageFilterHelper.LinkFilter.LINKED
+                R.id.chipUnlinked -> com.novelcharacter.app.util.ImageFilterHelper.LinkFilter.UNLINKED
+                R.id.chipLinkAuto -> com.novelcharacter.app.util.ImageFilterHelper.LinkFilter.AUTO
+                else -> com.novelcharacter.app.util.ImageFilterHelper.LinkFilter.ANY
+            }
+            viewModel.criteria = viewModel.criteria.copy(link = link)
+            applyView()
+        }
+
         // 검색 — 300ms 디바운스(캐릭터 목록 검색 패턴)
         binding.searchEdit.addTextChangedListener(object : android.text.TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
@@ -208,6 +220,12 @@ class ImageManagerFragment : Fragment() {
             com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.ALL -> R.id.chipAll
         }
         binding.filterChips.check(chipId)
+        binding.linkFilterChips.check(when (c.link) {
+            com.novelcharacter.app.util.ImageFilterHelper.LinkFilter.LINKED -> R.id.chipLinked
+            com.novelcharacter.app.util.ImageFilterHelper.LinkFilter.UNLINKED -> R.id.chipUnlinked
+            com.novelcharacter.app.util.ImageFilterHelper.LinkFilter.AUTO -> R.id.chipLinkAuto
+            com.novelcharacter.app.util.ImageFilterHelper.LinkFilter.ANY -> R.id.chipLinkAny
+        })
         if (c.query.isNotBlank()) binding.searchEdit.setText(c.query)
         updateTagFilterLabel()
         applyViewMode()
@@ -377,7 +395,8 @@ class ImageManagerFragment : Fragment() {
                     ImageManagerViewModel.Status.ORPHAN -> com.novelcharacter.app.util.ImageFilterHelper.StatusKind.ORPHAN
                     ImageManagerViewModel.Status.TRASH_HELD -> com.novelcharacter.app.util.ImageFilterHelper.StatusKind.TRASH
                     ImageManagerViewModel.Status.UNASSIGNED -> com.novelcharacter.app.util.ImageFilterHelper.StatusKind.UNASSIGNED
-                }
+                },
+                linkGroupId = item.meta?.linkGroupId
             )
         }
         val sorted = when (viewModel.sort) {
