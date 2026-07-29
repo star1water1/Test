@@ -593,9 +593,80 @@ class ImageManagerFragment : Fragment() {
                     ) { startOrganizeFolderImport() }
                     return@scanOrganizeFolder
                 }
-                confirmOrganizePlan(outcome.bundle)
+                resolveAmbiguousThenConfirm(outcome.bundle)
             }
         }
+    }
+
+    /**
+     * 동명 폴더가 있으면 **먼저 물어보고** 그 답으로 계획을 다시 세운 뒤 사전 확인으로 간다.
+     *
+     * 폴더마다 창을 띄우지 않고 **한 창에 목록으로** 묶는다 — 엑셀 가져오기의 '동명이인 충돌
+     * 해결'과 같은 형태다. 동명 그룹이 여러 개일 때 창이 여러 번 뜨는 것이 이 기능에서 가장
+     * 흔한 마찰이 된다(원칙 04).
+     */
+    private fun resolveAmbiguousThenConfirm(
+        bundle: com.novelcharacter.app.util.OrganizeFolderService.PlanBundle
+    ) {
+        val folders = bundle.plan.ambiguousFolders.filter { !bundle.ambiguousCandidates[it].isNullOrEmpty() }
+        if (folders.isEmpty()) { confirmOrganizePlan(bundle); return }
+
+        val ctx = requireContext()
+        val dp = ctx.resources.displayMetrics.density
+        val pad = (16 * dp).toInt()
+        val container = android.widget.LinearLayout(ctx).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(pad, pad / 2, pad, 0)
+        }
+        container.addView(android.widget.TextView(ctx).apply {
+            text = getString(R.string.organize_folder_ambiguous_message, folders.size)
+            setPadding(0, 0, 0, pad / 2)
+        })
+
+        // 폴더명 → 고른 캐릭터 id. 고르지 않으면 담기지 않는다(= 배정하지 않음, 종전 동작).
+        val picked = HashMap<String, Long>()
+        for (folder in folders) {
+            container.addView(android.widget.TextView(ctx).apply {
+                text = folder
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setPadding(0, pad / 2, 0, 0)
+            })
+            val group = android.widget.RadioGroup(ctx)
+            val candidates = bundle.ambiguousCandidates[folder].orEmpty()
+            for (c in candidates) {
+                group.addView(android.widget.RadioButton(ctx).apply {
+                    id = View.generateViewId()
+                    text = getString(
+                        R.string.organize_folder_candidate_format,
+                        c.name,
+                        c.novelTitle ?: getString(R.string.duplicate_novel_none)
+                    )
+                    setOnClickListener { picked[folder] = c.characterId }
+                })
+            }
+            group.addView(android.widget.RadioButton(ctx).apply {
+                id = View.generateViewId()
+                text = getString(R.string.organize_folder_ambiguous_skip)
+                isChecked = true // 기본은 종전 동작 — 고르지 않으면 아무것도 배정하지 않는다
+                setOnClickListener { picked.remove(folder) }
+            })
+            container.addView(group)
+        }
+
+        MaterialAlertDialogBuilder(ctx)
+            .setTitle(R.string.organize_folder_ambiguous_title)
+            .setView(android.widget.ScrollView(ctx).apply { addView(container) })
+            .setPositiveButton(R.string.confirm) { _, _ ->
+                if (picked.isEmpty()) {
+                    confirmOrganizePlan(bundle)
+                } else {
+                    viewModel.replanOrganizeFolder(bundle.scan, picked) { replanned ->
+                        if (isAdded && _binding != null) confirmOrganizePlan(replanned)
+                    }
+                }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
     }
 
     /** 사전 확인 — 폴더 재배열은 대량 메타 변경이라 조용히 반영하지 않는다(조용한 확대 금지). */
@@ -624,6 +695,12 @@ class ImageManagerFragment : Fragment() {
             lines.add(getString(
                 R.string.organize_folder_summary_ambiguous,
                 plan.ambiguousFolders.joinToString(", ")
+            ))
+        }
+        if (plan.unknownCodeFolders.isNotEmpty()) {
+            lines.add(getString(
+                R.string.organize_folder_summary_unknown_code,
+                plan.unknownCodeFolders.joinToString(", ")
             ))
         }
         if (plan.unknownTokenFiles > 0) {
@@ -788,8 +865,6 @@ class ImageManagerFragment : Fragment() {
         for (blocked in plan.blockedCharacters) {
             lines.add(getString(
                 when (blocked.reason) {
-                    com.novelcharacter.app.util.FolderExportPlanner.BlockReason.DUPLICATE_NAME ->
-                        R.string.organize_folder_export_blocked_duplicate
                     com.novelcharacter.app.util.FolderExportPlanner.BlockReason.RESERVED_NAME ->
                         R.string.organize_folder_export_blocked_reserved
                     com.novelcharacter.app.util.FolderExportPlanner.BlockReason.UNSAFE_NAME ->

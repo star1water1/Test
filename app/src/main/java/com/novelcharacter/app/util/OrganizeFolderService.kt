@@ -60,6 +60,9 @@ object OrganizeFolderService {
     )
 
     /** 계획 + 그 계획을 설명하는 데 필요한 부수 정보(사전 확인 다이얼로그용). */
+    /** 동명 폴더의 선택지 1건 — 사용자가 "어느 쪽인가"를 고를 수 있을 만큼만 담는다. */
+    data class FolderCandidate(val characterId: Long, val name: String, val novelTitle: String?)
+
     data class PlanBundle(
         val plan: FolderRoundtripPlanner.Plan,
         val scan: ScanResult,
@@ -76,7 +79,14 @@ object OrganizeFolderService {
          * 심볼릭 링크라 둘이 다른 문자열이 되는데, 그때 canonical로 쓰면 같은 파일의 meta 행이
          * 하나 더 생긴다(유니크 인덱스는 문자열 기준이라 막지 못한다).
          */
-        val storedPathByCanonical: Map<String, String> = emptyMap()
+        val storedPathByCanonical: Map<String, String> = emptyMap(),
+        /**
+         * 동명이라 물어봐야 하는 폴더명 → 고를 수 있는 후보들.
+         *
+         * 이름만 N개 나열하면 고를 수가 없으므로 **작품명을 함께** 싣는다
+         * (인앱 `DuplicateCharacterDialog`가 쓰는 방식과 같다).
+         */
+        val ambiguousCandidates: Map<String, List<FolderCandidate>> = emptyMap()
     ) {
         val isEmpty: Boolean get() = plan.isEmpty
 
@@ -201,12 +211,23 @@ object OrganizeFolderService {
     // ── 계획 ──
 
     /** 현재 DB 상태를 읽어 계획을 세운다. */
-    suspend fun buildPlan(context: Context, db: AppDatabase, scan: ScanResult): PlanBundle =
+    /**
+     * @param ambiguousChoices 동명 폴더에 대해 사용자가 고른 대상(폴더명 → 캐릭터 id).
+     *        비어 있으면 동명 폴더는 [FolderRoundtripPlanner.Plan.ambiguousFolders]에 실려
+     *        호출부가 물어보게 된다. 답을 받은 뒤 **같은 스캔으로 계획만 다시 세운다** —
+     *        다시 스캔하면 그 사이 바뀐 폴더 때문에 사용자가 답한 것과 다른 계획이 나온다.
+     */
+    suspend fun buildPlan(
+        context: Context,
+        db: AppDatabase,
+        scan: ScanResult,
+        ambiguousChoices: Map<String, Long> = emptyMap()
+    ): PlanBundle =
         withContext(Dispatchers.IO) {
             val gson = Gson()
             val characters = db.characterDao().getAllCharactersList()
 
-            // 캐릭터 이름 사전 — 트림 기준. 동명이 둘 이상이면 플래너가 배정을 보류한다.
+            // 캐릭터 이름 사전 — 트림 기준. 동명이 둘 이상이면 해소 사다리가 코드·작품으로 좁힌다.
             val idsByName = HashMap<String, MutableList<Long>>()
             // 이미지 경로 → 그 이미지를 등록한 캐릭터 id 목록(비교는 canonical, 저장은 원문).
             val idsByCanonPath = HashMap<String, MutableList<Long>>()
@@ -239,7 +260,20 @@ object OrganizeFolderService {
             val items = scan.files.map {
                 FolderRoundtripPlanner.ScanItem(it.documentId, it.folders, it.name)
             }
-            val plan = FolderRoundtripPlanner.plan(items, idsByName, dictionary.pathByToken, idsByCanonPath)
+            // 해소 사다리 — 정확 일치 → `이름#코드` → `이름(작품명)` → 사용자 선택.
+            val novels = db.novelDao().getAllNovelsList()
+            val novelIdsByTitle = HashMap<String, MutableList<Long>>()
+            for (n in novels) novelIdsByTitle.getOrPut(n.title.trim()) { mutableListOf() }.add(n.id)
+            val resolver = FolderRoundtripPlanner.CharacterFolderResolver(
+                characterIdsByName = idsByName,
+                characterIdByCode = characters.associate { it.code to it.id },
+                novelIdByCharacterId = characters.mapNotNull { c -> c.novelId?.let { c.id to it } }.toMap(),
+                novelIdsByTitle = novelIdsByTitle,
+                choices = ambiguousChoices
+            )
+            val plan = FolderRoundtripPlanner.plan(
+                items, idsByName, dictionary.pathByToken, idsByCanonPath, resolver
+            )
 
             // 링크 세트가 흡수하는 기존 그룹 — 사전 확인에 한 줄로 싣는다(설계 9장 C-8).
             var mergedGroups = 0
@@ -263,7 +297,17 @@ object OrganizeFolderService {
                     mergedOutsiders += (pulled - inFolder).coerceAtLeast(0)
                 }
             }
-            PlanBundle(plan, scan, mergedGroups, mergedOutsiders, storedByCanon.toMap())
+            // 물어봐야 하는 폴더의 후보 — 이름만으로는 고를 수 없으므로 작품명을 함께 싣는다.
+            val titleByNovelId = novels.associate { it.id to it.title }
+            val charById = characters.associateBy { it.id }
+            val candidates = plan.ambiguousFolders.associateWith { folder ->
+                idsByName[resolver.displayName(folder)].orEmpty().mapNotNull { id ->
+                    charById[id]?.let { c ->
+                        FolderCandidate(c.id, c.name, c.novelId?.let { titleByNovelId[it] })
+                    }
+                }
+            }
+            PlanBundle(plan, scan, mergedGroups, mergedOutsiders, storedByCanon.toMap(), candidates)
         }
 
     // ── 반영 ──
@@ -523,7 +567,7 @@ object OrganizeFolderService {
         )
         val plan = FolderExportPlanner.plan(
             images = images,
-            characters = characters.map { FolderExportPlanner.CharacterInput(it.id, it.name) },
+            characters = characters.map { FolderExportPlanner.CharacterInput(it.id, it.name, it.code) },
             tokenByPath = dictionary.tokenByPath,
             scope = scope,
             existingPaths = livePaths

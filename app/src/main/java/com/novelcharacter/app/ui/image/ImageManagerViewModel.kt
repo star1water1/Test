@@ -1065,6 +1065,28 @@ class ImageManagerViewModel(
     }
 
     /**
+     * 동명 폴더의 선택을 반영해 **같은 스캔으로 계획만 다시 세운다**.
+     *
+     * 다시 스캔하지 않는 것이 중요하다 — 사용자가 고르는 동안 폴더가 바뀌었다면 그 답은
+     * 다른 계획에 붙게 되고, 사용자는 자기가 본 적 없는 배치를 승인한 셈이 된다.
+     */
+    fun replanOrganizeFolder(
+        scan: com.novelcharacter.app.util.OrganizeFolderService.ScanResult,
+        choices: Map<String, Long>,
+        onDone: (com.novelcharacter.app.util.OrganizeFolderService.PlanBundle) -> Unit
+    ) {
+        _loading.value = true
+        viewModelScope.launch {
+            val bundle = withContext(Dispatchers.IO) {
+                com.novelcharacter.app.util.OrganizeFolderService
+                    .buildPlan(getApplication(), db, scan, choices)
+            }
+            _loading.value = false
+            onDone(bundle)
+        }
+    }
+
+    /**
      * 계획을 반영한다. 진행도는 [onProgress](메인 스레드)로 올라오고, [isCancelled]가 true가
      * 되면 그 항목까지 반영하고 멈춘다.
      */

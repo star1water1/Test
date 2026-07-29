@@ -2036,7 +2036,13 @@
     <string name="organize_folder_summary_sets">링크 묶음: %d개</string>
     <string name="organize_folder_summary_merge">기존 링크 %1$d개가 합쳐집니다 (폴더에 없던 이미지 %2$d장이 함께 묶입니다)</string>
     <string name="organize_folder_summary_hold">보류: %d장 (판단할 수 없어 이번에는 반영하지 않습니다 — 파일은 폴더에 그대로 남습니다)</string>
-    <string name="organize_folder_summary_ambiguous">같은 이름의 캐릭터가 둘 이상이라 배정을 보류한 폴더: %s</string>
+    <string name="organize_folder_summary_ambiguous">배정하지 않은 동명 폴더: %s (파일은 폴더에 그대로 남습니다)</string>
+    <string name="organize_folder_summary_unknown_code">폴더명의 코드와 맞는 캐릭터가 없습니다: %s (이름으로 대신 찾지 않았습니다 — 코드를 지우면 이름으로 찾습니다)</string>
+    <!-- 동명 폴더 선택 -->
+    <string name="organize_folder_ambiguous_title">어느 캐릭터의 폴더인가요?</string>
+    <string name="organize_folder_ambiguous_message">같은 이름의 캐릭터가 있어 폴더 %d개의 대상을 정할 수 없습니다. 폴더마다 골라 주세요. 고르지 않으면 배정하지 않고 묶기만 합니다.</string>
+    <string name="organize_folder_ambiguous_skip">배정하지 않음</string>
+    <string name="organize_folder_candidate_format">%1$s (%2$s)</string>
     <string name="organize_folder_summary_unknown_token">앱에서 내보낸 사본으로 보이지만 원본을 찾지 못한 파일 %d장 — 새 이미지로 편입합니다</string>
     <string name="organize_folder_summary_already">앱이 이미 처리한 파일 %d장은 건너뜁니다 (지난번 받아오기 또는 내보낸 사본)</string>
     <string name="organize_folder_summary_ignored">이미지가 아닌 파일 %1$d개, 정해진 위치 밖의 파일·폴더 %2$d개는 건드리지 않습니다</string>
@@ -2057,7 +2063,6 @@
     <string name="organize_folder_export_summary_buckets">캐릭터 폴더 %1$d개 · 미배정 %2$d장 · 묶음 폴더 %3$d개 · 공유 %4$d장</string>
     <string name="organize_folder_export_summary_replace">이전에 내보낸 사본 %d장은 새 사본으로 교체합니다</string>
     <string name="organize_folder_export_summary_pending">그중 %d장은 폴더에서 자리를 옮겨 두고 아직 받아오지 않은 것입니다 — 지금 내보내면 그 배치가 현재 상태로 덮어써집니다. 받아오기를 먼저 하는 편이 안전합니다</string>
-    <string name="organize_folder_export_blocked_duplicate">같은 이름의 캐릭터가 둘 이상입니다 — \'%1$s\'의 이미지 %2$d장은 내보내지 않습니다 (이름을 구분하면 내보낼 수 있습니다)</string>
     <string name="organize_folder_export_blocked_reserved">\'%1$s\'은 앱이 쓰는 폴더 이름입니다 — 이미지 %2$d장은 내보내지 않습니다 (이름을 바꾸면 내보낼 수 있습니다)</string>
     <string name="organize_folder_export_blocked_unsafe">\'%1$s\'은 폴더 이름으로 쓸 수 없습니다 — 이미지 %2$d장은 내보내지 않습니다 (특수문자를 빼거나 이름을 줄이면 내보낼 수 있습니다)</string>
     <string name="organize_folder_export_summary_legacy">파일 이름이 옛 방식이라 돌아올 때 자리를 알아볼 수 없는 이미지 %d장은 내보내지 않습니다</string>
