@@ -14,6 +14,10 @@ import com.novelcharacter.app.R
  * **세 곳에 그대로 복제**돼 있었다. 한 곳에만 버튼을 달면 나머지 둘이 뒤처지고, 항목이 늘 때
  * 세 곳이 갈라진다 — 이 저장소가 반복해서 값비싸게 배운 그 패턴이다(`architecture` 3장).
  *
+ * **가져오기도 같은 창을 쓴다**([showForImport]). 처음 모을 때 내보내기 셋만 보고 가져오기를
+ * 빠뜨렸는데, 항목이 같은 18개인 이상 짝이 맞아야 한다 — 한쪽에만 '전부 해제'가 있으면
+ * 사용자는 다른 쪽에서 18번을 누르게 된다.
+ *
  * ## 전부 선택 / 전부 해제
  *
  * 18개를 하나씩 끄는 것은 실제로 고통스럽다(원칙 04). 중립 버튼 하나로 전부를 뒤집되,
@@ -26,19 +30,48 @@ import com.novelcharacter.app.R
 object ExportOptionsDialog {
 
     /**
-     * 항목 선택 창을 띄운다. 확인을 누르면 [onConfirm]에 고른 옵션이 전달된다(취소면 호출 없음).
+     * 내보내기 항목 선택. 확인을 누르면 [onConfirm]에 고른 옵션이 전달된다(취소면 호출 없음).
      */
     fun show(fragment: Fragment, onConfirm: (ExportOptions) -> Unit) {
         if (!fragment.isAdded) return
-        val checked = ExportOptions.ALL.toBooleanArray()
+        show(
+            context = fragment.requireContext(),
+            titleRes = R.string.export_options_title,
+            initial = ExportOptions.ALL.toBooleanArray(),
+            onConfirm = onConfirm,
+            onCancel = {}
+        )
+    }
+
+    /**
+     * 가져오기 항목 선택 — 내보내기와 **같은 창**이되 제목과 초기 선택만 다르다.
+     *
+     * @param initial 초기 체크 상태. 가져오기는 ZIP에 이미지가 있을 때만 이미지를 켠다.
+     * @param onCancel 취소·바깥 탭. 가져오기는 취소를 '중단'으로 다뤄야 해서 성공과 갈린다.
+     */
+    fun showForImport(
+        context: android.content.Context,
+        initial: BooleanArray,
+        onConfirm: (ExportOptions) -> Unit,
+        onCancel: () -> Unit
+    ) = show(context, R.string.import_options_title, initial, onConfirm, onCancel)
+
+    private fun show(
+        context: android.content.Context,
+        titleRes: Int,
+        initial: BooleanArray,
+        onConfirm: (ExportOptions) -> Unit,
+        onCancel: () -> Unit
+    ) {
+        val checked = initial.copyOf()
 
         // 라벨 갱신은 show() 이후에야 실제 버튼을 잡을 수 있으므로 홀더로 미뤄 둔다.
         // `setMultiChoiceItems`의 콜백은 **그대로 살려 둔다** — 리스트의 클릭 리스너를
         // 갈아 끼우면 프레임워크가 체크 상태를 반영하는 경로와 싸우게 된다.
         var syncLabel: () -> Unit = {}
 
-        val dialog = MaterialAlertDialogBuilder(fragment.requireContext())
-            .setTitle(R.string.export_options_title)
+        val dialog = MaterialAlertDialogBuilder(context)
+            .setTitle(titleRes)
             .setMultiChoiceItems(ExportOptions.LABELS, checked) { _, which, isChecked ->
                 checked[which] = isChecked
                 syncLabel()
@@ -47,7 +80,8 @@ object ExportOptionsDialog {
             .setPositiveButton(R.string.confirm) { _, _ ->
                 onConfirm(ExportOptions.fromBooleanArray(checked))
             }
-            .setNegativeButton(R.string.cancel, null)
+            .setNegativeButton(R.string.cancel) { _, _ -> onCancel() }
+            .setOnCancelListener { onCancel() }
             .create()
 
         dialog.setOnShowListener {
