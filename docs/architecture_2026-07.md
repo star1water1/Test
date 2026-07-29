@@ -13,14 +13,19 @@
 
 ---
 
-## 1. 현행 규모 (2026-07-28 실측)
+## 1. 현행 규모 (2026-07-29 실측)
 
 | 항목 | 값 | 측정 방법 |
 |------|-----|-----------|
-| 메인 소스 | **328 파일 / 87,108줄** (Kotlin) | `find app/src/main/java -name '*.kt'` |
+| 메인 소스 | **332 파일 / 88,420줄** (Kotlin) | `find app/src/main/java -name '*.kt'` |
 | 테스트 소스 | **71 파일 / 순수 JVM 924건** | `tools/run_jvm_tests.sh` |
-| Room DB | **v44** · 엔티티 **26** · 마이그레이션 **44** | `data/database/AppDatabase.kt` |
+| Room DB | **v44** · 엔티티 **26** · 마이그레이션 **43**(v1→v44) | `data/database/AppDatabase.kt` |
 | 사용자 문구 | `res/values/strings.xml` 단일 파일 | `tools/check_text_style.sh` |
+
+> **테스트 파일 71 ≠ 러너가 도는 70.** `AiPresetsConsistencyTest`(3건)는 `R`을 참조해 순수
+> 하네스에서 돌 수 없어 목록에서 빠져 있다(CI 전용). 그래서 소스의 `@Test`는 927인데 실행은
+> 924다 — 이 차이를 결함으로 오인하지 말 것. 러너는 `$TESTS` 목록에 적힌 파일만 컴파일하므로
+> **목록에 넣지 않은 새 테스트는 조용히 돌지 않는다**(5장 착수 시 확인 항목).
 
 > **숫자를 문서에서 믿지 말 것.** 이 표의 값도 찍힌 순간의 스냅샷이다. 실제 작업 전에
 > 위 명령으로 재현하라 — 실제로 인수인계 문서의 테스트 기준선이 760으로 적혀 있는 동안
@@ -36,19 +41,27 @@ app/src/main/java/com/novelcharacter/app/
 │   ├── model/  (44)   엔티티 + 설정 값 객체(FieldStatsConfig·DisplayFormat·SemanticRole …)
 │   ├── dao/    (24)   Room DAO
 │   ├── repository/ (21)  트랜잭션 경계 · 휴지통 · 스냅샷 복원
-│   └── database/      AppDatabase(v44) + 마이그레이션 44개
-├── util/       (59)  ★ 순수 계층 — Android 비의존, JVM 테스트 대상 (3장)
-├── excel/      (22)  엑셀 왕복 (내보내기·가져오기·시트 규약)
+│   └── database/      AppDatabase(v44) + 마이그레이션 43개(v1→v44)
+├── util/       (60)  ★ 순수 계층이 사는 곳 — 38개는 Android 비의존(JVM 테스트 대상, 3장),
+│                        22개는 Android 의존(화면 헬퍼·Prefs·이미지 로더)
+├── excel/      (24)  엑셀 왕복 (내보내기·가져오기·시트 규약)
 ├── share/      (7)   월드패키지(ZIP) 내보내기·들이기
 ├── ai/         (15)  프롬프트 조립 · 응답 해석 · 정책
 ├── backup/     (4)   자동 백업 워커
 ├── widget/     (3)   홈 위젯
-└── ui/         (123)  화면 — character(22) · stats(15) · adapter(13) · image(10) …
+└── ui/         (124)  화면 — character(22) · stats(15) · adapter(13) · image(10) …
 ```
 
 **의존 방향은 한 방향이다:** `ui → repository → dao → Room`, 그리고 모든 계층이 `util`을
-바라본다. **`util`은 아무도 바라보지 않는다**(Android·Room 비의존) — 그래서 이 저장소에서
-유일하게 실행 검증이 가능한 계층이다(4장).
+바라본다. `util`은 아무도 바라보지 않는다 — 그래서 이 저장소에서 실행 검증이 가능한
+거의 유일한 계층이다(4장).
+
+> ⚠️ **`util/` = 순수 계층이 아니다. 디렉터리가 아니라 파일 단위로 갈린다.**
+> 60개 중 **22개가 Android·Material에 의존한다**(`AlertDialogExt`·`ProgressDialogs`·
+> `CharacterImageLoader`·`*Prefs`·`ThemeHelper` …). 이들은 JVM 하네스가 컴파일하지 않으므로
+> **`util/`에 넣었다는 사실만으로 "테스트된다"고 가정하지 말 것.**
+> 판정법은 하나다 — `tools/run_jvm_tests.sh`의 `$SOURCES` 목록에 그 파일이 있는가.
+> (실측: `grep -rl '^import android\.\|^import androidx\.' …/util | wc -l` → 22)
 
 ### 데이터 모델 — 26 엔티티
 
@@ -103,9 +116,10 @@ app/src/main/java/com/novelcharacter/app/
 
 | 도구 | 무엇을 보는가 | 기준선 |
 |------|---------------|--------|
-| `tools/run_jvm_tests.sh` | 순수 계층을 **실제로 실행**한다(표준 kotlinc + JUnitCore) | **896건** |
+| `tools/run_jvm_tests.sh` | 순수 계층을 **실제로 실행**한다(표준 kotlinc + JUnitCore) | **924건** |
 | `tools/check_text_style.sh` | 화면 문구의 말투·용어(가이드 기계 검출분) | 기준선 33건 동결, 새 위반은 즉시 실패 |
 | `tools/check_resources.sh` | 리소스 중복·미정의 참조·XML 구문 | 통과 |
+| `tools/check_dialog_validation.sh` | 자동 닫힘 버튼 안의 조기 return(R-27 위반) | 0건 동결 — 새 위반 즉시 실패 |
 | `tools/differential_compile.sh` | 손댄 파일에 **새로 생긴** 컴파일 오류만 | 기준선 대조 |
 | `tools/verify_room_migration*.py` | 마이그레이션 3종을 **실제 SQLite로** 실행 | 35 · 49 · 25건 |
 | `tools/verify_reset_coverage.py` | 엔티티 목록 ↔ `ResetPlan` ↔ `executeReset` 호출부 3자 대조 | 30건 |
@@ -143,7 +157,7 @@ app/src/main/java/com/novelcharacter/app/
 |-----------|---------|
 | `FieldType`을 참조 | 16 |
 | `FieldType.<상수>`로 분기 | 7 |
-| **`"CALCULATED"` 같은 생문자열로 분기** | **23** |
+| **`"CALCULATED"` 같은 생문자열로 분기** | **28** (2026-07-29 실측 — 등재 시점 23에서 늘었다) |
 
 타입 판정이 `fd.type == "CALCULATED"` 같은 **문자열 비교로 23개 파일에 흩어져 있다.**
 `FieldType`에 상수를 하나 더해도 이 23곳은 아무것도 모른다 — 새 타입은 그 화면들에서
@@ -179,7 +193,7 @@ AI 정책(`FieldAiPolicy`).
 
 ---
 
-## 6. 규약 색인 R-1 ~ R-26
+## 6. 규약 색인 R-1 ~ R-27
 
 정의는 전부 `docs/remaining_work_2026-07.md`에 있다(행 번호는 갱신되므로 제목으로 찾을 것).
 **아래는 색인이며, 착수 전 해당 영역의 규약은 원문을 읽을 것.**
@@ -212,6 +226,7 @@ AI 정책(`FieldAiPolicy`).
 | R-24 | 성립하지 않는 조합의 설정은 보이지 않는다 | UI |
 | R-25 | 화면에 노출되는 설정에는 목적문이 붙는다 | 텍스트 |
 | R-26 | 항목 순회형 대량 작업에는 결정형 진행도를, 조회형에는 가짜 진행도를 붙이지 않는다 | UI |
+| R-27 | 검증 실패는 창을 닫지 않는다 — 알리는 것과 고칠 자리를 남기는 것은 다른 일이다 | UI·입력 |
 
 ---
 
@@ -243,5 +258,6 @@ AI 정책(`FieldAiPolicy`).
 
 | 버전 | 날짜 | 변경 내용 |
 |------|------|-----------|
+| v1.2 | 2026.07.29 | **앞 커밋이 절반만 고친 수치 정정 + 계층 설명의 사실 오류 정정.** ① 4장 러너 기준선이 **896으로 남아 있었다**(1장만 924로 고쳐졌다 — 같은 문서 안에서 두 수치가 갈렸다) ② 규모 실측 현행화(328파일·87,108줄 → **332·88,420**, util 59→60·excel 22→24·ui 123→124) ③ **마이그레이션 "44개" → 43개**(v1→v44는 43단계다) ④ **`util/`을 "순수 계층 — Android 비의존"이라 단정하던 것 정정** — 60개 중 **22개가 Android 의존**이며 JVM 하네스가 컴파일하지 않는다(디렉터리가 아니라 `$SOURCES` 목록이 판정한다) ⑤ 테스트 파일 71 vs 러너 실행 70의 차이 명시(`AiPresetsConsistencyTest`는 CI 전용) ⑥ B-55 생문자열 분기 23→**28** 재실측. 규약 **R-27**(검증 실패는 창을 닫지 않는다) 등재 + `tools/check_dialog_validation.sh` 검증 체계 표 등재 |
 | v1.1 | 2026.07.29 | 수치 현행화(테스트 896건·70파일) · 단일 소스 표에 `ImportSource`·`ResetPlan` 등재 · 검증 체계 표에 python 하네스 4종 추가 · **문서 지도의 누락 8종 등재**(특히 `excel_streaming_import` — 바로 다음 작업의 설계 단일 소스인데 지도에 없었다) |
 | v1.0 | 2026.07.28 | 최초 작성 — 진입점 부재를 메운다. 현행 규모 실측(328파일·87,108줄·DB v44·엔티티 26), 계층·데이터 모델 지도, 단일 소스 표, 검증 체계, 확장점 4종, 규약 R-1~R-26 색인, 문서 지도 |

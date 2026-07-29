@@ -44,6 +44,7 @@ import com.novelcharacter.app.data.model.FieldStatsConfig
 import com.novelcharacter.app.databinding.FragmentStatsFieldInsightBinding
 import com.novelcharacter.app.util.FieldValueMatchSpec
 import com.novelcharacter.app.util.ValueDistributions
+import com.novelcharacter.app.util.setValidatedPositiveButton
 
 class StatsFieldInsightFragment : Fragment() {
 
@@ -763,27 +764,32 @@ class StatsFieldInsightFragment : Fragment() {
             override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
         }
 
-        MaterialAlertDialogBuilder(requireContext())
+        // B-28: 통보는 있었으나 창이 함께 닫혀, 고른 축·필드·필터값을 다시 처음부터 골라야 했다.
+        // 알리는 것과 고칠 자리를 남기는 것은 다른 일이다 — 실패 시 창을 유지한다.
+        val dialog = MaterialAlertDialogBuilder(requireContext())
             .setTitle(R.string.stats_cross_analysis)
             .setView(dialogView)
-            .setPositiveButton(R.string.stats_cross_run) { _, _ ->
-                val ids = currentFieldIds
-                if (ids.size < 2) {
-                    // 고른 축·필드·필터값을 통보 없이 버리지 않는다(S-12와 같은 부류).
-                    Toast.makeText(
-                        requireContext(), R.string.stats_cross_need_two_fields, Toast.LENGTH_LONG
-                    ).show()
-                    return@setPositiveButton
-                }
-                val f1 = ids[spinner1.selectedItemPosition.coerceIn(0, ids.size - 1)]
-                val f2 = ids[spinner2.selectedItemPosition.coerceIn(0, ids.size - 1)]
-                val filterPos = spinnerFilter.selectedItemPosition
-                val filterFieldId = if (filterPos in 1..ids.size) ids[filterPos - 1] else null
-                val filterValue = editFilterValue.text?.toString()?.takeIf { it.isNotBlank() }
-                viewModel.loadCrossAnalysis(f1, f2, filterFieldId, filterValue)
-            }
+            .setPositiveButton(R.string.stats_cross_run, null)
             .setNegativeButton(R.string.cancel, null)
-            .show()
+            .create()
+
+        dialog.setValidatedPositiveButton {
+            val ids = currentFieldIds
+            if (ids.size < 2) {
+                Toast.makeText(
+                    requireContext(), R.string.stats_cross_need_two_fields, Toast.LENGTH_LONG
+                ).show()
+                return@setValidatedPositiveButton false
+            }
+            val f1 = ids[spinner1.selectedItemPosition.coerceIn(0, ids.size - 1)]
+            val f2 = ids[spinner2.selectedItemPosition.coerceIn(0, ids.size - 1)]
+            val filterPos = spinnerFilter.selectedItemPosition
+            val filterFieldId = if (filterPos in 1..ids.size) ids[filterPos - 1] else null
+            val filterValue = editFilterValue.text?.toString()?.takeIf { it.isNotBlank() }
+            viewModel.loadCrossAnalysis(f1, f2, filterFieldId, filterValue)
+            true
+        }
+        dialog.show()
     }
 
     // ===== 교차 분석 결과 표시 =====
