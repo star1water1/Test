@@ -313,6 +313,10 @@ class OrganizeFolderController(
             R.string.organize_folder_result_main,
             result.imported, result.moved, result.detached, result.linkedSets
         ))
+        // 링크가 풀린 건 되돌리기 번거로운 변화라 결과에도 숫자로 남긴다(0이면 줄을 만들지 않는다).
+        if (result.unlinked > 0) {
+            lines.add(fragment.getString(R.string.organize_folder_result_unlinked, result.unlinked))
+        }
         if (result.cancelled) lines.add(fragment.getString(R.string.organize_folder_result_cancelled))
         if (result.heldNames.isNotEmpty()) {
             lines.add(fragment.getString(

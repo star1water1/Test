@@ -99,6 +99,8 @@ object OrganizeFolderService {
         val imported: Int = 0,
         val moved: Int = 0,
         val detached: Int = 0,
+        /** 배정 해제하면서 링크 묶음까지 푼 수 ([detached]의 부분집합). */
+        val unlinked: Int = 0,
         val linkedSets: Int = 0,
         val failed: List<String> = emptyList(),
         val heldNames: List<String> = emptyList(),
@@ -334,6 +336,8 @@ object OrganizeFolderService {
         var imported = 0
         var moved = 0
         var detached = 0
+        // 배정 해제 중 실제로 링크까지 푼 수 — 결과에 따로 싣는다(무엇이 일어났는지 숫자로 말한다).
+        var unlinked = 0
         val failures = ArrayList<String>()
         val processedFiles = ArrayList<ScannedFile>()
         val unmovedFingerprints = ArrayList<String>()
@@ -407,6 +411,17 @@ object OrganizeFolderService {
         }
 
         // ③ 배정 해제 — 파일은 남기고 라이브러리로 승격한다(인앱 '배정 해제'와 같은 규약).
+        //
+        // **링크 묶음도 함께 푼다.** 종전에는 캐릭터 배정만 떼고 `linkGroupId`는 남겨서, 같은
+        // 폴더가 신규 파일과 기존 파일에게 다른 뜻이 됐다 — 신규는 "미배정 + 링크 없음"인데
+        // 기존은 "배정 해제 + 링크 유지"였다. 사용자가 되돌리려고 `_미배정/`에 넣어도 묶음이
+        // 남으니 "초기화했는데 그대로"가 된다. 정리 폴더 직속·`_미배정/` 직속은 **되돌리는
+        // 자리**여야 하므로 뜻을 하나로 맞춘다(사용자 판정 A안).
+        //
+        // 해제 규약은 인앱 `unlinkImages`와 **같은 두 걸음**을 탄다 — 그룹을 비우고, 1장만
+        // 남은 그룹은 정리한다. 규칙이 두 곳에 갈리면 같은 조작이 화면마다 다른 결과를 낸다.
+        // 자동 링크(`char:`)는 따로 다루지 않는다 — 캐릭터 배정을 함께 떼므로 ⑤의 재동기화가
+        // 도로 묶지 않는다(인앱 해제가 `autoRelinkable`을 고지해야 했던 것과 갈리는 지점이다).
         if (!cancelled) for (action in plan.detaches) {
             if (isCancelled()) { cancelled = true; break }
             val file = fileById[action.item.id] ?: continue
@@ -421,7 +436,14 @@ object OrganizeFolderService {
                     }
                     val now = System.currentTimeMillis()
                     // 저장형으로 입양한다 — canonical로 넣으면 같은 파일의 meta 행이 하나 더 생긴다.
-                    db.imageMetaDao().adopt(bundle.stored(action.path), now)
+                    val storedPath = bundle.stored(action.path)
+                    val imageId = db.imageMetaDao().adopt(storedPath, now)
+                    val oldGroup = db.imageMetaDao().getByPath(storedPath)?.linkGroupId
+                    if (oldGroup != null) {
+                        db.imageMetaDao().setGroup(listOf(imageId), null)
+                        db.imageMetaDao().clearGroupIfSingleton(oldGroup)
+                        unlinked++
+                    }
                 }
             }.isSuccess
             if (ok) { detached++; processedFiles.add(file) } else failures.add(file.name)
@@ -473,6 +495,7 @@ object OrganizeFolderService {
             imported = imported,
             moved = moved,
             detached = detached,
+            unlinked = unlinked,
             linkedSets = linkedSets,
             failed = failures,
             heldNames = plan.holds.map { it.item.fileName },

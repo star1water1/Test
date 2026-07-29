@@ -2040,7 +2040,8 @@
     <string name="organize_folder_stage_apply">폴더의 이미지를 반영하는 중</string>
     <string name="organize_folder_summary_new">새로 편입: %d장</string>
     <string name="organize_folder_summary_move">배정 이동: %d장</string>
-    <string name="organize_folder_summary_detach">배정 해제: %d장</string>
+    <string name="organize_folder_summary_detach">배정 해제: %d장 (링크 묶음도 함께 풀립니다)</string>
+    <string name="organize_folder_result_unlinked">그중 %d장은 링크 묶음도 풀렸습니다</string>
     <string name="organize_folder_summary_sets">링크 묶음: %d개</string>
     <string name="organize_folder_summary_merge">기존 링크 %1$d개가 합쳐집니다 (폴더에 없던 이미지 %2$d장이 함께 묶입니다)</string>
     <string name="organize_folder_summary_hold">보류: %d장 (판단할 수 없어 이번에는 반영하지 않습니다 — 파일은 폴더에 그대로 남습니다)</string>
