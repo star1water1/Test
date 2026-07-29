@@ -38,6 +38,7 @@
 | `search_filter_sort_perf_2026-07.md` | `docs/` | **구현 완료** — 에폭 메모이제이션(`CharacterViewModel`) | `scalability_performance_2026-07.md` 부록 |
 | `storage_optimization_design_2026-07.md` | `docs/` | **구현 완료** — `StorageAnalyzer`, 백업 이미지 기본값 `true`→`false` | `scalability_performance_2026-07.md` 부록 |
 | `fix_design_round2_2026-07.md` | `docs/` | **F-1~F-7 구현 완료** — 안정 식별자 `code` 도입(DB v34→v35) | 원본 점검 `app_inspection_round2_2026-07.md`(현행 유지) · 규약 R-1 |
+| `device_verification_passed_2026-07.md` | `remaining_work_2026-07.md` 3장 | **실기기 확인 통과 6건**(3-1~3-4·3-16·3-17) — 끝난 절차서 | 아직 해야 할 확인은 전부 `remaining_work_2026-07.md` 3장에 있다 |
 | `audit_remediation_2026-07.md` | `docs/` | **PR-F1~F3 구현 완료** — 무음 유실 3건 등 | 규약 R-14·R-17 · `superficial_feature_audit_2026-07.md` |
 | `feature_readiness_audit.md` | `docs/` | 시점 준비도 리뷰 — 점검 대상 5종 전부 구현됨 | `usability_review_2026-07.md` · `superficial_feature_audit_2026-07.md` |
 
