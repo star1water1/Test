@@ -17,7 +17,12 @@ import com.novelcharacter.app.data.model.FactionRelationship
 data class MemberAddResult(
     val added: Int,
     val autoRelationsCreated: Int,
-    val autoRelationsSkipped: Int
+    val autoRelationsSkipped: Int,
+    /**
+     * 이미 활성 소속이라 건너뛴 수. 종전에는 조용히 `continue`해서 "N명 추가"의 N에서만
+     * 빠졌고 **왜 빠졌는지는 말하지 않았다** — 골랐는데 안 들어간 이유를 사용자가 알 길이 없다.
+     */
+    val alreadyMember: Int = 0
 )
 
 class FactionRepository(private val db: AppDatabase) {
@@ -123,7 +128,7 @@ class FactionRepository(private val db: AppDatabase) {
         return db.withTransaction {
             // 이미 활성 멤버인지 체크
             val existing = membershipDao.getActiveMembership(factionId, characterId)
-            if (existing != null) return@withTransaction MemberAddResult(0, 0, 0)
+            if (existing != null) return@withTransaction MemberAddResult(0, 0, 0, alreadyMember = 1)
 
             val faction = factionDao.getById(factionId)
                 ?: return@withTransaction MemberAddResult(0, 0, 0)
@@ -156,6 +161,7 @@ class FactionRepository(private val db: AppDatabase) {
             var addedCount = 0
             var createdTotal = 0
             var skippedTotal = 0
+            var alreadyCount = 0
             val faction = factionDao.getById(factionId)
                 ?: return@withTransaction MemberAddResult(0, 0, 0)
 
@@ -164,10 +170,11 @@ class FactionRepository(private val db: AppDatabase) {
                 .toMutableSet()
 
             for (characterId in characterIds) {
-                if (characterId in activeCharIds) continue
+                if (characterId in activeCharIds) { alreadyCount++; continue }
                 val existing = membershipDao.getActiveMembership(factionId, characterId)
                 if (existing != null) {
                     activeCharIds.add(characterId)
+                    alreadyCount++
                     continue
                 }
 
@@ -185,8 +192,33 @@ class FactionRepository(private val db: AppDatabase) {
                 activeCharIds.add(characterId)
                 addedCount++
             }
-            MemberAddResult(addedCount, createdTotal, skippedTotal)
+            MemberAddResult(addedCount, createdTotal, skippedTotal, alreadyCount)
         }
+    }
+
+    /**
+     * 가입 연도만 고친다 — 소속 **행 자체는 보존**한다(이력의 정체성).
+     * 종전에는 추가할 때 한 번 넣는 것이 전부였고 고칠 길이 없어, 잘못 넣으면
+     * 제거 후 재추가밖에 없었다(그러면 소속 이력이 끊긴다).
+     *
+     * @param joinYear null이면 '시점 불명'으로 되돌린다.
+     * @return 대상 행을 찾아 고쳤으면 true. false는 호출부가 사유를 고지해야 한다.
+     */
+    suspend fun updateJoinYear(membershipId: Long, joinYear: Int?): Boolean {
+        val membership = membershipDao.getById(membershipId) ?: return false
+        membershipDao.update(membership.copy(joinYear = joinYear))
+        return true
+    }
+
+    /**
+     * 소속 기록 한 줄을 지운다 — 탈퇴 이력 정리용.
+     * `removeMember`(활성 소속 제거)와 달리 **이미 끝난 소속의 기록**을 대상으로 한다.
+     * 되돌릴 수 없으므로 호출부가 실행 전에 알려야 한다(R-4).
+     */
+    suspend fun deleteMembershipRecord(membershipId: Long): Boolean {
+        membershipDao.getById(membershipId) ?: return false
+        membershipDao.deleteById(membershipId)
+        return true
     }
 
     /**

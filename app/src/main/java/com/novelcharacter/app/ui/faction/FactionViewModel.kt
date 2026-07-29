@@ -17,6 +17,9 @@ import com.novelcharacter.app.util.reportResult
 import com.novelcharacter.app.util.logResult
 import kotlinx.coroutines.launch
 
+/** 한 세력에 대한 캐릭터의 소속 상태 — 후보 목록이 셋을 구별해 보이기 위한 축. */
+enum class MemberState { ACTIVE, DEPARTED }
+
 class FactionViewModel(application: Application) : AndroidViewModel(application) {
 
     private val app = application as NovelCharacterApp
@@ -138,6 +141,59 @@ class FactionViewModel(application: Application) : AndroidViewModel(application)
             onResult(MemberAddResult(0, 0, 0))
             reportResult(_result, OpResult.failure(OpResult.CAT_FACTION,
                 app.getString(R.string.result_faction_member_add_failed), e.message))
+        }
+    }
+
+    /**
+     * 세력별 캐릭터 소속 상태 — 멤버 추가 후보 목록의 표시용.
+     * 활성 소속이 하나라도 있으면 ACTIVE가 이긴다(재가입한 캐릭터는 옛 탈퇴 행도 함께 갖는다).
+     */
+    suspend fun getMembershipStatesForFaction(factionId: Long): Map<Long, MemberState> {
+        val states = mutableMapOf<Long, MemberState>()
+        for (m in factionRepository.getMembershipsByFactionList(factionId)) {
+            if (m.leaveType == null) {
+                states[m.characterId] = MemberState.ACTIVE
+            } else if (states[m.characterId] == null) {
+                states[m.characterId] = MemberState.DEPARTED
+            }
+        }
+        return states
+    }
+
+    /** 가입 연도 수정 — 소속 행은 보존한다(이력의 정체성). null이면 '시점 불명'. */
+    fun updateJoinYear(membershipId: Long, joinYear: Int?) = viewModelScope.launch {
+        try {
+            val ok = factionRepository.updateJoinYear(membershipId, joinYear)
+            if (ok) {
+                reportResult(_result, OpResult.success(OpResult.CAT_FACTION,
+                    app.getString(R.string.result_faction_join_year_updated)))
+            } else {
+                // 대상이 사라진 경우도 반드시 알린다 — 조용한 무동작을 남기지 않는다
+                reportResult(_result, OpResult.failure(OpResult.CAT_FACTION,
+                    app.getString(R.string.result_faction_membership_gone)))
+            }
+        } catch (e: Exception) {
+            Log.e("FactionViewModel", "Failed to update join year", e)
+            reportResult(_result, OpResult.failure(OpResult.CAT_FACTION,
+                app.getString(R.string.result_faction_join_year_update_failed), e.message))
+        }
+    }
+
+    /** 소속 기록 삭제 — 이미 끝난 소속의 기록을 지운다(되돌릴 수 없다). */
+    fun deleteMembershipRecord(membershipId: Long) = viewModelScope.launch {
+        try {
+            val ok = factionRepository.deleteMembershipRecord(membershipId)
+            if (ok) {
+                reportResult(_result, OpResult.success(OpResult.CAT_FACTION,
+                    app.getString(R.string.result_faction_membership_deleted)))
+            } else {
+                reportResult(_result, OpResult.failure(OpResult.CAT_FACTION,
+                    app.getString(R.string.result_faction_membership_gone)))
+            }
+        } catch (e: Exception) {
+            Log.e("FactionViewModel", "Failed to delete membership record", e)
+            reportResult(_result, OpResult.failure(OpResult.CAT_FACTION,
+                app.getString(R.string.result_faction_membership_delete_failed), e.message))
         }
     }
 
