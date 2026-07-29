@@ -1412,6 +1412,9 @@
     <string name="faction_span_range">%1$d~%2$d년</string>
     <string name="faction_span_unknown_start">~%1$d년</string>
     <string name="faction_span_unknown">시점 불명</string>
+    <string name="faction_chip_span">%1$s (%2$s)</string>
+    <string name="faction_chip_departed">%1$s (탈퇴)</string>
+    <string name="faction_chip_departed_span">%1$s (탈퇴 · %2$s)</string>
     <string name="faction_departure_relation_changes_moved">탈퇴로 만들어진 관계 변화 %1$d건도 함께 옮겼습니다</string>
     <string name="result_faction_departure_updated">탈퇴 기록을 바꿨습니다</string>
     <string name="result_faction_departure_update_failed">탈퇴 기록을 바꾸지 못했습니다</string>

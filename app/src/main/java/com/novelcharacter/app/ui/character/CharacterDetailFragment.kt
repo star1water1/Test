@@ -20,6 +20,7 @@ import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
+import com.novelcharacter.app.util.factionSpanLabel
 import com.novelcharacter.app.util.dismissSafely
 import com.novelcharacter.app.util.navigateSafe
 import com.novelcharacter.app.util.notifyResult
@@ -307,7 +308,17 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
                     val ctx = context ?: return@launch
 
                     val isDeparted = membership.leaveType == FactionMembership.LEAVE_DEPARTED
-                    val chipText = if (isDeparted) "${faction.name} (탈퇴)" else faction.name
+                    // 세력 멤버 목록은 '1000년~' · '탈퇴 (1500년)'을 보여 주는데 이쪽은 이름뿐이라,
+                    // 같은 소속이 어디서 보느냐에 따라 아는 것이 달랐다. 표기는 세력 화면과 같은
+                    // 자리(factionSpanLabel)에서 가져온다.
+                    val span = ctx.factionSpanLabel(membership.joinYear, membership.leaveYear)
+                    val chipText = when {
+                        isDeparted && span != null ->
+                            getString(R.string.faction_chip_departed_span, faction.name, span)
+                        isDeparted -> getString(R.string.faction_chip_departed, faction.name)
+                        span != null -> getString(R.string.faction_chip_span, faction.name, span)
+                        else -> faction.name
+                    }
 
                     val chip = Chip(ctx).apply {
                         text = chipText
