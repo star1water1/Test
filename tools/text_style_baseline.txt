@@ -3,11 +3,7 @@ SPACING|app/src/main/java/com/novelcharacter/app/excel/ExcelImportService.kt|"�
 SPACING|app/src/main/java/com/novelcharacter/app/excel/ExcelImportService.kt|"관계변화 행 $i: '${char1Name}' 이름의 캐릭터가 ${r.count}명 존재합니다. 코드(code) 열을 사용하여 정확한 매칭을 해주세요."
 SPACING|app/src/main/java/com/novelcharacter/app/excel/ExcelImportService.kt|"관계변화 행 $i: '${char2Name}' 이름의 캐릭터가 ${r.count}명 존재합니다. 코드(code) 열을 사용하여 정확한 매칭을 해주세요."
 SPACING|app/src/main/java/com/novelcharacter/app/excel/ExcelImportService.kt|"세력 소속 행 $i: '$charName' 이름의 캐릭터가 ${r.count}명 존재합니다. 코드(code) 열을 사용하여 정확한 매칭을 해주세요."
-SPACING|strings.xml|assistant_health_no_image_detail
-SPACING|strings.xml|assistant_health_no_novel_detail
-SPACING|strings.xml|assistant_nudge_unused_names_detail
 SPACING|strings.xml|import_unsupported_zip
-SPACING|strings.xml|supplement_no_characters
 SPACING|strings.xml|world_package_import_failed
 TERM|app/src/main/java/com/novelcharacter/app/excel/ExcelExporter.kt|"  grades: 등급명과 수치 매핑 (필수). allowNegative: 음수 허용 여부 (기본 false)"
 TERM|app/src/main/java/com/novelcharacter/app/excel/ExcelExporter.kt|"[GRADE] 등급 — 등급 라벨과 수치를 매핑"
@@ -18,15 +14,6 @@ TERM|app/src/main/java/com/novelcharacter/app/excel/ExcelImportService.kt|"캐�
 TERM|app/src/main/java/com/novelcharacter/app/excel/ExcelImportService.kt|"파싱은 되지만 소비처가 못 읽는"
 TERM|strings.xml|storage_clear_export_cache_desc
 TONE-YO|strings.xml|ai_guide_openai
-TONE-YO|strings.xml|assistant_age_fixed
-TONE-YO|strings.xml|assistant_age_resolved
-TONE-YO|strings.xml|assistant_character_gone
-TONE-YO|strings.xml|assistant_death_detail_one
-TONE-YO|strings.xml|assistant_dismissed
-TONE-YO|strings.xml|assistant_empty_title
-TONE-YO|strings.xml|assistant_novel_assigned
-TONE-YO|strings.xml|assistant_nudge_stale_detail
-TONE-YO|strings.xml|assistant_nudge_unused_names_detail
 TONE-YO|strings.xml|backup_image_notice_title
 TONE-YO|strings.xml|batch_move_removed_warning
 TONE-YO|strings.xml|image_manager_recompress_undo_done
