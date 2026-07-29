@@ -1133,6 +1133,100 @@ class ImageManagerViewModel(
         }
     }
 
+    /** AI 태그 제안 결과 + 폴더별 적용 대상 경로(D-4: 이번에 그 폴더에서 온 이미지만). */
+    data class TagSuggestOutcome(
+        val result: com.novelcharacter.app.ai.ImageFolderTagSuggester.Result,
+        val pathsByFolder: Map<String, List<String>>
+    )
+
+    /**
+     * 폴더 이름으로 태그를 제안받는다(설계 image_folder_tag_ai 3장).
+     *
+     * 어휘는 **기존 이미지 태그 전량 + '어휘에 포함'이 켜진 필드의 값**이다. 후자를 켠 필드가
+     * 하나도 없어도 동작한다 — 그때는 기존 태그만으로 표기를 맞춘다.
+     */
+    suspend fun suggestFolderTags(
+        bundle: com.novelcharacter.app.util.OrganizeFolderService.PlanBundle,
+        applied: com.novelcharacter.app.util.OrganizeFolderService.ApplyResult,
+        folders: List<String>
+    ): TagSuggestOutcome = withContext(Dispatchers.IO) {
+        val plan = bundle.plan
+        // 신규는 편입 뒤 경로로, 토큰 파일은 이미 아는 경로로 — 둘 다 "이번에 그 폴더에서 온" 것.
+        val pathsByFolder = folders.associateWith { folder ->
+            val fresh = plan.aiTagFolders[folder].orEmpty().mapNotNull { applied.importedPathById[it] }
+            (fresh + plan.aiTagExistingPaths[folder].orEmpty()).distinct()
+        }.filterValues { it.isNotEmpty() }
+        if (pathsByFolder.isEmpty()) {
+            return@withContext TagSuggestOutcome(
+                com.novelcharacter.app.ai.ImageFolderTagSuggester.Result(), emptyMap()
+            )
+        }
+
+        val tagCounts = runCatching {
+            db.imageTagDao().getAllList().groupingBy { it.tag }.eachCount()
+        }.getOrDefault(emptyMap())
+        val vocabFields = runCatching {
+            db.fieldDefinitionDao().getAllFieldsAllTypes()
+                .filter { com.novelcharacter.app.data.model.FieldAiPolicy.isImageTagVocabEnabled(it.config) }
+                .map { db.fieldValueEntryDao().getByField(it.id) }
+        }.getOrDefault(emptyList())
+
+        val vocab = com.novelcharacter.app.ai.ImageFolderTagSuggester
+            .buildVocabulary(tagCounts, vocabFields)
+        val policy = com.novelcharacter.app.ai.AiPromptSettings(getApplication()).imageTagPolicy
+        val suggester = com.novelcharacter.app.ai.ImageFolderTagSuggester(
+            com.novelcharacter.app.ai.AiService(getApplication())
+        )
+        val result = suggester.suggest(
+            pathsByFolder.keys.toList(),
+            pathsByFolder.mapValues { it.value.size },
+            vocab,
+            policy
+        )
+        TagSuggestOutcome(result, pathsByFolder)
+    }
+
+    /**
+     * 검토 시트에서 고른 태그를 적용한다. 기존 태그와 **합친다**(덮지 않는다) — 사용자가 이미
+     * 붙여 둔 태그를 AI 제안이 지우면 그것이 곧 무통보 유실이다.
+     */
+    fun applyFolderTags(
+        picked: Map<String, List<String>>,
+        pathsByFolder: Map<String, List<String>>,
+        onDone: (tags: Int, images: Int) -> Unit
+    ) {
+        viewModelScope.launch {
+            var tagCount = 0
+            val touched = LinkedHashSet<String>()
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    db.withTransaction {
+                        val now = System.currentTimeMillis()
+                        for ((folder, tags) in picked) {
+                            if (tags.isEmpty()) continue
+                            for (path in pathsByFolder[folder].orEmpty()) {
+                                val imageId = db.imageMetaDao().adopt(path, now)
+                                val existing = db.imageTagDao().getTagsByImageList(imageId)
+                                    .mapTo(HashSet()) { it.tag }
+                                val fresh = tags.filterNot { it in existing }
+                                if (fresh.isEmpty()) continue
+                                db.imageTagDao().insertAll(
+                                    fresh.map {
+                                        com.novelcharacter.app.data.model.ImageTag(imageId = imageId, tag = it)
+                                    }
+                                )
+                                tagCount += fresh.size
+                                touched.add(path)
+                            }
+                        }
+                    }
+                }
+            }
+            load()
+            onDone(tagCount, touched.size)
+        }
+    }
+
     /**
      * 진입 감지 — 정리 폴더의 신규 후보 개수만 센다(D5). 폴더가 없거나 접근이 안 되면 0을
      * 돌려주고 **조용히 생략한다**(수동 메뉴가 항상 있다 — 진입마다 실패를 알리면 소음이다).

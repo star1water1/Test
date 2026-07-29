@@ -2478,6 +2478,18 @@
     <!-- A-1 필드별 AI 추천 토글 / A-2 필드 설명 -->
     <string name="field_ai_suggest_label">AI 추천 대상</string>
     <string name="field_ai_suggest_desc">끄면 일괄 추천에서 제외되고 이 필드의 ✨ 버튼도 숨습니다. 🎲 랜덤·값 라이브러리 AI 정리·통계·엑셀에는 영향이 없습니다.</string>
+    <string name="image_tag_review_title">AI 태그 제안 검토</string>
+    <string name="image_tag_review_desc">체크한 태그만 적용됩니다. 이번에 그 폴더에서 온 이미지에만 붙습니다.</string>
+    <string name="image_tag_review_empty">제안된 태그가 없습니다.</string>
+    <string name="image_tag_review_apply">적용</string>
+    <string name="image_tag_review_new_tag">%1$s (새 태그)</string>
+    <string name="image_tag_review_option">폴더 이름으로 태그 제안</string>
+    <string name="image_tag_review_option_desc">그 외 폴더 %1$d개의 이름을 AI가 읽고 태그를 제안합니다. 요청 %2$d건 · 적용 전에 검토합니다.</string>
+    <string name="image_tag_review_applied">태그 %1$d개를 이미지 %2$d장에 적용했습니다</string>
+    <string name="image_tag_review_notice_dropped">모델이 되돌린 것 중 %1$d건은 형식에 맞지 않아 제외했습니다</string>
+    <string name="image_tag_review_notice_vocab">어휘 %1$d개는 분량 상한을 넘어 싣지 못했습니다</string>
+    <string name="image_tag_review_notice_policy">기조 문구가 길어 %1$d자를 잘랐습니다</string>
+    <string name="image_tag_review_notice_failed">일부 요청이 실패했습니다: %1$s</string>
     <string name="ai_image_tag_policy_label">AI 이미지 태그 기조</string>
     <string name="ai_image_tag_policy_desc">쓰면 이미지 폴더 받아오기가 폴더 이름으로 태그를 제안할 때 이 지침을 함께 전달합니다. 비워 두면 보내지 않습니다.</string>
     <string name="ai_image_tag_policy_hint">예: 장면 종류와 복장을 우선으로 하고, 인물 감정은 넣지 마세요.</string>

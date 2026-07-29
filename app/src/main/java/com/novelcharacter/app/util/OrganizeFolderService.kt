@@ -112,6 +112,11 @@ object OrganizeFolderService {
         val autoLinkedKept: Int = 0,
         /** 묶음이 쪼개져 혼자 남은 이미지 수 — 어시스턴트 카드에 뜰 수와 같다(장부 ③). */
         val scattered: Int = 0,
+        /**
+         * 신규 편입 항목 id → 최종 저장 경로. AI 태그가 "이번에 그 폴더에서 온 이미지"를
+         * 짚으려면 이것이 필요하다(D-4) — 계획은 항목 id만 알고 경로는 편입 뒤에 정해진다.
+         */
+        val importedPathById: Map<String, String> = emptyMap(),
         val linkedSets: Int = 0,
         val failed: List<String> = emptyList(),
         val heldNames: List<String> = emptyList(),
@@ -594,6 +599,7 @@ object OrganizeFolderService {
             unlinked = unlinked,
             autoLinkedKept = autoLinkedKept,
             scattered = scattered.size,
+            importedPathById = importedPathById,
             linkedSets = linkedSets,
             failed = failures,
             heldNames = plan.holds.map { it.item.fileName },

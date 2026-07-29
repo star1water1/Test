@@ -289,16 +289,50 @@ class OrganizeFolderController(
             ))
         }
 
-        MaterialAlertDialogBuilder(fragment.requireContext())
+        // AI 태그 제안 체크박스 — **미설정이면 줄 자체를 감춘다**(R-24: 성립하지 않는 조합의
+        // 설정은 보이지 않는다). 체크 상태는 기억하지 않는다: 비용이 드는 동작의 기본값은
+        // 꺼짐이어야 하고, 폴더 구성은 매번 다르다.
+        val tagFolders = plan.aiTagFolders.keys.toList()
+        val aiUsable = tagFolders.isNotEmpty() &&
+            runCatching { com.novelcharacter.app.ai.AiService(fragment.requireContext()).hasUsableProvider() }
+                .getOrDefault(false)
+
+        val builder = MaterialAlertDialogBuilder(fragment.requireContext())
             .setTitle(R.string.organize_folder_import)
-            .setMessage(lines.joinToString("\n"))
-            .setPositiveButton(R.string.organize_folder_apply) { _, _ -> runOrganizePlan(bundle) }
             .setNegativeButton(R.string.cancel, null)
-            .show()
+
+        if (aiUsable) {
+            val requests = com.novelcharacter.app.ai.AiPromptPolicy.imageTagRequestCount(tagFolders.size)
+            val box = com.google.android.material.checkbox.MaterialCheckBox(fragment.requireContext()).apply {
+                text = fragment.getString(R.string.image_tag_review_option)
+                isChecked = false
+            }
+            val container = android.widget.LinearLayout(fragment.requireContext()).apply {
+                orientation = android.widget.LinearLayout.VERTICAL
+                setPadding(64, 16, 64, 0)
+                addView(android.widget.TextView(context).apply { text = lines.joinToString("\n") })
+                addView(box)
+                addView(android.widget.TextView(context).apply {
+                    text = fragment.getString(
+                        R.string.image_tag_review_option_desc, tagFolders.size, requests
+                    )
+                    textSize = 12f
+                })
+            }
+            builder.setView(android.widget.ScrollView(fragment.requireContext()).apply { addView(container) })
+                .setPositiveButton(R.string.organize_folder_apply) { _, _ ->
+                    runOrganizePlan(bundle, if (box.isChecked) tagFolders else emptyList())
+                }
+        } else {
+            builder.setMessage(lines.joinToString("\n"))
+                .setPositiveButton(R.string.organize_folder_apply) { _, _ -> runOrganizePlan(bundle, emptyList()) }
+        }
+        builder.show()
     }
 
     private fun runOrganizePlan(
-        bundle: com.novelcharacter.app.util.OrganizeFolderService.PlanBundle
+        bundle: com.novelcharacter.app.util.OrganizeFolderService.PlanBundle,
+        aiTagFolders: List<String>
     ) {
         val total = bundle.plan.actionCount
         var cancelled = false
@@ -318,6 +352,54 @@ class OrganizeFolderController(
             if (!fragment.isAdded || fragment.view == null) return@applyOrganizePlan
             refreshOrganizeFolderBanner()
             showOrganizeResult(result)
+            // AI 태그는 **부가 단계**다 — 받아오기 결과를 먼저 보이고 그다음에 제안을 띄운다.
+            // 실패해도 위 결과는 이미 확정이라 편입·배정·링크가 되돌아가지 않는다(설계 3-1 ⑤).
+            if (aiTagFolders.isNotEmpty()) runAiTagSuggest(bundle, result, aiTagFolders)
+        }
+    }
+
+    /**
+     * 폴더 이름으로 태그를 제안받아 검토 시트를 띄운다.
+     *
+     * 적용 대상은 **이번에 그 폴더에서 온 이미지뿐**이다(결정 D-4) — 링크 병합으로 딸려 온
+     * 기존 이미지에는 붙이지 않는다. 사용자가 폴더에 넣은 것과 화면에 나타나는 결과가 어긋나면,
+     * 폴더에 넣은 적 없는 이미지의 태그를 일일이 지워야 한다(조용한 확대).
+     */
+    private fun runAiTagSuggest(
+        bundle: com.novelcharacter.app.util.OrganizeFolderService.PlanBundle,
+        applied: com.novelcharacter.app.util.OrganizeFolderService.ApplyResult,
+        folders: List<String>
+    ) {
+        fragment.viewLifecycleOwner.lifecycleScope.launch {
+            val outcome = viewModel.suggestFolderTags(bundle, applied, folders)
+            if (!fragment.isAdded || fragment.view == null) return@launch
+            val notices = ArrayList<String>()
+            val d = outcome.result.drops
+            val dropped = d.unknownFolder + d.blankOrTooLong + d.overPerFolderCap
+            if (dropped > 0) notices.add(fragment.getString(R.string.image_tag_review_notice_dropped, dropped))
+            if (d.vocabTruncated > 0) notices.add(fragment.getString(R.string.image_tag_review_notice_vocab, d.vocabTruncated))
+            if (d.policyTruncated > 0) notices.add(fragment.getString(R.string.image_tag_review_notice_policy, d.policyTruncated))
+            if (outcome.result.failures.isNotEmpty()) {
+                val reason = com.novelcharacter.app.ai.AiErrorMessages.of(
+                    fragment.requireContext(), outcome.result.failures.first()
+                )
+                notices.add(fragment.getString(R.string.image_tag_review_notice_failed, reason))
+            }
+            // 제안도 없고 할 말도 없으면 시트를 띄우지 않는다 — 빈 창은 그 자체가 소음이다.
+            if (outcome.result.suggestions.isEmpty() && notices.isEmpty()) return@launch
+
+            val sheet = ImageFolderTagReviewSheet()
+            sheet.suggestions = outcome.result.suggestions
+            sheet.notices = notices
+            sheet.onApply = { picked ->
+                viewModel.applyFolderTags(picked, outcome.pathsByFolder) { tags, images ->
+                    if (!fragment.isAdded) return@applyFolderTags
+                    fragment.notifySuccess(
+                        fragment.getString(R.string.image_tag_review_applied, tags, images)
+                    )
+                }
+            }
+            sheet.show(fragment.childFragmentManager, ImageFolderTagReviewSheet.TAG)
         }
     }
 

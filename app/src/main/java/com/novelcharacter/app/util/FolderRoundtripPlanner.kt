@@ -300,8 +300,13 @@ object FolderRoundtripPlanner {
      * @param miscReadAsCharacter `기타/`라고 썼지만 그 이름의 캐릭터가 실재해 **캐릭터 폴더로
      *        읽은** 폴더명(D-1). 조용히 넘어가면 사용자는 서랍에 넣은 줄 알고 배정이 바뀐 것을
      *        모른다 — 고지하고 `_기타/`라는 빠져나갈 길을 함께 알린다(R-17).
-     * @param aiTagFolders AI 태그 제안의 대상이 되는 '그 외' 폴더명 → 그 폴더에서 온 항목 id.
-     *        캐릭터 폴더·서랍·예약 폴더는 들어오지 않는다(설계 2-1·2-4).
+     * @param aiTagFolders AI 태그 제안 대상 '그 외' 폴더명 → 그 폴더의 **신규 파일** 항목 id.
+     *        경로는 편입 뒤에야 정해지므로 실행부가 해석한다. 캐릭터 폴더·서랍·예약 폴더는
+     *        들어오지 않는다(설계 2-1·2-4).
+     * @param aiTagExistingPaths 같은 폴더의 **토큰 파일** 경로. 신규와 나눈 이유는 하나는
+     *        편입 후에야 경로가 생기고 다른 하나는 이미 있기 때문이다 — 한 목록에 담으면
+     *        실행부가 "이 문자열이 id인가 경로인가"를 추측해야 한다. 둘 다 "이번에 그 폴더에서
+     *        온" 이미지이므로 태그 적용 대상은 합집합이다(D-4).
      */
     data class Plan(
         val imports: List<ImportAction> = emptyList(),
@@ -316,6 +321,7 @@ object FolderRoundtripPlanner {
         val deeperIgnored: Int = 0,
         val miscReadAsCharacter: List<String> = emptyList(),
         val aiTagFolders: Map<String, List<String>> = emptyMap(),
+        val aiTagExistingPaths: Map<String, List<String>> = emptyMap(),
         /**
          * 서랍으로 **낱개 편입**되는 신규 파일 수. [imports] 안에서 자리로는 구별되지 않으므로
          * (되돌리는 자리·`_공유/`의 편입도 배정·세트가 없다) 세어 둔다 — 사용자가 요청한 동작이
@@ -389,6 +395,7 @@ object FolderRoundtripPlanner {
         val unknownCode = LinkedHashSet<String>()
         val miscAsCharacter = LinkedHashSet<String>()
         val aiTagFolders = LinkedHashMap<String, MutableList<String>>()
+        val aiTagExistingPaths = LinkedHashMap<String, MutableList<String>>()
         var unknownTokens = 0
         var deeper = 0
         var miscImported = 0
@@ -510,7 +517,12 @@ object FolderRoundtripPlanner {
                         // 태그가 된다. 신규·토큰 파일 모두 "이번에 그 폴더에서 온" 것이므로
                         // 함께 싣는다(D-4) — 경로 해석은 실행부 몫이다.
                         if (resolution is CharacterFolderResolver.Result.NotCharacter) {
-                            aiTagFolders.getOrPut(resolver.keyOf(key)) { mutableListOf() }.add(item.id)
+                            val folderKey = resolver.keyOf(key)
+                            if (path == null) {
+                                aiTagFolders.getOrPut(folderKey) { mutableListOf() }.add(item.id)
+                            } else {
+                                aiTagExistingPaths.getOrPut(folderKey) { mutableListOf() }.add(path)
+                            }
                         }
                     }
                 }
@@ -567,6 +579,7 @@ object FolderRoundtripPlanner {
             deeperIgnored = deeper,
             miscReadAsCharacter = miscAsCharacter.toList(),
             aiTagFolders = aiTagFolders.mapValues { it.value.toList() },
+            aiTagExistingPaths = aiTagExistingPaths.mapValues { it.value.toList() },
             miscImported = miscImported
         )
     }

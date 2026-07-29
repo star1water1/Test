@@ -461,8 +461,10 @@ class FolderRoundtripPlannerTest {
             ),
             names = mapOf("가온" to listOf(7L))
         )
+        // 신규는 항목 id로(경로가 편입 뒤에 정해진다), 토큰 파일은 이미 있는 경로로 나뉜다.
         assertEquals(setOf("여행"), p.aiTagFolders.keys)
-        assertEquals(listOf("a", "t"), p.aiTagFolders["여행"])
+        assertEquals(listOf("a"), p.aiTagFolders["여행"])
+        assertEquals(listOf(pathA), p.aiTagExistingPaths["여행"])
     }
 
     /** 동명 보류 폴더는 대상이 아니다 — 그 이름은 캐릭터를 가리키려던 것이라 태그가 되면 안 된다. */
