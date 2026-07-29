@@ -32,6 +32,7 @@ import com.novelcharacter.app.ui.adapter.FactionMemberAdapter
 import com.novelcharacter.app.ui.adapter.FactionMemberItem
 import com.novelcharacter.app.util.MembershipTimeline
 import com.novelcharacter.app.util.dismissSafely
+import com.novelcharacter.app.util.factionSpanLabel
 import com.novelcharacter.app.util.notifyResult
 import com.novelcharacter.app.util.setValidatedPositiveButton
 import com.novelcharacter.app.util.showInlineError
@@ -689,17 +690,13 @@ class FactionManageFragment : Fragment() {
             .show()
     }
 
-    /** 소속 구간을 사람이 읽는 말로 — 겹침 고지에 쓴다. */
-    private fun spanLabel(span: MembershipTimeline.Span): String {
-        val j = span.joinYear
-        val l = span.leaveYear
-        return when {
-            j != null && l != null -> getString(R.string.faction_span_range, j, l)
-            j != null -> getString(R.string.faction_span_open_end, j)
-            l != null -> getString(R.string.faction_span_unknown_start, l)
-            else -> getString(R.string.faction_span_unknown)
-        }
-    }
+    /**
+     * 소속 구간을 사람이 읽는 말로 — 겹침 고지에 쓴다.
+     * 표기는 캐릭터 상세의 세력 칩과 **같은 자리**에서 가져온다(각자 조립하면 갈라진다).
+     */
+    private fun spanLabel(span: MembershipTimeline.Span): String =
+        requireContext().factionSpanLabel(span.joinYear, span.leaveYear)
+            ?: getString(R.string.faction_span_unknown)
 
     /**
      * 끝난 소속(탈퇴) 기록 편집 — 네 값 전부.
