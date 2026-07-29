@@ -622,9 +622,16 @@ class FactionManageFragment : Fragment() {
     }
 
     private fun showMemberOptionsDialog(faction: Faction, item: FactionMemberItem) {
-        if (item.membership.leaveType != null) return // 이미 탈퇴/제거된 멤버
+        // 종전에는 탈퇴한 멤버를 길게 누르면 **아무 일도 일어나지 않았다**(조용한 무동작).
+        // 화면상 눌리기는 하므로 사용자는 앱이 멈춘 줄 안다 — R-27과 같은 부류다.
+        // 끝난 소속에는 끝난 소속에 맞는 선택지를 준다.
+        if (item.membership.leaveType != null) {
+            showDepartedMemberOptionsDialog(faction, item)
+            return
+        }
 
         val options = arrayOf(
+            getString(R.string.faction_join_year_edit),
             getString(R.string.faction_member_remove),
             getString(R.string.faction_member_depart)
         )
@@ -632,7 +639,8 @@ class FactionManageFragment : Fragment() {
             .setTitle(item.characterName)
             .setItems(options) { _, which ->
                 when (which) {
-                    0 -> {
+                    0 -> showJoinYearEditDialog(item)
+                    1 -> {
                         MaterialAlertDialogBuilder(requireContext())
                             .setTitle(R.string.faction_member_remove)
                             .setMessage(getString(R.string.faction_member_remove_confirm, item.characterName, faction.name))
@@ -642,10 +650,143 @@ class FactionManageFragment : Fragment() {
                             .setNegativeButton(R.string.cancel, null)
                             .show()
                     }
-                    1 -> showDepartureDialog(faction, item)
+                    2 -> showDepartureDialog(faction, item)
                 }
             }
             .show()
+    }
+
+    /**
+     * 끝난 소속(탈퇴/제거)의 선택지 — 다시 소속시키거나, 기록을 지운다.
+     * 재가입은 [showAddMemberDialog]와 **같은 저장소 경로**(`addMembers`)를 쓴다.
+     * 새 소속 행이 하나 생기고 이전 탈퇴 행은 남는다 — 그것이 이 앱의 소속 이력 규약이다
+     * (`FactionMembership`에 유니크 제약이 없는 이유).
+     */
+    private fun showDepartedMemberOptionsDialog(faction: Faction, item: FactionMemberItem) {
+        val options = arrayOf(
+            getString(R.string.faction_member_rejoin),
+            getString(R.string.faction_membership_delete)
+        )
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(item.characterName)
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> showRejoinDialog(faction, item)
+                    1 -> MaterialAlertDialogBuilder(requireContext())
+                        .setTitle(R.string.faction_membership_delete)
+                        .setMessage(getString(R.string.faction_membership_delete_confirm, item.characterName))
+                        .setPositiveButton(R.string.delete) { _, _ ->
+                            viewModel.deleteMembershipRecord(item.membership.id)
+                        }
+                        .setNegativeButton(R.string.cancel, null)
+                        .show()
+                }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    /** 가입 연도 편집 — 비우면 '시점 불명'으로 되돌린다. 검증 실패 시 창을 유지한다(R-27). */
+    private fun showJoinYearEditDialog(item: FactionMemberItem) {
+        val ctx = requireContext()
+        val density = resources.displayMetrics.density
+        val container = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding((24 * density).toInt(), (16 * density).toInt(), (24 * density).toInt(), 0)
+        }
+        val editYear = EditText(ctx).apply {
+            hint = getString(R.string.faction_join_year_optional)
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_SIGNED
+            setText(item.membership.joinYear?.toString() ?: "")
+        }
+        container.addView(editYear)
+        container.addView(android.widget.TextView(ctx).apply {
+            text = getString(R.string.faction_join_year_edit_hint)
+            textSize = 12f
+            setPadding(0, (8 * density).toInt(), 0, 0)
+        })
+
+        val dialog = MaterialAlertDialogBuilder(ctx)
+            .setTitle(R.string.faction_join_year_edit)
+            .setView(container)
+            .setPositiveButton(R.string.save, null)
+            .setNegativeButton(R.string.cancel, null)
+            .create()
+
+        dialog.setValidatedPositiveButton {
+            val text = editYear.text.toString().trim()
+            val year = if (text.isEmpty()) null else text.toIntOrNull()
+            if (text.isNotEmpty() && year == null) {
+                editYear.showInlineError(getString(R.string.faction_join_year_invalid))
+                return@setValidatedPositiveButton false
+            }
+            // 탈퇴 이력이 있는 행이라면 순서가 뒤집히지 않아야 한다(탈퇴 창의 검사와 짝).
+            val leaveYear = item.membership.leaveYear
+            if (year != null && leaveYear != null && year >= leaveYear) {
+                editYear.showInlineError(
+                    getString(R.string.faction_join_year_after_leave, year, leaveYear)
+                )
+                return@setValidatedPositiveButton false
+            }
+            viewModel.updateJoinYear(item.membership.id, year)
+            true
+        }
+        dialog.show()
+    }
+
+    /** 재가입 — 새 소속을 만든다. 이전 탈퇴 기록은 이력으로 남는다. */
+    private fun showRejoinDialog(faction: Faction, item: FactionMemberItem) {
+        val ctx = requireContext()
+        val density = resources.displayMetrics.density
+        val container = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding((24 * density).toInt(), (16 * density).toInt(), (24 * density).toInt(), 0)
+        }
+        val editYear = EditText(ctx).apply {
+            hint = getString(R.string.faction_join_year_optional)
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_SIGNED
+        }
+        container.addView(editYear)
+        container.addView(android.widget.TextView(ctx).apply {
+            text = getString(R.string.faction_member_rejoin_notice)
+            textSize = 12f
+            setPadding(0, (8 * density).toInt(), 0, 0)
+        })
+
+        val dialog = MaterialAlertDialogBuilder(ctx)
+            .setTitle(getString(R.string.faction_member_rejoin))
+            .setView(container)
+            .setPositiveButton(R.string.save, null)
+            .setNegativeButton(R.string.cancel, null)
+            .create()
+
+        dialog.setValidatedPositiveButton {
+            val text = editYear.text.toString().trim()
+            val year = if (text.isEmpty()) null else text.toIntOrNull()
+            if (text.isNotEmpty() && year == null) {
+                editYear.showInlineError(getString(R.string.faction_join_year_invalid))
+                return@setValidatedPositiveButton false
+            }
+            // 멤버 추가와 같은 경로 — 자동 관계 생성 규칙도 그대로 따라간다.
+            viewModel.addMembers(faction.id, listOf(item.membership.characterId), year) { result ->
+                if (!isAdded) return@addMembers
+                val parts = mutableListOf<String>()
+                if (result.added > 0) parts.add(getString(R.string.faction_member_rejoined))
+                // 탈퇴는 관계를 지우지 않고 변화 이력만 남기므로, 재가입 때 자동 관계가
+                // 이미 있는 것이 정상이다 — '수동 관계 우선'과 사유가 달라 문구를 가른다.
+                if (result.autoRelationsSkipped > 0) {
+                    parts.add(getString(R.string.faction_auto_relation_kept, result.autoRelationsSkipped))
+                }
+                if (result.alreadyMember > 0) {
+                    parts.add(getString(R.string.faction_members_already, result.alreadyMember))
+                }
+                if (parts.isNotEmpty()) {
+                    Toast.makeText(ctx, parts.joinToString("\n"), Toast.LENGTH_LONG).show()
+                }
+            }
+            true
+        }
+        dialog.show()
     }
 
     private fun showDepartureDialog(faction: Faction, item: FactionMemberItem) {
@@ -727,6 +868,11 @@ class FactionManageFragment : Fragment() {
             val density = resources.displayMetrics.density
             val dp = { value: Int -> (value * density).toInt() }
 
+            // 후보 목록은 세계관 캐릭터 전체다 — 종전에는 **이미 소속 중인 사람과 탈퇴한 사람,
+            // 한 번도 소속된 적 없는 사람이 전부 똑같이 보였다.** 그래서 재가입이 되는데도
+            // 그것이 재가입인지 알 수 없었고, 이미 소속된 사람을 골라도 조용히 건너뛰었다.
+            val memberStates = viewModel.getMembershipStatesForFaction(faction.id)
+
             val container = LinearLayout(ctx).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(dp(16), dp(8), dp(16), 0)
@@ -772,7 +918,13 @@ class FactionManageFragment : Fragment() {
                 listContainer.removeAllViews()
                 for (char in filteredCharacters) {
                     val checkBox = CheckBox(ctx).apply {
-                        text = char.name
+                        text = when (memberStates[char.id]) {
+                            MemberState.ACTIVE ->
+                                "${char.name} · ${getString(R.string.faction_member_state_active)}"
+                            MemberState.DEPARTED ->
+                                "${char.name} · ${getString(R.string.faction_member_state_departed)}"
+                            else -> char.name
+                        }
                         isChecked = char.id in selectedIds
                         setPadding(dp(4), dp(8), dp(4), dp(8))
                         setOnCheckedChangeListener { _, isChecked ->
@@ -823,8 +975,14 @@ class FactionManageFragment : Fragment() {
                         if (result.autoRelationsSkipped > 0) {
                             parts.add(getString(R.string.faction_auto_relation_skipped, result.autoRelationsSkipped))
                         }
+                        // 골랐는데 안 들어간 사람은 사유를 말한다 — 종전에는 "N명 추가"의 N에서만
+                        // 빠져서, 고른 것과 결과가 왜 다른지 알 수 없었다.
+                        if (result.alreadyMember > 0) {
+                            parts.add(getString(R.string.faction_members_already, result.alreadyMember))
+                        }
                         if (parts.isNotEmpty()) {
-                            val duration = if (result.autoRelationsSkipped > 0) Toast.LENGTH_LONG else Toast.LENGTH_SHORT
+                            val long = result.autoRelationsSkipped > 0 || result.alreadyMember > 0
+                            val duration = if (long) Toast.LENGTH_LONG else Toast.LENGTH_SHORT
                             Toast.makeText(ctx, parts.joinToString("\n"), duration).show()
                         }
                     }

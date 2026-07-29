@@ -1393,6 +1393,25 @@
     <string name="faction_leave_year_required">탈퇴 연도를 입력하세요</string>
     <string name="faction_leave_year_before_join">탈퇴 연도(%1$d)는 가입 연도(%2$d)보다 뒤여야 합니다</string>
     <string name="faction_member_select_required">추가할 캐릭터를 한 명 이상 선택하세요</string>
+    <!-- 소속 관리 — 가입 연도 편집 · 재가입 · 기록 삭제 -->
+    <string name="faction_join_year_edit">가입 연도 편집</string>
+    <string name="faction_join_year_invalid">연도를 숫자로 입력하세요</string>
+    <string name="faction_join_year_after_leave">가입 연도(%1$d)는 탈퇴 연도(%2$d)보다 앞이어야 합니다</string>
+    <string name="faction_join_year_edit_hint">비워 두면 가입 시점을 정하지 않은 것으로 둡니다</string>
+    <string name="faction_member_rejoin">다시 소속시키기</string>
+    <string name="faction_member_rejoin_notice">이전 탈퇴 기록은 이력으로 남고, 새 소속이 하나 더 생깁니다</string>
+    <string name="faction_member_rejoined">다시 소속시켰습니다</string>
+    <string name="faction_membership_delete">소속 기록 삭제</string>
+    <string name="faction_membership_delete_confirm">%1$s의 소속 기록 한 줄을 지웁니다. 탈퇴 이력이 함께 사라지며 되돌릴 수 없습니다. 탈퇴로 만들어진 캐릭터 관계는 그대로 남습니다.</string>
+    <string name="faction_member_state_active">소속 중</string>
+    <string name="faction_member_state_departed">탈퇴함</string>
+    <string name="faction_members_already">%d명은 이미 소속 중이라 건너뛰었습니다</string>
+    <string name="faction_auto_relation_kept">이미 있는 관계 %1$d건은 그대로 두었습니다</string>
+    <string name="result_faction_join_year_updated">가입 연도를 바꿨습니다</string>
+    <string name="result_faction_join_year_update_failed">가입 연도를 바꾸지 못했습니다</string>
+    <string name="result_faction_membership_deleted">소속 기록을 지웠습니다</string>
+    <string name="result_faction_membership_delete_failed">소속 기록을 지우지 못했습니다</string>
+    <string name="result_faction_membership_gone">대상 소속 기록을 찾을 수 없습니다</string>
     <string name="faction_no_characters">이 세계관에 캐릭터가 없습니다</string>
     <string name="faction_delete_title">%s 삭제</string>
     <string name="faction_delete_with_relations">자동 관계도 함께 삭제</string>
