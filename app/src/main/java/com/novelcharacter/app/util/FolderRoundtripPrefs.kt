@@ -7,12 +7,14 @@ import android.content.SharedPreferences
  * 정리 폴더 왕복이 기억하는 장부의 저장 계층 — 규칙은 [FolderRoundtripLedger](순수)에 있고
  * 여기는 SharedPreferences 입출력만 한다. **DB 스키마는 건드리지 않는다.**
  *
- * 두 가지를 보관한다:
+ * 세 가지를 보관한다:
  * - **이동 실패 지문**: `_처리됨/`으로 옮기지 못한 파일을 다음 스캔에서 다시 편입하지 않기 위한 표식.
  * - **개명 별칭**: 재압축 커밋·zip 복원이 파일을 새 UUID로 개명할 때 남기는 (옛 경로 → 새 경로).
  *   이것이 없으면 개명 전에 내보낸 사본이 돌아올 때 토큰이 끊겨 중복 편입된다(설계 9장 C-1).
+ * - **흩어진 나머지**: 받아오기가 묶음을 쪼개 혼자 남게 된 이미지 경로
+ *   (설계 `image_folder_tag_ai` 5-1). 어시스턴트 카드가 읽는다.
  *
- * 둘 다 **캐시 성격**이다 — 지워져도 데이터가 유실되지 않고 한 번 더 일할 뿐이다.
+ * 셋 다 **캐시 성격**이다 — 지워져도 데이터가 유실되지 않고 한 번 더 일할 뿐이다.
  * 그래서 저장 실패를 예외로 올리지 않고, 상한을 넘으면 오래된 것부터 버린다.
  *
  * **진입 감지 결과는 캐시하지 않는다.** SAF 트리의 루트 수정 시각은 하위 폴더 변경을 반영하지
@@ -25,6 +27,7 @@ object FolderRoundtripPrefs {
     private const val KEY_FINGERPRINTS = "unmoved_fingerprints"
     private const val KEY_EXPORT_FINGERPRINTS = "export_fingerprints"
     private const val KEY_RENAME_ALIASES = "rename_aliases"
+    private const val KEY_SCATTERED = "scattered_singletons"
 
     private fun prefs(context: Context): SharedPreferences =
         context.applicationContext.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
@@ -87,6 +90,39 @@ object FolderRoundtripPrefs {
             map = FolderRoundtripLedger.putRenameBounded(map, old, new)
         }
         p.edit().putString(KEY_RENAME_ALIASES, FolderRoundtripLedger.encodeMap(map)).apply()
+    }
+
+    // ── 흩어진 나머지 (설계 image_folder_tag_ai 5-1, 장부 ③) ──
+    //
+    // **왜 기록해야 하는가:** `ImageMetaDao.clearGroupIfSingleton`이 모든 해제 경로에서 1장짜리
+    // 링크 그룹을 즉시 없앤다(`AutoLinkPlanner`도 "1장 링크 배지는 오해"라고 못박는다). 그래서
+    // "원래 2장 이상이던 묶음에서 혼자 남은 것"은 **현재 상태로는 셀 수 없다** — 파생으로 만든
+    // 카드는 영원히 0건인 껍데기가 된다(원칙 02). 고른 기준이 애초에 역사적 서술이므로 기록이
+    // 정직한 구현이다.
+    //
+    // **의도한 잡동사니는 적지 않는다.** 폴더 하나를 통째로 서랍에 넣어 그룹 전원이 함께 풀린
+    // 경우는 사용자가 원한 결과다 — 그것까지 세면 서랍을 쓸 때마다 카드가 떠서 꺼지게 된다.
+    // 판정(누가 남았는가)은 실행부가 그룹 잔여 인원을 보고 한다.
+
+    fun scatteredPaths(context: Context): List<String> =
+        FolderRoundtripLedger.decodeList(prefs(context).getString(KEY_SCATTERED, null))
+
+    fun addScatteredPaths(context: Context, added: Collection<String>) =
+        append(context, KEY_SCATTERED, added)
+
+    /** 사용자가 다시 묶었거나 카드를 숨겼거나 이미지가 사라졌을 때 — 목록에서 뺀다. */
+    fun removeScatteredPaths(context: Context, removed: Collection<String>) {
+        if (removed.isEmpty()) return
+        val p = prefs(context)
+        val current = FolderRoundtripLedger.decodeList(p.getString(KEY_SCATTERED, null))
+        val drop = removed.toHashSet()
+        val kept = current.filterNot { it in drop }
+        if (kept.size == current.size) return
+        p.edit().putString(KEY_SCATTERED, FolderRoundtripLedger.encodeList(kept)).apply()
+    }
+
+    fun clearScatteredPaths(context: Context) {
+        prefs(context).edit().remove(KEY_SCATTERED).apply()
     }
 
     /**

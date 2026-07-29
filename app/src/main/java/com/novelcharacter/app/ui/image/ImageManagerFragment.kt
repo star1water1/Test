@@ -40,6 +40,15 @@ import kotlinx.coroutines.launch
  */
 class ImageManagerFragment : Fragment() {
 
+    companion object {
+        /**
+         * 진입 인자 — 이 탭을 특정 링크 상태로 걸어 연다([ImageFilterHelper.LinkFilter] 이름).
+         * 어시스턴트의 '흩어진 묶음' 카드가 쓴다. 값이 이상하면 무시한다(필터는 사용자가
+         * 언제든 바꿀 수 있으므로 잘못된 인자로 실패할 이유가 없다).
+         */
+        const val ARG_LINK_FILTER = "linkFilter"
+    }
+
     private var _binding: FragmentImageManagerBinding? = null
     private val binding get() = _binding!!
 
@@ -132,6 +141,15 @@ class ImageManagerFragment : Fragment() {
             }
         }
         requireActivity().onBackPressedDispatcher.addCallback(viewLifecycleOwner, galleryBackCallback!!)
+
+        // 진입 인자로 들어온 링크 필터를 **복원보다 먼저** 반영한다 — 저장된 필터를 덮어야
+        // 카드가 약속한 화면이 나온다. 인자는 한 번 쓰고 지운다(회전 때 다시 걸리면, 사용자가
+        // 그사이 바꾼 필터를 화면 재생성이 되돌려 놓는 꼴이 된다).
+        arguments?.getString(ARG_LINK_FILTER)?.let { raw ->
+            runCatching { com.novelcharacter.app.util.ImageFilterHelper.LinkFilter.valueOf(raw) }
+                .getOrNull()?.let { viewModel.criteria = viewModel.criteria.copy(link = it) }
+            arguments?.remove(ARG_LINK_FILTER)
+        }
 
         // 상태 복원(D10: SavedStateHandle 영속) — 리스너 등록 전에 UI를 현재 criteria로 맞춘다.
         restoreFilterUi()

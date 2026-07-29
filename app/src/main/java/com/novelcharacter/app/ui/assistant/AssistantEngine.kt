@@ -48,6 +48,8 @@ object InsightSeverity {
     const val HEALTH_DUP_TAGS = 38
     const val HEALTH_EMPTY_REL = 30
     const val HEALTH_NO_IMAGE = 28
+    /** 흩어진 묶음의 나머지 — 결함이 아니라 알림이라 '이미지 없음'보다 아래에 둔다. */
+    const val HEALTH_SCATTERED = 26
     const val BIAS_LOW = 25
     const val NUDGE_STALE = 22
     const val NUDGE_UNUSED_NAMES = 18

@@ -11,6 +11,7 @@ import com.google.gson.Gson
 import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.data.database.AppDatabase
 import com.novelcharacter.app.data.maintenance.SystemMaintenanceService
+import com.novelcharacter.app.util.FolderRoundtripPrefs
 import com.novelcharacter.app.util.GsonTypes
 import com.novelcharacter.app.util.ImageFilterHelper
 import com.novelcharacter.app.util.ImageImportHelper
@@ -917,6 +918,11 @@ class ImageManagerViewModel(
                             }
                             val groupId = plan.groupsInvolved.firstOrNull() ?: UUID.randomUUID().toString()
                             db.imageMetaDao().setGroup(ids.toList(), groupId)
+                        }
+                        // 다시 묶였으면 '흩어진 나머지'가 아니다 — 장부 ③에서 뺀다.
+                        // 안 빼면 사용자가 고친 뒤에도 어시스턴트 카드가 계속 뜬다.
+                        runCatching {
+                            FolderRoundtripPrefs.removeScatteredPaths(getApplication(), paths)
                         }
                         LinkOutcome.Done(paths.size, plan.needsMergeConfirm)
                     }

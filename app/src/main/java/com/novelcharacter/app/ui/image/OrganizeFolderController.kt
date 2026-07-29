@@ -338,6 +338,11 @@ class OrganizeFolderController(
         if (result.autoLinkedKept > 0) {
             lines.add(fragment.getString(R.string.organize_folder_result_auto_kept, result.autoLinkedKept))
         }
+        // 묶음이 쪼개져 혼자 남은 것 — 어시스턴트 카드에 뜰 수와 같다. 여기서 미리 알려야
+        // 사용자가 "왜 갑자기 카드가 생겼지"를 겪지 않는다.
+        if (result.scattered > 0) {
+            lines.add(fragment.getString(R.string.organize_folder_result_scattered, result.scattered))
+        }
         if (result.cancelled) lines.add(fragment.getString(R.string.organize_folder_result_cancelled))
         if (result.heldNames.isNotEmpty()) {
             lines.add(fragment.getString(

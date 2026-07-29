@@ -1906,6 +1906,9 @@
     <string name="assistant_health_dup_tags_detail">%1$s 등 — 대소문자·공백 차이로 갈라진 태그를 정리하면 분류가 깔끔해집니다.</string>
     <string name="assistant_health_empty_rel_title">설명이 비어 있는 관계 %1$d개</string>
     <string name="assistant_health_empty_rel_detail">관계에 설명을 더하면 인물 간 맥락이 분명해집니다.</string>
+    <string name="assistant_health_scattered_title">묶음에서 떨어져 나온 이미지 %1$d장</string>
+    <string name="assistant_health_scattered_detail">%1$s 등 — 링크 묶음이 나뉘면서 혼자 남았습니다. 다시 묶거나 그대로 두어도 됩니다.</string>
+    <string name="assistant_health_scattered_action">이미지 탭에서 보기</string>
 
     <!-- 편향·패턴 인사이트 -->
     <string name="assistant_bias_action">필드 인사이트 열기</string>
@@ -2094,6 +2097,7 @@
     <string name="organize_folder_summary_misc_unlink">\'기타\' 서랍에서 묶음 해제: %d장 (캐릭터 배정은 그대로 둡니다)</string>
     <string name="organize_folder_summary_misc_is_character">\'%s\' 이름의 캐릭터가 있어 그 폴더를 캐릭터 폴더로 읽었습니다. 잡동사니 서랍으로 쓰려면 폴더 이름을 \'_기타\'로 바꾸세요.</string>
     <string name="organize_folder_result_auto_kept">%d장은 캐릭터 자동 링크라 서랍에 넣어도 묶인 채로 남습니다. 계속 풀어 두려면 자동 링크 설정을 끄거나 캐릭터에서 이미지를 빼세요.</string>
+    <string name="organize_folder_result_scattered">묶음이 나뉘면서 혼자 남은 이미지 %d장 — 어시스턴트에서 확인할 수 있습니다</string>
     <string name="organize_folder_summary_sets">링크 묶음: %d개</string>
     <string name="organize_folder_summary_merge">기존 링크 %1$d개가 합쳐집니다 (폴더에 없던 이미지 %2$d장이 함께 묶입니다)</string>
     <string name="organize_folder_summary_hold">보류: %d장 (판단할 수 없어 이번에는 반영하지 않습니다 — 파일은 폴더에 그대로 남습니다)</string>

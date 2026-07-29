@@ -110,6 +110,8 @@ object OrganizeFolderService {
          * 재동기화가 도로 묶으므로, 푼 척하고 세는 대신 여기 담아 사유와 함께 고지한다.
          */
         val autoLinkedKept: Int = 0,
+        /** 묶음이 쪼개져 혼자 남은 이미지 수 — 어시스턴트 카드에 뜰 수와 같다(장부 ③). */
+        val scattered: Int = 0,
         val linkedSets: Int = 0,
         val failed: List<String> = emptyList(),
         val heldNames: List<String> = emptyList(),
@@ -356,6 +358,8 @@ object OrganizeFolderService {
         var unlinked = 0
         // 서랍에 넣었으나 자동 링크라 묶인 채 남은 수(③-b 참조).
         var autoLinkedKept = 0
+        // 이번 반영이 멤버를 뺀 링크 그룹 — 누가 혼자 남았는지는 ④가 끝난 뒤에 판정한다.
+        val touchedGroups = LinkedHashSet<String>()
         val failures = ArrayList<String>()
         val processedFiles = ArrayList<ScannedFile>()
         val unmovedFingerprints = ArrayList<String>()
@@ -467,7 +471,11 @@ object OrganizeFolderService {
                         val oldGroup = db.imageMetaDao().getByPath(storedPath)?.linkGroupId
                         if (oldGroup != null) {
                             db.imageMetaDao().setGroup(listOf(imageId), null)
-                            db.imageMetaDao().clearGroupIfSingleton(oldGroup)
+                            // 정리(singleton 해제)는 **모든 해제가 끝난 뒤** 한 번에 한다 —
+                            // 여기서 바로 하면 "누가 혼자 남았는가"를 중간 상태로 판정하게 되어,
+                            // 2장짜리 묶음을 통째로 푸는 동안 첫 장을 뗀 순간의 나머지가 잘못
+                            // 잡힌다(그 나머지도 곧 풀리므로 흩어진 것이 아니다).
+                            touchedGroups.add(oldGroup)
                             didUnlink = true
                         }
                     }
@@ -506,7 +514,7 @@ object OrganizeFolderService {
                         } else {
                             val imageId = db.imageMetaDao().adopt(storedPath, System.currentTimeMillis())
                             db.imageMetaDao().setGroup(listOf(imageId), null)
-                            db.imageMetaDao().clearGroupIfSingleton(oldGroup)
+                            touchedGroups.add(oldGroup)   // 정리·판정은 아래에서 한 번에
                             didUnlink = true
                         }
                     }
@@ -543,6 +551,24 @@ object OrganizeFolderService {
             if (ok) linkedSets++
         }
 
+        // ④-b 묶음 결산 — 이번 반영이 멤버를 뺀 그룹에서 **누가 혼자 남았는가**를 정한다.
+        //
+        // ④ 뒤에 두는 이유: 세트가 다시 묶을 수 있다. 앞에서 판정하면 곧 다시 묶일 이미지를
+        // '흩어진 것'으로 적는다. 그리고 항목마다가 아니라 여기서 한 번에 하는 이유는 위
+        // ③의 주석에 있다 — 중간 상태로 판정하면 통째로 푸는 묶음의 첫 나머지가 잘못 잡힌다.
+        //
+        // 그룹이 통째로 풀려 0장이 되면 아무도 남지 않으므로 기록되지 않는다. 이것이 곧
+        // "의도한 잡동사니는 적지 않는다"의 구현이다 — 별도 분기가 필요 없다.
+        val scattered = ArrayList<String>()
+        for (group in touchedGroups) {
+            val remaining = runCatching { db.imageMetaDao().getByGroup(group) }.getOrDefault(emptyList())
+            if (remaining.size == 1) scattered.add(remaining[0].path)
+            runCatching { db.imageMetaDao().clearGroupIfSingleton(group) }
+        }
+        if (scattered.isNotEmpty()) {
+            runCatching { FolderRoundtripPrefs.addScatteredPaths(context, scattered) }
+        }
+
         // ⑤ 마무리 — 자동 링크 재동기화(배정 변경분 수렴), 처리분 `_처리됨/` 이동.
         runCatching { CharacterImageAutoLinker.resyncIfEnabled(context, db) }
 
@@ -567,6 +593,7 @@ object OrganizeFolderService {
             detached = detached,
             unlinked = unlinked,
             autoLinkedKept = autoLinkedKept,
+            scattered = scattered.size,
             linkedSets = linkedSets,
             failed = failures,
             heldNames = plan.holds.map { it.item.fileName },

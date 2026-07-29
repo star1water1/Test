@@ -93,11 +93,22 @@ enum class InsightCategory(val isError: Boolean) {
 sealed interface InsightAction {
     val label: String
 
-    /** [destId]는 nav_graph 목적지 id. [characterId]가 있으면 characterDetail 등에 인자로 전달. */
+    /**
+     * [destId]는 nav_graph 목적지 id. [characterId]가 있으면 characterDetail 등에 인자로 전달.
+     *
+     * [extras]는 목적지에 함께 넘길 문자열 인자다 — "여기로 가라"가 아니라 "여기의 이것을
+     * 보여라"인 카드를 위해서다(예: 이미지 탭의 링크 필터). 카드마다 프래그먼트에 분기를
+     * 심으면 그것이 곧 방편식 패치이므로, 일반 통로를 하나 둔다. `Bundle`이 아니라 `Map`인
+     * 이유는 이 모델 계층을 안드로이드 타입에서 떼어 두기 위해서다.
+     */
     data class Navigate(
         val destId: Int,
         val characterId: Long? = null,
-        override val label: String
+        override val label: String,
+        // 반드시 `label` **뒤**에 둔다 — 이 클래스에는 위치 인자로 부르는 호출부가 셋 있어
+        // (`Navigate(destId, characterId, label)`), 중간에 끼우면 세 번째 위치 인자가 조용히
+        // 이 필드로 묶여 컴파일이 깨진다. 새 필드는 뒤에 붙이는 것이 규약이다.
+        val extras: Map<String, String> = emptyMap()
     ) : InsightAction
 
     /** 그 자리에서 해결하는 행동. [kind]가 어떤 교정인지 구분. */

@@ -98,7 +98,10 @@ class AssistantFragment : Fragment() {
     private fun executeAction(insight: AssistantInsight, action: InsightAction) {
         when (action) {
             is InsightAction.Navigate -> {
-                val args = action.characterId?.let { bundleOf("characterId" to it) }
+                val args = if (action.characterId == null && action.extras.isEmpty()) null else bundleOf().apply {
+                    action.characterId?.let { putLong("characterId", it) }
+                    action.extras.forEach { (k, v) -> putString(k, v) }
+                }
                 findNavController().navigateSafe(R.id.analysisFragment, action.destId, args)
             }
             is InsightAction.Fix -> handleFix(action.kind)
