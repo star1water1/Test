@@ -149,6 +149,7 @@ $MAIN/excel/StreamingXlsxReader.kt
 $MAIN/excel/MergedCellMap.kt
 $MAIN/excel/ImportSource.kt
 $MAIN/util/ResetPlan.kt
+$MAIN/util/MembershipTimeline.kt
 $MAIN/data/repository/FieldValueRules.kt
 $MAIN/share/WorldPackageFactionRelationships.kt
 $MAIN/share/WorldPackageContents.kt
@@ -215,6 +216,7 @@ $TEST/namebank/BulkRegisterPlannerTest.kt
 $TEST/excel/StreamingXlsxReaderTest.kt
 $TEST/excel/ImportSourceEquivalenceTest.kt
 $TEST/util/ResetPlanTest.kt
+$TEST/util/MembershipTimelineTest.kt
 $TEST/ai/CharacterFieldAiSuggesterTest.kt
 $TEST/ai/FieldAiTargetRuleTest.kt
 $TEST/data/FieldConfigPolicyTest.kt

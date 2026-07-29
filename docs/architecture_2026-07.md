@@ -17,14 +17,14 @@
 
 | 항목 | 값 | 측정 방법 |
 |------|-----|-----------|
-| 메인 소스 | **332 파일 / 88,420줄** (Kotlin) | `find app/src/main/java -name '*.kt'` |
-| 테스트 소스 | **71 파일 / 순수 JVM 924건** | `tools/run_jvm_tests.sh` |
+| 메인 소스 | **333 파일 / 88,775줄** (Kotlin) | `find app/src/main/java -name '*.kt'` |
+| 테스트 소스 | **72 파일 / 순수 JVM 934건** | `tools/run_jvm_tests.sh` |
 | Room DB | **v44** · 엔티티 **26** · 마이그레이션 **43**(v1→v44) | `data/database/AppDatabase.kt` |
 | 사용자 문구 | `res/values/strings.xml` 단일 파일 | `tools/check_text_style.sh` |
 
-> **테스트 파일 71 ≠ 러너가 도는 70.** `AiPresetsConsistencyTest`(3건)는 `R`을 참조해 순수
-> 하네스에서 돌 수 없어 목록에서 빠져 있다(CI 전용). 그래서 소스의 `@Test`는 927인데 실행은
-> 924다 — 이 차이를 결함으로 오인하지 말 것. 러너는 `$TESTS` 목록에 적힌 파일만 컴파일하므로
+> **테스트 파일 72 ≠ 러너가 도는 71.** `AiPresetsConsistencyTest`(3건)는 `R`을 참조해 순수
+> 하네스에서 돌 수 없어 목록에서 빠져 있다(CI 전용). 그래서 소스의 `@Test`는 937인데 실행은
+> 934다 — 이 차이를 결함으로 오인하지 말 것. 러너는 `$TESTS` 목록에 적힌 파일만 컴파일하므로
 > **목록에 넣지 않은 새 테스트는 조용히 돌지 않는다**(5장 착수 시 확인 항목).
 
 > **숫자를 문서에서 믿지 말 것.** 이 표의 값도 찍힌 순간의 스냅샷이다. 실제 작업 전에
@@ -42,7 +42,7 @@ app/src/main/java/com/novelcharacter/app/
 │   ├── dao/    (24)   Room DAO
 │   ├── repository/ (21)  트랜잭션 경계 · 휴지통 · 스냅샷 복원
 │   └── database/      AppDatabase(v44) + 마이그레이션 43개(v1→v44)
-├── util/       (60)  ★ 순수 계층이 사는 곳 — 38개는 Android 비의존(JVM 테스트 대상, 3장),
+├── util/       (61)  ★ 순수 계층이 사는 곳 — 39개는 Android 비의존(JVM 테스트 대상, 3장),
 │                        22개는 Android 의존(화면 헬퍼·Prefs·이미지 로더)
 ├── excel/      (24)  엑셀 왕복 (내보내기·가져오기·시트 규약)
 ├── share/      (7)   월드패키지(ZIP) 내보내기·들이기
@@ -57,7 +57,7 @@ app/src/main/java/com/novelcharacter/app/
 거의 유일한 계층이다(4장).
 
 > ⚠️ **`util/` = 순수 계층이 아니다. 디렉터리가 아니라 파일 단위로 갈린다.**
-> 60개 중 **22개가 Android·Material에 의존한다**(`AlertDialogExt`·`ProgressDialogs`·
+> 61개 중 **22개가 Android·Material에 의존한다**(`AlertDialogExt`·`ProgressDialogs`·
 > `CharacterImageLoader`·`*Prefs`·`ThemeHelper` …). 이들은 JVM 하네스가 컴파일하지 않으므로
 > **`util/`에 넣었다는 사실만으로 "테스트된다"고 가정하지 말 것.**
 > 판정법은 하나다 — `tools/run_jvm_tests.sh`의 `$SOURCES` 목록에 그 파일이 있는가.
@@ -107,6 +107,7 @@ app/src/main/java/com/novelcharacter/app/
 | `SortComparators` / `FieldFilterHelper` / `UnassignedFilter` | 목록 정렬·필터 | — |
 | `ImportSource`(`ImportWorkbook`/`Sheet`/`Row`/`Cell`) | 가져오기가 워크북을 읽는 유일한 접근면 | DOM·스트리밍 두 경로가 갈리면 같은 파일이 다른 데이터가 된다(B-8) |
 | `ResetPlan` | 앱 초기화가 비우는 테이블의 범위 | 26개 중 5개가 '모든 데이터 삭제' 뒤에도 살아남았다(S-13) |
+| `MembershipTimeline` | 새 소속의 가입 연도가 이전 이력과 겹치지 않는지 | 재가입이 이전 탈퇴보다 앞이어도 통과해, 같은 해에 나가 있으면서 들어와 있는 이력이 됐다(1-h장) |
 
 ---
 
@@ -116,7 +117,7 @@ app/src/main/java/com/novelcharacter/app/
 
 | 도구 | 무엇을 보는가 | 기준선 |
 |------|---------------|--------|
-| `tools/run_jvm_tests.sh` | 순수 계층을 **실제로 실행**한다(표준 kotlinc + JUnitCore) | **924건** |
+| `tools/run_jvm_tests.sh` | 순수 계층을 **실제로 실행**한다(표준 kotlinc + JUnitCore) | **934건** |
 | `tools/check_text_style.sh` | 화면 문구의 말투·용어(가이드 기계 검출분) | 기준선 33건 동결, 새 위반은 즉시 실패 |
 | `tools/check_resources.sh` | 리소스 중복·미정의 참조·XML 구문 | 통과 |
 | `tools/check_dialog_validation.sh` | 자동 닫힘 버튼 안의 조기 return(R-27 위반) | 0건 동결 — 새 위반 즉시 실패 |
@@ -159,8 +160,8 @@ app/src/main/java/com/novelcharacter/app/
 | `FieldType.<상수>`로 분기 | 7 |
 | **`"CALCULATED"` 같은 생문자열로 분기** | **28** (2026-07-29 실측 — 등재 시점 23에서 늘었다) |
 
-타입 판정이 `fd.type == "CALCULATED"` 같은 **문자열 비교로 23개 파일에 흩어져 있다.**
-`FieldType`에 상수를 하나 더해도 이 23곳은 아무것도 모른다 — 새 타입은 그 화면들에서
+타입 판정이 `fd.type == "CALCULATED"` 같은 **문자열 비교로 28개 파일에 흩어져 있다.**
+`FieldType`에 상수를 하나 더해도 이 28곳은 아무것도 모른다 — 새 타입은 그 화면들에서
 조용히 빠지고, 그것이 원칙 02 위반(껍데기 구현)의 가장 흔한 발생 경로다.
 
 착수 시 반드시 훑을 것: 입력 렌더(`DynamicFieldRenderer`) · 통계 적격성(`StatsFieldPolicy`) ·
@@ -168,7 +169,7 @@ app/src/main/java/com/novelcharacter/app/
 (`FieldConfigColumns`·`CharacterFieldValueOverflow`) · 랜덤 생성(`FieldRandomGenerator`) ·
 AI 정책(`FieldAiPolicy`).
 
-> **구조 부채로 등재할 것:** 문자열 분기 23곳을 `FieldType`으로 좁히면 새 타입 추가가
+> **구조 부채로 등재할 것:** 문자열 분기 28곳을 `FieldType`으로 좁히면 새 타입 추가가
 > 컴파일러의 도움을 받는다(`when`의 exhaustive 검사). 지금은 전수 grep이 유일한 방어다.
 
 ### 5-2. 새 대상(entityType) — 지금은 `character` · `event`
