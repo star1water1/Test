@@ -39,6 +39,20 @@ def check(cond, msg):
         print(f"  ✓ {msg}")
 
 
+def db_version_at_least(src, minimum):
+    """
+    @Database(version = N)이 minimum 이상인가.
+
+    **'= N'을 문자열로 못 박지 않는 이유:** 이 하네스가 지키는 것은 "이 마이그레이션이
+    도달시킨 버전 이상인가"이지 "지금 버전이 정확히 N인가"가 아니다. 못 박으면 다음
+    스키마 상향이 **이 하네스를 통째로 빨간불로 만든다** — 실제로 v44 도입(자동 링크)
+    이후 이 검사가 계속 실패해 왔고, 문서는 그동안 '49건 통과'라고 적고 있었다.
+    상시 실패는 신호가 아니라 소음이 되어 진짜 실패를 가린다.
+    """
+    m = re.search(r"version\s*=\s*(\d+)", src)
+    return m is not None and int(m.group(1)) >= minimum
+
+
 def extract_migration_block(src, name):
     start = src.index(f"private val {name} = object : Migration(")
     nxt = src.find("private val MIGRATION", start + 10)
@@ -139,7 +153,7 @@ def main():
     kind_col = next(s for s in stmts if "ADD COLUMN" in s and "operationKind" in s)
     check("NOT NULL" not in kind_col and "DEFAULT" not in kind_col,
           "operationKind도 NOT NULL/DEFAULT 없음 (엔티티가 String?)")
-    check("version = 43" in src, "@Database(version = 43)로 상향됨")
+    check(db_version_at_least(src, 43), "@Database(version)이 43 이상으로 상향됨")
     check("MIGRATION_42_43)" in src or "MIGRATION_42_43," in src, "addMigrations에 등록됨")
 
     print("\n[2] 엔티티 선언이 마이그레이션 결과와 같은 형태인가")

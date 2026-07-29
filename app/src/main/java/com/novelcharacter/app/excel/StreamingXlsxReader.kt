@@ -64,22 +64,122 @@ class StreamingXlsxReader(file: File) : Closeable {
      * 이름이 [sheetName]인 시트를 전방향으로 읽어 행마다 [onRow]를 호출한다.
      * 해당 시트가 없으면 아무 것도 하지 않는다(호출측이 존재 여부를 별도 판단).
      * @param onRow (0-기반 행 인덱스, 열 인덱스→정규화 값 맵)
+     *
+     * `dateHint = false` 고정 정규화이므로 **가져오기 배선은 이 API를 쓰지 않는다** —
+     * 필드 의미에 따라 dateHint가 달라지기 때문이다([readSheetRaw] 참조).
      */
     fun readSheet(sheetName: String, onRow: (rowIndex: Int, cells: Map<Int, String>) -> Unit) {
+        readSheetRaw(sheetName) { rowIndex, cells ->
+            val normalized = HashMap<Int, String>(cells.size)
+            for ((col, p) in cells) {
+                val v = ExcelCellValue.normalize(p, dateHint = false)
+                if (v.isNotEmpty()) normalized[col] = v
+            }
+            onRow(rowIndex, normalized)
+        }
+    }
+
+    /**
+     * [readSheet]와 같되 셀을 **정규화 이전의 [ExcelCellValue.Primitives]로** 방출하고,
+     * 시트의 병합 범위 목록을 돌려준다.
+     *
+     * **왜 정규화를 미루는가:** `dateHint`는 리더가 아니라 **호출부가 필드 의미로** 정한다
+     * (생일 같은 날짜 필드에서만 true). 리더가 미리 문자열로 굳히면 그 자리에서 dateHint를
+     * 알 수 없어, 서식 없는 날짜 시리얼이 DOM 경로에서는 `2020-06-15`, 스트리밍 경로에서는
+     * `44000`이 된다 — 두 경로가 같은 파일에서 다른 값을 내는 것은 왕복 무결성 붕괴다.
+     *
+     * **병합 범위를 함께 돌려주는 이유(B-7):** 병합 셀의 피복 칸은 파일에서 빈 셀로 읽히는데,
+     * 그대로 두면 '빈칸=삭제' 규약에 걸려 사용자가 화면에서 걸쳐 보던 값이 무통보 유실된다.
+     * DOM 경로가 `numMergedRegions`로 하는 일을 스트리밍도 해야 대칭이 성립한다.
+     * `mergeCells` 요소는 시트 XML에서 `sheetData` **뒤**에 오므로 파싱이 끝나야 알 수 있다 —
+     * 그래서 콜백이 아니라 반환값이다(행 소비는 이미 끝나 있고, 병합 조회는 그 뒤에 일어난다).
+     *
+     * @return 병합 범위 목록(없으면 빈 목록)
+     */
+    fun readSheetRaw(
+        sheetName: String,
+        onRow: (rowIndex: Int, cells: Map<Int, ExcelCellValue.Primitives>) -> Unit
+    ): List<MergedCellMap.Region> {
         val it = reader.sheetsData as XSSFReader.SheetIterator
         while (it.hasNext()) {
             val stream = it.next()
             if (it.sheetName == sheetName) {
-                stream.use { parseSheet(it, onRow) }
-                return
+                val handler = SheetHandler(onRow)
+                stream.use { s -> newSafeSaxFactory().newSAXParser().parse(InputSource(s), handler) }
+                return handler.mergedRegions
             } else {
                 stream.close()
             }
         }
+        return emptyList()
     }
 
-    private fun parseSheet(stream: InputStream, onRow: (Int, Map<Int, String>) -> Unit) {
-        newSafeSaxFactory().newSAXParser().parse(InputSource(stream), SheetHandler(onRow))
+    /** [readHeaderRow]가 첫 행을 얻은 뒤 SAX 파싱을 중단시키는 제어 신호(오류가 아니다). */
+    private class StopParsing : org.xml.sax.SAXException()
+
+    /**
+     * [sheetName]의 **첫 행만** 읽고 파싱을 중단한다. 시트가 없거나 행이 없으면 null.
+     *
+     * **왜 따로 있는가:** 가져오기는 시트의 정체를 헤더로 판정하므로(규약 R-7) 워크북의 모든
+     * 시트를 훑으며 0행만 읽는 경로가 여럿이다. 그때마다 시트를 통째로 적재하면 스트리밍이
+     * DOM보다 느리고 무거워진다 — 헤더 한 줄 보려고 전 시트를 다 읽는 꼴이다.
+     */
+    fun readHeaderRow(sheetName: String): Map<Int, ExcelCellValue.Primitives>? {
+        var header: Map<Int, ExcelCellValue.Primitives>? = null
+        val it = reader.sheetsData as XSSFReader.SheetIterator
+        while (it.hasNext()) {
+            val stream = it.next()
+            if (it.sheetName == sheetName) {
+                val handler = SheetHandler { _, cells ->
+                    header = HashMap(cells)
+                    throw StopParsing()
+                }
+                try {
+                    stream.use { s -> newSafeSaxFactory().newSAXParser().parse(InputSource(s), handler) }
+                } catch (_: StopParsing) {
+                    // 정상 종료 — 첫 행을 얻었다
+                } finally {
+                    try { stream.close() } catch (_: Exception) { /* use{}가 이미 닫았을 수 있다 */ }
+                }
+                return header
+            } else {
+                stream.close()
+            }
+        }
+        return null
+    }
+
+    /**
+     * [sheetName]의 마지막 행 0-기반 인덱스(POI `lastRowNum`과 같은 의미). 시트가 없거나
+     * 행이 없으면 0.
+     *
+     * 셀 값을 전혀 만들지 않고 `<row r>`만 훑는 **값싼 색인 패스**다. 가져오기의 모든 데이터
+     * 루프가 `1..lastRowNum`이라 이 값은 **정확해야 한다** — `<dimension>` 요소는 외부 편집기가
+     * 갱신하지 않을 수 있어 근거로 쓰지 않는다(틀리면 뒤쪽 행이 조용히 통째로 누락된다).
+     */
+    fun lastRowNumOf(sheetName: String): Int {
+        val it = reader.sheetsData as XSSFReader.SheetIterator
+        while (it.hasNext()) {
+            val stream = it.next()
+            if (it.sheetName == sheetName) {
+                var last = 0
+                var seq = -1
+                val handler = object : DefaultHandler() {
+                    override fun startElement(uri: String?, local: String?, qName: String, a: Attributes?) {
+                        if (qName == "row") {
+                            val r = a?.getValue("r")?.toIntOrNull()
+                            seq = if (r != null) r - 1 else seq + 1
+                            if (seq > last) last = seq
+                        }
+                    }
+                }
+                stream.use { s -> newSafeSaxFactory().newSAXParser().parse(InputSource(s), handler) }
+                return last
+            } else {
+                stream.close()
+            }
+        }
+        return 0
     }
 
     override fun close() {
@@ -130,11 +230,14 @@ class StreamingXlsxReader(file: File) : Closeable {
      * 정규화한다. 빈 셀·열 공백은 자연히 생략된다(맵에 미포함).
      */
     private inner class SheetHandler(
-        private val onRow: (Int, Map<Int, String>) -> Unit
+        private val onRow: (Int, Map<Int, ExcelCellValue.Primitives>) -> Unit
     ) : DefaultHandler() {
 
+        /** 파싱 중 수집한 병합 범위 (`mergeCells`는 `sheetData` 뒤에 온다). */
+        val mergedRegions = ArrayList<MergedCellMap.Region>()
+
         private var rowIndex = -1
-        private var cells = HashMap<Int, String>()
+        private var cells = HashMap<Int, ExcelCellValue.Primitives>()
 
         // 현재 셀 상태
         private var colIndex = -1
@@ -151,6 +254,7 @@ class StreamingXlsxReader(file: File) : Closeable {
                     rowIndex = (a?.getValue("r")?.toIntOrNull() ?: (rowIndex + 2)) - 1 // r은 1-기반
                     cells = HashMap()
                 }
+                "mergeCell" -> parseMergeRef(a?.getValue("ref"))?.let { mergedRegions.add(it) }
                 "c" -> {
                     colIndex = colOf(a?.getValue("r"))
                     cellType = a?.getValue("t") ?: ""
@@ -171,23 +275,27 @@ class StreamingXlsxReader(file: File) : Closeable {
             when (qName) {
                 "v" -> inValue = false
                 "t" -> { inText = false; inlineBuf.append(buf) } // 런 누적(rich text 다중 <t> 대응)
-                "c" -> {
-                    if (colIndex >= 0) {
-                        val value = normalizeCell()
-                        if (value.isNotEmpty()) cells[colIndex] = value
-                    }
-                }
+                "c" -> if (colIndex >= 0) cells[colIndex] = cellPrimitives()
                 "row" -> if (rowIndex >= 0) onRow(rowIndex, cells)
             }
         }
 
-        /** 현재 셀의 원시 데이터를 ExcelCellValue.Primitives로 만들어 정규화. */
-        private fun normalizeCell(): String {
-            val p = when (cellType) {
+        /**
+         * 현재 셀의 원시 데이터를 [ExcelCellValue.Primitives]로 만든다. **정규화하지 않는다** —
+         * dateHint는 호출부의 것이다.
+         *
+         * **값이 없어도 null이 아니라 [BLANK_CELL]을 돌려준다.** `<c>` 요소가 파일에 있으면
+         * DOM은 (빈 값이어도) 셀 객체를 만들고, 그래서 `lastCellNum`이 그 열까지 센다.
+         * 여기서 null을 주면 스트리밍 쪽 행 폭이 DOM보다 좁아져 **두 경로의 행 모양이 갈린다**
+         * (실제로 자기 재공격에서 DOM=4 / 스트리밍=3으로 어긋나는 것을 확인했다).
+         * 값 자체는 어느 쪽이든 ""로 정규화되지만, 모양이 갈리면 그 위에 쌓는 판정이 갈린다.
+         */
+        private fun cellPrimitives(): ExcelCellValue.Primitives {
+            return when (cellType) {
                 "s" -> {
                     // 공유 문자열 — buf는 SST 인덱스
-                    val idx = buf.toString().trim().toIntOrNull() ?: return ""
-                    val s = try { sharedStrings.getItemAt(idx).string } catch (_: Exception) { return "" }
+                    val idx = buf.toString().trim().toIntOrNull() ?: return BLANK_CELL
+                    val s = try { sharedStrings.getItemAt(idx).string } catch (_: Exception) { return BLANK_CELL }
                     ExcelCellValue.Primitives(CellType.STRING, stringValue = s)
                 }
                 "inlineStr" -> ExcelCellValue.Primitives(CellType.STRING, stringValue = inlineBuf.toString())
@@ -196,11 +304,10 @@ class StreamingXlsxReader(file: File) : Closeable {
                 "b" -> ExcelCellValue.Primitives(CellType.BOOLEAN, booleanValue = buf.toString().trim() == "1")
                 "e" -> ExcelCellValue.Primitives(CellType.ERROR)
                 else -> { // 숫자(t 없음 또는 "n")
-                    val num = buf.toString().trim().toDoubleOrNull() ?: return ""
+                    val num = buf.toString().trim().toDoubleOrNull() ?: return BLANK_CELL
                     numericPrimitives(num)
                 }
             }
-            return ExcelCellValue.normalize(p, dateHint = false)
         }
 
         private fun numericPrimitives(num: Double): ExcelCellValue.Primitives {
@@ -223,6 +330,39 @@ class StreamingXlsxReader(file: File) : Closeable {
     }
 
     private companion object {
+        /**
+         * 값 없는 `<c>` 요소를 나타내는 공용 인스턴스. DOM의 BLANK 셀과 같은 자리이며
+         * [ExcelCellValue.normalize]는 이것을 ""로 낸다. 불변이라 공유해도 안전하고,
+         * 서식만 있고 값이 없는 셀이 수만 개인 시트에서 할당이 늘지 않는다.
+         */
+        val BLANK_CELL = ExcelCellValue.Primitives(CellType.BLANK)
+
+        /** "A1"/"BC12" 등 셀 참조에서 0-기반 행 인덱스 추출. 숫자부가 없으면 -1. */
+        fun rowOf(ref: String?): Int {
+            if (ref.isNullOrEmpty()) return -1
+            val digits = ref.dropWhile { !it.isDigit() }
+            val n = digits.takeWhile { it.isDigit() }.toIntOrNull() ?: return -1
+            return n - 1
+        }
+
+        /**
+         * `mergeCell@ref`("A1:C3")를 [MergedCellMap.Region]으로. 형태가 아니면 null.
+         * 한 칸짜리("A1")도 엑셀이 쓸 수 있으므로 콜론이 없으면 양끝을 같은 칸으로 본다.
+         */
+        fun parseMergeRef(ref: String?): MergedCellMap.Region? {
+            if (ref.isNullOrBlank()) return null
+            val parts = ref.split(':')
+            val a = parts[0]
+            val b = if (parts.size > 1) parts[1] else parts[0]
+            val r1 = rowOf(a); val c1 = colOf(a)
+            val r2 = rowOf(b); val c2 = colOf(b)
+            if (r1 < 0 || c1 < 0 || r2 < 0 || c2 < 0) return null
+            return MergedCellMap.Region(
+                firstRow = minOf(r1, r2), lastRow = maxOf(r1, r2),
+                firstColumn = minOf(c1, c2), lastColumn = maxOf(c1, c2)
+            )
+        }
+
         /** "A1"/"BC12" 등 셀 참조에서 0-기반 열 인덱스 추출. 참조 없으면 -1. */
         fun colOf(ref: String?): Int {
             if (ref.isNullOrEmpty()) return -1

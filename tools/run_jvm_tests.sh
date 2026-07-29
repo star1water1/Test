@@ -147,6 +147,8 @@ $MAIN/ui/supplement/RandomPickEngine.kt
 $MAIN/ui/namebank/BulkRegisterPlanner.kt
 $MAIN/excel/StreamingXlsxReader.kt
 $MAIN/excel/MergedCellMap.kt
+$MAIN/excel/ImportSource.kt
+$MAIN/util/ResetPlan.kt
 $MAIN/data/repository/FieldValueRules.kt
 $MAIN/share/WorldPackageFactionRelationships.kt
 $MAIN/share/WorldPackageContents.kt
@@ -210,6 +212,8 @@ $TEST/ui/supplement/RandomPickEngineTest.kt
 $TEST/stats/StatsDataProviderUnassignedTest.kt
 $TEST/namebank/BulkRegisterPlannerTest.kt
 $TEST/excel/StreamingXlsxReaderTest.kt
+$TEST/excel/ImportSourceEquivalenceTest.kt
+$TEST/util/ResetPlanTest.kt
 $TEST/ai/CharacterFieldAiSuggesterTest.kt
 $TEST/ai/FieldAiTargetRuleTest.kt
 $TEST/data/FieldConfigPolicyTest.kt

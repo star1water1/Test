@@ -18,7 +18,7 @@
 | 항목 | 값 | 측정 방법 |
 |------|-----|-----------|
 | 메인 소스 | **328 파일 / 87,108줄** (Kotlin) | `find app/src/main/java -name '*.kt'` |
-| 테스트 소스 | **68 파일 / 순수 JVM 882건** | `tools/run_jvm_tests.sh` |
+| 테스트 소스 | **70 파일 / 순수 JVM 896건** | `tools/run_jvm_tests.sh` |
 | Room DB | **v44** · 엔티티 **26** · 마이그레이션 **44** | `data/database/AppDatabase.kt` |
 | 사용자 문구 | `res/values/strings.xml` 단일 파일 | `tools/check_text_style.sh` |
 
@@ -92,6 +92,8 @@ app/src/main/java/com/novelcharacter/app/
 | `CharacterFieldValueOverflow` | 캐릭터 시트가 담지 못한 값의 판정 | — |
 | `EventFieldValueMerge` / `CharacterFieldValueMerge` | 부분 저장의 커버 집합 | 사건 필드값이 무통보 폐기됐다(S-6) |
 | `SortComparators` / `FieldFilterHelper` / `UnassignedFilter` | 목록 정렬·필터 | — |
+| `ImportSource`(`ImportWorkbook`/`Sheet`/`Row`/`Cell`) | 가져오기가 워크북을 읽는 유일한 접근면 | DOM·스트리밍 두 경로가 갈리면 같은 파일이 다른 데이터가 된다(B-8) |
+| `ResetPlan` | 앱 초기화가 비우는 테이블의 범위 | 26개 중 5개가 '모든 데이터 삭제' 뒤에도 살아남았다(S-13) |
 
 ---
 
@@ -101,10 +103,12 @@ app/src/main/java/com/novelcharacter/app/
 
 | 도구 | 무엇을 보는가 | 기준선 |
 |------|---------------|--------|
-| `tools/run_jvm_tests.sh` | 순수 계층을 **실제로 실행**한다(표준 kotlinc + JUnitCore) | **882건** |
+| `tools/run_jvm_tests.sh` | 순수 계층을 **실제로 실행**한다(표준 kotlinc + JUnitCore) | **896건** |
 | `tools/check_text_style.sh` | 화면 문구의 말투·용어(가이드 기계 검출분) | 기준선 33건 동결, 새 위반은 즉시 실패 |
 | `tools/check_resources.sh` | 리소스 중복·미정의 참조·XML 구문 | 통과 |
 | `tools/differential_compile.sh` | 손댄 파일에 **새로 생긴** 컴파일 오류만 | 기준선 대조 |
+| `tools/verify_room_migration*.py` | 마이그레이션 3종을 **실제 SQLite로** 실행 | 35 · 49 · 25건 |
+| `tools/verify_reset_coverage.py` | 엔티티 목록 ↔ `ResetPlan` ↔ `executeReset` 호출부 3자 대조 | 30건 |
 
 **이 구조가 강제하는 설계 규칙:** 판단 로직은 최대한 `util`의 순수 객체로 내려야 한다.
 `ui`에 남은 로직은 **실행 검증이 불가능**하고 차분 컴파일의 잡음에 묻힌다(뷰바인딩 미해결만
@@ -120,7 +124,7 @@ app/src/main/java/com/novelcharacter/app/
 > 그런데 Gradle의 `testDebugUnitTest`가 쓰는 android.jar은 **모든 메서드가 예외를 던지는**
 > 껍데기라, 순수 로직이 진단용으로 부르는 `Log.w` 하나가 테스트를 깨뜨린다.
 > 로드맵 5에서 실제로 이것에 걸렸다 — `FormulaEvaluator`의 순환 참조·미존재 키 경로가
-> `Log.w`를 부르는데, 그 경로를 처음으로 테스트한 순간 **로컬 882건 통과 / CI 4건 실패**가 났다.
+> `Log.w`를 부르는데, 그 경로를 처음으로 테스트한 순간 **로컬 전량 통과 / CI 4건 실패**가 났다.
 > `app/build.gradle.kts`의 `testOptions { unitTests { isReturnDefaultValues = true } }`로 막았다.
 >
 > **일반화:** 하네스의 스텁은 "컴파일을 통과시키는 것"이 목적이라 **런타임 의미가 실제와 다르다.**
@@ -222,7 +226,9 @@ AI 정책(`FieldAiPolicy`).
 | **미이행 기능 색출과 개혁 로드맵** | `docs/superficial_feature_audit_2026-07.md` |
 | **실사용 데이터가 말한 것** | `docs/usage_reality_check_2026-07.md` (+ `_runbook`) |
 | **화면 문구** | `docs/text_style_guide_2026-07.md` |
-| **영역별 설계** | 엑셀 왕복 `excel_roundtrip_audit` · 이미지 폴더 왕복 `image_folder_roundtrip_design` · AI `ai_integration`·`ai_control_and_ui_density` · 값 라이브러리 `field_value_library` |
+| **영역별 설계** | 엑셀 왕복 `excel_roundtrip_audit` · 엑셀 스트리밍 가져오기 `excel_streaming_import` · 이미지 폴더 왕복 `image_folder_roundtrip_design`(결정 근거 `image_external_management`) · AI `ai_integration`·`ai_control_and_ui_density` · 값 라이브러리 `field_value_library` · 필터·정렬 짝 `filter_sort_parity` |
+| **점검 결과·수리 계획** | `app_inspection_round2` · `repair_plan` · `usability_review` · `design_intent` |
+| **절차서** | `room_migration_verification` — 마이그레이션 하네스 3종을 어떻게 만들고 돌리는가 |
 | **브랜치·병합** | `docs/branch_merge_rules.md` |
 | **끝난 것 / 낡은 것** | `docs/archive/` — 구현 완료된 계획서와 구시점 리뷰. **근거로 쓰지 말 것**(각 문서 머리의 보관 헤더가 무엇이 낡았는지 적어 둔다) |
 
@@ -237,4 +243,5 @@ AI 정책(`FieldAiPolicy`).
 
 | 버전 | 날짜 | 변경 내용 |
 |------|------|-----------|
+| v1.1 | 2026.07.29 | 수치 현행화(테스트 896건·70파일) · 단일 소스 표에 `ImportSource`·`ResetPlan` 등재 · 검증 체계 표에 python 하네스 4종 추가 · **문서 지도의 누락 8종 등재**(특히 `excel_streaming_import` — 바로 다음 작업의 설계 단일 소스인데 지도에 없었다) |
 | v1.0 | 2026.07.28 | 최초 작성 — 진입점 부재를 메운다. 현행 규모 실측(328파일·87,108줄·DB v44·엔티티 26), 계층·데이터 모델 지도, 단일 소스 표, 검증 체계, 확장점 4종, 규약 R-1~R-26 색인, 문서 지도 |

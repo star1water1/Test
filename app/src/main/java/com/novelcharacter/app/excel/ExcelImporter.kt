@@ -168,15 +168,9 @@ class ExcelImporter(context: Context) {
             ImportFileKind.OTHER_ZIP -> withContext(Dispatchers.Main) {
                 Toast.makeText(appContext, com.novelcharacter.app.R.string.import_unsupported_zip, Toast.LENGTH_LONG).show()
             }
-            ImportFileKind.PLAIN_XLSX, ImportFileKind.NOT_ZIP -> {
-                if (file.length() > MAX_IMPORT_FILE_SIZE) {
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(appContext, com.novelcharacter.app.R.string.import_xlsx_too_large, Toast.LENGTH_LONG).show()
-                    }
-                    return
-                }
-                importFromXlsx(file)
-            }
+            // B-8: 크기로 거부하지 않는다. 큰 파일은 스트리밍 경로가 받는다([openImportSource]) —
+            // 종전에는 앱이 만든 백업이 128MB를 넘으면 앱 자신이 복원을 거부했다(자기모순).
+            ImportFileKind.PLAIN_XLSX, ImportFileKind.NOT_ZIP -> importFromXlsx(file)
         }
     }
 
@@ -479,10 +473,13 @@ class ExcelImporter(context: Context) {
                         entry.name == "data.xlsx" -> {
                             val target = File(extractDir, "data.xlsx")
                             xlsxFile = target
+                            // 이 상한은 **파서 한계가 아니라 zip-bomb·디스크 방어**다 (B-8).
+                            // 파싱 쪽 한계는 스트리밍 경로가 없앴으므로, 앱이 만든 큰 백업이
+                            // 여기서 걸려 되돌아오지 못하는 일이 없도록 넉넉히 잡는다.
                             val copied = zip.getInputStream(entry).use { input ->
-                                FileOutputStream(target).use { output -> copyWithLimit(input, output, MAX_IMPORT_FILE_SIZE) }
+                                FileOutputStream(target).use { output -> copyWithLimit(input, output, MAX_EXTRACTED_XLSX_SIZE) }
                             }
-                            if (copied > MAX_IMPORT_FILE_SIZE) {
+                            if (copied > MAX_EXTRACTED_XLSX_SIZE) {
                                 withContext(Dispatchers.Main) {
                                     Toast.makeText(appContext, com.novelcharacter.app.R.string.import_xlsx_too_large, Toast.LENGTH_LONG).show()
                                 }
@@ -633,8 +630,65 @@ class ExcelImporter(context: Context) {
 
     // ── XLSX에서 가져오기 ──
 
+    /**
+     * 가져오기 원본을 연다 — 파일 크기에 따라 DOM/스트리밍을 고른다 (B-8 / 색출 로드맵 6).
+     *
+     * **경로가 둘이어도 해석은 하나다.** 두 구현 모두 [ImportWorkbook]이고, 값 정규화는
+     * [ExcelCellValue] 하나를 탄다(`ImportSource.kt` 참조). 그래서 어느 경로로 읽든 같은
+     * 파일은 같은 값이 된다 — 왕복 무결성이 구조적으로 보존된다.
+     *
+     * **DOM을 남겨 둔 이유:** 검증된 기준을 버리지 않기 위해서다. 작은 파일은 종전 그대로
+     * 돌고, 스트리밍은 종전이라면 **거부되거나 OOM으로 죽던** 크기에서만 켜진다.
+     */
+    private fun openImportSource(xlsxFile: File): OpenedImportSource {
+        val budget = domParseBudgetBytes()
+        if (xlsxFile.length() > budget) {
+            Log.i("ExcelImporter", "streaming import: ${xlsxFile.length()} bytes > budget $budget")
+            val wb = StreamingImportWorkbook(xlsxFile)
+            return OpenedImportSource(wb, closer = wb)
+        }
+        return try {
+            val poi = xlsxFile.inputStream().use { WorkbookFactory.create(it) }
+            OpenedImportSource(DomImportWorkbook(poi), closer = poi)
+        } catch (oom: OutOfMemoryError) {
+            // 예산 안이라 DOM으로 갔는데도 이 기기 힙엔 벅찼다 — 조용히 죽는 대신 스트리밍으로 물러선다.
+            // **여는 단계에서만** 폴백한다: 이 시점엔 DB에 쓴 것이 없어 다시 시작해도 안전하다
+            // (importAll 도중의 OOM을 여기서 되잡으면 부분 반영 위에 두 번 쓰게 된다).
+            Log.w("ExcelImporter", "DOM open OOM — falling back to streaming", oom)
+            val wb = StreamingImportWorkbook(xlsxFile)
+            OpenedImportSource(wb, closer = wb)
+        }
+    }
+
+    /**
+     * DOM(XSSFWorkbook)으로 열어도 좋은 파일 크기 상한.
+     *
+     * XSSF DOM은 XMLBeans 객체 그래프를 모든 시트에 대해 동시에 들고 있어 실사용에서 파일
+     * 크기의 **10~20배** 힙을 쓴다. 그래서 고정 상수가 아니라 이 기기의 힙에서 역산한다 —
+     * 상수로 두면 힙이 작은 기기에서는 여전히 죽고, 큰 기기에서는 공연히 스트리밍으로 샌다.
+     * 힙의 1/4을 DOM 파싱에 허용한다고 보고 12배를 나눈 값이며, 양끝은 상식선에서 자른다.
+     */
+    private fun domParseBudgetBytes(): Long {
+        val maxHeap = Runtime.getRuntime().maxMemory()
+        return (maxHeap / 4 / 12).coerceIn(8L * 1024 * 1024, 64L * 1024 * 1024)
+    }
+
+    /**
+     * 연 원본과 그 자원. [ImportWorkbook]은 닫는 방법을 모르므로 닫개를 따로 들고 다닌다.
+     *
+     * 어느 경로로 열렸는지는 **사용자에게 알리지 않는다** — 두 경로의 결과가 같다는 것이
+     * 이 설계의 전제이므로(설계 문서 "사용자에겐 투명, 임계값 자동"), 알릴 것이 있다면
+     * 그것은 결함이지 정보가 아니다. 진단은 [openImportSource]의 로그가 남긴다.
+     */
+    private class OpenedImportSource(
+        val source: ImportWorkbook,
+        private val closer: java.io.Closeable
+    ) : java.io.Closeable {
+        override fun close() = closer.close()
+    }
+
     private suspend fun importFromXlsx(xlsxFile: File, options: ExportOptions = ExportOptions()) {
-        var workbook: org.apache.poi.ss.usermodel.Workbook? = null
+        var opened: OpenedImportSource? = null
         var progressDialog: AlertDialog? = null
         var progressText: TextView? = null
 
@@ -644,7 +698,8 @@ class ExcelImporter(context: Context) {
             // 대형 백업의 압축 해제된 시트 XML이 상한에 걸려 거부되지 않게 한다.
             org.apache.poi.openxml4j.util.ZipSecureFile.setMaxEntrySize(POI_MAX_ENTRY_SIZE)
 
-            workbook = xlsxFile.inputStream().use { WorkbookFactory.create(it) }
+            opened = openImportSource(xlsxFile)
+            val workbook = opened.source
 
             // Phase 1: 분석 프로그레스 표시
             val activityRef = currentActivityRef
@@ -769,17 +824,18 @@ class ExcelImporter(context: Context) {
                 Toast.makeText(appContext, com.novelcharacter.app.R.string.import_failed_retry, Toast.LENGTH_LONG).show()
             }
         } catch (oom: OutOfMemoryError) {
-            // data.xlsx가 이 기기 메모리로 한 번에 파싱하기엔 너무 큼 — Error는 위 Exception catch로 안 잡히므로
-            // 여기서 명시적으로 받아 조용한 크래시 대신 원인과 대안을 안내한다(변수 제어).
-            try { workbook?.close() } catch (_: Exception) {}
-            workbook = null
+            // 여는 단계는 openImportSource가 스트리밍으로 물러서므로, 여기 오는 것은 그 뒤(분석·반영)의
+            // OOM이다. 그 지점은 이미 DB에 쓰고 있을 수 있어 자동 재시도가 위험하다 —
+            // Error는 위 Exception catch로 안 잡히므로 여기서 받아 조용한 크래시 대신 원인을 알린다(변수 제어).
+            try { opened?.close() } catch (_: Exception) {}
+            opened = null
             android.util.Log.e("ExcelImporter", "Import out of memory", oom)
             withContext(Dispatchers.Main) {
                 dismissDialogSafely(progressDialog)
                 Toast.makeText(appContext, com.novelcharacter.app.R.string.import_oom, Toast.LENGTH_LONG).show()
             }
         } finally {
-            try { workbook?.close() } catch (e: Exception) { android.util.Log.w("ExcelImporter", "Failed to close workbook", e) }
+            try { opened?.close() } catch (e: Exception) { android.util.Log.w("ExcelImporter", "Failed to close workbook", e) }
         }
     }
 
@@ -1418,10 +1474,13 @@ class ExcelImporter(context: Context) {
 
     companion object {
         // 왕복 무결성: 앱이 내보낸 백업은 크기와 무관하게 그 앱으로 다시 복원되어야 한다.
-        // 상한은 '메모리 바운드'(POI가 통째로 메모리에 올리는 data.xlsx)와 '디스크/개수 바운드'
-        // (스트리밍 추출되는 이미지·전체 ZIP)를 구분해 잡는다 — 후자는 넉넉히, 전자는 largeHeap과
-        // OOM 안내를 곁들여 보수적으로.
-        private const val MAX_IMPORT_FILE_SIZE = 128L * 1024 * 1024 // data.xlsx 파싱 상한(POI 인메모리 — largeHeap 병행)
+        //
+        // **B-8 이후 상한의 뜻이 바뀌었다.** 종전의 128MB는 '메모리 바운드'였다 — POI가 data.xlsx를
+        // 통째로 메모리에 올리므로 그 이상은 읽을 수 없었고, 그래서 앱이 만든 큰 백업을 앱이
+        // 거부했다. 스트리밍 경로가 그 메모리 바운드를 없앴으므로(파일 크기가 아니라 가장 큰 시트
+        // 하나에 비례), 파싱에는 더 이상 크기 상한이 없다. 남은 상한은 전부 '디스크/개수 바운드'이며
+        // zip-bomb 방어의 몫이다.
+        private const val MAX_EXTRACTED_XLSX_SIZE = 1024L * 1024 * 1024 // ZIP에서 꺼내는 data.xlsx 상한(디스크·zip-bomb 방어)
         private const val MAX_EXTERNAL_FILE_SIZE = 4L * 1024 * 1024 * 1024 // 외부/전체 파일 상한(스트리밍 복사 — 디스크 바운드, 4GB)
         private const val MAX_IMAGE_ENTRY_COUNT = 50000 // ZIP 이미지 엔트리 개수 상한
         private const val MAX_IMAGE_TOTAL_SIZE = 8L * 1024 * 1024 * 1024 // ZIP 이미지 총 해제 용량 상한 (8GB)

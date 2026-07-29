@@ -485,7 +485,7 @@
     <string name="delete_trash_notice">삭제 후 30일간 휴지통(설정 &gt; 데이터 관리 &gt; 휴지통)에서 복원할 수 있습니다.\n보관 단위는 한 번의 삭제이며 최근 30건까지 유지됩니다 — 한 삭제가 만든 백업은 통째로 남거나 통째로 사라지고, 한도를 넘기면 오래된 삭제부터 영구 삭제됩니다.</string>
     <string name="delete_impact_universe">함께 삭제: 작품 %1$d개 · 캐릭터 %2$d명 · 사건 %3$d건 · 필드 정의 %4$d개 · 필드값 %5$d건 (세력 포함)\n\n세계관·작품·캐릭터·세력·사건이 하나의 묶음으로 휴지통에 보관됩니다(최근 30건, 30일). 휴지통에서 \'전체 복원\'을 누르면 세계관부터 순서대로 되살아나 참조도 다시 이어집니다. 오래된 삭제부터 정리되니 되살릴 것이 있으면 먼저 복원하세요.</string>
     <string name="import_file_too_large">파일이 너무 커서 이 기기에서 처리할 수 없습니다 (최대 4GB)</string>
-    <string name="import_xlsx_too_large">엑셀 데이터 시트가 너무 큽니다 (데이터 시트 최대 128MB)</string>
+    <string name="import_xlsx_too_large">백업 안의 데이터 시트가 너무 큽니다 (최대 1GB). 파일이 손상되었을 수 있으니 다시 내보낸 백업으로 시도해 주세요.</string>
     <string name="import_too_many_images">백업에 포함된 이미지가 너무 많습니다 (최대 50,000장)</string>
     <string name="import_images_too_large">백업 이미지 총 용량이 너무 큽니다 (최대 8GB)</string>
     <string name="import_oom">기기 메모리가 부족해 데이터를 한 번에 처리하지 못했습니다. 데이터(캐릭터·필드·사건 등)가 매우 많은 경우이니, 작품(세계관)을 나눠 내보낸 뒤 부분씩 가져와 주세요. (이미지 용량은 이 한계와 무관합니다.)</string>
@@ -601,7 +601,7 @@
     <string name="settings_reset_app">앱 초기화</string>
     <string name="settings_reset_app_desc">모든 데이터를 삭제하고 초기 상태로 되돌립니다</string>
     <string name="reset_confirm_title">앱 초기화</string>
-    <string name="reset_confirm_message">모든 세계관, 작품, 캐릭터, 사건 등 앱 데이터가 삭제됩니다.\n\n이 작업은 되돌릴 수 없습니다.</string>
+    <string name="reset_confirm_message">모든 세계관, 작품, 캐릭터, 사건 등 앱 데이터가 삭제됩니다.\n\n휴지통에 보관된 삭제 항목, 작업 이력, 저장한 목록 프리셋, 이미지와 이미지 태그도 함께 지워집니다. 초기화 후에는 휴지통에서 되살릴 수 있는 것이 남지 않습니다.\n\n이 작업은 되돌릴 수 없습니다.</string>
     <string name="reset_delete_backups">백업 파일도 삭제</string>
     <string name="reset_final_confirm">정말로 초기화하시겠습니까?</string>
     <string name="reset_in_progress">초기화 중…</string>
