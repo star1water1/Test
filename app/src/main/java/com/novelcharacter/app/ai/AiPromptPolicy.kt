@@ -53,6 +53,43 @@ object AiPromptPolicy {
     fun confidenceFromWire(raw: String?): CharacterFieldAiSuggester.Confidence? =
         CharacterFieldAiSuggester.Confidence.fromWire(raw)
 
+    // ── AI 이미지 태그 (설계 image_folder_tag_ai 3장) ──
+
+    /**
+     * 한 요청에 담는 폴더 수. 폴더 이름은 짧지만 응답이 폴더마다 태그 배열을 되돌리므로
+     * **출력**이 먼저 찬다 — 상한의 근거는 입력이 아니라 출력 예산이다.
+     */
+    const val IMAGE_TAG_FOLDERS_PER_REQUEST = 40
+
+    /** 프롬프트에 싣는 기존 이미지 태그 어휘 개수(빈도 상위). */
+    const val IMAGE_TAG_VOCAB_MAX = 120
+
+    /** '어휘에 포함'을 켠 필드 **하나당** 싣는 값 개수. */
+    const val IMAGE_TAG_VALUES_PER_FIELD = 24
+
+    /** 필드에서 온 값 어휘의 총 상한 — 켠 필드가 많아도 프롬프트가 폭발하지 않게 한다. */
+    const val IMAGE_TAG_VALUES_TOTAL_MAX = 200
+
+    /** 사용자가 쓴 기조 문구의 길이 상한. 넘으면 자르고 **자른 사실을 고지한다**(R-14). */
+    const val IMAGE_TAG_POLICY_MAX_CHARS = 600
+
+    /** 한 폴더에 받아들일 태그 수 — 초과분은 버리고 개수를 보고한다. */
+    const val IMAGE_TAG_MAX_PER_FOLDER = 6
+
+    /** 태그 하나의 길이 상한 — 넘으면 태그가 아니라 문장이다. */
+    const val IMAGE_TAG_MAX_LENGTH = 24
+
+    fun clampImageTagPolicy(raw: String?): String {
+        val trimmed = raw?.trim().orEmpty()
+        return if (trimmed.length <= IMAGE_TAG_POLICY_MAX_CHARS) trimmed
+        else trimmed.take(IMAGE_TAG_POLICY_MAX_CHARS)
+    }
+
+    /** 폴더 수 → 요청 수. 비용 고지의 단일 소스(고지와 실제가 갈리면 안 된다). */
+    fun imageTagRequestCount(folderCount: Int): Int =
+        if (folderCount <= 0) 0
+        else (folderCount + IMAGE_TAG_FOLDERS_PER_REQUEST - 1) / IMAGE_TAG_FOLDERS_PER_REQUEST
+
     /** 슬라이더 눈금에 맞춘 값 — 저장값이 눈금 밖이면 슬라이더가 예외로 죽는다 */
     private fun snap(value: Int, step: Int): Int = (value / step) * step
 }

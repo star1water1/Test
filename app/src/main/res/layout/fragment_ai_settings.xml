@@ -283,6 +283,40 @@
                         android:textAppearance="@style/TextAppearance.App.Caption"
                         android:textColor="?attr/colorPrimary"
                         android:visibility="gone" />
+
+                    <!-- AI 이미지 태그 기조 (설계 image_folder_tag_ai 4-1) — R-25 목적문 포함 -->
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="20dp"
+                        android:text="@string/ai_image_tag_policy_label"
+                        android:textAppearance="@style/TextAppearance.App.Subtitle" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="@string/ai_image_tag_policy_desc"
+                        android:textAppearance="@style/TextAppearance.App.Caption"
+                        android:textColor="@color/text_secondary" />
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:hint="@string/ai_image_tag_policy_hint">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/imageTagPolicyEdit"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:inputType="textMultiLine|textCapSentences"
+                            android:minLines="2"
+                            android:maxLines="5"
+                            android:gravity="top"
+                            android:textAppearance="@style/TextAppearance.App.Body" />
+                    </com.google.android.material.textfield.TextInputLayout>
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 

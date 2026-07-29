@@ -134,6 +134,7 @@ $MAIN/ai/AiCreativity.kt
 $MAIN/ai/AiProtocolCodec.kt
 $MAIN/ai/NarrativeFieldAiWriter.kt
 $MAIN/ai/AiPromptPolicy.kt
+$MAIN/ai/ImageFolderTagSuggester.kt
 $MAIN/data/model/NarrativeMode.kt
 $MAIN/util/ImageFilterHelper.kt
 $MAIN/util/ImageRecommendationHelper.kt
@@ -219,6 +220,7 @@ $TEST/util/ResetPlanTest.kt
 $TEST/util/MembershipTimelineTest.kt
 $TEST/ai/CharacterFieldAiSuggesterTest.kt
 $TEST/ai/FieldAiTargetRuleTest.kt
+$TEST/ai/ImageFolderTagSuggesterTest.kt
 $TEST/data/FieldConfigPolicyTest.kt
 $TEST/excel/FieldConfigColumnsTest.kt
 $TEST/ai/FieldLibraryAiOrganizerTest.kt

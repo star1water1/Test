@@ -19,6 +19,37 @@ import org.json.JSONObject
 object FieldAiPolicy {
     const val CONFIG_KEY = "aiSuggest"
 
+    /**
+     * 필드별 **AI 이미지 태그 어휘 편입** 설정
+     * (설계 `image_folder_tag_ai` 4-2, 결정 D-3).
+     *
+     * 켜면 이 필드에 입력된 값들이 이미지 태그 제안 때 **어휘 후보로 함께 전달**된다.
+     * 기조 문구에 적히는 것이 아니고 이 필드의 값이 바뀌지도 않는다 — 사용자가 우려한 대로
+     * '기조에 포함'이라는 이름은 "내가 쓴 기조에 값이 덧붙는다"로 읽히므로, 화면 문구는
+     * '어휘에 포함'으로 부르고 목적문이 그 오해를 정면으로 막는다.
+     *
+     * [CONFIG_KEY]와 **기본값 방향이 반대다**(그쪽은 기본 켜짐, 이쪽은 기본 꺼짐).
+     * 모든 필드의 값을 무조건 어휘로 보내면 프롬프트가 폭발하고, 무관한 필드(메모·나이)가
+     * 태그 어휘를 오염시킨다. 그래서 **켠 것만** 싣는다.
+     */
+    const val IMAGE_TAG_VOCAB_KEY = "imageTagVocab"
+
+    /** 키 없음 = false(꺼짐). 손상 JSON도 기본값으로 관대 처리. */
+    fun isImageTagVocabEnabled(configJson: String): Boolean = try {
+        JSONObject(configJson).optBoolean(IMAGE_TAG_VOCAB_KEY, false)
+    } catch (_: Exception) {
+        false
+    }
+
+    /** false면 키를 제거한다(기본값 미저장). 손상 JSON은 원문 유지. */
+    fun applyImageTagVocabToConfig(existing: String, enabled: Boolean): String = try {
+        val json = if (existing.isBlank()) JSONObject() else JSONObject(existing)
+        if (enabled) json.put(IMAGE_TAG_VOCAB_KEY, true) else json.remove(IMAGE_TAG_VOCAB_KEY)
+        json.toString()
+    } catch (_: Exception) {
+        existing
+    }
+
     /** 키 없음 = true(켜짐). 손상 JSON도 기본값으로 관대 처리. */
     fun isSuggestEnabled(configJson: String): Boolean = try {
         JSONObject(configJson).optBoolean(CONFIG_KEY, true)

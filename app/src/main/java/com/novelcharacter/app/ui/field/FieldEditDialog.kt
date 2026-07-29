@@ -1041,6 +1041,8 @@ class FieldEditDialog : DialogFragment() {
         )
         binding.switchAiSuggest.isChecked =
             com.novelcharacter.app.data.model.FieldAiPolicy.isSuggestEnabled(field.config)
+        binding.switchImageTagVocab.isChecked =
+            com.novelcharacter.app.data.model.FieldAiPolicy.isImageTagVocabEnabled(field.config)
 
         // Set type spinner
         val types = FieldType.entries.toTypedArray()
@@ -1612,8 +1614,11 @@ class FieldEditDialog : DialogFragment() {
         val withDescription = com.novelcharacter.app.data.model.FieldDescription.applyToConfig(
             configJson, binding.editFieldDescription.text?.toString().orEmpty()
         )
-        return com.novelcharacter.app.data.model.FieldAiPolicy.applyToConfig(
+        val withSuggest = com.novelcharacter.app.data.model.FieldAiPolicy.applyToConfig(
             withDescription, binding.switchAiSuggest.isChecked
+        )
+        return com.novelcharacter.app.data.model.FieldAiPolicy.applyImageTagVocabToConfig(
+            withSuggest, binding.switchImageTagVocab.isChecked
         )
     }
 

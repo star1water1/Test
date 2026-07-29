@@ -60,6 +60,20 @@ class AiPromptSettings(context: Context) {
             sp.edit().putString(KEY_CREATIVITY, value.wire).apply()
         }
 
+    /**
+     * **AI 이미지 태그 기조** — 폴더 이름으로 태그를 제안할 때 함께 보내는 사용자 지침
+     * (설계 `image_folder_tag_ai` 4-1). 비우면 보내지 않는다.
+     *
+     * 어휘(기존 태그 + '어휘에 포함' 필드 값)만으로는 "무엇을 태그로 삼을 것인가"의 기준까지
+     * 전달되지 않는다 — 같은 폴더 이름에서 장면을 뽑을지 인물 감정을 뽑을지는 작품마다 다르고,
+     * 그것은 개발자가 정할 수 없다(자율성 우선). 상한·절단은 [AiPromptPolicy]가 단일 소스다.
+     */
+    var imageTagPolicy: String
+        get() = AiPromptPolicy.clampImageTagPolicy(sp.getString(KEY_IMAGE_TAG_POLICY, null))
+        set(value) {
+            sp.edit().putString(KEY_IMAGE_TAG_POLICY, AiPromptPolicy.clampImageTagPolicy(value)).apply()
+        }
+
     companion object {
         /** 키를 담지 않는다 — 이 파일은 `ai_keys`·`ai_providers`와 달리 민감 정보가 없다. */
         const val PREFS_NAME = "ai_prompt_settings"
@@ -67,5 +81,6 @@ class AiPromptSettings(context: Context) {
         private const val KEY_STYLE_SAMPLES = "styleSampleCount"
         private const val KEY_MIN_CONFIDENCE = "minConfidence"
         private const val KEY_CREATIVITY = "creativity"
+        private const val KEY_IMAGE_TAG_POLICY = "imageTagPolicy"
     }
 }
