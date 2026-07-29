@@ -7,6 +7,8 @@ import android.view.View
 import android.widget.ArrayAdapter
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
+import com.novelcharacter.app.util.setValidatedPositiveButton
+import com.novelcharacter.app.util.showInlineError
 import androidx.lifecycle.LifecycleOwner
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.novelcharacter.app.R
@@ -96,68 +98,73 @@ class StateChangeHelper(
         val title = if (existingChange != null) getString(R.string.edit_state_change)
         else getString(R.string.add_state_change)
 
-        MaterialAlertDialogBuilder(context)
+        // B-28: 검증 5종이 전부 '토스트 후 자동 닫힘'이라, 연도 하나를 잘못 적으면 필드·값·설명까지
+        // 통째로 사라졌다. 실패 시 창을 열어 둔 채 틀린 칸에 오류를 걸어 교정 경로를 남긴다(S-12와 같은 형태).
+        val dialog = MaterialAlertDialogBuilder(context)
             .setTitle(title)
             .setView(dialogBinding.root)
-            .setPositiveButton(getString(R.string.save)) { _, _ ->
-                val yearStr = dialogBinding.editYear.text.toString().trim()
-                if (yearStr.isEmpty()) {
-                    Toast.makeText(context, getString(R.string.year_required), Toast.LENGTH_SHORT).show()
-                    return@setPositiveButton
-                }
-                val year = yearStr.toIntOrNull()
-                if (year == null) {
-                    Toast.makeText(context, getString(R.string.year_required), Toast.LENGTH_SHORT).show()
-                    return@setPositiveButton
-                }
-
-                val month = dialogBinding.editMonth.text.toString().trim().toIntOrNull()
-                if (month != null && month !in 1..12) {
-                    Toast.makeText(context, getString(R.string.month_valid_range), Toast.LENGTH_SHORT).show()
-                    return@setPositiveButton
-                }
-                val day = dialogBinding.editDay.text.toString().trim().toIntOrNull()
-                if (day != null && !com.novelcharacter.app.util.isValidDay(month, day)) {
-                    Toast.makeText(context, getString(R.string.day_valid_range), Toast.LENGTH_SHORT).show()
-                    return@setPositiveButton
-                }
-                val selectedIndex = dialogBinding.spinnerFieldKey.selectedItemPosition
-                if (selectedIndex < 0 || selectedIndex >= fieldOptions.size) {
-                    Toast.makeText(context, getString(R.string.field_required), Toast.LENGTH_SHORT).show()
-                    return@setPositiveButton
-                }
-                val fieldKey = fieldOptions[selectedIndex].first
-                val newValue = dialogBinding.editNewValue.text.toString().trim()
-                if (newValue.isEmpty()) {
-                    Toast.makeText(context, getString(R.string.value_required), Toast.LENGTH_SHORT).show()
-                    return@setPositiveButton
-                }
-                val description = dialogBinding.editDescription.text.toString().trim()
-
-                val change = CharacterStateChange(
-                    id = existingChange?.id ?: 0,
-                    characterId = characterId,
-                    year = year,
-                    month = month,
-                    day = day,
-                    fieldKey = fieldKey,
-                    newValue = newValue,
-                    description = description,
-                    // 편집은 정체성을 보존한다(R-1) — 명시하지 않으면 기본값이 code를 재발급해
-                    // 엑셀 재가져오기 중복·복원 중복 차단 오동작을 만든다. 구버전 무코드 행은 1회 부여.
-                    code = existingChange?.code ?: generateEntityCode(),
-                    createdAt = existingChange?.createdAt ?: System.currentTimeMillis()
-                )
-
-                if (existingChange != null) {
-                    viewModel.updateStateChange(change)
-                } else {
-                    viewModel.insertStateChange(change)
-                }
-                // 결과는 viewModel.result 채널이 실제 완료 후 통보 (낙관적 오탐·중복 알림 방지)
-            }
+            .setPositiveButton(getString(R.string.save), null)
             .setNegativeButton(getString(R.string.cancel), null)
-            .show()
+            .create()
+
+        dialog.setValidatedPositiveButton {
+            val yearStr = dialogBinding.editYear.text.toString().trim()
+            val year = yearStr.toIntOrNull()
+            if (year == null) {
+                dialogBinding.layoutYear.showInlineError(
+                    getString(if (yearStr.isEmpty()) R.string.year_required else R.string.enter_valid_year)
+                )
+                return@setValidatedPositiveButton false
+            }
+
+            val month = dialogBinding.editMonth.text.toString().trim().toIntOrNull()
+            if (month != null && month !in 1..12) {
+                dialogBinding.layoutMonth.showInlineError(getString(R.string.month_valid_range))
+                return@setValidatedPositiveButton false
+            }
+            val day = dialogBinding.editDay.text.toString().trim().toIntOrNull()
+            if (day != null && !com.novelcharacter.app.util.isValidDay(month, day)) {
+                dialogBinding.layoutDay.showInlineError(getString(R.string.day_valid_range))
+                return@setValidatedPositiveButton false
+            }
+            val selectedIndex = dialogBinding.spinnerFieldKey.selectedItemPosition
+            if (selectedIndex < 0 || selectedIndex >= fieldOptions.size) {
+                // 스피너에는 오류를 걸 자리가 없다 — 여기만 토스트를 남기되 창은 유지한다.
+                Toast.makeText(context, getString(R.string.field_required), Toast.LENGTH_SHORT).show()
+                return@setValidatedPositiveButton false
+            }
+            val fieldKey = fieldOptions[selectedIndex].first
+            val newValue = dialogBinding.editNewValue.text.toString().trim()
+            if (newValue.isEmpty()) {
+                dialogBinding.layoutNewValue.showInlineError(getString(R.string.value_required))
+                return@setValidatedPositiveButton false
+            }
+            val description = dialogBinding.editDescription.text.toString().trim()
+
+            val change = CharacterStateChange(
+                id = existingChange?.id ?: 0,
+                characterId = characterId,
+                year = year,
+                month = month,
+                day = day,
+                fieldKey = fieldKey,
+                newValue = newValue,
+                description = description,
+                // 편집은 정체성을 보존한다(R-1) — 명시하지 않으면 기본값이 code를 재발급해
+                // 엑셀 재가져오기 중복·복원 중복 차단 오동작을 만든다. 구버전 무코드 행은 1회 부여.
+                code = existingChange?.code ?: generateEntityCode(),
+                createdAt = existingChange?.createdAt ?: System.currentTimeMillis()
+            )
+
+            if (existingChange != null) {
+                viewModel.updateStateChange(change)
+            } else {
+                viewModel.insertStateChange(change)
+            }
+            // 결과는 viewModel.result 채널이 실제 완료 후 통보 (낙관적 오탐·중복 알림 방지)
+            true
+        }
+        dialog.show()
     }
 
     private fun showEditDeleteDialog(change: CharacterStateChange) {

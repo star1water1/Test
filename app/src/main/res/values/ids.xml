@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <item name="image_load_job" type="id" />
+    <!-- 인라인 오류 감시자 중복 부착 방지 (util/AlertDialogExt.kt) -->
+    <item name="inline_error_watcher" type="id" />
 </resources>

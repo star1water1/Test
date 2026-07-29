@@ -22,6 +22,7 @@ import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.slider.Slider
+import com.google.android.material.textfield.TextInputLayout
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.Faction
 import com.novelcharacter.app.data.model.FactionMembership
@@ -29,7 +30,10 @@ import com.novelcharacter.app.databinding.FragmentFactionManageBinding
 import com.novelcharacter.app.ui.adapter.FactionAdapter
 import com.novelcharacter.app.ui.adapter.FactionMemberAdapter
 import com.novelcharacter.app.ui.adapter.FactionMemberItem
+import com.novelcharacter.app.util.dismissSafely
 import com.novelcharacter.app.util.notifyResult
+import com.novelcharacter.app.util.setValidatedPositiveButton
+import com.novelcharacter.app.util.showInlineError
 import kotlinx.coroutines.launch
 
 class FactionManageFragment : Fragment() {
@@ -251,45 +255,53 @@ class FactionManageFragment : Fragment() {
         }
 
         val title = if (faction == null) R.string.faction_add else R.string.faction_edit
-        MaterialAlertDialogBuilder(requireContext())
+        // B-28: 이름·관계 유형 검증이 토스트 후 자동 닫힘이라, 한 칸만 비어도 고른 색·강도·설명이
+        // 함께 사라졌다. 실패 시 창을 유지하고 빈 칸에 오류를 건다.
+        val layoutName = dialogView.findViewById<TextInputLayout>(R.id.layoutFactionName)
+        val layoutRelationType = dialogView.findViewById<TextInputLayout>(R.id.layoutAutoRelationType)
+        val dialog = MaterialAlertDialogBuilder(requireContext())
             .setTitle(title)
             .setView(dialogView)
-            .setPositiveButton(R.string.save) { _, _ ->
-                val name = editName.text.toString().trim()
-                val description = editDescription.text.toString().trim()
-                val autoRelationType = editAutoRelationType.text.toString().trim()
-                val intensity = sliderIntensity.value.toInt()
-
-                if (name.isEmpty()) {
-                    Toast.makeText(requireContext(), R.string.faction_name_required, Toast.LENGTH_SHORT).show()
-                    return@setPositiveButton
-                }
-                if (autoRelationType.isEmpty()) {
-                    Toast.makeText(requireContext(), R.string.faction_relation_type_required, Toast.LENGTH_SHORT).show()
-                    return@setPositiveButton
-                }
-
-                if (faction == null) {
-                    viewModel.insertFaction(Faction(
-                        universeId = universeId,
-                        name = name,
-                        description = description,
-                        color = selectedColor,
-                        autoRelationType = autoRelationType,
-                        autoRelationIntensity = intensity
-                    ))
-                } else {
-                    viewModel.updateFaction(faction.copy(
-                        name = name,
-                        description = description,
-                        color = selectedColor,
-                        autoRelationType = autoRelationType,
-                        autoRelationIntensity = intensity
-                    ))
-                }
-            }
+            .setPositiveButton(R.string.save, null)
             .setNegativeButton(R.string.cancel, null)
-            .show()
+            .create()
+
+        dialog.setValidatedPositiveButton {
+            val name = editName.text.toString().trim()
+            val description = editDescription.text.toString().trim()
+            val autoRelationType = editAutoRelationType.text.toString().trim()
+            val intensity = sliderIntensity.value.toInt()
+
+            if (name.isEmpty()) {
+                layoutName.showInlineError(getString(R.string.faction_name_required))
+                return@setValidatedPositiveButton false
+            }
+            if (autoRelationType.isEmpty()) {
+                layoutRelationType.showInlineError(getString(R.string.faction_relation_type_required))
+                return@setValidatedPositiveButton false
+            }
+
+            if (faction == null) {
+                viewModel.insertFaction(Faction(
+                    universeId = universeId,
+                    name = name,
+                    description = description,
+                    color = selectedColor,
+                    autoRelationType = autoRelationType,
+                    autoRelationIntensity = intensity
+                ))
+            } else {
+                viewModel.updateFaction(faction.copy(
+                    name = name,
+                    description = description,
+                    color = selectedColor,
+                    autoRelationType = autoRelationType,
+                    autoRelationIntensity = intensity
+                ))
+            }
+            true
+        }
+        dialog.show()
     }
 
     // ===== 세력 옵션 (편집/관계/삭제) =====
@@ -463,55 +475,81 @@ class FactionManageFragment : Fragment() {
                 "${getString(R.string.faction_relationship_edit)} — ${otherName ?: ""}"
             }
 
-            MaterialAlertDialogBuilder(ctx)
+            // B-28: 유형 검증은 토스트 후 닫힘이었고, 중복 판정은 창이 닫힌 **뒤** 비동기로 나서
+            // 사용자가 적은 설명·강도가 두 경로 모두에서 사라졌다. 동기 검증은 창을 유지하고,
+            // 비동기 판정은 결과를 받은 뒤에 닫는다(성공일 때만).
+            val relationshipDialog = MaterialAlertDialogBuilder(ctx)
                 .setTitle(title)
                 .setView(container)
-                .setPositiveButton(R.string.save) { _, _ ->
+                .setPositiveButton(R.string.save, null)
+                .setNegativeButton(R.string.cancel, null)
+                .create()
+
+            // 창을 살려 두면 저장 중에 한 번 더 누를 수 있다 — 종전에는 즉시 닫혀서 불가능했던 창이다.
+            var saving = false
+            relationshipDialog.setValidatedPositiveButton {
+                    if (saving) return@setValidatedPositiveButton false
                     val type = editType.text.toString().trim()
                     if (type.isEmpty()) {
-                        Toast.makeText(ctx, R.string.faction_relationship_type_required, Toast.LENGTH_SHORT).show()
-                        return@setPositiveButton
+                        editType.showInlineError(getString(R.string.faction_relationship_type_required))
+                        return@setValidatedPositiveButton false
                     }
+                    // 저장할 것은 코루틴에 들어가기 **전에** 짓는다 — 창이 살아 있는 동안 사용자가
+                    // 슬라이더를 더 움직이면, 중단 뒤에 읽는 값은 누른 순간의 값이 아니다.
+                    val toInsert = if (existing == null) {
+                        val target = others.getOrNull(targetSpinner.selectedItemPosition)
+                        if (target == null) {
+                            editType.showInlineError(getString(R.string.faction_relationship_need_two))
+                            return@setValidatedPositiveButton false
+                        }
+                        com.novelcharacter.app.data.model.FactionRelationship(
+                            factionId1 = faction.id,
+                            factionId2 = target.id,
+                            relationType = type,
+                            description = editDesc.text.toString().trim(),
+                            intensity = intensitySlider.value.toInt(),
+                            isBidirectional = bidirectionalCheck.isChecked
+                        )
+                    } else null
+                    val toUpdate = existing?.copy(
+                        relationType = type,
+                        description = editDesc.text.toString().trim(),
+                        intensity = intensitySlider.value.toInt(),
+                        isBidirectional = bidirectionalCheck.isChecked
+                    )
+                    saving = true
                     viewLifecycleOwner.lifecycleScope.launch {
-                        val duplicated: Boolean = if (existing == null) {
-                            val target = others.getOrNull(targetSpinner.selectedItemPosition)
-                                ?: return@launch
-                            val inserted = factionRepository.insertFactionRelationship(
-                                com.novelcharacter.app.data.model.FactionRelationship(
-                                    factionId1 = faction.id,
-                                    factionId2 = target.id,
-                                    relationType = type,
-                                    description = editDesc.text.toString().trim(),
-                                    intensity = intensitySlider.value.toInt(),
-                                    isBidirectional = bidirectionalCheck.isChecked
-                                )
-                            )
-                            inserted == -1L
-                        } else {
-                            try {
-                                factionRepository.updateFactionRelationship(
-                                    existing.copy(
-                                        relationType = type,
-                                        description = editDesc.text.toString().trim(),
-                                        intensity = intensitySlider.value.toInt(),
-                                        isBidirectional = bidirectionalCheck.isChecked
-                                    )
-                                )
-                                false
-                            } catch (e: Exception) {
-                                // (세력쌍, 유형) 유니크 충돌
-                                true
+                        // finally로 되돌린다 — 저장이 예외로 끝나면 잠금이 남아 창이 영영 반응하지
+                        // 않는다(창을 살려 둔 대가로 새로 생긴 자리다).
+                        val duplicated: Boolean = try {
+                            when {
+                                toInsert != null ->
+                                    factionRepository.insertFactionRelationship(toInsert) == -1L
+                                toUpdate != null -> try {
+                                    factionRepository.updateFactionRelationship(toUpdate)
+                                    false
+                                } catch (e: Exception) {
+                                    // (세력쌍, 유형) 유니크 충돌
+                                    true
+                                }
+                                else -> false
                             }
+                        } finally {
+                            saving = false
                         }
                         if (!isAdded) return@launch
                         if (duplicated) {
-                            Toast.makeText(requireContext(), R.string.faction_relationship_duplicate, Toast.LENGTH_SHORT).show()
+                            // 중복이면 창을 살려 둔다 — 적어 둔 설명·강도로 유형만 고쳐 다시 저장할 수 있다.
+                            editType.showInlineError(getString(R.string.faction_relationship_duplicate))
+                            return@launch
                         }
+                        relationshipDialog.dismissSafely()
                         showFactionRelationshipsDialog(faction)
                     }
+                    // 저장 여부는 위 코루틴이 정한다 — 여기서 닫으면 중복 판정을 받을 창이 사라진다.
+                    false
                 }
-                .setNegativeButton(R.string.cancel, null)
-                .show()
+            relationshipDialog.show()
         }
     }
 
@@ -645,28 +683,36 @@ class FactionManageFragment : Fragment() {
         }
         container.addView(sliderIntensity)
 
-        MaterialAlertDialogBuilder(ctx)
+        // B-28: 연도 검증 둘 다 토스트 후 닫힘이라, 연도를 잘못 적으면 고쳐 쓴 관계 유형·강도까지
+        // 함께 사라졌다. 실패 시 창을 유지하고 연도 칸에 오류를 건다.
+        val dialog = MaterialAlertDialogBuilder(ctx)
             .setTitle(getString(R.string.faction_member_depart))
             .setView(container)
-            .setPositiveButton(R.string.save) { _, _ ->
-                val yearStr = editYear.text.toString().trim()
-                val year = yearStr.toIntOrNull()
-                if (year == null) {
-                    Toast.makeText(ctx, R.string.faction_leave_year_required, Toast.LENGTH_SHORT).show()
-                    return@setPositiveButton
-                }
-                val joinYear = item.membership.joinYear
-                if (joinYear != null && year < joinYear) {
-                    Toast.makeText(ctx, "탈퇴 연도($year)는 가입 연도($joinYear) 이후여야 합니다.", Toast.LENGTH_LONG).show()
-                    return@setPositiveButton
-                }
-                val relType = editRelType.text.toString().trim().ifEmpty { "전 ${faction.autoRelationType}" }
-                val intensity = sliderIntensity.value.toInt()
-
-                viewModel.departMember(faction.id, item.membership.characterId, year, relType, intensity)
-            }
+            .setPositiveButton(R.string.save, null)
             .setNegativeButton(R.string.cancel, null)
-            .show()
+            .create()
+
+        dialog.setValidatedPositiveButton {
+            val yearStr = editYear.text.toString().trim()
+            val year = yearStr.toIntOrNull()
+            if (year == null) {
+                editYear.showInlineError(getString(R.string.faction_leave_year_required))
+                return@setValidatedPositiveButton false
+            }
+            val joinYear = item.membership.joinYear
+            if (joinYear != null && year < joinYear) {
+                editYear.showInlineError(
+                    getString(R.string.faction_leave_year_before_join, year, joinYear)
+                )
+                return@setValidatedPositiveButton false
+            }
+            val relType = editRelType.text.toString().trim().ifEmpty { "전 ${faction.autoRelationType}" }
+            val intensity = sliderIntensity.value.toInt()
+
+            viewModel.departMember(faction.id, item.membership.characterId, year, relType, intensity)
+            true
+        }
+        dialog.show()
     }
 
     private fun showAddMemberDialog(faction: Faction) {
@@ -753,11 +799,20 @@ class FactionManageFragment : Fragment() {
                 }
             })
 
-            MaterialAlertDialogBuilder(ctx)
+            // B-28: 아무도 고르지 않은 채 확인을 누르면 **아무 말 없이** 닫혔다 — 사용자는 추가된 줄
+            // 알았다(무통보 조기 return). 이제 창을 유지하고 무엇이 빠졌는지 말한다.
+            val memberDialog = MaterialAlertDialogBuilder(ctx)
                 .setTitle(R.string.faction_member_add)
                 .setView(container)
-                .setPositiveButton(R.string.confirm) { _, _ ->
-                    if (selectedIds.isEmpty()) return@setPositiveButton
+                .setPositiveButton(R.string.confirm, null)
+                .setNegativeButton(R.string.cancel, null)
+                .create()
+
+            memberDialog.setValidatedPositiveButton {
+                    if (selectedIds.isEmpty()) {
+                        Toast.makeText(ctx, R.string.faction_member_select_required, Toast.LENGTH_SHORT).show()
+                        return@setValidatedPositiveButton false
+                    }
 
                     val joinYear = editYear.text.toString().trim().toIntOrNull()
                     viewModel.addMembers(faction.id, selectedIds.toList(), joinYear) { result ->
@@ -773,9 +828,9 @@ class FactionManageFragment : Fragment() {
                             Toast.makeText(ctx, parts.joinToString("\n"), duration).show()
                         }
                     }
+                    true
                 }
-                .setNegativeButton(R.string.cancel, null)
-                .show()
+            memberDialog.show()
         }
     }
 

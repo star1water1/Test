@@ -21,7 +21,9 @@ import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import com.novelcharacter.app.R
 import com.novelcharacter.app.util.navigateSafe
+import com.novelcharacter.app.util.dismissSafely
 import com.novelcharacter.app.util.setValidatedPositiveButton
+import com.novelcharacter.app.util.showInlineError
 import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.CharacterRelationship
 import com.novelcharacter.app.data.model.CharacterRelationshipChange
@@ -207,54 +209,72 @@ class RelationshipHelper(
                 override fun afterTextChanged(s: android.text.Editable?) {}
             })
 
-            MaterialAlertDialogBuilder(context)
+            // B-28: 상대 미매칭도, 중복 관계도 창을 닫아 버려서 고른 유형·설명·강도가 사라졌다.
+            // 중복 판정은 비동기라 닫힘이 판정보다 **먼저** 왔다 — 이제 판정을 받고 나서 닫는다.
+            val dialog = MaterialAlertDialogBuilder(context)
                 .setTitle(getString(R.string.add_relationship))
                 .setView(dialogView)
-                .setPositiveButton(getString(R.string.save)) { _, _ ->
-                    // AutoComplete에서 텍스트로 직접 입력한 경우 매칭 시도
-                    if (selectedCharIndex < 0) {
-                        val typed = autoComplete.text.toString().trim()
-                        selectedCharIndex = charDisplayNames.indexOfFirst {
-                            it.equals(typed, ignoreCase = true)
-                        }
-                    }
-                    if (selectedCharIndex < 0 || selectedCharIndex >= sorted.size) {
-                        Toast.makeText(context, getString(R.string.no_other_characters), Toast.LENGTH_SHORT).show()
-                        return@setPositiveButton
-                    }
+                .setPositiveButton(getString(R.string.save), null)
+                .setNegativeButton(getString(R.string.cancel), null)
+                .create()
 
-                    val selectedType = typeNames[spinnerType.selectedItemPosition]
-                    val desc = editDesc.text.toString().trim()
-                    val intensity = sliderIntensity.value.toInt()
-                    val bidirectional = checkBidirectional.isChecked
-                    val otherChar = sorted[selectedCharIndex]
+            var saving = false
+            dialog.setValidatedPositiveButton {
+                if (saving) return@setValidatedPositiveButton false
+                // AutoComplete에서 텍스트로 직접 입력한 경우 매칭 시도
+                if (selectedCharIndex < 0) {
+                    val typed = autoComplete.text.toString().trim()
+                    selectedCharIndex = charDisplayNames.indexOfFirst {
+                        it.equals(typed, ignoreCase = true)
+                    }
+                }
+                if (selectedCharIndex < 0 || selectedCharIndex >= sorted.size) {
+                    // 종전 문구는 '다른 캐릭터가 없습니다'였는데 실제 사유는 '적은 이름이 목록에 없다'다.
+                    layoutCharSearch.showInlineError(getString(R.string.relationship_target_not_found))
+                    return@setValidatedPositiveButton false
+                }
 
-                    viewLifecycleOwner.lifecycleScope.launch {
+                val selectedType = typeNames[spinnerType.selectedItemPosition]
+                val desc = editDesc.text.toString().trim()
+                val intensity = sliderIntensity.value.toInt()
+                val bidirectional = checkBidirectional.isChecked
+                val otherChar = sorted[selectedCharIndex]
+
+                saving = true
+                viewLifecycleOwner.lifecycleScope.launch {
+                    // finally로 되돌린다 — 조회가 예외로 끝나면 잠금이 남아 창이 영영 반응하지 않는다.
+                    val alreadyExists = try {
                         val existingRels = viewModel.getRelationshipsForCharacterList(characterId)
-                        val alreadyExists = existingRels.any {
+                        existingRels.any {
                             ((it.characterId1 == characterId && it.characterId2 == otherChar.id) ||
                             (it.characterId1 == otherChar.id && it.characterId2 == characterId)) &&
                             it.relationshipType == selectedType
                         }
-                        if (alreadyExists) {
-                            val ctx = try { contextGetter() } catch (_: Exception) { return@launch }
-                            Toast.makeText(ctx, getString(R.string.relationship_already_exists), Toast.LENGTH_SHORT).show()
-                            return@launch
-                        }
-                        viewModel.insertRelationship(
-                            CharacterRelationship(
-                                characterId1 = characterId,
-                                characterId2 = otherChar.id,
-                                relationshipType = selectedType,
-                                description = desc,
-                                intensity = intensity,
-                                isBidirectional = bidirectional
-                            )
-                        )
+                    } finally {
+                        saving = false
                     }
+                    if (alreadyExists) {
+                        // 창을 살려 둔다 — 상대는 그대로 두고 유형만 바꿔 다시 저장할 수 있다.
+                        layoutCharSearch.showInlineError(getString(R.string.relationship_already_exists))
+                        return@launch
+                    }
+                    viewModel.insertRelationship(
+                        CharacterRelationship(
+                            characterId1 = characterId,
+                            characterId2 = otherChar.id,
+                            relationshipType = selectedType,
+                            description = desc,
+                            intensity = intensity,
+                            isBidirectional = bidirectional
+                        )
+                    )
+                    // 중단 뒤라 뷰가 사라졌을 수 있다 — 윈도우 분리 예외를 무해화한다.
+                    dialog.dismissSafely()
                 }
-                .setNegativeButton(getString(R.string.cancel), null)
-                .show()
+                // 저장 여부는 위 코루틴이 정한다 — 여기서 닫으면 중복 판정을 받을 창이 사라진다.
+                false
+            }
+            dialog.show()
         }
     }
 
@@ -406,7 +426,6 @@ class RelationshipHelper(
                 .also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
 
             slider.addOnChangeListener { _, value, _ -> textValue.text = value.toInt().toString() }
-            clearErrorOnEdit(editYear, layoutYear)
 
             // S-12: 연도 검증 실패가 입력 전체를 무통보 폐기하지 않게 — 자동 닫힘을 막고
             // 인라인 오류로 교정 경로를 준다(검증→알림→교정). 성공 시에만 저장·닫힘.
@@ -442,27 +461,19 @@ class RelationshipHelper(
         }
     }
 
-    /** 연도 파싱 — 실패 시 인라인 오류를 걸고 null(다이얼로그 유지, 입력 보존 — S-12). */
+    /**
+     * 연도 파싱 — 실패 시 인라인 오류를 걸고 null(다이얼로그 유지, 입력 보존 — S-12).
+     * 오류 표시·해제는 `showInlineError`가 단일 소스다(B-28) — 여기서 TextWatcher를 다시 짜지 않는다.
+     */
     private fun validateChangeYear(editYear: TextInputEditText, layoutYear: TextInputLayout): Int? {
         val yearText = editYear.text.toString().trim()
         val year = yearText.toIntOrNull()
         if (year == null) {
-            layoutYear.error = getString(
-                if (yearText.isEmpty()) R.string.year_required else R.string.enter_valid_year
+            layoutYear.showInlineError(
+                getString(if (yearText.isEmpty()) R.string.year_required else R.string.enter_valid_year)
             )
         }
         return year
-    }
-
-    /** 사용자가 값을 고치기 시작하면 인라인 오류를 지운다(교정 피드백). */
-    private fun clearErrorOnEdit(editYear: TextInputEditText, layoutYear: TextInputLayout) {
-        editYear.addTextChangedListener(object : android.text.TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
-                layoutYear.error = null
-            }
-            override fun afterTextChanged(s: android.text.Editable?) {}
-        })
     }
 
     private fun showEditRelationshipChangeDialog(change: CharacterRelationshipChange) {
@@ -509,7 +520,6 @@ class RelationshipHelper(
             }
 
             slider.addOnChangeListener { _, value, _ -> textValue.text = value.toInt().toString() }
-            clearErrorOnEdit(editYear, layoutYear)
 
             // S-12: 추가 다이얼로그와 같은 검증 구조 — 한쪽만 고치면 방편식 패치다.
             val dialog = MaterialAlertDialogBuilder(context)

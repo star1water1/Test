@@ -262,6 +262,7 @@
 
     <!-- RelationshipHelper -->
     <string name="no_other_characters">다른 캐릭터가 없습니다</string>
+    <string name="relationship_target_not_found">목록에 있는 캐릭터를 선택하세요</string>
     <string name="confirm_delete_relationship">이 관계를 삭제하시겠습니까?</string>
 
     <!-- ExcelExporter -->
@@ -1390,6 +1391,8 @@
     <string name="faction_name_required">세력 이름을 입력하세요</string>
     <string name="faction_relation_type_required">자동 관계 유형을 입력하세요</string>
     <string name="faction_leave_year_required">탈퇴 연도를 입력하세요</string>
+    <string name="faction_leave_year_before_join">탈퇴 연도(%1$d)는 가입 연도(%2$d)보다 뒤여야 합니다</string>
+    <string name="faction_member_select_required">추가할 캐릭터를 한 명 이상 선택하세요</string>
     <string name="faction_no_characters">이 세계관에 캐릭터가 없습니다</string>
     <string name="faction_delete_title">%s 삭제</string>
     <string name="faction_delete_with_relations">자동 관계도 함께 삭제</string>
