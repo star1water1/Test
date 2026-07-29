@@ -14,6 +14,15 @@
 3. **지우지 않는다.** "그때 무엇을 하려 했는가"와 "무엇이 왜 바뀌었는가"는 나중에 같은 논의를
    반복하지 않기 위해 필요하다.
 
+   > **이 규칙은 한 번 시험을 거쳤다(2026-07-28).** "끝난 건 지우자"는 제안에 대해 실측한 결과,
+   > 로드맵 5 세션이 근거로 쓴 `usability_fix_design`의 **피참조는 0**이었다 — 링크가 아니라
+   > `grep`에 우연히 걸려 찾았다. 그 문서가 없었다면 D-6이 이미 반려한 방식("전 필드 0.0으로
+   > 시험 평가해 NaN이면 오류")을 다시 제안했을 것이다. git은 지운 파일을 보관하지만
+   > **아무도 지운 파일을 grep하지 않는다.**
+   >
+   > 그래서 판정 기준은 "끝났는가"가 아니라 **"작업 지시서인가, 결정 근거인가"**다.
+   > 전자는 끝나면 값이 0이고, 후자는 끝나도 남는다.
+
 ## 목록
 
 | 문서 | 원래 위치 | 상태 | 이어받은 곳 |
@@ -22,6 +31,12 @@
 | `plan_duplicate_character_detect.md` | 루트 `plan.md` | **구현 완료** | `image_folder_roundtrip_design_2026-07.md`(동명 판정이 여기서 다른 의미를 얻었다) |
 | `code_review_2026-03.md` | 루트 `CODE_REVIEW.md` | 2026-03-21 시점 리뷰 — 전제 낡음(122파일·DB v25 / 현행 328파일·v44) | `architecture_2026-07.md` · `scalability_performance_2026-07.md` · 백로그 B-56~B-59 |
 | `design_review_2026-03.md` | 루트 `DESIGN_REVIEW.md` | 2026-03 시점 리뷰 — 일부 해결·일부 유효 | `usability_review_2026-07.md` · `ai_control_and_ui_density_2026-07.md` · `text_style_guide_2026-07.md` |
+| `usability_fix_design_2026-07.md` | `docs/` | **D-1~D-N 구현 완료** (마지막 D-6, 2026-07-28) | 원본 검토는 `usability_review_2026-07.md`(현행 유지) |
+| `result_notification_design_2026-07.md` | `docs/` | **구현 완료** — `util/ResultNotify`·`ResultReporting` | 규약 R-14·R-17·R-26 (색인: `architecture_2026-07.md` 6장) |
+| `creator_assistant_2026-07.md` | `docs/` | **Phase A 구현 완료** — `ui/assistant/` 8파일 | `ai_integration.md` · `ai_control_and_ui_density_2026-07.md`. Phase B는 백로그 |
+| `character_filter_sort_2026-07.md` | `docs/` | **구현 완료** — `FieldFilterHelper`·`SortComparators` | `filter_sort_parity_2026-07.md`(짝 맞춤) · `archive/search_filter_sort_perf`(성능) |
+| `search_filter_sort_perf_2026-07.md` | `docs/` | **구현 완료** — 에폭 메모이제이션(`CharacterViewModel`) | `scalability_performance_2026-07.md` 부록 |
+| `storage_optimization_design_2026-07.md` | `docs/` | **구현 완료** — `StorageAnalyzer`, 백업 이미지 기본값 `true`→`false` | `scalability_performance_2026-07.md` 부록 |
 
 ## 왜 루트에서 옮겼는가
 

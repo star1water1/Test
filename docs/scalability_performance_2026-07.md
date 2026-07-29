@@ -227,8 +227,8 @@ warmup 2회 후 5회 측정의 중앙값. 출처: `usage_reality_check_2026-07.m
 
 | 문서 | 다룬 것 | 상태 |
 |------|---------|------|
-| `search_filter_sort_perf_2026-07.md` (PR-E) | 캐릭터 목록 필터·정렬이 키 입력마다 DB 전체 재조회·수식 재평가를 하던 것 | **구현 완료** — `CharacterViewModel`에 Room `InvalidationTracker` 에폭 + 스테이지드 메모이제이션 실재(`:169~207`) |
-| `storage_optimization_design_2026-07.md` | 앱 용량 ~3GB의 정체(자동 백업 이미지 ×3벌 상주 등) | **구현 완료** — `util/StorageAnalyzer` 실재(고아 이미지 범주 포함), 자동 백업 이미지 포함 기본값이 `true` → **`false`로 뒤집혔다** |
+| `archive/search_filter_sort_perf_2026-07.md` (PR-E) | 캐릭터 목록 필터·정렬이 키 입력마다 DB 전체 재조회·수식 재평가를 하던 것 | **구현 완료** — `CharacterViewModel`에 Room `InvalidationTracker` 에폭 + 스테이지드 메모이제이션 실재(`:169~207`) |
+| `archive/storage_optimization_design_2026-07.md` | 앱 용량 ~3GB의 정체(자동 백업 이미지 ×3벌 상주 등) | **구현 완료** — `util/StorageAnalyzer` 실재(고아 이미지 범주 포함), 자동 백업 이미지 포함 기본값이 `true` → **`false`로 뒤집혔다** |
 | `excel_streaming_import_2026-07.md` (PR②) | 가져오기가 파일 전체를 DOM으로 메모리 적재하는 것 | ⬜ **설계만** — 리더는 완성됐는데 배선이 없다. **이 문서의 S2가 그것이다** |
 
 **읽는 순서:** S2에 착수한다면 `excel_streaming_import_2026-07.md`가 그대로 착수 문서다.
