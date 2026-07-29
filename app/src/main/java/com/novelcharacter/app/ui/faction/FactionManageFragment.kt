@@ -592,7 +592,7 @@ class FactionManageFragment : Fragment() {
         }
 
         val memberAdapter = FactionMemberAdapter(
-            onLongClick = { item -> showMemberOptionsDialog(faction, item) }
+            onSelect = { item -> showMemberOptionsDialog(faction, item) }
         )
         memberRecyclerView.adapter = memberAdapter
         container.addView(memberRecyclerView)
