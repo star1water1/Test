@@ -115,6 +115,17 @@ app/src/main/java/com/novelcharacter/app/
 > 콜론 하나가 빠져 **줄 번호를 지우지 못한다.** 그대로 비교하면 손댄 파일의 오류가 전부
 > '신규'로 뜬다. 스크립트 헤더가 안내하는 수동 정규화를 반드시 따를 것.
 
+> **⚠️ 하네스가 통과시키고 CI만 터지는 자리 — `android.util.Log`.**
+> 로컬 하네스는 `tools/jvm-stubs/AndroidLogStub.kt`로 Log 자리를 채운다(0을 돌려주는 껍데기).
+> 그런데 Gradle의 `testDebugUnitTest`가 쓰는 android.jar은 **모든 메서드가 예외를 던지는**
+> 껍데기라, 순수 로직이 진단용으로 부르는 `Log.w` 하나가 테스트를 깨뜨린다.
+> 로드맵 5에서 실제로 이것에 걸렸다 — `FormulaEvaluator`의 순환 참조·미존재 키 경로가
+> `Log.w`를 부르는데, 그 경로를 처음으로 테스트한 순간 **로컬 882건 통과 / CI 4건 실패**가 났다.
+> `app/build.gradle.kts`의 `testOptions { unitTests { isReturnDefaultValues = true } }`로 막았다.
+>
+> **일반화:** 하네스의 스텁은 "컴파일을 통과시키는 것"이 목적이라 **런타임 의미가 실제와 다르다.**
+> 순수 계층에 Android API를 새로 부르는 코드를 넣을 때는 하네스 통과가 근거가 되지 못한다.
+
 ---
 
 ## 5. 확장점 — 무엇을 추가할 때 어디를 건드리는가

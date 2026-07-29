@@ -64,6 +64,19 @@ android {
         arg("room.schemaLocation", "$projectDir/schemas")
     }
 
+    testOptions {
+        unitTests {
+            // 단위 테스트의 android.jar은 모든 메서드가 예외를 던지는 껍데기다.
+            // 순수 로직이 진단용으로 부르는 `android.util.Log.w`(예: FormulaEvaluator의
+            // 순환 참조·미존재 키 경로)까지 테스트를 깨뜨리므로 기본값 반환으로 바꾼다.
+            //
+            // **로컬 하네스(tools/run_jvm_tests.sh)는 이 함정을 잡지 못한다** —
+            // `tools/jvm-stubs/AndroidLogStub.kt`가 Log 자리를 채워 두기 때문에 로컬은 통과하고
+            // CI에서만 터진다. 순수 계층에 Log를 새로 부르는 코드를 넣을 때 기억할 것.
+            isReturnDefaultValues = true
+        }
+    }
+
     packaging {
         resources {
             excludes += listOf(
