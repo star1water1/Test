@@ -242,7 +242,12 @@ class OrganizeFolderController(
         val lines = ArrayList<String>()
         if (plan.imports.isNotEmpty()) lines.add(fragment.getString(R.string.organize_folder_summary_new, plan.imports.size))
         if (plan.moves.isNotEmpty()) lines.add(fragment.getString(R.string.organize_folder_summary_move, plan.moves.size))
-        if (plan.detaches.isNotEmpty()) lines.add(fragment.getString(R.string.organize_folder_summary_detach, plan.detaches.size))
+        // 배정 해제와 묶음 해제는 **단위가 다른 두 수**다 — 되돌리는 자리에서는 배정이 없고
+        // 묶음만 있는 이미지도 풀리므로, 한 줄에 합치면 어느 쪽이 몇 장인지 알 수 없다.
+        val detachCount = plan.detaches.count { it.fromCharacterIds.isNotEmpty() }
+        val unlinkCount = plan.detaches.count { it.unlinks }
+        if (detachCount > 0) lines.add(fragment.getString(R.string.organize_folder_summary_detach, detachCount))
+        if (unlinkCount > 0) lines.add(fragment.getString(R.string.organize_folder_summary_unlink, unlinkCount))
         if (plan.linkSets.isNotEmpty()) lines.add(fragment.getString(R.string.organize_folder_summary_sets, plan.linkSets.size))
         if (bundle.mergedGroups > 0) {
             lines.add(fragment.getString(R.string.organize_folder_summary_merge, bundle.mergedGroups, bundle.mergedOutsiders))
@@ -314,6 +319,7 @@ class OrganizeFolderController(
             result.imported, result.moved, result.detached, result.linkedSets
         ))
         // 링크가 풀린 건 되돌리기 번거로운 변화라 결과에도 숫자로 남긴다(0이면 줄을 만들지 않는다).
+        // 본문의 '배정 해제'와 겹치지 않는 별개의 수다 — 묶음만 풀린 항목은 여기에만 잡힌다.
         if (result.unlinked > 0) {
             lines.add(fragment.getString(R.string.organize_folder_result_unlinked, result.unlinked))
         }

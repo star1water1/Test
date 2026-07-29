@@ -18,7 +18,7 @@
 | 항목 | 값 | 측정 방법 |
 |------|-----|-----------|
 | 메인 소스 | **328 파일 / 87,108줄** (Kotlin) | `find app/src/main/java -name '*.kt'` |
-| 테스트 소스 | **70 파일 / 순수 JVM 896건** | `tools/run_jvm_tests.sh` |
+| 테스트 소스 | **71 파일 / 순수 JVM 924건** | `tools/run_jvm_tests.sh` |
 | Room DB | **v44** · 엔티티 **26** · 마이그레이션 **44** | `data/database/AppDatabase.kt` |
 | 사용자 문구 | `res/values/strings.xml` 단일 파일 | `tools/check_text_style.sh` |
 
@@ -234,7 +234,7 @@ AI 정책(`FieldAiPolicy`).
 
 > **루트의 `.md`는 `CLAUDE.md` 하나다.** 예전에는 루트에 계획서 2종과 리뷰 2종이 더 있었는데,
 > 넷 다 현재형으로 말하면서 실제로는 끝났거나 전제가 낡아 있었다(`CODE_REVIEW.md`는
-> "테스트 파일 미발견"이라 적혀 있었다 — 지금은 882건이 돈다). `docs/archive/`로 옮기고
+> "테스트 파일 미발견"이라 적혀 있었다 — 지금은 924건이 돈다). `docs/archive/`로 옮기고
 > 각각에 무엇이 낡았고 무엇이 이어받았는지를 헤더로 달았다.
 
 ---

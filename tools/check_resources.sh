@@ -53,15 +53,30 @@ echo "── 4. AAPT 문자열 이스케이프 (XML은 통과하지만 aapt가 �
 # 이 검사가 없어서 정리 폴더 삭제 안내 문구가 CI에서 처음 걸렸다 — 로컬 게이트의 구멍이었다.
 #
 # **일부러 좁게 본다.** 게이트가 거짓 경보를 내면 무시당한다. 그래서 실제로 빌드를 깨는
-# 둘만 본다: (1) 이스케이프 안 된 작은따옴표 (2) 알 수 없는 백슬래시 이스케이프.
+# 셋만 본다: (1) 이스케이프 안 된 작은따옴표 (2) 알 수 없는 백슬래시 이스케이프
+# (3) 자릿수가 틀린 유니코드 이스케이프 — CI가 실제로 낸 메시지가 이 부류의 이름이었다.
 # 큰따옴표로 **문자열 전체를 감싸는 것**은 앞뒤 공백을 보존하는 aapt의 정식 문법이므로
 # 통과시킨다(`name_bank_bulk_used_moved` 등이 실제로 그렇게 쓰고 있다).
-python3 - "$RES/values/strings.xml" <<'PYEOF' || FAIL=1
-import re, sys
-bad = []
-for i, line in enumerate(open(sys.argv[1], encoding="utf-8"), 1):
-    for m in re.finditer(r"<string[^>]*>(.*?)</string>", line):
-        body = m.group(1)
+#
+# **보는 범위:** `values*/`의 모든 xml x `<string>`·`<item>`, 여러 줄 문자열 포함.
+# 처음 만들 때는 values/strings.xml의 한 줄짜리 <string>만 봤다. 그러면 야간 테마·번역
+# 리소스나 여러 줄 문자열이 생기는 순간 조용히 빠져나간다 — 게이트의 구멍을 메우려고 만든
+# 검사가 같은 종류의 구멍을 남기면 안 된다.
+python3 - "$RES" <<'PYEOF' || FAIL=1
+import os, re, sys
+
+ELEMENT = re.compile(r"<(string|item)(\s[^>]*)?>(.*?)</\1>", re.S)
+HEX = "0123456789abcdefABCDEF"
+# aapt가 아는 이스케이프. \uXXXX 는 자릿수까지 봐야 해서 따로 다룬다.
+KNOWN = set("nt'\"\\@? ")
+
+
+def check(path, rel):
+    bad = []
+    text = open(path, encoding="utf-8").read()
+    for m in ELEMENT.finditer(text):
+        body = m.group(3)
+        line = text.count("\n", 0, m.start(3)) + 1
         # 전체를 감싼 큰따옴표는 aapt의 공백 보존 문법 — 벗겨 내고 안쪽만 본다.
         if len(body) >= 2 and body.startswith('"') and body.endswith('"'):
             body = body[1:-1]
@@ -70,16 +85,34 @@ for i, line in enumerate(open(sys.argv[1], encoding="utf-8"), 1):
             ch = body[j]
             if ch == "\\":
                 nxt = body[j + 1] if j + 1 < len(body) else ""
-                if nxt not in "nt'\"\\u@? ":
-                    bad.append((i, "알 수 없는 이스케이프 \\" + nxt))
+                if nxt == "u":
+                    digits = body[j + 2:j + 6]
+                    if len(digits) < 4 or any(c not in HEX for c in digits):
+                        bad.append((line, "유니코드 이스케이프의 자릿수가 틀렸다 (\\uXXXX 4자리)"))
+                    j += 6
+                    continue
+                if nxt not in KNOWN:
+                    bad.append((line, "알 수 없는 이스케이프 \\" + nxt))
                 j += 2
                 continue
             if ch == "'":
-                bad.append((i, "이스케이프되지 않은 작은따옴표 (\\' 로 쓸 것)"))
+                bad.append((line, "이스케이프되지 않은 작은따옴표 (\\' 로 쓸 것)"))
             j += 1
-for i, why in bad:
-    print("  \u2717 strings.xml:%d \u2014 %s" % (i, why))
-sys.exit(1 if bad else 0)
+    for line, why in bad:
+        print("  ✗ %s:%d — %s" % (rel, line, why))
+    return len(bad)
+
+
+root = sys.argv[1]
+total = 0
+for d in sorted(os.listdir(root)):
+    full = os.path.join(root, d)
+    if not d.startswith("values") or not os.path.isdir(full):
+        continue
+    for f in sorted(os.listdir(full)):
+        if f.endswith(".xml"):
+            total += check(os.path.join(full, f), "%s/%s" % (d, f))
+sys.exit(1 if total else 0)
 PYEOF
 [ $FAIL -eq 0 ] && echo "  ✓ 문자열 이스케이프 정상"
 

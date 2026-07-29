@@ -33,8 +33,12 @@ class FolderRoundtripPlannerTest {
     private fun plan(
         items: List<ScanItem>,
         names: Map<String, List<Long>> = emptyMap(),
-        owners: Map<String, List<Long>> = emptyMap()
-    ) = FolderRoundtripPlanner.plan(items, names, dict, owners)
+        owners: Map<String, List<Long>> = emptyMap(),
+        linked: Set<String> = emptySet()
+    ) = FolderRoundtripPlanner.plan(
+        items, names, dict, owners,
+        FolderRoundtripPlanner.CharacterFolderResolver(names), linked
+    )
 
     // ── 자리 해석 ──
 
@@ -183,9 +187,50 @@ class FolderRoundtripPlannerTest {
         assertEquals(listOf(3L), p.detaches[0].fromCharacterIds)
     }
 
-    @Test fun unassignedTokenFileAtRoot_isNoOp() {
+    @Test fun unassignedAndUnlinkedTokenFileAtRoot_isNoOp() {
         val p = plan(listOf(tokenFile("t", tokenA)))
         assertTrue(p.isEmpty)
+    }
+
+    // ── 되돌리는 자리는 배정도 묶음도 없앤다 ──
+    //
+    // 배정이 없고 묶음만 있는 이미지도 여기서는 할 일이 있다. 이 갈래가 없으면
+    // `<기타 이름>/`·`_미배정/<세트명>/`이 만든 세트를 폴더로 되돌릴 길이 없다.
+
+    @Test fun unassignedButLinkedTokenFileAtRoot_unlinks() {
+        val p = plan(listOf(tokenFile("t", tokenA)), linked = setOf(pathA))
+        assertEquals(1, p.detaches.size)
+        assertTrue(p.detaches[0].fromCharacterIds.isEmpty())
+        assertTrue(p.detaches[0].unlinks)
+    }
+
+    @Test fun unassignedButLinkedTokenFileInUnassignedRoot_unlinks() {
+        val p = plan(listOf(tokenFile("t", tokenA, "_미배정")), linked = setOf(pathA))
+        assertEquals(1, p.detaches.size)
+        assertTrue(p.detaches[0].unlinks)
+    }
+
+    @Test fun assignedAndLinkedTokenFileAtRoot_detachesAndUnlinks() {
+        val p = plan(
+            listOf(tokenFile("t", tokenA)),
+            owners = mapOf(pathA to listOf(3L)),
+            linked = setOf(pathA)
+        )
+        assertEquals(1, p.detaches.size)
+        assertEquals(listOf(3L), p.detaches[0].fromCharacterIds)
+        assertTrue(p.detaches[0].unlinks)
+    }
+
+    /** 소유자가 둘 이상이면 배정도 묶음도 건드리지 않는다 — 반쪽 반영은 보류가 아니다(C-2). */
+    @Test fun sharedOwnersAtRoot_holdsWithoutUnlinking() {
+        val p = plan(
+            listOf(tokenFile("t", tokenA)),
+            owners = mapOf(pathA to listOf(3L, 4L)),
+            linked = setOf(pathA)
+        )
+        assertTrue(p.detaches.isEmpty())
+        assertEquals(1, p.holds.size)
+        assertEquals(HoldReason.SHARED_OWNERS, p.holds[0].reason)
     }
 
     @Test fun tokenFileInUnassignedSet_detachesAndLinks() {
@@ -197,6 +242,30 @@ class FolderRoundtripPlannerTest {
         assertEquals(1, p.linkSets.size)
         assertEquals(listOf(pathA), p.linkSets[0].existingPaths)
         assertEquals(listOf("n"), p.linkSets[0].newItemIds)
+    }
+
+    /**
+     * 묶는 자리에서는 묶음을 풀지 않는다 — 여기서 풀면 뒤이은 링크 세트가 기존 그룹을
+     * 흡수하지 못해, 규약상 **병합**이어야 할 것이 조용히 **이동**이 된다.
+     */
+    @Test fun linkedTokenFileInUnassignedSet_doesNotUnlink() {
+        val p = plan(
+            listOf(tokenFile("t", tokenA, "_미배정", "세트1"), newFile("n", "_미배정", "세트1")),
+            owners = mapOf(pathA to listOf(3L)),
+            linked = setOf(pathA)
+        )
+        assertEquals(1, p.detaches.size)
+        assertTrue(p.detaches[0].unlinks.not())
+    }
+
+    /** 묶는 자리의 미배정+묶음 이미지는 해제 없이 세트에만 들어간다(할 일이 링크뿐이다). */
+    @Test fun unassignedLinkedTokenFileInUnassignedSet_joinsSetOnly() {
+        val p = plan(
+            listOf(tokenFile("t", tokenA, "_미배정", "세트1"), newFile("n", "_미배정", "세트1")),
+            linked = setOf(pathA)
+        )
+        assertTrue(p.detaches.isEmpty())
+        assertEquals(listOf(pathA), p.linkSets[0].existingPaths)
     }
 
     @Test fun tokenFileInUnknownFolder_keepsAssignmentButJoinsSet() {
