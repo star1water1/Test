@@ -13,10 +13,22 @@ package com.novelcharacter.app.util
  * |---|---|---|
  * | `<캐릭터명>/` 정확 일치 | 편입 + 그 캐릭터 배정(자동 링크가 묶는다) | 배정을 그 캐릭터로 **이동** |
  * | `<기타 이름>/` | 편입 + 미배정 + 그 폴더끼리 **링크 세트** | 배정 불변 + 그 폴더 세트로 링크 |
- * | 정리 폴더 직속 · `_미배정/` 직속 | 편입 + 미배정(링크 없음) | 캐릭터 배정 **전부 해제** |
- * | `_미배정/<세트명>/` | 편입 + 미배정 + 링크 세트 | 배정 해제 + 그 세트로 링크 |
+ * | 정리 폴더 직속 · `_미배정/` 직속 | 편입 + 미배정(링크 없음) | 캐릭터 배정 **전부 해제 + 링크 묶음도 해제** |
+ * | `_미배정/<세트명>/` | 편입 + 미배정 + 링크 세트 | 배정 해제 + 그 세트로 링크(**기존 묶음은 병합**) |
  * | `_공유/` | 편입 + 미배정(고지) | **반영 제외**(고지만) |
  * | `_처리됨/` | 스캔 제외 | 스캔 제외 |
+ *
+ * ### 되돌리는 자리 vs 묶는 자리 — 링크를 푸는 곳은 하나뿐이다
+ *
+ * 정리 폴더 직속·`_미배정/` 직속은 **되돌리는 자리**다. 신규 파일이 "미배정 + 링크 없음"으로
+ * 들어오는 자리이므로, 토큰 파일도 같은 뜻이어야 한다 — 배정도 묶음도 없는 상태로 돌아간다.
+ * 그래서 **배정이 없고 묶음만 있는 이미지도 여기서는 할 일이 있다**([DetachAction.unlinks]).
+ * 이 갈래가 없으면 `<기타 이름>/`·`_미배정/<세트명>/`이 만든 세트를 폴더로 되돌릴 길이 없다.
+ *
+ * 반대로 `_미배정/<세트명>/`은 **묶는 자리**라 링크를 풀지 않는다. 여기서 먼저 풀어 버리면
+ * 뒤이은 링크 세트가 기존 그룹을 흡수할 수 없어, 규약상 **병합**이어야 할 것이 조용히
+ * **이동**이 된다(같이 묶여 있던 이미지가 남겨진다). 사전 확인이 "폴더에 없던 이미지 M장이
+ * 함께 묶입니다"라고 이미 약속한 뒤이므로, 고지와 실제가 어긋난다.
  *
  * ## 판정의 축 — 셋을 헷갈리지 말 것
  *
@@ -190,11 +202,19 @@ object FolderRoundtripPlanner {
         val toCharacterId: Long
     )
 
-    /** 배정 해제 — 토큰 파일이 정리 폴더 직속·`_미배정/`에서 발견됐다. */
+    /**
+     * 배정 해제 — 토큰 파일이 정리 폴더 직속·`_미배정/`에서 발견됐다.
+     *
+     * @param fromCharacterIds 떼어낼 캐릭터 배정. **비어 있을 수 있다** — 이미 미배정이지만
+     *        묶음만 남은 이미지를 되돌리는 자리에 둔 경우가 그렇다(그때는 [unlinks]가 참이다).
+     * @param unlinks 링크 묶음까지 푸는가. 되돌리는 자리(직속)에서만 참이고,
+     *        묶는 자리(`_미배정/<세트명>/`)에서는 거짓이다 — 거기서 풀면 병합이 이동이 된다.
+     */
     data class DetachAction(
         val item: ScanItem,
         val path: String,
-        val fromCharacterIds: List<Long>
+        val fromCharacterIds: List<Long>,
+        val unlinks: Boolean = false
     )
 
     /**
@@ -286,13 +306,17 @@ object FolderRoundtripPlanner {
      * @param pathByToken 토큰 사전([FolderNameToken.buildDictionary]의 결과).
      * @param characterIdsByPath 이미지 경로 → 현재 그 이미지를 등록한 캐릭터 id 목록.
      *        비어 있거나 없으면 캐릭터 배정이 없는 이미지다.
+     * @param linkedPaths 현재 링크 묶음에 속한 이미지 경로. **되돌리는 자리에서만 쓴다** —
+     *        배정이 없어도 묶음이 있으면 할 일이 있다는 판정의 근거다(위 KDoc "되돌리는 자리").
+     *        비워 두면 묶음을 푸는 계획이 서지 않으므로, 호출부는 반드시 실어 보낸다.
      */
     fun plan(
         items: List<ScanItem>,
         characterIdsByName: Map<String, List<Long>>,
         pathByToken: Map<String, String>,
         characterIdsByPath: Map<String, List<Long>>,
-        resolver: CharacterFolderResolver = CharacterFolderResolver(characterIdsByName)
+        resolver: CharacterFolderResolver = CharacterFolderResolver(characterIdsByName),
+        linkedPaths: Set<String> = emptySet()
     ): Plan {
         val imports = ArrayList<ImportAction>()
         val moves = ArrayList<MoveAction>()
@@ -336,14 +360,20 @@ object FolderRoundtripPlanner {
 
             when (location) {
                 is Location.Root, is Location.UnassignedRoot -> {
+                    // 되돌리는 자리 — 배정과 묶음을 **모두** 없앤 상태로 돌린다.
+                    // 배정이 없어도 묶음이 있으면 할 일이 있다. 종전에는 owners만 보고 넘겨서,
+                    // `<기타 이름>/`·`_미배정/<세트명>/`이 만든 세트를 폴더로 되돌릴 길이 없었다.
+                    val linked = path != null && path in linkedPaths
                     if (path == null) {
                         imports.add(ImportAction(item, null, null))
                     } else if (sharedOwners) {
+                        // 소유자가 둘 이상이면 배정도 묶음도 건드리지 않는다(C-2) — 보류는
+                        // 배정에 대한 판단이지만, 반쪽만 반영하면 "보류했다면서 뭔가 했다"가 된다.
                         holds.add(Hold(item, HoldReason.SHARED_OWNERS))
-                    } else if (owners.isNotEmpty()) {
-                        detaches.add(DetachAction(item, path, owners))
+                    } else if (owners.isNotEmpty() || linked) {
+                        detaches.add(DetachAction(item, path, owners, unlinks = linked))
                     }
-                    // owners가 비어 있으면 이미 미배정이다 — 할 일 없음(계수도 하지 않는다).
+                    // 배정도 묶음도 없으면 이미 되돌아온 상태다 — 할 일 없음(계수도 하지 않는다).
                 }
 
                 is Location.Shared -> {
@@ -392,6 +422,8 @@ object FolderRoundtripPlanner {
                         holds.add(Hold(item, HoldReason.SHARED_OWNERS))
                         setExistingPaths.getOrPut(key) { mutableListOf() }.add(path)
                     } else {
+                        // 묶는 자리다 — 배정만 뗀다(`unlinks = false`). 여기서 묶음을 먼저 풀면
+                        // 아래 링크 세트가 기존 그룹을 흡수할 수 없어 병합이 이동이 된다.
                         if (owners.isNotEmpty()) detaches.add(DetachAction(item, path, owners))
                         setExistingPaths.getOrPut(key) { mutableListOf() }.add(path)
                     }

@@ -98,8 +98,12 @@ object OrganizeFolderService {
     data class ApplyResult(
         val imported: Int = 0,
         val moved: Int = 0,
+        /** 캐릭터 배정을 실제로 뗀 수. 묶음만 푼 항목은 여기 들어가지 않는다. */
         val detached: Int = 0,
-        /** 배정 해제하면서 링크 묶음까지 푼 수 ([detached]의 부분집합). */
+        /**
+         * 링크 묶음을 푼 수. [detached]와 **겹치지만 부분집합은 아니다** — 되돌리는 자리에서는
+         * 배정이 없고 묶음만 있는 이미지도 풀리기 때문이다(그런 항목은 여기에만 잡힌다).
+         */
         val unlinked: Int = 0,
         val linkedSets: Int = 0,
         val failed: List<String> = emptyList(),
@@ -244,7 +248,15 @@ object OrganizeFolderService {
             }
 
             // 토큰 사전 — 라이브러리 행 + 캐릭터가 쥔 경로 전체가 대상이다.
-            val metaPaths = db.imageMetaDao().getAllPaths()
+            // 행 전체를 한 번만 읽는다 — 토큰 사전(경로)과 되돌리는 자리 판정(linkGroupId),
+            // 아래 병합 고지가 **같은 스냅샷**을 쓰게 하려는 것이다. 종전에는 경로만 읽고
+            // 병합 고지에서 같은 표를 한 번 더 읽어, 질의 두 번에 시점도 갈렸다.
+            val metas = db.imageMetaDao().getAllList()
+            val metaPaths = metas.map { it.path }
+            // 묶음에 속한 경로 — 배정이 없어도 되돌리는 자리에서는 할 일이 있다는 판정의 근거.
+            val linkedCanonPaths = metas.mapNotNullTo(HashSet()) {
+                if (it.linkGroupId != null) canonical(it.path) else null
+            }
             val livePaths = LinkedHashSet<String>()
             for (p in metaPaths + storedByCanon.values) {
                 val canon = canonical(p)
@@ -274,14 +286,13 @@ object OrganizeFolderService {
                 choices = ambiguousChoices
             )
             val plan = FolderRoundtripPlanner.plan(
-                items, idsByName, dictionary.pathByToken, idsByCanonPath, resolver
+                items, idsByName, dictionary.pathByToken, idsByCanonPath, resolver, linkedCanonPaths
             )
 
             // 링크 세트가 흡수하는 기존 그룹 — 사전 확인에 한 줄로 싣는다(설계 9장 C-8).
             var mergedGroups = 0
             var mergedOutsiders = 0
             if (plan.linkSets.isNotEmpty()) {
-                val metas = db.imageMetaDao().getAllList()
                 val groupByCanon = metas.associate { canonical(it.path) to it.linkGroupId }
                 val membersByGroup = HashMap<String, Int>()
                 for (m in metas) {
@@ -422,9 +433,16 @@ object OrganizeFolderService {
         // 남은 그룹은 정리한다. 규칙이 두 곳에 갈리면 같은 조작이 화면마다 다른 결과를 낸다.
         // 자동 링크(`char:`)는 따로 다루지 않는다 — 캐릭터 배정을 함께 떼므로 ⑤의 재동기화가
         // 도로 묶지 않는다(인앱 해제가 `autoRelinkable`을 고지해야 했던 것과 갈리는 지점이다).
+        //
+        // **묶음을 푸는지는 계획이 정한다**([DetachAction.unlinks]). 여기서 "그룹이 있으면
+        // 푼다"로 판정하면 `_미배정/<세트명>/`의 해제까지 풀어 버려서, 뒤이은 ④가 기존 그룹을
+        // 흡수하지 못한다 — 규약상 **병합**이어야 할 것이 조용히 **이동**이 되고, 사전 확인이
+        // 이미 약속한 "폴더에 없던 이미지 M장이 함께 묶입니다"와 어긋난다.
         if (!cancelled) for (action in plan.detaches) {
             if (isCancelled()) { cancelled = true; break }
             val file = fileById[action.item.id] ?: continue
+            // 트랜잭션이 롤백되면 아무 일도 없었던 것이다 — 계수는 성공을 확인한 뒤에 올린다.
+            var didUnlink = false
             val ok = runCatching {
                 db.withTransaction {
                     for (id in action.fromCharacterIds) {
@@ -438,15 +456,23 @@ object OrganizeFolderService {
                     // 저장형으로 입양한다 — canonical로 넣으면 같은 파일의 meta 행이 하나 더 생긴다.
                     val storedPath = bundle.stored(action.path)
                     val imageId = db.imageMetaDao().adopt(storedPath, now)
-                    val oldGroup = db.imageMetaDao().getByPath(storedPath)?.linkGroupId
-                    if (oldGroup != null) {
-                        db.imageMetaDao().setGroup(listOf(imageId), null)
-                        db.imageMetaDao().clearGroupIfSingleton(oldGroup)
-                        unlinked++
+                    if (action.unlinks) {
+                        val oldGroup = db.imageMetaDao().getByPath(storedPath)?.linkGroupId
+                        if (oldGroup != null) {
+                            db.imageMetaDao().setGroup(listOf(imageId), null)
+                            db.imageMetaDao().clearGroupIfSingleton(oldGroup)
+                            didUnlink = true
+                        }
                     }
                 }
             }.isSuccess
-            if (ok) { detached++; processedFiles.add(file) } else failures.add(file.name)
+            if (ok) {
+                // 배정이 없고 묶음만 풀린 항목은 '배정 해제'로 세지 않는다 — 단위가 다른 두 수를
+                // 한 칸에 담으면 결과가 사용자에게 거짓말을 한다.
+                if (action.fromCharacterIds.isNotEmpty()) detached++
+                if (didUnlink) unlinked++
+                processedFiles.add(file)
+            } else failures.add(file.name)
             step()
         }
 
