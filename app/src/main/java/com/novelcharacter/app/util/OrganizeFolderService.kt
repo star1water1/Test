@@ -105,6 +105,11 @@ object OrganizeFolderService {
          * 배정이 없고 묶음만 있는 이미지도 풀리기 때문이다(그런 항목은 여기에만 잡힌다).
          */
         val unlinked: Int = 0,
+        /**
+         * 서랍에 넣었으나 **캐릭터 자동 링크라 묶인 채로 남은** 수. 배정이 그대로인 자리라
+         * 재동기화가 도로 묶으므로, 푼 척하고 세는 대신 여기 담아 사유와 함께 고지한다.
+         */
+        val autoLinkedKept: Int = 0,
         val linkedSets: Int = 0,
         val failed: List<String> = emptyList(),
         val heldNames: List<String> = emptyList(),
@@ -349,6 +354,8 @@ object OrganizeFolderService {
         var detached = 0
         // 배정 해제 중 실제로 링크까지 푼 수 — 결과에 따로 싣는다(무엇이 일어났는지 숫자로 말한다).
         var unlinked = 0
+        // 서랍에 넣었으나 자동 링크라 묶인 채 남은 수(③-b 참조).
+        var autoLinkedKept = 0
         val failures = ArrayList<String>()
         val processedFiles = ArrayList<ScannedFile>()
         val unmovedFingerprints = ArrayList<String>()
@@ -476,6 +483,43 @@ object OrganizeFolderService {
             step()
         }
 
+        // ③-b 서랍의 묶음만 해제 — 캐릭터 배정은 건드리지 않는다(설계 D-2).
+        //
+        // **자동 링크(`char:`) 묶음은 풀지 않고 센다.** 배정이 그대로 남는 자리이므로 아래 ⑤의
+        // 재동기화가 곧바로 도로 묶는다 — 풀었다고 세면 결과 요약이 "묶음 N개를 풀었습니다"라고
+        // 말하는데 화면은 그대로인, 사용자에게 거짓말하는 수가 된다. 대신 개수를 고지하고
+        // 인앱 해제와 같은 빠져나갈 길(자동 링크를 끄거나 캐릭터에서 이미지를 빼기)을 안내한다.
+        // 설정이 꺼져 있으면 재동기화가 돌지 않으므로 그때는 정상적으로 푼다.
+        val autoLinkOn = ImageSettingsStore(context).getAutoLinkByCharacter()
+        if (!cancelled) for (action in plan.unlinkOnly) {
+            if (isCancelled()) { cancelled = true; break }
+            val file = fileById[action.item.id] ?: continue
+            var didUnlink = false
+            var keptAuto = false
+            val ok = runCatching {
+                db.withTransaction {
+                    val storedPath = bundle.stored(action.path)
+                    val oldGroup = db.imageMetaDao().getByPath(storedPath)?.linkGroupId
+                    if (oldGroup != null) {
+                        if (autoLinkOn && AutoLinkPlanner.isAutoToken(oldGroup)) {
+                            keptAuto = true
+                        } else {
+                            val imageId = db.imageMetaDao().adopt(storedPath, System.currentTimeMillis())
+                            db.imageMetaDao().setGroup(listOf(imageId), null)
+                            db.imageMetaDao().clearGroupIfSingleton(oldGroup)
+                            didUnlink = true
+                        }
+                    }
+                }
+            }.isSuccess
+            if (ok) {
+                if (didUnlink) unlinked++
+                if (keptAuto) autoLinkedKept++
+                processedFiles.add(file)
+            } else failures.add(file.name)
+            step()
+        }
+
         // ④ 링크 세트 — 인앱 수동 링크와 같은 흡수·병합 규약(단, 자동 토큰은 흡수하지 않는다.
         //    자동 그룹을 대상으로 삼으면 다음 재동기화가 그 묶음을 도로 풀어 조용히 사라진다).
         var linkedSets = 0
@@ -522,6 +566,7 @@ object OrganizeFolderService {
             moved = moved,
             detached = detached,
             unlinked = unlinked,
+            autoLinkedKept = autoLinkedKept,
             linkedSets = linkedSets,
             failed = failures,
             heldNames = plan.holds.map { it.item.fileName },

@@ -252,6 +252,17 @@ class OrganizeFolderController(
         if (bundle.mergedGroups > 0) {
             lines.add(fragment.getString(R.string.organize_folder_summary_merge, bundle.mergedGroups, bundle.mergedOutsiders))
         }
+        // '기타' 서랍 — 낱개 편입과 묶음 해제는 단위가 다른 두 수라 줄을 나눈다.
+        if (plan.miscImported > 0) {
+            lines.add(fragment.getString(R.string.organize_folder_summary_misc, plan.miscImported))
+        }
+        if (plan.unlinkOnly.isNotEmpty()) {
+            lines.add(fragment.getString(R.string.organize_folder_summary_misc_unlink, plan.unlinkOnly.size))
+        }
+        // 서랍으로 쓰려던 이름이 캐릭터에 먹혔다면 그 사실과 빠져나갈 길을 함께 알린다(D-1).
+        plan.miscReadAsCharacter.forEach { name ->
+            lines.add(fragment.getString(R.string.organize_folder_summary_misc_is_character, name))
+        }
         if (plan.holds.isNotEmpty()) lines.add(fragment.getString(R.string.organize_folder_summary_hold, plan.holds.size))
         if (plan.ambiguousFolders.isNotEmpty()) {
             lines.add(fragment.getString(
@@ -322,6 +333,10 @@ class OrganizeFolderController(
         // 본문의 '배정 해제'와 겹치지 않는 별개의 수다 — 묶음만 풀린 항목은 여기에만 잡힌다.
         if (result.unlinked > 0) {
             lines.add(fragment.getString(R.string.organize_folder_result_unlinked, result.unlinked))
+        }
+        // 서랍에 넣었는데 자동 링크라 그대로인 것 — 아무 말도 없으면 "넣었는데 왜 그대로지"가 된다.
+        if (result.autoLinkedKept > 0) {
+            lines.add(fragment.getString(R.string.organize_folder_result_auto_kept, result.autoLinkedKept))
         }
         if (result.cancelled) lines.add(fragment.getString(R.string.organize_folder_result_cancelled))
         if (result.heldNames.isNotEmpty()) {
