@@ -36,6 +36,18 @@ def check(cond, msg):
         print(f"  ✓ {msg}")
 
 
+def db_version_at_least(src, minimum):
+    """
+    @Database(version = N)이 minimum 이상인가 — `verify_room_migration_43.py`와 같은 규약.
+
+    이 하네스가 지키는 것은 "이 마이그레이션이 도달시킨 버전 이상인가"이지 "지금이 정확히
+    N인가"가 아니다. 못 박으면 다음 스키마 상향이 이 하네스를 상시 실패로 만든다(43 하네스가
+    실제로 그렇게 됐다 — v44 도입 이후 계속 빨간불이었고 문서는 통과라고 적고 있었다).
+    """
+    m = re.search(r"version\s*=\s*(\d+)", src)
+    return m is not None and int(m.group(1)) >= minimum
+
+
 def extract_migration_block(src, name):
     start = src.index(f"private val {name} = object : Migration(")
     nxt = src.find("private val MIGRATION", start + 10)
@@ -107,7 +119,7 @@ def main():
           "컬럼 존재 가드가 있음 (중간 빌드를 거친 기기의 크래시 루프 방지)")
     check(all("DROP TABLE" not in s and "DELETE FROM" not in s for s in stmts),
           "파괴적 문장(DROP/DELETE) 없음")
-    check("version = 44" in src, "@Database(version = 44)로 상향됨")
+    check(db_version_at_least(src, 44), "@Database(version)이 44 이상으로 상향됨")
     check("MIGRATION_43_44)" in src or "MIGRATION_43_44," in src, "addMigrations에 등록됨")
 
     print("\n[2] 엔티티 선언이 마이그레이션 결과와 같은 형태인가")

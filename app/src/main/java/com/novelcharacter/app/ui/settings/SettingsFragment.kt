@@ -1025,6 +1025,11 @@ class SettingsFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             try {
                 // DB 초기화 (트랜잭션 내 FK CASCADE 안전 순서)
+                //
+                // **비우는 범위의 단일 소스는 [ResetPlan]이다** (S-13). 아래 호출 순서는
+                // ResetPlan.explicitOrder와 같아야 하며, 순수 JVM 테스트(ResetPlanTest)와
+                // tools/verify_reset_coverage.py가 셋(엔티티 목록 · 계획 · 이 호출부)을 대조한다.
+                // 엔티티를 늘리고 여기를 잊으면 그 테이블은 '모든 데이터 삭제' 뒤에도 살아남는다.
                 db.withTransaction {
                     db.characterRelationshipChangeDao().deleteAll()
                     db.characterRelationshipDao().deleteAll()
@@ -1042,6 +1047,15 @@ class SettingsFragment : Fragment() {
                     db.userPresetTemplateDao().deleteAll()
                     db.searchPresetDao().deleteAll()
                     db.recentActivityDao().deleteAll()
+                    // ── S-13: 여기부터가 종전에 빠져 있던 독립 테이블들이다 ──
+                    // 스냅샷 행을 **파일 삭제보다 먼저** 지운다. 순서가 반대면 "스냅샷이 살아 있는 동안
+                    // 그 파일은 남긴다"는 규약과 충돌하고, 그 사이 복원하면 깨진 캐릭터가 되살아난다.
+                    db.trashSnapshotDao().deleteAll()
+                    db.operationLogDao().clear()
+                    db.characterListPresetDao().deleteAll()
+                    // image_meta는 FK가 없어 어떤 부모로도 지워지지 않았다. 이것을 지워야
+                    // 자식 image_tags의 CASCADE도 비로소 성립한다(그전까지 태그가 영원히 남았다).
+                    db.imageMetaDao().deleteAll()
                 }
 
                 // SharedPreferences 초기화 (테마 제외) — 초기화가 UI 상태 찌꺼기를 남기지 않게
@@ -1054,9 +1068,18 @@ class SettingsFragment : Fragment() {
                         "supplement_criteria", "supplement_ui_state", "search_ui_state",
                         "namebank_ui_state", "graph_ui_state", "character_list_ui",
                         "analysis_ui_state", "image_manager_ui_state", "field_manage_ui_state",
+                        "field_library_ui_state",
                         "assistant_prefs", "app_migrations",
                         // 편집 드래프트 — 초기화 후 재사용된 캐릭터 id에 이전 드래프트가 되살아나지 않도록
-                        "character_edit_drafts"
+                        "character_edit_drafts",
+                        // S-13: 이미지 폴더 왕복 장부(지문·개명 별칭). 데이터를 다 지우고도 이것이 남으면,
+                        // 사용자가 정리 폴더에 다시 놓은 이미지가 "이미 내보낸 사본"으로 판정돼
+                        // 진입 감지에 잡히지 않는다 — 조용히 안 들어온다(무통보 유실).
+                        "folder_roundtrip_prefs"
+                        // **일부러 남기는 것:** theme_cache(테마) · ai_keys · ai_providers ·
+                        // ai_prompt_settings · onboarding_prefs. 이들은 '작품 데이터'가 아니라
+                        // 사용자 설정·자격증명이며, 데이터를 지운다고 API 키를 다시 입력하게 만들
+                        // 이유가 없다. 지우려면 확인 다이얼로그에 별도 항목으로 물어야 한다(자율성).
                     ).forEach { name ->
                         ctx.getSharedPreferences(name, android.content.Context.MODE_PRIVATE)
                             .edit().clear().apply()

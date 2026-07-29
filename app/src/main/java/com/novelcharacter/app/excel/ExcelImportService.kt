@@ -28,11 +28,15 @@ import com.novelcharacter.app.data.repository.NovelRepository
 import com.novelcharacter.app.data.repository.UniverseRepository
 import com.novelcharacter.app.util.SemanticFieldSyncHelper
 import com.novelcharacter.app.util.GradeValueResolver
-import org.apache.poi.ss.usermodel.Cell
 import org.apache.poi.ss.usermodel.CellType
-import org.apache.poi.ss.usermodel.Row
-import org.apache.poi.ss.usermodel.Sheet
-import org.apache.poi.ss.usermodel.Workbook
+// B-8(스트리밍 배선): 이 서비스는 이제 POI 타입이 아니라 [ImportSource]의 추상화를 읽는다.
+// DOM([DomImportWorkbook])과 스트리밍([StreamingImportWorkbook])이 같은 인터페이스를 구현하므로
+// 아래 5,700줄의 per-row 해석 로직은 **두 경로에서 글자 그대로 같은 코드**다(로직 비분기).
+// 별칭으로 둔 이유: 이름을 바꾸면 본문 120여 곳이 함께 바뀌어, Android 계층을 로컬에서
+// 컴파일할 수 없는 이 저장소에서 검증되지 않는 대형 diff가 된다. 접근면은 ImportSource.kt 참조.
+import com.novelcharacter.app.excel.ImportRow as Row
+import com.novelcharacter.app.excel.ImportSheet as Sheet
+import com.novelcharacter.app.excel.ImportWorkbook as Workbook
 
 data class ImportProgress(
     val currentPhase: String,
@@ -1528,11 +1532,18 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         reservedHeaders: Set<String> = emptySet()
     ): Map<String, Int> {
         val result = mutableMapOf<String, Int>()
-        val lastCol = headerRow.lastCellNum.toInt()
+        // 셀이 하나도 없는 행의 lastCellNum은 **-1**이라 그대로 쓰면 arrayOfNulls가
+        // NegativeArraySizeException으로 죽는다(손편집으로 헤더 행이 비워진 파일에서 실재).
+        // [matchesSpecHeader]가 이미 같은 이유로 coerceAtLeast(0)를 달고 있다 — 같은 함정의 다른 자리다.
+        val lastCol = headerRow.lastCellNum.toInt().coerceAtLeast(0)
         val raws = arrayOfNulls<String>(lastCol)
         for (col in 0 until lastCol) {
             val cell = headerRow.getCell(col) ?: continue
-            val rawHeader = try { cell.stringCellValue?.trim() ?: "" } catch (_: Exception) { "" }
+            // 종전 POI `cell.stringCellValue`(+ 예외 시 "")와 **같은 값**을 낸다:
+            // Primitives.stringValue는 STRING과 '문자열 결과 수식'에서만 비-null이고, 숫자·불리언·
+            // 오류·빈 셀에서는 null인데 — 그 셋이 정확히 POI가 예외를 던지거나 ""를 주던 경우다.
+            // 헤더는 이름이므로 숫자 셀은 헤더가 아니라는 판정도 그대로 보존된다.
+            val rawHeader = cell.primitives().stringValue?.trim() ?: ""
             if (rawHeader.isBlank()) continue
             raws[col] = rawHeader
         }
@@ -5366,8 +5377,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private fun getCellString(row: Row, cellIndex: Int, maxLength: Int = MAX_FIELD_LENGTH, dateHint: Boolean = false): String {
         if (cellIndex < 0) return ""
         val cell = row.getCell(cellIndex)
-        // 값 정규화는 ExcelCellValue(단일 소스)에 위임 — 스트리밍 경로와 동일 로직을 태워 값 왜곡을 구조적으로 차단.
-        var raw = if (cell != null) ExcelCellValue.normalize(ExcelCellValue.fromCell(cell), dateHint) else ""
+        // 값 정규화는 ExcelCellValue(단일 소스)에 위임한다 — 그리고 **여기가 그 자리다.**
+        // 호출부가 정한 dateHint를 아는 곳이 여기뿐이므로, 리더가 미리 문자열로 굳히면
+        // 같은 셀이 경로에 따라 다른 값이 된다(B-8). DOM·스트리밍 어느 쪽이든 primitives()가
+        // 같은 원시값을 주므로 결과가 같다 — 값 왜곡을 구조적으로 차단.
+        var raw = if (cell != null) ExcelCellValue.normalize(cell.primitives(), dateHint) else ""
         if (raw.isEmpty()) {
             // 병합 셀의 피복 칸(좌상단이 아닌 칸)은 파일에서 빈 셀/셀 없음으로 읽히지만,
             // 스프레드시트 화면에서는 좌상단 값이 걸쳐 보였다. 빈칸으로 두면 덮어쓰기의
@@ -5394,18 +5408,17 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private fun mergedTopLeftValue(row: Row, cellIndex: Int, dateHint: Boolean): String? {
         if (row.rowNum == 0) return null
         val sheet = row.sheet ?: return null
+        // 두 경로 모두 getMergedRegion이 이미 MergedCellMap.Region을 준다
+        // (DOM은 POI CellRangeAddress를, 스트리밍은 시트 XML의 mergeCells를 같은 형태로 옮긴다).
         val map = mergedCellMaps.getOrPut(sheet) {
-            MergedCellMap((0 until sheet.numMergedRegions).map { i ->
-                val r = sheet.getMergedRegion(i)
-                MergedCellMap.Region(r.firstRow, r.lastRow, r.firstColumn, r.lastColumn)
-            })
+            MergedCellMap((0 until sheet.numMergedRegions).map { i -> sheet.getMergedRegion(i) })
         }
         if (map.isEmpty || !map.isCoveredCell(row.rowNum, cellIndex)) return null
         val tl = map.topLeftOf(row.rowNum, cellIndex) ?: return null
         val tlCell = sheet.getRow(tl.row)?.getCell(tl.column) ?: return null
-        val value = ExcelCellValue.normalize(ExcelCellValue.fromCell(tlCell), dateHint)
+        val value = ExcelCellValue.normalize(tlCell.primitives(), dateHint)
         if (value.isEmpty()) return null
-        val name = sheet.sheetName ?: "?"
+        val name = sheet.sheetName
         // 구분자 ':'는 엑셀 시트명 금지 문자 — 시트명과 좌표가 섞여 다른 셀이 같은 키가 되지 않는다
         if (mergedFilledCells.add("$name:${row.rowNum}:$cellIndex")) {
             mergedFilledBySheet[name] = (mergedFilledBySheet[name] ?: 0) + 1
