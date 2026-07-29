@@ -47,6 +47,42 @@ for f in $(find "$RES" -name '*.xml' | sort); do
 done
 [ $FAIL -eq 0 ] && echo "  ✓ 모든 XML 파싱 가능"
 
+echo "── 4. AAPT 문자열 이스케이프 (XML은 통과하지만 aapt가 거부하는 것) ──"
+# 배경: XML 파서는 <string> 본문의 작은따옴표를 아무렇지 않게 통과시키지만 aapt2는
+# 이스케이프를 요구하고 "Failed to flatten XML for resource ..." 로 빌드를 깬다.
+# 이 검사가 없어서 정리 폴더 삭제 안내 문구가 CI에서 처음 걸렸다 — 로컬 게이트의 구멍이었다.
+#
+# **일부러 좁게 본다.** 게이트가 거짓 경보를 내면 무시당한다. 그래서 실제로 빌드를 깨는
+# 둘만 본다: (1) 이스케이프 안 된 작은따옴표 (2) 알 수 없는 백슬래시 이스케이프.
+# 큰따옴표로 **문자열 전체를 감싸는 것**은 앞뒤 공백을 보존하는 aapt의 정식 문법이므로
+# 통과시킨다(`name_bank_bulk_used_moved` 등이 실제로 그렇게 쓰고 있다).
+python3 - "$RES/values/strings.xml" <<'PYEOF' || FAIL=1
+import re, sys
+bad = []
+for i, line in enumerate(open(sys.argv[1], encoding="utf-8"), 1):
+    for m in re.finditer(r"<string[^>]*>(.*?)</string>", line):
+        body = m.group(1)
+        # 전체를 감싼 큰따옴표는 aapt의 공백 보존 문법 — 벗겨 내고 안쪽만 본다.
+        if len(body) >= 2 and body.startswith('"') and body.endswith('"'):
+            body = body[1:-1]
+        j = 0
+        while j < len(body):
+            ch = body[j]
+            if ch == "\\":
+                nxt = body[j + 1] if j + 1 < len(body) else ""
+                if nxt not in "nt'\"\\u@? ":
+                    bad.append((i, "알 수 없는 이스케이프 \\" + nxt))
+                j += 2
+                continue
+            if ch == "'":
+                bad.append((i, "이스케이프되지 않은 작은따옴표 (\\' 로 쓸 것)"))
+            j += 1
+for i, why in bad:
+    print("  \u2717 strings.xml:%d \u2014 %s" % (i, why))
+sys.exit(1 if bad else 0)
+PYEOF
+[ $FAIL -eq 0 ] && echo "  ✓ 문자열 이스케이프 정상"
+
 echo
 if [ $FAIL -ne 0 ]; then echo "리소스 검사 실패"; exit 1; fi
 echo "리소스 검사 통과"

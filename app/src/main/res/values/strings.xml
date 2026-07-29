@@ -2026,6 +2026,7 @@
     <string name="organize_folder_import">정리 폴더 받아오기</string>
     <string name="organize_folder_settings">정리 폴더 설정</string>
     <string name="organize_folder_purpose">폴더를 지정하면 그 폴더에 넣은 이미지를 이미지 탭에서 받아올 수 있고, 정리용 내보내기의 대상 폴더로 쓰입니다.</string>
+    <string name="organize_folder_delete_note">폴더에서 파일을 지워도 앱의 이미지는 지워지지 않습니다. 폴더에 있는 것만 반영하고, 없는 것은 그대로 둡니다.\n반대로 앱에서 지운 이미지의 사본이 폴더에 남아 있으면 받아올 때 다시 편입됩니다 — 완전히 없애려면 폴더의 사본도 함께 지우세요(\'_처리됨\' 폴더 포함).</string>
     <string name="organize_folder_pick">폴더 지정</string>
     <string name="organize_folder_clear">지정 해제</string>
     <string name="organize_folder_set">정리 폴더를 지정했습니다</string>
@@ -2050,7 +2051,7 @@
     <string name="organize_folder_ambiguous_message">같은 이름의 캐릭터가 있어 폴더 %d개의 대상을 정할 수 없습니다. 폴더마다 골라 주세요. 고르지 않으면 배정하지 않고 묶기만 합니다.</string>
     <string name="organize_folder_ambiguous_skip">배정하지 않음</string>
     <string name="organize_folder_candidate_format">%1$s (%2$s)</string>
-    <string name="organize_folder_summary_unknown_token">앱에서 내보낸 사본으로 보이지만 원본을 찾지 못한 파일 %d장 — 새 이미지로 편입합니다</string>
+    <string name="organize_folder_summary_unknown_token">앱에서 내보낸 사본으로 보이지만 원본을 찾지 못한 파일 %d장 — 새 이미지로 편입합니다 (앱에서 지운 이미지가 이렇게 되살아날 수 있습니다)</string>
     <string name="organize_folder_summary_already">앱이 이미 처리한 파일 %d장은 건너뜁니다 (지난번 받아오기 또는 내보낸 사본)</string>
     <string name="organize_folder_summary_ignored">이미지가 아닌 파일 %1$d개, 정해진 위치 밖의 파일·폴더 %2$d개는 건드리지 않습니다</string>
     <string name="organize_folder_result_main">새로 편입 %1$d장 · 배정 이동 %2$d장 · 배정 해제 %3$d장 · 링크 묶음 %4$d개</string>
