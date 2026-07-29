@@ -29,6 +29,8 @@ import com.novelcharacter.app.data.model.NarrativeMode
 import com.novelcharacter.app.data.model.SemanticRole
 import com.novelcharacter.app.data.model.StructuredInputConfig
 import com.novelcharacter.app.databinding.DialogFieldEditBinding
+import com.novelcharacter.app.util.FormulaLexer
+import com.novelcharacter.app.util.FormulaValidator
 import com.novelcharacter.app.util.setValidatedPositiveButton
 import androidx.lifecycle.lifecycleScope
 import androidx.room.withTransaction
@@ -48,8 +50,11 @@ class FieldEditDialog : DialogFragment() {
     private var universeId: Long = 0
     private var existingField: FieldDefinition? = null
 
-    // 수식 검증용 — 현재 세계관의 필드 키 목록 (비동기 로드, 로드 전이면 키 존재 검사만 생략)
+    // 수식 검증용 — 현재 세계관·같은 대상(캐릭터/사건)의 필드 키 (비동기 로드, 로드 전이면 키 존재 검사만 생략)
     private var universeFieldKeys: Set<String>? = null
+
+    // 수식 검증용 — 전이 순환 참조를 보기 위한 CALCULATED 필드의 키 → 수식 (편집 중인 필드는 제외)
+    private var calculatedFormulas: Map<String, String> = emptyMap()
 
     // 동적 분석 항목 관리
     private data class AnalysisRow(
@@ -117,6 +122,7 @@ class FieldEditDialog : DialogFragment() {
         setupCardDisplaySection(binding)
         setupAiAndDescriptionSection(binding)
         setupHelpButtons(binding)
+        setupFormulaHelp(binding)
         populateFields(binding)
 
         val dialog = MaterialAlertDialogBuilder(requireContext())
@@ -125,14 +131,22 @@ class FieldEditDialog : DialogFragment() {
             .setPositiveButton(R.string.save, null)
             .setNegativeButton(R.string.cancel, null)
             .create()
-        // 수식 검증용 필드 키 목록 로드 (프리셋 편집(universeId=0)은 DB에 없으므로 제외)
+        // 수식 검증용 필드 목록 로드 (프리셋 편집(universeId=0)은 DB에 없으므로 제외)
         if (universeId != 0L) {
             lifecycleScope.launch {
                 try {
                     val app = requireContext().applicationContext as com.novelcharacter.app.NovelCharacterApp
-                    universeFieldKeys = app.database.fieldDefinitionDao()
-                        .getFieldsByUniverseList(universeId).map { it.key }.toSet()
-                } catch (_: Exception) { /* 로드 실패 시 키 존재 검사만 생략 */ }
+                    // 대상(캐릭터/사건)을 맞춰 읽는다 — DAO 기본값이 캐릭터라, 사건 필드를 편집하면서
+                    // 캐릭터 필드 목록을 보면 있는 키를 없다고 하고 없는 키를 있다고 한다.
+                    val defs = app.database.fieldDefinitionDao()
+                        .getFieldsByUniverseList(universeId, currentEntityType())
+                    universeFieldKeys = defs.map { it.key }.toSet()
+                    // 편집 중인 필드는 뺀다 — 그 수식은 저장된 것이 아니라 지금 입력 중인 것이다.
+                    calculatedFormulas = defs
+                        .filter { it.type == FieldType.CALCULATED.name && it.id != existingField?.id }
+                        .mapNotNull { def -> formulaOf(def)?.let { def.key to it } }
+                        .toMap()
+                } catch (_: Exception) { /* 로드 실패 시 키 존재·순환 검사만 생략 */ }
             }
         }
 
@@ -393,6 +407,18 @@ class FieldEditDialog : DialogFragment() {
         ).forEach { (view, topic) ->
             view.setOnClickListener { help.showHelp(ctx, topic) }
         }
+    }
+
+    /**
+     * 수식 입력란 아래 안내 — 쓸 수 있는 함수는 [FormulaLexer.FUNCTIONS]가 단일 소스다.
+     * 문구에 이름을 박아 두면 함수를 늘릴 때 안내가 거짓이 된다(실제로 `avg`가 빠져 있었다).
+     */
+    private fun setupFormulaHelp(binding: DialogFieldEditBinding) {
+        val signatures = FormulaLexer.FUNCTIONS.entries.joinToString(", ") { (name, arity) ->
+            val args = ('a' until 'a' + arity).joinToString(",")
+            "$name($args)"
+        }
+        binding.textFormulaHelp.text = getString(R.string.text_formula_help, signatures)
     }
 
     /**
@@ -1265,31 +1291,44 @@ class FieldEditDialog : DialogFragment() {
         }
     }
 
-    /** 수식의 잠재 문제 목록 (빈 리스트면 통과). 경고 용도이며 저장을 차단하지 않는다. */
-    private fun validateFormula(formula: String, currentKey: String): List<String> {
-        if (formula.isBlank()) return emptyList()
-        val problems = mutableListOf<String>()
-        var depth = 0
-        var unbalanced = false
-        for (ch in formula) {
-            when (ch) {
-                '(' -> depth++
-                ')' -> { depth--; if (depth < 0) unbalanced = true }
+    /**
+     * 수식의 잠재 문제 목록 (빈 리스트면 통과). 경고 용도이며 저장을 차단하지 않는다.
+     *
+     * 판정은 [FormulaValidator]가 하고 여기서는 문구만 입힌다 — 검증기는 평가기와 같은
+     * 어휘 분석([FormulaLexer])을 보므로, 함수를 추가해도 검사가 뒤처지지 않는다.
+     */
+    private fun validateFormula(formula: String, currentKey: String): List<String> =
+        FormulaValidator.validate(formula, currentKey, universeFieldKeys, calculatedFormulas)
+            .map { problem ->
+                when (problem) {
+                    is FormulaValidator.Problem.UnbalancedParen ->
+                        getString(R.string.formula_warn_paren)
+                    is FormulaValidator.Problem.SelfReference ->
+                        getString(R.string.formula_warn_self_ref, problem.key)
+                    is FormulaValidator.Problem.CircularReference ->
+                        getString(R.string.formula_warn_circular, problem.path.joinToString(" → "))
+                    is FormulaValidator.Problem.UnknownKeys ->
+                        getString(R.string.formula_warn_missing_keys, problem.keys.joinToString(", "))
+                    is FormulaValidator.Problem.PaddedKeys ->
+                        getString(R.string.formula_warn_padded_keys, problem.keys.joinToString(", ") { "\"$it\"" })
+                    is FormulaValidator.Problem.UnknownFunctions ->
+                        getString(
+                            R.string.formula_warn_unknown_function,
+                            problem.names.joinToString(", "),
+                            FormulaLexer.KNOWN_NAMES.joinToString(", ")
+                        )
+                    is FormulaValidator.Problem.MalformedCalls ->
+                        getString(R.string.formula_warn_malformed_call, problem.names.joinToString(", "))
+                    is FormulaValidator.Problem.UnrecognizedText ->
+                        getString(R.string.formula_warn_unrecognized, problem.fragments.joinToString(", ") { "\"$it\"" })
+                }
             }
-        }
-        if (depth != 0 || unbalanced) problems.add(getString(R.string.formula_warn_paren))
-        val keys = universeFieldKeys
-        if (keys != null) {
-            val missing = Regex("""field\(\s*['"]?([^'")]+?)['"]?\s*\)""").findAll(formula)
-                .map { it.groupValues[1].trim() }
-                .filter { it.isNotEmpty() && it !in keys && it != currentKey }
-                .distinct().toList()
-            if (missing.isNotEmpty()) {
-                problems.add(getString(R.string.formula_warn_missing_keys, missing.joinToString(", ")))
-            }
-        }
-        return problems
-    }
+
+    /** 필드 설정에서 수식만 꺼낸다 (없거나 읽히지 않으면 null). */
+    private fun formulaOf(def: FieldDefinition): String? = try {
+        Gson().fromJson<Map<String, Any>>(def.config, Map::class.java)
+            ?.get("formula") as? String
+    } catch (_: Exception) { null }
 
     private fun checkTypeChangeImpact(field: FieldDefinition, oldType: String, newType: String) {
         val app = requireContext().applicationContext as com.novelcharacter.app.NovelCharacterApp

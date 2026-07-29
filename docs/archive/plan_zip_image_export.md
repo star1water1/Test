@@ -1,3 +1,18 @@
+> ## 📦 보관 문서 — **구현 완료** (원래 위치: 저장소 루트 `PLAN.md`)
+>
+> 이 계획은 **전부 구현됐다.** 2026-07-28 현행 코드로 확인한 근거:
+> `excel/ExportOptions.kt`(카테고리 선택 옵션) · `excel/ImageZipHelper.kt` ·
+> `excel/ExcelExporter.kt`·`ExcelImporter.kt`(ZIP 감지·이미지 복원) 실재.
+>
+> **계획서로 읽지 말 것.** 현행 엑셀 왕복의 실제 사양은
+> `docs/excel_roundtrip_audit_2026-07.md`와 `docs/architecture_2026-07.md` 5-4가 단일 소스다.
+> 이 문서는 "그때 무엇을 하려 했는가"의 기록으로만 남긴다.
+>
+> *(파일명 변경 이유: 루트에 `PLAN.md`와 `plan.md`가 대소문자만 다르게 공존해,
+> 대소문자를 구분하지 않는 파일시스템(macOS 기본 APFS·Windows)에서 체크아웃이 충돌했다.)*
+
+---
+
 # ZIP 기반 이미지 백업 + 선택 옵션 구현 계획
 
 ## 개요
