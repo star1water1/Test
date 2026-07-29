@@ -12,6 +12,7 @@ import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.Faction
 import com.novelcharacter.app.data.model.FactionMembership
 import com.novelcharacter.app.data.repository.MemberAddResult
+import com.novelcharacter.app.util.MembershipTimeline
 import com.novelcharacter.app.util.OpResult
 import com.novelcharacter.app.util.reportResult
 import com.novelcharacter.app.util.logResult
@@ -19,6 +20,13 @@ import kotlinx.coroutines.launch
 
 /** 한 세력에 대한 캐릭터의 소속 상태 — 후보 목록이 셋을 구별해 보이기 위한 축. */
 enum class MemberState { ACTIVE, DEPARTED }
+
+/**
+ * 한 (세력, 캐릭터)의 소속 이력 요약.
+ * [latestLeaveYear]는 재가입의 가입 연도가 이전 이력과 모순되지 않는지 판정하는 기준이다
+ * (`MembershipTimeline`). 상태와 함께 한 번의 조회로 얻는다.
+ */
+data class MembershipSummary(val state: MemberState, val latestLeaveYear: Int?)
 
 class FactionViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -145,20 +153,27 @@ class FactionViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /**
-     * 세력별 캐릭터 소속 상태 — 멤버 추가 후보 목록의 표시용.
+     * 세력별 캐릭터 소속 요약 — 후보 목록의 상태 표시 **와** 가입 연도 판정에 함께 쓴다.
      * 활성 소속이 하나라도 있으면 ACTIVE가 이긴다(재가입한 캐릭터는 옛 탈퇴 행도 함께 갖는다).
+     * 탈퇴 연도는 **가장 늦은 것**을 남긴다 — 새 소속은 마지막 탈퇴 뒤여야 겹치지 않는다.
      */
-    suspend fun getMembershipStatesForFaction(factionId: Long): Map<Long, MemberState> {
-        val states = mutableMapOf<Long, MemberState>()
-        for (m in factionRepository.getMembershipsByFactionList(factionId)) {
-            if (m.leaveType == null) {
-                states[m.characterId] = MemberState.ACTIVE
-            } else if (states[m.characterId] == null) {
-                states[m.characterId] = MemberState.DEPARTED
-            }
+    suspend fun getMembershipSummaryForFaction(factionId: Long): Map<Long, MembershipSummary> {
+        val rows = factionRepository.getMembershipsByFactionList(factionId)
+        return rows.groupBy { it.characterId }.mapValues { (_, group) ->
+            MembershipSummary(
+                state = if (group.any { it.leaveType == null }) MemberState.ACTIVE else MemberState.DEPARTED,
+                latestLeaveYear = MembershipTimeline.latestKnownLeaveYear(group.map { it.leaveYear })
+            )
         }
-        return states
     }
+
+    /** 한 (세력, 캐릭터)의 이전 탈퇴 중 가장 늦은 시점 — 재가입 창의 판정 기준. */
+    suspend fun latestLeaveYearFor(factionId: Long, characterId: Long): Int? =
+        MembershipTimeline.latestKnownLeaveYear(
+            factionRepository.getMembershipsByFactionList(factionId)
+                .filter { it.characterId == characterId }
+                .map { it.leaveYear }
+        )
 
     /** 가입 연도 수정 — 소속 행은 보존한다(이력의 정체성). null이면 '시점 불명'. */
     fun updateJoinYear(membershipId: Long, joinYear: Int?) = viewModelScope.launch {

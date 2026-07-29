@@ -1400,6 +1400,10 @@
     <string name="faction_join_year_edit_hint">비워 두면 가입 시점을 정하지 않은 것으로 둡니다</string>
     <string name="faction_member_rejoin">다시 소속시키기</string>
     <string name="faction_member_rejoin_notice">이전 탈퇴 기록은 이력으로 남고, 새 소속이 하나 더 생깁니다</string>
+    <string name="faction_join_year_required_after_leave">이전 탈퇴 연도(%1$d)가 있으므로 다시 소속된 연도를 적어야 합니다</string>
+    <string name="faction_join_year_before_leave">가입 연도(%1$d)는 이전 탈퇴 연도(%2$d)보다 앞일 수 없습니다</string>
+    <string name="faction_join_year_conflict_members">%1$s은 이전에 탈퇴한 적이 있습니다. 가입 연도를 %2$d년 이후로 적으세요</string>
+    <string name="faction_join_year_conflict_more">%1$s 외 %2$d명</string>
     <string name="faction_member_rejoined">다시 소속시켰습니다</string>
     <string name="faction_membership_delete">소속 기록 삭제</string>
     <string name="faction_membership_delete_confirm">%1$s의 소속 기록 한 줄을 지웁니다. 탈퇴 이력이 함께 사라지며 되돌릴 수 없습니다. 탈퇴로 만들어진 캐릭터 관계는 그대로 남습니다.</string>

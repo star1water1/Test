@@ -30,6 +30,7 @@ import com.novelcharacter.app.databinding.FragmentFactionManageBinding
 import com.novelcharacter.app.ui.adapter.FactionAdapter
 import com.novelcharacter.app.ui.adapter.FactionMemberAdapter
 import com.novelcharacter.app.ui.adapter.FactionMemberItem
+import com.novelcharacter.app.util.MembershipTimeline
 import com.novelcharacter.app.util.dismissSafely
 import com.novelcharacter.app.util.notifyResult
 import com.novelcharacter.app.util.setValidatedPositiveButton
@@ -735,7 +736,11 @@ class FactionManageFragment : Fragment() {
     }
 
     /** 재가입 — 새 소속을 만든다. 이전 탈퇴 기록은 이력으로 남는다. */
-    private fun showRejoinDialog(faction: Faction, item: FactionMemberItem) {
+    private fun showRejoinDialog(faction: Faction, item: FactionMemberItem) = viewLifecycleOwner.lifecycleScope.launch {
+        // 새 소속은 **마지막 탈퇴 뒤**여야 한다 — 앞이면 같은 해에 나가 있으면서 들어와 있게 된다.
+        // 사용자가 옛 탈퇴 줄을 눌러 재가입할 수 있으므로 그 줄이 아니라 가장 늦은 탈퇴를 본다.
+        val previousLeave = viewModel.latestLeaveYearFor(faction.id, item.membership.characterId)
+        if (!isAdded) return@launch
         val ctx = requireContext()
         val density = resources.displayMetrics.density
         val container = LinearLayout(ctx).apply {
@@ -766,6 +771,20 @@ class FactionManageFragment : Fragment() {
             if (text.isNotEmpty() && year == null) {
                 editYear.showInlineError(getString(R.string.faction_join_year_invalid))
                 return@setValidatedPositiveButton false
+            }
+            when (val verdict = MembershipTimeline.validateJoinYear(year, previousLeave)) {
+                is MembershipTimeline.JoinYearVerdict.Required -> {
+                    editYear.showInlineError(getString(
+                        R.string.faction_join_year_required_after_leave, verdict.previousLeaveYear))
+                    return@setValidatedPositiveButton false
+                }
+                is MembershipTimeline.JoinYearVerdict.BeforePreviousLeave -> {
+                    editYear.showInlineError(getString(
+                        R.string.faction_join_year_before_leave,
+                        verdict.joinYear, verdict.previousLeaveYear))
+                    return@setValidatedPositiveButton false
+                }
+                MembershipTimeline.JoinYearVerdict.Ok -> Unit
             }
             // 멤버 추가와 같은 경로 — 자동 관계 생성 규칙도 그대로 따라간다.
             viewModel.addMembers(faction.id, listOf(item.membership.characterId), year) { result ->
@@ -871,7 +890,7 @@ class FactionManageFragment : Fragment() {
             // 후보 목록은 세계관 캐릭터 전체다 — 종전에는 **이미 소속 중인 사람과 탈퇴한 사람,
             // 한 번도 소속된 적 없는 사람이 전부 똑같이 보였다.** 그래서 재가입이 되는데도
             // 그것이 재가입인지 알 수 없었고, 이미 소속된 사람을 골라도 조용히 건너뛰었다.
-            val memberStates = viewModel.getMembershipStatesForFaction(faction.id)
+            val memberStates = viewModel.getMembershipSummaryForFaction(faction.id)
 
             val container = LinearLayout(ctx).apply {
                 orientation = LinearLayout.VERTICAL
@@ -918,7 +937,7 @@ class FactionManageFragment : Fragment() {
                 listContainer.removeAllViews()
                 for (char in filteredCharacters) {
                     val checkBox = CheckBox(ctx).apply {
-                        text = when (memberStates[char.id]) {
+                        text = when (memberStates[char.id]?.state) {
                             MemberState.ACTIVE ->
                                 "${char.name} · ${getString(R.string.faction_member_state_active)}"
                             MemberState.DEPARTED ->
@@ -966,7 +985,31 @@ class FactionManageFragment : Fragment() {
                         return@setValidatedPositiveButton false
                     }
 
-                    val joinYear = editYear.text.toString().trim().toIntOrNull()
+                    val yearText = editYear.text.toString().trim()
+                    val joinYear = if (yearText.isEmpty()) null else yearText.toIntOrNull()
+                    if (yearText.isNotEmpty() && joinYear == null) {
+                        editYear.showInlineError(getString(R.string.faction_join_year_invalid))
+                        return@setValidatedPositiveButton false
+                    }
+
+                    // 이 창도 재가입의 문이다 — 탈퇴자를 다시 고르면 새 소속이 생긴다.
+                    // 규칙을 여기에만 안 걸면 같은 모순이 다른 문으로 들어온다.
+                    val conflicts = selectedIds.mapNotNull { id ->
+                        val prev = memberStates[id]?.latestLeaveYear ?: return@mapNotNull null
+                        val verdict = MembershipTimeline.validateJoinYear(joinYear, prev)
+                        if (verdict is MembershipTimeline.JoinYearVerdict.Ok) null
+                        else (allCharacters.firstOrNull { it.id == id }?.name ?: "") to prev
+                    }
+                    if (conflicts.isNotEmpty()) {
+                        val names = conflicts.map { it.first }.filter { it.isNotEmpty() }
+                        val shown = if (names.size <= 2) names.joinToString(", ")
+                        else getString(R.string.faction_join_year_conflict_more,
+                            names.take(2).joinToString(", "), names.size - 2)
+                        editYear.showInlineError(getString(
+                            R.string.faction_join_year_conflict_members,
+                            shown, conflicts.maxOf { it.second }))
+                        return@setValidatedPositiveButton false
+                    }
                     viewModel.addMembers(faction.id, selectedIds.toList(), joinYear) { result ->
                         if (!isAdded) return@addMembers
                         // 수동 관계 우선 정책: 건너뛴 자동관계는 반드시 통보 (조용한 불일치 방지)
