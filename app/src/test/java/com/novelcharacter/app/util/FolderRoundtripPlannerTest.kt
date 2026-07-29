@@ -358,6 +358,121 @@ class FolderRoundtripPlannerTest {
         assertEquals(0, p.unknownTokenFiles)
     }
 
+    // ── 서랍 `기타/`·`_기타/` (설계 image_folder_tag_ai 2장, D-1·D-2) ──
+
+    /** 서랍의 신규 파일은 **낱개**로 들어온다 — 여러 장이어도 세트가 서지 않는다. */
+    @Test fun miscFolder_newFilesAreImportedIndividuallyWithoutLink() {
+        val p = plan(listOf(newFile("a", "기타"), newFile("b", "기타"), newFile("c", "기타")))
+        assertEquals(3, p.imports.size)
+        assertTrue(p.imports.all { it.setKey == null && it.assignCharacterId == null })
+        assertTrue("서랍은 세트를 만들지 않는다", p.linkSets.isEmpty())
+        assertEquals(3, p.miscImported)
+    }
+
+    /** 서랍 편입 수는 다른 자리의 '배정·세트 없는 편입'과 섞이지 않는다. */
+    @Test fun miscImported_doesNotCountOtherUnassignedImports() {
+        val p = plan(listOf(newFile("a", "기타"), newFile("b"), newFile("c", "_미배정"), newFile("d", "_공유")))
+        assertEquals(4, p.imports.size)
+        assertEquals(1, p.miscImported)
+    }
+
+    /** 예약 접두판도 같은 함수를 탄다 — 둘의 뜻이 갈리면 규약이 둘이 된다. */
+    @Test fun reservedMiscFolder_behavesSameAsPlainName() {
+        val plain = plan(listOf(newFile("a", "기타"), newFile("b", "기타")))
+        val reserved = plan(listOf(newFile("a", "_기타"), newFile("b", "_기타")))
+        assertEquals(plain.imports.map { it.setKey }, reserved.imports.map { it.setKey })
+        assertEquals(plain.linkSets, reserved.linkSets)
+    }
+
+    /** `_기타/`가 "이름이 `_기타`인 캐릭터"를 찾으면 안 된다(classify 예약 분기 누락 회귀). */
+    @Test fun reservedMiscFolder_isNotTreatedAsCharacterName() {
+        val p = plan(listOf(newFile("a", "_기타")), names = mapOf("_기타" to listOf(9L)))
+        assertEquals(1, p.imports.size)
+        assertNull("예약 폴더는 캐릭터로 해석되지 않는다", p.imports[0].assignCharacterId)
+    }
+
+    /** 서랍의 토큰 파일은 **묶음만** 풀린다 — 캐릭터 배정은 그대로다(D-2). */
+    @Test fun miscFolder_tokenFileUnlinksOnlyAndKeepsAssignment() {
+        val p = plan(
+            listOf(tokenFile("t", tokenA, "기타")),
+            owners = mapOf(pathA to listOf(7L)),
+            linked = setOf(pathA)
+        )
+        assertEquals(1, p.unlinkOnly.size)
+        assertEquals(pathA, p.unlinkOnly[0].path)
+        assertTrue("배정을 떼는 계획이 서면 안 된다", p.detaches.isEmpty())
+        assertTrue(p.moves.isEmpty())
+    }
+
+    /** 이미 낱개인 토큰 파일은 할 일이 없다 — 계수도 하지 않는다. */
+    @Test fun miscFolder_alreadyUnlinkedTokenFileIsNoOp() {
+        val p = plan(listOf(tokenFile("t", tokenA, "기타")), owners = mapOf(pathA to listOf(7L)))
+        assertTrue(p.unlinkOnly.isEmpty())
+        assertTrue(p.detaches.isEmpty())
+        assertEquals(0, p.actionCount)
+    }
+
+    /**
+     * 소유자가 둘 이상이어도 서랍은 보류하지 않는다 — C-2 보류는 **배정을 건드릴 때**의
+     * 안전장치인데 서랍은 배정을 건드리지 않는다.
+     */
+    @Test fun miscFolder_sharedOwnersStillUnlink() {
+        val p = plan(
+            listOf(tokenFile("t", tokenA, "기타")),
+            owners = mapOf(pathA to listOf(7L, 8L)),
+            linked = setOf(pathA)
+        )
+        assertEquals(1, p.unlinkOnly.size)
+        assertTrue("서랍에서는 보류가 생기지 않는다", p.holds.isEmpty())
+    }
+
+    // ── D-1: 캐릭터가 우선 ──
+
+    /** '기타'라는 캐릭터가 실재하면 `기타/`는 그 캐릭터 폴더다. 그리고 그 사실을 고지한다. */
+    @Test fun miscPlainName_losesToRealCharacterAndIsReported() {
+        val p = plan(listOf(newFile("a", "기타")), names = mapOf("기타" to listOf(42L)))
+        assertEquals(1, p.imports.size)
+        assertEquals(42L, p.imports[0].assignCharacterId)
+        assertEquals(listOf("기타"), p.miscReadAsCharacter)
+    }
+
+    /** 예약 접두판은 캐릭터가 있어도 서랍이다 — 빠져나갈 길이 실제로 있어야 고지가 쓸모 있다. */
+    @Test fun reservedMiscFolder_winsEvenWhenCharacterNamedMiscExists() {
+        val p = plan(listOf(newFile("a", "_기타")), names = mapOf("기타" to listOf(42L)))
+        assertNull(p.imports[0].assignCharacterId)
+        assertTrue(p.miscReadAsCharacter.isEmpty())
+    }
+
+    /** 동명이인은 서랍으로 새지 않고 기존 해소 사다리(물어보기)를 탄다. */
+    @Test fun miscPlainName_withAmbiguousCharactersStillAsks() {
+        val p = plan(listOf(newFile("a", "기타")), names = mapOf("기타" to listOf(1L, 2L)))
+        assertEquals(listOf("기타"), p.ambiguousFolders)
+        assertTrue("서랍으로 강등되면 질문이 사라진다", p.miscReadAsCharacter.isEmpty())
+    }
+
+    // ── AI 태그 대상 수집 ──
+
+    /** '그 외' 폴더만 대상이다. 신규·토큰 파일 모두 "이번에 그 폴더에서 온" 것이다(D-4). */
+    @Test fun aiTagFolders_collectsOnlyNonCharacterNamedFolders() {
+        val p = plan(
+            listOf(
+                newFile("a", "여행"), tokenFile("t", tokenA, "여행"),
+                newFile("b", "가온"), newFile("c", "기타"), newFile("d", "_미배정", "세트")
+            ),
+            names = mapOf("가온" to listOf(7L))
+        )
+        // 신규는 항목 id로(경로가 편입 뒤에 정해진다), 토큰 파일은 이미 있는 경로로 나뉜다.
+        assertEquals(setOf("여행"), p.aiTagFolders.keys)
+        assertEquals(listOf("a"), p.aiTagFolders["여행"])
+        assertEquals(listOf(pathA), p.aiTagExistingPaths["여행"])
+    }
+
+    /** 동명 보류 폴더는 대상이 아니다 — 그 이름은 캐릭터를 가리키려던 것이라 태그가 되면 안 된다. */
+    @Test fun aiTagFolders_excludesAmbiguousFolders() {
+        val p = plan(listOf(newFile("a", "가온"), newFile("b", "가온")), names = mapOf("가온" to listOf(1L, 2L)))
+        assertTrue(p.aiTagFolders.isEmpty())
+    }
+
     // ── 결정성 ──
 
     @Test fun plan_isDeterministicForSameInput() {

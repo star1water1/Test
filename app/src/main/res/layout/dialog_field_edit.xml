@@ -145,6 +145,21 @@
                     android:textAppearance="@style/TextAppearance.App.Caption"
                     android:textColor="@color/text_secondary" />
 
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/switchImageTagVocab"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/field_image_tag_vocab_label" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="@string/field_image_tag_vocab_desc"
+                    android:textAppearance="@style/TextAppearance.App.Caption"
+                    android:textColor="@color/text_secondary" />
+
             </LinearLayout>
 
             <!-- 표시 형식 (TEXT/MULTI_TEXT 타입일 때 표시) -->

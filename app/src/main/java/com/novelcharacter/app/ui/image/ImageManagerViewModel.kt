@@ -11,6 +11,7 @@ import com.google.gson.Gson
 import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.data.database.AppDatabase
 import com.novelcharacter.app.data.maintenance.SystemMaintenanceService
+import com.novelcharacter.app.util.FolderRoundtripPrefs
 import com.novelcharacter.app.util.GsonTypes
 import com.novelcharacter.app.util.ImageFilterHelper
 import com.novelcharacter.app.util.ImageImportHelper
@@ -54,6 +55,10 @@ class ImageManagerViewModel(
             savedState["filter_base"] =
                 prefs.getString("filter_base", null) ?: ImageFilterHelper.BaseFilter.ALL.name
         }
+        if (!savedState.contains("filter_link")) {
+            savedState["filter_link"] =
+                prefs.getString("filter_link", null) ?: ImageFilterHelper.LinkFilter.ANY.name
+        }
         if (!savedState.contains("filter_tags")) {
             savedState["filter_tags"] = ArrayList(loadPersistedTags())
         }
@@ -81,15 +86,20 @@ class ImageManagerViewModel(
             base = runCatching {
                 ImageFilterHelper.BaseFilter.valueOf(savedState["filter_base"] ?: ImageFilterHelper.BaseFilter.ALL.name)
             }.getOrDefault(ImageFilterHelper.BaseFilter.ALL),
+            link = runCatching {
+                ImageFilterHelper.LinkFilter.valueOf(savedState["filter_link"] ?: ImageFilterHelper.LinkFilter.ANY.name)
+            }.getOrDefault(ImageFilterHelper.LinkFilter.ANY),
             tags = savedState.get<ArrayList<String>>("filter_tags")?.toSet() ?: emptySet(),
             query = savedState["filter_query"] ?: ""
         )
         set(value) {
             savedState["filter_base"] = value.base.name
+            savedState["filter_link"] = value.link.name
             savedState["filter_tags"] = ArrayList(value.tags)
             savedState["filter_query"] = value.query
             prefs.edit()
                 .putString("filter_base", value.base.name)
+                .putString("filter_link", value.link.name)
                 .putString("filter_tags", gson.toJson(ArrayList(value.tags)))
                 .apply()
         }
@@ -909,6 +919,11 @@ class ImageManagerViewModel(
                             val groupId = plan.groupsInvolved.firstOrNull() ?: UUID.randomUUID().toString()
                             db.imageMetaDao().setGroup(ids.toList(), groupId)
                         }
+                        // 다시 묶였으면 '흩어진 나머지'가 아니다 — 장부 ③에서 뺀다.
+                        // 안 빼면 사용자가 고친 뒤에도 어시스턴트 카드가 계속 뜬다.
+                        runCatching {
+                            FolderRoundtripPrefs.removeScatteredPaths(getApplication(), paths)
+                        }
                         LinkOutcome.Done(paths.size, plan.needsMergeConfirm)
                     }
                 } catch (e: Exception) {
@@ -1115,6 +1130,100 @@ class ImageManagerViewModel(
             }
             load()
             onDone(result)
+        }
+    }
+
+    /** AI 태그 제안 결과 + 폴더별 적용 대상 경로(D-4: 이번에 그 폴더에서 온 이미지만). */
+    data class TagSuggestOutcome(
+        val result: com.novelcharacter.app.ai.ImageFolderTagSuggester.Result,
+        val pathsByFolder: Map<String, List<String>>
+    )
+
+    /**
+     * 폴더 이름으로 태그를 제안받는다(설계 image_folder_tag_ai 3장).
+     *
+     * 어휘는 **기존 이미지 태그 전량 + '어휘에 포함'이 켜진 필드의 값**이다. 후자를 켠 필드가
+     * 하나도 없어도 동작한다 — 그때는 기존 태그만으로 표기를 맞춘다.
+     */
+    suspend fun suggestFolderTags(
+        bundle: com.novelcharacter.app.util.OrganizeFolderService.PlanBundle,
+        applied: com.novelcharacter.app.util.OrganizeFolderService.ApplyResult,
+        folders: List<String>
+    ): TagSuggestOutcome = withContext(Dispatchers.IO) {
+        val plan = bundle.plan
+        // 신규는 편입 뒤 경로로, 토큰 파일은 이미 아는 경로로 — 둘 다 "이번에 그 폴더에서 온" 것.
+        val pathsByFolder = folders.associateWith { folder ->
+            val fresh = plan.aiTagFolders[folder].orEmpty().mapNotNull { applied.importedPathById[it] }
+            (fresh + plan.aiTagExistingPaths[folder].orEmpty()).distinct()
+        }.filterValues { it.isNotEmpty() }
+        if (pathsByFolder.isEmpty()) {
+            return@withContext TagSuggestOutcome(
+                com.novelcharacter.app.ai.ImageFolderTagSuggester.Result(), emptyMap()
+            )
+        }
+
+        val tagCounts = runCatching {
+            db.imageTagDao().getAllList().groupingBy { it.tag }.eachCount()
+        }.getOrDefault(emptyMap())
+        val vocabFields = runCatching {
+            db.fieldDefinitionDao().getAllFieldsAllTypes()
+                .filter { com.novelcharacter.app.data.model.FieldAiPolicy.isImageTagVocabEnabled(it.config) }
+                .map { db.fieldValueEntryDao().getByField(it.id) }
+        }.getOrDefault(emptyList())
+
+        val vocab = com.novelcharacter.app.ai.ImageFolderTagSuggester
+            .buildVocabulary(tagCounts, vocabFields)
+        val policy = com.novelcharacter.app.ai.AiPromptSettings(getApplication()).imageTagPolicy
+        val suggester = com.novelcharacter.app.ai.ImageFolderTagSuggester(
+            com.novelcharacter.app.ai.AiService(getApplication())
+        )
+        val result = suggester.suggest(
+            pathsByFolder.keys.toList(),
+            pathsByFolder.mapValues { it.value.size },
+            vocab,
+            policy
+        )
+        TagSuggestOutcome(result, pathsByFolder)
+    }
+
+    /**
+     * 검토 시트에서 고른 태그를 적용한다. 기존 태그와 **합친다**(덮지 않는다) — 사용자가 이미
+     * 붙여 둔 태그를 AI 제안이 지우면 그것이 곧 무통보 유실이다.
+     */
+    fun applyFolderTags(
+        picked: Map<String, List<String>>,
+        pathsByFolder: Map<String, List<String>>,
+        onDone: (tags: Int, images: Int) -> Unit
+    ) {
+        viewModelScope.launch {
+            var tagCount = 0
+            val touched = LinkedHashSet<String>()
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    db.withTransaction {
+                        val now = System.currentTimeMillis()
+                        for ((folder, tags) in picked) {
+                            if (tags.isEmpty()) continue
+                            for (path in pathsByFolder[folder].orEmpty()) {
+                                val imageId = db.imageMetaDao().adopt(path, now)
+                                val existing = db.imageTagDao().getTagsByImageList(imageId)
+                                    .mapTo(HashSet()) { it.tag }
+                                val fresh = tags.filterNot { it in existing }
+                                if (fresh.isEmpty()) continue
+                                db.imageTagDao().insertAll(
+                                    fresh.map {
+                                        com.novelcharacter.app.data.model.ImageTag(imageId = imageId, tag = it)
+                                    }
+                                )
+                                tagCount += fresh.size
+                                touched.add(path)
+                            }
+                        }
+                    }
+                }
+            }
+            load()
+            onDone(tagCount, touched.size)
         }
     }
 

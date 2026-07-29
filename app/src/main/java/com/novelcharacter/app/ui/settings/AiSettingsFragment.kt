@@ -192,6 +192,13 @@ class AiSettingsFragment : Fragment() {
                 else -> null
             }
         }
+
+        // AI 이미지 태그 기조 — 자유 서술이라 '저장' 버튼을 두지 않고 포커스가 떠날 때 확정한다
+        // (원칙 04: 저장을 위해 버튼 단계를 거치지 않는다). 화면을 떠날 때도 한 번 더 쓴다.
+        binding.imageTagPolicyEdit.setText(settings.imageTagPolicy)
+        binding.imageTagPolicyEdit.setOnFocusChangeListener { _, hasFocus ->
+            if (!hasFocus) settings.imageTagPolicy = binding.imageTagPolicyEdit.text?.toString().orEmpty()
+        }
     }
 
     private fun renderUsageExamples(count: Int) {
@@ -703,6 +710,12 @@ class AiSettingsFragment : Fragment() {
     }
 
     override fun onDestroyView() {
+        // 포커스를 둔 채 뒤로 가면 focusChange가 오지 않는다 — 여기서 한 번 더 확정하지 않으면
+        // 방금 쓴 기조가 조용히 사라진다(입력 유실 금지, R-27과 같은 취지).
+        _binding?.let { b ->
+            AiPromptSettings(requireContext()).imageTagPolicy =
+                b.imageTagPolicyEdit.text?.toString().orEmpty()
+        }
         super.onDestroyView()
         _binding = null
     }

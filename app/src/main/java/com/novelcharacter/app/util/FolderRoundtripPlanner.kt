@@ -12,7 +12,8 @@ package com.novelcharacter.app.util
  * | 위치 | 신규 파일(토큰 없음) | 토큰 파일(기존 이미지) |
  * |---|---|---|
  * | `<캐릭터명>/` 정확 일치 | 편입 + 그 캐릭터 배정(자동 링크가 묶는다) | 배정을 그 캐릭터로 **이동** |
- * | `<기타 이름>/` | 편입 + 미배정 + 그 폴더끼리 **링크 세트** | 배정 불변 + 그 폴더 세트로 링크 |
+ * | `기타/` · `_기타/` **서랍** | 편입 + 미배정 + **링크 없음**(낱개) | **묶음만 해제**(배정은 유지) |
+ * | `<그 외 이름>/` | 편입 + 미배정 + 그 폴더끼리 **링크 세트** | 배정 불변 + 그 폴더 세트로 링크 |
  * | 정리 폴더 직속 · `_미배정/` 직속 | 편입 + 미배정(링크 없음) | 캐릭터 배정 **전부 해제 + 링크 묶음도 해제** |
  * | `_미배정/<세트명>/` | 편입 + 미배정 + 링크 세트 | 배정 해제 + 그 세트로 링크(**기존 묶음은 병합**) |
  * | `_공유/` | 편입 + 미배정(고지) | **반영 제외**(고지만) |
@@ -29,6 +30,17 @@ package com.novelcharacter.app.util
  * 뒤이은 링크 세트가 기존 그룹을 흡수할 수 없어, 규약상 **병합**이어야 할 것이 조용히
  * **이동**이 된다(같이 묶여 있던 이미지가 남겨진다). 사전 확인이 "폴더에 없던 이미지 M장이
  * 함께 묶입니다"라고 이미 약속한 뒤이므로, 고지와 실제가 어긋난다.
+ *
+ * ### 서랍은 세 번째 자리다 — 되돌리는 자리와 헷갈리지 말 것
+ *
+ * `기타/`·`_기타/`는 **낱개로 두는 자리**다([Location.Misc], 결정 D-2). 되돌리는 자리와
+ * 신규 파일에 대해서는 같은 뜻이지만, 토큰 파일에서 갈린다 — 서랍은 **묶음만** 풀고 캐릭터
+ * 배정은 그대로 둔다([UnlinkOnlyAction]). 배정까지 떼려는 사용자에게는 `_미배정/` 직속이
+ * 그대로 남아 있으므로, 두 자리는 서로를 대체하지 않고 역할이 갈린다.
+ *
+ * `기타/`(접두 없음)는 [classify]에서 [Location.Named]로 왔다가 **해석 단계에서** 강등된다.
+ * 그 이름의 캐릭터가 실재하면 캐릭터가 이기고([Plan.miscReadAsCharacter]로 고지), 동명이인·
+ * 미지 코드도 기존 해소 사다리를 그대로 탄다 — '기타'라는 이름이 질문을 우회하지 못한다.
  *
  * ## 판정의 축 — 셋을 헷갈리지 말 것
  *
@@ -55,6 +67,21 @@ object FolderRoundtripPlanner {
 
     /** 캐릭터 여럿이 함께 쓰는 이미지의 보관 폴더 — 위치 이동의 의미가 모호해 반영하지 않는다. */
     const val FOLDER_SHARED = "_공유"
+
+    /**
+     * 잡동사니 서랍 — 낱개로 들이는 자리(설계 `image_folder_tag_ai` 2장, 결정 D-1·D-2).
+     *
+     * `_미배정/` 직속과 헷갈리지 말 것. 그쪽은 **되돌리는 자리**라 토큰 파일의 배정까지 떼지만,
+     * 여기는 **비파괴 서랍**이라 묶음만 푼다. 신규 파일에 대해서만 둘이 같은 뜻이다.
+     */
+    const val FOLDER_MISC = "_기타"
+
+    /**
+     * 예약 접두 없이도 서랍으로 읽는 이름. **캐릭터가 우선이다**(D-1) — 이 이름의 캐릭터가
+     * 실재하면 캐릭터 폴더로 해석하고 [Plan.miscReadAsCharacter]로 고지한다.
+     * 서랍임을 확정하고 싶은 사용자에게는 [FOLDER_MISC]가 남아 있다.
+     */
+    const val MISC_PLAIN_NAME = "기타"
 
     /** 예약 폴더 접두. 사용자 폴더가 이 접두를 쓰면 캐릭터 이름으로 해석하지 않는다. */
     const val RESERVED_PREFIX = "_"
@@ -179,6 +206,8 @@ object FolderRoundtripPlanner {
         data class UnassignedSet(val name: String) : Location()
         /** `_공유/`. */
         object Shared : Location()
+        /** `_기타/` — 잡동사니 서랍. `기타/`는 [Location.Named]로 왔다가 해석 단계에서 강등된다. */
+        object Misc : Location()
         /** `_처리됨/` 하위 — 스캔 제외(계수도 하지 않는다). */
         object Skipped : Location()
         /** 규약 밖 깊이 — 무시하고 개수만 고지한다. */
@@ -218,6 +247,21 @@ object FolderRoundtripPlanner {
     )
 
     /**
+     * 묶음만 해제 — 토큰 파일이 서랍([Location.Misc])에서 발견됐다. **캐릭터 배정은 건드리지
+     * 않는다**(D-2).
+     *
+     * [DetachAction]에 플래그를 더하지 않은 이유: 그 자료형은 "배정을 뗀다"가 본체이고
+     * `unlinks`는 그 안의 갈래다. 배정을 떼지 않는 동작을 거기 실으면 이름이 거짓이 되고,
+     * 설계 11-1장이 정확히 그 혼선("계획이 정하는가 실행부가 판정하는가")으로 값을 치렀다.
+     * R-13(집계의 셀 단위가 다르면 함수를 나눈다)의 자료형 판이다.
+     *
+     * 그룹 id는 싣지 않는다 — 플래너는 [plan]의 `linkedPaths`로 "묶여 있다"만 알고, 어느
+     * 그룹인지는 실행부가 DB에서 읽는다. 여기 실으면 계획 시점과 실행 시점 사이에 그룹이
+     * 바뀌었을 때 낡은 값으로 지우게 된다.
+     */
+    data class UnlinkOnlyAction(val item: ScanItem, val path: String)
+
+    /**
      * 링크 세트 — 폴더 하나가 만드는 수동 묶음(UUID 토큰). 편입 후 경로가 정해지는 신규
      * 항목과, 토큰으로 이미 아는 기존 경로가 함께 실린다. 2장 이상일 때만 만들어진다.
      */
@@ -253,20 +297,40 @@ object FolderRoundtripPlanner {
      *        이름으로 조용히 폴백하지 않고 고지한다 — 코드를 적었다는 것은 대상을 특정하려는
      *        의도이므로, 폴백은 그 의도를 배신하는 오배정이 될 수 있다(R-17).
      * @param deeperIgnored 규약 밖 깊이라 무시한 파일 수.
+     * @param miscReadAsCharacter `기타/`라고 썼지만 그 이름의 캐릭터가 실재해 **캐릭터 폴더로
+     *        읽은** 폴더명(D-1). 조용히 넘어가면 사용자는 서랍에 넣은 줄 알고 배정이 바뀐 것을
+     *        모른다 — 고지하고 `_기타/`라는 빠져나갈 길을 함께 알린다(R-17).
+     * @param aiTagFolders AI 태그 제안 대상 '그 외' 폴더명 → 그 폴더의 **신규 파일** 항목 id.
+     *        경로는 편입 뒤에야 정해지므로 실행부가 해석한다. 캐릭터 폴더·서랍·예약 폴더는
+     *        들어오지 않는다(설계 2-1·2-4).
+     * @param aiTagExistingPaths 같은 폴더의 **토큰 파일** 경로. 신규와 나눈 이유는 하나는
+     *        편입 후에야 경로가 생기고 다른 하나는 이미 있기 때문이다 — 한 목록에 담으면
+     *        실행부가 "이 문자열이 id인가 경로인가"를 추측해야 한다. 둘 다 "이번에 그 폴더에서
+     *        온" 이미지이므로 태그 적용 대상은 합집합이다(D-4).
      */
     data class Plan(
         val imports: List<ImportAction> = emptyList(),
         val moves: List<MoveAction> = emptyList(),
         val detaches: List<DetachAction> = emptyList(),
+        val unlinkOnly: List<UnlinkOnlyAction> = emptyList(),
         val linkSets: List<LinkSetAction> = emptyList(),
         val holds: List<Hold> = emptyList(),
         val unknownTokenFiles: Int = 0,
         val ambiguousFolders: List<String> = emptyList(),
         val unknownCodeFolders: List<String> = emptyList(),
-        val deeperIgnored: Int = 0
+        val deeperIgnored: Int = 0,
+        val miscReadAsCharacter: List<String> = emptyList(),
+        val aiTagFolders: Map<String, List<String>> = emptyMap(),
+        val aiTagExistingPaths: Map<String, List<String>> = emptyMap(),
+        /**
+         * 서랍으로 **낱개 편입**되는 신규 파일 수. [imports] 안에서 자리로는 구별되지 않으므로
+         * (되돌리는 자리·`_공유/`의 편입도 배정·세트가 없다) 세어 둔다 — 사용자가 요청한 동작이
+         * 실제로 그렇게 계획됐는지 확인할 유일한 수다.
+         */
+        val miscImported: Int = 0
     ) {
         /** 실제로 파일을 만지는 항목 수 — 진행도 총량. */
-        val actionCount: Int get() = imports.size + moves.size + detaches.size
+        val actionCount: Int get() = imports.size + moves.size + detaches.size + unlinkOnly.size
 
         val isEmpty: Boolean get() = actionCount == 0 && linkSets.isEmpty()
     }
@@ -292,6 +356,10 @@ object FolderRoundtripPlanner {
             if (folders.size == 1) Location.UnassignedRoot else Location.UnassignedSet(folders[1])
         folders[0] == FOLDER_SHARED ->
             if (folders.size == 1) Location.Shared else Location.TooDeep
+        // 예약이므로 반드시 여기서 갈라야 한다 — 아래 `size == 1` 분기가 미등재 `_xxx`를
+        // 전부 Named로 흘려보내므로, 빠뜨리면 `_기타/`가 "이름이 `_기타`인 캐릭터"를 찾는다.
+        folders[0] == FOLDER_MISC ->
+            if (folders.size == 1) Location.Misc else Location.TooDeep
         folders.size == 1 -> Location.Named(folders[0])
         // 예약이 아닌 폴더의 하위 폴더는 규약 밖이다 — 세트는 `_미배정/` 아래에서만 만든다.
         else -> Location.TooDeep
@@ -321,11 +389,34 @@ object FolderRoundtripPlanner {
         val imports = ArrayList<ImportAction>()
         val moves = ArrayList<MoveAction>()
         val detaches = ArrayList<DetachAction>()
+        val unlinkOnly = ArrayList<UnlinkOnlyAction>()
         val holds = ArrayList<Hold>()
         val ambiguous = LinkedHashSet<String>()
         val unknownCode = LinkedHashSet<String>()
+        val miscAsCharacter = LinkedHashSet<String>()
+        val aiTagFolders = LinkedHashMap<String, MutableList<String>>()
+        val aiTagExistingPaths = LinkedHashMap<String, MutableList<String>>()
         var unknownTokens = 0
         var deeper = 0
+        var miscImported = 0
+
+        /**
+         * 서랍 처리 — 신규는 낱개로 들이고, 토큰 파일은 묶음만 푼다(D-2).
+         * `_기타/`와 강등된 `기타/`가 **같은 함수**를 타야 둘의 뜻이 갈리지 않는다.
+         *
+         * 소유자 수(C-2)를 보지 않는 이유: 그 보류는 **배정을 건드릴 때**의 안전장치인데
+         * 서랍은 배정을 건드리지 않는다. 링크 해제는 되돌릴 수 있고 파괴적이지 않다
+         * (`_미배정/<세트명>/`이 보류 중에도 묶음에는 넣는 것과 같은 판단).
+         */
+        fun handleMisc(item: ScanItem, path: String?) {
+            if (path == null) {
+                imports.add(ImportAction(item, null, null))
+                miscImported++
+            } else if (path in linkedPaths) {
+                unlinkOnly.add(UnlinkOnlyAction(item, path))
+            }
+            // 이미 낱개면 할 일 없음 — 계수도 하지 않는다(되돌리는 자리와 같은 규약).
+        }
 
         // 세트 후보를 폴더별로 모았다가 마지막에 2장 이상인 것만 세트로 만든다.
         val setNewItems = LinkedHashMap<String, MutableList<String>>()
@@ -381,14 +472,27 @@ object FolderRoundtripPlanner {
                     else holds.add(Hold(item, HoldReason.SHARED_FOLDER))
                 }
 
+                is Location.Misc -> handleMisc(item, path)
+
                 is Location.Named -> {
-                    val target = when (val r = resolver.resolve(location.name)) {
-                        is CharacterFolderResolver.Result.Found -> r.characterId
+                    val resolution = resolver.resolve(location.name)
+                    val target = when (resolution) {
+                        is CharacterFolderResolver.Result.Found -> resolution.characterId
                         is CharacterFolderResolver.Result.Ambiguous -> { ambiguous.add(resolver.keyOf(location.name)); null }
                         is CharacterFolderResolver.Result.UnknownCode -> { unknownCode.add(resolver.keyOf(location.name)); null }
                         is CharacterFolderResolver.Result.NotCharacter -> null
                     }
-                    if (target != null) {
+                    // 서랍 강등은 **그런 캐릭터가 없을 때만**이다(D-1 캐릭터 우선).
+                    // Ambiguous·UnknownCode는 캐릭터를 가리키려던 의도이므로 기존 해소 사다리에
+                    // 그대로 태운다 — '기타'라는 이름이 동명이인 질문을 우회하게 두지 않는다.
+                    val isDrawer = resolution is CharacterFolderResolver.Result.NotCharacter &&
+                        resolver.keyOf(location.name) == MISC_PLAIN_NAME
+                    if (isDrawer) {
+                        handleMisc(item, path)
+                    } else if (target != null) {
+                        if (resolver.keyOf(location.name) == MISC_PLAIN_NAME) {
+                            miscAsCharacter.add(resolver.keyOf(location.name))
+                        }
                         // 캐릭터 폴더 — 수동 세트를 만들지 않는다(자동 링크가 묶는다).
                         if (path == null) {
                             imports.add(ImportAction(item, target, null))
@@ -407,6 +511,18 @@ object FolderRoundtripPlanner {
                             imports.add(ImportAction(item, null, key))
                         } else {
                             setExistingPaths.getOrPut(key) { mutableListOf() }.add(path)
+                        }
+                        // AI 태그 대상은 **진짜 '그 외' 폴더뿐**이다. 동명 보류·미지 코드는
+                        // 캐릭터를 가리키려던 이름이라, 그 이름에서 태그를 뽑으면 캐릭터 이름이
+                        // 태그가 된다. 신규·토큰 파일 모두 "이번에 그 폴더에서 온" 것이므로
+                        // 함께 싣는다(D-4) — 경로 해석은 실행부 몫이다.
+                        if (resolution is CharacterFolderResolver.Result.NotCharacter) {
+                            val folderKey = resolver.keyOf(key)
+                            if (path == null) {
+                                aiTagFolders.getOrPut(folderKey) { mutableListOf() }.add(item.id)
+                            } else {
+                                aiTagExistingPaths.getOrPut(folderKey) { mutableListOf() }.add(path)
+                            }
                         }
                     }
                 }
@@ -430,6 +546,7 @@ object FolderRoundtripPlanner {
                 }
 
                 is Location.Skipped, is Location.TooDeep -> Unit  // 1단계에서 걸렀다
+
             }
         }
 
@@ -453,12 +570,17 @@ object FolderRoundtripPlanner {
             imports = finalImports,
             moves = moves,
             detaches = detaches,
+            unlinkOnly = unlinkOnly,
             linkSets = linkSets,
             holds = holds,
             unknownTokenFiles = unknownTokens,
             ambiguousFolders = ambiguous.toList(),
             unknownCodeFolders = unknownCode.toList(),
-            deeperIgnored = deeper
+            deeperIgnored = deeper,
+            miscReadAsCharacter = miscAsCharacter.toList(),
+            aiTagFolders = aiTagFolders.mapValues { it.value.toList() },
+            aiTagExistingPaths = aiTagExistingPaths.mapValues { it.value.toList() },
+            miscImported = miscImported
         )
     }
 }

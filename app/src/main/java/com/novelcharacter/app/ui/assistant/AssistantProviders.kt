@@ -6,7 +6,10 @@ import com.novelcharacter.app.ui.stats.PatternInsight
 import com.novelcharacter.app.ui.stats.PatternSeverity
 import com.novelcharacter.app.ui.stats.PatternType
 import com.novelcharacter.app.util.BirthdayHelper
+import com.novelcharacter.app.ui.image.ImageManagerFragment
 import com.novelcharacter.app.util.CharacterImageLoader
+import com.novelcharacter.app.util.FolderRoundtripPrefs
+import com.novelcharacter.app.util.ImageFilterHelper
 
 /** 이름 목록 미리보기 — 앞의 [max]개만 콤마로 잇는다. */
 private fun namesPreview(names: List<String>, max: Int = 3): String =
@@ -232,6 +235,40 @@ class HealthProvider : InsightProvider {
                 count = h.emptyDescRelationships, primaryAction = healthDetailAction
             )
         )
+
+        // 흩어진 묶음의 나머지 — **장부 ③을 읽는다**(설계 image_folder_tag_ai 5-1).
+        //
+        // 상태에서 파생하지 않는 유일한 카드다. `clearGroupIfSingleton`이 1장짜리 그룹을 즉시
+        // 없애므로 "혼자 남은 링크 그룹"은 현재 상태로 셀 수 없고, 고른 기준("원래 2장 이상이던
+        // 묶음에서 혼자 남은 것")이 애초에 역사적 서술이라 기록이 정직한 구현이다.
+        //
+        // 파일이 사라진 항목은 세지 않고 **장부에서도 뺀다** — 안 그러면 영원히 안 사라지는
+        // 카드가 된다(사용자가 손댈 수 없는 것을 계속 알리는 것은 알림이 아니라 소음이다).
+        val scattered = runCatching { FolderRoundtripPrefs.scatteredPaths(res) }.getOrDefault(emptyList())
+        if (scattered.isNotEmpty()) {
+            val (alive, gone) = scattered.partition { runCatching { java.io.File(it).exists() }.getOrDefault(false) }
+            if (gone.isNotEmpty()) runCatching { FolderRoundtripPrefs.removeScatteredPaths(res, gone) }
+            if (alive.isNotEmpty()) out.add(
+                AssistantInsight(
+                    id = "health_scattered_links", category = category,
+                    severity = InsightSeverity.HEALTH_SCATTERED,
+                    title = res.getString(R.string.assistant_health_scattered_title, alive.size),
+                    detail = res.getString(
+                        R.string.assistant_health_scattered_detail,
+                        namesPreview(alive.map { it.substringAfterLast('/') })
+                    ),
+                    count = alive.size,
+                    primaryAction = InsightAction.Navigate(
+                        destId = R.id.imageManagerFragment,
+                        label = res.getString(R.string.assistant_health_scattered_action),
+                        extras = mapOf(
+                            ImageManagerFragment.ARG_LINK_FILTER to
+                                ImageFilterHelper.LinkFilter.UNLINKED.name
+                        )
+                    )
+                )
+            )
+        }
         return out
     }
 

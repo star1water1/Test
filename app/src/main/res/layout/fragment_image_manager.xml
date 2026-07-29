@@ -96,6 +96,14 @@
         android:paddingStart="16dp"
         android:paddingEnd="16dp">
 
+        <!-- 두 축을 한 줄에 둔다: 소유·상태(왼쪽) | 링크 상태(오른쪽). 둘은 직교하므로
+             각각 단일 선택이며 AND로 조합된다. -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
         <com.google.android.material.chip.ChipGroup
             android:id="@+id/filterChips"
             android:layout_width="wrap_content"
@@ -154,6 +162,52 @@
                 android:layout_height="wrap_content"
                 android:text="@string/image_manager_filter_trash" />
         </com.google.android.material.chip.ChipGroup>
+
+        <View
+            android:layout_width="1dp"
+            android:layout_height="24dp"
+            android:layout_marginStart="8dp"
+            android:layout_marginEnd="8dp"
+            android:background="?attr/colorOutlineVariant" />
+
+        <com.google.android.material.chip.ChipGroup
+            android:id="@+id/linkFilterChips"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            app:singleLine="true"
+            app:singleSelection="true"
+            app:selectionRequired="true">
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipLinkAny"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/image_manager_link_any"
+                android:checked="true" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipLinked"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/image_manager_link_linked" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipUnlinked"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/image_manager_link_unlinked" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipLinkAuto"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/image_manager_link_auto" />
+        </com.google.android.material.chip.ChipGroup>
+        </LinearLayout>
     </HorizontalScrollView>
 
     <!-- 검색 + 태그 필터 줄 -->
