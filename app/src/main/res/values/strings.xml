@@ -1243,6 +1243,8 @@
     <string name="import_result_preset_templates">필드 템플릿 %d개</string>
     <string name="import_result_search_presets">검색 프리셋 %d개</string>
     <string name="import_result_settings">앱 설정 %d건 복원</string>
+    <string name="export_options_select_all">전부 선택</string>
+    <string name="export_options_clear_all">전부 해제</string>
     <string name="export_options_title">내보내기 항목 선택</string>
     <string name="import_options_title">가져오기 항목 선택</string>
     <string name="import_zip_no_data">ZIP 파일에 데이터 파일이 없습니다</string>
@@ -2015,6 +2017,11 @@
     <string name="image_manager_clean_orphans">고아 이미지 정리</string>
     <string name="image_manager_refresh">새로고침</string>
 
+    <!-- 설정 화면의 정리 폴더 진입점 (이미지 탭과 같은 기능) -->
+    <string name="settings_section_organize_folder">이미지 정리 폴더</string>
+    <string name="settings_organize_export_caption">앱의 이미지를 캐릭터별 폴더로 내보내 파일 탐색기에서 정리할 수 있습니다.</string>
+    <string name="settings_organize_import_caption">정리 폴더에서 바꾼 내용(새 이미지·폴더 이동)을 앱에 반영합니다.</string>
+    <string name="settings_organize_settings_caption">정리에 쓸 폴더를 지정하거나 해제합니다.</string>
     <!-- 정리 폴더 왕복(받아오기) -->
     <string name="organize_folder_import">정리 폴더 받아오기</string>
     <string name="organize_folder_settings">정리 폴더 설정</string>

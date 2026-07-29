@@ -252,6 +252,96 @@
 
             </LinearLayout>
 
+            <!-- Section: 이미지 정리 폴더 (이미지 탭과 같은 기능 — 같은 컨트롤러를 쓴다) -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/settings_section_organize_folder"
+                android:textAppearance="@style/TextAppearance.App.BodySmall"
+                android:textColor="@color/primary"
+                android:textStyle="bold"
+                android:paddingStart="16dp"
+                android:paddingTop="20dp"
+                android:paddingBottom="4dp" />
+
+            <!-- organizeFolderExportRow -->
+            <LinearLayout
+                android:id="@+id/organizeFolderExportRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp"
+                android:background="?attr/selectableItemBackground">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/organize_folder_export"
+                    android:textAppearance="@style/TextAppearance.App.Title"
+                    android:textColor="?attr/colorOnSurface" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/settings_organize_export_caption"
+                    android:textAppearance="@style/TextAppearance.App.BodySmall"
+                    android:textColor="?attr/colorOnSurfaceVariant"
+                    android:paddingTop="2dp" />
+
+            </LinearLayout>
+
+            <!-- organizeFolderImportRow -->
+            <LinearLayout
+                android:id="@+id/organizeFolderImportRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp"
+                android:background="?attr/selectableItemBackground">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/organize_folder_import"
+                    android:textAppearance="@style/TextAppearance.App.Title"
+                    android:textColor="?attr/colorOnSurface" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/settings_organize_import_caption"
+                    android:textAppearance="@style/TextAppearance.App.BodySmall"
+                    android:textColor="?attr/colorOnSurfaceVariant"
+                    android:paddingTop="2dp" />
+
+            </LinearLayout>
+
+            <!-- organizeFolderSettingsRow -->
+            <LinearLayout
+                android:id="@+id/organizeFolderSettingsRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp"
+                android:background="?attr/selectableItemBackground">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/organize_folder_settings"
+                    android:textAppearance="@style/TextAppearance.App.Title"
+                    android:textColor="?attr/colorOnSurface" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/settings_organize_settings_caption"
+                    android:textAppearance="@style/TextAppearance.App.BodySmall"
+                    android:textColor="?attr/colorOnSurfaceVariant"
+                    android:paddingTop="2dp" />
+
+            </LinearLayout>
+
             <!-- Section: 데이터 관리 (휴지통·저장소·압축·이력 + 점검) -->
             <TextView
                 android:layout_width="wrap_content"

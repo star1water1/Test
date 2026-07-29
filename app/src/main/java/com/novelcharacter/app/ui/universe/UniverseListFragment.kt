@@ -1215,21 +1215,8 @@ class UniverseListFragment : Fragment() {
     }
 
     private fun exportToExcel() {
-        if (!isAdded) return
-        val labels = com.novelcharacter.app.excel.ExportOptions.LABELS
-        val checked = com.novelcharacter.app.excel.ExportOptions.ALL.toBooleanArray()
-
-        MaterialAlertDialogBuilder(requireContext())
-            .setTitle(R.string.export_options_title)
-            .setMultiChoiceItems(labels, checked) { _, which, isChecked ->
-                checked[which] = isChecked
-            }
-            .setPositiveButton(R.string.confirm) { _, _ ->
-                val options = com.novelcharacter.app.excel.ExportOptions.fromBooleanArray(checked)
-                showExportModeDialog(options)
-            }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
+        // 항목 선택 창은 ExportOptionsDialog가 단일 소스다(종전에는 3곳에 복제돼 있었다).
+        com.novelcharacter.app.excel.ExportOptionsDialog.show(this) { showExportModeDialog(it) }
     }
 
     private fun showExportModeDialog(options: com.novelcharacter.app.excel.ExportOptions) {

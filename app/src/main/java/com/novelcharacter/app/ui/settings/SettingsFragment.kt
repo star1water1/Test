@@ -30,6 +30,7 @@ import com.novelcharacter.app.util.AppLogger
 import com.novelcharacter.app.util.ThemeHelper
 import com.novelcharacter.app.util.dismissSafely
 import com.novelcharacter.app.util.setValidatedPositiveButton
+import androidx.fragment.app.viewModels
 import androidx.room.withTransaction
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -42,6 +43,21 @@ class SettingsFragment : Fragment() {
 
     private lateinit var excel: com.novelcharacter.app.excel.ExcelTransferController
     private var pendingBackupExportFile: File? = null
+
+    /**
+     * 정리 폴더 왕복 — **이미지 탭과 같은 컨트롤러를 쓴다**(흐름을 복제하지 않는다).
+     *
+     * 배너는 이 화면에 없으므로 콜백을 비워 둔다. 뷰모델은 이미지 탭의 것을 그대로 쓰되,
+     * 이 화면에서는 목록을 적재하지 않으므로(`load()` 미호출) 비용이 없다.
+     *
+     * **필드 초기화 시점에 만드는 것이 계약이다** — 컨트롤러 생성자가 SAF 선택기를
+     * `registerForActivityResult`로 등록하는데, STARTED 이후 등록은 예외가 난다.
+     * 뷰모델은 그래서 람다로 넘긴다 — 이 시점엔 프래그먼트가 아직 붙기 전이라
+     * `by viewModels()`를 바로 건드리면 "detached fragment" 예외가 난다.
+     */
+    private val organizeViewModel: com.novelcharacter.app.ui.image.ImageManagerViewModel by viewModels()
+    private val organizeFolder =
+        com.novelcharacter.app.ui.image.OrganizeFolderController(this, { organizeViewModel })
 
     private val restoreFileLauncher = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -116,6 +132,11 @@ class SettingsFragment : Fragment() {
         binding.importRow.setOnClickListener {
             excel.showImportDialog()
         }
+
+        // 정리 폴더 왕복 — 이미지 탭에만 있던 것을 설정에서도 바로 쓸 수 있게(사용자 요청).
+        binding.organizeFolderExportRow.setOnClickListener { organizeFolder.startOrganizeFolderExport() }
+        binding.organizeFolderImportRow.setOnClickListener { organizeFolder.startOrganizeFolderImport() }
+        binding.organizeFolderSettingsRow.setOnClickListener { organizeFolder.showOrganizeFolderSettings() }
 
         binding.trashRow.setOnClickListener {
             findNavController().navigate(R.id.trashFragment)
