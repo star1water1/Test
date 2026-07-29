@@ -15,7 +15,15 @@ data class FactionMemberItem(
 )
 
 class FactionMemberAdapter(
-    private val onLongClick: (FactionMemberItem) -> Unit
+    /**
+     * 짧게 눌러도, 꾹 눌러도 **같은 자리**로 간다.
+     *
+     * 종전에는 꾹 누르기만 있었다 — 그런데 이 행에는 짧은 터치로 할 다른 일이 **없다.**
+     * 경쟁하는 동작이 없는데 숨은 제스처를 요구하면, 눌러 봐도 반응이 없어 기능이 있는 줄
+     * 모르게 된다(원칙 04: 접근과 조작은 최대한 짧아야 한다).
+     * 꾹 누르기는 종전 습관을 위해 그대로 둔다.
+     */
+    private val onSelect: (FactionMemberItem) -> Unit
 ) : ListAdapter<FactionMemberItem, FactionMemberAdapter.MemberViewHolder>(MemberDiffCallback()) {
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): MemberViewHolder {
@@ -59,8 +67,9 @@ class FactionMemberAdapter(
                 }
             }
 
+            binding.root.setOnClickListener { onSelect(item) }
             binding.root.setOnLongClickListener {
-                onLongClick(item)
+                onSelect(item)
                 true
             }
         }
