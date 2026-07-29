@@ -152,6 +152,8 @@ CLAUDE.md의 5대 원칙(특히 원칙 02 실질적 기능성, 원칙 04 조작 
 - 홈: 섹션 순서 오류→최근→생일→바로가기→도구, 캐릭터 추가 채움 버튼화, 도구 카드
   토널 타일화, 엑셀 카드 신설(`ExcelTransferController` 추출).
 - 보충 진입: `ic_supplement` 글리프 edit_note로 교체 + `action_supplement.xml` 라벨 버튼.
+  *(이후 뒤집힘 — `action_supplement.xml`·`character_menu.xml`은 N-1에서 **삭제**됐고 항목은
+  `⋮` `PopupMenu`로 통합됐다. 근거는 `ai_control_and_ui_density_2026-07.md` 상단바 절.)*
 - 보충탭: 필터 카드·뽑기 옵션 기본 접힘 + 한 줄 요약, 내부 탭 위치·이슈 필터 영속.
 - 보충 캐릭터 패널: 흩어진 카드를 외곽선 패널 하나로 응집, 이름 강조 + 정체성 앵커 라인.
   공용 `DynamicFieldRenderer`에 CARD/FLAT 모드 도입 — 상세=CARD(디자인 시스템 카드로
