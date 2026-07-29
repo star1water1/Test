@@ -68,6 +68,65 @@ class MembershipTimelineTest {
         assertEquals(JoinYearVerdict.Ok, MembershipTimeline.validateJoinYear(-400, -500))
     }
 
+    // ── overlaps / validateSpan (탈퇴 기록 편집) ──
+
+    private fun span(j: Int?, l: Int?) = MembershipTimeline.Span(j, l)
+
+    @Test fun adjacentSpansDoNotOverlap() {
+        // [1000,1500) 과 [1500,1600) — 1500년에는 앞 소속이 이미 끝났다
+        assertEquals(false, MembershipTimeline.overlaps(span(1000, 1500), span(1500, 1600)))
+    }
+
+    @Test fun oneYearOfSharingCountsAsOverlap() {
+        assertEquals(true, MembershipTimeline.overlaps(span(1000, 1501), span(1500, 1600)))
+    }
+
+    @Test fun openEndedSpansSwallowEverything() {
+        // 탈퇴하지 않은 소속은 +∞까지 간다
+        assertEquals(true, MembershipTimeline.overlaps(span(1000, null), span(9999, null)))
+        // 가입 시점을 모르면 -∞부터다
+        assertEquals(true, MembershipTimeline.overlaps(span(null, 1000), span(1, 5)))
+        assertEquals(true, MembershipTimeline.overlaps(span(null, null), span(1, 2)))
+    }
+
+    @Test fun openEndedStillRespectsTheBoundary() {
+        // [.., 1000) 과 [1000, ..) 은 맞닿기만 한다
+        assertEquals(false, MembershipTimeline.overlaps(span(null, 1000), span(1000, null)))
+    }
+
+    @Test fun joinOnOrAfterLeave_isRejected() {
+        assertEquals(
+            MembershipTimeline.SpanVerdict.JoinNotBeforeLeave(1500, 1500),
+            MembershipTimeline.validateSpan(span(1500, 1500), emptyList())
+        )
+        assertEquals(
+            MembershipTimeline.SpanVerdict.JoinNotBeforeLeave(1600, 1500),
+            MembershipTimeline.validateSpan(span(1600, 1500), emptyList())
+        )
+    }
+
+    @Test fun spanIsOkWhenItFitsBetweenOthers() {
+        val others = listOf(span(1000, 1200), span(1600, null))
+        assertEquals(
+            MembershipTimeline.SpanVerdict.Ok,
+            MembershipTimeline.validateSpan(span(1200, 1600), others)
+        )
+    }
+
+    @Test fun spanReportsWhichOtherItCollidesWith() {
+        val others = listOf(span(1000, 1200), span(1600, null))
+        val v = MembershipTimeline.validateSpan(span(1500, 1700), others)
+            as MembershipTimeline.SpanVerdict.OverlapsOther
+        assertEquals(span(1600, null), v.other)
+    }
+
+    @Test fun editingBackInTimeCollidesWithTheEarlierSpan() {
+        // 탈퇴 기록을 앞으로 당기다 이전 소속을 침범하는 경우
+        val others = listOf(span(1000, 1200))
+        val v = MembershipTimeline.validateSpan(span(1100, 1300), others)
+        assertEquals(MembershipTimeline.SpanVerdict.OverlapsOther(span(1000, 1200)), v)
+    }
+
     @Test fun verdictCarriesNumbersForTheMessage() {
         // 문구가 두 숫자를 그대로 실어야 하므로 판정이 값을 들고 다닌다
         val v = MembershipTimeline.validateJoinYear(3, 77) as JoinYearVerdict.BeforePreviousLeave

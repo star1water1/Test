@@ -640,7 +640,7 @@ class FactionManageFragment : Fragment() {
             .setTitle(item.characterName)
             .setItems(options) { _, which ->
                 when (which) {
-                    0 -> showJoinYearEditDialog(item)
+                    0 -> showJoinYearEditDialog(faction, item)
                     1 -> {
                         MaterialAlertDialogBuilder(requireContext())
                             .setTitle(R.string.faction_member_remove)
@@ -665,6 +665,7 @@ class FactionManageFragment : Fragment() {
      */
     private fun showDepartedMemberOptionsDialog(faction: Faction, item: FactionMemberItem) {
         val options = arrayOf(
+            getString(R.string.faction_departure_edit),
             getString(R.string.faction_member_rejoin),
             getString(R.string.faction_membership_delete)
         )
@@ -672,8 +673,9 @@ class FactionManageFragment : Fragment() {
             .setTitle(item.characterName)
             .setItems(options) { _, which ->
                 when (which) {
-                    0 -> showRejoinDialog(faction, item)
-                    1 -> MaterialAlertDialogBuilder(requireContext())
+                    0 -> showDepartureEditDialog(faction, item)
+                    1 -> showRejoinDialog(faction, item)
+                    2 -> MaterialAlertDialogBuilder(requireContext())
                         .setTitle(R.string.faction_membership_delete)
                         .setMessage(getString(R.string.faction_membership_delete_confirm, item.characterName))
                         .setPositiveButton(R.string.delete) { _, _ ->
@@ -687,8 +689,124 @@ class FactionManageFragment : Fragment() {
             .show()
     }
 
-    /** 가입 연도 편집 — 비우면 '시점 불명'으로 되돌린다. 검증 실패 시 창을 유지한다(R-27). */
-    private fun showJoinYearEditDialog(item: FactionMemberItem) {
+    /** 소속 구간을 사람이 읽는 말로 — 겹침 고지에 쓴다. */
+    private fun spanLabel(span: MembershipTimeline.Span): String {
+        val j = span.joinYear
+        val l = span.leaveYear
+        return when {
+            j != null && l != null -> getString(R.string.faction_span_range, j, l)
+            j != null -> getString(R.string.faction_span_open_end, j)
+            l != null -> getString(R.string.faction_span_unknown_start, l)
+            else -> getString(R.string.faction_span_unknown)
+        }
+    }
+
+    /**
+     * 끝난 소속(탈퇴) 기록 편집 — 네 값 전부.
+     * 활성 멤버는 가입 연도만 고치면 되지만, 끝난 소속에는 사용자가 정한 값이 넷 있고
+     * 종전에는 **하나도 고칠 수 없었다**(잘못 적었으면 지우고 처음부터 다시).
+     */
+    private fun showDepartureEditDialog(faction: Faction, item: FactionMemberItem) =
+        viewLifecycleOwner.lifecycleScope.launch {
+            val others = viewModel.otherSpansFor(
+                faction.id, item.membership.characterId, item.membership.id)
+            if (!isAdded) return@launch
+            val ctx = requireContext()
+            val density = resources.displayMetrics.density
+            val container = LinearLayout(ctx).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding((24 * density).toInt(), (16 * density).toInt(), (24 * density).toInt(), 0)
+            }
+            val editJoin = EditText(ctx).apply {
+                hint = getString(R.string.faction_join_year_optional)
+                inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_SIGNED
+                setText(item.membership.joinYear?.toString() ?: "")
+            }
+            container.addView(editJoin)
+            val editLeave = EditText(ctx).apply {
+                hint = getString(R.string.faction_leave_year)
+                inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_SIGNED
+                setText(item.membership.leaveYear?.toString() ?: "")
+            }
+            container.addView(editLeave)
+            val editRelType = EditText(ctx).apply {
+                hint = getString(R.string.faction_departed_relation)
+                setText(item.membership.departedRelationType ?: "전 ${faction.autoRelationType}")
+            }
+            container.addView(editRelType)
+            container.addView(android.widget.TextView(ctx).apply {
+                text = getString(R.string.faction_auto_relation_intensity)
+                setPadding(0, (12 * density).toInt(), 0, 0)
+            })
+            val sliderIntensity = Slider(ctx).apply {
+                valueFrom = 1f; valueTo = 10f; stepSize = 1f
+                value = (item.membership.departedIntensity ?: 1).coerceIn(1, 10).toFloat()
+            }
+            container.addView(sliderIntensity)
+            container.addView(android.widget.TextView(ctx).apply {
+                text = getString(R.string.faction_departure_edit_hint)
+                textSize = 12f
+                setPadding(0, (8 * density).toInt(), 0, 0)
+            })
+
+            val dialog = MaterialAlertDialogBuilder(ctx)
+                .setTitle(R.string.faction_departure_edit)
+                .setView(container)
+                .setPositiveButton(R.string.save, null)
+                .setNegativeButton(R.string.cancel, null)
+                .create()
+
+            dialog.setValidatedPositiveButton {
+                val joinText = editJoin.text.toString().trim()
+                val join = if (joinText.isEmpty()) null else joinText.toIntOrNull()
+                if (joinText.isNotEmpty() && join == null) {
+                    editJoin.showInlineError(getString(R.string.faction_join_year_invalid))
+                    return@setValidatedPositiveButton false
+                }
+                val leave = editLeave.text.toString().trim().toIntOrNull()
+                if (leave == null) {
+                    editLeave.showInlineError(getString(R.string.faction_leave_year_required))
+                    return@setValidatedPositiveButton false
+                }
+                // 만들 때와 달리 앞뒤 양쪽에 다른 소속이 있을 수 있어 구간 겹침으로 본다.
+                when (val v = MembershipTimeline.validateSpan(
+                    MembershipTimeline.Span(join, leave), others)) {
+                    is MembershipTimeline.SpanVerdict.JoinNotBeforeLeave -> {
+                        editJoin.showInlineError(getString(
+                            R.string.faction_join_not_before_leave, v.joinYear, v.leaveYear))
+                        return@setValidatedPositiveButton false
+                    }
+                    is MembershipTimeline.SpanVerdict.OverlapsOther -> {
+                        editLeave.showInlineError(getString(
+                            R.string.faction_span_overlaps, spanLabel(v.other)))
+                        return@setValidatedPositiveButton false
+                    }
+                    MembershipTimeline.SpanVerdict.Ok -> Unit
+                }
+                val relType = editRelType.text.toString().trim()
+                    .ifEmpty { "전 ${faction.autoRelationType}" }
+                viewModel.updateDepartedMembership(
+                    item.membership.id, join, leave, relType, sliderIntensity.value.toInt()
+                ) { moved ->
+                    if (!isAdded || moved <= 0) return@updateDepartedMembership
+                    Toast.makeText(ctx, getString(
+                        R.string.faction_departure_relation_changes_moved, moved),
+                        Toast.LENGTH_LONG).show()
+                }
+                true
+            }
+            dialog.show()
+        }
+
+    /**
+     * 가입 연도 편집 — 비우면 '시점 불명'으로 되돌린다. 검증 실패 시 창을 유지한다(R-27).
+     * 겹침 판정은 탈퇴 기록 편집과 **같은 규칙**을 쓴다 — 이 캐릭터가 같은 세력에 여러 번
+     * 소속됐다면 가입 연도를 앞으로 당기다 옛 소속을 침범할 수 있다.
+     */
+    private fun showJoinYearEditDialog(faction: Faction, item: FactionMemberItem) =
+        viewLifecycleOwner.lifecycleScope.launch {
+        val others = viewModel.otherSpansFor(faction.id, item.membership.characterId, item.membership.id)
+        if (!isAdded) return@launch
         val ctx = requireContext()
         val density = resources.displayMetrics.density
         val container = LinearLayout(ctx).apply {
@@ -721,13 +839,19 @@ class FactionManageFragment : Fragment() {
                 editYear.showInlineError(getString(R.string.faction_join_year_invalid))
                 return@setValidatedPositiveButton false
             }
-            // 탈퇴 이력이 있는 행이라면 순서가 뒤집히지 않아야 한다(탈퇴 창의 검사와 짝).
-            val leaveYear = item.membership.leaveYear
-            if (year != null && leaveYear != null && year >= leaveYear) {
-                editYear.showInlineError(
-                    getString(R.string.faction_join_year_after_leave, year, leaveYear)
-                )
-                return@setValidatedPositiveButton false
+            when (val v = MembershipTimeline.validateSpan(
+                MembershipTimeline.Span(year, item.membership.leaveYear), others)) {
+                is MembershipTimeline.SpanVerdict.JoinNotBeforeLeave -> {
+                    editYear.showInlineError(getString(
+                        R.string.faction_join_not_before_leave, v.joinYear, v.leaveYear))
+                    return@setValidatedPositiveButton false
+                }
+                is MembershipTimeline.SpanVerdict.OverlapsOther -> {
+                    editYear.showInlineError(getString(
+                        R.string.faction_span_overlaps, spanLabel(v.other)))
+                    return@setValidatedPositiveButton false
+                }
+                MembershipTimeline.SpanVerdict.Ok -> Unit
             }
             viewModel.updateJoinYear(item.membership.id, year)
             true

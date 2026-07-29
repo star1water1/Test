@@ -194,6 +194,43 @@ class FactionViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    /**
+     * 끝난 소속 기록 편집 — 네 값 전부. 탈퇴가 만든 관계 변화도 함께 옮긴다.
+     * 옮긴 건수는 [onDone]으로 돌려 호출부가 고지한다(조용히 남의 데이터를 건드리지 않는다).
+     */
+    fun updateDepartedMembership(
+        membershipId: Long,
+        joinYear: Int?,
+        leaveYear: Int,
+        relationType: String,
+        intensity: Int,
+        onDone: (Int) -> Unit = {}
+    ) = viewModelScope.launch {
+        try {
+            val r = factionRepository.updateDepartedMembership(
+                membershipId, joinYear, leaveYear, relationType, intensity)
+            if (!r.found) {
+                reportResult(_result, OpResult.failure(OpResult.CAT_FACTION,
+                    app.getString(R.string.result_faction_membership_gone)))
+                return@launch
+            }
+            onDone(r.relationChangesMoved)
+            logResult(OpResult.success(OpResult.CAT_FACTION,
+                app.getString(R.string.result_faction_departure_updated)))
+        } catch (e: Exception) {
+            Log.e("FactionViewModel", "Failed to update departure", e)
+            reportResult(_result, OpResult.failure(OpResult.CAT_FACTION,
+                app.getString(R.string.result_faction_departure_update_failed), e.message))
+        }
+    }
+
+    /** 한 캐릭터의 이 세력 소속 구간들 — 편집 시 겹침 판정용(고치는 당사자는 뺀다). */
+    suspend fun otherSpansFor(factionId: Long, characterId: Long, excludeMembershipId: Long):
+        List<MembershipTimeline.Span> =
+        factionRepository.getMembershipsByFactionList(factionId)
+            .filter { it.characterId == characterId && it.id != excludeMembershipId }
+            .map { MembershipTimeline.Span(it.joinYear, it.leaveYear) }
+
     /** 소속 기록 삭제 — 이미 끝난 소속의 기록을 지운다(되돌릴 수 없다). */
     fun deleteMembershipRecord(membershipId: Long) = viewModelScope.launch {
         try {

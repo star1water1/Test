@@ -50,4 +50,49 @@ object MembershipTimeline {
         }
         return JoinYearVerdict.Ok
     }
+
+    // ── 이미 있는 소속을 **고칠** 때의 규칙 ──
+    // 만들 때(위)는 '이전 탈퇴 뒤인가' 하나면 되지만, 고칠 때는 앞뒤 양쪽에 다른 소속이
+    // 있을 수 있어 구간 겹침으로 봐야 한다.
+
+    /**
+     * 한 소속이 차지하는 기간. 활성 판정(`joinYear <= year < leaveYear`)과 같은 반열림 구간이며,
+     * [joinYear]가 null이면 처음부터, [leaveYear]가 null이면 끝없이 이어진다.
+     */
+    data class Span(val joinYear: Int?, val leaveYear: Int?)
+
+    sealed interface SpanVerdict {
+        object Ok : SpanVerdict
+        /** 가입이 탈퇴와 같거나 뒤다 — 하루도 소속되지 않은 구간이 된다. */
+        data class JoinNotBeforeLeave(val joinYear: Int, val leaveYear: Int) : SpanVerdict
+        /** 같은 캐릭터의 다른 소속과 겹친다. */
+        data class OverlapsOther(val other: Span) : SpanVerdict
+    }
+
+    /** 두 구간이 **한 해라도** 겹치는가. null은 각각 -∞ / +∞로 읽는다. */
+    fun overlaps(a: Span, b: Span): Boolean {
+        val lo = when {
+            a.joinYear == null || b.joinYear == null -> a.joinYear ?: b.joinYear  // 한쪽이 -∞면 다른 쪽
+            else -> maxOf(a.joinYear, b.joinYear)
+        }
+        val hi = when {
+            a.leaveYear == null || b.leaveYear == null -> a.leaveYear ?: b.leaveYear
+            else -> minOf(a.leaveYear, b.leaveYear)
+        }
+        // lo가 -∞이거나 hi가 +∞면 반드시 겹친다(둘 다 null인 경우 포함)
+        if (lo == null || hi == null) return true
+        return lo < hi
+    }
+
+    /**
+     * 고친 구간이 성립하는지, 그리고 같은 캐릭터의 [others]와 겹치지 않는지.
+     * [others]에는 **고치는 당사자를 빼고** 넘길 것 — 자기 자신과는 당연히 겹친다.
+     */
+    fun validateSpan(target: Span, others: List<Span>): SpanVerdict {
+        val j = target.joinYear
+        val l = target.leaveYear
+        if (j != null && l != null && j >= l) return SpanVerdict.JoinNotBeforeLeave(j, l)
+        val hit = others.firstOrNull { overlaps(target, it) }
+        return if (hit != null) SpanVerdict.OverlapsOther(hit) else SpanVerdict.Ok
+    }
 }

@@ -14,6 +14,12 @@ import com.novelcharacter.app.data.model.FactionRelationship
  * 자동관계를 만들지 않고(가로채지도 않고) 건너뛴 건수를 집계해 사용자에게 알린다.
  * 수동 관계에 factionId를 부착하는 방식은 탈퇴 시 사용자가 만든 관계가 삭제되는 조용한 유실 경로가 되므로 금지.
  */
+/**
+ * 탈퇴 기록 편집 결과.
+ * [relationChangesMoved]는 탈퇴가 만들었던 관계 변화 중 함께 옮긴 건수 — 0이 아니면 고지한다.
+ */
+data class DepartureEditResult(val found: Boolean, val relationChangesMoved: Int)
+
 data class MemberAddResult(
     val added: Int,
     val autoRelationsCreated: Int,
@@ -208,6 +214,61 @@ class FactionRepository(private val db: AppDatabase) {
         val membership = membershipDao.getById(membershipId) ?: return false
         membershipDao.update(membership.copy(joinYear = joinYear))
         return true
+    }
+
+    /**
+     * 끝난 소속(탈퇴) 기록을 고친다 — 네 값 전부.
+     *
+     * **탈퇴가 만든 관계 변화도 함께 옮긴다.** `departMember`는 탈퇴 시점에
+     * `CharacterRelationshipChange`를 만드는데 그 행에는 소속으로 돌아오는 참조가 없다.
+     * 그래서 **옛 값 네 가지가 모두 일치하는 행**만 골라 옮긴다
+     * (이 세력의 자동 관계 · 옛 탈퇴 연도 · 옛 유형 · 옛 강도).
+     * 사용자가 손수 만든 변화가 네 가지 모두 우연히 같을 확률은 낮고, 같다면 그것은
+     * 사실상 같은 사건이다. **옮긴 건수는 반드시 호출부가 고지한다** — 조용히 남의 데이터를
+     * 건드리지 않는다.
+     */
+    suspend fun updateDepartedMembership(
+        membershipId: Long,
+        joinYear: Int?,
+        leaveYear: Int,
+        relationType: String,
+        intensity: Int
+    ): DepartureEditResult = db.withTransaction {
+        val old = membershipDao.getById(membershipId)
+            ?: return@withTransaction DepartureEditResult(found = false, relationChangesMoved = 0)
+
+        membershipDao.update(old.copy(
+            joinYear = joinYear,
+            leaveYear = leaveYear,
+            departedRelationType = relationType,
+            departedIntensity = intensity
+        ))
+
+        val oldLeave = old.leaveYear
+        val oldType = old.departedRelationType
+        val oldIntensity = old.departedIntensity
+        var moved = 0
+        if (oldLeave != null && oldType != null && oldIntensity != null) {
+            val relIds = relationshipDao
+                .getFactionRelationshipsForCharacter(old.factionId, old.characterId)
+                .map { it.id }
+            if (relIds.isNotEmpty()) {
+                for (change in relationshipChangeDao.getChangesForRelationships(relIds)) {
+                    if (change.year == oldLeave &&
+                        change.relationshipType == oldType &&
+                        change.intensity == oldIntensity
+                    ) {
+                        relationshipChangeDao.update(change.copy(
+                            year = leaveYear,
+                            relationshipType = relationType,
+                            intensity = intensity
+                        ))
+                        moved++
+                    }
+                }
+            }
+        }
+        DepartureEditResult(found = true, relationChangesMoved = moved)
     }
 
     /**

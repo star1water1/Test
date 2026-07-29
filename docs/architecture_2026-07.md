@@ -18,13 +18,13 @@
 | 항목 | 값 | 측정 방법 |
 |------|-----|-----------|
 | 메인 소스 | **333 파일 / 88,775줄** (Kotlin) | `find app/src/main/java -name '*.kt'` |
-| 테스트 소스 | **72 파일 / 순수 JVM 934건** | `tools/run_jvm_tests.sh` |
+| 테스트 소스 | **72 파일 / 순수 JVM 942건** | `tools/run_jvm_tests.sh` |
 | Room DB | **v44** · 엔티티 **26** · 마이그레이션 **43**(v1→v44) | `data/database/AppDatabase.kt` |
 | 사용자 문구 | `res/values/strings.xml` 단일 파일 | `tools/check_text_style.sh` |
 
 > **테스트 파일 72 ≠ 러너가 도는 71.** `AiPresetsConsistencyTest`(3건)는 `R`을 참조해 순수
-> 하네스에서 돌 수 없어 목록에서 빠져 있다(CI 전용). 그래서 소스의 `@Test`는 937인데 실행은
-> 934다 — 이 차이를 결함으로 오인하지 말 것. 러너는 `$TESTS` 목록에 적힌 파일만 컴파일하므로
+> 하네스에서 돌 수 없어 목록에서 빠져 있다(CI 전용). 그래서 소스의 `@Test`는 945인데 실행은
+> 942다 — 이 차이를 결함으로 오인하지 말 것. 러너는 `$TESTS` 목록에 적힌 파일만 컴파일하므로
 > **목록에 넣지 않은 새 테스트는 조용히 돌지 않는다**(5장 착수 시 확인 항목).
 
 > **숫자를 문서에서 믿지 말 것.** 이 표의 값도 찍힌 순간의 스냅샷이다. 실제 작업 전에
@@ -107,7 +107,7 @@ app/src/main/java/com/novelcharacter/app/
 | `SortComparators` / `FieldFilterHelper` / `UnassignedFilter` | 목록 정렬·필터 | — |
 | `ImportSource`(`ImportWorkbook`/`Sheet`/`Row`/`Cell`) | 가져오기가 워크북을 읽는 유일한 접근면 | DOM·스트리밍 두 경로가 갈리면 같은 파일이 다른 데이터가 된다(B-8) |
 | `ResetPlan` | 앱 초기화가 비우는 테이블의 범위 | 26개 중 5개가 '모든 데이터 삭제' 뒤에도 살아남았다(S-13) |
-| `MembershipTimeline` | 새 소속의 가입 연도가 이전 이력과 겹치지 않는지 | 재가입이 이전 탈퇴보다 앞이어도 통과해, 같은 해에 나가 있으면서 들어와 있는 이력이 됐다(1-h장) |
+| `MembershipTimeline` | 소속 구간의 시간 규칙 — 만들 때의 가입 연도, 고칠 때의 구간 겹침 | 재가입이 이전 탈퇴보다 앞이어도 통과해, 같은 해에 나가 있으면서 들어와 있는 이력이 됐다(1-h장) |
 
 ---
 
@@ -117,7 +117,7 @@ app/src/main/java/com/novelcharacter/app/
 
 | 도구 | 무엇을 보는가 | 기준선 |
 |------|---------------|--------|
-| `tools/run_jvm_tests.sh` | 순수 계층을 **실제로 실행**한다(표준 kotlinc + JUnitCore) | **934건** |
+| `tools/run_jvm_tests.sh` | 순수 계층을 **실제로 실행**한다(표준 kotlinc + JUnitCore) | **942건** |
 | `tools/check_text_style.sh` | 화면 문구의 말투·용어(가이드 기계 검출분) | 기준선 33건 동결, 새 위반은 즉시 실패 |
 | `tools/check_resources.sh` | 리소스 중복·미정의 참조·XML 구문 | 통과 |
 | `tools/check_dialog_validation.sh` | 자동 닫힘 버튼 안의 조기 return(R-27 위반) | 0건 동결 — 새 위반 즉시 실패 |
