@@ -21,13 +21,21 @@ package com.novelcharacter.app.util
  *
  * ## 되돌아올 수 없는 이름은 내보내지 않는다 (설계 9장 C-14)
  *
- * 받아오기는 폴더명을 캐릭터 이름과 **정확 일치**로만 되돌린다. 그래서 이름을 고쳐야만
- * 폴더로 쓸 수 있는 캐릭터, 예약 폴더명과 겹치는 캐릭터, **동명이 둘 이상인 캐릭터**는
- * 내보내기에서 빼고 이름·개수를 고지한다([BlockReason]).
+ * 받아오기는 폴더명으로 대상을 되돌린다. 그래서 이름을 고쳐야만 폴더로 쓸 수 있는 캐릭터와
+ * 예약 폴더명과 겹치는 캐릭터는 내보내기에서 빼고 이름·개수를 고지한다([BlockReason]).
  *
- * 특히 동명은 조용히 내보내면 손해가 크다 — 받아오기가 그 폴더를 "기타 이름"으로 읽어
- * 서로 다른 캐릭터의 이미지를 **하나의 수동 링크 묶음**으로 붙여 버린다. 수동 묶음은 자동
- * 링크와 달리 재동기화가 풀어 주지도 않는다. 오배정·오묶음은 생략보다 나쁘다(R-1과 같은 취지).
+ * ## 동명이인은 코드를 병기해 내보낸다 (C-14 개정)
+ *
+ * **종전에는 동명을 통째로 제외했다.** 이름만으로 내보내면 받아오기가 그 폴더를 "기타 이름"으로
+ * 읽어 서로 다른 캐릭터의 이미지를 **하나의 수동 링크 묶음**으로 붙여 버리고, 수동 묶음은 자동
+ * 링크와 달리 재동기화가 풀어 주지도 않기 때문이다(오배정은 생략보다 나쁘다 — R-1과 같은 취지).
+ *
+ * 그런데 생략도 공짜가 아니었다 — 동명인 캐릭터의 이미지는 **정리 폴더로 나가지도 못했다.**
+ * 그래서 세 번째 답으로 간다: 동명일 때만 폴더명에 안정 식별자를 병기한다
+ * (`홍길동#a1b2c3d4e5f60718` — [FolderNameToken.buildCharacterFolderName]). 받아오기는 코드로
+ * 대상을 확정하므로 생략도 오배정도 하지 않는다. 이름이 유일하면 종전처럼 `홍길동/`으로 둔다.
+ *
+ * 엑셀 왕복이 `관련캐릭터코드` 열로 같은 문제를 푸는 것과 같은 수단이다.
  */
 object FolderExportPlanner {
 
@@ -44,8 +52,13 @@ object FolderExportPlanner {
         UNASSIGNED
     }
 
-    /** 캐릭터 1명. [name]은 원문(트림은 여기서 한다). */
-    data class CharacterInput(val id: Long, val name: String)
+    /**
+     * 캐릭터 1명. [name]은 원문(트림은 여기서 한다).
+     *
+     * @param code 안정 식별자([com.novelcharacter.app.data.model.Character.code]).
+     *        **동명일 때만** 폴더명에 병기된다.
+     */
+    data class CharacterInput(val id: Long, val name: String, val code: String)
 
     /**
      * 내보내기 후보 이미지 1장.
@@ -77,11 +90,15 @@ object FolderExportPlanner {
 
     /** 내보낼 수 없는 캐릭터의 사유 — 전부 사용자가 **고칠 수 있는** 것들이라 이름째 고지한다. */
     enum class BlockReason {
-        /** 같은 이름의 캐릭터가 둘 이상 — 폴더 하나가 누구를 가리키는지 정할 수 없다. */
-        DUPLICATE_NAME,
         /** 예약 폴더명(`_미배정`·`_공유`·`_처리됨`)과 이름이 같다. */
         RESERVED_NAME,
-        /** 폴더명으로 그대로 쓸 수 없는 이름(금지 문자·제어문자·앞뒤 마침표·길이 초과). */
+        /**
+         * 폴더명으로 그대로 쓸 수 없는 이름(금지 문자·제어문자·앞뒤 마침표·길이 초과).
+         *
+         * 동명이라 코드를 병기하는 경우에는 **조립된 이름**(`홍길동#a1b2…`)으로 판정한다 —
+         * 코드 17자가 붙어 상한을 넘을 수 있기 때문이다. 같은 이름이면 코드 길이가 같으므로
+         * 동명 그룹은 통째로 나가거나 통째로 막힌다(한쪽만 나가는 비대칭이 생기지 않는다).
+         */
         UNSAFE_NAME
     }
 
@@ -162,21 +179,33 @@ object FolderExportPlanner {
         scope: Scope = Scope.ALL,
         existingPaths: Set<String>? = null
     ): Plan {
-        // ── 캐릭터 이름 색인 + 내보낼 수 없는 이름 판정.
+        // ── 캐릭터 이름 색인 + 폴더명 조립 + 내보낼 수 없는 이름 판정.
+        //
+        // **동명은 더 이상 막지 않는다.** 폴더명에 안정 식별자(code)를 병기해 되돌아올 수 있게
+        // 만든다 — `홍길동#a1b2c3d4e5f60718`. 이름이 유일하면 종전처럼 `홍길동`으로 둔다.
+        // 종전에는 동명을 통째로 제외했는데, 그 캐릭터의 이미지는 정리 폴더로 나가지도 못했다.
         val idsByName = LinkedHashMap<String, MutableList<Long>>()
         for (c in characters) idsByName.getOrPut(c.name.trim()) { mutableListOf() }.add(c.id)
 
+        val codeById = characters.associate { it.id to it.code }
+        // 표시 이름(사람이 읽는 것)과 폴더명(왕복의 축)을 따로 둔다 — 라벨엔 코드를 붙이지 않는다.
         val nameById = HashMap<Long, String>(characters.size)
+        val folderNameById = HashMap<Long, String>(characters.size)
         val blockReasonById = HashMap<Long, BlockReason>()
         for ((name, ids) in idsByName) {
-            val reason = when {
-                ids.size >= 2 -> BlockReason.DUPLICATE_NAME
-                name in RESERVED_FOLDER_NAMES -> BlockReason.RESERVED_NAME
-                !FolderNameToken.isFolderNameSafe(name) -> BlockReason.UNSAFE_NAME
-                else -> null
-            }
+            val ambiguous = ids.size >= 2
             for (id in ids) {
                 nameById[id] = name
+                // 동명일 때만 코드를 병기한다(자율성: 대부분의 폴더는 깨끗하게 남는다).
+                val folder = FolderNameToken.buildCharacterFolderName(name, if (ambiguous) codeById[id] else null)
+                folderNameById[id] = folder
+                val reason = when {
+                    // 예약 판정은 **이름**으로 한다 — 코드가 붙으면 예약어와 겹칠 수 없으므로,
+                    // 동명이면서 예약어인 캐릭터는 코드 병기로 오히려 구제된다.
+                    !ambiguous && name in RESERVED_FOLDER_NAMES -> BlockReason.RESERVED_NAME
+                    !FolderNameToken.isFolderNameSafe(folder) -> BlockReason.UNSAFE_NAME
+                    else -> null
+                }
                 if (reason != null) blockReasonById[id] = reason
             }
         }
@@ -225,7 +254,8 @@ object FolderExportPlanner {
                         folders = listOf(FolderRoundtripPlanner.FOLDER_UNASSIGNED)
                         label = FolderNameToken.FALLBACK_LABEL
                     } else {
-                        folders = listOf(name)
+                        // 폴더는 왕복의 축이라 코드가 붙을 수 있고, 라벨은 사람용이라 이름만 쓴다.
+                        folders = listOf(folderNameById[owner] ?: name)
                         label = name
                     }
                 }

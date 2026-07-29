@@ -32,6 +32,11 @@ class FolderExportPlannerTest {
 
     private val tokens = mapOf(pathA to tokenA, pathB to tokenB, pathC to tokenC)
 
+    /** 캐릭터 1명 — code는 id에서 결정적으로 만든다(테스트가 폴더명을 예측할 수 있게). */
+    private fun ch(id: Long, name: String) = CharacterInput(id, name, codeOf(id))
+    private fun ch(id: Int, name: String) = ch(id.toLong(), name)
+    private fun codeOf(id: Long) = id.toString().padStart(16, '0')
+
     private fun plan(
         images: List<ImageInput>,
         characters: List<CharacterInput> = emptyList(),
@@ -45,7 +50,7 @@ class FolderExportPlannerTest {
     @Test fun assignedImageGoesToCharacterFolder() {
         val p = plan(
             listOf(ImageInput(pathA, ownerCharacterIds = listOf(7))),
-            listOf(CharacterInput(7, "가온"))
+            listOf(ch(7, "가온"))
         )
         assertEquals(1, p.files.size)
         assertEquals(listOf("가온"), p.files[0].folders)
@@ -56,7 +61,7 @@ class FolderExportPlannerTest {
     @Test fun sharedImageGoesToSharedFolderWithOwnerHintLabel() {
         val p = plan(
             listOf(ImageInput(pathA, ownerCharacterIds = listOf(7, 9))),
-            listOf(CharacterInput(7, "가온"), CharacterInput(9, "나린"))
+            listOf(ch(7, "가온"), ch(9, "나린"))
         )
         assertEquals(listOf("_공유"), p.files[0].folders)
         assertEquals(1, p.sharedCount)
@@ -71,7 +76,7 @@ class FolderExportPlannerTest {
                 ImageInput(pathA, ownerCharacterIds = listOf(7, 9)),
                 ImageInput(pathB, ownerCharacterIds = listOf(9, 11))
             ),
-            listOf(CharacterInput(7, "가온"), CharacterInput(9, "나린"), CharacterInput(11, "다올"))
+            listOf(ch(7, "가온"), ch(9, "나린"), ch(11, "다올"))
         )
         val names = p.files.map { it.fileName }
         assertTrue(names.any { it.startsWith("가온-") })
@@ -113,7 +118,7 @@ class FolderExportPlannerTest {
             ImageInput(pathA, ownerCharacterIds = listOf(7)),
             ImageInput(pathB)
         )
-        val characters = listOf(CharacterInput(7, "가온"))
+        val characters = listOf(ch(7, "가온"))
         val first = plan(images, characters).files.map { it.relativePath }
         val second = plan(images.reversed(), characters).files.map { it.relativePath }
         assertEquals(first.sorted(), second.sorted())
@@ -130,21 +135,78 @@ class FolderExportPlannerTest {
                 ImageInput(pathA, ownerCharacterIds = listOf(7)),
                 ImageInput(pathB, ownerCharacterIds = listOf(9))
             ),
-            listOf(CharacterInput(7, "가온"), CharacterInput(9, "가온"))
+            listOf(ch(7, "가온"), ch(9, "가온"))
         )
-        assertTrue(p.files.isEmpty())
+        // **동명은 더 이상 막지 않는다** — 폴더명에 코드를 병기해 되돌아올 수 있게 만든다.
+        // 종전에는 둘 다 제외돼 그 캐릭터의 이미지가 정리 폴더로 나가지도 못했다.
+        assertEquals(2, p.files.size)
+        assertEquals(0, p.blockedCharacters.size)
+        assertEquals(0, p.skippedTotal)
+        val folders = p.files.map { it.folders }.toSet()
+        assertEquals(
+            setOf(listOf("가온#${codeOf(7)}"), listOf("가온#${codeOf(9)}")),
+            folders
+        )
+        // 라벨은 사람용이라 코드가 붙지 않는다 — 파일명은 읽을 수 있어야 한다.
+        assertTrue(p.files.all { it.fileName.startsWith("가온-") })
+    }
+
+    @Test fun uniqueNameKeepsPlainFolder() {
+        val p = plan(
+            listOf(ImageInput(pathA, ownerCharacterIds = listOf(7))),
+            listOf(ch(7, "가온"), ch(9, "나린"))
+        )
+        // 이름이 유일하면 코드를 붙이지 않는다 — 대부분의 폴더는 깨끗하게 남아야 한다.
+        assertEquals(listOf("가온"), p.files[0].folders)
+    }
+
+    @Test fun threeWayDuplicateSplitsIntoThreeFolders() {
+        val p = plan(
+            listOf(
+                ImageInput(pathA, ownerCharacterIds = listOf(7)),
+                ImageInput(pathB, ownerCharacterIds = listOf(9)),
+                ImageInput(pathC, ownerCharacterIds = listOf(11))
+            ),
+            listOf(ch(7, "가온"), ch(9, "가온"), ch(11, "가온"))
+        )
+        // 코드가 유일하므로 N명이면 N개 폴더로 그냥 갈라진다 — 2명과 구조가 다르지 않다.
+        assertEquals(3, p.files.map { it.folders }.toSet().size)
+        assertEquals(0, p.blockedCharacters.size)
+    }
+
+    @Test fun duplicateOfReservedNameIsRescuedByCode() {
+        val p = plan(
+            listOf(
+                ImageInput(pathA, ownerCharacterIds = listOf(7)),
+                ImageInput(pathB, ownerCharacterIds = listOf(9))
+            ),
+            listOf(ch(7, "_공유"), ch(9, "_공유"))
+        )
+        // 코드가 붙으면 예약 폴더명과 겹칠 수 없다 — 동명이 오히려 구제 경로가 된다.
+        assertEquals(2, p.files.size)
+        assertEquals(0, p.blockedCharacters.size)
+    }
+
+    @Test fun duplicateGroupIsBlockedTogetherWhenTooLong() {
+        val long = "다올".repeat(30) // 60자 + '#' + 코드 16자 = 77자 > 상한 64
+        val p = plan(
+            listOf(
+                ImageInput(pathA, ownerCharacterIds = listOf(7)),
+                ImageInput(pathB, ownerCharacterIds = listOf(9))
+            ),
+            listOf(ch(7, long), ch(9, long))
+        )
+        // 같은 이름이면 코드 길이도 같으므로 **통째로** 막힌다 — 한쪽만 나가는 비대칭이 없다.
+        assertEquals(0, p.files.size)
         assertEquals(1, p.blockedCharacters.size)
-        assertEquals("가온", p.blockedCharacters[0].name)
-        assertEquals(BlockReason.DUPLICATE_NAME, p.blockedCharacters[0].reason)
-        // 동명 두 명의 이미지가 한 줄로 합쳐진다 — 같은 이름을 두 번 보이면 소음이다.
+        assertEquals(BlockReason.UNSAFE_NAME, p.blockedCharacters[0].reason)
         assertEquals(2, p.blockedCharacters[0].imageCount)
-        assertEquals(2, p.skippedTotal)
     }
 
     @Test fun reservedFolderNameIsBlocked() {
         val p = plan(
             listOf(ImageInput(pathA, ownerCharacterIds = listOf(7))),
-            listOf(CharacterInput(7, "_공유"))
+            listOf(ch(7, "_공유"))
         )
         assertTrue(p.files.isEmpty())
         assertEquals(BlockReason.RESERVED_NAME, p.blockedCharacters[0].reason)
@@ -153,7 +215,7 @@ class FolderExportPlannerTest {
     @Test fun unsafeFolderNameIsBlocked() {
         val p = plan(
             listOf(ImageInput(pathA, ownerCharacterIds = listOf(7)), ImageInput(pathB, ownerCharacterIds = listOf(9))),
-            listOf(CharacterInput(7, "가온/나린"), CharacterInput(9, "다올".repeat(40)))
+            listOf(ch(7, "가온/나린"), ch(9, "다올".repeat(40)))
         )
         assertTrue(p.files.isEmpty())
         assertEquals(2, p.blockedCharacters.size)
@@ -164,7 +226,7 @@ class FolderExportPlannerTest {
     @Test fun underscorePrefixedNameIsExportableWhenNotReserved() {
         val p = plan(
             listOf(ImageInput(pathA, ownerCharacterIds = listOf(7))),
-            listOf(CharacterInput(7, "_가온"))
+            listOf(ch(7, "_가온"))
         )
         assertEquals(listOf("_가온"), p.files[0].folders)
         assertTrue(p.blockedCharacters.isEmpty())
@@ -174,7 +236,7 @@ class FolderExportPlannerTest {
     @Test fun surroundingSpacesAreTrimmedNotBlocked() {
         val p = plan(
             listOf(ImageInput(pathA, ownerCharacterIds = listOf(7))),
-            listOf(CharacterInput(7, "  가온  "))
+            listOf(ch(7, "  가온  "))
         )
         assertEquals(listOf("가온"), p.files[0].folders)
         assertTrue(p.blockedCharacters.isEmpty())
@@ -187,7 +249,7 @@ class FolderExportPlannerTest {
             ImageInput(pathA, ownerCharacterIds = listOf(7)),
             ImageInput(pathB)
         )
-        val characters = listOf(CharacterInput(7, "가온"))
+        val characters = listOf(ch(7, "가온"))
         assertEquals(2, plan(images, characters, Scope.ALL).files.size)
         assertEquals(listOf(pathA), plan(images, characters, Scope.ASSIGNED).files.map { it.sourcePath })
         assertEquals(listOf(pathB), plan(images, characters, Scope.UNASSIGNED).files.map { it.sourcePath })
@@ -210,7 +272,7 @@ class FolderExportPlannerTest {
     @Test fun entityOwnedImageStillExportsWhenAssignedToCharacter() {
         val p = plan(
             listOf(ImageInput(pathA, ownerCharacterIds = listOf(7), inLibrary = false)),
-            listOf(CharacterInput(7, "가온"))
+            listOf(ch(7, "가온"))
         )
         assertEquals(1, p.files.size)
         assertEquals(0, p.entityOnlySkipped)
@@ -332,7 +394,7 @@ class FolderExportPlannerTest {
             ImageInput(pathB),
             ImageInput(pathC, ownerCharacterIds = listOf(7, 9))
         )
-        val characters = listOf(CharacterInput(7, "가온"), CharacterInput(9, "나린"))
+        val characters = listOf(ch(7, "가온"), ch(9, "나린"))
         val exported = plan(images, characters).files
 
         val items = exported.map {
@@ -353,6 +415,68 @@ class FolderExportPlannerTest {
         assertEquals(FolderRoundtripPlanner.HoldReason.SHARED_FOLDER, back.holds[0].reason)
         assertEquals(0, back.deeperIgnored)
         assertEquals(0, back.unknownTokenFiles)
+    }
+
+    /**
+     * **동명이인도 왕복 고정점이어야 한다** — 이 기능의 핵심 성질.
+     *
+     * 코드를 병기해 내보낸 두 `가온` 폴더를 그대로 받아오면 배정이 흔들리지 않아야 한다.
+     * 여기가 깨지면 내보내기만 해도 두 동명 캐릭터의 이미지가 서로 뒤바뀔 수 있고, 그것이
+     * 정확히 종전에 동명을 통째로 제외했던 이유다.
+     */
+    @Test fun duplicateNamesAreAlsoAFixedPointOfImport() {
+        val images = listOf(
+            ImageInput(pathA, ownerCharacterIds = listOf(7)),
+            ImageInput(pathB, ownerCharacterIds = listOf(9))
+        )
+        val characters = listOf(ch(7, "가온"), ch(9, "가온"))
+        val exported = plan(images, characters).files
+        assertEquals(2, exported.size)
+
+        val items = exported.map {
+            FolderRoundtripPlanner.ScanItem(it.sourcePath, it.folders, it.fileName)
+        }
+        val resolver = FolderRoundtripPlanner.CharacterFolderResolver(
+            characterIdsByName = mapOf("가온" to listOf(7L, 9L)),
+            characterIdByCode = mapOf(codeOf(7) to 7L, codeOf(9) to 9L)
+        )
+        val back = FolderRoundtripPlanner.plan(
+            items,
+            characterIdsByName = mapOf("가온" to listOf(7L, 9L)),
+            pathByToken = mapOf(tokenA to pathA, tokenB to pathB),
+            characterIdsByPath = mapOf(pathA to listOf(7L), pathB to listOf(9L)),
+            resolver = resolver
+        )
+        assertTrue("동명 왕복에서 이동이 생겼다 — 배정이 뒤바뀔 수 있다", back.moves.isEmpty())
+        assertTrue(back.imports.isEmpty())
+        assertTrue(back.detaches.isEmpty())
+        assertTrue(back.linkSets.isEmpty())
+        assertTrue(back.holds.isEmpty())
+        // 코드로 확정됐으므로 물어볼 것이 없다.
+        assertTrue(back.ambiguousFolders.isEmpty())
+        assertTrue(back.unknownCodeFolders.isEmpty())
+    }
+
+    /**
+     * 코드 없이 손으로 만든 동명 폴더는 **묻고, 답한 대로 배정한다.**
+     * 답하기 전에는 종전과 같이 아무것도 배정하지 않는다.
+     */
+    @Test fun handMadeDuplicateFolderAsksThenAssigns() {
+        val items = listOf(FolderRoundtripPlanner.ScanItem("doc1", listOf("가온"), "새사진.jpg"))
+        val byName = mapOf("가온" to listOf(7L, 9L))
+
+        val asked = FolderRoundtripPlanner.plan(items, byName, emptyMap(), emptyMap())
+        assertEquals(listOf("가온"), asked.ambiguousFolders)
+        // 배정은 보류하되 편입은 한다(부드러운 실패 — 링크 세트로 묶인다).
+        assertEquals(1, asked.imports.size)
+        assertEquals(null, asked.imports[0].assignCharacterId)
+
+        val answered = FolderRoundtripPlanner.plan(
+            items, byName, emptyMap(), emptyMap(),
+            FolderRoundtripPlanner.CharacterFolderResolver(byName, choices = mapOf("가온" to 9L))
+        )
+        assertTrue(answered.ambiguousFolders.isEmpty())
+        assertEquals(9L, answered.imports[0].assignCharacterId)
     }
 
     /** 세트 폴더도 왕복해야 한다 — 내보낸 묶음이 받아오기에서 같은 묶음으로 돌아온다. */

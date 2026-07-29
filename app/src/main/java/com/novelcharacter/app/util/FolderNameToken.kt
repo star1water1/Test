@@ -49,6 +49,58 @@ object FolderNameToken {
     /** 라벨이 통째로 지워졌을 때 쓰는 대체 라벨(미배정 이미지의 기본 라벨이기도 하다). */
     const val FALLBACK_LABEL = "이미지"
 
+    /**
+     * 캐릭터 폴더명에 코드를 병기할 때 쓰는 구분자 — `홍길동#a1b2c3d4e5f60718`.
+     *
+     * **왜 필요한가:** 폴더명이 캐릭터 이름뿐이면 동명이인 둘이 같은 폴더명을 요구한다.
+     * 파일시스템이 그것을 허용하지 않을뿐더러, 받아오기가 그 폴더를 누구 것인지 정할 수 없다.
+     * 그래서 **동명일 때만** 안정 식별자(`Character.code`)를 덧붙인다 — 이름이 유일하면
+     * 종전처럼 `홍길동/`으로 깨끗하게 둔다.
+     *
+     * 엑셀 왕복이 `관련캐릭터코드` 열로 같은 문제를 푸는 것과 같은 수단이며, 규약 R-1
+     * ("코드가 대상을 정하고 이름은 확인 수단")의 재사용이다.
+     *
+     * `#`을 고른 이유: 윈도우·FAT 금지 문자가 아니고([FORBIDDEN_LABEL_CHARS]), 사람 이름에
+     * 거의 쓰이지 않아 오해석 여지가 작다. 이름에 `#`이 있어도 **뒤가 코드 형태일 때만**
+     * 코드로 읽으므로 안전하다.
+     */
+    const val CODE_SEPARATOR = '#'
+
+    /** `Character.code` 형태 — `generateEntityCode()`가 만드는 소문자 16진 16자. */
+    private val CODE_SHAPE = Regex("^[0-9a-f]{16}$")
+
+    /** 폴더명 해석 결과. [code]가 null이면 이름만 있는 폴더(종전 규약). */
+    data class ParsedFolder(val name: String, val code: String?)
+
+    /**
+     * 캐릭터 폴더명을 만든다. [code]가 null이면 이름 그대로.
+     *
+     * 조립 결과가 폴더로 쓸 수 없으면(길이 초과 등) 호출부가 [isFolderNameSafe]로 걸러야 한다 —
+     * 여기서 자르지 않는 이유는 [MAX_FOLDER_NAME_LENGTH] 주석과 같다. **자르는 순간 되돌아오지
+     * 못한다.**
+     */
+    fun buildCharacterFolderName(name: String, code: String?): String {
+        val trimmed = name.trim()
+        if (code.isNullOrBlank()) return trimmed
+        return "$trimmed$CODE_SEPARATOR$code"
+    }
+
+    /**
+     * 폴더명을 (이름, 코드)로 가른다. 마지막 [CODE_SEPARATOR] 뒤가 **코드 형태일 때만** 코드로
+     * 읽고, 아니면 통째로 이름이다.
+     *
+     * 그래서 `홍길동#1`·`C#으로 배우기` 같은 이름은 그대로 이름으로 남는다 — 사용자가 이미
+     * 쓰고 있던 폴더명을 이 규약이 빼앗지 않는다(하위 호환).
+     */
+    fun parseCharacterFolderName(folder: String): ParsedFolder {
+        val trimmed = folder.trim()
+        val sep = trimmed.lastIndexOf(CODE_SEPARATOR)
+        if (sep <= 0 || sep == trimmed.length - 1) return ParsedFolder(trimmed, null)
+        val candidate = trimmed.substring(sep + 1)
+        if (!CODE_SHAPE.matches(candidate)) return ParsedFolder(trimmed, null)
+        return ParsedFolder(trimmed.substring(0, sep).trim(), candidate)
+    }
+
     /** 파일명 금지 문자 — 윈도우·FAT 기준(가장 좁은 쪽에 맞춘다). */
     private val FORBIDDEN_LABEL_CHARS = charArrayOf('\\', '/', ':', '*', '?', '"', '<', '>', '|')
 

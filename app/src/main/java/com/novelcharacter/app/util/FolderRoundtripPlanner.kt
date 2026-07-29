@@ -53,6 +53,108 @@ object FolderRoundtripPlanner {
     /** 스캔 항목 1건. [folders]는 정리 폴더 기준 폴더 경로(직속이면 빈 목록). */
     data class ScanItem(val id: String, val folders: List<String>, val fileName: String)
 
+    /**
+     * 캐릭터 폴더명이 가리키는 대상을 정하는 **해소 사다리** — 위에서부터 먼저 맞는 것이 이긴다.
+     *
+     * | # | 폴더명 | 결과 |
+     * |---|--------|------|
+     * | 1 | `홍길동` (그 이름이 유일) | 그 캐릭터 |
+     * | 2 | `홍길동#a1b2c3d4e5f60718` | **코드로 확정** — 앱이 내보낸 폴더 |
+     * | 3 | `홍길동(은하전기)` | 작품으로 좁혀 1명이면 확정 |
+     * | 4 | 그래도 둘 이상 | [ambiguousFolders]에 실어 **사용자에게 묻는다** |
+     *
+     * **1번이 2·3번보다 먼저인 것이 중요하다.** 사용자가 이미 `홍길동(가명)`이라는 *이름*을 쓰고
+     * 있었다면 그 폴더는 그 캐릭터의 것이지, "홍길동인데 작품이 가명"이 아니다. 정확 일치를
+     * 먼저 보지 않으면 이 규약이 사용자가 쓰던 이름을 빼앗는다.
+     *
+     * @param characterIdsByName 트림된 이름 → 그 이름을 쓰는 캐릭터 id 목록.
+     * @param characterIdByCode 안정 식별자 → 캐릭터 id.
+     * @param novelIdByCharacterId 캐릭터 id → 그 캐릭터의 작품 id(없으면 미등재).
+     * @param novelIdsByTitle 트림된 작품 제목 → 작품 id 목록. 제목이 겹치면 좁히지 않는다.
+     * @param choices 사용자가 고른 폴더명 → 캐릭터 id (4번 질문의 답).
+     */
+    class CharacterFolderResolver(
+        private val characterIdsByName: Map<String, List<Long>>,
+        private val characterIdByCode: Map<String, Long> = emptyMap(),
+        private val novelIdByCharacterId: Map<Long, Long> = emptyMap(),
+        private val novelIdsByTitle: Map<String, List<Long>> = emptyMap(),
+        private val choices: Map<String, Long> = emptyMap()
+    ) {
+        /** 해소 결과. */
+        sealed class Result {
+            /** 대상 확정. */
+            data class Found(val characterId: Long) : Result()
+            /** 캐릭터 폴더가 아니다(그런 이름의 캐릭터가 없다) — '기타 이름'으로 다룬다. */
+            object NotCharacter : Result()
+            /** 동명이 둘 이상이고 좁힐 근거도 없다 — 물어봐야 한다. */
+            object Ambiguous : Result()
+            /** `#코드`가 붙어 있으나 그런 코드가 없다 — 조용히 이름으로 폴백하지 않는다. */
+            object UnknownCode : Result()
+        }
+
+        fun resolve(folderName: String): Result {
+            val raw = keyOf(folderName)
+            val exact = characterIdsByName[raw].orEmpty()
+
+            // 1. 폴더명 전체가 캐릭터 이름과 정확 일치하고 유일하면 그것이 답이다.
+            if (exact.size == 1) return Result.Found(exact[0])
+
+            // 2. `이름#코드` — 코드가 대상을 정한다(R-1).
+            val parsed = FolderNameToken.parseCharacterFolderName(raw)
+            if (parsed.code != null) {
+                // 코드가 있는데 못 찾으면 이름으로 폴백하지 않는다 — 폴백은 곧 오배정 위험이고,
+                // 코드를 적었다는 것은 대상을 특정하려는 의도다. 사유를 남겨 고지한다(R-17).
+                return characterIdByCode[parsed.code]?.let { Result.Found(it) } ?: Result.UnknownCode
+            }
+
+            // 사용자가 이미 고른 답이 있으면 그것이 이긴다.
+            choices[raw]?.let { return Result.Found(it) }
+
+            // 폴더명 자체가 동명인 이름이면 좁힐 근거가 없다 — 괄호도 없으니 물어봐야 한다.
+            if (exact.size >= 2) return Result.Ambiguous
+
+            // 3. `이름(작품명)` — 이름만으로 못 가를 때 작품으로 좁힌다.
+            val hint = parseNovelHint(raw) ?: return Result.NotCharacter
+            val byName = characterIdsByName[hint.name].orEmpty()
+            if (byName.isEmpty()) return Result.NotCharacter
+            if (byName.size == 1) return Result.Found(byName[0])
+
+            val novelIds = novelIdsByTitle[hint.novelTitle].orEmpty()
+            // 같은 제목의 작품이 둘이면 좁히는 것 자체가 근거 없는 선택이 된다.
+            if (novelIds.size != 1) return Result.Ambiguous
+            val narrowed = byName.filter { novelIdByCharacterId[it] == novelIds[0] }
+            return if (narrowed.size == 1) Result.Found(narrowed[0]) else Result.Ambiguous
+        }
+
+        /**
+         * 폴더명의 정규화 키 — [Plan.ambiguousFolders]에 실리는 값이자 [choices]의 키다.
+         * 물어본 키와 답한 키가 다르면 사용자가 고른 답이 조용히 무시된다.
+         */
+        fun keyOf(folderName: String): String = folderName.trim()
+
+        /** 사람이 읽을 이름 — 고지 문구에 `#코드`를 그대로 보이면 읽기 어렵다. */
+        fun displayName(folderName: String): String {
+            val raw = folderName.trim()
+            if (characterIdsByName.containsKey(raw)) return raw
+            val parsed = FolderNameToken.parseCharacterFolderName(raw)
+            if (parsed.code != null) return parsed.name
+            return parseNovelHint(raw)?.name ?: raw
+        }
+
+        private data class NovelHint(val name: String, val novelTitle: String)
+
+        /** `홍길동(은하전기)` → (홍길동, 은하전기). 꼴이 아니면 null. */
+        private fun parseNovelHint(raw: String): NovelHint? {
+            if (!raw.endsWith(')')) return null
+            val open = raw.lastIndexOf('(')
+            if (open <= 0) return null
+            val name = raw.substring(0, open).trim()
+            val title = raw.substring(open + 1, raw.length - 1).trim()
+            if (name.isEmpty() || title.isEmpty()) return null
+            return NovelHint(name, title)
+        }
+    }
+
     /** 항목이 놓인 자리의 해석. */
     sealed class Location {
         /** 정리 폴더 직속. */
@@ -125,7 +227,11 @@ object FolderRoundtripPlanner {
      * @param unknownTokenFiles 토큰꼴이지만 사전에 없어 **신규로 편입되는** 파일 수.
      *        재압축·복원 개명으로 별칭이 끊긴 사본이 여기 잡힌다 — 조용한 중복 편입을 막는
      *        고지 대상이다(설계 9장 C-1).
-     * @param ambiguousFolders 동명 캐릭터가 둘 이상이라 배정을 보류한 폴더명.
+     * @param ambiguousFolders 동명 캐릭터가 둘 이상이고 좁힐 근거도 없어 **사용자에게 물어야 하는**
+     *        폴더명. 사용자가 고르면 그 답을 [CharacterFolderResolver]에 실어 계획을 다시 세운다.
+     * @param unknownCodeFolders `#코드`가 붙어 있으나 그런 코드의 캐릭터가 없는 폴더명.
+     *        이름으로 조용히 폴백하지 않고 고지한다 — 코드를 적었다는 것은 대상을 특정하려는
+     *        의도이므로, 폴백은 그 의도를 배신하는 오배정이 될 수 있다(R-17).
      * @param deeperIgnored 규약 밖 깊이라 무시한 파일 수.
      */
     data class Plan(
@@ -136,6 +242,7 @@ object FolderRoundtripPlanner {
         val holds: List<Hold> = emptyList(),
         val unknownTokenFiles: Int = 0,
         val ambiguousFolders: List<String> = emptyList(),
+        val unknownCodeFolders: List<String> = emptyList(),
         val deeperIgnored: Int = 0
     ) {
         /** 실제로 파일을 만지는 항목 수 — 진행도 총량. */
@@ -184,13 +291,15 @@ object FolderRoundtripPlanner {
         items: List<ScanItem>,
         characterIdsByName: Map<String, List<Long>>,
         pathByToken: Map<String, String>,
-        characterIdsByPath: Map<String, List<Long>>
+        characterIdsByPath: Map<String, List<Long>>,
+        resolver: CharacterFolderResolver = CharacterFolderResolver(characterIdsByName)
     ): Plan {
         val imports = ArrayList<ImportAction>()
         val moves = ArrayList<MoveAction>()
         val detaches = ArrayList<DetachAction>()
         val holds = ArrayList<Hold>()
         val ambiguous = LinkedHashSet<String>()
+        val unknownCode = LinkedHashSet<String>()
         var unknownTokens = 0
         var deeper = 0
 
@@ -243,9 +352,12 @@ object FolderRoundtripPlanner {
                 }
 
                 is Location.Named -> {
-                    val matches = characterIdsByName[location.name.trim()].orEmpty()
-                    if (matches.size >= 2) ambiguous.add(location.name)
-                    val target = matches.singleOrNull()
+                    val target = when (val r = resolver.resolve(location.name)) {
+                        is CharacterFolderResolver.Result.Found -> r.characterId
+                        is CharacterFolderResolver.Result.Ambiguous -> { ambiguous.add(resolver.keyOf(location.name)); null }
+                        is CharacterFolderResolver.Result.UnknownCode -> { unknownCode.add(resolver.keyOf(location.name)); null }
+                        is CharacterFolderResolver.Result.NotCharacter -> null
+                    }
                     if (target != null) {
                         // 캐릭터 폴더 — 수동 세트를 만들지 않는다(자동 링크가 묶는다).
                         if (path == null) {
@@ -313,6 +425,7 @@ object FolderRoundtripPlanner {
             holds = holds,
             unknownTokenFiles = unknownTokens,
             ambiguousFolders = ambiguous.toList(),
+            unknownCodeFolders = unknownCode.toList(),
             deeperIgnored = deeper
         )
     }

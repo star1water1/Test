@@ -206,6 +206,7 @@ $TEST/util/ImageLinkResolverTest.kt
 $TEST/util/AutoLinkPlannerTest.kt
 $TEST/util/FolderNameTokenTest.kt
 $TEST/util/FolderRoundtripPlannerTest.kt
+$TEST/util/CharacterFolderResolverTest.kt
 $TEST/util/FolderRoundtripLedgerTest.kt
 $TEST/util/FolderExportPlannerTest.kt
 $TEST/ui/supplement/RandomPickEngineTest.kt
