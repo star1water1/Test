@@ -42,11 +42,6 @@ fun EditText.showInlineError(message: String) {
     attachErrorClearing { error = null }
 }
 
-/** 걸린 인라인 오류를 지운다(성공 경로에서 앞선 실패 표시를 걷을 때). */
-fun TextInputLayout.clearInlineError() {
-    error = null
-}
-
 /**
  * 값이 바뀌면 [clear]를 부르는 감시자를 **한 번만** 단다.
  * 두 번 달면 오류를 지우는 콜백이 중복 실행되고, 다이얼로그를 다시 열 때마다 쌓인다.
