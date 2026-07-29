@@ -81,7 +81,13 @@ class OrganizeFolderController(
             }
             val builder = MaterialAlertDialogBuilder(fragment.requireContext())
                 .setTitle(R.string.organize_folder_settings)
-                .setMessage(fragment.getString(R.string.organize_folder_purpose) + "\n\n" + message)
+                // 삭제 의미론을 여기서 밝힌다 — "폴더를 정리한다"는 말은 자연스럽게 "폴더가
+                // 진실이 된다"로 읽히지만, 실제로는 **폴더는 지시서**다(있는 것은 지시, 없는
+                // 것은 침묵). 오해하면 사용자는 폴더에서 지운 것이 앱에서도 지워졌다고 믿는다.
+                .setMessage(
+                    fragment.getString(R.string.organize_folder_purpose) + "\n\n" +
+                        fragment.getString(R.string.organize_folder_delete_note) + "\n\n" + message
+                )
                 .setPositiveButton(R.string.organize_folder_pick) { _, _ ->
                     pendingAfterPick = null
                     organizeFolderPicker.launch(null)
