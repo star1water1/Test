@@ -34,7 +34,14 @@ object HelpDialog {
         STATS_GROUPING(R.string.help_stats_grouping_title, R.string.help_stats_grouping_body),
         INPUT_MODE(R.string.help_input_mode_title, R.string.help_input_mode_body),
         INITIAL_VALUES(R.string.help_initial_values_title, R.string.help_initial_values_body),
-        GRADE_VALUES(R.string.help_grade_values_title, R.string.help_grade_values_body)
+        GRADE_VALUES(R.string.help_grade_values_title, R.string.help_grade_values_body),
+
+        /**
+         * 정리 폴더 사용법 — H1~H12와 달리 **기능 전체**를 설명하므로 본문이 길다.
+         * 길이를 맞추려고 쪼개면 "폴더에 넣으면 무슨 일이 일어나는가"라는 한 질문이 여러 창으로
+         * 흩어진다. 한 번 읽고 마는 종류라 한 자리에 모은다(가이드 9-2 H13).
+         */
+        ORGANIZE_FOLDER(R.string.help_organize_folder_title, R.string.help_organize_folder_body)
     }
 
     /** 앱 도움말 표시 — `?` 아이콘의 진입점. */

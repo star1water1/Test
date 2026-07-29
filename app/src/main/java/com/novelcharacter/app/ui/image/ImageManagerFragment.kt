@@ -475,6 +475,7 @@ class ImageManagerFragment : Fragment() {
         popup.menu.add(0, 3, 3, R.string.organize_folder_import)
         popup.menu.add(0, 4, 4, R.string.organize_folder_export)
         popup.menu.add(0, 5, 5, R.string.organize_folder_settings)
+        popup.menu.add(0, 6, 6, R.string.organize_folder_help)
         popup.setOnMenuItemClickListener { mi ->
             when (mi.itemId) {
                 0 -> ImageSettingsDialog.show(this) { viewModel.load() }
@@ -482,7 +483,10 @@ class ImageManagerFragment : Fragment() {
                 2 -> viewModel.load()
                 3 -> startOrganizeFolderImport()
                 4 -> startOrganizeFolderExport()
-                else -> showOrganizeFolderSettings()
+                5 -> showOrganizeFolderSettings()
+                else -> com.novelcharacter.app.ui.common.HelpDialog.showHelp(
+                    requireContext(), com.novelcharacter.app.ui.common.HelpDialog.Topic.ORGANIZE_FOLDER
+                )
             }
             true
         }

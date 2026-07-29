@@ -137,6 +137,11 @@ class SettingsFragment : Fragment() {
         binding.organizeFolderExportRow.setOnClickListener { organizeFolder.startOrganizeFolderExport() }
         binding.organizeFolderImportRow.setOnClickListener { organizeFolder.startOrganizeFolderImport() }
         binding.organizeFolderSettingsRow.setOnClickListener { organizeFolder.showOrganizeFolderSettings() }
+        binding.organizeFolderHelpRow.setOnClickListener {
+            com.novelcharacter.app.ui.common.HelpDialog.showHelp(
+                requireContext(), com.novelcharacter.app.ui.common.HelpDialog.Topic.ORGANIZE_FOLDER
+            )
+        }
 
         binding.trashRow.setOnClickListener {
             findNavController().navigate(R.id.trashFragment)
