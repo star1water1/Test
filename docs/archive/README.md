@@ -37,6 +37,9 @@
 | `character_filter_sort_2026-07.md` | `docs/` | **구현 완료** — `FieldFilterHelper`·`SortComparators` | `filter_sort_parity_2026-07.md`(짝 맞춤) · `archive/search_filter_sort_perf`(성능) |
 | `search_filter_sort_perf_2026-07.md` | `docs/` | **구현 완료** — 에폭 메모이제이션(`CharacterViewModel`) | `scalability_performance_2026-07.md` 부록 |
 | `storage_optimization_design_2026-07.md` | `docs/` | **구현 완료** — `StorageAnalyzer`, 백업 이미지 기본값 `true`→`false` | `scalability_performance_2026-07.md` 부록 |
+| `fix_design_round2_2026-07.md` | `docs/` | **F-1~F-7 구현 완료** — 안정 식별자 `code` 도입(DB v34→v35) | 원본 점검 `app_inspection_round2_2026-07.md`(현행 유지) · 규약 R-1 |
+| `audit_remediation_2026-07.md` | `docs/` | **PR-F1~F3 구현 완료** — 무음 유실 3건 등 | 규약 R-14·R-17 · `superficial_feature_audit_2026-07.md` |
+| `feature_readiness_audit.md` | `docs/` | 시점 준비도 리뷰 — 점검 대상 5종 전부 구현됨 | `usability_review_2026-07.md` · `superficial_feature_audit_2026-07.md` |
 
 ## 왜 루트에서 옮겼는가
 
