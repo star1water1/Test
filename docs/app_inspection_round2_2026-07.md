@@ -11,7 +11,7 @@
 > | 본문이 적은 것 | 현재(2026-07-29) |
 > |---|---|
 > | DB v34 | **DB v44** (`data/database/AppDatabase.kt`) |
-> | "테스트 파일이 하나도 없다" (§개-7) | **테스트 71파일·924건** (`app/src/test/`, CI `Run unit tests` 통과) |
+> | "테스트 파일이 하나도 없다" (§개-7) | **테스트가 있고 CI가 게이트다** (`app/src/test/`, `Run unit tests`) |
 > | `res/menu/character_menu.xml` (§개-6) | **삭제됨** — 항목이 `⋮` `PopupMenu`로 통합(N-1) |
 >
 > 지적의 **취지**는 대부분 아직 유효하다. 낡은 것은 근거로 든 수치와 파일 경로다.
@@ -107,9 +107,15 @@ plain TEXT는 고유 문자열마다 버킷이라(`StatsDataProvider.kt:1181`) �
 
 ### 개-7. 품질 안전망 — 자동 테스트 0건 [품질 기준] *(해소됨 — 아래 각주)*
 
-> **이 절의 전제는 뒤집혔다(2026-07-29).** 지금은 **테스트 71파일·924건**이 돌고(`app/src/test/`),
-> CI의 `Run unit tests` 단계가 게이트다. 순수 JVM 러너(`tools/run_jvm_tests.sh`)로 Android
-> 빌드 없이도 실행된다. **남은 것은 계측 테스트**다 — `androidTest` 디렉터리는 여전히 없고,
+> **이 절의 전제는 뒤집혔다.** 지금은 **테스트가 있고**(`app/src/test/`),
+> CI의 `Run unit tests` 단계가 **게이트**다. 순수 JVM 러너(`tools/run_jvm_tests.sh`)로 Android
+> 빌드 없이도 실행된다.
+>
+> **건수는 일부러 적지 않는다.** 이 자리는 2026-07-29에만 두 번 낡았다(924 → 942 → 981 →
+> 지금은 또 다르다). 숫자가 필요하면 세어라 — `grep -rho '@Test' app/src/test | wc -l`
+> (소스 기준. 러너 실행 수는 목록 등재분만이라 조금 적다).
+>
+> **남은 것은 계측 테스트**다 — `androidTest` 디렉터리는 여전히 없고,
 > 아래가 요구한 `MigrationTestHelper` 연속 마이그레이션 테스트도 아직이다(대신
 > `tools/verify_room_migration*.py`가 스키마 정합을 본다).
 
