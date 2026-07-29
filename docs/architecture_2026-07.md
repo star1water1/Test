@@ -213,6 +213,12 @@ AI 정책(`FieldAiPolicy`).
 | **화면 문구** | `docs/text_style_guide_2026-07.md` |
 | **영역별 설계** | 엑셀 왕복 `excel_roundtrip_audit` · 이미지 폴더 왕복 `image_folder_roundtrip_design` · AI `ai_integration`·`ai_control_and_ui_density` · 값 라이브러리 `field_value_library` |
 | **브랜치·병합** | `docs/branch_merge_rules.md` |
+| **끝난 것 / 낡은 것** | `docs/archive/` — 구현 완료된 계획서와 구시점 리뷰. **근거로 쓰지 말 것**(각 문서 머리의 보관 헤더가 무엇이 낡았는지 적어 둔다) |
+
+> **루트의 `.md`는 `CLAUDE.md` 하나다.** 예전에는 루트에 계획서 2종과 리뷰 2종이 더 있었는데,
+> 넷 다 현재형으로 말하면서 실제로는 끝났거나 전제가 낡아 있었다(`CODE_REVIEW.md`는
+> "테스트 파일 미발견"이라 적혀 있었다 — 지금은 882건이 돈다). `docs/archive/`로 옮기고
+> 각각에 무엇이 낡았고 무엇이 이어받았는지를 헤더로 달았다.
 
 ---
 

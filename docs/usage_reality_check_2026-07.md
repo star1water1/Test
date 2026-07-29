@@ -477,7 +477,7 @@ CALCULATED 2개 × 43행 = **86칸에 값이 채워져 있고**(§1-C ④), 엑�
 ```bash
 J=<세션 스크래치패드>
 JARS_DIR=$J tools/setup_jvm_env.sh
-JARS_DIR=$J tools/run_jvm_tests.sh          # 기준선 677건
+JARS_DIR=$J tools/run_jvm_tests.sh          # 기준선은 실행 결과를 믿을 것 (2026-07-28 기준 882건)
 CP=<run_jvm_tests.sh 33~38행과 동일하게 조립>
 # ⚠ 컴파일러 자신의 클래스패스에 kotlinx-coroutines-core-jvm.jar 이 필요하다(런북 2-3 레시피 누락분)
 java -cp $J/kotlin-compiler-embeddable-2.0.21.jar:$J/kotlin-stdlib-2.0.21.jar:$J/annotations-13.0.jar:$J/kotlinx-coroutines-core-jvm.jar:$J/trove4j.jar \
