@@ -1274,29 +1274,20 @@ class ExcelImporter(context: Context) {
 
         return withContext(Dispatchers.Main) {
             kotlinx.coroutines.suspendCancellableCoroutine { cont ->
-                val labels = ExportOptions.LABELS.toMutableList()
-                val checked = ExportOptions.ALL.toBooleanArray().toMutableList()
-
+                val checked = ExportOptions.ALL.toBooleanArray()
                 // 이미지 옵션: ZIP에 이미지가 있을 때만 기본 선택
                 checked[checked.size - 1] = hasImages
 
-                val checkedArray = checked.toBooleanArray()
-
-                MaterialAlertDialogBuilder(activity)
-                    .setTitle(com.novelcharacter.app.R.string.import_options_title)
-                    .setMultiChoiceItems(labels.toTypedArray(), checkedArray) { _, which, isChecked ->
-                        checkedArray[which] = isChecked
-                    }
-                    .setPositiveButton(com.novelcharacter.app.R.string.confirm) { _, _ ->
-                        cont.resume(ExportOptions.fromBooleanArray(checkedArray), null)
-                    }
-                    .setNegativeButton(com.novelcharacter.app.R.string.cancel) { _, _ ->
-                        cont.resume(null, null)
-                    }
-                    .setOnCancelListener {
-                        cont.resume(null, null)
-                    }
-                    .show()
+                // 항목 선택 창은 [ExportOptionsDialog]가 단일 소스 — 내보내기와 **같은 창**이라
+                // '전부 선택/해제'가 양쪽에 함께 붙는다(종전엔 내보내기에만 있었다).
+                // isActive 가드: 버튼과 취소 리스너는 서로 배타적이지만, 두 번 resume 되면
+                // 크래시다. 값싼 가드로 그 가능성 자체를 없앤다.
+                ExportOptionsDialog.showForImport(
+                    context = activity,
+                    initial = checked,
+                    onConfirm = { if (cont.isActive) cont.resume(it, null) },
+                    onCancel = { if (cont.isActive) cont.resume(null, null) }
+                )
             }
         }
     }
