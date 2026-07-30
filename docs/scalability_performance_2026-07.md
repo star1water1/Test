@@ -114,8 +114,8 @@ warmup 2회 후 5회 측정의 중앙값. 출처: `usage_reality_check_2026-07.m
 | ~~`ExcelImporter.MAX_IMPORT_FILE_SIZE`~~ | ~~128MB~~ | ~~가져오기 **거부**~~ | ✅ **해소 (S2 완료)** — 상한 자체를 없앴다. 파싱 메모리가 파일 크기가 아니라 **가장 큰 시트 하나**에 비례한다(5-1) |
 | `ExcelImporter.MAX_EXTRACTED_XLSX_SIZE` | 1GB | ZIP에서 data.xlsx 추출 거부 | ✅ (파서 한계가 아니라 디스크·zip-bomb 방어) |
 | Android CursorWindow | 행당 약 2MB | 백업을 **읽을 수 없게** 됨 (R-10) | ⚠️ **위험** (5-2) |
-| `FolderRoundtripLedger.DEFAULT_CAP` | **2,000** × 2키 | FIFO 축출 → 배너 숫자 부풀림 | ⚠️ **경계** (5-4) |
-| `StatsDataProvider.MAX_CACHED_SNAPSHOTS` | 4 | 캐시 통째 비움 | 개수는 안전, **크기가 문제**(5-3) |
+| `FolderRoundtripLedger.DEFAULT_CAP` | **2,000** × **4키**(이동실패 지문·내보내기 지문·개명 별칭·흩어진 나머지) | FIFO 축출 → 배너 숫자 부풀림 | ⚠️ **경계** (5-4). 키별로 독립 상한이라 C-18 규칙("누구의 것이 버려지는가")은 지켜졌다 |
+| `StatsDataProvider.MAX_CACHED_SNAPSHOTS` | 4 | 캐시 통째 비움 — **검사가 삽입보다 앞이라 실제로는 5개까지 든다** | 개수는 안전, **크기가 문제**(5-3) |
 | `ExcelImporter.MAX_EXTERNAL_FILE_SIZE` | 4GB | 거부 (스트리밍 복사) | ✅ |
 | `MAX_IMAGE_ENTRY_COUNT` | 50,000 | 거부 | ✅ |
 | `MAX_IMAGE_TOTAL_SIZE` | 8GB | 거부 | ✅ |
@@ -128,8 +128,18 @@ warmup 2회 후 5회 측정의 중앙값. 출처: `usage_reality_check_2026-07.m
 | `FolderNameToken.MAX_ALIAS_HOPS` | 16 | 별칭 추적 중단 | ✅ |
 | `FolderRoundtripPlanner.MAX_SCAN_DEPTH` | 2단계 | 무시 + 개수 고지 | ✅ |
 | `RandomPickEngine.MAX_HISTORY` | 100 | FIFO | ✅ |
-| `AppLogger.MAX_SIZE` | 512 | FIFO | ✅ |
-| AI 프롬프트 상한 다수 | `MAX_FILLED_FIELDS` 60 · `MAX_RELATIONSHIPS` 30 · `MAX_TAGS` 50 · `MAX_MEMO_CHARS` 1500 … | 잘라냄 | 요청당 상한이라 규모 무관 — 단 **잘라낸 것을 개수로 알리는가**(R-14)는 별도 확인 대상 |
+| `AppLogger.MAX_SIZE` | **512KB**(로그 파일 크기) | **파일 전량 삭제 후 재시작**(FIFO 아님 — `logFile.delete()`) | ✅ (로그는 데이터 규모와 무관) |
+| `BackupEncryptor.MAX_LEGACY_FILE_SIZE` | 256MB | v1 레거시 백업 **복호 거부**(`require` → 예외) | ✅ — 다만 버려지는 것은 **구버전으로 만든 암호화 백업**이다 |
+| `TrashRepository.PAYLOAD_BUDGET_CHARS` | 400,000자 | 이어붙임 행으로 **분할**(유실 없음) | 5-2의 실제 방어. CursorWindow 위험은 이 예산 **위**의 문제다 |
+| `RelationshipGraphFragment.SUMMARY_MODE_THRESHOLD` | 200(관여 캐릭터) | 요약 모드 전환 + 고지 | ×30에서 **상시 요약 모드**(5-5) |
+| `ExcelImporter.domParseBudgetBytes` 클램프 | 8MB~64MB | 넘으면 스트리밍 경로로(거부 아님) | ✅ — S2가 들인 상한 |
+| `SheetSpec.EXCEL_CELL_TEXT_LIMIT` | 32,767자 | 절단 + 건수 고지(R-14) | ✅ **왕복 계약** — 내보내기 절단과 가져오기 저장 한도가 같은 값을 봐야 한다 |
+| AI 프롬프트 상한 다수 | `MAX_FILLED_FIELDS` 60 · `MAX_RELATIONSHIPS` 30 · `MAX_TAGS` 50 · `MAX_MEMO_CHARS` 1500 … | 잘라냄 | 요청당 상한이라 규모 무관. 절단은 `truncationNotes`로 **개수 고지 구현·테스트 완료**(R-14) |
+
+> **이 표는 "전수"를 표방하므로 상한을 새로 만들면 여기 등재한다.** 2026.07.30 검증에서
+> 미등재 6종이 나왔다(위 표에 편입) — 그중 `PAYLOAD_BUDGET_CHARS`는 5-2가 "방어는 R-10
+> 규약뿐"이라 적은 자리에 **실재하는 수치 방어**였다. 세는 법:
+> `grep -rnE 'const val (MAX|LIMIT|BUDGET|THRESHOLD|DEFAULT_CAP)[A-Z_]*' app/src/main/java --include=*.kt`
 
 ### 상한을 새로 둘 때의 규칙 (C-18이 값비싸게 남긴 것)
 
@@ -145,34 +155,31 @@ warmup 2회 후 5회 측정의 중앙값. 출처: `usage_reality_check_2026-07.m
 
 ### ~~5-1. 엑셀 가져오기 128MB 벽~~ — **처리 완료 (S2 / 색출 로드맵 6, 2026.07.29)**
 
-자기모순이었다 — 앱이 만든 백업인데 앱이 되읽지 못했다. 해결 수단(`StreamingXlsxReader`)은
-완성돼 있었으나 **어떤 경로에서도 호출되지 않는 죽은 코드**였다.
+자기모순이었다 — 앱이 만든 백업인데 앱이 되읽지 못했다. 상한 자체를 없앴고, 파싱 메모리는
+이제 파일 크기가 아니라 **가장 큰 시트 하나**에 비례한다.
 
-배선은 설계 문서의 "이중 경로 + per-row 비분기" 원칙 그대로 갔다 — 다만 **전면 SAX 재작성을
-피하는 방법**이 관건이었다. `ExcelImportService` 5,700줄이 쓰는 POI 접근면을 실측하니
-13개 멤버뿐이어서, 그만큼을 `ImportSource.kt`의 인터페이스로 뽑고 DOM·스트리밍 두 구현을
-붙였다. 멤버 이름을 POI와 같게 두어 **호출부 본문은 한 글자도 바뀌지 않는다** — 두 경로가
-같은 per-row 로직을 탄다는 것이 diff로 증명된다.
+- **무엇이 정정됐는가**(dateHint·mergeCells·행의 '모양') → `remaining_work` **1-d장**이 원문이다.
+- **왜 그 수단이었는가**(POI 접근면 13개 → `ImportSource` 이중 구현) →
+  `docs/excel_streaming_import_2026-07.md` 헤더.
 
-착수 전 조사가 이 절의 전제를 둘 정정했다:
-- **스트리밍 리더를 그대로 배선했다면 값이 갈렸다.** `dateHint`를 `false`로 못 박고 값을
-  문자열로 굳혀 두어서, 서식 없는 날짜 시리얼이 DOM에서는 `2020-06-15`, 스트리밍에서는
-  `44000`이 될 참이었다. 정규화를 **호출부가 dateHint를 아는 자리로** 미뤄 해결했다.
-- **병합 셀(`mergeCells`)을 아예 읽지 않았다.** 못 읽으면 피복 칸이 빈칸이 되어 '빈칸=삭제'
-  규약에 걸린다(B-7이 막은 그 유실). 파싱을 붙여 DOM과 같은 범위를 낸다.
+> 종전에는 이 절이 두 문서의 서사를 **세 번째로 복제**하고 있었다(2026.07.30 검증에서 축약).
+> 같은 이야기를 세 곳에 두면 정정이 한 곳에만 들어간다.
 
-자기 재공격이 하나 더 잡았다 — **빈 셀·빈 행을 버리면 행의 '모양'이 갈린다.** 값은 양쪽 다
-`""`라 값 대조로는 안 잡히는데, `lastCellNum`이 DOM=4/스트리밍=3이 되고 빈 행이 한쪽에만
-존재했다. 호출부의 `getRow(i) ?: continue`와 `0 until lastCellNum`이 그 모양 위에 서 있다.
-
-남은 상한은 전부 디스크·zip-bomb 방어이며 파싱 한계가 아니다.
+**엑셀 가져오기 경로에 남은 상한**은 전부 디스크·zip-bomb 방어이며 파싱 한계가 아니다
+(저장소 전체의 남은 상한은 4장 표가 든다 — 그쪽이 전수다).
 
 ### 5-2. CursorWindow 행 크기 (R-10)
 
 세계관 payload 한 행이 한도를 넘으면 **백업 자체를 읽을 수 없다.** B-1 세션이 실제로 부딪혀
 규약으로 승격시킨 항목이다. 캐릭터가 아니라 **한 세계관에 담긴 데이터 총량**이 축이므로,
-×30에서 세계관당 데이터가 30배가 되면 직접 위협이 된다. 현재 방어는 R-10 규약뿐이고
-**자동 검사는 없다.**
+×30에서 세계관당 데이터가 30배가 되면 직접 위협이 된다.
+
+**방어는 R-10 규약뿐이 아니다 — 수치 방어가 실재한다**(2026.07.30 검증에서 정정).
+`TrashRepository.PAYLOAD_BUDGET_CHARS`(400,000자)가 세계관 부가 데이터를 예산 단위로
+**이어붙임 행으로 분할**하므로 유실은 없다. 따라서 이 절의 실제 잔여 위험은
+"방어가 없다"가 아니라 **① 예산이 CursorWindow 한도와 독립으로 정해져 있다는 것**과
+**② 한도 근접을 사용자에게 고지하지 않는다는 것** 둘이다(S3의 범위).
+**자동 검사는 여전히 없다.**
 
 ### 5-3. `StatsSnapshot` 전량 메모리 적재
 
@@ -214,8 +221,6 @@ warmup 2회 후 5회 측정의 중앙값. 출처: `usage_reality_check_2026-07.m
 
 ### 착수 규칙
 
-- ~~**S2를 먼저 한다.**~~ **완료.** 자기모순(앱이 만든 백업을 앱이 못 읽는다)은 규모 문제가 아니라 **결함**이며,
-  수단이 이미 코드에 있다.
 - **S4는 S1 없이 착수하지 않는다.** 추측으로 구조를 바꾸면 되돌리기가 가장 비싸다.
 - 어떤 작업이든 **상한을 옮기면 그 상한에 기대던 코드를 전부 찾는다**(4장 말미 규칙).
 
