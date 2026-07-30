@@ -3,7 +3,7 @@
 > ## ⏱ **위상: 완료 — 착수 문서가 아니다** (PR-1·PR-2 처리 완료, 2026-07-28)
 >
 > 이 문서는 **현행 사양의 단일 소스**이지 "지금 구현할 것"의 목록이 아니다.
-> 기능은 닫혔고(`remaining_work` 1장·1-b장), 확장분은
+> 기능은 닫혔고(`session_log` 1-a장·1-b장), 확장분은
 > `docs/image_folder_tag_ai_2026-07.md`(T-1~T-5, 완료)가 잇는다.
 > 자동 링크의 동작 계약은 `util/AutoLinkPlanner.kt`·`util/CharacterImageAutoLinker.kt`
 > 상단 KDoc이 단일 소스다.
