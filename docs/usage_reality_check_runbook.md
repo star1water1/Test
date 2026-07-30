@@ -174,7 +174,7 @@ git check-ignore -v "<1-1에서 찾은 경로>"     # 종료코드 0이 아니�
 
 ```bash
 JARS_DIR=<이 세션의 스크래치패드> tools/setup_jvm_env.sh
-JARS_DIR=<같은 경로>            tools/run_jvm_tests.sh     # 기준선 (작성 시점 629건)
+JARS_DIR=<같은 경로>            tools/run_jvm_tests.sh     # 기준선 = 이 출력값 (수를 적어 두지 않는다)
 ```
 
 > **`JARS_DIR`을 반드시 명시하라.** `setup_jvm_env.sh`는 필수로 요구하지만
@@ -224,7 +224,7 @@ java -cp "$JARS_DIR/out-tests:$CP" org.junit.runner.JUnitCore \
 `ExcelCellValueTest`가 red인데 6장 결과를 결론으로 올리지도 말 것 — 그건 깨진 코드의 출력을
 사실로 적는 일이다.
 
-**629는 불변식이 아니라 스냅샷이다.** 10장 2번의 예외(합성 회귀 테스트 추가)나 1-3⑤를 따르면
+**러너 건수는 불변식이 아니라 스냅샷이다.** 10장 2번의 예외(합성 회귀 테스트 추가)나 1-3⑤를 따르면
 건수는 달라진다. 차이는 각주에 적고 넘어가라.
 
 **"아무것도 못 봤습니다"로 끝내지 마라.** 어느 층이든 4·5·9장은 완주한다. 기준선 실패는 정지
