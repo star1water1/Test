@@ -66,6 +66,14 @@ class FieldEditDialog : DialogFragment() {
     private val analysisRows = mutableListOf<AnalysisRow>()
 
     // 동적 값 라벨 관리
+    // 등급 표 관리 (B-69) — C·B·A·S 고정 4칸을 동적 행으로. 순서·검증은 GradeTable(순수)이 담당.
+    private data class GradeRow(
+        val container: View,
+        val editLabel: EditText,
+        val editValue: EditText
+    )
+    private val gradeRows = mutableListOf<GradeRow>()
+
     // 동적 구간 관리
     private data class BinRangeRow(
         val container: View,
@@ -475,6 +483,14 @@ class FieldEditDialog : DialogFragment() {
             addBinRangeRow(binding.customBinContainer, density)
         }
 
+        // 등급 추가 버튼 (B-69) + 새 필드의 기본 표 — 기존 필드는 populateFields가 config로 대체한다
+        binding.btnAddGrade.setOnClickListener {
+            addGradeRow(binding.gradeRowsContainer, density)
+        }
+        com.novelcharacter.app.util.GradeTable.DEFAULT_ROWS.forEach { (label, value) ->
+            addGradeRow(binding.gradeRowsContainer, density, label, value)
+        }
+
         // 기본 분석 1개 추가
         addAnalysisRow(binding.analysisListContainer, density)
 
@@ -651,6 +667,51 @@ class FieldEditDialog : DialogFragment() {
         row.addView(btnRemove)
         container.addView(row)
         binRangeRows.add(BinRangeRow(row, editRange))
+    }
+
+    /** 등급 행 추가 (B-69) — 구간 행(addBinRangeRow)과 같은 방식의 동적 행. */
+    private fun addGradeRow(container: LinearLayout, density: Float, label: String = "", value: String = "") {
+        val ctx = requireContext()
+        val row = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = (4 * density).toInt() }
+        }
+
+        val editLabel = EditText(ctx).apply {
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 2f)
+            hint = getString(R.string.hint_grade_label)
+            textSize = 13f
+            if (label.isNotEmpty()) setText(label)
+        }
+
+        val editValue = EditText(ctx).apply {
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            hint = getString(R.string.hint_grade_value)
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER or
+                android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL or
+                android.text.InputType.TYPE_NUMBER_FLAG_SIGNED
+            textSize = 13f
+            if (value.isNotEmpty()) setText(value)
+        }
+
+        val btnRemove = ImageButton(ctx).apply {
+            layoutParams = LinearLayout.LayoutParams((36 * density).toInt(), (36 * density).toInt())
+            setImageResource(R.drawable.ic_delete)
+            setBackgroundResource(android.R.color.transparent)
+            setOnClickListener {
+                container.removeView(row)
+                gradeRows.removeAll { it.container == row }
+            }
+        }
+
+        row.addView(editLabel)
+        row.addView(editValue)
+        row.addView(btnRemove)
+        container.addView(row)
+        gradeRows.add(GradeRow(row, editLabel, editValue))
     }
 
     private fun addStructuredPartRow(container: LinearLayout, density: Float,
@@ -1060,13 +1121,18 @@ class FieldEditDialog : DialogFragment() {
         val options = (config["options"] as? List<*>)?.joinToString(",")
         if (options != null) binding.editSelectOptions.setText(options)
 
-        // GRADE mappings
-        val grades = config["grades"] as? Map<*, *>
-        if (grades != null) {
-            binding.editGradeC.setText((grades["C"] as? Number)?.toString() ?: "0.5")
-            binding.editGradeB.setText((grades["B"] as? Number)?.toString() ?: "1")
-            binding.editGradeA.setText((grades["A"] as? Number)?.toString() ?: "2")
-            binding.editGradeS.setText((grades["S"] as? Number)?.toString() ?: "3")
+        // GRADE 표 (B-69) — config의 등급 전부를 행으로. 종전 C·B·A·S 4칸은 그 밖의 등급
+        // (엑셀 필드정의로 넣은 SS·D 등)을 보여 주지도 고치게 하지도 못했다.
+        val gradeRowsFromConfig =
+            com.novelcharacter.app.util.GradeTable.fromConfigRows(field.config)
+        if (gradeRowsFromConfig.isNotEmpty()) {
+            val gradeContainer = binding.gradeRowsContainer
+            gradeContainer.removeAllViews()
+            gradeRows.clear()
+            val density = resources.displayMetrics.density
+            gradeRowsFromConfig.forEach { (label, value) ->
+                addGradeRow(gradeContainer, density, label, value)
+            }
         }
         val allowNeg = config["allowNegative"] as? Boolean ?: false
         binding.switchAllowNegative.isChecked = allowNeg
@@ -1232,6 +1298,21 @@ class FieldEditDialog : DialogFragment() {
 
         val types = FieldType.entries.toTypedArray()
         val selectedType = types[binding.spinnerFieldType.selectedItemPosition]
+
+        // 등급 표 검증 (B-69) — 실패 시 다이얼로그를 닫지 않는다(R-27). 조용히 버리거나
+        // 기본값으로 대체하면 사용자의 입력이 무통보 유실된다(변수 제어).
+        if (selectedType == FieldType.GRADE) {
+            val outcome = com.novelcharacter.app.util.GradeTable.build(
+                gradeRows.map { it.editLabel.text.toString() to it.editValue.text.toString() }
+            )
+            val problem = outcome.problems.firstOrNull()
+            if (problem != null) {
+                android.widget.Toast.makeText(
+                    requireContext(), gradeProblemMessage(problem), android.widget.Toast.LENGTH_LONG
+                ).show()
+                return false
+            }
+        }
 
         val config = buildConfig(binding, selectedType)
 
@@ -1455,6 +1536,21 @@ class FieldEditDialog : DialogFragment() {
         (dialog as? AlertDialog)?.getButton(AlertDialog.BUTTON_POSITIVE)?.isEnabled = enabled
     }
 
+    /** 등급 표 문제 → 화면 문구 (B-69). 순수 계층(GradeTable)은 타입만 돌려준다. */
+    private fun gradeProblemMessage(problem: com.novelcharacter.app.util.GradeTable.Problem): String =
+        when (problem) {
+            is com.novelcharacter.app.util.GradeTable.Problem.BlankLabel ->
+                getString(R.string.grade_error_blank_label, problem.valueText)
+            is com.novelcharacter.app.util.GradeTable.Problem.BadNumber ->
+                getString(R.string.grade_error_bad_number, problem.label, problem.valueText)
+            is com.novelcharacter.app.util.GradeTable.Problem.DuplicateLabel ->
+                getString(R.string.grade_error_duplicate, problem.label)
+            is com.novelcharacter.app.util.GradeTable.Problem.SignPrefixedLabel ->
+                getString(R.string.grade_error_sign_prefix, problem.label)
+            com.novelcharacter.app.util.GradeTable.Problem.Empty ->
+                getString(R.string.grade_error_empty)
+        }
+
     private fun buildConfig(binding: DialogFieldEditBinding, type: FieldType): String {
         val config = mutableMapOf<String, Any>()
 
@@ -1481,22 +1577,13 @@ class FieldEditDialog : DialogFragment() {
                 }
             }
             FieldType.GRADE -> {
-                // 기존 config의 커스텀 등급(C/B/A/S 외 키 — 엑셀 필드정의로 만든 D/SS 등)을 보존한다
-                val grades = mutableMapOf<String, Double>()
-                try {
-                    val cfg = existingField?.config
-                    if (!cfg.isNullOrBlank()) {
-                        val gradesJson = org.json.JSONObject(cfg).optJSONObject("grades")
-                        gradesJson?.keys()?.forEach { k ->
-                            grades[k] = gradesJson.optDouble(k, 0.0)
-                        }
-                    }
-                } catch (_: Exception) { /* 손상된 config는 기본 4등급으로 재구성 */ }
-                grades["C"] = binding.editGradeC.text.toString().toDoubleOrNull() ?: 0.5
-                grades["B"] = binding.editGradeB.text.toString().toDoubleOrNull() ?: 1.0
-                grades["A"] = binding.editGradeA.text.toString().toDoubleOrNull() ?: 2.0
-                grades["S"] = binding.editGradeS.text.toString().toDoubleOrNull() ?: 3.0
-                config["grades"] = grades
+                // B-69: 화면의 행이 곧 등급 표 전부다. 종전의 "C/B/A/S 밖 키 보존"은 화면이
+                // 그 키들을 보여 주지 못하던 시절의 보호막이었다 — 이제 전부 행으로 보이므로
+                // 행을 지운 것은 의도된 삭제다. 검증은 saveField가 이미 마쳤다(문제 시 여기 안 온다).
+                val outcome = com.novelcharacter.app.util.GradeTable.build(
+                    gradeRows.map { it.editLabel.text.toString() to it.editValue.text.toString() }
+                )
+                config["grades"] = outcome.grades
                 config["allowNegative"] = binding.switchAllowNegative.isChecked
             }
             FieldType.CALCULATED -> {
