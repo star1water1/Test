@@ -93,6 +93,21 @@ private fun quietHeapBytes(): Long {
 
 private fun mb(bytes: Long): String = "%.1fMB".format(bytes / 1024.0 / 1024.0)
 
+// ── S6-a 계산별 할당 ───────────────────────────────────────────────────────
+// 힙 폴링(peakHeapBytes)은 GC 사이에 찍히면 낮게 나오는 **하한**이라 계산끼리 견주기엔 거칠다.
+// 스레드 누적 할당량은 GC와 무관하게 **정확히** 누적되므로, "누가 얼마나 쓰레기를 만드는가"는
+// 이쪽으로 가른다. 힙 폴링이 답하는 질문(동시에 얼마나 살아 있는가)과는 다른 질문이다.
+private val threadMx =
+    java.lang.management.ManagementFactory.getThreadMXBean() as com.sun.management.ThreadMXBean
+
+@Suppress("DEPRECATION")
+private fun allocatedBytes(body: () -> Unit): Long {
+    val id = Thread.currentThread().id
+    val before = threadMx.getThreadAllocatedBytes(id)
+    body()
+    return threadMx.getThreadAllocatedBytes(id) - before
+}
+
 /**
  * [body] 실행 중 힙 사용량의 최대치를 폴링으로 잡는다. GC가 도는 사이에 찍히면 낮게 나오므로
  * **하한**으로 읽을 것 — "적어도 이만큼은 썼다"는 뜻이지 정확한 피크가 아니다.
@@ -552,6 +567,89 @@ fun main(args: Array<String>) {
             println("채움 ×30 스냅샷 힙 ${mb((after - before).coerceAtLeast(0))} (현재 ×30은 ${mb(r30)})")
             s = null
         }
+
+        // ── 5. 계산별 시간·할당 (S6 착수 조건) ────────────────────────────
+        // 6장이 S6에 건 조건: "계산별 할당을 가르기 전에 최적화하지 않는다."
+        // 위 [1]~[4]는 5계산만 봤으나 **화면은 10계산을 동시에 돌린다**(StatsViewModel의 async 블록).
+        // 빠진 다섯을 포함해 전부 잰다 — 안 재고 최적화하면 엉뚱한 곳을 깎는다.
+        println()
+        println("[5] 계산별 시간·할당 — 화면이 실제로 돌리는 10계산 (채움 ×30)")
+        println("  할당은 스레드 누적치라 GC와 무관하게 정확하다. 시간은 중앙값.")
+        data class Full(val label: String, val body: (StatsSnapshot) -> Unit)
+        val all = listOf(
+            Full("computeSummary") { p.computeSummary(it) },
+            Full("computeFieldInsights") { p.computeFieldInsights(it) },
+            Full("computeCharacterStats") { p.computeCharacterStats(it) },
+            Full("computeEventStats") { p.computeEventStats(it) },
+            Full("computeRelationshipStats") { p.computeRelationshipStats(it) },
+            Full("computeNameBankStats") { p.computeNameBankStats(it) },
+            Full("computeDataHealth") { p.computeDataHealth(it) },
+            Full("computeFieldAnalysis") { p.computeFieldAnalysis(it) },
+            Full("detectPatterns") { p.detectPatterns(it) },
+            Full("computeFactionStats") { p.computeFactionStats(it) }
+        )
+        println("%-28s %9s %11s %9s".format("계산", "시간", "할당", "시간몫"))
+        val rows = all.map { c ->
+            repeat(2) { c.body(filled30) }                       // JIT 예열 후 측정
+            val t = timeMs(0, 7) { c.body(filled30) }
+            val a = allocatedBytes { c.body(filled30) }
+            Triple(c.label, t, a)
+        }
+        val totalT = rows.sumOf { it.second }
+        val totalA = rows.sumOf { it.third }
+        for ((label, t, a) in rows.sortedByDescending { it.third }) {
+            println("%-28s %9s %11s %8.0f%%".format(label, "${t}ms", mb(a), t * 100.0 / totalT))
+        }
+        println("%-28s %9s %11s".format("합계(CPU 총량)", "${totalT}ms", mb(totalA)))
+        println("  ※ 화면은 이 열을 **동시에** 돌리므로 사용자 대기는 합계가 아니다 —")
+        println("    코어 수만큼 나뉘되 가장 느린 하나보다 짧아질 수는 없다.")
+        println("    가장 느린 하나 = ${rows.maxByOrNull { it.second }?.let { "${it.first} ${it.second}ms" }}")
+
+        // ── 6. 의심 지점 확인 — 토큰화가 값마다 config JSON을 다시 파싱한다(B-42) ──
+        // 상위 셋이 전부 필드값을 순회하며 토큰화한다. B-42는 `splitForStats`가 값 하나마다
+        // StructuredInputConfig.fromConfig(+ isMultiToken 경유 DisplayFormat.fromConfig)를 불러
+        // JSONObject를 2~3개 만든다고 적어 두었다 — **측정으로 확인한다.** 표적을 정하기 전에
+        // 표적이 맞는지 재는 것이 6장 착수 규칙이다.
+        println()
+        println("[6] 토큰화 1회 통과 비용 (채움 ×30 값 ${filled30.fieldValues.size}개)")
+        val defById = defs.associateBy { it.id }
+        val onePass = {
+            filled30.fieldValues.forEach { v ->
+                defById[v.fieldDefinitionId]?.let { fd ->
+                    com.novelcharacter.app.util.FieldValueTokenizer.splitForStats(fd, v.value)
+                }
+            }
+        }
+        repeat(2) { onePass() }
+        val passT = timeMs(0, 5) { onePass() }
+        val passA = allocatedBytes { onePass() }
+        println("  1회 통과: ${passT}ms · ${mb(passA)}")
+        println("  전체 대비: 시간 %.0f%% · 할당 %.0f%% (통계 한 번이 값 테이블을 여러 번 지난다)"
+            .format(passT * 100.0 / totalT, passA * 100.0 / totalA))
+        // 같은 통과에서 파싱만 뺀 하한 — fd별로 규칙을 한 번만 풀면 어디까지 내려가는가.
+        val ruleCache = HashMap<Long, Pair<Boolean, Boolean>>()   // fdId -> (구조화, 다중토큰)
+        val onePassCached = {
+            filled30.fieldValues.forEach { v ->
+                defById[v.fieldDefinitionId]?.let { fd ->
+                    val (structured, multi) = ruleCache.getOrPut(fd.id) {
+                        com.novelcharacter.app.data.model.StructuredInputConfig.fromConfig(fd.config).enabled to
+                            com.novelcharacter.app.util.FieldValueTokenizer.isMultiToken(fd)
+                    }
+                    when {
+                        fd.type == "BODY_SIZE" || structured -> Unit   // 구조화 경로는 이 비교의 대상이 아니다
+                        multi -> v.value.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                        else -> listOf(v.value.trim())
+                    }
+                }
+            }
+        }
+        repeat(2) { onePassCached() }
+        val cachedT = timeMs(0, 5) { onePassCached() }
+        val cachedA = allocatedBytes { onePassCached() }
+        println("  규칙을 필드당 1회만 풀면: ${cachedT}ms · ${mb(cachedA)}  " +
+            "(시간 -%.0f%% · 할당 -%.0f%%)".format(
+                (passT - cachedT) * 100.0 / passT.coerceAtLeast(1),
+                (passA - cachedA) * 100.0 / passA.coerceAtLeast(1)))
         println("### SCALE PROBE 끝")
     }
 }

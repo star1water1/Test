@@ -58,7 +58,13 @@ data class StructuredInputConfig(
     companion object {
         private const val KEY = "structuredInput"
 
-        fun fromConfig(configJson: String): StructuredInputConfig {
+        // 통계가 값 하나마다 부르는 자리라 파싱 결과를 기억한다 — 근거와 안전 조건은
+        // ConfigParseCache의 KDoc. 이 클래스와 Part가 전부 불변이라 인스턴스를 공유해도 된다.
+        private val cache = ConfigParseCache { configJson -> parseUncached(configJson) }
+
+        fun fromConfig(configJson: String): StructuredInputConfig = cache.get(configJson)
+
+        private fun parseUncached(configJson: String): StructuredInputConfig {
             return try {
                 val root = JSONObject(configJson)
                 val obj = root.optJSONObject(KEY) ?: return StructuredInputConfig()
@@ -79,7 +85,10 @@ data class StructuredInputConfig(
                     }
                 }
 
-                StructuredInputConfig(enabled, separator, parts)
+                // toList()는 방어적 복제다. 캐시가 생기면서 이 인스턴스를 **여러 호출부가
+                // 공유**하게 됐는데, 위 mutableListOf를 그대로 넘기면 List로 선언돼 있어도
+                // 캐스팅해 고칠 수 있는 객체가 공유된다. 파싱은 config당 한 번뿐이라 값싸다.
+                StructuredInputConfig(enabled, separator, parts.toList())
             } catch (_: Exception) {
                 StructuredInputConfig()
             }

@@ -56,6 +56,7 @@ $MAIN/data/model/FieldValueLibraryConfig.kt
 $MAIN/data/model/FieldAiPolicy.kt
 $MAIN/data/model/FieldDescription.kt
 $MAIN/excel/FieldConfigColumns.kt
+$MAIN/data/model/ConfigParseCache.kt
 $MAIN/data/model/DisplayFormat.kt
 $MAIN/data/model/SearchPreset.kt
 $MAIN/data/model/Faction.kt
