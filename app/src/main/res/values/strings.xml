@@ -410,6 +410,7 @@
     <string name="trash_skip_field_definitions">- 필드 정의 %1$d개 (같은 키의 정의가 이미 있어 건너뜀)</string>
     <string name="trash_skip_field_value_entries">- 필드 데이터(값 라이브러리) 항목 %1$d개</string>
     <string name="trash_skip_orphan_values">- 보관 중이던 필드값 %1$d개 (그 값을 가진 캐릭터·사건을 찾을 수 없음)</string>
+    <string name="trash_skip_novel_fields">- 작품 필드값 %1$d개 (필드 정의를 찾을 수 없음)</string>
     <string name="trash_skip_faction_relationships">- 세력 간 관계 %1$d개 (상대 세력을 찾을 수 없음)</string>
     <string name="trash_skip_detached_relationships">- 관계 %1$d개의 \'이 세력의 자동 관계\' 지정 (관계를 찾을 수 없음)</string>
     <string name="trash_skip_character_links">- 참가 캐릭터 연결 %1$d개 (캐릭터를 찾을 수 없음)</string>

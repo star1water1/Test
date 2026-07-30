@@ -90,6 +90,7 @@ $MAIN/data/model/CharacterSnapshot.kt
 $MAIN/data/model/SnapshotRefs.kt
 $MAIN/data/model/TrashSnapshot.kt
 $MAIN/data/model/EventFieldValue.kt
+$MAIN/data/model/NovelFieldValue.kt
 $MAIN/data/dao/EventFieldValueDao.kt
 $MAIN/data/repository/EventFieldValueMerge.kt
 $MAIN/data/model/FactionRelationship.kt
