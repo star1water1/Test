@@ -1,7 +1,7 @@
 # 아키텍처 개관 — 이 저장소의 진입점 (2026-07)
 
-> **이 문서의 자리:** 코드베이스가 328파일·87,108줄이 되도록 **진입점 문서가 없었다.**
-> 새 작업자(사람이든 세션이든)가 처음 잡는 문서는 1,650줄짜리 인수인계 로그
+> **이 문서의 자리:** 코드베이스가 수백 파일·수만 줄이 되도록 **진입점 문서가 없었다.**
+> 새 작업자(사람이든 세션이든)가 처음 잡는 문서는 수천 줄짜리 인수인계 로그
 > (`remaining_work_2026-07.md`)였고, 거기에는 "지금 무엇을 해야 하는가"는 있어도
 > "이 앱이 어떻게 생겼는가"는 없다. 이 문서가 그 자리를 채운다.
 >
@@ -13,23 +13,29 @@
 
 ---
 
-## 1. 현행 규모 (2026-07-29 실측)
+## 1. 현행 규모 — 세는 법
 
-| 항목 | 값 | 측정 방법 |
-|------|-----|-----------|
-| 메인 소스 | **333 파일 / 88,775줄** (Kotlin) | `find app/src/main/java -name '*.kt'` |
-| 테스트 소스 | **72 파일 / 순수 JVM 942건** | `tools/run_jvm_tests.sh` |
-| Room DB | **v44** · 엔티티 **26** · 마이그레이션 **43**(v1→v44) | `data/database/AppDatabase.kt` |
-| 사용자 문구 | `res/values/strings.xml` 단일 파일 | `tools/check_text_style.sh` |
+**값을 적지 않는다.** 이 표는 두 판 연속 낡았고(v1.2가 고친 수를 v1.4 이후 다시 벌어졌다),
+그때마다 정정 문장이 하나씩 늘었다. 규모는 **근거로만 인용되는 수**이므로
+값이 아니라 **세는 명령**을 싣는다(v9.19 규칙 — `remaining_work` 5-a).
 
-> **테스트 파일 72 ≠ 러너가 도는 71.** `AiPresetsConsistencyTest`(3건)는 `R`을 참조해 순수
-> 하네스에서 돌 수 없어 목록에서 빠져 있다(CI 전용). 그래서 소스의 `@Test`는 945인데 실행은
-> 942다 — 이 차이를 결함으로 오인하지 말 것. 러너는 `$TESTS` 목록에 적힌 파일만 컴파일하므로
+| 항목 | 세는 법 |
+|------|---------|
+| 메인 소스 | `find app/src/main/java -name '*.kt' \| wc -l` · 줄은 `-exec cat {} + \| wc -l` |
+| 테스트 소스 | 파일은 `find app/src/test -name '*.kt' \| wc -l` · 실행 건수는 `tools/run_jvm_tests.sh` 출력 |
+| Room DB | `data/database/AppDatabase.kt` — `@Database(version=…)` · `@Entity` 개수 · `MIGRATION_*` 개수 |
+| 사용자 문구 | `res/values/strings.xml` 단일 파일 · 검사는 `tools/check_text_style.sh` |
+
+> **재현 기준선은 여기가 아니라 `remaining_work` 2장·5장이 든다.** 그쪽 수에는
+> "손대기 전에 이 숫자부터 재현할 것"이라는 용도가 붙어 있어 숫자가 일을 한다.
+> 같은 수를 두 문서가 들면 반드시 한쪽이 뒤처진다 — 이 문서에서 실제로 두 번 그랬다
+> (1장과 4장이 갈렸고, 그 이력이 아래 문서 이력 v1.2에 남아 있다).
+
+> **테스트 파일 수 ≠ 러너가 도는 파일 수 — 차이는 1파일·3건이다.**
+> `AiPresetsConsistencyTest`(3건)는 `R`을 참조해 순수 하네스에서 돌 수 없어 목록에서
+> 빠져 있다(CI 전용). 그래서 소스의 `@Test` 합과 실행 건수가 **3만큼** 다르다 —
+> 이 차이를 결함으로 오인하지 말 것. 러너는 `$TESTS` 목록에 적힌 파일만 컴파일하므로
 > **목록에 넣지 않은 새 테스트는 조용히 돌지 않는다**(5장 착수 시 확인 항목).
-
-> **숫자를 문서에서 믿지 말 것.** 이 표의 값도 찍힌 순간의 스냅샷이다. 실제 작업 전에
-> 위 명령으로 재현하라 — 실제로 인수인계 문서의 테스트 기준선이 760으로 적혀 있는 동안
-> 실행값은 847이었다.
 
 ---
 
@@ -42,26 +48,38 @@ app/src/main/java/com/novelcharacter/app/
 │   ├── dao/    (24)   Room DAO
 │   ├── repository/ (21)  트랜잭션 경계 · 휴지통 · 스냅샷 복원
 │   └── database/      AppDatabase(v44) + 마이그레이션 43개(v1→v44)
-├── util/       (61)  ★ 순수 계층이 사는 곳 — 39개는 Android 비의존(JVM 테스트 대상, 3장),
-│                        22개는 Android 의존(화면 헬퍼·Prefs·이미지 로더)
-├── excel/      (24)  엑셀 왕복 (내보내기·가져오기·시트 규약)
-├── share/      (7)   월드패키지(ZIP) 내보내기·들이기
-├── ai/         (15)  프롬프트 조립 · 응답 해석 · 정책
-├── backup/     (4)   자동 백업 워커
-├── widget/     (3)   홈 위젯
-└── ui/         (124)  화면 — character(22) · stats(15) · adapter(13) · image(10) …
+├── util/            ★ 순수 계층이 사는 곳 — 다만 전부가 순수하지는 않다(아래 ⚠️)
+├── excel/           엑셀 왕복 (내보내기·가져오기·시트 규약)
+├── share/           월드패키지(ZIP) 내보내기·들이기
+├── ai/              프롬프트 조립 · 응답 해석 · 정책
+├── backup/          자동 백업 워커
+├── widget/          홈 위젯
+└── ui/              화면 — character · stats · adapter · image …
 ```
+
+> **파일 수를 적지 않는 것도 일부러다.** 이 지도의 값어치는 "무엇이 어디 사는가"이지
+> "얼마나 큰가"가 아니고, 괄호 안 수는 한 세션 만에 넷이 어긋났다(util·ai·ui·image).
+> 규모가 필요하면 세면 된다 — `find app/src/main/java/com/novelcharacter/app/<패키지> -name '*.kt' | wc -l`.
+> (`ui/character`처럼 하위 패키지를 가진 곳은 **무엇을 세는지 기준부터 정할 것** —
+> 종전 값 22는 `ui/character/batch/`를 뺀 최상위만 센 것이었는데 그 사실이 적혀 있지 않아
+> 재현이 불가능했다.)
 
 **의존 방향은 한 방향이다:** `ui → repository → dao → Room`, 그리고 모든 계층이 `util`을
 바라본다. `util`은 아무도 바라보지 않는다 — 그래서 이 저장소에서 실행 검증이 가능한
 거의 유일한 계층이다(4장).
 
 > ⚠️ **`util/` = 순수 계층이 아니다. 디렉터리가 아니라 파일 단위로 갈린다.**
-> 61개 중 **22개가 Android·Material에 의존한다**(`AlertDialogExt`·`ProgressDialogs`·
+> 일부는 Android·Material에 의존한다(`AlertDialogExt`·`ProgressDialogs`·
 > `CharacterImageLoader`·`*Prefs`·`ThemeHelper` …). 이들은 JVM 하네스가 컴파일하지 않으므로
 > **`util/`에 넣었다는 사실만으로 "테스트된다"고 가정하지 말 것.**
-> 판정법은 하나다 — `tools/run_jvm_tests.sh`의 `$SOURCES` 목록에 그 파일이 있는가.
-> (실측: `grep -rl '^import android\.\|^import androidx\.' …/util | wc -l` → 22)
+> 세는 법: `grep -rl '^import android\.\|^import androidx\.' …/util | wc -l`
+>
+> **그런데 'Android 비의존'과 '테스트된다'도 같은 말이 아니다 — 종전 서술은 이 둘을 붙여
+> 놓아 틀렸다.** 순수한 파일이라도 러너의 `$SOURCES` 목록에 없으면 **컴파일조차 되지 않는다.**
+> 실제로 순수한데 목록에 없는 파일이 여럿 있고, 그중 `FieldRandomGenerator.kt`는
+> **5-1장이 "새 필드 타입 착수 시 반드시 훑을 것"으로 지목한 확장점인데 테스트가 0건**이다.
+> **판정법은 하나뿐이다 — `tools/run_jvm_tests.sh`의 `$SOURCES` 목록에 그 파일이 있는가**(4장).
+> 순수함은 테스트의 필요조건이지 충분조건이 아니다.
 
 ### 데이터 모델 — 26 엔티티
 
@@ -117,8 +135,8 @@ app/src/main/java/com/novelcharacter/app/
 
 | 도구 | 무엇을 보는가 | 기준선 |
 |------|---------------|--------|
-| `tools/run_jvm_tests.sh` | 순수 계층을 **실제로 실행**한다(표준 kotlinc + JUnitCore) | **942건** |
-| `tools/check_text_style.sh` | 화면 문구의 말투·용어(가이드 기계 검출분) | 기준선 33건 동결, 새 위반은 즉시 실패 |
+| `tools/run_jvm_tests.sh` | 순수 계층을 **실제로 실행**한다(표준 kotlinc + JUnitCore) | 기준선은 `remaining_work` 5장이 든다 |
+| `tools/check_text_style.sh` | 화면 문구의 말투·용어(가이드 기계 검출분) | 기준선은 `tools/text_style_baseline.txt`가 든다(그 파일이 단일 소스) — 새 위반은 즉시 실패 |
 | `tools/check_resources.sh` | 리소스 중복·미정의 참조·XML 구문 | 통과 |
 | `tools/check_dialog_validation.sh` | 자동 닫힘 버튼 안의 조기 return(R-27 위반) | 0건 동결 — 새 위반 즉시 실패 |
 | `tools/differential_compile.sh` | 손댄 파일에 **새로 생긴** 컴파일 오류만 | 기준선 대조 |
@@ -169,7 +187,8 @@ app/src/main/java/com/novelcharacter/app/
 (`FieldConfigColumns`·`CharacterFieldValueOverflow`) · 랜덤 생성(`FieldRandomGenerator`) ·
 AI 정책(`FieldAiPolicy`).
 
-> **구조 부채로 등재할 것:** 문자열 분기 28곳을 `FieldType`으로 좁히면 새 타입 추가가
+> **구조 부채 B-55로 이미 등재돼 있다**(`remaining_work` 4장 — 그 항목이 이 5-1장을
+> 되가리키므로 상호 참조가 양방향이다). 문자열 분기를 `FieldType`으로 좁히면 새 타입 추가가
 > 컴파일러의 도움을 받는다(`when`의 exhaustive 검사). 지금은 전수 grep이 유일한 방어다.
 
 ### 5-2. 새 대상(entityType) — 지금은 `character` · `event`
