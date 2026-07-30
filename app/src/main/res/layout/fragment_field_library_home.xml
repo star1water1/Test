@@ -15,6 +15,21 @@
         app:layout_constraintTop_toTopOf="parent"
         app:title="@string/field_library_title" />
 
+    <!-- R-25 목적문 — 이 화면은 "있는 줄 몰랐다"는 회신이 나온 자리라(U-5),
+         도착한 뒤에도 무엇을 하는 곳인지 한 줄로 말한다. -->
+    <TextView
+        android:id="@+id/purposeText"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:paddingHorizontal="12dp"
+        android:paddingTop="4dp"
+        android:text="@string/purpose_field_library_home"
+        android:textAppearance="@style/TextAppearance.App.Caption"
+        android:textColor="@color/text_secondary"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/toolbar" />
+
     <LinearLayout
         android:id="@+id/filterLayout"
         android:layout_width="0dp"
@@ -25,7 +40,7 @@
         android:paddingVertical="4dp"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/toolbar">
+        app:layout_constraintTop_toBottomOf="@id/purposeText">
 
         <Spinner
             android:id="@+id/universeSpinner"

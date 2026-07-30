@@ -556,6 +556,28 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "• 같은 항목이 캐릭터 시트에도 있으면 캐릭터 시트가 우선하며 이 시트의 행은 무시됩니다."),
             GuideLine("", styles.guideBody, "• 캐릭터를 다시 작품에 배정하면 값이 캐릭터 시트로 옮겨가 이 시트에서 사라집니다(정상)."),
             GuideLine("", styles.guideBody, ""),
+            GuideLine("'전체 캐릭터' 시트 (읽기 전용)", styles.guideSection, ""),
+            GuideLine("", styles.guideBody, "모든 세계관의 캐릭터를 한 장에 모은 시트입니다. 전체 인원에 정렬·필터·피벗을 걸 때 쓰세요."),
+            GuideLine("", styles.guideBody, "• 가져오기는 이 시트를 읽지 않습니다. 값을 고치려면 세계관 이름의 캐릭터 시트에서 고치세요."),
+            GuideLine("", styles.guideBody, "• 그래서 이 시트는 지우거나 이름을 바꿔도 데이터에 영향이 없습니다."),
+            GuideLine("", styles.guideBody, "• 필드 열은 여러 세계관이 함께 쓰는 필드만 실립니다(열 이름에 필드키를 함께 적습니다)."),
+            GuideLine("", styles.guideBody, "  한 세계관에만 있는 필드는 그 세계관의 캐릭터 시트에 있습니다."),
+            GuideLine("", styles.guideBody, "• 세계관 칸이 빈 행은 미분류 캐릭터입니다."),
+            GuideLine("", styles.guideBody, ""),
+            GuideLine("'필드 데이터' 시트 (값 정리)", styles.guideSection, ""),
+            GuideLine("", styles.guideBody, "필드마다 실제로 쓰인 값이 모이는 시트입니다. 여기서 정리한 표기가 앱의 자동완성·통계·검색에 함께 반영됩니다."),
+            GuideLine("", styles.guideBody, "• '표시라벨'·'별칭(콤마구분)'·'카테고리'·'설명'·'숨김' 열을 채워 다시 가져오면 그대로 반영됩니다."),
+            GuideLine("", styles.guideBody, "• 값이 많으면 앱에서 하나씩 여는 것보다 이 시트에서 한 번에 채우는 편이 빠릅니다."),
+            GuideLine("", styles.guideBody, "• 별칭은 '데이터에 있는 다른 표기 → 이 값'입니다."),
+            GuideLine("", styles.guideBody, "  예) 값 '서울'의 별칭에 '서울시, 서울특별시'를 적으면 통계와 검색이 셋을 하나로 묶습니다."),
+            GuideLine("", styles.guideBody, "• '표시라벨'은 통계·카드에 보이는 이름이고, '값'은 캐릭터에 저장된 원래 표기입니다."),
+            GuideLine("", styles.guideBody, "• '숨김' Y는 입력 제안에서만 빼는 표시입니다. 통계에는 그대로 들어갑니다."),
+            GuideLine("", styles.guideBody, "• 기존 값은 코드로 찾고, 코드가 없으면 세계관+필드키+대상+값으로 찾습니다."),
+            GuideLine("", styles.guideBody, "• '필드명'·'사용횟수'·'코드'는 앱이 채우는 열입니다. 고쳐도 반영되지 않습니다."),
+            GuideLine("", styles.guideBody, "• '출처'는 고칠 수 있습니다. MANUAL로 두면 '미사용 자동수집 정리'에서 빠집니다."),
+            GuideLine("", styles.guideBody, "• '값' 칸을 고치면 이름 변경으로 보고 기존 값을 별칭으로 남깁니다."),
+            GuideLine("", styles.guideBody, "  캐릭터에 저장된 값까지 함께 바꾸려면 앱의 값 이름 변경을 쓰세요."),
+            GuideLine("", styles.guideBody, ""),
             GuideLine("테두리 색상", styles.guideSection, ""),
             GuideLine("", styles.guideBody, "• 세계관/작품 시트에서 테두리색(HEX), 테두리두께를 설정할 수 있습니다."),
             GuideLine("", styles.guideBody, "• 작품의 테두리를 비워두면 세계관 색상을 상속합니다."),
@@ -786,6 +808,24 @@ class ExcelExporter(context: Context) {
         val overflowSpecName = characterFieldValueSpec().sheetName
         val overflowSheetName = assignSheetName(overflowSpecName, usedSheetNames, ownerOf = overflowSpecName)
 
+        // ── '전체 캐릭터' 시트(U-12a) — 세계관 시트를 돌면서 같은 행을 한 벌 더 쌓는다 ──
+        // 열은 캐릭터 데이터를 보기 전에 정해진다(필드 정의만으로 판정) — 그래서 행을 따로
+        // 모아 두었다가 나중에 쓰지 않고, 시트를 먼저 열어 **한 번만** 순회한다.
+        val novelUniverseIds = novels.associate { it.id to it.universeId }
+        val universeIdsWithChars = allCharacters
+            .mapNotNullTo(HashSet<Long>()) { ch -> ch.novelId?.let { novelUniverseIds[it] } }
+        val sharedFields = AllCharactersSheet.sharedFields(
+            db.fieldDefinitionDao().getAllFieldsList(), universeIdsWithChars
+        )
+        val allSpec = allCharactersSpec(sharedFields.map { it.header })
+        val allSheet = if (allCharacters.isNotEmpty()) {
+            val name = assignSheetName(
+                ALL_CHARACTERS_SHEET_NAME, usedSheetNames, ownerOf = ALL_CHARACTERS_SHEET_NAME
+            )
+            workbook.createSheet(name).also { writeHeaderRow(it, allSpec) }
+        } else null
+        var allRowCount = 0
+
         for (universe in universes) {
             val fields = db.fieldDefinitionDao().getFieldsByUniverseList(universe.id)
             val universeNovels = novels.filter { it.universeId == universe.id }
@@ -794,11 +834,15 @@ class ExcelExporter(context: Context) {
 
             if (universeChars.isEmpty()) continue
 
-            val fieldValues = universeChars.associate { char ->
-                char.id to (allFieldValuesMap[char.id] ?: emptyList())
-            }
             val tags = universeChars.associate { char ->
                 char.id to (allTagsMap[char.id] ?: emptyList())
+            }
+            // 표시값은 캐릭터당 한 번만 낸다 — 두 시트가 **같은 값을 보여야 하고**,
+            // CALCULATED 평가를 시트마다 되풀이하면 캐릭터 수 × 수식 수만큼 두 배가 된다.
+            val resolved = universeChars.associate { char ->
+                char.id to resolveFieldDisplayValues(
+                    fields, (allFieldValuesMap[char.id] ?: emptyList()).associateBy { it.fieldDefinitionId }
+                )
             }
 
             val covered = fields.mapTo(HashSet()) { it.id }
@@ -806,8 +850,15 @@ class ExcelExporter(context: Context) {
 
             exportCharacterSheet(
                 workbook, usedSheetNames, universe.name,
-                universeChars, fields, novelMap, fieldValues, tags
+                universeChars, fields, novelMap, resolved, tags
             )
+
+            if (allSheet != null) {
+                allRowCount += appendAllCharacterRows(
+                    allSheet, allRowCount, sharedFields, universe.name,
+                    universeChars, fields, novelMap, resolved, tags
+                )
+            }
         }
 
         // 미분류 캐릭터 — 세계관이 없어 필드 열을 만들 수 없다.
@@ -826,11 +877,107 @@ class ExcelExporter(context: Context) {
                 unassignedChars, emptyList(), novelMap, emptyMap(), tags,
                 sheetOwnerOf = UNCLASSIFIED_SHEET_NAME
             )
+            // 미분류 캐릭터도 '전체'에 들어간다 — 빠지면 이 시트의 합계가 앱의 인원수와 어긋나고,
+            // 그것을 알아채려면 일일이 세어 봐야 한다(원칙 04).
+            if (allSheet != null) {
+                allRowCount += appendAllCharacterRows(
+                    allSheet, allRowCount, sharedFields, "",
+                    unassignedChars, emptyList(), novelMap, emptyMap(), tags
+                )
+            }
         }
+
+        if (allSheet != null) applySpecFormatting(allSheet, allSpec, allRowCount)
 
         exportCharacterFieldValueOverflow(
             workbook, overflowSheetName, allCharacters, allFieldValuesMap, coveredFieldIds
         )
+    }
+
+    /**
+     * 한 캐릭터의 필드 표시값(필드 id → 문자열) — CALCULATED는 실시간 평가한다.
+     *
+     * 캐릭터 시트와 '전체 캐릭터' 시트가 **같은 값을 보여야 하므로** 이 함수가 단일 소스다.
+     * 두 벌로 두면 한쪽만 고쳐진 채로 오래 간다(엑셀에서 대조하기 전에는 드러나지 않는다).
+     */
+    private fun resolveFieldDisplayValues(
+        fields: List<FieldDefinition>,
+        fieldValueMap: Map<Long, CharacterFieldValue>
+    ): Map<Long, String> {
+        if (fields.isEmpty()) return emptyMap()
+        val calculatedFields = fields.filter { it.type == "CALCULATED" }
+        val calculatedResults: Map<Long, String> = if (calculatedFields.isNotEmpty()) {
+            val fieldKeyValues = mutableMapOf<String, String>()
+            for (f in fields) {
+                val v = fieldValueMap[f.id]?.value ?: ""
+                if (v.isNotBlank()) fieldKeyValues[f.key] = v
+            }
+            val evaluator = com.novelcharacter.app.util.FormulaEvaluator(fieldKeyValues, fields)
+            calculatedFields.mapNotNull { f ->
+                val formula = try {
+                    org.json.JSONObject(f.config).optString("formula", "")
+                } catch (_: Exception) { "" }
+                if (formula.isBlank()) return@mapNotNull null
+                // 깨진 수식은 **셀에 오류 표식을 쓴다**(U-9). 엑셀에서 훑는 사람에게 그 자리가
+                // 곧 진단이고, 빈칸으로 두면 값이 없는 것과 구분되지 않는다.
+                // 왕복 오염은 없다 — 가져오기는 CALCULATED 열을 저장하지 않는다(F4).
+                f.id to com.novelcharacter.app.util.FormulaDisplay
+                    .evaluateForDisplay(formula, evaluator::evaluate)
+            }.toMap()
+        } else emptyMap()
+
+        return fields.associate { field ->
+            field.id to if (field.type == "CALCULATED") {
+                calculatedResults[field.id] ?: ""
+            } else {
+                fieldValueMap[field.id]?.value ?: ""
+            }
+        }
+    }
+
+    /**
+     * '전체 캐릭터' 시트에 한 세계관 몫의 행을 잇는다. 반환값은 쓴 행 수다.
+     * 시트를 한 번만 순회하려고 세계관 루프 안에서 부른다(행을 모아 두지 않는다).
+     */
+    private fun appendAllCharacterRows(
+        sheet: XSSFSheet,
+        startRow: Int,
+        sharedFields: List<AllCharactersSheet.SharedField>,
+        universeName: String,
+        characters: List<Character>,
+        fields: List<FieldDefinition>,
+        novelMap: Map<Long, Novel>,
+        resolvedValues: Map<Long, Map<Long, String>>,
+        allTags: Map<Long, List<CharacterTag>>
+    ): Int {
+        // (필드키, 타입) → 이 세계관의 필드 id. 같은 조합이 한 세계관에 둘 있을 수 없다
+        // (필드키는 세계관·entityType 안에서 유일하다).
+        val fieldIdByKeyType = fields.associate { (it.key to it.type) to it.id }
+        characters.forEachIndexed { index, character ->
+            val row = sheet.createRow(startRow + index + 1)
+            val novel = character.novelId?.let { novelMap[it] }
+            val values = resolvedValues[character.id].orEmpty()
+            var col = 0
+            row.createCell(col++).setTextSafe(universeName)
+            row.createCell(col++).setTextSafe(novel?.title ?: "")
+            row.createCell(col++).setTextSafe(character.name)
+            row.createCell(col++).setTextSafe(character.lastName)
+            row.createCell(col++).setTextSafe(character.firstName)
+            row.createCell(col++).setTextSafe(character.anotherName)
+            row.createCell(col++).setTextSafe(
+                (allTags[character.id] ?: emptyList()).joinToString(", ") { it.tag }
+            )
+            row.createCell(col++).setTextSafe(if (character.isPinned) "Y" else "N")
+            row.createCell(col++).setCellValue(character.displayOrder.toDouble())
+            row.createCell(col++).setCellValue(character.createdAt.toDouble())
+            row.createCell(col++).setTextSafe(character.code)
+            row.createCell(col++).setTextSafe(novel?.code ?: "")
+            for (shared in sharedFields) {
+                val fieldId = fieldIdByKeyType[shared.key to shared.type]
+                row.createCell(col++).setTextSafe(fieldId?.let { values[it] } ?: "")
+            }
+        }
+        return characters.size
     }
 
     /**
@@ -884,7 +1031,8 @@ class ExcelExporter(context: Context) {
         characters: List<Character>,
         fields: List<FieldDefinition>,
         novelMap: Map<Long, Novel>,
-        allFieldValues: Map<Long, List<CharacterFieldValue>>,
+        /** 캐릭터 id → (필드 id → 표시값). [resolveFieldDisplayValues]가 만든다 — 두 시트의 단일 소스. */
+        resolvedValues: Map<Long, Map<Long, String>>,
         allTags: Map<Long, List<CharacterTag>>,
         /**
          * 이 시트가 소유권을 주장하는 예약명. '미분류 캐릭터' 시트만 값을 갖고,
@@ -901,8 +1049,7 @@ class ExcelExporter(context: Context) {
         characters.forEachIndexed { index, character ->
             val row = sheet.createRow(index + 1)
             val novel = character.novelId?.let { novelMap[it] }
-            val fieldValues = allFieldValues[character.id] ?: emptyList()
-            val fieldValueMap = fieldValues.associateBy { it.fieldDefinitionId }
+            val values = resolvedValues[character.id].orEmpty()
             var col = 0
 
             // 이름
@@ -917,35 +1064,9 @@ class ExcelExporter(context: Context) {
             // 이명
             row.createCell(col++).setTextSafe(character.anotherName)
 
-            // 동적 필드 (CALCULATED 필드는 FormulaEvaluator로 실시간 계산)
-            val calculatedFields = fields.filter { it.type == "CALCULATED" }
-            val calculatedResults: Map<Long, String> = if (calculatedFields.isNotEmpty()) {
-                val fieldKeyValues = mutableMapOf<String, String>()
-                for (f in fields) {
-                    val v = fieldValueMap[f.id]?.value ?: ""
-                    if (v.isNotBlank()) fieldKeyValues[f.key] = v
-                }
-                val evaluator = com.novelcharacter.app.util.FormulaEvaluator(fieldKeyValues, fields)
-                calculatedFields.mapNotNull { f ->
-                    val formula = try {
-                        org.json.JSONObject(f.config).optString("formula", "")
-                    } catch (_: Exception) { "" }
-                    if (formula.isBlank()) return@mapNotNull null
-                    // 깨진 수식은 **셀에 오류 표식을 쓴다**(U-9). 엑셀에서 훑는 사람에게 그 자리가
-                    // 곧 진단이고, 빈칸으로 두면 값이 없는 것과 구분되지 않는다.
-                    // 왕복 오염은 없다 — 가져오기는 CALCULATED 열을 저장하지 않는다(F4).
-                    f.id to com.novelcharacter.app.util.FormulaDisplay
-                        .evaluateForDisplay(formula, evaluator::evaluate)
-                }.toMap()
-            } else emptyMap()
-
+            // 동적 필드 — CALCULATED 실시간 평가를 포함한 표시값은 resolveFieldDisplayValues가 냈다.
             for (field in fields) {
-                val value = if (field.type == "CALCULATED") {
-                    calculatedResults[field.id] ?: ""
-                } else {
-                    fieldValueMap[field.id]?.value ?: ""
-                }
-                row.createCell(col++).setTextSafe(value)
+                row.createCell(col++).setTextSafe(values[field.id] ?: "")
             }
 
             // 이미지경로 (readOnly)

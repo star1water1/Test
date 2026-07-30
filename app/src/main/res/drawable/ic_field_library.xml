@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 필드 데이터 라이브러리 진입용 툴바 아이콘. ic_search와 같이 colorControlNormal로 틴트한다
+     (툴바 메뉴 아이콘의 기존 관행 — ic_checklist의 on_primary는 배경이 다른 화면 전용이다). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="?attr/colorControlNormal">
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M4,6H2v14c0,1.1 0.9,2 2,2h14v-2H4V6zM20,2H8C6.9,2 6,2.9 6,4v12c0,1.1 0.9,2 2,2h12c1.1,0 2,-0.9 2,-2V4C22,2.9 21.1,2 20,2zM18,7H9V5h9V7zM14,11H9V9h5V11zM18,15H9v-2h9V15z" />
+</vector>

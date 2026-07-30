@@ -91,6 +91,9 @@ const val GUIDE_SHEET_NAME = "사용 안내"
 /** 세계관에 속하지 않은 캐릭터를 모으는 시트명 — 내보내기·가져오기 공용 상수 */
 const val UNCLASSIFIED_SHEET_NAME = "미분류 캐릭터"
 
+/** 전 세계관 캐릭터를 한 장에 모으는 읽기 전용 시트명 (U-12a) — 내보내기·가져오기 공용 상수 */
+const val ALL_CHARACTERS_SHEET_NAME = "전체 캐릭터"
+
 /** All reserved (non-universe) sheet names used by the app. */
 val RESERVED_SHEET_NAMES = setOf(
     GUIDE_SHEET_NAME,
@@ -112,7 +115,8 @@ val RESERVED_SHEET_NAMES = setOf(
     appSettingsSpec().sheetName,
     imageMetaSpec().sheetName,
     fieldValueLibrarySpec().sheetName,
-    characterFieldValueSpec().sheetName
+    characterFieldValueSpec().sheetName,
+    ALL_CHARACTERS_SHEET_NAME
 )
 
 /**
@@ -439,6 +443,40 @@ fun characterSpec(fields: List<FieldDefinition>, novelTitles: List<String>) = Sh
         add(ColumnSpec("정렬순서", width = 3000))
         add(ColumnSpec("고정", dropdownOptions = listOf("Y", "N"), width = 3000))
         add(ColumnSpec("생성일", readOnly = true, width = 5000))
+    }
+)
+
+/**
+ * 전 세계관 캐릭터를 한 장에 모으는 **읽기 전용** 시트 (U-12a).
+ *
+ * 캐릭터 시트는 세계관마다 갈리고 열 구성도 다르다(실사용 표본은 10장 · 49·38·42·13열).
+ * 그래서 엑셀의 최대 강점인 **전체 정렬·필터·피벗을 전 인원에 걸 수 없다** — 이 시트가 그 자리다.
+ *
+ * **가져오기는 이 시트를 읽지 않는다.** 예약명이라 세계관 캐릭터 시트로 오인되지 않고,
+ * 첫 열이 '이름'이 아니라 `looksLikeCharacterSheet`의 지문에도 걸리지 않는다
+ * (`characterFieldValueSpec`이 첫 열을 '캐릭터코드'로 둔 것과 같은 이유다).
+ * 왕복 규약을 건드리지 않으므로 **고칠 곳은 여전히 캐릭터 시트**이며, 그 사실을 사용 안내가 말한다.
+ *
+ * [sharedFieldHeaders]는 **여러 세계관이 함께 쓰는 필드**의 열이다. 한 세계관에만 있는 필드까지
+ * 실으면 열이 전 세계관의 합집합이 되어 피벗이라는 이 시트의 쓸모가 사라진다. 판정은
+ * **(필드키, 타입)** — 통계의 세계관 병합과 같은 규칙이라 새 개념을 만들지 않는다.
+ */
+fun allCharactersSpec(sharedFieldHeaders: List<String> = emptyList()) = SheetSpec(
+    sheetName = ALL_CHARACTERS_SHEET_NAME,
+    columns = buildList {
+        add(ColumnSpec("세계관", readOnly = true, width = 5000))
+        add(ColumnSpec("작품", readOnly = true, width = 6000))
+        add(ColumnSpec("이름", readOnly = true, width = 6000))
+        add(ColumnSpec("성", readOnly = true, width = 4000))
+        add(ColumnSpec("이름(First)", readOnly = true, width = 4000))
+        add(ColumnSpec("이명", readOnly = true, width = 6000))
+        add(ColumnSpec("태그", readOnly = true, width = 8000))
+        add(ColumnSpec("고정", readOnly = true, width = 3000))
+        add(ColumnSpec("정렬순서", readOnly = true, width = 3000))
+        add(ColumnSpec("생성일", readOnly = true, width = 5000))
+        add(ColumnSpec("코드", readOnly = true, width = 4000))
+        add(ColumnSpec("작품코드", readOnly = true, width = 4000))
+        for (header in sharedFieldHeaders) add(ColumnSpec(header, readOnly = true, width = 5000))
     }
 )
 

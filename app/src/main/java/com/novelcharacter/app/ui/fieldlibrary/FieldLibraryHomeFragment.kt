@@ -70,6 +70,19 @@ class FieldLibraryHomeFragment : Fragment() {
         binding.toolbar.setNavigationOnClickListener {
             requireActivity().onBackPressedDispatcher.onBackPressed()
         }
+        // `?` 도움말(H14) — 상시 노출 목적문 한 줄로는 모자란 설명을 담는다(P4·U-5).
+        binding.toolbar.inflateMenu(R.menu.menu_field_library_home)
+        binding.toolbar.setOnMenuItemClickListener { item ->
+            if (item.itemId == R.id.action_field_library_help) {
+                com.novelcharacter.app.ui.common.HelpDialog.showHelp(
+                    requireContext(),
+                    com.novelcharacter.app.ui.common.HelpDialog.Topic.FIELD_LIBRARY
+                )
+                true
+            } else {
+                false
+            }
+        }
         selectedUniverseId = arguments?.getLong("universeId", -1L) ?: -1L
 
         adapter = FieldRowAdapter { row ->
