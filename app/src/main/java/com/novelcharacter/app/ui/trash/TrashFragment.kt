@@ -203,6 +203,9 @@ class TrashFragment : Fragment() {
         if (losses.orphanFieldValues > 0) {
             details.add(getString(R.string.trash_skip_orphan_values, losses.orphanFieldValues))
         }
+        if (losses.novelFieldValues > 0) {
+            details.add(getString(R.string.trash_skip_novel_fields, losses.novelFieldValues))
+        }
         if (losses.fieldDefinitions > 0) {
             details.add(getString(R.string.trash_skip_field_definitions, losses.fieldDefinitions))
         }

@@ -35,5 +35,7 @@ data class FieldDefinition(
     companion object {
         const val ENTITY_CHARACTER = "character"
         const val ENTITY_EVENT = "event"
+        /** 작품 커스텀 필드 (확-3). 값은 `novel_field_values`가 든다. */
+        const val ENTITY_NOVEL = "novel"
     }
 }

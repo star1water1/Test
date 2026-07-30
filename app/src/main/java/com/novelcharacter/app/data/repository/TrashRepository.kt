@@ -443,7 +443,9 @@ class TrashRepository(
                 universeCode = novel.universeId?.let { universeCode(it) },
                 events = eventCodes,
                 characters = characterCodes
-            )
+            ),
+            // 작품 커스텀 필드값(확-3) — CASCADE로 사라지므로 여기서 담지 않으면 복원해도 빈다.
+            fieldValues = db.novelFieldValueDao().getValuesByNovelList(novel.id)
         )
         insertSnapshot(
             TrashSnapshot.TYPE_NOVEL, novel.title, snapshot,
@@ -2061,12 +2063,27 @@ class TrashRepository(
         val livingSame = data.novel.code.takeIf { it.isNotBlank() }
             ?.let { db.novelDao().getNovelByCode(it) != null } ?: false
 
+        // 작품 커스텀 필드값(확-3) — 정의가 이미 지워진 값은 FK가 거부하므로 되살릴 수 없다.
+        // **미리보기와 결과가 같은 수를 말하도록 여기서 센다**(RestoreLossCounts의 규약) —
+        // 복원 시점에만 세면 사용자가 동의한 예고와 실제가 갈린다.
+        val savedFieldValues = data.fieldValues.orEmpty()
+        val lostNovelFieldValues = if (savedFieldValues.isEmpty()) 0 else {
+            val liveDefIds = db.fieldDefinitionDao()
+                .getFieldsByIds(savedFieldValues.map { it.fieldDefinitionId }.distinct())
+                .mapTo(HashSet()) { it.id }
+            savedFieldValues.count { it.fieldDefinitionId !in liveDefIds }
+        }
+
         return NovelPlan(
             data = data,
             universeId = universe.id,
             eventIds = plannedEvents.toList(),
             imageCharacterCode = data.novel.imageCharacterId?.let { refs?.characters?.get(it.toString()) },
-            losses = RestoreLossCounts(events = lostEvents, universeCleared = universe.cleared),
+            losses = RestoreLossCounts(
+                events = lostEvents,
+                universeCleared = universe.cleared,
+                novelFieldValues = lostNovelFieldValues
+            ),
             relinkedByCode = tally.relinked,
             legacyPayload = tally.legacyGuess,
             previewOnly = tally.previewOnly,
@@ -2095,6 +2112,22 @@ class TrashRepository(
 
         for (eventId in plan.eventIds) {
             db.timelineDao().insertEventNovelCrossRef(TimelineEventNovelCrossRef(eventId, newId))
+        }
+
+        // 작품 커스텀 필드값(확-3) 되살리기. id는 새로 받고 novelId는 복원된 작품을 가리킨다.
+        // **정의가 사라진 값은 넣지 않는다** — FK가 거부해 복원 전체가 실패하기 때문이며,
+        // 버린 건수는 losses에 실려 사용자에게 고지된다(말없이 버리지 않는다).
+        val savedValues = plan.data.fieldValues.orEmpty()
+        if (savedValues.isNotEmpty()) {
+            val liveDefIds = db.fieldDefinitionDao()
+                .getFieldsByIds(savedValues.map { it.fieldDefinitionId }.distinct())
+                .mapTo(HashSet()) { it.id }
+            val restorable = savedValues.filter { it.fieldDefinitionId in liveDefIds }
+            if (restorable.isNotEmpty()) {
+                db.novelFieldValueDao().insertAll(
+                    restorable.map { it.copy(id = 0, novelId = newId) }
+                )
+            }
         }
 
         val deferred = plan.imageCharacterCode?.let {

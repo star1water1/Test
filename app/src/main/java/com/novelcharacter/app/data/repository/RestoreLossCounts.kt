@@ -59,7 +59,9 @@ data class RestoreLossCounts(
      */
     val nameBankLinks: Int = 0,
     /** 세계관을 찾을 수 없어 '세계관 없음'으로 복원된다 (사건·작품) */
-    val universeCleared: Boolean = false
+    val universeCleared: Boolean = false,
+    /** 되살리지 못한 작품 커스텀 필드값 (확-3) — 그 필드 정의가 이미 삭제됨 */
+    val novelFieldValues: Int = 0
 ) {
     /**
      * 항목별 규모의 단일 소스. 이름은 비교·집계에만 쓰이며 화면 문구는 UI가 만든다.
@@ -77,6 +79,7 @@ data class RestoreLossCounts(
             "relationshipFactions" to relationshipFactions,
             "changeEvents" to changeEvents,
             "novelCleared" to if (novelCleared) 1 else 0,
+            "novelFieldValues" to novelFieldValues,
             "fieldDefinitions" to fieldDefinitions,
             "fieldValueEntries" to fieldValueEntries,
             "orphanFieldValues" to orphanFieldValues,
@@ -133,6 +136,7 @@ data class RestoreLossCounts(
         imageLinks = imageLinks + other.imageLinks,
         stateChanges = stateChanges + other.stateChanges,
         nameBankLinks = nameBankLinks + other.nameBankLinks,
-        universeCleared = universeCleared || other.universeCleared
+        universeCleared = universeCleared || other.universeCleared,
+        novelFieldValues = novelFieldValues + other.novelFieldValues
     )
 }

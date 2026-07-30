@@ -35,7 +35,9 @@ import com.novelcharacter.app.data.model.FactionMembership
 import com.novelcharacter.app.data.model.FactionRelationship
 import com.novelcharacter.app.data.model.TrashSnapshot
 import com.novelcharacter.app.data.dao.EventFieldValueDao
+import com.novelcharacter.app.data.dao.NovelFieldValueDao
 import com.novelcharacter.app.data.model.EventFieldValue
+import com.novelcharacter.app.data.model.NovelFieldValue
 import com.novelcharacter.app.data.dao.OperationLogDao
 import com.novelcharacter.app.data.model.OperationLog
 import com.novelcharacter.app.data.dao.CharacterListPresetDao
@@ -91,9 +93,10 @@ import com.novelcharacter.app.data.model.Universe
         CharacterListPreset::class,
         ImageMeta::class,
         ImageTag::class,
-        FieldValueEntry::class
+        FieldValueEntry::class,
+        NovelFieldValue::class
     ],
-    version = 44,
+    version = 45,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -116,6 +119,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun factionRelationshipDao(): FactionRelationshipDao
     abstract fun trashSnapshotDao(): TrashSnapshotDao
     abstract fun eventFieldValueDao(): EventFieldValueDao
+    abstract fun novelFieldValueDao(): NovelFieldValueDao
     abstract fun operationLogDao(): OperationLogDao
     abstract fun characterListPresetDao(): CharacterListPresetDao
     abstract fun imageMetaDao(): ImageMetaDao
@@ -1777,6 +1781,34 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_44_45 = object : Migration(44, 45) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "Migrating database from version 44 to 45 — 작품 커스텀 필드(확-3)")
+
+                // 작품 커스텀 필드값. character_field_values·event_field_values와 **동형**이며
+                // 컬럼·인덱스 이름까지 Room이 엔티티에서 생성하는 것과 정확히 맞춘다
+                // (어긋나면 Room이 시작 시 스키마 불일치로 거부한다).
+                //
+                // 기존 행을 건드리지 않는 순수 추가라 되돌릴 데이터가 없다 — 표 하나와 인덱스
+                // 셋을 만들 뿐이고, 구버전 앱으로 내려가도 이 표를 모를 뿐 기존 표는 그대로다.
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `novel_field_values` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `novelId` INTEGER NOT NULL,
+                        `fieldDefinitionId` INTEGER NOT NULL,
+                        `value` TEXT NOT NULL,
+                        FOREIGN KEY(`novelId`) REFERENCES `novels`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE,
+                        FOREIGN KEY(`fieldDefinitionId`) REFERENCES `field_definitions`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                """)
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_novel_field_values_novelId` ON `novel_field_values`(`novelId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_novel_field_values_fieldDefinitionId` ON `novel_field_values`(`fieldDefinitionId`)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_novel_field_values_novelId_fieldDefinitionId` ON `novel_field_values`(`novelId`, `fieldDefinitionId`)")
+
+                Log.i(TAG, "Migration from version 44 to 45 completed successfully")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -1784,7 +1816,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "novel_character_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45)
                     .addCallback(SeedCallback(context.applicationContext))
                     .build()
                     .also { INSTANCE = it }

@@ -99,7 +99,16 @@ data class NovelSnapshot(
     val novel: Novel,
     /** 삭제 시점 이 작품에 연결돼 있던 사건 id (코드는 refs.events에 병기) */
     val linkedEventIds: List<Long>? = null,
-    val refs: EntityRefs? = null
+    val refs: EntityRefs? = null,
+    /**
+     * 작품 커스텀 필드값 (확-3). **nullable인 것은 일부러다** — 이 키가 없는 구버전 payload를
+     * Gson이 읽을 때 non-null 선언이면 null이 주입돼 이후 순회가 NPE로 죽는다(R-2).
+     * 구버전 스냅샷에는 값이 없는 것이 맞으므로 읽는 쪽이 `orEmpty()`로 받는다.
+     *
+     * 담지 않으면 작품 삭제가 FK CASCADE로 값을 지우고 복원은 되살리지 못한다 —
+     * 되살릴 수 없는 삭제는 휴지통이 있다는 약속을 깨는 것이다.
+     */
+    val fieldValues: List<NovelFieldValue>? = null
 )
 
 /**

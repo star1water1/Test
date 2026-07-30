@@ -27,7 +27,7 @@ class ResetPlanTest {
         "name_bank", "character_relationships", "character_relationship_changes",
         "recent_activities", "search_presets", "user_preset_templates",
         "factions", "faction_memberships", "faction_relationships",
-        "trash_snapshots", "event_field_values", "operation_logs",
+        "trash_snapshots", "event_field_values", "novel_field_values", "operation_logs",
         "character_list_presets", "image_meta", "image_tags", "field_value_entries"
     )
 
