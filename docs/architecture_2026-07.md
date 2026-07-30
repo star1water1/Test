@@ -259,7 +259,7 @@ AI 정책(`FieldAiPolicy`).
 | **규약 원문**(착수 전 읽는 현행 규칙) | `docs/conventions.md` — R-1~R-27 정의. 한 줄 색인은 위 6장 |
 | **확장 한계·성능** | `docs/scalability_performance_2026-07.md` |
 | **지금 할 일 / 백로그 / 실기기 확인** | `docs/remaining_work_2026-07.md` (5장이 시작점) |
-| **미이행 기능 색출과 개혁 로드맵** | `docs/superficial_feature_audit_2026-07.md` |
+| **미이행 기능 색출** — 로드맵(1~4장)은 **닫혔고 5장의 미검증 후보만 살아 있다** | `docs/superficial_feature_audit_2026-07.md` |
 | **실사용 데이터가 말한 것** | `docs/usage_reality_check_2026-07.md` (+ `_runbook`) |
 | **화면 문구** | `docs/text_style_guide_2026-07.md` |
 | **영역별 설계** | 엑셀 왕복 `excel_roundtrip_audit` · 엑셀 스트리밍 가져오기 `excel_streaming_import` · 이미지 폴더 왕복 `image_folder_roundtrip_design`(결정 근거 `image_external_management`, **확장 `image_folder_tag_ai`**) · AI `ai_integration`·`ai_control_and_ui_density` · 값 라이브러리 `field_value_library` · 필터·정렬 짝 `filter_sort_parity` |
