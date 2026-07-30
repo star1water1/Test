@@ -68,7 +68,7 @@ $MAIN/excel/FactionRefResolver.kt
 $MAIN/excel/ExcelRefColumns.kt
 $MAIN/excel/ImageZipReport.kt
 $MAIN/excel/ImageMetaRowResolver.kt
-$MAIN/excel/EventFieldHeaders.kt
+$MAIN/excel/EntityFieldHeaders.kt
 $MAIN/excel/ExcelHeaderAliases.kt
 $MAIN/excel/SheetSpec.kt
 $MAIN/excel/ExcelCellValue.kt
@@ -93,6 +93,8 @@ $MAIN/data/model/EventFieldValue.kt
 $MAIN/data/model/NovelFieldValue.kt
 $MAIN/data/dao/EventFieldValueDao.kt
 $MAIN/data/repository/EventFieldValueMerge.kt
+$MAIN/data/dao/NovelFieldValueDao.kt
+$MAIN/data/repository/NovelFieldValueMerge.kt
 $MAIN/data/model/FactionRelationship.kt
 $MAIN/data/model/EntitySnapshots.kt
 $MAIN/data/dao/TrashSnapshotDao.kt
@@ -167,7 +169,7 @@ $STUBS/AiServiceStub.kt
 TESTS="
 $TEST/excel/FieldValueSheetMapperTest.kt
 $TEST/excel/PortableFieldFiltersTest.kt
-$TEST/excel/EventFieldHeadersTest.kt
+$TEST/excel/EntityFieldHeadersTest.kt
 $TEST/excel/CharacterHeaderIdentityTest.kt
 $TEST/excel/CharacterFieldValueOverflowTest.kt
 $TEST/excel/PresetTemplateMatcherTest.kt
@@ -189,6 +191,7 @@ $TEST/data/CharacterSnapshotPayloadTest.kt
 $TEST/data/RestoreModeTest.kt
 $TEST/data/CharacterFieldValueMergeTest.kt
 $TEST/data/EventFieldValueMergeTest.kt
+$TEST/data/NovelFieldValueMergeTest.kt
 $TEST/data/EventFieldValueDaoReplaceTest.kt
 $TEST/excel/SheetNameAssignmentTest.kt
 $TEST/data/TrashPruneSelectorTest.kt

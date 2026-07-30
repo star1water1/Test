@@ -357,7 +357,7 @@ class FieldEditDialog : DialogFragment() {
         }
     }
 
-    /** 이 다이얼로그가 편집 중인 필드가 붙는 대상 (character / event) */
+    /** 이 다이얼로그가 편집 중인 필드가 붙는 대상 (character / event / novel) */
     private fun currentEntityType(): String =
         existingField?.entityType
             ?: arguments?.getString(ARG_ENTITY_TYPE)
@@ -423,8 +423,10 @@ class FieldEditDialog : DialogFragment() {
 
     /**
      * 필드 설명(A-2) + AI 추천 토글(A-1) 섹션.
-     * 사건 필드에는 AI 추천 경로 자체가 없어 토글을 노출하지 않는다(R-24) —
-     * 설명은 AI와 무관하게 인앱에서 값을 가지므로 사건 필드에도 노출한다.
+     * AI 추천 경로가 있는 것은 **캐릭터 필드뿐**이라 그 외 종류에는 토글을 노출하지 않는다
+     * (R-24 — 사건은 B-43, 작품은 확-3 잔여). 설명은 AI와 무관하게 인앱에서 값을 가지므로
+     * 모든 종류에 노출한다. 조건을 '캐릭터인가'로 쓰는 이유는 종류가 늘 때 이 자리가
+     * 조용히 뒤처지지 않게 하기 위해서다.
      */
     private fun setupAiAndDescriptionSection(binding: DialogFieldEditBinding) {
         binding.fieldDescriptionLayout.counterMaxLength =
@@ -432,8 +434,8 @@ class FieldEditDialog : DialogFragment() {
         binding.editFieldDescription.filters = arrayOf(
             android.text.InputFilter.LengthFilter(com.novelcharacter.app.data.model.FieldDescription.MAX_CHARS)
         )
-        val isEventField = currentEntityType() == FieldDefinition.ENTITY_EVENT
-        binding.aiSectionLayout.visibility = if (isEventField) View.GONE else View.VISIBLE
+        val isCharacterField = currentEntityType() == FieldDefinition.ENTITY_CHARACTER
+        binding.aiSectionLayout.visibility = if (isCharacterField) View.VISIBLE else View.GONE
     }
 
     private fun setupStatsSection(binding: DialogFieldEditBinding) {

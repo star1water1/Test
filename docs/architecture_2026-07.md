@@ -81,12 +81,12 @@ app/src/main/java/com/novelcharacter/app/
 > **판정법은 하나뿐이다 — `tools/run_jvm_tests.sh`의 `$SOURCES` 목록에 그 파일이 있는가**(4장).
 > 순수함은 테스트의 필요조건이지 충분조건이 아니다.
 
-### 데이터 모델 — 26 엔티티
+### 데이터 모델 — 엔티티 (세는 법: `grep -c '@Entity' app/src/main/java/com/novelcharacter/app/data/model/*.kt`)
 
 | 묶음 | 엔티티 |
 |------|--------|
 | 뼈대 | `Universe` → `Novel` → `Character` |
-| 사용자 정의 필드 | `FieldDefinition` · `CharacterFieldValue` · `EventFieldValue` · `FieldValueEntry`(값 라이브러리) |
+| 사용자 정의 필드 | `FieldDefinition` · `CharacterFieldValue` · `EventFieldValue` · `NovelFieldValue` · `FieldValueEntry`(값 라이브러리) |
 | 시간 | `TimelineEvent` · `TimelineCharacterCrossRef` · `TimelineEventNovelCrossRef` · `CharacterStateChange` |
 | 관계 | `CharacterRelationship` · `CharacterRelationshipChange` · `Faction` · `FactionMembership` · `FactionRelationship` |
 | 이미지 | `ImageMeta` · `ImageTag` |
@@ -121,7 +121,8 @@ app/src/main/java/com/novelcharacter/app/
 | `SnapshotRefs` / `SnapshotRefResolver` | 휴지통 복원의 안정 식별자 | 복원이 남의 엔티티에 붙었다(R-1) |
 | `FolderNameToken` / `FolderRoundtripPlanner` / `FolderExportPlanner` / `FolderRoundtripLedger` | 이미지 폴더 왕복의 이름·계획·장부 | 개명 경로가 토큰을 깨 중복 편입(C-1) |
 | `CharacterFieldValueOverflow` | 캐릭터 시트가 담지 못한 값의 판정 | — |
-| `EventFieldValueMerge` / `CharacterFieldValueMerge` | 부분 저장의 커버 집합 | 사건 필드값이 무통보 폐기됐다(S-6) |
+| `CharacterFieldValueMerge` / `EventFieldValueMerge` / `NovelFieldValueMerge` | 부분 저장의 커버 집합 — 종류마다 하나씩, **규칙은 하나** | 사건 필드값이 무통보 폐기됐다(S-6) |
+| `EntityFieldHeaders` | 한 시트가 전 세계관의 커스텀 필드를 동적 열로 실을 때의 헤더 규칙(연표·작품 시트) | — (확-3에서 사건 전용 이름을 승격) |
 | `SortComparators` / `FieldFilterHelper` / `UnassignedFilter` | 목록 정렬·필터 | — |
 | `ImportSource`(`ImportWorkbook`/`Sheet`/`Row`/`Cell`) | 가져오기가 워크북을 읽는 유일한 접근면 | DOM·스트리밍 두 경로가 갈리면 같은 파일이 다른 데이터가 된다(B-8) |
 | `ResetPlan` | 앱 초기화가 비우는 테이블의 범위 | 26개 중 5개가 '모든 데이터 삭제' 뒤에도 살아남았다(S-13) |
@@ -192,12 +193,24 @@ AI 정책(`FieldAiPolicy`).
 > 되가리키므로 상호 참조가 양방향이다). 문자열 분기를 `FieldType`으로 좁히면 새 타입 추가가
 > 컴파일러의 도움을 받는다(`when`의 exhaustive 검사). 지금은 전수 grep이 유일한 방어다.
 
-### 5-2. 새 대상(entityType) — 지금은 `character` · `event`
+### 5-2. 새 대상(entityType) — 지금은 `character` · `event` · `novel`
 
 `FieldDefinition.entityType`이 축이다. **DAO 기본 인자가 `ENTITY_CHARACTER`라는 것이 함정이다** —
 호출부가 대상을 넘기지 않으면 조용히 캐릭터 필드를 본다(로드맵 5가 `FieldEditDialog`에서
-실제로 이 결함을 잡았다). 새 대상을 열 때는 `getFieldsByUniverseList(universeId, entityType)`
-호출부를 전수 확인할 것. 작품·세력으로의 확장은 백로그(확-3).
+실제로 이 결함을 잡았다). 새 대상을 열 때는 **규약 R-29의 전수 명령**을 돌릴 것 —
+`getFieldsByUniverse*`뿐 아니라 `getAllFieldsList`·`getFieldByKey`·`getGroupNames`·
+`countFieldsByKeyExcluding`도 같은 기본값을 갖는다.
+
+**한 종류를 여는 데 드는 자리**(확-3 작품 축이 실측한 것 — 세션 로그 1-t·1-u장):
+값 테이블 + DAO(캐릭터·사건판과 **동형**으로) · 병합 규약(`*FieldValueMerge` — R-5) ·
+휴지통 스냅샷 **둘**(소유자 스냅샷 + 세계관 스냅샷의 고아 값) · 삭제 고지 집계 ·
+`ResetPlan` · 필드 관리 칩 + 편집 폼 + 값 라이브러리 · 엑셀(정의 시트 `대상`, 소유자 시트의
+`필드:` 동적 열, **가져오기 순서**) · 통계(스냅샷·인사이트·드릴다운·하위 그룹·CALCULATED) ·
+월드패키지 엔트리 + schemaVersion. **남은 것은 세계관·세력**이다(백로그 확-3).
+
+> **순서가 열보다 위험하다.** 작품 축은 열을 다 만들고도 `importNovels`가 `importFieldDefinitions`
+> 앞에 있어 빈 DB 복원에서 값이 통째로 버려질 참이었다 — 새 시트가 필드 열을 실으면
+> **그 시트가 언제 처리되는지**부터 확인할 것.
 
 ### 5-3. 새 통계 분석
 
@@ -287,6 +300,7 @@ AI 정책(`FieldAiPolicy`).
 
 | 버전 | 날짜 | 변경 내용 |
 |------|------|-----------|
+| v1.7 | 2026.07.30 | **확-3 작품 축이 열려 5-2 확장점을 갱신**(종류가 셋이 됐다 — `character`·`event`·`novel`, 세션 로그 1-u장). 전수 대상이 `getFieldsByUniverse*`만이 아니라는 것을 명시했다(`getAllFieldsList`·`getFieldByKey`·`getGroupNames`·`countFieldsByKeyExcluding`도 같은 기본값을 갖는다). **한 종류를 여는 데 드는 자리를 목록으로** 남겼다 — 다음 종류(세계관·세력)의 견적이 추측이 아니라 실측에서 나오게. 아울러 **"순서가 열보다 위험하다"**를 경고로 넣었다(작품 시트가 필드 정의보다 먼저 처리돼 값이 버려질 참이었다). 3장 단일 소스 표에 `NovelFieldValueMerge`·`EntityFieldHeaders` 등재, 2장 데이터 모델에 `NovelFieldValue` 등재. **엔티티 수 '26'은 값을 지우고 세는 법으로 바꿨다** — 이 문서가 1장·7장에서 이미 두 번 쓴 처방이고, 실제로 v45가 표를 하나 더한 순간 낡았다 |
 | v1.6 | 2026.07.30 | **6장 색인에 규약 R-29 등재**(`entityType`으로 갈리는 기능은 조회·중복 판정·순서·쓰기가 모두 같은 종류를 본다 — P5, 세션 로그 1-p장). 아울러 **R-28 행이 셀 하나가 빠진 채였다** — 3열 표에 2열로 들어가 렌더가 어긋났다(신설 시 영역 칸을 빼먹었다). `저장·UI`로 채웠다: 바로 옆에 행을 더하면서 깨진 행을 두는 것이 더 나쁘다 |
 | v1.5 | 2026.07.30 | **7장 문서 지도에 `docs/session_log_2026-07.md` 등재**(`remaining_work` 1장이 분할됐다 — 근거는 그 문서 5-a 3번). 지도 행에 **"다른 문서의 `1-x장`은 전부 이곳"**을 함께 적었다: 절 번호를 보존한 분리라 참조 문자열만으로는 어느 문서인지 알 수 없다. 아울러 **`R-1~R-27` 범위 표기 2자리를 없앴다**(6장 제목·7장 지도) — R-28이 등재되며 낡았고, 삼자 일치 자체는 {1..28}로 정상이었으니 **틀린 것은 상한을 적었다는 사실**이다. 이 문서가 1장·2장에서 이미 두 번 쓴 처방(값이 아니라 세는 법 / 표가 곧 현행)을 규약 범위에도 적용했다 — **표가 현행 범위다.** 3장 단일 소스 표의 `1-h장` 참조도 새 문서를 가리키도록 정정 |
 | v1.4 | 2026.07.29 | **7장 각주의 테스트 건수를 없앴다** — "지금은 924건이 돈다"는 `app_inspection_round2`가 같은 자리에서 두 판 연속 낡은 것과 **같은 문장**이었고, 여기서도 이미 스테일이었다(실측 984). 갱신이 아니라 제거를 골랐다: 이 자리의 수는 *근거로만 인용되는 수*라 값이 아니라 "테스트가 있다·CI가 게이트다"가 요지이고, **고칠 수 없는 것은 낡지도 않는다.** 대신 세는 법(`grep -rho '@Test' app/src/test \| wc -l`)을 적었다. *재현 기준선으로 쓰이는 수*(`remaining_work` 2장·5장)는 용도가 달라 그대로 둔다. 근거: `remaining_work` 5-a |

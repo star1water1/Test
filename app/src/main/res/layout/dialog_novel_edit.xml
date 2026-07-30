@@ -12,6 +12,7 @@
         android:padding="24dp">
 
         <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/titleLayout"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="12dp"
@@ -177,6 +178,48 @@
             android:gravity="center_vertical"
             android:text="@string/image_select_character"
             android:textColor="@color/primary"
+            android:visibility="gone" />
+
+        <!-- 작품 커스텀 필드 (확-3) — 이 작품이 속한 세계관의 작품 필드로 동적 구성 -->
+        <TextView
+            android:id="@+id/novelFieldSectionLabel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:layout_marginBottom="8dp"
+            android:text="@string/novel_custom_fields"
+            android:textColor="@color/primary"
+            android:textAppearance="@style/TextAppearance.App.BodyStrong"
+            android:visibility="gone" />
+
+        <LinearLayout
+            android:id="@+id/novelFieldContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone" />
+
+        <!--
+          필드가 0개일 때도 머리글과 함께 남는 안내 + 만드는 경로 (P5가 사건에서 세운 규약).
+          섹션을 통째로 감추면 작품을 쓰는 자리에서 '작품 필드'의 존재 신호가 없고,
+          만들려면 세계관 목록까지 되돌아가야 한다 — 빈 상태에서 교정 경로를 없애지 않는다.
+        -->
+        <TextView
+            android:id="@+id/novelFieldEmptyHint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
+            android:text="@string/novel_field_empty_hint"
+            android:textAppearance="@style/TextAppearance.App.Caption"
+            android:visibility="gone" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnAddNovelField"
+            style="@style/Widget.App.Button.Outlined"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/novel_field_add"
             android:visibility="gone" />
 
     </LinearLayout>

@@ -6,9 +6,11 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.switchMap
 import androidx.lifecycle.viewModelScope
+import androidx.room.withTransaction
 import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.Novel
+import com.novelcharacter.app.data.repository.NovelFieldValueMerge
 import com.novelcharacter.app.data.model.RecentActivity
 import com.novelcharacter.app.util.StandardYearSyncHelper
 import com.novelcharacter.app.util.OpResult
@@ -20,6 +22,7 @@ import kotlinx.coroutines.launch
 class NovelViewModel(application: Application) : AndroidViewModel(application) {
 
     private val app = application as NovelCharacterApp
+    private val db = app.database
     private val novelRepository = app.novelRepository
     private val universeRepository = app.universeRepository
     private val characterRepository = app.characterRepository
@@ -57,9 +60,21 @@ class NovelViewModel(application: Application) : AndroidViewModel(application) {
         _universeId.value = universeId
     }
 
-    fun insertNovel(novel: Novel) = viewModelScope.launch {
+    fun insertNovel(
+        novel: Novel,
+        fieldSubmission: NovelFieldValueMerge.Submission? = null
+    ) = viewModelScope.launch {
         try {
-            novelRepository.insertNovel(novel)
+            val newId = db.withTransaction {
+                val id = novelRepository.insertNovel(novel)
+                if (fieldSubmission != null) {
+                    // 폼의 권한은 렌더한 필드까지(R-5) — 커버 밖 기존 값은 건드리지 않는다
+                    NovelFieldValueMerge.saveWithinCover(db.novelFieldValueDao(), id, fieldSubmission)
+                }
+                id
+            }
+            // 커밋 후 값 라이브러리 수확 (실패 무해)
+            if (fieldSubmission != null) app.fieldValueLibraryRepository.harvestForNovel(newId)
             reportResult(_result, OpResult.success(OpResult.CAT_NOVEL,
                 app.getString(R.string.result_novel_saved, novel.title)))
         } catch (e: Exception) {
@@ -69,17 +84,92 @@ class NovelViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun updateNovel(novel: Novel) = viewModelScope.launch {
+    fun updateNovel(
+        novel: Novel,
+        fieldSubmission: NovelFieldValueMerge.Submission? = null
+    ) = viewModelScope.launch {
         try {
-            novelRepository.updateNovel(novel)
+            var preservedFieldValues = 0
+            db.withTransaction {
+                novelRepository.updateNovel(novel)
+                if (fieldSubmission != null) {
+                    preservedFieldValues =
+                        NovelFieldValueMerge.saveWithinCover(db.novelFieldValueDao(), novel.id, fieldSubmission)
+                }
+            }
+            if (fieldSubmission != null) app.fieldValueLibraryRepository.harvestForNovel(novel.id)
             reportResult(_result, OpResult.success(OpResult.CAT_NOVEL,
                 app.getString(R.string.result_novel_updated, novel.title)))
+            // 폼이 렌더하지 못해 보존된 값은 '존재를 알 수 없는 데이터'가 되지 않게 알린다(원칙 04)
+            notifyPreservedNovelFieldValues(preservedFieldValues)
         } catch (e: Exception) {
             Log.e("NovelViewModel", "Failed to update novel", e)
             reportResult(_result, OpResult.failure(OpResult.CAT_NOVEL,
                 app.getString(R.string.result_novel_update_failed), e.message))
         }
     }
+
+    private fun notifyPreservedNovelFieldValues(count: Int) {
+        if (count <= 0) return
+        reportResult(_result, OpResult.success(OpResult.CAT_NOVEL,
+            app.getString(R.string.novel_field_values_preserved, count)))
+    }
+
+    // ── 작품 커스텀 필드 (확-3) ──
+
+    /** 작품 편집 폼이 렌더할 정의 — 종류를 저장소 한 자리에서 고른다(R-29) */
+    suspend fun getNovelFieldsForUniverse(universeId: Long) =
+        universeRepository.getNovelFieldsByUniverseList(universeId)
+
+    suspend fun getNovelFieldValues(novelId: Long) =
+        db.novelFieldValueDao().getValuesByNovelList(novelId)
+
+    /** 작품 편집 자리에서 만든 작품 필드를 심는다. 실패는 예외로 올려 호출부가 알린다. */
+    suspend fun insertNovelField(field: com.novelcharacter.app.data.model.FieldDefinition): Long =
+        universeRepository.insertField(field)
+
+    /**
+     * 생성 창의 '값 사전 등록'을 라이브러리에 심는다 — 필드 관리 경로([FieldViewModel.insertField])와
+     * **같은 규칙**이다: 콤마로 가르고, 라이브러리 미지원 타입(NUMBER 등)은 등재해도 어디에도
+     * 보이지 않으므로 건너뛴다. 실패는 무해하다(필드 자체는 이미 만들어졌다).
+     */
+    suspend fun registerInitialValues(
+        fieldDefId: Long,
+        field: com.novelcharacter.app.data.model.FieldDefinition,
+        initialValues: String
+    ) {
+        val staged = initialValues.split(",").map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        if (staged.isEmpty()) return
+        if (!com.novelcharacter.app.util.FieldValueTokenizer.supportsLibrary(field)) return
+        for (value in staged) {
+            runCatching { app.fieldValueLibraryRepository.addEntry(fieldDefId, value) }
+        }
+    }
+
+    /**
+     * 폼이 미리 읽어 두는 값 라이브러리 엔트리 — **숨김도 포함**한다.
+     * 제안(자동완성)은 숨김을 빼지만 허용 목록 판정은 숨긴 값도 허용 목록의 일부로 본다
+     * (용도별 필터링은 호출측이 한다는 저장소 계약).
+     */
+    suspend fun novelFieldEntries(fieldIds: List<Long>) =
+        runCatching { app.fieldValueLibraryRepository.entriesForFields(fieldIds) }
+            .getOrDefault(emptyMap())
+
+    /** 허용 목록 위반을 사용자가 '값 추가하고 저장'으로 교정할 때 — 실패는 무해(저장은 계속된다) */
+    suspend fun addLibraryValues(byField: List<Pair<Long, List<String>>>) {
+        for ((fieldId, tokens) in byField) {
+            for (token in tokens) {
+                runCatching { app.fieldValueLibraryRepository.addEntry(fieldId, token) }
+            }
+        }
+    }
+
+    suspend fun novelFieldSuggestions(universeId: Long) =
+        runCatching {
+            app.fieldValueLibraryRepository.suggestionsForUniverse(
+                universeId, com.novelcharacter.app.data.model.FieldDefinition.ENTITY_NOVEL
+            )
+        }.getOrDefault(emptyMap())
 
     /** 삭제 확인 다이얼로그용 — 함께 삭제될 소속 캐릭터 수 집계(계단식 삭제 사전 고지) */
     suspend fun getNovelDeleteImpact(novelId: Long): Int =

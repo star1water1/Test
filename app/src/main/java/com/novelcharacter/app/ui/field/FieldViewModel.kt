@@ -34,7 +34,7 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
     val result: LiveData<OpResult?> = _result
     fun clearResult() { _result.value = null }
 
-    // 관리 대상 (B-10): 캐릭터 필드 / 사건 필드 전환 — 저장된 세그먼트에서 복원
+    // 관리 대상 (B-10 · 확-3): 캐릭터 / 사건 / 작품 필드 전환 — 저장된 세그먼트에서 복원
     private val _entityType = MutableLiveData(
         prefs.getString("entity_type", FieldDefinition.ENTITY_CHARACTER) ?: FieldDefinition.ENTITY_CHARACTER
     )
@@ -47,10 +47,12 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
 
     val fields: LiveData<List<FieldDefinition>> = _fieldsTrigger.switchMap {
         val id = _universeId.value ?: return@switchMap MutableLiveData(emptyList<FieldDefinition>())
-        if (_entityType.value == FieldDefinition.ENTITY_EVENT) {
-            universeRepository.getEventFieldsByUniverse(id)
-        } else {
-            universeRepository.getFieldsByUniverse(id)
+        // 종류 분기는 [fieldsOf]와 **같은 판정**이어야 한다 — 목록만 다른 종류를 보면
+        // 편집·삭제·가져오기가 화면에 없는 필드를 건드린다(R-29).
+        when (_entityType.value) {
+            FieldDefinition.ENTITY_EVENT -> universeRepository.getEventFieldsByUniverse(id)
+            FieldDefinition.ENTITY_NOVEL -> universeRepository.getNovelFieldsByUniverse(id)
+            else -> universeRepository.getFieldsByUniverse(id)
         }
     }
 
@@ -141,7 +143,10 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
         var formulaCount = 0
         var historyCount = 0
         app.database.withTransaction {
-            val referencing = getReferencingCalculatedFields(new.universeId, old.key)
+            // 참조 수식 모집단은 **바뀌는 필드와 같은 종류**다 — 종류가 다르면 같은 key가
+            // 공존할 수 있고(인덱스가 (universeId, entityType, key)), 남의 종류 수식을 고치면
+            // 그 화면의 수식이 존재하지 않는 키를 가리키게 된다(R-29).
+            val referencing = getReferencingCalculatedFields(new.universeId, old.key, new.entityType)
                 .filter { it.id != new.id }
             // field('키') / field("키") / field(키) 3형태 완전 일치 치환 (부분 문자열 오탐 방지)
             val refRegex = Regex("""field\(\s*(['"]?)${Regex.escape(old.key)}\1\s*\)""")
@@ -237,10 +242,10 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
 
     /** 관리 중인 종류에 맞는 필드 조회 — 종류 분기를 한 자리에 모아 호출부가 어긋나지 않게 한다. */
     private suspend fun fieldsOf(universeId: Long, entityType: String): List<FieldDefinition> =
-        if (entityType == FieldDefinition.ENTITY_EVENT) {
-            universeRepository.getEventFieldsByUniverseList(universeId)
-        } else {
-            universeRepository.getFieldsByUniverseList(universeId)
+        when (entityType) {
+            FieldDefinition.ENTITY_EVENT -> universeRepository.getEventFieldsByUniverseList(universeId)
+            FieldDefinition.ENTITY_NOVEL -> universeRepository.getNovelFieldsByUniverseList(universeId)
+            else -> universeRepository.getFieldsByUniverseList(universeId)
         }
 
     /** 현재 세계관에서 관리 중인 종류의 필드 키 목록 조회 (중복 표시용) */
@@ -248,9 +253,19 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
         return fieldsOf(universeId, entityType).map { it.key }.toSet()
     }
 
-    /** 지정 필드 키를 formula에서 참조하는 CALCULATED 필드 목록 조회 */
-    suspend fun getReferencingCalculatedFields(universeId: Long, fieldKey: String): List<FieldDefinition> {
-        val allFields = universeRepository.getFieldsByUniverseList(universeId)
+    /**
+     * 지정 필드 키를 formula에서 참조하는 CALCULATED 필드 목록 조회.
+     *
+     * **모집단은 같은 [entityType]이다**(R-29). 수식은 자기 종류의 필드값만 읽으므로
+     * (`FormulaEvaluator`에 넘어가는 정의 목록이 종류별이다) 캐릭터 필드를 모집단으로 세면
+     * 사건·작품 필드의 키를 바꿀 때 그 종류의 수식이 조용히 깨지고, 삭제 경고도 뜨지 않는다.
+     */
+    suspend fun getReferencingCalculatedFields(
+        universeId: Long,
+        fieldKey: String,
+        entityType: String = FieldDefinition.ENTITY_CHARACTER
+    ): List<FieldDefinition> {
+        val allFields = fieldsOf(universeId, entityType)
         return allFields.filter { field ->
             if (field.type != "CALCULATED") return@filter false
             val formula = try {

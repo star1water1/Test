@@ -33,6 +33,10 @@ data class StatsSnapshot(
     // 사건 커스텀 필드 (B-10) — "모든 필드가 통계에서 분석 가능해야 한다"(원칙 02)
     val eventFieldDefinitions: List<FieldDefinition> = emptyList(),
     val eventFieldValues: List<EventFieldValue> = emptyList(),
+    // 작품 커스텀 필드 (확-3) — 같은 원칙. 종류를 만들 수 있게 해 놓고 통계에서 빼면
+    // 그 필드는 '있는데 분석되지 않는 필드'가 된다(원칙 02 위반의 가장 흔한 형태).
+    val novelFieldDefinitions: List<FieldDefinition> = emptyList(),
+    val novelFieldValues: List<NovelFieldValue> = emptyList(),
     // 값 데이터 라이브러리 — 별칭 접기·표시 라벨·카테고리의 단일 소스 (구 valueLabels/valueCategories 대체)
     val valueEntries: List<com.novelcharacter.app.data.model.FieldValueEntry> = emptyList(),
     /**
@@ -313,6 +317,24 @@ data class NumericSummaryData(
  */
 enum class CrossAxis { CHARACTER, EVENT }
 
+/**
+ * 드릴다운·하위 그룹 분석이 다루는 **대상 축** — 확-3에서 셋이 됐다.
+ *
+ * 종전에는 `isEventAxis: Boolean` 하나가 축을 날랐다. 축이 둘일 때는 성립했지만 셋이 되는
+ * 순간 "사건이 아니면 캐릭터"라는 전제가 **작품을 캐릭터로 흘려보낸다** — 그러면 조각을
+ * 눌렀을 때 0명짜리 빈 시트가 뜨고, 그것이 S-9가 사건 축에서 겪은 결함 그대로다.
+ * 종류로 갈리는 분기는 한 자리에 모은다(R-29).
+ */
+enum class StatsEntityAxis {
+    CHARACTER, EVENT, NOVEL;
+
+    fun definitionsIn(s: StatsSnapshot): List<FieldDefinition> = when (this) {
+        CHARACTER -> s.fieldDefinitions
+        EVENT -> s.eventFieldDefinitions
+        NOVEL -> s.novelFieldDefinitions
+    }
+}
+
 /** 고른 필드들이 어느 축에 속하는지의 판정 결과 — 실패도 이유를 담아 돌려준다 (변수 제어). */
 sealed class CrossAxisResolution {
     data class Resolved(val axis: CrossAxis) : CrossAxisResolution()
@@ -445,6 +467,17 @@ data class FieldValueEvent(
     val fieldValue: String
 )
 
+/**
+ * 작품 드릴다운 행 — [FieldValueCharacter]의 작품판 (확-3).
+ * [universeId]는 행을 눌렀을 때 그 작품이 있는 목록으로 보내기 위한 것이다(작품 상세 화면이 없다).
+ */
+data class FieldValueNovel(
+    val novelId: Long,
+    val title: String,
+    val universeId: Long?,
+    val fieldValue: String
+)
+
 data class SubgroupAnalysis(
     val targetFieldName: String,
     val distribution: Map<String, Int>,
@@ -519,6 +552,8 @@ class StatsDataProvider {
             eventNovelCrossRefs = db.timelineDao().getAllEventNovelCrossRefs(),
             eventFieldDefinitions = db.fieldDefinitionDao().getAllFieldsList(FieldDefinition.ENTITY_EVENT),
             eventFieldValues = db.eventFieldValueDao().getAllValuesList(),
+            novelFieldDefinitions = db.fieldDefinitionDao().getAllFieldsList(FieldDefinition.ENTITY_NOVEL),
+            novelFieldValues = db.novelFieldValueDao().getAllValuesList(),
             valueEntries = db.fieldValueEntryDao().getAllList()
         )
     }
@@ -594,7 +629,10 @@ class StatsDataProvider {
             factionMemberships = filteredMemberships,
             eventNovelCrossRefs = s.eventNovelCrossRefs.filter { it.eventId in eventIds },
             eventFieldDefinitions = s.eventFieldDefinitions.filter { it.universeId == novel.universeId },
-            eventFieldValues = s.eventFieldValues.filter { it.eventId in eventIdsForNovel }
+            eventFieldValues = s.eventFieldValues.filter { it.eventId in eventIdsForNovel },
+            // 작품 스코프의 모수는 그 작품 하나다 — 값도 그 작품 것만 남긴다.
+            novelFieldDefinitions = s.novelFieldDefinitions.filter { it.universeId == novel.universeId },
+            novelFieldValues = s.novelFieldValues.filter { it.novelId == novelId }
         )
     }
 
@@ -614,6 +652,7 @@ class StatsDataProvider {
         val referencedDefIds = filteredFieldValues.map { it.fieldDefinitionId }.toSet()
         val filteredEventFieldValues = s.eventFieldValues.filter { it.eventId in eventIds }
         val referencedEventDefIds = filteredEventFieldValues.map { it.fieldDefinitionId }.toSet()
+
         return s.copy(
             characters = s.characters.filter { it.novelId == null },
             novels = emptyList(),
@@ -632,6 +671,12 @@ class StatsDataProvider {
             eventNovelCrossRefs = emptyList(),
             eventFieldDefinitions = s.eventFieldDefinitions.filter { it.id in referencedEventDefIds },
             eventFieldValues = filteredEventFieldValues,
+            // **작품 축은 이 스코프에 없다.** '작품 미배정'은 작품이 없는 캐릭터의 스코프라
+            // 작품 모수가 0이고, 값만 실으면 카드가 "3/0개"라는 읽을 수 없는 완성도를 낸다
+            // (캐릭터 축이 모수 0 모순을 피하려고 unassignedScope 분기를 둔 것과 같은 이유).
+            // 세계관 없는 작품이 보관 중인 값은 전체 스코프의 카드와 엑셀 왕복이 다룬다.
+            novelFieldDefinitions = emptyList(),
+            novelFieldValues = emptyList(),
             unassignedScope = true
         )
     }
@@ -1289,7 +1334,36 @@ class StatsDataProvider {
                 mergedFieldDefIds = fds.map { it.id })
         }
 
-        return characterInsights + eventInsights
+        // ── 작품 필드 인사이트 (확-3): 같은 규칙으로 편입 (원칙 02) ──
+        val novelValueStringsByFieldDef = mutableMapOf<Long, MutableList<String>>()
+        s.novelFieldValues.filter { it.value.isNotBlank() }.forEach { fv ->
+            novelValueStringsByFieldDef.getOrPut(fv.fieldDefinitionId) { mutableListOf() }.add(fv.value)
+        }
+        for ((_, fieldMap) in computeAllNovelCalculatedValues(s)) {
+            for ((fieldDefId, value) in fieldMap) {
+                novelValueStringsByFieldDef.getOrPut(fieldDefId) { mutableListOf() }.add(value)
+            }
+        }
+        val novelFieldGroups = statsCache.analyzable(s.novelFieldDefinitions)
+            .groupBy { it.key to it.type }
+        val novelInsights = novelFieldGroups.map { (_, fds) ->
+            val primaryFd = fds.first()
+            val statsConfig = statsCache.of(primaryFd)
+            val rawValues = fds.flatMap { fd -> novelValueStringsByFieldDef[fd.id] ?: emptyList() }
+
+            // 모수 = 해당 세계관들의 작품 수 (작품 필드는 세계관 소속 작품에만 부여 가능)
+            val universeIds = fds.map { it.universeId }.toSet()
+            val totalCount = s.novels.count { it.universeId in universeIds }
+
+            val universeName = if (fds.size == 1) {
+                universeMap[primaryFd.universeId]?.name ?: ""
+            } else ""
+
+            buildFieldInsight(s, primaryFd, statsConfig, rawValues, totalCount, universeName,
+                mergedFieldDefIds = fds.map { it.id })
+        }
+
+        return characterInsights + eventInsights + novelInsights
     }
 
     /** 필드 1개(세계관 통합 그룹)의 분석 결과 조립 — 캐릭터/사건 필드 공용 */
@@ -2556,6 +2630,64 @@ class StatsDataProvider {
     }
 
     /**
+     * 차트 조각(값 하나)을 가진 **작품** 목록 — [getCharactersByFieldValue]의 작품판 (확-3).
+     * 캐릭터·사건 축과 **대칭**이다: 카드를 만들어 놓고 조회 경로를 만들지 않으면 조각을 눌렀을 때
+     * 항상 0개짜리 빈 시트가 뜬다(S-9가 사건 축에서 겪은 그대로다).
+     */
+    fun getNovelsByFieldValue(
+        s: StatsSnapshot,
+        fieldDefIds: List<Long>,
+        spec: FieldValueMatchSpec
+    ): List<FieldValueNovel>? {
+        if (fieldDefIds.isEmpty()) return null
+        val idSet = fieldDefIds.toSet()
+        val defById = s.novelFieldDefinitions.filter { it.id in idSet }.associateBy { it.id }
+        if (defById.isEmpty()) return null
+
+        val refDef = defById[fieldDefIds.first()] ?: defById.values.first()
+        val refCfg = FieldStatsConfig.fromConfig(refDef.config)
+        val novelMap = s.novels.associateBy { it.id }
+
+        val result = LinkedHashMap<Long, FieldValueNovel>()
+        fun record(novelId: Long, shownValue: String) {
+            if (result.containsKey(novelId)) return
+            val novel = novelMap[novelId] ?: return
+            result[novelId] = FieldValueNovel(
+                novelId = novel.id,
+                title = novel.title,
+                universeId = novel.universeId,
+                fieldValue = shownValue
+            )
+        }
+
+        if (defById.values.any { it.type != "CALCULATED" }) {
+            for (fv in s.novelFieldValues) {
+                if (fv.fieldDefinitionId !in idSet) continue
+                if (defById[fv.fieldDefinitionId]?.type == "CALCULATED") continue
+                if (FieldValueMatcher.matches(spec, fv.value) { getFieldValues(s, refDef, fv.value, refCfg) }) {
+                    record(fv.novelId, fv.value)
+                }
+            }
+        }
+
+        val calcDefIds = defById.values.filter { it.type == "CALCULATED" }.map { it.id }
+        if (calcDefIds.isNotEmpty()) {
+            val calculatedValues = computeAllNovelCalculatedValues(s)
+            for ((novelId, fieldMap) in calculatedValues) {
+                for (defId in calcDefIds) {
+                    val computedValue = fieldMap[defId] ?: continue
+                    if (FieldValueMatcher.matches(spec, computedValue) {
+                            getFieldValues(s, refDef, computedValue, refCfg)
+                        }) {
+                        record(novelId, computedValue)
+                    }
+                }
+            }
+        }
+        return result.values.sortedBy { it.title }
+    }
+
+    /**
      * (key,type)로 묶인 여러 fieldDefId 전체에 걸쳐, 주어진 [values] 중 하나라도 가진(또는 [exclude]면
      * 하나도 갖지 않은) 캐릭터를 반환한다. detectPatterns가 다세계관을 합산해 감지하므로, 드릴다운도
      * 단일 fieldDefId가 아니라 **병합 id 전체**를 순회해야 과소집계되지 않는다. getFieldValues 파싱 재사용.
@@ -2753,6 +2885,60 @@ class StatsDataProvider {
             targetFieldName = refDef.name,
             distribution = view.shownMap(),
             totalCount = eventIds.size,
+            truncatedCount = view.hiddenKinds
+        )
+    }
+
+    /**
+     * 작품 ID 집합에 대해 다른 **작품 필드**의 분포를 분석 — [computeSubgroupAnalysis]의 작품판 (확-3).
+     * R-13대로 축마다 함수를 나눈다: 셀 단위가 작품 수다.
+     */
+    fun computeNovelSubgroupAnalysis(
+        s: StatsSnapshot,
+        novelIds: Set<Long>,
+        targetFieldDefIds: List<Long>
+    ): SubgroupAnalysis? {
+        if (targetFieldDefIds.isEmpty()) return null
+        val idSet = targetFieldDefIds.toSet()
+        val defById = s.novelFieldDefinitions.filter { it.id in idSet }.associateBy { it.id }
+        if (defById.isEmpty()) return null
+
+        val refDef = defById[targetFieldDefIds.first()] ?: defById.values.first()
+        val refCfg = FieldStatsConfig.fromConfig(refDef.config)
+
+        val holders = HashMap<String, MutableSet<Long>>()
+        fun record(entityId: Long, value: String) {
+            for (key in getFieldValues(s, refDef, value, refCfg)) {
+                holders.getOrPut(key) { HashSet() }.add(entityId)
+            }
+        }
+
+        for (fv in s.novelFieldValues) {
+            if (fv.fieldDefinitionId !in idSet) continue
+            if (fv.novelId !in novelIds) continue
+            if (defById[fv.fieldDefinitionId]?.type == "CALCULATED") continue
+            record(fv.novelId, fv.value)
+        }
+
+        val calcDefIds = defById.values.filter { it.type == "CALCULATED" }.map { it.id }
+        if (calcDefIds.isNotEmpty()) {
+            val calculated = computeAllNovelCalculatedValues(s)
+            for (novelId in novelIds) {
+                val fieldMap = calculated[novelId] ?: continue
+                for (defId in calcDefIds) {
+                    val v = fieldMap[defId] ?: continue
+                    record(novelId, v)
+                }
+            }
+        }
+
+        val counted = ValueDistributions.sorted(holders.mapValues { it.value.size })
+        val view = ValueDistributions.view(counted, SUBGROUP_DISTRIBUTION_LIMIT)
+
+        return SubgroupAnalysis(
+            targetFieldName = refDef.name,
+            distribution = view.shownMap(),
+            totalCount = novelIds.size,
             truncatedCount = view.hiddenKinds
         )
     }
@@ -3224,6 +3410,66 @@ class StatsDataProvider {
             }
             if (eventCalcValues.isNotEmpty()) {
                 result[event.id] = eventCalcValues
+            }
+        }
+        return result
+    }
+
+    /**
+     * 작품 CALCULATED 필드 일괄 계산 — [computeAllEventCalculatedValues]의 작품판 (확-3).
+     *
+     * 축이 셋이 됐으므로 계산도 셋이다. 한 축만 두면 그 축의 계산 필드는 목록에는 뜨는데
+     * 분포가 영원히 비고, 그것이 원칙 02가 말하는 '껍데기 구현'이다.
+     * @return Map<novelId, Map<fieldDefinitionId, 계산값 문자열>>
+     */
+    private fun computeAllNovelCalculatedValues(s: StatsSnapshot): Map<Long, Map<Long, String>> {
+        val calculatedFields = s.novelFieldDefinitions.filter { it.type == "CALCULATED" }
+        if (calculatedFields.isEmpty()) return emptyMap()
+
+        val fieldDefByUniverse = s.novelFieldDefinitions.groupBy { it.universeId }
+        val allFieldDefById = s.novelFieldDefinitions.associateBy { it.id }
+        val valuesByNovel = s.novelFieldValues.groupBy { it.novelId }
+
+        data class CalcFieldInfo(val fd: FieldDefinition, val formula: String)
+        val calcFieldsByUniverse = mutableMapOf<Long, List<CalcFieldInfo>>()
+        for ((universeId, fields) in fieldDefByUniverse) {
+            val calcInfos = fields.filter { it.type == "CALCULATED" }.mapNotNull { fd ->
+                val formula = try {
+                    org.json.JSONObject(fd.config).optString("formula", "")
+                } catch (_: Exception) { "" }
+                if (formula.isNotBlank()) CalcFieldInfo(fd, formula) else null
+            }
+            if (calcInfos.isNotEmpty()) calcFieldsByUniverse[universeId] = calcInfos
+        }
+        if (calcFieldsByUniverse.isEmpty()) return emptyMap()
+
+        val result = mutableMapOf<Long, MutableMap<Long, String>>()
+        for (novel in s.novels) {
+            val universeId = novel.universeId ?: continue
+            val calcInfos = calcFieldsByUniverse[universeId] ?: continue
+            val universeFields = fieldDefByUniverse[universeId] ?: continue
+
+            val values = valuesByNovel[novel.id] ?: emptyList()
+            val fieldKeyValues = mutableMapOf<String, String>()
+            for (fv in values) {
+                val fDef = allFieldDefById[fv.fieldDefinitionId] ?: continue
+                fieldKeyValues[fDef.key] = fv.value
+            }
+
+            val evaluator = FormulaEvaluator(fieldKeyValues, universeFields)
+            val novelCalcValues = mutableMapOf<Long, String>()
+            for ((fd, formula) in calcInfos) {
+                try {
+                    val value = evaluator.evaluate(formula)
+                    if (!value.isNaN() && !value.isInfinite()) {
+                        // 서식은 다른 축과 같은 단일 소스를 쓴다 — 같은 수식이 축마다 다른
+                        // 문자열이 되면 분포 키가 갈라진다(R-22).
+                        novelCalcValues[fd.id] = formatStatsNumber(value)
+                    }
+                } catch (_: Exception) { /* 평가 실패 시 해당 필드 제외 */ }
+            }
+            if (novelCalcValues.isNotEmpty()) {
+                result[novel.id] = novelCalcValues
             }
         }
         return result

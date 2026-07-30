@@ -158,7 +158,8 @@ class FieldValueLibraryViewModel(application: Application) : AndroidViewModel(ap
         val summary = if (alsoClearData) {
             app.getString(R.string.field_library_deleted) +
                 " · " + app.getString(R.string.field_library_propagation_message,
-                    report.characterValues, report.eventValues, report.stateChanges)
+                    report.characterValues, report.eventValues, report.stateChanges,
+                    report.novelValues)
         } else {
             app.getString(R.string.field_library_deleted)
         }

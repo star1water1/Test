@@ -69,10 +69,10 @@ enum class ConflictResolution {
 }
 
 /**
- * 연표 시트의 사건 커스텀 필드 열 하나.
+ * 동적 필드 열 하나 — **연표 시트의 사건 필드**와 **작품 시트의 작품 필드**가 함께 쓴다.
  *
  * [resolved]가 non-null이면 내보내기 규칙의 역함수로 필드가 확정된 열이다(이름·세계관명에
- * 괄호가 있어도 안전). null이면 헤더 추측 파싱 결과이므로 사건의 세계관에서 이름으로 조회한다.
+ * 괄호가 있어도 안전). null이면 헤더 추측 파싱 결과이므로 그 행의 세계관에서 이름으로 조회한다.
  */
 data class EventFieldColumn(
     val colIndex: Int,
@@ -454,9 +454,6 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             deferredNovelImageCharCodes.clear()
             universeCodeAliases.clear()
             if (effectiveOptions.universes) importUniverses(workbook, result, onProgress, totalRows)
-            if (effectiveOptions.novels) importNovels(workbook, result, onProgress, totalRows)
-            // Novel 임포트 완료 (또는 기존 DB 유지) → Universe의 imageNovelId 코드 해석
-            applyDeferredUniverseNovelRefs(result)
             if (effectiveOptions.fieldDefinitions) {
                 importFieldDefinitions(workbook, result, onProgress, totalRows)
                 // OVERWRITE: 사전 deleteAll 대신 매칭 후 잔여 정의만 정리 — 매칭된 정의는 id가 보존되어
@@ -464,6 +461,13 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 if (strategy == ImportStrategy.OVERWRITE) pruneUnmatchedFieldDefinitions(workbook, result)
                 importFieldValueLibrary(workbook, result, onProgress, totalRows)
             }
+            // **필드 정의 다음에 작품을 가져온다**(확-3). 작품 시트의 '필드:' 열은 정의를 찾아야
+            // 값이 붙는데, 신규 기기 복원(빈 DB)에서 작품이 먼저 오면 그 열이 전부 해석에 실패해
+            // "'필드 정의' 시트를 함께 가져오세요"라는 **거짓 경고**와 함께 값이 유실된다 —
+            // 같은 파일 안에 정의가 실려 있는데도. 연표(사건 필드)가 이미 정의 뒤에 있는 이유와 같다.
+            if (effectiveOptions.novels) importNovels(workbook, result, onProgress, totalRows)
+            // Novel 임포트 완료 (또는 기존 DB 유지) → Universe의 imageNovelId 코드 해석
+            applyDeferredUniverseNovelRefs(result)
 
             // Phase 2: Entity data (characters)
             if (effectiveOptions.characters) {
@@ -1862,7 +1866,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val headerRow = sheet.getRow(0) ?: return
         if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
 
-        reportUnknownColumns(headerRow, spec, result)
+        // 작품 커스텀 필드는 동적 열이므로 미인식 대상에서 제외한다(해석 실패는 아래에서 따로 고지)
+        reportUnknownColumns(headerRow, spec, result, dynamicColumnPrefixes = listOf(EntityFieldHeaders.PREFIX))
         val cols = resolveHeaderColumns(headerRow)
         val titleColIndex = cols[spec.firstColumnHeader] ?: cols["제목"] ?: 0
         val descColIndex = cols["설명"] ?: 1
@@ -1884,6 +1889,37 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
         val codesSeen = mutableMapOf<String, Int>()
         val entitySeen = mutableMapOf<Long, Int>()
+
+        // 작품 커스텀 필드 컬럼 (확-3) — 연표 시트와 **같은 규칙**(EntityFieldHeaders)의 역함수다.
+        // 정확 일치를 최우선으로 두는 이유는 이름이 괄호로 끝나는 필드를 세계관 한정으로
+        // 오인하면 열 전체가 버려지기 때문이다.
+        val allNovelFields = db.fieldDefinitionDao().getAllFieldsList(FieldDefinition.ENTITY_NOVEL)
+        val universeNamesById = db.universeDao().getAllUniversesList().associate { it.id to it.name }
+        val knownUniverseNames = universeNamesById.values.toHashSet()
+        val knownNovelFieldNames = allNovelFields.mapTo(HashSet()) { it.name }
+        val expectedNovelHeaders = EntityFieldHeaders.expectedHeaders(allNovelFields, universeNamesById)
+        val novelFieldColumns = mutableListOf<EventFieldColumn>()
+        val novelFieldHeadersSeen = mutableSetOf<String>()
+        // 정의 없는 "필드:" 열의 값 유실 고지용 — (헤더명) 단위로 1회만 경고
+        val droppedNovelFieldHeaders = mutableSetOf<String>()
+        for (ci in 0 until headerRow.lastCellNum) {
+            val header = getCellString(headerRow, ci)
+            if (!header.startsWith(EntityFieldHeaders.PREFIX)) continue
+            if (!novelFieldHeadersSeen.add(header)) {
+                result.warnings.add("작품: 필드 열 '$header'이(가) 중복되어 뒤쪽 열을 무시했습니다 — 필드명이 겹치지 않는지 확인하세요")
+                continue
+            }
+            val exact = expectedNovelHeaders[header]
+            if (exact != null) {
+                novelFieldColumns.add(
+                    EventFieldColumn(ci, header, exact.name, universeNamesById[exact.universeId], exact)
+                )
+                continue
+            }
+            val parsed = EntityFieldHeaders
+                .parseFallback(header, knownNovelFieldNames, knownUniverseNames) ?: continue
+            novelFieldColumns.add(EventFieldColumn(ci, header, parsed.fieldName, parsed.universeName, null))
+        }
 
         for (i in 1..sheet.lastRowNum) {
             try {
@@ -1965,6 +2001,13 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val effectiveInherit = if (inheritBorderColIndex >= 0) parseBoolean(getCellString(row, inheritBorderColIndex)) else (borderColorFromExcel ?: "").isBlank()
 
                 if (existing != null) {
+                    // 이 행이 확정하는 소속 — 아래 update와 필드값 적용이 **같은 값**을 봐야 한다.
+                    // 두 곳에 따로 쓰면 한쪽만 고쳐질 때 방금 옮긴 작품에 옛 세계관 필드가 붙는다.
+                    val effectiveUniverseId = when {
+                        !universeColumnPresent -> existing.universeId
+                        universeRefProvided && universeId == null -> existing.universeId
+                        else -> universeId
+                    }
                     val prevRow = entitySeen[existing.id]
                     if (prevRow != null) {
                         result.warnings.add("작품 행 $i: 행 $prevRow 과 같은 항목('$title')을 다시 덮어씀 — 별개의 작품으로 넣으려면 '코드' 칸을 비우고 제목을 다르게 한 뒤 다시 가져오세요")
@@ -1980,11 +2023,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         title = title,
                         description = descriptionFromExcel ?: existing.description,
                         // F1-A: 열 없음 = 기존 소속 유지. 참조가 있는데 미해석이면 무음 분리 대신 기존 유지(위 경고와 짝).
-                        universeId = when {
-                            !universeColumnPresent -> existing.universeId
-                            universeRefProvided && universeId == null -> existing.universeId
-                            else -> universeId
-                        },
+                        universeId = effectiveUniverseId,
                         displayOrder = displayOrder ?: existing.displayOrder,
                         borderColor = borderColorFromExcel ?: existing.borderColor,
                         borderWidthDp = borderWidthFromExcel ?: existing.borderWidthDp,
@@ -1999,6 +2038,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     ))
                     if (novelImageCharCode != null) deferredNovelImageCharCodes[existing.id] = novelImageCharCode
                     result.updatedNovels++
+                    // 소속이 이 행에서 바뀌었으면 **새 소속**의 필드가 적용 대상이다(위 val과 같은 값).
+                    applyNovelFieldColumns(
+                        row, existing.id, effectiveUniverseId,
+                        novelFieldColumns, allNovelFields, universeNamesById,
+                        droppedNovelFieldHeaders, result
+                    )
                 } else {
                     val newCode = if (code.isNotBlank()) code else generateEntityCode()
                     if (code.isBlank()) result.newCodesGenerated++
@@ -2015,6 +2060,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     if (novelImageCharCode != null) deferredNovelImageCharCodes[newId] = novelImageCharCode
                     entitySeen[newId] = i
                     result.newNovels++
+                    applyNovelFieldColumns(
+                        row, newId, universeId,
+                        novelFieldColumns, allNovelFields, universeNamesById,
+                        droppedNovelFieldHeaders, result
+                    )
                     // 세계관 미해석 경고는 위(해석 지점)에서 신규/기존 공통으로 1회 보고한다
                 }
             } catch (e: Exception) {
@@ -2023,6 +2073,69 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             }
         }
         reportProgress(onProgress, "작품", sheet.lastRowNum, totalRows)
+    }
+
+    /**
+     * 작품 시트의 커스텀 필드 열을 그 작품에 반영한다 (확-3).
+     *
+     * 연표 시트의 사건 필드와 **같은 규약**이다:
+     * - 해석에 성공한 열만 교체 대상이다 — 시트에 없던 필드의 기존 값은 살아남는다(F1-A 열 단위).
+     * - 열이 있고 셀이 빈칸이면 교체 대상에 들어가므로 **비움 의도는 존중**된다.
+     * - 이 작품의 세계관에 없는 필드 열은 정상(다른 세계관 열)이므로 값이 있을 때만 1회 경고한다.
+     * - 계산 필드는 저장하지 않는다(R-16) — 수식으로 산출되는 파생값이다.
+     */
+    private suspend fun applyNovelFieldColumns(
+        row: Row,
+        novelId: Long,
+        novelUniverseId: Long?,
+        columns: List<EventFieldColumn>,
+        allNovelFields: List<FieldDefinition>,
+        universeNamesById: Map<Long, String>,
+        droppedHeaders: MutableSet<String>,
+        result: ImportResult
+    ) {
+        if (columns.isEmpty() || novelUniverseId == null) return
+        val universeFields = allNovelFields.filter { it.universeId == novelUniverseId }
+        val universeName = universeNamesById[novelUniverseId]
+        val newValues = mutableListOf<com.novelcharacter.app.data.model.NovelFieldValue>()
+        val resolvedFieldIds = mutableListOf<Long>()
+        for (col in columns) {
+            val ci = col.colIndex
+            val fieldDef = when {
+                col.resolved != null ->
+                    if (col.resolved.universeId == novelUniverseId) col.resolved else null
+                col.universeName != null && col.universeName != universeName -> null
+                else -> universeFields.find { it.name == col.fieldName }
+            }
+            if (fieldDef == null) {
+                if (getCellString(row, ci).isNotBlank() && droppedHeaders.add(col.header)) {
+                    result.warnings.add(
+                        "작품 시트의 필드 열 '${col.header}'에 해당하는 작품 필드 정의를 찾을 수 없어 값이 반영되지 않았습니다 — '필드 정의' 시트(대상=작품)를 함께 가져오세요"
+                    )
+                }
+                continue
+            }
+            if (fieldDef.type == "CALCULATED") {
+                if (getCellString(row, ci).isNotBlank() && droppedHeaders.add(col.header)) {
+                    result.warnings.add(
+                        "작품 시트의 '${col.header}' 열은 계산 필드라 저장하지 않습니다(다른 필드로부터 산출됨)"
+                    )
+                }
+                continue
+            }
+            resolvedFieldIds.add(fieldDef.id)
+            val cellValue = getCellString(row, ci)
+            if (cellValue.isNotBlank()) {
+                newValues.add(
+                    com.novelcharacter.app.data.model.NovelFieldValue(
+                        novelId = novelId, fieldDefinitionId = fieldDef.id, value = cellValue
+                    )
+                )
+            }
+        }
+        if (resolvedFieldIds.isNotEmpty() || newValues.isNotEmpty()) {
+            db.novelFieldValueDao().replaceForFields(novelId, resolvedFieldIds, newValues)
+        }
     }
 
     // ── 필드 정의 가져오기 ──
@@ -2881,7 +2994,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
 
         // 사건 커스텀 필드는 동적 열이므로 미인식 대상에서 제외한다(해석 실패는 아래에서 따로 고지)
-        reportUnknownColumns(headerRow, spec, result, dynamicColumnPrefixes = listOf(EventFieldHeaders.PREFIX))
+        reportUnknownColumns(headerRow, spec, result, dynamicColumnPrefixes = listOf(EntityFieldHeaders.PREFIX))
         val cols = resolveHeaderColumns(headerRow)
         val yearColIndex = cols["연도"] ?: 0
         // 선택 속성 열: 위치 폴백을 쓰면 열 삭제 시 이웃 열을 오독하므로 -1(=없음). 열 없음이면 UPDATE에서 기존값 유지.
@@ -2913,7 +3026,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val allNovels = db.novelDao().getAllNovelsList()
         val eventCodesSeen = mutableSetOf<String>()
         // 정의 없는 "필드:" 열의 값 유실 고지용 — (헤더명) 단위로 1회만 경고
-        val droppedEventFieldHeaders = mutableSetOf<String>()
+        val droppedEntityFieldHeaders = mutableSetOf<String>()
 
         // 사건 커스텀 필드 컬럼 (B-10): "필드:{이름}" 또는 "필드:{이름}({세계관})" 헤더 스캔.
         // 정규식 추측 파싱은 이름이 괄호로 끝나는 필드('규모(명)')를 세계관 한정으로 오인하므로,
@@ -2922,13 +3035,13 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val universeNamesById = db.universeDao().getAllUniversesList().associate { it.id to it.name }
         val knownUniverseNames = universeNamesById.values.toHashSet()
         val knownEventFieldNames = allEventFields.mapTo(HashSet()) { it.name }
-        // 내보내기와 동일 규칙(EventFieldHeaders)으로 기대 헤더 맵을 만들어 정확 일치를 최우선 조회한다
-        val expectedEventHeaders = EventFieldHeaders.expectedHeaders(allEventFields, universeNamesById)
+        // 내보내기와 동일 규칙(EntityFieldHeaders)으로 기대 헤더 맵을 만들어 정확 일치를 최우선 조회한다
+        val expectedEventHeaders = EntityFieldHeaders.expectedHeaders(allEventFields, universeNamesById)
         val eventFieldColumns = mutableListOf<EventFieldColumn>()
         val eventFieldHeadersSeen = mutableSetOf<String>()
         for (ci in 0 until headerRow.lastCellNum) {
             val header = getCellString(headerRow, ci)
-            if (!header.startsWith(EventFieldHeaders.PREFIX)) continue
+            if (!header.startsWith(EntityFieldHeaders.PREFIX)) continue
             if (!eventFieldHeadersSeen.add(header)) {
                 result.warnings.add("사건 연표: 필드 열 '$header'이(가) 중복되어 뒤쪽 열을 무시했습니다 — 필드명이 겹치지 않는지 확인하세요")
                 continue
@@ -2939,7 +3052,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 eventFieldColumns.add(EventFieldColumn(ci, header, exact.name, universeNamesById[exact.universeId], exact))
                 continue
             }
-            val parsed = EventFieldHeaders.parseFallback(header, knownEventFieldNames, knownUniverseNames) ?: continue
+            val parsed = EntityFieldHeaders.parseFallback(header, knownEventFieldNames, knownUniverseNames) ?: continue
             eventFieldColumns.add(EventFieldColumn(ci, header, parsed.fieldName, parsed.universeName, null))
         }
 
@@ -3099,7 +3212,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                             // 이 사건의 세계관에 해당 필드가 없는 것은 정상(다른 세계관 열)이므로,
                             // 셀에 값이 있을 때만 1회 경고한다. 키는 원본 헤더 — 필드명으로 묶으면
                             // 서로 다른 세계관의 동명 열이 하나로 뭉쳐 경고가 누락된다.
-                            if (getCellString(row, ci).isNotBlank() && droppedEventFieldHeaders.add(col.header)) {
+                            if (getCellString(row, ci).isNotBlank() && droppedEntityFieldHeaders.add(col.header)) {
                                 result.warnings.add(
                                     "사건 시트의 필드 열 '${col.header}'에 해당하는 사건 필드 정의를 찾을 수 없어 값이 반영되지 않았습니다 — '필드 정의' 시트(대상=사건)를 함께 가져오세요"
                                 )
@@ -3110,7 +3223,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         // resolvedFieldIds에도 넣지 않아 기존 행을 건드리지 않는다(잔여 행 정리는
                         // 편집 저장의 커버 규칙이 맡는다 — EventFieldValueMerge).
                         if (fieldDef.type == "CALCULATED") {
-                            if (getCellString(row, ci).isNotBlank() && droppedEventFieldHeaders.add(col.header)) {
+                            if (getCellString(row, ci).isNotBlank() && droppedEntityFieldHeaders.add(col.header)) {
                                 result.warnings.add(
                                     "사건 시트의 '${col.header}' 열은 계산 필드라 저장하지 않습니다(다른 필드로부터 산출됨)"
                                 )

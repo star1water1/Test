@@ -188,18 +188,22 @@ class FieldManageFragment : Fragment() {
         }
     }
 
-    /** 캐릭터 필드 / 사건 필드 관리 대상 전환 (B-10) */
+    /** 캐릭터 / 사건 / 작품 필드 관리 대상 전환 (B-10 · 확-3) */
     private fun setupEntityTypeToggle() {
         binding.entityTypeChipGroup.setOnCheckedStateChangeListener { _, checkedIds ->
-            val type = if (checkedIds.contains(R.id.chipEventFields)) {
-                FieldDefinition.ENTITY_EVENT
-            } else {
-                FieldDefinition.ENTITY_CHARACTER
+            val type = when {
+                checkedIds.contains(R.id.chipEventFields) -> FieldDefinition.ENTITY_EVENT
+                checkedIds.contains(R.id.chipNovelFields) -> FieldDefinition.ENTITY_NOVEL
+                else -> FieldDefinition.ENTITY_CHARACTER
             }
             viewModel.setEntityType(type)
         }
         viewModel.entityType.observe(viewLifecycleOwner) { type ->
-            val targetId = if (type == FieldDefinition.ENTITY_EVENT) R.id.chipEventFields else R.id.chipCharacterFields
+            val targetId = when (type) {
+                FieldDefinition.ENTITY_EVENT -> R.id.chipEventFields
+                FieldDefinition.ENTITY_NOVEL -> R.id.chipNovelFields
+                else -> R.id.chipCharacterFields
+            }
             if (binding.entityTypeChipGroup.checkedChipId != targetId) {
                 binding.entityTypeChipGroup.check(targetId)
             }
@@ -256,7 +260,8 @@ class FieldManageFragment : Fragment() {
 
     private fun confirmDeleteField(field: FieldDefinition) {
         viewLifecycleOwner.lifecycleScope.launch {
-            val refs = viewModel.getReferencingCalculatedFields(universeId, field.key)
+            // 참조 수식은 같은 종류 안에서만 성립한다 — 종류를 넘겨야 사건·작품 필드도 경고가 뜬다(R-29)
+            val refs = viewModel.getReferencingCalculatedFields(universeId, field.key, field.entityType)
             if (refs.isEmpty()) {
                 viewModel.deleteField(field)
                 return@launch
@@ -279,12 +284,12 @@ class FieldManageFragment : Fragment() {
             val entityType = viewModel.currentEntityType()
             val allSources = viewModel.getFieldsFromAllSources(universeId, entityType)
             if (allSources.isEmpty()) {
-                // 사건 탭에서 "다른 세계관이 없습니다"는 거짓이 된다 — 세계관은 있고
-                // 그 종류의 필드가 없는 것이므로 사유를 갈라 알린다.
-                val message = if (entityType == FieldDefinition.ENTITY_EVENT) {
-                    R.string.import_no_event_field_sources
-                } else {
-                    R.string.import_no_other_universes
+                // 사건·작품 탭에서 "다른 세계관이 없습니다"는 거짓이 된다 — 세계관은 있고
+                // 그 종류의 필드가 없는 것이므로 사유를 갈라 알린다(R-29).
+                val message = when (entityType) {
+                    FieldDefinition.ENTITY_EVENT -> R.string.import_no_event_field_sources
+                    FieldDefinition.ENTITY_NOVEL -> R.string.import_no_novel_field_sources
+                    else -> R.string.import_no_other_universes
                 }
                 Toast.makeText(requireContext(), message, Toast.LENGTH_LONG).show()
                 return@launch

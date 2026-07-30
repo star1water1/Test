@@ -81,6 +81,9 @@ class WorldPackageExporter(private val context: Context) {
         // v3: 사건 필드값 — 내보내는 사건의 값만
         val eventFieldValues = db.eventFieldValueDao().getAllValuesList()
             .filter { it.eventId in eventIds }
+        // v4: 작품 필드값 — 내보내는 작품의 값만(확-3). 정의는 위 전 entityType 조회가 이미 담았다.
+        val novelFieldValues = db.novelFieldValueDao().getAllValuesList()
+            .filter { it.novelId in novelIds }
         // v3: 값 라이브러리 — 이 세계관 필드의 엔트리 전부(큐레이션 포함). IN 청크는 저장소 공통 관례.
         val fieldValueEntries = fieldDefinitionIds.chunked(900)
             .flatMap { db.fieldValueEntryDao().getForFields(it) }
@@ -132,6 +135,7 @@ class WorldPackageExporter(private val context: Context) {
                 writeJsonEntry(zip, WorldPackageEntries.FACTION_RELATIONSHIPS, factionRelResult.items)
                 writeJsonEntry(zip, WorldPackageEntries.EVENT_FIELD_VALUES, eventFieldValues)
                 writeJsonEntry(zip, WorldPackageEntries.FIELD_VALUE_ENTRIES, fieldValueEntries)
+                writeJsonEntry(zip, WorldPackageEntries.NOVEL_FIELD_VALUES, novelFieldValues)
 
                 // Images
                 if (config.includeImages) {

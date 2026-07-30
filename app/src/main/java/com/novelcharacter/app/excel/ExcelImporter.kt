@@ -397,6 +397,7 @@ class ExcelImporter(context: Context) {
         if (outcome.fieldValues > 0) parts.add("필드값 ${outcome.fieldValues}")
         if (outcome.events > 0) parts.add("사건 ${outcome.events}")
         if (outcome.eventFieldValues > 0) parts.add("사건 필드값 ${outcome.eventFieldValues}")
+        if (outcome.novelFieldValues > 0) parts.add("작품 필드값 ${outcome.novelFieldValues}")
         if (outcome.tags > 0) parts.add("태그 ${outcome.tags}")
         if (outcome.stateChanges > 0) parts.add("상태변화 ${outcome.stateChanges}")
         if (outcome.relationships > 0) parts.add("관계 ${outcome.relationships}")

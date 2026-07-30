@@ -25,6 +25,7 @@ import com.novelcharacter.app.data.model.FieldDefRef
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.FieldValueEntry
 import com.novelcharacter.app.data.model.Novel
+import com.novelcharacter.app.data.model.NovelFieldValue
 import com.novelcharacter.app.data.model.NovelSnapshot
 import com.novelcharacter.app.data.model.SnapshotRefs
 import com.novelcharacter.app.data.model.StateChangeSnapshot
@@ -300,6 +301,7 @@ class TrashRepository(
         val entries = ArrayList<FieldValueEntry>()
         val charValues = ArrayList<CharacterFieldValue>()
         val eventValues = ArrayList<EventFieldValue>()
+        val novelValues = ArrayList<NovelFieldValue>()
         for (chunk in fieldDefIds.chunked(IN_CLAUSE_CHUNK)) {
             // **큐레이션된 엔트리만 담는다.** 자동 수확(AUTO, 손대지 않은) 엔트리는 실제
             // 필드값에서 다시 만들어지므로(harvestUniverses) 담아 봐야 같은 것을 두 벌 갖는
@@ -314,6 +316,11 @@ class TrashRepository(
             eventValues.addAll(
                 db.eventFieldValueDao().getOrphanValuesForUniverseFields(chunk, universe.id)
             )
+            // 작품 필드값도 같은 이유로 담는다(확-3) — 세계관을 옮긴 작품이 옛 세계관 필드의
+            // 값을 보관 중이면 어떤 작품 스냅샷에도 실리지 않은 채 정의 CASCADE로 사라진다.
+            novelValues.addAll(
+                db.novelFieldValueDao().getOrphanValuesForUniverseFields(chunk, universe.id)
+            )
         }
 
         val characterCodes = HashMap<String, String>()
@@ -327,6 +334,9 @@ class TrashRepository(
         }
         val novelCodes = HashMap<String, String>()
         universe.imageNovelId?.let { id -> novelCode(id)?.let { novelCodes[id.toString()] = it } }
+        for (id in novelValues.map { it.novelId }.distinct()) {
+            novelCode(id)?.let { novelCodes[id.toString()] = it }
+        }
 
         val snapshot = UniverseSnapshot(
             universe = universe,
@@ -350,7 +360,10 @@ class TrashRepository(
             fieldDefRefs[fd.id.toString()] =
                 FieldDefRef(universeCode = universe.code, entityType = fd.entityType, key = fd.key)
         }
-        writeUniverseDataChunks(universe, entries, charValues, eventValues, fieldDefRefs, characterCodes, eventCodes)
+        writeUniverseDataChunks(
+            universe, entries, charValues, eventValues, novelValues,
+            fieldDefRefs, characterCodes, eventCodes, novelCodes
+        )
     }
 
     /**
@@ -364,23 +377,29 @@ class TrashRepository(
         entries: List<FieldValueEntry>,
         charValues: List<CharacterFieldValue>,
         eventValues: List<EventFieldValue>,
+        novelValues: List<NovelFieldValue>,
         fieldDefRefs: Map<String, FieldDefRef>,
         characterCodes: Map<String, String>,
-        eventCodes: Map<String, String>
+        eventCodes: Map<String, String>,
+        novelCodes: Map<String, String>
     ) {
-        if (entries.isEmpty() && charValues.isEmpty() && eventValues.isEmpty()) return
+        if (entries.isEmpty() && charValues.isEmpty() && eventValues.isEmpty() && novelValues.isEmpty()) return
 
         val pendingEntries = ArrayList<FieldValueEntry>()
         val pendingChars = ArrayList<CharacterFieldValue>()
         val pendingEvents = ArrayList<EventFieldValue>()
+        val pendingNovels = ArrayList<NovelFieldValue>()
         var budget = 0
 
         suspend fun flush() {
-            if (pendingEntries.isEmpty() && pendingChars.isEmpty() && pendingEvents.isEmpty()) return
+            if (pendingEntries.isEmpty() && pendingChars.isEmpty() &&
+                pendingEvents.isEmpty() && pendingNovels.isEmpty()
+            ) return
             // 이 조각이 실제로 쓰는 참조만 담는다 — 조각마다 전체 맵을 복사하면 그 자체가 커진다.
             val usedDefIds = (pendingEntries.map { it.fieldDefinitionId } +
                 pendingChars.map { it.fieldDefinitionId } +
-                pendingEvents.map { it.fieldDefinitionId }).distinct()
+                pendingEvents.map { it.fieldDefinitionId } +
+                pendingNovels.map { it.fieldDefinitionId }).distinct()
             insertSnapshot(
                 TrashSnapshot.TYPE_UNIVERSE_DATA, universe.name,
                 UniverseDataSnapshot(
@@ -388,6 +407,7 @@ class TrashRepository(
                     fieldValueEntries = pendingEntries.toList(),
                     orphanCharacterFieldValues = pendingChars.toList(),
                     orphanEventFieldValues = pendingEvents.toList(),
+                    orphanNovelFieldValues = pendingNovels.toList(),
                     refs = EntityRefs(
                         universeCode = universe.code,
                         fieldDefs = usedDefIds.mapNotNull { id ->
@@ -398,12 +418,16 @@ class TrashRepository(
                         }.toMap(),
                         events = pendingEvents.mapNotNull { v ->
                             eventCodes[v.eventId.toString()]?.let { v.eventId.toString() to it }
+                        }.toMap(),
+                        novels = pendingNovels.mapNotNull { v ->
+                            novelCodes[v.novelId.toString()]?.let { v.novelId.toString() to it }
                         }.toMap()
                     )
                 ),
                 emptyList()
             )
-            pendingEntries.clear(); pendingChars.clear(); pendingEvents.clear(); budget = 0
+            pendingEntries.clear(); pendingChars.clear(); pendingEvents.clear(); pendingNovels.clear()
+            budget = 0
         }
 
         for (e in entries) {
@@ -416,6 +440,10 @@ class TrashRepository(
         }
         for (v in eventValues) {
             pendingEvents.add(v); budget += gson.toJson(v).length
+            if (budget >= PAYLOAD_BUDGET_CHARS) flush()
+        }
+        for (v in novelValues) {
+            pendingNovels.add(v); budget += gson.toJson(v).length
             if (budget >= PAYLOAD_BUDGET_CHARS) flush()
         }
         flush()
@@ -1819,6 +1847,7 @@ class TrashRepository(
         /** (해석된 characterId, 해석된 필드정의 id, 값) */
         val characterValues: List<Triple<Long, Long, CharacterFieldValue>>,
         val eventValues: List<Triple<Long, Long, EventFieldValue>>,
+        val novelValues: List<Triple<Long, Long, NovelFieldValue>>,
         val losses: RestoreLossCounts,
         val relinkedByCode: Int,
         val legacyPayload: Boolean,
@@ -1854,9 +1883,10 @@ class TrashRepository(
         val entries = data.fieldValueEntries.orEmpty()
         val charValues = data.orphanCharacterFieldValues.orEmpty()
         val eventValues = data.orphanEventFieldValues.orEmpty()
+        val novelValues = data.orphanNovelFieldValues.orEmpty()
         val fieldIndex = buildFieldDefIndex(
             oldIds = (entries.map { it.fieldDefinitionId } + charValues.map { it.fieldDefinitionId } +
-                eventValues.map { it.fieldDefinitionId }).distinct(),
+                eventValues.map { it.fieldDefinitionId } + novelValues.map { it.fieldDefinitionId }).distinct(),
             refs = fieldRefs.values,
             session = session
         )
@@ -1882,6 +1912,7 @@ class TrashRepository(
             charValues.map { it.characterId }, refs?.characters?.values.orEmpty(), session
         )
         val evIndex = eventIndex(eventValues.map { it.eventId }, refs?.events?.values.orEmpty(), session)
+        val novIndex = novelIndex(novelValues.map { it.novelId }, refs?.novels?.values.orEmpty(), session)
 
         var orphanLost = 0
         var merged = 0
@@ -1930,11 +1961,34 @@ class TrashRepository(
             plannedEvents.add(Triple(owner, defId, v))
         }
 
+        val seenNovels = HashSet<Pair<Long, Long>>()
+        val plannedNovels = ArrayList<Triple<Long, Long, NovelFieldValue>>(novelValues.size)
+        for (v in novelValues) {
+            val code = refs?.novels?.get(v.novelId.toString())
+            val owner = tally.note(
+                SnapshotRefResolver.resolveByCode(
+                    v.novelId, code, novIndex.codeById, novIndex.idByCode, novIndex.liveIds
+                ),
+                code
+            ).id
+            val defId = resolveDef(v.fieldDefinitionId)
+            if (owner == null || defId == null) {
+                orphanLost++
+                continue
+            }
+            if (isResolved(owner, defId) && !seenNovels.add(owner to defId)) {
+                merged++
+                continue
+            }
+            plannedNovels.add(Triple(owner, defId, v))
+        }
+
         return UniverseDataPlan(
             data = data,
             entries = plannedEntries,
             characterValues = plannedChars,
             eventValues = plannedEvents,
+            novelValues = plannedNovels,
             losses = RestoreLossCounts(
                 fieldValueEntries = lostEntries,
                 orphanFieldValues = orphanLost,
@@ -1992,6 +2046,16 @@ class TrashRepository(
             eventRows.add(value.copy(id = 0, eventId = eventId, fieldDefinitionId = defId))
         }
         if (eventRows.isNotEmpty()) db.eventFieldValueDao().insertAll(eventRows)
+
+        val novelRows = ArrayList<NovelFieldValue>(plan.novelValues.size)
+        for ((novelId, defId, value) in plan.novelValues) {
+            if (db.novelFieldValueDao().getValue(novelId, defId) != null) {
+                orphanLost++
+                continue
+            }
+            novelRows.add(value.copy(id = 0, novelId = novelId, fieldDefinitionId = defId))
+        }
+        if (novelRows.isNotEmpty()) db.novelFieldValueDao().insertAll(novelRows)
 
         return RestoreResult(
             entityType = TrashSnapshot.TYPE_UNIVERSE_DATA,
@@ -2804,6 +2868,19 @@ class TrashRepository(
         idOf = { it.id },
         codeOf = { it.code },
         entityType = TrashSnapshot.TYPE_FACTION,
+        session = session
+    )
+
+    private suspend fun novelIndex(
+        oldIds: Collection<Long>, codes: Collection<String>, session: RestoreSession?
+    ) = buildIndex(
+        oldIds = oldIds,
+        codes = codes,
+        fetchByIds = { db.novelDao().getNovelsByIds(it) },
+        fetchByCodes = { db.novelDao().getNovelsByCodes(it) },
+        idOf = { it.id },
+        codeOf = { it.code },
+        entityType = TrashSnapshot.TYPE_NOVEL,
         session = session
     )
 

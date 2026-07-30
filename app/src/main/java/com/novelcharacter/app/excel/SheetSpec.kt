@@ -308,7 +308,14 @@ fun universeSpec() = SheetSpec(
     )
 )
 
-fun novelSpec(universeNames: List<String>) = SheetSpec(
+/**
+ * 작품 시트. [novelFieldHeaders]는 **작품 커스텀 필드**(확-3)의 동적 열이며 규칙은
+ * [EntityFieldHeaders]가 단일 소스다 — 연표 시트의 사건 필드 열과 같은 규칙을 쓴다.
+ */
+fun novelSpec(
+    universeNames: List<String>,
+    novelFieldHeaders: List<String> = emptyList()
+) = SheetSpec(
     sheetName = "작품",
     columns = listOf(
         ColumnSpec("제목", required = true, width = 8000),
@@ -326,7 +333,7 @@ fun novelSpec(universeNames: List<String>) = SheetSpec(
         ColumnSpec("고정", dropdownOptions = listOf("Y", "N"), width = 3000),
         ColumnSpec("표준연도", width = 3000),
         ColumnSpec("생성일", readOnly = true, width = 5000)
-    )
+    ) + novelFieldHeaders.map { ColumnSpec(it, width = 6000) }  // 작품 커스텀 필드 (확-3)
 )
 
 fun fieldDefinitionSpec(universeNames: List<String>) = SheetSpec(
@@ -345,9 +352,10 @@ fun fieldDefinitionSpec(universeNames: List<String>) = SheetSpec(
         ColumnSpec(FieldConfigColumns.COLUMN_AI_SUGGEST, dropdownOptions = listOf("Y", "N"), width = 3500),
         ColumnSpec(FieldConfigColumns.COLUMN_DESCRIPTION, width = 12000),
         ColumnSpec("세계관코드", readOnly = true, width = 4000),
-        // 캐릭터/사건 필드 구분 — 이 열이 없던 구버전 파일은 캐릭터로 간주(관대 수용).
-        // 사건 필드 정의도 왕복되어야 신규 기기 복원 시 사건 필드값이 유실되지 않는다.
-        ColumnSpec("대상", dropdownOptions = listOf("캐릭터", "사건"), width = 3500)
+        // 캐릭터/사건/작품 필드 구분 — 이 열이 없던 구버전 파일은 캐릭터로 간주(관대 수용).
+        // 모든 종류의 정의가 왕복되어야 신규 기기 복원 시 그 종류의 필드값이 유실되지 않는다.
+        // 목록은 FieldValueSheetMapper가 단일 소스다 — 라벨을 두 벌 두면 반드시 갈린다.
+        ColumnSpec("대상", dropdownOptions = FieldValueSheetMapper.ENTITY_LABELS, width = 3500)
     )
 )
 
@@ -358,7 +366,7 @@ fun fieldValueLibrarySpec(universeNames: List<String> = emptyList()) = SheetSpec
         ColumnSpec("세계관", required = true, dropdownOptions = universeNames.takeIf { it.isNotEmpty() }, width = 5000),
         ColumnSpec("필드키", required = true, width = 5000),
         ColumnSpec("필드명", readOnly = true, width = 5000),
-        ColumnSpec("대상", dropdownOptions = listOf("캐릭터", "사건"), width = 3500),
+        ColumnSpec("대상", dropdownOptions = FieldValueSheetMapper.ENTITY_LABELS, width = 3500),
         ColumnSpec("값", required = true, width = 6000),
         ColumnSpec("표시라벨", width = 5000),
         ColumnSpec("별칭(콤마구분)", width = 8000),
@@ -394,7 +402,7 @@ fun characterFieldValueSpec(universeNames: List<String> = emptyList()) = SheetSp
         ColumnSpec("세계관코드", readOnly = true, width = 4000),
         ColumnSpec("필드키", required = true, width = 5000),
         ColumnSpec("필드명", readOnly = true, width = 5000),
-        ColumnSpec("대상", readOnly = true, dropdownOptions = listOf("캐릭터", "사건"), width = 3500),
+        ColumnSpec("대상", readOnly = true, dropdownOptions = FieldValueSheetMapper.ENTITY_LABELS, width = 3500),
         ColumnSpec("값", width = 8000)
     )
 )

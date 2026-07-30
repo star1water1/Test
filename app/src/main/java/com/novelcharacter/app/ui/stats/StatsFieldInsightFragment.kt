@@ -155,9 +155,14 @@ class StatsFieldInsightFragment : Fragment() {
             val headerText = TextView(ctx).apply {
                 val uniPrefix = if (insight.universeName.isNotEmpty()) "${insight.universeName} · " else ""
                 // 사건 필드는 캐릭터 필드와 구분해 표기 (모수도 캐릭터 수가 아닌 사건 수)
-                val entityPrefix = if (insight.fieldDefinition.entityType == com.novelcharacter.app.data.model.FieldDefinition.ENTITY_EVENT) {
-                    getString(R.string.stats_event_field_prefix) + " · "
-                } else ""
+                // 캐릭터가 아닌 축은 모수 단위가 다르므로(사건 수·작품 수) 이름 앞에 종류를 밝힌다.
+                val entityPrefix = when (insight.fieldDefinition.entityType) {
+                    com.novelcharacter.app.data.model.FieldDefinition.ENTITY_EVENT ->
+                        getString(R.string.stats_event_field_prefix) + " · "
+                    com.novelcharacter.app.data.model.FieldDefinition.ENTITY_NOVEL ->
+                        getString(R.string.stats_novel_field_prefix) + " · "
+                    else -> ""
+                }
                 val typeLabel = com.novelcharacter.app.data.model.FieldType.fromName(insight.fieldDefinition.type)?.label ?: insight.fieldDefinition.type
                 text = "$entityPrefix$uniPrefix[${insight.fieldDefinition.groupName}] ${insight.fieldDefinition.name} ($typeLabel)"
                 textSize = textSizeSp
@@ -186,9 +191,14 @@ class StatsFieldInsightFragment : Fragment() {
     private fun makeCompletionText(insight: FieldInsightResult): TextView {
         val rate = if (insight.totalCount > 0) insight.filledCount * 100f / insight.totalCount else 0f
         val textSizeSp = resources.getDimension(R.dimen.stats_text_body_sm) / resources.displayMetrics.scaledDensity
-        // 사건 필드의 모수는 캐릭터가 아니라 사건 수 — 단위를 구분해 표기
-        val isEventField = insight.fieldDefinition.entityType == com.novelcharacter.app.data.model.FieldDefinition.ENTITY_EVENT
-        val completionRes = if (isEventField) R.string.stats_field_insight_completion_events else R.string.stats_field_insight_completion
+        // 모수 단위는 축마다 다르다(캐릭터 명 · 사건 건 · 작품 개) — 단위를 구분해 표기
+        val completionRes = when (insight.fieldDefinition.entityType) {
+            com.novelcharacter.app.data.model.FieldDefinition.ENTITY_EVENT ->
+                R.string.stats_field_insight_completion_events
+            com.novelcharacter.app.data.model.FieldDefinition.ENTITY_NOVEL ->
+                R.string.stats_field_insight_completion_novels
+            else -> R.string.stats_field_insight_completion
+        }
         return TextView(requireContext()).apply {
             text = getString(completionRes, insight.filledCount, insight.totalCount, rate)
             textSize = textSizeSp
@@ -336,6 +346,12 @@ class StatsFieldInsightFragment : Fragment() {
             val bundle = Bundle().apply { putLong("characterId", characterId) }
             findNavController().navigate(R.id.characterDetailFragment, bundle)
         }
+        sheet.onNovelClick = { universeId ->
+            // 작품 상세 화면이 없으므로 그 작품이 있는 목록으로 보낸다 — 사건 축이 연표로
+            // 보내는 것과 같은 규약이다. 세계관이 없는 작품은 전체 작품 목록으로 보낸다.
+            val bundle = Bundle().apply { if (universeId > 0) putLong("universeId", universeId) }
+            findNavController().navigate(R.id.novelListFragment, bundle)
+        }
         sheet.onEventClick = { year ->
             // 사건 상세 화면은 없다 — 전역 검색과 **같은 규약**으로 연표를 그 연도에 맞춰 연다
             // (center_year는 TimelineFragment.onResume이 소비한다).
@@ -347,13 +363,18 @@ class StatsFieldInsightFragment : Fragment() {
     }
 
     private fun showDrilldownBottomSheet(insight: FieldInsightResult, slice: ChartSlice) {
-        val isEvent = insight.fieldDefinition.entityType ==
-            com.novelcharacter.app.data.model.FieldDefinition.ENTITY_EVENT
+        // 축은 카드가 그린 필드의 종류가 정한다 — 불리언으로 두면 작품 카드가 캐릭터 조회로
+        // 흘러가 0명짜리 빈 시트가 뜬다(S-9와 같은 부류).
+        val axis = when (insight.fieldDefinition.entityType) {
+            com.novelcharacter.app.data.model.FieldDefinition.ENTITY_EVENT -> StatsEntityAxis.EVENT
+            com.novelcharacter.app.data.model.FieldDefinition.ENTITY_NOVEL -> StatsEntityAxis.NOVEL
+            else -> StatsEntityAxis.CHARACTER
+        }
         val sheet = StatsCharacterListBottomSheet.newInstance(
             fieldDefIds = insight.mergedFieldDefIds,
             fieldName = insight.fieldDefinition.name,
             selectedValue = slice.label,
-            isEventAxis = isEvent,
+            axis = axis,
             // 화면이 보여준 그 조각의 규칙을 그대로 넘긴다 — 접힌 '기타'도 목록을 볼 수 있다.
             matchSpec = slice.spec,
             sliceCount = slice.count

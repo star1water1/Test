@@ -29,6 +29,9 @@ import com.novelcharacter.app.ui.adapter.NovelAdapter
 import com.novelcharacter.app.util.dismissSafely
 import com.novelcharacter.app.util.navigateSafe
 import com.novelcharacter.app.util.notifyResult
+import com.novelcharacter.app.util.reportAndNotify
+import com.novelcharacter.app.util.setValidatedPositiveButton
+import com.novelcharacter.app.util.showInlineError
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -79,6 +82,39 @@ class NovelListFragment : Fragment() {
         com.novelcharacter.app.excel.ExcelImporter(requireContext().applicationContext)
     }
 
+    /**
+     * 열려 있는 작품 편집 다이얼로그의 **작품 필드 섹션 상태** (확-3).
+     *
+     * 다이얼로그가 AlertDialog(프래그먼트 아님)라 상태를 프래그먼트가 들고 있어야 필드를
+     * 새로 만든 뒤 섹션을 다시 그릴 수 있다. 다이얼로그가 닫히면 반드시 null로 되돌린다 —
+     * 남겨 두면 다음에 연 다이얼로그가 옛 위젯을 읽는다.
+     */
+    private var novelFieldSection: NovelFieldSection? = null
+
+    /**
+     * @param universeId 이 폼이 필드를 조회·생성하는 세계관. **폼을 여는 시점에 확정**되고
+     *   도중에 바뀌지 않는다(작품 편집에는 세계관 선택기가 없다). 값이 null이면 필드를
+     *   만들 자리를 모르므로 만드는 경로 자체를 열지 않는다.
+     * @param covered 폼이 조회한 정의 전체(CALCULATED 포함) — 저장 권한의 범위(R-5).
+     * @param inputs 실제로 렌더한 입력 위젯. 커버와 다른 이유는 위 [covered] 주석 참조.
+     */
+    private class NovelFieldSection(
+        val binding: DialogNovelEditBinding,
+        val universeId: Long?
+    ) {
+        var fields: List<com.novelcharacter.app.data.model.FieldDefinition> = emptyList()
+        var covered: Set<Long> = emptySet()
+        val inputs = mutableMapOf<Long, Any>()
+        /** 필드를 새로 만들어 다시 그릴 때 입력 중이던 값을 보존한다 */
+        val pendingValues = mutableMapOf<Long, String>()
+        /**
+         * 렌더한 필드의 값 라이브러리 엔트리 — **저장 시점의 restricted 판정을 동기로 만들기
+         * 위해** 폼을 그릴 때 함께 읽어 둔다(숨김 포함: 숨긴 값도 허용 목록의 일부다).
+         * 판정이 동기라야 위반 시 창을 닫지 않고 그 자리에서 고칠 수 있다(R-27).
+         */
+        var entriesByField: Map<Long, List<com.novelcharacter.app.data.model.FieldValueEntry>> = emptyMap()
+    }
+
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
     ): View {
@@ -100,6 +136,7 @@ class NovelListFragment : Fragment() {
         setupRecyclerView()
         setupFab()
         setupToolbarMenu()
+        setupAddNovelFieldPath()
         observeData()
 
         if (universeId != -1L) {
@@ -389,51 +426,432 @@ class NovelListFragment : Fragment() {
             override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
         }
 
-        MaterialAlertDialogBuilder(ctx)
+        // 작품 커스텀 필드 섹션 (확-3) — 세계관은 **폼을 여는 시점에 확정**된다.
+        // 편집이면 그 작품의 세계관, 신규면 이 목록이 필터 중인 세계관이다.
+        val fieldUniverseId = novel?.universeId ?: universeId.takeIf { it != -1L }
+        val section = NovelFieldSection(dialogBinding, fieldUniverseId)
+        novelFieldSection = section
+        dialogBinding.btnAddNovelField.setOnClickListener {
+            val uid = section.universeId ?: return@setOnClickListener
+            com.novelcharacter.app.ui.field.FieldEditDialog
+                .newInstance(uid, null, com.novelcharacter.app.data.model.FieldDefinition.ENTITY_NOVEL)
+                .show(childFragmentManager, "NovelFieldEditDialog")
+        }
+        loadNovelFieldSection(section, novel?.id)
+
+        val dialog = MaterialAlertDialogBuilder(ctx)
             .setTitle(if (novel == null) R.string.add_novel else R.string.edit_novel)
             .setView(dialogBinding.root)
-            .setPositiveButton(R.string.save) { _, _ ->
-                val title = dialogBinding.editTitle.text.toString().trim()
-                val description = dialogBinding.editDescription.text.toString().trim()
-                val borderColor = dialogBinding.editBorderColor.text.toString().trim()
-                val finalImagePaths = org.json.JSONArray(pendingImagePaths).toString()
-                val standardYearStr = dialogBinding.editStandardYear.text.toString().trim()
-                val standardYear = if (standardYearStr.isNotEmpty()) standardYearStr.toIntOrNull() else null
-                if (title.isNotEmpty()) {
-                    if (novel == null) {
-                        val newNovel = Novel(
-                            title = title,
-                            description = description,
-                            universeId = if (universeId != -1L) universeId else null,
-                            borderColor = borderColor,
-                            inheritUniverseBorder = borderColor.isBlank(),
-                            imagePaths = finalImagePaths,
-                            imageMode = selectedImageMode,
-                            imageCharacterId = selectedImageCharId,
-                            standardYear = standardYear
-                        )
-                        viewModel.insertNovel(newNovel)
-                    } else {
-                        val oldStdYear = novel.standardYear
-                        val updatedNovel = novel.copy(
-                            title = title,
-                            description = description,
-                            borderColor = borderColor,
-                            inheritUniverseBorder = borderColor.isBlank(),
-                            imagePaths = finalImagePaths,
-                            imageMode = selectedImageMode,
-                            imageCharacterId = selectedImageCharId,
-                            standardYear = standardYear
-                        )
-                        viewModel.updateNovel(updatedNovel)
-                        if (oldStdYear != standardYear) {
-                            viewModel.onStandardYearChanged(updatedNovel, oldStdYear, standardYear)
-                        }
-                    }
+            // 검증 실패로 창이 닫히면 사용자가 채운 필드값까지 함께 사라진다(R-27) —
+            // 종전에는 제목이 비면 **아무 말 없이 닫히고** 저장도 되지 않았다.
+            .setPositiveButton(R.string.save, null)
+            .setNegativeButton(R.string.cancel, null)
+            .create()
+
+        dialog.setOnDismissListener { novelFieldSection = null }
+
+        // 저장 실행 — **누른 순간에 지은 값**([snapshot])만 쓴다(R-27). 허용 목록 확인을 거쳐
+        // 한 걸음 늦게 저장될 수도 있으므로, 그때 위젯을 다시 읽으면 그사이 값을 읽게 된다.
+        fun performSave(
+            snapshot: NovelFormSnapshot,
+            submission: com.novelcharacter.app.data.repository.NovelFieldValueMerge.Submission
+        ) {
+            if (novel == null) {
+                viewModel.insertNovel(
+                    Novel(
+                        title = snapshot.title,
+                        description = snapshot.description,
+                        universeId = if (universeId != -1L) universeId else null,
+                        borderColor = snapshot.borderColor,
+                        inheritUniverseBorder = snapshot.borderColor.isBlank(),
+                        imagePaths = snapshot.imagePaths,
+                        imageMode = snapshot.imageMode,
+                        imageCharacterId = snapshot.imageCharacterId,
+                        standardYear = snapshot.standardYear
+                    ),
+                    submission
+                )
+            } else {
+                val oldStdYear = novel.standardYear
+                val updatedNovel = novel.copy(
+                    title = snapshot.title,
+                    description = snapshot.description,
+                    borderColor = snapshot.borderColor,
+                    inheritUniverseBorder = snapshot.borderColor.isBlank(),
+                    imagePaths = snapshot.imagePaths,
+                    imageMode = snapshot.imageMode,
+                    imageCharacterId = snapshot.imageCharacterId,
+                    standardYear = snapshot.standardYear
+                )
+                viewModel.updateNovel(updatedNovel, submission)
+                if (oldStdYear != snapshot.standardYear) {
+                    viewModel.onStandardYearChanged(updatedNovel, oldStdYear, snapshot.standardYear)
                 }
             }
-            .setNegativeButton(R.string.cancel, null)
+        }
+
+        dialog.setValidatedPositiveButton {
+            val title = dialogBinding.editTitle.text.toString().trim()
+            if (title.isEmpty()) {
+                dialogBinding.titleLayout.showInlineError(getString(R.string.novel_title_required))
+                return@setValidatedPositiveButton false
+            }
+            val standardYearStr = dialogBinding.editStandardYear.text.toString().trim()
+            val snapshot = NovelFormSnapshot(
+                title = title,
+                description = dialogBinding.editDescription.text.toString().trim(),
+                borderColor = dialogBinding.editBorderColor.text.toString().trim(),
+                imagePaths = org.json.JSONArray(pendingImagePaths).toString(),
+                imageMode = selectedImageMode,
+                imageCharacterId = selectedImageCharId,
+                standardYear = if (standardYearStr.isNotEmpty()) standardYearStr.toIntOrNull() else null
+            )
+            // 커버 집합도 같은 시점의 폼 상태여야 고지 건수와 실제 반영 범위가 갈리지 않는다.
+            val submission = buildNovelFieldSubmission(section)
+
+            // '제한' 입력 모드 필드에 허용 목록 밖 값이 들어왔는가 — 판정은 폼을 그릴 때 미리
+            // 읽어 둔 엔트리로 **동기 수행**한다. 비동기로 미루면 창이 먼저 닫혀 고칠 자리가
+            // 사라진다(R-27). 사건 편집은 같은 검사를 비동기로 해 창을 닫는다 — 그쪽의 한계다.
+            val violations = restrictedNovelViolations(section, submission.values)
+            if (violations.isNotEmpty()) {
+                showRestrictedNovelDialog(violations) {
+                    performSave(snapshot, submission)
+                    dialog.dismissSafely()
+                }
+                return@setValidatedPositiveButton false
+            }
+            performSave(snapshot, submission)
+            true
+        }
+        dialog.show()
+    }
+
+    /** 저장 버튼을 누른 **그 순간**의 폼 값 — 늦게 저장돼도 사용자가 확인한 값이 저장된다. */
+    private data class NovelFormSnapshot(
+        val title: String,
+        val description: String,
+        val borderColor: String,
+        val imagePaths: String,
+        val imageMode: String,
+        val imageCharacterId: Long?,
+        val standardYear: Int?
+    )
+
+    /**
+     * '제한' 입력 모드 작품 필드의 허용 목록 위반 — (필드, 위반 토큰) 목록.
+     * 판정 자체는 순수 함수([FieldValueLibraryRepository.validateRestricted])가 하고,
+     * 여기서는 폼이 미리 읽어 둔 엔트리를 먹인다.
+     */
+    private fun restrictedNovelViolations(
+        section: NovelFieldSection,
+        values: List<com.novelcharacter.app.data.model.NovelFieldValue>
+    ): List<Pair<com.novelcharacter.app.data.model.FieldDefinition, List<String>>> {
+        if (values.isEmpty()) return emptyList()
+        val fieldsById = section.fields.associateBy { it.id }
+        val result = mutableListOf<Pair<com.novelcharacter.app.data.model.FieldDefinition, List<String>>>()
+        for (v in values) {
+            val fd = fieldsById[v.fieldDefinitionId] ?: continue
+            if (!com.novelcharacter.app.util.FieldValueTokenizer.supportsLibrary(fd)) continue
+            if (!com.novelcharacter.app.data.model.FieldValueLibraryConfig
+                    .fromConfig(fd.config).isRestricted
+            ) continue
+            val bad = com.novelcharacter.app.data.repository.FieldValueLibraryRepository
+                .validateRestricted(fd, v.value, section.entriesByField[fd.id].orEmpty())
+            if (bad.isNotEmpty()) result.add(fd to bad)
+        }
+        return result
+    }
+
+    /**
+     * 위반 고지 + 교정 경로 둘 — 허용 목록에 넣고 저장하거나, 입력을 고치러 돌아간다.
+     * 거부만 하고 길을 주지 않으면 사용자는 막다른 길에 선다(변수 제어: 검증 → 알림 → 교정).
+     */
+    private fun showRestrictedNovelDialog(
+        violations: List<Pair<com.novelcharacter.app.data.model.FieldDefinition, List<String>>>,
+        onAddedAndSave: () -> Unit
+    ) {
+        val message = violations.joinToString("\n") { (fd, tokens) ->
+            getString(R.string.field_library_restricted_violation_line, fd.name, tokens.joinToString(", "))
+        } + "\n\n" + getString(R.string.field_library_restricted_violation_paths)
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.field_library_restricted_violation_title)
+            .setMessage(message)
+            .setPositiveButton(R.string.field_library_restricted_add_and_save) { _, _ ->
+                viewLifecycleOwner.lifecycleScope.launch {
+                    viewModel.addLibraryValues(violations.map { (fd, tokens) -> fd.id to tokens })
+                    if (!isAdded) return@launch
+                    onAddedAndSave()
+                }
+            }
+            .setNegativeButton(R.string.field_library_restricted_edit_input, null)
             .show()
+    }
+
+    // ── 작품 커스텀 필드 (확-3) ──
+
+    /**
+     * 작품 편집 자리에서 **작품 필드를 만드는 경로** — 사건 편집이 P5에서 세운 규약 그대로다.
+     * 여는 것은 필드 관리와 같은 다이얼로그이고, 부모(작품 편집)가 살아 있으므로 입력 중인
+     * 값은 그대로 보존된다(러프 입력 → 정밀 조정의 이중 경로).
+     */
+    private fun setupAddNovelFieldPath() {
+        childFragmentManager.setFragmentResultListener(
+            com.novelcharacter.app.ui.field.FieldEditDialog.RESULT_KEY, viewLifecycleOwner
+        ) { _, bundle ->
+            val json = bundle.getString(
+                com.novelcharacter.app.ui.field.FieldEditDialog.RESULT_FIELD_JSON
+            ) ?: return@setFragmentResultListener
+            val field = com.google.gson.Gson()
+                .fromJson(json, com.novelcharacter.app.data.model.FieldDefinition::class.java)
+                ?: return@setFragmentResultListener
+            // 이 경로는 생성 전용이다(편집은 필드 관리에서 한다) — id가 붙어 오면 무시한다.
+            if (field.id != 0L) return@setFragmentResultListener
+            // 생성 창에서 미리 적어 둔 값(값 사전 등록)도 함께 온다 — 받지 않으면
+            // 사용자가 적은 것이 조용히 사라진다(필드 관리 경로는 이미 받고 있다).
+            val initialValues = bundle.getString(
+                com.novelcharacter.app.ui.field.FieldEditDialog.RESULT_INITIAL_VALUES
+            ).orEmpty()
+            createNovelField(field, initialValues)
+        }
+    }
+
+    private fun createNovelField(
+        field: com.novelcharacter.app.data.model.FieldDefinition,
+        initialValues: String
+    ) {
+        val section = novelFieldSection ?: return
+        val universeIdForField = section.universeId ?: return
+        // 이 경로로 들어온 것은 작품 필드다 — 종류를 여기서 못박아 호출부마다 되풀이하지 않는다(R-29).
+        val toInsert = field.copy(
+            universeId = universeIdForField,
+            entityType = com.novelcharacter.app.data.model.FieldDefinition.ENTITY_NOVEL
+        )
+        viewLifecycleOwner.lifecycleScope.launch {
+            val result = try {
+                val newId = viewModel.insertNovelField(toInsert)
+                viewModel.registerInitialValues(newId, toInsert, initialValues)
+                com.novelcharacter.app.util.OpResult.success(
+                    com.novelcharacter.app.util.OpResult.CAT_FIELD,
+                    getString(R.string.novel_field_created, field.name)
+                )
+            } catch (e: android.database.sqlite.SQLiteConstraintException) {
+                android.util.Log.e("NovelList", "Duplicate novel field key: ${field.key}", e)
+                com.novelcharacter.app.util.OpResult.failure(
+                    com.novelcharacter.app.util.OpResult.CAT_FIELD,
+                    getString(R.string.novel_field_key_duplicate, field.key)
+                )
+            } catch (e: Exception) {
+                android.util.Log.e("NovelList", "Failed to insert novel field", e)
+                com.novelcharacter.app.util.OpResult.failure(
+                    com.novelcharacter.app.util.OpResult.CAT_FIELD,
+                    getString(R.string.novel_field_create_failed), e.message
+                )
+            }
+            if (!isAdded) return@launch
+            reportAndNotify(result)
+            // 성공한 것만 폼에 반영한다. 입력 중인 값은 다시 그리기가 보존한다.
+            if (result.success) {
+                novelFieldSection?.let { current -> loadNovelFieldSection(current, novelIdOfSection) }
+            }
+        }
+    }
+
+    /** 다시 그릴 때 기존 값을 어느 작품에서 읽을지 — 신규 작품이면 null(읽을 값이 없다) */
+    private var novelIdOfSection: Long? = null
+
+    /**
+     * 세계관의 작품 필드를 읽어 입력 섹션을 만든다. 입력 중이던 값은 보존한다.
+     *
+     * 커버는 조회된 정의 **전체**(CALCULATED 포함)이고 렌더는 입력 가능한 것만이다 —
+     * 계산 필드를 가리키는 잔여 저장 행이 있으면 저장 시 함께 정리되고, 매 저장마다
+     * "보관했습니다"를 반복하는 거짓 고지를 막는다(사건판과 같은 규칙).
+     */
+    private fun loadNovelFieldSection(section: NovelFieldSection, novelId: Long?) {
+        novelIdOfSection = novelId
+        // 입력 중이던 값 보존
+        for ((fieldId, widget) in section.inputs) {
+            section.pendingValues[fieldId] = novelFieldWidgetValue(widget)
+        }
+
+        val uid = section.universeId
+        val binding = section.binding
+        if (uid == null) {
+            // 세계관이 없으면 작품 필드가 성립하지 않는다. 섹션을 통째로 감추는 대신
+            // **사유를 남긴다** — 빈 화면은 고장과 구분되지 않는다(R-17).
+            section.fields = emptyList()
+            section.covered = emptySet()
+            section.inputs.clear()
+            binding.novelFieldContainer.removeAllViews()
+            binding.novelFieldContainer.visibility = View.GONE
+            binding.novelFieldSectionLabel.visibility = View.VISIBLE
+            binding.novelFieldEmptyHint.visibility = View.VISIBLE
+            binding.novelFieldEmptyHint.text = getString(R.string.novel_field_needs_universe)
+            binding.btnAddNovelField.visibility = View.GONE
+            return
+        }
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            val fields = viewModel.getNovelFieldsForUniverse(uid)
+            val existing = if (novelId != null) viewModel.getNovelFieldValues(novelId) else emptyList()
+            // 다이얼로그가 이미 닫혔으면 옛 위젯을 건드리지 않는다
+            if (!isAdded || novelFieldSection !== section) return@launch
+            for (v in existing) {
+                // 사용자가 이미 입력 중인 값이 우선이다 — DB 값으로 덮으면 입력이 사라진다
+                if (!section.pendingValues.containsKey(v.fieldDefinitionId)) {
+                    section.pendingValues[v.fieldDefinitionId] = v.value
+                }
+            }
+            section.covered = fields.mapTo(HashSet()) { it.id }
+            section.entriesByField = viewModel.novelFieldEntries(fields.map { it.id })
+            // 엔트리 조회도 중단점이다 — 그사이 창이 닫혔으면 옛 위젯을 다시 그리지 않는다
+            if (!isAdded || novelFieldSection !== section) return@launch
+            section.fields = fields
+                .filter {
+                    com.novelcharacter.app.data.model.FieldType.fromName(it.type) !=
+                        com.novelcharacter.app.data.model.FieldType.CALCULATED
+                }
+                .sortedBy { it.displayOrder }
+            buildNovelFieldInputs(section)
+        }
+    }
+
+    private fun buildNovelFieldInputs(section: NovelFieldSection) {
+        val ctx = context ?: return
+        val binding = section.binding
+        section.inputs.clear()
+        binding.novelFieldContainer.removeAllViews()
+
+        // 세계관을 아는 한 만드는 경로는 항상 남긴다 — 필드가 있을 때도 하나 더 필요할 수 있다.
+        binding.btnAddNovelField.visibility = View.VISIBLE
+
+        if (section.fields.isEmpty()) {
+            binding.novelFieldContainer.visibility = View.GONE
+            // 빈 상태에서도 머리글과 사유를 남긴다(B-31이 세운 규약과 같은 취지).
+            binding.novelFieldSectionLabel.visibility = View.VISIBLE
+            binding.novelFieldEmptyHint.visibility = View.VISIBLE
+            binding.novelFieldEmptyHint.text = getString(R.string.novel_field_empty_hint)
+            return
+        }
+        binding.novelFieldContainer.visibility = View.VISIBLE
+        binding.novelFieldSectionLabel.visibility = View.VISIBLE
+        binding.novelFieldEmptyHint.visibility = View.GONE
+
+        val density = resources.displayMetrics.density
+        for (field in section.fields) {
+            val saved = section.pendingValues[field.id].orEmpty()
+            when (com.novelcharacter.app.data.model.FieldType.fromName(field.type)) {
+                com.novelcharacter.app.data.model.FieldType.SELECT,
+                com.novelcharacter.app.data.model.FieldType.GRADE -> {
+                    val label = TextView(ctx).apply {
+                        text = field.name
+                        textSize = 13f
+                    }
+                    binding.novelFieldContainer.addView(label)
+
+                    val options = mutableListOf(getString(R.string.no_selection))
+                    options.addAll(
+                        if (com.novelcharacter.app.data.model.FieldType.fromName(field.type) ==
+                            com.novelcharacter.app.data.model.FieldType.SELECT
+                        ) {
+                            com.novelcharacter.app.util.FieldOptionParser.parseSelectOptions(field.config)
+                        } else {
+                            com.novelcharacter.app.util.FieldOptionParser.parseGradeOptions(field.config)
+                        }
+                    )
+                    // 고아 값 보존: 저장된 값이 현재 옵션에 없어도 유실하지 않는다
+                    if (saved.isNotBlank() && saved !in options) options.add(saved)
+
+                    val spinner = Spinner(ctx).apply {
+                        val spinnerAdapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item, options)
+                        spinnerAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+                        adapter = spinnerAdapter
+                        val idx = options.indexOf(saved)
+                        if (idx > 0) setSelection(idx)
+                    }
+                    binding.novelFieldContainer.addView(spinner)
+                    section.inputs[field.id] = spinner
+                }
+                else -> {
+                    val editText = com.google.android.material.textfield.MaterialAutoCompleteTextView(ctx).apply {
+                        hint = field.name
+                        setText(saved)
+                        threshold = 1
+                        if (com.novelcharacter.app.data.model.FieldType.fromName(field.type) ==
+                            com.novelcharacter.app.data.model.FieldType.NUMBER
+                        ) {
+                            inputType = android.text.InputType.TYPE_CLASS_NUMBER or
+                                android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL or
+                                android.text.InputType.TYPE_NUMBER_FLAG_SIGNED
+                        }
+                        layoutParams = android.widget.LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+                        ).apply { bottomMargin = (4 * density).toInt() }
+                    }
+                    binding.novelFieldContainer.addView(editText)
+                    section.inputs[field.id] = editText
+                }
+            }
+        }
+        attachNovelFieldSuggestions(section)
+    }
+
+    /** 작품 필드 자동완성 — 값 라이브러리 제안 (1쿼리 배치, 제안 꺼진 필드는 제외) */
+    private fun attachNovelFieldSuggestions(section: NovelFieldSection) {
+        val universeIdForFields = section.universeId ?: return
+        viewLifecycleOwner.lifecycleScope.launch {
+            val suggestions = viewModel.novelFieldSuggestions(universeIdForFields)
+            if (!isAdded || novelFieldSection !== section) return@launch
+            for (field in section.fields) {
+                val widget = section.inputs[field.id]
+                    as? com.google.android.material.textfield.MaterialAutoCompleteTextView ?: continue
+                if (!com.novelcharacter.app.data.model.FieldValueLibraryConfig
+                        .fromConfig(field.config).isSuggestEnabled
+                ) continue
+                val entries = suggestions[field.id].orEmpty()
+                if (entries.isNotEmpty()) {
+                    widget.setAdapter(
+                        com.novelcharacter.app.ui.fieldlibrary.LibrarySuggestionAdapter(
+                            requireContext(), entries
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    private fun novelFieldWidgetValue(widget: Any): String = when (widget) {
+        is android.widget.EditText -> widget.text.toString().trim()
+        is Spinner -> {
+            val pos = widget.selectedItemPosition
+            if (pos <= 0) "" else widget.selectedItem?.toString() ?: ""
+        }
+        else -> ""
+    }
+
+    /**
+     * 폼 제출 한 벌 (R-5). 커버는 조회된 정의 전체이고, 아직 조회가 끝나지 않았으면
+     * 커버가 공집합이라 **기존 값은 전량 보존**된다 — 로딩 중 저장이 값을 지우지 않는다.
+     */
+    private fun buildNovelFieldSubmission(
+        section: NovelFieldSection
+    ): com.novelcharacter.app.data.repository.NovelFieldValueMerge.Submission {
+        val values = mutableListOf<com.novelcharacter.app.data.model.NovelFieldValue>()
+        for (field in section.fields) {
+            val widget = section.inputs[field.id] ?: continue
+            val value = novelFieldWidgetValue(widget)
+            // 빈 값은 저장하지 않는다 — 커버된 필드가 폼에 없으면 삭제(비움 의도)로 처리된다
+            if (value.isNotBlank()) {
+                values.add(
+                    com.novelcharacter.app.data.model.NovelFieldValue(
+                        novelId = novelIdOfSection ?: 0,
+                        fieldDefinitionId = field.id,
+                        value = value
+                    )
+                )
+            }
+        }
+        return com.novelcharacter.app.data.repository.NovelFieldValueMerge
+            .Submission(values, section.covered)
     }
 
     private fun setupNovelImageRecyclerView(recyclerView: RecyclerView) {

@@ -84,6 +84,11 @@ data class UniverseDataSnapshot(
     val orphanCharacterFieldValues: List<CharacterFieldValue>? = null,
     /** 동상 — 삭제되지 않는 사건이 가진 이 세계관 사건 필드의 값 */
     val orphanEventFieldValues: List<EventFieldValue>? = null,
+    /**
+     * 동상 — 삭제되지 않는 **작품**이 가진 이 세계관 작품 필드의 값 (확-3).
+     * 세계관을 옮긴 작품이 옛 세계관 필드의 값을 보관 중인 경우가 이에 해당한다.
+     */
+    val orphanNovelFieldValues: List<NovelFieldValue>? = null,
     val refs: EntityRefs? = null
 )
 
