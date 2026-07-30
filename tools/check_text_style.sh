@@ -13,6 +13,16 @@
 # 사용법: tools/check_text_style.sh                # 검사 (새 위반 시 exit 1)
 #         tools/check_text_style.sh --rebaseline   # 현재 위반으로 기준선 재작성
 set -u
+# 로케일 고정 — 검사 결과가 호출자의 LANG에 따라 달라지지 않게 한다(기준선은 C에서 만들어졌다).
+#
+# **C.UTF-8로 올리지 말 것.** 아래 규칙의 `[가-힣]`은 UTF-8 로케일에서 콜레이션 범위로 해석되어
+# grep이 "Invalid collation character"로 거부한다(전개 3단계에서 실제로 겪었다). C에서는 바이트
+# 범위가 되어 "한글을 담았는가"라는 용도대로 동작한다.
+#
+# 그 대신 **새 규칙은 대괄호로 적지 않는다.** C 로케일에서 한글 대괄호는 글자가 아니라 바이트로
+# 쪼개져 엉뚱한 음절에 걸린다 — `[아어여와워해]보세요`가 '살펴보세요'를 잡았다(자기 재공격에서 발견).
+# 음절을 열거해야 하면 교체(|)를 쓸 것.
+export LC_ALL=C
 REPO="${REPO:-$(cd "$(dirname "$0")/.." && pwd)}"
 cd "$REPO"
 BASELINE="tools/text_style_baseline.txt"
@@ -41,24 +51,48 @@ app/src/main/java/com/novelcharacter/app/data/maintenance/SystemMaintenanceServi
 # '게요'는 -(으)ㄹ게요 종결 전용이라 어간을 열거하지 않는다 — 종전의 '볼게요|할게요'는
 # 열거된 둘만 잡아 실제로 0건을 검출했고, 그사이 '알려드릴게요'가 통과했다(전개 2단계에서 발견).
 YO_RE='(어요|에요|예요|아요|해요|께요|네요|데요|래요|게요|까요)'
-SPACING_RE='(해주세요|해주십시오|해보세요|해봐요|해먹|해두세요|해놓으세요)'
+# R2도 같은 함정을 갖고 있었다(전개 3단계에서 확인) — 종전의 열거형은 '해'로 시작하는 일곱 개만
+# 잡아 '가져와주세요'·'비워두세요'·'적어주세요' 세 건을 통과시켰다. 보조용언 붙여쓰기는 본용언의
+# 연결어미(아/어/여/와/워/려/해) + 보조용언(주다·보다·두다·놓다·드리다)이라는 **구조**라서,
+# 어간을 열거하는 대신 그 구조를 적는다. 대괄호가 아니라 교체(|)로 적는 이유는 위 로케일 주석에 있다.
+SPACING_RE='(아|어|여|와|워|려|해)(주세요|주십시오|주시고|보세요|봐요|두세요|놓으세요|드리세요|드릴게|드립니다)|해먹'
+# 한 단어로 굳은 합성동사는 **붙여 쓰는 것이 옳다** — 구조 규칙이 잡아도 위반이 아니다.
+# 이 목록을 지우면 '도와주세요'·'알아보세요' 같은 정상 문구가 검사에서 실패한다
+# (자기 재공격에서 실제로 오검출됐다). 늘릴 때는 표준국어대사전 표제어인지 확인하고 적을 것.
+LEXICALIZED_RE='(도와주|알아보|물어보|돌아보|살펴보|지켜보|여쭤보|들여다보|내려다보|찾아보)'
 TERM_RE='(산출물|카탈로그|매핑|그룹핑|파싱|렌더링|시맨틱|직렬화|정규화)'
+
+# 보조용언 붙여쓰기 판정 — 한 단어로 굳은 합성동사를 먼저 지운 뒤 구조 규칙을 적용한다.
+# 순서가 중요하다: 지우지 않고 검사하면 '알아보세요'가, 구조 규칙 없이 지우면 '메모해주세요'가 샌다.
+#
+# 첫 줄은 속도용 사전 걸러내기다. SPACING_RE는 반드시 아래 꼬리 중 하나를 포함하므로,
+# 꼬리가 없으면 지우기 전에도 후에도 걸릴 수 없다(지우기는 없던 꼬리를 만들지 못한다) —
+# 그래서 이 단축은 결과를 바꾸지 않는다. 문자열 대부분이 여기서 끝나 sed 호출이 사라진다.
+SPACING_TAIL_RE='(주세요|주십시오|주시고|보세요|봐요|두세요|놓으세요|드리세요|드릴게|드립니다|해먹)'
+has_spacing() {
+  printf '%s' "$1" | grep -qE "$SPACING_TAIL_RE" || return 1
+  printf '%s' "$1" | sed -E "s/$LEXICALIZED_RE//g" | grep -qE "$SPACING_RE"
+}
 
 violations() {
   # strings.xml — <string name="키">값</string> 의 값만 검사 (주석·이름 제외)
   sed -nE 's/.*<string[^>]*name="([^"]+)"[^>]*>(.*)<\/string>.*/\1\t\2/p' "$STRINGS" |
   while IFS=$'\t' read -r name value; do
     echo "$value" | grep -qE "${YO_RE}([^가-힣]|$)" && echo "TONE-YO|strings.xml|$name"
-    echo "$value" | grep -qE "$SPACING_RE" && echo "SPACING|strings.xml|$name"
+    has_spacing "$value" && echo "SPACING|strings.xml|$name"
     echo "$value" | grep -qE "$TERM_RE" && echo "TERM|strings.xml|$name"
   done
   # 코드 속 사용자 노출 문구 — 한국어를 담은 문자열 리터럴만 검사 (주석·로그 태그 제외)
+  # 주석 제외는 이 줄이 한다. 종전에는 '주석 제외'라고 적어 두고도 실제로는 걸러내지 않아,
+  # 따옴표를 품은 주석("파싱은 되지만 소비처가 못 읽는")이 기준선에 위반으로 앉아 있었다 —
+  # 화면에 나가지 않는 문구라 고칠 대상이 아닌데도 잔여 건수를 부풀렸다(전개 3단계에서 확인).
+  # 한 줄 주석·KDoc 본문 줄만 떨어낸다(줄 끝 주석은 그 줄의 실제 리터럴을 살려야 하므로 건드리지 않는다).
   for f in $KT_USER_FACING; do
     [ -f "$f" ] || continue
-    grep -oE '"[^"]*[가-힣][^"]*"' "$f" | sort -u |
+    grep -vE '^[[:space:]]*(//|\*|/\*)' "$f" | grep -oE '"[^"]*[가-힣][^"]*"' | sort -u |
     while read -r lit; do
       echo "$lit" | grep -qE "${YO_RE}([^가-힣]|$)" && echo "TONE-YO|$f|$lit"
-      echo "$lit" | grep -qE "$SPACING_RE" && echo "SPACING|$f|$lit"
+      has_spacing "$lit" && echo "SPACING|$f|$lit"
       echo "$lit" | grep -qE "$TERM_RE" && echo "TERM|$f|$lit"
     done
   done

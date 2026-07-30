@@ -2497,7 +2497,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 // 세계관 이동이 감지된 캐릭터는 필드값이 새 세계관 필드로 이미 재매핑됐다.
                 // 옛 세계관 키를 담은 이 행을 적용하면 방금 정리한 값이 되살아난다.
                 if (ch.id in universeMovedCharacterIds) {
-                    result.warnings.add("$rowLabel: '${ch.name}'은(는) 이번 가져오기에서 세계관이 바뀌어 필드값이 재매핑되었습니다 — 이 행은 적용하지 않았습니다")
+                    result.warnings.add("$rowLabel: '${ch.name}'은(는) 이번 가져오기에서 세계관이 바뀌어 필드값이 새 필드로 다시 연결되었습니다 — 이 행은 적용하지 않았습니다")
                     continue
                 }
 
@@ -2817,7 +2817,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         val aliasTokens = com.novelcharacter.app.util.FieldValueTokenizer.tokenize(field, value)
                             .filter { resolver.canonical(it) != it }
                         if (aliasTokens.isNotEmpty()) {
-                            result.warnings.add("캐릭터 행 $i: '${field.name}' 값 ${aliasTokens.joinToString(", ") { "'$it'" }}은(는) 라이브러리 별칭 표기입니다 — 원문대로 저장됨, 라이브러리에서 정규화 가능")
+                            result.warnings.add("캐릭터 행 $i: '${field.name}' 값 ${aliasTokens.joinToString(", ") { "'$it'" }}은(는) 라이브러리 별칭 표기입니다 — 원문대로 저장됨, 라이브러리에서 표기를 정리할 수 있습니다")
                         }
                     }
                     val existingValue = db.characterFieldValueDao().getValue(charId, field.id)
@@ -2857,9 +2857,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         )
                         when {
                             counts.hasRemoval -> result.warnings.add(
-                                "캐릭터 행 $i: '$name' 세계관 이동 감지 — 대응 없는 필드값 ${counts.removedValues}개·타 세계관 세력소속 ${counts.removedMemberships}개 정리(휴지통에 스냅샷 보관), ${counts.remappedValues}개 재매핑")
+                                "캐릭터 행 $i: '$name' 세계관 이동 감지 — 대응 없는 필드값 ${counts.removedValues}개·타 세계관 세력소속 ${counts.removedMemberships}개 정리(휴지통에 스냅샷 보관), ${counts.remappedValues}개 다시 연결")
                             counts.remappedValues > 0 -> result.warnings.add(
-                                "캐릭터 행 $i: '$name' 세계관 이동 감지 — 필드값 ${counts.remappedValues}개를 새 세계관 필드로 재매핑")
+                                "캐릭터 행 $i: '$name' 세계관 이동 감지 — 필드값 ${counts.remappedValues}개를 새 세계관 필드로 다시 연결")
                         }
                     }
                 }
@@ -3398,7 +3398,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     is CharLookupResult.Found -> r.character
                     is CharLookupResult.Ambiguous -> {
                         result.skippedRows++
-                        result.errors.add("관계 행 $i: '${char1Name}' 이름의 캐릭터가 ${r.count}명 존재합니다. 코드(code) 열을 사용하여 정확한 매칭을 해주세요.")
+                        result.errors.add("관계 행 $i: '${char1Name}' 이름의 캐릭터가 ${r.count}명입니다 — '캐릭터1코드' 열에 코드를 적어 한 명을 지정하세요")
                         continue
                     }
                     is CharLookupResult.NotFound -> {
@@ -3412,7 +3412,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     is CharLookupResult.Found -> r.character
                     is CharLookupResult.Ambiguous -> {
                         result.skippedRows++
-                        result.errors.add("관계 행 $i: '${char2Name}' 이름의 캐릭터가 ${r.count}명 존재합니다. 코드(code) 열을 사용하여 정확한 매칭을 해주세요.")
+                        result.errors.add("관계 행 $i: '${char2Name}' 이름의 캐릭터가 ${r.count}명입니다 — '캐릭터2코드' 열에 코드를 적어 한 명을 지정하세요")
                         continue
                     }
                     is CharLookupResult.NotFound -> {
@@ -3641,7 +3641,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     is CharLookupResult.Found -> r.character
                     is CharLookupResult.Ambiguous -> {
                         result.skippedRows++
-                        result.errors.add("관계변화 행 $i: '${char1Name}' 이름의 캐릭터가 ${r.count}명 존재합니다. 코드(code) 열을 사용하여 정확한 매칭을 해주세요.")
+                        result.errors.add("관계변화 행 $i: '${char1Name}' 이름의 캐릭터가 ${r.count}명입니다 — '캐릭터1코드' 열에 코드를 적어 한 명을 지정하세요")
                         continue
                     }
                     is CharLookupResult.NotFound -> {
@@ -3654,7 +3654,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     is CharLookupResult.Found -> r.character
                     is CharLookupResult.Ambiguous -> {
                         result.skippedRows++
-                        result.errors.add("관계변화 행 $i: '${char2Name}' 이름의 캐릭터가 ${r.count}명 존재합니다. 코드(code) 열을 사용하여 정확한 매칭을 해주세요.")
+                        result.errors.add("관계변화 행 $i: '${char2Name}' 이름의 캐릭터가 ${r.count}명입니다 — '캐릭터2코드' 열에 코드를 적어 한 명을 지정하세요")
                         continue
                     }
                     is CharLookupResult.NotFound -> {
@@ -3708,7 +3708,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 if (relationship == null) {
                     result.skippedRows++
                     result.errors.add(
-                        "관계변화 행 $i: '${char1Name}'–'${char2Name}' 사이에 관계가 ${pairRelationships.size}개 있어 어느 관계의 이력인지 확정할 수 없습니다 — '부모관계유형' 열에 대상 관계의 유형(${pairRelationships.joinToString("/") { it.relationshipType }})을 적어주세요"
+                        "관계변화 행 $i: '${char1Name}'–'${char2Name}' 사이에 관계가 ${pairRelationships.size}개 있어 어느 관계의 이력인지 확정할 수 없습니다 — '부모관계유형' 열에 대상 관계의 유형(${pairRelationships.joinToString("/") { it.relationshipType }})을 적으세요"
                     )
                     continue
                 }
@@ -4483,7 +4483,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     is CharLookupResult.Found -> r.character
                     is CharLookupResult.Ambiguous -> {
                         result.skippedRows++
-                        result.errors.add("세력 소속 행 $i: '$charName' 이름의 캐릭터가 ${r.count}명 존재합니다. 코드(code) 열을 사용하여 정확한 매칭을 해주세요.")
+                        result.errors.add("세력 소속 행 $i: '$charName' 이름의 캐릭터가 ${r.count}명입니다 — '캐릭터코드' 열에 코드를 적어 한 명을 지정하세요")
                         continue
                     }
                     is CharLookupResult.NotFound -> {

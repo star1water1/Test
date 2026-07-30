@@ -1066,15 +1066,15 @@
     <string name="share_world_conflict_skip">건너뛰기</string>
     <string name="share_world_conflict_new">새로 생성</string>
     <!-- 월드패키지 가져오기 (S-5) -->
-    <string name="import_unsupported_zip">지원하지 않는 ZIP 파일입니다 — 엑셀 백업도 월드패키지도 아닙니다. 앱에서 내보낸 파일인지 확인해주세요.</string>
+    <string name="import_unsupported_zip">지원하지 않는 ZIP 파일입니다 — 엑셀 백업도 월드패키지도 아닙니다. 앱에서 내보낸 파일인지 확인하세요.</string>
     <string name="world_package_import_title">월드패키지 가져오기</string>
     <string name="world_package_importing">월드패키지를 가져오는 중…</string>
     <string name="world_package_not_a_package">월드패키지 형식이 아닙니다 (manifest.json 없음)</string>
-    <string name="world_package_unsupported_version">이 패키지는 더 새로운 앱에서 만든 형식(v%1$d)입니다. 앱을 업데이트한 뒤 다시 가져와주세요.</string>
+    <string name="world_package_unsupported_version">이 패키지는 더 새로운 앱에서 만든 형식(v%1$d)입니다. 앱을 업데이트한 뒤 다시 가져오세요.</string>
     <string name="world_package_corrupted">패키지가 손상되었거나 형식이 올바르지 않습니다: %1$s</string>
     <string name="world_package_too_large">패키지 데이터가 너무 커서 가져올 수 없습니다</string>
     <string name="world_package_too_many_images">패키지의 이미지가 너무 많거나 커서 가져올 수 없습니다</string>
-    <string name="world_package_import_failed">월드패키지 가져오기에 실패했습니다. 파일이 온전한지 확인하고 다시 시도해주세요.</string>
+    <string name="world_package_import_failed">월드패키지 가져오기에 실패했습니다. 파일이 온전한지 확인하고 다시 시도하세요.</string>
     <string name="world_package_import_failed_after_overwrite">월드패키지 가져오기에 실패했습니다. 덮어쓰기로 삭제된 기존 세계관은 휴지통에 보관되어 있어 복원할 수 있습니다.</string>
     <string name="world_package_conflict_code">같은 세계관 \'%1$s\'이(가) 이미 있습니다.\n\n· 덮어쓰기: 기존 세계관을 휴지통에 보관하고 패키지 내용으로 교체\n· 새로 생성: 별개의 세계관으로 추가\n· 건너뛰기: 가져오지 않음</string>
     <string name="world_package_conflict_name">같은 이름의 세계관 \'%1$s\'이(가) 이미 있습니다(다른 세계관일 수 있음).\n\n· 덮어쓰기: 그 세계관을 휴지통에 보관하고 교체\n· 새로 생성: 별개의 세계관으로 추가\n· 건너뛰기: 가져오지 않음</string>
@@ -1677,7 +1677,7 @@
     <string name="storage_clean_orphan_aborted">일부 데이터를 읽을 수 없어 안전을 위해 정리를 중단했습니다. 설정 &gt; 시스템 관리의 무결성 점검 후 다시 시도하세요.</string>
 
     <string name="storage_clear_export_cache">내보내기 캐시 비우기</string>
-    <string name="storage_clear_export_cache_desc">엑셀/월드패키지/카드 내보내기의 임시 산출물을 삭제합니다. 원본 데이터·이미지에는 영향이 없으며 필요 시 다시 생성됩니다.</string>
+    <string name="storage_clear_export_cache_desc">엑셀/월드패키지/카드 내보내기의 임시 파일을 삭제합니다. 원본 데이터·이미지에는 영향이 없으며 필요 시 다시 생성됩니다.</string>
     <string name="storage_clear_cache_confirm">내보내기 임시 파일을 모두 삭제합니다. 원본 데이터에는 영향이 없습니다. 계속하시겠습니까?</string>
     <string name="storage_clear_cache_done">내보내기 캐시 정리 완료 (%s 확보)</string>
 

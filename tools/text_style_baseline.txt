@@ -1,18 +1,3 @@
-SPACING|app/src/main/java/com/novelcharacter/app/excel/ExcelImportService.kt|"관계 행 $i: '${char1Name}' 이름의 캐릭터가 ${r.count}명 존재합니다. 코드(code) 열을 사용하여 정확한 매칭을 해주세요."
-SPACING|app/src/main/java/com/novelcharacter/app/excel/ExcelImportService.kt|"관계 행 $i: '${char2Name}' 이름의 캐릭터가 ${r.count}명 존재합니다. 코드(code) 열을 사용하여 정확한 매칭을 해주세요."
-SPACING|app/src/main/java/com/novelcharacter/app/excel/ExcelImportService.kt|"관계변화 행 $i: '${char1Name}' 이름의 캐릭터가 ${r.count}명 존재합니다. 코드(code) 열을 사용하여 정확한 매칭을 해주세요."
-SPACING|app/src/main/java/com/novelcharacter/app/excel/ExcelImportService.kt|"관계변화 행 $i: '${char2Name}' 이름의 캐릭터가 ${r.count}명 존재합니다. 코드(code) 열을 사용하여 정확한 매칭을 해주세요."
-SPACING|app/src/main/java/com/novelcharacter/app/excel/ExcelImportService.kt|"세력 소속 행 $i: '$charName' 이름의 캐릭터가 ${r.count}명 존재합니다. 코드(code) 열을 사용하여 정확한 매칭을 해주세요."
-SPACING|strings.xml|import_unsupported_zip
-SPACING|strings.xml|world_package_import_failed
-TERM|app/src/main/java/com/novelcharacter/app/excel/ExcelExporter.kt|"  grades: 등급명과 수치 매핑 (필수). allowNegative: 음수 허용 여부 (기본 false)"
-TERM|app/src/main/java/com/novelcharacter/app/excel/ExcelExporter.kt|"[GRADE] 등급 — 등급 라벨과 수치를 매핑"
-TERM|app/src/main/java/com/novelcharacter/app/excel/ExcelImportService.kt|" }}은(는) 라이브러리 별칭 표기입니다 — 원문대로 저장됨, 라이브러리에서 정규화 가능"
-TERM|app/src/main/java/com/novelcharacter/app/excel/ExcelImportService.kt|"$rowLabel: '${ch.name}'은(는) 이번 가져오기에서 세계관이 바뀌어 필드값이 재매핑되었습니다 — 이 행은 적용하지 않았습니다"
-TERM|app/src/main/java/com/novelcharacter/app/excel/ExcelImportService.kt|"캐릭터 행 $i: '$name' 세계관 이동 감지 — 대응 없는 필드값 ${counts.removedValues}개·타 세계관 세력소속 ${counts.removedMemberships}개 정리(휴지통에 스냅샷 보관), ${counts.remappedValues}개 재매핑"
-TERM|app/src/main/java/com/novelcharacter/app/excel/ExcelImportService.kt|"캐릭터 행 $i: '$name' 세계관 이동 감지 — 필드값 ${counts.remappedValues}개를 새 세계관 필드로 재매핑"
-TERM|app/src/main/java/com/novelcharacter/app/excel/ExcelImportService.kt|"파싱은 되지만 소비처가 못 읽는"
-TERM|strings.xml|storage_clear_export_cache_desc
 TONE-YO|strings.xml|ai_guide_openai
 TONE-YO|strings.xml|backup_image_notice_title
 TONE-YO|strings.xml|batch_move_removed_warning
