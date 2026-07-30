@@ -267,6 +267,8 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
             override suspend fun getNovelIdsForEvent(eventId: Long) = viewModel.getNovelIdsForEvent(eventId)
             override suspend fun getEventFieldsForUniverse(universeId: Long) = viewModel.getEventFieldsForUniverse(universeId)
             override suspend fun getEventFieldValuesForEvent(eventId: Long) = viewModel.getEventFieldValuesForEvent(eventId)
+            override suspend fun insertEventField(field: com.novelcharacter.app.data.model.FieldDefinition) =
+                viewModel.insertEventField(field)
             override fun insertEvent(event: com.novelcharacter.app.data.model.TimelineEvent, characterIds: List<Long>, novelIds: List<Long>, fieldSubmission: com.novelcharacter.app.data.repository.EventFieldValueMerge.Submission) { viewModel.insertEvent(event, characterIds, novelIds, fieldSubmission) }
             override fun updateEvent(event: com.novelcharacter.app.data.model.TimelineEvent, characterIds: List<Long>, novelIds: List<Long>, fieldSubmission: com.novelcharacter.app.data.repository.EventFieldValueMerge.Submission) { viewModel.updateEvent(event, characterIds, novelIds, fieldSubmission) }
             override suspend fun getEventsInScope(novelIds: List<Long>, universeId: Long?): List<com.novelcharacter.app.data.model.TimelineEvent> {

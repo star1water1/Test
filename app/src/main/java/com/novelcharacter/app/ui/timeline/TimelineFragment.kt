@@ -614,6 +614,8 @@ class TimelineFragment : Fragment(), EventEditDialogFragment.Host {
             override suspend fun getNovelIdsForEvent(eventId: Long): List<Long> = viewModel.getNovelIdsForEvent(eventId)
             override suspend fun getEventFieldsForUniverse(universeId: Long) = viewModel.getEventFieldsForUniverse(universeId)
             override suspend fun getEventFieldValuesForEvent(eventId: Long) = viewModel.getEventFieldValuesForEvent(eventId)
+            override suspend fun insertEventField(field: com.novelcharacter.app.data.model.FieldDefinition) =
+                viewModel.insertEventField(field)
             override fun insertEvent(event: TimelineEvent, characterIds: List<Long>, novelIds: List<Long>, fieldSubmission: com.novelcharacter.app.data.repository.EventFieldValueMerge.Submission) {
                 viewModel.insertEvent(event, characterIds, novelIds, fieldSubmission)
             }

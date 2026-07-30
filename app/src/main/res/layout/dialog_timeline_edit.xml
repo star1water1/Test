@@ -166,5 +166,28 @@
             android:orientation="vertical"
             android:visibility="gone" />
 
+        <!--
+          사건 필드가 0개일 때도 머리글과 함께 남는 안내 + 만드는 경로 (P5).
+          종전에는 섹션이 통째로 사라져 사건을 쓰는 자리에서 '사건 필드'의 존재 신호가 없었고,
+          만들려면 세계관 목록까지 되돌아가야 했다 — 빈 상태에서 교정 경로를 없애지 않는다.
+        -->
+        <TextView
+            android:id="@+id/eventFieldEmptyHint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
+            android:text="@string/event_field_empty_hint"
+            android:textAppearance="@style/TextAppearance.App.Caption"
+            android:visibility="gone" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnAddEventField"
+            style="@style/Widget.App.Button.Outlined"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/event_field_add"
+            android:visibility="gone" />
+
     </LinearLayout>
 </androidx.core.widget.NestedScrollView>

@@ -163,10 +163,18 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    /** 현재 세계관의 필드 구성을 사용자 프리셋으로 저장 */
+    /**
+     * 현재 세계관의 필드 구성을 사용자 프리셋으로 저장.
+     *
+     * **사건 필드까지 담는다.** 종전에는 캐릭터 필드만 읽어(DAO 기본값) 사건 필드가 아무 고지 없이
+     * 빠졌고, 그 프리셋으로 세계관을 만들면 사건 필드가 사라진 채 복원됐다 — 직렬화 형식에
+     * `entityType` 자체가 없었으므로 담을 수도 없었다(P5에서 형식과 함께 고쳤다).
+     * 순서는 종류별로 다시 매겨지므로(PresetTemplates.toFieldDefinitions) 이어 붙이면 된다.
+     */
     fun saveAsUserPreset(universeId: Long, name: String, description: String) = viewModelScope.launch {
         try {
-            val fields = universeRepository.getFieldsByUniverseList(universeId)
+            val fields = universeRepository.getFieldsByUniverseList(universeId) +
+                universeRepository.getEventFieldsByUniverseList(universeId)
             val json = PresetTemplates.fieldsToJson(fields)
             userPresetDao.insert(UserPresetTemplate(
                 name = name,

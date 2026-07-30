@@ -19,6 +19,7 @@ import com.novelcharacter.app.util.toastAndLogResult
 import com.novelcharacter.app.util.SemanticFieldSyncHelper
 import com.novelcharacter.app.util.StandardYearSyncHelper
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -614,6 +615,15 @@ class TimelineViewModel(application: Application) : AndroidViewModel(application
     suspend fun getNovelIdsForEvent(eventId: Long) = timelineRepository.getNovelIdsForEvent(eventId)
     suspend fun getEventFieldsForUniverse(universeId: Long) =
         db.fieldDefinitionDao().getFieldsByUniverseList(universeId, com.novelcharacter.app.data.model.FieldDefinition.ENTITY_EVENT)
+
+    /**
+     * 사건 편집 자리에서 만든 사건 필드를 심는다(P5).
+     *
+     * 쓰기는 [viewModelScope]에서 돌린다 — 호출자(사건 편집 다이얼로그)의 코루틴이 도중에
+     * 취소되어도 이미 시작한 삽입이 사라지지 않게. 고지는 호출부가 결과를 받아서 한다.
+     */
+    suspend fun insertEventField(field: com.novelcharacter.app.data.model.FieldDefinition): Long =
+        viewModelScope.async { universeRepository.insertField(field) }.await()
     suspend fun getEventFieldValuesForEvent(eventId: Long) =
         db.eventFieldValueDao().getValuesByEventList(eventId)
     /**

@@ -151,6 +151,8 @@ $MAIN/excel/MergedCellMap.kt
 $MAIN/excel/ImportSource.kt
 $MAIN/util/ResetPlan.kt
 $MAIN/util/MembershipTimeline.kt
+$MAIN/data/model/UserPresetTemplate.kt
+$MAIN/util/PresetTemplates.kt
 $MAIN/data/repository/FieldValueRules.kt
 $MAIN/share/WorldPackageFactionRelationships.kt
 $MAIN/share/WorldPackageContents.kt
@@ -177,6 +179,7 @@ $TEST/util/FormulaEvaluatorTest.kt
 $TEST/util/FormulaValidatorTest.kt
 $TEST/util/SortComparatorsTest.kt
 $TEST/util/EpochMemoTest.kt
+$TEST/util/PresetTemplatesRoundtripTest.kt
 $TEST/ai/AiJsonExtractorTest.kt
 $TEST/util/FieldFilterHelperTest.kt
 $TEST/data/SnapshotRefResolverTest.kt

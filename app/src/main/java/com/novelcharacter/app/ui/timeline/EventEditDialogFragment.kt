@@ -26,8 +26,12 @@ import com.novelcharacter.app.data.model.TimelineEvent
 import com.novelcharacter.app.data.model.generateEntityCode
 import com.novelcharacter.app.data.repository.EventFieldValueMerge
 import com.novelcharacter.app.databinding.DialogTimelineEditBinding
+import com.novelcharacter.app.ui.field.FieldEditDialog
 import com.novelcharacter.app.util.FieldOptionParser
+import com.novelcharacter.app.util.OpResult
 import com.novelcharacter.app.util.isValidDay
+import com.novelcharacter.app.util.reportAndNotify
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -54,6 +58,12 @@ class EventEditDialogFragment : DialogFragment() {
         suspend fun getNovelIdsForEvent(eventId: Long): List<Long>
         suspend fun getEventFieldsForUniverse(universeId: Long): List<FieldDefinition>
         suspend fun getEventFieldValuesForEvent(eventId: Long): List<EventFieldValue>
+        /**
+         * 사건 편집 자리에서 만든 사건 필드를 심는다(P5). 실패는 예외로 올려 호출부가 알린다 —
+         * 호스트에 따라 result 채널 관찰 여부가 달라(캐릭터 편집 화면은 관찰하지 않는다)
+         * 고지를 호스트에 맡기면 한쪽에서 조용해진다.
+         */
+        suspend fun insertEventField(field: FieldDefinition): Long
         // 필드값은 값·커버 집합 한 벌([EventFieldValueMerge.Submission])로 전달한다(S-6) —
         // 값만 넘기면 "폼이 전체 진실"이 되어 폼이 렌더하지 못한 기존 값이 전량 삭제된다.
         fun insertEvent(event: TimelineEvent, characterIds: List<Long>, novelIds: List<Long>, fieldSubmission: EventFieldValueMerge.Submission)
@@ -101,6 +111,13 @@ class EventEditDialogFragment : DialogFragment() {
      * 마지막으로 렌더된 상태가 곧 화면의 진실이므로 그대로 둔다.
      */
     private var coveredEventFieldIds: Set<Long> = emptySet()
+
+    /**
+     * 필드 섹션이 해석한 세계관 — 이 자리에서 사건 필드를 만들 때 어디에 만들지가 이 값이다(P5).
+     * 세계관을 해석하지 못하면 null이고, 그때는 만들 수도 없으므로 경로를 감춘다
+     * (어느 세계관에 심을지 모르는 채로 만들게 하면 사용자가 고른 적 없는 곳에 들어간다).
+     */
+    private var resolvedFieldUniverseId: Long? = null
 
     // 역법 시드(R3): 신규 사건이면 스코프 세계관 최빈 역법을 시드하되, 편집·회전 복원·사용자 직접 입력은 존중.
     private var isRecreated = false
@@ -175,6 +192,8 @@ class EventEditDialogFragment : DialogFragment() {
             }
         }
 
+        setupAddEventFieldPath()
+
         // 목록/선택 상태 비동기 로드. 정적 입력값은 재생성 시 뷰 상태로 자동 복원되므로
         // 초기값 채우기는 최초 생성(savedInstanceState == null)에만 수행한다.
         lifecycleScope.launch {
@@ -220,6 +239,65 @@ class EventEditDialogFragment : DialogFragment() {
         }
 
         return alertDialog
+    }
+
+    /**
+     * 사건 필드를 **이 자리에서** 만드는 경로 (P5).
+     *
+     * 종전에는 사건 필드를 만들 길이 세계관 목록 → 카드의 필드 관리 버튼 → 종류 칩 전환 → FAB
+     * 하나뿐이었다. 사건을 쓰다가 필드가 필요해지면 편집을 버리고 되돌아가야 했고, 그래서
+     * 기능이 통계·연표까지 배선된 채로 쓰이지 않았다(사용자 회신: "알지만 조작이 불편했다").
+     *
+     * 여는 것은 필드 관리와 **같은 다이얼로그**다 — 새 편집 화면을 만들지 않는다. 이 다이얼로그가
+     * 부모로 살아 있으므로 사건 입력값은 그대로 보존되고(러프 입력 → 정밀 조정의 이중 경로),
+     * 정밀한 설정은 필드 관리에서 이어서 하면 된다.
+     */
+    private fun setupAddEventFieldPath() {
+        childFragmentManager.setFragmentResultListener(
+            FieldEditDialog.RESULT_KEY, this
+        ) { _, bundle ->
+            val json = bundle.getString(FieldEditDialog.RESULT_FIELD_JSON) ?: return@setFragmentResultListener
+            val field = gson.fromJson(json, FieldDefinition::class.java) ?: return@setFragmentResultListener
+            // 이 경로는 생성 전용이다(편집은 필드 관리에서 한다) — id가 붙어 오면 무시한다.
+            if (field.id != 0L) return@setFragmentResultListener
+            createEventField(field)
+        }
+        binding.btnAddEventField.setOnClickListener {
+            val universeId = resolvedFieldUniverseId ?: return@setOnClickListener
+            FieldEditDialog.newInstance(universeId, null, FieldDefinition.ENTITY_EVENT)
+                .show(childFragmentManager, "EventFieldEditDialog")
+        }
+    }
+
+    private fun createEventField(field: FieldDefinition) {
+        // 이 경로로 들어온 것은 사건 필드다 — 종류를 여기서 못박아 호출부마다 되풀이하지 않는다.
+        val toInsert = field.copy(entityType = FieldDefinition.ENTITY_EVENT)
+        lifecycleScope.launch {
+            val result = try {
+                requireProvider().insertEventField(toInsert)
+                OpResult.success(
+                    OpResult.CAT_FIELD,
+                    getString(R.string.event_field_created, field.name)
+                )
+            } catch (e: android.database.sqlite.SQLiteConstraintException) {
+                Log.e("EventEditDialog", "Duplicate event field key: ${field.key}", e)
+                OpResult.failure(
+                    OpResult.CAT_FIELD,
+                    getString(R.string.event_field_key_duplicate, field.key)
+                )
+            } catch (e: Exception) {
+                Log.e("EventEditDialog", "Failed to insert event field", e)
+                OpResult.failure(
+                    OpResult.CAT_FIELD,
+                    getString(R.string.event_field_create_failed),
+                    e.message
+                )
+            }
+            if (!isAdded) return@launch
+            reportAndNotify(result)
+            // 성공한 것만 폼에 반영한다. 입력 중인 값은 rebuild가 보존한다(pendingEventFieldValues).
+            if (result.success) rebuildEventFieldSection()
+        }
     }
 
     /**
@@ -534,9 +612,12 @@ class EventEditDialogFragment : DialogFragment() {
             eventFields = emptyList()
             eventFieldInputMap.clear()
             coveredEventFieldIds = emptySet()  // 렌더한 것이 없다 = 폼의 권한도 없다(전량 보존)
+            resolvedFieldUniverseId = null
             binding.eventFieldContainer.removeAllViews()
             binding.eventFieldContainer.visibility = View.GONE
             binding.eventFieldSectionLabel.visibility = View.GONE
+            binding.eventFieldEmptyHint.visibility = View.GONE
+            binding.btnAddEventField.visibility = View.GONE
             return
         }
 
@@ -549,6 +630,7 @@ class EventEditDialogFragment : DialogFragment() {
             val current = novels.firstOrNull { it.id in selectedNovelIds }?.universeId
                 ?: editingEvent?.universeId
             if (current != target) return@launch
+            resolvedFieldUniverseId = target
             // 커버는 조회된 정의 전체(CALCULATED 포함), 렌더는 입력 가능한 것만 — 필드 주석 참조.
             coveredEventFieldIds = fields.mapTo(HashSet()) { it.id }
             eventFields = fields
@@ -563,13 +645,22 @@ class EventEditDialogFragment : DialogFragment() {
         eventFieldInputMap.clear()
         binding.eventFieldContainer.removeAllViews()
 
+        // 세계관을 아는 한 만드는 경로는 항상 남긴다 — 필드가 있을 때도 하나 더 필요할 수 있다.
+        binding.btnAddEventField.visibility =
+            if (resolvedFieldUniverseId != null) View.VISIBLE else View.GONE
+
         if (eventFields.isEmpty()) {
             binding.eventFieldContainer.visibility = View.GONE
-            binding.eventFieldSectionLabel.visibility = View.GONE
+            // 빈 상태에서도 머리글과 사유를 남긴다 — 섹션을 통째로 감추면 사건을 쓰는 자리에서
+            // '사건 필드'라는 것의 존재를 알 길이 없다(B-31이 세운 규약과 같은 취지).
+            val known = resolvedFieldUniverseId != null
+            binding.eventFieldSectionLabel.visibility = if (known) View.VISIBLE else View.GONE
+            binding.eventFieldEmptyHint.visibility = if (known) View.VISIBLE else View.GONE
             return
         }
         binding.eventFieldContainer.visibility = View.VISIBLE
         binding.eventFieldSectionLabel.visibility = View.VISIBLE
+        binding.eventFieldEmptyHint.visibility = View.GONE
 
         val density = resources.displayMetrics.density
         for (field in eventFields) {
