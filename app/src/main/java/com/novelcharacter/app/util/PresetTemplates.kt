@@ -46,14 +46,20 @@ object PresetTemplates {
         )
     }
 
-    /** FieldDefinition 리스트를 JSON으로 직렬화 (저장용) */
+    /**
+     * FieldDefinition 리스트를 JSON으로 직렬화 (저장용).
+     *
+     * 등급 체계 참조(U-1)는 여기서 벗긴다 — 프리셋은 세계관을 넘나드는 템플릿이라 특정
+     * 세계관의 체계 code를 담으면 적용되는 곳마다 유령 참조가 된다. 실효 표(`grades`)는
+     * config에 물질화되어 있어 벗겨도 등급 표는 그대로 템플릿에 남는다.
+     */
     fun fieldsToJson(fields: List<FieldDefinition>): String {
         val dataList = fields.map { fd ->
             FieldTemplateData(
                 key = fd.key,
                 name = fd.name,
                 type = fd.type,
-                config = fd.config,
+                config = com.novelcharacter.app.data.model.GradeSystemRef.demote(fd.config),
                 groupName = fd.groupName,
                 isRequired = fd.isRequired,
                 entityType = fd.entityType
@@ -93,7 +99,9 @@ object PresetTemplates {
                 key = data.key,
                 name = data.name,
                 type = data.type,
-                config = data.config,
+                // 저장 시점에 벗겼지만(fieldsToJson) 손편집 JSON·엑셀 '필드 템플릿' 시트로
+                // 들어온 데이터는 그 경로를 안 거쳤다 — 복원 쪽에서도 벗겨야 구멍이 없다.
+                config = com.novelcharacter.app.data.model.GradeSystemRef.demote(data.config),
                 groupName = data.groupName,
                 displayOrder = order,
                 isRequired = data.isRequired,

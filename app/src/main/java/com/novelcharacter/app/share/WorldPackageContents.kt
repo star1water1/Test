@@ -13,6 +13,7 @@ import com.novelcharacter.app.data.model.Faction
 import com.novelcharacter.app.data.model.FactionMembership
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.FieldValueEntry
+import com.novelcharacter.app.data.model.GradeSystem
 import com.novelcharacter.app.data.model.NameBankEntry
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.NovelFieldValue
@@ -36,6 +37,10 @@ import com.novelcharacter.app.data.model.Universe
  *     은행이 통째로 실려, 패키지를 공유하면 무관한 전역 데이터까지 수신자에게 넘어갔다
  *   임포터([WorldPackageImporter])는 v1~v3 전부 읽으며, 구버전에 없는 엔트리는
  *   "없음"으로 처리하고 무엇이 빠진 형식인지 결과에 고지한다.
+ * - 4 (확-3): novel_field_values.json 추가 (작품 커스텀 필드값).
+ * - 5 (U-1): grade_systems.json 추가 (세계관 등급 체계 — 라벨 집합 + 기본 숫자).
+ *   필드 config의 참조는 체계 code라 별도 재배선 표가 필요 없다. 다만 code가 이 기기에서
+ *   충돌해 재발급되면 임포터가 config의 참조를 새 code로 다시 잇는다(R-1).
  */
 data class WorldPackageManifest(
     val schemaVersion: Int = WorldPackageEntries.CURRENT_SCHEMA_VERSION,
@@ -51,7 +56,7 @@ data class WorldPackageManifest(
  * 한쪽만 바뀌어 왕복이 조용히 깨지는 일이 없다.
  */
 object WorldPackageEntries {
-    const val CURRENT_SCHEMA_VERSION = 4
+    const val CURRENT_SCHEMA_VERSION = 5
 
     const val MANIFEST = "manifest.json"
     const val UNIVERSE = "universe.json"
@@ -73,6 +78,7 @@ object WorldPackageEntries {
     const val EVENT_FIELD_VALUES = "event_field_values.json"
     const val FIELD_VALUE_ENTRIES = "field_value_entries.json"
     const val NOVEL_FIELD_VALUES = "novel_field_values.json"
+    const val GRADE_SYSTEMS = "grade_systems.json"
 
     /** 이미지 엔트리 접두사 — `images/{캐릭터id}_{i}.jpg` · `images/universe_{i}.jpg` · `images/novel_{작품id}_{i}.jpg` */
     const val IMAGES_PREFIX = "images/"
@@ -108,6 +114,7 @@ data class WorldPackageContents(
     val eventFieldValues: List<EventFieldValue>,
     val fieldValueEntries: List<FieldValueEntry>,
     val novelFieldValues: List<NovelFieldValue>,
+    val gradeSystems: List<GradeSystem>,
     val droppedRows: Map<String, Int>
 )
 
@@ -226,6 +233,8 @@ object WorldPackageParser {
             ?: return malformed(e.FIELD_VALUE_ENTRIES)
         val novelFieldValues = read(e.NOVEL_FIELD_VALUES, object : TypeToken<List<NovelFieldValue?>>() {})
             ?: return malformed(e.NOVEL_FIELD_VALUES)
+        val gradeSystems = read(e.GRADE_SYSTEMS, object : TypeToken<List<GradeSystem?>>() {})
+            ?: return malformed(e.GRADE_SYSTEMS)
 
         return WorldPackageParseResult.Success(
             WorldPackageContents(
@@ -274,6 +283,9 @@ object WorldPackageParser {
                     allPresent(it.value, it.displayLabel, it.aliasesJson, it.category, it.description, it.source)
                 },
                 novelFieldValues = scrub(e.NOVEL_FIELD_VALUES, novelFieldValues) { allPresent(it.value) },
+                gradeSystems = scrub(e.GRADE_SYSTEMS, gradeSystems) {
+                    allPresent(it.name, it.gradesJson, it.code)
+                },
                 droppedRows = dropped
             )
         )

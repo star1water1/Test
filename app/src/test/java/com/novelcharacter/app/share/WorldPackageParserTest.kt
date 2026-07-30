@@ -7,6 +7,7 @@ import com.novelcharacter.app.data.model.EventFieldValue
 import com.novelcharacter.app.data.model.Faction
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.FieldValueEntry
+import com.novelcharacter.app.data.model.GradeSystem
 import com.novelcharacter.app.data.model.NameBankEntry
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.NovelFieldValue
@@ -94,6 +95,10 @@ class WorldPackageParserTest {
         entries[WorldPackageEntries.NAME_BANK] = gson.toJson(
             listOf(NameBankEntry(id = 81, name = "리안", isUsed = true, usedByCharacterId = 11))
         )
+        entries[WorldPackageEntries.GRADE_SYSTEMS] = gson.toJson(
+            listOf(GradeSystem(id = 91, universeId = 7, name = "능력 등급",
+                gradesJson = """{"C":0.5,"S":3}""", code = "GS91"))
+        )
 
         val contents = success(entries)
         assertEquals(WorldPackageEntries.CURRENT_SCHEMA_VERSION, contents.manifest.schemaVersion)
@@ -108,7 +113,35 @@ class WorldPackageParserTest {
         assertEquals("은색 머리", contents.fieldValueEntries.single().displayLabel)
         assertEquals("FC71", contents.factionRelationships.single().factionCode1)
         assertEquals(11L, contents.nameBank.single().usedByCharacterId)
+        assertEquals("GS91", contents.gradeSystems.single().code)
         assertTrue(contents.droppedRows.isEmpty())
+    }
+
+    @Test
+    fun `등급 체계 엔트리가 없는 v4 이하 패키지는 빈 목록이다 - 파손과 다르다`() {
+        val contents = success(baseEntries(version = 4))
+        assertTrue(contents.gradeSystems.isEmpty())
+    }
+
+    @Test
+    fun `등급 체계 엔트리가 깨지면 그 이름으로 Malformed다`() {
+        val entries = baseEntries()
+        entries[WorldPackageEntries.GRADE_SYSTEMS] = "[ not json"
+        assertEquals(
+            WorldPackageParseResult.Malformed(WorldPackageEntries.GRADE_SYSTEMS),
+            WorldPackageParser.parse(entries)
+        )
+    }
+
+    @Test
+    fun `등급 체계의 필수 문자열이 null인 행은 걸러 세고 나머지는 살린다`() {
+        val entries = baseEntries()
+        entries[WorldPackageEntries.GRADE_SYSTEMS] =
+            """[{"id":1,"universeId":7,"name":"능력 등급","gradesJson":"{}","displayOrder":0,"createdAt":0,"code":"GS1"},
+                {"id":2,"universeId":7,"displayOrder":0,"createdAt":0}]"""
+        val contents = success(entries)
+        assertEquals(1, contents.gradeSystems.size)
+        assertEquals(1, contents.droppedRows[WorldPackageEntries.GRADE_SYSTEMS])
     }
 
     @Test

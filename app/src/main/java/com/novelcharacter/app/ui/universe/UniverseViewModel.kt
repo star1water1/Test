@@ -101,6 +101,44 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    // ── 등급 체계 (U-1) — 저장·삭제는 GradeSystemRepository가 참조 필드 전파와 한 몸으로 처리 ──
+
+    private val gradeSystemRepository = com.novelcharacter.app.data.repository.GradeSystemRepository(db)
+
+    suspend fun getGradeSystems(universeId: Long): List<com.novelcharacter.app.data.model.GradeSystem> =
+        db.gradeSystemDao().getByUniverseList(universeId)
+
+    /** 삭제 확인(R-4)용 — 이 체계를 참조 중인 필드 수. */
+    suspend fun countGradeSystemReferences(system: com.novelcharacter.app.data.model.GradeSystem): Int =
+        gradeSystemRepository.referencingFields(system).size
+
+    /** @return 실효 표를 다시 쓴 필드 수. 실패 시 결과 채널로 통보하고 null. */
+    suspend fun saveGradeSystem(
+        system: com.novelcharacter.app.data.model.GradeSystem,
+        renames: Map<String, String>
+    ): Int? = try {
+        gradeSystemRepository.saveSystem(system, renames).propagatedFields
+    } catch (e: Exception) {
+        Log.e("UniverseViewModel", "Failed to save grade system", e)
+        reportResult(_result, OpResult.failure(OpResult.CAT_UNIVERSE,
+            app.getString(R.string.result_grade_system_save_failed, system.name), e.message))
+        null
+    }
+
+    /** @return 독자 표로 전환된 필드 수. 실패 시 결과 채널로 통보하고 null. */
+    suspend fun deleteGradeSystem(system: com.novelcharacter.app.data.model.GradeSystem): Int? = try {
+        // 인스턴스 하나 = 삭제 작업 하나(R-3) — 이 삭제가 만든 스냅샷이 정리에서 보호된다.
+        val trash = com.novelcharacter.app.data.repository.TrashRepository(db)
+        val demoted = gradeSystemRepository.deleteSystem(system, trash)
+        trash.pruneIfNeeded()
+        demoted
+    } catch (e: Exception) {
+        Log.e("UniverseViewModel", "Failed to delete grade system", e)
+        reportResult(_result, OpResult.failure(OpResult.CAT_UNIVERSE,
+            app.getString(R.string.result_grade_system_delete_failed, system.name), e.message))
+        null
+    }
+
     /** 삭제 확인 다이얼로그용 — 계단식 삭제 범위 집계(작품·캐릭터·사건·필드) */
     data class UniverseDeleteImpact(
         val novels: Int,

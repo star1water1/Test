@@ -86,7 +86,7 @@ app/src/main/java/com/novelcharacter/app/
 | 묶음 | 엔티티 |
 |------|--------|
 | 뼈대 | `Universe` → `Novel` → `Character` |
-| 사용자 정의 필드 | `FieldDefinition` · `CharacterFieldValue` · `EventFieldValue` · `NovelFieldValue` · `FieldValueEntry`(값 라이브러리) |
+| 사용자 정의 필드 | `FieldDefinition` · `CharacterFieldValue` · `EventFieldValue` · `NovelFieldValue` · `FieldValueEntry`(값 라이브러리) · `GradeSystem`(세계관 등급 체계 — U-1) |
 | 시간 | `TimelineEvent` · `TimelineCharacterCrossRef` · `TimelineEventNovelCrossRef` · `CharacterStateChange` |
 | 관계 | `CharacterRelationship` · `CharacterRelationshipChange` · `Faction` · `FactionMembership` · `FactionRelationship` |
 | 이미지 | `ImageMeta` · `ImageTag` |
@@ -118,6 +118,7 @@ app/src/main/java/com/novelcharacter/app/
 | `FormulaLexer` | 수식 어휘 규칙 + **버려지는 구간** | 미지 함수가 조용히 버려져 그럴듯한 오답이 됐다(로드맵 5) |
 | `FormulaEvaluator` / `FormulaValidator` / `FormulaDisplay` | 수식 평가 / 저장 시점 검증 / 표시 서식 | 서식·NaN 처리가 7곳에 복제(U-9) |
 | `GradeValueResolver` | 등급 라벨 → 숫자 | — |
+| `GradeSystemRef` | 등급 체계 참조·재정의·실효 표의 config 표현 + 강등·재배선 규칙 (쓰기 경로는 `GradeSystemRepository`만 — R-30) | — |
 | `SnapshotRefs` / `SnapshotRefResolver` | 휴지통 복원의 안정 식별자 | 복원이 남의 엔티티에 붙었다(R-1) |
 | `FolderNameToken` / `FolderRoundtripPlanner` / `FolderExportPlanner` / `FolderRoundtripLedger` | 이미지 폴더 왕복의 이름·계획·장부 | 개명 경로가 토큰을 깨 중복 편입(C-1) |
 | `CharacterFieldValueOverflow` | 캐릭터 시트가 담지 못한 값의 판정 | — |
@@ -263,6 +264,7 @@ AI 정책(`FieldAiPolicy`).
 | R-27 | 검증 실패는 창을 닫지 않는다 — 알리는 것과 고칠 자리를 남기는 것은 다른 일이다 | UI·입력 |
 | R-28 | 두 화면이 같은 prefs 파일의 같은 키를 공유하지 않는다 — 타입이 갈리면 ClassCastException (`tools/check_prefs_keys.sh`) | 저장·UI |
 | R-29 | `entityType`으로 갈리는 기능은 조회·중복 판정·순서·쓰기가 **모두** 같은 종류를 본다 — DAO 기본값이 캐릭터라 잊으면 오류가 아니라 잘못된 정답이 나온다 | 필드·데이터 |
+| R-30 | 물질화된 파생값의 원본을 고치는 경로는 파생값 재작성과 한 트랜잭션이다 — 등급 체계의 실효 표가 그 사례 | 필드·데이터 |
 
 ---
 
@@ -300,6 +302,7 @@ AI 정책(`FieldAiPolicy`).
 
 | 버전 | 날짜 | 변경 내용 |
 |------|------|-----------|
+| v1.8 | 2026.07.30 | **U-1 세계관 등급 체계 반영**(세션 로그 1-y장) — 2장 데이터 모델에 `GradeSystem` 등재(DB v46), 3장 단일 소스 표에 `GradeSystemRef` 등재(참조·재정의·실효 표의 config 표현 — 물질화 구조라 `GradeValueResolver` 소비자는 무변경), 6장 색인에 **R-30** 등재(물질화된 파생값의 원본 편집은 파생값 재작성과 한 트랜잭션) |
 | v1.7 | 2026.07.30 | **확-3 작품 축이 열려 5-2 확장점을 갱신**(종류가 셋이 됐다 — `character`·`event`·`novel`, 세션 로그 1-u장). 전수 대상이 `getFieldsByUniverse*`만이 아니라는 것을 명시했다(`getAllFieldsList`·`getFieldByKey`·`getGroupNames`·`countFieldsByKeyExcluding`도 같은 기본값을 갖는다). **한 종류를 여는 데 드는 자리를 목록으로** 남겼다 — 다음 종류(세계관·세력)의 견적이 추측이 아니라 실측에서 나오게. 아울러 **"순서가 열보다 위험하다"**를 경고로 넣었다(작품 시트가 필드 정의보다 먼저 처리돼 값이 버려질 참이었다). 3장 단일 소스 표에 `NovelFieldValueMerge`·`EntityFieldHeaders` 등재, 2장 데이터 모델에 `NovelFieldValue` 등재. **엔티티 수 '26'은 값을 지우고 세는 법으로 바꿨다** — 이 문서가 1장·7장에서 이미 두 번 쓴 처방이고, 실제로 v45가 표를 하나 더한 순간 낡았다 |
 | v1.6 | 2026.07.30 | **6장 색인에 규약 R-29 등재**(`entityType`으로 갈리는 기능은 조회·중복 판정·순서·쓰기가 모두 같은 종류를 본다 — P5, 세션 로그 1-p장). 아울러 **R-28 행이 셀 하나가 빠진 채였다** — 3열 표에 2열로 들어가 렌더가 어긋났다(신설 시 영역 칸을 빼먹었다). `저장·UI`로 채웠다: 바로 옆에 행을 더하면서 깨진 행을 두는 것이 더 나쁘다 |
 | v1.5 | 2026.07.30 | **7장 문서 지도에 `docs/session_log_2026-07.md` 등재**(`remaining_work` 1장이 분할됐다 — 근거는 그 문서 5-a 3번). 지도 행에 **"다른 문서의 `1-x장`은 전부 이곳"**을 함께 적었다: 절 번호를 보존한 분리라 참조 문자열만으로는 어느 문서인지 알 수 없다. 아울러 **`R-1~R-27` 범위 표기 2자리를 없앴다**(6장 제목·7장 지도) — R-28이 등재되며 낡았고, 삼자 일치 자체는 {1..28}로 정상이었으니 **틀린 것은 상한을 적었다는 사실**이다. 이 문서가 1장·2장에서 이미 두 번 쓴 처방(값이 아니라 세는 법 / 표가 곧 현행)을 규약 범위에도 적용했다 — **표가 현행 범위다.** 3장 단일 소스 표의 `1-h장` 참조도 새 문서를 가리키도록 정정 |

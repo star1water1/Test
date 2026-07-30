@@ -90,6 +90,9 @@ class ExcelExporter(context: Context) {
         if (options.universes) exportUniverses(workbook, usedSheetNames)
         if (options.novels) exportNovels(workbook, usedSheetNames)
         if (options.fieldDefinitions) {
+            // 등급 체계를 정의보다 먼저 — 시트 순서가 곧 가져오기 순서는 아니지만(가져오기는
+            // 이름으로 찾는다), 파일을 여는 사람이 참조 대상을 먼저 보게 된다.
+            exportGradeSystems(workbook, usedSheetNames)
             exportFieldDefinitions(workbook, usedSheetNames)
             exportFieldValueLibrary(workbook, usedSheetNames)
         }
@@ -485,6 +488,8 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "• 필드 정의: 세계관+필드키+대상으로 매칭. 타입은 드롭다운에서 선택. 대상이 사건·작품이면 그 종류의 필드"),
             GuideLine("", styles.guideBody, "  'AI추천'(Y/N)·'필드설명' 열을 채워 다시 가져오면 AI 추천 동작에 반영됩니다"),
             GuideLine("", styles.guideBody, "  (AI추천 빈칸=켜짐, 필드설명 빈칸=설명 없음. 두 열을 지운 파일은 기존 설정을 유지합니다)"),
+            GuideLine("", styles.guideBody, "  '등급체계' 열은 GRADE 필드가 참조하는 '등급 체계' 시트의 체계명입니다 — 아래 그 시트 안내 참조"),
+            GuideLine("", styles.guideBody, "• 등급 체계: 한 행이 등급 하나입니다. 세계관+체계명(코드 우선)으로 묶어 같은 체계로 인식합니다"),
             GuideLine("", styles.guideBody, "• 캐릭터 시트 (세계관 이름): 코드로 매칭. 코드 없을 시 이름+작품으로 매칭"),
             GuideLine("", styles.guideBody, "• 사건 연표: 코드로 매칭 (코드 없을 시 연도+설명). 관련 캐릭터는 쉼표로 구분. 세계관 열이 소속 기준"),
             GuideLine("", styles.guideBody, "• 필드 템플릿: '생성일'로 매칭합니다 — 이름이 같은 템플릿이 여럿 있을 수 있어 지우지 마세요"),
@@ -528,6 +533,8 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "[GRADE] 등급 — 등급 라벨과 수치를 연결"),
             GuideLine("", styles.guideBody, "  설정 예: {\"grades\":{\"C\":1,\"B\":2,\"A\":3,\"S\":4},\"allowNegative\":false}"),
             GuideLine("", styles.guideBody, "  grades: 등급명과 수치의 대응 (필수). allowNegative: 음수 허용 여부 (기본 false)"),
+            GuideLine("", styles.guideBody, "  여러 필드가 같은 등급 구성을 쓰면 '등급체계' 열로 체계를 참조하세요 (아래 '등급 체계' 시트 안내)"),
+            GuideLine("", styles.guideBody, "  gradeOverrides: 체계를 참조하는 필드가 일부 등급의 수치만 다르게 쓸 때의 대응 (선택)"),
             GuideLine("", styles.guideBody, ""),
             GuideLine("", styles.guideBody, "[CALCULATED] 자동 계산 — 다른 필드값을 참조하여 자동 산출"),
             GuideLine("", styles.guideBody, "  설정 예: {\"formula\":\"field('strength')+field('agility')\"}"),
@@ -563,6 +570,15 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "• 필드 열은 여러 세계관이 함께 쓰는 필드만 실립니다(열 이름에 필드키를 함께 적습니다)."),
             GuideLine("", styles.guideBody, "  한 세계관에만 있는 필드는 그 세계관의 캐릭터 시트에 있습니다."),
             GuideLine("", styles.guideBody, "• 세계관 칸이 빈 행은 미분류 캐릭터입니다."),
+            GuideLine("", styles.guideBody, ""),
+            GuideLine("'등급 체계' 시트 (등급 구성 공유)", styles.guideSection, ""),
+            GuideLine("", styles.guideBody, "등급(GRADE) 필드 여러 개가 같은 등급 구성을 쓰도록 세계관 단위로 묶는 시트입니다. 한 행이 등급 하나입니다."),
+            GuideLine("", styles.guideBody, "• 체계는 세계관+체계명으로 묶입니다('코드'가 있으면 코드 우선). 행을 추가해 등급을, 체계명을 바꿔 새 체계를 만듭니다."),
+            GuideLine("", styles.guideBody, "• '필드 정의' 시트의 '등급체계' 열에 체계명을 적으면 그 필드가 체계를 참조합니다 — 체계를 고치면 참조하는 필드 전체에 반영됩니다."),
+            GuideLine("", styles.guideBody, "• 참조하는 필드의 설정(JSON) grades는 실제 적용값입니다. 체계 기본과 다른 수치는 필드별 재정의(gradeOverrides)로 남습니다."),
+            GuideLine("", styles.guideBody, "• '등급체계' 칸을 비우면 그 필드는 체계와 무관한 독자 등급 표가 됩니다(표 내용은 유지). 열을 통째로 지우면 기존 참조가 유지됩니다."),
+            GuideLine("", styles.guideBody, "• 가리키는 체계가 파일에도 앱에도 없으면 거부하지 않고 독자 표로 들여온 뒤 결과에 알립니다."),
+            GuideLine("", styles.guideBody, "• 체계에서 등급 행을 지우면 참조 필드의 그 등급도 빠집니다. 캐릭터에 저장된 값은 지워지지 않고 해석만 빠집니다."),
             GuideLine("", styles.guideBody, ""),
             GuideLine("'필드 데이터' 시트 (값 정리)", styles.guideSection, ""),
             GuideLine("", styles.guideBody, "필드마다 실제로 쓰인 값이 모이는 시트입니다. 여기서 정리한 표기가 앱의 자동완성·통계·검색에 함께 반영됩니다."),
@@ -719,7 +735,12 @@ class ExcelExporter(context: Context) {
         }
         if (allFields.isEmpty()) return
 
-        val spec = fieldDefinitionSpec(universes.map { it.name })
+        // 등급 체계 참조(U-1)는 전용 열로만 나간다 — code → 체계로 풀어 이름·코드를 싣는다.
+        val systemsByCode = db.gradeSystemDao().getAllList().associateBy { it.code }
+        val spec = fieldDefinitionSpec(
+            universes.map { it.name },
+            systemsByCode.values.map { it.name }.distinct()
+        )
         val sheetName = assignSheetName(spec.sheetName, usedSheetNames, ownerOf = spec.sheetName)
         val sheet = workbook.createSheet(sheetName)
         writeHeaderRow(sheet, spec)
@@ -731,7 +752,7 @@ class ExcelExporter(context: Context) {
             row.createCell(1).setTextSafe(field.key)
             row.createCell(2).setTextSafe(field.name)
             row.createCell(3).setTextSafe(field.type)
-            // AI추천·필드설명은 전용 열로만 나간다 — 같은 사실을 두 벌 두지 않는다.
+            // AI추천·필드설명·등급체계는 전용 열로만 나간다 — 같은 사실을 두 벌 두지 않는다.
             // stripPortableKeys는 문자열 사본 변환이라 DB config(월드패키지의 원천)는 그대로다.
             row.createCell(4).setTextSafe(FieldConfigColumns.stripPortableKeys(field.config))
             row.createCell(5).setTextSafe(field.groupName)
@@ -745,9 +766,48 @@ class ExcelExporter(context: Context) {
             )
             row.createCell(10).setTextSafe(universe?.code ?: "")
             row.createCell(11).setTextSafe(FieldValueSheetMapper.entityLabel(field.entityType))
+            // 참조가 해석되지 않으면(체계가 이미 삭제된 잔재) 빈칸으로 내보낸다 — 그대로 다시
+            // 들이면 독자 표 강등과 같은 결과라, 파일이 앱보다 더 넓은 약속을 하지 않는다.
+            val refSystem = com.novelcharacter.app.data.model.GradeSystemRef.codeFromConfig(field.config)
+                ?.let { systemsByCode[it] }
+            row.createCell(12).setTextSafe(refSystem?.name ?: "")
+            row.createCell(13).setTextSafe(refSystem?.code ?: "")
         }
 
         applySpecFormatting(sheet, spec, allFields.size)
+    }
+
+    // ── 등급 체계 (U-1) ──
+
+    private suspend fun exportGradeSystems(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
+        val universes = db.universeDao().getAllUniversesList()
+        val universeMap = universes.associateBy { it.id }
+        val systems = db.gradeSystemDao().getAllList()
+        if (systems.isEmpty()) return
+
+        val spec = gradeSystemSpec(universes.map { it.name })
+        val sheetName = assignSheetName(spec.sheetName, usedSheetNames, ownerOf = spec.sheetName)
+        val sheet = workbook.createSheet(sheetName)
+        writeHeaderRow(sheet, spec)
+
+        var rowIndex = 1
+        for (system in systems) {
+            val universe = universeMap[system.universeId]
+            // 행 순서는 숫자 오름차순 — 앱의 등급 순서 파생 규칙과 같은 모양으로 내보낸다.
+            val grades = com.novelcharacter.app.data.model.GradeSystemRef.gradesFromJson(system.gradesJson)
+                .entries.sortedBy { it.value }
+            for ((label, value) in grades) {
+                val row = sheet.createRow(rowIndex++)
+                row.createCell(0).setTextSafe(universe?.name ?: "")
+                row.createCell(1).setTextSafe(system.name)
+                row.createCell(2).setTextSafe(label)
+                row.createCell(3).setCellValue(value)
+                row.createCell(4).setTextSafe(universe?.code ?: "")
+                row.createCell(5).setTextSafe(system.code)
+            }
+        }
+
+        applySpecFormatting(sheet, spec, rowIndex - 1)
     }
 
     // ── 필드 데이터 라이브러리 (값 카탈로그 — 별칭·라벨·카테고리 왕복) ──

@@ -75,6 +75,8 @@ object ResetPlan {
         cascade("event_field_values", via = "timeline_events"),
         // 작품 커스텀 필드값(확-3) — novels가 explicit로 지워지므로 함께 사라진다.
         cascade("novel_field_values", via = "novels"),
+        // 등급 체계(U-1) — universes가 explicit로 지워지므로 함께 사라진다.
+        cascade("grade_systems", via = "universes"),
         cascade("faction_relationships", via = "factions"),
         cascade("field_value_entries", via = "field_definitions"),
         // image_meta를 지우게 된 뒤에야 이 CASCADE가 실제로 성립한다.

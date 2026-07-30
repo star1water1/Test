@@ -24,6 +24,9 @@ import com.novelcharacter.app.data.model.FieldDefNaturalKey
 import com.novelcharacter.app.data.model.FieldDefRef
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.FieldValueEntry
+import com.novelcharacter.app.data.model.GradeSystem
+import com.novelcharacter.app.data.model.GradeSystemRef
+import com.novelcharacter.app.data.model.GradeSystemSnapshot
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.NovelFieldValue
 import com.novelcharacter.app.data.model.NovelSnapshot
@@ -345,7 +348,10 @@ class TrashRepository(
                 characters = characterCodes,
                 events = eventCodes,
                 novels = novelCodes
-            )
+            ),
+            // 등급 체계(U-1) — 필드 정의처럼 FK CASCADE로 함께 죽는다. 참조는 필드 config가
+            // code로 들고 있으므로 여기 담긴 체계만 되살리면 다시 이어진다.
+            gradeSystems = db.gradeSystemDao().getByUniverseList(universe.id)
         )
         insertSnapshot(
             TrashSnapshot.TYPE_UNIVERSE, universe.name, snapshot,
@@ -650,6 +656,28 @@ class TrashRepository(
         )
     }
 
+    /**
+     * 등급 체계 스냅샷 — 삭제 트랜잭션 안에서, 참조 필드를 **강등하기 전에** 호출할 것.
+     *
+     * **체계만 개별로 지우는 경로 전용이다.** 세계관 삭제는 [snapshotUniverse]가 체계를 담으므로
+     * 그 경로에서 함께 부르면 같은 체계가 두 벌 남는다(스냅샷은 겹치지 않고 이어붙는다).
+     *
+     * @param referencingFields 삭제 시점에 이 체계를 참조하던 필드 — 강등 후에는 config에서
+     *   참조가 사라져 알 수 없게 되므로, 지금 자연키로 담아야 복원이 다시 이을 수 있다(R-1).
+     */
+    suspend fun snapshotGradeSystem(system: GradeSystem, referencingFields: List<FieldDefinition>) {
+        val uCode = universeCode(system.universeId)
+        val snapshot = GradeSystemSnapshot(
+            gradeSystem = system,
+            referencingFields = referencingFields.map {
+                FieldDefRef(universeCode = uCode, entityType = it.entityType, key = it.key)
+            },
+            universeCode = uCode,
+            refs = EntityRefs(universeCode = uCode)
+        )
+        insertSnapshot(TrashSnapshot.TYPE_GRADE_SYSTEM, system.name, snapshot, emptyList())
+    }
+
     private suspend fun insertSnapshot(
         entityType: String,
         entityName: String,
@@ -793,6 +821,7 @@ class TrashRepository(
                 factionPlan(snap, pendingCodes, pendingPeerCodes = peerCodes.factions)?.toPreview()
             TrashSnapshot.TYPE_EVENT -> eventPlan(snap, pendingCodes)?.toPreview()
             TrashSnapshot.TYPE_STATE_CHANGE -> stateChangePlan(snap, pendingCodes)?.toPreview()
+            TrashSnapshot.TYPE_GRADE_SYSTEM -> gradeSystemPlan(snap, pendingCodes)?.toPreview()
             else -> null
         }
     }
@@ -864,6 +893,11 @@ class TrashRepository(
                     val plan = stateChangePlan(snap) ?: return@withTransaction
                     if (plan.blocker != null) return@withTransaction
                     result = applyStateChange(plan)
+                }
+                TrashSnapshot.TYPE_GRADE_SYSTEM -> {
+                    val plan = gradeSystemPlan(snap) ?: return@withTransaction
+                    if (plan.blocker != null) return@withTransaction
+                    result = applyGradeSystem(plan)
                 }
                 else -> return@withTransaction
             }
@@ -1006,6 +1040,8 @@ class TrashRepository(
                     parse(item, FactionSnapshot::class.java)?.faction?.code
                         ?.also { if (it.isNotBlank()) factions.add(it) }
                 TrashSnapshot.TYPE_EVENT -> parse(item, EventSnapshot::class.java)?.event?.code
+                TrashSnapshot.TYPE_GRADE_SYSTEM ->
+                    parse(item, GradeSystemSnapshot::class.java)?.gradeSystem?.code
                 else -> null
             }
             code?.takeIf { it.isNotBlank() }?.let { pending.add(it) }
@@ -1063,6 +1099,11 @@ class TrashRepository(
                     val plan = stateChangePlan(item, session = session) ?: return@withTransaction
                     if (plan.blocker != null) return@withTransaction
                     result = applyStateChange(plan)
+                }
+                TrashSnapshot.TYPE_GRADE_SYSTEM -> {
+                    val plan = gradeSystemPlan(item, session = session) ?: return@withTransaction
+                    if (plan.blocker != null) return@withTransaction
+                    result = applyGradeSystem(plan)
                 }
                 else -> return@withTransaction
             }
@@ -1728,6 +1769,8 @@ class TrashRepository(
         val data: UniverseSnapshot,
         /** 옛 필드정의 id → payload의 정의 (복원 후 새 id로 치환하기 위한 원본) */
         val fieldDefinitions: List<FieldDefinition>,
+        /** 함께 되살릴 등급 체계 (U-1). 구버전 payload는 빈 목록이다(R-2 — orEmpty로 받았다). */
+        val gradeSystems: List<GradeSystem>,
         val imageCharacterCode: String?,
         val imageNovelCode: String?,
         val losses: RestoreLossCounts,
@@ -1771,6 +1814,7 @@ class TrashRepository(
         return UniversePlan(
             data = data,
             fieldDefinitions = data.fieldDefinitions.orEmpty(),
+            gradeSystems = data.gradeSystems.orEmpty(),
             imageCharacterCode = data.universe.imageCharacterId
                 ?.let { refs?.characters?.get(it.toString()) },
             imageNovelCode = data.universe.imageNovelId?.let { refs?.novels?.get(it.toString()) },
@@ -1805,6 +1849,27 @@ class TrashRepository(
         // 등록하지 않을 경우 뒤 항목이 살아 있던 남의 엔티티에 붙는다(오배정).
         session?.record(TrashSnapshot.TYPE_UNIVERSE, source.code, newUniverseId)
 
+        // 등급 체계(U-1) — 필드 정의 config가 code로 참조하므로 **정의보다 먼저** 되살린다.
+        // code가 살아 있는 남의 체계와 충돌하면 재발급하고, 이 payload의 정의 config를 새 code로
+        // 다시 잇는다 — 옛 code로 두면 복원된 필드가 남의 체계에 붙는다(R-1의 교훈 그대로).
+        var skippedSystems = 0
+        val systemCodeRemap = HashMap<String, String>()
+        val seenSystemNames = HashSet<String>()
+        for (gs in plan.gradeSystems) {
+            @Suppress("SENSELESS_COMPARISON")
+            if (gs == null || gs.name == null || gs.gradesJson == null || gs.code == null) {
+                skippedSystems++   // 손편집·손상 payload의 행 (R-2)
+                continue
+            }
+            if (!seenSystemNames.add(gs.name)) {
+                skippedSystems++   // payload 안 이름 중복 — 유니크 (universeId, name) 위반 방지
+                continue
+            }
+            val safeCode = if (db.gradeSystemDao().getByCode(gs.code) == null) gs.code
+            else generateEntityCode().also { systemCodeRemap[gs.code] = it }
+            db.gradeSystemDao().insert(gs.copy(id = 0, universeId = newUniverseId, code = safeCode))
+        }
+
         // 필드 정의 — 새 세계관 아래라 자연키 충돌은 payload 안에서만 가능하다(같은 key 중복).
         var skippedDefs = 0
         val newDefIdByOld = HashMap<Long, Long>()
@@ -1814,7 +1879,12 @@ class TrashRepository(
                 skippedDefs++
                 continue
             }
-            val newId = db.fieldDefinitionDao().insert(def.copy(id = 0, universeId = newUniverseId))
+            val newId = db.fieldDefinitionDao().insert(
+                def.copy(
+                    id = 0, universeId = newUniverseId,
+                    config = GradeSystemRef.remapCode(def.config, systemCodeRemap)
+                )
+            )
             newDefIdByOld[def.id] = newId
         }
 
@@ -1830,7 +1900,7 @@ class TrashRepository(
         val result = RestoreResult(
             entityType = TrashSnapshot.TYPE_UNIVERSE,
             restoredName = source.name,
-            losses = plan.losses.copy(fieldDefinitions = skippedDefs),
+            losses = plan.losses.copy(fieldDefinitions = skippedDefs, gradeSystems = skippedSystems),
             relinkedByCode = plan.relinkedByCode
         )
         return result to deferred
@@ -2807,6 +2877,116 @@ class TrashRepository(
                 source.fieldKey == CharacterStateChange.KEY_BIRTH ||
                 source.fieldKey == CharacterStateChange.KEY_DEATH
             ) 1 else 0
+        )
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // 복원 — 등급 체계 (U-1)
+    // ──────────────────────────────────────────────────────────────────────
+
+    private data class GradeSystemPlan(
+        val data: GradeSystemSnapshot,
+        /** 해석된 세계관 id. blocker가 있으면 null이다. */
+        val universeId: Long?,
+        val relinkedByCode: Int,
+        val legacyPayload: Boolean,
+        val previewOnly: Boolean,
+        val blocker: RestoreBlocker?
+    ) {
+        fun toPreview() = RestorePreview(
+            entityType = TrashSnapshot.TYPE_GRADE_SYSTEM,
+            entityName = data.gradeSystem.name,
+            relinkedByCode = relinkedByCode,
+            legacyPayload = legacyPayload,
+            blocker = blocker
+        )
+    }
+
+    private suspend fun gradeSystemPlan(
+        snap: TrashSnapshot,
+        pendingCodes: Set<String> = emptySet(),
+        session: RestoreSession? = null
+    ): GradeSystemPlan? {
+        val data = parse(snap, GradeSystemSnapshot::class.java) ?: return null
+        @Suppress("SENSELESS_COMPARISON")
+        if (data.gradeSystem == null || data.gradeSystem.name == null ||
+            data.gradeSystem.gradesJson == null || data.gradeSystem.code == null
+        ) return null
+
+        val tally = RestoreTally(legacy = data.refs == null, pendingCodes = pendingCodes)
+        val uCode = data.universeCode ?: data.refs?.universeCode
+        val universeId = uCode?.let { code ->
+            session?.lookup(TrashSnapshot.TYPE_UNIVERSE, code)
+                ?: db.universeDao().getUniverseByCode(code)?.id
+                ?: if (code in pendingCodes) RestoreTally.PENDING_ID else null
+        }
+
+        // 같은 code의 체계가 아직 살아 있으면 복원은 되돌리기가 아니라 사본이다 —
+        // 상태변화 이력과 같은 규약으로 막고, 스냅샷은 남긴다(R-4).
+        val sameCodeLives = db.gradeSystemDao().getByCode(data.gradeSystem.code) != null
+
+        return GradeSystemPlan(
+            data = data,
+            universeId = universeId,
+            relinkedByCode = tally.relinked,
+            legacyPayload = tally.legacyGuess,
+            previewOnly = universeId == RestoreTally.PENDING_ID,
+            blocker = when {
+                universeId == null -> RestoreBlocker.MISSING_UNIVERSE
+                sameCodeLives -> RestoreBlocker.ALREADY_EXISTS
+                else -> null
+            }
+        )
+    }
+
+    private suspend fun applyGradeSystem(plan: GradeSystemPlan): RestoreResult {
+        check(!plan.previewOnly) { "미리보기 전용 계획으로 복원을 시도했다" }
+        check(plan.blocker == null) { "복원할 수 없는 등급 체계 계획이 적용 단계까지 왔다" }
+        val universeId = requireNotNull(plan.universeId)
+        val source = plan.data.gradeSystem
+
+        // 이름은 세계관 안 유니크 — 그 사이 같은 이름이 다시 쓰이고 있으면 변형해 되살린다
+        // (복원이 실패하는 것보다 "이름 (2)"로 돌아오는 편이 낫다. 내용은 같다).
+        var name = source.name
+        var suffix = 2
+        while (db.gradeSystemDao().getByUniverseAndName(universeId, name) != null) {
+            name = "${source.name} ($suffix)"
+            suffix++
+        }
+        // code 유니크 — 계획이 살아 있는 같은 code를 막았지만, 트랜잭션 안에서 한 번 더 확인한다.
+        val safeCode = source.code
+            .takeIf { it.isNotBlank() && db.gradeSystemDao().getByCode(it) == null }
+            ?: generateEntityCode()
+        db.gradeSystemDao().insert(source.copy(id = 0, universeId = universeId, name = name, code = safeCode))
+
+        // 삭제 시점에 참조하던 필드를 다시 잇는다 — 단, **아직 독자 표이고 라벨 집합이 삭제
+        // 시점 그대로인 필드만**. 그 사이 다른 체계를 골랐거나 라벨을 고쳤다면 그 편집이
+        // 우선이다(복원이 사용자의 이후 편집을 덮어쓰면 되돌리기가 아니라 파괴다).
+        val systemGrades = GradeSystemRef.gradesFromJson(source.gradesJson)
+        var relinked = 0
+        var lostLinks = 0
+        for (ref in plan.data.referencingFields.orEmpty()) {
+            val key = ref?.key
+            val entityType = ref?.entityType
+            if (key == null || entityType == null) { lostLinks++; continue }
+            val field = db.fieldDefinitionDao().getFieldByKey(universeId, key, entityType)
+            if (field == null || field.type != com.novelcharacter.app.data.model.FieldType.GRADE.name ||
+                GradeSystemRef.codeFromConfig(field.config) != null
+            ) { lostLinks++; continue }
+            val current = GradeSystemRef.gradesFromConfig(field.config)
+            if (current.keys != systemGrades.keys) { lostLinks++; continue }
+            val overrides = GradeSystemRef.deriveOverrides(current, systemGrades)
+            db.fieldDefinitionDao().update(
+                field.copy(config = GradeSystemRef.materialize(field.config, safeCode, systemGrades, overrides))
+            )
+            relinked++
+        }
+
+        return RestoreResult(
+            entityType = TrashSnapshot.TYPE_GRADE_SYSTEM,
+            restoredName = name,
+            losses = RestoreLossCounts(gradeSystemLinks = lostLinks),
+            relinkedByCode = plan.relinkedByCode + relinked
         )
     }
 

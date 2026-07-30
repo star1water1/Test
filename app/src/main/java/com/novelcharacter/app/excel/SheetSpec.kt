@@ -100,6 +100,7 @@ val RESERVED_SHEET_NAMES = setOf(
     universeSpec().sheetName,
     novelSpec(emptyList()).sheetName,
     fieldDefinitionSpec(emptyList()).sheetName,
+    gradeSystemSpec().sheetName,
     UNCLASSIFIED_SHEET_NAME,
     timelineSpec(emptyList()).sheetName,
     stateChangeSpec().sheetName,
@@ -340,7 +341,10 @@ fun novelSpec(
     ) + novelFieldHeaders.map { ColumnSpec(it, width = 6000) }  // 작품 커스텀 필드 (확-3)
 )
 
-fun fieldDefinitionSpec(universeNames: List<String>) = SheetSpec(
+fun fieldDefinitionSpec(
+    universeNames: List<String>,
+    gradeSystemNames: List<String> = emptyList()
+) = SheetSpec(
     sheetName = "필드 정의",
     columns = listOf(
         ColumnSpec("세계관", required = true, dropdownOptions = universeNames.takeIf { it.isNotEmpty() }, width = 5000),
@@ -359,7 +363,35 @@ fun fieldDefinitionSpec(universeNames: List<String>) = SheetSpec(
         // 캐릭터/사건/작품 필드 구분 — 이 열이 없던 구버전 파일은 캐릭터로 간주(관대 수용).
         // 모든 종류의 정의가 왕복되어야 신규 기기 복원 시 그 종류의 필드값이 유실되지 않는다.
         // 목록은 FieldValueSheetMapper가 단일 소스다 — 라벨을 두 벌 두면 반드시 갈린다.
-        ColumnSpec("대상", dropdownOptions = FieldValueSheetMapper.ENTITY_LABELS, width = 3500)
+        ColumnSpec("대상", dropdownOptions = FieldValueSheetMapper.ENTITY_LABELS, width = 3500),
+        // GRADE 필드의 등급 체계 참조(U-1) — 같은 세계관 '등급 체계' 시트의 체계명.
+        // config JSON의 참조 키는 내보내기에서 제거되고 이 열이 그 자리다(같은 사실 두 벌 금지).
+        // 해석은 '등급체계코드' 우선, 없으면 (세계관, 이름) — 다른 참조 열들과 같은 규약이다.
+        ColumnSpec("등급체계", dropdownOptions = gradeSystemNames.takeIf { it.isNotEmpty() }, width = 5000),
+        ColumnSpec("등급체계코드", readOnly = true, width = 4000)
+    )
+)
+
+/**
+ * 세계관 등급 체계 (U-1) — **한 행 = 등급 하나**. '필드 데이터' 시트가 값 하나를 한 행으로
+ * 다루는 것과 같은 형태라, 엑셀에서 필터·정렬·일괄 편집이 그대로 된다.
+ *
+ * 체계의 정체성은 '코드' 우선, 없으면 (세계관, 체계명)이다. 등급 순서 열이 없는 이유:
+ * 앱의 등급 순서는 어디서나 숫자 오름차순으로 파생되므로(GradeTable·FieldOptionParser)
+ * 순서를 따로 실으면 두 사실이 갈릴 자리만 생긴다.
+ *
+ * 첫 열이 '이름'이 아니라 캐릭터 시트 지문(looksLikeCharacterSheet)에 걸리지 않고,
+ * 예약명이라 세계관 시트에 자리를 빼앗기지 않는다 — '필드 정의' 시트와 같은 두 겹 방어다.
+ */
+fun gradeSystemSpec(universeNames: List<String> = emptyList()) = SheetSpec(
+    sheetName = "등급 체계",
+    columns = listOf(
+        ColumnSpec("세계관", required = true, dropdownOptions = universeNames.takeIf { it.isNotEmpty() }, width = 5000),
+        ColumnSpec("체계명", required = true, width = 6000),
+        ColumnSpec("등급", required = true, width = 4000),
+        ColumnSpec("기본숫자", required = true, width = 4000),
+        ColumnSpec("세계관코드", readOnly = true, width = 4000),
+        ColumnSpec("코드", readOnly = true, width = 4000)
     )
 )
 

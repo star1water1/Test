@@ -148,6 +148,29 @@
     <string name="grade_error_duplicate">등급 \'%1$s\'이(가) 두 번 있습니다. 등급 이름은 겹칠 수 없습니다.</string>
     <string name="grade_error_sign_prefix">등급 이름은 -나 +로 시작할 수 없습니다: \'%1$s\'. 음수 등급은 \'음수 허용\'을 켜면 입력 시 ±로 표현됩니다.</string>
     <string name="grade_error_empty">등급을 1개 이상 입력하세요.</string>
+
+    <!-- 등급 체계 (U-1) — 세계관 단위 등급 구성 공유 -->
+    <string name="label_grade_system">등급 체계</string>
+    <string name="caption_grade_system">등급 구성을 세계관의 등급 체계에서 가져와 여러 필드가 함께 씁니다. 체계는 세계관 편집에서 만들고 고치며, 고치면 참조하는 모든 필드에 반영됩니다. 수치는 이 필드에서만 다르게 정할 수 있습니다.</string>
+    <string name="grade_system_standalone">독자 표 (이 필드 전용)</string>
+    <string name="grade_system_dangling">참조하던 등급 체계를 찾을 수 없어 독자 표로 표시합니다. 저장하면 독자 표로 확정됩니다.</string>
+    <string name="grade_systems_label">등급 체계</string>
+    <string name="grade_systems_desc">여러 등급 필드가 같은 등급 구성을 쓰도록 세계관 단위로 묶습니다. 필드 편집의 \'등급 체계\'에서 참조하며, 여기서 고치면 참조하는 필드 전체에 반영됩니다.</string>
+    <string name="grade_systems_add">+ 체계 추가</string>
+    <string name="grade_system_row_format">%1$s — %2$s</string>
+    <string name="grade_system_add_title">등급 체계 추가</string>
+    <string name="grade_system_edit_title">등급 체계 편집</string>
+    <string name="grade_system_name_hint">체계 이름 (예: 능력 등급)</string>
+    <string name="grade_system_name_required_error">체계 이름을 입력하세요.</string>
+    <string name="grade_system_name_duplicate_error">같은 이름의 체계가 이 세계관에 이미 있습니다.</string>
+    <string name="grade_system_saved_toast">\'%1$s\' 체계를 저장했습니다. 참조하는 필드 %2$d개에 반영되었습니다.</string>
+    <string name="grade_system_delete_title">등급 체계 삭제</string>
+    <string name="grade_system_delete_confirm">\'%1$s\' 체계를 삭제하시겠습니까? 참조하는 필드는 없습니다. 삭제한 체계는 휴지통에 보관됩니다.</string>
+    <string name="grade_system_delete_confirm_refs">\'%1$s\' 체계를 삭제하시겠습니까? 참조하는 필드 %2$d개는 지금 표를 그대로 가진 독자 표로 바뀝니다(값·통계는 그대로). 삭제한 체계는 휴지통에 보관됩니다.</string>
+    <string name="grade_system_deleted_toast">\'%1$s\' 체계를 삭제했습니다</string>
+    <string name="grade_system_deleted_toast_refs">\'%1$s\' 체계를 삭제했습니다. 필드 %2$d개가 독자 표로 바뀌었습니다.</string>
+    <string name="result_grade_system_save_failed">등급 체계 \'%1$s\' 저장 실패</string>
+    <string name="result_grade_system_delete_failed">등급 체계 \'%1$s\' 삭제 실패</string>
     <string name="label_formula">계산 수식</string>
     <string name="hint_formula_example">예: field(\'aura\') + field(\'body\')</string>
     <string name="text_formula_help">사용 가능: field(\'키\'), sum_all_grades(), %1$s, +, -, *, /</string>
@@ -377,6 +400,7 @@
     <string name="trash_type_faction">세력</string>
     <string name="trash_type_event">사건</string>
     <string name="trash_type_state_change">상태변화</string>
+    <string name="trash_type_grade_system">등급 체계</string>
 
     <!-- 삭제 작업(그룹) — 한 번의 삭제가 만든 스냅샷 묶음 (B-1/B-14) -->
     <string name="trash_operation_title">%1$s \'%2$s\' 삭제</string>
@@ -391,6 +415,7 @@
     <string name="trash_operation_purged">%1$d개 항목 영구 삭제됨</string>
     <string name="trash_restore_blocked_universe">이 세력이 속한 세계관이 없어 복원할 수 없습니다. 세력은 세계관 없이 존재할 수 없으므로 아무 세계관에나 붙이지 않습니다.\n같은 삭제로 만들어진 세계관 항목을 먼저 복원한 뒤(또는 \'전체 복원\'으로) 다시 시도하세요. 휴지통 항목은 그대로 남습니다.</string>
     <string name="trash_restore_blocked_character">이 상태변화 이력의 캐릭터가 없어 복원할 수 없습니다. 이력은 캐릭터 없이 존재할 수 없으므로 아무 캐릭터에나 붙이지 않습니다.\n캐릭터를 먼저 복원한 뒤(또는 \'전체 복원\'으로) 다시 시도하세요. 휴지통 항목은 그대로 남습니다.</string>
+    <string name="trash_restore_blocked_universe_grade_system">이 등급 체계가 속한 세계관이 없어 복원할 수 없습니다. 체계는 세계관 없이 존재할 수 없으므로 아무 세계관에나 붙이지 않습니다.\n세계관을 먼저 복원한 뒤 다시 시도하세요. 휴지통 항목은 그대로 남습니다.</string>
     <string name="trash_restore_blocked_title">복원할 수 없음</string>
 
     <string name="trash_item_meta">%1$s · 삭제 %2$s</string>
@@ -416,6 +441,8 @@
     <string name="trash_skip_change_events">- 관계 변화 %1$d개의 사건 연결 (사건을 찾을 수 없음)</string>
     <string name="trash_skip_universe">- 소속 세계관을 찾을 수 없어 미배정으로 복원됩니다</string>
     <string name="trash_skip_field_definitions">- 필드 정의 %1$d개 (같은 키의 정의가 이미 있어 건너뜀)</string>
+    <string name="trash_skip_grade_systems">- 등급 체계 %1$d개 (손상되었거나 이름이 겹쳐 건너뜀)</string>
+    <string name="trash_skip_grade_system_links">- 등급 체계 참조 %1$d개 (필드가 없거나 그 사이 표가 바뀌어 잇지 않음)</string>
     <string name="trash_skip_field_value_entries">- 필드 데이터(값 라이브러리) 항목 %1$d개</string>
     <string name="trash_skip_orphan_values">- 보관 중이던 필드값 %1$d개 (그 값을 가진 캐릭터·사건을 찾을 수 없음)</string>
     <string name="trash_skip_novel_fields">- 작품 필드값 %1$d개 (필드 정의를 찾을 수 없음)</string>
@@ -2619,7 +2646,7 @@
     <string name="help_initial_values_title">값 사전 등록</string>
     <string name="help_initial_values_body">필드를 만들면서 쓸 값들을 미리 넣어 둡니다. 쉼표로 구분해 적으면(예: 빨강, 파랑, 검정) 값 목록에 바로 등록되어 자동완성과 \'제한\' 모드에 즉시 쓰입니다.</string>
     <string name="help_grade_values_title">등급 값</string>
-    <string name="help_grade_values_body">등급(C·B·A·S)에 숫자를 매겨 통계에서 평균·비교가 가능하게 합니다. 숫자는 등급 간 간격이라, S=3·A=2처럼 차이를 크게 두면 통계에서 등급 차이가 크게 반영됩니다. 등급은 \'등급 추가\'로 자유롭게 늘리거나 지울 수 있습니다.</string>
+    <string name="help_grade_values_body">등급(C·B·A·S)에 숫자를 매겨 통계에서 평균·비교가 가능하게 합니다. 숫자는 등급 간 간격이라, S=3·A=2처럼 차이를 크게 두면 통계에서 등급 차이가 크게 반영됩니다. 등급은 \'등급 추가\'로 자유롭게 늘리거나 지울 수 있습니다. 여러 필드가 같은 등급 구성을 쓴다면 \'등급 체계\'를 참조하세요 — 체계는 세계관 편집에서 만들고, 한 번 고치면 참조하는 필드 전체에 반영됩니다.</string>
 
     <!-- 어시스턴트 — 라이브러리 품질 카드 -->
     <string name="assistant_library_quality_title">\'%1$s\' 필드에 유사 표기 값</string>

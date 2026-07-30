@@ -394,6 +394,7 @@ class ExcelImporter(context: Context) {
         if (outcome.novels > 0) parts.add("작품 ${outcome.novels}")
         if (outcome.characters > 0) parts.add("캐릭터 ${outcome.characters}")
         if (outcome.fieldDefinitions > 0) parts.add("필드 ${outcome.fieldDefinitions}")
+        if (outcome.gradeSystems > 0) parts.add("등급 체계 ${outcome.gradeSystems}")
         if (outcome.fieldValues > 0) parts.add("필드값 ${outcome.fieldValues}")
         if (outcome.events > 0) parts.add("사건 ${outcome.events}")
         if (outcome.eventFieldValues > 0) parts.add("사건 필드값 ${outcome.eventFieldValues}")
@@ -1307,6 +1308,9 @@ class ExcelImporter(context: Context) {
             parts.add(r.getString(com.novelcharacter.app.R.string.import_result_novels, result.newNovels + result.updatedNovels))
         if (result.newFields > 0 || result.updatedFields > 0)
             parts.add(r.getString(com.novelcharacter.app.R.string.import_result_fields, result.newFields + result.updatedFields))
+        val gsTotal = result.newGradeSystems + result.updatedGradeSystems
+        if (gsTotal > 0) parts.add("등급 체계 ${gsTotal}건")
+        if (result.deletedGradeSystems > 0) parts.add("등급 체계 삭제 ${result.deletedGradeSystems}건")
         if (charTotal > 0) {
             parts.add(if (result.updatedCharacters > 0) {
                 r.getString(com.novelcharacter.app.R.string.import_result_characters_updated, charTotal, result.updatedCharacters)

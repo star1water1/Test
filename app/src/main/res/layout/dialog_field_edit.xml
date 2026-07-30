@@ -272,6 +272,37 @@
                     android:background="?attr/selectableItemBackground"
                     android:layout_marginBottom="8dp" />
 
+                <!-- U-1: 등급 체계 참조 — 독자 표(기본) 또는 세계관 등급 체계 선택.
+                     프리셋 편집(universeId=0)에서는 성립하지 않아 통째로 숨긴다(R-24). -->
+                <LinearLayout
+                    android:id="@+id/gradeSystemLayout"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone"
+                    android:layout_marginBottom="4dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/label_grade_system"
+                        android:textAppearance="@style/TextAppearance.App.Body" />
+
+                    <Spinner
+                        android:id="@+id/spinnerGradeSystem"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content" />
+
+                    <TextView
+                        android:id="@+id/captionGradeSystem"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/caption_grade_system"
+                        android:textAppearance="@style/TextAppearance.App.Caption"
+                        android:textColor="@color/text_secondary"
+                        android:layout_marginBottom="4dp" />
+                </LinearLayout>
+
                 <!-- B-69: 등급 행은 동적으로 추가·삭제한다 (addGradeRow — 구간·칸 행과 같은 방식).
                      종전의 C·B·A·S 4칸 고정은 config가 담을 수 있는 임의 등급을 화면에서 숨겼다. -->
                 <LinearLayout
