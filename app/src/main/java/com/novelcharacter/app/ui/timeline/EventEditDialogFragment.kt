@@ -623,6 +623,11 @@ class EventEditDialogFragment : DialogFragment() {
 
         // 작품을 빠르게 토글해도 이전 세계관 fetch가 늦게 도착해 덮어쓰지 않게 이전 작업 취소 + await 후 재확인(P2-2).
         val target = universeId
+        // **fetch 전에 대입한다.** 조회가 끝난 뒤에 넣으면 작품을 A→B로 바꾼 직후 조회가 도는
+        // 동안 이 값이 A로 남고, 버튼은 계속 보이므로 그 사이에 누르면 **사용자가 고른 적 없는
+        // 세계관 A에 필드가 생긴다.** null 검사만으로는 이 자리를 막지 못한다 —
+        // 막아야 하는 것은 '모르는 상태'가 아니라 '낡은 상태'다.
+        resolvedFieldUniverseId = target
         fieldSectionJob?.cancel()
         fieldSectionJob = lifecycleScope.launch {
             val fields = requireProvider().getEventFieldsForUniverse(target)
@@ -630,7 +635,6 @@ class EventEditDialogFragment : DialogFragment() {
             val current = novels.firstOrNull { it.id in selectedNovelIds }?.universeId
                 ?: editingEvent?.universeId
             if (current != target) return@launch
-            resolvedFieldUniverseId = target
             // 커버는 조회된 정의 전체(CALCULATED 포함), 렌더는 입력 가능한 것만 — 필드 주석 참조.
             coveredEventFieldIds = fields.mapTo(HashSet()) { it.id }
             eventFields = fields

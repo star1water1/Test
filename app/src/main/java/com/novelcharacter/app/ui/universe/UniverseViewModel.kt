@@ -114,8 +114,13 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
         val novels = db.novelDao().getNovelsByUniverseList(universeId).size
         val characters = db.characterDao().getCharactersByUniverseList(universeId).size
         val events = db.timelineDao().countByUniverse(universeId)
-        val fields = db.fieldDefinitionDao().getFieldsByUniverseList(universeId).size
-        val values = db.characterFieldValueDao().countValuesByUniverse(universeId)
+        // 삭제는 FK CASCADE로 **모든 entityType**의 정의와 값을 함께 지운다(FieldDefinitionDao의
+        // getFieldsByUniverseAllTypes 주석). 캐릭터 쪽만 세면 이 고지가 실제보다 적은 수를 말하고,
+        // 그러면 '말없는 유실을 막는다'는 이 다이얼로그의 존재 이유가 무너진다.
+        // 사건 필드를 만들 수 있게 되기 전에는 드러나지 않던 자리다(P5).
+        val fields = db.fieldDefinitionDao().getFieldsByUniverseAllTypes(universeId).size
+        val values = db.characterFieldValueDao().countValuesByUniverse(universeId) +
+            db.eventFieldValueDao().countValuesByUniverse(universeId)
         return UniverseDeleteImpact(novels, characters, events, fields, values)
     }
 
