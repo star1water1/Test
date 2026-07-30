@@ -343,7 +343,8 @@ class FieldValueListFragment : Fragment() {
             val message = getString(
                 R.string.field_library_merge_confirm, sources.size, target.value,
                 getString(R.string.field_library_propagation_message,
-                    preview.characterValues, preview.eventValues, preview.stateChanges)
+                    preview.characterValues, preview.eventValues, preview.stateChanges,
+                    preview.novelValues)
             ) + joinNoticeIfMulti(fd)
             MaterialAlertDialogBuilder(requireContext())
                 .setTitle(R.string.field_library_menu_merge)
@@ -450,7 +451,8 @@ class FieldValueListFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             val preview = viewModel.previewPropagation(fd, setOf(entry.value))
             val message = getString(R.string.field_library_propagation_message,
-                preview.characterValues, preview.eventValues, preview.stateChanges) +
+                preview.characterValues, preview.eventValues, preview.stateChanges,
+                preview.novelValues) +
                 joinNoticeIfMulti(fd) +
                 (if (preview.whitespaceNormalized > 0)
                     getString(R.string.field_library_propagation_whitespace) else "")
@@ -488,6 +490,11 @@ class FieldValueListFragment : Fragment() {
                     usage.events.take(15).forEach { add("  · ${it.getFormattedDate()} ${it.description}") }
                     if (usage.events.size > 15) add("  · … 외 ${usage.events.size - 15}건")
                 }
+                if (usage.novels.isNotEmpty()) {
+                    add(getString(R.string.field_library_usage_novels, usage.novels.size))
+                    usage.novels.take(15).forEach { add("  · ${it.title}") }
+                    if (usage.novels.size > 15) add("  · … 외 ${usage.novels.size - 15}개")
+                }
                 if (usage.stateChangeCount > 0) {
                     add(getString(R.string.field_library_usage_state_changes, usage.stateChangeCount))
                 }
@@ -508,7 +515,8 @@ class FieldValueListFragment : Fragment() {
             val options = arrayOf(
                 getString(R.string.field_library_delete_entry_only),
                 getString(R.string.field_library_delete_with_data,
-                    preview.characterValues, preview.eventValues, preview.stateChanges)
+                    preview.characterValues, preview.eventValues, preview.stateChanges,
+                    preview.novelValues)
             )
             var choice = 0
             MaterialAlertDialogBuilder(requireContext())

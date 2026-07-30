@@ -171,6 +171,31 @@ class StatsDataProviderUnassignedTest {
     }
 
     @Test
+    fun unassignedScope_hasNoNovelAxis() {
+        // 확-3: '작품 미배정'은 작품이 없는 캐릭터의 스코프다. 작품 모수가 0이므로 작품 필드
+        // 카드를 만들면 "N/0개"가 되고, 그것은 읽을 수 없는 수치이자 캐릭터 축이 일부러 피한
+        // 모순이다. 값이 있어도 이 스코프에서는 작품 축을 만들지 않는다.
+        val withNovelField = snapshot().copy(
+            novelFieldDefinitions = listOf(
+                FieldDefinition(
+                    id = 50L, universeId = 100L, key = "form", name = "형식", type = "TEXT",
+                    entityType = FieldDefinition.ENTITY_NOVEL
+                )
+            ),
+            novelFieldValues = listOf(
+                com.novelcharacter.app.data.model.NovelFieldValue(
+                    novelId = 10L, fieldDefinitionId = 50L, value = "장편"
+                )
+            )
+        )
+        val filtered = provider.filterByNovel(withNovelField, UnassignedFilter.NO_NOVEL_ID)
+        assertTrue(filtered.novelFieldDefinitions.isEmpty())
+        assertTrue(filtered.novelFieldValues.isEmpty())
+        assertTrue(provider.computeFieldInsights(filtered)
+            .none { it.fieldDefinition.entityType == FieldDefinition.ENTITY_NOVEL })
+    }
+
+    @Test
     fun fullScope_unassignedCharacterStillCountedIncomplete() {
         // 회귀 고정: 필터 없는 전체 스코프에서는 기존 판정('작품 미배정 = 미완성') 불변
         val overview = provider.computeDataOverview(snapshot())

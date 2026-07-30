@@ -210,18 +210,20 @@ object AiOrganizeSheet {
             var totalChars = 0
             var totalEvents = 0
             var totalStates = 0
+            var totalNovels = 0
             for (m in merges) {
                 val report = viewModel.previewPropagation(fd, m.variants.toSet())
                 totalChars += report.characterValues
                 totalEvents += report.eventValues
                 totalStates += report.stateChanges
+                totalNovels += report.novelValues
             }
             val message = buildString {
                 if (merges.isNotEmpty()) {
                     append(fragment.getString(R.string.field_library_ai_apply_merges, merges.size))
                     append("\n")
                     append(fragment.getString(R.string.field_library_propagation_message,
-                        totalChars, totalEvents, totalStates))
+                        totalChars, totalEvents, totalStates, totalNovels))
                 }
                 if (categories.isNotEmpty()) {
                     if (isNotEmpty()) append("\n")

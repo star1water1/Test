@@ -57,13 +57,20 @@ class EntitySnapshotPayloadTest {
             orphanEventFieldValues = listOf(
                 EventFieldValue(id = 2, eventId = 41, fieldDefinitionId = 13, value = "3화")
             ),
+            orphanNovelFieldValues = listOf(
+                com.novelcharacter.app.data.model.NovelFieldValue(
+                    id = 3, novelId = 7, fieldDefinitionId = 14, value = "장편"
+                )
+            ),
             refs = EntityRefs(
                 universeCode = "UNI-1",
                 characters = mapOf("88" to "CHR-9"),
                 events = mapOf("41" to "EVT-1"),
+                novels = mapOf("7" to "NVL-1"),
                 fieldDefs = mapOf(
                     "12" to FieldDefRef("UNI-1", "character", "mana"),
-                    "13" to FieldDefRef("UNI-1", "event", "chapter")
+                    "13" to FieldDefRef("UNI-1", "event", "chapter"),
+                    "14" to FieldDefRef("UNI-1", "novel", "form")
                 )
             )
         )
@@ -71,6 +78,9 @@ class EntitySnapshotPayloadTest {
         assertEquals("UNI-1", restored.universeCode)
         assertEquals(88L, restored.orphanCharacterFieldValues!![0].characterId)
         assertEquals(41L, restored.orphanEventFieldValues!![0].eventId)
+        // 작품 축(확-3)도 같은 계약이다 — 값과 그것을 되찾을 코드가 함께 실린다
+        assertEquals(7L, restored.orphanNovelFieldValues!![0].novelId)
+        assertEquals("NVL-1", restored.refs!!.novels!!["7"])
         // 옛 필드정의 id는 자연키로만 되찾을 수 있다 — 세계관이 새 id로 다시 만들어지기 때문이다.
         assertEquals(FieldDefRef("UNI-1", "character", "mana"), restored.refs!!.fieldDefs!!["12"])
 
@@ -78,6 +88,7 @@ class EntitySnapshotPayloadTest {
         val bare = gson.fromJson("""{"universeCode": "UNI-1"}""", UniverseDataSnapshot::class.java)
         assertNull(bare.fieldValueEntries)
         assertNull(bare.orphanCharacterFieldValues)
+        assertNull(bare.orphanNovelFieldValues)
         assertNull(bare.refs)
         assertEquals(emptyList<CharacterFieldValue>(), bare.orphanCharacterFieldValues.orEmpty())
     }

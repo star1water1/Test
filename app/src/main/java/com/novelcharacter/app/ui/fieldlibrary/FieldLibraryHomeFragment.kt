@@ -85,10 +85,10 @@ class FieldLibraryHomeFragment : Fragment() {
         binding.fieldRecyclerView.adapter = adapter
 
         binding.entityTypeChipGroup.setOnCheckedStateChangeListener { _, checkedIds ->
-            entityType = if (R.id.chipEventFields in checkedIds) {
-                FieldDefinition.ENTITY_EVENT
-            } else {
-                FieldDefinition.ENTITY_CHARACTER
+            entityType = when {
+                R.id.chipEventFields in checkedIds -> FieldDefinition.ENTITY_EVENT
+                R.id.chipNovelFields in checkedIds -> FieldDefinition.ENTITY_NOVEL
+                else -> FieldDefinition.ENTITY_CHARACTER
             }
             reload()
         }

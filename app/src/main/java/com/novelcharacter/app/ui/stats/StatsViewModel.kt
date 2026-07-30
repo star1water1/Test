@@ -499,6 +499,10 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
     private val _chartTapEvents = MutableLiveData<List<FieldValueEvent>?>()
     val chartTapEvents: LiveData<List<FieldValueEvent>?> = _chartTapEvents
 
+    /** 작품 필드 카드의 드릴다운 결과 (확-3) — 같은 이유로 따로 싣는다(셀 단위가 작품 수다). */
+    private val _chartTapNovels = MutableLiveData<List<FieldValueNovel>?>()
+    val chartTapNovels: LiveData<List<FieldValueNovel>?> = _chartTapNovels
+
     private val _subgroupAnalysis = MutableLiveData<SubgroupAnalysis?>()
     val subgroupAnalysis: LiveData<SubgroupAnalysis?> = _subgroupAnalysis
 
@@ -556,6 +560,27 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** 작품 필드 카드 드릴다운 (확-3) — 캐릭터·사건 경로와 대칭. */
+    fun loadNovelsByFieldValue(fieldDefIds: List<Long>, spec: FieldValueMatchSpec) {
+        viewModelScope.launch {
+            try {
+                val snapshot = ensureSnapshot()
+                val filtered = getFilteredSnapshot(snapshot)
+                val found = withContext(Dispatchers.IO) {
+                    provider.getNovelsByFieldValue(filtered, fieldDefIds, spec)
+                }
+                if (found == null) {
+                    _error.value = getApplication<Application>()
+                        .getString(com.novelcharacter.app.R.string.stats_drilldown_field_missing)
+                } else {
+                    _chartTapNovels.value = found
+                }
+            } catch (e: Exception) {
+                reportError(e)
+            }
+        }
+    }
+
     fun loadSubgroupAnalysis(characterIds: Set<Long>, targetFieldDefIds: List<Long>) {
         viewModelScope.launch {
             try {
@@ -597,9 +622,31 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** 작품 축 하위 그룹 분석 (확-3) — 캐릭터·사건판과 대칭(R-13: 축마다 함수를 나눈다). */
+    fun loadNovelSubgroupAnalysis(novelIds: Set<Long>, targetFieldDefIds: List<Long>) {
+        viewModelScope.launch {
+            try {
+                val snapshot = ensureSnapshot()
+                val filtered = getFilteredSnapshot(snapshot)
+                val result = withContext(Dispatchers.IO) {
+                    provider.computeNovelSubgroupAnalysis(filtered, novelIds, targetFieldDefIds)
+                }
+                if (result == null) {
+                    _error.value = getApplication<Application>()
+                        .getString(com.novelcharacter.app.R.string.stats_subgroup_field_missing)
+                } else {
+                    _subgroupAnalysis.value = result
+                }
+            } catch (e: Exception) {
+                reportError(e)
+            }
+        }
+    }
+
     fun clearChartTapData() {
         _chartTapCharacters.value = null
         _chartTapEvents.value = null
+        _chartTapNovels.value = null
         _subgroupAnalysis.value = null
     }
 
@@ -613,22 +660,20 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
      * "함께 볼 다른 필드가 없습니다"와 "있지만 통계에서 제외돼 있습니다"는 전혀 다른 사실이고,
      * 후자는 되돌리는 경로(필드 편집의 토글)가 있다(R-17).
      */
-    fun statsExcludedFieldGroupCount(isEventAxis: Boolean): Int {
+    fun statsExcludedFieldGroupCount(axis: StatsEntityAxis): Int {
         val snapshot = cachedSnapshot ?: return 0
         val novelId = _selectedNovelId.value
         val filtered = if (novelId != null) provider.filterByNovel(snapshot, novelId) else snapshot
-        val defs = if (isEventAxis) filtered.eventFieldDefinitions else filtered.fieldDefinitions
+        val defs = axis.definitionsIn(filtered)
         val all = defs.groupBy { it.key to it.type }.size
         return (all - provider.getMergedFieldGroups(defs).size).coerceAtLeast(0)
     }
 
-    fun getMergedFieldGroups(isEventAxis: Boolean): List<MergedFieldGroup> {
+    fun getMergedFieldGroups(axis: StatsEntityAxis): List<MergedFieldGroup> {
         val snapshot = cachedSnapshot ?: return emptyList()
         val novelId = _selectedNovelId.value
         val filtered = if (novelId != null) provider.filterByNovel(snapshot, novelId) else snapshot
-        return provider.getMergedFieldGroups(
-            if (isEventAxis) filtered.eventFieldDefinitions else filtered.fieldDefinitions
-        )
+        return provider.getMergedFieldGroups(axis.definitionsIn(filtered))
     }
 
     // ===== 인라인 분석 설정 업데이트 =====

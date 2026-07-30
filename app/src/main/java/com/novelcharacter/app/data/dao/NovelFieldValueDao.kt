@@ -40,6 +40,22 @@ interface NovelFieldValueDao {
     suspend fun getValue(novelId: Long, fieldDefId: Long): NovelFieldValue?
 
     /**
+     * 이 세계관 필드를 참조하지만 **이 세계관 소속이 아닌 작품**의 값 — 세계관 스냅샷용.
+     * 사유는 `CharacterFieldValueDao.getOrphanValuesForUniverseFields`와 같다: 함께 삭제되는
+     * 작품의 값은 각자의 작품 스냅샷이 담으므로 여기서 빼고, 살아남는 작품이 보관 중인 값만 담는다.
+     * 그 값은 어떤 작품 스냅샷에도 실리지 않으면서 필드 정의 CASCADE로 함께 소멸한다.
+     */
+    @Query(
+        """SELECT * FROM novel_field_values
+           WHERE fieldDefinitionId IN (:fieldDefIds)
+             AND novelId NOT IN (SELECT id FROM novels WHERE universeId = :universeId)"""
+    )
+    suspend fun getOrphanValuesForUniverseFields(
+        fieldDefIds: List<Long>,
+        universeId: Long
+    ): List<NovelFieldValue>
+
+    /**
      * 세계관 삭제 영향 고지용 — 해당 세계관 필드 정의에 걸린 작품 필드값 총수.
      * 캐릭터·사건판과 짝이다(R-29: 종류가 갈리는 집계는 전부 같이 세야 한다).
      */

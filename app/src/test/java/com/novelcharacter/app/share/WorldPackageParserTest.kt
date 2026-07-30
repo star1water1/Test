@@ -9,6 +9,7 @@ import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.FieldValueEntry
 import com.novelcharacter.app.data.model.NameBankEntry
 import com.novelcharacter.app.data.model.Novel
+import com.novelcharacter.app.data.model.NovelFieldValue
 import com.novelcharacter.app.data.model.TimelineEvent
 import com.novelcharacter.app.data.model.Universe
 import org.junit.Assert.assertEquals
@@ -55,6 +56,10 @@ class WorldPackageParserTest {
                 FieldDefinition(
                     id = 22, universeId = 7, key = "chapter", name = "회차", type = "TEXT",
                     entityType = FieldDefinition.ENTITY_EVENT
+                ),
+                FieldDefinition(
+                    id = 23, universeId = 7, key = "form", name = "형식", type = "TEXT",
+                    entityType = FieldDefinition.ENTITY_NOVEL
                 )
             )
         )
@@ -66,6 +71,9 @@ class WorldPackageParserTest {
         )
         entries[WorldPackageEntries.EVENT_FIELD_VALUES] = gson.toJson(
             listOf(EventFieldValue(id = 51, eventId = 41, fieldDefinitionId = 22, value = "3화"))
+        )
+        entries[WorldPackageEntries.NOVEL_FIELD_VALUES] = gson.toJson(
+            listOf(NovelFieldValue(id = 52, novelId = 1, fieldDefinitionId = 23, value = "장편"))
         )
         entries[WorldPackageEntries.FIELD_VALUE_ENTRIES] = gson.toJson(
             listOf(FieldValueEntry(id = 61, fieldDefinitionId = 21, value = "은발", displayLabel = "은색 머리"))
@@ -93,9 +101,10 @@ class WorldPackageParserTest {
         assertEquals(7L, contents.universe.id)
         assertEquals(1, contents.novels.size)
         assertEquals(1, contents.characters.size)
-        assertEquals(2, contents.fieldDefinitions.size)
+        assertEquals(3, contents.fieldDefinitions.size)
         assertEquals("은발", contents.fieldValues.single().value)
         assertEquals("3화", contents.eventFieldValues.single().value)
+        assertEquals("장편", contents.novelFieldValues.single().value)
         assertEquals("은색 머리", contents.fieldValueEntries.single().displayLabel)
         assertEquals("FC71", contents.factionRelationships.single().factionCode1)
         assertEquals(11L, contents.nameBank.single().usedByCharacterId)
@@ -160,7 +169,33 @@ class WorldPackageParserTest {
         assertTrue(contents.factionRelationships.isEmpty())
         assertTrue(contents.eventFieldValues.isEmpty())
         assertTrue(contents.fieldValueEntries.isEmpty())
+        // v4에서 생긴 엔트리도 구버전 파일에서는 '없음'이지 파손이 아니다(확-3)
+        assertTrue(contents.novelFieldValues.isEmpty())
         assertTrue(contents.droppedRows.isEmpty())
+    }
+
+    @Test
+    fun `작품 필드값 엔트리가 깨지면 그 이름으로 Malformed다`() {
+        // 새 엔트리도 기존 것과 같은 계약을 따라야 한다 — '없음'과 '파손'은 다르다.
+        val entries = baseEntries()
+        entries[WorldPackageEntries.NOVEL_FIELD_VALUES] = "[{ broken"
+        val result = WorldPackageParser.parse(entries)
+        assertTrue(result is WorldPackageParseResult.Malformed)
+        assertEquals(
+            WorldPackageEntries.NOVEL_FIELD_VALUES,
+            (result as WorldPackageParseResult.Malformed).entryName
+        )
+    }
+
+    @Test
+    fun `작품 필드값의 필수 문자열이 null이면 그 행만 걸러 센다`() {
+        // R-2: Gson은 JSON에 키가 없으면 non-null 선언에도 null을 주입한다.
+        val entries = baseEntries()
+        entries[WorldPackageEntries.NOVEL_FIELD_VALUES] =
+            """[{"id":1,"novelId":1,"fieldDefinitionId":2},{"id":2,"novelId":1,"fieldDefinitionId":3,"value":"장편"}]"""
+        val contents = success(entries)
+        assertEquals(1, contents.novelFieldValues.size)
+        assertEquals(1, contents.droppedRows[WorldPackageEntries.NOVEL_FIELD_VALUES])
     }
 
     @Test

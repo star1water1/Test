@@ -32,7 +32,8 @@ import org.json.JSONObject
  *   (무효화 폭풍 방지). 갱신 지점: 라이브러리 화면 진입·엑셀 임포트 후·유지보수 잡.
  * - rename/merge/delete 전파는 SQL 정확일치가 아니라 로드→토큰화(trim)→치환→재조합으로
  *   수행한다 — 미trim 잔여 데이터("서울 ")도 함께 정규화하며 그 건수를 보고한다.
- * - 전파는 character_field_values·event_field_values에 더해 character_state_changes(이력)와
+ * - 전파는 character_field_values·event_field_values·novel_field_values에 더해
+ *   character_state_changes(이력)와
  *   필드 config의 값 리터럴(SELECT options/GRADE grades/시맨틱 aliveValue·deadValue)까지 포함한다.
  * - deleteEntry(alsoClearData)는 파괴 전 영향 캐릭터를 휴지통에 스냅샷한다.
  */
@@ -42,6 +43,7 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
     private val fieldDao get() = db.fieldDefinitionDao()
     private val charValueDao get() = db.characterFieldValueDao()
     private val eventValueDao get() = db.eventFieldValueDao()
+    private val novelValueDao get() = db.novelFieldValueDao()
     private val stateChangeDao get() = db.characterStateChangeDao()
 
     // ===== 조회 =====
@@ -134,6 +136,28 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
         scheduleRecount(targets)
     }
 
+    /** 작품 저장 후 (확-3) — 사건판([harvestForEvent])과 같은 규칙 */
+    suspend fun harvestForNovel(novelId: Long) = safely("harvestForNovel") {
+        val values = novelValueDao.getValuesByNovelList(novelId)
+        val defsById = supportedDefsById()
+        val tokensByField = HashMap<Long, MutableSet<String>>()
+        for (v in values) {
+            val fd = defsById[v.fieldDefinitionId] ?: continue
+            tokensByField.getOrPut(fd.id) { linkedSetOf() }
+                .addAll(FieldValueTokenizer.tokenize(fd, v.value))
+        }
+        insertNewTokens(tokensByField)
+        // 캐릭터·사건 축과 같은 이유로 세계관 전체의 작품 필드를 재집계 대상에 넣는다 —
+        // 이 저장이 다른 작품에서 쓰이던 값을 지웠을 수도 있다.
+        val targets = LinkedHashSet(tokensByField.keys)
+        db.novelDao().getNovelById(novelId)?.universeId?.let { uid ->
+            defsById.values
+                .filter { it.universeId == uid && it.entityType == FieldDefinition.ENTITY_NOVEL }
+                .forEach { targets.add(it.id) }
+        }
+        scheduleRecount(targets)
+    }
+
     /** 일괄 편집 등 필드 단위 쓰기 후 */
     suspend fun harvestField(fieldDefId: Long) = safely("harvestField") {
         val fd = fieldDao.getFieldById(fieldDefId) ?: return@safely
@@ -141,6 +165,7 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
         val tokens = linkedSetOf<String>()
         charValueDao.getValuesByFieldDef(fd.id).forEach { tokens.addAll(FieldValueTokenizer.tokenize(fd, it.value)) }
         eventValueDao.getValuesByFieldDef(fd.id).forEach { tokens.addAll(FieldValueTokenizer.tokenize(fd, it.value)) }
+        novelValueDao.getValuesByFieldDef(fd.id).forEach { tokens.addAll(FieldValueTokenizer.tokenize(fd, it.value)) }
         insertNewTokens(mapOf(fd.id to tokens))
         scheduleRecount(listOf(fd.id))
     }
@@ -181,6 +206,10 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
             tokensByField.getOrPut(fd.id) { linkedSetOf() }.addAll(FieldValueTokenizer.tokenize(fd, v.value))
         }
         for (v in eventValueDao.getAllValuesList()) {
+            val fd = defsById[v.fieldDefinitionId] ?: continue
+            tokensByField.getOrPut(fd.id) { linkedSetOf() }.addAll(FieldValueTokenizer.tokenize(fd, v.value))
+        }
+        for (v in novelValueDao.getAllValuesList()) {
             val fd = defsById[v.fieldDefinitionId] ?: continue
             tokensByField.getOrPut(fd.id) { linkedSetOf() }.addAll(FieldValueTokenizer.tokenize(fd, v.value))
         }
@@ -263,13 +292,19 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
         val eventValuesByField = targetIds.chunked(CHUNK_SIZE)
             .flatMap { eventValueDao.getValuesByFieldDefs(it) }
             .groupBy { it.fieldDefinitionId }
+        // 종류가 셋이므로 세 표를 모두 센다 — 한 표를 빠뜨리면 그 종류의 usageCount가 영원히
+        // 0이고 '미사용 정리'가 살아 있는 값을 지우자고 권한다(R-29 · B-60과 같은 부류).
+        val novelValuesByField = targetIds.chunked(CHUNK_SIZE)
+            .flatMap { novelValueDao.getValuesByFieldDefs(it) }
+            .groupBy { it.fieldDefinitionId }
 
         val changed = mutableListOf<FieldValueEntry>()
         for (fieldId in targetIds) {
             val fd = defsById[fieldId] ?: continue
             val entries = entriesByField[fieldId] ?: continue
             val raw = charValuesByField[fieldId].orEmpty().map { it.value } +
-                eventValuesByField[fieldId].orEmpty().map { it.value }
+                eventValuesByField[fieldId].orEmpty().map { it.value } +
+                novelValuesByField[fieldId].orEmpty().map { it.value }
             changed.addAll(recountedEntries(fd, entries, raw))
         }
         if (changed.isNotEmpty()) changed.chunked(CHUNK_SIZE).forEach { entryDao.updateAll(it) }
@@ -413,9 +448,11 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
         val whitespaceNormalized: Int = 0,
         val configUpdated: Boolean = false,
         val affectedCharacterIds: List<Long> = emptyList(),
-        val snapshottedCharacters: Int = 0
+        val snapshottedCharacters: Int = 0,
+        /** 작품 필드값 행 수 (확-3) — 종류가 늘면 합계에도 함께 들어와야 한다 */
+        val novelValues: Int = 0
     ) {
-        val total: Int get() = characterValues + eventValues + stateChanges
+        val total: Int get() = characterValues + eventValues + stateChanges + novelValues
 
         operator fun plus(o: PropagationReport) = PropagationReport(
             characterValues + o.characterValues,
@@ -424,7 +461,8 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
             whitespaceNormalized + o.whitespaceNormalized,
             configUpdated || o.configUpdated,
             (affectedCharacterIds + o.affectedCharacterIds).distinct(),
-            snapshottedCharacters + o.snapshottedCharacters
+            snapshottedCharacters + o.snapshottedCharacters,
+            novelValues + o.novelValues
         )
     }
 
@@ -563,6 +601,7 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
         var charRows = 0
         var eventRows = 0
         var stateRows = 0
+        var novelRows = 0
         val affected = mutableListOf<Long>()
         for (row in charValueDao.getValuesByFieldDef(fd.id)) {
             if (FieldValueTokenizer.tokenize(fd, row.value).any { it in tokens }) {
@@ -572,18 +611,26 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
         for (row in eventValueDao.getValuesByFieldDef(fd.id)) {
             if (FieldValueTokenizer.tokenize(fd, row.value).any { it in tokens }) eventRows++
         }
+        for (row in novelValueDao.getValuesByFieldDef(fd.id)) {
+            if (FieldValueTokenizer.tokenize(fd, row.value).any { it in tokens }) novelRows++
+        }
         if (fd.entityType == FieldDefinition.ENTITY_CHARACTER) {
             for (change in stateChangeDao.getChangesByFieldKeyForUniverse(fd.universeId, fd.key)) {
                 if (FieldValueTokenizer.tokenize(fd, change.newValue).any { it in tokens }) stateRows++
             }
         }
-        return PropagationReport(charRows, eventRows, stateRows, affectedCharacterIds = affected.distinct())
+        return PropagationReport(
+            charRows, eventRows, stateRows,
+            affectedCharacterIds = affected.distinct(), novelValues = novelRows
+        )
     }
 
     data class UsageDrilldown(
         val characters: List<Character>,
         val events: List<TimelineEvent>,
-        val stateChangeCount: Int
+        val stateChangeCount: Int,
+        /** 이 값을 쓰는 작품 (확-3) — 종류가 늘면 사용처 목록도 함께 늘어야 한다 */
+        val novels: List<com.novelcharacter.app.data.model.Novel> = emptyList()
     )
 
     /** 값 사용처 — 원칙 04: 숨은 데이터 없음 */
@@ -598,9 +645,13 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
             stateCount = stateChangeDao.getChangesByFieldKeyForUniverse(fd.universeId, fd.key)
                 .count { change -> FieldValueTokenizer.tokenize(fd, change.newValue).any { it in tokens } }
         }
+        val novelIds = novelValueDao.getValuesByFieldDef(fd.id)
+            .filter { row -> FieldValueTokenizer.tokenize(fd, row.value).any { it in tokens } }
+            .map { it.novelId }.distinct()
         val characters = charIds.chunked(CHUNK_SIZE).flatMap { db.characterDao().getCharactersByIds(it) }
         val events = eventIds.mapNotNull { db.timelineDao().getEventById(it) }
-        return UsageDrilldown(characters, events, stateCount)
+        val novels = novelIds.chunked(CHUNK_SIZE).flatMap { db.novelDao().getNovelsByIds(it) }
+        return UsageDrilldown(characters, events, stateCount, novels)
     }
 
     // ===== 시드 (valueLabels/valueCategories → 라이브러리 이관) =====
@@ -727,6 +778,7 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
         var charRows = 0
         var eventRows = 0
         var stateRows = 0
+        var novelRows = 0
         var whitespaceOnly = 0
         val affected = mutableListOf<Long>()
 
@@ -766,6 +818,23 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
                 }
             }
         }
+        // 작품 필드값도 같은 규칙으로 고쳐 쓴다(확-3) — 빠뜨리면 이름을 바꾼 값이 작품에만
+        // 옛 이름으로 남고, '데이터도 함께 삭제'가 작품 값을 남긴 채 지웠다고 말한다.
+        for (row in novelValueDao.getValuesByFieldDef(fd.id)) {
+            val tokens = FieldValueTokenizer.tokenize(fd, row.value)
+            val mapped = mapTokens(tokens) ?: continue
+            if (mapped.isEmpty()) {
+                novelValueDao.delete(row)
+                novelRows++
+            } else {
+                val joined = FieldValueTokenizer.join(mapped)
+                if (joined != row.value) {
+                    novelValueDao.update(row.copy(value = joined))
+                    novelRows++
+                    if (FieldValueTokenizer.join(tokens) != row.value) whitespaceOnly++
+                }
+            }
+        }
         // 상태변화 이력 — 연도 슬라이더·성장 그래프가 읽는 시간축 데이터 (A2: 무통보 이력 파손 방지)
         if (fd.entityType == FieldDefinition.ENTITY_CHARACTER) {
             for (change in stateChangeDao.getChangesByFieldKeyForUniverse(fd.universeId, fd.key)) {
@@ -785,7 +854,10 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
                 }
             }
         }
-        return PropagationReport(charRows, eventRows, stateRows, whitespaceOnly, false, affected.distinct())
+        return PropagationReport(
+            charRows, eventRows, stateRows, whitespaceOnly, false, affected.distinct(),
+            novelValues = novelRows
+        )
     }
 
     /**

@@ -21,11 +21,14 @@ import com.novelcharacter.app.databinding.BottomSheetStatsCharacterListBinding
 import com.novelcharacter.app.util.FieldValueMatchSpec
 
 /**
- * 차트 조각 드릴다운 시트 — **캐릭터/사건 두 축을 모두** 다룬다.
+ * 차트 조각 드릴다운 시트 — **캐릭터·사건·작품 세 축을 모두** 다룬다([StatsEntityAxis]).
  *
  * 종전에는 캐릭터 전용이었고 사건 필드 카드도 이 시트로 흘러와 항상 0명짜리 빈 목록이 떴다(S-9).
  * 또 대표 fieldDefId 하나만 받아 전체 세계관 보기에서 차트보다 적게 나왔다(S-7) — 이제
  * 카드가 합산한 머지 id 전체를 받는다.
+ *
+ * 축이 셋이 되면서 판정을 **enum으로 옮겼다**(확-3) — 불리언으로 두면 "사건이 아니면 캐릭터"가
+ * 되어 작품 카드가 캐릭터 조회로 흘러가 S-9가 그대로 재현된다.
  */
 class StatsCharacterListBottomSheet : BottomSheetDialogFragment() {
 
@@ -36,7 +39,7 @@ class StatsCharacterListBottomSheet : BottomSheetDialogFragment() {
     private var fieldDefIds: List<Long> = emptyList()
     private var fieldName: String = ""
     private var selectedValue: String = ""
-    private var isEventAxis: Boolean = false
+    private var axis: StatsEntityAxis = StatsEntityAxis.CHARACTER
     /** 이 조각의 매칭 규칙 — 화면이 분포를 만든 그 규칙 그대로다(S-16). */
     private var matchSpec: FieldValueMatchSpec = FieldValueMatchSpec.Values(emptySet())
     /** 화면에 보인 조각의 **값 건수**. 목록의 대상 수와 다를 수 있어 그 차이를 고지하는 데 쓴다. */
@@ -45,6 +48,8 @@ class StatsCharacterListBottomSheet : BottomSheetDialogFragment() {
     var onCharacterClick: ((Long) -> Unit)? = null
     /** 사건 행 탭 — 인자는 연표를 맞출 연도다(사건 상세 화면이 없어 전역 검색과 같은 규약을 쓴다). */
     var onEventClick: ((Int) -> Unit)? = null
+    /** 작품 행 탭 — 인자는 그 작품의 세계관 id다(작품 상세 화면이 없어 목록으로 보낸다). */
+    var onNovelClick: ((Long) -> Unit)? = null
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
@@ -59,14 +64,17 @@ class StatsCharacterListBottomSheet : BottomSheetDialogFragment() {
         fieldDefIds = arguments?.getLongArray(ARG_FIELD_DEF_IDS)?.toList() ?: emptyList()
         fieldName = arguments?.getString(ARG_FIELD_NAME, "") ?: ""
         selectedValue = arguments?.getString(ARG_SELECTED_VALUE, "") ?: ""
-        isEventAxis = arguments?.getBoolean(ARG_IS_EVENT_AXIS, false) ?: false
+        axis = readAxis(arguments)
         matchSpec = readMatchSpec(arguments, selectedValue)
         sliceCount = arguments?.getInt(ARG_SLICE_COUNT, -1) ?: -1
 
         binding.titleText.text = getString(R.string.stats_chart_tap_title, fieldName, selectedValue)
         binding.btnSubgroupAnalysis.setText(
-            if (isEventAxis) R.string.stats_subgroup_analysis_events
-            else R.string.stats_subgroup_analysis
+            when (axis) {
+                StatsEntityAxis.EVENT -> R.string.stats_subgroup_analysis_events
+                StatsEntityAxis.NOVEL -> R.string.stats_subgroup_analysis_novels
+                StatsEntityAxis.CHARACTER -> R.string.stats_subgroup_analysis
+            }
         )
 
         binding.characterRecyclerView.layoutManager = LinearLayoutManager(requireContext())
@@ -74,16 +82,16 @@ class StatsCharacterListBottomSheet : BottomSheetDialogFragment() {
         setupObservers()
         setupSubgroupAnalysis()
 
-        if (isEventAxis) {
-            viewModel.loadEventsByFieldValue(fieldDefIds, matchSpec)
-        } else {
-            viewModel.loadCharactersByFieldValue(fieldDefIds, matchSpec)
+        when (axis) {
+            StatsEntityAxis.EVENT -> viewModel.loadEventsByFieldValue(fieldDefIds, matchSpec)
+            StatsEntityAxis.NOVEL -> viewModel.loadNovelsByFieldValue(fieldDefIds, matchSpec)
+            StatsEntityAxis.CHARACTER -> viewModel.loadCharactersByFieldValue(fieldDefIds, matchSpec)
         }
     }
 
     private fun setupObservers() {
         viewModel.chartTapCharacters.observe(viewLifecycleOwner) { characters ->
-            if (isEventAxis || characters == null) return@observe
+            if (axis != StatsEntityAxis.CHARACTER || characters == null) return@observe
             binding.countText.text = countText(
                 getString(R.string.stats_chart_tap_count, characters.size), characters.size
             )
@@ -96,7 +104,7 @@ class StatsCharacterListBottomSheet : BottomSheetDialogFragment() {
         }
 
         viewModel.chartTapEvents.observe(viewLifecycleOwner) { events ->
-            if (!isEventAxis || events == null) return@observe
+            if (axis != StatsEntityAxis.EVENT || events == null) return@observe
             binding.countText.text = countText(
                 getString(R.string.stats_chart_tap_count_events, events.size), events.size
             )
@@ -116,6 +124,21 @@ class StatsCharacterListBottomSheet : BottomSheetDialogFragment() {
             }
         }
 
+        viewModel.chartTapNovels.observe(viewLifecycleOwner) { novels ->
+            if (axis != StatsEntityAxis.NOVEL || novels == null) return@observe
+            binding.countText.text = countText(
+                getString(R.string.stats_chart_tap_count_novels, novels.size), novels.size
+            )
+            binding.characterRecyclerView.adapter = RowAdapter(
+                // 작품은 세계관 목록으로 보낸다 — 작품 상세 화면이 없으므로 사건 축과 같은 규약이다.
+                // 세계관이 없는 작품은 전체 목록으로 보낸다(-1).
+                novels.map { Row((it.universeId ?: -1L).toString(), it.title, it.fieldValue) }
+            ) { key ->
+                onNovelClick?.invoke(key.toLong())
+                dismiss()
+            }
+        }
+
         viewModel.subgroupAnalysis.observe(viewLifecycleOwner) { analysis ->
             if (analysis == null) return@observe
             showSubgroupResult(analysis)
@@ -127,7 +150,7 @@ class StatsCharacterListBottomSheet : BottomSheetDialogFragment() {
             // 인사이트 카드와 같은 (key,type) 머지 축으로 고른다 — 머지하지 않으면 전체 세계관
             // 보기에서 같은 필드가 중복 나열되고 한 세계관 값만 집계된다.
             val currentIds = fieldDefIds.toSet()
-            val groups = viewModel.getMergedFieldGroups(isEventAxis)
+            val groups = viewModel.getMergedFieldGroups(axis)
                 // 현재 필드 제외 — 대표 id 하나가 아니라 **그룹 전체**를 걸러야 형제 세계관의
                 // 같은 필드가 다른 이름인 척 남지 않는다.
                 .filter { g -> g.mergedFieldDefIds.none { it in currentIds } }
@@ -135,7 +158,7 @@ class StatsCharacterListBottomSheet : BottomSheetDialogFragment() {
                 // 버튼을 눌렀는데 아무 일도 일어나지 않으면 고장과 구분되지 않는다 — 사유를 알린다.
                 // **사유는 사실이어야 한다**: 필드가 없는 것과, 있는데 '통계에 포함'이 꺼진 것은
                 // 다르다. 후자에게 "필드를 더 만들면"이라고 말하면 되돌리는 경로를 못 찾는다.
-                val excluded = viewModel.statsExcludedFieldGroupCount(isEventAxis)
+                val excluded = viewModel.statsExcludedFieldGroupCount(axis)
                 val message = if (excluded > 0) {
                     getString(R.string.stats_subgroup_all_excluded, excluded)
                 } else {
@@ -152,10 +175,11 @@ class StatsCharacterListBottomSheet : BottomSheetDialogFragment() {
                     val target = groups[which]
                     // 모수가 아직 없으면(목록 로딩 미완·조회 실패) 고른 것을 조용히 삼키지 않는다 —
                     // 다이얼로그만 닫히면 사용자는 선택이 먹힌 줄 안다.
-                    val ids: Set<Long>? = if (isEventAxis) {
-                        viewModel.chartTapEvents.value?.map { it.eventId }?.toSet()
-                    } else {
-                        viewModel.chartTapCharacters.value?.map { it.characterId }?.toSet()
+                    val ids: Set<Long>? = when (axis) {
+                        StatsEntityAxis.EVENT -> viewModel.chartTapEvents.value?.map { it.eventId }?.toSet()
+                        StatsEntityAxis.NOVEL -> viewModel.chartTapNovels.value?.map { it.novelId }?.toSet()
+                        StatsEntityAxis.CHARACTER ->
+                            viewModel.chartTapCharacters.value?.map { it.characterId }?.toSet()
                     }
                     if (ids == null) {
                         Toast.makeText(
@@ -163,8 +187,11 @@ class StatsCharacterListBottomSheet : BottomSheetDialogFragment() {
                         ).show()
                         return@setItems
                     }
-                    if (isEventAxis) viewModel.loadEventSubgroupAnalysis(ids, target.mergedFieldDefIds)
-                    else viewModel.loadSubgroupAnalysis(ids, target.mergedFieldDefIds)
+                    when (axis) {
+                        StatsEntityAxis.EVENT -> viewModel.loadEventSubgroupAnalysis(ids, target.mergedFieldDefIds)
+                        StatsEntityAxis.NOVEL -> viewModel.loadNovelSubgroupAnalysis(ids, target.mergedFieldDefIds)
+                        StatsEntityAxis.CHARACTER -> viewModel.loadSubgroupAnalysis(ids, target.mergedFieldDefIds)
+                    }
                 }
                 .show()
         }
@@ -193,8 +220,11 @@ class StatsCharacterListBottomSheet : BottomSheetDialogFragment() {
         // 타이틀
         val title = TextView(ctx).apply {
             text = getString(
-                if (isEventAxis) R.string.stats_subgroup_result_title_events
-                else R.string.stats_subgroup_result_title,
+                when (axis) {
+                    StatsEntityAxis.EVENT -> R.string.stats_subgroup_result_title_events
+                    StatsEntityAxis.NOVEL -> R.string.stats_subgroup_result_title_novels
+                    StatsEntityAxis.CHARACTER -> R.string.stats_subgroup_result_title
+                },
                 analysis.targetFieldName, analysis.totalCount
             )
             textSize = 14f
@@ -216,8 +246,11 @@ class StatsCharacterListBottomSheet : BottomSheetDialogFragment() {
             val pct = if (totalValues > 0) count * 100f / totalValues else 0f
             val row = TextView(ctx).apply {
                 text = getString(
-                    if (isEventAxis) R.string.stats_subgroup_row_events
-                    else R.string.stats_subgroup_row_characters,
+                    when (axis) {
+                        StatsEntityAxis.EVENT -> R.string.stats_subgroup_row_events
+                        StatsEntityAxis.NOVEL -> R.string.stats_subgroup_row_novels
+                        StatsEntityAxis.CHARACTER -> R.string.stats_subgroup_row_characters
+                    },
                     value, count, String.format("%.1f", pct)
                 )
                 textSize = 13f
@@ -260,9 +293,12 @@ class StatsCharacterListBottomSheet : BottomSheetDialogFragment() {
         _binding = null
     }
 
-    // ===== 두 줄 목록 행 (캐릭터/사건 공용) =====
+    // ===== 두 줄 목록 행 (캐릭터/사건/작품 공용) =====
 
-    /** [key]는 탭 시 호출부에 넘길 식별자 — 캐릭터는 id, 사건은 연표를 맞출 연도다. */
+    /**
+     * [key]는 탭 시 호출부에 넘길 식별자 — 캐릭터는 id, 사건은 연표를 맞출 연도,
+     * 작품은 그 작품이 있는 세계관 id다(각 축에 상세 화면이 있는가에 따라 다르다).
+     */
     private data class Row(val key: String, val title: String, val subtitle: String)
 
     private class RowAdapter(
@@ -323,7 +359,7 @@ class StatsCharacterListBottomSheet : BottomSheetDialogFragment() {
         private const val ARG_FIELD_DEF_IDS = "fieldDefIds"
         private const val ARG_FIELD_NAME = "fieldName"
         private const val ARG_SELECTED_VALUE = "selectedValue"
-        private const val ARG_IS_EVENT_AXIS = "isEventAxis"
+        private const val ARG_AXIS = "axis"
         private const val ARG_MATCH_VALUES = "matchValues"
         private const val ARG_MATCH_PART_INDEX = "matchPartIndex"
         private const val ARG_MATCH_SEPARATOR = "matchSeparator"
@@ -344,7 +380,7 @@ class StatsCharacterListBottomSheet : BottomSheetDialogFragment() {
             fieldDefIds: List<Long>,
             fieldName: String,
             selectedValue: String,
-            isEventAxis: Boolean,
+            axis: StatsEntityAxis,
             matchSpec: FieldValueMatchSpec = FieldValueMatchSpec.Values(selectedValue),
             sliceCount: Int = -1
         ): StatsCharacterListBottomSheet {
@@ -353,11 +389,17 @@ class StatsCharacterListBottomSheet : BottomSheetDialogFragment() {
                     putLongArray(ARG_FIELD_DEF_IDS, fieldDefIds.toLongArray())
                     putString(ARG_FIELD_NAME, fieldName)
                     putString(ARG_SELECTED_VALUE, selectedValue)
-                    putBoolean(ARG_IS_EVENT_AXIS, isEventAxis)
+                    putString(ARG_AXIS, axis.name)
                     putMatchSpec(this, matchSpec)
                     putInt(ARG_SLICE_COUNT, sliceCount)
                 }
             }
+        }
+
+        /** 축은 이름으로 싣는다 — 프로세스 재생성 뒤에도 살아남고, 값이 늘어도 순서에 의존하지 않는다. */
+        private fun readAxis(bundle: Bundle?): StatsEntityAxis {
+            val name = bundle?.getString(ARG_AXIS) ?: return StatsEntityAxis.CHARACTER
+            return StatsEntityAxis.entries.firstOrNull { it.name == name } ?: StatsEntityAxis.CHARACTER
         }
 
         /** 스펙은 Bundle에 원시값으로 싣는다(Parcelable 도입 없이 프로세스 재생성에도 살아남게). */

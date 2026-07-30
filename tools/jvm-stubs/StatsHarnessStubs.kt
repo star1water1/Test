@@ -27,6 +27,7 @@ class HarnessDb {
     fun characterFieldValueDao(): HarnessCharFieldValueDao = HarnessCharFieldValueDao()
     fun timelineDao(): HarnessTimelineDao = HarnessTimelineDao()
     fun eventFieldValueDao(): HarnessEventFieldValueDao = HarnessEventFieldValueDao()
+    fun novelFieldValueDao(): HarnessNovelFieldValueDao = HarnessNovelFieldValueDao()
     fun fieldValueEntryDao(): HarnessFieldValueEntryDao = HarnessFieldValueEntryDao()
 }
 
@@ -44,6 +45,7 @@ class HarnessTimelineDao {
     suspend fun getAllEventNovelCrossRefs(): List<TimelineEventNovelCrossRef> = emptyList()
 }
 class HarnessEventFieldValueDao { suspend fun getAllValuesList(): List<EventFieldValue> = emptyList() }
+class HarnessNovelFieldValueDao { suspend fun getAllValuesList(): List<NovelFieldValue> = emptyList() }
 class HarnessFieldValueEntryDao { suspend fun getAllList(): List<FieldValueEntry> = emptyList() }
 
 class HarnessCharacterRepo {

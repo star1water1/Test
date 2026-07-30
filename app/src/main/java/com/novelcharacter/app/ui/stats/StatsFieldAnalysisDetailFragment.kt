@@ -375,7 +375,7 @@ class StatsFieldAnalysisDetailFragment : Fragment() {
             fieldDefIds = listOf(fieldDefId),
             fieldName = fieldName,
             selectedValue = value,
-            isEventAxis = false,
+            axis = StatsEntityAxis.CHARACTER,
             matchSpec = spec,
             sliceCount = sliceCount
         )

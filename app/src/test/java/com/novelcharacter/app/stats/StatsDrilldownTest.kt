@@ -5,6 +5,7 @@ import com.novelcharacter.app.data.model.CharacterFieldValue
 import com.novelcharacter.app.data.model.EventFieldValue
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.Novel
+import com.novelcharacter.app.data.model.NovelFieldValue
 import com.novelcharacter.app.data.model.TimelineEvent
 import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.ui.stats.StatsDataProvider
@@ -317,6 +318,119 @@ class StatsDrilldownTest {
     @Test
     fun `사건 하위 그룹 분석은 캐릭터 필드 id를 받지 않는다`() {
         assertNull(provider.computeEventSubgroupAnalysis(eventSnapshot(), setOf(1L), listOf(10L)))
+    }
+
+    // ===== 확-3: 작품 필드 드릴다운 (사건 축과 대칭) =====
+
+    private fun novelField(
+        id: Long, key: String, name: String, universeId: Long = uniA,
+        type: String = "TEXT", config: String = "{}"
+    ) = FieldDefinition(
+        id = id, universeId = universeId, key = key, name = name, type = type, config = config,
+        entityType = FieldDefinition.ENTITY_NOVEL
+    )
+
+    private fun novelSnapshot() = StatsSnapshot(
+        characters = emptyList(),
+        novels = listOf(
+            Novel(id = 1, title = "가작품", universeId = uniA),
+            Novel(id = 2, title = "나작품", universeId = uniA),
+            Novel(id = 3, title = "다작품", universeId = uniA)
+        ),
+        universes = listOf(Universe(id = uniA, name = "A")),
+        events = emptyList(), relationships = emptyList(), relationshipChanges = emptyList(),
+        tags = emptyList(), nameBank = emptyList(), stateChanges = emptyList(),
+        fieldDefinitions = emptyList(), fieldValues = emptyList(), crossRefs = emptyList(),
+        novelFieldDefinitions = listOf(novelField(30, "form", "형식")),
+        novelFieldValues = listOf(
+            NovelFieldValue(novelId = 1, fieldDefinitionId = 30, value = "장편"),
+            NovelFieldValue(novelId = 2, fieldDefinitionId = 30, value = "단편"),
+            NovelFieldValue(novelId = 3, fieldDefinitionId = 30, value = "장편")
+        )
+    )
+
+    @Test
+    fun `작품 필드도 인사이트 카드가 되고 모수는 작품 수다`() {
+        val s = novelSnapshot()
+        val insight = provider.computeFieldInsights(s).first {
+            it.fieldDefinition.entityType == FieldDefinition.ENTITY_NOVEL
+        }
+        // 모수는 캐릭터 수(0)가 아니라 그 세계관의 작품 수 — 단위를 잘못 세면
+        // "3/0개"라는 읽을 수 없는 완성도가 나온다.
+        assertEquals(3, insight.totalCount)
+        assertEquals(2, insight.analysisResults.firstNotNullOf { it.distributionData }["장편"])
+    }
+
+    @Test
+    fun `작품 필드 조각을 탭하면 작품 목록이 나온다`() {
+        val s = novelSnapshot()
+        val insight = provider.computeFieldInsights(s).first {
+            it.fieldDefinition.entityType == FieldDefinition.ENTITY_NOVEL
+        }
+        val listed = provider.getNovelsByFieldValue(
+            s, insight.mergedFieldDefIds,
+            com.novelcharacter.app.util.FieldValueMatchSpec.Values("장편")
+        )!!
+        assertEquals(listOf("가작품", "다작품"), listed.map { it.title })
+        assertEquals(listOf("장편", "장편"), listed.map { it.fieldValue })
+        // 행을 누르면 갈 곳(그 작품의 세계관)이 실려 있어야 한다 — 없으면 탭이 죽는다
+        assertTrue(listed.all { it.universeId == uniA })
+    }
+
+    @Test
+    fun `작품 조회는 캐릭터·사건 필드 id로는 아무것도 돌려주지 않는다`() {
+        // 축이 셋이 됐으므로 축 판정도 셋이다 — 남의 축 id로 빈 목록을 돌려주면
+        // "0개"라는 거짓 사실이 된다(R-17).
+        val s = novelSnapshot()
+        assertNull(provider.getNovelsByFieldValue(
+            s, listOf(10L), com.novelcharacter.app.util.FieldValueMatchSpec.Values("검사")))
+        assertNull(provider.getNovelsByFieldValue(
+            s, listOf(20L), com.novelcharacter.app.util.FieldValueMatchSpec.Values("전투")))
+    }
+
+    @Test
+    fun `작품 CALCULATED 필드도 드릴다운된다`() {
+        val base = novelSnapshot()
+        val s = base.copy(
+            novelFieldDefinitions = base.novelFieldDefinitions + listOf(
+                novelField(31, "vol", "권수", type = "NUMBER"),
+                novelField(32, "vol2", "권수x2", type = "CALCULATED",
+                    config = """{"formula":"field('vol') * 2"}""")
+            ),
+            novelFieldValues = base.novelFieldValues + listOf(
+                NovelFieldValue(novelId = 1, fieldDefinitionId = 31, value = "3"),
+                NovelFieldValue(novelId = 2, fieldDefinitionId = 31, value = "3"),
+                NovelFieldValue(novelId = 3, fieldDefinitionId = 31, value = "5")
+            )
+        )
+        val listed = provider.getNovelsByFieldValue(
+            s, listOf(32L), com.novelcharacter.app.util.FieldValueMatchSpec.Values("6"))!!
+        assertEquals(listOf("가작품", "나작품"), listed.map { it.title })
+    }
+
+    @Test
+    fun `작품 하위 그룹 분석은 작품 수를 센다`() {
+        val s = novelSnapshot()
+        val r = provider.computeNovelSubgroupAnalysis(s, setOf(1L, 3L), listOf(30L))!!
+        assertEquals(2, r.distribution["장편"])
+        assertNull(r.distribution["단편"])
+        assertEquals(2, r.totalCount)
+    }
+
+    @Test
+    fun `작품 하위 그룹 분석은 남의 축 필드 id를 받지 않는다`() {
+        assertNull(provider.computeNovelSubgroupAnalysis(novelSnapshot(), setOf(1L), listOf(20L)))
+    }
+
+    @Test
+    fun `작품 필터 스코프는 그 작품의 값만 남긴다`() {
+        // filterByNovel이 작품 축을 걸러 주지 않으면 한 작품을 골라도 분포가 전체를 센다.
+        val s = provider.filterByNovel(novelSnapshot(), 1L)
+        assertEquals(listOf(1L), s.novelFieldValues.map { it.novelId })
+        val insight = provider.computeFieldInsights(s).first {
+            it.fieldDefinition.entityType == FieldDefinition.ENTITY_NOVEL
+        }
+        assertEquals(1, insight.totalCount)
     }
 
     // ===== 필드 선택 목록의 머지 =====

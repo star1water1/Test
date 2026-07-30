@@ -482,7 +482,7 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "  쉼표 구분(연인, 라이벌 / 연인=#E91E63)으로 적어도 해석하지만 경고가 표시됩니다."),
             GuideLine("", styles.guideBody, "  비우면 기본 관계 유형·색상으로 돌아갑니다. 해석할 수 없으면 적용하지 않고 기존 설정을 유지합니다."),
             GuideLine("", styles.guideBody, "• 작품: 코드로 매칭. 코드 없을 시 제목+세계관으로 매칭"),
-            GuideLine("", styles.guideBody, "• 필드 정의: 세계관+필드키+대상으로 매칭. 타입은 드롭다운에서 선택. 대상=사건이면 사건 필드"),
+            GuideLine("", styles.guideBody, "• 필드 정의: 세계관+필드키+대상으로 매칭. 타입은 드롭다운에서 선택. 대상이 사건·작품이면 그 종류의 필드"),
             GuideLine("", styles.guideBody, "  'AI추천'(Y/N)·'필드설명' 열을 채워 다시 가져오면 AI 추천 동작에 반영됩니다"),
             GuideLine("", styles.guideBody, "  (AI추천 빈칸=켜짐, 필드설명 빈칸=설명 없음. 두 열을 지운 파일은 기존 설정을 유지합니다)"),
             GuideLine("", styles.guideBody, "• 캐릭터 시트 (세계관 이름): 코드로 매칭. 코드 없을 시 이름+작품으로 매칭"),
@@ -638,7 +638,17 @@ class ExcelExporter(context: Context) {
 
         val universeMap = universes.associateBy { it.id }
         val charCodeMap = db.characterDao().getAllCharactersList().associate { it.id to it.code }
-        val spec = novelSpec(universes.map { it.name })
+
+        // 작품 커스텀 필드 (확-3) — 헤더 규칙은 EntityFieldHeaders 단일 소스이고
+        // 가져오기가 같은 규칙의 역함수로 되짚는다(연표 시트의 사건 필드 열과 같은 방식).
+        val novelFields = db.fieldDefinitionDao().getAllFieldsList(FieldDefinition.ENTITY_NOVEL)
+        val novelFieldColumns = EntityFieldHeaders.headersFor(
+            novelFields,
+            universeMap.mapValues { (_, u) -> u.name }
+        )
+        val novelFieldValuesByNovel = db.novelFieldValueDao().getAllValuesList().groupBy { it.novelId }
+
+        val spec = novelSpec(universes.map { it.name }, novelFieldColumns.map { it.second })
         val sheetName = assignSheetName(spec.sheetName, usedSheetNames, ownerOf = spec.sheetName)
         val sheet = workbook.createSheet(sheetName)
         writeHeaderRow(sheet, spec)
@@ -661,6 +671,12 @@ class ExcelExporter(context: Context) {
             row.createCell(12).setTextSafe(if (novel.isPinned) "Y" else "N")
             novel.standardYear?.let { row.createCell(13).setCellValue(it.toDouble()) }
             row.createCell(14).setCellValue(novel.createdAt.toDouble())
+
+            // 작품 커스텀 필드 값 (확-3) — 열이 없으면 내보내기에서 값이 유실된다(개발 의도 4)
+            val fieldValues = novelFieldValuesByNovel[novel.id]?.associateBy { it.fieldDefinitionId } ?: emptyMap()
+            novelFieldColumns.forEachIndexed { fi, (fieldDef, _) ->
+                fieldValues[fieldDef.id]?.let { row.createCell(15 + fi).setTextSafe(it.value) }
+            }
         }
 
         applySpecFormatting(sheet, spec, novels.size)
@@ -673,10 +689,10 @@ class ExcelExporter(context: Context) {
         val universeMap = universes.associateBy { it.id }
         val allFields = mutableListOf<Pair<Long, FieldDefinition>>()
         for (universe in universes) {
-            // 캐릭터 필드 + 사건 필드(B-10) 모두 왕복 — 사건 필드 정의가 파일에 없으면
-            // 신규 기기 복원 시 사건 필드값이 통째로 유실된다(대상 열로 구분).
-            val fields = db.fieldDefinitionDao().getFieldsByUniverseList(universe.id) +
-                db.fieldDefinitionDao().getFieldsByUniverseList(universe.id, FieldDefinition.ENTITY_EVENT)
+            // **모든 종류**를 왕복한다(캐릭터·사건·작품) — 정의가 파일에 없으면 신규 기기
+            // 복원 시 그 종류의 필드값이 통째로 유실된다(대상 열로 구분). 종류를 늘릴 때
+            // 여기를 잊으면 새 종류만 조용히 빠진다(R-29) — 그래서 전 종류 조회를 쓴다.
+            val fields = db.fieldDefinitionDao().getFieldsByUniverseAllTypes(universe.id)
             fields.forEach { allFields.add(universe.id to it) }
         }
         if (allFields.isEmpty()) return
@@ -977,8 +993,8 @@ class ExcelExporter(context: Context) {
             com.novelcharacter.app.data.model.FieldDefinition.ENTITY_EVENT
         )
         val universesById = db.universeDao().getAllUniversesList().associateBy { it.id }
-        // 헤더 규칙은 EventFieldHeaders 단일 소스 — 가져오기가 같은 규칙의 역함수로 정확히 되짚는다
-        val eventFieldColumns = EventFieldHeaders.headersFor(
+        // 헤더 규칙은 EntityFieldHeaders 단일 소스 — 가져오기가 같은 규칙의 역함수로 정확히 되짚는다
+        val eventFieldColumns = EntityFieldHeaders.headersFor(
             eventFields,
             universesById.mapValues { (_, u) -> u.name }
         )

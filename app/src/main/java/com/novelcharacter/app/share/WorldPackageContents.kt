@@ -15,6 +15,7 @@ import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.FieldValueEntry
 import com.novelcharacter.app.data.model.NameBankEntry
 import com.novelcharacter.app.data.model.Novel
+import com.novelcharacter.app.data.model.NovelFieldValue
 import com.novelcharacter.app.data.model.TimelineCharacterCrossRef
 import com.novelcharacter.app.data.model.TimelineEvent
 import com.novelcharacter.app.data.model.TimelineEventNovelCrossRef
@@ -50,7 +51,7 @@ data class WorldPackageManifest(
  * 한쪽만 바뀌어 왕복이 조용히 깨지는 일이 없다.
  */
 object WorldPackageEntries {
-    const val CURRENT_SCHEMA_VERSION = 3
+    const val CURRENT_SCHEMA_VERSION = 4
 
     const val MANIFEST = "manifest.json"
     const val UNIVERSE = "universe.json"
@@ -71,6 +72,7 @@ object WorldPackageEntries {
     const val FACTION_RELATIONSHIPS = "faction_relationships.json"
     const val EVENT_FIELD_VALUES = "event_field_values.json"
     const val FIELD_VALUE_ENTRIES = "field_value_entries.json"
+    const val NOVEL_FIELD_VALUES = "novel_field_values.json"
 
     /** 이미지 엔트리 접두사 — `images/{캐릭터id}_{i}.jpg` · `images/universe_{i}.jpg` · `images/novel_{작품id}_{i}.jpg` */
     const val IMAGES_PREFIX = "images/"
@@ -105,6 +107,7 @@ data class WorldPackageContents(
     val factionRelationships: List<PortableFactionRelationship>,
     val eventFieldValues: List<EventFieldValue>,
     val fieldValueEntries: List<FieldValueEntry>,
+    val novelFieldValues: List<NovelFieldValue>,
     val droppedRows: Map<String, Int>
 )
 
@@ -221,6 +224,8 @@ object WorldPackageParser {
             ?: return malformed(e.EVENT_FIELD_VALUES)
         val fieldValueEntries = read(e.FIELD_VALUE_ENTRIES, object : TypeToken<List<FieldValueEntry?>>() {})
             ?: return malformed(e.FIELD_VALUE_ENTRIES)
+        val novelFieldValues = read(e.NOVEL_FIELD_VALUES, object : TypeToken<List<NovelFieldValue?>>() {})
+            ?: return malformed(e.NOVEL_FIELD_VALUES)
 
         return WorldPackageParseResult.Success(
             WorldPackageContents(
@@ -268,6 +273,7 @@ object WorldPackageParser {
                 fieldValueEntries = scrub(e.FIELD_VALUE_ENTRIES, fieldValueEntries) {
                     allPresent(it.value, it.displayLabel, it.aliasesJson, it.category, it.description, it.source)
                 },
+                novelFieldValues = scrub(e.NOVEL_FIELD_VALUES, novelFieldValues) { allPresent(it.value) },
                 droppedRows = dropped
             )
         )

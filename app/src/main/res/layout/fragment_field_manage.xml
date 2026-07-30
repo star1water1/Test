@@ -53,7 +53,7 @@
 
     </LinearLayout>
 
-    <!-- 관리 대상 전환 (B-10): 캐릭터 필드 / 사건 필드 -->
+    <!-- 관리 대상 전환 (B-10 · 확-3): 캐릭터 필드 / 사건 필드 / 작품 필드 -->
     <com.google.android.material.chip.ChipGroup
         android:id="@+id/entityTypeChipGroup"
         android:layout_width="0dp"
@@ -80,6 +80,13 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/field_target_event" />
+
+        <com.google.android.material.chip.Chip
+            android:id="@+id/chipNovelFields"
+            style="@style/Widget.Material3.Chip.Filter"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/field_target_novel" />
 
     </com.google.android.material.chip.ChipGroup>
 

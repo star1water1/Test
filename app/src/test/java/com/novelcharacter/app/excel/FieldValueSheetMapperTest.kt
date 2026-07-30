@@ -149,9 +149,34 @@ class FieldValueSheetMapperTest {
     fun entityLabel_tolerant() {
         assertEquals(FieldDefinition.ENTITY_EVENT, FieldValueSheetMapper.entityTypeOf("사건"))
         assertEquals(FieldDefinition.ENTITY_EVENT, FieldValueSheetMapper.entityTypeOf("EVENT"))
+        assertEquals(FieldDefinition.ENTITY_NOVEL, FieldValueSheetMapper.entityTypeOf("작품"))
+        assertEquals(FieldDefinition.ENTITY_NOVEL, FieldValueSheetMapper.entityTypeOf("NOVEL"))
+        assertEquals(FieldDefinition.ENTITY_NOVEL, FieldValueSheetMapper.entityTypeOf(" novel "))
         assertEquals(FieldDefinition.ENTITY_CHARACTER, FieldValueSheetMapper.entityTypeOf("캐릭터"))
         assertEquals(FieldDefinition.ENTITY_CHARACTER, FieldValueSheetMapper.entityTypeOf(null))
         assertEquals(FieldDefinition.ENTITY_CHARACTER, FieldValueSheetMapper.entityTypeOf(""))
+    }
+
+    /**
+     * '대상' 열의 왕복 — 라벨과 해석이 **서로의 역함수**여야 한다.
+     * 한쪽만 종류를 늘리면 그 종류의 정의가 왕복에서 캐릭터로 접히고, 그 순간
+     * 값이 붙을 자리를 잃는다(R-29). 드롭다운 목록도 같은 소스를 쓴다.
+     */
+    @Test
+    fun entityLabel_roundTripsEveryKind() {
+        for (type in listOf(
+            FieldDefinition.ENTITY_CHARACTER, FieldDefinition.ENTITY_EVENT, FieldDefinition.ENTITY_NOVEL
+        )) {
+            assertEquals(type, FieldValueSheetMapper.entityTypeOf(FieldValueSheetMapper.entityLabel(type)))
+        }
+        // 드롭다운이 제시하는 값은 전부 해석 가능해야 한다 — 고를 수 있는데 해석되지 않으면
+        // 사용자는 고른 대로 저장됐다고 믿는다.
+        assertEquals(
+            FieldValueSheetMapper.ENTITY_LABELS,
+            FieldValueSheetMapper.ENTITY_LABELS.map {
+                FieldValueSheetMapper.entityLabel(FieldValueSheetMapper.entityTypeOf(it))
+            }
+        )
     }
 
     @Test

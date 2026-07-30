@@ -73,9 +73,11 @@ class FieldDefinitionAdapter(
             binding.btnFieldInfo.visibility = if (hasDescription) View.VISIBLE else View.GONE
             binding.btnFieldInfo.setOnClickListener { onInfoClick(field) }
 
-            // AI 추천 토글 (A-1). 사건 필드에는 AI 추천 경로 자체가 없다 — 아무 일도 하지 않는
-            // 스위치를 두지 않는다(R-24: 성립하지 않는 조합의 설정은 보이지 않는다).
-            if (field.entityType == FieldDefinition.ENTITY_EVENT) {
+            // AI 추천 토글 (A-1). 캐릭터 필드에만 AI 추천 경로가 있다 — 사건·작품 필드에
+            // 아무 일도 하지 않는 스위치를 두지 않는다(R-24: 성립하지 않는 조합의 설정은
+            // 보이지 않는다). **조건은 '캐릭터인가'로 쓴다** — 종류를 하나씩 빼는 형태로 쓰면
+            // 종류가 늘 때마다 여기가 뒤처지고, 뒤처진 결과가 '아무 일도 안 하는 스위치'다.
+            if (field.entityType != FieldDefinition.ENTITY_CHARACTER) {
                 binding.switchAiSuggest.setOnCheckedChangeListener(null)
                 binding.switchAiSuggest.visibility = View.GONE
             } else {

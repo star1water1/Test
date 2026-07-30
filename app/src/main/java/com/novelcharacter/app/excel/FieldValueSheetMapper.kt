@@ -13,14 +13,26 @@ object FieldValueSheetMapper {
 
     const val ENTITY_LABEL_CHARACTER = "캐릭터"
     const val ENTITY_LABEL_EVENT = "사건"
+    const val ENTITY_LABEL_NOVEL = "작품"
 
-    fun entityLabel(entityType: String): String =
-        if (entityType == FieldDefinition.ENTITY_EVENT) ENTITY_LABEL_EVENT else ENTITY_LABEL_CHARACTER
+    /** 시트의 '대상' 열이 쓰는 라벨 — 드롭다운 목록도 이 값을 단일 소스로 삼는다(SheetSpec). */
+    val ENTITY_LABELS = listOf(ENTITY_LABEL_CHARACTER, ENTITY_LABEL_EVENT, ENTITY_LABEL_NOVEL)
 
-    /** "사건"/"event"만 사건, 그 외(빈 값 포함)는 캐릭터 — 구버전·수기 편집 관대 수용 */
+    fun entityLabel(entityType: String): String = when (entityType) {
+        FieldDefinition.ENTITY_EVENT -> ENTITY_LABEL_EVENT
+        FieldDefinition.ENTITY_NOVEL -> ENTITY_LABEL_NOVEL
+        else -> ENTITY_LABEL_CHARACTER
+    }
+
+    /**
+     * "사건"/"event"는 사건, "작품"/"novel"은 작품, 그 외(빈 값 포함)는 캐릭터 —
+     * 구버전·수기 편집 관대 수용. **캐릭터가 기본값인 것은 이 열이 없던 파일 때문이다** —
+     * 종류를 늘릴 때 여기에 등재하지 않으면 그 종류의 정의가 왕복에서 캐릭터로 접힌다(R-29).
+     */
     fun entityTypeOf(label: String?): String =
         when (label?.trim()?.lowercase()) {
             ENTITY_LABEL_EVENT, "event" -> FieldDefinition.ENTITY_EVENT
+            ENTITY_LABEL_NOVEL, "novel" -> FieldDefinition.ENTITY_NOVEL
             else -> FieldDefinition.ENTITY_CHARACTER
         }
 

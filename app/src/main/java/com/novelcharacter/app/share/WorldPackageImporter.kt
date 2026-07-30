@@ -136,6 +136,7 @@ class WorldPackageImporter(context: Context) {
         val fieldDefinitions: Int,
         val fieldValues: Int,
         val eventFieldValues: Int,
+        val novelFieldValues: Int,
         val tags: Int,
         val stateChanges: Int,
         val relationships: Int,
@@ -451,6 +452,18 @@ class WorldPackageImporter(context: Context) {
                 }
                 eventValueRows.chunked(CHUNK).forEach { db.eventFieldValueDao().insertAll(it) }
 
+                // 13-b. 작품 필드값 (v4, 확-3) — 사건판과 같은 규칙: 작품·정의 둘 다 새 id로
+                //       재배선되지 않으면 넣을 수 없다(FK가 거부한다). 버린 것은 개수로 고지한다.
+                val novelValueRows = contents.novelFieldValues.mapNotNull { v ->
+                    val nid = novelIdMap[v.novelId]
+                    val fid = defIdMap[v.fieldDefinitionId]
+                    if (nid == null || fid == null) {
+                        danglingRefs++
+                        null
+                    } else v.copy(id = 0, novelId = nid, fieldDefinitionId = fid)
+                }
+                novelValueRows.chunked(CHUNK).forEach { db.novelFieldValueDao().insertAll(it) }
+
                 // 14. 관계 — 내보내기는 한쪽만 내보내는 집합에 걸친 관계도 실었을 수 있다.
                 //     상대가 패키지에 없으면 삽입할 수 없으므로 버리되 개수를 고지한다.
                 val relIdMap = HashMap<Long, Long>()
@@ -559,6 +572,7 @@ class WorldPackageImporter(context: Context) {
                     fieldDefinitions = defIdMap.size,
                     fieldValues = fieldValueRows.size,
                     eventFieldValues = eventValueRows.size,
+                    novelFieldValues = novelValueRows.size,
                     tags = tagRows.size,
                     stateChanges = stateChangeRows.size,
                     relationships = relIdMap.size,

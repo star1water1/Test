@@ -120,7 +120,8 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
         // 사건 필드를 만들 수 있게 되기 전에는 드러나지 않던 자리다(P5).
         val fields = db.fieldDefinitionDao().getFieldsByUniverseAllTypes(universeId).size
         val values = db.characterFieldValueDao().countValuesByUniverse(universeId) +
-            db.eventFieldValueDao().countValuesByUniverse(universeId)
+            db.eventFieldValueDao().countValuesByUniverse(universeId) +
+            db.novelFieldValueDao().countValuesByUniverse(universeId)
         return UniverseDeleteImpact(novels, characters, events, fields, values)
     }
 
@@ -171,15 +172,17 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
     /**
      * 현재 세계관의 필드 구성을 사용자 프리셋으로 저장.
      *
-     * **사건 필드까지 담는다.** 종전에는 캐릭터 필드만 읽어(DAO 기본값) 사건 필드가 아무 고지 없이
-     * 빠졌고, 그 프리셋으로 세계관을 만들면 사건 필드가 사라진 채 복원됐다 — 직렬화 형식에
-     * `entityType` 자체가 없었으므로 담을 수도 없었다(P5에서 형식과 함께 고쳤다).
+     * **모든 종류를 담는다(캐릭터·사건·작품).** 종전에는 캐릭터 필드만 읽어(DAO 기본값) 사건 필드가
+     * 아무 고지 없이 빠졌고, 그 프리셋으로 세계관을 만들면 사건 필드가 사라진 채 복원됐다 —
+     * 직렬화 형식에 `entityType` 자체가 없었으므로 담을 수도 없었다(P5에서 형식과 함께 고쳤다).
      * 순서는 종류별로 다시 매겨지므로(PresetTemplates.toFieldDefinitions) 이어 붙이면 된다.
+     * **종류를 늘릴 때 이 자리를 잊으면 새 종류만 프리셋에서 조용히 빠진다**(R-29).
      */
     fun saveAsUserPreset(universeId: Long, name: String, description: String) = viewModelScope.launch {
         try {
             val fields = universeRepository.getFieldsByUniverseList(universeId) +
-                universeRepository.getEventFieldsByUniverseList(universeId)
+                universeRepository.getEventFieldsByUniverseList(universeId) +
+                universeRepository.getNovelFieldsByUniverseList(universeId)
             val json = PresetTemplates.fieldsToJson(fields)
             userPresetDao.insert(UserPresetTemplate(
                 name = name,
