@@ -2573,6 +2573,7 @@
     <string name="purpose_structured_input">한 필드를 여러 칸으로 나눠 입력합니다 (예: B-W-H). 칸은 아래에서 추가합니다.</string>
     <string name="purpose_stats">켜면 통계 탭이 이 필드를 분석합니다. 어떤 분석을 보여줄지 아래에서 고릅니다.</string>
     <string name="purpose_field_library">이 필드에 입력된 값들을 목록으로 모아, 자동완성·통계·AI 추천이 함께 씁니다.</string>
+    <string name="purpose_field_library_home">필드에 입력된 값이 여기 모입니다. 표시 라벨·별칭·카테고리를 정리하면 입력 자동완성·통계·검색이 함께 씁니다.</string>
     <string name="purpose_body_analysis">신체 사이즈 값으로 체형 분류·컵 사이즈 등을 자동 계산해 캐릭터 상세에 보여줍니다.</string>
 
     <!-- 10장 4번(전개 4단계) 목적문 — 통계 교차 분석.

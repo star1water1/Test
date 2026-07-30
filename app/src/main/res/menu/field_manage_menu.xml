@@ -7,9 +7,12 @@
         android:title="@string/import_fields_from_other"
         app:showAsAction="never" />
 
+    <!-- U-5(발견성): 오버플로에 묻혀 있어 "있는 줄 몰랐다"는 회신이 나온 자리다.
+         필드를 만드는 화면에서 값 정리로 가는 길이라 툴바에 아이콘으로 올린다. -->
     <item
         android:id="@+id/action_field_library"
+        android:icon="@drawable/ic_field_library"
         android:title="@string/field_library_title"
-        app:showAsAction="never" />
+        app:showAsAction="ifRoom" />
 
 </menu>
