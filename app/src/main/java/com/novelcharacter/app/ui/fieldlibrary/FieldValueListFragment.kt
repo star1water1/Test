@@ -56,6 +56,25 @@ class FieldValueListFragment : Fragment() {
         requireContext().getSharedPreferences("field_library_ui_state", Context.MODE_PRIVATE)
     }
 
+    /**
+     * 정렬 상태를 읽는다 — **옛 설치본이 이 키에 String을 넣어 두었을 수 있다.**
+     *
+     * 종전에는 `FieldLibraryHomeFragment`가 같은 파일의 같은 키(`sort_mode`)를 String으로
+     * 쓰고 이 화면은 Int로 읽어, 두 화면을 오가면 읽는 순간 `ClassCastException`으로 죽었다.
+     * 홈 화면은 이제 `home_sort_mode`로 갈라 두었지만, **이미 잘못된 타입이 저장된 기기는
+     * 갱신만으로 낫지 않는다** — 그 값이 그대로 남아 있기 때문이다.
+     *
+     * 그래서 잘못된 타입을 만나면 **조용히 무시하지 않고 그 자리에서 지우고** 기본값으로
+     * 돌아온다(다음 실행부터는 정상 경로다). 사용자에게 알릴 것은 없다 — 유실되는 것은
+     * 데이터가 아니라 정렬 선택 하나이고, 그것은 화면에 즉시 보인다.
+     */
+    private fun readSortMode(): Int = try {
+        prefs.getInt(KEY_SORT, SORT_USAGE)
+    } catch (_: ClassCastException) {
+        prefs.edit().remove(KEY_SORT).apply()
+        SORT_USAGE
+    }
+
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
     ): View {
@@ -65,7 +84,7 @@ class FieldValueListFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        sortMode = prefs.getInt(KEY_SORT, SORT_USAGE)
+        sortMode = readSortMode()
 
         binding.toolbar.setNavigationIcon(R.drawable.ic_arrow_back)
         binding.toolbar.setNavigationOnClickListener {

@@ -139,6 +139,7 @@ app/src/main/java/com/novelcharacter/app/
 | `tools/check_text_style.sh` | 화면 문구의 말투·용어(가이드 기계 검출분) | 기준선은 `tools/text_style_baseline.txt`가 든다(그 파일이 단일 소스) — 새 위반은 즉시 실패 |
 | `tools/check_resources.sh` | 리소스 중복·미정의 참조·XML 구문 | 통과 |
 | `tools/check_dialog_validation.sh` | 자동 닫힘 버튼 안의 조기 return(R-27 위반) | 0건 동결 — 새 위반 즉시 실패 |
+| `tools/check_prefs_keys.sh` | 같은 prefs 키를 두 곳이 다른 타입으로 쓰는가(R-28 위반) | 충돌 0 — 새 충돌 즉시 실패 |
 | `tools/differential_compile.sh` | 손댄 파일에 **새로 생긴** 컴파일 오류만 | 기준선 대조 |
 | `tools/verify_room_migration*.py` | 마이그레이션 3종을 **실제 SQLite로** 실행 | 35 · 49 · 25건 |
 | `tools/verify_reset_coverage.py` | 엔티티 목록 ↔ `ResetPlan` ↔ `executeReset` 호출부 3자 대조 | 30건 |
@@ -247,6 +248,7 @@ AI 정책(`FieldAiPolicy`).
 | R-25 | 화면에 노출되는 설정에는 목적문이 붙는다 | 텍스트 |
 | R-26 | 항목 순회형 대량 작업에는 결정형 진행도를, 조회형에는 가짜 진행도를 붙이지 않는다 | UI |
 | R-27 | 검증 실패는 창을 닫지 않는다 — 알리는 것과 고칠 자리를 남기는 것은 다른 일이다 | UI·입력 |
+| R-28 | 두 화면이 같은 prefs 파일의 같은 키를 공유하지 않는다 — 타입이 갈리면 ClassCastException (`tools/check_prefs_keys.sh`) |
 
 ---
 

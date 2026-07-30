@@ -1,26 +1,15 @@
-# 이미지 폴더 왕복 — 구현 설계·착수 문서 (2026-07)
+# 이미지 폴더 왕복 — 구현 설계 (2026-07)
 
-> **위상: 착수 — 이 문서가 구현의 단일 소스다.** 결정 근거·논의 이력은
-> `docs/image_external_management_2026-07.md`(v0.2, 결정 D1~D8)에 있고, 여기는 그 결정을
-> 그대로 구현할 수 있는 사양·파일 지도·순서를 담는다.
+> ## ⏱ **위상: 완료 — 착수 문서가 아니다** (PR-1·PR-2 처리 완료, 2026-07-28)
 >
-> **v1.1 갱신:** 착수 전 비판적 검토가 v1.0의 "미결정 사항 없음" 선언을 **정정했다** —
-> 결함 1건(심각)과 미결정 8건을 찾아 9장에 기록하고, 그 결론을 2·3·6·7·8장에 반영했다.
-> 아래 본문은 이미 정정본이다(9장은 근거 기록).
-
-## 0. 새 세션 착수 절차
-
-1. **읽기 순서**: 이 문서 전체 → `image_external_management_2026-07.md` 0장(결정 표) →
-   `CLAUDE.md`(원칙·체크리스트·브랜치 규칙). 자동 링크의 동작 계약은
-   `util/AutoLinkPlanner.kt`·`util/CharacterImageAutoLinker.kt` 상단 KDoc이 단일 소스다.
-2. **브랜치**: CLAUDE.md 규칙대로 최신 `origin/master`에서 지정 작업 브랜치를 분기
-   (`git fetch origin master && git checkout -B <작업브랜치> origin/master`). PR base는 항상
-   `master`, 병합 후 브랜치 삭제.
-3. **검증 환경**: `JARS_DIR=<스크래치패드> tools/setup_jvm_env.sh` → `tools/run_jvm_tests.sh`
-   (착수 시점 기준선 **760건** — 손대기 전에 이 숫자부터 재현할 것.
-   `dl.google.com` 차단으로 `./gradlew`는 로컬에서 실패한다 — CI가 최종 컴파일 검증).
-4. **구현 순서는 8장** — PR-1(받아오기)부터. 순수 로직(플래너)을 먼저 만들고 JVM 테스트로
-   계약을 고정한 뒤 UI·SAF를 배선한다.
+> 이 문서는 **현행 사양의 단일 소스**이지 "지금 구현할 것"의 목록이 아니다.
+> 기능은 닫혔고(`remaining_work` 1장·1-b장), 확장분은
+> `docs/image_folder_tag_ai_2026-07.md`(T-1~T-5, 완료)가 잇는다.
+> 자동 링크의 동작 계약은 `util/AutoLinkPlanner.kt`·`util/CharacterImageAutoLinker.kt`
+> 상단 KDoc이 단일 소스다.
+>
+> 결정 근거·논의 이력은 `docs/image_external_management_2026-07.md`(결정 D1~D8)에 있다.
+> 9장은 착수 전 비판적 검토의 근거 기록이며, 본문은 그 정정을 이미 반영한 상태다.
 
 ## 1. 기능 요약과 용어
 
@@ -228,7 +217,7 @@ v1.0은 "직속 + 1단계"라 적어 아래 표의 `_미배정/<세트명>/`(2�
    개명 두 지점(재압축 커밋·zip 복원)에 별칭 기록 배선(C-1).
 4. UI 배선(메뉴·배너·확인/요약 다이얼로그·설정) + 문자열(R-25 목적문).
 5. 엑셀 곁다리(D2 — 열 개방 + **빈 칸 = 해제** + 안내) + `remaining_work` 백로그 갱신.
-6. 검증: `run_jvm_tests.sh`(기준선 760 + 신규 전부), `check_text_style.sh`,
+6. 검증: `run_jvm_tests.sh`(기준선은 실행 결과를 믿는다 — 수를 적지 않는다), `check_text_style.sh`,
    `check_resources.sh`, 차분 컴파일(기준선 대조 — 노이즈 판별 절차는 스크립트 헤더 참조),
    CI(gradle 컴파일 + 단위 테스트)까지 확인 후 master 병합.
 
