@@ -129,6 +129,24 @@ class NovelViewModel(application: Application) : AndroidViewModel(application) {
         universeRepository.insertField(field)
 
     /**
+     * 생성 창의 '값 사전 등록'을 라이브러리에 심는다 — 필드 관리 경로([FieldViewModel.insertField])와
+     * **같은 규칙**이다: 콤마로 가르고, 라이브러리 미지원 타입(NUMBER 등)은 등재해도 어디에도
+     * 보이지 않으므로 건너뛴다. 실패는 무해하다(필드 자체는 이미 만들어졌다).
+     */
+    suspend fun registerInitialValues(
+        fieldDefId: Long,
+        field: com.novelcharacter.app.data.model.FieldDefinition,
+        initialValues: String
+    ) {
+        val staged = initialValues.split(",").map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        if (staged.isEmpty()) return
+        if (!com.novelcharacter.app.util.FieldValueTokenizer.supportsLibrary(field)) return
+        for (value in staged) {
+            runCatching { app.fieldValueLibraryRepository.addEntry(fieldDefId, value) }
+        }
+    }
+
+    /**
      * 폼이 미리 읽어 두는 값 라이브러리 엔트리 — **숨김도 포함**한다.
      * 제안(자동완성)은 숨김을 빼지만 허용 목록 판정은 숨긴 값도 허용 목록의 일부로 본다
      * (용도별 필터링은 호출측이 한다는 저장소 계약).

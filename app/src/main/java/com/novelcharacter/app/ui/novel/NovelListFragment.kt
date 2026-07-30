@@ -606,11 +606,19 @@ class NovelListFragment : Fragment() {
                 ?: return@setFragmentResultListener
             // 이 경로는 생성 전용이다(편집은 필드 관리에서 한다) — id가 붙어 오면 무시한다.
             if (field.id != 0L) return@setFragmentResultListener
-            createNovelField(field)
+            // 생성 창에서 미리 적어 둔 값(값 사전 등록)도 함께 온다 — 받지 않으면
+            // 사용자가 적은 것이 조용히 사라진다(필드 관리 경로는 이미 받고 있다).
+            val initialValues = bundle.getString(
+                com.novelcharacter.app.ui.field.FieldEditDialog.RESULT_INITIAL_VALUES
+            ).orEmpty()
+            createNovelField(field, initialValues)
         }
     }
 
-    private fun createNovelField(field: com.novelcharacter.app.data.model.FieldDefinition) {
+    private fun createNovelField(
+        field: com.novelcharacter.app.data.model.FieldDefinition,
+        initialValues: String
+    ) {
         val section = novelFieldSection ?: return
         val universeIdForField = section.universeId ?: return
         // 이 경로로 들어온 것은 작품 필드다 — 종류를 여기서 못박아 호출부마다 되풀이하지 않는다(R-29).
@@ -620,7 +628,8 @@ class NovelListFragment : Fragment() {
         )
         viewLifecycleOwner.lifecycleScope.launch {
             val result = try {
-                viewModel.insertNovelField(toInsert)
+                val newId = viewModel.insertNovelField(toInsert)
+                viewModel.registerInitialValues(newId, toInsert, initialValues)
                 com.novelcharacter.app.util.OpResult.success(
                     com.novelcharacter.app.util.OpResult.CAT_FIELD,
                     getString(R.string.novel_field_created, field.name)
@@ -694,6 +703,8 @@ class NovelListFragment : Fragment() {
             }
             section.covered = fields.mapTo(HashSet()) { it.id }
             section.entriesByField = viewModel.novelFieldEntries(fields.map { it.id })
+            // 엔트리 조회도 중단점이다 — 그사이 창이 닫혔으면 옛 위젯을 다시 그리지 않는다
+            if (!isAdded || novelFieldSection !== section) return@launch
             section.fields = fields
                 .filter {
                     com.novelcharacter.app.data.model.FieldType.fromName(it.type) !=
