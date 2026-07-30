@@ -1345,7 +1345,7 @@ class StatsDataProvider {
             return (0 until partCount).mapNotNull { partIdx ->
                 val partLabel = if (structuredConfig.enabled && partIdx < structuredConfig.parts.size) {
                     structuredConfig.parts[partIdx].label
-                } else "파트${partIdx + 1}"
+                } else "칸${partIdx + 1}"
 
                 val numericValues = rawValues.mapNotNull { value ->
                     val parts = value.split(separator).map { it.trim() }
@@ -2009,10 +2009,10 @@ class StatsDataProvider {
         sampleValue?.split(separator)?.size ?: 1
     }
 
-    /** 구조화 입력 파트 라벨 — 설정이 없으면 '파트N'. */
+    /** 구조화 입력 칸 라벨 — 설정이 없으면 '칸N'(가이드 5장 표3: 화면 용어는 '칸'). */
     private fun bodySizePartLabel(config: StructuredInputConfig, partIdx: Int): String =
         if (config.enabled && partIdx < config.parts.size) config.parts[partIdx].label
-        else "파트${partIdx + 1}"
+        else "칸${partIdx + 1}"
 
     /** 수치 요약 조립 — min/max/avg/median 계산이 세 곳에 흩어지지 않게 한다. */
     private fun numberSummary(fieldName: String, values: List<Float>): NumberFieldSummary {
@@ -2204,7 +2204,7 @@ class StatsDataProvider {
                         severity = if (topPct >= 80f) PatternSeverity.HIGH else PatternSeverity.MEDIUM,
                         title = "${fieldName}: '${topEntry.key}' 편중",
                         description = "${fieldName} 분포에서 '${topEntry.key}'이(가) ${String.format("%.0f", topPct)}%를 차지하여 편중되어 있습니다.",
-                        suggestion = "다양성을 위해 다른 ${fieldName} 값을 가진 캐릭터 추가를 고려해보세요.",
+                        suggestion = "다양성을 위해 다른 ${fieldName} 값을 가진 캐릭터 추가를 고려하세요.",
                         fieldDefId = fd.id,
                         fieldKey = fd.key,
                         fieldType = fd.type,
@@ -2250,7 +2250,7 @@ class StatsDataProvider {
                         severity = PatternSeverity.LOW,
                         title = "${fieldName}: 희소 값 발견",
                         description = "${fieldName}에서 $outlierNames 등이 각 1명에게만 해당됩니다.",
-                        suggestion = "의도적인 개성 부여인지, 오입력인지 확인해보세요.",
+                        suggestion = "의도적인 개성 부여인지, 오입력인지 확인하세요.",
                         fieldDefId = fd.id,
                         fieldKey = fd.key,
                         fieldType = fd.type,
@@ -2278,7 +2278,7 @@ class StatsDataProvider {
                         severity = PatternSeverity.MEDIUM,
                         title = "사건 연대 집중",
                         description = "전체 사건의 ${String.format("%.0f", pct)}%가 ${topDecade.key}~${topDecade.key + 9}년에 집중되어 있습니다.",
-                        suggestion = "서사적 밀도가 높은 시기입니다. 다른 시기에도 사건을 분산시킬지 검토해보세요."
+                        suggestion = "서사적 밀도가 높은 시기입니다. 다른 시기에도 사건을 분산시킬지 검토하세요."
                     ))
                 }
             }
@@ -2293,7 +2293,7 @@ class StatsDataProvider {
                         severity = PatternSeverity.LOW,
                         title = "서사 공백 구간",
                         description = "${gap.first}년~${gap.second}년 사이에 사건이 없습니다 (${gap.second - gap.first}년 간격).",
-                        suggestion = "의도적 공백기인지, 추가할 사건이 있는지 검토해보세요."
+                        suggestion = "의도적 공백기인지, 추가할 사건이 있는지 검토하세요."
                     ))
                 }
             }
@@ -2318,7 +2318,7 @@ class StatsDataProvider {
                             severity = PatternSeverity.MEDIUM,
                             title = "작품 간 캐릭터 수 불균형",
                             description = "'${largest.first}'(${largest.second}명)과 '${smallest.first}'(${smallest.second}명) 사이에 ${String.format("%.1f", ratio)}배 차이가 있습니다.",
-                            suggestion = "작품별 서사 규모 차이가 의도적인지 확인해보세요."
+                            suggestion = "작품별 서사 규모 차이가 의도적인지 확인하세요."
                         ))
                     }
                 }
@@ -2349,7 +2349,7 @@ class StatsDataProvider {
                         severity = PatternSeverity.LOW,
                         title = "${fieldDefs.first().name}: 작품별 편중 경향",
                         description = "$desc — 전체적으로 ${fieldDefs.first().name} 편중 경향이 보입니다.",
-                        suggestion = "작품별 다양성 확보를 고려해보세요."
+                        suggestion = "작품별 다양성 확보를 고려하세요."
                     ))
                 }
             }
@@ -2368,7 +2368,7 @@ class StatsDataProvider {
                     severity = PatternSeverity.MEDIUM,
                     title = "멤버 없는 세력 발견",
                     description = "${emptyFactions.joinToString(", ") { "'${it.name}'" }} 세력에 활성 멤버가 없습니다.",
-                    suggestion = "캐릭터를 세력에 배정하거나, 불필요한 세력을 정리해보세요."
+                    suggestion = "캐릭터를 세력에 배정하거나, 불필요한 세력을 정리하세요."
                 ))
             }
 
@@ -2384,7 +2384,7 @@ class StatsDataProvider {
                             severity = PatternSeverity.MEDIUM,
                             title = "세력 편중: 모든 캐릭터가 동일 세력",
                             description = "모든 캐릭터가 '${factionName}' 단일 세력에 소속되어 있습니다.",
-                            suggestion = "대립 구조나 다양성을 위해 다른 세력을 추가하는 것을 고려해보세요."
+                            suggestion = "대립 구조나 다양성을 위해 다른 세력을 추가하는 것을 고려하세요."
                         ))
                     }
                 }

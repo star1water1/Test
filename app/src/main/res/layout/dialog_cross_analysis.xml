@@ -11,12 +11,30 @@
         android:orientation="vertical"
         android:padding="24dp">
 
+        <!-- R-25 목적문: 이 다이얼로그가 무엇을 만들어 내는지를 고르기 전에 알린다. -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            android:text="@string/purpose_cross_analysis"
+            android:textAppearance="@style/TextAppearance.App.Caption"
+            android:textColor="@color/text_secondary" />
+
         <!-- 집계 축 (B-4): 셀 값이 캐릭터 수인지 사건 수인지를 정한다. 축이 다른 필드는 한 표에 섞이지 않는다. -->
         <TextView
             android:id="@+id/axisLabel"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/stats_cross_axis"
+            android:textAppearance="@style/TextAppearance.App.Caption"
+            android:textColor="@color/text_secondary" />
+
+        <!-- 축 선택기와 함께 숨는다(축이 하나뿐이면 고를 것이 없다) — 배선은 StatsFieldInsightFragment. -->
+        <TextView
+            android:id="@+id/axisPurpose"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/purpose_cross_axis"
             android:textAppearance="@style/TextAppearance.App.Caption"
             android:textColor="@color/text_secondary" />
 
@@ -68,6 +86,13 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/stats_cross_filter_field"
+                android:textAppearance="@style/TextAppearance.App.Caption"
+                android:textColor="@color/text_secondary" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/purpose_cross_filter"
                 android:textAppearance="@style/TextAppearance.App.Caption"
                 android:textColor="@color/text_secondary" />
 

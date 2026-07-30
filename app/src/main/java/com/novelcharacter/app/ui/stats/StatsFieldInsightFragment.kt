@@ -717,6 +717,7 @@ class StatsFieldInsightFragment : Fragment() {
         val dialogView = LayoutInflater.from(requireContext()).inflate(R.layout.dialog_cross_analysis, null)
         val spinnerAxis = dialogView.findViewById<Spinner>(R.id.spinnerAxis)
         val axisLabel = dialogView.findViewById<TextView>(R.id.axisLabel)
+        val axisPurpose = dialogView.findViewById<TextView>(R.id.axisPurpose)
         val spinner1 = dialogView.findViewById<Spinner>(R.id.spinnerField1)
         val spinner2 = dialogView.findViewById<Spinner>(R.id.spinnerField2)
         val spinnerFilter = dialogView.findViewById<Spinner>(R.id.spinnerFilterField)
@@ -726,6 +727,8 @@ class StatsFieldInsightFragment : Fragment() {
         val singleAxis = axisOptions.size == 1
         spinnerAxis.visibility = if (singleAxis) View.GONE else View.VISIBLE
         axisLabel.visibility = if (singleAxis) View.GONE else View.VISIBLE
+        // 목적문은 그 설정이 보일 때만 뜻이 있다 — 라벨과 함께 숨는다(R-25).
+        axisPurpose.visibility = if (singleAxis) View.GONE else View.VISIBLE
 
         spinnerAxis.adapter = ArrayAdapter(
             requireContext(), android.R.layout.simple_spinner_item, axisOptions.map { it.first }

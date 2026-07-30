@@ -40,6 +40,7 @@ app/src/main/java/com/novelcharacter/app/data/repository/TrashRepository.kt
 app/src/main/java/com/novelcharacter/app/data/repository/EventFieldValueMerge.kt
 app/src/main/java/com/novelcharacter/app/data/model/EntitySnapshots.kt
 app/src/main/java/com/novelcharacter/app/data/maintenance/SystemMaintenanceService.kt
+app/src/main/java/com/novelcharacter/app/ui/stats/StatsDataProvider.kt
 "
 
 # ── 규칙 (가이드 4·6장의 기계 검출 가능분) ──
