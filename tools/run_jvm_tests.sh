@@ -73,6 +73,7 @@ $MAIN/excel/ExcelHeaderAliases.kt
 $MAIN/excel/SheetSpec.kt
 $MAIN/excel/ExcelCellValue.kt
 $MAIN/excel/CharacterFieldValueOverflow.kt
+$MAIN/excel/AllCharactersSheet.kt
 $MAIN/util/FieldValueTokenizer.kt
 $MAIN/util/StatsFieldPolicy.kt
 $MAIN/util/ValueDistributions.kt
@@ -172,6 +173,7 @@ $TEST/excel/PortableFieldFiltersTest.kt
 $TEST/excel/EntityFieldHeadersTest.kt
 $TEST/excel/CharacterHeaderIdentityTest.kt
 $TEST/excel/CharacterFieldValueOverflowTest.kt
+$TEST/excel/AllCharactersSheetTest.kt
 $TEST/excel/PresetTemplateMatcherTest.kt
 $TEST/excel/SheetValueConventionsTest.kt
 $TEST/excel/FactionRefResolverTest.kt

@@ -165,7 +165,8 @@ class SheetNameAssignmentTest {
             timelineSpec(emptyList()), stateChangeSpec(), relationshipSpec(), relationshipChangeSpec(),
             nameBankSpec(), factionSpec(), factionMembershipSpec(), factionRelationshipSpec(),
             userPresetTemplateSpec(), searchPresetSpec(), characterListPresetSpec(),
-            appSettingsSpec(), imageMetaSpec(), fieldValueLibrarySpec(), characterFieldValueSpec()
+            appSettingsSpec(), imageMetaSpec(), fieldValueLibrarySpec(), characterFieldValueSpec(),
+            allCharactersSpec()
         )
         for (spec in reserved) {
             val headers = spec.columns.map { it.header }
