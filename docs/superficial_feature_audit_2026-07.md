@@ -18,7 +18,7 @@
 > 약속 불이행 — 을 전수 색출하고, 확정 건마다 개혁안을 설계한다.
 > **방법:** 서브시스템별 8방향 병렬 수색 → 발견별 적대적 반증 검증(코드 실독 필수) →
 > 검증 미귀환은 기각이 아니라 생존으로 집계(선행 세션 규약).
-> **선행 문서:** `remaining_work_2026-07.md` 1-6장(이번 세션의 B-6·B-7·러너 수리),
+> **선행 문서:** `session_log_2026-07.md` 1-6장(이번 세션의 B-6·B-7·러너 수리),
 > `app_inspection_round2_2026-07.md`.
 > 이 문서의 항목 번호는 **S-n**(superficial)이다. 기존 백로그(B-n)와 겹치는 것은 병기한다.
 
@@ -103,83 +103,83 @@ QuickAdd·BatchEdit의 신규 생성)은 전수 확인 결과 정상이었다 �
 
 > 검증자 판정 심각도 기준 정렬. 개혁안(fix_sketch)은 검증자가 코드를 실독하고 설계한 수리 방향이다.
 
-### ~~S-5~~. 월드패키지(.ncworld)는 내보내기만 존재 — 가져오기 경로가 앱 어디에도 없는 일방통행 기능 — **처리 완료 (remaining_work 1-8장)**
+### ~~S-5~~. 월드패키지(.ncworld)는 내보내기만 존재 — 가져오기 경로가 앱 어디에도 없는 일방통행 기능 — **처리 완료 (session_log 1-8장)**
 - **위치:** `app/src/main/java/com/novelcharacter/app/share/WorldPackageExporter.kt:81` · **분류:** 약속 불이행 · **심각도:** 상
 - **증상:** 세계관 패키지를 공유받은 사용자가 그 파일을 열 방법이 전혀 없다. 설정의 가져오기에서 .ncworld를 고르면(파일 선택기가 application/zip을 허용하므로 선택은 됨) data.xlsx가 없어 xlsx로 오판 → POI 파싱 실패 → "가져오기에 실패했습니다" 일반 오류 토스트만 뜬다. '배포' 기능인데 수신 측이 없어 기능 전체가 구색이다.
 - **개혁안:** WorldPackageImporter를 신설해 manifest.json의 schemaVersion(1/2)을 검증하고 exporter가 쓰는 전체 엔트리(universe/fields/characters/…/faction_relationships)를 역직렬화·트랜잭션 삽입하도록 구현한다. 가져오기 진입부의 ZIP 판별을 3분기(data.xlsx 엔트리→엑셀 ZIP, manifest.json 엔트리→월드패키지, 그 외→xlsx 시도)로 확장해 기존 백업 복원 경로와 충돌 없이 라우팅한다. 이름/ID 충돌은 이미 존재하는 죽은 문자열(share_world_conflict_title/overwrite/skip/new)을 살려 덮어쓰기·건너뛰기·새로 생성 선택 다이얼로그로 처리하고(변수 제어: 검증→알림→교정), v1 패키지는 exporter KDoc대로 "세력 간 관계 없음"을 구버전 형식으로 안내한다. 형식 인식 실패 시에도 일반 토스트가 아니라 "지원하지 않는 패키지 형식/손상됨" 등 원인별 메시지를 제공해 무통보 실패를 없앤다.
 
-### ~~S-6~~. 사건 편집 다이얼로그가 작품 미선택/작품 소실 시 사건 필드값 전체를 무통보 삭제한다 (N2의 사건판, R-5 미적용) — **처리 완료 (remaining_work 1-7장)**
+### ~~S-6~~. 사건 편집 다이얼로그가 작품 미선택/작품 소실 시 사건 필드값 전체를 무통보 삭제한다 (N2의 사건판, R-5 미적용) — **처리 완료 (session_log 1-7장)**
 - **위치:** `app/src/main/java/com/novelcharacter/app/ui/timeline/EventEditDialogFragment.kt:493` · **분류:** 조용한 실패 · **심각도:** 상
 - **증상:** 작품이 삭제돼 연결이 끊긴(또는 다이얼로그에서 작품 체크를 해제한) 사건을 열어 설명만 고치고 저장하면, 채워 둔 회차·챕터 등 사건 필드값이 전부 소리 없이 사라진다. 필드 로딩이 끝나기 전에 빠르게 저장해도 동일하다.
 - **개혁안:** 캐릭터 경로의 R-5 커버 집합을 사건 경로에 그대로 이식한다: DataProvider.updateEvent/insertEvent/updateEventAndShiftOthers에 '폼이 실제 렌더한 필드 정의 id 집합'을 함께 넘기고, TimelineViewModel이 replaceAllByEvent 대신 커버 집합 기준 병합(기존 EventFieldValueDao.replaceForFields 재사용)으로 커버 밖 기존 값을 보존한다. 세계관 미해결(universeId==null)·필드 섹션 로딩 미완이면 커버 집합을 공집합으로 넘겨 전량 보존하고, 보존 건수가 0보다 크면 CharacterSaveCoordinator.notifyPreservedFieldValues와 동일한 "N개 필드값을 보관했습니다" 고지를 띄운다(검증→알림→교정). 추가로 rebuildEventFieldSection의 세계관 해석에 editingEvent?.universeId 폴백을 두어 작품 연결이 끊긴 사건도 기존 필드값을 화면에 드러내 편집할 수 있게 한다(존재를 알 수 없는 데이터 금지, 원칙 04).
 
-### ~~S-7~~. 다세계관 통합 인사이트 카드의 차트 탭이 대표 필드 1개만 조회해 캐릭터 목록이 과소집계된다 — **처리 완료 (remaining_work 1-9장)**
+### ~~S-7~~. 다세계관 통합 인사이트 카드의 차트 탭이 대표 필드 1개만 조회해 캐릭터 목록이 과소집계된다 — **처리 완료 (session_log 1-9장)**
 - **위치:** `app/src/main/java/com/novelcharacter/app/ui/stats/StatsFieldInsightFragment.kt:237` · **분류:** 조용한 실패 · **심각도:** 상
 - **증상:** 전체 세계관 보기에서 '직업' 카드가 세계관 A+B 합산으로 '검사 15명'을 그리는데, 그 조각을 탭하면 첫 세계관 필드의 캐릭터(예: 7명)만 나열된다. 어긋난 수치에 대한 고지가 없고, 이 목록을 모수로 쓰는 하위 그룹 분석까지 연쇄로 과소집계된다.
 - **개혁안:** FieldInsightResult에 mergedFieldDefIds: List<Long>를 추가하고 computeFieldInsights/buildFieldInsight에서 fds.map{it.id}로 채운 뒤(단일 세계관도 원소 1개 리스트로 통일), StatsFieldInsightFragment의 탭 리스너와 StatsCharacterListBottomSheet 인자를 long[] 병합 id로 교체한다. 바텀시트는 getCharactersByFieldValue 대신 기존 getCharactersByFieldKeyValues(첫 def config로 파싱해 차트 값 공간과 일치)를 호출하는 ViewModel 경로를 신설해 차트 조각 수치와 목록 인원이 항상 일치하게 한다. 하위 그룹 분석의 현재 필드 제외(77행)도 병합 id 집합 기준으로 바꿔 형제 세계관 def가 대상에 섞이지 않게 하고, 만약 파싱 config 차이로 수치가 어긋날 수 있는 경우에는 목록 상단에 고지를 표시한다(변수 제어: 검증→알림→교정). 단일 id 경로를 남겨 특정 케이스만 때우는 방편식 분기는 두지 않는다.
 
-### ~~S-8~~. 캐릭터 축 교차분석이 CALCULATED 필드 계산값을 합치지 않아 빈 표가 무통보로 나온다 — **처리 완료 (remaining_work 1-9장)**
+### ~~S-8~~. 캐릭터 축 교차분석이 CALCULATED 필드 계산값을 합치지 않아 빈 표가 무통보로 나온다 — **처리 완료 (session_log 1-9장)**
 - **위치:** `app/src/main/java/com/novelcharacter/app/ui/stats/StatsDataProvider.kt:1463` · **분류:** 조용한 실패 · **심각도:** 중
 - **증상:** 인사이트 목록에는 분포가 그려지는 CALCULATED 필드(예: 수식으로 계산한 '전투력')를 교차분석 축으로 고르고 실행하면 제목·캡션만 있는 빈 표가 나오고 아무 안내도 없다. B-4('사건 필드를 고르면 아무 일도 안 일어남')와 동일 부류의 잔존 구멍 — 사건 축만 고쳐지고 캐릭터 축의 CALCULATED는 남았다.
 - **개혁안:** 근본 원인을 사건 축과 대칭으로 수리한다: computeCrossAnalysis에서 storedRows = s.fieldValues.groupBy(...) 뒤 mergeCalculatedRows(storedRows, computeAllCalculatedValues(s))를 rowsByEntity로 사용해 CALCULATED 계산값이 축·필터 어디에 쓰여도 집계되게 한다(이미 있는 mergeCalculatedRows/computeAllCalculatedValues 재사용, 한 축만 고치는 방편식 패치 금지). 방어선으로 showCrossAnalysisResult/renderCrossTable의 빈 crossTable 무통보 return을 "조건에 맞는 데이터 없음" 고지로 바꿔 진짜 데이터가 없는 경우도 변수 제어(검증→알림) 원칙대로 사용자에게 알린다. JVM 테스트에 캐릭터 축 CALCULATED 필드(축1·축2·필터 각각) 교차분석 케이스를 추가해 회귀를 막는다.
 
-### ~~S-9~~. 사건 필드 인사이트 차트를 탭하면 항상 빈 캐릭터 목록 시트가 뜬다 (사건 드릴다운 미구현인데 탭 리스너는 부착) — **처리 완료 (remaining_work 1-9장)**
+### ~~S-9~~. 사건 필드 인사이트 차트를 탭하면 항상 빈 캐릭터 목록 시트가 뜬다 (사건 드릴다운 미구현인데 탭 리스너는 부착) — **처리 완료 (session_log 1-9장)**
 - **위치:** `app/src/main/java/com/novelcharacter/app/ui/stats/StatsFieldInsightFragment.kt:244` · **분류:** 조용한 실패 · **심각도:** 중
 - **증상:** 사건 커스텀 필드 카드(B-10으로 편입)의 파이/막대 조각을 탭하면 — 차트에는 사건 12건이라 그려져 있어도 — '필드명: 값' 시트가 열리고 0명·빈 목록이 나온다. 해당 값을 가진 사건을 보여주는 경로 자체가 없는데 탭 인터랙션은 살아 있어, 기능이 있는 것처럼 보이고 실제로는 아무것도 돌려주지 않는다.
 - **개혁안:** 사건 드릴다운을 캐릭터 드릴다운과 대칭으로 완결 구현한다(방편식 패치 금지 — 리스너만 떼는 땜빵 불가): StatsDataProvider에 s.eventFieldDefinitions/s.eventFieldValues(+computeAllEventCalculatedValues)를 조회하는 getEventsByFieldValue를 추가하고, 시트를 엔티티 인지형으로 일반화(또는 사건용 시트 신설)해 탭한 값을 가진 사건 목록을 보여주고 사건 상세로 내비게이트한다. attachChartTapListener에 insight.fieldDefinition.entityType을 전달해 경로를 분기하고, 사건 축에서는 하위 그룹 분석 버튼도 사건 필드 목록으로 채운다. 변수 제어 원칙에 따라 getCharactersByFieldValue의 `?: return emptyList()` 폴백도 제거한다 — 대상 필드 정의를 찾지 못하면 빈 목록으로 위장하지 말고 오류를 상위로 알려 사용자에게 표시한다.
 
-### ~~S-10~~. StreamingXlsxReader 미배선 — **처리 완료 (remaining_work 1-d장)** — 완성된 스트리밍 리더가 죽은 코드로 방치 (기지 백로그 B-8)
+### ~~S-10~~. StreamingXlsxReader 미배선 — **처리 완료 (session_log 1-d장)** — 완성된 스트리밍 리더가 죽은 코드로 방치 (기지 백로그 B-8)
 - **위치:** `app/src/main/java/com/novelcharacter/app/excel/StreamingXlsxReader.kt:30` · **분류:** 죽은 코드/미배선 · **심각도:** 중 · **기지 백로그:** B-8
 - **증상:** 128MB 초과 백업 xlsx는 앱이 만든 파일인데도 복원이 거부되고, 한도 내 대형 파일도 기기 메모리에 따라 OOM으로 실패할 수 있다. 이를 해결하려고 만든(테스트까지 갖춘) 스트리밍 리더는 어떤 경로에서도 호출되지 않는다. 이미 알려진 백로그 B-8 재확인.
 - **개혁안:** docs/excel_streaming_import_2026-07.md의 원칙대로 importFromXlsx에 크기 임계값(예: 기존 MAX_IMPORT_FILE_SIZE 또는 가용 힙 기반)을 두고, 초과 시 DOM 대신 StreamingXlsxReader 경로로 전환하되 per-row 해석 로직은 두 경로가 동일 코드를 타게 한다(이중 경로 + 비분기 — 방편식 패치 금지). 스트리밍 경로가 배선되면 :107/:153/:212의 128MB 거부를 스트리밍 처리로 대체해 앱 자신의 백업은 크기와 무관하게 복원되게 하고(:1141 주석의 왕복 무결성 선언 이행), 손상·형식 이탈 행은 조용히 버리지 말고 기존 결과 다이얼로그(buildResultMessage)에 건수·교정 경로로 고지한다(변수 제어: 검증→알림→교정). 기존 StreamingXlsxReaderTest의 DOM 동치 대조를 임포트 파이프라인 수준 통합 테스트로 확장해 두 경로 결과가 행 단위로 일치함을 강제한다.
 
-### ~~S-11~~. CALCULATED 수식 오류 신호(NaN)가 모든 표시 경로에서 소멸 — 오류와 미입력이 구분 불가 — **처리 완료 (PR #99 + remaining_work 1-c장)**
+### ~~S-11~~. CALCULATED 수식 오류 신호(NaN)가 모든 표시 경로에서 소멸 — 오류와 미입력이 구분 불가 — **처리 완료 (PR #99 + session_log 1-c장)**
 
 > **증상 서술이 절반만 맞았다(정정).** 아래 개혁안 1·2는 PR #99가 이행했다. 3(수식 편집기 검증)을
 > 착수하며 현행 코드를 **실행해** 대조한 결과, 이 절이 전제한 "NaN이 소비자에서 소멸한다"보다
 > 나쁜 경로가 드러났다 — 미지 함수·연산자·설명 글자는 토큰화가 조용히 버리므로 **NaN이 아예
 > 만들어지지 않는다**(`sqrt(4)`→4). 그래서 "NaN을 관통시킨다"만으로는 닫히지 않고, 어휘 분석이
-> **버린 것을 남겨야** 저장 시점에 물어볼 수 있다. 상세는 remaining_work 1-c장.
+> **버린 것을 남겨야** 저장 시점에 물어볼 수 있다. 상세는 session_log 1-c장.
 - **위치:** `app/src/main/java/com/novelcharacter/app/ui/character/DynamicFieldRenderer.kt:591` · **분류:** 조용한 실패 · **심각도:** 중
 - **증상:** 수식에 자기참조/순환 참조나 오타(fied(...), 0나눗셈)를 넣고 저장하면 아무 경고 없이 저장되고, 캐릭터 상세에는 '필드명 (자동 계산)'만 값 없이 표시된다. 입력값이 아직 없어서 빈 것인지 수식이 깨진 것인지 사용자는 알 길이 없고, 엑셀 내보내기에서도 빈 셀이 되어 오류가 어디에서도 드러나지 않는다. B-4(교차분석 null 무시)와 같은 부류.
 - **개혁안:** 1) NaN/Infinite를 오류 신호로 소비자까지 관통시킨다: 계산 결과를 sealed 타입(성공값/오류사유)으로 반환하는 공용 헬퍼로 각 소비자의 중복 평가 코드를 통합하고, DynamicFieldRenderer·CharacterDetailFragment는 "필드명: 수식 오류 (자동 계산)"처럼 TimeStateResolver.FORMULA_ERROR_DISPLAY와 일관된 오류 표기를 렌더링한다(방편식 패치 금지 — 경로별 개별 땜빵 대신 단일 소스). 2) 엑셀/PDF 내보내기는 빈 셀 대신 오류 마커(예: "#수식오류")를 기록하거나 내보내기 완료 시 오류 필드 개수를 사용자에게 통지한다(엑셀 왕복 무결성). 3) FieldEditDialog.validateFormula에 자기참조·순환 참조 검사(currentKey 직접 참조 + CALCULATED 간 전이 참조)와 미지 함수명 검출을 추가해 저장 시점에 경고한다(검증→알림→교정, 기존 '그대로 저장' 선택지는 유지해 자율성 보존).
 
-### ~~S-12~~. 관계 변화 추가·편집 다이얼로그 — 연도 미입력 시 저장 탭이 전체 입력을 무통보 폐기 — **처리 완료 (remaining_work 1-7장)**
+### ~~S-12~~. 관계 변화 추가·편집 다이얼로그 — 연도 미입력 시 저장 탭이 전체 입력을 무통보 폐기 — **처리 완료 (session_log 1-7장)**
 - **위치:** `app/src/main/java/com/novelcharacter/app/ui/character/RelationshipHelper.kt:413` · **분류:** 조용한 실패 · **심각도:** 중
 - **증상:** 관계 변화 추가에서 유형·설명·강도·사건 연결까지 채우고 연도만 비운 채 저장을 누르면 다이얼로그가 닫히고 아무 일도 일어나지 않는다. 입력 전체가 알림 없이 사라진다 — B-4 전례(고르면 조용히 아무 일도 안 일어남)와 같은 부류이며 CLAUDE.md 변수 제어(검증→알림→교정 경로) 직접 위반.
 - **개혁안:** Override the positive button's default auto-dismiss: build the dialog, call show(), then rebind dialog.getButton(BUTTON_POSITIVE).setOnClickListener. In that listener, validate the year; on failure set an inline error on the year field's TextInputLayout (e.g. "연도를 입력하세요") and keep the dialog open so the user can correct it (검증→알림→교정), clearing the error on text change; only on success run the existing insert/update logic and dismiss(). Apply the same complete fix to both showAddRelationshipChangeDialog (line 413) and showEditRelationshipChangeDialog (line 487) — patching only one would be a 방편식 패치.
 
-### ~~S-13~~. 앱 초기화가 휴지통 스냅샷·작업 이력·캐릭터탭 프리셋을 남기고, 휴지통이 보류 중인 이미지 파일만 삭제한다 — **처리 완료 (remaining_work 1-d장)**
+### ~~S-13~~. 앱 초기화가 휴지통 스냅샷·작업 이력·캐릭터탭 프리셋을 남기고, 휴지통이 보류 중인 이미지 파일만 삭제한다 — **처리 완료 (session_log 1-d장)**
 - **위치:** `app/src/main/java/com/novelcharacter/app/ui/settings/SettingsFragment.kt:1028` · **분류:** 약속 불이행 · **심각도:** 중
 - **증상:** 초기화 후에도 (1) 설정>휴지통에 과거 삭제 항목이 그대로 남아 '복원' 가능해 보이고, 복원하면 이미지 파일은 이미 지워져 깨진 imagePaths를 단 캐릭터가 부활한다(거짓 예고+부분 파손). (2) 작업 이력 화면에 초기화 이전 기록 전부 잔존. (3) 캐릭터 탭 프리셋 칩이 초기화 후에도 그대로 남는다(검색 프리셋은 지워져 비대칭). '모든 데이터 삭제·되돌릴 수 없음' 약속과 셋 다 어긋난다.
 - **개혁안:** executeReset()의 db.withTransaction 블록(SettingsFragment.kt:1028-1045)에 db.trashSnapshotDao().deleteAll(), db.operationLogDao().clear(), db.characterListPresetDao().deleteAll()을 추가해 '모든 데이터 삭제' 약속과 DB 상태를 일치시킨다 — 스냅샷 행을 먼저 지우므로 1069-1071행의 파일 일괄 삭제는 규약(스냅샷 생존 중 파일 유지)과 더는 충돌하지 않는다. 방편식 패치 금지 원칙에 따라 세 개만 덧붙이지 말고 AppDatabase의 전체 DAO 목록을 리셋 삭제 목록과 대조 감사해 FK CASCADE로 비워지지 않는 독립 테이블(예: imageMeta 등)이 더 누락됐는지 확인하고, 누락 재발을 막기 위해 '리셋이 모든 테이블을 비운다'를 검증하는 JVM 테스트(테이블 목록 열거 대 삭제 호출 대조)를 추가한다. 확인 다이얼로그 문구(strings.xml:591)는 그대로 두되, 백업 보존 선택처럼 휴지통·작업 이력 보존을 의도적으로 허용하려면 명시적 체크박스로 사용자에게 알리고 선택하게 한다(변수 제어: 검증→알림→교정).
 
-### ~~S-14~~. 패턴 인사이트가 '통계에 포함' 꺼진 필드도 분석한다 — **처리 완료 (remaining_work 1-10장)**
+### ~~S-14~~. 패턴 인사이트가 '통계에 포함' 꺼진 필드도 분석한다 — **처리 완료 (session_log 1-10장)**
 - **위치:** `app/src/main/java/com/novelcharacter/app/ui/stats/StatsDataProvider.kt:2005` · **분류:** 약속 불이행 · **심각도:** 중
 - **증상:** 사용자가 특정 필드(예: 민감한 메모성 필드)를 '통계에 포함' 해제해도 통계 메인의 패턴 인사이트에 '○○: △△ 편중' 카드가 계속 뜨고, 작품 간 편중 비교와 어시스턴트 인사이트에도 그 필드가 나온다. 설정 스위치가 약속한 동작(통계 제외)이 인사이트 목록에만 적용되고 패턴 감지에는 적용되지 않는다.
 - **개혁안:** detectPatterns의 필드 그룹화(StatsDataProvider.kt:2005)를 computeFieldInsights(1168-1169)와 동일하게 `s.fieldDefinitions.filter { FieldStatsConfig.fromConfig(it.config).enabled }` 이후 groupBy 하도록 고친다. 이 한 곳을 고치면 필드별 편중/균형/이상치 패턴(2007-2091)과 작품 간 필드 편중 비교(2154-2181), AssistantEngine 경유 호출까지 같은 함수라 일괄 해결되어 방편식 패치가 아닌 완결 수정이 된다. config 파싱이 def당 2회가 되지 않도록 computeSummary(665)의 statsConfigCache 패턴처럼 파싱 결과를 재사용하고, 화면 간 수치 일치 원칙(663행 주석)에 맞춰 기존 JVM 테스트에 '통계 제외 필드는 패턴 인사이트에 나타나지 않는다' 케이스를 추가해 회귀를 막는다.
 
-### ~~S-15~~. 레거시 '필드 분석' 화면이 CALCULATED 필드를 통째로 누락하고 '통계에 포함' 설정도 무시한다 — **처리 완료 (remaining_work 1-10장)**
+### ~~S-15~~. 레거시 '필드 분석' 화면이 CALCULATED 필드를 통째로 누락하고 '통계에 포함' 설정도 무시한다 — **처리 완료 (session_log 1-10장)**
 - **위치:** `app/src/main/java/com/novelcharacter/app/ui/stats/StatsDataProvider.kt:1734` · **분류:** 껍데기 구현 · **심각도:** 중
 - **증상:** 필드 분석 상세 화면에서 수식 필드(CALCULATED)는 값이 계산돼 인사이트 화면·순위에는 나오는데 여기서만 아무 항목도 없이 조용히 빠진다. 반대로 통계 제외한 필드는 계속 표시된다. '모든 필드가 통계에서 분석 가능해야 한다'(원칙 02)와 사용자 설정 양쪽에 어긋난다.
 - **개혁안:** computeFieldAnalysis를 computeFieldInsights와 동일한 데이터 준비 규칙으로 통일한다: (a) computeAllCalculatedValues(s) 결과를 합성 CharacterFieldValue로 valuesByFieldDef에 합산(1151-1165행 방식 재사용을 공용 헬퍼로 추출), (b) 네 분기(이산 분포·BODY_SIZE 분포·NUMBER 요약·BODY_SIZE 요약) 진입 전에 FieldStatsConfig.fromConfig(fd.config).enabled 필터를 일괄 적용, (c) CALCULATED는 FieldStatsConfig.StatsType.forFieldType("CALCULATED")(분포+수치+순위)에 맞춰 NUMBER와 동일한 수치 요약 및 binning 기반 분포에 편입한다. 레거시·신규 두 경로가 같은 필드 적격성 판정을 공유하도록 헬퍼를 단일화해야 방편식 패치 금지 원칙에 부합하며, 향후 두 화면의 재분기(divergence)를 구조적으로 차단한다.
 
-### ~~S-16~~. 레거시 필드 분석의 BODY_SIZE 분포 조각 탭이 항상 0명을 돌려준다 — **처리 완료 (remaining_work 1-10장)**
+### ~~S-16~~. 레거시 필드 분석의 BODY_SIZE 분포 조각 탭이 항상 0명을 돌려준다 — **처리 완료 (session_log 1-10장)**
 - **위치:** `app/src/main/java/com/novelcharacter/app/ui/stats/StatsFieldAnalysisDetailFragment.kt:161` · **분류:** 조용한 실패 · **심각도:** 중
 - **증상:** 필드 분석 화면에서 신체 사이즈 분포(예: '키 — 파트1'의 '160~170' 조각)를 탭하면 캐릭터 목록 시트가 항상 '0명'으로 뜬다. 그 구간에 실제로 캐릭터가 있어도 마찬가지 — 탭 인터랙션이 존재하지만 어떤 입력에서도 결과를 내지 못한다.
 - **개혁안:** 문자열 라벨을 매칭 키로 재사용하는 대신, 분포 생성 시점의 구조 정보(partIdx, binMin, binMax, separator)를 FieldValueDistribution에 함께 담아 탭 시 그대로 전달하고, getCharactersByFieldValue에 타입드 매치 스펙(정확값 매치 vs 수치 범위+파트 인덱스 매치)을 추가한다. 범위 매치는 분포 계산과 동일한 파싱(separator split → partIdx → toFloatOrNull)과 동일한 경계 규칙(마지막 bin만 상한 포함)을 단일 소스로 공유해 분포 인원수와 드릴다운 인원수가 항상 일치하게 한다. NUMBER 커스텀 binning 라벨 매치와도 같은 스펙으로 통합해 문자열 우연 일치에 기대는 방편식 처리를 없애고, 매치 스펙이 없는 구버전 호출은 기존 정확값 경로로 동작을 보존한다.
 
-### ~~S-17~~. 분포 비율(%)이 상위 N개 잘라낸 합 기준으로 계산돼 실제 점유율을 왜곡한다 — **처리 완료 (remaining_work 1-10장)**
+### ~~S-17~~. 분포 비율(%)이 상위 N개 잘라낸 합 기준으로 계산돼 실제 점유율을 왜곡한다 — **처리 완료 (session_log 1-10장)**
 - **위치:** `app/src/main/java/com/novelcharacter/app/ui/stats/StatsFieldInsightFragment.kt:497` · **분류:** 원칙 위반 · **심각도:** 중
 - **증상:** 고유값이 limit(기본 10)보다 많은 필드(거주지·태그성 TEXT 등)에서 각 값의 '비율' 열이 전체 대비가 아니라 상위 10개 합 대비로 부풀려 표시된다. 편향 발견이 목적인 화면에서 편향 정도 자체가 왜곡되고, 나머지 값들이 몇 건 잘렸는지 알 길이 없다.
 - **개혁안:** computeFieldDistribution은 전체 분포(또는 전체 합계·잘린 종수/건수 메타데이터 포함 결과 타입)를 반환하도록 바꾸고, 상한 적용은 표시 계층의 관심사로 옮긴다. UI에서는 분모를 전체 값 합으로 계산해 비율을 참값으로 표시하고, 상위 N행 아래에 "기타 N종 M건 (x.x%)" 집계 행을 추가하며 파이차트에도 동일한 '기타' 조각을 넣어 R-14(잘라낸 것은 개수로 알린다)를 충족한다. RANKING 경로도 같은 전체 분포에서 상위 N만 취하므로 함께 정리하되, limit 자체는 사용자 설정(자율성 우선)으로 유지한다. UI에서만 분모를 고치는 땜빵이 아니라 개수 정보 소실 지점(provider의 take)을 제거하는 것이 방편식 패치 금지 원칙에 부합한다.
 
-### ~~S-18~~. 순위(빈도 모드)가 통계 파싱 규칙을 쓰지 않는다 — **처리 완료 (remaining_work 1-10장)**
+### ~~S-18~~. 순위(빈도 모드)가 통계 파싱 규칙을 쓰지 않는다 — **처리 완료 (session_log 1-10장)**
 - **위치:** `app/src/main/java/com/novelcharacter/app/ui/stats/StatsDataProvider.kt:2517` · **분류:** 껍데기 구현 · **심각도:** 중
 - **증상:** 콤마 목록 표시 형식으로 설정한 TEXT 필드를 순위 필드로 고르면 '검, 활 (1회)'처럼 원문 전체가 한 값으로 집계돼 전원 1회 동률의 무의미한 순위가 나온다. 별칭 사전을 쓰는 필드는 인사이트 분포 차트와 순위 탭의 빈도 수치가 서로 다른데 아무 고지가 없다.
 - **개혁안:** computeRanking 빈도 모드에서 fd.type=="MULTI_TEXT" 하드코딩 분기(2518, 2566)를 제거하고, GRADE/BODY_SIZE가 이미 하듯 값 소유 필드(fieldDefMap[fv.fieldDefinitionId])를 기준으로 FieldValueTokenizer.tokenize(또는 splitForStats)로 분리해 frequencyMap 구축·매칭을 통일한다. 분리된 토큰은 resolversByFieldId의 FieldValueResolver(statsKeys 또는 canonical)로 접은 뒤 집계해 인사이트 분포와 동일한 키 공간에서 빈도를 계산한다 — 통계 파싱 단일 소스 계약 준수(방편식 재구현 금지). 검증→알림 원칙에 따라 COMMA_LIST TEXT·별칭 필드에 대해 인사이트 분포 카운트와 순위 빈도가 일치함을 확인하는 JVM 테스트를 추가하고, 토큰화로 인해 한 캐릭터가 복수 토큰을 갖는 경우의 대표값 표시 규칙(최다 빈도 토큰)을 MULTI_TEXT 기존 경로와 동일하게 적용한다.
 
-### ~~S-19~~. 하위 그룹 분석이 CALCULATED 필드를 대상으로 고를 수 있게 해놓고 항상 '데이터 없음'을 돌려준다 — **처리 완료 (remaining_work 1-9장)**
+### ~~S-19~~. 하위 그룹 분석이 CALCULATED 필드를 대상으로 고를 수 있게 해놓고 항상 '데이터 없음'을 돌려준다 — **처리 완료 (session_log 1-9장)**
 - **위치:** `app/src/main/java/com/novelcharacter/app/ui/stats/StatsDataProvider.kt:2366` · **분류:** 껍데기 구현 · **심각도:** 중
 - **증상:** 차트 탭 → '하위 그룹 분석'에서 수식 필드(예: 계산된 '나이대')를 고르면, 그 필드가 자기 카드에서는 분포를 그려주는데도 항상 '데이터 없음'이 뜬다. 목록에 고를 수 있게 나오는 것 자체가 동작을 약속하는데 어떤 경우에도 결과가 없다.
 - **개혁안:** computeSubgroupAnalysis를 두 갈래로 보강한다: 대상 def가 CALCULATED면 getCharactersByFieldValue(2242행)·편향 드릴다운(2321행)과 동일하게 computeAllCalculatedValues(s)에서 characterIds에 속한 캐릭터의 해당 필드 값을 가져와 getFieldValues로 파싱해 분포에 합산한다. 아울러 targetFieldDefId 하나가 아니라 getRankableFields(2404-2424행)처럼 (key,type) 머지된 def 목록을 받아 전체 세계관 스코프에서 같은 필드의 타 세계관 값도 집계하고, 파싱은 기준 def config로 통일한다(2306-2309행의 기존 관례). 선택 목록에서 CALCULATED를 숨기는 방식은 기능 간소화(원칙 03 위반)이므로 금지 — 목록이 약속하는 필드는 전부 실제로 분석되게 만든다. 값이 진짜로 없는 경우에만 '데이터 없음'이 뜨도록 하여 변수 제어(검증→알림) 원칙을 지킨다.
@@ -200,13 +200,13 @@ QuickAdd·BatchEdit의 신규 생성)은 전수 확인 결과 정상이었다 �
 
 | 순위 | 묶음 | 대상 | 요지 |
 |------|------|------|------|
-| ~~1~~ | ~~**사건 입력 보호**~~ | ~~S-6 (+S-12)~~ | **처리 완료** — `EventFieldValueMerge`(커버 집합) + `replaceForFields` 공용화 + universeId 보존 폴백 + 보존 Toast·이력 고지 + `setValidatedPositiveButton` 재조립. 상세·실기기 확인 절차는 remaining_work 1-7장·3-7장. 인접 발견: 통보-후-닫힘 입력 유실 잔여(B-28), CharacterViewModel 사건 CRUD 무통보 실패(B-29) 등재 |
-| ~~2~~ | ~~**월드패키지 완결**~~ | ~~S-5~~ | **처리 완료** — `WorldPackageImporter` 신설(manifest v1~v3 검증 → 전 엔트리 역직렬화 → 원자 트랜잭션 삽입 + old→new id 재배선 + code 충돌 재발급 고지), 충돌 3분기 다이얼로그(share_world_conflict_* 문자열 소생), `ImportFileFormat` ZIP 판별 3분기, 원인별 오류 메시지. 미검증 목록의 "추가 누락 데이터"는 **전부 실재로 확인**되어 내보내기 v3으로 완결(사건 필드 정의·값, 값 라이브러리, 세계관/작품 이미지 추가 + 전역 이름 은행 과포함 축소). 상세·실기기 확인 절차는 remaining_work 1-8장·3-8장 |
-| ~~3~~ | ~~**통계 조용한 실패 일소**~~ | ~~S-7·S-8·S-9·S-19~~ | **처리 완료** — ① `FieldInsightResult.mergedFieldDefIds` 신설로 드릴다운이 카드가 합산한 (key,type) 그룹 전체를 기준 def config로 조회(S-7), ② `computeCrossAnalysis`가 사건 축과 대칭으로 `mergeCalculatedRows(…, computeAllCalculatedValues)` 수행(S-8), ③ `getEventsByFieldValue`·`computeEventSubgroupAnalysis` 신설 + 시트를 엔티티 인지형으로 일반화, 사건 행 탭은 전역 검색과 같은 `center_year` 규약으로 연표 이동(S-9), ④ `computeSubgroupAnalysis`가 머지 id 목록을 받고 CALCULATED 계산값을 합산(S-19). 빈 결과 무통보 return은 전부 사유 고지로 교체(교차표 빈 표·드릴다운 필드 소실·하위 그룹 대상 없음). 신규 JVM 테스트 19건. 상세·실기기 확인 절차는 remaining_work 1-9장·3-9장 |
-| ~~4~~ | ~~**통계 정합성**~~ | ~~S-14·S-15·S-16·S-17·S-18 (+B-31~B-35)~~ | **처리 완료** — ① `StatsFieldPolicy` 신설로 '통계에 포함'을 자동 집계 경로 7곳에 일관 적용(규칙: 자동 선택은 설정을 따르고 명시적 선택은 존중 — 규약 R-18), ② `ValueDistributions`로 분포 전량 반환 + 비율 분모 교정 + '기타 N종' 조각·행·드릴다운(R-19), ③ `NumericBinning`+`FieldValueMatchSpec`로 드릴다운을 라벨 대신 타입드 스펙으로(R-20), ④ `augmentedCharacterValues`·`formatStatsNumber`로 계산 필드 병합·서식 단일화(순위의 수식 재평가 분기 제거), ⑤ 순위 빈도를 `getFieldValues` 파싱으로 통일 + 별칭 접기(GRADE 포함) + 캐릭터당 1행 보장, ⑥ 해석기를 provider 가변 필드에서 스냅샷 파생으로(R-21 — 이것을 먼저 하지 않으면 별칭 케이스를 테스트로 고정할 수 없었다), ⑦ B-31 빈 상태 카드 유지·사유 표시(+어시스턴트가 유형 설정을 읽도록), B-32 오류 고지 일괄(취소 되던지기·sticky 소비). **레거시 필드 분석 화면은 통합하지 않았다** — 그 화면에만 있는 기능(필드 완성도·상태변화 수)이 있고 머지 축이 다르다(R-15). 규칙만 통일했다. 신규 JVM 테스트 44건. 상세·실기기 확인 절차는 remaining_work 1-10장·3-10장 |
-| ~~5~~ | ~~**수식 오류 가시화**~~ | ~~S-11~~ | **처리 완료** (두 번에 나눠 끝났다) — 전반부는 PR #99: 평가·서식이 **7곳**에 복제돼 NaN을 저마다 다르게 버리던 것을 `FormulaDisplay` 하나로(로케일 고정 + `오류` 표식). 후반부는 저장 시점 검증: **착수 전 실행 대조가 이 표의 요지를 정정했다** — "표시 계층만 손대면 된다"가 아니었다. 흔한 실수 여럿은 **NaN조차 내지 않는다**(`sqrt(4)`→4, `2 * pow(3,2)`→6, `field(a) & field(b)`→b값). 알아보지 못한 글자를 토큰화가 조용히 버리기 때문이라, 표시 계층에는 띄울 신호 자체가 없다. → 어휘 분석을 `FormulaLexer`로 떼어 **버려지는 구간을 목록에 남기고**, `FormulaValidator`가 저장 시점에 8종(괄호·자기참조·전이 순환·없는 키·키 앞뒤 공백·미지 함수·함수 표기 오류·미인식 잔여)을 고지한다(막지 않고 '그대로 저장' 유지). 인접 수리 3건: `evaluateRPN` 잔여 스택 → NaN, 사건 필드가 캐릭터 키 목록을 보던 것, 안내 문구에서 빠져 있던 `avg`. 신규 JVM 테스트 35건(`FormulaEvaluator`는 이번이 첫 테스트). 상세·실기기 확인 절차는 remaining_work 1-c장·3-11장 |
-| ~~6~~ | ~~**B-8 스트리밍 리더 배선**~~ | ~~S-10~~ | **처리 완료 (2026.07.29)** — `ImportSource` 접근면 추상화(POI 멤버 13개 실측) + DOM·스트리밍 두 구현. 호출부 5,700줄은 본문 무변경(로직 비분기가 diff로 증명된다). 임계값은 힙에서 역산하고 DOM 열기 OOM 시 스트리밍으로 폴백한다. 128MB 거부는 삭제 — 남은 상한은 디스크·zip-bomb 방어뿐. **착수 조사가 정정한 것 둘:** 리더가 `dateHint`를 못 박아 날짜 셀이 경로별로 갈릴 참이었고, `mergeCells`를 아예 읽지 않아 B-7이 막은 유실이 스트리밍에서 되살아날 참이었다. **재공격이 잡은 것 하나:** 빈 셀·빈 행을 버려 행의 '모양'(lastCellNum·행 존재)이 갈렸다 — 값 대조로는 안 잡히는 종류다. 신규 JVM 테스트 8건. 상세는 remaining_work 1-d장 |
-| ~~7~~ | ~~**초기화 완결**~~ | ~~S-13~~ | **처리 완료 (2026.07.29)** — 전수 감사 결과 살아남던 테이블은 문서가 지목한 3개가 아니라 **5개**였다(`trash_snapshots`·`operation_logs`·`character_list_presets`·`image_meta`·`image_tags`). `image_tags`는 CASCADE로 지워진다고 적혀 있었으나 **부모 `image_meta`가 초기화 목록에 없어 영원히 남았다** — CASCADE는 부모가 실제로 비워질 때만 성립한다. 범위를 `ResetPlan`(순수 선언)으로 옮기고 JVM 테스트 6건 + `tools/verify_reset_coverage.py`(엔티티·계획·호출부 3자 대조, 30건)로 잠갔다. 인접 발견: 폴더 왕복 지문 장부(`folder_roundtrip_prefs`)가 남아 재배치한 이미지가 '이미 내보낸 사본'으로 판정되던 것도 함께 수리. 확인 다이얼로그에 삭제 범위 명시. 상세는 remaining_work 1-d장 |
+| ~~1~~ | ~~**사건 입력 보호**~~ | ~~S-6 (+S-12)~~ | **처리 완료** — `EventFieldValueMerge`(커버 집합) + `replaceForFields` 공용화 + universeId 보존 폴백 + 보존 Toast·이력 고지 + `setValidatedPositiveButton` 재조립. 상세·실기기 확인 절차는 session_log 1-7장 · remaining_work 3-7장. 인접 발견: 통보-후-닫힘 입력 유실 잔여(B-28), CharacterViewModel 사건 CRUD 무통보 실패(B-29) 등재 |
+| ~~2~~ | ~~**월드패키지 완결**~~ | ~~S-5~~ | **처리 완료** — `WorldPackageImporter` 신설(manifest v1~v3 검증 → 전 엔트리 역직렬화 → 원자 트랜잭션 삽입 + old→new id 재배선 + code 충돌 재발급 고지), 충돌 3분기 다이얼로그(share_world_conflict_* 문자열 소생), `ImportFileFormat` ZIP 판별 3분기, 원인별 오류 메시지. 미검증 목록의 "추가 누락 데이터"는 **전부 실재로 확인**되어 내보내기 v3으로 완결(사건 필드 정의·값, 값 라이브러리, 세계관/작품 이미지 추가 + 전역 이름 은행 과포함 축소). 상세·실기기 확인 절차는 session_log 1-8장 · remaining_work 3-8장 |
+| ~~3~~ | ~~**통계 조용한 실패 일소**~~ | ~~S-7·S-8·S-9·S-19~~ | **처리 완료** — ① `FieldInsightResult.mergedFieldDefIds` 신설로 드릴다운이 카드가 합산한 (key,type) 그룹 전체를 기준 def config로 조회(S-7), ② `computeCrossAnalysis`가 사건 축과 대칭으로 `mergeCalculatedRows(…, computeAllCalculatedValues)` 수행(S-8), ③ `getEventsByFieldValue`·`computeEventSubgroupAnalysis` 신설 + 시트를 엔티티 인지형으로 일반화, 사건 행 탭은 전역 검색과 같은 `center_year` 규약으로 연표 이동(S-9), ④ `computeSubgroupAnalysis`가 머지 id 목록을 받고 CALCULATED 계산값을 합산(S-19). 빈 결과 무통보 return은 전부 사유 고지로 교체(교차표 빈 표·드릴다운 필드 소실·하위 그룹 대상 없음). 신규 JVM 테스트 19건. 상세·실기기 확인 절차는 session_log 1-9장 · remaining_work 3-9장 |
+| ~~4~~ | ~~**통계 정합성**~~ | ~~S-14·S-15·S-16·S-17·S-18 (+B-31~B-35)~~ | **처리 완료** — ① `StatsFieldPolicy` 신설로 '통계에 포함'을 자동 집계 경로 7곳에 일관 적용(규칙: 자동 선택은 설정을 따르고 명시적 선택은 존중 — 규약 R-18), ② `ValueDistributions`로 분포 전량 반환 + 비율 분모 교정 + '기타 N종' 조각·행·드릴다운(R-19), ③ `NumericBinning`+`FieldValueMatchSpec`로 드릴다운을 라벨 대신 타입드 스펙으로(R-20), ④ `augmentedCharacterValues`·`formatStatsNumber`로 계산 필드 병합·서식 단일화(순위의 수식 재평가 분기 제거), ⑤ 순위 빈도를 `getFieldValues` 파싱으로 통일 + 별칭 접기(GRADE 포함) + 캐릭터당 1행 보장, ⑥ 해석기를 provider 가변 필드에서 스냅샷 파생으로(R-21 — 이것을 먼저 하지 않으면 별칭 케이스를 테스트로 고정할 수 없었다), ⑦ B-31 빈 상태 카드 유지·사유 표시(+어시스턴트가 유형 설정을 읽도록), B-32 오류 고지 일괄(취소 되던지기·sticky 소비). **레거시 필드 분석 화면은 통합하지 않았다** — 그 화면에만 있는 기능(필드 완성도·상태변화 수)이 있고 머지 축이 다르다(R-15). 규칙만 통일했다. 신규 JVM 테스트 44건. 상세·실기기 확인 절차는 session_log 1-10장 · remaining_work 3-10장 |
+| ~~5~~ | ~~**수식 오류 가시화**~~ | ~~S-11~~ | **처리 완료** (두 번에 나눠 끝났다) — 전반부는 PR #99: 평가·서식이 **7곳**에 복제돼 NaN을 저마다 다르게 버리던 것을 `FormulaDisplay` 하나로(로케일 고정 + `오류` 표식). 후반부는 저장 시점 검증: **착수 전 실행 대조가 이 표의 요지를 정정했다** — "표시 계층만 손대면 된다"가 아니었다. 흔한 실수 여럿은 **NaN조차 내지 않는다**(`sqrt(4)`→4, `2 * pow(3,2)`→6, `field(a) & field(b)`→b값). 알아보지 못한 글자를 토큰화가 조용히 버리기 때문이라, 표시 계층에는 띄울 신호 자체가 없다. → 어휘 분석을 `FormulaLexer`로 떼어 **버려지는 구간을 목록에 남기고**, `FormulaValidator`가 저장 시점에 8종(괄호·자기참조·전이 순환·없는 키·키 앞뒤 공백·미지 함수·함수 표기 오류·미인식 잔여)을 고지한다(막지 않고 '그대로 저장' 유지). 인접 수리 3건: `evaluateRPN` 잔여 스택 → NaN, 사건 필드가 캐릭터 키 목록을 보던 것, 안내 문구에서 빠져 있던 `avg`. 신규 JVM 테스트 35건(`FormulaEvaluator`는 이번이 첫 테스트). 상세·실기기 확인 절차는 session_log 1-c장 · remaining_work 3-11장 |
+| ~~6~~ | ~~**B-8 스트리밍 리더 배선**~~ | ~~S-10~~ | **처리 완료 (2026.07.29)** — `ImportSource` 접근면 추상화(POI 멤버 13개 실측) + DOM·스트리밍 두 구현. 호출부 5,700줄은 본문 무변경(로직 비분기가 diff로 증명된다). 임계값은 힙에서 역산하고 DOM 열기 OOM 시 스트리밍으로 폴백한다. 128MB 거부는 삭제 — 남은 상한은 디스크·zip-bomb 방어뿐. **착수 조사가 정정한 것 둘:** 리더가 `dateHint`를 못 박아 날짜 셀이 경로별로 갈릴 참이었고, `mergeCells`를 아예 읽지 않아 B-7이 막은 유실이 스트리밍에서 되살아날 참이었다. **재공격이 잡은 것 하나:** 빈 셀·빈 행을 버려 행의 '모양'(lastCellNum·행 존재)이 갈렸다 — 값 대조로는 안 잡히는 종류다. 신규 JVM 테스트 8건. 상세는 session_log 1-d장 |
+| ~~7~~ | ~~**초기화 완결**~~ | ~~S-13~~ | **처리 완료 (2026.07.29)** — 전수 감사 결과 살아남던 테이블은 문서가 지목한 3개가 아니라 **5개**였다(`trash_snapshots`·`operation_logs`·`character_list_presets`·`image_meta`·`image_tags`). `image_tags`는 CASCADE로 지워진다고 적혀 있었으나 **부모 `image_meta`가 초기화 목록에 없어 영원히 남았다** — CASCADE는 부모가 실제로 비워질 때만 성립한다. 범위를 `ResetPlan`(순수 선언)으로 옮기고 JVM 테스트 6건 + `tools/verify_reset_coverage.py`(엔티티·계획·호출부 3자 대조, 30건)로 잠갔다. 인접 발견: 폴더 왕복 지문 장부(`folder_roundtrip_prefs`)가 남아 재배치한 이미지가 '이미 내보낸 사본'으로 판정되던 것도 함께 수리. 확인 다이얼로그에 삭제 범위 명시. 상세는 session_log 1-d장 |
 
 미검증 57건(5장)은 이 로드맵과 별개로, 다음 감사 라인이 항목당 실재 확인 → 확정 시 이 표에 편입한다.
 특히 **medium 조용한 실패 계열**(연표 재정렬 무효·회전 시 콜백 유실·프리셋 무통보 파괴·검색 필터 시트)은

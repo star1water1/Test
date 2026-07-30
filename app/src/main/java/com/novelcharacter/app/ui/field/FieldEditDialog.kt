@@ -856,7 +856,7 @@ class FieldEditDialog : DialogFragment() {
             BodyAnalysisConfig.INSIGHT_FRAME_SIZE to "프레임 사이즈",
             BodyAnalysisConfig.INSIGHT_PROPORTION to "볼륨/곡선 지수",
             BodyAnalysisConfig.INSIGHT_BWH_DIFF to "B/W/H 차이",
-            BodyAnalysisConfig.INSIGHT_NORMALIZED_RATIO to "정규화 비율",
+            BodyAnalysisConfig.INSIGHT_NORMALIZED_RATIO to getString(R.string.body_normalized_ratio_label),
             BodyAnalysisConfig.INSIGHT_BMI to "BMI",
             BodyAnalysisConfig.INSIGHT_WHR to "WHR",
             BodyAnalysisConfig.INSIGHT_HEIGHT_RELATIVE to "키 대비 비율",

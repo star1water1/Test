@@ -1,5 +1,0 @@
-TONE-YO|strings.xml|ai_guide_openai
-TONE-YO|strings.xml|backup_image_notice_title
-TONE-YO|strings.xml|batch_move_removed_warning
-TONE-YO|strings.xml|image_manager_recompress_undo_done
-TONE-YO|strings.xml|image_manager_recompress_undo_failed

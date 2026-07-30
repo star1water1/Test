@@ -158,7 +158,7 @@ warmup 2회 후 5회 측정의 중앙값. 출처: `usage_reality_check_2026-07.m
 자기모순이었다 — 앱이 만든 백업인데 앱이 되읽지 못했다. 상한 자체를 없앴고, 파싱 메모리는
 이제 파일 크기가 아니라 **가장 큰 시트 하나**에 비례한다.
 
-- **무엇이 정정됐는가**(dateHint·mergeCells·행의 '모양') → `remaining_work` **1-d장**이 원문이다.
+- **무엇이 정정됐는가**(dateHint·mergeCells·행의 '모양') → `session_log` **1-d장**이 원문이다.
 - **왜 그 수단이었는가**(POI 접근면 13개 → `ImportSource` 이중 구현) →
   `docs/excel_streaming_import_2026-07.md` 헤더.
 
