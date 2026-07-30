@@ -53,6 +53,17 @@ interface EventFieldValueDao {
     @Query("SELECT * FROM event_field_values WHERE eventId = :eventId AND fieldDefinitionId = :fieldDefId")
     suspend fun getValue(eventId: Long, fieldDefId: Long): EventFieldValue?
 
+    /**
+     * 세계관 삭제 영향 고지용 — 해당 세계관 필드 정의에 걸린 사건 필드값 총수.
+     * 캐릭터판([CharacterFieldValueDao.countValuesByUniverse])과 짝이다. 삭제는 FK CASCADE로
+     * 두 종류를 함께 지우므로, 한쪽만 세면 고지가 실제보다 적은 수를 말한다.
+     */
+    @Query("""
+        SELECT COUNT(*) FROM event_field_values
+        WHERE fieldDefinitionId IN (SELECT id FROM field_definitions WHERE universeId = :universeId)
+    """)
+    suspend fun countValuesByUniverse(universeId: Long): Int
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(values: List<EventFieldValue>)
 

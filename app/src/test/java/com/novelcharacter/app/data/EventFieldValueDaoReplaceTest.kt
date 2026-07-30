@@ -31,6 +31,10 @@ class EventFieldValueDaoReplaceTest {
             throw UnsupportedOperationException("이 테스트 범위 아님")
         override suspend fun getValue(eventId: Long, fieldDefId: Long) =
             rows.firstOrNull { it.eventId == eventId && it.fieldDefinitionId == fieldDefId }
+        // 세계관 경유 집계는 field_definitions 조인이라 이 Fake의 모사 범위 밖이다 —
+        // 쓰지 않는 자리에서 0을 돌려주면 '세어 봤더니 없더라'와 구별되지 않으므로 던진다.
+        override suspend fun countValuesByUniverse(universeId: Long) =
+            throw UnsupportedOperationException("이 테스트 범위 아님")
 
         override suspend fun insertAll(values: List<EventFieldValue>) {
             for (v in values) {
