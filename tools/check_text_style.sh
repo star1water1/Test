@@ -41,7 +41,19 @@ app/src/main/java/com/novelcharacter/app/data/repository/EventFieldValueMerge.kt
 app/src/main/java/com/novelcharacter/app/data/model/EntitySnapshots.kt
 app/src/main/java/com/novelcharacter/app/data/maintenance/SystemMaintenanceService.kt
 app/src/main/java/com/novelcharacter/app/ui/stats/StatsDataProvider.kt
+app/src/main/java/com/novelcharacter/app/ui/field/FieldEditDialog.kt
 "
+
+# 등재 누락을 사람 기억에 맡기지 않는 법 — 전개 5단계에서 실제로 한 건 더 나왔다
+# (`FieldEditDialog`의 측정값 토글 라벨 13개가 코드 하드코딩이라 '정규화 비율'이 표1 위반인
+# 채로 검사·기준선 양쪽에 안 잡혔다. 파일럿 화면이었는데도 그랬다).
+# 아래를 돌리면 미등재 파일의 위반 후보가 나온다 — 새 문구를 넣은 세션은 한 번 돌려 볼 것:
+#   find app/src/main -name '*.kt' | while read f; do
+#     grep -qxF "$f" <<<"$KT_USER_FACING" && continue
+#     grep -vE '^[[:space:]]*(//|\*|/\*)' "$f" | grep -oE '"[^"]*[가-힣][^"]*"' | ...규칙 적용...
+#   done
+# 근본 해결은 코드에서 한국어 리터럴을 없애는 것이다(strings.xml로 옮기면 자동으로 검사된다) —
+# 위 위반도 그렇게 고쳤다: 읽기 화면이 이미 쓰던 `body_normalized_ratio_label`을 함께 쓰게 했다.
 
 # ── 규칙 (가이드 4·6장의 기계 검출 가능분) ──
 # R1 TONE-YO   해요체 종결 금지 (합니다체 통일). '~세요'(하세요/보세요/주세요)는 허용.
@@ -105,7 +117,10 @@ violations() {
 CURRENT=$(violations | sort -u)
 
 if [ "${1:-}" = "--rebaseline" ]; then
-  echo "$CURRENT" > "$BASELINE"
+  # 위반이 없으면 **정말로 빈 파일**을 쓴다(`echo ""`는 빈 줄 하나를 남긴다).
+  # 전개 5단계로 기준선이 0건에 도달했고, 그때부터 이 파일의 크기 자체가 증명이다 —
+  # 0바이트 = 위반 없음. 빈 줄 하나가 들어 있으면 그 증명을 눈으로 확인할 수 없다.
+  if [ -n "$CURRENT" ]; then echo "$CURRENT" > "$BASELINE"; else : > "$BASELINE"; fi
   echo "기준선 갱신: $(echo "$CURRENT" | grep -c .)건"
   exit 0
 fi
