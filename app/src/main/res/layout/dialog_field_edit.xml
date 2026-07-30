@@ -272,22 +272,20 @@
                     android:background="?attr/selectableItemBackground"
                     android:layout_marginBottom="8dp" />
 
-                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginBottom="4dp">
-                    <TextView android:layout_width="40dp" android:layout_height="wrap_content" android:text="C:" android:textAppearance="@style/TextAppearance.App.Body" />
-                    <com.google.android.material.textfield.TextInputEditText android:id="@+id/editGradeC" android:layout_width="80dp" android:layout_height="40dp" android:inputType="numberDecimal|numberSigned" android:text="0.5" android:textAppearance="@style/TextAppearance.App.Body" />
-                </LinearLayout>
-                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginBottom="4dp">
-                    <TextView android:layout_width="40dp" android:layout_height="wrap_content" android:text="B:" android:textAppearance="@style/TextAppearance.App.Body" />
-                    <com.google.android.material.textfield.TextInputEditText android:id="@+id/editGradeB" android:layout_width="80dp" android:layout_height="40dp" android:inputType="numberDecimal|numberSigned" android:text="1" android:textAppearance="@style/TextAppearance.App.Body" />
-                </LinearLayout>
-                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginBottom="4dp">
-                    <TextView android:layout_width="40dp" android:layout_height="wrap_content" android:text="A:" android:textAppearance="@style/TextAppearance.App.Body" />
-                    <com.google.android.material.textfield.TextInputEditText android:id="@+id/editGradeA" android:layout_width="80dp" android:layout_height="40dp" android:inputType="numberDecimal|numberSigned" android:text="2" android:textAppearance="@style/TextAppearance.App.Body" />
-                </LinearLayout>
-                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginBottom="4dp">
-                    <TextView android:layout_width="40dp" android:layout_height="wrap_content" android:text="S:" android:textAppearance="@style/TextAppearance.App.Body" />
-                    <com.google.android.material.textfield.TextInputEditText android:id="@+id/editGradeS" android:layout_width="80dp" android:layout_height="40dp" android:inputType="numberDecimal|numberSigned" android:text="3" android:textAppearance="@style/TextAppearance.App.Body" />
-                </LinearLayout>
+                <!-- B-69: 등급 행은 동적으로 추가·삭제한다 (addGradeRow — 구간·칸 행과 같은 방식).
+                     종전의 C·B·A·S 4칸 고정은 config가 담을 수 있는 임의 등급을 화면에서 숨겼다. -->
+                <LinearLayout
+                    android:id="@+id/gradeRowsContainer"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnAddGrade"
+                    style="@style/Widget.App.Button.Tonal"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/label_add_grade" />
 
                 <com.google.android.material.switchmaterial.SwitchMaterial
                     android:id="@+id/switchAllowNegative"

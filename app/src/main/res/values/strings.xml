@@ -140,6 +140,14 @@
     <string name="hint_select_example">예: 남,여,?</string>
     <string name="label_grade_mapping">등급 값 (통계용 숫자)</string>
     <string name="label_allow_negative">음수 허용 (±등급)</string>
+    <string name="label_add_grade">등급 추가</string>
+    <string name="hint_grade_label">등급 이름</string>
+    <string name="hint_grade_value">수치</string>
+    <string name="grade_error_blank_label">수치 \'%1$s\'의 등급 이름이 비어 있습니다. 이름을 채우거나 행을 삭제하세요.</string>
+    <string name="grade_error_bad_number">등급 \'%1$s\'의 수치 \'%2$s\'을(를) 숫자로 해석할 수 없습니다. 숫자로 고쳐 입력하세요.</string>
+    <string name="grade_error_duplicate">등급 \'%1$s\'이(가) 두 번 있습니다. 등급 이름은 겹칠 수 없습니다.</string>
+    <string name="grade_error_sign_prefix">등급 이름은 -나 +로 시작할 수 없습니다: \'%1$s\'. 음수 등급은 \'음수 허용\'을 켜면 입력 시 ±로 표현됩니다.</string>
+    <string name="grade_error_empty">등급을 1개 이상 입력하세요.</string>
     <string name="label_formula">계산 수식</string>
     <string name="hint_formula_example">예: field(\'aura\') + field(\'body\')</string>
     <string name="text_formula_help">사용 가능: field(\'키\'), sum_all_grades(), %1$s, +, -, *, /</string>
@@ -2611,7 +2619,7 @@
     <string name="help_initial_values_title">값 사전 등록</string>
     <string name="help_initial_values_body">필드를 만들면서 쓸 값들을 미리 넣어 둡니다. 쉼표로 구분해 적으면(예: 빨강, 파랑, 검정) 값 목록에 바로 등록되어 자동완성과 \'제한\' 모드에 즉시 쓰입니다.</string>
     <string name="help_grade_values_title">등급 값</string>
-    <string name="help_grade_values_body">등급(C·B·A·S)에 숫자를 매겨 통계에서 평균·비교가 가능하게 합니다. 숫자는 등급 간 간격이라, S=3·A=2처럼 차이를 크게 두면 통계에서 등급 차이가 크게 반영됩니다.</string>
+    <string name="help_grade_values_body">등급(C·B·A·S)에 숫자를 매겨 통계에서 평균·비교가 가능하게 합니다. 숫자는 등급 간 간격이라, S=3·A=2처럼 차이를 크게 두면 통계에서 등급 차이가 크게 반영됩니다. 등급은 \'등급 추가\'로 자유롭게 늘리거나 지울 수 있습니다.</string>
 
     <!-- 어시스턴트 — 라이브러리 품질 카드 -->
     <string name="assistant_library_quality_title">\'%1$s\' 필드에 유사 표기 값</string>

@@ -128,6 +128,7 @@ $MAIN/util/FormulaEvaluator.kt
 $MAIN/util/FormulaValidator.kt
 $MAIN/util/FormulaDisplay.kt
 $MAIN/util/GradeValueResolver.kt
+$MAIN/util/GradeTable.kt
 $MAIN/ui/stats/StatsDataProvider.kt
 $MAIN/util/UnassignedFilter.kt
 $MAIN/data/model/RandomConfig.kt
@@ -174,6 +175,7 @@ $TEST/excel/EntityFieldHeadersTest.kt
 $TEST/excel/CharacterHeaderIdentityTest.kt
 $TEST/excel/CharacterFieldValueOverflowTest.kt
 $TEST/excel/AllCharactersSheetTest.kt
+$TEST/util/GradeTableTest.kt
 $TEST/excel/PresetTemplateMatcherTest.kt
 $TEST/excel/SheetValueConventionsTest.kt
 $TEST/excel/FactionRefResolverTest.kt
