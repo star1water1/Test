@@ -41,7 +41,14 @@ object HelpDialog {
          * 길이를 맞추려고 쪼개면 "폴더에 넣으면 무슨 일이 일어나는가"라는 한 질문이 여러 창으로
          * 흩어진다. 한 번 읽고 마는 종류라 한 자리에 모은다(가이드 9-2 H13).
          */
-        ORGANIZE_FOLDER(R.string.help_organize_folder_title, R.string.help_organize_folder_body)
+        ORGANIZE_FOLDER(R.string.help_organize_folder_title, R.string.help_organize_folder_body),
+
+        /**
+         * 필드 데이터 라이브러리 — H13과 같은 이유로 본문이 길다(스위치 하나가 아니라 화면 전체).
+         * 이 화면은 "있는 줄 몰랐다"는 회신이 나온 자리라(P4·U-5), 도착한 뒤의 설명이
+         * 상시 노출 목적문 한 줄로는 모자란다. 초안·승인 근거는 가이드 9-2 H14.
+         */
+        FIELD_LIBRARY(R.string.help_field_library_title, R.string.help_field_library_body)
     }
 
     /** 앱 도움말 표시 — `?` 아이콘의 진입점. */
