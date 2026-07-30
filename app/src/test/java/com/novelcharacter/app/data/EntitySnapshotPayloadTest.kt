@@ -13,6 +13,8 @@ import com.novelcharacter.app.data.model.FactionRelationship
 import com.novelcharacter.app.data.model.FactionSnapshot
 import com.novelcharacter.app.data.model.FieldDefRef
 import com.novelcharacter.app.data.model.FieldDefinition
+import com.novelcharacter.app.data.model.GradeSystem
+import com.novelcharacter.app.data.model.GradeSystemSnapshot
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.NovelSnapshot
 import com.novelcharacter.app.data.model.SnapshotRefs
@@ -315,6 +317,72 @@ class EntitySnapshotPayloadTest {
         assertNull(old.refs)
         assertNull(old.change.code)
         assertEquals(emptyMap<String, String>(), old.refs?.characters.orEmpty())
+    }
+
+    @Test
+    fun `세계관 스냅샷은 등급 체계를 담고 구버전 payload에서는 null이다`() {
+        val original = UniverseSnapshot(
+            universe = Universe(id = 1, name = "U", code = "UNI-1"),
+            gradeSystems = listOf(
+                GradeSystem(id = 3, universeId = 1, name = "능력 등급",
+                    gradesJson = """{"C":0.5,"S":3}""", code = "GS-1")
+            )
+        )
+        val restored = gson.fromJson(gson.toJson(original), UniverseSnapshot::class.java)
+        assertEquals("능력 등급", restored.gradeSystems!!.single().name)
+        assertEquals("GS-1", restored.gradeSystems!!.single().code)
+
+        // U-1 이전 payload에는 이 키가 없다 — null이 주입되고 읽는 쪽이 orEmpty로 받는다(R-2).
+        val old = gson.fromJson("""{"universe": {"id": 1, "name": "U", "description": "",
+            "createdAt": 0, "code": "UNI-1", "displayOrder": 0, "borderColor": "",
+            "borderWidthDp": 1.5, "imagePaths": "[]", "imageMode": "none",
+            "customRelationshipTypes": "", "customRelationshipColors": ""}}""",
+            UniverseSnapshot::class.java)
+        assertNull(old.gradeSystems)
+        assertEquals(emptyList<GradeSystem>(), old.gradeSystems.orEmpty())
+    }
+
+    @Test
+    fun `등급 체계 스냅샷은 참조 필드 자연키를 담고 구버전 키 없음에도 견딘다`() {
+        val original = GradeSystemSnapshot(
+            gradeSystem = GradeSystem(id = 3, universeId = 1, name = "능력 등급",
+                gradesJson = """{"C":0.5,"S":3}""", code = "GS-1"),
+            referencingFields = listOf(
+                FieldDefRef(universeCode = "UNI-1", entityType = "character", key = "mana")
+            ),
+            universeCode = "UNI-1",
+            refs = EntityRefs(universeCode = "UNI-1")
+        )
+        val restored = gson.fromJson(gson.toJson(original), GradeSystemSnapshot::class.java)
+        assertEquals("GS-1", restored.gradeSystem.code)
+        assertEquals("mana", restored.referencingFields!!.single().key)
+        assertEquals("UNI-1", restored.universeCode)
+
+        // 필수 키만 있는 payload — 목록·참조가 null이어도 역직렬화는 되어야 한다(R-2).
+        val bare = """{"gradeSystem": {"id": 3, "universeId": 1, "name": "능력 등급",
+                       "gradesJson": "{}", "displayOrder": 0, "createdAt": 0, "code": "GS-1"}}"""
+        val old = gson.fromJson(bare, GradeSystemSnapshot::class.java)
+        assertNull(old.referencingFields)
+        assertNull(old.universeCode)
+        assertEquals(emptyList<FieldDefRef>(), old.referencingFields.orEmpty())
+    }
+
+    @Test
+    fun `등급 체계는 세계관 다음 - 하위 엔티티 이전에 복원된다`() {
+        // 체계는 세계관에만 매달린다. 세계관보다 먼저 오면 붙을 자리가 없고,
+        // 필드 정의 config가 code로 참조하므로 정의 계층 안에서는 이른 쪽이 안전하다.
+        assertTrue(
+            TrashSnapshot.restorePriority(TrashSnapshot.TYPE_GRADE_SYSTEM) >
+                TrashSnapshot.restorePriority(TrashSnapshot.TYPE_UNIVERSE)
+        )
+        assertTrue(
+            TrashSnapshot.restorePriority(TrashSnapshot.TYPE_GRADE_SYSTEM) >
+                TrashSnapshot.restorePriority(TrashSnapshot.TYPE_UNIVERSE_DATA)
+        )
+        assertTrue(
+            TrashSnapshot.restorePriority(TrashSnapshot.TYPE_NOVEL) >
+                TrashSnapshot.restorePriority(TrashSnapshot.TYPE_GRADE_SYSTEM)
+        )
     }
 
     @Test

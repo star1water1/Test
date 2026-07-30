@@ -38,6 +38,8 @@ import com.novelcharacter.app.data.dao.EventFieldValueDao
 import com.novelcharacter.app.data.dao.NovelFieldValueDao
 import com.novelcharacter.app.data.model.EventFieldValue
 import com.novelcharacter.app.data.model.NovelFieldValue
+import com.novelcharacter.app.data.dao.GradeSystemDao
+import com.novelcharacter.app.data.model.GradeSystem
 import com.novelcharacter.app.data.dao.OperationLogDao
 import com.novelcharacter.app.data.model.OperationLog
 import com.novelcharacter.app.data.dao.CharacterListPresetDao
@@ -94,9 +96,10 @@ import com.novelcharacter.app.data.model.Universe
         ImageMeta::class,
         ImageTag::class,
         FieldValueEntry::class,
-        NovelFieldValue::class
+        NovelFieldValue::class,
+        GradeSystem::class
     ],
-    version = 45,
+    version = 46,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -125,6 +128,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun imageMetaDao(): ImageMetaDao
     abstract fun imageTagDao(): ImageTagDao
     abstract fun fieldValueEntryDao(): FieldValueEntryDao
+    abstract fun gradeSystemDao(): GradeSystemDao
 
     companion object {
         private const val TAG = "AppDatabase"
@@ -1809,6 +1813,35 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_45_46 = object : Migration(45, 46) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "Migrating database from version 45 to 46 — 세계관 등급 체계(U-1)")
+
+                // 등급 체계 테이블. 컬럼·인덱스 이름은 Room이 GradeSystem 엔티티에서 생성하는
+                // 것과 정확히 맞춘다(어긋나면 Room이 시작 시 스키마 불일치로 거부한다).
+                //
+                // 기존 행을 건드리지 않는 순수 추가다 — 기존 GRADE 필드는 config의 실효 표
+                // (`grades`)로 그대로 동작하고, 체계 참조는 사용자가 만들 때부터 생긴다.
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `grade_systems` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `universeId` INTEGER NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `gradesJson` TEXT NOT NULL,
+                        `displayOrder` INTEGER NOT NULL,
+                        `createdAt` INTEGER NOT NULL,
+                        `code` TEXT NOT NULL,
+                        FOREIGN KEY(`universeId`) REFERENCES `universes`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                """)
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_grade_systems_universeId` ON `grade_systems`(`universeId`)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_grade_systems_universeId_name` ON `grade_systems`(`universeId`, `name`)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_grade_systems_code` ON `grade_systems`(`code`)")
+
+                Log.i(TAG, "Migration from version 45 to 46 completed successfully")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -1816,7 +1849,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "novel_character_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46)
                     .addCallback(SeedCallback(context.applicationContext))
                     .build()
                     .also { INSTANCE = it }

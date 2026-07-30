@@ -109,7 +109,7 @@ class TrashFragment : Fragment() {
             preview?.blocker?.let { blocker ->
                 MaterialAlertDialogBuilder(requireContext())
                     .setTitle(R.string.trash_restore_blocked_title)
-                    .setMessage(blockerMessage(blocker))
+                    .setMessage(blockerMessage(blocker, preview.entityType))
                     .setPositiveButton(R.string.confirm, null)
                     .show()
                 return@launch
@@ -160,8 +160,11 @@ class TrashFragment : Fragment() {
         }
     }
 
-    private fun blockerMessage(blocker: TrashRepository.RestoreBlocker): String = when (blocker) {
-        TrashRepository.RestoreBlocker.MISSING_UNIVERSE -> getString(R.string.trash_restore_blocked_universe)
+    private fun blockerMessage(blocker: TrashRepository.RestoreBlocker, entityType: String): String = when (blocker) {
+        // 같은 사유라도 주어가 다르다 — 세력 문구를 등급 체계에 그대로 쓰면 사실과 다른 안내가 된다.
+        TrashRepository.RestoreBlocker.MISSING_UNIVERSE ->
+            if (entityType == TrashSnapshot.TYPE_GRADE_SYSTEM) getString(R.string.trash_restore_blocked_universe_grade_system)
+            else getString(R.string.trash_restore_blocked_universe)
         TrashRepository.RestoreBlocker.MISSING_CHARACTER -> getString(R.string.trash_restore_blocked_character)
         TrashRepository.RestoreBlocker.ALREADY_EXISTS -> getString(R.string.trash_restore_blocked_exists)
     }
@@ -208,6 +211,12 @@ class TrashFragment : Fragment() {
         }
         if (losses.fieldDefinitions > 0) {
             details.add(getString(R.string.trash_skip_field_definitions, losses.fieldDefinitions))
+        }
+        if (losses.gradeSystems > 0) {
+            details.add(getString(R.string.trash_skip_grade_systems, losses.gradeSystems))
+        }
+        if (losses.gradeSystemLinks > 0) {
+            details.add(getString(R.string.trash_skip_grade_system_links, losses.gradeSystemLinks))
         }
         if (losses.fieldValueEntries > 0) {
             details.add(getString(R.string.trash_skip_field_value_entries, losses.fieldValueEntries))
@@ -608,6 +617,7 @@ class TrashFragment : Fragment() {
             TrashSnapshot.TYPE_FACTION -> context.getString(R.string.trash_type_faction)
             TrashSnapshot.TYPE_EVENT -> context.getString(R.string.trash_type_event)
             TrashSnapshot.TYPE_STATE_CHANGE -> context.getString(R.string.trash_type_state_change)
+            TrashSnapshot.TYPE_GRADE_SYSTEM -> context.getString(R.string.trash_type_grade_system)
             else -> entityType
         }
 

@@ -100,6 +100,9 @@ data class ImportResult(
     var updatedNovels: Int = 0,
     var newFields: Int = 0,
     var updatedFields: Int = 0,
+    var newGradeSystems: Int = 0,
+    var updatedGradeSystems: Int = 0,
+    var deletedGradeSystems: Int = 0,
     var newCharacters: Int = 0,
     var updatedCharacters: Int = 0,
     var newEvents: Int = 0,
@@ -244,6 +247,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private val matchedFactionRelationshipIds = mutableSetOf<Long>()
     // OVERWRITE에서 백업과 매칭된 필드 정의 id — 사전 deleteAll 대신 잔여분만 정리하기 위한 추적
     private val matchedFieldDefinitionIds = mutableSetOf<Long>()
+    // 동상 — 등급 체계 (U-1)
+    private val matchedGradeSystemIds = mutableSetOf<Long>()
 
     // Phase 1에서 FK 참조를 deferred 처리 (코드 기반 해석)
     private val deferredUniverseImageCharCodes = mutableMapOf<Long, String>()  // universeId → charCode
@@ -445,6 +450,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             matchedFactionMembershipIds.clear()
             matchedFactionRelationshipIds.clear()
             matchedFieldDefinitionIds.clear()
+            matchedGradeSystemIds.clear()
             pendingAutoRelationMemberships.clear()
 
             // Phase 1: Schema definitions (universes, novels, field definitions)
@@ -455,10 +461,17 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             universeCodeAliases.clear()
             if (effectiveOptions.universes) importUniverses(workbook, result, onProgress, totalRows)
             if (effectiveOptions.fieldDefinitions) {
+                // 등급 체계를 **필드 정의보다 먼저** — '필드 정의' 시트의 '등급체계' 열이 여기서
+                // 만든 체계를 찾아야 한다. 뒤에 두면 신규 기기 복원(빈 DB)에서 같은 파일 안에
+                // 체계가 실려 있는데도 참조가 전부 독자 표로 강등된다(확-3 "순서가 열보다 위험하다").
+                importGradeSystems(workbook, result, onProgress, totalRows)
                 importFieldDefinitions(workbook, result, onProgress, totalRows)
                 // OVERWRITE: 사전 deleteAll 대신 매칭 후 잔여 정의만 정리 — 매칭된 정의는 id가 보존되어
                 // 캐릭터·사건 필드값과 값 라이브러리가 FK CASCADE로 전멸하지 않는다 (위 삭제 블록 주석 참조)
-                if (strategy == ImportStrategy.OVERWRITE) pruneUnmatchedFieldDefinitions(workbook, result)
+                if (strategy == ImportStrategy.OVERWRITE) {
+                    pruneUnmatchedFieldDefinitions(workbook, result)
+                    pruneUnmatchedGradeSystems(workbook, result)
+                }
                 importFieldValueLibrary(workbook, result, onProgress, totalRows)
             }
             // **필드 정의 다음에 작품을 가져온다**(확-3). 작품 시트의 '필드:' 열은 정의를 찾아야
@@ -652,6 +665,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         if (options.universes) categories.add(analyzeUniverses(workbook, onProgress, totalRows))
         if (options.novels) categories.add(analyzeNovels(workbook, onProgress, totalRows))
         if (options.fieldDefinitions) {
+            categories.add(analyzeGradeSystems(workbook, onProgress, totalRows))
             categories.add(analyzeFieldDefinitions(workbook, onProgress, totalRows))
             categories.add(analyzeFieldValueLibrary(workbook, onProgress, totalRows))
         }
@@ -2140,6 +2154,233 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     // ── 필드 정의 가져오기 ──
 
+    // ── 등급 체계 가져오기 (U-1 — 필드 정의 직전: '등급체계' 열이 여기서 만든 체계를 찾는다) ──
+
+    private suspend fun analyzeGradeSystems(workbook: Workbook, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
+        val spec = gradeSystemSpec()
+        val label = "등급 체계"
+        val existingTotal = db.gradeSystemDao().getAllList().size
+        val sheet = workbook.getSheet(spec.sheetName)
+        if (sheet == null || sheet.lastRowNum < 1) return CategoryAnalysis("gradeSystems", label, 0, 0, 0, 0, existingTotal)
+        val headerRow = sheet.getRow(0) ?: return CategoryAnalysis("gradeSystems", label, 0, 0, 0, 0, existingTotal)
+
+        var newCount = 0; var updateCount = 0; var unchangedCount = 0
+        val groups = collectGradeSystemRows(sheet, headerRow, result = null)
+        for (group in groups) {
+            val existing = resolveGradeSystem(group)
+            when {
+                existing == null -> newCount++
+                existing.name != group.name ||
+                    com.novelcharacter.app.data.model.GradeSystemRef.gradesFromJson(existing.gradesJson) !=
+                        com.novelcharacter.app.data.model.GradeSystemRef.gradesFromJson(group.gradesJson()) -> updateCount++
+                else -> unchangedCount++
+            }
+        }
+        reportProgress(onProgress, "등급 체계 분석", sheet.lastRowNum, totalRows)
+        return CategoryAnalysis("gradeSystems", label, groups.size, newCount, updateCount, unchangedCount, existingTotal)
+    }
+
+    /** 시트 한 무리 = 체계 하나. 행은 (라벨, 수치 원문)으로 모으고 검증은 GradeTable이 한다. */
+    private class GradeSystemGroup(
+        val universeId: Long,
+        val universeName: String,
+        val name: String,
+        val code: String,
+        val firstRowNum: Int
+    ) {
+        val rows = mutableListOf<Pair<String, String>>()
+        var built: com.novelcharacter.app.util.GradeTable.Outcome? = null
+        fun gradesJson(): String {
+            val outcome = built ?: com.novelcharacter.app.util.GradeTable.build(rows).also { built = it }
+            return com.novelcharacter.app.data.model.GradeSystemRef.gradesToJson(outcome.grades)
+        }
+    }
+
+    /**
+     * 시트를 (세계관, 코드|체계명) 무리로 접는다. 세계관을 못 찾는 행은 건너뛰고 [result]에
+     * 보고한다(분석 경로는 result가 null이라 개수만 영향을 받는다 — 가져오기와 같은 판정).
+     */
+    private suspend fun collectGradeSystemRows(
+        sheet: Sheet,
+        headerRow: Row,
+        result: ImportResult?
+    ): List<GradeSystemGroup> {
+        val cols = resolveHeaderColumns(headerRow)
+        val universeColIndex = cols["세계관"] ?: 0
+        val nameColIndex = cols["체계명"] ?: 1
+        val labelColIndex = cols["등급"] ?: 2
+        val valueColIndex = cols["기본숫자"] ?: 3
+        val universeCodeColIndex = cols["세계관코드"] ?: -1
+        val codeColIndex = cols["코드"] ?: -1
+
+        val groups = LinkedHashMap<String, GradeSystemGroup>()
+        for (i in 1..sheet.lastRowNum) {
+            val row = sheet.getRow(i) ?: continue
+            val universeName = getCellString(row, universeColIndex)
+            val systemName = getCellString(row, nameColIndex)
+            if (universeName.isBlank() && systemName.isBlank()) continue
+            if (universeName.isBlank() || systemName.isBlank()) {
+                result?.let {
+                    it.skippedRows++
+                    it.errors.add("등급 체계 행 $i: 세계관·체계명은 필수입니다")
+                }
+                continue
+            }
+            val universeCode = if (universeCodeColIndex >= 0) getCellString(row, universeCodeColIndex) else ""
+            val universe = (if (universeCode.isNotBlank()) db.universeDao().getUniverseByCode(universeCode) else null)
+                ?: db.universeDao().getUniverseByName(universeName)
+            if (universe == null) {
+                result?.let {
+                    it.skippedRows++
+                    it.errors.add("등급 체계 행 $i: 세계관 '${universeName}'을(를) 찾을 수 없음")
+                }
+                continue
+            }
+            val code = if (codeColIndex >= 0) getCellString(row, codeColIndex) else ""
+            // 무리 키는 코드 우선, 없으면 (세계관, 체계명) — 다른 시트의 매칭 규약과 같다.
+            val key = if (code.isNotBlank()) "code:$code" else "name:${universe.id}:$systemName"
+            val group = groups.getOrPut(key) {
+                GradeSystemGroup(universe.id, universe.name, systemName, code, i)
+            }
+            group.rows.add(getCellString(row, labelColIndex) to getCellString(row, valueColIndex))
+        }
+        return groups.values.toList()
+    }
+
+    /** 무리 → 기존 체계. 코드 우선(같은 세계관일 때만), 다음 (세계관, 이름). */
+    private suspend fun resolveGradeSystem(group: GradeSystemGroup): com.novelcharacter.app.data.model.GradeSystem? {
+        if (group.code.isNotBlank()) {
+            val byCode = db.gradeSystemDao().getByCode(group.code)
+            // 코드가 다른 세계관의 체계를 가리키면 무시하고 이름 매칭으로 넘어간다 — 체계의
+            // 세계관 소속은 조용히 옮기지 않는다(참조가 세계관 안에서만 성립하기 때문).
+            if (byCode != null && byCode.universeId == group.universeId) return byCode
+        }
+        return db.gradeSystemDao().getByUniverseAndName(group.universeId, group.name)
+    }
+
+    private suspend fun importGradeSystems(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
+        val spec = gradeSystemSpec()
+        // U-1 이전 백업에는 이 시트가 없는 것이 정상이라 경고하지 않는다 — '캐릭터 필드값'
+        // 시트와 같은 관례(없으면 기존 체계 유지). 접미사 변형까지 같은 해석으로 되찾는다.
+        val sheet = resolveSpecSheet(workbook, spec) ?: return
+        consumedSheetNames.add(sheet.sheetName)
+        val headerRow = sheet.getRow(0) ?: return
+        if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
+        reportUnknownColumns(headerRow, spec, result)
+
+        val repository = com.novelcharacter.app.data.repository.GradeSystemRepository(db)
+        for (group in collectGradeSystemRows(sheet, headerRow, result)) {
+            // 행 검증은 필드의 등급 표와 같은 규칙(GradeTable) — 유효 행만 반영하고, 문제는
+            // 행 단위로 보고한다(무리 전체 거부는 관대 수용이 아니다).
+            val outcome = com.novelcharacter.app.util.GradeTable.build(group.rows)
+            for (problem in outcome.problems) {
+                result.warnings.add(
+                    "등급 체계 '${group.name}' (행 ${group.firstRowNum}부터): " + gradeProblemText(problem)
+                )
+            }
+            if (outcome.grades.isEmpty()) {
+                result.skippedRows++
+                result.errors.add("등급 체계 '${group.name}': 유효한 등급 행이 없어 건너뜀")
+                continue
+            }
+            val gradesJson = com.novelcharacter.app.data.model.GradeSystemRef.gradesToJson(outcome.grades)
+            val existing = resolveGradeSystem(group)
+            if (existing != null) {
+                // 이름 변경이 같은 세계관의 다른 체계와 충돌하면 이름은 유지한다(유니크).
+                val rename = group.name != existing.name &&
+                    db.gradeSystemDao().getByUniverseAndName(group.universeId, group.name) == null
+                if (!rename && group.name != existing.name) {
+                    result.warnings.add(
+                        "등급 체계 '${existing.name}': 같은 세계관에 '${group.name}'이(가) 이미 있어 이름을 바꾸지 않았습니다"
+                    )
+                }
+                val saved = existing.copy(
+                    name = if (rename) group.name else existing.name,
+                    gradesJson = gradesJson
+                )
+                if (saved != existing) {
+                    // 참조 필드 전파까지 한 몸으로 — 엑셀 경로는 라벨 개명을 추적할 수 없으므로
+                    // (행의 정체가 라벨 그 자체다) 라벨 변경은 삭제+추가로 다룬다.
+                    repository.saveSystem(saved)
+                    result.updatedGradeSystems++
+                } // 변경 없음은 세지 않는다
+                matchedGradeSystemIds.add(existing.id)
+            } else {
+                // 코드가 다른 세계관의 체계와 겹치면 재발급한다(전역 유니크 — 소속을 옮기지 않는다).
+                val wantedCode = group.code.takeIf { it.isNotBlank() }
+                val safeCode = wantedCode?.takeIf { db.gradeSystemDao().getByCode(it) == null }
+                    ?: com.novelcharacter.app.data.model.generateEntityCode().also {
+                        if (wantedCode != null) result.newCodesGenerated++
+                    }
+                val newId = db.gradeSystemDao().insert(
+                    com.novelcharacter.app.data.model.GradeSystem(
+                        universeId = group.universeId,
+                        name = group.name,
+                        gradesJson = gradesJson,
+                        displayOrder = matchedGradeSystemIds.size,
+                        code = safeCode
+                    )
+                )
+                matchedGradeSystemIds.add(newId)
+                result.newGradeSystems++
+            }
+        }
+        reportProgress(onProgress, "등급 체계", sheet.lastRowNum, totalRows)
+    }
+
+    /** GradeTable의 타입 문제 → 가져오기 결과 문구 (다이얼로그 문구와 별개 — 결과 창은 서술형이다). */
+    private fun gradeProblemText(problem: com.novelcharacter.app.util.GradeTable.Problem): String = when (problem) {
+        is com.novelcharacter.app.util.GradeTable.Problem.BlankLabel ->
+            "수치 '${problem.valueText}'에 등급 이름이 없어 그 행을 건너뛰었습니다"
+        is com.novelcharacter.app.util.GradeTable.Problem.BadNumber ->
+            "등급 '${problem.label}'의 수치 '${problem.valueText}'을(를) 숫자로 해석할 수 없어 건너뛰었습니다"
+        is com.novelcharacter.app.util.GradeTable.Problem.DuplicateLabel ->
+            "등급 '${problem.label}'이(가) 중복되어 뒤의 행을 건너뛰었습니다"
+        is com.novelcharacter.app.util.GradeTable.Problem.SignPrefixedLabel ->
+            "등급 이름 '${problem.label}'은(는) -나 +로 시작할 수 없어 건너뛰었습니다"
+        com.novelcharacter.app.util.GradeTable.Problem.Empty ->
+            "유효한 등급 행이 없습니다"
+    }
+
+    /**
+     * OVERWRITE 전략에서 백업에 없는 등급 체계만 삭제한다 — [pruneUnmatchedFieldDefinitions]와
+     * 같은 보호를 쓴다(시트 부재·전건 실패 시 삭제하지 않음). 삭제되는 체계를 참조하던 필드는
+     * 독자 표로 내려앉는다(실효 표가 남아 필드값·통계는 그대로다).
+     */
+    private suspend fun pruneUnmatchedGradeSystems(workbook: Workbook, result: ImportResult) {
+        val existing = db.gradeSystemDao().getAllList()
+        if (existing.isEmpty()) return
+        val spec = gradeSystemSpec()
+        val header = workbook.getSheet(spec.sheetName)?.getRow(0)
+        if (header == null || !isValidHeader(header, spec.firstColumnHeader)) {
+            result.warnings.add("백업에 '${spec.sheetName}' 시트가 없어 기존 등급 체계를 삭제하지 않고 유지했습니다 (덮어쓰기 제외)")
+            return
+        }
+        if (matchedGradeSystemIds.isEmpty()) {
+            result.warnings.add("덮어쓰기: '${spec.sheetName}' 시트에서 처리된 등급 체계가 하나도 없어 기존 체계를 삭제하지 않았습니다 — 위의 행 오류를 먼저 확인하세요")
+            return
+        }
+        val repository = com.novelcharacter.app.data.repository.GradeSystemRepository(db)
+        val stale = existing.filter { it.id !in matchedGradeSystemIds }
+        var demoted = 0
+        for (system in stale) {
+            for (field in repository.referencingFields(system)) {
+                db.fieldDefinitionDao().update(
+                    field.copy(config = com.novelcharacter.app.data.model.GradeSystemRef.demote(field.config))
+                )
+                demoted++
+            }
+            db.gradeSystemDao().delete(system)
+            result.deletedGradeSystems++
+        }
+        if (stale.isNotEmpty()) {
+            val names = stale.take(5).joinToString(", ") { it.name }
+            val more = if (stale.size > 5) " 외 ${stale.size - 5}개" else ""
+            val demotedNote = if (demoted > 0) " — 참조하던 필드 ${demoted}개는 독자 등급 표로 전환했습니다(표 내용은 그대로)" else ""
+            result.warnings.add("덮어쓰기: 백업에 없는 등급 체계 ${stale.size}개($names$more)를 삭제했습니다$demotedNote")
+        }
+    }
+
     private suspend fun importFieldDefinitions(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = fieldDefinitionSpec(emptyList())
         val sheet = findSheet(workbook, spec, result) ?: return
@@ -2163,6 +2404,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // config 파생 전용 열(A-1·A-2) — 열/JSON 키/기존값 3분기 병합 (FieldConfigColumns.merge)
         val aiSuggestColIndex = cols[FieldConfigColumns.COLUMN_AI_SUGGEST] ?: -1
         val descriptionColIndex = cols[FieldConfigColumns.COLUMN_DESCRIPTION] ?: -1
+        // 등급 체계 참조 열(U-1) — 같은 3분기 문법. 해석은 코드 우선, 없으면 (세계관, 이름).
+        val gradeSystemColIndex = cols["등급체계"] ?: -1
+        val gradeSystemCodeColIndex = cols["등급체계코드"] ?: -1
 
         val entitySeen = mutableMapOf<Long, Int>()
 
@@ -2217,13 +2461,27 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val existing = db.fieldDefinitionDao().getFieldByKey(universe.id, key, entityType)
                 // AI추천·필드설명 병합 — 열이 있으면 셀이 값, 없으면 JSON 키 유지, 둘 다 없으면
                 // 기존 DB 값 보존(빠뜨리면 전용 열을 지운 파일에서 설명이 무통보 유실된다)
-                val mergedConfig = FieldConfigColumns.merge(
+                val portableMerged = FieldConfigColumns.merge(
                     sheetConfig = config,
                     aiColumnPresent = aiSuggestColIndex >= 0,
                     aiCellText = getCellString(row, aiSuggestColIndex),
                     descriptionColumnPresent = descriptionColIndex >= 0,
                     descriptionCellText = getCellString(row, descriptionColIndex),
                     existingConfig = existing?.config
+                )
+                // 등급 체계 참조 병합(U-1) — 참조가 해석되면 실효 표를 다시 물질화하고,
+                // 가리키는 체계가 없으면 거부 대신 독자 표로 내려앉히고 고지한다(관대 수용).
+                val mergedConfig = mergeGradeSystemColumn(
+                    universeId = universe.id,
+                    rowIndex = i,
+                    fieldName = name,
+                    fieldType = type,
+                    config = portableMerged,
+                    columnPresent = gradeSystemColIndex >= 0,
+                    cellName = if (gradeSystemColIndex >= 0) getCellString(row, gradeSystemColIndex) else "",
+                    cellCode = if (gradeSystemCodeColIndex >= 0) getCellString(row, gradeSystemCodeColIndex) else "",
+                    existingConfig = existing?.config,
+                    result = result
                 )
                 if (existing != null) {
                     val prevRow = entitySeen[existing.id]
@@ -2257,6 +2515,86 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             }
         }
         reportProgress(onProgress, "필드 정의", sheet.lastRowNum, totalRows)
+    }
+
+    /**
+     * '필드 정의' 시트의 등급 체계 참조 병합 (U-1) — [FieldConfigColumns.merge]와 같은 3분기 문법.
+     *
+     * ① 열이 있으면 셀이 값이다: 채움 = 참조(해석 실패는 독자 표 강등 + 고지), 빈칸 = 독자 표.
+     * ② 열이 없고 JSON에 참조 키가 있으면 그 참조를 존중한다(손편집·구형식 파일).
+     * ③ 열도 키도 없으면 기존 DB의 참조를 다시 얹는다 — 이 분기를 빠뜨리면 두 열을 지운
+     *    파일을 들일 때 참조가 무통보로 풀린다.
+     *
+     * 참조가 해석되면 실효 표를 다시 물질화한다([GradeSystemRef.mergeResolved]) — 파일의
+     * `grades`가 사용자가 보고 고친 값이므로 체계 기본과 다른 라벨은 재정의로 남고,
+     * 체계에 없는 라벨은 빠지되 반드시 고지한다(조용한 좁힘 금지).
+     */
+    private suspend fun mergeGradeSystemColumn(
+        universeId: Long,
+        rowIndex: Int,
+        fieldName: String,
+        fieldType: String,
+        config: String,
+        columnPresent: Boolean,
+        cellName: String,
+        cellCode: String,
+        existingConfig: String?,
+        result: ImportResult
+    ): String {
+        if (fieldType != FieldType.GRADE.name) return config
+        val ref = com.novelcharacter.app.data.model.GradeSystemRef
+
+        suspend fun resolve(code: String?, name: String?): com.novelcharacter.app.data.model.GradeSystem? {
+            if (!code.isNullOrBlank()) {
+                db.gradeSystemDao().getByCode(code)
+                    ?.takeIf { it.universeId == universeId }
+                    ?.let { return it }
+            }
+            if (!name.isNullOrBlank()) {
+                db.gradeSystemDao().getByUniverseAndName(universeId, name)?.let { return it }
+            }
+            return null
+        }
+
+        fun applyResolved(system: com.novelcharacter.app.data.model.GradeSystem): String {
+            val merge = ref.mergeResolved(config, system.code, system.gradesJson)
+            if (merge.droppedLabels.isNotEmpty()) {
+                result.warnings.add(
+                    "필드 정의 행 $rowIndex: 필드 '$fieldName'의 등급 ${merge.droppedLabels.joinToString(", ")}은(는) " +
+                        "체계 '${system.name}'에 없어 빠졌습니다 — 체계에 등급을 추가하거나 '등급체계' 칸을 비워 독자 표로 두세요"
+                )
+            }
+            return merge.config
+        }
+
+        fun demoteWithNotice(pointer: String): String {
+            result.warnings.add(
+                "필드 정의 행 $rowIndex: 필드 '$fieldName'이(가) 가리키는 등급 체계 '$pointer'을(를) 찾을 수 없어 " +
+                    "독자 등급 표로 들였습니다 (표 내용은 그대로입니다)"
+            )
+            return ref.demote(config)
+        }
+
+        val jsonCode = ref.codeFromConfig(config)
+        return when {
+            columnPresent -> {
+                if (cellName.isBlank() && cellCode.isBlank()) ref.demote(config)
+                else resolve(cellCode, cellName)?.let { applyResolved(it) }
+                    ?: demoteWithNotice(cellName.ifBlank { cellCode })
+            }
+            jsonCode != null ->
+                resolve(jsonCode, null)?.let { applyResolved(it) } ?: demoteWithNotice(jsonCode)
+            else -> {
+                val existingCode = existingConfig?.let { ref.codeFromConfig(it) } ?: return config
+                resolve(existingCode, null)?.let { applyResolved(it) }
+                    ?: try {
+                        // 참조가 이미 끊겨 있던 기존 상태 그대로 — 가져오기가 상태를 조용히 바꾸지 않는다.
+                        org.json.JSONObject(config).put(ref.CONFIG_KEY, existingCode).toString()
+                    } catch (_: Exception) {
+                        config
+                    }
+            }
+        }
     }
 
     /**

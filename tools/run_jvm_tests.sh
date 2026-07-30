@@ -52,6 +52,8 @@ $MAIN/data/model/Novel.kt
 $MAIN/data/model/Universe.kt
 $MAIN/data/model/FieldDefinition.kt
 $MAIN/data/model/FieldValueEntry.kt
+$MAIN/data/model/GradeSystem.kt
+$MAIN/data/model/GradeSystemRef.kt
 $MAIN/data/model/FieldValueLibraryConfig.kt
 $MAIN/data/model/FieldAiPolicy.kt
 $MAIN/data/model/FieldDescription.kt
@@ -175,7 +177,9 @@ $TEST/excel/EntityFieldHeadersTest.kt
 $TEST/excel/CharacterHeaderIdentityTest.kt
 $TEST/excel/CharacterFieldValueOverflowTest.kt
 $TEST/excel/AllCharactersSheetTest.kt
+$TEST/excel/GradeSystemSheetTest.kt
 $TEST/util/GradeTableTest.kt
+$TEST/data/GradeSystemRefTest.kt
 $TEST/excel/PresetTemplateMatcherTest.kt
 $TEST/excel/SheetValueConventionsTest.kt
 $TEST/excel/FactionRefResolverTest.kt

@@ -87,6 +87,9 @@ class WorldPackageExporter(private val context: Context) {
         // v3: 값 라이브러리 — 이 세계관 필드의 엔트리 전부(큐레이션 포함). IN 청크는 저장소 공통 관례.
         val fieldValueEntries = fieldDefinitionIds.chunked(900)
             .flatMap { db.fieldValueEntryDao().getForFields(it) }
+        // v5: 등급 체계(U-1) — 필드 config가 code로 참조하므로 함께 싣지 않으면 수신 기기에서
+        // 참조가 전부 허공을 가리킨다(정의는 실효 표로 동작하지만 체계 편집·공유가 사라진다).
+        val gradeSystems = db.gradeSystemDao().getByUniverseList(config.universeId)
         // v3: 이름 은행은 내보내는 캐릭터가 사용 중인 이름만 — 전체 은행을 실으면 패키지 공유 시
         // 무관한 전역 데이터가 수신자에게 넘어간다(범위 밖 데이터는 패키지의 것이 아니다)
         val nameBank = db.nameBankDao().getAllNamesList()
@@ -136,6 +139,7 @@ class WorldPackageExporter(private val context: Context) {
                 writeJsonEntry(zip, WorldPackageEntries.EVENT_FIELD_VALUES, eventFieldValues)
                 writeJsonEntry(zip, WorldPackageEntries.FIELD_VALUE_ENTRIES, fieldValueEntries)
                 writeJsonEntry(zip, WorldPackageEntries.NOVEL_FIELD_VALUES, novelFieldValues)
+                writeJsonEntry(zip, WorldPackageEntries.GRADE_SYSTEMS, gradeSystems)
 
                 // Images
                 if (config.includeImages) {

@@ -23,7 +23,9 @@ object FieldConfigColumns {
     const val COLUMN_DESCRIPTION = "필드설명"
 
     /**
-     * 내보내기용: JSON 셀에 싣기 전에 전용 열로 나가는 두 키를 **문자열 사본에서** 제거한다.
+     * 내보내기용: JSON 셀에 싣기 전에 전용 열로 나가는 키들을 **문자열 사본에서** 제거한다
+     * (AI추천 · 필드설명 · 등급체계 참조 — 재정의 `gradeOverrides`와 실효 표 `grades`는
+     * 전용 열이 없으므로 JSON에 남는다).
      *
      * DB의 config 원본은 절대 건드리지 않는다 — 월드패키지(`.ncworld`)는 FieldDefinition 객체를
      * 통째 직렬화하므로 원본을 고치면 그쪽 왕복이 함께 빈다(설계 4-5의 조건).
@@ -33,6 +35,7 @@ object FieldConfigColumns {
         val json = JSONObject(configJson)
         json.remove(FieldAiPolicy.CONFIG_KEY)
         json.remove(FieldDescription.CONFIG_KEY)
+        json.remove(com.novelcharacter.app.data.model.GradeSystemRef.CONFIG_KEY)
         json.toString()
     } catch (_: Exception) {
         configJson

@@ -58,7 +58,13 @@ data class EntityRefs(
 data class UniverseSnapshot(
     val universe: Universe,
     val fieldDefinitions: List<FieldDefinition>? = null,
-    val refs: EntityRefs? = null
+    val refs: EntityRefs? = null,
+    /**
+     * 등급 체계 (U-1) — 필드 정의처럼 세계관에 매달려 FK CASCADE로 함께 죽는다.
+     * **nullable인 것은 일부러다**(R-2) — 이 키가 없는 구버전 payload를 Gson이 읽을 때
+     * non-null 선언이면 null이 주입돼 순회가 NPE로 죽는다. 읽는 쪽이 `orEmpty()`로 받는다.
+     */
+    val gradeSystems: List<GradeSystem>? = null
 )
 
 /**
@@ -165,6 +171,23 @@ data class EventSnapshot(
      * 되돌리면 덮어쓰기가 되므로, 되돌리지 않았다는 사실을 복원 결과로 알린다.
      */
     val linkedStateChanges: List<CharacterStateChange>? = null,
+    val refs: EntityRefs? = null
+)
+
+/**
+ * 등급 체계 하나의 스냅샷 (U-1) — **체계만 개별로 지운 경로 전용**.
+ *
+ * 세계관 삭제로 함께 사라지는 체계는 [UniverseSnapshot.gradeSystems]가 담는다(겹치지 않는다).
+ * 삭제는 참조 필드를 독자 표로 내려앉히므로(실효 표가 남아 필드는 그대로 동작한다), 복원이
+ * 되돌려야 하는 것은 체계 본체와 **"삭제 시점에 누가 참조했는가"**다 — 참조 필드의 자연키를
+ * 담아, 복원 시 아직 독자 표인 필드만 다시 잇는다(그 사이 다른 체계를 골랐다면 그 선택이 우선).
+ */
+data class GradeSystemSnapshot(
+    val gradeSystem: GradeSystem,
+    /** 삭제 시점 이 체계를 참조하던 필드의 자연키(R-1) — 복원이 다시 잇는 대상. */
+    val referencingFields: List<FieldDefRef>? = null,
+    /** 이 체계가 속한 세계관의 코드 — 없으면 붙일 자리를 찾을 수 없다. */
+    val universeCode: String? = null,
     val refs: EntityRefs? = null
 )
 

@@ -17,7 +17,7 @@ import org.junit.Test
 class ResetPlanTest {
 
     /**
-     * `AppDatabase.entities`의 26종 tableName. **여기를 손으로 고치는 일이 곧 신호다** —
+     * `AppDatabase.entities`의 tableName 전수. **여기를 손으로 고치는 일이 곧 신호다** —
      * 엔티티를 늘렸다면 [ResetPlan]에도 처분을 적어야 한다.
      */
     private val entityTables = listOf(
@@ -28,7 +28,8 @@ class ResetPlanTest {
         "recent_activities", "search_presets", "user_preset_templates",
         "factions", "faction_memberships", "faction_relationships",
         "trash_snapshots", "event_field_values", "novel_field_values", "operation_logs",
-        "character_list_presets", "image_meta", "image_tags", "field_value_entries"
+        "character_list_presets", "image_meta", "image_tags", "field_value_entries",
+        "grade_systems"
     )
 
     @Test fun 모든_엔티티_테이블이_초기화_계획에_있다() {

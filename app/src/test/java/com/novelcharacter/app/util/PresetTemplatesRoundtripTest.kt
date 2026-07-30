@@ -94,6 +94,32 @@ class PresetTemplatesRoundtripTest {
     }
 
     @Test
+    fun `등급 체계 참조는 프리셋에 실리지 않는다 - 세계관을 넘는 유령 참조 차단`() {
+        // 프리셋은 세계관을 넘나드는 템플릿이다 — 특정 세계관의 체계 code를 실으면 적용되는
+        // 곳마다 남의 세계관을 가리키는 참조가 된다(U-1). 실효 표는 남아 등급 표는 온전하다.
+        val gradeField = FieldDefinition(
+            universeId = 5, key = "rank", name = "등급", type = "GRADE",
+            config = """{"grades":{"C":0.5,"S":3.0},"gradeSystem":"gs01","gradeOverrides":{"S":5.0},"allowNegative":false}"""
+        )
+        val restored = PresetTemplates.fieldsFromJson(PresetTemplates.fieldsToJson(listOf(gradeField))).single()
+        assertEquals(null, com.novelcharacter.app.data.model.GradeSystemRef.codeFromConfig(restored.config))
+        assertEquals(
+            "실효 표는 그대로 남는다",
+            mapOf("C" to 0.5, "S" to 3.0),
+            com.novelcharacter.app.data.model.GradeSystemRef.gradesFromConfig(restored.config)
+        )
+        // 참조 없는 config는 저장이 원문을 건드리지 않는다 — 키 순서까지 그대로다.
+        val plain = FieldDefinition(
+            universeId = 5, key = "hair", name = "머리색", type = "TEXT",
+            config = """{"displayFormat":"comma","description":"머리 색"}"""
+        )
+        assertEquals(
+            plain.config,
+            PresetTemplates.fieldsFromJson(PresetTemplates.fieldsToJson(listOf(plain))).single().config
+        )
+    }
+
+    @Test
     fun `깨진 JSON은 빈 목록이 되고 예외로 죽지 않는다`() {
         assertEquals(emptyList<FieldDefinition>(), PresetTemplates.fieldsFromJson("{not json"))
         assertEquals(

@@ -302,7 +302,15 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
                         universeId = targetUniverseId,
                         // 소스는 이미 같은 종류로 걸러져 있으나 명시해 불변식을 코드에 남긴다
                         entityType = entityType,
-                        displayOrder = maxOrder + 1 + index
+                        displayOrder = maxOrder + 1 + index,
+                        // 등급 체계 참조는 세계관 안에서만 성립한다(U-1) — 다른 세계관에서
+                        // 가져온 필드의 참조를 그대로 두면 남의 세계관 체계를 가리키는 유령이
+                        // 된다. 실효 표는 config에 물질화되어 있어 강등해도 표·값·통계는 그대로다.
+                        config = if (field.universeId != targetUniverseId) {
+                            com.novelcharacter.app.data.model.GradeSystemRef.demote(field.config)
+                        } else {
+                            field.config
+                        }
                     )
                 }
             if (newFields.isNotEmpty()) {

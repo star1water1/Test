@@ -33,6 +33,8 @@ import androidx.recyclerview.widget.ItemTouchHelper
 import com.novelcharacter.app.ui.adapter.UniverseAdapter
 import com.novelcharacter.app.util.PresetTemplates
 import com.novelcharacter.app.util.dismissSafely
+import com.novelcharacter.app.util.setValidatedPositiveButton
+import com.novelcharacter.app.util.showInlineError
 import com.novelcharacter.app.util.navigateSafe
 import com.novelcharacter.app.util.notifyResult
 
@@ -990,6 +992,76 @@ class UniverseListFragment : Fragment() {
         }
         layout.addView(relResetBtn)
 
+        // 등급 체계 섹션 (U-1) — 저장·삭제가 참조 필드 전파와 한 몸이라 세계관 저장을 기다리지
+        // 않고 즉시 DB에 쓴다. 새 세계관(universe == null)은 붙일 대상이 없어 섹션을 숨긴다(R-24).
+        if (universe != null) {
+            val gradeLabel = TextView(ctx).apply {
+                text = getString(R.string.grade_systems_label)
+                setPadding(0, (16 * dp).toInt(), 0, (2 * dp).toInt())
+            }
+            layout.addView(gradeLabel)
+            layout.addView(sectionCaption(R.string.grade_systems_desc))
+
+            val systemsContainer = LinearLayout(ctx).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(0, 0, 0, (4 * dp).toInt())
+            }
+            layout.addView(systemsContainer)
+
+            lateinit var refreshGradeSystems: () -> Unit
+            refreshGradeSystems = {
+                viewLifecycleOwner.lifecycleScope.launch {
+                    val systems = viewModel.getGradeSystems(universe.id)
+                    systemsContainer.removeAllViews()
+                    for (system in systems) {
+                        val row = LinearLayout(ctx).apply {
+                            orientation = LinearLayout.HORIZONTAL
+                            gravity = android.view.Gravity.CENTER_VERTICAL
+                            setPadding(0, (2 * dp).toInt(), 0, (2 * dp).toInt())
+                        }
+                        val grades = com.novelcharacter.app.data.model.GradeSystemRef
+                            .gradesFromJson(system.gradesJson)
+                        val preview = grades.entries.sortedBy { it.value }
+                            .joinToString(" · ") { it.key }
+                        row.addView(TextView(ctx).apply {
+                            text = getString(R.string.grade_system_row_format, system.name, preview)
+                            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                            maxLines = 1
+                            ellipsize = android.text.TextUtils.TruncateAt.END
+                        })
+                        row.addView(TextView(ctx).apply {
+                            text = getString(R.string.edit)
+                            setTextColor(ctx.getColor(R.color.primary))
+                            setPadding((8 * dp).toInt(), 0, 0, 0)
+                            setOnClickListener {
+                                showGradeSystemEditDialog(universe.id, system) { refreshGradeSystems() }
+                            }
+                        })
+                        row.addView(TextView(ctx).apply {
+                            text = "✕"
+                            setTextColor(ctx.getColor(R.color.primary))
+                            setPadding((8 * dp).toInt(), 0, 0, 0)
+                            setOnClickListener {
+                                confirmDeleteGradeSystem(system) { refreshGradeSystems() }
+                            }
+                        })
+                        systemsContainer.addView(row)
+                    }
+                }
+            }
+            refreshGradeSystems()
+
+            val addSystemBtn = TextView(ctx).apply {
+                text = getString(R.string.grade_systems_add)
+                setTextColor(ctx.getColor(R.color.primary))
+                setPadding(0, (4 * dp).toInt(), 0, (8 * dp).toInt())
+                setOnClickListener {
+                    showGradeSystemEditDialog(universe.id, null) { refreshGradeSystems() }
+                }
+            }
+            layout.addView(addSystemBtn)
+        }
+
         // 이미지 모드 선택
         val imageLabel = TextView(ctx).apply {
             text = getString(R.string.image_mode_label)
@@ -1314,6 +1386,217 @@ class UniverseListFragment : Fragment() {
             override fun getItemCount() = pendingImagePaths.size
         }
         recyclerView.adapter = universeImageAdapter
+    }
+
+    // ── 등급 체계 편집·삭제 (U-1) ──
+
+    /**
+     * 등급 체계 편집 다이얼로그 — 이름 + 동적 (등급, 기본숫자) 행. 검증 규칙은 필드의 등급
+     * 표와 같은 [com.novelcharacter.app.util.GradeTable]이고, 실패 시 창을 닫지 않는다(R-27).
+     * 저장은 참조 필드 전파와 한 몸이다(GradeSystemRepository).
+     */
+    private fun showGradeSystemEditDialog(
+        universeId: Long,
+        existing: com.novelcharacter.app.data.model.GradeSystem?,
+        onSaved: () -> Unit
+    ) {
+        val ctx = requireContext()
+        val dp = ctx.resources.displayMetrics.density
+        viewLifecycleOwner.lifecycleScope.launch {
+            // 이름 유니크 검증용 형제 목록 — DB 유니크 인덱스가 최후의 방어선이고, 여기서는
+            // 창을 닫기 전에 잡아 입력을 지키는 것이 목적이다(R-27).
+            val siblings = viewModel.getGradeSystems(universeId)
+
+            val layout = LinearLayout(ctx).apply {
+                orientation = LinearLayout.VERTICAL
+                val dp24 = (24 * dp).toInt()
+                setPadding(dp24, (16 * dp).toInt(), dp24, (8 * dp).toInt())
+            }
+            val nameEdit = EditText(ctx).apply {
+                hint = getString(R.string.grade_system_name_hint)
+                existing?.let { setText(it.name) }
+            }
+            layout.addView(nameEdit)
+
+            val rowsContainer = LinearLayout(ctx).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(0, (8 * dp).toInt(), 0, 0)
+            }
+            layout.addView(rowsContainer)
+
+            data class SystemRow(val editLabel: EditText, val editValue: EditText, val originalLabel: String?)
+            val rows = mutableListOf<SystemRow>()
+
+            fun addRow(label: String = "", value: String = "", originalLabel: String? = null) {
+                val row = LinearLayout(ctx).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                    ).apply { bottomMargin = (4 * dp).toInt() }
+                }
+                val editLabel = EditText(ctx).apply {
+                    layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 2f)
+                    hint = getString(R.string.hint_grade_label)
+                    textSize = 13f
+                    if (label.isNotEmpty()) setText(label)
+                }
+                val editValue = EditText(ctx).apply {
+                    layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                    hint = getString(R.string.hint_grade_value)
+                    inputType = android.text.InputType.TYPE_CLASS_NUMBER or
+                        android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL or
+                        android.text.InputType.TYPE_NUMBER_FLAG_SIGNED
+                    textSize = 13f
+                    if (value.isNotEmpty()) setText(value)
+                }
+                val entry = SystemRow(editLabel, editValue, originalLabel)
+                val btnRemove = TextView(ctx).apply {
+                    text = "✕"
+                    setTextColor(ctx.getColor(R.color.primary))
+                    setPadding((8 * dp).toInt(), (8 * dp).toInt(), 0, 0)
+                    setOnClickListener {
+                        rowsContainer.removeView(row)
+                        rows.remove(entry)
+                    }
+                }
+                row.addView(editLabel)
+                row.addView(editValue)
+                row.addView(btnRemove)
+                rowsContainer.addView(row)
+                rows.add(entry)
+            }
+
+            val initialGrades = existing
+                ?.let { com.novelcharacter.app.data.model.GradeSystemRef.gradesFromJson(it.gradesJson) }
+            if (initialGrades != null && initialGrades.isNotEmpty()) {
+                initialGrades.entries.sortedBy { it.value }.forEach { (label, value) ->
+                    addRow(label, com.novelcharacter.app.util.GradeTable.formatValue(value), originalLabel = label)
+                }
+            } else {
+                com.novelcharacter.app.util.GradeTable.DEFAULT_ROWS.forEach { (label, value) ->
+                    addRow(label, value)
+                }
+            }
+
+            val addGradeBtn = TextView(ctx).apply {
+                text = getString(R.string.label_add_grade)
+                setTextColor(ctx.getColor(R.color.primary))
+                setPadding(0, (4 * dp).toInt(), 0, (8 * dp).toInt())
+                setOnClickListener { addRow() }
+            }
+            layout.addView(addGradeBtn)
+
+            val scroll = android.widget.ScrollView(ctx).apply { addView(layout) }
+            val dialog = MaterialAlertDialogBuilder(ctx)
+                .setTitle(if (existing == null) R.string.grade_system_add_title else R.string.grade_system_edit_title)
+                .setView(scroll)
+                .setPositiveButton(R.string.save, null)
+                .setNegativeButton(R.string.cancel, null)
+                .create()
+
+            dialog.setValidatedPositiveButton {
+                val name = nameEdit.text.toString().trim()
+                if (name.isEmpty()) {
+                    nameEdit.showInlineError(getString(R.string.grade_system_name_required_error))
+                    return@setValidatedPositiveButton false
+                }
+                if (siblings.any { it.name == name && it.id != (existing?.id ?: 0L) }) {
+                    nameEdit.showInlineError(getString(R.string.grade_system_name_duplicate_error))
+                    return@setValidatedPositiveButton false
+                }
+                val outcome = com.novelcharacter.app.util.GradeTable.build(
+                    rows.map { it.editLabel.text.toString() to it.editValue.text.toString() }
+                )
+                val problem = outcome.problems.firstOrNull()
+                if (problem != null) {
+                    // 오류는 고칠 자리에 붙인다(B-28) — 문제의 행을 라벨로 되찾고, 못 찾으면 이름 칸.
+                    val message = com.novelcharacter.app.ui.common.gradeProblemMessage(ctx, problem)
+                    val target = when (problem) {
+                        is com.novelcharacter.app.util.GradeTable.Problem.BadNumber ->
+                            rows.firstOrNull { it.editLabel.text.toString().trim() == problem.label }?.editValue
+                        is com.novelcharacter.app.util.GradeTable.Problem.DuplicateLabel,
+                        is com.novelcharacter.app.util.GradeTable.Problem.SignPrefixedLabel ->
+                            rows.lastOrNull {
+                                it.editLabel.text.toString().trim() == when (problem) {
+                                    is com.novelcharacter.app.util.GradeTable.Problem.DuplicateLabel -> problem.label
+                                    is com.novelcharacter.app.util.GradeTable.Problem.SignPrefixedLabel -> problem.label
+                                    else -> ""
+                                }
+                            }?.editLabel
+                        is com.novelcharacter.app.util.GradeTable.Problem.BlankLabel ->
+                            rows.firstOrNull {
+                                it.editLabel.text.toString().isBlank() &&
+                                    it.editValue.text.toString().trim() == problem.valueText
+                            }?.editLabel
+                        com.novelcharacter.app.util.GradeTable.Problem.Empty -> nameEdit
+                    }
+                    (target ?: nameEdit).showInlineError(message)
+                    return@setValidatedPositiveButton false
+                }
+
+                // 라벨 개명 추적 — 행의 정체(originalLabel)로 재정의가 개명을 따라가게 한다.
+                val renames = rows.mapNotNull { row ->
+                    val original = row.originalLabel ?: return@mapNotNull null
+                    val current = row.editLabel.text.toString().trim()
+                    if (current.isNotEmpty() && current != original) original to current else null
+                }.toMap()
+
+                val system = (existing ?: com.novelcharacter.app.data.model.GradeSystem(
+                    universeId = universeId, name = name, displayOrder = siblings.size
+                )).copy(
+                    name = name,
+                    gradesJson = com.novelcharacter.app.data.model.GradeSystemRef.gradesToJson(outcome.grades)
+                )
+                viewLifecycleOwner.lifecycleScope.launch {
+                    val propagated = viewModel.saveGradeSystem(system, renames)
+                    if (propagated != null) {
+                        if (existing != null && propagated > 0) {
+                            Toast.makeText(
+                                ctx, getString(R.string.grade_system_saved_toast, name, propagated),
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                        onSaved()
+                    }
+                }
+                true
+            }
+            dialog.show()
+        }
+    }
+
+    /** 삭제 확인(R-4) — 참조 필드가 어떻게 되는지(독자 표 전환)를 먼저 말한다. */
+    private fun confirmDeleteGradeSystem(
+        system: com.novelcharacter.app.data.model.GradeSystem,
+        onDeleted: () -> Unit
+    ) {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val refCount = viewModel.countGradeSystemReferences(system)
+            val message = if (refCount > 0) {
+                getString(R.string.grade_system_delete_confirm_refs, system.name, refCount)
+            } else {
+                getString(R.string.grade_system_delete_confirm, system.name)
+            }
+            MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.grade_system_delete_title)
+                .setMessage(message)
+                .setPositiveButton(R.string.delete) { _, _ ->
+                    viewLifecycleOwner.lifecycleScope.launch {
+                        val demoted = viewModel.deleteGradeSystem(system)
+                        if (demoted != null) {
+                            val doneMessage = if (demoted > 0) {
+                                getString(R.string.grade_system_deleted_toast_refs, system.name, demoted)
+                            } else {
+                                getString(R.string.grade_system_deleted_toast, system.name)
+                            }
+                            Toast.makeText(requireContext(), doneMessage, Toast.LENGTH_SHORT).show()
+                            onDeleted()
+                        }
+                    }
+                }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+        }
     }
 
     private fun parseImagePaths(json: String): List<String> {

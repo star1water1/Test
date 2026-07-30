@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.room.withTransaction
 import com.google.gson.Gson
 import com.novelcharacter.app.NovelCharacterApp
+import com.novelcharacter.app.data.model.GradeSystemRef
 import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.util.OpResult
 import com.novelcharacter.app.util.copyWithLimit
@@ -134,6 +135,7 @@ class WorldPackageImporter(context: Context) {
         val novels: Int,
         val characters: Int,
         val fieldDefinitions: Int,
+        val gradeSystems: Int,
         val fieldValues: Int,
         val eventFieldValues: Int,
         val novelFieldValues: Int,
@@ -202,8 +204,10 @@ class WorldPackageImporter(context: Context) {
             .associateBy { it.code }
         val nameBankReg = WorldPackageCodes.Registry(existingNameBank.map { it.code })
         val entryReg = WorldPackageCodes.Registry(db.fieldValueEntryDao().getAllList().map { it.code })
+        val gradeSystemReg = WorldPackageCodes.Registry(db.gradeSystemDao().getAllList().map { it.code })
         val registries = listOf(
-            uniReg, novelReg, charReg, eventReg, scReg, relReg, relChangeReg, factionReg, nameBankReg, entryReg
+            uniReg, novelReg, charReg, eventReg, scReg, relReg, relChangeReg, factionReg, nameBankReg, entryReg,
+            gradeSystemReg
         )
 
         val pkgName: String = contents.universe.name
@@ -267,6 +271,7 @@ class WorldPackageImporter(context: Context) {
         var crossUniverseRelsDropped = 0
         var detachedEvents = 0
         var duplicateDefsSkipped = 0
+        var demotedGradeRefs = 0
         var nameBankSkippedUnrelated = 0
         var nameBankLinkConflicts = 0
         var unresolvedFactionRels = 0
@@ -291,7 +296,22 @@ class WorldPackageImporter(context: Context) {
                 val newUniverseId = db.universeDao().insert(universeRow)
                 importedUniverseId = newUniverseId
 
+                // 1.5. 등급 체계 (v5 — U-1). 필드 정의 config가 code로 참조하므로 **정의보다
+                //      먼저** 넣는다. code가 재발급되면 config의 참조를 새 code로 다시 잇는다(R-1).
+                val systemCodeRemap = HashMap<String, String>()
+                val packageSystemCodes = HashSet<String>()
+                val seenSystemNames = HashSet<String>()
+                for (gs in contents.gradeSystems) {
+                    if (!seenSystemNames.add(gs.name)) continue   // 유니크 (universeId, name) 방어
+                    val claimed = gradeSystemReg.claim(gs.code)
+                    if (claimed != gs.code) systemCodeRemap[gs.code] = claimed
+                    packageSystemCodes.add(gs.code)
+                    db.gradeSystemDao().insert(gs.copy(id = 0, universeId = newUniverseId, code = claimed))
+                }
+
                 // 2. 필드 정의 (전 entityType — v3). 유니크 (universeId, entityType, key) 방어적 중복 제거.
+                //    등급 체계 참조는 재발급 표로 다시 잇고, 패키지에 없는 체계를 가리키면
+                //    독자 표로 내려앉힌다(실효 표가 config에 있어 필드는 그대로 동작한다 — 관대 수용).
                 val defIdMap = HashMap<Long, Long>()
                 val seenDefKeys = HashSet<Pair<String, String>>()
                 for (fd in contents.fieldDefinitions) {
@@ -299,7 +319,17 @@ class WorldPackageImporter(context: Context) {
                         duplicateDefsSkipped++
                         continue
                     }
-                    defIdMap[fd.id] = db.fieldDefinitionDao().insert(fd.copy(id = 0, universeId = newUniverseId))
+                    val refCode = GradeSystemRef.codeFromConfig(fd.config)
+                    val config = when {
+                        refCode == null -> fd.config
+                        refCode in packageSystemCodes -> GradeSystemRef.remapCode(fd.config, systemCodeRemap)
+                        else -> {
+                            demotedGradeRefs++
+                            GradeSystemRef.demote(fd.config)
+                        }
+                    }
+                    defIdMap[fd.id] =
+                        db.fieldDefinitionDao().insert(fd.copy(id = 0, universeId = newUniverseId, config = config))
                 }
 
                 // 3. 작품 — imageCharacterId는 캐릭터 삽입 후 재배선
@@ -570,6 +600,7 @@ class WorldPackageImporter(context: Context) {
                     novels = novelIdMap.size,
                     characters = charIdMap.size,
                     fieldDefinitions = defIdMap.size,
+                    gradeSystems = packageSystemCodes.size,
                     fieldValues = fieldValueRows.size,
                     eventFieldValues = eventValueRows.size,
                     novelFieldValues = novelValueRows.size,
@@ -601,6 +632,9 @@ class WorldPackageImporter(context: Context) {
         if (crossUniverseRelsDropped > 0) warnings.add("패키지 밖 캐릭터와 얽힌 관계·관계변화 ${crossUniverseRelsDropped}건 제외")
         if (detachedEvents > 0) warnings.add("다른 세계관 소속이던 사건 ${detachedEvents}건은 세계관 연결 없이 들어왔습니다")
         if (duplicateDefsSkipped > 0) warnings.add("중복 필드 정의 ${duplicateDefsSkipped}건 제외")
+        if (demotedGradeRefs > 0) {
+            warnings.add("패키지에 없는 등급 체계를 가리키던 필드 ${demotedGradeRefs}개를 독자 등급 표로 전환했습니다 (표 내용은 그대로입니다)")
+        }
         if (nameBankSkippedUnrelated > 0) warnings.add("패키지 캐릭터와 무관한 이름 은행 항목 ${nameBankSkippedUnrelated}건 제외")
         if (nameBankLinkConflicts > 0) warnings.add("이름 은행 사용 표시 ${nameBankLinkConflicts}건은 다른 캐릭터가 사용 중이라 잇지 않았습니다")
         if (unresolvedFactionRels > 0) warnings.add("세력을 찾지 못한 세력 간 관계 ${unresolvedFactionRels}건 제외")

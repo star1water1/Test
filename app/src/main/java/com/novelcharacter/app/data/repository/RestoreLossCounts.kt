@@ -61,7 +61,11 @@ data class RestoreLossCounts(
     /** 세계관을 찾을 수 없어 '세계관 없음'으로 복원된다 (사건·작품) */
     val universeCleared: Boolean = false,
     /** 되살리지 못한 작품 커스텀 필드값 (확-3) — 그 필드 정의가 이미 삭제됨 */
-    val novelFieldValues: Int = 0
+    val novelFieldValues: Int = 0,
+    /** 되살리지 못한 등급 체계 (U-1) — payload 손상·payload 안 이름 중복으로 건너뜀 */
+    val gradeSystems: Int = 0,
+    /** 다시 잇지 못한 등급 체계 참조 (U-1) — 필드가 삭제됐거나 그 사이 다른 체계를 골랐음 */
+    val gradeSystemLinks: Int = 0
 ) {
     /**
      * 항목별 규모의 단일 소스. 이름은 비교·집계에만 쓰이며 화면 문구는 UI가 만든다.
@@ -91,7 +95,9 @@ data class RestoreLossCounts(
             "imageLinks" to imageLinks,
             "stateChanges" to stateChanges,
             "nameBankLinks" to nameBankLinks,
-            "universeCleared" to if (universeCleared) 1 else 0
+            "universeCleared" to if (universeCleared) 1 else 0,
+            "gradeSystems" to gradeSystems,
+            "gradeSystemLinks" to gradeSystemLinks
         )
 
     val total: Int get() = counts.sumOf { it.second }
@@ -137,6 +143,8 @@ data class RestoreLossCounts(
         stateChanges = stateChanges + other.stateChanges,
         nameBankLinks = nameBankLinks + other.nameBankLinks,
         universeCleared = universeCleared || other.universeCleared,
-        novelFieldValues = novelFieldValues + other.novelFieldValues
+        novelFieldValues = novelFieldValues + other.novelFieldValues,
+        gradeSystems = gradeSystems + other.gradeSystems,
+        gradeSystemLinks = gradeSystemLinks + other.gradeSystemLinks
     )
 }

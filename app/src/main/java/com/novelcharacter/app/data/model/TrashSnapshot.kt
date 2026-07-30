@@ -85,6 +85,13 @@ data class TrashSnapshot(
          */
         const val TYPE_STATE_CHANGE = "state_change"
 
+        /**
+         * 등급 체계 하나 (U-1). **체계만 개별로 지운 경로 전용이다** — 세계관 삭제로 함께
+         * 사라지는 체계는 세계관 스냅샷이 담는다(스냅샷은 겹치지 않고 이어붙는다).
+         * 삭제 시점의 참조 필드 목록을 함께 담아, 복원이 강등된 필드를 다시 잇는다.
+         */
+        const val TYPE_GRADE_SYSTEM = "grade_system"
+
         /** 삭제 백업 — 복원 = 부활. */
         const val KIND_DELETE = "delete"
 
@@ -124,13 +131,16 @@ data class TrashSnapshot(
             TYPE_UNIVERSE -> 0
             // 세계관 본체가 필드 정의를 만든 **뒤에** 그 정의를 가리키는 값들이 붙는다.
             TYPE_UNIVERSE_DATA -> 1
-            TYPE_NOVEL -> 2
-            TYPE_FACTION -> 3
-            TYPE_EVENT -> 4
-            TYPE_CHARACTER -> 5
+            // 등급 체계는 세계관만 있으면 붙는다. 참조 필드 재연결은 자연키 조회라 순서 무관이나,
+            // 다른 하위 엔티티보다 먼저 두어 "정의 계층 → 데이터 계층" 순서를 유지한다.
+            TYPE_GRADE_SYSTEM -> 2
+            TYPE_NOVEL -> 3
+            TYPE_FACTION -> 4
+            TYPE_EVENT -> 5
+            TYPE_CHARACTER -> 6
             // 상태변화는 주인 캐릭터가 이미 살아 있어야 붙을 자리가 있다.
-            TYPE_STATE_CHANGE -> 6
-            else -> 7
+            TYPE_STATE_CHANGE -> 7
+            else -> 8
         }
     }
 }

@@ -74,6 +74,12 @@ class FieldEditDialog : DialogFragment() {
     )
     private val gradeRows = mutableListOf<GradeRow>()
 
+    // 등급 체계 참조 (U-1) — 라벨 집합은 체계가 정하고 숫자만 이 필드에서 재정의한다.
+    private var gradeSystems: List<com.novelcharacter.app.data.model.GradeSystem> = emptyList()
+    private var selectedGradeSystem: com.novelcharacter.app.data.model.GradeSystem? = null
+    /** 편집 중인 필드가 참조하던 체계 code — 목록 로드가 끝나면 스피너 선택으로 반영된다. */
+    private var pendingGradeSystemCode: String? = null
+
     // 동적 구간 관리
     private data class BinRangeRow(
         val container: View,
@@ -158,10 +164,110 @@ class FieldEditDialog : DialogFragment() {
             }
         }
 
+        // 등급 체계 목록 (U-1) — 프리셋 편집(universeId=0)은 세계관이 없어 참조가 성립하지
+        // 않으므로 섹션을 통째로 숨긴다(R-24). 목록이 비어도 스피너('독자 표' 하나)와 목적문은
+        // 남긴다 — 체계를 어디서 만드는지 이 자리가 알려 준다(발견성, P4의 교훈).
+        if (universeId != 0L) {
+            binding.gradeSystemLayout.visibility = View.VISIBLE
+            setupGradeSystemSpinner(binding)
+            lifecycleScope.launch {
+                try {
+                    val app = requireContext().applicationContext as com.novelcharacter.app.NovelCharacterApp
+                    gradeSystems = app.database.gradeSystemDao().getByUniverseList(universeId)
+                    applyGradeSystemList(binding)
+                } catch (_: Exception) { /* 로드 실패 시 독자 표 편집만 가능 */ }
+            }
+        }
+
         // 검증 실패 시 다이얼로그를 닫지 않는다 (입력 유실 방지).
         // 타입 변경 영향 분석(비동기) 경로는 checkTypeChangeImpact가 완료 시점에 직접 닫는다.
         dialog.setValidatedPositiveButton { saveField(binding) }
         return dialog
+    }
+
+    // ── 등급 체계 참조 (U-1) ──
+
+    private fun setupGradeSystemSpinner(binding: DialogFieldEditBinding) {
+        binding.spinnerGradeSystem.adapter = ArrayAdapter(
+            requireContext(), android.R.layout.simple_spinner_item,
+            mutableListOf(getString(R.string.grade_system_standalone))
+        ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+        binding.spinnerGradeSystem.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                applyGradeSystemSelection(binding, position)
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+    }
+
+    /** 목록 로드 완료 — 어댑터를 채우고, 편집 중 필드가 참조하던 체계를 선택으로 반영한다. */
+    private fun applyGradeSystemList(binding: DialogFieldEditBinding) {
+        val labels = mutableListOf(getString(R.string.grade_system_standalone))
+        gradeSystems.forEach { labels.add(it.name) }
+        binding.spinnerGradeSystem.adapter = ArrayAdapter(
+            requireContext(), android.R.layout.simple_spinner_item, labels
+        ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+
+        val pending = pendingGradeSystemCode
+        if (pending != null) {
+            val index = gradeSystems.indexOfFirst { it.code == pending }
+            if (index >= 0) {
+                binding.spinnerGradeSystem.setSelection(index + 1)
+            } else {
+                // 참조가 끊긴 상태를 말없이 지우지 않는다 — 지금은 독자 표로 보여 주고,
+                // 저장하면 독자 표로 확정된다는 사실을 알린다(변수 제어).
+                android.widget.Toast.makeText(
+                    requireContext(), getString(R.string.grade_system_dangling), android.widget.Toast.LENGTH_LONG
+                ).show()
+                pendingGradeSystemCode = null
+            }
+        }
+    }
+
+    /**
+     * 스피너 선택 반영 — 체계를 고르면 라벨은 체계의 것으로 잠기고 숫자만 재정의 가능해진다.
+     * 현재 행의 숫자는 라벨이 같으면 보존한다(체계 전환이 입력을 지우지 않게).
+     */
+    private fun applyGradeSystemSelection(binding: DialogFieldEditBinding, position: Int) {
+        val system = if (position <= 0) null else gradeSystems.getOrNull(position - 1)
+        selectedGradeSystem = system
+        val currentValues = LinkedHashMap<String, String>()
+        gradeRows.forEach { row ->
+            val label = row.editLabel.text.toString().trim()
+            if (label.isNotEmpty()) currentValues[label] = row.editValue.text.toString()
+        }
+        val container = binding.gradeRowsContainer
+        val density = resources.displayMetrics.density
+        if (system == null) {
+            // 독자 표 — 잠금만 풀면 되므로 행을 다시 그리지 않고 상태만 되돌린다.
+            gradeRows.forEach { it.editLabel.isEnabled = true }
+            binding.btnAddGrade.visibility = View.VISIBLE
+            setGradeRowRemovable(true)
+            return
+        }
+        container.removeAllViews()
+        gradeRows.clear()
+        val defaults = com.novelcharacter.app.data.model.GradeSystemRef.gradesFromJson(system.gradesJson)
+        defaults.entries.sortedBy { it.value }.forEach { (label, def) ->
+            addGradeRow(
+                container, density, label,
+                currentValues[label] ?: com.novelcharacter.app.util.GradeTable.formatValue(def),
+                lockedLabel = true
+            )
+        }
+        binding.btnAddGrade.visibility = View.GONE
+    }
+
+    /** 체계 참조 중에는 행 삭제 버튼을 숨긴다 — 라벨 집합은 체계가 정한다(R-24). */
+    private fun setGradeRowRemovable(removable: Boolean) {
+        gradeRows.forEach { row ->
+            (row.container as? LinearLayout)?.let { rowLayout ->
+                for (i in 0 until rowLayout.childCount) {
+                    (rowLayout.getChildAt(i) as? ImageButton)?.visibility =
+                        if (removable) View.VISIBLE else View.GONE
+                }
+            }
+        }
     }
 
     private fun setupTypeSpinner(binding: DialogFieldEditBinding) {
@@ -669,8 +775,14 @@ class FieldEditDialog : DialogFragment() {
         binRangeRows.add(BinRangeRow(row, editRange))
     }
 
-    /** 등급 행 추가 (B-69) — 구간 행(addBinRangeRow)과 같은 방식의 동적 행. */
-    private fun addGradeRow(container: LinearLayout, density: Float, label: String = "", value: String = "") {
+    /**
+     * 등급 행 추가 (B-69) — 구간 행(addBinRangeRow)과 같은 방식의 동적 행.
+     * @param lockedLabel 체계 참조 중(U-1)에는 라벨이 체계의 것이라 편집·삭제를 잠근다(R-24).
+     */
+    private fun addGradeRow(
+        container: LinearLayout, density: Float, label: String = "", value: String = "",
+        lockedLabel: Boolean = false
+    ) {
         val ctx = requireContext()
         val row = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -685,6 +797,7 @@ class FieldEditDialog : DialogFragment() {
             hint = getString(R.string.hint_grade_label)
             textSize = 13f
             if (label.isNotEmpty()) setText(label)
+            isEnabled = !lockedLabel
         }
 
         val editValue = EditText(ctx).apply {
@@ -701,6 +814,7 @@ class FieldEditDialog : DialogFragment() {
             layoutParams = LinearLayout.LayoutParams((36 * density).toInt(), (36 * density).toInt())
             setImageResource(R.drawable.ic_delete)
             setBackgroundResource(android.R.color.transparent)
+            visibility = if (lockedLabel) View.GONE else View.VISIBLE
             setOnClickListener {
                 container.removeView(row)
                 gradeRows.removeAll { it.container == row }
@@ -1134,6 +1248,9 @@ class FieldEditDialog : DialogFragment() {
                 addGradeRow(gradeContainer, density, label, value)
             }
         }
+        // 체계 참조 (U-1) — 목록이 비동기라 code만 적어 두고, 로드 완료가 선택으로 바꾼다.
+        pendingGradeSystemCode =
+            com.novelcharacter.app.data.model.GradeSystemRef.codeFromConfig(field.config)
         val allowNeg = config["allowNegative"] as? Boolean ?: false
         binding.switchAllowNegative.isChecked = allowNeg
 
@@ -1536,20 +1653,9 @@ class FieldEditDialog : DialogFragment() {
         (dialog as? AlertDialog)?.getButton(AlertDialog.BUTTON_POSITIVE)?.isEnabled = enabled
     }
 
-    /** 등급 표 문제 → 화면 문구 (B-69). 순수 계층(GradeTable)은 타입만 돌려준다. */
+    /** 등급 표 문제 → 화면 문구 (B-69) — 등급 체계 편집(U-1)과 공유하는 공용 매퍼를 쓴다. */
     private fun gradeProblemMessage(problem: com.novelcharacter.app.util.GradeTable.Problem): String =
-        when (problem) {
-            is com.novelcharacter.app.util.GradeTable.Problem.BlankLabel ->
-                getString(R.string.grade_error_blank_label, problem.valueText)
-            is com.novelcharacter.app.util.GradeTable.Problem.BadNumber ->
-                getString(R.string.grade_error_bad_number, problem.label, problem.valueText)
-            is com.novelcharacter.app.util.GradeTable.Problem.DuplicateLabel ->
-                getString(R.string.grade_error_duplicate, problem.label)
-            is com.novelcharacter.app.util.GradeTable.Problem.SignPrefixedLabel ->
-                getString(R.string.grade_error_sign_prefix, problem.label)
-            com.novelcharacter.app.util.GradeTable.Problem.Empty ->
-                getString(R.string.grade_error_empty)
-        }
+        com.novelcharacter.app.ui.common.gradeProblemMessage(requireContext(), problem)
 
     private fun buildConfig(binding: DialogFieldEditBinding, type: FieldType): String {
         val config = mutableMapOf<String, Any>()
@@ -1585,6 +1691,18 @@ class FieldEditDialog : DialogFragment() {
                 )
                 config["grades"] = outcome.grades
                 config["allowNegative"] = binding.switchAllowNegative.isChecked
+                // 체계 참조 (U-1) — 실효 표(grades)와 함께 참조·재정의를 기록한다. 재정의는
+                // 체계 기본과 다른 숫자만 남는다(GradeSystemRef가 규칙의 단일 소스).
+                selectedGradeSystem?.let { system ->
+                    val defaults = com.novelcharacter.app.data.model.GradeSystemRef
+                        .gradesFromJson(system.gradesJson)
+                    val overrides = com.novelcharacter.app.data.model.GradeSystemRef
+                        .deriveOverrides(outcome.grades, defaults)
+                    config[com.novelcharacter.app.data.model.GradeSystemRef.CONFIG_KEY] = system.code
+                    if (overrides.isNotEmpty()) {
+                        config[com.novelcharacter.app.data.model.GradeSystemRef.OVERRIDES_KEY] = overrides
+                    }
+                }
             }
             FieldType.CALCULATED -> {
                 val formula = binding.editFormula.text.toString().trim()
