@@ -441,7 +441,15 @@ class UniverseListFragment : Fragment() {
                     setTextColor(android.graphics.Color.parseColor("#DD000000"))
                 }
                 val detailText = TextView(ctx).apply {
-                    text = "${field.type} · ${field.groupName} · ${field.key}"
+                    // 프리셋이 사건 필드까지 담게 되면서(P5) 한 목록에 두 종류가 섞인다 —
+                    // 표시가 같으면 어느 것이 사건 필드인지 열어 보지 않고는 알 수 없다.
+                    val targetPrefix =
+                        if (field.entityType == com.novelcharacter.app.data.model.FieldDefinition.ENTITY_EVENT) {
+                            getString(R.string.field_target_event) + " · "
+                        } else {
+                            ""
+                        }
+                    text = "$targetPrefix${field.type} · ${field.groupName} · ${field.key}"
                     textSize = 12f
                     setTextColor(android.graphics.Color.parseColor("#88000000"))
                 }

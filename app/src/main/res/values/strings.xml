@@ -58,6 +58,7 @@
     <string name="field_manage">필드 관리</string>
     <string name="import_fields_from_other">다른 세계관에서 필드 가져오기</string>
     <string name="import_no_other_universes">가져올 수 있는 다른 세계관이 없습니다</string>
+    <string name="import_no_event_field_sources">가져올 사건 필드가 없습니다. 다른 세계관이나 프리셋에 사건 필드가 있으면 여기에 나타납니다.</string>
     <string name="import_select_universe">가져올 세계관 선택</string>
     <string name="import_select_fields">%s에서 가져올 필드 선택</string>
     <string name="import_action">가져오기</string>
@@ -454,6 +455,12 @@
     <string name="faction_relationship_item_format">%1$s : %2$s (강도 %3$d)</string>
     <!-- 사건 커스텀 필드 (B-10) -->
     <string name="event_custom_fields">사건 필드</string>
+    <!-- 사건 필드를 사건 편집 자리에서 바로 만드는 경로 (P5) -->
+    <string name="event_field_add">사건 필드 추가</string>
+    <string name="event_field_empty_hint">이 세계관에는 사건 필드가 없습니다. 추가하면 사건 편집 폼과 연표 카드, 통계 교차분석에 함께 나타납니다.</string>
+    <string name="event_field_created">사건 필드 \'%1$s\'을(를) 추가했습니다</string>
+    <string name="event_field_create_failed">사건 필드를 추가하지 못했습니다</string>
+    <string name="event_field_key_duplicate">필드 키 \'%1$s\'이(가) 이미 있습니다. 다른 키로 다시 만들어 주세요.</string>
     <string name="field_target_character">캐릭터 필드</string>
     <string name="field_target_event">사건 필드</string>
     <!-- 온보딩/기능 힌트 (B-8) -->

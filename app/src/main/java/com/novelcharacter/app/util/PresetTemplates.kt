@@ -37,18 +37,7 @@ object PresetTemplates {
             Log.w("PresetTemplates", "Failed to parse fieldsJson for preset '${preset.name}'", e)
             emptyList()
         }
-        val fields = fieldDataList.mapIndexed { index, data ->
-            FieldDefinition(
-                universeId = 0,
-                key = data.key,
-                name = data.name,
-                type = data.type,
-                config = data.config,
-                groupName = data.groupName,
-                displayOrder = index,
-                isRequired = data.isRequired
-            )
-        }
+        val fields = toFieldDefinitions(fieldDataList)
         return PresetTemplate(
             universe = Universe(name = preset.name, description = preset.description),
             fields = fields,
@@ -66,7 +55,8 @@ object PresetTemplates {
                 type = fd.type,
                 config = fd.config,
                 groupName = fd.groupName,
-                isRequired = fd.isRequired
+                isRequired = fd.isRequired,
+                entityType = fd.entityType
             )
         }
         return gson.toJson(dataList)
@@ -79,7 +69,25 @@ object PresetTemplates {
         } catch (e: Exception) {
             emptyList()
         }
-        return dataList.mapIndexed { index, data ->
+        return toFieldDefinitions(dataList)
+    }
+
+    /**
+     * 직렬화 데이터 → 필드 정의. 복원 경로 두 곳([fromUserPreset]·[fieldsFromJson])이 같은 규칙을
+     * 쓰도록 한 자리에 둔다 — 갈라져 있으면 미리보기와 실제 적용이 다른 것을 보여 준다.
+     *
+     * `displayOrder`는 **종류별로** 센다. 캐릭터·사건 필드가 한 목록에 섞여 있어 전역 색인을 쓰면
+     * 사건 필드의 순서가 캐릭터 필드 개수만큼 밀려 시작한다(같은 세계관 안에서 두 종류의 순서는
+     * 서로 독립이다).
+     */
+    private fun toFieldDefinitions(dataList: List<FieldTemplateData>): List<FieldDefinition> {
+        val orderByEntity = mutableMapOf<String, Int>()
+        return dataList.map { data ->
+            // 구버전 프리셋에는 이 키가 없다 — Gson은 키가 없으면 non-null 선언에도 null을 주입하므로
+            // 필드를 nullable로 두고 여기서 캐릭터로 떨어뜨린다(R-2). 옛 프리셋은 전부 캐릭터 필드였다.
+            val entityType = data.entityType ?: FieldDefinition.ENTITY_CHARACTER
+            val order = orderByEntity.getOrDefault(entityType, 0)
+            orderByEntity[entityType] = order + 1
             FieldDefinition(
                 universeId = 0,
                 key = data.key,
@@ -87,8 +95,9 @@ object PresetTemplates {
                 type = data.type,
                 config = data.config,
                 groupName = data.groupName,
-                displayOrder = index,
-                isRequired = data.isRequired
+                displayOrder = order,
+                isRequired = data.isRequired,
+                entityType = entityType
             )
         }
     }
@@ -100,7 +109,13 @@ object PresetTemplates {
         val type: String,
         val config: String = "{}",
         val groupName: String = "기본 정보",
-        val isRequired: Boolean = false
+        val isRequired: Boolean = false,
+        /**
+         * 필드 종류(캐릭터/사건). **nullable인 것은 일부러다** — 이 키가 없는 구버전 프리셋 JSON을
+         * Gson이 읽을 때 non-null 선언이면 null이 주입돼 이후 비교가 전부 어긋난다(R-2).
+         * 읽는 쪽([toFieldDefinitions])이 캐릭터로 떨어뜨린다.
+         */
+        val entityType: String? = null
     )
 
     // ===== 기본 제공 템플릿 =====

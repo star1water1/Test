@@ -56,6 +56,7 @@ $MAIN/data/model/FieldValueLibraryConfig.kt
 $MAIN/data/model/FieldAiPolicy.kt
 $MAIN/data/model/FieldDescription.kt
 $MAIN/excel/FieldConfigColumns.kt
+$MAIN/data/model/ConfigParseCache.kt
 $MAIN/data/model/DisplayFormat.kt
 $MAIN/data/model/SearchPreset.kt
 $MAIN/data/model/Faction.kt
@@ -151,6 +152,8 @@ $MAIN/excel/MergedCellMap.kt
 $MAIN/excel/ImportSource.kt
 $MAIN/util/ResetPlan.kt
 $MAIN/util/MembershipTimeline.kt
+$MAIN/data/model/UserPresetTemplate.kt
+$MAIN/util/PresetTemplates.kt
 $MAIN/data/repository/FieldValueRules.kt
 $MAIN/share/WorldPackageFactionRelationships.kt
 $MAIN/share/WorldPackageContents.kt
@@ -177,6 +180,7 @@ $TEST/util/FormulaEvaluatorTest.kt
 $TEST/util/FormulaValidatorTest.kt
 $TEST/util/SortComparatorsTest.kt
 $TEST/util/EpochMemoTest.kt
+$TEST/util/PresetTemplatesRoundtripTest.kt
 $TEST/ai/AiJsonExtractorTest.kt
 $TEST/util/FieldFilterHelperTest.kt
 $TEST/data/SnapshotRefResolverTest.kt

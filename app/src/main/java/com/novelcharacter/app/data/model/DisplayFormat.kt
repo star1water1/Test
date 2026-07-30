@@ -20,14 +20,17 @@ enum class DisplayFormat(val key: String, val label: String) {
         fun fromKey(key: String?): DisplayFormat =
             entries.find { it.key == key } ?: PLAIN
 
-        fun fromConfig(config: String): DisplayFormat {
-            return try {
-                val json = JSONObject(config)
-                fromKey(json.optString("displayFormat", "plain"))
+        // 통계가 값 하나마다 부르는 자리라 파싱 결과를 기억한다 — 근거와 안전 조건은
+        // ConfigParseCache의 KDoc. enum이라 공유해도 되고, 키가 config 문자열이라 낡지 않는다.
+        private val cache = ConfigParseCache { config ->
+            try {
+                fromKey(JSONObject(config).optString("displayFormat", "plain"))
             } catch (_: Exception) {
                 PLAIN
             }
         }
+
+        fun fromConfig(config: String): DisplayFormat = cache.get(config)
 
         fun labels(): List<String> = entries.map { it.label }
     }

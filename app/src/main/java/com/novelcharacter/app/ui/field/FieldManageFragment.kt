@@ -275,14 +275,23 @@ class FieldManageFragment : Fragment() {
     /** 다른 세계관 + 프리셋에서 필드 가져오기 (중복 자동 표시) */
     private fun showImportFieldsDialog() {
         viewLifecycleOwner.lifecycleScope.launch {
-            val allSources = viewModel.getFieldsFromAllSources(universeId)
+            // 관리 중인 종류를 열 때 한 번 확정한다 — 소스·중복·삽입이 도중에 갈리지 않게.
+            val entityType = viewModel.currentEntityType()
+            val allSources = viewModel.getFieldsFromAllSources(universeId, entityType)
             if (allSources.isEmpty()) {
-                Toast.makeText(requireContext(), R.string.import_no_other_universes, Toast.LENGTH_SHORT).show()
+                // 사건 탭에서 "다른 세계관이 없습니다"는 거짓이 된다 — 세계관은 있고
+                // 그 종류의 필드가 없는 것이므로 사유를 갈라 알린다.
+                val message = if (entityType == FieldDefinition.ENTITY_EVENT) {
+                    R.string.import_no_event_field_sources
+                } else {
+                    R.string.import_no_other_universes
+                }
+                Toast.makeText(requireContext(), message, Toast.LENGTH_LONG).show()
                 return@launch
             }
 
-            // 현재 세계관의 기존 필드 키 (중복 확인용)
-            val currentFieldKeys = viewModel.getCurrentFieldKeys(universeId)
+            // 현재 세계관의 기존 필드 키 (중복 확인용) — 같은 종류만
+            val currentFieldKeys = viewModel.getCurrentFieldKeys(universeId, entityType)
 
             val ctx = requireContext()
             val sourceNames = allSources.keys.toList()
@@ -343,7 +352,7 @@ class FieldManageFragment : Fragment() {
                         fieldListView.isItemChecked(i)
                     }
                     if (selected.isNotEmpty()) {
-                        viewModel.importFields(universeId, selected)
+                        viewModel.importFields(universeId, selected, entityType)
                         Toast.makeText(ctx,
                             getString(R.string.import_success, selected.size),
                             Toast.LENGTH_SHORT).show()

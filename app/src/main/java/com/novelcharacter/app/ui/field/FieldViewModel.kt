@@ -188,8 +188,18 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** 다른 세계관 + 프리셋의 필드 목록 통합 조회 */
-    suspend fun getFieldsFromAllSources(currentUniverseId: Long): Map<String, List<FieldDefinition>> {
+    /**
+     * 다른 세계관 + 프리셋의 필드 목록 통합 조회 — **관리 중인 [entityType]과 같은 종류만** 모은다.
+     *
+     * 종전에는 종류를 가리지 않고 캐릭터 필드만 조회해, 사건 필드 탭에서 가져오기를 하면
+     * 캐릭터 필드가 소스로 뜨고 그것을 캐릭터 필드로 심어 **보고 있는 목록에 아무것도 나타나지
+     * 않았다**(중복 판정·순서도 캐릭터 모집단 기준이었다). 소스·중복·순서·삽입이 모두 같은
+     * 종류를 봐야 한다 — 한 곳만 어긋나도 조용한 무동작이 된다.
+     */
+    suspend fun getFieldsFromAllSources(
+        currentUniverseId: Long,
+        entityType: String
+    ): Map<String, List<FieldDefinition>> {
         val result = linkedMapOf<String, List<FieldDefinition>>()
 
         // 1. 다른 세계관 (이름 중복 시 구분을 위해 카운터 추가)
@@ -197,7 +207,7 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
         val nameCount = mutableMapOf<String, Int>()
         for (universe in allUniverses) {
             if (universe.id == currentUniverseId) continue
-            val fields = universeRepository.getFieldsByUniverseList(universe.id)
+            val fields = fieldsOf(universe.id, entityType)
             if (fields.isNotEmpty()) {
                 val count = nameCount.getOrDefault(universe.name, 0)
                 nameCount[universe.name] = count + 1
@@ -206,26 +216,36 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
 
-        // 2. 내장 프리셋 템플릿
+        // 2. 내장 프리셋 템플릿 — 해당 종류가 없는 프리셋은 빈 목록으로 뜨지 않게 건너뛴다
         for (preset in PresetTemplates.getBuiltInTemplates()) {
-            val label = "${preset.universe.name} (프리셋)"
-            result[label] = preset.fields
+            val fields = preset.fields.filter { it.entityType == entityType }
+            if (fields.isEmpty()) continue
+            result["${preset.universe.name} (프리셋)"] = fields
         }
 
         // 3. 사용자 정의 프리셋
         val userPresets = userPresetDao.getAllTemplatesList()
         for (preset in userPresets) {
             val template = PresetTemplates.fromUserPreset(preset)
-            val label = "${template.universe.name} (사용자 프리셋)"
-            result[label] = template.fields
+            val fields = template.fields.filter { it.entityType == entityType }
+            if (fields.isEmpty()) continue
+            result["${template.universe.name} (사용자 프리셋)"] = fields
         }
 
         return result
     }
 
-    /** 현재 세계관의 필드 키 목록 조회 */
-    suspend fun getCurrentFieldKeys(universeId: Long): Set<String> {
-        return universeRepository.getFieldsByUniverseList(universeId).map { it.key }.toSet()
+    /** 관리 중인 종류에 맞는 필드 조회 — 종류 분기를 한 자리에 모아 호출부가 어긋나지 않게 한다. */
+    private suspend fun fieldsOf(universeId: Long, entityType: String): List<FieldDefinition> =
+        if (entityType == FieldDefinition.ENTITY_EVENT) {
+            universeRepository.getEventFieldsByUniverseList(universeId)
+        } else {
+            universeRepository.getFieldsByUniverseList(universeId)
+        }
+
+    /** 현재 세계관에서 관리 중인 종류의 필드 키 목록 조회 (중복 표시용) */
+    suspend fun getCurrentFieldKeys(universeId: Long, entityType: String): Set<String> {
+        return fieldsOf(universeId, entityType).map { it.key }.toSet()
     }
 
     /** 지정 필드 키를 formula에서 참조하는 CALCULATED 필드 목록 조회 */
@@ -242,10 +262,20 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** 선택된 필드를 현재 세계관으로 복사 */
-    fun importFields(targetUniverseId: Long, sourceFields: List<FieldDefinition>) = viewModelScope.launch {
+    /**
+     * 선택된 필드를 현재 세계관의 [entityType] 종류로 복사.
+     *
+     * 중복 판정과 순서 산정은 **같은 종류의 기존 필드**만 모집단으로 삼는다 — key 유일성 제약이
+     * `(universeId, entityType, key)`라(FieldDefinition 인덱스) 종류가 다르면 같은 key가 공존할
+     * 수 있고, 캐릭터 필드를 모집단으로 세면 사건 필드를 넣을 때 멀쩡한 key가 중복으로 걸린다.
+     */
+    fun importFields(
+        targetUniverseId: Long,
+        sourceFields: List<FieldDefinition>,
+        entityType: String
+    ) = viewModelScope.launch {
         try {
-            val currentFields = universeRepository.getFieldsByUniverseList(targetUniverseId)
+            val currentFields = fieldsOf(targetUniverseId, entityType)
             val existingKeys = currentFields.map { it.key }.toSet()
             val maxOrder = currentFields.maxOfOrNull { it.displayOrder } ?: -1
 
@@ -255,6 +285,8 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
                     field.copy(
                         id = 0,
                         universeId = targetUniverseId,
+                        // 소스는 이미 같은 종류로 걸러져 있으나 명시해 불변식을 코드에 남긴다
+                        entityType = entityType,
                         displayOrder = maxOrder + 1 + index
                     )
                 }

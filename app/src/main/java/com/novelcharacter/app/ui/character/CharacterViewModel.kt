@@ -20,6 +20,7 @@ import com.novelcharacter.app.data.model.FieldFilter
 import com.novelcharacter.app.data.model.StructuredInputConfig
 import com.google.gson.Gson
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
@@ -1702,6 +1703,14 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         db.fieldDefinitionDao().getFieldsByUniverseList(universeId, com.novelcharacter.app.data.model.FieldDefinition.ENTITY_EVENT)
     suspend fun getEventFieldValuesForEvent(eventId: Long) =
         db.eventFieldValueDao().getValuesByEventList(eventId)
+
+    /**
+     * 사건 편집 자리에서 만든 사건 필드를 심는다(P5) — 연표판([TimelineViewModel])과 같은 규칙.
+     * 쓰기를 [viewModelScope]에서 돌리는 이유도 같다(호출자 취소가 삽입을 지우지 않게).
+     */
+    suspend fun insertEventField(field: com.novelcharacter.app.data.model.FieldDefinition): Long =
+        viewModelScope.async { universeRepository.insertField(field) }.await()
+
     suspend fun getEventsByNovelList(novelId: Long) = timelineRepository.getEventsByNovelList(novelId)
     suspend fun getEventsByUniverseList(universeId: Long) = timelineRepository.getEventsByUniverseList(universeId)
     suspend fun getAllEventsList() = timelineRepository.getAllEventsList()

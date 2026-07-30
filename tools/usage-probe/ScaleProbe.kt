@@ -7,14 +7,39 @@
 // 7-3 스케일 스윕: 구조를 유지한 채 캐릭터·필드값만 ×3/×10/×30 으로 복제 증폭한다
 //     (필드 정의와 값 종수 분포는 그대로 — 곡선의 형태를 보는 것이 목적이다).
 //
+// ── S1(측정 축 확대, 2026.07.30)에서 넓힌 것 ─────────────────────────────────
+// 위 7-1의 "6개 목록만"은 이제 **옛 범위**다. S1이 요구한 대로 셋을 더한다:
+//   (a) 조립 범위를 events·crossRefs·eventNovelCrossRefs·relationships·stateChanges·
+//       tags·factions·factionMemberships·nameBank 까지 넓힌다. 넓힌 뒤에도 남는 미조립은
+//       **사유와 함께** 출력한다(0건과 미조립은 다른 말이다 — 런북 7-1).
+//   (b) **힙을 시간과 함께 잰다.** 5-3이 "메모리는 측정된 적이 없다"고 남긴 자리이며
+//       S4(부분 적재)는 이 수 없이 착수하지 않는다.
+//   (c) **채움률 축.** 표본은 아직 덜 채워졌고 앞으로 더 채워진다(사용자 확인 2026.07.30).
+//       캐릭터 수만 늘리는 축은 그 사실을 담지 못해 미래를 과소평가한다 —
+//       "같은 캐릭터 수, 빈 칸을 채운" 축을 따로 잰다.
+//
+// 증폭 규칙(넓히면서 정한 것): **캐릭터에 매달린 것은 함께 복제하고, 세계관·작품에 매달린
+// 것은 유지한다.** 캐릭터만 30배로 늘리고 관계·상태변화·태그를 그대로 두면 캐릭터당 밀도가
+// 30분의 1로 묽어져 실제보다 가벼운 스냅샷을 재게 된다. 다만 이 규칙은 **캐릭터당 밀도를
+// 유지**할 뿐이므로, 밀도 자체가 오르는 축(캐릭터가 늘면 1인당 관계도 는다)은 여전히 미측정이다.
+//
 // 실행:
 //   java -Dstdout.encoding=UTF-8 -cp "$J/out-probe:$J/out-tests:$CP" ScaleProbeKt "<파일경로>"
 
 import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.CharacterFieldValue
+import com.novelcharacter.app.data.model.CharacterRelationship
+import com.novelcharacter.app.data.model.CharacterStateChange
+import com.novelcharacter.app.data.model.CharacterTag
+import com.novelcharacter.app.data.model.Faction
+import com.novelcharacter.app.data.model.FactionMembership
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.FieldValueEntry
+import com.novelcharacter.app.data.model.NameBankEntry
 import com.novelcharacter.app.data.model.Novel
+import com.novelcharacter.app.data.model.TimelineCharacterCrossRef
+import com.novelcharacter.app.data.model.TimelineEvent
+import com.novelcharacter.app.data.model.TimelineEventNovelCrossRef
 import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.excel.CHARACTER_SHEET_FINGERPRINT
 import com.novelcharacter.app.excel.ExcelCellValue
@@ -53,6 +78,55 @@ private fun timeMs(warmup: Int, runs: Int, body: () -> Unit): Long {
         val t0 = System.nanoTime(); body(); (System.nanoTime() - t0) / 1_000_000
     }.sorted()
     return samples[samples.size / 2]
+}
+
+// ── S1-b 힙 측정 ──────────────────────────────────────────────────────────
+// 정확한 retained size는 JVM에서 공짜로 얻을 수 없다. 여기서는 **GC로 잠재운 뒤의 사용량 차이**를
+// 쓴다 — 근사지만 "×30에서 스냅샷이 몇 MB인가"라는 질문에는 답이 된다. 절대값을 소수점까지
+// 믿지 말고 **증가 형태와 자릿수**를 볼 것(ART와 JVM은 객체 헤더·정렬이 다르다).
+
+private fun quietHeapBytes(): Long {
+    val rt = Runtime.getRuntime()
+    repeat(4) { System.gc(); Thread.sleep(60) }
+    return rt.totalMemory() - rt.freeMemory()
+}
+
+private fun mb(bytes: Long): String = "%.1fMB".format(bytes / 1024.0 / 1024.0)
+
+// ── S6-a 계산별 할당 ───────────────────────────────────────────────────────
+// 힙 폴링(peakHeapBytes)은 GC 사이에 찍히면 낮게 나오는 **하한**이라 계산끼리 견주기엔 거칠다.
+// 스레드 누적 할당량은 GC와 무관하게 **정확히** 누적되므로, "누가 얼마나 쓰레기를 만드는가"는
+// 이쪽으로 가른다. 힙 폴링이 답하는 질문(동시에 얼마나 살아 있는가)과는 다른 질문이다.
+private val threadMx =
+    java.lang.management.ManagementFactory.getThreadMXBean() as com.sun.management.ThreadMXBean
+
+@Suppress("DEPRECATION")
+private fun allocatedBytes(body: () -> Unit): Long {
+    val id = Thread.currentThread().id
+    val before = threadMx.getThreadAllocatedBytes(id)
+    body()
+    return threadMx.getThreadAllocatedBytes(id) - before
+}
+
+/**
+ * [body] 실행 중 힙 사용량의 최대치를 폴링으로 잡는다. GC가 도는 사이에 찍히면 낮게 나오므로
+ * **하한**으로 읽을 것 — "적어도 이만큼은 썼다"는 뜻이지 정확한 피크가 아니다.
+ */
+private fun peakHeapBytes(body: () -> Unit): Long {
+    val rt = Runtime.getRuntime()
+    val running = java.util.concurrent.atomic.AtomicBoolean(true)
+    val peak = java.util.concurrent.atomic.AtomicLong(0)
+    val poller = Thread {
+        while (running.get()) {
+            val used = rt.totalMemory() - rt.freeMemory()
+            peak.updateAndGet { if (used > it) used else it }
+            Thread.sleep(3)
+        }
+    }
+    poller.isDaemon = true
+    poller.start()
+    try { body() } finally { running.set(false); poller.join(500) }
+    return peak.get()
 }
 
 fun main(args: Array<String>) {
@@ -100,9 +174,13 @@ fun main(args: Array<String>) {
             }
         }
 
-        // ── 캐릭터 + 필드값 ──
+        // ── 캐릭터 + 필드값 (+ S1: 태그 · 코드/이름 역인덱스) ──
         val characters = mutableListOf<Character>()
         val fieldValues = mutableListOf<CharacterFieldValue>()
+        val tags = mutableListOf<CharacterTag>()
+        val charIdByCode = mutableMapOf<String, Long>()
+        val charIdByName = mutableMapOf<String, Long>()   // 동명이인은 첫 행이 이긴다(근사 — 아래 주)
+        val charUniverseId = mutableMapOf<Long, Long?>()  // 캐릭터 → 세계관 (채움률 계산용)
         val fixed = setOf("이름", "성", "이름(First)", "이명", "이미지경로", "작품", "메모", "태그",
             "코드", "작품코드", "정렬순서", "고정", "생성일")
         for ((sname, sh) in byName) {
@@ -133,6 +211,16 @@ fun main(args: Array<String>) {
                     anotherName = hs.indexOf("이명").takeIf { it >= 0 }?.let { text(row.getCell(it)) } ?: "",
                     memo = hs.indexOf("메모").takeIf { it >= 0 }?.let { text(row.getCell(it)) } ?: ""
                 ))
+                charUniverseId[cid] = uid
+                charIdByName.putIfAbsent(nm, cid)
+                hs.indexOf("코드").takeIf { it >= 0 }?.let { ci ->
+                    text(row.getCell(ci)).takeIf { it.isNotBlank() }?.let { charIdByCode[it] = cid }
+                }
+                // 태그는 전용 시트가 없다 — 캐릭터 시트의 `태그` 열(쉼표 구분)이 원본이다.
+                hs.indexOf("태그").takeIf { it >= 0 }?.let { ci ->
+                    text(row.getCell(ci)).split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                        .forEach { tags.add(CharacterTag(id = tags.size + 1L, characterId = cid, tag = it)) }
+                }
                 for ((ci, did) in colDef) {
                     val v = text(row.getCell(ci)); if (v.isBlank()) continue
                     fieldValues.add(CharacterFieldValue(id = fieldValues.size + 1L, characterId = cid, fieldDefinitionId = did, value = v))
@@ -159,43 +247,243 @@ fun main(args: Array<String>) {
             }
         }
 
-        fun snapshotOf(mult: Int): StatsSnapshot {
-            if (mult == 1) return StatsSnapshot(
-                characters = characters, novels = novels, universes = universes,
-                events = emptyList(), relationships = emptyList(), relationshipChanges = emptyList(),
-                tags = emptyList(), nameBank = emptyList(), stateChanges = emptyList(),
-                fieldDefinitions = defs, fieldValues = fieldValues, crossRefs = emptyList(),
-                valueEntries = entries
-            )
-            // 구조 그대로 복제 증폭 — 캐릭터 id 만 치환하고 필드 정의·값 종수 분포는 유지한다.
+        // ── S1-a: 종전에 미조립이던 목록들 ──────────────────────────────────
+        // 캐릭터 참조는 코드 우선, 없으면 이름으로 푼다. 코드가 왕복 안정 식별자이고
+        // 이름은 동명이인에서 갈리기 때문이다(폴백은 근사이며, 못 푼 건수를 아래에서 보고한다).
+        var unresolvedCharRefs = 0
+        fun resolveChar(code: String, name: String): Long? {
+            charIdByCode[code.trim()]?.let { return it }
+            charIdByName[name.trim()]?.let { return it }
+            if (code.isNotBlank() || name.isNotBlank()) unresolvedCharRefs++
+            return null
+        }
+
+        val events = mutableListOf<TimelineEvent>()
+        val crossRefs = mutableListOf<TimelineCharacterCrossRef>()
+        val eventNovelCrossRefs = mutableListOf<TimelineEventNovelCrossRef>()
+        byName["사건 연표"]?.let { sh ->
+            rows(sh) { get ->
+                val desc = get("사건 설명")
+                val year = get("연도").toIntOrNull() ?: return@rows
+                val eid = events.size + 1L
+                events.add(TimelineEvent(
+                    id = eid, year = year,
+                    month = get("월").toIntOrNull(), day = get("일").toIntOrNull(),
+                    calendarType = get("역법").ifBlank { "천개력" },
+                    description = desc,
+                    eventType = when (get("사건 유형")) { "출생" -> "birth"; "사망" -> "death"; else -> "" },
+                    universeId = uniIdByName[get("세계관")],
+                    displayOrder = get("정렬순서").toIntOrNull() ?: 0,
+                    isTemporary = get("임시배치") == "Y",
+                    code = get("코드").ifBlank { null }
+                ))
+                val codes = get("관련캐릭터코드").split(",").map { it.trim() }
+                val names = get("관련 캐릭터").split(",").map { it.trim() }
+                val n = maxOf(codes.size, names.size)
+                for (i in 0 until n) {
+                    val c = codes.getOrElse(i) { "" }; val nm = names.getOrElse(i) { "" }
+                    if (c.isBlank() && nm.isBlank()) continue
+                    resolveChar(c, nm)?.let { crossRefs.add(TimelineCharacterCrossRef(eid, it)) }
+                }
+                get("관련 작품").split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                    .forEach { t -> novelIdByTitle[t]?.let { eventNovelCrossRefs.add(TimelineEventNovelCrossRef(eid, it)) } }
+            }
+        }
+
+        val relationships = mutableListOf<CharacterRelationship>()
+        byName["캐릭터 관계"]?.let { sh ->
+            rows(sh) { get ->
+                val a = resolveChar(get("캐릭터1코드"), get("캐릭터1")) ?: return@rows
+                val b = resolveChar(get("캐릭터2코드"), get("캐릭터2")) ?: return@rows
+                relationships.add(CharacterRelationship(
+                    id = relationships.size + 1L, characterId1 = a, characterId2 = b,
+                    relationshipType = get("관계 유형"), description = get("설명"),
+                    intensity = get("강도").toIntOrNull() ?: 5,
+                    isBidirectional = get("양방향") != "N",
+                    displayOrder = get("표시순서").toIntOrNull() ?: 0,
+                    code = get("코드").ifBlank { null }
+                ))
+            }
+        }
+
+        val stateChanges = mutableListOf<CharacterStateChange>()
+        byName["캐릭터 상태변화"]?.let { sh ->
+            rows(sh) { get ->
+                val cid = resolveChar(get("캐릭터코드"), get("캐릭터")) ?: return@rows
+                val year = get("연도").toIntOrNull() ?: return@rows
+                stateChanges.add(CharacterStateChange(
+                    id = stateChanges.size + 1L, characterId = cid, year = year,
+                    month = get("월").toIntOrNull(), day = get("일").toIntOrNull(),
+                    fieldKey = get("필드키"), newValue = get("새 값"),
+                    description = get("설명"), code = get("코드").ifBlank { null }
+                ))
+            }
+        }
+
+        val factions = mutableListOf<Faction>()
+        val factionIdByCode = mutableMapOf<String, Long>()
+        val factionIdByName = mutableMapOf<String, Long>()
+        byName["세력"]?.let { sh ->
+            rows(sh) { get ->
+                val nm = get("이름"); if (nm.isBlank()) return@rows
+                val uid = uniIdByName[get("세계관")] ?: return@rows
+                val id = factions.size + 1L
+                factions.add(Faction(
+                    id = id, universeId = uid, name = nm, description = get("설명"),
+                    color = get("색상").ifBlank { "#2196F3" },
+                    autoRelationType = get("자동관계유형"),
+                    autoRelationIntensity = get("자동관계강도").toIntOrNull() ?: 5,
+                    displayOrder = get("정렬순서").toIntOrNull() ?: 0
+                ))
+                get("코드").takeIf { it.isNotBlank() }?.let { factionIdByCode[it] = id }
+                factionIdByName.putIfAbsent(nm, id)
+            }
+        }
+        val factionMemberships = mutableListOf<FactionMembership>()
+        byName["세력 소속"]?.let { sh ->
+            rows(sh) { get ->
+                val fid = factionIdByCode[get("세력코드").trim()] ?: factionIdByName[get("세력").trim()] ?: return@rows
+                val cid = resolveChar(get("캐릭터코드"), get("캐릭터")) ?: return@rows
+                factionMemberships.add(FactionMembership(
+                    id = factionMemberships.size + 1L, factionId = fid, characterId = cid,
+                    joinYear = get("가입연도").toIntOrNull(), leaveYear = get("탈퇴연도").toIntOrNull(),
+                    leaveType = get("탈퇴유형").ifBlank { null }
+                ))
+            }
+        }
+
+        val nameBank = mutableListOf<NameBankEntry>()
+        byName["이름 은행"]?.let { sh ->
+            rows(sh) { get ->
+                val nm = get("이름"); if (nm.isBlank()) return@rows
+                nameBank.add(NameBankEntry(
+                    id = nameBank.size + 1L, name = nm, gender = get("성별"),
+                    origin = get("출처"), notes = get("메모"), isUsed = get("사용여부") == "Y",
+                    usedByCharacterId = charIdByCode[get("사용캐릭터코드").trim()]
+                ))
+            }
+        }
+
+        // ── S1-c: 채움률 ──────────────────────────────────────────────────
+        // 분모는 "캐릭터 × 그 캐릭터가 속한 세계관의 캐릭터 필드 정의 수"다. 필드 정의는
+        // 세계관마다 다르므로 전역 90을 곱하면 분모가 부풀어 채움률이 실제보다 낮게 나온다.
+        val charDefsByUniverse = defs.filter { it.entityType == FieldDefinition.ENTITY_CHARACTER }
+            .groupBy { it.universeId }
+        val fillDenominator = characters.sumOf { c -> (charDefsByUniverse[charUniverseId[c.id]]?.size ?: 0).toLong() }
+        val fillRatio = if (fillDenominator == 0L) 0.0 else fieldValues.size.toDouble() / fillDenominator
+
+        /** 빈 칸을 그 필드의 기존 값으로 메운 필드값 목록 — 값 종수 분포는 유지한다. */
+        fun filledValues(): List<CharacterFieldValue> {
+            val samplesByDef = fieldValues.groupBy { it.fieldDefinitionId }
+                .mapValues { (_, v) -> v.map { it.value }.distinct() }
+            val have = fieldValues.mapTo(HashSet()) { it.characterId to it.fieldDefinitionId }
+            val out = ArrayList<CharacterFieldValue>(fieldValues)
+            var next = fieldValues.size.toLong() + 1
+            for (c in characters) {
+                val here = charDefsByUniverse[charUniverseId[c.id]] ?: continue
+                for ((i, fd) in here.withIndex()) {
+                    if ((c.id to fd.id) in have) continue
+                    val pool = samplesByDef[fd.id] ?: continue   // 표본에 값이 하나도 없는 필드는 못 채운다
+                    out.add(CharacterFieldValue(
+                        id = next++, characterId = c.id, fieldDefinitionId = fd.id,
+                        value = pool[(c.id.toInt() + i) % pool.size]
+                    ))
+                }
+            }
+            return out
+        }
+        val filled = filledValues()
+
+        /**
+         * @param mult   캐릭터와 그에 매달린 목록의 복제 배수
+         * @param full   true면 S1이 넓힌 전량 조립, false면 **옛 6목록 범위**(비교 기준)
+         * @param fillUp true면 빈 필드값을 메운 목록을 쓴다(S1-c 채움률 축)
+         */
+        fun snapshotOf(mult: Int, full: Boolean = true, fillUp: Boolean = false): StatsSnapshot {
+            val srcValues = if (fillUp) filled else fieldValues
+            // 캐릭터에 매달린 것만 복제한다(헤더의 증폭 규칙). 세계관·작품·필드 정의·값 라이브러리·
+            // 세력·이름 은행은 구조라 유지한다 — 유지하는 축은 아래 출력에 명시한다.
             val chars = ArrayList<Character>(characters.size * mult)
-            val vals = ArrayList<CharacterFieldValue>(fieldValues.size * mult)
-            val base = characters.size.toLong()
+            val vals = ArrayList<CharacterFieldValue>(srcValues.size * mult)
+            val tg = ArrayList<CharacterTag>(tags.size * mult)
+            val rel = ArrayList<CharacterRelationship>(relationships.size * mult)
+            val stc = ArrayList<CharacterStateChange>(stateChanges.size * mult)
+            val evs = ArrayList<TimelineEvent>(events.size * mult)
+            val xr = ArrayList<TimelineCharacterCrossRef>(crossRefs.size * mult)
+            val exr = ArrayList<TimelineEventNovelCrossRef>(eventNovelCrossRefs.size * mult)
+            val fm = ArrayList<FactionMembership>(factionMemberships.size * mult)
+            val cBase = characters.size.toLong()
+            val eBase = events.size.toLong()
             for (k in 0 until mult) {
-                val off = base * k
-                characters.forEach { chars.add(it.copy(id = it.id + off, name = it.name + "#" + k, code = it.code + k)) }
-                fieldValues.forEach { vals.add(it.copy(id = it.id + fieldValues.size.toLong() * k, characterId = it.characterId + off)) }
+                val cOff = cBase * k
+                val eOff = eBase * k
+                characters.forEach { chars.add(it.copy(id = it.id + cOff, name = it.name + "#" + k, code = it.code + k)) }
+                // 값 문자열을 **새 인스턴스로** 만든다. copy()는 String 참조를 공유하므로 그대로 두면
+                // 30벌이 문자열 하나를 나눠 써서 힙이 실제보다 훨씬 가볍게 측정된다(DB는 행마다 새
+                // String을 준다). 내용은 같으므로 값 종수 분포와 집계 결과는 바뀌지 않는다 —
+                // 바뀌는 것은 힙뿐이고, 그것이 이 축에서 재려는 것이다.
+                srcValues.forEach {
+                    vals.add(it.copy(
+                        id = it.id + srcValues.size.toLong() * k,
+                        characterId = it.characterId + cOff,
+                        value = if (k == 0) it.value else String(it.value.toCharArray())
+                    ))
+                }
+                if (!full) continue
+                tags.forEach { tg.add(it.copy(id = it.id + tags.size.toLong() * k, characterId = it.characterId + cOff)) }
+                relationships.forEach {
+                    rel.add(it.copy(
+                        id = it.id + relationships.size.toLong() * k,
+                        characterId1 = it.characterId1 + cOff, characterId2 = it.characterId2 + cOff
+                    ))
+                }
+                stateChanges.forEach { stc.add(it.copy(id = it.id + stateChanges.size.toLong() * k, characterId = it.characterId + cOff)) }
+                events.forEach { evs.add(it.copy(id = it.id + eOff)) }
+                crossRefs.forEach { xr.add(TimelineCharacterCrossRef(it.eventId + eOff, it.characterId + cOff)) }
+                eventNovelCrossRefs.forEach { exr.add(TimelineEventNovelCrossRef(it.eventId + eOff, it.novelId)) }
+                factionMemberships.forEach { fm.add(it.copy(id = it.id + factionMemberships.size.toLong() * k, characterId = it.characterId + cOff)) }
             }
             return StatsSnapshot(
                 characters = chars, novels = novels, universes = universes,
-                events = emptyList(), relationships = emptyList(), relationshipChanges = emptyList(),
-                tags = emptyList(), nameBank = emptyList(), stateChanges = emptyList(),
-                fieldDefinitions = defs, fieldValues = vals, crossRefs = emptyList(),
+                events = evs, relationships = rel,
+                // 관계변화는 표본에 시트 자체가 없다 — 0건이 아니라 **미조립**이다(출력 참조).
+                relationshipChanges = emptyList(),
+                tags = tg, nameBank = if (full) nameBank else emptyList(), stateChanges = stc,
+                fieldDefinitions = defs, fieldValues = vals, crossRefs = xr,
+                factions = if (full) factions else emptyList(), factionMemberships = fm,
+                eventNovelCrossRefs = exr,
                 valueEntries = entries
             )
         }
 
-        println("### SCALE PROBE")
-        println("조립: 세계관 ${universes.size} · 작품 ${novels.size} · 캐릭터 ${characters.size} · " +
+        println("### SCALE PROBE (S1 — 측정 축 확대)")
+        println("최대 힙: ${mb(Runtime.getRuntime().maxMemory())}")
+        println()
+        println("[조립] 세계관 ${universes.size} · 작품 ${novels.size} · 캐릭터 ${characters.size} · " +
             "필드정의 ${defs.size} · 필드값 ${fieldValues.size} · 라이브러리 ${entries.size}")
-        println("미조립(런북 7-1): events · crossRefs · relationships · relationshipChanges · stateChanges · " +
-            "factions · factionMemberships · nameBank · tags · eventField*")
+        println("[S1이 더한 것] 사건 ${events.size} · 사건-캐릭터 ${crossRefs.size} · 사건-작품 ${eventNovelCrossRefs.size} · " +
+            "관계 ${relationships.size} · 상태변화 ${stateChanges.size} · 태그 ${tags.size} · " +
+            "세력 ${factions.size} · 세력소속 ${factionMemberships.size} · 이름은행 ${nameBank.size}")
+        println("[여전히 미조립] relationshipChanges(표본에 `캐릭터 관계 변화` 시트 없음) · " +
+            "eventField*(대상=사건 필드 정의가 ${defs.count { it.entityType == FieldDefinition.ENTITY_EVENT }}개라 값도 없음)")
+        println("[증폭에서 고정] 세계관 · 작품 · 필드정의 · 값 라이브러리 · 세력 · 이름은행 (구조 축)")
+        if (unresolvedCharRefs > 0) println("[주의] 캐릭터 참조 미해결 ${unresolvedCharRefs}건 — 그만큼 관계·상태변화·crossRef가 덜 조립됐다")
+
+        // ── S1-c 채움률 ──
+        println()
+        println("[채움률] 필드값 ${fieldValues.size} / 가능한 칸 $fillDenominator = ${"%.1f".format(fillRatio * 100)}%")
+        println("         빈 칸을 메우면 필드값 ${fieldValues.size} → ${filled.size} (${"%.1f".format(filled.size.toDouble() / fieldValues.size)}배)")
+        println("         표본은 아직 채워지는 중이다 — 캐릭터 수만 늘리는 축은 이 배수를 담지 못한다.")
 
         val p = StatsDataProvider()
-        println("\n%-26s %8s %8s %8s %8s   %s".format("계산", "×1", "×3", "×10", "×30", "증가 형태"))
         val mults = listOf(1, 3, 10, 30)
-        val snaps = mults.associateWith { snapshotOf(it) }
 
+        // ── 1. 조립 범위가 수치를 얼마나 바꾸는가 (옛 6목록 vs S1 전량) ──
+        println()
+        println("[1] 조립 범위 비교 — 옛 범위에서 잰 수는 실제보다 가볍다")
+        val minimal30 = snapshotOf(30, full = false)
+        val full30 = snapshotOf(30, full = true)
+        println("%-26s %10s %10s %8s".format("계산", "옛범위×30", "전량×30", "차이"))
         data class Case(val label: String, val body: (StatsSnapshot) -> Unit)
         val cases = listOf(
             Case("computeSummary") { p.computeSummary(it) },
@@ -204,6 +492,21 @@ fun main(args: Array<String>) {
             Case("detectPatterns") { p.detectPatterns(it) },
             Case("computeCrossNovelComparison") { p.computeCrossNovelComparison(it) }
         )
+        // 이 표는 차이가 작을 것으로 예상되는 자리라 표본을 늘린다 — 5회로는 ±10%가 흔들려
+        // '옛 범위가 더 느리다'는 물리적으로 불가능한 부호가 나온다(1회차에서 실제로 나왔다).
+        for (c in cases) {
+            val a = timeMs(3, 9) { c.body(minimal30) }
+            val b = timeMs(3, 9) { c.body(full30) }
+            val d = if (a <= 0) "—" else "%+.0f%%".format((b - a) * 100.0 / a)
+            println("%-26s %10s %10s %8s".format(c.label, "${a}ms", "${b}ms", d))
+        }
+        println("  (부호가 음수면 노이즈다 — 목록을 더하고 계산이 빨라질 수는 없다)")
+
+        // ── 2. 시간 스윕 (전량 조립) ──
+        println()
+        println("[2] 시간 — 전량 조립 기준")
+        println("%-26s %8s %8s %8s %8s   %s".format("계산", "×1", "×3", "×10", "×30", "증가 형태"))
+        val snaps = mults.associateWith { snapshotOf(it) }
         for (c in cases) {
             val ts = mults.map { m -> timeMs(2, 5) { c.body(snaps[m]!!) } }
             val shape = if (ts[0] <= 0) "기준 0ms — 판정보류" else {
@@ -216,10 +519,137 @@ fun main(args: Array<String>) {
             }
             println("%-26s %8s %8s %8s %8s   %s".format(c.label, "${ts[0]}ms", "${ts[1]}ms", "${ts[2]}ms", "${ts[3]}ms", shape))
         }
-
-        // 부수 관측 (런북 7-2)
         val insights = p.computeFieldInsights(snaps[1]!!)
-        println("\n인사이트 카드 ${insights.size}장")
+        println("인사이트 카드 ${insights.size}장")
+
+        // ── 3. 힙 (S1-b) — 5-3이 "측정된 적이 없다"고 남긴 자리 ──
+        // 스냅샷을 하나씩 만들어 재고 즉시 버린다. 넷을 동시에 들고 있으면 서로의 측정을 오염시킨다
+        // (그리고 앱의 계산 캐시는 스냅샷 4개까지 보관하므로, 그 경우는 아래 마지막 줄로 환산한다).
+        snaps.keys.toList()  // 위 스윕이 잡고 있던 참조를 여기서 놓는다
+        println()
+        println("[3] 힙 — 스냅샷 적재량과 계산 피크")
+        // '계산 중 추가'는 피크에서 **스냅샷을 든 채 잠재운 힙**을 뺀 값이다. 피크 절대값을
+        // 스냅샷 크기로 나누면 JVM 기본 점유까지 분자에 들어가 ×1에서 수백 배 같은 무의미한
+        // 비율이 나온다(1회차에서 실제로 그랬다). 여기서 알고 싶은 것은 **적재 위에 얼마나 더
+        // 쌓이는가**이므로 차이를 적는다.
+        println("%-8s %12s %12s %14s".format("배수", "스냅샷", "계산중 추가", "적재+계산"))
+        val retained = LinkedHashMap<Int, Long>()
+        for (m in mults) {
+            val before = quietHeapBytes()
+            var snap: StatsSnapshot? = snapshotOf(m)
+            val loaded = quietHeapBytes()
+            val size = (loaded - before).coerceAtLeast(0)
+            retained[m] = size
+            val peak = peakHeapBytes { cases.forEach { it.body(snap!!) } }
+            val extra = (peak - loaded).coerceAtLeast(0)
+            println("%-8s %12s %12s %14s".format("×$m", mb(size), mb(extra), mb(size + extra)))
+            snap = null
+        }
+        val r30 = retained[30] ?: 0L
+        println("스냅샷 4개 캐시(현행 정책) 환산 — ×30에서 ${mb(r30 * 4)}")
+        println("  적재는 싼데 계산이 비싸면, 줄일 것은 캐시가 아니라 계산의 중간 할당이다.")
+
+        // ── 4. 채움률을 올린 축 (S1-c) ──
+        println()
+        println("[4] 채움률 100% — 캐릭터 수는 그대로, 빈 칸만 메운 경우")
+        println("%-26s %10s %10s %8s".format("계산", "현재×30", "채움×30", "차이"))
+        val filled30 = snapshotOf(30, fillUp = true)
+        for (c in cases) {
+            val a = timeMs(2, 5) { c.body(full30) }
+            val b = timeMs(2, 5) { c.body(filled30) }
+            val d = if (a <= 0) "—" else "%+.0f%%".format((b - a) * 100.0 / a)
+            println("%-26s %10s %10s %8s".format(c.label, "${a}ms", "${b}ms", d))
+        }
+        run {
+            val before = quietHeapBytes()
+            @Suppress("UNUSED_VARIABLE") var s: StatsSnapshot? = snapshotOf(30, fillUp = true)
+            val after = quietHeapBytes()
+            println("채움 ×30 스냅샷 힙 ${mb((after - before).coerceAtLeast(0))} (현재 ×30은 ${mb(r30)})")
+            s = null
+        }
+
+        // ── 5. 계산별 시간·할당 (S6 착수 조건) ────────────────────────────
+        // 6장이 S6에 건 조건: "계산별 할당을 가르기 전에 최적화하지 않는다."
+        // 위 [1]~[4]는 5계산만 봤으나 **화면은 10계산을 동시에 돌린다**(StatsViewModel의 async 블록).
+        // 빠진 다섯을 포함해 전부 잰다 — 안 재고 최적화하면 엉뚱한 곳을 깎는다.
+        println()
+        println("[5] 계산별 시간·할당 — 화면이 실제로 돌리는 10계산 (채움 ×30)")
+        println("  할당은 스레드 누적치라 GC와 무관하게 정확하다. 시간은 중앙값.")
+        data class Full(val label: String, val body: (StatsSnapshot) -> Unit)
+        val all = listOf(
+            Full("computeSummary") { p.computeSummary(it) },
+            Full("computeFieldInsights") { p.computeFieldInsights(it) },
+            Full("computeCharacterStats") { p.computeCharacterStats(it) },
+            Full("computeEventStats") { p.computeEventStats(it) },
+            Full("computeRelationshipStats") { p.computeRelationshipStats(it) },
+            Full("computeNameBankStats") { p.computeNameBankStats(it) },
+            Full("computeDataHealth") { p.computeDataHealth(it) },
+            Full("computeFieldAnalysis") { p.computeFieldAnalysis(it) },
+            Full("detectPatterns") { p.detectPatterns(it) },
+            Full("computeFactionStats") { p.computeFactionStats(it) }
+        )
+        println("%-28s %9s %11s %9s".format("계산", "시간", "할당", "시간몫"))
+        val rows = all.map { c ->
+            repeat(2) { c.body(filled30) }                       // JIT 예열 후 측정
+            val t = timeMs(0, 7) { c.body(filled30) }
+            val a = allocatedBytes { c.body(filled30) }
+            Triple(c.label, t, a)
+        }
+        val totalT = rows.sumOf { it.second }
+        val totalA = rows.sumOf { it.third }
+        for ((label, t, a) in rows.sortedByDescending { it.third }) {
+            println("%-28s %9s %11s %8.0f%%".format(label, "${t}ms", mb(a), t * 100.0 / totalT))
+        }
+        println("%-28s %9s %11s".format("합계(CPU 총량)", "${totalT}ms", mb(totalA)))
+        println("  ※ 화면은 이 열을 **동시에** 돌리므로 사용자 대기는 합계가 아니다 —")
+        println("    코어 수만큼 나뉘되 가장 느린 하나보다 짧아질 수는 없다.")
+        println("    가장 느린 하나 = ${rows.maxByOrNull { it.second }?.let { "${it.first} ${it.second}ms" }}")
+
+        // ── 6. 의심 지점 확인 — 토큰화가 값마다 config JSON을 다시 파싱한다(B-42) ──
+        // 상위 셋이 전부 필드값을 순회하며 토큰화한다. B-42는 `splitForStats`가 값 하나마다
+        // StructuredInputConfig.fromConfig(+ isMultiToken 경유 DisplayFormat.fromConfig)를 불러
+        // JSONObject를 2~3개 만든다고 적어 두었다 — **측정으로 확인한다.** 표적을 정하기 전에
+        // 표적이 맞는지 재는 것이 6장 착수 규칙이다.
+        println()
+        println("[6] 토큰화 1회 통과 비용 (채움 ×30 값 ${filled30.fieldValues.size}개)")
+        val defById = defs.associateBy { it.id }
+        val onePass = {
+            filled30.fieldValues.forEach { v ->
+                defById[v.fieldDefinitionId]?.let { fd ->
+                    com.novelcharacter.app.util.FieldValueTokenizer.splitForStats(fd, v.value)
+                }
+            }
+        }
+        repeat(2) { onePass() }
+        val passT = timeMs(0, 5) { onePass() }
+        val passA = allocatedBytes { onePass() }
+        println("  1회 통과: ${passT}ms · ${mb(passA)}")
+        println("  전체 대비: 시간 %.0f%% · 할당 %.0f%% (통계 한 번이 값 테이블을 여러 번 지난다)"
+            .format(passT * 100.0 / totalT, passA * 100.0 / totalA))
+        // 같은 통과에서 파싱만 뺀 하한 — fd별로 규칙을 한 번만 풀면 어디까지 내려가는가.
+        val ruleCache = HashMap<Long, Pair<Boolean, Boolean>>()   // fdId -> (구조화, 다중토큰)
+        val onePassCached = {
+            filled30.fieldValues.forEach { v ->
+                defById[v.fieldDefinitionId]?.let { fd ->
+                    val (structured, multi) = ruleCache.getOrPut(fd.id) {
+                        com.novelcharacter.app.data.model.StructuredInputConfig.fromConfig(fd.config).enabled to
+                            com.novelcharacter.app.util.FieldValueTokenizer.isMultiToken(fd)
+                    }
+                    when {
+                        fd.type == "BODY_SIZE" || structured -> Unit   // 구조화 경로는 이 비교의 대상이 아니다
+                        multi -> v.value.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                        else -> listOf(v.value.trim())
+                    }
+                }
+            }
+        }
+        repeat(2) { onePassCached() }
+        val cachedT = timeMs(0, 5) { onePassCached() }
+        val cachedA = allocatedBytes { onePassCached() }
+        println("  규칙을 필드당 1회만 풀면: ${cachedT}ms · ${mb(cachedA)}  " +
+            "(시간 -%.0f%% · 할당 -%.0f%%)".format(
+                (passT - cachedT) * 100.0 / passT.coerceAtLeast(1),
+                (passA - cachedA) * 100.0 / passA.coerceAtLeast(1)))
         println("### SCALE PROBE 끝")
     }
 }
