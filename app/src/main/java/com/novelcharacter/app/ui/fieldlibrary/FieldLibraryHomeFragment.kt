@@ -44,6 +44,19 @@ class FieldLibraryHomeFragment : Fragment() {
     private val sortPrefs
         get() = requireContext().getSharedPreferences("field_library_ui_state", android.content.Context.MODE_PRIVATE)
 
+    /**
+     * 이 화면의 정렬 키 — **`FieldValueListFragment`와 파일은 같아도 키는 달라야 한다.**
+     *
+     * 종전에는 두 화면이 같은 파일의 `"sort_mode"` 하나를 공유하면서 이쪽은 String,
+     * 저쪽은 Int로 읽고 썼다. SharedPreferences는 값의 타입을 기억하므로, 한 화면에서
+     * 정렬을 바꾼 뒤 다른 화면을 열면 **읽는 순간 ClassCastException으로 죽었다**
+     * (양쪽 다 `onViewCreated`의 맨몸 호출이라 가드도 없었다).
+     *
+     * 두 정렬은 애초에 다른 개념이다 — 이쪽은 '필드 목록'을(기본순·이름·엔트리 수),
+     * 저쪽은 '값 목록'을(사용 횟수 등) 정렬한다. 그래서 합치는 것이 아니라 키를 가른다.
+     */
+    private val keySortMode = "home_sort_mode"
+
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
     ): View {
@@ -80,7 +93,7 @@ class FieldLibraryHomeFragment : Fragment() {
             reload()
         }
 
-        sortMode = sortPrefs.getString("sort_mode", SORT_DEFAULT) ?: SORT_DEFAULT
+        sortMode = sortPrefs.getString(keySortMode, SORT_DEFAULT) ?: SORT_DEFAULT
         updateSortChip()
         binding.chipSort.setOnClickListener { anchor ->
             val modes = listOf(
@@ -92,7 +105,7 @@ class FieldLibraryHomeFragment : Fragment() {
                 modes.forEachIndexed { i, pair -> menu.add(0, i, i, pair.second) }
                 setOnMenuItemClickListener { item ->
                     sortMode = modes[item.itemId].first
-                    sortPrefs.edit().putString("sort_mode", sortMode).apply()
+                    sortPrefs.edit().putString(keySortMode, sortMode).apply()
                     updateSortChip()
                     reload()
                     true
