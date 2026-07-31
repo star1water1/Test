@@ -44,10 +44,10 @@
 ```
 app/src/main/java/com/novelcharacter/app/
 ├── data/            DB 계층 — 여기가 진실의 원본
-│   ├── model/  (44)   엔티티 + 설정 값 객체(FieldStatsConfig·DisplayFormat·SemanticRole …)
-│   ├── dao/    (24)   Room DAO
-│   ├── repository/ (21)  트랜잭션 경계 · 휴지통 · 스냅샷 복원
-│   └── database/      AppDatabase(v44) + 마이그레이션 43개(v1→v44)
+│   ├── model/         엔티티 + 설정 값 객체(FieldStatsConfig·DisplayFormat·SemanticRole …)
+│   ├── dao/           Room DAO
+│   ├── repository/    트랜잭션 경계 · 휴지통 · 스냅샷 복원
+│   └── database/      AppDatabase + 마이그레이션 (버전·개수는 1장 세는 법이 든다)
 ├── util/            ★ 순수 계층이 사는 곳 — 다만 전부가 순수하지는 않다(아래 ⚠️)
 ├── excel/           엑셀 왕복 (내보내기·가져오기·시트 규약)
 ├── share/           월드패키지(ZIP) 내보내기·들이기
@@ -118,7 +118,7 @@ app/src/main/java/com/novelcharacter/app/
 | `FormulaLexer` | 수식 어휘 규칙 + **버려지는 구간** | 미지 함수가 조용히 버려져 그럴듯한 오답이 됐다(로드맵 5) |
 | `FormulaEvaluator` / `FormulaValidator` / `FormulaDisplay` | 수식 평가 / 저장 시점 검증 / 표시 서식 | 서식·NaN 처리가 7곳에 복제(U-9) |
 | `GradeValueResolver` | 등급 라벨 → 숫자 | — |
-| `GradeSystemRef` | 등급 체계 참조·재정의·실효 표의 config 표현 + 강등·재배선 규칙 (쓰기 경로는 `GradeSystemRepository`만 — R-30) | — |
+| `GradeSystemRef` | 등급 체계 참조·재정의·실효 표의 config 표현 + 강등·재배선 규칙 (원본을 고치는 쓰기·전파는 `GradeSystemRepository` 경유 — R-30. 전파가 공허한 신설 삽입·복원·프룬 경로는 예외이며, 직접 호출 자리는 R-30 위반 후보로 점검한다) | — |
 | `SnapshotRefs` / `SnapshotRefResolver` | 휴지통 복원의 안정 식별자 | 복원이 남의 엔티티에 붙었다(R-1) |
 | `FolderNameToken` / `FolderRoundtripPlanner` / `FolderExportPlanner` / `FolderRoundtripLedger` | 이미지 폴더 왕복의 이름·계획·장부 | 개명 경로가 토큰을 깨 중복 편입(C-1) |
 | `CharacterFieldValueOverflow` | 캐릭터 시트가 담지 못한 값의 판정 | — |
@@ -143,8 +143,8 @@ app/src/main/java/com/novelcharacter/app/
 | `tools/check_dialog_validation.sh` | 자동 닫힘 버튼 안의 조기 return(R-27 위반) | 0건 동결 — 새 위반 즉시 실패 |
 | `tools/check_prefs_keys.sh` | 같은 prefs 키를 두 곳이 다른 타입으로 쓰는가(R-28 위반) | 충돌 0 — 새 충돌 즉시 실패 |
 | `tools/differential_compile.sh` | 손댄 파일에 **새로 생긴** 컴파일 오류만 | 기준선 대조 |
-| `tools/verify_room_migration*.py` | 마이그레이션 3종을 **실제 SQLite로** 실행 | 35 · 49 · 25건 |
-| `tools/verify_reset_coverage.py` | 엔티티 목록 ↔ `ResetPlan` ↔ `executeReset` 호출부 3자 대조 | 30건 |
+| `tools/verify_room_migration*.py` | 마이그레이션 하네스(마이그레이션마다 하나씩 는다 — 종 수는 `ls tools/verify_room_migration*.py`로 센다)를 **실제 SQLite로** 실행 | 각 스크립트 출력이 든다 |
+| `tools/verify_reset_coverage.py` | 엔티티 목록 ↔ `ResetPlan` ↔ `executeReset` 호출부 3자 대조 | 스크립트 출력이 든다(엔티티가 늘면 함께 는다) |
 
 **이 구조가 강제하는 설계 규칙:** 판단 로직은 최대한 `util`의 순수 객체로 내려야 한다.
 `ui`에 남은 로직은 **실행 검증이 불가능**하고 차분 컴파일의 잡음에 묻힌다(뷰바인딩 미해결만
@@ -175,15 +175,16 @@ app/src/main/java/com/novelcharacter/app/
 `FieldType` enum에 더하는 것으로 끝나지 않는다. 그리고 **분기 지점을 enum으로 세면 과소평가된다** —
 실측하면 이렇다:
 
-| 세는 방법 | 파일 수 |
-|-----------|---------|
-| `FieldType`을 참조 | 16 |
-| `FieldType.<상수>`로 분기 | 7 |
-| **`"CALCULATED"` 같은 생문자열로 분기** | **28** (2026-07-29 실측 — 등재 시점 23에서 늘었다) |
+| 세는 방법 | 세는 명령(파일 수) |
+|-----------|---------------------|
+| `FieldType`을 참조 | `grep -rl 'FieldType' app/src/main/java --include=*.kt \| wc -l` |
+| `FieldType.<상수>`로 분기 | `grep -rlE 'FieldType\.(TEXT\|NUMBER\|SELECT\|MULTI_TEXT\|GRADE\|CALCULATED\|BODY_SIZE)' app/src/main/java --include=*.kt \| wc -l` |
+| **`"CALCULATED"` 같은 생문자열로 분기** | `grep -rlE '"(TEXT\|NUMBER\|SELECT\|MULTI_TEXT\|GRADE\|CALCULATED\|BODY_SIZE)"' app/src/main/java --include=*.kt \| wc -l` — **착수 시 직접 셀 것.** 등재 후 계속 늘었다(23 → 28, 2026-07-29 실측) |
 
-타입 판정이 `fd.type == "CALCULATED"` 같은 **문자열 비교로 28개 파일에 흩어져 있다.**
-`FieldType`에 상수를 하나 더해도 이 28곳은 아무것도 모른다 — 새 타입은 그 화면들에서
-조용히 빠지고, 그것이 원칙 02 위반(껍데기 구현)의 가장 흔한 발생 경로다.
+타입 판정이 `fd.type == "CALCULATED"` 같은 **문자열 비교로 수십 개 파일에 흩어져 있다**
+(위 셋째 명령이 현행 수를 든다). `FieldType`에 상수를 하나 더해도 그 자리들은 아무것도
+모른다 — 새 타입은 그 화면들에서 조용히 빠지고, 그것이 원칙 02 위반(껍데기 구현)의 가장
+흔한 발생 경로다.
 
 착수 시 반드시 훑을 것: 입력 렌더(`DynamicFieldRenderer`) · 통계 적격성(`StatsFieldPolicy`) ·
 분포 계산(`ValueDistributions`) · 드릴다운 매칭(`FieldValueMatchSpec`) · 엑셀 열 직렬화
@@ -222,7 +223,8 @@ AI 정책(`FieldAiPolicy`).
 ### 5-4. 새 왕복 포맷
 
 현재 둘: **엑셀 왕복**(`excel/` — 시트 규약, 오버플로 시트, 헤더 별칭)과
-**월드패키지**(`share/` — ZIP + manifest v1~v3). 새 포맷은 기존 둘의 규약을 재사용해야 한다 —
+**월드패키지**(`share/` — ZIP + manifest. 현행 버전은 `WorldPackageContents.CURRENT_SCHEMA_VERSION`이
+든다). 새 포맷은 기존 둘의 규약을 재사용해야 한다 —
 특히 안정 식별자(`EntityCode`)와 "빈 칸 = 해제" 규약, 그리고 **거부가 아니라 수용·교정**
 (개발 의도 4번).
 
@@ -283,7 +285,7 @@ AI 정책(`FieldAiPolicy`).
 | **화면 문구** | `docs/text_style_guide_2026-07.md` |
 | **영역별 설계** | 엑셀 왕복 `excel_roundtrip_audit` · 엑셀 스트리밍 가져오기 `excel_streaming_import` · 이미지 폴더 왕복 `image_folder_roundtrip_design`(결정 근거 `image_external_management`, **확장 `image_folder_tag_ai`**) · AI `ai_integration`·`ai_control_and_ui_density` · 값 라이브러리 `field_value_library` · 필터·정렬 짝 `filter_sort_parity` |
 | **점검 결과·수리 계획** | `app_inspection_round2` · `repair_plan` · `usability_review` · `design_intent` |
-| **절차서** | `room_migration_verification` — 마이그레이션 하네스 3종을 어떻게 만들고 돌리는가 |
+| **절차서** | `room_migration_verification` — 마이그레이션 하네스를 어떻게 만들고 돌리는가(종 수는 `ls tools/verify_room_migration*.py`로 센다) |
 | **브랜치·병합** | `docs/branch_merge_rules.md` |
 | **끝난 것 / 낡은 것** | `docs/archive/` — 구현 완료된 계획서와 구시점 리뷰. **근거로 쓰지 말 것**(각 문서 머리의 보관 헤더가 무엇이 낡았는지 적어 둔다) |
 
@@ -302,6 +304,7 @@ AI 정책(`FieldAiPolicy`).
 
 | 버전 | 날짜 | 변경 내용 |
 |------|------|-----------|
+| v1.9 | 2026.07.31 | **2026.07.31 문서 감사 반영** — 2장 지도(DB 버전·파일 수 값 제거, 세는 법 위임), 3장 GradeSystemRef 행(R-30 예외 명시 — 프룬·신설 삽입 경로), 4장 하네스·리셋 행(종수·건수 → 스크립트 출력 위임), 5-1 실측표(값 → 세는 명령 3종 병기), 5-4 manifest 버전(코드 참조로), 7장 절차서 행(하네스 종수 제거) |
 | v1.8 | 2026.07.30 | **U-1 세계관 등급 체계 반영**(세션 로그 1-y장) — 2장 데이터 모델에 `GradeSystem` 등재(DB v46), 3장 단일 소스 표에 `GradeSystemRef` 등재(참조·재정의·실효 표의 config 표현 — 물질화 구조라 `GradeValueResolver` 소비자는 무변경), 6장 색인에 **R-30** 등재(물질화된 파생값의 원본 편집은 파생값 재작성과 한 트랜잭션) |
 | v1.7 | 2026.07.30 | **확-3 작품 축이 열려 5-2 확장점을 갱신**(종류가 셋이 됐다 — `character`·`event`·`novel`, 세션 로그 1-u장). 전수 대상이 `getFieldsByUniverse*`만이 아니라는 것을 명시했다(`getAllFieldsList`·`getFieldByKey`·`getGroupNames`·`countFieldsByKeyExcluding`도 같은 기본값을 갖는다). **한 종류를 여는 데 드는 자리를 목록으로** 남겼다 — 다음 종류(세계관·세력)의 견적이 추측이 아니라 실측에서 나오게. 아울러 **"순서가 열보다 위험하다"**를 경고로 넣었다(작품 시트가 필드 정의보다 먼저 처리돼 값이 버려질 참이었다). 3장 단일 소스 표에 `NovelFieldValueMerge`·`EntityFieldHeaders` 등재, 2장 데이터 모델에 `NovelFieldValue` 등재. **엔티티 수 '26'은 값을 지우고 세는 법으로 바꿨다** — 이 문서가 1장·7장에서 이미 두 번 쓴 처방이고, 실제로 v45가 표를 하나 더한 순간 낡았다 |
 | v1.6 | 2026.07.30 | **6장 색인에 규약 R-29 등재**(`entityType`으로 갈리는 기능은 조회·중복 판정·순서·쓰기가 모두 같은 종류를 본다 — P5, 세션 로그 1-p장). 아울러 **R-28 행이 셀 하나가 빠진 채였다** — 3열 표에 2열로 들어가 렌더가 어긋났다(신설 시 영역 칸을 빼먹었다). `저장·UI`로 채웠다: 바로 옆에 행을 더하면서 깨진 행을 두는 것이 더 나쁘다 |

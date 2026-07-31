@@ -2,7 +2,7 @@
 
 ## 목적
 
-모든 필드(시스템·커스텀, 캐릭터·사건)의 값을 **정규화된 카탈로그**로 관리한다.
+모든 필드(시스템·커스텀, 캐릭터·사건·작품)의 값을 **정규화된 카탈로그**로 관리한다.
 값은 입력 즉시 자동 수집되고, 사용자는 그 위에 표시 라벨·별칭·카테고리·설명을 큐레이션한다.
 자동완성·검색 칩·통계·엑셀·일괄편집·캐릭터 카드가 모두 이 카탈로그를 단일 소스로 소비한다.
 
@@ -38,7 +38,8 @@
 ## 자동 수확 (insert-only)
 
 쓰기 경로 전부에 훅: 캐릭터 저장(일반·세계관 간 이동)·필드값 일괄 저장·일괄 편집·작품 일괄
-이동·세계관 이관·**상태변화 기록**·사건 필드값 저장·휴지통 복원·엑셀 임포트 말미.
+이동·세계관 이관·**상태변화 기록**·사건 필드값 저장·**작품 필드값 저장**(`harvestForNovel` —
+확-3)·휴지통 복원·엑셀 임포트 말미·**월드패키지 임포트 말미**(`harvestUniverses`).
 계약: 트랜잭션 커밋 후 실행, 내부 runCatching(수확 실패가 저장을 실패시키지 않음),
 usageCount는 건드리지 않음(훅에서 recount 금지 — 저장 지연·무효화 폭풍 방지).
 
@@ -60,7 +61,8 @@ config에서 두 맵 제거) ② 전체 수확(상태변화 이력 포함) ③ �
 ## 전파 (rename / merge / delete)
 
 로드→토큰화→치환→재조합으로 수행(SQL 정확일치 금지 — 미trim 행 "서울 "도 잡음).
-대상: character_field_values + event_field_values + **character_state_changes**(연도 슬라이더·
+대상: character_field_values + event_field_values + **novel_field_values**(확-3 작품 축) +
+**character_state_changes**(연도 슬라이더·
 성장 그래프가 읽는 이력 — 구 migrateFieldKey 선례) + **필드 config의 값 리터럴**
 (SELECT options / GRADE grades / 시맨틱 aliveValue·deadValue — 생사 동기화·스피너 desync 방지).
 모든 파괴적 조작은 사전 드라이런(`previewPropagation`) 건수 확인을 거치고,
@@ -72,7 +74,7 @@ config에서 두 맵 제거) ② 전체 수확(상태변화 이력 포함) ③ �
 - `free`: 제안 끔
 - `restricted`: 라이브러리 값만 허용 — 저장 시 검증하되 차단 대신
   "허용 값 안내 + 추가하고 저장 / 입력 수정" 경로 제공. 가드 위치는
-  CharacterSaveCoordinator(편집·보충 공통)·사건 편집·일괄 편집.
+  CharacterSaveCoordinator(편집·보충 공통)·사건 편집·일괄 편집·작품 편집(확-3).
   엑셀 임포트는 거부하지 않고 경고만 (수용·교정 원칙).
 
 ## AI 정리 (`ai/FieldLibraryAiOrganizer`)

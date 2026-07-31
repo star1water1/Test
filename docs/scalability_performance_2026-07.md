@@ -250,11 +250,22 @@ B-42는 "필드별 파싱 규칙 값 타입을 만들어 호출부가 들고 다
 | `ExcelImporter.domParseBudgetBytes` 클램프 | 8MB~64MB | 넘으면 스트리밍 경로로(거부 아님) | ✅ — S2가 들인 상한 |
 | `SheetSpec.EXCEL_CELL_TEXT_LIMIT` | 32,767자 | 절단 + 건수 고지(R-14) | ✅ **왕복 계약** — 내보내기 절단과 가져오기 저장 한도가 같은 값을 봐야 한다 |
 | AI 프롬프트 상한 다수 | `MAX_FILLED_FIELDS` 60 · `MAX_RELATIONSHIPS` 30 · `MAX_TAGS` 50 · `MAX_MEMO_CHARS` 1500 … | 잘라냄 | 요청당 상한이라 규모 무관. 절단은 `truncationNotes`로 **개수 고지 구현·테스트 완료**(R-14) |
+| `TrashSnapshot.MAX_OPERATIONS` | 30(작업 묶음) | 초과분 **오래된 작업부터 영구 삭제**(pruneIfNeeded — 고지는 삭제 다이얼로그·휴지통 캡션) | ⚠️ **판정 필요(B-74)** — 버려지는 것이 복원 가능성 그 자체다. 대청소 반복형 사용(점검 2차 시나리오 6)이면 30건이 빨리 소진된다 |
+| `TrashSnapshot.RETENTION_MS` | 30일 | 기한 지난 작업 **영구 삭제** | 위와 같은 판정(B-74). 세는 명령에 안 잡히는 상한이기도 하다(아래 각주) |
+| `CharacterListPreset.MAX_PRESETS` / `SearchPreset.MAX_PRESETS` | 각 20 | 인앱 저장 **하드 차단**(통보 있음 — R-14). 단 엑셀 임포트는 초과 **수용**하며 같은 값을 "인앱 권장 한도"라 부른다 | ⚠️ **판정 필요(B-75)** — 같은 수를 한 경로는 법, 한 경로는 권고로 다룬다. 성격을 하나로 정할 것 |
+| `OperationLog.MAX_ENTRIES` | 200 | 오래된 이력부터 정리 | ✅ (열람용 이력 — 데이터 규모와 비례하지 않는다) |
+| `RecentActivity.MAX_ENTRIES` | 10 | 오래된 항목부터 밀림 | ✅ (홈 표시용) |
+| `CardDisplayConfig.MAX_ON_CARD` | 4(카드 표시 필드) | 초과 선택 차단 | ✅ (카드 레이아웃 계약 — 데이터 유실 아님) |
+| `ExcelExporter.MAX_DROPDOWN_ROWS` | 10,000행 | 초과 행에 드롭다운 검증 **미적용**(값 자체는 온전) | ✅ ×30 단일 시트에서도 여유 — 다만 넘으면 무음이므로 시트가 그 규모가 되면 고지 후보 |
+| `FieldDescription.MAX_CHARS` | 1,000자 | 절단 | ✅ (입력 시점 절단 — 왕복 유실 아님) |
 
 > **이 표는 "전수"를 표방하므로 상한을 새로 만들면 여기 등재한다.** 2026.07.30 검증에서
-> 미등재 6종이 나왔다(위 표에 편입) — 그중 `PAYLOAD_BUDGET_CHARS`는 5-2가 "방어는 R-10
-> 규약뿐"이라 적은 자리에 **실재하는 수치 방어**였다. 세는 법:
-> `grep -rnE 'const val (MAX|LIMIT|BUDGET|THRESHOLD|DEFAULT_CAP)[A-Z_]*' app/src/main/java --include=*.kt`
+> 미등재 6종이 나왔고(위 표에 편입) — 그중 `PAYLOAD_BUDGET_CHARS`는 5-2가 "방어는 R-10
+> 규약뿐"이라 적은 자리에 **실재하는 수치 방어**였다 — 2026.07.31 원칙 감사에서 **8종이 더
+> 나와 편입했다**(`TrashSnapshot.MAX_OPERATIONS` 이하의 행들). 세는 법(접미 일치 포함):
+> `grep -rnE 'const val [A-Z_]*(MAX|LIMIT|BUDGET|THRESHOLD|CAP|RETENTION)[A-Z_]*' app/src/main/java --include=*.kt`
+> — 다만 **함수형 상한**(`domParseBudgetBytes` 클램프 등)과 이름이 규칙을 벗어난 상수는 이
+> 명령에 안 잡히므로, 새 상한을 만들 때 등재하는 것이 유일한 전수 유지 방법이다.
 
 ### 상한을 새로 둘 때의 규칙 (C-18이 값비싸게 남긴 것)
 
@@ -380,8 +391,9 @@ B-42는 "필드별 파싱 규칙 값 타입을 만들어 호출부가 들고 다
 | `archive/storage_optimization_design_2026-07.md` | 앱 용량 ~3GB의 정체(자동 백업 이미지 ×3벌 상주 등) | **구현 완료** — `util/StorageAnalyzer` 실재(고아 이미지 범주 포함), 자동 백업 이미지 포함 기본값이 `true` → **`false`로 뒤집혔다** |
 | `excel_streaming_import_2026-07.md` (PR②) | 가져오기가 파일 전체를 DOM으로 메모리 적재하는 것 | ✅ **구현 완료 (2026.07.29, S2)** — 설계 원칙(이중 경로 + per-row 비분기)은 그대로 지켰고, 접근면 추상화라는 수단이 더해졌다 |
 
-**읽는 순서:** S2는 완료됐다. 남은 최우선은 **S1(측정 축 확대)**이며, S4는 S1 없이 착수하지 않는다.
-앞의 둘은 "왜 지금 구조가 이런가"의 근거로만 읽는다.
+**읽는 순서:** S1·S2는 완료됐고 **S4는 S1의 측정 결과로 취소됐다**(3-3 — 줄일 것은 적재가
+아니라 계산 중 할당이었다). S6은 1차 완료(3-6). 남은 것은 S3·S5·S6 잔여이며 **다음 표적은
+재서 정한다**(6장 표). 앞의 둘은 "왜 지금 구조가 이런가"의 근거로만 읽는다.
 
 ---
 
@@ -389,6 +401,7 @@ B-42는 "필드별 파싱 규칙 값 타입을 만들어 호출부가 들고 다
 
 | 버전 | 날짜 | 변경 내용 |
 |------|------|-----------|
+| v1.5 | 2026.07.31 | **2026.07.31 원칙 감사 반영** — 4장 상한 표에 미등재 8종 편입(`TrashSnapshot.MAX_OPERATIONS`·`RETENTION_MS`(B-74) · `MAX_PRESETS`×2(B-75) · `OperationLog`·`RecentActivity.MAX_ENTRIES` · `CardDisplayConfig.MAX_ON_CARD` · `MAX_DROPDOWN_ROWS` · `FieldDescription.MAX_CHARS`), 세는 명령 접미 일치로 확장 + 함수형 상한 한계 각주, 7장 읽는 순서 정정(S1 완료·S4 취소·S6 1차 완료 반영) |
 | v1.4 | 2026.07.30 | **S6 1차 — 계산별로 가르고 첫 표적을 잡았다**(3-6 신설, 세션 로그 1-r장). 분해가 상위 셋(`detectPatterns`·`computeFieldInsights`·`computeSummary`)에 시간 88%·할당 90%가 몰려 있음을 보였고, 셋의 공통 원인이 **값마다 config JSON을 다시 파싱하는 것**(B-42)이었다. `fromConfig` 메모이즈로 **CPU 4,593→1,837ms · 할당 3,009→1,106MB**. 3장 머리에 "3-1~3-5는 S6 이전 측정" 배너를 달았다 — 앞의 수를 지우지 않는 것은 **무엇을 보고 어디를 고쳤는가가 그 대비에 들어 있기 때문**이다 |
 | v1.3 | 2026.07.30 | **S1 완료 — 측정 축 확대**(세션 로그 1-q장). 조립을 9목록 넓히고(3-1) **힙을 처음으로 쟀다**(3-3 신설). 결과가 이 문서의 두 대목을 뒤집었다: ① **5-3의 전제** — 적재 5.5MB vs 계산 267MB(48배)라 붕괴 후보는 적재가 아니었다 → **S4 취소**, 대신 **S6**(계산 중간 할당) 등재 ② **2장의 축** — 표본 채움률이 **21.7%**라 '×30'은 상한이 아니라 **하한**이다(3-5 신설: 채우면 필드값 3.7배, 통계 3~4.7배, `detectPatterns` 약 2초). 7장 4단계의 2·3번도 이에 맞춰 고쳤다. `computeSummary` ×10의 502ms 잡음은 재현되지 않아 3-3 목록에서 내렸다 |
 | v1.2 | 2026.07.29 | **S2 완료 반영** — 128MB 벽 해소(5-1 재작성), 상한 표에서 `MAX_IMPORT_FILE_SIZE` 제거·`MAX_EXTRACTED_XLSX_SIZE` 등재, 부록의 `excel_streaming_import` 상태를 '구현 완료'로. 착수 조사가 정정한 전제 2건(dateHint 값 갈림·병합 셀 미파싱)과 재공격이 잡은 1건(빈 셀·빈 행의 모양)을 기록 |

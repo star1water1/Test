@@ -18,13 +18,13 @@
 > 실제 결과와 착수 조사가 정정한 것은 `docs/session_log_2026-07.md` 1-d장에 있다.
 
 
-## 목적 / 배경
+## 목적 / 배경 (설계 시점의 상태 — 구현 전)
 
-현재 가져오기는 `ExcelImporter.kt:353`에서
+설계 시점의 가져오기는 `ExcelImporter`가
 `xlsxFile.inputStream().use { WorkbookFactory.create(it) }` 로 **파일 전체를 메모리에
-DOM(XSSFWorkbook)으로 적재**한다. 이어지는 분석(analyzeAll)·가져오기(importAll)
+DOM(XSSFWorkbook)으로 적재**했다. 이어지는 분석(analyzeAll)·가져오기(importAll)
 파이프라인은 이 인메모리 워크북 위에서 `getSheet(name)`, `getRow(i)`, `getCell(idx)`
-같은 **랜덤 액세스**로 17개 시트를 처리한다.
+같은 **랜덤 액세스**로 전 시트를 처리했다(시트 종류는 `SheetSpec.kt`의 spec 함수들로 센다).
 
 캐릭터 수백 명 × 커스텀 필드 수십 열 + 연표·관계 시트가 큰 파일에서는 이 DOM 적재가
 `largeHeap`으로도 OOM을 낼 수 있다(PR①에서 largeHeap·용량 상한 완화·OOM 안내로 완충만

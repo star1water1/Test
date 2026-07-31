@@ -126,8 +126,11 @@ classify(["기타"])   → Location.Named("기타")  // 지금과 동일 — 판
 
 ```kotlin
 /** '기타' 서랍 — 묶음만 푼다. 캐릭터 배정은 건드리지 않는다(D-2). */
-data class UnlinkOnlyAction(val path: String, val groupId: String)
+data class UnlinkOnlyAction(val item: ScanItem, val path: String)
 ```
+
+(구현 시그니처로 정정 — 그룹 id는 싣지 않는다. 어느 묶음을 푸는가는 `plan(...,
+linkedPaths)`가 판정 근거다.)
 
 **`DetachAction`에 플래그를 더하지 않는 이유:** 그 자료형은 "배정을 뗀다"가 본체이고
 `unlinks`는 그 안의 갈래다. 배정을 떼지 않는 동작을 거기 실으면 이름이 거짓이 되고,
@@ -166,10 +169,13 @@ data class UnlinkOnlyAction(val path: String, val groupId: String)
 
 | 축 | 내용 | 상한 |
 |---|---|---|
-| **대상** | 그 외 폴더의 이름 + 그 폴더의 이미지 수 | 요청당 폴더 `MAX_FOLDERS_PER_REQUEST` (청킹) |
-| **어휘 ①** | 기존 `image_tags`의 distinct 태그, 빈도 상위 | `MAX_VOCAB_TAGS` |
-| **어휘 ②** | '기조에 포함' 필드의 사용값 | 필드당 `MAX_VALUES_PER_FIELD`, 총 `MAX_VOCAB_VALUES` |
-| **기조** | 사용자가 쓴 자유 서술(4장) | `MAX_POLICY_CHARS` |
+| **대상** | 그 외 폴더의 이름 + 그 폴더의 이미지 수 | 요청당 폴더 `IMAGE_TAG_FOLDERS_PER_REQUEST` (청킹) |
+| **어휘 ①** | 기존 `image_tags`의 distinct 태그, 빈도 상위 | `IMAGE_TAG_VOCAB_MAX` |
+| **어휘 ②** | '어휘에 포함' 필드의 사용값 | 필드당 `IMAGE_TAG_VALUES_PER_FIELD`, 총 `IMAGE_TAG_VALUES_TOTAL_MAX` |
+| **기조** | 사용자가 쓴 자유 서술(4장) | `IMAGE_TAG_POLICY_MAX_CHARS` |
+
+(상수명은 `AiPromptPolicy.kt`의 구현 이름으로 정정 — 설계 초안의 `MAX_*` 가칭은 구현에서
+`IMAGE_TAG_*` 접두로 통일됐다. 현행 값은 그 파일이 든다.)
 
 어휘 ②의 **선별은 새로 만들지 않는다** — `CharacterFieldAiSuggester.selectUsageExamples`가
 이미 "앞 2/3은 빈도 상위(주류 기조), 나머지 1/3은 균등 간격으로 훑어(분포의 폭)"를 난수 없이
@@ -232,7 +238,7 @@ AI 이미지 태그 어휘에 포함
 기조 문구에 적히지는 않으며, 이 필드의 값이 바뀌지도 않습니다.
 ```
 
-**이름을 '기조에 포함'이 아니라 '기조 어휘에 포함'으로 둔 이유**(D-3 결정의 실행):
+**이름을 '기조에 포함'이 아니라 '어휘에 포함'('AI 이미지 태그 어휘에 포함')으로 둔 이유**(D-3 결정의 실행):
 사용자가 우려한 그대로, '기조에 포함'은 "내가 쓴 기조 문구에 이 값들이 덧붙는다"로 읽힌다.
 실제 동작은 "AI에 함께 전달"이므로 목적문 2·3문장이 그 오해를 정면으로 막는다.
 
@@ -295,14 +301,14 @@ ORPHAN / TRASH`뿐이라 **링크 상태로 거를 방법이 없다**(실측). �
 `BaseFilter`에 값을 더하지 않고 **독립 축**으로 만든다:
 
 ```kotlin
-enum class LinkFilter { ANY, LINKED, UNLINKED, AUTO_LINKED }
+enum class LinkFilter { ANY, LINKED, UNLINKED, AUTO }
 ```
 
 **이유:** `BaseFilter`는 소유·상태의 배타 분류(캐릭터냐 고아냐 휴지통이냐)인데 링크 여부는
 그와 **직교**한다. "캐릭터에 배정됐고 링크는 없는 것"은 두 축의 교집합이라 한 enum에
 욱여넣으면 값이 곱으로 늘어난다. `Criteria`에 필드를 하나 더하고 `matches`에 한 줄을 얹는다.
 
-`AUTO_LINKED`를 분리하는 근거: `linkGroupId`가 `char:<id>` 접두면 캐릭터 자동 링크이고
+`AUTO`(캐릭터 자동 링크)를 분리하는 근거: `linkGroupId`가 `char:<id>` 접두면 캐릭터 자동 링크이고
 (`AutoLinkPlanner.AUTO_TOKEN_PREFIX`), 그건 사용자가 만든 묶음이 아니다. 둘을 합치면
 "내가 묶은 것"을 찾을 수 없다.
 
@@ -360,7 +366,7 @@ enum class LinkFilter { ANY, LINKED, UNLINKED, AUTO_LINKED }
 | **T-1** | '기타' 서랍 (2장 전부) + 고지 | ✅ 완료 (`c792280`) |
 | **T-2** | 링크 필터 (5-2) | ✅ 완료 (`4d3063b`) |
 | **T-3** | 장부 ③ + 어시스턴트 카드 (5-1) | ✅ 완료 (`7b54395`) |
-| **T-4** | 설정 2곳 (4-1·4-2) + 어휘 수집 + 제안 엔진 | ✅ 완료 (`6b83201`) |
+| **T-4** | 설정 2곳 (4-1·4-2) + 어휘 수집 + 제안 엔진 | ✅ 완료 (`38747f3` — 커밋 제목은 T-4·T-5 핵심을 겸한다) |
 | **T-5** | 검토 시트 + 받아오기 배선 (3장·4-3) | ✅ 완료 (`d0597a3`) |
 
 ### 8-1. 구현이 설계를 정정한 것 (2026-07-29)
@@ -421,5 +427,6 @@ D-2대로 배정을 유지하면 마무리의 `resyncIfEnabled`가 곧바로 도
 
 | 버전 | 날짜 | 변경 |
 |------|------|------|
+| v1.2 | 2026.07.31 | **2026.07.31 문서 감사 반영** — 구현과 어긋난 인용 정정: `UnlinkOnlyAction` 시그니처(item+path — 그룹 id는 plan이 판정), 3-2 상한 상수명(`IMAGE_TAG_*`), LinkFilter `AUTO_LINKED`→`AUTO`, 설정명 인용("어휘에 포함"), 8장 T-4 커밋 해시 `6b83201`→`38747f3` |
 | v1.1 | 2026.07.29 | **T-1~T-5 전부 구현 완료.** 8장을 상태표로 바꾸고 **8-1장(구현이 설계를 정정한 것 4건)** 신설 — ① 자동 링크 묶음은 서랍에서 풀지 않는다(풀면 재동기화가 도로 묶어 결과 요약이 거짓말한다) ② 묶음 결산은 항목마다가 아니라 링크 세트까지 선 뒤 한 번에(중간 상태로 판정하면 통째로 푸는 묶음의 첫 나머지가 잘못 잡힌다) ③ AI 태그 대상은 신규(항목 id)와 토큰(경로)을 나눠 실어야 한다 ④ `Navigate`의 새 필드는 맨 뒤 — 앞에 끼워 위치 인자 호출부 셋을 깨뜨렸고 차분 컴파일이 잡았다. 순수 JVM 942 → **981건**(신규 39) |
 | v1.0 | 2026.07.29 | 최초 작성 — 사용자 요청(이미지 폴더 '기타' 서랍 + AI 폴더 태그)의 설계. 착수 전 현행 코드 대조로 **전제 3건 정정**(`기타/`가 지금은 정반대로 링크 세트가 된다 / `_미배정/` 직속이 신규 파일에 한해 이미 같은 일을 한다 / "혼자 남은 링크 그룹"은 `clearGroupIfSingleton` 때문에 상태로 존재하지 않아 카드를 기록으로 만들어야 한다). 결정 D-1~D-7 사용자 확정. 구현은 T-1~T-5로 분할 |

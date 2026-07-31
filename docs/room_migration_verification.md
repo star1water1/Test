@@ -1,6 +1,9 @@
 # Room 마이그레이션 검증 절차
 
-> **상태: 현행 절차 — 스키마를 건드릴 때마다 쓴다.** (현재 DB **v44**, 마이그레이션 **43개** — v1→v44는 43단계다. 종전의 "44개"는 오기이며 `architecture` v1.2가 자기 문서에서 같은 오기를 이미 고쳤는데 **이 문서에는 소급되지 않았다**. 세는 법: `grep -rhoE 'MIGRATION_[0-9]+_[0-9]+' app/src/main/java --include=*.kt | sort -u | wc -l`)
+> **상태: 현행 절차 — 스키마를 건드릴 때마다 쓴다.** (현재 DB 버전은 `AppDatabase.kt`의
+> `version =`이 단일 소스다. 마이그레이션 개수의 세는 법:
+> `grep -rhoE 'MIGRATION_[0-9]+_[0-9]+' app/src/main/java --include=*.kt | sort -u | wc -l`
+> — 여기 값을 병기하던 관행은 두 판 연속 낡아 없앴다. v1→vN은 항상 N-1단계다.)
 > 이 문서는 끝난 계획서가 아니라 **살아 있는 절차서**다.
 
 DB 스키마 변경은 실패하면 **사용자 기기에서 앱이 기동하지 못한다**. 이 저장소는
@@ -19,7 +22,11 @@ DB 스키마 변경은 실패하면 **사용자 기기에서 앱이 기동하지
 python3 tools/verify_room_migration.py       # 초기 하네스 (대조군 포함)
 python3 tools/verify_room_migration_43.py    # v42 → v43 — 49건
 python3 tools/verify_room_migration_44.py    # v43 → v44 (image_meta.adoptSource) — 25건
+python3 tools/verify_room_migration_45.py    # v44 → v45 (작품 커스텀 필드, 확-3) — 23건
+python3 tools/verify_room_migration_46.py    # v45 → v46 (grade_systems, U-1) — 23건
 ```
+
+현행 전체 목록은 `ls tools/verify_room_migration*.py`가 든다(위 목록은 등재 시점 스냅샷).
 
 새 마이그레이션을 추가하면 **`_<새버전>.py`를 새로 만든다.** 건수는 각 스크립트의 실행 결과를
 믿을 것(문서의 숫자는 작성 시점 스냅샷이다).
