@@ -99,8 +99,13 @@ Maven Central은 접근 가능하다. `kotlin-compiler-embeddable`·`kotlin-stdl
 annotations-13.0, kotlinx-coroutines-core-jvm(1.9.0), kotlinx-coroutines-test-jvm-1.9.0,
 junit-4.13.2, hamcrest-core-1.3, json-20240303, gson-2.10.1,
 poi-5.2.5, poi-ooxml-5.2.5, poi-ooxml-lite-5.2.5, commons-collections4-4.4,
-commons-io-2.15.0, commons-compress-1.25.0, xmlbeans-5.2.0, log4j-api-2.21.1
+commons-io-2.15.0, commons-compress-1.25.0, xmlbeans-5.2.0, log4j-api-2.21.1,
+commons-lang3-3.14.0, SparseBitSet-1.3
 ```
+
+> **정본은 `tools/setup_jvm_env.sh`다** — 위 목록은 그 스크립트가 없던 2차 세션의 기록이며,
+> 이후 필요 jar이 늘 때는 스크립트만 갱신한다(단일 소스를 양쪽에 따로 두면 반드시
+> 드리프트한다 — 7장 규약 그대로).
 
 androidx 스텁(`$JARS_DIR/out-room`)에서 막히기 쉬운 점 셋 — 미리 알고 가면 시간을 아낀다:
 - `ForeignKey`에 **companion object로 CASCADE/SET_NULL/NO_ACTION/RESTRICT/SET_DEFAULT** 상수가 있어야 한다.
@@ -112,7 +117,8 @@ androidx 스텁(`$JARS_DIR/out-room`)에서 막히기 쉬운 점 셋 — 미리 
 JARS_DIR=/path/to/jars tools/run_jvm_tests.sh
 ```
 표준 kotlinc로 Android 비의존 소스만 컴파일하고 JUnitCore로 실행한다.
-**현재 148건 통과**(1차 세션 66건 → 2차에서 대폭 추가).
+**감사(2차 세션) 시점 148건 통과**(1차 세션 66건). 현행 건수는 `tools/run_jvm_tests.sh`
+실행 결과와 `remaining_work` 5장의 재현 기준선을 볼 것.
 
 테스트 가능한 형태로 뽑아낸 순수 로직(2차 세션에서 6개 추가):
 `CharacterFieldValueOverflow`, `PresetTemplateMatcher`, `FactionRefResolver`(+`ExcelRefColumns`),
@@ -127,9 +133,7 @@ JARS_DIR=/path/to/jars tools/run_jvm_tests.sh
 ```
 git stash push -m base && JARS_DIR=... tools/differential_compile.sh /tmp/base.txt && git stash pop
 JARS_DIR=... tools/differential_compile.sh /tmp/cur.txt
-sed -E 's/^([^:]+):[0-9]+:[0-9]+: (error: .*)$/\1: \2/' /tmp/base.txt | sort -u > /tmp/base-n.txt
-sed -E 's/^([^:]+):[0-9]+:[0-9]+: (error: .*)$/\1: \2/' /tmp/cur.txt  | sort -u > /tmp/cur-n.txt
-comm -13 /tmp/base-n.txt /tmp/cur-n.txt
+comm -13 /tmp/base.txt /tmp/cur.txt   # 두 출력은 스크립트가 이미 정규화·정렬해 둔다
 ```
 기준선에서도 약 3.5만 줄의 오류가 난다(Android SDK 부재).
 
@@ -144,10 +148,12 @@ comm -13 /tmp/base-n.txt /tmp/cur-n.txt
 
 ### (3) Room 마이그레이션 하네스 — 저장소에 포함됨
 ```
-python3 tools/verify_room_migration.py
+python3 tools/verify_room_migration.py   # 최초 하네스 — 이후 버전별 스크립트가 하나씩 늘었다
 ```
 의존성 없이 파이썬 내장 sqlite3만 사용. **AppDatabase.kt에서 실제 SQL을 추출해** 실제 SQLite로
-실행하고 35건을 검사한다. 새 마이그레이션을 추가하면 대상 버전·테이블 정의를 갱신할 것.
+실행한다. 하네스는 마이그레이션마다 하나씩이다(`ls tools/verify_room_migration*.py`로 센다) —
+**새 마이그레이션은 `tools/verify_room_migration_<버전>.py`를 새로 만든다**(절차는
+`docs/room_migration_verification.md` 1단계).
 
 ### (4) 리소스 점검
 ```
@@ -189,6 +195,8 @@ id는 이름이 이미 일치할 때의 타이브레이커로만 쓴다.
 ### 4-5. 예약 시트는 캐릭터 시트보다 먼저 이름을 선점한다
 `ExcelExporter`에서 예약 시트명은 세계관 루프 **앞에서** `sanitizeSheetName`으로 확보해야 한다.
 안 그러면 같은 이름의 세계관이 예약명을 빼앗는다. 이미지 시트가 세운 선례이며, 회귀 감사가 같은 결함을 잡았다.
+→ **이 규약은 R-6(`assignSheetName` — `conventions.md`)으로 대체됐다.** 이제 호출 순서에
+기대지 말 것 — 예약명 선점은 이름 배정기가 구조적으로 보장한다.
 
 ### 4-6. 복원할 수 없는 것은 지우지 않는다 — 스냅샷으로 때우지 말 것
 회귀 감사가 잡은 가장 값진 교훈이다. "삭제하되 휴지통에 스냅샷을 남긴다"는 안전망은 두 이유로 무너졌다:
@@ -282,11 +290,11 @@ id는 이름이 이미 일치할 때의 타이브레이커로만 쓴다.
 > (CLAUDE.md 문서 지도). 여기 있던 브랜치·커밋 대조 절차는 그 브랜치가 사라지고
 > master에 커밋이 쌓여 **실행 불가능해졌으므로 지웠다.**
 
-2. 검증 도구는 모두 `tools/`에 있다 — 3장의 환경 구축 절차대로 jar만 준비하면 된다.
-3. 감사 원본 항목은 소진됐고, 5장의 별건 3개(N1~N3)도 처리 완료됐다.
+1. 검증 도구는 모두 `tools/`에 있다 — 3장의 환경 구축 절차대로 jar만 준비하면 된다.
+2. 감사 원본 항목은 소진됐고, 5장의 별건 3개(N1~N3)도 처리 완료됐다.
    새 작업은 **`docs/remaining_work_2026-07.md` 4장의 백로그**부터 검토할 것.
-4. 수정할 때마다 (1) 순수 JVM 테스트 (2) 차분 컴파일 (3) 리소스 점검,
-   마이그레이션을 건드렸다면 (4) 하네스를 돌릴 것.
-5. **수정 후에는 반드시 자기 수정분을 재공격하라.** 2차 세션은 13건을 고친 뒤 회귀 감사에서
+3. 수정할 때마다 순수 JVM 테스트 · 차분 컴파일 · 리소스 점검을 돌리고,
+   마이그레이션을 건드렸다면 하네스까지 돌릴 것(도구별 상세는 3장의 (1)~(4)).
+4. **수정 후에는 반드시 자기 수정분을 재공격하라.** 2차 세션은 13건을 고친 뒤 회귀 감사에서
    자기 결함 7건(그중 high 1건)을 더 찾았다. 특히 **"안전망을 새로 만든" 코드를 의심할 것** —
    가장 심각했던 결함이 정확히 거기서 나왔다.

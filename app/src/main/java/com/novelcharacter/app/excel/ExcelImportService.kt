@@ -2477,7 +2477,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     fieldName = name,
                     fieldType = type,
                     config = portableMerged,
-                    columnPresent = gradeSystemColIndex >= 0,
+                    nameColumnPresent = gradeSystemColIndex >= 0,
+                    codeColumnPresent = gradeSystemCodeColIndex >= 0,
                     cellName = if (gradeSystemColIndex >= 0) getCellString(row, gradeSystemColIndex) else "",
                     cellCode = if (gradeSystemCodeColIndex >= 0) getCellString(row, gradeSystemCodeColIndex) else "",
                     existingConfig = existing?.config,
@@ -2520,7 +2521,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     /**
      * '필드 정의' 시트의 등급 체계 참조 병합 (U-1) — [FieldConfigColumns.merge]와 같은 3분기 문법.
      *
-     * ① 열이 있으면 셀이 값이다: 채움 = 참조(해석 실패는 독자 표 강등 + 고지), 빈칸 = 독자 표.
+     * ① 참조 열 쌍('등급체계'/'등급체계코드')의 유무·해제·조회 의도는 [refColumnIntent]가
+     *    정한다 — 관계 시트의 '세력'/'세력코드'와 같은 규약이다. **이름 칸을 비우면 코드 셀이
+     *    남아 있어도 독자 표다**(코드 열은 회색 잔재라, 읽으면 사용자가 이름을 지워도 해제되지
+     *    않는다). 조회는 코드 우선 → 이름 폴백이고, 해석 실패는 독자 표 강등 + 고지다.
      * ② 열이 없고 JSON에 참조 키가 있으면 그 참조를 존중한다(손편집·구형식 파일).
      * ③ 열도 키도 없으면 기존 DB의 참조를 다시 얹는다 — 이 분기를 빠뜨리면 두 열을 지운
      *    파일을 들일 때 참조가 무통보로 풀린다.
@@ -2535,7 +2539,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         fieldName: String,
         fieldType: String,
         config: String,
-        columnPresent: Boolean,
+        nameColumnPresent: Boolean,
+        codeColumnPresent: Boolean,
         cellName: String,
         cellCode: String,
         existingConfig: String?,
@@ -2576,23 +2581,24 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         }
 
         val jsonCode = ref.codeFromConfig(config)
-        return when {
-            columnPresent -> {
-                if (cellName.isBlank() && cellCode.isBlank()) ref.demote(config)
-                else resolve(cellCode, cellName)?.let { applyResolved(it) }
+        return when (refColumnIntent(nameColumnPresent, codeColumnPresent, cellName, cellCode)) {
+            RefIntent.CLEAR -> ref.demote(config)
+            RefIntent.LOOKUP ->
+                resolve(cellCode, cellName)?.let { applyResolved(it) }
                     ?: demoteWithNotice(cellName.ifBlank { cellCode })
-            }
-            jsonCode != null ->
-                resolve(jsonCode, null)?.let { applyResolved(it) } ?: demoteWithNotice(jsonCode)
-            else -> {
-                val existingCode = existingConfig?.let { ref.codeFromConfig(it) } ?: return config
-                resolve(existingCode, null)?.let { applyResolved(it) }
-                    ?: try {
-                        // 참조가 이미 끊겨 있던 기존 상태 그대로 — 가져오기가 상태를 조용히 바꾸지 않는다.
-                        org.json.JSONObject(config).put(ref.CONFIG_KEY, existingCode).toString()
-                    } catch (_: Exception) {
-                        config
-                    }
+            RefIntent.KEEP -> when {
+                jsonCode != null ->
+                    resolve(jsonCode, null)?.let { applyResolved(it) } ?: demoteWithNotice(jsonCode)
+                else -> {
+                    val existingCode = existingConfig?.let { ref.codeFromConfig(it) } ?: return config
+                    resolve(existingCode, null)?.let { applyResolved(it) }
+                        ?: try {
+                            // 참조가 이미 끊겨 있던 기존 상태 그대로 — 가져오기가 상태를 조용히 바꾸지 않는다.
+                            org.json.JSONObject(config).put(ref.CONFIG_KEY, existingCode).toString()
+                        } catch (_: Exception) {
+                            config
+                        }
+                }
             }
         }
     }
