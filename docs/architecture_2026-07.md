@@ -283,7 +283,7 @@ AI 정책(`FieldAiPolicy`).
 | **미이행 기능 색출** — 로드맵(1~4장)은 **닫혔고 5장의 미검증 후보만 살아 있다** | `docs/superficial_feature_audit_2026-07.md` |
 | **실사용 데이터가 말한 것** | `docs/usage_reality_check_2026-07.md` (+ `_runbook`) |
 | **화면 문구** | `docs/text_style_guide_2026-07.md` |
-| **영역별 설계** | 엑셀 왕복 `excel_roundtrip_audit` · 엑셀 스트리밍 가져오기 `excel_streaming_import` · 이미지 폴더 왕복 `image_folder_roundtrip_design`(결정 근거 `image_external_management`, **확장 `image_folder_tag_ai`**) · AI `ai_integration`·`ai_control_and_ui_density` · 값 라이브러리 `field_value_library` · 필터·정렬 짝 `filter_sort_parity` |
+| **영역별 설계** | 엑셀 왕복 `excel_roundtrip_audit` · 엑셀 스트리밍 가져오기 `excel_streaming_import` · 이미지 폴더 왕복 `image_folder_roundtrip_design`(결정 근거 `image_external_management`, **확장 `image_folder_tag_ai`**) · AI `ai_integration`·`ai_control_and_ui_density` · 값 라이브러리 `field_value_library` · 필터·정렬 짝 `filter_sort_parity` · **체형(실루엣 재편) `body_visual_redesign`(설계 확정 — 구현 대기)** |
 | **점검 결과·수리 계획** | `app_inspection_round2` · `repair_plan` · `usability_review` · `design_intent` |
 | **절차서** | `room_migration_verification` — 마이그레이션 하네스를 어떻게 만들고 돌리는가(종 수는 `ls tools/verify_room_migration*.py`로 센다) |
 | **브랜치·병합** | `docs/branch_merge_rules.md` |
@@ -304,6 +304,7 @@ AI 정책(`FieldAiPolicy`).
 
 | 버전 | 날짜 | 변경 내용 |
 |------|------|-----------|
+| v1.10 | 2026.07.31 | 7장 영역별 설계에 **체형(실루엣 재편) `body_visual_redesign`** 등재 — 설계 확정·구현 대기(사용자 확정 다음 작업) |
 | v1.9 | 2026.07.31 | **문서 감사 반영** — 2장 지도(DB 버전·파일 수 값 제거, 세는 법 위임), 3장 GradeSystemRef 행(R-30 예외 명시 — 프룬·신설 삽입 경로), 4장 하네스·리셋 행(종수·건수 → 스크립트 출력 위임), 5-1 실측표(값 → 세는 명령 3종 병기), 5-4 manifest 버전(코드 참조로), 7장 절차서 행(하네스 종수 제거) |
 | v1.8 | 2026.07.30 | **U-1 세계관 등급 체계 반영**(세션 로그 1-y장) — 2장 데이터 모델에 `GradeSystem` 등재(DB v46), 3장 단일 소스 표에 `GradeSystemRef` 등재(참조·재정의·실효 표의 config 표현 — 물질화 구조라 `GradeValueResolver` 소비자는 무변경), 6장 색인에 **R-30** 등재(물질화된 파생값의 원본 편집은 파생값 재작성과 한 트랜잭션) |
 | v1.7 | 2026.07.30 | **확-3 작품 축이 열려 5-2 확장점을 갱신**(종류가 셋이 됐다 — `character`·`event`·`novel`, 세션 로그 1-u장). 전수 대상이 `getFieldsByUniverse*`만이 아니라는 것을 명시했다(`getAllFieldsList`·`getFieldByKey`·`getGroupNames`·`countFieldsByKeyExcluding`도 같은 기본값을 갖는다). **한 종류를 여는 데 드는 자리를 목록으로** 남겼다 — 다음 종류(세계관·세력)의 견적이 추측이 아니라 실측에서 나오게. 아울러 **"순서가 열보다 위험하다"**를 경고로 넣었다(작품 시트가 필드 정의보다 먼저 처리돼 값이 버려질 참이었다). 3장 단일 소스 표에 `NovelFieldValueMerge`·`EntityFieldHeaders` 등재, 2장 데이터 모델에 `NovelFieldValue` 등재. **엔티티 수 '26'은 값을 지우고 세는 법으로 바꿨다** — 이 문서가 1장·7장에서 이미 두 번 쓴 처방이고, 실제로 v45가 표를 하나 더한 순간 낡았다 |

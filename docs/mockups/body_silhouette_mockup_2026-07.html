@@ -1,0 +1,589 @@
+<title>체형 실루엣 편집기 목업</title>
+<style>
+  :root {
+    --ground: #F7F4F6; --card: #FFFFFF; --ink: #241F26; --muted: #756C78;
+    --line: #E4DCE3; --accent: #8E5A7E; --accent-soft: #8E5A7E22;
+    --figure: #EBD8E5; --figure-arm: #DFC5D9; --figure-leg: #E5CEDF; --ghost: #8E8794; --warn: #B4552D; --chip: #F1E9F0;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground: #17141A; --card: #221E26; --ink: #EDE7EE; --muted: #A69DA9;
+      --line: #383241; --accent: #C98FB4; --accent-soft: #C98FB426;
+      --figure: #5E4C59; --figure-arm: #52404F; --figure-leg: #584754; --ghost: #7F7889; --warn: #E08050; --chip: #2E2833;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #17141A; --card: #221E26; --ink: #EDE7EE; --muted: #A69DA9;
+    --line: #383241; --accent: #C98FB4; --accent-soft: #C98FB426;
+    --figure: #5E4C59; --figure-arm: #52404F; --figure-leg: #584754; --ghost: #7F7889; --warn: #E08050; --chip: #2E2833;
+  }
+  :root[data-theme="light"] {
+    --ground: #F7F4F6; --card: #FFFFFF; --ink: #241F26; --muted: #756C78;
+    --line: #E4DCE3; --accent: #8E5A7E; --accent-soft: #8E5A7E22;
+    --figure: #EBD8E5; --figure-arm: #DFC5D9; --figure-leg: #E5CEDF; --ghost: #8E8794; --warn: #B4552D; --chip: #F1E9F0;
+  }
+  * { box-sizing: border-box; }
+  body {
+    background: var(--ground); color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans KR", sans-serif;
+    margin: 0; padding: 28px 20px 56px; line-height: 1.55;
+  }
+  .wrap { max-width: 1040px; margin: 0 auto; }
+  .eyebrow {
+    font-size: 11px; letter-spacing: .14em; color: var(--accent);
+    font-weight: 700; margin-bottom: 6px;
+  }
+  h1 { font-size: 22px; margin: 0 0 4px; text-wrap: balance; }
+  .lede { color: var(--muted); font-size: 13.5px; margin: 0 0 24px; max-width: 62ch; }
+  .panels { display: flex; gap: 24px; align-items: flex-start; flex-wrap: wrap; }
+  .phone {
+    background: var(--card); border: 1px solid var(--line); border-radius: 22px;
+    width: 375px; max-width: 100%; overflow: hidden; flex: 0 0 auto;
+    box-shadow: 0 1px 2px rgb(0 0 0 / .06), 0 8px 28px rgb(0 0 0 / .05);
+  }
+  .phone-label {
+    font-size: 11px; letter-spacing: .12em; font-weight: 700; color: var(--muted);
+    padding: 10px 16px 0;
+  }
+  .sheet-head { padding: 10px 16px 6px; display: flex; align-items: center; gap: 8px; }
+  .sheet-head .t { font-weight: 700; font-size: 15px; flex: 1; }
+  .iconbtn {
+    width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--line);
+    background: none; color: var(--muted); font-size: 15px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .iconbtn[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+  .iconbtn:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .purpose { font-size: 11.5px; color: var(--muted); padding: 0 16px 8px; }
+  .stage { position: relative; background: linear-gradient(var(--card), var(--ground) 140%); }
+  svg { display: block; touch-action: none; }
+  .clamp-note {
+    position: absolute; left: 12px; bottom: 10px; font-size: 10.5px; color: var(--warn);
+    background: var(--card); border: 1px solid var(--warn); border-radius: 8px;
+    padding: 3px 8px; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: 75%;
+  }
+  @media (prefers-reduced-motion: reduce) { .clamp-note { transition: none; } }
+  .clamp-note.on { opacity: 1; }
+  .rows { padding: 6px 16px 4px; border-top: 1px solid var(--line); }
+  .prow { display: grid; grid-template-columns: 64px 1fr 64px; gap: 10px; align-items: center; padding: 5px 0; }
+  .prow label { font-size: 12.5px; color: var(--ink); }
+  .prow .u { color: var(--muted); font-size: 10.5px; }
+  .prow input[type=range] { width: 100%; accent-color: var(--accent); }
+  .prow input[type=number] {
+    width: 100%; font: inherit; font-size: 12.5px; padding: 4px 6px;
+    font-variant-numeric: tabular-nums; text-align: right;
+    border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--ink);
+  }
+  .dicebox { border-top: 1px solid var(--line); padding: 8px 16px; }
+  .dicebox summary { font-size: 12.5px; cursor: pointer; color: var(--ink); font-weight: 600; }
+  .dicebox .opts { display: flex; gap: 8px; margin: 8px 0 2px; flex-wrap: wrap; }
+  select {
+    font: inherit; font-size: 12px; padding: 4px 8px; border: 1px solid var(--line);
+    border-radius: 8px; background: var(--card); color: var(--ink);
+  }
+  .btn {
+    font: inherit; font-size: 12.5px; font-weight: 600; padding: 7px 14px;
+    border-radius: 999px; border: 1px solid var(--line); background: var(--card);
+    color: var(--ink); cursor: pointer;
+  }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .footer-bar {
+    display: flex; gap: 10px; justify-content: flex-end; padding: 10px 16px 14px;
+    border-top: 1px solid var(--line);
+  }
+  .card-mock { padding: 12px 16px 16px; }
+  .cardbox { border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; }
+  .cardbox .head { display: flex; align-items: center; }
+  .cardbox .head .t { font-weight: 700; font-size: 14.5px; color: var(--accent); flex: 1; }
+  .card-body { display: flex; gap: 12px; margin-top: 8px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; }
+  .chip { background: var(--chip); border-radius: 999px; font-size: 11px; padding: 3px 9px; }
+  .metric { font-size: 12.5px; padding: 2px 0; font-variant-numeric: tabular-nums; }
+  .metric small { display: block; color: var(--muted); font-size: 10.5px; }
+  .more { margin-top: 8px; font-size: 12.5px; color: var(--accent); background: none; border: none; cursor: pointer; padding: 0; font-weight: 600; }
+  .detail { display: none; margin-top: 6px; border-top: 1px dashed var(--line); padding-top: 6px; }
+  .detail.on { display: block; }
+  .detail .metric { color: var(--muted); }
+  .legend { flex: 1 1 260px; min-width: 250px; font-size: 13px; color: var(--muted); }
+  .legend h2 { font-size: 13px; color: var(--ink); margin: 18px 0 6px; }
+  .legend ul { margin: 0; padding-left: 18px; } .legend li { margin: 4px 0; }
+  .legend .k { color: var(--accent); font-weight: 600; }
+</style>
+
+<div class="wrap">
+  <div class="eyebrow">BODY VISUAL REDESIGN · 설계 검증 목업</div>
+  <h1>체형 실루엣 편집기 — 만져 보는 설계안</h1>
+  <p class="lede">설계 문서 5-4의 감각 검증용입니다. 슬라이더·수치·실루엣의 <b>핸들(점)을 좌우로 드래그</b>해 보세요 — 셋이 양방향으로 동기됩니다. 🎲는 굴린 결과가 숫자가 아니라 실루엣으로 먼저 나타나는 흐름의 시연입니다. 수치 상수의 정본은 설계 문서 4-1입니다. 이 프로토타입의 그림 상수(기준 몸 정점·계수)는 잠정이며, 재저작(설계 문서 10장 0단계)이 레퍼런스 기준으로 갈아끼웁니다 — 인터랙션(핸들·동기·🎲·토글)은 이어받습니다.</p>
+
+  <div class="panels">
+    <!-- 편집기 시트 목업 -->
+    <div class="phone">
+      <div class="phone-label">편집기 시트 (5-4-4)</div>
+      <div class="sheet-head">
+        <span class="t">실루엣으로 조정</span>
+        <button class="iconbtn" id="btnGhost" aria-pressed="false" title="작품 평균 겹쳐 보기">👥</button>
+        <button class="iconbtn" id="btnLabels" aria-pressed="true" title="라벨 표시">🏷️</button>
+        <button class="iconbtn" id="btnParts" aria-pressed="true" title="파츠 색 구분">🧩</button>
+        <button class="iconbtn" title="닫기(취소)">✕</button>
+      </div>
+      <div class="purpose">실루엣을 잡으면 수치가 따라옵니다. 저장 전까지는 초안입니다.</div>
+      <div class="stage">
+        <svg id="stage" viewBox="0 0 240 330" width="100%" height="330" role="img" aria-label="체형 실루엣 편집 영역"></svg>
+        <div class="clamp-note" id="clampNote">그림의 표현 한계입니다 — 값은 그대로 저장됩니다</div>
+      </div>
+      <div class="rows" id="rows"></div>
+      <details class="dicebox" id="dice">
+        <summary>🎲 몸매 생성</summary>
+        <div class="opts">
+          <select id="genHeight" aria-label="키 옵션">
+            <option value="152">키: 작음</option><option value="163" selected>키: 보통</option>
+            <option value="172">키: 큼</option><option value="180">키: 매우 큼</option>
+          </select>
+          <select id="genBuild" aria-label="체형 옵션">
+            <option value="0">마름</option><option value="1">보통-마름</option>
+            <option value="2" selected>보통</option><option value="3">보통-풍만</option><option value="4">풍만</option>
+          </select>
+          <button class="btn" id="btnRoll">굴리기</button>
+          <button class="btn" id="btnUndo" disabled>직전으로</button>
+        </div>
+      </details>
+      <div class="footer-bar">
+        <button class="btn">취소</button>
+        <button class="btn primary" id="btnApply" disabled>적용</button>
+      </div>
+    </div>
+
+    <!-- 읽기 카드 목업 -->
+    <div class="phone">
+      <div class="phone-label">읽기 화면 카드 (5-4-2) — 편집 상태를 그대로 반영</div>
+      <div class="card-mock">
+        <div class="cardbox">
+          <div class="head">
+            <span class="t">체형 분석</span>
+            <button class="iconbtn" title="체형 분석 설정">⚙️</button>
+          </div>
+          <div class="card-body">
+            <svg id="mini" viewBox="0 0 150 240" width="118" height="186" role="img" aria-label="체형 실루엣 미리보기"></svg>
+            <div style="flex:1; min-width:0;">
+              <div class="chips" id="tagChips"></div>
+              <div class="metric" id="mCup"></div>
+              <div class="metric" id="mWhr"></div>
+              <div class="metric" id="mRatio"></div>
+            </div>
+          </div>
+          <button class="more" id="btnMore">자세히 ▾</button>
+          <div class="detail" id="detail">
+            <div class="metric" id="dDiff"></div>
+            <div class="metric" id="dHeightRel"></div>
+            <div class="metric">작품 내 순위: 가슴 2위 / 허리 1위 (전체 8캐릭터 중) — 예시 행</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="legend">
+      <h2>이 목업이 검증하는 것</h2>
+      <ul>
+        <li><span class="k">역방향 입력</span> — 핸들을 끌면 수치가 따라오는 감각(설계 D2). 핸들은 한쪽만 잡아도 좌우가 함께 움직입니다.</li>
+        <li><span class="k">🎲 체감 루프</span> — 굴리기 → 실루엣으로 확인 → 아니면 다시, 비슷하면 드래그 미세 조정.</li>
+        <li><span class="k">작품 평균 유령</span>(👥, 기본 끔 — 판정 P3) — 회색 윤곽과 비교하며 "쟤들보다 조금 더"식 상대 조정.</li>
+        <li><span class="k">표현 한계 고지</span> — 극단값으로 끌면 핸들이 경고색이 되고 안내가 뜨지만 <b>값은 그대로</b>입니다.</li>
+        <li><span class="k">카드 위계</span> — 요약(태그·컵·WHR)만 보이고 나머지는 '자세히'에 접힘.</li>
+      </ul>
+      <h2>실물과 다른 점</h2>
+      <ul>
+        <li>색·서체는 앱 테마를 따르게 되며 여기 팔레트는 목업용입니다.</li>
+        <li>어깨는 너비(cm), 가슴·허리·엉덩이는 둘레(cm) — 설계 5-4-1의 단위 규정 그대로.</li>
+        <li>체형 태그·컵은 기본 규칙 근사입니다(실물은 사용자 정의 규칙·컵 매핑 사용).</li>
+      </ul>
+    </div>
+  </div>
+</div>
+<script>
+(function () {
+  "use strict";
+  // ── 상태 ──
+  const BASE = { height: 165, shoulder: 38, bust: 86, waist: 62, hip: 90 }; // 기준 몸 (설계 4-1 정본)
+  const S = { height: 165, shoulder: 38, bust: 90, waist: 60, hip: 89 };
+  const AVG = { height: 164, shoulder: 37.5, bust: 86, waist: 63, hip: 90 }; // 작품 평균(예시)
+  const PARTS = [
+    { key: "height",   label: "키",     unit: "cm", min: 130, max: 205 },
+    { key: "shoulder", label: "어깨",   unit: "너비 cm", min: 28, max: 55 },
+    { key: "bust",     label: "가슴",   unit: "둘레 cm", min: 60, max: 150 },
+    { key: "waist",    label: "허리",   unit: "둘레 cm", min: 45, max: 110 },
+    { key: "hip",      label: "엉덩이", unit: "둘레 cm", min: 60, max: 150 },
+  ];
+  const ALPHA = { shoulder: 1.0, bust: .78, waist: 1.18, hip: 1.12 }; // 변형 이득 — 허리·엉덩이는 증폭(과장이 문법, 4-1)
+  const ANCHOR_Y = { shoulder: .812, bust: .708, waist: .622, hip: .522 };
+  let ghost = false, labels = true, parts = true, undoBuf = null;
+
+  // ── 기준 몸 정점 (키 비율, 반폭 cm — 저작 1회, 설계 4-1) ──
+  const R_OUTER = [
+    [.858, 2.9], [.845, 3.2], [.833, 8.0], [.822, 15.0], [.812, 17.2],
+    [.786, 15.4], [.762, 14.0], [.750, 13.9], [.740, 13.8], [.728, 13.7],
+    [.718, 13.5], [.708, 13.3], [.698, 13.0], [.688, 12.8], [.678, 12.2],
+    [.663, 11.7], [.648, 11.3], [.622, 10.5], [.592, 13.4], [.558, 16.4], [.522, 17.8],
+    [.478, 17.2], [.432, 14.4], [.372, 11.4], [.300, 8.9], [.262, 7.9],
+    [.222, 8.1], [.165, 6.6], [.095, 4.0], [.042, 2.9], [.022, 3.6], [.006, 3.1],
+  ];
+  const R_INNER_UP = [ // 발끝→가랑이(작은 V — 일직선 금지)
+    [.006, 1.7], [.042, 2.1], [.095, 2.4], [.165, 3.2], [.222, 3.0],
+    [.262, 2.7], [.300, 3.0], [.372, 3.9], [.432, 4.8], [.470, 4.0],
+    [.494, 2.2], [.506, 0.9],
+  ];
+  const HEAD = [ // 두상 (중심 기준 상대 cm — 6.5~7등신 비례, 턱 좁힘)
+    [0, 11.0], [5.2, 9.2], [7.4, 4.4], [7.0, -2.2], [4.4, -8.0], [0, -11.0],
+    [-4.4, -8.0], [-7.0, -2.2], [-7.4, 4.4], [-5.2, 9.2],
+  ];
+  // ── 부위 스케일 (베이스 템플릿 + 변형, 코사인 보간) ──
+  function scales(v) {
+    const w = Math.pow(v.waist / BASE.waist, ALPHA.waist);
+    return {
+      sh: Math.pow(v.shoulder / BASE.shoulder, ALPHA.shoulder),
+      b: Math.pow(v.bust / BASE.bust, ALPHA.bust),
+      rib: 1 + (w - 1) * 0.6, // 흉곽은 가슴 값과 독립 — 밑가슴(≈허리+보정)에 추종
+      w,
+      h: Math.pow(v.hip / BASE.hip, ALPHA.hip),
+    };
+  }
+  const cupDiff = v => Math.max(0, Math.min(v.bust - (v.waist + 6), 32));
+  function scaleAt(frac, sc) {
+    const knots = [
+      [.845, 1], [ANCHOR_Y.shoulder, sc.sh], [ANCHOR_Y.bust, sc.rib],
+      [ANCHOR_Y.waist, sc.w], [ANCHOR_Y.hip, sc.h],
+      [.30, 1 + (sc.h - 1) * .45], [.006, 1 + (sc.h - 1) * .15],
+    ];
+    if (frac >= knots[0][0]) return 1;
+    for (let i = 0; i < knots.length - 1; i++) {
+      const [a, sa] = knots[i], [b, sb] = knots[i + 1];
+      if (frac <= a && frac >= b) {
+        const t = (a - frac) / (a - b);
+        const w = (1 - Math.cos(Math.PI * t)) / 2;
+        return sa + (sb - sa) * w;
+      }
+    }
+    return knots[knots.length - 1][1];
+  }
+
+  function spline(pts, close) { // Catmull-Rom → cubic bezier
+    const n = pts.length;
+    const P = i => pts[close ? ((i % n) + n) % n : Math.max(0, Math.min(n - 1, i))];
+    let d = `M ${pts[0][0].toFixed(1)} ${pts[0][1].toFixed(1)}`;
+    const last = close ? n : n - 1;
+    for (let i = 0; i < last; i++) {
+      const p0 = P(i - 1), p1 = P(i), p2 = P(i + 1), p3 = P(i + 2);
+      const c1 = [p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6];
+      const c2 = [p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6];
+      d += ` C ${c1[0].toFixed(1)} ${c1[1].toFixed(1)}, ${c2[0].toFixed(1)} ${c2[1].toFixed(1)}, ${p2[0].toFixed(1)} ${p2[1].toFixed(1)}`;
+    }
+    return d + (close ? " Z" : "");
+  }
+
+  function figure(v, W, H, pad) {
+    const k = (H - pad * 2) / 205;          // px per cm (최대 키 고정 스케일)
+    const cx = W / 2, baseY = H - pad;
+    const hpx = v.height * k;
+    const y = f => baseY - hpx * f;
+    const sc = scales(v);
+    const bg = bustGeom(v);
+    const breastHalf = f => { // 물방울의 정면 프로필(높이별 반폭) — 흉곽과 독립.
+      // 최대폭은 대역 하부 1/3(가슴은 아래가 참), 상부는 대흉근 사면을 따라 완만히
+      // 소멸, 하부는 타원 1/4로 둥글게 닫힘 — 사인 단봉은 스필이 뾰족해져 기각.
+      if (f >= bg.topF || f <= bg.botF) return 0;
+      const t = (f - bg.botF) / (bg.topF - bg.botF), p = .46;
+      const w = t >= p
+        ? Math.pow(Math.cos(Math.PI / 2 * (t - p) / (1 - p)), 1.35)
+        : Math.sqrt(1 - Math.pow((p - t) / p, 2));
+      return bg.outCm * w;
+    };
+    const X = (frac, halfCm) => Math.max(halfCm * scaleAt(frac, sc), breastHalf(frac)) * k;
+    const loop = [];
+    for (const [f, x] of R_OUTER) loop.push([cx + X(f, x), y(f)]);
+    for (const [f, x] of R_INNER_UP) loop.push([cx + X(f, x), y(f)]);
+    for (let i = R_INNER_UP.length - 2; i >= 0; i--) { const [f, x] = R_INNER_UP[i]; loop.push([cx - X(f, x), y(f)]); }
+    for (let i = R_OUTER.length - 1; i >= 0; i--) { const [f, x] = R_OUTER[i]; loop.push([cx - X(f, x), y(f)]); }
+    const body = spline(loop, true);
+    // 머리 (고정 형상 — 6.5~7등신 비례, 몸통과 별도 패스: 윤곽 고리 방지)
+    const cy = y(.933);
+    const head = spline(HEAD.map(p => [cx + p[0] * k, cy - p[1] * k]), true);
+    // 팔 (어깨 스케일 따라 이동만, 굵기 불변 — 몸통과 띄워 허리 굴곡이 틈으로 읽히게.
+    // 단 가슴 스필이 팔 안쪽에 닿으면 겨드랑이 아래 구간만 초과분을 따라 바깥으로 휜다)
+    const edgeCm = 17.2 * sc.sh;
+    const ov = Math.max(0, bg.outCm + 0.6 - (edgeCm + 1.4)) * k;
+    const edge = edgeCm * k;
+    const arms = [1, -1].map(s => spline([
+      [cx + s * (edge - 1.2 * k), y(.808)],
+      [cx + s * (edge + 2.2 * k + ov * .55), y(.752)],
+      [cx + s * (edge + 3.2 * k + ov), y(.672)],
+      [cx + s * (edge + 2.6 * k + ov * .45), y(.578)],
+      [cx + s * (edge + 1.6 * k + ov * .15), y(.492)],
+      [cx + s * (edge + 2.1 * k), y(.448)],
+    ], false));
+    const armW = 3.6 * k;
+    return { body, head, arms, armW, cx, y, k, sc };
+  }
+  const halfBaseAt = { shoulder: 17.2, bust: 13.3, waist: 10.5, hip: 17.8 };
+  // 가슴 기하(공용): 컵에 비례해 폭·처짐 성장 — 흉곽 상한 없음(합집합 규칙, 4-1)
+  const bustGeom = v => {
+    const cd = cupDiff(v);
+    return {
+      cd,
+      outCm: Math.min(5.0 + cd * .55, 22.0),          // 바깥 폭 — cd≈15(C~D)부터 흉곽(13.3)을 넘는다
+      topF: .752,
+      botF: .752 - Math.min(.042 + cd * .0012, .078), // 밑가슴은 흉곽 중부에 — 허리로 처지지 않는다
+
+    };
+  };
+  const bustOuterCm = v => bustGeom(v).outCm;
+  // 볼륨 최대폭 높이 — 가슴 핸들·가이드라인이 앉는 곳(실측도 가장 볼록한 지점에서 잰다)
+  const bustPeakF = v => { const g = bustGeom(v); return g.botF + (g.topF - g.botF) * .46; };
+  function deformedHalf(key, v, k) {
+    const sc = scales(v);
+    if (key === "bust") return bustOuterCm(v) * k; // 핸들은 가슴 볼륨 가장자리에 — 잡는 대상이 곧 가슴
+    return halfBaseAt[key] * sc[{ shoulder: "sh", waist: "w", hip: "h" }[key]] * k;
+  }
+
+  // ── 그럴듯 범위(키 연동 — 클램프는 표시만) ──
+  function plausible(key, v) {
+    const h = S.height;
+    const R = { shoulder: [h * .20, h * .28], bust: [h * .42, h * .68], waist: [h * .30, h * .55], hip: [h * .44, h * .68] }[key];
+    return !R || (v >= R[0] && v <= R[1]);
+  }
+
+  // ── 렌더 ──
+  const stage = document.getElementById("stage"), mini = document.getElementById("mini");
+  const clampNote = document.getElementById("clampNote");
+  const HANDLE_KEYS = ["shoulder", "bust", "waist", "hip"];
+  // ── 2.5D 볼륨 표기층 — 외곽이 못 담는 부피를 음영으로 (값에 비례) ──
+  function volumeLayer(f, v, idp) {
+    const { cx, y, k, sc } = f;
+    const cd = cupDiff(v); // 컵 근사(보정 6)
+    const arc = (mx, my, ax, ay, a1, a2) => {
+      const p1 = [mx + ax * Math.cos(a1), my + ay * Math.sin(a1)];
+      const p2 = [mx + ax * Math.cos(a2), my + ay * Math.sin(a2)];
+      return `M ${p1[0].toFixed(1)} ${p1[1].toFixed(1)} A ${ax.toFixed(1)} ${ay.toFixed(1)} 0 0 1 ${p2[0].toFixed(1)} ${p2[1].toFixed(1)}`;
+    };
+    const d2r = d => d * Math.PI / 180;
+    let s = "";
+    // 가슴 — 물방울 작도(참고 자료 규칙): 상단 앵커 고정, 커질수록 아래·바깥으로,
+    // 가운데 골 유지, 언더 라인이 주 윤곽. (원형 마운드 금지 — "구슬 두 개" 판정)
+    const bg = bustGeom(v);
+    const topF = bg.topF, botF = bg.botF;
+    const midF = botF + (topF - botF) * .46; // 최대폭 높이 — 외곽 프로필 봉우리와 동기
+    const O = bg.outCm * k;   // 중심 기준 바깥 폭
+    const IN = 1.1 * k;                // 골(간격) — 고정
+    const sh = .006 + Math.min(cd, 28) * .0004; // 언더붑 캐스트 섀도 높이(컵 비례)
+    for (const side of [-1, 1]) {
+      const px = xc => (cx + side * xc).toFixed(1);
+      const dT = Math.max(0, bg.outCm - 14) * .0009; // 폭이 넓을수록 사면을 세운다(선반 방지)
+      const pts = [
+        [cx + side * IN, y(topF + .002)],
+        [cx + side * O * .50, y(topF - .009 - dT * .5)],
+        [cx + side * O * .88, y(topF - .021 - dT)],
+        [cx + side * O, y(midF)],
+        [cx + side * O * .80, y(botF + .011)],
+        [cx + side * O * .48, y(botF)],
+        [cx + side * IN * .78, y(botF + .011)],
+        [cx + side * IN * .62, y((topF + botF) / 2 + .008)],
+      ];
+      s += `<path d="${spline(pts, true)}" fill="#000" fill-opacity=".05"></path>`;
+      s += `<path d="M ${px(O * .84)} ${y(botF + .014).toFixed(1)} Q ${px(O * .46)} ${y(botF - .004).toFixed(1)} ${px(IN * .82)} ${y(botF + .011).toFixed(1)} L ${px(IN * .82)} ${y(botF + .011 - sh).toFixed(1)} Q ${px(O * .46)} ${y(botF - .004 - sh).toFixed(1)} ${px(O * .84)} ${y(botF + .014 - sh).toFixed(1)} Z" fill="#000" fill-opacity=".14"></path>`;
+      s += `<path d="M ${px(O * .84)} ${y(botF + .014).toFixed(1)} Q ${px(O * .46)} ${y(botF - .004).toFixed(1)} ${px(IN * .82)} ${y(botF + .011).toFixed(1)}" fill="none" stroke="#000" stroke-opacity="${(0.30 + Math.min(cd, 24) * .006).toFixed(2)}" stroke-width="${((1.0 + Math.min(cd, 24) * .022) * k).toFixed(1)}" stroke-linecap="round"></path>`;
+    }
+    // 쇄골 — 흉골 홈에서 어깨 쪽으로 얕은 S커브(어깨 스케일 추종, 고정 표기)
+    const shEdge = 17.2 * sc.sh * k;
+    for (const side of [-1, 1]) {
+      const x0 = cx + side * 1.4 * k, x1 = cx + side * shEdge * .60, x2 = cx + side * shEdge * .80;
+      s += `<path d="M ${x0.toFixed(1)} ${y(.818).toFixed(1)} Q ${x1.toFixed(1)} ${y(.812).toFixed(1)} ${x2.toFixed(1)} ${y(.826).toFixed(1)}" fill="none" stroke="#000" stroke-opacity=".15" stroke-width="${(0.9 * k).toFixed(1)}" stroke-linecap="round"></path>`;
+    }
+    s += `<line x1="${cx}" y1="${y(.742).toFixed(1)}" x2="${cx}" y2="${y(.722).toFixed(1)}" stroke="#000" stroke-opacity=".14" stroke-width="${(0.9 * k).toFixed(1)}" stroke-linecap="round"></line>`;
+    const ww = 10.5 * sc.w * k, hw = 17.8 * sc.h * k;
+    for (const side of [-1, 1]) {
+      s += `<ellipse cx="${(cx + side * (ww - 1.0 * k)).toFixed(1)}" cy="${y(.622).toFixed(1)}" rx="${(1.3 * k).toFixed(1)}" ry="${(4.0 * k).toFixed(1)}" fill="#000" fill-opacity=".12"></ellipse>`;
+      s += `<ellipse cx="${(cx + side * (hw - 1.6 * k)).toFixed(1)}" cy="${y(.535).toFixed(1)}" rx="${(1.7 * k).toFixed(1)}" ry="${(4.4 * k).toFixed(1)}" fill="#000" fill-opacity=".09"></ellipse>`;
+    }
+    s += `<ellipse cx="${cx}" cy="${y(.585).toFixed(1)}" rx="${(0.7 * k).toFixed(1)}" ry="${(0.45 * k).toFixed(1)}" fill="#000" fill-opacity=".13"></ellipse>`;
+    return s;
+  }
+
+  function drawFigure(v, W, H, pad, color, opts) {
+    const f = figure(v, W, H, pad);
+    let s = "";
+    for (const a of f.arms)
+      s += opts.ghost
+        ? `<path d="${a}" fill="none" stroke="${color}" stroke-width="${f.armW}" stroke-linecap="round" opacity=".8" stroke-dasharray="4 3"></path>`
+        : `<path d="${a}" fill="none" stroke="${color}" stroke-width="${(f.armW + 3.0).toFixed(1)}" stroke-linecap="round"></path>`
+          + `<path d="${a}" fill="none" stroke="${parts ? "var(--figure-arm)" : "var(--figure)"}" stroke-width="${f.armW}" stroke-linecap="round"></path>`;
+    s += opts.ghost
+      ? `<path d="${f.body}" fill="none" stroke="${color}" stroke-width="1.3" stroke-dasharray="4 3" opacity=".8"></path>`
+        + `<path d="${f.head}" fill="none" stroke="${color}" stroke-width="1.3" stroke-dasharray="4 3" opacity=".8"></path>`
+      : `<path d="${f.body}" fill="var(--figure)" stroke="${color}" stroke-width="2" stroke-linejoin="round"></path>`
+        + `<path d="${f.head}" fill="var(--figure)" stroke="${color}" stroke-width="2"></path>`;
+    if (!opts.ghost && parts) { // 다리 틴트 — 경계는 엉덩이 관절 V(팬티 라인), 몸 외곽에 클립
+      const idp = opts.idp || "g";
+      const yT = f.y(.548).toFixed(1), yC = f.y(.500).toFixed(1), yB = H + 4;
+      s += `<clipPath id="${idp}pc"><path d="${f.body}"></path></clipPath>`
+        + `<polygon points="0,${yT} ${f.cx},${yC} ${W},${yT} ${W},${yB} 0,${yB}" fill="var(--figure-leg)" clip-path="url(#${idp}pc)"></polygon>`
+        + `<path d="${f.body}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round"></path>`;
+    }
+    if (!opts.ghost) {
+      s += volumeLayer(f, v, opts.idp || "g");
+    }
+    return { svg: s, f };
+  }
+
+  function render() {
+    const css = k => getComputedStyle(document.documentElement).getPropertyValue(k).trim();
+    const accent = css("--accent"), ghostC = css("--ghost"), warn = css("--warn"), muted = css("--muted"), line = css("--line");
+    let s = "";
+    if (ghost) {
+      s += drawFigure(AVG, 240, 330, 20, ghostC, { ghost: true }).svg;
+      s += `<text x="10" y="20" font-size="9" fill="${ghostC}">─ 작품 평균</text>`;
+    }
+    const { svg, f } = drawFigure(S, 240, 330, 20, accent, { ghost: false, idp: "st" });
+    s += svg;
+    let anyClamp = false;
+    for (const key of HANDLE_KEYS) {
+      const fy = f.y(key === "bust" ? bustPeakF(S) : ANCHOR_Y[key]);
+      const half = deformedHalf(key, S, f.k);
+      const ok = plausible(key, S[key]); if (!ok) anyClamp = true;
+      const c = ok ? accent : warn;
+      if (labels) {
+        s += `<line x1="${f.cx - half - 30}" y1="${fy}" x2="${f.cx + half + 30}" y2="${fy}" stroke="${line}" stroke-width="1" stroke-dasharray="2 3"></line>`;
+        s += `<text x="6" y="${fy - 3}" font-size="8.5" fill="${muted}">${PARTS.find(p => p.key === key).label}</text>`;
+        s += `<text x="234" y="${fy - 3}" font-size="9" fill="${c}" text-anchor="end" font-weight="600">${Math.round(S[key])}</text>`;
+      }
+      for (const side of [-1, 1])
+        s += `<g class="handle" data-key="${key}" style="cursor:ew-resize">
+                <circle cx="${f.cx + side * half}" cy="${fy}" r="14" fill="transparent"></circle>
+                <circle cx="${f.cx + side * half}" cy="${fy}" r="5" fill="var(--card)" stroke="${c}" stroke-width="2"></circle>
+              </g>`;
+    }
+    if (labels) s += `<text x="6" y="322" font-size="8.5" fill="${muted}">키 ${Math.round(S.height)}cm</text>`;
+    stage.innerHTML = s;
+    clampNote.classList.toggle("on", anyClamp);
+    mini.innerHTML = drawFigure(S, 150, 240, 12, accent, { ghost: false, idp: "mi" }).svg;
+    renderRows(); renderCard();
+  }
+
+  // ── 슬라이더/수치 행 ──
+  const rows = document.getElementById("rows");
+  function renderRows() {
+    if (!rows.dataset.built) {
+      rows.innerHTML = PARTS.map(p => `
+        <div class="prow">
+          <label for="r_${p.key}">${p.label} <span class="u">${p.unit}</span></label>
+          <input type="range" id="r_${p.key}" min="${p.min}" max="${p.max}" step="1" aria-label="${p.label} 슬라이더">
+          <input type="number" id="n_${p.key}" step="1" aria-label="${p.label} 수치">
+        </div>`).join("");
+      rows.dataset.built = "1";
+      for (const p of PARTS) {
+        document.getElementById("r_" + p.key).addEventListener("input", e => setVal(p.key, +e.target.value));
+        document.getElementById("n_" + p.key).addEventListener("change", e => setVal(p.key, +e.target.value || S[p.key]));
+      }
+    }
+    for (const p of PARTS) {
+      document.getElementById("r_" + p.key).value = Math.round(S[p.key]);
+      document.getElementById("n_" + p.key).value = Math.round(S[p.key]);
+    }
+  }
+  function setVal(key, v) {
+    S[key] = Math.max(20, Math.min(250, v));
+    document.getElementById("btnApply").disabled = false;
+    render();
+  }
+
+  // ── 카드 요약 (기본 규칙 근사) ──
+  function renderCard() {
+    const bw = S.bust - S.waist, wh = S.hip - S.waist, whr = S.waist / S.hip;
+    const tags = [];
+    if (whr <= .72 && bw >= 18) tags.push("모래시계");
+    else if (bw <= 13 && wh <= 13) tags.push("슬렌더");
+    else if (whr >= .70 && whr <= .80 && Math.abs(S.bust / S.hip - 1) <= .07) tags.push("탄탄형");
+    else if (whr >= .85) tags.push("배형"); else tags.push("보통");
+    if (S.height >= 170 && whr <= .73) tags.push("모델급");
+    if (S.height <= 158 && S.bust <= 82) tags.push("아담한");
+    document.getElementById("tagChips").innerHTML = tags.map(t => `<span class="chip">${t}</span>`).join("");
+    const diff = S.bust - (S.waist + 6);
+    const cups = ["AA","A","B","C","D","E","F","G","H","I","J+"];
+    const cup = diff <= 0 ? "—" : cups[Math.min(Math.max(Math.ceil((diff - 7.5) / 2.5), 0), 10)];
+    document.getElementById("mCup").innerHTML = `컵 사이즈: <b>${cup}</b> <small>가슴둘레 − 밑가슴(허리+보정 6) 차이로 근사</small>`;
+    document.getElementById("mWhr").innerHTML = `WHR (허리-엉덩이 비율): <b>${whr.toFixed(2)}</b> <small>낮을수록 잘록</small>`;
+    document.getElementById("mRatio").innerHTML = `보정 비율: <b>1 : ${(S.waist / S.bust).toFixed(2)} : ${(S.hip / S.bust).toFixed(2)}</b> <small>가슴을 1로 본 상대 비율</small>`;
+    document.getElementById("dDiff").textContent = `측정값 차이 — B−W ${bw >= 0 ? "+" : ""}${Math.round(bw)}cm · H−W +${Math.round(wh)}cm`;
+    document.getElementById("dHeightRel").textContent = `키 대비 — 가슴 ${(S.bust / S.height * 100).toFixed(1)}% · 허리 ${(S.waist / S.height * 100).toFixed(1)}% · 엉덩이 ${(S.hip / S.height * 100).toFixed(1)}%`;
+  }
+
+  // ── 핸들 드래그 (좌우 대칭, 역산: 값 = 기준값 × (목표폭/기준폭)^(1/α)) ──
+  let drag = null;
+  stage.addEventListener("pointerdown", e => {
+    const h = e.target.closest(".handle"); if (!h) return;
+    drag = h.dataset.key; stage.setPointerCapture(e.pointerId); e.preventDefault();
+  });
+  stage.addEventListener("pointermove", e => {
+    if (!drag) return;
+    const r = stage.getBoundingClientRect();
+    const x = (e.clientX - r.left) * (240 / r.width);
+    const k = (330 - 40) / 205;
+    const halfCm = Math.abs(x - 120) / k;
+    const p = PARTS.find(p => p.key === drag);
+    let v;
+    if (drag === "bust") { // 볼륨 폭의 역산 — 닫힌 식(cd = (폭−5.0)/.55)
+      const cd = Math.max(0, (halfCm - 5.0) / .55);
+      v = (S.waist + 6) + cd;
+    } else {
+      const sNeeded = Math.max(halfCm / halfBaseAt[drag], .2);
+      v = BASE[drag] * Math.pow(sNeeded, 1 / ALPHA[drag]);
+    }
+    setVal(drag, Math.max(p.min - 15, Math.min(p.max + 25, v)));
+  });
+  stage.addEventListener("pointerup", () => { drag = null; });
+
+  // ── 🎲 (BodyGenerator 근사) ──
+  const BUILDS = [
+    { waist: 57, bustB: 8,  hipB: 10 }, { waist: 61, bustB: 13, hipB: 14 },
+    { waist: 65, bustB: 18, hipB: 18 }, { waist: 69, bustB: 25, hipB: 22 }, { waist: 73, bustB: 32, hipB: 26 },
+  ];
+  const jitter = a => (Math.random() * 2 - 1) * a;
+  document.getElementById("btnRoll").addEventListener("click", () => {
+    undoBuf = { ...S }; document.getElementById("btnUndo").disabled = false;
+    const hc = +document.getElementById("genHeight").value;
+    const b = BUILDS[+document.getElementById("genBuild").value];
+    S.height = Math.round(hc + jitter(4));
+    S.waist = Math.round(b.waist + (S.height - 160) * .15 + jitter(2));
+    S.bust = Math.round(S.waist + b.bustB + jitter(3));
+    S.hip = Math.round(S.waist + b.hipB + jitter(3));
+    S.shoulder = Math.round(S.height * .23 + jitter(1));
+    document.getElementById("btnApply").disabled = false;
+    render();
+  });
+  document.getElementById("btnUndo").addEventListener("click", () => {
+    if (undoBuf) { Object.assign(S, undoBuf); undoBuf = null; document.getElementById("btnUndo").disabled = true; render(); }
+  });
+
+  // ── 토글·기타 ──
+  document.getElementById("btnGhost").addEventListener("click", e => {
+    ghost = !ghost; e.currentTarget.setAttribute("aria-pressed", String(ghost)); render();
+  });
+  document.getElementById("btnLabels").addEventListener("click", e => {
+    labels = !labels; e.currentTarget.setAttribute("aria-pressed", String(labels)); render();
+  });
+  document.getElementById("btnParts").addEventListener("click", e => {
+    parts = !parts; e.currentTarget.setAttribute("aria-pressed", String(parts)); render();
+  });
+  document.getElementById("btnMore").addEventListener("click", e => {
+    const d = document.getElementById("detail"); d.classList.toggle("on");
+    e.currentTarget.textContent = d.classList.contains("on") ? "접기 ▴" : "자세히 ▾";
+  });
+  document.getElementById("btnApply").addEventListener("click", e => {
+    e.currentTarget.disabled = true;
+    e.currentTarget.textContent = "적용됨 ✓";
+    setTimeout(() => { e.currentTarget.textContent = "적용"; }, 1200);
+  });
+  const mo = new MutationObserver(render);
+  mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  if (window.matchMedia) window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", render);
+  render();
+})();
+</script>
