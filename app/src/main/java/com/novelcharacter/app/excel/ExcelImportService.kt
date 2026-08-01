@@ -245,6 +245,21 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private val matchedNameBankIds = mutableSetOf<Long>()
     private val matchedFactionIds = mutableSetOf<Long>()
     private val matchedFactionMembershipIds = mutableSetOf<Long>()
+
+    /**
+     * 덮어쓰기로 **이번 가져오기가 직접 비운** 범주.
+     *
+     * 그 범주에서 "코드가 기존에 없어 새로 생성됨 — 오타·삭제 여부를 확인하세요"는
+     * **앱이 스스로 지운 결과를 두고 사용자에게 되묻는 것**이라 행마다 알리지 않는다.
+     * 덮어쓰기는 ① 먼저 전량 삭제 ② 그다음 행 읽기 순서라 **모든 행이 예외 없이** 이 분기에
+     * 걸린다 — 실사용 보고에서 경고 376건 중 372건이 이 한 문구였고, 상세 창은 20건까지만
+     * 보여 주므로 **진짜 경고(이름 기반 매칭·타입 불일치 등)를 볼 방법이 사라졌다.**
+     * 병합에서는 값어치가 크므로(앱에서 지운 항목이 옛 파일로 되살아나는 것을 잡는다) 그대로 둔다.
+     */
+    private val wipedByOverwrite = mutableSetOf<String>()
+
+    /** 위 범주에서 새로 만들어진 행 수 — 무음이 아니라 범주당 한 줄로 요약해 고지한다. */
+    private val createdAfterWipe = mutableMapOf<String, Int>()
     private val matchedFactionRelationshipIds = mutableSetOf<Long>()
     // OVERWRITE에서 백업과 매칭된 필드 정의 id — 사전 deleteAll 대신 잔여분만 정리하기 위한 추적
     private val matchedFieldDefinitionIds = mutableSetOf<Long>()
@@ -307,6 +322,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         importAliasResolvers.clear()
         processedRowsSoFar = 0
         truncatedFieldCount = 0
+        wipedByOverwrite.clear()
+        createdAfterWipe.clear()
         truncatedDetails.clear()
         mergedCellMaps.clear()
         mergedFilledCells.clear()
@@ -372,7 +389,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 if (shouldDelete(effectiveOptions.relationships, relationshipSpec())) db.characterRelationshipDao().deleteAll()
                 if (shouldDelete(effectiveOptions.factionMemberships, factionMembershipSpec())) db.factionMembershipDao().deleteAll()
                 if (shouldDelete(effectiveOptions.factionRelationships, factionRelationshipSpec())) db.factionRelationshipDao().deleteAll()
-                if (shouldDelete(effectiveOptions.factions, factionSpec())) db.factionDao().deleteAll()
+                if (shouldDelete(effectiveOptions.factions, factionSpec())) { db.factionDao().deleteAll(); wipedByOverwrite.add("factions") }
                 if (shouldDelete(effectiveOptions.stateChanges, stateChangeSpec())) db.characterStateChangeDao().deleteAll()
                 if (shouldDelete(effectiveOptions.timeline, timelineSpec(emptyList()))) {
                     db.timelineDao().deleteAllCrossRefs()
@@ -398,14 +415,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                                 "이 값들은 미분류 캐릭터이거나 다른 세계관 필드를 가리켜 캐릭터 시트로는 복원되지 않습니다. " +
                                 "완전한 덮어쓰기를 원하면 지금 데이터를 최신 형식으로 한 번 내보낸 뒤 다시 시도하세요"
                             )
-                        else -> db.characterDao().deleteAll()
+                        else -> { db.characterDao().deleteAll(); wipedByOverwrite.add("characters") }
                     }
                 }
                 // 값 라이브러리(필드 데이터)는 시트가 있을 때만 비우고 재구성한다.
                 if (shouldDelete(effectiveOptions.fieldDefinitions, fieldValueLibrarySpec())) {
                     db.fieldValueEntryDao().deleteAll()
                 }
-                if (shouldDelete(effectiveOptions.novels, novelSpec(emptyList()))) db.novelDao().deleteAll()
+                if (shouldDelete(effectiveOptions.novels, novelSpec(emptyList()))) { db.novelDao().deleteAll(); wipedByOverwrite.add("novels") }
                 // 세계관 삭제는 FK CASCADE로 필드 정의 → 캐릭터·사건 필드값·값 라이브러리까지 연쇄 삭제한다.
                 // 따라서 '세계관' 시트만이 아니라 '필드 정의' 시트도 있어야 복원 가능하다.
                 // (이 연쇄 때문에 pruneUnmatchedFieldDefinitions의 id 보존은 세계관을 함께 덮어쓸 때 성립하지 않는다)
@@ -419,6 +436,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                             result.warnings.add("백업에 '${fdSpec.sheetName}' 시트가 없어 세계관을 삭제하지 않았습니다 — 세계관을 지우면 모든 필드 정의와 캐릭터·사건 필드값이 함께 사라지는데 복원할 수 없습니다")
                         else -> {
                             db.universeDao().deleteAll()
+                            wipedByOverwrite.add("universes")
                             result.warnings.add("덮어쓰기: 세계관을 삭제하면서 필드 정의와 모든 필드값이 함께 삭제되었습니다 — 백업의 '필드 정의'·'필드 데이터'·캐릭터 시트로 재구성됩니다")
                         }
                     }
@@ -517,6 +535,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             // 커밋 이후 블록으로 뺐다(아래 참조). 여기에 두면 롤백 시 "실패했다고 알리면서 설정만 바뀐"
             // 부분 커밋이 된다.
             if (effectiveOptions.imageMeta) importImageMeta(workbook, result, onProgress, totalRows)
+
+            // 덮어쓰기로 비운 범주의 신규 생성은 여기서 한 줄로 요약한다(행마다 알리지 않는다).
+            reportCreatedAfterWipe(result)
 
             // Phase 5: 엑셀에 없는 항목 삭제 (MERGE + deleteOptions)
             if (strategy == ImportStrategy.MERGE) {
@@ -1834,7 +1855,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         } else {
                             existing = null
                             matchedByName = false
-                            result.warnings.add("세계관 행 $i: 코드 '$code'가 기존 세계관에 없어 새로 생성됨 — 오타·삭제 여부를 확인하세요")
+                            warnCreatedNewByCode("universes", "세계관 행 $i: 코드 '$code'가 기존 세계관에 없어 새로 생성됨 — 오타·삭제 여부를 확인하세요", result)
                         }
                     }
                 } else {
@@ -2027,7 +2048,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                             result.warnings.add("작품 행 $i: 코드 '$code'를 찾지 못해 제목 '$title'으로 매칭함 — 의도한 새 작품이면 코드를 비우세요")
                         } else {
                             existing = null
-                            result.warnings.add("작품 행 $i: 코드 '$code'가 기존 작품에 없어 새로 생성됨 — 오타·삭제 여부를 확인하세요")
+                            warnCreatedNewByCode("novels", "작품 행 $i: 코드 '$code'가 기존 작품에 없어 새로 생성됨 — 오타·삭제 여부를 확인하세요", result)
                         }
                     }
                 } else {
@@ -3166,7 +3187,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                             result.warnings.add("캐릭터 행 $i: 코드 '$code'를 찾지 못해 이름 '$name'으로 매칭함 — 의도한 새 캐릭터라면 코드를 비우세요")
                         } else {
                             existingChar = null
-                            result.warnings.add("캐릭터 행 $i: 코드 '$code'가 기존 캐릭터에 없어 새로 생성됨 — 오타·삭제 여부를 확인하세요")
+                            warnCreatedNewByCode("characters", "캐릭터 행 $i: 코드 '$code'가 기존 캐릭터에 없어 새로 생성됨 — 오타·삭제 여부를 확인하세요", result)
                         }
                     }
                 } else {
@@ -4867,7 +4888,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         } else {
                             existing = null
                             matchedByName = false
-                            result.warnings.add("세력 행 $i: 코드 '$code'가 기존 세력에 없어 새로 생성됨 — 오타·삭제 여부를 확인하세요")
+                            warnCreatedNewByCode("factions", "세력 행 $i: 코드 '$code'가 기존 세력에 없어 새로 생성됨 — 오타·삭제 여부를 확인하세요", result)
                         }
                     }
                 } else {
@@ -6140,6 +6161,49 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
      *
      * 삭제(옵션 켜짐) **이후에** 부른다: 켜진 종류의 삭제가 연쇄로 지운 것까지 반영된 최종 상태를 센다.
      */
+    /**
+     * 요약 문구의 이름과 세는 단위 — 단위가 종류마다 다르므로 함께 든다 (R-13).
+     * 목적격 조사도 함께 드는 이유는 받침이 단위를 따라가기 때문이다(9개**를** / 214명**을**).
+     * 조사를 문자열에 박아 두면 한쪽이 반드시 틀린다.
+     */
+    private val wipedCategoryLabels = mapOf(
+        "universes" to Triple("세계관", "개", "를"),
+        "novels" to Triple("작품", "개", "를"),
+        "characters" to Triple("캐릭터", "명", "을"),
+        "factions" to Triple("세력", "개", "를")
+    )
+
+    /**
+     * "코드가 기존에 없어 새로 생성됨" 고지.
+     *
+     * 병합에서는 **행마다** 알린다 — 앱에서 지운 항목이 옛 파일로 되살아나는 것을 잡는 자리라
+     * 어느 행·어느 코드인지가 곧 값어치다. 덮어쓰기로 방금 비운 범주에서는 세기만 하고
+     * [reportCreatedAfterWipe]가 범주당 한 줄로 요약한다(사유는 [wipedByOverwrite] 참조).
+     */
+    private fun warnCreatedNewByCode(category: String, message: String, result: ImportResult) {
+        if (category in wipedByOverwrite) {
+            createdAfterWipe[category] = (createdAfterWipe[category] ?: 0) + 1
+            return
+        }
+        result.warnings.add(message)
+    }
+
+    /**
+     * 덮어쓰기로 비운 범주에서 새로 만든 건수를 범주당 한 줄로 고지한다.
+     * **무음이 아니라 요약이다** — 몇 개가 어떻게 들어왔는지는 그대로 말하되,
+     * 확인을 요구하지 않는다(사용자가 확인할 것이 없는 사실이기 때문이다).
+     */
+    private fun reportCreatedAfterWipe(result: ImportResult) {
+        for ((category, count) in createdAfterWipe) {
+            if (count <= 0) continue
+            val (label, unit, particle) = wipedCategoryLabels[category] ?: Triple(category, "개", "를")
+            result.warnings.add(
+                "덮어쓰기: $label $count$unit$particle 백업의 코드 그대로 새로 만들었습니다 — " +
+                "덮어쓰기가 먼저 지운 자리라 확인하실 것이 없습니다"
+            )
+        }
+    }
+
     private suspend fun countKeptUnmatchedEntities(options: ExportOptions, result: ImportResult) {
         val del = options.deleteOptions
         val parts = mutableListOf<String>()
