@@ -95,6 +95,6 @@
 
 ## 6. 브랜치 상태
 
-`claude/new-session-y2ewkt`에 커밋 `e8a3be6`(재저작 기록), `9d763a8`(측면 재저작)
-푸시됨 — base `master` 대비 문서 3종 + 스냅샷 1종. PR은 아직 없다(사용자 지시 대기).
-병합 규칙은 `docs/branch_merge_rules.md`(PR base는 항상 master).
+재저작 세션 산출물(문서 3종 + 스냅샷 1종)은 `claude/new-session-y2ewkt` → **master에
+병합 완료(2026.08.01, 사용자 지시)**. 이식 세션은 최신 `origin/master`에서 새 작업
+브랜치로 분기해 시작한다(`docs/branch_merge_rules.md`).
