@@ -28,6 +28,7 @@ import com.novelcharacter.app.data.repository.NovelRepository
 import com.novelcharacter.app.data.repository.UniverseRepository
 import com.novelcharacter.app.util.SemanticFieldSyncHelper
 import com.novelcharacter.app.util.GradeValueResolver
+import com.novelcharacter.app.util.FactionMembershipMatcher
 import org.apache.poi.ss.usermodel.CellType
 // B-8(스트리밍 배선): 이 서비스는 이제 POI 타입이 아니라 [ImportSource]의 추상화를 읽는다.
 // DOM([DomImportWorkbook])과 스트리밍([StreamingImportWorkbook])이 같은 인터페이스를 구현하므로
@@ -1283,13 +1284,27 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val charNameColIndex = cols["캐릭터"] ?: -1
         val factionCodeColIndex = cols["세력코드"] ?: -1
         val charCodeColIndex = cols["캐릭터코드"] ?: -1
+        val joinYearColIndex = cols["가입연도"] ?: -1
+        val leaveYearColIndex = cols["탈퇴연도"] ?: -1
         val leaveTypeColIndex = cols["탈퇴유형"] ?: -1
+        val departedRelTypeColIndex = cols["탈퇴후관계유형"] ?: -1
+        val departedIntensityColIndex = cols["탈퇴후강도"] ?: -1
+        val createdAtColIndex = cols["생성일"] ?: -1
 
         if (charNameColIndex < 0) return CategoryAnalysis("factionMemberships", "세력 소속", 0, 0, 0, 0, existingTotal)
 
-        // 루프 밖에서 1회 — 행마다 전체 세력을 다시 읽지 않는다
+        // 루프 밖에서 1회 — 행마다 전체 세력/소속을 다시 읽지 않는다.
+        // 소속은 위에서 existingTotal 때문에 이미 한 번 읽었으므로 그 목록을 쌍으로 묶어 재사용한다.
         val factionIndex = FactionIndex(db.factionDao().getAllFactionsList())
-        var inBackup = 0; var newCount = 0; var unchangedCount = 0
+        val membershipsByPair = db.factionMembershipDao().getAllMembershipsList()
+            .groupBy { it.factionId to it.characterId }
+        val presence = factionMembershipPresence(
+            joinYearColIndex, leaveYearColIndex, leaveTypeColIndex,
+            departedRelTypeColIndex, departedIntensityColIndex, createdAtColIndex
+        )
+        // 한 쌍에 이력이 여럿일 수 있으므로 실제 가져오기처럼 **이미 가져간 행을 뺀다**.
+        val takenIds = mutableSetOf<Long>()
+        var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0
         for (i in 1..sheet.lastRowNum) {
             val row = sheet.getRow(i) ?: continue
             val factionName = getCellString(row, factionNameColIndex)
@@ -1300,8 +1315,6 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
             val factionCode = if (factionCodeColIndex >= 0) getCellString(row, factionCodeColIndex) else ""
             val charCode = if (charCodeColIndex >= 0) getCellString(row, charCodeColIndex) else ""
-            val leaveTypeRaw = if (leaveTypeColIndex >= 0) getCellString(row, leaveTypeColIndex) else ""
-            val leaveType = when (leaveTypeRaw.trim()) { "순수제거", "removed" -> "removed"; "설정상탈퇴", "departed" -> "departed"; else -> null }
 
             // 캐릭터를 먼저 — 세력의 동명 해소 힌트가 된다(실제 임포트와 같은 순서)
             val character = (if (charCode.isNotBlank()) db.characterDao().getCharacterByCode(charCode) else null)
@@ -1312,11 +1325,29 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 as? FactionLookupResult.Found)?.faction
             if (faction == null) { continue }
 
-            val existingMembership = db.factionMembershipDao().getActiveMembership(faction.id, character.id)
-            if (existingMembership != null && leaveType == null) unchangedCount++ else newCount++
+            // 매칭 규칙은 실제 가져오기와 **같은 함수**를 쓴다(FactionMembershipMatcher).
+            // 활성만 보던 종전 규칙은 탈퇴 이력 행을 매번 '신규'로, 나아가 '백업에 없음'으로
+            // 세어 아무것도 안 고친 파일에 삭제를 예고했다 — 실제로는 매칭돼 그대로 남는데도.
+            val rowValues = FactionMembershipMatcher.RowValues(
+                joinYear = if (joinYearColIndex >= 0) parseNumber(getCellString(row, joinYearColIndex))?.toInt() else null,
+                leaveYear = if (leaveYearColIndex >= 0) parseNumber(getCellString(row, leaveYearColIndex))?.toInt() else null,
+                leaveType = parseFactionLeaveType(if (leaveTypeColIndex >= 0) getCellString(row, leaveTypeColIndex) else ""),
+                departedRelationType = if (departedRelTypeColIndex >= 0) getCellString(row, departedRelTypeColIndex).ifBlank { null } else null,
+                departedIntensity = if (departedIntensityColIndex >= 0) parseNumber(getCellString(row, departedIntensityColIndex))?.toInt() else null,
+                createdAt = if (createdAtColIndex >= 0) parseNumber(getCellString(row, createdAtColIndex))?.toLong() else null
+            )
+            val candidates = (membershipsByPair[faction.id to character.id] ?: emptyList())
+                .filter { it.id !in takenIds }
+            val existingMembership = FactionMembershipMatcher.match(candidates, rowValues)
+            if (existingMembership == null) {
+                newCount++
+            } else {
+                takenIds.add(existingMembership.id)
+                if (FactionMembershipMatcher.changes(existingMembership, rowValues, presence)) updateCount++ else unchangedCount++
+            }
         }
         reportProgress(onProgress, "세력 소속 분석", sheet.lastRowNum, totalRows)
-        return CategoryAnalysis("factionMemberships", "세력 소속", inBackup, newCount, 0, unchangedCount, existingTotal)
+        return CategoryAnalysis("factionMemberships", "세력 소속", inBackup, newCount, updateCount, unchangedCount, existingTotal)
     }
 
     private suspend fun analyzeFactionRelationships(workbook: Workbook, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
@@ -4895,6 +4926,33 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     // ── 세력 소속 가져오기 ──
 
+    /**
+     * '탈퇴유형' 셀 해석 — 가져오기와 미리보기 분석이 **같은 함수**를 쓴다.
+     * 종전에는 두 곳이 각자 `when`을 들고 있었고, 분석 쪽은 상수 대신 문자열 리터럴을 썼다.
+     */
+    private fun parseFactionLeaveType(raw: String): String? = when (raw.trim()) {
+        "순수제거", "removed" -> FactionMembership.LEAVE_REMOVED
+        "설정상탈퇴", "departed" -> FactionMembership.LEAVE_DEPARTED
+        else -> null
+    }
+
+    /** 열 존재 여부 묶음 — 없는 열은 기존값을 유지한다(F1-A). 가져오기·분석 공용. */
+    private fun factionMembershipPresence(
+        joinYearColIndex: Int,
+        leaveYearColIndex: Int,
+        leaveTypeColIndex: Int,
+        departedRelTypeColIndex: Int,
+        departedIntensityColIndex: Int,
+        createdAtColIndex: Int
+    ) = FactionMembershipMatcher.ColumnPresence(
+        joinYear = joinYearColIndex >= 0,
+        leaveYear = leaveYearColIndex >= 0,
+        leaveType = leaveTypeColIndex >= 0,
+        departedRelationType = departedRelTypeColIndex >= 0,
+        departedIntensity = departedIntensityColIndex >= 0,
+        createdAt = createdAtColIndex >= 0
+    )
+
     private suspend fun importFactionMemberships(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = factionMembershipSpec()
         val sheet = findSheet(workbook, spec, result) ?: return
@@ -4974,42 +5032,38 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
                 val joinYear = if (joinYearColIndex >= 0) parseNumber(getCellString(row, joinYearColIndex))?.toInt() else null
                 val leaveYear = if (leaveYearColIndex >= 0) parseNumber(getCellString(row, leaveYearColIndex))?.toInt() else null
-                val leaveTypeRaw = if (leaveTypeColIndex >= 0) getCellString(row, leaveTypeColIndex) else ""
-                val leaveType = when (leaveTypeRaw.trim()) {
-                    "순수제거", "removed" -> FactionMembership.LEAVE_REMOVED
-                    "설정상탈퇴", "departed" -> FactionMembership.LEAVE_DEPARTED
-                    else -> null
-                }
+                val leaveType = parseFactionLeaveType(if (leaveTypeColIndex >= 0) getCellString(row, leaveTypeColIndex) else "")
                 val departedRelationType = if (departedRelTypeColIndex >= 0) getCellString(row, departedRelTypeColIndex).ifBlank { null } else null
                 val departedIntensity = parseIntensityWithWarn(row, departedIntensityColIndex, null, "세력 소속 행 $i", result)
-                val createdAt = if (createdAtColIndex >= 0) parseNumber(getCellString(row, createdAtColIndex))?.toLong() ?: System.currentTimeMillis() else System.currentTimeMillis()
+                // 열이 없거나 해석 불가면 null — 기존 이력의 생성일을 **유지**한다.
+                // 종전에는 해석 불가일 때 현재 시각을 찍어, 매칭은 자연키로 되면서도 생성일만
+                // 조용히 바뀌었다(왕복할 때마다 안정 식별자가 흔들리는 자리였다).
+                val parsedCreatedAt = if (createdAtColIndex >= 0) parseNumber(getCellString(row, createdAtColIndex))?.toLong() else null
 
                 // 소속 매칭: 활성/탈퇴 구분 없는 단일 계층 규칙 (활성만 보던 기존 방식은 탈퇴 이력을
                 // 영원히 매칭하지 못해 재가져오기마다 중복 행을 만들었다 — 왕복 비멱등).
-                // ① 생성일(안정 식별자) 일치 → ② 자연키(가입/탈퇴연도·탈퇴유형) 일치 → ③ 후보가 유일하면 상태 전이로 간주
+                // 규칙 원문은 FactionMembershipMatcher — 미리보기 분석도 **같은 함수**를 쓴다
+                // (규칙을 두 벌로 두었다가 분석만 옛 규칙에 남아 거짓 삭제 예고를 낸 적이 있다).
+                // F1-A: 열이 없으면 기존값 유지 (탈퇴연도만 지운 시트가 예정 탈퇴를 무음 초기화하지 않게)
+                val rowValues = FactionMembershipMatcher.RowValues(
+                    joinYear = joinYear,
+                    leaveYear = leaveYear,
+                    leaveType = leaveType,
+                    departedRelationType = departedRelationType,
+                    departedIntensity = departedIntensity,
+                    createdAt = parsedCreatedAt
+                )
+                val presence = factionMembershipPresence(
+                    joinYearColIndex, leaveYearColIndex, leaveTypeColIndex,
+                    departedRelTypeColIndex, departedIntensityColIndex, createdAtColIndex
+                )
                 val pairMemberships = db.factionMembershipDao()
                     .getAllMembershipsForPair(faction.id, character.id)
                     .filter { it.id !in matchedFactionMembershipIds }
-                val existingMembership: FactionMembership? = run {
-                    if (createdAtColIndex >= 0) {
-                        pairMemberships.find { it.createdAt == createdAt }?.let { return@run it }
-                    }
-                    pairMemberships.find {
-                        it.joinYear == joinYear && it.leaveYear == leaveYear && it.leaveType == leaveType
-                    }?.let { return@run it }
-                    pairMemberships.singleOrNull()
-                }
+                val existingMembership: FactionMembership? = FactionMembershipMatcher.match(pairMemberships, rowValues)
 
                 if (existingMembership != null) {
-                    // F1-A: 열이 없으면 기존값 유지 (탈퇴연도만 지운 시트가 예정 탈퇴를 무음 초기화하지 않게)
-                    val updated = existingMembership.copy(
-                        joinYear = if (joinYearColIndex >= 0) joinYear else existingMembership.joinYear,
-                        leaveYear = if (leaveYearColIndex >= 0) leaveYear else existingMembership.leaveYear,
-                        leaveType = if (leaveTypeColIndex >= 0) leaveType else existingMembership.leaveType,
-                        departedRelationType = if (departedRelTypeColIndex >= 0) departedRelationType else existingMembership.departedRelationType,
-                        departedIntensity = if (departedIntensityColIndex >= 0) departedIntensity else existingMembership.departedIntensity,
-                        createdAt = if (createdAtColIndex >= 0) createdAt else existingMembership.createdAt
-                    )
+                    val updated = FactionMembershipMatcher.apply(existingMembership, rowValues, presence)
                     if (updated.leaveType != existingMembership.leaveType) {
                         val before = existingMembership.leaveType ?: "활성"
                         val after = updated.leaveType ?: "활성"
@@ -5028,7 +5082,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         leaveType = leaveType,
                         departedRelationType = departedRelationType,
                         departedIntensity = departedIntensity,
-                        createdAt = createdAt
+                        createdAt = parsedCreatedAt ?: System.currentTimeMillis()
                     ))
 
                     // 활성 소속이면 세력 자동 관계 생성 대상 — 단, **여기서 만들지 않고 큐에 넣는다**.
