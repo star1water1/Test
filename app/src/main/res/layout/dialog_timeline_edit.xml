@@ -180,6 +180,25 @@
             android:textAppearance="@style/TextAppearance.App.Caption"
             android:visibility="gone" />
 
+        <ImageButton
+            android:id="@+id/btnEventFieldHelp"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="4dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/help_icon_desc"
+            android:src="@drawable/ic_help"
+            android:visibility="gone" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnPickEventField"
+            style="@style/Widget.App.Button.Outlined"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/event_field_pick_recommended"
+            android:visibility="gone" />
+
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnAddEventField"
             style="@style/Widget.App.Button.Outlined"

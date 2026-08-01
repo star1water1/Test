@@ -138,12 +138,9 @@ class NovelViewModel(application: Application) : AndroidViewModel(application) {
         field: com.novelcharacter.app.data.model.FieldDefinition,
         initialValues: String
     ) {
-        val staged = initialValues.split(",").map { it.trim() }.filter { it.isNotEmpty() }.distinct()
-        if (staged.isEmpty()) return
-        if (!com.novelcharacter.app.util.FieldValueTokenizer.supportsLibrary(field)) return
-        for (value in staged) {
-            runCatching { app.fieldValueLibraryRepository.addEntry(fieldDefId, value) }
-        }
+        // 해석·등재는 저장소가 단일 소스다 — 종전에는 필드 관리 경로와 두 벌이었고,
+        // 이쪽만 runCatching으로 실패를 삼켜 같은 조작의 고지가 화면마다 갈렸다.
+        app.fieldValueLibraryRepository.registerInitialValues(fieldDefId, field, initialValues)
     }
 
     /**

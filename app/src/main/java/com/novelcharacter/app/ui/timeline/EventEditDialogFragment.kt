@@ -9,6 +9,9 @@ import android.widget.ArrayAdapter
 import android.widget.CheckBox
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
+import androidx.lifecycle.ViewModelProvider
+import com.novelcharacter.app.util.setValidatedPositiveButton
+import com.novelcharacter.app.ui.field.FieldViewModel
 import androidx.core.os.bundleOf
 import androidx.fragment.app.DialogFragment
 import androidx.fragment.app.FragmentManager
@@ -260,24 +263,40 @@ class EventEditDialogFragment : DialogFragment() {
             val field = gson.fromJson(json, FieldDefinition::class.java) ?: return@setFragmentResultListener
             // 이 경로는 생성 전용이다(편집은 필드 관리에서 한다) — id가 붙어 오면 무시한다.
             if (field.id != 0L) return@setFragmentResultListener
-            createEventField(field)
+            // 생성 창에서 미리 적어 둔 값(값 사전 등록)도 함께 온다 — 받지 않으면 사용자가 적은 것이
+            // 조용히 사라진다(B-68. 필드 관리·작품 편집은 이미 받고 있었고 여기만 빠져 있었다).
+            val initialValues = bundle.getString(FieldEditDialog.RESULT_INITIAL_VALUES).orEmpty()
+            createEventField(field, initialValues)
         }
         binding.btnAddEventField.setOnClickListener {
             val universeId = resolvedFieldUniverseId ?: return@setOnClickListener
             FieldEditDialog.newInstance(universeId, null, FieldDefinition.ENTITY_EVENT)
                 .show(childFragmentManager, "EventFieldEditDialog")
         }
+        binding.btnPickEventField.setOnClickListener { showRecommendedEventFields() }
+        // `?` — 상시 노출 안내문 한 줄로는 모자란 설명을 담는다(H15. 가이드 9-2 승인 본문).
+        binding.btnEventFieldHelp.setOnClickListener {
+            com.novelcharacter.app.ui.common.HelpDialog.showHelp(
+                requireContext(),
+                com.novelcharacter.app.ui.common.HelpDialog.Topic.EVENT_FIELD
+            )
+        }
     }
 
-    private fun createEventField(field: FieldDefinition) {
+    private fun createEventField(field: FieldDefinition, initialValues: String = "") {
         // 이 경로로 들어온 것은 사건 필드다 — 종류를 여기서 못박아 호출부마다 되풀이하지 않는다.
         val toInsert = field.copy(entityType = FieldDefinition.ENTITY_EVENT)
         lifecycleScope.launch {
             val result = try {
-                requireProvider().insertEventField(toInsert)
+                val newId = requireProvider().insertEventField(toInsert)
+                // 값 사전 등록은 **호스트가 아니라 여기서** 심는다. DataProvider 구현이 셋이라
+                // (그중 하나는 완전 수식 이름이라 착수 grep에 안 걸린 전력이 있다 — 1-p장)
+                // 호스트에 맡기면 한 곳이 빠져도 조용하다. 인터페이스의 고지 규약과 같은 취지다.
+                val planted = plantInitialValues(newId, toInsert, initialValues)
                 OpResult.success(
                     OpResult.CAT_FIELD,
-                    getString(R.string.event_field_created, field.name)
+                    getString(R.string.event_field_created, field.name),
+                    planted
                 )
             } catch (e: android.database.sqlite.SQLiteConstraintException) {
                 Log.e("EventEditDialog", "Duplicate event field key: ${field.key}", e)
@@ -298,6 +317,119 @@ class EventEditDialogFragment : DialogFragment() {
             // 성공한 것만 폼에 반영한다. 입력 중인 값은 rebuild가 보존한다(pendingEventFieldValues).
             if (result.success) rebuildEventFieldSection()
         }
+    }
+
+    /**
+     * 추천 사건 필드 고르기 — 빈 캔버스 앞의 "무엇을 만들지 모르겠다"를 없애는 자리(설계 D4 러프 경로).
+     *
+     * 후보는 [FieldViewModel.getFieldsFromAllSources]가 조립한다 — **기본 제공 추천 ∪ 다른 세계관
+     * ∪ 프리셋**. 그 함수를 여기서 다시 짜지 않는 이유는 필드 관리의 '필드 가져오기'가 이미
+     * 같은 합집합을 쓰기 때문이다(두 벌이 되면 갈린다). 그래서 다이얼로그가 `FieldViewModel`을
+     * 직접 얻어 쓴다 — `AndroidViewModel`이라 호스트가 무엇이든 같은 결과가 나온다.
+     *
+     * 이미 있는 `key`는 **지우지 않고 비활성 + 사유**로 남긴다(조용히 빼면 "왜 없지"가 된다).
+     */
+    private fun showRecommendedEventFields() {
+        val universeId = resolvedFieldUniverseId ?: return
+        val ctx = context ?: return
+        lifecycleScope.launch {
+            val fieldViewModel = ViewModelProvider(this@EventEditDialogFragment)[FieldViewModel::class.java]
+            val sources = runCatching {
+                fieldViewModel.getFieldsFromAllSources(universeId, FieldDefinition.ENTITY_EVENT)
+            }.getOrNull().orEmpty()
+            val existingKeys = runCatching {
+                fieldViewModel.getCurrentFieldKeys(universeId, FieldDefinition.ENTITY_EVENT)
+            }.getOrNull().orEmpty()
+            if (!isAdded) return@launch
+            // 합집합이 비면 만드는 길은 '사건 필드 추가'뿐이다 — 그 사실을 말한다.
+            val candidates = sources.values.flatten().distinctBy { it.key }
+            if (candidates.isEmpty()) {
+                Toast.makeText(ctx, R.string.import_no_event_field_sources, Toast.LENGTH_LONG).show()
+                return@launch
+            }
+            val labels = candidates.map { f ->
+                val dup = if (f.key in existingKeys) " " + getString(R.string.event_field_pick_duplicate_suffix) else ""
+                "${f.name} (${f.type})$dup"
+            }.toTypedArray()
+            val checked = BooleanArray(candidates.size) { false }
+            MaterialAlertDialogBuilder(ctx)
+                .setTitle(R.string.event_field_pick_title)
+                .setMultiChoiceItems(labels, checked) { dialog, which, isChecked ->
+                    // 이미 있는 것은 고를 수 없다 — 고르면 중복 키로 실패할 뿐이다.
+                    if (isChecked && candidates[which].key in existingKeys) {
+                        checked[which] = false
+                        (dialog as? AlertDialog)?.listView?.setItemChecked(which, false)
+                    } else {
+                        checked[which] = isChecked
+                    }
+                }
+                .setNegativeButton(android.R.string.cancel, null)
+                // 자동 닫힘 버튼 안에서 조기 return을 하면 검증 실패에 창이 닫혀 고른 것이
+                // 날아간다(R-27 — 검사 도구가 잡는 자리다). 실패하면 창을 유지한다.
+                .setPositiveButton(android.R.string.ok, null)
+                .create()
+                .also { dialog ->
+                    dialog.setValidatedPositiveButton {
+                        val picked = candidates.filterIndexed { i, _ -> checked[i] }
+                        if (picked.isEmpty()) {
+                            Toast.makeText(ctx, R.string.event_field_pick_none, Toast.LENGTH_SHORT).show()
+                            false
+                        } else {
+                            createEventFields(picked, universeId)
+                            true
+                        }
+                    }
+                }
+                .show()
+        }
+    }
+
+    /**
+     * 고른 추천을 심는다 — **필드 관리의 '필드 가져오기'와 같은 함수를 쓴다**([FieldViewModel.importFieldsNow]).
+     *
+     * 손으로 넣으면 세 가지를 빠뜨린다: 세계관 못박기(후보는 남의 세계관·프리셋에서 온다) ·
+     * `displayOrder` 이어 붙이기 · **다른 세계관의 등급 체계 참조 강등**(R-30 — 그대로 두면
+     * 남의 체계를 가리키는 유령 참조가 된다). 그 셋이 이미 그 함수 안에 있다.
+     *
+     * 고지는 여기서 한다 — 이 화면은 `FieldViewModel`의 result 채널을 관찰하지 않는다.
+     */
+    private fun createEventFields(fields: List<FieldDefinition>, universeId: Long) {
+        lifecycleScope.launch {
+            val fieldViewModel = ViewModelProvider(this@EventEditDialogFragment)[FieldViewModel::class.java]
+            val result = try {
+                val added = fieldViewModel.importFieldsNow(universeId, fields, FieldDefinition.ENTITY_EVENT)
+                OpResult.success(OpResult.CAT_FIELD, getString(R.string.event_field_pick_added, added))
+            } catch (e: Exception) {
+                Log.e("EventEditDialog", "Failed to add recommended event fields", e)
+                OpResult.failure(
+                    OpResult.CAT_FIELD,
+                    getString(R.string.event_field_create_failed),
+                    e.message
+                )
+            }
+            if (!isAdded) return@launch
+            reportAndNotify(result)
+            if (result.success) rebuildEventFieldSection()
+        }
+    }
+
+    /**
+     * 값 사전 등록분을 라이브러리에 심고, **못 심은 것이 있으면 그 사실을 돌려준다**(무음 유실 금지).
+     * 해석·등재 규칙은 [com.novelcharacter.app.data.repository.FieldValueLibraryRepository]가
+     * 단일 소스다 — 필드 관리·작품 편집도 같은 경로를 쓴다.
+     */
+    private suspend fun plantInitialValues(
+        newId: Long,
+        field: FieldDefinition,
+        raw: String
+    ): String? {
+        if (newId <= 0L || raw.isBlank()) return null
+        val app = activity?.application as? com.novelcharacter.app.NovelCharacterApp ?: return null
+        val outcome = runCatching {
+            app.fieldValueLibraryRepository.registerInitialValues(newId, field, raw)
+        }.getOrNull() ?: return null
+        if (outcome.failed <= 0) return null
+        return getString(R.string.event_field_initial_values_partial, outcome.failed)
     }
 
     /**
@@ -618,6 +750,8 @@ class EventEditDialogFragment : DialogFragment() {
             binding.eventFieldSectionLabel.visibility = View.GONE
             binding.eventFieldEmptyHint.visibility = View.GONE
             binding.btnAddEventField.visibility = View.GONE
+            binding.btnPickEventField.visibility = View.GONE
+            binding.btnEventFieldHelp.visibility = View.GONE
             return
         }
 
@@ -650,8 +784,12 @@ class EventEditDialogFragment : DialogFragment() {
         binding.eventFieldContainer.removeAllViews()
 
         // 세계관을 아는 한 만드는 경로는 항상 남긴다 — 필드가 있을 때도 하나 더 필요할 수 있다.
-        binding.btnAddEventField.visibility =
-            if (resolvedFieldUniverseId != null) View.VISIBLE else View.GONE
+        val fieldPathKnown = resolvedFieldUniverseId != null
+        binding.btnAddEventField.visibility = if (fieldPathKnown) View.VISIBLE else View.GONE
+        // 추천은 빈 캔버스보다 값싼 출발점이라 **함께** 남긴다. 필드가 이미 있어도 하나 더
+        // 필요할 수 있다는 현행 판단(바로 위 주석)을 그대로 따른다.
+        binding.btnPickEventField.visibility = if (fieldPathKnown) View.VISIBLE else View.GONE
+        binding.btnEventFieldHelp.visibility = if (fieldPathKnown) View.VISIBLE else View.GONE
 
         if (eventFields.isEmpty()) {
             binding.eventFieldContainer.visibility = View.GONE

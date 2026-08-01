@@ -72,17 +72,9 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
     fun insertField(field: FieldDefinition, initialValues: String = "") = viewModelScope.launch {
         try {
             val newId = universeRepository.insertField(field)
-            // 생성 다이얼로그의 값 사전 등록분 (콤마 구분) — restricted 모드도 한 번에 완결.
-            // 라이브러리 미지원 타입(NUMBER 등)은 등재해도 어디에도 표시되지 않으므로 스킵.
-            val staged = initialValues.split(",").map { it.trim() }.filter { it.isNotEmpty() }.distinct()
-            if (staged.isNotEmpty() &&
-                com.novelcharacter.app.util.FieldValueTokenizer.supportsLibrary(field)
-            ) {
-                val fieldLibrary = app.fieldValueLibraryRepository
-                for (value in staged) {
-                    fieldLibrary.addEntry(newId, value)
-                }
-            }
+            // 생성 다이얼로그의 값 사전 등록분 — 해석·등재 규칙은 저장소가 단일 소스다
+            // (종전에는 이 로직이 작품 경로와 두 벌이었고 실패 처리가 서로 달랐다).
+            app.fieldValueLibraryRepository.registerInitialValues(newId, field, initialValues)
             reportResult(_result, OpResult.success(OpResult.CAT_FIELD,
                 app.getString(R.string.result_field_added, field.name)))
         } catch (e: android.database.sqlite.SQLiteConstraintException) {
@@ -207,6 +199,14 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
     ): Map<String, List<FieldDefinition>> {
         val result = linkedMapOf<String, List<FieldDefinition>>()
 
+        // 0. 기본 제공 추천 — **맨 앞에 둔다.** 재고가 0인 종류(사건)에서는 이것이 유일한
+        // 출발점이고, 목록의 첫 항목이 곧 기본 선택이라 여기 있어야 값을 한다.
+        // 자동으로 심지 않으므로(설계 D1) 프리셋 `fields`가 아니라 이 경로로만 나온다.
+        val recommended = PresetTemplates.recommendedFields(entityType)
+        if (recommended.isNotEmpty()) {
+            result[app.getString(R.string.field_source_recommended)] = recommended
+        }
+
         // 1. 다른 세계관 (이름 중복 시 구분을 위해 카운터 추가)
         val allUniverses = universeRepository.getAllUniversesList()
         val nameCount = mutableMapOf<String, Int>()
@@ -290,6 +290,30 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
         entityType: String
     ) = viewModelScope.launch {
         try {
+            val inserted = importFieldsNow(targetUniverseId, sourceFields, entityType)
+            reportResult(_result, OpResult.success(OpResult.CAT_FIELD,
+                if (inserted > 0) app.getString(R.string.result_field_imported, inserted)
+                else app.getString(R.string.result_field_import_none)))
+        } catch (e: Exception) {
+            Log.e("FieldViewModel", "Failed to import fields", e)
+            reportResult(_result, OpResult.failure(OpResult.CAT_FIELD,
+                app.getString(R.string.result_field_import_failed), e.message))
+        }
+    }
+
+    /**
+     * [importFields]의 본체 — **심은 수를 돌려주고 고지는 하지 않는다.**
+     *
+     * 사건 편집처럼 `_result`를 관찰하지 않는 화면이 이 경로를 쓰기 때문이다. 고지를 여기서
+     * 하면 그 화면에서는 조용해진다(`DataProvider.insertEventField`의 KDoc이 같은 이유로
+     * 세운 규약). 실패는 예외로 올려 호출부가 알린다.
+     */
+    suspend fun importFieldsNow(
+        targetUniverseId: Long,
+        sourceFields: List<FieldDefinition>,
+        entityType: String
+    ): Int {
+        run {
             val currentFields = fieldsOf(targetUniverseId, entityType)
             val existingKeys = currentFields.map { it.key }.toSet()
             val maxOrder = currentFields.maxOfOrNull { it.displayOrder } ?: -1
@@ -313,18 +337,9 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
                         }
                     )
                 }
-            if (newFields.isNotEmpty()) {
-                universeRepository.insertAllFields(newFields)
-                reportResult(_result, OpResult.success(OpResult.CAT_FIELD,
-                    app.getString(R.string.result_field_imported, newFields.size)))
-            } else {
-                reportResult(_result, OpResult.success(OpResult.CAT_FIELD,
-                    app.getString(R.string.result_field_import_none)))
-            }
-        } catch (e: Exception) {
-            Log.e("FieldViewModel", "Failed to import fields", e)
-            reportResult(_result, OpResult.failure(OpResult.CAT_FIELD,
-                app.getString(R.string.result_field_import_failed), e.message))
+            if (newFields.isEmpty()) return 0
+            universeRepository.insertAllFields(newFields)
+            return newFields.size
         }
     }
 }
