@@ -41,6 +41,13 @@ object HelpDialog {
          * 길이를 맞추려고 쪼개면 "폴더에 넣으면 무슨 일이 일어나는가"라는 한 질문이 여러 창으로
          * 흩어진다. 한 번 읽고 마는 종류라 한 자리에 모은다(가이드 9-2 H13).
          */
+        /**
+         * 사건 필드 — H13·H14와 같은 계열이다(스위치 하나가 아니라 "이게 무엇이고 어떻게
+         * 쓰는가"라 절이 나뉜다). 본문은 가이드 9-2에서 승인된 것과 **한 글자도 다르지 않다**.
+         * 예시 셋(회차·장소·시점 인물)은 추천 세트와 한 몸이라 세트가 바뀌면 함께 바꾼다.
+         */
+        EVENT_FIELD(R.string.help_event_field_title, R.string.help_event_field_body),
+
         ORGANIZE_FOLDER(R.string.help_organize_folder_title, R.string.help_organize_folder_body),
 
         /**

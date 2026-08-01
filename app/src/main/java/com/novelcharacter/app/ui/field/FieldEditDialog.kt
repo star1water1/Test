@@ -50,6 +50,16 @@ class FieldEditDialog : DialogFragment() {
     private var universeId: Long = 0
     private var existingField: FieldDefinition? = null
 
+    /**
+     * **미리 채우되 생성 모드**로 열 때의 초안 필드(추천에서 고르기 — 설계 D7).
+     *
+     * [existingField]로 넘기면 안 된다: 그러면 제목이 '필드 수정'이 되고
+     * `stagedInitialValues`가 **생성일 때만 채워지므로**(아래 저장부) 추천이 딸려 보낸 값이
+     * 통째로 버려진다. 그래서 '무엇을 보여 줄까'(prefill)와 '무엇을 고치는 중인가'(existing)를
+     * 다른 인자로 가른다.
+     */
+    private var prefillField: FieldDefinition? = null
+
     // 수식 검증용 — 현재 세계관·같은 대상(캐릭터/사건)의 필드 키 (비동기 로드, 로드 전이면 키 존재 검사만 생략)
     private var universeFieldKeys: Set<String>? = null
 
@@ -125,6 +135,10 @@ class FieldEditDialog : DialogFragment() {
         universeId = arguments?.getLong(ARG_UNIVERSE_ID) ?: 0
         val fieldJson = arguments?.getString(ARG_FIELD_JSON)
         existingField = if (fieldJson != null) Gson().fromJson(fieldJson, FieldDefinition::class.java) else null
+        val prefillJson = arguments?.getString(ARG_PREFILL_JSON)
+        // 편집이면 프리필은 무시한다 — 고치는 중인 값이 언제나 이긴다.
+        prefillField = if (existingField == null && prefillJson != null)
+            Gson().fromJson(prefillJson, FieldDefinition::class.java) else null
 
         setupTabSwitching(binding)
         setupTypeSpinner(binding)
@@ -1206,7 +1220,8 @@ class FieldEditDialog : DialogFragment() {
     }
 
     private fun populateFields(binding: DialogFieldEditBinding) {
-        val field = existingField ?: return
+        // 편집 중인 필드가 없으면 프리필 초안으로 채운다(생성 모드는 그대로 유지된다).
+        val field = existingField ?: prefillField ?: return
 
         binding.editFieldName.setText(field.name)
         binding.editFieldKey.setText(field.key)
@@ -1895,18 +1910,23 @@ class FieldEditDialog : DialogFragment() {
         private const val ARG_UNIVERSE_ID = "universeId"
         private const val ARG_FIELD_JSON = "fieldJson"
         private const val ARG_ENTITY_TYPE = "entityType"
+        private const val ARG_PREFILL_JSON = "prefillJson"
 
         fun newInstance(
             universeId: Long,
             field: FieldDefinition?,
-            entityType: String = FieldDefinition.ENTITY_CHARACTER
+            entityType: String = FieldDefinition.ENTITY_CHARACTER,
+            prefill: FieldDefinition? = null
         ): FieldEditDialog {
             return FieldEditDialog().apply {
                 arguments = Bundle().apply {
                     putLong(ARG_UNIVERSE_ID, universeId)
-                    putString(ARG_ENTITY_TYPE, field?.entityType ?: entityType)
+                    putString(ARG_ENTITY_TYPE, field?.entityType ?: prefill?.entityType ?: entityType)
                     if (field != null) {
                         putString(ARG_FIELD_JSON, Gson().toJson(field))
+                    } else if (prefill != null) {
+                        // 생성 모드를 유지한 채 폼만 채운다 — 값 사전 등록이 살아 있어야 하기 때문이다.
+                        putString(ARG_PREFILL_JSON, Gson().toJson(prefill.copy(id = 0)))
                     }
                 }
             }

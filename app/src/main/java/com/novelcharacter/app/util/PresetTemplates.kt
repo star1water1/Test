@@ -128,6 +128,71 @@ object PresetTemplates {
 
     // ===== 기본 제공 템플릿 =====
 
+    /**
+     * 내장 프리셋의 **사건 필드** — 두 템플릿이 공유한다.
+     *
+     * 종전에는 내장 템플릿 본문에 `entityType` 지정이 **0회**여서 모든 프리셋 필드가
+     * 캐릭터였고, 그래서 **사건 필드는 늘 0개에서 출발했다**(B-62). 실사용의 캐릭터:사건
+     * 90:0은 취향이 아니라 그 경사의 결과다.
+     *
+     * **자동으로 심지 않는다** — 세계관을 만들 때 딸려 오는 것이 아니라, 사건 편집의
+     * '추천에서 고르기'가 이 목록을 **후보로** 보여 준다(설계 D1·D2). 목록의 출처를
+     * 코드 상수가 아니라 프리셋으로 둔 이유는, 프리셋이 이미 추가·편집·삭제되고
+     * 엑셀·월드패키지로 오가기 때문이다(원칙 01 — 닫힌 목록 금지).
+     *
+     * 내용은 `docs/event_field_recommend_2026-08.md` 8장이 단일 소스다. 이름을 바꾸면
+     * 도움말 H15의 예시(회차·장소·시점 인물)도 함께 바꿀 것 — 둘은 한 몸이다.
+     */
+    private fun eventFieldTemplates(): List<FieldDefinition> = listOf(
+        FieldDefinition(
+            universeId = 0, key = "episode", name = "회차", type = "NUMBER",
+            entityType = FieldDefinition.ENTITY_EVENT, groupName = "집필",
+            config = """{"description":"이 사건이 몇 화·몇 장에 나오는가. 집필·연재 단위로 사건을 묶을 때 씁니다"}"""
+        ),
+        FieldDefinition(
+            universeId = 0, key = "place", name = "장소", type = "TEXT",
+            entityType = FieldDefinition.ENTITY_EVENT, groupName = "배경",
+            config = """{"description":"사건이 벌어지는 곳. 값이 쌓이면 장소별 분포를 볼 수 있습니다"}"""
+        ),
+        FieldDefinition(
+            universeId = 0, key = "pov", name = "시점 인물", type = "TEXT",
+            entityType = FieldDefinition.ENTITY_EVENT, groupName = "배경",
+            config = """{"description":"이 사건을 누구의 시점으로 서술하는가"}"""
+        ),
+        FieldDefinition(
+            universeId = 0, key = "story_stage", name = "이야기 단계", type = "SELECT",
+            entityType = FieldDefinition.ENTITY_EVENT, groupName = "구성",
+            config = """{"options":["도입","전개","절정","결말"],"description":"전체 흐름에서 이 사건이 놓인 자리"}"""
+        ),
+        FieldDefinition(
+            // 세계관 등급 체계를 참조하지 않는다(독자 표) — 프리셋은 체계를 만들지 않으므로
+            // 참조를 심으면 유령 참조가 되고 복사 경계 강등(R-30)에 걸린다. 설계 8장 확정.
+            universeId = 0, key = "importance", name = "중요도", type = "GRADE",
+            entityType = FieldDefinition.ENTITY_EVENT, groupName = "구성",
+            config = """{"grades":{"C":0.5,"B":1,"A":2,"S":3},"allowNegative":false,"description":"줄일 수 없는 사건인지 곁가지인지"}"""
+        ),
+        FieldDefinition(
+            universeId = 0, key = "disclosure", name = "공개 상태", type = "SELECT",
+            entityType = FieldDefinition.ENTITY_EVENT, groupName = "구성",
+            config = """{"options":["공개","복선","비공개"],"description":"독자가 지금 이 사건을 아는가"}"""
+        )
+    ).mapIndexed { index, field -> field.copy(displayOrder = index) }
+
+    /**
+     * 종류별 **추천 필드**(기본 제공) — 재고가 0인 축에 출발점을 준다.
+     *
+     * **축 중립으로 두되 지금 켜는 것은 사건뿐이다**(설계 D5). 캐릭터는 재고가 없어서가 아니라
+     * 너무 많아서 문제이므로(실사용 90개·채움률 21.7%) 추천을 붙이면 방향이 반대다.
+     * 캐릭터 축의 처방은 B-89(프리셋을 기존 세계관에도 적용)이며, 켤 일이 생기면 여기 한 줄이다.
+     *
+     * **자동으로 심지 않는다** — 이 목록은 `PresetTemplate.fields`에 넣지 않는다.
+     * 넣으면 프리셋을 고른 모든 새 세계관이 받게 되어 D1(추천만)을 어긴다.
+     */
+    fun recommendedFields(entityType: String): List<FieldDefinition> = when (entityType) {
+        FieldDefinition.ENTITY_EVENT -> eventFieldTemplates()
+        else -> emptyList()
+    }
+
     private fun createStarAdventureTemplate(): PresetTemplate {
         val universe = Universe(
             name = "별님대모험",

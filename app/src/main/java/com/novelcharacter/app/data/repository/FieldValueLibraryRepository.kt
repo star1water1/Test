@@ -12,6 +12,7 @@ import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.FieldStatsConfig
 import com.novelcharacter.app.data.model.FieldValueEntry
 import com.novelcharacter.app.data.model.TimelineEvent
+import com.novelcharacter.app.util.InitialFieldValues
 import com.novelcharacter.app.util.FieldValueResolver
 import com.novelcharacter.app.util.FieldValueTokenizer
 import com.novelcharacter.app.util.GsonTypes
@@ -415,6 +416,35 @@ class FieldValueLibraryRepository(private val db: AppDatabase) {
         )
         return AddResult.Added(entry.copy(id = entryDao.insert(entry)))
     }
+
+    /**
+     * 필드 생성 창의 **값 사전 등록**분을 한 번에 등재한다 — 필드 관리·작품 편집·사건 편집 공용.
+     *
+     * 종전에는 같은 일을 두 곳이 각자 했고 **실패 처리가 갈렸다**(한쪽은 고지, 한쪽은 무음).
+     * 여기로 모으면서 정책을 하나로 정한다: **개별 값의 실패는 전체를 실패로 만들지 않는다.**
+     * 필드는 이미 만들어졌으므로 실패로 보고하면 사용자가 필드가 안 생긴 줄 안다.
+     * 대신 **등재하지 못한 수를 돌려주어** 호출부가 고지할 수 있게 한다(무음 유실 금지).
+     *
+     * @return 등재 시도 수와 실패 수. 지원하지 않는 타입이거나 적은 값이 없으면 둘 다 0이다.
+     */
+    suspend fun registerInitialValues(
+        fieldDefId: Long,
+        field: FieldDefinition,
+        raw: String
+    ): InitialValueOutcome {
+        val staged = InitialFieldValues.parse(raw, field)
+        if (staged.isEmpty()) return InitialValueOutcome(0, 0)
+        var failed = 0
+        for (value in staged) {
+            val ok = runCatching { addEntry(fieldDefId, value) }.getOrNull()
+            // Duplicate는 실패가 아니다 — 이미 있는 값을 또 적은 것뿐이다.
+            if (ok == null) failed++
+        }
+        return InitialValueOutcome(staged.size, failed)
+    }
+
+    /** [registerInitialValues]의 결과 — 실패분을 고지하려면 호출부가 이 수를 쓴다. */
+    data class InitialValueOutcome(val attempted: Int, val failed: Int)
 
     sealed class UpdateResult {
         object Updated : UpdateResult()
