@@ -573,6 +573,206 @@ object BodySilhouetteSpec {
     }
 
     // ══════════════════════════════════════════════════════════════════════
+    // 2.5D 볼륨 표기층 — 정면 외곽이 못 담는 "이 수치면 이렇게 형성된다"
+    // ══════════════════════════════════════════════════════════════════════
+
+    /**
+     * 볼륨 음영 한 조각.
+     *
+     * **전부 셀(cel) 문법이다** — 경계가 선명한 플랫 셰이프이며 그라데이션을 쓰지 않는다
+     * (13차에서 소프트 그라데이션이 "실사체 느낌"의 원인으로 기각됐다). 근육 구조는
+     * 음영 면이 아니라 형태로만 표현한다.
+     */
+    sealed interface VolumeShape {
+        /** 0..1. 채움색 위에 얹는 저불투명 오버레이라 테마 색이 무엇이든 자동 대응한다. */
+        val alpha: Double
+
+        /** 플랫 음영 면. [spline]이면 정점을 곡선으로 잇는다. */
+        data class Shade(
+            val points: List<PointCm>,
+            val spline: Boolean,
+            override val alpha: Double
+        ) : VolumeShape
+
+        /** 윤곽선 한 줄. [accent]면 테마색, 아니면 흑색 저불투명. */
+        data class Contour(
+            val points: List<PointCm>,
+            val widthCm: Double,
+            override val alpha: Double,
+            val accent: Boolean
+        ) : VolumeShape
+
+        /** 타원 음영(허리 측면·골반 크레센트·배꼽). */
+        data class Blob(
+            val center: PointCm,
+            val rxCm: Double,
+            val ryCm: Double,
+            override val alpha: Double
+        ) : VolumeShape
+    }
+
+    /**
+     * 볼륨 표기층 전체. 뷰는 이것을 몸 외곽에 클립해 순서대로 그리기만 한다.
+     *
+     * 컵 게이팅(재저작 2차): 골 라인은 C쯤부터, 상부 사면선은 중간 컵부터, 아크는
+     * 짧고 얕게 → 길고 깊게. **빈유는 바닥값을 걷어 실루엣 직선 + 언더 힌트만 남긴다.**
+     */
+    fun volumeShapes(m: Measures): List<VolumeShape> {
+        val sc = scales(m)
+        val bg = bustGeom(m)
+        val cd = bg.cupDiff
+        val h = m.height
+        val yc = { f: Double -> h * f }
+
+        val out = ArrayList<VolumeShape>(16)
+        val fade = min(1.0, max(0.0, cd - 5) / 18)
+        val topF = bg.topF
+        val botF = bg.botF
+        val band = topF - botF
+        val midF = botF + band * .50
+        val o = arcOuterCm(sc, bg)
+        val inn = 1.1
+        val shOff = .005 + min(cd, 28.0) * .0003
+        val gapIn = inn * (1.2 + min(cd, 30.0) * .045)
+        val dT = max(0.0, bg.massBase - 13) * .0013
+        val clv = midF + .008 + dT * .6
+        val g = min(1.0, cd / 22)
+
+        for (side in listOf(-1.0, 1.0)) {
+            // ① 가슴 플랫 음영 — 물방울. 채움은 플랫이고 경계가 곧 형태다.
+            if (fade > 0) {
+                out.add(
+                    VolumeShape.Shade(
+                        points = listOf(
+                            PointCm(side * 1.25, yc(.776)),
+                            PointCm(side * o * .44, yc(.769 - dT * .4)),
+                            PointCm(side * o * .80, yc(botF + band * .58)),
+                            PointCm(side * o * .985, yc(botF + band * .37)),
+                            PointCm(side * o * .86, yc(botF + .008)),
+                            PointCm(side * o * .46, yc(botF - .003)),
+                            PointCm(side * inn * .80, yc(botF + .009)),
+                            PointCm(side * inn * .85, yc(clv))
+                        ),
+                        spline = true,
+                        alpha = .068 * fade
+                    )
+                )
+
+                // ② 언더 라인 아래 컵 비례 캐스트 섀도 밴드.
+                val bandPts = ArrayList<PointCm>(20)
+                quadSample(
+                    PointCm(side * o * .80, yc(botF + .010)),
+                    PointCm(side * o * .44, yc(botF - .006)),
+                    PointCm(side * gapIn, yc(botF + .008)), bandPts
+                )
+                quadSample(
+                    PointCm(side * gapIn, yc(botF + .008 - shOff)),
+                    PointCm(side * o * .44, yc(botF - .006 - shOff)),
+                    PointCm(side * o * .80, yc(botF + .010 - shOff)), bandPts
+                )
+                out.add(VolumeShape.Shade(bandPts, spline = false, alpha = .11 * fade))
+            }
+
+            // ③ 가슴 본윤곽 W-아크 — 컵 크기의 정면 표현을 폭·깊이·굵기가 함께 든다.
+            val arcAlpha = if (cd > .5) max(.16, min(1.0, max(0.0, cd - 3) / 13) * .92) else 0.0
+            if (arcAlpha > 0) {
+                out.add(
+                    VolumeShape.Contour(
+                        points = listOf(
+                            PointCm(side * o * (.98 - .10 * (1 - g)), yc(botF + band * (.16 + .16 * g))),
+                            PointCm(side * o * .80, yc(botF + .004)),
+                            PointCm(side * o * .45, yc(botF - .004 - min(cd, 30.0) * .00015)),
+                            PointCm(side * inn * (1.90 - .40 * g), yc(botF + .006)),
+                            PointCm(side * inn * (1.40 - .35 * g), yc(botF + (.014 + .010 * g)))
+                        ),
+                        widthCm = 0.78 + min(cd, 24.0) * .016,
+                        alpha = arcAlpha,
+                        accent = true
+                    )
+                )
+            }
+
+            // ④ 상부 사면선 — 쇄골 홈 아래 대흉근 기점에서 시작한다. 뿌리가 겨드랑이
+            //    쪽 최고점이고 골로 갈수록 내려온다(반대로 그리면 근육판 인상이 된다).
+            val slopeAlpha = min(1.0, max(0.0, cd - 10) / 14) * .46
+            if (slopeAlpha > 0) {
+                out.add(
+                    VolumeShape.Contour(
+                        points = listOf(
+                            PointCm(side * 1.35, yc(.774)),
+                            PointCm(side * o * .36, yc(.768 - dT * .45)),
+                            PointCm(side * o * .62, yc(botF + band * .66)),
+                            PointCm(side * o * .80, yc(botF + band * .42))
+                        ),
+                        widthCm = 0.72, alpha = slopeAlpha, accent = true
+                    )
+                )
+            }
+
+            // ⑤ 쇄골 — 흉골 홈에서 어깨로 뻗는 얕은 S커브. 어깨 폭을 따라간다.
+            val shEdge = HALF_SHOULDER * sc.shoulder
+            out.add(
+                VolumeShape.Contour(
+                    points = quadSample(
+                        PointCm(side * 1.5, yc(.806)),
+                        PointCm(side * shEdge * .52, yc(.800)),
+                        PointCm(side * shEdge * .72, yc(.812)),
+                        ArrayList()
+                    ),
+                    widthCm = 0.9, alpha = .15, accent = false
+                )
+            )
+
+            // ⑥ 허리 측면 셰이드(조일수록 깊게) · 골반 크레센트.
+            out.add(
+                VolumeShape.Blob(
+                    PointCm(side * (HALF_WAIST * sc.waist - 0.6), yc(.630)),
+                    rxCm = 0.9, ryCm = 4.6, alpha = .08
+                )
+            )
+            out.add(
+                VolumeShape.Blob(
+                    PointCm(side * (HALF_HIP * sc.hip - 1.6), yc(.518)),
+                    rxCm = 1.4, ryCm = 4.6, alpha = .07
+                )
+            )
+        }
+
+        // ⑦ 가슴골 — C쯤부터 든다(컵 게이팅).
+        val clvGate = min(1.0, max(0.0, cd - 11) / 8)
+        if (clvGate > 0) {
+            out.add(
+                VolumeShape.Contour(
+                    points = listOf(PointCm(0.0, yc(midF + .004)), PointCm(0.0, yc(botF + .012))),
+                    widthCm = 0.9, alpha = .13 * clvGate, accent = false
+                )
+            )
+        }
+
+        // ⑧ 배꼽 — 마네킹 가독.
+        out.add(VolumeShape.Blob(PointCm(0.0, yc(.608)), rxCm = 0.7, ryCm = 0.45, alpha = .13))
+        return out
+    }
+
+    /** 2차 베지어를 점열로 뜬다 — 볼륨층의 곡선 조각을 곧은 표본으로 바꾼다. */
+    private fun quadSample(
+        from: PointCm, control: PointCm, to: PointCm, into: ArrayList<PointCm>
+    ): ArrayList<PointCm> {
+        val steps = 8
+        for (i in 0..steps) {
+            val t = i.toDouble() / steps
+            val u = 1 - t
+            into.add(
+                PointCm(
+                    u * u * from.x + 2 * u * t * control.x + t * t * to.x,
+                    u * u * from.y + 2 * u * t * control.y + t * t * to.y
+                )
+            )
+        }
+        return into
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
     // 역산 — 핸들 드래그가 값으로 돌아오는 길 (양방향이 같은 상수를 쓴다)
     // ══════════════════════════════════════════════════════════════════════
 

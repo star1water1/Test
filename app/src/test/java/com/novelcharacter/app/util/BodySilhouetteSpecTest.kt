@@ -402,6 +402,69 @@ class BodySilhouetteSpecTest {
         )
     }
 
+    // ── 볼륨 표기층 (셀 문법 + 컵 게이팅) ─────────────────────────────────
+
+    @Test
+    fun `빈유는 가슴 음영을 걷고 언더 힌트만 남긴다`() {
+        // 물방울 ⑤항 — 작을 때는 볼륨이 옅어져 납작해지되 형상 자체가 사라지지는 않는다.
+        val flat = spec.volumeShapes(m(bust = 66.0, waist = 62.0))   // 컵차 0
+        val full = spec.volumeShapes(m(bust = 92.0, waist = 62.0))   // 컵차 18
+
+        val flatShade = flat.filterIsInstance<BodySilhouetteSpec.VolumeShape.Shade>()
+        assertTrue("컵차 0에서 가슴 플랫 음영이 남아 있으면 안 된다", flatShade.isEmpty())
+        assertTrue(full.filterIsInstance<BodySilhouetteSpec.VolumeShape.Shade>().isNotEmpty())
+
+        // 형상이 통째로 사라지지는 않는다 — 쇄골·허리·골반·배꼽은 컵과 무관하다.
+        assertTrue(
+            "컵이 0이어도 쇄골은 남는다",
+            flat.filterIsInstance<BodySilhouetteSpec.VolumeShape.Contour>().isNotEmpty()
+        )
+        assertTrue(
+            "컵이 0이어도 허리·골반·배꼽 음영은 남는다",
+            flat.filterIsInstance<BodySilhouetteSpec.VolumeShape.Blob>().size >= 5
+        )
+    }
+
+    @Test
+    fun `골 라인과 상부 사면선은 컵이 자라야 든다`() {
+        fun hasCleavage(bust: Double): Boolean {
+            val shapes = spec.volumeShapes(m(bust = bust, waist = 62.0))
+            return shapes.filterIsInstance<BodySilhouetteSpec.VolumeShape.Contour>()
+                .any { it.points.size == 2 && it.points.all { p -> abs(p.x) < 1e-9 } }
+        }
+        assertFalse("작은 컵에 골이 생기면 안 된다", hasCleavage(72.0))
+        assertTrue("C쯤부터는 골이 들어야 한다", hasCleavage(92.0))
+    }
+
+    @Test
+    fun `볼륨 음영은 전부 셀 문법의 유효한 값이다`() {
+        for (v in listOf(m(), m(bust = 130.0, waist = 50.0, hip = 110.0), m(bust = 60.0, waist = 100.0))) {
+            val shapes = spec.volumeShapes(v)
+            assertTrue(shapes.isNotEmpty())
+            for (s in shapes) {
+                assertTrue("불투명도가 범위를 벗어났다 (${s.alpha})", s.alpha in 0.0..1.0)
+                val pts = when (s) {
+                    is BodySilhouetteSpec.VolumeShape.Shade -> s.points
+                    is BodySilhouetteSpec.VolumeShape.Contour -> s.points
+                    is BodySilhouetteSpec.VolumeShape.Blob -> listOf(s.center)
+                }
+                assertTrue("빈 도형", pts.isNotEmpty())
+                for (p in pts) assertTrue("$v 볼륨층 좌표가 유한하지 않다", p.x.isFinite() && p.y.isFinite())
+            }
+        }
+    }
+
+    @Test
+    fun `아크는 컵이 클수록 길고 깊고 굵어진다`() {
+        fun arc(bust: Double) = spec.volumeShapes(m(bust = bust, waist = 62.0))
+            .filterIsInstance<BodySilhouetteSpec.VolumeShape.Contour>()
+            .first { it.accent && it.points.size == 5 }
+        val small = arc(76.0)
+        val large = arc(96.0)
+        assertTrue("굵기", large.widthCm > small.widthCm)
+        assertTrue("진하기", large.alpha > small.alpha)
+    }
+
     // ── 곡선 ─────────────────────────────────────────────────────────────
 
     @Test
