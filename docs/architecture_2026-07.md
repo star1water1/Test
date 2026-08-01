@@ -283,8 +283,8 @@ AI 정책(`FieldAiPolicy`).
 | **미이행 기능 색출** — 로드맵(1~4장)은 **닫혔고 5장의 미검증 후보만 살아 있다** | `docs/superficial_feature_audit_2026-07.md` |
 | **실사용 데이터가 말한 것** | `docs/usage_reality_check_2026-07.md` (+ `_runbook`) |
 | **화면 문구** | `docs/text_style_guide_2026-07.md` |
-| **영역별 설계** | 엑셀 왕복 `excel_roundtrip_audit` · 엑셀 스트리밍 가져오기 `excel_streaming_import` · 이미지 폴더 왕복 `image_folder_roundtrip_design`(결정 근거 `image_external_management`, **확장 `image_folder_tag_ai`**) · AI `ai_integration`·`ai_control_and_ui_density` · 값 라이브러리 `field_value_library` · 필터·정렬 짝 `filter_sort_parity` · **체형(실루엣 재편) `body_visual_redesign`(설계 확정 — 구현 대기)** |
-| **점검 결과·수리 계획** | `app_inspection_round2` · `repair_plan` · `usability_review` · `design_intent` |
+| **영역별 설계** | 엑셀 왕복 `excel_roundtrip_audit` · 엑셀 스트리밍 가져오기 `excel_streaming_import` · 이미지 폴더 왕복 `image_folder_roundtrip_design`(결정 근거 `image_external_management`, **확장 `image_folder_tag_ai`**) · AI `ai_integration`·`ai_control_and_ui_density` · 값 라이브러리 `field_value_library` · 필터·정렬 짝 `filter_sort_parity` · **체형(실루엣 재편) `body_visual_redesign`(이식 목업 완료 — 사용자 검증 대기. 이어받는 세션은 `handover_body_reauthor_2026-08`부터)** |
+| **점검 결과·수리 계획** | `app_inspection_round2` · `repair_plan` · `usability_review` · `design_intent` · **`plan_design_adversarial_review_2026-08`(전 문서 적대 검토 — 실증 발견·후보 목록·판정 대기)** |
 | **절차서** | `room_migration_verification` — 마이그레이션 하네스를 어떻게 만들고 돌리는가(종 수는 `ls tools/verify_room_migration*.py`로 센다) |
 | **브랜치·병합** | `docs/branch_merge_rules.md` |
 | **끝난 것 / 낡은 것** | `docs/archive/` — 구현 완료된 계획서와 구시점 리뷰. **근거로 쓰지 말 것**(각 문서 머리의 보관 헤더가 무엇이 낡았는지 적어 둔다) |
@@ -304,6 +304,7 @@ AI 정책(`FieldAiPolicy`).
 
 | 버전 | 날짜 | 변경 내용 |
 |------|------|-----------|
+| v1.11 | 2026.08.01 | 7장 지도 갱신 — 점검 결과 행에 **`plan_design_adversarial_review_2026-08` 등재**(전 문서 적대 검토, 세션 로그 1-ab), 체형 행을 "설계 확정 — 구현 대기" → **"이식 목업 완료 — 사용자 검증 대기"**로, 이어받는 진입점(`handover_body_reauthor_2026-08`)을 지도에 명기(그 문서가 지도 밖이라 3홉을 밟아야 닿던 것 — 검토 F-2) |
 | v1.10 | 2026.07.31 | 7장 영역별 설계에 **체형(실루엣 재편) `body_visual_redesign`** 등재 — 설계 확정·구현 대기(사용자 확정 다음 작업) |
 | v1.9 | 2026.07.31 | **문서 감사 반영** — 2장 지도(DB 버전·파일 수 값 제거, 세는 법 위임), 3장 GradeSystemRef 행(R-30 예외 명시 — 프룬·신설 삽입 경로), 4장 하네스·리셋 행(종수·건수 → 스크립트 출력 위임), 5-1 실측표(값 → 세는 명령 3종 병기), 5-4 manifest 버전(코드 참조로), 7장 절차서 행(하네스 종수 제거) |
 | v1.8 | 2026.07.30 | **U-1 세계관 등급 체계 반영**(세션 로그 1-y장) — 2장 데이터 모델에 `GradeSystem` 등재(DB v46), 3장 단일 소스 표에 `GradeSystemRef` 등재(참조·재정의·실효 표의 config 표현 — 물질화 구조라 `GradeValueResolver` 소비자는 무변경), 6장 색인에 **R-30** 등재(물질화된 파생값의 원본 편집은 파생값 재작성과 한 트랜잭션) |
