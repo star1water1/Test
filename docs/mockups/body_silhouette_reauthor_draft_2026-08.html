@@ -1,0 +1,453 @@
+<title>기준 몸 재저작 2차 — 완전 신규 저작 (2026.08.01 스냅샷)</title>
+<!--
+  실루엣 재저작 2차의 정본 스냅샷 (2026.08.01, 세션 로그 1-aa · 설계 문서 4-1 재저작 2차 결정).
+  기존 14차 목업(body_silhouette_mockup_2026-07.html)의 그림을 폐기하고 레퍼런스 기준으로
+  완전 신규 저작한 정점 배열·상수의 유일한 정본이다. 이식(설계 문서 10장) 시 이 파일의
+  R_OUTER·R_INNER_UP·HEAD·ARM·ANCHOR_Y·HALF·bustGeom·SIDE_BUMP와 측면 정점
+  (S_FRONT·S_BACK·S_HEAD — P10)·클램프 값이 BodySilhouetteSpec의 상수로 들어간다.
+  인터랙션(핸들·동기·🎲)은 14차 목업이 정본. 공격 상태 검증(적대 검토 렌더)은 이 파일의
+  STATES 배열만 바꿔 재현한다.
+-->
+<style>
+  :root {
+    --card: #FFFFFF; --ink: #241F26; --muted: #756C78;
+    --accent: #8E5A7E;
+    --figure: #EBD8E5; --figure-arm: #DFC5D9; --figure-leg: #E5CEDF; --grid: #C9B8C6;
+  }
+  body { background: var(--card); color: var(--ink); font-family: system-ui, "Noto Sans KR", sans-serif; margin: 0; padding: 16px; }
+  h1 { font-size: 15px; margin: 0 0 2px; }
+  .sub { font-size: 11px; color: var(--muted); margin: 0 0 10px; }
+  svg { display: block; }
+</style>
+<h1>기준 몸 재저작 2차 — 기존 모델링 폐기, 레퍼런스 기준 완전 신규 저작</h1>
+<p class="sub">좌: 기준 몸(86-62-90) 확대 + 두신 눈금. 우: 같은 몸이 수치 변형으로 그리는 4가지 체형(구조 규칙·변형 시스템 보존 검증).</p>
+<svg id="sheet" width="900" height="1180" viewBox="0 0 900 1180"></svg>
+<script>
+(function () {
+  "use strict";
+  const BASE = { height: 165, shoulder: 38, bust: 86, waist: 62, hip: 90 };
+  const ALPHA = { shoulder: 1.0, waist: 1.18, hip: 1.12 };
+  const ANCHOR_Y = { shoulder: .785, bust: .700, waist: .630, hip: .515 };
+  const HEAD_LEN = 24.6; // 6.7등신
+
+  // ── 기준 몸 외곽 (완전 신규 저작 — 레퍼런스 ①②④ 기반, [키 비율, 반폭 cm]) ──
+  const R_OUTER = [
+    [.856, 2.85], [.848, 2.75], [.840, 2.72], [.832, 2.80], [.825, 3.10], // 목(짧고 자연스럽게)
+    [.818, 4.50], [.812, 7.80], [.806, 11.60], [.800, 14.20],             // 어깨 선반(레퍼런스 ① — 수평에 가깝게)
+    [.794, 15.20], [.789, 15.35], [.783, 15.20], [.777, 14.60],           // 둥근 삼각근 캡
+    [.770, 14.00],                                                        // 겨드랑이 주름
+    [.763, 13.55], [.756, 13.30], [.749, 13.15], [.742, 13.00],
+    [.735, 12.85], [.728, 12.70], [.721, 12.55], [.714, 12.40],
+    [.707, 12.25], [.700, 12.10],                                         // 밑가슴(2두신)
+    [.693, 11.75], [.687, 11.40], [.681, 11.10], [.675, 10.82],           // 언더 → 완만한 테이퍼(코르셋 노치 제거)
+    [.668, 10.55], [.661, 10.30], [.653, 10.08], [.645, 9.90], [.637, 9.77],
+    [.630, 9.70],                                                         // 허리(최협)
+    [.622, 9.80], [.612, 10.10], [.602, 10.55], [.591, 11.20],            // 장골 S-플레어(길고 완만하게)
+    [.580, 12.10], [.569, 13.10], [.558, 14.15], [.547, 15.15],
+    [.537, 16.05], [.528, 16.80], [.520, 17.35], [.513, 17.68],           // 넓고 둥근 크레스트(괄호 곡선)
+    [.506, 17.74], [.499, 17.70], [.491, 17.55], [.482, 17.25],           // …정점 플래토(7cm대에 걸쳐 최대폭 유지)
+    [.472, 16.80], [.461, 16.25], [.449, 15.60], [.436, 14.85],
+    [.422, 14.00], [.407, 13.10], [.391, 12.20], [.374, 11.30],
+    [.357, 10.50], [.340, 9.85], [.323, 9.35], [.307, 8.95],
+    [.295, 8.62], [.291, 8.50], [.280, 8.42],                             // 무릎(살짝 좁아짐)
+    [.270, 8.55], [.259, 8.78], [.247, 8.80], [.234, 8.50],               // 종아리(바깥 봉우리 높게)
+    [.220, 8.00], [.205, 7.35], [.189, 6.70], [.172, 6.05],
+    [.154, 5.50], [.135, 5.00], [.116, 4.60], [.097, 4.30], [.079, 4.05],
+    [.063, 3.90], [.050, 3.95], [.039, 3.92],                             // 발목(가늘게)
+    [.024, 4.10], [.014, 4.85], [.006, 5.20], [.001, 5.00],               // 작은 발
+  ];
+  const R_INNER_UP = [ // 발끝→가랑이
+    [.001, 2.00], [.009, 1.58], [.020, 1.45], [.034, 1.40], [.048, 1.55],
+    [.065, 1.80], [.085, 2.05], [.108, 2.30], [.133, 2.52], [.158, 2.70],
+    [.183, 2.84], [.207, 2.94], [.228, 3.00],                             // 안쪽 종아리 봉우리(바깥보다 낮게)
+    [.247, 2.97], [.264, 2.88], [.279, 2.80], [.291, 2.76],               // 무릎 안쪽
+    [.304, 2.76], [.320, 2.80], [.338, 2.85], [.357, 2.88], [.377, 2.86],
+    [.397, 2.78], [.416, 2.62], [.434, 2.42], [.450, 2.16],               // 허벅지 안쪽(슬림 갭)
+    [.464, 1.86], [.477, 1.50], [.488, 1.10], [.497, 0.70], [.503, 0.42], [.5065, 0.28], // 가랑이 V
+  ];
+  const HEAD = [ // 애니메이션 두상 — 넓고 둥근 두개, 볼 곡선, 좁은 턱
+    [0, 12.4], [5.0, 11.5], [8.0, 7.8], [8.8, 3.0], [8.2, -1.8], [6.4, -5.6],
+    [4.1, -9.0], [1.8, -11.5], [0, -12.2],
+    [-1.8, -11.5], [-4.1, -9.0], [-6.4, -5.6], [-8.2, -1.8], [-8.8, 3.0], [-8.0, 7.8], [-5.0, 11.5],
+  ];
+  const HEAD_CY = .925;
+  // 팔 — 가변 굵기 닫힌 형상: [키 비율, 중심선 cm, 반굵기 cm] (굵기는 불변, 위치만 어깨 스케일 추종)
+  const ARM = [ // [키 비율, 중심선, 반굵기] — 바깥 라인은 삼각근→손목 연속 테이퍼, 전완 볼륨은 안쪽(굴근)에
+    [.788, 13.10, 3.25], [.768, 13.30, 3.02], [.740, 13.80, 2.72],
+    [.705, 14.10, 2.52], [.672, 14.18, 2.40], [.645, 14.15, 2.28],  // 팔꿈치(허리 높이)
+    [.607, 14.05, 2.36],                                            // 전완(안쪽 볼륨)
+    [.567, 13.75, 2.12], [.528, 13.25, 1.80], [.500, 12.95, 1.52],  // 손목
+    [.480, 13.02, 1.55],                                            // 손바닥
+    [.458, 13.10, 1.26], [.438, 13.14, 0.85], [.426, 13.08, 0.52],  // 손끝(안으로 살짝 말림)
+  ];
+  const HALF = { shoulder: 16.6, waist: 9.7, hip: 17.70 }; // 핸들이 앉는 기준 반폭
+
+  const STATES = [
+    { label: "기준 86-62-90", v: { height: 165, shoulder: 38, bust: 86, waist: 62, hip: 90 }, big: true },
+    { label: "슬림 76-56-82 (155cm)", v: { height: 155, shoulder: 36, bust: 76, waist: 56, hip: 82 } },
+    { label: "글래머 98-58-94", v: { height: 165, shoulder: 38, bust: 98, waist: 58, hip: 94 } },
+    { label: "장신 78-58-86 (180cm)", v: { height: 180, shoulder: 39, bust: 78, waist: 58, hip: 86 } },
+    { label: "풍만 100-78-104", v: { height: 165, shoulder: 39, bust: 100, waist: 78, hip: 104 } },
+  ];
+
+  const cupDiff = v => Math.max(0, Math.min(v.bust - (v.waist + 6), 40));
+  function scales(v) {
+    const sh0 = Math.pow(v.shoulder / BASE.shoulder, ALPHA.shoulder);
+    const w0 = Math.pow(v.waist / BASE.waist, ALPHA.waist);
+    const h0 = Math.pow(v.hip / BASE.hip, ALPHA.hip);
+    const cl = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
+    const sh = cl(sh0, .78, 1.28), w = cl(w0, .66, 1.50), h = cl(h0, .75, 1.38);
+    // 표시 클램프(설계 4-2): 값은 절대 불변 — 그림만 한계 안. clamped는 핸들 경고색용(이식 시 배선)
+    return { sh, w, rib: 1 + (w - 1) * .6, h, clamped: sh !== sh0 || w !== w0 || h !== h0 };
+  }
+  function scaleAt(frac, sc) {
+    const knots = [
+      [.845, 1], [ANCHOR_Y.shoulder, sc.sh], [ANCHOR_Y.bust, sc.rib],
+      [ANCHOR_Y.waist, sc.w], [ANCHOR_Y.hip, sc.h],
+      [.290, 1 + (sc.h - 1) * .52], [.006, 1 + (sc.h - 1) * .12],
+    ];
+    if (frac >= knots[0][0]) return 1;
+    for (let i = 0; i < knots.length - 1; i++) {
+      const [a, sa] = knots[i], [b, sb] = knots[i + 1];
+      if (frac <= a && frac >= b) {
+        const t = (a - frac) / (a - b);
+        let w = (1 - Math.cos(Math.PI * t)) / 2;
+        if (a === ANCHOR_Y.waist && b === ANCHOR_Y.hip) w = Math.pow(w, 1.3); // 플레어 하방 편중
+        return sa + (sb - sa) * w;
+      }
+    }
+    return knots[knots.length - 1][1];
+  }
+  const bustGeom = v => {
+    const cd = cupDiff(v);
+    const eff = cd <= 20 ? cd : 20 + (cd - 20) * .35;
+    return {
+      cd,
+      spill: Math.min(.25 + Math.max(0, cd - 5) * .105, 3.6),   // 실루엣이 흉곽 밖으로 넘는 양 — 옆 부풂은 작게(가슴은 앞으로 돌출)
+      massBase: 2.4 + eff * .64,               // 정면에 그리는 덩어리 폭(아크·골·음영이 크기를 말한다)
+      topF: .757,
+      botF: .757 - (.047 + Math.min(cd * .0008, .031)),
+    };
+  };
+
+  // ── 측면(사이드) 저작 — 같은 수치에서 파생되는 표시 전용 뷰 (P10) ──
+  // 좌표: [키 비율 f, 축 기준 앞(+)/뒤(−) cm]. 축 = 귀~발목 수직선. 정본 원칙은 정면과 동일:
+  // 가산 혹(문턱 없음)·상단 앵커 고정·컵 게이팅·표시 클램프 공유.
+  const S_BACK = [ // 전경 목덜미→등(흉추 볼록 — 기울어진 흉곽)→요추 오목→둔부→다리 뒤→뒤꿈치
+    [.845, -3.2], [.832, -3.9], [.818, -4.8], [.803, -5.8], [.788, -6.8],
+    [.772, -7.6], [.756, -8.2], [.738, -8.5], [.720, -8.3], [.702, -7.8],
+    [.684, -7.0], [.666, -6.2], [.649, -5.6], [.633, -5.2], [.617, -5.2],
+    [.601, -5.6], [.586, -6.2], [.572, -7.1], [.558, -8.3], [.545, -9.4],
+    [.533, -10.1], [.522, -10.4], [.511, -10.2], [.501, -9.5], [.492, -8.4],
+    [.484, -7.4], [.472, -6.9], [.455, -6.7], [.435, -6.4], [.413, -6.1],
+    [.390, -5.7], [.366, -5.2], [.342, -4.8], [.318, -4.5], [.298, -4.4],
+    [.278, -4.8], [.262, -5.7], [.248, -6.1], [.232, -5.9], [.212, -5.3],
+    [.190, -4.5], [.166, -3.7], [.142, -3.1], [.118, -2.7], [.094, -2.5],
+    [.070, -2.5], [.050, -2.8], [.034, -3.6], [.018, -4.5], [.006, -4.6], [.001, -4.2],
+  ];
+  const S_FRONT = [ // 턱밑→전경 목→기울어진 흉판→(대역: 물방울 가산)→늑골 융기→배→골반→다리 앞→발끝
+    [.845, 3.4], [.833, 3.7], [.821, 4.1], [.809, 4.7], [.797, 5.3],
+    [.785, 5.8], [.773, 6.3], [.762, 6.5], [.757, 6.5],
+    [.748, 6.4], [.738, 6.3], [.728, 6.1], [.718, 5.9], [.710, 5.7],
+    [.702, 5.5], [.694, 5.3], [.684, 5.5], [.672, 5.4], [.658, 5.1],
+    [.645, 4.8], [.632, 4.6], [.618, 4.6], [.604, 4.8], [.590, 5.1],
+    [.576, 5.4], [.562, 5.7], [.548, 5.9], [.534, 6.0], [.524, 5.9],
+    [.514, 5.6], [.507, 5.2], [.501, 4.9],
+    [.494, 6.2], [.484, 6.8], [.472, 6.9], [.458, 6.8], [.440, 6.5],
+    [.420, 6.1], [.398, 5.7], [.375, 5.2], [.352, 4.8], [.330, 4.4],
+    [.308, 4.2], [.288, 4.0], [.266, 3.8], [.244, 3.6], [.222, 3.4],
+    [.200, 3.2], [.178, 3.1], [.156, 3.0], [.134, 2.9], [.112, 2.8],
+    [.090, 2.8], [.070, 2.9], [.052, 3.3], [.038, 5.0], [.026, 9.6],
+    [.014, 12.5], [.005, 13.0], [.001, 12.1],
+  ];
+  const S_HEAD = [ // 측면 두상 — 이마·후두부, 무표정 마네킹 (중심 cy 기준 [dx, dy] cm)
+    [1.0, 12.3], [5.4, 10.8], [7.8, 7.2], [8.6, 3.0], [8.2, -1.5],
+    [7.4, -5.2], [6.6, -8.6], [4.6, -11.2], [1.6, -12.2], [-1.8, -12.0],
+    [-4.6, -10.6], [-7.2, -8.0], [-8.8, -4.2], [-9.3, 0.0], [-8.9, 4.4],
+    [-7.2, 8.6], [-4.0, 11.4],
+  ];
+  function sideFigure(v, W, H, pad, ox, oy) {
+    const k = (H - pad * 2) / 205;
+    const cx = ox + W / 2 - 1.0 * k, baseY = oy + H - pad; // 발 길이만큼 축을 살짝 뒤로
+    const y = f => baseY - v.height * k * f;
+    const sc = scales(v);
+    const bg = bustGeom(v);
+    // 가슴 전방 돌출(가산 혹): 깊이 = 컵차 비례, 대역·게이팅은 정면과 공유
+    const S_BUMP = [ // 매달린 물방울 — 앞면은 넓은 원호(최대가 t .22~.46에 걸쳐 유지), 위는 긴 사면, 아래는 둥근 훅
+      [0, 0], [.05, .30], [.10, .62], [.16, .86], [.22, .96], [.30, 1.0],
+      [.38, 1.0], [.46, .97], [.55, .88], [.65, .72], [.75, .53], [.85, .33], [.93, .16], [1, 0],
+    ];
+    const depth = Math.min(0.8 + bg.cd * .46, 14.0); // 기준(컵차 18)이 레퍼런스급 드롭이 되게
+    const sideTop = bg.topF + .018; // 흉판 상부(쇄골 근처)에서 길게 내려온다(밑가슴·행은 정면과 공유)
+    const bump = f => {
+      if (f >= sideTop || f <= bg.botF) return 0;
+      const t = (f - bg.botF) / (sideTop - bg.botF);
+      for (let i = 0; i < S_BUMP.length - 1; i++) {
+        const [ta, wa] = S_BUMP[i], [tb, wb] = S_BUMP[i + 1];
+        if (t >= ta && t <= tb) {
+          const u = (t - ta) / (tb - ta);
+          return depth * (wa + (wb - wa) * (1 - Math.cos(Math.PI * u)) / 2);
+        }
+      }
+      return 0;
+    };
+    // 부위별 깊이 스케일: 배·허리 앞뒤=허리, 둔부=힙, 등 상부=어깨(가볍게)
+    const fMul = f => (f < .665 && f > .495) ? 1 + (sc.w - 1) * 1.05 : 1;
+    const bMul = f => {
+      if (f < .585 && f > .470) return 1 + (sc.h - 1) * 1.0;   // 둔부
+      if (f < .680 && f >= .585) return 1 + (sc.w - 1) * .55;  // 요추
+      if (f >= .680 && f < .800) return 1 + (sc.sh - 1) * .4;  // 등 상부
+      return 1;
+    };
+    const loop = [];
+    for (const [f, x] of S_FRONT) loop.push([cx + (x * fMul(f) + bump(f)) * k, y(f)]);
+    for (let i = S_BACK.length - 1; i >= 0; i--) { const [f, x] = S_BACK[i]; loop.push([cx + x * bMul(f) * k, y(f)]); }
+    const body = spline(loop, true);
+    const cy = y(HEAD_CY);
+    const head = spline(S_HEAD.map(p => [cx + (p[0] + 1.3) * k, cy - p[1] * k]), true); // 전경 자세 — 머리가 앞에 앉는다
+    // 측면은 팔 생략(P10) — 컵 차트·비례 튜토리얼 측면 관행: 돌출·S라인·둔부의 계측 가독 우선
+    return { body, head, cx, y, k, sc, bg, depth };
+  }
+  function drawSideFigure(v, W, H, pad, ox, oy, idp) {
+    const f = sideFigure(v, W, H, pad, ox, oy);
+    const accent = "#8E5A7E";
+    const ow = Math.max(1.4, 2 * (W / 240));
+    let s = "";
+    s += `<path d="${f.body}" fill="var(--figure)" stroke="${accent}" stroke-width="${ow}" stroke-linejoin="round"></path>`;
+    s += `<clipPath id="${idp}sc"><path d="${f.body}"></path></clipPath>`;
+    // 다리 틴트(측면 관절 경계: 앞 .525 → 뒤 .490 사선)
+    const yF = f.y(.525).toFixed(1), yB = f.y(.490).toFixed(1), yBot = oy + H + 4;
+    s += `<polygon points="${ox + W},${yF} ${ox},${yB} ${ox},${yBot} ${ox + W},${yBot}" fill="var(--figure-leg)" clip-path="url(#${idp}sc)"></polygon>`
+      + `<path d="${f.body}" fill="none" stroke="${accent}" stroke-width="${ow}" stroke-linejoin="round"></path>`;
+    // 볼륨 표기(셀): 밑가슴 턱 라인(컵 게이팅 공유) + 둔부 밑 크리즈
+    const cd = f.bg.cd, k = f.k, cx = f.cx;
+    const gate = Math.min(1, Math.max(0, cd - 3) / 13);
+    if (gate > 0) {
+      const bx = 6.2 * k;
+      s += `<path d="M ${(cx + bx + f.depth * .72 * k).toFixed(1)} ${f.y(f.bg.botF + .012).toFixed(1)} Q ${(cx + bx + f.depth * .30 * k).toFixed(1)} ${f.y(f.bg.botF - .006).toFixed(1)} ${(cx + bx * .55).toFixed(1)} ${f.y(f.bg.botF + .004).toFixed(1)}" fill="none" stroke="${accent}" stroke-opacity="${(gate * .85).toFixed(2)}" stroke-width="${((0.75 + Math.min(cd, 24) * .014) * k).toFixed(1)}" stroke-linecap="round" clip-path="url(#${idp}sc)"></path>`;
+    }
+    s += `<path d="M ${(cx - 9.6 * f.sc.h * k).toFixed(1)} ${f.y(.492).toFixed(1)} Q ${(cx - 6.4 * k).toFixed(1)} ${f.y(.482).toFixed(1)} ${(cx - 4.0 * k).toFixed(1)} ${f.y(.487).toFixed(1)}" fill="none" stroke="#000" stroke-opacity=".16" stroke-width="${(0.8 * k).toFixed(1)}" stroke-linecap="round" clip-path="url(#${idp}sc)"></path>`;
+    s += `<path d="${f.head}" fill="var(--figure)" stroke="${accent}" stroke-width="${ow}"></path>`;
+    return s;
+  }
+
+  function spline(pts, close) {
+    const n = pts.length;
+    const P = i => pts[close ? ((i % n) + n) % n : Math.max(0, Math.min(n - 1, i))];
+    let d = `M ${pts[0][0].toFixed(1)} ${pts[0][1].toFixed(1)}`;
+    const last = close ? n : n - 1;
+    for (let i = 0; i < last; i++) {
+      const p0 = P(i - 1), p1 = P(i), p2 = P(i + 1), p3 = P(i + 2);
+      const c1 = [p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6];
+      const c2 = [p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6];
+      d += ` C ${c1[0].toFixed(1)} ${c1[1].toFixed(1)}, ${c2[0].toFixed(1)} ${c2[1].toFixed(1)}, ${p2[0].toFixed(1)} ${p2[1].toFixed(1)}`;
+    }
+    return d + (close ? " Z" : "");
+  }
+
+  function figure(v, W, H, pad, ox, oy) {
+    const k = (H - pad * 2) / 205;
+    const cx = ox + W / 2, baseY = oy + H - pad;
+    const y = f => baseY - v.height * k * f;
+    const sc = scales(v);
+    const bg = bustGeom(v);
+
+    const SIDE_BUMP = [ // 옆가슴 혹 프로필 — 양끝 0(흉곽선에 접선 합류), 최대는 중앙 아래
+      [0, 0], [.08, .22], [.18, .55], [.30, .85], [.40, 1.0],
+      [.55, .88], [.70, .62], [.85, .30], [1, 0],
+    ];
+    const sideBump = f => {
+      if (f >= bg.topF || f <= bg.botF) return 0;
+      const t = (f - bg.botF) / (bg.topF - bg.botF);
+      for (let i = 0; i < SIDE_BUMP.length - 1; i++) {
+        const [ta, wa] = SIDE_BUMP[i], [tb, wb] = SIDE_BUMP[i + 1];
+        if (t >= ta && t <= tb) {
+          const u = (t - ta) / (tb - ta);
+          return bg.spill * (wa + (wb - wa) * (1 - Math.cos(Math.PI * u)) / 2);
+        }
+      }
+      return 0;
+    };
+    const X = (frac, halfCm) => (halfCm * scaleAt(frac, sc) + sideBump(frac)) * k;
+    const loop = [];
+    for (const [f, x] of R_OUTER) loop.push([cx + X(f, x), y(f)]);
+    for (const [f, x] of R_INNER_UP) loop.push([cx + X(f, x), y(f)]);
+    for (let i = R_INNER_UP.length - 2; i >= 0; i--) { const [f, x] = R_INNER_UP[i]; loop.push([cx - X(f, x), y(f)]); }
+    for (let i = R_OUTER.length - 1; i >= 0; i--) { const [f, x] = R_OUTER[i]; loop.push([cx - X(f, x), y(f)]); }
+    const body = spline(loop, true);
+    const cy = y(HEAD_CY);
+    const head = spline(HEAD.map(p => [cx + p[0] * k, cy - p[1] * k]), true);
+    // 팔 — 중심선×어깨 스케일 이동, 굵기 불변. 허리·골반이 넓으면 팔꿈치 아래가
+    // 몸에 밀려 바깥으로 이동(팔이 몸을 뚫지 않게 — 살에 얹히는 실측 문법).
+    const outerHalf = f => { // 기준 몸 외곽 반폭 보간(가슴 제외)
+      for (let i = 0; i < R_OUTER.length - 1; i++) {
+        const [a, xa] = R_OUTER[i], [b, xb] = R_OUTER[i + 1];
+        if (f <= a && f >= b) return xa + (xb - xa) * (a - f) / (a - b);
+      }
+      return R_OUTER[R_OUTER.length - 1][1];
+    };
+    const ELBOW = .645;
+    // 강체 플랭크 푸시: 플랭크 구간(.58~.72)의 최대 부족량 하나로 팔꿈치 아래 전체를
+    // 한 번에 민다(팔은 뼈 — 몸 굴곡을 점별로 따라 굽지 않는다). 뿌리 쪽은 코사인 소멸.
+    let push = 0;
+    for (const [f, c, w] of ARM) {
+      if (f < .58 || f > .72) continue;
+      const d = outerHalf(f) * scaleAt(f, sc) + .4 + w - c * sc.sh;
+      if (d > push) push = d;
+    }
+    const pushBlend = f => f >= .78 ? 0 : f >= .70 ? (1 - Math.cos(Math.PI * (.78 - f) / .08)) / 2 : 1;
+    const armPts = ARM.map(([f, c, w]) => [f, c * sc.sh + push * pushBlend(f), w]);
+    const buildArm = (pts, s, capTop) => {
+      const outer = pts.map(([f, c, w]) => [cx + s * (c + w) * k, y(f)]);
+      const inner = pts.slice().reverse().map(([f, c, w]) => [cx + s * (c - w) * k, y(f)]);
+      const tip = [cx + s * (pts[pts.length - 1][1] + .04) * k, y(pts[pts.length - 1][0] - .004)];
+      const loop2 = [];
+      if (capTop) loop2.push([cx + s * pts[0][1] * k, y(pts[0][0] + .0045)]);
+      loop2.push(...outer, tip, ...inner);
+      // 채움은 닫힌 패스, 윤곽은 절단변을 긋지 않는 열린 패스(관절 이음이 보이지 않게)
+      return { fill: spline(loop2, true), edge: spline(outer.concat([tip], inner), false) };
+    };
+    const arms = [1, -1].map(s => buildArm(armPts, s, true));                            // 뒤: 전체 팔
+    const fore = [1, -1].map(s => buildArm(armPts.filter(p => p[0] <= ELBOW), s, false)); // 앞: 팔꿈치 아래
+    return { body, head, arms, fore, cx, y, k, sc, bg };
+  }
+
+  function volumeLayer(f, v) {
+    const { cx, y, k, sc } = f;
+    const bg = f.bg, cd = bg.cd;
+    let s = "";
+    const fade = Math.min(1, Math.max(0, cd - 5) / 18);
+    const topF = bg.topF, botF = bg.botF;
+    const midF = botF + (topF - botF) * .50;
+    const O = Math.min(bg.massBase, 12.3 * sc.rib + bg.spill - .4) * k, IN = 1.1 * k;
+    const sh = .005 + Math.min(cd, 28) * .0003;
+    const gapIn = IN * (1.2 + Math.min(cd, 30) * .045);
+    for (const side of [-1, 1]) {
+      const px = xc => (cx + side * xc).toFixed(1);
+      const dT = Math.max(0, bg.outCm - 13) * .0013;
+      const clv = midF + .008 + dT * .6; // 골 지점 — 컵이 클수록 깊게 내려온다
+      const pts = [
+        [cx + side * 1.25 * k, y(.776)],                   // 시작: 쇄골 홈 아래(대흉근 기점)
+        [cx + side * O * .44, y(.769 - dT * .4)],          // 사면을 타고 바깥으로
+        [cx + side * O * .80, y(botF + (topF - botF) * .58)],
+        [cx + side * O * .985, y(botF + (topF - botF) * .37)], // 바깥 봉우리(중앙 아래)
+        [cx + side * O * .86, y(botF + .008)],
+        [cx + side * O * .46, y(botF - .003)],             // 아랫극(꽉 찬 닫힘)
+        [cx + side * IN * .80, y(botF + .009)],
+        [cx + side * IN * .85, y(clv)],                    // 골(안쪽 상단)
+      ];
+      s += `<path d="${spline(pts, true)}" fill="#000" fill-opacity="${(.068 * fade).toFixed(3)}"></path>`;
+      // 캐스트 섀도(언더 바로 아래 얇게)
+      s += `<path d="M ${px(O * .80)} ${y(botF + .010).toFixed(1)} Q ${px(O * .44)} ${y(botF - .006).toFixed(1)} ${px(gapIn)} ${y(botF + .008).toFixed(1)} L ${px(gapIn)} ${y(botF + .008 - sh).toFixed(1)} Q ${px(O * .44)} ${y(botF - .006 - sh).toFixed(1)} ${px(O * .80)} ${y(botF + .010 - sh).toFixed(1)} Z" fill="#000" fill-opacity="${(.11 * fade).toFixed(3)}"></path>`;
+      // 가슴 본윤곽 아크 — 각 가슴의 하부 2/3를 도는 둥근 본선(레퍼런스 ①④의 W)
+      const band = topF - botF;
+      const g = Math.min(1, cd / 22); // 컵 진행도 — 아크가 짧고 얕게 → 길고 깊게
+      const arc = [
+        [cx + side * O * (.98 - .10 * (1 - g)), y(botF + band * (.16 + .16 * g))],
+        [cx + side * O * .80, y(botF + .004)],
+        [cx + side * O * .45, y(botF - .004 - Math.min(cd, 30) * .00015)],
+        [cx + side * IN * (1.90 - .40 * g), y(botF + .006)],
+        [cx + side * IN * (1.40 - .35 * g), y(botF + (.014 + .010 * g))],
+      ];
+      s += `<path d="${spline(arc, false)}" fill="none" stroke="#8E5A7E" stroke-opacity="${(cd > .5 ? Math.max(.16, Math.min(1, Math.max(0, cd - 3) / 13) * .92) : 0).toFixed(2)}" stroke-width="${((0.78 + Math.min(cd, 24) * .016) * k).toFixed(1)}" stroke-linecap="round"></path>`;
+      // 상부 사면 라인 — 쇄골 아래 근육에서 물방울이 시작되는 형태(언더보다 가볍게)
+      const slope = [
+        [cx + side * 1.35 * k, y(.774)],
+        [cx + side * O * .36, y(.768 - dT * .45)],
+        [cx + side * O * .62, y(botF + band * .66)],
+        [cx + side * O * .80, y(botF + band * .42)],
+      ];
+      s += `<path d="${spline(slope, false)}" fill="none" stroke="#8E5A7E" stroke-opacity="${(Math.min(1, Math.max(0, cd - 10) / 14) * .46).toFixed(2)}" stroke-width="${(0.72 * k).toFixed(1)}" stroke-linecap="round"></path>`;
+    }
+    const shEdge = HALF.shoulder * sc.sh * k;
+    for (const side of [-1, 1]) {
+      const x0 = cx + side * 1.5 * k, x1 = cx + side * shEdge * .52, x2 = cx + side * shEdge * .72;
+      s += `<path d="M ${x0.toFixed(1)} ${y(.806).toFixed(1)} Q ${x1.toFixed(1)} ${y(.800).toFixed(1)} ${x2.toFixed(1)} ${y(.812).toFixed(1)}" fill="none" stroke="#000" stroke-opacity=".15" stroke-width="${(0.9 * k).toFixed(1)}" stroke-linecap="round"></path>`;
+    }
+    const clvGate = Math.min(1, Math.max(0, cd - 11) / 8); // 골은 C쯤부터 나타난다(컵 차트)
+    if (clvGate > 0)
+      s += `<line x1="${cx}" y1="${y(midF + .004).toFixed(1)}" x2="${cx}" y2="${y(botF + .012).toFixed(1)}" stroke="#000" stroke-opacity="${(.13 * clvGate).toFixed(2)}" stroke-width="${(0.9 * k).toFixed(1)}" stroke-linecap="round"></line>`;
+    const ww = HALF.waist * sc.w * k, hw = HALF.hip * sc.h * k;
+    for (const side of [-1, 1]) {
+      s += `<ellipse cx="${(cx + side * (ww - 0.6 * k)).toFixed(1)}" cy="${y(.630).toFixed(1)}" rx="${(0.9 * k).toFixed(1)}" ry="${(4.6 * k).toFixed(1)}" fill="#000" fill-opacity=".08"></ellipse>`;
+      s += `<ellipse cx="${(cx + side * (hw - 1.6 * k)).toFixed(1)}" cy="${y(.518).toFixed(1)}" rx="${(1.4 * k).toFixed(1)}" ry="${(4.6 * k).toFixed(1)}" fill="#000" fill-opacity=".07"></ellipse>`;
+    }
+    s += `<ellipse cx="${cx}" cy="${y(.608).toFixed(1)}" rx="${(0.7 * k).toFixed(1)}" ry="${(0.45 * k).toFixed(1)}" fill="#000" fill-opacity=".13"></ellipse>`;
+    return s;
+  }
+
+  function drawFigure(v, W, H, pad, ox, oy, idp) {
+    const f = figure(v, W, H, pad, ox, oy);
+    const accent = "#8E5A7E";
+    const ow = Math.max(1.4, 2 * (W / 240)); // 셀 크기 비례 윤곽 무게
+    let s = "";
+    // 1) 위팔(몸 뒤 — 가슴·몸통이 팔 뿌리를 가리는 레퍼런스 문법)
+    for (const a of f.arms)
+      s += `<path d="${a.fill}" fill="var(--figure-arm)"></path>`
+        + `<path d="${a.edge}" fill="none" stroke="${accent}" stroke-width="${ow}" stroke-linejoin="round" stroke-linecap="round"></path>`;
+    // 2) 몸통
+    s += `<path d="${f.body}" fill="var(--figure)" stroke="${accent}" stroke-width="${ow}" stroke-linejoin="round"></path>`;
+    // 3) 다리 틴트(관절 V 경계, 외곽 클립)
+    const yT = f.y(.538).toFixed(1), yC = f.y(.500).toFixed(1), yB = oy + H + 4;
+    s += `<clipPath id="${idp}pc"><path d="${f.body}"></path></clipPath>`
+      + `<polygon points="${ox},${yT} ${f.cx},${yC} ${ox + W},${yT} ${ox + W},${yB} ${ox},${yB}" fill="var(--figure-leg)" clip-path="url(#${idp}pc)"></polygon>`
+      + `<path d="${f.body}" fill="none" stroke="${accent}" stroke-width="${ow}" stroke-linejoin="round"></path>`;
+    // 4) 볼륨 표기층(본체 클립)
+    s += `<g clip-path="url(#${idp}pc)">` + volumeLayer(f, v) + `</g>`;
+    s += `<path d="${f.head}" fill="var(--figure)" stroke="${accent}" stroke-width="${ow}"></path>`;
+    // 5) 전완+손(몸 앞 — 손이 허벅지 앞, 전완이 골반 플레어 앞. 절단선은 팔꿈치:
+    //    윤곽은 절단변을 긋지 않고, 푸시 규칙이 절단 지점을 몸 밖에 둬서 이음이 없다)
+    for (const a of f.fore)
+      s += `<path d="${a.fill}" fill="var(--figure-arm)"></path>`
+        + `<path d="${a.edge}" fill="none" stroke="${accent}" stroke-width="${ow}" stroke-linejoin="round" stroke-linecap="round"></path>`;
+    return s;
+  }
+
+  function grid(v, W, H, pad, ox, oy) {
+    const k = (H - pad * 2) / 205;
+    const baseY = oy + H - pad;
+    const y = f => baseY - v.height * k * f;
+    let s = "";
+    const crown = .9996, unitF = HEAD_LEN / v.height;
+    for (let n = 0; ; n++) {
+      const f = crown - n * unitF;
+      if (f < -0.001) break;
+      const yy = y(Math.max(f, 0));
+      s += `<line x1="${ox + 8}" y1="${yy.toFixed(1)}" x2="${ox + W - 8}" y2="${yy.toFixed(1)}" stroke="var(--grid)" stroke-width=".7" stroke-opacity=".55"></line>`;
+      if (n > 0) s += `<text x="${ox + 10}" y="${(yy - 3).toFixed(1)}" font-size="8" fill="var(--grid)">${n}</text>`;
+    }
+    s += `<line x1="${ox + 8}" y1="${y(0).toFixed(1)}" x2="${ox + W - 8}" y2="${y(0).toFixed(1)}" stroke="var(--grid)" stroke-width=".9"></line>`;
+    const anchors = [[.785, "어깨", -2.5], [.700, "밑가슴", -2.5], [.630, "허리", -2.5], [.515, "엉덩이", -2.5], [.5065, "가랑이", 8.5], [.290, "무릎", -2.5]];
+    for (const [f, name, dy] of anchors) {
+      s += `<line x1="${ox + 8}" y1="${y(f).toFixed(1)}" x2="${ox + W - 8}" y2="${y(f).toFixed(1)}" stroke="#B4552D" stroke-width=".6" stroke-opacity=".5" stroke-dasharray="3 3"></line>`;
+      s += `<text x="${ox + W - 10}" y="${(y(f) + dy).toFixed(1)}" font-size="7.5" fill="#B4552D" fill-opacity=".8" text-anchor="end">${name}</text>`;
+    }
+    return s;
+  }
+
+  let out = "";
+  // 큰 셀: 기준 몸 (정면)
+  const BW = 380, BH = 560;
+  out += `<text x="${16 + BW / 2}" y="16" font-size="12" font-weight="700" fill="var(--ink)" text-anchor="middle">${STATES[0].label} — 정면</text>`;
+  out += grid(STATES[0].v, BW, BH, 26, 16, 22);
+  out += drawFigure(STATES[0].v, BW, BH, 26, 16, 22, "big");
+  // 작은 셀 2×2 (정면)
+  const SW = 235, SH = 275;
+  STATES.slice(1).forEach((st, i) => {
+    const ox = 420 + (i % 2) * (SW + 6), oy = 22 + Math.floor(i / 2) * (SH + 20);
+    out += `<text x="${ox + SW / 2}" y="${oy - 5}" font-size="10.5" font-weight="700" fill="var(--muted)" text-anchor="middle">${st.label}</text>`;
+    out += drawFigure(st.v, SW, SH, 14, ox, oy, "s" + i);
+  });
+  // ── 측면 행 (P10): 기준 대형 + 상태 3종 ──
+  const SY = 618;
+  out += `<text x="${16 + 300 / 2}" y="${SY - 6}" font-size="12" font-weight="700" fill="var(--ink)" text-anchor="middle">기준 — 측면</text>`;
+  out += grid(STATES[0].v, 300, 540, 26, 16, SY);
+  out += drawSideFigure(STATES[0].v, 300, 540, 26, 16, SY, "sb");
+  [STATES[1], STATES[2], STATES[4]].forEach((st, i) => {
+    const ox = 340 + i * (185 + 6), oy = SY + (i === 9 ? 0 : 0);
+    out += `<text x="${ox + 185 / 2}" y="${oy - 6}" font-size="10.5" font-weight="700" fill="var(--muted)" text-anchor="middle">${st.label} 측면</text>`;
+    out += drawSideFigure(st.v, 185, 265, 13, ox, oy, "ss" + i);
+  });
+  document.getElementById("sheet").innerHTML = out;
+})();
+</script>
