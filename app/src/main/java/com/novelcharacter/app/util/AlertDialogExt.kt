@@ -1,6 +1,8 @@
 package com.novelcharacter.app.util
 
+import android.content.Context
 import android.widget.EditText
+import android.widget.ScrollView
 import androidx.appcompat.app.AlertDialog
 import com.google.android.material.textfield.TextInputLayout
 import com.novelcharacter.app.R
@@ -54,4 +56,39 @@ private fun EditText.attachErrorClearing(clear: () -> Unit) {
         override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = clear()
         override fun afterTextChanged(s: android.text.Editable?) {}
     })
+}
+
+/**
+ * 다이얼로그 본문에 넣는 **내용만큼 자라되 화면을 넘지 않는** 스크롤 영역.
+ *
+ * **왜 필요한가:** `ScrollView(ctx).apply { addView(list) }`만 쓰면 다이얼로그가 아주 긴
+ * 목록에서 잘리고 **끝까지 스크롤되지 않는다**(실기기 보고, 2026.08.01 — AI 추천 검토 창).
+ * 높이 제약이 없어 다이얼로그가 화면 밖으로 밀려나기 때문이며, 사용자가 기대하는 동작은
+ * "내용에 맞춰 창이 길어지고, 화면을 넘으면 그때 스크롤"이다.
+ *
+ * `AT_MOST`로 측정하면 그 둘이 한 번에 된다 — **짧으면 내용만큼만 차지하고**(작은 창 유지),
+ * 길면 상한에서 멈춘 뒤 **안에서 스크롤**된다. 제목·버튼이 차지할 몫을 남기려고 화면의
+ * 일부만 쓴다(`fraction`).
+ */
+fun cappedScrollView(
+    context: Context,
+    fraction: Float = 0.7f
+): ScrollView {
+    // 이름을 capPx로 둔다 — 뷰 계열에 같은 이름의 멤버가 있으면 캡처한 지역값이 가려진다
+    val capPx = (context.resources.displayMetrics.heightPixels * fraction).toInt()
+    return object : ScrollView(context) {
+        override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+            // 부모가 이미 더 좁게 잡았으면 그쪽을 따른다 — 상한을 무조건 밀어붙이면
+            // 가로 모드나 작은 화면에서 되레 넘친다(고치려던 문제를 다른 자리에서 재현).
+            val limit = if (MeasureSpec.getMode(heightMeasureSpec) == MeasureSpec.UNSPECIFIED) {
+                capPx
+            } else {
+                minOf(capPx, MeasureSpec.getSize(heightMeasureSpec))
+            }
+            super.onMeasure(
+                widthMeasureSpec,
+                MeasureSpec.makeMeasureSpec(limit, MeasureSpec.AT_MOST)
+            )
+        }
+    }
 }

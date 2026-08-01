@@ -3,7 +3,6 @@ package com.novelcharacter.app.ui.fieldlibrary
 import android.view.View
 import android.widget.CheckBox
 import android.widget.LinearLayout
-import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
@@ -17,6 +16,7 @@ import com.novelcharacter.app.ai.FieldLibraryAiOrganizer
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.FieldValueEntry
 import kotlinx.coroutines.launch
+import com.novelcharacter.app.util.cappedScrollView
 
 /**
  * AI 정리 플로우 (온디맨드, docs/ai_integration.md 계약):
@@ -168,7 +168,9 @@ object AiOrganizeSheet {
             }
         }
 
-        val scroll = ScrollView(context).apply { addView(list) }
+        // 내용만큼 자라되 화면을 넘으면 안에서 스크롤한다 — 상한이 없으면 긴 목록에서
+        // 다이얼로그가 잘리고 끝까지 내려가지 않는다(공용 헬퍼가 단일 소스다).
+        val scroll = cappedScrollView(context).apply { addView(list) }
         val dialog = MaterialAlertDialogBuilder(context)
             .setTitle(R.string.field_library_ai_review_title)
             .setView(scroll)
