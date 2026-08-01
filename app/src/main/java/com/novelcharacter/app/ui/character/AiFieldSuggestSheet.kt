@@ -463,7 +463,9 @@ object AiFieldSuggestSheet {
         for (s in outcome.suggestions) {
             val spec = specByKey[s.fieldKey] ?: continue
             val row = Row(cb = CheckBox(context), spec = spec, suggestion = s)
-            row.cb.layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
+            // 폭은 addReviewRow가 정한다 — 가로 배치에서 가중치를 받던 종전 구조가
+            // 여러 줄 텍스트의 높이를 잘못 잡아 사유가 잘렸다(실기기 보고, 2026.08.01).
+            row.cb.layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
             // 빈 필드 채움은 비파괴 조작 — 기본 선택으로 마찰 최소화. 덮어쓰기와 '추측'은
             // 명시적 선택으로 남긴다(전체선택 한 번에 근거 얕은 값이 딸려 들어가지 않게).
             row.cb.isChecked = spec.currentValue.isBlank() &&
@@ -611,9 +613,15 @@ object AiFieldSuggestSheet {
         // 체크 표시가 라벨 세로 중앙이 아니라 **첫 줄 옆**에 오게 한다(CompoundButton의 내부 정렬).
         row.cb.gravity = Gravity.TOP or Gravity.START
         val vPad = (10 * density).toInt()
+        // **세로로 쌓는다.** 종전에는 [체크박스(가중치 1)][보완]을 가로로 놓았는데,
+        // 가로 LinearLayout 안에서 가중치를 받는 **여러 줄 텍스트**는 높이가 잘못 잡혀
+        // 사유가 세 줄쯤에서 잘렸다(실기기 보고, 2026.08.01 — 스크린샷). 폭 계산과 높이 계산이
+        // 두 번에 나뉘어 도는 자리라 조건이 맞으면 재발하며, 로컬에는 안드로이드 런타임이 없어
+        // 그 조건을 재현·검증할 수단이 없다. 그래서 원인을 짐작해 한 줄 고치는 대신
+        // **그 구조를 쓰지 않는다** — 텍스트가 폭을 통째로 쓰므로 줄 수도 함께 준다.
+        (refine.layoutParams as? LinearLayout.LayoutParams)?.gravity = Gravity.END
         list.addView(LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.TOP
+            orientation = LinearLayout.VERTICAL
             setPadding(0, vPad, 0, vPad)
             layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
             addView(row.cb)
