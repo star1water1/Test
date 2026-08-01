@@ -283,7 +283,7 @@ AI 정책(`FieldAiPolicy`).
 | **미이행 기능 색출** — 로드맵(1~4장)은 **닫혔고 5장의 미검증 후보만 살아 있다** | `docs/superficial_feature_audit_2026-07.md` |
 | **실사용 데이터가 말한 것** | `docs/usage_reality_check_2026-07.md` (+ `_runbook`) |
 | **화면 문구** | `docs/text_style_guide_2026-07.md` |
-| **영역별 설계** | 엑셀 왕복 `excel_roundtrip_audit` · 엑셀 스트리밍 가져오기 `excel_streaming_import` · 이미지 폴더 왕복 `image_folder_roundtrip_design`(결정 근거 `image_external_management`, **확장 `image_folder_tag_ai`**) · AI `ai_integration`·`ai_control_and_ui_density` · 값 라이브러리 `field_value_library` · 필터·정렬 짝 `filter_sort_parity` · **체형(실루엣 재편) `body_visual_redesign`(설계 마무리 — 코드 구현 대기. 이어받는 세션은 `handover_body_reauthor_2026-08`부터)** · **백업·내보내기 동선 `backup_export_redesign`(설계 확정 — 체형 다음 슬라이스)** · **사건 필드 추천 `event_field_recommend_2026-08`(설계 초안 — 내장 세트·H15 본문 판정 대기. B-62 해소 예정)** |
+| **영역별 설계** | 엑셀 왕복 `excel_roundtrip_audit` · 엑셀 스트리밍 가져오기 `excel_streaming_import` · 이미지 폴더 왕복 `image_folder_roundtrip_design`(결정 근거 `image_external_management`, **확장 `image_folder_tag_ai`**) · AI `ai_integration`·`ai_control_and_ui_density` · 값 라이브러리 `field_value_library` · 필터·정렬 짝 `filter_sort_parity` · **체형(실루엣 재편) `body_visual_redesign`(설계 마무리 — 코드 구현 대기. 이어받는 세션은 `handover_body_reauthor_2026-08`부터)** · **백업·내보내기 동선 `backup_export_redesign`(설계 확정 — 체형 다음 슬라이스)** · **사건 필드 추천 `event_field_recommend_2026-08`(v1.1 — 설계·구현 완료. B-62·B-68 해소, 실기기 3-32)** |
 | **점검 결과·수리 계획** | `app_inspection_round2` · `repair_plan` · `usability_review` · `design_intent` · **`plan_design_adversarial_review_2026-08`(전 문서 적대 검토 — 실증 발견·후보 목록·판정 대기)** |
 | **절차서** | `room_migration_verification` — 마이그레이션 하네스를 어떻게 만들고 돌리는가(종 수는 `ls tools/verify_room_migration*.py`로 센다) |
 | **브랜치·병합** | `docs/branch_merge_rules.md` |
