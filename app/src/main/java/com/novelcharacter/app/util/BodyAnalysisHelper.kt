@@ -283,11 +283,8 @@ class BodyAnalysisHelper {
     }
 
     companion object {
-        fun parseNumericFromText(text: String?): Double? {
-            if (text.isNullOrBlank()) return null
-            val cleaned = text.trim().replace(Regex("[^0-9.]"), "")
-            return cleaned.toDoubleOrNull()
-        }
+        /** 수치 해석은 [BodyMeasurements]가 단일 소스다 — 여기서 규칙을 복제하지 않는다. */
+        fun parseNumericFromText(text: String?): Double? = BodyMeasurements.parseNumber(text)
 
         fun computeRank(currentValue: Double, allValues: List<Double>): Int {
             if (allValues.isEmpty()) return 0
