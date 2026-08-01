@@ -1,5 +1,12 @@
 package com.novelcharacter.app.ui.character
 
+import android.text.SpannableStringBuilder
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
+import android.text.style.RelativeSizeSpan
+import android.text.style.StyleSpan
+import android.view.Gravity
+import android.view.View
 import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -475,13 +482,7 @@ object AiFieldSuggestSheet {
                     }
                 )
             }
-            list.addView(LinearLayout(context).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = android.view.Gravity.CENTER_VERTICAL
-                layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
-                addView(row.cb)
-                addView(refine)
-            })
+            addReviewRow(list, row, refine, density, isFirst = rows.isEmpty())
             rows.add(row)
         }
 
@@ -541,21 +542,81 @@ object AiFieldSuggestSheet {
         setOnClickListener { action() }
     }
 
-    /** 행 표시 갱신 — 값 수정 후에도 같은 규칙으로 다시 그리기 위해 한 곳에 둔다 */
+    /**
+     * 행 표시 갱신 — 값 수정 후에도 같은 규칙으로 다시 그리기 위해 한 곳에 둔다.
+     *
+     * **텍스트는 체크박스의 라벨로 둔다(밖으로 빼지 않는다).** 별도 TextView로 옮기면
+     * 글을 눌러 켜고 끄던 넓은 탭 영역이 사라져, 보기 좋아지는 대신 누르기 어려워진다
+     * (원칙 04). 그래서 계층은 **구조가 아니라 스팬**으로 준다 —
+     * 필드 이름은 굵게, 근거 강도·수정 표시·사유는 작고 흐리게.
+     * 항목끼리의 경계는 [addReviewRow]의 구분선이 맡는다.
+     */
     private fun renderRow(fragment: Fragment, row: Row) {
         val s = row.suggestion
-        row.cb.text = buildString {
-            append(row.spec.name).append(": ")
-            if (row.spec.currentValue.isNotBlank()) {
-                append(fragment.getString(R.string.ai_field_overwrite_format, row.spec.currentValue, s.value))
-            } else {
-                append(s.value)
-            }
-            // 근거 강도는 채택 판단의 핵심 정보다 — 값 옆에 붙여 스캔 한 번에 보이게 한다
-            s.confidence?.let { append("  [").append(it.label).append(']') }
-            if (s.editedByUser) append("  [").append(fragment.getString(R.string.ai_field_edited)).append(']')
-            if (s.reason.isNotBlank()) append("\n  (").append(s.reason).append(')')
+        val dim = row.cb.context.getColor(R.color.text_secondary)
+        val sb = SpannableStringBuilder()
+
+        // ① 필드 이름 — 어느 항목인지가 먼저 읽혀야 한다
+        val nameStart = sb.length
+        sb.append(row.spec.name).append(": ")
+        sb.setSpan(StyleSpan(android.graphics.Typeface.BOLD), nameStart, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+
+        // ② 값 — 기본 스타일 그대로가 가장 잘 읽힌다
+        if (row.spec.currentValue.isNotBlank()) {
+            sb.append(fragment.getString(R.string.ai_field_overwrite_format, row.spec.currentValue, s.value))
+        } else {
+            sb.append(s.value)
         }
+
+        // ③ 근거 강도·수정 표시 — 채택 판단의 핵심이라 값 옆에 두되, 값보다는 뒤로 물린다
+        val markStart = sb.length
+        s.confidence?.let { sb.append("  [").append(it.label).append(']') }
+        if (s.editedByUser) sb.append("  [").append(fragment.getString(R.string.ai_field_edited)).append(']')
+        if (sb.length > markStart) {
+            sb.setSpan(RelativeSizeSpan(0.9f), markStart, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            sb.setSpan(ForegroundColorSpan(dim), markStart, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+
+        // ④ 사유 — 가장 길고 가장 덜 급한 부분. 작고 흐리게 두면 줄 수도 함께 준다
+        if (s.reason.isNotBlank()) {
+            val reasonStart = sb.length
+            sb.append("\n  (").append(s.reason).append(')')
+            sb.setSpan(RelativeSizeSpan(0.9f), reasonStart, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            sb.setSpan(ForegroundColorSpan(dim), reasonStart, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        row.cb.text = sb
+    }
+
+    /**
+     * 검토 목록에 항목 하나를 붙인다 — **항목 사이의 경계를 만드는 자리.**
+     *
+     * 종전에는 행이 그냥 세로로 쌓여, 다섯 줄짜리 사유 뒤에 다음 항목의 값이 바로 이어졌다.
+     * 게다가 체크박스는 긴 라벨의 **세로 중앙**에 붙어 다음 항목의 글 옆에 놓였다 —
+     * 어느 체크박스가 어느 항목인지 눈으로 짚을 수 없는 상태였다(사용자 보고, 2026.08.01).
+     *
+     * 셋으로 고친다: ① 체크박스와 '보완'을 **위로 정렬**해 항목의 첫 줄과 나란히 두고
+     * ② 항목마다 위아래 여백을 주고 ③ 항목 사이에 **구분선**을 넣는다.
+     * 색은 `outline_variant`라 밝은 테마·어두운 테마 양쪽이 함께 정의돼 있다.
+     */
+    private fun addReviewRow(list: LinearLayout, row: Row, refine: View, density: Float, isFirst: Boolean) {
+        val context = list.context
+        if (!isFirst) {
+            list.addView(View(context).apply {
+                layoutParams = LinearLayout.LayoutParams(MATCH, maxOf(1, (density).toInt()))
+                setBackgroundColor(context.getColor(R.color.outline_variant))
+            })
+        }
+        // 체크 표시가 라벨 세로 중앙이 아니라 **첫 줄 옆**에 오게 한다(CompoundButton의 내부 정렬).
+        row.cb.gravity = Gravity.TOP or Gravity.START
+        val vPad = (10 * density).toInt()
+        list.addView(LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.TOP
+            setPadding(0, vPad, 0, vPad)
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP)
+            addView(row.cb)
+            addView(refine)
+        })
     }
 
     /**
