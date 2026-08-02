@@ -111,4 +111,13 @@
     <color name="graph_rel_sibling">#FFA726</color>
     <color name="graph_rel_mentor">#26C6DA</color>
     <color name="graph_rel_other">#9E9E9E</color>
+
+    <!-- 체형 실루엣 — 다크에서도 같은 조건이다: 음영(흑색 저불투명)이 읽히려면
+         채움이 배경보다 밝은 중간 명도여야 한다. -->
+    <color name="silhouette_figure">#4B5273</color>
+    <color name="silhouette_figure_arm">#414868</color>
+    <color name="silhouette_figure_leg">#464D6E</color>
+    <color name="silhouette_ghost">#6D7686</color>
+    <color name="silhouette_warn">#E08050</color>
+    <color name="silhouette_handle_fill">#E7EAF0</color>
 </resources>

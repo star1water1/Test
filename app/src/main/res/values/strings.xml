@@ -1379,6 +1379,15 @@
     <string name="body_volume_label">볼륨 지수</string>
     <string name="body_curves_label">곡선 지수</string>
 
+    <!-- 체형 실루엣 (설계 body_visual_redesign_2026-07 5-4-1) -->
+    <string name="silhouette_content_description">체형 실루엣</string>
+    <string name="silhouette_slot_shoulder">어깨</string>
+    <string name="silhouette_slot_bust">가슴</string>
+    <string name="silhouette_slot_waist">허리</string>
+    <string name="silhouette_slot_hip">엉덩이</string>
+    <string name="silhouette_value_cm">%1$scm</string>
+    <string name="silhouette_clamp_caption">그림의 표현 한계입니다 — 값은 그대로 저장됩니다</string>
+
     <!-- Body Generator -->
     <string name="body_generator_title">신체 수치 생성</string>
     <string name="body_gen_height">키</string>
