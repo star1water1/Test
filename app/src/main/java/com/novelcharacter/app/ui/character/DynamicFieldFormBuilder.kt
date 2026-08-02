@@ -47,6 +47,12 @@ class DynamicFieldFormBuilder(
 
     var fieldDefinitions: List<FieldDefinition> = emptyList()
     var currentUniverseId: Long? = null
+
+    /**
+     * 지금 고른 작품 — 실루엣 편집기의 상대 생성·분포·작품 평균이 이 축으로 모인다.
+     * 설정되지 않으면 그 셋이 재료 없이 조용히 빠진다(호스트가 작품을 모르는 화면).
+     */
+    var currentNovelId: Long? = null
     /**
      * 필드별 ✨ AI 추천 진입 훅 — 호스트가 설정하면 편집 가능 필드(CALCULATED·미지 타입 제외)에
      * 🎲과 같은 문법의 ✨ 버튼이 붙는다. null이면 폼은 기존과 동일하게 렌더된다.
@@ -116,6 +122,15 @@ class DynamicFieldFormBuilder(
 
     private fun createDiceButton(context: Context, density: Float, action: () -> Unit) =
         createInlineActionButton(context, density, "🎲", action)
+
+    /**
+     * 실루엣 편집기 진입 — 🎲·✨과 같은 문법의 인라인 버튼이다(설계 5-4-4).
+     * 🎲도 같은 시트를 열지만 이쪽은 그림부터, 저쪽은 생성 패널부터 시작한다.
+     */
+    private fun createSilhouetteButton(context: Context, density: Float, action: () -> Unit) =
+        createInlineActionButton(context, density, "🧍", action).apply {
+            contentDescription = getString(R.string.silhouette_editor_open)
+        }
 
     /** 필드가 ✨ AI 추천 대상이면 버튼 생성 — CALCULATED·미지 타입·AI 추천 꺼짐(A-1)은 제외 */
     private fun createAiButtonOrNull(
@@ -284,48 +299,133 @@ class DynamicFieldFormBuilder(
         return result
     }
 
-    private fun showBodyGenerator(bodySizeField: com.novelcharacter.app.data.model.FieldDefinition) {
+    /**
+     * 실루엣 편집기를 연다 (설계 5-2 — 🎲 생성기는 이 시트 안으로 들어왔다).
+     *
+     * 폼의 🎲 버튼도 같은 시트를 열되 [openGenerator]로 패널을 펼친 상태로 시작한다 —
+     * 기존 사용자의 동선을 끊지 않기 위해서다.
+     */
+    private fun showSilhouetteEditor(
+        bodySizeField: FieldDefinition,
+        openGenerator: Boolean
+    ) {
         val fm = fragmentManagerGetter() ?: return
-        val sheet = BodyGeneratorBottomSheet()
-        sheet.analysisConfig = com.novelcharacter.app.data.model.BodyAnalysisConfig.fromConfig(bodySizeField.config)
-        // TODO: 같은 작품의 캐릭터 목록을 제공하여 상대 생성/분포 활성화
-        sheet.onApply = { body ->
-            // BWH 필드에 값 채우기
-            val bwhView = fieldInputMap[bodySizeField.id]
-            if (bwhView is android.widget.LinearLayout) {
-                val parts = body.bwhString.split("-")
-                for (i in 0 until minOf(bwhView.childCount, parts.size)) {
-                    val child = bwhView.getChildAt(i)
-                    if (child is com.google.android.material.textfield.TextInputLayout) {
-                        child.editText?.setText(parts[i])
-                    }
-                }
-            } else if (bwhView is android.widget.EditText) {
-                bwhView.setText(body.bwhString)
-            }
-            // 키 필드 채우기
-            for ((id, view) in fieldInputMap) {
-                val fd = fieldDefinitions.find { it.id == id } ?: continue
-                val role = com.novelcharacter.app.data.model.SemanticRole.fromConfig(fd.config)
-                if (role == com.novelcharacter.app.data.model.SemanticRole.HEIGHT) {
-                    val editText = when (view) {
-                        is android.widget.EditText -> view
-                        is com.google.android.material.textfield.TextInputLayout -> view.editText
-                        else -> null
-                    }
-                    editText?.setText(body.height.toInt().toString())
-                } else if (role == com.novelcharacter.app.data.model.SemanticRole.WEIGHT) {
-                    val editText = when (view) {
-                        is android.widget.EditText -> view
-                        is com.google.android.material.textfield.TextInputLayout -> view.editText
-                        else -> null
-                    }
-                    editText?.setText(body.weight.toInt().toString())
-                }
+        val config = com.novelcharacter.app.data.model.BodyAnalysisConfig.fromConfig(bodySizeField.config)
+        val structured = StructuredInputConfig.fromConfig(bodySizeField.config)
+        val widget = fieldInputMap[bodySizeField.id]
+
+        val partValues = readBodyParts(widget)
+        val partLabels = if (structured.enabled) structured.parts.map { it.label } else emptyList()
+        val roleField = { role: SemanticRole ->
+            fieldDefinitions.firstOrNull { SemanticRole.fromConfig(it.config) == role }
+        }
+        val heightField = roleField(SemanticRole.HEIGHT)
+        val weightField = roleField(SemanticRole.WEIGHT)
+        val measurements = com.novelcharacter.app.util.BodyMeasurements.resolveParts(
+            labels = partLabels,
+            texts = partValues,
+            config = config,
+            heightText = heightField?.let { readSingleValue(fieldInputMap[it.id]) },
+            weightText = weightField?.let { readSingleValue(fieldInputMap[it.id]) }
+        )
+        val slots = com.novelcharacter.app.util.BodyEditorModel.writableSlots(
+            measurements.partSlots, maxOf(partValues.size, structured.parts.size)
+        )
+
+        val sheet = BodySilhouetteEditorSheet()
+        sheet.analysisConfig = config
+        sheet.initial = measurements
+        sheet.writableSlots = slots
+        sheet.partValues = partValues
+        sheet.hasHeightField = heightField != null && fieldInputMap[heightField.id] != null
+        sheet.hasWeightField = weightField != null && fieldInputMap[weightField.id] != null
+        sheet.positionalFallback = measurements.partSlots.none { it != com.novelcharacter.app.data.model.BodySlot.NONE }
+        sheet.openWithGenerator = openGenerator
+        sheet.onApply = { parts, heightCm, weightKg ->
+            writeBodyParts(widget, parts, structured)
+            heightCm?.let { h -> heightField?.let { setSingleValue(fieldInputMap[it.id], formatMeasure(h)) } }
+            weightKg?.let { w -> weightField?.let { setSingleValue(fieldInputMap[it.id], formatMeasure(w)) } }
+            onFieldChanged()
+            contextGetter()?.let {
+                android.widget.Toast.makeText(it, R.string.silhouette_editor_applied, android.widget.Toast.LENGTH_SHORT).show()
             }
         }
-        sheet.show(fm, "body_generator")
+        sheet.show(fm, BodySilhouetteEditorSheet.TAG)
+        loadBodyPeers(bodySizeField, config, sheet)
     }
+
+    /**
+     * 같은 작품 캐릭터의 수치를 붙인다 — 상대 생성·분포·작품 평균 오버레이의 재료다.
+     * 시트를 띄운 뒤 비동기로 채운다(조회 때문에 여는 것이 늦어지지 않게).
+     */
+    private fun loadBodyPeers(
+        bodySizeField: FieldDefinition,
+        config: com.novelcharacter.app.data.model.BodyAnalysisConfig,
+        sheet: BodySilhouetteEditorSheet
+    ) {
+        val novelId = currentNovelId ?: return
+        scopeGetter().launch {
+            val characters = viewModel.getCharactersByNovelList(novelId)
+            if (characters.isEmpty()) return@launch
+            val heightField = fieldDefinitions.firstOrNull { SemanticRole.fromConfig(it.config) == SemanticRole.HEIGHT }
+            val weightField = fieldDefinitions.firstOrNull { SemanticRole.fromConfig(it.config) == SemanticRole.WEIGHT }
+            val peers = mutableMapOf<Long, com.novelcharacter.app.util.BodyMeasurements>()
+            for (character in characters) {
+                val values = viewModel.getValuesByCharacterList(character.id).associateBy { it.fieldDefinitionId }
+                val raw = values[bodySizeField.id]?.value ?: continue
+                peers[character.id] = com.novelcharacter.app.util.BodyMeasurements.resolve(
+                    field = bodySizeField,
+                    rawValue = raw,
+                    heightText = heightField?.let { values[it.id]?.value },
+                    weightText = weightField?.let { values[it.id]?.value },
+                    config = config
+                )
+            }
+            if (!isAlive() || peers.isEmpty()) return@launch
+            sheet.setPeers(characters.filter { peers.containsKey(it.id) }, peers)
+        }
+    }
+
+    /** BODY_SIZE 위젯의 파트 원문. 구조화 입력이 아니면 구분자로 쪼갠 결과다. */
+    private fun readBodyParts(widget: Any?): List<String> = when (widget) {
+        is LinearLayout -> (0 until widget.childCount).map { i ->
+            (widget.getChildAt(i) as? TextInputLayout)?.editText?.text?.toString()?.trim() ?: ""
+        }
+        else -> com.novelcharacter.app.util.BodyMeasurements.splitPlain(readSingleValue(widget) ?: "")
+    }
+
+    private fun writeBodyParts(widget: Any?, parts: List<String>, structured: StructuredInputConfig) {
+        when (widget) {
+            is LinearLayout -> for (i in 0 until minOf(widget.childCount, parts.size)) {
+                (widget.getChildAt(i) as? TextInputLayout)?.editText?.setText(parts[i])
+            }
+            else -> setSingleValue(
+                widget,
+                if (structured.enabled) structured.joinValues(parts) else parts.joinToString("-")
+            )
+        }
+    }
+
+    private fun readSingleValue(widget: Any?): String? = when (widget) {
+        is MaterialAutoCompleteTextView -> widget.text?.toString()
+        is TextInputEditText -> widget.text?.toString()
+        is android.widget.EditText -> widget.text?.toString()
+        is TextInputLayout -> widget.editText?.text?.toString()
+        is Spinner -> if (widget.selectedItemPosition > 0) widget.selectedItem?.toString() else null
+        else -> null
+    }
+
+    private fun setSingleValue(widget: Any?, value: String) {
+        when (widget) {
+            is MaterialAutoCompleteTextView -> widget.setText(value, false)
+            is android.widget.EditText -> widget.setText(value)
+            is TextInputLayout -> widget.editText?.setText(value)
+        }
+    }
+
+    /** 키·체중은 소수 한 자리까지만 적는다 — 정수는 정수로(종전 🎲가 하던 것과 같은 모양). */
+    private fun formatMeasure(value: Double): String =
+        com.novelcharacter.app.util.BodyEditorModel.formatValue(value)
 
     /** DB에 저장된 필드값을 폼 위젯에 채운다 */
     suspend fun loadFieldValues(characterId: Long) {
@@ -472,9 +572,15 @@ class DynamicFieldFormBuilder(
                             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
                         }
                         labelRow.addView(label)
+                        // 실루엣 편집기 진입 (설계 5-4-4 — BODY_SIZE 라벨 행 우측)
+                        if (fieldType == FieldType.BODY_SIZE) {
+                            labelRow.addView(createSilhouetteButton(context, density) {
+                                showSilhouetteEditor(field, openGenerator = false)
+                            })
+                        }
                         // 🎲 생성 버튼
                         val diceAction: (() -> Unit)? = when {
-                            fieldType == FieldType.BODY_SIZE -> {{ showBodyGenerator(field) }}
+                            fieldType == FieldType.BODY_SIZE -> {{ showSilhouetteEditor(field, openGenerator = true) }}
                             SemanticRole.fromConfig(field.config) == SemanticRole.BIRTH_DATE -> {{ showBirthdaySeasonDialog(field) }}
                             com.novelcharacter.app.data.model.RandomConfig.fromConfig(field.config).enabled -> {{ applyRandomForField(field, fieldType) }}
                             else -> null
@@ -555,12 +661,17 @@ class DynamicFieldFormBuilder(
                         inputLayout.addView(editText)
                         // 비구조화 필드에 🎲 버튼 추가 판정
                         val unstructuredDiceAction: (() -> Unit)? = when {
-                            fieldType == FieldType.BODY_SIZE -> {{ showBodyGenerator(field) }}
+                            fieldType == FieldType.BODY_SIZE -> {{ showSilhouetteEditor(field, openGenerator = true) }}
                             SemanticRole.fromConfig(field.config) == SemanticRole.BIRTH_DATE -> {{ showBirthdaySeasonDialog(field) }}
                             com.novelcharacter.app.data.model.RandomConfig.fromConfig(field.config).enabled -> {{ applyRandomForField(field, fieldType) }}
                             else -> null
                         }
                         val textButtons = buildList {
+                            if (fieldType == FieldType.BODY_SIZE) {
+                                add(createSilhouetteButton(context, density) {
+                                    showSilhouetteEditor(field, openGenerator = false)
+                                })
+                            }
                             if (unstructuredDiceAction != null) add(createDiceButton(context, density, unstructuredDiceAction))
                             createAiButtonOrNull(context, density, field)?.let { add(it) }
                             createInfoButtonOrNull(context, density, field)?.let { add(it) }
