@@ -601,32 +601,39 @@ class DynamicFieldRenderer(
         val bodySizeField = fields.find { SemanticRole.fromConfig(it.config) == SemanticRole.BODY_SIZE }
             ?: fields.find { it.type == "BODY_SIZE" }
             ?: fields.find { it.key in listOf("body_size", "body_type", "three_sizes") }
+            ?: return null
 
-        val bodySizeValue = bodySizeField?.let { valueMap[it.id]?.value } ?: return null
+        val bodySizeValue = valueMap[bodySizeField.id]?.value ?: return null
         if (bodySizeValue.isBlank()) return null
 
-        // bust/waist/hip 파싱 (구분자: -, /, 공백)
-        val parts = bodySizeValue.split(Regex("[-/\\s]+")).mapNotNull { it.trim().toDoubleOrNull() }
-        if (parts.size < 3) return null
-        val bust = parts[0]
-        val waist = parts[1]
-        val hip = parts[2]
-
         // config에서 BodyAnalysisConfig 파싱 (없으면 DEFAULT)
-        val config = bodySizeField?.let { BodyAnalysisConfig.fromConfig(it.config) }
-            ?: BodyAnalysisConfig.DEFAULT
+        val config = BodyAnalysisConfig.fromConfig(bodySizeField.config)
 
         // HEIGHT 필드 찾기
         val heightField = fields.find { SemanticRole.fromConfig(it.config) == SemanticRole.HEIGHT }
             ?: fields.find { it.key in listOf("height", "키") }
-        val height = heightField?.let { BodyAnalysisHelper.parseNumericFromText(valueMap[it.id]?.value) }
 
         // WEIGHT 필드 찾기
         val weightField = fields.find { SemanticRole.fromConfig(it.config) == SemanticRole.WEIGHT }
             ?: fields.find { it.key in listOf("weight", "체중") }
-        val weight = weightField?.let { BodyAnalysisHelper.parseNumericFromText(valueMap[it.id]?.value) }
 
-        val result = BodyAnalysisHelper().analyze(bust, waist, hip, height, weight, config)
+        // 부위 해석은 BodyMeasurements가 단일 소스다 — 여기서 다시 쪼개지 않는다.
+        // 종전의 인라인 파서는 파트 라벨을 못 보고 늘 앞 세 값을 B/W/H로 봤다.
+        val measured = com.novelcharacter.app.util.BodyMeasurements.resolve(
+            field = bodySizeField,
+            rawValue = bodySizeValue,
+            heightText = heightField?.let { valueMap[it.id]?.value },
+            weightText = weightField?.let { valueMap[it.id]?.value },
+            config = config
+        )
+        // 분석 엔진의 계약(B/W/H 3값 필수)은 v1에서 그대로 둔다 — 부분 슬롯일 때
+        // 분석은 종전처럼 없고, 실루엣이 있는 슬롯만으로 그리는 것은 후속 단계다.
+        if (!measured.hasCoreThree) return null
+
+        val result = BodyAnalysisHelper().analyze(
+            measured.bust!!, measured.waist!!, measured.hip!!,
+            measured.heightCm, measured.weightKg, config
+        )
         return result to config
     }
 

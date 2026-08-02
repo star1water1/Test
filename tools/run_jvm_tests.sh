@@ -121,6 +121,9 @@ $MAIN/data/model/NameBankEntry.kt
 $MAIN/data/model/TimelineCharacterCrossRef.kt
 $MAIN/data/model/TimelineEventNovelCrossRef.kt
 $MAIN/data/model/BodyAnalysisConfig.kt
+$MAIN/util/BodyAnalysisHelper.kt
+$MAIN/util/BodyMeasurements.kt
+$MAIN/util/BodySilhouetteSpec.kt
 $MAIN/data/model/CardDisplayConfig.kt
 $MAIN/util/CardFieldSummary.kt
 $MAIN/util/GsonTypes.kt
@@ -253,6 +256,8 @@ $TEST/excel/MergedCellMapTest.kt
 $TEST/share/WorldPackageParserTest.kt
 $TEST/share/WorldPackageCodesTest.kt
 $TEST/excel/ImportFileFormatTest.kt
+$TEST/util/BodyMeasurementsTest.kt
+$TEST/util/BodySilhouetteSpecTest.kt
 "
 # 주의: AiPresetsConsistencyTest는 R을 참조하므로 여기서 돌릴 수 없다(파일 상단 KDoc 참조) — CI 전용.
 # 선택 소스: 존재하고 순수 JVM이면 추가

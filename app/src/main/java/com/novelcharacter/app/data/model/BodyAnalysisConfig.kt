@@ -4,12 +4,26 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
+ * 구조화 입력 파트가 몸의 어느 부위를 재는가.
+ *
+ * 파트 라벨은 사용자가 자유롭게 짓는다("B"·"가슴"·"윗둘레"…). 그래서 분석·실루엣이
+ * 라벨을 직접 읽으면 새 표기마다 조용히 빠진다 — 부위는 라벨이 아니라 이 슬롯이 든다.
+ * 해석 사다리(명시 매핑 → 라벨 추론 → 위치 폴백)는 [com.novelcharacter.app.util.BodyMeasurements]가
+ * 단일 소스로 갖는다.
+ *
+ * [UNDERBUST]는 선택 슬롯이다 — 매핑돼 있으면 컵 계산이 실측 밑가슴을 쓰고,
+ * 없으면 현행 근사(허리 + [BodyAnalysisConfig.ribOffset])로 동작한다.
+ */
+enum class BodySlot { BUST, UNDERBUST, WAIST, HIP, SHOULDER, NONE }
+
+/**
  * 체형 분석 인사이트 설정.
  * FieldDefinition.config JSON의 "bodyAnalysis" 객체에 저장됨.
  *
  * - cupMapping: 컵 사이즈 산출 매핑 (bust-underbust 차이 → 라벨)
  * - bodyTypeRules: 체형 분류 규칙 (조건 기반, priority 순 평가)
  * - enabledInsights: 인사이트 항목별 표시/숨김 토글
+ * - partSlots: 구조화 입력 파트 인덱스 → [BodySlot] 명시 매핑 (비어 있으면 추론)
  *
  * config에 "bodyAnalysis" 키가 없으면 DEFAULT를 사용하므로
  * 기존 데이터의 마이그레이션이 불필요하다.
@@ -22,7 +36,8 @@ data class BodyAnalysisConfig(
     val enabledInsights: Map<String, Boolean> = DEFAULT_ENABLED_INSIGHTS,
     val ribOffset: Double = 0.0,                                        // 흉곽 보정 (0=기존, 권장 6.0)
     val bodyTagRules: List<BodyTagRule> = emptyList(),                   // 다층 태그 (비어있으면 bodyTypeRules에서 변환)
-    val goldenRatioIdeals: Map<String, Double> = DEFAULT_GOLDEN_RATIO_IDEALS  // 사용자 정의 이상값
+    val goldenRatioIdeals: Map<String, Double> = DEFAULT_GOLDEN_RATIO_IDEALS,  // 사용자 정의 이상값
+    val partSlots: List<BodySlot> = emptyList()                          // 파트 인덱스 → 부위 (비어있으면 추론)
 ) {
     data class CupMappingEntry(val maxDiff: Double, val label: String)
 
@@ -266,6 +281,20 @@ data class BodyAnalysisConfig(
                     }
                 }
 
+                // Part → BodySlot 명시 매핑. 모르는 이름은 NONE으로 받아 자리를 보존한다
+                // (버리면 뒤 파트의 인덱스가 밀려 매핑 전체가 어긋난다).
+                val partSlots = mutableListOf<BodySlot>()
+                val slotsArr = obj.optJSONArray("partSlots")
+                if (slotsArr != null) {
+                    for (i in 0 until slotsArr.length()) {
+                        val name = slotsArr.optString(i, "")
+                        partSlots.add(
+                            runCatching { BodySlot.valueOf(name.trim().uppercase()) }
+                                .getOrDefault(BodySlot.NONE)
+                        )
+                    }
+                }
+
                 // Enabled insights
                 val enabledInsights = mutableMapOf<String, Boolean>()
                 val insightsObj = obj.optJSONObject("enabledInsights")
@@ -285,7 +314,8 @@ data class BodyAnalysisConfig(
                     enabledInsights = if (enabledInsights.isEmpty()) DEFAULT_ENABLED_INSIGHTS else enabledInsights,
                     ribOffset = ribOffset,
                     bodyTagRules = bodyTagRules,
-                    goldenRatioIdeals = if (goldenRatioIdeals.isEmpty()) DEFAULT_GOLDEN_RATIO_IDEALS else goldenRatioIdeals
+                    goldenRatioIdeals = if (goldenRatioIdeals.isEmpty()) DEFAULT_GOLDEN_RATIO_IDEALS else goldenRatioIdeals,
+                    partSlots = partSlots
                 )
             } catch (_: Exception) {
                 DEFAULT
@@ -367,6 +397,14 @@ data class BodyAnalysisConfig(
                         idealsObj.put(k, v)
                     }
                     put("goldenRatioIdeals", idealsObj)
+                }
+
+                // Part → BodySlot 매핑은 명시했을 때만 싣는다 — 추론과 같은 기본값을 굽지 않아야
+                // 기존 필드 정의의 JSON이 불어나지 않는다(ribOffset 선례).
+                if (config.partSlots.isNotEmpty()) {
+                    val slotsArr = JSONArray()
+                    for (slot in config.partSlots) slotsArr.put(slot.name)
+                    put("partSlots", slotsArr)
                 }
 
                 // Enabled insights
