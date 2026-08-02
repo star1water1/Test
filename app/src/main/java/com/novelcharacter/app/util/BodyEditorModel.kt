@@ -86,7 +86,17 @@ object BodyEditorModel {
      * (숫자가 없으니 위치 폴백 조건도 못 넘는다), 그렇다고 편집기를 못 쓰게 하면
      * **가장 필요한 순간에 도구가 없다.**
      */
-    fun writableSlots(partSlots: List<BodySlot>, partCount: Int): List<BodySlot> {
+    fun writableSlots(
+        partSlots: List<BodySlot>,
+        partCount: Int,
+        explicit: Boolean = false
+    ): List<BodySlot> {
+        // 사용자가 설정에서 직접 정한 배정은 **비어 있어도 그대로 둔다** — 전부 '사용 안 함'으로
+        // 골랐는데 편집기가 위치 폴백으로 B/W/H를 되쓰면, 부위가 아니라고 말한 칸에 수치가
+        // 들어간다(`BodyMeasurements.resolveSlots`의 같은 자리와 한 규약).
+        if (explicit) {
+            return (0 until maxOf(partCount, partSlots.size)).map { partSlots.getOrNull(it) ?: BodySlot.NONE }
+        }
         if (partSlots.any { it != BodySlot.NONE }) {
             return (0 until maxOf(partCount, partSlots.size)).map { partSlots.getOrNull(it) ?: BodySlot.NONE }
         }

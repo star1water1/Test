@@ -133,6 +133,19 @@ class BodyEditorModelTest {
         assertEquals(listOf(BodySlot.NONE, BodySlot.NONE), out.drop(3))
     }
 
+    @Test
+    fun `사용자가 전부 사용 안 함으로 정했으면 위치 폴백이 덮지 않는다`() {
+        // 설정에서 직접 정한 배정은 비어 있어도 그대로다 — 부위가 아니라고 말한 칸에
+        // 편집기가 가슴·허리·엉덩이를 되쓰면 그 선택이 무의미해진다.
+        val allNone = listOf(BodySlot.NONE, BodySlot.NONE, BodySlot.NONE)
+        assertEquals(allNone, BodyEditorModel.writableSlots(allNone, 3, explicit = true))
+        // 명시가 아니면 종전 그대로 폴백한다.
+        assertEquals(
+            listOf(BodySlot.BUST, BodySlot.WAIST, BodySlot.HIP),
+            BodyEditorModel.writableSlots(allNone, 3, explicit = false)
+        )
+    }
+
     // ── 초안 ─────────────────────────────────────────────────────────────
 
     @Test

@@ -14,6 +14,7 @@ import android.widget.Spinner
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.core.os.bundleOf
+import androidx.core.widget.doOnTextChanged
 import androidx.fragment.app.DialogFragment
 import androidx.fragment.app.setFragmentResult
 import com.google.gson.Gson
@@ -22,6 +23,7 @@ import com.google.android.material.tabs.TabLayout
 import com.novelcharacter.app.data.model.CharacterFieldValue
 import com.novelcharacter.app.data.model.DisplayFormat
 import com.novelcharacter.app.data.model.BodyAnalysisConfig
+import com.novelcharacter.app.data.model.BodySlot
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.FieldStatsConfig
 import com.novelcharacter.app.data.model.FieldType
@@ -116,6 +118,17 @@ class FieldEditDialog : DialogFragment() {
     private val insightToggleSwitches = mutableMapOf<String, androidx.appcompat.widget.SwitchCompat>()
     private var currentBodyTypeRules: List<BodyAnalysisConfig.BodyTypeRule> = BodyAnalysisConfig.DEFAULT_BODY_TYPE_RULES
 
+    // 파트 연결 (설계 5-4-5) — 구조화 입력의 칸 목록을 따라 다시 그려지므로 행을 들고 있는다.
+    private val partSlotRows = mutableListOf<Spinner>()
+    /** 손대지 않았을 때의 배정 — 저장 시 이것과 같으면 싣지 않는다(설계 3-1). */
+    private var inferredPartSlots: List<BodySlot> = emptyList()
+    /** 편집 중인 필드가 이미 들고 있던 명시 연결. 행을 못 그릴 때(칸 0개) 그대로 보존한다. */
+    private var loadedPartSlots: List<BodySlot> = emptyList()
+    /** 드롭다운 순서 — 인덱스가 곧 [BodySlot]이라 이 목록 하나가 표시와 저장을 함께 정한다. */
+    private val partSlotChoices = listOf(
+        BodySlot.BUST, BodySlot.UNDERBUST, BodySlot.WAIST, BodySlot.HIP, BodySlot.SHOULDER, BodySlot.NONE
+    )
+
     private var fieldTypeSpinner: Spinner? = null
 
     private fun currentFieldType(): String {
@@ -152,6 +165,9 @@ class FieldEditDialog : DialogFragment() {
         setupHelpButtons(binding)
         setupFormulaHelp(binding)
         populateFields(binding)
+        // 파트 연결 행은 칸이 다 복원된 뒤에 그린다 — 새 필드(칸 0개)에서도 안내가 뜨도록
+        // populateFields 안이 아니라 여기서 부른다(그 함수는 편집·프리필이 없으면 일찍 반환한다).
+        refreshPartSlotRows(binding)
 
         val dialog = MaterialAlertDialogBuilder(requireContext())
             .setTitle(if (existingField == null) R.string.add_field else R.string.edit_field)
@@ -635,10 +651,13 @@ class FieldEditDialog : DialogFragment() {
             binding.structuredSeparatorLayout.visibility = visibility
             binding.structuredPartsContainer.visibility = visibility
             binding.btnAddStructuredPart.visibility = visibility
+            refreshPartSlotRows(binding)
         }
 
         binding.btnAddStructuredPart.setOnClickListener {
-            addStructuredPartRow(binding.structuredPartsContainer, density)
+            addStructuredPartRow(binding.structuredPartsContainer, density,
+                onPartsChanged = { refreshPartSlotRows(binding) })
+            refreshPartSlotRows(binding)
         }
     }
 
@@ -842,8 +861,13 @@ class FieldEditDialog : DialogFragment() {
         gradeRows.add(GradeRow(row, editLabel, editValue))
     }
 
+    /**
+     * [onPartsChanged]는 칸의 이름·종류·존재가 바뀔 때마다 불린다 — 파트 연결 행이 그 목록을
+     * 따라 다시 그려져야 하기 때문이다(방금 만든 칸을 연결할 수 없으면 기능이 반쪽이 된다).
+     */
     private fun addStructuredPartRow(container: LinearLayout, density: Float,
-                                      label: String = "", suffix: String = "", inputType: String = "text") {
+                                      label: String = "", suffix: String = "", inputType: String = "text",
+                                      onPartsChanged: (() -> Unit)? = null) {
         val ctx = requireContext()
         val row = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -858,6 +882,7 @@ class FieldEditDialog : DialogFragment() {
             hint = getString(R.string.hint_part_label)
             textSize = 13f
             if (label.isNotEmpty()) setText(label)
+            onPartsChanged?.let { notify -> doOnTextChanged { _, _, _, _ -> notify() } }
         }
 
         val editSuffix = EditText(ctx).apply {
@@ -874,6 +899,12 @@ class FieldEditDialog : DialogFragment() {
                 it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
             }
             if (inputType == "number") setSelection(1)
+            onPartsChanged?.let { notify ->
+                onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                    override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) = notify()
+                    override fun onNothingSelected(parent: AdapterView<*>?) {}
+                }
+            }
         }
 
         val btnRemove = ImageButton(ctx).apply {
@@ -883,6 +914,7 @@ class FieldEditDialog : DialogFragment() {
             setOnClickListener {
                 container.removeView(row)
                 structuredPartRows.removeAll { it.container == row }
+                onPartsChanged?.invoke()
             }
         }
 
@@ -892,6 +924,100 @@ class FieldEditDialog : DialogFragment() {
         row.addView(btnRemove)
         container.addView(row)
         structuredPartRows.add(StructuredPartRow(row, editLabel, editSuffix, spinnerInputType))
+    }
+
+    // ── 파트 연결 (설계 5-4-5) ──────────────────────────────────────────────
+
+    /** 드롭다운 라벨 — 부위 이름은 실루엣·폴백과 같은 리소스이고, 단위만 여기서 덧붙인다. */
+    private fun partSlotChoiceLabel(slot: BodySlot): String = when (slot) {
+        BodySlot.NONE -> getString(R.string.body_part_slot_none)
+        BodySlot.SHOULDER -> getString(
+            R.string.body_part_slot_width, getString(R.string.silhouette_slot_shoulder)
+        )
+        else -> getString(
+            R.string.body_part_slot_circumference,
+            when (slot) {
+                BodySlot.BUST -> getString(R.string.silhouette_slot_bust)
+                BodySlot.UNDERBUST -> getString(R.string.silhouette_slot_underbust)
+                BodySlot.WAIST -> getString(R.string.silhouette_slot_waist)
+                else -> getString(R.string.silhouette_slot_hip)
+            }
+        )
+    }
+
+    /**
+     * 구조화 입력의 칸 목록을 따라 연결 행을 다시 그린다.
+     *
+     * 칸은 같은 다이얼로그 아래쪽에서 지금도 편집되는 중이므로(추가·삭제·이름 변경),
+     * 행 목록은 그때마다 따라와야 한다 — 안 그러면 방금 만든 칸이 여기 없어 연결할 길이 없다.
+     * 다시 그리는 동안 **사용자가 이미 고른 선택은 인덱스로 보존한다.**
+     */
+    private fun refreshPartSlotRows(binding: DialogFieldEditBinding) {
+        val density = resources.displayMetrics.density
+        val ctx = requireContext()
+        val container = binding.partSlotContainer
+
+        val structuredOn = binding.switchStructuredInput.isChecked
+        val labels = if (structuredOn) structuredPartRows.map { it.editLabel.text.toString().trim() } else emptyList()
+        val numeric = if (structuredOn) structuredPartRows.map { it.spinnerInputType.selectedItemPosition == 1 } else emptyList()
+
+        // 이전 선택 보존 — 행을 다시 만들기 전에 읽어 둔다.
+        val previous = partSlotRows.map { partSlotChoices.getOrElse(it.selectedItemPosition) { BodySlot.NONE } }
+        val previousInferred = inferredPartSlots
+
+        inferredPartSlots = com.novelcharacter.app.util.BodyMeasurements.inferSlotsForParts(labels, numeric)
+        container.removeAllViews()
+        partSlotRows.clear()
+
+        if (labels.isEmpty()) {
+            // 칸이 없으면 연결할 대상도 없다. 무엇을 먼저 해야 하는지 말하고 끝낸다(원칙 04).
+            binding.partSlotNotice.text = getString(R.string.body_part_slot_empty)
+            binding.partSlotNotice.visibility = View.VISIBLE
+            return
+        }
+
+        // 화면에 있던 선택이 추론과 다르면 사용자가 고른 것이다 — 칸을 고쳤다고 그것을 지우지 않는다.
+        val userChose = previous.isNotEmpty() && previous != previousInferred
+        val choiceLabels = partSlotChoices.map { partSlotChoiceLabel(it) }
+        for (index in labels.indices) {
+            // 우선순위: 사용자가 고른 것 → 저장돼 있던 명시 연결 → 추론(새로 생긴 칸이 여기로 온다).
+            val selected = (if (userChose) previous.getOrNull(index) else null)
+                ?: loadedPartSlots.getOrNull(index)
+                ?: inferredPartSlots.getOrNull(index)
+                ?: BodySlot.NONE
+
+            val row = LinearLayout(ctx).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { bottomMargin = (4 * density).toInt() }
+            }
+            row.addView(TextView(ctx).apply {
+                text = labels[index].ifEmpty { getString(R.string.body_part_slot_unnamed, index + 1) }
+                textSize = 13f
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            })
+            val spinner = Spinner(ctx).apply {
+                // 48dp — 설계 5-4-6의 최소 터치 영역.
+                layoutParams = LinearLayout.LayoutParams(0, (48 * density).toInt(), 1.4f)
+                adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item, choiceLabels).also {
+                    it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+                }
+                setSelection(partSlotChoices.indexOf(selected).coerceAtLeast(0))
+            }
+            row.addView(spinner)
+            container.addView(row)
+            partSlotRows.add(spinner)
+        }
+
+        // 지금 보이는 것이 자동 판단인지 사용자가 정한 것인지 밝힌다 — 둘은 칸 이름을 고쳤을 때
+        // 따라오느냐 마느냐가 갈리므로, 한쪽 문구로 뭉뚱그리면 화면이 거짓을 말하게 된다.
+        val chosen = userChose || loadedPartSlots.isNotEmpty()
+        binding.partSlotNotice.text = getString(
+            if (chosen) R.string.body_part_slot_chosen_notice else R.string.body_part_slot_auto_notice
+        )
+        binding.partSlotNotice.visibility = View.VISIBLE
     }
 
     private fun setupBodyAnalysisSection(binding: DialogFieldEditBinding) {
@@ -1018,7 +1144,7 @@ class FieldEditDialog : DialogFragment() {
 
         // 이상 몸(치수) — 창작자는 비율이 아니라 "165에 88-58-88"로 생각한다(2026.08.02 요청).
         val idealBodyLabel = TextView(ctx).apply {
-            text = "이상 몸(치수)으로 정하기 — 세 치수를 적으면 목표 비율을 이 몸에서 계산합니다. 캐릭터 키에 맞춰 조정됩니다."
+            text = ctx.getString(R.string.body_ideal_body_title)
             textSize = 12f
             alpha = 0.7f
             setPadding(0, (12 * density).toInt(), 0, (4 * density).toInt())
@@ -1031,10 +1157,10 @@ class FieldEditDialog : DialogFragment() {
             ).apply { bottomMargin = (2 * density).toInt() }
         }
         val idealBodyFields = listOf(
-            "idealBody_bust" to "가슴 (cm)",
-            "idealBody_waist" to "허리 (cm)",
-            "idealBody_hip" to "엉덩이 (cm)",
-            "idealBody_height" to "기준 키 (비우면 $baseHeight)"
+            "idealBody_bust" to ctx.getString(R.string.body_ideal_body_bust),
+            "idealBody_waist" to ctx.getString(R.string.body_ideal_body_waist),
+            "idealBody_hip" to ctx.getString(R.string.body_ideal_body_hip),
+            "idealBody_height" to ctx.getString(R.string.body_ideal_body_height, baseHeight)
         )
         for ((tagName, hint) in idealBodyFields) {
             idealBodyRow.addView(EditText(ctx).apply {
@@ -1049,14 +1175,14 @@ class FieldEditDialog : DialogFragment() {
 
         // 비율 직접 고정 — 이상 몸보다 세밀한 경로(키별 병용 가능).
         val idealEntries = listOf(
-            "whr" to "WHR 이상값 (비우면 자동 · 장르 기준 ≈${refOf("whr")})",
-            "bustHipRatio" to "B/H 이상값 (비우면 자동 · 장르 기준 ≈${refOf("bustHipRatio")})",
-            "waistHeight" to "W/키 이상값 (비우면 자동 · 장르 기준 ≈${refOf("waistHeight")})",
-            "bustHeight" to "B/키 이상값 (비우면 자동 · 장르 기준 ≈${refOf("bustHeight")})"
+            "whr" to ctx.getString(R.string.body_ideal_ratio_whr, refOf("whr")),
+            "bustHipRatio" to ctx.getString(R.string.body_ideal_ratio_bust_hip, refOf("bustHipRatio")),
+            "waistHeight" to ctx.getString(R.string.body_ideal_ratio_waist_height, refOf("waistHeight")),
+            "bustHeight" to ctx.getString(R.string.body_ideal_ratio_bust_height, refOf("bustHeight"))
         )
         val goldenIdealEdits = mutableMapOf<String, EditText>()
         val idealLabel = TextView(ctx).apply {
-            text = "비율로 직접 고정하기 — 적은 칸이 이상 몸·장르 기준보다 우선합니다"
+            text = ctx.getString(R.string.body_ideal_ratio_title)
             textSize = 12f
             alpha = 0.7f
             setPadding(0, (12 * density).toInt(), 0, (4 * density).toInt())
@@ -1077,21 +1203,27 @@ class FieldEditDialog : DialogFragment() {
             goldenIdealEdits[key] = edit
         }
 
-        // 인사이트 토글 생성
+        // 인사이트 토글 생성 — 라벨은 **읽기 화면과 같은 리소스**를 쓴다(B-61 해소, 설계 6장).
+        // 새 이름을 짓지 않는 것이 요지다: 두 화면이 같은 문자열을 가리키면 이름이 갈릴 수 없고,
+        // 코드에서 한국어 리터럴이 사라져 텍스트 검사의 대상이 된다.
         val insightKeys = listOf(
-            BodyAnalysisConfig.INSIGHT_BODY_TAGS to "다층 태그",
-            BodyAnalysisConfig.INSIGHT_BODY_TYPE to "체형 분류",
-            BodyAnalysisConfig.INSIGHT_SILHOUETTE to "실루엣 설명",
-            BodyAnalysisConfig.INSIGHT_CUP_SIZE to "컵 사이즈",
-            BodyAnalysisConfig.INSIGHT_FRAME_SIZE to "프레임 사이즈",
-            BodyAnalysisConfig.INSIGHT_PROPORTION to "볼륨/곡선 지수",
-            BodyAnalysisConfig.INSIGHT_BWH_DIFF to "B/W/H 차이",
+            BodyAnalysisConfig.INSIGHT_BODY_TAGS to getString(R.string.body_tags_label),
+            BodyAnalysisConfig.INSIGHT_BODY_TYPE to getString(R.string.body_type_label),
+            BodyAnalysisConfig.INSIGHT_SILHOUETTE to getString(R.string.body_silhouette_label),
+            BodyAnalysisConfig.INSIGHT_CUP_SIZE to getString(R.string.cup_size_label),
+            BodyAnalysisConfig.INSIGHT_FRAME_SIZE to getString(R.string.body_frame_label),
+            // 토글은 하나, 읽기 행은 둘 — 두 이름을 조합해 어느 쪽이 바뀌어도 함께 움직이게 한다.
+            BodyAnalysisConfig.INSIGHT_PROPORTION to getString(
+                R.string.body_proportion_label,
+                getString(R.string.body_volume_label), getString(R.string.body_curves_label)
+            ),
+            BodyAnalysisConfig.INSIGHT_BWH_DIFF to getString(R.string.body_bwh_diff_label),
             BodyAnalysisConfig.INSIGHT_NORMALIZED_RATIO to getString(R.string.body_normalized_ratio_label),
-            BodyAnalysisConfig.INSIGHT_BMI to "BMI",
-            BodyAnalysisConfig.INSIGHT_WHR to "WHR",
-            BodyAnalysisConfig.INSIGHT_HEIGHT_RELATIVE to "키 대비 비율",
-            BodyAnalysisConfig.INSIGHT_GOLDEN_RATIO to "골든 비율",
-            BodyAnalysisConfig.INSIGHT_RANKING to "작품 내 순위"
+            BodyAnalysisConfig.INSIGHT_BMI to getString(R.string.bmi_label),
+            BodyAnalysisConfig.INSIGHT_WHR to getString(R.string.whr_label),
+            BodyAnalysisConfig.INSIGHT_HEIGHT_RELATIVE to getString(R.string.body_height_relative_label),
+            BodyAnalysisConfig.INSIGHT_GOLDEN_RATIO to getString(R.string.body_target_ratio_label),
+            BodyAnalysisConfig.INSIGHT_RANKING to getString(R.string.body_ranking_label)
         )
 
         for ((key, label) in insightKeys) {
@@ -1126,7 +1258,7 @@ class FieldEditDialog : DialogFragment() {
 
         val editMaxDiff = EditText(ctx).apply {
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-            hint = "차이(cm)"
+            hint = ctx.getString(R.string.body_cup_mapping_diff_hint)
             textSize = 13f
             inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
             if (maxDiff > 0) setText(if (maxDiff >= 999) "" else maxDiff.toString())
@@ -1260,13 +1392,25 @@ class FieldEditDialog : DialogFragment() {
             heightCm = idealBodyNum("idealBody_height")
         ).takeUnless { it.isEmpty }
 
+        // 파트 연결 — 추론과 같으면 싣지 않는다(설계 3-1). 행을 못 그리는 상태(구조화 입력이
+        // 꺼져 있거나 칸이 0개)에서는 **저장돼 있던 것을 그대로 둔다** — 화면에 없다는 이유로
+        // 사용자의 설정을 지우면 말없는 유실이다.
+        val partSlots = if (partSlotRows.isEmpty()) loadedPartSlots else {
+            val selected = partSlotRows.map { partSlotChoices.getOrElse(it.selectedItemPosition) { BodySlot.NONE } }
+            com.novelcharacter.app.util.BodyMeasurements.slotsToStore(selected, inferredPartSlots)
+        }
+
         return BodyAnalysisConfig(
             cupMapping = cupMapping,
+            // 아래 둘은 UI가 없다 — 기존값을 이어받지 않으면 저장할 때마다 조용히 기본값으로 돌아간다.
+            underbustEstimation = existingConfig?.underbustEstimation ?: BodyAnalysisConfig.DEFAULT.underbustEstimation,
+            defaultBodyType = existingConfig?.defaultBodyType ?: BodyAnalysisConfig.DEFAULT.defaultBodyType,
             bodyTypeRules = bodyTypeRules,
             enabledInsights = enabledInsights.ifEmpty { BodyAnalysisConfig.DEFAULT_ENABLED_INSIGHTS },
             ribOffset = ribOffset,
             bodyTagRules = existingConfig?.bodyTagRules ?: emptyList(),  // UI 미노출 → 기존값 보존
             goldenRatioIdeals = goldenIdeals,
+            partSlots = partSlots,
             idealBody = idealBody
         )
     }
@@ -1476,9 +1620,14 @@ class FieldEditDialog : DialogFragment() {
             binding.editStructuredSeparator.setText(structuredConfig.separator)
             for (part in structuredConfig.parts) {
                 addStructuredPartRow(binding.structuredPartsContainer, density,
-                    part.label, part.suffix, part.inputType)
+                    part.label, part.suffix, part.inputType,
+                    onPartsChanged = { refreshPartSlotRows(binding) })
             }
         }
+
+        // 저장돼 있던 명시 연결 — 행을 그리는 것은 호출부(onCreateDialog)가 한다.
+        // 새 필드(populateFields가 일찍 반환하는 경로)에서도 행은 그려져야 하기 때문이다.
+        loadedPartSlots = BodyAnalysisConfig.fromConfig(field.config).partSlots
     }
 
     /** @return true면 저장이 동기적으로 완료되어 다이얼로그를 닫아도 된다. false면 유지(검증 실패 또는 비동기 처리 진행 중). */

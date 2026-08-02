@@ -132,7 +132,10 @@ data class BodyMeasurements(
 
             return BodyMeasurements(
                 values = values,
-                mode = if (values.isEmpty()) MappingMode.NONE else mode,
+                // 아무 수치도 못 정했으면 "연결 없음"으로 보고한다 — 다만 **명시 연결은 예외다.**
+                // 사용자가 전부 '사용 안 함'으로 정하면 값이 하나도 안 나오는 것이 정상이고,
+                // 그것을 NONE으로 강등하면 소비처가 추론·위치 폴백으로 되돌아가 그 선택을 뒤집는다.
+                mode = if (values.isEmpty() && mode != MappingMode.EXPLICIT) MappingMode.NONE else mode,
                 partSlots = slots,
                 partValues = texts,
                 unmappedParts = unmapped,
@@ -144,10 +147,10 @@ data class BodyMeasurements(
         /**
          * 해석 사다리 (설계 3-2). 파트 인덱스 순 슬롯 배정과 그것을 정한 단을 돌려준다.
          *
-         * 1. 명시 매핑([BodyAnalysisConfig.partSlots])이 있으면 그대로.
+         * 1. 명시 연결([BodyAnalysisConfig.partSlots])이 있으면 그대로.
          * 2. 없으면 파트 라벨로 추론.
          * 3. 추론이 하나도 안 되고 숫자 파트가 3개 이상이면 앞 3개 = B/W/H.
-         * 4. 그 외 → 매핑 없음.
+         * 4. 그 외 → 연결 없음.
          */
         fun resolveSlots(
             labels: List<String>,
@@ -156,8 +159,14 @@ data class BodyMeasurements(
         ): Pair<List<BodySlot>, MappingMode> {
             val count = maxOf(labels.size, numbers.size)
 
-            // 1. 명시 매핑 — 파트 수보다 짧거나 길어도 인덱스 기준으로 맞춘다(설정이 뒤에 늘어난 파트를 모를 수 있다).
-            if (config.partSlots.any { it != BodySlot.NONE }) {
+            // 1. 명시 연결 — 파트 수보다 짧거나 길어도 인덱스 기준으로 맞춘다(설정이 뒤에 늘어난 파트를 모를 수 있다).
+            //
+            // **비어 있지 않다는 것 자체가 명시의 표시다.** 종전에는 "NONE이 아닌 것이 하나라도
+            // 있는가"로 봤는데, 그러면 사용자가 파트 연결 UI에서 **전부 '사용 안 함'으로 고른 것**이
+            // 추론으로 되돌아간다 — 명시적으로 "이 칸들은 부위가 아니다"라고 말한 것을 말없이
+            // 뒤집는 자리였다(개발 의도 2번 '변수 제어'). 저장 쪽은 추론과 같으면 아예 안 싣는
+            // 규약(설계 3-1)이라, 실려 있으면 곧 사용자가 정한 것이다.
+            if (config.partSlots.isNotEmpty()) {
                 val slots = (0 until count).map { config.partSlots.getOrNull(it) ?: BodySlot.NONE }
                 return slots to MappingMode.EXPLICIT
             }
@@ -187,6 +196,33 @@ data class BodyMeasurements(
             // 4. 매핑 없음
             return List(count) { BodySlot.NONE } to MappingMode.NONE
         }
+
+        /**
+         * 설정 화면(파트 연결 UI)이 기본으로 보여 줄 배정 — 값 없이 **파트 정의만으로** 사다리를 돈다.
+         *
+         * 필드를 편집하는 자리에는 캐릭터 값이 없으므로 위치 폴백의 조건("숫자로 읽히는 파트")을
+         * 실제 수치 대신 **파트의 입력 종류**로 판정한다([numericParts]). 사용자가 그 칸을 숫자로
+         * 선언해 두었다면 값이 들어올 때 숫자로 읽힐 자리이므로, 화면이 보여 주는 기본값과
+         * 실제 해석이 갈리지 않는다.
+         *
+         * 명시 연결은 여기서 보지 않는다 — 이 함수가 내는 것은 **"손대지 않았을 때의 결과"**이고,
+         * 그것이 곧 [slotsToStore]가 "바꾸지 않았다"를 판정하는 기준선이다.
+         */
+        fun inferSlotsForParts(labels: List<String>, numericParts: List<Boolean>): List<BodySlot> {
+            val count = maxOf(labels.size, numericParts.size)
+            val numbers = (0 until count).map { if (numericParts.getOrNull(it) == true) 0.0 else null }
+            return resolveSlots(labels, numbers, BodyAnalysisConfig.DEFAULT).first
+        }
+
+        /**
+         * 저장할 명시 연결을 정한다 — **추론과 같으면 싣지 않는다**(설계 3-1).
+         *
+         * 기본값을 구워 두면 ⓐ 기존 필드 정의의 JSON이 이유 없이 불어나고 ⓑ 파트 이름을 나중에
+         * 고쳐도 배정이 옛날에 굳은 채 따라오지 않는다. 사용자가 실제로 고른 것만 실어야
+         * 추론이 살아 있는 상태로 남는다.
+         */
+        fun slotsToStore(selected: List<BodySlot>, inferred: List<BodySlot>): List<BodySlot> =
+            if (selected == inferred) emptyList() else selected
 
         /** 구조화 설정이 없는 값의 분리 — 현행 인라인 파서와 같은 구분자(-, /, 공백)를 쓴다. */
         fun splitPlain(rawValue: String): List<String> =

@@ -1369,15 +1369,20 @@
     <string name="cup_size_label">컵 사이즈 (추정)</string>
     <string name="bmi_label">BMI</string>
     <string name="whr_label">WHR (허리-엉덩이 비율)</string>
-    <string name="body_bwh_diff_label">측정값 분석</string>
+    <!-- 파트가 B/W/H가 아닐 수 있어 '측정값 차이'로 통일한다 (설계 9장 P1 확정) -->
+    <string name="body_bwh_diff_label">측정값 차이</string>
     <string name="body_normalized_ratio_label">보정 비율</string>
     <string name="body_height_relative_label">키 대비 비율</string>
-    <string name="body_golden_ratio_label">골든 비율</string>
     <string name="body_ranking_label">작품 내 순위</string>
     <string name="body_tags_label">체형 태그</string>
     <string name="body_frame_label">프레임</string>
     <string name="body_volume_label">볼륨 지수</string>
     <string name="body_curves_label">곡선 지수</string>
+    <!-- 토글 전용 이름 둘 (B-61) — 읽기 화면에 대응 라벨이 없던 자리다.
+         '실루엣'은 그림과 설명을 함께 여닫으므로 '설명'을 떼었고, 볼륨·곡선은 토글이
+         하나인데 읽기 행이 둘이라 **두 이름을 조합**한다(제3의 이름을 지으면 또 갈린다). -->
+    <string name="body_silhouette_label">실루엣</string>
+    <string name="body_proportion_label">%1$s · %2$s</string>
 
     <!-- 체형 실루엣 (설계 body_visual_redesign_2026-07 5-4-1) -->
     <string name="silhouette_content_description">체형 실루엣</string>
@@ -1396,7 +1401,8 @@
     <string name="silhouette_editor_open">실루엣으로 조정</string>
     <string name="silhouette_editor_discard">조정한 내용을 버리고 닫으시겠습니까?</string>
     <string name="silhouette_editor_discard_confirm">버리기</string>
-    <string name="silhouette_editor_positional_notice">파트 연결이 정해지지 않아 앞 세 칸을 가슴·허리·엉덩이로 봅니다. 체형 분석 설정에서 바꿀 수 있습니다.</string>
+    <string name="silhouette_editor_positional_notice">파트 연결이 정해지지 않아 앞 세 칸을 가슴·허리·엉덩이로 봅니다. 체형 분석 설정의 \'파트 연결\'에서 바꿀 수 있습니다.</string>
+    <string name="silhouette_editor_no_slot">연결된 부위가 없어 적용해도 값이 들어가지 않습니다. 체형 분석 설정의 \'파트 연결\'에서 부위를 정해 주세요.</string>
     <string name="silhouette_editor_no_body_field">키·체중 필드가 폼에 없어 그 값은 적용되지 않습니다.</string>
     <string name="silhouette_editor_applied">실루엣 수치를 폼에 적었습니다</string>
     <string name="silhouette_row_height">키</string>
@@ -1474,10 +1480,39 @@
     <string name="body_gen_recommend">추천!</string>
 
     <string name="body_analysis_settings_title">체형 분석 설정</string>
+
+    <!-- 파트 연결 (설계 5-4-5) — 각 칸을 어느 부위로 읽을지 정하는 자리 -->
+    <string name="body_part_slot_title">파트 연결</string>
+    <string name="purpose_body_part_slot">각 칸을 어느 부위로 읽을지 여기서 정합니다. 실루엣과 아래 분석이 이 연결을 따릅니다.</string>
+    <string name="body_part_slot_auto_notice">지금은 칸 이름으로 자동 판단한 결과입니다. 바꾸면 그 선택이 저장되고, 그다음부터는 자동 판단을 쓰지 않습니다.</string>
+    <string name="body_part_slot_chosen_notice">직접 정한 연결입니다. 칸 이름을 고쳐도 이 선택을 그대로 씁니다.</string>
+    <string name="body_part_slot_empty">아래 \'구조화 입력\'에서 칸을 먼저 만들면 여기에서 부위를 연결할 수 있습니다.</string>
+    <string name="body_part_slot_none">사용 안 함</string>
+    <!-- 어깨만 너비이고 나머지는 둘레다 — 드롭다운이 그 차이를 함께 보인다(설계 5-4-1) -->
+    <string name="body_part_slot_circumference">%1$s(둘레)</string>
+    <string name="body_part_slot_width">%1$s(너비)</string>
+    <string name="body_part_slot_unnamed">%1$d번 칸</string>
+
     <string name="body_cup_mapping_title">컵 사이즈 기준</string>
+    <string name="purpose_body_cup_mapping">가슴과 밑가슴의 차이를 어떤 컵 글자로 부를지 정합니다. 그림의 가슴 크기도 같은 표를 따릅니다.</string>
     <string name="body_type_preset_title">체형 분류 프리셋</string>
+    <string name="purpose_body_type_preset">캐릭터를 어떤 체형 이름으로 부를지 정하는 규칙입니다. 사용자 정의를 고르면 규칙을 직접 쓸 수 있습니다.</string>
     <string name="body_type_custom_json_hint">체형 분류 규칙 (JSON)</string>
     <string name="body_insight_toggle_title">표시할 분석</string>
+    <string name="purpose_body_insight_toggle">켠 항목만 캐릭터 상세의 체형 분석 카드에 나타납니다. 이름은 카드에 뜨는 이름과 같습니다.</string>
+
+    <!-- 흉곽 보정·목표 비율 (설정 안에서 코드가 만드는 행 — 7단계에서 리소스로) -->
+    <string name="body_ideal_body_title">이상 몸(치수)으로 정하기 — 세 치수를 적으면 목표 비율을 이 몸에서 계산합니다. 캐릭터 키에 맞춰 조정됩니다.</string>
+    <string name="body_ideal_body_bust">가슴 (cm)</string>
+    <string name="body_ideal_body_waist">허리 (cm)</string>
+    <string name="body_ideal_body_hip">엉덩이 (cm)</string>
+    <string name="body_ideal_body_height">기준 키 (비우면 %1$d)</string>
+    <string name="body_ideal_ratio_title">비율로 직접 고정하기 — 적은 칸이 이상 몸·장르 기준보다 우선합니다</string>
+    <string name="body_ideal_ratio_whr">WHR 이상값 (비우면 자동 · 장르 기준 ≈%1$s)</string>
+    <string name="body_ideal_ratio_bust_hip">B/H 이상값 (비우면 자동 · 장르 기준 ≈%1$s)</string>
+    <string name="body_ideal_ratio_waist_height">W/키 이상값 (비우면 자동 · 장르 기준 ≈%1$s)</string>
+    <string name="body_ideal_ratio_bust_height">B/키 이상값 (비우면 자동 · 장르 기준 ≈%1$s)</string>
+    <string name="body_cup_mapping_diff_hint">차이(cm)</string>
     <string name="body_restore_defaults">기본값 복원</string>
     <string name="body_preset_subculture">서브컬쳐 기본</string>
     <string name="body_preset_detailed">상세 분류</string>

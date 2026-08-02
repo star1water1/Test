@@ -70,6 +70,12 @@ class BodySilhouetteEditorSheet : BottomSheetDialogFragment() {
     /** 위치 폴백으로 자리를 정했는가 — 그렇다면 그 사실을 화면이 말한다. */
     var positionalFallback: Boolean = false
 
+    /**
+     * 되쓸 자리가 하나도 없는가 — 설정에서 모든 칸을 '사용 안 함'으로 정하면 그렇게 된다.
+     * 편집기는 열리되(그림은 볼 수 있다) 적용이 아무 데도 닿지 않으므로 그 사실을 먼저 말한다.
+     */
+    var noWritableSlot: Boolean = false
+
     /** 열자마자 🎲 패널을 펼칠 것인가(폼의 🎲 버튼으로 들어온 경우 — 설계 5-2). */
     var openWithGenerator: Boolean = false
 
@@ -380,6 +386,7 @@ class BodySilhouetteEditorSheet : BottomSheetDialogFragment() {
 
     private fun setupNotices() {
         val notices = buildList {
+            if (noWritableSlot) add(getString(R.string.silhouette_editor_no_slot))
             if (positionalFallback) add(getString(R.string.silhouette_editor_positional_notice))
             if (!hasHeightField && !hasWeightField) add(getString(R.string.silhouette_editor_no_body_field))
         }

@@ -249,4 +249,69 @@ class BodyMeasurementsTest {
         assertEquals(BodyMeasurements.MappingMode.INFERRED, m.mode)
         assertNotNull(m.bust)
     }
+
+    // ── 파트 연결 UI가 쓰는 계약 (설계 5-4-5) ─────────────────────────────
+
+    @Test
+    fun `전부 사용 안 함으로 정한 것은 추론으로 되돌아가지 않는다`() {
+        // 파트 연결 UI가 만들 수 있는 상태다 — 라벨은 B/W/H로 읽히지만 사용자가
+        // "이 칸들은 부위가 아니다"라고 정했다. 말없이 뒤집으면 변수 제어 위반이다.
+        val config = BodyAnalysisConfig.DEFAULT.copy(
+            partSlots = listOf(BodySlot.NONE, BodySlot.NONE, BodySlot.NONE)
+        )
+        val m = BodyMeasurements.resolve(
+            field(structured("가슴", "허리", "엉덩이")), "88-60-90", config = config
+        )
+        assertEquals(BodyMeasurements.MappingMode.EXPLICIT, m.mode)
+        assertNull(m.bust)
+        assertNull(m.waist)
+        assertNull(m.hip)
+        assertFalse(m.hasCoreThree)
+    }
+
+    @Test
+    fun `설정 화면의 기본 배정은 값 없이 파트 정의만으로 사다리를 돈다`() {
+        // 라벨로 알아보는 자리.
+        assertEquals(
+            listOf(BodySlot.BUST, BodySlot.WAIST, BodySlot.HIP),
+            BodyMeasurements.inferSlotsForParts(
+                listOf("가슴", "허리", "엉덩이"), listOf(true, true, true)
+            )
+        )
+        // 라벨로 못 알아보면 **숫자로 선언된 칸**이 위치 폴백을 받는다 —
+        // 값이 없는 편집 화면에서도 실제 해석과 같은 결과가 나와야 한다.
+        assertEquals(
+            listOf(BodySlot.BUST, BodySlot.WAIST, BodySlot.HIP),
+            BodyMeasurements.inferSlotsForParts(
+                listOf("상", "중", "하"), listOf(true, true, true)
+            )
+        )
+        // 글자 칸은 위치 폴백의 셈에 들지 않는다(값이 들어와도 숫자로 안 읽힌다).
+        assertEquals(
+            listOf(BodySlot.NONE, BodySlot.NONE),
+            BodyMeasurements.inferSlotsForParts(listOf("상", "중"), listOf(false, false))
+        )
+    }
+
+    @Test
+    fun `추론과 같은 배정은 저장하지 않는다`() {
+        val inferred = listOf(BodySlot.BUST, BodySlot.WAIST, BodySlot.HIP)
+        assertEquals(
+            "기본값을 구우면 JSON이 불어나고 칸 이름을 고쳐도 옛 배정이 따라온다",
+            emptyList<BodySlot>(), BodyMeasurements.slotsToStore(inferred, inferred)
+        )
+        val changed = listOf(BodySlot.HIP, BodySlot.WAIST, BodySlot.BUST)
+        assertEquals(changed, BodyMeasurements.slotsToStore(changed, inferred))
+        // 전부 '사용 안 함'도 추론과 다르면 저장된다 — 그래야 위 계약이 성립한다.
+        val allNone = listOf(BodySlot.NONE, BodySlot.NONE, BodySlot.NONE)
+        assertEquals(allNone, BodyMeasurements.slotsToStore(allNone, inferred))
+    }
+
+    @Test
+    fun `연결이 아무것도 안 되는 필드는 저장할 것도 없다`() {
+        // 라벨로도 위치로도 못 정하는 칸 둘 — 추론이 이미 all NONE이라 사용자가
+        // 손대지 않았다면 실을 것이 없다(빈 목록 = 추론에 맡김).
+        val inferred = BodyMeasurements.inferSlotsForParts(listOf("상", "중"), listOf(false, false))
+        assertEquals(emptyList<BodySlot>(), BodyMeasurements.slotsToStore(inferred, inferred))
+    }
 }

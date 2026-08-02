@@ -328,8 +328,11 @@ class DynamicFieldFormBuilder(
             heightText = heightField?.let { readSingleValue(fieldInputMap[it.id]) },
             weightText = weightField?.let { readSingleValue(fieldInputMap[it.id]) }
         )
+        val explicitSlots = measurements.mode ==
+            com.novelcharacter.app.util.BodyMeasurements.MappingMode.EXPLICIT
         val slots = com.novelcharacter.app.util.BodyEditorModel.writableSlots(
-            measurements.partSlots, maxOf(partValues.size, structured.parts.size)
+            measurements.partSlots, maxOf(partValues.size, structured.parts.size),
+            explicit = explicitSlots
         )
 
         val sheet = BodySilhouetteEditorSheet()
@@ -339,7 +342,12 @@ class DynamicFieldFormBuilder(
         sheet.partValues = partValues
         sheet.hasHeightField = heightField != null && fieldInputMap[heightField.id] != null
         sheet.hasWeightField = weightField != null && fieldInputMap[weightField.id] != null
-        sheet.positionalFallback = measurements.partSlots.none { it != com.novelcharacter.app.data.model.BodySlot.NONE }
+        // 위치 폴백 고지는 **실제로 폴백이 걸렸을 때만** 단다 — 사용자가 설정에서 전부
+        // '사용 안 함'으로 정한 경우에도 켜지면, 앞 세 칸을 가슴·허리·엉덩이로 본다고
+        // 거짓을 말하게 된다(그 경우 되쓸 자리는 하나도 없다).
+        sheet.positionalFallback = !explicitSlots &&
+            measurements.partSlots.none { it != com.novelcharacter.app.data.model.BodySlot.NONE }
+        sheet.noWritableSlot = slots.none { it != com.novelcharacter.app.data.model.BodySlot.NONE }
         sheet.openWithGenerator = openGenerator
         sheet.onApply = { parts, heightCm, weightKg ->
             writeBodyParts(widget, parts, structured)
