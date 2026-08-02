@@ -695,6 +695,41 @@ class ImageManagerFragment : Fragment() {
             .show()
     }
 
+    // ---------- 작업형 진행도 (규약 R-26 · B-51) ----------
+    //
+    // 이미지 대량 작업은 전부 항목 순회형인데 **표시가 0건이었다** — 수백 장을 고르면 화면이
+    // 죽은 채 있다가 결과창만 튀어나왔다(B-51의 이미지 몫).
+    //
+    // **뷰모델의 진행 콜백은 작업 스레드(IO)에서 온다.** 갱신은 메인이어야 하므로 여기서
+    // 한 번에 감싼다 — 뷰모델이 경로마다 스레드를 갈아타면 갱신이 작업보다 비싸지고,
+    // Room 트랜잭션 안에서 도는 갈래(배정·해제·태그)는 그 전환 자체가 위험하다.
+
+    /** 진행 창을 띄운다. 화면이 없으면 null이고 작업은 그대로 진행된다. */
+    private fun showTaskProgress(
+        @androidx.annotation.StringRes titleRes: Int,
+        total: Int,
+        @androidx.annotation.StringRes stageRes: Int,
+        onCancel: (() -> Unit)? = null
+    ): com.novelcharacter.app.ui.common.TaskProgressDialog.Handle? {
+        val ctx = context ?: return null
+        return runCatching {
+            com.novelcharacter.app.ui.common.TaskProgressDialog.show(
+                ctx, titleRes = titleRes, total = total, stageRes = stageRes, onCancel = onCancel
+            )
+        }.getOrNull()
+    }
+
+    /** 진행도 갱신 — 화면이 사라진 뒤의 갱신은 조용히 버린다(작업은 계속 돈다). */
+    private fun postProgress(
+        handle: com.novelcharacter.app.ui.common.TaskProgressDialog.Handle?,
+        current: Int,
+        total: Int,
+        stage: String? = null
+    ) {
+        handle ?: return
+        activity?.runOnUiThread { if (isAdded) handle.update(current, total, stage) }
+    }
+
     private fun deleteSelected() {
         val ctx = context ?: return
         val items = selectedItems()
@@ -706,7 +741,18 @@ class ImageManagerFragment : Fragment() {
             .setTitle(R.string.image_manager_delete_title)
             .setMessage(getString(R.string.image_manager_delete_selected_confirm, items.size))
             .setPositiveButton(R.string.delete) { _, _ ->
-                viewModel.deleteImages(items) { result ->
+                // 삭제는 한 건 한 건이 완결되므로 취소를 받는다 —
+                // 취소 = 중단 시점까지 반영 + 요약(R-26 원문).
+                var cancelled = false
+                val progress = showTaskProgress(
+                    R.string.image_manager_delete_title, items.size, R.string.image_manager_stage_delete
+                ) { cancelled = true }
+                viewModel.deleteImages(
+                    items,
+                    onProgress = { done, total -> postProgress(progress, done, total) },
+                    isCancelled = { cancelled }
+                ) { result ->
+                    progress?.dismiss()
                     // isAdded는 onDestroyView 후에도 true라 회전/백스택 중 콜백이 파괴된 뷰에 닿는다 →
                     // _binding까지 확인해야 exitSelection()의 binding!! NPE를 막는다(ViewModel이 프래그먼트 스코프라 코루틴 생존).
                     if (!isAdded || _binding == null) return@deleteImages
@@ -715,6 +761,12 @@ class ImageManagerFragment : Fragment() {
                         reportAndNotify(OpResult.failure(
                             OpResult.CAT_MAINTENANCE,
                             getString(R.string.image_manager_bulk_delete_failed, result.failed)
+                        ))
+                    } else if (cancelled) {
+                        // 취소해도 여기까지는 실제로 지워졌다 — 조용히 넘기면 목록이 줄어든 이유를 알 수 없다.
+                        reportAndNotify(OpResult.success(
+                            OpResult.CAT_MAINTENANCE,
+                            getString(R.string.image_manager_bulk_delete_cancelled, result.deleted)
                         ))
                     } else {
                         reportAndNotify(OpResult.success(
@@ -741,8 +793,25 @@ class ImageManagerFragment : Fragment() {
 
     /** 대상들을 준비(임시 재인코드)한 뒤, 정확한 전/후 크기·스킵 사유를 담은 확인 다이얼로그를 띄운다. */
     private fun startRecompress(items: List<ImageManagerViewModel.ManagedImage>) {
-        viewModel.prepareRecompress(items) { preview ->
+        // 준비는 대상 전부를 디코드·재인코드하는 가장 느린 구간이다 — 재압축에서 취소가
+        // 값을 하는 자리도 여기뿐이다. 취소 = 산출물 없음(임시 파일까지 지운다).
+        var cancelled = false
+        val progress = showTaskProgress(
+            R.string.image_manager_recompress_confirm_title,
+            items.size,
+            R.string.image_manager_stage_recompress_prepare
+        ) { cancelled = true }
+        viewModel.prepareRecompress(
+            items,
+            onProgress = { done, total -> postProgress(progress, done, total) },
+            isCancelled = { cancelled }
+        ) { preview ->
+            progress?.dismiss()
             if (!isAdded) { viewModel.discardRecompress(); return@prepareRecompress }
+            if (preview.cancelled) {
+                notifySuccess(getString(R.string.image_manager_recompress_prepare_cancelled))
+                return@prepareRecompress
+            }
             showRecompressConfirm(preview)
         }
     }
@@ -779,7 +848,25 @@ class ImageManagerFragment : Fragment() {
             .setTitle(R.string.image_manager_recompress_confirm_title)
             .setMessage(msg)
             .setPositiveButton(R.string.image_manager_recompress) { _, _ ->
-                viewModel.commitRecompress { result ->
+                // 커밋은 취소를 받지 않는다(2단계 DB 교체가 한 트랜잭션 — 뷰모델 주석 참조).
+                // 대신 두 구간(바꾸기·보관)을 각자 총량으로 보고한다.
+                val commitProgress = showTaskProgress(
+                    R.string.image_manager_recompress_confirm_title,
+                    preview.plans.size,
+                    R.string.image_manager_stage_recompress_replace
+                )
+                val replaceStage = getString(R.string.image_manager_stage_recompress_replace)
+                val backupStage = getString(R.string.image_manager_stage_recompress_backup)
+                viewModel.commitRecompress(
+                    onProgress = { done, total, stage ->
+                        val text = when (stage) {
+                            ImageManagerViewModel.RecompressStage.REPLACE -> replaceStage
+                            ImageManagerViewModel.RecompressStage.BACKUP -> backupStage
+                        }
+                        postProgress(commitProgress, done, total, text)
+                    }
+                ) { result ->
+                    commitProgress?.dismiss()
                     // onDestroyView 후에도 isAdded==true인 창(회전/백스택)에서 파괴된 뷰 접근 방지 — _binding까지 확인.
                     if (!isAdded || _binding == null) return@commitRecompress
                     exitSelection()
@@ -807,7 +894,17 @@ class ImageManagerFragment : Fragment() {
                     if (result.recompressed > 0 && viewModel.hasRecompressUndo()) {
                         logOperation(op)  // 이력엔 남기고 알림은 액션 스낵바로 대체
                         notifyWithAction(text, getString(R.string.image_manager_recompress_undo)) {
-                            viewModel.undoLastRecompress { ok ->
+                            // 되돌리기는 취소를 받지 않는다 — 복구 행위를 다시 끊으면 어느 이미지가
+                            // 어느 상태인지 알 길이 없다(뷰모델 주석 참조). 표시는 한다.
+                            val undoProgress = showTaskProgress(
+                                R.string.image_manager_recompress_undo_title,
+                                result.recompressed,
+                                R.string.image_manager_stage_recompress_undo
+                            )
+                            viewModel.undoLastRecompress(
+                                onProgress = { done, total -> postProgress(undoProgress, done, total) }
+                            ) { ok ->
+                                undoProgress?.dismiss()
                                 if (!isAdded || _binding == null) return@undoLastRecompress
                                 if (ok) notifySuccess(getString(R.string.image_manager_recompress_undo_done))
                                 else notifyError(getString(R.string.image_manager_recompress_undo_failed))
@@ -894,7 +991,16 @@ class ImageManagerFragment : Fragment() {
     }
 
     private fun doAssign(paths: List<String>, type: ImageManagerViewModel.OwnerType, row: ImageManagerViewModel.PickRow) {
-        viewModel.assignToTarget(paths, type, row.id) { result ->
+        // 총량은 링크 그룹으로 넓힌 뒤의 수다 — 고른 수로 띄우면 막대가 총량을 넘는다.
+        val total = viewModel.expandWithLinkedGroups(paths).allPaths.size
+        val progress = showTaskProgress(
+            R.string.image_assign_action, total, R.string.image_manager_stage_assign
+        )
+        viewModel.assignToTarget(
+            paths, type, row.id,
+            onProgress = { done, t -> postProgress(progress, done, t) }
+        ) { result ->
+            progress?.dismiss()
             if (!isAdded || _binding == null) return@assignToTarget
             if (result.failed) {
                 reportAndNotify(OpResult.failure(OpResult.CAT_MAINTENANCE, getString(R.string.image_assign_failed)))
@@ -920,7 +1026,14 @@ class ImageManagerFragment : Fragment() {
     }
 
     private fun runUnassign(paths: List<String>, owners: List<ImageManagerViewModel.Owner>?) {
-        viewModel.unassign(paths, owners) { result ->
+        val progress = showTaskProgress(
+            R.string.image_unassign_action, paths.size, R.string.image_manager_stage_unassign
+        )
+        viewModel.unassign(
+            paths, owners,
+            onProgress = { done, total -> postProgress(progress, done, total) }
+        ) { result ->
+            progress?.dismiss()
             if (!isAdded || _binding == null) return@unassign
             if (result.failed) {
                 reportAndNotify(OpResult.failure(OpResult.CAT_MAINTENANCE, getString(R.string.image_unassign_failed)))
@@ -991,18 +1104,32 @@ class ImageManagerFragment : Fragment() {
             { viewModel.getTagSuggestions() }
         }
         sheet.onConfirm = { tags ->
+            // 둘 다 취소를 받지 않는다 — 한 트랜잭션(추가) · 끊어 보내는 삭제 질의(제거)라
+            // 중간에 멈출 안전한 경계가 없다(뷰모델 주석 참조).
+            val progress = showTaskProgress(
+                R.string.image_manager_tag_progress_title,
+                paths.size,
+                if (remove) R.string.image_manager_stage_tag_remove else R.string.image_manager_stage_tag_add
+            )
+            val onCount: (Int) -> Unit = { count ->
+                progress?.dismiss()
+                if (isAdded && _binding != null) {
+                    exitSelection()
+                    reportAndNotify(OpResult.success(OpResult.CAT_MAINTENANCE, getString(R.string.image_batch_tag_done, count)))
+                }
+            }
             if (remove) {
-                viewModel.removeTagsFromImages(paths, tags) { count ->
-                    if (!isAdded || _binding == null) return@removeTagsFromImages
-                    exitSelection()
-                    reportAndNotify(OpResult.success(OpResult.CAT_MAINTENANCE, getString(R.string.image_batch_tag_done, count)))
-                }
+                viewModel.removeTagsFromImages(
+                    paths, tags,
+                    onProgress = { done, total -> postProgress(progress, done, total) },
+                    onDone = onCount
+                )
             } else {
-                viewModel.addTagsToImages(paths, tags) { count ->
-                    if (!isAdded || _binding == null) return@addTagsToImages
-                    exitSelection()
-                    reportAndNotify(OpResult.success(OpResult.CAT_MAINTENANCE, getString(R.string.image_batch_tag_done, count)))
-                }
+                viewModel.addTagsToImages(
+                    paths, tags,
+                    onProgress = { done, total -> postProgress(progress, done, total) },
+                    onDone = onCount
+                )
             }
         }
         sheet.show(childFragmentManager, ImageBatchTagBottomSheet.TAG)

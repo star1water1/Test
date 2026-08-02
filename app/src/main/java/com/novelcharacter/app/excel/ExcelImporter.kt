@@ -25,6 +25,9 @@ import kotlinx.coroutines.withContext
 import org.apache.poi.ss.usermodel.WorkbookFactory
 import android.util.Log
 import android.graphics.Typeface
+import com.novelcharacter.app.ui.common.TaskProgressDialog
+import com.novelcharacter.app.util.CopyCancelledException
+import com.novelcharacter.app.util.ProgressScale
 import com.novelcharacter.app.util.copyWithLimit
 import java.io.File
 import java.io.FileOutputStream
@@ -72,6 +75,68 @@ class ExcelImporter(context: Context) {
         currentActivityRef = null
     }
 
+    // ── 작업형 진행도 (규약 R-26 · B-51 완결) ─────────────────────────────────────
+    //
+    // 가져오기는 구간이 **다섯**이고(복사 · 압축 풀기 · 이미지 되살리기 · 분석 · 반영)
+    // 단위가 둘이다(MB와 건). 종전에는 가장 오래 걸리는 앞 두 구간에 **표시가 아예 없었고**
+    // 표시가 있는 분석 단계가 맨 뒤였다 — 750MB 백업에서 몇 분 동안 화면이 멈춘 것과
+    // 구분되지 않았다(사용자 회신이 이 항목의 착수 근거다).
+    //
+    // 착수 대조가 조사표를 넓혔다: 표는 "3구간"이라 적었으나 **이미지 되살리기 구간이 빠져
+    // 있었다.** 그 구간도 총량(복원 대상 장 수)을 알고 파일 복사라 실제로 오래 걸린다.
+    //
+    // 창은 **한 번의 가져오기가 하나**를 공유한다 — 구간마다 새로 띄우면 다섯 번 깜빡인다.
+    // 다만 사용자에게 묻는 창(옵션 · 미리보기 · 충돌 해결) 앞에서는 닫는다. 진행 창 위에
+    // 선택 창을 겹치면 어느 쪽이 살아 있는지 알 수 없다.
+
+    /**
+     * 진행 창을 띄운다.
+     *
+     * 화면이 없으면(액티비티가 이미 사라진 뒤의 복원 등) null이고, **작업은 그대로 진행된다** —
+     * 표시가 없는 것과 작업이 없는 것은 다른 일이다.
+     */
+    private suspend fun showTaskProgress(
+        total: Int,
+        @androidx.annotation.StringRes stageRes: Int,
+        format: TaskProgressDialog.CountFormat = TaskProgressDialog.CountFormat.ITEMS,
+        onCancel: (() -> Unit)? = null
+    ): TaskProgressDialog.Handle? = withContext(Dispatchers.Main) {
+        val act = currentActivityRef?.get()
+        if (act == null || act.isFinishing || act.isDestroyed) return@withContext null
+        runCatching {
+            TaskProgressDialog.show(
+                act,
+                titleRes = com.novelcharacter.app.R.string.import_progress_title,
+                total = total,
+                stageRes = stageRes,
+                format = format,
+                onCancel = onCancel
+            )
+        }.getOrNull()
+    }
+
+    /**
+     * 진행도 갱신 — 작업은 IO, 갱신은 메인(R-26).
+     *
+     * 화면이 사라진 뒤의 갱신은 조용히 버린다. 그래도 작업 자체는 계속 돈다(취소가 아니다).
+     */
+    private fun postProgress(
+        handle: TaskProgressDialog.Handle?,
+        current: Int,
+        total: Int,
+        stage: String? = null,
+        format: TaskProgressDialog.CountFormat = TaskProgressDialog.CountFormat.ITEMS
+    ) {
+        if (handle == null) return
+        importScope.launch(Dispatchers.Main) { handle.update(current, total, stage, format) }
+    }
+
+    /** 진행 창 닫기 — 완료·실패·취소와 무관하게 부른다. */
+    private suspend fun dismissTaskProgress(handle: TaskProgressDialog.Handle?) {
+        if (handle == null) return
+        withContext(Dispatchers.Main) { handle.dismiss() }
+    }
+
     fun showImportDialog(fragment: Fragment) {
         val launcher = importLauncher
         if (launcher != null) {
@@ -111,6 +176,10 @@ class ExcelImporter(context: Context) {
 
     private fun importFromUri(uri: Uri) {
         ensureActiveScope().launch {
+            // 복사 구간의 취소는 **폐기**다 — 반쯤 받아온 파일은 어차피 열 수 없고, 아직 DB에
+            // 아무것도 쓰지 않았으므로 되돌릴 것도 없다(R-26: 반쪽 항목을 남기지 않는다).
+            var cancelled = false
+            var progress: TaskProgressDialog.Handle? = null
             try {
                 // 파일 크기 체크 (외부 파일 전체 상한 — 이미지 포함 ZIP 왕복을 보장하는 수준으로 넉넉히)
                 val fileSize = appContext.contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: -1L
@@ -125,8 +194,28 @@ class ExcelImporter(context: Context) {
                 // statSize를 보고하지 않는 콘텐츠 프로바이더(-1L)가 있으므로 복사 단계에서도 크기 상한을 강제한다
                 val tempFile = File(appContext.cacheDir, "import_temp_${System.currentTimeMillis()}")
                 try {
+                    // 크기를 보고하지 않는 프로바이더면 총량 눈금이 0이 되고, 창은 퍼센트 대신
+                    // 불확정 막대와 "지금까지 N MB"를 그린다(퍼센트를 지어내지 않는다).
+                    val scale = ProgressScale.forBytes(fileSize)
+                    progress = showTaskProgress(
+                        total = scale.totalSteps,
+                        stageRes = com.novelcharacter.app.R.string.import_progress_stage_copy,
+                        format = TaskProgressDialog.CountFormat.MEGABYTES
+                    ) { cancelled = true }
+
                     val copied = appContext.contentResolver.openInputStream(uri)?.use { input ->
-                        FileOutputStream(tempFile).use { output -> copyWithLimit(input, output, MAX_EXTERNAL_FILE_SIZE) }
+                        FileOutputStream(tempFile).use { output ->
+                            copyWithLimit(
+                                input, output, MAX_EXTERNAL_FILE_SIZE,
+                                onProgress = { done ->
+                                    postProgress(
+                                        progress, scale.stepsFor(done), scale.totalSteps,
+                                        format = TaskProgressDialog.CountFormat.MEGABYTES
+                                    )
+                                },
+                                isCancelled = { cancelled }
+                            )
+                        }
                     } ?: throw Exception("Cannot open file input stream")
                     if (copied > MAX_EXTERNAL_FILE_SIZE) {
                         withContext(Dispatchers.Main) {
@@ -135,15 +224,21 @@ class ExcelImporter(context: Context) {
                         return@launch
                     }
 
-                    routeImport(tempFile)
+                    routeImport(tempFile, progress)
                 } finally {
                     tempFile.delete()
+                }
+            } catch (e: CopyCancelledException) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(appContext, com.novelcharacter.app.R.string.import_cancelled, Toast.LENGTH_SHORT).show()
                 }
             } catch (e: Exception) {
                 android.util.Log.e("ExcelImporter", "Import failed", e)
                 withContext(Dispatchers.Main) {
                     Toast.makeText(appContext, com.novelcharacter.app.R.string.import_failed_retry, Toast.LENGTH_LONG).show()
                 }
+            } finally {
+                dismissTaskProgress(progress)
             }
         }
     }
@@ -157,12 +252,12 @@ class ExcelImporter(context: Context) {
      * - 그 외 ZIP → 원인별 안내 (일반 "가져오기 실패" 금지)
      * - ZIP 아님/평범한 xlsx → 기존 xlsx 경로 (구형 .xls는 POI가 판별)
      */
-    private suspend fun routeImport(file: File) {
+    private suspend fun routeImport(file: File, progress: TaskProgressDialog.Handle? = null) {
         when (ImportFileFormat.detect(file)) {
             ImportFileKind.EXCEL_BACKUP_ZIP -> {
                 // 이미지 포함 백업(ZIP)은 전체 크기 대신 해제 단계에서 엔트리별 상한을 검사한다
                 // (전체 상한을 걸면 앱이 만든 대용량 백업이 스스로 복원 불가가 됨)
-                importFromZip(file)
+                importFromZip(file, progress)
             }
             ImportFileKind.WORLD_PACKAGE -> importWorldPackage(file)
             ImportFileKind.OTHER_ZIP -> withContext(Dispatchers.Main) {
@@ -170,7 +265,7 @@ class ExcelImporter(context: Context) {
             }
             // B-8: 크기로 거부하지 않는다. 큰 파일은 스트리밍 경로가 받는다([openImportSource]) —
             // 종전에는 앱이 만든 백업이 128MB를 넘으면 앱 자신이 복원을 거부했다(자기모순).
-            ImportFileKind.PLAIN_XLSX, ImportFileKind.NOT_ZIP -> importFromXlsx(file)
+            ImportFileKind.PLAIN_XLSX, ImportFileKind.NOT_ZIP -> importFromXlsx(file, progress = progress)
         }
     }
 
@@ -454,8 +549,11 @@ class ExcelImporter(context: Context) {
 
     // ── ZIP에서 가져오기 ──
 
-    private suspend fun importFromZip(zipTempFile: File) {
+    private suspend fun importFromZip(zipTempFile: File, progress: TaskProgressDialog.Handle? = null) {
         val extractDir = File(appContext.cacheDir, "import_extract_${System.currentTimeMillis()}")
+        // 해제 구간의 취소는 안전하다 — 산출물이 전부 [extractDir] 안에 있고 아래 finally가
+        // 통째로 지운다. 아직 DB에도 filesDir에도 쓴 것이 없다.
+        var extractCancelled = false
         try {
             extractDir.mkdirs()
 
@@ -464,12 +562,34 @@ class ExcelImporter(context: Context) {
             var imageMapJson: String? = null
             val hasImages: Boolean
 
+            // 해제 구간의 진행 창 — 복사 구간에서 이어받은 것이 있으면 그대로 쓴다(창을 다시
+            // 띄우면 한 번의 가져오기에 창이 두 번 깜빡인다). 없으면(백업 복원처럼 복사 없이
+            // 들어온 경로) 여기서 연다.
+            val extractStage = appContext.getString(com.novelcharacter.app.R.string.import_progress_stage_extract)
+            val entryTotal = ZipFile(zipTempFile).use { it.size() }
+            val extractProgress = progress ?: showTaskProgress(
+                total = entryTotal,
+                stageRes = com.novelcharacter.app.R.string.import_progress_stage_extract
+            ) { extractCancelled = true }
+            postProgress(extractProgress, 0, entryTotal, extractStage)
+
             // ZIP bomb 방어는 전체 파일 크기가 아니라 해제 지점에서 엔트리별로 수행한다
             // (엔트리 헤더의 크기 선언은 신뢰할 수 없으므로 실제 해제 바이트를 계수)
             ZipFile(zipTempFile).use { zip ->
                 var imageCount = 0
                 var imageTotalBytes = 0L
+                var processed = 0
                 for (entry in zip.entries()) {
+                    // 이어받은 창은 취소 버튼이 복사 구간에서 붙은 것이라, 눌린 사실은 창이 들고
+                    // 있다([Handle.isCancelled]). 새로 연 창은 위 람다가 플래그를 세운다.
+                    if (extractCancelled || extractProgress?.isCancelled == true) {
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(appContext, com.novelcharacter.app.R.string.import_cancelled, Toast.LENGTH_SHORT).show()
+                        }
+                        return
+                    }
+                    processed++
+                    postProgress(extractProgress, processed, entryTotal, extractStage)
                     if (entry.isDirectory) continue
                     when {
                         entry.name == "data.xlsx" -> {
@@ -541,28 +661,52 @@ class ExcelImporter(context: Context) {
             // 이미지 경로 재매핑 생성
             val imagePathRemap = buildImageRemap(imageMapJson, extractDir)
 
+            // 묻는 창을 띄우기 전에 진행 창을 닫는다 — 겹치면 어느 쪽이 살아 있는지 알 수 없다.
+            dismissTaskProgress(extractProgress)
+
             // 가져오기 옵션 다이얼로그 표시
             val options = showImportOptionsDialog(hasImages) ?: return
 
-            // 이미지 복원: extractDir에서 filesDir로 복사
-            pendingImageFailures = 0
-            if (options.images && hasImages) {
-                pendingImageFailures = restoreImages(imageMapJson, extractDir, imagePathRemap)
-                // 복원은 원 파일이 없을 때 새 UUID로 자리를 잡는다 = 정리 폴더 토큰이 끊긴다.
-                // 별칭을 남겨 다른 기기에서 내보낸 사본도 같은 이미지로 이어지게 한다(C-1).
-                runCatching {
-                    com.novelcharacter.app.util.FolderRoundtripPrefs.recordRenames(
-                        appContext,
-                        imagePathRemap.filter { (old, new) -> old != new }
+            // 선택 뒤의 두 구간(이미지 되살리기 · 분석)이 공유하는 창.
+            //
+            // **이 구간부터는 취소를 제공하지 않는다.** 되살린 이미지는 filesDir에 남는데 그것을
+            // 가리킬 DB 행은 아직 안 들어왔으므로, 중간에 끊으면 참조 없는 파일이 남는다 —
+            // R-26이 금지한 "조용한 반쪽 상태"다. 되돌리려면 이번에 만든 파일만 골라 지워야
+            // 하는데, 재복원 멱등화(같은 경로로 매핑되는 기존 파일)와 섞여 있어 남의 이미지를
+            // 지울 위험이 있다. 표시는 하되 끊지 않는 쪽이 안전하다.
+            var stageProgress: TaskProgressDialog.Handle? = null
+            try {
+                // 이미지 복원: extractDir에서 filesDir로 복사
+                pendingImageFailures = 0
+                if (options.images && hasImages) {
+                    // 총량은 재매핑 크기다 — restoreImages가 도는 대상이 정확히 그 집합이고
+                    // (재매핑에 없는 원본은 건너뛴다), 실행과 같은 값을 쓰므로 갈리지 않는다.
+                    val imagesStage = appContext.getString(com.novelcharacter.app.R.string.import_progress_stage_images)
+                    stageProgress = showTaskProgress(
+                        total = imagePathRemap.size,
+                        stageRes = com.novelcharacter.app.R.string.import_progress_stage_images
                     )
+                    pendingImageFailures = restoreImages(imageMapJson, extractDir, imagePathRemap) { done, total ->
+                        postProgress(stageProgress, done, total, imagesStage)
+                    }
+                    // 복원은 원 파일이 없을 때 새 UUID로 자리를 잡는다 = 정리 폴더 토큰이 끊긴다.
+                    // 별칭을 남겨 다른 기기에서 내보낸 사본도 같은 이미지로 이어지게 한다(C-1).
+                    runCatching {
+                        com.novelcharacter.app.util.FolderRoundtripPrefs.recordRenames(
+                            appContext,
+                            imagePathRemap.filter { (old, new) -> old != new }
+                        )
+                    }
                 }
-            }
 
-            // xlsx 가져오기
-            val verifiedXlsx = xlsxFile ?: return  // already checked above
-            importService.imagePathRemap = if (options.images) imagePathRemap else emptyMap()
-            importFromXlsx(verifiedXlsx, options)
-            importService.imagePathRemap = emptyMap()
+                // xlsx 가져오기
+                val verifiedXlsx = xlsxFile ?: return  // already checked above
+                importService.imagePathRemap = if (options.images) imagePathRemap else emptyMap()
+                importFromXlsx(verifiedXlsx, options, stageProgress)
+                importService.imagePathRemap = emptyMap()
+            } finally {
+                dismissTaskProgress(stageProgress)
+            }
 
         } finally {
             extractDir.deleteRecursively()
@@ -606,8 +750,16 @@ class ExcelImporter(context: Context) {
     /**
      * @return 복원 실패한 이미지 수
      */
+    /**
+     * 해제된 이미지를 filesDir로 되살린다.
+     *
+     * [onProgress]는 (처리한 장, 전체 장)을 받는다 — 전체는 [imagePathRemap]의 크기다.
+     * 이 루프가 도는 대상이 정확히 그 집합이라(재매핑에 없는 원본은 건너뛴다) 총량과 실행이
+     * 갈리지 않는다(R-26: 따로 세면 막대가 100%를 넘거나 못 미친 채 끝난다).
+     */
     private fun restoreImages(
-        imageMapJson: String?, extractDir: File, imagePathRemap: Map<String, String>
+        imageMapJson: String?, extractDir: File, imagePathRemap: Map<String, String>,
+        onProgress: ((Int, Int) -> Unit)? = null
     ): Int {
         if (imageMapJson == null) return 0
         val gson = com.google.gson.Gson()
@@ -616,9 +768,13 @@ class ExcelImporter(context: Context) {
             gson.fromJson(imageMapJson, type)
         } catch (_: Exception) { return 0 }
 
+        val total = imagePathRemap.size
+        var processed = 0
         var failedCount = 0
         for ((originalPath, zipRelPath) in originalMap) {
             val newPath = imagePathRemap[originalPath] ?: continue
+            processed++
+            onProgress?.invoke(processed, total)
             val extractedFile = File(extractDir, zipRelPath)
             if (!extractedFile.exists()) { failedCount++; continue }
             val destFile = File(newPath)
@@ -689,10 +845,14 @@ class ExcelImporter(context: Context) {
         override fun close() = closer.close()
     }
 
-    private suspend fun importFromXlsx(xlsxFile: File, options: ExportOptions = ExportOptions()) {
+    private suspend fun importFromXlsx(
+        xlsxFile: File,
+        options: ExportOptions = ExportOptions(),
+        progress: TaskProgressDialog.Handle? = null
+    ) {
         var opened: OpenedImportSource? = null
-        var progressDialog: AlertDialog? = null
-        var progressText: TextView? = null
+        // 분석 구간의 창 — 앞 구간에서 이어받은 것이 있으면 그것을 그대로 쓴다.
+        var stageProgress: TaskProgressDialog.Handle? = progress
 
         try {
             org.apache.poi.openxml4j.util.ZipSecureFile.setMinInflateRatio(0.01)
@@ -703,52 +863,36 @@ class ExcelImporter(context: Context) {
             opened = openImportSource(xlsxFile)
             val workbook = opened.source
 
-            // Phase 1: 분석 프로그레스 표시
-            val activityRef = currentActivityRef
-            val activity = activityRef?.get()
-            if (activity != null && !activity.isFinishing && !activity.isDestroyed) {
-                withContext(Dispatchers.Main) {
-                    val act = activityRef?.get()
-                    if (act != null && !act.isFinishing && !act.isDestroyed) {
-                        val layout = LinearLayout(act).apply {
-                            orientation = LinearLayout.VERTICAL
-                            gravity = Gravity.CENTER
-                            val dp16 = (16 * act.resources.displayMetrics.density).toInt()
-                            setPadding(dp16 * 2, dp16, dp16 * 2, dp16)
-                        }
-                        val progressBar = ProgressBar(act).apply { isIndeterminate = true }
-                        layout.addView(progressBar)
-                        val textView = TextView(act).apply {
-                            text = appContext.getString(com.novelcharacter.app.R.string.restore_analyzing)
-                            gravity = Gravity.CENTER
-                            val dp8 = (8 * act.resources.displayMetrics.density).toInt()
-                            setPadding(0, dp8, 0, 0)
-                        }
-                        layout.addView(textView)
-                        progressText = textView
-
-                        progressDialog = MaterialAlertDialogBuilder(act)
-                            .setTitle(appContext.getString(com.novelcharacter.app.R.string.restore_preview_title))
-                            .setView(layout)
-                            .setCancelable(false)
-                            .create()
-                        progressDialog?.show()
-                    }
-                }
+            // Phase 1: 분석 구간의 진행 창(작업형 · R-26).
+            //
+            // 총량(행 수)은 [ExcelImportService.analyzeAll]이 세므로 **첫 보고가 와야 안다**.
+            // 그때까지는 총량 0 = 불확정으로 두고, 첫 보고에서 막대가 확정으로 바뀐다 —
+            // 모르는 동안 퍼센트를 지어내지 않는다(R-26 후단).
+            val analyzeStage = appContext.getString(com.novelcharacter.app.R.string.import_progress_stage_analyze)
+            if (stageProgress == null) {
+                stageProgress = showTaskProgress(
+                    total = 0,
+                    stageRes = com.novelcharacter.app.R.string.import_progress_stage_analyze
+                )
+            } else {
+                postProgress(stageProgress, 0, 0, analyzeStage)
             }
+            val analyzeWindow = stageProgress
 
             // Phase 2: 백업 내용 분석
-            val analysis = importService.analyzeAll(workbook, options) { progress ->
-                val pct = if (progress.totalRows > 0) {
-                    (progress.processedRows * 100 / progress.totalRows).coerceAtMost(100)
-                } else 0
-                val text = appContext.getString(com.novelcharacter.app.R.string.import_progress_format, progress.currentPhase, pct)
-                importScope.launch(Dispatchers.Main) {
-                    progressText?.text = text
-                }
+            val analysis = importService.analyzeAll(workbook, options) { p ->
+                postProgress(
+                    analyzeWindow, p.processedRows, p.totalRows,
+                    appContext.getString(
+                        com.novelcharacter.app.R.string.import_progress_stage_detail,
+                        analyzeStage, p.currentPhase
+                    )
+                )
             }
 
-            withContext(Dispatchers.Main) { dismissDialogSafely(progressDialog) }
+            // 묻는 창(미리보기·충돌 해결) 앞에서는 진행 창을 닫는다.
+            dismissTaskProgress(stageProgress)
+            stageProgress = null
 
             // Phase 3: 미리보기 + 전략 선택 다이얼로그
             val (strategy, deleteOpts) = showRestorePreviewDialog(analysis) ?: return
@@ -764,49 +908,26 @@ class ExcelImporter(context: Context) {
                 emptyMap()
             }
 
-            // Phase 4: 실제 가져오기 진행
-            progressDialog = null
-            progressText = null
-            val act2 = currentActivityRef?.get()
-            if (act2 != null && !act2.isFinishing && !act2.isDestroyed) {
-                withContext(Dispatchers.Main) {
-                    val act = currentActivityRef?.get()
-                    if (act != null && !act.isFinishing && !act.isDestroyed) {
-                        val layout = LinearLayout(act).apply {
-                            orientation = LinearLayout.VERTICAL
-                            gravity = Gravity.CENTER
-                            val dp16 = (16 * act.resources.displayMetrics.density).toInt()
-                            setPadding(dp16 * 2, dp16, dp16 * 2, dp16)
-                        }
-                        val progressBar = ProgressBar(act).apply { isIndeterminate = true }
-                        layout.addView(progressBar)
-                        val textView = TextView(act).apply {
-                            text = appContext.getString(com.novelcharacter.app.R.string.import_preparing)
-                            gravity = Gravity.CENTER
-                            val dp8 = (8 * act.resources.displayMetrics.density).toInt()
-                            setPadding(0, dp8, 0, 0)
-                        }
-                        layout.addView(textView)
-                        progressText = textView
+            // Phase 4: 실제 가져오기 진행.
+            //
+            // **이 구간은 취소를 제공하지 않는다.** 전략(덮어쓰기·병합)이 여러 표에 걸쳐 반영되므로
+            // 중간에 끊으면 반쯤 덮인 DB가 남는다 — 항목 단위로 완결되지 않는 작업이라
+            // R-26이 취소를 요구하지 않는 자리다(반쪽 상태 금지가 우선한다).
+            val applyStage = appContext.getString(com.novelcharacter.app.R.string.import_progress_stage_apply)
+            stageProgress = showTaskProgress(
+                total = 0,
+                stageRes = com.novelcharacter.app.R.string.import_progress_stage_apply
+            )
+            val applyWindow = stageProgress
 
-                        progressDialog = MaterialAlertDialogBuilder(act)
-                            .setTitle(appContext.getString(com.novelcharacter.app.R.string.import_progress_title))
-                            .setView(layout)
-                            .setCancelable(false)
-                            .create()
-                        progressDialog?.show()
-                    }
-                }
-            }
-
-            val result = importService.importAll(workbook, effectiveOptions, strategy, resolvedConflicts) { progress ->
-                val pct = if (progress.totalRows > 0) {
-                    (progress.processedRows * 100 / progress.totalRows).coerceAtMost(100)
-                } else 0
-                val text = appContext.getString(com.novelcharacter.app.R.string.import_progress_format, progress.currentPhase, pct)
-                importScope.launch(Dispatchers.Main) {
-                    progressText?.text = text
-                }
+            val result = importService.importAll(workbook, effectiveOptions, strategy, resolvedConflicts) { p ->
+                postProgress(
+                    applyWindow, p.processedRows, p.totalRows,
+                    appContext.getString(
+                        com.novelcharacter.app.R.string.import_progress_stage_detail,
+                        applyStage, p.currentPhase
+                    )
+                )
             }
 
             if (pendingImageFailures > 0) {
@@ -816,13 +937,13 @@ class ExcelImporter(context: Context) {
 
             val message = buildResultMessage(result)
             withContext(Dispatchers.Main) {
-                dismissDialogSafely(progressDialog)
+                stageProgress?.dismiss()
                 showResultDialog(result, message)
             }
         } catch (e: Exception) {
             android.util.Log.e("ExcelImporter", "Import failed", e)
             withContext(Dispatchers.Main) {
-                dismissDialogSafely(progressDialog)
+                stageProgress?.dismiss()
                 Toast.makeText(appContext, com.novelcharacter.app.R.string.import_failed_retry, Toast.LENGTH_LONG).show()
             }
         } catch (oom: OutOfMemoryError) {
@@ -833,10 +954,12 @@ class ExcelImporter(context: Context) {
             opened = null
             android.util.Log.e("ExcelImporter", "Import out of memory", oom)
             withContext(Dispatchers.Main) {
-                dismissDialogSafely(progressDialog)
+                stageProgress?.dismiss()
                 Toast.makeText(appContext, com.novelcharacter.app.R.string.import_oom, Toast.LENGTH_LONG).show()
             }
         } finally {
+            // 어느 갈래로 빠져나가든 진행 창은 닫힌다 — 위 catch들이 이미 닫았어도 무해하다.
+            withContext(kotlinx.coroutines.NonCancellable) { dismissTaskProgress(stageProgress) }
             try { opened?.close() } catch (e: Exception) { android.util.Log.w("ExcelImporter", "Failed to close workbook", e) }
         }
     }

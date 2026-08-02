@@ -398,7 +398,6 @@
     <string name="backup_passphrase_too_short">암호는 최소 %1$d자 이상이어야 합니다</string>
     <string name="backup_passphrase_mismatch">암호가 일치하지 않습니다</string>
     <string name="backup_passphrase_wrong">암호가 올바르지 않습니다. 다시 입력해 주세요.</string>
-    <string name="backup_portable_preparing">이식 가능 백업 생성 중…</string>
     <string name="backup_restore_portable_still_ok">단, 암호를 설정해 만든 \'이식 가능 백업\' 파일은 지금도 복원할 수 있습니다.</string>
     <!-- 휴지통 (B-7) -->
     <string name="trash_title">휴지통</string>
@@ -616,6 +615,20 @@
     <string name="export_save_success">파일이 저장되었습니다</string>
     <string name="export_save_failed">파일 저장에 실패했습니다</string>
 
+    <!--
+        가져오기 진행도(작업형 · B-51) — 구간이 넷이고 단위가 둘이다.
+        복사·해제가 가장 오래 걸리는데 종전에는 그 둘에 아무 표시가 없었고, 표시가 있는
+        분석 단계가 맨 뒤였다(750MB 백업에서 몇 분간 화면이 죽은 것처럼 보였다).
+    -->
+    <string name="import_progress_stage_copy">파일을 복사하는 중</string>
+    <string name="import_progress_stage_extract">압축을 푸는 중</string>
+    <string name="import_progress_stage_images">이미지를 되살리는 중</string>
+    <string name="import_progress_stage_analyze">내용을 살펴보는 중</string>
+    <string name="import_progress_stage_apply">데이터를 넣는 중</string>
+    <!-- 구간 + 지금 다루는 갈래(캐릭터·관계 등) — 행 수는 숫자 칸이 따로 말한다 -->
+    <string name="import_progress_stage_detail">%1$s · %2$s</string>
+    <string name="import_cancelled">가져오기를 취소했습니다 — 아무것도 바꾸지 않았습니다</string>
+
     <!-- Field validation -->
     <string name="field_name_key_required">필드 이름과 키를 입력하세요</string>
     <string name="field_type_change_title">필드 타입 변경</string>
@@ -748,7 +761,6 @@
     <string name="add_relationship_desc">관계 추가</string>
     <string name="add_state_change_desc">상태 변화 추가</string>
     <string name="settings_icon_desc">설정</string>
-    <string name="import_preparing">가져오기 준비 중…</string>
     <string name="import_progress_title">가져오기 진행 중</string>
 
     <!-- Maintenance log -->
@@ -815,7 +827,11 @@
     <string name="backup_restore_select">복원할 백업을 선택하세요</string>
     <string name="backup_restore_confirm_title">백업 복원 확인</string>
     <string name="backup_restore_confirm_message">\'%s\' 백업을 복원하시겠습니까?\n\n복호화 후 복원 방식(병합/덮어쓰기)을 선택할 수 있습니다.</string>
-    <string name="backup_restore_decrypting">백업 파일 복호화 중…</string>
+    <!-- 백업 복원·이식 백업의 진행도(작업형 · B-51) — 총량은 파일 바이트라 MB로 센다 -->
+    <string name="backup_restore_progress_title">백업 복원</string>
+    <string name="backup_restore_stage_decrypt">백업 파일을 여는 중</string>
+    <string name="backup_portable_progress_title">이식 가능 백업 만들기</string>
+    <string name="backup_portable_stage_encrypt">암호를 걸어 다시 쓰는 중</string>
     <string name="backup_restore_success">백업 복원 완료</string>
     <string name="backup_restore_failed">백업 복원 실패: %s</string>
     <string name="backup_file_open_failed">파일을 열 수 없습니다</string>
@@ -1352,11 +1368,9 @@
     <string name="import_result_empty">가져오기 완료: 데이터 없음</string>
     <string name="import_result_title">가져오기 결과</string>
     <string name="import_result_details">상세 보기</string>
-    <string name="import_progress_format">%s 처리 중… (%d%%)</string>
 
     <!-- Restore preview / strategy -->
     <string name="restore_preview_title">복원 미리보기</string>
-    <string name="restore_analyzing">백업 내용 분석 중…</string>
     <string name="restore_strategy_merge">병합</string>
     <string name="restore_strategy_merge_desc">기존 데이터를 유지하고, 백업의 변경분만 반영합니다.\nDB에만 있는 데이터는 그대로 남습니다.</string>
     <string name="restore_strategy_overwrite">덮어쓰기</string>
@@ -2337,8 +2351,12 @@
     <string name="organize_folder_export_result_cancelled">취소해서 여기까지만 내보냈습니다</string>
     <string name="organize_folder_export_result_remove_failed">이전 사본 %d장은 지우지 못했습니다 — 폴더에 남아 있으면 받아오기가 그 이미지를 보류합니다</string>
 
-    <!-- 공용 진행도(R-26) -->
+    <!-- 공용 진행도(R-26) — 숫자 칸의 단위는 구간마다 다르다(장·건 / MB) -->
     <string name="task_progress_count">%1$d / %2$d (%3$d%%)</string>
+    <string name="task_progress_count_mb">%1$dMB / %2$dMB (%3$d%%)</string>
+    <!-- 총량을 모르는 구간 — 퍼센트를 지어내지 않고 지금까지의 양만 말한다(R-26 후단) -->
+    <string name="task_progress_count_unknown">%1$d개째</string>
+    <string name="task_progress_count_unknown_mb">%1$dMB째</string>
     <string name="image_manager_view_full">전체화면 보기</string>
     <string name="image_manager_delete_title">이미지 삭제</string>
     <string name="image_manager_delete_referenced_confirm">이 이미지는 %1$d곳에서 사용 중입니다. 삭제하면 해당 항목에서도 함께 제거됩니다. 계속하시겠습니까?</string>
@@ -2359,6 +2377,25 @@
     <!-- 이미지 관리 탭 — 기존 이미지 재압축(PR-3a) -->
     <string name="image_manager_recompress">재압축</string>
     <string name="image_manager_recompress_confirm_title">이미지 재압축</string>
+
+    <!--
+        이미지 대량 작업의 진행도(작업형 · B-51). 종전에는 이 여덟 갈래 전부 표시가 0건이라
+        수백 장을 고를수록 화면이 죽은 채 있다가 결과창만 튀어나왔다.
+        취소를 받는 곳과 받지 않는 곳이 갈리는 근거는 각 뷰모델 함수의 주석에 있다.
+    -->
+    <string name="image_manager_stage_delete">이미지를 지우는 중</string>
+    <string name="image_manager_stage_recompress_prepare">다시 압축해 보는 중</string>
+    <string name="image_manager_stage_recompress_replace">새 이미지로 바꾸는 중</string>
+    <string name="image_manager_stage_recompress_backup">원본을 보관하는 중</string>
+    <string name="image_manager_stage_recompress_undo">원본으로 되돌리는 중</string>
+    <string name="image_manager_stage_assign">배정하는 중</string>
+    <string name="image_manager_stage_unassign">배정을 푸는 중</string>
+    <string name="image_manager_stage_tag_add">태그를 다는 중</string>
+    <string name="image_manager_stage_tag_remove">태그를 떼는 중</string>
+    <string name="image_manager_recompress_undo_title">재압축 되돌리기</string>
+    <string name="image_manager_tag_progress_title">태그 반영</string>
+    <string name="image_manager_bulk_delete_cancelled">취소해서 %1$d장까지 지웠습니다</string>
+    <string name="image_manager_recompress_prepare_cancelled">재압축을 취소했습니다 — 아무것도 바꾸지 않았습니다</string>
     <string name="image_manager_recompress_confirm">%1$d개 재압축 · %2$s → %3$s (%4$s 절감)\n\n재압축은 화질을 낮춰 용량을 줄입니다. 원본은 삭제되며 되돌릴 수 없습니다.</string>
     <string name="image_manager_recompress_none">재압축할 대상이 없습니다.</string>
     <string name="image_manager_recompress_done">이미지 %1$d개 재압축 · %2$s 확보</string>
@@ -2443,7 +2480,10 @@
 
     <!-- 장시간 작업 진행 표시 (공용 진행 다이얼로그) -->
     <string name="backup_export_saving">백업 파일 저장 중…</string>
-    <string name="world_package_exporting">월드 패키지 생성 중…</string>
+    <!-- 월드패키지 내보내기 진행도(작업형 · B-51) — 자료(절)와 이미지(장)는 단위가 다르다 -->
+    <string name="world_package_progress_title">월드 패키지 내보내는 중</string>
+    <string name="world_package_stage_sections">자료를 담는 중</string>
+    <string name="world_package_cancelled">월드 패키지 내보내기를 취소했습니다 — 파일을 만들지 않았습니다</string>
     <string name="world_package_dropped_faction_relationships">세력 간 관계 %1$d건은 이 세계관 밖 세력과 걸쳐 있어 패키지에 포함되지 않았습니다</string>
     <string name="excel_export_in_progress">엑셀 파일 생성 중…</string>
     <string name="pdf_generating">PDF 생성 중…</string>

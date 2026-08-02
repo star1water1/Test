@@ -178,7 +178,15 @@ class ImageManagerViewModel(
         val plans: List<RecompressPlan>,
         val skips: List<RecompressSkip>,
         val totalBefore: Long,
-        val totalAfter: Long
+        val totalAfter: Long,
+        /**
+         * 사용자가 준비 단계를 취소했다(B-51 · R-26).
+         *
+         * 준비는 원본을 건드리지 않고 임시 파일만 만들므로 취소는 **산출물 없음**이다 —
+         * 반쯤 만든 미리보기로 "이만큼 줄어듭니다"라고 말하면 그 숫자가 거짓이 된다.
+         * 그래서 여기까지 만든 임시 파일은 지우고 빈 미리보기를 돌려준다.
+         */
+        val cancelled: Boolean = false
     ) {
         val savings: Long get() = (totalBefore - totalAfter).coerceAtLeast(0L)
     }
@@ -391,16 +399,31 @@ class ImageManagerViewModel(
     /**
      * 여러 이미지를 일괄 삭제한다. 각 건은 [deleteInternal] 재사용(참조본이면 소유 엔티티 경로도 함께 제거).
      * 개별 결과를 집계해 돌려주고 목록을 재로딩한다.
+     *
+     * 진행도는 [onProgress](메인 스레드)로 올라온다 — 총량은 인자 리스트 크기다(규약 R-26 · B-51).
+     *
+     * **취소는 "중단 시점까지 반영 + 요약"이다.** 한 건 한 건이 그 자체로 완결되므로
+     * (파일 삭제 + 소유 엔티티 경로 제거) 끊어도 반쪽 항목이 남지 않는다 — R-26 원문 그대로다.
+     * 몇 장까지 지웠는지는 [BulkDeleteResult.deleted]가 들고 있어 호출부가 요약할 수 있다.
      */
-    fun deleteImages(items: List<ManagedImage>, onDone: (BulkDeleteResult) -> Unit) {
+    fun deleteImages(
+        items: List<ManagedImage>,
+        onProgress: (Int, Int) -> Unit = { _, _ -> },
+        isCancelled: () -> Boolean = { false },
+        onDone: (BulkDeleteResult) -> Unit
+    ) {
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) {
                 var deleted = 0
                 var freed = 0L
                 var failed = 0
+                var processed = 0
                 for (item in items) {
+                    if (isCancelled()) break
                     val f = deleteInternal(item)
                     if (f != null) { deleted++; freed += f } else failed++
+                    processed++
+                    onProgress(processed, items.size)
                 }
                 BulkDeleteResult(deleted, freed, failed)
             }
@@ -414,13 +437,18 @@ class ImageManagerViewModel(
      * 이 단계는 원본을 건드리지 않으며, 결과([RecompressPreview])를 [pendingPreview]에 보관해 확인 뒤 커밋한다.
      * 참조본이 아닌 것(고아/휴지통)과 임계값 미만·손상·이득 없음은 스킵(사유 포함).
      */
-    fun prepareRecompress(items: List<ManagedImage>, onReady: (RecompressPreview) -> Unit) {
+    fun prepareRecompress(
+        items: List<ManagedImage>,
+        onProgress: (Int, Int) -> Unit = { _, _ -> },
+        isCancelled: () -> Boolean = { false },
+        onReady: (RecompressPreview) -> Unit
+    ) {
         _loading.value = true
         // pendingPreview가 세팅되기 전 창을 보호(동시 load()의 sweep가 준비 중 임시 파일을 지우지 않도록).
         preparingRecompress = true
         viewModelScope.launch {
             try {
-                val preview = withContext(Dispatchers.IO) { buildPreview(items) }
+                val preview = withContext(Dispatchers.IO) { buildPreview(items, onProgress, isCancelled) }
                 pendingPreview = preview
                 onReady(preview)
             } finally {
@@ -432,12 +460,24 @@ class ImageManagerViewModel(
         }
     }
 
-    private suspend fun buildPreview(items: List<ManagedImage>): RecompressPreview {
+    private suspend fun buildPreview(
+        items: List<ManagedImage>,
+        onProgress: (Int, Int) -> Unit = { _, _ -> },
+        isCancelled: () -> Boolean = { false }
+    ): RecompressPreview {
         sweepRecompressTempFiles()  // 직전에 중단된 미리보기 잔여물 정리
         val settings = ImageSettingsStore(getApplication()).getSettings()
         val plans = ArrayList<RecompressPlan>()
         val skips = ArrayList<RecompressSkip>()
+        var processed = 0
         for (item in items) {
+            if (isCancelled()) {
+                // 취소 = 산출물 없음. 여기까지 만든 임시 파일을 지우고 빈 미리보기를 돌려준다.
+                plans.forEach { runCatching { File(it.tempPath).delete() } }
+                return RecompressPreview(emptyList(), emptyList(), 0L, 0L, cancelled = true)
+            }
+            processed++
+            onProgress(processed, items.size)
             // 참조본과 라이브러리 미배정 모두 재압축 가능한 사용자 자산. 고아·휴지통 보류만 스킵.
             if (item.status == Status.ORPHAN || item.status == Status.TRASH_HELD) {
                 skips.add(RecompressSkip(item, ImageImportHelper.SkipReason.NOT_REFERENCED))
@@ -473,7 +513,18 @@ class ImageManagerViewModel(
      * 원본을 삭제한다. 파일 개명(1) → DB 경로 교체(2) → 원본 삭제(3) 순서라, 도중 실패해도
      * 원본은 살아 있고 새 파일만 고아로 남아(안전) 이후 정리 대상이 된다.
      */
-    fun commitRecompress(onDone: (RecompressResult) -> Unit) {
+    /**
+     * @param onProgress (처리한 장, 전체 장, 구간). 총량은 계획 수다(규약 R-26 · B-51).
+     *
+     * **취소를 제공하지 않는다.** 2단계(소유 엔티티 경로 교체)가 **한 트랜잭션**이라
+     * 그 안에는 "여기까지 반영"이라는 경계가 없다 — 끊으면 전부 되돌아가거나 전부 들어간다.
+     * 되돌릴 길은 이미 있다(커밋 뒤 [undoLastRecompress]). 오래 걸리는 쪽은 준비 단계이고,
+     * 그쪽은 취소를 받는다([prepareRecompress]).
+     */
+    fun commitRecompress(
+        onProgress: (Int, Int, RecompressStage) -> Unit = { _, _, _ -> },
+        onDone: (RecompressResult) -> Unit
+    ) {
         val preview = pendingPreview
         pendingPreview = null
         if (preview == null || preview.plans.isEmpty()) {
@@ -483,7 +534,7 @@ class ImageManagerViewModel(
         viewModelScope.launch {
             // 백스톱: 어떤 예외에도 크래시 대신 '전량 실패'로 통보하고 목록을 재로딩한다(변수 제어).
             val result = try {
-                withContext(Dispatchers.IO) { commitInternal(preview) }
+                withContext(Dispatchers.IO) { commitInternal(preview, onProgress) }
             } catch (e: Exception) {
                 RecompressResult(0, 0L, preview.skips.size, preview.plans.size)
             }
@@ -501,7 +552,17 @@ class ImageManagerViewModel(
         }
     }
 
-    private suspend fun commitInternal(preview: RecompressPreview): RecompressResult {
+    /**
+     * 재압축 커밋의 구간 — 단위는 같지만(장) 하는 일이 달라 문구를 나눈다.
+     *
+     * 사이의 2단계(DB 경로 교체)는 한 트랜잭션이라 항목 경계가 없어 구간으로 세지 않는다.
+     */
+    enum class RecompressStage { REPLACE, BACKUP }
+
+    private suspend fun commitInternal(
+        preview: RecompressPreview,
+        onProgress: (Int, Int, RecompressStage) -> Unit = { _, _, _ -> }
+    ): RecompressResult {
         // 직전 되돌리기 창은 지났으므로 이전 백업을 정리하고(무한 누적 방지), 오래된 백업(7일)도 함께 쓸어낸다.
         pendingUndo?.forEach { runCatching { File(it.backupPath).delete() } }
         pendingUndo = null
@@ -510,7 +571,10 @@ class ImageManagerViewModel(
 
         // 1단계: 임시 파일 → 정식 이름 개명(파일 시스템). 사라졌거나 실패한 건은 스킵.
         val committed = ArrayList<Triple<RecompressPlan, String, String>>() // plan, finalPath, oldCanon
+        var renamed = 0
         for (plan in preview.plans) {
+            renamed++
+            onProgress(renamed, preview.plans.size, RecompressStage.REPLACE)
             val temp = File(plan.tempPath)
             if (!temp.exists()) continue
             val finalFile = File(filesDir, "${plan.prefix}_${UUID.randomUUID()}.jpg")
@@ -559,7 +623,10 @@ class ImageManagerViewModel(
         val backupDir = recompressBackupDir()
         val undo = ArrayList<RecompressUndoEntry>()
         var freed = 0L
+        var backedUpCount = 0
         for ((plan, finalPath, _) in committed) {
+            backedUpCount++
+            onProgress(backedUpCount, committed.size, RecompressStage.BACKUP)
             val orig = File(plan.item.path)
             val origLen = orig.length()
             val newLen = File(finalPath).length()
@@ -583,21 +650,38 @@ class ImageManagerViewModel(
             pathRemap = committed.associate { (plan, finalPath, _) -> plan.item.path to finalPath })
     }
 
-    /** 방금 재압축한 원본을 복원한다: 백업 → 원위치, DB 경로를 재압축본 → 원본으로 되돌리고(트랜잭션) 재압축본 삭제. */
-    fun undoLastRecompress(onDone: (Boolean) -> Unit) {
+    /**
+     * 방금 재압축한 원본을 복원한다: 백업 → 원위치, DB 경로를 재압축본 → 원본으로 되돌리고(트랜잭션) 재압축본 삭제.
+     *
+     * 진행도는 [onProgress]로 올라온다 — 총량은 되돌릴 항목 수다(규약 R-26 · B-51).
+     *
+     * **취소를 제공하지 않는다.** 되돌리기는 이미 "직전 작업을 무르는" 복구 행위인데 그것을
+     * 다시 중간에 끊으면 어느 이미지가 원본이고 어느 것이 재압축본인지 사용자가 알 길이 없다.
+     * 표시는 하되 끝까지 간다.
+     */
+    fun undoLastRecompress(
+        onProgress: (Int, Int) -> Unit = { _, _ -> },
+        onDone: (Boolean) -> Unit
+    ) {
         val entries = pendingUndo
         if (entries.isNullOrEmpty()) { onDone(false); return }
         viewModelScope.launch {
-            val ok = withContext(Dispatchers.IO) { restoreRecompress(entries) }
+            val ok = withContext(Dispatchers.IO) { restoreRecompress(entries, onProgress) }
             pendingUndo = null
             load()
             onDone(ok)
         }
     }
 
-    private suspend fun restoreRecompress(entries: List<RecompressUndoEntry>): Boolean {
+    private suspend fun restoreRecompress(
+        entries: List<RecompressUndoEntry>,
+        onProgress: (Int, Int) -> Unit = { _, _ -> }
+    ): Boolean {
         var allOk = true
+        var processed = 0
         for (e in entries) {
+            processed++
+            onProgress(processed, entries.size)
             val backup = File(e.backupPath)
             val original = File(e.originalPath)
             // 1) 백업 → 원위치 복원
@@ -767,7 +851,21 @@ class ImageManagerViewModel(
      * 작품/세계관은 imageMode==none이고 **기존 이미지가 0장이던 경우에만** custom으로 자동 전환+고지
      * (사용자가 의도적으로 none 설정한 카드는 존중).
      */
-    fun assignToTarget(paths: List<String>, type: OwnerType, targetId: Long, onDone: (AssignResult) -> Unit) {
+    /**
+     * @param onProgress (처리한 장, 전체 장). 총량은 링크 그룹으로 넓힌 뒤의 경로 수다 —
+     *   선택한 수가 아니라 **실제로 도는 수**여야 막대가 갈리지 않는다(규약 R-26 · B-51).
+     *
+     * **취소를 제공하지 않는다.** 배정은 대상 엔티티 한 행을 통째로 갈아 끼우는 한 트랜잭션이라
+     * 중간 경계가 없다. 경로마다 `canonicalPath`를 묻는(파일 시스템 호출) 대목이 실제 비용이고,
+     * 그것이 어디까지 갔는지를 보여 주는 것이 이 진행도의 몫이다.
+     */
+    fun assignToTarget(
+        paths: List<String>,
+        type: OwnerType,
+        targetId: Long,
+        onProgress: (Int, Int) -> Unit = { _, _ -> },
+        onDone: (AssignResult) -> Unit
+    ) {
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) {
                 try {
@@ -775,18 +873,21 @@ class ImageManagerViewModel(
                     var assigned = 0
                     var already = 0
                     var modeChanged = false
+                    val appendTotal = expansion.allPaths.size
+                    var appended = 0
+                    val reportAppend: () -> Unit = { onProgress(++appended, appendTotal) }
                     db.withTransaction {
                         when (type) {
                             OwnerType.CHARACTER -> {
                                 val c = requireNotNull(db.characterDao().getCharacterById(targetId))
-                                val (json, added, skipped) = appendPaths(c.imagePaths, expansion.allPaths)
+                                val (json, added, skipped) = appendPaths(c.imagePaths, expansion.allPaths, reportAppend)
                                 db.characterDao().update(c.copy(imagePaths = json))
                                 assigned = added; already = skipped
                             }
                             OwnerType.NOVEL -> {
                                 val n = requireNotNull(db.novelDao().getNovelById(targetId))
                                 val wasEmpty = parsePaths(n.imagePaths).isEmpty()
-                                val (json, added, skipped) = appendPaths(n.imagePaths, expansion.allPaths)
+                                val (json, added, skipped) = appendPaths(n.imagePaths, expansion.allPaths, reportAppend)
                                 var updated = n.copy(imagePaths = json)
                                 if (n.imageMode == com.novelcharacter.app.data.model.Novel.IMAGE_MODE_NONE && wasEmpty && added > 0) {
                                     updated = updated.copy(imageMode = com.novelcharacter.app.data.model.Novel.IMAGE_MODE_CUSTOM)
@@ -798,7 +899,7 @@ class ImageManagerViewModel(
                             OwnerType.UNIVERSE -> {
                                 val u = requireNotNull(db.universeDao().getUniverseById(targetId))
                                 val wasEmpty = parsePaths(u.imagePaths).isEmpty()
-                                val (json, added, skipped) = appendPaths(u.imagePaths, expansion.allPaths)
+                                val (json, added, skipped) = appendPaths(u.imagePaths, expansion.allPaths, reportAppend)
                                 var updated = u.copy(imagePaths = json)
                                 if (u.imageMode == com.novelcharacter.app.data.model.Universe.IMAGE_MODE_NONE && wasEmpty && added > 0) {
                                     updated = updated.copy(imageMode = com.novelcharacter.app.data.model.Universe.IMAGE_MODE_CUSTOM)
@@ -826,14 +927,24 @@ class ImageManagerViewModel(
         }
     }
 
-    /** imagePaths JSON에 경로들을 append(중복 canonical 스킵). @return (새 JSON, 추가 수, 스킵 수) */
-    private fun appendPaths(json: String, adds: Collection<String>): Triple<String, Int, Int> {
+    /**
+     * imagePaths JSON에 경로들을 append(중복 canonical 스킵). @return (새 JSON, 추가 수, 스킵 수)
+     *
+     * [onEach]는 경로 하나를 훑을 때마다 불린다 — 이 루프가 경로마다 `canonicalPath`를 묻는
+     * 파일 시스템 호출이라 수백 장에서 실제로 걸리는 자리다(B-51 진행도의 대상).
+     */
+    private fun appendPaths(
+        json: String,
+        adds: Collection<String>,
+        onEach: () -> Unit = {}
+    ): Triple<String, Int, Int> {
         val current = parsePaths(json)
         val canonSet = current.mapTo(HashSet()) { runCatching { File(it).canonicalPath }.getOrNull() ?: it }
         val result = current.toMutableList()
         var added = 0
         var skipped = 0
         for (p in adds) {
+            onEach()
             val c = runCatching { File(p).canonicalPath }.getOrNull() ?: p
             if (c in canonSet) { skipped++ } else { result.add(p); canonSet.add(c); added++ }
         }
@@ -845,15 +956,28 @@ class ImageManagerViewModel(
      * 소유자 0이 된 비-라이브러리 경로는 자동 입양(미배정 복귀) — 명시적 비삭제 행위가
      * 이후 고아 정리에 지워질 고아를 만들지 않게 한다(변수 제어).
      */
-    fun unassign(paths: List<String>, ownerFilter: List<Owner>?, onDone: (UnassignResult) -> Unit) {
+    /**
+     * @param onProgress (처리한 장, 전체 장). 총량은 인자 리스트 크기다(규약 R-26 · B-51).
+     *
+     * **취소를 제공하지 않는다.** 경로마다 소유 엔티티를 고쳐 쓰는 일이 **한 트랜잭션**이라
+     * 중간 경계가 없다 — 끊으면 전부 되돌아가거나 전부 들어간다.
+     */
+    fun unassign(
+        paths: List<String>,
+        ownerFilter: List<Owner>?,
+        onProgress: (Int, Int) -> Unit = { _, _ -> },
+        onDone: (UnassignResult) -> Unit
+    ) {
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) {
                 try {
                     val byPath = currentItemsByPath()
                     var cleared = 0
                     var adopted = 0
+                    var processed = 0
                     db.withTransaction {
                         for (path in paths) {
+                            onProgress(++processed, paths.size)
                             val item = byPath[path] ?: continue
                             val targets = ownerFilter?.filter { it in item.owners } ?: item.owners
                             if (targets.isEmpty()) continue
@@ -975,14 +1099,27 @@ class ImageManagerViewModel(
         }
     }
 
-    /** 일괄 태그 추가 — 전원 입양 후 태그 삽입(중복 IGNORE). @return 반영 이미지 수 */
-    fun addTagsToImages(paths: List<String>, tags: List<String>, onDone: (Int) -> Unit) {
+    /**
+     * 일괄 태그 추가 — 전원 입양 후 태그 삽입(중복 IGNORE). @return 반영 이미지 수
+     *
+     * @param onProgress (처리한 장, 전체 장). 총량은 인자 리스트 크기다(규약 R-26 · B-51).
+     *
+     * **취소를 제공하지 않는다** — 한 트랜잭션이라 중간 경계가 없다.
+     */
+    fun addTagsToImages(
+        paths: List<String>,
+        tags: List<String>,
+        onProgress: (Int, Int) -> Unit = { _, _ -> },
+        onDone: (Int) -> Unit
+    ) {
         viewModelScope.launch {
             val count = withContext(Dispatchers.IO) {
                 try {
+                    var processed = 0
                     db.withTransaction {
                         val now = System.currentTimeMillis()
                         for (p in paths) {
+                            onProgress(++processed, paths.size)
                             val id = db.imageMetaDao().adopt(p, now)
                             db.imageTagDao().insertAll(tags.map { com.novelcharacter.app.data.model.ImageTag(imageId = id, tag = it) })
                         }
@@ -995,13 +1132,36 @@ class ImageManagerViewModel(
         }
     }
 
-    /** 일괄 태그 제거 — 라이브러리 이미지들에서 지정 태그 제거. @return 대상 이미지 수 */
-    fun removeTagsFromImages(paths: List<String>, tags: List<String>, onDone: (Int) -> Unit) {
+    /**
+     * 일괄 태그 제거 — 라이브러리 이미지들에서 지정 태그 제거. @return 대상 이미지 수
+     *
+     * @param onProgress (처리한 장, 전체 장). 총량은 대상 이미지 수다(규약 R-26 · B-51).
+     *
+     * **삭제 질의를 900개씩 끊어 보낸다.** 종전에는 선택분 전량을 `IN (:imageIds)` 하나에
+     * 실었는데, SQLite의 바인딩 변수 상한(999)을 넘으면 질의 자체가 예외로 죽는다 —
+     * 그런데 이 함수의 `catch`가 그것을 0으로 삼켜 **"태그를 지웠다고 생각했는데 그대로"**가
+     * 된다(조용한 유실). 이 저장소의 다른 대량 질의가 쓰는 `chunked(900)` 관례를 따른다.
+     * 끊어 보내면 진행도의 단위도 생긴다.
+     */
+    fun removeTagsFromImages(
+        paths: List<String>,
+        tags: List<String>,
+        onProgress: (Int, Int) -> Unit = { _, _ -> },
+        onDone: (Int) -> Unit
+    ) {
         viewModelScope.launch {
             val count = withContext(Dispatchers.IO) {
                 try {
                     val ids = metaIdsForPaths(paths)
-                    if (ids.isNotEmpty()) db.imageTagDao().deleteTagsFromImages(ids, tags)
+                    var processed = 0
+                    // 질의는 `imageId IN (…) AND tag IN (…)`이라 **두 목록이 함께** 변수를 쓴다 —
+                    // 태그 몫을 빼지 않으면 태그가 많을 때 다시 상한에 닿는다.
+                    val chunkSize = (SQL_BIND_CHUNK - tags.size).coerceAtLeast(1)
+                    for (chunk in ids.chunked(chunkSize)) {
+                        db.imageTagDao().deleteTagsFromImages(chunk, tags)
+                        processed += chunk.size
+                        onProgress(processed, ids.size)
+                    }
                     ids.size
                 } catch (e: Exception) { 0 }
             }
@@ -1311,5 +1471,13 @@ class ImageManagerViewModel(
             if (it == oldPath || c == oldCanon) newPath else it
         }
         return gson.toJson(updated)
+    }
+
+    companion object {
+        /**
+         * `IN (…)` 목록을 끊어 보내는 단위 — SQLite의 바인딩 변수 상한(999)보다 낮게 잡는다.
+         * 이 저장소의 다른 대량 질의가 쓰는 값과 같다(`chunked(900)`).
+         */
+        private const val SQL_BIND_CHUNK = 900
     }
 }

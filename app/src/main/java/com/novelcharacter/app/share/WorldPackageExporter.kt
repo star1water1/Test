@@ -5,6 +5,9 @@ import android.util.Log
 import com.google.gson.GsonBuilder
 import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.data.model.*
+// 취소 예외는 엑셀 내보내기(D5)가 정의한 것을 그대로 쓴다 — "취소했다"가 두 가지 뜻을
+// 갖지 않게 하려는 것이다. 두 작업의 취소 의미가 같다(산출물을 만들지 않고 멈춘다).
+import com.novelcharacter.app.excel.ExportCancelledException
 import java.io.File
 import java.io.FileOutputStream
 import java.util.zip.Deflater
@@ -34,7 +37,35 @@ class WorldPackageExporter(private val context: Context) {
         val droppedFactionRelationships: Int
     )
 
-    suspend fun export(config: ExportConfig): ExportResult {
+    /**
+     * 월드패키지 내보내기의 진행 보고 창구(규약 R-26 · B-51 완결).
+     *
+     * 순회 구간이 **둘**이고 단위가 다르다 — 자료는 '절(entry)', 이미지는 '장'이다. 그래서
+     * 하나로 합치지 않고 각자 총량으로 보고한다(D5의 [com.novelcharacter.app.excel.ExportProgressSink]와 같은 이유).
+     *
+     * 종전에는 불확정 스피너뿐이라 대형 세계관에서 "도는 중"과 "멈춤"이 구분되지 않았다.
+     *
+     * **취소는 산출물을 만들지 않고 멈추는 것이다** — 사용자가 받는 항목이 파일 하나이므로
+     * 반쯤 쓴 패키지를 건네면 상대 기기에서 조용히 깨진다(D5가 내보내기에서 정한 것과 같다).
+     */
+    class ProgressSink(
+        /** 자료 구간 — (기록한 절, 전체 절). */
+        val onSections: (done: Int, total: Int) -> Unit = { _, _ -> },
+        /** 이미지 구간 — (훑은 장, 전체 장). 이미지를 담지 않으면 불리지 않는다. */
+        val onImages: (done: Int, total: Int) -> Unit = { _, _ -> },
+        /** 취소 요청 여부 — 순회가 항목마다 확인한다. */
+        val isCancelled: () -> Boolean = { false }
+    )
+
+    /** imagePaths JSON이 담은 경로 수. 형식이 깨졌으면 0(내보내기를 막을 일은 아니다). */
+    private fun countImagePaths(imagePathsJson: String): Int {
+        if (imagePathsJson.isBlank() || imagePathsJson == "[]") return 0
+        return runCatching {
+            gson.fromJson(imagePathsJson, Array<String>::class.java)?.size ?: 0
+        }.getOrDefault(0)
+    }
+
+    suspend fun export(config: ExportConfig, progress: ProgressSink = ProgressSink()): ExportResult {
         val app = context.applicationContext as NovelCharacterApp
         val db = app.database
 
@@ -114,33 +145,55 @@ class WorldPackageExporter(private val context: Context) {
         val outputFile = File(exportsDir, fileName)
 
         try {
+            val manifest = WorldPackageManifest(
+                universeName = universe.name,
+                includesImages = config.includeImages
+            )
+
+            // **이 목록이 절 순서의 단일 소스다**(규약 R-26 · B-51) — 실행이 이 목록을 돌고
+            // 진행도 총량도 이 목록의 크기다. 종전처럼 실행은 호출 나열로 두고 총량만 따로 세면
+            // 두 벌이 되어, 갈리는 순간 막대가 100%를 넘거나 못 미친 채 끝난다.
+            val sections: List<Pair<String, Any>> = listOf(
+                WorldPackageEntries.MANIFEST to manifest,
+                WorldPackageEntries.UNIVERSE to universe,
+                WorldPackageEntries.FIELD_DEFINITIONS to fieldDefinitions,
+                WorldPackageEntries.NOVELS to novels,
+                WorldPackageEntries.CHARACTERS to characters,
+                WorldPackageEntries.FIELD_VALUES to fieldValues,
+                WorldPackageEntries.STATE_CHANGES to stateChanges,
+                WorldPackageEntries.TAGS to tags,
+                WorldPackageEntries.RELATIONSHIPS to relationships,
+                WorldPackageEntries.RELATIONSHIP_CHANGES to relChanges,
+                WorldPackageEntries.TIMELINE_EVENTS to events,
+                WorldPackageEntries.TIMELINE_CROSS_REFS to crossRefs,
+                WorldPackageEntries.TIMELINE_EVENT_NOVEL_CROSS_REFS to eventNovelCrossRefs,
+                WorldPackageEntries.NAME_BANK to nameBank,
+                WorldPackageEntries.FACTIONS to factions,
+                WorldPackageEntries.FACTION_MEMBERSHIPS to factionMemberships,
+                WorldPackageEntries.FACTION_RELATIONSHIPS to factionRelResult.items,
+                WorldPackageEntries.EVENT_FIELD_VALUES to eventFieldValues,
+                WorldPackageEntries.FIELD_VALUE_ENTRIES to fieldValueEntries,
+                WorldPackageEntries.NOVEL_FIELD_VALUES to novelFieldValues,
+                WorldPackageEntries.GRADE_SYSTEMS to gradeSystems
+            )
+
+            // 이미지 구간도 같은 원칙 — 도는 목록과 총량이 한 값에서 나온다.
+            // v3: 세계관·작품 직접 등록 이미지의 엔트리 접두사는 WorldPackageImageEntries
+            // 규약(임포터와 공유)을 따른다.
+            val imageGroups: List<Pair<String, String>> = buildList {
+                for (char in characters) add(char.imagePaths to "images/${char.id}_")
+                add(universe.imagePaths to "images/universe_")
+                for (novel in novels) add(novel.imagePaths to "images/novel_${novel.id}_")
+            }
+            val imageTotal = if (config.includeImages) imageGroups.sumOf { countImagePaths(it.first) } else 0
+
             ZipOutputStream(FileOutputStream(outputFile)).use { zip ->
-                // Manifest
-                val manifest = WorldPackageManifest(
-                    universeName = universe.name,
-                    includesImages = config.includeImages
-                )
-                writeJsonEntry(zip, WorldPackageEntries.MANIFEST, manifest)
-                writeJsonEntry(zip, WorldPackageEntries.UNIVERSE, universe)
-                writeJsonEntry(zip, WorldPackageEntries.FIELD_DEFINITIONS, fieldDefinitions)
-                writeJsonEntry(zip, WorldPackageEntries.NOVELS, novels)
-                writeJsonEntry(zip, WorldPackageEntries.CHARACTERS, characters)
-                writeJsonEntry(zip, WorldPackageEntries.FIELD_VALUES, fieldValues)
-                writeJsonEntry(zip, WorldPackageEntries.STATE_CHANGES, stateChanges)
-                writeJsonEntry(zip, WorldPackageEntries.TAGS, tags)
-                writeJsonEntry(zip, WorldPackageEntries.RELATIONSHIPS, relationships)
-                writeJsonEntry(zip, WorldPackageEntries.RELATIONSHIP_CHANGES, relChanges)
-                writeJsonEntry(zip, WorldPackageEntries.TIMELINE_EVENTS, events)
-                writeJsonEntry(zip, WorldPackageEntries.TIMELINE_CROSS_REFS, crossRefs)
-                writeJsonEntry(zip, WorldPackageEntries.TIMELINE_EVENT_NOVEL_CROSS_REFS, eventNovelCrossRefs)
-                writeJsonEntry(zip, WorldPackageEntries.NAME_BANK, nameBank)
-                writeJsonEntry(zip, WorldPackageEntries.FACTIONS, factions)
-                writeJsonEntry(zip, WorldPackageEntries.FACTION_MEMBERSHIPS, factionMemberships)
-                writeJsonEntry(zip, WorldPackageEntries.FACTION_RELATIONSHIPS, factionRelResult.items)
-                writeJsonEntry(zip, WorldPackageEntries.EVENT_FIELD_VALUES, eventFieldValues)
-                writeJsonEntry(zip, WorldPackageEntries.FIELD_VALUE_ENTRIES, fieldValueEntries)
-                writeJsonEntry(zip, WorldPackageEntries.NOVEL_FIELD_VALUES, novelFieldValues)
-                writeJsonEntry(zip, WorldPackageEntries.GRADE_SYSTEMS, gradeSystems)
+                progress.onSections(0, sections.size)
+                sections.forEachIndexed { index, (name, data) ->
+                    if (progress.isCancelled()) throw ExportCancelledException()
+                    writeJsonEntry(zip, name, data)
+                    progress.onSections(index + 1, sections.size)
+                }
 
                 // Images
                 if (config.includeImages) {
@@ -148,14 +201,14 @@ class WorldPackageExporter(private val context: Context) {
                     // 이미 압축된 형식에 deflate를 걸어 얻는 것이 없으므로 CPU만 지불하게 된다.
                     // 위 JSON 엔트리들은 압축이 실효가 있어 기본 수준으로 이미 기록됐다.
                     zip.setLevel(Deflater.NO_COMPRESSION)
-                    for (char in characters) {
-                        writeImageEntries(zip, char.imagePaths, "images/${char.id}_")
-                    }
-                    // v3: 세계관·작품 직접 등록 이미지 — 엔트리 접두사는
-                    // WorldPackageImageEntries 규약(임포터와 공유)을 따른다
-                    writeImageEntries(zip, universe.imagePaths, "images/universe_")
-                    for (novel in novels) {
-                        writeImageEntries(zip, novel.imagePaths, "images/novel_${novel.id}_")
+                    var written = 0
+                    progress.onImages(0, imageTotal)
+                    for ((json, prefix) in imageGroups) {
+                        if (progress.isCancelled()) throw ExportCancelledException()
+                        writeImageEntries(zip, json, prefix) {
+                            written++
+                            progress.onImages(written, imageTotal)
+                        }
                     }
                     zip.setLevel(Deflater.DEFAULT_COMPRESSION)
                 }
@@ -180,12 +233,20 @@ class WorldPackageExporter(private val context: Context) {
      * "유실된 이미지"로 세어 고지한다. 확장자 표기는 v1 형식과의 호환을 위해
      * `.jpg`로 고정한다(내용 바이트는 원본 그대로 — 소비자는 내용으로 판별한다).
      */
-    private fun writeImageEntries(zip: ZipOutputStream, imagePathsJson: String, entryPrefix: String) {
+    private fun writeImageEntries(
+        zip: ZipOutputStream,
+        imagePathsJson: String,
+        entryPrefix: String,
+        onEach: () -> Unit = {}
+    ) {
         if (imagePathsJson.isBlank() || imagePathsJson == "[]") return
         val appDir = context.filesDir
         try {
             val paths = gson.fromJson(imagePathsJson, Array<String>::class.java)
             paths?.forEachIndexed { index, path ->
+                // 훑은 장을 센다 — 실제로 담긴 장이 아니라. 원본이 없는 인덱스는 결번으로
+                // 건너뛰므로(아래) 담긴 수로 세면 막대가 총량에 못 미친 채 끝난다.
+                onEach()
                 val imageFile = File(path)
                 if (imageFile.exists() && imageFile.canonicalPath.startsWith(appDir.canonicalPath + File.separator)) {
                     zip.putNextEntry(ZipEntry("$entryPrefix$index.jpg"))
