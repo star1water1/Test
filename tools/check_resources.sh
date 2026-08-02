@@ -26,8 +26,14 @@ done
 
 echo "── 2. 참조되지만 정의되지 않은 문자열 ──"
 # android.R.string.* 은 프레임워크 제공이므로 제외한다
-grep -rhoE '(^|[^.a-zA-Z])R\.string\.[a-zA-Z0-9_]+' app/src/main/java \
-  | sed -E 's/.*R\.string\.//' | sort -u > /tmp/_res_used.txt
+# 코드와 **레이아웃 양쪽**을 본다 — 종전에는 코드만 봤고, 그래서 레이아웃의
+# `@string/없는이름`은 이 검사를 통과한 뒤 CI 빌드에서만 터졌다(2026.08.02 실제로 겪음).
+{
+  grep -rhoE '(^|[^.a-zA-Z])R\.string\.[a-zA-Z0-9_]+' app/src/main/java \
+    | sed -E 's/.*R\.string\.//'
+  grep -rhoE '"@string/[a-zA-Z0-9_]+"' "$RES" \
+    | sed -E 's/.*@string\/([a-zA-Z0-9_]+).*/\1/'
+} | sort -u > /tmp/_res_used.txt
 grep -rhoE '<string[^>]*name="[^"]*"' "$RES"/values/strings.xml \
   | sed -E 's/.*name="([^"]*)".*/\1/' | sort -u > /tmp/_res_defined.txt
 missing=$(comm -23 /tmp/_res_used.txt /tmp/_res_defined.txt)

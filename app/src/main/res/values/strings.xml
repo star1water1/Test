@@ -1385,19 +1385,39 @@
     <string name="silhouette_slot_bust">가슴</string>
     <string name="silhouette_slot_waist">허리</string>
     <string name="silhouette_slot_hip">엉덩이</string>
+    <string name="silhouette_slot_underbust">밑가슴</string>
     <string name="silhouette_value_cm">%1$scm</string>
     <string name="silhouette_clamp_caption">그림의 표현 한계입니다 — 값은 그대로 저장됩니다</string>
 
+    <!-- 실루엣 편집기 (설계 5-4-4) -->
+    <string name="silhouette_editor_title">실루엣으로 조정</string>
+    <string name="silhouette_editor_purpose">실루엣을 끌면 수치 칸이 따라옵니다. 적용을 누르기 전까지는 저장되지 않습니다. 그림은 여성 성인 기준입니다.</string>
+    <string name="silhouette_editor_generator">🎲 수치 생성</string>
+    <string name="silhouette_editor_open">실루엣으로 조정</string>
+    <string name="silhouette_editor_discard">조정한 내용을 버리고 닫으시겠습니까?</string>
+    <string name="silhouette_editor_discard_confirm">버리기</string>
+    <string name="silhouette_editor_positional_notice">파트 연결이 정해지지 않아 앞 세 칸을 가슴·허리·엉덩이로 봅니다. 체형 분석 설정에서 바꿀 수 있습니다.</string>
+    <string name="silhouette_editor_no_body_field">키·체중 필드가 폼에 없어 그 값은 적용되지 않습니다.</string>
+    <string name="silhouette_editor_applied">실루엣 수치를 폼에 적었습니다</string>
+    <string name="silhouette_row_height">키</string>
+    <string name="silhouette_row_weight">체중</string>
+    <string name="silhouette_view_front">정면</string>
+    <string name="silhouette_view_side">측면</string>
+    <string name="silhouette_overlay_average">작품 평균</string>
+    <string name="silhouette_axis_summary">%1$s · 컵 %2$s · %3$s · %4$s</string>
+
     <!-- Body Generator -->
-    <string name="body_generator_title">신체 수치 생성</string>
+    <string name="body_gen_purpose">축을 고르고 굴리면 위 실루엣과 수치 칸이 함께 바뀝니다. 적용 전에는 폼에 쓰이지 않습니다.</string>
     <string name="body_gen_height">키</string>
-    <string name="body_gen_body_type">체형</string>
-    <string name="body_gen_independent">독립 조절</string>
+    <string name="body_gen_preset">체형 프리셋</string>
+    <string name="body_gen_axis_torso">몸통</string>
+    <string name="body_gen_axis_bust">가슴</string>
+    <string name="body_gen_axis_hip">힙</string>
     <string name="body_gen_any">상관없음</string>
-    <string name="body_gen_bust_size">가슴 크기</string>
-    <string name="body_gen_hip_size">엉덩이 크기</string>
     <string name="body_gen_cup_mode">컵 사이즈 지정</string>
     <string name="body_gen_cup_none">미지정</string>
+    <string name="body_gen_roll">🎲 굴리기</string>
+    <string name="body_gen_undo_roll">직전으로</string>
 
     <!-- Random Field -->
     <string name="random_enabled">랜덤 생성</string>
@@ -1412,14 +1432,10 @@
     <string name="body_gen_no_base">선택 안 함</string>
     <string name="body_gen_height_adjust">키 조절</string>
     <string name="body_gen_volume_adjust">체형 조절</string>
-    <string name="body_gen_generate">🎲 생성</string>
-    <string name="body_gen_regenerate">다시 생성</string>
-    <string name="body_gen_apply">적용</string>
-    <string name="body_gen_preview_measurements">키: %1$dcm  몸무게: %2$dkg\nBWH: %3$s</string>
-    <string name="body_gen_distribution">풍만 %1$d / 보통 %2$d / 마름 %3$d%4$s</string>
-    <string name="body_gen_cat_slim">마름</string>
-    <string name="body_gen_cat_normal">보통</string>
-    <string name="body_gen_cat_voluptuous">풍만</string>
+    <string name="body_gen_distribution">볼륨 %1$d / 표준 %2$d / 슬렌더 %3$d%4$s</string>
+    <string name="body_gen_cat_slim">슬렌더</string>
+    <string name="body_gen_cat_normal">표준</string>
+    <string name="body_gen_cat_voluptuous">볼륨</string>
     <string name="body_gen_recommend">추천!</string>
 
     <string name="body_analysis_settings_title">체형 분석 설정</string>

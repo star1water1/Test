@@ -1046,6 +1046,16 @@ object BodySilhouetteSpec {
         return CUP_LABELS[idx]
     }
 
+    /**
+     * 축 밴드의 경계 — 요약이 가르는 자리이자 **🎲 생성기가 겨누는 자리**다
+     * (`BodyGenerator`가 이 상수로 축의 폭을 짓는다 — 고른 축과 돌아오는 요약이 갈리면
+     * 셀렉터가 이름표로 격하된다). 목-⑤ 잠정치이며 작품 평균 실측으로 함께 교정한다.
+     */
+    const val TORSO_SLIM_MAX_RATIO = .362
+    const val TORSO_STANDARD_MAX_RATIO = .402
+    const val HIP_SLIM_MAX_DIFF = 24.0
+    const val HIP_STANDARD_MAX_DIFF = 31.0
+
     /** 3축 요약과 종합 인상을 낸다. 문턱값은 목-⑤의 잠정치이며 작품 평균 실측으로 교정한다. */
     fun axisSummary(m: Measures): AxisSummary {
         val cd = cupDiff(m)
@@ -1053,13 +1063,13 @@ object BodySilhouetteSpec {
         val hipD = m.hip - m.waist
         val whr = if (m.hip > 0) m.waist / m.hip else 1.0
         val torso = when {
-            torsoR <= .362 -> "슬림"
-            torsoR <= .402 -> "표준"
+            torsoR <= TORSO_SLIM_MAX_RATIO -> "슬림"
+            torsoR <= TORSO_STANDARD_MAX_RATIO -> "표준"
             else -> "소프트"
         }
         val hip = when {
-            hipD <= 24 -> "힙 슬림"
-            hipD <= 31 -> "힙 표준"
+            hipD <= HIP_SLIM_MAX_DIFF -> "힙 슬림"
+            hipD <= HIP_STANDARD_MAX_DIFF -> "힙 표준"
             else -> "볼륨힙"
         }
         // 종합 인상 한 개 — X/I/A/V/O. 종전 '배형'은 O/A로 흡수했다(긍정 프레이밍).

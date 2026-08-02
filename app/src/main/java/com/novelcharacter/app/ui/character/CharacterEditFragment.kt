@@ -440,12 +440,15 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
                         val novel = novels[position - 1]
                         val universeId = novel.universeId
                         formBuilder.currentUniverseId = universeId
+                        // 실루엣 편집기의 상대 생성·분포·작품 평균이 이 작품 축으로 모인다.
+                        formBuilder.currentNovelId = novel.id
                         if (universeId != null) {
                             formBuilder.fieldDefinitions = viewModel.getFieldsByUniverseList(universeId)
                         } else {
                             formBuilder.fieldDefinitions = emptyList()
                         }
                     } else {
+                        formBuilder.currentNovelId = null
                         formBuilder.fieldDefinitions = emptyList()
                     }
                     if (_binding == null) return@launch
