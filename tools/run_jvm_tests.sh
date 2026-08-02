@@ -142,6 +142,7 @@ $MAIN/util/FormulaDisplay.kt
 $MAIN/util/GradeValueResolver.kt
 $MAIN/util/GradeTable.kt
 $MAIN/util/FactionMembershipMatcher.kt
+$MAIN/util/FactionRelationshipMatcher.kt
 $MAIN/util/InitialFieldValues.kt
 $MAIN/ui/stats/StatsDataProvider.kt
 $MAIN/util/UnassignedFilter.kt
@@ -256,6 +257,7 @@ $TEST/excel/ImportSourceEquivalenceTest.kt
 $TEST/util/ResetPlanTest.kt
 $TEST/util/MembershipTimelineTest.kt
 $TEST/util/FactionMembershipMatcherTest.kt
+$TEST/util/FactionRelationshipMatcherTest.kt
 $TEST/util/EventFieldRecommendationTest.kt
 $TEST/ai/CharacterFieldAiSuggesterTest.kt
 $TEST/ai/FieldAiTargetRuleTest.kt

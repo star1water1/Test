@@ -146,6 +146,96 @@ object FieldValueSheetMapper {
     }
 
     /**
+     * 시트 한 행이 가리키는 기존 엔트리 — **코드 우선, 없으면 같은 필드 안의 같은 값.**
+     * 코드가 적혀 있으나 그 코드를 가진 형제가 없으면 값으로 되돌아간다(외부에서 코드만 지운 파일).
+     *
+     * [siblings]는 **같은 필드(fieldDefinitionId)의 엔트리만**이어야 한다 —
+     * 전체 엔트리에서 코드로 찾으면 다른 필드의 엔트리를 집어 온다.
+     */
+    fun match(siblings: List<FieldValueEntry>, row: ImportedRow): FieldValueEntry? {
+        val code = row.code?.trim().orEmpty()
+        if (code.isNotEmpty()) siblings.find { it.code == code }?.let { return it }
+        return siblings.find { it.value == row.trimmedValue }
+    }
+
+    /**
+     * [mergeRow]의 결과 — 최종 엔트리와, 가져오기가 사용자에게 고지해야 할 사실들.
+     *
+     * 고지 문구는 가져오기가 만들고 이 자료형은 **무엇이 일어났는가만** 든다.
+     * 미리보기 분석은 같은 자료형에서 '변경/동일/건너뜀'을 읽는다.
+     */
+    data class MergeOutcome(
+        /** 저장될 엔트리. null이면 값이 비어 매핑 자체가 불가하다. */
+        val entry: FieldValueEntry?,
+        /** 코드 매칭으로 값 이름이 바뀐 경우의 구 값 (별칭으로 보존된다). */
+        val renamedFrom: String? = null,
+        /** 다른 엔트리와 충돌해 제외된 별칭들. */
+        val droppedAliases: List<String> = emptyList(),
+        /** 바뀐 값을 다른 엔트리가 이미 쓰고 있다 → 가져오기는 **이 행을 건너뛴다.** */
+        val valueTaken: Boolean = false
+    )
+
+    /**
+     * 가져오기가 이 행으로 **실제로 저장할 것**을 [applyRow] 위에 끝까지 계산한다 —
+     * 이름 변경 시 구 값 별칭 보존, 값 충돌 판정, 충돌 별칭 제외까지.
+     *
+     * 순서가 곧 의미다(가져오기 본문과 같다): 병합 → 이름 변경 별칭 보존 → **값 충돌이면 중단** →
+     * 별칭 충돌 제외. 값 충돌 행은 가져오기가 통째로 건너뛰므로 그 뒤 단계를 밟지 않는다.
+     */
+    fun mergeRow(
+        existing: FieldValueEntry?,
+        fieldDefId: Long,
+        row: ImportedRow,
+        siblings: List<FieldValueEntry>
+    ): MergeOutcome {
+        var candidate = applyRow(existing, fieldDefId, row) ?: return MergeOutcome(null)
+        var renamedFrom: String? = null
+        if (existing != null && existing.value != candidate.value) {
+            renamedFrom = existing.value
+            candidate = candidate.copy(
+                aliasesJson = FieldValueEntry.aliasesToJson(candidate.aliases() + existing.value)
+            )
+        }
+        if (siblings.any { it.id != candidate.id && it.value == candidate.value }) {
+            return MergeOutcome(candidate, renamedFrom, valueTaken = true)
+        }
+        val conflicts = conflictingAliases(candidate, siblings)
+        if (conflicts.isNotEmpty()) {
+            candidate = candidate.copy(
+                aliasesJson = FieldValueEntry.aliasesToJson(candidate.aliases().filter { it !in conflicts })
+            )
+        }
+        return MergeOutcome(candidate, renamedFrom, conflicts)
+    }
+
+    /** 이 행이 가져오기에서 실제로 하는 일 — 복원 미리보기가 세는 단위다. */
+    enum class RowEffect { NEW, UPDATED, UNCHANGED, SKIPPED }
+
+    /**
+     * 이 행을 넣으면 실제로 무슨 일이 일어나는가 — 미리보기의 '신규/변경/동일'을 가르는 자리(B-87).
+     * 가져오기가 쓰는 [mergeRow]와 **같은 함수**로 판정하므로 예고와 실제가 어긋나지 않는다.
+     *
+     * **`updatedAt`은 비교하지 않는다.** 갱신 시각은 가져오기가 무조건 새로 찍는 기록용 값이라
+     * 이것까지 세면 '동일'이 구조적으로 도달 불가능해져 B-87을 고치는 의미가 없어진다.
+     *
+     * [SKIPPED]는 가져오기가 그 행을 통째로 건너뛰는 경우다(값이 비었거나, 바뀐 값을 다른
+     * 엔트리가 이미 쓰고 있다) — 바뀌는 것이 없으므로 '변경'도 '동일'도 아니다.
+     */
+    fun effectOf(
+        existing: FieldValueEntry?,
+        fieldDefId: Long,
+        row: ImportedRow,
+        siblings: List<FieldValueEntry>
+    ): RowEffect {
+        val outcome = mergeRow(existing, fieldDefId, row, siblings)
+        val merged = outcome.entry ?: return RowEffect.SKIPPED
+        if (outcome.valueTaken) return RowEffect.SKIPPED
+        if (existing == null) return RowEffect.NEW
+        return if (merged.copy(updatedAt = existing.updatedAt) != existing) RowEffect.UPDATED
+        else RowEffect.UNCHANGED
+    }
+
+    /**
      * 별칭 충돌 검사: 같은 필드의 다른 엔트리 canonical/별칭과 겹치는 별칭 목록.
      * 임포트는 거부 대신 충돌 별칭만 스킵 + 경고한다.
      */

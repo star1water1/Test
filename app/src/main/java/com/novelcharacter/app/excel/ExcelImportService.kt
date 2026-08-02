@@ -29,6 +29,7 @@ import com.novelcharacter.app.data.repository.UniverseRepository
 import com.novelcharacter.app.util.SemanticFieldSyncHelper
 import com.novelcharacter.app.util.GradeValueResolver
 import com.novelcharacter.app.util.FactionMembershipMatcher
+import com.novelcharacter.app.util.FactionRelationshipMatcher
 import org.apache.poi.ss.usermodel.CellType
 // B-8(스트리밍 배선): 이 서비스는 이제 POI 타입이 아니라 [ImportSource]의 추상화를 읽는다.
 // DOM([DomImportWorkbook])과 스트리밍([StreamingImportWorkbook])이 같은 인터페이스를 구현하므로
@@ -745,35 +746,62 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val keyCol = cols["필드키"] ?: 1
         val entityCol = cols["대상"] ?: -1
         val valueCol = cols["값"] ?: 4
+        val labelCol = cols["표시라벨"] ?: -1
+        val aliasCol = cols["별칭(콤마구분)"] ?: cols["별칭"] ?: -1
+        val categoryCol = cols["카테고리"] ?: -1
+        val descCol = cols["설명"] ?: -1
+        val hiddenCol = cols["숨김"] ?: -1
         val codeCol = cols["코드"] ?: -1
-        val byCode = existingEntries.filter { it.code.isNotBlank() }.associateBy { it.code }
-        // 코드 없는 수기 행도 실제 임포트와 같은 (세계관,필드키,대상,값) 기준으로 갱신 예측 (프리뷰 정확성)
-        val fieldsById = db.fieldDefinitionDao().getAllFieldsAllTypes().associateBy { it.id }
-        val universeNamesById = db.universeDao().getAllUniversesList().associate { it.id to it.name }
-        val byNaturalKey = existingEntries.mapNotNull { e ->
-            val fd = fieldsById[e.fieldDefinitionId] ?: return@mapNotNull null
-            val universeName = universeNamesById[fd.universeId] ?: return@mapNotNull null
-            Triple(universeName, fd.key, fd.entityType) to e.value
-        }.toHashSet()
+        val sourceCol = cols["출처"] ?: -1
 
-        var inBackup = 0; var newCount = 0; var matchedCount = 0
+        // 실제 가져오기와 같은 경로로 필드를 찾는다: 세계관명 → 필드(키, 대상). 행마다 쿼리하지
+        // 않으려고 한 번에 읽어 (세계관, 키, 대상)으로 색인할 뿐, getFieldByKey와 같은 결과다.
+        val universesByName = db.universeDao().getAllUniversesList().associateBy { it.name }
+        val fieldsByKey = db.fieldDefinitionDao().getAllFieldsAllTypes()
+            .associateBy { Triple(it.universeId, it.key, it.entityType) }
+        val entriesByField = existingEntries.groupBy { it.fieldDefinitionId }
+
+        var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0
         for (i in 1..sheet.lastRowNum) {
             val row = sheet.getRow(i) ?: continue
             val value = getCellString(row, valueCol)
             if (value.isBlank()) continue
             inBackup++
-            val code = if (codeCol >= 0) getCellString(row, codeCol) else ""
-            val entityType = FieldValueSheetMapper.entityTypeOf(
-                if (entityCol >= 0) getCellString(row, entityCol) else null)
-            val naturalKey = Triple(getCellString(row, universeCol), getCellString(row, keyCol), entityType) to value.trim()
-            if ((code.isNotBlank() && byCode.containsKey(code)) || naturalKey in byNaturalKey) {
-                matchedCount++
-            } else {
-                newCount++
+            val universeName = getCellString(row, universeCol)
+            val fieldKey = getCellString(row, keyCol)
+            val imported = FieldValueSheetMapper.ImportedRow(
+                universeName = universeName,
+                fieldKey = fieldKey,
+                entityLabel = if (entityCol >= 0) getCellString(row, entityCol) else null,
+                value = value,
+                displayLabel = if (labelCol >= 0) getCellString(row, labelCol) else null,
+                aliasesCsv = if (aliasCol >= 0) getCellString(row, aliasCol) else null,
+                category = if (categoryCol >= 0) getCellString(row, categoryCol) else null,
+                description = if (descCol >= 0) getCellString(row, descCol) else null,
+                hiddenFlag = if (hiddenCol >= 0) getCellString(row, hiddenCol) else null,
+                code = if (codeCol >= 0) getCellString(row, codeCol) else null,
+                sourceFlag = if (sourceCol >= 0) getCellString(row, sourceCol) else null
+            )
+            // 세계관·필드가 아직 없으면 **신규**다 — 같은 가져오기가 세계관·필드 정의를 먼저
+            // 만들고 나서 이 시트를 처리하므로(임포트 순서), 실제로 새 엔트리가 된다.
+            val universe = universesByName[universeName]
+            val fd = universe?.let { fieldsByKey[Triple(it.id, fieldKey, imported.entityType)] }
+            if (fd == null) { newCount++; continue }
+
+            // '동일'은 매칭 키가 아니라 **가져오기가 실제로 쓰는 값 전체**로 가른다(B-87).
+            // 건너뛸 행(값 충돌 등)은 바뀌는 것이 없으므로 어느 쪽으로도 세지 않는다 —
+            // 세력 소속 분석이 해석 불가 행을 세지 않는 것과 같은 처분이다.
+            val siblings = entriesByField[fd.id] ?: emptyList()
+            val existing = FieldValueSheetMapper.match(siblings, imported)
+            when (FieldValueSheetMapper.effectOf(existing, fd.id, imported, siblings)) {
+                FieldValueSheetMapper.RowEffect.NEW -> newCount++
+                FieldValueSheetMapper.RowEffect.UPDATED -> updateCount++
+                FieldValueSheetMapper.RowEffect.UNCHANGED -> unchangedCount++
+                FieldValueSheetMapper.RowEffect.SKIPPED -> {}
             }
         }
         reportProgress(onProgress, label, sheet.lastRowNum, totalRows)
-        return CategoryAnalysis("fieldValueLibrary", label, inBackup, newCount, matchedCount, 0, existingTotal)
+        return CategoryAnalysis("fieldValueLibrary", label, inBackup, newCount, updateCount, unchangedCount, existingTotal)
     }
 
     private suspend fun analyzeImageMeta(workbook: Workbook, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
@@ -1403,14 +1431,19 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val typeColIndex = cols["관계 유형"] ?: -1
         val faction1CodeColIndex = cols["세력1코드"] ?: -1
         val faction2CodeColIndex = cols["세력2코드"] ?: -1
+        val descColIndex = cols["설명"] ?: -1
+        val intensityColIndex = cols["강도"] ?: -1
+        val bidirectionalColIndex = cols["양방향"] ?: -1
+        val orderColIndex = cols["표시순서"] ?: -1
         if (faction2ColIndex < 0 || typeColIndex < 0) return CategoryAnalysis("factionRelationships", "세력 관계", 0, 0, 0, 0, existingTotal)
 
         val factionIndex = FactionIndex(db.factionDao().getAllFactionsList())
-        val existingKeys = existingRels.flatMap {
-            listOf(Triple(it.factionId1, it.factionId2, it.relationType), Triple(it.factionId2, it.factionId1, it.relationType))
-        }.toSet()
+        val existingByKey = existingRels.associateBy {
+            FactionRelationshipMatcher.key(it.factionId1, it.factionId2, it.relationType)
+        }
+        val presence = factionRelationshipPresence(descColIndex, intensityColIndex, bidirectionalColIndex, orderColIndex)
 
-        var inBackup = 0; var newCount = 0; var updateCount = 0
+        var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0
         for (i in 1..sheet.lastRowNum) {
             val row = sheet.getRow(i) ?: continue
             val f1Name = getCellString(row, faction1ColIndex)
@@ -1428,11 +1461,23 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val (pr1, pr2) = resolveFactionPair(factionIndex, f1Name, f1Code, f2Name, f2Code)
             val f1 = (pr1 as? FactionLookupResult.Found)?.faction
             val f2 = (pr2 as? FactionLookupResult.Found)?.faction
+            // 세력이 아직 없으면 **신규**다 — 같은 가져오기가 세력을 먼저 만들고 이 시트를 처리한다.
             if (f1 == null || f2 == null) { newCount++; continue }
-            if (Triple(f1.id, f2.id, relType) in existingKeys) updateCount++ else newCount++
+
+            // 매칭은 (세력1, 세력2, 유형)이되 **'동일'은 가져오기가 실제로 쓰는 값 전체**로 가른다(B-87).
+            // 종전에는 unchanged 자리에 상수 0이 박혀 있어, 설명·강도·양방향·표시순서가 한 글자도
+            // 다르지 않아도 매칭된 행을 전부 '변경'이라 말했다 — 아무것도 고치지 않은 파일을 그대로
+            // 다시 넣어도 미리보기가 "변경 N"이라 해 왕복 멱등 확인(A7)에서 어긋남으로 읽혔다.
+            val existing = FactionRelationshipMatcher.match(existingByKey, f1.id, f2.id, relType)
+            if (existing == null) { newCount++; continue }
+            val rowValues = factionRelationshipRowValues(
+                row, descColIndex, intensityColIndex, bidirectionalColIndex, orderColIndex,
+                "세력 관계 행 $i", null
+            )
+            if (FactionRelationshipMatcher.changes(existing, rowValues, presence)) updateCount++ else unchangedCount++
         }
         reportProgress(onProgress, "세력 관계 분석", sheet.lastRowNum, totalRows)
-        return CategoryAnalysis("factionRelationships", "세력 관계", inBackup, newCount, updateCount, 0, existingTotal)
+        return CategoryAnalysis("factionRelationships", "세력 관계", inBackup, newCount, updateCount, unchangedCount, existingTotal)
     }
 
     private suspend fun analyzePresetTemplates(workbook: Workbook, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
@@ -2772,10 +2817,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val sourceCell = FieldValueSheetMapper.parseSourceCell(imported.sourceFlag)
 
                 val siblings = entriesByField.getOrPut(fd.id) { mutableListOf() }
-                // 매칭: 코드 우선 → (필드, 값)
-                val byCode = imported.code?.trim().orEmpty()
-                    .takeIf { it.isNotEmpty() }?.let { code -> siblings.find { it.code == code } }
-                val existing = byCode ?: siblings.find { it.value == imported.trimmedValue }
+                // 매칭(코드 우선 → 같은 필드의 같은 값)은 복원 미리보기 분석과 **같은 함수**를 쓴다 —
+                // 규칙을 두 곳이 각자 들면 갈린다(B-87. 세력 소속이 그렇게 갈렸던 것이 1-ac다)
+                val existing = FieldValueSheetMapper.match(siblings, imported)
 
                 // 출처 오타는 조용히 수용하지도, 기존 값을 파괴하지도 않는다 — 고지 + 교정 경로 안내.
                 // 실제 저장될 값이 갱신/신규에 따라 다르므로 매칭 이후에 판정한다(사실과 다른 경고 금지).
@@ -2788,36 +2832,30 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     )
                 }
 
-                var candidate = FieldValueSheetMapper.applyRow(existing, fd.id, imported)
-                if (candidate == null) {
+                // 병합(이름 변경 별칭 보존 · 값 충돌 판정 · 충돌 별칭 제외)도 분석과 같은 함수다.
+                // 여기서는 그 결과를 고지로 옮기기만 한다 — 무엇이 일어났는가는 mergeRow가 안다.
+                val outcome = FieldValueSheetMapper.mergeRow(existing, fd.id, imported, siblings)
+                val merged = outcome.entry
+                if (merged == null) {
                     result.skippedRows++
                     result.warnings.add("필드 데이터 행 $i: 값이 비어 있어 건너뜀")
                     continue
                 }
+                var candidate = merged
                 // 시트에서 값 이름이 바뀐 경우(코드 매칭): 인앱 이름변경과 달리 데이터 전파가 없으므로
                 // 구 값을 별칭으로 보존해 재수확 시 중복 엔트리로 갈라지지 않게 한다 + 고지
-                if (existing != null && existing.value != candidate.value) {
-                    candidate = candidate.copy(
-                        aliasesJson = com.novelcharacter.app.data.model.FieldValueEntry.aliasesToJson(
-                            candidate.aliases() + existing.value)
-                    )
-                    result.warnings.add("필드 데이터 행 $i: 값 '${existing.value}' → '${candidate.value}' 이름 변경 감지 — 구 값을 별칭으로 보존 (캐릭터 값 일괄 변경은 인앱 라이브러리의 이름 변경 사용)")
+                if (outcome.renamedFrom != null) {
+                    result.warnings.add("필드 데이터 행 $i: 값 '${outcome.renamedFrom}' → '${candidate.value}' 이름 변경 감지 — 구 값을 별칭으로 보존 (캐릭터 값 일괄 변경은 인앱 라이브러리의 이름 변경 사용)")
                 }
                 // 값 이름이 다른 엔트리와 충돌(코드 매칭으로 이름이 바뀐 경우) — 거부 대신 그 행만 스킵
-                val valueTaken = siblings.any { it.id != candidate!!.id && it.value == candidate!!.value }
-                if (valueTaken) {
+                if (outcome.valueTaken) {
                     result.skippedRows++
                     result.warnings.add("필드 데이터 행 $i: 값 '${candidate.value}'이(가) 이미 존재해 건너뜀")
                     continue
                 }
                 // 별칭 충돌은 해당 별칭만 제외 + 경고 (관대 수용)
-                val conflicts = FieldValueSheetMapper.conflictingAliases(candidate, siblings)
-                if (conflicts.isNotEmpty()) {
-                    result.warnings.add("필드 데이터 행 $i: 별칭 ${conflicts.joinToString(", ")}이(가) 다른 값과 충돌해 제외됨")
-                    candidate = candidate.copy(
-                        aliasesJson = com.novelcharacter.app.data.model.FieldValueEntry.aliasesToJson(
-                            candidate.aliases().filter { it !in conflicts })
-                    )
+                if (outcome.droppedAliases.isNotEmpty()) {
+                    result.warnings.add("필드 데이터 행 $i: 별칭 ${outcome.droppedAliases.joinToString(", ")}이(가) 다른 값과 충돌해 제외됨")
                 }
 
                 if (existing != null) {
@@ -4992,6 +5030,39 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         createdAt = createdAtColIndex >= 0
     )
 
+    private fun factionRelationshipPresence(
+        descColIndex: Int,
+        intensityColIndex: Int,
+        bidirectionalColIndex: Int,
+        orderColIndex: Int
+    ) = FactionRelationshipMatcher.ColumnPresence(
+        description = descColIndex >= 0,
+        intensity = intensityColIndex >= 0,
+        isBidirectional = bidirectionalColIndex >= 0,
+        displayOrder = orderColIndex >= 0
+    )
+
+    /**
+     * '세력 관계' 한 행이 말하는 값 — **가져오기와 복원 미리보기가 같은 함수로 읽는다**(B-87).
+     * 따로 읽으면 강도 보정·불리언 토큰 해석이 갈려 '동일'이 사실과 어긋난다.
+     */
+    private fun factionRelationshipRowValues(
+        row: Row,
+        descColIndex: Int,
+        intensityColIndex: Int,
+        bidirectionalColIndex: Int,
+        orderColIndex: Int,
+        rowLabel: String,
+        result: ImportResult?
+    ) = FactionRelationshipMatcher.RowValues(
+        description = if (descColIndex >= 0) getCellString(row, descColIndex) else "",
+        intensity = parseIntensityWithWarn(row, intensityColIndex, 5, rowLabel, result) ?: 5,
+        // 다른 관계 시트와 동일하게 parseBoolean 사용(P2-10) — 예전 `!= "N"`은 FALSE/0/false 같은
+        // falsey 값을 true로 뒤집었다. 열이 없으면 기본 양방향(true).
+        isBidirectional = if (bidirectionalColIndex >= 0) parseBoolean(getCellString(row, bidirectionalColIndex)) else true,
+        displayOrder = if (orderColIndex >= 0) parseNumber(getCellString(row, orderColIndex))?.toInt() ?: 0 else 0
+    )
+
     private suspend fun importFactionMemberships(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
         val spec = factionMembershipSpec()
         val sheet = findSheet(workbook, spec, result) ?: return
@@ -5223,8 +5294,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val factionIndex = FactionIndex(db.factionDao().getAllFactionsList())
         val universeNames = db.universeDao().getAllUniversesList().associate { it.id to it.name }
         val existingByKey = db.factionRelationshipDao().getAllRelationshipsList()
-            .associateBy { Triple(it.factionId1, it.factionId2, it.relationType) }
+            .associateBy { FactionRelationshipMatcher.key(it.factionId1, it.factionId2, it.relationType) }
             .toMutableMap()
+        val presence = factionRelationshipPresence(descColIndex, intensityColIndex, bidirectionalColIndex, orderColIndex)
 
         for (i in 1..sheet.lastRowNum) {
             try {
@@ -5285,27 +5357,19 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     continue
                 }
 
-                val description = if (descColIndex >= 0) getCellString(row, descColIndex) else ""
-                val intensity = parseIntensityWithWarn(row, intensityColIndex, 5, "세력 관계 행 $i", result) ?: 5
-                // 다른 관계 시트와 동일하게 parseBoolean 사용(P2-10) — 예전 `!= "N"`은 FALSE/0/false 같은
-                // falsey 값을 true로 뒤집었다. 열이 없으면 기본 양방향(true).
-                val isBidirectional = if (bidirectionalColIndex >= 0) parseBoolean(getCellString(row, bidirectionalColIndex)) else true
-                val displayOrder = if (orderColIndex >= 0) parseNumber(getCellString(row, orderColIndex))?.toInt() ?: 0 else 0
+                val rowValues = factionRelationshipRowValues(
+                    row, descColIndex, intensityColIndex, bidirectionalColIndex, orderColIndex,
+                    "세력 관계 행 $i", result
+                )
                 val createdAt = if (createdAtColIndex >= 0) parseNumber(getCellString(row, createdAtColIndex))?.toLong() ?: System.currentTimeMillis() else System.currentTimeMillis()
 
-                // 정방향/역방향 모두 매칭하여 중복 생성 방지
-                val existing = existingByKey[Triple(faction1.id, faction2.id, relType)]
-                    ?: existingByKey[Triple(faction2.id, faction1.id, relType)]
+                // 정방향/역방향 모두 매칭하여 중복 생성 방지 — 규칙은 미리보기 분석과 같은 함수다(B-87)
+                val existing = FactionRelationshipMatcher.match(existingByKey, faction1.id, faction2.id, relType)
 
                 if (existing != null) {
                     // 열 없음 = 기존값 유지(무음 손실 방지), 빈칸=삭제 집계 — 캐릭터 관계 시트와 동일 의미론
-                    if (descColIndex >= 0 && description == "" && existing.description.isNotBlank()) result.clearedFields++
-                    db.factionRelationshipDao().update(existing.copy(
-                        description = if (descColIndex >= 0) description else existing.description,
-                        intensity = if (intensityColIndex >= 0) intensity else existing.intensity,
-                        isBidirectional = if (bidirectionalColIndex >= 0) isBidirectional else existing.isBidirectional,
-                        displayOrder = if (orderColIndex >= 0) displayOrder else existing.displayOrder
-                    ))
+                    if (descColIndex >= 0 && rowValues.description == "" && existing.description.isNotBlank()) result.clearedFields++
+                    db.factionRelationshipDao().update(FactionRelationshipMatcher.apply(existing, rowValues, presence))
                     matchedFactionRelationshipIds.add(existing.id)
                     result.updatedFactionRelationships++
                 } else {
@@ -5313,15 +5377,15 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         factionId1 = faction1.id,
                         factionId2 = faction2.id,
                         relationType = relType,
-                        description = description,
-                        intensity = intensity,
-                        isBidirectional = isBidirectional,
-                        displayOrder = displayOrder,
+                        description = rowValues.description,
+                        intensity = rowValues.intensity,
+                        isBidirectional = rowValues.isBidirectional,
+                        displayOrder = rowValues.displayOrder,
                         createdAt = createdAt
                     )
                     val newId = db.factionRelationshipDao().insert(newRel)
                     if (newId > 0) {
-                        existingByKey[Triple(faction1.id, faction2.id, relType)] = newRel.copy(id = newId)
+                        existingByKey[FactionRelationshipMatcher.key(faction1.id, faction2.id, relType)] = newRel.copy(id = newId)
                         matchedFactionRelationshipIds.add(newId)
                         result.newFactionRelationships++
                     } else {
@@ -5905,18 +5969,22 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     }
 
     /** 강도 파싱 + 범위 경고: 열 없음/빈 셀=default, 해석 불가=경고 후 default, 1~10 밖=클램프 후 경고 */
-    private fun parseIntensityWithWarn(row: Row, colIndex: Int, default: Int?, rowLabel: String, result: ImportResult): Int? {
+    /**
+     * [result]가 null이면 **고지 없이 같은 값만** 낸다 — 복원 미리보기 분석이 쓰는 경로다.
+     * 분석이 따로 파싱하면 가져오기와 강도가 갈려 '동일' 판정이 어긋난다(B-87).
+     */
+    private fun parseIntensityWithWarn(row: Row, colIndex: Int, default: Int?, rowLabel: String, result: ImportResult?): Int? {
         if (colIndex < 0) return default
         val raw = getCellString(row, colIndex)
         if (raw.isBlank()) return default
         val parsed = parseNumber(raw)?.toInt()
         if (parsed == null) {
-            result.warnings.add("$rowLabel: 강도 '$raw'을(를) 숫자로 해석할 수 없어 기본값 적용")
+            result?.warnings?.add("$rowLabel: 강도 '$raw'을(를) 숫자로 해석할 수 없어 기본값 적용")
             return default
         }
         val clamped = parsed.coerceIn(1, 10)
         if (clamped != parsed) {
-            result.warnings.add("$rowLabel: 강도 $parsed 이(가) 범위(1~10)를 벗어나 ${clamped}(으)로 조정됨")
+            result?.warnings?.add("$rowLabel: 강도 $parsed 이(가) 범위(1~10)를 벗어나 ${clamped}(으)로 조정됨")
         }
         return clamped
     }
