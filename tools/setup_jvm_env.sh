@@ -14,6 +14,8 @@ set -eu
 
 SP="${JARS_DIR:?JARS_DIR를 지정하세요 (예: 세션 스크래치패드 경로)}"
 G="${GRADLE_LIB:-/opt/gradle-8.14.3/lib}"
+# jar 버전의 단일 소스 — POI·gson은 앱의 build.gradle.kts에서 읽는다(B-84).
+. "$(cd "$(dirname "$0")" && pwd)/jvm_env_versions.sh"
 mkdir -p "$SP"
 cd "$SP"
 
@@ -32,17 +34,19 @@ dl $M/org/jetbrains/kotlinx/kotlinx-coroutines-test-jvm/1.9.0/kotlinx-coroutines
 dl $M/junit/junit/4.13.2/junit-4.13.2.jar junit-4.13.2.jar
 dl $M/org/hamcrest/hamcrest-core/1.3/hamcrest-core-1.3.jar hamcrest-core-1.3.jar
 dl $M/org/json/json/20240303/json-20240303.jar json-20240303.jar
-dl $M/com/google/code/gson/gson/2.10.1/gson-2.10.1.jar gson-2.10.1.jar
-dl $M/org/apache/poi/poi/5.2.5/poi-5.2.5.jar poi-5.2.5.jar
-dl $M/org/apache/poi/poi-ooxml/5.2.5/poi-ooxml-5.2.5.jar poi-ooxml-5.2.5.jar
-dl $M/org/apache/poi/poi-ooxml-lite/5.2.5/poi-ooxml-lite-5.2.5.jar poi-ooxml-lite-5.2.5.jar
-dl $M/org/apache/commons/commons-collections4/4.4/commons-collections4-4.4.jar commons-collections4-4.4.jar
-dl $M/commons-io/commons-io/2.15.0/commons-io-2.15.0.jar commons-io-2.15.0.jar
-dl $M/org/apache/commons/commons-compress/1.25.0/commons-compress-1.25.0.jar commons-compress-1.25.0.jar
-dl $M/org/apache/xmlbeans/xmlbeans/5.2.0/xmlbeans-5.2.0.jar xmlbeans-5.2.0.jar
-dl $M/org/apache/logging/log4j/log4j-api/2.21.1/log4j-api-2.21.1.jar log4j-api-2.21.1.jar
-dl $M/org/apache/commons/commons-lang3/3.14.0/commons-lang3-3.14.0.jar commons-lang3-3.14.0.jar
-dl $M/com/zaxxer/SparseBitSet/1.3/SparseBitSet-1.3.jar SparseBitSet-1.3.jar
+# 버전은 전부 `tools/jvm_env_versions.sh`가 정한다 — POI·gson은 **앱이 정하고**(B-84),
+# 나머지는 그 파일이 든다. 여기 숫자를 다시 적으면 그 순간 두 벌이 되어 갈린다.
+dl $M/com/google/code/gson/gson/$GSON_VER/gson-$GSON_VER.jar gson-$GSON_VER.jar
+dl $M/org/apache/poi/poi/$POI_VER/poi-$POI_VER.jar poi-$POI_VER.jar
+dl $M/org/apache/poi/poi-ooxml/$POI_VER/poi-ooxml-$POI_VER.jar poi-ooxml-$POI_VER.jar
+dl $M/org/apache/poi/poi-ooxml-lite/$POI_VER/poi-ooxml-lite-$POI_VER.jar poi-ooxml-lite-$POI_VER.jar
+dl $M/org/apache/commons/commons-collections4/$COMMONS_COLLECTIONS4_VER/commons-collections4-$COMMONS_COLLECTIONS4_VER.jar commons-collections4-$COMMONS_COLLECTIONS4_VER.jar
+dl $M/commons-io/commons-io/$COMMONS_IO_VER/commons-io-$COMMONS_IO_VER.jar commons-io-$COMMONS_IO_VER.jar
+dl $M/org/apache/commons/commons-compress/$COMMONS_COMPRESS_VER/commons-compress-$COMMONS_COMPRESS_VER.jar commons-compress-$COMMONS_COMPRESS_VER.jar
+dl $M/org/apache/xmlbeans/xmlbeans/$XMLBEANS_VER/xmlbeans-$XMLBEANS_VER.jar xmlbeans-$XMLBEANS_VER.jar
+dl $M/org/apache/logging/log4j/log4j-api/$LOG4J_API_VER/log4j-api-$LOG4J_API_VER.jar log4j-api-$LOG4J_API_VER.jar
+dl $M/org/apache/commons/commons-lang3/$COMMONS_LANG3_VER/commons-lang3-$COMMONS_LANG3_VER.jar commons-lang3-$COMMONS_LANG3_VER.jar
+dl $M/com/zaxxer/SparseBitSet/$SPARSEBITSET_VER/SparseBitSet-$SPARSEBITSET_VER.jar SparseBitSet-$SPARSEBITSET_VER.jar
 
 echo "jar 준비 완료: $(ls *.jar | wc -l)개"
 
