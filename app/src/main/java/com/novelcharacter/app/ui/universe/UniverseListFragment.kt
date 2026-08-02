@@ -32,6 +32,7 @@ import com.novelcharacter.app.databinding.FragmentUniverseListBinding
 import androidx.recyclerview.widget.ItemTouchHelper
 import com.novelcharacter.app.ui.adapter.UniverseAdapter
 import com.novelcharacter.app.util.PresetTemplates
+import com.novelcharacter.app.util.cappedScrollView
 import com.novelcharacter.app.util.setValidatedPositiveButton
 import com.novelcharacter.app.util.showInlineError
 import com.novelcharacter.app.util.navigateSafe
@@ -536,7 +537,8 @@ class UniverseListFragment : Fragment() {
             addView(btnAddField)
         }
 
-        val scrollView = android.widget.ScrollView(ctx).apply {
+        // 필드 줄이 프리셋 필드 수만큼 늘어난다 — 상한 없이 두면 긴 프리셋에서 잘린다(B-91).
+        val scrollView = cappedScrollView(ctx).apply {
             addView(rootLayout)
             isFillViewport = true
         }
@@ -1212,8 +1214,9 @@ class UniverseListFragment : Fragment() {
             override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
         }
 
-        // ScrollView로 래핑하여 긴 다이얼로그 스크롤 가능하게
-        val scrollView = android.widget.ScrollView(ctx).apply {
+        // ScrollView로 래핑하여 긴 다이얼로그 스크롤 가능하게 — 관계 유형 칩·등급 체계 줄·
+        // 이미지 목록이 전부 개수만큼 늘어나므로 높이 상한이 필요하다(B-91).
+        val scrollView = cappedScrollView(ctx).apply {
             addView(layout)
             isFillViewport = true
         }
@@ -1435,7 +1438,8 @@ class UniverseListFragment : Fragment() {
             }
             layout.addView(addGradeBtn)
 
-            val scroll = android.widget.ScrollView(ctx).apply { addView(layout) }
+            // 등급 줄은 '등급 추가'로 무한히 는다 — 상한 없이는 추가한 줄이 화면 밖으로 밀린다(B-91).
+            val scroll = cappedScrollView(ctx).apply { addView(layout) }
             val dialog = MaterialAlertDialogBuilder(ctx)
                 .setTitle(if (existing == null) R.string.grade_system_add_title else R.string.grade_system_edit_title)
                 .setView(scroll)

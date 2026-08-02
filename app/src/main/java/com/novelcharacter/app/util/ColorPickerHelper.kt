@@ -7,7 +7,6 @@ import android.graphics.drawable.GradientDrawable
 import android.view.View
 import android.widget.EditText
 import android.widget.LinearLayout
-import android.widget.ScrollView
 import android.widget.SeekBar
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
@@ -136,7 +135,9 @@ object ColorPickerHelper {
             }
         })
 
-        val scrollView = ScrollView(ctx).apply {
+        // 칸 수는 고정이지만 글꼴 크기 설정과 가로 모드에서 화면을 넘는다 — 그때 잘리는 대신
+        // 상한에서 멈추고 스크롤된다(B-91. 짧을 때는 상한이 아무 일도 하지 않는다).
+        val scrollView = cappedScrollView(ctx).apply {
             addView(layout)
             isFillViewport = true
         }
