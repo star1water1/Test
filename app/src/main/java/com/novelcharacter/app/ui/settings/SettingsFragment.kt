@@ -272,9 +272,19 @@ class SettingsFragment : Fragment() {
 
         try {
             val pInfo = requireContext().packageManager.getPackageInfo(requireContext().packageName, 0)
-            binding.versionText.text = getString(R.string.settings_version_format, pInfo.versionName)
+            // **빌드 번호를 함께 보인다.** `versionName`은 손으로 올리는 값이라 모든 빌드가
+            // 같은 문자열이고, 실제로 빌드를 가르는 것은 `versionCode`(CI 빌드 번호)다.
+            // 그래서 종전 표시로는 **어느 빌드가 깔려 있는지 알 수 없었고**, 2026.08.02
+            // 설치 충돌을 진단할 때 그 자리에서 막혔다(설치본과 아티팩트를 대조할 수 없었다).
+            binding.versionText.text = getString(
+                R.string.settings_version_format,
+                pInfo.versionName,
+                androidx.core.content.pm.PackageInfoCompat.getLongVersionCode(pInfo)
+            )
         } catch (e: Exception) {
-            binding.versionText.text = getString(R.string.settings_version_format, "1.0")
+            // 자기 패키지 조회라 사실상 실패하지 않지만, 실패했다면 **모른다고 말한다** —
+            // 종전에는 "1.0"을 지어내 보여 줬고, 그것은 대조에 쓰면 틀린 답을 주는 값이다
+            binding.versionText.text = getString(R.string.settings_version_unknown)
         }
 
         loadBackupStatus()
