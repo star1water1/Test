@@ -1045,6 +1045,9 @@ class FactionManageFragment : Fragment() {
                 )
             }
 
+            // scroll-cap-exempt: 다이얼로그 본문이 아니라 본문 안의 한 칸이고, 높이가 이미
+            // dp(250)으로 묶여 있다 — 검색으로 목록이 바뀌어도 창 높이가 흔들리지 않게 하려는
+            // 고정이다(B-91 판정: 상한 없음이 아니라 다른 상한).
             val scrollView = android.widget.ScrollView(ctx).apply {
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,

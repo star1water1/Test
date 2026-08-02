@@ -28,6 +28,8 @@ SP="${JARS_DIR:?JARS_DIR를 지정하세요 (setup_jvm_env.sh가 만든 곳)}"
 OUT="${1:?출력 파일 경로가 필수 인자입니다 (빼면 어디에 썼는지 알 수 없다)}"
 REPO="${REPO:-$(cd "$(dirname "$0")/.." && pwd)}"
 TOOLS="$(cd "$(dirname "$0")" && pwd)"
+. "$TOOLS/jvm_env_versions.sh"   # jar 버전 단일 소스 (B-84)
+jvm_env_require_jars "$SP"
 WORK="$SP/probe-work"
 mkdir -p "$WORK"
 
@@ -71,10 +73,8 @@ M="$REPO/app/src/main/java/com/novelcharacter/app"
 # 주의: 컴파일러 자신의 클래스패스에도 coroutines가 있어야 한다(없으면 CoroutineScope
 # NoClassDefFoundError로 **컴파일이 시작조차 못 하고**, 오류 0으로 보여 헛된 안심을 준다).
 CP="$SP/kotlin-stdlib-2.0.21.jar:$SP/annotations-13.0.jar:$SP/out-room"
-CP="$CP:$SP/json-20240303.jar:$SP/gson-2.10.1.jar"
-CP="$CP:$SP/poi-5.2.5.jar:$SP/poi-ooxml-5.2.5.jar:$SP/poi-ooxml-lite-5.2.5.jar"
-CP="$CP:$SP/commons-collections4-4.4.jar:$SP/commons-io-2.15.0.jar:$SP/commons-compress-1.25.0.jar"
-CP="$CP:$SP/xmlbeans-5.2.0.jar:$SP/log4j-api-2.21.1.jar:$SP/kotlinx-coroutines-core-jvm.jar"
+CP="$CP:$SP/json-20240303.jar:$SP/gson-$GSON_VER.jar"
+CP="$CP:$(excel_cp "$SP"):$SP/kotlinx-coroutines-core-jvm.jar"
 
 java -cp "$SP/kotlin-compiler-embeddable-2.0.21.jar:$SP/kotlin-stdlib-2.0.21.jar:$SP/annotations-13.0.jar:$SP/kotlinx-coroutines-core-jvm.jar:$SP/trove4j.jar" \
   org.jetbrains.kotlin.cli.jvm.K2JVMCompiler \

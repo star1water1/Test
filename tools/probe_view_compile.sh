@@ -20,6 +20,7 @@ set -eu
 SP="${JARS_DIR:?JARS_DIR를 지정하세요 (setup_jvm_env.sh가 만든 곳)}"
 OUT="${1:?출력 파일 경로가 필수 인자입니다}"
 REPO="${REPO:-$(cd "$(dirname "$0")/.." && pwd)}"
+. "$(cd "$(dirname "$0")" && pwd)/jvm_env_versions.sh"   # jar 버전 단일 소스 (B-84)
 WORK="$SP/view-probe-work"
 rm -rf "$WORK"
 mkdir -p "$WORK"
@@ -157,7 +158,7 @@ M="$REPO/app/src/main/java/com/novelcharacter/app"
 } > "$WORK/files.txt"
 
 # ── 3. 컴파일 ──
-CP="$SP/kotlin-stdlib-2.0.21.jar:$SP/annotations-13.0.jar:$SP/out-room:$SP/gson-2.10.1.jar:$SP/json-20240303.jar"
+CP="$SP/kotlin-stdlib-2.0.21.jar:$SP/annotations-13.0.jar:$SP/out-room:$SP/gson-$GSON_VER.jar:$SP/json-20240303.jar"
 # 컴파일러 **자신의** 클래스패스에도 coroutines가 있어야 한다 — 없으면 CoroutineScope
 # NoClassDefFoundError로 컴파일이 시작조차 못 한다(probe_compile.sh의 같은 주석).
 java -cp "$SP/kotlin-compiler-embeddable-2.0.21.jar:$SP/kotlin-stdlib-2.0.21.jar:$SP/annotations-13.0.jar:$SP/kotlinx-coroutines-core-jvm.jar:$SP/trove4j.jar" \

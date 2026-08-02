@@ -97,14 +97,18 @@ Maven Central은 접근 가능하다. `kotlin-compiler-embeddable`·`kotlin-stdl
 
 ```
 annotations-13.0, kotlinx-coroutines-core-jvm(1.9.0), kotlinx-coroutines-test-jvm-1.9.0,
-junit-4.13.2, hamcrest-core-1.3, json-20240303, gson-2.10.1,
-poi-5.2.5, poi-ooxml-5.2.5, poi-ooxml-lite-5.2.5, commons-collections4-4.4,
-commons-io-2.15.0, commons-compress-1.25.0, xmlbeans-5.2.0, log4j-api-2.21.1,
-commons-lang3-3.14.0, SparseBitSet-1.3
+junit-4.13.2, hamcrest-core-1.3, json-20240303, gson,
+poi, poi-ooxml, poi-ooxml-lite, commons-collections4,
+commons-io, commons-compress, xmlbeans, log4j-api,
+commons-lang3, SparseBitSet
 ```
 
-> **정본은 `tools/setup_jvm_env.sh`다** — 위 목록은 그 스크립트가 없던 2차 세션의 기록이며,
-> 이후 필요 jar이 늘 때는 스크립트만 갱신한다(단일 소스를 양쪽에 따로 두면 반드시
+> **정본은 `tools/setup_jvm_env.sh`이고, 버전의 정본은 `tools/jvm_env_versions.sh`다**
+> — 위 목록은 그 스크립트가 없던 2차 세션의 기록이라 **무엇이 필요한가만** 남기고
+> **버전은 지웠다**(2026.08.02, B-84). 여기 적어 두면 스크립트와 갈리기 때문이며,
+> 실제로 갈렸다: 하네스가 POI 5.2.5로 도는 동안 앱은 5.3.0을 싣고 있었다.
+> 이제 POI·gson 버전은 그 스크립트가 **앱의 `app/build.gradle.kts`에서 읽는다** —
+> 앱이 올리면 하네스가 다음 실행부터 따라 올라간다(단일 소스를 양쪽에 따로 두면 반드시
 > 드리프트한다 — 7장 규약 그대로).
 
 androidx 스텁(`$JARS_DIR/out-room`)에서 막히기 쉬운 점 셋 — 미리 알고 가면 시간을 아낀다:

@@ -10,9 +10,9 @@
 # JARS_DIR 에 아래 jar 들이 필요하다 (Maven Central 에서 받는다):
 #   kotlin-compiler-embeddable-2.0.21.jar, kotlin-stdlib-2.0.21.jar, annotations-13.0.jar,
 #   kotlinx-coroutines-core-jvm.jar, kotlinx-coroutines-test-jvm-1.9.0.jar, trove4j.jar,
-#   junit-4.13.2.jar, hamcrest-core-1.3.jar, json-20240303.jar, gson-2.10.1.jar,
-#   poi-5.2.5.jar, poi-ooxml-5.2.5.jar, poi-ooxml-lite-5.2.5.jar, commons-collections4-4.4.jar,
-#   commons-io-2.15.0.jar, commons-compress-1.25.0.jar, xmlbeans-5.2.0.jar, log4j-api-2.21.1.jar
+#   junit-4.13.2.jar, hamcrest-core-1.3.jar, json-20240303.jar, gson, POI 계열
+# **버전은 여기 적지 않는다** — `tools/jvm_env_versions.sh`가 단일 소스이고, POI·gson은
+# 그 파일이 앱의 build.gradle.kts에서 읽는다(B-84: 하네스 5.2.5 vs 앱 5.3.0으로 갈렸던 자리).
 #
 # 또한 androidx 스텁을 $JARS_DIR/out-room 에 컴파일해 두어야 한다:
 #  - androidx.room: @Entity/@ForeignKey/@Index/@PrimaryKey/@ColumnInfo/@Ignore/@Dao/@Query/
@@ -24,6 +24,8 @@
 set -u
 SP="${JARS_DIR:-/tmp/claude-0/-home-user-Test/6a87d14f-0af6-505a-8734-77051e12d059/scratchpad}"
 REPO="${REPO:-$(cd "$(dirname "$0")/.." && pwd)}"
+. "$(cd "$(dirname "$0")" && pwd)/jvm_env_versions.sh"   # jar 버전 단일 소스 (B-84)
+jvm_env_require_jars "$SP"
 MAIN=$REPO/app/src/main/java/com/novelcharacter/app
 TEST=$REPO/app/src/test/java/com/novelcharacter/app
 STUBS=$REPO/tools/jvm-stubs
@@ -31,10 +33,8 @@ OUT=$SP/out-tests
 rm -rf "$OUT"; mkdir -p "$OUT"
 
 CP="$SP/kotlin-stdlib-2.0.21.jar:$SP/annotations-13.0.jar:$SP/out-room:$SP/json-20240303.jar"
-CP="$CP:$SP/gson-2.10.1.jar:$SP/junit-4.13.2.jar:$SP/hamcrest-core-1.3.jar"
-CP="$CP:$SP/poi-5.2.5.jar:$SP/poi-ooxml-5.2.5.jar:$SP/poi-ooxml-lite-5.2.5.jar"
-CP="$CP:$SP/commons-collections4-4.4.jar:$SP/commons-io-2.15.0.jar:$SP/commons-compress-1.25.0.jar"
-CP="$CP:$SP/xmlbeans-5.2.0.jar:$SP/log4j-api-2.21.1.jar:$SP/kotlinx-coroutines-core-jvm.jar"
+CP="$CP:$SP/gson-$GSON_VER.jar:$SP/junit-4.13.2.jar:$SP/hamcrest-core-1.3.jar"
+CP="$CP:$(excel_cp "$SP"):$SP/kotlinx-coroutines-core-jvm.jar"
 CP="$CP:$SP/kotlinx-coroutines-test-jvm-1.9.0.jar"
 
 KOTLINC="java -cp $SP/kotlin-compiler-embeddable-2.0.21.jar:$SP/kotlin-stdlib-2.0.21.jar:$SP/annotations-13.0.jar:$SP/kotlinx-coroutines-core-jvm.jar:$SP/trove4j.jar org.jetbrains.kotlin.cli.jvm.K2JVMCompiler -nowarn -no-stdlib"

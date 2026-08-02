@@ -11,7 +11,6 @@ import android.widget.ProgressBar
 import android.widget.CheckBox
 import android.widget.RadioButton
 import android.widget.RadioGroup
-import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -27,6 +26,7 @@ import android.util.Log
 import android.graphics.Typeface
 import com.novelcharacter.app.ui.common.TaskProgressDialog
 import com.novelcharacter.app.util.CopyCancelledException
+import com.novelcharacter.app.util.cappedScrollView
 import com.novelcharacter.app.util.ProgressScale
 import com.novelcharacter.app.util.copyWithLimit
 import java.io.File
@@ -532,7 +532,8 @@ class ExcelImporter(context: Context) {
 
     private fun showWorldWarningsDialog(act: android.app.Activity, warnings: List<String>) {
         if (act.isFinishing || act.isDestroyed) return
-        val scrollView = ScrollView(act)
+        // 안내 줄은 경고 수만큼 늘어난다 — 상한 없이는 긴 목록이 잘린다(B-91).
+        val scrollView = cappedScrollView(act)
         val textView = TextView(act).apply {
             text = warnings.joinToString("\n") { "• $it" }
             val dp16 = (16 * act.resources.displayMetrics.density).toInt()
@@ -985,7 +986,9 @@ class ExcelImporter(context: Context) {
                 val dp8 = (8 * dp).toInt()
                 val dp16 = (16 * dp).toInt()
 
-                val scrollView = ScrollView(act)
+                // 범주 블록이 파일에 담긴 범주 수만큼 쌓이고 삭제 옵션까지 붙는다 —
+                // 상한 없이는 아래쪽 옵션과 버튼이 화면 밖으로 밀린다(B-91).
+                val scrollView = cappedScrollView(act)
                 val container = LinearLayout(act).apply {
                     orientation = LinearLayout.VERTICAL
                     setPadding(dp16, dp16, dp16, dp8)
@@ -1226,7 +1229,8 @@ class ExcelImporter(context: Context) {
                 val dp8 = (8 * dp).toInt()
                 val dp16 = (16 * dp).toInt()
 
-                val scrollView = ScrollView(act).apply {
+                // 충돌 블록이 이름 충돌 건수만큼 쌓인다 — 상한 없이는 뒤쪽 선택지가 잘린다(B-91).
+                val scrollView = cappedScrollView(act).apply {
                     layoutParams = LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
                         LinearLayout.LayoutParams.WRAP_CONTENT
@@ -1564,7 +1568,8 @@ class ExcelImporter(context: Context) {
             }
         }
 
-        val scrollView = android.widget.ScrollView(act)
+        // 오류·경고를 각각 최대 30건까지 적으므로 60줄 넘는 본문이 나온다(B-91).
+        val scrollView = cappedScrollView(act)
         val textView = TextView(act).apply {
             text = sb.toString()
             val dp16 = (16 * act.resources.displayMetrics.density).toInt()

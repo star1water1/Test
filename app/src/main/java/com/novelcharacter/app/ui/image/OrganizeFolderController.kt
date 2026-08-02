@@ -6,6 +6,7 @@ import androidx.lifecycle.lifecycleScope
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.novelcharacter.app.R
 import com.novelcharacter.app.util.OpResult
+import com.novelcharacter.app.util.cappedScrollView
 import com.novelcharacter.app.util.logOperation
 import com.novelcharacter.app.util.notifySuccess
 import kotlinx.coroutines.launch
@@ -212,7 +213,8 @@ class OrganizeFolderController(
 
         MaterialAlertDialogBuilder(ctx)
             .setTitle(R.string.organize_folder_ambiguous_title)
-            .setView(android.widget.ScrollView(ctx).apply { addView(container) })
+            // 후보 라디오 묶음이 모호한 폴더 수 × 동명 캐릭터 수만큼 늘어난다(B-91).
+            .setView(cappedScrollView(ctx).apply { addView(container) })
             .setPositiveButton(R.string.confirm) { _, _ ->
                 if (picked.isEmpty()) {
                     confirmOrganizePlan(bundle)
@@ -319,7 +321,9 @@ class OrganizeFolderController(
                     textSize = 12f
                 })
             }
-            builder.setView(android.widget.ScrollView(fragment.requireContext()).apply { addView(container) })
+            // 요약 줄은 '서랍 이름이 캐릭터에 먹힌 것'마다 한 줄씩 늘고, 모호·미상 폴더 이름은
+            // 한 줄에 전부 이어 붙는다 — 폴더가 많으면 화면을 넘는다(B-91).
+            builder.setView(cappedScrollView(fragment.requireContext()).apply { addView(container) })
                 .setPositiveButton(R.string.organize_folder_apply) { _, _ ->
                     runOrganizePlan(bundle, if (box.isChecked) tagFolders else emptyList())
                 }
