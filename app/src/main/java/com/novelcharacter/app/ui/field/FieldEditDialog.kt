@@ -1008,26 +1008,61 @@ class FieldEditDialog : DialogFragment() {
         // Store reference for later use
         ribOffsetEdit.tag = "ribOffsetEdit"
 
-        // ── 목표 비율 이상값 (P8 — 종전 '골든비율') ──
-        // 칸을 비우면 장르 기준 자동(키·흉곽 보정 적응)이고, 적은 키만 그 값으로 고정된다.
+        // ── 목표 비율 (P8 — 종전 '골든비율') ──
+        // 겹 셋: 전부 비우면 장르 기준 자동 → 이상 몸(치수)을 적으면 그 몸에서 계산 →
+        // 비율 칸에 적은 키는 그 값으로 고정(가장 구체적인 것이 이긴다).
         // 힌트의 참고 숫자는 파생 함수에서 그때그때 계산한다 — 적어 두면 낡는다(B-92의 교훈).
         val genreRef = com.novelcharacter.app.util.BodyGenerator.genreTargetIdeals()
         fun refOf(key: String) = String.format(java.util.Locale.US, "%.2f", genreRef[key] ?: 0.0)
-        val idealEntries = listOf(
-            "whr" to "WHR 이상값 (비우면 장르 기준 ≈${refOf("whr")})",
-            "bustHipRatio" to "B/H 이상값 (비우면 장르 기준 ≈${refOf("bustHipRatio")})",
-            "waistHeight" to "W/키 이상값 (비우면 장르 기준 ≈${refOf("waistHeight")})",
-            "bustHeight" to "B/키 이상값 (비우면 장르 기준 ≈${refOf("bustHeight")})"
-        )
-        val goldenIdealEdits = mutableMapOf<String, EditText>()
-        val idealLabel = TextView(ctx).apply {
-            text = "목표 비율 이상값 — 비우면 장르 기준으로 잽니다"
+        val baseHeight = com.novelcharacter.app.util.BodySilhouetteSpec.BASE.height.toInt()
+
+        // 이상 몸(치수) — 창작자는 비율이 아니라 "165에 88-58-88"로 생각한다(2026.08.02 요청).
+        val idealBodyLabel = TextView(ctx).apply {
+            text = "이상 몸(치수)으로 정하기 — 세 치수를 적으면 목표 비율을 이 몸에서 계산합니다. 캐릭터 키에 맞춰 조정됩니다."
             textSize = 12f
             alpha = 0.7f
             setPadding(0, (12 * density).toInt(), 0, (4 * density).toInt())
         }
-        binding.insightTogglesContainer.addView(idealLabel, 2)
-        var insertIdx = 3
+        binding.insightTogglesContainer.addView(idealBodyLabel, 2)
+        val idealBodyRow = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = (2 * density).toInt() }
+        }
+        val idealBodyFields = listOf(
+            "idealBody_bust" to "가슴 (cm)",
+            "idealBody_waist" to "허리 (cm)",
+            "idealBody_hip" to "엉덩이 (cm)",
+            "idealBody_height" to "기준 키 (비우면 $baseHeight)"
+        )
+        for ((tagName, hint) in idealBodyFields) {
+            idealBodyRow.addView(EditText(ctx).apply {
+                inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+                this.hint = hint
+                textSize = 13f
+                tag = tagName
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            })
+        }
+        binding.insightTogglesContainer.addView(idealBodyRow, 3)
+
+        // 비율 직접 고정 — 이상 몸보다 세밀한 경로(키별 병용 가능).
+        val idealEntries = listOf(
+            "whr" to "WHR 이상값 (비우면 자동 · 장르 기준 ≈${refOf("whr")})",
+            "bustHipRatio" to "B/H 이상값 (비우면 자동 · 장르 기준 ≈${refOf("bustHipRatio")})",
+            "waistHeight" to "W/키 이상값 (비우면 자동 · 장르 기준 ≈${refOf("waistHeight")})",
+            "bustHeight" to "B/키 이상값 (비우면 자동 · 장르 기준 ≈${refOf("bustHeight")})"
+        )
+        val goldenIdealEdits = mutableMapOf<String, EditText>()
+        val idealLabel = TextView(ctx).apply {
+            text = "비율로 직접 고정하기 — 적은 칸이 이상 몸·장르 기준보다 우선합니다"
+            textSize = 12f
+            alpha = 0.7f
+            setPadding(0, (12 * density).toInt(), 0, (4 * density).toInt())
+        }
+        binding.insightTogglesContainer.addView(idealLabel, 4)
+        var insertIdx = 5
         for ((key, hint) in idealEntries) {
             val edit = EditText(ctx).apply {
                 inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
@@ -1207,12 +1242,23 @@ class FieldEditDialog : DialogFragment() {
         val ribOffset = ribOffsetView?.text?.toString()?.toDoubleOrNull()?.coerceIn(0.0, 10.0)
             ?: BodyAnalysisConfig.DEFAULT_RIB_OFFSET
 
-        // 목표 비율 이상값 — 적힌 칸만 담는다(빈 칸 = 장르 기준 자동, P8)
+        // 목표 비율 이상값 — 적힌 칸만 담는다(빈 칸 = 자동, P8)
         val goldenIdeals = mutableMapOf<String, Double>()
         for (key in listOf("whr", "bustHipRatio", "waistHeight", "bustHeight")) {
             val edit = binding.insightTogglesContainer.findViewWithTag<EditText>("goldenIdeal_$key")
             edit?.text?.toString()?.toDoubleOrNull()?.let { goldenIdeals[key] = it }
         }
+
+        // 이상 몸 — 적힌 그대로 담는다(부분 입력도 보존 — R-27. 효력은 셋이 갖춰질 때).
+        fun idealBodyNum(tagName: String): Double? =
+            binding.insightTogglesContainer.findViewWithTag<EditText>(tagName)
+                ?.text?.toString()?.toDoubleOrNull()
+        val idealBody = BodyAnalysisConfig.IdealBody(
+            bust = idealBodyNum("idealBody_bust"),
+            waist = idealBodyNum("idealBody_waist"),
+            hip = idealBodyNum("idealBody_hip"),
+            heightCm = idealBodyNum("idealBody_height")
+        ).takeUnless { it.isEmpty }
 
         return BodyAnalysisConfig(
             cupMapping = cupMapping,
@@ -1220,7 +1266,8 @@ class FieldEditDialog : DialogFragment() {
             enabledInsights = enabledInsights.ifEmpty { BodyAnalysisConfig.DEFAULT_ENABLED_INSIGHTS },
             ribOffset = ribOffset,
             bodyTagRules = existingConfig?.bodyTagRules ?: emptyList(),  // UI 미노출 → 기존값 보존
-            goldenRatioIdeals = goldenIdeals
+            goldenRatioIdeals = goldenIdeals,
+            idealBody = idealBody
         )
     }
 
@@ -1402,10 +1449,23 @@ class FieldEditDialog : DialogFragment() {
             // ribOffset 복원 (V2)
             val ribOffsetView = binding.insightTogglesContainer.findViewWithTag<EditText>("ribOffsetEdit")
             ribOffsetView?.setText(bodyConfig.ribOffset.toString())
-            // 골든비율 이상값 복원 (V2)
+            // 목표 비율 이상값 복원 — 직접 정한 키만 채워진다(빈 칸 = 자동)
             for ((key, value) in bodyConfig.goldenRatioIdeals) {
                 val edit = binding.insightTogglesContainer.findViewWithTag<EditText>("goldenIdeal_$key")
                 edit?.setText(value.toString())
+            }
+            // 이상 몸 복원 — 적었던 값 그대로(부분 입력 포함)
+            bodyConfig.idealBody?.let { body ->
+                fun restore(tagName: String, value: Double?) {
+                    value?.let {
+                        binding.insightTogglesContainer.findViewWithTag<EditText>(tagName)
+                            ?.setText(com.novelcharacter.app.util.BodyEditorModel.formatValue(it))
+                    }
+                }
+                restore("idealBody_bust", body.bust)
+                restore("idealBody_waist", body.waist)
+                restore("idealBody_hip", body.hip)
+                restore("idealBody_height", body.heightCm)
             }
         }
 

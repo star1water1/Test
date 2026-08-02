@@ -946,12 +946,21 @@ class DynamicFieldRenderer(
             result.goldenRatioScore != null
         ) {
             addSectionTitle(getString(R.string.body_target_ratio_label))
-            // 무엇과의 거리인지 말한다(5-3) — 비웠으면 장르 기준, 채웠으면 직접 정한 값.
+            // 무엇과의 거리인지 말한다(5-3) — 이상 몸 > 비율 고정 > 장르 기준 순으로 밝힌다.
+            val idealBody = config.idealBody
             addSubRow(
-                getString(
-                    if (config.goldenRatioIdeals.isEmpty()) R.string.body_target_ratio_hint_auto
-                    else R.string.body_target_ratio_hint_custom
-                )
+                when {
+                    idealBody != null && idealBody.isComplete -> {
+                        val fmt = { v: Double -> com.novelcharacter.app.util.BodyEditorModel.formatValue(v) }
+                        context.getString(
+                            R.string.body_target_ratio_hint_body,
+                            fmt(idealBody.bust!!), fmt(idealBody.waist!!), fmt(idealBody.hip!!),
+                            fmt(idealBody.heightCm ?: com.novelcharacter.app.util.BodySilhouetteSpec.BASE.height)
+                        )
+                    }
+                    config.goldenRatioIdeals.isNotEmpty() -> getString(R.string.body_target_ratio_hint_custom)
+                    else -> getString(R.string.body_target_ratio_hint_auto)
+                }
             )
             addSubRow(getStringWithArg(R.string.body_target_ratio_score, "%.0f".format(result.goldenRatioScore)))
             result.goldenRatioDetails?.forEach { item ->

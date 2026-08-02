@@ -109,4 +109,95 @@ class BodyTargetRatioTest {
         val r = BodyAnalysisHelper().analyze(86.0, 62.0, 90.0, null, null, BodyAnalysisConfig.DEFAULT)
         assertNull(r.goldenRatioScore)
     }
+
+    // ── 이상 몸(치수 입력 — P8 '사용자 이상형', 2026.08.02 요청) ─────────────
+
+    private val idealBody = BodyAnalysisConfig.IdealBody(
+        bust = 88.0, waist = 58.0, hip = 88.0, heightCm = 165.0
+    )
+
+    @Test
+    fun `이상 몸은 기준 키에서 자기 자신이다 - 흉곽 보정과 무관하게`() {
+        // 분해(비율·컵차·힙차) → 재구성이 기준 키에서 항등이어야 "적은 몸이 이상"이라는
+        // 약속이 성립한다. 보정이 얼마든 컵차 항이 상쇄해 가슴도 그대로다.
+        for (offset in listOf(0.0, 6.0, 10.0)) {
+            val ideals = BodyGenerator.idealsFromBody(idealBody, 165.0, offset)!!
+            assertEquals(58.0 / 165.0, ideals.getValue("waistHeight"), 1e-9)
+            assertEquals(58.0 / 88.0, ideals.getValue("whr"), 1e-9)
+            assertEquals(1.0, ideals.getValue("bustHipRatio"), 1e-9)
+            assertEquals(88.0 / 165.0, ideals.getValue("bustHeight"), 1e-9)
+        }
+    }
+
+    @Test
+    fun `이상 몸과 같은 몸은 만점이다`() {
+        val config = BodyAnalysisConfig.DEFAULT.copy(idealBody = idealBody)
+        val r = BodyAnalysisHelper().analyze(88.0, 58.0, 88.0, 165.0, null, config)
+        assertTrue("점수 ${r.goldenRatioScore}", r.goldenRatioScore!! >= 99.0)
+    }
+
+    @Test
+    fun `이상 몸은 캐릭터 키에 맞춰 조정된다 - cm 축은 유지 비율 축은 스케일`() {
+        val at165 = BodyGenerator.idealsFromBody(idealBody, 165.0, 6.0)!!
+        val at150 = BodyGenerator.idealsFromBody(idealBody, 150.0, 6.0)!!
+        // 허리/키는 비율이라 그대로, 힙−허리·컵차는 cm 유지라 작은 키에서 더 잘록해진다.
+        assertEquals(at165.getValue("waistHeight"), at150.getValue("waistHeight"), 1e-9)
+        assertTrue(at150.getValue("whr") < at165.getValue("whr"))
+        assertTrue(at150.getValue("bustHipRatio") <= at165.getValue("bustHipRatio") + 1e-9)
+        // 순수 비율 스케일(비율 동결)이 아니라는 것 — 150에서의 이상이 원몸 비율과 다르다.
+        assertTrue(kotlin.math.abs(at150.getValue("whr") - 58.0 / 88.0) > 1e-3)
+    }
+
+    @Test
+    fun `비율 칸이 이상 몸보다 우선한다`() {
+        val config = BodyAnalysisConfig.DEFAULT.copy(
+            idealBody = idealBody,
+            goldenRatioIdeals = mapOf("whr" to 0.70)
+        )
+        val details = BodyAnalysisHelper()
+            .analyze(86.0, 62.0, 90.0, 165.0, null, config)
+            .goldenRatioDetails!!
+        assertEquals(0.70, details.first { it.label == "허리/엉덩이" }.ideal, 1e-9)
+        // 고정하지 않은 키는 이상 몸이 채운다(장르 기준이 아니라).
+        assertEquals(1.0, details.first { it.label == "가슴/엉덩이" }.ideal, 1e-9)
+    }
+
+    @Test
+    fun `이상 몸이 불완전하면 효력이 없고 장르 기준으로 돈다`() {
+        val partial = BodyAnalysisConfig.IdealBody(bust = 88.0)
+        assertNull(BodyGenerator.idealsFromBody(partial, 165.0, 6.0))
+        val config = BodyAnalysisConfig.DEFAULT.copy(idealBody = partial)
+        val details = BodyAnalysisHelper()
+            .analyze(86.0, 62.0, 90.0, 165.0, null, config)
+            .goldenRatioDetails!!
+        val genre = BodyGenerator.genreTargetIdeals(165.0, config.ribOffset)
+        assertEquals(genre.getValue("whr"), details.first { it.label == "허리/엉덩이" }.ideal, 1e-9)
+    }
+
+    @Test
+    fun `이상 몸 왕복 - 부분 입력도 보존된다`() {
+        // 완전한 몸
+        val full = BodyAnalysisConfig.DEFAULT.copy(idealBody = idealBody)
+        val json = BodyAnalysisConfig.applyToConfig("{}", full)
+        assertEquals(idealBody, BodyAnalysisConfig.fromConfig(json).idealBody)
+        // 적다 만 몸 — 버리면 말없는 유실이다(R-27 결)
+        val partial = BodyAnalysisConfig.DEFAULT.copy(
+            idealBody = BodyAnalysisConfig.IdealBody(waist = 58.0)
+        )
+        val json2 = BodyAnalysisConfig.applyToConfig("{}", partial)
+        val restored = BodyAnalysisConfig.fromConfig(json2).idealBody
+        assertEquals(58.0, restored?.waist)
+        assertNull(restored?.bust)
+        // 빈 몸은 저장되지 않는다
+        val empty = BodyAnalysisConfig.applyToConfig("{}", BodyAnalysisConfig.DEFAULT)
+        assertFalse(empty.contains("idealBody"))
+    }
+
+    @Test
+    fun `기준 키를 비우면 기준 몸 키로 읽는다`() {
+        val noHeight = BodyAnalysisConfig.IdealBody(bust = 88.0, waist = 58.0, hip = 88.0)
+        val ideals = BodyGenerator.idealsFromBody(noHeight, BodySilhouetteSpec.BASE.height, 6.0)!!
+        assertEquals(58.0 / BodySilhouetteSpec.BASE.height, ideals.getValue("waistHeight"), 1e-9)
+        assertEquals(58.0 / 88.0, ideals.getValue("whr"), 1e-9)
+    }
 }

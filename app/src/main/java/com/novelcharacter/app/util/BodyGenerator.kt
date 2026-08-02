@@ -160,16 +160,60 @@ object BodyGenerator {
         heightCm: Double = BodySilhouetteSpec.BASE.height,
         ribOffset: Double = BodyAnalysisConfig.DEFAULT_RIB_OFFSET
     ): Map<String, Double> {
-        val h = if (heightCm > 0) heightCm else BodySilhouetteSpec.BASE.height
         val preset = DEFAULT_BODY_PRESETS.first { it.label == GENRE_IDEAL_PRESET_LABEL }
         val (torso, bust, hip) = axesOf(preset)
-        val waist = torso.waistRatio * h
-        val bustCm = waist + ribOffset + bust.cupDiff
-        val hipCm = waist + hip.hipBonus
+        return idealsFromFigure(torso.waistRatio, bust.cupDiff, hip.hipBonus, heightCm, ribOffset)
+    }
+
+    /**
+     * 사용자가 치수로 적은 이상 몸을 캐릭터 키에 맞춘 이상값으로 (P8 '사용자 이상형' —
+     * 2026.08.02 사용자 요청 "사이즈 이상치를 직접 입력, 키에 따라 비율을 조정").
+     *
+     * 몸을 (허리/키 비율 · 컵차 cm · 힙−허리 cm)로 분해한 뒤 캐릭터 키에서 재구성한다 —
+     * [genreTargetIdeals]와 같은 분해라 두 소스의 키 적응이 같은 문법으로 움직인다.
+     * **cm 축을 비율로 늘리지 않는 것은 축 체계의 결**이다: 컵차·힙−허리의 밴드는 키와
+     * 무관한 cm이고(D컵은 150cm에서도 D컵), 그래서 작은 키에서 비율이 "어느 정도" 더
+     * 잘록해진다 — 몸매는 유지하고 뼈대만 줄인 몸과 비교한다.
+     *
+     * 기준 키가 없으면 기준 몸 키로 읽는다. **기준 키의 캐릭터에게는 적은 몸 그대로가
+     * 이상이 된다**(분해→재구성이 항등 — 흉곽 보정이 얼마든 컵차 항이 상쇄한다).
+     * 셋(B·W·H)이 안 갖춰지면 null — 효력 없음은 호출부가 장르 기준으로 잇는다.
+     */
+    fun idealsFromBody(
+        body: BodyAnalysisConfig.IdealBody,
+        characterHeightCm: Double,
+        ribOffset: Double = BodyAnalysisConfig.DEFAULT_RIB_OFFSET
+    ): Map<String, Double>? {
+        if (!body.isComplete) return null
+        val ref = body.heightCm?.takeIf { it > 0 } ?: BodySilhouetteSpec.BASE.height
+        return idealsFromFigure(
+            waistRatio = body.waist!! / ref,
+            cupDiffCm = body.bust!! - body.waist!! - ribOffset,
+            hipDiffCm = body.hip!! - body.waist!!,
+            heightCm = characterHeightCm,
+            ribOffset = ribOffset
+        )
+    }
+
+    /**
+     * 몸의 분해값(허리/키 비율 · 컵차 cm · 힙−허리 cm)을 키에서 재구성해 목표 비율
+     * 이상값 4종으로. [genreTargetIdeals]·[idealsFromBody]가 공유하는 유일한 재구성이다.
+     */
+    fun idealsFromFigure(
+        waistRatio: Double,
+        cupDiffCm: Double,
+        hipDiffCm: Double,
+        heightCm: Double,
+        ribOffset: Double
+    ): Map<String, Double> {
+        val h = if (heightCm > 0) heightCm else BodySilhouetteSpec.BASE.height
+        val waist = waistRatio * h
+        val bustCm = waist + ribOffset + cupDiffCm
+        val hipCm = waist + hipDiffCm
         return mapOf(
             "whr" to waist / hipCm,
             "bustHipRatio" to bustCm / hipCm,
-            "waistHeight" to torso.waistRatio,
+            "waistHeight" to waistRatio,
             "bustHeight" to bustCm / h
         )
     }
