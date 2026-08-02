@@ -157,6 +157,7 @@ $MAIN/ai/AiPromptPolicy.kt
 $MAIN/ai/ImageFolderTagSuggester.kt
 $MAIN/data/model/NarrativeMode.kt
 $MAIN/util/ImageFilterHelper.kt
+$MAIN/util/LibraryPickerRow.kt
 $MAIN/util/ImageRecommendationHelper.kt
 $MAIN/util/ImageLinkResolver.kt
 $MAIN/util/AutoLinkPlanner.kt
@@ -235,6 +236,7 @@ $TEST/util/CardFieldSummaryTest.kt
 $TEST/util/UnassignedFilterTest.kt
 $TEST/util/FieldValueResolverTest.kt
 $TEST/util/ImageFilterHelperTest.kt
+$TEST/util/LibraryPickerRowsTest.kt
 $TEST/util/ImageRecommendationHelperTest.kt
 $TEST/util/ImageLinkResolverTest.kt
 $TEST/util/AutoLinkPlannerTest.kt

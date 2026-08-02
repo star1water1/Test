@@ -56,13 +56,31 @@
                 android:orientation="vertical"
                 android:padding="16dp">
 
-            <!-- Add image button -->
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnAddImage"
+            <!-- 이미지를 들이는 두 경로를 나란히 둔다 — 기기 갤러리 / 앱 라이브러리.
+                 종전에는 갤러리뿐이라, 앱이 이미 들고 있는 이미지를 편집창에서 고르는 길이
+                 태그 추천 스트립(아래)밖에 없었다. 그 스트립은 태그가 겹칠 때만 열린다. -->
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="@string/add_image"
-                style="@style/Widget.App.Button.Outlined" />
+                android:orientation="horizontal">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnAddImage"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:text="@string/add_image"
+                    style="@style/Widget.App.Button.Outlined" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnPickFromLibrary"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:text="@string/image_library_pick_action"
+                    style="@style/Widget.App.Button.Outlined" />
+            </LinearLayout>
 
             <!-- Image preview list -->
             <androidx.recyclerview.widget.RecyclerView

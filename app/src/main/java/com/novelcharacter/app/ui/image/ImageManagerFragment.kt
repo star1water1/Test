@@ -22,6 +22,8 @@ import com.novelcharacter.app.R
 import com.novelcharacter.app.databinding.BottomSheetImageDetailBinding
 import com.novelcharacter.app.databinding.FragmentImageManagerBinding
 import com.novelcharacter.app.util.ImageImportHelper
+import com.novelcharacter.app.util.setValidatedPositiveButton
+import com.novelcharacter.app.util.showInlineError
 import com.novelcharacter.app.util.OpResult
 import com.novelcharacter.app.util.StorageAnalyzer
 import com.novelcharacter.app.util.navigateSafe
@@ -968,6 +970,7 @@ class ImageManagerFragment : Fragment() {
     private fun startAssignFlow(paths: List<String>) {
         val picker = EntityPickerBottomSheet()
         picker.loadTargets = { type -> viewModel.getAssignTargets(type) }
+        picker.onCreateNewCharacter = { promptCreateCharacter(paths) }
         picker.onPicked = { type, row ->
             val expansion = viewModel.expandWithLinkedGroups(paths)
             if (expansion.addedByLink.isNotEmpty()) {
@@ -988,6 +991,75 @@ class ImageManagerFragment : Fragment() {
             }
         }
         picker.show(childFragmentManager, EntityPickerBottomSheet.TAG)
+    }
+
+    /**
+     * '새 캐릭터 만들기' — 이름(필수) + 작품(선택)을 받아 즉시 만들고 그 이미지를 배정한다.
+     *
+     * **러프 입력 경로다**(원칙 04의 이중 경로). 여기서 받는 것은 이름뿐이고 나머지는 캐릭터
+     * 편집 화면이 정한다. 작품을 **강제하지 않는 것도 일부러다** — 강제하면 이미지 한 장
+     * 붙이려고 작품부터 만들어야 해서, 막혀 있던 자리가 그대로 남는다(미분류 캐릭터는
+     * 이 앱이 이미 지원하는 상태다).
+     *
+     * 입력을 유실하지 않는다(R-27) — 이름이 비면 만들지 않고 그 자리에서 알린다.
+     */
+    private fun promptCreateCharacter(paths: List<String>) {
+        val ctx = context ?: return
+        viewLifecycleOwner.lifecycleScope.launch {
+            val novels = viewModel.getNovelChoices()
+            if (!isAdded) return@launch
+
+            val density = ctx.resources.displayMetrics.density
+            val pad = (20 * density).toInt()
+            val container = android.widget.LinearLayout(ctx).apply {
+                orientation = android.widget.LinearLayout.VERTICAL
+                setPadding(pad, (8 * density).toInt(), pad, 0)
+            }
+            val nameEdit = android.widget.EditText(ctx).apply {
+                hint = getString(R.string.image_assign_create_name_hint)
+                setSingleLine()
+            }
+            container.addView(nameEdit)
+
+            // 작품 선택 — 첫 항목은 '작품 없음'(미분류). 작품이 하나도 없으면 스피너를 감춘다.
+            val novelSpinner = android.widget.Spinner(ctx)
+            if (novels.isNotEmpty()) {
+                val labels = mutableListOf(getString(R.string.image_assign_create_no_novel))
+                labels.addAll(novels.map { it.title })
+                novelSpinner.adapter = android.widget.ArrayAdapter(
+                    ctx, android.R.layout.simple_spinner_dropdown_item, labels
+                )
+                container.addView(novelSpinner)
+            }
+
+            // R-27: 리스너 없이 만들고 setValidatedPositiveButton으로 검증한다 —
+            // setPositiveButton은 조기 return을 해도 창이 닫혀 입력이 유실된다.
+            val dialog = MaterialAlertDialogBuilder(ctx)
+                .setTitle(R.string.image_assign_create_character)
+                .setView(container)
+                .setPositiveButton(R.string.confirm, null)
+                .setNegativeButton(R.string.cancel, null)
+                .create()
+            dialog.setValidatedPositiveButton {
+                val name = nameEdit.text.toString().trim()
+                if (name.isEmpty()) {
+                    // 실패 문구는 고칠 자리에 붙인다(토스트는 화면을 떠난다)
+                    nameEdit.showInlineError(getString(R.string.image_assign_create_name_required))
+                    return@setValidatedPositiveButton false
+                }
+                val novelId = if (novels.isEmpty()) null else {
+                    val idx = novelSpinner.selectedItemPosition
+                    if (idx <= 0) null else novels[idx - 1].id
+                }
+                viewLifecycleOwner.lifecycleScope.launch {
+                    val row = viewModel.createCharacterForAssign(name, novelId)
+                    if (!isAdded) return@launch
+                    doAssign(paths, ImageManagerViewModel.OwnerType.CHARACTER, row)
+                }
+                true
+            }
+            dialog.show()
+        }
     }
 
     private fun doAssign(paths: List<String>, type: ImageManagerViewModel.OwnerType, row: ImageManagerViewModel.PickRow) {

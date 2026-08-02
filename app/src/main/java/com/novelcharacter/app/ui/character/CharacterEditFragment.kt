@@ -542,8 +542,66 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
         binding.btnAddImage.setOnClickListener {
             imagePickerLauncher.launch("image/*")
         }
+        binding.btnPickFromLibrary.setOnClickListener { openLibraryPicker() }
 
         imageStrip.attach()
+    }
+
+    /**
+     * 라이브러리 피커를 연다 — 추천 스트립과 **같은 첨부 자리**를 지난다.
+     *
+     * 추천은 태그가 겹칠 때만 열리므로(교집합 0이면 섹션이 숨는다) 태그를 쓰지 않는 사용자에게는
+     * 라이브러리로 가는 문이 없었다. 이 버튼이 그 문이고, 목록은 태그와 무관하게 항상 열린다.
+     */
+    private fun openLibraryPicker() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val data = viewModel.getLibraryImages()
+            if (!isAdded || _binding == null) return@launch
+            if (data.images.isEmpty()) {
+                Toast.makeText(
+                    requireContext(), R.string.image_library_picker_empty, Toast.LENGTH_SHORT
+                ).show()
+                return@launch
+            }
+            val sheet = ImageLibraryPickerBottomSheet()
+            sheet.images = data.images
+            // 이미 붙어 있는 것은 뺀다 — canonical로 맞춰야 같은 파일의 다른 표기를 걸러낸다
+            // (추천 스트립의 excluded 계산과 같은 규칙이다).
+            val currentCanon = imageStrip.paths.mapTo(HashSet()) { canonicalOrSelf(it) }
+            sheet.excludePaths = data.images
+                .filter { canonicalOrSelf(it.path) in currentCanon }
+                .mapTo(HashSet()) { it.path }
+            sheet.onConfirm = { picked -> attachLibraryImages(picked, data.metas) }
+            sheet.show(parentFragmentManager, "image_library_picker")
+        }
+    }
+
+    /**
+     * 고른 라이브러리 이미지를 붙인다.
+     *
+     * **링크 그룹 확장을 여기서도 한다** — 추천 첨부([attachRecommendedImage])와 같은 규칙이라야
+     * "추천으로 붙이면 묶음이 따라오는데 피커로 붙이면 안 따라온다"는 갈림이 생기지 않는다.
+     */
+    private fun attachLibraryImages(
+        paths: List<String>,
+        metas: List<com.novelcharacter.app.util.ImageLinkResolver.Meta>
+    ) {
+        if (paths.isEmpty()) return
+        val expansion = com.novelcharacter.app.util.ImageLinkResolver.expand(paths, metas)
+        val currentCanon = imageStrip.paths.mapTo(HashSet()) { canonicalOrSelf(it) }
+        val toAdd = expansion.allPaths.filter { canonicalOrSelf(it) !in currentCanon }
+        if (toAdd.isEmpty()) return
+        // 첨부는 미저장 변경 — addPaths가 더티 훅을 호출해 무음 유실을 막는다
+        imageStrip.addPaths(toAdd)
+        if (isAdded) {
+            Toast.makeText(
+                requireContext(),
+                getString(R.string.image_library_picker_attached, toAdd.size),
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+        // 붙인 것은 추천에서 빠져야 한다(추천은 첨부된 경로를 제외한다)
+        refreshRecommendations()
     }
 
     // ===== 추천 이미지 스트립 (G3) =====

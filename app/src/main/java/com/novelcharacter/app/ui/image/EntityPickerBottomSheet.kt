@@ -26,6 +26,16 @@ class EntityPickerBottomSheet : BottomSheetDialogFragment() {
     var loadTargets: (suspend (ImageManagerViewModel.OwnerType) -> List<ImageManagerViewModel.PickRow>)? = null
     var onPicked: ((ImageManagerViewModel.OwnerType, ImageManagerViewModel.PickRow) -> Unit)? = null
 
+    /**
+     * '새 캐릭터 만들기' — null이면 버튼을 감춘다.
+     *
+     * 목록은 [loadTargets]가 **이미 있는 것만** 싣는다. 그래서 아직 없는 캐릭터에 이미지를
+     * 붙이려면 화면을 나가 캐릭터를 만들고 돌아와야 했다(사용자 지적 2026.08.02).
+     * **캐릭터 유형일 때만** 보인다 — 작품·세계관은 이미지 탭에서 만드는 것이 자연스러운
+     * 자리가 아니고, 지금 막힌 것도 캐릭터 축이다.
+     */
+    var onCreateNewCharacter: (() -> Unit)? = null
+
     private var _binding: BottomSheetEntityPickerBinding? = null
     private val binding get() = _binding!!
 
@@ -58,14 +68,28 @@ class EntityPickerBottomSheet : BottomSheetDialogFragment() {
                 binding.typeUniverse.id -> ImageManagerViewModel.OwnerType.UNIVERSE
                 else -> ImageManagerViewModel.OwnerType.CHARACTER
             }
+            updateCreateButton()
             loadRows()
         }
+        binding.createNewButton.setOnClickListener {
+            val cb = onCreateNewCharacter
+            dismiss()
+            cb?.invoke()
+        }
+        updateCreateButton()
         binding.searchEdit.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
             override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) { applyFilter() }
             override fun afterTextChanged(s: Editable?) {}
         })
         loadRows()
+    }
+
+    /** 캐릭터 유형이고 호출부가 콜백을 준 경우에만 보인다. */
+    private fun updateCreateButton() {
+        val show = onCreateNewCharacter != null &&
+            currentType == ImageManagerViewModel.OwnerType.CHARACTER
+        binding.createNewButton.visibility = if (show) View.VISIBLE else View.GONE
     }
 
     private fun loadRows() {

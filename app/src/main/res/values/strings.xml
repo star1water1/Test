@@ -2247,6 +2247,23 @@
     <string name="image_tag_edit_done">태그 %1$d개를 저장했습니다</string>
     <string name="image_link_badge">링크</string>
     <string name="image_recommend_title">추천 이미지 — 태그 일치 (탭하여 첨부)</string>
+    <!-- 이미지 탭 — 배정 피커에서 캐릭터를 즉시 만드는 경로 -->
+    <string name="image_assign_create_character">새 캐릭터 만들기</string>
+    <string name="image_assign_create_name_hint">캐릭터 이름</string>
+    <string name="image_assign_create_no_novel">작품 없음(나중에 정하기)</string>
+    <string name="image_assign_create_name_required">이름을 적어야 만들 수 있습니다.</string>
+    <!-- 라이브러리 이미지 피커 — 편집창에서 앱이 이미 들고 있는 이미지를 고른다 -->
+    <string name="image_library_pick_action">라이브러리에서 고르기</string>
+    <string name="image_library_picker_title">라이브러리에서 고르기</string>
+    <string name="image_library_picker_purpose">앱에 들어 있는 이미지를 골라 이 캐릭터에 붙입니다. 저장해야 반영됩니다.</string>
+    <string name="image_library_picker_search_hint">파일명·태그·배정된 이름으로 찾기</string>
+    <string name="image_library_picker_chip_unassigned">아직 아무 데도 안 쓴 것만</string>
+    <string name="image_library_picker_empty">고를 이미지가 없습니다. 이미지 탭에서 먼저 들여오세요.</string>
+    <string name="image_library_picker_confirm">붙이기</string>
+    <string name="image_library_picker_selected">%1$d장 고름</string>
+    <string name="image_library_picker_owner">%1$s에 쓰는 중</string>
+    <string name="image_library_picker_owner_none">아직 안 쓴 이미지</string>
+    <string name="image_library_picker_attached">%1$d장을 붙였습니다. 저장해야 반영됩니다.</string>
     <string name="image_recommend_attached_with_link">링크된 이미지 %1$d장이 함께 첨부되었습니다</string>
     <string name="image_settings_auto_link_title">캐릭터 이미지 자동 링크</string>
     <string name="image_settings_auto_link_desc">켜면 한 캐릭터에 함께 등록된 이미지들이 이미지 탭에서 자동으로 링크(같은 캐릭터 묶음)로 묶이고, 캐릭터에서 빼면 그 링크가 풀립니다. 꺼도 이미 만든 링크는 그대로 남습니다.</string>

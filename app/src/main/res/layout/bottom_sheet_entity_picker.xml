@@ -66,10 +66,20 @@
             android:textAppearance="@style/TextAppearance.App.Body" />
     </com.google.android.material.textfield.TextInputLayout>
 
+    <!-- 새 캐릭터 만들기 — 목록이 '이미 있는 것'만 싣기 때문에, 아직 없는 캐릭터에
+         이미지를 붙이려면 화면을 나갔다 와야 했다. 캐릭터 유형일 때만 보인다. -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/createNewButton"
+        style="@style/Widget.Material3.Button.TonalButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="@string/image_assign_create_character" />
+
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/recyclerView"
         android:layout_width="match_parent"
-        android:layout_height="320dp"
+        android:layout_height="280dp"
         android:layout_marginTop="8dp" />
 
     <TextView
