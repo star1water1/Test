@@ -1424,6 +1424,8 @@
     <string name="body_part_bar_label">%1$s %2$s</string>
     <string name="body_part_index">%1$d번째 값</string>
     <string name="body_target_ratio_label">목표 비율</string>
+    <string name="body_target_ratio_hint_auto">같은 키의 장르 기준 몸(X라인 중심)과의 거리입니다. 이상값은 체형 분석 설정에서 직접 정할 수 있습니다.</string>
+    <string name="body_target_ratio_hint_custom">직접 정한 이상값과의 거리입니다.</string>
     <string name="body_target_ratio_score">%1$s점 / 100점</string>
     <string name="body_rank_bust">가슴 %1$d위</string>
     <string name="body_rank_hip">엉덩이 %1$d위</string>

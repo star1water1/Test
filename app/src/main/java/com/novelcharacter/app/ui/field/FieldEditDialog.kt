@@ -1008,16 +1008,20 @@ class FieldEditDialog : DialogFragment() {
         // Store reference for later use
         ribOffsetEdit.tag = "ribOffsetEdit"
 
-        // ── 골든비율 이상값 (V2) ──
+        // ── 목표 비율 이상값 (P8 — 종전 '골든비율') ──
+        // 칸을 비우면 장르 기준 자동(키·흉곽 보정 적응)이고, 적은 키만 그 값으로 고정된다.
+        // 힌트의 참고 숫자는 파생 함수에서 그때그때 계산한다 — 적어 두면 낡는다(B-92의 교훈).
+        val genreRef = com.novelcharacter.app.util.BodyGenerator.genreTargetIdeals()
+        fun refOf(key: String) = String.format(java.util.Locale.US, "%.2f", genreRef[key] ?: 0.0)
         val idealEntries = listOf(
-            "whr" to "WHR 이상값 (기본 0.70)",
-            "bustHipRatio" to "B/H 이상값 (기본 1.00)",
-            "waistHeight" to "W/키 이상값 (기본 0.40)",
-            "bustHeight" to "B/키 이상값 (기본 0.52)"
+            "whr" to "WHR 이상값 (비우면 장르 기준 ≈${refOf("whr")})",
+            "bustHipRatio" to "B/H 이상값 (비우면 장르 기준 ≈${refOf("bustHipRatio")})",
+            "waistHeight" to "W/키 이상값 (비우면 장르 기준 ≈${refOf("waistHeight")})",
+            "bustHeight" to "B/키 이상값 (비우면 장르 기준 ≈${refOf("bustHeight")})"
         )
         val goldenIdealEdits = mutableMapOf<String, EditText>()
         val idealLabel = TextView(ctx).apply {
-            text = "골든비율 이상값"
+            text = "목표 비율 이상값 — 비우면 장르 기준으로 잽니다"
             textSize = 12f
             alpha = 0.7f
             setPadding(0, (12 * density).toInt(), 0, (4 * density).toInt())
@@ -1029,7 +1033,7 @@ class FieldEditDialog : DialogFragment() {
                 inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
                 this.hint = hint
                 tag = "goldenIdeal_$key"
-                setText(BodyAnalysisConfig.DEFAULT_GOLDEN_RATIO_IDEALS[key]?.toString() ?: "")
+                // 비워 두는 것이 기본이다 — 미리 채우면 '직접 정한 값'과 구분되지 않는다.
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
                 ).apply { bottomMargin = (2 * density).toInt() }
@@ -1203,7 +1207,7 @@ class FieldEditDialog : DialogFragment() {
         val ribOffset = ribOffsetView?.text?.toString()?.toDoubleOrNull()?.coerceIn(0.0, 10.0)
             ?: BodyAnalysisConfig.DEFAULT_RIB_OFFSET
 
-        // 골든비율 이상값 (V2)
+        // 목표 비율 이상값 — 적힌 칸만 담는다(빈 칸 = 장르 기준 자동, P8)
         val goldenIdeals = mutableMapOf<String, Double>()
         for (key in listOf("whr", "bustHipRatio", "waistHeight", "bustHeight")) {
             val edit = binding.insightTogglesContainer.findViewWithTag<EditText>("goldenIdeal_$key")
@@ -1216,7 +1220,7 @@ class FieldEditDialog : DialogFragment() {
             enabledInsights = enabledInsights.ifEmpty { BodyAnalysisConfig.DEFAULT_ENABLED_INSIGHTS },
             ribOffset = ribOffset,
             bodyTagRules = existingConfig?.bodyTagRules ?: emptyList(),  // UI 미노출 → 기존값 보존
-            goldenRatioIdeals = goldenIdeals.ifEmpty { BodyAnalysisConfig.DEFAULT_GOLDEN_RATIO_IDEALS }
+            goldenRatioIdeals = goldenIdeals
         )
     }
 

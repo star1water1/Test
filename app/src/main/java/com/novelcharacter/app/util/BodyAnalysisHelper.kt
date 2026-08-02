@@ -192,14 +192,18 @@ class BodyAnalysisHelper {
         val volumeIndex = safeHeight?.let { (bust + waist + hip) / (3.0 * it) }
         val curvesIndex = safeHeight?.let { (bustWaistDiff + waistHipDiff) / it }
 
-        // 11. 골든 비율 점수 — 사용자 정의 이상값 (V2)
-        val ideals = config.goldenRatioIdeals
+        // 11. 목표 비율 점수 (P8 재의미화 — 종전 '골든 비율') — 공식은 무변경이고 이상값의
+        //     근거만 바뀐다: 직접 정한 키는 그 값이 이기고, 비운 키는 장르 기준
+        //     (BodyGenerator.genreTargetIdeals — 키·흉곽 보정 적응)이 채운다.
+        //     종전의 키별 리터럴 폴백(.70/1.00/.40/.52)은 황금비 잔재의 세 번째 사본이었다.
         val goldenRatioDetails = if (safeHeight != null) {
+            val ideals = BodyGenerator.genreTargetIdeals(safeHeight, config.ribOffset) +
+                config.goldenRatioIdeals
             listOf(
-                goldenRatioItem("허리/엉덩이", whr, ideals["whr"] ?: 0.70),
-                goldenRatioItem("가슴/엉덩이", bustHipRatio, ideals["bustHipRatio"] ?: 1.00),
-                goldenRatioItem("허리/키", waist / safeHeight, ideals["waistHeight"] ?: 0.40),
-                goldenRatioItem("가슴/키", bust / safeHeight, ideals["bustHeight"] ?: 0.52)
+                goldenRatioItem("허리/엉덩이", whr, ideals.getValue("whr")),
+                goldenRatioItem("가슴/엉덩이", bustHipRatio, ideals.getValue("bustHipRatio")),
+                goldenRatioItem("허리/키", waist / safeHeight, ideals.getValue("waistHeight")),
+                goldenRatioItem("가슴/키", bust / safeHeight, ideals.getValue("bustHeight"))
             )
         } else null
 

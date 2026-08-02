@@ -36,7 +36,10 @@ data class BodyAnalysisConfig(
     val enabledInsights: Map<String, Boolean> = DEFAULT_ENABLED_INSIGHTS,
     val ribOffset: Double = DEFAULT_RIB_OFFSET,                          // 흉곽 보정 — 밑가슴 = 허리 + 이 값
     val bodyTagRules: List<BodyTagRule> = emptyList(),                   // 다층 태그 (비어있으면 bodyTypeRules에서 변환)
-    val goldenRatioIdeals: Map<String, Double> = DEFAULT_GOLDEN_RATIO_IDEALS,  // 사용자 정의 이상값
+    // 목표 비율 이상값 — **비어 있으면 장르 기준 자동**(BodyGenerator.genreTargetIdeals,
+    // 키·흉곽 보정 적응). 키별로 직접 정한 값만 담기며, 담긴 키가 자동을 이긴다.
+    // 종전 기본(황금비 계열 .70/1.00/.40/.52)은 P8 '황금비 잔재 제거'로 소거됐다(2026.08.02).
+    val goldenRatioIdeals: Map<String, Double> = emptyMap(),
     val partSlots: List<BodySlot> = emptyList()                          // 파트 인덱스 → 부위 (비어있으면 추론)
 ) {
     data class CupMappingEntry(val maxDiff: Double, val label: String)
@@ -172,13 +175,6 @@ data class BodyAnalysisConfig(
                 "height" to RangeCondition(max = 158.0), "bust" to RangeCondition(max = 82.0)
             ), 2),
             BodyTagRule("볼륨 압도적", "special", mapOf("cupIndex" to RangeCondition(min = 8.0)), 3)
-        )
-
-        val DEFAULT_GOLDEN_RATIO_IDEALS = mapOf(
-            "whr" to 0.70,
-            "bustHipRatio" to 1.00,
-            "waistHeight" to 0.40,
-            "bustHeight" to 0.52
         )
 
         val DEFAULT_ENABLED_INSIGHTS = mapOf(
@@ -328,7 +324,8 @@ data class BodyAnalysisConfig(
                     enabledInsights = if (enabledInsights.isEmpty()) DEFAULT_ENABLED_INSIGHTS else enabledInsights,
                     ribOffset = ribOffset,
                     bodyTagRules = bodyTagRules,
-                    goldenRatioIdeals = if (goldenRatioIdeals.isEmpty()) DEFAULT_GOLDEN_RATIO_IDEALS else goldenRatioIdeals,
+                    // 비어 있으면 빈 채로 둔다 — '장르 기준 자동'이라는 뜻이 있는 값이다.
+                    goldenRatioIdeals = goldenRatioIdeals,
                     partSlots = partSlots
                 )
             } catch (_: Exception) {
@@ -406,8 +403,8 @@ data class BodyAnalysisConfig(
                     put("bodyTagRules", tagRulesArr)
                 }
 
-                // Golden ratio ideals (사용자 정의 시에만 저장)
-                if (config.goldenRatioIdeals != DEFAULT_GOLDEN_RATIO_IDEALS) {
+                // 목표 비율 이상값 — 직접 정한 키가 있을 때만 저장(빈 = 장르 기준 자동).
+                if (config.goldenRatioIdeals.isNotEmpty()) {
                     val idealsObj = JSONObject()
                     for ((k, v) in config.goldenRatioIdeals) {
                         idealsObj.put(k, v)

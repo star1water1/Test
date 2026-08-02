@@ -18,9 +18,15 @@ class BodyGeneratorTest {
     private val options = BodyGenerator.GenerationPreset()
     private val heights = options.heightOptions
 
-    /** 축 하나를 여러 난수·여러 키로 굴려 본다 — 흔들림이 밴드를 넘는지는 표본으로만 보인다. */
+    /**
+     * 축 하나를 여러 난수·여러 키로 굴려 본다 — 흔들림이 밴드를 넘는지는 표본으로만 보인다.
+     *
+     * 기본 보정은 분석 규약과 같은 값이다. 종전에는 여기만 0이라 **0으로 굴리고 6으로 재는**
+     * 비정합 표본이었다 — 가슴 축이 증가량이던 시절엔 우연히 상쇄돼 통과했다.
+     */
     private fun roll(
-        torso: Int = 1, bust: Int = 1, hip: Int = 1, cupDiff: Double? = null, ribOffset: Double = 0.0
+        torso: Int = 1, bust: Int = 1, hip: Int = 1, cupDiff: Double? = null,
+        ribOffset: Double = BodyAnalysisConfig.DEFAULT_RIB_OFFSET
     ): List<BodyGenerator.GeneratedBody> = buildList {
         for (h in heights.indices) {
             for (seed in 0 until 40) {
@@ -77,6 +83,28 @@ class BodyGeneratorTest {
         for (body in roll(bust = 0)) {
             val cd = BodySilhouetteSpec.cupDiff(measures(body))
             assertTrue("컵차 $cd (가슴 ${body.bust} 허리 ${body.waist})", cd in 8.0..12.0)
+        }
+    }
+
+    @Test
+    fun `가슴 축의 컵차는 흉곽 보정과 무관하다`() {
+        // 축의 의미가 컵차이므로 보정이 얼마든 고른 축과 읽히는 컵이 같아야 한다 —
+        // 종전(증가량 의미)에는 보정 0에서 아담이 D로 읽혔다(B-92 잔여 결함).
+        for (offset in listOf(0.0, 6.0, 10.0)) {
+            for (option in options.bustOptions) {
+                for (body in roll(bust = options.bustOptions.indexOf(option), ribOffset = offset)) {
+                    val m = BodySilhouetteSpec.Measures(
+                        body.height, BodySilhouetteSpec.BASE.shoulder,
+                        body.bust, body.waist, body.hip, ribOffset = offset
+                    )
+                    val cd = BodySilhouetteSpec.cupDiff(m)
+                    // 흔들림 ±2 + 정수 반올림 ±1
+                    assertTrue(
+                        "보정 $offset 축 ${option.label} 컵차 $cd",
+                        kotlin.math.abs(cd - option.cupDiff) <= 3.0
+                    )
+                }
+            }
         }
     }
 

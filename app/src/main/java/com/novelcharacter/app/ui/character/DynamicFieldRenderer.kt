@@ -946,6 +946,13 @@ class DynamicFieldRenderer(
             result.goldenRatioScore != null
         ) {
             addSectionTitle(getString(R.string.body_target_ratio_label))
+            // 무엇과의 거리인지 말한다(5-3) — 비웠으면 장르 기준, 채웠으면 직접 정한 값.
+            addSubRow(
+                getString(
+                    if (config.goldenRatioIdeals.isEmpty()) R.string.body_target_ratio_hint_auto
+                    else R.string.body_target_ratio_hint_custom
+                )
+            )
             addSubRow(getStringWithArg(R.string.body_target_ratio_score, "%.0f".format(result.goldenRatioScore)))
             result.goldenRatioDetails?.forEach { item ->
                 addSubRow("${item.label}: ${"%.2f".format(item.actual)} (이상: ${"%.2f".format(item.ideal)}, %+.1f%%)".format(item.deviationPercent))
