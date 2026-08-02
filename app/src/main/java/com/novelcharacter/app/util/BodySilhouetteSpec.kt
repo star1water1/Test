@@ -491,6 +491,41 @@ object BodySilhouetteSpec {
         return out
     }
 
+    /**
+     * 팔 채움 고리에서 **윤곽으로 그을 부분만** 떼어낸다.
+     *
+     * 채움은 닫힌 고리지만 윤곽은 열린 패스다 — 팔꿈치 절단변([FrontFigure.forearms])이나
+     * 어깨 캡을 그으면 몸 위에 없는 선이 생긴다(인수인계 4장 "절단변을 긋지 않는 열린 윤곽").
+     * [capped]는 [FrontFigure.arms]처럼 어깨 캡 점을 머리에 단 고리인가다.
+     */
+    fun armEdge(loop: List<PointCm>, capped: Boolean): List<PointCm> =
+        if (capped && loop.isNotEmpty()) loop.subList(1, loop.size) else loop
+
+    /**
+     * 값이 없어 보간한 부위의 윤곽 대역(키 비율 lo..hi) — 그 구간을 점선으로 긋는다(설계 5-4-1).
+     *
+     * 대역을 뷰가 정하면 화면마다 갈리므로 여기서 든다. 가슴만 대역이 값에 따라
+     * 움직이므로 [bg]를 받는다.
+     */
+    fun estimatedBand(slot: BodySlot, bg: BustGeom): ClosedRange<Double>? = when (slot) {
+        BodySlot.SHOULDER -> (ANCHOR_SHOULDER - .030)..(ANCHOR_SHOULDER + .035)
+        BodySlot.BUST -> bg.botF..bg.topF
+        BodySlot.WAIST -> (ANCHOR_WAIST - .035)..(ANCHOR_WAIST + .035)
+        BodySlot.HIP -> (ANCHOR_HIP - .045)..(ANCHOR_HIP + .045)
+        else -> null
+    }
+
+    /**
+     * 파츠 색 구분(설계 5-4-1)의 다리 경계 — 엉덩이 관절 V 라인의 세 높이(키 비율).
+     *
+     * 틴트는 몸 외곽에 클립해 얹으므로 외곽 한 획은 그대로 유지된다.
+     */
+    const val LEG_TINT_SIDE_F = .538
+    const val LEG_TINT_CENTER_F = .500
+    /** 측면의 다리 경계 — 앞쪽이 낮고 뒤쪽이 높은 사선 하나다. */
+    const val LEG_TINT_SIDE_FRONT_F = .525
+    const val LEG_TINT_SIDE_BACK_F = .490
+
     /** 변형 전 몸통 바깥 반폭(cm) — 팔 푸시 계산이 쓴다. */
     private fun outerHalfAt(frac: Double): Double {
         for (i in 0 until R_OUTER.size - 1) {
@@ -751,6 +786,53 @@ object BodySilhouetteSpec {
 
         // ⑧ 배꼽 — 마네킹 가독.
         out.add(VolumeShape.Blob(PointCm(0.0, yc(.608)), rxCm = 0.7, ryCm = 0.45, alpha = .13))
+        return out
+    }
+
+    /**
+     * 측면의 셀 표기층 — 밑가슴 턱 라인과 엉덩이 접힘. 정면과 같은 문법(플랫·선명)이다.
+     *
+     * 정면의 [volumeShapes]와 나란한 자리이며, 뷰가 다시 계산하지 않도록 여기서 든다.
+     * 좌표는 [side]와 같은 축(중심축 오프셋 [SIDE_AXIS_DX] 포함)이라 그대로 얹으면 맞는다.
+     */
+    fun sideVolumeShapes(m: Measures): List<VolumeShape> {
+        val sc = scales(m)
+        val bg = bustGeom(m)
+        val yc = { f: Double -> m.height * f }
+        val depth = min(0.8 + bg.cupDiff * .46, 14.0)
+        val out = ArrayList<VolumeShape>(2)
+
+        // ① 밑가슴 턱 — 컵이 클수록 깊고 진하다(정면 W-아크와 같은 게이팅).
+        val gate = min(1.0, max(0.0, bg.cupDiff - 3) / 13)
+        if (gate > 0) {
+            val bx = 6.2
+            out.add(
+                VolumeShape.Contour(
+                    points = quadSample(
+                        PointCm(SIDE_AXIS_DX + bx + depth * .72, yc(bg.botF + .012)),
+                        PointCm(SIDE_AXIS_DX + bx + depth * .30, yc(bg.botF - .006)),
+                        PointCm(SIDE_AXIS_DX + bx * .55, yc(bg.botF + .004)),
+                        ArrayList()
+                    ),
+                    widthCm = 0.75 + min(bg.cupDiff, 24.0) * .014,
+                    alpha = gate * .85,
+                    accent = true
+                )
+            )
+        }
+
+        // ② 엉덩이 접힘 — 뒤쪽에만 든다(엉덩이 스케일을 따라 자리가 옮겨진다).
+        out.add(
+            VolumeShape.Contour(
+                points = quadSample(
+                    PointCm(SIDE_AXIS_DX - 9.6 * sc.hip, yc(.492)),
+                    PointCm(SIDE_AXIS_DX - 6.4, yc(.482)),
+                    PointCm(SIDE_AXIS_DX - 4.0, yc(.487)),
+                    ArrayList()
+                ),
+                widthCm = 0.8, alpha = .16, accent = false
+            )
+        )
         return out
     }
 

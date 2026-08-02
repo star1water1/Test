@@ -575,6 +575,67 @@ class BodySilhouetteSpecTest {
         assertEquals("좌우 폭이 어긋나면 몸이 기운다", maxRight, maxLeft, 1e-9)
     }
 
+    // ── 뷰가 쓰는 자리 (SilhouetteView는 그리기만 한다) ──────────────────────
+
+    @Test
+    fun `팔 윤곽은 절단변을 긋지 않는다`() {
+        val f = spec.front(m())
+        val arm = f.arms.first()
+        val fore = f.forearms.first()
+        // 위팔은 어깨 캡 점을 머리에 달고 있다 — 윤곽에서는 그 한 점을 뺀다.
+        val armEdge = spec.armEdge(arm, capped = true)
+        assertEquals(arm.size - 1, armEdge.size)
+        assertEquals(arm[1].x, armEdge[0].x, 1e-9)
+        // 전완은 캡이 없다 — 그대로 열린 패스로 긋는다(절단면을 그으면 팔에 없는 선이 생긴다).
+        assertEquals(fore.size, spec.armEdge(fore, capped = false).size)
+    }
+
+    @Test
+    fun `보간 대역은 그 부위 핸들을 품는다`() {
+        // 점선 구간이 핸들과 어긋나면 "어디가 추정인가"가 딴 곳을 가리킨다.
+        val mm = m(bust = 95.0, waist = 58.0, hip = 96.0)
+        val bg = spec.bustGeom(mm)
+        for (h in spec.handles(mm)) {
+            val band = spec.estimatedBand(h.slot, bg)
+            assertNotNull("${h.slot} 대역이 없다", band)
+            assertTrue(
+                "${h.slot} 대역이 핸들 높이를 벗어난다",
+                h.heightFraction in band!!
+            )
+        }
+        assertNull("부위가 아닌 슬롯에는 대역이 없다", spec.estimatedBand(BodySlot.NONE, bg))
+    }
+
+    @Test
+    fun `측면 표기층은 컵 게이팅을 따르고 엉덩이를 따라 옮겨진다`() {
+        val flat = spec.sideVolumeShapes(m(bust = 64.0, waist = 62.0))
+        val big = spec.sideVolumeShapes(m(bust = 110.0, waist = 62.0))
+        // 빈유는 밑가슴 턱이 들지 않는다 — 접힘 하나만 남는다.
+        assertEquals(1, flat.size)
+        assertEquals(2, big.size)
+        assertTrue("컵이 크면 턱이 진해야 한다", big.first().alpha > .3)
+
+        val wide = spec.sideVolumeShapes(m(hip = 108.0)).last() as BodySilhouetteSpec.VolumeShape.Contour
+        val narrow = spec.sideVolumeShapes(m(hip = 78.0)).last() as BodySilhouetteSpec.VolumeShape.Contour
+        assertTrue(
+            "엉덩이 접힘이 값을 따라가지 않으면 몸 밖에 뜬다",
+            wide.points.first().x < narrow.points.first().x
+        )
+    }
+
+    @Test
+    fun `측면 표기층도 셀 문법의 유효한 값이다`() {
+        for (mm in listOf(m(), m(bust = 130.0, waist = 50.0), m(bust = 60.0, hip = 120.0))) {
+            for (s in spec.sideVolumeShapes(mm)) {
+                assertTrue("불투명도가 범위 밖", s.alpha in 0.0..1.0)
+                val pts = (s as BodySilhouetteSpec.VolumeShape.Contour).points
+                assertTrue("표기층에 정점이 없다", pts.size >= 2)
+                assertTrue("NaN 정점", pts.all { it.x.isFinite() && it.y.isFinite() })
+                assertTrue("굵기가 0 이하", s.widthCm > 0)
+            }
+        }
+    }
+
     @Test
     fun `핸들 넷이 모두 자리를 갖는다`() {
         val f = spec.front(m())

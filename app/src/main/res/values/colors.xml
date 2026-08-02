@@ -114,4 +114,14 @@
     <color name="graph_rel_sibling">#E65100</color>
     <color name="graph_rel_mentor">#00838F</color>
     <color name="graph_rel_other">#616161</color>
+
+    <!-- 체형 실루엣 — 마네킹 톤. 인디고 팔레트에서 파생한다(그림 코드의 색 하드코딩 금지).
+         채움은 볼륨 음영이 읽히는 중간 명도여야 한다: 너무 짙으면 셀 음영을 삼킨다.
+         윤곽은 primary, 음영은 채움색 위 흑색 저불투명이라 테마를 자동으로 따른다. -->
+    <color name="silhouette_figure">#DDE0F3</color>
+    <color name="silhouette_figure_arm">#CBD0EB</color>
+    <color name="silhouette_figure_leg">#D4D8F0</color>
+    <color name="silhouette_ghost">#8B93A1</color>
+    <color name="silhouette_warn">#B4552D</color>
+    <color name="silhouette_handle_fill">#FFFFFF</color>
 </resources>
