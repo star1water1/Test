@@ -34,7 +34,7 @@ data class BodyAnalysisConfig(
     val bodyTypeRules: List<BodyTypeRule> = DEFAULT_BODY_TYPE_RULES,
     val defaultBodyType: String = "보통체형",
     val enabledInsights: Map<String, Boolean> = DEFAULT_ENABLED_INSIGHTS,
-    val ribOffset: Double = 0.0,                                        // 흉곽 보정 (0=기존, 권장 6.0)
+    val ribOffset: Double = DEFAULT_RIB_OFFSET,                          // 흉곽 보정 — 밑가슴 = 허리 + 이 값
     val bodyTagRules: List<BodyTagRule> = emptyList(),                   // 다층 태그 (비어있으면 bodyTypeRules에서 변환)
     val goldenRatioIdeals: Map<String, Double> = DEFAULT_GOLDEN_RATIO_IDEALS,  // 사용자 정의 이상값
     val partSlots: List<BodySlot> = emptyList()                          // 파트 인덱스 → 부위 (비어있으면 추론)
@@ -76,6 +76,19 @@ data class BodyAnalysisConfig(
         const val INSIGHT_BODY_TAGS = "bodyTags"
         const val INSIGHT_FRAME_SIZE = "frameSize"
         const val INSIGHT_PROPORTION = "proportion"
+
+        /**
+         * 흉곽 보정 기본값(cm) — 실측 밑가슴이 없을 때 `밑가슴 = 허리 + 이 값`으로 본다.
+         *
+         * **이 값 하나가 그림과 글자를 함께 정한다**(B-92 해소, 2026.08.02). 종전에는
+         * 기본이 0이라 분석은 `밑가슴 = 허리`로 컵을 재고 실루엣은 전용 상수 6으로 그려,
+         * 같은 캐릭터의 컵 글자가 두 계층에서 두 컵 이상 갈렸다. 읽기 카드가 실루엣과
+         * 컵 글자를 **한 카드에** 싣게 되면서 그 어긋남이 화면 안으로 들어오므로,
+         * 근사 규약을 판정 P4가 확정한 장르 감각(밑가슴 ≈ 허리 + 6)으로 통일했다.
+         *
+         * 사용자가 이 값을 바꾸면 **그림도 함께 움직인다** — 설정과 화면이 갈리지 않는다.
+         */
+        const val DEFAULT_RIB_OFFSET = 6.0
 
         val DEFAULT_CUP_MAPPING = listOf(
             CupMappingEntry(7.5, "AA"),
@@ -239,8 +252,9 @@ data class BodyAnalysisConfig(
 
                 val defaultBodyType = obj.optString("defaultBodyType", "보통체형")
 
-                // Rib offset
-                val ribOffset = obj.optDouble("ribOffset", 0.0)
+                // Rib offset — 키가 없으면 기본값. 종전 기본이 0이던 동안 0은 저장된 적이
+                // 없으므로(아래 toConfig의 기본값 생략 규칙), 이 갈아타기로 잃는 저장값은 없다.
+                val ribOffset = obj.optDouble("ribOffset", DEFAULT_RIB_OFFSET)
 
                 // Body tag rules (multi-tag)
                 val bodyTagRules = mutableListOf<BodyTagRule>()
@@ -364,8 +378,10 @@ data class BodyAnalysisConfig(
 
                 put("defaultBodyType", config.defaultBodyType)
 
-                // Rib offset
-                if (config.ribOffset != 0.0) {
+                // Rib offset — 기본값이면 적지 않는다(기존 config JSON이 불어나지 않게).
+                // 기준이 [DEFAULT_RIB_OFFSET]으로 옮겨졌으므로 이제 **0은 명시 저장된다** —
+                // 근사를 끄고 싶은 사용자의 선택이 기본값과 구분돼 왕복한다.
+                if (config.ribOffset != DEFAULT_RIB_OFFSET) {
                     put("ribOffset", config.ribOffset)
                 }
 

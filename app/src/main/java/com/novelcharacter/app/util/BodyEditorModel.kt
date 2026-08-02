@@ -111,8 +111,11 @@ object BodyEditorModel {
      * 빈 화면 대신 만질 것을 주는 초안이며, **적용을 누르기 전에는 아무것도 쓰이지 않는다**
      * (변경이 없으면 [적용]이 비활성이라 초안이 조용히 저장되는 경로가 없다).
      */
-    fun draftMeasures(m: BodyMeasurements): Measures {
-        BodySilhouetteSpec.measuresFrom(m)?.let { return it }
+    fun draftMeasures(
+        m: BodyMeasurements,
+        ribOffset: Double = BodySilhouetteSpec.FIGURE_RIB_OFFSET_CM
+    ): Measures {
+        BodySilhouetteSpec.measuresFrom(m, ribOffset)?.let { return it }
         val heightKnown = m.heightCm != null && m.heightCm > 0
         val h = if (heightKnown) m.heightCm!! else BodySilhouetteSpec.BASE.height
         val f = h / BodySilhouetteSpec.BASE.height
@@ -124,7 +127,8 @@ object BodyEditorModel {
             hip = BodySilhouetteSpec.BASE.hip * f,
             underbust = null,
             estimated = emptySet(),
-            heightKnown = heightKnown
+            heightKnown = heightKnown,
+            ribOffset = ribOffset
         )
     }
 
@@ -148,7 +152,10 @@ object BodyEditorModel {
      * 한 명분도 못 모으면 null이며, 그때 화면은 오버레이 토글을 내놓지 않는다
      * (눌러도 아무것도 안 나타나는 토글은 구색이다).
      */
-    fun peerAverage(peers: List<BodyMeasurements>): Measures? {
+    fun peerAverage(
+        peers: List<BodyMeasurements>,
+        ribOffset: Double = BodySilhouetteSpec.FIGURE_RIB_OFFSET_CM
+    ): Measures? {
         if (peers.isEmpty()) return null
         fun avg(pick: (BodyMeasurements) -> Double?): Double? =
             peers.mapNotNull(pick).takeIf { it.isNotEmpty() }?.average()
@@ -175,7 +182,8 @@ object BodyEditorModel {
                 unmappedParts = emptyList(),
                 heightCm = height,
                 weightKg = null
-            )
+            ),
+            ribOffset
         )
     }
 }

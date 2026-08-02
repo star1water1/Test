@@ -261,6 +261,7 @@ $TEST/excel/ImportFileFormatTest.kt
 $TEST/util/BodyMeasurementsTest.kt
 $TEST/util/BodySilhouetteSpecTest.kt
 $TEST/util/BodyEditorModelTest.kt
+$TEST/util/BodyCupContractTest.kt
 $TEST/util/BodyGeneratorTest.kt
 "
 # 주의: AiPresetsConsistencyTest는 R을 참조하므로 여기서 돌릴 수 없다(파일 상단 KDoc 참조) — CI 전용.

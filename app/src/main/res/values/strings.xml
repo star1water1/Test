@@ -1406,6 +1406,38 @@
     <string name="silhouette_overlay_average">작품 평균</string>
     <string name="silhouette_axis_summary">%1$s · 컵 %2$s · %3$s · %4$s</string>
 
+    <!-- 읽기 카드 재편 (설계 5-4-2 · 판정 P8) -->
+    <string name="body_analysis_settings">체형 분석 설정</string>
+    <string name="body_analysis_expand">자세히 ▾</string>
+    <string name="body_analysis_collapse">접기 ▴</string>
+    <string name="body_analysis_female_notice">그림은 여성 성인 기준이며, 표시할 항목은 체형 분석 설정에서 고릅니다.</string>
+    <string name="body_silhouette_open_large">크게 보기</string>
+    <string name="body_core_cup">컵</string>
+    <string name="body_core_cup_hint">장르 감각의 근사입니다. 밑가슴을 재는 파트를 연결하면 실측으로 바뀝니다.</string>
+    <string name="body_core_bmi">몸통</string>
+    <string name="body_core_bmi_hint">키 대비 몸무게입니다. BMI %1$s</string>
+    <string name="body_core_whr">잘록함</string>
+    <string name="body_core_whr_hint">허리를 엉덩이로 나눈 값입니다. 낮을수록 잘록합니다. WHR %1$s</string>
+    <string name="body_core_missing">—</string>
+    <string name="body_core_missing_hint">키·체중 필드를 채우면 나타납니다.</string>
+    <string name="body_parts_fallback_notice">파트 연결이 없어 실루엣 대신 값만 보입니다. 체형 분석 설정에서 연결하면 그림이 나타납니다.</string>
+    <string name="body_part_bar_label">%1$s %2$s</string>
+    <string name="body_part_index">%1$d번째 값</string>
+    <string name="body_target_ratio_label">목표 비율</string>
+    <string name="body_target_ratio_score">%1$s점 / 100점</string>
+    <string name="body_rank_bust">가슴 %1$d위</string>
+    <string name="body_rank_hip">엉덩이 %1$d위</string>
+    <string name="body_rank_height">키 %1$d위</string>
+    <string name="body_rank_waist">허리 %1$d위</string>
+    <string name="body_rank_total">전체 %1$d명 중</string>
+    <string name="body_rib_offset_label">흉곽 보정 (cm) — 밑가슴을 허리보다 이만큼 크게 봅니다. 높일수록 컵이 작아집니다.</string>
+    <string name="body_rib_offset_hint">흉곽 보정값 (기본 6.0)</string>
+
+    <!-- 실루엣 크게 보기 (설계 5-4-3) -->
+    <string name="silhouette_large_purpose">그림 참고용입니다. 수치를 고치려면 편집 화면의 실루엣으로 조정을 씁니다. 그림은 여성 성인 기준입니다.</string>
+    <string name="silhouette_large_labels">라벨</string>
+    <string name="silhouette_close">닫기</string>
+
     <!-- Body Generator -->
     <string name="body_gen_purpose">축을 고르고 굴리면 위 실루엣과 수치 칸이 함께 바뀝니다. 적용 전에는 폼에 쓰이지 않습니다.</string>
     <string name="body_gen_height">키</string>

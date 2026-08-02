@@ -155,7 +155,7 @@ object BodyGenerator {
         bustOption: BustOption,
         hipOption: HipOption,
         targetCupDiff: Double? = null,
-        ribOffset: Double = 0.0,
+        ribOffset: Double = BodyAnalysisConfig.DEFAULT_RIB_OFFSET,
         random: Random = Random.Default
     ): GeneratedBody {
         val height = (heightOption.center + random.nextDouble(-heightOption.variance, heightOption.variance))

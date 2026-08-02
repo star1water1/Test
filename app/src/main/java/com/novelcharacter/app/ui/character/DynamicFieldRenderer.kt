@@ -3,9 +3,11 @@ package com.novelcharacter.app.ui.character
 import android.content.Context
 import android.content.res.Resources
 import android.graphics.Typeface
+import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.google.android.material.card.MaterialCardView
@@ -41,6 +43,19 @@ class DynamicFieldRenderer(
 
     /** 외부에서 주입하는 순위 데이터 (체형 분석 인사이트용) */
     var bodyRankingInfo: RankingInfo? = null
+
+    /**
+     * 체형 분석 카드의 ⚙ — 그 필드의 편집 다이얼로그(체형 분석 설정)를 연다.
+     *
+     * 주입하지 않으면 아이콘 자체가 나오지 않는다. 눌러도 아무 데도 안 가는 버튼은 구색이다.
+     */
+    var onOpenBodySettings: ((FieldDefinition) -> Unit)? = null
+
+    /**
+     * 실루엣 탭 — 크게 보기(설계 5-4-3). 호스트가 다이얼로그를 띄우며 작품 평균 재료도
+     * 그쪽이 붙인다(렌더러는 조회를 하지 않는다).
+     */
+    var onOpenSilhouette: ((FieldDefinition, com.novelcharacter.app.util.BodyMeasurements, BodyAnalysisConfig) -> Unit)? = null
 
     /**
      * 섹션 표현 방식.
@@ -230,175 +245,9 @@ class DynamicFieldRenderer(
             container.addView(card)
         }
 
-        // 체형 분석 인사이트 카드
-        val bodyAnalysisPair = computeBodyAnalysis(fields, valueMap)
-        if (bodyAnalysisPair != null) {
-            val (bodyAnalysis, analysisConfig) = bodyAnalysisPair
-            val result = bodyRankingInfo?.let { bodyAnalysis.copy(rankingInNovel = it) } ?: bodyAnalysis
-
-            val insightCard = createCard(context, density)
-            val insightContent = LinearLayout(context).apply {
-                orientation = LinearLayout.VERTICAL
-                layoutParams = FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.MATCH_PARENT,
-                    FrameLayout.LayoutParams.WRAP_CONTENT
-                )
-            }
-
-            // 타이틀
-            insightContent.addView(TextView(context).apply {
-                text = getString(R.string.body_analysis_title)
-                setTypeface(null, Typeface.BOLD)
-                textSize = 16f
-                setTextColor(context.getColor(R.color.primary))
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { bottomMargin = (8 * density).toInt() }
-            })
-
-            fun addRow(label: String, value: String) {
-                insightContent.addView(TextView(context).apply {
-                    text = "$label: $value"
-                    textSize = 14f
-                    layoutParams = LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT
-                    ).apply { bottomMargin = (4 * density).toInt() }
-                })
-            }
-
-            fun addSectionTitle(title: String) {
-                insightContent.addView(TextView(context).apply {
-                    text = title
-                    textSize = 13f
-                    setTypeface(null, Typeface.BOLD)
-                    setTextColor(context.getColor(R.color.text_secondary))
-                    layoutParams = LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT
-                    ).apply {
-                        topMargin = (6 * density).toInt()
-                        bottomMargin = (2 * density).toInt()
-                    }
-                })
-            }
-
-            fun addSubRow(text: String) {
-                insightContent.addView(TextView(context).apply {
-                    this.text = text
-                    textSize = 12f
-                    setTextColor(context.getColor(R.color.text_secondary))
-                    layoutParams = LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT
-                    ).apply { bottomMargin = (2 * density).toInt() }
-                })
-            }
-
-            // 섹션 0: 다층 태그 (V2)
-            if (analysisConfig.isInsightEnabled(BodyAnalysisConfig.INSIGHT_BODY_TAGS) &&
-                result.bodyTags.isNotEmpty()) {
-                addRow(getString(R.string.body_tags_label), result.bodyTags.joinToString(" · "))
-            }
-
-            // 섹션 1: 체형 분류 + 실루엣
-            if (analysisConfig.isInsightEnabled(BodyAnalysisConfig.INSIGHT_BODY_TYPE)) {
-                result.bodyType?.let { addRow(getString(R.string.body_type_label), it) }
-            }
-            if (analysisConfig.isInsightEnabled(BodyAnalysisConfig.INSIGHT_SILHOUETTE)) {
-                result.silhouetteDescription?.let { addSubRow(it) }
-            }
-
-            // 섹션 2: 컵 사이즈 (보정 표시)
-            if (analysisConfig.isInsightEnabled(BodyAnalysisConfig.INSIGHT_CUP_SIZE)) {
-                result.cupSize?.let { cup ->
-                    val diffStr = result.bustDiff?.let { d -> " (차이 ${"%.1f".format(d)}cm)" } ?: ""
-                    val ubStr = if (result.adjustedUnderbust != null && result.adjustedUnderbust != result.waist) {
-                        " [보정 UB ${"%.0f".format(result.adjustedUnderbust)}]"
-                    } else ""
-                    addRow(getString(R.string.cup_size_label), "$cup$diffStr$ubStr")
-                }
-            }
-
-            // 섹션 2.5: 프레임 + 프로포션 (V2)
-            if (analysisConfig.isInsightEnabled(BodyAnalysisConfig.INSIGHT_FRAME_SIZE) && result.frameSize != null) {
-                val heightStr = result.height?.let { " (${"%.0f".format(it)}cm)" } ?: ""
-                addRow(getString(R.string.body_frame_label), "${result.frameSize}$heightStr")
-            }
-            if (analysisConfig.isInsightEnabled(BodyAnalysisConfig.INSIGHT_PROPORTION)) {
-                result.volumeIndex?.let { vi ->
-                    addRow(getString(R.string.body_volume_label), "${"%.2f".format(vi)} (${BodyAnalysisHelper.volumeLabel(vi)})")
-                }
-                result.curvesIndex?.let { ci ->
-                    addRow(getString(R.string.body_curves_label), "${"%.2f".format(ci)} (${BodyAnalysisHelper.curvesLabel(ci)})")
-                }
-            }
-
-            // 섹션 3: 측정값 분석
-            if (analysisConfig.isInsightEnabled(BodyAnalysisConfig.INSIGHT_BWH_DIFF)) {
-                addSectionTitle(getString(R.string.body_bwh_diff_label))
-                addRow("B-W", "%+.0fcm".format(result.bustWaistDiff))
-                addRow("W-H", "%+.0fcm".format(-result.waistHipDiff))
-                addRow("B-H", "%+.0fcm".format(result.bustHipDiff))
-            }
-            if (analysisConfig.isInsightEnabled(BodyAnalysisConfig.INSIGHT_NORMALIZED_RATIO)) {
-                addRow(getString(R.string.body_normalized_ratio_label), result.normalizedRatio)
-            }
-
-            // 섹션 4: 신체 지표
-            if (analysisConfig.isInsightEnabled(BodyAnalysisConfig.INSIGHT_BMI)) {
-                result.bmi?.let { bmi ->
-                    val categoryStr = result.bmiCategory?.let { " ($it)" } ?: ""
-                    addRow(getString(R.string.bmi_label), "${"%.1f".format(bmi)}$categoryStr")
-                }
-            }
-            if (analysisConfig.isInsightEnabled(BodyAnalysisConfig.INSIGHT_WHR)) {
-                result.whr?.let { addRow(getString(R.string.whr_label), "%.2f".format(it)) }
-            }
-
-            // 섹션 5: 키 대비 비율
-            if (analysisConfig.isInsightEnabled(BodyAnalysisConfig.INSIGHT_HEIGHT_RELATIVE) &&
-                result.bustHeightRatio != null) {
-                addSectionTitle(getString(R.string.body_height_relative_label))
-                result.bustHeightRatio.let {
-                    addSubRow("가슴/키: ${"%.1f".format(it * 100)}% (참고: 51~53%)")
-                }
-                result.waistHeightRatio?.let {
-                    addSubRow("허리/키: ${"%.1f".format(it * 100)}% (참고: 38~42%)")
-                }
-                result.hipHeightRatio?.let {
-                    addSubRow("엉덩이/키: ${"%.1f".format(it * 100)}% (참고: 52~56%)")
-                }
-            }
-
-            // 섹션 6: 골든 비율
-            if (analysisConfig.isInsightEnabled(BodyAnalysisConfig.INSIGHT_GOLDEN_RATIO) &&
-                result.goldenRatioScore != null) {
-                addSectionTitle(getString(R.string.body_golden_ratio_label))
-                addRow("점수", "${"%.0f".format(result.goldenRatioScore)}/100")
-                result.goldenRatioDetails?.forEach { item ->
-                    addSubRow("${item.label}: ${"%.2f".format(item.actual)} (이상: ${"%.2f".format(item.ideal)}, %+.1f%%)".format(item.deviationPercent))
-                }
-            }
-
-            // 섹션 7: 작품 내 순위
-            if (analysisConfig.isInsightEnabled(BodyAnalysisConfig.INSIGHT_RANKING) &&
-                result.rankingInNovel != null && result.rankingInNovel.totalCharacters > 1) {
-                addSectionTitle(getString(R.string.body_ranking_label))
-                val r = result.rankingInNovel
-                val parts = mutableListOf<String>()
-                r.bustRank?.let { parts.add("가슴: ${it}위") }
-                r.waistRank?.let { parts.add("허리: ${it}위") }
-                r.hipRank?.let { parts.add("엉덩이: ${it}위") }
-                if (parts.isNotEmpty()) {
-                    addSubRow(parts.joinToString(" / "))
-                    addSubRow("(전체 ${r.totalCharacters}캐릭터 중)")
-                }
-            }
-
-            insightCard.addView(insightContent)
-            container.addView(insightCard)
+        // 체형 분석 카드 (설계 5-4-2 — 위계 + 실루엣 + 바로가기)
+        bodyCardData(fields, valueMap)?.let { data ->
+            container.addView(buildBodyAnalysisCard(context, density, data))
         }
     }
 
@@ -593,10 +442,25 @@ class DynamicFieldRenderer(
         return results
     }
 
-    private fun computeBodyAnalysis(
+    /**
+     * 체형 분석 카드가 쓰는 재료 한 벌.
+     *
+     * [result]가 null이면 분석 엔진의 계약(B/W/H 3값)을 못 채운 것이다 — 그래도 카드는
+     * 뜬다. 종전에는 이 경우 카드가 통째로 사라져 **왜 없는지 알 길이 없었다**(원칙 04:
+     * 일일이 확인해야 존재를 아는 데이터 금지). 이제 사유와 파트 값을 보이고, 부위가
+     * 하나라도 잡히면 실루엣은 그린다(설계 3-3).
+     */
+    private data class BodyCardData(
+        val field: FieldDefinition,
+        val config: BodyAnalysisConfig,
+        val measured: com.novelcharacter.app.util.BodyMeasurements,
+        val result: BodyAnalysisResult?
+    )
+
+    private fun bodyCardData(
         fields: List<FieldDefinition>,
         valueMap: Map<Long, CharacterFieldValue>
-    ): Pair<BodyAnalysisResult, BodyAnalysisConfig>? {
+    ): BodyCardData? {
         // BODY_SIZE 필드 찾기 (SemanticRole 또는 type/key 기반)
         val bodySizeField = fields.find { SemanticRole.fromConfig(it.config) == SemanticRole.BODY_SIZE }
             ?: fields.find { it.type == "BODY_SIZE" }
@@ -626,15 +490,485 @@ class DynamicFieldRenderer(
             weightText = weightField?.let { valueMap[it.id]?.value },
             config = config
         )
-        // 분석 엔진의 계약(B/W/H 3값 필수)은 v1에서 그대로 둔다 — 부분 슬롯일 때
-        // 분석은 종전처럼 없고, 실루엣이 있는 슬롯만으로 그리는 것은 후속 단계다.
-        if (!measured.hasCoreThree) return null
+        // 분석 엔진의 계약(B/W/H 3값 필수)은 v1에서 그대로 둔다 — 못 채우면 분석은 없고
+        // 카드는 사유·파트 값·(가능하면) 실루엣만 든다.
+        val result = if (measured.hasCoreThree) {
+            BodyAnalysisHelper().analyze(
+                measured.bust!!, measured.waist!!, measured.hip!!,
+                measured.heightCm, measured.weightKg, config
+            )
+        } else null
 
-        val result = BodyAnalysisHelper().analyze(
-            measured.bust!!, measured.waist!!, measured.hip!!,
-            measured.heightCm, measured.weightKg, config
-        )
-        return result to config
+        return BodyCardData(bodySizeField, config, measured, result)
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // 체형 분석 카드 (설계 5-4-2 · 판정 P8)
+    // ══════════════════════════════════════════════════════════════════════
+
+    /** 2열 배치를 접는 화면 폭(dp). 이보다 좁으면 실루엣과 요약을 위아래로 놓는다. */
+    private val narrowScreenDp = 360
+
+    private fun buildBodyAnalysisCard(context: Context, density: Float, data: BodyCardData): View {
+        val result = data.result?.let { r -> bodyRankingInfo?.let { r.copy(rankingInNovel = it) } ?: r }
+
+        val card = createCard(context, density)
+        val content = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+
+        content.addView(buildBodyHeader(context, density, data.field))
+
+        // 본문 2열 — 좌 실루엣 / 우 요약. 좁은 화면은 세로로 접는다(5-4-2).
+        val narrow = resourcesGetter().configuration.screenWidthDp < narrowScreenDp
+        val silhouette = buildCardSilhouette(context, density, data)
+        val body = LinearLayout(context).apply {
+            orientation = if (narrow) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+        if (silhouette != null) body.addView(silhouette)
+        body.addView(buildBodySummary(context, density, data, result, narrow || silhouette == null))
+        content.addView(body)
+
+        // 실루엣이 없으면 사유와 파트 값을 보인다 (D6) — 카드가 통째로 사라지지 않게.
+        if (silhouette == null) buildPartFallback(context, density, data)?.let { content.addView(it) }
+
+        // 고지 — 그림의 기준 몸(P9-②)과 표시 항목을 어디서 고르는가.
+        content.addView(bodySubText(context, density, getString(R.string.body_analysis_female_notice)))
+
+        // 자세히 ▾ — 나머지 전부(현행 행 형식 유지). 접힘 상태는 영속하지 않는다(5-1).
+        val detail = buildBodyDetail(context, density, data.config, result)
+        if (detail.childCount > 0) {
+            detail.visibility = View.GONE
+            content.addView(TextView(context).apply {
+                text = getString(R.string.body_analysis_expand)
+                textSize = 13f
+                setTextColor(context.getColor(R.color.primary))
+                setPadding(0, (8 * density).toInt(), 0, (8 * density).toInt())
+                setOnClickListener {
+                    val opening = detail.visibility != View.VISIBLE
+                    detail.visibility = if (opening) View.VISIBLE else View.GONE
+                    text = getString(
+                        if (opening) R.string.body_analysis_collapse else R.string.body_analysis_expand
+                    )
+                }
+            })
+            content.addView(detail)
+        }
+
+        card.addView(content)
+        return card
+    }
+
+    /** 머리 행 — 제목 + ⚙(체형 분석 설정 바로가기, 터치 48dp). */
+    private fun buildBodyHeader(context: Context, density: Float, field: FieldDefinition): View {
+        val row = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = (8 * density).toInt() }
+        }
+        row.addView(TextView(context).apply {
+            text = getString(R.string.body_analysis_title)
+            setTypeface(null, Typeface.BOLD)
+            textSize = 16f
+            setTextColor(context.getColor(R.color.primary))
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        onOpenBodySettings?.let { open ->
+            row.addView(ImageButton(context).apply {
+                setImageResource(R.drawable.ic_settings)
+                setBackgroundResource(borderlessBackground(context))
+                setColorFilter(context.getColor(R.color.text_secondary))
+                contentDescription = getString(R.string.body_analysis_settings)
+                layoutParams = LinearLayout.LayoutParams((48 * density).toInt(), (48 * density).toInt())
+                setOnClickListener { open(field) }
+            })
+        }
+        return row
+    }
+
+    /** 테두리 없는 물결 배경 — 카드 안 아이콘 버튼이 네모 상자로 보이지 않게. */
+    private fun borderlessBackground(context: Context): Int {
+        val attrs = context.obtainStyledAttributes(intArrayOf(android.R.attr.selectableItemBackgroundBorderless))
+        val id = attrs.getResourceId(0, 0)
+        attrs.recycle()
+        return id
+    }
+
+    /**
+     * 카드의 실루엣 — 탭하면 크게 보기로 간다. 그릴 부위가 하나도 없으면 null이며
+     * 그때는 파트 값 폴백이 대신 선다(D6).
+     */
+    private fun buildCardSilhouette(context: Context, density: Float, data: BodyCardData): View? {
+        if (!data.config.isInsightEnabled(BodyAnalysisConfig.INSIGHT_SILHOUETTE)) return null
+        val m = com.novelcharacter.app.util.BodySilhouetteSpec
+            .measuresFrom(data.measured, data.config.ribOffset) ?: return null
+        return SilhouetteView(context).apply {
+            measures = m
+            showLabels = false      // 카드에서는 기본 끔 — 라벨은 크게 보기·편집기의 몫(5-4-1)
+            interactive = false
+            layoutParams = LinearLayout.LayoutParams(
+                (96 * density).toInt(), (140 * density).toInt()
+            ).apply { rightMargin = (12 * density).toInt() }
+            onOpenSilhouette?.let { open ->
+                isClickable = true
+                contentDescription = getString(R.string.body_silhouette_open_large)
+                setOnClickListener { open(data.field, data.measured, data.config) }
+            }
+        }
+    }
+
+    /** 우측 요약 — 3축 한 줄 · 체형 태그 칩 · 핵심 지표 3행(5-4-2). */
+    private fun buildBodySummary(
+        context: Context,
+        density: Float,
+        data: BodyCardData,
+        result: BodyAnalysisResult?,
+        fullWidth: Boolean
+    ): View {
+        val col = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = if (fullWidth) {
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+            } else {
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            }
+        }
+
+        // 3축 요약 — 편집기와 **같은 문자열·같은 경계 상수**를 쓴다(두 화면이 같은 말을 하게).
+        com.novelcharacter.app.util.BodySilhouetteSpec
+            .measuresFrom(data.measured, data.config.ribOffset)?.let { m ->
+                val axis = com.novelcharacter.app.util.BodySilhouetteSpec
+                    .axisSummary(m, data.config.cupMapping)
+                col.addView(TextView(context).apply {
+                    // 인자가 둘 이상인 서식은 주입된 getString(1인자)이 못 받는다 — 컨텍스트로 짠다.
+                    text = context.getString(
+                        R.string.silhouette_axis_summary, axis.torso, axis.cup, axis.hip, axis.line
+                    )
+                    textSize = 14f
+                    setTypeface(null, Typeface.BOLD)
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    ).apply { bottomMargin = (4 * density).toInt() }
+                })
+            }
+
+        // 체형 태그 칩
+        if (data.config.isInsightEnabled(BodyAnalysisConfig.INSIGHT_BODY_TAGS) &&
+            result != null && result.bodyTags.isNotEmpty()
+        ) {
+            col.addView(ChipGroup(context).apply {
+                isSingleLine = false
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+                for (tag in result.bodyTags) {
+                    addView(Chip(context).apply {
+                        text = tag
+                        isClickable = false
+                        isCheckable = false
+                    })
+                }
+            })
+        }
+
+        // 핵심 지표 3행 — 컵 · 몸통(BMI) · 잘록함(WHR). 장르어가 라벨, 수치는 부제(P8).
+        if (data.config.isInsightEnabled(BodyAnalysisConfig.INSIGHT_CUP_SIZE)) {
+            col.addView(
+                bodyCoreMetric(
+                    context, density,
+                    getString(R.string.body_core_cup),
+                    result?.cupSize ?: getString(R.string.body_core_missing),
+                    getString(R.string.body_core_cup_hint)
+                )
+            )
+        }
+        if (data.config.isInsightEnabled(BodyAnalysisConfig.INSIGHT_BMI)) {
+            val bmi = result?.bmi
+            col.addView(
+                bodyCoreMetric(
+                    context, density,
+                    getString(R.string.body_core_bmi),
+                    bmi?.let { BodyAnalysisHelper.bmiToneLabel(it) } ?: getString(R.string.body_core_missing),
+                    bmi?.let { getStringWithArg(R.string.body_core_bmi_hint, "%.1f".format(it)) }
+                        ?: getString(R.string.body_core_missing_hint)
+                )
+            )
+        }
+        if (data.config.isInsightEnabled(BodyAnalysisConfig.INSIGHT_WHR)) {
+            val whr = result?.whr
+            col.addView(
+                bodyCoreMetric(
+                    context, density,
+                    getString(R.string.body_core_whr),
+                    whr?.let { BodyAnalysisHelper.waistlineLabel(it) } ?: getString(R.string.body_core_missing),
+                    whr?.let { getStringWithArg(R.string.body_core_whr_hint, "%.2f".format(it)) }
+                        ?: getString(R.string.body_core_missing_hint)
+                )
+            )
+        }
+        return col
+    }
+
+    /** 핵심 지표 한 행 — 장르어 라벨 + 값, 그 아래 쉬운 설명 한 줄(5-3). */
+    private fun bodyCoreMetric(
+        context: Context,
+        density: Float,
+        label: String,
+        value: String,
+        hint: String
+    ): View = LinearLayout(context).apply {
+        orientation = LinearLayout.VERTICAL
+        layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply { topMargin = (6 * density).toInt() }
+        addView(TextView(context).apply {
+            text = "$label: $value"
+            textSize = 14f
+        })
+        addView(TextView(context).apply {
+            text = hint
+            textSize = 12f
+            setTextColor(context.getColor(R.color.text_secondary))
+        })
+    }
+
+    /**
+     * 실루엣을 못 그릴 때의 폴백 (D6) — 파트 이름·값과 상대 길이 바, 그리고 사유 한 줄.
+     *
+     * 값이 아예 없으면 바도 사유도 없다(빈 카드를 만들지 않는다).
+     */
+    private fun buildPartFallback(context: Context, density: Float, data: BodyCardData): View? {
+        val rows = data.measured.partValues.withIndex()
+            .filter { (_, text) -> text.isNotBlank() }
+        if (rows.isEmpty()) return null
+
+        val col = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = (6 * density).toInt() }
+        }
+        val numbers = rows.mapNotNull { (_, t) -> com.novelcharacter.app.util.BodyMeasurements.parseNumber(t) }
+        val maxValue = numbers.maxOrNull() ?: 0.0
+        for ((index, text) in rows) {
+            val slot = data.measured.partSlots.getOrNull(index)
+            val name = bodySlotName(slot) ?: getStringWithArg(R.string.body_part_index, index + 1)
+            col.addView(TextView(context).apply {
+                this.text = context.getString(R.string.body_part_bar_label, name, text)
+                textSize = 13f
+            })
+            val value = com.novelcharacter.app.util.BodyMeasurements.parseNumber(text)
+            if (value != null && maxValue > 0) {
+                col.addView(View(context).apply {
+                    setBackgroundColor(context.getColor(R.color.primary))
+                    layoutParams = LinearLayout.LayoutParams(
+                        ((value / maxValue) * 120 * density).toInt().coerceAtLeast(1),
+                        (4 * density).toInt()
+                    ).apply { bottomMargin = (4 * density).toInt() }
+                })
+            }
+        }
+        col.addView(bodySubText(context, density, getString(R.string.body_parts_fallback_notice)))
+        return col
+    }
+
+    private fun bodySlotName(slot: com.novelcharacter.app.data.model.BodySlot?): String? = when (slot) {
+        com.novelcharacter.app.data.model.BodySlot.SHOULDER -> getString(R.string.silhouette_slot_shoulder)
+        com.novelcharacter.app.data.model.BodySlot.BUST -> getString(R.string.silhouette_slot_bust)
+        com.novelcharacter.app.data.model.BodySlot.UNDERBUST -> getString(R.string.silhouette_slot_underbust)
+        com.novelcharacter.app.data.model.BodySlot.WAIST -> getString(R.string.silhouette_slot_waist)
+        com.novelcharacter.app.data.model.BodySlot.HIP -> getString(R.string.silhouette_slot_hip)
+        else -> null
+    }
+
+    private fun bodySubText(context: Context, density: Float, text: String): TextView =
+        TextView(context).apply {
+            this.text = text
+            textSize = 12f
+            setTextColor(context.getColor(R.color.text_secondary))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = (6 * density).toInt() }
+        }
+
+    /**
+     * 자세히 영역 — 종전 카드의 나머지 전부(원칙 03: 삭제 없음, 위계만 바뀐다).
+     *
+     * 핵심층으로 올라간 셋(컵·BMI·WHR)도 **여기서 원 수치로 다시 보인다** — 장르어는
+     * 요약이고, 정확한 값을 찾는 사람의 경로를 없애지 않는다.
+     */
+    private fun buildBodyDetail(
+        context: Context,
+        density: Float,
+        config: BodyAnalysisConfig,
+        result: BodyAnalysisResult?
+    ): LinearLayout {
+        val box = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+        if (result == null) return box
+
+        fun addRow(label: String, value: String) {
+            box.addView(TextView(context).apply {
+                text = "$label: $value"
+                textSize = 14f
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { bottomMargin = (4 * density).toInt() }
+            })
+        }
+
+        fun addSectionTitle(title: String) {
+            box.addView(TextView(context).apply {
+                text = title
+                textSize = 13f
+                setTypeface(null, Typeface.BOLD)
+                setTextColor(context.getColor(R.color.text_secondary))
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    topMargin = (6 * density).toInt()
+                    bottomMargin = (2 * density).toInt()
+                }
+            })
+        }
+
+        fun addSubRow(text: String) {
+            box.addView(TextView(context).apply {
+                this.text = text
+                textSize = 12f
+                setTextColor(context.getColor(R.color.text_secondary))
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { bottomMargin = (2 * density).toInt() }
+            })
+        }
+
+        // 체형 분류 + 실루엣 설명
+        if (config.isInsightEnabled(BodyAnalysisConfig.INSIGHT_BODY_TYPE)) {
+            result.bodyType?.let { addRow(getString(R.string.body_type_label), it) }
+        }
+        if (config.isInsightEnabled(BodyAnalysisConfig.INSIGHT_SILHOUETTE)) {
+            result.silhouetteDescription?.let { addSubRow(it) }
+        }
+
+        // 컵 사이즈 (보정 표시)
+        if (config.isInsightEnabled(BodyAnalysisConfig.INSIGHT_CUP_SIZE)) {
+            result.cupSize?.let { cup ->
+                val diffStr = result.bustDiff?.let { d -> " (차이 ${"%.1f".format(d)}cm)" } ?: ""
+                val ubStr = if (result.adjustedUnderbust != null && result.adjustedUnderbust != result.waist) {
+                    " [보정 UB ${"%.0f".format(result.adjustedUnderbust)}]"
+                } else ""
+                addRow(getString(R.string.cup_size_label), "$cup$diffStr$ubStr")
+            }
+        }
+
+        // 프레임 + 프로포션
+        if (config.isInsightEnabled(BodyAnalysisConfig.INSIGHT_FRAME_SIZE) && result.frameSize != null) {
+            val heightStr = result.height?.let { " (${"%.0f".format(it)}cm)" } ?: ""
+            addRow(getString(R.string.body_frame_label), "${result.frameSize}$heightStr")
+        }
+        if (config.isInsightEnabled(BodyAnalysisConfig.INSIGHT_PROPORTION)) {
+            result.volumeIndex?.let { vi ->
+                addRow(getString(R.string.body_volume_label), "${"%.2f".format(vi)} (${BodyAnalysisHelper.volumeLabel(vi)})")
+            }
+            result.curvesIndex?.let { ci ->
+                addRow(getString(R.string.body_curves_label), "${"%.2f".format(ci)} (${BodyAnalysisHelper.curvesLabel(ci)})")
+            }
+        }
+
+        // 측정값 분석
+        if (config.isInsightEnabled(BodyAnalysisConfig.INSIGHT_BWH_DIFF)) {
+            addSectionTitle(getString(R.string.body_bwh_diff_label))
+            addRow("B-W", "%+.0fcm".format(result.bustWaistDiff))
+            addRow("W-H", "%+.0fcm".format(-result.waistHipDiff))
+            addRow("B-H", "%+.0fcm".format(result.bustHipDiff))
+        }
+        if (config.isInsightEnabled(BodyAnalysisConfig.INSIGHT_NORMALIZED_RATIO)) {
+            addRow(getString(R.string.body_normalized_ratio_label), result.normalizedRatio)
+        }
+
+        // 신체 지표 — 핵심층의 장르어에 대응하는 원 수치
+        if (config.isInsightEnabled(BodyAnalysisConfig.INSIGHT_BMI)) {
+            result.bmi?.let { bmi ->
+                val categoryStr = result.bmiCategory?.let { " ($it)" } ?: ""
+                addRow(getString(R.string.bmi_label), "${"%.1f".format(bmi)}$categoryStr")
+            }
+        }
+        if (config.isInsightEnabled(BodyAnalysisConfig.INSIGHT_WHR)) {
+            result.whr?.let { addRow(getString(R.string.whr_label), "%.2f".format(it)) }
+        }
+
+        // 키 대비 비율
+        if (config.isInsightEnabled(BodyAnalysisConfig.INSIGHT_HEIGHT_RELATIVE) &&
+            result.bustHeightRatio != null
+        ) {
+            addSectionTitle(getString(R.string.body_height_relative_label))
+            result.bustHeightRatio.let {
+                addSubRow("가슴/키: ${"%.1f".format(it * 100)}% (참고: 51~53%)")
+            }
+            result.waistHeightRatio?.let {
+                addSubRow("허리/키: ${"%.1f".format(it * 100)}% (참고: 38~42%)")
+            }
+            result.hipHeightRatio?.let {
+                addSubRow("엉덩이/키: ${"%.1f".format(it * 100)}% (참고: 52~56%)")
+            }
+        }
+
+        // 목표 비율 (P8 — '골든 비율'의 개명. 공식은 그대로이고 이상값은 설정이 든다)
+        if (config.isInsightEnabled(BodyAnalysisConfig.INSIGHT_GOLDEN_RATIO) &&
+            result.goldenRatioScore != null
+        ) {
+            addSectionTitle(getString(R.string.body_target_ratio_label))
+            addSubRow(getStringWithArg(R.string.body_target_ratio_score, "%.0f".format(result.goldenRatioScore)))
+            result.goldenRatioDetails?.forEach { item ->
+                addSubRow("${item.label}: ${"%.2f".format(item.actual)} (이상: ${"%.2f".format(item.ideal)}, %+.1f%%)".format(item.deviationPercent))
+            }
+        }
+
+        // 작품 내 순위 — 축별로(P8: 가슴·힙·키). 허리는 뒤에 남긴다.
+        val ranking = result.rankingInNovel
+        if (config.isInsightEnabled(BodyAnalysisConfig.INSIGHT_RANKING) &&
+            ranking != null && ranking.totalCharacters > 1
+        ) {
+            addSectionTitle(getString(R.string.body_ranking_label))
+            val parts = mutableListOf<String>()
+            ranking.bustRank?.let { parts.add(getStringWithArg(R.string.body_rank_bust, it)) }
+            ranking.hipRank?.let { parts.add(getStringWithArg(R.string.body_rank_hip, it)) }
+            ranking.heightRank?.let { parts.add(getStringWithArg(R.string.body_rank_height, it)) }
+            ranking.waistRank?.let { parts.add(getStringWithArg(R.string.body_rank_waist, it)) }
+            if (parts.isNotEmpty()) {
+                addSubRow(parts.joinToString(" / "))
+                addSubRow(getStringWithArg(R.string.body_rank_total, ranking.totalCharacters))
+            }
+        }
+        return box
     }
 
     private fun createGroupTitle(context: Context, density: Float, groupName: String): TextView {

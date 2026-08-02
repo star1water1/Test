@@ -307,5 +307,32 @@ class BodyAnalysisHelper {
             index < 0.30 -> "곡선적"
             else -> "매우 곡선적"
         }
+
+        /**
+         * BMI를 장르어로 (판정 P8 — 전문 지표는 장르어로 읽히고 수치는 부제로 내린다).
+         *
+         * **어휘는 3축 요약의 몸통 축과 같은 말을 쓴다**(`BodySilhouetteSpec.axisSummary` —
+         * 슬림·표준·소프트). 같은 몸을 두 자리가 다른 낱말로 부르면 위계가 아니라 소음이다.
+         * 엔진의 [BodyAnalysisResult.bmiCategory]는 그대로 둔다(계약 무변경) — 여기는
+         * 표시 계층이며, 자세히 영역은 종전 낱말을 계속 보인다.
+         */
+        fun bmiToneLabel(bmi: Double): String = when {
+            bmi < 18.5 -> "슬림"
+            bmi < 25.0 -> "표준"
+            bmi < 30.0 -> "소프트"
+            else -> "글래머"
+        }
+
+        /**
+         * WHR을 장르어로 (판정 P8 — "잘록함"). 낮을수록 잘록하다.
+         *
+         * 경계는 골든 비율 이상값(WHR .70)을 가장 잘록한 칸의 문턱으로 두고 위로 벌린 것이다.
+         */
+        fun waistlineLabel(whr: Double): String = when {
+            whr <= 0.70 -> "깊음"
+            whr <= 0.78 -> "뚜렷함"
+            whr <= 0.85 -> "완만함"
+            else -> "일자"
+        }
     }
 }

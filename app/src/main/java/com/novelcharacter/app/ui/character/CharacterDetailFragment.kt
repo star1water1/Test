@@ -53,9 +53,21 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
     private val binding get() = _binding!!
     private val viewModel: CharacterViewModel by viewModels()
 
+    /**
+     * 체형 분석 설정(⚙)에서 고친 필드를 저장하는 자리 — 필드 관리 화면과 **같은 뷰모델**이다.
+     * 키 변경 시의 수식·상태변화 이력 이관이 거기 들어 있으므로 별도 저장 경로를 만들지 않는다.
+     */
+    private val fieldViewModel: com.novelcharacter.app.ui.field.FieldViewModel by viewModels()
+
     private var characterId: Long = -1L
 
     private var cachedCharacter: Character? = null
+
+    /**
+     * 같은 작품 캐릭터의 체형 수치 — 순위 계산이 모아 둔 것을 실루엣 크게 보기의
+     * 작품 평균 오버레이가 재사용한다(같은 조회를 두 번 하지 않는다).
+     */
+    private var bodyPeerMeasurements: List<com.novelcharacter.app.util.BodyMeasurements> = emptyList()
 
     // Helpers
     private lateinit var fieldRenderer: DynamicFieldRenderer
@@ -117,6 +129,22 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
             getString = { id -> getString(id) },
             getStringWithArg = { id, arg -> getString(id, arg) }
         )
+        // ⚙ — 체형 분석 설정(대상 필드의 편집 다이얼로그). 저장은 필드 관리 화면과 **같은
+        // 경로**를 탄다(키 변경 시의 수식·이력 이관까지) — 여기만 다른 저장을 쓰면 갈린다.
+        fieldRenderer.onOpenBodySettings = { field ->
+            com.novelcharacter.app.ui.field.FieldEditDialog
+                .newInstance(field.universeId, field)
+                .show(childFragmentManager, "body_analysis_settings")
+        }
+        // 실루엣 탭 — 크게 보기. 작품 평균은 순위 계산이 이미 모아 둔 이웃 수치를 재사용한다.
+        fieldRenderer.onOpenSilhouette = { _, measured, config ->
+            SilhouetteLargeDialog.newInstance(cachedCharacter?.name.orEmpty()).apply {
+                this.measured = measured
+                this.config = config
+                this.peers = bodyPeerMeasurements
+            }.show(childFragmentManager, SilhouetteLargeDialog.TAG)
+        }
+        setupBodyFieldEditResultListener()
 
         timeSliderHelper = TimeSliderHelper(
             binding = binding,
@@ -150,6 +178,27 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
             navController = { findNavController() },
             isBindingAlive = { _binding != null }
         )
+    }
+
+    /**
+     * ⚙로 연 체형 분석 설정의 저장 결과를 받는다.
+     *
+     * 저장은 [fieldViewModel]에 맡기고(필드 관리 화면과 같은 경로), 화면은 다시 그린다 —
+     * 토글·파트 연결을 바꾼 사용자가 카드가 그대로인 것을 보면 안 먹은 줄 안다(원칙 04).
+     */
+    private fun setupBodyFieldEditResultListener() {
+        childFragmentManager.setFragmentResultListener(
+            com.novelcharacter.app.ui.field.FieldEditDialog.RESULT_KEY, viewLifecycleOwner
+        ) { _, bundle ->
+            val json = bundle.getString(
+                com.novelcharacter.app.ui.field.FieldEditDialog.RESULT_FIELD_JSON
+            ) ?: return@setFragmentResultListener
+            val savedField = com.google.gson.Gson()
+                .fromJson(json, com.novelcharacter.app.data.model.FieldDefinition::class.java)
+            if (savedField.id == 0L) return@setFragmentResultListener   // 이 화면은 생성 경로가 없다
+            fieldViewModel.updateField(savedField)
+            cachedCharacter?.let { displayCharacter(it) }
+        }
     }
 
     // ===== Character display =====
@@ -760,7 +809,15 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
 
     /**
      * 같은 작품 내 다른 캐릭터들의 BODY_SIZE 데이터를 조회하여
-     * 현재 캐릭터의 가슴/허리/엉덩이 순위를 계산한다.
+     * 현재 캐릭터의 가슴/허리/엉덩이/키 순위를 계산한다.
+     *
+     * **부위 해석은 [com.novelcharacter.app.util.BodyMeasurements]가 든다**(설계 3-3).
+     * 종전에는 여기 인라인 파서(`parseBwh`)가 따로 있어 **파트 라벨도 파트 연결 설정도
+     * 보지 않고 늘 앞 세 값을 B/W/H로 봤다** — 같은 화면의 분석 카드는 이미 해석 사다리를
+     * 쓰고 있었으므로, 순위만 다른 부위를 세는 일이 실제로 가능했다.
+     *
+     * 모아 둔 이웃 수치는 [bodyPeerMeasurements]에 남겨 실루엣 크게 보기의 작품 평균
+     * 오버레이가 재사용한다(같은 조회를 두 번 하지 않는다).
      */
     private suspend fun computeBodyRanking(
         fields: List<com.novelcharacter.app.data.model.FieldDefinition>,
@@ -768,6 +825,7 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
         character: Character,
         novel: com.novelcharacter.app.data.model.Novel?
     ): com.novelcharacter.app.util.RankingInfo? {
+        bodyPeerMeasurements = emptyList()
         val novelId = novel?.id ?: return null
 
         // BODY_SIZE 필드 찾기
@@ -776,44 +834,62 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
                 com.novelcharacter.app.data.model.SemanticRole.BODY_SIZE
         } ?: fields.find { it.type == "BODY_SIZE" } ?: return null
 
-        // 현재 캐릭터의 BWH 파싱
-        val valueMap = values.associateBy { it.fieldDefinitionId }
-        val myBwh = parseBwh(valueMap[bodySizeField.id]?.value) ?: return null
+        val config = com.novelcharacter.app.data.model.BodyAnalysisConfig.fromConfig(bodySizeField.config)
+        val heightField = fields.find {
+            com.novelcharacter.app.data.model.SemanticRole.fromConfig(it.config) ==
+                com.novelcharacter.app.data.model.SemanticRole.HEIGHT
+        }
+        val weightField = fields.find {
+            com.novelcharacter.app.data.model.SemanticRole.fromConfig(it.config) ==
+                com.novelcharacter.app.data.model.SemanticRole.WEIGHT
+        }
 
-        // 같은 작품의 모든 캐릭터 BWH 수집
+        fun resolve(
+            valuesById: Map<Long, com.novelcharacter.app.data.model.CharacterFieldValue>
+        ): com.novelcharacter.app.util.BodyMeasurements? {
+            val raw = valuesById[bodySizeField.id]?.value ?: return null
+            if (raw.isBlank()) return null
+            return com.novelcharacter.app.util.BodyMeasurements.resolve(
+                field = bodySizeField,
+                rawValue = raw,
+                heightText = heightField?.let { valuesById[it.id]?.value },
+                weightText = weightField?.let { valuesById[it.id]?.value },
+                config = config
+            )
+        }
+
+        val mine = resolve(values.associateBy { it.fieldDefinitionId }) ?: return null
+
+        // 같은 작품의 모든 캐릭터 수치 수집
         val allCharacters = viewModel.getCharactersByNovelList(novelId)
         if (allCharacters.size <= 1) return null
 
-        val allBusts = mutableListOf<Double>()
-        val allWaists = mutableListOf<Double>()
-        val allHips = mutableListOf<Double>()
-
+        val peers = mutableListOf<com.novelcharacter.app.util.BodyMeasurements>()
         for (char in allCharacters) {
-            val charValues = viewModel.getValuesByCharacterList(char.id)
-            val bwhValue = charValues.firstOrNull { it.fieldDefinitionId == bodySizeField.id }?.value
-            val bwh = parseBwh(bwhValue)
-            if (bwh != null) {
-                allBusts.add(bwh.first)
-                allWaists.add(bwh.second)
-                allHips.add(bwh.third)
-            }
+            val charValues = viewModel.getValuesByCharacterList(char.id).associateBy { it.fieldDefinitionId }
+            resolve(charValues)?.let { peers.add(it) }
+        }
+        bodyPeerMeasurements = peers
+        if (peers.size <= 1) return null
+
+        // 부위별로 **값이 있는 캐릭터만** 센다 — 빈 칸을 0으로 세면 순위가 무너진다.
+        fun rankOf(pick: (com.novelcharacter.app.util.BodyMeasurements) -> Double?): Int? {
+            val my = pick(mine) ?: return null
+            val all = peers.mapNotNull(pick)
+            if (all.size <= 1) return null
+            return com.novelcharacter.app.util.BodyAnalysisHelper.computeRank(my, all)
         }
 
-        if (allBusts.size <= 1) return null
+        val total = peers.count { it.bust != null || it.waist != null || it.hip != null }
+        if (total <= 1) return null
 
         return com.novelcharacter.app.util.RankingInfo(
-            bustRank = com.novelcharacter.app.util.BodyAnalysisHelper.computeRank(myBwh.first, allBusts),
-            waistRank = com.novelcharacter.app.util.BodyAnalysisHelper.computeRank(myBwh.second, allWaists),
-            hipRank = com.novelcharacter.app.util.BodyAnalysisHelper.computeRank(myBwh.third, allHips),
-            totalCharacters = allBusts.size
+            bustRank = rankOf { it.bust },
+            waistRank = rankOf { it.waist },
+            hipRank = rankOf { it.hip },
+            heightRank = rankOf { it.heightCm },
+            totalCharacters = total
         )
-    }
-
-    private fun parseBwh(value: String?): Triple<Double, Double, Double>? {
-        if (value.isNullOrBlank()) return null
-        val parts = value.split(Regex("[-/\\s]+")).mapNotNull { it.trim().toDoubleOrNull() }
-        if (parts.size < 3) return null
-        return Triple(parts[0], parts[1], parts[2])
     }
 
     private fun loadCharacterStats() {

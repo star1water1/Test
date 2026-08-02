@@ -992,14 +992,14 @@ class FieldEditDialog : DialogFragment() {
         // ── 흉곽 보정값 (V2) ──
         val ribOffsetEdit = EditText(ctx).apply {
             inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
-            hint = "흉곽 보정값 (0=기존, 권장 6.0)"
-            setText("0.0")
+            hint = ctx.getString(R.string.body_rib_offset_hint)
+            setText(BodyAnalysisConfig.DEFAULT_RIB_OFFSET.toString())
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { bottomMargin = (4 * density).toInt() }
         }
         val ribOffsetLabel = TextView(ctx).apply {
-            text = "흉곽 보정 (cm) — 높을수록 컵 사이즈↓"
+            text = ctx.getString(R.string.body_rib_offset_label)
             textSize = 12f
             alpha = 0.7f
         }
@@ -1200,7 +1200,8 @@ class FieldEditDialog : DialogFragment() {
 
         // ribOffset (V2)
         val ribOffsetView = binding.insightTogglesContainer.findViewWithTag<EditText>("ribOffsetEdit")
-        val ribOffset = ribOffsetView?.text?.toString()?.toDoubleOrNull()?.coerceIn(0.0, 10.0) ?: 0.0
+        val ribOffset = ribOffsetView?.text?.toString()?.toDoubleOrNull()?.coerceIn(0.0, 10.0)
+            ?: BodyAnalysisConfig.DEFAULT_RIB_OFFSET
 
         // 골든비율 이상값 (V2)
         val goldenIdeals = mutableMapOf<String, Double>()
