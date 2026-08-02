@@ -236,6 +236,7 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
                 override fun collectFieldValues(characterId: Long) = formBuilder.collectFieldValues(characterId)
                 override fun coveredFieldDefinitionIds() = formBuilder.coveredFieldDefinitionIds()
                 override fun validateRequiredFields() = formBuilder.validateRequiredFields()
+                override fun emptyRequiredNoticeCount() = formBuilder.emptyRequiredNoticeCount()
                 override fun editingCharacterId() = displayedCharacter?.id ?: -1L
                 override fun existingCharacter() = displayedCharacter
 

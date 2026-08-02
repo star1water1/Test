@@ -97,8 +97,24 @@
                 android:id="@+id/switchRequired"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="@string/label_required_field"
-                android:layout_marginBottom="12dp" />
+                android:text="@string/label_required_field" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/purpose_required_field"
+                android:textAppearance="@style/TextAppearance.App.Caption"
+                android:textColor="@color/text_secondary" />
+
+            <!-- 강도는 '필수 입력'이 켜져 있을 때만 뜻이 있다 (B-90) -->
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/switchRequiredBlocksSave"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:layout_marginBottom="12dp"
+                android:text="@string/label_required_blocks_save"
+                android:visibility="gone" />
 
             <!-- 필드 설명 (A-2) — 사용자가 쓰는 "이 필드가 무엇인지". 카운터 상한은 코드에서
                  FieldDescription.MAX_CHARS로 채운다 (상한 단일 소스) -->

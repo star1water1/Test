@@ -19,6 +19,7 @@ import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.Novel
+import com.novelcharacter.app.data.model.RequiredFieldMark
 import com.novelcharacter.app.databinding.DialogNovelEditBinding
 import com.novelcharacter.app.databinding.FragmentNovelListBinding
 import android.widget.Toast
@@ -741,7 +742,7 @@ class NovelListFragment : Fragment() {
                 com.novelcharacter.app.data.model.FieldType.SELECT,
                 com.novelcharacter.app.data.model.FieldType.GRADE -> {
                     val label = TextView(ctx).apply {
-                        text = field.name
+                        text = RequiredFieldMark.label(field)
                         textSize = 13f
                     }
                     binding.novelFieldContainer.addView(label)
@@ -771,7 +772,7 @@ class NovelListFragment : Fragment() {
                 }
                 else -> {
                     val editText = com.google.android.material.textfield.MaterialAutoCompleteTextView(ctx).apply {
-                        hint = field.name
+                        hint = RequiredFieldMark.label(field)
                         setText(saved)
                         threshold = 1
                         if (com.novelcharacter.app.data.model.FieldType.fromName(field.type) ==

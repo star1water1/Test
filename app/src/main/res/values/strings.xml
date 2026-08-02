@@ -183,6 +183,9 @@
     <string name="hint_formula_example">예: field(\'aura\') + field(\'body\')</string>
     <string name="text_formula_help">사용 가능: field(\'키\'), sum_all_grades(), %1$s, +, -, *, /</string>
     <string name="label_required_field">필수 입력</string>
+    <string name="purpose_required_field">채워야 할 칸으로 표시합니다. 편집 화면에서 이름 옆에 표식이 붙고, 비어 있으면 저장할 때 알려 줍니다.</string>
+    <string name="label_required_blocks_save">비어 있으면 저장 막기</string>
+    <string name="required_fields_empty_notice">필수 칸 %1$d개가 비어 있습니다</string>
     <string name="label_display_format">표시 형식</string>
     <string name="label_narrative_mode">서술형 여부</string>
     <string name="hint_narrative_mode">서술형으로 두면 ✨ AI가 이 필드에 긴 글 초안을 쓰거나, 이미 쓴 글을 이어쓰기·다듬기 합니다. 자동은 표시 형식이 \'여러 줄\'일 때 서술형으로 봅니다.</string>

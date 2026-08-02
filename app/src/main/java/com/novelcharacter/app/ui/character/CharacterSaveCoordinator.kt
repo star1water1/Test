@@ -56,7 +56,10 @@ class CharacterSaveCoordinator(
          * ([collectFieldValues]가 빈 목록을 돌려주는 것과 "값이 없다"는 서로 다른 상태다)
          */
         fun coveredFieldDefinitionIds(): Set<Long>
+        /** 저장을 **막는** 빈 필수 필드 이름(없으면 null) — 강도가 `BLOCK`인 것만이다 (B-90). */
         fun validateRequiredFields(): String?
+        /** 저장은 되지만 알려야 할 빈 필수 칸 수 (B-90). */
+        fun emptyRequiredNoticeCount(): Int
         /** 편집 중인 캐릭터 id (-1L = 신규) */
         fun editingCharacterId(): Long
         fun existingCharacter(): Character?
@@ -132,6 +135,18 @@ class CharacterSaveCoordinator(
         if (missingRequired != null) {
             Toast.makeText(ctx, ctx.getString(R.string.required_field_empty, missingRequired), Toast.LENGTH_SHORT).show()
             return false
+        }
+
+        // 막지 않는 필수 칸은 **저장을 멈추지 않고 알리기만 한다** (B-90). 러프하게 적어 두고
+        // 나중에 채우는 경로를 막지 않는 것이 원칙 04이고, 그래도 비어 있다는 사실은 말한다
+        // (개발 의도 2번 — 일일이 열어 보지 않으면 모르는 데이터를 남기지 않는다).
+        val emptyRequiredCount = host.emptyRequiredNoticeCount()
+        if (emptyRequiredCount > 0) {
+            Toast.makeText(
+                ctx,
+                ctx.getString(R.string.required_fields_empty_notice, emptyRequiredCount),
+                Toast.LENGTH_SHORT
+            ).show()
         }
 
         val character = buildCharacterFromForm()

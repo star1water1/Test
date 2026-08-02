@@ -20,6 +20,8 @@ import com.novelcharacter.app.data.model.CharacterFieldValue
 import com.novelcharacter.app.data.model.DisplayFormat
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.FieldType
+import com.novelcharacter.app.data.model.RequiredEnforcement
+import com.novelcharacter.app.data.model.RequiredFieldMark
 import com.novelcharacter.app.data.model.SemanticRole
 import com.novelcharacter.app.data.model.StructuredInputConfig
 import kotlinx.coroutines.CoroutineScope
@@ -575,7 +577,7 @@ class DynamicFieldFormBuilder(
                             ).apply { topMargin = (4 * density).toInt() }
                         }
                         val label = TextView(context).apply {
-                            text = field.name
+                            text = RequiredFieldMark.label(field)
                             textSize = 14f
                             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
                         }
@@ -646,7 +648,7 @@ class DynamicFieldFormBuilder(
                             ).apply {
                                 bottomMargin = (8 * density).toInt()
                             }
-                            hint = field.name
+                            hint = RequiredFieldMark.label(field)
                             if (format == DisplayFormat.COMMA_LIST || format == DisplayFormat.BULLET_LIST) {
                                 helperText = getString(R.string.hint_comma_list_helper)
                                 isHelperTextEnabled = true
@@ -700,7 +702,7 @@ class DynamicFieldFormBuilder(
                         ).apply {
                             bottomMargin = (8 * density).toInt()
                         }
-                        hint = field.name
+                        hint = RequiredFieldMark.label(field)
                     }
                     val editText = TextInputEditText(context).apply {
                         layoutParams = LinearLayout.LayoutParams(
@@ -730,7 +732,7 @@ class DynamicFieldFormBuilder(
                         ).apply { topMargin = (4 * density).toInt() }
                     }
                     val label = TextView(context).apply {
-                        text = field.name
+                        text = RequiredFieldMark.label(field)
                         textSize = 14f
                         layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
                     }
@@ -774,7 +776,7 @@ class DynamicFieldFormBuilder(
                         ).apply { topMargin = (4 * density).toInt() }
                     }
                     val label = TextView(context).apply {
-                        text = field.name
+                        text = RequiredFieldMark.label(field)
                         textSize = 14f
                         layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
                     }
@@ -863,7 +865,7 @@ class DynamicFieldFormBuilder(
                         ).apply {
                             bottomMargin = (8 * density).toInt()
                         }
-                        hint = field.name
+                        hint = RequiredFieldMark.label(field)
                     }
                     val editText = TextInputEditText(context).apply {
                         layoutParams = LinearLayout.LayoutParams(
@@ -963,8 +965,9 @@ class DynamicFieldFormBuilder(
     private fun parseGradeOptions(configJson: String): List<String> =
         com.novelcharacter.app.util.FieldOptionParser.parseGradeOptions(configJson)
 
-    /** 필수 필드 검증 — 비어 있는 필수 필드 이름을 반환(없으면 null) */
-    fun validateRequiredFields(): String? {
+    /** 비어 있는 필수 필드 전부 — 강도는 여기서 보지 않는다 (B-90). */
+    private fun emptyRequiredFields(): List<FieldDefinition> {
+        val empty = mutableListOf<FieldDefinition>()
         for (field in fieldDefinitions) {
             if (!field.isRequired) continue
             val fieldType = FieldType.fromName(field.type)
@@ -983,10 +986,26 @@ class DynamicFieldFormBuilder(
                 }
                 else -> true
             }
-            if (isEmpty) return field.name
+            if (isEmpty) empty.add(field)
         }
-        return null
+        return empty
     }
+
+    private fun enforcementOf(field: FieldDefinition): RequiredEnforcement =
+        RequiredEnforcement.resolve(field.config, field.entityType)
+
+    /**
+     * 저장을 **막는** 필수 필드 이름(없으면 null).
+     *
+     * **'필수'라고 다 막지 않는다** — 막는 것은 강도가 [RequiredEnforcement.BLOCK]인 필드뿐이다
+     * (B-90). 나머지는 [emptyRequiredNoticeCount]가 세어 저장 뒤 알린다.
+     */
+    fun validateRequiredFields(): String? =
+        emptyRequiredFields().firstOrNull { enforcementOf(it) == RequiredEnforcement.BLOCK }?.name
+
+    /** 저장은 되지만 알려야 할 빈 필수 칸 수 (B-90). */
+    fun emptyRequiredNoticeCount(): Int =
+        emptyRequiredFields().count { enforcementOf(it) == RequiredEnforcement.NOTIFY }
 
     /**
      * 폼이 실제로 렌더한 필드 정의 id 집합 — 저장 시 폼의 권한 범위다 (N2).
