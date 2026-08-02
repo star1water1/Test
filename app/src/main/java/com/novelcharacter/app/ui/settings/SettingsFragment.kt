@@ -120,7 +120,12 @@ class SettingsFragment : Fragment() {
             showThemeDialog()
         }
 
-        // Data management
+        // Data management — 백업(전부 보관)과 데이터 추출(표로 뽑기)은 원하는 기본값이
+        // 정반대라 행부터 갈라 둔다(설계 D1·D3)
+        binding.fullBackupRow.setOnClickListener {
+            excel.startFullBackup()
+        }
+
         binding.exportRow.setOnClickListener {
             excel.showExportDialog()
         }
@@ -169,6 +174,8 @@ class SettingsFragment : Fragment() {
         binding.backupRestoreRow.setOnClickListener {
             showBackupRestoreDialog()
         }
+
+        setupBackupNow()
 
         binding.backupOptionsRow.setOnClickListener {
             showBackupOptionsDialog()
@@ -412,46 +419,8 @@ class SettingsFragment : Fragment() {
                 MaterialAlertDialogBuilder(requireContext())
                     .setTitle(R.string.share_world_package)
                     .setItems(names) { _, which ->
-                        val universe = universes[which]
-                        // Toast 대신 진행 다이얼로그 — 대형 세계관에서도 진행 중임이 분명하게 보이도록
-                        val progress = createProgressDialog(R.string.world_package_exporting)
-                        progress.show()
-                        viewLifecycleOwner.lifecycleScope.launch {
-                            try {
-                                val exporter = WorldPackageExporter(requireContext())
-                                val config = WorldPackageExporter.ExportConfig(universeId = universe.id)
-                                val result = withContext(Dispatchers.IO) { exporter.export(config) }
-
-                                if (!isAdded) return@launch
-                                if (result.droppedFactionRelationships > 0) {
-                                    // 세계관 밖 세력에 걸친 관계는 패키지에 실을 수 없다 — 무통보 유실 금지
-                                    Toast.makeText(
-                                        requireContext(),
-                                        getString(
-                                            R.string.world_package_dropped_faction_relationships,
-                                            result.droppedFactionRelationships
-                                        ),
-                                        Toast.LENGTH_LONG
-                                    ).show()
-                                }
-                                val uri = FileProvider.getUriForFile(
-                                    requireContext(),
-                                    "${requireContext().packageName}.fileprovider",
-                                    result.file
-                                )
-                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                    type = "application/zip"
-                                    putExtra(Intent.EXTRA_STREAM, uri)
-                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                }
-                                startActivity(Intent.createChooser(shareIntent, getString(R.string.share_world_package)))
-                            } catch (e: Exception) {
-                                if (isAdded) {
-                                    Toast.makeText(requireContext(), e.message, Toast.LENGTH_LONG).show()
-                                }
-                            } finally {
-                                progress.dismissSafely()
-                            }
+                        askWorldPackageImages { includeImages ->
+                            runWorldPackageExport(universes[which].id, includeImages)
                         }
                     }
                     .show()
@@ -461,9 +430,109 @@ class SettingsFragment : Fragment() {
         }
     }
 
+    /**
+     * 월드패키지 '이미지 포함' 선택(곁다리 W-1 · B-73 해소).
+     *
+     * 종전에는 세계관을 고르는 즉시 기본값으로 나갔고, `share_world_include_images`는 정의만
+     * 있고 참조가 0건이었다 — **수신측 고지("이미지 미포함 패키지")는 이미 배선돼 있었는데
+     * 보내는 쪽에 고를 자리가 없었다.** 기본값은 현행 그대로 포함(true)이다.
+     */
+    private fun askWorldPackageImages(onChosen: (Boolean) -> Unit) {
+        if (!isAdded) return
+        val checked = booleanArrayOf(true)
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.share_world_package)
+            .setMultiChoiceItems(
+                arrayOf(getString(R.string.share_world_include_images)), checked
+            ) { _, _, isChecked -> checked[0] = isChecked }
+            .setPositiveButton(R.string.confirm) { _, _ -> onChosen(checked[0]) }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun runWorldPackageExport(universeId: Long, includeImages: Boolean) {
+        if (!isAdded) return
+        // Toast 대신 진행 다이얼로그 — 대형 세계관에서도 진행 중임이 분명하게 보이도록
+        val progress = createProgressDialog(R.string.world_package_exporting)
+        progress.show()
+        viewLifecycleOwner.lifecycleScope.launch {
+            try {
+                val exporter = WorldPackageExporter(requireContext())
+                val config = WorldPackageExporter.ExportConfig(
+                    universeId = universeId,
+                    includeImages = includeImages
+                )
+                val result = withContext(Dispatchers.IO) { exporter.export(config) }
+
+                if (!isAdded) return@launch
+                if (result.droppedFactionRelationships > 0) {
+                    // 세계관 밖 세력에 걸친 관계는 패키지에 실을 수 없다 — 무통보 유실 금지
+                    Toast.makeText(
+                        requireContext(),
+                        getString(
+                            R.string.world_package_dropped_faction_relationships,
+                            result.droppedFactionRelationships
+                        ),
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+                val uri = FileProvider.getUriForFile(
+                    requireContext(),
+                    "${requireContext().packageName}.fileprovider",
+                    result.file
+                )
+                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                    type = "application/zip"
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                startActivity(Intent.createChooser(shareIntent, getString(R.string.share_world_package)))
+            } catch (e: Exception) {
+                if (isAdded) {
+                    Toast.makeText(requireContext(), e.message, Toast.LENGTH_LONG).show()
+                }
+            } finally {
+                progress.dismissSafely()
+            }
+        }
+    }
+
     // ── 백업/복원 ──
 
-    /** 자동 백업 옵션 행의 현재값 라벨 갱신 */
+    /**
+     * '지금 백업'(설계 D2 · B-86) — 주기(최대 하루)를 기다리지 않고 한 벌 만든다.
+     *
+     * 결과 고지는 **상태 카드**가 한다. WorkManager 백그라운드 작업이라 진행도 다이얼로그의
+     * 대상이 아니고(D5에서 제외), 그래서 끝난 것을 알 길이 필요하다 — 작업 상태를 관찰해
+     * 끝나면 카드를 다시 읽는다. 관찰하지 않으면 사용자는 화면을 나갔다 와야 결과를 본다.
+     *
+     * 연타 방어는 **`ExistingWorkPolicy.KEEP`이 하고**(워커 쪽), 버튼 비활성은 보조 수단이다 —
+     * 다만 도는 동안 눌러도 아무 일이 없으면서 "시작했습니다"만 뜨는 것은 거짓이므로,
+     * 도는 동안에는 버튼이 그 사실을 말한다.
+     */
+    private fun setupBackupNow() {
+        val appContext = requireContext().applicationContext
+        binding.backupNowButton.setOnClickListener {
+            com.novelcharacter.app.backup.AutoBackupWorker.enqueueManual(appContext)
+            Toast.makeText(requireContext(), R.string.backup_now_started, Toast.LENGTH_SHORT).show()
+        }
+        androidx.work.WorkManager.getInstance(appContext)
+            .getWorkInfosForUniqueWorkLiveData(
+                com.novelcharacter.app.backup.AutoBackupWorker.MANUAL_WORK_NAME
+            )
+            .observe(viewLifecycleOwner) { infos ->
+                if (_binding == null) return@observe
+                val running = infos?.any { !it.state.isFinished } == true
+                binding.backupNowButton.isEnabled = !running
+                binding.backupNowButton.setText(
+                    if (running) R.string.backup_now_running else R.string.backup_now
+                )
+                // 막 끝났다면 상태 카드의 '마지막 성공/실패'가 이미 갱신돼 있다 — 다시 읽는다
+                if (!running) loadBackupStatus()
+            }
+    }
+
+    /** 자동 백업 옵션 행의 현재값 라벨 갱신 + '지금 백업'의 성격 고지 */
     private fun updateBackupOptionsLabel() {
         viewLifecycleOwner.lifecycleScope.launch {
             val settings = BackupSettingsStore(requireContext().applicationContext).getSettings()
@@ -473,6 +542,10 @@ class SettingsFragment : Fragment() {
             )
             binding.backupOptionsValue.text =
                 getString(R.string.backup_options_value, imagesText, settings.maxBackups)
+            // '지금 백업'이 회전 풀을 주기와 공유한다는 사실을 숨기지 않는다 — 연타하면
+            // 주기 이력이 밀려난다(설계 D2 고지). 보관 개수는 설정을 따르므로 함께 갱신한다.
+            binding.backupNowCaption.text =
+                getString(R.string.backup_now_purpose, settings.maxBackups)
         }
     }
 

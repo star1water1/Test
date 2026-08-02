@@ -40,6 +40,16 @@ data class ExportOptions(
     /** MERGE 모드에서 엑셀에 없는 항목을 카테고리별로 삭제할지 여부 */
     val deleteOptions: DeleteOptions = DeleteOptions()
 ) {
+    /**
+     * 이 선택이 **완전한 백업**인가 — 모든 항목과 이미지가 다 켜져 있는가(설계 D1의 완료 고지 조건).
+     *
+     * `deleteOptions`는 가져오기 전용 선택이라 판정에서 뺀다(그래서 `==` 비교가 아니라
+     * 항목 배열을 본다). '전체 백업' 버튼뿐 아니라 '골라서'에서 사용자가 전부 켠 경우도
+     * 참이다 — 결과가 같으면 같은 말을 해야 한다.
+     */
+    val isCompleteBackup: Boolean
+        get() = toBooleanArray().all { it }
+
     // images는 반드시 마지막 유지 — ExcelImporter 옵션 다이얼로그가 checked[size-1]=hasImages로 참조한다
     fun toBooleanArray() = booleanArrayOf(
         universes, novels, characters, fieldDefinitions,

@@ -377,6 +377,10 @@
     <string name="export_images_detail_failed">· 읽기·압축 실패: %1$d건</string>
     <string name="export_images_detail_samples">· 예: %1$s</string>
     <string name="export_images_detail_guide">설정 &gt; 시스템 점검 &gt; \'이미지 경로 점검\'에서 어떤 항목의 이미지가 끊겼는지 확인할 수 있습니다.</string>
+    <!-- 전부 담긴 경우의 고지 — 손실만 알리고 완전함은 말하지 않으면 매번 열어서 확인해야 한다 -->
+    <string name="export_backup_complete">이미지 %1$d장 포함 — 완전한 백업입니다</string>
+    <string name="export_cancelled">내보내기를 취소했습니다 — 파일을 만들지 않았습니다</string>
+    <string name="export_failed_no_space">저장 공간이 부족합니다 — 약 %1$d MB가 필요합니다. 공간을 확보하고 다시 시도하세요</string>
     <string name="backup_device_bound_title">이 기기 전용 백업</string>
     <string name="backup_device_bound_message">이 백업 파일(.enc)은 암호화되어 이 기기에서만 복원할 수 있습니다.\n\n다른 기기로 데이터를 옮기려면 \'이식 가능 백업\'(암호 설정) 또는 \'엑셀로 내보내기\'를 사용하세요.</string>
     <string name="backup_export_continue">계속 내보내기</string>
@@ -594,6 +598,21 @@
     <string name="export_mode_title">내보내기 방식 선택</string>
     <string name="export_mode_share">공유하기</string>
     <string name="export_mode_save">파일로 저장</string>
+
+    <!-- 내보내기 2단 진입 — '전부 안전하게 보관'과 '표로 뽑아 작업'은 원하는 기본값이 정반대다 -->
+    <string name="export_pick_title">내보내기</string>
+    <string name="export_full_backup">전체 백업 (이미지 포함)</string>
+    <string name="export_full_backup_purpose">모든 데이터와 이미지를 한 파일(zip)로 내보냅니다. 기기 이전·복구용입니다.</string>
+    <string name="export_choose_items">골라서 내보내기 (고급)</string>
+    <string name="export_choose_items_purpose">항목을 직접 골라 엑셀로 뽑습니다. 표 작업용이라 이미지는 기본으로 빠집니다.</string>
+    <!-- 대용량 사전 고지(견적) — 경고이지 공간 검사가 아니다 -->
+    <string name="export_size_estimate">이미지 약 %1$s 포함 — 시간이 걸릴 수 있습니다</string>
+
+    <!-- 내보내기 진행도(작업형) — 시트와 이미지는 단위가 달라 구간을 나눠 보고한다 -->
+    <string name="export_progress_title">내보내는 중</string>
+    <string name="export_progress_stage_sheets">표를 만드는 중</string>
+    <string name="export_progress_stage_images">이미지를 담는 중</string>
+    <string name="export_progress_stage_writing">파일로 쓰는 중</string>
     <string name="export_save_success">파일이 저장되었습니다</string>
     <string name="export_save_failed">파일 저장에 실패했습니다</string>
 
@@ -776,6 +795,11 @@
 
     <!-- Sprint 1: Backup Status -->
     <string name="backup_status_title">자동 백업 상태</string>
+    <!-- 주기를 기다리지 않고 지금 한 벌 만든다 — 파괴적 작업 직전의 안전망(R-4) -->
+    <string name="backup_now">지금 백업</string>
+    <string name="backup_now_purpose">지금 백업 = 내부 보관용 스냅샷입니다. 보관 개수 %1$d개에 함께 계수됩니다. 반출용 완전 사본은 \'전체 백업\'을 쓰세요.</string>
+    <string name="backup_now_started">백업을 시작했습니다 — 끝나면 위 상태에 표시됩니다</string>
+    <string name="backup_now_running">백업하는 중…</string>
     <string name="backup_last_success">마지막 성공: %s</string>
     <string name="backup_last_failure">마지막 실패: %s</string>
     <string name="backup_failure_reason">실패 원인: %s</string>
@@ -1124,9 +1148,8 @@
     <string name="share_world_export">패키지 내보내기</string>
     <string name="share_world_import">패키지 가져오기</string>
     <string name="share_world_include_images">이미지 포함</string>
-    <string name="share_world_image_quality">이미지 품질</string>
-    <string name="share_world_quality_original">원본</string>
-    <string name="share_world_quality_compressed">압축</string>
+    <!-- '이미지 품질'(원본/압축) 3키는 지웠다(B-73 처분) — 배선된 적이 없고, D8이 이미지를
+         무압축으로 담기로 정한 뒤로는 패키지에 재압축 선택지 자체가 없다. 죽은 정의를 남기지 않는다. -->
     <string name="share_world_exporting">패키지 내보내기 중…</string>
     <string name="share_world_exported">패키지가 내보내기 되었습니다</string>
     <string name="share_world_conflict_title">충돌 감지</string>
@@ -1989,6 +2012,7 @@
     <string name="batch_note_skipped">제외 %1$d건(다른 세계관/미배정·중복)</string>
     <string name="result_excel_exported">엑셀 내보내기 완료 — 시트 %1$d개 · %2$d행</string>
     <string name="result_excel_export_failed">엑셀 내보내기 실패</string>
+    <string name="result_excel_export_cancelled">엑셀 내보내기 취소 — 파일을 만들지 않았습니다</string>
     <string name="result_excel_saved">엑셀 파일 저장 완료</string>
     <string name="result_excel_save_failed">엑셀 파일 저장 실패</string>
     <string name="result_pdf_shared">PDF 공유 — %1$s</string>

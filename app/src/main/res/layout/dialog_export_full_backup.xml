@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  '전체 백업'의 확인 단계(설계 D1) — 이 창이 곧 확인이다.
+
+  목적문(R-25) 한 줄과 크기 견적(D6) 한 줄을 함께 보인다. 견적은 편의이지 게이트가 아니라서
+  계산이 늦거나 실패하면 그 줄만 사라진다(기본 visibility=gone).
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingStart="24dp"
+    android:paddingEnd="24dp"
+    android:paddingTop="8dp"
+    android:paddingBottom="8dp">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/export_full_backup_purpose"
+        android:textAppearance="@style/TextAppearance.App.BodySmall"
+        android:textColor="?attr/colorOnSurfaceVariant" />
+
+    <TextView
+        android:id="@+id/estimateText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:textAppearance="@style/TextAppearance.App.BodySmall"
+        android:textColor="?attr/colorOnSurface"
+        android:visibility="gone" />
+
+</LinearLayout>
