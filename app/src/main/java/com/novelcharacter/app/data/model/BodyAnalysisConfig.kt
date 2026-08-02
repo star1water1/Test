@@ -34,11 +34,39 @@ data class BodyAnalysisConfig(
     val bodyTypeRules: List<BodyTypeRule> = DEFAULT_BODY_TYPE_RULES,
     val defaultBodyType: String = "보통체형",
     val enabledInsights: Map<String, Boolean> = DEFAULT_ENABLED_INSIGHTS,
-    val ribOffset: Double = 0.0,                                        // 흉곽 보정 (0=기존, 권장 6.0)
+    val ribOffset: Double = DEFAULT_RIB_OFFSET,                          // 흉곽 보정 — 밑가슴 = 허리 + 이 값
     val bodyTagRules: List<BodyTagRule> = emptyList(),                   // 다층 태그 (비어있으면 bodyTypeRules에서 변환)
-    val goldenRatioIdeals: Map<String, Double> = DEFAULT_GOLDEN_RATIO_IDEALS,  // 사용자 정의 이상값
-    val partSlots: List<BodySlot> = emptyList()                          // 파트 인덱스 → 부위 (비어있으면 추론)
+    // 목표 비율 이상값 — **비어 있으면 자동**(이상 몸 → 장르 기준 순 —
+    // BodyGenerator.genreTargetIdeals, 키·흉곽 보정 적응). 키별로 직접 정한 값만 담기며,
+    // 담긴 키가 자동을 이긴다.
+    // 종전 기본(황금비 계열 .70/1.00/.40/.52)은 P8 '황금비 잔재 제거'로 소거됐다(2026.08.02).
+    val goldenRatioIdeals: Map<String, Double> = emptyMap(),
+    val partSlots: List<BodySlot> = emptyList(),                         // 파트 인덱스 → 부위 (비어있으면 추론)
+    // 이상 몸(치수 입력 — P8 '사용자 이상형', 2026.08.02 사용자 요청). 셋(B·W·H)이 다
+    // 있어야 효력이 있고, 비율 환산·키 적응은 BodyGenerator.idealsFromBody가 든다.
+    // 부분 입력도 저장은 한다 — 적다 만 값을 버리면 말없는 유실이다(R-27 결).
+    val idealBody: IdealBody? = null
 ) {
+    /**
+     * 사용자가 치수로 적은 이상 몸. [heightCm]가 없으면 기준 몸 키로 읽는다.
+     *
+     * 저장은 적은 그대로(원문 보존), 해석은 평가 시점에 한다 — 흉곽 보정을 나중에 바꿔도
+     * 이 몸의 컵차가 그 시점 규약으로 다시 계산된다(늦은 해석 — `BodyMeasurements` 선례).
+     */
+    data class IdealBody(
+        val bust: Double? = null,
+        val waist: Double? = null,
+        val hip: Double? = null,
+        val heightCm: Double? = null
+    ) {
+        /** 비율을 낼 수 있는가 — 세 치수가 전부 양수여야 한다. */
+        val isComplete: Boolean
+            get() = (bust ?: 0.0) > 0 && (waist ?: 0.0) > 0 && (hip ?: 0.0) > 0
+
+        val isEmpty: Boolean
+            get() = bust == null && waist == null && hip == null && heightCm == null
+    }
+
     data class CupMappingEntry(val maxDiff: Double, val label: String)
 
     data class BodyTypeRule(
@@ -76,6 +104,19 @@ data class BodyAnalysisConfig(
         const val INSIGHT_BODY_TAGS = "bodyTags"
         const val INSIGHT_FRAME_SIZE = "frameSize"
         const val INSIGHT_PROPORTION = "proportion"
+
+        /**
+         * 흉곽 보정 기본값(cm) — 실측 밑가슴이 없을 때 `밑가슴 = 허리 + 이 값`으로 본다.
+         *
+         * **이 값 하나가 그림과 글자를 함께 정한다**(B-92 해소, 2026.08.02). 종전에는
+         * 기본이 0이라 분석은 `밑가슴 = 허리`로 컵을 재고 실루엣은 전용 상수 6으로 그려,
+         * 같은 캐릭터의 컵 글자가 두 계층에서 두 컵 이상 갈렸다. 읽기 카드가 실루엣과
+         * 컵 글자를 **한 카드에** 싣게 되면서 그 어긋남이 화면 안으로 들어오므로,
+         * 근사 규약을 판정 P4가 확정한 장르 감각(밑가슴 ≈ 허리 + 6)으로 통일했다.
+         *
+         * 사용자가 이 값을 바꾸면 **그림도 함께 움직인다** — 설정과 화면이 갈리지 않는다.
+         */
+        const val DEFAULT_RIB_OFFSET = 6.0
 
         val DEFAULT_CUP_MAPPING = listOf(
             CupMappingEntry(7.5, "AA"),
@@ -161,13 +202,6 @@ data class BodyAnalysisConfig(
             BodyTagRule("볼륨 압도적", "special", mapOf("cupIndex" to RangeCondition(min = 8.0)), 3)
         )
 
-        val DEFAULT_GOLDEN_RATIO_IDEALS = mapOf(
-            "whr" to 0.70,
-            "bustHipRatio" to 1.00,
-            "waistHeight" to 0.40,
-            "bustHeight" to 0.52
-        )
-
         val DEFAULT_ENABLED_INSIGHTS = mapOf(
             INSIGHT_BODY_TYPE to true,
             INSIGHT_CUP_SIZE to true,
@@ -239,8 +273,9 @@ data class BodyAnalysisConfig(
 
                 val defaultBodyType = obj.optString("defaultBodyType", "보통체형")
 
-                // Rib offset
-                val ribOffset = obj.optDouble("ribOffset", 0.0)
+                // Rib offset — 키가 없으면 기본값. 종전 기본이 0이던 동안 0은 저장된 적이
+                // 없으므로(아래 toConfig의 기본값 생략 규칙), 이 갈아타기로 잃는 저장값은 없다.
+                val ribOffset = obj.optDouble("ribOffset", DEFAULT_RIB_OFFSET)
 
                 // Body tag rules (multi-tag)
                 val bodyTagRules = mutableListOf<BodyTagRule>()
@@ -281,6 +316,19 @@ data class BodyAnalysisConfig(
                     }
                 }
 
+                // 이상 몸 — 있는 키만 읽는다(부분 입력 보존).
+                val idealBodyObj = obj.optJSONObject("idealBody")
+                fun bodyNum(key: String): Double? =
+                    if (idealBodyObj != null && idealBodyObj.has(key))
+                        idealBodyObj.optDouble(key).takeUnless { it.isNaN() }
+                    else null
+                val idealBody = if (idealBodyObj != null) IdealBody(
+                    bust = bodyNum("bust"),
+                    waist = bodyNum("waist"),
+                    hip = bodyNum("hip"),
+                    heightCm = bodyNum("height")
+                ).takeUnless { it.isEmpty } else null
+
                 // Part → BodySlot 명시 매핑. 모르는 이름은 NONE으로 받아 자리를 보존한다
                 // (버리면 뒤 파트의 인덱스가 밀려 매핑 전체가 어긋난다).
                 val partSlots = mutableListOf<BodySlot>()
@@ -314,8 +362,10 @@ data class BodyAnalysisConfig(
                     enabledInsights = if (enabledInsights.isEmpty()) DEFAULT_ENABLED_INSIGHTS else enabledInsights,
                     ribOffset = ribOffset,
                     bodyTagRules = bodyTagRules,
-                    goldenRatioIdeals = if (goldenRatioIdeals.isEmpty()) DEFAULT_GOLDEN_RATIO_IDEALS else goldenRatioIdeals,
-                    partSlots = partSlots
+                    // 비어 있으면 빈 채로 둔다 — '장르 기준 자동'이라는 뜻이 있는 값이다.
+                    goldenRatioIdeals = goldenRatioIdeals,
+                    partSlots = partSlots,
+                    idealBody = idealBody
                 )
             } catch (_: Exception) {
                 DEFAULT
@@ -364,8 +414,10 @@ data class BodyAnalysisConfig(
 
                 put("defaultBodyType", config.defaultBodyType)
 
-                // Rib offset
-                if (config.ribOffset != 0.0) {
+                // Rib offset — 기본값이면 적지 않는다(기존 config JSON이 불어나지 않게).
+                // 기준이 [DEFAULT_RIB_OFFSET]으로 옮겨졌으므로 이제 **0은 명시 저장된다** —
+                // 근사를 끄고 싶은 사용자의 선택이 기본값과 구분돼 왕복한다.
+                if (config.ribOffset != DEFAULT_RIB_OFFSET) {
                     put("ribOffset", config.ribOffset)
                 }
 
@@ -390,13 +442,23 @@ data class BodyAnalysisConfig(
                     put("bodyTagRules", tagRulesArr)
                 }
 
-                // Golden ratio ideals (사용자 정의 시에만 저장)
-                if (config.goldenRatioIdeals != DEFAULT_GOLDEN_RATIO_IDEALS) {
+                // 목표 비율 이상값 — 직접 정한 키가 있을 때만 저장(빈 = 자동).
+                if (config.goldenRatioIdeals.isNotEmpty()) {
                     val idealsObj = JSONObject()
                     for ((k, v) in config.goldenRatioIdeals) {
                         idealsObj.put(k, v)
                     }
                     put("goldenRatioIdeals", idealsObj)
+                }
+
+                // 이상 몸 — 적힌 값만 싣는다(부분 입력 보존, 빈 몸은 싣지 않는다).
+                config.idealBody?.takeUnless { it.isEmpty }?.let { body ->
+                    put("idealBody", JSONObject().apply {
+                        body.bust?.let { put("bust", it) }
+                        body.waist?.let { put("waist", it) }
+                        body.hip?.let { put("hip", it) }
+                        body.heightCm?.let { put("height", it) }
+                    })
                 }
 
                 // Part → BodySlot 매핑은 명시했을 때만 싣는다 — 추론과 같은 기본값을 굽지 않아야

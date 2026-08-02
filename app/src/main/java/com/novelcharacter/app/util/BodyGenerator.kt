@@ -32,8 +32,15 @@ object BodyGenerator {
         val ratioBand: ClosedFloatingPointRange<Double>
     )
 
-    /** 가슴 축 — 허리 대비 증가량(cm). 그림의 컵차는 여기서 [BodySilhouetteSpec.FIGURE_RIB_OFFSET_CM]을 뺀 값이다. */
-    data class BustOption(val label: String, val bustBonus: Double)
+    /**
+     * 가슴 축 — **컵차 목표(cm)**. 가슴 = 허리 + 흉곽 보정 + 이 값이다.
+     *
+     * 종전에는 "허리 대비 증가량"(보정 포함 값)이었다 — 보정이 기본 6일 때만 라벨과 컵이
+     * 맞고, 사용자가 보정을 바꾸면 아담을 골라도 D가 나왔다(B-92를 닫으며 요약이 설정을
+     * 따르게 되자 드러난 자리). 컵차로 적으면 **어느 보정에서도 고른 축과 돌아오는 컵
+     * 글자가 같다** — 몸통·힙 축이 밴드 상수로 지키는 계약의 가슴 축 판이다.
+     */
+    data class BustOption(val label: String, val cupDiff: Double)
 
     /** 힙 축 — 허리 대비 증가량(cm). [diffBand]의 근거는 [TorsoOption.ratioBand]와 같다. */
     data class HipOption(
@@ -75,14 +82,16 @@ object BodyGenerator {
     )
 
     /**
-     * 가슴 − 허리(cm). 그림 컵차 = 이 값 − 6이므로 8 / 13 / 18 / 24 → 대략 A · C · E · G다.
-     * 가장 작은 축이 컵차 8~12인 것이 P5-② '장르 상향'의 이행이다(종전 최소는 8, 즉 컵차 2).
+     * 컵차 목표(cm). 흔들림 ±2를 합치면 8~12 / 13~17 / 18~22 / 24~28 — 기본 컵 표로
+     * **A~B · C~D · E~F · G~I**다. 가장 작은 축이 컵차 8~12인 것이 P5-② '장르 상향'의
+     * 이행이다(종전 최소는 컵차 2 상당). 값은 종전 증가량 16/21/26/32에서 기본 보정 6을
+     * 뺀 것이라 **기본 설정의 산출은 종전과 동일하다.**
      */
     val DEFAULT_BUST_OPTIONS = listOf(
-        BustOption("아담", 16.0),
-        BustOption("내추럴", 21.0),
-        BustOption("볼륨", 26.0),
-        BustOption("글래머", 32.0)
+        BustOption("아담", 10.0),
+        BustOption("내추럴", 15.0),
+        BustOption("볼륨", 20.0),
+        BustOption("글래머", 26.0)
     )
 
     /** 엉덩이 − 허리(cm). 구간은 `axisSummary`의 경계 상수가 가른다. */
@@ -113,7 +122,11 @@ object BodyGenerator {
         return if (lo >= hi) (lowCm + highCm) / 2 else value.coerceIn(lo, hi)
     }
 
-    /** 몸무게 보정의 기준점 — 축 기본값(내추럴 · 힙 표준)에서 0이 되게 잡는다. */
+    /**
+     * 몸무게 보정의 기준점 — 축 기본값(내추럴 · 힙 표준)에서 0이 되게 잡는다.
+     * 가슴 쪽 21 = 내추럴 컵차 15 + 기본 흉곽 보정 6 (실제 가슴−허리를 재므로 보정이
+     * 크면 몸무게도 조금 붙는다 — 흉곽이 큰 몸이 무거운 것은 물리적으로 맞다).
+     */
     private const val BUST_BONUS_REF = 21.0
     private const val HIP_BONUS_REF = 27.0
 
@@ -124,6 +137,86 @@ object BodyGenerator {
         val hipOptions: List<HipOption> = DEFAULT_HIP_OPTIONS,
         val bodyPresets: List<BodyPreset> = DEFAULT_BODY_PRESETS
     )
+
+    /** 목표 비율의 장르 기준이 파생되는 프리셋 라벨 — 존재는 테스트가 못 박는다. */
+    const val GENRE_IDEAL_PRESET_LABEL = "아워글래스"
+
+    /**
+     * 목표 비율의 **장르 기준 이상값** (P8 재의미화 — 2026.08.02 사용자 요청 "장르문법상
+     * 최적 비율").
+     *
+     * 숫자를 새로 발명하지 않는다 — **[GENRE_IDEAL_PRESET_LABEL] 프리셋(X라인 중심)의 세 축
+     * 목표값에서 계산한다.** 축 상수는 목-⑤로 사용자 잠정 승인을 받은 자리이고, 작품 평균
+     * 실측 교정이 오면 축과 이상값이 **함께** 움직인다(값을 두 벌 적으면 갈린다 — B-92의
+     * 교훈 그대로).
+     *
+     * 키·흉곽 보정에 적응한다: 이상은 "같은 키·같은 세계 규약의 X라인 중심 몸"이다.
+     * 150cm 캐릭터를 165cm 기준 몸과 비교하면 같은 체형인데도 점수가 깎인다.
+     *
+     * 종전 기본값(WHR .70 · B/H 1.00 · W/키 .40 · B/키 .52)은 실사 몸의 황금비 계열이라
+     * P8이 "황금비 잔재 제거"로 판정한 자리다 — 이 함수가 그 제거의 이행이다.
+     */
+    fun genreTargetIdeals(
+        heightCm: Double = BodySilhouetteSpec.BASE.height,
+        ribOffset: Double = BodyAnalysisConfig.DEFAULT_RIB_OFFSET
+    ): Map<String, Double> {
+        val preset = DEFAULT_BODY_PRESETS.first { it.label == GENRE_IDEAL_PRESET_LABEL }
+        val (torso, bust, hip) = axesOf(preset)
+        return idealsFromFigure(torso.waistRatio, bust.cupDiff, hip.hipBonus, heightCm, ribOffset)
+    }
+
+    /**
+     * 사용자가 치수로 적은 이상 몸을 캐릭터 키에 맞춘 이상값으로 (P8 '사용자 이상형' —
+     * 2026.08.02 사용자 요청 "사이즈 이상치를 직접 입력, 키에 따라 비율을 조정").
+     *
+     * 몸을 (허리/키 비율 · 컵차 cm · 힙−허리 cm)로 분해한 뒤 캐릭터 키에서 재구성한다 —
+     * [genreTargetIdeals]와 같은 분해라 두 소스의 키 적응이 같은 문법으로 움직인다.
+     * **cm 축을 비율로 늘리지 않는 것은 축 체계의 결**이다: 컵차·힙−허리의 밴드는 키와
+     * 무관한 cm이고(D컵은 150cm에서도 D컵), 그래서 작은 키에서 비율이 "어느 정도" 더
+     * 잘록해진다 — 몸매는 유지하고 뼈대만 줄인 몸과 비교한다.
+     *
+     * 기준 키가 없으면 기준 몸 키로 읽는다. **기준 키의 캐릭터에게는 적은 몸 그대로가
+     * 이상이 된다**(분해→재구성이 항등 — 흉곽 보정이 얼마든 컵차 항이 상쇄한다).
+     * 셋(B·W·H)이 안 갖춰지면 null — 효력 없음은 호출부가 장르 기준으로 잇는다.
+     */
+    fun idealsFromBody(
+        body: BodyAnalysisConfig.IdealBody,
+        characterHeightCm: Double,
+        ribOffset: Double = BodyAnalysisConfig.DEFAULT_RIB_OFFSET
+    ): Map<String, Double>? {
+        if (!body.isComplete) return null
+        val ref = body.heightCm?.takeIf { it > 0 } ?: BodySilhouetteSpec.BASE.height
+        return idealsFromFigure(
+            waistRatio = body.waist!! / ref,
+            cupDiffCm = body.bust!! - body.waist!! - ribOffset,
+            hipDiffCm = body.hip!! - body.waist!!,
+            heightCm = characterHeightCm,
+            ribOffset = ribOffset
+        )
+    }
+
+    /**
+     * 몸의 분해값(허리/키 비율 · 컵차 cm · 힙−허리 cm)을 키에서 재구성해 목표 비율
+     * 이상값 4종으로. [genreTargetIdeals]·[idealsFromBody]가 공유하는 유일한 재구성이다.
+     */
+    fun idealsFromFigure(
+        waistRatio: Double,
+        cupDiffCm: Double,
+        hipDiffCm: Double,
+        heightCm: Double,
+        ribOffset: Double
+    ): Map<String, Double> {
+        val h = if (heightCm > 0) heightCm else BodySilhouetteSpec.BASE.height
+        val waist = waistRatio * h
+        val bustCm = waist + ribOffset + cupDiffCm
+        val hipCm = waist + hipDiffCm
+        return mapOf(
+            "whr" to waist / hipCm,
+            "bustHipRatio" to bustCm / hipCm,
+            "waistHeight" to waistRatio,
+            "bustHeight" to bustCm / h
+        )
+    }
 
     /**
      * 프리셋이 가리키는 세 축을 꺼낸다. 인덱스가 목록 밖이면 가운데 축으로 접는다 —
@@ -147,7 +240,8 @@ object BodyGenerator {
      * 돌아오면 셀렉터가 거짓말을 하는 셈이라, 흔들림은 밴드 안에서만 준다.
      *
      * @param targetCupDiff non-null이면 컵 사이즈 역산으로 가슴 결정 (가슴 축보다 우선)
-     * @param ribOffset 컵 역산용 흉곽 보정값 (BodyAnalysisConfig.ribOffset — 분석 쪽 규약)
+     * @param ribOffset 흉곽 보정값 (BodyAnalysisConfig.ribOffset) — 가슴 축·컵 역산 모두
+     *   `가슴 = 허리 + 보정 + 컵차`로 여기를 지난다(B-92의 규약 한 벌이 생성에도 성립)
      */
     fun generate(
         heightOption: HeightOption,
@@ -155,7 +249,7 @@ object BodyGenerator {
         bustOption: BustOption,
         hipOption: HipOption,
         targetCupDiff: Double? = null,
-        ribOffset: Double = 0.0,
+        ribOffset: Double = BodyAnalysisConfig.DEFAULT_RIB_OFFSET,
         random: Random = Random.Default
     ): GeneratedBody {
         val height = (heightOption.center + random.nextDouble(-heightOption.variance, heightOption.variance))
@@ -172,12 +266,11 @@ object BodyGenerator {
             ).coerceIn(45.0, 110.0)
         ).toDouble()
 
+        // 가슴은 축이든 역산이든 같은 식 하나다: 가슴 = 밑가슴(허리+보정) + 컵차.
         val bust = if (targetCupDiff != null) {
-            // 컵 사이즈 역산: underbust = waist + ribOffset, bust = underbust + cupDiff
-            val underbust = waist + ribOffset
-            (underbust + targetCupDiff + random.nextDouble(-1.5, 1.5)).coerceIn(60.0, 150.0)
+            (waist + ribOffset + targetCupDiff + random.nextDouble(-1.5, 1.5)).coerceIn(60.0, 150.0)
         } else {
-            (waist + bustOption.bustBonus + random.nextDouble(-2.0, 2.0)).coerceIn(60.0, 150.0)
+            (waist + ribOffset + bustOption.cupDiff + random.nextDouble(-2.0, 2.0)).coerceIn(60.0, 150.0)
         }
 
         val hip = bandFold(

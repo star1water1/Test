@@ -66,14 +66,15 @@ object BodySilhouetteSpec {
     const val CLAMP_HIP_MAX = 1.38
 
     /**
-     * 그림이 쓰는 밑가슴 근사 보정(cm).
+     * 밑가슴 근사 보정(cm)의 그림 쪽 기본값 — 실측 밑가슴이 없을 때 `밑가슴 = 허리 + 6`.
      *
-     * 실측 밑가슴이 없을 때 `밑가슴 = 허리 + 6`으로 본다. **[BodyAnalysisConfig.ribOffset]을
-     * 쓰지 않는 것은 일부러다** — 그쪽은 사용자가 컵 표를 조율하는 값이고 기본이 0이라,
-     * 그대로 쓰면 컵차가 통째로 부풀어 모든 캐릭터가 거유가 된다. 그림의 컵 근사를 6으로
-     * 두는 것은 장르 비율 판정이다(설계 9장 P4 — 실사 쪽 디플레 제안이 기각된 자리).
+     * **[BodyAnalysisConfig.DEFAULT_RIB_OFFSET]과 같은 값이며, 같아야 한다**(B-92 해소).
+     * 종전에는 이것이 그림 전용 상수였다 — 설정 기본이 0이라 그대로 쓰면 컵차가 통째로
+     * 부풀어 모든 캐릭터가 거유가 되기 때문이었다. 설정 기본이 장르 감각(P4)으로 옮겨
+     * 오면서 그 이유가 사라졌고, 이제 [Measures.ribOffset]이 **설정값을 실어 나른다** —
+     * 이 상수는 설정을 모르는 자리(기준 몸·테스트)의 기본값으로만 남는다.
      */
-    const val FIGURE_RIB_OFFSET_CM = 6.0
+    const val FIGURE_RIB_OFFSET_CM = BodyAnalysisConfig.DEFAULT_RIB_OFFSET
 
     /** 옆 부풂 상한(cm). 가슴은 앞으로 돌출한다 — 정면 옆 폭이 아니다(스필·덩어리 분리). */
     const val MAX_SPILL_CM = 3.6
@@ -95,12 +96,19 @@ object BodySilhouetteSpec {
         val bust: Double,
         val waist: Double,
         val hip: Double,
-        /** 실측 밑가슴(cm). null이면 `허리 + [FIGURE_RIB_OFFSET_CM]` 근사를 쓴다. */
+        /** 실측 밑가슴(cm). null이면 `허리 + [ribOffset]` 근사를 쓴다. */
         val underbust: Double? = null,
         /** 값이 없어 이웃에서 보간한 부위 — 해당 핸들은 비활성·점선으로 표시된다. */
         val estimated: Set<BodySlot> = emptySet(),
         /** 키가 실제 입력값인가. false면 화면이 "키 미입력 — 비례만 표시"를 단다. */
-        val heightKnown: Boolean = true
+        val heightKnown: Boolean = true,
+        /**
+         * 밑가슴 근사 보정(cm) — [BodyAnalysisConfig.ribOffset]이 실려 온다.
+         *
+         * 그림과 분석이 **같은 값에서 컵차를 낸다**(B-92). 설정을 모르는 자리는
+         * [FIGURE_RIB_OFFSET_CM]을 그대로 쓴다.
+         */
+        val ribOffset: Double = FIGURE_RIB_OFFSET_CM
     )
 
     /** 변형 스케일과 표시 클램프 결과. */
@@ -304,8 +312,8 @@ object BodySilhouetteSpec {
     // 변형
     // ══════════════════════════════════════════════════════════════════════
 
-    /** 실루엣이 쓰는 밑가슴(cm) — 실측이 있으면 그것, 없으면 허리 + [FIGURE_RIB_OFFSET_CM]. */
-    fun figureUnderbust(m: Measures): Double = m.underbust ?: (m.waist + FIGURE_RIB_OFFSET_CM)
+    /** 실루엣이 쓰는 밑가슴(cm) — 실측이 있으면 그것, 없으면 허리 + [Measures.ribOffset]. */
+    fun figureUnderbust(m: Measures): Double = m.underbust ?: (m.waist + m.ribOffset)
 
     /** 컵차(cm) = 가슴 − 밑가슴. 음수는 0으로, 상한은 [CUP_DIFF_CAP]. */
     fun cupDiff(m: Measures): Double = max(0.0, min(m.bust - figureUnderbust(m), CUP_DIFF_CAP))
@@ -917,7 +925,7 @@ object BodySilhouetteSpec {
      * 화면은 그 핸들을 비활성·점선으로 그려 추정임을 보인다(무음 금지).
      * 하나도 없으면 null을 돌려주며, 그때는 실루엣 대신 바 폴백이다.
      */
-    fun measuresFrom(m: BodyMeasurements): Measures? {
+    fun measuresFrom(m: BodyMeasurements, ribOffset: Double = FIGURE_RIB_OFFSET_CM): Measures? {
         val bust = m.bust
         val waist = m.waist
         val hip = m.hip
@@ -965,7 +973,8 @@ object BodySilhouetteSpec {
             hip = resolvedHip,
             underbust = m.underbust,
             estimated = estimated,
-            heightKnown = heightKnown
+            heightKnown = heightKnown,
+            ribOffset = ribOffset
         )
     }
 
@@ -1037,13 +1046,19 @@ object BodySilhouetteSpec {
     /** 3축 요약. 어휘는 전부 긍정 프레이밍이다(고르는 옵션이 다 매력적이어야 한다). */
     data class AxisSummary(val torso: String, val cup: String, val hip: String, val line: String)
 
-    private val CUP_LABELS = listOf("AA", "A", "B", "C", "D", "E", "F", "G", "H", "I", "J+")
-
-    /** 컵차(cm)를 라벨로. 표는 [BodyAnalysisConfig.cupMapping]이 정본이고 여기는 그림용 근사다. */
-    fun cupLabel(cupDiff: Double): String {
+    /**
+     * 컵차(cm)를 라벨로 — **표는 [BodyAnalysisConfig.cupMapping] 하나뿐이다**(B-92).
+     *
+     * 종전에는 여기에 같은 경계를 다시 적은 사다리가 있었다. 기본 표와 값이 같아 평소에는
+     * 티가 안 났지만, 사용자가 컵 표를 손보면 그림 쪽 글자만 옛 표에 남았다 —
+     * 밑가슴 규약을 통일하면서 글자 표도 함께 하나로 모은다.
+     */
+    fun cupLabel(
+        cupDiff: Double,
+        mapping: List<BodyAnalysisConfig.CupMappingEntry> = BodyAnalysisConfig.DEFAULT_CUP_MAPPING
+    ): String {
         if (cupDiff <= 0) return "—"
-        val idx = kotlin.math.ceil((cupDiff - 7.5) / 2.5).toInt().coerceIn(0, CUP_LABELS.size - 1)
-        return CUP_LABELS[idx]
+        return mapping.sortedBy { it.maxDiff }.firstOrNull { cupDiff <= it.maxDiff }?.label ?: "?"
     }
 
     /**
@@ -1057,7 +1072,10 @@ object BodySilhouetteSpec {
     const val HIP_STANDARD_MAX_DIFF = 31.0
 
     /** 3축 요약과 종합 인상을 낸다. 문턱값은 목-⑤의 잠정치이며 작품 평균 실측으로 교정한다. */
-    fun axisSummary(m: Measures): AxisSummary {
+    fun axisSummary(
+        m: Measures,
+        cupMapping: List<BodyAnalysisConfig.CupMappingEntry> = BodyAnalysisConfig.DEFAULT_CUP_MAPPING
+    ): AxisSummary {
         val cd = cupDiff(m)
         val torsoR = m.waist / m.height
         val hipD = m.hip - m.waist
@@ -1081,7 +1099,7 @@ object BodySilhouetteSpec {
             cd < 12 && hipD < 24 -> "I라인"
             else -> "밸런스"
         }
-        return AxisSummary(torso = torso, cup = cupLabel(cd), hip = hip, line = line)
+        return AxisSummary(torso = torso, cup = cupLabel(cd, cupMapping), hip = hip, line = line)
     }
 
     /** 두 스펙이 같은 그림인가 — 회귀 테스트가 쓰는 허용 오차 비교. */

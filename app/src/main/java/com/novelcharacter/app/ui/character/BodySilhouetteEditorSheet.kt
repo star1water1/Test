@@ -165,7 +165,7 @@ class BodySilhouetteEditorSheet : BottomSheetDialogFragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        start = BodyEditorModel.draftMeasures(initial)
+        start = BodyEditorModel.draftMeasures(initial, analysisConfig.ribOffset)
         current = start
         startHeight = initial.heightCm
         startWeight = initial.weightKg
@@ -212,7 +212,7 @@ class BodySilhouetteEditorSheet : BottomSheetDialogFragment() {
 
     /** 작품 평균 오버레이 토글 — 재료(작품 캐릭터 수치)가 있을 때만 존재한다(P3 · 기본 끔). */
     private fun setupOverlayToggle() {
-        val average = BodyEditorModel.peerAverage(peerMeasurements.values.toList())
+        val average = BodyEditorModel.peerAverage(peerMeasurements.values.toList(), analysisConfig.ribOffset)
         if (average == null) {
             // 켜도 아무것도 안 나타나는 토글은 구색이다 — 재료가 없으면 내놓지 않는다.
             binding.btnToggleOverlay.visibility = View.GONE
@@ -365,7 +365,7 @@ class BodySilhouetteEditorSheet : BottomSheetDialogFragment() {
         if (from != SyncSource.HANDLE) binding.silhouette.measures = current
         else binding.silhouette.invalidate()
 
-        val summary = BodySilhouetteSpec.axisSummary(current)
+        val summary = BodySilhouetteSpec.axisSummary(current, analysisConfig.cupMapping)
         binding.axisSummary.text =
             getString(R.string.silhouette_axis_summary, summary.torso, summary.cup, summary.hip, summary.line)
         binding.clampCaption.visibility = if (binding.silhouette.isClamped) View.VISIBLE else View.GONE

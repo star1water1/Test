@@ -192,14 +192,20 @@ class BodyAnalysisHelper {
         val volumeIndex = safeHeight?.let { (bust + waist + hip) / (3.0 * it) }
         val curvesIndex = safeHeight?.let { (bustWaistDiff + waistHipDiff) / it }
 
-        // 11. 골든 비율 점수 — 사용자 정의 이상값 (V2)
-        val ideals = config.goldenRatioIdeals
+        // 11. 목표 비율 점수 (P8 재의미화 — 종전 '골든 비율') — 공식은 무변경이고 이상값의
+        //     근거만 바뀐다. 겹은 셋이고 구체적인 것이 이긴다:
+        //     장르 기준(자동) < 이상 몸(치수 입력, 키 적응) < 키별 직접 고정.
+        //     종전의 키별 리터럴 폴백(.70/1.00/.40/.52)은 황금비 잔재의 세 번째 사본이었다.
         val goldenRatioDetails = if (safeHeight != null) {
+            val ideals = BodyGenerator.genreTargetIdeals(safeHeight, config.ribOffset) +
+                (config.idealBody?.let { BodyGenerator.idealsFromBody(it, safeHeight, config.ribOffset) }
+                    ?: emptyMap()) +
+                config.goldenRatioIdeals
             listOf(
-                goldenRatioItem("허리/엉덩이", whr, ideals["whr"] ?: 0.70),
-                goldenRatioItem("가슴/엉덩이", bustHipRatio, ideals["bustHipRatio"] ?: 1.00),
-                goldenRatioItem("허리/키", waist / safeHeight, ideals["waistHeight"] ?: 0.40),
-                goldenRatioItem("가슴/키", bust / safeHeight, ideals["bustHeight"] ?: 0.52)
+                goldenRatioItem("허리/엉덩이", whr, ideals.getValue("whr")),
+                goldenRatioItem("가슴/엉덩이", bustHipRatio, ideals.getValue("bustHipRatio")),
+                goldenRatioItem("허리/키", waist / safeHeight, ideals.getValue("waistHeight")),
+                goldenRatioItem("가슴/키", bust / safeHeight, ideals.getValue("bustHeight"))
             )
         } else null
 
@@ -306,6 +312,33 @@ class BodyAnalysisHelper {
             index < 0.20 -> "보통"
             index < 0.30 -> "곡선적"
             else -> "매우 곡선적"
+        }
+
+        /**
+         * BMI를 장르어로 (판정 P8 — 전문 지표는 장르어로 읽히고 수치는 부제로 내린다).
+         *
+         * **어휘는 3축 요약의 몸통 축과 같은 말을 쓴다**(`BodySilhouetteSpec.axisSummary` —
+         * 슬림·표준·소프트). 같은 몸을 두 자리가 다른 낱말로 부르면 위계가 아니라 소음이다.
+         * 엔진의 [BodyAnalysisResult.bmiCategory]는 그대로 둔다(계약 무변경) — 여기는
+         * 표시 계층이며, 자세히 영역은 종전 낱말을 계속 보인다.
+         */
+        fun bmiToneLabel(bmi: Double): String = when {
+            bmi < 18.5 -> "슬림"
+            bmi < 25.0 -> "표준"
+            bmi < 30.0 -> "소프트"
+            else -> "글래머"
+        }
+
+        /**
+         * WHR을 장르어로 (판정 P8 — "잘록함"). 낮을수록 잘록하다.
+         *
+         * 경계는 골든 비율 이상값(WHR .70)을 가장 잘록한 칸의 문턱으로 두고 위로 벌린 것이다.
+         */
+        fun waistlineLabel(whr: Double): String = when {
+            whr <= 0.70 -> "깊음"
+            whr <= 0.78 -> "뚜렷함"
+            whr <= 0.85 -> "완만함"
+            else -> "일자"
         }
     }
 }
