@@ -147,6 +147,7 @@ $MAIN/ui/stats/StatsDataProvider.kt
 $MAIN/util/UnassignedFilter.kt
 $MAIN/data/model/RandomConfig.kt
 $MAIN/data/model/SemanticRole.kt
+$MAIN/data/model/RequiredEnforcement.kt
 $MAIN/ai/CharacterFieldAiSuggester.kt
 $MAIN/ai/FieldLibraryAiOrganizer.kt
 $MAIN/ai/AiModels.kt
@@ -193,6 +194,8 @@ $TEST/excel/AllCharactersSheetTest.kt
 $TEST/excel/GradeSystemSheetTest.kt
 $TEST/util/GradeTableTest.kt
 $TEST/data/GradeSystemRefTest.kt
+$TEST/data/SemanticRoleEntityScopeTest.kt
+$TEST/data/RequiredEnforcementTest.kt
 $TEST/excel/PresetTemplateMatcherTest.kt
 $TEST/excel/SheetValueConventionsTest.kt
 $TEST/excel/FactionRefResolverTest.kt

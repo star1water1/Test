@@ -28,6 +28,7 @@ import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.FieldStatsConfig
 import com.novelcharacter.app.data.model.FieldType
 import com.novelcharacter.app.data.model.NarrativeMode
+import com.novelcharacter.app.data.model.RequiredEnforcement
 import com.novelcharacter.app.data.model.SemanticRole
 import com.novelcharacter.app.data.model.StructuredInputConfig
 import com.novelcharacter.app.databinding.DialogFieldEditBinding
@@ -160,6 +161,7 @@ class FieldEditDialog : DialogFragment() {
         setupRandomSection(binding)
         setupStructuredInputSection(binding)
         setupBodyAnalysisSection(binding)
+        setupRequiredSection(binding)
         setupCardDisplaySection(binding)
         setupAiAndDescriptionSection(binding)
         setupHelpButtons(binding)
@@ -339,9 +341,11 @@ class FieldEditDialog : DialogFragment() {
                 // 서술형은 TEXT에서만 성립한다(SELECT는 옵션 계약, NUMBER·BODY_SIZE는 형식 계약).
                 binding.narrativeModeLayout.visibility =
                     if (NarrativeMode.isEligibleType(selectedType.name)) View.VISIBLE else View.GONE
-                // 시스템 연동: CALCULATED 제외
+                // 시스템 연동: CALCULATED 제외 + **이 종류에서 성립하는 역할이 있을 때만** (B-81).
+                // 두 조건 다 "성립하지 않으면 보이지 않는다"(R-24)의 같은 적용이다.
                 binding.semanticRoleLayout.visibility =
-                    if (selectedType != FieldType.CALCULATED) View.VISIBLE else View.GONE
+                    if (selectedType != FieldType.CALCULATED && semanticRoleOptions.isNotEmpty())
+                        View.VISIBLE else View.GONE
                 // 통계 설정: 모든 타입 지원 (CALCULATED 포함 — 수식 결과를 통계 분석 가능)
                 binding.statsSettingsLayout.visibility = View.VISIBLE
                 // NUMBER 전용 구간 설정
@@ -384,8 +388,32 @@ class FieldEditDialog : DialogFragment() {
         })
     }
 
+    /**
+     * 이 필드 종류에서 고를 수 있는 시맨틱 역할 (B-81).
+     *
+     * **역할 목록을 종류가 가린다 — 섹션을 종류 이름으로 감추지 않는다.** 지금은 역할 여덟이
+     * 전부 캐릭터 축이라 사건·작품에서는 이 목록이 비고, 그 사실만 보고 섹션이 사라진다
+     * (R-24가 조건문 없이 성립한다). 사건·작품 역할이 [SemanticRole.entityTypes]에 실리면
+     * 이 파일을 고치지 않아도 섹션이 저절로 다시 선다.
+     *
+     * **이미 저장된 역할이 지금 종류에서 성립하지 않아도 목록에서 빼지 않는다** — 빼면 다음
+     * 저장에서 그 역할이 조용히 지워진다(개발 의도 2번: 말없는 유실 금지). 보이게 두고
+     * 사용자가 직접 '없음'으로 내리게 한다.
+     */
+    private val semanticRoleOptions: List<SemanticRole> by lazy {
+        val applicable = SemanticRole.forEntityType(currentEntityType())
+        val saved = existingField?.let { SemanticRole.fromConfig(it.config) }
+        if (saved != null && saved !in applicable) applicable + saved else applicable
+    }
+
     private fun setupSemanticRoleSpinner(binding: DialogFieldEditBinding) {
-        val roleLabels = listOf(getString(R.string.label_semantic_role_none)) + SemanticRole.labels()
+        // 성립하는 역할이 0개면 세울 것이 없다 — 타입 스피너 쪽 가시성도 같은 조건을 본다.
+        if (semanticRoleOptions.isEmpty()) {
+            binding.semanticRoleLayout.visibility = View.GONE
+            return
+        }
+        val roleLabels = listOf(getString(R.string.label_semantic_role_none)) +
+            semanticRoleOptions.map { it.label }
         val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, roleLabels)
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         binding.spinnerSemanticRole.adapter = adapter
@@ -399,7 +427,7 @@ class FieldEditDialog : DialogFragment() {
                     binding.textSemanticRoleDesc.visibility = View.GONE
                     linkageRuleContainer?.visibility = View.GONE
                 } else {
-                    val role = SemanticRole.entries[position - 1]
+                    val role = semanticRoleOptions[position - 1]
                     binding.textSemanticRoleDesc.text = role.description
                     binding.textSemanticRoleDesc.visibility = View.VISIBLE
                     // AGE 선택 시 연동 규칙 표시
@@ -506,6 +534,25 @@ class FieldEditDialog : DialogFragment() {
         existingField?.entityType
             ?: arguments?.getString(ARG_ENTITY_TYPE)
             ?: FieldDefinition.ENTITY_CHARACTER
+
+    /**
+     * '필수 입력'의 강도 (B-90).
+     *
+     * 강도는 필수가 켜져 있을 때만 뜻이 있으므로 꺼져 있으면 감춘다 — '고를 수 있는데 아무
+     * 일도 일어나지 않는 자리'를 만들지 않는다(R-24). 이 다이얼로그가 **종류를 가리지 않는
+     * 것이 요점이다**: 표식은 캐릭터·사건·작품에서 모두 같은 뜻이라 감출 이유가 없다.
+     */
+    private fun setupRequiredSection(binding: DialogFieldEditBinding) {
+        binding.switchRequired.setOnCheckedChangeListener { _, _ ->
+            updateRequiredEnforcementVisibility(binding)
+        }
+        updateRequiredEnforcementVisibility(binding)
+    }
+
+    private fun updateRequiredEnforcementVisibility(binding: DialogFieldEditBinding) {
+        binding.switchRequiredBlocksSave.visibility =
+            if (binding.switchRequired.isChecked) View.VISIBLE else View.GONE
+    }
 
     /**
      * 목록 카드 표시 설정 (B-5).
@@ -1423,6 +1470,11 @@ class FieldEditDialog : DialogFragment() {
         binding.editFieldKey.setText(field.key)
         binding.editGroupName.setText(field.groupName)
         binding.switchRequired.isChecked = field.isRequired
+        // 강도 복원 — 설정이 없는 옛 필드는 종류에 따라 갈린다(캐릭터는 막던 자리, 사건·작품은
+        // 막은 적이 없다). [RequiredEnforcement.legacyDefaultFor]가 그 판정을 든다 (B-90).
+        binding.switchRequiredBlocksSave.isChecked =
+            RequiredEnforcement.resolve(field.config, field.entityType) == RequiredEnforcement.BLOCK
+        updateRequiredEnforcementVisibility(binding)
         // 필드 설명(A-2) + AI 추천 토글(A-1) — 목록 행 스위치와 같은 소스(config 키)
         binding.editFieldDescription.setText(
             com.novelcharacter.app.data.model.FieldDescription.fromConfig(field.config)
@@ -1480,7 +1532,9 @@ class FieldEditDialog : DialogFragment() {
         // Semantic role
         val semanticRole = SemanticRole.fromConfig(field.config)
         if (semanticRole != null) {
-            val roleIdx = SemanticRole.entries.indexOf(semanticRole) + 1 // +1 for "없음"
+            // 목록은 저장된 역할을 반드시 담는다(성립하지 않는 역할도 남긴다 —
+            // [semanticRoleOptions]). 그래서 여기서 -1이 나오지 않는다.
+            val roleIdx = semanticRoleOptions.indexOf(semanticRole) + 1 // +1 for "없음"
             binding.spinnerSemanticRole.setSelection(roleIdx)
             // AGE면 연동 규칙 복원
             if (semanticRole == SemanticRole.AGE) {
@@ -1889,6 +1943,12 @@ class FieldEditDialog : DialogFragment() {
     private fun buildConfig(binding: DialogFieldEditBinding, type: FieldType): String {
         val config = mutableMapOf<String, Any>()
 
+        // 필수 강도는 **항상 적는다** (B-90). 적지 않으면 그 필드는 계속
+        // [RequiredEnforcement.legacyDefaultFor]에 걸려, 화면에서 고른 값과 실제 동작이 갈린다.
+        config[RequiredEnforcement.CONFIG_KEY] =
+            (if (binding.switchRequiredBlocksSave.isChecked) RequiredEnforcement.BLOCK
+            else RequiredEnforcement.NOTIFY).key
+
         // Display format (TEXT, MULTI_TEXT only)
         if (type == FieldType.TEXT || type == FieldType.MULTI_TEXT) {
             val formats = DisplayFormat.entries
@@ -1951,8 +2011,10 @@ class FieldEditDialog : DialogFragment() {
 
         // Semantic role (CALCULATED 제외)
         if (type != FieldType.CALCULATED) {
+            // 섹션이 감춰진 종류에서는 어댑터가 없어 위치가 INVALID_POSITION(-1)이라 null로 떨어진다.
             val rolePos = binding.spinnerSemanticRole.selectedItemPosition
-            val role = if (rolePos > 0) SemanticRole.entries[rolePos - 1] else null
+            val role = if (rolePos > 0 && rolePos - 1 < semanticRoleOptions.size)
+                semanticRoleOptions[rolePos - 1] else null
             if (role != null) {
                 config["semanticRole"] = role.key
                 // AGE 역할이면 연동 규칙 저장

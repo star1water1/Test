@@ -24,6 +24,7 @@ import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.EventFieldValue
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.FieldType
+import com.novelcharacter.app.data.model.RequiredFieldMark
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.TimelineEvent
 import com.novelcharacter.app.data.model.generateEntityCode
@@ -810,7 +811,7 @@ class EventEditDialogFragment : DialogFragment() {
             when (FieldType.fromName(field.type)) {
                 FieldType.SELECT, FieldType.GRADE -> {
                     val label = android.widget.TextView(ctx).apply {
-                        text = field.name
+                        text = RequiredFieldMark.label(field)
                         textSize = 13f
                     }
                     binding.eventFieldContainer.addView(label)
@@ -840,7 +841,7 @@ class EventEditDialogFragment : DialogFragment() {
                     // MaterialAutoCompleteTextView(EditText 하위) — 라이브러리 제안 장착 지점 (검토 A9:
                     // 사건 값도 수확만 하고 제안하지 않는 비대칭 제거)
                     val editText = com.google.android.material.textfield.MaterialAutoCompleteTextView(ctx).apply {
-                        hint = field.name
+                        hint = RequiredFieldMark.label(field)
                         setText(saved)
                         threshold = 1
                         if (FieldType.fromName(field.type) == FieldType.NUMBER) {
