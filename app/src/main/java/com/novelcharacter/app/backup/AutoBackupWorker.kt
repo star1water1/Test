@@ -54,9 +54,25 @@ class AutoBackupWorker(
         }
     }
 
+    /**
+     * 취소 창구(B-96) — 보고는 하지 않고 **stop만 잇는다.**
+     *
+     * 백그라운드라 띄울 막대가 없으므로 `onSheets`·`onImages`는 비어 있다. 이 싱크의 존재
+     * 이유는 `isCancelled` 하나다: WorkManager가 실행 시간 초과로 워커를 stop해도
+     * 종전에는 **이미지 루프가 그것을 보지 못해** 끝까지 돌았고(`copyTo`는 블로킹 I/O라
+     * 코루틴 취소로도 멈추지 않는다), 그동안 시작된 재시도 인스턴스와 **둘이 함께 돌았다**
+     * (워크북 2개 = 메모리 2배). 2026.08.02 사용자 기기의 `ENOENT` 실패가 그 결과였다.
+     */
+    private fun cancellationSink() = com.novelcharacter.app.excel.ExportProgressSink(
+        onSheets = { _, _ -> },
+        onImages = { _, _ -> },
+        isCancelled = { isStopped }
+    )
+
     override suspend fun doWork(): Result {
         val statusStore = BackupStatusStore(appContext)
         val settings = BackupSettingsStore(appContext).getSettings()
+        val progress = cancellationSink()
         return try {
             Log.i(TAG, "Starting auto backup...")
             val workbook = XSSFWorkbook()
@@ -66,10 +82,10 @@ class AutoBackupWorker(
                 // 별도 export 로직을 두면 포맷이 드리프트(세력관계 시트·사건 코드·커스텀 필드·
                 // 관련캐릭터코드 누락, 32,767자 미가드)하여 복원 시 데이터가 유실되므로,
                 // 자동 백업도 반드시 이 경로로 워크북을 생성한다. (엑셀 왕복 무결성)
-                ExcelExporter(appContext).populateWorkbook(workbook, ExportOptions())
+                ExcelExporter(appContext).populateWorkbook(workbook, ExportOptions(), progress)
 
                 // Write workbook to bytes, encrypt, and save to internal storage
-                imageReport = saveEncryptedBackup(workbook, settings.includeImages)
+                imageReport = saveEncryptedBackup(workbook, settings.includeImages, progress)
             } finally {
                 try { workbook.close() } catch (e: Exception) { Log.w(TAG, "Failed to close workbook", e) }
             }
@@ -100,11 +116,25 @@ class AutoBackupWorker(
             ))
             Result.success()
         } catch (e: Exception) {
-            Log.e(TAG, "Auto backup failed", e)
-            AppLogger.error(TAG, "자동 백업 실패: ${e.message}", e)
-            statusStore.recordFailure(e.message ?: "Unknown error")
-            val willRetry = runAttemptCount < 3
-            if (!willRetry) {
+            // 취소(stop)는 실패가 아니다 — 산출물이 없으므로 기록할 실패도 없다(B-96).
+            // `isStopped`도 함께 보는 이유: 취소 시점에 따라 접힌 예외가
+            // ExportCancelledException이 아니라 그 뒤에 따라온 I/O 예외일 수 있다.
+            val cancelled = e is com.novelcharacter.app.excel.ExportCancelledException || isStopped
+            val outcome = com.novelcharacter.app.util.BackupWorkerPolicy.outcome(
+                cancelled = cancelled,
+                failed = true,
+                runAttemptCount = runAttemptCount
+            )
+            if (cancelled) {
+                Log.i(TAG, "Auto backup cancelled (stopped by WorkManager) — will run again next time")
+            } else {
+                Log.e(TAG, "Auto backup failed", e)
+                AppLogger.error(TAG, "자동 백업 실패: ${e.message}", e)
+            }
+            if (outcome.recordsFailure) {
+                statusStore.recordFailure(e.message ?: "Unknown error")
+            }
+            if (outcome.notifiesUser) {
                 // 재시도 소진 — 최종 실패. 시스템 알림으로 능동 통지 + 이력 기록.
                 com.novelcharacter.app.notification.NotificationHelper
                     .showBackupFailedNotification(appContext, e.message ?: "Unknown error")
@@ -114,7 +144,7 @@ class AutoBackupWorker(
                     detail = e.message
                 ))
             }
-            if (willRetry) Result.retry() else Result.failure()
+            if (outcome.retries) Result.retry() else Result.failure()
         }
     }
 
@@ -127,7 +157,8 @@ class AutoBackupWorker(
 
     private suspend fun saveEncryptedBackup(
         workbook: XSSFWorkbook,
-        includeImages: Boolean
+        includeImages: Boolean,
+        progress: com.novelcharacter.app.excel.ExportProgressSink?
     ): com.novelcharacter.app.excel.ImageZipReport {
         val backupDir = File(appContext.filesDir, BACKUP_DIR_NAME)
         if (!backupDir.exists()) {
@@ -155,7 +186,7 @@ class AutoBackupWorker(
             val report = if (includeImages) {
                 val db = AppDatabase.getDatabase(appContext)
                 com.novelcharacter.app.excel.ImageZipHelper.wrapWithImages(
-                    tempXlsx, tempZip, db, appContext
+                    tempXlsx, tempZip, db, appContext, progress
                 )
             } else {
                 com.novelcharacter.app.excel.ImageZipReport.NOT_REQUESTED

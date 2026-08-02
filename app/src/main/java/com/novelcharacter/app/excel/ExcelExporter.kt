@@ -80,9 +80,11 @@ class ExcelExporter(context: Context) {
      *
      * 호출 전 truncatedCellCount를 초기화하고, styles를 워크북에 바인딩한다.
      *
-     * @param progress 진행 보고·취소 창구(R-26). null이면 보고 없이 끝까지 돈다 —
-     *   자동 백업(백그라운드)이 그 경로다. 취소가 걸리면 [ExportCancelledException]을 던지며,
+     * @param progress 진행 보고·취소 창구(R-26). 취소가 걸리면 [ExportCancelledException]을 던지며,
      *   반쯤 채운 워크북은 호출부가 버린다(반쪽 파일을 건네지 않는다).
+     *   null이면 보고도 취소 확인도 없이 끝까지 돈다 — **자동 백업은 더 이상 그 경로가 아니다**
+     *   (B-96: 워커가 stop돼도 루프가 끝까지 돌아 재시도 인스턴스와 겹쳤다. 지금은
+     *   `isCancelled = { isStopped }`만 실은 싱크를 넘긴다).
      * @return 32,767자(XLSX 셀 규격) 초과로 잘린 셀 수
      */
     suspend fun populateWorkbook(
