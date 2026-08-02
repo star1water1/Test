@@ -7,6 +7,7 @@ import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.data.model.*
 import java.io.File
 import java.io.FileOutputStream
+import java.util.zip.Deflater
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
@@ -143,6 +144,10 @@ class WorldPackageExporter(private val context: Context) {
 
                 // Images
                 if (config.includeImages) {
+                    // 이미지 구간은 무압축(설계 D8 — ImageZipHelper와 짝. R-16).
+                    // 이미 압축된 형식에 deflate를 걸어 얻는 것이 없으므로 CPU만 지불하게 된다.
+                    // 위 JSON 엔트리들은 압축이 실효가 있어 기본 수준으로 이미 기록됐다.
+                    zip.setLevel(Deflater.NO_COMPRESSION)
                     for (char in characters) {
                         writeImageEntries(zip, char.imagePaths, "images/${char.id}_")
                     }
@@ -152,6 +157,7 @@ class WorldPackageExporter(private val context: Context) {
                     for (novel in novels) {
                         writeImageEntries(zip, novel.imagePaths, "images/novel_${novel.id}_")
                     }
+                    zip.setLevel(Deflater.DEFAULT_COMPRESSION)
                 }
             }
         } catch (e: Exception) {

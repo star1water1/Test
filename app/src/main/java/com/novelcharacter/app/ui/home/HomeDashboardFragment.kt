@@ -212,10 +212,20 @@ class HomeDashboardFragment : Fragment() {
         binding.cardExcel.setOnClickListener {
             MaterialAlertDialogBuilder(requireContext())
                 .setTitle(R.string.dashboard_tool_excel)
+                // 첫 항목이 '전체 백업'이다(설계 D1) — 백업의 직업과 데이터 추출의 직업은
+                // 원하는 기본값이 정반대라 진입부터 갈라 둔다
                 .setItems(
-                    arrayOf(getString(R.string.settings_export), getString(R.string.settings_import))
+                    arrayOf(
+                        getString(R.string.export_full_backup),
+                        getString(R.string.export_choose_items),
+                        getString(R.string.settings_import)
+                    )
                 ) { _, which ->
-                    if (which == 0) excel.showExportDialog() else excel.showImportDialog()
+                    when (which) {
+                        0 -> excel.startFullBackup()
+                        1 -> excel.showExportDialog()
+                        else -> excel.showImportDialog()
+                    }
                 }
                 .setNegativeButton(R.string.cancel, null)
                 .show()

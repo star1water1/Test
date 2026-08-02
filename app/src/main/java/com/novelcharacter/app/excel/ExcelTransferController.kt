@@ -5,9 +5,15 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.lifecycleScope
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.novelcharacter.app.R
-import com.novelcharacter.app.util.dismissSafely
+import com.novelcharacter.app.data.database.AppDatabase
+import com.novelcharacter.app.databinding.DialogExportFullBackupBinding
+import com.novelcharacter.app.ui.common.TaskProgressDialog
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
@@ -15,6 +21,16 @@ import java.io.File
  *
  * SettingsFragment에 묶여 있던 옵션 다이얼로그·SAF 런처·pendingExportFile 복원을 추출해
  * 홈 대시보드 등 어느 프래그먼트에서든 같은 흐름을 중복 없이 쓸 수 있게 한다.
+ * **세계관·작품 목록의 복제 흐름도 2026.08.02에 여기로 흡수했다**(설계 D3 후단) — 그 전에는
+ * 두 진입이 자기 exporter·런처·모드 창을 따로 들고 있어, 이 컨트롤러만 고치면 그쪽은
+ * 옛 흐름에 남았다.
+ *
+ * **내보내기는 두 직업으로 갈라져 있다**(설계 D1·D3):
+ * - [startFullBackup] — "전부 안전하게 보관". 옵션은 [ExportOptions.ALL_WITH_IMAGES] 고정이고
+ *   체크박스가 없다. 백업의 생명은 완전성인데, 종전에는 그것이 18항목 중 **마지막 체크박스**·
+ *   기본 꺼짐으로 앉아 있어 모르면 반쪽 백업이 됐다.
+ * - [showExportDialog] — "표로 뽑아 작업". 현행 18항목 그대로이고 이미지는 기본 꺼짐이다 —
+ *   그 직업에는 그 기본값이 옳다.
  *
  * 반드시 프래그먼트의 onCreate에서 생성해야 한다 — registerForActivityResult는
  * STARTED 이전에 등록되어야 하고, 등록 순서가 재생성 시에도 동일해야 결과가 올바로 배달된다.
@@ -50,7 +66,65 @@ class ExcelTransferController(private val fragment: Fragment) {
         })
     }
 
-    /** 내보내기: 항목 선택 → 공유/파일 저장 선택 → 실행 */
+    /**
+     * 내보내기 진입 2단(설계 D3) — 목록 화면의 메뉴처럼 **진입이 하나뿐인 자리**에서 쓴다.
+     * 설정·홈처럼 두 항목을 각각 놓을 수 있는 화면은 [startFullBackup]·[showExportDialog]를
+     * 직접 부른다.
+     */
+    fun showExportEntry() {
+        if (!fragment.isAdded) return
+        MaterialAlertDialogBuilder(fragment.requireContext())
+            .setTitle(R.string.export_pick_title)
+            .setItems(
+                arrayOf(
+                    fragment.getString(R.string.export_full_backup),
+                    fragment.getString(R.string.export_choose_items)
+                )
+            ) { _, which ->
+                when (which) {
+                    0 -> startFullBackup()
+                    1 -> showExportDialog()
+                }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    /**
+     * 전체 백업(설계 D1) — 항목 선택 없이 **모드 선택 창이 곧 확인 단계**다.
+     * 그 창이 목적문과 크기 견적(D6)을 함께 보인다.
+     */
+    fun startFullBackup() {
+        if (!fragment.isAdded) return
+        val binding = DialogExportFullBackupBinding.inflate(fragment.layoutInflater)
+        val dialog = MaterialAlertDialogBuilder(fragment.requireContext())
+            .setTitle(R.string.export_full_backup)
+            .setView(binding.root)
+            // 버튼 순서(취소 | 공유하기 | 파일로 저장)는 머티리얼 규격이 정한다
+            .setNeutralButton(R.string.export_mode_share) { _, _ ->
+                runExport(ExportOptions.ALL_WITH_IMAGES, saveToFile = false)
+            }
+            .setPositiveButton(R.string.export_mode_save) { _, _ ->
+                runExport(ExportOptions.ALL_WITH_IMAGES, saveToFile = true)
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .create()
+        dialog.show()
+
+        // 견적은 편의이지 게이트가 아니다 — 늦거나 실패하면 그 줄만 뜨지 않고 흐름은 그대로다.
+        val appContext = fragment.requireContext().applicationContext
+        fragment.lifecycleScope.launch {
+            val bytes = withContext(Dispatchers.IO) {
+                ImageZipHelper.estimateImageBytes(AppDatabase.getDatabase(appContext), appContext)
+            }
+            if (bytes <= 0L || !dialog.isShowing || !fragment.isAdded) return@launch
+            binding.estimateText.text =
+                fragment.getString(R.string.export_size_estimate, formatSize(bytes))
+            binding.estimateText.visibility = android.view.View.VISIBLE
+        }
+    }
+
+    /** 골라서 내보내기(고급): 항목 선택 → 공유/파일 저장 선택 → 실행 */
     fun showExportDialog() {
         // 항목 선택 창은 [ExportOptionsDialog]가 단일 소스다(종전에는 이 코드가 3곳에 복제돼 있었다).
         ExportOptionsDialog.show(fragment) { showExportModeDialog(it) }
@@ -66,26 +140,80 @@ class ExcelTransferController(private val fragment: Fragment) {
                     fragment.getString(R.string.export_mode_save)
                 )
             ) { _, which ->
-                exporter?.cancel()
-                exporter = ExcelExporter(fragment.requireContext().applicationContext)
-                // 워크북 생성이 오래 걸릴 수 있어 Toast 대신 진행 다이얼로그로 표시(변수 제어)
-                val progress = com.novelcharacter.app.util.createProgressDialog(
-                    fragment.requireContext(), R.string.excel_export_in_progress
-                )
-                progress.show()
-                val dismissProgress: () -> Unit = { progress.dismissSafely() }
-                when (which) {
-                    0 -> exporter?.exportAll(options, onFinished = dismissProgress)
-                    1 -> exporter?.exportAll(options, onFinished = dismissProgress) { file, fileName ->
-                        if (fragment.isAdded) {
-                            pendingExportFile = file
-                            saveFileLauncher.launch(fileName)
-                        }
-                    }
-                }
+                runExport(options, saveToFile = which == 1)
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
+    }
+
+    /**
+     * 두 진입이 공유하는 실행부 — **진행도는 작업형 규격**(R-26 · 설계 D5)이다.
+     *
+     * 종전에는 조회형 스피너였다. 이미지 포함 백업은 수백 MB·수 분이 걸리는 순회 작업이라
+     * "끝을 모르는 표시"로는 사용자가 멈춘 것과 도는 것을 구분할 수 없었다(B-51의 엑셀 몫).
+     *
+     * 취소는 **산출물을 만들지 않고 멈추는 것**이다 — 반쯤 쓴 파일을 건네면 그것으로 복원할 때
+     * 조용히 유실된다. 취소 뒤 임시 파일 삭제·고지는 [ExcelExporter]가 맡는다.
+     */
+    private fun runExport(options: ExportOptions, saveToFile: Boolean) {
+        if (!fragment.isAdded) return
+        exporter?.cancel()
+        exporter = ExcelExporter(fragment.requireContext().applicationContext)
+
+        var cancelled = false
+        // 총량은 띄우기 전에 안다(R-26: 총량 확정 후에 show한다) — 실행부와 같은 목록을 쓴다.
+        val progressDialog = TaskProgressDialog.show(
+            fragment.requireContext(),
+            titleRes = R.string.export_progress_title,
+            total = ExportSheetStep.of(options).size,
+            stageRes = R.string.export_progress_stage_sheets,
+            onCancel = { cancelled = true }
+        )
+        val sheetsStage = fragment.getString(R.string.export_progress_stage_sheets)
+        val imagesStage = fragment.getString(R.string.export_progress_stage_images)
+        val writingStage = fragment.getString(R.string.export_progress_stage_writing)
+
+        // 작업은 IO, 갱신은 메인(R-26). 화면이 사라진 뒤의 갱신은 조용히 버린다 —
+        // 그래도 작업 자체는 계속 돈다(취소가 아니다).
+        fun post(block: () -> Unit) {
+            fragment.activity?.runOnUiThread {
+                if (fragment.isAdded) block()
+            }
+        }
+
+        val sink = ExportProgressSink(
+            onSheets = { done, total ->
+                post {
+                    // 시트를 다 만들면 다음은 쓰기다 — 마지막 시트에서 막대가 100%로 멈춘 채
+                    // 오래 있는 것처럼 보이지 않도록 단계 문구를 바꿔 준다
+                    progressDialog.update(done, total, if (done == total && total > 0) writingStage else sheetsStage)
+                }
+            },
+            onImages = { done, total -> post { progressDialog.update(done, total, imagesStage) } },
+            isCancelled = { cancelled }
+        )
+
+        val onFinished: () -> Unit = { progressDialog.dismiss() }
+        if (saveToFile) {
+            exporter?.exportAll(options, onFinished = onFinished, progress = sink) { file, fileName ->
+                if (fragment.isAdded) {
+                    pendingExportFile = file
+                    saveFileLauncher.launch(fileName)
+                }
+            }
+        } else {
+            exporter?.exportAll(options, onFinished = onFinished, progress = sink)
+        }
+    }
+
+    /** 견적 표기 — GB/MB 두 자리까지. 자릿수만 맞으면 되는 안내라 소수 1자리로 끊는다. */
+    private fun formatSize(bytes: Long): String {
+        val mb = bytes.toDouble() / 1_048_576.0
+        return if (mb >= 1024.0) {
+            String.format(java.util.Locale.US, "%.1fGB", mb / 1024.0)
+        } else {
+            String.format(java.util.Locale.US, "%.0fMB", mb)
+        }
     }
 
     /** 가져오기: 파일 선택(SAF) → 분석/미리보기 → 임포트 (ExcelImporter가 전체 흐름 처리) */

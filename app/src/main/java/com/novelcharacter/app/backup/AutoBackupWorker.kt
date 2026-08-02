@@ -24,6 +24,34 @@ class AutoBackupWorker(
         private const val BACKUP_DIR_NAME = "backups"
         private const val BACKUP_PREFIX = "NovelCharacter_AutoBackup_"
         private const val BACKUP_EXTENSION = ".enc"
+
+        /**
+         * 주기 예약의 유니크 이름. **수동 격발은 이 이름을 쓰지 않는다** —
+         * 같은 이름공간에 넣으면 요청이 조용히 무시되거나 주기 예약이 취소될 수 있다.
+         */
+        const val PERIODIC_WORK_NAME = "auto_backup"
+
+        /** '지금 백업'(설계 D2)의 유니크 이름 — 주기와 별도 이름공간이다. */
+        const val MANUAL_WORK_NAME = "manual_backup"
+
+        /**
+         * 완료되지 않은 임시 파일로 볼 나이(밀리초).
+         *
+         * 종전에는 `backup_*` 임시 파일을 **전부** 지웠다. 주기와 수동이 겹칠 수 있게 된 지금
+         * 그것은 **실행 중인 다른 인스턴스의 작업 파일을 태우는** 일이다(설계 D2 무해화 ①).
+         * 백업 하나가 이 시간을 넘겨 걸리는 일은 없다고 보고, 넘겼다면 그것은 중단된 잔해다.
+         */
+        const val ORPHAN_TEMP_AGE_MS = 6L * 60L * 60L * 1000L // 6시간
+
+        /** 수동 격발 요청 — 제약 없음(즉시성이 이 버튼의 존재 이유다). 이미 돌고 있으면 KEEP이 무시한다. */
+        fun enqueueManual(context: Context) {
+            val request = androidx.work.OneTimeWorkRequestBuilder<AutoBackupWorker>().build()
+            androidx.work.WorkManager.getInstance(context).enqueueUniqueWork(
+                MANUAL_WORK_NAME,
+                androidx.work.ExistingWorkPolicy.KEEP,
+                request
+            )
+        }
     }
 
     override suspend fun doWork(): Result {
@@ -112,6 +140,11 @@ class AutoBackupWorker(
 
         val tempXlsx = File.createTempFile("backup_", ".xlsx", backupDir)
         val tempZip = File.createTempFile("backup_", ".zip", backupDir)
+        // 암호화는 임시 이름에 쓰고 끝나야 최종 이름으로 옮긴다(설계 D2 무해화 ②).
+        // 최종 이름에 직접 쓰면 **암호화 중인 부분 파일**을 '백업 내보내기'(최신 파일 선택)와
+        // 복원 목록이 집을 수 있다. 종전에도 있던 창인데, 수동 버튼이 그것을 사용자 눈앞으로
+        // 가져오므로 이번에 함께 닫는다.
+        val tempEnc = File.createTempFile("backup_", ".enc.part", backupDir)
         try {
             // 1. XLSX 쓰기
             tempXlsx.outputStream().use { fos ->
@@ -130,7 +163,12 @@ class AutoBackupWorker(
 
             // 3. 암호화 (이미지가 담겼으면 ZIP, 아니면 XLSX)
             val sourceFile = if (report.created) tempZip else tempXlsx
-            BackupEncryptor.encryptFile(sourceFile, backupFile)
+            BackupEncryptor.encryptFile(sourceFile, tempEnc)
+
+            // 4. 완성된 것만 최종 이름으로 — 같은 파일 시스템 안이라 rename은 원자적이다
+            if (!tempEnc.renameTo(backupFile)) {
+                throw java.io.IOException("Failed to finalize backup file: ${backupFile.name}")
+            }
             Log.i(TAG, "Encrypted backup saved (includeImages=$includeImages, " +
                 "images=${report.includedCount}/${report.referencedCount}): ${backupFile.absolutePath}")
             return report
@@ -140,6 +178,7 @@ class AutoBackupWorker(
         } finally {
             tempXlsx.delete()
             tempZip.delete()
+            tempEnc.delete()
         }
     }
 
@@ -147,10 +186,13 @@ class AutoBackupWorker(
         val backupDir = File(appContext.filesDir, BACKUP_DIR_NAME)
         if (!backupDir.exists()) return
 
-        // Clean up orphaned temp files from previous interrupted backups
+        // 중단된 이전 백업의 고아 임시 파일 청소 — **오래된 것만** 지운다(설계 D2 무해화 ①).
+        // 조건 없이 지우면 지금 함께 돌고 있는 다른 인스턴스(주기 ↔ 수동)의 작업 파일을 태운다.
+        val orphanCutoff = System.currentTimeMillis() - ORPHAN_TEMP_AGE_MS
         backupDir.listFiles { file ->
             file.name.startsWith("backup_") &&
-                (file.name.endsWith(".xlsx") || file.name.endsWith(".zip"))
+                (file.name.endsWith(".xlsx") || file.name.endsWith(".zip") || file.name.endsWith(".enc.part")) &&
+                file.lastModified() < orphanCutoff
         }?.forEach { it.delete() }
 
         val backupFiles = backupDir.listFiles { file ->

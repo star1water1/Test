@@ -349,8 +349,10 @@ class NovelCharacterApp : Application() {
                 .build()
         ).build()
 
+        // 이름은 워커가 든다 — 수동 격발('지금 백업')이 별도 이름공간을 쓴다는 사실과
+        // 한자리에 있어야 둘이 갈리지 않는다(설계 D2)
         WorkManager.getInstance(this).enqueueUniquePeriodicWork(
-            "auto_backup",
+            AutoBackupWorker.PERIODIC_WORK_NAME,
             ExistingPeriodicWorkPolicy.KEEP,
             workRequest
         )

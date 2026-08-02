@@ -79,39 +79,51 @@ class ExcelExporter(context: Context) {
      * 누락)하여 복원 시 데이터가 유실되므로, 반드시 이 메서드 하나만을 통해 시트를 생성한다.
      *
      * 호출 전 truncatedCellCount를 초기화하고, styles를 워크북에 바인딩한다.
+     *
+     * @param progress 진행 보고·취소 창구(R-26). null이면 보고 없이 끝까지 돈다 —
+     *   자동 백업(백그라운드)이 그 경로다. 취소가 걸리면 [ExportCancelledException]을 던지며,
+     *   반쯤 채운 워크북은 호출부가 버린다(반쪽 파일을 건네지 않는다).
      * @return 32,767자(XLSX 셀 규격) 초과로 잘린 셀 수
      */
-    suspend fun populateWorkbook(workbook: XSSFWorkbook, options: ExportOptions = ExportOptions()): Int {
+    suspend fun populateWorkbook(
+        workbook: XSSFWorkbook,
+        options: ExportOptions = ExportOptions(),
+        progress: ExportProgressSink? = null
+    ): Int {
         truncatedCellCount = 0
         styles = ExcelStyles(workbook)
         val usedSheetNames = mutableSetOf<String>()
 
-        exportInstructions(workbook, usedSheetNames)
-        if (options.universes) exportUniverses(workbook, usedSheetNames)
-        if (options.novels) exportNovels(workbook, usedSheetNames)
-        if (options.fieldDefinitions) {
-            // 등급 체계를 정의보다 먼저 — 시트 순서가 곧 가져오기 순서는 아니지만(가져오기는
-            // 이름으로 찾는다), 파일을 여는 사람이 참조 대상을 먼저 보게 된다.
-            exportGradeSystems(workbook, usedSheetNames)
-            exportFieldDefinitions(workbook, usedSheetNames)
-            exportFieldValueLibrary(workbook, usedSheetNames)
+        // 시트 목록·순서는 [ExportSheetStep.of]가 단일 소스다 — 진행도의 총량도 같은 것을
+        // 쓴다(R-26: 총량 확정 후에 띄운다). 종전 if 연쇄와 조건·순서는 그대로다.
+        val plan = ExportSheetStep.of(options)
+        progress?.onSheets?.invoke(0, plan.size)
+        for ((index, step) in plan.withIndex()) {
+            if (progress?.isCancelled?.invoke() == true) throw ExportCancelledException()
+            when (step) {
+                ExportSheetStep.INSTRUCTIONS -> exportInstructions(workbook, usedSheetNames)
+                ExportSheetStep.UNIVERSES -> exportUniverses(workbook, usedSheetNames)
+                ExportSheetStep.NOVELS -> exportNovels(workbook, usedSheetNames)
+                ExportSheetStep.GRADE_SYSTEMS -> exportGradeSystems(workbook, usedSheetNames)
+                ExportSheetStep.FIELD_DEFINITIONS -> exportFieldDefinitions(workbook, usedSheetNames)
+                ExportSheetStep.FIELD_VALUE_LIBRARY -> exportFieldValueLibrary(workbook, usedSheetNames)
+                ExportSheetStep.IMAGE_META -> exportImageMeta(workbook, usedSheetNames)
+                ExportSheetStep.CHARACTERS -> exportCharacters(workbook, usedSheetNames)
+                ExportSheetStep.TIMELINE -> exportTimeline(workbook, usedSheetNames)
+                ExportSheetStep.STATE_CHANGES -> exportStateChanges(workbook, usedSheetNames)
+                ExportSheetStep.RELATIONSHIPS -> exportRelationships(workbook, usedSheetNames)
+                ExportSheetStep.RELATIONSHIP_CHANGES -> exportRelationshipChanges(workbook, usedSheetNames)
+                ExportSheetStep.NAME_BANK -> exportNameBank(workbook, usedSheetNames)
+                ExportSheetStep.FACTIONS -> exportFactions(workbook, usedSheetNames)
+                ExportSheetStep.FACTION_MEMBERSHIPS -> exportFactionMemberships(workbook, usedSheetNames)
+                ExportSheetStep.FACTION_RELATIONSHIPS -> exportFactionRelationships(workbook, usedSheetNames)
+                ExportSheetStep.PRESET_TEMPLATES -> exportUserPresetTemplates(workbook, usedSheetNames)
+                ExportSheetStep.SEARCH_PRESETS -> exportSearchPresets(workbook, usedSheetNames)
+                ExportSheetStep.CHARACTER_LIST_PRESETS -> exportCharacterListPresets(workbook, usedSheetNames)
+                ExportSheetStep.APP_SETTINGS -> exportAppSettings(workbook, usedSheetNames)
+            }
+            progress?.onSheets?.invoke(index + 1, plan.size)
         }
-        // 이미지 시트는 반드시 캐릭터 시트보다 먼저 — 세계관 이름이 "이미지"여도 예약 시트가
-        // 원명을 선점하고 캐릭터 시트는 sanitize("(2)")되어 가져오기에서 충돌하지 않는다.
-        if (options.imageMeta) exportImageMeta(workbook, usedSheetNames)
-        if (options.characters) exportCharacters(workbook, usedSheetNames)
-        if (options.timeline) exportTimeline(workbook, usedSheetNames)
-        if (options.stateChanges) exportStateChanges(workbook, usedSheetNames)
-        if (options.relationships) exportRelationships(workbook, usedSheetNames)
-        if (options.relationshipChanges) exportRelationshipChanges(workbook, usedSheetNames)
-        if (options.nameBank) exportNameBank(workbook, usedSheetNames)
-        if (options.factions) exportFactions(workbook, usedSheetNames)
-        if (options.factionMemberships) exportFactionMemberships(workbook, usedSheetNames)
-        if (options.factionRelationships) exportFactionRelationships(workbook, usedSheetNames)
-        if (options.presetTemplates) exportUserPresetTemplates(workbook, usedSheetNames)
-        if (options.searchPresets) exportSearchPresets(workbook, usedSheetNames)
-        if (options.characterListPresets) exportCharacterListPresets(workbook, usedSheetNames)
-        if (options.appSettings) exportAppSettings(workbook, usedSheetNames)
         return truncatedCellCount
     }
 
@@ -119,12 +131,15 @@ class ExcelExporter(context: Context) {
      * @param options 내보내기에 포함할 항목 선택
      * @param onFinished if non-null, 성공/실패와 무관하게 작업 종료 시 Main에서 호출 —
      *                   호출측 진행 다이얼로그 해제용. 지정 시 시작 Toast는 생략된다(중복 안내 방지).
+     * @param progress if non-null, 시트·이미지 순회의 진행을 보고하고 취소를 받는다(R-26).
+     *                 취소하면 산출물을 만들지 않고 임시 파일을 지운 뒤 '취소했습니다'만 알린다.
      * @param onFileReady if non-null, called with the temp file instead of opening a share sheet.
      *                    The caller is responsible for launching SAF to let the user pick a save location.
      */
     fun exportAll(
         options: ExportOptions = ExportOptions(),
         onFinished: (() -> Unit)? = null,
+        progress: ExportProgressSink? = null,
         onFileReady: ((File, String) -> Unit)? = null
     ) {
         if (!isExporting.compareAndSet(false, true)) return
@@ -135,9 +150,12 @@ class ExcelExporter(context: Context) {
                 }
             }
             var workbook: XSSFWorkbook? = null
+            // 취소·실패 시 지울 산출물. 사용자에게 건넨 뒤에는 null로 되돌려 놓는다 —
+            // 그때부터는 공유 시트·SAF가 쓰는 파일이라 우리가 지울 것이 아니다.
+            var orphanFile: File? = null
             try {
                 workbook = XSSFWorkbook()
-                populateWorkbook(workbook, options)
+                populateWorkbook(workbook, options, progress)
 
                 // 내보내기 요약(시트/행 건수) — 사용 안내 시트는 데이터가 아니므로 제외
                 var exportedSheets = 0
@@ -152,13 +170,14 @@ class ExcelExporter(context: Context) {
                 val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
                 val xlsxFileName = "NovelCharacter_$timestamp.xlsx"
                 val xlsxFile = saveWorkbook(workbook, xlsxFileName)
+                orphanFile = xlsxFile
 
                 val file: File
                 val fileName: String
                 var imageReport = ImageZipReport.NOT_REQUESTED
                 if (options.images) {
                     val zipFileName = "NovelCharacter_$timestamp.zip"
-                    val wrapped = wrapWithImages(xlsxFile, zipFileName)
+                    val wrapped = wrapWithImages(xlsxFile, zipFileName, progress)
                     imageReport = wrapped.second
                     val zipFile: File? = wrapped.first
                     if (zipFile != null) {
@@ -174,8 +193,9 @@ class ExcelExporter(context: Context) {
                     file = xlsxFile
                     fileName = xlsxFileName
                 }
+                orphanFile = file
 
-                val imageNotice = buildImageNotice(imageReport)
+                val imageNotice = buildImageNotice(imageReport, options.isCompleteBackup)
                 val imageDetail = buildImageDetail(imageReport)
                 // 이력 한 줄만 봐도 백업이 불완전함을 알 수 있게 요약에 누락 건수를 붙인다
                 val exportSummary = appContext.getString(R.string.result_excel_exported, exportedSheets, exportedRows) +
@@ -188,6 +208,8 @@ class ExcelExporter(context: Context) {
                             Toast.LENGTH_LONG
                         ).show()
                     }
+                    // 여기서부터 파일은 공유 시트·SAF의 것이다 — 아래 catch가 지우면 안 된다
+                    orphanFile = null
                     if (onFileReady != null) {
                         // 저장(SAF) 모드: 실제 완료는 writeToUri에서 통보 — 여기선 이력만 기록
                         onFileReady(file, fileName)
@@ -207,13 +229,33 @@ class ExcelExporter(context: Context) {
                         if (truncatedCellCount > 0) appContext.getString(R.string.export_cells_truncated, truncatedCellCount) else null,
                         imageDetail
                     ).joinToString("\n").ifBlank { null }))
+            } catch (e: ExportCancelledException) {
+                // 취소는 실패가 아니다 — 반쪽 파일만 지우고 사실대로 한 줄 알린다.
+                // (반쪽을 건네면 그 파일로 복원할 때 조용히 유실된다 — R-26 후단)
+                orphanFile?.delete()
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(appContext, appContext.getString(R.string.export_cancelled), Toast.LENGTH_SHORT).show()
+                }
+                logExportResult(OpResult.success(OpResult.CAT_EXCEL,
+                    appContext.getString(R.string.result_excel_export_cancelled)))
             } catch (e: Exception) {
                 android.util.Log.e("ExcelExporter", "Export failed", e)
+                orphanFile?.delete()
+                // 공간 부족은 별도 갈래로 말한다(설계 D7 · R-17) — "다시 시도하세요"는
+                // 공간이 없는 사용자에게 아무것도 알려 주지 않는 안내다.
+                val outOfSpace = ExportSpace.isOutOfSpace(e)
+                val message = if (outOfSpace) {
+                    val needMb = ExportSpace.requiredMegabytes(estimateExportBytes(options))
+                    appContext.getString(R.string.export_failed_no_space, needMb)
+                } else {
+                    appContext.getString(R.string.export_failed_retry)
+                }
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(appContext, appContext.getString(R.string.export_failed_retry), Toast.LENGTH_LONG).show()
+                    Toast.makeText(appContext, message, Toast.LENGTH_LONG).show()
                 }
                 logExportResult(OpResult.failure(OpResult.CAT_EXCEL,
-                    appContext.getString(R.string.result_excel_export_failed), e.message))
+                    appContext.getString(R.string.result_excel_export_failed),
+                    listOfNotNull(if (outOfSpace) message else null, e.message).joinToString("\n").ifBlank { null }))
             } finally {
                 try { workbook?.close() } catch (e: Exception) { android.util.Log.w("ExcelExporter", "Failed to close workbook", e) }
                 isExporting.set(false)
@@ -1550,19 +1592,42 @@ class ExcelExporter(context: Context) {
     // ── ZIP + 이미지 래핑 ──
 
     /** @return (사용할 ZIP 파일 또는 null, 이미지 포함 결과 집계) */
-    private suspend fun wrapWithImages(xlsxFile: File, zipFileName: String): Pair<File?, ImageZipReport> {
+    private suspend fun wrapWithImages(
+        xlsxFile: File,
+        zipFileName: String,
+        progress: ExportProgressSink? = null
+    ): Pair<File?, ImageZipReport> {
         val exportsDir = File(appContext.cacheDir, "exports")
         exportsDir.mkdirs()
         val zipFile = File(exportsDir, zipFileName)
-        val report = ImageZipHelper.wrapWithImages(xlsxFile, zipFile, db, appContext)
-        return (if (report.created) zipFile else null) to report
+        try {
+            val report = ImageZipHelper.wrapWithImages(xlsxFile, zipFile, db, appContext, progress)
+            return (if (report.created) zipFile else null) to report
+        } catch (e: Throwable) {
+            // 취소든 실패든 반쯤 쓴 ZIP은 남기지 않는다 — 캐시에 쌓이고, 무엇보다
+            // 다음 '백업 내보내기'가 그것을 집을 수 있다
+            zipFile.delete()
+            throw e
+        }
     }
+
+    /**
+     * 이 내보내기가 만들 파일의 대략적 크기(바이트) — 공간 부족 안내(D7)와
+     * 사전 견적(D6)이 같은 식을 쓴다.
+     *
+     * 이미지는 실측 합산(무압축으로 담으므로 실제 zip 크기와 거의 같다 — 설계 D8의 부수 이득),
+     * 워크북 몫은 이미 만들어 둔 임시 파일에서 재지 않고 생략한다 — 실패 시점에 그 파일이
+     * 남아 있다는 보장이 없고, 이미지가 압도적이라(실측 744MB 대 수 MB) 안내의 자릿수가
+     * 바뀌지 않는다. **모자라게 말하지 않는 것이 중요하므로** 이미지 몫만으로도 안내는 성립한다.
+     */
+    private suspend fun estimateExportBytes(options: ExportOptions): Long =
+        if (options.images) ImageZipHelper.estimateImageBytes(db, appContext) else 0L
 
     /**
      * 이미지 포함 결과 고지 한 줄. 사실만 말한다 — 제외가 0건이면 손실 문구를 쓰지 않는다.
      * (사실과 다른 경고는 무음보다 나쁘다)
      */
-    private fun buildImageNotice(r: ImageZipReport): String? = when {
+    private fun buildImageNotice(r: ImageZipReport, isCompleteBackup: Boolean): String? = when {
         !r.requested -> null
         r.hasLoss && r.includedCount == 0 ->
             appContext.getString(R.string.export_images_none_included, r.referencedCount)
@@ -1570,6 +1635,9 @@ class ExcelExporter(context: Context) {
             appContext.getString(R.string.export_images_incomplete, r.referencedCount, r.includedCount, r.excludedCount)
         // 요청했으나 앱에 이미지 자체가 없는 경우 — 손실이 아니라 확장자(.xlsx)에 대한 설명
         r.referencedCount == 0 -> appContext.getString(R.string.export_images_none)
+        // 전부 담겼다. 종전에는 이 갈래가 무고지였다(설계 1장) — 손실은 알려 주면서 완전함은
+        // 말하지 않으면, 백업의 생명인 완전성을 사용자가 매번 열어서 확인해야 한다(원칙 04).
+        isCompleteBackup -> appContext.getString(R.string.export_backup_complete, r.includedCount)
         else -> null
     }
 

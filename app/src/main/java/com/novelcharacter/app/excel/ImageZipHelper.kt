@@ -6,6 +6,7 @@ import com.google.gson.Gson
 import com.novelcharacter.app.data.database.AppDatabase
 import java.io.File
 import java.io.FileOutputStream
+import java.util.zip.Deflater
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
@@ -25,6 +26,9 @@ object ImageZipHelper {
      * - images/ (이미지 파일들)
      * - image_map.json (원본경로 → ZIP 상대경로 매핑)
      *
+     * @param progress 진행 보고·취소 창구(R-26). null이면 보고 없이 끝까지 돈다 —
+     *        자동 백업(백그라운드)이 그 경로다. 취소가 걸리면 [ExportCancelledException]을
+     *        던지며, 반쯤 쓴 ZIP은 호출부가 지운다.
      * @return 래핑 결과 집계([ImageZipReport]). created=false면 담을 이미지가 없어 래핑하지 않은 것이며,
      *         이때도 참조·제외 건수는 채워져 호출부가 사용자에게 사실대로 알릴 수 있다
      *         (이미지가 빠진 백업을 완전한 백업으로 오인하는 것을 막는다).
@@ -33,7 +37,8 @@ object ImageZipHelper {
         xlsxFile: File,
         outputZipFile: File,
         db: AppDatabase,
-        appContext: Context
+        appContext: Context,
+        progress: ExportProgressSink? = null
     ): ImageZipReport {
         val gson = Gson()
         val appDir = appContext.filesDir
@@ -71,14 +76,25 @@ object ImageZipHelper {
         val failedPaths = mutableListOf<String>()
 
         ZipOutputStream(FileOutputStream(outputZipFile)).use { zip ->
-            // data.xlsx 추가
+            // data.xlsx 추가 — XML이라 압축이 실효가 있으므로 기본 수준 그대로 쓴다
             zip.putNextEntry(ZipEntry("data.xlsx"))
             xlsxFile.inputStream().use { it.copyTo(zip) }
             zip.closeEntry()
 
+            // 이미지 구간은 무압축(설계 D8) — JPEG·PNG는 이미 압축된 형식이라 deflate가
+            // 사실상 0%를 벌면서 전량에 CPU를 지불한다(실측: 744.3MB → 740MB, -0.6%).
+            // STORED가 아니라 setLevel인 이유: STORED는 항목마다 size·crc를 미리 채워야 해
+            // 파일을 두 번 읽거나 통째로 버퍼링해야 한다. 이 방식은 스트리밍(copyTo)이 그대로다.
+            // 압축 수준은 zip 리더에게 투명하므로 왕복 규약은 무변경이다.
+            zip.setLevel(Deflater.NO_COMPRESSION)
+
             // 이미지 추가 (파일명 충돌 방지)
             val usedNames = mutableSetOf<String>()
+            val imageTotal = existingImages.size
+            var imageDone = 0
+            progress?.onImages?.invoke(0, imageTotal)
             for (path in existingImages) {
+                if (progress?.isCancelled?.invoke() == true) throw ExportCancelledException()
                 val imageFile = File(path)
                 var name = imageFile.name
                 if (name in usedNames) {
@@ -99,10 +115,15 @@ object ImageZipHelper {
                     try { zip.closeEntry() } catch (_: Exception) { }
                     Log.w(TAG, "Failed to add image to ZIP: $path", e)
                 }
+                imageDone++
+                progress?.onImages?.invoke(imageDone, imageTotal)
             }
             if (failedPaths.isNotEmpty()) {
                 Log.w(TAG, "${failedPaths.size} of ${existingImages.size} images failed to add to ZIP")
             }
+
+            // 이미지 구간 종료 — JSON은 압축이 실효가 있으므로 기본 수준으로 원복한다
+            zip.setLevel(Deflater.DEFAULT_COMPRESSION)
 
             // image_map.json 추가
             zip.putNextEntry(ZipEntry("image_map.json"))
@@ -121,6 +142,31 @@ object ImageZipHelper {
             // 표본은 "끊어진 참조 + 압축 실패"를 함께 — 사용자가 어느 파일인지 짚을 수 있게 한다
             sampleNames = ImagePathClassifier.sampleNames(classified.broken + failedPaths)
         )
+    }
+
+    /**
+     * 이미지 포함 내보내기가 담을 총 바이트 견적(설계 D6).
+     *
+     * **모집단은 [wrapWithImages]와 같은 식으로 구한다** — 엔티티 참조 ∪ 라이브러리 메타
+     * 경로를 [ImagePathClassifier]로 거른 '담을 수 있는 것'이다. 다른 식으로 세면 견적과
+     * 실물이 갈리므로 이 함수와 래핑이 같은 두 단계를 밟는 것이 요점이다.
+     * (`ImageMeta`에는 크기 컬럼이 없어 파일 하나씩 재는 것 말고는 방법이 없다 — 검토 F2.)
+     *
+     * 견적은 **편의이지 게이트가 아니다.** 실패하면 0을 돌려주고 호출부는 그 줄을 생략한다 —
+     * 견적 때문에 내보내기를 막지 않는다.
+     */
+    suspend fun estimateImageBytes(db: AppDatabase, appContext: Context): Long {
+        return runCatching {
+            val gson = Gson()
+            val appDir = appContext.filesDir
+            val imagePathSet = buildSet {
+                addAll(collectAllImagePaths(db, gson))
+                addAll(runCatching { db.imageMetaDao().getAllPaths() }.getOrDefault(emptyList()))
+            }
+            val appDirCanonical = runCatching { appDir.canonicalPath }.getOrNull() ?: appDir.absolutePath
+            ImagePathClassifier.classify(imagePathSet, appDirCanonical).includable
+                .sumOf { runCatching { File(it).length() }.getOrDefault(0L) }
+        }.getOrDefault(0L)
     }
 
     /**

@@ -127,6 +127,29 @@
                 android:textAppearance="@style/TextAppearance.App.BodySmall"
                 android:textColor="?attr/colorOnSurfaceVariant" />
 
+            <!-- 지금 백업(설계 D2) — 종전에는 주기(최대 하루)를 기다리는 길뿐이라
+                 파괴적 작업 직전에 안전망을 만들 수단이 없었다(B-86 · R-4).
+                 채움 버튼이 아니라 보조 버튼이다(규칙 2: 화면당 채움 버튼 1개). -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/backupNowButton"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:layout_marginEnd="16dp"
+                android:text="@string/backup_now" />
+
+            <TextView
+                android:id="@+id/backupNowCaption"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
+                android:paddingTop="6dp"
+                android:paddingBottom="4dp"
+                android:textAppearance="@style/TextAppearance.App.BodySmall"
+                android:textColor="?attr/colorOnSurfaceVariant" />
+
             <!-- Auto backup options -->
             <LinearLayout
                 android:id="@+id/backupOptionsRow"
@@ -198,7 +221,34 @@
                 android:paddingTop="20dp"
                 android:paddingBottom="4dp" />
 
-            <!-- Export -->
+            <!-- 전체 백업 — 섹션 첫 행. 백업의 생명은 완전성인데 종전에는 그것이
+                 '엑셀 내보내기' 18항목 중 마지막 체크박스(기본 꺼짐)로 앉아 있었다(설계 D1) -->
+            <LinearLayout
+                android:id="@+id/fullBackupRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp"
+                android:background="?attr/selectableItemBackground">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/export_full_backup"
+                    android:textAppearance="@style/TextAppearance.App.Title"
+                    android:textColor="?attr/colorOnSurface" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/export_full_backup_purpose"
+                    android:textAppearance="@style/TextAppearance.App.BodySmall"
+                    android:textColor="?attr/colorOnSurfaceVariant"
+                    android:paddingTop="2dp" />
+
+            </LinearLayout>
+
+            <!-- Export (골라서 — 데이터 작업용) -->
             <LinearLayout
                 android:id="@+id/exportRow"
                 android:layout_width="match_parent"
@@ -210,9 +260,17 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="@string/settings_export"
+                    android:text="@string/export_choose_items"
                     android:textAppearance="@style/TextAppearance.App.Title"
                     android:textColor="?attr/colorOnSurface" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/export_choose_items_purpose"
+                    android:textAppearance="@style/TextAppearance.App.BodySmall"
+                    android:textColor="?attr/colorOnSurfaceVariant"
+                    android:paddingTop="2dp" />
 
             </LinearLayout>
 

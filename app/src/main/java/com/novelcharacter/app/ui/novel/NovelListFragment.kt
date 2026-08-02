@@ -76,10 +76,13 @@ class NovelListFragment : Fragment() {
         }
     }
 
-    private var importerInitialized = false
-    private val importer by lazy {
-        importerInitialized = true
-        com.novelcharacter.app.excel.ExcelImporter(requireContext().applicationContext)
+    private lateinit var excel: com.novelcharacter.app.excel.ExcelTransferController
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        // 런처 등록 순서 보존을 위해 onCreate에서 생성 (컨트롤러 KDoc 참조)
+        excel = com.novelcharacter.app.excel.ExcelTransferController(this)
+        excel.restoreState(savedInstanceState)
     }
 
     /**
@@ -125,11 +128,6 @@ class NovelListFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        savedInstanceState?.getString("pendingExportFilePath")?.let {
-            pendingExportFile = java.io.File(it)
-        }
-
-        importer.registerLauncher(this)
         universeId = arguments?.getLong("universeId", -1L) ?: -1L
         viewModel.setUniverseFilter(universeId)
 
@@ -924,66 +922,22 @@ class NovelListFragment : Fragment() {
         }
     }
 
-    private var exporter: com.novelcharacter.app.excel.ExcelExporter? = null
-    private var pendingExportFile: java.io.File? = null
-
-    private val saveFileLauncher = registerForActivityResult(
-        ActivityResultContracts.CreateDocument("*/*")
-    ) { uri ->
-        if (!isAdded) return@registerForActivityResult
-        val file = pendingExportFile
-        if (uri != null && file != null) {
-            if (exporter == null) {
-                exporter = com.novelcharacter.app.excel.ExcelExporter(requireContext().applicationContext)
-            }
-            exporter?.writeToUri(uri, file)
-        }
-        pendingExportFile = null
-    }
-
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
-        pendingExportFile?.absolutePath?.let {
-            outState.putString("pendingExportFilePath", it)
-        }
+        excel.saveState(outState)
     }
 
     private fun exportToExcel() {
-        // 항목 선택 창은 ExportOptionsDialog가 단일 소스다(종전에는 3곳에 복제돼 있었다).
-        com.novelcharacter.app.excel.ExportOptionsDialog.show(this) { showExportModeDialog(it) }
-    }
-
-    private fun showExportModeDialog(options: com.novelcharacter.app.excel.ExportOptions) {
-        if (!isAdded) return
-        MaterialAlertDialogBuilder(requireContext())
-            .setTitle(R.string.export_mode_title)
-            .setItems(arrayOf(getString(R.string.export_mode_share), getString(R.string.export_mode_save))) { _, which ->
-                exporter?.cancel()
-                exporter = com.novelcharacter.app.excel.ExcelExporter(requireContext().applicationContext)
-                // 워크북 생성이 오래 걸릴 수 있어 진행 다이얼로그 표시 (ExcelTransferController와 동일 패턴)
-                val progress = com.novelcharacter.app.util.createProgressDialog(
-                    requireContext(), R.string.excel_export_in_progress
-                )
-                progress.show()
-                val dismissProgress: () -> Unit = { progress.dismissSafely() }
-                when (which) {
-                    0 -> exporter?.exportAll(options, onFinished = dismissProgress)
-                    1 -> exporter?.exportAll(options, onFinished = dismissProgress) { file, fileName ->
-                        if (isAdded) {
-                            pendingExportFile = file
-                            saveFileLauncher.launch(fileName)
-                        }
-                    }
-                }
-            }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
+        // 내보내기 흐름은 ExcelTransferController가 단일 소스다 — 종전에는 이 프래그먼트가
+        // exporter·SAF 런처·모드 다이얼로그를 통째로 복제해, 컨트롤러만 고치면 이 진입은
+        // 옛 흐름에 남는 구조였다(설계 D3 후단). 메뉴는 진입이 하나뿐이라 2단 선택 창을 쓴다.
+        excel.showExportEntry()
     }
 
     private fun importFromExcel() {
         if (!isAdded) return
         try {
-            importer.showImportDialog(this)
+            excel.showImportDialog()
         } catch (e: Exception) {
             if (isAdded) {
                 Toast.makeText(requireContext(), R.string.import_file_too_large, Toast.LENGTH_SHORT).show()
@@ -999,12 +953,5 @@ class NovelListFragment : Fragment() {
         _binding = null
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
-        exporter?.cancel()
-        exporter = null
-        if (importerInitialized) {
-            importer.cleanup()
-        }
-    }
+    // exporter·importer의 수명은 ExcelTransferController가 생명주기 관찰자로 정리한다.
 }

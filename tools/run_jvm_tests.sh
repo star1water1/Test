@@ -69,6 +69,8 @@ $MAIN/excel/PresetTemplateMatcher.kt
 $MAIN/excel/FactionRefResolver.kt
 $MAIN/excel/ExcelRefColumns.kt
 $MAIN/excel/ImageZipReport.kt
+$MAIN/excel/ExportOptions.kt
+$MAIN/excel/ExportProgress.kt
 $MAIN/excel/ImageMetaRowResolver.kt
 $MAIN/excel/EntityFieldHeaders.kt
 $MAIN/excel/ExcelHeaderAliases.kt
@@ -191,6 +193,7 @@ $TEST/excel/PresetTemplateMatcherTest.kt
 $TEST/excel/SheetValueConventionsTest.kt
 $TEST/excel/FactionRefResolverTest.kt
 $TEST/excel/ImageBackupIntegrityTest.kt
+$TEST/excel/ExportPlanAndSpaceTest.kt
 $TEST/excel/ExcelCellValueTest.kt
 $TEST/util/FieldValueTokenizerTest.kt
 $TEST/util/FormulaDisplayTest.kt
