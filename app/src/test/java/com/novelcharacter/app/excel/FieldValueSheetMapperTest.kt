@@ -234,4 +234,139 @@ class FieldValueSheetMapperTest {
             aliasesJson = FieldValueEntry.aliasesToJson(listOf("서울시", "옛서울")))
         assertEquals(listOf("서울시"), FieldValueSheetMapper.conflictingAliases(candidate, listOf(a)))
     }
+
+    // ── match / effectOf — 가져오기와 복원 미리보기의 단일 소스 (B-87) ──
+    //
+    // 종전 미리보기는 '동일'을 셀 자리가 없어(unchanged에 상수 0) 매칭된 행을 전부 '변경'이라
+    // 말했다. 아무것도 고치지 않은 파일을 그대로 다시 넣어도 "변경 N"이 뜨는 자리다(A7).
+
+    private fun entry(
+        id: Long,
+        value: String,
+        code: String = "FVE$id",
+        label: String = "",
+        aliases: List<String> = emptyList(),
+        category: String = "",
+        description: String = "",
+        hidden: Boolean = false,
+        source: String = FieldValueEntry.SOURCE_AUTO,
+        updatedAt: Long = 1_000L
+    ) = FieldValueEntry(
+        id = id, fieldDefinitionId = 1, value = value, displayLabel = label,
+        aliasesJson = FieldValueEntry.aliasesToJson(aliases), category = category,
+        description = description, isHidden = hidden, source = source,
+        code = code, createdAt = 500L, updatedAt = updatedAt
+    )
+
+    /** 내보낸 엔트리를 그대로 되읽었을 때의 시트 행 (엑셀 왕복의 정상 경로) */
+    private fun exportedRow(e: FieldValueEntry) = row(
+        e.value, label = e.displayLabel, aliases = FieldValueSheetMapper.aliasesToCsv(e),
+        category = e.category, description = e.description,
+        hidden = if (e.isHidden) "Y" else "", code = e.code, source = e.source
+    )
+
+    @Test
+    fun `고치지 않은 왕복은 전부 동일로 판정된다`() {
+        val a = entry(1, "서울", label = "서울특별시", aliases = listOf("서울시"), category = "수도권", description = "설명")
+        val b = entry(2, "부산", hidden = true, source = FieldValueEntry.SOURCE_MANUAL)
+        val siblings = listOf(a, b)
+        val effects = siblings.map {
+            val existing = FieldValueSheetMapper.match(siblings, exportedRow(it))
+            FieldValueSheetMapper.effectOf(existing, 1, exportedRow(it), siblings)
+        }
+        assertEquals(
+            "갱신 시각(updatedAt)까지 비교하면 '동일'이 영원히 0이 된다",
+            listOf(FieldValueSheetMapper.RowEffect.UNCHANGED, FieldValueSheetMapper.RowEffect.UNCHANGED),
+            effects
+        )
+    }
+
+    @Test
+    fun `값 하나만 달라도 변경이다`() {
+        val existing = entry(1, "서울", category = "수도권")
+        val siblings = listOf(existing)
+        val changed = exportedRow(existing).copy(category = "경기권")
+        assertEquals(
+            FieldValueSheetMapper.RowEffect.UPDATED,
+            FieldValueSheetMapper.effectOf(existing, 1, changed, siblings)
+        )
+    }
+
+    @Test
+    fun `코드가 맞으면 값이 바뀌어도 같은 엔트리다 - 이름 변경`() {
+        val existing = entry(1, "서울")
+        val siblings = listOf(existing)
+        val renamed = exportedRow(existing).copy(value = "한양")
+        assertEquals(existing, FieldValueSheetMapper.match(siblings, renamed))
+
+        val outcome = FieldValueSheetMapper.mergeRow(existing, 1, renamed, siblings)
+        assertEquals("구 값을 별칭으로 보존해야 재수확이 갈라지지 않는다", "서울", outcome.renamedFrom)
+        assertTrue(outcome.entry!!.aliases().contains("서울"))
+        assertEquals(
+            FieldValueSheetMapper.RowEffect.UPDATED,
+            FieldValueSheetMapper.effectOf(existing, 1, renamed, siblings)
+        )
+    }
+
+    @Test
+    fun `코드는 같은 필드 안에서만 찾는다`() {
+        // 전역 코드 색인으로 찾으면 다른 필드의 엔트리를 집어 와 '변경'으로 세어진다
+        val otherField = FieldValueEntry(id = 9, fieldDefinitionId = 2, value = "부산", code = "FVE9")
+        assertNull(FieldValueSheetMapper.match(emptyList(), row("서울", code = otherField.code)))
+    }
+
+    @Test
+    fun `코드가 시트에만 있고 기존에 없으면 값으로 되돌아간다`() {
+        val existing = entry(1, "서울", code = "FVE1")
+        assertEquals(existing, FieldValueSheetMapper.match(listOf(existing), row("서울", code = "없는코드")))
+    }
+
+    @Test
+    fun `매칭되는 것이 없으면 신규다`() {
+        assertEquals(
+            FieldValueSheetMapper.RowEffect.NEW,
+            FieldValueSheetMapper.effectOf(null, 1, row("대구"), emptyList())
+        )
+    }
+
+    @Test
+    fun `바뀐 값을 다른 엔트리가 이미 쓰면 가져오기가 건너뛴다`() {
+        val target = entry(1, "서울")
+        val taken = entry(2, "한양")
+        val siblings = listOf(target, taken)
+        val renamed = exportedRow(target).copy(value = "한양")
+        val outcome = FieldValueSheetMapper.mergeRow(target, 1, renamed, siblings)
+        assertTrue(outcome.valueTaken)
+        assertEquals(
+            "건너뛰는 행은 바뀌는 것이 없으니 '변경'도 '동일'도 아니다",
+            FieldValueSheetMapper.RowEffect.SKIPPED,
+            FieldValueSheetMapper.effectOf(target, 1, renamed, siblings)
+        )
+    }
+
+    @Test
+    fun `충돌 별칭만 빠져도 나머지가 같으면 동일이다`() {
+        val other = entry(2, "부산", aliases = listOf("부산시"))
+        val existing = entry(1, "서울", aliases = listOf("서울시"))
+        val siblings = listOf(existing, other)
+        // 외부에서 '부산시'를 서울의 별칭으로 덧붙였다 — 가져오기는 그 별칭만 제외한다
+        val withConflict = exportedRow(existing).copy(aliasesCsv = "서울시, 부산시")
+        val outcome = FieldValueSheetMapper.mergeRow(existing, 1, withConflict, siblings)
+        assertEquals(listOf("부산시"), outcome.droppedAliases)
+        assertEquals(
+            "제외하고 나면 기존과 같으므로 저장돼도 바뀌는 것이 없다",
+            FieldValueSheetMapper.RowEffect.UNCHANGED,
+            FieldValueSheetMapper.effectOf(existing, 1, withConflict, siblings)
+        )
+    }
+
+    @Test
+    fun `축약 시트는 말하지 않은 열을 바꾸지 않는다`() {
+        // 세계관·필드키·값만 남긴 시트 — F1-A로 나머지가 유지되므로 '동일'이다
+        val existing = entry(1, "서울", label = "서울특별시", aliases = listOf("서울시"), category = "수도권")
+        assertEquals(
+            FieldValueSheetMapper.RowEffect.UNCHANGED,
+            FieldValueSheetMapper.effectOf(existing, 1, row("서울"), listOf(existing))
+        )
+    }
 }
