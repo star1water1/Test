@@ -80,9 +80,11 @@ class ExcelExporter(context: Context) {
      *
      * 호출 전 truncatedCellCount를 초기화하고, styles를 워크북에 바인딩한다.
      *
-     * @param progress 진행 보고·취소 창구(R-26). null이면 보고 없이 끝까지 돈다 —
-     *   자동 백업(백그라운드)이 그 경로다. 취소가 걸리면 [ExportCancelledException]을 던지며,
+     * @param progress 진행 보고·취소 창구(R-26). 취소가 걸리면 [ExportCancelledException]을 던지며,
      *   반쯤 채운 워크북은 호출부가 버린다(반쪽 파일을 건네지 않는다).
+     *   null이면 보고도 취소 확인도 없이 끝까지 돈다 — **자동 백업은 더 이상 그 경로가 아니다**
+     *   (B-96: 워커가 stop돼도 루프가 끝까지 돌아 재시도 인스턴스와 겹쳤다. 지금은
+     *   `isCancelled = { isStopped }`만 실은 싱크를 넘긴다).
      * @return 32,767자(XLSX 셀 규격) 초과로 잘린 셀 수
      */
     suspend fun populateWorkbook(
@@ -96,6 +98,22 @@ class ExcelExporter(context: Context) {
 
         // 시트 목록·순서는 [ExportSheetStep.of]가 단일 소스다 — 진행도의 총량도 같은 것을
         // 쓴다(R-26: 총량 확정 후에 띄운다). 종전 if 연쇄와 조건·순서는 그대로다.
+        //
+        // **빈 범주도 시트를 만든다(B-88).** 종전에는 각 export 함수가 `if (xxx.isEmpty()) return`
+        // 으로 빠져나가, '전체 체크'로 내보내도 **비어 있던 종류는 시트 자체가 없었다** —
+        // 그러면 엑셀에서 그 종류를 새로 적어 넣을 수단이 사라진다(개발 의도 4번 '엑셀 왕복
+        // 무결성'. 사용자 지적: "시트를 안 만들면 엑셀 편집이 안 되니까"). 지금은 헤더만 있는
+        // 빈 시트가 나가고, 사용자는 거기에 행을 적어 되돌려 넣는다.
+        //
+        // **이것은 '삭제'의 의미를 바꾸지 않는다**(선택지 ①, 사용자 판정 2026.08.02).
+        // 가져오기의 덮어쓰기 가드는 "시트가 있는가"가 아니라 **"데이터 행이 1개 이상인가"**를
+        // 본다(`ExcelImportService.canRestore`) — 그래서 빈 시트를 만들어도 덮어쓰기가
+        // 지우던 범위는 종전 그대로이고, 엑셀에서 행을 실수로 다 지운 파일이 그 종류를
+        // 통째로 없애는 일도 없다. **두 자리는 함께 움직여야 한다** — 한쪽만 바꾸면
+        // 빈 시트가 곧 '전부 삭제' 지시가 된다.
+        //
+        // 파생·읽기 전용 시트는 대상이 아니다 — '전체 캐릭터'(U-12a)와 캐릭터 필드값
+        // 오버플로는 가져오기가 읽지 않으므로 빈 채로 내보낼 이유가 없다.
         val plan = ExportSheetStep.of(options)
         progress?.onSheets?.invoke(0, plan.size)
         for ((index, step) in plan.withIndex()) {
@@ -509,6 +527,12 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "• 셀당 최대 32,767자(엑셀 규격) — 초과분은 내보내기 시 잘려 기록됩니다."),
             GuideLine("", styles.guideBody, "• 가져오기도 동일하게 32,767자까지 저장됩니다 — 내보낸 파일을 그대로 들여오면 잘리지 않습니다."),
             GuideLine("", styles.guideBody, ""),
+            GuideLine("빈 시트 안내", styles.guideSection, ""),
+            GuideLine("", styles.guideBody, "아직 데이터가 없는 종류도 머리글만 있는 빈 시트로 함께 나갑니다. 여기에 행을 적어 새 데이터를 만듭니다."),
+            GuideLine("", styles.guideBody, "• 캐릭터가 없는 세계관도 시트가 만들어집니다. 그 세계관의 필드가 열로 준비되어 있습니다."),
+            GuideLine("", styles.guideBody, "• 빈 시트는 '엑셀에 없는 항목 삭제'의 대상이 아닙니다 — 행이 하나도 없는 시트로는 기존 데이터를 지우지 않습니다."),
+            GuideLine("", styles.guideBody, "• 그래서 실수로 행을 모두 지운 파일을 들여와도 그 종류가 통째로 사라지지 않습니다."),
+            GuideLine("", styles.guideBody, ""),
             GuideLine("코드 컬럼 안내 (중요)", styles.guideSection, ""),
             GuideLine("", styles.guideBody, "• 회색 코드 컬럼은 자동 생성된 고유 식별자입니다. 수정하지 마세요."),
             GuideLine("", styles.guideBody, "• 코드가 데이터 매칭의 1순위입니다. 이름/제목은 자유롭게 변경 가능합니다."),
@@ -680,7 +704,6 @@ class ExcelExporter(context: Context) {
 
     private suspend fun exportUniverses(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
         val universes = db.universeDao().getAllUniversesList()
-        if (universes.isEmpty()) return
 
         // imageCharacterId/imageNovelId → code 해석용 맵
         val charCodeMap = db.characterDao().getAllCharactersList().associate { it.id to it.code }
@@ -716,7 +739,6 @@ class ExcelExporter(context: Context) {
     private suspend fun exportNovels(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
         val novels = db.novelDao().getAllNovelsList()
         val universes = db.universeDao().getAllUniversesList()
-        if (novels.isEmpty()) return
 
         val universeMap = universes.associateBy { it.id }
         val charCodeMap = db.characterDao().getAllCharactersList().associate { it.id to it.code }
@@ -777,7 +799,6 @@ class ExcelExporter(context: Context) {
             val fields = db.fieldDefinitionDao().getFieldsByUniverseAllTypes(universe.id)
             fields.forEach { allFields.add(universe.id to it) }
         }
-        if (allFields.isEmpty()) return
 
         // 등급 체계 참조(U-1)는 전용 열로만 나간다 — code → 체계로 풀어 이름·코드를 싣는다.
         val systemsByCode = db.gradeSystemDao().getAllList().associateBy { it.code }
@@ -827,7 +848,6 @@ class ExcelExporter(context: Context) {
         val universes = db.universeDao().getAllUniversesList()
         val universeMap = universes.associateBy { it.id }
         val systems = db.gradeSystemDao().getAllList()
-        if (systems.isEmpty()) return
 
         val spec = gradeSystemSpec(universes.map { it.name })
         val sheetName = assignSheetName(spec.sheetName, usedSheetNames, ownerOf = spec.sheetName)
@@ -861,7 +881,6 @@ class ExcelExporter(context: Context) {
         val universeMap = universes.associateBy { it.id }
         val fieldsById = db.fieldDefinitionDao().getAllFieldsAllTypes().associateBy { it.id }
         val entries = db.fieldValueEntryDao().getAllList()
-        if (entries.isEmpty()) return
 
         val spec = fieldValueLibrarySpec(universes.map { it.name })
         val sheetName = assignSheetName(spec.sheetName, usedSheetNames, ownerOf = spec.sheetName)
@@ -936,8 +955,9 @@ class ExcelExporter(context: Context) {
             val universeNovelIds = universeNovels.map { it.id }.toSet()
             val universeChars = allCharacters.filter { it.novelId in universeNovelIds }
 
-            if (universeChars.isEmpty()) continue
-
+            // 캐릭터가 0명인 세계관도 **시트를 만든다**(B-88) — 종전에는 `continue`로 건너뛰어
+            // 새로 만든 세계관에 엑셀로 캐릭터를 적어 넣을 길이 아예 없었다. 열 구성은
+            // 그 세계관의 필드 정의가 정하므로 캐릭터가 없어도 정확히 만들어진다.
             val tags = universeChars.associate { char ->
                 char.id to (allTagsMap[char.id] ?: emptyList())
             }
@@ -1209,7 +1229,6 @@ class ExcelExporter(context: Context) {
 
     private suspend fun exportTimeline(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
         val events = db.timelineDao().getAllEventsList()
-        if (events.isEmpty()) return
         val novels = db.novelDao().getAllNovelsList()
         val novelMap = novels.associateBy { it.id }
 
@@ -1290,7 +1309,6 @@ class ExcelExporter(context: Context) {
 
     private suspend fun exportStateChanges(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
         val allChangesRaw = db.characterStateChangeDao().getAllChangesList()
-        if (allChangesRaw.isEmpty()) return
 
         val changesByCharId = allChangesRaw.groupBy { it.characterId }
         val charIds = changesByCharId.keys
@@ -1306,7 +1324,6 @@ class ExcelExporter(context: Context) {
             val novelTitle = character.novelId?.let { novelMap[it]?.title } ?: ""
             changes.forEach { allChanges.add(ChangeRow(character, novelTitle, it)) }
         }
-        if (allChanges.isEmpty()) return
 
         val spec = stateChangeSpec()
         val sheetName = assignSheetName(spec.sheetName, usedSheetNames, ownerOf = spec.sheetName)
@@ -1337,7 +1354,6 @@ class ExcelExporter(context: Context) {
 
     private suspend fun exportRelationships(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
         val allRelationships = db.characterRelationshipDao().getAllRelationships()
-        if (allRelationships.isEmpty()) return
 
         val allCharacters = db.characterDao().getAllCharactersList()
         val charMap = allCharacters.associateBy { it.id }
@@ -1380,7 +1396,6 @@ class ExcelExporter(context: Context) {
 
     private suspend fun exportRelationshipChanges(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
         val allChanges = db.characterRelationshipChangeDao().getAllChanges()
-        if (allChanges.isEmpty()) return
 
         val allRelationships = db.characterRelationshipDao().getAllRelationships()
         val relMap = allRelationships.associateBy { it.id }
@@ -1430,7 +1445,6 @@ class ExcelExporter(context: Context) {
      */
     private suspend fun exportImageMeta(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
         val metas = db.imageMetaDao().getAllList()
-        if (metas.isEmpty()) return
         val tagsByImage = db.imageTagDao().getAllList().groupBy({ it.imageId }, { it.tag })
 
         val spec = imageMetaSpec()
@@ -1452,7 +1466,6 @@ class ExcelExporter(context: Context) {
 
     private suspend fun exportNameBank(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
         val allNames = db.nameBankDao().getAllNamesList()
-        if (allNames.isEmpty()) return
 
         val allCharacters = db.characterDao().getAllCharactersList()
         val charMap = allCharacters.associateBy { it.id }
@@ -1485,7 +1498,6 @@ class ExcelExporter(context: Context) {
 
     private suspend fun exportFactions(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
         val allFactions = db.factionDao().getAllFactionsList()
-        if (allFactions.isEmpty()) return
 
         val universes = db.universeDao().getAllUniversesList()
         val universeMap = universes.associateBy { it.id }
@@ -1517,7 +1529,6 @@ class ExcelExporter(context: Context) {
 
     private suspend fun exportFactionMemberships(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
         val allMemberships = db.factionMembershipDao().getAllMembershipsList()
-        if (allMemberships.isEmpty()) return
 
         val allFactions = db.factionDao().getAllFactionsList()
         val factionMap = allFactions.associateBy { it.id }
@@ -1558,7 +1569,6 @@ class ExcelExporter(context: Context) {
 
     private suspend fun exportFactionRelationships(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
         val allRelationships = db.factionRelationshipDao().getAllRelationshipsList()
-        if (allRelationships.isEmpty()) return
 
         val allFactions = db.factionDao().getAllFactionsList()
         val factionMap = allFactions.associateBy { it.id }
@@ -1657,7 +1667,6 @@ class ExcelExporter(context: Context) {
 
     private suspend fun exportUserPresetTemplates(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
         val templates = db.userPresetTemplateDao().getAllTemplatesList()
-        if (templates.isEmpty()) return
 
         val spec = userPresetTemplateSpec()
         val sheetName = assignSheetName(spec.sheetName, usedSheetNames, ownerOf = spec.sheetName)
@@ -1681,7 +1690,6 @@ class ExcelExporter(context: Context) {
 
     private suspend fun exportSearchPresets(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
         val presets = db.searchPresetDao().getAllPresetsList()
-        if (presets.isEmpty()) return
 
         val spec = searchPresetSpec()
         val sheetName = assignSheetName(spec.sheetName, usedSheetNames, ownerOf = spec.sheetName)
@@ -1731,7 +1739,6 @@ class ExcelExporter(context: Context) {
      */
     private suspend fun exportCharacterListPresets(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
         val presets = db.characterListPresetDao().getAllPresetsList()
-        if (presets.isEmpty()) return
 
         val novelCodeById = db.novelDao().getAllNovelsList().associate { it.id to it.code }
         val spec = characterListPresetSpec()

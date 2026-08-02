@@ -26,9 +26,11 @@ object ImageZipHelper {
      * - images/ (이미지 파일들)
      * - image_map.json (원본경로 → ZIP 상대경로 매핑)
      *
-     * @param progress 진행 보고·취소 창구(R-26). null이면 보고 없이 끝까지 돈다 —
-     *        자동 백업(백그라운드)이 그 경로다. 취소가 걸리면 [ExportCancelledException]을
+     * @param progress 진행 보고·취소 창구(R-26). 취소가 걸리면 [ExportCancelledException]을
      *        던지며, 반쯤 쓴 ZIP은 호출부가 지운다.
+     *        null이면 보고도 취소 확인도 없이 끝까지 돈다 — **자동 백업은 더 이상 그 경로가
+     *        아니다**(B-96). 이 루프의 `copyTo`는 블로킹 I/O라 코루틴 취소로는 멈추지 않으므로,
+     *        stop을 보는 유일한 길이 이 싱크다.
      * @return 래핑 결과 집계([ImageZipReport]). created=false면 담을 이미지가 없어 래핑하지 않은 것이며,
      *         이때도 참조·제외 건수는 채워져 호출부가 사용자에게 사실대로 알릴 수 있다
      *         (이미지가 빠진 백업을 완전한 백업으로 오인하는 것을 막는다).

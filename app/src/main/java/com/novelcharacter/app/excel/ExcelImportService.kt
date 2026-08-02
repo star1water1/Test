@@ -368,22 +368,40 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 // 삭제 가드와 실제 조회는 **반드시 같은 판정**이어야 한다. 가드만 정확 일치로
                 // 두면 findSheet가 접미사 시트를 되찾아 읽는데 가드는 "시트가 없다"고 판단해,
                 // 덮어쓰기가 조용히 병합으로 바뀌고 서로 모순되는 경고가 함께 뜬다.
-                fun canRestore(spec: SheetSpec): Boolean = resolveSpecSheet(workbook, spec) != null
+                // 판정은 순수 계층 [OverwriteGuard]가 든다(B-88) — "시트가 있는가"가 아니라
+                // **"데이터 행이 1개 이상인가"**다. 사유·경계는 그 파일의 KDoc에 있다.
+                fun classify(spec: SheetSpec): RestoreSource =
+                    OverwriteGuard.classify(resolveSpecSheet(workbook, spec)?.lastRowNum)
+                /** 이 spec의 시트를 근거로 기존 데이터를 지워도 되는가(= 데이터 행이 있는가). */
+                fun canRestore(spec: SheetSpec): Boolean = classify(spec) == RestoreSource.HAS_ROWS
                 /** 선택됐고 백업으로 복원 가능할 때만 true. 복원 불가면 삭제를 건너뛰고 사용자에게 알린다. */
                 fun shouldDelete(enabled: Boolean, spec: SheetSpec): Boolean {
                     if (!enabled) return false
-                    if (!canRestore(spec)) {
-                        result.warnings.add("백업에 '${spec.sheetName}' 시트가 없어 기존 데이터를 삭제하지 않고 유지했습니다 (덮어쓰기 제외)")
-                        return false
+                    // 시트가 없는 것과 비어 있는 것을 갈라 말한다 — 사용자가 할 일이 다르다
+                    // (전자는 다시 내보내기, 후자는 그 시트에 행을 적기).
+                    return when (classify(spec)) {
+                        RestoreSource.HAS_ROWS -> true
+                        RestoreSource.EMPTY -> {
+                            result.warnings.add("'${spec.sheetName}' 시트에 데이터 행이 없어 기존 데이터를 삭제하지 않고 유지했습니다 (덮어쓰기 제외)")
+                            false
+                        }
+                        RestoreSource.MISSING -> {
+                            result.warnings.add("백업에 '${spec.sheetName}' 시트가 없어 기존 데이터를 삭제하지 않고 유지했습니다 (덮어쓰기 제외)")
+                            false
+                        }
                     }
-                    return true
                 }
                 // 캐릭터는 세계관별 시트 + 미분류 시트로 나뉘므로 별도 판정
+                // 캐릭터 시트도 같은 규칙이다(B-88) — 헤더만 있는 시트는 복원 재료가 아니다.
+                // 내보내기가 캐릭터 0명인 세계관에도 시트를 만들게 됐으므로, 헤더 검사만 두면
+                // **캐릭터가 하나도 없는 세계관의 빈 시트 하나가 전 캐릭터 삭제를 허가한다.**
+                fun charSheetRestorable(sheet: Sheet?): Boolean =
+                    sheet != null &&
+                        sheet.getRow(0)?.let { isValidHeader(it, "이름") } == true &&
+                        OverwriteGuard.canRestore(sheet.lastRowNum)
                 val charactersRestorable = db.universeDao().getAllUniversesList().any { u ->
-                    findSheetForUniverse(workbook, u.name, RESERVED_SHEET_NAMES)?.getRow(0)
-                        ?.let { isValidHeader(it, "이름") } == true
-                } || findUnclassifiedSheet(workbook)?.getRow(0)
-                    ?.let { isValidHeader(it, "이름") } == true
+                    charSheetRestorable(findSheetForUniverse(workbook, u.name, RESERVED_SHEET_NAMES))
+                } || charSheetRestorable(findUnclassifiedSheet(workbook))
 
                 if (shouldDelete(effectiveOptions.relationshipChanges, relationshipChangeSpec())) db.characterRelationshipChangeDao().deleteAll()
                 if (shouldDelete(effectiveOptions.relationships, relationshipSpec())) db.characterRelationshipDao().deleteAll()
