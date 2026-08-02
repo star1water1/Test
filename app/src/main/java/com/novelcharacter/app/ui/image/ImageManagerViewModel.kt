@@ -809,6 +809,36 @@ class ImageManagerViewModel(
     /** 배정 대상 목록 행(피커 표시용). */
     data class PickRow(val id: Long, val title: String, val subtitle: String)
 
+    /** '새 캐릭터 만들기'가 고를 수 있는 작품 목록 — 비워 두면 미분류 캐릭터가 된다. */
+    suspend fun getNovelChoices(): List<PickRow> = withContext(Dispatchers.IO) {
+        val unis = db.universeDao().getAllUniversesList().associateBy({ it.id }, { it.name })
+        db.novelDao().getAllNovelsList().sortedBy { it.title }
+            .map { PickRow(it.id, it.title, it.universeId?.let { u -> unis[u] } ?: "") }
+    }
+
+    /**
+     * 이미지 탭에서 캐릭터를 즉시 만든다 — **러프 입력 경로**(원칙 04의 이중 경로).
+     *
+     * 이름만 받고 나머지는 기본값으로 둔다. 정밀 조정은 캐릭터 편집 화면이 한다.
+     * `novelId`가 null이면 **미분류 캐릭터**가 되는데, 그것은 이 앱이 이미 지원하는 상태다
+     * (엑셀에도 '미분류 캐릭터' 시트가 있다) — 작품을 강제하면 이미지 한 장 붙이려고
+     * 작품부터 만들어야 해서 막힌 자리가 그대로 남는다.
+     *
+     * @return 만들어진 캐릭터의 [PickRow]. 배정은 호출부가 기존 경로로 잇는다.
+     */
+    suspend fun createCharacterForAssign(name: String, novelId: Long?): PickRow =
+        withContext(Dispatchers.IO) {
+            val character = com.novelcharacter.app.data.model.Character(
+                name = name.trim(),
+                novelId = novelId
+            )
+            val newId = db.characterDao().insert(character)
+            val subtitle = novelId?.let { id ->
+                db.novelDao().getAllNovelsList().firstOrNull { it.id == id }?.title
+            } ?: ""
+            PickRow(newId, character.name, subtitle)
+        }
+
     /** 현재 목록 기준 링크 meta(경로↔그룹) — 확장·계획 판정의 입력. */
     private fun currentMetas(): List<ImageLinkResolver.Meta> =
         (_images.value ?: emptyList()).mapNotNull { item ->

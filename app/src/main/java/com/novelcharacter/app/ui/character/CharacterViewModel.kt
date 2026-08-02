@@ -1570,6 +1570,79 @@ class CharacterViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    // ===== 편집창 라이브러리 피커 =====
+
+    /**
+     * 피커에 필요한 것 묶음 — 목록 + 링크 확장용 전체 메타(첨부 시 그룹을 함께 끌어온다).
+     *
+     * 행 타입은 순수 계층 [com.novelcharacter.app.util.LibraryPickerRow]다 — 선별 규칙이
+     * 프로브 범위 밖 화면에 갇히지 않도록 떼어 두었다(그 파일 KDoc 참조).
+     */
+    data class LibraryPickerData(
+        val images: List<com.novelcharacter.app.util.LibraryPickerRow>,
+        val metas: List<com.novelcharacter.app.util.ImageLinkResolver.Meta>
+    )
+
+    /**
+     * 라이브러리 전체를 1회 페치한다 — 이후 검색·필터는 [ImageFilterHelper]로 인메모리 처리한다
+     * (추천 스트립과 같은 계약: 오픈 때 한 번만 읽는다).
+     *
+     * 소유자 이름은 캐릭터·작품·세계관 셋을 모두 훑어 모은다. **파일이 없는 meta는 제외**한다 —
+     * 고를 수 없는 것을 보여 주면 고른 뒤에 실패한다.
+     */
+    suspend fun getLibraryImages(): LibraryPickerData = withContext(kotlinx.coroutines.Dispatchers.IO) {
+        try {
+            fun canonical(p: String): String =
+                try { java.io.File(p).canonicalPath } catch (_: Exception) { p }
+
+            val gson = com.google.gson.Gson()
+            // canonical 경로 → (소유자 이름, 종류). 한 이미지에 여럿이 붙을 수 있다.
+            val owners = HashMap<String, MutableList<Pair<String, com.novelcharacter.app.util.ImageFilterHelper.OwnerKind>>>()
+            fun collect(json: String, name: String, kind: com.novelcharacter.app.util.ImageFilterHelper.OwnerKind) {
+                if (json.isBlank() || json == "[]") return
+                val parsed = try { gson.fromJson(json, Array<String>::class.java) } catch (_: Exception) { null }
+                parsed?.forEach { raw ->
+                    owners.getOrPut(canonical(raw)) { mutableListOf() }.add(name to kind)
+                }
+            }
+            for (c in db.characterDao().getAllCharactersList()) {
+                collect(c.imagePaths, c.name, com.novelcharacter.app.util.ImageFilterHelper.OwnerKind.CHARACTER)
+            }
+            for (n in db.novelDao().getAllNovelsList()) {
+                collect(n.imagePaths, n.title, com.novelcharacter.app.util.ImageFilterHelper.OwnerKind.NOVEL)
+            }
+            for (u in db.universeDao().getAllUniversesList()) {
+                collect(u.imagePaths, u.name, com.novelcharacter.app.util.ImageFilterHelper.OwnerKind.UNIVERSE)
+            }
+
+            val existingMetas = db.imageMetaDao().getAllList().filter { java.io.File(it.path).exists() }
+            val tagsByImage = db.imageTagDao().getAllList().groupBy({ it.imageId }, { it.tag })
+
+            val images = existingMetas.map { meta ->
+                val own = owners[canonical(meta.path)].orEmpty()
+                com.novelcharacter.app.util.LibraryPickerRow(
+                    path = meta.path,
+                    tags = tagsByImage[meta.id].orEmpty(),
+                    ownerNames = own.map { it.first },
+                    ownerKinds = own.mapTo(HashSet()) { it.second },
+                    linkGroupId = meta.linkGroupId,
+                    importedAt = meta.importedAt
+                )
+            }
+            // 정렬 규칙도 순수 계층이 든다 — 추천과 같은 결이라 두 목록에서 같은 이미지가
+            // 다른 자리에 있지 않다.
+            val sorted = com.novelcharacter.app.util.LibraryPickerRows.sorted(images)
+
+            LibraryPickerData(
+                images = sorted,
+                metas = existingMetas.map { com.novelcharacter.app.util.ImageLinkResolver.Meta(it.path, it.linkGroupId) }
+            )
+        } catch (e: Exception) {
+            Log.e("CharacterViewModel", "Failed to load library images", e)
+            LibraryPickerData(emptyList(), emptyList())
+        }
+    }
+
     // ===== Event CRUD (캐릭터 화면에서 사건 생성용) =====
     private val db = app.database
 
