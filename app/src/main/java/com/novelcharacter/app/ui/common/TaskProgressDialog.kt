@@ -24,6 +24,15 @@ import com.novelcharacter.app.databinding.DialogTaskProgressBinding
  */
 object TaskProgressDialog {
 
+    /**
+     * 숫자 칸이 무엇을 세는가 — 구간마다 단위가 다르다.
+     *
+     * [ITEMS]는 장·건이고 [MEGABYTES]는 파일 바이트다. 단위를 표시하지 않으면 "350 / 750"이
+     * 이미지 750장인지 750MB인지 알 수 없다. 바이트 구간의 눈금 환산은
+     * [com.novelcharacter.app.util.ProgressScale]이 한다(Int 상한을 넘는 총량 때문).
+     */
+    enum class CountFormat { ITEMS, MEGABYTES }
+
     /** 표시 중인 진행도 손잡이. 작업 쪽은 이것만 들고 다닌다. */
     class Handle internal constructor(
         private val dialog: AlertDialog,
@@ -38,17 +47,49 @@ object TaskProgressDialog {
         /**
          * 진행도 갱신.
          *
-         * @param current 처리 완료 항목 수, [total] 총량. total이 0이면 퍼센트를 그리지 않는다.
+         * @param current 처리 완료 항목 수, [total] 총량.
          * @param stage 현재 단계 문구(예: "이미지를 들여오는 중"). null이면 유지.
+         * @param format 숫자 칸의 단위 — 장·건인가 MB인가.
+         *
+         * **[total]이 0이면 "총량을 모른다"는 뜻이다**(그 구간에 한해). 퍼센트를 지어내지 않고
+         * 불확정 막대로 돌리며 숫자는 "지금까지 얼마"만 말한다 — R-26 후단(총량을 모르는 작업에
+         * 퍼센트를 붙이지 않는다)을 한 창 안에서 구간별로 지키는 방법이다.
          */
-        fun update(current: Int, total: Int, stage: String? = null) {
+        fun update(
+            current: Int,
+            total: Int,
+            stage: String? = null,
+            format: CountFormat = CountFormat.ITEMS
+        ) {
             if (stage != null) binding.stageText.text = stage
             val safeTotal = total.coerceAtLeast(0)
-            val safeCurrent = current.coerceIn(0, if (safeTotal == 0) 0 else safeTotal)
-            val percent = if (safeTotal == 0) 0 else (safeCurrent * 100) / safeTotal
+            if (safeTotal == 0) {
+                val done = current.coerceAtLeast(0)
+                binding.progressBar.visibility = android.view.View.GONE
+                binding.indeterminateBar.visibility = android.view.View.VISIBLE
+                binding.countText.text = context.getString(
+                    when (format) {
+                        CountFormat.ITEMS -> R.string.task_progress_count_unknown
+                        CountFormat.MEGABYTES -> R.string.task_progress_count_unknown_mb
+                    },
+                    done
+                )
+                return
+            }
+            binding.indeterminateBar.visibility = android.view.View.GONE
+            binding.progressBar.visibility = android.view.View.VISIBLE
+            val safeCurrent = current.coerceIn(0, safeTotal)
+            // Long으로 셈한다 — 항목 수가 큰 작업(ZIP 이미지 엔트리 상한 5만)에서 `current * 100`이
+            // Int를 넘길 여지를 아예 없앤다.
+            val percent = ((safeCurrent.toLong() * 100L) / safeTotal.toLong()).toInt()
             binding.progressBar.progress = percent
-            binding.countText.text =
-                context.getString(R.string.task_progress_count, safeCurrent, safeTotal, percent)
+            binding.countText.text = context.getString(
+                when (format) {
+                    CountFormat.ITEMS -> R.string.task_progress_count
+                    CountFormat.MEGABYTES -> R.string.task_progress_count_mb
+                },
+                safeCurrent, safeTotal, percent
+            )
         }
 
         /** 뷰가 이미 사라진 뒤에도 안전하게 닫는다(윈도우 분리 예외 무해화). */
@@ -73,6 +114,7 @@ object TaskProgressDialog {
         @StringRes titleRes: Int,
         total: Int,
         @StringRes stageRes: Int? = null,
+        format: CountFormat = CountFormat.ITEMS,
         onCancel: (() -> Unit)? = null
     ): Handle {
         val binding = DialogTaskProgressBinding.inflate(android.view.LayoutInflater.from(context))
@@ -97,7 +139,7 @@ object TaskProgressDialog {
                 dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.isEnabled = false
             }
         }
-        handle.update(0, total, stageRes?.let { context.getString(it) })
+        handle.update(0, total, stageRes?.let { context.getString(it) }, format)
         return handle
     }
 }

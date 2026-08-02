@@ -78,6 +78,7 @@ $MAIN/excel/SheetSpec.kt
 $MAIN/excel/ExcelCellValue.kt
 $MAIN/excel/CharacterFieldValueOverflow.kt
 $MAIN/excel/AllCharactersSheet.kt
+$MAIN/util/ProgressScale.kt
 $MAIN/util/FieldValueTokenizer.kt
 $MAIN/util/StatsFieldPolicy.kt
 $MAIN/util/ValueDistributions.kt
@@ -195,6 +196,7 @@ $TEST/excel/FactionRefResolverTest.kt
 $TEST/excel/ImageBackupIntegrityTest.kt
 $TEST/excel/ExportPlanAndSpaceTest.kt
 $TEST/excel/ExcelCellValueTest.kt
+$TEST/util/ProgressScaleTest.kt
 $TEST/util/FieldValueTokenizerTest.kt
 $TEST/util/FormulaDisplayTest.kt
 $TEST/util/FormulaEvaluatorTest.kt

@@ -101,11 +101,19 @@ object BackupEncryptor {
     }
 
     /** 청크 단위 암호화 공통 루틴. 청크마다 새 IV로 [IV(12B)][암호문+GCM 태그]를 기록. */
-    private fun encryptChunks(inputFile: File, fos: FileOutputStream, key: SecretKey) {
+    private fun encryptChunks(
+        inputFile: File,
+        fos: FileOutputStream,
+        key: SecretKey,
+        onProgress: ((Long) -> Unit)? = null
+    ) {
+        var consumed = 0L
         FileInputStream(inputFile).use { fis ->
             val buffer = ByteArray(CHUNK_SIZE)
             var bytesRead: Int
             while (fis.read(buffer).also { bytesRead = it } != -1) {
+                consumed += bytesRead
+                onProgress?.invoke(consumed)
                 val cipher = Cipher.getInstance(TRANSFORMATION)
                 cipher.init(Cipher.ENCRYPT_MODE, key)
                 val iv = cipher.iv  // 12 bytes, 청크마다 새 IV
@@ -153,7 +161,12 @@ object BackupEncryptor {
      *   chunk1_IV(12B) + chunk1_encrypted + GCM tag
      *   ...
      */
-    fun encryptFilePortable(inputFile: File, outputFile: File, passphrase: CharArray) {
+    fun encryptFilePortable(
+        inputFile: File,
+        outputFile: File,
+        passphrase: CharArray,
+        onProgress: ((Long) -> Unit)? = null
+    ) {
         require(passphrase.size >= MIN_PASSPHRASE_LENGTH) {
             "Passphrase must be at least $MIN_PASSPHRASE_LENGTH characters"
         }
@@ -164,15 +177,22 @@ object BackupEncryptor {
             fos.write(ByteBuffer.allocate(4).putInt(PBKDF2_ITERATIONS).array())
             fos.write(salt)
             fos.write(ByteBuffer.allocate(4).putInt(CHUNK_SIZE).array())
-            encryptChunks(inputFile, fos, key)
+            encryptChunks(inputFile, fos, key, onProgress)
         }
     }
 
     /**
      * 이식 가능(NCP1) 형식 복호화. 잘못된 암호는 첫 청크의 GCM 태그 검증 실패
      * (javax.crypto.AEADBadTagException)로 감지된다.
+     *
+     * @param onProgress 지금까지 읽은 입력 바이트(누적). 총량은 `inputFile.length()`다(R-26 · B-51).
      */
-    fun decryptFilePortable(inputFile: File, outputFile: File, passphrase: CharArray) {
+    fun decryptFilePortable(
+        inputFile: File,
+        outputFile: File,
+        passphrase: CharArray,
+        onProgress: ((Long) -> Unit)? = null
+    ) {
         val tempFile = File(outputFile.parentFile, outputFile.name + ".tmp")
         try {
             FileInputStream(inputFile).use { fis ->
@@ -192,7 +212,9 @@ object BackupEncryptor {
                 require(chunkSize in 1..CHUNK_SIZE * 2) { "Invalid chunk size in backup header: $chunkSize" }
 
                 val key = deriveKey(passphrase, salt, iterations)
-                decryptChunked(fis, tempFile, chunkSize, key)
+                // 헤더는 MAGIC(4) + iterations(4) + salt(16) + chunkSize(4)까지 읽었다.
+                val headerBytes = (PORTABLE_MAGIC.size + 4 + SALT_LENGTH + 4).toLong()
+                decryptChunked(fis, tempFile, chunkSize, key, onProgress, headerBytes)
             }
 
             if (!tempFile.renameTo(outputFile)) {
@@ -212,7 +234,12 @@ object BackupEncryptor {
     //
     // doFinal() 기반으로 GCM 인증 태그를 항상 검증.
     // CipherInputStream은 일부 Android 버전에서 태그 검증을 건너뛸 수 있으므로 사용하지 않음.
-    fun decryptFile(inputFile: File, outputFile: File) {
+    /**
+     * @param onProgress 지금까지 **읽은 입력 바이트**(누적). 총량은 `inputFile.length()`다.
+     *   복호화는 수백 MB짜리 백업에서 분 단위가 걸리는데 종전에는 불확정 스피너뿐이라
+     *   "도는 중"과 "멈춤"이 구분되지 않았다(규약 R-26 · B-51).
+     */
+    fun decryptFile(inputFile: File, outputFile: File, onProgress: ((Long) -> Unit)? = null) {
         val tempFile = File(outputFile.parentFile, outputFile.name + ".tmp")
         try {
             val fis = FileInputStream(inputFile)
@@ -230,11 +257,16 @@ object BackupEncryptor {
                     require(chunkSize in 1..CHUNK_SIZE * 2) {
                         "Invalid chunk size in backup header: $chunkSize"
                     }
-                    decryptChunked(fis, tempFile, chunkSize, getOrCreateKey())
+                    decryptChunked(
+                        fis, tempFile, chunkSize, getOrCreateKey(),
+                        onProgress, headerRead.toLong()
+                    )
                 } else {
                     // v1: 레거시 전체 로드 (헤더를 이미 소비했으므로 새로 열어야 함)
                     fis.close()
                     decryptLegacy(inputFile, tempFile)
+                    // 레거시는 한 번의 doFinal이라 중간 보고 지점이 없다 — 끝난 사실만 알린다.
+                    onProgress?.invoke(inputFile.length())
                 }
             } finally {
                 try { fis.close() } catch (_: Exception) { }
@@ -255,8 +287,17 @@ object BackupEncryptor {
      * v2 청크 복호화. 각 청크를 독립적으로 복호화하여 메모리 사용 최소화.
      * 피크 메모리: ~2MB (암호문 청크 + 복호화 결과)
      */
-    private fun decryptChunked(fis: InputStream, outputFile: File, chunkSize: Int, key: SecretKey) {
+    private fun decryptChunked(
+        fis: InputStream,
+        outputFile: File,
+        chunkSize: Int,
+        key: SecretKey,
+        onProgress: ((Long) -> Unit)? = null,
+        consumedBefore: Long = 0L
+    ) {
         val maxEncryptedChunkSize = chunkSize + GCM_TAG_BYTES
+        // 청크는 이미 MB급이라 청크마다 보고해도 갱신이 작업보다 비싸지지 않는다.
+        var consumed = consumedBefore
         FileOutputStream(outputFile).use { fos ->
             while (true) {
                 // IV 읽기
@@ -274,6 +315,9 @@ object BackupEncryptor {
                 cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(GCM_TAG_LENGTH, iv))
                 val decrypted = cipher.doFinal(encryptedChunk)
                 fos.write(decrypted)
+
+                consumed += ivRead + encryptedChunk.size
+                onProgress?.invoke(consumed)
             }
         }
     }

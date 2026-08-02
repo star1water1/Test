@@ -20,7 +20,10 @@ import com.novelcharacter.app.backup.BackupEncryptor
 import com.novelcharacter.app.backup.BackupSettingsStore
 import com.novelcharacter.app.backup.BackupStatusStore
 import com.novelcharacter.app.data.maintenance.SystemMaintenanceService
+import com.novelcharacter.app.excel.ExportCancelledException
 import com.novelcharacter.app.share.WorldPackageExporter
+import com.novelcharacter.app.ui.common.TaskProgressDialog
+import com.novelcharacter.app.util.ProgressScale
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -462,9 +465,17 @@ class SettingsFragment : Fragment() {
 
     private fun runWorldPackageExport(universeId: Long, includeImages: Boolean) {
         if (!isAdded) return
-        // Toast 대신 진행 다이얼로그 — 대형 세계관에서도 진행 중임이 분명하게 보이도록
-        val progress = createProgressDialog(R.string.world_package_exporting)
-        progress.show()
+        // 작업형 진행도(R-26 · B-51) — 종전에는 불확정 스피너라 대형 세계관에서 진행 중인지
+        // 멈춘 것인지 알 수 없었다. 자료(절)와 이미지(장)는 단위가 달라 구간을 나눠 보고한다.
+        // 취소는 산출물을 만들지 않고 멈추는 것이다(D5가 엑셀 내보내기에서 정한 것과 같다).
+        var cancelled = false
+        val progress = showTaskProgress(
+            R.string.world_package_progress_title,
+            total = 0,
+            stageRes = R.string.world_package_stage_sections
+        ) { cancelled = true }
+        val sectionsStage = getString(R.string.world_package_stage_sections)
+        val imagesStage = getString(R.string.export_progress_stage_images)
         viewLifecycleOwner.lifecycleScope.launch {
             try {
                 val exporter = WorldPackageExporter(requireContext())
@@ -472,7 +483,12 @@ class SettingsFragment : Fragment() {
                     universeId = universeId,
                     includeImages = includeImages
                 )
-                val result = withContext(Dispatchers.IO) { exporter.export(config) }
+                val sink = WorldPackageExporter.ProgressSink(
+                    onSections = { done, total -> postProgress(progress, done, total, sectionsStage) },
+                    onImages = { done, total -> postProgress(progress, done, total, imagesStage) },
+                    isCancelled = { cancelled }
+                )
+                val result = withContext(Dispatchers.IO) { exporter.export(config, sink) }
 
                 if (!isAdded) return@launch
                 if (result.droppedFactionRelationships > 0) {
@@ -497,12 +513,17 @@ class SettingsFragment : Fragment() {
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
                 startActivity(Intent.createChooser(shareIntent, getString(R.string.share_world_package)))
+            } catch (e: ExportCancelledException) {
+                // 실패가 아니다 — 내보내는 쪽이 파일을 이미 지웠으므로 알리기만 한다.
+                if (isAdded) {
+                    Toast.makeText(requireContext(), R.string.world_package_cancelled, Toast.LENGTH_SHORT).show()
+                }
             } catch (e: Exception) {
                 if (isAdded) {
                     Toast.makeText(requireContext(), e.message, Toast.LENGTH_LONG).show()
                 }
             } finally {
-                progress.dismissSafely()
+                progress?.dismiss()
             }
         }
     }
@@ -792,23 +813,45 @@ class SettingsFragment : Fragment() {
     private fun exportPortableBackup(deviceEncFile: File, passphrase: CharArray) {
         if (!isAdded) return
         val ctx = requireContext().applicationContext
-        val progressDialog = createProgressDialog(R.string.backup_portable_preparing)
-        progressDialog.show()
+        // 두 구간(복호화 · 암호를 걸어 다시 쓰기)이 모두 바이트 순회이고 총량을 안다 —
+        // 각자 자기 총량으로 보고한다(합치면 단위가 다른 둘이 한 막대에 섞인다. R-26 · D5).
+        val decryptScale = ProgressScale.forBytes(deviceEncFile.length())
+        val progressDialog = showTaskProgress(
+            R.string.backup_portable_progress_title,
+            total = decryptScale.totalSteps,
+            stageRes = R.string.backup_restore_stage_decrypt,
+            format = TaskProgressDialog.CountFormat.MEGABYTES
+        )
+        val decryptStage = getString(R.string.backup_restore_stage_decrypt)
+        val encryptStage = getString(R.string.backup_portable_stage_encrypt)
 
         viewLifecycleOwner.lifecycleScope.launch {
             try {
                 val portableFile = withContext(Dispatchers.IO) {
                     val plainTemp = File.createTempFile("export_plain_", ".xlsx", ctx.cacheDir)
                     try {
-                        BackupEncryptor.decryptFile(deviceEncFile, plainTemp)
+                        BackupEncryptor.decryptFile(deviceEncFile, plainTemp) { read ->
+                            postProgress(
+                                progressDialog, decryptScale.stepsFor(read), decryptScale.totalSteps,
+                                decryptStage, TaskProgressDialog.CountFormat.MEGABYTES
+                            )
+                        }
+                        // 두 번째 구간의 총량은 **평문 크기**다 — 복호화가 끝나야 알 수 있으므로
+                        // 여기서 눈금을 새로 잡는다(총량 확정 후에 보고한다).
+                        val encryptScale = ProgressScale.forBytes(plainTemp.length())
                         val portable = File.createTempFile("export_portable_", ".enc", ctx.cacheDir)
-                        BackupEncryptor.encryptFilePortable(plainTemp, portable, passphrase)
+                        BackupEncryptor.encryptFilePortable(plainTemp, portable, passphrase) { written ->
+                            postProgress(
+                                progressDialog, encryptScale.stepsFor(written), encryptScale.totalSteps,
+                                encryptStage, TaskProgressDialog.CountFormat.MEGABYTES
+                            )
+                        }
                         portable
                     } finally {
                         plainTemp.delete()
                     }
                 }
-                progressDialog.dismiss()
+                progressDialog?.dismiss()
                 if (!isAdded || _binding == null) return@launch
                 pendingBackupExportFile = portableFile
                 val dateFormat = SimpleDateFormat("yyyyMMdd_HHmm", Locale.getDefault())
@@ -817,7 +860,7 @@ class SettingsFragment : Fragment() {
                 backupExportLauncher.launch(fileName)
             } catch (e: Exception) {
                 AppLogger.error("Settings", "이식 가능 백업 생성 실패", e)
-                if (progressDialog.isShowing) progressDialog.dismiss()
+                progressDialog?.dismiss()
                 if (_binding != null) {
                     Toast.makeText(ctx, getString(R.string.backup_export_failed, e.message), Toast.LENGTH_LONG).show()
                 }
@@ -905,16 +948,60 @@ class SettingsFragment : Fragment() {
         }
     }
 
-    /** 불확정 진행 표시 다이얼로그 (복호화/재암호화 등 IO 작업용) — 공용 유틸 위임 */
+    /** 불확정 진행 표시 다이얼로그 (총량을 셀 수 없는 단발 IO 작업용) — 공용 유틸 위임 */
     private fun createProgressDialog(messageRes: Int): AlertDialog =
         com.novelcharacter.app.util.createProgressDialog(requireContext(), messageRes)
+
+    // ---------- 작업형 진행도 (규약 R-26 · B-51) ----------
+    //
+    // 백업 복원(복호화)·이식 백업 만들기·월드패키지 내보내기는 전부 **총량을 아는** 작업인데
+    // 종전에는 불확정 스피너뿐이었다 — 수백 MB짜리 백업에서 "도는 중"과 "멈춤"이 구분되지 않았다.
+    // 바이트 구간은 MB 눈금으로 환산해 보고한다([ProgressScale] — 상한이 Int를 넘기 때문).
+
+    /** 작업형 진행 창. 화면이 없으면 null이고 작업은 그대로 진행된다. */
+    private fun showTaskProgress(
+        @androidx.annotation.StringRes titleRes: Int,
+        total: Int,
+        @androidx.annotation.StringRes stageRes: Int,
+        format: TaskProgressDialog.CountFormat = TaskProgressDialog.CountFormat.ITEMS,
+        onCancel: (() -> Unit)? = null
+    ): TaskProgressDialog.Handle? {
+        if (!isAdded) return null
+        return runCatching {
+            TaskProgressDialog.show(
+                requireContext(), titleRes = titleRes, total = total,
+                stageRes = stageRes, format = format, onCancel = onCancel
+            )
+        }.getOrNull()
+    }
+
+    /** 진행도 갱신 — 작업은 IO, 갱신은 메인. 화면이 사라진 뒤의 갱신은 조용히 버린다. */
+    private fun postProgress(
+        handle: TaskProgressDialog.Handle?,
+        current: Int,
+        total: Int,
+        stage: String? = null,
+        format: TaskProgressDialog.CountFormat = TaskProgressDialog.CountFormat.ITEMS
+    ) {
+        handle ?: return
+        activity?.runOnUiThread { if (isAdded) handle.update(current, total, stage, format) }
+    }
 
     private fun restoreFromEncryptedFile(encFile: File) {
         if (!isAdded) return
 
         val ctx = requireContext()
-        val progressDialog = createProgressDialog(R.string.backup_restore_decrypting)
-        progressDialog.show()
+        // 복호화는 총량(파일 바이트)을 아는 작업형이다(R-26 · B-51) — 종전의 불확정 스피너로는
+        // 수백 MB짜리 백업에서 도는 중인지 멈춘 것인지 알 수 없었다(사용자 회신이 이 항목의 근거다).
+        // 취소는 제공하지 않는다: 이어지는 가져오기가 DB를 갈아 끼우므로 중간 경계가 없고,
+        // 복호화만 끊어 봐야 얻는 것이 없다.
+        val scale = ProgressScale.forBytes(encFile.length())
+        val progressDialog = showTaskProgress(
+            R.string.backup_restore_progress_title,
+            total = scale.totalSteps,
+            stageRes = R.string.backup_restore_stage_decrypt,
+            format = TaskProgressDialog.CountFormat.MEGABYTES
+        )
 
         viewLifecycleOwner.lifecycleScope.launch {
             var tempXlsx: File? = null
@@ -922,13 +1009,18 @@ class SettingsFragment : Fragment() {
                 // 복호화
                 tempXlsx = withContext(Dispatchers.IO) {
                     val xlsx = File.createTempFile("restore_", ".xlsx", ctx.cacheDir)
-                    BackupEncryptor.decryptFile(encFile, xlsx)
+                    BackupEncryptor.decryptFile(encFile, xlsx) { read ->
+                        postProgress(
+                            progressDialog, scale.stepsFor(read), scale.totalSteps,
+                            format = TaskProgressDialog.CountFormat.MEGABYTES
+                        )
+                    }
                     xlsx
                 }
                 if (_binding == null) return@launch
 
                 // 복호화된 파일을 직접 전달 (불필요한 복사 없이)
-                progressDialog.dismiss()
+                progressDialog?.dismiss()
                 // tempXlsx 삭제를 여기서 하지 않음:
                 // importFromLocalFile()이 별도 코루틴을 실행하여 비동기로 파일을 읽으므로
                 // 즉시 삭제하면 경쟁 조건 발생. cacheDir 파일은 시스템이 관리.
@@ -936,7 +1028,7 @@ class SettingsFragment : Fragment() {
 
             } catch (e: Exception) {
                 AppLogger.error("Settings", "백업 복원 실패", e)
-                if (progressDialog.isShowing) progressDialog.dismiss()
+                progressDialog?.dismiss()
                 if (_binding != null) {
                     // 복호화 실패의 가장 흔한 원인(다른 기기의 백업)을 함께 안내
                     Toast.makeText(
@@ -957,15 +1049,25 @@ class SettingsFragment : Fragment() {
         if (!isAdded) return
 
         val ctx = requireContext()
-        val progressDialog = createProgressDialog(R.string.backup_restore_decrypting)
-        progressDialog.show()
+        val scale = ProgressScale.forBytes(encFile.length())
+        val progressDialog = showTaskProgress(
+            R.string.backup_restore_progress_title,
+            total = scale.totalSteps,
+            stageRes = R.string.backup_restore_stage_decrypt,
+            format = TaskProgressDialog.CountFormat.MEGABYTES
+        )
 
         viewLifecycleOwner.lifecycleScope.launch {
             try {
                 val tempXlsx = withContext(Dispatchers.IO) {
                     val xlsx = File.createTempFile("restore_", ".xlsx", ctx.cacheDir)
                     try {
-                        BackupEncryptor.decryptFilePortable(encFile, xlsx, passphrase)
+                        BackupEncryptor.decryptFilePortable(encFile, xlsx, passphrase) { read ->
+                            postProgress(
+                                progressDialog, scale.stepsFor(read), scale.totalSteps,
+                                format = TaskProgressDialog.CountFormat.MEGABYTES
+                            )
+                        }
                     } catch (e: Exception) {
                         xlsx.delete()
                         throw e
@@ -974,12 +1076,12 @@ class SettingsFragment : Fragment() {
                 }
                 if (_binding == null) return@launch
 
-                progressDialog.dismiss()
+                progressDialog?.dismiss()
                 // tempXlsx 삭제를 여기서 하지 않음 — importFromLocalFile()이 비동기로 읽음
                 excel.importFromLocalFile(tempXlsx)
             } catch (e: javax.crypto.AEADBadTagException) {
                 // 잘못된 암호 — 재입력 기회 제공
-                if (progressDialog.isShowing) progressDialog.dismiss()
+                progressDialog?.dismiss()
                 if (_binding != null && isAdded) {
                     Toast.makeText(ctx, R.string.backup_passphrase_wrong, Toast.LENGTH_SHORT).show()
                     showEnterPassphraseDialog { retry ->
@@ -988,7 +1090,7 @@ class SettingsFragment : Fragment() {
                 }
             } catch (e: Exception) {
                 AppLogger.error("Settings", "이식 백업 복원 실패", e)
-                if (progressDialog.isShowing) progressDialog.dismiss()
+                progressDialog?.dismiss()
                 if (_binding != null) {
                     Toast.makeText(ctx, getString(R.string.backup_restore_failed, e.message), Toast.LENGTH_LONG).show()
                 }
