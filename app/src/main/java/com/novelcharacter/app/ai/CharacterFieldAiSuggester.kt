@@ -28,7 +28,8 @@ import com.novelcharacter.app.util.FieldValueTokenizer
  * 사용 빈도까지 들고 있어, 캐릭터 전체를 훑지 않고 1쿼리로 "이 작품의 기조"를 얻는다.
  * 값 전량이 아니라 [selectUsageExamples]가 고른 소수만 실어 토큰을 통제한다.
  * 응답 쪽도 같은 카탈로그로 접는다: 별칭 표기는 canonical로 교정하고(값 분열 방지),
- * `inputMode=restricted` 필드는 저장 시 검증과 같은 규칙으로 목록 밖 값을 드롭한다.
+ * `inputMode=restricted` 필드의 목록 밖 값은 **버리지 않고 '목록 밖'으로 표시해 후보로 낸다**
+ * (B-79 — 처분은 저장 경로가 이미 하는 그것이다: 추가하고 저장 / 입력 수정).
  *
  * 프롬프트 조립·응답 파싱은 AiService 미호출 순수 함수로 분리되어 단위 테스트된다.
  */
@@ -112,7 +113,12 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
         /** 모델이 스스로 매긴 근거 강도. **null은 '미표기'**이며 절대 걸러 내지 않는다 */
         val confidence: Confidence? = null,
         /** 검토 화면에서 사용자가 값을 손봤는가 — 표시·기본 선택 판단에 쓴다 */
-        val editedByUser: Boolean = false
+        val editedByUser: Boolean = false,
+        /**
+         * `restricted` 필드의 허용 목록 밖 값인가 (B-79). **거른다는 뜻이 아니라 표시한다는 뜻이다** —
+         * 채택하면 저장 시 기존 가드가 "추가하고 저장 / 입력 수정"을 묻는다.
+         */
+        val outsideLibrary: Boolean = false
     )
 
     /**
@@ -158,7 +164,7 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
         val fieldKey: String,
         val fieldName: String,
         val cause: MissingCause,
-        /** 모델이 밝힌 사유(DECLINED)나 검증이 거부한 원문 값(INVALID·RESTRICTED 등) */
+        /** 모델이 밝힌 사유(DECLINED)나 검증이 거부한 원문 값(INVALID 등) */
         val detail: String = ""
     ) {
         fun describe(): String = buildString {
@@ -178,7 +184,8 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
         DECLINED("모델이 추천 불가로 표시"),
 
         INVALID("형식·옵션에 맞지 않아 제외"),
-        RESTRICTED("허용 목록 밖 값이라 제외"),
+        // RESTRICTED('허용 목록 밖 값이라 제외')는 B-79로 없앴다 — 목록 밖 값은 이제 결손이
+        // 아니라 '목록 밖' 표시가 붙은 후보다. 사유를 남겨 두면 도달할 수 없는 갈래가 된다.
         SAME_AS_CURRENT("현재 값과 같아 제외"),
         DUPLICATE("같은 필드에 중복 제안이라 제외"),
         TRUNCATED("응답이 출력 상한에 잘려 못 받음"),
@@ -230,7 +237,11 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
 
     /** 값 정규화 결과 — 실패 사유를 잃지 않기 위해 null 대신 사유를 들고 돌아온다 */
     sealed class Normalized {
-        data class Ok(val value: String) : Normalized()
+        /**
+         * 통과. [outsideLibrary]는 `restricted` 필드의 허용 목록 밖 값이라는 **표시**이지
+         * 거부가 아니다 (B-79) — 저장 경로가 손 입력에 대해 하는 처분과 같은 자리에 둔다.
+         */
+        data class Ok(val value: String, val outsideLibrary: Boolean = false) : Normalized()
         data class Rejected(val cause: MissingCause) : Normalized()
     }
 
@@ -443,6 +454,21 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
             val lines = missing.take(MAX_MISSING_LINES).map { "· " + it.describe() }
             val rest = missing.size - lines.size
             return if (rest > 0) lines + "· 외 ${rest}개" else lines
+        }
+
+        /**
+         * '목록 밖' 후보가 섞였을 때의 한 줄 (B-79). null이면 붙이지 않는다.
+         *
+         * **표식만으로는 부족하다** — 사용자가 알아야 할 것은 "목록 밖이다"가 아니라
+         * *"채택하면 어떻게 되는가"*이고, 그 답(저장할 때 라이브러리에 추가할지 묻는다)은
+         * 이 줄이 아니면 저장 버튼을 누른 뒤에야 나온다. 결손 고지가 사유와 함께 교정 경로를
+         * 대는 것과 같은 취지다.
+         */
+        fun outsideLibraryLine(suggestions: List<Suggestion>): String? {
+            val count = suggestions.count { it.outsideLibrary }
+            if (count == 0) return null
+            return "· '목록 밖' ${count}개 — 허용 목록에 없는 값입니다. " +
+                "채택해 저장하면 라이브러리에 추가할지 묻습니다."
         }
 
         /** 잘려서 아무것도 못 건진 경우 — '다시 시도'는 같은 결과를 부르므로 안내하지 않는다. */
@@ -716,7 +742,9 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
         /**
          * restricted 필드의 허용 검증 — 저장 시 가드(FieldValueRules.validateRestricted)와 같은 집합.
          * 라이브러리가 **비어 있으면 제한하지 않는다**: 허용 목록을 준 적이 없는데 목록 밖이라고
-         * 드롭하면 유료 응답을 통째로 버리는 셈이고, 저장 가드도 그 경우 '추가하고 저장'을 연다.
+         * 표시하면 사용자가 고칠 수 없는 표식이 되고, 저장 가드도 그 경우 '추가하고 저장'을 연다.
+         *
+         * **이 판정의 결과는 이제 드롭이 아니라 표식이다** (B-79) — false여도 값은 후보로 나간다.
          */
         fun isAllowedByLibrary(value: String, spec: FieldSpec): Boolean {
             if (!spec.restrictedToLibrary || spec.canonicalByVariant.isEmpty()) return true
@@ -898,12 +926,13 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
                     sb.append(" / 이미 물린 값(다시 내지 말 것): ")
                         .append(t.rejectedValues.joinToString(", ") { it.take(MAX_VALUE_CHARS) })
                 }
-                // restricted 필드의 허용 목록을 다 싣지 못했으면 조용히 두지 않는다 —
-                // 목록 밖 제안은 드롭되므로 사용자가 결손을 알아야 한다 (R-14).
+                // restricted 필드의 허용 목록을 다 싣지 못했으면 조용히 두지 않는다 (R-14).
+                // **결손 고지가 아니라 정확도 고지다** — 목록 밖 제안은 B-79 이후 버려지지 않고
+                // '목록 밖'으로 표시되지만, 목록을 다 못 준 탓에 그 표시가 늘 수는 있다.
                 if (t.restrictedToLibrary && t.usageExamples.size < t.usageTotal) {
                     notes.add(
                         "'${t.name}'의 허용 값 ${t.usageTotal}종 중 ${t.usageExamples.size}개만 예시로 전달 " +
-                            "(목록 밖 제안은 제외됨)"
+                            "('목록 밖' 표시가 늘 수 있음)"
                     )
                 }
                 sb.append('\n')
@@ -990,7 +1019,12 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
                             dropped++
                             note(spec, MissingCause.REPEATED, normalized.value)
                         } else {
-                            out.add(Suggestion(key, normalized.value, reason, confidence))
+                            out.add(
+                                Suggestion(
+                                    key, normalized.value, reason, confidence,
+                                    outsideLibrary = normalized.outsideLibrary
+                                )
+                            )
                             resolved.add(key)
                         }
                     is Normalized.Rejected -> {
@@ -1028,8 +1062,9 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
                 spec.structuredPartCount != null -> normalizeStructured(folded, spec)
                 else -> folded
             } ?: return Normalized.Rejected(MissingCause.INVALID)
-            return if (isAllowedByLibrary(typed, spec)) Normalized.Ok(typed)
-            else Normalized.Rejected(MissingCause.RESTRICTED)
+            // B-79 — 목록 밖이라고 버리지 않는다. 손으로는 넣을 수 있는 값을 유료 응답에서만
+            // 버리던 비대칭을 없애고, 처분을 저장 경로에 맡긴다(추가하고 저장 / 입력 수정).
+            return Normalized.Ok(typed, outsideLibrary = !isAllowedByLibrary(typed, spec))
         }
 
         /**

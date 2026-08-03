@@ -549,9 +549,13 @@ class CharacterFieldAiSuggesterTest {
             name = "거주지", usageExamples = listOf("북부", "남부"), usageTotal = 9
         )
         val build = CharacterFieldAiSuggester.buildUserPrompt(context(), listOf(target))
+        // 프롬프트 지시는 그대로다 — B-79가 바꾼 것은 **응답의 처분**이지 모델에 대한 요구가 아니다
         assertTrue(build.text.contains("(이 목록의 값만 허용)"))
-        // 허용 목록을 다 못 실었으면 조용히 두지 않는다 — 목록 밖 제안은 드롭되므로 (R-14)
+        // 허용 목록을 다 못 실었으면 조용히 두지 않는다 (R-14). 다만 이제 그것은 결손 고지가
+        // 아니라 정확도 고지다 — 드롭되는 것이 아니라 '목록 밖' 표시가 느는 것이다.
         assertTrue(build.truncationNotes.any { it.contains("거주지") && it.contains("9종 중 2개") })
+        assertTrue(build.truncationNotes.any { it.contains("'목록 밖' 표시가 늘 수 있음") })
+        assertTrue(build.truncationNotes.none { it.contains("제외됨") })
     }
 
     @Test
@@ -597,29 +601,97 @@ class CharacterFieldAiSuggesterTest {
     }
 
     @Test
-    fun normalize_restricted는_목록_밖_값을_드롭한다() {
+    fun normalize_restricted는_목록_밖_값을_버리지_않고_표시한다() {
+        // B-79 — 저장 경로는 같은 값을 받아 주면서 '추가하고 저장 / 입력 수정'을 묻는다.
+        // 유료 응답에서만 버리던 비대칭을 없앤다. **드롭이 아니라 표식이다.**
         val enriched = CharacterFieldAiSuggester.withLibraryUsage(
             libSpec(restricted = true), listOf(entry("북부", 3), entry("남부", 1))
         )
-        assertEquals("북부", CharacterFieldAiSuggester.normalizeValue("북부", enriched))
-        assertNull("저장 시 가드와 같은 규칙", CharacterFieldAiSuggester.normalizeValue("동부", enriched))
+        val inList = CharacterFieldAiSuggester.normalizeChecked("북부", enriched)
+        assertEquals(CharacterFieldAiSuggester.Normalized.Ok("북부", false), inList)
+
+        val outside = CharacterFieldAiSuggester.normalizeChecked("동부", enriched)
+        assertEquals(CharacterFieldAiSuggester.Normalized.Ok("동부", true), outside)
+        // 값 자체는 살아남는다 — 이것이 종전과 갈리는 자리다(옛 동작은 null이었다)
+        assertEquals("동부", CharacterFieldAiSuggester.normalizeValue("동부", enriched))
     }
 
     @Test
-    fun normalize_restricted라도_라이브러리가_비면_제한하지_않는다() {
-        // 허용 목록을 준 적이 없는데 '목록 밖'이라고 드롭하면 유료 응답을 통째로 버리는 셈이다
+    fun normalize_restricted라도_라이브러리가_비면_표시하지_않는다() {
+        // 허용 목록을 준 적이 없는데 '목록 밖'이라 표시하면 사용자가 고칠 수 없는 표식이 된다
         val empty = CharacterFieldAiSuggester.withLibraryUsage(libSpec(restricted = true), emptyList())
-        assertEquals("동부", CharacterFieldAiSuggester.normalizeValue("동부", empty))
+        assertEquals(
+            CharacterFieldAiSuggester.Normalized.Ok("동부", false),
+            CharacterFieldAiSuggester.normalizeChecked("동부", empty)
+        )
     }
 
     @Test
-    fun normalize_restricted_복수값은_모든_토큰이_허용목록에_있어야_한다() {
+    fun normalize_restricted가_아니면_목록_밖_표시도_붙지_않는다() {
+        // 표식은 restricted 필드의 것이다 — 제안 모드 필드에까지 붙으면 뜻 없는 경고가 된다
+        val suggestMode = CharacterFieldAiSuggester.withLibraryUsage(
+            libSpec(restricted = false), listOf(entry("북부", 3))
+        )
+        assertEquals(
+            CharacterFieldAiSuggester.Normalized.Ok("동부", false),
+            CharacterFieldAiSuggester.normalizeChecked("동부", suggestMode)
+        )
+    }
+
+    @Test
+    fun normalize_restricted_복수값은_한_토큰만_벗어나도_표시된다() {
         val enriched = CharacterFieldAiSuggester.withLibraryUsage(
             libSpec(type = FieldType.MULTI_TEXT, multiToken = true, restricted = true),
             listOf(entry("검술", 3), entry("마법", 2))
         )
-        assertEquals("검술, 마법", CharacterFieldAiSuggester.normalizeValue("검술, 마법", enriched))
-        assertNull(CharacterFieldAiSuggester.normalizeValue("검술, 요리", enriched))
+        assertEquals(
+            CharacterFieldAiSuggester.Normalized.Ok("검술, 마법", false),
+            CharacterFieldAiSuggester.normalizeChecked("검술, 마법", enriched)
+        )
+        assertEquals(
+            CharacterFieldAiSuggester.Normalized.Ok("검술, 요리", true),
+            CharacterFieldAiSuggester.normalizeChecked("검술, 요리", enriched)
+        )
+    }
+
+    @Test
+    fun normalize_형식_위반은_여전히_거부된다() {
+        // B-79가 연 것은 '목록 밖'뿐이다. 형식·옵션은 계약이므로 그대로 거부한다 —
+        // 완화를 한 칸 더 밀면 SELECT 옵션 밖 값이 저장 폼에 들어간다.
+        val enriched = CharacterFieldAiSuggester.withLibraryUsage(
+            libSpec(type = FieldType.SELECT, restricted = true).copy(options = listOf("남", "여")),
+            listOf(entry("남", 3))
+        )
+        assertEquals(
+            CharacterFieldAiSuggester.Normalized.Rejected(
+                CharacterFieldAiSuggester.MissingCause.INVALID
+            ),
+            CharacterFieldAiSuggester.normalizeChecked("무성", enriched)
+        )
+    }
+
+    @Test
+    fun outsideLibraryLine_표식이_없으면_줄도_없다() {
+        assertNull(CharacterFieldAiSuggester.outsideLibraryLine(emptyList()))
+        assertNull(
+            CharacterFieldAiSuggester.outsideLibraryLine(
+                listOf(CharacterFieldAiSuggester.Suggestion("k", "v", ""))
+            )
+        )
+    }
+
+    @Test
+    fun outsideLibraryLine_개수와_교정_경로를_함께_말한다() {
+        val line = CharacterFieldAiSuggester.outsideLibraryLine(
+            listOf(
+                CharacterFieldAiSuggester.Suggestion("a", "동부", "", outsideLibrary = true),
+                CharacterFieldAiSuggester.Suggestion("b", "북부", ""),
+                CharacterFieldAiSuggester.Suggestion("c", "서부", "", outsideLibrary = true)
+            )
+        )!!
+        assertTrue(line.contains("2개"))
+        // 표식의 뜻만 말하고 다음에 무엇이 일어나는지를 빼면 저장 버튼을 누른 뒤에야 알게 된다
+        assertTrue(line.contains("라이브러리에 추가"))
     }
 
     @Test

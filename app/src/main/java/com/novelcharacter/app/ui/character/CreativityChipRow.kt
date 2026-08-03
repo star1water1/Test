@@ -19,14 +19,25 @@ import com.novelcharacter.app.ai.CharacterFieldAiSuggester
  * 나누면 화면마다 다른 값이 살아 있어 원칙 04가 금지한 상태가 된다. 칩 높이 한 줄이라
  * 기존 다이얼로그 레이아웃을 밀지 않는다 — 별도 진입점·별도 화면을 만들지 않는 것이
  * "다른 기능 사용에 방해되지 않는 위치"에 대한 답이다.
+ *
+ * **이 줄을 쓰는 자리가 곧 "설정 카드 밖"이다**(B-82) — 설정 화면의 창작도 카드는 이 줄이
+ * 아니라 자기 라디오를 쓰고 [applyWithConflictGuard]만 공유한다. 그래서 전역 변경 고지는
+ * [create]에만 붙는다. 새 자리가 이 줄을 쓰면 고지도 따라온다(감춤을 하드코딩하지 않는다).
  */
 object CreativityChipRow {
 
-    /** 라벨 + 4칩 한 줄 생성. 선택 즉시 반영(저장 버튼 없음), 자유·실험은 충돌 가드를 거친다. */
+    /**
+     * 라벨 + 4칩 한 줄 생성. 선택 즉시 반영(저장 버튼 없음), 자유·실험은 충돌 가드를 거친다.
+     *
+     * 바꾼 값이 전역 기본값이라는 사실은 칩 아래 한 줄로 고지한다
+     * ([AiCreativity.globalChangeNotice] — 되돌리면 그 줄도 사라진다).
+     */
     fun create(fragment: Fragment): View {
         val context = fragment.requireContext()
         val settings = AiPromptSettings(context)
         val density = context.resources.displayMetrics.density
+        // 이 자리를 연 시점의 값 — 고지 판정의 기준이다(되돌림을 알아보려면 시작점이 필요하다).
+        val initial = settings.creativity
 
         val group = ChipGroup(context).apply {
             isSingleSelection = true
@@ -35,11 +46,26 @@ object CreativityChipRow {
             chipSpacingHorizontal = (4 * density).toInt()
         }
 
+        // B-82 고지 — 평소에는 자리를 차지하지 않는다(GONE). 칩 한 줄이 레이아웃을 밀지
+        // 않는다는 §6-8의 전제를 바꾼 뒤에만, 바꾼 그 자리에서 깨뜨린다.
+        val globalNote = TextView(context).apply {
+            textSize = 12f
+            setTextColor(context.getColor(R.color.accent))
+            visibility = View.GONE
+            setPadding(0, (2 * density).toInt(), 0, 0)
+        }
+
         fun syncChips() {
             val current = settings.creativity
             for (i in 0 until group.childCount) {
                 val chip = group.getChildAt(i) as? Chip ?: continue
                 chip.isChecked = (chip.tag as? AiCreativity) == current
+            }
+            val changed = AiCreativity.globalChangeNotice(initial, current)
+            globalNote.visibility = if (changed == null) View.GONE else View.VISIBLE
+            if (changed != null) {
+                globalNote.text =
+                    context.getString(R.string.ai_creativity_global_change_note, changed.label)
             }
         }
 
@@ -60,7 +86,7 @@ object CreativityChipRow {
         }
         syncChips()
 
-        return LinearLayout(context).apply {
+        val row = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = android.view.Gravity.CENTER_VERTICAL
             addView(TextView(context).apply {
@@ -70,6 +96,11 @@ object CreativityChipRow {
                 setPadding(0, 0, (8 * density).toInt(), 0)
             })
             addView(group)
+        }
+        return LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(row)
+            addView(globalNote)
         }
     }
 

@@ -172,4 +172,38 @@ class AiCreativityTest {
         assertTrue(base.copy(detectedOutputLimit = 8192).hasLearnedFacts())
         assertTrue(base.copy(temperatureUnsupported = true).hasLearnedFacts())
     }
+
+    // ===== B-82 — 설정 카드 밖의 변경은 전역이다 =====
+
+    @Test
+    fun globalChangeNotice_silentWhenUnchanged() {
+        for (tier in AiCreativity.entries) {
+            assertNull(AiCreativity.globalChangeNotice(tier, tier))
+        }
+    }
+
+    @Test
+    fun globalChangeNotice_namesTheNewDefault() {
+        assertEquals(
+            AiCreativity.BOLD,
+            AiCreativity.globalChangeNotice(AiCreativity.BALANCED, AiCreativity.BOLD)
+        )
+        // 내리는 변경도 전역이다 — 고지 조건은 '올렸는가'가 아니라 '바뀌었는가'다.
+        assertEquals(
+            AiCreativity.PRECISE,
+            AiCreativity.globalChangeNotice(AiCreativity.BOLD, AiCreativity.PRECISE)
+        )
+    }
+
+    @Test
+    fun globalChangeNotice_disappearsWhenRevertedInPlace() {
+        // 균형 → 실험 → 균형: 마지막 상태는 연 시점과 같으므로 바뀐 것이 없다.
+        // 고지가 *사건*이면 여기서 거짓말이 남는다 — 그래서 *상태*로 판정한다.
+        val opened = AiCreativity.BALANCED
+        assertEquals(
+            AiCreativity.BOLD,
+            AiCreativity.globalChangeNotice(opened, AiCreativity.BOLD)
+        )
+        assertNull(AiCreativity.globalChangeNotice(opened, AiCreativity.BALANCED))
+    }
 }

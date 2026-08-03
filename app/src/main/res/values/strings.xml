@@ -2728,6 +2728,8 @@
     <string name="ai_field_retry_missing">못 받은 %1$d개 필드만 다시 요청</string>
     <string name="ai_field_refine">보완</string>
     <string name="ai_field_edited">직접 수정</string>
+    <!-- B-79: restricted 필드의 목록 밖 값 — 버리지 않고 표시한다(처분은 저장 가드가 맡는다) -->
+    <string name="ai_field_outside_library">목록 밖</string>
     <string name="ai_field_edited_reason">사용자가 직접 지정한 값</string>
     <string name="ai_field_refine_value_hint">값 (직접 고쳐 쓸 수 있습니다)</string>
     <string name="ai_field_refine_value_required">값을 비울 수 없습니다</string>
@@ -2804,6 +2806,8 @@
     <string name="ai_creativity_confidence_conflict">근거 강도 하한이 \'%1$s\'(으)로 설정돼 있어 창작도를 올려도 근거가 얕은 추천은 대부분 제외됩니다 — 요금만 들고 결과가 비어 있을 수 있습니다.</string>
     <string name="ai_creativity_lower_floor">강도 하한 낮추기</string>
     <string name="ai_creativity_apply_anyway">그대로 적용</string>
+    <!-- B-82: 설정 카드 밖에서 바꾸면 전역 기본값이 바뀐다 — 조용히 바꾸지 않는다(R-23과 같은 부류) -->
+    <string name="ai_creativity_global_change_note">기본 창작도가 \'%1$s\'(으)로 바뀌었습니다 — 이후 모든 AI 요청에 적용됩니다.</string>
 
     <!-- restricted 입력 모드 위반 안내 -->
     <string name="field_library_restricted_violation_title">허용되지 않은 값</string>
