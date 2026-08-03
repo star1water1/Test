@@ -15,50 +15,117 @@ import org.junit.Test
  */
 class FieldConfigPolicyTest {
 
-    // ===== FieldAiPolicy =====
+    // ===== FieldAiPolicy (B-80: 3단) =====
+
+    private val ALL = FieldAiPolicy.SuggestMode.ALL
+    private val MANUAL = FieldAiPolicy.SuggestMode.MANUAL_ONLY
+    private val OFF = FieldAiPolicy.SuggestMode.OFF
 
     @Test
-    fun aiPolicy_missingKey_meansEnabled() {
-        assertTrue(FieldAiPolicy.isSuggestEnabled("{}"))
-        assertTrue(FieldAiPolicy.isSuggestEnabled("""{"options":["A"]}"""))
+    fun aiPolicy_missingKey_meansAll() {
+        assertEquals(ALL, FieldAiPolicy.suggestMode("{}"))
+        assertEquals(ALL, FieldAiPolicy.suggestMode("""{"options":["A"]}"""))
     }
 
     @Test
     fun aiPolicy_corruptJson_lenientDefault() {
-        assertTrue(FieldAiPolicy.isSuggestEnabled(""))
-        assertTrue(FieldAiPolicy.isSuggestEnabled("not json"))
+        assertEquals(ALL, FieldAiPolicy.suggestMode(""))
+        assertEquals(ALL, FieldAiPolicy.suggestMode("not json"))
     }
 
     @Test
     fun aiPolicy_defaultNotStored() {
-        // true(기본값)를 쓰면 키가 제거된다 — NarrativeMode.applyToConfig와 같은 관행
-        val disabled = FieldAiPolicy.applyToConfig("{}", false)
-        assertFalse(FieldAiPolicy.isSuggestEnabled(disabled))
-        val reEnabled = FieldAiPolicy.applyToConfig(disabled, true)
-        assertFalse(JSONObject(reEnabled).has(FieldAiPolicy.CONFIG_KEY))
-        assertTrue(FieldAiPolicy.isSuggestEnabled(reEnabled))
+        // 기본값(전부)을 쓰면 키가 제거된다 — NarrativeMode.applyToConfig와 같은 관행
+        val off = FieldAiPolicy.applyMode("{}", OFF)
+        assertEquals(OFF, FieldAiPolicy.suggestMode(off))
+        val backToAll = FieldAiPolicy.applyMode(off, ALL)
+        assertFalse(JSONObject(backToAll).has(FieldAiPolicy.CONFIG_KEY))
+        assertEquals(ALL, FieldAiPolicy.suggestMode(backToAll))
+    }
+
+    /**
+     * **왕복 무결성의 핵심** — OFF는 2단 시절과 같은 불리언 `false`로 저장된다.
+     * 표현을 바꿨다면 이미 꺼 둔 필드가 다음 저장에서 표현만 달라지고,
+     * 그전에 내보낸 엑셀·월드패키지·백업이 전부 옛 표현을 담게 된다.
+     */
+    @Test
+    fun aiPolicy_offIsStoredAsLegacyBoolean() {
+        val off = FieldAiPolicy.applyMode("{}", OFF)
+        assertEquals(false, JSONObject(off).get(FieldAiPolicy.CONFIG_KEY))
+    }
+
+    @Test
+    fun aiPolicy_manualOnlyIsStoredAsString() {
+        val manual = FieldAiPolicy.applyMode("{}", MANUAL)
+        assertEquals("manual", JSONObject(manual).getString(FieldAiPolicy.CONFIG_KEY))
+        assertEquals(MANUAL, FieldAiPolicy.suggestMode(manual))
+    }
+
+    /** 2단 시절 파일·DB가 지금도 들어온다 — `false`는 끄기, `true`는 전부로 읽어야 한다. */
+    @Test
+    fun aiPolicy_readsLegacyBooleanValues() {
+        assertEquals(OFF, FieldAiPolicy.suggestMode("""{"aiSuggest":false}"""))
+        assertEquals(ALL, FieldAiPolicy.suggestMode("""{"aiSuggest":true}"""))
+    }
+
+    /** 외부에서 손으로 고쳐 온 값도 받는다. 모르는 값은 기본으로 — 이유 없이 AI에서 빠지지 않게. */
+    @Test
+    fun aiPolicy_readsLenientStrings() {
+        assertEquals(OFF, FieldAiPolicy.suggestMode("""{"aiSuggest":"off"}"""))
+        assertEquals(OFF, FieldAiPolicy.suggestMode("""{"aiSuggest":"N"}"""))
+        assertEquals(MANUAL, FieldAiPolicy.suggestMode("""{"aiSuggest":"MANUAL"}"""))
+        assertEquals(MANUAL, FieldAiPolicy.suggestMode("""{"aiSuggest":"개별만"}"""))
+        assertEquals(ALL, FieldAiPolicy.suggestMode("""{"aiSuggest":"all"}"""))
+        assertEquals(ALL, FieldAiPolicy.suggestMode("""{"aiSuggest":"알 수 없는 값"}"""))
+    }
+
+    /** 3단이 두 경로에 각각 답한다 — 이것이 B-80이 메우려던 공백이다. */
+    @Test
+    fun aiPolicy_modesAnswerBothPathsIndependently() {
+        assertTrue(ALL.inBulk); assertTrue(ALL.inlineSparkle)
+        assertFalse(MANUAL.inBulk); assertTrue(MANUAL.inlineSparkle)
+        assertFalse(OFF.inBulk); assertFalse(OFF.inlineSparkle)
+    }
+
+    @Test
+    fun aiPolicy_predicatesFollowMode() {
+        val manual = FieldAiPolicy.applyMode("{}", MANUAL)
+        assertFalse(FieldAiPolicy.isBulkTarget(manual))
+        assertTrue(FieldAiPolicy.isInlineSparkleEnabled(manual))
+        val off = FieldAiPolicy.applyMode("{}", OFF)
+        assertFalse(FieldAiPolicy.isBulkTarget(off))
+        assertFalse(FieldAiPolicy.isInlineSparkleEnabled(off))
+    }
+
+    @Test
+    fun aiPolicy_roundTripsEveryMode() {
+        for (mode in FieldAiPolicy.SuggestMode.entries) {
+            assertEquals(mode, FieldAiPolicy.suggestMode(FieldAiPolicy.applyMode("{}", mode)))
+        }
     }
 
     @Test
     fun aiPolicy_preservesOtherKeys() {
         val config = """{"options":["A","B"],"narrativeMode":"short"}"""
-        val disabled = FieldAiPolicy.applyToConfig(config, false)
-        val json = JSONObject(disabled)
-        assertEquals(2, json.getJSONArray("options").length())
-        assertEquals("short", json.getString("narrativeMode"))
-        assertFalse(FieldAiPolicy.isSuggestEnabled(disabled))
+        for (mode in FieldAiPolicy.SuggestMode.entries) {
+            val written = FieldAiPolicy.applyMode(config, mode)
+            val json = JSONObject(written)
+            assertEquals(2, json.getJSONArray("options").length())
+            assertEquals("short", json.getString("narrativeMode"))
+            assertEquals(mode, FieldAiPolicy.suggestMode(written))
+        }
     }
 
     @Test
     fun aiPolicy_corruptJson_writeKeepsOriginal() {
         // 손상 JSON에 쓰기를 시도해도 다른 데이터를 파괴하지 않고 원문을 돌려준다
-        assertEquals("not json", FieldAiPolicy.applyToConfig("not json", false))
+        assertEquals("not json", FieldAiPolicy.applyMode("not json", OFF))
     }
 
     @Test
     fun aiPolicy_blankConfig_write() {
-        val disabled = FieldAiPolicy.applyToConfig("", false)
-        assertFalse(FieldAiPolicy.isSuggestEnabled(disabled))
+        assertEquals(OFF, FieldAiPolicy.suggestMode(FieldAiPolicy.applyMode("", OFF)))
+        assertEquals(MANUAL, FieldAiPolicy.suggestMode(FieldAiPolicy.applyMode("", MANUAL)))
     }
 
     // ===== FieldDescription =====
@@ -98,7 +165,7 @@ class FieldConfigPolicyTest {
     fun description_preservesOtherKeys() {
         val config = """{"aiSuggest":false,"options":["A"]}"""
         val withDesc = FieldDescription.applyToConfig(config, "설명문")
-        assertFalse(FieldAiPolicy.isSuggestEnabled(withDesc))
+        assertEquals(FieldAiPolicy.SuggestMode.OFF, FieldAiPolicy.suggestMode(withDesc))
         assertEquals(1, JSONObject(withDesc).getJSONArray("options").length())
         assertEquals("설명문", FieldDescription.fromConfig(withDesc))
     }

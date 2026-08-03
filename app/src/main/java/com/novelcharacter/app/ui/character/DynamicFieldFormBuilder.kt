@@ -145,7 +145,8 @@ class DynamicFieldFormBuilder(
         if (type == FieldType.CALCULATED) return null
         // 토글 OFF의 의미는 "이 필드는 AI가 건드리지 않는다" — 버튼만 남기면 토글이 일괄
         // 필터로 격하된다. 꺼짐 사유는 필드 관리 목록(스위치 조감)과 일괄 고지에서 보인다.
-        if (!com.novelcharacter.app.data.model.FieldAiPolicy.isSuggestEnabled(field.config)) return null
+        // '개별만'(B-80)은 여기서 살아 있어야 하는 상태다 — 일괄에서만 빠진다.
+        if (!com.novelcharacter.app.data.model.FieldAiPolicy.isInlineSparkleEnabled(field.config)) return null
         return createInlineActionButton(context, density, "✨") { handler(field) }
     }
 

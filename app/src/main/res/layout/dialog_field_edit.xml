@@ -146,12 +146,18 @@
                 android:padding="12dp"
                 android:background="@drawable/bg_count_badge">
 
-                <com.google.android.material.switchmaterial.SwitchMaterial
-                    android:id="@+id/switchAiSuggest"
+                <!-- 3단(B-80): 전부 / 개별만 / 끄기. 서술형 여부 스피너와 같은 배선이다. -->
+                <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="@string/field_ai_suggest_label"
-                    android:checked="true" />
+                    android:textAppearance="@style/TextAppearance.App.BodyStrong"
+                    android:textColor="?attr/colorOnSurface" />
+
+                <Spinner
+                    android:id="@+id/spinnerAiSuggest"
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp" />
 
                 <TextView
                     android:layout_width="match_parent"

@@ -96,6 +96,44 @@ class FieldAiTargetRuleTest {
         assertEquals("계산·미지원 타입 1개 · AI 추천 꺼짐 2개 · 서술형 1개", summary)
     }
 
+    // ===== B-80: 3단 — '개별만'은 끈 것이 아니다 =====
+
+    /** 개별만은 일괄에서 빠지되 **끄기와 다른 사유로** 빠져야 한다(고지가 거짓이 되지 않게). */
+    @Test
+    fun bulkTargets_manualOnly_excludedUnderItsOwnCause() {
+        val fields = listOf(
+            field("all"),
+            field("manual", config = """{"aiSuggest":"manual"}"""),
+            field("off", config = """{"aiSuggest":false}""")
+        )
+        val bulk = CharacterFieldAiSuggester.bulkTargetsOf(fields, emptyMap())
+
+        assertEquals(listOf("all"), bulk.targets.map { it.spec.key })
+        assertEquals(listOf("이름_manual"), bulk.excluded[BulkExcludeCause.MANUAL_ONLY])
+        assertEquals(listOf("이름_off"), bulk.excluded[BulkExcludeCause.AI_DISABLED])
+    }
+
+    /** 제외가 '기능 부재'로 읽히지 않도록 교정 경로를 병기한다(서술형 줄과 같은 규칙). */
+    @Test
+    fun bulkExcludedDetail_manualOnlyLineCarriesCorrectionPath() {
+        val bulk = CharacterFieldAiSuggester.bulkTargetsOf(
+            listOf(field("m", config = """{"aiSuggest":"manual"}""")), emptyMap()
+        )
+        val line = CharacterFieldAiSuggester.bulkExcludedDetailLines(bulk.excluded).single()
+        assertTrue(line.startsWith("개별 추천만 1개: "))
+        assertTrue(line.contains("✨"))
+    }
+
+    @Test
+    fun bulkTargets_sumStillEqualsInputWithThreeModes() {
+        val fields = listOf(
+            field("a"), field("b", config = """{"aiSuggest":"manual"}"""),
+            field("c", config = """{"aiSuggest":false}"""), field("d", type = "CALCULATED")
+        )
+        val bulk = CharacterFieldAiSuggester.bulkTargetsOf(fields, emptyMap())
+        assertEquals(fields.size, bulk.targets.size + bulk.excluded.values.sumOf { it.size })
+    }
+
     @Test
     fun bulkExcludedSummary_emptyIsNull() {
         assertEquals(null, CharacterFieldAiSuggester.bulkExcludedSummary(emptyMap()))

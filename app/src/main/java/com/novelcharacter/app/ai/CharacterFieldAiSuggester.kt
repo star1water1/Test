@@ -201,8 +201,14 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
         /** CALCULATED(파생값)·알 수 없는 타입 — 지금도 제외되지만 종전에는 아무도 알려주지 않았다 */
         UNSUPPORTED_TYPE("계산·미지원 타입"),
 
-        /** 사용자가 필드 관리에서 AI 추천을 끔(FieldAiPolicy) */
+        /** 사용자가 필드 관리에서 AI 추천을 끔(FieldAiPolicy.SuggestMode.OFF) */
         AI_DISABLED("AI 추천 꺼짐"),
+
+        /**
+         * 사용자가 **개별만**으로 둠(FieldAiPolicy.SuggestMode.MANUAL_ONLY) — 끈 것이 아니다.
+         * 일괄에서만 빠지고 필드별 ✨은 그대로이므로, 고지도 그렇게 말한다(B-80).
+         */
+        MANUAL_ONLY("개별 추천만"),
 
         /** 서술형 필드 — 짧은 값 경로가 아니라 필드별 ✨의 초안·이어쓰기로 작성한다 */
         NARRATIVE_PATH("서술형")
@@ -490,8 +496,12 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
                 val spec = fieldSpecOf(field, currentValues[field.id] ?: "")
                 when {
                     spec == null -> exclude(BulkExcludeCause.UNSUPPORTED_TYPE, field.name)
-                    !FieldAiPolicy.isSuggestEnabled(field.config) ->
+                    // 3단(B-80)이라 '일괄에서 빠지는' 사유가 둘이다 — 끈 것과 개별만 받기로 한 것.
+                    // 한 사유로 뭉치면 "AI 추천 꺼짐"이 ✨이 멀쩡히 있는 필드까지 가리켜 고지가 거짓이 된다.
+                    FieldAiPolicy.suggestMode(field.config) == FieldAiPolicy.SuggestMode.OFF ->
                         exclude(BulkExcludeCause.AI_DISABLED, field.name)
+                    !FieldAiPolicy.isBulkTarget(field.config) ->
+                        exclude(BulkExcludeCause.MANUAL_ONLY, field.name)
                     NarrativeMode.isNarrative(field) -> exclude(BulkExcludeCause.NARRATIVE_PATH, field.name)
                     else -> targets.add(BulkTarget(field.id, spec))
                 }
@@ -523,8 +533,12 @@ class CharacterFieldAiSuggester(private val aiService: AiService) {
                     append(cause.label).append(' ').append(names.size).append("개: ")
                     append(shown.joinToString(", "))
                     if (names.size > shown.size) append(" 외 ").append(names.size - shown.size).append('개')
+                    // 교정 경로를 병기하는 두 사유 — 제외가 '기능 부재'로 읽히지 않게 한다(변수 제어).
                     if (cause == BulkExcludeCause.NARRATIVE_PATH) {
                         append(" — 필드별 ✨에서 초안·이어쓰기로 작성합니다")
+                    }
+                    if (cause == BulkExcludeCause.MANUAL_ONLY) {
+                        append(" — 필드별 ✨을 누르면 이 필드도 추천을 받습니다")
                     }
                 }
             }

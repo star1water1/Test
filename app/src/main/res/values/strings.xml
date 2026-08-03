@@ -2753,7 +2753,11 @@
 
     <!-- A-1 필드별 AI 추천 토글 / A-2 필드 설명 -->
     <string name="field_ai_suggest_label">AI 추천 대상</string>
-    <string name="field_ai_suggest_desc">끄면 일괄 추천에서 제외되고 이 필드의 ✨ 버튼도 숨습니다. 🎲 랜덤·값 라이브러리 AI 정리·통계·엑셀에는 영향이 없습니다.</string>
+    <string name="field_ai_suggest_desc">이 필드를 AI 추천이 어디까지 다룰지 정합니다. \'개별만\'은 일괄 추천에서만 빠지고 ✨ 버튼은 그대로 남습니다(비용을 아끼면서 필요할 때 직접 요청). \'끄기\'는 ✨ 버튼까지 숨깁니다. 🎲 랜덤·값 라이브러리 AI 정리·통계·엑셀에는 어느 쪽도 영향이 없습니다.</string>
+    <!-- 목록 행의 짧은 라벨 — 편집 화면의 긴 라벨과 같은 상태를 길이만 달리 부른다(B-80) -->
+    <string name="field_ai_mode_all_short">AI 전부</string>
+    <string name="field_ai_mode_manual_short">AI 개별만</string>
+    <string name="field_ai_mode_off_short">AI 끄기</string>
     <string name="image_tag_review_title">AI 태그 제안 검토</string>
     <string name="image_tag_review_desc">체크한 태그만 적용됩니다. 이번에 그 폴더에서 온 이미지에만 붙습니다.</string>
     <string name="image_tag_review_empty">제안된 태그가 없습니다.</string>
