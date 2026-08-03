@@ -70,7 +70,18 @@ data class CategoryAnalysis(
     val newCount: Int,
     val updateCount: Int,
     val unchangedCount: Int,
-    val existingTotal: Int
+    val existingTotal: Int,
+    /**
+     * **이번 가져오기가 실행하지 않을 행 수** (B-102 ⓑ).
+     *
+     * 행이 가리키는 선행 항목(세계관·캐릭터·관계)이 지금 DB에 없는데 **그것을 만들 범주가
+     * 이번 선택에서 빠져 있으면** 가져오기는 그 행을 경고와 함께 건너뛴다.
+     * 종전에는 그것을 '신규'로 세어, 실제로는 아무것도 들어가지 않는데 "신규 N건"이라 말했다.
+     *
+     * 선행 범주가 함께 선택돼 있으면 가져오기가 그것을 먼저 만들므로 '신규'가 맞다 —
+     * **정상 복원에서는 이 값이 0이다.**
+     */
+    val skippedCount: Int = 0
 ) {
     /** 백업에 없고 DB에만 있는 항목 수 (덮어쓰기 시 삭제 대상) */
     val onlyInDb: Int get() = existingTotal - (updateCount + unchangedCount)
@@ -1920,6 +1931,78 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         return if (content == existing) existing else content.copy(updatedAt = now)
     }
 
+    private class ImageMetaCols(cols: Map<String, Int>) {
+        val file = cols["파일명"] ?: 0
+        // **위치 폴백 금지** — 열을 지우면 이웃 열을 오독한다.
+        // 열 없음(-1) = 말한 바 없음 = 기존 유지(F1-A).
+        val tag = cols["태그"] ?: -1
+        val group = cols["링크그룹"] ?: -1
+        // 뗀 이미지 서랍(B-107 D1) — 같은 규약이다.
+        val detachedAt = cols["뗀날짜"] ?: -1
+    }
+
+    private data class ImageMetaRowValues(
+        val fileName: String,
+        val hasTagCol: Boolean, val tags: Set<String>,
+        val hasGroupCol: Boolean, val groupToken: String?,
+        val hasDetachedCol: Boolean, val detachedRaw: String, val detachedAt: Long?
+    )
+
+    /**
+     * 이미지 한 장의 '표' 상태.
+     *
+     * 이 범주만 [mergeUniverse] 같은 `copy` 한 줄로 표현되지 않는다 — 상태가 **엔티티 셋**
+     * (`ImageMeta` · `ImageTag` 행들 · 링크 그룹)에 걸쳐 있고 가져오기도 세 갈래로 나눠 쓴다.
+     * 그래서 상태를 따로 세우고 그 위에서 병합한다. 규약은 다른 범주와 같다.
+     */
+    private data class ImageMetaState(val tags: Set<String>, val linkGroupId: String?, val detachedAt: Long?)
+
+    private fun readImageMetaRow(row: Row, c: ImageMetaCols, result: ImportResult?): ImageMetaRowValues {
+        val detachedRaw = if (c.detachedAt >= 0) getCellString(row, c.detachedAt).trim() else ""
+        return ImageMetaRowValues(
+            fileName = getCellString(row, c.file),
+            hasTagCol = c.tag >= 0,
+            tags = if (c.tag >= 0) splitCsv(getCellString(row, c.tag)).toSet() else emptySet(),
+            hasGroupCol = c.group >= 0,
+            groupToken = if (c.group >= 0) getCellString(row, c.group).trim().ifBlank { null } else null,
+            hasDetachedCol = c.detachedAt >= 0,
+            detachedRaw = detachedRaw,
+            detachedAt = detachedRaw.toDoubleOrNull()?.toLong()?.takeIf { it > 0L }
+        )
+    }
+
+    /** 행을 기존 상태에 적용한 결과 — 가져오기와 미리보기의 단일 소스(규약 R-33). */
+    private fun mergeImageMetaState(existing: ImageMetaState, r: ImageMetaRowValues): ImageMetaState =
+        ImageMetaState(
+            // F1-A: '태그' 열이 없으면 기존 태그 유지. 열이 있고 빈칸이면 비움 의도로 존중.
+            tags = if (r.hasTagCol) r.tags else existing.tags,
+            // 빈 칸 = 링크 해제(태그 열과 같은 규약).
+            linkGroupId = if (r.hasGroupCol) r.groupToken else existing.linkGroupId,
+            // 값이 있는데 숫자가 아니면 **손대지 않는다** — 조용히 버리면 사용자가 무엇을
+            // 잘못 적었는지 알 길이 없다(가져오기는 경고만 하고 그대로 둔다).
+            detachedAt = when {
+                !r.hasDetachedCol -> existing.detachedAt
+                r.detachedRaw.isNotBlank() && r.detachedAt == null -> existing.detachedAt
+                else -> r.detachedAt
+            }
+        )
+
+    /**
+     * 등급 체계 한 무리를 기존 체계에 적용한 결과 — 가져오기와 미리보기의 단일 소스(규약 R-33).
+     *
+     * [rename]은 **이름 변경이 같은 세계관의 다른 체계와 충돌하지 않는가**이며 DB 조회가 필요해
+     * 호출부가 정한다. 충돌하면 이름을 유지한다(유니크).
+     */
+    private fun mergeGradeSystem(
+        existing: com.novelcharacter.app.data.model.GradeSystem,
+        name: String,
+        gradesJson: String,
+        rename: Boolean
+    ): com.novelcharacter.app.data.model.GradeSystem = existing.copy(
+        name = if (rename) name else existing.name,
+        gradesJson = gradesJson
+    )
+
     suspend fun analyzeAll(
         workbook: Workbook,
         options: ExportOptions = ExportOptions(),
@@ -1937,7 +2020,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         if (options.novels) categories.add(analyzeNovels(workbook, onProgress, totalRows))
         if (options.fieldDefinitions) {
             categories.add(analyzeGradeSystems(workbook, onProgress, totalRows))
-            categories.add(analyzeFieldDefinitions(workbook, onProgress, totalRows))
+            categories.add(analyzeFieldDefinitions(workbook, options, onProgress, totalRows))
             categories.add(analyzeFieldValueLibrary(workbook, onProgress, totalRows))
         }
         if (options.characters) {
@@ -1946,11 +2029,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             characterConflicts = charResult.conflicts
         }
         if (options.timeline) categories.add(analyzeTimeline(workbook, onProgress, totalRows))
-        if (options.stateChanges) categories.add(analyzeStateChanges(workbook, onProgress, totalRows))
-        if (options.relationships) categories.add(analyzeRelationships(workbook, onProgress, totalRows))
-        if (options.relationshipChanges) categories.add(analyzeRelationshipChanges(workbook, onProgress, totalRows))
+        if (options.stateChanges) categories.add(analyzeStateChanges(workbook, options, onProgress, totalRows))
+        if (options.relationships) categories.add(analyzeRelationships(workbook, options, onProgress, totalRows))
+        if (options.relationshipChanges) categories.add(analyzeRelationshipChanges(workbook, options, onProgress, totalRows))
         if (options.nameBank) categories.add(analyzeNameBank(workbook, onProgress, totalRows))
-        if (options.factions) categories.add(analyzeFactions(workbook, onProgress, totalRows))
+        if (options.factions) categories.add(analyzeFactions(workbook, options, onProgress, totalRows))
         if (options.factionMemberships) categories.add(analyzeFactionMemberships(workbook, onProgress, totalRows))
         if (options.factionRelationships) categories.add(analyzeFactionRelationships(workbook, onProgress, totalRows))
         if (options.presetTemplates) categories.add(analyzePresetTemplates(workbook, onProgress, totalRows))
@@ -2043,14 +2126,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val headerRow = sheet.getRow(0) ?: return CategoryAnalysis("imageMeta", label, 0, 0, 0, 0, existingTotal)
         if (!isValidHeader(headerRow, spec.firstColumnHeader)) return CategoryAnalysis("imageMeta", label, 0, 0, 0, 0, existingTotal)
 
-        val cols = resolveHeaderColumns(headerRow)
-        val fileColIndex = cols["파일명"] ?: 0
-        // **위치 폴백 금지 — 가져오기와 같은 규칙이다.** 종전에는 여기만 `?: 1`·`?: 2`였고,
+        // **위치 폴백 금지 — 가져오기와 같은 규칙이다.** 종전에는 분석만 `?: 1`·`?: 2`였고,
         // 그래서 '태그' 열을 지운 시트에서 분석은 1번 열(=링크그룹)을 태그로 읽어 '변경'이라
-        // 말하는데 가져오기는 태그를 손대지 않았다. 열 없음(-1) = 기존 유지 = 비교 대상 아님.
-        val tagColIndex = cols["태그"] ?: -1
-        val groupColIndex = cols["링크그룹"] ?: -1
-        val detachedAtColIndex = cols["뗀날짜"] ?: -1
+        // 말하는데 가져오기는 태그를 손대지 않았다.
+        val c = ImageMetaCols(resolveHeaderColumns(headerRow))
 
         val remapByBasename = HashMap<String, String>()
         for ((origPath, newPath) in imagePathRemap) {
@@ -2061,26 +2140,21 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0
         for (i in 1..sheet.lastRowNum) {
             val row = sheet.getRow(i) ?: continue
-            val fileName = getCellString(row, fileColIndex)
-            if (fileName.isBlank()) continue
+            val r = readImageMetaRow(row, c, result = null)
+            if (r.fileName.isBlank()) continue
             inBackup++
-            val path = remapByBasename[fileName]
-                ?: filesDir?.let { dir -> java.io.File(dir, fileName).takeIf { it.exists() }?.absolutePath }
+            val path = remapByBasename[r.fileName]
+                ?: filesDir?.let { dir -> java.io.File(dir, r.fileName).takeIf { it.exists() }?.absolutePath }
                 ?: continue  // 파일 미해석 행은 new/update에 계상하지 않음 (가져오기에서 스킵 경고)
             val existing = db.imageMetaDao().getByPath(path)
             if (existing == null) { newCount++; continue }
-            // 열이 없으면 가져오기가 기존값을 유지하므로 비교 대상이 아니다(F1-A).
-            val tagsChanged = if (tagColIndex < 0) false else {
-                val existingTags = db.imageTagDao().getTagsByImageList(existing.id).map { it.tag }.toSet()
-                existingTags != splitCsv(getCellString(row, tagColIndex)).toSet()
-            }
-            val groupChanged = if (groupColIndex < 0) false else
-                existing.linkGroupId != getCellString(row, groupColIndex).trim().ifBlank { null }
-            val detachedChanged = if (detachedAtColIndex < 0) false else {
-                val parsed = getCellString(row, detachedAtColIndex).trim().toDoubleOrNull()?.toLong()
-                parsed?.takeIf { it > 0L } != existing.detachedAt
-            }
-            if (tagsChanged || groupChanged || detachedChanged) updateCount++ else unchangedCount++
+            // 태그는 열이 있을 때만 읽는다 — 열이 없으면 비교 대상이 아니라 조회도 낭비다.
+            val current = ImageMetaState(
+                tags = if (r.hasTagCol) db.imageTagDao().getTagsByImageList(existing.id).map { it.tag }.toSet() else emptySet(),
+                linkGroupId = existing.linkGroupId,
+                detachedAt = existing.detachedAt
+            )
+            if (mergeImageMetaState(current, r) != current) updateCount++ else unchangedCount++
         }
         reportProgress(onProgress, "이미지 분석", sheet.lastRowNum, totalRows)
         return CategoryAnalysis("imageMeta", label, inBackup, newCount, updateCount, unchangedCount, existingTotal)
@@ -2165,7 +2239,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         return CategoryAnalysis("novels", "작품", inBackup, newCount, updateCount, unchangedCount, existingTotal)
     }
 
-    private suspend fun analyzeFieldDefinitions(workbook: Workbook, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
+    private suspend fun analyzeFieldDefinitions(workbook: Workbook, options: ExportOptions, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
         val spec = fieldDefinitionSpec(emptyList())
         val sheet = workbook.getSheet(spec.sheetName)
         // 캐릭터+사건 필드 모두 시트에 실리므로 기존 총계도 전 타입 기준 (프리뷰 정확성)
@@ -2175,7 +2249,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val headerRow = sheet.getRow(0) ?: return CategoryAnalysis("fieldDefinitions", "필드 정의", 0, 0, 0, 0, existingTotal)
         val c = FieldDefCols(resolveHeaderColumns(headerRow), spec.firstColumnHeader)
 
-        var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0
+        var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skippedCount = 0
         for (i in 1..sheet.lastRowNum) {
             val row = sheet.getRow(i) ?: continue
             val r = readFieldDefRow(row, c, "필드 행 $i", result = null)
@@ -2185,7 +2259,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
             val universe = (if (r.universeCode.isNotBlank()) db.universeDao().getUniverseByCode(r.universeCode) else null)
                 ?: db.universeDao().getUniverseByName(r.universeName)
-            if (universe == null) { newCount++; continue }
+            if (universe == null) {
+                // B-102 ⓑ: '세계관'을 함께 가져오면 그것이 먼저 생기므로 '신규'가 맞고,
+                // 빼놓았으면 가져오기가 이 행을 경고와 함께 **건너뛴다**.
+                if (options.universes) newCount++ else skippedCount++
+                continue
+            }
 
             val existing = db.fieldDefinitionDao().getFieldByKey(universe.id, r.key, r.entityType)
             if (existing == null) { newCount++; continue }
@@ -2196,7 +2275,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             if (merged != existing) updateCount++ else unchangedCount++
         }
         reportProgress(onProgress, "필드 정의 분석", sheet.lastRowNum, totalRows)
-        return CategoryAnalysis("fieldDefinitions", "필드 정의", inBackup, newCount, updateCount, unchangedCount, existingTotal)
+        return CategoryAnalysis("fieldDefinitions", "필드 정의", inBackup, newCount, updateCount, unchangedCount, existingTotal, skippedCount)
     }
 
     data class CharacterAnalysisResult(
@@ -2337,7 +2416,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         return CategoryAnalysis("timeline", "사건 연표", inBackup, newCount, updateCount, unchangedCount, existingTotal)
     }
 
-    private suspend fun analyzeStateChanges(workbook: Workbook, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
+    private suspend fun analyzeStateChanges(workbook: Workbook, options: ExportOptions, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
         val spec = stateChangeSpec()
         val sheet = workbook.getSheet(spec.sheetName)
         val existingTotal = db.characterStateChangeDao().getAllChangesList().size
@@ -2353,7 +2432,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val now = System.currentTimeMillis()
 
         val allNovels = db.novelDao().getAllNovelsList()
-        var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0
+        var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skippedCount = 0
 
         for (i in 1..sheet.lastRowNum) {
             val row = sheet.getRow(i) ?: continue
@@ -2369,7 +2448,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     val novelId = if (r.novelTitle.isNotBlank()) allNovels.find { it.title == r.novelTitle }?.id else null
                     findCharacterByName(r.charName, novelId)
                 }
-            if (character == null) { continue }
+            // 캐릭터가 해석되지 않으면 가져오기가 행을 거부한다(B-102 ⓑ).
+            if (character == null) {
+                if (options.characters) newCount++ else skippedCount++
+                continue
+            }
 
             // 실제 임포트와 동일한 매칭: 코드 우선 → 자연키 폴백
             val existing = (if (r.fileCode.isNotBlank()) db.characterStateChangeDao().getChangeByCode(r.fileCode) else null)
@@ -2380,10 +2463,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             if (merged != existing) updateCount++ else unchangedCount++
         }
         reportProgress(onProgress, "상태 변화 분석", sheet.lastRowNum, totalRows)
-        return CategoryAnalysis("stateChanges", "상태 변화", inBackup, newCount, updateCount, unchangedCount, existingTotal)
+        return CategoryAnalysis("stateChanges", "상태 변화", inBackup, newCount, updateCount, unchangedCount, existingTotal, skippedCount)
     }
 
-    private suspend fun analyzeRelationships(workbook: Workbook, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
+    private suspend fun analyzeRelationships(workbook: Workbook, options: ExportOptions, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
         val spec = relationshipSpec()
         val sheet = workbook.getSheet(spec.sheetName)
         val existingTotal = db.characterRelationshipDao().getAllRelationships().size
@@ -2400,7 +2483,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val factionRefUsed = c.faction >= 0 || c.factionCode >= 0
         val factionIndex = FactionIndex(if (factionRefUsed) db.factionDao().getAllFactionsList() else emptyList())
 
-        var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0
+        var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skippedCount = 0
         for (i in 1..sheet.lastRowNum) {
             val row = sheet.getRow(i) ?: continue
             val r = readRelationshipRow(row, c, "관계 행 $i", now, result = null)
@@ -2423,8 +2506,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 }
             }
             if (existing == null) {
-                // 캐릭터가 해석되지 않으면 가져오기도 행을 건너뛴다 — '신규'로 세지 않는다.
-                if (char1 == null || char2 == null || char1.id == char2.id) continue
+                // 캐릭터가 해석되지 않으면 가져오기가 행을 거부한다(B-102 ⓑ).
+                if (char1 == null || char2 == null || char1.id == char2.id) {
+                    if (options.characters) newCount++ else skippedCount++
+                    continue
+                }
                 newCount++
                 continue
             }
@@ -2440,10 +2526,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             if (merged != existing) updateCount++ else unchangedCount++
         }
         reportProgress(onProgress, "관계 분석", sheet.lastRowNum, totalRows)
-        return CategoryAnalysis("relationships", "관계", inBackup, newCount, updateCount, unchangedCount, existingTotal)
+        return CategoryAnalysis("relationships", "관계", inBackup, newCount, updateCount, unchangedCount, existingTotal, skippedCount)
     }
 
-    private suspend fun analyzeRelationshipChanges(workbook: Workbook, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
+    private suspend fun analyzeRelationshipChanges(workbook: Workbook, options: ExportOptions, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
         val sheet = workbook.getSheet("관계 변화")
         val existingTotal = db.characterRelationshipChangeDao().getAllChanges().size
         if (sheet == null || sheet.lastRowNum < 1) return CategoryAnalysis("relationshipChanges", "관계 변화", 0, 0, 0, 0, existingTotal)
@@ -2456,7 +2542,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val c = RelChangeCols(cols, char2NameColIndex, yearColIndex)
         val now = System.currentTimeMillis()
 
-        var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0
+        var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skippedCount = 0
         for (i in 1..sheet.lastRowNum) {
             val row = sheet.getRow(i) ?: continue
             val r = readRelChangeRow(row, c, "관계변화 행 $i", now, result = null)
@@ -2468,7 +2554,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 ?: findCharacterByName(r.char1Name, null)
             val char2 = (if (r.char2Code.isNotBlank()) db.characterDao().getCharacterByCode(r.char2Code) else null)
                 ?: findCharacterByName(r.char2Name, null)
-            if (char1 == null || char2 == null) continue
+            // 캐릭터가 해석되지 않으면 가져오기가 행을 거부한다(B-102 ⓑ).
+            if (char1 == null || char2 == null) {
+                if (options.characters) newCount++ else skippedCount++
+                continue
+            }
 
             // 부모 관계 해석도 가져오기와 **같은 함수**다 — 종전에는 쌍의 첫 관계를 골라
             // 유형이 다른 이력을 엉뚱한 관계에 붙여 세었다.
@@ -2478,10 +2568,13 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     (rel.characterId1 == char1.id && rel.characterId2 == char2.id) ||
                     (rel.characterId1 == char2.id && rel.characterId2 == char1.id)
                 }
-            // 관계가 없거나 확정되지 않으면 가져오기도 행을 건너뛴다 — '신규'로 세지 않는다.
-            if (pairRelationships.isEmpty()) continue
+            // 관계가 없거나 확정되지 않으면 가져오기가 행을 거부한다(B-102 ⓑ).
+            if (pairRelationships.isEmpty()) {
+                if (options.relationships) newCount++ else skippedCount++
+                continue
+            }
             val relationship = resolveRelChangeParent(r, pairRelationships, char1.id, char2.id, "관계변화 행 $i", result = null)
-                ?: continue
+            if (relationship == null) { skippedCount++; continue }
 
             // 실제 임포트와 동일한 매칭: 코드 우선 → 자연키 폴백
             val existing = (if (r.fileCode.isNotBlank()) db.characterRelationshipChangeDao().getChangeByCode(r.fileCode) else null)
@@ -2497,7 +2590,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             if (merged != existing) updateCount++ else unchangedCount++
         }
         reportProgress(onProgress, "관계 변화 분석", sheet.lastRowNum, totalRows)
-        return CategoryAnalysis("relationshipChanges", "관계 변화", inBackup, newCount, updateCount, unchangedCount, existingTotal)
+        return CategoryAnalysis("relationshipChanges", "관계 변화", inBackup, newCount, updateCount, unchangedCount, existingTotal, skippedCount)
     }
 
     private suspend fun analyzeNameBank(workbook: Workbook, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
@@ -2551,7 +2644,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         return CategoryAnalysis("nameBank", "이름 은행", inBackup, newCount, updateCount, unchangedCount, existingTotal)
     }
 
-    private suspend fun analyzeFactions(workbook: Workbook, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
+    private suspend fun analyzeFactions(workbook: Workbook, options: ExportOptions, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
         val spec = factionSpec()
         val sheet = workbook.getSheet(spec.sheetName)
         val existingTotal = db.factionDao().getAllFactionsList().size
@@ -2561,16 +2654,23 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val c = FactionCols(resolveHeaderColumns(headerRow), spec.firstColumnHeader)
         val now = System.currentTimeMillis()
 
-        var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0
+        var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skippedCount = 0
         for (i in 1..sheet.lastRowNum) {
             val row = sheet.getRow(i) ?: continue
             val r = readFactionRow(row, c, "세력 행 $i", now, result = null)
             if (r.name.isBlank()) continue
             inBackup++
 
+            // 자동관계유형이 비면 가져오기가 행을 거부한다 — '신규'가 아니다.
+            if (r.autoRelationType.isBlank()) { skippedCount++; continue }
             // 세계관 해석도 가져오기와 같다 — 코드 우선, 이름 폴백(종전에는 이름만 봤다).
             val resolvedUniverse = (if (r.universeCode.isNotBlank()) db.universeDao().getUniverseByCode(r.universeCode) else null)
                 ?: (if (r.universeName.isNotBlank()) db.universeDao().getUniverseByName(r.universeName) else null)
+            // 세계관 참조가 있는데 해석되지 않으면 가져오기가 행을 거부한다(B-102 ⓑ).
+            if (resolvedUniverse == null && (r.universeName.isNotBlank() || r.universeCode.isNotBlank())) {
+                if (options.universes) newCount++ else skippedCount++
+                continue
+            }
             val existing = (if (r.code.isNotBlank()) db.factionDao().getByCode(r.code) else null)
                 ?: resolvedUniverse?.let { db.factionDao().getByNameAndUniverse(r.name, it.id) }
             if (existing == null) { newCount++; continue }
@@ -2578,7 +2678,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             if (merged != existing) updateCount++ else unchangedCount++
         }
         reportProgress(onProgress, "세력 분석", sheet.lastRowNum, totalRows)
-        return CategoryAnalysis("factions", "세력", inBackup, newCount, updateCount, unchangedCount, existingTotal)
+        return CategoryAnalysis("factions", "세력", inBackup, newCount, updateCount, unchangedCount, existingTotal, skippedCount)
     }
 
     private suspend fun analyzeFactionMemberships(workbook: Workbook, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
@@ -3459,13 +3559,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val groups = collectGradeSystemRows(sheet, headerRow, result = null)
         for (group in groups) {
             val existing = resolveGradeSystem(group)
-            when {
-                existing == null -> newCount++
-                existing.name != group.name ||
-                    com.novelcharacter.app.data.model.GradeSystemRef.gradesFromJson(existing.gradesJson) !=
-                        com.novelcharacter.app.data.model.GradeSystemRef.gradesFromJson(group.gradesJson()) -> updateCount++
-                else -> unchangedCount++
-            }
+            if (existing == null) { newCount++; continue }
+            // 적용도 가져오기와 **같은 함수**다(규약 R-33) — 이름 충돌 판정까지 같이 본다.
+            val rename = group.name != existing.name &&
+                db.gradeSystemDao().getByUniverseAndName(group.universeId, group.name) == null
+            val merged = mergeGradeSystem(existing, group.name, group.gradesJson(), rename)
+            if (merged != existing) updateCount++ else unchangedCount++
         }
         reportProgress(onProgress, "등급 체계 분석", sheet.lastRowNum, totalRows)
         return CategoryAnalysis("gradeSystems", label, groups.size, newCount, updateCount, unchangedCount, existingTotal)
@@ -3585,10 +3684,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         "등급 체계 '${existing.name}': 같은 세계관에 '${group.name}'이(가) 이미 있어 이름을 바꾸지 않았습니다"
                     )
                 }
-                val saved = existing.copy(
-                    name = if (rename) group.name else existing.name,
-                    gradesJson = gradesJson
-                )
+                // 적용도 미리보기와 **같은 함수**다(규약 R-33).
+                val saved = mergeGradeSystem(existing, group.name, gradesJson, rename)
                 if (saved != existing) {
                     // 참조 필드 전파까지 한 몸으로 — 엑셀 경로는 라벨 개명을 추적할 수 없으므로
                     // (행의 정체가 라벨 그 자체다) 라벨 변경은 삭제+추가로 다룬다.
@@ -6127,15 +6224,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         }
 
         reportUnknownColumns(headerRow, spec, result)
-        val cols = resolveHeaderColumns(headerRow)
-        val fileColIndex = cols["파일명"] ?: 0
-        // 위치 폴백 금지 — 열을 지우면 이웃 열을 오독한다
-        val tagColIndex = cols["태그"] ?: -1
-        val groupColIndex = cols["링크그룹"] ?: -1
-        // 뗀 이미지 서랍(B-107 D1) — 같은 규약이다: 열이 없으면 기존 유지, 빈칸이면 해제.
-        // 출처는 readOnly라 **읽지 않는다**(사용자가 적은 코드를 믿으면 없는 캐릭터를 가리키게
-        // 된다). 시각만 읽고, 새로 붙는 표식의 출처는 앱이 아는 값으로만 채운다.
-        val detachedAtColIndex = cols["뗀날짜"] ?: -1
+        // 열 해석은 미리보기와 **같은 클래스**다(규약 R-33).
+        // '뗀날짜'의 출처는 readOnly라 **읽지 않는다**(사용자가 적은 코드를 믿으면 없는 캐릭터를
+        // 가리키게 된다). 시각만 읽고, 새로 붙는 표식의 출처는 앱이 아는 값으로만 채운다.
+        val imc = ImageMetaCols(resolveHeaderColumns(headerRow))
 
         // zip 리맵 키(원 절대경로)의 basename → 복원된 새 경로. basename 충돌은 무음 last-wins 대신 고지한다.
         val remap = ImageMetaRowResolver.buildRemapByBasename(imagePathRemap)
@@ -6146,7 +6238,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 다른 시트의 코드 중복과 같은 규약(마지막 행 우선 + 고지)으로 접는다.
         val sheetRows = (1..sheet.lastRowNum).mapNotNull { i ->
             val row = sheet.getRow(i) ?: return@mapNotNull null
-            val fileName = getCellString(row, fileColIndex)
+            val fileName = getCellString(row, imc.file)
             if (fileName.isBlank()) null else i to fileName
         }
         val plan = ImageMetaRowResolver.plan(sheetRows, remap.byBasename) { fileName ->
@@ -6167,33 +6259,47 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             try {
                 val row = sheet.getRow(i) ?: continue
 
+                // 읽기도 미리보기와 **같은 함수**다(규약 R-33).
+                val r = readImageMetaRow(row, imc, result)
+
                 val existing = db.imageMetaDao().getByPath(path)
                 val imageId = existing?.id ?: db.imageMetaDao().adopt(path, now)
                 if (existing != null) result.updatedImageMeta++ else result.newImageMeta++
 
+                // 무엇이 바뀌는가의 판정도 같은 함수다. 태그는 열이 있을 때만 읽는다 —
+                // 없으면 비교 대상이 아니라 조회도 낭비다.
+                val current = ImageMetaState(
+                    tags = if (r.hasTagCol) db.imageTagDao().getTagsByImageList(imageId).map { it.tag }.toSet() else emptySet(),
+                    linkGroupId = existing?.linkGroupId,
+                    detachedAt = existing?.detachedAt
+                )
+                val target = mergeImageMetaState(current, r)
+
                 // F1-A: '태그' 열이 없으면 기존 태그 유지. 열이 있고 빈칸이면 비움 의도로 존중.
-                if (tagColIndex >= 0) {
-                    val tags = splitCsv(getCellString(row, tagColIndex))
+                // 바뀌지 않으면 쓰지 않는다 — replaceAllForImage는 전량 삭제+재삽입이다.
+                if (r.hasTagCol && target.tags != current.tags) {
                     db.imageTagDao().replaceAllForImage(
                         imageId,
-                        tags.map { com.novelcharacter.app.data.model.ImageTag(imageId = imageId, tag = it) }
+                        target.tags.map { com.novelcharacter.app.data.model.ImageTag(imageId = imageId, tag = it) }
                     )
                 }
 
                 // 뗀 표식(B-107) — 태그·링크그룹과 같은 규약. 값이 있으면 그 시각으로 두고,
                 // 빈칸이면 서랍에서 뺀다. **출처 열은 읽지 않는다**(readOnly): 앱이 아는 출처를
                 // 사용자가 적은 문자열로 덮어쓰면 화면이 없는 캐릭터를 가리키게 된다.
-                if (detachedAtColIndex >= 0) {
-                    val raw = getCellString(row, detachedAtColIndex).trim()
-                    val parsed = raw.toDoubleOrNull()?.toLong()
+                if (r.hasDetachedCol) {
+                    // 값이 있는데 숫자가 아니면 **손대지 않고 알린다** — 조용히 버리면
+                    // 사용자가 무엇을 잘못 적었는지 알 길이 없다(개발 의도 2번).
+                    // 병합 결과가 기존과 같다는 것이 곧 '손대지 않는다'이다.
+                    if (r.detachedRaw.isNotBlank() && r.detachedAt == null) {
+                        result.warnings.add("이미지 행 $i: '뗀날짜' 값 \"${r.detachedRaw}\"을(를) 읽을 수 없어 그대로 두었습니다")
+                    }
+                    val targetDetachedAt = target.detachedAt
                     when {
-                        // 값이 있는데 숫자가 아니면 **손대지 않고 알린다** — 조용히 버리면
-                        // 사용자가 무엇을 잘못 적었는지 알 길이 없다(개발 의도 2번).
-                        raw.isNotBlank() && parsed == null ->
-                            result.warnings.add("이미지 행 $i: '뗀날짜' 값 \"$raw\"을(를) 읽을 수 없어 그대로 두었습니다")
-                        parsed != null && parsed > 0L ->
+                        targetDetachedAt == current.detachedAt -> Unit  // 바뀌지 않으면 쓰지 않는다
+                        targetDetachedAt != null ->
                             db.imageMetaDao().markDetachedByPaths(
-                                listOf(path), parsed, existing?.detachedFromCode
+                                listOf(path), targetDetachedAt, existing?.detachedFromCode
                             )
                         // 빈칸(또는 0) = 서랍에서 빼기. 이미 빠져 있으면 아무 일도 없다.
                         else -> if (existing?.isDetached == true) {
@@ -6202,9 +6308,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     }
                 }
 
-                if (groupColIndex >= 0) {
-                    val groupToken = getCellString(row, groupColIndex).trim()
-                    if (groupToken.isNotBlank()) {
+                if (r.hasGroupCol) {
+                    val groupToken = target.linkGroupId
+                    if (groupToken != null) {
                         groupMembers.getOrPut(groupToken) { mutableListOf() }.add(imageId)
                     } else {
                         val currentGroup = existing?.linkGroupId

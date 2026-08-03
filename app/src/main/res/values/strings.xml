@@ -1435,6 +1435,7 @@
     <string name="restore_preview_summary">신규 %1$d / 변경 %2$d / 동일 %3$d</string>
     <string name="restore_preview_db_info">현재 DB: %1$d개, 백업에 없음: %2$d개</string>
     <string name="restore_preview_no_change">변경 없음</string>
+    <string name="restore_preview_skipped">건너뜀 %1$d개 — 이 행이 가리키는 항목이 앱에 없고, 그것을 만드는 항목이 이번 선택에서 빠져 있습니다</string>
     <string name="restore_preview_no_data">백업에 데이터 없음 (현재 DB: %d개)</string>
     <string name="restore_overwrite_delete_item">%1$s %2$d개</string>
     <string name="restore_action">복원</string>

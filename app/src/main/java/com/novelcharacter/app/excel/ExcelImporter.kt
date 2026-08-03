@@ -1075,6 +1075,18 @@ class ExcelImporter(context: Context) {
                     }
                     catLayout.addView(labelText)
 
+                    // B-102 ⓑ: 실행되지 않을 행은 '신규'가 아니라 '건너뜀'이다.
+                    // "신규 N건"이라 예고해 놓고 아무것도 넣지 않으면 미리보기가 거짓말이 된다.
+                    fun addSkippedLine() {
+                        if (cat.skippedCount <= 0) return
+                        catLayout.addView(TextView(act).apply {
+                            text = appContext.getString(
+                                com.novelcharacter.app.R.string.restore_preview_skipped, cat.skippedCount)
+                            textSize = 11f
+                            setPadding(dp8, 0, 0, 0)
+                        })
+                    }
+
                     if (cat.newCount == 0 && cat.updateCount == 0 && cat.inBackup > 0) {
                         val detailText = TextView(act).apply {
                             text = appContext.getString(com.novelcharacter.app.R.string.restore_preview_no_change) +
@@ -1107,6 +1119,7 @@ class ExcelImporter(context: Context) {
                         }
                         catLayout.addView(dbInfoText)
                     }
+                    addSkippedLine()
 
                     container.addView(catLayout)
                 }
