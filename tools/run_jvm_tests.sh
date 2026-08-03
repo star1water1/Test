@@ -179,6 +179,7 @@ $MAIN/util/ResetPlan.kt
 $MAIN/util/MembershipTimeline.kt
 $MAIN/data/model/UserPresetTemplate.kt
 $MAIN/util/PresetTemplates.kt
+$MAIN/util/PresetMerge.kt
 $MAIN/data/repository/FieldValueRules.kt
 $MAIN/share/WorldPackageFactionRelationships.kt
 $MAIN/share/WorldPackageContents.kt
@@ -218,6 +219,7 @@ $TEST/util/DetailListSortTest.kt
 $TEST/ui/assistant/AssistantSortTest.kt
 $TEST/util/EpochMemoTest.kt
 $TEST/util/PresetTemplatesRoundtripTest.kt
+$TEST/util/PresetMergeTest.kt
 $TEST/ai/AiJsonExtractorTest.kt
 $TEST/util/FieldFilterHelperTest.kt
 $TEST/data/SnapshotRefResolverTest.kt

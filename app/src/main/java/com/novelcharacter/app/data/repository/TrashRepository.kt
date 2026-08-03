@@ -23,6 +23,7 @@ import com.novelcharacter.app.data.model.FactionSnapshot
 import com.novelcharacter.app.data.model.FieldDefNaturalKey
 import com.novelcharacter.app.data.model.FieldDefRef
 import com.novelcharacter.app.data.model.FieldDefinition
+import com.novelcharacter.app.data.model.FieldDefinitionSnapshot
 import com.novelcharacter.app.data.model.FieldValueEntry
 import com.novelcharacter.app.data.model.GradeSystem
 import com.novelcharacter.app.data.model.GradeSystemRef
@@ -678,6 +679,42 @@ class TrashRepository(
         insertSnapshot(TrashSnapshot.TYPE_GRADE_SYSTEM, system.name, snapshot, emptyList())
     }
 
+    /**
+     * **필드 정의 덮어쓰기 직전 백업** (B-89) — 덮어쓰기 트랜잭션 안에서, 쓰기 **전에** 부를 것.
+     *
+     * 한 병합이 한 행이다. 필드 열 개를 덮으면 스냅샷은 하나이고, 되돌리기도 한 번이다 —
+     * 행을 쪼개면 휴지통에서 일부만 되돌리는 **반쪽 되돌리기**가 만들어진다(R-9와 같은 이유).
+     *
+     * **건너뛴 항목은 넘기지 말 것.** 바뀐 것이 없어 되돌릴 대상이 아니고(④ 사용자 확정),
+     * 담으면 아무 일도 하지 않는 백업이 보관 한도를 먹는다(R-3).
+     *
+     * @param fields 덮이기 **직전**의 정의. 비어 있으면 아무것도 남기지 않는다.
+     * @param sourceName 덮어쓴 소스(프리셋·세계관)의 이름 — 목록이 "무엇을 물리는가"를 말한다.
+     */
+    suspend fun snapshotFieldDefinitions(
+        universeId: Long,
+        fields: List<FieldDefinition>,
+        sourceName: String
+    ) {
+        if (fields.isEmpty()) return
+        val uCode = universeCode(universeId)
+        val snapshot = FieldDefinitionSnapshot(
+            fields = fields,
+            universeCode = uCode,
+            sourceName = sourceName,
+            refs = EntityRefs(universeCode = uCode)
+        )
+        insertSnapshot(
+            TrashSnapshot.TYPE_FIELD_DEFINITION,
+            sourceName,
+            snapshot,
+            emptyList(),
+            // 종류는 인스턴스가 아니라 이 호출이 아는 사실이다(R-12). 이 경로는 언제나
+            // 편집 백업이다 — 필드는 지워진 적이 없고 정의만 덮였다.
+            kind = TrashSnapshot.KIND_EDIT_BACKUP
+        )
+    }
+
     private suspend fun insertSnapshot(
         entityType: String,
         entityName: String,
@@ -822,6 +859,7 @@ class TrashRepository(
             TrashSnapshot.TYPE_EVENT -> eventPlan(snap, pendingCodes)?.toPreview()
             TrashSnapshot.TYPE_STATE_CHANGE -> stateChangePlan(snap, pendingCodes)?.toPreview()
             TrashSnapshot.TYPE_GRADE_SYSTEM -> gradeSystemPlan(snap, pendingCodes)?.toPreview()
+            TrashSnapshot.TYPE_FIELD_DEFINITION -> fieldDefinitionPlan(snap, pendingCodes)?.toPreview()
             else -> null
         }
     }
@@ -898,6 +936,15 @@ class TrashRepository(
                     val plan = gradeSystemPlan(snap) ?: return@withTransaction
                     if (plan.blocker != null) return@withTransaction
                     result = applyGradeSystem(plan)
+                }
+                TrashSnapshot.TYPE_FIELD_DEFINITION -> {
+                    val plan = fieldDefinitionPlan(snap) ?: return@withTransaction
+                    if (plan.blocker != null) return@withTransaction
+                    // 살아 있는 정의를 덮는 되돌리기다 — 동의 없이 실행하지 않는다(R-4).
+                    // 캐릭터 되돌리기가 사본으로 내려가는 것과 달리 이쪽은 내려갈 자리가
+                    // 없으므로(정의를 하나 더 만들면 새 필드다) 아무것도 하지 않고 멈춘다.
+                    if (!consentedRevert) return@withTransaction
+                    result = applyFieldDefinitionRevert(plan)
                 }
                 else -> return@withTransaction
             }
@@ -1105,6 +1152,10 @@ class TrashRepository(
                     if (plan.blocker != null) return@withTransaction
                     result = applyGradeSystem(plan)
                 }
+                // TYPE_FIELD_DEFINITION은 **일부러 없다.** 이 경로는 '작업 전체 복원'이고
+                // 그 버튼은 편집 백업 묶음에 달리지 않는다(TrashGrouping.needsHeader).
+                // 여기 분기를 두면 동의 없이 살아 있는 정의를 덮는 경로가 생긴다 —
+                // 이 함수에는 사용자의 동의를 실어 나를 인자가 없다(R-4).
                 else -> return@withTransaction
             }
         }
@@ -2987,6 +3038,132 @@ class TrashRepository(
             restoredName = name,
             losses = RestoreLossCounts(gradeSystemLinks = lostLinks),
             relinkedByCode = plan.relinkedByCode + relinked
+        )
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // 되돌리기 — 필드 정의 덮어쓰기 (B-89)
+    // ──────────────────────────────────────────────────────────────────────
+
+    private data class FieldDefinitionPlan(
+        val data: FieldDefinitionSnapshot,
+        val universeId: Long?,
+        /** 자연키로 다시 찾아 되돌릴 수 있는 필드. */
+        val targets: List<Pair<FieldDefinition, FieldDefinition>>,
+        /** 그 사이 사라져 되돌릴 자리가 없는 필드 수. */
+        val missing: Int,
+        val relinkedByCode: Int,
+        val legacyPayload: Boolean,
+        val previewOnly: Boolean,
+        val blocker: RestoreBlocker?
+    ) {
+        fun toPreview() = RestorePreview(
+            entityType = TrashSnapshot.TYPE_FIELD_DEFINITION,
+            entityName = data.sourceName.orEmpty(),
+            losses = RestoreLossCounts(revertTargetsMissing = missing),
+            relinkedByCode = relinkedByCode,
+            legacyPayload = legacyPayload,
+            blocker = blocker,
+            // 살아 있는 정의에 덮어쓰는 되돌리기다 — 앱에서 복원이 살아 있는 데이터를 고치는
+            // 두 번째 자리이므로 캐릭터 되돌리기와 같은 동의를 받는다(R-4).
+            revertsInPlace = targets.isNotEmpty(),
+            revertScope = if (targets.isEmpty()) emptySet()
+            else setOf(RestoreModes.SCOPE_FIELD_DEFINITIONS)
+        )
+    }
+
+    /**
+     * 되돌릴 대상을 **자연키로** 찾는다 (R-1).
+     *
+     * id로 찾지 않는 이유는 백업 이후 그 필드가 지워졌다 다시 만들어졌을 수 있기 때문이다 —
+     * 옛 id는 재발급되어 **남의 필드**를 가리킬 수 있고, 덮으면 그것을 파괴한다.
+     */
+    private suspend fun fieldDefinitionPlan(
+        snap: TrashSnapshot,
+        pendingCodes: Set<String> = emptySet(),
+        session: RestoreSession? = null
+    ): FieldDefinitionPlan? {
+        val data = parse(snap, FieldDefinitionSnapshot::class.java) ?: return null
+        val fields = data.fields?.filterNotNull().orEmpty()
+        if (fields.isEmpty()) return null
+
+        val tally = RestoreTally(legacy = data.refs == null, pendingCodes = pendingCodes)
+        val uCode = data.universeCode ?: data.refs?.universeCode
+        val universeId = uCode?.let { code ->
+            session?.lookup(TrashSnapshot.TYPE_UNIVERSE, code)
+                ?: db.universeDao().getUniverseByCode(code)?.id
+                ?: if (code in pendingCodes) RestoreTally.PENDING_ID else null
+        }
+        val previewOnly = universeId == RestoreTally.PENDING_ID
+
+        val targets = ArrayList<Pair<FieldDefinition, FieldDefinition>>()
+        var missing = 0
+        if (universeId != null && !previewOnly) {
+            for (backup in fields) {
+                @Suppress("SENSELESS_COMPARISON")
+                if (backup.key == null || backup.entityType == null) { missing++; continue }
+                val living = db.fieldDefinitionDao()
+                    .getFieldByKey(universeId, backup.key, backup.entityType)
+                if (living == null) { missing++; continue }
+                targets.add(living to backup)
+            }
+        } else if (previewOnly) {
+            // 세계관이 아직 복원되지 않은 미리보기 — 셀 수 있는 것이 없으므로 예고도 하지 않는다.
+            missing = 0
+        }
+
+        return FieldDefinitionPlan(
+            data = data,
+            universeId = universeId,
+            targets = targets,
+            missing = missing,
+            relinkedByCode = tally.relinked + targets.size,
+            legacyPayload = tally.legacyGuess,
+            previewOnly = previewOnly,
+            blocker = when {
+                universeId == null -> RestoreBlocker.MISSING_UNIVERSE
+                // 되돌릴 자리가 하나도 없다 — 되살리지 않는다. 정의만 다시 심으면 그것은
+                // 되돌리기가 아니라 새 필드이고, 옛 값은 이미 CASCADE로 사라진 뒤다.
+                !previewOnly && targets.isEmpty() -> RestoreBlocker.MISSING_UNIVERSE
+                else -> null
+            }
+        )
+    }
+
+    private suspend fun applyFieldDefinitionRevert(plan: FieldDefinitionPlan): RestoreResult {
+        check(!plan.previewOnly) { "미리보기 전용 계획으로 복원을 시도했다" }
+        check(plan.blocker == null) { "되돌릴 수 없는 필드 정의 계획이 적용 단계까지 왔다" }
+        val universeId = requireNotNull(plan.universeId)
+
+        // 덮기 직전 백업 — 이 스냅샷이 되돌리기의 취소 경로다(R-4). 복원은 성공 시 스냅샷을
+        // 소각하므로 남기지 않으면 어느 쪽으로도 갈 수 없다.
+        snapshotFieldDefinitions(
+            universeId,
+            plan.targets.map { it.first },
+            plan.data.sourceName.orEmpty()
+        )
+
+        for ((living, backup) in plan.targets) {
+            // 되돌리는 것은 **정의뿐이다.** id·universeId·entityType·key는 살아 있는 행의 것을
+            // 유지하고, `displayOrder`도 그렇다 — 덮어쓰기가 순서를 건드리지 않았으므로
+            // 되돌리기가 건드리면 사용자가 그 뒤에 끌어다 정한 자리를 파괴한다.
+            db.fieldDefinitionDao().update(
+                living.copy(
+                    name = backup.name,
+                    type = backup.type,
+                    config = backup.config,
+                    groupName = backup.groupName,
+                    isRequired = backup.isRequired
+                )
+            )
+        }
+
+        return RestoreResult(
+            entityType = TrashSnapshot.TYPE_FIELD_DEFINITION,
+            restoredName = plan.data.sourceName.orEmpty(),
+            losses = RestoreLossCounts(revertTargetsMissing = plan.missing),
+            relinkedByCode = plan.relinkedByCode,
+            revertedInPlace = true
         )
     }
 

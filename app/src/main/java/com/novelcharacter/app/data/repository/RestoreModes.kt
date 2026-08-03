@@ -61,6 +61,15 @@ object RestoreModes {
     const val SCOPE_STATE_CHANGES = "state_changes"
 
     /**
+     * 필드 **정의**를 덮어썼다 (B-89 — 프리셋 병합의 '덮어쓰기').
+     *
+     * 값 행은 손대지 않는다(`fieldDefinitionId`로 매달려 있다). 바뀌는 것은 이름·타입·설정·
+     * 묶음·필수이며, **타입이 바뀌면 저장된 값의 해석이 달라진다** — 그것이 이 갈래를
+     * 되돌릴 수 있어야 하는 이유다.
+     */
+    const val SCOPE_FIELD_DEFINITIONS = "field_definitions"
+
+    /**
      * 범위를 기록하지 않은 구버전 편집 백업에 적용할 범위.
      *
      * 모든 편집 백업 경로가 공통으로 파괴하는 것은 필드값 하나뿐이다. 모르는 것은 되돌리지
@@ -100,7 +109,8 @@ object RestoreModes {
      */
     fun revertScopeOf(raw: List<String>?): Set<String> {
         val known = setOf(
-            SCOPE_CHARACTER_ROW, SCOPE_FIELD_VALUES, SCOPE_MEMBERSHIPS, SCOPE_STATE_CHANGES
+            SCOPE_CHARACTER_ROW, SCOPE_FIELD_VALUES, SCOPE_MEMBERSHIPS, SCOPE_STATE_CHANGES,
+            SCOPE_FIELD_DEFINITIONS
         )
         val source = raw ?: LEGACY_REVERT_SCOPE
         return source.filter { it in known }.toSet()

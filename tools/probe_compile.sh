@@ -5,8 +5,15 @@
 # `androidx`를 import한 타입이 전부 미해석이 되고, 그 위의 모든 멤버 접근이 "unresolved"로
 # 뜬다(기준선에 1만 건 이상). 그래서 **진짜 오류가 노이즈에 묻힌다.**
 # 이 스크립트는 실제 jar(POI·gson·coroutines) + androidx 스텁 + **DAO 접근자만 가진
-# AppDatabase 스텁**을 물려, `excel` + `data/model` + `data/dao` + `util`을 통째로
-# 진짜 타입 검사한다(2026-08-01 기준 164파일).
+# AppDatabase 스텁**을 물려, `excel` + `data/model` + `data/dao` + `util` +
+# **`data/repository`**를 통째로 진짜 타입 검사한다(파일 수는 적지 않는다 — 세면 낡는다).
+#
+# **`data/repository`는 2026-08-03에 들어왔다(B-89).** 그전까지 이 계층은 **어떤 로컬 검사에도
+# 잡히지 않았다** — 프로브 범위 밖이었고, 차분 컴파일에서는 노이즈에 묻혔다. 그런데 휴지통
+# 복원·스냅샷처럼 **되돌릴 수 없는 것을 다루는 코드**가 거기 산다. 넣어 보니 오류가 늘기는커녕
+# **줄었다**(480 → 435): 그 파일들이 정의를 제공해 종전에 미해석이던 참조들이 풀렸기 때문이다.
+# 넣은 뒤 `TrashRepository`의 새 코드에 일부러 오타를 내 435 → 439로 오르는 것을 확인했다
+# (자기 재공격 — 범위에 들었다는 증명이며, 이 저장소가 1-ba장에서 쓴 것과 같은 방법이다).
 #
 # **재현 가능하게 남기는 이유는 이 저장소의 관행 그대로다** — 세션마다 손으로 다시 세우면
 # 같은 함정에 같은 시간을 쓴다(`setup_jvm_env.sh`의 머리말과 같은 취지).
@@ -63,7 +70,7 @@ EOF
 M="$REPO/app/src/main/java/com/novelcharacter/app"
 {
   ls "$M"/excel/*.kt | grep -v "ExcelImporter.kt"
-  ls "$M"/data/model/*.kt "$M"/data/dao/*.kt "$M"/util/*.kt
+  ls "$M"/data/model/*.kt "$M"/data/dao/*.kt "$M"/util/*.kt "$M"/data/repository/*.kt
   echo "$WORK/AndroidProbeStubs.kt"
   echo "$WORK/AppDatabaseProbe.kt"
   echo "$TOOLS/jvm-stubs/AndroidLogStub.kt"

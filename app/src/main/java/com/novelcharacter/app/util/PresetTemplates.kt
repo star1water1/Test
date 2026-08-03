@@ -193,6 +193,23 @@ object PresetTemplates {
         else -> emptyList()
     }
 
+    /**
+     * 종류를 가리지 않은 추천 전량 — 프리셋 병합 미리보기(B-89)가 종류별로 묶어 보여 준다.
+     *
+     * **열거를 여기 한 자리에 둔다.** 호출부마다 종류를 손으로 더하면 종류가 늘 때마다
+     * 그 자리들이 뒤처진다(R-29가 "열거는 다음 실수의 예약"이라 적은 그대로다). 위
+     * [recommendedFields]에 종류를 하나 켜면 이 함수가 자동으로 함께 든다.
+     */
+    fun allRecommendedFields(): List<FieldDefinition> =
+        ENTITY_TYPES.flatMap { recommendedFields(it) }
+
+    /** 필드가 붙을 수 있는 종류 전량. 확-3이 넓히면 여기부터 넓힌다. */
+    private val ENTITY_TYPES = listOf(
+        FieldDefinition.ENTITY_CHARACTER,
+        FieldDefinition.ENTITY_EVENT,
+        FieldDefinition.ENTITY_NOVEL
+    )
+
     private fun createStarAdventureTemplate(): PresetTemplate {
         val universe = Universe(
             name = "별님대모험",

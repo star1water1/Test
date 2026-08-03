@@ -12,6 +12,7 @@ import com.novelcharacter.app.NovelCharacterApp
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.Universe
+import com.novelcharacter.app.util.PresetMerge
 import com.novelcharacter.app.util.PresetTemplates
 import com.novelcharacter.app.util.OpResult
 import com.novelcharacter.app.util.reportResult
@@ -196,13 +197,37 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
     suspend fun getFieldsFromAllSources(
         currentUniverseId: Long,
         entityType: String
+    ): Map<String, List<FieldDefinition>> = collectSources(currentUniverseId, entityType)
+
+    /**
+     * 같은 합집합을 **종류를 가리지 않고** 모은다 — 프리셋 병합 미리보기(B-89) 전용.
+     *
+     * 걸러 받지 않는 것은 사용자 확정이다(③): 프리셋은 `entityType`을 담고 있고, 캐릭터
+     * 필드만 받으면 열린 구조를 스스로 닫는 것이다(원칙 01). 원치 않는 종류는 미리보기가
+     * 종류별로 보여 주므로 그 자리에서 빼면 된다.
+     *
+     * 위 [getFieldsFromAllSources]와 **본체를 공유한다** — 두 벌이 되면 한쪽만 고쳐진다.
+     */
+    suspend fun getMergeSources(currentUniverseId: Long): Map<String, List<FieldDefinition>> =
+        collectSources(currentUniverseId, entityType = null)
+
+    /**
+     * 소스 합집합의 단일 소스. [entityType]이 null이면 종류를 가리지 않는다.
+     *
+     * 어느 쪽이든 **한 소스가 내주는 목록의 종류 구성이 곧 심기는 구성**이다 — 거르는 자리와
+     * 심는 자리가 갈리면 화면에 없는 것이 들어가거나 고른 것이 사라진다(R-29).
+     */
+    private suspend fun collectSources(
+        currentUniverseId: Long,
+        entityType: String?
     ): Map<String, List<FieldDefinition>> {
         val result = linkedMapOf<String, List<FieldDefinition>>()
 
         // 0. 기본 제공 추천 — **맨 앞에 둔다.** 재고가 0인 종류(사건)에서는 이것이 유일한
         // 출발점이고, 목록의 첫 항목이 곧 기본 선택이라 여기 있어야 값을 한다.
         // 자동으로 심지 않으므로(설계 D1) 프리셋 `fields`가 아니라 이 경로로만 나온다.
-        val recommended = PresetTemplates.recommendedFields(entityType)
+        val recommended = if (entityType == null) PresetTemplates.allRecommendedFields()
+        else PresetTemplates.recommendedFields(entityType)
         if (recommended.isNotEmpty()) {
             result[app.getString(R.string.field_source_recommended)] = recommended
         }
@@ -212,7 +237,11 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
         val nameCount = mutableMapOf<String, Int>()
         for (universe in allUniverses) {
             if (universe.id == currentUniverseId) continue
-            val fields = fieldsOf(universe.id, entityType)
+            val fields = if (entityType == null) {
+                app.database.fieldDefinitionDao().getFieldsByUniverseAllTypes(universe.id)
+            } else {
+                fieldsOf(universe.id, entityType)
+            }
             if (fields.isNotEmpty()) {
                 val count = nameCount.getOrDefault(universe.name, 0)
                 nameCount[universe.name] = count + 1
@@ -223,7 +252,7 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
 
         // 2. 내장 프리셋 템플릿 — 해당 종류가 없는 프리셋은 빈 목록으로 뜨지 않게 건너뛴다
         for (preset in PresetTemplates.getBuiltInTemplates()) {
-            val fields = preset.fields.filter { it.entityType == entityType }
+            val fields = preset.fields.ofType(entityType)
             if (fields.isEmpty()) continue
             result["${preset.universe.name} (프리셋)"] = fields
         }
@@ -232,13 +261,17 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
         val userPresets = userPresetDao.getAllTemplatesList()
         for (preset in userPresets) {
             val template = PresetTemplates.fromUserPreset(preset)
-            val fields = template.fields.filter { it.entityType == entityType }
+            val fields = template.fields.ofType(entityType)
             if (fields.isEmpty()) continue
             result["${template.universe.name} (사용자 프리셋)"] = fields
         }
 
         return result
     }
+
+    /** null이면 전 종류. 걸러 내는 자리를 하나로 모아 호출부가 조건을 잊지 못하게 한다. */
+    private fun List<FieldDefinition>.ofType(entityType: String?): List<FieldDefinition> =
+        if (entityType == null) this else filter { it.entityType == entityType }
 
     /** 관리 중인 종류에 맞는 필드 조회 — 종류 분기를 한 자리에 모아 호출부가 어긋나지 않게 한다. */
     private suspend fun fieldsOf(universeId: Long, entityType: String): List<FieldDefinition> =
@@ -341,5 +374,65 @@ class FieldViewModel(application: Application) : AndroidViewModel(application) {
             universeRepository.insertAllFields(newFields)
             return newFields.size
         }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // 프리셋·세계관 병합 (B-89)
+    // ──────────────────────────────────────────────────────────────────────
+
+    /**
+     * 소스 필드를 대상 세계관에 합칠 계획을 세운다 — **쓰지 않는다.**
+     *
+     * 중복 판정 모집단은 **전 종류**다([getFieldsByUniverseAllTypes]). 한 종류만 보면 다른
+     * 종류의 중복을 놓쳐 삽입이 유니크 제약에 걸리고, 그 실패는 화면이 예고하지 않은 것이다
+     * (R-29 — 조회·판정·순서·쓰기가 모두 같은 모집단을 봐야 한다).
+     */
+    suspend fun buildMergePlan(
+        targetUniverseId: Long,
+        sourceFields: List<FieldDefinition>
+    ): PresetMerge.Plan = PresetMerge.buildPlan(
+        sourceFields,
+        app.database.fieldDefinitionDao().getFieldsByUniverseAllTypes(targetUniverseId)
+    )
+
+    /**
+     * 고른 처분을 실제로 반영한다 — 삽입·덮어쓰기·되돌리기 백업이 **한 트랜잭션**이다.
+     *
+     * 백업이 트랜잭션 밖이면 쓰기가 실패했을 때 되돌릴 것이 없는 백업만 남고, 백업이 실패했을
+     * 때는 되돌릴 수 없는 덮어쓰기가 남는다. 둘 다 R-4가 막으려는 상태다.
+     *
+     * @param sourceName 소스(프리셋·세계관)의 이름 — 되돌리기 항목이 무엇을 물리는지 말한다.
+     * @return 실제로 심고 덮은 것. 화면은 이것으로 고지한다 — **고른 수가 아니라 반영된 수**여야
+     *   한다(종전 경로는 고른 수를 토스트로 말하고 실제 반영 수를 결과 채널로 말해, 같은 조작에
+     *   숫자가 둘이었다).
+     */
+    suspend fun applyMergePlan(
+        targetUniverseId: Long,
+        plan: PresetMerge.Plan,
+        selected: Set<String>,
+        sourceName: String
+    ): PresetMerge.Resolution {
+        val existing = app.database.fieldDefinitionDao().getFieldsByUniverseAllTypes(targetUniverseId)
+        val maxOrder = existing
+            .groupBy { it.entityType }
+            .mapValues { (_, fields) -> fields.maxOf { it.displayOrder } }
+        val resolution = PresetMerge.resolve(plan, selected, targetUniverseId, maxOrder)
+        if (resolution.isEmpty) return resolution
+
+        app.database.withTransaction {
+            // 덮기 **전에** 백업한다 — 순서가 뒤집히면 백업이 덮인 값을 담는다.
+            if (resolution.backups.isNotEmpty()) {
+                app.trashRepository.snapshotFieldDefinitions(
+                    targetUniverseId, resolution.backups, sourceName
+                )
+            }
+            if (resolution.inserts.isNotEmpty()) {
+                universeRepository.insertAllFields(resolution.inserts)
+            }
+            for (field in resolution.updates) {
+                universeRepository.updateField(field)
+            }
+        }
+        return resolution
     }
 }

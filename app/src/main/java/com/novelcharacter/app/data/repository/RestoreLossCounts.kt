@@ -65,7 +65,17 @@ data class RestoreLossCounts(
     /** 되살리지 못한 등급 체계 (U-1) — payload 손상·payload 안 이름 중복으로 건너뜀 */
     val gradeSystems: Int = 0,
     /** 다시 잇지 못한 등급 체계 참조 (U-1) — 필드가 삭제됐거나 그 사이 다른 체계를 골랐음 */
-    val gradeSystemLinks: Int = 0
+    val gradeSystemLinks: Int = 0,
+
+    // ── 필드 정의 덮어쓰기 되돌리기 (B-89) ──
+    /**
+     * 되돌릴 자리가 없어진 필드 정의 — 백업 이후 그 필드가 삭제됐다.
+     *
+     * **[fieldDefinitions]와 칸을 나눈다.** 그쪽은 "같은 키의 정의가 이미 있어 건너뜀"(세계관
+     * 되살리기)이고 이쪽은 "그 필드가 사라져 되돌릴 대상이 없음"이다 — 사유가 정반대라
+     * 한 칸에 합치면 화면이 사실과 다른 문구를 말한다(R-13·R-17).
+     */
+    val revertTargetsMissing: Int = 0
 ) {
     /**
      * 항목별 규모의 단일 소스. 이름은 비교·집계에만 쓰이며 화면 문구는 UI가 만든다.
@@ -97,7 +107,8 @@ data class RestoreLossCounts(
             "nameBankLinks" to nameBankLinks,
             "universeCleared" to if (universeCleared) 1 else 0,
             "gradeSystems" to gradeSystems,
-            "gradeSystemLinks" to gradeSystemLinks
+            "gradeSystemLinks" to gradeSystemLinks,
+            "revertTargetsMissing" to revertTargetsMissing
         )
 
     val total: Int get() = counts.sumOf { it.second }
@@ -145,6 +156,7 @@ data class RestoreLossCounts(
         universeCleared = universeCleared || other.universeCleared,
         novelFieldValues = novelFieldValues + other.novelFieldValues,
         gradeSystems = gradeSystems + other.gradeSystems,
-        gradeSystemLinks = gradeSystemLinks + other.gradeSystemLinks
+        gradeSystemLinks = gradeSystemLinks + other.gradeSystemLinks,
+        revertTargetsMissing = revertTargetsMissing + other.revertTargetsMissing
     )
 }
