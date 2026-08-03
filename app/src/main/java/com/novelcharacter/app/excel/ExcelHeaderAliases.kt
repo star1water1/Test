@@ -30,6 +30,7 @@ object ExcelHeaderAliases {
         alias("성", "last_name", "lastName", "family_name")
         alias("이름(First)", "first_name", "firstName", "given_name")
         alias("이미지경로", "image_path", "이미지 경로", "image_file", "imagepath", "imagepaths")
+        alias("대표이미지", "representative_image", "대표 이미지", "representative_image_path", "대표이미지경로")
         alias("이미지모드", "image_mode", "이미지 모드")
         alias("이미지캐릭터코드", "이미지캐릭터ID", "image_character_id", "image_character_code", "이미지 캐릭터 ID")
         alias("이미지작품코드", "이미지작품ID", "image_novel_id", "image_novel_code", "이미지 작품 ID")
