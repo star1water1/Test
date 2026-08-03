@@ -209,3 +209,34 @@ data class StateChangeSnapshot(
     val characterCode: String? = null,
     val refs: EntityRefs? = null
 )
+
+/**
+ * **필드 정의 덮어쓰기 직전 백업** (B-89) — 삭제 백업이 아니라 [TrashSnapshot.KIND_EDIT_BACKUP]이다.
+ *
+ * 프리셋·다른 세계관의 정의로 **이미 있는 필드를 덮을 때**만 생긴다. 건너뛴 항목은 바뀐 것이
+ * 없어 되돌릴 대상이 아니므로 담지 않는다(④ 사용자 확정).
+ *
+ * ## 한 작업이 한 행이다
+ * 필드 열 개를 한 번에 덮으면 스냅샷도 하나다. 되돌리기는 사용자에게 "그 병합을 물린다"는
+ * 한 번의 조작이고, 행을 열 개로 쪼개면 휴지통에서 아홉 개를 되돌리고 하나를 남기는
+ * **반쪽 되돌리기**가 만들어진다(R-9가 작업 단위를 세운 것과 같은 이유).
+ *
+ * ## 담는 것은 정의뿐이다
+ * 필드값(`character_field_values` 등)은 담지 않는다 — 덮어쓰기는 **정의만** 바꾸고 값 행은
+ * 손대지 않기 때문이다(값은 `fieldDefinitionId`로 매달려 있어 정의를 고쳐도 그대로 있다).
+ * 다만 타입이 바뀌면 **값의 해석**이 달라지므로(TEXT 값이 SELECT 목록 밖 값이 되는 식),
+ * 되돌리기는 그 해석을 원래대로 되돌린다.
+ *
+ * ## 자연키로 되돌린다
+ * id가 아니라 `(universeCode, entityType, key)`로 대상을 찾는다(R-1). 백업 이후 그 필드가
+ * 지워졌다 다시 만들어졌으면 id는 재발급됐고, 옛 id로 덮으면 **남의 필드를 파괴한다.**
+ */
+data class FieldDefinitionSnapshot(
+    /** 덮이기 직전의 정의 전량. 비어 있는 스냅샷은 만들지 않는다. */
+    val fields: List<FieldDefinition>? = null,
+    /** 이 필드들이 속한 세계관의 코드 — 없으면 되돌릴 자리를 찾을 수 없다(R-1). */
+    val universeCode: String? = null,
+    /** 덮어쓴 소스의 이름(프리셋·세계관 이름) — 휴지통 목록이 "무엇을 물리는가"를 말한다. */
+    val sourceName: String? = null,
+    val refs: EntityRefs? = null
+)

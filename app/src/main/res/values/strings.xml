@@ -62,8 +62,33 @@
     <string name="character_detail">캐릭터 상세</string>
     <string name="related_events">관련 사건</string>
     <string name="field_manage">필드 관리</string>
-    <string name="import_fields_from_other">다른 세계관에서 필드 가져오기</string>
-    <string name="import_no_other_universes">가져올 수 있는 다른 세계관이 없습니다</string>
+    <string name="import_fields_from_other">프리셋·다른 세계관에서 필드 합치기</string>
+
+    <!-- 프리셋 병합 (B-89) — 고른 곳의 필드를 **이미 있는** 세계관에 더한다.
+         새 필드는 그냥 들어오고, 이미 있는 필드는 기본이 '건드리지 않음'이며 고른 것만 덮는다.
+         덮은 것은 휴지통에 편집 직전 백업이 남아 되돌릴 수 있다. -->
+    <string name="merge_title">필드 합치기</string>
+    <string name="merge_purpose">고른 곳의 필드를 이 세계관에 더합니다. 이미 있는 필드는 체크해야만 덮어쓰며, 덮어쓴 것은 휴지통에서 되돌릴 수 있습니다.</string>
+    <string name="merge_source_entry">%1$s (필드 %2$d개)</string>
+    <string name="merge_summary">새로 들어올 필드 %1$d개 · 이미 있는 필드 %2$d개</string>
+    <string name="merge_group_header">%1$s %2$d개</string>
+    <string name="merge_item_label">[%1$s] %2$s (%3$s)</string>
+    <string name="merge_item_identical">\n이미 있음 · 내용이 같아 덮어쓸 것이 없습니다</string>
+    <string name="merge_item_overwrite">\n이미 있음 · 덮어쓰면 바뀝니다: %1$s</string>
+    <string name="merge_change_name">이름</string>
+    <string name="merge_change_type">타입</string>
+    <string name="merge_change_config">설정</string>
+    <string name="merge_change_group">묶음</string>
+    <string name="merge_change_required">필수 표식</string>
+    <string name="merge_change_separator">, </string>
+    <string name="merge_apply">합치기</string>
+    <string name="merge_none_selected">더할 필드를 하나 이상 고르십시오</string>
+    <string name="merge_no_sources">합칠 수 있는 필드가 없습니다. 다른 세계관이나 프리셋에 필드가 있으면 여기에 나타납니다.</string>
+    <string name="merge_result_added">%1$s %2$d개 추가</string>
+    <string name="merge_result_overwritten">%1$s %2$d개 덮어씀</string>
+    <string name="merge_result_none">반영된 필드가 없습니다</string>
+    <string name="merge_result_revert_hint">덮어쓰기 직전 상태는 휴지통에 백업했습니다. 되돌리려면 휴지통에서 복원하십시오.</string>
+    <string name="merge_failed">필드를 합치지 못했습니다</string>
     <string name="field_source_recommended">추천 (기본 제공)</string>
     <string name="help_event_field_title">사건 필드</string>
     <string name="help_event_field_body">사건에 직접 만들어 붙이는 항목입니다. 캐릭터에 성별·나이 칸을 두는 것과 같은 방식이며, 무엇을 둘지는 작품마다 다르므로 미리 정해 두지 않았습니다.\n\n<b>어디에 나타나는가</b>\n만들면 세 곳에 함께 나타납니다. 사건을 적는 편집 폼, 연표의 사건 카드, 그리고 통계의 교차분석입니다. 값을 쌓으면 \u0027절정에 몰린 사건이 몇 건인가\u0027 같은 것을 볼 수 있습니다.\n\n<b>무엇을 만들면 되는가</b>\n처음이라면 \u0027추천에서 고르기\u0027로 시작하십시오. 회차·장소·시점 인물처럼 자주 쓰는 항목이 설명과 함께 준비돼 있고, 골라서 넣은 뒤 이름도 선택지도 자유롭게 고칠 수 있습니다. 직접 만들려면 \u0027사건 필드 추가\u0027를 누르십시오.\n\n<b>작품을 먼저 고르십시오</b>\n사건 필드는 세계관에 속하므로, 작품을 고르기 전에는 어느 세계관에 만들지 알 수 없어 이 항목들이 보이지 않습니다. 작품을 고르면 나타납니다.</string>
@@ -73,10 +98,7 @@
     <string name="event_field_pick_added">사건 필드 %1$d개를 추가했습니다</string>
     <string name="event_field_pick_duplicate_suffix">(이미 있음)</string>
     <string name="import_no_event_field_sources">가져올 사건 필드가 없습니다. 다른 세계관이나 프리셋에 사건 필드가 있으면 여기에 나타납니다.</string>
-    <string name="import_select_universe">가져올 세계관 선택</string>
     <string name="import_select_fields">%s에서 가져올 필드 선택</string>
-    <string name="import_action">가져오기</string>
-    <string name="import_success">%d개 필드를 가져왔습니다</string>
     <string name="add_field">필드 추가</string>
     <string name="edit_field">필드 편집</string>
 
@@ -428,6 +450,7 @@
     <string name="trash_type_event">사건</string>
     <string name="trash_type_state_change">상태변화</string>
     <string name="trash_type_grade_system">등급 체계</string>
+    <string name="trash_type_field_definition">필드 정의(덮어쓰기 직전)</string>
 
     <!-- 삭제 작업(그룹) — 한 번의 삭제가 만든 스냅샷 묶음 (B-1/B-14) -->
     <string name="trash_operation_title">%1$s \'%2$s\' 삭제</string>
@@ -468,6 +491,7 @@
     <string name="trash_skip_change_events">- 관계 변화 %1$d개의 사건 연결 (사건을 찾을 수 없음)</string>
     <string name="trash_skip_universe">- 소속 세계관을 찾을 수 없어 미배정으로 복원됩니다</string>
     <string name="trash_skip_field_definitions">- 필드 정의 %1$d개 (같은 키의 정의가 이미 있어 건너뜀)</string>
+    <string name="trash_skip_revert_targets">- 필드 정의 %1$d개 (그 사이 삭제되어 되돌릴 자리가 없음)</string>
     <string name="trash_skip_grade_systems">- 등급 체계 %1$d개 (손상되었거나 이름이 겹쳐 건너뜀)</string>
     <string name="trash_skip_grade_system_links">- 등급 체계 참조 %1$d개 (필드가 없거나 그 사이 표가 바뀌어 잇지 않음)</string>
     <string name="trash_skip_field_value_entries">- 필드 데이터(값 라이브러리) 항목 %1$d개</string>
@@ -490,6 +514,7 @@
     <string name="trash_revert_scope_field_values">· 필드값 전체</string>
     <string name="trash_revert_scope_memberships">· 세력 소속(빠진 것만 보충)</string>
     <string name="trash_revert_scope_state_changes">· 상태변화 이력(빠진 것만 보충)</string>
+    <string name="trash_revert_scope_field_definitions">· 필드 정의(이름·타입·설정·묶음·필수). 입력해 둔 값은 그대로 남습니다</string>
     <string name="trash_reverted">\'%1$s\' 되돌리기 완료 — 편집 직전 상태로 복구했습니다</string>
     <string name="trash_restore_blocked_exists">같은 이력이 이미 있어 복원하지 않았습니다. 그 사이 사용자가 다시 만든 것으로 보이며, 덮어쓰면 지금 값을 잃게 됩니다.\n휴지통 항목은 그대로 남습니다 — 지금 값과 비교한 뒤 필요하면 기존 이력을 지우고 다시 복원하세요.</string>
     <string name="trash_skip_name_bank">- 이름 은행 사용 표시 %1$d개 (항목이 삭제됐거나 다른 캐릭터가 사용 중)</string>
@@ -536,7 +561,6 @@
     <string name="novel_field_create_failed">작품 필드를 추가하지 못했습니다</string>
     <string name="novel_field_key_duplicate">필드 키 \'%1$s\'이(가) 이미 있습니다. 다른 키로 다시 만들어 주세요.</string>
     <string name="novel_field_needs_universe">세계관에 속한 작품만 작품 필드를 가질 수 있습니다. 이 작품을 세계관에 넣으면 여기에 필드가 나타납니다.</string>
-    <string name="import_no_novel_field_sources">가져올 작품 필드가 없습니다. 다른 세계관이나 프리셋에 작품 필드가 있으면 여기에 나타납니다.</string>
     <string name="novel_title_required">작품 제목을 입력하세요</string>
     <!-- 온보딩/기능 힌트 (B-8) -->
     <string name="onboarding_welcome_title">시작하기</string>

@@ -187,6 +187,9 @@ class TrashFragment : Fragment() {
         if (RestoreModes.SCOPE_STATE_CHANGES in scope) {
             lines.add(getString(R.string.trash_revert_scope_state_changes))
         }
+        if (RestoreModes.SCOPE_FIELD_DEFINITIONS in scope) {
+            lines.add(getString(R.string.trash_revert_scope_field_definitions))
+        }
         return lines.joinToString("\n")
     }
 
@@ -211,6 +214,9 @@ class TrashFragment : Fragment() {
         }
         if (losses.fieldDefinitions > 0) {
             details.add(getString(R.string.trash_skip_field_definitions, losses.fieldDefinitions))
+        }
+        if (losses.revertTargetsMissing > 0) {
+            details.add(getString(R.string.trash_skip_revert_targets, losses.revertTargetsMissing))
         }
         if (losses.gradeSystems > 0) {
             details.add(getString(R.string.trash_skip_grade_systems, losses.gradeSystems))
@@ -618,6 +624,7 @@ class TrashFragment : Fragment() {
             TrashSnapshot.TYPE_EVENT -> context.getString(R.string.trash_type_event)
             TrashSnapshot.TYPE_STATE_CHANGE -> context.getString(R.string.trash_type_state_change)
             TrashSnapshot.TYPE_GRADE_SYSTEM -> context.getString(R.string.trash_type_grade_system)
+            TrashSnapshot.TYPE_FIELD_DEFINITION -> context.getString(R.string.trash_type_field_definition)
             else -> entityType
         }
 

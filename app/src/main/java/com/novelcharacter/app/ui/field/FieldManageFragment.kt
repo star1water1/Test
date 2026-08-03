@@ -7,11 +7,11 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
+import android.widget.CheckBox
 import android.widget.LinearLayout
-import android.widget.ListView
 import android.widget.Spinner
+import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
@@ -25,7 +25,11 @@ import com.novelcharacter.app.data.model.FieldAiPolicy
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.databinding.FragmentFieldManageBinding
 import com.novelcharacter.app.ui.adapter.FieldDefinitionAdapter
+import com.novelcharacter.app.util.OpResult
+import com.novelcharacter.app.util.PresetMerge
+import com.novelcharacter.app.util.cappedScrollView
 import com.novelcharacter.app.util.notifyResult
+import com.novelcharacter.app.util.setValidatedPositiveButton
 import kotlinx.coroutines.launch
 
 class FieldManageFragment : Fragment() {
@@ -298,109 +302,253 @@ class FieldManageFragment : Fragment() {
         }
     }
 
-    /** 다른 세계관 + 프리셋에서 필드 가져오기 (중복 자동 표시) */
+    /**
+     * **프리셋·다른 세계관에서 필드 합치기** (B-89) — 고르면 바로 심지 않고 미리보기를 연다.
+     *
+     * 종전에는 목록에 `[중복]`만 붙여 두고 그것을 체크해도 **조용히 걸렀다**. 화면은
+     * "N개 가져왔습니다"라고 말했는데 그 N은 고른 수였고 실제로 심긴 수는 달랐다.
+     * 이제 처분이 셋이다 — 새 필드는 들어오고, 이미 있는 필드는 기본으로 손대지 않으며,
+     * 원하는 것만 덮어쓰기로 올린다([PresetMerge]).
+     *
+     * **종류를 가리지 않는다**(③ 사용자 확정) — 프리셋이 담은 캐릭터·사건·작품 필드가 함께
+     * 오고, 미리보기가 종류별로 묶어 보여 준다. 관리 중인 탭에 갇혀 있으면 프리셋이 담은
+     * 사건 필드는 그 탭으로 옮겨 다시 열기 전에는 존재조차 알 수 없다(원칙 04).
+     */
     private fun showImportFieldsDialog() {
         viewLifecycleOwner.lifecycleScope.launch {
-            // 관리 중인 종류를 열 때 한 번 확정한다 — 소스·중복·삽입이 도중에 갈리지 않게.
-            val entityType = viewModel.currentEntityType()
-            val allSources = viewModel.getFieldsFromAllSources(universeId, entityType)
+            val allSources = viewModel.getMergeSources(universeId)
             if (allSources.isEmpty()) {
-                // 사건·작품 탭에서 "다른 세계관이 없습니다"는 거짓이 된다 — 세계관은 있고
-                // 그 종류의 필드가 없는 것이므로 사유를 갈라 알린다(R-29).
-                val message = when (entityType) {
-                    FieldDefinition.ENTITY_EVENT -> R.string.import_no_event_field_sources
-                    FieldDefinition.ENTITY_NOVEL -> R.string.import_no_novel_field_sources
-                    else -> R.string.import_no_other_universes
-                }
-                Toast.makeText(requireContext(), message, Toast.LENGTH_LONG).show()
+                Toast.makeText(requireContext(), R.string.merge_no_sources, Toast.LENGTH_LONG).show()
                 return@launch
             }
-
-            // 현재 세계관의 기존 필드 키 (중복 확인용) — 같은 종류만
-            val currentFieldKeys = viewModel.getCurrentFieldKeys(universeId, entityType)
 
             val ctx = requireContext()
             val sourceNames = allSources.keys.toList()
             val density = resources.displayMetrics.density
+            fun dp(value: Int) = (value * density).toInt()
 
-            var currentFields = allSources[sourceNames[0]] ?: emptyList()
-
-            // 중복 필드 표시 + 기본 체크 상태 결정
-            fun buildFieldLabels(fields: List<FieldDefinition>): Array<String> {
-                return fields.map { f ->
-                    val isDuplicate = f.key in currentFieldKeys
-                    val prefix = if (isDuplicate) "[중복] " else ""
-                    "$prefix[${f.groupName}] ${f.name} (${f.type})"
-                }.toTypedArray()
-            }
-
-            // 컨테이너: Spinner + ListView를 단일 다이얼로그에 배치
             val container = LinearLayout(ctx).apply {
                 orientation = LinearLayout.VERTICAL
-                setPadding((16 * density).toInt(), (8 * density).toInt(), (16 * density).toInt(), 0)
+                setPadding(dp(16), dp(8), dp(16), 0)
             }
 
             val sourceSpinner = Spinner(ctx).apply {
                 adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_item,
-                    sourceNames.map { "$it (${allSources[it]?.size ?: 0}개 필드)" }
+                    sourceNames.map { getString(R.string.merge_source_entry, it, allSources[it]?.size ?: 0) }
                 ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
             }
             container.addView(sourceSpinner)
 
-            val fieldListView = ListView(ctx).apply {
-                choiceMode = ListView.CHOICE_MODE_MULTIPLE
-                layoutParams = LinearLayout.LayoutParams(
+            // R-25 목적문 — 이 창이 무엇을 어디에 어떻게 하는가를 한 줄로 말한다.
+            container.addView(TextView(ctx).apply {
+                setText(R.string.merge_purpose)
+                textSize = 12f
+                setPadding(0, dp(6), 0, dp(2))
+            })
+
+            val summaryView = TextView(ctx).apply {
+                textSize = 13f
+                setPadding(0, dp(2), 0, dp(6))
+            }
+            container.addView(summaryView)
+
+            // R-31 — 항목 수가 소스에 비례하므로 상한 없이는 긴 프리셋이 잘린 채 끝까지
+            // 스크롤되지 않는다. 짧으면 아무 일도 하지 않는다.
+            val listHolder = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+            container.addView(
+                cappedScrollView(ctx).apply { addView(listHolder) },
+                LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
-                    (200 * density).toInt()
-                ).apply {
-                    topMargin = (8 * density).toInt()
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+            )
+
+            // 화면이 쥐는 상태는 이 둘뿐이다 — 지금 보고 있는 계획과, 켜 둔 항목.
+            var plan = PresetMerge.Plan(emptyList())
+            val selected = linkedSetOf<String>()
+
+            fun renderSummary() {
+                summaryView.text = getString(
+                    R.string.merge_summary, plan.additions.size, plan.duplicates.size
+                )
+            }
+
+            fun changeLabel(changes: Set<PresetMerge.Change>): String = changes.joinToString(
+                getString(R.string.merge_change_separator)
+            ) {
+                getString(
+                    when (it) {
+                        PresetMerge.Change.NAME -> R.string.merge_change_name
+                        PresetMerge.Change.TYPE -> R.string.merge_change_type
+                        PresetMerge.Change.CONFIG -> R.string.merge_change_config
+                        PresetMerge.Change.GROUP -> R.string.merge_change_group
+                        PresetMerge.Change.REQUIRED -> R.string.merge_change_required
+                    }
+                )
+            }
+
+            fun renderList() {
+                listHolder.removeAllViews()
+                for ((entityType, items) in plan.byEntityType()) {
+                    val boxes = ArrayList<CheckBox>(items.size)
+
+                    // 종류 머리글은 그 종류를 통째로 켜고 끄는 자리이기도 하다 — 캐릭터 필드
+                    // 스물몇 개를 하나씩 끄게 두면 "사건 필드만 받고 싶다"가 스무 번의 조작이 된다.
+                    val header = CheckBox(ctx).apply {
+                        text = getString(R.string.merge_group_header, entityTypeLabel(entityType), items.size)
+                        setTypeface(null, android.graphics.Typeface.BOLD)
+                        setPadding(0, dp(10), 0, dp(2))
+                    }
+                    listHolder.addView(header)
+
+                    // 머리글 상태를 아이들에 맞춘다. **프로그램 대입은 아래 setOnClickListener를
+                    // 부르지 않으므로**(클릭 리스너는 사용자 조작에만 반응한다) 재귀가 없다.
+                    fun syncHeader() {
+                        val togglable = boxes.filter { it.isEnabled }
+                        // 전부 '같은 내용'이라 고를 것이 없는 묶음은 머리글도 누를 수 없다 —
+                        // 눌러도 아무 일이 없는 조작을 남겨 두면 고장으로 읽힌다.
+                        header.isEnabled = togglable.isNotEmpty()
+                        header.isChecked = togglable.isNotEmpty() && togglable.all { it.isChecked }
+                    }
+
+                    for (item in items) {
+                        val box = CheckBox(ctx).apply {
+                            val label = getString(
+                                R.string.merge_item_label,
+                                item.source.groupName, item.source.name, item.source.type
+                            )
+                            text = when {
+                                !item.isDuplicate -> label
+                                item.isIdentical ->
+                                    label + getString(R.string.merge_item_identical)
+                                else -> label + getString(
+                                    R.string.merge_item_overwrite, changeLabel(item.changes)
+                                )
+                            }
+                            // 같은 정의는 덮어써도 결과가 같다 — 아무 일도 하지 않는 조작을
+                            // 선택지로 주지 않는다. 지우지는 않는다(있다는 사실은 알려야 한다).
+                            // 딤만으로는 사유를 말하지 못하므로 라벨이 사유를 함께 든다.
+                            isEnabled = !item.isIdentical
+                            isChecked = item.itemKey in selected
+                            setPadding(dp(8), dp(2), 0, dp(2))
+                            setOnCheckedChangeListener { _, checked ->
+                                if (checked) selected.add(item.itemKey) else selected.remove(item.itemKey)
+                                // 하나를 끄면 머리글도 함께 풀린다 — 아니면 머리글이 "전부 켰다"고
+                                // 거짓을 말한다.
+                                syncHeader()
+                            }
+                        }
+                        boxes.add(box)
+                        listHolder.addView(box)
+                    }
+
+                    syncHeader()
+                    header.setOnClickListener {
+                        // CheckBox의 클릭 리스너는 상태가 **바뀐 뒤** 불린다 — 지금 값이 곧 목표다.
+                        val on = header.isChecked
+                        boxes.filter { it.isEnabled }.forEach { it.isChecked = on }
+                    }
                 }
             }
-            container.addView(fieldListView)
 
-            // 필드 목록 갱신 함수 (중복 아닌 것만 기본 체크)
-            fun updateFieldList(fields: List<FieldDefinition>) {
-                currentFields = fields
-                val labels = buildFieldLabels(fields)
-                fieldListView.adapter = ArrayAdapter(ctx,
-                    android.R.layout.simple_list_item_multiple_choice, labels)
-                for (i in fields.indices) {
-                    val isDuplicate = fields[i].key in currentFieldKeys
-                    fieldListView.setItemChecked(i, !isDuplicate)
-                }
+            /**
+             * 마지막으로 요청된 소스. 스피너를 빠르게 넘기면 코루틴 여럿이 동시에 뜨고,
+             * **먼저 요청한 것이 나중에 끝나면** 화면과 `plan`이 다른 소스를 가리킨다 —
+             * 그러면 미리보기에 보이는 것과 실제로 심기는 것이 갈린다.
+             */
+            var pendingSource: String? = null
+
+            suspend fun loadSource(name: String) {
+                pendingSource = name
+                val built = viewModel.buildMergePlan(universeId, allSources[name] ?: emptyList())
+                if (pendingSource != name) return
+                plan = built
+                selected.clear()
+                selected.addAll(plan.defaultSelection())
+                renderSummary()
+                renderList()
             }
 
             val dialog = MaterialAlertDialogBuilder(ctx)
-                .setTitle(R.string.import_select_universe)
+                .setTitle(R.string.merge_title)
                 .setView(container)
-                .setPositiveButton(R.string.import_action) { _, _ ->
-                    val selected = currentFields.filterIndexed { i, _ ->
-                        fieldListView.isItemChecked(i)
-                    }
-                    if (selected.isNotEmpty()) {
-                        viewModel.importFields(universeId, selected, entityType)
-                        Toast.makeText(ctx,
-                            getString(R.string.import_success, selected.size),
-                            Toast.LENGTH_SHORT).show()
-                    }
-                }
+                // R-27 — 아무것도 안 고른 채 누르면 알리되 창은 유지한다. 창이 닫히면
+                // 고르던 것이 함께 사라진다.
+                .setPositiveButton(R.string.merge_apply, null)
                 .setNegativeButton(R.string.cancel, null)
                 .create()
 
-            // 소스 변경 시 필드 목록 갱신
             sourceSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
                 override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                    updateFieldList(allSources[sourceNames[position]] ?: emptyList())
+                    viewLifecycleOwner.lifecycleScope.launch { loadSource(sourceNames[position]) }
                 }
                 override fun onNothingSelected(parent: AdapterView<*>?) {}
             }
 
             dialog.show()
-
-            // 다이얼로그 표시 후 초기 목록 설정
-            updateFieldList(currentFields)
+            dialog.setValidatedPositiveButton {
+                if (selected.isEmpty()) {
+                    Toast.makeText(ctx, R.string.merge_none_selected, Toast.LENGTH_SHORT).show()
+                    false
+                } else {
+                    val sourceName = sourceNames.getOrNull(sourceSpinner.selectedItemPosition).orEmpty()
+                    applyMerge(plan, selected.toSet(), sourceName)
+                    true
+                }
+            }
+            // 첫 소스는 스피너가 붙으면서 리스너를 부르지만, 그것은 다음 레이아웃 패스의 일이라
+            // 창이 잠깐 빈 채로 뜬다. 여기서 한 번 부르고, 겹쳐도 위 [pendingSource]가 뒤엣것만
+            // 반영하므로 두 번 그려지지 않는다.
+            loadSource(sourceNames[0])
         }
     }
+
+    /**
+     * 고른 처분을 반영하고 **반영된 수**로 알린다.
+     *
+     * 고른 수가 아니라 반영된 수인 것이 이 함수의 요점이다 — 종전 경로는 고른 수를 토스트로,
+     * 실제로 심긴 수를 결과 채널로 말해 같은 조작에 숫자가 둘이었다(개발 의도 2번 '변수 제어').
+     * 다른 종류에 심긴 것은 지금 보고 있는 목록에 나타나지 않으므로 **종류를 함께 말한다** —
+     * 말하지 않으면 사용자가 보는 화면에서는 아무 일도 일어나지 않은 것과 같다(R-29).
+     */
+    private fun applyMerge(plan: PresetMerge.Plan, selected: Set<String>, sourceName: String) {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val result = try {
+                val resolution = viewModel.applyMergePlan(universeId, plan, selected, sourceName)
+                val parts = mutableListOf<String>()
+                for ((entityType, count) in resolution.insertsByEntityType()) {
+                    parts.add(getString(R.string.merge_result_added, entityTypeLabel(entityType), count))
+                }
+                for ((entityType, count) in resolution.updatesByEntityType()) {
+                    parts.add(getString(R.string.merge_result_overwritten, entityTypeLabel(entityType), count))
+                }
+                if (parts.isEmpty()) {
+                    OpResult.success(OpResult.CAT_FIELD, getString(R.string.merge_result_none))
+                } else {
+                    OpResult.success(
+                        OpResult.CAT_FIELD,
+                        parts.joinToString(getString(R.string.merge_change_separator)),
+                        // 되돌릴 수 있다는 사실은 덮어쓴 때만 참이다(④ — 스냅샷은 덮어쓰기를
+                        // 고른 항목에만 남는다). 늘 붙이면 건너뛰기만 한 병합에서 거짓이 된다.
+                        if (resolution.updates.isEmpty()) null
+                        else getString(R.string.merge_result_revert_hint)
+                    )
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("FieldManageFragment", "Failed to merge fields", e)
+                OpResult.failure(OpResult.CAT_FIELD, getString(R.string.merge_failed), e.message)
+            }
+            if (isAdded) notifyResult(result)
+        }
+    }
+
+    private fun entityTypeLabel(entityType: String): String = getString(
+        when (entityType) {
+            FieldDefinition.ENTITY_EVENT -> R.string.field_target_event
+            FieldDefinition.ENTITY_NOVEL -> R.string.field_target_novel
+            else -> R.string.field_target_character
+        }
+    )
 
     override fun onDestroyView() {
         adapter.itemTouchHelper = null

@@ -79,6 +79,15 @@ data class TrashSnapshot(
         const val TYPE_EVENT = "event"
 
         /**
+         * 필드 정의 **덮어쓰기 직전 백업** (B-89). 언제나 [KIND_EDIT_BACKUP]이다 —
+         * 원본이 살아 있으므로 복원은 부활이 아니라 되돌리기다.
+         *
+         * 세계관 삭제로 함께 사라지는 필드 정의는 [TYPE_UNIVERSE] 스냅샷이 담는다
+         * (스냅샷은 겹치지 않고 이어붙는다 — R-8). 이 타입은 **정의를 덮은 경로 전용이다.**
+         */
+        const val TYPE_FIELD_DEFINITION = "field_definition"
+
+        /**
          * 상태변화 이력 한 줄. 캐릭터에 매달리므로 **캐릭터보다 나중에** 복원된다.
          * (캐릭터 삭제·출생사망 사건 삭제로 함께 사라지는 이력은 각각 캐릭터·사건 스냅샷이
          * 담는다 — 이 타입은 이력만 개별로 지운 경로 전용이다.)
@@ -129,18 +138,22 @@ data class TrashSnapshot(
          */
         fun restorePriority(entityType: String): Int = when (entityType) {
             TYPE_UNIVERSE -> 0
+            // 필드 정의는 세계관이 있어야 붙고, 그 정의를 가리키는 값보다 먼저 있어야 한다.
+            // (덮어쓰기 되돌리기 전용이라 실제로는 다른 타입과 한 작업에 섞이지 않지만,
+            //  순서는 타입이 어디에 속하는지의 선언이므로 제자리에 둔다.)
+            TYPE_FIELD_DEFINITION -> 1
             // 세계관 본체가 필드 정의를 만든 **뒤에** 그 정의를 가리키는 값들이 붙는다.
-            TYPE_UNIVERSE_DATA -> 1
+            TYPE_UNIVERSE_DATA -> 2
             // 등급 체계는 세계관만 있으면 붙는다. 참조 필드 재연결은 자연키 조회라 순서 무관이나,
             // 다른 하위 엔티티보다 먼저 두어 "정의 계층 → 데이터 계층" 순서를 유지한다.
-            TYPE_GRADE_SYSTEM -> 2
-            TYPE_NOVEL -> 3
-            TYPE_FACTION -> 4
-            TYPE_EVENT -> 5
-            TYPE_CHARACTER -> 6
+            TYPE_GRADE_SYSTEM -> 3
+            TYPE_NOVEL -> 4
+            TYPE_FACTION -> 5
+            TYPE_EVENT -> 6
+            TYPE_CHARACTER -> 7
             // 상태변화는 주인 캐릭터가 이미 살아 있어야 붙을 자리가 있다.
-            TYPE_STATE_CHANGE -> 7
-            else -> 8
+            TYPE_STATE_CHANGE -> 8
+            else -> 9
         }
     }
 }
