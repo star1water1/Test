@@ -161,6 +161,9 @@ $MAIN/ai/AiPromptPolicy.kt
 $MAIN/ai/ImageFolderTagSuggester.kt
 $MAIN/data/model/NarrativeMode.kt
 $MAIN/util/ImageFilterHelper.kt
+$MAIN/util/ImagePathMatch.kt
+$MAIN/util/CharacterRepresentativeImage.kt
+$MAIN/util/RepresentativeImageCell.kt
 $MAIN/util/LibraryPickerRow.kt
 $MAIN/util/ImageRecommendationHelper.kt
 $MAIN/util/ImageLinkResolver.kt
@@ -226,6 +229,10 @@ $TEST/util/PresetTemplatesRoundtripTest.kt
 $TEST/util/PresetMergeTest.kt
 $TEST/ai/AiJsonExtractorTest.kt
 $TEST/util/FieldFilterHelperTest.kt
+$TEST/util/ImagePathMatchTest.kt
+$TEST/util/CharacterRepresentativeImageTest.kt
+$TEST/util/RepresentativeImageCellTest.kt
+$TEST/excel/CharacterSpecColumnOrderTest.kt
 $TEST/data/SnapshotRefResolverTest.kt
 $TEST/data/CharacterSnapshotPayloadTest.kt
 $TEST/data/RestoreModeTest.kt

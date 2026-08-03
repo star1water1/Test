@@ -62,7 +62,7 @@ data class SheetSpec(
  * 커스텀 필드명이 이 목록과 겹치면 열 정체가 흔들리므로 내보내기가 필드키를 병기한다.
  */
 val CHARACTER_FIXED_HEADERS = setOf(
-    "이름", "성", "이름(First)", "이명", "이미지경로", "작품", "메모", "태그",
+    "이름", "성", "이름(First)", "이명", "이미지경로", "대표이미지", "작품", "메모", "태그",
     "코드", "작품코드", "정렬순서", "고정", "생성일"
 )
 
@@ -467,6 +467,9 @@ fun characterSpec(fields: List<FieldDefinition>, novelTitles: List<String>) = Sh
             add(ColumnSpec(headerName, required = field.isRequired, dropdownOptions = options))
         }
         add(ColumnSpec("이미지경로", readOnly = true, width = 4000))
+        // 대표 이미지(B-103 D8). `이미지경로`와 달리 **읽기 전용이 아니다** — 사람이 읽고
+        // 고칠 수 있어야 값어치가 있고, 그래서 내부 경로 원문이 아니라 파일명을 싣는다.
+        add(ColumnSpec("대표이미지", width = 5000))
         add(ColumnSpec("작품", dropdownOptions = novelTitles.takeIf { it.isNotEmpty() }, width = 6000))
         add(ColumnSpec("메모", width = 10000))
         add(ColumnSpec("태그", width = 8000))

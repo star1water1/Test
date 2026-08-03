@@ -51,6 +51,20 @@ import kotlinx.coroutines.withContext
 
 class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.EventEditDialogFragment.Host {
 
+    /**
+     * 이 화면 진입의 랜덤 시드(B-103 D3) — 대표가 없는 캐릭터의 그림을 고른다.
+     * 같은 시드가 유지되는 동안에는 재바인드에도 그림이 튀지 않는다.
+     */
+    private val imageSeed: Long = com.novelcharacter.app.util.CharacterRepresentativeImage.newSeed()
+
+    /**
+     * ☆ 상태를 현재 장에 맞추는 콜백(B-103 D7). 재등록 전에 반드시 해제한다 —
+     * `setupImages`는 캐릭터가 갱신될 때마다 다시 불리므로, 쌓이면 한 번 넘길 때
+     * 같은 일이 여러 번 돈다.
+     */
+    private var representativePageCallback: androidx.viewpager2.widget.ViewPager2.OnPageChangeCallback =
+        object : androidx.viewpager2.widget.ViewPager2.OnPageChangeCallback() {}
+
     private var _binding: FragmentCharacterDetailBinding? = null
     private val binding get() = _binding!!
     private val viewModel: CharacterViewModel by viewModels()
@@ -105,6 +119,13 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
                 R.id.action_growth_chart -> { navigateToGrowthChart(); true }
                 R.id.action_share_card -> { shareCharacterCard(); true }
                 R.id.action_share_pdf -> { sharePdf(); true }
+                R.id.action_representative_image_help -> {
+                    com.novelcharacter.app.ui.common.HelpDialog.showHelp(
+                        requireContext(),
+                        com.novelcharacter.app.ui.common.HelpDialog.Topic.REPRESENTATIVE_IMAGE
+                    )
+                    true
+                }
                 else -> false
             }
         }
@@ -583,7 +604,7 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
             }
         }
 
-        setupImages(character.imagePaths)
+        setupImages(character)
     }
 
     /**
@@ -775,18 +796,21 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
 
     // ===== Images =====
 
-    private fun setupImages(imagePathsJson: String) {
+    private fun setupImages(character: com.novelcharacter.app.data.model.Character) {
+        // 캐릭터를 통째로 받는다 — 시작 위치를 대표로 잡으려면 포인터와 id가 함께 필요하다(B-103 D4).
         val imagePaths: List<String> = try {
-            GSON.fromJson(imagePathsJson, IMAGE_PATHS_TYPE) ?: emptyList()
+            GSON.fromJson(character.imagePaths, IMAGE_PATHS_TYPE) ?: emptyList()
         } catch (e: Exception) {
             emptyList()
         }
 
         if (imagePaths.isEmpty()) {
-            binding.imageViewPager.visibility = View.GONE
+            binding.imageCarouselContainer.visibility = View.GONE
+            binding.representativeMissingNotice.visibility = View.GONE
             return
         }
 
+        binding.imageCarouselContainer.visibility = View.VISIBLE
         binding.imageViewPager.visibility = View.VISIBLE
         binding.imageViewPager.adapter = object : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
             override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
@@ -808,7 +832,7 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
                 val path = imagePaths[position]
                 imageView.setOnClickListener {
                     val bundle = Bundle().apply {
-                        putString("imagePaths", imagePathsJson)
+                        putString("imagePaths", character.imagePaths)
                         putInt("startPosition", position)
                     }
                     findNavController().navigateSafe(R.id.characterDetailFragment, R.id.imageViewerFragment, bundle)
@@ -834,11 +858,80 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
             override fun getItemCount() = imagePaths.size
         }
 
-        // 이미지가 2장 이상이면 랜덤 위치에서 시작
+        val pick = com.novelcharacter.app.util.CharacterRepresentativeImage.pickFrom(
+            imagePaths, character.representativeImagePath, imageSeed, character.id
+        )
+
+        // 시작 위치: **대표가 있으면 그 장**, 없으면 시드 랜덤 (B-103 D4).
+        // 종전에는 무조건 랜덤이라 대표를 지정해도 상세만 다른 장에서 열렸다.
         if (imagePaths.size > 1) {
-            binding.imageViewPager.setCurrentItem(
-                kotlin.random.Random.nextInt(imagePaths.size), false
+            binding.imageViewPager.setCurrentItem(pick.index.coerceAtLeast(0), false)
+        }
+
+        setupRepresentativeStar(character, imagePaths, pick)
+    }
+
+    /**
+     * 대표 지정 ☆ (B-103 D7) + 사후 고지 (D6ⓑ).
+     *
+     * 탭 = 지금 보고 있는 그 장을 대표로, 다시 탭 = 해제. **1탭이다**(원칙 04).
+     * 이미지 탭(=뷰어 열기)과 스와이프는 그대로 둔다 — 기존 제스처를 뺏지 않는다.
+     */
+    private fun setupRepresentativeStar(
+        character: com.novelcharacter.app.data.model.Character,
+        imagePaths: List<String>,
+        pick: com.novelcharacter.app.util.CharacterRepresentativeImage.Pick
+    ) {
+        // 지정한 대표를 목록에서 못 찾았다 — 앱 밖 삭제·폴더 왕복처럼 사전 고지가 불가능한
+        // 자리다. **포인터를 조용히 지우지 않는다**(D6ⓑ) — 폴더 왕복은 파일을 되돌려 놓을 수
+        // 있어서, 잠깐 안 보인다고 지우면 돌아왔을 때 지정이 사라져 있다.
+        binding.representativeMissingNotice.visibility =
+            if (pick.pinnedMissing) View.VISIBLE else View.GONE
+
+        fun currentPathIsRepresentative(): Boolean {
+            val position = binding.imageViewPager.currentItem
+            val path = imagePaths.getOrNull(position) ?: return false
+            return com.novelcharacter.app.util.ImagePathMatch.same(path, character.representativeImagePath)
+        }
+
+        fun renderStar() {
+            val pinned = currentPathIsRepresentative()
+            binding.btnRepresentativeImage.setImageResource(
+                if (pinned) R.drawable.ic_star else R.drawable.ic_star_outline
             )
+            binding.btnRepresentativeImage.contentDescription = getString(
+                if (pinned) R.string.representative_image_clear else R.string.representative_image_set
+            )
+        }
+
+        renderStar()
+
+        // 스와이프로 장을 넘기면 ☆도 그 장의 상태를 말해야 한다 — 아니면 지정 여부를
+        // 알려면 일일이 눌러 봐야 한다(원칙 04가 금지하는 상태다).
+        binding.imageViewPager.unregisterOnPageChangeCallback(representativePageCallback)
+        representativePageCallback =
+            object : androidx.viewpager2.widget.ViewPager2.OnPageChangeCallback() {
+                override fun onPageSelected(position: Int) = renderStar()
+            }
+        binding.imageViewPager.registerOnPageChangeCallback(representativePageCallback)
+
+        binding.btnRepresentativeImage.setOnClickListener {
+            val position = binding.imageViewPager.currentItem
+            val path = imagePaths.getOrNull(position) ?: return@setOnClickListener
+            val clearing = currentPathIsRepresentative()
+            // 저장은 이 자리에서 곧바로 한다(원칙 04 — 저장 버튼을 거치지 않는다).
+            // 상세는 편집 폼이 아니므로 취소 계약에 걸리지 않는다.
+            viewModel.updateCharacter(
+                character.copy(
+                    representativeImagePath = if (clearing) "" else path,
+                    updatedAt = System.currentTimeMillis()
+                )
+            )
+            Toast.makeText(
+                requireContext(),
+                if (clearing) R.string.representative_image_cleared else R.string.representative_image_set_done,
+                Toast.LENGTH_SHORT
+            ).show()
         }
     }
 
@@ -1052,8 +1145,12 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
 
                         val charBitmap = withContext(Dispatchers.IO) {
                             // 풀사이즈·무가드 디코드는 대용량 이미지에서 OOM 위험 → 공용 유틸로 다운샘플+경로가드.
-                            com.novelcharacter.app.util.CharacterImageLoader.firstImagePath(character.imagePaths)
-                                ?.let { com.novelcharacter.app.util.CharacterImageLoader.decodeThumbnail(it, getAppDir(), 1024) }
+                            // 카드에 박히는 그림도 대표를 따른다 (B-103 D4) — 종전에는 0번 고정이라
+                            // 대표를 지정해도 내보낸 카드만 다른 사람처럼 보였다.
+                            com.novelcharacter.app.util.CharacterRepresentativeImage.path(
+                                character.imagePaths, character.representativeImagePath,
+                                imageSeed, character.id
+                            )?.let { com.novelcharacter.app.util.CharacterImageLoader.decodeThumbnail(it, getAppDir(), 1024) }
                         }
 
                         val config = CharacterCardRenderer.CardConfig(theme = selectedTheme)

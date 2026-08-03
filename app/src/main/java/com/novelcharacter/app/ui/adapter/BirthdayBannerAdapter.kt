@@ -7,8 +7,6 @@ import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
-import com.google.gson.Gson
-import com.google.gson.reflect.TypeToken
 import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.BirthdayCharacterItem
 import com.novelcharacter.app.databinding.ItemBirthdayCharacterBinding
@@ -22,6 +20,17 @@ class BirthdayBannerAdapter(
     private val coroutineScope: CoroutineScope,
     private val onClick: (BirthdayCharacterItem) -> Unit
 ) : ListAdapter<BirthdayCharacterItem, BirthdayBannerAdapter.BirthdayViewHolder>(BirthdayDiffCallback()) {
+
+    /**
+     * 이 화면 진입의 랜덤 시드(B-103 D3). **사용자 요청 ①이 여기서 이뤄진다** —
+     * 배너는 종전에 언제나 `paths[0]`이었다. 대표를 지정한 캐릭터는 그 장이 나오고,
+     * 지정하지 않았으면 화면에 들어올 때마다 다른 장이 나온다.
+     *
+     * 재추첨 함수를 따로 두지 않는다 — 이 어댑터는 `setupBirthdaySection()`에서 **뷰 생성마다
+     * 새로 만들어지므로** 생성자의 시드가 곧 "화면 진입 1회"다(D3이 정의한 그 단위).
+     * 목록·상세와 **같은 주기**가 된다(사용자 확정 P-3).
+     */
+    private val imageSeed: Long = com.novelcharacter.app.util.CharacterRepresentativeImage.newSeed()
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): BirthdayViewHolder {
         val binding = ItemBirthdayCharacterBinding.inflate(
@@ -89,13 +98,13 @@ class BirthdayBannerAdapter(
 
         private fun loadCharacterImage(item: BirthdayCharacterItem) {
             binding.birthdayCharImage.setImageResource(R.drawable.ic_character_placeholder)
-            val paths: List<String> = try {
-                gson.fromJson(item.character.imagePaths, imagePathsType) ?: emptyList()
-            } catch (_: Exception) { emptyList() }
-
-            if (paths.isEmpty()) return
-
-            val path = paths[0]
+            // 대표가 있으면 그 장, 없으면 시드 랜덤 (B-103 D2·D4).
+            val path = com.novelcharacter.app.util.CharacterRepresentativeImage.path(
+                item.character.imagePaths,
+                item.character.representativeImagePath,
+                imageSeed,
+                item.character.id
+            ) ?: return
             val appDir = binding.root.context.filesDir
             loadJob = coroutineScope.launch {
                 // 공용 유틸 위임 — filesDir 경로 가드 + 총 픽셀 상한(파노라마 OOM 방지, P2-6).
@@ -117,8 +126,4 @@ class BirthdayBannerAdapter(
             oldItem == newItem
     }
 
-    companion object {
-        private val gson = Gson()
-        private val imagePathsType = object : TypeToken<List<String>>() {}.type
-    }
 }

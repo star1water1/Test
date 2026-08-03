@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    이미지 위에 얹는 버튼의 바탕(B-103 D7의 ☆).
+
+    `bg_image_count_badge`와 같은 반투명 검정을 쓰되 **원형**이다 — 배지는 글자가 들어가는
+    알약이고 이쪽은 아이콘 하나짜리 터치 대상이라, 같은 모서리 값을 쓰면 48dp 정사각형에서
+    모서리만 살짝 깎인 네모로 보인다. 밝은 이미지 위에서도 아이콘이 묻히지 않게 하는 것이
+    이 바탕의 목적이다.
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+    <solid android:color="#99000000" />
+</shape>

@@ -121,6 +121,8 @@ app/src/main/java/com/novelcharacter/app/
 | `GradeSystemRef` | 등급 체계 참조·재정의·실효 표의 config 표현 + 강등·재배선 규칙 (원본을 고치는 쓰기·전파는 `GradeSystemRepository` 경유 — R-30. 전파가 공허한 신설 삽입·복원·프룬 경로는 예외이며, 직접 호출 자리는 R-30 위반 후보로 점검한다) | — |
 | `SnapshotRefs` / `SnapshotRefResolver` | 휴지통 복원의 안정 식별자 | 복원이 남의 엔티티에 붙었다(R-1) |
 | `FolderNameToken` / `FolderRoundtripPlanner` / `FolderExportPlanner` / `FolderRoundtripLedger` | 이미지 폴더 왕복의 이름·계획·장부 | 개명 경로가 토큰을 깨 중복 편입(C-1) |
+| `CharacterRepresentativeImage` / `ImagePathMatch` | **어느 이미지가 이 캐릭터를 대표하는가**(사다리·시드 랜덤·쓰기 정합) / 경로 대조 | 같은 판정이 아홉 종류로 갈려 규칙이 넷이었다(B-103) |
+| `RepresentativeImageCell` | 엑셀 `대표이미지` 열의 쓰기·읽기 규약(해석 사다리 5단) | — |
 | `CharacterFieldValueOverflow` | 캐릭터 시트가 담지 못한 값의 판정 | — |
 | `CharacterFieldValueMerge` / `EventFieldValueMerge` / `NovelFieldValueMerge` | 부분 저장의 커버 집합 — 종류마다 하나씩, **규칙은 하나** | 사건 필드값이 무통보 폐기됐다(S-6) |
 | `EntityFieldHeaders` | 한 시트가 전 세계관의 커스텀 필드를 동적 열로 실을 때의 헤더 규칙(연표·작품 시트) | — (확-3에서 사건 전용 이름을 승격) |
@@ -142,6 +144,7 @@ app/src/main/java/com/novelcharacter/app/
 | `tools/check_resources.sh` | 리소스 중복·미정의 참조·XML 구문 | 통과 |
 | `tools/check_dialog_validation.sh` | 자동 닫힘 버튼 안의 조기 return(R-27 위반) | 0건 동결 — 새 위반 즉시 실패 |
 | `tools/check_prefs_keys.sh` | 같은 prefs 키를 두 곳이 다른 타입으로 쓰는가(R-28 위반) | 충돌 0 — 새 충돌 즉시 실패 |
+| `tools/check_image_pointer.sh` | 캐릭터 `imagePaths` 쓰기가 대표 포인터를 함께 고치는가(R-32 위반) | 0건 동결 — 새 위반 즉시 실패 |
 | `tools/differential_compile.sh` | 손댄 파일에 **새로 생긴** 컴파일 오류만 | 기준선 대조 |
 | `tools/verify_room_migration*.py` | 마이그레이션 하네스(마이그레이션마다 하나씩 는다 — 종 수는 `ls tools/verify_room_migration*.py`로 센다)를 **실제 SQLite로** 실행 | 각 스크립트 출력이 든다 |
 | `tools/verify_reset_coverage.py` | 엔티티 목록 ↔ `ResetPlan` ↔ `executeReset` 호출부 3자 대조 | 스크립트 출력이 든다(엔티티가 늘면 함께 는다) |
@@ -267,6 +270,7 @@ AI 정책(`FieldAiPolicy`).
 | R-28 | 두 화면이 같은 prefs 파일의 같은 키를 공유하지 않는다 — 타입이 갈리면 ClassCastException (`tools/check_prefs_keys.sh`) | 저장·UI |
 | R-29 | `entityType`으로 갈리는 기능은 조회·중복 판정·순서·쓰기가 **모두** 같은 종류를 본다 — DAO 기본값이 캐릭터라 잊으면 오류가 아니라 잘못된 정답이 나온다 | 필드·데이터 |
 | R-30 | 물질화된 파생값의 원본을 고치는 경로는 파생값 재작성과 한 트랜잭션이다 — 등급 체계의 실효 표가 그 사례 | 필드·데이터 |
+| R-32 | 목록을 가리키는 포인터는 그 목록을 고치는 **모든** 경로가 함께 고친다 — 빠뜨려도 오류가 나지 않고 포인터만 조용히 어긋난다. 판정은 `util.CharacterRepresentativeImage`, 쓰기는 `Character.withImagePaths` 하나다 (`tools/check_image_pointer.sh`) | 저장·데이터 |
 | R-31 | 다이얼로그 본문 스크롤에는 높이 상한이 있다 — 없으면 긴 내용이 잘린 채 끝까지 스크롤되지 않는다. 코드는 `util.cappedScrollView`, **XML 루트는 `ui.common.CappedScrollView`**(중첩 스크롤판 `CappedNestedScrollView`)이고 측정 규칙의 단일 소스는 `util.DialogScrollCap`이다 (`tools/check_dialog_scroll.sh` — 코드·XML 두 축) | UI |
 
 ---
@@ -284,7 +288,7 @@ AI 정책(`FieldAiPolicy`).
 | **미이행 기능 색출** — 로드맵(1~4장)은 **닫혔고 5장의 미검증 후보만 살아 있다** | `docs/superficial_feature_audit_2026-07.md` |
 | **실사용 데이터가 말한 것** | `docs/usage_reality_check_2026-07.md` (+ `_runbook`) |
 | **화면 문구** | `docs/text_style_guide_2026-07.md` |
-| **영역별 설계** | 엑셀 왕복 `excel_roundtrip_audit` · 엑셀 스트리밍 가져오기 `excel_streaming_import` · 이미지 폴더 왕복 `image_folder_roundtrip_design`(결정 근거 `image_external_management`, **확장 `image_folder_tag_ai`**) · AI `ai_integration`·`ai_control_and_ui_density` · 값 라이브러리 `field_value_library` · 필터·정렬 짝 `filter_sort_parity` · **체형(실루엣 재편) `body_visual_redesign`(설계 마무리 — 코드 구현 대기. 이어받는 세션은 `handover_body_reauthor_2026-08`부터)** · **백업·내보내기 동선 `backup_export_redesign`(설계 확정 — 체형 다음 슬라이스)** · **사건 필드 추천 `event_field_recommend_2026-08`(v1.1 — 설계·구현 완료. B-62·B-68 해소, 실기기 3-32)** · **대표 이미지 `representative_image_design_2026-08`(B-103 — 설계 확정, 구현 대기. 판정 없음)** · **뗀 이미지 관리 `detached_image_management_design_2026-08`(B-107 — 설계 확정, 구현 대기. 폴더 왕복 규약을 바꾸므로 `image_folder_roundtrip_design` 3장·`image_folder_tag_ai` 2-1과 상호 참조)** |
+| **영역별 설계** | 엑셀 왕복 `excel_roundtrip_audit` · 엑셀 스트리밍 가져오기 `excel_streaming_import` · 이미지 폴더 왕복 `image_folder_roundtrip_design`(결정 근거 `image_external_management`, **확장 `image_folder_tag_ai`**) · AI `ai_integration`·`ai_control_and_ui_density` · 값 라이브러리 `field_value_library` · 필터·정렬 짝 `filter_sort_parity` · **체형(실루엣 재편) `body_visual_redesign`(설계 마무리 — 코드 구현 대기. 이어받는 세션은 `handover_body_reauthor_2026-08`부터)** · **백업·내보내기 동선 `backup_export_redesign`(설계 확정 — 체형 다음 슬라이스)** · **사건 필드 추천 `event_field_recommend_2026-08`(v1.1 — 설계·구현 완료. B-62·B-68 해소, 실기기 3-32)** · **대표 이미지 `representative_image_design_2026-08`(B-103 — 설계·구현 완료 2026.08.03. 실기기 확인 3-50)** · **뗀 이미지 관리 `detached_image_management_design_2026-08`(B-107 — 설계 확정, 구현 대기. **선행이던 B-103이 끝났으므로 지금이 착수 자리다.** 폴더 왕복 규약을 바꾸므로 `image_folder_roundtrip_design` 3장·`image_folder_tag_ai` 2-1과 상호 참조)** |
 | **점검 결과·수리 계획** | `app_inspection_round2` · `repair_plan` · `usability_review` · `design_intent` · **`plan_design_adversarial_review_2026-08`(전 문서 적대 검토 — 실증 발견·후보 목록·판정 대기)** |
 | **절차서** | `room_migration_verification` — 마이그레이션 하네스를 어떻게 만들고 돌리는가(종 수는 `ls tools/verify_room_migration*.py`로 센다) |
 | **브랜치·병합** | `docs/branch_merge_rules.md` |
@@ -305,6 +309,7 @@ AI 정책(`FieldAiPolicy`).
 
 | 버전 | 날짜 | 변경 내용 |
 |------|------|-----------|
+| v1.14 | 2026.08.03 | **B-103 대표 이미지 구현 반영**(세션 로그 1-bs). 3장 단일 소스 표에 `CharacterRepresentativeImage`/`ImagePathMatch`(대표 판정·경로 대조)와 `RepresentativeImageCell`(엑셀 열 규약) 등재 · 4장 검증 도구에 `check_image_pointer.sh` · 6장 색인에 **R-32**(포인터는 목록을 고치는 모든 경로가 함께 고친다) · 7장 지도에서 B-103을 **구현 완료**로 옮기고 **B-107 행에 "선행이 끝나 지금이 착수 자리"를 적었다** — 그 행이 순서 근거를 담고 있는데 선행 상태가 바뀐 것을 말하지 않으면 다음 세션이 다시 대조해야 한다 |
 | v1.13 | 2026.08.03 | 7장 영역별 설계에 **설계 문서 둘 등재** — `representative_image_design_2026-08`(B-103 대표 이미지)와 `detached_image_management_design_2026-08`(B-107 뗀 이미지 관리). 둘 다 **설계 확정·구현 대기**다. **B-107 행에 상호 참조를 함께 적었다** — 그 설계가 **폴더 왕복 규약을 바꾸므로**(`_삭제승인` 신설 · `_미배정/` 재정의) `image_folder_roundtrip_design` 3장과 `image_folder_tag_ai` 2-1에 **역참조를 걸었고**, 이 지도가 그 사실을 알아야 반대쪽에서 들어온 세션이 찾는다. 지도에 새 설계를 등재하지 않으면 **진입점이 최신 설계를 모른다** — 이번 인수인계 점검이 그것을 잡았다 |
 | v1.12 | 2026.08.01 | 7장 영역별 설계에 **`backup_export_redesign` 등재**(백업·내보내기 동선 재편 — 실기기 확인 중 사용자가 실제로 막힌 백업 동선의 재편, 사용자 확정으로 체형 다음 슬라이스) + 체형 행 상태를 "이식 목업 완료 — 검증 대기" → "설계 마무리 — 코드 구현 대기"로(판정 6건 확정 반영) |
 | v1.11 | 2026.08.01 | 7장 지도 갱신 — 점검 결과 행에 **`plan_design_adversarial_review_2026-08` 등재**(전 문서 적대 검토, 세션 로그 1-ab), 체형 행을 "설계 확정 — 구현 대기" → **"이식 목업 완료 — 사용자 검증 대기"**로, 이어받는 진입점(`handover_body_reauthor_2026-08`)을 지도에 명기(그 문서가 지도 밖이라 3홉을 밟아야 닿던 것 — 검토 F-2) |

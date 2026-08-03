@@ -42,7 +42,14 @@ class CharacterSaveCoordinator(
         val tags: String,
         val memo: String,
         val novelId: Long?,
-        val imagePaths: List<String>
+        val imagePaths: List<String>,
+        /**
+         * 폼이 들고 있는 대표 이미지 지정(B-103). 빈 문자열 = 지정 없음.
+         *
+         * **반드시 폼에서 온다** — 기존 엔티티에서 바로 읽으면 편집 중에 ☆로 바꾼 것이
+         * 저장에서 사라진다. [buildCharacterFromForm]이 새 목록에 남아 있는지 한 번 더 거른다.
+         */
+        val representativeImagePath: String = ""
     )
 
     interface Host {
@@ -104,6 +111,12 @@ class CharacterSaveCoordinator(
             anotherName = snapshot.anotherName.trim(),
             novelId = snapshot.novelId,
             imagePaths = gson.toJson(snapshot.imagePaths),
+            // 이 함수는 기존 엔티티를 copy()하지 않고 폼 스냅샷으로 새로 조립한다 —
+            // 여기 적지 않으면 **저장할 때마다 대표가 조용히 지워진다**(`partSlots`가 이 병으로
+            // 지워지던 전례: 세션 로그 1-ar). D5의 "목록이 통째로 바뀐다" 갈래이므로
+            // 새 목록에 남아 있을 때만 유지한다.
+            representativeImagePath = com.novelcharacter.app.util.CharacterRepresentativeImage
+                .retain(snapshot.representativeImagePath, snapshot.imagePaths),
             createdAt = existingCharacter?.createdAt ?: System.currentTimeMillis(),
             updatedAt = System.currentTimeMillis(),
             memo = snapshot.memo,

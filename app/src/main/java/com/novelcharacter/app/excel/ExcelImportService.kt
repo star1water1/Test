@@ -27,6 +27,7 @@ import com.novelcharacter.app.data.repository.CharacterRepository
 import com.novelcharacter.app.data.repository.NovelRepository
 import com.novelcharacter.app.data.repository.UniverseRepository
 import com.novelcharacter.app.util.SemanticFieldSyncHelper
+import com.novelcharacter.app.util.withImagePaths
 import com.novelcharacter.app.util.GradeValueResolver
 import com.novelcharacter.app.util.FactionMembershipMatcher
 import com.novelcharacter.app.util.FactionRelationshipMatcher
@@ -287,6 +288,37 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     private fun remapImagePath(path: String): String {
         if (imagePathRemap.isEmpty() || path.isBlank()) return path
         return imagePathRemap[path] ?: path
+    }
+
+    /**
+     * `대표이미지` 셀을 캐릭터에 반영한다(B-103 D8).
+     *
+     * 해석은 `RepresentativeImageCell`이 다섯 단으로 한다 — 정확 일치 → 재매핑 → 그 행 안에서
+     * 유일한 파일명 → 1부터 세는 번호 → **못 찾으면 경고 + 기존 값 유지.**
+     * 마지막 단이 이 기능의 규약이다: 외부에서 편집된 파일의 오류를 이유로 사용자가 정해 둔
+     * 대표를 조용히 날리지 않는다(개발 의도 2번·4번).
+     */
+    private fun applyRepresentativeCell(
+        character: Character,
+        cell: String?,
+        characterName: String,
+        rowIndex: Int,
+        result: ImportResult
+    ): Character {
+        val paths = com.novelcharacter.app.util.CharacterRepresentativeImage.paths(character.imagePaths)
+        return when (val r = com.novelcharacter.app.util.RepresentativeImageCell.resolve(cell, paths, imagePathRemap)) {
+            is com.novelcharacter.app.util.RepresentativeImageCell.Resolution.Absent -> character
+            is com.novelcharacter.app.util.RepresentativeImageCell.Resolution.Cleared ->
+                character.copy(representativeImagePath = "")
+            is com.novelcharacter.app.util.RepresentativeImageCell.Resolution.Matched ->
+                character.copy(representativeImagePath = r.path)
+            is com.novelcharacter.app.util.RepresentativeImageCell.Resolution.Unresolved -> {
+                result.warnings.add(
+                    "캐릭터 행 $rowIndex ($characterName): '대표이미지' 값 \"${r.raw}\"에 해당하는 이미지를 찾을 수 없어 기존 대표 지정을 유지했습니다"
+                )
+                character
+            }
+        }
     }
 
     /** imagePaths JSON 배열 내 모든 경로를 재매핑. 레거시 단일 경로도 JSON 배열로 변환. */
@@ -3146,6 +3178,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val lastNameColIndex = cols["성"] ?: -1
         val firstNameColIndex = cols["이름(First)"] ?: -1
         val imageColIndex = cols["이미지경로"] ?: -1
+        val representativeColIndex = cols["대표이미지"] ?: -1
         val novelColIndex = cols["작품"] ?: -1
         val memoColIndex = cols["메모"] ?: -1
         val tagsColIndex = cols["태그"] ?: -1
@@ -3194,6 +3227,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 // imageColIndex < 0 means column is missing: use null sentinel to preserve existing images
                 val rawImagePaths: String? = if (imageColIndex >= 0) getCellString(row, imageColIndex).ifBlank { "[]" } else null
                 val imagePathsFromExcel: String? = rawImagePaths?.let { remapImagePaths(it) }
+                // 대표이미지 열(B-103 D8). **열 없음과 빈 칸은 다른 상태다** —
+                // 열 없음은 "말하지 않았다"(기존 유지), 빈 칸은 "지정 없음으로 하라"(해제).
+                val representativeCell: String? =
+                    if (representativeColIndex >= 0) getCellString(row, representativeColIndex) else null
                 val memoFromExcel: String? = if (memoColIndex >= 0) getCellString(row, memoColIndex) else null
                 val displayOrder: Long? = if (orderColIndex >= 0) {
                     val raw = getCellString(row, orderColIndex)
@@ -3268,19 +3305,21 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     if (lastNameFromExcel == "" && existingChar.lastName.isNotBlank()) result.clearedFields++
                     if (anotherNameFromExcel == "" && existingChar.anotherName.isNotBlank()) result.clearedFields++
                     if (memoFromExcel == "" && existingChar.memo.isNotBlank()) result.clearedFields++
+                    // imagePaths는 `withImagePaths`로 넘긴다 — 대표 포인터(B-103)가 재매핑을
+                    // 따라가고, 다른 기기에서 온 목록에 그 파일이 없으면 풀린다(D5).
                     db.characterDao().update(existingChar.copy(
                         name = name,
                         firstName = firstNameFromExcel ?: existingChar.firstName,
                         lastName = lastNameFromExcel ?: existingChar.lastName,
                         anotherName = anotherNameFromExcel ?: existingChar.anotherName,
                         novelId = if (novelColumnsPresent) novelId else existingChar.novelId,
-                        imagePaths = imagePathsFromExcel ?: existingChar.imagePaths,
                         memo = memoFromExcel ?: existingChar.memo,
                         updatedAt = System.currentTimeMillis(),
                         displayOrder = displayOrder ?: existingChar.displayOrder,
                         isPinned = pinnedFromExcel ?: existingChar.isPinned,
                         createdAt = if (createdAtColIndex >= 0) createdAt else existingChar.createdAt
-                    ))
+                    ).withImagePaths(imagePathsFromExcel ?: existingChar.imagePaths, imagePathRemap)
+                        .let { applyRepresentativeCell(it, representativeCell, name, i, result) })
                     result.updatedCharacters++
 
                     // 사용자가 이전 세계관 필드값 삭제를 선택한 경우 정리
@@ -3290,11 +3329,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 } else {
                     val newCode = if (code.isNotBlank()) code else generateEntityCode()
                     if (code.isBlank()) result.newCodesGenerated++
-                    charId = db.characterDao().insert(Character(
-                        name = name, firstName = firstNameFromExcel ?: "", lastName = lastNameFromExcel ?: "",
-                        anotherName = anotherNameFromExcel ?: "", novelId = if (novelColumnsPresent) novelId else null,
-                        imagePaths = imagePathsFromExcel ?: "[]", memo = memoFromExcel ?: "", code = newCode, displayOrder = displayOrder ?: i.toLong(),
-                        isPinned = pinnedFromExcel ?: false, createdAt = createdAt
+                    charId = db.characterDao().insert(applyRepresentativeCell(
+                        Character(
+                            name = name, firstName = firstNameFromExcel ?: "", lastName = lastNameFromExcel ?: "",
+                            anotherName = anotherNameFromExcel ?: "", novelId = if (novelColumnsPresent) novelId else null,
+                            imagePaths = imagePathsFromExcel ?: "[]", memo = memoFromExcel ?: "", code = newCode, displayOrder = displayOrder ?: i.toLong(),
+                            isPinned = pinnedFromExcel ?: false, createdAt = createdAt
+                        ),
+                        representativeCell, name, i, result
                     ))
                     result.newCharacters++
                 }

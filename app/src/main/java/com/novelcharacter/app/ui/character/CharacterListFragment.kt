@@ -149,7 +149,6 @@ class CharacterListFragment : Fragment() {
                         .setMessage(message)
                         .setPositiveButton(R.string.yes) { _, _ ->
                             viewModel.deleteCharacter(character)
-                            com.novelcharacter.app.util.ImageIndexPrefs.clear(requireContext(), "character", character.id)
                         }
                         .setNegativeButton(R.string.no, null)
                         .show()
@@ -584,7 +583,7 @@ class CharacterListFragment : Fragment() {
         // 재추첨 경로가 아예 사라져 '랜덤 표시'가 최초 1회 추첨 후 영구 고정으로 퇴화했다(실기기 보고).
         // 진입 1회 재추첨은 P2-1의 취지(방출마다 전 목록 재랜덤·O(N) 쓰기 금지)를 지키면서
         // 방문할 때마다 다른 이미지가 나오게 한다. 재배정·저장은 실제로 bind되는 행에서만 일어난다.
-        adapter.refreshRandomImages(requireContext())
+        adapter.refreshRandomImages()
         viewModel.searchResults.observe(viewLifecycleOwner) { characters ->
             // 리스트 갱신마다 이미지 인덱스를 초기화하지 않는다(P2-1). 매 emission(핀·필터·정렬·검색)마다
             // clearAll하면 영속 인덱스가 무력화되고 전 캐릭터 썸네일이 재랜덤·O(N) 메인스레드 쓰기가 발생했다.

@@ -20,6 +20,11 @@ class RankingAdapter(
     private var items: List<RankingEntry> = emptyList()
     private val gson = Gson()
     private val imagePathsType = object : TypeToken<List<String>>() {}.type
+    /**
+     * 이 화면 진입의 랜덤 시드(B-103 D3) — 대표가 없는 캐릭터의 그림을 고른다.
+     * 같은 시드가 유지되는 동안에는 재바인드에도 그림이 튀지 않는다.
+     */
+    private val imageSeed: Long = com.novelcharacter.app.util.CharacterRepresentativeImage.newSeed()
     // KB 단위 상한(≈10MB) — sizeOf 오버라이드로 실제 비트맵 KB를 센다(P1-G: 없으면 '엔트리 수'로 세어
     // ~수백MB까지 부풀던 단위 불일치 버그). 형제 어댑터와 동일한 메모리 예산.
     private val imageCache = object : LruCache<String, android.graphics.Bitmap>(
@@ -97,12 +102,11 @@ class RankingAdapter(
         }
 
         private fun loadImage(entry: RankingEntry) {
-            val paths: List<String> = try {
-                gson.fromJson(entry.imagePaths, imagePathsType) ?: emptyList()
-            } catch (e: Exception) {
-                emptyList()
-            }
-            val path = paths.firstOrNull() ?: return
+            // 대표가 있으면 그 장, 없으면 시드 랜덤 (B-103 D2·D4).
+            // 종전에는 언제나 0번이라 순위 카드만 다른 화면과 다른 그림을 보여 줬다.
+            val path = com.novelcharacter.app.util.CharacterRepresentativeImage.path(
+                entry.imagePaths, entry.representativeImagePath, imageSeed, entry.characterId
+            ) ?: return
 
             val cached = imageCache.get(path)
             if (cached != null) {

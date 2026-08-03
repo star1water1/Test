@@ -43,8 +43,24 @@ class CharacterImageStripController(
     private val imagePaths = mutableListOf<String>()
     private var imageAdapter: RecyclerView.Adapter<RecyclerView.ViewHolder>? = null
 
+    /**
+     * 폼이 들고 있는 대표 이미지 지정(B-103 D7). 빈 문자열 = 지정 없음.
+     *
+     * **저장 시점에 반영된다** — 편집창의 이미지 조작은 취소할 수 있으므로(취소 계약)
+     * 여기서 곧바로 DB를 고치지 않는다. 호스트가 저장할 때 `FormSnapshot`에 실어 넘긴다.
+     */
+    var representativePath: String = ""
+        private set
+
     /** 현재 이미지 경로 목록 (읽기 전용 뷰) */
     val paths: List<String> get() = imagePaths
+
+    /** 드래프트·회전 복원과 기존 캐릭터 로드가 대표 지정을 되살릴 때 쓴다. */
+    fun setRepresentativePath(path: String?) {
+        representativePath = com.novelcharacter.app.util.CharacterRepresentativeImage
+            .retain(path, imagePaths)
+        imageAdapter?.notifyDataSetChanged()
+    }
 
     private val appDir: File? get() = fragment.context?.filesDir
 
@@ -131,17 +147,41 @@ class CharacterImageStripController(
                 override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
                     val d = parent.context.resources.displayMetrics.density
                     val sizePx = (80 * d).toInt()
-                    val imageView = ImageView(parent.context).apply {
+                    // 썸네일 위에 ☆를 얹으려면 겹칠 자리가 있어야 한다(B-103 D7).
+                    // 탭(=뷰어)·롱프레스(=삭제)는 썸네일이 그대로 가져간다 — 기존 제스처를 뺏지 않는다.
+                    val container = android.widget.FrameLayout(parent.context).apply {
                         layoutParams = RecyclerView.LayoutParams(sizePx, sizePx).apply {
                             marginEnd = (4 * d).toInt()
                         }
-                        scaleType = ImageView.ScaleType.CENTER_CROP
                     }
-                    return object : RecyclerView.ViewHolder(imageView) {}
+                    val imageView = ImageView(parent.context).apply {
+                        layoutParams = android.widget.FrameLayout.LayoutParams(
+                            android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                            android.widget.FrameLayout.LayoutParams.MATCH_PARENT
+                        )
+                        scaleType = ImageView.ScaleType.CENTER_CROP
+                        id = R.id.strip_thumbnail
+                    }
+                    val starPx = (28 * d).toInt()
+                    val star = ImageView(parent.context).apply {
+                        layoutParams = android.widget.FrameLayout.LayoutParams(starPx, starPx).apply {
+                            gravity = android.view.Gravity.TOP or android.view.Gravity.END
+                            topMargin = (2 * d).toInt()
+                            marginEnd = (2 * d).toInt()
+                        }
+                        setBackgroundResource(R.drawable.bg_image_badge)
+                        val pad = (5 * d).toInt()
+                        setPadding(pad, pad, pad, pad)
+                        id = R.id.strip_representative_star
+                    }
+                    container.addView(imageView)
+                    container.addView(star)
+                    return object : RecyclerView.ViewHolder(container) {}
                 }
 
                 override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
-                    val imageView = holder.itemView as ImageView
+                    val imageView = holder.itemView.findViewById<ImageView>(R.id.strip_thumbnail)
+                    bindRepresentativeStar(holder)
                     // 이전 로드 작업 취소 + 이미지 초기화
                     (imageView.getTag(R.id.image_load_job) as? kotlinx.coroutines.Job)?.cancel()
                     imageView.setTag(R.id.image_load_job, null)
@@ -176,13 +216,26 @@ class CharacterImageStripController(
                     imageView.setOnLongClickListener {
                         val adapterPosition = holder.bindingAdapterPosition
                         if (adapterPosition >= 0 && adapterPosition < imagePaths.size) {
+                            // 사전 고지(D6ⓐ) — 대표를 빼는 것이면 결과를 먼저 말한다.
+                            // 확인창 하나가 두 줄을 함께 말한다(무엇을 빼는지 + 그것이 대표라는 것).
+                            val removingRepresentative = com.novelcharacter.app.util.ImagePathMatch
+                                .same(imagePaths[adapterPosition], representativePath)
+                            val message = if (removingRepresentative) {
+                                fragment.getString(R.string.image_delete_confirm) + "\n\n" +
+                                    fragment.getString(R.string.representative_image_delete_warning_self)
+                            } else {
+                                fragment.getString(R.string.image_delete_confirm)
+                            }
                             MaterialAlertDialogBuilder(fragment.requireContext())
                                 .setTitle(R.string.delete)
-                                .setMessage(R.string.image_delete_confirm)
+                                .setMessage(message)
                                 .setPositiveButton(R.string.delete) { _, _ ->
                                     val currentPos = holder.bindingAdapterPosition
                                     if (currentPos >= 0 && currentPos < imagePaths.size) {
                                         imagePaths.removeAt(currentPos)
+                                        // 목록에서 빠졌으면 포인터도 함께 풀린다(D5).
+                                        representativePath = com.novelcharacter.app.util
+                                            .CharacterRepresentativeImage.retain(representativePath, imagePaths)
                                         imageAdapter?.notifyItemRemoved(currentPos)
                                         imageAdapter?.notifyItemRangeChanged(currentPos, imagePaths.size - currentPos)
                                         onChanged()
@@ -201,6 +254,38 @@ class CharacterImageStripController(
             rv.adapter = imageAdapter
         } else {
             imageAdapter?.notifyDataSetChanged()
+        }
+    }
+
+    /**
+     * 썸네일 코너의 ☆ (B-103 D7) — 탭 한 번으로 지정/해제.
+     *
+     * 목록에서 어느 것이 대표인지 **보이게** 두는 것이 절반이다(원칙 04 — 일일이 확인하지
+     * 않으면 존재를 알 수 없는 데이터가 있어서는 안 된다).
+     */
+    private fun bindRepresentativeStar(holder: RecyclerView.ViewHolder) {
+        val star = holder.itemView.findViewById<ImageView>(R.id.strip_representative_star) ?: return
+        val position = holder.bindingAdapterPosition
+        val path = imagePaths.getOrNull(position)
+        if (path == null) {
+            star.visibility = android.view.View.GONE
+            return
+        }
+        val pinned = com.novelcharacter.app.util.ImagePathMatch.same(path, representativePath)
+        star.visibility = android.view.View.VISIBLE
+        star.setImageResource(if (pinned) R.drawable.ic_star else R.drawable.ic_star_outline)
+        star.contentDescription = fragment.getString(
+            if (pinned) R.string.representative_image_clear else R.string.representative_image_set
+        )
+        star.setOnClickListener {
+            val current = holder.bindingAdapterPosition
+            val target = imagePaths.getOrNull(current) ?: return@setOnClickListener
+            representativePath = if (
+                com.novelcharacter.app.util.ImagePathMatch.same(target, representativePath)
+            ) "" else target
+            // 다른 항목의 ☆도 함께 꺼져야 하므로 전량 갱신한다(대표는 하나뿐이다).
+            imageAdapter?.notifyDataSetChanged()
+            onChanged()
         }
     }
 
