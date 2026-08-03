@@ -44,7 +44,10 @@ class Resources { val displayMetrics: android.util.DisplayMetrics get() = androi
 EOF
 cat > "$WORK/UtilStub.kt" <<'EOF'
 package android.util
-class DisplayMetrics { @JvmField var density: Float = 1f }
+class DisplayMetrics {
+    @JvmField var density: Float = 1f
+    @JvmField var heightPixels: Int = 0
+}
 interface AttributeSet
 EOF
 cat > "$WORK/GraphicsStub.kt" <<'EOF'
@@ -123,6 +126,40 @@ open class View(context: android.content.Context, attrs: android.util.AttributeS
     fun invalidate() {}
     protected open fun onDraw(canvas: android.graphics.Canvas) {}
     open fun onTouchEvent(event: android.view.MotionEvent): Boolean = false
+    protected open fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {}
+    // 실제 API는 View의 public static 중첩 클래스다 — 값도 실제와 같게 둔다
+    // (모드는 상위 2비트: UNSPECIFIED=0, EXACTLY=1<<30, AT_MOST=2<<30).
+    object MeasureSpec {
+        const val UNSPECIFIED: Int = 0
+        const val EXACTLY: Int = 1073741824
+        const val AT_MOST: Int = -2147483648
+        fun getMode(measureSpec: Int): Int = 0
+        fun getSize(measureSpec: Int): Int = 0
+        fun makeMeasureSpec(size: Int, mode: Int): Int = 0
+    }
+}
+open class ViewGroup(context: android.content.Context, attrs: android.util.AttributeSet?, defStyleAttr: Int)
+    : View(context, attrs, defStyleAttr) {
+    constructor(context: android.content.Context) : this(context, null, 0)
+}
+EOF
+# 상한 스크롤(B-98)의 상위 타입 — `ui/common/CappedScrollView.kt`가 이 둘을 상속한다.
+cat > "$WORK/ScrollStub.kt" <<'EOF'
+package android.widget
+open class FrameLayout(context: android.content.Context, attrs: android.util.AttributeSet?, defStyleAttr: Int)
+    : android.view.ViewGroup(context, attrs, defStyleAttr) {
+    constructor(context: android.content.Context) : this(context, null, 0)
+}
+open class ScrollView(context: android.content.Context, attrs: android.util.AttributeSet?, defStyleAttr: Int)
+    : FrameLayout(context, attrs, defStyleAttr) {
+    constructor(context: android.content.Context) : this(context, null, 0)
+}
+EOF
+cat > "$WORK/NestedScrollStub.kt" <<'EOF'
+package androidx.core.widget
+open class NestedScrollView(context: android.content.Context, attrs: android.util.AttributeSet?, defStyleAttr: Int)
+    : android.widget.FrameLayout(context, attrs, defStyleAttr) {
+    constructor(context: android.content.Context) : this(context, null, 0)
 }
 EOF
 
@@ -146,6 +183,8 @@ EOF
 M="$REPO/app/src/main/java/com/novelcharacter/app"
 {
   echo "$M/ui/character/SilhouetteView.kt"
+  echo "$M/ui/common/CappedScrollView.kt"
+  echo "$M/util/DialogScrollCap.kt"
   echo "$M/util/BodySilhouetteSpec.kt"
   echo "$M/util/BodyMeasurements.kt"
   ls "$M"/data/model/*.kt
@@ -154,6 +193,8 @@ M="$REPO/app/src/main/java/com/novelcharacter/app"
   echo "$WORK/UtilStub.kt"
   echo "$WORK/GraphicsStub.kt"
   echo "$WORK/ViewStub.kt"
+  echo "$WORK/ScrollStub.kt"
+  echo "$WORK/NestedScrollStub.kt"
   echo "$WORK/RProbe.kt"
 } > "$WORK/files.txt"
 
