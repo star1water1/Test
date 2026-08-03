@@ -162,6 +162,7 @@ class ImageManagerFragment : Fragment() {
                 R.id.chipNovel -> com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.NOVEL
                 R.id.chipUniverse -> com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.UNIVERSE
                 R.id.chipUnassigned -> com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.UNASSIGNED
+                R.id.chipDetached -> com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.DETACHED
                 R.id.chipOrphan -> com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.ORPHAN
                 R.id.chipTrash -> com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.TRASH
                 else -> com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.ALL
@@ -211,7 +212,8 @@ class ImageManagerFragment : Fragment() {
         viewModel.summary.observe(viewLifecycleOwner) { s ->
             binding.summaryText.text = getString(
                 R.string.image_manager_summary,
-                s.totalCount, StorageAnalyzer.formatBytes(s.totalBytes), s.referencedCount, s.unassignedCount, s.orphanCount
+                s.totalCount, StorageAnalyzer.formatBytes(s.totalBytes), s.referencedCount,
+                s.unassignedCount, s.detachedCount, s.orphanCount
             )
         }
         viewModel.images.observe(viewLifecycleOwner) { applyView() }
@@ -235,6 +237,7 @@ class ImageManagerFragment : Fragment() {
             com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.NOVEL -> R.id.chipNovel
             com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.UNIVERSE -> R.id.chipUniverse
             com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.UNASSIGNED -> R.id.chipUnassigned
+            com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.DETACHED -> R.id.chipDetached
             com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.ORPHAN -> R.id.chipOrphan
             com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.TRASH -> R.id.chipTrash
             com.novelcharacter.app.util.ImageFilterHelper.BaseFilter.ALL -> R.id.chipAll
@@ -416,7 +419,8 @@ class ImageManagerFragment : Fragment() {
                     ImageManagerViewModel.Status.TRASH_HELD -> com.novelcharacter.app.util.ImageFilterHelper.StatusKind.TRASH
                     ImageManagerViewModel.Status.UNASSIGNED -> com.novelcharacter.app.util.ImageFilterHelper.StatusKind.UNASSIGNED
                 },
-                linkGroupId = item.meta?.linkGroupId
+                linkGroupId = item.meta?.linkGroupId,
+                detachedAt = item.meta?.detachedAt
             )
         }
         val sorted = when (viewModel.sort) {
@@ -972,6 +976,7 @@ class ImageManagerFragment : Fragment() {
                 ImageBatchOperationBottomSheet.Action.LINK -> startLinkFlow(items.map { it.path })
                 ImageBatchOperationBottomSheet.Action.UNLINK -> runUnlink(items.map { it.path })
                 ImageBatchOperationBottomSheet.Action.UNASSIGN -> confirmBatchUnassign(items.map { it.path })
+                ImageBatchOperationBottomSheet.Action.CLEAR_DETACHED -> clearDetachedMarks(items.map { it.path })
                 ImageBatchOperationBottomSheet.Action.RECOMPRESS -> recompressSelected()
                 ImageBatchOperationBottomSheet.Action.DELETE -> deleteSelected()
             }
@@ -1128,6 +1133,23 @@ class ImageManagerFragment : Fragment() {
             val parts = mutableListOf(getString(R.string.image_unassign_done, result.cleared))
             if (result.adopted > 0) parts.add(getString(R.string.image_unassign_note_adopted, result.adopted))
             reportAndNotify(OpResult.success(OpResult.CAT_MAINTENANCE, parts.joinToString(" · ")))
+        }
+    }
+
+    /**
+     * 뗀 표식 지우기 — 서랍에서 뺀다(B-107 D2).
+     *
+     * **확인창을 두지 않는다.** 파괴적이지 않고(파일도 배정도 그대로다) 되돌리기가 같은
+     * 자리에 있다 — 다시 떼면 된다. 파괴 경로에만 확인을 두는 것이 R-4의 취지다.
+     */
+    private fun clearDetachedMarks(paths: List<String>) {
+        viewModel.clearDetachedMark(paths) { cleared ->
+            if (!isAdded || _binding == null) return@clearDetachedMark
+            exitSelection()
+            reportAndNotify(OpResult.success(
+                OpResult.CAT_MAINTENANCE,
+                getString(R.string.image_manager_clear_detached_done, cleared)
+            ))
         }
     }
 

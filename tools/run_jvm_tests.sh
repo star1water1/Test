@@ -162,6 +162,7 @@ $MAIN/ai/ImageFolderTagSuggester.kt
 $MAIN/data/model/NarrativeMode.kt
 $MAIN/util/ImageFilterHelper.kt
 $MAIN/util/ImagePathMatch.kt
+$MAIN/util/DetachedImageRule.kt
 $MAIN/util/CharacterRepresentativeImage.kt
 $MAIN/util/RepresentativeImageCell.kt
 $MAIN/util/LibraryPickerRow.kt
@@ -256,6 +257,7 @@ $TEST/util/NumericBinningTest.kt
 $TEST/util/StatsFieldPolicyTest.kt
 $TEST/util/CardFieldSummaryTest.kt
 $TEST/util/UnassignedFilterTest.kt
+$TEST/util/DetachedImageRuleTest.kt
 $TEST/util/FieldValueResolverTest.kt
 $TEST/util/ImageFilterHelperTest.kt
 $TEST/util/LibraryPickerRowsTest.kt

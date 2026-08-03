@@ -250,6 +250,23 @@ class OrganizeFolderController(
         val unlinkCount = plan.detaches.count { it.unlinks }
         if (detachCount > 0) lines.add(fragment.getString(R.string.organize_folder_summary_detach, detachCount))
         if (unlinkCount > 0) lines.add(fragment.getString(R.string.organize_folder_summary_unlink, unlinkCount))
+        // `_삭제승인/` — 이 창에서 **유일하게 되돌릴 수 없는** 처분이다(B-107 D6).
+        // 그래서 개수만 말하지 않고 결과를 함께 말한다: 공유본인가 · 대표인가 · 원본은 어디 남는가.
+        // 확정 ⓑ가 앱 안 되돌리기를 없앴으므로 마지막 안전망이 폴더 쪽에 있다는 사실이 특히 중요하다.
+        if (plan.deletes.isNotEmpty()) {
+            lines.add(fragment.getString(R.string.organize_folder_summary_delete, plan.deletes.size))
+            val sharedDeletes = plan.deletes.count { it.ownerCharacterIds.size >= 2 }
+            if (sharedDeletes > 0) {
+                lines.add(fragment.getString(R.string.organize_folder_summary_delete_shared, sharedDeletes))
+            }
+            if (bundle.deleteRepresentativeOf.isNotEmpty()) {
+                lines.add(fragment.getString(
+                    R.string.organize_folder_summary_delete_representative,
+                    bundle.deleteRepresentativeOf.joinToString(", ")
+                ))
+            }
+            lines.add(fragment.getString(R.string.organize_folder_summary_delete_originals))
+        }
         if (plan.linkSets.isNotEmpty()) lines.add(fragment.getString(R.string.organize_folder_summary_sets, plan.linkSets.size))
         if (bundle.mergedGroups > 0) {
             lines.add(fragment.getString(R.string.organize_folder_summary_merge, bundle.mergedGroups, bundle.mergedOutsiders))
@@ -420,6 +437,14 @@ class OrganizeFolderController(
         if (result.unlinked > 0) {
             lines.add(fragment.getString(R.string.organize_folder_result_unlinked, result.unlinked))
         }
+        // 되돌릴 수 없는 처분은 결과에서도 수로 남긴다 — 확인창이 약속한 수와 같아야 한다.
+        if (result.deleted > 0) {
+            lines.add(fragment.getString(
+                R.string.organize_folder_result_deleted,
+                result.deleted,
+                com.novelcharacter.app.util.StorageAnalyzer.formatBytes(result.deletedBytes)
+            ))
+        }
         // 서랍에 넣었는데 자동 링크라 그대로인 것 — 아무 말도 없으면 "넣었는데 왜 그대로지"가 된다.
         if (result.autoLinkedKept > 0) {
             lines.add(fragment.getString(R.string.organize_folder_result_auto_kept, result.autoLinkedKept))
@@ -480,8 +505,11 @@ class OrganizeFolderController(
         val labels = arrayOf(
             fragment.getString(R.string.organize_folder_export_scope_all),
             fragment.getString(R.string.organize_folder_export_scope_assigned),
-            fragment.getString(R.string.organize_folder_export_scope_unassigned)
+            fragment.getString(R.string.organize_folder_export_scope_unassigned),
+            fragment.getString(R.string.organize_folder_export_scope_detached)
         )
+        // 라벨 순서는 `Scope` 선언 순서와 **같아야 한다** — `scopes[picked]`가 그 짝을 믿는다.
+        require(labels.size == scopes.size) { "Scope와 라벨 수가 어긋났습니다" }
         var picked = 0
         MaterialAlertDialogBuilder(fragment.requireContext())
             .setTitle(R.string.organize_folder_export)

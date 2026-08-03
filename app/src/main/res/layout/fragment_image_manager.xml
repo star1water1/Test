@@ -148,6 +148,15 @@
                 android:layout_height="wrap_content"
                 android:text="@string/image_manager_filter_unassigned" />
 
+            <!-- 뗀 것 서랍(B-107) — '미배정' 바로 옆이다. 둘은 배타이고, 나란히 있어야
+                 "이쪽이 아니면 저쪽"이라는 관계가 보인다. -->
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipDetached"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/image_manager_filter_detached" />
+
             <com.google.android.material.chip.Chip
                 android:id="@+id/chipOrphan"
                 style="@style/Widget.Material3.Chip.Filter"

@@ -86,7 +86,15 @@ object OrganizeFolderService {
          * 이름만 N개 나열하면 고를 수가 없으므로 **작품명을 함께** 싣는다
          * (인앱 `DuplicateCharacterDialog`가 쓰는 방식과 같다).
          */
-        val ambiguousCandidates: Map<String, List<FolderCandidate>> = emptyMap()
+        val ambiguousCandidates: Map<String, List<FolderCandidate>> = emptyMap(),
+        /**
+         * `_삭제승인/`이 지울 이미지를 **대표로 지정한** 캐릭터 이름들(B-107 D6 · B-103 ㄷ1).
+         *
+         * 계획만으로는 알 수 없다 — 대표 포인터는 캐릭터 쪽에 있고 플래너는 순수 계층이다.
+         * 확인창이 "지우면 대표 지정이 풀린다"를 말하려면 여기 실어야 한다. 되돌릴 수 없는
+         * 처분이므로 **결과를 먼저 말하는 것**이 R-4의 요구다.
+         */
+        val deleteRepresentativeOf: List<String> = emptyList()
     ) {
         val isEmpty: Boolean get() = plan.isEmpty
 
@@ -110,6 +118,13 @@ object OrganizeFolderService {
          * 재동기화가 도로 묶으므로, 푼 척하고 세는 대신 여기 담아 사유와 함께 고지한다.
          */
         val autoLinkedKept: Int = 0,
+        /**
+         * `_삭제승인/`으로 **앱에서 지운** 이미지 수(B-107 D6). 되돌릴 수 없으므로 실행 전에
+         * 확인창을 거쳤고, 여기 수는 그 확인이 약속한 수와 같아야 한다.
+         */
+        val deleted: Int = 0,
+        /** 지워서 확보한 바이트 — 파괴의 대가를 수로 보여 준다. */
+        val deletedBytes: Long = 0,
         /** 묶음이 쪼개져 혼자 남은 이미지 수 — 어시스턴트 카드에 뜰 수와 같다(장부 ③). */
         val scattered: Int = 0,
         /**
@@ -269,6 +284,13 @@ object OrganizeFolderService {
             val linkedCanonPaths = metas.mapNotNullTo(HashSet()) {
                 if (it.linkGroupId != null) canonical(it.path) else null
             }
+            // 뗀 표식이 붙은 경로 — `linkedCanonPaths`와 같은 이유로 필요하다(B-107 D5).
+            // 서랍에 있던 파일을 `_미배정/`으로 옮기는 것은 "다시 쓸 것으로 되돌림"이라 할 일이
+            // 있는데, 그 파일은 배정도 묶음도 없어 이 집합 없이는 '할 일 없음'으로 보인다.
+            // 같은 `metas`에서 뽑는다 — 질의를 한 번 더 하면 시점이 갈린다(바로 위 주석의 전례).
+            val detachedCanonPaths = metas.mapNotNullTo(HashSet()) {
+                if (it.isDetached) canonical(it.path) else null
+            }
             val livePaths = LinkedHashSet<String>()
             for (p in metaPaths + storedByCanon.values) {
                 val canon = canonical(p)
@@ -298,7 +320,8 @@ object OrganizeFolderService {
                 choices = ambiguousChoices
             )
             val plan = FolderRoundtripPlanner.plan(
-                items, idsByName, dictionary.pathByToken, idsByCanonPath, resolver, linkedCanonPaths
+                items, idsByName, dictionary.pathByToken, idsByCanonPath, resolver,
+                linkedCanonPaths, detachedCanonPaths
             )
 
             // 링크 세트가 흡수하는 기존 그룹 — 사전 확인에 한 줄로 싣는다(설계 9장 C-8).
@@ -332,7 +355,19 @@ object OrganizeFolderService {
                     }
                 }
             }
-            PlanBundle(plan, scan, mergedGroups, mergedOutsiders, storedByCanon.toMap(), candidates)
+            // `_삭제승인/`이 대표 이미지를 지우면 확인창이 그 사실을 함께 말해야 한다
+            // (B-107 D6 · B-103 ㄷ1 — 파괴는 결과를 먼저 말한다). 캐릭터는 위에서 이미 읽었다.
+            val deleteTargets = plan.deletes.mapTo(HashSet()) { canonical(it.path) }
+            val representativeOf = if (deleteTargets.isEmpty()) emptyList() else {
+                characters.filter {
+                    ImagePathMatch.canonical(it.representativeImagePath).takeIf { p -> p.isNotEmpty() }
+                        ?.let { p -> p in deleteTargets } == true
+                }.map { it.name }
+            }
+            PlanBundle(
+                plan, scan, mergedGroups, mergedOutsiders, storedByCanon.toMap(), candidates,
+                deleteRepresentativeOf = representativeOf
+            )
         }
 
     // ── 반영 ──
@@ -363,6 +398,8 @@ object OrganizeFolderService {
         var unlinked = 0
         // 서랍에 넣었으나 자동 링크라 묶인 채 남은 수(③-b 참조).
         var autoLinkedKept = 0
+        var deleted = 0
+        var deletedBytes = 0L
         // 이번 반영이 멤버를 뺀 링크 그룹 — 누가 혼자 남았는지는 ④가 끝난 뒤에 판정한다.
         val touchedGroups = LinkedHashSet<String>()
         val failures = ArrayList<String>()
@@ -472,6 +509,19 @@ object OrganizeFolderService {
                     // 저장형으로 입양한다 — canonical로 넣으면 같은 파일의 meta 행이 하나 더 생긴다.
                     val storedPath = bundle.stored(action.path)
                     val imageId = db.imageMetaDao().adopt(storedPath, now)
+                    // 뗀 표식의 처분은 **계획이 정한다**(B-107 D5) — 여기서 폴더 이름을 다시
+                    // 보고 판정하면 규칙이 둘로 갈라진다. `_분리됨/`은 "아직 판단 안 함"이라
+                    // 남기고, `_미배정/`·직속은 "다시 쓸 것으로 되돌림"이라 지운다.
+                    if (action.keepsDetachedMark) {
+                        DetachedImageMarker.markDetached(
+                            db, listOf(storedPath),
+                            action.fromCharacterIds.firstOrNull()
+                                ?.let { db.characterDao().getCharacterById(it)?.code },
+                            now
+                        )
+                    } else {
+                        DetachedImageMarker.clearMark(db, listOf(storedPath))
+                    }
                     if (action.unlinks) {
                         val oldGroup = db.imageMetaDao().getByPath(storedPath)?.linkGroupId
                         if (oldGroup != null) {
@@ -494,6 +544,39 @@ object OrganizeFolderService {
                 processedFiles.add(file)
             } else failures.add(file.name)
             step()
+        }
+
+        // ③-a `_삭제승인/` — **앱에서 지운다**(B-107 D6). 예약 폴더 처분 중 유일하게 파괴적이라
+        // 호출부가 확인창을 이미 거쳤다(R-4). 여기서 다시 묻지 않는다.
+        //
+        // 처분은 `ImageDeletionService`가 단일 소스다 — 이미지 탭의 명시적 삭제와 **같은 함수**를
+        // 부른다. 규칙을 한 벌 더 적으면 링크 정리·대표 포인터·롤백 조건이 갈라진다.
+        //
+        // 소유 색인을 여기서 한 번 만드는 이유: 계획은 **캐릭터 축만** 안다(`characterIdsByPath`).
+        // 작품·세계관이 쓰는 이미지를 그대로 지우면 그쪽 참조가 끊긴 채 남는다.
+        if (!cancelled && plan.deletes.isNotEmpty()) {
+            val ownerIndex = ImageDeletionService.buildOwnerIndex(db, gson)
+            for (action in plan.deletes) {
+                if (isCancelled()) { cancelled = true; break }
+                val file = fileById[action.item.id] ?: continue
+                val storedPath = bundle.stored(action.path)
+                val canon = ImagePathMatch.canonical(storedPath)
+                val freed = ImageDeletionService.delete(
+                    db = db,
+                    path = storedPath,
+                    owners = ownerIndex[canon] ?: ImageDeletionService.Owners.NONE,
+                    linkGroupId = db.imageMetaDao().getByPath(storedPath)?.linkGroupId,
+                    gson = gson
+                )
+                if (freed != null) {
+                    deleted++
+                    deletedBytes += freed
+                    // 원본은 `_처리됨/`으로 옮긴다 — **앱이 사용자의 폴더 파일을 지우지는 않는다.**
+                    // 되돌리기가 없는 처분이라 폴더에 남는 원본이 마지막 안전망이다(D6).
+                    processedFiles.add(file)
+                } else failures.add(file.name)
+                step()
+            }
         }
 
         // ③-b 서랍의 묶음만 해제 — 캐릭터 배정은 건드리지 않는다(설계 D-2).
@@ -598,6 +681,8 @@ object OrganizeFolderService {
             detached = detached,
             unlinked = unlinked,
             autoLinkedKept = autoLinkedKept,
+            deleted = deleted,
+            deletedBytes = deletedBytes,
             scattered = scattered.size,
             importedPathById = importedPathById,
             linkedSets = linkedSets,

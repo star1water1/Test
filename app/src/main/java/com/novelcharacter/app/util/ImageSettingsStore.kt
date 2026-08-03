@@ -90,18 +90,33 @@ class ImageSettingsStore(private val context: Context) {
 
     /**
      * 캐릭터 편집창에서 이미지를 제거하고 저장할 때의 파일 처리 정책.
-     * - [LIBRARY_ONLY](기본): 라이브러리(image_meta) 이미지는 파일을 남겨 미배정으로 복귀,
-     *   편집창에서 직접 골라 넣은 일반 이미지는 기존대로 삭제(공유 참조는 가드가 보호).
-     * - [ALWAYS_ADOPT]: 어떤 이미지든 제거 시 파일을 지우지 않고 라이브러리(미배정)로 입양.
-     *   삭제는 이미지 탭에서만 이뤄진다(실수 복구 용이, 용량은 수동 관리).
+     * - [ALWAYS_ADOPT](**기본** — B-107 D8, 사용자 확정 ⓐ "뗀 이미지는 무조건 남긴다"):
+     *   어떤 이미지든 제거 시 파일을 지우지 않고 라이브러리(미배정)로 입양한다.
+     *   삭제는 명시적으로 고를 때만 일어난다(편집창 2지 선택 · 이미지 탭 · `_삭제승인/`).
+     * - [LIBRARY_ONLY]: 라이브러리(image_meta) 이미지는 파일을 남겨 미배정으로 복귀,
+     *   편집창에서 직접 골라 넣은 일반 이미지는 삭제(공유 참조는 가드가 보호).
+     *
+     * ### 기본을 뒤집은 이유
+     *
+     * `LIBRARY_ONLY`는 **같은 조작인데 넣은 경로에 따라 결과가 갈린다** — 이미지 탭에서
+     * 불러온 것은 남고 편집창에서 갤러리로 고른 것은 파일째 지워지는데, 사용자는 몇 달 전에
+     * 어느 경로로 넣었는지 기억하지 못한다. 그것이 확정 ⓐ가 겨눈 자리다.
+     *
+     * **그래도 설정을 없애지는 않는다.** 명시적으로 고른 것이라면 사용자의 자유이고
+     * (자율성 — 기능의 쓸모는 사용자가 가린다), 없애는 쪽은 엑셀 '앱 설정' 시트에 실린 키를
+     * 없애는 일이라 왕복 처리가 따라붙는다(B-95의 `underbustEstimation`이 P-5를 낳은 부류).
+     *
+     * 기본을 뒤집으면 남는 파일이 늘지만, **골라 지울 자리가 같은 슬라이스 안에 함께 들어왔다**
+     * (서랍 D3 · `_삭제승인` D6 · 편집창 2지 선택 D7).
      */
     enum class EditorRemovePolicy { LIBRARY_ONLY, ALWAYS_ADOPT }
 
     suspend fun getEditorRemovePolicy(): EditorRemovePolicy {
         val prefs = context.imageSettingsDataStore.data.first()
         return when (prefs[KEY_EDITOR_REMOVE_POLICY]) {
-            EditorRemovePolicy.ALWAYS_ADOPT.name -> EditorRemovePolicy.ALWAYS_ADOPT
-            else -> EditorRemovePolicy.LIBRARY_ONLY
+            // 고른 적이 있으면 그 값이 이긴다 — 기본을 뒤집는 것이 사용자의 선택을 덮지 않는다.
+            EditorRemovePolicy.LIBRARY_ONLY.name -> EditorRemovePolicy.LIBRARY_ONLY
+            else -> EditorRemovePolicy.ALWAYS_ADOPT
         }
     }
 

@@ -52,6 +52,25 @@ class CharacterImageStripController(
     var representativePath: String = ""
         private set
 
+    /**
+     * "앱에서 삭제"를 고른 경로들(B-107 D7) — **저장할 때 실행된다.**
+     *
+     * 즉시 지우지 않는 이유가 이 화면의 계약이다: 편집창의 모든 변경(이름·필드·이미지 추가)은
+     * 저장해야 반영되고 취소하면 무해하다. 여기만 예외로 두면 **취소가 듣지 않는 조작**이
+     * 하나 생긴다 — 어리둥절함보다 나쁘다(설계 6장 적대 검토).
+     *
+     * 저장 시 `CharacterSaveCoordinator`가 가져가고, 그 삭제도 `ImageOwnershipGuard`를 거쳐
+     * 다른 캐릭터·작품·세계관·휴지통이 쓰는 파일은 지우지 못한다(조용한 실패 금지).
+     */
+    private val pendingDeletePaths = mutableListOf<String>()
+
+    /** 저장 코디네이터가 가져간다. 목록에 다시 들어온 경로는 자동으로 빠진다(마음이 바뀐 것). */
+    val pendingDeletes: List<String>
+        get() = pendingDeletePaths.filterNot { com.novelcharacter.app.util.ImagePathMatch.containedIn(imagePaths, it) }
+
+    /** 저장이 끝났거나 편집을 버렸을 때 — 대기 목록을 비운다. */
+    fun clearPendingDeletes() = pendingDeletePaths.clear()
+
     /** 현재 이미지 경로 목록 (읽기 전용 뷰) */
     val paths: List<String> get() = imagePaths
 
@@ -221,28 +240,40 @@ class CharacterImageStripController(
                             val removingRepresentative = com.novelcharacter.app.util.ImagePathMatch
                                 .same(imagePaths[adapterPosition], representativePath)
                             val message = if (removingRepresentative) {
-                                fragment.getString(R.string.image_delete_confirm) + "\n\n" +
+                                fragment.getString(R.string.image_remove_choice_desc) + "\n\n" +
                                     fragment.getString(R.string.representative_image_delete_warning_self)
                             } else {
-                                fragment.getString(R.string.image_delete_confirm)
+                                fragment.getString(R.string.image_remove_choice_desc)
+                            }
+                            // 2지 선택(B-107 D7) — "캐릭터에서만 빼기"와 "앱에서 삭제"를
+                            // **한 창**에서 고른다. 창을 둘로 띄우면 조작 마찰이고, 대표 고지는
+                            // 같은 창이 함께 말해야 한다(B-103 ㄷ1과 한 창 — 설계 8장 3번).
+                            //
+                            // **고른 즉시 지우지 않는다.** 편집창의 제거는 저장해야 반영되고
+                            // 취소하면 무해하다는 것이 이 화면의 계약이다 — 즉시 지우면
+                            // 편집을 취소해도 파일이 사라져 계약이 깨진다. 저장할 때
+                            // `CharacterSaveCoordinator`가 `pendingDeletePaths`를 처리한다.
+                            val removeOne: (Boolean) -> Unit = { alsoDeleteFile ->
+                                val currentPos = holder.bindingAdapterPosition
+                                if (currentPos >= 0 && currentPos < imagePaths.size) {
+                                    val removedPath = imagePaths[currentPos]
+                                    imagePaths.removeAt(currentPos)
+                                    if (alsoDeleteFile) pendingDeletePaths.add(removedPath)
+                                    // 목록에서 빠졌으면 포인터도 함께 풀린다(D5).
+                                    representativePath = com.novelcharacter.app.util
+                                        .CharacterRepresentativeImage.retain(representativePath, imagePaths)
+                                    imageAdapter?.notifyItemRemoved(currentPos)
+                                    imageAdapter?.notifyItemRangeChanged(currentPos, imagePaths.size - currentPos)
+                                    onChanged()
+                                    onRemoved()
+                                }
                             }
                             MaterialAlertDialogBuilder(fragment.requireContext())
-                                .setTitle(R.string.delete)
+                                .setTitle(R.string.image_remove_choice_title)
                                 .setMessage(message)
-                                .setPositiveButton(R.string.delete) { _, _ ->
-                                    val currentPos = holder.bindingAdapterPosition
-                                    if (currentPos >= 0 && currentPos < imagePaths.size) {
-                                        imagePaths.removeAt(currentPos)
-                                        // 목록에서 빠졌으면 포인터도 함께 풀린다(D5).
-                                        representativePath = com.novelcharacter.app.util
-                                            .CharacterRepresentativeImage.retain(representativePath, imagePaths)
-                                        imageAdapter?.notifyItemRemoved(currentPos)
-                                        imageAdapter?.notifyItemRangeChanged(currentPos, imagePaths.size - currentPos)
-                                        onChanged()
-                                        onRemoved()
-                                    }
-                                }
-                                .setNegativeButton(R.string.cancel, null)
+                                .setPositiveButton(R.string.image_remove_choice_detach) { _, _ -> removeOne(false) }
+                                .setNegativeButton(R.string.image_remove_choice_delete) { _, _ -> removeOne(true) }
+                                .setNeutralButton(R.string.cancel, null)
                                 .show()
                         }
                         true

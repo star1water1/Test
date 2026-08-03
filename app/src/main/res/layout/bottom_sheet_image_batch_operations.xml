@@ -75,6 +75,16 @@
             android:gravity="start|center_vertical"
             android:text="@string/image_unassign_action" />
 
+        <!-- 서랍에서 빼기(B-107) — '배정 해제' 바로 아래다. 뗀 표식을 붙이는 조작의 짝이라
+             나란히 있어야 붙이고 떼는 한 쌍으로 읽힌다. -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/opClearDetached"
+            style="@style/Widget.App.Button.Outlined"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="start|center_vertical"
+            android:text="@string/image_manager_clear_detached_mark" />
+
         <com.google.android.material.button.MaterialButton
             android:id="@+id/opRecompress"
             style="@style/Widget.App.Button.Outlined"
