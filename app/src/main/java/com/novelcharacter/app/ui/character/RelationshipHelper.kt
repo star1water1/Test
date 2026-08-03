@@ -20,6 +20,7 @@ import com.google.android.material.slider.Slider
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import com.novelcharacter.app.R
+import com.novelcharacter.app.util.DetailListSort
 import com.novelcharacter.app.util.navigateSafe
 import com.novelcharacter.app.util.dismissSafely
 import com.novelcharacter.app.util.setValidatedPositiveButton
@@ -51,6 +52,16 @@ class RelationshipHelper(
     private var currentRelationships: List<CharacterRelationship> = emptyList()
     private var currentDisplayItems: MutableList<RelationshipDisplayItem> = mutableListOf()
 
+    /**
+     * 보기 정렬(B-85). 기본은 저장된 수동 순서이며, **그때만 드래그 재정렬이 열린다** —
+     * 정렬된 화면에서 드래그를 허용하면 그 위치가 그대로 `displayOrder`로 저장되어
+     * 사용자가 손으로 잡아 둔 순서가 지워지기 때문이다(판정 근거는 `DetailListSort`).
+     */
+    private var sortMode = DetailListSort.RelationshipMode.MANUAL
+
+    /** 정렬 적용 전의 순서 = DB의 `displayOrder` 순서. 저장은 언제나 이 목록을 기준으로 한다. */
+    private var manualOrderItems: List<RelationshipDisplayItem> = emptyList()
+
     fun setup() {
         relationshipAdapter = RelationshipAdapter(
             onClick = { item ->
@@ -68,6 +79,13 @@ class RelationshipHelper(
         val touchHelper = ItemTouchHelper(object : ItemTouchHelper.SimpleCallback(
             ItemTouchHelper.UP or ItemTouchHelper.DOWN, 0
         ) {
+            // 비기본 정렬에서는 드래그 자체를 닫는다. onMove에서 막으면 항목이 손에 붙었다가
+            // 제자리로 튀어 "되는데 안 먹는" 것처럼 보이므로, 잡히지도 않게 하는 쪽이 정직하다.
+            override fun getDragDirs(
+                recyclerView: RecyclerView,
+                viewHolder: RecyclerView.ViewHolder
+            ): Int = if (sortMode.allowsManualReorder) super.getDragDirs(recyclerView, viewHolder) else 0
+
             override fun onMove(
                 recyclerView: RecyclerView,
                 viewHolder: RecyclerView.ViewHolder,
@@ -94,9 +112,67 @@ class RelationshipHelper(
         binding.btnAddRelationship.setOnClickListener {
             showAddRelationshipDialog()
         }
+        sortMode = CharacterDetailSortPrefs.relationshipMode(contextGetter())
+        binding.btnSortRelationships.setOnClickListener { showSortMenu(it) }
+        updateSortUi()
+    }
+
+    // ── 보기 정렬(B-85) ──
+
+    private fun showSortMenu(anchor: View) {
+        val context = try { contextGetter() } catch (_: Exception) { return }
+        val modes = DetailListSort.RelationshipMode.values()
+        android.widget.PopupMenu(context, anchor).apply {
+            modes.forEachIndexed { i, m -> menu.add(0, i, i, sortLabelRes(m)) }
+            setOnMenuItemClickListener { item ->
+                sortMode = modes[item.itemId]
+                CharacterDetailSortPrefs.setRelationshipMode(context, sortMode)
+                updateSortUi()
+                render()
+                true
+            }
+            show()
+        }
+    }
+
+    private fun updateSortUi() {
+        binding.btnSortRelationships.setText(sortLabelRes(sortMode))
+        // 드래그가 닫힌 사유와 되돌릴 길을 함께 보여 준다 — 잠근 사실만 알면 "왜 안 되지"가 남는다.
+        binding.textRelationshipSortNote.visibility =
+            if (sortMode.allowsManualReorder) View.GONE else View.VISIBLE
+    }
+
+    private fun sortLabelRes(mode: DetailListSort.RelationshipMode): Int = when (mode) {
+        // 캐릭터 목록의 수동 정렬과 같은 라벨을 쓴다 — 드래그로 순서를 잡는 목록이 둘뿐인데
+        // 서로 다른 이름을 쓰면 같은 것을 다른 것으로 읽는다(sort_default_order는 정렬이 없는 화면의 말이다).
+        DetailListSort.RelationshipMode.MANUAL -> R.string.sort_manual
+        DetailListSort.RelationshipMode.NAME -> R.string.sort_name
+        DetailListSort.RelationshipMode.INTENSITY -> R.string.sort_intensity
+        DetailListSort.RelationshipMode.TYPE -> R.string.sort_relationship_type
+    }
+
+    /**
+     * 화면 다시 그리기 — 저장 순서([manualOrderItems])는 그대로 두고 보이는 순서만 만든다.
+     * 정렬을 바꿔도 DB를 읽지 않는다(원칙 04) — 재정렬은 보기 설정이지 데이터 변경이 아니다.
+     */
+    private fun render() {
+        val cmp = DetailListSort.relationships<RelationshipDisplayItem>(
+            sortMode, { it.otherCharacterName }, { it.intensity }, { it.relationshipType }
+        )
+        val shown = if (cmp == null) manualOrderItems else manualOrderItems.sortedWith(cmp)
+        // 드래그가 열린 기본 순서에서만 이 목록이 저장 대상이 된다(getDragDirs가 그것을 보장).
+        currentDisplayItems = shown.toMutableList()
+        relationshipAdapter.submitList(shown)
+        if (!isBindingAlive()) return
+        binding.textNoRelationships.visibility = if (shown.isEmpty()) View.VISIBLE else View.GONE
+        binding.relationshipsRecyclerView.visibility = if (shown.isEmpty()) View.GONE else View.VISIBLE
     }
 
     private fun saveDisplayOrder() {
+        // 보기 정렬 중에는 저장하지 않는다 — 그때 화면 순서는 저장 순서가 아니라 정렬 결과이고,
+        // 그대로 쓰면 사용자가 손으로 잡아 둔 순서를 덮어 버린다. getDragDirs가 이미 드래그를
+        // 닫아 두었지만 **쓰는 자리에서 한 번 더** 막는다 — 순서 유실은 되돌릴 방법이 없다.
+        if (!sortMode.allowsManualReorder) return
         val updatedRelationships = currentDisplayItems.mapIndexedNotNull { index, displayItem ->
             currentRelationships.find { it.id == displayItem.relationshipId }
                 ?.copy(displayOrder = index)
@@ -126,11 +202,9 @@ class RelationshipHelper(
                         )
                     } else null
                 }
-                currentDisplayItems = displayItems.toMutableList()
-                relationshipAdapter.submitList(displayItems)
-                if (!isBindingAlive()) return@launch
-                binding.textNoRelationships.visibility = if (displayItems.isEmpty()) View.VISIBLE else View.GONE
-                binding.relationshipsRecyclerView.visibility = if (displayItems.isEmpty()) View.GONE else View.VISIBLE
+                // DAO가 준 순서(displayOrder)가 곧 저장 순서다 — 정렬은 이 목록을 건드리지 않는다.
+                manualOrderItems = displayItems
+                render()
             }
         }
     }

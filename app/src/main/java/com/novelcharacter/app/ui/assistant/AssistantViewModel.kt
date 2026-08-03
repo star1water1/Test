@@ -56,7 +56,13 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
                     val all = engine.run(snapshot, statsProvider, enabled)
                     val hidden = all.filter { prefs.isDismissed(it) }.associate { it.id to it.title }
                     // 편향 카드 상한은 숨김 반영 '후'에 적용 — 숨긴 카드가 슬롯을 먹지 않고 다음 카드가 승격된다.
-                    val visible = capBiasCards(all.filterNot { prefs.isDismissed(it) }, prefs.biasMaxCards())
+                    // 그리고 보기 정렬은 그 **뒤**다(B-85): 상한은 심각도 상위 N장을 남기는 규칙이라
+                    // 정렬을 먼저 걸면 고른 순서에 따라 살아남는 편향 카드가 달라진다 — 정렬이 '보는
+                    // 순서'가 아니라 '목록의 내용'을 바꾸게 된다. 순서를 뒤집지 말 것(AssistantSort의 계약).
+                    val visible = AssistantSort.sort(
+                        capBiasCards(all.filterNot { prefs.isDismissed(it) }, prefs.biasMaxCards()),
+                        prefs.sortMode()
+                    )
                     // 배지는 숨김과 무관하게 **실제로 존재하는** 정합성 오류 수 — 카드를 숨겨도 오류가 사라진 척하지 않는다(P2-7).
                     val errorTotal = all.count { it.category.isError }
                     Triple(visible, hidden, errorTotal)
@@ -103,6 +109,19 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
 
     /** 현재 숨김 상태인 카드들의 id→제목(복원 다이얼로그 목록용). */
     fun dismissedTitles(): Map<String, String> = hiddenTitles
+
+    // ── 보기 정렬(B-85) ──
+
+    fun sortMode(): AssistantSort.Mode = prefs.sortMode()
+
+    /**
+     * 정렬만 바꾼다 — 스냅샷을 다시 읽지 않는다(원칙 04: 순서 하나 바꾸는 데 전체 재계산은 마찰이다).
+     * 정렬은 비파괴라 이미 손에 있는 목록을 재배열하는 것으로 충분하고, 상한은 이미 적용된 뒤다.
+     */
+    fun setSortMode(mode: AssistantSort.Mode) {
+        prefs.setSortMode(mode)
+        _insights.value = AssistantSort.sort(_insights.value.orEmpty(), mode)
+    }
 
     fun isCategoryEnabled(category: InsightCategory) = prefs.isCategoryEnabled(category)
 

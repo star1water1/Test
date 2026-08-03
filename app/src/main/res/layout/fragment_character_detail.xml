@@ -2,6 +2,7 @@
 <androidx.coordinatorlayout.widget.CoordinatorLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/background">
@@ -335,6 +336,19 @@
                                 android:textAppearance="@style/TextAppearance.App.Title"
                                 android:textColor="@color/primary" />
 
+                            <!-- 보기 정렬(B-85): 기본은 수동 순서. 그때만 드래그 재정렬이 열린다. -->
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnSortRelationships"
+                                style="@style/Widget.App.Button.Outlined"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:minWidth="0dp"
+                                android:minHeight="0dp"
+                                android:paddingHorizontal="8dp"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                tools:text="기본 (수동 순서)" />
+
                             <ImageView
                                 android:id="@+id/btnAddRelationship"
                                 android:layout_width="48dp"
@@ -345,6 +359,21 @@
                                 android:contentDescription="@string/add_relationship" />
 
                         </LinearLayout>
+
+                        <!--
+                          드래그가 잠긴 사유 고지. 정렬 중에 드래그를 열어 두면 정렬된 화면의 위치가
+                          그대로 저장 순서(displayOrder)로 덮여 손으로 잡아 둔 순서가 지워진다.
+                          잠그는 것으로 끝내면 "왜 안 되지"가 남으므로 되돌릴 길까지 함께 적는다.
+                        -->
+                        <TextView
+                            android:id="@+id/textRelationshipSortNote"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="@string/relationship_sort_drag_locked"
+                            android:textAppearance="@style/TextAppearance.App.BodySmall"
+                            android:textColor="@color/text_secondary"
+                            android:visibility="gone" />
 
                         <TextView
                             android:id="@+id/textNoRelationships"
@@ -393,6 +422,20 @@
                                 android:text="@string/related_events"
                                 android:textAppearance="@style/TextAppearance.App.Title"
                                 android:textColor="@color/primary" />
+
+                            <!-- 보기 정렬(B-85) — 사건은 저장 순서가 없어 드래그와 충돌하지 않는다. -->
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnSortEvents"
+                                style="@style/Widget.App.Button.Outlined"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginEnd="4dp"
+                                android:minWidth="0dp"
+                                android:minHeight="0dp"
+                                android:paddingHorizontal="8dp"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                tools:text="연도순" />
 
                             <com.google.android.material.button.MaterialButton
                                 android:id="@+id/btnAddEvent"
@@ -471,6 +514,19 @@
                                 android:text="@string/state_changes"
                                 android:textAppearance="@style/TextAppearance.App.Title"
                                 android:textColor="@color/primary" />
+
+                            <!-- 보기 정렬(B-85) — 상태 변화도 저장 순서가 없다(DAO가 연·월·일 고정). -->
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnSortStateChanges"
+                                style="@style/Widget.App.Button.Outlined"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:minWidth="0dp"
+                                android:minHeight="0dp"
+                                android:paddingHorizontal="8dp"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                tools:text="연도순" />
 
                             <ImageView
                                 android:id="@+id/btnAddStateChange"

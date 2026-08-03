@@ -58,6 +58,8 @@ class AssistantFragment : Fragment() {
         binding.insightRecyclerView.layoutManager = LinearLayoutManager(requireContext())
         binding.insightRecyclerView.adapter = adapter
         binding.overflowButton.setOnClickListener { showScreenMenu(it) }
+        binding.btnSort.setOnClickListener { showSortMenu(it) }
+        updateSortButton()
 
         // '전체 보기' 시트에서 교정이 있었으면 한 번만 갱신(행마다 재로딩 방지).
         childFragmentManager.setFragmentResultListener(
@@ -151,6 +153,35 @@ class AssistantFragment : Fragment() {
         notifyWithAction(getString(R.string.assistant_dismissed), getString(R.string.assistant_undo)) {
             viewModel.undismiss(insight)
         }
+    }
+
+    // ===== 보기 정렬 (B-85) =====
+
+    /**
+     * 정렬 선택 — 비파괴다. 순서만 바뀌고 어떤 카드가 뜨는지는 그대로다(카테고리·숨김·편향 상한이 정한다).
+     * 스냅샷을 다시 읽지 않으므로 목록이 즉시 다시 그려진다.
+     */
+    private fun showSortMenu(anchor: View) {
+        val modes = AssistantSort.Mode.values()
+        PopupMenu(requireContext(), anchor).apply {
+            modes.forEachIndexed { i, m -> menu.add(0, i, i, sortLabelRes(m)) }
+            setOnMenuItemClickListener { item ->
+                viewModel.setSortMode(modes[item.itemId])
+                updateSortButton()
+                true
+            }
+            show()
+        }
+    }
+
+    private fun updateSortButton() {
+        binding.btnSort.setText(sortLabelRes(viewModel.sortMode()))
+    }
+
+    private fun sortLabelRes(mode: AssistantSort.Mode): Int = when (mode) {
+        AssistantSort.Mode.SEVERITY -> R.string.assistant_sort_severity
+        AssistantSort.Mode.CATEGORY -> R.string.assistant_sort_category
+        AssistantSort.Mode.COUNT -> R.string.assistant_sort_count
     }
 
     // ===== 화면 메뉴 (새로고침 / 표시할 항목 / 숨긴 항목 복원) =====

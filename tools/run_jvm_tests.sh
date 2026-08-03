@@ -167,6 +167,9 @@ $MAIN/util/FolderNameToken.kt
 $MAIN/util/FolderRoundtripPlanner.kt
 $MAIN/util/FolderRoundtripLedger.kt
 $MAIN/util/FolderExportPlanner.kt
+$MAIN/ui/assistant/AssistantInsight.kt
+$MAIN/ui/assistant/AssistantSort.kt
+$MAIN/util/DetailListSort.kt
 $MAIN/ui/supplement/RandomPickEngine.kt
 $MAIN/ui/namebank/BulkRegisterPlanner.kt
 $MAIN/excel/StreamingXlsxReader.kt
@@ -211,6 +214,8 @@ $TEST/util/FormulaDisplayTest.kt
 $TEST/util/FormulaEvaluatorTest.kt
 $TEST/util/FormulaValidatorTest.kt
 $TEST/util/SortComparatorsTest.kt
+$TEST/util/DetailListSortTest.kt
+$TEST/ui/assistant/AssistantSortTest.kt
 $TEST/util/EpochMemoTest.kt
 $TEST/util/PresetTemplatesRoundtripTest.kt
 $TEST/ai/AiJsonExtractorTest.kt

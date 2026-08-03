@@ -48,6 +48,16 @@ class AssistantPrefs(context: Context) {
         sp.edit().remove(dismissKey(id)).remove(legacyTitleKey(id)).apply()
     }
 
+    // ── 보기 정렬(B-85) ──
+    // 무엇을 볼지(카테고리·숨김)에 이어 **어떤 순서로 볼지**도 사용자가 정한다. 순서는 보기
+    // 설정이라 카드의 내용에 관여하지 않는다(비파괴 — AssistantSort의 계약).
+
+    fun sortMode(): AssistantSort.Mode = AssistantSort.parse(sp.getString(KEY_SORT_MODE, null))
+
+    fun setSortMode(mode: AssistantSort.Mode) {
+        sp.edit().putString(KEY_SORT_MODE, mode.name).apply()
+    }
+
     // ── 편향 카드 규모 제어(사용자 설정) ──
     // 데이터가 많아질수록 편향 카드가 쏟아지던 문제를, 사용자가 직접 임계값으로 가린다(자율성 우선).
 
@@ -70,6 +80,7 @@ class AssistantPrefs(context: Context) {
     companion object {
         private const val PREFS_NAME = "assistant_prefs"
         private const val DISMISS_PREFIX = "dismiss_"
+        private const val KEY_SORT_MODE = "sort_mode"
         private const val KEY_BIAS_MIN_POP = "bias_min_population"
         private const val KEY_BIAS_MAX_CARDS = "bias_max_cards"
         const val DEFAULT_BIAS_MIN_POP = 8
