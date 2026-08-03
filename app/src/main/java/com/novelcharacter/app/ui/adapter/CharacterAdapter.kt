@@ -29,13 +29,12 @@ class CharacterAdapter(
     private val onEditClick: (Character) -> Unit,
     private val onDeleteClick: (Character) -> Unit,
     private val onPinClick: ((Character) -> Unit)? = null,
-    /** 카드 롱프레스(일반 탐색 모드 한정) — 일괄편집 진입 가속기. 이미지 포함 카드 전체에 적용. 반환값 = 이벤트 소비 여부. */
+    /** 카드 롱프레스(일반 탐색 모드 한정) — 선택 모드 진입 가속기. 이미지 포함 카드 전체에 적용. 반환값 = 이벤트 소비 여부. */
     private val onLongClick: ((Character) -> Boolean)? = null
 ) : ListAdapter<Character, CharacterAdapter.CharacterViewHolder>(CharacterDiffCallback()) {
 
     private var isSelectionMode = false
     private var selectedIds = setOf<Long>()
-    private var isMaxReached = false
 
     private var isReorderMode = false
     var itemTouchHelper: ItemTouchHelper? = null
@@ -75,20 +74,11 @@ class CharacterAdapter(
     }
 
     /**
-     * Update max-reached state without triggering notifyDataSetChanged.
-     * Caller should batch this with setSelectedIds to avoid double refresh.
-     */
-    fun setMaxReached(maxReached: Boolean) {
-        isMaxReached = maxReached
-    }
-
-    /**
-     * Batch reset: clears selection mode, selected IDs, and max-reached in a single notify.
+     * Batch reset: clears selection mode and selected IDs in a single notify.
      */
     fun resetState() {
         isSelectionMode = false
         selectedIds = emptySet()
-        isMaxReached = false
         notifyItemRangeChanged(0, itemCount)
     }
 
@@ -211,10 +201,6 @@ class CharacterAdapter(
                         binding.root.alpha = 1.0f
                         binding.root.setCardBackgroundColor(binding.root.context.getColor(R.color.primary_light))
                     }
-                    isSelectionMode && isMaxReached -> {
-                        binding.root.alpha = 0.3f
-                        binding.root.setCardBackgroundColor(defaultCardColor)
-                    }
                     isSelectionMode -> {
                         binding.root.alpha = 0.5f
                         binding.root.setCardBackgroundColor(defaultCardColor)
@@ -226,7 +212,7 @@ class CharacterAdapter(
                 }
 
                 binding.root.setOnClickListener { onClick(character) }
-                // 선택/비교 모드가 아닐 때만 롱프레스 = 일괄편집 진입(보조). 선택 모드에선 탭이 토글이므로 롱프레스 비활성.
+                // 선택 모드가 아닐 때만 롱프레스 = 선택 모드 진입(보조). 선택 모드에선 탭이 토글이므로 롱프레스 비활성.
                 if (!isSelectionMode && onLongClick != null) {
                     binding.root.setOnLongClickListener { onLongClick.invoke(character) }
                     binding.root.isLongClickable = true

@@ -125,8 +125,13 @@
 
     </LinearLayout>
 
+    <!-- 선택 바 (B-83) — 진입 셋(⋮ 비교하기 · ⋮ 일괄 편집 · 카드 롱프레스)이 전부 이 하나로 온다.
+         종전엔 목적지마다 바가 따로 있어(batchEditBar / compareBar) 어느 문으로 들어왔는지가
+         무엇을 할 수 있는지를 정했다 — 롱프레스로 들어오면 비교가 없었다. 선택을 목적지에서
+         떼어내 두 실행 버튼을 나란히 두면, 고르는 순서가 '무엇을 할지 → 누구를'에서
+         '누구를 → 무엇을 할지'로 바뀐다(원칙 04). -->
     <LinearLayout
-        android:id="@+id/batchEditBar"
+        android:id="@+id/selectionBar"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
@@ -140,7 +145,7 @@
         app:layout_constraintTop_toBottomOf="@id/filterSortBar">
 
         <ImageButton
-            android:id="@+id/btnBatchClose"
+            android:id="@+id/btnSelectionClose"
             android:layout_width="36dp"
             android:layout_height="36dp"
             android:background="?attr/selectableItemBackgroundBorderless"
@@ -150,7 +155,7 @@
             app:tint="?attr/colorOnSurfaceVariant" />
 
         <TextView
-            android:id="@+id/batchSelectedCount"
+            android:id="@+id/selectionCount"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
@@ -159,7 +164,7 @@
             android:paddingStart="4dp" />
 
         <ImageButton
-            android:id="@+id/btnBatchOverflow"
+            android:id="@+id/btnSelectionOverflow"
             android:layout_width="36dp"
             android:layout_height="36dp"
             android:layout_marginEnd="4dp"
@@ -169,61 +174,31 @@
             android:scaleType="centerInside"
             app:tint="?attr/colorOnSurfaceVariant" />
 
+        <!-- 실행 둘은 토널(보조) + 채움(주)으로 위계를 준다 — 목적지가 둘이라는 것은 보이되
+             어느 쪽이 기본인지는 남긴다. 텍스트 버튼을 쓰지 않은 것은 그 스타일이 다이얼로그
+             액션 슬롯·인라인 링크 전용이라 styles.xml에 적혀 있기 때문이다.
+             좁은 화면 대비: 둘 다 maxLines=1이고, 남는 폭은 선택 수 표기(weight=1)가 먼저 내준다. -->
         <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnBatchAction"
-            style="@style/Widget.App.Button"
+            android:id="@+id/btnSelectionCompare"
+            style="@style/Widget.App.Button.Tonal"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="@string/batch_action"
+            android:layout_marginEnd="4dp"
+            android:text="@string/compare_mode_label"
+            android:maxLines="1"
             android:minWidth="56dp"
             android:minHeight="36dp"
             android:insetTop="0dp"
             android:insetBottom="0dp"
             android:enabled="false" />
 
-    </LinearLayout>
-
-    <!-- 비교 전용 바 (N-1 §7-4) — 일괄 편집 바와 같은 문법: [✕] 선택 수 …… [비교하기].
-         진입이 ⋮로 들어가면서 모드 중의 상태·실행·취소가 갈 곳을 여기서 맡는다. -->
-    <LinearLayout
-        android:id="@+id/compareBar"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:paddingHorizontal="8dp"
-        android:paddingVertical="4dp"
-        android:background="@color/surface"
-        android:visibility="gone"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/batchEditBar">
-
-        <ImageButton
-            android:id="@+id/btnCompareClose"
-            android:layout_width="36dp"
-            android:layout_height="36dp"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:contentDescription="@string/close"
-            android:src="@drawable/ic_close"
-            android:scaleType="centerInside"
-            app:tint="?attr/colorOnSurfaceVariant" />
-
-        <TextView
-            android:id="@+id/compareSelectedCount"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="@string/compare_select_hint"
-            android:textAppearance="@style/TextAppearance.App.BodyStrong"
-            android:paddingStart="4dp" />
-
         <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnCompareRun"
+            android:id="@+id/btnSelectionAction"
             style="@style/Widget.App.Button"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="@string/compare_mode_label"
+            android:text="@string/batch_action"
+            android:maxLines="1"
             android:minWidth="56dp"
             android:minHeight="36dp"
             android:insetTop="0dp"
@@ -242,7 +217,7 @@
         android:paddingHorizontal="8dp"
         android:paddingTop="4dp"
         android:paddingBottom="4dp"
-        app:layout_constraintTop_toBottomOf="@id/compareBar"
+        app:layout_constraintTop_toBottomOf="@id/selectionBar"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">
 
