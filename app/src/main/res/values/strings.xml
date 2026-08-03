@@ -50,6 +50,12 @@
     <string name="sort_recent_added">등록 최신순</string>
     <string name="sort_default_order">기본 순서</string>
     <string name="sort_entry_count">값 많은 순</string>
+    <!-- B-85에서 추가된 공용 라벨. 화면마다 새로 만들지 않고 여기서 데려다 쓴다. -->
+    <string name="sort_year_asc">연도순</string>
+    <string name="sort_year_desc">연도 역순</string>
+    <string name="sort_intensity">강도순</string>
+    <string name="sort_relationship_type">유형순</string>
+    <string name="sort_field_key">필드순</string>
     <string name="yes">예</string>
     <string name="no">아니오</string>
     <string name="confirm_delete">정말 삭제하시겠습니까?</string>
@@ -295,6 +301,8 @@
     <string name="show_available_only">미사용만</string>
     <string name="name_bank_empty_hint">이름을 추가해 보세요</string>
     <string name="relationship_label">관계</string>
+    <!-- 캐릭터 목록의 reorder_needs_manual_sort와 형제 문구 — 같은 사정(정렬된 부분집합에 순서를 찍으면 손상)을 같은 말로 알린다. -->
+    <string name="relationship_sort_drag_locked">정렬을 \'기본 (수동 순서)\'로 두어야 드래그로 순서를 바꿀 수 있습니다</string>
     <string name="target_character">대상 캐릭터</string>
     <string name="relationship_type">관계 유형</string>
     <string name="description_optional">설명 (선택)</string>
@@ -2164,6 +2172,10 @@
     <string name="assistant_action_view_all">전체 보기 (%1$d명)</string>
     <string name="assistant_affected_remaining">남은 %1$d명</string>
     <!-- 전체 보기 시트 정렬(비파괴 — 보는 순서만) -->
+    <!-- 카드 목록의 보기 정렬(B-85). 순서만 바꾸며 어떤 카드가 뜨는지는 바뀌지 않는다. -->
+    <string name="assistant_sort_severity">심각도순</string>
+    <string name="assistant_sort_category">분류순</string>
+    <string name="assistant_sort_count">항목 많은 순</string>
     <string name="assistant_sort_default">기본 순서</string>
     <string name="assistant_sort_name">이름순</string>
     <string name="assistant_sort_recent">최근 수정순</string>
@@ -2741,7 +2753,11 @@
 
     <!-- A-1 필드별 AI 추천 토글 / A-2 필드 설명 -->
     <string name="field_ai_suggest_label">AI 추천 대상</string>
-    <string name="field_ai_suggest_desc">끄면 일괄 추천에서 제외되고 이 필드의 ✨ 버튼도 숨습니다. 🎲 랜덤·값 라이브러리 AI 정리·통계·엑셀에는 영향이 없습니다.</string>
+    <string name="field_ai_suggest_desc">이 필드를 AI 추천이 어디까지 다룰지 정합니다. \'개별만\'은 일괄 추천에서만 빠지고 ✨ 버튼은 그대로 남습니다(비용을 아끼면서 필요할 때 직접 요청). \'끄기\'는 ✨ 버튼까지 숨깁니다. 🎲 랜덤·값 라이브러리 AI 정리·통계·엑셀에는 어느 쪽도 영향이 없습니다.</string>
+    <!-- 목록 행의 짧은 라벨 — 편집 화면의 긴 라벨과 같은 상태를 길이만 달리 부른다(B-80) -->
+    <string name="field_ai_mode_all_short">AI 전부</string>
+    <string name="field_ai_mode_manual_short">AI 개별만</string>
+    <string name="field_ai_mode_off_short">AI 끄기</string>
     <string name="image_tag_review_title">AI 태그 제안 검토</string>
     <string name="image_tag_review_desc">체크한 태그만 적용됩니다. 이번에 그 폴더에서 온 이미지에만 붙습니다.</string>
     <string name="image_tag_review_empty">제안된 태그가 없습니다.</string>

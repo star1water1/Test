@@ -357,7 +357,7 @@ fun fieldDefinitionSpec(
         ColumnSpec("필수여부", dropdownOptions = listOf("Y", "N"), width = 4000),
         // config 파생 전용 열(A-1·A-2) — 사람이 고치는 값이라 JSON 셀에 뭉치지 않고 열을 판다.
         // 내보내기는 설정(JSON) 셀에서 두 키를 제거하고 여기에만 싣는다(FieldConfigColumns).
-        ColumnSpec(FieldConfigColumns.COLUMN_AI_SUGGEST, dropdownOptions = listOf("Y", "N"), width = 3500),
+        ColumnSpec(FieldConfigColumns.COLUMN_AI_SUGGEST, dropdownOptions = FieldConfigColumns.AI_CELL_OPTIONS, width = 3500),
         ColumnSpec(FieldConfigColumns.COLUMN_DESCRIPTION, width = 12000),
         ColumnSpec("세계관코드", readOnly = true, width = 4000),
         // 캐릭터/사건/작품 필드 구분 — 이 열이 없던 구버전 파일은 캐릭터로 간주(관대 수용).

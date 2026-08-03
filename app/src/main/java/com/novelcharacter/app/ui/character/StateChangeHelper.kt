@@ -18,6 +18,7 @@ import com.novelcharacter.app.data.model.generateEntityCode
 import com.novelcharacter.app.databinding.DialogStateChangeBinding
 import com.novelcharacter.app.databinding.FragmentCharacterDetailBinding
 import com.novelcharacter.app.ui.adapter.StateChangeAdapter
+import com.novelcharacter.app.util.DetailListSort
 
 class StateChangeHelper(
     private val binding: FragmentCharacterDetailBinding,
@@ -31,6 +32,12 @@ class StateChangeHelper(
 ) {
     private lateinit var stateChangeAdapter: StateChangeAdapter
 
+    /** 보기 정렬(B-85). 상태 변화에는 저장 순서가 없어(DAO가 연·월·일 고정) 드래그와 충돌하지 않는다. */
+    private var sortMode = DetailListSort.StateChangeMode.CHRONO
+
+    /** 마지막으로 받은 원본 — 정렬만 바꿀 때 DB를 다시 읽지 않기 위해 들고 있는다. */
+    private var currentChanges: List<CharacterStateChange> = emptyList()
+
     fun setup() {
         stateChangeAdapter = StateChangeAdapter(
             onClick = { change -> showEditDeleteDialog(change) },
@@ -42,24 +49,59 @@ class StateChangeHelper(
         binding.btnAddStateChange.setOnClickListener {
             showStateChangeDialog(null)
         }
+
+        sortMode = CharacterDetailSortPrefs.stateChangeMode(contextGetter())
+        binding.btnSortStateChanges.setOnClickListener { showSortMenu(it) }
+        updateSortButton()
     }
 
     fun observe() {
         viewModel.getChangesByCharacter(characterId).observe(viewLifecycleOwner) { changes ->
-            val sortedChanges = changes.sortedWith(
-                compareBy({ it.year }, { it.month ?: 0 }, { it.day ?: 0 })
-            )
-            stateChangeAdapter.submitList(sortedChanges)
-
-            if (sortedChanges.isEmpty()) {
-                binding.textNoStateChanges.visibility = View.VISIBLE
-                binding.stateChangesRecyclerView.visibility = View.GONE
-            } else {
-                binding.textNoStateChanges.visibility = View.GONE
-                binding.stateChangesRecyclerView.visibility = View.VISIBLE
-            }
-
+            currentChanges = changes
+            render()
             onSliderUpdate()
+        }
+    }
+
+    // ── 보기 정렬(B-85) ──
+
+    private fun showSortMenu(anchor: View) {
+        val context = try { contextGetter() } catch (_: Exception) { return }
+        val modes = DetailListSort.StateChangeMode.values()
+        android.widget.PopupMenu(context, anchor).apply {
+            modes.forEachIndexed { i, m -> menu.add(0, i, i, sortLabelRes(m)) }
+            setOnMenuItemClickListener { item ->
+                sortMode = modes[item.itemId]
+                CharacterDetailSortPrefs.setStateChangeMode(context, sortMode)
+                updateSortButton()
+                render()
+                true
+            }
+            show()
+        }
+    }
+
+    private fun updateSortButton() {
+        binding.btnSortStateChanges.setText(sortLabelRes(sortMode))
+    }
+
+    private fun sortLabelRes(mode: DetailListSort.StateChangeMode): Int = when (mode) {
+        DetailListSort.StateChangeMode.CHRONO -> R.string.sort_year_asc
+        DetailListSort.StateChangeMode.CHRONO_DESC -> R.string.sort_year_desc
+        DetailListSort.StateChangeMode.FIELD -> R.string.sort_field_key
+    }
+
+    /** 보이는 순서만 만든다 — 정렬을 바꿔도 DB를 다시 읽지 않는다(원칙 04). */
+    private fun render() {
+        val sorted = currentChanges.sortedWith(DetailListSort.stateChanges(sortMode))
+        stateChangeAdapter.submitList(sorted)
+
+        if (sorted.isEmpty()) {
+            binding.textNoStateChanges.visibility = View.VISIBLE
+            binding.stateChangesRecyclerView.visibility = View.GONE
+        } else {
+            binding.textNoStateChanges.visibility = View.GONE
+            binding.stateChangesRecyclerView.visibility = View.VISIBLE
         }
     }
 

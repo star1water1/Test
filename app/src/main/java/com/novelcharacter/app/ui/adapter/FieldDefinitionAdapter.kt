@@ -13,19 +13,35 @@ import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.FieldDescription
 import com.novelcharacter.app.data.model.FieldType
 import com.novelcharacter.app.data.model.SemanticRole
+import com.novelcharacter.app.R
 import com.novelcharacter.app.databinding.ItemFieldDefinitionBinding
 
 class FieldDefinitionAdapter(
     private val onClick: (FieldDefinition) -> Unit,
     private val onLongClick: (FieldDefinition) -> Unit,
-    /** A-1: AI 추천 토글 — 1탭 즉시 저장(성공 무통보). 편집 다이얼로그의 스위치와 같은 소스를 쓴다 */
-    private val onAiToggle: (FieldDefinition, Boolean) -> Unit,
+    /**
+     * A-1: AI 추천 대상 — 상태 버튼을 누르면 호출된다(B-80으로 3단이 되어 스위치가 아니다).
+     * 메뉴 표시·저장은 화면이 맡는다 — 어댑터는 앵커만 넘긴다.
+     */
+    private val onAiModeClick: (FieldDefinition, View) -> Unit,
     /** A-2: 필드 설명 ⓘ — 설명이 있는 필드에만 노출된다 */
     private val onInfoClick: (FieldDefinition) -> Unit
 ) : ListAdapter<FieldDefinition, FieldDefinitionAdapter.FieldViewHolder>(FieldDiffCallback()) {
 
     /** 드래그는 핸들 전용 — 세계관·작품·캐릭터·연표 목록과 같은 배선 (isLongPressDragEnabled=false 짝) */
     var itemTouchHelper: ItemTouchHelper? = null
+
+    companion object {
+        /**
+         * 목록 행의 짧은 라벨. 편집 다이얼로그의 [FieldAiPolicy.SuggestMode.label]은 설명이 붙은
+         * 긴 문장이라 좁은 행에 들어가지 않는다 — 같은 상태를 길이만 달리 부른다.
+         */
+        fun shortLabelRes(mode: FieldAiPolicy.SuggestMode): Int = when (mode) {
+            FieldAiPolicy.SuggestMode.ALL -> R.string.field_ai_mode_all_short
+            FieldAiPolicy.SuggestMode.MANUAL_ONLY -> R.string.field_ai_mode_manual_short
+            FieldAiPolicy.SuggestMode.OFF -> R.string.field_ai_mode_off_short
+        }
+    }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): FieldViewHolder {
         val binding = ItemFieldDefinitionBinding.inflate(
@@ -78,18 +94,14 @@ class FieldDefinitionAdapter(
             // 보이지 않는다). **조건은 '캐릭터인가'로 쓴다** — 종류를 하나씩 빼는 형태로 쓰면
             // 종류가 늘 때마다 여기가 뒤처지고, 뒤처진 결과가 '아무 일도 안 하는 스위치'다.
             if (field.entityType != FieldDefinition.ENTITY_CHARACTER) {
-                binding.switchAiSuggest.setOnCheckedChangeListener(null)
-                binding.switchAiSuggest.visibility = View.GONE
+                binding.btnAiMode.setOnClickListener(null)
+                binding.btnAiMode.visibility = View.GONE
             } else {
-                binding.switchAiSuggest.visibility = View.VISIBLE
-                // 재바인딩 시 setChecked가 이전 행의 리스너를 부르지 않도록 먼저 해제한다
-                binding.switchAiSuggest.setOnCheckedChangeListener(null)
-                binding.switchAiSuggest.isChecked = FieldAiPolicy.isSuggestEnabled(field.config)
-                binding.switchAiSuggest.setOnCheckedChangeListener { _, checked ->
-                    if (checked != FieldAiPolicy.isSuggestEnabled(field.config)) {
-                        onAiToggle(field, checked)
-                    }
-                }
+                binding.btnAiMode.visibility = View.VISIBLE
+                // B-80: 3단이라 스위치가 아니라 상태 라벨 + 메뉴다. 상태를 글자로 띄우므로
+                // 재바인딩에서 리스너가 먼저 불리는 문제(스위치의 setChecked)가 애초에 없다.
+                binding.btnAiMode.setText(shortLabelRes(FieldAiPolicy.suggestMode(field.config)))
+                binding.btnAiMode.setOnClickListener { anchor -> onAiModeClick(field, anchor) }
             }
 
             binding.root.setOnClickListener { onClick(field) }

@@ -22,6 +22,39 @@ object FieldConfigColumns {
     const val COLUMN_AI_SUGGEST = "AI추천"
     const val COLUMN_DESCRIPTION = "필드설명"
 
+    /** `AI추천` 열의 '개별만'(B-80) 셀 값. 나머지 둘은 2단 시절 그대로 `Y`/`N`이다. */
+    const val AI_CELL_MANUAL_ONLY = "개별만"
+
+    /** 드롭다운 선택지 = 내보내기가 쓰는 값 그대로. 이 목록이 시트와 내보내기의 단일 소스다. */
+    val AI_CELL_OPTIONS = listOf("Y", AI_CELL_MANUAL_ONLY, "N")
+
+    /** 상태 → 셀 값. **`Y`/`N`은 2단 시절과 같다** — 옛 파일과 새 파일이 같은 말을 쓴다(왕복 무결성). */
+    fun aiCellOf(configJson: String): String = when (FieldAiPolicy.suggestMode(configJson)) {
+        FieldAiPolicy.SuggestMode.ALL -> "Y"
+        FieldAiPolicy.SuggestMode.MANUAL_ONLY -> AI_CELL_MANUAL_ONLY
+        FieldAiPolicy.SuggestMode.OFF -> "N"
+    }
+
+    /**
+     * 셀 값 → 상태. **빈칸은 기본(전부)**이고, 그 외에는 종전 `parseSheetBoolean`의 판정을 그대로 잇는다:
+     * 참으로 읽히는 값은 전부, `개별만` 계열은 개별만, **나머지는 전부 끄기**다
+     * (오타·모르는 값이 조용히 켜지지 않게 하던 종전 성질을 바꾸지 않는다).
+     */
+    fun parseAiCell(cellText: String): FieldAiPolicy.SuggestMode {
+        val text = cellText.trim()
+        if (text.isBlank()) return FieldAiPolicy.SuggestMode.DEFAULT
+        if (isManualOnlyCell(text)) return FieldAiPolicy.SuggestMode.MANUAL_ONLY
+        return if (parseSheetBoolean(text)) FieldAiPolicy.SuggestMode.ALL
+        else FieldAiPolicy.SuggestMode.OFF
+    }
+
+    /** 외부 편집을 관대하게 받는다 — 사용자가 손으로 적는 자리다(개발 의도 4번). */
+    private fun isManualOnlyCell(text: String): Boolean =
+        when (toHalfWidth(text).uppercase()) {
+            AI_CELL_MANUAL_ONLY, "개별", "MANUAL", "MANUAL_ONLY", "M" -> true
+            else -> false
+        }
+
     /**
      * 내보내기용: JSON 셀에 싣기 전에 전용 열로 나가는 키들을 **문자열 사본에서** 제거한다
      * (AI추천 · 필드설명 · 등급체계 참조 — 재정의 `gradeOverrides`와 실효 표 `grades`는
@@ -44,8 +77,8 @@ object FieldConfigColumns {
     /**
      * 가져오기 병합 — 두 열 각각 3분기 (`필수여부`의 `sheetBooleanOrKeep`과 같은 문법):
      *
-     * ① 전용 열이 있으면 → 그 셀이 값이다. AI추천의 빈칸은 기본값(켜짐)으로 해석한다 —
-     *    끄기는 드롭다운의 "N"이 말하고, 빈칸은 config 키 없음(=기본값)에 대응한다.
+     * ① 전용 열이 있으면 → 그 셀이 값이다. AI추천의 빈칸은 기본값(전부)으로 해석한다 —
+     *    끄기는 드롭다운의 "N"이, 개별만은 "개별만"이 말하고, 빈칸은 config 키 없음(=기본값)에 대응한다.
      *    필드설명의 빈칸은 설명 제거다(내보내기가 설명 없는 필드를 빈칸으로 쓰므로 왕복 일치).
      * ② 열이 없고 JSON 셀에 키가 있으면 → 그대로 둔다 (전용 열 도입 전 구버전 파일).
      * ③ 열이 없고 JSON에도 키가 없으면 → **기존 DB 값을 다시 얹는다** — 이 분기를 빠뜨리면
@@ -62,13 +95,10 @@ object FieldConfigColumns {
     ): String {
         var merged = sheetConfig
         merged = when {
-            aiColumnPresent -> {
-                val enabled = if (aiCellText.isBlank()) true else parseSheetBoolean(aiCellText)
-                FieldAiPolicy.applyToConfig(merged, enabled)
-            }
+            aiColumnPresent -> FieldAiPolicy.applyMode(merged, parseAiCell(aiCellText))
             hasKey(merged, FieldAiPolicy.CONFIG_KEY) -> merged
             existingConfig != null ->
-                FieldAiPolicy.applyToConfig(merged, FieldAiPolicy.isSuggestEnabled(existingConfig))
+                FieldAiPolicy.applyMode(merged, FieldAiPolicy.suggestMode(existingConfig))
             else -> merged
         }
         merged = when {

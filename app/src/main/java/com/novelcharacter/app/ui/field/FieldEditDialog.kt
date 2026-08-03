@@ -322,6 +322,12 @@ class FieldEditDialog : DialogFragment() {
         ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
         binding.spinnerNarrativeMode.adapter = narrativeAdapter
 
+        // AI 추천 대상 3단(B-80) — 전부 / 개별만 / 끄기. 라벨의 단일 소스는 SuggestMode다.
+        binding.spinnerAiSuggest.adapter = ArrayAdapter(
+            requireContext(), android.R.layout.simple_spinner_item,
+            com.novelcharacter.app.data.model.FieldAiPolicy.SuggestMode.entries.map { it.label }
+        ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+
         // Percentile toggle
         binding.switchPercentileEnabled.setOnCheckedChangeListener { _, isChecked ->
             binding.percentileScopeLayout.visibility = if (isChecked) View.VISIBLE else View.GONE
@@ -1479,8 +1485,9 @@ class FieldEditDialog : DialogFragment() {
         binding.editFieldDescription.setText(
             com.novelcharacter.app.data.model.FieldDescription.fromConfig(field.config)
         )
-        binding.switchAiSuggest.isChecked =
-            com.novelcharacter.app.data.model.FieldAiPolicy.isSuggestEnabled(field.config)
+        val aiModeIndex = com.novelcharacter.app.data.model.FieldAiPolicy.SuggestMode.entries
+            .indexOf(com.novelcharacter.app.data.model.FieldAiPolicy.suggestMode(field.config))
+        if (aiModeIndex >= 0) binding.spinnerAiSuggest.setSelection(aiModeIndex)
         binding.switchImageTagVocab.isChecked =
             com.novelcharacter.app.data.model.FieldAiPolicy.isImageTagVocabEnabled(field.config)
 
@@ -2106,14 +2113,18 @@ class FieldEditDialog : DialogFragment() {
 
     /**
      * 필드 설명(A-2)과 AI 추천 토글(A-1)을 config에 기록 — 두 buildConfig 출구가 공유한다.
-     * 사건 필드는 토글이 노출되지 않고 스위치 기본값(true)이 유지되므로 키가 남지 않는다(R-24).
+     * 사건 필드는 설정이 노출되지 않고 스피너 기본 선택(전부)이 유지되므로 키가 남지 않는다(R-24).
      */
     private fun applyAiAndDescriptionConfig(binding: DialogFieldEditBinding, configJson: String): String {
         val withDescription = com.novelcharacter.app.data.model.FieldDescription.applyToConfig(
             configJson, binding.editFieldDescription.text?.toString().orEmpty()
         )
-        val withSuggest = com.novelcharacter.app.data.model.FieldAiPolicy.applyToConfig(
-            withDescription, binding.switchAiSuggest.isChecked
+        val withSuggest = com.novelcharacter.app.data.model.FieldAiPolicy.applyMode(
+            withDescription,
+            com.novelcharacter.app.data.model.FieldAiPolicy.SuggestMode.entries
+                .getOrElse(binding.spinnerAiSuggest.selectedItemPosition) {
+                    com.novelcharacter.app.data.model.FieldAiPolicy.SuggestMode.DEFAULT
+                }
         )
         return com.novelcharacter.app.data.model.FieldAiPolicy.applyImageTagVocabToConfig(
             withSuggest, binding.switchImageTagVocab.isChecked

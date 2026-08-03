@@ -552,8 +552,9 @@ class ExcelExporter(context: Context) {
             GuideLine("", styles.guideBody, "  비우면 기본 관계 유형·색상으로 돌아갑니다. 해석할 수 없으면 적용하지 않고 기존 설정을 유지합니다."),
             GuideLine("", styles.guideBody, "• 작품: 코드로 매칭. 코드 없을 시 제목+세계관으로 매칭"),
             GuideLine("", styles.guideBody, "• 필드 정의: 세계관+필드키+대상으로 매칭. 타입은 드롭다운에서 선택. 대상이 사건·작품이면 그 종류의 필드"),
-            GuideLine("", styles.guideBody, "  'AI추천'(Y/N)·'필드설명' 열을 채워 다시 가져오면 AI 추천 동작에 반영됩니다"),
-            GuideLine("", styles.guideBody, "  (AI추천 빈칸=켜짐, 필드설명 빈칸=설명 없음. 두 열을 지운 파일은 기존 설정을 유지합니다)"),
+            GuideLine("", styles.guideBody, "  'AI추천'(Y/개별만/N)·'필드설명' 열을 채워 다시 가져오면 AI 추천 동작에 반영됩니다"),
+            GuideLine("", styles.guideBody, "  (Y=일괄 추천과 ✨ 모두, 개별만=✨ 버튼으로 요청할 때만, N=AI가 건드리지 않음)"),
+            GuideLine("", styles.guideBody, "  (AI추천 빈칸=Y, 필드설명 빈칸=설명 없음. 두 열을 지운 파일은 기존 설정을 유지합니다)"),
             GuideLine("", styles.guideBody, "  '등급체계' 열은 GRADE 필드가 참조하는 '등급 체계' 시트의 체계명입니다 — 아래 그 시트 안내 참조"),
             GuideLine("", styles.guideBody, "• 등급 체계: 한 행이 등급 하나입니다. 세계관+체계명(코드 우선)으로 묶어 같은 체계로 인식합니다"),
             GuideLine("", styles.guideBody, "• 캐릭터 시트 (세계관 이름): 코드로 매칭. 코드 없을 시 이름+작품으로 매칭"),
@@ -823,9 +824,8 @@ class ExcelExporter(context: Context) {
             row.createCell(5).setTextSafe(field.groupName)
             row.createCell(6).setCellValue(field.displayOrder.toDouble())
             row.createCell(7).setTextSafe(if (field.isRequired) "Y" else "N")
-            row.createCell(8).setTextSafe(
-                if (com.novelcharacter.app.data.model.FieldAiPolicy.isSuggestEnabled(field.config)) "Y" else "N"
-            )
+            // 3단(B-80) — Y/개별만/N. 값의 단일 소스는 FieldConfigColumns다(드롭다운도 같은 목록을 쓴다).
+            row.createCell(8).setTextSafe(FieldConfigColumns.aiCellOf(field.config))
             row.createCell(9).setTextSafe(
                 com.novelcharacter.app.data.model.FieldDescription.fromConfig(field.config)
             )

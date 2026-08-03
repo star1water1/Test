@@ -95,12 +95,22 @@
             android:visibility="gone"
             android:contentDescription="@string/field_description_info_desc" />
 
-        <!-- AI 추천 대상 토글(A-1) — 1탭 즉시 반영, 저장 버튼 없음. 사건 필드에는 노출하지 않는다(R-24) -->
-        <com.google.android.material.switchmaterial.SwitchMaterial
-            android:id="@+id/switchAiSuggest"
+        <!--
+          AI 추천 대상(A-1). B-80으로 3단이 되어 스위치로는 담을 수 없다 —
+          현재 상태를 라벨로 띄우는 버튼 1탭 → 메뉴 1탭으로 바꾼다.
+          목록의 값어치가 '한눈에 조감'이라 상태가 글자로 보여야 한다. 사건 필드에는 노출하지 않는다(R-24).
+        -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnAiMode"
+            style="@style/Widget.App.Button.Outlined"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginStart="4dp"
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            android:paddingHorizontal="8dp"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
             android:contentDescription="@string/field_ai_suggest_label" />
 
     </LinearLayout>

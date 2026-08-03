@@ -12,6 +12,7 @@ import android.view.ViewGroup
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.ImageView
+import android.widget.PopupMenu
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.core.content.FileProvider
@@ -20,6 +21,7 @@ import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
+import com.novelcharacter.app.util.DetailListSort
 import com.novelcharacter.app.util.factionSpanLabel
 import com.novelcharacter.app.util.dismissSafely
 import com.novelcharacter.app.util.navigateSafe
@@ -68,6 +70,10 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
      * 작품 평균 오버레이가 재사용한다(같은 조회를 두 번 하지 않는다).
      */
     private var bodyPeerMeasurements: List<com.novelcharacter.app.util.BodyMeasurements> = emptyList()
+
+    /** 관련 사건의 보기 정렬(B-85)과 그 원본. 정렬만 바꿀 때 DB를 다시 읽지 않기 위해 들고 있는다. */
+    private var eventSortMode = DetailListSort.EventMode.CHRONO
+    private var currentEvents: List<com.novelcharacter.app.data.model.TimelineEvent> = emptyList()
 
     // Helpers
     private lateinit var fieldRenderer: DynamicFieldRenderer
@@ -240,7 +246,8 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
         binding.eventsRecyclerView.adapter = timelineAdapter
 
         viewModel.getEventsForCharacter(characterId).observe(viewLifecycleOwner) { events ->
-            timelineAdapter.submitEventList(events)
+            currentEvents = events
+            renderEvents(timelineAdapter)
         }
 
         // 사건 추가 버튼
@@ -251,6 +258,39 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
                 preSelectedNovelIds = listOfNotNull(cachedCharacter?.novelId)
             )
         }
+
+        // 보기 정렬(B-85) — 사건에는 저장 순서가 없어 순서 편집과 충돌하지 않는다.
+        eventSortMode = CharacterDetailSortPrefs.eventMode(requireContext())
+        updateEventSortButton()
+        binding.btnSortEvents.setOnClickListener { anchor ->
+            val modes = DetailListSort.EventMode.values()
+            PopupMenu(requireContext(), anchor).apply {
+                modes.forEachIndexed { i, m -> menu.add(0, i, i, eventSortLabelRes(m)) }
+                setOnMenuItemClickListener { item ->
+                    eventSortMode = modes[item.itemId]
+                    CharacterDetailSortPrefs.setEventMode(requireContext(), eventSortMode)
+                    updateEventSortButton()
+                    renderEvents(timelineAdapter)
+                    true
+                }
+                show()
+            }
+        }
+    }
+
+    /** 보이는 순서만 만든다 — 정렬을 바꿔도 DB를 다시 읽지 않는다(원칙 04). */
+    private fun renderEvents(adapter: TimelineAdapter) {
+        adapter.submitEventList(currentEvents.sortedWith(DetailListSort.events(eventSortMode)))
+    }
+
+    private fun updateEventSortButton() {
+        binding.btnSortEvents.setText(eventSortLabelRes(eventSortMode))
+    }
+
+    private fun eventSortLabelRes(mode: DetailListSort.EventMode): Int = when (mode) {
+        DetailListSort.EventMode.CHRONO -> R.string.sort_year_asc
+        DetailListSort.EventMode.CHRONO_DESC -> R.string.sort_year_desc
+        DetailListSort.EventMode.RECENT_ADDED -> R.string.sort_recent_added
     }
 
     private fun showEventEditDialog(event: com.novelcharacter.app.data.model.TimelineEvent) {

@@ -21,6 +21,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.gson.Gson
 import com.novelcharacter.app.R
+import com.novelcharacter.app.data.model.FieldAiPolicy
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.databinding.FragmentFieldManageBinding
 import com.novelcharacter.app.ui.adapter.FieldDefinitionAdapter
@@ -104,6 +105,29 @@ class FieldManageFragment : Fragment() {
     // 드래그 후 저장할 순서를 보관 (ListAdapter 비동기 diff가 끝나기 전 currentList가 stale할 수 있음)
     private var pendingOrderList: List<FieldDefinition>? = null
 
+    /**
+     * AI 추천 대상 3단 선택(B-80) — 목록 행의 상태 버튼에서 연다.
+     * 고른 즉시 저장한다(저장 버튼 없음 — 종전 스위치와 같은 마찰).
+     */
+    private fun showAiModeMenu(field: FieldDefinition, anchor: View) {
+        val modes = FieldAiPolicy.SuggestMode.entries
+        val current = FieldAiPolicy.suggestMode(field.config)
+        android.widget.PopupMenu(requireContext(), anchor).apply {
+            modes.forEachIndexed { i, mode -> menu.add(0, i, i, mode.label) }
+            setOnMenuItemClickListener { item ->
+                val picked = modes.getOrNull(item.itemId) ?: return@setOnMenuItemClickListener false
+                // 같은 값을 다시 고르면 쓰지 않는다 — 무의미한 갱신이 목록을 흔들지 않게.
+                if (picked != current) {
+                    viewModel.updateFieldQuiet(
+                        field.copy(config = FieldAiPolicy.applyMode(field.config, picked))
+                    )
+                }
+                true
+            }
+            show()
+        }
+    }
+
     private fun setupRecyclerView() {
         adapter = FieldDefinitionAdapter(
             onClick = { field ->
@@ -112,13 +136,10 @@ class FieldManageFragment : Fragment() {
             onLongClick = { field ->
                 showFieldOptionsDialog(field)
             },
-            // A-1: 1탭 즉시 반영 — 재정렬과 같은 규칙(성공 무통보, 실패만 알림). 목록 재방출로
-            // 스위치 상태가 DB 값과 다시 맞춰지므로 실패해도 화면이 거짓 상태로 남지 않는다.
-            onAiToggle = { field, enabled ->
-                viewModel.updateFieldQuiet(
-                    field.copy(config = com.novelcharacter.app.data.model.FieldAiPolicy.applyToConfig(field.config, enabled))
-                )
-            },
+            // A-1: 상태 버튼 1탭 → 메뉴 1탭 즉시 반영 — 재정렬과 같은 규칙(성공 무통보, 실패만 알림).
+            // 목록 재방출로 라벨이 DB 값과 다시 맞춰지므로 실패해도 화면이 거짓 상태로 남지 않는다.
+            // B-80으로 3단이 되어 스위치가 아니다(끄기 / 개별만 / 전부).
+            onAiModeClick = { field, anchor -> showAiModeMenu(field, anchor) },
             // A-2: 필드 설명 — 폼의 ⓘ와 같은 다이얼로그
             onInfoClick = { field ->
                 com.novelcharacter.app.ui.common.HelpDialog.showFieldNote(requireContext(), field)

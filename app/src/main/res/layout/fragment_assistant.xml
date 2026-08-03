@@ -24,6 +24,19 @@
             android:textAppearance="@style/TextAppearance.App.TitleLarge"
             android:textColor="?attr/colorOnSurface" />
 
+        <!-- 보기 정렬(B-85): 순서만 바꾼다. 어떤 카드가 뜨는지(카테고리·숨김·편향 상한)는 그대로다. -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnSort"
+            style="@style/Widget.App.Button.Outlined"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            android:paddingHorizontal="8dp"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            tools:text="심각도순" />
+
         <ImageButton
             android:id="@+id/overflowButton"
             android:layout_width="48dp"
