@@ -849,6 +849,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         val fileColIndex = cols["파일명"] ?: 0
         val tagColIndex = cols["태그"] ?: 1
         val groupColIndex = cols["링크그룹"] ?: 2
+        // 이 열도 비교에 넣어야 한다 — 빠뜨리면 서랍만 고친 시트가 미리보기에서 '동일'로 뜨는데
+        // 가져오기는 실제로 바꾼다(B-87이 고친 것과 같은 부류의 거짓말이다).
+        // 없으면 -1이고, 그때는 '기존 유지'라 비교 대상이 아니다.
+        val detachedAtColIndex = cols["뗀날짜"] ?: -1
 
         val remapByBasename = HashMap<String, String>()
         for ((origPath, newPath) in imagePathRemap) {
@@ -870,7 +874,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val existingTags = db.imageTagDao().getTagsByImageList(existing.id).map { it.tag }.toSet()
             val sheetTags = splitCsv(getCellString(row, tagColIndex)).toSet()
             val sheetGroup = getCellString(row, groupColIndex).trim().ifBlank { null }
-            if (existingTags != sheetTags || existing.linkGroupId != sheetGroup) updateCount++ else unchangedCount++
+            val detachedChanged = if (detachedAtColIndex < 0) false else {
+                val parsed = getCellString(row, detachedAtColIndex).trim().toDoubleOrNull()?.toLong()
+                val sheetDetachedAt = parsed?.takeIf { it > 0L }
+                sheetDetachedAt != existing.detachedAt
+            }
+            if (existingTags != sheetTags || existing.linkGroupId != sheetGroup || detachedChanged) {
+                updateCount++
+            } else unchangedCount++
         }
         reportProgress(onProgress, "이미지 분석", sheet.lastRowNum, totalRows)
         return CategoryAnalysis("imageMeta", label, inBackup, newCount, updateCount, unchangedCount, existingTotal)
@@ -5474,6 +5485,10 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 위치 폴백 금지 — 열을 지우면 이웃 열을 오독한다
         val tagColIndex = cols["태그"] ?: -1
         val groupColIndex = cols["링크그룹"] ?: -1
+        // 뗀 이미지 서랍(B-107 D1) — 같은 규약이다: 열이 없으면 기존 유지, 빈칸이면 해제.
+        // 출처는 readOnly라 **읽지 않는다**(사용자가 적은 코드를 믿으면 없는 캐릭터를 가리키게
+        // 된다). 시각만 읽고, 새로 붙는 표식의 출처는 앱이 아는 값으로만 채운다.
+        val detachedAtColIndex = cols["뗀날짜"] ?: -1
 
         // zip 리맵 키(원 절대경로)의 basename → 복원된 새 경로. basename 충돌은 무음 last-wins 대신 고지한다.
         val remap = ImageMetaRowResolver.buildRemapByBasename(imagePathRemap)
@@ -5516,6 +5531,28 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                         imageId,
                         tags.map { com.novelcharacter.app.data.model.ImageTag(imageId = imageId, tag = it) }
                     )
+                }
+
+                // 뗀 표식(B-107) — 태그·링크그룹과 같은 규약. 값이 있으면 그 시각으로 두고,
+                // 빈칸이면 서랍에서 뺀다. **출처 열은 읽지 않는다**(readOnly): 앱이 아는 출처를
+                // 사용자가 적은 문자열로 덮어쓰면 화면이 없는 캐릭터를 가리키게 된다.
+                if (detachedAtColIndex >= 0) {
+                    val raw = getCellString(row, detachedAtColIndex).trim()
+                    val parsed = raw.toDoubleOrNull()?.toLong()
+                    when {
+                        // 값이 있는데 숫자가 아니면 **손대지 않고 알린다** — 조용히 버리면
+                        // 사용자가 무엇을 잘못 적었는지 알 길이 없다(개발 의도 2번).
+                        raw.isNotBlank() && parsed == null ->
+                            result.warnings.add("이미지 행 $i: '뗀날짜' 값 \"$raw\"을(를) 읽을 수 없어 그대로 두었습니다")
+                        parsed != null && parsed > 0L ->
+                            db.imageMetaDao().markDetachedByPaths(
+                                listOf(path), parsed, existing?.detachedFromCode
+                            )
+                        // 빈칸(또는 0) = 서랍에서 빼기. 이미 빠져 있으면 아무 일도 없다.
+                        else -> if (existing?.isDetached == true) {
+                            db.imageMetaDao().clearDetachedByPaths(listOf(path))
+                        }
+                    }
                 }
 
                 if (groupColIndex >= 0) {

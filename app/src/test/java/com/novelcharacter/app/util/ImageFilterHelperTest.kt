@@ -18,8 +18,9 @@ class ImageFilterHelperTest {
         owners: List<Pair<OwnerKind, String>> = emptyList(),
         tags: List<String> = emptyList(),
         status: StatusKind = if (owners.isEmpty()) StatusKind.ORPHAN else StatusKind.REFERENCED,
-        linkGroupId: String? = null
-    ) = Img(name, Facts(name, owners.map { it.second }, tags, owners.mapTo(HashSet()) { it.first }, status, linkGroupId))
+        linkGroupId: String? = null,
+        detachedAt: Long? = null
+    ) = Img(name, Facts(name, owners.map { it.second }, tags, owners.mapTo(HashSet()) { it.first }, status, linkGroupId, detachedAt))
 
     private val charImg = img("char_a.jpg", listOf(OwnerKind.CHARACTER to "홍길동"), listOf("여성", "흑발"))
     private val novelImg = img("novel_b.jpg", listOf(OwnerKind.NOVEL to "어떤 소설"))
@@ -111,5 +112,55 @@ class ImageFilterHelperTest {
     @Test fun linkAxisAlone_marksCriteriaActive() {
         assertEquals(true, Criteria(link = ImageFilterHelper.LinkFilter.UNLINKED).isActive)
         assertEquals(false, Criteria().isActive)
+    }
+
+    // ===== 뗀 것 서랍 (B-107 D3) — 요청의 본체는 "섞이지 않게"이므로 배타성이 계약이다 =====
+
+    private val neverDetached = img("fresh.jpg", status = StatusKind.UNASSIGNED)
+    private val detached = img("was_used.jpg", status = StatusKind.UNASSIGNED, detachedAt = 1_700_000_000_000L)
+    private val drawerSet = listOf(neverDetached, detached)
+
+    private fun applyDrawer(base: BaseFilter) =
+        ImageFilterHelper.apply(drawerSet, Criteria(base = base)) { it.facts }.map { it.name }
+
+    /** **이 슬라이스의 핵심 계약**: 뗀 것은 미배정 칩에 잡히지 않는다. */
+    @Test fun unassignedChip_excludesDetached() {
+        assertEquals(listOf("fresh.jpg"), applyDrawer(BaseFilter.UNASSIGNED))
+    }
+
+    @Test fun detachedChip_matchesOnlyDetached() {
+        assertEquals(listOf("was_used.jpg"), applyDrawer(BaseFilter.DETACHED))
+    }
+
+    /** 배타의 정의 그 자체 — 두 칩의 결과가 겹치지 않고, 합치면 원래 집합이다. */
+    @Test fun twoChips_partitionTheUnassignedAxis() {
+        val a = applyDrawer(BaseFilter.UNASSIGNED)
+        val b = applyDrawer(BaseFilter.DETACHED)
+        assertEquals(emptyList<String>(), a.intersect(b.toSet()).toList())
+        assertEquals(drawerSet.map { it.name }.toSet(), (a + b).toSet())
+    }
+
+    /**
+     * 작품이 아직 쓰는 이미지도 뗀 것이다 — 캐릭터 축의 이력이라 현재 소유와 독립이다(D2).
+     * 이것이 `DETACHED`가 [StatusKind]를 보지 않는 이유이고, 보게 만들면 이 사례가 사라진다.
+     */
+    @Test fun detachedChip_ignoresCurrentOwnership() {
+        val stillUsedByNovel = img(
+            "novel_keeps.jpg", listOf(OwnerKind.NOVEL to "은하전기"),
+            detachedAt = 1_700_000_000_000L
+        )
+        val out = ImageFilterHelper.apply(listOf(stillUsedByNovel), Criteria(base = BaseFilter.DETACHED)) { it.facts }
+        assertEquals(listOf("novel_keeps.jpg"), out.map { it.name })
+    }
+
+    /** 서랍 칩도 다른 축과 AND로 조합된다(태그·검색이 서랍 안에서 듣는다). */
+    @Test fun detachedChip_combinesWithTagAxis() {
+        val tagged = img("t.jpg", tags = listOf("배경"), status = StatusKind.UNASSIGNED, detachedAt = 5L)
+        val untagged = img("u.jpg", status = StatusKind.UNASSIGNED, detachedAt = 5L)
+        val out = ImageFilterHelper.apply(
+            listOf(tagged, untagged),
+            Criteria(base = BaseFilter.DETACHED, tags = setOf("배경"))
+        ) { it.facts }.map { it.name }
+        assertEquals(listOf("t.jpg"), out)
     }
 }

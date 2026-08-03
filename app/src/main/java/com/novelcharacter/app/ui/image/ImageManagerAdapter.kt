@@ -156,8 +156,33 @@ class ImageManagerAdapter(
             thumbJob?.cancel()
         }
 
+        /**
+         * 소유자 줄. **뗀 이미지는 이 줄이 출처·시점을 싣는다**(B-107 D3, 사용자 판정).
+         *
+         * 줄을 새로 만들지 않은 이유: 뗀 이미지는 소유자가 없어 이 자리가 지금 "미배정"이라는
+         * 낱말 하나만 싣고 있다. 줄을 더하면 그리드 칸 높이가 **모든 이미지에 대해** 늘어난다
+         * (레이아웃이 태그 줄을 1줄 고정한 것과 같은 이유 — 행 높이 균일).
+         *
+         * 소유자가 남아 있으면(작품·세계관이 아직 쓰는 뗀 이미지) **소유자 표시가 이긴다** —
+         * 그 정보는 여기서만 나오지만 뗀 사실은 칩·배지로도 알 수 있다.
+         */
         private fun ownerLabel(ctx: android.content.Context, item: ImageManagerViewModel.ManagedImage): String {
             if (item.owners.isEmpty()) {
+                val meta = item.meta
+                if (meta?.detachedAt != null) {
+                    val whenText = android.text.format.DateUtils.getRelativeTimeSpanString(
+                        meta.detachedAt, System.currentTimeMillis(),
+                        android.text.format.DateUtils.DAY_IN_MILLIS
+                    ).toString()
+                    return when {
+                        meta.detachedFromName != null ->
+                            ctx.getString(R.string.image_manager_detached_from, meta.detachedFromName, whenText)
+                        // 코드는 있는데 이름을 못 찾았다 = 그 캐릭터가 지워졌다.
+                        meta.detachedFromCode != null ->
+                            ctx.getString(R.string.image_manager_detached_from_unknown, whenText)
+                        else -> ctx.getString(R.string.image_manager_detached_no_source, whenText)
+                    }
+                }
                 return when (item.status) {
                     ImageManagerViewModel.Status.TRASH_HELD -> ctx.getString(R.string.image_manager_owner_trash)
                     ImageManagerViewModel.Status.UNASSIGNED -> ctx.getString(R.string.image_manager_owner_unassigned)

@@ -1466,6 +1466,11 @@ class ExcelExporter(context: Context) {
             row.createCell(0).setTextSafe(java.io.File(meta.path).name)
             row.createCell(1).setTextSafe(tagsByImage[meta.id]?.joinToString(", ") ?: "")
             row.createCell(2).setTextSafe(meta.linkGroupId ?: "")
+            // 뗀 적 없으면 **칸을 만들지 않는다** — 빈칸이 곧 "뗀 적 없음"이라(D1) 0이나
+            // 빈 문자열을 넣으면 상태가 값과 갈린다. 시각은 다른 시트의 `createdAt`과 같은
+            // 규약으로 밀리초 숫자다(사람이 읽을 일이 없고, 지울 때는 칸을 비우면 된다).
+            meta.detachedAt?.let { row.createCell(3).setCellValue(it.toDouble()) }
+            row.createCell(4).setTextSafe(meta.detachedFromCode ?: "")
         }
 
         applySpecFormatting(sheet, spec, metas.size)

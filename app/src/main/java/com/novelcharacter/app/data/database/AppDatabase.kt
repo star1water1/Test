@@ -99,7 +99,7 @@ import com.novelcharacter.app.data.model.Universe
         NovelFieldValue::class,
         GradeSystem::class
     ],
-    version = 47,
+    version = 48,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -1855,6 +1855,24 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_47_48 = object : Migration(47, 48) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "Migrating database from version 47 to 48 — 뗀 이미지 표식(B-107)")
+
+                // 둘 다 **nullable**이다 — null이 곧 "뗀 적 없음"이라 기존 행에 채울 값이 없다.
+                // NOT NULL + 기본값으로 두면 "안 뗀 것"을 나타내는 특수값(0·빈 문자열)이 필요해지고,
+                // 그 값을 아는 자리가 코드 전체로 퍼진다. 여기서는 null 하나가 상태다.
+                //
+                // 소급하지 않는 것이 확정 사항이다 — 지금까지 뗀 이미지는 기록이 없으므로
+                // 시각을 지어낼 수 없고, 지어내면 "3일 전에 뗐다"는 거짓을 화면이 말하게 된다.
+                // 이 마이그레이션 이후에 뗀 것부터 서랍에 들어온다.
+                db.execSQL("ALTER TABLE `image_meta` ADD COLUMN `detachedAt` INTEGER")
+                db.execSQL("ALTER TABLE `image_meta` ADD COLUMN `detachedFromCode` TEXT")
+
+                Log.i(TAG, "Migration from version 47 to 48 completed successfully")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -1862,7 +1880,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "novel_character_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48)
                     .addCallback(SeedCallback(context.applicationContext))
                     .build()
                     .also { INSTANCE = it }

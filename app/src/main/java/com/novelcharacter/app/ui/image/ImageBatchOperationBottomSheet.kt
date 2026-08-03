@@ -14,7 +14,7 @@ import com.novelcharacter.app.databinding.BottomSheetImageBatchOperationsBinding
  */
 class ImageBatchOperationBottomSheet : BottomSheetDialogFragment() {
 
-    enum class Action { ASSIGN, TAG_ADD, TAG_REMOVE, LINK, UNLINK, UNASSIGN, RECOMPRESS, DELETE }
+    enum class Action { ASSIGN, TAG_ADD, TAG_REMOVE, LINK, UNLINK, UNASSIGN, CLEAR_DETACHED, RECOMPRESS, DELETE }
 
     var onAction: ((Action) -> Unit)? = null
 
@@ -43,6 +43,7 @@ class ImageBatchOperationBottomSheet : BottomSheetDialogFragment() {
         binding.opLink.setOnClickListener { run(Action.LINK) }
         binding.opUnlink.setOnClickListener { run(Action.UNLINK) }
         binding.opUnassign.setOnClickListener { run(Action.UNASSIGN) }
+        binding.opClearDetached.setOnClickListener { run(Action.CLEAR_DETACHED) }
         binding.opRecompress.setOnClickListener { run(Action.RECOMPRESS) }
         binding.opDelete.setOnClickListener { run(Action.DELETE) }
     }

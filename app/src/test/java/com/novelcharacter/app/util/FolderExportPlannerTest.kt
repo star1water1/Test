@@ -498,4 +498,110 @@ class FolderExportPlannerTest {
         assertNotNull(back.linkSets[0].key)
         assertEquals(0, back.deeperIgnored)
     }
+
+    // ══ 뗀 것 서랍 분화 (B-107 D4·D9) ═══════════════════════════════════════════════
+
+    private val detachedDrawer = FolderRoundtripPlanner.FOLDER_DETACHED
+    private val unassignedDrawer = FolderRoundtripPlanner.FOLDER_UNASSIGNED
+
+    @Test fun detachedImageGoesToItsOwnDrawer() {
+        val p = plan(listOf(ImageInput(pathB, isDetached = true)))
+        assertEquals(listOf(detachedDrawer), p.files[0].folders)
+        assertEquals(1, p.detachedCount)
+        assertEquals(0, p.unassignedCount)
+    }
+
+    @Test fun neverDetachedImageStaysInUnassigned() {
+        val p = plan(listOf(ImageInput(pathB)))
+        assertEquals(listOf(unassignedDrawer), p.files[0].folders)
+        assertEquals(1, p.unassignedCount)
+        assertEquals(0, p.detachedCount)
+    }
+
+    /**
+     * 배정이 살아 있으면 서랍 판정을 하지 않는다 — 그 이미지는 캐릭터 폴더로 간다.
+     * (뗀 표식은 캐릭터 축의 **이력**이라 다시 붙은 뒤에도 남아 있을 수 있다.)
+     */
+    @Test fun assignedImageIgnoresDetachedMark() {
+        val p = plan(
+            listOf(ImageInput(pathA, ownerCharacterIds = listOf(7), isDetached = true)),
+            listOf(ch(7, "가온"))
+        )
+        assertEquals(listOf("가온"), p.files[0].folders)
+        assertEquals(0, p.detachedCount)
+    }
+
+    /** 세트 규칙은 두 서랍이 **완전히 대칭**이다(스캔 깊이도 그대로 2). */
+    @Test fun detachedDrawerGetsSetSubfoldersToo() {
+        val p = plan(
+            listOf(
+                ImageInput(pathB, linkGroupId = "grp-1", isDetached = true),
+                ImageInput(pathC, linkGroupId = "grp-1", isDetached = true)
+            )
+        )
+        assertTrue(p.files.all { it.folders.size == 2 && it.folders[0] == detachedDrawer })
+        assertEquals(1, p.setFolders)
+        // 세트 폴더는 서랍 직속 계수에 들어가지 않는다(단위가 다르다).
+        assertEquals(0, p.detachedCount)
+    }
+
+    // ── 범위 ──
+
+    @Test fun scopeDetached_exportsOnlyTheDrawer() {
+        val p = plan(
+            listOf(
+                ImageInput(pathA, ownerCharacterIds = listOf(7)),
+                ImageInput(pathB),
+                ImageInput(pathC, isDetached = true)
+            ),
+            listOf(ch(7, "가온")),
+            scope = Scope.DETACHED
+        )
+        assertEquals(listOf(pathC), p.files.map { it.sourcePath })
+    }
+
+    /** 인앱 칩과 같은 배타 규약 — 한쪽에서 갈라 놓고 다른 쪽에서 섞으면 요청이 반만 지켜진다. */
+    @Test fun scopeUnassigned_excludesDetached() {
+        val p = plan(
+            listOf(ImageInput(pathB), ImageInput(pathC, isDetached = true)),
+            scope = Scope.UNASSIGNED
+        )
+        assertEquals(listOf(pathB), p.files.map { it.sourcePath })
+    }
+
+    @Test fun scopeAll_stillIncludesBothDrawers() {
+        val p = plan(listOf(ImageInput(pathB), ImageInput(pathC, isDetached = true)))
+        assertEquals(2, p.files.size)
+        assertEquals(1, p.unassignedCount)
+        assertEquals(1, p.detachedCount)
+    }
+
+    // ── 예약 이름 (D9) ──
+
+    /**
+     * **막는 쪽과 읽는 쪽이 같은 목록을 봐야 한다.** `_기타`가 빠져 있어서, 이름이 `_기타`인
+     * 캐릭터는 내보내기가 막지 않는데 받아오기는 서랍으로 읽어 이미지가 통째로 서랍행이 됐다.
+     */
+    @Test fun reservedNames_coverEveryFolderImportReadsAsReserved() {
+        val reserved = listOf(
+            FolderRoundtripPlanner.FOLDER_PROCESSED,
+            FolderRoundtripPlanner.FOLDER_UNASSIGNED,
+            FolderRoundtripPlanner.FOLDER_SHARED,
+            FolderRoundtripPlanner.FOLDER_MISC,
+            FolderRoundtripPlanner.FOLDER_DETACHED,
+            FolderRoundtripPlanner.FOLDER_DELETE_APPROVAL
+        )
+        for ((index, name) in reserved.withIndex()) {
+            val id = (index + 1).toLong()
+            val p = plan(
+                listOf(ImageInput(pathA, ownerCharacterIds = listOf(id))),
+                listOf(ch(id, name))
+            )
+            assertEquals(
+                "예약 이름 '$name'을 캐릭터 폴더로 내보내면 받아오기가 그 폴더를 예약으로 읽는다",
+                listOf(BlockReason.RESERVED_NAME),
+                p.blockedCharacters.map { it.reason }
+            )
+        }
+    }
 }

@@ -77,6 +77,30 @@ object FolderRoundtripPlanner {
     const val FOLDER_MISC = "_기타"
 
     /**
+     * 뗀 이미지 서랍 — 캐릭터에서 뗀 이미지가 나가고 들어오는 자리(B-107 결정 D4·D5).
+     *
+     * **`_미배정/`과 구조는 대칭이고 뜻은 반대다.** 둘 다 배정을 떼지만,
+     * 여기는 **뗀 표식을 유지**하고(“아직 판단 안 함”) `_미배정/`은 **표식을 지운다**(“다시 쓸 것”).
+     * 그래서 정리 작업의 세 갈래가 폴더 셋과 1:1로 맞는다 —
+     * 판단 안 함(여기) · 살림([FOLDER_UNASSIGNED]) · 지움([FOLDER_DELETE_APPROVAL]).
+     *
+     * 둘을 같은 뜻으로 두는 대안은 기각했다: 그러면 이 폴더가 받아오기에서 아무 뜻도 갖지
+     * 못하고, 서랍에서 빼는 일을 인앱에서만 할 수 있어 폴더로 정리하는 사람의 왕복이 반쪽이 된다.
+     */
+    const val FOLDER_DETACHED = "_분리됨"
+
+    /**
+     * 삭제 승인 폴더 — 여기 든 이미지는 **앱에서도 지운다**(B-107 결정 D6, 사용자 확정 ⓒ).
+     *
+     * 예약 폴더 중 유일하게 **파괴적**이다. 그래서 확인창 하나를 반드시 거치고(되돌리기 없음 —
+     * 사용자 확정 ⓑ), **원본은 `_처리됨/`으로 옮겨 폴더 쪽에 마지막 안전망을 남긴다.**
+     * 앱이 사용자의 폴더 파일까지 지우지는 않는다.
+     *
+     * 하위 폴더는 두지 않는다([Location.TooDeep]) — 삭제에 세트라는 개념이 없다.
+     */
+    const val FOLDER_DELETE_APPROVAL = "_삭제승인"
+
+    /**
      * 예약 접두 없이도 서랍으로 읽는 이름. **캐릭터가 우선이다**(D-1) — 이 이름의 캐릭터가
      * 실재하면 캐릭터 폴더로 해석하고 [Plan.miscReadAsCharacter]로 고지한다.
      * 서랍임을 확정하고 싶은 사용자에게는 [FOLDER_MISC]가 남아 있다.
@@ -208,6 +232,12 @@ object FolderRoundtripPlanner {
         object Shared : Location()
         /** `_기타/` — 잡동사니 서랍. `기타/`는 [Location.Named]로 왔다가 해석 단계에서 강등된다. */
         object Misc : Location()
+        /** `_분리됨/` 직속 — 배정을 떼되 **뗀 표식은 남긴다**([FOLDER_DETACHED]). */
+        object DetachedRoot : Location()
+        /** `_분리됨/<세트명>/` — `_미배정/<세트명>/`과 같은 묶는 자리이되 표식을 남긴다. */
+        data class DetachedSet(val name: String) : Location()
+        /** `_삭제승인/` — 앱에서 삭제한다. 하위 폴더는 없다. */
+        object DeleteApproval : Location()
         /** `_처리됨/` 하위 — 스캔 제외(계수도 하지 않는다). */
         object Skipped : Location()
         /** 규약 밖 깊이 — 무시하고 개수만 고지한다. */
@@ -238,12 +268,35 @@ object FolderRoundtripPlanner {
      *        묶음만 남은 이미지를 되돌리는 자리에 둔 경우가 그렇다(그때는 [unlinks]가 참이다).
      * @param unlinks 링크 묶음까지 푸는가. 되돌리는 자리(직속)에서만 참이고,
      *        묶는 자리(`_미배정/<세트명>/`)에서는 거짓이다 — 거기서 풀면 병합이 이동이 된다.
+     * @param keepsDetachedMark 뗀 표식을 남기는가(B-107 D5). `_분리됨/`에서 온 것만 참이다 —
+     *        거기 둔다는 것은 *"아직 판단 안 함"*이므로 서랍에 그대로 있어야 한다. 거짓이면
+     *        표식을 지운다(`_미배정/`·정리 폴더 직속 = *"다시 쓸 것으로 되돌림"*).
+     *        **`unlinks`처럼 이 자료형 안의 갈래다** — 본체는 여전히 "배정을 뗀다"이고,
+     *        표식 처분만 자리에 따라 갈린다. 실행부가 폴더 이름을 다시 보고 판정하면
+     *        규칙이 둘로 갈라진다(설계 11-1장이 그 값을 이미 치렀다).
      */
     data class DetachAction(
         val item: ScanItem,
         val path: String,
         val fromCharacterIds: List<Long>,
-        val unlinks: Boolean = false
+        val unlinks: Boolean = false,
+        val keepsDetachedMark: Boolean = false
+    )
+
+    /**
+     * 앱에서 삭제 — 토큰 파일이 `_삭제승인/`에서 발견됐다(B-107 결정 D6).
+     *
+     * **예약 폴더 처분 중 유일하게 파괴적이다.** 그래서 다른 자료형과 달리 실행 전에
+     * 확인창을 반드시 거치고(R-4 — 사전 고지 + 취소 경로), 그 창이 개수·공유·대표를 함께 말한다.
+     *
+     * @param ownerCharacterIds 지금 이 이미지를 쓰는 캐릭터. **여럿이어도 보류하지 않는다** —
+     *        `_공유/`가 보류인 근거는 *"위치 이동의 의미가 모호해서"*인데 삭제는 모호하지 않다.
+     *        모호함은 보류로, 파괴성은 고지로 다룬다. 확인창이 이 수를 실어 사용자가 보고 정한다.
+     */
+    data class DeleteAction(
+        val item: ScanItem,
+        val path: String,
+        val ownerCharacterIds: List<Long>
     )
 
     /**
@@ -312,6 +365,7 @@ object FolderRoundtripPlanner {
         val imports: List<ImportAction> = emptyList(),
         val moves: List<MoveAction> = emptyList(),
         val detaches: List<DetachAction> = emptyList(),
+        val deletes: List<DeleteAction> = emptyList(),
         val unlinkOnly: List<UnlinkOnlyAction> = emptyList(),
         val linkSets: List<LinkSetAction> = emptyList(),
         val holds: List<Hold> = emptyList(),
@@ -329,8 +383,9 @@ object FolderRoundtripPlanner {
          */
         val miscImported: Int = 0
     ) {
-        /** 실제로 파일을 만지는 항목 수 — 진행도 총량. */
-        val actionCount: Int get() = imports.size + moves.size + detaches.size + unlinkOnly.size
+        /** 실제로 파일을 만지는 항목 수 — 진행도 총량(규약 R-26). */
+        val actionCount: Int get() =
+            imports.size + moves.size + detaches.size + unlinkOnly.size + deletes.size
 
         val isEmpty: Boolean get() = actionCount == 0 && linkSets.isEmpty()
     }
@@ -360,6 +415,12 @@ object FolderRoundtripPlanner {
         // 전부 Named로 흘려보내므로, 빠뜨리면 `_기타/`가 "이름이 `_기타`인 캐릭터"를 찾는다.
         folders[0] == FOLDER_MISC ->
             if (folders.size == 1) Location.Misc else Location.TooDeep
+        // `_미배정/`과 같은 두 단계다 — 내보내기가 `_분리됨/세트-n/`을 만들기 때문이다(D4).
+        folders[0] == FOLDER_DETACHED ->
+            if (folders.size == 1) Location.DetachedRoot else Location.DetachedSet(folders[1])
+        // 삭제에는 세트가 없다 — 하위는 규약 밖으로 보내 조용히 지우는 일이 없게 한다.
+        folders[0] == FOLDER_DELETE_APPROVAL ->
+            if (folders.size == 1) Location.DeleteApproval else Location.TooDeep
         folders.size == 1 -> Location.Named(folders[0])
         // 예약이 아닌 폴더의 하위 폴더는 규약 밖이다 — 세트는 `_미배정/` 아래에서만 만든다.
         else -> Location.TooDeep
@@ -377,6 +438,11 @@ object FolderRoundtripPlanner {
      * @param linkedPaths 현재 링크 묶음에 속한 이미지 경로. **되돌리는 자리에서만 쓴다** —
      *        배정이 없어도 묶음이 있으면 할 일이 있다는 판정의 근거다(위 KDoc "되돌리는 자리").
      *        비워 두면 묶음을 푸는 계획이 서지 않으므로, 호출부는 반드시 실어 보낸다.
+     * @param detachedPaths 지금 **뗀 표식이 붙어 있는** 이미지 경로(B-107 D5).
+     *        [linkedPaths]와 같은 이유로 필요하다 — 서랍에 있던 파일을 `_미배정/`으로 옮기는 것은
+     *        *"다시 쓸 것으로 되돌림"*이라 할 일(표식 지우기)이 있는데, 그 파일은 배정도 묶음도
+     *        없어서 **이 집합 없이는 "할 일 없음"으로 보인다.** 그러면 폴더로 서랍을 비우는
+     *        길이 통째로 막힌다(설계 D5가 세운 세 갈래 중 '살림'이 듣지 않는다).
      */
     fun plan(
         items: List<ScanItem>,
@@ -384,11 +450,13 @@ object FolderRoundtripPlanner {
         pathByToken: Map<String, String>,
         characterIdsByPath: Map<String, List<Long>>,
         resolver: CharacterFolderResolver = CharacterFolderResolver(characterIdsByName),
-        linkedPaths: Set<String> = emptySet()
+        linkedPaths: Set<String> = emptySet(),
+        detachedPaths: Set<String> = emptySet()
     ): Plan {
         val imports = ArrayList<ImportAction>()
         val moves = ArrayList<MoveAction>()
         val detaches = ArrayList<DetachAction>()
+        val deletes = ArrayList<DeleteAction>()
         val unlinkOnly = ArrayList<UnlinkOnlyAction>()
         val holds = ArrayList<Hold>()
         val ambiguous = LinkedHashSet<String>()
@@ -461,10 +529,40 @@ object FolderRoundtripPlanner {
                         // 소유자가 둘 이상이면 배정도 묶음도 건드리지 않는다(C-2) — 보류는
                         // 배정에 대한 판단이지만, 반쪽만 반영하면 "보류했다면서 뭔가 했다"가 된다.
                         holds.add(Hold(item, HoldReason.SHARED_OWNERS))
-                    } else if (owners.isNotEmpty() || linked) {
+                    } else if (owners.isNotEmpty() || linked || path in detachedPaths) {
+                        // 뗀 표식만 남은 파일도 **할 일이 있다** — 여기 두는 것이 곧
+                        // "다시 쓸 것으로 되돌림"이고, 그 처분이 표식 지우기다(D5).
+                        // 배정·묶음이 없어도 이 자료형으로 싣는 이유는 실행부가 표식을 지우는
+                        // 자리가 이것 하나여야 하기 때문이다(규칙을 둘로 두지 않는다).
                         detaches.add(DetachAction(item, path, owners, unlinks = linked))
                     }
-                    // 배정도 묶음도 없으면 이미 되돌아온 상태다 — 할 일 없음(계수도 하지 않는다).
+                    // 배정도 묶음도 표식도 없으면 이미 되돌아온 상태다 — 할 일 없음(계수도 않는다).
+                }
+
+                is Location.DetachedRoot -> {
+                    // `_미배정/` 직속과 **같은 처분에 표식만 다르다**(D5). 그래서 위 분기를
+                    // 복사하지 않고 같은 자료형에 플래그만 세운다 — 갈래가 하나뿐이어야
+                    // "되돌리는 자리"의 규약이 둘로 갈라지지 않는다.
+                    val linked = path != null && path in linkedPaths
+                    if (path == null) {
+                        // 앱이 모르는 파일을 여기 넣은 경우다. 편입은 하되 뗀 표식은 붙이지
+                        // 않는다 — 한 번도 붙은 적 없는 이미지는 뗀 것이 아니다(D2의 뜻).
+                        imports.add(ImportAction(item, null, null))
+                    } else if (sharedOwners) {
+                        holds.add(Hold(item, HoldReason.SHARED_OWNERS))
+                    } else if (owners.isNotEmpty() || linked) {
+                        detaches.add(
+                            DetachAction(item, path, owners, unlinks = linked, keepsDetachedMark = true)
+                        )
+                    }
+                    // 배정도 묶음도 없으면 이미 서랍에 있는 상태다 — 할 일 없음.
+                }
+
+                is Location.DeleteApproval -> {
+                    // 앱이 모르는 파일은 지울 것이 없다 — 편입도 하지 않는다. 여기 넣은 뜻은
+                    // "앱에서 지워라"인데 앱에 없으므로 요청이 이미 이뤄진 상태다.
+                    // (편입해 두고 지우면 한 왕복에서 만들었다 없애는 꼴이 된다.)
+                    if (path != null) deletes.add(DeleteAction(item, path, owners))
                 }
 
                 is Location.Shared -> {
@@ -527,6 +625,25 @@ object FolderRoundtripPlanner {
                     }
                 }
 
+                is Location.DetachedSet -> {
+                    // `_미배정/<세트명>/`의 짝 — 묶는 자리라 배정만 떼고(`unlinks = false`)
+                    // 표식은 남긴다. 키에 폴더 이름을 넣어 두 서랍의 같은 이름 세트를 가른다.
+                    val key = "$FOLDER_DETACHED/${location.name}"
+                    if (path == null) {
+                        setNewItems.getOrPut(key) { mutableListOf() }.add(item.id)
+                        setKeyOfItem[item.id] = key
+                        imports.add(ImportAction(item, null, key))
+                    } else if (sharedOwners) {
+                        holds.add(Hold(item, HoldReason.SHARED_OWNERS))
+                        setExistingPaths.getOrPut(key) { mutableListOf() }.add(path)
+                    } else {
+                        if (owners.isNotEmpty()) {
+                            detaches.add(DetachAction(item, path, owners, keepsDetachedMark = true))
+                        }
+                        setExistingPaths.getOrPut(key) { mutableListOf() }.add(path)
+                    }
+                }
+
                 is Location.UnassignedSet -> {
                     val key = "$FOLDER_UNASSIGNED/${location.name}"
                     if (path == null) {
@@ -570,6 +687,7 @@ object FolderRoundtripPlanner {
             imports = finalImports,
             moves = moves,
             detaches = detaches,
+            deletes = deletes,
             unlinkOnly = unlinkOnly,
             linkSets = linkSets,
             holds = holds,

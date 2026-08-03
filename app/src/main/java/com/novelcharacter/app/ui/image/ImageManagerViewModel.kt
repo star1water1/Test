@@ -139,7 +139,23 @@ class ImageManagerViewModel(
     /** UNASSIGNED = 라이브러리(image_meta) 관리 중이나 아직 어떤 엔티티에도 배정되지 않은 이미지(고아 아님·보호됨). */
     enum class Status { REFERENCED, ORPHAN, TRASH_HELD, UNASSIGNED }
     /** 라이브러리 메타(있으면 라이브러리 관리 이미지): 태그·링크 그룹. */
-    data class MetaInfo(val imageId: Long, val linkGroupId: String?, val tags: List<String>)
+    /**
+     * @param detachedAt 캐릭터에서 뗀 시각. null=뗀 적 없음(B-107 D1).
+     * @param detachedFromCode 마지막으로 뗀 캐릭터의 안정 식별자. 화면이 이름을 찾아 보여 준다.
+     */
+    data class MetaInfo(
+        val imageId: Long,
+        val linkGroupId: String?,
+        val tags: List<String>,
+        val detachedAt: Long? = null,
+        val detachedFromCode: String? = null,
+        /**
+         * [detachedFromCode]가 가리키는 캐릭터의 현재 이름. **코드는 있는데 이 값이 null이면
+         * 그 캐릭터가 지워진 것**이고, 화면은 그렇게 말한다(둘을 한 값으로 접으면 "출처 없음"과
+         * "지워진 캐릭터"가 구별되지 않는다).
+         */
+        val detachedFromName: String? = null
+    )
     data class ManagedImage(
         val path: String,
         val sizeBytes: Long,
@@ -161,7 +177,12 @@ class ImageManagerViewModel(
         val referencedCount: Int,
         val orphanCount: Int,
         val trashCount: Int,
-        val unassignedCount: Int = 0
+        val unassignedCount: Int = 0,
+        /**
+         * 뗀 것 서랍의 크기(B-107 D3). [unassignedCount]와 **배타다** — 칩이 갈라 놓았으니
+         * 요약 줄도 갈라 세어야 두 수의 합이 사용자가 보는 것과 맞는다.
+         */
+        val detachedCount: Int = 0
     )
 
     /** 탭 임포트 결과. */
@@ -272,10 +293,14 @@ class ImageManagerViewModel(
         }
         // 대표로 지정한 캐릭터 역맵 — 삭제 확인창의 사전 고지(B-103 D6ⓐ)가 쓴다.
         val representativeMap = HashMap<String, MutableList<String>>()
+        // 뗀 출처를 사람이 읽는 이름으로 옮기는 표(B-107 D1). 코드로 남기는 이유가 여기서
+        // 값을 한다 — 캐릭터가 지워졌으면 이 표에 없고, 화면이 "지워진 캐릭터"라고 말한다.
+        val nameByCode = HashMap<String, String>()
         for (c in db.characterDao().getAllCharactersList()) {
             addOwners(c.imagePaths, OwnerType.CHARACTER, c.name, c.id)
             val rep = com.novelcharacter.app.util.ImagePathMatch.canonical(c.representativeImagePath)
             if (rep.isNotEmpty()) representativeMap.getOrPut(rep) { mutableListOf() }.add(c.name)
+            nameByCode[c.code] = c.name
         }
         for (n in db.novelDao().getAllNovelsList()) addOwners(n.imagePaths, OwnerType.NOVEL, n.title, n.id)
         for (u in db.universeDao().getAllUniversesList()) addOwners(u.imagePaths, OwnerType.UNIVERSE, u.name, u.id)
@@ -300,7 +325,11 @@ class ImageManagerViewModel(
                 }
                 continue
             }
-            metaMap[canon] = MetaInfo(m.id, m.linkGroupId, tagsByImage[m.id]?.sorted() ?: emptyList())
+            metaMap[canon] = MetaInfo(
+                m.id, m.linkGroupId, tagsByImage[m.id]?.sorted() ?: emptyList(),
+                m.detachedAt, m.detachedFromCode,
+                detachedFromName = m.detachedFromCode?.let { nameByCode[it] }
+            )
         }
         if (staleMetaPaths.isNotEmpty()) {
             runCatching { db.imageMetaDao().deleteByPaths(staleMetaPaths) }
@@ -316,6 +345,7 @@ class ImageManagerViewModel(
         var orphanCount = 0
         var trashCount = 0
         var unassignedCount = 0
+        var detachedCount = 0
         for (f in files) {
             val canon = runCatching { f.canonicalPath }.getOrNull() ?: f.absolutePath
             val owners = ownerMap[canon] ?: emptyList()
@@ -335,13 +365,21 @@ class ImageManagerViewModel(
                 Status.TRASH_HELD -> trashCount++
                 Status.UNASSIGNED -> unassignedCount++
             }
+            // 서랍은 상태 축과 **직교하지 않는다** — `UNASSIGNED`에서 뗀 것을 빼고 따로 센다.
+            // 필터(`ImageFilterHelper.matchesBase`)와 같은 규칙이어야 요약과 목록이 맞는다.
+            if (meta?.detachedAt != null) {
+                detachedCount++
+                if (status == Status.UNASSIGNED) unassignedCount--
+            }
             items.add(ManagedImage(
                 f.absolutePath, size, f.lastModified(), owners, status, meta,
                 representativeOf = representativeMap[canon] ?: emptyList()
             ))
         }
         items.sortByDescending { it.sizeBytes }  // 기본 정렬: 큰 것부터(정리 우선)
-        return items to Summary(totalBytes, items.size, refCount, orphanCount, trashCount, unassignedCount)
+        return items to Summary(
+            totalBytes, items.size, refCount, orphanCount, trashCount, unassignedCount, detachedCount
+        )
     }
 
     private fun parsePaths(json: String): List<String> {
@@ -362,38 +400,23 @@ class ImageManagerViewModel(
         }
     }
 
-    private suspend fun deleteInternal(item: ManagedImage): Long? = try {
-        val file = File(item.path)
-        val canon = runCatching { file.canonicalPath }.getOrNull() ?: item.path
-        val existed = file.exists()
-        val size = if (existed) file.length() else 0L
-        val groupId = item.meta?.linkGroupId
-        // 원자성: 소유 엔티티 imagePaths 제거를 단일 트랜잭션으로 묶고, 파일 삭제를 그 안에서 마지막에 시도한다.
-        // 파일 삭제 실패 시 예외를 던져 링크 제거를 롤백 → 파일·링크가 함께 보존된다(캐릭터가 이미지를 조용히 잃지 않음).
-        // 파일이 이미 없는(고아) 경우엔 링크만 정리한다. 라이브러리 meta·태그(CASCADE)도 함께 제거(명시적 파괴).
-        db.withTransaction {
-            for (owner in item.owners) {
-                when (owner.type) {
-                    OwnerType.CHARACTER -> db.characterDao().getCharacterById(owner.id)?.let { c ->
-                        db.characterDao().update(c.withImagePaths(removePath(c.imagePaths, item.path, canon)))
-                    }
-                    OwnerType.NOVEL -> db.novelDao().getNovelById(owner.id)?.let { n ->
-                        db.novelDao().update(n.copy(imagePaths = removePath(n.imagePaths, item.path, canon)))
-                    }
-                    OwnerType.UNIVERSE -> db.universeDao().getUniverseById(owner.id)?.let { u ->
-                        db.universeDao().update(u.copy(imagePaths = removePath(u.imagePaths, item.path, canon)))
-                    }
-                }
-            }
-            db.imageMetaDao().deleteByPaths(listOf(item.path, canon))
-            // 삭제로 링크 그룹이 1장만 남으면 잔존 "링크" 표식이 오해를 부르므로 자동 해제.
-            if (groupId != null) db.imageMetaDao().clearGroupIfSingleton(groupId)
-            if (existed && !file.delete()) throw java.io.IOException("파일 삭제 실패: ${item.path}")
-        }
-        size
-    } catch (e: Exception) {
-        null
-    }
+    /**
+     * 처분 자체는 [com.novelcharacter.app.util.ImageDeletionService]가 단일 소스다(B-107 D6) —
+     * `_삭제승인/`(폴더 받아오기)이 같은 함수를 부른다. 여기서는 목록이 이미 아는 소유자를
+     * 그 자료형으로 옮겨 주기만 한다(전수를 다시 훑지 않는다).
+     */
+    private suspend fun deleteInternal(item: ManagedImage): Long? =
+        com.novelcharacter.app.util.ImageDeletionService.delete(
+            db = db,
+            path = item.path,
+            owners = com.novelcharacter.app.util.ImageDeletionService.Owners(
+                characterIds = item.owners.filter { it.type == OwnerType.CHARACTER }.map { it.id },
+                novelIds = item.owners.filter { it.type == OwnerType.NOVEL }.map { it.id },
+                universeIds = item.owners.filter { it.type == OwnerType.UNIVERSE }.map { it.id }
+            ),
+            linkGroupId = item.meta?.linkGroupId,
+            gson = gson
+        )
 
     private fun removePath(json: String, path: String, canon: String): String {
         val kept = parsePaths(json).filter {
@@ -936,6 +959,10 @@ class ImageManagerViewModel(
                                 val (json, added, skipped) = appendPaths(c.imagePaths, expansion.allPaths, reportAppend)
                                 db.characterDao().update(c.withImagePaths(json))
                                 assigned = added; already = skipped
+                                // 다시 붙였으면 서랍에서 뺀다(B-107 D2 — 푸는 자리 ①).
+                                // 판정은 단일 소스가 하므로 여기서 "뗀 것이었나"를 묻지 않는다.
+                                com.novelcharacter.app.util.DetachedImageMarker
+                                    .sync(db, expansion.allPaths, c.code)
                             }
                             OwnerType.NOVEL -> {
                                 val n = requireNotNull(db.novelDao().getNovelById(targetId))
@@ -1028,6 +1055,9 @@ class ImageManagerViewModel(
                     var cleared = 0
                     var adopted = 0
                     var processed = 0
+                    // 뗀 표식의 후보 — 캐릭터에서 뗀 것만 모은다. 출처(code)를 경로마다 들고
+                    // 가는 이유는 일괄 해제가 **여러 캐릭터에 걸쳐** 일어나기 때문이다.
+                    val detachCandidates = ArrayList<com.novelcharacter.app.util.DetachedImageRule.Candidate>()
                     db.withTransaction {
                         for (path in paths) {
                             onProgress(++processed, paths.size)
@@ -1039,6 +1069,10 @@ class ImageManagerViewModel(
                                 when (owner.type) {
                                     OwnerType.CHARACTER -> db.characterDao().getCharacterById(owner.id)?.let { c ->
                                         db.characterDao().update(c.withImagePaths(removePath(c.imagePaths, path, canon)))
+                                        detachCandidates.add(
+                                            com.novelcharacter.app.util.DetachedImageRule
+                                                .Candidate(path, c.code)
+                                        )
                                     }
                                     OwnerType.NOVEL -> db.novelDao().getNovelById(owner.id)?.let { n ->
                                         db.novelDao().update(n.copy(imagePaths = removePath(n.imagePaths, path, canon)))
@@ -1059,6 +1093,9 @@ class ImageManagerViewModel(
                                 db.imageMetaDao().promoteToUserByPaths(listOf(path, canon))
                             }
                         }
+                        // 소유를 다 고친 **뒤에** 판정한다 — 같은 트랜잭션이라 표식과 소유가
+                        // 함께 들어가거나 함께 되돌아간다(B-107 D2 — 붙는 자리 ①).
+                        com.novelcharacter.app.util.DetachedImageMarker.sync(db, detachCandidates)
                     }
                     // 캐릭터에서 빠진 이미지의 자동 링크를 풀어 준다(설정 켜짐 시)
                     runCatching {
@@ -1072,6 +1109,25 @@ class ImageManagerViewModel(
             }
             load()
             onDone(result)
+        }
+    }
+
+    /**
+     * 뗀 표식을 지운다 — 서랍에서 뺀다(B-107 D2의 푸는 길 ②).
+     *
+     * **소유를 보지 않는다.** 판정을 태우면 캐릭터가 안 쓰는 이미지는 지워도 곧바로 다시 붙어
+     * 버튼이 듣지 않는다. 안 쓰면서 서랍에도 두지 않는 것은 사용자의 자유다.
+     */
+    fun clearDetachedMark(paths: List<String>, onDone: (Int) -> Unit) {
+        viewModelScope.launch {
+            val cleared = withContext(Dispatchers.IO) {
+                runCatching {
+                    com.novelcharacter.app.util.DetachedImageMarker.clearMark(db, paths)
+                    paths.size
+                }.getOrDefault(0)
+            }
+            load()
+            onDone(cleared)
         }
     }
 

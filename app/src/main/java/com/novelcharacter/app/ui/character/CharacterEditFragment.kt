@@ -330,6 +330,26 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
                     if (supplementMode) navigateToNextSupplement()
                     else findNavController().popBackStack()
                 }
+                override fun pendingImageDeletes() = imageStrip.pendingDeletes
+                override fun onPendingImageDeletesApplied(deleted: Int, protectedCount: Int) {
+                    imageStrip.clearPendingDeletes()
+                    if (!isAdded) return
+                    // 못 지운 것을 조용히 넘기지 않는다 — 사용자는 지웠다고 알고 나간다.
+                    val ctx = context ?: return
+                    if (protectedCount > 0) {
+                        Toast.makeText(
+                            ctx,
+                            getString(R.string.image_remove_pending_delete_protected, protectedCount),
+                            Toast.LENGTH_LONG
+                        ).show()
+                    } else if (deleted > 0) {
+                        Toast.makeText(
+                            ctx,
+                            getString(R.string.image_remove_pending_delete_done, deleted),
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
             }
         )
         saveCoordinator.registerResultListeners() // 회전 안전(P1-A): 결과 리스너를 onViewCreated에서 1회 등록

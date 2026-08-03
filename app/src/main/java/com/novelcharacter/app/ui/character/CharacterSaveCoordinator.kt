@@ -80,6 +80,17 @@ class CharacterSaveCoordinator(
          * 다음 저장 성공 시 스테일 동작이 실행되지 않는다.
          */
         fun onSaveAborted() {}
+
+        /**
+         * 편집창에서 **"앱에서 삭제"를 고른** 이미지 경로들(B-107 D7).
+         *
+         * 고른 즉시가 아니라 저장할 때 실행하는 것이 이 화면의 계약이다 — 취소하면 무해해야
+         * 한다. 기본 구현이 빈 목록이라, 이 조작이 없는 호스트는 아무것도 하지 않는다.
+         */
+        fun pendingImageDeletes(): List<String> = emptyList()
+
+        /** 대기 삭제를 실제로 실행한 뒤 호출된다 — 호스트가 목록을 비운다(중복 실행 방지). */
+        fun onPendingImageDeletesApplied(deleted: Int, protectedCount: Int) {}
     }
 
     private val gson = Gson()
@@ -345,7 +356,12 @@ class CharacterSaveCoordinator(
             // 자동 링크 재동기화는 제거 파일 정리보다 먼저 — 빠진 이미지의 자동 링크가 풀리고
             // 자동 입양 행이 반납된 뒤에 제거 정책이 봐야 "라이브러리 보존" 판정이 종전과 같다.
             resyncAutoLink()
-            cleanupRemovedImages(host.existingCharacter()?.imagePaths, snapshot.imagePaths)
+            val previousPaths = host.existingCharacter()?.imagePaths
+            cleanupRemovedImages(previousPaths, snapshot.imagePaths)
+            syncDetachedMarks(character.code, previousPaths, snapshot.imagePaths)
+            // 명시적 삭제는 맨 뒤다 — 이 캐릭터의 참조가 빠진 뒤라야 "다른 곳이 쓰는가"를
+            // 제대로 판정할 수 있다(D7).
+            applyPendingImageDeletes()
         } else {
             val newId = viewModel.insertCharacterSuspend(character)
             val fieldValues = resolvedFieldValues?.map { it.copy(characterId = newId) }
@@ -353,6 +369,10 @@ class CharacterSaveCoordinator(
             viewModel.saveAllFieldValues(newId, fieldValues)
             savedCharId = newId
             resyncAutoLink()
+            // 새 캐릭터도 서랍을 건드린다 — 전에 뗐던 이미지를 다시 골라 쓰는 경로가 여기다.
+            // 뗄 것은 없으므로(옛 목록이 없다) 이 호출은 지우기만 한다.
+            syncDetachedMarks(character.code, null, snapshot.imagePaths)
+            applyPendingImageDeletes()
         }
 
         val tagList = snapshot.tags.split(",").map { it.trim() }.filter { it.isNotBlank() }
@@ -600,5 +620,71 @@ class CharacterSaveCoordinator(
                     com.novelcharacter.app.util.ImageOwnershipGuard.adoptOrphans(db, appCtx, removed)
             }
         } catch (_: Exception) { /* 보존이 삭제보다 안전 — 실패 시 파일 유지 */ }
+    }
+
+    /**
+     * 뗀 표식을 저장 결과에 맞춘다(B-107 D2 — 붙는 자리 ②, 푸는 자리 ①).
+     *
+     * **뺀 것과 남은 것을 함께 넘긴다.** 판정은
+     * [com.novelcharacter.app.util.DetachedImageMarker]가 하고, 그것이 뺀 것 중 캐릭터가
+     * 아무도 안 쓰게 된 것에 표식을 붙이며 남은 것에서는 표식을 지운다 — **전에 뗐던 이미지를
+     * 다시 골라 쓴 경우가 후자다.** 두 방향을 한 호출로 두는 이유는 규칙이 하나이기 때문이다.
+     *
+     * [cleanupRemovedImages] **뒤에** 부른다: 그쪽이 정책에 따라 meta 행을 만들거나
+     * (`adoptOrphans`) 지울 수 있고, 없는 행에는 표식을 붙일 자리가 없다.
+     */
+    private suspend fun syncDetachedMarks(
+        code: String,
+        oldPathsJson: String?,
+        currentPaths: List<String>
+    ) {
+        val oldPaths: List<String> = try {
+            gson.fromJson(oldPathsJson ?: "[]", com.novelcharacter.app.util.GsonTypes.STRING_LIST) ?: emptyList()
+        } catch (_: Exception) { emptyList() }
+        val touched = (oldPaths + currentPaths).distinct()
+        if (touched.isEmpty()) return
+        val db = (fragment.activity?.application as? com.novelcharacter.app.NovelCharacterApp)?.database ?: return
+        // 표식은 부가 정보다 — 실패해도 저장 자체를 되돌리지 않는다(파일도 소유도 이미 맞다).
+        runCatching {
+            com.novelcharacter.app.util.DetachedImageMarker.sync(
+                db, touched, code.takeIf { it.isNotBlank() }
+            )
+        }
+    }
+
+    /**
+     * 편집창에서 "앱에서 삭제"를 고른 이미지를 **지금** 지운다(B-107 D7).
+     *
+     * 저장이 끝난 뒤에 부른다 — 그래야 이 캐릭터의 참조가 이미 빠져 있고, 그때까지 남아 있는
+     * 소유자는 **정말로 다른 곳**이다.
+     *
+     * `ImageOwnershipGuard.deleteIfUnprotected`를 쓰지 않는 이유: 그쪽은 **라이브러리 meta 행이
+     * 있는 파일을 통째로 보호**한다(그것이 그 함수의 목적이다). 여기서 쓰면 라이브러리에 든
+     * 이미지는 사용자가 명시적으로 골라도 영영 안 지워진다. 대신 보호해야 할 것을 직접 본다 —
+     * **다른 엔티티가 쓰는가 · 휴지통이 쥐고 있는가.** 못 지운 것은 세어서 알린다(조용한 실패 금지).
+     */
+    private suspend fun applyPendingImageDeletes() {
+        val pending = host.pendingImageDeletes()
+        if (pending.isEmpty()) return
+        val db = (fragment.activity?.application as? com.novelcharacter.app.NovelCharacterApp)?.database ?: return
+        var deleted = 0
+        var protectedCount = 0
+        runCatching {
+            val ownerIndex = com.novelcharacter.app.util.ImageDeletionService.buildOwnerIndex(db, gson)
+            val trashHeld = com.novelcharacter.app.util.StorageAnalyzer.collectTrashHeldPaths(db, gson)
+            for (path in pending) {
+                val canon = com.novelcharacter.app.util.ImagePathMatch.canonical(path)
+                val stillUsed = ownerIndex[canon]?.isEmpty == false || canon in trashHeld
+                if (stillUsed) { protectedCount++; continue }
+                val freed = com.novelcharacter.app.util.ImageDeletionService.delete(
+                    db = db, path = path,
+                    owners = com.novelcharacter.app.util.ImageDeletionService.Owners.NONE,
+                    linkGroupId = db.imageMetaDao().getByPath(path)?.linkGroupId,
+                    gson = gson
+                )
+                if (freed != null) deleted++ else protectedCount++
+            }
+        }
+        host.onPendingImageDeletesApplied(deleted, protectedCount)
     }
 }

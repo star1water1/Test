@@ -9,7 +9,14 @@ package com.novelcharacter.app.util
  */
 object ImageFilterHelper {
 
-    enum class BaseFilter { ALL, CHARACTER, NOVEL, UNIVERSE, UNASSIGNED, ORPHAN, TRASH }
+    /**
+     * [UNASSIGNED]와 [DETACHED]는 **배타다** — 같은 이미지가 두 칩에 동시에 잡히지 않는다.
+     *
+     * 이것이 B-107 요청의 본체다(*"뗀 것을 따로 관리"* = 섞이지 않게 하라). 그래서 링크 축을
+     * 독립으로 둔 [LinkFilter]의 선례를 따르지 않고 [UNASSIGNED] 쪽을 **좁혔다**: 두 칩이
+     * 겹치면 갈랐다고 말만 한 것이 된다.
+     */
+    enum class BaseFilter { ALL, CHARACTER, NOVEL, UNIVERSE, UNASSIGNED, DETACHED, ORPHAN, TRASH }
     enum class OwnerKind { CHARACTER, NOVEL, UNIVERSE }
     enum class StatusKind { REFERENCED, ORPHAN, TRASH, UNASSIGNED }
 
@@ -44,7 +51,15 @@ object ImageFilterHelper {
         val ownerKinds: Set<OwnerKind>,
         val status: StatusKind,
         /** 링크 그룹 토큰. null=미링크, `char:` 접두=캐릭터 자동 링크, 그 밖=수동 묶음. */
-        val linkGroupId: String? = null
+        val linkGroupId: String? = null,
+        /**
+         * 캐릭터에서 뗀 시각. null=뗀 적 없음
+         * ([com.novelcharacter.app.data.model.ImageMeta.detachedAt] 그대로).
+         *
+         * **작품·세계관이 아직 쓰는 이미지도 값이 있을 수 있다** — 캐릭터 축의 이력이라
+         * 현재 소유와 독립이다(설계 D2). 그래서 [BaseFilter.DETACHED]는 [status]를 보지 않는다.
+         */
+        val detachedAt: Long? = null
     )
 
     fun <T> apply(items: List<T>, criteria: Criteria, facts: (T) -> Facts): List<T> {
@@ -71,7 +86,10 @@ object ImageFilterHelper {
         BaseFilter.CHARACTER -> OwnerKind.CHARACTER in f.ownerKinds
         BaseFilter.NOVEL -> OwnerKind.NOVEL in f.ownerKinds
         BaseFilter.UNIVERSE -> OwnerKind.UNIVERSE in f.ownerKinds
-        BaseFilter.UNASSIGNED -> f.status == StatusKind.UNASSIGNED
+        // 뗀 것은 여기서 빠진다 — 이 한 줄이 두 칩의 배타성을 만든다.
+        BaseFilter.UNASSIGNED -> f.status == StatusKind.UNASSIGNED && f.detachedAt == null
+        // 소유 상태를 보지 않는다: 캐릭터에서 뗐지만 작품이 아직 쓰는 이미지도 뗀 것이다(D2).
+        BaseFilter.DETACHED -> f.detachedAt != null
         BaseFilter.ORPHAN -> f.status == StatusKind.ORPHAN
         BaseFilter.TRASH -> f.status == StatusKind.TRASH
     }

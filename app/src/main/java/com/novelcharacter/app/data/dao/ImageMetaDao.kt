@@ -60,6 +60,27 @@ interface ImageMetaDao {
     )
     suspend fun sweepBareAutoAdopted()
 
+    /**
+     * 뗀 표식을 붙인다(B-107 D2). 이미 붙어 있으면 **덮어쓴다** — 마지막으로 뗀 시각이
+     * 쓸모 있는 값이고, 출처도 마지막 것 하나만 남기는 것이 확정이다.
+     *
+     * 판정("캐릭터 소유가 0인가")은 여기서 하지 않는다 —
+     * [com.novelcharacter.app.util.DetachedImageMarker]가 단일 소스이고 이것은 쓰기 손이다.
+     */
+    @Query("UPDATE image_meta SET detachedAt = :now, detachedFromCode = :fromCode WHERE path IN (:paths)")
+    suspend fun markDetachedByPaths(paths: List<String>, now: Long, fromCode: String?)
+
+    /**
+     * 뗀 표식을 지운다 — 다시 캐릭터에 붙었거나(자동), 사용자가 직접 지웠거나(수동),
+     * `_미배정/`으로 되돌렸을 때(폴더 왕복 D5). 셋 다 "서랍에서 뺀다"는 같은 뜻이다.
+     */
+    @Query("UPDATE image_meta SET detachedAt = NULL, detachedFromCode = NULL WHERE path IN (:paths)")
+    suspend fun clearDetachedByPaths(paths: List<String>)
+
+    /** 서랍 크기 — 요약 줄이 쓴다. 목록을 실어 나르지 않으려고 세는 질의를 따로 둔다. */
+    @Query("SELECT COUNT(*) FROM image_meta WHERE detachedAt IS NOT NULL")
+    suspend fun countDetached(): Int
+
     @Query("DELETE FROM image_meta WHERE path IN (:paths)")
     suspend fun deleteByPaths(paths: List<String>)
 

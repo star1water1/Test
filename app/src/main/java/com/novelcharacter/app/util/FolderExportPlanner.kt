@@ -48,8 +48,13 @@ object FolderExportPlanner {
         ALL,
         /** 캐릭터에 배정된 것만. */
         ASSIGNED,
-        /** 미배정 라이브러리만. */
-        UNASSIGNED
+        /** 미배정 라이브러리만. **뗀 것은 빠진다** — 아래 [DETACHED]와 배타다. */
+        UNASSIGNED,
+        /**
+         * 뗀 것만(B-107 D4). 정리하려고 꺼내는 것이 이 기능의 주 용도라 범위를 따로 둔다 —
+         * 전부 내보내면 서랍을 찾으러 폴더를 뒤져야 한다.
+         */
+        DETACHED
     }
 
     /**
@@ -74,7 +79,14 @@ object FolderExportPlanner {
         val sizeBytes: Long = 0,
         val ownerCharacterIds: List<Long> = emptyList(),
         val linkGroupId: String? = null,
-        val inLibrary: Boolean = true
+        val inLibrary: Boolean = true,
+        /**
+         * 뗀 표식이 붙어 있는가([com.novelcharacter.app.data.model.ImageMeta.detachedAt] != null).
+         *
+         * 캐릭터 배정이 남아 있으면 **읽지 않는다** — 배정된 이미지는 그 캐릭터 폴더로 가고,
+         * 서랍은 미배정 축을 가르는 것이기 때문이다.
+         */
+        val isDetached: Boolean = false
     )
 
     /** 내보낼 파일 1건 — 어디에 무슨 이름으로 쓸 것인가. */
@@ -116,6 +128,8 @@ object FolderExportPlanner {
         val files: List<ExportFile> = emptyList(),
         val characterFolders: Int = 0,
         val unassignedCount: Int = 0,
+        /** `_분리됨/` 직속으로 나가는 장수(B-107 D4). 미배정과 **따로** 센다 — 갈랐으니 따로 말한다. */
+        val detachedCount: Int = 0,
         val setFolders: Int = 0,
         val sharedCount: Int = 0,
         val legacySkipped: Int = 0,
@@ -157,10 +171,21 @@ object FolderExportPlanner {
         val isEmpty: Boolean get() = staleIds.isEmpty()
     }
 
+    /**
+     * 캐릭터 이름으로 쓸 수 없는 폴더명 — **받아오기가 예약으로 읽는 이름 전부**여야 한다.
+     *
+     * 종전에 `_기타`가 빠져 있었다(B-107 설계 1-4의 곁가지 결함, D9): 이름이 `_기타`인 캐릭터를
+     * 내보내기가 막지 않는데 받아오기는 서랍으로 읽어, 그 캐릭터의 이미지가 통째로 서랍행이 됐다.
+     * **막는 쪽과 읽는 쪽이 같은 목록을 봐야 한다** — 그래서 값을 여기 적지 않고
+     * [FolderRoundtripPlanner]의 상수를 그대로 든다.
+     */
     private val RESERVED_FOLDER_NAMES = setOf(
         FolderRoundtripPlanner.FOLDER_PROCESSED,
         FolderRoundtripPlanner.FOLDER_UNASSIGNED,
-        FolderRoundtripPlanner.FOLDER_SHARED
+        FolderRoundtripPlanner.FOLDER_SHARED,
+        FolderRoundtripPlanner.FOLDER_MISC,
+        FolderRoundtripPlanner.FOLDER_DETACHED,
+        FolderRoundtripPlanner.FOLDER_DELETE_APPROVAL
     )
 
     /**
@@ -225,7 +250,9 @@ object FolderExportPlanner {
         for (image in images.sortedBy { it.path }) {
             if (!seen.add(image.path)) continue
             val owners = image.ownerCharacterIds.distinct().sorted()
-            if (!scope.accepts(owners.isNotEmpty())) continue
+            // 배정이 남아 있으면 서랍 판정을 하지 않는다 — 그 이미지는 캐릭터 폴더로 간다.
+            val detached = owners.isEmpty() && image.isDetached
+            if (!scope.accepts(owners.isNotEmpty(), detached)) continue
             // 캐릭터도 라이브러리도 쥐지 않은 이미지 = 작품·세계관 전용(v1 범위 밖).
             if (owners.isEmpty() && !image.inLibrary) { entityOnly++; continue }
             if (existingPaths != null && image.path !in existingPaths) { missing++; continue }
@@ -261,12 +288,21 @@ object FolderExportPlanner {
                 }
 
                 else -> {
+                    // 서랍을 가른다(D4) — 뗀 적 없으면 `_미배정/`, 뗀 것이면 `_분리됨/`.
+                    // 세트 규칙은 **완전히 대칭**이라 스캔 깊이도 그대로다.
+                    val drawer = if (detached) {
+                        FolderRoundtripPlanner.FOLDER_DETACHED
+                    } else {
+                        FolderRoundtripPlanner.FOLDER_UNASSIGNED
+                    }
                     val group = image.linkGroupId?.takeIf { !AutoLinkPlanner.isAutoToken(it) }
                     folders = if (group == null) {
-                        listOf(FolderRoundtripPlanner.FOLDER_UNASSIGNED)
+                        listOf(drawer)
                     } else {
+                        // 세트 번호는 두 서랍이 **함께** 센다 — 같은 묶음이 갈라져 양쪽에 나가는
+                        // 일은 없지만(뗀 표식은 이미지마다다), 번호가 겹치면 사람이 헷갈린다.
                         val number = setIndexByGroup.getOrPut(group) { setIndexByGroup.size + 1 }
-                        listOf(FolderRoundtripPlanner.FOLDER_UNASSIGNED, "$SET_FOLDER_PREFIX$number")
+                        listOf(drawer, "$SET_FOLDER_PREFIX$number")
                     }
                     label = FolderNameToken.FALLBACK_LABEL
                 }
@@ -278,15 +314,21 @@ object FolderExportPlanner {
         val files = ArrayList<ExportFile>()
         var characterFolders = 0
         var unassigned = 0
+        var detachedCount = 0
         var setFolders = 0
         var shared = 0
         for ((folders, entries) in bucketed) {
-            val isShared = folders == listOf(FolderRoundtripPlanner.FOLDER_SHARED)
-            val isUnassignedRoot = folders == listOf(FolderRoundtripPlanner.FOLDER_UNASSIGNED)
-            val isSet = folders.size == 2 && folders[0] == FolderRoundtripPlanner.FOLDER_UNASSIGNED
+            val head = folders.firstOrNull()
+            val isRootOf = { name: String -> folders.size == 1 && head == name }
+            // 세트는 두 서랍 아래 모두 생긴다 — 한쪽만 보면 `_분리됨/세트-n/`이
+            // '캐릭터 폴더'로 세어져 요약이 거짓말을 한다.
+            val isSet = folders.size == 2 &&
+                (head == FolderRoundtripPlanner.FOLDER_UNASSIGNED ||
+                    head == FolderRoundtripPlanner.FOLDER_DETACHED)
             when {
-                isShared -> shared += entries.size
-                isUnassignedRoot -> unassigned += entries.size
+                isRootOf(FolderRoundtripPlanner.FOLDER_SHARED) -> shared += entries.size
+                isRootOf(FolderRoundtripPlanner.FOLDER_UNASSIGNED) -> unassigned += entries.size
+                isRootOf(FolderRoundtripPlanner.FOLDER_DETACHED) -> detachedCount += entries.size
                 isSet -> setFolders++
                 else -> characterFolders++
             }
@@ -320,6 +362,7 @@ object FolderExportPlanner {
             files = files,
             characterFolders = characterFolders,
             unassignedCount = unassigned,
+            detachedCount = detachedCount,
             setFolders = setFolders,
             sharedCount = shared,
             legacySkipped = legacy,
@@ -329,10 +372,16 @@ object FolderExportPlanner {
         )
     }
 
-    private fun Scope.accepts(assigned: Boolean): Boolean = when (this) {
+    /**
+     * @param detached 캐릭터 배정이 없고 뗀 표식이 붙어 있는가.
+     *        [Scope.UNASSIGNED]가 이것을 **빼는** 것이 인앱 칩과 같은 배타 규약이다(D3) —
+     *        한쪽에서 갈라 놓고 다른 쪽에서 섞으면 "섞이지 않게 하라"는 요청이 반만 지켜진다.
+     */
+    private fun Scope.accepts(assigned: Boolean, detached: Boolean): Boolean = when (this) {
         Scope.ALL -> true
         Scope.ASSIGNED -> assigned
-        Scope.UNASSIGNED -> !assigned
+        Scope.UNASSIGNED -> !assigned && !detached
+        Scope.DETACHED -> detached
     }
 
     /**

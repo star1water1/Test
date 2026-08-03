@@ -3,6 +3,7 @@ package com.novelcharacter.app.util
 import com.novelcharacter.app.util.FolderRoundtripPlanner.HoldReason
 import com.novelcharacter.app.util.FolderRoundtripPlanner.ScanItem
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -34,10 +35,11 @@ class FolderRoundtripPlannerTest {
         items: List<ScanItem>,
         names: Map<String, List<Long>> = emptyMap(),
         owners: Map<String, List<Long>> = emptyMap(),
-        linked: Set<String> = emptySet()
+        linked: Set<String> = emptySet(),
+        detached: Set<String> = emptySet()
     ) = FolderRoundtripPlanner.plan(
         items, names, dict, owners,
-        FolderRoundtripPlanner.CharacterFolderResolver(names), linked
+        FolderRoundtripPlanner.CharacterFolderResolver(names), linked, detached
     )
 
     // ── 자리 해석 ──
@@ -487,5 +489,148 @@ class FolderRoundtripPlannerTest {
         assertEquals(first.imports.map { it.item.id }, second.imports.map { it.item.id })
         assertEquals(first.linkSets, second.linkSets)
         assertEquals(first.moves, second.moves)
+    }
+
+    // ══ 뗀 것 서랍 · _삭제승인 (B-107 D5·D6) ══════════════════════════════════════════
+    //
+    // 이 묶음이 지키는 것은 **세 폴더가 정리 작업의 세 갈래와 1:1이라는 것**이다 —
+    // `_분리됨`=판단 안 함 · `_미배정`=살림 · `_삭제승인`=지움. 셋 중 하나라도 뜻이 겹치면
+    // 폴더로 정리하는 사람의 왕복이 반쪽이 된다.
+
+    @Test fun classify_readsNewReservedFolders() {
+        val detachedFolder = FolderRoundtripPlanner.FOLDER_DETACHED
+        val deleteFolder = FolderRoundtripPlanner.FOLDER_DELETE_APPROVAL
+        assertEquals(
+            FolderRoundtripPlanner.Location.DetachedRoot,
+            FolderRoundtripPlanner.classify(listOf(detachedFolder))
+        )
+        assertEquals(
+            FolderRoundtripPlanner.Location.DetachedSet("세트-1"),
+            FolderRoundtripPlanner.classify(listOf(detachedFolder, "세트-1"))
+        )
+        assertEquals(
+            FolderRoundtripPlanner.Location.DeleteApproval,
+            FolderRoundtripPlanner.classify(listOf(deleteFolder))
+        )
+        // 삭제에는 세트가 없다 — 하위를 규약 밖으로 보내 조용히 지우는 일이 없게 한다.
+        assertEquals(
+            FolderRoundtripPlanner.Location.TooDeep,
+            FolderRoundtripPlanner.classify(listOf(deleteFolder, "아무거나"))
+        )
+    }
+
+    /** `_분리됨/`은 배정을 떼되 표식을 **남긴다** — "아직 판단 안 함". */
+    @Test fun detachedFolder_detachesAndKeepsMark() {
+        val plan = plan(
+            listOf(tokenFile("f1", tokenA, FolderRoundtripPlanner.FOLDER_DETACHED)),
+            owners = mapOf(pathA to listOf(7L))
+        )
+        assertEquals(1, plan.detaches.size)
+        assertEquals(listOf(7L), plan.detaches[0].fromCharacterIds)
+        assertTrue(plan.detaches[0].keepsDetachedMark)
+    }
+
+    /** `_미배정/`은 같은 배정 해제이되 표식을 **지운다** — "다시 쓸 것으로 되돌림". */
+    @Test fun unassignedFolder_detachesAndClearsMark() {
+        val plan = plan(
+            listOf(tokenFile("f1", tokenA, FolderRoundtripPlanner.FOLDER_UNASSIGNED)),
+            owners = mapOf(pathA to listOf(7L))
+        )
+        assertEquals(1, plan.detaches.size)
+        assertFalse(plan.detaches[0].keepsDetachedMark)
+    }
+
+    /**
+     * **이 슬라이스에서 가장 놓치기 쉬운 자리.** 서랍에 있던 파일은 배정도 묶음도 없어서,
+     * `detachedPaths`를 안 넘기면 `_미배정/`에 옮겨도 "할 일 없음"으로 보인다 —
+     * 그러면 폴더로 서랍을 비우는 길이 통째로 막힌다.
+     */
+    @Test fun markOnlyFile_movedToUnassigned_hasWorkToDo() {
+        val items = listOf(tokenFile("f1", tokenA, FolderRoundtripPlanner.FOLDER_UNASSIGNED))
+        assertTrue(plan(items).detaches.isEmpty())   // 집합을 안 주면 못 본다(회귀 방지)
+        val seen = plan(items, detached = setOf(pathA))
+        assertEquals(1, seen.detaches.size)
+        assertEquals(emptyList<Long>(), seen.detaches[0].fromCharacterIds)
+        assertFalse(seen.detaches[0].keepsDetachedMark)
+    }
+
+    /** 이미 서랍에 있는 것을 서랍에 그대로 두면 할 일이 없다(계수도 하지 않는다). */
+    @Test fun markOnlyFile_leftInDetachedFolder_isNoOp() {
+        val plan = plan(
+            listOf(tokenFile("f1", tokenA, FolderRoundtripPlanner.FOLDER_DETACHED)),
+            detached = setOf(pathA)
+        )
+        assertTrue(plan.detaches.isEmpty())
+        assertEquals(0, plan.actionCount)
+    }
+
+    /** `_분리됨/<세트명>/`은 `_미배정/<세트명>/`의 짝이다 — 묶는 자리라 묶음을 풀지 않는다. */
+    @Test fun detachedSet_keepsLinksAndMark() {
+        val plan = plan(
+            listOf(
+                tokenFile("f1", tokenA, FolderRoundtripPlanner.FOLDER_DETACHED, "세트-1"),
+                tokenFile("f2", tokenB, FolderRoundtripPlanner.FOLDER_DETACHED, "세트-1")
+            ),
+            owners = mapOf(pathA to listOf(7L))
+        )
+        assertEquals(1, plan.detaches.size)
+        assertFalse(plan.detaches[0].unlinks)
+        assertTrue(plan.detaches[0].keepsDetachedMark)
+        assertEquals(1, plan.linkSets.size)
+    }
+
+    /** 두 서랍의 같은 이름 세트는 **다른 묶음**이다 — 키가 겹치면 하나로 합쳐진다. */
+    @Test fun sameSetNameInTwoDrawers_staysSeparate() {
+        val plan = plan(
+            listOf(
+                tokenFile("f1", tokenA, FolderRoundtripPlanner.FOLDER_DETACHED, "세트-1"),
+                newFile("n1", FolderRoundtripPlanner.FOLDER_DETACHED, "세트-1"),
+                tokenFile("f2", tokenB, FolderRoundtripPlanner.FOLDER_UNASSIGNED, "세트-1"),
+                newFile("n2", FolderRoundtripPlanner.FOLDER_UNASSIGNED, "세트-1")
+            )
+        )
+        assertEquals(2, plan.linkSets.size)
+    }
+
+    // ── _삭제승인 ──
+
+    @Test fun deleteApproval_plansDeletionWithOwners() {
+        val plan = plan(
+            listOf(tokenFile("f1", tokenA, FolderRoundtripPlanner.FOLDER_DELETE_APPROVAL)),
+            owners = mapOf(pathA to listOf(7L, 8L))
+        )
+        assertEquals(1, plan.deletes.size)
+        assertEquals(pathA, plan.deletes[0].path)
+        assertEquals(listOf(7L, 8L), plan.deletes[0].ownerCharacterIds)
+    }
+
+    /**
+     * **여러 캐릭터가 쓰는 이미지도 보류하지 않는다.** `_공유/`가 보류인 근거는 "이동의 의미가
+     * 모호해서"인데 삭제는 모호하지 않다 — 파괴적일 뿐이고, 파괴는 확인창으로 다룬다(R-4).
+     */
+    @Test fun deleteApproval_doesNotHoldSharedImages() {
+        val plan = plan(
+            listOf(tokenFile("f1", tokenA, FolderRoundtripPlanner.FOLDER_DELETE_APPROVAL)),
+            owners = mapOf(pathA to listOf(7L, 8L))
+        )
+        assertTrue(plan.holds.isEmpty())
+    }
+
+    /** 앱이 모르는 파일은 지울 것이 없다 — 편입해 두고 지우면 한 왕복에서 만들었다 없앤다. */
+    @Test fun deleteApproval_ignoresUnknownFiles() {
+        val plan = plan(listOf(newFile("n1", FolderRoundtripPlanner.FOLDER_DELETE_APPROVAL)))
+        assertTrue(plan.deletes.isEmpty())
+        assertTrue(plan.imports.isEmpty())
+        assertEquals(0, plan.actionCount)
+    }
+
+    /** 삭제도 파일을 만지는 일이라 진행도 총량에 든다(규약 R-26). */
+    @Test fun deletes_countTowardProgressTotal() {
+        val plan = plan(
+            listOf(tokenFile("f1", tokenA, FolderRoundtripPlanner.FOLDER_DELETE_APPROVAL)),
+            owners = mapOf(pathA to listOf(7L))
+        )
+        assertEquals(1, plan.actionCount)
+        assertFalse(plan.isEmpty)
     }
 }

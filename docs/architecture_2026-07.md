@@ -122,6 +122,8 @@ app/src/main/java/com/novelcharacter/app/
 | `SnapshotRefs` / `SnapshotRefResolver` | 휴지통 복원의 안정 식별자 | 복원이 남의 엔티티에 붙었다(R-1) |
 | `FolderNameToken` / `FolderRoundtripPlanner` / `FolderExportPlanner` / `FolderRoundtripLedger` | 이미지 폴더 왕복의 이름·계획·장부 | 개명 경로가 토큰을 깨 중복 편입(C-1) |
 | `CharacterRepresentativeImage` / `ImagePathMatch` | **어느 이미지가 이 캐릭터를 대표하는가**(사다리·시드 랜덤·쓰기 정합) / 경로 대조 | 같은 판정이 아홉 종류로 갈려 규칙이 넷이었다(B-103) |
+| `DetachedImageRule` / `DetachedImageMarker` | **무엇이 "캐릭터에서 뗀 것"인가**(순수 판정) / 그 표식을 읽고 쓰는 손 | 붙는 자리 셋·푸는 자리 셋에 규칙을 나눠 적으면 "뗐다가 다시 붙였는데 서랍에 남아 있다"가 생기고 어느 쪽이 틀렸는지 알 길이 없다(B-107 D2). 불변식은 하나다 — **캐릭터가 쓰고 있는 이미지는 뗀 것이 아니다** |
+| `ImageDeletionService` | **앱에서 이미지를 지우는 처분**(참조 제거 + 라이브러리 행 제거 + 파일 삭제, 한 트랜잭션) | `ImageManagerViewModel.deleteInternal`에 private으로 갇혀 있어 `_삭제승인`이 같은 일을 하려면 규칙을 한 벌 더 적어야 했다 — 링크 정리·대표 포인터·롤백 조건이 갈라질 자리다(B-107 D6) |
 | `RepresentativeImageCell` | 엑셀 `대표이미지` 열의 쓰기·읽기 규약(해석 사다리 5단) | — |
 | `CharacterFieldValueOverflow` | 캐릭터 시트가 담지 못한 값의 판정 | — |
 | `CharacterFieldValueMerge` / `EventFieldValueMerge` / `NovelFieldValueMerge` | 부분 저장의 커버 집합 — 종류마다 하나씩, **규칙은 하나** | 사건 필드값이 무통보 폐기됐다(S-6) |
@@ -288,7 +290,7 @@ AI 정책(`FieldAiPolicy`).
 | **미이행 기능 색출** — 로드맵(1~4장)은 **닫혔고 5장의 미검증 후보만 살아 있다** | `docs/superficial_feature_audit_2026-07.md` |
 | **실사용 데이터가 말한 것** | `docs/usage_reality_check_2026-07.md` (+ `_runbook`) |
 | **화면 문구** | `docs/text_style_guide_2026-07.md` |
-| **영역별 설계** | 엑셀 왕복 `excel_roundtrip_audit` · 엑셀 스트리밍 가져오기 `excel_streaming_import` · 이미지 폴더 왕복 `image_folder_roundtrip_design`(결정 근거 `image_external_management`, **확장 `image_folder_tag_ai`**) · AI `ai_integration`·`ai_control_and_ui_density` · 값 라이브러리 `field_value_library` · 필터·정렬 짝 `filter_sort_parity` · **체형(실루엣 재편) `body_visual_redesign`(설계 마무리 — 코드 구현 대기. 이어받는 세션은 `handover_body_reauthor_2026-08`부터)** · **백업·내보내기 동선 `backup_export_redesign`(설계 확정 — 체형 다음 슬라이스)** · **사건 필드 추천 `event_field_recommend_2026-08`(v1.1 — 설계·구현 완료. B-62·B-68 해소, 실기기 3-32)** · **대표 이미지 `representative_image_design_2026-08`(B-103 — 설계·구현 완료 2026.08.03. 실기기 확인 3-50)** · **뗀 이미지 관리 `detached_image_management_design_2026-08`(B-107 — 설계 확정, 구현 대기. **선행이던 B-103이 끝났으므로 지금이 착수 자리다.** 폴더 왕복 규약을 바꾸므로 `image_folder_roundtrip_design` 3장·`image_folder_tag_ai` 2-1과 상호 참조)** |
+| **영역별 설계** | 엑셀 왕복 `excel_roundtrip_audit` · 엑셀 스트리밍 가져오기 `excel_streaming_import` · 이미지 폴더 왕복 `image_folder_roundtrip_design`(결정 근거 `image_external_management`, **확장 `image_folder_tag_ai`**) · AI `ai_integration`·`ai_control_and_ui_density` · 값 라이브러리 `field_value_library` · 필터·정렬 짝 `filter_sort_parity` · **체형(실루엣 재편) `body_visual_redesign`(설계 마무리 — 코드 구현 대기. 이어받는 세션은 `handover_body_reauthor_2026-08`부터)** · **백업·내보내기 동선 `backup_export_redesign`(설계 확정 — 체형 다음 슬라이스)** · **사건 필드 추천 `event_field_recommend_2026-08`(v1.1 — 설계·구현 완료. B-62·B-68 해소, 실기기 3-32)** · **대표 이미지 `representative_image_design_2026-08`(B-103 — 설계·구현 완료 2026.08.03. 실기기 확인 3-50)** · **뗀 이미지 관리 `detached_image_management_design_2026-08`(B-107 — v1.1, 설계·구현 완료 2026.08.03. 실기기 확인 3-52. 폴더 왕복 규약을 바꿨고 `image_folder_roundtrip_design` 3장·`image_folder_tag_ai` 2-1의 표를 **갱신했다**)** |
 | **점검 결과·수리 계획** | `app_inspection_round2` · `repair_plan` · `usability_review` · `design_intent` · **`plan_design_adversarial_review_2026-08`(전 문서 적대 검토 — 실증 발견·후보 목록·판정 대기)** |
 | **절차서** | `room_migration_verification` — 마이그레이션 하네스를 어떻게 만들고 돌리는가(종 수는 `ls tools/verify_room_migration*.py`로 센다) |
 | **브랜치·병합** | `docs/branch_merge_rules.md` |
@@ -309,6 +311,7 @@ AI 정책(`FieldAiPolicy`).
 
 | 버전 | 날짜 | 변경 내용 |
 |------|------|-----------|
+| v1.15 | 2026.08.03 | **B-107 뗀 이미지 관리 구현 반영**(세션 로그 1-bu). 3장 단일 소스 표에 `DetachedImageRule`/`DetachedImageMarker`(뗀 것 판정)와 `ImageDeletionService`(삭제 처분) 등재 · 7장 지도에서 B-107을 **구현 완료**로 옮기고, **역참조 둘이 "바꿀 예정"에서 "갱신됐다"로 바뀐 사실**을 함께 적었다(`image_folder_roundtrip_design` 3장·`image_folder_tag_ai` 2-1 — 그 표들은 이제 `_분리됨`·`_삭제승인`을 담은 현행이다). 예약 폴더가 **넷에서 여섯**이 됐다 |
 | v1.14 | 2026.08.03 | **B-103 대표 이미지 구현 반영**(세션 로그 1-bs). 3장 단일 소스 표에 `CharacterRepresentativeImage`/`ImagePathMatch`(대표 판정·경로 대조)와 `RepresentativeImageCell`(엑셀 열 규약) 등재 · 4장 검증 도구에 `check_image_pointer.sh` · 6장 색인에 **R-32**(포인터는 목록을 고치는 모든 경로가 함께 고친다) · 7장 지도에서 B-103을 **구현 완료**로 옮기고 **B-107 행에 "선행이 끝나 지금이 착수 자리"를 적었다** — 그 행이 순서 근거를 담고 있는데 선행 상태가 바뀐 것을 말하지 않으면 다음 세션이 다시 대조해야 한다 |
 | v1.13 | 2026.08.03 | 7장 영역별 설계에 **설계 문서 둘 등재** — `representative_image_design_2026-08`(B-103 대표 이미지)와 `detached_image_management_design_2026-08`(B-107 뗀 이미지 관리). 둘 다 **설계 확정·구현 대기**다. **B-107 행에 상호 참조를 함께 적었다** — 그 설계가 **폴더 왕복 규약을 바꾸므로**(`_삭제승인` 신설 · `_미배정/` 재정의) `image_folder_roundtrip_design` 3장과 `image_folder_tag_ai` 2-1에 **역참조를 걸었고**, 이 지도가 그 사실을 알아야 반대쪽에서 들어온 세션이 찾는다. 지도에 새 설계를 등재하지 않으면 **진입점이 최신 설계를 모른다** — 이번 인수인계 점검이 그것을 잡았다 |
 | v1.12 | 2026.08.01 | 7장 영역별 설계에 **`backup_export_redesign` 등재**(백업·내보내기 동선 재편 — 실기기 확인 중 사용자가 실제로 막힌 백업 동선의 재편, 사용자 확정으로 체형 다음 슬라이스) + 체형 행 상태를 "이식 목업 완료 — 검증 대기" → "설계 마무리 — 코드 구현 대기"로(판정 6건 확정 반영) |
