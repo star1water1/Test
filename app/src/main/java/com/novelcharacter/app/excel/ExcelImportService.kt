@@ -57,6 +57,12 @@ private fun nameBankKey(name: String, gender: String): String = "$name\u0000$gen
 
 private fun NameBankEntry.mapKeyForNameBank(): String = nameBankKey(name, gender)
 
+/**
+ * 미리보기가 '코드 백필'을 예고할 때 쓰는 자리표시자.
+ * 실제 발급은 가져오기가 하고, 미리보기는 **발급이 일어난다는 사실**만 알면 된다.
+ */
+private const val CODE_BACKFILL_PREVIEW = "(미리보기: 코드 발급 예정)"
+
 data class CategoryAnalysis(
     val key: String,
     val label: String,
@@ -1300,6 +1306,251 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         return if (content == existing) existing else content.copy(updatedAt = r.updatedAt ?: now)
     }
 
+    private class FieldDefCols(cols: Map<String, Int>, firstHeader: String) {
+        val universeName = cols[firstHeader] ?: cols["세계관"] ?: 0
+        val key = cols["필드키"] ?: 1
+        val name = cols["필드명"] ?: 2
+        val type = cols["타입"] ?: 3
+        val config = cols["설정(JSON)"] ?: 4
+        val group = cols["그룹"] ?: 5
+        val order = cols["순서"] ?: -1
+        // 위치 폴백 금지 — 열을 지우면 '세계관코드'를 필수여부로 오독한다
+        val required = cols["필수여부"] ?: -1
+        val universeCode = cols["세계관코드"] ?: -1
+        // 대상(캐릭터/사건) — 열이 없는 구버전 파일은 캐릭터로 간주 (관대 수용)
+        val entityType = cols["대상"] ?: -1
+        // config 파생 전용 열(A-1·A-2) — 열/JSON 키/기존값 3분기 병합 (FieldConfigColumns.merge)
+        val aiSuggest = cols[FieldConfigColumns.COLUMN_AI_SUGGEST] ?: -1
+        val description = cols[FieldConfigColumns.COLUMN_DESCRIPTION] ?: -1
+        // 등급 체계 참조 열(U-1) — 같은 3분기 문법. 해석은 코드 우선, 없으면 (세계관, 이름).
+        val gradeSystem = cols["등급체계"] ?: -1
+        val gradeSystemCode = cols["등급체계코드"] ?: -1
+    }
+
+    private data class FieldDefRowValues(
+        val universeName: String,
+        val universeCode: String,
+        val key: String,
+        val name: String,
+        val type: String,
+        val config: String,
+        val groupName: String,
+        val displayOrder: Int?,
+        val isRequired: Boolean?,
+        val entityType: String,
+        val aiColumnPresent: Boolean,
+        val aiCellText: String,
+        val descriptionColumnPresent: Boolean,
+        val descriptionCellText: String,
+        val gradeNameColumnPresent: Boolean,
+        val gradeCellName: String,
+        val gradeCodeColumnPresent: Boolean,
+        val gradeCellCode: String
+    )
+
+    private fun readFieldDefRow(row: Row, c: FieldDefCols, ctx: String, result: ImportResult?): FieldDefRowValues =
+        FieldDefRowValues(
+            universeName = getCellString(row, c.universeName),
+            universeCode = getCellCode(row, c.universeCode, ctx, result),
+            key = getCellString(row, c.key),
+            name = getCellString(row, c.name),
+            type = getCellString(row, c.type),
+            config = getCellString(row, c.config).ifBlank { "{}" },
+            groupName = getCellString(row, c.group).ifBlank { "기본 정보" },
+            displayOrder = if (c.order >= 0) getCellString(row, c.order).let { if (it.isBlank()) null else parseNumber(it)?.toInt() } else null,
+            isRequired = sheetBooleanOrKeep(c.required >= 0, getCellString(row, c.required)),
+            entityType = FieldValueSheetMapper.entityTypeOf(if (c.entityType >= 0) getCellString(row, c.entityType) else null),
+            aiColumnPresent = c.aiSuggest >= 0,
+            aiCellText = getCellString(row, c.aiSuggest),
+            descriptionColumnPresent = c.description >= 0,
+            descriptionCellText = getCellString(row, c.description),
+            gradeNameColumnPresent = c.gradeSystem >= 0,
+            gradeCellName = if (c.gradeSystem >= 0) getCellString(row, c.gradeSystem) else "",
+            gradeCodeColumnPresent = c.gradeSystemCode >= 0,
+            gradeCellCode = if (c.gradeSystemCode >= 0) getCellString(row, c.gradeSystemCode) else ""
+        )
+
+    /**
+     * config 열의 3분기 병합 둘을 이어 붙인 결과 — **가져오기와 미리보기가 같은 값을 봐야 한다.**
+     * config는 필드 정의에서 가장 잘 바뀌는 자리인데(AI추천·필드설명·등급체계가 전부 여기 산다)
+     * 종전 미리보기는 이 열을 아예 비교하지 않았다.
+     */
+    private suspend fun resolveFieldDefConfig(
+        universeId: Long,
+        rowIndex: Int,
+        r: FieldDefRowValues,
+        existing: FieldDefinition?,
+        result: ImportResult?
+    ): String {
+        // AI추천·필드설명 병합 — 열이 있으면 셀이 값, 없으면 JSON 키 유지, 둘 다 없으면
+        // 기존 DB 값 보존(빠뜨리면 전용 열을 지운 파일에서 설명이 무통보 유실된다)
+        val portableMerged = FieldConfigColumns.merge(
+            sheetConfig = r.config,
+            aiColumnPresent = r.aiColumnPresent,
+            aiCellText = r.aiCellText,
+            descriptionColumnPresent = r.descriptionColumnPresent,
+            descriptionCellText = r.descriptionCellText,
+            existingConfig = existing?.config
+        )
+        // 등급 체계 참조 병합(U-1) — 참조가 해석되면 실효 표를 다시 물질화하고,
+        // 가리키는 체계가 없으면 거부 대신 독자 표로 내려앉히고 고지한다(관대 수용).
+        return mergeGradeSystemColumn(
+            universeId = universeId,
+            rowIndex = rowIndex,
+            fieldName = r.name,
+            fieldType = r.type,
+            config = portableMerged,
+            nameColumnPresent = r.gradeNameColumnPresent,
+            codeColumnPresent = r.gradeCodeColumnPresent,
+            cellName = r.gradeCellName,
+            cellCode = r.gradeCellCode,
+            existingConfig = existing?.config,
+            result = result
+        )
+    }
+
+    private fun mergeFieldDefinition(existing: FieldDefinition, r: FieldDefRowValues, mergedConfig: String): FieldDefinition =
+        existing.copy(
+            name = r.name, type = r.type, config = mergedConfig,
+            groupName = r.groupName, displayOrder = r.displayOrder ?: existing.displayOrder,
+            isRequired = r.isRequired ?: existing.isRequired
+        )
+
+    private class TimelineCols(cols: Map<String, Int>, val desc: Int) {
+        val year = cols["연도"] ?: 0
+        // 선택 속성 열: 위치 폴백을 쓰면 열 삭제 시 이웃 열을 오독하므로 -1(=없음). 열 없음이면 UPDATE에서 기존값 유지.
+        val month = cols["월"] ?: -1
+        val day = cols["일"] ?: -1
+        val calendar = cols["역법"] ?: -1
+        val eventType = cols["사건 유형"] ?: -1
+        // 선택 연결 열: 위치 폴백 금지 — 열 없음(-1)이면 기존 연결 유지
+        val novel = cols["관련 작품"] ?: -1
+        val novelCode = cols["관련작품코드"] ?: -1
+        val displayOrder = cols["정렬순서"] ?: -1
+        val isTemporary = cols["임시배치"] ?: -1
+        val code = cols["코드"] ?: -1
+        val createdAt = cols["생성일"] ?: -1
+        // 세계관 소속 열 — 열이 없는 구버전 파일은 기존처럼 관련 작품에서 유도한다(하위 호환).
+        val universeName = cols["세계관"] ?: -1
+        val universeCode = cols["세계관코드"] ?: -1
+        val novelLinkColumnPresent = cols.containsKey("관련 작품") || novelCode >= 0
+
+        companion object {
+            /** '사건 설명'은 필수 열이다 — 위치 폴백을 쓰면 이웃 열이 설명으로 오기록된다. */
+            fun descColumn(cols: Map<String, Int>): Int? = cols["사건 설명"]
+                ?: cols.entries.firstOrNull { it.key.contains("설명") }?.value
+        }
+    }
+
+    private data class TimelineRowValues(
+        val year: Int?,
+        val yearRaw: String,
+        val description: String,
+        val hasMonthCol: Boolean, val month: Int?,
+        val hasDayCol: Boolean, val day: Int?,
+        val hasCalendarCol: Boolean, val calendarType: String,
+        val hasEventTypeCol: Boolean, val eventType: String,
+        val novelTitle: String,
+        val novelCode: String,
+        val displayOrder: Int?,
+        val hasTemporaryCol: Boolean, val isTemporary: Boolean,
+        val fileCode: String,
+        val createdAt: Long?
+    )
+
+    private fun readTimelineRow(row: Row, c: TimelineCols, ctx: String, now: Long, result: ImportResult?): TimelineRowValues {
+        val yearRaw = getCellString(row, c.year)
+        // F1-B: 범위 밖/해석 불가 월·일은 조용히 버리지 않고 연도처럼 경고
+        val month = parseMonthWithWarn(row, c.month, ctx, result)
+        val eventType = if (c.eventType >= 0) {
+            val label = getCellString(row, c.eventType)
+            val mapped = labelToEventType(label)
+            // F4: 인식 못한 사건 유형(오타)은 조용히 '일반'으로 떨어뜨리지 않고 경고
+            if (label.isNotBlank() && mapped == TimelineEvent.TYPE_NONE &&
+                label.trim() !in setOf("일반", "general", "normal")) {
+                result?.warnings?.add("$ctx: 사건 유형 '$label'을(를) 인식할 수 없어 '일반'으로 처리 — 탄생/사망/일반 중 선택")
+            }
+            mapped
+        } else TimelineEvent.TYPE_NONE
+        return TimelineRowValues(
+            year = parseNumber(yearRaw)?.toInt(),
+            yearRaw = yearRaw,
+            description = getCellString(row, c.desc),
+            hasMonthCol = c.month >= 0, month = month,
+            hasDayCol = c.day >= 0, day = parseDayWithWarn(row, c.day, month, ctx, result),
+            hasCalendarCol = c.calendar >= 0, calendarType = getCellString(row, c.calendar).ifBlank { "천개력" },
+            hasEventTypeCol = c.eventType >= 0, eventType = eventType,
+            novelTitle = getCellString(row, c.novel),
+            novelCode = getCellCode(row, c.novelCode, ctx, result),
+            displayOrder = if (c.displayOrder >= 0) getCellString(row, c.displayOrder).let { if (it.isBlank()) null else parseNumber(it)?.toInt() } else null,
+            hasTemporaryCol = c.isTemporary >= 0, isTemporary = if (c.isTemporary >= 0) parseBoolean(getCellString(row, c.isTemporary)) else false,
+            fileCode = getCellCode(row, c.code, ctx, result),
+            createdAt = if (c.createdAt >= 0) (parseNumber(getCellString(row, c.createdAt))?.toLong() ?: now) else null
+        )
+    }
+
+    /** 사건의 작품 연결과 세계관 소속 해석 — 갱신·미리보기·필드값 적용이 **같은 값**을 봐야 한다. */
+    private data class TimelineLinks(val novelIds: List<Long>, val universeId: Long?)
+
+    private suspend fun resolveTimelineLinks(
+        row: Row, c: TimelineCols, r: TimelineRowValues, allNovels: List<Novel>, ctx: String, result: ImportResult?
+    ): TimelineLinks {
+        // 작품 해석: 콤마 구분 복수 작품 지원
+        val novelCodes = splitCsv(r.novelCode)
+        val resolvedNovels = (if (novelCodes.isNotEmpty()) novelCodes.mapNotNull { db.novelDao().getNovelByCode(it) } else emptyList())
+            .ifEmpty { splitCsv(r.novelTitle).mapNotNull { title -> allNovels.find { it.title == title } } }
+        // 세계관 소속: 명시 열(코드 우선 → 이름) 우선, 없으면 관련 작품에서 유도(구버전 호환).
+        val explicitUniverse = run {
+            val uCode = getCellCode(row, c.universeCode, ctx, result)
+            val uName = if (c.universeName >= 0) getCellString(row, c.universeName) else ""
+            if (uCode.isBlank() && uName.isBlank()) return@run null
+            val resolved = (if (uCode.isNotBlank()) db.universeDao().getUniverseByCode(uCode) else null)
+                ?: (if (uName.isNotBlank()) db.universeDao().getUniverseByName(uName) else null)
+            if (resolved == null) {
+                result?.warnings?.add("$ctx: 세계관 '${uName.ifBlank { uCode }}'을(를) 찾을 수 없어 관련 작품에서 유도합니다")
+            }
+            resolved
+        }
+        val derivedUniverseId = resolvedNovels.firstOrNull()?.universeId
+        if (explicitUniverse != null && derivedUniverseId != null && explicitUniverse.id != derivedUniverseId) {
+            result?.warnings?.add("$ctx: 세계관 열('${explicitUniverse.name}')과 관련 작품의 세계관이 달라 세계관 열을 우선합니다")
+        }
+        val novelIds = resolvedNovels.map { it.id }
+        // 세계관 열이 명시됐으면 그 값, 아니면 작품 해석 성공 시 유도값, 둘 다 없으면 호출부가 기존 세계관을 보존한다.
+        return TimelineLinks(
+            novelIds = novelIds,
+            universeId = if (explicitUniverse != null || novelIds.isNotEmpty()) (explicitUniverse?.id ?: derivedUniverseId) else null
+        )
+    }
+
+    /**
+     * [backfillCode]는 **기존 코드도 파일 코드도 없을 때 새로 붙일 코드**다.
+     * 가져오기는 실제 코드를 발급하고, 미리보기는 [CODE_BACKFILL_PREVIEW]를 넘긴다 —
+     * 값이 무엇이든 기존이 null이면 결과가 non-null이 되어 '변경'으로 잡히는데, **그것이 사실이다**
+     * (가져오기가 그 행에 코드를 심는다). 미리보기가 매번 다른 난수를 만들면 안 되므로 상수를 쓴다.
+     */
+    private fun mergeTimelineEvent(
+        existing: TimelineEvent,
+        r: TimelineRowValues,
+        links: TimelineLinks,
+        backfillCode: String
+    ): TimelineEvent =
+        existing.copy(
+            // 코드 매칭 시 연도·설명은 편집 가능한 값 (자연키 매칭 시엔 동일값이라 무해)
+            year = r.year ?: existing.year, description = r.description,
+            // 열 없음 = 기존값 유지, 열 있음+빈칸 = 삭제/무값 (외부 편집에서 열 삭제 시 무음 손실 방지)
+            month = if (r.hasMonthCol) r.month else existing.month,
+            day = if (r.hasDayCol) r.day else existing.day,
+            calendarType = if (r.hasCalendarCol) r.calendarType else existing.calendarType,
+            eventType = if (r.hasEventTypeCol) r.eventType else existing.eventType,
+            universeId = links.universeId ?: existing.universeId,
+            displayOrder = r.displayOrder ?: existing.displayOrder,
+            isTemporary = if (r.hasTemporaryCol) r.isTemporary else existing.isTemporary,
+            createdAt = r.createdAt ?: existing.createdAt,
+            // 코드 없는 기존 행은 점진 백필 (기존 코드는 절대 덮어쓰지 않음 — 외부 참조 보호)
+            code = existing.code ?: r.fileCode.takeIf { it.isNotBlank() } ?: backfillCode
+        )
+
     suspend fun analyzeAll(
         workbook: Workbook,
         options: ExportOptions = ExportOptions(),
@@ -1552,36 +1803,27 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         if (sheet == null || sheet.lastRowNum < 1) return CategoryAnalysis("fieldDefinitions", "필드 정의", 0, 0, 0, 0, existingTotal)
 
         val headerRow = sheet.getRow(0) ?: return CategoryAnalysis("fieldDefinitions", "필드 정의", 0, 0, 0, 0, existingTotal)
-        val cols = resolveHeaderColumns(headerRow)
-        val universeNameColIndex = cols[spec.firstColumnHeader] ?: cols["세계관"] ?: 0
-        val keyColIndex = cols["필드키"] ?: 1
-        val nameColIndex = cols["필드명"] ?: 2
-        val typeColIndex = cols["타입"] ?: 3
-        val universeCodeColIndex = cols["세계관코드"] ?: -1
-        val entityTypeColIndex = cols["대상"] ?: -1
+        val c = FieldDefCols(resolveHeaderColumns(headerRow), spec.firstColumnHeader)
 
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0
         for (i in 1..sheet.lastRowNum) {
             val row = sheet.getRow(i) ?: continue
-            val universeName = getCellString(row, universeNameColIndex)
-            if (universeName.isBlank()) continue
-            val key = getCellString(row, keyColIndex)
-            if (key.isBlank()) continue
+            val r = readFieldDefRow(row, c, "필드 행 $i", result = null)
+            if (r.universeName.isBlank()) continue
+            if (r.key.isBlank()) continue
             inBackup++
 
-            val universeCode = if (universeCodeColIndex >= 0) getCellString(row, universeCodeColIndex) else ""
-            val universe = (if (universeCode.isNotBlank()) db.universeDao().getUniverseByCode(universeCode) else null)
-                ?: db.universeDao().getUniverseByName(universeName)
+            val universe = (if (r.universeCode.isNotBlank()) db.universeDao().getUniverseByCode(r.universeCode) else null)
+                ?: db.universeDao().getUniverseByName(r.universeName)
             if (universe == null) { newCount++; continue }
 
-            val name = getCellString(row, nameColIndex)
-            val type = getCellString(row, typeColIndex)
-            val entityType = FieldValueSheetMapper.entityTypeOf(
-                if (entityTypeColIndex >= 0) getCellString(row, entityTypeColIndex) else null
-            )
-            val existing = db.fieldDefinitionDao().getFieldByKey(universe.id, key, entityType)
+            val existing = db.fieldDefinitionDao().getFieldByKey(universe.id, r.key, r.entityType)
             if (existing == null) { newCount++; continue }
-            if (existing.name != name || existing.type != type) updateCount++ else unchangedCount++
+            val merged = mergeFieldDefinition(
+                existing, r,
+                resolveFieldDefConfig(universe.id, i, r, existing, result = null)
+            )
+            if (merged != existing) updateCount++ else unchangedCount++
         }
         reportProgress(onProgress, "필드 정의 분석", sheet.lastRowNum, totalRows)
         return CategoryAnalysis("fieldDefinitions", "필드 정의", inBackup, newCount, updateCount, unchangedCount, existingTotal)
@@ -1697,31 +1939,31 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
         val headerRow = sheet.getRow(0) ?: return CategoryAnalysis("timeline", "사건 연표", 0, 0, 0, 0, existingTotal)
         val cols = resolveHeaderColumns(headerRow)
-        val yearColIndex = cols["연도"] ?: 0
-        // 실제 임포트와 동일한 설명 열 해석 — 스펙 위치는 5 (4로 폴백하면 사건 유형 열을 설명으로 오독)
-        val descColIndex = cols["사건 설명"]
-            ?: cols.entries.firstOrNull { it.key.contains("설명") }?.value
-            ?: 5
-        val codeColIndex = cols["코드"] ?: -1
+        // 실제 임포트와 동일한 설명 열 해석 — 없으면 가져오기도 시트를 통째로 건너뛴다.
+        val descColIndex = TimelineCols.descColumn(cols)
+            ?: return CategoryAnalysis("timeline", "사건 연표", 0, 0, 0, 0, existingTotal)
+        val c = TimelineCols(cols, descColIndex)
+        val now = System.currentTimeMillis()
+        val allNovels = db.novelDao().getAllNovelsList()
 
         var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0
 
         for (i in 1..sheet.lastRowNum) {
             val row = sheet.getRow(i) ?: continue
-            val year = parseNumber(getCellString(row, yearColIndex))?.toInt() ?: continue
-            val description = getCellString(row, descColIndex)
-            if (description.isBlank()) continue
+            val r = readTimelineRow(row, c, "연표 행 $i", now, result = null)
+            val year = r.year ?: continue
+            if (r.description.isBlank()) continue
             inBackup++
 
             // 실제 임포트와 동일한 매칭: 코드 우선 → 자연키 폴백
-            val fileCode = if (codeColIndex >= 0) getCellString(row, codeColIndex) else ""
-            val byCode = if (fileCode.isNotBlank()) db.timelineDao().getEventByCode(fileCode) else null
-            val existing = byCode ?: db.timelineDao().getEventByNaturalKey(year, description)
-            when {
-                existing == null -> newCount++
-                byCode != null && (existing.year != year || existing.description != description) -> updateCount++
-                else -> unchangedCount++
-            }
+            val existing = (if (r.fileCode.isNotBlank()) db.timelineDao().getEventByCode(r.fileCode) else null)
+                ?: db.timelineDao().getEventByNaturalKey(year, r.description)
+            if (existing == null) { newCount++; continue }
+            // 종전에는 **자연키로 매칭된 행을 무조건 '동일'**로 셌다 — 월·일·역법·유형·세계관·
+            // 정렬순서·임시배치를 고쳐도 미리보기가 '변경 없음'이라 말했다.
+            val links = resolveTimelineLinks(row, c, r, allNovels, "연표 행 $i", result = null)
+            val merged = mergeTimelineEvent(existing, r, links, CODE_BACKFILL_PREVIEW)
+            if (merged != existing) updateCount++ else unchangedCount++
         }
         reportProgress(onProgress, "사건 분석", sheet.lastRowNum, totalRows)
         return CategoryAnalysis("timeline", "사건 연표", inBackup, newCount, updateCount, unchangedCount, existingTotal)
@@ -3078,37 +3320,20 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
 
         reportUnknownColumns(headerRow, spec, result)
-        val cols = resolveHeaderColumns(headerRow)
-        val universeNameColIndex = cols[spec.firstColumnHeader] ?: cols["세계관"] ?: 0
-        val keyColIndex = cols["필드키"] ?: 1
-        val nameColIndex = cols["필드명"] ?: 2
-        val typeColIndex = cols["타입"] ?: 3
-        val configColIndex = cols["설정(JSON)"] ?: 4
-        val groupColIndex = cols["그룹"] ?: 5
-        val orderColIndex = cols["순서"] ?: -1
-        // 위치 폴백 금지 — 열을 지우면 '세계관코드'를 필수여부로 오독한다
-        val requiredColIndex = cols["필수여부"] ?: -1
-        val universeCodeColIndex = cols["세계관코드"] ?: -1
-        // 대상(캐릭터/사건) — 열이 없는 구버전 파일은 캐릭터로 간주 (관대 수용)
-        val entityTypeColIndex = cols["대상"] ?: -1
-        // config 파생 전용 열(A-1·A-2) — 열/JSON 키/기존값 3분기 병합 (FieldConfigColumns.merge)
-        val aiSuggestColIndex = cols[FieldConfigColumns.COLUMN_AI_SUGGEST] ?: -1
-        val descriptionColIndex = cols[FieldConfigColumns.COLUMN_DESCRIPTION] ?: -1
-        // 등급 체계 참조 열(U-1) — 같은 3분기 문법. 해석은 코드 우선, 없으면 (세계관, 이름).
-        val gradeSystemColIndex = cols["등급체계"] ?: -1
-        val gradeSystemCodeColIndex = cols["등급체계코드"] ?: -1
+        val fdc = FieldDefCols(resolveHeaderColumns(headerRow), spec.firstColumnHeader)
 
         val entitySeen = mutableMapOf<Long, Int>()
 
         for (i in 1..sheet.lastRowNum) {
             try {
                 val row = sheet.getRow(i) ?: continue
-                val universeName = getCellString(row, universeNameColIndex)
+                // 읽기는 미리보기와 **같은 함수**다(규약 R-33).
+                val r = readFieldDefRow(row, fdc, "필드 행 $i", result)
+                val universeName = r.universeName
                 if (universeName.isBlank()) continue
 
-                val universeCode = getCellCode(row, universeCodeColIndex, "필드 행 $i", result)
-                val universe = (if (universeCode.isNotBlank()) {
-                    db.universeDao().getUniverseByCode(universeCode)
+                val universe = (if (r.universeCode.isNotBlank()) {
+                    db.universeDao().getUniverseByCode(r.universeCode)
                 } else null)
                     ?: db.universeDao().getUniverseByName(universeName)
                 if (universe == null) {
@@ -3117,11 +3342,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     continue
                 }
 
-                val key = getCellString(row, keyColIndex)
+                val key = r.key
                 if (key.isBlank()) continue
 
-                val name = getCellString(row, nameColIndex)
-                val type = getCellString(row, typeColIndex)
+                val name = r.name
+                val type = r.type
                 // Validate field type against known types
                 if (type.isBlank()) {
                     result.skippedRows++
@@ -3133,47 +3358,17 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     result.errors.add("필드 정의 행 $i: 알 수 없는 필드 타입 '$type' (허용: ${FieldType.entries.joinToString { it.name }})")
                     continue
                 }
-                val config = getCellString(row, configColIndex).ifBlank { "{}" }
                 // F4: 설정(JSON)이 손상(절단·구문 오류)됐으면 조용히 넘기지 않고 경고 (필드 동작 무력화 방지)
-                if (config != "{}" && !isValidJson(config)) {
+                if (r.config != "{}" && !isValidJson(r.config)) {
                     result.warnings.add("필드 정의 행 $i: 필드 '$name'의 설정(JSON)이 올바른 형식이 아닙니다(절단·오타 가능) — 그대로 저장되나 해당 기능이 동작하지 않을 수 있습니다")
                 }
-                val groupName = getCellString(row, groupColIndex).ifBlank { "기본 정보" }
-                val displayOrder: Int? = if (orderColIndex >= 0) {
-                    val raw = getCellString(row, orderColIndex)
-                    if (raw.isBlank()) null else parseNumber(raw)?.toInt()
-                } else null
-                val isRequired = sheetBooleanOrKeep(requiredColIndex >= 0, getCellString(row, requiredColIndex))
-                val entityType = FieldValueSheetMapper.entityTypeOf(
-                    if (entityTypeColIndex >= 0) getCellString(row, entityTypeColIndex) else null
-                )
+                val groupName = r.groupName
+                val displayOrder: Int? = r.displayOrder
+                val isRequired = r.isRequired
+                val entityType = r.entityType
 
                 val existing = db.fieldDefinitionDao().getFieldByKey(universe.id, key, entityType)
-                // AI추천·필드설명 병합 — 열이 있으면 셀이 값, 없으면 JSON 키 유지, 둘 다 없으면
-                // 기존 DB 값 보존(빠뜨리면 전용 열을 지운 파일에서 설명이 무통보 유실된다)
-                val portableMerged = FieldConfigColumns.merge(
-                    sheetConfig = config,
-                    aiColumnPresent = aiSuggestColIndex >= 0,
-                    aiCellText = getCellString(row, aiSuggestColIndex),
-                    descriptionColumnPresent = descriptionColIndex >= 0,
-                    descriptionCellText = getCellString(row, descriptionColIndex),
-                    existingConfig = existing?.config
-                )
-                // 등급 체계 참조 병합(U-1) — 참조가 해석되면 실효 표를 다시 물질화하고,
-                // 가리키는 체계가 없으면 거부 대신 독자 표로 내려앉히고 고지한다(관대 수용).
-                val mergedConfig = mergeGradeSystemColumn(
-                    universeId = universe.id,
-                    rowIndex = i,
-                    fieldName = name,
-                    fieldType = type,
-                    config = portableMerged,
-                    nameColumnPresent = gradeSystemColIndex >= 0,
-                    codeColumnPresent = gradeSystemCodeColIndex >= 0,
-                    cellName = if (gradeSystemColIndex >= 0) getCellString(row, gradeSystemColIndex) else "",
-                    cellCode = if (gradeSystemCodeColIndex >= 0) getCellString(row, gradeSystemCodeColIndex) else "",
-                    existingConfig = existing?.config,
-                    result = result
-                )
+                val mergedConfig = resolveFieldDefConfig(universe.id, i, r, existing, result)
                 if (existing != null) {
                     val prevRow = entitySeen[existing.id]
                     if (prevRow != null) {
@@ -3183,11 +3378,8 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     if (existing.type != type && type.isNotBlank()) {
                         result.warnings.add("필드 정의 행 $i: 필드 '$name'의 타입이 '${existing.type}'에서 '$type'(으)로 변경됨 — 기존 값 호환성을 확인하세요")
                     }
-                    db.fieldDefinitionDao().update(existing.copy(
-                        name = name, type = type, config = mergedConfig,
-                        groupName = groupName, displayOrder = displayOrder ?: existing.displayOrder,
-                        isRequired = isRequired ?: existing.isRequired
-                    ))
+                    // 적용도 미리보기와 **같은 함수**다(규약 R-33).
+                    db.fieldDefinitionDao().update(mergeFieldDefinition(existing, r, mergedConfig))
                     matchedFieldDefinitionIds.add(existing.id)
                     result.updatedFields++
                 } else {
@@ -3234,7 +3426,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         cellName: String,
         cellCode: String,
         existingConfig: String?,
-        result: ImportResult
+        result: ImportResult?
     ): String {
         if (fieldType != FieldType.GRADE.name) return config
         val ref = com.novelcharacter.app.data.model.GradeSystemRef
@@ -3254,7 +3446,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         fun applyResolved(system: com.novelcharacter.app.data.model.GradeSystem): String {
             val merge = ref.mergeResolved(config, system.code, system.gradesJson)
             if (merge.droppedLabels.isNotEmpty()) {
-                result.warnings.add(
+                result?.warnings?.add(
                     "필드 정의 행 $rowIndex: 필드 '$fieldName'의 등급 ${merge.droppedLabels.joinToString(", ")}은(는) " +
                         "체계 '${system.name}'에 없어 빠졌습니다 — 체계에 등급을 추가하거나 '등급체계' 칸을 비워 독자 표로 두세요"
                 )
@@ -3263,7 +3455,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         }
 
         fun demoteWithNotice(pointer: String): String {
-            result.warnings.add(
+            result?.warnings?.add(
                 "필드 정의 행 $rowIndex: 필드 '$fieldName'이(가) 가리키는 등급 체계 '$pointer'을(를) 찾을 수 없어 " +
                     "독자 등급 표로 들였습니다 (표 내용은 그대로입니다)"
             )
@@ -4033,32 +4225,15 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // 사건 커스텀 필드는 동적 열이므로 미인식 대상에서 제외한다(해석 실패는 아래에서 따로 고지)
         reportUnknownColumns(headerRow, spec, result, dynamicColumnPrefixes = listOf(EntityFieldHeaders.PREFIX))
         val cols = resolveHeaderColumns(headerRow)
-        val yearColIndex = cols["연도"] ?: 0
-        // 선택 속성 열: 위치 폴백을 쓰면 열 삭제 시 이웃 열을 오독하므로 -1(=없음). 열 없음이면 UPDATE에서 기존값 유지.
-        val monthColIndex = cols["월"] ?: -1
-        val dayColIndex = cols["일"] ?: -1
-        val calendarColIndex = cols["역법"] ?: -1
-        val eventTypeColIndex = cols["사건 유형"] ?: -1
         // 필수 컬럼: 위치 폴백을 쓰면 컬럼 삭제 시 이웃 컬럼 데이터가 사건 설명으로 오기록되므로 검증 후 스킵
-        val descColIndex = cols["사건 설명"]
-            ?: cols.entries.firstOrNull { it.key.contains("설명") }?.value
+        val descColIndex = TimelineCols.descColumn(cols)
             ?: requiredCol(cols, "사건 설명", sheet.sheetName, result) ?: return
-        // 선택 연결 열: 위치 폴백 금지(스펙상 5·6은 사건 설명·관련 작품이라 폴백이 이웃 열을 오독) — 열 없음(-1)이면 기존 연결 유지
-        val novelColIndex = cols["관련 작품"] ?: -1
+        val tc = TimelineCols(cols, descColIndex)
+        val nowMillis = System.currentTimeMillis()
         val charColIndex = cols["관련 캐릭터"] ?: -1
         val charCodeColIndex = cols["관련캐릭터코드"] ?: -1
         // F1-A: 참가자 열이 실제로 헤더에 존재하는지 (위치 폴백만으로는 "빈칸=삭제" 규칙을 적용하지 않음 — 구버전 파일 오삭제 방지)
         val participantColumnPresent = cols.containsKey("관련 캐릭터") || charCodeColIndex >= 0
-        val novelCodeColIndex = cols["관련작품코드"] ?: -1
-        // F1-A: 작품 연결 열이 실제로 헤더에 존재하는지 (동일 취지)
-        val novelLinkColumnPresent = cols.containsKey("관련 작품") || novelCodeColIndex >= 0
-        val displayOrderColIndex = cols["정렬순서"] ?: -1
-        val isTemporaryColIndex = cols["임시배치"] ?: -1
-        val codeColIndex = cols["코드"] ?: -1
-        val createdAtColIndex = cols["생성일"] ?: -1
-        // 세계관 소속 열 — 열이 없는 구버전 파일은 기존처럼 관련 작품에서 유도한다(하위 호환).
-        val eventUniverseNameColIndex = cols["세계관"] ?: -1
-        val eventUniverseCodeColIndex = cols["세계관코드"] ?: -1
 
         val allNovels = db.novelDao().getAllNovelsList()
         val eventCodesSeen = mutableSetOf<String>()
@@ -4096,74 +4271,27 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         for (i in 1..sheet.lastRowNum) {
             try {
                 val row = sheet.getRow(i) ?: continue
-                val yearStr = getCellString(row, yearColIndex)
-                val year = parseNumber(yearStr)?.toInt()
+                // 읽기는 미리보기와 **같은 함수**다(규약 R-33).
+                val r = readTimelineRow(row, tc, "연표 행 $i", nowMillis, result)
+                val year = r.year
                 if (year == null) {
                     // 행이 조용히 사라지지 않도록 보고 (빈 행은 제외)
-                    if (yearStr.isNotBlank() || !getCellString(row, descColIndex).isBlank()) {
+                    if (r.yearRaw.isNotBlank() || r.description.isNotBlank()) {
                         result.skippedRows++
-                        result.errors.add("연표 행 $i: 연도 '$yearStr'을(를) 숫자로 해석할 수 없어 행을 건너뛰었습니다")
+                        result.errors.add("연표 행 $i: 연도 '${r.yearRaw}'을(를) 숫자로 해석할 수 없어 행을 건너뛰었습니다")
                     }
                     continue
                 }
-                val description = getCellString(row, descColIndex)
+                val description = r.description
                 if (description.isBlank()) continue
 
-                // F1-B: 범위 밖/해석 불가 월·일은 조용히 버리지 않고 연도처럼 경고
-                val month = parseMonthWithWarn(row, monthColIndex, "연표 행 $i", result)
-                val day = parseDayWithWarn(row, dayColIndex, month, "연표 행 $i", result)
-                val calendarType = getCellString(row, calendarColIndex).ifBlank { "천개력" }
-                val eventType = if (eventTypeColIndex >= 0) {
-                    val eventTypeLabel = getCellString(row, eventTypeColIndex)
-                    val mapped = labelToEventType(eventTypeLabel)
-                    // F4: 인식 못한 사건 유형(오타)은 조용히 '일반'으로 떨어뜨리지 않고 경고
-                    if (eventTypeLabel.isNotBlank() && mapped == TimelineEvent.TYPE_NONE &&
-                        eventTypeLabel.trim() !in setOf("일반", "general", "normal")) {
-                        result.warnings.add("연표 행 $i: 사건 유형 '$eventTypeLabel'을(를) 인식할 수 없어 '일반'으로 처리 — 탄생/사망/일반 중 선택")
-                    }
-                    mapped
-                } else TimelineEvent.TYPE_NONE
-                val novelTitle = getCellString(row, novelColIndex)
-                val novelCode = getCellCode(row, novelCodeColIndex, "연표 행 $i", result)
-                val displayOrder: Int? = if (displayOrderColIndex >= 0) {
-                    val raw = getCellString(row, displayOrderColIndex)
-                    if (raw.isBlank()) null else parseNumber(raw)?.toInt()
-                } else null
-                val isTemporary = if (isTemporaryColIndex >= 0) parseBoolean(getCellString(row, isTemporaryColIndex)) else false
-                val createdAt = if (createdAtColIndex >= 0) parseNumber(getCellString(row, createdAtColIndex))?.toLong() ?: System.currentTimeMillis() else System.currentTimeMillis()
+                val novelTitle = r.novelTitle
+                val novelCode = r.novelCode
+                // 작품 연결·세계관 소속 해석도 미리보기와 **같은 함수**다.
+                val links = resolveTimelineLinks(row, tc, r, allNovels, "연표 행 $i", result)
+                val novelIds = links.novelIds
 
-                // 작품 해석: 콤마 구분 복수 작품 지원
-                val novelTitles = splitCsv(novelTitle)
-                val novelCodes = splitCsv(novelCode)
-                val resolvedNovels = if (novelCodes.isNotEmpty()) {
-                    novelCodes.mapNotNull { code -> db.novelDao().getNovelByCode(code) }
-                } else {
-                    emptyList()
-                }.ifEmpty {
-                    novelTitles.mapNotNull { title -> allNovels.find { it.title == title } }
-                }
-                val novelIds = resolvedNovels.map { it.id }
-
-                // 세계관 소속: 명시 열(코드 우선 → 이름) 우선, 없으면 관련 작품에서 유도(구버전 호환).
-                // 작품 미연결 사건도 이 열 덕분에 신규 기기 복원 시 세계관을 잃지 않는다.
-                val explicitUniverse: com.novelcharacter.app.data.model.Universe? = run {
-                    val uCode = getCellCode(row, eventUniverseCodeColIndex, "연표 행 $i", result)
-                    val uName = if (eventUniverseNameColIndex >= 0) getCellString(row, eventUniverseNameColIndex) else ""
-                    if (uCode.isBlank() && uName.isBlank()) return@run null
-                    val resolved = (if (uCode.isNotBlank()) db.universeDao().getUniverseByCode(uCode) else null)
-                        ?: (if (uName.isNotBlank()) db.universeDao().getUniverseByName(uName) else null)
-                    if (resolved == null) {
-                        result.warnings.add("연표 행 $i: 세계관 '${uName.ifBlank { uCode }}'을(를) 찾을 수 없어 관련 작품에서 유도합니다")
-                    }
-                    resolved
-                }
-                val derivedUniverseId = resolvedNovels.firstOrNull()?.universeId
-                if (explicitUniverse != null && derivedUniverseId != null && explicitUniverse.id != derivedUniverseId) {
-                    result.warnings.add("연표 행 $i: 세계관 열('${explicitUniverse.name}')과 관련 작품의 세계관이 달라 세계관 열을 우선합니다")
-                }
-                val universeId = explicitUniverse?.id ?: derivedUniverseId
-
-                val fileCode = getCellCode(row, codeColIndex, "연표 행 $i", result)
+                val fileCode = r.fileCode
                 if (fileCode.isNotBlank() && !eventCodesSeen.add(fileCode)) {
                     result.warnings.add("연표 행 $i: 코드 '${fileCode}'가 파일 내에서 중복되어 같은 사건을 덮어씁니다")
                 }
@@ -4174,30 +4302,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 val eventId: Long
                 if (existingEvent != null) {
                     eventId = existingEvent.id
-                    // 세계관 열이 명시됐으면 그 값, 아니면 작품 해석 성공 시 유도값, 둘 다 없으면 기존 세계관 보존
-                    val effectiveUniverseId =
-                        if (explicitUniverse != null || novelIds.isNotEmpty()) universeId else existingEvent.universeId
-                    db.timelineDao().update(existingEvent.copy(
-                        // 코드 매칭 시 연도·설명은 편집 가능한 값 (자연키 매칭 시엔 동일값이라 무해)
-                        year = year, description = description,
-                        // 열 없음(colIndex<0) = 기존값 유지, 열 있음+빈칸 = 삭제/무값 (외부 편집에서 열 삭제 시 무음 손실 방지)
-                        month = if (monthColIndex >= 0) month else existingEvent.month,
-                        day = if (dayColIndex >= 0) day else existingEvent.day,
-                        calendarType = if (calendarColIndex >= 0) calendarType else existingEvent.calendarType,
-                        eventType = if (eventTypeColIndex >= 0) eventType else existingEvent.eventType,
-                        universeId = effectiveUniverseId,
-                        displayOrder = displayOrder ?: existingEvent.displayOrder,
-                        isTemporary = if (isTemporaryColIndex >= 0) isTemporary else existingEvent.isTemporary,
-                        createdAt = if (createdAtColIndex >= 0) createdAt else existingEvent.createdAt,
-                        // 코드 없는 기존 행은 점진 백필 (기존 코드는 절대 덮어쓰지 않음 — 외부 참조 보호)
-                        code = existingEvent.code ?: fileCode.takeIf { it.isNotBlank() } ?: generateEntityCode()
-                    ))
+                    // 적용도 미리보기와 **같은 함수**다(규약 R-33).
+                    db.timelineDao().update(mergeTimelineEvent(existingEvent, r, links, generateEntityCode()))
                     // 작품이 해석된 경우에만 M2M 교체; 해석 실패 시 기존 관계 유지 + 경고
                     if (novelIds.isNotEmpty()) {
                         db.timelineDao().replaceEventNovels(eventId, novelIds)
                     } else if (novelTitle.isNotBlank() || novelCode.isNotBlank()) {
                         result.warnings.add("사건 행 $i: 작품 '${novelTitle}'을(를) 찾을 수 없어 기존 작품 연결을 유지합니다")
-                    } else if (novelLinkColumnPresent) {
+                    } else if (tc.novelLinkColumnPresent) {
                         // F1-A 규칙 가: 작품 열이 있으나 비어 있음 → 기존 작품 연결 삭제 (요약 집계, 세계관 소속은 universeId로 유지)
                         if (db.timelineDao().getNovelIdsForEvent(eventId).isNotEmpty()) {
                             db.timelineDao().deleteEventNovelCrossRefsByEvent(eventId)
@@ -4207,12 +4319,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     result.updatedEvents++
                 } else {
                     eventId = db.timelineDao().insert(TimelineEvent(
-                        year = year, month = month, day = day,
-                        calendarType = calendarType, description = description,
-                        eventType = eventType,
-                        universeId = universeId,
-                        displayOrder = displayOrder ?: i, isTemporary = isTemporary,
-                        createdAt = createdAt,
+                        year = year, month = r.month, day = r.day,
+                        calendarType = r.calendarType, description = description,
+                        eventType = r.eventType,
+                        universeId = links.universeId,
+                        displayOrder = r.displayOrder ?: i, isTemporary = r.isTemporary,
+                        createdAt = r.createdAt ?: nowMillis,
                         // 파일의 코드를 보존해 기기 이전 후에도 왕복 정체성 유지 (없으면 자동 생성)
                         code = fileCode.takeIf { it.isNotBlank() } ?: generateEntityCode()
                     ))
@@ -4225,11 +4337,9 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 matchedEventIds.add(eventId)
 
                 // 사건 커스텀 필드 값 반영 (B-10) — 빈 셀 = 기존 값 삭제 (캐릭터 필드와 동일 규약)
-                val eventUniverseId = if (existingEvent != null) {
-                    if (explicitUniverse != null || novelIds.isNotEmpty()) universeId else existingEvent.universeId
-                } else {
-                    universeId
-                }
+                // 소속 해석은 위 update와 **같은 값**을 봐야 한다 — 두 곳에 따로 쓰면
+                // 한쪽만 고쳐질 때 방금 옮긴 사건에 옛 세계관 필드가 붙는다.
+                val eventUniverseId = links.universeId ?: existingEvent?.universeId
                 if (eventFieldColumns.isNotEmpty() && eventUniverseId != null) {
                     val universeFields = allEventFields.filter { it.universeId == eventUniverseId }
                     val universeName = universeNamesById[eventUniverseId]
@@ -4312,18 +4422,18 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                             )
                         }
                         // birth/death 사건이면 관련 캐릭터의 상태변화 동기화 대상에 추가
-                        if (eventType == TimelineEvent.TYPE_BIRTH || eventType == TimelineEvent.TYPE_DEATH) {
-                            val stateKey = if (eventType == TimelineEvent.TYPE_BIRTH) CharacterStateChange.KEY_BIRTH else CharacterStateChange.KEY_DEATH
+                        if (r.eventType == TimelineEvent.TYPE_BIRTH || r.eventType == TimelineEvent.TYPE_DEATH) {
+                            val stateKey = if (r.eventType == TimelineEvent.TYPE_BIRTH) CharacterStateChange.KEY_BIRTH else CharacterStateChange.KEY_DEATH
                             for (character in resolvedCharacters) {
                                 val existing = db.characterStateChangeDao()
                                     .getChangeByNaturalKey(character.id, year, stateKey, year.toString())
                                 if (existing == null) {
                                     db.characterStateChangeDao().insert(CharacterStateChange(
-                                        characterId = character.id, year = year, month = month, day = day,
+                                        characterId = character.id, year = year, month = r.month, day = r.day,
                                         fieldKey = stateKey, newValue = year.toString()
                                     ))
                                 }
-                                val uId = universeId ?: character.novelId?.let { db.novelDao().getNovelById(it)?.universeId }
+                                val uId = eventUniverseId ?: character.novelId?.let { db.novelDao().getNovelById(it)?.universeId }
                                 if (uId != null) {
                                     pendingSyncCharacters[character.id] = uId
                                 }
@@ -6364,25 +6474,25 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
     // ── F1-B: 범위 밖 값을 조용히 버리지 않고 연도처럼 경고하는 공용 파서 (변수 제어) ──
 
     /** 월 파싱 + 범위 경고: 열 없음/빈 셀=null(정상), 해석 불가·1~12 밖=경고 후 null */
-    private fun parseMonthWithWarn(row: Row, colIndex: Int, rowLabel: String, result: ImportResult): Int? {
+    private fun parseMonthWithWarn(row: Row, colIndex: Int, rowLabel: String, result: ImportResult?): Int? {
         if (colIndex < 0) return null
         val raw = getCellString(row, colIndex)
         if (raw.isBlank()) return null
         val month = parseNumber(raw)?.toInt()?.takeIf { it in 1..12 }
         if (month == null) {
-            result.warnings.add("$rowLabel: 월 '$raw'을(를) 1~12 범위의 숫자로 해석할 수 없어 무시됨")
+            result?.warnings?.add("$rowLabel: 월 '$raw'을(를) 1~12 범위의 숫자로 해석할 수 없어 무시됨")
         }
         return month
     }
 
     /** 일 파싱 + 유효성 경고: 열 없음/빈 셀=null(정상), 1~31·월별 일수 밖=경고 후 null */
-    private fun parseDayWithWarn(row: Row, colIndex: Int, month: Int?, rowLabel: String, result: ImportResult): Int? {
+    private fun parseDayWithWarn(row: Row, colIndex: Int, month: Int?, rowLabel: String, result: ImportResult?): Int? {
         if (colIndex < 0) return null
         val raw = getCellString(row, colIndex)
         if (raw.isBlank()) return null
         val day = parseNumber(raw)?.toInt()?.takeIf { d -> d in 1..31 && isValidDay(month, d) }
         if (day == null) {
-            result.warnings.add("$rowLabel: 일 '$raw'이(가) 유효하지 않아(1~31·월별 일수) 무시됨")
+            result?.warnings?.add("$rowLabel: 일 '$raw'이(가) 유효하지 않아(1~31·월별 일수) 무시됨")
         }
         return day
     }
