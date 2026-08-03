@@ -267,7 +267,7 @@ AI 정책(`FieldAiPolicy`).
 | R-28 | 두 화면이 같은 prefs 파일의 같은 키를 공유하지 않는다 — 타입이 갈리면 ClassCastException (`tools/check_prefs_keys.sh`) | 저장·UI |
 | R-29 | `entityType`으로 갈리는 기능은 조회·중복 판정·순서·쓰기가 **모두** 같은 종류를 본다 — DAO 기본값이 캐릭터라 잊으면 오류가 아니라 잘못된 정답이 나온다 | 필드·데이터 |
 | R-30 | 물질화된 파생값의 원본을 고치는 경로는 파생값 재작성과 한 트랜잭션이다 — 등급 체계의 실효 표가 그 사례 | 필드·데이터 |
-| R-31 | 다이얼로그 본문 스크롤에는 높이 상한이 있다 — 없으면 긴 내용이 잘린 채 끝까지 스크롤되지 않는다 (`util.cappedScrollView` · `tools/check_dialog_scroll.sh`) | UI |
+| R-31 | 다이얼로그 본문 스크롤에는 높이 상한이 있다 — 없으면 긴 내용이 잘린 채 끝까지 스크롤되지 않는다. 코드는 `util.cappedScrollView`, **XML 루트는 `ui.common.CappedScrollView`**(중첩 스크롤판 `CappedNestedScrollView`)이고 측정 규칙의 단일 소스는 `util.DialogScrollCap`이다 (`tools/check_dialog_scroll.sh` — 코드·XML 두 축) | UI |
 
 ---
 
