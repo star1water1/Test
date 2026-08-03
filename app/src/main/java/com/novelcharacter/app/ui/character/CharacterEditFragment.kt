@@ -531,6 +531,9 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
                 emptyList()
             }
             imageStrip.setPaths(paths)
+            // 대표 지정도 함께 되살린다(B-103 D7) — 안 하면 편집창을 열 때마다 ☆가 꺼져
+            // 있고, 그 상태로 저장하면 지정이 사라진다.
+            imageStrip.setRepresentativePath(character.representativeImagePath)
         } else {
             imageStrip.refresh()
         }
@@ -721,7 +724,8 @@ class CharacterEditFragment : Fragment(), EventEditDialogFragment.Host {
             tags = binding.editTags.text.toString(),
             memo = binding.editMemo.text.toString(),
             novelId = selectedNovelId,
-            imagePaths = imageStrip.paths.toList()
+            imagePaths = imageStrip.paths.toList(),
+            representativeImagePath = imageStrip.representativePath
         )
     }
 

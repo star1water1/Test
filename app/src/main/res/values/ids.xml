@@ -3,4 +3,7 @@
     <item name="image_load_job" type="id" />
     <!-- 인라인 오류 감시자 중복 부착 방지 (util/AlertDialogExt.kt) -->
     <item name="inline_error_watcher" type="id" />
+    <!-- 이미지 스트립 항목의 썸네일과 대표 지정 ☆ (ui/character/CharacterImageStripController) -->
+    <item name="strip_thumbnail" type="id" />
+    <item name="strip_representative_star" type="id" />
 </resources>

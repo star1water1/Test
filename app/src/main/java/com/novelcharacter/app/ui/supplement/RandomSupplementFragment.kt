@@ -230,7 +230,8 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
                     tags = binding.editTags.text.toString(),
                     memo = binding.editMemo.text.toString(),
                     novelId = selectedNovelIdFromSpinner(),
-                    imagePaths = imageStrip.paths.toList()
+                    imagePaths = imageStrip.paths.toList(),
+                    representativeImagePath = imageStrip.representativePath
                 )
 
                 override fun collectFieldValues(characterId: Long) = formBuilder.collectFieldValues(characterId)
@@ -980,6 +981,8 @@ class RandomSupplementFragment : Fragment(), RandomEditGuard {
             emptyList()
         }
         imageStrip.setPaths(paths)
+        // 대표 지정도 함께 되살린다(B-103 D7) — 편집창과 같은 이유다.
+        imageStrip.setRepresentativePath(character.representativeImagePath)
 
         // 태그 비동기 로드 — 하이드레이션 완료 전에는 suppressDirtyTracking이 유지되므로
         // 프로그램적 setText가 더티를 세우지 않는다

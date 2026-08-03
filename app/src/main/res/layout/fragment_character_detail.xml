@@ -153,15 +153,54 @@
                 android:orientation="vertical"
                 android:padding="16dp">
 
-                <!-- Image carousel -->
-                <androidx.viewpager2.widget.ViewPager2
-                    android:id="@+id/imageViewPager"
+                <!-- Image carousel + 대표 지정 ☆ (B-103 D7) -->
+                <FrameLayout
+                    android:id="@+id/imageCarouselContainer"
                     android:layout_width="match_parent"
-                    android:layout_height="250dp"
-                    android:maxHeight="300dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="16dp">
+
+                    <androidx.viewpager2.widget.ViewPager2
+                        android:id="@+id/imageViewPager"
+                        android:layout_width="match_parent"
+                        android:layout_height="250dp"
+                        android:maxHeight="300dp"
+                        android:background="@color/item_background_light"
+                        android:contentDescription="@string/image_carousel_desc" />
+
+                    <!--
+                        코너에 두어 이미지 탭·스와이프를 가리지 않는다. 탭 = 지금 보고 있는
+                        그 장을 대표로, 다시 탭 = 해제(D7 — 1탭).
+                    -->
+                    <ImageButton
+                        android:id="@+id/btnRepresentativeImage"
+                        android:layout_width="48dp"
+                        android:layout_height="48dp"
+                        android:layout_gravity="top|end"
+                        android:layout_margin="4dp"
+                        android:background="@drawable/bg_image_badge"
+                        android:padding="10dp"
+                        android:scaleType="fitCenter"
+                        android:src="@drawable/ic_star_outline"
+                        android:contentDescription="@string/representative_image_set" />
+
+                </FrameLayout>
+
+                <!--
+                    사후 고지(D6ⓑ) — 지정한 대표를 못 찾았을 때. 앱 밖 삭제·폴더 왕복처럼
+                    사전 고지가 원리적으로 불가능한 자리를 여기서 받는다.
+                -->
+                <TextView
+                    android:id="@+id/representativeMissingNotice"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
                     android:layout_marginBottom="16dp"
+                    android:padding="12dp"
                     android:background="@color/item_background_light"
-                    android:contentDescription="@string/image_carousel_desc" />
+                    android:textAppearance="@style/TextAppearance.App.Body"
+                    android:textColor="@color/text_secondary"
+                    android:text="@string/representative_image_missing_notice"
+                    android:visibility="gone" />
 
                 <!-- Character name -->
                 <TextView

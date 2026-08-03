@@ -57,6 +57,14 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
      */
     private val imageSeed: Long = com.novelcharacter.app.util.CharacterRepresentativeImage.newSeed()
 
+    /**
+     * ☆ 상태를 현재 장에 맞추는 콜백(B-103 D7). 재등록 전에 반드시 해제한다 —
+     * `setupImages`는 캐릭터가 갱신될 때마다 다시 불리므로, 쌓이면 한 번 넘길 때
+     * 같은 일이 여러 번 돈다.
+     */
+    private var representativePageCallback: androidx.viewpager2.widget.ViewPager2.OnPageChangeCallback =
+        object : androidx.viewpager2.widget.ViewPager2.OnPageChangeCallback() {}
+
     private var _binding: FragmentCharacterDetailBinding? = null
     private val binding get() = _binding!!
     private val viewModel: CharacterViewModel by viewModels()
@@ -111,6 +119,13 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
                 R.id.action_growth_chart -> { navigateToGrowthChart(); true }
                 R.id.action_share_card -> { shareCharacterCard(); true }
                 R.id.action_share_pdf -> { sharePdf(); true }
+                R.id.action_representative_image_help -> {
+                    com.novelcharacter.app.ui.common.HelpDialog.showHelp(
+                        requireContext(),
+                        com.novelcharacter.app.ui.common.HelpDialog.Topic.REPRESENTATIVE_IMAGE
+                    )
+                    true
+                }
                 else -> false
             }
         }
@@ -790,10 +805,12 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
         }
 
         if (imagePaths.isEmpty()) {
-            binding.imageViewPager.visibility = View.GONE
+            binding.imageCarouselContainer.visibility = View.GONE
+            binding.representativeMissingNotice.visibility = View.GONE
             return
         }
 
+        binding.imageCarouselContainer.visibility = View.VISIBLE
         binding.imageViewPager.visibility = View.VISIBLE
         binding.imageViewPager.adapter = object : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
             override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
@@ -841,13 +858,80 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
             override fun getItemCount() = imagePaths.size
         }
 
+        val pick = com.novelcharacter.app.util.CharacterRepresentativeImage.pickFrom(
+            imagePaths, character.representativeImagePath, imageSeed, character.id
+        )
+
         // 시작 위치: **대표가 있으면 그 장**, 없으면 시드 랜덤 (B-103 D4).
         // 종전에는 무조건 랜덤이라 대표를 지정해도 상세만 다른 장에서 열렸다.
         if (imagePaths.size > 1) {
-            val pick = com.novelcharacter.app.util.CharacterRepresentativeImage.pickFrom(
-                imagePaths, character.representativeImagePath, imageSeed, character.id
-            )
             binding.imageViewPager.setCurrentItem(pick.index.coerceAtLeast(0), false)
+        }
+
+        setupRepresentativeStar(character, imagePaths, pick)
+    }
+
+    /**
+     * 대표 지정 ☆ (B-103 D7) + 사후 고지 (D6ⓑ).
+     *
+     * 탭 = 지금 보고 있는 그 장을 대표로, 다시 탭 = 해제. **1탭이다**(원칙 04).
+     * 이미지 탭(=뷰어 열기)과 스와이프는 그대로 둔다 — 기존 제스처를 뺏지 않는다.
+     */
+    private fun setupRepresentativeStar(
+        character: com.novelcharacter.app.data.model.Character,
+        imagePaths: List<String>,
+        pick: com.novelcharacter.app.util.CharacterRepresentativeImage.Pick
+    ) {
+        // 지정한 대표를 목록에서 못 찾았다 — 앱 밖 삭제·폴더 왕복처럼 사전 고지가 불가능한
+        // 자리다. **포인터를 조용히 지우지 않는다**(D6ⓑ) — 폴더 왕복은 파일을 되돌려 놓을 수
+        // 있어서, 잠깐 안 보인다고 지우면 돌아왔을 때 지정이 사라져 있다.
+        binding.representativeMissingNotice.visibility =
+            if (pick.pinnedMissing) View.VISIBLE else View.GONE
+
+        fun currentPathIsRepresentative(): Boolean {
+            val position = binding.imageViewPager.currentItem
+            val path = imagePaths.getOrNull(position) ?: return false
+            return com.novelcharacter.app.util.ImagePathMatch.same(path, character.representativeImagePath)
+        }
+
+        fun renderStar() {
+            val pinned = currentPathIsRepresentative()
+            binding.btnRepresentativeImage.setImageResource(
+                if (pinned) R.drawable.ic_star else R.drawable.ic_star_outline
+            )
+            binding.btnRepresentativeImage.contentDescription = getString(
+                if (pinned) R.string.representative_image_clear else R.string.representative_image_set
+            )
+        }
+
+        renderStar()
+
+        // 스와이프로 장을 넘기면 ☆도 그 장의 상태를 말해야 한다 — 아니면 지정 여부를
+        // 알려면 일일이 눌러 봐야 한다(원칙 04가 금지하는 상태다).
+        binding.imageViewPager.unregisterOnPageChangeCallback(representativePageCallback)
+        representativePageCallback =
+            object : androidx.viewpager2.widget.ViewPager2.OnPageChangeCallback() {
+                override fun onPageSelected(position: Int) = renderStar()
+            }
+        binding.imageViewPager.registerOnPageChangeCallback(representativePageCallback)
+
+        binding.btnRepresentativeImage.setOnClickListener {
+            val position = binding.imageViewPager.currentItem
+            val path = imagePaths.getOrNull(position) ?: return@setOnClickListener
+            val clearing = currentPathIsRepresentative()
+            // 저장은 이 자리에서 곧바로 한다(원칙 04 — 저장 버튼을 거치지 않는다).
+            // 상세는 편집 폼이 아니므로 취소 계약에 걸리지 않는다.
+            viewModel.updateCharacter(
+                character.copy(
+                    representativeImagePath = if (clearing) "" else path,
+                    updatedAt = System.currentTimeMillis()
+                )
+            )
+            Toast.makeText(
+                requireContext(),
+                if (clearing) R.string.representative_image_cleared else R.string.representative_image_set_done,
+                Toast.LENGTH_SHORT
+            ).show()
         }
     }
 
