@@ -319,7 +319,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         cell: String?,
         characterName: String,
         rowIndex: Int,
-        result: ImportResult
+        result: ImportResult?
     ): Character {
         val paths = com.novelcharacter.app.util.CharacterRepresentativeImage.paths(character.imagePaths)
         return when (val r = com.novelcharacter.app.util.RepresentativeImageCell.resolve(cell, paths, imagePathRemap)) {
@@ -329,7 +329,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             is com.novelcharacter.app.util.RepresentativeImageCell.Resolution.Matched ->
                 character.copy(representativeImagePath = r.path)
             is com.novelcharacter.app.util.RepresentativeImageCell.Resolution.Unresolved -> {
-                result.warnings.add(
+                result?.warnings?.add(
                     "캐릭터 행 $rowIndex ($characterName): '대표이미지' 값 \"${r.raw}\"에 해당하는 이미지를 찾을 수 없어 기존 대표 지정을 유지했습니다"
                 )
                 character
@@ -1831,6 +1831,95 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         code = existing.code ?: r.fileCode.takeIf { it.isNotBlank() } ?: backfillCode
     )
 
+    private class CharacterCols(cols: Map<String, Int>) {
+        val name = cols["이름"] ?: 0
+        val anotherName = cols["이명"] ?: -1
+        val lastName = cols["성"] ?: -1
+        val firstName = cols["이름(First)"] ?: -1
+        val image = cols["이미지경로"] ?: -1
+        val representative = cols["대표이미지"] ?: -1
+        val novel = cols["작품"] ?: -1
+        val memo = cols["메모"] ?: -1
+        val tags = cols["태그"] ?: -1
+        val code = cols["코드"] ?: -1
+        val novelCode = cols["작품코드"] ?: -1
+        val order = cols["정렬순서"] ?: -1
+        val pinned = cols["고정"] ?: -1
+        val createdAt = cols["생성일"] ?: -1
+        // 열이 있으면 셀 해석(빈칸=미배정, 사용자 의도 존중)
+        val novelColumnsPresent = novel >= 0 || novelCode >= 0
+    }
+
+    private data class CharacterRowValues(
+        val name: String,
+        val code: String,
+        val novelTitle: String,
+        val novelCode: String,
+        val novelColumnsPresent: Boolean,
+        val anotherName: String?,
+        val lastName: String?,
+        val firstName: String?,
+        val imagePaths: String?,
+        /** null = '대표이미지' 열 없음(기존 유지). 빈 문자열 = 지정 없음으로 하라(해제). */
+        val representativeCell: String?,
+        val memo: String?,
+        val displayOrder: Long?,
+        val isPinned: Boolean?,
+        val createdAt: Long?
+    )
+
+    private fun readCharacterRow(row: Row, c: CharacterCols, ctx: String, now: Long, result: ImportResult?): CharacterRowValues {
+        // imageColIndex < 0 means column is missing: use null sentinel to preserve existing images
+        val rawImagePaths: String? = if (c.image >= 0) getCellString(row, c.image).ifBlank { "[]" } else null
+        return CharacterRowValues(
+            name = getCellString(row, c.name),
+            code = getCellCode(row, c.code, ctx, result),  // F4: 숫자 코드 방어
+            novelTitle = if (c.novel >= 0) getCellString(row, c.novel) else "",
+            novelCode = getCellCode(row, c.novelCode, ctx, result),
+            novelColumnsPresent = c.novelColumnsPresent,
+            // 열이 없으면(colIndex<0) null → 기존 값 유지. 열이 있으면 셀 값(빈칸="" = 비움, 의도 존중) — F1-A.
+            anotherName = if (c.anotherName >= 0) getCellString(row, c.anotherName) else null,
+            lastName = if (c.lastName >= 0) getCellString(row, c.lastName) else null,
+            firstName = if (c.firstName >= 0) getCellString(row, c.firstName) else null,
+            imagePaths = rawImagePaths?.let { remapImagePaths(it) },
+            // 대표이미지 열(B-103 D8). **열 없음과 빈 칸은 다른 상태다** —
+            // 열 없음은 "말하지 않았다"(기존 유지), 빈 칸은 "지정 없음으로 하라"(해제).
+            representativeCell = if (c.representative >= 0) getCellString(row, c.representative) else null,
+            memo = if (c.memo >= 0) getCellString(row, c.memo) else null,
+            displayOrder = if (c.order >= 0) getCellString(row, c.order).let { if (it.isBlank()) null else parseNumber(it)?.toLong() } else null,
+            isPinned = if (c.pinned >= 0) parseBoolean(getCellString(row, c.pinned)) else null,
+            createdAt = if (c.createdAt >= 0) (parseNumber(getCellString(row, c.createdAt))?.toLong() ?: now) else null
+        )
+    }
+
+    /**
+     * [now]는 `updatedAt`에 찍을 시각이다 — **내용이 그대로면 찍지 않는다**(프리셋과 같은 규약, 설계 2-2).
+     * 종전 가져오기는 아무것도 안 바뀐 행에도 시각을 새로 찍었고, 그러면 미리보기가
+     * 모든 행을 '변경'이라 말하거나(쓸모 없음) 비교에서 빼고 거짓말하거나 둘 중 하나가 된다.
+     */
+    private fun mergeCharacter(
+        existing: Character,
+        r: CharacterRowValues,
+        novelId: Long?,
+        rowIndex: Int,
+        now: Long,
+        result: ImportResult?
+    ): Character {
+        val content = existing.copy(
+            name = r.name,
+            firstName = r.firstName ?: existing.firstName,
+            lastName = r.lastName ?: existing.lastName,
+            anotherName = r.anotherName ?: existing.anotherName,
+            novelId = if (r.novelColumnsPresent) novelId else existing.novelId,
+            memo = r.memo ?: existing.memo,
+            displayOrder = r.displayOrder ?: existing.displayOrder,
+            isPinned = r.isPinned ?: existing.isPinned,
+            createdAt = r.createdAt ?: existing.createdAt
+        ).withImagePaths(r.imagePaths ?: existing.imagePaths, imagePathRemap)
+            .let { applyRepresentativeCell(it, r.representativeCell, r.name, rowIndex, result) }
+        return if (content == existing) existing else content.copy(updatedAt = now)
+    }
+
     suspend fun analyzeAll(
         workbook: Workbook,
         options: ExportOptions = ExportOptions(),
@@ -1956,11 +2045,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
         val cols = resolveHeaderColumns(headerRow)
         val fileColIndex = cols["파일명"] ?: 0
-        val tagColIndex = cols["태그"] ?: 1
-        val groupColIndex = cols["링크그룹"] ?: 2
-        // 이 열도 비교에 넣어야 한다 — 빠뜨리면 서랍만 고친 시트가 미리보기에서 '동일'로 뜨는데
-        // 가져오기는 실제로 바꾼다(B-87이 고친 것과 같은 부류의 거짓말이다).
-        // 없으면 -1이고, 그때는 '기존 유지'라 비교 대상이 아니다.
+        // **위치 폴백 금지 — 가져오기와 같은 규칙이다.** 종전에는 여기만 `?: 1`·`?: 2`였고,
+        // 그래서 '태그' 열을 지운 시트에서 분석은 1번 열(=링크그룹)을 태그로 읽어 '변경'이라
+        // 말하는데 가져오기는 태그를 손대지 않았다. 열 없음(-1) = 기존 유지 = 비교 대상 아님.
+        val tagColIndex = cols["태그"] ?: -1
+        val groupColIndex = cols["링크그룹"] ?: -1
         val detachedAtColIndex = cols["뗀날짜"] ?: -1
 
         val remapByBasename = HashMap<String, String>()
@@ -1980,17 +2069,18 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 ?: continue  // 파일 미해석 행은 new/update에 계상하지 않음 (가져오기에서 스킵 경고)
             val existing = db.imageMetaDao().getByPath(path)
             if (existing == null) { newCount++; continue }
-            val existingTags = db.imageTagDao().getTagsByImageList(existing.id).map { it.tag }.toSet()
-            val sheetTags = splitCsv(getCellString(row, tagColIndex)).toSet()
-            val sheetGroup = getCellString(row, groupColIndex).trim().ifBlank { null }
+            // 열이 없으면 가져오기가 기존값을 유지하므로 비교 대상이 아니다(F1-A).
+            val tagsChanged = if (tagColIndex < 0) false else {
+                val existingTags = db.imageTagDao().getTagsByImageList(existing.id).map { it.tag }.toSet()
+                existingTags != splitCsv(getCellString(row, tagColIndex)).toSet()
+            }
+            val groupChanged = if (groupColIndex < 0) false else
+                existing.linkGroupId != getCellString(row, groupColIndex).trim().ifBlank { null }
             val detachedChanged = if (detachedAtColIndex < 0) false else {
                 val parsed = getCellString(row, detachedAtColIndex).trim().toDoubleOrNull()?.toLong()
-                val sheetDetachedAt = parsed?.takeIf { it > 0L }
-                sheetDetachedAt != existing.detachedAt
+                parsed?.takeIf { it > 0L } != existing.detachedAt
             }
-            if (existingTags != sheetTags || existing.linkGroupId != sheetGroup || detachedChanged) {
-                updateCount++
-            } else unchangedCount++
+            if (tagsChanged || groupChanged || detachedChanged) updateCount++ else unchangedCount++
         }
         reportProgress(onProgress, "이미지 분석", sheet.lastRowNum, totalRows)
         return CategoryAnalysis("imageMeta", label, inBackup, newCount, updateCount, unchangedCount, existingTotal)
@@ -2158,49 +2248,47 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
     private suspend fun analyzeCharacterSheet(sheet: Sheet, headerRow: Row, sheetLabel: String): SheetAnalysis {
         // 실제 임포트와 동일한 고정 열 우선 해석 — 미리보기 건수가 임포트 결과와 어긋나지 않게 한다
-        val cols = resolveHeaderColumns(headerRow, reservedHeaders = CHARACTER_FIXED_HEADERS)
-        val nameColIndex = cols["이름"] ?: 0
-        val codeColIndex = cols["코드"] ?: -1
-        val memoColIndex = cols["메모"] ?: -1
-        val anotherNameColIndex = cols["이명"] ?: -1
-        val novelColIndex = cols["작품"] ?: -1
+        val c = CharacterCols(resolveHeaderColumns(headerRow, reservedHeaders = CHARACTER_FIXED_HEADERS))
+        val now = System.currentTimeMillis()
 
         var inBackup = 0; var newCount = 0; var updateCount = 0; var conflictCount = 0
         val conflicts = mutableListOf<CharacterConflict>()
 
+        // 미리보기가 예고하는 '변경'을 판정하는 자리 — 가져오기와 **같은 함수**를 쓴다(규약 R-33).
+        // 종전에는 이름·메모·이명 셋만 봤다: 성·이름(First)·작품·정렬순서·고정·생성일·
+        // 이미지경로·대표이미지를 고쳐도 '변경 없음'이라 말했다.
+        suspend fun countAgainst(existing: Character, r: CharacterRowValues, rowIndex: Int) {
+            val novelId = (if (r.novelCode.isNotBlank()) db.novelDao().getNovelByCode(r.novelCode)?.id else null)
+                ?: (if (r.novelTitle.isNotBlank()) db.novelDao().getAllNovelsList().find { it.title == r.novelTitle }?.id else null)
+            if (mergeCharacter(existing, r, novelId, rowIndex, now, result = null) != existing) updateCount++
+        }
+
         for (i in 1..sheet.lastRowNum) {
             val row = sheet.getRow(i) ?: continue
-            val name = getCellString(row, nameColIndex)
+            val r = readCharacterRow(row, c, "캐릭터 행 $i", now, result = null)
+            val name = r.name
             if (name.isBlank()) continue
             inBackup++
 
-            val code = if (codeColIndex >= 0) getCellString(row, codeColIndex) else ""
-            if (code.isNotBlank()) {
+            if (r.code.isNotBlank()) {
                 // 코드 기반 매칭: 충돌 없음 (코드가 권위적)
-                val existing = db.characterDao().getCharacterByCode(code)
+                val existing = db.characterDao().getCharacterByCode(r.code)
                 if (existing == null) { newCount++; continue }
-                val memo = if (memoColIndex >= 0) getCellString(row, memoColIndex) else ""
-                val anotherName = if (anotherNameColIndex >= 0) getCellString(row, anotherNameColIndex) else ""
-                if (existing.name != name || existing.memo != memo || existing.anotherName != anotherName) updateCount++
+                countAgainst(existing, r, i)
             } else {
                 // 코드 없음: 이름 기반 매칭 — 동명이인 충돌 가능
                 val allMatches = db.characterDao().getAllCharactersByName(name)
                 if (allMatches.isEmpty()) {
                     newCount++
                 } else if (allMatches.size == 1) {
-                    // 단일 매칭: 기존 동작과 동일
-                    val existing = allMatches[0]
-                    val memo = if (memoColIndex >= 0) getCellString(row, memoColIndex) else ""
-                    val anotherName = if (anotherNameColIndex >= 0) getCellString(row, anotherNameColIndex) else ""
-                    if (existing.name != name || existing.memo != memo || existing.anotherName != anotherName) updateCount++
+                    countAgainst(allMatches[0], r, i)
                 } else {
                     // 다중 매칭: 충돌 발생
-                    val novelTitle = if (novelColIndex >= 0) getCellString(row, novelColIndex) else null
                     conflicts.add(CharacterConflict(
                         excelRowIndex = i,
                         sheetName = sheetLabel,
                         excelName = name,
-                        excelNovelTitle = novelTitle?.ifBlank { null },
+                        excelNovelTitle = r.novelTitle.ifBlank { null },
                         existingCharacters = allMatches
                     ))
                     // 충돌 행은 사용자 결정 전까지 분류 미정 — 별도 카운트
@@ -4179,21 +4267,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         // U-10: 계산 필드 열에 값을 써 넣었지만 저장되지 않은 열 — 열 단위로 한 번만 알린다
         // (행마다 내면 214행짜리 시트에서 같은 경고가 214번 쌓인다). 사건 시트의 형제 경고와 같은 방식.
         val droppedCalculatedHeaders = mutableSetOf<String>()
-        val nameColIndex = cols["이름"] ?: 0
-        val anotherNameColIndex = cols["이명"] ?: -1
-        val lastNameColIndex = cols["성"] ?: -1
-        val firstNameColIndex = cols["이름(First)"] ?: -1
-        val imageColIndex = cols["이미지경로"] ?: -1
-        val representativeColIndex = cols["대표이미지"] ?: -1
-        val novelColIndex = cols["작품"] ?: -1
-        val memoColIndex = cols["메모"] ?: -1
-        val tagsColIndex = cols["태그"] ?: -1
-        val codeColIndex = cols["코드"] ?: -1
-        val novelCodeColIndex = cols["작품코드"] ?: -1
-        val orderColIndex = cols["정렬순서"] ?: -1
-        val pinnedColIndex = cols["고정"] ?: -1
-        val createdAtColIndex = cols["생성일"] ?: -1
-        val fixedColIndices = setOf(nameColIndex, anotherNameColIndex, lastNameColIndex, firstNameColIndex, imageColIndex, novelColIndex, memoColIndex, tagsColIndex, codeColIndex, novelCodeColIndex, orderColIndex, pinnedColIndex, createdAtColIndex).filter { it >= 0 }.toSet()
+        val cc = CharacterCols(cols)
+        val nowMillis = System.currentTimeMillis()
+        val nameColIndex = cc.name
+        val tagsColIndex = cc.tags
+        val fixedColIndices = setOf(cc.name, cc.anotherName, cc.lastName, cc.firstName, cc.image, cc.novel, cc.memo, cc.tags, cc.code, cc.novelCode, cc.order, cc.pinned, cc.createdAt).filter { it >= 0 }.toSet()
         val columnFieldMap = buildColumnFieldMap(headerRow, fields, fixedColIndices, universe, result, sheetLabel)
 
         val codesSeen = mutableMapOf<String, Int>()
@@ -4202,12 +4280,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         for (i in 1..sheet.lastRowNum) {
             try {
                 val row = sheet.getRow(i) ?: continue
-                val name = getCellString(row, nameColIndex)
+                // 읽기는 미리보기와 **같은 함수**다(규약 R-33).
+                val r = readCharacterRow(row, cc, "캐릭터 행 $i", nowMillis, result)
+                val name = r.name
                 if (name.isBlank()) continue
 
-                val code = getCellCode(row, codeColIndex, "캐릭터 행 $i", result)  // F4: 숫자 코드 방어
-                val novelCode = getCellCode(row, novelCodeColIndex, "캐릭터 행 $i", result)
-                val novelTitle = if (novelColIndex >= 0) getCellString(row, novelColIndex) else ""
+                val code = r.code
+                val novelCode = r.novelCode
+                val novelTitle = r.novelTitle
 
                 // Duplicate code detection
                 if (code.isNotBlank()) {
@@ -4220,30 +4300,15 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
 
                 // Resolve novel: code-first, then title. F1-A: 작품/작품코드 열이 모두 없으면 기존 배정을 유지한다(아래 적용).
                 // 열이 있으면 셀 해석(빈칸=미배정, 사용자 의도 존중). resolveNovelId는 제목이 있을 때만 호출(빈 제목 유령 생성 방지).
-                val novelColumnsPresent = novelColIndex >= 0 || novelCodeColIndex >= 0
+                val novelColumnsPresent = r.novelColumnsPresent
                 val novelId: Long? = (if (novelCode.isNotBlank()) db.novelDao().getNovelByCode(novelCode)?.id else null)
                     ?: if (novelTitle.isNotBlank()) {
                         resolveNovelId(novelTitle, universe?.id, result, "캐릭터 행 $i")
                     } else null
 
-                // 열이 없으면(colIndex<0) null → 아래에서 기존 값 유지. 열이 있으면 셀 값(빈칸="" = 비움, 의도 존중) — F1-A.
-                val anotherNameFromExcel: String? = if (anotherNameColIndex >= 0) getCellString(row, anotherNameColIndex) else null
-                val lastNameFromExcel: String? = if (lastNameColIndex >= 0) getCellString(row, lastNameColIndex) else null
-                val firstNameFromExcel: String? = if (firstNameColIndex >= 0) getCellString(row, firstNameColIndex) else null
-                // imageColIndex < 0 means column is missing: use null sentinel to preserve existing images
-                val rawImagePaths: String? = if (imageColIndex >= 0) getCellString(row, imageColIndex).ifBlank { "[]" } else null
-                val imagePathsFromExcel: String? = rawImagePaths?.let { remapImagePaths(it) }
-                // 대표이미지 열(B-103 D8). **열 없음과 빈 칸은 다른 상태다** —
-                // 열 없음은 "말하지 않았다"(기존 유지), 빈 칸은 "지정 없음으로 하라"(해제).
-                val representativeCell: String? =
-                    if (representativeColIndex >= 0) getCellString(row, representativeColIndex) else null
-                val memoFromExcel: String? = if (memoColIndex >= 0) getCellString(row, memoColIndex) else null
-                val displayOrder: Long? = if (orderColIndex >= 0) {
-                    val raw = getCellString(row, orderColIndex)
-                    if (raw.isBlank()) null else parseNumber(raw)?.toLong()
-                } else null
-                val pinnedFromExcel: Boolean? = if (pinnedColIndex >= 0) parseBoolean(getCellString(row, pinnedColIndex)) else null
-                val createdAt = if (createdAtColIndex >= 0) parseNumber(getCellString(row, createdAtColIndex))?.toLong() ?: System.currentTimeMillis() else System.currentTimeMillis()
+                val imagePathsFromExcel: String? = r.imagePaths
+                val memoFromExcel: String? = r.memo
+                val displayOrder: Long? = r.displayOrder
 
                 // 충돌 해결 확인
                 val conflictKey = "$sheetLabel:$i"
@@ -4307,25 +4372,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     charId = existingChar.id
                     // 빈칸으로 기존 텍스트가 지워지는 경우 요약("지워진 값 N건")에 집계 — 조용한 per-cell 삭제 방지(변수 제어).
                     // (열 없음이면 xFromExcel==null → 유지되어 카운트 안 됨. 열 있음+빈칸("")+기존값 있음일 때만 삭제로 집계.)
-                    if (firstNameFromExcel == "" && existingChar.firstName.isNotBlank()) result.clearedFields++
-                    if (lastNameFromExcel == "" && existingChar.lastName.isNotBlank()) result.clearedFields++
-                    if (anotherNameFromExcel == "" && existingChar.anotherName.isNotBlank()) result.clearedFields++
+                    if (r.firstName == "" && existingChar.firstName.isNotBlank()) result.clearedFields++
+                    if (r.lastName == "" && existingChar.lastName.isNotBlank()) result.clearedFields++
+                    if (r.anotherName == "" && existingChar.anotherName.isNotBlank()) result.clearedFields++
                     if (memoFromExcel == "" && existingChar.memo.isNotBlank()) result.clearedFields++
                     // imagePaths는 `withImagePaths`로 넘긴다 — 대표 포인터(B-103)가 재매핑을
                     // 따라가고, 다른 기기에서 온 목록에 그 파일이 없으면 풀린다(D5).
-                    db.characterDao().update(existingChar.copy(
-                        name = name,
-                        firstName = firstNameFromExcel ?: existingChar.firstName,
-                        lastName = lastNameFromExcel ?: existingChar.lastName,
-                        anotherName = anotherNameFromExcel ?: existingChar.anotherName,
-                        novelId = if (novelColumnsPresent) novelId else existingChar.novelId,
-                        memo = memoFromExcel ?: existingChar.memo,
-                        updatedAt = System.currentTimeMillis(),
-                        displayOrder = displayOrder ?: existingChar.displayOrder,
-                        isPinned = pinnedFromExcel ?: existingChar.isPinned,
-                        createdAt = if (createdAtColIndex >= 0) createdAt else existingChar.createdAt
-                    ).withImagePaths(imagePathsFromExcel ?: existingChar.imagePaths, imagePathRemap)
-                        .let { applyRepresentativeCell(it, representativeCell, name, i, result) })
+                    // 적용도 미리보기와 **같은 함수**다(규약 R-33).
+                    db.characterDao().update(mergeCharacter(existingChar, r, novelId, i, nowMillis, result))
                     result.updatedCharacters++
 
                     // 사용자가 이전 세계관 필드값 삭제를 선택한 경우 정리
@@ -4337,12 +4391,12 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     if (code.isBlank()) result.newCodesGenerated++
                     charId = db.characterDao().insert(applyRepresentativeCell(
                         Character(
-                            name = name, firstName = firstNameFromExcel ?: "", lastName = lastNameFromExcel ?: "",
-                            anotherName = anotherNameFromExcel ?: "", novelId = if (novelColumnsPresent) novelId else null,
+                            name = name, firstName = r.firstName ?: "", lastName = r.lastName ?: "",
+                            anotherName = r.anotherName ?: "", novelId = if (novelColumnsPresent) novelId else null,
                             imagePaths = imagePathsFromExcel ?: "[]", memo = memoFromExcel ?: "", code = newCode, displayOrder = displayOrder ?: i.toLong(),
-                            isPinned = pinnedFromExcel ?: false, createdAt = createdAt
+                            isPinned = r.isPinned ?: false, createdAt = r.createdAt ?: nowMillis
                         ),
-                        representativeCell, name, i, result
+                        r.representativeCell, name, i, result
                     ))
                     result.newCharacters++
                 }
