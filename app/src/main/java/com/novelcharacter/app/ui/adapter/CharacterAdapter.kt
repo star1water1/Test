@@ -51,16 +51,19 @@ class CharacterAdapter(
         }
     }
 
-    // 캐릭터별 표시 이미지 인덱스 (영속 저장)
-    private val imageIndexMap = mutableMapOf<Long, Int>()
-    private var prefsLoaded = false
-    private val ENTITY_TYPE = "character"
+    /**
+     * 이 화면 진입의 랜덤 시드(B-103 D3). **화면이 소유하고 어댑터는 들고만 있는다** —
+     * 같은 시드가 유지되는 동안 스크롤 재바인드·검색·필터·정렬에 그림이 튀지 않고,
+     * [refreshRandomImages]로 새 시드를 받으면 전 목록이 한 번에 다시 뽑힌다.
+     *
+     * **prefs를 쓰던 종전 방식을 대신한다** — 목록 진입마다 전량 읽기(`loadAll`)와
+     * bind마다의 쓰기가 사라져 쓰기가 0이 됐다(P2-1이 걸었던 제약을 그대로 지킨다).
+     */
+    private var imageSeed: Long = com.novelcharacter.app.util.CharacterRepresentativeImage.newSeed()
 
-    /** 캐릭터 이미지 표시를 랜덤으로 재설정 (목록 새로고침 시 호출) */
-    fun refreshRandomImages(context: android.content.Context? = null) {
-        context?.let { com.novelcharacter.app.util.ImageIndexPrefs.clearAll(it, ENTITY_TYPE) }
-        imageIndexMap.clear()
-        prefsLoaded = false
+    /** 캐릭터 이미지 표시를 랜덤으로 재설정 (화면 진입 1회 호출) */
+    fun refreshRandomImages() {
+        imageSeed = com.novelcharacter.app.util.CharacterRepresentativeImage.newSeed()
     }
 
     fun setSelectionMode(enabled: Boolean) {
@@ -248,18 +251,10 @@ class CharacterAdapter(
             } catch (e: Exception) {
                 emptyList()
             }
-            val context = itemView.context
-            if (!prefsLoaded) {
-                imageIndexMap.putAll(com.novelcharacter.app.util.ImageIndexPrefs.loadAll(context, ENTITY_TYPE))
-                prefsLoaded = true
-            }
-            val idx = if (paths.isNotEmpty()) {
-                imageIndexMap.getOrPut(character.id) {
-                    val randomIdx = (0 until paths.size).random()
-                    com.novelcharacter.app.util.ImageIndexPrefs.save(context, ENTITY_TYPE, character.id, randomIdx)
-                    randomIdx
-                }
-            } else 0
+            // 대표가 지정돼 있으면 언제나 그 장, 아니면 시드 랜덤 (B-103 D2·D4).
+            val pick = com.novelcharacter.app.util.CharacterRepresentativeImage
+                .pickFrom(paths, character.representativeImagePath, imageSeed, character.id)
+            val idx = pick.index.coerceAtLeast(0)
 
             // 이미지 개수 배지
             if (paths.size > 1) {

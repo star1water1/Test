@@ -506,6 +506,12 @@ data class RankingEntry(
     val value: Double,
     val displayValue: String,
     val imagePaths: String,
+    /**
+     * 대표 이미지 포인터(B-103 D8). `imagePaths`를 이미 나르므로 **함께 나른다** —
+     * 캐릭터당 짧은 문자열 하나이고 이것을 순회하는 계산이 없다(확장성 4단계 ③).
+     * 없으면 순위 카드만 대표를 모르는 상태가 되어 다른 화면과 다른 그림을 보여 준다.
+     */
+    val representativeImagePath: String,
     val novelTitle: String?
 )
 
@@ -531,6 +537,15 @@ data class RankableField(
  * 그래서 생성자에서 앱을 받지 않는다: Android 런타임 없이도 집계 규칙을 실제로 실행해 검증할 수 있다.
  */
 class StatsDataProvider {
+
+    /**
+     * 드릴다운 목록의 캐릭터 그림을 고를 때 쓰는 랜덤 시드(B-103 D3).
+     *
+     * **이 provider 한 벌에 시드 하나다** — 통계 화면은 이 인스턴스를 들고 있고 드릴다운을
+     * 여러 번 열어도 같은 캐릭터는 같은 그림이어야 한다. 화면을 나갔다 들어오면 provider가
+     * 다시 만들어지므로 그때 새로 뽑힌다(D3이 정의한 "화면 진입 1회").
+     */
+    private val drilldownImageSeed: Long = com.novelcharacter.app.util.CharacterRepresentativeImage.newSeed()
 
     suspend fun loadSnapshot(app: NovelCharacterApp): StatsSnapshot {
         val db = app.database
@@ -2527,7 +2542,8 @@ class StatsDataProvider {
                 characterId = char.id,
                 characterName = char.name,
                 fieldValue = shownValue,
-                imageUri = images.firstOrNull()
+                imageUri = com.novelcharacter.app.util.CharacterRepresentativeImage
+                    .pickFrom(images, char.representativeImagePath, drilldownImageSeed, char.id).path
             )
         }
 
@@ -2753,7 +2769,8 @@ class StatsDataProvider {
                     characterId = char.id,
                     characterName = char.name,
                     fieldValue = shownValue,
-                    imageUri = images.firstOrNull()
+                    imageUri = com.novelcharacter.app.util.CharacterRepresentativeImage
+                        .pickFrom(images, char.representativeImagePath, drilldownImageSeed, char.id).path
                 )
             )
         }
@@ -3193,6 +3210,7 @@ class StatsDataProvider {
                     value = sorted[i].numericValue,
                     displayValue = sorted[i].displayValue,
                     imagePaths = char.imagePaths,
+                    representativeImagePath = char.representativeImagePath,
                     novelTitle = novel?.title
                 )
             )

@@ -51,6 +51,12 @@ import kotlinx.coroutines.withContext
 
 class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.EventEditDialogFragment.Host {
 
+    /**
+     * 이 화면 진입의 랜덤 시드(B-103 D3) — 대표가 없는 캐릭터의 그림을 고른다.
+     * 같은 시드가 유지되는 동안에는 재바인드에도 그림이 튀지 않는다.
+     */
+    private val imageSeed: Long = com.novelcharacter.app.util.CharacterRepresentativeImage.newSeed()
+
     private var _binding: FragmentCharacterDetailBinding? = null
     private val binding get() = _binding!!
     private val viewModel: CharacterViewModel by viewModels()
@@ -583,7 +589,7 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
             }
         }
 
-        setupImages(character.imagePaths)
+        setupImages(character)
     }
 
     /**
@@ -775,9 +781,10 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
 
     // ===== Images =====
 
-    private fun setupImages(imagePathsJson: String) {
+    private fun setupImages(character: com.novelcharacter.app.data.model.Character) {
+        // 캐릭터를 통째로 받는다 — 시작 위치를 대표로 잡으려면 포인터와 id가 함께 필요하다(B-103 D4).
         val imagePaths: List<String> = try {
-            GSON.fromJson(imagePathsJson, IMAGE_PATHS_TYPE) ?: emptyList()
+            GSON.fromJson(character.imagePaths, IMAGE_PATHS_TYPE) ?: emptyList()
         } catch (e: Exception) {
             emptyList()
         }
@@ -808,7 +815,7 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
                 val path = imagePaths[position]
                 imageView.setOnClickListener {
                     val bundle = Bundle().apply {
-                        putString("imagePaths", imagePathsJson)
+                        putString("imagePaths", character.imagePaths)
                         putInt("startPosition", position)
                     }
                     findNavController().navigateSafe(R.id.characterDetailFragment, R.id.imageViewerFragment, bundle)
@@ -834,11 +841,13 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
             override fun getItemCount() = imagePaths.size
         }
 
-        // 이미지가 2장 이상이면 랜덤 위치에서 시작
+        // 시작 위치: **대표가 있으면 그 장**, 없으면 시드 랜덤 (B-103 D4).
+        // 종전에는 무조건 랜덤이라 대표를 지정해도 상세만 다른 장에서 열렸다.
         if (imagePaths.size > 1) {
-            binding.imageViewPager.setCurrentItem(
-                kotlin.random.Random.nextInt(imagePaths.size), false
+            val pick = com.novelcharacter.app.util.CharacterRepresentativeImage.pickFrom(
+                imagePaths, character.representativeImagePath, imageSeed, character.id
             )
+            binding.imageViewPager.setCurrentItem(pick.index.coerceAtLeast(0), false)
         }
     }
 
@@ -1052,8 +1061,12 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
 
                         val charBitmap = withContext(Dispatchers.IO) {
                             // 풀사이즈·무가드 디코드는 대용량 이미지에서 OOM 위험 → 공용 유틸로 다운샘플+경로가드.
-                            com.novelcharacter.app.util.CharacterImageLoader.firstImagePath(character.imagePaths)
-                                ?.let { com.novelcharacter.app.util.CharacterImageLoader.decodeThumbnail(it, getAppDir(), 1024) }
+                            // 카드에 박히는 그림도 대표를 따른다 (B-103 D4) — 종전에는 0번 고정이라
+                            // 대표를 지정해도 내보낸 카드만 다른 사람처럼 보였다.
+                            com.novelcharacter.app.util.CharacterRepresentativeImage.path(
+                                character.imagePaths, character.representativeImagePath,
+                                imageSeed, character.id
+                            )?.let { com.novelcharacter.app.util.CharacterImageLoader.decodeThumbnail(it, getAppDir(), 1024) }
                         }
 
                         val config = CharacterCardRenderer.CardConfig(theme = selectedTheme)

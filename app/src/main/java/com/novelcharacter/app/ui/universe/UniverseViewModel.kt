@@ -287,6 +287,23 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
 
     private val gson = Gson()
 
+    /**
+     * 연동 캐릭터의 그림 한 장 — **그 캐릭터의 대표를 존중한다**(B-103 D4, 원칙 05).
+     *
+     * 종전에는 `randomOrNull()`이라 **호출할 때마다** 바뀌었고, 대표를 지정해 두어도
+     * 세계관·작품 카드만 딴 장을 보여 줬다. 이제 다른 화면과 같은 규칙을 쓴다.
+     *
+     * 시드는 호출마다 새로 뽑는다 — 이 경로는 카드 한 장을 그릴 때 한 번 불리고,
+     * 목록처럼 여러 행이 동시에 걸리는 자리가 아니다.
+     */
+    private fun linkedCharacterImage(character: com.novelcharacter.app.data.model.Character): String? =
+        com.novelcharacter.app.util.CharacterRepresentativeImage.path(
+            character.imagePaths,
+            character.representativeImagePath,
+            com.novelcharacter.app.util.CharacterRepresentativeImage.newSeed(),
+            character.id
+        )
+
     /** 세계관에 속한 캐릭터 중 이미지가 있는 랜덤 캐릭터의 첫 이미지 경로 반환 */
     fun resolveRandomCharacterImage(universeId: Long, callback: (String?) -> Unit) {
         viewModelScope.launch {
@@ -300,11 +317,7 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
                     callback(null)
                     return@launch
                 }
-                val target = withImages.random()
-                val randomPath = try {
-                    gson.fromJson(target.imagePaths, Array<String>::class.java)?.randomOrNull()
-                } catch (_: Exception) { null }
-                callback(randomPath)
+                callback(linkedCharacterImage(withImages.random()))
             } catch (e: Exception) {
                 Log.e("UniverseViewModel", "Failed to resolve character image", e)
                 callback(null)
@@ -320,10 +333,7 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
                     callback(null)
                     return@launch
                 }
-                val randomPath = try {
-                    gson.fromJson(character.imagePaths, Array<String>::class.java)?.randomOrNull()
-                } catch (_: Exception) { null }
-                callback(randomPath)
+                callback(linkedCharacterImage(character))
             } catch (e: Exception) {
                 Log.e("UniverseViewModel", "Failed to resolve character image by ID", e)
                 callback(null)
@@ -425,10 +435,7 @@ class UniverseViewModel(application: Application) : AndroidViewModel(application
             } else {
                 withImages.random()
             }
-            val path = try {
-                gson.fromJson(target.imagePaths, Array<String>::class.java)?.randomOrNull()
-            } catch (_: Exception) { null }
-            callback(path)
+            callback(linkedCharacterImage(target))
             return
         }
         callback(null)

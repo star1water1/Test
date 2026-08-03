@@ -159,6 +159,14 @@ class DuplicateCharacterDialog : DialogFragment() {
         private val onSelected: (Int) -> Unit
     ) : RecyclerView.Adapter<CandidateAdapter.VH>() {
 
+        /**
+         * 이 화면 진입의 랜덤 시드(B-103 D3) — 대표가 없는 캐릭터의 그림을 고른다.
+         * 어댑터가 들고 있는 이유는 이 클래스가 다이얼로그의 중첩 클래스가 아니어서
+         * 바깥 필드를 볼 수 없기 때문이고, 어차피 다이얼로그를 열 때마다 새로 만들어지므로
+         * 생성자 시드가 곧 "화면 진입 1회"다.
+         */
+        private val imageSeed: Long = com.novelcharacter.app.util.CharacterRepresentativeImage.newSeed()
+
         private var selectedPos = -1
 
         fun setSelected(pos: Int) {
@@ -191,7 +199,10 @@ class DuplicateCharacterDialog : DialogFragment() {
             }
 
             // 공용 유틸: 바운즈 없는 고정 샘플(=4) 대신 요청 크기 다운샘플 + filesDir 경로가드.
-            val firstPath = com.novelcharacter.app.util.CharacterImageLoader.firstImagePath(character.imagePaths)
+            // 대표가 있으면 그 장, 없으면 시드 랜덤 (B-103 D2·D4).
+            val firstPath = com.novelcharacter.app.util.CharacterRepresentativeImage.path(
+                character.imagePaths, character.representativeImagePath, imageSeed, character.id
+            )
             val bitmap = firstPath?.let {
                 com.novelcharacter.app.util.CharacterImageLoader.decodeThumbnail(it, holder.itemView.context.filesDir, 128)
             }
