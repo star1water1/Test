@@ -46,12 +46,10 @@ class CharacterListFragment : Fragment() {
     private var itemTouchHelper: ItemTouchHelper? = null
     private var novelId: Long = -1L
 
-    // Comparison mode
-    private var isCompareMode = false
-    private val selectedForCompare = mutableSetOf<Long>()
-
-    // Batch edit mode
-    private var isBatchEditMode = false
+    // 선택 모드 (B-83) — 비교와 일괄 편집이 공유한다. 목적지는 선택을 마친 뒤 바에서 고른다.
+    // 선택 집합의 단일 소스는 batchViewModel.selectedIds다(비교 전용 집합을 따로 두지 않는다 —
+    // 두 벌이면 어느 문으로 들어왔는지에 따라 선택이 갈린다).
+    private var isSelectionMode = false
 
     // 탐색 origin 목적지 id — 하단 캐릭터 탭 루트는 characterTabFragment(novelId=-1),
     // 작품 목록·검색에서 novelId를 들고 푸시되면 characterListFragment다.
@@ -59,14 +57,11 @@ class CharacterListFragment : Fragment() {
     private val navOriginId: Int
         get() = if (novelId == -1L) R.id.characterTabFragment else R.id.characterListFragment
 
-    // 배치/비교 모드에서 뒤로가기 = 화면 이탈이 아니라 모드 종료(선택 해제). 롱프레스 진입이 잦아진 만큼
+    // 선택 모드에서 뒤로가기 = 화면 이탈이 아니라 모드 종료(선택 해제). 롱프레스 진입이 잦아진 만큼
     // 뒤로가기로 취소하려다 화면을 뜨며 선택을 흘리는 걸 막는다. isEnabled는 모드 전환 시 토글.
-    private val batchBackCallback = object : OnBackPressedCallback(false) {
+    private val selectionBackCallback = object : OnBackPressedCallback(false) {
         override fun handleOnBackPressed() {
-            when {
-                isBatchEditMode -> exitBatchEditMode()
-                isCompareMode -> exitCompareMode()
-            }
+            if (isSelectionMode) exitSelectionMode()
         }
     }
 
@@ -86,22 +81,20 @@ class CharacterListFragment : Fragment() {
         setupRecyclerView()
         setupSearch()
         setupFab()
-        setupCompareBar()
-        setupBatchEditBar()
+        setupSelectionBar()
         setupBirthdayBanner()
         setupFilterSort()
         setupOverflowMenu()
         observeData()
         observeBatchEdit()
 
-        requireActivity().onBackPressedDispatcher.addCallback(viewLifecycleOwner, batchBackCallback)
+        requireActivity().onBackPressedDispatcher.addCallback(viewLifecycleOwner, selectionBackCallback)
 
-        // 회전 후 모드 복원 — 배치/비교는 상호배타라 else-if. 비교 선택도 함께 복원(P2-14).
-        if (savedInstanceState?.getBoolean("isBatchEditMode") == true) {
-            enterBatchEditMode()
-        } else if (savedInstanceState?.getBoolean("isCompareMode") == true) {
-            savedInstanceState.getLongArray("selectedForCompare")?.let { selectedForCompare.addAll(it.toList()) }
-            enterCompareMode()
+        // 회전 후 모드 복원. 선택 자체는 activity 스코프 ViewModel에 살아 있으므로 여기서 되살릴 것은
+        // 모드뿐이다 — enterSelectionMode가 살아남은 선택을 그대로 그린다(P2-14의 비교 선택 보존도
+        // 같은 자리에서 함께 해결된다. 종전엔 비교만 Bundle로 따로 실어 날랐다).
+        if (savedInstanceState?.getBoolean("isSelectionMode") == true) {
+            enterSelectionMode()
         }
 
         // 툴바는 조건부다 (N-1 §7-2): 탭 루트에서는 하단 내비가 이미 "캐릭터"를 말하므로 감춰
@@ -120,8 +113,7 @@ class CharacterListFragment : Fragment() {
             coroutineScope = viewLifecycleOwner.lifecycleScope,
             onClick = { character ->
                 when {
-                    isBatchEditMode -> batchViewModel.toggleSelection(character.id)
-                    isCompareMode -> toggleCompareSelection(character.id)
+                    isSelectionMode -> batchViewModel.toggleSelection(character.id)
                     else -> {
                         viewModel.recordRecentActivity(character.id, character.name)
                         val bundle = Bundle().apply { putLong("characterId", character.id) }
@@ -166,11 +158,12 @@ class CharacterListFragment : Fragment() {
             onPinClick = { character ->
                 viewModel.togglePin(character)
             },
-            // 롱프레스 = 일괄편집 진입(카드 전체·이미지 포함). 주 진입은 툴바 아이콘, 롱프레스는 사용자가 요청한 가속기.
+            // 롱프레스 = 선택 모드 진입(카드 전체·이미지 포함). ⋮의 두 항목이 이름을 붙인 주 진입이고,
+            // 롱프레스는 그 둘을 함께 여는 가속기다 — B-83이 요구한 "대체 진입점"이 이것이다.
             // 일반 탐색 모드일 때만 동작 — 진입 후 롱프레스한 캐릭터를 바로 선택한다. (이미지 뷰어는 상세화면에서)
             onLongClick = { character ->
-                if (!isBatchEditMode && !isCompareMode && !adapter.isReorderMode()) {
-                    enterBatchEditMode()
+                if (!isSelectionMode && !adapter.isReorderMode()) {
+                    enterSelectionMode()
                     batchViewModel.toggleSelection(character.id)
                     true
                 } else {
@@ -215,6 +208,11 @@ class CharacterListFragment : Fragment() {
      * 액션 행은 탭 루트·푸시 양쪽에서 보이므로 메뉴 호스트는 이 하나뿐이다 — 툴바에도 메뉴를
      * 두면 보충의 "탭 루트에서만" 게이팅이 두 벌이 되고, 두 벌이 된 게이팅은 반드시 갈린다.
      * 보충의 상시 진입점은 홈 도구 타일(N-2)이 맡는다 — 총 발견성은 옮기기 전보다 올라간다.
+     *
+     * 비교·일괄 편집은 **같은 선택 모드로 들어간다**(B-83). 항목을 둘로 남겨 둔 것은 메뉴가
+     * 이 화면에서 무엇을 할 수 있는지 말하는 유일한 자리이기 때문이다 — 하나로 합치면
+     * 목적지의 이름이 메뉴에서 사라져, 선택 모드에 들어가 보기 전까지 비교의 존재를 알 수 없다
+     * (원칙 04). 두 항목의 차이는 비교가 인원 제한을 미리 일러 주는 것뿐이다.
      */
     private fun setupOverflowMenu() {
         binding.btnListOverflow.setOnClickListener { anchor ->
@@ -233,27 +231,22 @@ class CharacterListFragment : Fragment() {
                         true
                     }
                     MENU_COMPARE -> {
-                        if (isBatchEditMode) exitBatchEditMode()
                         if (adapter.isReorderMode()) toggleReorderMode()
-                        if (!isCompareMode) {
-                            selectedForCompare.clear()
-                            enterCompareMode()
-                            Toast.makeText(requireContext(), R.string.compare_select_hint, Toast.LENGTH_SHORT).show()
-                        }
+                        if (!isSelectionMode) enterSelectionMode()
+                        // 인원 제한(2~3명)은 이름을 걸고 들어온 이 경로에서만 미리 일러 준다.
+                        // 롱프레스로 들어온 사용자는 4명 이상에서 '비교하기'를 누를 때 듣는다.
+                        Toast.makeText(requireContext(), R.string.compare_select_hint, Toast.LENGTH_SHORT).show()
                         true
                     }
                     MENU_REORDER -> {
-                        // 재정렬은 일괄편집·비교와 상호배타 — 두 모드 모두 먼저 종료해야 chrome(검색·필터바·비교바)이
-                        // 엉키지 않는다. 기존엔 배치만 종료하고 비교는 안 해서 두 모드가 겹치는 손상 상태가 났다.
-                        if (isBatchEditMode) exitBatchEditMode()
-                        if (isCompareMode) exitCompareMode()
+                        // 재정렬은 선택 모드와 상호배타 — 먼저 종료해야 chrome(검색·필터바·선택바)이 엉키지 않는다.
+                        if (isSelectionMode) exitSelectionMode()
                         toggleReorderMode()
                         true
                     }
                     MENU_BATCH_EDIT -> {
-                        if (isCompareMode) exitCompareMode()
                         if (adapter.isReorderMode()) toggleReorderMode()
-                        enterBatchEditMode()
+                        if (!isSelectionMode) enterSelectionMode()
                         true
                     }
                     else -> false
@@ -295,76 +288,27 @@ class CharacterListFragment : Fragment() {
         }
     }
 
-    private fun toggleCompareSelection(characterId: Long) {
-        if (selectedForCompare.contains(characterId)) {
-            selectedForCompare.remove(characterId)
-        } else {
-            if (selectedForCompare.size >= 3) {
-                Toast.makeText(requireContext(), R.string.max_compare_limit, Toast.LENGTH_SHORT).show()
-                return
-            }
-            selectedForCompare.add(characterId)
+    /**
+     * 선택한 캐릭터로 비교 화면에 들어간다.
+     *
+     * 상한(3명)은 **거절이 아니라 설명으로** 건다. 종전 비교 모드는 4번째 선택 자체를 막고
+     * 나머지 카드를 딤 처리했는데, 선택이 일괄 편집과 한 벌이 된 지금 그 딤은 성립하지 않는다
+     * (일괄 편집은 상한이 없다). 그래서 넘긴 선택을 조용히 자르거나 버튼을 죽여 두는 대신,
+     * 무엇이 문제이고 어떻게 고치는지를 말한다(개발 의도 2번 '변수 제어' — 막다른 길을 두지 않는다).
+     */
+    private fun runCompare() {
+        val ids = batchViewModel.selectedIds.value.orEmpty()
+        if (ids.size > MAX_COMPARE) {
+            Toast.makeText(requireContext(), R.string.max_compare_limit, Toast.LENGTH_SHORT).show()
+            return
         }
-        // Update max-reached first (no-op if unchanged), then setSelectedIds triggers single notify
-        adapter.setMaxReached(selectedForCompare.size >= 3)
-        adapter.setSelectedIds(selectedForCompare)
-        updateCompareBarState()
-    }
-
-    /** 비교 전용 바 (N-1 §7-4) — 일괄 편집 바와 같은 문법: 취소·선택 수·실행이 모드 중 상주한다. */
-    private fun setupCompareBar() {
-        binding.btnCompareClose.setOnClickListener { exitCompareMode() }
-        binding.btnCompareRun.setOnClickListener {
-            if (selectedForCompare.size < 2) {
-                Toast.makeText(requireContext(), R.string.compare_min_select, Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
-            val idsStr = selectedForCompare.joinToString(",")
-            val bundle = Bundle().apply { putString("characterIds", idsStr) }
-            exitCompareMode()
-            findNavController().navigateSafe(navOriginId, R.id.characterCompareFragment, bundle)
+        if (ids.size < MIN_COMPARE) {
+            Toast.makeText(requireContext(), R.string.compare_min_select, Toast.LENGTH_SHORT).show()
+            return
         }
-    }
-
-    /** 비교 모드 진입/복원 공용. 선택 초기화는 호출부가 담당(진입은 초기화, 회전 복원은 선택 유지). */
-    private fun enterCompareMode() {
-        isCompareMode = true
-        batchBackCallback.isEnabled = true
-        adapter.setSelectionMode(true)
-        // 회전 복원 시에도 '최대 선택' 딤 상태를 재구성(진입 시엔 선택 0이라 무해). 누락 시 회전 후 3명 선택
-        // 상태의 딤이 사라져 있었다.
-        adapter.setMaxReached(selectedForCompare.size >= 3)
-        adapter.setSelectedIds(selectedForCompare)
-        // 일괄 편집 모드와 같은 화면 문법 — 액션 행을 감추고 전용 바를 띄운다
-        binding.compareBar.visibility = View.VISIBLE
-        binding.actionRow.visibility = View.GONE
-        binding.fabAddCharacter.visibility = View.GONE
-        setFilterSortBarVisible(false)
-        updateBirthdayBannerVisibility(false)
-        updateCompareBarState()
-    }
-
-    private fun exitCompareMode() {
-        isCompareMode = false
-        batchBackCallback.isEnabled = false
-        selectedForCompare.clear()
-        adapter.resetState()  // batch reset: clears selection + mode in single notify
-        binding.compareBar.visibility = View.GONE
-        binding.actionRow.visibility = View.VISIBLE
-        binding.fabAddCharacter.visibility = View.VISIBLE
-        setFilterSortBarVisible(true)
-        updateBirthdayBannerVisibility(true)
-    }
-
-    /** 비교 바 상태 — 선택 수 표기(0이면 상시 안내) + 최소 2명부터 실행 활성. */
-    private fun updateCompareBarState() {
-        if (_binding == null) return
-        binding.compareSelectedCount.text = if (selectedForCompare.isEmpty()) {
-            getString(R.string.compare_select_hint)
-        } else {
-            getString(R.string.compare_selected_count, selectedForCompare.size)
-        }
-        binding.btnCompareRun.isEnabled = selectedForCompare.size >= 2
+        val bundle = Bundle().apply { putString("characterIds", ids.joinToString(",")) }
+        exitSelectionMode()
+        findNavController().navigateSafe(navOriginId, R.id.characterCompareFragment, bundle)
     }
 
     private var searchJob: kotlinx.coroutines.Job? = null
@@ -396,12 +340,13 @@ class CharacterListFragment : Fragment() {
         }
     }
 
-    // ===== 일괄 편집 모드 =====
+    // ===== 선택 모드 =====
 
-    private fun setupBatchEditBar() {
-        binding.btnBatchClose.setOnClickListener { exitBatchEditMode() }
-        // 전체/해제/필터 = 보조 조작이라 ⋮ 오버플로로 접어 '작업' 버튼이 좁은 화면에서도 잘리지 않게 한다.
-        binding.btnBatchOverflow.setOnClickListener { anchor ->
+    private fun setupSelectionBar() {
+        binding.btnSelectionClose.setOnClickListener { exitSelectionMode() }
+        binding.btnSelectionCompare.setOnClickListener { runCompare() }
+        // 전체/해제/필터 = 보조 조작이라 ⋮ 오버플로로 접어 실행 버튼이 좁은 화면에서도 잘리지 않게 한다.
+        binding.btnSelectionOverflow.setOnClickListener { anchor ->
             val popup = PopupMenu(requireContext(), anchor)
             popup.menu.add(0, MENU_SELECT_ALL, 0, R.string.batch_select_all)
             popup.menu.add(0, MENU_DESELECT_ALL, 1, R.string.batch_deselect_all)
@@ -426,7 +371,7 @@ class CharacterListFragment : Fragment() {
             }
             popup.show()
         }
-        binding.btnBatchAction.setOnClickListener {
+        binding.btnSelectionAction.setOnClickListener {
             val count = batchViewModel.selectedCount
             if (count > 0) {
                 val sheet = BatchOperationBottomSheet.newInstance(count)
@@ -471,8 +416,8 @@ class CharacterListFragment : Fragment() {
             if (items.isNullOrEmpty()) {
                 binding.birthdayBanner.visibility = View.GONE
             } else {
-                // 배치편집/비교/재정렬 모드가 아닐 때만 표시
-                val showBanner = !isBatchEditMode && !isCompareMode && !this.adapter.isReorderMode()
+                // 선택/재정렬 모드가 아닐 때만 표시
+                val showBanner = !isSelectionMode && !this.adapter.isReorderMode()
                 binding.birthdayBanner.visibility = if (showBanner) View.VISIBLE else View.GONE
                 this.birthdayBannerAdapter?.submitList(items)
                 binding.birthdayTitle.text = getString(R.string.birthday_banner_title_count, items.size)
@@ -485,40 +430,50 @@ class CharacterListFragment : Fragment() {
         binding.birthdayBanner.visibility = if (show && hasBirthdayData) View.VISIBLE else View.GONE
     }
 
-    private fun enterBatchEditMode() {
-        isBatchEditMode = true
+    private fun enterSelectionMode() {
+        isSelectionMode = true
         adapter.setSelectionMode(true)
-        binding.batchEditBar.visibility = View.VISIBLE
+        binding.selectionBar.visibility = View.VISIBLE
         binding.actionRow.visibility = View.GONE
         binding.fabAddCharacter.visibility = View.GONE
         setFilterSortBarVisible(false)
         updateBirthdayBannerVisibility(false)
-        // 진입 즉시 현재 선택 상태를 반영. observeBatchEdit의 즉시 전달은 isBatchEditMode=false 시점에
+        // 진입 즉시 현재 선택 상태를 반영. observeBatchEdit의 즉시 전달은 isSelectionMode=false 시점에
         // 걸러지므로(onViewCreated 순서), 메뉴 진입(선택 0 → 상시 안내)과 회전 복원(살아남은 선택
-        // 하이라이트·수·'작업' 활성)을 여기서 초기화한다.
+        // 하이라이트·수·실행 버튼 활성)을 여기서 초기화한다.
         val surviving = batchViewModel.selectedIds.value ?: emptySet()
         adapter.setSelectedIds(surviving)
-        renderBatchSelection(surviving.size)
-        batchBackCallback.isEnabled = true
+        renderSelection(surviving.size)
+        selectionBackCallback.isEnabled = true
     }
 
-    /** 배치바 선택 수 표기 + '작업' 활성. 0이면 상시 행동 안내(사라지는 Toast 대체)를 보여준다. */
-    private fun renderBatchSelection(count: Int) {
+    /**
+     * 선택 바 상태 — 선택 수 표기 + 실행 둘의 활성.
+     * 0이면 상시 행동 안내(사라지는 Toast 대체)를 보여준다.
+     *
+     * 실행 둘 다 "선택이 있으면 활성"이다. 비교의 2~3명 조건으로 버튼을 죽여 두지 않는 것은
+     * 죽은 버튼이 이유를 말하지 못하기 때문이다 — 조건은 눌렀을 때 [runCompare]가 설명한다.
+     */
+    private fun renderSelection(count: Int) {
         if (_binding == null) return
-        binding.batchSelectedCount.text = if (count == 0) {
+        binding.selectionCount.text = if (count == 0) {
             getString(R.string.batch_enter_hint)
         } else {
             getString(R.string.batch_selected_count, count)
         }
-        binding.btnBatchAction.isEnabled = count > 0 && batchViewModel.isProcessing.value != true
+        // 일괄 작업이 도는 동안은 둘 다 막는다 — 선택이 한 벌이 된 뒤로 '비교하기'로 화면을 뜨면
+        // 진행 중인 작업의 결과 고지(유실·스킵 경고)를 받을 자리가 사라진다.
+        val idle = batchViewModel.isProcessing.value != true
+        binding.btnSelectionCompare.isEnabled = count > 0 && idle
+        binding.btnSelectionAction.isEnabled = count > 0 && idle
     }
 
-    private fun exitBatchEditMode() {
-        isBatchEditMode = false
-        batchBackCallback.isEnabled = false
+    private fun exitSelectionMode() {
+        isSelectionMode = false
+        selectionBackCallback.isEnabled = false
         batchViewModel.deselectAll()
         adapter.resetState()
-        binding.batchEditBar.visibility = View.GONE
+        binding.selectionBar.visibility = View.GONE
         binding.actionRow.visibility = View.VISIBLE
         binding.fabAddCharacter.visibility = View.VISIBLE
         setFilterSortBarVisible(true)
@@ -527,15 +482,17 @@ class CharacterListFragment : Fragment() {
 
     private fun observeBatchEdit() {
         batchViewModel.selectedIds.observe(viewLifecycleOwner) { ids ->
-            if (isBatchEditMode) {
+            if (isSelectionMode) {
                 adapter.setSelectedIds(ids)
-                renderBatchSelection(ids.size)
+                renderSelection(ids.size)
             }
         }
 
         batchViewModel.isProcessing.observe(viewLifecycleOwner) { processing ->
-            if (isBatchEditMode) {
-                binding.btnBatchAction.isEnabled = !processing && batchViewModel.selectedCount > 0
+            if (isSelectionMode) {
+                val enabled = !processing && batchViewModel.selectedCount > 0
+                binding.btnSelectionCompare.isEnabled = enabled
+                binding.btnSelectionAction.isEnabled = enabled
             }
         }
 
@@ -612,10 +569,9 @@ class CharacterListFragment : Fragment() {
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
-        outState.putBoolean("isBatchEditMode", isBatchEditMode)
-        // 비교 모드·선택도 회전에 보존(P2-14) — 배치와 동일하게, 조용한 선택 유실 방지.
-        outState.putBoolean("isCompareMode", isCompareMode)
-        outState.putLongArray("selectedForCompare", selectedForCompare.toLongArray())
+        // 선택 집합 자체는 activity 스코프 ViewModel이 들고 있어 회전에 그대로 살아남는다 —
+        // 여기 실을 것은 모드뿐이다(P2-14의 '조용한 선택 유실 방지'는 그대로 지켜진다).
+        outState.putBoolean("isSelectionMode", isSelectionMode)
     }
 
     private var lastListEmpty = false
@@ -910,9 +866,9 @@ class CharacterListFragment : Fragment() {
     }
 
     override fun onDestroyView() {
-        // 배치 선택은 activity 스코프라 화면 이탈 후에도 남는다 → 회전이 아닌 실제 이탈이면 비워
+        // 선택은 activity 스코프라 화면 이탈 후에도 남는다 → 회전이 아닌 실제 이탈이면 비워
         // 다른(다른 작품) 목록에서 안 보이는 캐릭터가 선택된 채 일괄 작업/삭제되는 것을 막는다.
-        if (isBatchEditMode && activity?.isChangingConfigurations != true) {
+        if (isSelectionMode && activity?.isChangingConfigurations != true) {
             batchViewModel.deselectAll()
         }
         searchJob?.cancel()
@@ -926,7 +882,13 @@ class CharacterListFragment : Fragment() {
     }
 
     companion object {
-        // 일괄편집 ⋮ 오버플로 메뉴 항목 id
+        // 비교 인원 경계. 하한은 비교 화면이 스스로 거는 것과 같다(2명 미만이면 되돌아 나간다).
+        // 상한은 가독성 판정이다 — 비교 표는 열 수가 고정돼 있지 않아 넷도 그려지지만 좁아진다.
+        // 종전 비교 모드가 4번째 선택을 막던 그 값을 그대로 옮겨 왔다(문구 max_compare_limit와 한 벌).
+        private const val MIN_COMPARE = 2
+        private const val MAX_COMPARE = 3
+
+        // 선택 바 ⋮ 오버플로 메뉴 항목 id
         private const val MENU_SELECT_ALL = 1
         private const val MENU_DESELECT_ALL = 2
         private const val MENU_FILTER_SELECT = 3
