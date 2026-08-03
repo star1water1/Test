@@ -6,6 +6,7 @@ import com.novelcharacter.app.ui.stats.DataHealthStats
 import com.novelcharacter.app.ui.stats.PatternInsight
 import com.novelcharacter.app.ui.stats.StatsDataProvider
 import com.novelcharacter.app.ui.stats.StatsSnapshot
+import com.novelcharacter.app.util.CharacterRepresentativeImage
 import com.novelcharacter.app.util.ConsistencyChecker
 
 /**
@@ -32,7 +33,16 @@ data class InsightContext(
     /** 분포·필드값 해석 등 추가 계산이 필요한 provider(편향 드릴다운 등)를 위한 재사용 진입점. */
     val statsProvider: StatsDataProvider,
     /** fieldDefinitionId → 값 목록. 편향 드릴다운이 카드마다 전체 테이블을 스캔하지 않도록 한 번만 그룹화(P1-D). */
-    val valuesByDefId: Map<Long, List<CharacterFieldValue>>
+    val valuesByDefId: Map<Long, List<CharacterFieldValue>>,
+    /**
+     * 캐릭터 그림을 고를 때 쓰는 랜덤 시드(B-103 D3).
+     *
+     * **묶음 하나에 시드 하나다.** provider마다 따로 뽑으면 같은 캐릭터가 카드마다 다른
+     * 그림으로 나온다 — 어시스턴트는 여러 카드가 같은 사람을 가리키는 화면이라 그것이 곧
+     * "같은 사람인지 못 알아보는" 상태가 된다. 어시스턴트는 화면에 들어올 때 다시 계산되므로
+     * 이 한 벌이 곧 "화면 진입 1회"다.
+     */
+    val imageSeed: Long = CharacterRepresentativeImage.newSeed()
 )
 
 /** 카드 정렬용 심각도. 정합성 오류가 항상 최상단에 오도록 배치한다. */

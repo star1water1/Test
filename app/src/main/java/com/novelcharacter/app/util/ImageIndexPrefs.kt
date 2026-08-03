@@ -3,6 +3,17 @@ package com.novelcharacter.app.util
 import android.content.Context
 import android.content.SharedPreferences
 
+/**
+ * 카드에 보일 이미지의 **영속 랜덤 인덱스**.
+ *
+ * > **캐릭터 몫은 2026.08.03에 빠졌다(B-103).** 캐릭터는 이제 `CharacterRepresentativeImage`가
+ * > 시드로 고른다 — 상태를 저장하지 않으므로 쓰기가 0이고, 목록이 줄었을 때 인덱스가 **다른
+ * > 그림을 가리키는** 문제도 없다(`idx % size`가 가려 두고 있던 상태다).
+ * >
+ * > 남은 것은 **작품·세계관**뿐이고, 그쪽은 *재방출마다 재추첨*이라 주기도 다르다.
+ * > 통일할지 지금이 맞는지는 **판정이 필요해 백로그 B-106에 있다** — 이 슬라이스 밖이라
+ * > 손대지 않았다(세션 착수 규칙 2번).
+ */
 object ImageIndexPrefs {
     private const val PREF_NAME = "image_index_prefs"
 

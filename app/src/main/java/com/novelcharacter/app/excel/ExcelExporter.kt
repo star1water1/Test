@@ -1196,6 +1196,15 @@ class ExcelExporter(context: Context) {
             // 이미지경로 (readOnly)
             row.createCell(col++).setTextSafe(character.imagePaths)
 
+            // 대표이미지 (B-103 D8) — 사람이 읽고 고칠 수 있도록 파일명으로 싣는다.
+            // 한 행 안에서 파일명이 겹치면 규약이 알아서 전체 경로로 떨어진다.
+            row.createCell(col++).setTextSafe(
+                com.novelcharacter.app.util.RepresentativeImageCell.toCell(
+                    character.representativeImagePath,
+                    com.novelcharacter.app.util.CharacterRepresentativeImage.paths(character.imagePaths)
+                )
+            )
+
             // 작품
             row.createCell(col++).setTextSafe(novel?.title ?: "")
 

@@ -55,7 +55,17 @@ object HelpDialog {
          * 이 화면은 "있는 줄 몰랐다"는 회신이 나온 자리라(P4·U-5), 도착한 뒤의 설명이
          * 상시 노출 목적문 한 줄로는 모자란다. 초안·승인 근거는 가이드 9-2 H14.
          */
-        FIELD_LIBRARY(R.string.help_field_library_title, R.string.help_field_library_body)
+        FIELD_LIBRARY(R.string.help_field_library_title, R.string.help_field_library_body),
+
+        /**
+         * 대표 이미지(B-103 D7). ☆는 설정 스위치가 아니라 조작이라 R-25 목적문 대상이 아니고,
+         * 대신 "지정하면 무엇이 달라지는가"를 여기서 한 번에 말한다 — 지정·해제·표시 자리·
+         * 삭제 시 처분이 한 질문이라 창을 쪼개면 답이 흩어진다.
+         */
+        REPRESENTATIVE_IMAGE(
+            R.string.help_representative_image_title,
+            R.string.help_representative_image_body
+        )
     }
 
     /** 앱 도움말 표시 — `?` 아이콘의 진입점. */

@@ -670,10 +670,23 @@ class ImageManagerFragment : Fragment() {
 
     private fun confirmDelete(item: ImageManagerViewModel.ManagedImage) {
         val ctx = context ?: return
-        val msg = if (item.owners.isNotEmpty()) {
+        val base = if (item.owners.isNotEmpty()) {
             getString(R.string.image_manager_delete_referenced_confirm, item.owners.size)
         } else {
             getString(R.string.image_manager_delete_orphan_confirm)
+        }
+        // 사전 고지(B-103 D6ⓐ) — 대표를 지우는 것이면 결과를 실행 전에 말하고 취소 경로를 남긴다(R-4).
+        // 여기서 말하지 않으면 대표가 조용히 풀리고 사용자는 다음 화면에서야 알게 된다.
+        val msg = when {
+            item.representativeOf.size == 1 ->
+                base + "\n\n" + getString(
+                    R.string.representative_image_delete_warning_one, item.representativeOf.first()
+                )
+            item.representativeOf.size > 1 ->
+                base + "\n\n" + getString(
+                    R.string.representative_image_delete_warning_many, item.representativeOf.size
+                )
+            else -> base
         }
         MaterialAlertDialogBuilder(ctx)
             .setTitle(R.string.image_manager_delete_title)

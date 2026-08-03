@@ -17,4 +17,13 @@
         android:title="@string/share_pdf_export"
         app:showAsAction="never" />
 
+    <!--
+        대표 이미지 사용법(B-103 D7). 이름을 '도움말'로 두지 않는 것은 이 화면의 도움말
+        전체가 아니라 한 주제이기 때문이다 — 정리 폴더가 쓰는 방식과 같다.
+    -->
+    <item
+        android:id="@+id/action_representative_image_help"
+        android:title="@string/representative_image_help"
+        app:showAsAction="never" />
+
 </menu>

@@ -7,12 +7,23 @@ import com.novelcharacter.app.ui.stats.PatternSeverity
 import com.novelcharacter.app.ui.stats.PatternType
 import com.novelcharacter.app.util.BirthdayHelper
 import com.novelcharacter.app.ui.image.ImageManagerFragment
-import com.novelcharacter.app.util.CharacterImageLoader
+import com.novelcharacter.app.data.model.Character
+import com.novelcharacter.app.util.CharacterRepresentativeImage
 import com.novelcharacter.app.util.FolderRoundtripPrefs
 import com.novelcharacter.app.util.GapEntity
 import com.novelcharacter.app.util.ImageFilterHelper
 import com.novelcharacter.app.util.RequiredFieldGaps
 import com.novelcharacter.app.util.RequiredGap
+
+/**
+ * 어시스턴트 행에 보일 캐릭터 그림 — 대표가 있으면 그 장, 없으면 시드 랜덤 (B-103 D4).
+ *
+ * [seed]는 [InsightContext.imageSeed] 하나를 모든 카드가 함께 쓴다 — 카드마다 따로 뽑으면
+ * 같은 캐릭터가 카드마다 다른 그림으로 나온다.
+ */
+private fun rowImage(character: Character?, seed: Long): String? = character?.let {
+    CharacterRepresentativeImage.path(it.imagePaths, it.representativeImagePath, seed, it.id)
+}
 
 /** 이름 목록 미리보기 — 앞의 [max]개만 콤마로 잇는다. */
 private fun namesPreview(names: List<String>, max: Int = 3): String =
@@ -99,7 +110,7 @@ class ConsistencyProvider : InsightProvider {
                         it.standardYear, it.inputAge, it.inputBirthYear, it.expectedAge
                     ),
                     fixType = AffectedFixType.AGE_LINKAGE,
-                    imagePath = CharacterImageLoader.firstImagePath(charById[it.characterId]?.imagePaths),
+                    imagePath = rowImage(charById[it.characterId], ctx.imageSeed),
                     updatedAt = charById[it.characterId]?.updatedAt
                 )
             }
@@ -131,7 +142,7 @@ class ConsistencyProvider : InsightProvider {
                     characterId = it.characterId,
                     name = it.characterName,
                     subtitle = res.getString(R.string.assistant_affected_death_subtitle, it.birthYear, it.deathYear),
-                    imagePath = CharacterImageLoader.firstImagePath(charById[it.characterId]?.imagePaths),
+                    imagePath = rowImage(charById[it.characterId], ctx.imageSeed),
                     updatedAt = charById[it.characterId]?.updatedAt
                 )
             }
@@ -174,7 +185,7 @@ class HealthProvider : InsightProvider {
             val affected = noNovel.map {
                 AffectedRow(
                     it.id, it.name, fixType = AffectedFixType.ASSIGN_NOVEL,
-                    imagePath = CharacterImageLoader.firstImagePath(it.imagePaths),
+                    imagePath = rowImage(it, ctx.imageSeed),
                     updatedAt = it.updatedAt
                 )
             }
@@ -203,21 +214,21 @@ class HealthProvider : InsightProvider {
             s.characters.filter { it.id !in relCharIds }.sortedBy { it.name },
             { n -> res.getString(R.string.assistant_health_isolated_title, n) },
             { p -> res.getString(R.string.assistant_health_isolated_detail, p) },
-            healthDetailAction
+            healthDetailAction, ctx.imageSeed
         )?.let(out::add)
         characterHealthCard(
             res, "health_unlinked", InsightSeverity.HEALTH_UNLINKED,
             s.characters.filter { it.id !in eventCharIds }.sortedBy { it.name },
             { n -> res.getString(R.string.assistant_health_unlinked_title, n) },
             { p -> res.getString(R.string.assistant_health_unlinked_detail, p) },
-            healthDetailAction
+            healthDetailAction, ctx.imageSeed
         )?.let(out::add)
         characterHealthCard(
             res, "health_no_image", InsightSeverity.HEALTH_NO_IMAGE,
             s.characters.filter { it.imagePaths.isBlank() || it.imagePaths == "[]" }.sortedBy { it.name },
             { n -> res.getString(R.string.assistant_health_no_image_title, n) },
             { p -> res.getString(R.string.assistant_health_no_image_detail, p) },
-            healthDetailAction
+            healthDetailAction, ctx.imageSeed
         )?.let(out::add)
 
         // 캐릭터 특정이 아닌 카드 — 데이터 건강 화면으로만 이동(affected 없음)
@@ -280,14 +291,16 @@ class HealthProvider : InsightProvider {
         res: android.content.Context, id: String, severity: Int,
         chars: List<com.novelcharacter.app.data.model.Character>,
         title: (Int) -> String, detail: (String) -> String,
-        healthDetailAction: InsightAction
+        healthDetailAction: InsightAction,
+        // 시드는 묶음 하나에 하나여야 하므로 호출부(=provide)가 ctx의 것을 넘긴다(B-103 D3).
+        seed: Long
     ): AssistantInsight? {
         if (chars.isEmpty()) return null
         val first = chars.first()
         val affected = chars.map {
             AffectedRow(
                 it.id, it.name,
-                imagePath = CharacterImageLoader.firstImagePath(it.imagePaths),
+                imagePath = rowImage(it, seed),
                 updatedAt = it.updatedAt
             )
         }
@@ -339,7 +352,7 @@ class RequiredFieldsProvider : InsightProvider {
                 AffectedRow(
                     gap.entityId, gap.entityName,
                     subtitle = namesPreview(gap.missingFieldNames),
-                    imagePath = ch?.let { CharacterImageLoader.firstImagePath(it.imagePaths) },
+                    imagePath = rowImage(ch, ctx.imageSeed),
                     updatedAt = ch?.updatedAt
                 )
             }
@@ -543,7 +556,7 @@ class NudgeProvider : InsightProvider {
                 val c = charById[u.characterId] ?: return@mapNotNull null
                 AffectedRow(
                     c.id, c.name, subtitle = whenText(res, u.daysUntil),
-                    imagePath = CharacterImageLoader.firstImagePath(c.imagePaths),
+                    imagePath = rowImage(c, ctx.imageSeed),
                     updatedAt = c.updatedAt
                 )
             }
@@ -585,7 +598,7 @@ class NudgeProvider : InsightProvider {
             val affected = stale.map {
                 AffectedRow(
                     it.id, it.name,
-                    imagePath = CharacterImageLoader.firstImagePath(it.imagePaths),
+                    imagePath = rowImage(it, ctx.imageSeed),
                     updatedAt = it.updatedAt
                 )
             }

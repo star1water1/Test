@@ -398,7 +398,7 @@ object OrganizeFolderService {
                     if (target != null) {
                         db.characterDao().getCharacterById(target)?.let { c ->
                             val paths = parsePaths(gson, c.imagePaths) + path
-                            db.characterDao().update(c.copy(imagePaths = gson.toJson(paths)))
+                            db.characterDao().update(c.withImagePaths(gson.toJson(paths)))
                         }
                     }
                 }
@@ -419,7 +419,7 @@ object OrganizeFolderService {
                     for (id in action.fromCharacterIds) {
                         db.characterDao().getCharacterById(id)?.let { c ->
                             db.characterDao().update(
-                                c.copy(imagePaths = removePath(gson, c.imagePaths, action.path))
+                                c.withImagePaths(removePath(gson, c.imagePaths, action.path))
                             )
                         }
                     }
@@ -427,7 +427,7 @@ object OrganizeFolderService {
                         val current = parsePaths(gson, c.imagePaths)
                         if (current.none { canonical(it) == action.path }) {
                             db.characterDao().update(
-                                c.copy(imagePaths = gson.toJson(current + storedPath))
+                                c.withImagePaths(gson.toJson(current + storedPath))
                             )
                         }
                     }
@@ -464,7 +464,7 @@ object OrganizeFolderService {
                     for (id in action.fromCharacterIds) {
                         db.characterDao().getCharacterById(id)?.let { c ->
                             db.characterDao().update(
-                                c.copy(imagePaths = removePath(gson, c.imagePaths, action.path))
+                                c.withImagePaths(removePath(gson, c.imagePaths, action.path))
                             )
                         }
                     }
