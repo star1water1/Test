@@ -343,6 +343,8 @@ object AiFieldSuggestSheet {
             )
         }
         addAll(CharacterFieldAiSuggester.missingLines(outcome.missing))
+        // B-79 — '목록 밖' 표식이 무엇을 뜻하는지는 표식 옆이 아니라 여기서 말한다
+        CharacterFieldAiSuggester.outsideLibraryLine(outcome.suggestions)?.let { add(it) }
         if (outcome.unknownKeys.isNotEmpty()) {
             add(fragment.getString(R.string.ai_field_unknown_keys, outcome.unknownKeys.size))
         }
@@ -379,6 +381,9 @@ object AiFieldSuggestSheet {
                 append(spec.name).append(": ").append(suggestion.value)
             }
             suggestion.confidence?.let { append("  [").append(it.label).append(']') }
+            if (suggestion.outsideLibrary) {
+                append("  [").append(fragment.getString(R.string.ai_field_outside_library)).append(']')
+            }
             if (suggestion.reason.isNotBlank()) {
                 append("\n\n").append(fragment.getString(R.string.ai_field_reason_format, suggestion.reason))
             }
@@ -576,6 +581,10 @@ object AiFieldSuggestSheet {
         val markStart = sb.length
         s.confidence?.let { sb.append("  [").append(it.label).append(']') }
         if (s.editedByUser) sb.append("  [").append(fragment.getString(R.string.ai_field_edited)).append(']')
+        // B-79 — 목록 밖 값은 버리지 않고 표시한다. 채택 판단의 재료이므로 강도와 같은 자리다.
+        if (s.outsideLibrary) {
+            sb.append("  [").append(fragment.getString(R.string.ai_field_outside_library)).append(']')
+        }
         if (sb.length > markStart) {
             sb.setSpan(RelativeSizeSpan(0.9f), markStart, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             sb.setSpan(ForegroundColorSpan(dim), markStart, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
@@ -703,10 +712,13 @@ object AiFieldSuggestSheet {
                 // 그 실패를 지금, 고칠 수 있는 자리에서 알린다 (변수 제어).
                 when (val checked = CharacterFieldAiSuggester.normalizeChecked(typed, row.spec)) {
                     is CharacterFieldAiSuggester.Normalized.Ok -> {
+                        // 목록 밖이어도 막지 않는다 (B-79) — 여기서 튕기면 사용자가 손으로 적은
+                        // 값을 폼에서는 받고 이 창에서만 거절하는, 같은 비대칭의 축소판이 된다.
                         row.suggestion = row.suggestion.copy(
                             value = checked.value,
                             reason = fragment.getString(R.string.ai_field_edited_reason),
-                            editedByUser = true
+                            editedByUser = true,
+                            outsideLibrary = checked.outsideLibrary
                         )
                         dialog.dismiss()
                         onEdited(row)
