@@ -903,21 +903,48 @@ object OrganizeFolderService {
         }.getOrNull()
         if (movedUri != null) return true
 
-        // 폴백: 복사 후 삭제. 복사가 확실히 끝난 뒤에만 원본을 지운다.
-        val copied = runCatching {
-            val created = DocumentsContract.createDocument(
-                resolver, targetParentUri, mimeOf(file.name), file.name
-            ) ?: return@runCatching false
+        // 폴백: **복사 → 크기 검증 → 그다음에만 원본 삭제** (B-78).
+        //
+        // 검증 없이 지우면 사용자 폴더의 파일이 깨진 사본만 남기고 사라진다 — R-4가 금지한
+        // 파괴적 조작이다. 그리고 **어느 단계에서 실패하든 사본을 지운다**: 같은 토큰이 두 위치에
+        // 남으면 다음 스캔이 "같은 토큰 두 위치 → 반영 보류"를 **앱 스스로 유발**한다.
+        // 두 위치에 남는 갈래를 만들지 않는 것이 처방이므로 `_처리됨/` 스캔 제외와의
+        // 상호작용을 따로 정의할 필요가 없다(B-78 판정).
+        val created = runCatching {
+            DocumentsContract.createDocument(resolver, targetParentUri, mimeOf(file.name), file.name)
+        }.getOrNull() ?: return false
+        fun discardCopy() {
+            runCatching { DocumentsContract.deleteDocument(resolver, created) }
+        }
+
+        val copiedBytes = runCatching {
             resolver.openInputStream(sourceUri)?.use { input ->
-                resolver.openOutputStream(created)?.use { output ->
-                    input.copyTo(output)
-                    true
-                } ?: false
-            } ?: false
+                resolver.openOutputStream(created)?.use { output -> input.copyTo(output) }
+            }
+        }.getOrNull()
+        if (copiedBytes == null) { discardCopy(); return false }
+
+        // 나열이 크기를 못 읽으면 0으로 들어온다(`COLUMN_SIZE`가 null인 provider) — 그때는
+        // 이 대조를 건너뛴다. 걸어 버리면 그런 기기에서 이동이 **전부** 실패한다.
+        if (file.size > 0L && copiedBytes != file.size) { discardCopy(); return false }
+        // 스트림이 센 바이트와 목적지에 실제로 쓰인 길이는 다를 수 있다(provider 버퍼링·중단).
+        // 목적지 크기를 못 읽으면(null) 확인할 방법이 없으므로 통과시킨다 — 위 대조가 남는다.
+        val destSize = documentSize(resolver, created)
+        if (destSize != null && destSize != copiedBytes) { discardCopy(); return false }
+
+        val deleted = runCatching {
+            DocumentsContract.deleteDocument(resolver, sourceUri)
         }.getOrDefault(false)
-        if (!copied) return false
-        return runCatching { DocumentsContract.deleteDocument(resolver, sourceUri) }.getOrDefault(false)
+        if (!deleted) { discardCopy(); return false }
+        return true
     }
+
+    /** 목적지 문서의 실제 크기. 읽을 수 없으면 null(= 확인 불가이지 0이 아니다). */
+    private fun documentSize(resolver: android.content.ContentResolver, uri: Uri): Long? =
+        runCatching {
+            resolver.query(uri, arrayOf(DocumentsContract.Document.COLUMN_SIZE), null, null, null)
+                ?.use { c -> if (c.moveToFirst() && !c.isNull(0)) c.getLong(0) else null }
+        }.getOrNull()
 
     private fun mimeOf(name: String): String = when (name.substringAfterLast('.', "").lowercase()) {
         "png" -> "image/png"

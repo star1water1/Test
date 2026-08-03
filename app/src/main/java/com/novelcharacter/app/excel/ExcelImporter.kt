@@ -43,6 +43,16 @@ class ExcelImporter(context: Context) {
     private val importService = ExcelImportService(db, appContext)
     private var pendingImageFailures = 0
 
+    /**
+     * **이번 가져오기가 filesDir에 새로 만든** 이미지 파일들 (B-77).
+     *
+     * `importAll`은 전체가 한 트랜잭션이라 실패하면 DB는 통째로 롤백되는데, 이미지 복사는
+     * 그 **트랜잭션 밖에서 먼저** 일어난다 — 그래서 실패하면 가리킬 행이 없는 파일만 남았다.
+     * 되돌리려면 남의 이미지를 건드리지 않아야 하므로 **새로 만든 것만** 여기 모은다
+     * ([restoreImages]가 이미 존재하는 목적지를 건너뛰므로 이 목록은 정확히 신규분이다).
+     */
+    private var restoredImagePaths: List<String> = emptyList()
+
     private var importLauncher: androidx.activity.result.ActivityResultLauncher<Array<String>>? = null
     private var currentActivityRef: java.lang.ref.WeakReference<Activity>? = null
 
@@ -679,6 +689,7 @@ class ExcelImporter(context: Context) {
             try {
                 // 이미지 복원: extractDir에서 filesDir로 복사
                 pendingImageFailures = 0
+                restoredImagePaths = emptyList()
                 if (options.images && hasImages) {
                     // 총량은 재매핑 크기다 — restoreImages가 도는 대상이 정확히 그 집합이고
                     // (재매핑에 없는 원본은 건너뛴다), 실행과 같은 값을 쓰므로 갈리지 않는다.
@@ -687,9 +698,12 @@ class ExcelImporter(context: Context) {
                         total = imagePathRemap.size,
                         stageRes = com.novelcharacter.app.R.string.import_progress_stage_images
                     )
-                    pendingImageFailures = restoreImages(imageMapJson, extractDir, imagePathRemap) { done, total ->
+                    val restored = restoreImages(imageMapJson, extractDir, imagePathRemap) { done, total ->
                         postProgress(stageProgress, done, total, imagesStage)
                     }
+                    pendingImageFailures = restored.failedCount
+                    // 가져오기가 실패하면 이 목록만 지운다(B-77) — DB는 한 트랜잭션이라 스스로 롤백된다.
+                    restoredImagePaths = restored.createdPaths
                     // 복원은 원 파일이 없을 때 새 UUID로 자리를 잡는다 = 정리 폴더 토큰이 끊긴다.
                     // 별칭을 남겨 다른 기기에서 내보낸 사본도 같은 이미지로 이어지게 한다(C-1).
                     runCatching {
@@ -761,17 +775,18 @@ class ExcelImporter(context: Context) {
     private fun restoreImages(
         imageMapJson: String?, extractDir: File, imagePathRemap: Map<String, String>,
         onProgress: ((Int, Int) -> Unit)? = null
-    ): Int {
-        if (imageMapJson == null) return 0
+    ): RestoreImagesOutcome {
+        if (imageMapJson == null) return RestoreImagesOutcome()
         val gson = com.google.gson.Gson()
         val type = object : com.google.gson.reflect.TypeToken<Map<String, String>>() {}.type
         val originalMap: Map<String, String> = try {
             gson.fromJson(imageMapJson, type)
-        } catch (_: Exception) { return 0 }
+        } catch (_: Exception) { return RestoreImagesOutcome() }
 
         val total = imagePathRemap.size
         var processed = 0
         var failedCount = 0
+        val created = mutableListOf<String>()
         for ((originalPath, zipRelPath) in originalMap) {
             val newPath = imagePathRemap[originalPath] ?: continue
             processed++
@@ -779,12 +794,47 @@ class ExcelImporter(context: Context) {
             val extractedFile = File(extractDir, zipRelPath)
             if (!extractedFile.exists()) { failedCount++; continue }
             val destFile = File(newPath)
+            // 이미 있는 목적지는 건드리지 않는다 — 그래서 아래 copyTo에 닿는 것은
+            // **전부 이번에 새로 만드는 파일**이고, 되돌릴 때 남의 이미지를 지울 일이 없다(B-77).
             if (destFile.exists()) continue
             try {
                 extractedFile.copyTo(destFile)
+                created.add(newPath)
             } catch (_: Exception) { failedCount++ }
         }
-        return failedCount
+        return RestoreImagesOutcome(failedCount, created)
+    }
+
+    /**
+     * [restoreImages]의 결과.
+     *
+     * @param createdPaths **이번에 새로 만든** 파일만. 이미 있던 목적지는 들어오지 않으므로
+     *   실패 되돌리기가 기존 이미지를 건드리지 않는다(B-77 처방 ②).
+     */
+    private data class RestoreImagesOutcome(
+        val failedCount: Int = 0,
+        val createdPaths: List<String> = emptyList()
+    )
+
+    /**
+     * 가져오기가 실패했을 때 **이번에 만든 이미지 파일만** 지운다 (B-77 처방 ②).
+     *
+     * `importAll`은 전체가 한 트랜잭션이라 DB는 스스로 롤백된다 — 트랜잭션 밖에서 먼저 복사된
+     * 이 파일들만 남으므로 여기서 짝을 맞춘다. 파일 삭제가 실패해도 조용히 넘긴다:
+     * 이미 실패를 알리는 중이고, 남은 파일은 다음 가져오기가 같은 경로로 덮어쓴다.
+     *
+     * 이름 별칭(`FolderRoundtripPrefs.recordRenames`)은 되돌리지 않는다 — 다시 시도하면
+     * 같은 상태에서 같은 재매핑이 나와 그 별칭이 그대로 유효하다.
+     */
+    private fun rollbackRestoredImages() {
+        val paths = restoredImagePaths
+        restoredImagePaths = emptyList()
+        if (paths.isEmpty()) return
+        var deleted = 0
+        for (p in paths) {
+            if (runCatching { File(p).delete() }.getOrDefault(false)) deleted++
+        }
+        Log.i("ExcelImporter", "import failed — rolled back $deleted/${paths.size} restored images")
     }
 
     // ── XLSX에서 가져오기 ──
@@ -854,6 +904,11 @@ class ExcelImporter(context: Context) {
         var opened: OpenedImportSource? = null
         // 분석 구간의 창 — 앞 구간에서 이어받은 것이 있으면 그것을 그대로 쓴다.
         var stageProgress: TaskProgressDialog.Handle? = progress
+        // 실패 고지가 "어디서 멈췄는가"를 말하려면 마지막 진행 지점이 catch에서도 보여야 한다(B-77 처방 ③).
+        // **진행 보고는 각 단계가 '끝났을 때' 오므로 이것은 마지막으로 '끝낸' 단계다** —
+        // 실패한 단계는 그다음이다. 문구도 그렇게 말한다(모르는 것을 아는 척하지 않는다).
+        var lastDonePhase = ""
+        var lastDoneRows = 0
 
         try {
             org.apache.poi.openxml4j.util.ZipSecureFile.setMinInflateRatio(0.01)
@@ -921,7 +976,10 @@ class ExcelImporter(context: Context) {
             )
             val applyWindow = stageProgress
 
+            // 진행 콜백이 이미 시트 이름과 행 수를 나르므로 따로 세지 않는다 — 따로 세면 갈린다.
             val result = importService.importAll(workbook, effectiveOptions, strategy, resolvedConflicts) { p ->
+                lastDonePhase = p.currentPhase
+                lastDoneRows = p.processedRows
                 postProgress(
                     applyWindow, p.processedRows, p.totalRows,
                     appContext.getString(
@@ -935,6 +993,8 @@ class ExcelImporter(context: Context) {
                 result.warnings.add("${pendingImageFailures}개 이미지 복원 실패")
                 pendingImageFailures = 0
             }
+            // 여기까지 왔으면 트랜잭션이 커밋됐다 — 되살린 이미지는 이제 가리킬 행이 있다.
+            restoredImagePaths = emptyList()
 
             val message = buildResultMessage(result)
             withContext(Dispatchers.Main) {
@@ -943,9 +1003,10 @@ class ExcelImporter(context: Context) {
             }
         } catch (e: Exception) {
             android.util.Log.e("ExcelImporter", "Import failed", e)
+            rollbackRestoredImages()
             withContext(Dispatchers.Main) {
                 stageProgress?.dismiss()
-                Toast.makeText(appContext, com.novelcharacter.app.R.string.import_failed_retry, Toast.LENGTH_LONG).show()
+                showImportFailedDialog(lastDonePhase, lastDoneRows)
             }
         } catch (oom: OutOfMemoryError) {
             // 여는 단계는 openImportSource가 스트리밍으로 물러서므로, 여기 오는 것은 그 뒤(분석·반영)의
@@ -954,6 +1015,8 @@ class ExcelImporter(context: Context) {
             try { opened?.close() } catch (_: Exception) {}
             opened = null
             android.util.Log.e("ExcelImporter", "Import out of memory", oom)
+            // OOM도 트랜잭션은 롤백된다 — 트랜잭션 밖에서 만든 이미지 파일만 남으므로 함께 지운다(B-77).
+            rollbackRestoredImages()
             withContext(Dispatchers.Main) {
                 stageProgress?.dismiss()
                 Toast.makeText(appContext, com.novelcharacter.app.R.string.import_oom, Toast.LENGTH_LONG).show()
@@ -1536,6 +1599,37 @@ class ExcelImporter(context: Context) {
         }
         builder.setPositiveButton(appContext.getString(com.novelcharacter.app.R.string.confirm), null)
         builder.show()
+    }
+
+    /**
+     * 가져오기가 도중에 죽었을 때의 고지 (B-77 처방 ③).
+     *
+     * **토스트가 아니라 창인 이유:** 여기서 말할 것이 둘인데(전부 아니면 전무라는 사실 + 고칠 자리)
+     * 사라지는 문구로는 "어느 시트 몇 행에서 멈췄는가"가 남지 않는다.
+     *
+     * 반영분이 없다고 단언할 수 있는 근거는 [ExcelImportService]가 가져오기 **전체를 한
+     * 트랜잭션으로** 감싸기 때문이다 — 도중에 죽으면 DB는 통째로 롤백된다.
+     * 트랜잭션 밖에서 만든 이미지 파일은 [rollbackRestoredImages]가 이미 지웠다.
+     */
+    private fun showImportFailedDialog(lastDonePhase: String, lastDoneRows: Int) {
+        // [lastDonePhase]는 마지막으로 **끝낸** 단계다(진행 보고가 단계 종료 시점에 온다).
+        // 누적 행 수도 파일 전체 기준이라 "그 시트의 몇 번째 행"이 아니다 — 문구가 그대로 말한다.
+        val where = if (lastDonePhase.isBlank()) {
+            appContext.getString(com.novelcharacter.app.R.string.import_failed_where_unknown)
+        } else {
+            appContext.getString(com.novelcharacter.app.R.string.import_failed_where, lastDonePhase, lastDoneRows)
+        }
+        val body = appContext.getString(com.novelcharacter.app.R.string.import_failed_nothing_applied, where)
+        val act = currentActivityRef?.get()
+        if (act == null || act.isFinishing || act.isDestroyed) {
+            Toast.makeText(appContext, body, Toast.LENGTH_LONG).show()
+            return
+        }
+        MaterialAlertDialogBuilder(act)
+            .setTitle(appContext.getString(com.novelcharacter.app.R.string.import_failed_title))
+            .setMessage(body)
+            .setPositiveButton(appContext.getString(com.novelcharacter.app.R.string.confirm), null)
+            .show()
     }
 
     private fun showErrorDetailDialog(act: android.app.Activity, result: ImportResult) {
