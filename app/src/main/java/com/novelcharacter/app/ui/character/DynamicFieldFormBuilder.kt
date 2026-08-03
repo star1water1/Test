@@ -24,6 +24,7 @@ import com.novelcharacter.app.data.model.RequiredEnforcement
 import com.novelcharacter.app.data.model.RequiredFieldMark
 import com.novelcharacter.app.data.model.SemanticRole
 import com.novelcharacter.app.data.model.StructuredInputConfig
+import com.novelcharacter.app.util.RequiredFieldGaps
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -966,13 +967,20 @@ class DynamicFieldFormBuilder(
     private fun parseGradeOptions(configJson: String): List<String> =
         com.novelcharacter.app.util.FieldOptionParser.parseGradeOptions(configJson)
 
-    /** 비어 있는 필수 필드 전부 — 강도는 여기서 보지 않는다 (B-90). */
+    /**
+     * 비어 있는 필수 필드 전부 — 강도는 여기서 보지 않는다 (B-90).
+     *
+     * **어느 필드를 세는가는 [RequiredFieldGaps.countsAsSlot]과 같은 규칙이다**(B-99 —
+     * 어시스턴트 카드가 같은 것을 센다). 여기서만 규칙을 바꾸면 *카드가 말한 칸 수와
+     * 열어서 보는 칸 수가 갈린다* — 그때는 카드가 없느니만 못하다. 둘을 함께 고칠 것.
+     *
+     * 판정 자체는 이 함수가 **위젯**을 보고(폼은 아직 저장되지 않은 입력까지 안다),
+     * 카드 쪽은 **저장된 값**을 본다. 규칙은 같고 보는 대상이 다르다.
+     */
     private fun emptyRequiredFields(): List<FieldDefinition> {
         val empty = mutableListOf<FieldDefinition>()
         for (field in fieldDefinitions) {
-            if (!field.isRequired) continue
-            val fieldType = FieldType.fromName(field.type)
-            if (fieldType == FieldType.CALCULATED) continue
+            if (!RequiredFieldGaps.countsAsSlot(field)) continue
             val widget = fieldInputMap[field.id] ?: continue
             val isEmpty = when (widget) {
                 is MaterialAutoCompleteTextView -> widget.text.isNullOrBlank()
