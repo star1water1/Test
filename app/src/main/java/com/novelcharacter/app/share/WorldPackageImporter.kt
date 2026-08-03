@@ -9,6 +9,7 @@ import com.novelcharacter.app.data.model.GradeSystemRef
 import com.novelcharacter.app.data.model.Universe
 import com.novelcharacter.app.util.OpResult
 import com.novelcharacter.app.util.copyWithLimit
+import com.novelcharacter.app.util.withImagePaths
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
@@ -27,6 +28,12 @@ import java.util.zip.ZipFile
  *   유실이다(R-9와 같은 취지). 트랜잭션 실패 시 미리 복사한 이미지 파일도 되돌린다.
  * - **UI 비의존.** 다이얼로그(충돌 3분기 등)는 호출부(ExcelImporter)가 담당한다.
  */
+/**
+ * 복원된 이미지 목록과 **옛 경로 → 새 경로** 대응.
+ * 대표 이미지 포인터(B-103)가 재매핑을 따라가려면 후자가 필요하다.
+ */
+private data class RestoredPaths(val json: String, val renames: Map<String, String>)
+
 class WorldPackageImporter(context: Context) {
 
     private val appContext: Context = context.applicationContext
@@ -223,12 +230,16 @@ class WorldPackageImporter(context: Context) {
         var missingImages = 0
         var strippedImagePaths = 0
 
-        fun restoreImagePaths(imagePathsJson: String?, entryPrefix: String): String {
-            if (imagePathsJson.isNullOrBlank() || imagePathsJson == "[]") return "[]"
+        // 새 경로 목록과 함께 **옛 경로 → 새 경로**를 돌려준다. 대표 이미지(B-103)가 그것을
+        // 따라가야 하기 때문이다 — 패키지 안의 대표 경로는 내보낸 기기의 것이라, 재매핑을
+        // 반영하지 않으면 받아온 쪽에서 100% 어긋난다(D5의 "경로가 바뀐다" 갈래).
+        fun restoreImagePaths(imagePathsJson: String?, entryPrefix: String): RestoredPaths {
+            if (imagePathsJson.isNullOrBlank() || imagePathsJson == "[]") return RestoredPaths("[]", emptyMap())
             val paths: List<String?> = try {
                 gson.fromJson(imagePathsJson, Array<String>::class.java)?.toList() ?: emptyList()
             } catch (_: Exception) { emptyList() }
             val result = mutableListOf<String>()
+            val renames = mutableMapOf<String, String>()
             paths.forEachIndexed { index, original ->
                 if (original == null) return@forEachIndexed
                 val entryFile = File(extractDir, "${WorldPackageEntries.IMAGES_PREFIX}$entryPrefix$index.jpg")
@@ -245,6 +256,7 @@ class WorldPackageImporter(context: Context) {
                             entryFile.copyTo(dest)
                             copiedFiles.add(dest)
                             result.add(dest.absolutePath)
+                            renames[original] = dest.absolutePath
                             restoredImages++
                         } catch (e: Exception) {
                             Log.w(TAG, "Image restore failed for $entryPrefix$index", e)
@@ -258,12 +270,12 @@ class WorldPackageImporter(context: Context) {
                     else -> strippedImagePaths++
                 }
             }
-            return gson.toJson(result)
+            return RestoredPaths(gson.toJson(result), renames)
         }
 
         val oldUniverse = contents.universe
-        val universeImagePaths = restoreImagePaths(oldUniverse.imagePaths, "universe_")
-        val novelImagePaths = contents.novels.associate { it.id to restoreImagePaths(it.imagePaths, "novel_${it.id}_") }
+        val universeImagePaths = restoreImagePaths(oldUniverse.imagePaths, "universe_").json
+        val novelImagePaths = contents.novels.associate { it.id to restoreImagePaths(it.imagePaths, "novel_${it.id}_").json }
         val charImagePaths = contents.characters.associate { it.id to restoreImagePaths(it.imagePaths, "${it.id}_") }
 
         var importedUniverseId = 0L
@@ -354,13 +366,17 @@ class WorldPackageImporter(context: Context) {
                     val mappedNovel = character.novelId?.let { old ->
                         novelIdMap[old].also { if (it == null) danglingRefs++ }
                     }
+                    val restored = charImagePaths[character.id]
                     charIdMap[character.id] = db.characterDao().insert(
                         character.copy(
                             id = 0,
                             novelId = mappedNovel,
                             code = charReg.claim(character.code),
-                            imagePaths = charImagePaths[character.id] ?: "[]"
-                        )
+                            // v47 이전 패키지에는 이 키가 없어 Gson이 null을 주입한다(R-2).
+                            // **명시로 넘겨야 한다** — 넘기지 않으면 기본값으로 채워지면서
+                            // Kotlin이 거는 copy 인자 null 검사에 그대로 걸려 죽는다.
+                            representativeImagePath = character.representativeImagePath.orEmpty()
+                        ).withImagePaths(restored?.json ?: "[]", restored?.renames ?: emptyMap())
                     )
                 }
 

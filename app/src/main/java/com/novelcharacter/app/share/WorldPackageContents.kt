@@ -247,6 +247,15 @@ object WorldPackageParser {
                     allPresent(it.title, it.description, it.borderColor, it.imagePaths, it.imageMode)
                 },
                 characters = scrub(e.CHARACTERS, characters) {
+                    // representativeImagePath(v47 — B-103)는 **여기서 다루지 않는다.** 이유가 둘이다:
+                    //  ① `allPresent`는 행을 **버리는** 검사인데, 이 칸의 null은 파손이 아니라
+                    //     "v47 이전에 내보낸 패키지"라는 뜻이다 — 넣으면 옛 패키지의 캐릭터가 전부 사라진다.
+                    //  ② 여기서 `copy()`로 기본값을 접을 수도 없다. Kotlin의 `copy`는 **넘기지 않아
+                    //     기본값으로 채워지는 인자에도** null 검사를 걸어서, `code`가 null인 행
+                    //     (이 파서가 일부러 살려 두고 임포터가 재발급하는 정상 사례)에서 죽는다.
+                    //     실제로 `WorldPackageParserTest`가 그 계약을 지키고 있고, 이 자리에서
+                    //     copy를 부르자 그 테스트가 곧바로 깨졌다.
+                    // → 접는 것은 **쓰는 쪽**의 몫이다(`WorldPackageImporter`가 삽입 직전에 한다).
                     allPresent(it.name, it.firstName, it.lastName, it.anotherName, it.imagePaths, it.memo)
                 },
                 fieldValues = scrub(e.FIELD_VALUES, fieldValues) { allPresent(it.value) },

@@ -42,8 +42,12 @@ def db_version_at_least(src, minimum):
 
 def extract_migration_sql(src):
     """MIGRATION_45_46 블록의 execSQL 인자를 순서대로 뽑는다 (SQL을 복사하지 않기 위해)."""
-    start = src.index("MIGRATION_45_46")
-    end = src.index("fun getDatabase(", start)
+    start = src.index("private val MIGRATION_45_46 = object : Migration(")
+    # 경계는 **다음 마이그레이션 블록**이다. `fun getDatabase(`로 잡으면 뒤에 새 마이그레이션이
+    # 들어오는 순간 그것까지 함께 추출되어, 이 하네스가 만들지도 않은 표에 대고 SQL을 돌리다
+    # 죽는다(2026.08.03 MIGRATION_46_47 추가 때 실제로 그렇게 됐다). 42~44판은 이미 이 형태다.
+    nxt = src.find("private val MIGRATION", start + 10)
+    end = nxt if nxt != -1 else src.index("fun getDatabase(", start)
     block = src[start:end]
     triple = re.findall(r'execSQL\(\s*"""(.*?)"""\s*\)', block, re.S)
     single = re.findall(r'execSQL\(\s*"([^"\n]+)"\s*\)', block)

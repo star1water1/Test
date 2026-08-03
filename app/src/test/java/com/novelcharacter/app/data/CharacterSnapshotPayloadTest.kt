@@ -129,6 +129,58 @@ class CharacterSnapshotPayloadTest {
     }
 
     @Test
+    fun `구버전 payload는 representativeImagePath가 null이다 — 복원이 기본값으로 접어야 한다`() {
+        // v47(B-103) 이전에 지운 캐릭터에는 이 키가 없다. 선언은 non-null이므로
+        // 읽는 쪽이 접지 않으면 **그때 휴지통에 있던 항목 전량이 복원 불가**가 된다.
+        val snap = gson.fromJson(legacyPayload, CharacterSnapshot::class.java)
+        @Suppress("SENSELESS_COMPARISON")
+        assertNull("v47 이전 payload에는 이 키가 없다", snap.character.representativeImagePath as String?)
+        assertEquals("", snap.character.representativeImagePath.orEmpty())
+    }
+
+    /** v47 직전 형식 — 그때 있던 칸은 **전부** 들어 있고 representativeImagePath만 없다. */
+    private val v46Payload = """
+        {
+          "character": {"id": 5, "name": "가온", "firstName": "", "lastName": "",
+                        "anotherName": "", "novelId": 3, "imagePaths": "[]",
+                        "createdAt": 1, "updatedAt": 2, "memo": "", "code": "CHR-1",
+                        "displayOrder": 0, "isPinned": false},
+          "fieldValues": [], "stateChanges": [], "tags": [],
+          "relationships": [], "relationshipChanges": [],
+          "factionMemberships": [], "eventIds": []
+        }
+    """.trimIndent()
+
+    @Test
+    fun `v47 이전 payload를 copy할 때는 새 칸을 명시로 넘겨야 한다`() {
+        // Kotlin의 `copy`는 **넘기지 않아 기본값으로 채워지는 인자에도** null 검사를 건다.
+        // 그래서 새 non-null 칸을 더하면 **그 이전 payload를 그냥 copy하는 모든 자리가**
+        // 조용히 NPE 지뢰가 된다. 실제로 이 슬라이스에서 `WorldPackageContents`가 그렇게
+        // 깨졌고(파서 테스트가 잡았다), 휴지통 복원도 같은 모양이라 함께 고쳤다.
+        // 칸을 더할 때마다 되풀이되는 함정이라 계약으로 고정해 둔다.
+        val character = gson.fromJson(v46Payload, CharacterSnapshot::class.java).character
+        @Suppress("SENSELESS_COMPARISON")
+        assertNull("v47 이전 payload에는 이 키가 없다", character.representativeImagePath as String?)
+
+        var threw = false
+        try {
+            character.copy(novelId = 7L)
+        } catch (_: NullPointerException) {
+            threw = true
+        }
+        assertTrue("새 칸을 명시하지 않은 copy는 NPE로 죽는다 — 이것이 함정의 실물이다", threw)
+
+        // 명시로 넘기면 살아난다. 휴지통 복원·월드패키지 임포터가 하는 일이 이것이다.
+        val ok = character.copy(
+            novelId = 7L,
+            representativeImagePath = character.representativeImagePath.orEmpty()
+        )
+        assertEquals("", ok.representativeImagePath)
+        assertEquals(7L, ok.novelId)
+        assertEquals("가온", ok.name)
+    }
+
+    @Test
     fun `eventIds 타입은 유지된다 — 코드는 refs로 병기한다`() {
         // 기존 필드의 타입을 바꾸면 구버전 payload의 역직렬화가 깨지므로,
         // List<Long>은 그대로 두고 코드를 refs.events에 병기하는 형태를 고정한다.

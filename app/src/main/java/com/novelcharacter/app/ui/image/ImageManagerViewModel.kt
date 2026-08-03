@@ -18,6 +18,7 @@ import com.novelcharacter.app.util.ImageImportHelper
 import com.novelcharacter.app.util.ImageLinkResolver
 import com.novelcharacter.app.util.ImageSettingsStore
 import com.novelcharacter.app.util.StorageAnalyzer
+import com.novelcharacter.app.util.withImagePaths
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -358,7 +359,7 @@ class ImageManagerViewModel(
             for (owner in item.owners) {
                 when (owner.type) {
                     OwnerType.CHARACTER -> db.characterDao().getCharacterById(owner.id)?.let { c ->
-                        db.characterDao().update(c.copy(imagePaths = removePath(c.imagePaths, item.path, canon)))
+                        db.characterDao().update(c.withImagePaths(removePath(c.imagePaths, item.path, canon)))
                     }
                     OwnerType.NOVEL -> db.novelDao().getNovelById(owner.id)?.let { n ->
                         db.novelDao().update(n.copy(imagePaths = removePath(n.imagePaths, item.path, canon)))
@@ -598,7 +599,10 @@ class ImageManagerViewModel(
                     for (owner in plan.item.owners) {
                         when (owner.type) {
                             OwnerType.CHARACTER -> db.characterDao().getCharacterById(owner.id)?.let { e ->
-                                db.characterDao().update(e.copy(imagePaths = replacePath(e.imagePaths, plan.item.path, oldCanon, finalPath)))
+                                db.characterDao().update(e.withImagePaths(
+                                    replacePath(e.imagePaths, plan.item.path, oldCanon, finalPath),
+                                    mapOf(plan.item.path to finalPath, oldCanon to finalPath)
+                                ))
                             }
                             OwnerType.NOVEL -> db.novelDao().getNovelById(owner.id)?.let { e ->
                                 db.novelDao().update(e.copy(imagePaths = replacePath(e.imagePaths, plan.item.path, oldCanon, finalPath)))
@@ -696,7 +700,10 @@ class ImageManagerViewModel(
                     for (owner in e.owners) {
                         when (owner.type) {
                             OwnerType.CHARACTER -> db.characterDao().getCharacterById(owner.id)?.let { c ->
-                                db.characterDao().update(c.copy(imagePaths = replacePath(c.imagePaths, e.finalPath, finalCanon, e.originalPath)))
+                                db.characterDao().update(c.withImagePaths(
+                                    replacePath(c.imagePaths, e.finalPath, finalCanon, e.originalPath),
+                                    mapOf(e.finalPath to e.originalPath, finalCanon to e.originalPath)
+                                ))
                             }
                             OwnerType.NOVEL -> db.novelDao().getNovelById(owner.id)?.let { n ->
                                 db.novelDao().update(n.copy(imagePaths = replacePath(n.imagePaths, e.finalPath, finalCanon, e.originalPath)))
@@ -911,7 +918,7 @@ class ImageManagerViewModel(
                             OwnerType.CHARACTER -> {
                                 val c = requireNotNull(db.characterDao().getCharacterById(targetId))
                                 val (json, added, skipped) = appendPaths(c.imagePaths, expansion.allPaths, reportAppend)
-                                db.characterDao().update(c.copy(imagePaths = json))
+                                db.characterDao().update(c.withImagePaths(json))
                                 assigned = added; already = skipped
                             }
                             OwnerType.NOVEL -> {
@@ -1015,7 +1022,7 @@ class ImageManagerViewModel(
                             for (owner in targets) {
                                 when (owner.type) {
                                     OwnerType.CHARACTER -> db.characterDao().getCharacterById(owner.id)?.let { c ->
-                                        db.characterDao().update(c.copy(imagePaths = removePath(c.imagePaths, path, canon)))
+                                        db.characterDao().update(c.withImagePaths(removePath(c.imagePaths, path, canon)))
                                     }
                                     OwnerType.NOVEL -> db.novelDao().getNovelById(owner.id)?.let { n ->
                                         db.novelDao().update(n.copy(imagePaths = removePath(n.imagePaths, path, canon)))

@@ -1597,7 +1597,13 @@ class TrashRepository(
             return applyCharacterRevert(plan, session)
         }
         val data = plan.data
-        var character = data.character.copy(novelId = plan.novelId)
+        // representativeImagePath(v47 — B-103)는 그 이전에 만들어진 payload에 키가 없어
+        // 선언이 non-null이어도 Gson이 null을 주입한다(R-2). 휴지통은 파일을 옮기지 않으므로
+        // 경로 재매핑은 필요 없고, 빠진 칸만 기본값으로 접으면 된다.
+        var character = data.character.copy(
+            novelId = plan.novelId,
+            representativeImagePath = data.character.representativeImagePath.orEmpty()
+        )
         // 코드 충돌 시 재발급 (code unique)
         if (db.characterDao().getCharacterByCode(character.code) != null) {
             character = character.copy(code = generateEntityCode())

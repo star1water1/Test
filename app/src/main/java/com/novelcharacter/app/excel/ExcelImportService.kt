@@ -27,6 +27,7 @@ import com.novelcharacter.app.data.repository.CharacterRepository
 import com.novelcharacter.app.data.repository.NovelRepository
 import com.novelcharacter.app.data.repository.UniverseRepository
 import com.novelcharacter.app.util.SemanticFieldSyncHelper
+import com.novelcharacter.app.util.withImagePaths
 import com.novelcharacter.app.util.GradeValueResolver
 import com.novelcharacter.app.util.FactionMembershipMatcher
 import com.novelcharacter.app.util.FactionRelationshipMatcher
@@ -3268,19 +3269,20 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                     if (lastNameFromExcel == "" && existingChar.lastName.isNotBlank()) result.clearedFields++
                     if (anotherNameFromExcel == "" && existingChar.anotherName.isNotBlank()) result.clearedFields++
                     if (memoFromExcel == "" && existingChar.memo.isNotBlank()) result.clearedFields++
+                    // imagePaths는 `withImagePaths`로 넘긴다 — 대표 포인터(B-103)가 재매핑을
+                    // 따라가고, 다른 기기에서 온 목록에 그 파일이 없으면 풀린다(D5).
                     db.characterDao().update(existingChar.copy(
                         name = name,
                         firstName = firstNameFromExcel ?: existingChar.firstName,
                         lastName = lastNameFromExcel ?: existingChar.lastName,
                         anotherName = anotherNameFromExcel ?: existingChar.anotherName,
                         novelId = if (novelColumnsPresent) novelId else existingChar.novelId,
-                        imagePaths = imagePathsFromExcel ?: existingChar.imagePaths,
                         memo = memoFromExcel ?: existingChar.memo,
                         updatedAt = System.currentTimeMillis(),
                         displayOrder = displayOrder ?: existingChar.displayOrder,
                         isPinned = pinnedFromExcel ?: existingChar.isPinned,
                         createdAt = if (createdAtColIndex >= 0) createdAt else existingChar.createdAt
-                    ))
+                    ).withImagePaths(imagePathsFromExcel ?: existingChar.imagePaths, imagePathRemap))
                     result.updatedCharacters++
 
                     // 사용자가 이전 세계관 필드값 삭제를 선택한 경우 정리
