@@ -80,6 +80,7 @@ $MAIN/excel/ExcelCellValue.kt
 $MAIN/excel/CharacterFieldValueOverflow.kt
 $MAIN/excel/AllCharactersSheet.kt
 $MAIN/util/ProgressScale.kt
+$MAIN/util/DialogScrollCap.kt
 $MAIN/util/BackupWorkerPolicy.kt
 $MAIN/util/FieldValueTokenizer.kt
 $MAIN/util/StatsFieldPolicy.kt
@@ -209,6 +210,7 @@ $TEST/excel/ExportPlanAndSpaceTest.kt
 $TEST/excel/OverwriteGuardTest.kt
 $TEST/excel/ExcelCellValueTest.kt
 $TEST/util/ProgressScaleTest.kt
+$TEST/util/DialogScrollCapTest.kt
 $TEST/util/BackupWorkerPolicyTest.kt
 $TEST/util/FieldValueTokenizerTest.kt
 $TEST/util/FormulaDisplayTest.kt

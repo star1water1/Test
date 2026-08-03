@@ -6,6 +6,7 @@ import android.widget.ScrollView
 import androidx.appcompat.app.AlertDialog
 import com.google.android.material.textfield.TextInputLayout
 import com.novelcharacter.app.R
+import com.novelcharacter.app.ui.common.CappedScrollView
 
 /**
  * 양성(저장) 버튼을 수동 처리하여 [onValid]가 true를 반환할 때만 다이얼로그를 닫는다.
@@ -69,26 +70,11 @@ private fun EditText.attachErrorClearing(clear: () -> Unit) {
  * `AT_MOST`로 측정하면 그 둘이 한 번에 된다 — **짧으면 내용만큼만 차지하고**(작은 창 유지),
  * 길면 상한에서 멈춘 뒤 **안에서 스크롤**된다. 제목·버튼이 차지할 몫을 남기려고 화면의
  * 일부만 쓴다(`fraction`).
+ *
+ * **구현은 [CappedScrollView] 하나다**(B-98). 종전에는 여기 익명 객체가 있었는데, XML 루트에
+ * 쓸 수 없어 **같은 규칙의 둘째 구현이 생길 참이었다** — 이름 있는 클래스로 옮겨 한 벌로 둔다.
  */
 fun cappedScrollView(
     context: Context,
-    fraction: Float = 0.7f
-): ScrollView {
-    // 이름을 capPx로 둔다 — 뷰 계열에 같은 이름의 멤버가 있으면 캡처한 지역값이 가려진다
-    val capPx = (context.resources.displayMetrics.heightPixels * fraction).toInt()
-    return object : ScrollView(context) {
-        override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-            // 부모가 이미 더 좁게 잡았으면 그쪽을 따른다 — 상한을 무조건 밀어붙이면
-            // 가로 모드나 작은 화면에서 되레 넘친다(고치려던 문제를 다른 자리에서 재현).
-            val limit = if (MeasureSpec.getMode(heightMeasureSpec) == MeasureSpec.UNSPECIFIED) {
-                capPx
-            } else {
-                minOf(capPx, MeasureSpec.getSize(heightMeasureSpec))
-            }
-            super.onMeasure(
-                widthMeasureSpec,
-                MeasureSpec.makeMeasureSpec(limit, MeasureSpec.AT_MOST)
-            )
-        }
-    }
-}
+    fraction: Float = DialogScrollCap.DEFAULT_FRACTION
+): ScrollView = CappedScrollView(context).apply { capFraction = fraction }
