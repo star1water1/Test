@@ -2222,11 +2222,11 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             val universeId = (if (r.universeCode.isNotBlank()) db.universeDao().getUniverseByCode(r.universeCode)?.id else null)
                 ?: (if (r.universeName.isNotBlank()) db.universeDao().getUniverseByName(r.universeName)?.id else null)
             // 매칭도 가져오기와 같다: 코드가 있으나 DB에 없으면 제목+세계관으로 폴백한다.
-            val byTitle = {
-                if (universeId != null) db.novelDao().getNovelByTitleAndUniverse(r.title, universeId)
-                else db.novelDao().getNovelByTitleNoUniverse(r.title)
-            }
-            val existing = (if (r.code.isNotBlank()) db.novelDao().getNovelByCode(r.code) else null) ?: byTitle()
+            // 괄호 필수 — 괄호 없이 쓰면 엘비스가 `else` 가지(null)에만 붙어
+            // 코드 미해석 시 제목 폴백이 죽는다(가져오기 쪽 주석과 같은 함정).
+            val existing = (if (r.code.isNotBlank()) db.novelDao().getNovelByCode(r.code) else null)
+                ?: (if (universeId != null) db.novelDao().getNovelByTitleAndUniverse(r.title, universeId)
+                    else db.novelDao().getNovelByTitleNoUniverse(r.title))
             if (existing == null) { newCount++; continue }
             val merged = mergeNovel(
                 existing, r,
@@ -3555,9 +3555,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         if (sheet == null || sheet.lastRowNum < 1) return CategoryAnalysis("gradeSystems", label, 0, 0, 0, 0, existingTotal)
         val headerRow = sheet.getRow(0) ?: return CategoryAnalysis("gradeSystems", label, 0, 0, 0, 0, existingTotal)
 
-        var newCount = 0; var updateCount = 0; var unchangedCount = 0
+        var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skippedCount = 0
         val groups = collectGradeSystemRows(sheet, headerRow, result = null)
         for (group in groups) {
+            // 유효한 등급 행이 하나도 없으면 가져오기가 무리를 통째로 거부한다 — '신규'가 아니다(B-102 ⓑ).
+            if (com.novelcharacter.app.data.model.GradeSystemRef.gradesFromJson(group.gradesJson()).isEmpty()) {
+                skippedCount++
+                continue
+            }
             val existing = resolveGradeSystem(group)
             if (existing == null) { newCount++; continue }
             // 적용도 가져오기와 **같은 함수**다(규약 R-33) — 이름 충돌 판정까지 같이 본다.
@@ -3567,7 +3572,7 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             if (merged != existing) updateCount++ else unchangedCount++
         }
         reportProgress(onProgress, "등급 체계 분석", sheet.lastRowNum, totalRows)
-        return CategoryAnalysis("gradeSystems", label, groups.size, newCount, updateCount, unchangedCount, existingTotal)
+        return CategoryAnalysis("gradeSystems", label, groups.size, newCount, updateCount, unchangedCount, existingTotal, skippedCount)
     }
 
     /** 시트 한 무리 = 체계 하나. 행은 (라벨, 수치 원문)으로 모으고 검증은 GradeTable이 한다. */
