@@ -87,5 +87,21 @@ enum class AiCreativity(val wire: String, val label: String) {
 
         /** 알 수 없는 표기는 기본값 — 손상 설정으로 동작이 바뀌지 않는다. */
         fun fromWire(raw: String?): AiCreativity = entries.find { it.wire == raw } ?: DEFAULT
+
+        /**
+         * 설정 카드 **밖**(실행 다이얼로그·재요청·서술형 시트의 칩 줄)에서 값을 바꿨을 때
+         * 고지할 단계. null이면 고지하지 않는다 (B-82).
+         *
+         * **값은 하나다**(§6-8)의 뒷면이다 — 그 자리에서 한 번 올리면 이번 요청만이 아니라
+         * **이후 모든 요청의 기본값**이 바뀐다. 그 사실을 말하지 않으면 사용자는 자기가
+         * 언제 무엇을 바꿨는지 모르는 채로 계속 그 단계로 과금된다.
+         * R-23("초기화 사실은 한 줄로 고지한다 — 조용히 바꾸지 않는다")과 같은 부류다.
+         *
+         * [initial]은 그 자리를 **열었을 때**의 값이다. 되돌리면(현재 == 초기) 바뀐 것이
+         * 없으므로 고지도 사라진다 — 이 고지는 *일어난 사건*이 아니라 *지금의 상태*를 말한다.
+         * 사건으로 두면 균형 → 실험 → 균형 뒤에도 "바뀌었다"가 남아 화면이 거짓이 된다.
+         */
+        fun globalChangeNotice(initial: AiCreativity, current: AiCreativity): AiCreativity? =
+            current.takeIf { it != initial }
     }
 }
