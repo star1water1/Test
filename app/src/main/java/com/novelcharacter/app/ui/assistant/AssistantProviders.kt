@@ -9,7 +9,10 @@ import com.novelcharacter.app.util.BirthdayHelper
 import com.novelcharacter.app.ui.image.ImageManagerFragment
 import com.novelcharacter.app.util.CharacterImageLoader
 import com.novelcharacter.app.util.FolderRoundtripPrefs
+import com.novelcharacter.app.util.GapEntity
 import com.novelcharacter.app.util.ImageFilterHelper
+import com.novelcharacter.app.util.RequiredFieldGaps
+import com.novelcharacter.app.util.RequiredGap
 
 /** 이름 목록 미리보기 — 앞의 [max]개만 콤마로 잇는다. */
 private fun namesPreview(names: List<String>, max: Int = 3): String =
@@ -295,6 +298,143 @@ class HealthProvider : InsightProvider {
             alwaysSecondary = listOf(healthDetailAction)
         )
     }
+}
+
+/**
+ * **필수인데 비어 있는 칸** provider — B-90이 설계한 '필수 표식'의 소비처 ② (B-99).
+ *
+ * 소비처 ①(폼 표식 + 저장 시 알림)만 있을 때는 **그 항목을 열어 저장을 눌러 봐야** 빈 칸을
+ * 알 수 있었다 — 원칙 04가 금지한 *"일일이 확인하지 않으면 존재를 알 수 없는 데이터"*다.
+ *
+ * **셋을 다 센다.** 표식이 종류를 가리지 않는 것이 B-90의 요점이므로, 여기서 캐릭터만 세면
+ * 그 요점이 소비처에서 무너진다. 다만 **되돌아가는 길은 종류마다 다르다** — 캐릭터는
+ * `affected` 시트로 한 명씩 열 수 있지만([AffectedRow]가 캐릭터 id를 받는다), 사건·작품은
+ * 그 통로가 없어 목록 화면으로 보낸다. 통로를 넓히는 것은 이 슬라이스의 몫이 아니다.
+ *
+ * 세는 규칙은 [RequiredFieldGaps]가 단일 소스이고 폼과 같다.
+ */
+class RequiredFieldsProvider : InsightProvider {
+    override val category = InsightCategory.HEALTH
+
+    override fun provide(ctx: InsightContext): List<AssistantInsight> {
+        val res = ctx.context
+        val s = ctx.snapshot
+        val out = mutableListOf<AssistantInsight>()
+
+        // ── 캐릭터 — 세계관이 작품을 거쳐 정해진다(작품이 없으면 셀 수 없다) ──
+        val universeIdByNovel = s.novels.associate { it.id to it.universeId }
+        val charGaps = RequiredFieldGaps.compute(
+            definitions = s.fieldDefinitions,
+            entities = s.characters.map {
+                GapEntity(it.id, it.name, it.novelId?.let { n -> universeIdByNovel[n] })
+            },
+            filledDefIdsByEntity = filledDefIds(
+                s.fieldValues, { it.characterId }, { it.fieldDefinitionId }, { it.value }
+            )
+        )
+        if (charGaps.isNotEmpty()) {
+            val charById = s.characters.associateBy { it.id }
+            val affected = charGaps.map { gap ->
+                val ch = charById[gap.entityId]
+                AffectedRow(
+                    gap.entityId, gap.entityName,
+                    subtitle = namesPreview(gap.missingFieldNames),
+                    imagePath = ch?.let { CharacterImageLoader.firstImagePath(it.imagePaths) },
+                    updatedAt = ch?.updatedAt
+                )
+            }
+            out.add(
+                aggregateCard(
+                    res, "required_gaps_character", category, InsightSeverity.HEALTH_REQUIRED_GAPS,
+                    res.getString(R.string.assistant_required_character_title, charGaps.size),
+                    res.getString(
+                        R.string.assistant_required_character_detail,
+                        namesPreview(charGaps.map { it.entityName }),
+                        RequiredFieldGaps.slotCount(charGaps)
+                    ),
+                    affected,
+                    singlePrimary = openCharacter(res, charGaps.first().entityId)
+                )
+            )
+        }
+
+        // ── 사건·작품 — 자기 값으로 세계관이 정해진다. 되돌아가는 길은 목록 화면이다 ──
+        gapCard(
+            res, "required_gaps_event", InsightSeverity.HEALTH_REQUIRED_GAPS,
+            RequiredFieldGaps.compute(
+                definitions = s.eventFieldDefinitions,
+                entities = s.events.map { GapEntity(it.id, it.description, it.universeId) },
+                filledDefIdsByEntity = filledDefIds(
+                    s.eventFieldValues, { it.eventId }, { it.fieldDefinitionId }, { it.value }
+                )
+            ),
+            R.string.assistant_required_event_title,
+            R.string.assistant_required_event_detail,
+            InsightAction.Navigate(
+                destId = R.id.timelineFragment,
+                label = res.getString(R.string.assistant_required_event_action)
+            )
+        )?.let(out::add)
+
+        gapCard(
+            res, "required_gaps_novel", InsightSeverity.HEALTH_REQUIRED_GAPS,
+            RequiredFieldGaps.compute(
+                definitions = s.novelFieldDefinitions,
+                entities = s.novels.map { GapEntity(it.id, it.title, it.universeId) },
+                filledDefIdsByEntity = filledDefIds(
+                    s.novelFieldValues, { it.novelId }, { it.fieldDefinitionId }, { it.value }
+                )
+            ),
+            R.string.assistant_required_novel_title,
+            R.string.assistant_required_novel_detail,
+            InsightAction.Navigate(
+                destId = R.id.novelListFragment,
+                label = res.getString(R.string.assistant_required_novel_action)
+            )
+        )?.let(out::add)
+
+        return out
+    }
+}
+
+/**
+ * 항목 id → **값이 비어 있지 않은** 필드 정의 id 집합.
+ *
+ * 세 값 테이블(캐릭터·사건·작품)이 서로 다른 타입이라 접근자를 받는다 — 같은 것을 세 번
+ * 적으면 한 곳만 고치는 실수가 난다. **빈 문자열 행은 채운 것이 아니므로 여기서 거른다**
+ * (행이 있는 것과 값이 있는 것은 다르다).
+ */
+private fun <T> filledDefIds(
+    values: List<T>,
+    entityIdOf: (T) -> Long,
+    defIdOf: (T) -> Long,
+    valueOf: (T) -> String
+): Map<Long, Set<Long>> =
+    values.asSequence()
+        .filter { valueOf(it).isNotBlank() }
+        .groupBy(entityIdOf) { defIdOf(it) }
+        .mapValues { it.value.toSet() }
+
+/** 사건·작품 카드 — 캐릭터와 달리 `affected` 통로가 없어 목록 화면으로 보낸다. */
+private fun gapCard(
+    res: android.content.Context,
+    id: String,
+    severity: Int,
+    gaps: List<RequiredGap>,
+    titleRes: Int,
+    detailRes: Int,
+    action: InsightAction
+): AssistantInsight? {
+    if (gaps.isEmpty()) return null
+    return AssistantInsight(
+        id = id,
+        category = InsightCategory.HEALTH,
+        severity = severity,
+        title = res.getString(titleRes, gaps.size),
+        detail = res.getString(detailRes, namesPreview(gaps.map { it.entityName }), RequiredFieldGaps.slotCount(gaps)),
+        count = gaps.size,
+        primaryAction = action
+    )
 }
 
 /**

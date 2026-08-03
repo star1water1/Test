@@ -2156,6 +2156,16 @@
     <string name="assistant_health_scattered_detail">%1$s 등 — 링크 묶음이 나뉘면서 혼자 남았습니다. 다시 묶거나 그대로 두어도 됩니다.</string>
     <string name="assistant_health_scattered_action">이미지 탭에서 보기</string>
 
+    <!-- 필수 표식의 소비처 ② (B-99) — 종류를 가리지 않고 센다(그것이 B-90의 요점이다) -->
+    <string name="assistant_required_character_title">필수 칸이 비어 있는 캐릭터 %1$d명</string>
+    <string name="assistant_required_character_detail">%1$s 등 — 필수로 표시한 칸이 모두 %2$d개 비어 있습니다.</string>
+    <string name="assistant_required_event_title">필수 칸이 비어 있는 사건 %1$d개</string>
+    <string name="assistant_required_event_detail">%1$s 등 — 필수로 표시한 칸이 모두 %2$d개 비어 있습니다.</string>
+    <string name="assistant_required_novel_title">필수 칸이 비어 있는 작품 %1$d개</string>
+    <string name="assistant_required_novel_detail">%1$s 등 — 필수로 표시한 칸이 모두 %2$d개 비어 있습니다.</string>
+    <string name="assistant_required_event_action">연표 열기</string>
+    <string name="assistant_required_novel_action">작품 목록 열기</string>
+
     <!-- 편향·패턴 인사이트 -->
     <string name="assistant_bias_action">필드 탐색 열기</string>
     <!-- 편향 카드 규모 설정 -->

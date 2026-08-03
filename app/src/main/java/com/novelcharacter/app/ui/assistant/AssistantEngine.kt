@@ -42,6 +42,11 @@ object InsightSeverity {
     const val NUDGE_BIRTHDAY = 65
     const val BIAS_HIGH = 60
     const val HEALTH_NO_NOVEL = 55
+    /**
+     * 필수인데 비어 있는 칸(B-99). **사용자가 스스로 "채워야 한다"고 표시한 자리**라
+     * 앱이 짐작한 건강 항목(관계 없음·이미지 없음)보다 위에 둔다.
+     */
+    const val HEALTH_REQUIRED_GAPS = 50
     const val BIAS_MEDIUM = 45
     const val HEALTH_ISOLATED = 44
     const val HEALTH_UNLINKED = 40
@@ -98,6 +103,7 @@ class AssistantEngine(
         fun defaultProviders(): List<InsightProvider> = listOf(
             ConsistencyProvider(),
             HealthProvider(),
+            RequiredFieldsProvider(),
             BiasProvider(),
             NudgeProvider(),
             LibraryQualityProvider()
