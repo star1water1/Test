@@ -284,7 +284,7 @@ AI 정책(`FieldAiPolicy`).
 | **미이행 기능 색출** — 로드맵(1~4장)은 **닫혔고 5장의 미검증 후보만 살아 있다** | `docs/superficial_feature_audit_2026-07.md` |
 | **실사용 데이터가 말한 것** | `docs/usage_reality_check_2026-07.md` (+ `_runbook`) |
 | **화면 문구** | `docs/text_style_guide_2026-07.md` |
-| **영역별 설계** | 엑셀 왕복 `excel_roundtrip_audit` · 엑셀 스트리밍 가져오기 `excel_streaming_import` · 이미지 폴더 왕복 `image_folder_roundtrip_design`(결정 근거 `image_external_management`, **확장 `image_folder_tag_ai`**) · AI `ai_integration`·`ai_control_and_ui_density` · 값 라이브러리 `field_value_library` · 필터·정렬 짝 `filter_sort_parity` · **체형(실루엣 재편) `body_visual_redesign`(설계 마무리 — 코드 구현 대기. 이어받는 세션은 `handover_body_reauthor_2026-08`부터)** · **백업·내보내기 동선 `backup_export_redesign`(설계 확정 — 체형 다음 슬라이스)** · **사건 필드 추천 `event_field_recommend_2026-08`(v1.1 — 설계·구현 완료. B-62·B-68 해소, 실기기 3-32)** |
+| **영역별 설계** | 엑셀 왕복 `excel_roundtrip_audit` · 엑셀 스트리밍 가져오기 `excel_streaming_import` · 이미지 폴더 왕복 `image_folder_roundtrip_design`(결정 근거 `image_external_management`, **확장 `image_folder_tag_ai`**) · AI `ai_integration`·`ai_control_and_ui_density` · 값 라이브러리 `field_value_library` · 필터·정렬 짝 `filter_sort_parity` · **체형(실루엣 재편) `body_visual_redesign`(설계 마무리 — 코드 구현 대기. 이어받는 세션은 `handover_body_reauthor_2026-08`부터)** · **백업·내보내기 동선 `backup_export_redesign`(설계 확정 — 체형 다음 슬라이스)** · **사건 필드 추천 `event_field_recommend_2026-08`(v1.1 — 설계·구현 완료. B-62·B-68 해소, 실기기 3-32)** · **대표 이미지 `representative_image_design_2026-08`(B-103 — 설계 확정, 구현 대기. 판정 없음)** · **뗀 이미지 관리 `detached_image_management_design_2026-08`(B-107 — 설계 확정, 구현 대기. 폴더 왕복 규약을 바꾸므로 `image_folder_roundtrip_design` 3장·`image_folder_tag_ai` 2-1과 상호 참조)** |
 | **점검 결과·수리 계획** | `app_inspection_round2` · `repair_plan` · `usability_review` · `design_intent` · **`plan_design_adversarial_review_2026-08`(전 문서 적대 검토 — 실증 발견·후보 목록·판정 대기)** |
 | **절차서** | `room_migration_verification` — 마이그레이션 하네스를 어떻게 만들고 돌리는가(종 수는 `ls tools/verify_room_migration*.py`로 센다) |
 | **브랜치·병합** | `docs/branch_merge_rules.md` |
@@ -305,6 +305,7 @@ AI 정책(`FieldAiPolicy`).
 
 | 버전 | 날짜 | 변경 내용 |
 |------|------|-----------|
+| v1.13 | 2026.08.03 | 7장 영역별 설계에 **설계 문서 둘 등재** — `representative_image_design_2026-08`(B-103 대표 이미지)와 `detached_image_management_design_2026-08`(B-107 뗀 이미지 관리). 둘 다 **설계 확정·구현 대기**다. **B-107 행에 상호 참조를 함께 적었다** — 그 설계가 **폴더 왕복 규약을 바꾸므로**(`_삭제승인` 신설 · `_미배정/` 재정의) `image_folder_roundtrip_design` 3장과 `image_folder_tag_ai` 2-1에 **역참조를 걸었고**, 이 지도가 그 사실을 알아야 반대쪽에서 들어온 세션이 찾는다. 지도에 새 설계를 등재하지 않으면 **진입점이 최신 설계를 모른다** — 이번 인수인계 점검이 그것을 잡았다 |
 | v1.12 | 2026.08.01 | 7장 영역별 설계에 **`backup_export_redesign` 등재**(백업·내보내기 동선 재편 — 실기기 확인 중 사용자가 실제로 막힌 백업 동선의 재편, 사용자 확정으로 체형 다음 슬라이스) + 체형 행 상태를 "이식 목업 완료 — 검증 대기" → "설계 마무리 — 코드 구현 대기"로(판정 6건 확정 반영) |
 | v1.11 | 2026.08.01 | 7장 지도 갱신 — 점검 결과 행에 **`plan_design_adversarial_review_2026-08` 등재**(전 문서 적대 검토, 세션 로그 1-ab), 체형 행을 "설계 확정 — 구현 대기" → **"이식 목업 완료 — 사용자 검증 대기"**로, 이어받는 진입점(`handover_body_reauthor_2026-08`)을 지도에 명기(그 문서가 지도 밖이라 3홉을 밟아야 닿던 것 — 검토 F-2) |
 | v1.10 | 2026.07.31 | 7장 영역별 설계에 **체형(실루엣 재편) `body_visual_redesign`** 등재 — 설계 확정·구현 대기(사용자 확정 다음 작업) |
