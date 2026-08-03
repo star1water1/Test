@@ -92,6 +92,9 @@ object AiPresets {
         ),
         AiPreset(
             id = "groq",
+            // **Grok(xAI)과 다른 서비스다.** 한 글자 차이라 한국어로는 둘 다 "그록"으로 읽히고,
+            // 실사용에서 실제로 사용자가 xAI 키를 이 프리셋에 붙여 넣어 인증이 실패했다
+            // (2026.08.03 보고). 표시명에 구별을 넣고 가이드가 서로를 가리킨다.
             displayName = "Groq",
             protocol = AiProtocol.OPENAI_COMPAT,
             baseUrl = "https://api.groq.com/openai/v1",
@@ -101,6 +104,44 @@ object AiPresets {
             consoleUrl = "https://console.groq.com/keys",
             modelDocsUrl = "https://console.groq.com/docs/models",
             guideRes = R.string.ai_guide_groq,
+            hasFreeTier = true
+        ),
+        AiPreset(
+            // **Grok — xAI(일론 머스크)의 모델.** 위 `Groq`과 이름이 한 글자 다를 뿐
+            // 완전히 다른 회사·다른 키다(2026.08.03 사용자 보고로 신설).
+            id = "xai",
+            displayName = "xAI (Grok)",
+            protocol = AiProtocol.OPENAI_COMPAT,
+            baseUrl = "https://api.x.ai/v1",
+            defaultModel = "grok-4-0709",
+            suggestedModels = listOf("grok-4-0709", "grok-4", "grok-3"),
+            consoleUrl = "https://console.x.ai",
+            modelDocsUrl = "https://docs.x.ai/docs/models",
+            guideRes = R.string.ai_guide_xai
+        ),
+        AiPreset(
+            id = "cerebras",
+            displayName = "Cerebras",
+            protocol = AiProtocol.OPENAI_COMPAT,
+            baseUrl = "https://api.cerebras.ai/v1",
+            defaultModel = "llama-3.3-70b",
+            suggestedModels = listOf("llama-3.3-70b", "qwen-3-32b", "gpt-oss-120b"),
+            consoleUrl = "https://cloud.cerebras.ai",
+            modelDocsUrl = "https://inference-docs.cerebras.ai/models/overview",
+            guideRes = R.string.ai_guide_cerebras,
+            hasFreeTier = true
+        ),
+        AiPreset(
+            id = "mistral",
+            displayName = "Mistral AI",
+            protocol = AiProtocol.OPENAI_COMPAT,
+            baseUrl = "https://api.mistral.ai/v1",
+            // `-latest` 별칭은 제공사가 최신 판을 가리키도록 유지하는 이름이라 잘 낡지 않는다.
+            defaultModel = "mistral-large-latest",
+            suggestedModels = listOf("mistral-large-latest", "mistral-medium-latest", "mistral-small-latest"),
+            consoleUrl = "https://console.mistral.ai",
+            modelDocsUrl = "https://docs.mistral.ai/getting-started/models/models_overview",
+            guideRes = R.string.ai_guide_mistral,
             hasFreeTier = true
         ),
         AiPreset(
