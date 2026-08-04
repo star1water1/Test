@@ -287,6 +287,7 @@ C-18이 남긴 규칙에 정면으로 맞춘 모양이며, **보고 필드가 �
 | `DuelPairing.Options.maxPairScan` (200만 짝) | 짝 전수 훑기 | 순위 이웃 + 무작위 표본만 훑는다 | `Plan.scanCapped` · `Progress.exact=false` |
 | `DuelCounterRelations.Options.maxTriangleSteps` (500만) | 3-순환 훑기 | 훑기를 멈춘다 | `Report.triangleScanCapped` |
 | `DuelRating.Options.maxIterations` (10,000) | 적합 반복 | 그 지점의 값을 낸다(표시 점수는 훨씬 일찍 굳는다) | `Fit.converged=false` |
+| `DuelCategoryStats.Options.maxMatchups` (**30칸**, B-112) | 범주 집계 목록 | **z가 작은 칸부터 버린다** — 곧 *"예상대로였던 자리"*라 사용자가 볼 값어치가 가장 낮은 쪽이다(C-18의 *"누구의 것이 버려지는가"*에 답이 있다) | `Report.totalMatchups` · 화면의 *"기운 순으로 N칸만 실었습니다"* |
 
 **비용 축은 캐릭터 수(N²)와 판 수(M) 둘 다이며 새 축이라 실측했다**(7장 2번이 요구하는 자리 —
 2장 표에서 ⬜이면 측정을 함께 계획하라고 했고, 여기서는 **계획 대신 실측**을 냈다).

@@ -34,6 +34,12 @@ import kotlinx.coroutines.launch
  *
  * ①이 지우는 판 수를 **묻기 전에 알린다**(R-4). 되돌릴 수 없는 처분이고, 몇 판이 사라지는지
  * 모르고 누른 것은 동의가 아니다.
+ *
+ * ## 목록 뒤에 **왜 그런가**가 붙는다 (B-112)
+ * 위 목록은 *"A가 B에게 진다"*까지만 말한다. 그 아래 [DuelCategoryStats] 구역이
+ * *"불이 물에 약하다"*를 대므로, **판정을 내리는 바로 그 자리에서 근거를 읽는다.**
+ * 개체 순환(`A>B>C>A`)이 범주 순환(`불>물>풀>불`)에서 나온 것이라면 그 사실이 여기서 드러난다 —
+ * 그때 ③(상성이다)은 찍어 맞히는 것이 아니라 **근거 있는 판정**이 된다.
  */
 class DuelCounterFragment : Fragment() {
 
@@ -106,7 +112,14 @@ class DuelCounterFragment : Fragment() {
             val review = DuelStandings.counterReview(
                 loaded.state.report, loaded.state.records, loaded.verdicts
             )
-            adapter.submit(DuelCounterAdapter.rowsOf(review))
+            // 범주 집계는 상성 목록 **뒤에** 붙는다(B-112) — 저 위가 *"무엇이 어긋났는가"*이고
+            // 이것이 *"왜 그런가"*라, 어긋남을 먼저 보고 이유를 읽는 것이 순서다.
+            val categories = viewModel.categoryReports(axis, characters, loaded.state)
+            if (!isAdded) return@launch
+            adapter.submit(
+                DuelCounterAdapter.rowsOf(review) +
+                    DuelCounterAdapter.categoryRows(requireContext(), categories)
+            )
 
             // 코드를 되찾지 못해 못 실은 항목이 있으면 **그 사실을 말한다** — 조용히 빠지면
             // 사용자는 상성이 없다고 믿는다(개발 의도 2번).
