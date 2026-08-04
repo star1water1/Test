@@ -130,7 +130,7 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
         cachedSnapshot?.let { return it }
         return snapshotMutex.withLock {
             cachedSnapshot ?: withContext(Dispatchers.IO) {
-                provider.loadSnapshot(app)
+                provider.loadSnapshot(app, CompletionWeightPrefs.weights(getApplication()))
             }.also { cachedSnapshot = it }
         }
     }
@@ -168,6 +168,17 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
     private fun invalidateSnapshots() {
         cachedSnapshot = null
         filteredCache = null
+    }
+
+    /**
+     * 완성도 가중 설정이 바뀌었다 (B-100).
+     *
+     * 가중은 **스냅샷에 실려** 계산되므로(`StatsSnapshot.completionWeights`) 캐시를 버려야
+     * 새 배수가 반영된다 — 버리지 않으면 설정을 바꿔도 숫자가 그대로이고, 그것이 R-24가
+     * 금지한 '고를 수 있는데 아무 일도 일어나지 않는' 자리다.
+     */
+    fun onCompletionWeightChanged() {
+        invalidateSnapshots()
     }
 
     @Volatile private var isRefreshing = false

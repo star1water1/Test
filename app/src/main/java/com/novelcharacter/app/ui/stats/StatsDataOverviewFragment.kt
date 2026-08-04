@@ -26,8 +26,10 @@ import com.github.mikephil.charting.data.PieEntry
 import com.github.mikephil.charting.formatter.IndexAxisValueFormatter
 import com.github.mikephil.charting.formatter.PercentFormatter
 import com.github.mikephil.charting.formatter.ValueFormatter
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.novelcharacter.app.R
 import com.novelcharacter.app.databinding.FragmentStatsDataOverviewBinding
+import com.novelcharacter.app.util.CompletionWeights
 
 class StatsDataOverviewFragment : Fragment() {
 
@@ -45,8 +47,66 @@ class StatsDataOverviewFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         binding.toolbar.setNavigationOnClickListener { findNavController().popBackStack() }
+        binding.completionWeightButton.setOnClickListener { showCompletionWeightDialog() }
         setupObservers()
         viewModel.loadDataOverview()
+    }
+
+    /**
+     * 완성도 필수 가중 설정 (B-100 — 사용자 확정 ㄱ2).
+     *
+     * 저장은 [CompletionWeightPrefs] 하나를 탄다. 바꾼 뒤 스냅샷을 다시 읽는 것은,
+     * 가중이 **스냅샷에 실려** 계산되기 때문이다 — 캐시된 스냅샷을 그대로 두면 설정을
+     * 바꿔도 숫자가 안 움직이고, 그것이 R-24가 금지한 '고를 수 있는데 아무 일도 없는' 자리다.
+     */
+    private fun showCompletionWeightDialog() {
+        val ctx = context ?: return
+        val current = CompletionWeightPrefs.weights(ctx)
+
+        val content = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            val pad = resources.getDimensionPixelSize(R.dimen.stats_padding_card)
+            setPadding(pad, pad, pad, 0)
+        }
+        // R-25 목적문 — 무엇이 어디서 어떻게 바뀌는가.
+        content.addView(TextView(ctx).apply {
+            text = getString(R.string.stats_completion_weight_purpose)
+            textSize = 13f
+            setTextColor(ContextCompat.getColor(ctx, R.color.text_secondary))
+        })
+        val valueLabel = TextView(ctx).apply {
+            text = getString(R.string.stats_completion_weight_value, current.requiredWeight)
+            textSize = 15f
+            setPadding(0, resources.getDimensionPixelSize(R.dimen.stats_margin_sm), 0, 0)
+        }
+        content.addView(valueLabel)
+
+        val slider = com.google.android.material.slider.Slider(ctx).apply {
+            valueFrom = CompletionWeights.MIN_REQUIRED_WEIGHT
+            valueTo = CompletionWeights.MAX_REQUIRED_WEIGHT
+            stepSize = 0.5f
+            value = current.requiredWeight
+            addOnChangeListener { _, v, _ ->
+                valueLabel.text = getString(R.string.stats_completion_weight_value, v)
+            }
+        }
+        content.addView(slider)
+
+        MaterialAlertDialogBuilder(ctx)
+            .setTitle(getString(R.string.stats_completion_weight_title))
+            .setView(content)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                CompletionWeightPrefs.save(ctx, CompletionWeights.clamp(slider.value))
+                viewModel.onCompletionWeightChanged()
+                viewModel.loadDataOverview()
+            }
+            .setNeutralButton(R.string.stats_completion_weight_reset) { _, _ ->
+                CompletionWeightPrefs.save(ctx, CompletionWeights.DEFAULT)
+                viewModel.onCompletionWeightChanged()
+                viewModel.loadDataOverview()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
     }
 
     private fun setupObservers() {
@@ -79,6 +139,13 @@ class StatsDataOverviewFragment : Fragment() {
     private fun populateFieldCompletion(stats: DataOverviewStats) {
         val container = binding.fieldCompletionContainer
         container.removeAllViews()
+
+        // 가중이 걸리는지를 먼저 말한다 — 필수 칸이 없으면 설정을 만져도 숫자가 안 움직이고,
+        // 그 이유를 화면이 말하지 않으면 사용자는 설정이 고장 난 줄 안다(원칙 04).
+        binding.completionWeightNote.text = when {
+            stats.requiredSlotCount == 0 -> getString(R.string.stats_completion_weight_note_none)
+            else -> getString(R.string.stats_completion_weight_note, stats.requiredWeight)
+        }
 
         if (stats.fieldCompletionByGroup.isEmpty() && stats.fieldCompletionByField.isEmpty()) {
             container.addView(makeTextView(getString(R.string.stats_no_data)))

@@ -1032,15 +1032,22 @@ class CharacterDetailFragment : Fragment(), com.novelcharacter.app.ui.timeline.E
             val events = viewModel.getEventsForCharacterSuspend(characterId)
             val stateChanges = viewModel.getChangesByCharacterList(characterId)
 
-            // 필드 완성도 계산
+            // 필드 완성도 — 판정은 [CompletionRate] 하나다(B-100). 종전에는 이 화면만
+            // 분모에서 CALCULATED를 빼지 않고 분자로 값을 통째로 세어, **같은 캐릭터가
+            // 통계 화면과 다른 %로 보였다.**
+            val statsCtx = context ?: return@launch
             val novel = character.novelId?.let { viewModel.getNovelById(it) }
             val universeId = novel?.universeId
             val fieldCompletion = if (universeId != null) {
                 val fields = viewModel.getFieldsByUniverseList(universeId)
-                val values = viewModel.getValuesByCharacterList(characterId)
-                if (fields.isNotEmpty()) {
-                    values.count { it.value.isNotBlank() }.toFloat() / fields.size * 100f
-                } else 0f
+                val filledDefIds = viewModel.getValuesByCharacterList(characterId)
+                    .filter { it.value.isNotBlank() }
+                    .map { it.fieldDefinitionId }
+                    .toSet()
+                com.novelcharacter.app.util.CompletionRate.percentOf(
+                    fields, filledDefIds,
+                    com.novelcharacter.app.ui.stats.CompletionWeightPrefs.weights(statsCtx)
+                ) ?: 0f
             } else 0f
 
             // 복잡도 점수 (StatsDataProvider와 동일한 가중치)

@@ -1319,6 +1319,13 @@
     <string name="stats_data_overview_title">데이터 현황</string>
     <string name="stats_overview_totals">데이터 요약</string>
     <string name="stats_overview_field_completion">그룹별 필드 완성도</string>
+    <!-- Stats: 완성도 필수 가중 (B-100) -->
+    <string name="stats_completion_weight_title">필수 칸 가중</string>
+    <string name="stats_completion_weight_purpose">필수로 표시한 칸을 몇 배로 셀지 정합니다. 완성도를 쓰는 모든 화면(데이터 현황·건강도·캐릭터 통계·보충)에 함께 적용됩니다.</string>
+    <string name="stats_completion_weight_value">현재 %.1f배</string>
+    <string name="stats_completion_weight_note">필수 칸을 %.1f배로 세고 있습니다.</string>
+    <string name="stats_completion_weight_note_none">이 범위에 필수로 표시한 칸이 없어 모든 칸을 같게 셉니다.</string>
+    <string name="stats_completion_weight_reset">기본값으로</string>
     <string name="stats_overview_year_density">연도별 사건 밀도</string>
     <string name="stats_overview_namebank">이름뱅크 현황</string>
     <string name="stats_overview_health">건강도 경고</string>

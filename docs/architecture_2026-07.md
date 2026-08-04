@@ -148,6 +148,7 @@ app/src/main/java/com/novelcharacter/app/
 | `tools/check_prefs_keys.sh` | 같은 prefs 키를 두 곳이 다른 타입으로 쓰는가(R-28 위반) | 충돌 0 — 새 충돌 즉시 실패 |
 | `tools/check_image_pointer.sh` | 캐릭터 `imagePaths` 쓰기가 대표 포인터를 함께 고치는가(R-32 위반) | 0건 동결 — 새 위반 즉시 실패 |
 | `tools/check_restore_preview_parity.sh` | 복원 미리보기(`analyze*`)가 가져오기와 같은 `merge*`로 '변경/동일'을 판정하는가(R-33 위반) | 0건 동결 — 새 위반 즉시 실패 |
+| `tools/check_completion_rate.sh` | 필드 완성도 백분율을 `CompletionRate` 하나가 내는가 — 분모가 필드 수인 백분율이 단일 소스 밖에 있는가 · 등재된 소비처가 실제로 그것을 부르는가(R-34 위반) | 0건 동결 — 새 위반 즉시 실패 |
 | `tools/differential_compile.sh` | 손댄 파일에 **새로 생긴** 컴파일 오류만 | 기준선 대조 |
 | `tools/verify_room_migration*.py` | 마이그레이션 하네스(마이그레이션마다 하나씩 는다 — 종 수는 `ls tools/verify_room_migration*.py`로 센다)를 **실제 SQLite로** 실행 | 각 스크립트 출력이 든다 |
 | `tools/verify_reset_coverage.py` | 엔티티 목록 ↔ `ResetPlan` ↔ `executeReset` 호출부 3자 대조 | 스크립트 출력이 든다(엔티티가 늘면 함께 는다) |
@@ -275,6 +276,7 @@ AI 정책(`FieldAiPolicy`).
 | R-30 | 물질화된 파생값의 원본을 고치는 경로는 파생값 재작성과 한 트랜잭션이다 — 등급 체계의 실효 표가 그 사례 | 필드·데이터 |
 | R-32 | 목록을 가리키는 포인터는 그 목록을 고치는 **모든** 경로가 함께 고친다 — 빠뜨려도 오류가 나지 않고 포인터만 조용히 어긋난다. 판정은 `util.CharacterRepresentativeImage`, 쓰기는 `Character.withImagePaths` 하나다 (`tools/check_image_pointer.sh`) | 저장·데이터 |
 | R-33 | 복원 미리보기의 판정과 가져오기의 쓰기는 **같은 함수**에서 나온다 — 모을 것은 셋이다(열 해석·읽기·적용). 갈리면 늘 *'바뀌는데 안 바뀐다'는 거짓 안심*이 되어 사용자가 되돌릴 기회를 잃는다 (`tools/check_restore_preview_parity.sh`) | 엑셀 왕복 |
+| R-34 | **같은 이름의 지표는 한 함수가 낸다** — 분자와 분모를 각 화면이 정하지 않는다. 분자는 언제나 분모 집합과의 **교집합**이고, 임계값 같은 상수도 단일 소스이며, 설정으로 여는 계수는 계산 계층이 **인자로 받는다**(그래야 순수 하네스가 돈다) (`tools/check_completion_rate.sh`) | 통계·완성도 |
 | R-31 | 다이얼로그 본문 스크롤에는 높이 상한이 있다 — 없으면 긴 내용이 잘린 채 끝까지 스크롤되지 않는다. 코드는 `util.cappedScrollView`, **XML 루트는 `ui.common.CappedScrollView`**(중첩 스크롤판 `CappedNestedScrollView`)이고 측정 규칙의 단일 소스는 `util.DialogScrollCap`이다 (`tools/check_dialog_scroll.sh` — 코드·XML 두 축) | UI |
 
 ---
@@ -313,6 +315,7 @@ AI 정책(`FieldAiPolicy`).
 
 | 버전 | 날짜 | 변경 내용 |
 |------|------|-----------|
+| v1.16 | 2026.08.04 | **R-34 등재**(B-100 완성도 가중) — 6장 규약 색인과 검사 도구 표 양쪽. *"같은 이름의 지표는 한 함수가 낸다"*이며, 어기면 `tools/check_completion_rate.sh`가 막는다. **이 문서가 규약 색인이므로 R-34도 여기서 찾을 수 있어야 한다**(아래 v1.15가 R-33에 대해 적은 것과 같은 이유). 등재의 계기는 필드 완성도가 **열 자리에서 분자·분모·임계값이 갈려 있던 것**이고, 그중 분자의 갈림은 `CharacterFieldValueMerge`가 **일부러 남기는** 보존 값을 세어 **완성도를 100% 넘게 만들 수 있었다**. (곁다리: 이 표에 **`v1.15`가 둘**이다 — 슬라이스 밖이라 고치지 않았고 **B-109**가 이미 '같은 번호가 둘인 자리'로 등재해 두었다.) |
 | v1.15 | 2026.08.03 | **B-107 뗀 이미지 관리 구현 반영**(세션 로그 1-bu). 3장 단일 소스 표에 `DetachedImageRule`/`DetachedImageMarker`(뗀 것 판정)와 `ImageDeletionService`(삭제 처분) 등재 · 7장 지도에서 B-107을 **구현 완료**로 옮기고, **역참조 둘이 "바꿀 예정"에서 "갱신됐다"로 바뀐 사실**을 함께 적었다(`image_folder_roundtrip_design` 3장·`image_folder_tag_ai` 2-1 — 그 표들은 이제 `_분리됨`·`_삭제승인`을 담은 현행이다). 예약 폴더가 **넷에서 여섯**이 됐다 |
 | v1.14 | 2026.08.03 | **B-103 대표 이미지 구현 반영**(세션 로그 1-bs). 3장 단일 소스 표에 `CharacterRepresentativeImage`/`ImagePathMatch`(대표 판정·경로 대조)와 `RepresentativeImageCell`(엑셀 열 규약) 등재 · 4장 검증 도구에 `check_image_pointer.sh` · 6장 색인에 **R-32**(포인터는 목록을 고치는 모든 경로가 함께 고친다) · 7장 지도에서 B-103을 **구현 완료**로 옮기고 **B-107 행에 "선행이 끝나 지금이 착수 자리"를 적었다** — 그 행이 순서 근거를 담고 있는데 선행 상태가 바뀐 것을 말하지 않으면 다음 세션이 다시 대조해야 한다 |
 | v1.15 | 2026.08.03 | 7장 영역별 설계에 **`restore_preview_parity_2026-08` 등재**(B-101+B-102 복원 미리보기 정합). **이 문서가 규약 색인이므로 R-33도 여기서 찾을 수 있어야 한다** — 그 규약은 `analyze*`와 `import*`가 같은 함수를 부르게 하고, 어기면 `tools/check_restore_preview_parity.sh`가 막는다. 선행 B-87(세력 소속·세력 관계 매처)이 **규약으로 올라가지 않아 나머지 열다섯이 그대로 갈려 있었던 것**이 이 등재의 이유다 |
