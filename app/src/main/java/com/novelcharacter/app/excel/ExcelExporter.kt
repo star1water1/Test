@@ -13,10 +13,13 @@ import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.CharacterFieldValue
 import com.novelcharacter.app.data.model.CharacterStateChange
 import com.novelcharacter.app.data.model.CharacterTag
+import com.novelcharacter.app.data.model.DuelCounterVerdict
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.Novel
 import com.novelcharacter.app.data.model.SearchPreset
 import com.novelcharacter.app.data.model.TimelineEvent
+import com.novelcharacter.app.util.DuelFieldLinks
+import com.novelcharacter.app.util.DuelRecords
 import com.novelcharacter.app.util.OpResult
 import com.novelcharacter.app.util.ThemeHelper
 import kotlinx.coroutines.CoroutineScope
@@ -139,6 +142,9 @@ class ExcelExporter(context: Context) {
                 ExportSheetStep.SEARCH_PRESETS -> exportSearchPresets(workbook, usedSheetNames)
                 ExportSheetStep.CHARACTER_LIST_PRESETS -> exportCharacterListPresets(workbook, usedSheetNames)
                 ExportSheetStep.APP_SETTINGS -> exportAppSettings(workbook, usedSheetNames)
+                ExportSheetStep.DUEL_AXES -> exportDuelAxes(workbook, usedSheetNames)
+                ExportSheetStep.DUEL_MATCHES -> exportDuelMatches(workbook, usedSheetNames)
+                ExportSheetStep.DUEL_VERDICTS -> exportDuelVerdicts(workbook, usedSheetNames)
             }
             progress?.onSheets?.invoke(index + 1, plan.size)
         }
@@ -1616,6 +1622,127 @@ class ExcelExporter(context: Context) {
     // ── ZIP + 이미지 래핑 ──
 
     /** @return (사용할 ZIP 파일 또는 null, 이미지 포함 결과 집계) */
+    // ── 대결 (B-104 ㄹ1) ──
+
+    /**
+     * 대결 **축** — 세계관·대상·필드 연결.
+     *
+     * 필드 연결은 키를 쉼표로 이은 글이다(`util/DuelFieldLinks.toText`) — 사람이 손으로 고칠
+     * 자리라 JSON을 싣지 않는다. **순서가 곧 영향력 순위**이므로 이어 붙이는 차례를 지킨다.
+     */
+    private suspend fun exportDuelAxes(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
+        val axes = db.duelAxisDao().getAllList()
+        val universeMap = db.universeDao().getAllUniversesList().associateBy { it.id }
+
+        val spec = duelAxisSpec(universeMap.values.map { it.name })
+        val sheetName = assignSheetName(spec.sheetName, usedSheetNames, ownerOf = spec.sheetName)
+        val sheet = workbook.createSheet(sheetName)
+        writeHeaderRow(sheet, spec)
+
+        axes.forEachIndexed { i, axis ->
+            val row = sheet.createRow(i + 1)
+            val universe = universeMap[axis.universeId]
+            val links = axis.fieldLinks
+            row.createCell(0).setTextSafe(axis.name)
+            row.createCell(1).setTextSafe(universe?.name ?: "")
+            row.createCell(2).setTextSafe(universe?.code ?: "")
+            row.createCell(3).setTextSafe(
+                if (axis.isImageAxis) DuelSheetLabels.TARGET_IMAGE else DuelSheetLabels.TARGET_CHARACTER
+            )
+            row.createCell(4).setTextSafe(DuelFieldLinks.toText(links.influences))
+            row.createCell(5).setTextSafe(DuelFieldLinks.toText(links.outcomes))
+            row.createCell(6).setCellValue(axis.displayOrder.toDouble())
+            row.createCell(7).setTextSafe(axis.code)
+            row.createCell(8).setCellValue(axis.createdAt.toDouble())
+        }
+
+        applySpecFormatting(sheet, spec, axes.size)
+    }
+
+    /**
+     * 대결 **기록** — 한 행이 한 판이다.
+     *
+     * ⚠️ 이 앱에서 **가장 큰 시트**가 될 수 있다(수만 행). 참가자 이름을 붙이려고 캐릭터 표를
+     * 한 번만 읽고 코드로 색인한다 — 행마다 조회하면 그 비용이 행 수만큼 곱해진다.
+     *
+     * **승자를 이름으로 적는 것이 이 시트의 요점이다.** 코드를 적으라고 하면 사람이 고칠 수
+     * 없고, 그러면 이 시트를 엑셀에 싣는 뜻이 없어진다(사용자 요청: *"엑셀에서도 편집"*).
+     */
+    private suspend fun exportDuelMatches(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
+        val axes = db.duelAxisDao().getAllList()
+        val nameByCode = db.characterDao().getAllCharactersList().associate { it.code to it.displayName }
+
+        val spec = duelMatchSpec(axes.map { it.name })
+        val sheetName = assignSheetName(spec.sheetName, usedSheetNames, ownerOf = spec.sheetName)
+        val sheet = workbook.createSheet(sheetName)
+        writeHeaderRow(sheet, spec)
+
+        var rowIndex = 0
+        for (axis in axes) {
+            for (match in db.duelMatchDao().getByAxis(axis.id)) {
+                val row = sheet.createRow(++rowIndex)
+                row.createCell(0).setTextSafe(axis.name)
+                row.createCell(1).setTextSafe(axis.code)
+                row.createCell(2).setTextSafe(nameByCode[match.aCode] ?: "")
+                row.createCell(3).setTextSafe(match.aCode)
+                row.createCell(4).setTextSafe(nameByCode[match.bCode] ?: "")
+                row.createCell(5).setTextSafe(match.bCode)
+                // 승자 이름을 못 찾으면 **코드를 그대로 적는다** — 비우면 무승부로 되읽혀
+                // 사용자가 고른 승패가 왕복 한 번에 사라진다(개발 의도 4번).
+                row.createCell(6).setTextSafe(
+                    match.winnerCode?.let { nameByCode[it] ?: it } ?: DuelSheetLabels.WINNER_DRAW
+                )
+                row.createCell(7).setTextSafe(match.groupId ?: "")
+                row.createCell(8).setCellValue(match.decidedAt.toDouble())
+                row.createCell(9).setTextSafe(match.code)
+            }
+        }
+
+        applySpecFormatting(sheet, spec, rowIndex)
+    }
+
+    /** 대결 **상성** — 층 B의 사용자 판정. 파생이 아니라 판정이라 싣는다. */
+    private suspend fun exportDuelVerdicts(workbook: XSSFWorkbook, usedSheetNames: MutableSet<String>) {
+        val axes = db.duelAxisDao().getAllList()
+        val nameByCode = db.characterDao().getAllCharactersList().associate { it.code to it.displayName }
+
+        val spec = duelVerdictSpec(axes.map { it.name })
+        val sheetName = assignSheetName(spec.sheetName, usedSheetNames, ownerOf = spec.sheetName)
+        val sheet = workbook.createSheet(sheetName)
+        writeHeaderRow(sheet, spec)
+
+        var rowIndex = 0
+        for (axis in axes) {
+            for (verdict in db.duelCounterVerdictDao().getByAxis(axis.id)) {
+                val members = DuelRecords.decodeMembers(verdict.memberCodes)
+                val row = sheet.createRow(++rowIndex)
+                row.createCell(0).setTextSafe(axis.name)
+                row.createCell(1).setTextSafe(axis.code)
+                row.createCell(2).setTextSafe(
+                    if (verdict.kind == DuelCounterVerdict.KIND_COUNTER) {
+                        DuelSheetLabels.KIND_COUNTER
+                    } else {
+                        DuelSheetLabels.KIND_UNDECIDED
+                    }
+                )
+                row.createCell(3).setTextSafe(
+                    if (verdict.shape == DuelCounterVerdict.SHAPE_CYCLE) {
+                        DuelSheetLabels.SHAPE_CYCLE
+                    } else {
+                        DuelSheetLabels.SHAPE_DIRECT
+                    }
+                )
+                // 뜻이 있는 순서다(천적은 [센 쪽, 잡는 쪽], 순환은 이기는 차례) — 정렬하지 않는다.
+                row.createCell(4).setTextSafe(members.joinToString(", ") { nameByCode[it] ?: it })
+                row.createCell(5).setTextSafe(members.joinToString(", "))
+                row.createCell(6).setCellValue(verdict.decidedAt.toDouble())
+                row.createCell(7).setTextSafe(verdict.code)
+            }
+        }
+
+        applySpecFormatting(sheet, spec, rowIndex)
+    }
+
     private suspend fun wrapWithImages(
         xlsxFile: File,
         zipFileName: String,

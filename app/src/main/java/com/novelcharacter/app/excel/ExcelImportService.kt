@@ -11,6 +11,9 @@ import com.novelcharacter.app.data.model.FactionMembership
 import com.novelcharacter.app.data.model.FactionRelationship
 import com.novelcharacter.app.data.model.CharacterStateChange
 import com.novelcharacter.app.data.model.CharacterTag
+import com.novelcharacter.app.data.model.DuelAxis
+import com.novelcharacter.app.data.model.DuelCounterVerdict
+import com.novelcharacter.app.data.model.DuelMatch
 import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.model.NameBankEntry
 import com.novelcharacter.app.data.model.Novel
@@ -26,6 +29,8 @@ import com.novelcharacter.app.data.model.SemanticRole
 import com.novelcharacter.app.data.repository.CharacterRepository
 import com.novelcharacter.app.data.repository.NovelRepository
 import com.novelcharacter.app.data.repository.UniverseRepository
+import com.novelcharacter.app.util.DuelFieldLinks
+import com.novelcharacter.app.util.DuelRecords
 import com.novelcharacter.app.util.SemanticFieldSyncHelper
 import com.novelcharacter.app.util.withImagePaths
 import com.novelcharacter.app.util.GradeValueResolver
@@ -172,6 +177,12 @@ data class ImportResult(
     var updatedImageMeta: Int = 0,
     var newFieldValueEntries: Int = 0,
     var updatedFieldValueEntries: Int = 0,
+    var newDuelAxes: Int = 0,
+    var updatedDuelAxes: Int = 0,
+    var newDuelMatches: Int = 0,
+    var updatedDuelMatches: Int = 0,
+    var newDuelVerdicts: Int = 0,
+    var updatedDuelVerdicts: Int = 0,
     var skippedRows: Int = 0,
     val errors: MutableList<String> = mutableListOf(),
     var nameBasedMappings: Int = 0,
@@ -469,6 +480,22 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
                 if (shouldDelete(effectiveOptions.factionRelationships, factionRelationshipSpec())) db.factionRelationshipDao().deleteAll()
                 if (shouldDelete(effectiveOptions.factions, factionSpec())) { db.factionDao().deleteAll(); wipedByOverwrite.add("factions") }
                 if (shouldDelete(effectiveOptions.stateChanges, stateChangeSpec())) db.characterStateChangeDao().deleteAll()
+                // 대결(B-104) — **축을 지우면 그 아래 판이 CASCADE로 함께 죽는다.** 그래서
+                // 축 시트만 보고 지우면 *"기록 시트가 빈 파일"* 하나가 수만 판을 없앤다.
+                // 대원칙 그대로 — 백업이 복원할 수 없는 것은 지우지 않는다: 기록 시트도 함께
+                // 복원 가능하거나, 애초에 지울 판이 없을 때만 축을 비운다.
+                if (shouldDelete(effectiveOptions.duels, duelAxisSpec())) {
+                    val matchesRestorable = canRestore(duelMatchSpec())
+                    val existingMatches = db.duelMatchDao().countAll()
+                    if (matchesRestorable || existingMatches == 0) {
+                        db.duelAxisDao().deleteAll()
+                    } else {
+                        result.warnings.add(
+                            "'${duelMatchSpec().sheetName}' 시트에 데이터 행이 없어 대결 축을 삭제하지 않고 유지했습니다 " +
+                                "(축을 지우면 쌓인 판 ${existingMatches}개가 함께 사라지는데 이 파일로는 되살릴 수 없습니다)"
+                        )
+                    }
+                }
                 if (shouldDelete(effectiveOptions.timeline, timelineSpec(emptyList()))) {
                     db.timelineDao().deleteAllCrossRefs()
                     db.timelineDao().deleteAllEvents()
@@ -613,6 +640,14 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             // 커밋 이후 블록으로 뺐다(아래 참조). 여기에 두면 롤백 시 "실패했다고 알리면서 설정만 바뀐"
             // 부분 커밋이 된다.
             if (effectiveOptions.imageMeta) importImageMeta(workbook, result, onProgress, totalRows)
+
+            // 대결(B-104) — **축 → 기록 → 상성** 순서가 규약이다(정의가 기록보다 앞이다).
+            // 캐릭터보다 뒤인 것도 필수다: 판의 참가자를 이름으로 되찾는 경로가 캐릭터를 본다.
+            if (effectiveOptions.duels) {
+                importDuelAxes(workbook, result, onProgress, totalRows)
+                importDuelMatches(workbook, result, onProgress, totalRows)
+                importDuelVerdicts(workbook, result, onProgress, totalRows)
+            }
 
             // 덮어쓰기로 비운 범주의 신규 생성은 여기서 한 줄로 요약한다(행마다 알리지 않는다).
             reportCreatedAfterWipe(result)
@@ -2040,8 +2075,89 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
         if (options.searchPresets) categories.add(analyzeSearchPresets(workbook, onProgress, totalRows))
         if (options.characterListPresets) categories.add(analyzeCharacterListPresets(workbook, onProgress, totalRows))
         if (options.imageMeta) categories.add(analyzeImageMeta(workbook, onProgress, totalRows))
+        if (options.duels) {
+            categories.add(analyzeDuelAxes(workbook, onProgress, totalRows))
+            categories.add(analyzeDuelMatches(workbook, onProgress, totalRows))
+        }
 
         return RestoreAnalysis(categories, characterConflicts)
+    }
+
+    // ── 대결 복원 미리보기 (R-33 — 가져오기와 **같은 read/merge 쌍**으로 판정한다) ──
+
+    private suspend fun analyzeDuelAxes(workbook: Workbook, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
+        val spec = duelAxisSpec()
+        val label = "대결 축"
+        val existingTotal = db.duelAxisDao().getAllList().size
+        val sheet = workbook.getSheet(spec.sheetName)
+        if (sheet == null || sheet.lastRowNum < 1) return CategoryAnalysis("duelAxes", label, 0, 0, 0, 0, existingTotal)
+        val headerRow = sheet.getRow(0) ?: return CategoryAnalysis("duelAxes", label, 0, 0, 0, 0, existingTotal)
+        if (!isValidHeader(headerRow, spec.firstColumnHeader)) return CategoryAnalysis("duelAxes", label, 0, 0, 0, 0, existingTotal)
+
+        val cols = resolveHeaderColumns(headerRow)
+        val now = System.currentTimeMillis()
+        var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skippedCount = 0
+        for (i in 1..sheet.lastRowNum) {
+            val row = sheet.getRow(i) ?: continue
+            val r = readDuelAxisRow(row, cols, now)
+            if (r.name.isBlank()) continue
+            inBackup++
+
+            val universe = (if (r.universeCode.isNotBlank()) db.universeDao().getUniverseByCode(r.universeCode) else null)
+                ?: (if (r.universeName.isNotBlank()) db.universeDao().getUniverseByName(r.universeName) else null)
+            if (universe == null) { skippedCount++; continue }   // 가져오기도 이 행을 거부한다
+
+            val existing = (if (r.code.isNotBlank()) db.duelAxisDao().getByCode(r.code) else null)
+                ?: db.duelAxisDao().getByUniverseAndName(universe.id, r.targetType, r.name)
+            if (existing == null) { newCount++; continue }
+            val merged = mergeDuelAxis(existing, r, universe.id)
+            if (merged != existing) updateCount++ else unchangedCount++
+        }
+        reportProgress(onProgress, "대결 축 분석", sheet.lastRowNum, totalRows)
+        return CategoryAnalysis("duelAxes", label, inBackup, newCount, updateCount, unchangedCount, existingTotal, skippedCount)
+    }
+
+    private suspend fun analyzeDuelMatches(workbook: Workbook, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
+        val spec = duelMatchSpec()
+        val label = "대결 기록"
+        val existingTotal = db.duelMatchDao().countAll()
+        val sheet = workbook.getSheet(spec.sheetName)
+        if (sheet == null || sheet.lastRowNum < 1) return CategoryAnalysis("duelMatches", label, 0, 0, 0, 0, existingTotal)
+        val headerRow = sheet.getRow(0) ?: return CategoryAnalysis("duelMatches", label, 0, 0, 0, 0, existingTotal)
+        if (!isValidHeader(headerRow, spec.firstColumnHeader)) return CategoryAnalysis("duelMatches", label, 0, 0, 0, 0, existingTotal)
+
+        val cols = resolveHeaderColumns(headerRow)
+        val now = System.currentTimeMillis()
+        // 가져오기와 **같은 색인**을 세운다 — 행마다 조회하면 수만 행에서 미리보기가 멎는다.
+        val axes = db.duelAxisDao().getAllList()
+        val axisByCode = axes.associateBy { it.code }
+        val axesByName = axes.groupBy { it.name }
+        val codeByName = db.characterDao().getAllCharactersList()
+            .groupBy({ it.displayName }, { it.code })
+
+        var inBackup = 0; var newCount = 0; var updateCount = 0; var unchangedCount = 0; var skippedCount = 0
+        for (i in 1..sheet.lastRowNum) {
+            val row = sheet.getRow(i) ?: continue
+            val r = readDuelMatchRow(row, cols, now)
+            if (r.axisName.isBlank() && r.axisCode.isBlank()) continue
+            inBackup++
+
+            val axis = axisByCode[r.axisCode] ?: axesByName[r.axisName]?.singleOrNull()
+            if (axis == null) { skippedCount++; continue }
+
+            val aCode = r.aCode.ifBlank { codeByName[r.aName]?.singleOrNull().orEmpty() }
+            val bCode = r.bCode.ifBlank { codeByName[r.bName]?.singleOrNull().orEmpty() }
+            if (aCode.isBlank() || bCode.isBlank() || aCode == bCode) { skippedCount++; continue }
+            val winner = resolveDuelWinner(r.winnerText, aCode, r.aName, bCode, r.bName)
+            if (winner.isFailure) { skippedCount++; continue }
+
+            val existing = if (r.code.isNotBlank()) db.duelMatchDao().getByCode(r.code) else null
+            if (existing == null) { newCount++; continue }
+            val merged = mergeDuelMatch(existing, winner.getOrNull(), r.groupId.ifBlank { null })
+            if (merged != existing) updateCount++ else unchangedCount++
+        }
+        reportProgress(onProgress, "대결 기록 분석", sheet.lastRowNum, totalRows)
+        return CategoryAnalysis("duelMatches", label, inBackup, newCount, updateCount, unchangedCount, existingTotal, skippedCount)
     }
 
     private suspend fun analyzeFieldValueLibrary(workbook: Workbook, onProgress: (ImportProgress) -> Unit, totalRows: Int): CategoryAnalysis {
@@ -6362,6 +6478,368 @@ class ExcelImportService(private val db: AppDatabase, private val appContext: an
             result.warnings.add("이미지 ${skippedMissing}건: 파일을 찾을 수 없어 태그·링크 복원을 건너뛰었습니다 (이미지 포함 ZIP 백업으로 가져오면 함께 복원됩니다)")
         }
         reportProgress(onProgress, "이미지", sheet.lastRowNum, totalRows)
+    }
+
+    // ── 대결 가져오기 (B-104 ㄹ1) ──
+    //
+    // **순서가 규약이다: 축 → 기록 → 상성.** 판·처분은 축을 가리키므로 축이 먼저 들어와야
+    // 붙을 자리가 있다(확-3의 교훈 — 정의가 기록보다 앞이다). 축을 못 찾은 행은 조용히 버리지
+    // 않고 **세어서 알린다**(개발 의도 2번).
+    //
+    // 읽기(`readDuel*Row`)와 병합(`mergeDuel*`)을 함수로 뽑은 것은 규약 R-33이다 —
+    // 복원 미리보기(`analyzeDuel*`)와 실제 가져오기가 **같은 함수**로 판정해야 '변경/동일'이
+    // 거짓말을 하지 않는다.
+
+    private data class DuelAxisRowValues(
+        val name: String,
+        val universeName: String,
+        val universeCode: String,
+        val targetType: String,
+        val influenceFieldKeys: String,
+        val outcomeFieldKeys: String,
+        val displayOrder: Int,
+        val code: String,
+        val createdAt: Long
+    )
+
+    private fun readDuelAxisRow(row: Row, cols: Map<String, Int>, now: Long): DuelAxisRowValues {
+        fun cell(header: String, dateHint: Boolean = false) =
+            getCellString(row, cols[header] ?: -1, dateHint = dateHint)
+
+        val targetLabel = cell("대상")
+        return DuelAxisRowValues(
+            name = cell("축이름"),
+            universeName = cell("세계관"),
+            universeCode = cell("세계관코드"),
+            // 한국어 말과 저장값을 모두 받는다 — 외부 도구가 저장값을 그대로 쓸 수도 있다.
+            targetType = when (targetLabel) {
+                DuelSheetLabels.TARGET_IMAGE, DuelAxis.TARGET_IMAGE -> DuelAxis.TARGET_IMAGE
+                else -> DuelAxis.TARGET_CHARACTER
+            },
+            // 사람이 적은 차례가 곧 영향력 순위다 — 정렬하지 않는다.
+            influenceFieldKeys = DuelFieldLinks.encode(DuelFieldLinks.parseText(cell("영향필드"))),
+            outcomeFieldKeys = DuelFieldLinks.encode(DuelFieldLinks.parseText(cell("산출필드"))),
+            displayOrder = cell("정렬순서").toDoubleOrNull()?.toInt() ?: 0,
+            code = cell("코드"),
+            createdAt = cell("생성일", dateHint = true).toDoubleOrNull()?.toLong() ?: now
+        )
+    }
+
+    /** 병합 규칙의 단일 소스 — 미리보기와 가져오기가 함께 부른다(R-33). */
+    private fun mergeDuelAxis(existing: DuelAxis, r: DuelAxisRowValues, universeId: Long): DuelAxis =
+        existing.copy(
+            name = r.name,
+            universeId = universeId,
+            // **대상은 바꾸지 않는다** — 바꾸면 쌓인 판의 참가자가 통째로 뜻을 잃는다(엔티티 주석).
+            targetType = existing.targetType,
+            influenceFieldKeys = r.influenceFieldKeys,
+            outcomeFieldKeys = r.outcomeFieldKeys,
+            displayOrder = r.displayOrder
+        )
+
+    private suspend fun importDuelAxes(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
+        val spec = duelAxisSpec()
+        val sheet = findSheet(workbook, spec, result) ?: return
+        val headerRow = sheet.getRow(0) ?: return
+        if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
+
+        reportUnknownColumns(headerRow, spec, result)
+        val cols = resolveHeaderColumns(headerRow, result, spec.sheetName)
+        val now = System.currentTimeMillis()
+
+        for (i in 1..sheet.lastRowNum) {
+            try {
+                val row = sheet.getRow(i) ?: continue
+                val r = readDuelAxisRow(row, cols, now)
+                if (r.name.isBlank()) continue
+
+                val universe = (if (r.universeCode.isNotBlank()) db.universeDao().getUniverseByCode(r.universeCode) else null)
+                    ?: (if (r.universeName.isNotBlank()) db.universeDao().getUniverseByName(r.universeName) else null)
+                if (universe == null) {
+                    result.skippedRows++
+                    result.errors.add("대결 축 행 $i: 세계관 '${r.universeName}'을(를) 찾을 수 없음")
+                    continue
+                }
+
+                val existing = (if (r.code.isNotBlank()) db.duelAxisDao().getByCode(r.code) else null)
+                    ?: db.duelAxisDao().getByUniverseAndName(universe.id, r.targetType, r.name)
+                if (existing == null) {
+                    // 같은 (세계관, 대상, 이름)이 이미 있으면 유니크 인덱스가 던진다 — 위에서
+                    // 이미 찾아봤으므로 여기 오는 것은 진짜 새 축이다.
+                    db.duelAxisDao().insert(
+                        DuelAxis(
+                            universeId = universe.id,
+                            name = r.name,
+                            targetType = r.targetType,
+                            displayOrder = r.displayOrder,
+                            createdAt = r.createdAt,
+                            influenceFieldKeys = r.influenceFieldKeys,
+                            outcomeFieldKeys = r.outcomeFieldKeys,
+                            code = r.code.ifBlank { generateEntityCode() }
+                        )
+                    )
+                    result.newDuelAxes++
+                    if (r.code.isNotBlank()) {
+                        warnCreatedNewByCode("duelAxes", "대결 축 행 $i: 코드 '${r.code}'가 기존 축에 없어 새로 생성됨 — 오타·삭제 여부를 확인하세요", result)
+                    }
+                } else {
+                    val merged = mergeDuelAxis(existing, r, universe.id)
+                    if (merged != existing) {
+                        db.duelAxisDao().update(merged)
+                        result.updatedDuelAxes++
+                    }
+                }
+            } catch (e: Exception) {
+                result.skippedRows++
+                result.errors.add("대결 축 행 $i: ${e.message}")
+            }
+        }
+        reportProgress(onProgress, "대결 축 가져오기", sheet.lastRowNum, totalRows)
+    }
+
+    private data class DuelMatchRowValues(
+        val axisName: String,
+        val axisCode: String,
+        val aName: String,
+        val aCode: String,
+        val bName: String,
+        val bCode: String,
+        val winnerText: String,
+        val groupId: String,
+        val code: String,
+        val decidedAt: Long
+    )
+
+    private fun readDuelMatchRow(row: Row, cols: Map<String, Int>, now: Long): DuelMatchRowValues {
+        fun cell(header: String, dateHint: Boolean = false) =
+            getCellString(row, cols[header] ?: -1, dateHint = dateHint)
+        return DuelMatchRowValues(
+            axisName = cell("축"),
+            axisCode = cell("축코드"),
+            aName = cell("참가자1"),
+            aCode = cell("참가자1코드"),
+            bName = cell("참가자2"),
+            bCode = cell("참가자2코드"),
+            winnerText = cell("승자"),
+            groupId = cell("묶음"),
+            code = cell("코드"),
+            decidedAt = cell("판정일", dateHint = true).toDoubleOrNull()?.toLong() ?: now
+        )
+    }
+
+    private fun mergeDuelMatch(existing: DuelMatch, winnerCode: String?, groupId: String?): DuelMatch =
+        // 참가자와 시각은 바꾸지 않는다 — 바꾸면 그 행은 *다른 판*이다(기록 화면과 같은 규약).
+        existing.copy(winnerCode = winnerCode, groupId = groupId)
+
+    /**
+     * 승자 칸을 코드로 옮긴다.
+     *
+     * **빈 칸과 '비슷함'만 무승부다.** 이름을 적었는데 두 참가자 중 어느 쪽도 아니면 그 행은
+     * 거부한다 — 조용히 무승부로 접으면 사용자가 고른 승패가 왕복 한 번에 사라지고, 그것은
+     * 이 앱이 금지하는 무음 유실이다(개발 의도 2번·4번).
+     */
+    private fun resolveDuelWinner(
+        text: String,
+        aCode: String, aName: String,
+        bCode: String, bName: String
+    ): Result<String?> {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty() || trimmed == DuelSheetLabels.WINNER_DRAW) return Result.success(null)
+        return when (trimmed) {
+            aCode, aName -> Result.success(aCode)
+            bCode, bName -> Result.success(bCode)
+            else -> Result.failure(IllegalArgumentException(trimmed))
+        }
+    }
+
+    private suspend fun importDuelMatches(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
+        val spec = duelMatchSpec()
+        val sheet = findSheet(workbook, spec, result) ?: return
+        val headerRow = sheet.getRow(0) ?: return
+        if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
+
+        reportUnknownColumns(headerRow, spec, result)
+        val cols = resolveHeaderColumns(headerRow, result, spec.sheetName)
+        val now = System.currentTimeMillis()
+
+        // 축과 캐릭터 이름은 **루프 밖에서 한 번** 색인한다 — 이 시트는 수만 행이 될 수 있어
+        // 행마다 조회하면 그 비용이 행 수만큼 곱해진다.
+        val axes = db.duelAxisDao().getAllList()
+        val axisByCode = axes.associateBy { it.code }
+        val axesByName = axes.groupBy { it.name }
+        val codeByName = db.characterDao().getAllCharactersList()
+            .groupBy({ it.displayName }, { it.code })
+
+        val seenCodes = HashSet<String>()
+        for (i in 1..sheet.lastRowNum) {
+            try {
+                val row = sheet.getRow(i) ?: continue
+                val r = readDuelMatchRow(row, cols, now)
+                if (r.axisName.isBlank() && r.axisCode.isBlank()) continue
+
+                val axis = axisByCode[r.axisCode] ?: axesByName[r.axisName]?.let { candidates ->
+                    if (candidates.size == 1) candidates.first() else null
+                }
+                if (axis == null) {
+                    result.skippedRows++
+                    result.errors.add(
+                        if ((axesByName[r.axisName]?.size ?: 0) > 1) {
+                            "대결 기록 행 $i: 축 '${r.axisName}'이(가) 여럿이라 어느 축인지 정할 수 없음 — 축코드를 함께 적어 주세요"
+                        } else {
+                            "대결 기록 행 $i: 축 '${r.axisName}'을(를) 찾을 수 없음"
+                        }
+                    )
+                    continue
+                }
+
+                // 참가자는 **코드가 정체**다. 코드가 비어 있을 때만 이름으로 찾고, 동명이인이면
+                // 거부한다 — 아무나 골라 붙이는 것이 R-1이 말하는 오배정이다.
+                fun resolveParticipant(code: String, name: String): String? {
+                    if (code.isNotBlank()) return code
+                    val candidates = codeByName[name].orEmpty()
+                    return if (candidates.size == 1) candidates.first() else null
+                }
+                val aCode = resolveParticipant(r.aCode, r.aName)
+                val bCode = resolveParticipant(r.bCode, r.bName)
+                if (aCode.isNullOrBlank() || bCode.isNullOrBlank() || aCode == bCode) {
+                    result.skippedRows++
+                    result.errors.add("대결 기록 행 $i: 참가자를 정할 수 없음 ('${r.aName}' · '${r.bName}') — 참가자 코드를 함께 적어 주세요")
+                    continue
+                }
+
+                val winner = resolveDuelWinner(r.winnerText, aCode, r.aName, bCode, r.bName)
+                if (winner.isFailure) {
+                    result.skippedRows++
+                    result.errors.add("대결 기록 행 $i: 승자 '${r.winnerText}'이(가) 두 참가자 중 어느 쪽도 아님 — 비겼으면 '${DuelSheetLabels.WINNER_DRAW}'이라고 적어 주세요")
+                    continue
+                }
+                val winnerCode = winner.getOrNull()
+                val groupId = r.groupId.ifBlank { null }
+
+                if (r.code.isNotBlank() && !seenCodes.add(r.code)) {
+                    result.warnings.add("대결 기록: 코드 '${r.code}'가 두 행에 중복됨 (마지막 행 우선)")
+                }
+
+                val existing = if (r.code.isNotBlank()) db.duelMatchDao().getByCode(r.code) else null
+                if (existing == null) {
+                    db.duelMatchDao().insert(
+                        DuelMatch(
+                            axisId = axis.id,
+                            aCode = aCode,
+                            bCode = bCode,
+                            winnerCode = winnerCode,
+                            groupId = groupId,
+                            decidedAt = r.decidedAt,
+                            code = r.code.ifBlank { generateEntityCode() }
+                        )
+                    )
+                    result.newDuelMatches++
+                } else {
+                    val merged = mergeDuelMatch(existing, winnerCode, groupId)
+                    if (merged != existing) {
+                        db.duelMatchDao().update(merged)
+                        result.updatedDuelMatches++
+                    }
+                }
+            } catch (e: Exception) {
+                result.skippedRows++
+                result.errors.add("대결 기록 행 $i: ${e.message}")
+            }
+        }
+        reportProgress(onProgress, "대결 기록 가져오기", sheet.lastRowNum, totalRows)
+    }
+
+    private suspend fun importDuelVerdicts(workbook: Workbook, result: ImportResult, onProgress: (ImportProgress) -> Unit, totalRows: Int) {
+        val spec = duelVerdictSpec()
+        val sheet = findSheet(workbook, spec, result) ?: return
+        val headerRow = sheet.getRow(0) ?: return
+        if (!checkHeaderOrReport(sheet, headerRow, spec.firstColumnHeader, result)) return
+
+        reportUnknownColumns(headerRow, spec, result)
+        val cols = resolveHeaderColumns(headerRow, result, spec.sheetName)
+        val now = System.currentTimeMillis()
+
+        val axes = db.duelAxisDao().getAllList()
+        val axisByCode = axes.associateBy { it.code }
+        val axesByName = axes.groupBy { it.name }
+        val codeByName = db.characterDao().getAllCharactersList()
+            .groupBy({ it.displayName }, { it.code })
+
+        for (i in 1..sheet.lastRowNum) {
+            try {
+                val row = sheet.getRow(i) ?: continue
+                fun cell(header: String, dateHint: Boolean = false) =
+                    getCellString(row, cols[header] ?: -1, dateHint = dateHint)
+
+                val axisName = cell("축")
+                val axisCode = cell("축코드")
+                if (axisName.isBlank() && axisCode.isBlank()) continue
+                val axis = axisByCode[axisCode] ?: axesByName[axisName]?.singleOrNull()
+                if (axis == null) {
+                    result.skippedRows++
+                    result.errors.add("대결 상성 행 $i: 축 '$axisName'을(를) 찾을 수 없음")
+                    continue
+                }
+
+                // 코드 목록이 정체이고 이름은 사람이 읽는 몫이다 — 순서에 뜻이 있으므로 지키고,
+                // 이름으로 되찾을 때도 적힌 차례 그대로 옮긴다.
+                val rawCodes = cell("참가자코드들").split(',').map { it.trim() }.filter { it.isNotEmpty() }
+                val members = rawCodes.ifEmpty {
+                    cell("참가자들").split(',').map { it.trim() }.filter { it.isNotEmpty() }
+                        .mapNotNull { name -> codeByName[name]?.singleOrNull() }
+                }
+                val shape = DuelRecords.shapeOf(members)
+                if (shape == null) {
+                    result.skippedRows++
+                    result.errors.add("대결 상성 행 $i: 참가자가 둘 이상이어야 판정할 관계가 있습니다")
+                    continue
+                }
+
+                val kindLabel = cell("종류")
+                val kind = when (kindLabel) {
+                    DuelSheetLabels.KIND_UNDECIDED, DuelCounterVerdict.KIND_UNDECIDED -> DuelCounterVerdict.KIND_UNDECIDED
+                    else -> DuelCounterVerdict.KIND_COUNTER
+                }
+                val code = cell("코드")
+                val memberKey = DuelRecords.memberKey(members)
+                // 같은 관계는 축 안에서 하나뿐이다(유니크). 코드로 못 찾으면 그 키로 찾아
+                // **덮어쓴다** — 그러지 않으면 유니크 인덱스가 예외로 죽는다.
+                val existing = (if (code.isNotBlank()) db.duelCounterVerdictDao().getByCode(code) else null)
+                    ?: db.duelCounterVerdictDao().getByMemberKey(axis.id, memberKey)
+
+                val decidedAt = cell("판정일", dateHint = true).toDoubleOrNull()?.toLong() ?: now
+                if (existing == null) {
+                    db.duelCounterVerdictDao().upsert(
+                        DuelCounterVerdict(
+                            axisId = axis.id,
+                            kind = kind,
+                            shape = shape,
+                            memberCodes = DuelRecords.encodeMembers(members),
+                            memberKey = memberKey,
+                            decidedAt = decidedAt,
+                            code = code.ifBlank { generateEntityCode() }
+                        )
+                    )
+                    result.newDuelVerdicts++
+                } else {
+                    val merged = existing.copy(
+                        axisId = axis.id,
+                        kind = kind,
+                        shape = shape,
+                        memberCodes = DuelRecords.encodeMembers(members),
+                        memberKey = memberKey
+                    )
+                    if (merged != existing) {
+                        db.duelCounterVerdictDao().update(merged)
+                        result.updatedDuelVerdicts++
+                    }
+                }
+            } catch (e: Exception) {
+                result.skippedRows++
+                result.errors.add("대결 상성 행 $i: ${e.message}")
+            }
+        }
+        reportProgress(onProgress, "대결 상성 가져오기", sheet.lastRowNum, totalRows)
     }
 
     // ── 유틸리티 메서드 ──

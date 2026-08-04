@@ -111,6 +111,28 @@ class DuelRepository(private val db: AppDatabase) {
     /** 한 화면이 낸 판들을 통째로 되돌린다(k지선다). 반쪽 되돌리기를 만들지 않는다. */
     suspend fun undoGroup(groupId: String) = db.duelMatchDao().deleteByGroup(groupId)
 
+    /**
+     * 기록 화면의 손편집 — **승자만 고친다.**
+     *
+     * @param winnerCode 이긴 쪽. null이면 무승부다. 두 참가자 중 어느 쪽도 아니면 고치지 않고
+     *   null을 돌려준다 — [record]와 같은 규칙이다(검증은 들어오는 자리에서 하는 것이 싸다).
+     *   **깨진 판을 고치는 경우는 예외로 받는다**: 이미 저장된 값이 깨져 있어 사용자가 그것을
+     *   바로잡으러 온 것이라, 새 값이 옳으면 통과시켜야 한다.
+     */
+    suspend fun updateWinner(match: DuelMatch, winnerCode: String?): DuelMatch? {
+        if (winnerCode != null && winnerCode != match.aCode && winnerCode != match.bCode) return null
+        if (winnerCode == match.winnerCode) return match
+        val updated = match.copy(winnerCode = winnerCode)
+        db.duelMatchDao().update(updated)
+        return updated
+    }
+
+    /** 기록 화면이 보는 최근 판 — 상한을 받는다(이 표는 수만 행이 될 수 있다). */
+    suspend fun recentMatches(axisId: Long, limit: Int): List<DuelMatch> =
+        db.duelMatchDao().getRecent(axisId, limit)
+
+    suspend fun matchCount(axisId: Long): Int = db.duelMatchDao().countByAxis(axisId)
+
     /** 가장 최근 판 — 화면의 '방금 그거 취소'가 집는 대상. */
     suspend fun lastMatch(axisId: Long): DuelMatch? =
         db.duelMatchDao().getRecent(axisId, 1).firstOrNull()

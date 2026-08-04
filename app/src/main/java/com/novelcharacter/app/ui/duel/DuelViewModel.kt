@@ -9,6 +9,7 @@ import com.novelcharacter.app.data.model.Character
 import com.novelcharacter.app.data.model.DuelAxis
 import com.novelcharacter.app.data.model.DuelCounterVerdict
 import com.novelcharacter.app.data.model.DuelMatch
+import com.novelcharacter.app.data.model.FieldDefinition
 import com.novelcharacter.app.data.repository.DuelRepository
 import com.novelcharacter.app.util.OpResult
 import com.novelcharacter.app.util.reportResult
@@ -112,6 +113,56 @@ class DuelViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // ──────────────────────────────────────────────────────────────────────
+    // 필드 연결 (층 C)
+    // ──────────────────────────────────────────────────────────────────────
+
+    /** 이 세계관의 캐릭터 필드 — 축에 걸 수 있는 후보다. 차례는 필드 관리에서 정한 그대로다. */
+    suspend fun characterFields(universeId: Long): List<FieldDefinition> =
+        app.database.fieldDefinitionDao()
+            .getFieldsByUniverseList(universeId, FieldDefinition.ENTITY_CHARACTER)
+
+    /**
+     * 참가자들의 **연결 필드 값** — `참가자 코드 → (필드 키 → 값)`.
+     *
+     * @param keys 볼 필드의 키. 비어 있으면 아무것도 읽지 않는다 — 연결이 없는 축에서
+     *   캐릭터 전원의 필드값을 훑으면 그 비용이 순전히 낭비다(목표 규모는 캐릭터 수백 명이다).
+     *
+     * **한 번에 읽는 것이 요점이다.** 짝이 뜰 때마다 둘씩 읽으면 수백 판을 누르는 동안 질의가
+     * 그만큼 늘어난다 — 대결은 *단순반복*이 성질인 기능이라 판당 비용이 그대로 누적된다.
+     */
+    suspend fun fieldValuesOf(
+        universeId: Long,
+        characters: List<Character>,
+        keys: Collection<String>
+    ): Map<String, Map<String, String>> {
+        if (keys.isEmpty() || characters.isEmpty()) return emptyMap()
+        return withContext(Dispatchers.Default) {
+            val wanted = keys.toSet()
+            val fieldsById = app.database.fieldDefinitionDao()
+                .getFieldsByUniverseList(universeId, FieldDefinition.ENTITY_CHARACTER)
+                .filter { it.key in wanted }
+                .associateBy({ it.id }, { it.key })
+            if (fieldsById.isEmpty()) return@withContext emptyMap()
+
+            val codeById = characters.associate { it.id to it.code }
+            // **`IN`을 청크로 나눈다** — SQLite의 변수 상한은 999이고 목표 규모는 캐릭터 수백
+            // 명이라 한 번에 넣으면 언젠가 넘는다. 넘으면 예외가 나고, 그것을 삼키면 값이
+            // 조용히 사라진다(이 저장소가 이미 한 번 겪은 부류 — `removeTagsFromImages`).
+            val values = characters.map { it.id }
+                .chunked(900)
+                .flatMap { app.database.characterFieldValueDao().getValuesForCharacters(it) }
+            val result = HashMap<String, MutableMap<String, String>>()
+            for (row in values) {
+                val key = fieldsById[row.fieldDefinitionId] ?: continue
+                val code = codeById[row.characterId] ?: continue
+                if (row.value.isBlank()) continue
+                result.getOrPut(code) { HashMap() }[key] = row.value
+            }
+            result
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
     // 상태
     // ──────────────────────────────────────────────────────────────────────
 
@@ -200,6 +251,49 @@ class DuelViewModel(application: Application) : AndroidViewModel(application) {
         val members = codes.toSet()
         return app.database.duelMatchDao().getByAxis(axisId)
             .filter { it.aCode in members && it.bCode in members }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // 기록 화면 — 보기와 손편집
+    // ──────────────────────────────────────────────────────────────────────
+
+    suspend fun recentMatches(axisId: Long, limit: Int): List<DuelMatch> =
+        duelRepository.recentMatches(axisId, limit)
+
+    /**
+     * 판 하나의 승자를 고친다.
+     *
+     * **이력에 남긴다.** 대결의 누름 하나하나는 이력에 오지 않지만([OpResult.CAT_DUEL]),
+     * **손으로 고친 것은 다르다** — 반복 조작이 아니라 판정을 뒤집는 일이고, 그 판이 걸린
+     * 짝의 순위가 함께 움직인다. 무더기로 오가는 것만 남긴다는 규칙의 뜻이 *"사용자가 하나를
+     * 콕 집어 바꾼 것은 남기지 않는다"*는 아니다.
+     */
+    suspend fun editWinner(
+        matchCode: String,
+        winnerCode: String?,
+        relation: String,
+        winnerLabel: String
+    ): DuelMatch? {
+        val match = app.database.duelMatchDao().getByCode(matchCode) ?: return null
+        val updated = duelRepository.updateWinner(match, winnerCode) ?: return null
+        reportResult(
+            _result,
+            OpResult.success(
+                OpResult.CAT_DUEL,
+                app.getString(R.string.duel_op_match_edited, relation, winnerLabel)
+            )
+        )
+        return updated
+    }
+
+    /** 판 하나를 지운다 — **되돌릴 수 없다**(휴지통을 거치지 않는다). 이력이 유일한 자취다. */
+    suspend fun deleteMatch(matchCode: String, relation: String) {
+        val match = app.database.duelMatchDao().getByCode(matchCode) ?: return
+        duelRepository.undo(match)
+        reportResult(
+            _result,
+            OpResult.success(OpResult.CAT_DUEL, app.getString(R.string.duel_op_match_deleted, relation))
+        )
     }
 
     /**

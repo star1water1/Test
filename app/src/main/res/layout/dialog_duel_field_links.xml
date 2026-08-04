@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  축에 걸 필드를 고르는 창 — 영향 필드(순위 있음)와 산출 필드가 같은 창을 쓴다.
+
+  scroll-cap-exempt: 목록은 아래 FrameLayout이 높이를 묶고 그 안에서 스크롤된다(R-31의 요구 그대로).
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingStart="20dp"
+    android:paddingEnd="20dp"
+    android:paddingTop="8dp"
+    android:paddingBottom="4dp">
+
+    <!-- 목적문(R-25) — 무엇을 고르는 것이고 그것이 어디에 쓰이는가. 호출부가 갈아 끼운다. -->
+    <TextView
+        android:id="@+id/linksPurpose"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="8dp"
+        android:textAppearance="@style/TextAppearance.App.BodySmall"
+        android:textColor="@color/text_secondary" />
+
+    <TextView
+        android:id="@+id/linksEmpty"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="8dp"
+        android:text="@string/duel_links_no_fields"
+        android:textAppearance="@style/TextAppearance.App.BodySmall"
+        android:textColor="@color/text_secondary"
+        android:visibility="gone" />
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="360dp">
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/linksRecyclerView"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false" />
+
+    </FrameLayout>
+
+</LinearLayout>

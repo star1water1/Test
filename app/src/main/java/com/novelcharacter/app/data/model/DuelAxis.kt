@@ -2,8 +2,10 @@ package com.novelcharacter.app.data.model
 
 import androidx.room.Entity
 import androidx.room.ForeignKey
+import androidx.room.Ignore
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import com.novelcharacter.app.util.DuelFieldLinks
 
 /**
  * 대결의 **축** (B-104) — "무엇을 겨루는가". 강함·몸매·아름다움은 예시일 뿐이고 사용자가
@@ -49,10 +51,33 @@ data class DuelAxis(
     val targetType: String = TARGET_CHARACTER,
     val displayOrder: Int = 0,
     val createdAt: Long = System.currentTimeMillis(),
+    /**
+     * **승패에 영향을 주는 필드** — `FieldDefinition.key`의 JSON 배열이고 **순서가 영향력
+     * 순위다**(1순위가 맨 앞). 앞머리 `-`는 *작을수록 유리*를 뜻한다.
+     * 해석·비교는 [com.novelcharacter.app.util.DuelFieldLinks]가 단일 소스다.
+     *
+     * 이 값들은 **대결 화면에 보인다** — 고를 때 보는 판단 재료이기 때문이다.
+     */
+    val influenceFieldKeys: String = "[]",
+    /**
+     * **대결 결과가 이어지는 필드**(산출). 같은 저장 형식이지만 방향이 반대다 —
+     * 영향 필드가 *필드 → 대결*이라면 이쪽은 *대결 → 필드*다.
+     *
+     * **대결 화면에 보이지 않는다.** 이 값이 곧 그 대결이 물으려는 답이라, 보이면 물음과 답이
+     * 한 화면에 놓인다(설계 5장 ①이 점수를 두고 금지한 것과 같은 부류).
+     */
+    val outcomeFieldKeys: String = "[]",
     /** 안정 식별자 — 판·처분·휴지통·엑셀이 이 값으로 축을 가리킨다(R-1). */
     val code: String = generateEntityCode()
 ) {
     val isImageAxis: Boolean get() = targetType == TARGET_IMAGE
+
+    /** 이 축의 필드 연결 — 저장 형식을 해석한 결과. 해석 규칙은 [DuelFieldLinks]가 단일 소스다. */
+    val fieldLinks: DuelFieldLinks.Axis
+        @Ignore get() = DuelFieldLinks.Axis(
+            influences = DuelFieldLinks.decode(influenceFieldKeys),
+            outcomes = DuelFieldLinks.decode(outcomeFieldKeys)
+        )
 
     companion object {
         /** 캐릭터끼리 겨루는 축. 참가자 코드는 `Character.code`다. */

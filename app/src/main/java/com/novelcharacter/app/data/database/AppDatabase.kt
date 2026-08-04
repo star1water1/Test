@@ -108,7 +108,7 @@ import com.novelcharacter.app.data.model.Universe
         DuelMatch::class,
         DuelCounterVerdict::class
     ],
-    version = 49,
+    version = 50,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -1956,6 +1956,25 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_49_50 = object : Migration(49, 50) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "Migrating database from version 49 to 50 — 대결 축↔필드 연결(B-104 층 C)")
+
+                // 칸 둘을 더하는 **순수 추가**다. 기존 축은 `[]`(연결 없음)이 되어 종전과 똑같이
+                // 동작한다 — 소급해서 필드를 이어 주지 않는 것은, 어느 필드가 그 축의 재료였는지
+                // 앱이 알 길이 없고 지어내면 사용자가 정하지 않은 것을 정해 주는 것이 되기 때문이다.
+                //
+                // 둘을 한 칸으로 합치지 않은 것은 **방향이 반대**여서다: 영향 필드는 승패를 가르는
+                // 재료(필드 → 대결)이고 산출 필드는 대결이 만들어 내는 값(대결 → 필드)이라,
+                // 대결 화면에 보이는지부터 갈린다(산출 필드를 보이면 물음과 답이 한 화면에 놓인다).
+                // 한 칸에 담고 표식으로 가르면 그 표식을 아는 자리가 코드 전체로 퍼진다.
+                db.execSQL("ALTER TABLE `duel_axes` ADD COLUMN `influenceFieldKeys` TEXT NOT NULL DEFAULT '[]'")
+                db.execSQL("ALTER TABLE `duel_axes` ADD COLUMN `outcomeFieldKeys` TEXT NOT NULL DEFAULT '[]'")
+
+                Log.i(TAG, "Migration from version 49 to 50 completed successfully")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -1963,7 +1982,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "novel_character_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49, MIGRATION_49_50)
                     .addCallback(SeedCallback(context.applicationContext))
                     .build()
                     .also { INSTANCE = it }

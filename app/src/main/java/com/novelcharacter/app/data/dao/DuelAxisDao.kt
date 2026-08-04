@@ -42,4 +42,11 @@ interface DuelAxisDao {
 
     @Delete
     suspend fun delete(axis: DuelAxis)
+
+    /**
+     * 덮어쓰기 가져오기가 쓰는 전량 삭제 — **판·처분이 CASCADE로 함께 죽는다.**
+     * 부르는 쪽이 *"이 파일로 되살릴 수 있는가"*를 먼저 판정할 것(`ExcelImportService`).
+     */
+    @Query("DELETE FROM duel_axes")
+    suspend fun deleteAll()
 }

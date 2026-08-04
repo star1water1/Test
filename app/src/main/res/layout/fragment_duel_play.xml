@@ -113,31 +113,59 @@
                 android:layout_width="match_parent"
                 android:layout_height="match_parent">
 
+                <!-- scaleType은 코드가 정한다(DuelImageFit.Fit) — 여기 적힌 것은 자리표시자용 기본값이다. -->
                 <ImageView
                     android:id="@+id/imageA"
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
-                    android:scaleType="centerCrop"
+                    android:scaleType="fitCenter"
                     android:contentDescription="@string/duel_pick_left" />
 
-                <TextView
-                    android:id="@+id/nameA"
+                <!--
+                  이름과 **영향 필드 값**이 함께 앉는 자리. 산출 필드는 여기 오지 않는다 —
+                  그 값이 곧 이 대결이 물으려는 답이다(util/DuelFieldLinks의 설명).
+                -->
+                <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_gravity="bottom"
                     android:background="@drawable/bg_duel_name_scrim"
-                    android:padding="10dp"
-                    android:textAppearance="@style/TextAppearance.App.Title"
-                    android:textColor="@android:color/white" />
+                    android:orientation="vertical"
+                    android:padding="10dp">
+
+                    <TextView
+                        android:id="@+id/nameA"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:textAppearance="@style/TextAppearance.App.Title"
+                        android:textColor="@android:color/white" />
+
+                    <TextView
+                        android:id="@+id/fieldsA"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:textAppearance="@style/TextAppearance.App.BodySmall"
+                        android:textColor="@android:color/white"
+                        android:visibility="gone" />
+
+                </LinearLayout>
 
             </FrameLayout>
 
         </com.google.android.material.card.MaterialCardView>
 
+        <!--
+          배치(위아래/나란히)는 실행 중에 바뀐다 — 가로/세로 폭과 gravity를 코드가 함께
+          갈아 끼운다(DuelPlayFragment.applyViewOptions). 여기 적힌 값은 '위아래'일 때의 것이다.
+        -->
         <TextView
+            android:id="@+id/versusLabel"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="center_horizontal"
+            android:paddingStart="6dp"
+            android:paddingEnd="6dp"
             android:text="@string/duel_versus"
             android:textAppearance="@style/TextAppearance.App.LabelSmall"
             android:textColor="@color/text_secondary" />
@@ -161,18 +189,34 @@
                     android:id="@+id/imageB"
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
-                    android:scaleType="centerCrop"
+                    android:scaleType="fitCenter"
                     android:contentDescription="@string/duel_pick_right" />
 
-                <TextView
-                    android:id="@+id/nameB"
+                <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_gravity="bottom"
                     android:background="@drawable/bg_duel_name_scrim"
-                    android:padding="10dp"
-                    android:textAppearance="@style/TextAppearance.App.Title"
-                    android:textColor="@android:color/white" />
+                    android:orientation="vertical"
+                    android:padding="10dp">
+
+                    <TextView
+                        android:id="@+id/nameB"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:textAppearance="@style/TextAppearance.App.Title"
+                        android:textColor="@android:color/white" />
+
+                    <TextView
+                        android:id="@+id/fieldsB"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:textAppearance="@style/TextAppearance.App.BodySmall"
+                        android:textColor="@android:color/white"
+                        android:visibility="gone" />
+
+                </LinearLayout>
 
             </FrameLayout>
 

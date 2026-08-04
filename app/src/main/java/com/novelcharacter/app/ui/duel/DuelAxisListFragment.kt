@@ -5,6 +5,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.EditText
+import android.widget.TextView
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
@@ -17,6 +18,8 @@ import com.novelcharacter.app.R
 import com.novelcharacter.app.data.model.DuelAxis
 import com.novelcharacter.app.databinding.FragmentDuelAxisListBinding
 import com.novelcharacter.app.ui.adapter.DuelAxisAdapter
+import com.novelcharacter.app.ui.adapter.DuelFieldLinkAdapter
+import com.novelcharacter.app.util.DuelFieldLinks
 import com.novelcharacter.app.util.navigateSafe
 import com.novelcharacter.app.util.notifyResult
 import com.novelcharacter.app.util.setValidatedPositiveButton
@@ -81,7 +84,8 @@ class DuelAxisListFragment : Fragment() {
             onClick = { axis -> openAxis(axis, R.id.duelPlayFragment) },
             onEdit = { axis -> showAxisEditDialog(axis) },
             onDelete = { axis -> confirmDelete(axis) },
-            onStandings = { axis -> openAxis(axis, R.id.duelStandingsFragment) }
+            onStandings = { axis -> openAxis(axis, R.id.duelStandingsFragment) },
+            onMatches = { axis -> openAxis(axis, R.id.duelMatchesFragment) }
         )
         binding.axisRecyclerView.layoutManager = LinearLayoutManager(requireContext())
         binding.axisRecyclerView.adapter = adapter
@@ -146,6 +150,9 @@ class DuelAxisListFragment : Fragment() {
 
     private fun reload() {
         viewLifecycleOwner.lifecycleScope.launch {
+            // 필드 이름을 먼저 받아 둔다 — 축 편집 창의 연결 요약이 **키가 아니라 이름**을
+            // 말해야 하는데, 그 창은 목록에서 곧바로 열리므로 그때 읽으면 늦는다.
+            fieldNames = viewModel.characterFields(universeId).associate { it.key to it.name }
             val axes = viewModel.axes(universeId)
             if (!isAdded) return@launch
             adapter.submitList(axes)
@@ -195,6 +202,42 @@ class DuelAxisListFragment : Fragment() {
         val editName = view.findViewById<EditText>(R.id.editAxisName)
         editName.setText(existing?.name.orEmpty())
 
+        // 필드 연결 — 창을 여는 동안 편집 중인 값이고, 저장을 눌러야 축에 실린다.
+        val links = existing?.fieldLinks ?: DuelFieldLinks.Axis()
+        var influences = links.influences
+        var outcomes = links.outcomes
+        val influenceSummary = view.findViewById<TextView>(R.id.influenceSummary)
+        val outcomeSummary = view.findViewById<TextView>(R.id.outcomeSummary)
+        val conflictWarning = view.findViewById<TextView>(R.id.linkConflictWarning)
+
+        fun renderLinks() {
+            influenceSummary.text = summarize(influences)
+            outcomeSummary.text = summarize(outcomes)
+            // 같은 필드가 재료이면서 결과일 수는 없다 — 막지는 않고 **말한다**(자율성 우선).
+            val conflicts = DuelFieldLinks.Axis(influences, outcomes).conflicts
+            conflictWarning.visibility = if (conflicts.isEmpty()) View.GONE else View.VISIBLE
+            if (conflicts.isNotEmpty()) {
+                conflictWarning.text = getString(
+                    R.string.duel_links_conflict,
+                    conflicts.joinToString(", ") { fieldNames[it] ?: it }
+                )
+            }
+        }
+        renderLinks()
+
+        view.findViewById<View>(R.id.btnEditInfluence).setOnClickListener {
+            showFieldLinkDialog(influences, rankable = true) { picked ->
+                influences = picked
+                renderLinks()
+            }
+        }
+        view.findViewById<View>(R.id.btnEditOutcome).setOnClickListener {
+            showFieldLinkDialog(outcomes, rankable = false) { picked ->
+                outcomes = picked
+                renderLinks()
+            }
+        }
+
         val dialog = MaterialAlertDialogBuilder(context)
             .setTitle(if (existing == null) R.string.duel_axis_add else R.string.duel_axis_edit)
             .setView(view)
@@ -211,11 +254,16 @@ class DuelAxisListFragment : Fragment() {
                 editName.showInlineError(getString(R.string.duel_axis_name_required))
                 return@setValidatedPositiveButton false
             }
-            val axis = existing?.copy(name = name) ?: DuelAxis(
-                universeId = universeId,
-                name = name,
-                targetType = DuelAxis.TARGET_CHARACTER,
-                displayOrder = adapter.itemCount
+            val axis = (
+                existing?.copy(name = name) ?: DuelAxis(
+                    universeId = universeId,
+                    name = name,
+                    targetType = DuelAxis.TARGET_CHARACTER,
+                    displayOrder = adapter.itemCount
+                )
+                ).copy(
+                influenceFieldKeys = DuelFieldLinks.encode(influences),
+                outcomeFieldKeys = DuelFieldLinks.encode(outcomes)
             )
             saving = true
             // 이름 유니크는 인덱스가 지킨다. 인덱스에 걸리면 예외로 죽으므로 **먼저 묻는다** —
@@ -237,6 +285,60 @@ class DuelAxisListFragment : Fragment() {
             false
         }
         dialog.show()
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // 필드 연결 (층 C)
+    // ──────────────────────────────────────────────────────────────────────
+
+    /** 이 세계관의 캐릭터 필드 — 키 → 이름. 요약 줄이 키가 아니라 **사람이 읽는 이름**을 말하게 한다. */
+    private var fieldNames: Map<String, String> = emptyMap()
+
+    private fun summarize(links: List<DuelFieldLinks.Link>): String {
+        if (links.isEmpty()) return getString(R.string.duel_links_none)
+        return links.joinToString(" · ") { link ->
+            val label = fieldNames[link.key] ?: link.key
+            if (link.higherWins) label else getString(R.string.duel_links_lower_marker, label)
+        }
+    }
+
+    /**
+     * 필드를 고르는 창.
+     *
+     * **필드를 여기서 만들 수는 없다** — 이 창은 이미 있는 필드를 잇는 자리이고, 필드가 하나도
+     * 없으면 그 사실과 어디서 만드는지를 말한다(빈 화면에 아무 설명이 없으면 사용자는 기능이
+     * 고장 난 것으로 읽는다).
+     */
+    private fun showFieldLinkDialog(
+        current: List<DuelFieldLinks.Link>,
+        rankable: Boolean,
+        onPicked: (List<DuelFieldLinks.Link>) -> Unit
+    ) {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val fields = viewModel.characterFields(universeId)
+            if (!isAdded) return@launch
+            fieldNames = fields.associate { it.key to it.name }
+
+            val context = requireContext()
+            val view = LayoutInflater.from(context).inflate(R.layout.dialog_duel_field_links, null)
+            view.findViewById<TextView>(R.id.linksPurpose).setText(
+                if (rankable) R.string.duel_links_influence_purpose else R.string.duel_links_outcome_purpose
+            )
+            view.findViewById<View>(R.id.linksEmpty).visibility =
+                if (fields.isEmpty()) View.VISIBLE else View.GONE
+
+            val recycler = view.findViewById<RecyclerView>(R.id.linksRecyclerView)
+            val linkAdapter = DuelFieldLinkAdapter(fields, current, rankable) {}
+            recycler.layoutManager = LinearLayoutManager(context)
+            recycler.adapter = linkAdapter
+
+            MaterialAlertDialogBuilder(context)
+                .setTitle(if (rankable) R.string.duel_links_influence_label else R.string.duel_links_outcome_label)
+                .setView(view)
+                .setPositiveButton(R.string.confirm) { _, _ -> onPicked(linkAdapter.currentLinks()) }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+        }
     }
 
     private fun confirmDelete(axis: DuelAxis) {

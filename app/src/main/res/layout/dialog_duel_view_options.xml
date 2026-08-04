@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  대결 화면 보기 설정 — 카드 배치와 그림 맞춤.
+
+  scroll-cap-exempt: 라디오 여섯 줄로 높이가 고정된 짧은 본문이라 스크롤이 생기지 않는다.
+-->
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="20dp">
+
+    <!-- 목적문(R-25) — 무엇이 어디서 어떻게 달라지는가. -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="12dp"
+        android:text="@string/duel_view_options_purpose"
+        android:textAppearance="@style/TextAppearance.App.BodySmall"
+        android:textColor="@color/text_secondary" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/duel_view_layout_label"
+        android:textAppearance="@style/TextAppearance.App.LabelSmall" />
+
+    <RadioGroup
+        android:id="@+id/groupLayout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <RadioButton
+            android:id="@+id/optionSideBySide"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/duel_view_layout_side" />
+
+        <RadioButton
+            android:id="@+id/optionStacked"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/duel_view_layout_stacked" />
+
+    </RadioGroup>
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:text="@string/duel_view_fit_label"
+        android:textAppearance="@style/TextAppearance.App.LabelSmall" />
+
+    <RadioGroup
+        android:id="@+id/groupFit"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <RadioButton
+            android:id="@+id/optionFillTop"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/duel_view_fit_fill" />
+
+        <RadioButton
+            android:id="@+id/optionWhole"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/duel_view_fit_whole" />
+
+    </RadioGroup>
+
+</LinearLayout>
