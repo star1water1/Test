@@ -23,6 +23,11 @@
         app:showAsAction="always|withText" />
 
     <item
+        android:id="@+id/action_duel_matches"
+        android:title="@string/duel_matches_title"
+        app:showAsAction="never" />
+
+    <item
         android:id="@+id/action_duel_view_options"
         android:title="@string/duel_view_options"
         app:showAsAction="never" />

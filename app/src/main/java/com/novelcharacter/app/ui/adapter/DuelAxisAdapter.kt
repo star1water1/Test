@@ -20,7 +20,8 @@ class DuelAxisAdapter(
     private val onClick: (DuelAxis) -> Unit,
     private val onEdit: (DuelAxis) -> Unit,
     private val onDelete: (DuelAxis) -> Unit,
-    private val onStandings: (DuelAxis) -> Unit
+    private val onStandings: (DuelAxis) -> Unit,
+    private val onMatches: (DuelAxis) -> Unit
 ) : ListAdapter<DuelAxis, DuelAxisAdapter.AxisViewHolder>(DiffCallback()) {
 
     /** 축 id → 요약 문구. 판 수 집계가 비동기라 목록보다 늦게 온다. */
@@ -49,13 +50,15 @@ class DuelAxisAdapter(
             binding.btnAxisMenu.setOnClickListener { view ->
                 val popup = PopupMenu(view.context, view)
                 popup.menu.add(0, 1, 0, R.string.duel_standings)
-                popup.menu.add(0, 2, 1, R.string.menu_edit)
-                popup.menu.add(0, 3, 2, R.string.menu_delete)
+                popup.menu.add(0, 2, 1, R.string.duel_matches_title)
+                popup.menu.add(0, 3, 2, R.string.menu_edit)
+                popup.menu.add(0, 4, 3, R.string.menu_delete)
                 popup.setOnMenuItemClickListener { item ->
                     when (item.itemId) {
                         1 -> { onStandings(axis); true }
-                        2 -> { onEdit(axis); true }
-                        3 -> { onDelete(axis); true }
+                        2 -> { onMatches(axis); true }
+                        3 -> { onEdit(axis); true }
+                        4 -> { onDelete(axis); true }
                         else -> false
                     }
                 }

@@ -115,6 +115,7 @@ class DuelPlayFragment : Fragment() {
         binding.toolbar.setOnMenuItemClickListener { item ->
             when (item.itemId) {
                 R.id.action_duel_axes -> { openAxisList(); true }
+                R.id.action_duel_matches -> { openMatches(); true }
                 R.id.action_duel_view_options -> { showViewOptions(); true }
                 else -> false
             }
@@ -499,6 +500,12 @@ class DuelPlayFragment : Fragment() {
     private fun openStandings() {
         val bundle = Bundle().apply { putLong("axisId", axisId) }
         findNavController().navigateSafe(R.id.duelPlayFragment, R.id.duelStandingsFragment, bundle)
+    }
+
+    /** 쌓은 판을 보고 고치는 자리 — 되돌리기가 집지 못하는 *어제 그 판*이 여기 있다. */
+    private fun openMatches() {
+        val bundle = Bundle().apply { putLong("axisId", axisId) }
+        findNavController().navigateSafe(R.id.duelPlayFragment, R.id.duelMatchesFragment, bundle)
     }
 
     /** 홈에서 바로 들어온 경우 축 목록에 닿을 길이 여기뿐이다(뒤로가기는 홈으로 간다). */

@@ -384,6 +384,18 @@
     </fragment>
 
     <fragment
+        android:id="@+id/duelMatchesFragment"
+        android:name="com.novelcharacter.app.ui.duel.DuelMatchesFragment"
+        android:label="@string/duel_matches_title"
+        tools:layout="@layout/fragment_duel_matches">
+
+        <argument
+            android:name="axisId"
+            app:argType="long"
+            android:defaultValue="-1L" />
+    </fragment>
+
+    <fragment
         android:id="@+id/duelCounterFragment"
         android:name="com.novelcharacter.app.ui.duel.DuelCounterFragment"
         android:label="@string/duel_counter_label"

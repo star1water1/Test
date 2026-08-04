@@ -84,7 +84,8 @@ class DuelAxisListFragment : Fragment() {
             onClick = { axis -> openAxis(axis, R.id.duelPlayFragment) },
             onEdit = { axis -> showAxisEditDialog(axis) },
             onDelete = { axis -> confirmDelete(axis) },
-            onStandings = { axis -> openAxis(axis, R.id.duelStandingsFragment) }
+            onStandings = { axis -> openAxis(axis, R.id.duelStandingsFragment) },
+            onMatches = { axis -> openAxis(axis, R.id.duelMatchesFragment) }
         )
         binding.axisRecyclerView.layoutManager = LinearLayoutManager(requireContext())
         binding.axisRecyclerView.adapter = adapter

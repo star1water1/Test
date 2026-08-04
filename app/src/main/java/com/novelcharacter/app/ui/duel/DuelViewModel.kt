@@ -253,6 +253,49 @@ class DuelViewModel(application: Application) : AndroidViewModel(application) {
             .filter { it.aCode in members && it.bCode in members }
     }
 
+    // ──────────────────────────────────────────────────────────────────────
+    // 기록 화면 — 보기와 손편집
+    // ──────────────────────────────────────────────────────────────────────
+
+    suspend fun recentMatches(axisId: Long, limit: Int): List<DuelMatch> =
+        duelRepository.recentMatches(axisId, limit)
+
+    /**
+     * 판 하나의 승자를 고친다.
+     *
+     * **이력에 남긴다.** 대결의 누름 하나하나는 이력에 오지 않지만([OpResult.CAT_DUEL]),
+     * **손으로 고친 것은 다르다** — 반복 조작이 아니라 판정을 뒤집는 일이고, 그 판이 걸린
+     * 짝의 순위가 함께 움직인다. 무더기로 오가는 것만 남긴다는 규칙의 뜻이 *"사용자가 하나를
+     * 콕 집어 바꾼 것은 남기지 않는다"*는 아니다.
+     */
+    suspend fun editWinner(
+        matchCode: String,
+        winnerCode: String?,
+        relation: String,
+        winnerLabel: String
+    ): DuelMatch? {
+        val match = app.database.duelMatchDao().getByCode(matchCode) ?: return null
+        val updated = duelRepository.updateWinner(match, winnerCode) ?: return null
+        reportResult(
+            _result,
+            OpResult.success(
+                OpResult.CAT_DUEL,
+                app.getString(R.string.duel_op_match_edited, relation, winnerLabel)
+            )
+        )
+        return updated
+    }
+
+    /** 판 하나를 지운다 — **되돌릴 수 없다**(휴지통을 거치지 않는다). 이력이 유일한 자취다. */
+    suspend fun deleteMatch(matchCode: String, relation: String) {
+        val match = app.database.duelMatchDao().getByCode(matchCode) ?: return
+        duelRepository.undo(match)
+        reportResult(
+            _result,
+            OpResult.success(OpResult.CAT_DUEL, app.getString(R.string.duel_op_match_deleted, relation))
+        )
+    }
+
     /**
      * 층 B ①의 실행 — **되돌릴 수 없다.** 축 삭제와 달리 휴지통을 거치지 않으므로(판 하나하나가
      * 스냅샷을 갖지 않는다) **이력에 남기는 것이 유일한 자취**다.

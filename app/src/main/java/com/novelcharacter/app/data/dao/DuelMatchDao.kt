@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.Query
+import androidx.room.Update
 import com.novelcharacter.app.data.model.DuelMatch
 
 /**
@@ -53,4 +54,12 @@ interface DuelMatchDao {
 
     @Query("DELETE FROM duel_matches WHERE groupId = :groupId")
     suspend fun deleteByGroup(groupId: String)
+
+    /**
+     * 기록 화면의 손편집 — **승자만 바뀐다.** 참가자와 시각은 그대로 두는 것이 설계다:
+     * 참가자를 바꾸면 그 판은 *다른 판*이 되고, 시각을 바꾸면 *언제 정했는가*라는 사실이
+     * 거짓이 된다. 둘 다 고치고 싶으면 지우고 다시 붙이는 것이 정직한 경로다.
+     */
+    @Update
+    suspend fun update(match: DuelMatch)
 }
