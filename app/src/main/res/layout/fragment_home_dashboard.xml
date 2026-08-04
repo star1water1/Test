@@ -286,6 +286,65 @@
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
 
+                <!-- 대결(B-104) — 도구 중 유일하게 **반복 활동**이라 부제로 이어할 자리를 함께 낸다.
+                     ⋮ 안에만 두었더니 새 기능이 앱에서 가장 안 보이는 자리에 있게 됐다
+                     (바로 위 보충 타일 주석이 세운 원칙: 덜 눈에 띄는 자리로 옮길 때는
+                     더 눈에 띄는 자리가 먼저 생겨야 한다). -->
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/cardDuel"
+                    style="@style/Widget.App.Card.Tonal"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/spacing_sm"
+                    android:clickable="true"
+                    android:focusable="true">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:padding="@dimen/card_padding">
+
+                        <ImageView
+                            android:layout_width="@dimen/icon_md"
+                            android:layout_height="@dimen/icon_md"
+                            android:src="@drawable/ic_duel"
+                            app:tint="?attr/colorPrimary"
+                            android:importantForAccessibility="no" />
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginStart="@dimen/spacing_md"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text="@string/duel_title"
+                                android:textAppearance="@style/TextAppearance.App.Subtitle" />
+
+                            <!-- 마지막에 연 축이 있으면 "아르카나 · 강함", 없으면 무엇을 하는 곳인지. -->
+                            <TextView
+                                android:id="@+id/duelSubtitle"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:textAppearance="@style/TextAppearance.App.BodySmall"
+                                android:textColor="@color/text_secondary" />
+
+                        </LinearLayout>
+
+                        <ImageView
+                            android:layout_width="@dimen/icon_md"
+                            android:layout_height="@dimen/icon_md"
+                            android:src="@drawable/ic_chevron_right"
+                            app:tint="?attr/colorOnSurfaceVariant"
+                            android:importantForAccessibility="no" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
                 <com.google.android.material.card.MaterialCardView
                     android:id="@+id/cardNameBank"
                     style="@style/Widget.App.Card.Tonal"
