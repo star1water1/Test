@@ -65,6 +65,48 @@ print(f"__COUNT__{len(found)}")
 PY
 )
 
+PAIRING=$(python3 - "$TARGET" <<'PY2'
+import re, sys
+lines = open(sys.argv[1], encoding='utf-8').read().split('\n')
+
+# `analyze*` / `import*` 본문 범위
+DECL = re.compile(r'^    (?:private )?suspend fun (analyze[A-Za-z0-9_]*|import[A-Za-z0-9_]*)\s*\(')
+spans, i = [], 0
+while i < len(lines):
+    m = DECL.match(lines[i])
+    if not m:
+        i += 1
+        continue
+    j = i + 1
+    while j < len(lines) and lines[j] != '    }':
+        j += 1
+    spans.append((m.group(1), i, j))
+    i = j + 1
+
+# 규약이 세운 이름꼴: 한 행을 읽는 자리는 `read*Row`다.
+# **양쪽이 같은 리더를 부르지 않으면** 비교식을 아무리 맞춰도 한 겹 아래에서 갈린다(설계 1-1).
+readers = sorted(set(re.findall(r'\bfun (read[A-Z][A-Za-z0-9_]*Row)\s*\(', '\n'.join(lines))))
+bad = []
+for r in readers:
+    called = {'analyze': False, 'import': False}
+    for name, s, e in spans:
+        side = 'analyze' if name.startswith('analyze') else 'import'
+        if any(r + '(' in l for l in lines[s:e]):
+            called[side] = True
+    if not (called['analyze'] and called['import']):
+        only = 'analyze' if called['analyze'] else ('import' if called['import'] else '아무데서도')
+        bad.append(f"{r}\t{only}")
+
+for b in bad:
+    print(b)
+print(f"__PCOUNT__{len(bad)}\t__TOTAL__{len(readers)}")
+PY2
+)
+
+pcount=$(printf '%s\n' "$PAIRING" | sed -n 's/^__PCOUNT__\([0-9]*\).*/\1/p')
+ptotal=$(printf '%s\n' "$PAIRING" | sed -n 's/.*__TOTAL__\([0-9]*\)$/\1/p')
+pbody=$(printf '%s\n' "$PAIRING" | grep -v '^__PCOUNT__' || true)
+
 count=$(printf '%s\n' "$violations" | sed -n 's/^__COUNT__//p')
 body=$(printf '%s\n' "$violations" | grep -v '^__COUNT__' || true)
 
@@ -83,6 +125,21 @@ if [ "${count:-0}" -gt 0 ]; then
   exit 1
 fi
 
+if [ "${pcount:-0}" -gt 0 ]; then
+  echo "  ✗ 읽기(read*Row)를 한쪽에서만 부릅니다 (${pcount}건)"
+  echo
+  printf '%s\n' "$pbody" | while IFS=$'\t' read -r fn only; do
+    [ -z "${fn:-}" ] && continue
+    echo "    $fn — ${only}에서만 부름"
+  done
+  echo
+  echo "  비교식만 맞추고 리더를 각자 두면 같은 결함이 한 겹 아래에서 되살아납니다."
+  echo "  가져오기와 미리보기가 **같은 read*Row**를 부르게 하세요."
+  echo "             설계: docs/restore_preview_parity_2026-08.md 1-1"
+  exit 1
+fi
+
 echo "  ✓ 모든 analyze*가 가져오기와 같은 merge* 판정을 씁니다"
+echo "  ✓ read*Row ${ptotal}종을 가져오기와 미리보기가 함께 부릅니다"
 echo
 echo "복원 미리보기 정합 검사 통과"
