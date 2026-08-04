@@ -12,10 +12,15 @@ Room 마이그레이션 44→45 검증 하네스 (Android 없이 실제 SQLite�
  4. FK CASCADE가 실제로 동작하는지 실행으로 확인한다. 이 표를 통합 테이블이 아니라 세 번째
     테이블로 만든 **유일한 이유가 CASCADE**이므로, 그것이 안 걸리면 설계 근거가 사라진다.
 """
+import os
 import re
 import sqlite3
 
-REPO = "/home/user/Test"
+# 저장소 루트 — **스크립트 위치에서 유도한다**(`tools/`의 부모).
+# 종전에는 `/home/user/Test`가 박혀 있어 **다른 경로로 체크아웃하면 어디서도 못 돌았다**;
+# 개발 컨테이너의 경로와 우연히 같아 로컬에서만 통과했고, 2026.08.04에 이 하네스를
+# CI에 걸면서 처음 드러났다(세션 로그 1-bw). 셸 검사들이 쓰는 규약과 같다.
+REPO = os.environ.get("REPO") or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 APPDB = f"{REPO}/app/src/main/java/com/novelcharacter/app/data/database/AppDatabase.kt"
 ENTITY = f"{REPO}/app/src/main/java/com/novelcharacter/app/data/model/NovelFieldValue.kt"
 DAO = f"{REPO}/app/src/main/java/com/novelcharacter/app/data/dao/NovelFieldValueDao.kt"

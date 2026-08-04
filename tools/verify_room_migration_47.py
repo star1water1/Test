@@ -14,10 +14,15 @@ Room 마이그레이션 46→47 검증 하네스 (Android 없이 실제 SQLite�
     죽고, 기본값을 `'0'` 같은 것으로 두면 **아무도 고르지 않은 이미지가 대표로 심긴다**.
  5. 표 하나만 바뀌는 순수 추가이므로 **다른 표가 건드려지지 않았는지**도 함께 본다.
 """
+import os
 import re
 import sqlite3
 
-REPO = "/home/user/Test"
+# 저장소 루트 — **스크립트 위치에서 유도한다**(`tools/`의 부모).
+# 종전에는 `/home/user/Test`가 박혀 있어 **다른 경로로 체크아웃하면 어디서도 못 돌았다**;
+# 개발 컨테이너의 경로와 우연히 같아 로컬에서만 통과했고, 2026.08.04에 이 하네스를
+# CI에 걸면서 처음 드러났다(세션 로그 1-bw). 셸 검사들이 쓰는 규약과 같다.
+REPO = os.environ.get("REPO") or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 APPDB = f"{REPO}/app/src/main/java/com/novelcharacter/app/data/database/AppDatabase.kt"
 ENTITY = f"{REPO}/app/src/main/java/com/novelcharacter/app/data/model/Character.kt"
 
